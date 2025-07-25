@@ -783,6 +783,78 @@ INT_IQ_CONFIGS = {
             create_issue_ports([IntDiv(), IntMisc()], 1)
         )
     ],
+    '5split': [
+        # IQ0: ALU queue 1 (3 ports)
+        IssueQue(name='intIQ0', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntMult()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ1: ALU queue 2 (3 ports)
+        IssueQue(name='intIQ1', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntMult()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ2: ALU queue 3 (3 ports)
+        IssueQue(name='intIQ2', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ3: ALU queue 4 (3 ports)
+        IssueQue(name='intIQ3', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntDiv(), IntMisc()], 1)
+        )
+    ],
+    '6split': [
+        # IQ0: ALU queue 1 (3 ports)
+        IssueQue(name='intIQ0', inports=2, size=16, oports=
+            create_issue_ports([IntALU(), IntMult()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ1: ALU queue 2 (3 ports)
+        IssueQue(name='intIQ1', inports=2, size=16, oports=
+            create_issue_ports([IntALU(), IntMult()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ2: ALU queue 3 (3 ports)
+        IssueQue(name='intIQ2', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ3: ALU queue 4 (3 ports)
+        IssueQue(name='intIQ3', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntDiv(), IntMisc()], 1)
+        )
+    ],
+    '7split': [
+        # IQ0: ALU queue 1 (3 ports)
+        IssueQue(name='intIQ0', inports=2, size=16, oports=
+            create_issue_ports([IntALU(), IntMult()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ1: ALU queue 2 (3 ports)
+        IssueQue(name='intIQ1', inports=2, size=16, oports=
+            create_issue_ports([IntALU(), IntMult()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ2: ALU queue 3 (3 ports)
+        IssueQue(name='intIQ2', inports=2, size=16, oports=
+            create_issue_ports([IntALU(), IntALU()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ3: ALU queue 4 (3 ports)
+        IssueQue(name='intIQ3', inports=2, size=16, oports=
+            create_issue_ports([IntALU(), IntALU()], 1) +
+            create_issue_ports([IntDiv(), IntMisc()], 1)
+        )
+    ],
     'reduced_ports': [
         # Unified IQ with port count close to Ideal: 4ALU + 2MULT + 1BRU + 1DIV
         IssueQue(name='intIQ0', inports=6, size=48, oports=
@@ -842,9 +914,34 @@ class UnifyIQ_4Split(UnifyIQBase):
     def __init__(self, *args, **kwargs):
         super().__init__('4split', *args, **kwargs)
 
+class UnifyIQ_5Split(UnifyIQBase):
+    """
+    Experiment 4: UnifyIQ to Ideal - 5-way split (ALU vs MULT vs BRU/DIV)
+    Target: test the impact of fine-grained functional unit separation
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('5split', *args, **kwargs)
+
+class UnifyIQ_6Split(UnifyIQBase):
+    """
+    Experiment 5: UnifyIQ to Ideal - 6-way split (ALU vs MULT vs BRU/DIV)
+    Target: test the impact of fine-grained functional unit separation
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('6split', *args, **kwargs)
+
+class UnifyIQ_7Split(UnifyIQBase):
+
+    """
+    Experiment 6: UnifyIQ to Ideal - 7-way split (ALU vs MULT vs BRU/DIV)
+    Target: test the impact of fine-grained functional unit separation
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('7split', *args, **kwargs)
+
 class UnifyIQ_ReducedPorts(UnifyIQBase):
     """
-    Experiment 4: UnifyIQ to Ideal - unified IQ with reduced port count
+    Experiment 6: UnifyIQ to Ideal - unified IQ with reduced port count
     Target: test the trade-off between unified scheduling vs port count
     """
     def __init__(self, *args, **kwargs):
