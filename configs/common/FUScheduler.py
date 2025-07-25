@@ -809,6 +809,55 @@ INT_IQ_CONFIGS = {
             create_issue_ports([IntDiv(), IntMisc()], 1)
         )
     ],
+    '5split_opt': [
+        # IQ0: ALU queue 1 (3 ports)
+        IssueQue(name='intIQ0', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntMult()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ1: ALU queue 2 (3 ports)
+        IssueQue(name='intIQ1', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntMult()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ2: ALU queue 3 (2 ports) - BRU
+        IssueQue(name='intIQ2', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntALU()], 1)
+        ),
+        # IQ3: ALU queue 4 (3 ports)
+        IssueQue(name='intIQ3', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntDiv(), IntMisc()], 1)
+        )
+    ],
+    '5split_opt2': [
+        # IQ0: ALU queue 1 (3 ports)
+        IssueQue(name='intIQ0', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntMult()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ1: ALU queue 2 (3 ports)
+        IssueQue(name='intIQ1', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntMult()], 1) +
+            create_issue_ports([IntBRU()], 1)
+        ),
+        # IQ2: ALU queue 3 (2 ports)
+        IssueQue(name='intIQ2', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntALU()], 1)
+        ),
+        # IQ3: ALU queue 4 (2 ports) - ALU
+        IssueQue(name='intIQ3', inports=2, size=16, oports=
+            create_issue_ports([IntALU()], 1) +
+            create_issue_ports([IntDiv(), IntMisc()], 1)
+        )
+    ],
     '6split': [
         # IQ0: ALU queue 1 (3 ports)
         IssueQue(name='intIQ0', inports=2, size=16, oports=
@@ -921,6 +970,23 @@ class UnifyIQ_5Split(UnifyIQBase):
     """
     def __init__(self, *args, **kwargs):
         super().__init__('5split', *args, **kwargs)
+
+class UnifyIQ_5SplitOpt(UnifyIQBase):
+    """
+    Experiment 5: UnifyIQ to Ideal - 5-way split (ALU vs MULT vs BRU/DIV)
+    Target: test the impact of fine-grained functional unit separation
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('5split_opt', *args, **kwargs)
+
+class UnifyIQ_5SplitOpt2(UnifyIQBase):
+
+    """
+    Experiment 6: UnifyIQ to Ideal - 5-way split (ALU vs MULT vs BRU/DIV)
+    Target: test the impact of fine-grained functional unit separation
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__('5split_opt2', *args, **kwargs)
 
 class UnifyIQ_6Split(UnifyIQBase):
     """
