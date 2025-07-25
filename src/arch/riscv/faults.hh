@@ -89,6 +89,10 @@ enum ExceptionCode : uint64_t
     VIRTUAL_INST = 22,
     STORE_G_PAGE = 23,
     AMO_G_PAGE = 23,
+    //define MPT Page fault
+    INST_MPT_PAGE = 24,
+    LOAD_MPT_PAGE = 25,
+    STORE_MPT_PAGE = 26,
 
     INT_SOFTWARE_USER = 0,
     INT_SOFTWARE_SUPER = 1,
