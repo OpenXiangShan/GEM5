@@ -240,6 +240,13 @@ class TLB : public BaseTLB
 
     Walker *walker;
 
+  // #if MPT_ENABLED
+	  MPT globalMPT;//globalMPT/mptcache是在mmu_mpt_and_mptcache-Smmpt52.cc中创建的。
+	  // #if MPT_CACHE_ENABLED
+	    MPTCache52* globalMPTCache;
+	//  #endif
+	// #endif
+
     struct TlbStats : public statistics::Group
     {
         TlbStats(statistics::Group *parent);
@@ -331,6 +338,18 @@ class TLB : public BaseTLB
         statistics::Formula mptTotalAccesses;
         statistics::Formula mptHitRate;
         statistics::Formula mptMissRate;
+
+        // Instruction TLB
+        statistics::Scalar iTLBHits;
+        statistics::Scalar iTLBMisses;
+        statistics::Scalar iTLBAccesses;
+        statistics::Formula iTLBMissRate;
+
+        // Data TLB
+        statistics::Scalar dTLBHits;
+        statistics::Scalar dTLBMisses;
+        statistics::Scalar dTLBAccesses;
+        statistics::Formula dTLBMissRate;
 
     } stats;
 

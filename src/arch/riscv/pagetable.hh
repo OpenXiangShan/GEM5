@@ -53,6 +53,11 @@ inline int getPageShiftForLevel(int level){ // 返回每个层级的页大小对
     }
 }
 
+uint64_t getPageSizeForLevel(int level);
+uint64_t getRegionSizeForLevel(int level);
+uint8_t log2floor(uint64_t x);
+bool checkMPTEPermissions(const MPTE52 &mpte, BaseMMU::Mode mode, Addr range_offset, int level);
+
 //MPT Information
 BitUnion32(MPTInfoRaw)
     Bitfield<31, 12>   reserved;        // 剩余 bits 是保留位
@@ -114,9 +119,11 @@ struct MPTE52
     uint8_t perms(uint8_t pi) const;
 };
 
+
+
 struct MPTCacheEntry
 {
-    // Addr tag;                  // region base（对齐后的地址）   目前这个 tag 用不上，用于查找的 key 是下面 unordered map 中的 Addr，此处 tag 的用处为增加调试信息 + 以后扩展为 set-ass 时可用
+    Addr tag;                  // region base（对齐后的地址）   目前这个 tag 用不上，用于查找的 key 是下面 unordered map 中的 Addr，此处 tag 的用处为增加调试信息 + 以后扩展为 set-ass 时可用
     MPTE52 mpte;               // 缓存的 MPTE  // 这个结构体包含 raw 64-bit 值，N 位在内部就有
     bool valid = false;
 
