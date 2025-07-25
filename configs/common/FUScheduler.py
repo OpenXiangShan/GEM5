@@ -684,318 +684,170 @@ class UnifyIQ(Scheduler):
         SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
     ]
 
-# UnifyIQ to Ideal experiment, for performance analysis
+# Common configurations for UnifyIQ variants to reduce code duplication
+def get_unify_mem_config():
+    """Memory IQ configuration used by all UnifyIQ variants"""
+    return [
+        IssueQue(name='load0', inports=6, size=48, oports=[
+            IssuePort(fu=[ReadPort()]),
+            IssuePort(fu=[ReadPort()]),
+            IssuePort(fu=[ReadPort()]),
+        ]),
+        IssueQue(name='sta0', inports=4, size=32, oports=[
+            IssuePort(fu=[WritePort()]),
+            IssuePort(fu=[WritePort()]),
+        ]),
+        IssueQue(name='std0', inports=4, size=32, oports=[
+            IssuePort(fu=[StoreDataPort()]),
+            IssuePort(fu=[StoreDataPort()]),
+        ])
+    ]
+
+def get_unify_fp_config():
+    """Floating-point IQ configuration used by all UnifyIQ variants"""
+    return [
+        IssueQue(name='fpIQ0', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='fpIQ1', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='fpIQ2', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='fpIQ3', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='fpIQ4', inports=2, size=18, oports=[
+            IssuePort(fu=[FP_SLOW()]),
+            IssuePort(fu=[FP_SLOW()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ0', inports=5, size=42, oports=[
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()]),
+            IssuePort(fu=[SIMD_Unit()])
+        ], scheduleToExecDelay=3),
+    ]
+
+def create_issue_ports(fu_list, count):
+    """Helper function to create multiple IssuePort instances"""
+    return [IssuePort(fu=fu_list) for _ in range(count)]
+
+# Integer IQ configurations for different UnifyIQ variants
+INT_IQ_CONFIGS = {
+    '2split': [
+        # IQ0: ALU + MULT (compute-intensive operations)
+        IssueQue(name='intIQ0', inports=6, size=32, oports=
+            create_issue_ports([IntALU()], 4) +
+            create_issue_ports([IntMult()], 2)
+        ),
+        # IQ1: BRU + DIV/MISC (control and special operations)
+        IssueQue(name='intIQ1', inports=4, size=24, oports=
+            create_issue_ports([IntBRU()], 3) +
+            create_issue_ports([IntDiv(), IntMisc()], 1)
+        )
+    ],
+    '3split': [
+        # IQ0: dedicated ALU queue
+        IssueQue(name='intIQ0', inports=4, size=24, oports=
+            create_issue_ports([IntALU()], 4)
+        ),
+        # IQ1: dedicated MULT queue
+        IssueQue(name='intIQ1', inports=3, size=20, oports=
+            create_issue_ports([IntMult()], 2)
+        ),
+        # IQ2: BRU + DIV/MISC queue
+        IssueQue(name='intIQ2', inports=4, size=24, oports=
+            create_issue_ports([IntBRU()], 3) +
+            create_issue_ports([IntDiv(), IntMisc()], 1)
+        )
+    ],
+    '4split': [
+        # IQ0: ALU queue 1 (3 ports)
+        IssueQue(name='intIQ0', inports=3, size=20, oports=
+            create_issue_ports([IntALU()], 3)
+        ),
+        # IQ1: ALU queue 2 (3 ports)
+        IssueQue(name='intIQ1', inports=3, size=20, oports=
+            create_issue_ports([IntALU()], 3)
+        ),
+        # IQ2: MULT dedicated queue
+        IssueQue(name='intIQ2', inports=3, size=18, oports=
+            create_issue_ports([IntMult()], 2)
+        ),
+        # IQ3: BRU + DIV/MISC queue
+        IssueQue(name='intIQ3', inports=4, size=22, oports=
+            create_issue_ports([IntBRU()], 3) +
+            create_issue_ports([IntDiv(), IntMisc()], 1)
+        )
+    ],
+    'reduced_ports': [
+        # Unified IQ with port count close to Ideal: 4ALU + 2MULT + 1BRU + 1DIV
+        IssueQue(name='intIQ0', inports=6, size=48, oports=
+            create_issue_ports([IntALU()], 4) +
+            create_issue_ports([IntMult()], 2) +
+            create_issue_ports([IntBRU()], 1) +
+            create_issue_ports([IntDiv(), IntMisc()], 1)
+        )
+    ]
+}
+
+class UnifyIQBase(Scheduler):
+    """Base class for UnifyIQ variants to reduce code duplication"""
+
+    def __init__(self, config_name, *args, **kwargs):
+        self._intIQs = INT_IQ_CONFIGS[config_name]
+        self._memIQs = get_unify_mem_config()
+        self._fpIQs = get_unify_fp_config()
+
+        self.IQs = self._intIQs + self._memIQs + self._fpIQs
+        self._int_bank = [i.name for i in self._intIQs]
+        self._mem_bank = [i.name for i in self._memIQs]
+        self._fp_bank = [i.name for i in self._fpIQs]
+        self.specWakeupNetwork = [
+            SpecWakeupChannel(srcs=self._int_bank + self._mem_bank,
+                            dsts=self._int_bank + self._mem_bank),
+            SpecWakeupChannel(srcs=self._fp_bank, dsts=self._fp_bank)
+        ]
+
+        super().__init__(*args, **kwargs)
+
+# UnifyIQ to Ideal progressive experiment configurations
 # Control variables: keep memory and floating-point IQ configurations unchanged,
 # only change the integer IQ organization
 
-class UnifyIQ_2Split(Scheduler):
+class UnifyIQ_2Split(UnifyIQBase):
     """
-    experiment 1: UnifyIQ to Ideal, ALU/MULT vs BRU/DIV
-    target: test the impact of separating ALU/MULT vs BRU/DIV
+    Experiment 1: UnifyIQ to Ideal - 2-way split (ALU/MULT vs BRU/DIV)
+    Target: test the impact of separating compute vs control operations
     """
-    __intIQs = [
-        # IQ0: ALU + MULT (compute-intensive)
-        IssueQue(name='intIQ0', inports=6, size=32, oports=[
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntMult()]),
-            IssuePort(fu=[IntMult()]),
-        ]),
-        # IQ1: BRU + DIV/MISC (control and special operations)
-        IssueQue(name='intIQ1', inports=4, size=24, oports=[
-            IssuePort(fu=[IntBRU()]),
-            IssuePort(fu=[IntBRU()]),
-            IssuePort(fu=[IntBRU()]),
-            IssuePort(fu=[IntDiv(), IntMisc()]),
-        ])
-    ]
+    def __init__(self, *args, **kwargs):
+        super().__init__('2split', *args, **kwargs)
 
-    # reuse the memory and floating-point configurations from UnifyIQ
-    __memIQs = [
-        IssueQue(name='load0', inports=6, size=48, oports=[
-            IssuePort(fu=[ReadPort()]),
-            IssuePort(fu=[ReadPort()]),
-            IssuePort(fu=[ReadPort()]),
-        ]),
-        IssueQue(name='sta0', inports=4, size=32, oports=[
-            IssuePort(fu=[WritePort()]),
-            IssuePort(fu=[WritePort()]),
-        ]),
-        IssueQue(name='std0', inports=4, size=32, oports=[
-            IssuePort(fu=[StoreDataPort()]),
-            IssuePort(fu=[StoreDataPort()]),
-        ])
-    ]
-
-    __fpIQs = [
-        IssueQue(name='fpIQ0', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ1', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ2', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ3', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ4', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_SLOW()]),
-            IssuePort(fu=[FP_SLOW()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='vecIQ0', inports=5, size=42, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()])
-        ], scheduleToExecDelay=3),
-    ]
-
-    IQs = __intIQs + __memIQs + __fpIQs
-    __int_bank = [i.name for i in __intIQs]
-    __mem_bank = [i.name for i in __memIQs]
-    __fp_bank = [i.name for i in __fpIQs]
-    specWakeupNetwork = [
-        SpecWakeupChannel(srcs=__int_bank + __mem_bank, dsts=__int_bank + __mem_bank),
-        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
-    ]
-
-class UnifyIQ_3Split(Scheduler):
+class UnifyIQ_3Split(UnifyIQBase):
     """
-    experiment 2: UnifyIQ to Ideal, ALU vs MULT vs BRU/DIV
-    target: test the impact of separating ALU vs MULT vs BRU/DIV
+    Experiment 2: UnifyIQ to Ideal - 3-way split (ALU vs MULT vs BRU/DIV)
+    Target: test the impact of fine-grained functional unit separation
     """
-    __intIQs = [
-        # IQ0: dedicated ALU queue
-        IssueQue(name='intIQ0', inports=4, size=24, oports=[
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-        ]),
-        # IQ1: dedicated MULT queue
-        IssueQue(name='intIQ1', inports=3, size=20, oports=[
-            IssuePort(fu=[IntMult()]),
-            IssuePort(fu=[IntMult()]),
-        ]),
-        # IQ2: BRU + DIV/MISC queue
-        IssueQue(name='intIQ2', inports=4, size=24, oports=[
-            IssuePort(fu=[IntBRU()]),
-            IssuePort(fu=[IntBRU()]),
-            IssuePort(fu=[IntBRU()]),
-            IssuePort(fu=[IntDiv(), IntMisc()]),
-        ])
-    ]
+    def __init__(self, *args, **kwargs):
+        super().__init__('3split', *args, **kwargs)
 
-    # reuse the same memory and floating-point configurations
-    __memIQs = [
-        IssueQue(name='load0', inports=6, size=48, oports=[
-            IssuePort(fu=[ReadPort()]),
-            IssuePort(fu=[ReadPort()]),
-            IssuePort(fu=[ReadPort()]),
-        ]),
-        IssueQue(name='sta0', inports=4, size=32, oports=[
-            IssuePort(fu=[WritePort()]),
-            IssuePort(fu=[WritePort()]),
-        ]),
-        IssueQue(name='std0', inports=4, size=32, oports=[
-            IssuePort(fu=[StoreDataPort()]),
-            IssuePort(fu=[StoreDataPort()]),
-        ])
-    ]
-
-    __fpIQs = [
-        IssueQue(name='fpIQ0', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ1', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ2', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ3', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ4', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_SLOW()]),
-            IssuePort(fu=[FP_SLOW()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='vecIQ0', inports=5, size=42, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()])
-        ], scheduleToExecDelay=3),
-    ]
-
-    IQs = __intIQs + __memIQs + __fpIQs
-    __int_bank = [i.name for i in __intIQs]
-    __mem_bank = [i.name for i in __memIQs]
-    __fp_bank = [i.name for i in __fpIQs]
-    specWakeupNetwork = [
-        SpecWakeupChannel(srcs=__int_bank + __mem_bank, dsts=__int_bank + __mem_bank),
-        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
-    ]
-
-class UnifyIQ_4Split(Scheduler):
+class UnifyIQ_4Split(UnifyIQBase):
     """
-    experiment 3: UnifyIQ to Ideal, ALU vs MULT vs BRU/DIV
-    target: test the impact of separating ALU vs MULT vs BRU/DIV
+    Experiment 3: UnifyIQ to Ideal - 4-way split (dual ALU + MULT + BRU/DIV)
+    Target: test the impact of distributed ALU with more IQ counts
     """
-    __intIQs = [
-        # IQ0: ALU queue 1 (3 ports)
-        IssueQue(name='intIQ0', inports=3, size=20, oports=[
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-        ]),
-        # IQ1: ALU queue 2 (3 ports)
-        IssueQue(name='intIQ1', inports=3, size=20, oports=[
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-        ]),
-        # IQ2: MULT dedicated queue
-        IssueQue(name='intIQ2', inports=3, size=18, oports=[
-            IssuePort(fu=[IntMult()]),
-            IssuePort(fu=[IntMult()]),
-        ]),
-        # IQ3: BRU + DIV/MISC queue
-        IssueQue(name='intIQ3', inports=4, size=22, oports=[
-            IssuePort(fu=[IntBRU()]),
-            IssuePort(fu=[IntBRU()]),
-            IssuePort(fu=[IntBRU()]),
-            IssuePort(fu=[IntDiv(), IntMisc()]),
-        ])
-    ]
+    def __init__(self, *args, **kwargs):
+        super().__init__('4split', *args, **kwargs)
 
-    # reuse the same memory and floating-point configurations
-    __memIQs = [
-        IssueQue(name='load0', inports=6, size=48, oports=[
-            IssuePort(fu=[ReadPort()]),
-            IssuePort(fu=[ReadPort()]),
-            IssuePort(fu=[ReadPort()]),
-        ]),
-        IssueQue(name='sta0', inports=4, size=32, oports=[
-            IssuePort(fu=[WritePort()]),
-            IssuePort(fu=[WritePort()]),
-        ]),
-        IssueQue(name='std0', inports=4, size=32, oports=[
-            IssuePort(fu=[StoreDataPort()]),
-            IssuePort(fu=[StoreDataPort()]),
-        ])
-    ]
-
-    __fpIQs = [
-        IssueQue(name='fpIQ0', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ1', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ2', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ3', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ4', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_SLOW()]),
-            IssuePort(fu=[FP_SLOW()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='vecIQ0', inports=5, size=42, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()])
-        ], scheduleToExecDelay=3),
-    ]
-
-    IQs = __intIQs + __memIQs + __fpIQs
-    __int_bank = [i.name for i in __intIQs]
-    __mem_bank = [i.name for i in __memIQs]
-    __fp_bank = [i.name for i in __fpIQs]
-    specWakeupNetwork = [
-        SpecWakeupChannel(srcs=__int_bank + __mem_bank, dsts=__int_bank + __mem_bank),
-        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
-    ]
-
-class UnifyIQ_ReducedPorts(Scheduler):
+class UnifyIQ_ReducedPorts(UnifyIQBase):
     """
-    experiment 4: UnifyIQ to Ideal, ALU vs MULT vs BRU/DIV
-    target: test the impact of separating ALU vs MULT vs BRU/DIV
+    Experiment 4: UnifyIQ to Ideal - unified IQ with reduced port count
+    Target: test the trade-off between unified scheduling vs port count
     """
-    __intIQs = [
-        IssueQue(name='intIQ0', inports=6, size=48, oports=[
-            # reduce to the configuration close to Ideal: 4ALU + 2MULT + 1BRU + 1DIV
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntALU()]),
-            IssuePort(fu=[IntMult()]),
-            IssuePort(fu=[IntMult()]),
-            IssuePort(fu=[IntBRU()]),
-            IssuePort(fu=[IntDiv(), IntMisc()]),
-        ])
-    ]
-
-    # reuse the same memory and floating-point configurations
-    __memIQs = [
-        IssueQue(name='load0', inports=6, size=48, oports=[
-            IssuePort(fu=[ReadPort()]),
-            IssuePort(fu=[ReadPort()]),
-            IssuePort(fu=[ReadPort()]),
-        ]),
-        IssueQue(name='sta0', inports=4, size=32, oports=[
-            IssuePort(fu=[WritePort()]),
-            IssuePort(fu=[WritePort()]),
-        ]),
-        IssueQue(name='std0', inports=4, size=32, oports=[
-            IssuePort(fu=[StoreDataPort()]),
-            IssuePort(fu=[StoreDataPort()]),
-        ])
-    ]
-
-    __fpIQs = [
-        IssueQue(name='fpIQ0', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ1', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ2', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ3', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='fpIQ4', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_SLOW()]),
-            IssuePort(fu=[FP_SLOW()])
-        ], scheduleToExecDelay=3),
-        IssueQue(name='vecIQ0', inports=5, size=42, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()])
-        ], scheduleToExecDelay=3),
-    ]
-
-    IQs = __intIQs + __memIQs + __fpIQs
-    __int_bank = [i.name for i in __intIQs]
-    __mem_bank = [i.name for i in __memIQs]
-    __fp_bank = [i.name for i in __fpIQs]
-    specWakeupNetwork = [
-        SpecWakeupChannel(srcs=__int_bank + __mem_bank, dsts=__int_bank + __mem_bank),
-        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
-    ]
+    def __init__(self, *args, **kwargs):
+        super().__init__('reduced_ports', *args, **kwargs)
 
 DefaultScheduler = KunminghuScheduler
