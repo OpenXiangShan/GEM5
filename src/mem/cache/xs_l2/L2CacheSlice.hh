@@ -17,6 +17,7 @@
 #include "params/L2CacheSlice.hh"
 #include "sim/cur_tick.hh"
 #include "sim/eventq.hh"
+#include "sim/stats.hh"
 
 namespace gem5
 {
@@ -71,6 +72,18 @@ class L2CacheSlice : public CacheWrapper
 
     friend class L2MainPipe;
     L2MainPipe mainPipe;
+
+    struct L2CacheSliceStats : public statistics::Group
+    {
+        L2CacheSliceStats(statistics::Group *parent);
+
+        statistics::Scalar l1ReqArbFail;
+        statistics::Scalar l1ReqEnterPipeFail;
+        statistics::Scalar l1ReqPipeSetConflict;
+        statistics::Scalar l1ReqPipeMCP2Stall;
+        statistics::Scalar l1ReqPipeDirSramStall;
+    };
+    L2CacheSliceStats stats;
 
     // This will hold the function to calculate the set index for an address.
     std::function<Addr(Addr)> getSetIdx;

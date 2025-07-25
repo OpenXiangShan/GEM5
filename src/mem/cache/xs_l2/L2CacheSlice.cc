@@ -21,7 +21,23 @@ L2CacheSlice::L2CacheSlice(const L2CacheSliceParams &p)
                         tickMainPipePri),
       arbFailRetryEvent([this]{ innerCpuPortRecvReqRetry(); }, name(), false,
                         arbFailRetryPri),
-      mainPipe(this, p.pipeline_depth)
+      mainPipe(this, p.pipeline_depth),
+      stats(this)
+{
+}
+
+L2CacheSlice::L2CacheSliceStats::L2CacheSliceStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(l1ReqArbFail, statistics::units::Count::get(),
+             "Number of failed arbitrations in ReqArb for L1 MSHR requests"),
+      ADD_STAT(l1ReqEnterPipeFail, statistics::units::Count::get(),
+               "Number of failed entrances to L2MainPipe for L1 MSHR requests"),
+      ADD_STAT(l1ReqPipeSetConflict, statistics::units::Count::get(),
+               "Number of Set Conflicts in L2MainPipe for L1 MSHR requests"),
+      ADD_STAT(l1ReqPipeMCP2Stall, statistics::units::Count::get(),
+               "Number of MCP2 stalls in L2MainPipe for L1 MSHR requests"),
+      ADD_STAT(l1ReqPipeDirSramStall, statistics::units::Count::get(),
+               "Number of DirSram stalls in L2MainPipe for L1 MSHR requests")
 {
 }
 

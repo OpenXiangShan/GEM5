@@ -59,6 +59,20 @@ class L2MainPipe
     bool setBlockByDir(PacketPtr pkt, TaskSource source) const;
 
     /**
+     * Check if we should be blocked by MCP2 in the start stage.
+     * @param resource The resource to check.
+     * @return True if the resource is available, false otherwise.
+     */
+    bool hasMCP2Stall(PipelineResources resource) const;
+
+    /**
+     * Check if we should be blocked by DirSram in the start stage.
+     * @param resource The resource to check.
+     * @return True if the resource is available, false otherwise.
+     */
+    bool hasDirSramStall(PipelineResources resource) const;
+
+    /**
      * Check if a resource is available in the start stage.
      * @param resource The resource to check.
      * @return True if the resource is available, false otherwise.

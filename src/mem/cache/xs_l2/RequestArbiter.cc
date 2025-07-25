@@ -39,6 +39,10 @@ RequestArbiter::arbitrate(TaskSource task_source, Cycles now)
         default:
             panic("Invalid task source");
     }
+
+    if ((task_source == TaskSource::L1MSHR) && !success) {
+        owner->stats.l1ReqArbFail++;
+    }
     return success;
 }
 

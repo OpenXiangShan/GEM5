@@ -96,28 +96,40 @@ L2MainPipe::getExtraResources(PacketPtr pkt, TaskSource source) const
 }
 
 bool
-L2MainPipe::isResourceAvailable(PipelineResources resource) const
+L2MainPipe::hasMCP2Stall(PipelineResources resource) const
 {
     // Data is muti cycle path 2,
     // so if last cycle needs to read or write data,
     // this cycle is not available to read or write data
-    bool avail = true;
+    bool stall = false;
     if (resource & PipelineResources::DataRead) {
-        avail &= (scoreboardResources[1] &
+        stall |= (scoreboardResources[1] &
                  (PipelineResources::DataRead |
-                  PipelineResources::DataWrite)) == 0;
+                  PipelineResources::DataWrite)) != 0;
     }
     if (resource & PipelineResources::DataWrite) {
-        avail &= (scoreboardResources[1] &
+        stall |= (scoreboardResources[1] &
                  (PipelineResources::DataRead |
-                  PipelineResources::DataWrite)) == 0;
+                  PipelineResources::DataWrite)) != 0;
     }
+    return stall;
+}
+
+bool
+L2MainPipe::hasDirSramStall(PipelineResources resource) const
+{
     // Dir is SRAM, read and write should not be available at the same time
     if (resource & PipelineResources::DirRead) {
-        avail &= (scoreboardResources[getDirWriteStage()] &
-                 (PipelineResources::DirWrite)) == 0;
+        return (scoreboardResources[getDirWriteStage()] &
+                PipelineResources::DirWrite) != 0;
     }
-    return avail;
+    return false;
+}
+
+bool
+L2MainPipe::isResourceAvailable(PipelineResources resource) const
+{
+    return !hasMCP2Stall(resource) && !hasDirSramStall(resource);
 }
 
 bool
@@ -148,8 +160,25 @@ L2MainPipe::isTaskAvailable(PacketPtr pkt, TaskSource source) const
         }
         setBlock = false;
     }
-    return (scoreboardTasks[0].source == TaskSource::NoWhere) && !setBlock &&
-           isResourceAvailable(resources);
+    bool available = (scoreboardTasks[0].source == TaskSource::NoWhere) && !setBlock &&
+                     isResourceAvailable(resources);
+
+    // record stats
+    if (source == TaskSource::L1MSHR) {
+        if (!available) {
+            owner->stats.l1ReqEnterPipeFail++;
+        }
+        if (setBlock) {
+            owner->stats.l1ReqPipeSetConflict++;
+        }
+        if (hasMCP2Stall(resources)) {
+            owner->stats.l1ReqPipeMCP2Stall++;
+        }
+        if (hasDirSramStall(resources)) {
+            owner->stats.l1ReqPipeDirSramStall++;
+        }
+    }
+    return available;
 }
 
 void
