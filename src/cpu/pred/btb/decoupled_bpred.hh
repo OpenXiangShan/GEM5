@@ -218,7 +218,6 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // NEW: Full predictor validation methods for enhanced 2-taken
     bool validateUbtbSecondPrediction();
-    void discardUbtbSecondPrediction();
 
     bool validateFSQEnqueue();
 

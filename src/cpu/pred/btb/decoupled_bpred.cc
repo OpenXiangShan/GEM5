@@ -647,8 +647,8 @@ DecoupledBPUWithBTB::tick()
 
         // NEW: Full predictor validation happens AFTER first makeNewPrediction()
         // This ensures all predictors have correct folded history for validation
-        if (hasSecondPrediction && !validateUbtbSecondPrediction()) {
-            discardUbtbSecondPrediction();
+        if (hasSecondPrediction) {
+            validateUbtbSecondPrediction();
         }
 
         // If we still have a valid second FB, pad ABTB ahead-pipeline now.
@@ -2406,36 +2406,29 @@ bool DecoupledBPUWithBTB::validateUbtbSecondPrediction()
         for (int i = 0; i < numComponents; ++i) {
             secondPredValidationMetas[i] = components[i]->getPredictionMeta();
         }
-        // Also, enrich the secondPrediction with condTakens from the composite prediction
-        secondPrediction.condTakens = compositePred.condTakens;
+
         return true;
     } else {
         DPRINTF(DecoupleBP, "Full validation FAILED for 2nd prediction. Override reason: %d\n",
                 static_cast<int>(overrideReason));
         dbpBtbStats.secondPredValidationFailed++;
-        return false;
+
+        secondPrediction = compositePred;
+
+        secondPredValidationMetas.resize(numComponents);
+        for (int i = 0; i < numComponents; ++i) {
+            secondPredValidationMetas[i] = components[i]->getPredictionMeta();
+        }
+
+        numOverrideBubbles = 2;
+        if (predDFF.valid) {
+            ubtb->removeSecondPrediction(predDFF.prevUbtbHitIndex);
+        }
+
+        return true;
     }
 }
 
-void DecoupledBPUWithBTB::discardUbtbSecondPrediction()
-{
-    DPRINTF(DecoupleBP, "Discarding second prediction due to full validation failure, adding %d override bubbles\n",
-            std::max(numOverrideBubbles, 2u));
-
-    hasSecondPrediction = false;
-    secondPrediction.btbEntries.clear();
-
-    // Add override bubbles to fetch from the correct path next cycle
-    numOverrideBubbles = std::max(numOverrideBubbles, 2u);
-
-    // Invalidate the 2-taken part of the uBTB entry to prevent repeated failures
-    if (ubtbHitIndex >= 0) {
-        ubtb->removeSecondPrediction(ubtbHitIndex);
-    }
-
-    // Clear any stored metadata
-    secondPredValidationMetas.clear();
-}
 
 }  // namespace btb_pred
 
