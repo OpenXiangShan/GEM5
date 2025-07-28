@@ -190,6 +190,12 @@ class DecoupledBPUWithBTB : public BPredUnit
     // Tick helper functions
     void requestNewPrediction();
 
+    // 2-taken upper bound functions
+    void produce2ndPrediction();
+    bool satisfiesFirstPred2TakenCondition(FullBTBPrediction& pred);
+    bool satisfiesSecondPred2TakenCondition(FullBTBPrediction& pred);
+    void handleSecondPredictionFailure();
+
     Addr computePathHash(Addr br, Addr target);
 
     // TODO: compare phr and ghr

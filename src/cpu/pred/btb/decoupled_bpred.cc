@@ -568,49 +568,52 @@ DecoupledBPUWithBTB::tick()
         return;
     }
 
-    int predsRemainsToBeMade = enableTwoTaken ? 2 : 1;
+    // Single iteration prediction logic (was inside while loop)
+    if (bpuState == BpuState::IDLE && !streamQueueFull() && numOverrideBubbles == 0) {
+        requestNewPrediction();
+        bpuState = BpuState::PREDICTOR_DONE;
+    }
 
-    while (predsRemainsToBeMade > 0) {
-        // 1. Request new prediction if FSQ not full and we are idle
-        if (bpuState == BpuState::IDLE && !streamQueueFull()) {
-            requestNewPrediction();
-            bpuState = BpuState::PREDICTOR_DONE;
+    // Handle pending prediction if available
+    if (bpuState == BpuState::PREDICTOR_DONE) {
+        DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
+        numOverrideBubbles = generateFinalPredAndCreateBubbles();
+        bpuState = BpuState::PREDICTION_OUTSTANDING;
+
+        // Clear each predictor's output
+        for (int i = 0; i < numStages; i++) {
+            predsOfEachStage[i].btbEntries.clear();
+        }
+    }
+
+    // Process enqueue operations and bubble counter
+    tryEnqFetchTarget();
+
+    // check if:
+    // 1. FSQ has space
+    // 2. there's no bubble
+    // 3. PREDICTION_OUTSTANDING
+    if (validateFSQEnqueue()) {
+        // Create first FSQ entry with the current prediction
+        makeNewPrediction(true);
+
+        // NEW: 2-taken decision point
+        if (enableTwoTaken &&
+            finalPred.predSource == 0 &&
+            !streamQueueFull() &&
+            satisfiesFirstPred2TakenCondition(finalPred)) {
+            produce2ndPrediction();
         }
 
-        // 2. Handle pending prediction if available
-        if (bpuState == BpuState::PREDICTOR_DONE) {
-            DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
-            numOverrideBubbles = generateFinalPredAndCreateBubbles();
-            bpuState = BpuState::PREDICTION_OUTSTANDING;
+        DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
+        bpuState = BpuState::IDLE;
+    }
 
-            // Clear each predictor's output
-            for (int i = 0; i < numStages; i++) {
-                predsOfEachStage[i].btbEntries.clear();
-            }
-        }
-
-        // 3. Process enqueue operations and bubble counter
-        tryEnqFetchTarget();
-
-        // check if:
-        // 1. FSQ has space
-        // 2. there's no bubble
-        // 3. PREDICTION_OUTSTANDING
-        if (validateFSQEnqueue()) {
-            // Create new FSQ entry with the current prediction
-            makeNewPrediction(true);
-
-            DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
-            bpuState = BpuState::IDLE;
-        }
-
-        if (numOverrideBubbles > 0) {
-            numOverrideBubbles--;
-            dbpBtbStats.overrideBubbleNum++;
-            DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
-        }
-
-        predsRemainsToBeMade--;
+    // Decrement override bubbles counter (keep original logic location)
+    if (numOverrideBubbles > 0) {
+        numOverrideBubbles--;
+        dbpBtbStats.overrideBubbleNum++;
+        DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
     }
 
 
@@ -2068,6 +2071,82 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
         squash_type == SQUASH_CTRL ? "control squash" :
         squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
 #endif
+}
+
+void
+DecoupledBPUWithBTB::produce2ndPrediction()
+{
+    DPRINTF(Override, "Attempting to produce second prediction for 2-taken\n");
+
+    // 1. Generate second prediction (streamlined, s0PC already updated by makeNewPrediction)
+    requestNewPrediction();
+    generateFinalPredAndCreateBubbles(); // Don't store override bubbles
+
+    // Clear each predictor's output
+    for (int i = 0; i < numStages; i++) {
+        predsOfEachStage[i].btbEntries.clear();
+    }
+
+    // 2. Validate second prediction before enqueueing
+    if (finalPred.predSource == 0 && satisfiesSecondPred2TakenCondition(finalPred)) {
+        DPRINTF(Override, "Second prediction validation passed, enqueueing\n");
+        tryEnqFetchTarget();
+        makeNewPrediction(true);
+    } else {
+        DPRINTF(Override, "Second prediction validation failed\n");
+        handleSecondPredictionFailure();
+    }
+}
+
+bool
+DecoupledBPUWithBTB::satisfiesFirstPred2TakenCondition(FullBTBPrediction& pred)
+{
+    // First prediction must have at least one branch
+    if (pred.btbEntries.empty()) {
+        return false;
+    }
+
+    // The first prediction must be taken for a 2-taken sequence to form
+    if (!pred.isTaken()) {
+        return false;
+    }
+
+    // Multi-target indirect as 1st branch is not allowed
+    auto firstBr = pred.getTakenEntry();
+    if (firstBr.isIndirect) {
+        return false;
+    }
+
+    return true;
+}
+
+bool
+DecoupledBPUWithBTB::satisfiesSecondPred2TakenCondition(FullBTBPrediction& pred)
+{
+    // Second prediction can be empty (fallthrough case)
+    if (pred.btbEntries.empty()) {
+        return true;  // pt_2nd = false case (sequential execution)
+    }
+
+    // If not empty, check second prediction specific rules
+    auto takenEntry = pred.getTakenEntry();
+    if (!takenEntry.valid) {
+        return false;  // No taken branch in second prediction
+    }
+
+    // No indirect branches as second branch
+    if (takenEntry.isIndirect) {
+        return false;
+    }
+
+    return true;
+}
+
+void
+DecoupledBPUWithBTB::handleSecondPredictionFailure()
+{
+    numOverrideBubbles = 2;  // Penalty for failed 2-taken attempt
+    DPRINTF(Override, "Second prediction validation failed, adding 2 override bubbles\n");
 }
 
 
