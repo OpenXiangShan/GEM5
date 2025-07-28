@@ -2,9 +2,8 @@ name: gem5 Ideal BTB Performance Test (1Taken)
 
 on:
   push:
-    branches: [ xs-dev ]
-  pull_request:
-    branches: [ xs-dev ]
+    branches: [ two-taken-ideal-xbr-2 ]
+
 
 jobs:
   perf_test:
