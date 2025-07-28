@@ -685,25 +685,6 @@ UBTB::train2Taken(FullBTBPrediction &dff_pred,
     trainCommon(hit_index, dff_pred, &s3_pred);
 }
 
-void
-UBTB::recoverHist(const boost::dynamic_bitset<> &history,
-                 const FetchStream &entry, int shamt, bool cond_taken)
-{
-    DPRINTF(UBTB, "uBTB squash recovery: clearing all entries (had %lu valid entries)\n",
-           std::count_if(ubtb.begin(), ubtb.end(), [](const TickedUBTBEntry& e) { return e.valid; }));
-
-    // Clear all uBTB entries by marking them as invalid
-    // This removes pollution from wrong-path predictions
-    for (auto &entry : ubtb) {
-        //entry.valid = false;
-        entry.valid_2nd = false;  // Also clear second branch validity
-    }
-
-    // we don't explicitly clear entry.tick, because tick will be updated when the entry is filled again
-
-
-    DPRINTF(UBTB, "uBTB squash recovery complete: all entries cleared\n");
-}
 
 
 void

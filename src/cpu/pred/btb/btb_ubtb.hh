@@ -192,9 +192,6 @@ class UBTB : public TimedBaseBTBPredictor
         return mbtbSecondPredMeta;
     }
 
-    void recoverHist(const boost::dynamic_bitset<> &history,
-        const FetchStream &entry, int shamt, bool cond_taken) override;
-
     // the following methods are not used
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override {}
     void reset();
