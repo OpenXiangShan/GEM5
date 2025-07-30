@@ -2100,6 +2100,8 @@ DecoupledBPUWithBTB::produce2ndPrediction()
         makeNewPrediction(true);
     } else {
         DPRINTF(Override, "Second prediction failed uBTB source check, adding penalty\n");
+        tryEnqFetchTarget();
+        makeNewPrediction(true);
         handleSecondPredictionFailure();
     }
 }
