@@ -60,10 +60,12 @@ class L2MainPipe
 
     /**
      * Check if we should be blocked by MCP2 in the start stage.
+     * With DataSram bank checking - requests to different banks won't stall each other.
      * @param resource The resource to check.
+     * @param pkt The packet to check for bank conflicts.
      * @return True if the resource is available, false otherwise.
      */
-    bool hasMCP2Stall(PipelineResources resource) const;
+    bool hasMCP2Stall(PipelineResources resource, PacketPtr pkt) const;
 
     /**
      * Check if we should be blocked by DirSram in the start stage.
@@ -73,11 +75,12 @@ class L2MainPipe
     bool hasDirSramStall(PipelineResources resource) const;
 
     /**
-     * Check if a resource is available in the start stage.
+     * Check if all pipeline resources are available for the task.
      * @param resource The resource to check.
+     * @param pkt The packet to check for bank conflicts.
      * @return True if the resource is available, false otherwise.
      */
-    bool isResourceAvailable(PipelineResources resource) const;
+    bool isResourceAvailable(PipelineResources resource, PacketPtr pkt) const;
 
     /**
      * Check if a task is available in the start stage.

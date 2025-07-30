@@ -18,12 +18,17 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
       block_bits(p.block_bits),
       pipe_data_write_stage(p.pipe_data_write_stage),
       dirReadBypass(p.dir_read_bypass),
+      dataSramBanks(p.data_sram_banks),
       sliced_cache_accessor(this),
       prefetcher(p.prefetcher),
       system(p.system)
 {
     if (p.num_slices == 0 || (p.num_slices & (p.num_slices - 1)) != 0) {
         fatal("L2CacheWrapper: num_slices must be a power of 2.");
+    }
+
+    if (p.data_sram_banks == 0 || (p.data_sram_banks & (p.data_sram_banks - 1)) != 0) {
+        fatal("L2CacheWrapper: data_sram_banks must be a power of 2.");
     }
 
     for (int i = 0; i < p.num_slices; ++i) {

@@ -85,6 +85,13 @@ class L2CacheWrapper : public ClockedObject
             Addr set_idx = (addr >> (block_bits + slice_bits)) & setMask;
             return set_idx;
         });
+        // Set the function to calculate DataSram bank index for an address
+        slice->setGetDataBankIdxFunc([this](Addr addr) -> Addr {
+            Addr slice_bits = popCount(sliceMask);
+            Addr set_idx = (addr >> (block_bits + slice_bits)) & setMask;
+            // Extract lower bits of set index based on number of banks
+            return set_idx & (dataSramBanks - 1);
+        });
     }
 
   protected:
@@ -134,6 +141,7 @@ class L2CacheWrapper : public ClockedObject
     const Addr block_bits;
     const uint64_t pipe_data_write_stage;
     const bool dirReadBypass;
+    const uint64_t dataSramBanks;
     SlicedCacheAccessor sliced_cache_accessor;
     prefetch::Base *prefetcher;
 

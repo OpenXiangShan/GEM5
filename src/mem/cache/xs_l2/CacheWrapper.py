@@ -65,6 +65,10 @@ class L2CacheWrapper(ClockedObject):
     pipe_data_write_stage = Param.Unsigned(3, "the stage of data write in L2MainPipe")
     dir_read_bypass = Param.Bool(False, "whether to bypass the directory read when set address is the same")
 
+    # Number of DataSram banks (divides the Data Sets into banks)
+    # Must be power of 2 (1, 2, 4, 8, etc.), default is 1 (single bank)
+    data_sram_banks = Param.Unsigned(1, "Number of DataSram banks for dividing Data Sets")
+
     prefetcher = Param.BasePrefetcher(L2CompositeWithWorkerPrefetcher(), "Prefetcher attached to L2CacheWrapper")
     system = Param.System(Parent.any, "System we belong to")
 

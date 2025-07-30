@@ -96,21 +96,23 @@ L2MainPipe::getExtraResources(PacketPtr pkt, TaskSource source) const
 }
 
 bool
-L2MainPipe::hasMCP2Stall(PipelineResources resource) const
+L2MainPipe::hasMCP2Stall(PipelineResources resource, PacketPtr pkt) const
 {
-    // Data is muti cycle path 2,
+    // Data is multi cycle path 2,
     // so if last cycle needs to read or write data,
     // this cycle is not available to read or write data
+    // With DataSram banking: only stall if accessing the same bank
     bool stall = false;
-    if (resource & PipelineResources::DataRead) {
-        stall |= (scoreboardResources[1] &
-                 (PipelineResources::DataRead |
-                  PipelineResources::DataWrite)) != 0;
-    }
-    if (resource & PipelineResources::DataWrite) {
-        stall |= (scoreboardResources[1] &
-                 (PipelineResources::DataRead |
-                  PipelineResources::DataWrite)) != 0;
+    if (resource & (PipelineResources::DataRead | PipelineResources::DataWrite)) {
+        bool prevCycleHasDataAccess = (scoreboardResources[1] &
+                                      (PipelineResources::DataRead |
+                                       PipelineResources::DataWrite)) != 0;
+        if (prevCycleHasDataAccess) {
+            // Check if accessing the same DataSram bank
+            bool sameBank = owner->getDataBankIdx(pkt->getAddr()) ==
+                            owner->getDataBankIdx(scoreboardTasks[1].addr);
+            stall |= sameBank;
+        }
     }
     return stall;
 }
@@ -127,9 +129,9 @@ L2MainPipe::hasDirSramStall(PipelineResources resource) const
 }
 
 bool
-L2MainPipe::isResourceAvailable(PipelineResources resource) const
+L2MainPipe::isResourceAvailable(PipelineResources resource, PacketPtr pkt) const
 {
-    return !hasMCP2Stall(resource) && !hasDirSramStall(resource);
+    return !hasMCP2Stall(resource, pkt) && !hasDirSramStall(resource);
 }
 
 bool
@@ -161,7 +163,7 @@ L2MainPipe::isTaskAvailable(PacketPtr pkt, TaskSource source) const
         setBlock = false;
     }
     bool available = (scoreboardTasks[0].source == TaskSource::NoWhere) && !setBlock &&
-                     isResourceAvailable(resources);
+                     isResourceAvailable(resources, pkt);
 
     // record stats
     if (source == TaskSource::L1MSHR) {
@@ -171,7 +173,7 @@ L2MainPipe::isTaskAvailable(PacketPtr pkt, TaskSource source) const
         if (setBlock) {
             owner->stats.l1ReqPipeSetConflict++;
         }
-        if (hasMCP2Stall(resources)) {
+        if (hasMCP2Stall(resources, pkt)) {
             owner->stats.l1ReqPipeMCP2Stall++;
         }
         if (hasDirSramStall(resources)) {
