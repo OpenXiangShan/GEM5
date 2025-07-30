@@ -18,6 +18,7 @@
 #include "mem/xsCHI/base/params.hh"
 #include "params/CHIPort.hh"
 #include "sim/clocked_object.hh"
+#include "sim/cur_tick.hh"
 #include "sim/eventq.hh"
 #include "sim/sim_object.hh"
 

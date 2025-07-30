@@ -351,6 +351,7 @@ public:
 
     // 构造函数
     Request() = default;
+    Request(const Request& other);
     Request(CHI_OP_TYPE op, uint64_t addr, uint32_t size);
     ~Request(){
         deleteData(); // 确保在析构时释放数据内存
