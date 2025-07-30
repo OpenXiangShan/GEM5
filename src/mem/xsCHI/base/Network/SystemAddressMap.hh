@@ -10,16 +10,16 @@ namespace gem5
 {
 namespace xsCHI
 {
-    class SystemAddressMap
-    {
-    public:
-        SystemAddressMap() = default;
-        // ~SystemAddressMap() = default;
-        // 获取目标ID
-        virtual uint32_t getTargetID(uint64_t addr) = 0;
-    };
+    // class SystemAddressMap
+    // {
+    // public:
+    //     SystemAddressMap() = default;
+    //     // ~SystemAddressMap() = default;
+    //     // 获取目标ID
+    //     virtual uint32_t getTargetID(uint64_t addr) = 0;
+    // };
 
-    class SystemAddressMapRN : public SystemAddressMap
+    class SystemAddressMapRN 
     {
         // Transactions from an RN must pass through an RN SAM to generate a CHI target ID. The target ID
         // is used to send the flit to the correct target node in the mesh.
@@ -53,20 +53,19 @@ namespace xsCHI
             std::list<uint32_t> HNF_NodeIDs; // 存储目标ID列表
             uint32_t SelectBits; // 选择位数，表示HNF_NodeIDs的大小
         public:
-            SystemAddressMapRN() = default;
-            SystemAddressMapRN(std::list<uint32_t> &NodeList)
-                : HNF_NodeIDs(NodeList)  // 正确：使用传入的列表直接初始化
-            {
+            // SystemAddressMapRN() = default;
+            SystemAddressMapRN() : HNF_NodeIDs(0), SelectBits(0) {
+            }
+            void addNodeID(uint32_t nodeID) {
+                HNF_NodeIDs.push_back(nodeID);
                 // 验证节点数量是2的幂
                 size_t size = HNF_NodeIDs.size();
-                assert(size > 0 && "NodeList must not be empty");
-                assert((size & (size - 1)) == 0 && "NodeList size must be power of 2");
-
+                // assert((size & (size - 1)) == 0 && "NodeList size must be power of 2");
                 SelectBits = floorLog2(size);
             }
             // ~SystemAddressMapRN() = default;
             // 获取目标ID
-            uint32_t getTargetID(uint64_t addr) override {
+            uint32_t getTargetID(uint64_t addr)  {
                 // HNF_NodeIDs.size() 必为2的幂
                 if (HNF_NodeIDs.size()==1){
                     return *(HNF_NodeIDs.begin());
@@ -95,29 +94,24 @@ namespace xsCHI
                 return *it;
             };
     };
-    class SystemAddressMapHN : public SystemAddressMap
+    class SystemAddressMapHN 
     {
         private:
             std::list<uint32_t> HNF_NodeIDs; // 存储目标ID列表
             uint32_t SelectBits; // 选择位数，表示HNF_NodeIDs的大小
         public:
-            SystemAddressMapHN(std::list<uint32_t> NodeList)
-                : HNF_NodeIDs(NodeList) {
-                    assert(NodeList.size()==1 ||
-                           NodeList.size()==2 ||
-                           NodeList.size()==4 ||
-                           NodeList.size()==8 ||
-                           NodeList.size()==16 ||
-                           NodeList.size()==32 ||
-                           NodeList.size()==64 ||
-                           NodeList.size()==128 ||
-                           NodeList.size()==256);
-                    SelectBits = floorLog2(NodeList.size());
-
-                };
-            // ~SystemAddressMapHN() = default;
+            SystemAddressMapHN() : HNF_NodeIDs(0), SelectBits(0) {
+            }
+            void addNodeID(uint32_t nodeID) {
+                HNF_NodeIDs.push_back(nodeID);
+                // 验证节点数量是2的幂
+                size_t size = HNF_NodeIDs.size();
+                // assert((size & (size - 1)) == 0 && "NodeList size must be power of 2");
+                SelectBits = floorLog2(size);
+            }
+            // ~SystemAddressMapRN() = default;
             // 获取目标ID
-            uint32_t getTargetID(uint64_t addr) override {
+            uint32_t getTargetID(uint64_t addr)  {
                 // HNF_NodeIDs.size() 必为2的幂
                 if (HNF_NodeIDs.size()==1){
                     return *(HNF_NodeIDs.begin());

@@ -268,6 +268,7 @@ def config_cache(options, system):
                 system.CHIsys = L2ToDramSys(configFile=os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'))
                 system.CHIsys.L2Wrapper = L2Wrapper(RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)))
                 system.CHIsys.L3 = FakeL3(L2side=CHIPort(recv_buffer_size=4),Dramside=CHIPort(recv_buffer_size=4))
+                system.CHIsys.mem_side_port = system.membus.cpu_side_ports
             else:
                 system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
                                             **_get_cache_opts(NULL, 'l3', options))

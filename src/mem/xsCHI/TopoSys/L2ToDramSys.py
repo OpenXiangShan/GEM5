@@ -38,7 +38,8 @@ class L2ToDramSys(ClockedObject):
     # A single port for now
     cpu_side_port = ResponsePort("port for receiving requests from"
                         "the CPU or other requestor")
-
+    mem_side_port = RequestPort("This port sends requests and "
+                            "receives responses")
     configFile = Param.String("ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
                               "The configuration file to use with DRAMSim3")
     filePath = Param.String("ext/dramsim3/DRAMsim3/",
