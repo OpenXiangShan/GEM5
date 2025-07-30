@@ -72,4 +72,71 @@ namespace xsCHI
         delete[] tmp; // 释放临时内存
         return resp;
     }
+    Request::Request(const Request& other):
+        std::enable_shared_from_this<Request>(other) // 显式初始化基类
+    {
+        this->opcode = other.opcode;
+        this->addr = other.addr;
+        this->size = other.size;
+        this->data = nullptr;
+        if (other.data != nullptr) {
+            this->data = new uint8_t[other.size];
+            std::memcpy(this->data, other.data, other.size);
+        }
+        this->dataFlitsTransferred = other.dataFlitsTransferred;
+        this->IsRecvSepData = other.IsRecvSepData;
+        this->qos_priority = other.qos_priority;
+        this->target_id = other.target_id;
+        this->source_id = other.source_id;
+        this->transaction_id = other.transaction_id;
+        this->logicalProcessor_id = other.logicalProcessor_id;
+        this->pgroup_id = other.pgroup_id;
+        this->deep = other.deep;
+        this->return_nid = other.return_nid;
+        this->return_txnid = other.return_txnid;
+        this->stash_nid = other.stash_nid;
+        this->stash_nid_valid = other.stash_nid_valid;
+        this->stash_lpid = other.stash_lpid;
+        this->stash_lpid_valid = other.stash_lpid_valid;
+        this->stash_group_id = other.stash_group_id;
+        this->ccid = other.ccid;
+        this->data_id = other.data_id;
+        this->ns = other.ns;
+        this->allow_retry = other.allow_retry;
+        this->pcrd_type = other.pcrd_type;
+        this->exp_comp_ack = other.exp_comp_ack;
+        this->mem_attr = other.mem_attr;
+        this->snp_attr = other.snp_attr;
+        this->do_dwt = other.do_dwt;
+        this->snoop_me = other.snoop_me;
+        this->likely_shared = other.likely_shared;
+        this->fwd_nid = other.fwd_nid;
+        this->fwd_txnid = other.fwd_txnid;
+        this->return_nid = other.return_nid;
+        this->home_nid = other.home_nid;
+        this->home_nid = other.home_nid;
+        this->fwd_state = other.fwd_state;
+        this->cbusy = other.cbusy;
+        this->resp_err = other.resp_err;
+        this->resp = other.resp;
+        this->ret_to_src = other.ret_to_src;
+        this->data_pull = other.data_pull;
+        this->data_source = other.data_source;
+        this->do_not_go_to_sd = other.do_not_go_to_sd;
+        this->vmid_ext = other.vmid_ext;
+        this->tag_op = other.tag_op;
+        this->tag_group_id = other.tag_group_id;
+        this->trace_tag = other.trace_tag;
+        this->mpam = other.mpam;
+        this->tu = other.tu;
+        this->endian = other.endian;
+        this->slc_rep_hint = other.slc_rep_hint;
+        this->excl = other.excl;
+        this->order = other.order;
+        this->tag = other.tag;//may be err
+        this->be = other.be;
+        this->data_check = other.data_check;
+        this->poison = other.poison;
+
+    }
 }}

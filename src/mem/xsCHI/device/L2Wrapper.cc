@@ -26,6 +26,7 @@ namespace xsCHI
     L2Wrapper::L2Wrapper(const Params &p):
     ClockedObject(p),
     cpuSidePort(p.name + ".cpu_side_port", this, "CpuSidePort"),
+    memSidePort(p.name + ".mem_side_port", this, "CpuSidePort"),
     bridge(p.RNBridge)
     {
         bridge->set_recvReadResp_callback([this](ReqPtr& req) { this->recvReadResp(req); });
@@ -59,6 +60,14 @@ namespace xsCHI
     bool
     L2Wrapper::CpuSidePort::recvTimingReq(PacketPtr pkt)
     {
+        // if pkt is a Uncached request, we should redirect it to MemSidePort
+        if (pkt->req->isUncacheable()) {
+            DPRINTF(CHIL2Wrapper,"Recv Uncached request, redirect to MemSidePort, cmd:%s, addr: %lx\n",
+                    pkt->cmdString(), pkt->getAddr());
+            // redirect to MemSidePort
+            return wrapper->memSidePort.sendTimingReq(pkt);
+        }
+        
         assert(pkt->isRequest());
         DPRINTF(CHIL2Wrapper,"RecvReq, cmd:%s, addr: %lx\n",pkt->cmdString(),pkt->getAddr());
         ReqPtr req = wrapper->CreateRequest(pkt);
@@ -83,6 +92,15 @@ namespace xsCHI
     CpuSidePort::CpuSidePort(const std::string &_name, L2Wrapper *wrapper,
                             const std::string &_label)
         : CacheResponsePort(_name, wrapper, _label),wrapper(wrapper)
+    {
+    }
+
+    L2Wrapper::MemSidePort::MemSidePort(const std::string &_name,
+                                        L2Wrapper *wrapper,
+                                        const std::string &_label)
+        : CacheRequestPort(_name, wrapper, _reqQueue, _snoopRespQueue),
+        _reqQueue(*wrapper, *this, _label),
+        _snoopRespQueue(*wrapper, *this, true, _label), wrapper(wrapper)
     {
     }
 
@@ -214,7 +232,14 @@ namespace xsCHI
     gem5::Port &
     L2Wrapper::getPort(const std::string &if_name, PortID idx)
     {
-        return cpuSidePort;
+
+        if (if_name == "mem_side_port")
+            return memSidePort;
+        else if (if_name == "cpu_side_port")
+            return cpuSidePort;
+        else
+            // pass it along to our super class
+            return ClockedObject::getPort(if_name, idx);
     }
     CHIPort*
     L2Wrapper::getCHIPort(){
@@ -223,5 +248,46 @@ namespace xsCHI
     CHIBridge* L2Wrapper::getBridge(){
         return bridge;
     }
+
+    ///////////////
+//
+// MemSidePort
+//
+///////////////
+bool
+L2Wrapper::MemSidePort::recvTimingResp(PacketPtr pkt)
+{
+    wrapper->cpuSidePort.schedTimingResp(pkt, curTick());
+    // cache->recvTimingResp(pkt);
+    return true;
+}
+
+void
+L2Wrapper::MemSidePort::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
+{
+    assert(false && "recvFunctionalCustomSignal not implemented in L2Wrapper::MemSidePort");
+}
+
+// Express snooping requests to memside port
+void
+L2Wrapper::MemSidePort::recvTimingSnoopReq(PacketPtr pkt)
+{
+    // Snoops shouldn't happen when bypassing caches
+    assert(false && "Snoops should not happen inL2Wrapper ");
+
+}
+
+Tick
+L2Wrapper::MemSidePort::recvAtomicSnoop(PacketPtr pkt)
+{
+    panic("not supported");
+    return curTick();
+}
+
+void
+L2Wrapper::MemSidePort::recvFunctionalSnoop(PacketPtr pkt)
+{
+    panic("not supported");
+}
 }
 }

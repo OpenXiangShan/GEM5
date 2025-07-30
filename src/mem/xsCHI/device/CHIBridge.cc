@@ -18,7 +18,20 @@ namespace xsCHI
           _NodeID(0,0,0),
           SAM(nullptr),
           TXN_Manager(1024),// default max outstanding transactions
-          req_handle_event([this] { if (ReceiveReq(Req_tobesent.front())){Req_tobesent.pop();}}, name()),
+          req_handle_event([this] { 
+            DPRINTF(CHIBridge,"retry called ,Req_tobesent's number : %d reqOP:%s,addr:%lx\n",Req_tobesent.size(),CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(Req_tobesent.front()->getOpcode()),Req_tobesent.front()->getAddr());
+            if (ReceiveReq(Req_tobesent.front())){
+                Req_tobesent.pop();
+                if (!Req_tobesent.empty() ) {
+                    assert(req_handle_event.scheduled() && "Req_handle_event should be scheduled");
+                }else {
+                    if(req_handle_event.scheduled()) {
+                        DPRINTF(CHIBridge,"After handle, Req_tobesent become empty, deschedule event \n");
+                        deschedule(req_handle_event);
+                    }
+                }
+            }
+        }, name()),
             ack_handle_event([this] { TrySendCompACK();}, name())
 
     {
@@ -50,15 +63,16 @@ namespace xsCHI
 
     // CHIBridge::~CHIBridge() = default;
 
-    bool CHIBridge::ReceiveReq(ReqPtr &req)
+    bool CHIBridge::ReceiveReq(ReqPtr req)
     {
         // we assume only get requests or snoop responses from cache wrapper
         assert(req->isRequest());
         bool success = false;
         int txn_id = TXN_Manager.getID();
-        DPRINTF(Cache,"RecvCHIReq, op:%s, addr: %#x, size:%d , try allocate Txn_id:%d\n",static_cast<int>(req->getOpcode()),req->getAddr(),req->getSize(),txn_id);
+        DPRINTF(CHIBridge,"RecvCHIReq, op:%s, addr: %#x, size:%d , try allocate Txn_id:%d\n",static_cast<int>(req->getOpcode()),req->getAddr(),req->getSize(),txn_id);
         if (txn_id < 0) {
             Req_tobesent.push(req); // 将请求放入待发送队列, try later //err:push req fault
+            DPRINTF(CHIBridge,"Txn allocate Failed,  add Req to queue, size:%d\n",Req_tobesent.size());
         }else{
             FlitPtr flit = createRequestFlit(req);
             if (!flit) {
@@ -85,13 +99,13 @@ namespace xsCHI
         }
         // 如果有待发送的请求，调度处理事件
         if (!Req_tobesent.empty() && !req_handle_event.scheduled()) {
-            DPRINTF(CHIBridge,"Req_tobesent's number : %d ,Schedule handle event to next Cycle\n",Req_tobesent.size());
-            schedule(req_handle_event, clockEdge(Cycles(1)));
+            DPRINTF(CHIBridge,"Req_tobesent's number : %d ,Schedule handle event to next Cycle, tick:%d\n",Req_tobesent.size(),curTick()+clockPeriod());
+            schedule(req_handle_event, curTick()+clockPeriod());
         }
         return success; // 返回是否成功发送请求
 
     }
-    void CHIBridge::ReceiveSnoopResponse(ReqPtr &req)
+    void CHIBridge::ReceiveSnoopResponse(ReqPtr req)
     {
         // 处理来自wrapper的Snoop响应
         // 目前假设只处理Snoop响应
@@ -102,7 +116,7 @@ namespace xsCHI
 
     bool CHIBridge::handleNetworkPortReceive(FlitPtr &flit)
     {
-        DPRINTF(CHIBridge,"RecvCHIFlit, op:%s, srcId:%d,tgtId:%d, \n",static_cast<int>(flit->getOpcode()),flit->getSrcId(),flit->getTgtId());
+        DPRINTF(CHIBridge,"Recv CHIFlit, op:%s, srcId:%d,tgtId:%d, txn_id:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(flit->getOpcode()),flit->getSrcId(),flit->getTgtId(),flit->getTxnId());
         switch (flit->get_Flit_Channel_Type()) {
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ: {
                 // RN不应该收到 Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ 类型的Flit
@@ -228,6 +242,8 @@ namespace xsCHI
             case CHI_OP_TYPE::CHI_DAT_COMPDATA:{
                 // if we receive a CompData Flit,
                 req->gatherDataFlit(flit); // 收集数据Flit
+                DPRINTF(CHIBridge,"Gather data Flit, op:%s, addr: %#x, size:%d , txn_id:%d, dataId:%d\n",\
+                    static_cast<int>(flit->getOpcode()),flit->getAddr(),flit->getSize(),flit->getTxnId(),flit->getDataId());
 
                 if (req->dataTransferFinished()) {
                     // we have received both data and response, so we can finish this request
@@ -239,6 +255,8 @@ namespace xsCHI
             case CHI_OP_TYPE::CHI_DAT_DATASEPRESP: {
 
                 req->gatherDataFlit(flit); // 收集数据Flit
+                DPRINTF(CHIBridge,"Gather data Flit, op:%s, addr: %#x, size:%d , txn_id:%d, dataId:%d\n",\
+                    static_cast<int>(flit->getOpcode()),flit->getAddr(),flit->getSize(),flit->getTxnId(),flit->getDataId());
 
                 if (req->dataTransferFinished() && req->isRecvSepData()) {
                         // we have received both data and response, so we can finish this request
@@ -277,6 +295,7 @@ namespace xsCHI
         // 发送完成请求的逻辑
         TXN_Manager.releaseID(flit->getTxnId());
         outstanding_requests.erase(flit->getTxnId());
+        DPRINTF(CHIBridge,"Finish read request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
     }
 
     void CHIBridge::sendCompACK(FlitPtr &flit)
@@ -304,6 +323,7 @@ namespace xsCHI
                 break; // 不支持的操作码
         }
         Ack_tobesent.push(std::move(compack_flit)); // 将COMPACK Flit放入待发送队列
+        TrySendCompACK();
     }
     void CHIBridge::TrySendCompACK()
     {
@@ -316,7 +336,7 @@ namespace xsCHI
         }
         // 尝试发送COMPACK Flit
         if (!Ack_tobesent.empty() && !ack_handle_event.scheduled()) {
-            schedule(ack_handle_event, clockEdge(Cycles(1)));
+            schedule(ack_handle_event, curTick()+clockPeriod());
         }
     }
 
@@ -352,6 +372,7 @@ namespace xsCHI
                     // 发送完成请求的逻辑
                     TXN_Manager.releaseID(flit->getTxnId());
                     outstanding_requests.erase(flit->getTxnId());
+                    DPRINTF(CHIBridge, "Finish write request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
                 }
                 return true;
             }
@@ -371,6 +392,7 @@ namespace xsCHI
                 // 发送完成请求的逻辑
                 TXN_Manager.releaseID(flit->getTxnId());
                 outstanding_requests.erase(flit->getTxnId());
+                DPRINTF(CHIBridge, "Finish evict request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
                 return true;
             }
             default:

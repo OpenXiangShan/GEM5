@@ -31,7 +31,7 @@ namespace xsCHI
     public:
         Flit() { init(); }
         Flit(CHI_OP_TYPE op,uint64_t addr,uint32_t size);
-        Flit(FlitPtr other);
+        Flit(Flit& other);
         ~Flit(){
             deleteData();
         }

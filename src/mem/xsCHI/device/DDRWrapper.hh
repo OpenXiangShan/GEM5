@@ -7,6 +7,7 @@
 #pragma once
 
 
+#include <cstdint>
 #include <functional>
 #include <queue>
 #include <unordered_map>
@@ -38,7 +39,7 @@ class DDRWrapper :  public memory::AbstractMemory
 {
   private:
     NodeID _NodeID;
-    SystemAddressMap *sam;
+    // SystemAddressMapRN *sam;
 
     CHIPort* port;
 
@@ -74,8 +75,8 @@ class DDRWrapper :  public memory::AbstractMemory
      * done so that we can return the right packet on completion from
      * DRAMSim.
      */
-    std::unordered_map<Addr, std::queue<PacketPtr> > outstandingReads;
-    std::unordered_map<Addr, std::queue<PacketPtr> > outstandingWrites;
+    std::unordered_map<Addr, std::queue<std::shared_ptr<Packet>> > outstandingReads;
+    std::unordered_map<Addr, std::queue<std::shared_ptr<Packet>> > outstandingWrites;
 
     /**
      * Count the number of outstanding transactions so that we can
@@ -93,12 +94,12 @@ class DDRWrapper :  public memory::AbstractMemory
 
     struct sort_policy
     {
-        bool operator()(const std::pair<PacketPtr, Tick> a, std::pair<PacketPtr, Tick> b) const {
+        bool operator()(const std::pair<std::shared_ptr<Packet>, Tick> a, std::pair<std::shared_ptr<Packet>, Tick> b) const {
           return a.second > b.second;
         }
     };
 
-    boost::heap::priority_queue<std::pair<PacketPtr, Tick>, boost::heap::compare<sort_policy>> responseQueue;
+    boost::heap::priority_queue<std::pair<std::shared_ptr<Packet>, Tick>, boost::heap::compare<sort_policy>> responseQueue;
 
 
     unsigned int nbrOutstanding() const;
@@ -110,7 +111,7 @@ class DDRWrapper :  public memory::AbstractMemory
      *
      * @param pkt The packet from the outside world
      */
-    void accessAndRespond(PacketPtr pkt);
+    void accessAndRespond(std::shared_ptr<Packet> pkt);
 
     void sendResponse();
 
@@ -139,7 +140,7 @@ class DDRWrapper :  public memory::AbstractMemory
 
     typedef DDRWrapperParams Params;
     DDRWrapper(const Params &p);
-    DDRWrapper(const Params &p, NodeID nodeID, SystemAddressMap *sam);
+    // DDRWrapper(const Params &p, NodeID nodeID, SystemAddressMapRN *sam);
     DDRWrapper();
 
     /**
@@ -172,19 +173,19 @@ class DDRWrapper :  public memory::AbstractMemory
     CHIPort* getCHIPort(){return port;}
 
     void setNodeID(NodeID _ID);
-    void setSAM(SystemAddressMap *sam);
+    // void setSAM(SystemAddressMapRN *sam);
     // std::string name() const override{ return "DDRWrapper"; }
 
   protected:
 
-    // Tick recvAtomic(PacketPtr pkt);
-    // void recvFunctional(PacketPtr pkt);
-    bool recvTimingReq(PacketPtr pkt);
+    // Tick recvAtomic(std::shared_ptr<Packet> pkt);
+    // void recvFunctional(std::shared_ptr<Packet> pkt);
+    bool recvTimingReq(std::shared_ptr<Packet> pkt);
     void recvRespRetry();
 
     bool handlePortReceive(FlitPtr &flit);
 
-    std::unordered_map<PacketPtr,ReqPtr> outstandingReadTransferMap;// for read request
+    std::unordered_map<uint64_t,ReqPtr> outstandingReadTransferMap;// for read request
 
     TxnIDManager TXN_Manager;
     std::unordered_map<int, ReqPtr> outstanding_requests; // 存储由本节点产生的、未完成的请求, SN only for write Transfer

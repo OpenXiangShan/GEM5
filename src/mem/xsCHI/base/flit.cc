@@ -33,34 +33,34 @@ namespace xsCHI {
         data_id = 0;
     }
 
-    Flit::Flit(FlitPtr other){
+    Flit::Flit(Flit& other){
         init();
-        opcode = other->opcode;
-        size = other->getSize();
-        addr = other->getAddr();
+        opcode = other.opcode;
+        size = other.getSize();
+        addr = other.getAddr();
         data = nullptr;
-        if (other->DataValid()){
-            data = new uint8_t[other->getSize()];
-            other->getData(data);
+        if (other.DataValid()){
+            data = new uint8_t[other.getSize()];
+            other.getData(data);
         }
-        tgt_id = other->tgt_id;
-        src_id = other->src_id;
-        home_nid = other->home_nid;
-        return_nid = other->return_nid;
-        fwd_nid = other->fwd_nid;
-        lpid = other->lpid;
-        pgroup_id = other->pgroup_id;
-        stash_nid = other->stash_nid;
-        stash_nid_valid = other->stash_nid_valid;
-        stash_lpid = other->stash_lpid;
-        stash_lpid_valid = other->stash_lpid_valid;
-        stash_group_id = other->stash_group_id;
-        txn_id = other->txn_id;
-        return_txnid = other->return_txnid;
-        fwd_txnid = other->fwd_txnid;
-        dbid = other->dbid;
-        ccid = other->ccid;
-        data_id = other->data_id;
+        tgt_id = other.tgt_id;
+        src_id = other.src_id;
+        home_nid = other.home_nid;
+        return_nid = other.return_nid;
+        fwd_nid = other.fwd_nid;
+        lpid = other.lpid;
+        pgroup_id = other.pgroup_id;
+        stash_nid = other.stash_nid;
+        stash_nid_valid = other.stash_nid_valid;
+        stash_lpid = other.stash_lpid;
+        stash_lpid_valid = other.stash_lpid_valid;
+        stash_group_id = other.stash_group_id;
+        txn_id = other.txn_id;
+        return_txnid = other.return_txnid;
+        fwd_txnid = other.fwd_txnid;
+        dbid = other.dbid;
+        ccid = other.ccid;
+        data_id = other.data_id;
 
     }
     Flit::Flit(CHI_OP_TYPE op,uint64_t addr,uint32_t size){

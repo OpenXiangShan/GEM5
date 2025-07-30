@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <unordered_map>
 
 #include "../base/CHIPort.hh"
@@ -25,7 +26,7 @@ namespace xsCHI
         CHIPort* L2side;
         CHIPort* Dramside;
         NodeID _NodeID;
-        SystemAddressMap *SAM; // 系统地址映射，用于生成目标ID
+        std::shared_ptr<SystemAddressMapHN> SAM; // 系统地址映射，用于生成目标ID
         bool handleL2sideRecv(FlitPtr &flit);
         bool handleDramsideRecv(FlitPtr &flit);
 
@@ -48,7 +49,7 @@ namespace xsCHI
         CHIPort* getCHIPort_MEMSIDE();
         void init() override;
         void setNodeID(NodeID id){_NodeID = id;}
-        void setSAM(SystemAddressMap* sam){SAM = sam;}
+        void setSAM(std::shared_ptr<SystemAddressMapHN> sam){SAM = sam;}
         // std::string name() const override{ return "FakeL3"; }
 
     };

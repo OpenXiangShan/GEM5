@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 #include <utility>
 
 #include "DDRWrapper.hh"
@@ -17,7 +18,6 @@ namespace xsCHI
     DDRWrapper::DDRWrapper(const Params &p) :
     AbstractMemory(p),
     _NodeID(0,0,0),
-    sam(nullptr),
     port(p.networkPort),
     read_cb(std::bind(&DDRWrapper::readComplete,
                       this, 0, std::placeholders::_1)),
@@ -45,35 +45,35 @@ namespace xsCHI
     registerExitCallback([this]() { wrapper.printStats(); });
     }
 
-    DDRWrapper::DDRWrapper(const Params &p, NodeID nodeID, SystemAddressMap *sam) :
-    AbstractMemory(p),
-    _NodeID(nodeID),
-    sam(sam),
-    port(nullptr),
-    read_cb(std::bind(&DDRWrapper::readComplete,
-                      this, 0, std::placeholders::_1)),
-    write_cb(std::bind(&DDRWrapper::writeComplete,
-                       this, 0, std::placeholders::_1)),
-    wrapper(p.configFile, p.filePath, read_cb, write_cb),
-    retryReq(false), retryResp(false), startTick(0),
-    nbrOutstandingReads(0), nbrOutstandingWrites(0),
-    sendResponseEvent([this]{ sendResponse(); }, AbstractMemory::name()),
-    tickEvent([this]{ tick(); }, AbstractMemory::name()),
-    TXN_Manager(1024)
-{
-    DPRINTF(CHIDramsim,
-            "Instantiated DDRWrapper with clock %d ns and queue size %d\n",
-            wrapper.clockPeriod(), wrapper.queueSize());
+//     DDRWrapper::DDRWrapper(const Params &p, NodeID nodeID, SystemAddressMap *sam) :
+//     AbstractMemory(p),
+//     _NodeID(nodeID),
+//     sam(sam),
+//     port(nullptr),
+//     read_cb(std::bind(&DDRWrapper::readComplete,
+//                       this, 0, std::placeholders::_1)),
+//     write_cb(std::bind(&DDRWrapper::writeComplete,
+//                        this, 0, std::placeholders::_1)),
+//     wrapper(p.configFile, p.filePath, read_cb, write_cb),
+//     retryReq(false), retryResp(false), startTick(0),
+//     nbrOutstandingReads(0), nbrOutstandingWrites(0),
+//     sendResponseEvent([this]{ sendResponse(); }, AbstractMemory::name()),
+//     tickEvent([this]{ tick(); }, AbstractMemory::name()),
+//     TXN_Manager(1024)
+// {
+//     DPRINTF(CHIDramsim,
+//             "Instantiated DDRWrapper with clock %d ns and queue size %d\n",
+//             wrapper.clockPeriod(), wrapper.queueSize());
 
-    // Register a callback to compensate for the destructor not
-    // being called. The callback prints the DDRWrapper stats.
-    port->setReceiveCallback(
-        [this](FlitPtr& flit) {
-            // No-op callback, always return false
-            return handlePortReceive(flit);
-        });
-    registerExitCallback([this]() { wrapper.printStats(); });
-}
+//     // Register a callback to compensate for the destructor not
+//     // being called. The callback prints the DDRWrapper stats.
+//     port->setReceiveCallback(
+//         [this](FlitPtr& flit) {
+//             // No-op callback, always return false
+//             return handlePortReceive(flit);
+//         });
+//     registerExitCallback([this]() { wrapper.printStats(); });
+// }
 
 void
 DDRWrapper::init()
@@ -114,12 +114,12 @@ DDRWrapper::sendResponse()
     DPRINTF(CHIDramsim, "Attempting to send response\n");
 
     auto [pkt, time] = responseQueue.top();
-    ReqPtr req = outstandingReadTransferMap[pkt];
+    ReqPtr req = outstandingReadTransferMap[pkt->getAddr()];
     assert(req != nullptr && "DDRWrapper has no outstanding request for this packet");
     if (!req->DataValid()) {
         // if the data is not set, we need to set it here
         // this is the case for read requests
-        req->setData(pkt);
+        req->setData(pkt.get());
         assert(!req->dataTransferStarted());
     }
     uint32_t data_id = req->generateWriteDataID();
@@ -149,7 +149,7 @@ DDRWrapper::sendResponse()
                     responseQueue.size());
 
     if (!responseQueue.empty() && !sendResponseEvent.scheduled()) {
-        schedule(sendResponseEvent, clockEdge(Cycles(1)));
+        schedule(sendResponseEvent, curTick()+clockPeriod());
     }
 
     if (nbrOutstanding() == 0)
@@ -210,7 +210,7 @@ DDRWrapper::tick()
 // }
 
 bool
-DDRWrapper::recvTimingReq(PacketPtr pkt)
+DDRWrapper::recvTimingReq(std::shared_ptr<Packet> pkt)
 {
     // if a cache is responding, sink the packet without further action
     // if (pkt->cacheResponding()) {
@@ -304,7 +304,7 @@ DDRWrapper::recvRespRetry()
 }
 
 void
-DDRWrapper::accessAndRespond(PacketPtr pkt)
+DDRWrapper::accessAndRespond(std::shared_ptr<Packet> pkt)
 {
     // DPRINTF(CHIDramsim, "Access for address %lx\n", pkt->getAddr());
 
@@ -313,7 +313,7 @@ DDRWrapper::accessAndRespond(PacketPtr pkt)
     // do the actual memory access which also turns the packet into a
     // response
     pkt->allocate();
-    access(pkt);
+    access(pkt.get());
 
     // turn packet around to go back to requestor if response expected
     if (needsResponse) {
@@ -332,11 +332,12 @@ DDRWrapper::accessAndRespond(PacketPtr pkt)
         // if we are not already waiting for a retry, or are scheduled
         // to send a response, schedule an event
         if (!sendResponseEvent.scheduled())
-            schedule(sendResponseEvent, clockEdge(Cycles(1)));
-    } else {
-        // queue the packet for deletion
-        pendingDelete.reset(pkt);
-    }
+            schedule(sendResponseEvent, curTick()+clockPeriod());
+    } 
+    // else {
+    //     // queue the packet for deletion
+    //     pendingDelete.reset(pkt);
+    // }
 }
 
 void DDRWrapper::readComplete(unsigned id, uint64_t addr)
@@ -350,7 +351,7 @@ void DDRWrapper::readComplete(unsigned id, uint64_t addr)
 
     // first in first out, which is not necessarily true, but it is
     // the best we can do at this point
-    PacketPtr pkt = p->second.front();
+    auto pkt = p->second.front();
     p->second.pop();
 
     if (p->second.empty())
@@ -417,7 +418,7 @@ DDRWrapper::handlePortReceive(FlitPtr &flit)
                 flit->getAddr(), flit->getSize(), gem5::Flags<uint64_t>(0),
                 RequestorID(0));
             Req->setPaddr(flit->getAddr());
-            PacketPtr pkt = new Packet(Req,gem5::MemCmd::ReadExReq,CACHEBLOCK_SIZE);
+            auto pkt = (std::make_shared<Packet>(Req,gem5::MemCmd::ReadExReq,CACHEBLOCK_SIZE));
 
             if (recvTimingReq(pkt)) {
                 ReqPtr req = std::make_shared<Request>(
@@ -429,9 +430,9 @@ DDRWrapper::handlePortReceive(FlitPtr &flit)
                 req->setReturnTxnid(flit->getReturnTxnid());
                 req->setSize(flit->getSize());
                 //here we do not have data,but need to fill it when start transfer
-                assert(outstandingReadTransferMap.find(pkt) == outstandingReadTransferMap.end() &&
+                assert(outstandingReadTransferMap.find(pkt->getAddr()) == outstandingReadTransferMap.end() &&
                        "DDRWrapper already has a read request for this packet");
-                outstandingReadTransferMap[pkt] = req;
+                outstandingReadTransferMap[pkt->getAddr()] = req;
                 return true;
 
             }else{
@@ -495,7 +496,7 @@ DDRWrapper::handlePortReceive(FlitPtr &flit)
                 RequestPtr req = std::make_shared<gem5::Request>(
                 flit->getAddr(), flit->getSize(), gem5::Flags<uint64_t>(0),
                 RequestorID(0));
-                PacketPtr pkt = new Packet(req,gem5::MemCmd::WritebackDirty,flit->getSize());
+                auto pkt = std::make_shared<Packet>(req,gem5::MemCmd::WritebackDirty,flit->getSize());
                 uint8_t* tmp = new uint8_t[flit->getSize()];
                 flit->getData(tmp);
                 pkt->setData(tmp);
@@ -536,8 +537,8 @@ void DDRWrapper::saveOutstandingRequest(ReqPtr &req, uint32_t txn_id)
 void DDRWrapper::setNodeID(NodeID _ID){
     this->_NodeID = _ID;
 }
-void DDRWrapper::setSAM(SystemAddressMap *sam){
-    this->sam = sam;
-}
+// void DDRWrapper::setSAM(SystemAddressMap *sam){
+//     this->sam = sam;
+// }
 }
 }

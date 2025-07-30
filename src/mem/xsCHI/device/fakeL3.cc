@@ -3,7 +3,10 @@
 #include <memory>
 
 #include "HNF.hh"
+#include "base/trace.hh"
+#include "mem/xsCHI/base/flit.hh"
 #include "sim/clocked_object.hh"
+#include "debug/CHIFakeL3.hh"
 
 namespace gem5
 {
@@ -60,8 +63,8 @@ namespace xsCHI
                                 return true;
                             }else{
                                 //send failed, we need to save the request and retry later
-                                if (flit!=nullptr) {
-                                    flit.reset();
+                                if (read!=nullptr) {
+                                    read.reset();
                                 }
                                 TXN_Manager.releaseID(txn_id);
                                 return false;
@@ -97,8 +100,8 @@ namespace xsCHI
                                 return true;
                             }else{
                                 //send failed, we need to save the request and retry later
-                                if (flit!=nullptr) {
-                                    flit.reset();
+                                if (write!=nullptr) {
+                                    write.reset();
                                 }
                                 TXN_Manager.releaseID(txn_id);
                                 return false;
@@ -115,8 +118,8 @@ namespace xsCHI
                         if (L2side->send(rsp)){
                             return true;
                         }else{
-                            if (flit!=nullptr) {
-                                flit.reset();
+                            if (rsp!=nullptr) {
+                                rsp.reset();
                             }
                             return false;
                         }
@@ -146,8 +149,8 @@ namespace xsCHI
                                 return true;
                             }else{
                                 //send failed, we need to save the request and retry later
-                                if (flit!=nullptr) {
-                                    flit.reset();
+                                if (comp!=nullptr) {
+                                    comp.reset();
                                 }
                                 TXN_Manager.releaseID(txn_id);
                                 return false;
@@ -174,6 +177,7 @@ namespace xsCHI
                                 assert(req->dataTransferFinished());
                                 TXN_Manager.releaseID(flit->getTxnId());
                                 outstanding_requests.erase(flit->getTxnId());
+                                DPRINTF(CHIFakeL3, "Finish read request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
                                 return true;
                             }
                             default:{
@@ -185,6 +189,7 @@ namespace xsCHI
                             case CHI_OP_TYPE::CHI_RSP_COMPACK:{
                                 TXN_Manager.releaseID(flit->getTxnId());
                                 outstanding_requests.erase(flit->getTxnId());
+                                DPRINTF(CHIFakeL3, "Finish clean unique request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
                                 return true;
                             }
                             default:{
@@ -247,12 +252,13 @@ namespace xsCHI
                                     if (req->dataTransferFinished()){
                                         TXN_Manager.releaseID(flit->getTxnId());
                                         outstanding_requests.erase(flit->getTxnId());
+                                        DPRINTF(CHIFakeL3, "Finish write request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
                                     }
                                     return true;
                                 }else{
                                     //send failed, we need to save the request and retry later
-                                    if (flit!=nullptr) {
-                                        flit.reset();
+                                    if (data!=nullptr) {
+                                        data.reset();
                                     }
                                     return false;
                                 }
@@ -280,6 +286,21 @@ namespace xsCHI
 
     bool
     FakeL3::handleDramsideRecv(FlitPtr &flit){
+        if(flit->getTgtId()!= _NodeID.getNodeID()){
+            // 不是发给本节点的Flit,要转发给RN
+            FlitPtr copy = std::make_unique<Flit>(*flit);
+            if (L2side->send(copy)){
+                //send success
+                return true;
+            }else{
+                //send failed, 
+                if (copy!=nullptr) {
+                    copy.reset();
+                }
+                return false;
+            }
+            return false;
+        }
         switch (flit->get_Flit_Channel_Type()) {
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA: {
                 ReqPtr req = outstanding_requests[flit->getTxnId()];
@@ -290,7 +311,7 @@ namespace xsCHI
                         switch (flit->getOpcode()) {
                             case CHI_OP_TYPE::CHI_DAT_COMPDATA:{
 
-                                FlitPtr rsp = std::make_unique<Flit>(*flit);
+                                FlitPtr rsp = std::make_unique<Flit>(*flit);//here need to call copy constructor!!
                                 if (!rsp) {
                                     return false; // 创建失败
                                 }
@@ -301,8 +322,8 @@ namespace xsCHI
                                     return true;
                                 }else{
                                     //send failed, we need to save the request and retry later
-                                    if (flit!=nullptr) {
-                                        flit.reset();
+                                    if (rsp!=nullptr) {
+                                        rsp.reset();
                                     }
                                     return false;
                                 }
@@ -344,8 +365,8 @@ namespace xsCHI
                                     return true;
                                 }else{
                                     //send failed, we need to save the request and retry later
-                                    if (flit!=nullptr) {
-                                        flit.reset();
+                                    if (rsp!=nullptr) {
+                                        rsp.reset();
                                     }
                                     return false;
                                 }
@@ -375,6 +396,7 @@ namespace xsCHI
          assert(outstanding_requests.count(txn_id) == 0 &&
                 "TxnID already used by another request");
         outstanding_requests[txn_id] = req;
+        DPRINTF(CHIFakeL3, "Save outstanding request: txn_id=%d, outstanding_requests.size()=%d\n", txn_id, outstanding_requests.size());
     }
     CHIPort*
     FakeL3::getCHIPort_CPUSIDE(){
