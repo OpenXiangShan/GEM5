@@ -7,7 +7,9 @@
 #include "base/types.hh"
 #include "debug/CHIPort.hh"
 #include "mem/xsCHI/base/flit.hh"
+#include "mem/xsCHI/base/params.hh"
 #include "params/ClockedObject.hh"
+#include "sim/cur_tick.hh"
 #include "sim/port.hh"
 #include "sim/sim_object.hh"
 
@@ -79,52 +81,52 @@ namespace xsCHI
         switch (channel_type) {
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ:
                 if (req_credit == 0 || curCycle() <= req_last_send_time) {
-                    DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit \
-                        or already sent a request flit in the current cycle",
-                          owner_module->name(), owner_module->name());
+                    DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit :%d\
+                        or already sent a request flit in the current cycle\n",
+                          owner_module->name(), owner_module->name(), req_credit);
                     return false; // 没有信用，发送失败
                 }
                 req_credit--;
-                DPRINTF(CHIPort,"%s:REQ channel send, remain Credit:%d\n",this->name(),req_credit);
+                DPRINTF(CHIPort,"%s:REQ channel send, remain Credit:%d, req_last_send_time:%d, curcycle:%d\n",this->name(),req_credit,req_last_send_time,curCycle());
                 req_last_send_time = curCycle();
                 break;
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_SNP:
                 if (snp_credit == 0 || curCycle() <= snp_last_send_time) {
-                    DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit \
-                        or already sent a request flit in the current cycle",
-                          owner_module->name(), owner_module->name());
+                    DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit :%d\
+                        or already sent a request flit in the current cycle\n",
+                          owner_module->name(), owner_module->name(), snp_credit);
                     return false; // 没有信用，发送失败
                 }
                 snp_credit--;
-                DPRINTF(CHIPort,"%s:SNP channel send, remain Credit:%d\n",this->name(),snp_credit);
+                DPRINTF(CHIPort,"%s:SNP channel send, remain Credit:%d, snp_last_send_time:%d, curcycle:%d\n",this->name(),snp_credit,snp_last_send_time,curCycle());
                 snp_last_send_time = curCycle();
                 break;
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA:
                 if (dat_credit == 0 || curCycle() <= dat_last_send_time) {
-                    DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit \
-                        or already sent a request flit in the current cycle",
-                          owner_module->name(), owner_module->name());
+                    DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit :%d\
+                        or already sent a request flit in the current cycle\n",
+                          owner_module->name(), owner_module->name(), dat_credit);
                     return false; // 没有信用，发送失败
                 }
                 dat_credit--;
-                DPRINTF(CHIPort,"%s:DAT channel send, remain Credit:%d\n",this->name(),dat_credit);
+                DPRINTF(CHIPort,"%s:DAT channel send, remain Credit:%d, dat_last_send_time:%d, curcycle:%d\n",this->name(),dat_credit,dat_last_send_time,curCycle());
                 dat_last_send_time = curCycle();
                 break;
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP:
                 if (rsp_credit == 0 || curCycle() <= rsp_last_send_time) {
-                    DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit \
-                        or already sent a request flit in the current cycle",
-                          owner_module->name(), owner_module->name());
+                    DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit :%d\
+                        or already sent a request flit in the current cycle\n",
+                          owner_module->name(), owner_module->name(), rsp_credit);
                     return false; // 没有信用，发送失败
                 }
                 rsp_credit--;
-                DPRINTF(CHIPort,"%s:RSP channel send, remain Credit:%d\n",this->name(),rsp_credit);
+                DPRINTF(CHIPort,"%s:RSP channel send, remain Credit:%d, rsp_last_send_time:%d, curcycle:%d\n",this->name(),rsp_credit,rsp_last_send_time,curCycle());
                 rsp_last_send_time = curCycle();
                 break;
             default:
                 panic("Invalid channel type for sending flit");
         }
-        DPRINTF(CHIPort,"send Flit op:%s, addr: %lx, size:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(data->getOpcode()),data->getAddr(),data->getSize());
+        DPRINTF(CHIPort,"send Flit op:%s, addr: %lx, size:%d,txn_id:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(data->getOpcode()),data->getAddr(),data->getSize(),data->getTxnId());
         // 将数据发送到连接的端口
         if (connected_port != nullptr) {
             connected_port->receive(std::move(data));
@@ -137,14 +139,14 @@ namespace xsCHI
     }
     void CHIPort::receive(FlitPtr data){
         //todo ::schedule event, call OnEventCallback
-        DPRINTF(CHIPort,"Recv Flit op:%s, addr: %lx, size:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(data->getOpcode()),data->getAddr(),data->getSize());
+        DPRINTF(CHIPort,"Recv Flit op:%s, addr: %lx, size:%d,txn_id:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(data->getOpcode()),data->getAddr(),data->getSize(),data->getTxnId());
         Flit::CHI_CHN_TYPE channel_type = data->get_Flit_Channel_Type();
         switch (channel_type) {
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ:{
                 assert(req_buffer.size() < BUFFER_SIZE && "Request buffer overflow");
                 req_buffer.push(std::move(data));
                 if (!global_handle_event.scheduled()) {
-                    schedule(global_handle_event, clockEdge(Cycles(PortTransferLatency)));
+                    schedule(global_handle_event, curTick()+clockPeriod()*PortTransferLatency);
                 }
                 break;
             }
@@ -152,7 +154,7 @@ namespace xsCHI
                 assert(snp_buffer.size() < BUFFER_SIZE && "Snoop buffer overflow");
                 snp_buffer.push(std::move(data));
                 if (!global_handle_event.scheduled()) {
-                    schedule(global_handle_event, clockEdge(Cycles(PortTransferLatency)));
+                    schedule(global_handle_event, curTick()+clockPeriod()*PortTransferLatency);
                 }
                 break;
             }
@@ -161,7 +163,7 @@ namespace xsCHI
                 assert(dat_buffer.size() < BUFFER_SIZE && "Data buffer overflow");
                 dat_buffer.push(std::move(data));
                 if (!global_handle_event.scheduled()) {
-                    schedule(global_handle_event, clockEdge(Cycles(PortTransferLatency)));
+                    schedule(global_handle_event, curTick()+clockPeriod()*PortTransferLatency);
                 }
                 break;
             }
@@ -170,7 +172,7 @@ namespace xsCHI
                 assert(rsp_buffer.size() < BUFFER_SIZE && "Response buffer overflow");
                 rsp_buffer.push(std::move(data));
                 if (!global_handle_event.scheduled()) {
-                    schedule(global_handle_event, clockEdge(Cycles(PortTransferLatency)));
+                    schedule(global_handle_event, curTick()+clockPeriod()*PortTransferLatency);
                 }
                 break;
             }
@@ -198,7 +200,7 @@ namespace xsCHI
         // after handling the head entry, check if the buffer is empty,if not, reschedule the event to next cycle
         if (!snp_buffer.empty()|| !req_buffer.empty()|| !dat_buffer.empty() || !rsp_buffer.empty()) {
             if (!global_handle_event.scheduled()) {
-                schedule(global_handle_event, clockEdge(Cycles(1)));
+                schedule(global_handle_event, curTick()+clockPeriod());
             }
         }
     }
@@ -226,7 +228,7 @@ namespace xsCHI
         // after handling the head entry, check if the buffer is empty,if not, reschedule the event to next cycle
         // if (!req_buffer.empty()) {
         //     if (!req_handle_event.scheduled()) {
-        //         schedule(req_handle_event, clockEdge(Cycles(1)));
+        //         schedule(req_handle_event, curTick()+clockPeriod());
         //     }
         // }
     }
@@ -255,7 +257,7 @@ namespace xsCHI
         // // after handling the head entry, check if the buffer is empty,if not, reschedule the event to next cycle
         // if (!snp_buffer.empty()) {
         //     if (!snp_handle_event.scheduled()) {
-        //         schedule(snp_handle_event, clockEdge(Cycles(1)));
+        //         schedule(snp_handle_event, curTick()+clockPeriod());
         //     }
         // }
     }
@@ -284,7 +286,7 @@ namespace xsCHI
         // // after handling the head entry, check if the buffer is empty,if not, reschedule the event to next cycle
         // if (!dat_buffer.empty()) {
         //     if (!dat_handle_event.scheduled()) {
-        //         schedule(dat_handle_event, clockEdge(Cycles(1)));
+        //         schedule(dat_handle_event, curTick()+clockPeriod());
         //     }
         // }
     }
@@ -313,7 +315,7 @@ namespace xsCHI
         // // after handling the head entry, check if the buffer is empty,if not, reschedule the event to next cycle
         // if (!rsp_buffer.empty()) {
         //     if (!rsp_handle_event.scheduled()) {
-        //         schedule(rsp_handle_event, clockEdge(Cycles(1)));
+        //         schedule(rsp_handle_event, curTick()+clockPeriod());
         //     }
         // }
     }

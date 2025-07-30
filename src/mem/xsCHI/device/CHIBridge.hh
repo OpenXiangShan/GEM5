@@ -1,6 +1,7 @@
 #pragma once
 #include <cassert>
 #include <map>
+#include <memory>
 #include <unordered_map>
 
 #include "mem/xsCHI/base/CHIPort.hh"
@@ -34,7 +35,7 @@ class CHIBridge : public ClockedObject
         // CHIPort<ReqPtr> *storagePort; // 存储端口
         CHIPort* networkPort;     // 网络端口
         NodeID _NodeID; // 节点ID,gain from it's owner module
-        SystemAddressMapRN *SAM; // 系统地址映射，用于生成目标ID
+        std::shared_ptr<SystemAddressMapRN> SAM; // 系统地址映射，用于生成目标ID
     public:
         typedef CHIBridgeParams Params;
         CHIBridge(const Params &p);
@@ -43,14 +44,14 @@ class CHIBridge : public ClockedObject
         // ~CHIBridge();
         // Port<ReqPtr>* getStoragePort() const { return storagePort; }
         CHIPort* getNetworkPort()  { return networkPort; }
-        bool ReceiveReq(ReqPtr &req);
-        void ReceiveSnoopResponse(ReqPtr &req);
+        bool ReceiveReq(ReqPtr req);
+        void ReceiveSnoopResponse(ReqPtr req);
         bool handleNetworkPortReceive(FlitPtr &flit);
 
         // void initState() override;
         void init() override;
-        void setNodeID(NodeID id){_NodeID = id;}
-        void setSAM(SystemAddressMapRN* sam){SAM = sam;}
+        void setNodeID(NodeID id){_NodeID = *std::make_shared<NodeID>(id);}
+        void setSAM(std::shared_ptr<SystemAddressMapRN> sam){SAM = sam;}
     private:
         //All CHI transactions require a target ID to route packets from source to destination. For
         //addressable requests, a System Address Map (SAM) determines the target ID. Each node that can

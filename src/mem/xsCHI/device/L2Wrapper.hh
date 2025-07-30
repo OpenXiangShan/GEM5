@@ -1,7 +1,10 @@
 #pragma once
+#include <cassert>
 #include <cstdint>
+#include <memory>
 
 #include "debug/CHIL2Wrapper.hh"
+#include "debug/CHIPort.hh"
 #include "mem/abstract_mem.hh"
 #include "mem/packet.hh"
 #include "mem/qport.hh"
@@ -93,8 +96,71 @@ namespace xsCHI {
                     const std::string &_label);
 
     };
+    class CacheRequestPort : public QueuedRequestPort
+    {
+
+      public:
+
+        /**
+         * Schedule a send of a request packet (from the MSHR). Note
+         * that we could already have a retry outstanding.
+         */
+        void schedSendEvent(Tick time)
+        {
+            DPRINTF(CHIL2Wrapper, "Scheduling send event at %llu\n", time);
+            reqQueue.schedSendEvent(time);
+        }
+
+      protected:
+
+        CacheRequestPort(const std::string &_name, L2Wrapper *wrapper,
+                        ReqPacketQueue &_reqQueue,
+                        SnoopRespPacketQueue &_snoopRespQueue) :
+            QueuedRequestPort(_name, wrapper, _reqQueue, _snoopRespQueue)
+        { }
+
+        /**
+         * Memory-side port always snoops.
+         *
+         * @return always true
+         */
+        virtual bool isSnooping() const { return true; }
+    };
+
+    class MemSidePort : public CacheRequestPort
+    {
+      private:
+
+        /** The cache-specific queue. */
+        ReqPacketQueue _reqQueue;
+
+        SnoopRespPacketQueue _snoopRespQueue;
+
+        // a pointer to our specific cache implementation
+        L2Wrapper *wrapper;
+
+      protected:
+
+        virtual void recvTimingSnoopReq(PacketPtr pkt);
+
+        virtual bool recvTimingResp(PacketPtr pkt);
+
+        virtual Tick recvAtomicSnoop(PacketPtr pkt);
+
+        virtual void recvFunctionalSnoop(PacketPtr pkt);
+
+        virtual void recvFunctionalCustomSignal(PacketPtr pkt, int sig);
+
+      public:
+
+        MemSidePort(const std::string &_name, L2Wrapper *wrapper,
+                    const std::string &_label);
+
+        bool hasSchedSendEvent() const { return true; }
+    };
 
     CpuSidePort cpuSidePort;//for recv origin request,and convert it to xsCHI request
+    MemSidePort memSidePort;//for redirect Uncached requests to IO devices
 
     // extract command , data , address from pkt, and create a xsCHI request,other fields are ignored.
     // maybe we need to cache these pkts in case we need to send them back to Gem5Cache.
@@ -118,7 +184,7 @@ namespace xsCHI {
     CHIBridge* getBridge();
     CHIPort* getCHIPort();
     void setNodeID(NodeID id){getBridge()->setNodeID(id);}
-    void setSAM(SystemAddressMapRN* sam){getBridge()->setSAM(sam);}
+    void setSAM(std::shared_ptr<SystemAddressMapRN> sam){getBridge()->setSAM(sam);}
   };
 }
 }
