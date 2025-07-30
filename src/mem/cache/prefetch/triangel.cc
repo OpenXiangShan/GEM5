@@ -82,6 +82,7 @@ Triangel::Triangel(const TriangelPrefetcherParams &p)
       use_pattern(p.use_pattern),
       use_pattern2(p.use_pattern2),
       use_mrb(p.use_mrb),
+      use_cache_space(p.use_cache_space),
       perfbias(p.perfbias),
       smallduel(p.smallduel),
       timed_scs(p.timed_scs),
@@ -138,7 +139,7 @@ Triangel::Triangel(const TriangelPrefetcherParams &p)
         lookupTable[x] = 0;
         lookupTick[x] = 0;
     }
-    current_size = 0;
+    current_size = use_cache_space ? 0 : size_increment * maxWays;
     target_size = 0;
 }
 
@@ -475,7 +476,7 @@ Triangel::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &
     }
 
     // 如果不使用布隆过滤器模式，则使用大小决斗器来动态调整缓存分区
-    if (!use_bloom) {
+    if (!use_bloom && use_cache_space) {
 
         // 遍历所有大小决斗器（根据配置选择32个或64个）
         for (int x = 0; x < (smallduel ? 32 : 64); x++) {
@@ -633,7 +634,7 @@ Triangel::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &
         should_hawk = originalTrainEntry->hawkConfidence > 7;
     }
 
-    if (use_bloom) {
+    if (use_bloom && use_cache_space) {
         if (correlated_addr_found && should_pf) {
             if (bloomset == -1)
                 bloomset = index & 127;
@@ -878,8 +879,9 @@ Triangel::getHistoryEntry(Addr index, bool is_secure, bool replace, bool readonl
 
     // 清除缓存标签中对应的集合和路，为马尔可夫表的访问做准备
     // 这是为了模拟真实硬件中缓存和预取器元数据表之间的交互
-    cachetags->clearSetWay(thsa->extractSet(index) / maxWays, thsa->extractSet(index) % maxWays);
-
+    if (use_cache_space){
+        cachetags->clearSetWay(thsa->extractSet(index) / maxWays, thsa->extractSet(index) % maxWays);
+    }
     // 如果启用了重新排列功能，则跟踪不同索引的关联度变化
     // 用于统计元数据访问次数，这对性能分析很重要
     if (should_rearrange) {

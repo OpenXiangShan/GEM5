@@ -72,6 +72,7 @@ class Triangel : public Queued
     const bool use_pattern;
     const bool use_pattern2;
     const bool use_mrb;
+    const bool use_cache_space;
     const bool perfbias;
     const bool smallduel;
     const bool timed_scs;

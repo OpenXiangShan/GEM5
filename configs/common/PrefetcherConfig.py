@@ -53,6 +53,7 @@ def create_prefetcher(cpu, cache_level, options):
 
         prefetcher.enable_temporal = options.l1d_enable_cmc
         prefetcher.enable_triangel = options.l1d_enable_triangel
+        prefetcher.triangel.use_cache_space = not options.l1d_triangel_no_use_cache_space
 
         if options.ideal_cache:
             prefetcher.stream_pf_ahead = False

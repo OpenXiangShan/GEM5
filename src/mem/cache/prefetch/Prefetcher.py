@@ -1011,6 +1011,7 @@ class TriangelPrefetcher(QueuedPrefetcher):
     use_pattern = Param.Bool(True, "Use PatternConf")
     use_pattern2 = Param.Bool(True, "Use Pattern2Conf")
     use_mrb = Param.Bool(True, "Use ReuseBuffer")
+    use_cache_space = Param.Bool(True, "Use cache space for history table")
     timed_scs = Param.Bool(True, "Use timed SCS")
     perfbias = Param.Bool(False, "Bias away from energy efficiency")
     smallduel = Param.Bool(False, "Use small set dueller")
