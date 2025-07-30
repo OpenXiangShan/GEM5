@@ -529,7 +529,21 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     ADD_STAT(btbEntriesWithDifferentStart, statistics::units::Count::get(), "number of btb entries with different start PC"),
     ADD_STAT(btbEntriesWithOnlyOneJump, statistics::units::Count::get(), "number of btb entries with different start PC starting with a jump"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
-    ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit")
+    ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
+
+    ADD_STAT(totalPredCount, statistics::units::Count::get(), "total number of predictions made"),
+    ADD_STAT(twoTakenHit, statistics::units::Count::get(), "2-taken prediction hits"),
+    ADD_STAT(twoTakenRemainsAfterOverride, statistics::units::Count::get(),
+    "2-taken predictions remaining after override"),
+    ADD_STAT(predProduce2Taken, statistics::units::Count::get(), "the number of predictions that produce 2-taken"),
+
+    ADD_STAT(predTwoTakenRatio, statistics::units::Ratio::get(), "ratio of predictions that produce 2-taken"),
+    ADD_STAT(twoTakenHitRatio, statistics::units::Ratio::get(), "2-taken hit ratio"),
+    ADD_STAT(twoTakenRemainsRatio, statistics::units::Ratio::get(), "2-taken remains after override ratio"),
+    ADD_STAT(secondPredValidationPassed, statistics::units::Count::get(),
+               "Number of full predictor validations that passed"),
+    ADD_STAT(secondPredValidationFailed, statistics::units::Count::get(),
+               "Number of full predictor validations that failed")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
@@ -538,6 +552,11 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
+
+    // 2-taken ratio calculations
+    predTwoTakenRatio = predProduce2Taken / totalPredCount;
+    twoTakenHitRatio = twoTakenHit / totalPredCount;
+    twoTakenRemainsRatio = twoTakenRemainsAfterOverride / totalPredCount;
 }
 
 DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchStream &stream, const DynInstPtr &inst, bool mispred)
@@ -569,7 +588,7 @@ DecoupledBPUWithBTB::tick()
     }
 
     // Single iteration prediction logic (was inside while loop)
-    if (bpuState == BpuState::IDLE && !streamQueueFull() && numOverrideBubbles == 0) {
+    if (bpuState == BpuState::IDLE && fetchStreamQueue.size() < fetchStreamQueueSize - 1 && numOverrideBubbles == 0) {
         requestNewPrediction();
         bpuState = BpuState::PREDICTOR_DONE;
     }
@@ -597,11 +616,8 @@ DecoupledBPUWithBTB::tick()
         // Create first FSQ entry with the current prediction
         makeNewPrediction(true);
 
-                // NEW: 2-taken decision point
-        if (enableTwoTaken &&
-            finalPred.predSource == 0 && finalPred.fromUBTB &&
-            !streamQueueFull() &&
-            satisfiesFirstPred2TakenCondition(finalPred)) {
+                        // NEW: 2-taken decision point
+        if (enableTwoTaken) {
             produce2ndPrediction();
         }
 
@@ -2077,33 +2093,54 @@ void
 DecoupledBPUWithBTB::produce2ndPrediction()
 {
     DPRINTF(Override, "Attempting to produce second prediction for 2-taken\n");
+    assert(!streamQueueFull());
+
+    dbpBtbStats.totalPredCount++;
+
+    // Check the 3 conditions for 2-taken eligibility
+    bool firstPredisFromUBTB = finalPred.predSource == 0 && finalPred.fromUBTB;
+    bool firstPredUBTBHit = finalPred.fromUBTB;
+    bool satisfiesFirstCondition = satisfiesFirstPred2TakenCondition(finalPred);
+
 
     // 1. Generate second prediction (streamlined, s0PC already updated by makeNewPrediction)
     requestNewPrediction();
     generateFinalPredAndCreateBubbles(); // Don't store override bubbles
 
-    // Clear each predictor's output
-    for (int i = 0; i < numStages; i++) {
-        predsOfEachStage[i].btbEntries.clear();
-    }
+    bool secondPredUBTBHit = finalPred.fromUBTB;
+    bool secondPredisFromUBTB = finalPred.predSource == 0 && finalPred.fromUBTB;
+
 
     // 2. Validate second prediction before enqueueing
-    if (!satisfiesSecondPred2TakenCondition(finalPred)) {
+    if (!firstPredUBTBHit ||
+        !satisfiesFirstCondition ||
+        !secondPredUBTBHit ||
+        !satisfiesSecondPred2TakenCondition(finalPred)
+    ) {
         // Second prediction doesn't meet basic 2-taken conditions, just return without penalty
-        DPRINTF(Override, "Second prediction doesn't satisfy 2-taken conditions, ending without penalty\n");
-        return;
-    }
+        DPRINTF(Override, "the prediction pair doesn't satisfy 2-taken conditions, or isn't hit in uBTB, abort\n");
+         return;
+     }
+     dbpBtbStats.twoTakenHit++;
+
+    if (!firstPredisFromUBTB) {
+         DPRINTF(Override, "First prediction not from uBTB, abort\n");
+         return;
+     }
+     dbpBtbStats.twoTakenRemainsAfterOverride++;
 
     if (finalPred.predSource == 0 && finalPred.fromUBTB) {
         DPRINTF(Override, "Second prediction validation passed, enqueueing\n");
         tryEnqFetchTarget();
         makeNewPrediction(true);
+        dbpBtbStats.secondPredValidationPassed++;
     } else {
         DPRINTF(Override, "Second prediction failed uBTB source check, adding penalty\n");
-        tryEnqFetchTarget();
-        makeNewPrediction(true);
         handleSecondPredictionFailure();
-    }
+        dbpBtbStats.secondPredValidationFailed++;
+     }
+
+     dbpBtbStats.predProduce2Taken++;
 }
 
 bool

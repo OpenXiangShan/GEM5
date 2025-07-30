@@ -362,6 +362,21 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
 
+        // 2-taken statistics
+        statistics::Scalar totalPredCount;
+        statistics::Scalar twoTakenHit;
+        statistics::Scalar twoTakenRemainsAfterOverride;
+        statistics::Scalar predProduce2Taken;
+
+        // 2-taken ratio statistics
+        statistics::Formula predTwoTakenRatio;
+        statistics::Formula twoTakenHitRatio;
+        statistics::Formula twoTakenRemainsRatio;
+        
+        // Second prediction validation statistics
+        statistics::Scalar secondPredValidationPassed;
+        statistics::Scalar secondPredValidationFailed;
+
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;
 
