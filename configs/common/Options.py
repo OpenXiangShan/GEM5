@@ -308,7 +308,7 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l1d-enable-triangel", action="store_true", default=False,
                         help="""
                         Enable triangel component for L1 data prefetcher""")
-    parser.add_argument("--l1d_triangel-no-use-cache-space", action="store_true", default=False,
+    parser.add_argument("--l1d-triangel-no-use-cache-space", action="store_true", default=False,
                         help="""
                         Enable triangel component for L1 data prefetcher""")
     parser.add_argument("--short-stride-thres", action="store", default=0, type=int,
