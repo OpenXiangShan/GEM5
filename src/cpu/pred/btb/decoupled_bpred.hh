@@ -264,6 +264,7 @@ class DecoupledBPUWithBTB : public BPredUnit
             stagePred.condTakens.clear();
             stagePred.indirectTargets.clear();
             stagePred.btbEntries.clear();
+            stagePred.fromUBTB = false;  // Reset uBTB flag
         }
     }
 

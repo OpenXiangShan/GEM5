@@ -448,6 +448,7 @@ struct FullBTBPrediction
     unsigned predSource;
     OverrideReason overrideReason;
     Tick predTick;
+    bool fromUBTB;  // True if prediction comes from uBTB, false if from aBTB
 
     FullBTBPrediction() :
         bbStart(0),
@@ -457,7 +458,8 @@ struct FullBTBPrediction
         returnTarget(0),
         tageInfoForMgscs(),
         predSource(0),
-        predTick(0) {}
+        predTick(0),
+        fromUBTB(false) {}
 
     BTBEntry getTakenEntry() {
         // IMPORTANT: assume entries are sorted

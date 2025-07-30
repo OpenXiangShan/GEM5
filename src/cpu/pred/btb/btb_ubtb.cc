@@ -116,6 +116,9 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
     }
 
     if (entry.valid) {
+        // Mark this prediction as coming from uBTB since we have a valid hit
+        FillStageLoop(s) stagePreds[s].fromUBTB = true;
+
         // push back dummy conditional branches before the taken branch, to create the correct speculative history
         // information, these dummy entries are not taken, thanks to them not being in stagePreds.condTakens.
         for (int i = 0; i < entry.numNTConds; i++) {

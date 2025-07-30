@@ -597,9 +597,9 @@ DecoupledBPUWithBTB::tick()
         // Create first FSQ entry with the current prediction
         makeNewPrediction(true);
 
-        // NEW: 2-taken decision point
+                // NEW: 2-taken decision point
         if (enableTwoTaken &&
-            finalPred.predSource == 0 &&
+            finalPred.predSource == 0 && finalPred.fromUBTB &&
             !streamQueueFull() &&
             satisfiesFirstPred2TakenCondition(finalPred)) {
             produce2ndPrediction();
@@ -2088,12 +2088,18 @@ DecoupledBPUWithBTB::produce2ndPrediction()
     }
 
     // 2. Validate second prediction before enqueueing
-    if (finalPred.predSource == 0 && satisfiesSecondPred2TakenCondition(finalPred)) {
+    if (!satisfiesSecondPred2TakenCondition(finalPred)) {
+        // Second prediction doesn't meet basic 2-taken conditions, just return without penalty
+        DPRINTF(Override, "Second prediction doesn't satisfy 2-taken conditions, ending without penalty\n");
+        return;
+    }
+
+    if (finalPred.predSource == 0 && finalPred.fromUBTB) {
         DPRINTF(Override, "Second prediction validation passed, enqueueing\n");
         tryEnqFetchTarget();
         makeNewPrediction(true);
     } else {
-        DPRINTF(Override, "Second prediction validation failed\n");
+        DPRINTF(Override, "Second prediction failed uBTB source check, adding penalty\n");
         handleSecondPredictionFailure();
     }
 }
@@ -2145,7 +2151,7 @@ DecoupledBPUWithBTB::satisfiesSecondPred2TakenCondition(FullBTBPrediction& pred)
 void
 DecoupledBPUWithBTB::handleSecondPredictionFailure()
 {
-    numOverrideBubbles = 2;  // Penalty for failed 2-taken attempt
+    numOverrideBubbles = 3;  // Penalty for failed 2-taken attempt
     DPRINTF(Override, "Second prediction validation failed, adding 2 override bubbles\n");
 }
 
