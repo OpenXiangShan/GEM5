@@ -1272,13 +1272,107 @@ IEW::classifyInstToDispQue(ThreadID tid)
     std::queue<StallReason> dispatch_stalls;
     StallReason breakDispatch = StallReason::NoStall;
     unsigned dispatched = 0;
+    scheduler->lookahead(insts_to_dispatch);
+    int disp_seq = -1;
     while (!insts_to_dispatch.empty()) {
         auto& inst = insts_to_dispatch.front();
+        disp_seq++;
         int ins = cpu->cpuStats.committedInsts.total();
+
         if (cpu->hasHintDownStream() && ins % 10000 == 1) {
             cpu->hintDownStream->notifyIns(ins);
         }
+
         int id = getInstDQType(inst);
+        if (id != DQType::MemDQ) {
+            bool add_to_iq = false;
+            auto &inst = insts_to_dispatch.front();
+
+            assert(!inst->isMemRef());
+            int ins = cpu->cpuStats.committedInsts.total();
+            if (cpu->hasHintDownStream() && ins % 10000 == 1) {
+                cpu->hintDownStream->notifyIns(ins);
+            }
+
+            if (inst->isSquashed()) {
+                ++iewStats.dispSquashedInsts;
+                // Tell Rename That An Instruction has been processed
+                toRename->iewInfo[tid].dispatched++;
+                insts_to_dispatch.pop_front();
+
+                dispatch_stalls.push(StallReason::InstSquashed);
+                continue;
+            }
+
+            if ((inst->isSerializeBefore() && !inst->isSerializeHandled()) ? !emptyROB : false) {
+                dispatch_stalls.push(StallReason::SerializeStall);
+                breakDispatch = StallReason::SerializeStall;
+                blockReason = breakDispatch;
+                break;
+            }
+
+            if (!scheduler->ready(inst, disp_seq)) {
+                DPRINTF(IEW, "[tid:%i] Dispatch: IQ is full or bwFull.\n", tid);
+                iewStats.stallEvents[IQFull]++;
+                ++iewStats.iqFullEvents;
+
+                dispatch_stalls.push(checkDispatchStall(tid, NumDQ, inst, disp_seq));
+                breakDispatch = dispatch_stalls.back();
+                blockReason = breakDispatch;
+                break;
+            }
+
+            const int numHtmStarts = ldstQueue.numHtmStarts(tid);
+            const int numHtmStops = ldstQueue.numHtmStops(tid);
+            const int htmDepth = numHtmStarts - numHtmStops;
+            if (htmDepth > 0) {
+                inst->setHtmTransactionalState(ldstQueue.getLatestHtmUid(tid), htmDepth);
+            } else {
+                inst->clearHtmTransactionalState();
+            }
+
+            if (!inst->isNop() && !inst->isEliminated()) {
+                scheduler->addProducer(inst);
+            }
+
+            if (inst->isNop() || inst->isEliminated()) {
+                DPRINTF(IEW,
+                        "[tid:%i] Dispatch: Nop instruction [sn:%llu] encountered, "
+                        "skipping.\n",
+                        tid, inst->seqNum);
+                inst->setIssued();
+                inst->setExecuted();
+                inst->setCanCommit();
+                iewStats.executedInstStats.numNop[tid]++;
+                add_to_iq = false;
+            } else {
+                assert(!inst->isExecuted());
+                add_to_iq = true;
+            }
+
+            if (add_to_iq && inst->isNonSpeculative()) {
+                DPRINTF(IEW,
+                        "[tid:%i] Dispatch: Nonspeculative instruction "
+                        "encountered, skipping.\n",
+                        tid);
+                inst->setCanCommit();
+                instQueue.insertNonSpec(inst);
+                add_to_iq = false;
+            }
+
+            if (add_to_iq) {
+                instQueue.insert(inst, disp_seq);
+            }
+            ppDispatch->notify(inst);
+
+            toRename->iewInfo[tid].dispatched++;
+            ++iewStats.dispatchedInsts;
+
+            insts_to_dispatch.pop_front();
+            dispatched++;
+            continue;
+        }
+
         if (dispQue[id].size() < dqSize[id]) {
             if (inst->isSquashed()) {
                 ++iewStats.dispSquashedInsts;
@@ -1399,7 +1493,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
     bool add_to_iq = false;
     int dis_num_inst = 0;
 
-    for (int i = 0; i < NumDQ; i++) {
+    for (int i = DQType::MemDQ; i <= DQType::MemDQ; i++) {
         int dispatched = 0;
         int disp_seq = -1;
         scheduler->lookahead(dispQue[i]);
