@@ -192,6 +192,9 @@ def config_cache(options, system):
                 system.tol3bus = L2ToL3Bus(clk_domain=system.cpu_clk_domain)
                 system.tol3bus.snoop_filter.max_capacity = "32MB"
 
+                # if not options.no_pf:
+                #     system.l3_wrapper.prefetcher = create_prefetcher(system.cpu, 'l3_wrapper', options)
+
                 for i in range(num_l3_slices):
                     l3_wrapper = system.l3_wrapper
                     cache_slice = l3_wrapper.slices[i]
@@ -258,10 +261,16 @@ def config_cache(options, system):
                     system.l2_caches[i].prefetcher != NULL
                 dcache.prefetcher.add_pf_downstream(system.l2_caches[i].prefetcher)
 
-            if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
+            if (not options.no_pf) and options.l3cache and (not options.newl3cache) and options.l2_to_l3_pf_hint:
                 assert system.l2_caches[i].prefetcher != NULL and \
                     system.l3.prefetcher != NULL
                 system.l2_caches[i].prefetcher.add_pf_downstream(system.l3.prefetcher)
+
+
+            if (not options.no_pf) and options.l3cache and options.newl3cache and options.l2_to_l3_pf_hint:
+                assert system.l2_caches[i].prefetcher != NULL and \
+                    system.l3_wrapper.prefetcher != NULL
+                system.l2_caches[i].prefetcher.add_pf_downstream(system.l3_wrapper.prefetcher)
 
             # If we have a walker cache specified, instantiate two
             # instances here
