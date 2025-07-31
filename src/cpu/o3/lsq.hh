@@ -254,10 +254,6 @@ class LSQ
         void markDelayed() override { flags.set(Flag::Delayed); }
         bool isDelayed() { return flags.isSet(Flag::Delayed); }
 
-        static uint64_t numSBufferRequest;
-        static uint64_t numSingleRequest;
-        static uint64_t numSplitRequest;
-
       public:
         LSQUnit& _port;
         const DynInstPtr _inst;
@@ -624,19 +620,9 @@ class LSQ
         SingleDataRequest(LSQUnit* port, const DynInstPtr& inst,
                 bool isLoad, const Addr& addr, const uint32_t& size,
                 const Request::Flags& flags_, PacketDataPtr data=nullptr,
-                uint64_t* res=nullptr, AtomicOpFunctorPtr amo_op=nullptr) :
-            LSQRequest(port, inst, isLoad, addr, size, flags_, data, res,
-                       std::move(amo_op)) {
-            numSingleRequest++;
-            singleList.push_back(this);
-            assert(numSingleRequest <= 400);
-        }
+                uint64_t* res=nullptr, AtomicOpFunctorPtr amo_op=nullptr);
 
-        virtual ~SingleDataRequest() {
-            assert(numSingleRequest > 0);
-            numSingleRequest--;
-            singleList.remove(this);
-        }
+        virtual ~SingleDataRequest();
         virtual void markAsStaleTranslation();
         virtual void initiateTranslation();
         virtual void finish(const Fault &fault, const RequestPtr &req,
@@ -685,30 +671,8 @@ class LSQ
         SplitDataRequest(LSQUnit* port, const DynInstPtr& inst,
                 bool isLoad, const Addr& addr, const uint32_t& size,
                 const Request::Flags & flags_, PacketDataPtr data=nullptr,
-                uint64_t* res=nullptr) :
-            LSQRequest(port, inst, isLoad, addr, size, flags_, data, res,
-                       nullptr),
-            numFragments(0),
-            numReceivedPackets(0),
-            _mainReq(nullptr),
-            _mainPacket(nullptr)
-        {
-            numSplitRequest++;
-            assert(numSplitRequest <= 400);
-            flags.set(Flag::IsSplit);
-        }
-        virtual ~SplitDataRequest()
-        {
-            assert(numSplitRequest > 0);
-            numSplitRequest--;
-            if (_mainReq) {
-                _mainReq = nullptr;
-            }
-            if (_mainPacket) {
-                delete _mainPacket;
-                _mainPacket = nullptr;
-            }
-        }
+                uint64_t* res=nullptr);
+        virtual ~SplitDataRequest();
         virtual void markAsStaleTranslation();
         virtual void finish(const Fault &fault, const RequestPtr &req,
                 gem5::ThreadContext* tc, BaseMMU::Mode mode);
@@ -734,10 +698,7 @@ class LSQ
       public:
         StoreBufferEntry* sbuffer_entry=nullptr;
         SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, uint8_t* data);
-        virtual ~SbufferRequest() {
-            assert(numSBufferRequest > 0);
-            numSBufferRequest--;
-        }
+        virtual ~SbufferRequest();
 
         void addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<bool> byteEnable);
 

@@ -83,9 +83,6 @@ LSQ::DcachePort::DcachePort(LSQ *_lsq, CPU *_cpu) :
     RequestPort(_cpu->name() + ".dcache_port", _cpu), lsq(_lsq), cpu(_cpu)
 {}
 
-uint64_t LSQ::LSQRequest::numSBufferRequest = 0;
-uint64_t LSQ::LSQRequest::numSingleRequest = 0;
-uint64_t LSQ::LSQRequest::numSplitRequest = 0;
 std::list<LSQ::SingleDataRequest*> LSQ::SingleDataRequest::singleList;
 
 LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
@@ -1119,6 +1116,24 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     return inst->getFault();
 }
 
+LSQ::SingleDataRequest::SingleDataRequest(
+    LSQUnit* port, const DynInstPtr& inst,
+    bool isLoad, const Addr& addr, const uint32_t& size,
+    const Request::Flags& flags_, PacketDataPtr data,
+    uint64_t* res, AtomicOpFunctorPtr amo_op) :
+    LSQRequest(port, inst, isLoad, addr, size, flags_, data, res,
+                std::move(amo_op)) {
+    port->numSingleRequest++;
+    singleList.push_back(this);
+    assert(port->numSingleRequest <= 400);
+}
+
+LSQ::SingleDataRequest::~SingleDataRequest(){
+    assert(_port.numSingleRequest > 0);
+    _port.numSingleRequest--;
+    singleList.remove(this);
+}
+
 void
 LSQ::SingleDataRequest::finish(const Fault &fault, const RequestPtr &request,
         gem5::ThreadContext* tc, BaseMMU::Mode mode)
@@ -1151,6 +1166,33 @@ LSQ::SingleDataRequest::finish(const Fault &fault, const RequestPtr &request,
         LSQRequest::_inst->translationCompleted(true);
         DPRINTF(LSQ, "Translation of inst %llu notified as completed\n",
                 LSQRequest::_inst->seqNum);
+    }
+}
+
+LSQ::SplitDataRequest::SplitDataRequest(LSQUnit* port, const DynInstPtr& inst, bool isLoad, const Addr& addr,
+                                        const uint32_t& size, const Request::Flags& flags_, PacketDataPtr data,
+                                        uint64_t* res)
+    : LSQRequest(port, inst, isLoad, addr, size, flags_, data, res, nullptr),
+      numFragments(0),
+      numReceivedPackets(0),
+      _mainReq(nullptr),
+      _mainPacket(nullptr)
+{
+    port->numSplitRequest++;
+    assert(port->numSplitRequest <= 400);
+    flags.set(Flag::IsSplit);
+}
+
+LSQ::SplitDataRequest::~SplitDataRequest()
+{
+    assert(_port.numSplitRequest > 0);
+    _port.numSplitRequest--;
+    if (_mainReq) {
+        _mainReq = nullptr;
+    }
+    if (_mainPacket) {
+        delete _mainPacket;
+        _mainPacket = nullptr;
     }
 }
 
@@ -1315,8 +1357,13 @@ LSQ::SbufferRequest::SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, ui
     : LSQRequest(port, nullptr, false, 0, port->cacheLineSize(), 0, data,
                  nullptr, nullptr, false),
       cpu(cpu) {
-    numSBufferRequest++;
-    assert(numSBufferRequest <= port->sbufferEntries);
+    port->numSBufferRequest++;
+    assert(port->numSBufferRequest <= port->sbufferEntries);
+}
+
+LSQ::SbufferRequest::~SbufferRequest() {
+    assert(_port.numSBufferRequest > 0);
+    _port.numSBufferRequest--;
 }
 
 void
