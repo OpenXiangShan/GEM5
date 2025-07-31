@@ -44,7 +44,54 @@
 #include "mem/request.hh"
 #include "params/RiscvTLB.hh"
 #include "sim/sim_object.hh"
+
+#include <type_traits>
 #include "arch/riscv/plru.hh"
+#include "arch/generic/mmu.hh"
+#include "cpu/translation.hh" //translation  class DataTranslation : public BaseMMU::Translation
+#include "mem/request.hh"
+
+#include <unordered_map>
+#include <vector>
+#include <optional>
+#include <cstdint> 
+#include <functional>
+#include <cassert>
+#include "cpu/base.hh"
+#include "params/RiscvTLB.hh"
+#include "sim/sim_object.hh"
+#include "mem/packet.hh"//SenderState
+#include "arch/riscv/faults.hh"
+
+
+
+// Whether MPT is enabled (enabled by default, use `-D__ARCH_RISCV_MMU_MPT_HH__` to disable).
+//#ifndef __ARCH_RISCV_MMU_MPT_HH__
+#ifndef MPT_ENABLED
+#define MPT_ENABLED 1
+#endif
+//#include "sim/stat_control.hh" 
+//#else
+//#define MPT_ENABLED 0
+//#endif
+
+// Whether MPT Cache is enabled (enabled by default, use `-D__ARCH_RISCV_MMU_MPT_CACHE_HH__` to disable), provided that MPT is enabled.																										
+//#if MPT_ENABLED && !defined(__ARCH_RISCV_MMU_MPT_CACHE_HH__)
+#define MPT_CACHE_ENABLED 1
+//#include "params/RiscvTLB.hh" //
+//#else
+//#define MPT_CACHE_ENABLED 0
+//#endif
+
+
+#ifndef MPT_SIMULATE_N_BIT
+#define MPT_SIMULATE_N_BIT 0
+#endif
+
+
+#ifndef MPT_CACHE_SIZE
+#define MPT_CACHE_SIZE 128    //MPT_CACHE_SIZE default (128)
+#endif
 
 namespace gem5
 {
@@ -55,6 +102,11 @@ class ThreadContext;
    simply create an ITLB and DTLB that will point to the real TLB */
 namespace RiscvISA {
 
+
+
+#if MPT_ENABLED
+
+/* depracated implementation
 struct MPTSenderState : public Packet::SenderState {
     ThreadContext *tc;
     BaseMMU::Translation *translation;
@@ -62,30 +114,39 @@ struct MPTSenderState : public Packet::SenderState {
     MPTSenderState(ThreadContext *tc_, BaseMMU::Translation *tr_)
         : tc(tc_), translation(tr_) {}
 };
+*/
+//new implementation
+extern std::unordered_map<const Request*, std::pair<ThreadContext*, BaseMMU::Translation*>> mptContextMap;
+
+
 struct MPT {
 
-    Addr rootPPN; // 根页表物理页号（页号单位）
+    Addr rootPPN; // Root page table physical page number (in page number units).
     //override:
     std::unordered_map<Addr, MPTE52> simulatedMPTMemory;
     Addr nextPPN;
-    MPT(); // 默认构造函数
+    MPT(); // Default constructor.
     MPTE52 simulateLeafAllowAll() const;
     MPTE52 simulateNonLeaf(Addr nextLevelPPN) const;
     Addr allocMPTPage(const std::vector<MPTE52>& entries);
     Addr buildSimulatedMPTTree(int levels = MPT_LEVELS);
     uint64_t readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &accessCounter) const;
-    // Smmp52 多级 MPT 遍历，根据虚拟地址返回 MPTE52（或无效项）
+    //Smmp52 multi-level MPT traversal, returning MPTE52 (or an invalid entry) based on the virtual address.
     MPTE52 walk(Addr vaddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &accessCounter) const;
     
     //all miss, 127*4; L3 hit , else miss,  127*3.   L3 L2 hit , l1 l0 miss, 127*2.   L3 L2 L1 hit , l0 miss 127
 
-    //新增：异步延迟 walk 接口，127 cycle 后触发回调返回结果
+    //Asynchronous delayed walk interface, triggers the callback to return the result after 127 cycles.
     void walkDelayed(Addr vaddr,
                      ThreadContext *tc,
                      PMAChecker *pma, PMP *pmp,
-                     std::function<void(MPTE52)> callback) const;
+                     std::function<void(MPTE52)> callback); //const;
 
 };
+#endif //MPT_ENABLED
+
+
+#if MPT_CACHE_ENABLED
 
 class MPTCache52 {
   private:
@@ -96,7 +157,7 @@ class MPTCache52 {
     size_t capacityL3;
     size_t capacitySP;
 
-	  static int configuredSize;//JJW2  用来存 param 传进来的值（类全局共享）
+	  static int configuredSize;//  Used to store values passed through `param` (globally shared within the class).
 	
     std::unordered_map<Addr, MPTCacheEntry> table;
 	
@@ -106,16 +167,16 @@ class MPTCache52 {
     std::unordered_map<Addr, MPTCacheEntry> tableL3;
     std::unordered_map<Addr, MPTCacheEntry> tableSP;
 
-    // -------- PLRU 替换支持 --------
-    // 每级 tag 顺序 & 替换路径
-    // 每级 cache 的 tag 顺序表 + 对应的 PLRU 树
+// -------- PLRU Replacement Support --------
+// Tag order and replacement path for each level
+// Tag order table for each level's cache + corresponding PLRU tree
     std::vector<Addr> tagListL0;
     std::vector<Addr> tagListL1;
     std::vector<Addr> tagListL2;
     std::vector<Addr> tagListL3;
     std::vector<Addr> tagListSP;
 
-    PLRUTreeN plruL0 = PLRUTreeN(1); // 默认构造，稍后 resize
+    PLRUTreeN plruL0 = PLRUTreeN(1); // Default constructor, will resize later.
     PLRUTreeN plruL1 = PLRUTreeN(1);
     PLRUTreeN plruL2 = PLRUTreeN(1);
     PLRUTreeN plruL3 = PLRUTreeN(1);
@@ -123,6 +184,10 @@ class MPTCache52 {
 	// -------------------------------
 	
     Addr regionAlign(Addr pa, int level) const;
+
+
+
+  public:
 
     // MPTCache Hit 
     mutable statistics::Scalar mptCacheL0Hits;
@@ -137,8 +202,7 @@ class MPTCache52 {
     mutable statistics::Scalar mptCacheL2Misses;
     mutable statistics::Scalar mptCacheL3Misses;
     mutable statistics::Scalar mptCacheSPMisses;
-
-  public:
+    
     MPTCache52(size_t capL0, size_t capL1, size_t capL2, size_t capL3, size_t capSP);
     MPTCache52();
 
@@ -152,35 +216,52 @@ class MPTCache52 {
 
     void initMPTCacheFromParams(const RiscvTLBParams *params);
     
-    // -------- PLRU 替换支持 --------
+    // -------- PLRU Replacement Support --------
     std::vector<Addr>& getTagListByLevel(int level);
     PLRUTreeN& getPLRUByLevel(int level);
+    const std::vector<Addr>& getTagListByLevel(int level) const;
+    const PLRUTreeN& getPLRUByLevel(int level) const;      //const overload
     // -------------------------------
 
 
-    // 非 const 版本：允许修改
+    // non-const 
     std::unordered_map<Addr, MPTCacheEntry>& getTableByLevel(int level);
 
-    // const 版本：只读
+    // const
     const std::unordered_map<Addr, MPTCacheEntry>& getTableByLevel(int level) const;
 
-    // 允许修改
+    // non-const
     size_t& getCapacityByLevel(int level);
 
-    // 只读版本（如果需要在 const 函数中读取容量）
+    // Read-only version (if the capacity needs to be read in a `const` function).
     size_t getCapacityByLevel(int level) const;
 
     void fetchDelayed(
           Addr pa,
           int level,
-          const MPT &mpt,
+          /*const*/ MPT &mpt,
           ThreadContext *tc,
           PMAChecker *pma, PMP *pmp,
-          std::function<void(bool /*hit*/, MPTCacheEntry)> callback) const;
-          //callback是一个函数指针的封装，类型是：std::function<void(bool, MPTCacheEntry)>
+          std::function<void(bool /*hit*/, MPTCacheEntry)> callback);// const;
+    //The callback is a function pointer wrapper, with the type: `std::function<void(bool, MPTCacheEntry)>`.
 
 };
+#endif //MPT_CACHE_ENABLED
 
+
+
+
+	#if MPT_ENABLED
+	extern gem5::RiscvISA::MPT globalMPT;//`globalMPT/mptcache` are created in `tlb.cc`.
+	  #if MPT_CACHE_ENABLED
+	  //extern MPTCache52 globalMPTCache;
+	  extern gem5::RiscvISA::MPTCache52* globalMPTCache;
+	  #endif
+
+	#endif
+
+
+  
 
 
 class Walker;
@@ -240,12 +321,7 @@ class TLB : public BaseTLB
 
     Walker *walker;
 
-  // #if MPT_ENABLED
-	  MPT globalMPT;//globalMPT/mptcache是在mmu_mpt_and_mptcache-Smmpt52.cc中创建的。
-	  // #if MPT_CACHE_ENABLED
-	    MPTCache52* globalMPTCache;
-	//  #endif
-	// #endif
+
 
     struct TlbStats : public statistics::Group
     {
@@ -340,18 +416,20 @@ class TLB : public BaseTLB
         statistics::Formula mptMissRate;
 
         // Instruction TLB
-        statistics::Scalar iTLBHits;
         statistics::Scalar iTLBMisses;
-        statistics::Scalar iTLBAccesses;
+        statistics::Scalar iTLBHits;
+        statistics::Formula iTLBAccesses;
         statistics::Formula iTLBMissRate;
 
         // Data TLB
-        statistics::Scalar dTLBHits;
-        statistics::Scalar dTLBMisses;
-        statistics::Scalar dTLBAccesses;
+        statistics::Formula dTLBMisses;// formula not scalar
+        statistics::Formula dTLBHits;
+        statistics::Formula dTLBAccesses;
         statistics::Formula dTLBMissRate;
 
     } stats;
+    
+    //void regStats() override; 
 
   public:
     PMAChecker *pma;
@@ -458,27 +536,26 @@ class TLB : public BaseTLB
     
 
 
-    void checkMPTPermInTLB(TlbEntry* entry, Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode,
-      ThreadContext *tc,
-      BaseMMU::Translation *translation,
-      //  #if MPT_ENABLED
-      const MPT& mpt,
-  //    #if MPT_CACHE_ENABLED
-      MPTCache52* cache,
-  // //    #endif
-  //  #endif
-      RequestPtr req
- 
-  );
+ void checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode,
+    ThreadContext *tc,
+    gem5::BaseMMU::Translation *translation,
+    gem5::RequestPtr req
+ #if MPT_ENABLED
+     , const MPT& mpt
+   #if MPT_CACHE_ENABLED
+     , MPTCache52* cache
+   #endif
+ #endif
+ );
 	
-	// #if MPT_ENABLED
-		// 根据 logBytes 推导出 MPT 的层级（L0~L3）
+	#if MPT_ENABLED
+		// Derive the MPT hierarchy (L0 to L3) based on `logBytes`.
 		inline int getLevelForPageSizeLog2(uint8_t logBytes);
-	// #endif
+	#endif
 	
-	// #if MPT_ENABLED
+	#if MPT_ENABLED
     Fault createMPTPagefault(Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode);
-  // #endif
+  #endif
 
 
 

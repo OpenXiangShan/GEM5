@@ -60,5 +60,108 @@ TlbEntry::unserialize(CheckpointIn &cp)
     UNSERIALIZE_SCALAR(lruSeq);
 }
 
+
+
+#if MPT_ENABLED
+
+// Retrieve the "single page size" for the current level. 
+//This is a global helper function to get the page size at runtime, 
+//not a member function of any class or structure, and should be placed outside of the namespace.
+
+uint64_t getPageSizeForLevel(int level) {
+    switch (level) {
+        case 0: return MPT_LEAF_L0_PAGE_SIZE;
+        case 1: return MPT_LEAF_L1_PAGE_SIZE;
+        case 2: return MPT_LEAF_L2_PAGE_SIZE;
+        case 3: return MPT_LEAF_L3_PAGE_SIZE;
+        default: return 0;//or panic
+    }
+}
+
+// Retrieve the MPTE region size for the current level (16 pages).
+uint64_t getRegionSizeForLevel(int level) {
+    return MPT_NUM_PERMS * getPageSizeForLevel(level);
+}
+
+uint8_t log2floor(uint64_t x) {
+    uint8_t r = 0;
+    while (x >>= 1) ++r;
+    return r;
+}
+
+
+
+MPTE52::MPTE52() : raw(0) {}
+
+MPTE52::MPTE52(uint64_t val) : raw(val) {}
+
+bool MPTE52::isValid() const { return raw & 0x1; } 
+
+bool MPTE52::isLeaf() const { return raw & 0x2; } 
+
+bool MPTE52::getN() const { return (raw >> 63) & 0x1; } // N （bit 63）
+
+// Physical page number of the next-level page table (used when not a leaf).
+Addr MPTE52::nextLevelPPN() const {
+    return (raw >> 10) & 0x000FFFFFFFFFFFFF; // bits 10~61
+}
+
+// Physical address of the next-level page table (aligned to 4KB pages).
+Addr MPTE52::nextLevelPAddr() const {
+    return nextLevelPPN() << 12;   //2^12=4KB
+}
+
+// Retrieve the pi-th （pi ∈ [0, 15]）
+uint8_t MPTE52::perms(uint8_t pi) const {
+    // If napot is enabled, return unified permissions (using `perms[0]`).
+    if (getN())
+        return (raw >> 2) & MPT_PERM_MASK;
+
+    // Otherwise, return the permissions of the `pi`-th entry.
+    if (pi >= MPT_NUM_PERMS) return 0;
+    return (raw >> (2 + pi * MPT_PERM_BITS_PER_ENTRY)) & MPT_PERM_MASK;
+    //2 is because the last two bits represent `valid` and `leaf`.
+}
+
+
+
+
+
+
+//Namespace-level utility function, not inside a struct.
+bool checkMPTEPermissions(const MPTE52 &mpte, BaseMMU::Mode mode, Addr range_offset, int level)
+{
+    if (!mpte.isValid() || !mpte.isLeaf())
+        return false;
+
+    // The page size of the current level.
+    uint64_t pageSize = getPageSizeForLevel(level);         // e.g. 2MB for level=1
+    uint8_t pi = (range_offset / pageSize) & 0xF;            // Select the permissions of the specified page.
+
+    uint8_t perm = mpte.perms(pi);
+
+    switch (mode) {
+        case BaseMMU::Read:    return perm & MPT_PERM_R;
+        case BaseMMU::Write:   return perm & MPT_PERM_W;
+        case BaseMMU::Execute: return perm & MPT_PERM_X;
+        default: return false;
+    }
+}
+
+
+
+#endif // MPT_ENABLED
+
+
+
+
+
+
+
+
+
+
+
+
 } // namespace RiscvISA
 } // namespace gem5

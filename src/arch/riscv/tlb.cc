@@ -60,6 +60,12 @@
 #include "sim/process.hh"
 #include "sim/system.hh"
 
+#include "sim/eventq.hh" //LambdaEvent
+#include "base/types.hh"      // for Addr, uint64_t //typedef uint64_t Tick;
+#include "base/statistics.hh" //statistics::Scalar
+#include "cpu/translation.hh" //translation  class DataTranslation : public BaseMMU::Translation
+#include "mem/packet.hh"//SenderState
+
 namespace gem5
 {
 
@@ -69,6 +75,520 @@ using namespace RiscvISA;
 //
 //  RISC-V TLB
 //
+
+
+#if MPT_ENABLED
+
+std::unordered_map<const Request*, std::pair<ThreadContext*, BaseMMU::Translation*>> gem5::RiscvISA::mptContextMap;
+
+
+MPT::MPT() : nextPPN(0x10000) {
+    rootPPN = buildSimulatedMPTTree();
+}
+
+
+
+MPTE52 MPT::simulateLeafAllowAll() const {
+    uint64_t raw = 0;
+    raw |= 0x1; // V
+    raw |= 0x2; // L
+
+#if MPT_SIMULATE_N_BIT
+    raw |= (1ULL << 63); //  napot
+#endif
+
+    for (int i = 0; i < MPT_NUM_PERMS; ++i) { // Set 16 permission segments, each 3 bits, with value 0b111 (R/W/X)
+        raw |= ((uint64_t)(MPT_PERM_R | MPT_PERM_W | MPT_PERM_X)
+               << (2 + i * MPT_PERM_BITS_PER_ENTRY));
+    }
+
+    return MPTE52(raw);
+}
+
+
+MPTE52 MPT::simulateNonLeaf(Addr nextLevelPPN) const {
+    uint64_t raw = 0;
+    raw |= 0x1; // V
+    raw |= (nextLevelPPN & 0x000FFFFFFFFFFFFF) << 10;
+    return MPTE52(raw);
+}
+
+Addr MPT::allocMPTPage(const std::vector<MPTE52>& entries) {
+    Addr ppn = nextPPN++;
+    Addr baseAddr = ppn << 12;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        Addr addr = baseAddr + i * MPT_MPTE_SIZE;
+        simulatedMPTMemory[addr] = entries[i];
+    }
+    return ppn;
+}
+
+Addr MPT::buildSimulatedMPTTree(int levels) {
+    assert(levels >= 1 && levels <= MPT_LEVELS);
+    std::vector<MPTE52> leafEntries(512, simulateLeafAllowAll());
+    Addr leafPPN = allocMPTPage(leafEntries);
+    Addr lowerPPN = leafPPN;
+    for (int l = 1; l < levels; ++l) {
+        std::vector<MPTE52> levelEntries(512);
+        levelEntries[0] = simulateNonLeaf(lowerPPN);
+        Addr currentPPN = allocMPTPage(levelEntries);
+        lowerPPN = currentPPN;
+    }
+    return lowerPPN;
+}
+
+/*
+uint64_t MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &accessCounter) const {
+    // ① 构造 Request
+    RequestPtr req = std::make_shared<Request>(
+        paddr,
+        sizeof(MPTE52),
+        Request::PHYSICAL,
+        tc->getCpuPtr()->thread[tc->threadId()]->getMasterId()
+    );
+
+    // ② PMA 检查
+    pma->check(req);
+
+    // ③ PMP 检查
+    PrivilegeMode pmode = getMemPriv(tc, BaseMMU::Read);
+    gem5::Fault fault = pmp->pmpCheck(req, BaseMMU::Read, pmode, tc);
+
+    if (fault != NoFault) {
+        panic("PMP blocked access to MPTE at 0x%lx\n", paddr);
+    }
+
+    // ④ 模拟 memory 读取
+    auto it = simulatedMPTMemory.find(paddr);
+    if (it != simulatedMPTMemory.end()) {
+        accessCounter++;  // 每次模拟访问memory都累加
+        return it->second.raw;
+    } else {
+        return 0;
+    }
+}
+*/
+
+uint64_t MPT::readMPTE(Addr paddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &accessCounter) const
+{
+// Construct Request and retrieve MasterId: Directly obtain from tc (ThreadContext)
+    RequestPtr req = std::make_shared<Request>(
+        paddr,
+        sizeof(MPTE52),
+        Request::PHYSICAL,
+        tc->contextId()
+        //tc->getCpuPtr()->getMasterId()
+    );
+
+    // 2 PMA check
+    pma->check(req);
+
+    // 3 Retrieve privilege level: Called by a member function within the class
+    //PrivilegeMode pmode = tlb->getMemPriv(tc, BaseMMU::Read);    
+    PrivilegeMode pmode = static_cast<MMU *>(tc->getMMUPtr())->getMemPriv(tc, BaseMMU::Read);
+    //reference：pmp->pmpCheck(req, mode, static_cast<MMU *>(tc->getMMUPtr())->getMemPriv(tc, mode), tc);
+    gem5::Fault fault = pmp->pmpCheck(req, BaseMMU::Read, pmode, tc);
+
+    if (fault != NoFault) {
+        panic("PMP blocked access to MPTE at 0x%lx\n", paddr);
+    }
+
+    // 4 Simulate memory read
+    auto it = simulatedMPTMemory.find(paddr);
+    if (it != simulatedMPTMemory.end()) {
+        accessCounter++;  // Each time a memory access is simulated, it is accumulated.
+        return it->second.raw;
+    } else {
+        return 0;
+    }
+}
+
+
+// Multi-level MPT traversal in Smmpt52, returning MPTE52 (or invalid entry) based on the virtual address.
+MPTE52 MPT::walk(Addr vaddr, ThreadContext *tc, PMAChecker *pma, PMP *pmp, int &accessCounter) const {
+    Addr base = rootPPN << 12;  // Page table base address = PPN × 4KB (Page table page size is fixed at 4KB).
+
+    for (int level = MPT_LEVELS - 1; level >= 0; --level) {
+        // Each level uses a 9-bit index (512 entries).
+        size_t shift = level * 9 + 12;
+        size_t index = (vaddr >> shift) & 0x1FF;
+        Addr paddr = base + index * MPT_MPTE_SIZE;
+
+        // read MPTE 
+        uint64_t raw = readMPTE(paddr, tc, pma, pmp, accessCounter);
+        MPTE52 mpte(raw);
+
+        if (!mpte.isValid()) {
+            return MPTE52(); // Invalid entry.
+        }
+
+        if (mpte.isLeaf()) {
+            // Find the leaf entry and return directly.
+            return mpte;
+        }
+
+        // Otherwise, proceed to the next level.
+        base = mpte.nextLevelPAddr();
+    }
+
+    //Leaf not found, return invalid entry.
+    return MPTE52();
+}
+
+//all miss, 127*4; L3 hit , else miss,  127*3.   L3 L2 hit , l1 l0 miss, 127*2.   L3 L2 L1 hit , l0 miss 127
+
+//Asynchronous delayed walk interface, triggers callback to return results after 127 cycles.
+void MPT::walkDelayed(Addr vaddr,
+                      ThreadContext *tc,
+                      PMAChecker *pma, PMP *pmp,
+                      std::function<void(MPTE52)> callback) //const
+{
+    int accessCounter = 0;
+    MPTE52 result = walk(vaddr, tc, pma, pmp, accessCounter); // Use the synchronous interface to generate results immediately (simulating "waiting this long for the result").
+
+    //Tick delay = accessCounter  * 127 * SimClock::Int::ns(); // 127 cycle
+    Tick delay = accessCounter  * 127 * SimClock::as_int::ns; 
+
+    // Delay the callback call, making the request wait for 127 cycles to get the result (wrap the lambda with EventFunctionWrapper from eventq.hh).
+    curEventQueue()->schedule(
+        new gem5::EventFunctionWrapper(
+            [=]() {
+                callback(result);
+            },
+            "mpt.walkDelayed_callback", // event name
+            true  // Automatically release.
+        ),
+        curTick() + delay
+    );
+}
+
+
+
+
+
+
+#endif // MPT_ENABLED
+
+
+#if MPT_ENABLED
+//MPT globalMPT;
+gem5::RiscvISA::MPT gem5::RiscvISA::globalMPT;
+#endif
+
+
+
+
+#if MPT_CACHE_ENABLED
+	
+MPTCache52::MPTCache52(size_t capL0, size_t capL1, size_t capL2, size_t capL3, size_t capSP)
+    : capacityL0(capL0),
+      capacityL1(capL1),
+      capacityL2(capL2),
+      capacityL3(capL3),
+      capacitySP(capSP),
+      plruL0(capL0),
+      plruL1(capL1),
+      plruL2(capL2),
+      plruL3(capL3),
+      plruSP(capSP)
+{
+    tagListL0.reserve(capL0);
+    tagListL1.reserve(capL1);
+    tagListL2.reserve(capL2);
+    tagListL3.reserve(capL3);
+    tagListSP.reserve(capSP);
+}
+
+MPTCache52::MPTCache52()
+    : capacityL0(configuredSizeL0),
+      capacityL1(configuredSizeL1),
+      capacityL2(configuredSizeL2),
+      capacityL3(configuredSizeL3),
+      capacitySP(configuredSizeSP),
+      plruL0(configuredSizeL0),
+      plruL1(configuredSizeL1),
+      plruL2(configuredSizeL2),
+      plruL3(configuredSizeL3),
+      plruSP(configuredSizeSP)
+{
+    tagListL0.reserve(capacityL0);
+    tagListL1.reserve(capacityL1);
+    tagListL2.reserve(capacityL2);
+    tagListL3.reserve(capacityL3);
+    tagListSP.reserve(capacitySP);
+}
+
+
+void MPTCache52::configureSize(int sL0, int sL1, int sL2, int sL3, int sSP) {
+    configuredSizeL0 = sL0;
+    configuredSizeL1 = sL1;
+    configuredSizeL2 = sL2;
+    configuredSizeL3 = sL3;
+    configuredSizeSP = sSP;
+}
+
+Addr MPTCache52::regionAlign(Addr pa, int level) const {
+    return pa & ~(getRegionSizeForLevel(level) - 1);
+}
+
+// non-const version
+std::unordered_map<Addr, MPTCacheEntry>& MPTCache52::getTableByLevel(int level) {
+    if (level == 0) return tableL0;
+    else if (level == 1) return tableL1;
+    else if (level == 2) return tableL2;
+    else if (level == 3) return tableL3;
+    else return tableSP;
+}
+
+// const : read only
+const std::unordered_map<Addr, MPTCacheEntry>& MPTCache52::getTableByLevel(int level) const {
+    if (level == 0) return tableL0;
+    else if (level == 1) return tableL1;
+    else if (level == 2) return tableL2;
+    else if (level == 3) return tableL3;
+    else return tableSP;
+}
+
+
+size_t& MPTCache52::getCapacityByLevel(int level) {
+    if (level == 0) return capacityL0;
+    else if (level == 1) return capacityL1;
+    else if (level == 2) return capacityL2;
+    else if (level == 3) return capacityL3;
+    else return capacitySP;
+}
+
+
+size_t MPTCache52::getCapacityByLevel(int level) const {
+    if (level == 0) return capacityL0;
+    else if (level == 1) return capacityL1;
+    else if (level == 2) return capacityL2;
+    else if (level == 3) return capacityL3;
+    else return capacitySP;
+}
+
+// -------- Supports PLRU (Pseudo-LRU) replacement. --------
+std::vector<Addr>& MPTCache52::getTagListByLevel(int level) {
+    if (level == 0) return tagListL0;
+    else if (level == 1) return tagListL1;
+    else if (level == 2) return tagListL2;
+    else if (level == 3) return tagListL3;
+    else return tagListSP;
+}
+
+PLRUTreeN& MPTCache52::getPLRUByLevel(int level) {
+    if (level == 0) return plruL0;
+    else if (level == 1) return plruL1;
+    else if (level == 2) return plruL2;
+    else if (level == 3) return plruL3;
+    else return plruSP;
+}
+
+const std::vector<Addr>& MPTCache52::getTagListByLevel(int level) const {
+    if (level == 0) return tagListL0;
+    else if (level == 1) return tagListL1;
+    else if (level == 2) return tagListL2;
+    else if (level == 3) return tagListL3;
+    else return tagListSP;
+}
+
+const PLRUTreeN& MPTCache52::getPLRUByLevel(int level) const {
+    if (level == 0) return plruL0;
+    else if (level == 1) return plruL1;
+    else if (level == 2) return plruL2;
+    else if (level == 3) return plruL3;
+    else return plruSP;
+}
+
+// -------------------------------
+
+	
+	
+//int MPTCache52::configuredSize = MPT_CACHE_SIZE;
+	int MPTCache52::configuredSizeL0 = 0;
+	int MPTCache52::configuredSizeL1 = 0;
+	int MPTCache52::configuredSizeL2 = 0;
+	int MPTCache52::configuredSizeL3 = 0;
+	int MPTCache52::configuredSizeSP = 0;
+
+	
+
+// Use a pointer to delay the construction of globalMPTCache. When accessing this singleton elsewhere, please use the arrow operator `->` (instead of `.`) to use globalMPTCache.
+
+//MPTCache52* globalMPTCache = nullptr;
+gem5::RiscvISA::MPTCache52* gem5::RiscvISA::globalMPTCache = nullptr;
+
+// Called during SimObject initialization to complete the construction.
+void MPTCache52::initMPTCacheFromParams(const RiscvTLBParams *params)
+{
+    // MPTCache52::configureSize(params->mptcache_size);       
+    // globalMPTCache = new MPTCache52();                       
+
+    MPTCache52::configureSize(
+        params->mptcache_l0_size,
+        params->mptcache_l1_size,
+        params->mptcache_l2_size,
+        params->mptcache_l3_size,
+        params->mptcache_sp_size
+    );
+    globalMPTCache = new MPTCache52();  // The default constructor will use the above 5 static values.
+
+    //MISC: In gem5, the `new` used for a global singleton (global singleton) does not require manual deallocation (no need for `delete`).
+
+    DPRINTF(TLB, "Initialized globalMPTCache with size = L0:%d L1:%d L2:%d L3:%d SP:%d\n",
+    params->mptcache_l0_size,
+    params->mptcache_l1_size,
+    params->mptcache_l2_size,
+    params->mptcache_l3_size,
+    params->mptcache_sp_size);
+}
+
+	  
+	 
+	/*	This approach doesn't work, as it cannot use the parameters passed from Python during initialization.
+
+	int runtimeMPTCacheSize //= MPT_CACHE_SIZE;
+
+	void initMPTCacheFromParams(const RiscvTLBParams *params)
+	{
+		runtimeMPTCacheSize = params->mptcache_size;
+	}
+	
+	MPTCache52 globalMPTCache(runtimeMPTCacheSize);
+	*/
+	
+	
+	
+	
+void MPTCache52::fetchDelayed(
+    Addr pa,
+    int level,
+    /*const*/ MPT &mpt,
+    ThreadContext *tc,
+    PMAChecker *pma, PMP *pmp,
+    std::function<void(bool /*hit*/, MPTCacheEntry)> callback) //const
+    //  The callback is a function pointer wrapper, with the type: std::function<void(bool, MPTCacheEntry)>.
+{
+    Addr aligned = regionAlign(pa, level);
+    auto& table = getTableByLevel(level);
+    auto it = table.find(aligned);
+
+    if (it != table.end() && it->second.valid) {
+        // Hit: Apply a direct 10-cycle delay.
+        //Tick delay = 10 * SimClock::Int::ns();    
+        Tick delay = 10 * SimClock::as_int::ns;
+        MPTCacheEntry entry = it->second;
+
+//PLRU update.
+		auto& tagList = this->getTagListByLevel(level);
+		auto& plru = this->getPLRUByLevel(level);
+
+		auto itTag = std::find(tagList.begin(), tagList.end(), aligned);
+		if (itTag != tagList.end()) {
+			size_t idx = std::distance(tagList.begin(), itTag);
+			plru.access(idx);  // This entry is accessed, refresh the path.
+		}
+// -----------
+
+
+        // Track the hit statistics.
+        //++globalMPTCache->mptCacheL1Misses;
+        if (level == 0) ++globalMPTCache->mptCacheL0Hits;
+        else if (level == 1) ++globalMPTCache->mptCacheL1Hits;
+        else if (level == 2) ++globalMPTCache->mptCacheL2Hits;
+        else if (level == 3) ++globalMPTCache->mptCacheL3Hits;
+        else ++globalMPTCache->mptCacheSPHits;
+
+        // Asynchronous callback: Delay 10 cycles to execute `callback(true, entry)`.
+        curEventQueue()->schedule(
+            new gem5::EventFunctionWrapper(
+                [=]() {
+                    callback(true, entry); // `true` indicates a hit.
+                },
+                "mptcache.fetchDelayed_hit", // event name
+                true  // release
+            ),
+            curTick() + delay
+        );
+
+
+
+    } else {
+        // Miss: Call `mpt.walkDelayed()` to simulate the full page table access delay.
+
+        mpt.walkDelayed(pa, tc, pma, pmp, 
+            [=](MPTE52 mpte) {
+                if (!mpte.isValid()) {
+                    callback(false, {});
+                    return;
+                }
+
+                // Insert into cache.
+                auto& table_mut = this->getTableByLevel(level);//Retrieve the cache table (map) corresponding to the current level (L0/L1/L2/L3/SP).
+                size_t& cap = this->getCapacityByLevel(level);//Retrieve the maximum capacity limit of the cache corresponding to the current level.
+
+
+//PLRU 
+				auto& tagList = this->getTagListByLevel(level);//Retrieve the tag list (vector) used to record the entry order for the current level.
+				auto& plru = this->getPLRUByLevel(level);//Retrieve the PLRU tree for the current level, used to determine which victim to replace and refresh the access path.
+
+				if (table_mut.size() >= cap) {
+					size_t victimIdx = plru.getVictim();
+					Addr victimAddr = tagList[victimIdx];
+					table_mut.erase(victimAddr);
+					tagList[victimIdx] = aligned;
+					plru.access(victimIdx);
+				} else {
+					tagList.push_back(aligned);
+					plru.access(tagList.size() - 1);
+				}
+// -----------
+
+
+/*random replacement
+                if (table_mut.size() >= cap) {
+                    auto randomIt = std::next(table_mut.begin(), rand() % table_mut.size());
+                    table_mut.erase(randomIt);
+                }
+*/
+				
+/* another implementation
+                auto& table_mut = const_cast<MPTCache52*>(this)->getTableByLevel(level);
+                size_t& cap = const_cast<MPTCache52*>(this)->getCapacityByLevel(level);
+                if (table_mut.size() >= cap) {
+                    auto randomIt = std::next(table_mut.begin(), rand() % table_mut.size());
+                    table_mut.erase(randomIt);
+                }
+*/
+
+				uint64_t regionSize = getRegionSizeForLevel(level);
+				if (mpte.getN()) {
+					regionSize *= 512;  // napot, Equivalent region expansion.
+				}
+
+				MPTCacheEntry entry = {
+					aligned, mpte, true, level, log2floor(regionSize)
+				};
+
+                table_mut[aligned] = entry;
+
+                // miss
+                if (level == 0) ++globalMPTCache->mptCacheL0Misses;
+                else if (level == 1) ++globalMPTCache->mptCacheL1Misses;
+                else if (level == 2) ++globalMPTCache->mptCacheL2Misses;
+                else if (level == 3) ++globalMPTCache->mptCacheL3Misses;
+                else ++globalMPTCache->mptCacheSPMisses;
+
+                callback(false, entry);
+            }
+        );
+    }
+}
+
+
+#endif//MPT_CACHE_ENABLED
+
+
 
 static Addr
 buildKey(Addr vpn, uint16_t asid, uint8_t translateMode)
@@ -295,15 +815,71 @@ TLB::l2TLBEvictLRU(int l2TLBlevel, Addr vaddr)
     }
 }
 
+
+
+
+
+
 TlbEntry *
 TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
-            bool sign_used,uint8_t translateMode)
+            bool sign_used, uint8_t translateMode)
 {
     TlbEntry *entry = trie.lookup(buildKey(vpn, asid, translateMode));
 
     if (!hidden) {
         if (entry)
             entry->lruSeq = nextSeq();
+
+        // Add separate statistics for ITLB and DTLB.
+        if (mode == BaseMMU::Execute) {
+            // Instruction TLB 
+            //stats.iTLBAccesses++; No need for this, as access will be automatically calculated, and the formula format does not support `++`.
+            if (!entry)
+                stats.iTLBMisses++;
+            else
+                stats.iTLBHits++;
+        }
+        else if (mode == BaseMMU::Write) {
+            // Data TLB W
+            stats.writeAccesses++;
+            if (!entry)
+                stats.writeMisses++;
+            else
+                stats.writeHits++;
+        }
+        else {
+            // Data TLB R
+            stats.readAccesses++;
+            if (!entry)
+                stats.readMisses++;
+            else
+                stats.readHits++;
+        }
+
+        if (entry) {
+            if (entry->isSquashed) {
+                if (mode == BaseMMU::Write)
+                    stats.writeHitsSquashed++;
+                else
+                    stats.readHitsSquashed++;
+            }
+        }
+
+
+        DPRINTF(TLBVerbose, "lookup(vpn=%#x, asid=%#x): %s ppn %#x\n",
+                vpn, asid, entry ? "hit" : "miss", entry ? entry->paddr : 0);
+    }
+
+    if (sign_used) {
+        if (entry) {
+            entry->used = true;
+        }
+    }
+
+    return entry;
+}
+
+/*The previous version (before adding separate statistics for ITLB and DTLB):
 
         if (mode == BaseMMU::Write)
             stats.writeAccesses++;
@@ -322,27 +898,12 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
             else
                 stats.readHits++;
         }
+*/
 
-        if (entry) {
-            if (entry->isSquashed) {
-                if (mode == BaseMMU::Write)
-                    stats.writeHitsSquashed++;
-                else
-                    stats.readHitsSquashed++;
-            }
-        }
 
-        DPRINTF(TLBVerbose, "lookup(vpn=%#x, asid=%#x): %s ppn %#x\n",
-                vpn, asid, entry ? "hit" : "miss", entry ? entry->paddr : 0);
-    }
-    if (sign_used) {
-        if (entry) {
-            entry->used = true;
-        }
-    }
 
-    return entry;
-}
+
+
 TlbEntry *
 TLB::lookupForwardPre(Addr vpn, uint64_t asid, bool hidden)
 {
@@ -1169,15 +1730,70 @@ TLB::L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr
                 }
             }
 
-        } else {
-            level--;
-            if (level < 0) {
-                hitInSp = true;
-                fault = L2TLBPagefault(vaddr, mode, req, isPre, is_back_pre);
-            } else {
-                hitInSp = false;
-            }
-        }
+            
+                /* 
+                Insert MPT permission check. This occurs after all other fault checks pass. Other faults include:
+
+                * `checkPermissions(...) == NoFault`
+                * Large page legality check passes
+                * A/D checks pass
+
+                */
+            if (fault == NoFault) {
+                Addr paddr = (pte.ppn << PageShift) | (vaddr & mask(getPageShiftForLevel(level)));
+
+			//get tc and translation
+            
+                auto it = gem5::RiscvISA::mptContextMap.find(req.get());
+                assert(it != gem5::RiscvISA::mptContextMap.end());
+
+                ThreadContext *tc = it->second.first;
+                BaseMMU::Translation *translation = it->second.second;
+
+/*depracated
+				auto *mptState = dynamic_cast<MPTSenderState *>(req->getSenderState());
+				assert(mptState != nullptr);
+				
+				ThreadContext *tc = mptState->tc;
+				BaseMMU::Translation *translation = mptState->translation;
+*/				
+				
+				//Directly call the asynchronous permission check.
+				checkMPTPermissionFunctionInTLBcc(
+					nullptr,  
+					vaddr,
+					paddr,
+					mode,
+					tc,
+					translation,
+					req
+				#if MPT_ENABLED
+					, globalMPT
+				#if MPT_CACHE_ENABLED
+					, globalMPTCache
+				#endif
+				#endif
+				);
+
+				// Do not return prematurely, maintain a consistent style: continue towards returning the fault.
+				fault = NoFault;
+
+			} else { /*
+ The `else` case corresponds to a pointer page of an intermediate page table,
+  which cannot directly convert to a physical address. Therefore,
+ there's no need to call `checkPermissions(...)` or perform MPT permission checks.
+                
+                
+                */
+				level--;
+				if (level < 0) {
+					hitInSp = true;
+					fault = L2TLBPagefault(vaddr, mode, req, isPre, is_back_pre);
+				} else {
+					hitInSp = false;
+				}
+			}
+		}
     }
     DPRINTF(TLB, "tlb check final\n");
     if (fault == NoFault)
@@ -1190,6 +1806,8 @@ TLB::L2TLBCheck(PTESv39 pte, int level, STATUS status, PrivilegeMode pmode, Addr
     }
     return fault;
 }
+
+
 bool
 TLB::checkPrePrecision(uint64_t &removeNoUsePre, uint64_t &usedPre)
 {
@@ -1306,12 +1924,84 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             }
+            
+			
+			
+			Addr paForMPTCheck = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+
+			checkMPTPermissionFunctionInTLBcc(
+				e[0], vaddr, paForMPTCheck, mode,
+				tc, translation, req
+			#if MPT_ENABLED
+				, globalMPT
+				#if MPT_CACHE_ENABLED
+					, globalMPTCache
+				#endif
+			#endif
+			);
+			
+			//Asynchronous check → Exit early, and delegate the result handling to `translation->finish()`.
+			return std::make_pair(hit_type, NoFault);
+			
+			/*
+            else { // The priority of the MPT check is lower than that of `checkPermissions`.
+                    The logic here is: MPT permissions will only be checked if `checkPermissions` passes.
+
+                auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                    e[0], vaddr,//reference:  if ((vpn == 0 || (vpn & mask) == (tlb[i].vaddr & mask)) && (asid == 0 || tlb[i].asid == asid)) remove(i);
+                    e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes)), //reference:  paddr = e_l2tlb->paddr << PageShift | (vaddr & mask(e_l2tlb->logBytes));
+                    mode
+                    #if MPT_ENABLED
+                        , globalMPT
+                        #if MPT_CACHE_ENABLED
+                            , globalMPTCache
+                        #endif
+                    #endif
+                );
+            
+                if (mpt_fault != NoFault) {
+                    return std::make_pair(hit_type, mpt_fault);  // MPT  not passed.
+                }
+            } */
+
         }
         Addr fault_gpaddr = ((e[0]->gpaddr >> 12) << 12) | (vaddr & 0xfff);
 
         std::pair(continuePtw,fault) = checkGPermissions(status,vaddr,fault_gpaddr,mode,e[0]->pte,req->get_h_inst());
         if (fault != NoFault) {
             return std::make_pair(hit_type, fault);
+        }
+        
+        else {
+            Addr paForMPTCheck = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+            
+			checkMPTPermissionFunctionInTLBcc(
+				e[0], vaddr, paForMPTCheck, mode,
+				tc, translation, req
+			#if MPT_ENABLED
+				, globalMPT
+				#if MPT_CACHE_ENABLED
+					, globalMPTCache
+				#endif
+			#endif
+			);
+
+			//The current function is suspended, waiting for the `finish` callback.
+			return std::make_pair(hit_type, NoFault);
+			/*
+			auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                e[0], vaddr, paForMPTCheck, mode
+                #if MPT_ENABLED
+                        , globalMPT
+                        #if MPT_CACHE_ENABLED
+                            , globalMPTCache
+                        #endif
+                #endif
+            );
+                
+            if (mpt_fault != NoFault) {
+                return std::make_pair(hit_type, mpt_fault);
+            }*/
         }
 
         Addr paddr = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
@@ -1348,6 +2038,41 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
                 }
+                
+                else {
+                    //MPT Permission check.
+                    Addr paForMPTCheck = e[0]->paddr << PageShift | (vaddr & mask(e[0]->logBytes));
+            
+					checkMPTPermissionFunctionInTLBcc(
+						e[0], vaddr, paForMPTCheck, mode,
+						tc, translation, req
+					#if MPT_ENABLED
+						, globalMPT
+						#if MPT_CACHE_ENABLED
+							, globalMPTCache
+						#endif
+					#endif
+					);
+
+					//The current function exits, waiting for the `finish` to asynchronously resume.
+					return std::make_pair(hit_type, NoFault);
+					
+					
+					/*
+                    auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                        e[0], vaddr, paForMPTCheck, mode
+                        #if MPT_ENABLED
+                            , globalMPT
+                            #if MPT_CACHE_ENABLED
+                                , globalMPTCache
+                            #endif
+                        #endif
+                    );
+            
+                    if (mpt_fault != NoFault) {
+                        return std::make_pair(hit_type, mpt_fault);
+                    } */
+                }
             }
             req->setPaddr(gPaddr);
             ppn = e[0]->pte.ppn;
@@ -1369,6 +2094,45 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
 
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
+                }
+                
+                else {
+                    // MPT Permission check.
+                    Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
+                    
+					checkMPTPermissionFunctionInTLBcc(
+						e[0], vaddr, paForMPTCheck, mode,
+						tc, translation, req
+					#if MPT_ENABLED
+						, globalMPT
+						#if MPT_CACHE_ENABLED
+							, globalMPTCache
+						#endif
+					#endif
+					);
+
+					//The current translation is suspended, waiting for `translation->finish()` to resume.
+					return std::make_pair(hit_type, NoFault);
+					
+					
+					
+					/*
+					
+					auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                        e[0], vaddr, paForMPTCheck, mode
+                        #if MPT_ENABLED
+                            , globalMPT
+                            #if MPT_CACHE_ENABLED
+                                , globalMPTCache
+                            #endif
+                        #endif
+                    );
+                
+                    if (mpt_fault != NoFault) {
+                        return std::make_pair(hit_type, mpt_fault);
+                    } */
+					
+					
                 }
 
 
@@ -1458,6 +2222,42 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                 return std::make_pair(hit_type, fault);
             } else {
                 hit_type = h_l2GstageHitEnd;
+
+                
+                // Insert MPT permission check.
+                Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
+                
+				checkMPTPermissionFunctionInTLBcc(
+					e[0], vaddr, paForMPTCheck, mode,
+					tc, translation, req
+				#if MPT_ENABLED
+					, globalMPT
+					#if MPT_CACHE_ENABLED
+						, globalMPTCache
+					#endif
+				#endif
+				);
+
+
+				return std::make_pair(hit_type, NoFault);
+				
+				/*
+				auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                        e[0], vaddr, paForMPTCheck, mode
+                        #if MPT_ENABLED
+                            , globalMPT
+                            #if MPT_CACHE_ENABLED
+                                , globalMPTCache
+                            #endif
+                        #endif
+                );
+
+                if (mpt_fault != NoFault) {
+                    return std::make_pair(hit_type, mpt_fault);
+                }*/
+
+                
+
                 if (e[0]->level > 0) {
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
                     pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
@@ -1544,9 +2344,51 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                         req->setTwoPtwWalk(true, level, twoStageLevel--, e[0]->pte.ppn, hitInSp);
                         req->setgPaddr(gPaddr);
                         return std::make_pair(hit_type, fault);
+                    //This branch indeed doesn't require the MPT permission check, 
+                    //as the physical address `paForMPTCheck` that MPT relies on has not been determined yet.
+
                     } else {
                         hit_type = h_l2GstageHitEnd;
+
                         uint64_t gpaddr_past = gPaddr;
+
+
+                        
+                        //Insert MPT permission check.
+                        Addr paForMPTCheck = e[0]->paddr << PageShift | (gPaddr & mask(e[0]->logBytes));
+                        
+						checkMPTPermissionFunctionInTLBcc(
+							e[0], vaddr, paForMPTCheck, mode,
+							tc, translation, req
+						#if MPT_ENABLED
+							, globalMPT
+							#if MPT_CACHE_ENABLED
+								, globalMPTCache
+							#endif
+						#endif
+						);
+
+
+						return std::make_pair(hit_type, NoFault);
+						
+						/*
+						auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                                e[0], vaddr, paForMPTCheck, mode
+                                #if MPT_ENABLED
+                                    , globalMPT
+                                    #if MPT_CACHE_ENABLED
+                                        , globalMPTCache
+                                    #endif
+                                #endif
+                            );
+
+                        if (mpt_fault != NoFault) {
+                            return std::make_pair(hit_type, mpt_fault);
+                        } */
+                        
+
+
+
                         if (finishgva) {
                             if (e[0]->level > 0) {
                                 pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
@@ -1889,6 +2731,41 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         DPRINTF(TLB, "translate(vpn=%#x, asid=%#x): %#x pc %#x mode %i pte.d %\n", vaddr, satp.asid, paddr,
                 req->getPC(), mode, e[0]->pte.d);
         fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
+
+        
+        // Insert MPT permission check.
+        if (fault == NoFault) {
+            Addr paForMPTCheck = (e[0]->paddr << PageShift) | (vaddr & mask(e[0]->logBytes));
+            
+			 checkMPTPermissionFunctionInTLBcc(
+				e[0], vaddr, paForMPTCheck, mode,
+				tc, translation, req
+			#if MPT_ENABLED
+				, globalMPT
+				#if MPT_CACHE_ENABLED
+					, globalMPTCache
+				#endif
+			#endif
+			);
+
+			return NoFault;  
+			
+			/*
+			auto [mpt_result, mpt_fault] = checkMPTPermissionFunctionInTLBcc(
+                    e[0], vaddr, paForMPTCheck, mode
+                    #if MPT_ENABLED
+                        , globalMPT
+                        #if MPT_CACHE_ENABLED
+                            , globalMPTCache
+                        #endif
+                    #endif
+                );
+            if (mpt_fault != NoFault) {
+                return mpt_fault;
+            }*/
+        }
+        
+
     }
 
 
@@ -2125,12 +3002,27 @@ TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
 {
     bool delayed;
     assert(translation);
+
+    // Set the global context mapping.
+    gem5::RiscvISA::mptContextMap[req.get()] = std::make_pair(tc, translation);
+    
     Fault fault = translate(req, tc, translation, mode, delayed);
     if (!delayed){
         translation->finish(fault, req, tc, mode);
+        // Optional: Clean up the context after the request ends.
+        //gem5::RiscvISA::mptContextMap.erase(req.get());
     }
     else
         translation->markDelayed();
+        /*
+        Do not clean up during the delay, as the context will not be accessible during the subsequent asynchronous `finish`.
+        You can add a line at the end of the `BaseMMU::Translation::finish()` implementation:
+                `gem5::RiscvISA::mptContextMap.erase(req.get());`
+        This ensures that the context is correctly cleaned up even in the delayed path.
+    
+        */
+        
+
 }
 
 void
@@ -2375,7 +3267,72 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
                "Total TLB (read and write) misses", readMisses + writeMisses),
       ADD_STAT(accesses, statistics::units::Count::get(),
                "Total TLB (read and write) accesses",
-               readAccesses + writeAccesses)
+               readAccesses + writeAccesses),
+			   
+			   //mpt
+      ADD_STAT(mptL0Hits, statistics::units::Count::get(), "MPT L0 hits"),
+      ADD_STAT(mptL0Misses, statistics::units::Count::get(), "MPT L0 misses"),
+      ADD_STAT(mptL0Accesses, statistics::units::Count::get(), "MPT L0 accesses", mptL0Hits + mptL0Misses),
+      ADD_STAT(mptL0HitRate, statistics::units::Ratio::get(), "MPT L0 hit rate", mptL0Hits / mptL0Accesses),
+      ADD_STAT(mptL0MissRate, statistics::units::Ratio::get(), "MPT L0 miss rate", mptL0Misses / mptL0Accesses),
+
+      ADD_STAT(mptL1Hits, statistics::units::Count::get(), "MPT L1 hits"),
+      ADD_STAT(mptL1Misses, statistics::units::Count::get(), "MPT L1 misses"),
+      ADD_STAT(mptL1Accesses, statistics::units::Count::get(), "MPT L1 accesses", mptL1Hits + mptL1Misses),
+      ADD_STAT(mptL1HitRate, statistics::units::Ratio::get(), "MPT L1 hit rate", mptL1Hits / mptL1Accesses),
+      ADD_STAT(mptL1MissRate, statistics::units::Ratio::get(), "MPT L1 miss rate", mptL1Misses / mptL1Accesses),
+
+      ADD_STAT(mptL2Hits, statistics::units::Count::get(), "MPT L2 hits"),
+      ADD_STAT(mptL2Misses, statistics::units::Count::get(), "MPT L2 misses"),
+      ADD_STAT(mptL2Accesses, statistics::units::Count::get(), "MPT L2 accesses", mptL2Hits + mptL2Misses),
+      ADD_STAT(mptL2HitRate, statistics::units::Ratio::get(), "MPT L2 hit rate", mptL2Hits / mptL2Accesses),
+      ADD_STAT(mptL2MissRate, statistics::units::Ratio::get(), "MPT L2 miss rate", mptL2Misses / mptL2Accesses),
+
+      ADD_STAT(mptL3Hits, statistics::units::Count::get(), "MPT L3 hits"),
+      ADD_STAT(mptL3Misses, statistics::units::Count::get(), "MPT L3 misses"),
+      ADD_STAT(mptL3Accesses, statistics::units::Count::get(), "MPT L3 accesses", mptL3Hits + mptL3Misses),
+      ADD_STAT(mptL3HitRate, statistics::units::Ratio::get(), "MPT L3 hit rate", mptL3Hits / mptL3Accesses),
+      ADD_STAT(mptL3MissRate, statistics::units::Ratio::get(), "MPT L3 miss rate", mptL3Misses / mptL3Accesses),
+
+      ADD_STAT(mptSPHits, statistics::units::Count::get(), "MPT SuperPage hits"),
+      ADD_STAT(mptSPMisses, statistics::units::Count::get(), "MPT SuperPage misses"),
+      ADD_STAT(mptSPAccesses, statistics::units::Count::get(), "MPT SuperPage accesses", mptSPHits + mptSPMisses),
+      ADD_STAT(mptSPHitRate, statistics::units::Ratio::get(), "MPT SuperPage hit rate", mptSPHits / mptSPAccesses),
+      ADD_STAT(mptSPMissRate, statistics::units::Ratio::get(), "MPT SuperPage miss rate", mptSPMisses / mptSPAccesses),
+
+      ADD_STAT(mptTotalHits, statistics::units::Count::get(), "Total MPT hits",
+               mptL0Hits + mptL1Hits + mptL2Hits + mptL3Hits + mptSPHits),
+      ADD_STAT(mptTotalMisses, statistics::units::Count::get(), "Total MPT misses",
+               mptL0Misses + mptL1Misses + mptL2Misses + mptL3Misses + mptSPMisses),
+      ADD_STAT(mptTotalAccesses, statistics::units::Count::get(), "Total MPT accesses",
+               mptTotalHits + mptTotalMisses),
+      ADD_STAT(mptHitRate, statistics::units::Ratio::get(), "MPT hit rate",
+               mptTotalHits / mptTotalAccesses),
+      ADD_STAT(mptMissRate, statistics::units::Ratio::get(), "MPT miss rate",
+               mptTotalMisses / mptTotalAccesses),
+
+	   
+		// I/D tlb miss/hit  -->mpt miss/hit	   To calculate the total latency.
+			   
+		ADD_STAT(iTLBMisses, statistics::units::Count::get(), "Instruction TLB misses"),
+		ADD_STAT(iTLBHits, statistics::units::Count::get(), "Instruction TLB hits"),
+		ADD_STAT(iTLBAccesses, statistics::units::Count::get(), "Instruction TLB accesses",
+				 iTLBHits + iTLBMisses),
+		ADD_STAT(iTLBMissRate, statistics::units::Ratio::get(), "Instruction TLB miss rate",
+				 iTLBMisses / iTLBAccesses),
+	   
+        ADD_STAT(dTLBMisses, statistics::units::Count::get(), "Data TLB misses",
+         readMisses + writeMisses),
+		ADD_STAT(dTLBHits, statistics::units::Count::get(), "Data TLB hits",
+         readHits + writeHits),
+        ADD_STAT(dTLBAccesses, statistics::units::Count::get(), "Data TLB accesses",
+                readAccesses + writeAccesses),
+        ADD_STAT(dTLBMissRate, statistics::units::Ratio::get(), "Data TLB miss rate",
+                dTLBMisses / dTLBAccesses)
+	   
+			   
+			   
+			   
 {
     l2tlbRemove
         .init(5)
@@ -2388,10 +3345,334 @@ TLB::TlbStats::TlbStats(statistics::Group *parent)
         .flags(gem5::statistics::total);
 }
 
+
+/*
+void TLB::regStats()
+{
+    BaseTLB::regStats();  // Call the parent class's statistics registration logic.
+
+    // Bind the multi-level MPT statistics data to `globalMPTCache` (must be a pointer).
+    stats.mptL0Hits.dataPtr(&globalMPTCache->mptCacheL0Hits);
+    stats.mptL0Misses.dataPtr(&globalMPTCache->mptCacheL0Misses);
+
+    stats.mptL1Hits.dataPtr(&globalMPTCache->mptCacheL1Hits);
+    stats.mptL1Misses.dataPtr(&globalMPTCache->mptCacheL1Misses);
+
+    stats.mptL2Hits.dataPtr(&globalMPTCache->mptCacheL2Hits);
+    stats.mptL2Misses.dataPtr(&globalMPTCache->mptCacheL2Misses);
+
+    stats.mptL3Hits.dataPtr(&globalMPTCache->mptCacheL3Hits);
+    stats.mptL3Misses.dataPtr(&globalMPTCache->mptCacheL3Misses);
+
+    stats.mptSPHits.dataPtr(&globalMPTCache->mptCacheSPHits);
+    stats.mptSPMisses.dataPtr(&globalMPTCache->mptCacheSPMisses);
+}
+*/
+
+
+
+
+
+
+
+
 Port *
 TLB::getTableWalkerPort()
 {
     return &walker->getPort("port");
 }
+
+
+
+
+
+
+
+
+#if MPT_ENABLED
+inline int TLB::getLevelForPageSizeLog2(uint8_t logBytes) {
+    switch (logBytes) {
+        case 12: return 0; // 4KB
+        case 21: return 1; // 2MB
+        case 30: return 2; // 1GB
+        case 39: return 3; // 512GB
+        default: return -1;
+    }
+}
+#endif
+
+
+/*
+Check if the MPT permissions corresponding to a TLB entry allow the current operation.
+First, use the mptInfo that comes with the entry. If it's not trustworthy, access MPTCache to get the real permissions.
+Fill back `tlbEntry.mptInfo`, but do not trust it again.
+The `int` is used to record the result type:
+- 0: No fault, directly hit mptinfoInTLB.
+- 1: No fault, but the trust of mptinfoInTLB was not satisfied, found it in MPTCache or MPT.
+- 2: Reserved.
+- 3: Not found in MPT, search failed.
+- 4: Invalid page size for level < 0.
+- 5: MPT mechanism is not enabled.
+*/
+
+
+//std::pair<int, Fault>
+void
+TLB::checkMPTPermissionFunctionInTLBcc(TlbEntry* entry, Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode,
+    ThreadContext *tc,
+    gem5::BaseMMU::Translation *translation,
+    gem5::RequestPtr req
+ #if MPT_ENABLED
+     , const MPT& mpt
+   #if MPT_CACHE_ENABLED
+     , MPTCache52* cache
+   #endif
+ #endif
+ )   
+{
+#if !MPT_ENABLED
+
+    // 1：MPT is completely disabled, treated as always allowing access.
+    //return {5, NoFault};
+	translation->finish(NoFault, req, tc, mode);
+    return;
+
+#elif MPT_ENABLED && MPT_CACHE_ENABLED
+
+    // 2：Enable MPT + Cache (default path).
+    const MPTInfoInTLB& mptInfo = entry->mptInfo;
+    const uint8_t tlbLogBytes = entry->logBytes;
+
+    // Case 0: MPTInfo in the TLB is trustworthy.
+    if (mptInfo.mptinfoTrust(tlbLogBytes)) {
+        bool hasPerm = false;
+        switch (mode) {
+            case BaseMMU::Read:    hasPerm = mptInfo.raw.perm_r; break;
+            case BaseMMU::Write:   hasPerm = mptInfo.raw.perm_w; break;
+            case BaseMMU::Execute: hasPerm = mptInfo.raw.perm_x; break;
+            default: break;
+        }
+		/*
+        if (hasPerm)
+            return {0, NoFault};
+        else
+            return {0, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+		*/
+        Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
+        translation->finish(fault, req, tc, mode);
+        return;		
+			
+    }
+
+    // Case 1: Not trustworthy, derive the MPT hierarchy.
+    int level = getLevelForPageSizeLog2(tlbLogBytes);
+    if (level < 0) {
+        //return {4, createMPTPagefault(vaddr, paForMPTCheck, mode)}; // Invalid page size.
+        DPRINTF(TLB, "Invalid page size → [path=4] vaddr=%#lx\n", vaddr);
+        translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+        return;		
+    }
+
+    // Case 2: Search MPTCache. Asynchronous fetch, with delay for both hit and miss.
+	
+    MPTCacheEntry cacheEntry;
+	
+	cache->fetchDelayed(paForMPTCheck, level, globalMPT, tc, pma, pmp, 
+        [=](bool hit, MPTCacheEntry cacheEntry) {
+            if (!cacheEntry.valid) {
+                DPRINTF(TLB, "MPTCache fetch failed → [path=3] vaddr=%#lx\n", vaddr);
+                translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+                return;
+            }
+	
+			/*
+			if (!globalMPTCache->fetch(paForMPTCheck, level, globalMPT, cacheEntry)) { 
+			//if (!globalMPTCache.fetch(paForMPTCheck, level, globalMPT, cacheEntry)) {  
+                The `&entry` in the fetch parameters is an empty object passed by the caller, which will be populated and returned by the function. First, declare a temporary variable `MPTCacheEntry cacheEntry;`, which will be automatically filled inside `fetch()`.
+                    This filled temporary variable is used to:
+
+                    * Extract `mpte.perms()`
+                    * Generate the offset
+                    * Update `TLBEntry::mptInfo`, etc.
+
+				return {3, createMPTPagefault(vaddr, paForMPTCheck, mode)}; // cache 和 walk 都失败
+			}*/
+
+			
+			// Case 3: Success, calculate the offset and permissions; fill back the TLB's `mptInfo`; extract the permissions.
+			Addr offset = paForMPTCheck - cacheEntry.tag;
+			uint64_t regionSizeAfterN = getRegionSizeForLevel(level);
+			if (cacheEntry.mpte.getN()) {
+				regionSizeAfterN *= 512;  // napot 模式，粒度放大
+			}
+			uint8_t log2RegionSize = log2floor(regionSizeAfterN);
+			
+			// Construct a virtual cache entry for use in `fromEntry`.
+			MPTCacheEntry fakeEntry = {
+				.tag = MPTCacheEntry::regionAlignStatic(paForMPTCheck, level),//
+				.mpte = cacheEntry.mpte,
+				.valid = true,
+				.level = level,
+				.log2RegionSize = log2RegionSize
+			};
+			entry->mptInfo = MPTInfoInTLB::fromEntry(fakeEntry, offset);
+
+
+			uint8_t pi = (offset >> getPageShiftForLevel(level)) & 0xF;
+			uint8_t perm = cacheEntry.mpte.perms(pi); //// This is sufficient, as the napot is already handled automatically internally.
+			bool hasPerm = false;
+
+			switch (mode) {
+				case BaseMMU::Read:    hasPerm = perm & MPT_PERM_R; break;
+				case BaseMMU::Write:   hasPerm = perm & MPT_PERM_W; break;
+				case BaseMMU::Execute: hasPerm = perm & MPT_PERM_X; break;
+				default: break;
+			}
+		/*
+			if (hasPerm)
+				return {1, NoFault};
+			else
+				return {1, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+		*/
+			Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
+			translation->finish(fault, req, tc, mode);
+        }
+    );
+
+#elif MPT_ENABLED && !MPT_CACHE_ENABLED
+
+    // 3：Enable MPT, but disable Cache, perform a direct walk.
+    const MPTInfoInTLB& mptInfo = entry->mptInfo;
+    const uint8_t tlbLogBytes = entry->logBytes;
+
+    // Case 0: The TLB already contains trustworthy MPT information.
+    if (mptInfo.mptinfoTrust(tlbLogBytes)) {
+        bool hasPerm = false;
+        switch (mode) {
+            case BaseMMU::Read:    hasPerm = mptInfo.perm_r; break;
+            case BaseMMU::Write:   hasPerm = mptInfo.perm_w; break;
+            case BaseMMU::Execute: hasPerm = mptInfo.perm_x; break;
+            default: break;
+        }
+        /*
+		if (hasPerm)
+            return {0, NoFault};
+        else
+            return {0, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+		*/
+		Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
+        translation->finish(fault, req, tc, mode);
+        return;
+		
+    }
+
+    // Case 1。Derive the page granularity.
+    int level = getLevelForPageSizeLog2(tlbLogBytes);
+    if (level < 0){
+        //return {4, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+	    DPRINTF(TLB, "MPT walk invalid page size → [path=4] vaddr=%#lx\n", vaddr);
+        translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+        return;
+	}
+	
+	
+	
+    // Case 2。Manually walk here and construct the MPTInfoInTLB.
+    //MPTE52 mpte = globalMPT.walk(paForMPTCheck);
+	mpt.walkDelayed(paForMPTCheck, tc, pma, pmp,[=](MPTE52 mpte) {
+		if (!mpte.isValid()) {
+			//return {3, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+			DPRINTF(TLB, "MPT walk result invalid → [path=3] vaddr=%#lx\n", vaddr);
+			translation->finish(createMPTPagefault(vaddr, paForMPTCheck, mode), req, tc, mode);
+			return;
+			}
+		
+		// regionBase: No need to multiply by a coefficient, just align.
+		Addr regionBase = paForMPTCheck  & ~(getRegionSizeForLevel(level) - 1);
+		Addr offset = paForMPTCheck  - regionBase;
+
+		//perms(pi): The logic for checking N has been encapsulated.
+		uint8_t pi = (offset >> getPageShiftForLevel(level)) & 0xF;
+		uint8_t perm = mpte.perms(pi);
+
+		//napot: In the mode, the permission granularity is expanded, requiring multiplication by 512.
+		uint64_t regionSizeAfterrN = getRegionSizeForLevel(level);
+		if (mpte.getN()) {
+			regionSizeAfterrN *= 512;
+		}
+		uint8_t log2RegionSize = log2floor(regionSizeAfterrN);
+		
+		//Fill back the `mptInfo` // This logic is scheduled to execute after 127 cycles.
+		entry->mptInfo.raw = 0;
+		entry->mptInfo.raw.valid(1);
+		entry->mptInfo.raw.perm_r((perm & MPT_PERM_R) != 0);
+		entry->mptInfo.raw.perm_w((perm & MPT_PERM_W) != 0);
+		entry->mptInfo.raw.perm_x((perm & MPT_PERM_X) != 0);
+		entry->mptInfo.raw.napot(mpte.getN());  // Explicitly mark napot.
+		entry->mptInfo.raw.mptLogBytes(log2RegionSize);
+
+		// Permission check.
+		bool hasPerm = false;
+		switch (mode) {
+			case BaseMMU::Read:    hasPerm = perm & MPT_PERM_R; break;
+			case BaseMMU::Write:   hasPerm = perm & MPT_PERM_W; break;
+			case BaseMMU::Execute: hasPerm = perm & MPT_PERM_X; break;
+			default: break;
+		}
+
+		/*
+		if (hasPerm)
+			return {2, NoFault};
+		else
+			return {2, createMPTPagefault(vaddr, paForMPTCheck, mode)};
+		*/
+
+		Fault fault = hasPerm ? NoFault : createMPTPagefault(vaddr, paForMPTCheck, mode);
+		translation->finish(fault, req, tc, mode);
+	});
+	
+	
+
+	
+	
+	
+
+    // Return early (waiting for the `finish` callback).
+    return;
+	
+	
+	
+
+#endif
+}
+
+
+#if MPT_ENABLED
+Fault TLB::createMPTPagefault(Addr vaddr, Addr paForMPTCheck, BaseMMU::Mode mode)
+{
+    ExceptionCode code;
+    switch (mode) {
+        case BaseMMU::Read:
+            code = ExceptionCode::LOAD_MPT_PAGE;
+            break;
+        case BaseMMU::Write:
+            code = ExceptionCode::STORE_MPT_PAGE;
+            break;
+        case BaseMMU::Execute:
+            code = ExceptionCode::INST_MPT_PAGE;
+            break;
+        default:
+            panic("Unsupported memory mode for MPT page fault");
+    }
+
+    DPRINTF(TLB, "Create MPT page fault #%i on vaddr=%#lx paForMPTCheck=%#lx\n",
+            code, vaddr, paForMPTCheck);
+
+    return std::make_shared<AddressFault>(vaddr, paForMPTCheck, code);
+}
+#endif
+
+
+
 
 } // namespace gem5

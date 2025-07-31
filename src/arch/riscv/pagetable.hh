@@ -37,13 +37,44 @@
 #include "base/types.hh"
 #include "sim/serialize.hh"
 
+//#include "arch/riscv/mmu.hh"
+#include "arch/generic/mmu.hh"
+// Whether MPT is enabled (enabled by default, use `-D__ARCH_RISCV_MMU_MPT_HH__` to disable).
+//#ifndef __ARCH_RISCV_MMU_MPT_HH__
+#ifndef MPT_ENABLED
+#define MPT_ENABLED 1
+#endif
+//#include "sim/stat_control.hh" 
+//#else
+//#define MPT_ENABLED 0
+//#endif
+
+// Whether MPT Cache is enabled (enabled by default, use `-D__ARCH_RISCV_MMU_MPT_CACHE_HH__` to disable), provided that MPT is enabled.																											
+//#if MPT_ENABLED && !defined(__ARCH_RISCV_MMU_MPT_CACHE_HH__)
+#define MPT_CACHE_ENABLED 1
+//#include "params/RiscvTLB.hh" 
+//#else
+//#define MPT_CACHE_ENABLED 0
+//#endif
+
+
+#ifndef MPT_SIMULATE_N_BIT
+#define MPT_SIMULATE_N_BIT 0
+#endif
+
+
+#ifndef MPT_CACHE_SIZE
+#define MPT_CACHE_SIZE 128    //`MPT_CACHE_SIZE` is 128 by default.
+#endif
+
+
 namespace gem5
 {
 
 namespace RiscvISA {
 
-
-inline int getPageShiftForLevel(int level){ // 返回每个层级的页大小对应的 log2 值
+#if MPT_ENABLED 
+inline int getPageShiftForLevel(int level){ // Return the `log2` value corresponding to the page size for each level.
     switch (level) {
         case 0: return 12; // log2(4KB)
         case 1: return 21; // log2(2MB)
@@ -53,24 +84,30 @@ inline int getPageShiftForLevel(int level){ // 返回每个层级的页大小对
     }
 }
 
-uint64_t getPageSizeForLevel(int level);
-uint64_t getRegionSizeForLevel(int level);
-uint8_t log2floor(uint64_t x);
-bool checkMPTEPermissions(const MPTE52 &mpte, BaseMMU::Mode mode, Addr range_offset, int level);
+
 
 //MPT Information
 BitUnion32(MPTInfoRaw)
-    Bitfield<31, 12>   reserved;        // 剩余 bits 是保留位
-    Bitfield<11, 6>    mptLogBytes;     // 6位最大63, 支持 log2(64EB) =48, 覆盖所有 napot 层级
-    Bitfield<4>        napot;           // N 位，napot 模式
+    Bitfield<31, 12>   reserved;        // The remaining bits are reserved.
+    Bitfield<11, 6>    mptLogBytes;  
+        // 6 bits, with a maximum value of 63, supporting `log2(64EB) = 48`, covering all napot levels.
+    Bitfield<4>        napot;           // N ，napot 
     Bitfield<3>        perm_x;
     Bitfield<2>        perm_w;
     Bitfield<1>        perm_r;
     Bitfield<0>        valid;
 EndBitUnion(MPTInfoRaw);
 
+
+
+
+#endif //MPT_ENABLED
+
+
+
+#if MPT_ENABLED 
 // -----------------------------
-// MPT 权限位定义
+// MPT permission bit definition.
 // -----------------------------
 #define MPT_PERM_R  (1 << 0)
 #define MPT_PERM_W  (1 << 1)
@@ -78,59 +115,78 @@ EndBitUnion(MPTInfoRaw);
 
 
 // -----------------------------
-// Smmp52 相关参数定义
+//Smmp52 related parameter definition.
 // -----------------------------
-#define MPT_LEVELS 4                 // Smmp52 使用 4 级页表（L3 → L0）
-#define MPT_MPTE_SIZE 8              // 每个 MPTE 占 8 字节
-#define MPT_NUM_PERMS 16             // 每个 MPTE 控制 16 个子页权限
-#define MPT_PERM_BITS_PER_ENTRY 3    // 每个子页权限占 3 bit
-#define MPT_PERM_MASK 0x7            // 低 3 位掩码
+#define MPT_LEVELS 4                 // Smmp52 uses a 4-level page table (L3 → L0).
+#define MPT_MPTE_SIZE 8              // Each MPTE occupies 8 bytes.
+#define MPT_NUM_PERMS 16             // Each MPTE controls the permissions of 16 sub-pages.
+#define MPT_PERM_BITS_PER_ENTRY 3    // Each sub-page permission occupies 3 bits.
+#define MPT_PERM_MASK 0x7            // Low 3-bit mask.
 
-// 各层粒度：单位页大小（注意：不是 MPTE 粒度，是“单页粒度”）
+// Granularity at each level: unit page size (note: this is not the MPTE granularity, but the "single page granularity").
 #define MPT_LEAF_L0_PAGE_SIZE   (1UL << 12) // 4KB
 #define MPT_LEAF_L1_PAGE_SIZE   (1UL << 21) // 2MB
 #define MPT_LEAF_L2_PAGE_SIZE   (1UL << 30) // 1GB
 #define MPT_LEAF_L3_PAGE_SIZE   (1UL << 39) // 512GB
 
-// 每个 MPTE 覆盖范围（单位：字节） = 16 × 单页粒度
+// The coverage range of each MPTE (in bytes) = 16 × single page granularity.
 #define MPT_REGION_SIZE_L0   (MPT_NUM_PERMS * MPT_LEAF_L0_PAGE_SIZE) // 64KB
 #define MPT_REGION_SIZE_L1   (MPT_NUM_PERMS * MPT_LEAF_L1_PAGE_SIZE) // 32MB
 #define MPT_REGION_SIZE_L2   (MPT_NUM_PERMS * MPT_LEAF_L2_PAGE_SIZE) // 16GB
-#define MPT_REGION_SIZE_L3   (MPT_NUM_PERMS * MPT_LEAF_L3_PAGE_SIZE) // 8TB     //我们香山没有这样的需求，不过smmpt52的最大支持是这样，将来可拓展。
+#define MPT_REGION_SIZE_L3   (MPT_NUM_PERMS * MPT_LEAF_L3_PAGE_SIZE) // 8TB     
+    //We do not have such a requirement at Xiangshan, but the maximum supported by Smmpt52 is this, and it can be expanded in the future.
 
 struct MPTE52
 {
     uint64_t raw;
-    // 默认构造函数（无效项）
+    // Default constructor (invalid entry).
     MPTE52();
-    // 用原始值构造
+    // Construct with the raw value.
     MPTE52(uint64_t val);
-    // 是否有效
+    // Whether it is valid.
     bool isValid() const;
-    // 是否为叶子
+    // Whether it is a leaf.
     bool isLeaf() const;
-    // N 位（bit 63）
+    // N （bit 63）
     bool getN() const;
-    // 下一层页表的物理页号（非叶子时使用）
+    // Physical page number of the next-level page table (used when not a leaf).
     Addr nextLevelPPN() const;
-    // 下一层页表物理地址（按 4KB 页对齐）
+    // Physical address of the next-level page table (aligned to 4KB pages).
     Addr nextLevelPAddr() const;
-    // 获取第 pi 个页的权限（pi ∈ [0, 15]）
+    // Retrieve the permissions of the `pi`-th page.（pi ∈ [0, 15]）
     uint8_t perms(uint8_t pi) const;
 };
 
+uint64_t getPageSizeForLevel(int level);
+uint64_t getRegionSizeForLevel(int level);
+uint8_t log2floor(uint64_t x);
+bool checkMPTEPermissions(const MPTE52 &mpte, BaseMMU::Mode mode, Addr range_offset, int level);
 
+#endif //MPT_ENABLED
 
+#if MPT_CACHE_ENABLED
 struct MPTCacheEntry
 {
-    Addr tag;                  // region base（对齐后的地址）   目前这个 tag 用不上，用于查找的 key 是下面 unordered map 中的 Addr，此处 tag 的用处为增加调试信息 + 以后扩展为 set-ass 时可用
-    MPTE52 mpte;               // 缓存的 MPTE  // 这个结构体包含 raw 64-bit 值，N 位在内部就有
+    Addr tag;                  
+    // Region base (aligned address). Currently, this tag is not used; the key for lookup is the `Addr` in the unordered map below. 
+    // The purpose of this tag is to add debug information and will be useful for future expansion when set-associative mapping is implemented.
+
+    MPTE52 mpte;          // Cached MPTE // This structure contains the raw 64-bit value, with N bits already included internally.
     bool valid = false;
 
-    //让 cache entry 自带粒度信息
+    //Make the cache entry carry its own granularity information.
     int level = -1;
-    uint8_t log2RegionSize = 0;   //C++ 的 uint8_t 是8-bit
+    uint8_t log2RegionSize = 0;   
+
+     // Use a static function to implement the alignment functionality.
+    static Addr regionAlignStatic(Addr pa, int level) {
+        // The same logic as `MPTCache52::regionAlign`.
+        return pa & ~(getRegionSizeForLevel(level) - 1);
+    }
 };
+#endif //MPT_CACHE_ENABLED
+
+#if MPT_ENABLED 
 struct MPTInfoInTLB
 {
     MPTInfoRaw raw;
@@ -146,7 +202,7 @@ struct MPTInfoInTLB
 
     static MPTInfoInTLB fromEntry(const MPTCacheEntry &entry, Addr rangeOffset)
     {
-        // 根据 napot 与否判断是否使用 pi（子页索引）
+        // Determine whether to use the `pi` (subpage index) based on whether napot is enabled.
         uint8_t pi = (rangeOffset >> getPageShiftForLevel(entry.level)) & 0xF;
         uint8_t perm = entry.mpte.perms(entry.mpte.getN() ? 0 : pi);
 
@@ -158,13 +214,14 @@ struct MPTInfoInTLB
         info.raw.perm_x = (perm & MPT_PERM_X) != 0;
         info.raw.napot = entry.mpte.getN();
 
-        // 不再重复推导，直接使用已有值(在 mpt.cc 中或 tlb.cc 中已近分别考虑过 N 位开启后的等效 size)
+        // No need to re-derive, directly use the existing value 
+        //(the equivalent size after N bits are enabled has already been considered in `tlb.cc`).
         info.raw.mptLogBytes = entry.log2RegionSize;
 
         return info;
     }
 };
-
+#endif //MPT_ENABLED
 
 
 
@@ -339,7 +396,10 @@ struct TlbEntry : public Serializable
     bool fromBackPreReq;
     bool preSign;
 
-    MPTInfoInTLB mptInfo;// JJW
+    #if MPT_ENABLED 
+    MPTInfoInTLB mptInfo;
+    #endif //MPT_ENABLED
+
 
     TlbEntry()
         : paddr(0),
@@ -360,8 +420,10 @@ struct TlbEntry : public Serializable
           isPre(false),
           fromForwardPreReq(false),
           fromBackPreReq(false),
-          preSign(false),
-          mptInfo()
+          preSign(false)
+#if MPT_ENABLED
+        , mptInfo()
+#endif 
     {
     }
 
