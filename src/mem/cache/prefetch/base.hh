@@ -489,7 +489,7 @@ class Base : public ClockedObject
     size_t blkSize;
 
     /** log_2 block size(Bytes) of the parent cache. */
-    size_t log2BlkSize;
+    size_t lBlkSize;
 
     /** The page size(Bypes) of the parent cache */
     const size_t pageSize;

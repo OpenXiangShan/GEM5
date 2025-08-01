@@ -164,7 +164,7 @@ IrregularStreamBuffer::calculatePrefetch(const PrefetchInfo &pfi,
                 AddressMapping &spm = sp_am->mappings[sp_index + d];
                 //generate prefetch
                 if (spm.counter > 0) {
-                    Addr pf_addr = spm.address << log2BlkSize;
+                    Addr pf_addr = spm.address << lBlkSize;
                     addresses.push_back(AddrPriority(pf_addr, 0, true,
                         PrefetchSourceType::IrregularStreamBuffer));
                 }

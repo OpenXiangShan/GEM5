@@ -128,7 +128,7 @@ SBOOE::calculatePrefetch(const PrefetchInfo &pfi,
         return;
     }
     const Addr pfi_addr = pfi.getVAddr();
-    const Addr pfi_line = pfi_addr >> log2BlkSize;
+    const Addr pfi_line = pfi_addr >> lBlkSize;
 
     auto it = demandAddresses.find(pfi_addr);
 
@@ -140,7 +140,7 @@ SBOOE::calculatePrefetch(const PrefetchInfo &pfi,
 
     if (evaluationFinished && bestSandbox->score() > scoreThreshold) {
         Addr pref_line = pfi_line + bestSandbox->stride;
-        addresses.push_back(AddrPriority(pref_line << log2BlkSize, 0, true, PrefetchSourceType::SBOOE, 0, false));
+        addresses.push_back(AddrPriority(pref_line << lBlkSize, 0, true, PrefetchSourceType::SBOOE, 0, false));
     }
 }
 

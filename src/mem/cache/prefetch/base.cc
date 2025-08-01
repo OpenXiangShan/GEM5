@@ -125,7 +125,7 @@ Base::Base(const BasePrefetcherParams &p)
       isSubPrefetcher(p.is_sub_prefetcher),
       isCompositePrefetcher(p.is_composite_prefetcher),
       blkSize(p.block_size),
-      log2BlkSize(floorLog2(blkSize)),
+      lBlkSize(floorLog2(blkSize)),
       pageSize(p.page_bytes),
       pfOnHitNormalLine(p.on_hit_normal_line),
       pfOnHitPrefetchedLine(p.on_hit_prefetched_line),
@@ -153,7 +153,7 @@ Base::setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsign
 
     // If the cache has a different block size from the system's, save it
     blkSize = blk_size;
-    log2BlkSize = floorLog2(blkSize);
+    lBlkSize = floorLog2(blkSize);
 }
 
 Base::StatGroup::StatGroup(statistics::Group *parent)
@@ -307,7 +307,7 @@ Base::blockAddress(Addr a) const
 Addr
 Base::blockIndex(Addr a) const
 {
-    return a >> log2BlkSize;
+    return a >> lBlkSize;
 }
 
 Addr
@@ -325,7 +325,7 @@ Base::pageOffset(Addr a) const
 Addr
 Base::pageIthBlockAddress(Addr page, uint32_t blockIndex) const
 {
-    return page + (blockIndex << log2BlkSize);
+    return page + (blockIndex << lBlkSize);
 }
 
 void

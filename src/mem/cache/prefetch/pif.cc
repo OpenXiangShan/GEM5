@@ -146,7 +146,7 @@ PIF::notifyRetiredInst(const Addr pc)
         // If the PC of the instruction retired is in the same spatial region
         // than the last trigger address, update the bit vectors based on the
         // distance between them
-        if (spatialCompactor.inSameSpatialRegion(pc, log2BlkSize, true)) {
+        if (spatialCompactor.inSameSpatialRegion(pc, lBlkSize, true)) {
         // If the PC of the instruction retired is outside the latest spatial
         // region, check if it matches in any of the regions in the temporal
         // compactor and update it to the MRU position
@@ -157,7 +157,7 @@ PIF::notifyRetiredInst(const Addr pc)
             for (auto it = temporalCompactor.begin();
                     it != temporalCompactor.end(); it++)
             {
-                if (it->inSameSpatialRegion(pc, log2BlkSize, false)) {
+                if (it->inSameSpatialRegion(pc, lBlkSize, false)) {
                     spatialCompactor = (*it);
                     temporalCompactor.erase(it);
                     is_in_temporal_compactor = true;
@@ -212,9 +212,9 @@ PIF::calculatePrefetch(const PrefetchInfo &pfi,
     // First check if the access has been prefetched, this is done by
     // comparing the access against the active Stream Address Buffers
     for (auto &sabEntry : streamAddressBuffer) {
-        if (sabEntry->hasAddress(pc, log2BlkSize)) {
+        if (sabEntry->hasAddress(pc, lBlkSize)) {
             sabEntry++;
-            sabEntry->getPredictedAddresses(log2BlkSize, addresses);
+            sabEntry->getPredictedAddresses(lBlkSize, addresses);
             // We are done
             return;
         }
@@ -233,7 +233,7 @@ PIF::calculatePrefetch(const PrefetchInfo &pfi,
         // Track the block in the Stream Address Buffer
         streamAddressBuffer.push_back(entry);
 
-        entry->getPredictedAddresses(log2BlkSize, addresses);
+        entry->getPredictedAddresses(lBlkSize, addresses);
     }
 }
 
