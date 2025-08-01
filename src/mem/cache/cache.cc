@@ -1231,6 +1231,14 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
                     (uint64_t)deferring_mshr);
         }
 
+        // If the packet is deferred and the deferring MSHR is not the one that promised to respond,
+        // then we should not respond.
+        // This situation happens when a packet is not setting pendingModifiedResp properly.
+        if (is_deferred && deferring_mshr && (uint64_t)deferring_mshr != pkt->getCacheRespondingBy()) {
+            assert(pkt->flags.noneSet(Packet::STATIC_DATA|Packet::DYNAMIC_DATA));
+            respond = false;
+        }
+
         gem5_assert(!(isReadOnly && blk->isSet(CacheBlk::DirtyBit)),
             "Should never have a dirty block in a read-only cache %s\n",
             name());
