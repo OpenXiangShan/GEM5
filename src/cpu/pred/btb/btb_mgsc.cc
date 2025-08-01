@@ -19,137 +19,137 @@ namespace btb_pred{
 // Constructor: Initialize MGSC predictor with given parameters
 BTBMGSC::BTBMGSC(const Params& p):
 TimedBaseBTBPredictor(p),
-bwnb(p.bwnb),
-logBwnb(p.logBwnb),
-bwm(p.bwm),
+bwTableNum(p.bwTableNum),
+bwTableIdxWidth(p.bwTableIdxWidth),
+bwHistLen(p.bwHistLen),
 bwWeightInitValue(p.bwWeightInitValue),
 numEntriesFirstLocalHistories(p.numEntriesFirstLocalHistories),
-lnb(p.lnb),
-logLnb(p.logLnb),
-lm(p.lm),
+lTableNum(p.lTableNum),
+lTableIdxWidth(p.lTableIdxWidth),
+lHistLen(p.lHistLen),
 lWeightInitValue(p.lWeightInitValue),
-inb(p.inb),
-logInb(p.logInb),
-im(p.im),
+iTableNum(p.iTableNum),
+iTableIdxWidth(p.iTableIdxWidth),
+iHistLen(p.iHistLen),
 iWeightInitValue(p.iWeightInitValue),
-gnb(p.gnb),
-logGnb(p.logGnb),
-gm(p.gm),
+gTableNum(p.gTableNum),
+gTableIdxWidth(p.gTableIdxWidth),
+gHistLen(p.gHistLen),
 gWeightInitValue(p.gWeightInitValue),
-pnb(p.pnb),
-logPnb(p.logPnb),
-pm(p.pm),
+pTableNum(p.pTableNum),
+pTableIdxWidth(p.pTableIdxWidth),
+pHistLen(p.pHistLen),
 pWeightInitValue(p.pWeightInitValue),
-biasnb(p.biasnb),
-logBiasnb(p.logBiasnb),
+biasTableNum(p.biasTableNum),
+biasTableIdxWidth(p.biasTableIdxWidth),
 scCountersWidth(p.scCountersWidth),
 thresholdTablelogSize(p.thresholdTablelogSize),
 updateThresholdWidth(p.updateThresholdWidth),
 pUpdateThresholdWidth(p.pUpdateThresholdWidth),
 initialUpdateThresholdValue(p.initialUpdateThresholdValue),
 extraWeightsWidth(p.extraWeightsWidth),
-logWeightnb(p.logWeightnb),
+weightTableIdxWidth(p.weightTableIdxWidth),
 numWays(p.numWays),
 enableMGSC(p.enableMGSC),
 mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
     this->needMoreHistories = p.needMoreHistories;
-    bwTable.resize(bwnb);
-    for (unsigned int i = 0; i < bwnb; ++i) {
-        assert(bwTable.size() >= bwnb);
-        bwTable[i].resize(std::pow(2,logBwnb));
-        for (unsigned int j = 0; j < (std::pow(2,logBwnb)); ++j) {
+    bwTable.resize(bwTableNum);
+    for (unsigned int i = 0; i < bwTableNum; ++i) {
+        assert(bwTable.size() >= bwTableNum);
+        bwTable[i].resize(std::pow(2,bwTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2,bwTableIdxWidth)); ++j) {
             bwTable[i][j].resize(numWays);
         }
-        indexBwFoldedHist.push_back(FoldedHist(bwm[i], logBwnb, 16, HistoryType::GLOBALBW));
+        indexBwFoldedHist.push_back(FoldedHist(bwHistLen[i], bwTableIdxWidth, 16, HistoryType::GLOBALBW));
     }
-    bwIndex.resize(bwnb);
+    bwIndex.resize(bwTableNum);
 
-    lTable.resize(lnb);
+    lTable.resize(lTableNum);
     indexLFoldedHist.resize(numEntriesFirstLocalHistories);
-    for (unsigned int i = 0; i < lnb; ++i) {
-        assert(lTable.size() >= lnb);
-        lTable[i].resize(std::pow(2,logLnb));
-        for (unsigned int j = 0; j < (std::pow(2,logLnb)); ++j) {
+    for (unsigned int i = 0; i < lTableNum; ++i) {
+        assert(lTable.size() >= lTableNum);
+        lTable[i].resize(std::pow(2,lTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2,lTableIdxWidth)); ++j) {
             lTable[i][j].resize(numWays);
         }
         for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
-            indexLFoldedHist[k].push_back(FoldedHist(lm[i], logLnb, 16, HistoryType::LOCAL));
+            indexLFoldedHist[k].push_back(FoldedHist(lHistLen[i], lTableIdxWidth, 16, HistoryType::LOCAL));
         }
     }
-    lIndex.resize(lnb);
+    lIndex.resize(lTableNum);
 
-    iTable.resize(inb);
-    for (unsigned int i = 0; i < inb; ++i) {
-        assert(iTable.size() >= inb);
-        iTable[i].resize(std::pow(2,logInb));
-        for (unsigned int j = 0; j < (std::pow(2,logInb)); ++j) {
+    iTable.resize(iTableNum);
+    for (unsigned int i = 0; i < iTableNum; ++i) {
+        assert(iTable.size() >= iTableNum);
+        iTable[i].resize(std::pow(2,iTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2,iTableIdxWidth)); ++j) {
             iTable[i][j].resize(numWays);
         }
-        indexIFoldedHist.push_back(FoldedHist(im[i], logInb, 16, HistoryType::IMLI));
+        indexIFoldedHist.push_back(FoldedHist(iHistLen[i], iTableIdxWidth, 16, HistoryType::IMLI));
     }
-    iIndex.resize(inb);
+    iIndex.resize(iTableNum);
 
-    gTable.resize(gnb);
-    for (unsigned int i = 0; i < gnb; ++i) {
-        assert(gTable.size() >= gnb);
-        gTable[i].resize(std::pow(2,logGnb));
-        for (unsigned int j = 0; j < (std::pow(2,logGnb)); ++j) {
+    gTable.resize(gTableNum);
+    for (unsigned int i = 0; i < gTableNum; ++i) {
+        assert(gTable.size() >= gTableNum);
+        gTable[i].resize(std::pow(2,gTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2,gTableIdxWidth)); ++j) {
             gTable[i][j].resize(numWays);
         }
-        indexGFoldedHist.push_back(FoldedHist(gm[i], logGnb, 16, HistoryType::GLOBAL));
+        indexGFoldedHist.push_back(FoldedHist(gHistLen[i], gTableIdxWidth, 16, HistoryType::GLOBAL));
     }
-    gIndex.resize(gnb);
+    gIndex.resize(gTableNum);
 
-    pTable.resize(pnb);
-    for (unsigned int i = 0; i < pnb; ++i) {
-        assert(pTable.size() >= pnb);
-        pTable[i].resize(std::pow(2,logPnb));
-        for (unsigned int j = 0; j < (std::pow(2,logPnb)); ++j) {
+    pTable.resize(pTableNum);
+    for (unsigned int i = 0; i < pTableNum; ++i) {
+        assert(pTable.size() >= pTableNum);
+        pTable[i].resize(std::pow(2,pTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2,pTableIdxWidth)); ++j) {
             pTable[i][j].resize(numWays);
         }
-        indexPFoldedHist.push_back(FoldedHist(pm[i], logPnb, 2, HistoryType::PATH));
+        indexPFoldedHist.push_back(FoldedHist(pHistLen[i], pTableIdxWidth, 2, HistoryType::PATH));
     }
-    pIndex.resize(pnb);
+    pIndex.resize(pTableNum);
 
-    biasTable.resize(biasnb);
-    for (unsigned int i = 0; i < biasnb; ++i) {
-        assert(biasTable.size() >= biasnb);
-        biasTable[i].resize(std::pow(2,logBiasnb));
-        for (unsigned int j = 0; j < (std::pow(2,logBiasnb)); ++j) {
+    biasTable.resize(biasTableNum);
+    for (unsigned int i = 0; i < biasTableNum; ++i) {
+        assert(biasTable.size() >= biasTableNum);
+        biasTable[i].resize(std::pow(2,biasTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2,biasTableIdxWidth)); ++j) {
             biasTable[i][j].resize(numWays);
         }
     }
-    biasIndex.resize(biasnb);
+    biasIndex.resize(biasTableNum);
 
-    bwWeightTable.resize(std::pow(2,logWeightnb));
-    for (unsigned int j = 0; j < (std::pow(2,logWeightnb)); ++j) {
+    bwWeightTable.resize(std::pow(2,weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
         bwWeightTable[j].resize(numWays);
     }
 
-    lWeightTable.resize(std::pow(2,logWeightnb));
-    for (unsigned int j = 0; j < (std::pow(2,logWeightnb)); ++j) {
+    lWeightTable.resize(std::pow(2,weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
         lWeightTable[j].resize(numWays);
     }
 
-    iWeightTable.resize(std::pow(2,logWeightnb));
-    for (unsigned int j = 0; j < (std::pow(2,logWeightnb)); ++j) {
+    iWeightTable.resize(std::pow(2,weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
         iWeightTable[j].resize(numWays);
     }
 
-    gWeightTable.resize(std::pow(2,logWeightnb));
-    for (unsigned int j = 0; j < (std::pow(2,logWeightnb)); ++j) {
+    gWeightTable.resize(std::pow(2,weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
         gWeightTable[j].resize(numWays);
     }
 
-    pWeightTable.resize(std::pow(2,logWeightnb));
-    for (unsigned int j = 0; j < (std::pow(2,logWeightnb)); ++j) {
+    pWeightTable.resize(std::pow(2,weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
         pWeightTable[j].resize(numWays);
     }
 
-    biasWeightTable.resize(std::pow(2,logWeightnb));
-    for (unsigned int j = 0; j < (std::pow(2,logWeightnb)); ++j) {
+    biasWeightTable.resize(std::pow(2,weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
         biasWeightTable[j].resize(numWays);
     }
 
@@ -269,17 +269,17 @@ BTBMGSC::findThreshold(const std::vector<std::vector<MgscThresEntry>> &threshold
 
 /**
  * Calculate if weight scale causes prediction difference
- * @param lsum Total weighted sum
+ * @param total_sum Total weighted sum
  * @param scale_percsum Component's scaled percsum
  * @param percsum Component's raw percsum
  * @return True if weight scale causes prediction to change
  */
 bool
-BTBMGSC::calculateWeightScaleDiff(int lsum, int scale_percsum, int percsum) {
+BTBMGSC::calculateWeightScaleDiff(int total_sum, int scale_percsum, int percsum) {
     // First check if removing this table's contribution keeps the sum positive (predict taken)
     // Then check if doubling this table's contribution keeps the sum positive
     // If one is true and the other is false, the table's weight is crucial for prediction
-    return ((lsum - scale_percsum) >= 0) != ((lsum - scale_percsum + 2*percsum) >= 0);
+    return ((total_sum - scale_percsum) >= 0) != ((total_sum - scale_percsum + 2*percsum) >= 0);
 }
 
 /**
@@ -297,61 +297,61 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
         btb_entry.pc, btb_entry.alwaysTaken);
 
     // Calculate indices for all tables
-    for (unsigned int i = 0; i < bwnb; ++i) {
-        bwIndex[i] = getHistIndex(startPC, logBwnb, indexBwFoldedHist[i].get());
+    for (unsigned int i = 0; i < bwTableNum; ++i) {
+        bwIndex[i] = getHistIndex(startPC, bwTableIdxWidth, indexBwFoldedHist[i].get());
     }
 
-    for (unsigned int i = 0; i < lnb; ++i) {
-        lIndex[i] = getHistIndex(startPC, logLnb,
+    for (unsigned int i = 0; i < lTableNum; ++i) {
+        lIndex[i] = getHistIndex(startPC, lTableIdxWidth,
                   indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
     }
 
-    for (unsigned int i = 0; i < inb; ++i) {
-        iIndex[i] = getHistIndex(startPC, logInb, indexIFoldedHist[i].get());
+    for (unsigned int i = 0; i < iTableNum; ++i) {
+        iIndex[i] = getHistIndex(startPC, iTableIdxWidth, indexIFoldedHist[i].get());
     }
 
-    for (unsigned int i = 0; i < gnb; ++i) {
-        gIndex[i] = getHistIndex(startPC, logGnb, indexGFoldedHist[i].get());
+    for (unsigned int i = 0; i < gTableNum; ++i) {
+        gIndex[i] = getHistIndex(startPC, gTableIdxWidth, indexGFoldedHist[i].get());
     }
 
-    for (unsigned int i = 0; i < pnb; ++i) {
-        pIndex[i] = getHistIndex(startPC, logPnb, indexPFoldedHist[i].get());
+    for (unsigned int i = 0; i < pTableNum; ++i) {
+        pIndex[i] = getHistIndex(startPC, pTableIdxWidth, indexPFoldedHist[i].get());
     }
 
-    for (unsigned int i = 0; i < biasnb; ++i) {
-        biasIndex[i] = getBiasIndex(startPC, logBiasnb, tage_info.tage_pred_taken,
+    for (unsigned int i = 0; i < biasTableNum; ++i) {
+        biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth, tage_info.tage_pred_taken,
                     tage_info.tage_pred_conf_low && tage_info.tage_pred_alt_diff);
     }
 
     // Calculate percsums and weights for all tables
-    Addr tableIndex = getPcIndex(startPC, logWeightnb);
+    Addr tableIndex = getPcIndex(startPC, weightTableIdxWidth);
 
-    int bw_percsum = calculatePercsum(bwTable, bwIndex, bwnb, btb_entry.pc);
+    int bw_percsum = calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.pc);
     int bw_weight = findWeight(bwWeightTable, tableIndex, btb_entry.pc);
     int bw_scale_percsum = calculateScaledPercsum(bw_weight, bw_percsum);
 
-    int l_percsum = calculatePercsum(lTable, lIndex, lnb, btb_entry.pc);
+    int l_percsum = calculatePercsum(lTable, lIndex, lTableNum, btb_entry.pc);
     int l_weight = findWeight(lWeightTable, tableIndex, btb_entry.pc);
     int l_scale_percsum = calculateScaledPercsum(l_weight, l_percsum);
 
-    int i_percsum = calculatePercsum(iTable, iIndex, inb, btb_entry.pc);
+    int i_percsum = calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc);
     int i_weight = findWeight(iWeightTable, tableIndex, btb_entry.pc);
     int i_scale_percsum = calculateScaledPercsum(i_weight, i_percsum);
 
-    int g_percsum = calculatePercsum(gTable, gIndex, gnb, btb_entry.pc);
+    int g_percsum = calculatePercsum(gTable, gIndex, gTableNum, btb_entry.pc);
     int g_weight = findWeight(gWeightTable, tableIndex, btb_entry.pc);
     int g_scale_percsum = calculateScaledPercsum(g_weight, g_percsum);
 
-    int p_percsum = calculatePercsum(pTable, pIndex, pnb, btb_entry.pc);
+    int p_percsum = calculatePercsum(pTable, pIndex, pTableNum, btb_entry.pc);
     int p_weight = findWeight(pWeightTable, tableIndex, btb_entry.pc);
     int p_scale_percsum = calculateScaledPercsum(p_weight, p_percsum);
 
-    int bias_percsum = calculatePercsum(biasTable, biasIndex, biasnb, btb_entry.pc);
+    int bias_percsum = calculatePercsum(biasTable, biasIndex, biasTableNum, btb_entry.pc);
     int bias_weight = findWeight(biasWeightTable, tableIndex, btb_entry.pc);
     int bias_scale_percsum = calculateScaledPercsum(bias_weight, bias_percsum);
 
     // Calculate total sum of all weighted percsums
-    int lsum = bw_scale_percsum + l_scale_percsum + i_scale_percsum +
+    int total_sum = bw_scale_percsum + l_scale_percsum + i_scale_percsum +
                g_scale_percsum + p_scale_percsum + bias_scale_percsum;
 
     // Find thresholds
@@ -376,33 +376,33 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
     // Determine whether to use SC prediction based on confidence levels
     bool use_sc_pred = false;
     if (tage_info.tage_pred_conf_high) {
-        if (abs(lsum) > total_thres/2) {
+        if (abs(total_sum) > total_thres/2) {
             use_sc_pred = true;
         }
     } else if (tage_info.tage_pred_conf_mid) {
-        if (abs(lsum) > total_thres/4) {
+        if (abs(total_sum) > total_thres/4) {
             use_sc_pred = true;
         }
     } else if (tage_info.tage_pred_conf_low) {
-        if (abs(lsum) > total_thres/8) {
+        if (abs(total_sum) > total_thres/8) {
             use_sc_pred = true;
         }
     }
 
-    // Final prediction
-    bool taken = (use_sc_pred && enableMGSC) ? (lsum >= 0) : tage_info.tage_pred_taken;  // lsum >= 0 means taken if use_sc_pred
+    // Final prediction, total_sum >= 0 means taken if use_sc_pred
+    bool taken = (use_sc_pred && enableMGSC) ? (total_sum >= 0) : tage_info.tage_pred_taken;
 
     // Calculate weight scale differences
-    bool bw_weight_scale_diff = calculateWeightScaleDiff(lsum, bw_scale_percsum, bw_percsum);
-    bool l_weight_scale_diff = calculateWeightScaleDiff(lsum, l_scale_percsum, l_percsum);
-    bool i_weight_scale_diff = calculateWeightScaleDiff(lsum, i_scale_percsum, i_percsum);
-    bool g_weight_scale_diff = calculateWeightScaleDiff(lsum, g_scale_percsum, g_percsum);
-    bool p_weight_scale_diff = calculateWeightScaleDiff(lsum, p_scale_percsum, p_percsum);
-    bool bias_weight_scale_diff = calculateWeightScaleDiff(lsum, bias_scale_percsum, bias_percsum);
+    bool bw_weight_scale_diff = calculateWeightScaleDiff(total_sum, bw_scale_percsum, bw_percsum);
+    bool l_weight_scale_diff = calculateWeightScaleDiff(total_sum, l_scale_percsum, l_percsum);
+    bool i_weight_scale_diff = calculateWeightScaleDiff(total_sum, i_scale_percsum, i_percsum);
+    bool g_weight_scale_diff = calculateWeightScaleDiff(total_sum, g_scale_percsum, g_percsum);
+    bool p_weight_scale_diff = calculateWeightScaleDiff(total_sum, p_scale_percsum, p_percsum);
+    bool bias_weight_scale_diff = calculateWeightScaleDiff(total_sum, bias_scale_percsum, bias_percsum);
 
     DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.pc, taken);
 
-    return MgscPrediction(btb_entry.pc, lsum, use_sc_pred, taken,
+    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken,
                         tage_info.tage_pred_taken, total_thres,
                         bwIndex, lIndex, iIndex, gIndex, pIndex, biasIndex,
                         bw_weight_scale_diff, l_weight_scale_diff, i_weight_scale_diff,
@@ -704,10 +704,10 @@ BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry,
                              const MgscPrediction &pred,
                              const FetchStream &stream) {
     // Extract prediction information
-    auto lsum = pred.lsum;
+    auto total_sum = pred.total_sum;
     auto use_mgsc = pred.use_mgsc;
     auto total_thres = pred.total_thres;
-    auto sc_pred_taken = lsum >= 0;
+    auto sc_pred_taken = total_sum >= 0;
     auto tage_pred_taken = pred.taken_before_sc;    // tage predictions
 
     // Update statistics
@@ -727,49 +727,49 @@ BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry,
     }
 
     // Only update tables if prediction was wrong or confidence was low
-    if (sc_pred_taken != actual_taken || abs(lsum) < total_thres) {
-        // PC index for weight tables
-        Addr pcIndex = getPcIndex(stream.startPC, logWeightnb);
+    if (sc_pred_taken != actual_taken || abs(total_sum) < total_thres) {
+        // get weight table index from startPC
+        Addr weightTableIdx = getPcIndex(stream.startPC, weightTableIdxWidth);
 
         // Update BW tables
-        updateAndAllocatePredTable(bwTable, pred.bwIndex, bwnb, entry.pc, actual_taken);
+        updateAndAllocatePredTable(bwTable, pred.bwIndex, bwTableNum, entry.pc, actual_taken);
         updateAndAllocateWeightTable(
-            bwWeightTable, pcIndex, entry.pc, pred.bw_weight_scale_diff,
+            bwWeightTable, weightTableIdx, entry.pc, pred.bw_weight_scale_diff,
             (pred.bw_percsum >= 0) == actual_taken);
 
         // Update L tables
         updateAndAllocatePredTable(
-            lTable, pred.lIndex, lnb, entry.pc, actual_taken);
+            lTable, pred.lIndex, lTableNum, entry.pc, actual_taken);
         updateAndAllocateWeightTable(
-            lWeightTable, pcIndex, entry.pc, pred.l_weight_scale_diff,
+            lWeightTable, weightTableIdx, entry.pc, pred.l_weight_scale_diff,
             (pred.l_percsum >= 0) == actual_taken);
 
         // Update I tables
         updateAndAllocatePredTable(
-            iTable, pred.iIndex, inb, entry.pc, actual_taken);
+            iTable, pred.iIndex, iTableNum, entry.pc, actual_taken);
         updateAndAllocateWeightTable(
-            iWeightTable, pcIndex, entry.pc, pred.i_weight_scale_diff,
+            iWeightTable, weightTableIdx, entry.pc, pred.i_weight_scale_diff,
             (pred.i_percsum >= 0) == actual_taken);
 
         // Update G tables
         updateAndAllocatePredTable(
-            gTable, pred.gIndex, gnb, entry.pc, actual_taken);
+            gTable, pred.gIndex, gTableNum, entry.pc, actual_taken);
         updateAndAllocateWeightTable(
-            gWeightTable, pcIndex, entry.pc, pred.g_weight_scale_diff,
+            gWeightTable, weightTableIdx, entry.pc, pred.g_weight_scale_diff,
             (pred.g_percsum >= 0) == actual_taken);
 
         // Update P tables
         updateAndAllocatePredTable(
-            pTable, pred.pIndex, pnb, entry.pc, actual_taken);
+            pTable, pred.pIndex, pTableNum, entry.pc, actual_taken);
         updateAndAllocateWeightTable(
-            pWeightTable, pcIndex, entry.pc, pred.p_weight_scale_diff,
+            pWeightTable, weightTableIdx, entry.pc, pred.p_weight_scale_diff,
             (pred.p_percsum >= 0) == actual_taken);
 
         // Update bias tables
         updateAndAllocatePredTable(
-            biasTable, pred.biasIndex, biasnb, entry.pc, actual_taken);
+            biasTable, pred.biasIndex, biasTableNum, entry.pc, actual_taken);
         updateAndAllocateWeightTable(
-            biasWeightTable, pcIndex, entry.pc, pred.bias_weight_scale_diff,
+            biasWeightTable, weightTableIdx, entry.pc, pred.bias_weight_scale_diff,
             (pred.bias_percsum >= 0) == actual_taken);
 
         // Update PC-indexed threshold table
@@ -1065,7 +1065,7 @@ BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
-    for (int i = 0; i < gnb; i++) {
+    for (int i = 0; i < gTableNum; i++) {
         indexGFoldedHist[i].recover(predMeta->indexGFoldedHist[i]);
     }
     doUpdateHist(history, shamt, cond_taken, indexGFoldedHist);
@@ -1089,7 +1089,7 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
-    for (int i = 0; i < pnb; i++) {
+    for (int i = 0; i < pTableNum; i++) {
         indexPFoldedHist[i].recover(predMeta->indexPFoldedHist[i]);
     }
     doUpdateHist(history, 1, cond_taken, indexPFoldedHist, entry.getControlPC());
@@ -1113,7 +1113,7 @@ BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
-    for (int i = 0; i < bwnb; i++) {
+    for (int i = 0; i < bwTableNum; i++) {
         indexBwFoldedHist[i].recover(predMeta->indexBwFoldedHist[i]);
     }
     doUpdateHist(history, shamt, cond_taken, indexBwFoldedHist);
@@ -1137,7 +1137,7 @@ BTBMGSC::recoverIHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
-    for (int i = 0; i < inb; i++) {
+    for (int i = 0; i < iTableNum; i++) {
         indexIFoldedHist[i].recover(predMeta->indexIFoldedHist[i]);
     }
     doUpdateHist(history, shamt, cond_taken, indexIFoldedHist);
@@ -1162,7 +1162,7 @@ BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history,
 {
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
-        for (int i = 0; i < lnb; i++) {
+        for (int i = 0; i < lTableNum; i++) {
             indexLFoldedHist[k][i].recover(predMeta->indexLFoldedHist[k][i]);
         }
     }
