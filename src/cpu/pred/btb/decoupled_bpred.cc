@@ -595,6 +595,11 @@ DecoupledBPUWithBTB::tick()
 
     // Handle pending prediction if available
     if (bpuState == BpuState::PREDICTOR_DONE) {
+
+        // update ubtb using mbtb prediction
+        if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
+            ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+        }
         DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
         numOverrideBubbles = generateFinalPredAndCreateBubbles();
         bpuState = BpuState::PREDICTION_OUTSTANDING;
@@ -729,10 +734,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
         overrideReason = reason;
     }
 
-    // update ubtb using mbtb prediction
-    if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
-        ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-    }
+
 
     // 4. Record override bubbles and update statistics
     if (first_hit_stage > 0) {
