@@ -4,9 +4,26 @@
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/btb/stream_struct.hh"
-#include "cpu/pred/btb/timed_base_pred.hh"
-#include "debug/RAS.hh"
-#include "params/BTBRAS.hh"
+
+// Conditional includes based on build mode
+#ifdef UNIT_TEST
+    // Test mode includes
+    #include "cpu/pred/btb/test/test_dprintf.hh"
+    #include "cpu/pred/btb/test/timed_base_pred.hh"
+
+    // Test mode type definitions
+    namespace gem5 {
+        namespace o3 {
+            class DynInst;
+        }
+    }
+    using DynInstPtr = std::shared_ptr<gem5::o3::DynInst>;
+#else
+    // Production mode includes
+    #include "cpu/pred/btb/timed_base_pred.hh"
+    #include "debug/RAS.hh"
+    #include "params/BTBRAS.hh"
+#endif
 
 namespace gem5 {
 
@@ -14,12 +31,22 @@ namespace branch_prediction {
 
 namespace btb_pred {
 
-class BTBRAS : public TimedBaseBTBPredictor
-{
+// Class definition with conditional inheritance and constructors
+#ifdef UNIT_TEST
+    namespace test {
+        class BTBRAS : public TimedBaseBTBPredictor
+        {
+        public:
+            // Test constructor for unit testing mode
+            BTBRAS(unsigned numEntries, unsigned ctrWidth, unsigned numInflightEntries);
+#else
+    class BTBRAS : public TimedBaseBTBPredictor
+    {
     public:
-    
+        // Production constructor
         typedef BTBRASParams Params;
         BTBRAS(const Params &p);
+#endif
 
         typedef struct RASEssential
         {
@@ -75,7 +102,12 @@ class BTBRAS : public TimedBaseBTBPredictor
 
         void update(const FetchStream &entry) override;
 
+        // commitBranch method - override only in production mode
+#ifdef UNIT_TEST
+        void commitBranch(const FetchStream &stream, const DynInstPtr &inst);
+#else
         void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+#endif
 
         Addr getTopAddrFromMetas(const FetchStream &stream);
 
@@ -181,11 +213,17 @@ class BTBRAS : public TimedBaseBTBPredictor
         std::shared_ptr<RASMeta> meta;
 
 
-};
+}; // class BTBRAS
 
-}  // namespace btb_pred
+// Close conditional namespaces
+#ifdef UNIT_TEST
+    } // namespace test
+#endif
 
-}  // namespace branch_prediction
+} // namespace btb_pred
 
-}  // namespace gem5
-#endif  // __CPU_PRED_BTB_RAS_HH__
+} // namespace branch_prediction
+
+} // namespace gem5
+
+#endif // __CPU_PRED_BTB_RAS_HH__

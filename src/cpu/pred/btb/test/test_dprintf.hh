@@ -4,11 +4,12 @@
 #include <cstdio>
 
 // Define debug namespace and flags to avoid compilation errors
-namespace gem5 {
-namespace debug {
-    extern bool BTB;
-}
-}
+// Note: Commented out to avoid conflicts with real gem5 debug symbols
+// namespace gem5 {
+// namespace debug {
+//     extern bool BTB;
+// }
+// }
 
 // Undefine existing macros first to avoid redefinition errors
 #ifdef DPRINTF
@@ -39,7 +40,7 @@ namespace debug {
 #undef DPRINTF_UNCONDITIONAL
 #endif
 
-// #define DPRINTF_AS_NOP
+#define DPRINTF_AS_NOP
 
 #if defined(DPRINTF_AS_NOP)
 // define Dprintf as nop
