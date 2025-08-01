@@ -2140,6 +2140,8 @@ DecoupledBPUWithBTB::produce2ndPrediction()
         DPRINTF(Override, "Second prediction failed uBTB source check, adding penalty\n");
         handleSecondPredictionFailure();
         dbpBtbStats.secondPredValidationFailed++;
+        tryEnqFetchTarget();
+        makeNewPrediction(true);
      }
 
      dbpBtbStats.predProduce2Taken++;
