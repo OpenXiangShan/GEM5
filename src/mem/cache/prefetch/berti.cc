@@ -285,14 +285,14 @@ BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vecto
     if (using_best_delta_and_confident) {
         lastUsedBestDelta = blockIndex(addr) - blockIndex(pfi.getVAddr());
     }
-    if (filter->contains(addr)) {
+    if (filter->contains(addr, true)) {
         DPRINTF(BertiPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         int64_t blk_delta = (int64_t)blockIndex(addr) - blockIndex(pfi.getVAddr());
         topDeltas[blk_delta] = topDeltas.count(blk_delta) ? topDeltas[blk_delta] + 1 : 1;
         DPRINTF(BertiPrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
+        filter->insert(addr, true);
         addresses.push_back(AddrPriority(addr, prio, true, src));
         return true;
     }

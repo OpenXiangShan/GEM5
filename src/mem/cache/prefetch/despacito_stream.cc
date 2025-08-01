@@ -109,12 +109,12 @@ DespacitoStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, 
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getVAddr(), addr, src);
     }
-    if (filter->contains(addr)) {
+    if (filter->contains(addr, useVirtualAddresses)) {
         DPRINTF(DespacitoStreamPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(DespacitoStreamPrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
+        filter->insert(addr, useVirtualAddresses);
         addresses.push_back(AddrPriority(addr, prio, true, src));
         return true;
     }

@@ -80,7 +80,7 @@ class CMCPrefetcher : public Queued
         panic("not implemented");
     };
 
-    boost::compute::detail::lru_cache<Addr, Addr> *filter;
+    PrefetchFilter *filter;
 
     void doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool is_first_shot);

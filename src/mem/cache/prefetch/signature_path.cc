@@ -99,7 +99,7 @@ SignaturePath::PatternEntry::getStrideEntry(stride_t stride)
 void
 SignaturePath::addPrefetch(Addr ppn, stride_t last_block, stride_t delta, double path_confidence,
                            signature_t signature, bool is_secure, std::vector<AddrPriority> &addresses,
-                           boost::compute::detail::lru_cache<Addr, Addr> &filter)
+                           PrefetchFilter &filter)
 {
     stride_t block = last_block + delta;
 
@@ -233,8 +233,12 @@ SignaturePath::calculateLookaheadConfidence(PatternEntry const &sig,
 
 bool
 SignaturePath::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses,
-                                 boost::compute::detail::lru_cache<Addr, Addr> &filter, int32_t &best_block_offset)
+                                 PrefetchFilter &filter, int32_t &best_block_offset)
 {
+    if (!pfi.isVaddrValid()){
+        return false;
+    }
+
     Addr request_addr = pfi.getVAddr();
     Addr ppn = request_addr / sPageBytes;
     stride_t current_block = (request_addr % sPageBytes) / blkSize;
@@ -359,7 +363,7 @@ SignaturePath::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
 void
 SignaturePath::auxiliaryPrefetcher(Addr ppn, stride_t current_block, bool is_secure,
                                    std::vector<AddrPriority> &addresses,
-                                   boost::compute::detail::lru_cache<Addr, Addr> &filter)
+                                   PrefetchFilter &filter)
 {
     if (addresses.empty()) {
         // Enable the next line prefetcher if no prefetch candidates are found
@@ -370,14 +374,14 @@ SignaturePath::auxiliaryPrefetcher(Addr ppn, stride_t current_block, bool is_sec
 
 bool
 SignaturePath::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                                boost::compute::detail::lru_cache<Addr, Addr> &filter)
+                                PrefetchFilter &filter)
 {
-    if (filter.contains(addr)) {
+    if (filter.contains(addr, true)) {
         DPRINTF(SPP, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(SPP, "Send pf: %lx\n", addr);
-        filter.insert(addr, 0);
+        filter.insert(addr, true);
         addresses.push_back(AddrPriority(addr, prio, true, PrefetchSourceType::SPP));
         return true;
     }

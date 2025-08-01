@@ -157,7 +157,8 @@ Queued::printQueue(const std::list<DeferredPacket> &queue) const
 
     for (const_iterator it = queue.cbegin(); it != queue.cend();
                                                             it++, pos++) {
-        Addr vaddr = it->pfInfo.getVAddr();
+        /* set vaddr to 0 if this is a physical prefetch*/
+        Addr vaddr = it->pfInfo.isVaddrValid() ? it->pfInfo.getVAddr() : 0;
         /* Set paddr to 0 if not yet translated */
         Addr paddr = it->pkt ? it->pkt->getAddr() : 0;
         DPRINTF(HWPrefetchQueue, "%s[%d]: Prefetch Req VA: %#x PA: %#x "
@@ -278,8 +279,10 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
             PrefetchInfo new_pfi(pfi, addr_prio.addr, addr_prio.isVA);
             new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource,addr_prio.depth));
             statsQueued.pfIdentified++;
-            DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
-                    "inserting into prefetch queue.\n", new_pfi.getVAddr());
+            DPRINTF(HWPrefetch, "Found a pf candidate %saddr: %#x, "
+                    "inserting into prefetch queue.\n",
+                    new_pfi.isVaddrValid() ? "p" : "v",
+                    new_pfi.isVaddrValid() ? new_pfi.getVAddr() : new_pfi.getPaddr());
             // Create and insert the request
             insert(pkt, new_pfi, addr_prio);
             num_pfs += 1;
@@ -478,7 +481,12 @@ void
 Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &addr_prio)
 {
     const int32_t priority = addr_prio.priority;
-    assert(new_pfi.getVAddr() % blkSize == 0);
+    if (new_pfi.isVaddrValid()) {
+        assert(new_pfi.getVAddr() % blkSize == 0);
+    } else {
+        assert(new_pfi.getPaddr() % blkSize == 0);
+    }
+
 
     if (queueFilter) {
         if (alreadyInQueue(pfq, new_pfi, priority)) {
@@ -517,7 +525,8 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
             // if we generate a virtual addresses prefetch request,
             // and the request's Virtual page is the same as the original Virtual page
             // Compute the target PA using req->getPaddr + stride
-            target_paddr = posStride ? (pkt->req->getPaddr() + stride) :
+            target_paddr = posStride ?
+                (pkt->req->getPaddr() + stride) :
                 (pkt->req->getPaddr() - stride);
         } else {
             // if we generate a physical addresses prefetch request,
@@ -540,24 +549,12 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
             has_target_pa = false;
             translation_req = createPrefetchRequest(new_pfi.getVAddr(), new_pfi, pkt,
                                              addr_prio.pfSource, addr_prio.depth);
-        } else if (pkt->req->hasVaddr()) {
-            // if we generate a physical addresses prefetch request,
-            // and the request's Pysical page is different from the original Pysical page
-            // and the original request has a valid VA,
-            // we can compute the target VA using req->getVaddr + stride
-            // and then create a translation request
-            has_target_pa = false;
-            // Compute the target VA using req->getVaddr + stride
-            Addr target_vaddr = posStride ?
-                (pkt->req->getVaddr() + stride) :
-                (pkt->req->getVaddr() - stride);
-            translation_req = createPrefetchRequest(target_vaddr, new_pfi, pkt, addr_prio.pfSource, addr_prio.depth);
         } else {
             // if we generate a physical addresses prefetch request,
             // and the request's Physical page is different from the original Physical page
-            // and the original request has no valid VA,
-            // we can not compute the target VA, so we can not create a translation request
-            return;
+            // we use the prefetch PA as the target PA
+            has_target_pa = true;
+            target_paddr  = new_pfi.getPaddr();
         }
     }
 
@@ -578,15 +575,15 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
         dpp.createPkt(target_paddr, blkSize, requestorId, tagPrefetchWithPC,
                       pf_time, addr_prio.pfSource, addr_prio.depth);
         DPRINTF(HWPrefetch, "Prefetch queued. "
-                "addr:%#x priority: %3d tick:%lld.\n",
-                new_pfi.getVAddr(), priority, pf_time);
+                "paddr:%#x priority: %3d tick:%lld.\n",
+                target_paddr, priority, pf_time);
         addToQueue(pfq, dpp);
     } else {
         // Add the translation request and try to resolve it later
         dpp.setTranslationRequest(translation_req);
         dpp.tc = system->threads[translation_req->contextId()];
         DPRINTF(HWPrefetch, "Prefetch queued with no translation. "
-                "addr:%#x priority: %3d\n", new_pfi.getVAddr(), priority);
+                "vaddr:%#x priority: %3d\n", new_pfi.getVAddr(), priority);
         addToQueue(pfqMissingTranslation, dpp);
         if (!tlbReqEvent.scheduled()) {
             schedule(tlbReqEvent, nextCycle());
@@ -647,8 +644,10 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
                 /* update pointer */
                 it = prev;
         }
-        DPRINTF(HWPrefetch, "%s full (sz=%lu), removing lowest priority oldest packet, addr: %#x\n", queue_name,
-                queue.size(), it->pfInfo.getVAddr());
+        DPRINTF(HWPrefetch, "%s full (sz=%lu), removing lowest priority oldest packet, %saddr: %#x\n",
+            queue_name, queue.size(),
+            it->pfInfo.isVaddrValid() ? "v" : "p",
+            it->pfInfo.isVaddrValid() ? it->pfInfo.getVAddr() : it->pfInfo.getPaddr());
         if (&queue == &pfq || !it->ongoingTranslation){
             delete it->pkt;
             queue.erase(it);

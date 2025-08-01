@@ -39,7 +39,7 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
         stream_type = PrefetchSourceType::StoreStream;
         DPRINTF(XsStreamPrefetcher, "prefetch trigger come from store unit\n");
     }
-    if (pfi.isCacheMiss() && (streamBlkFilter.contains(block_addr))) {
+    if (pfi.isCacheMiss() && (streamBlkFilter.contains(block_addr, true))) {
         badPreNum++;
     }
     STREAMEntry *entry = streamLookup(pfi, in_active_page, decr);
@@ -120,11 +120,11 @@ XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
 {
     for (int i = 0; i < pf_degree; i++) {
         Addr pf_addr = addr + i * blkSize;
-        if (filter->contains(pf_addr)) {
+        if (filter->contains(pf_addr, true)) {
             DPRINTF(XsStreamPrefetcher, "Skip recently prefetched: %lx\n", pf_addr);
         } else {
             DPRINTF(XsStreamPrefetcher, "Send pf: %lx\n", pf_addr);
-            filter->insert(pf_addr, 0);
+            filter->insert(pf_addr, true);
             addresses.push_back(AddrPriority(pf_addr, prio, useVirtualAddresses, src,
                                                 ahead_level, ahead_level > cache->level()));
             streamBlkFilter.insert(pf_addr, 0);

@@ -317,7 +317,8 @@ BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
     auto [exist, rr_entry] = testRR(lookup_addr);
     if (exist) {
         if (archDBer) {
-            archDBer->bopTrainTraceWrite(curTick(), rr_entry.fullAddr, pfi.getVAddr(), offset,
+            Addr curAddr = useVirtualAddresses ? pfi.getVAddr() : pfi.getPaddr();
+            archDBer->bopTrainTraceWrite(curTick(), rr_entry.fullAddr, curAddr, offset,
                                         offsetsListIterator->score + 1, pfi.isCacheMiss());
         }
 
@@ -469,12 +470,12 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
         useVirtualAddresses ? pfi.getVAddr() : pfi.getPaddr(),
         addr, src);
     }
-    if (filter->contains(addr)) {
+    if (filter->contains(addr,useVirtualAddresses)) {
         DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(BOPPrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
+        filter->insert(addr, useVirtualAddresses);
         addresses.push_back(AddrPriority(addr, prio, useVirtualAddresses, src));
         return true;
     }

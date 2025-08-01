@@ -251,11 +251,11 @@ void
 XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
                                       int prio, PrefetchSourceType src, int ahead_level)
 {
-    if (filter->contains(addr)) {
+    if (filter->contains(addr, useVirtualAddresses)) {
         DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
     } else {
         DPRINTF(XSStridePrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
+        filter->insert(addr, useVirtualAddresses);
         addresses.push_back(AddrPriority(addr, prio, true, src, ahead_level, ahead_level > cache->level()));
     }
 }

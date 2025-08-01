@@ -226,12 +226,12 @@ bool
 OptPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                                 PrefetchSourceType src, int ahead_level)
 {
-    if (filter->contains(addr)) {
+    if (filter->contains(addr, true)) {
         DPRINTF(OptPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(OptPrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
+        filter->insert(addr, true);
         if (ahead_level > 1) {
             assert(ahead_level == 2 || ahead_level == 3);
             addresses.back().targetLevel = ahead_level;

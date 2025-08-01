@@ -181,7 +181,7 @@ class SignaturePath : public Queued
      */
     void addPrefetch(Addr ppn, stride_t last_block, stride_t delta, double path_confidence, signature_t signature,
                      bool is_secure, std::vector<AddrPriority> &addresses,
-                     boost::compute::detail::lru_cache<Addr, Addr> &filter);
+                     PrefetchFilter &filter);
 
     /**
      * Obtains the SignatureEntry of the given page, if the page is not found,
@@ -267,7 +267,7 @@ class SignaturePath : public Queued
      */
     virtual void auxiliaryPrefetcher(Addr ppn, stride_t current_block, bool is_secure,
                                      std::vector<AddrPriority> &addresses,
-                                     boost::compute::detail::lru_cache<Addr, Addr> &filter);
+                                     PrefetchFilter &filter);
 
     /**
      * Handles the situation when the lookahead process has crossed the
@@ -296,11 +296,11 @@ class SignaturePath : public Queued
     using Queued::calculatePrefetch;
 
     bool calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses,
-                           boost::compute::detail::lru_cache<Addr, Addr> &filter, int32_t &best_block_offset);
+                           PrefetchFilter &filter, int32_t &best_block_offset);
 
   private:
     bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                          boost::compute::detail::lru_cache<Addr, Addr> &filter);
+                          PrefetchFilter &filter);
     unsigned sPageBytes;
 
     bool preferLongPattern{false};

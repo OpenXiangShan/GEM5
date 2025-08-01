@@ -222,7 +222,7 @@ class BOP : public Queued
         } stats;
 
     public:
-        boost::compute::detail::lru_cache<Addr, Addr> *filter;
+        PrefetchFilter *filter;
 
         /** Update the RR right table after a prefetch fill */
         void notifyFill(const PacketPtr& pkt) override;

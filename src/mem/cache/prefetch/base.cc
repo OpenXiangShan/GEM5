@@ -499,6 +499,13 @@ void Base::PrefetchFilter::LRUCache<Key>::clear()
     cache_map.clear();
 }
 
+Base::PrefetchFilter::PrefetchFilter(size_t capacity)
+    : physicalAddrFilter(capacity),
+      virtualAddrFilter(capacity)
+{
+    // DPRINTF(PrefetchFilter, "Created PrefetchFilter with each capacity %zu\n", each_capacity);
+}
+
 Base::PrefetchFilter::PrefetchFilter(size_t physical_capacity, size_t virtual_capacity)
     : physicalAddrFilter(physical_capacity),
       virtualAddrFilter(virtual_capacity)

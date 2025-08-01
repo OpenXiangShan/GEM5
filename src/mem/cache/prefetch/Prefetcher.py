@@ -737,6 +737,7 @@ class BOPPrefetcher(QueuedPrefetcher):
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
 
 class XSPhysicalSmallBOP(BOPPrefetcher):
+    use_virtual_addresses=False
     score_max = 31
     round_max = 50
     bad_score = 1

@@ -552,25 +552,25 @@ bool
 XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
                                         int prio, PrefetchSourceType src, int ahead_level)
 {
-    if (ahead_level < 2 && pfPageLRUFilter.contains(regionAddress(addr))) {
+    if (ahead_level < 2 && pfPageLRUFilter.contains(regionAddress(addr), useVirtualAddresses)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L1 prefetched page: %lx\n", regionAddress(addr));
         return false;
 
-    } else if (ahead_level == 2 && pfPageLRUFilterL2.contains(regionAddress(addr))) {
+    } else if (ahead_level == 2 && pfPageLRUFilterL2.contains(regionAddress(addr), useVirtualAddresses)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L2 prefetched page: %lx\n", regionAddress(addr));
         return false;
 
-    } else if (ahead_level == 3 && pfPageLRUFilterL3.contains(regionAddress(addr))) {
+    } else if (ahead_level == 3 && pfPageLRUFilterL3.contains(regionAddress(addr), useVirtualAddresses)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L3 prefetched page: %lx\n", regionAddress(addr));
         return false;
 
-    } else if (pfBlockLRUFilter.contains(addr)) {
+    } else if (pfBlockLRUFilter.contains(addr, useVirtualAddresses)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
 
     } else {
         if (!(src == PrefetchSourceType::SStream || src == PrefetchSourceType::StoreStream)) {
-            pfBlockLRUFilter.insert(addr, 0);
+            pfBlockLRUFilter.insert(addr, useVirtualAddresses);
         }
         if (archDBer) {
             archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getVAddr(), addr, src);
@@ -583,7 +583,7 @@ XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std:
 
 void
 XSCompositePrefetcher::sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, std::vector<AddrPriority> &addresses,
-                                    boost::compute::detail::lru_cache<Addr, Addr> &Filter, bool decr, int pf_level)
+                                    PrefetchFilter &Filter, bool decr, int pf_level)
 {
     Addr pf_tgt_region = regionAddress(pf_tgt_addr);
     Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
@@ -599,7 +599,7 @@ XSCompositePrefetcher::sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, s
         DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d] pf_level %d\n", cur, i, pf_level);
         fatal_if(i < 0, "i < 0\n");
     }
-    Filter.insert(pf_tgt_region, 0);
+    Filter.insert(pf_tgt_region, useVirtualAddresses);
 }
 
 void

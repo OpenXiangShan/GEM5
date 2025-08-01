@@ -139,11 +139,11 @@ Stride::calculatePrefetch(const PrefetchInfo &pfi,
     // Get required packet info
     Addr pf_addr = blockAddress(pfi.getVAddr());
 
-    if (blockLRUFilter.contains(pf_addr)) {
+    if (blockLRUFilter.contains(pf_addr, useVirtualAddresses)) {
         DPRINTF(StridePrefetcher, "Ignoring recently prefetched address %#x.\n", pf_addr);
         return;
     } else {
-        blockLRUFilter.insert(pf_addr, pf_addr);
+        blockLRUFilter.insert(pf_addr, useVirtualAddresses);
     }
 
     Addr pc = pfi.getPC();

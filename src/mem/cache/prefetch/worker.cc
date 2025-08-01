@@ -34,22 +34,40 @@ void
 WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 {
     auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
+    bool isVaddrValid = ptr->pkt->req->hasVaddr();
+    bool isPaddrValid = ptr->pkt->req->hasPaddr();
+    Addr recvVAddr = isVaddrValid ? ptr->pkt->req->getVaddr() : 0;
+    Addr recvPAddr = isPaddrValid ? ptr->pkt->req->getPaddr() : 0;
 
     // ignore if pfahead_host > itself level
     if ((ptr->isCrossLevel ? (ptr->targetLevel <= cache->level()) : true) &&
         (ptr->pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::SStream)) {
-        if (pfLRUFilter.contains(ptr->pfInfo.getVAddr())) {
-            DPRINTF(WorkerPref, "Worker: offload: [%lx, %d] skip recently in localBuffer\n",
-                ptr->pfInfo.getVAddr(), ptr->targetLevel);
+        if (isVaddrValid && pfLRUFilter.contains(recvVAddr, isVaddrValid)) {
+            DPRINTF(WorkerPref, "Worker: offload vaddr: [%lx, %d] skip recently in localBuffer\n",
+                recvVAddr, ptr->targetLevel);
+            return;
+        } else if (isPaddrValid && pfLRUFilter.contains(recvPAddr, isPaddrValid)) {
+            DPRINTF(WorkerPref, "Worker: offload paddr: [%lx, %d] skip recently in localBuffer\n",
+                isVaddrValid ? "vaddr":"paddr", recvPAddr, ptr->targetLevel);
             return;
         }
-        pfLRUFilter.insert(ptr->pfInfo.getVAddr(),0);
+        if (isVaddrValid) {
+            pfLRUFilter.insert(recvVAddr,isVaddrValid);
+        } else if (isPaddrValid) {
+            pfLRUFilter.insert(recvPAddr,isVaddrValid);
+        }
+
     }
 
     workerStats.hintsReceived++;
 
-    DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n",
-        ptr->pfInfo.getVAddr(), ptr->targetLevel, localBuffer.size());
+    if (isVaddrValid) {
+        DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n",
+                recvVAddr, ptr->targetLevel, localBuffer.size());
+    } else if (isPaddrValid) {
+        DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n",
+                recvPAddr, ptr->targetLevel, localBuffer.size());
+    }
     localBuffer.push_back(*ptr);
 
     if (!transferEvent->scheduled()){

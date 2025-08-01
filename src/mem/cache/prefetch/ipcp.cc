@@ -23,7 +23,7 @@ IPCP::IPCP(const IPCPrefetcherParams &p)
     assert((ipt_size & (ipt_size - 1)) == 0);
     assert((cspt_size & (cspt_size - 1)) == 0);
     if (p.use_rrf) {
-        rrf = new boost::compute::detail::lru_cache<Addr, Addr>(32);
+        rrf = new PrefetchFilter(32);
     }
 
     ipt.resize(ipt_size);
@@ -57,12 +57,12 @@ IPCP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPrior
                        PrefetchSourceType pfSource)
 {
     assert(rrf);
-    if (rrf->contains(addr)) {
+    if (rrf->contains(addr, useVirtualAddresses)) {
         DPRINTF(IPCP, "IPCP PF filtered\n");
         ipcpStats.pf_filtered++;
         return false;
     } else {
-        rrf->insert(addr, 0);
+        rrf->insert(addr, useVirtualAddresses);
         addresses.push_back(AddrPriority(addr, prio, true, pfSource));
         return true;
     }

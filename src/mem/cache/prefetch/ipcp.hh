@@ -106,7 +106,7 @@ class IPCP : public Queued
     int saved_stride;
 
     // prefetch filter (32RR filter)
-    boost::compute::detail::lru_cache<Addr, Addr> *rrf = nullptr;
+    PrefetchFilter *rrf = nullptr;
 
     IPCP(const IPCPrefetcherParams &p);
 

@@ -287,12 +287,12 @@ bool
 CMCPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                                 PrefetchSourceType src)
 {
-    if (filter->contains(addr)) {
+    if (filter->contains(addr, useVirtualAddresses)) {
         DPRINTF(CMCPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(CMCPrefetcher, "CMC: send pf: %lx\n", addr);
-        filter->insert(addr, 0);
+        filter->insert(addr, useVirtualAddresses);
         addresses.push_back(AddrPriority(addr, prio, true, src));
         return true;
     }

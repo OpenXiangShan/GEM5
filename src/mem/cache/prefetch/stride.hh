@@ -168,7 +168,7 @@ class Stride : public Queued
   private:
 
     const unsigned filterSize{32};
-    boost::compute::detail::lru_cache<Addr, Addr> blockLRUFilter;
+    PrefetchFilter blockLRUFilter;
 
 };
 

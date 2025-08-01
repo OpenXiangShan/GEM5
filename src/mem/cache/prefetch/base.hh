@@ -151,7 +151,8 @@ class Base : public ClockedObject
         LRUCache<Addr> virtualAddrFilter;
 
     public:
-        PrefetchFilter(size_t physical_capacity = 256, size_t virtual_capacity = 256);
+        PrefetchFilter(size_t capacity);
+        PrefetchFilter(size_t physical_capacity, size_t virtual_capacity);
 
         /**
          * Check if the address is in the filter.
@@ -392,11 +393,11 @@ class Base : public ClockedObject
          */
         bool sameAddr(PrefetchInfo const &pfi) const
         {
-            if (validVaddr && pfi.isVaddrValid()) {
-                return this->getVAddr() == pfi.getVAddr() &&
-                    this->isSecure() == pfi.isSecure();
-            } else if (validPaddr && pfi.isPaddrValid()) {
+            if (validPaddr && pfi.isPaddrValid()) {
                 return this->getPaddr() == pfi.getPaddr() &&
+                    this->isSecure() == pfi.isSecure();
+            } else if (validVaddr && pfi.isVaddrValid()) {
+                return this->getVAddr() == pfi.getVAddr() &&
                     this->isSecure() == pfi.isSecure();
             } else {
                 return false;

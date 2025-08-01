@@ -83,9 +83,9 @@ class XsStreamPrefetcher : public Queued
                           PrefetchSourceType src, int pf_degree, int ahead_level = -1);
 
   public:
-    boost::compute::detail::lru_cache<Addr, Addr> *filter;
+    PrefetchFilter *filter;
     const unsigned pfFilterSize{256};
-    boost::compute::detail::lru_cache<Addr, Addr> streamBlkFilter;
+    PrefetchFilter streamBlkFilter;
     XsStreamPrefetcher(const XsStreamPrefetcherParams &p);
     using Queued::calculatePrefetch;
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses) override

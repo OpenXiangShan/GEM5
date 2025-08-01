@@ -71,7 +71,7 @@ class WorkerPrefetcher : public Queued
     } workerStats;
 
   protected:
-    boost::compute::detail::lru_cache<Addr, Addr> pfLRUFilter;
+    PrefetchFilter pfLRUFilter;
 
     std::list<DeferredPacket> localBuffer;
 
