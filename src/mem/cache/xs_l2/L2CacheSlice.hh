@@ -41,6 +41,11 @@ class L2CacheSlice : public CacheWrapper
         getDataBankIdx = func;
     }
 
+    // L2CacheWrapper will call this to provide the implementation for getDirBankIdx.
+    void setGetDirBankIdxFunc(std::function<Addr(Addr)> func) {
+        getDirBankIdx = func;
+    }
+
     void setPipeDataWriteStage(uint64_t stage) {
         pipeDataWriteStage = stage;
     }
@@ -93,6 +98,7 @@ class L2CacheSlice : public CacheWrapper
     // This will hold the function to calculate the set index for an address.
     std::function<Addr(Addr)> getSetIdx;
     std::function<Addr(Addr)> getDataBankIdx;
+    std::function<Addr(Addr)> getDirBankIdx;
 
     uint64_t pipeDataWriteStage = 3;
     bool dirReadBypass = false;

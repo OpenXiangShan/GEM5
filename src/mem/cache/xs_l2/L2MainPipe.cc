@@ -118,12 +118,18 @@ L2MainPipe::hasMCP2Stall(PipelineResources resource, PacketPtr pkt) const
 }
 
 bool
-L2MainPipe::hasDirSramStall(PipelineResources resource) const
+L2MainPipe::hasDirSramStall(PipelineResources resource, PacketPtr pkt) const
 {
     // Dir is SRAM, read and write should not be available at the same time
+    // With DirSram banking: only stall if accessing the same bank
     if (resource & PipelineResources::DirRead) {
-        return (scoreboardResources[getDirWriteStage()] &
-                PipelineResources::DirWrite) != 0;
+        if ((scoreboardResources[getDirWriteStage()] &
+                PipelineResources::DirWrite) != 0) {
+            // Check if accessing the same DirSram bank
+            bool sameBank = owner->getDirBankIdx(pkt->getAddr()) ==
+                            owner->getDirBankIdx(scoreboardTasks[getDirWriteStage()].addr);
+            return sameBank;
+        }
     }
     return false;
 }
@@ -131,7 +137,7 @@ L2MainPipe::hasDirSramStall(PipelineResources resource) const
 bool
 L2MainPipe::isResourceAvailable(PipelineResources resource, PacketPtr pkt) const
 {
-    return !hasMCP2Stall(resource, pkt) && !hasDirSramStall(resource);
+    return !hasMCP2Stall(resource, pkt) && !hasDirSramStall(resource, pkt);
 }
 
 bool
@@ -176,7 +182,7 @@ L2MainPipe::isTaskAvailable(PacketPtr pkt, TaskSource source) const
         if (hasMCP2Stall(resources, pkt)) {
             owner->stats.l1ReqPipeMCP2Stall++;
         }
-        if (hasDirSramStall(resources)) {
+        if (hasDirSramStall(resources, pkt)) {
             owner->stats.l1ReqPipeDirSramStall++;
         }
     }

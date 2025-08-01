@@ -92,6 +92,13 @@ class L2CacheWrapper : public ClockedObject
             // Extract lower bits of set index based on number of banks
             return set_idx & (dataSramBanks - 1);
         });
+        // Set the function to calculate DirSram bank index for an address
+        slice->setGetDirBankIdxFunc([this](Addr addr) -> Addr {
+            Addr slice_bits = popCount(sliceMask);
+            Addr set_idx = (addr >> (block_bits + slice_bits)) & setMask;
+            // Extract lower bits of set index based on number of banks
+            return set_idx & (dirSramBanks - 1);
+        });
     }
 
   protected:
@@ -142,6 +149,7 @@ class L2CacheWrapper : public ClockedObject
     const uint64_t pipe_data_write_stage;
     const bool dirReadBypass;
     const uint64_t dataSramBanks;
+    const uint64_t dirSramBanks;
     SlicedCacheAccessor sliced_cache_accessor;
     prefetch::Base *prefetcher;
 

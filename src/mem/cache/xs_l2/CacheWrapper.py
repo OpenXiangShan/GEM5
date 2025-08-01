@@ -69,6 +69,10 @@ class L2CacheWrapper(ClockedObject):
     # Must be power of 2 (1, 2, 4, 8, etc.), default is 1 (single bank)
     data_sram_banks = Param.Unsigned(1, "Number of DataSram banks for dividing Data Sets")
 
+    # Number of DirSram banks (divides the Dir Sets into banks)
+    # Must be power of 2 (1, 2, 4, 8, etc.), default is 1 (single bank)
+    dir_sram_banks = Param.Unsigned(1, "Number of DirSram banks for dividing Dir Sets")
+
     prefetcher = Param.BasePrefetcher(L2CompositeWithWorkerPrefetcher(), "Prefetcher attached to L2CacheWrapper")
     system = Param.System(Parent.any, "System we belong to")
 

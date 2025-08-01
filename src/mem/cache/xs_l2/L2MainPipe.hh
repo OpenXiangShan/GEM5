@@ -70,9 +70,10 @@ class L2MainPipe
     /**
      * Check if we should be blocked by DirSram in the start stage.
      * @param resource The resource to check.
+     * @param pkt The packet to check for bank conflicts.
      * @return True if the resource is available, false otherwise.
      */
-    bool hasDirSramStall(PipelineResources resource) const;
+    bool hasDirSramStall(PipelineResources resource, PacketPtr pkt) const;
 
     /**
      * Check if all pipeline resources are available for the task.

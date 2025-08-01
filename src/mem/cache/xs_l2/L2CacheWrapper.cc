@@ -19,6 +19,7 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
       pipe_data_write_stage(p.pipe_data_write_stage),
       dirReadBypass(p.dir_read_bypass),
       dataSramBanks(p.data_sram_banks),
+      dirSramBanks(p.dir_sram_banks),
       sliced_cache_accessor(this),
       prefetcher(p.prefetcher),
       system(p.system)
@@ -29,6 +30,10 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
 
     if (p.data_sram_banks == 0 || (p.data_sram_banks & (p.data_sram_banks - 1)) != 0) {
         fatal("L2CacheWrapper: data_sram_banks must be a power of 2.");
+    }
+
+    if (p.dir_sram_banks == 0 || (p.dir_sram_banks & (p.dir_sram_banks - 1)) != 0) {
+        fatal("L2CacheWrapper: dir_sram_banks must be a power of 2.");
     }
 
     for (int i = 0; i < p.num_slices; ++i) {
