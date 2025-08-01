@@ -1,5 +1,11 @@
-#include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/btb/ras.hh"
+
+// Additional conditional includes based on build mode
+#ifdef UNIT_TEST
+    #include "cpu/pred/btb/test/test_dprintf.hh"
+#else
+    #include "cpu/o3/dyn_inst.hh"
+#endif
 
 namespace gem5 {
 
@@ -7,33 +13,69 @@ namespace branch_prediction {
 
 namespace btb_pred {
 
-BTBRAS::BTBRAS(const Params &p)
-    : TimedBaseBTBPredictor(p),
-    numEntries(p.numEntries),
-    ctrWidth(p.ctrWidth),
-    numInflightEntries(p.numInflightEntries)
-{
-    //ssp = numEntries - 1;
-    ssp = 0;
-    nsp = 0;
-    sctr = 0;
-    stack.resize(numEntries);
-    maxCtr = (1 << ctrWidth) - 1;
-    TOSW = 0;
-    TOSR = 0;
-    inflightPtrDec(TOSR);
-    BOS = 0;
-    inflightStack.resize(numInflightEntries);
-    for (auto &entry : stack) {
-        entry.data.ctr = 0;
-        entry.data.retAddr = 0x80000000L;
+// Constructor implementations based on build mode
+#ifdef UNIT_TEST
+    namespace test {
+        // Test constructor for unit testing mode
+        BTBRAS::BTBRAS(unsigned numEntries, unsigned ctrWidth, unsigned numInflightEntries)
+            : TimedBaseBTBPredictor(),
+              numEntries(numEntries),
+              ctrWidth(ctrWidth),
+              numInflightEntries(numInflightEntries)
+        {
+            // Initialize RAS state
+            ssp = 0;
+            nsp = 0;
+            sctr = 0;
+            stack.resize(numEntries);
+            maxCtr = (1 << ctrWidth) - 1;
+            TOSW = 0;
+            TOSR = 0;
+            inflightPtrDec(TOSR);
+            BOS = 0;
+            inflightStack.resize(numInflightEntries);
+
+            // Initialize stack entries
+            for (auto &entry : stack) {
+                entry.data.ctr = 0;
+                entry.data.retAddr = 0x80000000L;
+            }
+            for (auto &entry : inflightStack) {
+                entry.data.ctr = 0;
+                entry.data.retAddr = 0x80000000L;
+            }
+        }
+#else
+    // Production constructor
+    BTBRAS::BTBRAS(const Params &p)
+        : TimedBaseBTBPredictor(p),
+          numEntries(p.numEntries),
+          ctrWidth(p.ctrWidth),
+          numInflightEntries(p.numInflightEntries)
+    {
+        // Initialize RAS state
+        ssp = 0;
+        nsp = 0;
+        sctr = 0;
+        stack.resize(numEntries);
+        maxCtr = (1 << ctrWidth) - 1;
+        TOSW = 0;
+        TOSR = 0;
+        inflightPtrDec(TOSR);
+        BOS = 0;
+        inflightStack.resize(numInflightEntries);
+
+        // Initialize stack entries
+        for (auto &entry : stack) {
+            entry.data.ctr = 0;
+            entry.data.retAddr = 0x80000000L;
+        }
+        for (auto &entry : inflightStack) {
+            entry.data.ctr = 0;
+            entry.data.retAddr = 0x80000000L;
+        }
     }
-    for (auto &entry : inflightStack) {
-        entry.data.ctr = 0;
-        entry.data.retAddr = 0x80000000L;
-    }
-    //ndepth = 0;
-}
+#endif
 
 void
 BTBRAS::checkCorrectness() {
@@ -60,7 +102,7 @@ BTBRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
 {
     assert(getDelay() < stagePreds.size());
     meta = std::make_shared<RASMeta>();
-    DPRINTFR(RAS, "putPC startAddr %x", startAddr);
+    DPRINTFR(RAS, "putPC startAddr %lx", startAddr);
     // checkCorrectness();
     for (int i = getDelay(); i < stagePreds.size(); i++) {
         stagePreds[i].returnTarget = getTop_meta().retAddr; // stack[sp].retAddr;
@@ -84,7 +126,7 @@ BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction
     // do push & pops on prediction
     // pred.returnTarget = stack[sp].retAddr;
     auto takenEntry = pred.getTakenEntry();
-    DPRINTFR(RAS, "Do specUpdate for PC %x pred target %x ", pred.bbStart, pred.returnTarget);
+    DPRINTFR(RAS, "Do specUpdate for PC %lx pred target %lx ", pred.bbStart, pred.returnTarget);
 
     if (takenEntry.isCall) {
         Addr retAddr = takenEntry.pc + takenEntry.size;
@@ -95,10 +137,10 @@ BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction
         pop();
     }
     if (takenEntry.isCall) {
-        DPRINTFR(RAS, "IsCall spec PC %x\n", takenEntry.pc);
+        DPRINTFR(RAS, "IsCall spec PC %lx\n", takenEntry.pc);
     }
     if (takenEntry.isReturn) {
-        DPRINTFR(RAS, "IsRet spec PC %x\n", takenEntry.pc);
+        DPRINTFR(RAS, "IsRet spec PC %lx\n", takenEntry.pc);
     }
     
     if (takenEntry.isCall || takenEntry.isReturn)
@@ -116,7 +158,8 @@ BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &e
     }*/
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
-    DPRINTF(RAS, "recover called, meta TOSR %d TOSW %d ssp %d sctr %u entry PC %x end PC %x\n", meta_ptr->TOSR, meta_ptr->TOSW, meta_ptr->ssp, meta_ptr->sctr, entry.startPC, entry.predEndPC);
+    DPRINTF(RAS, "recover called, meta TOSR %d TOSW %d ssp %d sctr %u entry PC %lx end PC %lx\n",
+        meta_ptr->TOSR, meta_ptr->TOSW, meta_ptr->ssp, meta_ptr->sctr, entry.startPC, entry.predEndPC);
 
     TOSR = meta_ptr->TOSR;
     TOSW = meta_ptr->TOSW;
@@ -139,7 +182,8 @@ BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &e
     if (entry.exeTaken) {
         DPRINTF(RAS, "isCall %d, isRet %d\n", takenEntry.isCall, takenEntry.isReturn);
         if (takenEntry.isReturn) {
-            DPRINTF(RAS, "IsRet expect target %llx, preded %llx, pred taken %d pred target %llx\n", takenEntry.target, meta_ptr->target, entry.predTaken, entry.predBranchInfo.target);
+            DPRINTF(RAS, "IsRet expect target %lx, preded %lx, pred taken %d pred target %lx\n",
+                takenEntry.target, meta_ptr->target, entry.predTaken, entry.predBranchInfo.target);
         }
         printStack("after recoverHist");
     }
@@ -153,18 +197,21 @@ BTBRAS::update(const FetchStream &entry)
     auto takenEntry = entry.exeBranchInfo;
     if (entry.exeTaken) {
         if (meta_ptr->ssp != nsp || meta_ptr->sctr != stack[nsp].data.ctr) {
-            DPRINTF(RAS, "ssp and nsp mismatch, recovering, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n", meta_ptr->ssp, meta_ptr->sctr, nsp, stack[nsp].data.ctr);
+            DPRINTF(RAS, "ssp and nsp mismatch, recovering, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
+                meta_ptr->ssp, meta_ptr->sctr, nsp, stack[nsp].data.ctr);
             nsp = meta_ptr->ssp;
         } else
-            DPRINTF(RAS, "ssp and nsp match, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n", meta_ptr->ssp, meta_ptr->sctr, nsp, stack[nsp].data.ctr);
+            DPRINTF(RAS, "ssp and nsp match, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
+                meta_ptr->ssp, meta_ptr->sctr, nsp, stack[nsp].data.ctr);
         if (takenEntry.isCall) {
-            DPRINTF(RAS, "real update call BTB hit %d meta TOSR %d TOSW %d\n entry PC %x", entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
+            DPRINTF(RAS, "real update call BTB hit %d meta TOSR %d TOSW %d\n entry PC %lx",
+                entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
             Addr retAddr = takenEntry.pc + takenEntry.size;
             push_stack(retAddr);
             BOS = inflightPtrPlus1(meta_ptr->TOSW);
         }
         if (takenEntry.isReturn) {
-            DPRINTF(RAS, "update ret entry PC %x\n", entry.startPC);
+            DPRINTF(RAS, "update ret entry PC %lx\n", entry.startPC);
             pop_stack();
         }
     }
@@ -237,7 +284,7 @@ BTBRAS::pop()
 
     // pop may need to deal with committed stack
     if (inflightInRange(TOSR)) {
-        DPRINTF(RAS, "Select from inflight, addr %x\n", inflightStack[TOSR].data.retAddr);
+        DPRINTF(RAS, "Select from inflight, addr %lx\n", inflightStack[TOSR].data.retAddr);
         TOSR = inflightStack[TOSR].nos;
         if (sctr > 0) {
             sctr--; 
@@ -320,7 +367,7 @@ BTBRAS::getTop()
     // results may come from two sources: inflight queue and committed stack
     if (inflightInRange(TOSR)) {
         // result come from inflight queue
-        DPRINTF(RAS, "Select from inflight, addr %x\n", inflightStack[TOSR].data.retAddr);
+        DPRINTF(RAS, "Select from inflight, addr %lx\n", inflightStack[TOSR].data.retAddr);
         // additional check: if nos is out of bound, check if commit stack top == inflight[nos]
         /*
         if (!inflightInRange(inflightStack[TOSR].nos)) {
@@ -335,7 +382,7 @@ BTBRAS::getTop()
         return inflightStack[TOSR].data;
     } else {
         // result come from commit queue
-        DPRINTF(RAS, "Select from stack, addr %x\n", stack[ssp].data.retAddr);
+        DPRINTF(RAS, "Select from stack, addr %lx\n", stack[ssp].data.retAddr);
         return stack[ssp].data;
     }
 }
@@ -345,7 +392,7 @@ BTBRAS::getTop_meta() {
     // results may come from two sources: inflight queue and committed stack
     if (inflightInRange(TOSR)) {
         // result come from inflight queue
-        DPRINTF(RAS, "Select from inflight, addr %x\n", inflightStack[TOSR].data.retAddr);
+        DPRINTF(RAS, "Select from inflight, addr %lx\n", inflightStack[TOSR].data.retAddr);
         meta->ssp = ssp;
         meta->sctr = sctr;
         meta->TOSR = TOSR;
@@ -371,7 +418,7 @@ BTBRAS::getTop_meta() {
         meta->TOSR = TOSR;
         meta->TOSW = TOSW;
         meta->target = stack[ssp].data.retAddr;
-        DPRINTF(RAS, "Select from stack, addr %x\n", stack[ssp].data.retAddr);
+        DPRINTF(RAS, "Select from stack, addr %lx\n", stack[ssp].data.retAddr);
         return stack[ssp].data;
     }
 }
@@ -388,9 +435,13 @@ BTBRAS::getTopAddrFromMetas(const FetchStream &stream)
     return meta_ptr->target;
 }
 
+// Close conditional namespaces
+#ifdef UNIT_TEST
+    } // namespace test
+#endif
 
-}  // namespace btb_pred
+} // namespace btb_pred
 
-}  // namespace branch_prediction
+} // namespace branch_prediction
 
-}  // namespace gem5
+} // namespace gem5

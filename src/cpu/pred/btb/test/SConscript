@@ -53,6 +53,13 @@ GTest('decoupled_bpred.test',
     # '../../../../sim/serialize.cc',     # for PCStateBase
 )
 
+# add --unit-test to enable unit test mode for RAS
+GTest('ras.test',
+    'ras_test.cc',
+    '../ras.cc',
+    'timed_base_pred.cc',
+)
+
 # Add the test to UNITTESTS target
 env.Append(UNITTESTS=['uras.test',
         'btb.test',
@@ -60,4 +67,5 @@ env.Append(UNITTESTS=['uras.test',
         'folded_hist.test',
         'jump_ahead.test',
         'fetch_target_queue.test',
-        'decoupled_bpred.test'])
+        'decoupled_bpred.test',
+        'ras.test'])
