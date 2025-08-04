@@ -2102,6 +2102,9 @@ DecoupledBPUWithBTB::produce2ndPrediction()
     bool satisfiesFirstCondition = satisfiesFirstPred2TakenCondition(finalPred);
 
 
+    // Save abtb's aheadReadBtbEntries before requestNewPrediction to restore if needed
+    auto savedAheadReadBtbEntries = abtb->aheadReadBtbEntries;
+
     // 1. Generate second prediction (streamlined, s0PC already updated by makeNewPrediction)
     requestNewPrediction();
     generateFinalPredAndCreateBubbles(); // Don't store override bubbles
@@ -2116,14 +2119,18 @@ DecoupledBPUWithBTB::produce2ndPrediction()
         !secondPredUBTBHit ||
         !satisfiesSecondPred2TakenCondition(finalPred)
     ) {
-        // Second prediction doesn't meet basic 2-taken conditions, just return without penalty
-        DPRINTF(Override, "the prediction pair doesn't satisfy 2-taken conditions, or isn't hit in uBTB, abort\n");
+        // Second prediction doesn't meet basic 2-taken conditions, restore abtb state and return
+        abtb->aheadReadBtbEntries = savedAheadReadBtbEntries;
+        DPRINTF(Override, "the prediction pair doesn't satisfy 2-taken conditions, \
+            or isn't hit in uBTB, restored abtb state\n");
         return;
     }
     dbpBtbStats.twoTakenHit++;
 
     if (!firstPredisFromUBTB) {
-        DPRINTF(Override, "First prediction not from uBTB, abort\n");
+        // Restore abtb state before returning
+        abtb->aheadReadBtbEntries = savedAheadReadBtbEntries;
+        DPRINTF(Override, "First prediction not from uBTB, restored abtb state\n");
         return;
     }
     dbpBtbStats.twoTakenRemainsAfterOverride++;

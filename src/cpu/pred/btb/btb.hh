@@ -361,7 +361,9 @@ class DefaultBTB : public TimedBaseBTBPredictor
      */
     std::vector<BTBHeap> mruList;
 
+    public:
     std::queue<std::tuple<Addr, Addr, BTBSet>> aheadReadBtbEntries;
+    private:
 
     /** BTB configuration parameters */
     unsigned numEntries;    // Total number of entries
