@@ -604,10 +604,8 @@ DecoupledBPUWithBTB::tick()
         numOverrideBubbles = generateFinalPredAndCreateBubbles();
         bpuState = BpuState::PREDICTION_OUTSTANDING;
 
-        // Clear each predictor's output
-        for (int i = 0; i < numStages; i++) {
-            predsOfEachStage[i].btbEntries.clear();
-        }
+        // Clear stage predictions for next cycle
+        clearPreds();
     }
 
     // Process enqueue operations and bubble counter
@@ -749,8 +747,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     printFullBTBPrediction(finalPred);
     dbpBtbStats.predsOfEachStage[first_hit_stage]++;
 
-    // Clear stage predictions for next cycle
-    clearPreds();
+
 
     DPRINTF(Override, "Prediction complete: override bubbles=%d\n", first_hit_stage);
     return first_hit_stage;
@@ -2121,30 +2118,37 @@ DecoupledBPUWithBTB::produce2ndPrediction()
     ) {
         // Second prediction doesn't meet basic 2-taken conditions, just return without penalty
         DPRINTF(Override, "the prediction pair doesn't satisfy 2-taken conditions, or isn't hit in uBTB, abort\n");
-         return;
-     }
-     dbpBtbStats.twoTakenHit++;
+        return;
+    }
+    dbpBtbStats.twoTakenHit++;
 
     if (!firstPredisFromUBTB) {
-         DPRINTF(Override, "First prediction not from uBTB, abort\n");
-         return;
-     }
-     dbpBtbStats.twoTakenRemainsAfterOverride++;
+        DPRINTF(Override, "First prediction not from uBTB, abort\n");
+        return;
+    }
+    dbpBtbStats.twoTakenRemainsAfterOverride++;
 
     if (finalPred.predSource == 0 && finalPred.fromUBTB) {
         DPRINTF(Override, "Second prediction validation passed, enqueueing\n");
-        tryEnqFetchTarget();
-        makeNewPrediction(true);
         dbpBtbStats.secondPredValidationPassed++;
     } else {
         DPRINTF(Override, "Second prediction failed uBTB source check, adding penalty\n");
         handleSecondPredictionFailure();
         dbpBtbStats.secondPredValidationFailed++;
-        tryEnqFetchTarget();
-        makeNewPrediction(true);
-     }
+    }
+    // either way, 2 taken is triggered, this version of 2-taken has net performance gain and no side-effect
 
-     dbpBtbStats.predProduce2Taken++;
+    // update of ubtb always accompany enqueueing fetch block
+    if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
+        ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+    }
+
+    // Clear stage predictions for next cycle
+    clearPreds();
+    tryEnqFetchTarget();
+    makeNewPrediction(true);
+
+    dbpBtbStats.predProduce2Taken++;
 }
 
 bool

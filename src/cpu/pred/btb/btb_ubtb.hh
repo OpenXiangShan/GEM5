@@ -316,6 +316,8 @@ class UBTB : public TimedBaseBTBPredictor
         statistics::Scalar returnHits;
         statistics::Scalar returnMisses;
 
+        statistics::Scalar s3PredBtbEntriesEmpty;
+
         UBTBStats(statistics::Group* parent);
     } ubtbStats;
 

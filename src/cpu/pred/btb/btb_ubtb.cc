@@ -217,9 +217,13 @@ UBTB::replaceOldEntry(UBTBIter oldEntryIter, FullBTBPrediction &newPrediction)
 void
 UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 {
-
+    // Count when s3Pred.btbEntries is empty
+    if (s3Pred.btbEntries.empty()) {
+        ubtbStats.s3PredBtbEntriesEmpty++;
+    }
 
     UBTBIter s0EntryIter = lastPred.hit_entry;
+
     if (s0EntryIter != ubtb.end()) {
         assert(s0EntryIter->valid); //lookup() should only return valid entry
     }
@@ -433,7 +437,8 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(callHits, statistics::units::Count::get(), "calls committed that was predicted hit"),
       ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
       ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
-      ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
+      ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
+      ADD_STAT(s3PredBtbEntriesEmpty, statistics::units::Count::get(), "times when s3Pred.btbEntries is empty")
 {
 }
 
