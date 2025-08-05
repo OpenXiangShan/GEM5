@@ -563,59 +563,87 @@ DecoupledBPUWithBTB::tick()
     if (squashing) {
         bpuState = BpuState::IDLE;
         numOverrideBubbles = 0;
+        firstPredBubbles = 0;
         DPRINTF(Override, "Squashing, BPU state updated.\n");
         squashing = false;
         return;
     }
 
-    int predsRemainsToBeMade = enableTwoTaken ? 2 : 1;
-
-    while (predsRemainsToBeMade > 0) {
-        // 1. Request new prediction if FSQ not full and we are idle
-        if (bpuState == BpuState::IDLE && !streamQueueFull()) {
-            requestNewPrediction();
-            bpuState = BpuState::PREDICTOR_DONE;
-        }
-
-        // 2. Handle pending prediction if available
-        if (bpuState == BpuState::PREDICTOR_DONE) {
-            DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
-            numOverrideBubbles = generateFinalPredAndCreateBubbles();
-            bpuState = BpuState::PREDICTION_OUTSTANDING;
-
-            // Clear each predictor's output
-            for (int i = 0; i < numStages; i++) {
-                predsOfEachStage[i].btbEntries.clear();
-            }
-        }
-
-        // 3. Process enqueue operations and bubble counter
-        tryEnqFetchTarget();
-
-        // check if:
-        // 1. FSQ has space
-        // 2. there's no bubble
-        // 3. PREDICTION_OUTSTANDING
-        if (validateFSQEnqueue()) {
-            // Create new FSQ entry with the current prediction
-            makeNewPrediction(true);
-
-            DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
-            bpuState = BpuState::IDLE;
-        }
-
-        if (numOverrideBubbles > 0) {
-            numOverrideBubbles--;
-            dbpBtbStats.overrideBubbleNum++;
-            DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
-        }
-
-        predsRemainsToBeMade--;
+    // Single iteration prediction logic (removed while loop)
+    if (bpuState == BpuState::IDLE && !streamQueueFull() && numOverrideBubbles == 0) {
+        requestNewPrediction();
+        bpuState = BpuState::PREDICTOR_DONE;
     }
 
+    if (bpuState == BpuState::PREDICTOR_DONE) {
+        DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
+        numOverrideBubbles = generateFinalPredAndCreateBubbles();
+        firstPredBubbles = numOverrideBubbles;  // Store for parallel reduction
+        bpuState = BpuState::PREDICTION_OUTSTANDING;
+
+        // Clear each predictor's output
+        for (int i = 0; i < numStages; i++) {
+            predsOfEachStage[i].btbEntries.clear();
+        }
+    }
+
+    tryEnqFetchTarget();
+
+    // wait until 1st pred's bubbles are spent, then enqueue first prediction
+    if (bpuState == BpuState::PREDICTION_OUTSTANDING && validateFSQEnqueue()) {
+
+        makeNewPrediction(true);  // finalPred is now consumed, FSQ entry created
+
+        // Always attempt second prediction when 2-taken enabled
+        if (enableTwoTaken) {
+            produce2ndPrediction(firstPredBubbles);
+            // finalPred now contains second prediction, and numOverrideBubbles is the bubble needed for 2nd pred
+        } else {
+            bpuState = BpuState::IDLE;
+        }
+    }
+
+    // Enqueue second prediction when its bubbles are exhausted
+    if (bpuState == BpuState::ENQ_2ND_PRED && validateFSQEnqueue()) {
+        makeNewPrediction(true);  // finalPred contains second prediction
+        bpuState = BpuState::IDLE;
+        DPRINTF(Override, "Second prediction enqueued\n");
+    }
+
+    // Decrement override bubbles (works for both first and second prediction bubbles)
+    if (numOverrideBubbles > 0) {
+        numOverrideBubbles--;
+        dbpBtbStats.overrideBubbleNum++;
+        DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
+    }
 
     DPRINTF(Override, "Prediction cycle complete\n");
+}
 
+void
+DecoupledBPUWithBTB::produce2ndPrediction(int firstPredBubbles)
+{
+    DPRINTF(Override, "Generating second prediction for 2-taken mode\n");
+
+    // Generate second prediction using first prediction's target as starting PC
+    // (s0PC already updated by makeNewPrediction)
+    requestNewPrediction();
+    int secondPredBubbles = generateFinalPredAndCreateBubbles();
+
+    // Calculate parallel bubble reduction and store in numOverrideBubbles
+    numOverrideBubbles = std::max(0, secondPredBubbles - firstPredBubbles);
+
+    // finalPred now contains the second prediction (ready for future makeNewPrediction)
+    // Set state to indicate second prediction is ready
+    bpuState = BpuState::ENQ_2ND_PRED;
+
+    // Clear each predictor's output
+    for (int i = 0; i < numStages; i++) {
+        predsOfEachStage[i].btbEntries.clear();
+    }
+
+    DPRINTF(Override, "Second prediction generated, bubbles: %d (reduced from %d)\n",
+            numOverrideBubbles, secondPredBubbles);
 }
 
 /**
@@ -1560,19 +1588,13 @@ DecoupledBPUWithBTB::validateFSQEnqueue()
         return false;
     }
 
-    // 1. Check if a prediction is available to enqueue
-    if (bpuState != BpuState::PREDICTION_OUTSTANDING) {
-        DPRINTF(Override, "No prediction available to enqueue into FSQ\n");
-        return false;
-    }
-
-    // 2. Validate PC value
+    // 1. Validate PC value
     if (s0PC == MaxAddr) {
         DPRINTF(DecoupleBP, "Invalid PC value %#lx, cannot make prediction\n", s0PC);
         return false;
     }
 
-    // 3. Check for override bubbles
+    // 2. Check for override bubbles
     // When higher stages override lower stages, bubbles are needed for pipeline consistency
     if (numOverrideBubbles > 0) {
         DPRINTF(Override, "Waiting for %u override bubbles before enqueuing\n", numOverrideBubbles);

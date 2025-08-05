@@ -146,6 +146,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         IDLE,               // Waiting to start a prediction.
         PREDICTOR_DONE,         // Prediction in progress (conceptually replaces `predictorFinished`).
         PREDICTION_OUTSTANDING,         // Prediction is ready to be enqueued (replaces `receivedPred`).
+        ENQ_2ND_PRED,          // Ready to enqueue second prediction.
     };
     BpuState bpuState;
 
@@ -165,6 +166,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     HistoryManager historyManager;
 
     unsigned numOverrideBubbles{0};
+    int firstPredBubbles{0};  ///< Override bubbles from first prediction for parallel reduction
 
 
     using JAInfo = JumpAheadPredictor::JAInfo;
@@ -813,6 +815,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // Helper function to process FTQ entry completion
     void processFetchTargetCompletion(const FtqEntry &target_to_fetch);
+
+    // Generate second prediction for 2-taken mode
+    void produce2ndPrediction(int firstPredBubbles);
 
     /**
      * @brief Types of control flow instructions for misprediction tracking
