@@ -139,8 +139,17 @@ Triangel::Triangel(const TriangelPrefetcherParams &p)
         lookupTable[x] = 0;
         lookupTick[x] = 0;
     }
-    current_size = use_cache_space ? 0 : size_increment * maxWays;
+    current_size = use_cache_space ? 0 : size_increment;
     target_size = 0;
+
+    TriangelHashedSetAssociative *thsa =
+        dynamic_cast<TriangelHashedSetAssociative *>(markovTablePtr->indexingPolicy);
+
+    if (thsa) {
+        thsa->ways = current_size / size_increment;  // 设置新的关联度
+        thsa->max_ways = maxWays;                    // 设置最大关联度
+        assert(thsa->ways <= thsa->max_ways);
+    }
 }
 
 
