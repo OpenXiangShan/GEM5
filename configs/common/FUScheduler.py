@@ -180,26 +180,30 @@ class KunminghuScheduler(Scheduler):
 class KMHV3Scheduler(Scheduler):
     __intIQs = [
         IssueQue(name='intIQ0', inports=2, size=16, oports=[
-            IssuePort(fu=[IntALU(), IntMult()],
+            IssuePort(fu=[IntALU()],
                       rp=[IntRD(0, 0), IntRD(1, 0)]),
-            IssuePort(fu=[IntBRU(), IntDiv(), IntMisc()])
+            IssuePort(fu=[IntBRU()])
         ]),
         IssueQue(name='intIQ1', inports=2, size=16, oports=[
-            IssuePort(fu=[IntALU(), IntMult()],
+            IssuePort(fu=[IntALU()],
                       rp=[IntRD(2, 0), IntRD(3, 0)]),
             IssuePort(fu=[IntBRU()])
         ]),
         IssueQue(name='intIQ2', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU()],
                       rp=[IntRD(4, 0), IntRD(5, 0)]),
-            IssuePort(fu=[IntALU()],
-                      rp=[IntRD(6, 0), IntRD(7, 0)]),
             IssuePort(fu=[IntBRU()])
         ]),
         IssueQue(name='intIQ3', inports=2, size=16, oports=[
-            IssuePort(fu=[IntALU()],
+            IssuePort(fu=[IntALU(), IntMult()],
+                      rp=[IntRD(6, 0), IntRD(7, 0)]),
+        ]),
+        IssueQue(name='intIQ4', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntMult()],
                       rp=[IntRD(8, 0), IntRD(9, 0)]),
-            IssuePort(fu=[IntALU()],
+        ]),
+        IssueQue(name='intIQ5', inports=2, size=16, oports=[
+            IssuePort(fu=[IntALU(), IntDiv(), IntMisc()],
                       rp=[IntRD(10, 0), IntRD(11, 0)])
         ]),
     ]
