@@ -143,7 +143,7 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--no-l3cache", action="store_true")
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
     parser.add_argument("--l2-to-l3-pf-hint", action="store_true")
-    parser.add_argument("--newl3cache", action="store_true") #Added for new L3 cache
+    parser.add_argument("--newl3cache", default = False, action="store_true") #Added for new L3 cache
 
     parser.add_argument("--num-dirs", type=int, default=1)
     parser.add_argument("--num-l2caches", type=int, default=1)
@@ -173,8 +173,10 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         choices=ObjectList.hwp_list.get_names(), help="L1 dcache hardware prefetcher")
     parser.add_argument("--l2-hwp-type", default='L2CompositeWithWorkerPrefetcher',
                         choices=ObjectList.hwp_list.get_names(), help="L2 cache hardware prefetcher")
-    parser.add_argument("--l3-hwp-type", default='WorkerPrefetcher',
+    parser.add_argument("--l3-hwp-type", default='PrefetcherForwarder',
                         choices=ObjectList.hwp_list.get_names(), help="L3 cache hardware prefetcher")
+    parser.add_argument("--l3-wrapper-hwp-type", default='WorkerPrefetcher',
+                        choices=ObjectList.hwp_list.get_names(), help="L3 wrapper cache hardware prefetcher")
 
     # Run duration options
     parser.add_argument("-m", "--abs-max-tick", type=int, default=m5.MaxTick,

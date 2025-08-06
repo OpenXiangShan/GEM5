@@ -207,7 +207,7 @@ class L3ToMemBus(CoherentXBar):
     # contributions.
     frontend_latency = 0
     forward_latency = 9
-    response_latency = 78
+    response_latency = 74
     snoop_response_latency = 4
 
     # Use a snoop-filter by default

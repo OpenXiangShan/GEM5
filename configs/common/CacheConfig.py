@@ -192,8 +192,8 @@ def config_cache(options, system):
                 system.tol3bus = L2ToL3Bus(clk_domain=system.cpu_clk_domain)
                 system.tol3bus.snoop_filter.max_capacity = "32MB"
 
-                # if not options.no_pf:
-                #     system.l3_wrapper.prefetcher = create_prefetcher(system.cpu, 'l3_wrapper', options)
+                if not options.no_pf:
+                    system.l3_wrapper.prefetcher = create_prefetcher(NULL, 'l3_wrapper', options)
 
                 for i in range(num_l3_slices):
                     l3_wrapper = system.l3_wrapper
@@ -205,6 +205,9 @@ def config_cache(options, system):
                     l3_wrapper.addSliceAccessor(cache_slice)
                     cache_slice.setCacheAccessor(inner_cache)
 
+                    if not options.no_pf and options.l3_hwp_type == 'PrefetcherForwarder':
+                        inner_cache.prefetcher.setRealPrefetcher(l3_wrapper.prefetcher)
+
                     # Connect the slice's inward ports to the inner cache ports.
                     cache_slice.inner_cpu_port = inner_cache.cpu_side
                     inner_cache.mem_side = cache_slice.inner_mem_port
@@ -213,15 +216,15 @@ def config_cache(options, system):
                     cache_slice.cpu_side = l3_wrapper.slice_cpuside_ports
                     l3_wrapper.xbar.cpu_side_ports = cache_slice.mem_side
 
-                    # Connect the xbar mem_side to the L3 wrapper's mem_side port
+                    # Connect the xbar mem_side to the Membus cpu_side ports.
                     #l3_wrapper.xbar.mem_side_ports = l3_wrapper.mem_side
                     l3_wrapper.xbar.mem_side_ports = system.membus.cpu_side_ports
+
+                    inner_cache.do_fast_writeline = not options.kmh_align
 
                 # Connect the L3 wrapper to L2toL3 bus and MEM bus
                 system.l3_wrapper.cpu_side = system.tol3bus.mem_side_ports
                 #system.l3_wrapper.mem_side = system.membus.cpu_side_ports
-
-                #system.l3_wrapper.do_fast_writeline = not options.kmh_align
 
             else:
                 system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,

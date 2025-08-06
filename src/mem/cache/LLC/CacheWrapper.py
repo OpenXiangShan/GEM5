@@ -35,7 +35,7 @@ class L3CacheSlice(CacheWrapper):
     # add the cache accessors to the L2CacheSlice.
     def regProbeListeners(self):
         if self._cache_accessor is not None:
-            print("Registering inner cache accessor for L2CacheSlice {}".format(self))
+            print("Registering inner cache accessor for L3CacheSlice {}".format(self))
             self.getCCObject().setCacheAccessor(self._cache_accessor.getCCObject())
         self.getCCObject().regProbeListeners()
 
