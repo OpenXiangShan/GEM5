@@ -495,14 +495,27 @@ CPU::CPUStats::CPUStats(CPU *cpu)
 
     Scheduler* scheduler = cpu->iew.getScheduler();
     const auto &stats = scheduler->getStats();
-    // coreBound = (EXEC_STALL_CYCLE - MEMSTALL_ANYLOAD - MEMSTALL_STORE)/CPU_CYCLE
-    coreBound = (stats.exec_stall_cycle - stats.memstall_any_load - stats.memstall_any_store) / cpu->baseStats.numCycles;
-    memoryBound = (stats.memstall_any_load + stats.memstall_any_store) / cpu->baseStats.numCycles;
-    l1Bound = (stats.memstall_any_load - stats.memstall_l1miss) / cpu->baseStats.numCycles;
-    l2Bound = (stats.memstall_l1miss - stats.memstall_l2miss) / cpu->baseStats.numCycles;
-    l3Bound = (stats.memstall_l2miss - stats.memstall_l3miss) / cpu->baseStats.numCycles;
-    memBound = (stats.memstall_l3miss) / cpu->baseStats.numCycles;
-    storeBound = (stats.memstall_any_store) / cpu->baseStats.numCycles;
+
+    // Calculate raw proportions first
+    auto rawCore = stats.exec_stall_cycle - stats.memstall_any_load - stats.memstall_any_store;
+    auto rawMemory = stats.memstall_any_load + stats.memstall_any_store;
+    auto rawTotal = rawCore + rawMemory;
+
+    // Scale Level 2: ensure Core + Memory = Backend
+    coreBound = backendBound * rawCore / rawTotal;
+    memoryBound = backendBound * rawMemory / rawTotal;
+
+    // Scale Level 3: ensure sub-components sum to Memory
+    auto rawL1 = stats.memstall_any_load - stats.memstall_l1miss;
+    auto rawL2 = stats.memstall_l1miss - stats.memstall_l2miss;
+    auto rawL3 = stats.memstall_l2miss - stats.memstall_l3miss;
+    auto rawL3Total = rawL1 + rawL2 + rawL3 + stats.memstall_l3miss + stats.memstall_any_store;
+
+    l1Bound = memoryBound * rawL1 / rawL3Total;
+    l2Bound = memoryBound * rawL2 / rawL3Total;
+    l3Bound = memoryBound * rawL3 / rawL3Total;
+    memBound = memoryBound * stats.memstall_l3miss / rawL3Total;
+    storeBound = memoryBound * stats.memstall_any_store / rawL3Total;
 
     intRegfileReads
         .prereq(intRegfileReads);
