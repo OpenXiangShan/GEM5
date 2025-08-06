@@ -16,7 +16,7 @@ L2CacheWrapper::L2CacheWrapper(const L2CacheWrapperParams &p)
       sliceMask(p.num_slices - 1),
       setMask((p.cache_size / (1 << p.block_bits) / p.cache_assoc / p.num_slices) - 1),
       block_bits(p.block_bits),
-      pipe_data_write_stage(p.pipe_data_write_stage),
+      pipe_dir_write_stage(p.pipe_dir_write_stage),
       dirReadBypass(p.dir_read_bypass),
       dataSramBanks(p.data_sram_banks),
       dirSramBanks(p.dir_sram_banks),

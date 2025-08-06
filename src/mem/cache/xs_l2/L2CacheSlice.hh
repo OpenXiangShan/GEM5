@@ -46,8 +46,8 @@ class L2CacheSlice : public CacheWrapper
         getDirBankIdx = func;
     }
 
-    void setPipeDataWriteStage(uint64_t stage) {
-        pipeDataWriteStage = stage;
+    void setPipeDirWriteStage(uint64_t stage) {
+        pipeDirWriteStage = stage;
     }
 
     void setDirReadBypass(bool bypass) {
@@ -100,7 +100,7 @@ class L2CacheSlice : public CacheWrapper
     std::function<Addr(Addr)> getDataBankIdx;
     std::function<Addr(Addr)> getDirBankIdx;
 
-    uint64_t pipeDataWriteStage = 3;
+    uint64_t pipeDirWriteStage = 3;
     bool dirReadBypass = false;
 
     bool cpuSidePortRecvTimingReq(PacketPtr pkt) override;

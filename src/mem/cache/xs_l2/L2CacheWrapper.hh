@@ -78,7 +78,7 @@ class L2CacheWrapper : public ClockedObject
     void addSliceAccessor(L2CacheSlice* slice)
     {
         slice_accessors.push_back(slice);
-        slice->setPipeDataWriteStage(pipe_data_write_stage);
+        slice->setPipeDirWriteStage(pipe_dir_write_stage);
         slice->setDirReadBypass(dirReadBypass);
         slice->setGetSetIdxFunc([this](Addr addr) -> Addr {
             Addr slice_bits = popCount(sliceMask);
@@ -146,7 +146,7 @@ class L2CacheWrapper : public ClockedObject
     const Addr sliceMask;
     const Addr setMask;
     const Addr block_bits;
-    const uint64_t pipe_data_write_stage;
+    const uint64_t pipe_dir_write_stage;
     const bool dirReadBypass;
     const uint64_t dataSramBanks;
     const uint64_t dirSramBanks;

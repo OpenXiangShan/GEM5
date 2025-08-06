@@ -404,6 +404,8 @@ def setKmhV3IdealParams(args, system):
             l2_wrapper = system.l2_wrappers[i]
             l2_wrapper.data_sram_banks = 2
             l2_wrapper.dir_sram_banks = 2
+            l2_wrapper.pipe_dir_write_stage = 4
+            l2_wrapper.dir_read_bypass = True
             for j in range(args.l2_slices):
                 l2cache = l2_wrapper.slices[j].inner_cache
                 l2cache.size = '2MB'

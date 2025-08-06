@@ -62,7 +62,7 @@ class L2CacheWrapper(ClockedObject):
     cache_assoc = Param.Unsigned("Cache associativity")
     block_bits = Param.Unsigned(6, "Log2 of cache block size in bytes")
 
-    pipe_data_write_stage = Param.Unsigned(3, "the stage of data write in L2MainPipe")
+    pipe_dir_write_stage = Param.Unsigned(3, "the stage of directory write in L2MainPipe")
     dir_read_bypass = Param.Bool(False, "whether to bypass the directory read when set address is the same")
 
     # Number of DataSram banks (divides the Data Sets into banks)

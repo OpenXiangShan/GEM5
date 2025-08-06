@@ -38,7 +38,7 @@ inline uint64_t
 L2MainPipe::getDirWriteStage() const
 {
     // -1 is to get the index of scoreboardTasks & scoreboardResources
-    return owner->pipeDataWriteStage - 1;
+    return owner->pipeDirWriteStage - 1;
 }
 
 inline PipelineResources
