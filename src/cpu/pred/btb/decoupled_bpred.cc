@@ -623,6 +623,8 @@ DecoupledBPUWithBTB::tick()
         if (enableTwoTaken) {
             produce2ndPrediction();
         }
+        // Clear stage predictions for next cycle
+        clearPreds();
 
         DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
         bpuState = BpuState::IDLE;
@@ -2138,24 +2140,22 @@ DecoupledBPUWithBTB::produce2ndPrediction()
     if (finalPred.predSource == 0 && finalPred.fromUBTB) {
         DPRINTF(Override, "Second prediction validation passed, enqueueing\n");
         dbpBtbStats.secondPredValidationPassed++;
+        dbpBtbStats.predProduce2Taken++;
+        tryEnqFetchTarget();
+        makeNewPrediction(true);
     } else {
         DPRINTF(Override, "Second prediction failed uBTB source check, adding penalty\n");
-        handleSecondPredictionFailure();
-        dbpBtbStats.secondPredValidationFailed++;
-    }
-    // either way, 2 taken is triggered, this version of 2-taken has net performance gain and no side-effect
 
-    // update of ubtb always accompany enqueueing fetch block
+        dbpBtbStats.secondPredValidationFailed++;
+        abtb->aheadReadBtbEntries = savedAheadReadBtbEntries;
+        handleSecondPredictionFailure();
+    }
+    // either way, we needs to update the ubtb with S3 pred
+
     if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
         ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
     }
 
-    // Clear stage predictions for next cycle
-    clearPreds();
-    tryEnqFetchTarget();
-    makeNewPrediction(true);
-
-    dbpBtbStats.predProduce2Taken++;
 }
 
 bool
@@ -2172,6 +2172,10 @@ DecoupledBPUWithBTB::satisfiesFirstPred2TakenCondition(FullBTBPrediction& pred)
     }
 
     // Multi-target indirect as 1st branch is not allowed
+    // we disallow this because in our simplified model, this might give us an edge over
+    // the realistic model: we predicted FB A and use it as 1st pred, Then predict FB B using
+    // B as the S0PC. This is not achievable in the realistic model, in our realistic model, we need to
+    // make both predictions using the startAddr of A.
     auto firstBr = pred.getTakenEntry();
     if (firstBr.isIndirect) {
         return false;
