@@ -116,6 +116,7 @@ MakeInclude('structures/RubyPrefetcher.hh')
 MakeInclude('structures/RubyPrefetcherProxy.hh')
 MakeInclude('structures/TBEStorage.hh')
 MakeInclude('structures/SharingManager.hh')
+MakeInclude('structures/SharingManagerProxy.hh')
 if env['CONF']['PROTOCOL'] == 'CHI':
     MakeInclude('structures/MN_TBEStorage.hh')
     MakeInclude('structures/MN_TBETable.hh')

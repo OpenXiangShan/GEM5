@@ -91,6 +91,10 @@ class Mesh_XY(SimpleTopology):
             ext_links.append(ExtLink(link_id=link_count, ext_node=n,
                                     int_node=routers[router_id],
                                     latency = link_latency))
+            # Router id to xid and yid
+            xid, yid = divmod(router_id, num_columns)
+            print(f"xid:{xid} yid {yid}")
+            n.setCoordinate(xid, yid)
             link_count += 1
 
         # Connect the remainding nodes to router 0.  These should only be

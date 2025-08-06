@@ -163,7 +163,11 @@ enumeration(CHIResponseType, desc="...") {
   RetryAck;
   PCrdGrant;
   
+  ReadProxy;
+  PushProxy;
   CompDBIDRespProxy;
+
+  CompDBIDRespCancel;
   CompAckProxy;
 
   null;

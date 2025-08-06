@@ -65,7 +65,11 @@ structure(OutPort, external = "yes", primitive="yes") {
 }
 
 external_type(NodeID, default="0", primitive="yes");
-external_type(MachineID);
+// external_type(MachineID);
+
+structure(MachineID, external = "yes") {
+  bool isValid();
+}
 
 structure (Set, external = "yes", non_obj="yes") {
   void setSize(int);
@@ -289,9 +293,23 @@ structure(RubyPrefetcherProxy, external = "yes") {
     void regProbePoints();
 }
 
+// structure(Neighbour, external = "yes") {
+//   MachineID upstream0();
+//   MachineID upstream1();
+//   MachineID downstream();
+// }
+
 structure(SharingManager, external = "yes") {
   void setSharing(Addr, Addr, int);
   void clearSharing(Addr);
   bool checkSharing(Addr);
   MachineID getDestination(Addr);
+  int getSharingDirection(Addr);
+  MachineID getUpstream_0(Addr);
+  MachineID getUpstream_1(Addr);
+  MachineID getDownstream(Addr);
+}
+
+structure(SharingManagerProxy, external="yes") {
+
 }

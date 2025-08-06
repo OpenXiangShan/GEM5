@@ -83,6 +83,9 @@ def create_system(
                 decoder.dvm_enabled = True
 
     # read specialized classes from config file if provided
+    # chi configs in noc_config and CHI_config.py are substitudes
+    # (In reality noc_config classes all inherit CHI_config classes,
+    # adding router_lists)
     if options.chi_config:
         chi_defs = read_config_file(options.chi_config)
     elif options.topology == "CustomMesh":

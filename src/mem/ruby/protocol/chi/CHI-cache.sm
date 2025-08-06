@@ -182,7 +182,7 @@ machine(MachineType:Cache, "Cache coherency protocol") :
   bool enable_difftest := "False";
 
   bool enable_proxy := "False";
-  SharingManager * sharingManager;
+  SharingManager * sharingManager, constructor="this";
 
   // int xid, default="-1";
   // int yid, default="-1";
@@ -287,6 +287,8 @@ machine(MachineType:Cache, "Cache coherency protocol") :
     // are blocked
     BUSY_INTR, AccessPermission:Busy, desc="Waiting for data and/or ack";
     BUSY_BLKD, AccessPermission:Busy, desc="Waiting for data and/or ack; blocks snoops";
+
+    BUSY_PROXY, AccessPermission:Busy, desc="In a proxy state";
 
     // Null state for debugging
     null, AccessPermission:Invalid, desc="Null state";
@@ -573,6 +575,20 @@ machine(MachineType:Cache, "Cache coherency protocol") :
     // Proxied requests
     ReadProxy, desc="ReadShared that is sent to RNs, need to be proxied to HNs";
     PushProxy, desc="Push data to another HN using write transaction";
+    LoadMissProxy, desc="Load miss on proxied addr, init proxy and turn state to BUSY_PROXY";
+
+    // Proxy transaction internal events
+    SendReadProxy, desc="Upstream send read proxy to downstream";
+    ReplyProxyData, desc="Send data in response to proxy read";
+    
+    // Downstream master
+    SendPushReq, desc="Send PushProxy to upstream";
+    SendPushData, desc="Push proxy data after receiving DBID";
+    CompDBIDRespCancel, desc="Receive cancel from upstream";
+
+    // Upstream slave
+    SendCompDBID, desc="SendCompDBID to downstream master";
+    CancelDownstreamPush, desc="Upstream already sent ReadProxy or has no MSHR";
 
     // This is triggered once a transaction doesn't have
     // any queued action and is not expecting responses/data. The transaction
@@ -781,10 +797,38 @@ machine(MachineType:Cache, "Cache coherency protocol") :
     bool wakeup_pending_snp;
     bool wakeup_pending_tgr;
 
-    //
-    bool proxyTBE;
-    MachineID forwardTgt;
-    MachineID backwardTgt;
+    // Proxy related stuff
+    bool is_proxy;
+    MachineID upstream_0;
+    MachineID upstream_1;
+    MachineID downstream;
+
+    // Last RN of chain that communicates directly with HN/SN
+    bool chain_tail;
+
+    bool has_upstream_0;
+    bool has_upstream_1;
+
+    // Indicating that a push transaction is in progress
+    bool push_pending_0;
+    bool push_pending_1;
+
+    // Indicating DBID has been received
+    bool push_dbid_ready_0;
+    bool push_dbid_ready_1;
+
+    // Reveiced ReadProxy from upstream, but has no data
+    bool up_read_pending_0;
+    bool up_read_pending_1;
+
+    // ReadProxy pending to downstream
+    bool read_pending;
+
+
+    // Received load from core but has no data
+    bool load_pending;
+
+    // MSHR can deallocate when all pending fields are cleared
   }
 
   // TBE table definition
@@ -853,6 +897,8 @@ machine(MachineType:Cache, "Cache coherency protocol") :
   // Interface to prefetchers
   RubyPrefetcherProxy pfProxy, constructor="this, m_prefetcher_ptr, m_prefetchQueue_ptr";
 
+  // Interface to sharing manager
+  SharingManagerProxy smProxy, constructor="this, m_sharingManager_ptr";
 
   // DVM data
   // Queue of non-sync operations that haven't been Comp-d yet.

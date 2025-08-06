@@ -1495,34 +1495,6 @@ transition({BUSY_BLKD,BUSY_INTR},
   ProcessNextState;
 }
 
-// Push data to neighbour once 
-transition({BUSY_PROXY}, {SendProxyData}) {
-  ProcessNextState;
-}
-
-transition({BUSY_PROXY}, {RetryAck}) {
-  Receive_ReadReceipt;
-  Pop_RespInQueue;
-  ProcessNextState;
-}
-
-transition({BUSY_BLKD}, {ReadProxy, SendProxyData}) {
-  Proxy_Error;
-}
-
-transition({BUSY_PROXY}, {PushProxy}) {
-  Discard_Push;
-}
-
-transition({SC, UC, UD, UD_RSC, UD_RSD, UD_T}, {PushProxy}) {
-  Proxy_Error;
-}
-
-transition({BUSY_PROXY}, {Load}) {
-  // TODO Add perf counter?
-  StallRequest;
-}
-
 transition(BUSY_INTR, ReadReceipt, BUSY_BLKD) {
   Receive_ReadReceipt;
   Pop_RespInQueue;
@@ -1851,4 +1823,4 @@ transition(DvmExtOp_Finished, Final, I) {
   Finalize_DeallocateDvmSnoop;
 }
 
-include "CHI-proxy-transitions.sm"
+include "CHI-proxy-transitions.sm";

@@ -59,6 +59,7 @@
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
 #include "mem/ruby/protocol/AccessPermission.hh"
+#include "mem/ruby/structures/SharingManagerProxy.hh"
 #include "mem/ruby/system/CacheRecorder.hh"
 #include "params/RubyController.hh"
 #include "sim/clocked_object.hh"
@@ -184,6 +185,9 @@ class AbstractController : public ClockedObject, public Consumer, public HasDown
   public:
     MachineID getMachineID() const { return m_machineID; }
     RequestorID getRequestorId() const { return m_id; }
+
+    virtual SharingManagerProxy getSharingManagerProxy()
+      {panic("SharingManager not implemented in this class %s", name()); return SharingManagerProxy();};
 
     statistics::Histogram& getDelayHist() { return stats.delayHistogram; }
     statistics::Histogram& getDelayVCHist(uint32_t index)

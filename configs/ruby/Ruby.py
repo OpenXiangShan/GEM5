@@ -193,21 +193,38 @@ def setup_memory_controllers(system, ruby, dir_cntrls, options):
             if crossbar != None:
                 mem_ctrl.port = crossbar.mem_side_ports
             else:
+                # Where is memory_out_port set?
                 mem_ctrl.port = dir_cntrl.memory_out_port
 
             # Enable low-power DRAM states if option is set
+            # Or = is bi-directional?
             if issubclass(mem_type, DRAMInterface):
                 mem_ctrl.dram.enable_dram_powerdown = (
                     options.enable_dram_powerdown
                 )
 
         index += 1
+        # This sets SNF addr ranges
+        # RN needs to know this
         dir_cntrl.addr_ranges = dir_ranges
 
     system.mem_ctrls = mem_ctrls
 
     if len(crossbars) > 0:
         ruby.crossbars = crossbars
+
+
+def setup_rnf_controller_mappings(rnfs, hnfs, snfs):
+    """Let RNF know it's location in mesh and which
+    memory controller or HNF it sends to"""
+    mode = "HNF"
+    for r in rnfs:
+        r.sharingManager = SharingManager(
+            downstream_hnfs=hnfs,
+            downstream_snfs=snfs,
+            xid=r.xid,
+            yid=r.yid
+        )
 
 
 def create_topology(controllers, options):
@@ -237,6 +254,7 @@ def create_system(
     FileSystemConfig.config_filesystem(system, options)
 
     # Create the network object
+    # get classes for interface
     (
         network,
         IntLinkClass,
@@ -252,6 +270,12 @@ def create_system(
     protocol = buildEnv["PROTOCOL"]
     exec(f"from . import {protocol}")
     try:
+        # This creates protocol's cache controllers, sequencers, Caches
+        # and Message Buffers, but do not connect them
+        # Also creates topology, which basically creates the
+        # topology object and set its node list
+        # Also sets a lot of stuff for `ruby`
+        # dir_cntrls is actually SNF's mem controllers
         (cpu_sequencers, dir_cntrls, topology) = eval(
             "%s.create_system(options, full_system, system, dma_ports,\
                                     bootmem, ruby, cpus)"
@@ -262,6 +286,9 @@ def create_system(
         raise
 
     # Create the network topology
+    #
+    # also sets network.(router|int_links|ext_links)
+    # connects nodes and routers
     topology.makeTopology(
         options, network, IntLinkClass, ExtLinkClass, RouterClass
     )
@@ -271,6 +298,9 @@ def create_system(
         topology.registerTopology(options)
 
     # Initialize network based on topology
+    # Set bridges for each Link Object and InterfaceClass for ext link
+    # TODO: There's only one link for all 4 channels!
+    # Either instantiate four links, or try make the link support multiple channels
     Network.init_network(options, network, InterfaceClass)
 
     # Create a port proxy for connecting the system port. This is
@@ -288,6 +318,8 @@ def create_system(
     system.system_port = system.sys_port_proxy.in_ports
 
     setup_memory_controllers(system, ruby, dir_cntrls, options)
+    # TODO
+    setup_rnf_controller_mappings(dirs, rnfs)
 
     # Connect the cpu sequencers and the piobus
     if piobus != None:

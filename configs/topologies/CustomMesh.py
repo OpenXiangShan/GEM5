@@ -52,6 +52,41 @@ class CustomMesh(SimpleTopology):
     def __init__(self, controllers):
         self.nodes = controllers
 
+
+    # nodeID format is xid(4 bits) yid(4 bits)
+    def toNodeId(self, idx, portid, node_type):
+        xid = idx % self.columns
+        yid = idx // self.columns
+        return xid * (10 ** 3) + yid * (10 ** 2) + portid * 10 + node_type
+
+    def toRouterId(self, idx, rnf_no = None):
+        xid = idx % self.columns
+        yid = idx // self.columns
+
+        return xid * (10 ** 2) + yid * (10 ** 1) + 0 if rnf_no is None else rnf_no
+
+    def toMeshLinkId(self, s_xid, s_yid, direction):
+        # linkid format
+        # source xid yid direction
+        # direction 00: West (To larger xid)
+        # direction 01: East (To smaller xid)
+        # direction 2 North (To smaller yid)
+        # direction 3: South (To smaller yid)
+        # direction 4: Mesh router and RNF router
+        return s_xid * (10 ** 3) + s_yid * (10 ** 2) + direction
+
+    def toIntLinkId(self, router, direction):
+        return router * 10 + direction
+    def toRNFRouterLinkID(self, src_router_id):
+        return src_router_id * 10 + 4
+
+    # Todo add port!
+    def toExtLinkId(self, router_id, port):
+        return router_id * 10 + port
+        # Ext links
+        # router xid, yid, direction
+        # direction 0: Ext to int, inwards
+        # direction 1: Int to ext, outwards
     #--------------------------------------------------------------------------
     # _makeMesh
     #--------------------------------------------------------------------------
@@ -63,6 +98,13 @@ class CustomMesh(SimpleTopology):
         # XY routing weights
         link_weights = [1, 1, 2, 2]
 
+        if num_rows > 16 or num_columns > 16:
+            fatal("CustomMesh topology does not support more than 16 nodes "
+                  "in each dimension")
+
+        # East: Smaller XID
+        # North: Smaller YID
+        # (0, 0) is on top right corner
         # East output to West input links
         for row in range(num_rows):
             for col in range(num_columns):
@@ -182,6 +224,7 @@ class CustomMesh(SimpleTopology):
         router_idx_list = node_placement_config.router_list
 
         if num_nodes_per_router:
+            fatal('CustomMesh: num_nodes_per_router is not supported')
             # evenly distribute nodes to all listed routers
             assert(len(router_idx_list)*num_nodes_per_router == len(node_list))
 
@@ -210,14 +253,23 @@ class CustomMesh(SimpleTopology):
             # try to circulate all nodes to all routers, some routers may be
             # connected to zero or more than one node.
             idx = 0
+            # print(f"{node_list[0].__class__} node_list len is {len(node_list)}")
+            # print(f"router_idx_list len is {len(router_idx_list)}")
+            # print(f"router len is {len(self._routers)}")
             for node in node_list:
                 ridx = router_idx_list[idx]
                 router = self._routers[ridx]
 
+                # here CHI is CHI_Config
                 if isinstance(node, CHI.CHI_RNF):
                     router = self._createRNFRouter(router)
                 ctrls = node.getNetworkSideControllers()
                 for c in ctrls:
+                    # Ext link is also object
+                    # When creating links connection is made
+                    # ext linkid format:
+                    # xid yid portid type
+                    linkid = self.toExtLinkId(router.router_id, self.router_node_cnt[ridx])
                     for v in range(4):
                         self._ext_links.append(self._ExtLink( \
                                                     link_id = self._link_count,
@@ -277,8 +329,9 @@ class CustomMesh(SimpleTopology):
             assert(curr == None or curr == val)
             return val
 
+        # copy CHI node param from noc_config folder
         for n in self.nodes:
-            if isinstance(n, CHI.CHI_RNF):
+            if isinstance(n, CHI.CHI_RNF): # TODO Support derived rnf
                 rnf_nodes.append(n)
                 rnf_params = check_same(type(n).NoC_Params, rnf_params)
             elif isinstance(n, CHI.CHI_HNF):
@@ -307,15 +360,18 @@ class CustomMesh(SimpleTopology):
         self._routers = [Router(router_id=i, latency = options.router_latency)\
                                     for i in range(num_mesh_routers)]
 
+        self.router_node_cnt = [0 for i in range(num_mesh_routers)]
         self._link_count = 0
         self._int_links = []
         self._ext_links = []
 
         # Create all the mesh internal links.
+        # Links are objects as well
         self._makeMesh(IntLink, self._router_link_latency, num_rows, num_cols,
                        options.cross_links, options.cross_link_latency)
 
         # Place CHI_RNF on the mesh
+        # rnf params and other params becomes node_distribution_params
         self.distributeNodes(rnf_params, rnf_nodes)
 
         # Place CHI_HNF on the mesh

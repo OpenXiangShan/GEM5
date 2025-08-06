@@ -796,13 +796,10 @@ action(Initiate_LoadHit, desc="") {
 }
 
 action(Initiate_LoadMiss, desc="") {
-  int sharingGroup = sharingManager.getSharingDirection(tbe.addr);
-  if (sharingGroup != 0) {
+  if (sharingManager.getSharingDirection(tbe.addr) != 0) {
     tbe.actions.push(Event:LoadMissProxy);
     // Initiate_Proxy action inserts CheckCacheFill and TagArrayWrite
-    return;
-  }
-  if (is_HN) {
+  } else if (is_HN) {
     tbe.actions.push(Event:SendReadNoSnp);
     tbe.actions.push(Event:CheckCacheFill);
     tbe.actions.push(Event:TagArrayWrite);
@@ -1554,22 +1551,6 @@ action(Send_ReadShared, desc="") {
     // Destination is set here
     out_msg.Destination.add(mapAddressToDownstreamMachine(tbe.addr));
     out_msg.dataToFwdRequestor := false;
-    allowRequestRetry(tbe, out_msg);
-  }
-}
-
-action(Send_ReadProxy, desc="") {
-  assert(is_HN == false);
-  assert(tbe.dataValid == false);
-
-  clearExpectedReqResp(tbe);
-  tbe.expected_req_resp.addExpectedDataType(CHIDataType:CompData_SC);
-  tbe.dataBlkValid.clear();
-
-  enqueue(reqOutPort, CHIRequestMsg, request_latency) {
-    prepareRequest(tbe, CHIRequestType:ReadProxy, out_msg);
-    out_msg.Destination.add(tbe.forwardTgt);
-    // out_msg.dataToFwdRequestor := false;
     allowRequestRetry(tbe, out_msg);
   }
 }
@@ -4164,4 +4145,4 @@ action(Profile_OutgoingEnd_DVM, desc="") {
   outgoingTransactionEnd(address, tbe.rcvdRetryAck, false);
 }
 
-include "CHI-proxy-actions.sm"
+include "CHI-proxy-actions.sm";

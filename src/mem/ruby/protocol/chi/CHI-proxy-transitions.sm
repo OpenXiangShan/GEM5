@@ -1,117 +1,240 @@
-// Downstream replies data
-transition({BUSY_PROXY}, {CompData_SC}) {
-  Receive_RespSepDataFromCompData;
-  Receive_ReqDataResp;
-  UpdateDataState_FromReqDataResp;
-  Callback_Miss; // TODO, if this is a push then no need to callback
-  Try_Push; // If not received readshared from neighbour, push to it
-  Profile_OutgoingEnd_DataResp;
-  Pop_DataInQueue;
+// Send CompAck to HN
+// Only needed on chain_tail
+
+// ---------------------------------
+// Load initiate request [x]
+// ---------------------------------
+
+// Mark load miss TBE as proxy TBE
+// A push/read proxy might come here,
+// Then It waits until the proxy entry is deallocated
+// Might cause deadlock
+// Need to prevent a ReadProxy/LoadProxy between "Load" and "LoadMissProxy"
+// Currently we use reqInPort's recycle (zz_recycleReq)
+transition(BUSY_BLKD, LoadMissProxy, BUSY_PROXY) {
+  // TODO: Callback for load
+  Initiate_Proxy;
+  Initiate_ReadProxy;
+  Register_ProxyLoad;
   ProcessNextState;
 }
 
-transition({BUSY_PROXY}, {CompAck}) {
-  Receive_ReqResp;
-  UpdateDirState_FromReqResp;
-  Pop_RespInQueue;
-  ProcessNextState;
+transition(BUSY_PROXY, AllocRequest) {
+  Find_ProxyTBE;
 }
 
-// Upstream initiates request
-transition({I}, {ReadProxy}, {BUSY_PROXY}) {
+// ---------------------------------
+// Downstream Slave RX Transition [x]
+// ---------------------------------
+// After alloc TBE
+transition({I, SC}, {ReadProxy}, BUSY_PROXY) {
   Initiate_Request;
+  Initiate_ReadProxy;
   Initiate_Proxy;
   Allocate_DirEntry;
   Pop_ReqRdyQueue;
   ProcessNextState;
 }
 
-transition({I}, {PushProxy}, {BUSY_PROXY}) {
-  Initiate_Request;
-  Initiate_Proxy;
-  Allocate_DirEntry;
+// no need tbe alloc
+transition({BUSY_PROXY}, {ReadProxy}) {
+  Mark_UpstreamRead; // If data is ready satisfy the request. If not, block until Compdata
+  Try_ReplyProxyRead;
   Pop_ReqRdyQueue;
   ProcessNextState;
 }
 
-transition({SC}, {ReadProxy},) {
-  // Read L2
-  Initiate_Request;
-  Initiate_Proxy_Upstream;
-  Try_Push;
-  Pop_ReqRdyQueue;
+// Current block may not be evicted and a load is in progress
+// TODO: Wait for the load to complete
+// TODO: Add perf counter for this
+transition(BUSY_BLKD, ReadProxy) {
   Proxy_Error;
 }
 
-transition({UC, SC, SD, RSC, RSD}, {ReadProxy},) {
-  Proxy_error;
+transition({UC, UD, UD_T, SD, RSC, RSD, BUSY_INTR}, {ReadProxy}) {
+  Proxy_Error;
 }
 
-transition({SC}, {PushProxy},) {
-  Initiate_Request;
-  Initiate_Proxy_Downstream;
-  Try_Push;
-  Pop_ReqRdyQueue;
+transition(BUSY_PROXY, ReplyProxyData) {
+  Reply_ProxyData;
+  Pop_TriggerQueue;
   ProcessNextState;
 }
 
-transition({UC, SC, SD, RSC, RSD}, {PushProxy},) {
-  Proxy_error;
-}
-
-// Load Initiate Proxy
-// transition(I, {Load}, {BUSY_PROXY}) {
-//   Initiate_Request;
-//   Initiate_Proxy;
-//   Allocate_DirEntry;
-//   Pop_ReqRdyQueue;
-//   ProcessNextState;
-// }
-
-// Downstream Initiate Proxy
-transition(I, {PushProxy}, {BUSY_PROXY}) {
+// ---------------------------------
+// Upstream Slave RX Handling [x]
+// ---------------------------------
+transition({I, SC}, {PushProxy}, BUSY_PROXY) {
   Initiate_Request;
   Initiate_Proxy;
   Allocate_DirEntry;
+  Handle_PushProxy;
   Pop_ReqRdyQueue;
   ProcessNextState;
 }
 
-transition({BUSY_PROXY}, {ReadProxy}) {
-  Mark_UpstreamRead; // If data is ready satisfy the request. If not, block until Compdata
+transition({UC, UD, UD_T, SD, RSC, RSD, BUSY_INTR}, {PushProxy}) {
+  Proxy_Error;
+}
+
+transition(BUSY_BLKD, PushProxy) {
+  Proxy_Error;
+}
+
+transition(BUSY_PROXY, PushProxy) {
+  Handle_PushProxy;
+  Pop_ReqInPort;
   ProcessNextState;
 }
 
-transition({BUSY_PROXY}, CompData) {
+transition(BUSY_PROXY, SendCompDBID) {
+  Send_CompDBID;
+  Pop_TriggerQueue;
+  ProcessNextState;
+}
+
+transition(BUSY_PROXY, CBWrData_SC) {
+  Receive_ReqDataResp;
+  // Receive_ProxyData; // Original action might work
+  Initiate_Push;
+  // Check_DataWaitingPush; // Same as below
   Try_SatisfyLoad;
-  Try_SatisfyUpstream;
-  Write_Cache;
+  Pop_DataInQueue;
+  // Write_Cache; // This is done in CheckCacheFill, after all events completed
+  ProcessNextState;
+}
+
+/* When upstream sends ReadProxy, then recv PushProxy, it sends CompDBIDRespCancel
+ * Downstream cancels without reply.
+ * If a proxy transaction comples PushProxy is sent to upstream,
+ * up sends proxy cancel if cache state is not I
+ */
+transition(BUSY_PROXY, CancelDownstreamPush) {
+  Pop_TriggerQueue;
+  Send_CompDBIDRespCancel;
+  ProcessNextState;
+}
+
+// ---------------------------------
+// Upstream Master [x]
+// ---------------------------------
+
+transition(BUSY_PROXY, SendReadProxy) {
+  Send_ReadProxy;
+  Pop_TriggerQueue;
+  ProcessNextState;
+}
+
+transition(BUSY_PROXY, {CompData_SC}) {
+  // Receive_ProxyData;
+  Receive_ReqDataResp;
+  UpdateDataState_FromReqDataResp;
+  Try_SatisfyLoad; // "Callback_Miss" For proxy transitions
+  // Currently we choose to push data only when we have it
+  Initiate_Push;
+  // Check_DataWaitingPush;
+  Pop_DataInQueue;
+  // Write_Cache;
+  Check_ProxyEnd;
+  // Profile_OutgoingEnd_DataResp;
+  ProcessNextState;
+}
+
+transition(BUSY_PROXY, {CompData_I, CompData_UC, CompData_UD_PD, CompData_SD_PD}) {
+  Proxy_Error;
+}
+
+// --------------------------------
+// Downstream Master TX Transition [x]
+// --------------------------------
+
+// Triggers twice if 2 upstream
+transition(BUSY_PROXY, SendPushReq) {
+  Send_PushReq;
+  Pop_TriggerQueue;
   ProcessNextState;
 }
 
 transition({BUSY_PROXY}, CompDBIDResp) {
-  Try_SatisfyUpstream;
+  Try_PushData; // If failed, RXDAT sees dbid_ready, then triggers push
+  Check_ProxyEnd;
+  Pop_RespInQueue;
   ProcessNextState;
 }
 
+transition(BUSY_PROXY, SendPushData) {
+  Push_ProxyData;
+  Check_ProxyEnd;
+  Pop_TriggerQueue;
+  ProcessNextState;
+}
+
+transition(BUSY_PROXY, CompDBIDRespCancel) {
+  Set_PushCancelled;
+  Check_ProxyEnd;
+  Pop_RespInQueue;
+  ProcessNextState;
+}
+
+// We don't have 25 bit bus, so no need to use original TX_Data transition
+// transition(BUSY_PROXY, TX_Data) {
+//   Pop_TriggerQueue;
+//   Send_Data;
+//   Check_PushEnd;
+//   processNextState_ClearPending;
+// }
+
+// -------------------------------
+// Proxy TBE Final Transition
+// -------------------------------
+
 transition(BUSY_PROXY, Final, I) {
   Pop_TriggerQueue;
+  Finalize_Proxy;
   Finalize_UpdateCacheFromTBE;
   Finalize_UpdateDirectoryFromTBE;
   Finalize_DeallocateRequest;
 }
 
-transition({BUSY_PROXY}, {Load}) {
-  processNextState;
+// -------------------------------
+// Load Transition
+// -------------------------------
+
+transition(BUSY_PROXY, Load) {
+  Pop_TriggerQueue;
+  Register_ProxyLoad;
+  Try_SatisfyLoad;
+  ProcessNextState;
 }
 
-transition({BUSY_PROXY}, {PushProxy}) {
-  processNextState;
+// ---------------------------------
+// Tag/Data Array
+// ---------------------------------
+
+transition(BUSY_PROXY, CheckCacheFill, BUSY_PROXY) {
+  CheckCacheFill; // This action includes processNextState
 }
 
-// Internal transitions
-transition(BUSY_BLKD, LoadMissProxy, BUSY_PROXY) {
-  // Callback for load
-  Initiate_Proxy;
-  processNextState;
+transition(BUSY_PROXY, DataArrayRead) {
+  Pop_TriggerQueue;
+  DataArrayRead;
+  ProcessNextState_ClearPending;
+}
+
+transition(BUSY_PROXY, DataArrayWrite, BUSY_PROXY) {
+  Pop_TriggerQueue;
+  DataArrayWrite;
+  ProcessNextState_ClearPending;
+}
+
+transition(BUSY_PROXY, TagArrayWrite) {TagArrayWrite} {
+  Pop_TriggerQueue;
+  TagArrayWrite;
+  ProcessNextState_ClearPending;
+}
+
+transition(BUSY_PROXY, TagArrayRead) {TagArrayRead} {
+  Pop_TriggerQueue;
+  TagArrayRead;
+  ProcessNextState_ClearPending;
 }

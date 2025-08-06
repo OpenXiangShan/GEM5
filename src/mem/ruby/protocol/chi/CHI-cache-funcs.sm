@@ -447,6 +447,19 @@ void initializeTBE(TBE tbe, Addr addr, int storSlot) {
   tbe.delayNextAction := intToTick(0);
 
   tbe.is_stale := false;
+
+  tbe.is_proxy := false;
+  tbe.chain_tail := false;
+  tbe.has_upstream_0 := false;
+  tbe.has_upstream_1 := false;
+
+  tbe.push_pending_0 := false;
+  tbe.push_pending_1 := false;
+  tbe.push_dbid_ready_0 := false;
+  tbe.push_dbid_ready_1 := false;
+  tbe.up_read_pending_0 := false;
+  tbe.up_read_pending_1 := false;
+  tbe.load_pending := false;
 }
 
 TBE allocateRequestTBE(Addr addr, CHIRequestMsg in_msg), return_by_pointer="yes" {
@@ -856,7 +869,7 @@ bool needCacheEntry(CHIRequestType req_type,
            (alloc_on_seq_line_write && (req_type == CHIRequestType:StoreLine)) ||
            (alloc_on_atomic && ((req_type == CHIRequestType:AtomicReturn) ||
                                  (req_type == CHIRequestType:AtomicNoReturn))) ||
-            req_type == CHIRequestType:ReadProxy;
+            req_type == CHIRequestType:ReadProxy || req_type == CHIRequestType:PushProxy;
   }
 }
 
@@ -1351,9 +1364,10 @@ Event reqToEvent(CHIRequestType type, bool is_prefetch) {
     return Event:ReadProxy;
   } else if (type == CHIRequestType:PushProxy) {
     type == CHIRequestType:PushProxy;
-  } {
+  } else {
     error("Invalid CHIRequestType");
   }
+  return Event:null;
 }
 
 Event respToEvent (CHIResponseType type, TBE tbe) {
@@ -1424,10 +1438,10 @@ Event respToEvent (CHIResponseType type, TBE tbe) {
         return Event:PCrdGrant;
       }
     }
-  } else if (type == CHIResponseType:CompDBIDRespProxy) {
-    return Event:CompDBIDRespProxy;
-  } else if (type == CHIResponseType:CompAckProxy) {
-    return Event:CompAckProxy;
+  // } else if (type == CHIResponseType:CompDBIDRespProxy) {
+  //   return Event:CompDBIDRespProxy;
+  // } else if (type == CHIResponseType:CompAckProxy) {
+  //   return Event:CompAckProxy;
   } else {
     error("Invalid CHIResponseType");
   }
@@ -1484,8 +1498,8 @@ Event dataToEvent (CHIDataType type) {
     return Event:SnpRespData_I_PD_Fwded_SC;
   } else if (type == CHIDataType:SnpRespData_I_Fwded_SC) {
     return Event:SnpRespData_I_Fwded_SC;
-  } else if (type == CHIDataType:CompDataProxy) {
-    return Event:CompDataProxy;
+  // } else if (type == CHIDataType:CompDataProxy) {
+  //   return Event:CompDataProxy;
   } else {
     error("Invalid CHIDataType");
   }
@@ -1582,15 +1596,22 @@ bool checkResourceAvailable(RequestType request_type, Addr addr) {
   return avail;
 }
 
-int getXid() {
-  return xid;
+SharingManagerProxy getSharingManagerProxy() {
+  return smProxy;
 }
 
-int getYid() {
-  return yid;
-}
+bool proxyCompleted(TBE tbe) {
+  bool push_end_0 := !(tbe.has_upstream_0 && tbe.push_pending_1);
+  bool push_end_1 := !(tbe.has_upstream_1 && tbe.push_pending_1);
+  
+  bool up_read_end_0 := !tbe.up_read_pending_0;
+  bool up_read_end_1 := !tbe.up_read_pending_1;
 
-SharingManager *
-AbstractController::getSharingManager() const {
-  return sharingManager;
+  bool read_end := !tbe.read_pending;
+
+  bool load_end := !tbe.load_pending;
+
+  bool proxy_end := push_end_0 && push_end_1 && up_read_end_0 && up_read_end_1 && load_end;
+
+  return proxy_end;
 }

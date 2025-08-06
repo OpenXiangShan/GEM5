@@ -58,7 +58,7 @@ def define_options(parser):
         in the topology file.""")
     parser.add_argument(
         "--link-width-bits", action="store", type=int,
-        default=128,
+        default=8192,
         help="width in bits for all links inside garnet.")
     parser.add_argument(
         "--vcs-per-vnet", action="store", type=int, default=4,
@@ -81,7 +81,7 @@ def define_options(parser):
         type=int, default=50000,
         help="network-level deadlock threshold.")
     parser.add_argument("--simple-physical-channels", action="store_true",
-        default=False,
+        default=True,
         help="""SimpleNetwork links uses a separate physical
             channel for each virtual network""")
 

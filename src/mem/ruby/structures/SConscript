@@ -60,5 +60,6 @@ Source('BankedArray.cc')
 Source('ALUFreeListArray.cc')
 Source('TBEStorage.cc')
 Source('SharingManager.cc')
+Source('SharingManagerProxy.cc')
 if env['CONF']['PROTOCOL'] == 'CHI':
     Source('MN_TBETable.cc')

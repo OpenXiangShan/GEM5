@@ -85,7 +85,7 @@ class NoC_Params:
 
     router_link_latency = 1
     node_link_latency = 1
-    router_latency = 1
+    router_latency = 2
     router_buffer_size = 128
     cntrl_msg_size = 64 # This breaks garnet completely!
     data_width = 64
@@ -168,6 +168,10 @@ class CHI_Node(SubSystem):
         cntrl.snpIn.in_port = self._network.out_port
         cntrl.datIn.in_port = self._network.out_port
 
+    def setCoordinate(self, xid, yid):
+        self.xid = xid
+        self.yid = yid
+
 class TriggerMessageBuffer(MessageBuffer):
     """
     MessageBuffer for triggering internal controller events.
@@ -224,6 +228,10 @@ class CHI_Cache_Controller(Cache_Controller):
     def setPrefetcher(self, pf):
         self.prefetcher = pf
         self.use_prefetcher = pf != NULL
+
+    def setCoordinate(self, xid, yid):
+        self.xid = xid
+        self.yid = yid
 
 
 class CHI_L1Controller(CHI_Cache_Controller):
@@ -381,6 +389,10 @@ class CHI_MNController(MiscNode_Controller):
 
         # "upstream_destinations" = targets for DVM snoops
         self.upstream_destinations = l1d_caches
+
+    def setCoordinate(self, xid, yid):
+        self.xid = xid
+        self.yid = yid
 
 
 class CHI_DMAController(CHI_Cache_Controller):
@@ -712,6 +724,9 @@ class CHI_SNF_Base(CHI_Node):
     def __init__(self, ruby_system, parent):
         super().__init__(ruby_system)
 
+        # _cntrl has an addr range
+        # Set via setup_memory_controllers
+        # but CHI_SNF_Base does not have this info
         self._cntrl = Memory_Controller(
             version=Versions.getVersion(Memory_Controller),
             ruby_system=ruby_system,

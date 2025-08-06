@@ -148,18 +148,26 @@ class CHI_RNF_TrafficGen(CHI_config.CHI_RNF):
 class CHI_RNF(CHI_RNF_TrafficGen):
     class NoC_Params(CHI_config.CHI_RNF.NoC_Params):
         router_list = [i for i in range(4, 20)]
+    def getTypeId(self):
+        return 1
 
 class CHI_HNF(CHI_config.CHI_HNF):
     class NoC_Params(CHI_config.CHI_HNF.NoC_Params):
         router_list = [i for i in range(4, 20)]
+    def getTypeId(self):
+        return 2
 
 class CHI_MN(CHI_config.CHI_MN):
     class NoC_Params(CHI_config.CHI_MN.NoC_Params):
         router_list = [0]
+    def getTypeId(self):
+        return 4
 
 class CHI_SNF_MainMem(CHI_config.CHI_SNF_MainMem):
     class NoC_Params(CHI_config.CHI_SNF_MainMem.NoC_Params):
         router_list = [i for i in range(4)] + [i for i in range(20, 24)]
+    def getTypeId(self):
+        return 3
 
 class CHI_SNF_BootMem(CHI_config.CHI_SNF_BootMem):
     class NoC_Params(CHI_config.CHI_SNF_BootMem.NoC_Params):

@@ -1,6 +1,94 @@
+// ----------------------------------------
+// Common actions for a proxy transaction
+// ----------------------------------------
+action(Initiate_Proxy, desc="Initialize TBE entry for proxy transaction") {
+    assert(is_HN == false);
+    tbe.is_proxy := true;
+    tbe.upstream_0 := sharingManager.getUpstream_0(tbe.addr);
+    tbe.upstream_1 := sharingManager.getUpstream_1(tbe.addr);
+    tbe.downstream := sharingManager.getDownstream(tbe.addr);
+
+    tbe.actions.push(Event:CheckCacheFill);
+    tbe.actions.push(Event:TagArrayWrite);
+}
+
+action(Find_ProxyTBE, desc="Enqueue redRdy directly if proxy request meets BUSY_PROXY state") {
+    peek(reqInPort, CHIRequestMsg) {
+        enqueue(reqRdyOutPort, CHIRequestMsg, allocation_latency) {
+            assert(in_msg.addr == address);
+            assert(in_msg.is_local_pf == false);
+            out_msg := in_msg;
+        }
+    }
+  reqInPort.dequeue(clockEdge());
+}
+
+action(Pop_ReqInPort, desc="Remove req from raw RXREQ") {
+    reqInPort.dequeue(clockEdge());
+}
+
+action(Register_LoadProxy, desc="Mark TBE for load callback") {
+    tbe.load_pending := true;
+}
+
 action(Proxy_Error, desc="Error related to proxy transaction") {
     printTBEState("Proxy Error", tbe);
     error("Error condition encountered - printing state before exit");
+}
+
+action(Check_ProxyEnd, desc="Dealloc TBE if proxy transaction is complete") {
+    bool proxy_end := proxyCompleted(tbe);
+    if (proxy_end) {
+        tbe.pendAction := Event:Final;
+        Cycles trigger_latency := intToCycles(0);
+        enqueue(triggerOutPort, TriggerMsg, trigger_latency) {
+            out_msg.addr := tbe.addr;
+            // TODO
+        }
+    }
+}
+
+action(Finalize_Proxy, desc="Finalize Proxy") {
+    assert(tbe.is_proxy);
+    assert(proxyCompleted(tbe));
+}
+
+// action(Initiate_Proxy_Upstream, desc="Proxy transaction initiated by upstream") {
+//     MachineID upstream := sharingManager.getUpstream(tbe.addr);
+//     assert(upstream == inport.machineid);
+//     assert(is_HN == false);
+//     int sharingGroup != sharingManager.getSharingDirection(tbe.addr);
+//     assert(sharingGroup != SharingDirection::None);
+//     tbe.actions.push(Event:SendReadProxy);
+//     tbe.actions.push(Event:CheckCacheFill);
+//     tbe.actions.push(Event:TagArrayWrite);
+//     //
+//     tbe.downstream = sharingManager.getDownstream(tbe.addr);
+//     tbe.chain_tail = tbe.downstream not RNF;
+//     tbe.upstream = sharingManager.getUpstream(tbe.addr);
+//     tbe.chain_head := tbe.upstream not this;
+// }
+
+// action(Init_Proxy_Downstream, desc="Proxy transaction initiated by downstream") {
+    
+//     tbe.actions.push(Event:PushProxy);
+//     tbe.actions.push(Event:CheckCacheFill);
+//     tbe.actions.push(Event:TagArrayWrite);
+
+//     tbe.up_pending = true;
+// }
+
+
+
+// ----------------------------
+// Load
+// ----------------------------
+
+action(Try_SatisfyLoad, desc="Try to satisfy load proxy") {
+    if (tbe.dataBlkValid.isFull() && tbe.load_pending) {
+        sequencer.readCallback(tbe.addr, tbe.dataBlk, true);
+        tbe.load_pending := false;
+    }
 }
 
 action(Callback_Proxy, desc="Handle pending load causing a proxy") {
@@ -18,70 +106,330 @@ action(Callback_Proxy, desc="Handle pending load causing a proxy") {
 
 }
 
-// If there is upstream, send push
-action(Try_Push, desc="Push data to next neighbour") {
+action(Register_ProxyLoad, desc="Mark proxy entry load pending") {
+    assert(!tbe.load_pending);
+    tbe.load_pending := true;
+}
 
-    // Get upstream id
-    MachineID upstream = sharingManager.getUpstream(tbe.addr);
-    if (upstream != MachineID::Null) {
-        // Need push
-        if (tbe.upstream_pending) {
-            // If upstream already sent a readproxy, reply with data
-            tbe.actions.push(Event:SendData)
+action(Callback_ProxyMiss, desc="Handle load miss on proxied address") {
+    assert(tbe.dataValid);
+    if (tbe.load_pending) {
+        sequencer.readCallback(tbe.addr, tbe.dataBlk, true);
+    }
+    tbe.load_pending := false;
+}
+
+// Downstream master
+
+// ---------------------------------
+// Downstream Slave
+// ---------------------------------
+
+action(Try_ReplyProxyRead, desc="Check data is ready") {
+    if (tbe.dataValid) {
+        tbe.actions.push(Event:ReplyProxyData);
+    }
+}
+
+action(Reply_ProxyData, desc="Send Compdata to upstream in response of read proxy") {
+    assert(tbe.is_proxy);
+    assert(tbe.dataValid);
+    assert(data_channel_size == blockSize);
+    if (tbe.push_dbid_ready_0) {
+        assert(tbe.push_pending_0);
+        enqueue(datOutPort, CHIDataMsg, data_latency) {
+            out_msg.addr := tbe.addr;
+            out_msg.type := CHIDataType:CBWrData_SC;
+            out_msg.txnId := tbe.txnId;
+            out_msg.dataBlk := tbe.dataBlk;
+
+            out_msg.bitMask.setMask(0, blockSize);
+            out_msg.responder := tbe.upstream_0;
+            out_msg.Destination.add(tbe.upstream_0);
+        }
+        tbe.push_pending_0 := false;
+    } else if (tbe.push_dbid_ready_1) {
+        assert(tbe.push_pending_1);
+        enqueue(datOutPort, CHIDataMsg, data_latency) {
+            out_msg.addr := tbe.addr;
+            out_msg.type := CHIDataType:CBWrData_SC;
+            out_msg.txnId := tbe.txnId;
+            out_msg.dataBlk := tbe.dataBlk;
+
+            out_msg.bitMask.setMask(0, blockSize);
+            out_msg.responder := tbe.upstream_1;
+            out_msg.Destination.add(tbe.upstream_1);
+        }
+
+        tbe.push_dbid_ready_1 := false;
+        tbe.push_pending_0 := false;
+    }    
+}
+
+action(Mark_UpstreamRead, desc="Mark specific fields after receiving upstream ReadProxy") {
+    peek(reqInPort, CHIRequestMsg) {
+        // TODO initiate TBE fields
+
+        // Mark pending
+        if (in_msg.requestor == tbe.upstream_0) {
+            if (tbe.dataValid) {
+                tbe.actions.push(Event:ReplyProxyData);
+            }
+            tbe.up_read_pending_0 := true;
+        } else if (in_msg.requestor == tbe.upstream_1) {
+            if (tbe.dataValid) {
+                tbe.actions.push(Event:ReplyProxyData);
+            }
+            // up_read_pending is cleared after reply data is sent
+            tbe.up_read_pending_1 := true;
+
         } else {
-            // send Push to upstream
-            tbe.push_sent = true;
+            error("Received REQ is not from expected upstream!");
         }
     }
 }
 
-action(Mark_UpstreamRead, desc="Receive upstream ReadProxy") {
-    MachineID upstream = sharingManager.getUpstream(tbe.addr);
-    assert(upstream = inport.machineid);
-    if (hasData) {
-        // When downstream already sent push, replay the upstream readproxy only
-        tbe.actions.push(Event:SendData);
+// ---------------------------------
+// Upstream Slave
+// ---------------------------------
+
+action(Handle_PushProxy, desc="Handle PushProxy Req from downstream") {
+    peek(reqInPort, CHIRequestMsg) {
+        assert(in_msg.requestor == tbe.downstream);
+    }
+    if (tbe.read_pending) {
+        tbe.actions.push(Event:CancelDownstreamPush);
     } else {
-        tbe.upstream_pending = true;
-    }
-    if (tbe.push_sent) {
-        tbe.ignore_push = true;
+        tbe.actions.push(Event:SendCompDBID);
     }
 }
 
-// Common actions for a proxy transaction
-action(Initiate_Proxy, desc="Initialize TBE entry for proxy transaction") {
-    // TODO
-
-    tbe.actions.push(Event:CheckCacheFill);
-    tbe.actions.push(Event:TagArrayWrite);
+action(Reject_PushProxy, desc="Cancel push proxy immediately without allocating TBE") {
+    peek(reqInPort, CHIRequestMsg) {
+        enqueue(rspOutPort, CHIResponseMsg, response_latency) {
+            out_msg.addr := in_msg.addr;
+            out_msg.type := CHIResponseType:CompDBIDRespCancel;
+        }
+    }
 }
 
-action(Initiate_Proxy_Upstream, desc="Proxy transaction initiated by upstream") {
-    MachineID upstream = sharingManager.getUpstream(tbe.addr);
-    assert(upstream = inport.machineid);
-    assert(is_HN == false);
-    int sharingGroup = sharingManager.getSharingDirection(tbe.addr);
-    assert(sharingGroup != SharingDirection::None);
-    tbe.actions.push(Event:SendReadProxy);
-    tbe.actions.push(Event:CheckCacheFill);
-    tbe.actions.push(Event:TagArrayWrite);
-    //
-    tbe.downstream = sharingManager.getDownstream(tbe.addr);
-    tbe.chain_tail = tbe.downstream not RNF;
-    tbe.upstream = sharingManager.getUpstream(tbe.addr);
-    tbe.chain_head = tbe.upstream not this;
+action(Send_CompDBID, desc="Send CompDBID to downstream") {
+    if (tbe.read_pending) {
+        enqueue(rspOutPort, CHIResponseMsg, response_latency) {
+            out_msg.addr := address;
+            out_msg.type := CHIResponseType:CompDBIDRespCancel;
+            out_msg.responder := machineID;
+            out_msg.Destination.add(tbe.upstream_0);
+            out_msg.txnId := tbe.txnId;
+            out_msg.dbid := tbe.txnId;
+        }
+    } else {
+        enqueue(rspOutPort, CHIResponseMsg, response_latency) {
+            out_msg.addr := address;
+            out_msg.type := CHIResponseType:CompDBIDResp;
+            out_msg.responder := machineID;
+            out_msg.Destination.add(tbe.upstream_0);
+            out_msg.txnId := tbe.txnId;
+            out_msg.dbid := tbe.txnId;
+        }
+    }
 }
 
-action(Init_Proxy_Downstream, desc="Proxy transaction initiated by downstream") {
+action(Send_CompDBIDRespCancel, desc="Discard push from downstream") {
+    DPRINTF(RubySlicc, "Downstream sent a push but upstream proxy request has completed\n");
+    // peek (no tbe here)
+    peek(reqInPort, CHIRequestMsg) {
+        enqueue(rspOutPort, CHIResponseMsg, response_latency) {
+            out_msg.addr := tbe.addr;
+            out_msg.type := CHIResponseType:CompDBIDRespCancel;
+            out_msg.responder := tbe.downstream;
+            out_msg.Destination.add(tbe.downstream);
+            out_msg.txnId := tbe.txnId;
+        }
+    }
+
+    reqInPort.dequeue(clockEdge());
+}
+
+// action(Receive_ProxyData, desc="") {
+
+// }
+
+// ---------------------------------
+// Downstream Master
+//----------------------------------
+
+action(Initiate_Push, desc="Initiate push") {
+    if (tbe.upstream_0.isValid() && !tbe.up_read_pending_0) {
+        tbe.push_pending_0 := true;
+        tbe.push_dbid_ready_0 := false;
+        tbe.actions.push(Event:SendPushReq);
+    }
+    if (tbe.upstream_1.isValid() && !tbe.up_read_pending_1) {
+        tbe.push_pending_1 := true;
+        tbe.push_dbid_ready_1 := false;
+        tbe.actions.push(Event:SendPushReq);
+    }
+}
+
+action(Send_PushReq, desc="Send Push REQ Packet") {
+    if (tbe.push_pending_0) {
+        assert(tbe.push_dbid_ready_0 == false);
+        assert(tbe.upstream_0.isValid());
+        enqueue(reqOutPort, CHIRequestMsg, request_latency) {
+            prepareRequest(tbe, CHIRequestType:PushProxy, out_msg);
+            out_msg.Destination.add(tbe.upstream_0);
+        }
+    } else if (tbe.push_pending_1) {
+        assert(tbe.push_dbid_ready_1 == false);
+        assert(tbe.upstream_0.isValid());
+        enqueue(reqOutPort, CHIRequestMsg, request_latency) {
+            prepareRequest(tbe, CHIRequestType:PushProxy, out_msg);
+            out_msg.Destination.add(tbe.upstream_1);
+        }
+    }
+}
+
+// Used by CompDBIDRespHandler, not used by CompData/CBWrData
+action(Try_PushData, desc="DBID ready, check if can push") {
+    peek(rspInPort, CHIRequestMsg) {
+        MachineID sender := in_msg.requestor;
+        assert(sender == tbe.upstream_0 || sender == tbe.upstream_1);
+        if (sender == tbe.upstream_0) {
+            assert(!tbe.push_dbid_ready_0);
+            assert(tbe.push_pending_0);
+            tbe.push_dbid_ready_0 := true;
+            if (tbe.dataValid) {
+                tbe.actions.push(Event:SendPushData);
+                tbe.push_dbid_ready_0 := false;
+            }
+        } else if (sender == tbe.upstream_1) {
+            assert(!tbe.push_dbid_ready_1);
+            assert(tbe.push_pending_1);
+            tbe.push_dbid_ready_1 := true;
+            if (tbe.dataValid) {
+                tbe.actions.push(Event:SendPushData);
+                tbe.push_dbid_ready_1 := false;
+            }
+        }
+    }
+}
+
+// Used by CompData/CBWrData handler, not used by CompDBIDRespHandler
+action(Check_DataWaitingPush, desc="Check pending pushes that have DBID and waiting for data ready") {
+    if (tbe.push_pending_0 && tbe.push_dbid_ready_0) {
+        assert(tbe.upstream_0.isValid());
+        tbe.actions.push(Event:SendPushData);
+        tbe.push_dbid_ready_0 := false;
+    }
+    if (tbe.push_pending_1 && tbe.push_dbid_ready_1) {
+        assert(tbe.upstream_0.isValid());
+        tbe.actions.push(Event:SendPushData);
+        tbe.push_dbid_ready_1 := false;
+    }
+}
+
+
+action(Push_ProxyData, desc="Send_Data alternative for proxy transaction") {
+    assert(tbe.is_proxy);
+    assert(tbe.dataValid);
+    assert(data_channel_size == blockSize);
+    if (tbe.push_pending_0) {
+        assert(!tbe.push_dbid_ready_0);
+        enqueue(datOutPort, CHIDataMsg, data_latency) {
+            out_msg.addr := tbe.addr;
+            out_msg.type := CHIDataType:CBWrData_SC;
+            out_msg.txnId := tbe.txnId;
+            out_msg.dataBlk := tbe.dataBlk;
+
+            out_msg.bitMask.setMask(0, blockSize);
+            out_msg.responder := tbe.upstream_0;
+            out_msg.Destination.add(tbe.upstream_0);
+        }
+        tbe.push_pending_0 := false;
+    } else if (tbe.push_pending_1) {
+        assert(!tbe.push_dbid_ready_1);
+        enqueue(datOutPort, CHIDataMsg, data_latency) {
+            out_msg.addr := tbe.addr;
+            out_msg.type := CHIDataType:CBWrData_SC;
+            out_msg.txnId := tbe.txnId;
+            out_msg.dataBlk := tbe.dataBlk;
+
+            out_msg.bitMask.setMask(0, blockSize);
+            out_msg.responder := tbe.upstream_1;
+            out_msg.Destination.add(tbe.upstream_1);
+        }
+
+        tbe.push_dbid_ready_1 := false;
+        tbe.push_pending_0 := false;
+    }
+}
+
+action(Set_PushCancelled, desc="Downstream receive CompDBIDRespCancel") {
+    peek(rspInPort, CHIRequestMsg) {
+        MachineID canceller := in_msg.requestor;
+        if (canceller == tbe.upstream_0) {
+            if (!tbe.push_pending_0) {
+                error("Received push cancel or upstream 0 but no push pending!");
+            }
+            tbe.push_pending_0 := false;
+        } else if (canceller == tbe.upstream_1) {
+            if (!tbe.push_pending_1) {
+                error("Received push cancel or upstream 1 but no push pending!");
+            }
+            tbe.push_pending_1 := false;
+        } else {
+            error("Received REQ is not from expected upstream!");
+        }
+    }
+}
+
+// ----------------------------------
+// Upstream Master
+// ----------------------------------
+
+action(Initiate_ReadProxy, desc="Send ReadProxy to downstream") {
+    // mark read proxy pending
+    peek(reqInPort, CHIRequestMsg) {
+        // TODO initiate TBE fields
+
+        // Mark pending
+        if (in_msg.requestor == tbe.upstream_0) {
+            tbe.up_read_pending_0 := true;
+        } else if (in_msg.requestor == tbe.upstream_1) {
+            tbe.up_read_pending_1 := true;
+        } else {
+            error("Received REQ is not from expected upstream!");
+        }
+    }
+    // TODO expected resps may need modification to work for proxy/push transitions
     
-    tbe.actions.push(Event:PushProxy);
-    tbe.actions.push(Event:CheckCacheFill);
-    tbe.actions.push(Event:TagArrayWrite);
-
-    tbe.up_pending = true;
+    tbe.actions.push(Event:SendReadProxy);
 }
 
-action(Discard_Push, desc="Discard push from downstream") {
-    DPRINTF(RubySlicc, "Downstream sent a push but upstream already in proxy request\n");
+
+action(Send_ReadProxy, desc="Send Read Request") {
+    if (tbe.downstream.isValid()) {
+        // If downstream is HN, send proxy request
+    } else {
+        // send readonce, no need compack
+    }
+
+    if (tbe.chain_tail) {
+        enqueue(reqOutPort, CHIRequestMsg, request_latency) {
+            prepareRequest(tbe, CHIRequestType:ReadOnce, out_msg);
+            // TBE.downstream is used to determine proxy direction
+            // downstream might be SN
+            // Destination should always be hn
+            out_msg.Destination.add(mapAddressToDownstreamMachine(tbe.addr));
+            allowRequestRetry(tbe, out_msg);
+        }
+
+    } else {
+        // Proxy the request downwards
+        enqueue(reqOutPort, CHIRequestMsg, request_latency) {
+            prepareRequest(tbe, CHIRequestType:ReadProxy, out_msg);
+            out_msg.Destination.add(tbe.downstream);
+        }
+    }
 }
