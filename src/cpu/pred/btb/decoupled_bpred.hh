@@ -146,6 +146,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         IDLE,               // Waiting to start a prediction.
         PREDICTOR_DONE,         // Prediction in progress (conceptually replaces `predictorFinished`).
         PREDICTION_OUTSTANDING,         // Prediction is ready to be enqueued (replaces `receivedPred`).
+        ENQ_2ND_PRED,          // Ready to enqueue second prediction.
     };
     BpuState bpuState;
 
@@ -165,6 +166,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     HistoryManager historyManager;
 
     unsigned numOverrideBubbles{0};
+    int firstPredBubbles{0};  ///< Override bubbles from first prediction for parallel reduction
 
 
     using JAInfo = JumpAheadPredictor::JAInfo;
@@ -190,11 +192,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     // Tick helper functions
     void requestNewPrediction();
 
-    // 2-taken upper bound functions
-    void produce2ndPrediction();
-    bool satisfiesFirstPred2TakenCondition(FullBTBPrediction& pred);
-    bool satisfiesSecondPred2TakenCondition(FullBTBPrediction& pred);
-    void handleSecondPredictionFailure();
+    // Generate second prediction for 2-taken mode
+    void produce2ndPrediction(int firstPredBubbles);
+
 
     Addr computePathHash(Addr br, Addr target);
 
@@ -365,6 +365,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         // 2-taken statistics
         statistics::Scalar totalPredCount;
         statistics::Scalar twoTakenHit;
+        statistics::Scalar twoTakenMiss;
         statistics::Scalar twoTakenRemainsAfterOverride;
         statistics::Scalar predProduce2Taken;
 
@@ -376,6 +377,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         // Second prediction validation statistics
         statistics::Scalar secondPredValidationPassed;
         statistics::Scalar secondPredValidationFailed;
+
+        // Total bubbles count by bubble number
+        statistics::Vector totalBubblesCount;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;

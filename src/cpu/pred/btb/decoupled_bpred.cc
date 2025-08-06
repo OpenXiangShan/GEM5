@@ -533,6 +533,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
 
     ADD_STAT(totalPredCount, statistics::units::Count::get(), "total number of predictions made"),
     ADD_STAT(twoTakenHit, statistics::units::Count::get(), "2-taken prediction hits"),
+    ADD_STAT(twoTakenMiss, statistics::units::Count::get(), "2-taken prediction misses"),
     ADD_STAT(twoTakenRemainsAfterOverride, statistics::units::Count::get(),
     "2-taken predictions remaining after override"),
     ADD_STAT(predProduce2Taken, statistics::units::Count::get(), "the number of predictions that produce 2-taken"),
@@ -543,7 +544,9 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     ADD_STAT(secondPredValidationPassed, statistics::units::Count::get(),
                "Number of full predictor validations that passed"),
     ADD_STAT(secondPredValidationFailed, statistics::units::Count::get(),
-               "Number of full predictor validations that failed")
+               "Number of full predictor validations that failed"),
+    ADD_STAT(totalBubblesCount, statistics::units::Count::get(),
+               "Count of total bubbles by bubble number (firstPredBubbles + numOverrideBubbles)")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
@@ -552,6 +555,9 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
+
+    // Initialize total bubbles count vector (50 elements for 0-49 bubbles)
+    totalBubblesCount.init(numStages);
 
     // 2-taken ratio calculations
     predTwoTakenRatio = predProduce2Taken / totalPredCount;
@@ -582,53 +588,55 @@ DecoupledBPUWithBTB::tick()
     if (squashing) {
         bpuState = BpuState::IDLE;
         numOverrideBubbles = 0;
+        firstPredBubbles = 0;
         DPRINTF(Override, "Squashing, BPU state updated.\n");
         squashing = false;
         return;
     }
 
-    // Single iteration prediction logic (was inside while loop)
-    if (bpuState == BpuState::IDLE && fetchStreamQueue.size() < fetchStreamQueueSize - 1 && numOverrideBubbles == 0) {
+    // Single iteration prediction logic (removed while loop)
+    if (bpuState == BpuState::IDLE && !streamQueueFull() && numOverrideBubbles == 0) {
         requestNewPrediction();
         bpuState = BpuState::PREDICTOR_DONE;
     }
 
-    // Handle pending prediction if available
     if (bpuState == BpuState::PREDICTOR_DONE) {
-
-        // update ubtb using mbtb prediction
-        if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
-            ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-        }
         DPRINTF(Override, "Generating final prediction for PC %#lx\n", s0PC);
         numOverrideBubbles = generateFinalPredAndCreateBubbles();
+        firstPredBubbles = numOverrideBubbles;  // Store for parallel reduction
         bpuState = BpuState::PREDICTION_OUTSTANDING;
 
-        // Clear stage predictions for next cycle
-        clearPreds();
+        // Clear each predictor's output
+        for (int i = 0; i < numStages; i++) {
+            predsOfEachStage[i].btbEntries.clear();
+        }
     }
 
     // Process enqueue operations and bubble counter
     tryEnqFetchTarget();
 
-    // check if:
-    // 1. FSQ has space
-    // 2. there's no bubble
-    // 3. PREDICTION_OUTSTANDING
-    if (validateFSQEnqueue()) {
-        // Create first FSQ entry with the current prediction
-        makeNewPrediction(true);
+    // wait until 1st pred's bubbles are spent, then enqueue first prediction
+    if (bpuState == BpuState::PREDICTION_OUTSTANDING && validateFSQEnqueue()) {
 
-                        // NEW: 2-taken decision point
+        makeNewPrediction(true);  // finalPred is now consumed, FSQ entry created
+
+        // Always attempt second prediction when 2-taken enabled
         if (enableTwoTaken) {
-            produce2ndPrediction();
+            produce2ndPrediction(firstPredBubbles);
+            // finalPred now contains second prediction, and numOverrideBubbles is the bubble needed for 2nd pred
+        } else {
+            bpuState = BpuState::IDLE;
         }
-
-        DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
-        bpuState = BpuState::IDLE;
     }
 
-    // Decrement override bubbles counter (keep original logic location)
+    // Enqueue second prediction when its bubbles are exhausted
+    if (bpuState == BpuState::ENQ_2ND_PRED && validateFSQEnqueue()) {
+        makeNewPrediction(true);  // finalPred contains second prediction
+        bpuState = BpuState::IDLE;
+        DPRINTF(Override, "Second prediction enqueued\n");
+    }
+
+    // Decrement override bubbles (works for both first and second prediction bubbles)
     if (numOverrideBubbles > 0) {
         numOverrideBubbles--;
         dbpBtbStats.overrideBubbleNum++;
@@ -638,6 +646,64 @@ DecoupledBPUWithBTB::tick()
 
     DPRINTF(Override, "Prediction cycle complete\n");
 
+}
+
+void
+DecoupledBPUWithBTB::produce2ndPrediction(int firstPredBubbles)
+{
+    DPRINTF(Override, "Generating second prediction for 2-taken mode\n");
+    dbpBtbStats.totalPredCount++;
+
+    bool firstPredUbtbHit = finalPred.fromUBTB;
+
+    // Generate second prediction using first prediction's target as starting PC
+    // (s0PC already updated by makeNewPrediction)
+    requestNewPrediction();
+    bool secondPredUbtbHit = predsOfEachStage[0].fromUBTB;
+
+
+    // Check if we have a 2-taken hit or miss
+    bool twoTakenHit = firstPredUbtbHit && secondPredUbtbHit;
+
+    if (!twoTakenHit) {
+        // 2-taken miss: Force override of S1 for second prediction
+        DPRINTF(Override, "2-taken miss detected, overriding S1 prediction\n");
+
+        // Clear S1 prediction to force use of higher stages
+        predsOfEachStage[0].btbEntries.clear();
+        predsOfEachStage[1].btbEntries.clear();
+
+        // Regenerate final prediction without S1
+
+
+        dbpBtbStats.twoTakenMiss++;
+    } else {
+        dbpBtbStats.twoTakenHit++;
+    }
+
+    int secondPredBubbles = generateFinalPredAndCreateBubbles();
+
+    // Calculate parallel bubble reduction and store in numOverrideBubbles
+    numOverrideBubbles = std::max(0, secondPredBubbles - firstPredBubbles);
+
+    // Track count of total bubbles (firstPredBubbles + numOverrideBubbles)
+    int totalBubbles = firstPredBubbles + numOverrideBubbles;
+
+    dbpBtbStats.totalBubblesCount[totalBubbles]++;
+
+
+    // finalPred now contains the second prediction (ready for future makeNewPrediction)
+    // Set state to indicate second prediction is ready
+    bpuState = BpuState::ENQ_2ND_PRED;
+
+    // Clear each predictor's output
+    for (int i = 0; i < numStages; i++) {
+        predsOfEachStage[i].btbEntries.clear();
+    }
+
+    dbpBtbStats.predProduce2Taken++;
+    DPRINTF(Override, "Second prediction generated, bubbles: %d (reduced from %d)\n",
+            numOverrideBubbles, secondPredBubbles);
 }
 
 /**
@@ -734,6 +800,11 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 
 
 
+    // update ubtb using mbtb prediction
+    if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
+        ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+    }
+
     // 4. Record override bubbles and update statistics
     if (first_hit_stage > 0) {
         dbpBtbStats.overrideCount++;
@@ -746,6 +817,9 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     // Debug output for final prediction
     printFullBTBPrediction(finalPred);
     dbpBtbStats.predsOfEachStage[first_hit_stage]++;
+
+    // Clear stage predictions for next cycle
+    clearPreds();
 
 
 
@@ -1578,11 +1652,6 @@ DecoupledBPUWithBTB::validateFSQEnqueue()
         return false;
     }
 
-    // 1. Check if a prediction is available to enqueue
-    if (bpuState != BpuState::PREDICTION_OUTSTANDING) {
-        DPRINTF(Override, "No prediction available to enqueue into FSQ\n");
-        return false;
-    }
 
     // 2. Validate PC value
     if (s0PC == MaxAddr) {
@@ -2088,126 +2157,8 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
 #endif
 }
 
-void
-DecoupledBPUWithBTB::produce2ndPrediction()
-{
-    DPRINTF(Override, "Attempting to produce second prediction for 2-taken\n");
-    assert(!streamQueueFull());
-
-    dbpBtbStats.totalPredCount++;
-
-    // Check the 3 conditions for 2-taken eligibility
-    bool firstPredisFromUBTB = finalPred.predSource == 0 && finalPred.fromUBTB;
-    bool firstPredUBTBHit = finalPred.fromUBTB;
-    bool satisfiesFirstCondition = satisfiesFirstPred2TakenCondition(finalPred);
 
 
-    // Save abtb's aheadReadBtbEntries before requestNewPrediction to restore if needed
-    auto savedAheadReadBtbEntries = abtb->aheadReadBtbEntries;
-
-    // 1. Generate second prediction (streamlined, s0PC already updated by makeNewPrediction)
-    requestNewPrediction();
-    generateFinalPredAndCreateBubbles(); // Don't store override bubbles
-
-    bool secondPredUBTBHit = finalPred.fromUBTB;
-    bool secondPredisFromUBTB = finalPred.predSource == 0 && finalPred.fromUBTB;
-
-
-    // 2. Validate second prediction before enqueueing
-    if (!firstPredUBTBHit ||
-        !satisfiesFirstCondition ||
-        !secondPredUBTBHit ||
-        !satisfiesSecondPred2TakenCondition(finalPred)
-    ) {
-        // Second prediction doesn't meet basic 2-taken conditions, restore abtb state and return
-        abtb->aheadReadBtbEntries = savedAheadReadBtbEntries;
-        DPRINTF(Override, "the prediction pair doesn't satisfy 2-taken conditions, \
-            or isn't hit in uBTB, restored abtb state\n");
-        return;
-    }
-    dbpBtbStats.twoTakenHit++;
-
-    if (!firstPredisFromUBTB) {
-        // Restore abtb state before returning
-        abtb->aheadReadBtbEntries = savedAheadReadBtbEntries;
-        DPRINTF(Override, "First prediction not from uBTB, restored abtb state\n");
-        return;
-    }
-    dbpBtbStats.twoTakenRemainsAfterOverride++;
-
-    if (finalPred.predSource == 0 && finalPred.fromUBTB) {
-        DPRINTF(Override, "Second prediction validation passed, enqueueing\n");
-        dbpBtbStats.secondPredValidationPassed++;
-    } else {
-        DPRINTF(Override, "Second prediction failed uBTB source check, adding penalty\n");
-        handleSecondPredictionFailure();
-        dbpBtbStats.secondPredValidationFailed++;
-    }
-    // either way, 2 taken is triggered, this version of 2-taken has net performance gain and no side-effect
-
-    // update of ubtb always accompany enqueueing fetch block
-    if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
-        ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-    }
-
-    // Clear stage predictions for next cycle
-    clearPreds();
-    tryEnqFetchTarget();
-    makeNewPrediction(true);
-
-    dbpBtbStats.predProduce2Taken++;
-}
-
-bool
-DecoupledBPUWithBTB::satisfiesFirstPred2TakenCondition(FullBTBPrediction& pred)
-{
-    // First prediction must have at least one branch
-    if (pred.btbEntries.empty()) {
-        return false;
-    }
-
-    // The first prediction must be taken for a 2-taken sequence to form
-    if (!pred.isTaken()) {
-        return false;
-    }
-
-    // Multi-target indirect as 1st branch is not allowed
-    auto firstBr = pred.getTakenEntry();
-    if (firstBr.isIndirect) {
-        return false;
-    }
-
-    return true;
-}
-
-bool
-DecoupledBPUWithBTB::satisfiesSecondPred2TakenCondition(FullBTBPrediction& pred)
-{
-    // Second prediction can be empty (fallthrough case)
-    if (pred.btbEntries.empty()) {
-        return true;  // pt_2nd = false case (sequential execution)
-    }
-
-    // If not empty, check second prediction specific rules
-    auto takenEntry = pred.getTakenEntry();
-    if (!takenEntry.valid) {
-        return false;  // No taken branch in second prediction
-    }
-
-    // No indirect branches as second branch
-    if (takenEntry.isIndirect) {
-        return false;
-    }
-
-    return true;
-}
-
-void
-DecoupledBPUWithBTB::handleSecondPredictionFailure()
-{
-    numOverrideBubbles = 3;  // Penalty for failed 2-taken attempt
-    DPRINTF(Override, "Second prediction validation failed, adding 2 override bubbles\n");
-}
 
 
 }  // namespace btb_pred
