@@ -303,6 +303,11 @@ class LSQUnit
     bool sqWillFull = false;
     const uint32_t sbufferEvictThreshold = 0;
     const uint32_t sbufferEntries = 0;
+
+    uint64_t numSBufferRequest = 0;
+    uint64_t numSingleRequest = 0;
+    uint64_t numSplitRequest = 0;
+
     StoreBuffer storeBuffer;
     // Store Buffer Writeback Timeout
     uint64_t storeBufferWritebackInactive;

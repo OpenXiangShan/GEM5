@@ -381,7 +381,7 @@ def setKmhV3IdealParams(args, system):
                 cpu.branchPred.predictWidth = 64              # max width of a fetch block
                 cpu.branchPred.btb.numEntries = 16384
                 # TODO: BTB TAGE do not bave base table, do not support SC
-                cpu.branchPred.tage.tableSizes = [1024] * 8  # 2 way, 1024 sets
+                cpu.branchPred.tage.tableSizes = [2048] * 8  # 2 way, 2048 sets
                 cpu.branchPred.tage.numWays = 2
 
             cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert

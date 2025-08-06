@@ -83,9 +83,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
     struct MgscPrediction
     {
         Addr btb_pc;                    // BTB entry PC
-        int lsum;                       // Total weighted sum
+        int total_sum;                  // Total weighted sum
         bool use_mgsc;                  // Whether to use MGSC prediction
-        bool taken;                     // Final prediction = (use sc pred) ? (lsum >= 0) : tage prediction
+        bool taken;                     // Final prediction = (use sc pred) ? (total_sum >= 0) : tage prediction
         bool taken_before_sc;           // Tage prediction (before SC)
         unsigned total_thres;           // Combined threshold
         std::vector<Addr> bwIndex;      // BW table indices
@@ -108,14 +108,14 @@ class BTBMGSC : public TimedBaseBTBPredictor
             int p_percsum;
             int bias_percsum;
 
-            MgscPrediction() : btb_pc(0), lsum(0), use_mgsc(false), taken(false),
+            MgscPrediction() : btb_pc(0), total_sum(0), use_mgsc(false), taken(false),
                                taken_before_sc(false), total_thres(0), bwIndex(0),
                                lIndex(0), iIndex(0), gIndex(0), pIndex(0), biasIndex(0), bw_weight_scale_diff(false),
                                l_weight_scale_diff(false), i_weight_scale_diff(false),
                                g_weight_scale_diff(false), p_weight_scale_diff(false), bias_weight_scale_diff(false),
                                bw_percsum(0), l_percsum(0), i_percsum(0), g_percsum(0), p_percsum(0), bias_percsum(0){}
 
-            MgscPrediction(Addr btb_pc, int lsum, bool use_mgsc, bool taken,
+            MgscPrediction(Addr btb_pc, int total_sum, bool use_mgsc, bool taken,
                            bool taken_before_sc, unsigned total_thres,
                            std::vector<Addr> bwIndex, std::vector<Addr> lIndex,
                            std::vector<Addr> iIndex, std::vector<Addr> gIndex,
@@ -124,7 +124,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
                            bool g_weight_scale_diff, bool p_weight_scale_diff,
                            bool bias_weight_scale_diff, int bw_percsum,
                            int l_percsum, int i_percsum, int g_percsum, int p_percsum, int bias_percsum) :
-                            btb_pc(btb_pc), lsum(lsum), use_mgsc(use_mgsc),
+                            btb_pc(btb_pc), total_sum(total_sum), use_mgsc(use_mgsc),
                             taken(taken), taken_before_sc(taken_before_sc),
                             total_thres(total_thres), bwIndex(bwIndex),
                             lIndex(lIndex), iIndex(iIndex), gIndex(gIndex), pIndex(pIndex),
@@ -209,7 +209,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Calculate if weight scale causes prediction difference
      */
-    bool calculateWeightScaleDiff(int lsum, int scale_percsum, int percsum);
+    bool calculateWeightScaleDiff(int total_sum, int scale_percsum, int percsum);
 
     /**
      * Update a prediction table and allocate new entry if needed
@@ -266,46 +266,46 @@ class BTBMGSC : public TimedBaseBTBPredictor
         bool taken, std::vector<FoldedHist> &foldedHist, Addr pc=0);
 
     /** global backward branch history indexed tables */
-    //number of global backward branch history indexed tables
-    unsigned bwnb;
-    //global backward branch history indexed table depth
-    unsigned logBwnb;
-    //global backward branch history length
-    std::vector<int> bwm;
+    // number of global backward branch history indexed tables
+    unsigned bwTableNum;
+    // table index width
+    unsigned bwTableIdxWidth;
+    // global backward branch history length
+    std::vector<int> bwHistLen;
     int bwWeightInitValue;
 
     /** First local history indexed tables param*/
-    //number of entries for first local histories
+    // number of entries for first local histories
     unsigned numEntriesFirstLocalHistories;
-    //number of first local history indexed tables
-    unsigned lnb;
-    //log number of first local history indexed tables
-    unsigned logLnb;
-    //local history lengths for all first local history indexed tables
-    std::vector<int> lm;
+    // number of first local history indexed tables
+    unsigned lTableNum;
+    // table index width
+    unsigned lTableIdxWidth;
+    // local history lengths for all first local history indexed tables
+    std::vector<int> lHistLen;
     int lWeightInitValue;
 
     /** loop counter indexed tables param*/
-    unsigned inb;
-    unsigned logInb;
-    std::vector<int> im;
+    unsigned iTableNum;
+    unsigned iTableIdxWidth;
+    std::vector<int> iHistLen;
     int iWeightInitValue;
 
     /** global history indexed table param*/
-    unsigned gnb;
-    unsigned logGnb;
-    std::vector<int> gm;
+    unsigned gTableNum;
+    unsigned gTableIdxWidth;
+    std::vector<int> gHistLen;
     int gWeightInitValue;
 
     /** path history indexed table param*/
-    unsigned pnb;
-    unsigned logPnb;
-    std::vector<int> pm;
+    unsigned pTableNum;
+    unsigned pTableIdxWidth;
+    std::vector<int> pHistLen;
     int pWeightInitValue;
 
     /** bias table param*/
-    unsigned biasnb;
-    unsigned logBiasnb;
+    unsigned biasTableNum;
+    unsigned biasTableIdxWidth;
 
     /*Statistical corrector counters width*/
     unsigned scCountersWidth;
@@ -321,8 +321,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     /*Number of bits for the extra weights*/
     unsigned extraWeightsWidth;
-    /*Number of weight table entries*/
-    unsigned logWeightnb;
+    /*weight table index width*/
+    unsigned weightTableIdxWidth;
 
     // Number of ways for set associative design
     const unsigned numWays;

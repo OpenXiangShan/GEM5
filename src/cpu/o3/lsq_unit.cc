@@ -555,6 +555,9 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
     uint64_t storeBufferInactiveThreshold, uint32_t ldPipeStages, uint32_t stPipeStages)
     : sbufferEvictThreshold(sbufferEvictThreshold),
       sbufferEntries(sbufferEntries),
+      numSBufferRequest(0),
+      numSingleRequest(0),
+      numSplitRequest(0),
       storeBufferWritebackInactive(0),
       storeBufferInactiveThreshold(storeBufferInactiveThreshold),
       lsqID(-1),
