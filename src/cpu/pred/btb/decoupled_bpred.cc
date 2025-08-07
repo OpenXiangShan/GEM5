@@ -2442,17 +2442,19 @@ bool DecoupledBPUWithBTB::validateUbtbSecondPrediction()
                 static_cast<int>(overrideReason));
         dbpBtbStats.secondPredValidationFailed++;
 
-        secondPrediction = compositePred;
+        // 4. On failure, discard the second prediction and add override bubbles
+        hasSecondPrediction = false;
+        secondPrediction.btbEntries.clear();
 
-        secondPredValidationMetas.resize(numComponents);
-        for (int i = 0; i < numComponents; ++i) {
-            secondPredValidationMetas[i] = components[i]->getPredictionMeta();
-        }
+        // Add override bubbles to fetch from the correct path next cycle
+        numOverrideBubbles = std::max(numOverrideBubbles, 2u);
 
-        numOverrideBubbles = 2;
+        // Invalidate the 2-taken part of the uBTB entry to prevent repeated failures
         if (predDFF.valid) {
             ubtb->removeSecondPrediction(predDFF.prevUbtbHitIndex);
         }
+        // Clear any stored metadata
+        secondPredValidationMetas.clear();
 
         return true;
     }
