@@ -482,11 +482,6 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, FullBTBPrediction& s3Pred)
         return false;
     }
 
-    // 3. Rule: 'multi-target indirect' as 1st branch is not allowed.
-    if (firstBr.isIndirect) {
-        ubtbStats.twoTakenFailFirstIndirect++;
-        return false;
-    }
 
     // 4. Handle pt_2nd = false case: second FB has no branches (sequential execution)
     if (s3Pred.btbEntries.empty()) {
@@ -505,25 +500,6 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, FullBTBPrediction& s3Pred)
         return false;
     }
 
-    // Rule: 'multi-target indirect' as 2nd branch is not allowed.
-    if (s3TakenEntry.isIndirect) {
-        ubtbStats.twoTakenFailSecondIndirect++;
-        return false;
-    }
-
-
-
-    // Rule: 'ret -> ret' is not allowed to avoid multiple RAS reads.
-    if (firstBr.isReturn && s3TakenEntry.isReturn) {
-        ubtbStats.twoTakenFailRetRet++;
-        return false;
-    }
-
-    // Rule: 'call -> call' is not allowed to avoid multiple RAS writes.
-    if (firstBr.isCall && s3TakenEntry.isCall) {
-        ubtbStats.twoTakenFailCallCall++;
-        return false;
-    }
 
     // All conditions passed for pt_2nd = true case.
     ubtbStats.twoTakenAccept++;
