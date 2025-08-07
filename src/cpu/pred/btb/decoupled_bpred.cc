@@ -2385,19 +2385,21 @@ bool DecoupledBPUWithBTB::validateUbtbSecondPrediction()
     // Let the BPU merge these predictions into a final composite prediction
     auto compositePred = validationPreds[numStages-1];
 
-    // 2. Extract history info from composite prediction and insert dummy NT conditional branches
+    // 2. Extract history info and prepare for comparison with history alignment
     auto [compositeShamt, compositeTaken] = compositePred.getHistInfo();
     auto [ubtbShamt, ubtbTaken] = secondPrediction.getHistInfo();
 
-    // Calculate number of dummy NT conditional branches needed
+    // Calculate number of dummy NT conditional branches needed for history alignment
     int numDummyBranches = std::max(0, compositeShamt - ubtbShamt);
 
     DPRINTF(DecoupleBP, "History info: composite (%d, %d), uBTB (%d, %d), adding %d dummy branches\n",
             compositeShamt, compositeTaken, ubtbShamt, ubtbTaken, numDummyBranches);
 
-    // Insert dummy NT conditional branches at the beginning of secondPrediction
+    // Store original entries before temporary modification for comparison
+    auto originalBtbEntries = secondPrediction.btbEntries;
+
+    // Temporarily insert dummy NT conditional branches for comparison alignment
     if (numDummyBranches > 0) {
-        auto originalBtbEntries = secondPrediction.btbEntries;
         secondPrediction.btbEntries.clear();
 
         // Add dummy conditional branches (not taken, so not in condTakens)
@@ -2414,7 +2416,7 @@ bool DecoupledBPUWithBTB::validateUbtbSecondPrediction()
             secondPrediction.btbEntries.push_back(entry);
         }
 
-        DPRINTF(DecoupleBP, "Inserted %d dummy NT conditional branches into secondPrediction\n", numDummyBranches);
+        DPRINTF(DecoupleBP, "Inserted %d dummy NT conditional branches for comparison\n", numDummyBranches);
     }
 
     // 3. Use the match function to compare predictions (now with matching history info)
@@ -2424,7 +2426,11 @@ bool DecoupledBPUWithBTB::validateUbtbSecondPrediction()
         DPRINTF(DecoupleBP, "Full validation PASSED for 2nd prediction using match() function\n");
         dbpBtbStats.secondPredValidationPassed++;
 
-        // 4. On success, store the rich metadata from the composite prediction for training
+        // 4. On success, adopt the composite prediction's BTB entries for proper training
+        // This ensures TAGE trains on the same branches it actually predicted
+        secondPrediction.btbEntries = compositePred.btbEntries;
+
+        // 5. Store the rich metadata from the composite prediction for training
         secondPredValidationMetas.resize(numComponents);
         for (int i = 0; i < numComponents; ++i) {
             secondPredValidationMetas[i] = components[i]->getPredictionMeta();
