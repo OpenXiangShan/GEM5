@@ -149,6 +149,10 @@ class IssueQue : public SimObject
     std::vector<std::vector<std::pair<int, int>>> intWrRfTPI;
 
     std::vector<int64_t> portBusy;
+
+    // TX dynamic port optimization control
+    bool enableMainRdpOpt = false;
+
     // opclass mapping to pipeid
     std::vector<ReadyQue*> readyQclassify;
     // s0: wakeup inst, add ready inst to readyInstsQue
@@ -196,6 +200,7 @@ class IssueQue : public SimObject
     IssueQue(const IssueQueParams& params);
     void setIQID(int id) { IQID = id; }
     void setCPU(CPU* cpu);
+    void setMainRdpOpt(bool enable) { enableMainRdpOpt = enable; }
     void resetDepGraph(int numPhysRegs);
 
     void tick();
@@ -315,6 +320,7 @@ class Scheduler : public SimObject
     void setCPU(CPU* cpu, LSQ* lsq);
     void resetDepGraph(uint64_t numPhysRegs);
     void setMemDepUnit(MemDepUnit* memDepUnit) { this->memDepUnit = memDepUnit; }
+    void setMainRdpOpt(bool enable);
 
     void tick();
     void issueAndSelect();

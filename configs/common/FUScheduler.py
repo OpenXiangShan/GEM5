@@ -190,62 +190,55 @@ class KMHV3Scheduler(Scheduler):
             IssuePort(fu=[IntALU()],
                       rp=[IntRD(0, 0), IntRD(1, 0), IntWR(0, 0)]),
             IssuePort(fu=[IntBRU()],
-                      rp=[IntWR(0, 1)])
+                      rp=[IntRD(1, 1), IntRD(7, 2), IntWR(0, 1)])
         ]),
         IssueQue(name='intIQ1', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU()],
                       rp=[IntRD(2, 0), IntRD(3, 0), IntWR(1, 0)]),
             IssuePort(fu=[IntBRU()],
-                      rp=[IntWR(1, 1)])
+                      rp=[IntRD(3, 1), IntRD(9, 2), IntWR(1, 1)])
         ]),
         IssueQue(name='intIQ2', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU()],
                       rp=[IntRD(4, 0), IntRD(5, 0), IntWR(2, 0)]),
             IssuePort(fu=[IntBRU()],
-                      rp=[IntWR(2, 1)])
+                      rp=[IntRD(5, 1), IntRD(11, 2), IntWR(2, 1)])
         ]),
         IssueQue(name='intIQ3', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU(), IntMult()],
-                      rp=[IntRD(6, 0), IntRD(7, 0)]),
+                      rp=[IntRD(6, 0), IntRD(7, 1)]),
         ]),
         IssueQue(name='intIQ4', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU(), IntMult()],
-                      rp=[IntRD(8, 0), IntRD(9, 0)]),
+                      rp=[IntRD(8, 0), IntRD(9, 1)]),
         ]),
         IssueQue(name='intIQ5', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU(), IntDiv(), IntMisc()],
-                      rp=[IntRD(10, 0), IntRD(11, 0)])
+                      rp=[IntRD(10, 0), IntRD(11, 1)])
         ]),
     ]
     __memIQs = [
         IssueQue(name='ld0', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()],
-                      rp=[IntRD(12, 0)])
-        ]),
+                      rp=[IntRD(7, 0)])]),
         IssueQue(name='ld1', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()],
-                      rp=[IntRD(13, 0)])
-        ]),
+                      rp=[IntRD(9, 0)])]),
         IssueQue(name='ld2', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()],
-                      rp=[IntRD(14, 0)])
-        ]),
+                      rp=[IntRD(11, 0)])]),
         IssueQue(name='sta0', inports=2, size=16, oports=[
             IssuePort(fu=[WritePort()],
-                      rp=[IntRD(5, 1)])
-        ]),
+                      rp=[IntRD(6, 1)])]),
         IssueQue(name='sta1', inports=2, size=16, oports=[
             IssuePort(fu=[WritePort()],
-                      rp=[IntRD(7, 1)])
-        ]),
+                      rp=[IntRD(8, 1)])]),
         IssueQue(name='std0', inports=2, size=16, oports=[
             IssuePort(fu=[StoreDataPort()],
-                      rp=[IntRD(9, 1), FpRD(12, 0)])
-        ]),
+                      rp=[IntRD(0, 1), FpRD(12, 0)])]),
         IssueQue(name='std1', inports=2, size=16, oports=[
             IssuePort(fu=[StoreDataPort()],
-                      rp=[IntRD(11, 1), FpRD(13, 0)])
-        ]),
+                      rp=[IntRD(2, 1), FpRD(13, 0)])]),
     ]
     __fpIQs = [
         IssueQue(name='fpIQ0', inports=2, size=18, oports=[
@@ -285,6 +278,8 @@ class KMHV3Scheduler(Scheduler):
         SpecWakeupChannel(srcs=__int_bank + __mem_bank, dsts=__int_bank + __mem_bank),
         SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
     ]
+
+    enableMainRdpOpt = True  # TX dynamic read port optimization
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

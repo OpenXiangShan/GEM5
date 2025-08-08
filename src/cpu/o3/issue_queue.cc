@@ -561,7 +561,13 @@ IssueQue::selectInst()
                     std::pair<int, int> rfTypePortId;
                     // read port is point to point with srcid
                     if (psrc->isIntReg() && intRdRfTPI[pi].size() > i) {
-                        rfTypePortId = intRdRfTPI[pi][i];
+                        // TX dynamic port optimization: src1 can borrow src0's port if src0 is in regcache
+                        if (enableMainRdpOpt && i == 1 &&
+                            scheduler->regCache.contains(inst->renamedSrcIdx(0)->flatIndex())) {
+                            rfTypePortId = intRdRfTPI[pi][0]; // borrow src0's port
+                        } else {
+                            rfTypePortId = intRdRfTPI[pi][i];
+                        }
                         scheduler->useRfRdPort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
                     } else if (psrc->isFloatReg() && fpRdRfTPI[pi].size() > i) {
                         rfTypePortId = fpRdRfTPI[pi][i];
@@ -860,6 +866,9 @@ Scheduler::Scheduler(const SchedulerParams& params)
     assert(maxWrTypePortId <= MAXVAL_TYPEPORTID);
     rdRfPortOccupancy.resize(maxRdTypePortId, {nullptr, 0});
     wrRfPortOccupancy.resize(maxWrTypePortId, {nullptr, 0, 0});
+
+    // Set TX dynamic read port optimization for all IssueQues
+    setMainRdpOpt(params.enableMainRdpOpt);
 
     if (opChecker.count() != enums::Num_OpClass) {
         for (int i = 0; i < enums::Num_OpClass; i++) {
@@ -1429,6 +1438,14 @@ Scheduler::getIQInsts()
         total += iq->instNum;
     }
     return total;
+}
+
+void
+Scheduler::setMainRdpOpt(bool enable)
+{
+    for (auto iq : issueQues) {
+        iq->setMainRdpOpt(enable);
+    }
 }
 
 }
