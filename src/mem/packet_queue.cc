@@ -165,10 +165,6 @@ PacketQueue::schedSendEvent(Tick when)
         assert(!sendEvent.scheduled());
         return;
     }
-    // if (sendEvent.scheduled()) {
-    //     DPRINTF(PacketQueue, "Not scheduling send as already scheduled\n");
-    //     return;
-    // }
 
     if (when != MaxTick) {
         // we cannot go back in time, and to be consistent we stick to
