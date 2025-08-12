@@ -45,11 +45,17 @@ BOP::BOP(const BOPPrefetcherParams &p)
     : Queued(p),
       scoreMax(p.score_max), roundMax(p.round_max),
       badScore(p.bad_score), rrEntries(p.rr_size),
-      tagMask((1 << p.tag_bits) - 1),
+      rrIdxBits(floorLog2(rrEntries)),
+      rrIdxMask((1 << rrIdxBits) - 1),
+      rrTagBits(p.rr_tag_bits),
+      rrTagMask((1 << rrTagBits) - 1),
       delayQueueEnabled(p.delay_queue_enable),
       delayQueueSize(p.delay_queue_size),
       delayTicks(cyclesToTicks(p.delay_queue_cycles)),
+      enDynExtOffset(p.enable_dynamic_external_offset),
       crossPage(p.crossPage),
+      enDynDepth(p.enable_dynamic_depth),
+      enEarlyStop(p.enable_early_stop),
       victimListSize(p.victimOffsetsListSize),
       restoreCycle(p.restoreCycle),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
@@ -67,8 +73,8 @@ BOP::BOP(const BOPPrefetcherParams &p)
     rrRight.resize(rrEntries);
 
     int offset_count = p.offsets.size();
-    maxOffsetCount = p.negative_offsets_enable ? 2*p.offsets.size() : p.offsets.size();
-    if (p.autoLearning) {
+    maxOffsetCount = p.negative_offsets_enable ? 2*offset_count : offset_count;
+    if (enDynExtOffset && 32 > maxOffsetCount) {
         maxOffsetCount = 32;
     }
 
@@ -122,11 +128,18 @@ BOP::delayQueueEventWrapper()
 }
 
 unsigned int
-BOP::hash(Addr addr, unsigned int way) const
+BOP::index(Addr addr, unsigned int way) const
 {
-    Addr hash1 = addr >> way;
-    Addr hash2 = hash1 >> floorLog2(rrEntries);
-    return (hash1 ^ hash2) & (Addr)(rrEntries - 1);
+    // Extract the block address by removing the block offset bits
+    Addr blkAddr = addr >> lBlkSize;
+
+    // Create two hashes from different parts of the address and XOR them
+    // to reduce conflicts in the reference recording tables
+    Addr hash1 = blkAddr & rrIdxMask;
+    Addr hash2 = (blkAddr >> rrIdxBits) & rrIdxMask;
+
+    Addr index = (hash1 ^ hash2) & rrIdxMask;
+    return index;
 }
 
 void
@@ -140,10 +153,10 @@ BOP::insertIntoRR(RREntryDebug rr_entry, unsigned int way)
 {
     switch (way) {
         case RRWay::Left:
-            rrLeft[hash(rr_entry.hashAddr, RRWay::Left)] = rr_entry;
+            rrLeft[index(rr_entry.fullAddr, RRWay::Left)] = rr_entry;
             break;
         case RRWay::Right:
-            rrRight[hash(rr_entry.hashAddr, RRWay::Right)] = rr_entry;
+            rrRight[index(rr_entry.fullAddr, RRWay::Right)] = rr_entry;
             break;
     }
 }
@@ -177,17 +190,21 @@ BOP::resetScores()
 inline Addr
 BOP::tag(Addr addr) const
 {
-    return (addr >> lBlkSize) & tagMask;
+    Addr blkAddr = addr >> lBlkSize;
+    Addr tag = (blkAddr >> rrIdxBits) & rrTagMask;
+
+    return tag;
 }
 
 std::pair<bool, BOP::RREntryDebug>
-BOP::testRR(Addr tag) const
+BOP::testRR(Addr testAddr) const
 {
-    if (rrLeft[hash(tag, RRWay::Left)].hashAddr == tag) {
-        return std::make_pair(true, rrLeft[hash(tag, RRWay::Left)]);
+    Addr testTag = tag(testAddr);
+    if (rrLeft[index(testAddr, RRWay::Left)].tag == testTag) {
+        return std::make_pair(true, rrLeft[index(testAddr, RRWay::Left)]);
     }
-    if (rrRight[hash(tag, RRWay::Right)].hashAddr == tag) {
-        return std::make_pair(true, rrRight[hash(tag, RRWay::Right)]);
+    if (rrRight[index(testAddr, RRWay::Right)].tag == testTag) {
+        return std::make_pair(true, rrRight[index(testAddr, RRWay::Right)]);
     }
 
     return std::make_pair(false, RREntryDebug());
@@ -196,6 +213,10 @@ BOP::testRR(Addr tag) const
 bool
 BOP::tryAddOffset(int64_t offset, bool late)
 {
+    if (!enDynExtOffset) {
+        return false;
+    }
+
     assert(offset != 0);
     bool find_it = std::find(offsetsList.begin(), offsetsList.end(), offset) != offsetsList.end();
     if (find_it) {
@@ -306,11 +327,11 @@ BOP::getBestOffsetIter()
 }
 
 bool
-BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
+BOP::bestOffsetLearning(Addr trainAddr, bool late, const PrefetchInfo &pfi)
 {
     DPRINTF(BOPPrefetcher, "Reach %s entry, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
     Addr offset = offsetsListIterator->calcOffset();
-    Addr lookup_addr = x - offset;
+    Addr lookup_addr = trainAddr - (offset << lBlkSize);
     DPRINTF(BOPPrefetcher, "%s: offset: %d lookup addr: %#lx\n", __FUNCTION__, offset, lookup_addr);
     // There was a hit in the RR table, increment the score for this offset
     auto [exist, rr_entry] = testRR(lookup_addr);
@@ -320,10 +341,10 @@ BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
                                         offsetsListIterator->score + 1, pfi.isCacheMiss());
         }
 
-        DPRINTF(BOPPrefetcher, "Address %#lx found in the RR table\n", x);
+        DPRINTF(BOPPrefetcher, "Address %#lx found in the RR table\n", trainAddr);
         offsetsListIterator->score++;
 
-        if (offsetsListIterator->score >= round / 2) {
+        if (enDynDepth && (offsetsListIterator->score >= round / 2)) {
             if (late) {
                 offsetsListIterator->late += 2;
             } else {
@@ -363,40 +384,38 @@ BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
 
     offsetsListIterator++;
 
-    // All the offsets in the list were visited meaning that a learning
-    // phase finished. Check if
     if (offsetsListIterator == offsetsList.end()) {
-        offsetsListIterator = offsetsList.begin();
         round++;
-
-        // Check if the best offset must be updated if:
-        // (1) One of the scores equals SCORE_MAX
-        // (2) The number of rounds equals ROUND_MAX
-        if ((bestScore >= scoreMax) || (round == roundMax)) {
-            DPRINTF(BOPPrefetcher, "update new score: %d round: %d phase best offset: %d\n",
-                    bestScore, round, phaseBestOffset);
-
-            if (bestScore > badScore) {
-                issuePrefetchRequests = true;
-                DPRINTF(BOPPrefetcher, "Enable prefetch\n");
-            } else {
-                issuePrefetchRequests = false;
-                DPRINTF(BOPPrefetcher, "Disable prefetch\n");
-            }
-
-            bestOffset = phaseBestOffset;
-            round = 0;
-            bestScore = 0;
-            phaseBestOffset = 0;
-            resetScores();
-            //issuePrefetchRequests = true;
-            return true;
-        } else if ((round >= roundMax/2) && (bestOffset != phaseBestOffset) && (bestScore <= badScore)) {
-            DPRINTF(BOPPrefetcher, "last round offset has not enough confidence, early stop\n");
-            DPRINTF(BOPPrefetcher, "score %u <  badScore %u\n", bestScore, badScore);
-            issuePrefetchRequests = false;
-        }
+        offsetsListIterator = offsetsList.begin();
     }
+
+    // Check if the best offset must be updated if:
+    // (1) One of the scores equals SCORE_MAX
+    // (2) The number of rounds equals ROUND_MAX
+    if ((bestScore >= scoreMax) || (round == roundMax)) {
+        DPRINTF(BOPPrefetcher, "update new score: %d round: %d phase best offset: %d\n",
+                bestScore, round, phaseBestOffset);
+
+        if (bestScore > badScore) {
+            issuePrefetchRequests = true;
+            DPRINTF(BOPPrefetcher, "Enable prefetch\n");
+        } else {
+            issuePrefetchRequests = false;
+            DPRINTF(BOPPrefetcher, "Disable prefetch\n");
+        }
+
+        bestOffset = phaseBestOffset;
+        round = 0;
+        bestScore = 0;
+        phaseBestOffset = 0;
+        resetScores();
+        return true;
+    } else if (enEarlyStop && (round >= roundMax/2) && (bestOffset != phaseBestOffset) && (bestScore <= badScore)) {
+        DPRINTF(BOPPrefetcher, "last round offset has not enough confidence, early stop\n");
+        DPRINTF(BOPPrefetcher, "score %u <  badScore %u\n", bestScore, badScore);
+        issuePrefetchRequests = false;
+    }
+
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
     return false;
 }
@@ -405,26 +424,26 @@ void
 BOP::calculatePrefetch(const PrefetchInfo &pfi,
         std::vector<AddrPriority> &addresses, bool late)
 {
-    Addr addr = blockAddress(pfi.getAddr());
-    Addr tag_x = tag(addr);
+    Addr trainAddr = blockAddress(pfi.getAddr());
+    Addr tag_x = tag(trainAddr);
 
     DPRINTF(BOPPrefetcher,
-            "Train prefetcher with addr %#lx tag %#lx\n", addr, tag_x);
+            "Train prefetcher with addr %#lx tag %#lx\n", trainAddr, tag_x);
 
     if (delayQueueEnabled) {
-        insertIntoDelayQueue(addr, tag_x);
+        insertIntoDelayQueue(trainAddr, tag_x);
     } else {
-        insertIntoRR(addr, tag_x, RRWay::Left);
+        insertIntoRR(trainAddr, tag_x, RRWay::Left);
     }
 
     // Go through the nth offset and update the score, the best score and the
     // current best offset if a better one is found
-    bestOffsetLearning(tag_x, late, pfi);
+    bestOffsetLearning(trainAddr, late, pfi);
 
     // This prefetcher is a degree 1 prefetch, so it will only generate one
     // prefetch at most per access
     if (issuePrefetchRequests) {
-        Addr prefetch_addr = addr + (bestOffset << lBlkSize);
+        Addr prefetch_addr = trainAddr + (bestOffset << lBlkSize);
         stats.issuedOffsetDist.sample(bestOffset);
         sendPFWithFilter(pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
         DPRINTF(BOPPrefetcher,

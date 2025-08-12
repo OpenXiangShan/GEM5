@@ -697,7 +697,7 @@ class BOPPrefetcher(QueuedPrefetcher):
     round_max = Param.Unsigned(50, "Max. round to update the best offset")
     bad_score = Param.Unsigned(12, "Score at which the HWP is disabled")
     rr_size = Param.Unsigned(256, "Number of entries of each RR bank")
-    tag_bits = Param.Unsigned(24, "Bits used to store the tag")
+    rr_tag_bits = Param.Unsigned(24, "Bits used to store the RR tag")
     negative_offsets_enable = Param.Bool(False,
                 "Initialize the offsets list also with negative values \
                 (i.e. the table will have half of the entries with positive \
@@ -708,12 +708,14 @@ class BOPPrefetcher(QueuedPrefetcher):
     delay_queue_cycles = Param.Cycles(150,
                 "Cycles to delay a write in the left RR table from the delay queue")
 
-    autoLearning = Param.Bool(False," auto learn offset")
+    enable_dynamic_external_offset = Param.Bool(False," Dynamic Update Offset Table")
 
     offsets = VectorParam.Int([72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128, 135, 144,
                               150, 160, 162, 180, 192, 200, 216, 225, 240, 243, 250, 256], "Predefined offsets")
 
     crossPage = Param.Bool(True, "Cross page prefetching")
+    enable_dynamic_depth = Param.Bool(True, "Dynamic Update Offset's depth")
+    enable_early_stop = Param.Bool(True, "Allow early stop learning phase")
     victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
 
@@ -722,40 +724,64 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     round_max = 50
     bad_score = 1
     rr_size = 256
-    tag_bits = 12
+    rr_tag_bits = 12
     negative_offsets_enable = False
     delay_queue_enable = True
     delay_queue_size = 16
     delay_queue_cycles = 175
+    enable_dynamic_external_offset = False
     crossPage = False
+    enable_dynamic_depth = False
+    enable_early_stop = False
+    use_virtual_addresses=False
 
-    offsets = [x for i in [
+    offsets = sorted([x for i in [
         1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30
-    ] for x in (i, -i)] + [-32]
+    ] for x in (i, -i)] + [-32])
 
 class XSVirtualLargeBOP(BOPPrefetcher):
     score_max = 31
     round_max = 50
     bad_score = 2
     rr_size = 256
-    tag_bits = 12
+    rr_tag_bits = 12
     negative_offsets_enable = False
     delay_queue_enable = True
     delay_queue_size = 16
     delay_queue_cycles = 175
+    enable_dynamic_external_offset = False
+    crossPage = True
+    enable_dynamic_depth = False
+    enable_early_stop = False
+    use_virtual_addresses = True
 
-    offsets = [x for i in [
+    offsets = sorted([x for i in [
         1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30, 32, 36, 40, 45, 48,
-        50, 54, 60, 64, 72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128, 135, 144, 150, 160, 162, 180, 192, 200, 216,
-        225, 240, 243, 250
-    ] for x in (i, -i)] + [-256]
+        50, 54, 60, 64, 72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128, 135, 144, 150, 160,
+        162, 180, 192, 200, 216, 225, 240, 243, 250
+    ] for x in (i, -i)] + [-256])
+
+class LargeBOPPrefetcher(BOPPrefetcher):
+    score_max = 20
+    round_max = 50
+    bad_score = 12
+    rr_size = 256
+    rr_tag_bits = 24
+    enable_dynamic_external_offset = True
+    negative_offsets_enable = True
+    delay_queue_enable = True
+
+    negative_offsets_enable = False
+    offsets = [72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128, 135, 144,
+                150, 160, 162, 180, 192, 200, 216, 225, 240, 243, 250, 256]
 
 class SmallBOPPrefetcher(BOPPrefetcher):
     score_max = 31
     round_max = 30
     bad_score = 8
     rr_size = 256
-    tag_bits = 24
+    rr_tag_bits = 24
+    enable_dynamic_external_offset = True
     negative_offsets_enable = True
     delay_queue_enable = False
 
@@ -767,13 +793,13 @@ class LearnedBOPPrefetcher(BOPPrefetcher):
     round_max = 30
     bad_score = 8
     rr_size = 256
-    tag_bits = 24
+    rr_tag_bits = 24
     negative_offsets_enable = True
     delay_queue_enable = True
     delay_queue_size = 16
     delay_queue_cycles = 30
 
-    autoLearning = True
+    enable_dynamic_external_offset = True
     offsets = [64]
 
 class FallenBOPPrefetcher(BOPPrefetcher):
@@ -781,13 +807,13 @@ class FallenBOPPrefetcher(BOPPrefetcher):
     round_max = 30
     bad_score = 8
     rr_size = 256
-    tag_bits = 24
+    rr_tag_bits = 24
     negative_offsets_enable = False
     delay_queue_enable = True
     delay_queue_size = 16
     delay_queue_cycles = 30
 
-    autoLearning = False
+    enable_dynamic_external_offset = False
     offsets = [24]
 
 class SBOOEPrefetcher(QueuedPrefetcher):
@@ -1105,7 +1131,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of pf_gen"
     )
-    bop_large = Param.BasePrefetcher(BOPPrefetcher(is_sub_prefetcher=True),
+    bop_large = Param.BasePrefetcher(LargeBOPPrefetcher(is_sub_prefetcher=True),
                                      "Large BOP used in composite prefetcher ")
     bop_small = Param.BasePrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
                                      "Small BOP used in composite prefetcher ")
@@ -1157,9 +1183,9 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
 
     cdp = Param.CDP(CDP(is_sub_prefetcher=True), "")
     cmc = Param.CMCPrefetcher(CMCPrefetcher(is_sub_prefetcher=True), "")
-    bop_large = Param.BOPPrefetcher(BOPPrefetcher(is_sub_prefetcher=True),
+    bop_large = Param.BOPPrefetcher(XSVirtualLargeBOP(is_sub_prefetcher=True),
                                      "Large BOP used in composite prefetcher ")
-    bop_small = Param.BOPPrefetcher(SmallBOPPrefetcher(is_sub_prefetcher=True),
+    bop_small = Param.BOPPrefetcher(XSPhysicalSmallBOP(is_sub_prefetcher=True),
                                      "Small BOP used in composite prefetcher ")
     despacito_stream = Param.DespacitoStreamPrefetcher(DespacitoStreamPrefetcher(is_sub_prefetcher=True),
                                                        "DespacitoStream used in composite prefetcher")
