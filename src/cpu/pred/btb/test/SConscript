@@ -5,13 +5,13 @@ GTest('uras.test', 'uras_test.cc')
 
 # Add BTB test with minimal dependencies
 GTest('btb.test', 
-    'mockbtb.cc',
+    '../btb.cc',
     'btb.test.cc',
     'timed_base_pred.cc',
 )
 
 GTest('abtb.test',
-    'mockbtb.cc',
+    '../btb.cc',
     'abtb.test.cc',
     'timed_base_pred.cc',
 )
@@ -45,7 +45,7 @@ GTest('fetch_target_queue.test',
 GTest('decoupled_bpred.test',
     'decoupled_bpred.test.cc',
     'decoupled_bpred.cc',
-    'mockbtb.cc',
+    '../btb.cc',
     'btb_tage.cc',
     '../folded_hist.cc',
     'timed_base_pred.cc',

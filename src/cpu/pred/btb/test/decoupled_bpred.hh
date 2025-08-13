@@ -15,7 +15,7 @@
 #include "cpu/pred/btb/stream_struct.hh"
 #include "cpu/pred/btb/test/btb_tage.hh"
 #include "cpu/pred/btb/test/mock_PCState.hh"
-#include "cpu/pred/btb/test/mockbtb.hh"
+#include "cpu/pred/btb/btb.hh"
 #include "cpu/pred/btb/test/test_dprintf.hh"
 #include "cpu/pred/btb/test/timed_base_pred.hh"
 

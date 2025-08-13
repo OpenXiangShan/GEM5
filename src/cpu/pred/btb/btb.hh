@@ -46,15 +46,24 @@
 
 #include <queue>
 
-#include "arch/generic/pcstate.hh"
-#include "base/logging.hh"
 #include "base/types.hh"
-#include "config/the_isa.hh"
 #include "cpu/pred/btb/stream_struct.hh"
-#include "cpu/pred/btb/timed_base_pred.hh"
-#include "debug/BTB.hh"
-#include "debug/BTBStats.hh"
-#include "params/DefaultBTB.hh"
+
+// Conditional includes based on build mode
+#ifdef UNIT_TEST
+    #include <gmock/gmock.h>
+    #include <gtest/gtest.h>
+    #include "cpu/pred/btb/test/test_dprintf.hh"
+    #include "cpu/pred/btb/test/timed_base_pred.hh"
+#else
+    #include "arch/generic/pcstate.hh"
+    #include "base/logging.hh"
+    #include "config/the_isa.hh"
+    #include "debug/BTB.hh"
+    #include "debug/BTBStats.hh"
+    #include "params/DefaultBTB.hh"
+    #include "cpu/pred/btb/timed_base_pred.hh"
+#endif
 
 namespace gem5
 {
@@ -65,15 +74,27 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+// Conditional namespace wrapper for testing
+#ifdef UNIT_TEST
+namespace test {
+#endif
+
 class DefaultBTB : public TimedBaseBTBPredictor
 {
   private:
 
   public:
 
+#ifdef UNIT_TEST
+    // Test constructor
+    DefaultBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay,
+               bool entryHalfAligned = false);
+#else
+    // Production constructor
     typedef DefaultBTBParams Params;
 
     DefaultBTB(const Params& p);
+#endif
 
     /*
      * BTB Entry with timestamp for MRU replacement
@@ -99,9 +120,20 @@ class DefaultBTB : public TimedBaseBTBPredictor
     using BTBSetIter = typename BTBSet::iterator;
     // MRU heap for each set
     using BTBHeap = std::vector<BTBSetIter>;
+
+#ifdef UNIT_TEST
+    unsigned tick{0};
+    unsigned getComponentIdx() { return 0; }
+    uint64_t curTick() { return tick++; }
+#else
+    // Production methods
     void tickStart() override;
-    
+
     void tick() override;
+    void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+    void setTrace() override;
+    TraceManager *btbTrace;
+#endif
 
     /*
      * Main prediction function
@@ -128,6 +160,7 @@ class DefaultBTB : public TimedBaseBTBPredictor
     void recoverHist(const boost::dynamic_bitset<> &history,
         const FetchStream &entry, int shamt, bool cond_taken) override;
 
+#ifndef UNIT_TEST
     /** Creates a BTB with the given number of entries, number of bits per
      *  tag, and instruction offset amount.
      *  @param numEntries Number of entries for the BTB.
@@ -136,9 +169,8 @@ class DefaultBTB : public TimedBaseBTBPredictor
      */
     DefaultBTB(unsigned numEntries, unsigned tagBits,
                unsigned instShiftAmt, unsigned numThreads);
+#endif
 
-    void reset();
-    
     /**
      * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
      *        only in L1BTB will this function be called before update
@@ -154,12 +186,6 @@ class DefaultBTB : public TimedBaseBTBPredictor
      *  3. Updates MRU information
      */
     void update(const FetchStream &stream) override;
-
-    void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
-
-    void setTrace() override;
-
-    TraceManager *btbTrace;
 
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
@@ -367,6 +393,10 @@ class DefaultBTB : public TimedBaseBTBPredictor
     unsigned numEntries;    // Total number of entries
     unsigned numWays;       // Number of ways per set
     unsigned numSets;       // Number of sets (numEntries/numWays)
+
+#ifdef UNIT_TEST
+    uint64_t blockSize{32};  // max size in byte of a Fetch Block
+#endif
     // Whether the entries are half-aligned, in other words, whether it is mBTB. Note that the global
     // variable halfAligned in stream_common.hh is used to define the alignment of the fallthrough address
     // of the a fetch block, and it is orthogonal to whether the entries are stored in 32B aligned blocks
@@ -381,9 +411,6 @@ class DefaultBTB : public TimedBaseBTBPredictor
     unsigned idxShiftAmt;  // Amount to shift PC for index
     unsigned tagShiftAmt;  // Amount to shift PC for tag
 
-    /** Thread handling */
-    unsigned log2NumThreads;  // Log2 of number of threads for hashing
-
     /** Branch counter */
     unsigned numBr;  // Number of branches seen
 
@@ -391,72 +418,89 @@ class DefaultBTB : public TimedBaseBTBPredictor
         READ, WRITE, EVICT
     };
 
+#ifdef UNIT_TEST
+    typedef uint64_t Scalar;
+#else
+    typedef statistics::Scalar Scalar;
+#endif
+
+#ifdef UNIT_TEST
+    struct BTBStats {
+#else
     struct BTBStats : public statistics::Group {
-        statistics::Scalar newEntry;
-        statistics::Scalar newEntryWithCond;
-        statistics::Scalar newEntryWithUncond;
-        statistics::Scalar oldEntry;
-        statistics::Scalar oldEntryIndirectTargetModified;
-        statistics::Scalar oldEntryWithNewCond;
-        statistics::Scalar oldEntryWithNewUncond;
+#endif
+        Scalar newEntry;
+        Scalar newEntryWithCond;
+        Scalar newEntryWithUncond;
+        Scalar oldEntry;
+        Scalar oldEntryIndirectTargetModified;
+        Scalar oldEntryWithNewCond;
+        Scalar oldEntryWithNewUncond;
 
-        statistics::Scalar predMiss;
-        statistics::Scalar predHit;
-        statistics::Scalar updateMiss;
-        statistics::Scalar updateHit;
-        statistics::Scalar updateExisting;
-        statistics::Scalar updateReplace;
-        statistics::Scalar updateReplaceValidOne;
+        Scalar predMiss;
+        Scalar predHit;
+        Scalar updateMiss;
+        Scalar updateHit;
+        Scalar updateExisting;
+        Scalar updateReplace;
+        Scalar updateReplaceValidOne;
 
-        statistics::Scalar eraseSlotBehindUncond;
+        Scalar eraseSlotBehindUncond;
 
-        statistics::Scalar predUseL0OnL1Miss;
-        statistics::Scalar updateUseL0OnL1Miss;
+        Scalar predUseL0OnL1Miss;
+        Scalar updateUseL0OnL1Miss;
 
-        statistics::Scalar S0Predmiss;
-        statistics::Scalar S0PredUseUBTB;
-        statistics::Scalar S0PredUseABTB;
+        Scalar S0Predmiss;
+        Scalar S0PredUseUBTB;
+        Scalar S0PredUseABTB;
 
         // per branch statistics
-        statistics::Scalar allBranchHits;
-        statistics::Scalar allBranchHitTakens;
-        statistics::Scalar allBranchHitNotTakens;
-        statistics::Scalar allBranchMisses;
-        statistics::Scalar allBranchMissTakens;
-        statistics::Scalar allBranchMissNotTakens;
+        Scalar allBranchHits;
+        Scalar allBranchHitTakens;
+        Scalar allBranchHitNotTakens;
+        Scalar allBranchMisses;
+        Scalar allBranchMissTakens;
+        Scalar allBranchMissNotTakens;
 
-        statistics::Scalar condHits;
-        statistics::Scalar condHitTakens;
-        statistics::Scalar condHitNotTakens;
-        statistics::Scalar condMisses;
-        statistics::Scalar condMissTakens;
-        statistics::Scalar condMissNotTakens;
-        statistics::Scalar condPredCorrect;
-        statistics::Scalar condPredWrong;
+        Scalar condHits;
+        Scalar condHitTakens;
+        Scalar condHitNotTakens;
+        Scalar condMisses;
+        Scalar condMissTakens;
+        Scalar condMissNotTakens;
+        Scalar condPredCorrect;
+        Scalar condPredWrong;
 
-        statistics::Scalar uncondHits;
-        statistics::Scalar uncondMisses;
+        Scalar uncondHits;
+        Scalar uncondMisses;
 
-        statistics::Scalar indirectHits;
-        statistics::Scalar indirectMisses;
-        statistics::Scalar indirectPredCorrect;
-        statistics::Scalar indirectPredWrong;
+        Scalar indirectHits;
+        Scalar indirectMisses;
+        Scalar indirectPredCorrect;
+        Scalar indirectPredWrong;
 
-        statistics::Scalar callHits;
-        statistics::Scalar callMisses;
+        Scalar callHits;
+        Scalar callMisses;
 
-        statistics::Scalar returnHits;
-        statistics::Scalar returnMisses;
+        Scalar returnHits;
+        Scalar returnMisses;
 
+#ifndef UNIT_TEST
         BTBStats(statistics::Group* parent);
+#endif
     } btbStats;
 
-    void incNonL0Stat(statistics::Scalar &stat) {
+    void incNonL0Stat(Scalar &stat) {
         if (!isL0()) {
             stat++;
         }
     }
 };
+
+// Close conditional namespace wrapper for testing
+#ifdef UNIT_TEST
+} // namespace test
+#endif
 
 } // namespace btb_pred
 } // namespace branch_prediction

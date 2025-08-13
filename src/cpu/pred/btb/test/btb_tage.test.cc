@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <algorithm>
 #include "cpu/pred/btb/test/btb_tage.hh"
 #include "cpu/pred/btb/stream_struct.hh"
 #include "base/types.hh"
@@ -66,6 +67,22 @@ FetchStream setMispredStream(FetchStream stream) {
     stream.squashPC = stream.exeBranchInfo.pc;
     return stream;
 }
+
+/**
+ * @brief Helper function to find conditional taken prediction for a given PC
+ *
+ * @param condTakens Vector of conditional predictions
+ * @param pc Branch PC to search for
+ * @return Pair of (found, prediction) where found indicates if PC was found
+ */
+std::pair<bool, bool> findCondTaken(const gem5::branch_prediction::btb_pred::CondTakens& condTakens, Addr pc) {
+    auto it = CondTakens_find(condTakens, pc);
+    if (it != condTakens.end()) {
+        return {true, it->second};
+    }
+    return {false, false};
+}
+
 /**
  * @brief Execute a complete TAGE prediction cycle
  *
@@ -87,8 +104,13 @@ bool predictTAGE(BTBTAGE* tage, Addr startPC,
     tage->putPCHistory(startPC, history, stagePreds);
 
     // Return prediction for first entry if exists
-    if (!entries.empty() && stagePreds[1].condTakens.find(entries[0].pc) != stagePreds[1].condTakens.end()) {
-        return stagePreds[1].condTakens[entries[0].pc];
+    if (!entries.empty()) {
+        auto result = findCondTaken(stagePreds[1].condTakens, entries[0].pc);
+        bool found = result.first;
+        bool taken = result.second;
+        if (found) {
+            return taken;
+        }
     }
     return false;
 }
@@ -113,7 +135,10 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
     tage->putPCHistory(startPC, history, stagePreds);
 
     // 2. Get predicted result
-    bool predicted_taken = stagePreds[1].condTakens[entry.pc];
+    Addr branch_pc = entry.pc;
+    auto it = CondTakens_find(stagePreds[1].condTakens, branch_pc);
+    ASSERT_TRUE(it != stagePreds[1].condTakens.end()) << "Prediction not found for PC " << std::hex << entry.pc;
+    bool predicted_taken = it->second;
 
     // 3. Speculatively update history
     tage->specUpdateHist(history, stagePreds[1]);
@@ -360,8 +385,11 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     predictTAGE(tage, 0x1000, {entry1}, history, stagePreds);
     auto meta = tage->getPredictionMeta();
     bool predicted = false;
-    if (stagePreds[1].condTakens.find(0x1000) != stagePreds[1].condTakens.end()) {
-        predicted = stagePreds[1].condTakens[0x1000];
+    auto result_pred = findCondTaken(stagePreds[1].condTakens, 0x1000);
+    bool found_pred = result_pred.first;
+    bool pred_result = result_pred.second;
+    if (found_pred) {
+        predicted = pred_result;
     }
 
     // Create a stream for entry2 with opposite outcome to force allocation
@@ -443,11 +471,13 @@ TEST_F(BTBTAGETest, MultipleBranchSequence) {
 
     // Get predictions for both branches
     bool first_pred = false, second_pred = false;
-    if (stagePreds[1].condTakens.find(0x1000) != stagePreds[1].condTakens.end()) {
-        first_pred = stagePreds[1].condTakens[0x1000];
+    auto result1 = findCondTaken(stagePreds[1].condTakens, 0x1000);
+    if (result1.first) {
+        first_pred = result1.second;
     }
-    if (stagePreds[1].condTakens.find(0x1004) != stagePreds[1].condTakens.end()) {
-        second_pred = stagePreds[1].condTakens[0x1004];
+    auto result2 = findCondTaken(stagePreds[1].condTakens, 0x1004);
+    if (result2.first) {
+        second_pred = result2.second;
     }
 
     // Update first branch (correct prediction), no allocation
@@ -658,8 +688,9 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
 
     // Get prediction for entry1
     bool pred1 = false;
-    if (stagePreds[1].condTakens.find(entry1.pc) != stagePreds[1].condTakens.end()) {
-        pred1 = stagePreds[1].condTakens[entry1.pc];
+    auto result_entry1 = findCondTaken(stagePreds[1].condTakens, entry1.pc);
+    if (result_entry1.first) {
+        pred1 = result_entry1.second;
     }
     EXPECT_TRUE(pred1) << "Entry1 should predict taken";
 
@@ -675,8 +706,9 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
 
     // Get prediction for entry2
     bool pred2 = false;
-    if (stagePreds[1].condTakens.find(entry2.pc) != stagePreds[1].condTakens.end()) {
-        pred2 = stagePreds[1].condTakens[entry2.pc];
+    auto result_entry2 = findCondTaken(stagePreds[1].condTakens, entry2.pc);
+    if (result_entry2.first) {
+        pred2 = result_entry2.second;
     }
     EXPECT_FALSE(pred2) << "Entry2 should predict not taken";
 }

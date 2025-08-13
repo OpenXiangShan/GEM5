@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
-#include "cpu/pred/btb/test/mockbtb.hh"
+#include "cpu/pred/btb/btb.hh"
 
 namespace gem5
 {
@@ -62,6 +62,36 @@ FetchStream setupStream(Addr startPC, const BranchInfo& branch, bool taken,
     stream.predMetas[0] = meta;
     stream.updateEndInstPC = endInstPC;
     return stream;
+}
+
+/**
+ * @brief Helper function to find conditional taken prediction for a given PC
+ *
+ * @param condTakens Vector of conditional predictions
+ * @param pc Branch PC to search for
+ * @return Pair of (found, prediction) where found indicates if PC was found
+ */
+std::pair<bool, bool> findCondTaken(const CondTakens& condTakens, Addr pc) {
+    auto it = CondTakens_find(condTakens, pc);
+    if (it != condTakens.end()) {
+        return {true, it->second};
+    }
+    return {false, false};
+}
+
+/**
+ * @brief Helper function to find indirect target for a given PC
+ *
+ * @param indirectTargets Vector of indirect targets
+ * @param pc Branch PC to search for
+ * @return Pair of (found, target) where found indicates if PC was found
+ */
+std::pair<bool, Addr> findIndirectTarget(const IndirectTargets& indirectTargets, Addr pc) {
+    auto it = IndirectTakens_find(indirectTargets, pc);
+    if (it != indirectTargets.end()) {
+        return {true, it->second};
+    }
+    return {false, 0};
 }
 
 /**
@@ -208,22 +238,22 @@ TEST_F(BTBTest, ConditionalCounter) {
     std::vector<FullBTBPrediction> stagePreds =
         predictUpdateCycle(mbtb, 0x1000, branch, true);
 
-    // Counter should be initialized to 1 and stay at 1 after taken
+    // Counter should be initialized to 0 and stay at 0 after taken (since alwaysTaken=true)
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, 1);
+        EXPECT_EQ(entries[0].ctr, 0);
         EXPECT_TRUE(entries[0].alwaysTaken);
     }
     
     // Then update with not taken
     stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
 
-    // Counter should be reduced after not taken (1 -> 0)
+    // Counter should be reduced after not taken (0 -> -1)
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, 0);
+        EXPECT_EQ(entries[0].ctr, -1);
         EXPECT_FALSE(entries[0].alwaysTaken);
     }
 }
@@ -233,15 +263,15 @@ TEST_F(BTBTest, CounterSaturation) {
     // Create conditional branch info
     BranchInfo branch = createBranchInfo(0x1000, 0x2000, true);
 
-    // First entry is initialized with ctr=1
+    // First entry is initialized with ctr=0
     std::vector<FullBTBPrediction> stagePreds =
         predictUpdateCycle(mbtb, 0x1000, branch, true);
 
-    // Check counter is at 1
+    // Check counter is at 0 (alwaysTaken=true, so updateCtr not called)
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
         auto &entries = stagePreds[i].btbEntries;
-        EXPECT_EQ(entries[0].ctr, 1);  // Counter should be at 1
+        EXPECT_EQ(entries[0].ctr, 0);  // Counter should be at 0
         EXPECT_TRUE(entries[0].alwaysTaken);
     }
     
@@ -293,7 +323,9 @@ TEST_F(BTBTest, IndirectBranchPrediction) {
     // Verify indirect target
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        EXPECT_EQ(stagePreds[i].indirectTargets[0x1000], 0x2000);
+        auto [found1, target1] = findIndirectTarget(stagePreds[i].indirectTargets, 0x1000);
+        ASSERT_TRUE(found1);
+        EXPECT_EQ(target1, 0x2000);
     }
     
     // Update with new target
@@ -302,7 +334,9 @@ TEST_F(BTBTest, IndirectBranchPrediction) {
 
     // Verify new indirect target
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
-        EXPECT_EQ(stagePreds[i].indirectTargets[0x1000], 0x3000);
+        auto [found2, target2] = findIndirectTarget(stagePreds[i].indirectTargets, 0x1000);
+        ASSERT_TRUE(found2);
+        EXPECT_EQ(target2, 0x3000);
     }
 }
 
