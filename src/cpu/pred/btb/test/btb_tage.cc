@@ -246,7 +246,10 @@ BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
         auto cond_takens = lookupHelper(stream_start, stage_pred.btbEntries);
-        stage_pred.condTakens = cond_takens;
+        stage_pred.condTakens.clear();
+        for (const auto& pair : cond_takens) {
+            stage_pred.condTakens.push_back(pair);
+        }
     }
 
 }

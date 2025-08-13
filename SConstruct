@@ -383,10 +383,6 @@ for variant_path in variant_paths:
     env = main.Clone()
     env['BUILDDIR'] = variant_path
 
-    # Check for unit test mode and define UNIT_TEST macro if enabled
-    # This is used to replace debug/DecoupleBP.hh with test_dprintf.hh
-    if GetOption('unit_test'):
-        env.Append(CPPDEFINES=['UNIT_TEST'])
     if GetOption('debug_cycle'):
         env.Append(CPPDEFINES=['DEBUG_SHOW_CYCLES'])
 

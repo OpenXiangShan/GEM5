@@ -30,10 +30,16 @@
 #include "cpu/pred/btb/btb.hh"
 
 #include "base/intmath.hh"
-#include "base/trace.hh"
-#include "cpu/o3/dyn_inst.hh"
-#include "debug/AheadPipeline.hh"
-#include "debug/Fetch.hh"
+
+// Additional conditional includes based on build mode
+#ifdef UNIT_TEST
+    #include "cpu/pred/btb/test/test_dprintf.hh"
+#else
+    #include "base/trace.hh"
+    #include "cpu/o3/dyn_inst.hh"
+    #include "debug/AheadPipeline.hh"
+    #include "debug/Fetch.hh"
+#endif
 
 namespace gem5
 {
@@ -44,6 +50,11 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+// Conditional namespace wrapper for testing
+#ifdef UNIT_TEST
+namespace test {
+#endif
+
 /*
  * BTB Constructor
  * Initializes:
@@ -51,15 +62,29 @@ namespace btb_pred
  * - MRU tracking for each set
  * - Address calculation parameters (index/tag masks and shifts)
  */
+#ifdef UNIT_TEST
+// Test constructor for unit testing mode
+DefaultBTB::DefaultBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay,
+                       bool entryHalfAligned)
+    : TimedBaseBTBPredictor(),
+      numEntries(numEntries),
+      numWays(numWays),
+      entryHalfAligned(entryHalfAligned),
+      tagBits(tagBits)
+{
+    setNumDelay(numDelay);
+#else
+// Production constructor
 DefaultBTB::DefaultBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
     numEntries(p.numEntries),
     numWays(p.numWays),
     entryHalfAligned(p.entryHalfAligned),
     tagBits(p.tagBits),
-    log2NumThreads(floorLog2(p.numThreads)),
     btbStats(this)
 {
+    this->aheadPipelinedStages = p.aheadPipelinedStages;
+#endif
     // Calculate shift amounts for index calculation
     if (entryHalfAligned) { // if half aligned, | tag | idx | block offset | instShiftAmt
         idxShiftAmt = floorLog2(blockSize);
@@ -69,7 +94,6 @@ DefaultBTB::DefaultBTB(const Params &p)
 
     assert(numEntries % numWays == 0);
     numSets = numEntries / numWays;
-    this->aheadPipelinedStages = p.aheadPipelinedStages;
     // half-aligned should not be used with ahead-pipelined stages
     assert(aheadPipelinedStages == 0 || !entryHalfAligned);
 
@@ -102,14 +126,17 @@ DefaultBTB::DefaultBTB(const Params &p)
     DPRINTF(BTB, "numEntries %d, numSets %d, numWays %d, tagBits %d, tagShiftAmt %d, idxMask %#lx, tagMask %#lx\n",
         numEntries, numSets, numWays, tagBits, tagShiftAmt, idxMask, tagMask);
 
+#ifndef UNIT_TEST
     hasDB = true;
     switch (getDelay()) {
         case 0: dbName = std::string("btb_0"); break;
         case 1: dbName = std::string("btb_1"); break;
         default: dbName = std::string("btb"); break;
     }
+#endif
 }
 
+#ifndef UNIT_TEST
 void
 DefaultBTB::tickStart()
 {
@@ -139,6 +166,7 @@ DefaultBTB::setTrace()
         btbTrace->init_table();
     }
 }
+#endif
 
 /**
  * Process BTB entries:
@@ -366,7 +394,7 @@ DefaultBTB::lookupSingleBlock(Addr block_pc)
     // thus we need to store the entry read from memory for later use
     if (aheadPipelinedStages > 0) {
         assert(!entryHalfAligned);
-        DPRINTF(AheadPipeline, "FTB: pushing set for ahead-pipelined stages %d, idx %d\n",
+        DPRINTF(AheadPipeline, "FTB: pushing set for ahead-pipelined stages %d, idx %ld\n",
              aheadPipelinedStages, btb_idx);
         // DPRINTF(AheadPipeline, "FTB: dumping ftb set\n");
         // for (auto &entry : btb_set) {
@@ -390,7 +418,7 @@ DefaultBTB::lookupSingleBlock(Addr block_pc)
             // in case there are push without corresponding pop
             assert(aheadReadBtbEntries.size() == aheadPipelinedStages+1);
             std::tie(current_pc, current_idx, current_set) = aheadReadBtbEntries.front();
-            DPRINTF(AheadPipeline, "BTB: ahead-pipeline filled, using set %d from pc %#lx\n",
+            DPRINTF(AheadPipeline, "BTB: ahead-pipeline filled, using set %ld from pc %#lx\n",
                 current_idx, current_pc);
             DPRINTF(AheadPipeline, "BTB: dumping btb set\n");
             for (auto &entry : current_set) {
@@ -398,7 +426,7 @@ DefaultBTB::lookupSingleBlock(Addr block_pc)
             }
             aheadReadBtbEntries.pop();
         } else {
-            DPRINTF(AheadPipeline, "BTB: ahead-pipeline not filled, only have %d sets read,"
+            DPRINTF(AheadPipeline, "BTB: ahead-pipeline not filled, only have %ld sets read,"
                 " skipping tag compare, assigning miss\n", aheadReadBtbEntries.size());
         }
     }
@@ -462,7 +490,7 @@ DefaultBTB::lookup(Addr block_pc)
 void
 DefaultBTB::getAndSetNewBTBEntry(FetchStream &stream)
 {
-    DPRINTF(BTB, "generating new btb entry\n");
+    DPRINTF(BTB, "getAndSetNewBTBEntry called for pc %#lx\n", stream.startPC);
     // Get prediction metadata from previous stages
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &predBTBEntries = meta->hit_entries;
@@ -481,6 +509,7 @@ DefaultBTB::getAndSetNewBTBEntry(FetchStream &stream)
 
     // If branch was not predicted but was actually taken in execution, create new entry
     if (!pred_branch_hit && stream.exeTaken) {
+        DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n", stream.exeBranchInfo.pc);
         BTBEntry new_entry = BTBEntry(stream.exeBranchInfo);
         new_entry.valid = true;
         // For conditional branches, initialize as always taken
@@ -495,6 +524,8 @@ DefaultBTB::getAndSetNewBTBEntry(FetchStream &stream)
         entry_to_write = new_entry;
         is_old_entry = false;
     } else {
+        DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, stream.exeTaken=%d\n",
+                pred_branch_hit, stream.exeTaken);
         // Existing entries will be updated in update()
     }
 
@@ -650,12 +681,14 @@ DefaultBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, co
     if (found) {
         // Update existing entry
         *it = ticked_entry;
+#ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
             rec.set(ticked_entry.pc, ticked_entry.getType(),
                 ticked_entry.target, btb_idx, Mode::WRITE, 1);
             btbTrace->write_record(rec);
         }
+#endif
         btbStats.updateExisting++;
     } else {
         // Replace oldest entry in the set
@@ -664,12 +697,14 @@ DefaultBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, co
         // put the oldest entry in this set to the back of heap
         std::pop_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
         const auto& entry_in_btb_now = mruList[btb_idx].back();
+#ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
             rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
                     entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
                 btbTrace->write_record(rec);
         }
+#endif
         if (entry_in_btb_now->valid) {
             // if all ways are really occupied, we need to replace valid entry
             // means 32B block is more than 4ways/ 4 branches
@@ -679,12 +714,14 @@ DefaultBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, co
         DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
                 entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
         *entry_in_btb_now = ticked_entry;
+#ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
             rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
                 entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
             btbTrace->write_record(rec);
         }
+#endif
         dumpMruList(mruList[btb_idx]);
     }
     std::make_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
@@ -759,12 +796,12 @@ DefaultBTB::getPreviousPC(const FetchStream &stream)
     auto previous_pcs = stream.previousPCs;
     if (previous_pcs.size() < aheadPipelinedStages) {
         // if the stream is not filled, we cannot update ftb
-        DPRINTF(AheadPipeline, "FTB: ahead-pipeline not filled, only have %d pcs read,"
+        DPRINTF(AheadPipeline, "FTB: ahead-pipeline not filled, only have %ld pcs read,"
             " skipping ftb update\n", previous_pcs.size());
         return 0;
     } else {
         DPRINTF(AheadPipeline, "FTB: ahead-pipeline filled, using pc %d blocks before,"
-            " prevoiusPC.size() %d\n", aheadPipelinedStages, previous_pcs.size());
+            " prevoiusPC.size() %ld\n", aheadPipelinedStages, previous_pcs.size());
         while (previous_pcs.size() > aheadPipelinedStages) {
             previous_pcs.pop();
         }
@@ -772,6 +809,7 @@ DefaultBTB::getPreviousPC(const FetchStream &stream)
     }
 }
 
+#ifndef UNIT_TEST
 void
 DefaultBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
@@ -880,7 +918,9 @@ DefaultBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
         }
     }
 }
+#endif
 
+#ifndef UNIT_TEST
 DefaultBTB::BTBStats::BTBStats(statistics::Group* parent) :
     statistics::Group(parent),
     ADD_STAT(newEntry, statistics::units::Count::get(), "number of new btb entries generated"),
@@ -950,6 +990,12 @@ DefaultBTB::BTBStats::BTBStats(statistics::Group* parent) :
         S0PredUseABTB.prereq(S0PredUseABTB);
     }
 }
+#endif
+
+// Close conditional namespace wrapper for testing
+#ifdef UNIT_TEST
+} // namespace test
+#endif
 
 } // namespace btb_pred
 } // namespace branch_prediction

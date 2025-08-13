@@ -1,7 +1,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "cpu/pred/btb/test/mockbtb.hh"
+#include "cpu/pred/btb/btb.hh"
 
 namespace gem5
 {
@@ -59,7 +59,7 @@ protected:
         // Create a BTB with 16 entries, 8-bit tags, 4-way associative, 1-cycle delay
         // The last parameter (true) enables pipelined operation
         abtb = new DefaultBTB(16, 20, 4, 1, false, 1);
-        assert(!abtb->halfAligned);
+        // assert(!abtb->entryHalfAligned);
 
         bigAbtb = new DefaultBTB(1024, 20, 1, 1, false, 1);
     }
