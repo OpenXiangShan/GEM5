@@ -38,7 +38,7 @@ namespace xsCHI
 class DDRWrapper :  public memory::AbstractMemory
 {
   private:
-    NodeID _NodeID;
+    uint32_t _NodeID;
     // SystemAddressMapRN *sam;
 
     CHIPort* port;
@@ -172,7 +172,7 @@ class DDRWrapper :  public memory::AbstractMemory
     void resetStats() override;
     CHIPort* getCHIPort(){return port;}
 
-    void setNodeID(NodeID _ID);
+    void setNodeID(uint32_t _ID);
     // void setSAM(SystemAddressMapRN *sam);
     // std::string name() const override{ return "DDRWrapper"; }
 
