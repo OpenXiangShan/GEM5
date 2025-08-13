@@ -2,6 +2,7 @@
 #include "mem/xsCHI/TopoSys/L2todram.hh"
 
 #include <cassert>
+#include <cstdint>
 #include <memory>
 
 #include "base/trace.hh"
@@ -18,28 +19,31 @@ namespace xsCHI {
         Dram(p.dramsim3)
     {
         // NodeID* L2ID = new NodeID(0,0,0);
-        auto L2ID= std::make_shared<NodeID>(0,0,0);
-        auto L3ID = std::make_shared<NodeID>(1,1,0);
-        auto dramID = std::make_shared<NodeID>(2,2,0);
+        // auto L2ID= std::make_shared<NodeID>(0,0,0);
+        // auto L3ID = std::make_shared<NodeID>(1,1,0);
+        // auto dramID = std::make_shared<NodeID>(2,2,0);
         // auto HNs = std::make_shared<std::list<uint32_t>>();
+        uint32_t L2ID = 1;
+        uint32_t L3ID = 2;
+        uint32_t dramID = 3;
         // HNs->push_back(L3ID->getNodeID());
         auto L2SAM = std::make_shared<SystemAddressMapRN>();
-        L2SAM->addNodeID(L3ID->getNodeID());
+        L2SAM->addNodeID(L3ID);
         // L2wrap = new L2Wrapper(p,L2ID,&L2SAM);
-        L2wrap->setNodeID(*L2ID);
+        L2wrap->setNodeID(L2ID);
         L2wrap->setSAM(L2SAM);
         // Dram = new DDRWrapper(params,dramID,&L2SAM);
         // auto list = std::make_shared<std::list<uint32_t>>();
         // list->push_back(dramID->getNodeID());
         // auto dramSAM = std::make_shared<SystemAddressMapRN>(*list);
-        Dram->setNodeID(*dramID);
+        Dram->setNodeID(dramID);
         // Dram->setSAM(dramSAM.get());
         // auto SNs =std::make_shared<std::list<uint32_t>>();
         // SNs->push_back(dramID->getNodeID());
         auto HNF_SAM = std::make_shared<SystemAddressMapHN>();
         // L3bridge = new FakeL3(p,L3ID,&HNF_SAM);
-        HNF_SAM->addNodeID(dramID->getNodeID());
-        L3bridge->setNodeID(*L3ID);
+        HNF_SAM->addNodeID(dramID);
+        L3bridge->setNodeID(L3ID);
         L3bridge->setSAM(HNF_SAM);
         //todo:connect port! set buffersize by param!
         assert(L2wrap->getCHIPort()!=nullptr && L3bridge->getCHIPort_CPUSIDE() != nullptr);

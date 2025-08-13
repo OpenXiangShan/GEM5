@@ -15,12 +15,12 @@ namespace xsCHI
     CHIBridge::CHIBridge(const Params &p)
         : ClockedObject(p),
           networkPort(p.networkPort),
-          _NodeID(0,0,0),
+          _NodeID(0),
           SAM(nullptr),
           TXN_Manager(1024),// default max outstanding transactions
           req_handle_event([this] { 
             DPRINTF(CHIBridge,"retry called ,Req_tobesent's number : %d reqOP:%s,addr:%lx\n",Req_tobesent.size(),CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(Req_tobesent.front()->getOpcode()),Req_tobesent.front()->getAddr());
-            if (ReceiveReq(Req_tobesent.front())){
+            if (ReceiveReq(Req_tobesent.front(),true)){
                 Req_tobesent.pop();
                 if (!Req_tobesent.empty() ) {
                     assert(req_handle_event.scheduled() && "Req_handle_event should be scheduled");
@@ -63,15 +63,22 @@ namespace xsCHI
 
     // CHIBridge::~CHIBridge() = default;
 
-    bool CHIBridge::ReceiveReq(ReqPtr req)
+    bool CHIBridge::ReceiveReq(ReqPtr req, bool isRetry)
     {
+        // if(req->getOpcode() == CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL) {
+        //     // 对于写回请求，可能需要额外处理
+        //     // 例如，可能需要等待数据传输完成
+        //     kill(getpid(), SIGTRAP);
+        // }
         // we assume only get requests or snoop responses from cache wrapper
         assert(req->isRequest());
         bool success = false;
         int txn_id = TXN_Manager.getID();
         DPRINTF(CHIBridge,"RecvCHIReq, op:%s, addr: %#x, size:%d , try allocate Txn_id:%d\n",static_cast<int>(req->getOpcode()),req->getAddr(),req->getSize(),txn_id);
         if (txn_id < 0) {
-            Req_tobesent.push(req); // 将请求放入待发送队列, try later //err:push req fault
+            if (!isRetry) {
+                Req_tobesent.push(req); // 将请求放入待发送队列, try later //err:push req fault
+            }
             DPRINTF(CHIBridge,"Txn allocate Failed,  add Req to queue, size:%d\n",Req_tobesent.size());
         }else{
             FlitPtr flit = createRequestFlit(req);
@@ -93,7 +100,9 @@ namespace xsCHI
                     flit.reset();
                 }
                 TXN_Manager.releaseID(txn_id);
-                Req_tobesent.push(req); // 将请求放入待发送队列
+                if (!isRetry) {
+                    Req_tobesent.push(req); // 将请求放入待发送队列
+                }
                 DPRINTF(CHIBridge,"Send Failed, release TxnId: %d, add Req to queue\n",txn_id);
             }
         }
@@ -197,9 +206,9 @@ namespace xsCHI
         uint64_t addr = req->getAddr();
         uint32_t tgtID = SAM->getTargetID(addr);
         flit->setTgtId(tgtID);
-        flit->setSrcId(_NodeID.getNodeID());
+        flit->setSrcId(_NodeID);
         DPRINTF(CHIBridge,"Create Flit, op:%s, addr: %#x, size:%d , tgtId:%d ,SrcId:%d\n",\
-            static_cast<int>(req->getOpcode()),req->getAddr(),req->getSize(),SAM->getTargetID(req->getAddr()),_NodeID.getNodeID());
+            static_cast<int>(req->getOpcode()),req->getAddr(),req->getSize(),SAM->getTargetID(req->getAddr()),_NodeID);
         // flit->setTxnId(GenTxnID(flit));
 
 
@@ -307,14 +316,14 @@ namespace xsCHI
         switch (flit->getOpcode()) {
             case CHI_OP_TYPE::CHI_DAT_COMPDATA:{
                 compack_flit->setTgtId(flit->getHomeNid());
-                compack_flit->setSrcId(_NodeID.getNodeID());
+                compack_flit->setSrcId(_NodeID);
                 compack_flit->setTxnId(flit->getDbid());
                 break;
             }
             case CHI_OP_TYPE::CHI_RSP_RESPSEPDATA:
             case CHI_OP_TYPE::CHI_RSP_COMP:{
                 compack_flit->setTgtId(flit->getSrcId());
-                compack_flit->setSrcId(_NodeID.getNodeID());
+                compack_flit->setSrcId(_NodeID);
                 compack_flit->setTxnId(flit->getDbid());
                 break;
             }
@@ -355,10 +364,10 @@ namespace xsCHI
                 data_flit->setOpcode(CHI_OP_TYPE::CHI_DAT_COPYBACKWRDATA);
                 data_flit->setDataId(data_id);
                 data_flit->setCcid(0); // assuming CCID is always 0
-                data_flit->setData(req);
                 data_flit->setSize(req->getSize());
+                data_flit->setData(req);
                 data_flit->setTgtId(flit->getSrcId());
-                data_flit->setSrcId(_NodeID.getNodeID());
+                data_flit->setSrcId(_NodeID);
                 data_flit->setTxnId(flit->getDbid());
 
                 if (networkPort->send(data_flit)){
@@ -373,8 +382,9 @@ namespace xsCHI
                     TXN_Manager.releaseID(flit->getTxnId());
                     outstanding_requests.erase(flit->getTxnId());
                     DPRINTF(CHIBridge, "Finish write request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
+                    return true;
                 }
-                return true;
+                return false; // 还没有完成数据传输，不能返回true
             }
             default:
                 assert(false && "Unsupported write opcode");
