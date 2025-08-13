@@ -33,7 +33,7 @@
         assert(opNum[x->opClass()] != 0); \
         opNum[x->opClass()]--;            \
         instNum--;                        \
-        selector->deallocate(x);       \
+        selector->deallocate(x);          \
     } while (0)
 
 #define READYQ_PUSH(x)                                                                    \
@@ -46,10 +46,12 @@
 
 // must be consistent with FUScheduler.py
 // rfTypePortId = regfile typeid + portid
-#define MAXVAL_TYPEPORTID (1 << (2 + 4)) // [5:4] is typeid, [3:0] is portid
-#define RF_GET_PRIORITY(x) ((x) & 0b11)
+#define MAXVAL_TYPEPORTID (1 << (2 + 4))  // [5:4] is typeid, [3:0] is portid
+#define RF_GET_PRIORITY(x) ((x)&0b11)
+#define RF_GET_TYPEPORTID(x) (((x) >> 2) & 0b111111)
 #define RF_GET_PORTID(x) (((x) >> 2) & 0b1111)
-#define RF_GET_TYPEID(x) ((x) >> 6)
+#define RF_GET_TYPEID(x) (((x) >> 6) & 0b11)
+#define RF_GET_RDWR(x) (((x) >> 8) & 0b1)
 
 #define RF_MAKE_TYPEPORTID(t, p) (((t) << 4) | (p))
 
@@ -79,21 +81,22 @@ BaseSelector::select(ReadyQue::iterator begin, int portid)
 }
 
 void
-PAgeSelector::setparent(Scheduler *scheduler, IssueQue *iq)
+PAgeSelector::setparent(Scheduler* scheduler, IssueQue* iq)
 {
     BaseSelector::setparent(scheduler, iq);
 
     panic_if(iq->iqsize % numInstperGroup != 0,
              "POldSelector: IssueQue size % numInstperGroup != 0, "
-             "size: %d, numInstperGroup: %d\n", iq->iqsize, numInstperGroup);
+             "size: %d, numInstperGroup: %d\n",
+             iq->iqsize, numInstperGroup);
     iqselectQ = &iq->selectQ;
-    for (int i=0;i<iq->iqsize; i++) {
+    for (int i = 0; i < iq->iqsize; i++) {
         freelist.push_back(i);
     }
 }
 
 void
-PAgeSelector::allocate(const DynInstPtr &inst)
+PAgeSelector::allocate(const DynInstPtr& inst)
 {
     assert(!freelist.empty());
     inst->iqtag = freelist.front();
@@ -101,11 +104,11 @@ PAgeSelector::allocate(const DynInstPtr &inst)
 }
 
 void
-PAgeSelector::deallocate(const DynInstPtr &inst)
+PAgeSelector::deallocate(const DynInstPtr& inst)
 {
     assert(inst->iqtag >= 0 && inst->iqtag < (int)freelist.size());
     freelist.push_back(inst->iqtag);
-    inst->iqtag = -1; // reset
+    inst->iqtag = -1;  // reset
 }
 
 ReadyQue::iterator
@@ -199,8 +202,10 @@ IssueQue::IssueQue(const IssueQueParams& params)
     opNum.resize(enums::Num_OpClass, 0);
     portBusy.resize(outports, 0);
 
-    intRfTypePortId.resize(outports);
-    fpRfTypePortId.resize(outports);
+    intRdRfTPI.resize(outports);
+    fpRdRfTPI.resize(outports);
+    intWrRfTPI.resize(outports);
+
     readyQs.resize(outports, nullptr);
 
     readyQclassify.resize(Num_OpClasses, nullptr);
@@ -209,18 +214,43 @@ IssueQue::IssueQue(const IssueQueParams& params)
     std::unordered_map<std::bitset<Num_OpClasses>, ReadyQue*> readyQmap;
     for (int i = 0; i < outports; i++) {
         auto oport = params.oports[i];
+
+        int wr_pri = -1;
         for (auto rfp : oport->rp) {
             int rf_type = RF_GET_TYPEID(rfp);
-            int rf_portid = RF_GET_PORTID(rfp);
             int rf_portPri = RF_GET_PRIORITY(rfp);
-            assert(rf_portPri < 4);
-            assert(RF_MAKE_TYPEPORTID(rf_type, rf_portid) < 64);
-            if (rf_type == RF_INTID) {
-                intRfTypePortId[i].push_back(std::make_pair(RF_MAKE_TYPEPORTID(rf_type, rf_portid), rf_portPri));
-            } else if (rf_type == RF_FPID) {
-                fpRfTypePortId[i].push_back(std::make_pair(RF_MAKE_TYPEPORTID(rf_type, rf_portid), rf_portPri));
+            int is_wr = RF_GET_RDWR(rfp);
+            int rf_typeportid = RF_GET_TYPEPORTID(rfp);
+
+            assert(rf_portPri < (1 << 2));     // 2 bits for priority
+            assert(rf_typeportid < (1 << 6));  // 6 bits for typeportid
+
+            auto rf_typeportid_pair = std::make_pair(rf_typeportid, rf_portPri);
+
+            if (is_wr) {
+                if (rf_type == RF_INTID) {
+                    intWrRfTPI[i].push_back(rf_typeportid_pair);
+                } else {
+                    panic("%s: Unknown write RF type %d\n", iqname, rf_type);
+                }
+                if (rf_portPri > 1) {
+                    panic("Num of write arbitration RF port greater than 2 are not supported \n");
+                }
+
+                wr_pri = rf_portPri;
             } else {
-                panic("%s: Unknown RF type %d\n", iqname, rf_type);
+                if (rf_type == RF_INTID) {
+                    intRdRfTPI[i].push_back(rf_typeportid_pair);
+                } else if (rf_type == RF_FPID) {
+                    fpRdRfTPI[i].push_back(rf_typeportid_pair);
+                } else {
+                    panic("%s: Unknown RF type %d\n", iqname, rf_type);
+                }
+            }
+
+            if (wr_pri != -1 && wr_pri != rf_portPri) {
+                // if has write RF, all read RF must have the same priority
+                panic("%s: Found write RF priority with different other's priority\n", iqname);
             }
         }
 
@@ -259,8 +289,10 @@ IssueQue::IssueQue(const IssueQueParams& params)
             }
         }
 
-        if (loadPipeAcc) numLoadPipe++;
-        if (storePipeAcc) numStorePipe++;
+        if (loadPipeAcc)
+            numLoadPipe++;
+        if (storePipeAcc)
+            numStorePipe++;
     }
 }
 
@@ -293,7 +325,7 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
                 panic("dst[sn:%llu] is not load", dst_inst->seqNum);
             }
             DPRINTF(Schedule, "[sn:%llu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum,
-                inst->srcRegIdx(i), dst_inst->genDisassembly());
+                    inst->srcRegIdx(i), dst_inst->genDisassembly());
             scheduler->loadCancel(dst_inst);
             return false;
         }
@@ -323,7 +355,7 @@ IssueQue::issueToFu()
     int issuedStore = 0;
 
     // replay first
-    for (;!replayQ.empty() && replayed < outports; replayed++) {
+    for (; !replayQ.empty() && replayed < outports; replayed++) {
         auto& inst = replayQ.front();
 
         if (inst->isLoad()) {
@@ -350,8 +382,7 @@ IssueQue::issueToFu()
         if (!inst) {
             continue;
         }
-        if ((i + replayed >= outports) ||
-            (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
+        if ((i + replayed >= outports) || (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
             (inst->isStore() && (issuedStore >= numStorePipe))) {
             inst->clearScheduled();
             // only for load/store
@@ -507,20 +538,33 @@ IssueQue::selectInst()
             if (!(portBusy[pi] & (1llu << scheduler->getCorrectedOpLat(inst)))) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
 
+                // get regfile write port
+                for (int i = 0; i < inst->numDestRegs(); i++) {
+                    auto pdst = inst->renamedDestIdx(i);
+                    if (pdst->isFixedMapping()) [[unlikely]]
+                        continue;
+                    std::pair<int, int> rfTypePortId;
+                    // write port is point to point with dstid
+                    if (pdst->isIntReg() && intWrRfTPI[pi].size() > i) {
+                        rfTypePortId = intWrRfTPI[pi][i];
+                        scheduler->useRfWrPort(inst, pdst, rfTypePortId.first, rfTypePortId.second);
+                    }
+                }
+
+
                 // get regfile read port
                 for (int i = 0; i < inst->numSrcRegs(); i++) {
-                    auto src = inst->srcRegIdx(i);
                     PhysRegIdPtr psrc = inst->renamedSrcIdx(i);
                     if (psrc->isFixedMapping())
                         continue;
                     std::pair<int, int> rfTypePortId;
                     // read port is point to point with srcid
-                    if (src.isIntReg() && intRfTypePortId[pi].size() > i) {
-                        rfTypePortId = intRfTypePortId[pi][i];
-                        scheduler->useRegfilePort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
-                    } else if (src.isFloatReg() && fpRfTypePortId[pi].size() > i) {
-                        rfTypePortId = fpRfTypePortId[pi][i];
-                        scheduler->useRegfilePort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
+                    if (psrc->isIntReg() && intRdRfTPI[pi].size() > i) {
+                        rfTypePortId = intRdRfTPI[pi][i];
+                        scheduler->useRfRdPort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
+                    } else if (psrc->isFloatReg() && fpRdRfTPI[pi].size() > i) {
+                        rfTypePortId = fpRdRfTPI[pi][i];
+                        scheduler->useRfRdPort(inst, psrc, rfTypePortId.first, rfTypePortId.second);
                     }
                 }
 
@@ -718,10 +762,9 @@ IssueQue::doSquash(const InstSeqNum seqNum)
     }
 }
 
-Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst,
-    IssueQue* to, PendingWakeEventsType* owner)
-    : Event(Stat_Event_Pri, AutoDelete),
-      inst(inst), owner(owner), to_issue_queue(to)
+Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to,
+                                                      PendingWakeEventsType* owner)
+    : Event(Stat_Event_Pri, AutoDelete), inst(inst), owner(owner), to_issue_queue(to)
 {
 }
 
@@ -739,18 +782,17 @@ Scheduler::SpecWakeupCompletion::description() const
 }
 
 Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
-  : statistics::Group(parent),
-    ADD_STAT(exec_stall_cycle, "SUM(OpsExecuted[= FEW])"),
-    ADD_STAT(memstall_any_load,
-        "Cycles with no uops executed and at least X in-flight load that is not completed yet"),
-    ADD_STAT(memstall_any_store,
-        "Cycles with few uops executed and no more stores can be issued"),
-    ADD_STAT(memstall_l1miss,
-        "Cycles with no uops executed and at least X in-flight load that has missed the L1-cache"),
-    ADD_STAT(memstall_l2miss,
-        "Cycles with no uops executed and at least X in-flight load that has missed the L2-cache"),
-    ADD_STAT(memstall_l3miss,
-        "Cycles with no uops executed and at least X in-flight load that has missed the L3-cache")
+    : statistics::Group(parent),
+      ADD_STAT(exec_stall_cycle, "SUM(OpsExecuted[= FEW])"),
+      ADD_STAT(memstall_any_load,
+               "Cycles with no uops executed and at least X in-flight load that is not completed yet"),
+      ADD_STAT(memstall_any_store, "Cycles with few uops executed and no more stores can be issued"),
+      ADD_STAT(memstall_l1miss,
+               "Cycles with no uops executed and at least X in-flight load that has missed the L1-cache"),
+      ADD_STAT(memstall_l2miss,
+               "Cycles with no uops executed and at least X in-flight load that has missed the L2-cache"),
+      ADD_STAT(memstall_l3miss,
+               "Cycles with no uops executed and at least X in-flight load that has missed the L3-cache")
 {
 }
 
@@ -771,8 +813,10 @@ Scheduler::Scheduler(const SchedulerParams& params)
     opPipelined.resize(enums::OpClass::Num_OpClass, false);
 
     boost::dynamic_bitset<> opChecker(enums::Num_OpClass, 0);
-    std::vector<int> rfportChecker(MAXVAL_TYPEPORTID, 0);
-    int maxTypePortId = 0;
+    std::vector<int> rdRfportChecker(MAXVAL_TYPEPORTID, 0);
+    std::vector<int> wrRfportChecker(MAXVAL_TYPEPORTID, 0);
+    int maxRdTypePortId = 0;
+    int maxWrTypePortId = 0;
     for (int i = 0; i < issueQues.size(); i++) {
         issueQues[i]->setIQID(i);
         issueQues[i]->scheduler = this;
@@ -787,23 +831,34 @@ Scheduler::Scheduler(const SchedulerParams& params)
             }
         }
 
-        for (auto rfTypePortId : issueQues[i]->intRfTypePortId) {
-            for (auto &typePortId : rfTypePortId) {
-                maxTypePortId = std::max(maxTypePortId, typePortId.first);
-                rfportChecker[typePortId.first] += 1;
+        // read port check
+        for (auto& rfTypePortId : issueQues[i]->intRdRfTPI) {
+            for (auto& typePortId : rfTypePortId) {
+                maxRdTypePortId = std::max(maxRdTypePortId, typePortId.first);
+                rdRfportChecker[typePortId.first] += 1;
             }
         }
-        for (auto rfTypePortId : issueQues[i]->fpRfTypePortId) {
-            for (auto typePortId : rfTypePortId) {
-                maxTypePortId = std::max(maxTypePortId, typePortId.first);
-                rfportChecker[typePortId.first] += 1;
+        for (auto& rfTypePortId : issueQues[i]->fpRdRfTPI) {
+            for (auto& typePortId : rfTypePortId) {
+                maxRdTypePortId = std::max(maxRdTypePortId, typePortId.first);
+                rdRfportChecker[typePortId.first] += 1;
+            }
+        }
+
+        // write port check
+        for (auto& rfTypePortId : issueQues[i]->intWrRfTPI) {
+            for (auto& typePortId : rfTypePortId) {
+                maxWrTypePortId = std::max(maxWrTypePortId, typePortId.first);
+                wrRfportChecker[typePortId.first] += 1;
             }
         }
     }
-    maxTypePortId += 1;
-    assert(maxTypePortId <= MAXVAL_TYPEPORTID);
-    rfMaxTypePortId = maxTypePortId;
-    rfPortOccupancy.resize(maxTypePortId, {nullptr, 0});
+    maxRdTypePortId += 1;
+    maxWrTypePortId += 1;
+    assert(maxRdTypePortId <= MAXVAL_TYPEPORTID);
+    assert(maxWrTypePortId <= MAXVAL_TYPEPORTID);
+    rdRfPortOccupancy.resize(maxRdTypePortId, {nullptr, 0});
+    wrRfPortOccupancy.resize(maxWrTypePortId, {nullptr, 0, 0});
 
     if (opChecker.count() != enums::Num_OpClass) {
         for (int i = 0; i < enums::Num_OpClass; i++) {
@@ -906,27 +961,27 @@ Scheduler::issueAndSelect()
         it->selectInst();
     }
 
-    // inst arbitration
-    for (auto inst : arbFailedInsts) {
-        inst->setArbFailed();
-    }
-    arbFailedInsts.clear();
-    std::fill(rfPortOccupancy.begin(), rfPortOccupancy.end(), std::make_pair(nullptr, 0));
-
+    std::fill(rdRfPortOccupancy.begin(), rdRfPortOccupancy.end(), std::make_pair(nullptr, 0));
+    std::fill(wrRfPortOccupancy.begin(), wrRfPortOccupancy.end(), std::make_tuple(nullptr, 0, 0));
 
     for (auto it : issueQues) {
         it->issueToFu();
     }
     if (instsToFu.size() < intel_fewops) {
         stats.exec_stall_cycle++;
-        if (lsq->anyStoreNotExecute()) stats.memstall_any_store++;
+        if (lsq->anyStoreNotExecute())
+            stats.memstall_any_store++;
     }
     if (instsToFu.size() == 0) {
         int misslevel = lsq->anyInflightLoadsNotComplete();
-        if (misslevel != 0) stats.memstall_any_load++;
-        if ((misslevel & ((1<<1) - 1)) == ((1<<1) - 1)) stats.memstall_l1miss++;
-        if ((misslevel & ((1<<2) - 1)) == ((1<<2) - 1)) stats.memstall_l2miss++;
-        if ((misslevel & ((1<<3) - 1)) == ((1<<3) - 1)) stats.memstall_l3miss++;
+        if (misslevel != 0)
+            stats.memstall_any_load++;
+        if ((misslevel & ((1 << 1) - 1)) == ((1 << 1) - 1))
+            stats.memstall_l1miss++;
+        if ((misslevel & ((1 << 2) - 1)) == ((1 << 2) - 1))
+            stats.memstall_l2miss++;
+        if ((misslevel & ((1 << 3) - 1)) == ((1 << 3) - 1))
+            stats.memstall_l3miss++;
     }
 }
 
@@ -1150,14 +1205,14 @@ Scheduler::getInstToFU()
 bool
 Scheduler::checkRfPortBusy(int typePortId, int pri)
 {
-    if (rfPortOccupancy[typePortId].first && rfPortOccupancy[typePortId].second > pri) {
+    if (rdRfPortOccupancy[typePortId].first && rdRfPortOccupancy[typePortId].second > pri) {
         return false;
     }
     return true;
 }
 
 void
-Scheduler::useRegfilePort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri)
+Scheduler::useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri)
 {
     if (regid->is(IntRegClass)) {
         if (regCache.contains(regid->flatIndex())) {
@@ -1165,22 +1220,57 @@ Scheduler::useRegfilePort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int
             return;
         }
     }
-    assert(typePortId < rfPortOccupancy.size());
-    if (rfPortOccupancy[typePortId].first) {
-        if (rfPortOccupancy[typePortId].second < pri) { // smaller is higher priority
+    assert(typePortId < rdRfPortOccupancy.size());
+    auto& t_inst = rdRfPortOccupancy[typePortId].first;
+    auto& t_pri = rdRfPortOccupancy[typePortId].second;
+
+    if (t_inst) {
+        if (t_pri < pri) {  // smaller is higher priority
             // inst arbitration failure
-            arbFailedInsts.push_back(inst);
-            DPRINTF(Schedule, "[sn:%llu] arbitration failure, typePortId %d occupied by [sn:%llu]\n", inst->seqNum, typePortId,
-                    rfPortOccupancy[typePortId].first->seqNum);
+            inst->setArbFailed();
+            DPRINTF(Schedule, "[sn:%llu] arbitration failure, typePortId %d occupied by [sn:%llu]\n", inst->seqNum,
+                    typePortId, t_inst->seqNum);
             return;
         } else {
-            // rfPortOccupancy[typePortId].first arbitration failure
-            arbFailedInsts.push_back(rfPortOccupancy[typePortId].first);
-            DPRINTF(Schedule, "[sn:%llu] arbitration failure, typePortId %d occupied by [sn:%llu]\n",
-                    rfPortOccupancy[typePortId].first->seqNum, typePortId, inst->seqNum);
+            // t_inst arbitration failure
+            t_inst->setArbFailed();
+            DPRINTF(Schedule, "[sn:%llu] arbitration failure, typePortId %d occupied by [sn:%llu]\n", t_inst->seqNum,
+                    typePortId, inst->seqNum);
         }
     }
-    rfPortOccupancy[typePortId] = std::make_pair(inst, pri);
+
+    t_inst = inst;
+    t_pri = pri;
+}
+
+void
+Scheduler::useRfWrPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri)
+{
+    assert(typePortId < wrRfPortOccupancy.size());
+
+    auto& t_inst = std::get<0>(wrRfPortOccupancy[typePortId]);
+    auto& t_pri = std::get<1>(wrRfPortOccupancy[typePortId]);
+    auto& t_lat = std::get<2>(wrRfPortOccupancy[typePortId]);
+    int lat = getCorrectedOpLat(inst);
+
+    if (t_inst) {
+        if ((t_lat == lat) && (t_pri < pri)) {  // smaller is higher priority
+            // inst arbitration failure
+            inst->setArbFailed();
+            DPRINTF(Schedule, "[sn:%llu] arbitration failure, typePortId %d occupied by [sn:%llu]\n", inst->seqNum,
+                    typePortId, t_inst->seqNum);
+            return;
+        } else {
+            // t_inst arbitration failure
+            t_inst->setArbFailed();
+            DPRINTF(Schedule, "[sn:%llu] arbitration failure, typePortId %d occupied by [sn:%llu]\n", t_inst->seqNum,
+                    typePortId, inst->seqNum);
+        }
+    }
+
+    t_inst = inst;
+    t_pri = pri;
+    t_lat = lat;
 }
 
 void

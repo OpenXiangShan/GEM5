@@ -24,6 +24,13 @@ def FpRD(id, p):
     ret = (1 << 6) | (id << 2) | (p)
     return ret
 
+def IntWR(id, p):
+    # [8] [7:6] [5:2] [1:0]
+    assert id < 16
+    assert p < 4
+    ret = (1 << 8) | (0 << 6) | (id << 2) | (p)
+    return ret
+
 class ECoreScheduler(Scheduler):
     IQs = [
         IssueQue(name='intIQ0' , inports=2, size=2*12, oports=[
@@ -181,18 +188,21 @@ class KMHV3Scheduler(Scheduler):
     __intIQs = [
         IssueQue(name='intIQ0', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU()],
-                      rp=[IntRD(0, 0), IntRD(1, 0)]),
-            IssuePort(fu=[IntBRU()])
+                      rp=[IntRD(0, 0), IntRD(1, 0), IntWR(0, 0)]),
+            IssuePort(fu=[IntBRU()],
+                      rp=[IntWR(0, 1)])
         ]),
         IssueQue(name='intIQ1', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU()],
-                      rp=[IntRD(2, 0), IntRD(3, 0)]),
-            IssuePort(fu=[IntBRU()])
+                      rp=[IntRD(2, 0), IntRD(3, 0), IntWR(1, 0)]),
+            IssuePort(fu=[IntBRU()],
+                      rp=[IntWR(1, 1)])
         ]),
         IssueQue(name='intIQ2', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU()],
-                      rp=[IntRD(4, 0), IntRD(5, 0)]),
-            IssuePort(fu=[IntBRU()])
+                      rp=[IntRD(4, 0), IntRD(5, 0), IntWR(2, 0)]),
+            IssuePort(fu=[IntBRU()],
+                      rp=[IntWR(2, 1)])
         ]),
         IssueQue(name='intIQ3', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU(), IntMult()],
@@ -210,25 +220,32 @@ class KMHV3Scheduler(Scheduler):
     __memIQs = [
         IssueQue(name='ld0', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()],
-                      rp=[IntRD(12, 0)])]),
+                      rp=[IntRD(12, 0)])
+        ]),
         IssueQue(name='ld1', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()],
-                      rp=[IntRD(13, 0)])]),
+                      rp=[IntRD(13, 0)])
+        ]),
         IssueQue(name='ld2', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()],
-                      rp=[IntRD(14, 0)])]),
+                      rp=[IntRD(14, 0)])
+        ]),
         IssueQue(name='sta0', inports=2, size=16, oports=[
             IssuePort(fu=[WritePort()],
-                      rp=[IntRD(5, 1)])]),
+                      rp=[IntRD(5, 1)])
+        ]),
         IssueQue(name='sta1', inports=2, size=16, oports=[
             IssuePort(fu=[WritePort()],
-                      rp=[IntRD(7, 1)])]),
+                      rp=[IntRD(7, 1)])
+        ]),
         IssueQue(name='std0', inports=2, size=16, oports=[
             IssuePort(fu=[StoreDataPort()],
-                      rp=[IntRD(9, 1), FpRD(12, 0)])]),
+                      rp=[IntRD(9, 1), FpRD(12, 0)])
+        ]),
         IssueQue(name='std1', inports=2, size=16, oports=[
             IssuePort(fu=[StoreDataPort()],
-                      rp=[IntRD(11, 1), FpRD(13, 0)])]),
+                      rp=[IntRD(11, 1), FpRD(13, 0)])
+        ]),
     ]
     __fpIQs = [
         IssueQue(name='fpIQ0', inports=2, size=18, oports=[

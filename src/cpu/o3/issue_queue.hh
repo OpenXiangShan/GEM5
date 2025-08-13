@@ -143,8 +143,11 @@ class IssueQue : public SimObject
     uint64_t instNum = 0;
 
     // issueport : regfileport : priority
-    std::vector<std::vector<std::pair<int, int>>> intRfTypePortId;
-    std::vector<std::vector<std::pair<int, int>>> fpRfTypePortId;
+    std::vector<std::vector<std::pair<int, int>>> intRdRfTPI;
+    std::vector<std::vector<std::pair<int, int>>> fpRdRfTPI;
+
+    std::vector<std::vector<std::pair<int, int>>> intWrRfTPI;
+
     std::vector<int64_t> portBusy;
     // opclass mapping to pipeid
     std::vector<ReadyQue*> readyQclassify;
@@ -277,7 +280,6 @@ class Scheduler : public SimObject
     std::vector<IssueQue*> issueQues;
     std::vector<std::vector<IssueQue*>> wakeMatrix;
     uint32_t combinedFus;
-    int rfMaxTypePortId;
 
     std::vector<DynInstPtr> instsToFu;
 
@@ -287,8 +289,9 @@ class Scheduler : public SimObject
 
 
     // typePortId : [inst : priority]
-    std::vector<std::pair<DynInstPtr, int>> rfPortOccupancy;
-    std::vector<DynInstPtr> arbFailedInsts;
+    std::vector<std::pair<DynInstPtr, int>> rdRfPortOccupancy;
+    // typePortId : [inst : priority : time]
+    std::vector<std::tuple<DynInstPtr, int, int>> wrRfPortOccupancy;
 
     struct NullStruct {};
 
@@ -327,7 +330,8 @@ class Scheduler : public SimObject
     DynInstPtr getInstToFU();
 
     bool checkRfPortBusy(int typePortId, int pri);
-    void useRegfilePort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri);
+    void useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri);
+    void useRfWrPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri);
 
     void specWakeUpFromLoadPipe(const DynInstPtr& inst);
     void loadCancel(const DynInstPtr& inst);

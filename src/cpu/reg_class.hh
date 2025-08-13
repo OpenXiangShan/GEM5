@@ -318,6 +318,15 @@ class PhysRegId : private RegId
      */
     bool isFixedMapping() const { return !isRenameable(); }
 
+    /** @return true if it is an integer physical register. */
+    bool isIntReg() const { return regClass == IntRegClass; }
+
+    /** @return true if it is a floating-point physical register. */
+    bool isFloatReg() const { return regClass == FloatRegClass; }
+
+    /** @return true if it is a vector physical register. */
+    bool isVecReg()  const { return regClass == VecRegClass; }
+
     /** Flat index accessor */
     const RegIndex& flatIndex() const { return flatIdx; }
 
