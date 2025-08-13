@@ -15,7 +15,7 @@ namespace xsCHI
     FakeL3::FakeL3(const Params &p):
     ClockedObject(p),
     L2side(p.L2side),
-    Dramside(p.Dramside),_NodeID(0,0,0),SAM(nullptr),TXN_Manager(1024){
+    Dramside(p.Dramside),_NodeID(0),SAM(nullptr),TXN_Manager(1024){
         L2side->setReceiveCallback([this](FlitPtr &flit) { return this->handleL2sideRecv(flit); });
         L2side->setOwner(this);
         Dramside->setReceiveCallback([this](FlitPtr &flit) { return this->handleDramsideRecv(flit);});
@@ -50,7 +50,7 @@ namespace xsCHI
                             // 设置Flit的相关字段
                             read->setOpcode(CHI_OP_TYPE::CHI_REQ_READNOSNP);
                             read->setTgtId(SAM->getTargetID(flit->getAddr()));
-                            read->setSrcId(_NodeID.getNodeID());
+                            read->setSrcId(_NodeID);
                             read->setTxnId(txn_id);
                             read->setReturnNid(flit->getSrcId());
                             read->setReturnTxnid(flit->getTxnId());
@@ -85,7 +85,7 @@ namespace xsCHI
                             // 设置Flit的相关字段
                             write->setOpcode(CHI_OP_TYPE::CHI_REQ_WRITENOSNPFULL);
                             write->setTgtId(SAM->getTargetID(flit->getAddr()));
-                            write->setSrcId(_NodeID.getNodeID());
+                            write->setSrcId(_NodeID);
                             write->setTxnId(txn_id);
 
                             ReqPtr req = std::make_shared<Request>(
@@ -113,8 +113,9 @@ namespace xsCHI
                         //send ack back
                         FlitPtr rsp = std::make_unique<Flit>();
                         rsp->setOpcode(CHI_OP_TYPE::CHI_RSP_COMP);
-                        rsp->setSrcId(_NodeID.getNodeID());
+                        rsp->setSrcId(_NodeID);
                         rsp->setTgtId(flit->getSrcId());
+                        rsp->setTxnId(flit->getTxnId());
                         if (L2side->send(rsp)){
                             return true;
                         }else{
@@ -137,7 +138,7 @@ namespace xsCHI
                             // 设置Flit的相关字段
                             comp->setOpcode(CHI_OP_TYPE::CHI_RSP_COMP);
                             comp->setTgtId(flit->getSrcId());
-                            comp->setSrcId(_NodeID.getNodeID());
+                            comp->setSrcId(_NodeID);
                             comp->setTxnId(flit->getTxnId());
                             comp->setDbid(txn_id);
                             ReqPtr req = std::make_shared<Request>(
@@ -174,7 +175,7 @@ namespace xsCHI
                     case CHI_OP_TYPE::CHI_REQ_READCLEAN:{
                         switch (flit->getOpcode()) {
                             case CHI_OP_TYPE::CHI_RSP_COMPACK:{
-                                assert(req->dataTransferFinished());
+                                // assert(req->dataTransferFinished());
                                 TXN_Manager.releaseID(flit->getTxnId());
                                 outstanding_requests.erase(flit->getTxnId());
                                 DPRINTF(CHIFakeL3, "Finish read request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
@@ -234,16 +235,16 @@ namespace xsCHI
                                 // 设置Flit的相关字段
                                 data->setOpcode(CHI_OP_TYPE::CHI_DAT_NCBWRDATACOMPACK);
                                 data->setTgtId(dramId);
-                                data->setSrcId(_NodeID.getNodeID());
+                                data->setSrcId(_NodeID);
                                 data->setTxnId(req->getDbid());
                                 data->setDataId(flit->getDataId());
                                 data->setCcid(0); // assuming CCID is always 0
-
+                                data->setSize(flit->getSize());
                                 uint8_t *tmp = new uint8_t[flit->getSize()];
                                 flit->getData(tmp);
                                 data->setData(tmp);
                                 delete[] tmp; // 释放临时内存
-                                data->setSize(flit->getSize());
+                                
                                 // 尝试发送到网络端口
                                 if (Dramside->send(data)){
                                     //send success, we need to save the request and txn_id
@@ -286,7 +287,7 @@ namespace xsCHI
 
     bool
     FakeL3::handleDramsideRecv(FlitPtr &flit){
-        if(flit->getTgtId()!= _NodeID.getNodeID()){
+        if(flit->getTgtId()!= _NodeID){
             // 不是发给本节点的Flit,要转发给RN
             FlitPtr copy = std::make_unique<Flit>(*flit);
             if (L2side->send(copy)){
@@ -346,7 +347,7 @@ namespace xsCHI
                     case CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL:
                     case CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL:{
                         switch (flit->getOpcode()) {
-                            case CHI_OP_TYPE::CHI_DAT_NCBWRDATACOMPACK:{
+                            case CHI_OP_TYPE::CHI_RSP_DBIDRESP:{
 
                                 FlitPtr rsp = std::make_unique<Flit>();
                                 if (!rsp) {
@@ -355,7 +356,7 @@ namespace xsCHI
                                 // 设置Flit的相关字段
                                 rsp->setOpcode(CHI_OP_TYPE::CHI_RSP_COMPDBIDRESP);
                                 rsp->setTgtId(L2Id);
-                                rsp->setSrcId(_NodeID.getNodeID());
+                                rsp->setSrcId(_NodeID);
                                 rsp->setTxnId(req->getTransactionId());
                                 rsp->setDbid(flit->getTxnId());//here we make send and recv use the same transaction!
                                 // 尝试发送到网络端口

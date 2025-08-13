@@ -25,7 +25,7 @@ namespace xsCHI
     private:
         CHIPort* L2side;
         CHIPort* Dramside;
-        NodeID _NodeID;
+        uint32_t _NodeID;
         std::shared_ptr<SystemAddressMapHN> SAM; // 系统地址映射，用于生成目标ID
         bool handleL2sideRecv(FlitPtr &flit);
         bool handleDramsideRecv(FlitPtr &flit);
@@ -37,18 +37,18 @@ namespace xsCHI
         bool handleFlit_CopybackWrite(FlitPtr &flit);
         bool handleFlit_EVICT(FlitPtr &flit);
         bool handleFlit_CLEANUNIQUE_MAKEUNIQUE(FlitPtr &flit);
-        const uint32_t L2Id = 0;
-        const uint32_t dramId = 1;
+        const uint32_t L2Id = 1;
+        const uint32_t dramId = 3;
     public:
         typedef FakeL3Params Params;
         FakeL3(const Params &p);
-        // FakeL3(const Params &p,NodeID id,SystemAddressMap *sam);
+        // FakeL3(const Params &p,uint32_t id,SystemAddressMap *sam);
         FakeL3();
         // ~FakeL3() =default;
         CHIPort* getCHIPort_CPUSIDE();
         CHIPort* getCHIPort_MEMSIDE();
         void init() override;
-        void setNodeID(NodeID id){_NodeID = id;}
+        void setNodeID(uint32_t id){_NodeID = id;}
         void setSAM(std::shared_ptr<SystemAddressMapHN> sam){SAM = sam;}
         // std::string name() const override{ return "FakeL3"; }
 

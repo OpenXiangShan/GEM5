@@ -46,6 +46,7 @@ class CHIPort: public ClockedObject
      * Whether this port is currently connected to a peer port.
      */
     bool _connected;
+    bool blocked;
 
 
     CHIPort* connected_port;          // 连接的对端Port
@@ -113,6 +114,9 @@ public:
     /** Is this port currently connected to a peer? */
     bool isConnected() const { return _connected; }
     void setOwner(SimObject* owner){owner_module = owner;}
+
+    void setBlocked();
+    void setUnblocked();
 
     // operator<< will be defined as a friend outside the class
     friend std::ostream& operator<<(std::ostream& os, const CHIPort& port) {

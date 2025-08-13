@@ -183,7 +183,7 @@ namespace xsCHI {
     // ~L2Wrapper() = default;
     CHIBridge* getBridge();
     CHIPort* getCHIPort();
-    void setNodeID(NodeID id){getBridge()->setNodeID(id);}
+    void setNodeID(uint32_t id){getBridge()->setNodeID(id);}
     void setSAM(std::shared_ptr<SystemAddressMapRN> sam){getBridge()->setSAM(sam);}
   };
 }

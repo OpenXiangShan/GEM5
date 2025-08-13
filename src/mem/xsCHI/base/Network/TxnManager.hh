@@ -38,15 +38,15 @@ namespace xsCHI
 
         // 释放一个TxnID（收到所有响应或RetryAck后调用）
         void releaseID(int id) {
-            if (id >= 0 && id < max_ids)
-                used_ids.reset(id);
+            assert (id >= 0 && id < max_ids);
+            assert(used_ids.test(id) && "ID not in use");
+            used_ids.reset(id);
         }
 
         // 判断ID是否被占用
         bool isUsed(int id) {
-            if (id >= 0 && id < max_ids)
-                return used_ids.test(id);
-            return false;
+            assert(id >= 0 && id < max_ids);
+            return used_ids.test(id);
         }
 
     private:

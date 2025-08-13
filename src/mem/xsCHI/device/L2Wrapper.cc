@@ -72,9 +72,12 @@ namespace xsCHI
         DPRINTF(CHIL2Wrapper,"RecvReq, cmd:%s, addr: %lx\n",pkt->cmdString(),pkt->getAddr());
         ReqPtr req = wrapper->CreateRequest(pkt);
 
-        wrapper->bridge->ReceiveReq(req);
+        wrapper->bridge->ReceiveReq(req, false);
         assert(wrapper->outstanding_pkts.count(pkt->getAddr())==0);
-        wrapper->outstanding_pkts[pkt->getAddr()] = pkt;
+        if (pkt->needsResponse()) {
+            assert(!pkt->isWrite());
+            wrapper->outstanding_pkts[pkt->getAddr()] = pkt;
+        }
         //always true
         return true;
     }

@@ -34,7 +34,7 @@ class CHIBridge : public ClockedObject
     private:
         // CHIPort<ReqPtr> *storagePort; // 存储端口
         CHIPort* networkPort;     // 网络端口
-        NodeID _NodeID; // 节点ID,gain from it's owner module
+        uint32_t _NodeID; // 节点ID,gain from it's owner module
         std::shared_ptr<SystemAddressMapRN> SAM; // 系统地址映射，用于生成目标ID
     public:
         typedef CHIBridgeParams Params;
@@ -44,13 +44,13 @@ class CHIBridge : public ClockedObject
         // ~CHIBridge();
         // Port<ReqPtr>* getStoragePort() const { return storagePort; }
         CHIPort* getNetworkPort()  { return networkPort; }
-        bool ReceiveReq(ReqPtr req);
+        bool ReceiveReq(ReqPtr req, bool isRetry);
         void ReceiveSnoopResponse(ReqPtr req);
         bool handleNetworkPortReceive(FlitPtr &flit);
 
         // void initState() override;
         void init() override;
-        void setNodeID(NodeID id){_NodeID = *std::make_shared<NodeID>(id);}
+        void setNodeID(uint32_t id){_NodeID = id;}
         void setSAM(std::shared_ptr<SystemAddressMapRN> sam){SAM = sam;}
     private:
         //All CHI transactions require a target ID to route packets from source to destination. For
