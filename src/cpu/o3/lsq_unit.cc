@@ -58,6 +58,7 @@
 #include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
+#include "cpu/o3/replay_events.hh"
 #include "cpu/utils.hh"
 #include "debug/Activity.hh"
 #include "debug/Diff.hh"
@@ -765,7 +766,8 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
       ADD_STAT(RARQueueLatency, statistics::units::Cycle::get(), "RAR queue latency distribution"),
       ADD_STAT(RAWQueueFull, "Number of times RAW queue was full"),
       ADD_STAT(RAWQueueReplay, "Number of instructions replayed from RAW queue"),
-      ADD_STAT(RAWQueueLatency, statistics::units::Cycle::get(), "RAW queue latency distribution")
+      ADD_STAT(RAWQueueLatency, statistics::units::Cycle::get(), "RAW queue latency distribution"),
+      ADD_STAT(loadReplayEvents, statistics::units::Count::get(), "event distribution of load replay")
 {
     loadToUse
         .init(0, 299, 10)
@@ -781,6 +783,12 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
     RAWQueueLatency
         .init(0, 500, 20)
         .flags(statistics::nozero);
+    loadReplayEvents
+        .init(LdStReplayTypeCount)
+        .flags(statistics::total);
+    for (int i = 0; i < LdStReplayTypeCount; i++) {
+        loadReplayEvents.subname(i, load_store_replay_event_str[static_cast<LdStReplayType>(i)]);
+    }
 }
 
 void
@@ -1489,6 +1497,10 @@ LSQUnit::executeLoadPipeSx()
             // If inst was replyed, must clear inst in pipeline
             if (inst->needSTLFReplay() || inst->needCacheBlockedReplay() || inst->needRescheduleReplay()) {
                 DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
+                // record replay stats
+                assert(inst->getReplayType());
+                stats.loadReplayEvents[*inst->getReplayType()]++;
+
                 iewStage->loadCancel(inst);
                 inst->endPipelining();
                 inst = nullptr;
@@ -1497,6 +1509,9 @@ LSQUnit::executeLoadPipeSx()
 
             if (i == loadWhenToReplay && inst->needReplay()) [[unlikely]] {
                 DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
+                // record replay stats
+                assert(inst->getReplayType());
+                stats.loadReplayEvents[*inst->getReplayType()]++;
 
                 if (inst->needBankConflicyReplay()) inst->issueQue->retryMem(inst);
                 else if (inst->needCacheMissReplay()) iewStage->cacheMissLdReplay(inst);
@@ -3462,14 +3477,13 @@ LSQUnit::processReplayQueues()
             if (isRAR) {
                 stats.RARQueueLatency.sample(cycleLatency);
                 stats.RARQueueReplay++;
-                inst->clearRARReplay();
             } else {
                 stats.RAWQueueLatency.sample(cycleLatency);
                 stats.RAWQueueReplay++;
-                inst->clearRAWReplay();
             }
         }
 
+        inst->clearReplayType();
         inst->clearNeedReplay();
         inst->issueQue->retryMem(inst);
     }

@@ -46,6 +46,7 @@
 #include <array>
 #include <deque>
 #include <list>
+#include <optional>
 #include <string>
 
 #include "base/refcnt.hh"
@@ -60,6 +61,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "cpu/o3/lsq_unit.hh"
+#include "cpu/o3/replay_events.hh"
 #include "cpu/op_class.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
@@ -182,15 +184,6 @@ class DynInst : public ExecContext, public RefCounted
         FullForward,
         LocalAccess,
         NeedReplay,
-        TLBMissReplay,
-        CacheMissReplay,
-        RescheduleReplay,
-        STLFReplay,
-        NukeReplay,
-        CacheBlockedReplay,
-        BankConflicyReplay,
-        RARReplay,
-        RAWReplay,
         SkipFollowingPipe,
 
         // load/store pipe state end
@@ -247,6 +240,9 @@ class DynInst : public ExecContext, public RefCounted
 
     /** The status of this BaseDynInst.  Several bits can be set. */
     std::bitset<NumStatus> status;
+
+    /* replay type of this instruction */
+    std::optional<LdStReplayType> replayType;
 
   protected:
     /** The result of the instruction; assumes an instruction can have many
@@ -945,17 +941,9 @@ class DynInst : public ExecContext, public RefCounted
                     (1 << FullForward) |
                     (1 << LocalAccess) |
                     (1 << NeedReplay) |
-                    (1 << TLBMissReplay) |
-                    (1 << CacheMissReplay) |
-                    (1 << RescheduleReplay) |
-                    (1 << STLFReplay) |
-                    (1 << NukeReplay) |
-                    (1 << CacheBlockedReplay) |
-                    (1 << BankConflicyReplay) |
-                    (1 << RARReplay) |
-                    (1 << RAWReplay) |
                     (1 << SkipFollowingPipe));
         status.set(InPipe);
+        clearReplayType();
     }
 
     void endPipelining() {
@@ -967,6 +955,15 @@ class DynInst : public ExecContext, public RefCounted
     void setCacheHit() { status.set(CacheHit); }
     bool cacheHit() const { return status[CacheHit]; }
 
+    void setReplay(LdStReplayType type) {
+        setNeedReplay();
+        replayType = type;
+    }
+    std::optional<LdStReplayType> getReplayType() const {
+        return replayType;
+    }
+    void clearReplayType() { replayType.reset(); }
+
     // only can be set once!!!
     void setNeedReplay() {
         assert(!status[NeedReplay]);
@@ -974,35 +971,33 @@ class DynInst : public ExecContext, public RefCounted
     }
     bool needReplay() const { return status[NeedReplay]; }
 
-    void setTLBMissReplay() { setNeedReplay(); status.set(TLBMissReplay); }
-    bool needTLBMissReplay() const { return status[TLBMissReplay]; }
+    void setTLBMissReplay() { setReplay(LdStReplayType::TLBMissReplay); }
+    bool needTLBMissReplay() const { return getReplayType() == LdStReplayType::TLBMissReplay; }
 
-    void setCacheMissReplay() { setNeedReplay(); status.set(CacheMissReplay); }
-    bool needCacheMissReplay() const { return status[CacheMissReplay]; }
+    void setCacheMissReplay() { setReplay(LdStReplayType::CacheMissReplay); }
+    bool needCacheMissReplay() const { return getReplayType() == LdStReplayType::CacheMissReplay; }
 
-    void setRescheduleReplay() { setNeedReplay(); status.set(RescheduleReplay); }
-    bool needRescheduleReplay() const { return status[RescheduleReplay]; }
+    void setRescheduleReplay() { setReplay(LdStReplayType::RescheduleReplay); }
+    bool needRescheduleReplay() const { return getReplayType() == LdStReplayType::RescheduleReplay; }
 
-    void setSTLFReplay() { setNeedReplay(); status.set(STLFReplay); }
-    bool needSTLFReplay() const { return status[STLFReplay]; }
+    void setSTLFReplay() { setReplay(LdStReplayType::STLFReplay); }
+    bool needSTLFReplay() const { return getReplayType() == LdStReplayType::STLFReplay; }
 
-    void setNukeReplay() { setNeedReplay(); status.set(NukeReplay); }
-    bool needNukeReplay() const { return status[NukeReplay]; }
+    void setNukeReplay() { setReplay(LdStReplayType::NukeReplay); }
+    bool needNukeReplay() const { return getReplayType() == LdStReplayType::NukeReplay; }
 
-    void setCacheBlockedReplay() { setNeedReplay(); status.set(CacheBlockedReplay); }
-    bool needCacheBlockedReplay() const { return status[CacheBlockedReplay]; }
+    void setCacheBlockedReplay() { setReplay(LdStReplayType::CacheBlockedReplay); }
+    bool needCacheBlockedReplay() const { return getReplayType() == LdStReplayType::CacheBlockedReplay; }
 
-    void setBankConflicyReplay() { setNeedReplay(); status.set(BankConflicyReplay); }
-    bool needBankConflicyReplay() const { return status[BankConflicyReplay]; }
+    void setBankConflicyReplay() { setReplay(LdStReplayType::BankConflictReplay); }
+    bool needBankConflicyReplay() const { return getReplayType() == LdStReplayType::BankConflictReplay; }
 
-    void setRARReplay() { setNeedReplay(); status.set(RARReplay); }
-    bool needRARReplay() const { return status[RARReplay]; }
+    void setRARReplay() { setReplay(LdStReplayType::RARReplay); }
+    bool needRARReplay() const { return getReplayType() == LdStReplayType::RARReplay; }
 
-    void setRAWReplay() { setNeedReplay(); status.set(RAWReplay); }
-    bool needRAWReplay() const { return status[RAWReplay]; }
+    void setRAWReplay() { setReplay(LdStReplayType::RAWReplay); }
+    bool needRAWReplay() const { return getReplayType() == LdStReplayType::RAWReplay; }
 
-    void clearRARReplay() { status.reset(RARReplay); }
-    void clearRAWReplay() { status.reset(RAWReplay); }
     void clearNeedReplay() { status.reset(NeedReplay); }
 
     void setFullForward() { status.set(FullForward); }

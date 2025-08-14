@@ -66,6 +66,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
+#include "cpu/o3/replay_events.hh"
 #include "cpu/timebuf.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/LSQUnit.hh"
@@ -905,6 +906,8 @@ class LSQUnit
         statistics::Scalar RAWQueueFull;
         statistics::Scalar RAWQueueReplay;
         statistics::Distribution RAWQueueLatency;
+
+        statistics::Vector loadReplayEvents;
     } stats;
 
     void bankConflictReplay();
