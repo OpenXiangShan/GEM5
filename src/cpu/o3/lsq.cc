@@ -142,7 +142,9 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         thread.emplace_back(maxLQEntries, maxSQEntries, params.SbufferEntries,
             params.SbufferEvictThreshold, params.storeBufferInactiveThreshold,
-            params.LdPipeStages, params.StPipeStages);
+            params.LdPipeStages, params.StPipeStages, params.RARQEntries, params.RAWQEntries,
+            params.RARDequeuePerCycle, params.RAWDequeuePerCycle, params.LoadCompletionWidth,
+            params.StoreCompletionWidth);
         thread[tid].init(cpu, iew_ptr, params, this, tid);
         thread[tid].setDcachePort(&dcachePort);
     }

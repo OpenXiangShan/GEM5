@@ -189,6 +189,8 @@ class DynInst : public ExecContext, public RefCounted
         NukeReplay,
         CacheBlockedReplay,
         BankConflicyReplay,
+        RARReplay,
+        RAWReplay,
         SkipFollowingPipe,
 
         // load/store pipe state end
@@ -752,6 +754,13 @@ class DynInst : public ExecContext, public RefCounted
         }
     }
 
+    void clearForwardPackets() {
+        if (savedRequest) {
+            savedRequest->SQforwardPackets.clear();
+            savedRequest->SBforwardPackets.clear();
+        }
+    }
+
     /** Temporarily sets this instruction as a serialize before instruction. */
     void setSerializeBefore() { status.set(SerializeBefore); }
 
@@ -943,6 +952,8 @@ class DynInst : public ExecContext, public RefCounted
                     (1 << NukeReplay) |
                     (1 << CacheBlockedReplay) |
                     (1 << BankConflicyReplay) |
+                    (1 << RARReplay) |
+                    (1 << RAWReplay) |
                     (1 << SkipFollowingPipe));
         status.set(InPipe);
     }
@@ -983,6 +994,16 @@ class DynInst : public ExecContext, public RefCounted
 
     void setBankConflicyReplay() { setNeedReplay(); status.set(BankConflicyReplay); }
     bool needBankConflicyReplay() const { return status[BankConflicyReplay]; }
+
+    void setRARReplay() { setNeedReplay(); status.set(RARReplay); }
+    bool needRARReplay() const { return status[RARReplay]; }
+
+    void setRAWReplay() { setNeedReplay(); status.set(RAWReplay); }
+    bool needRAWReplay() const { return status[RAWReplay]; }
+
+    void clearRARReplay() { status.reset(RARReplay); }
+    void clearRAWReplay() { status.reset(RAWReplay); }
+    void clearNeedReplay() { status.reset(NeedReplay); }
 
     void setFullForward() { status.set(FullForward); }
     bool fullForward() const { return status[FullForward]; }
@@ -1246,6 +1267,10 @@ class DynInst : public ExecContext, public RefCounted
 
     Tick readyTick = -1;
     Tick completionTick = -1;
+
+    /** RAR/RAW replay queue entry timestamps for latency calculation */
+    Tick RARQueueEntryTick = -1;
+    Tick RAWQueueEntryTick = -1;
 
     /** Reads a misc. register, including any side-effects the read
      * might have as defined by the architecture.

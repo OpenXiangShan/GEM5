@@ -349,6 +349,13 @@ def setKmhV3IdealParams(args, system):
         cpu.SQEntries = 64
         cpu.SbufferEntries = 24
         cpu.SbufferEvictThreshold = 16
+        # RAR/RAW replay queue thresholds
+        cpu.RARQEntries = 96 # set 72 in the RTL model.
+        cpu.RAWQEntries = 56 # set 32 in the RTL model.
+        cpu.LoadCompletionWidth = 8
+        cpu.StoreCompletionWidth = 4
+        cpu.RARDequeuePerCycle = 4
+        cpu.RAWDequeuePerCycle = 4
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
         cpu.RobCompressPolicy = 'kmhv3'
