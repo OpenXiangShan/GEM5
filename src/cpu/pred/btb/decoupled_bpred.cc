@@ -2116,9 +2116,8 @@ DecoupledBPUWithBTB::produce2ndPrediction()
 
 
     // 2. Validate second prediction before enqueueing
-    if (!firstPredUBTBHit ||
+    if (
         !satisfiesFirstCondition ||
-        !secondPredUBTBHit ||
         !satisfiesSecondPred2TakenCondition(finalPred)
     ) {
         // Second prediction doesn't meet basic 2-taken conditions, restore abtb state and return
