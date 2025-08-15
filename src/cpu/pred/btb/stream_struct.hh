@@ -612,10 +612,11 @@ struct FullBTBPrediction
         return std::make_pair(shamt, taken);
     }
 
-    std::pair<Addr, bool> getPHistInfo() //path
+    std::tuple<Addr, Addr, bool> getPHistInfo() //path
     {
         bool taken = false;
         Addr pc = 0;
+        Addr target = 0;
         for (auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) {
@@ -625,6 +626,7 @@ struct FullBTBPrediction
                         if (it->second) {
                             taken = true;
                             pc = entry.pc; // get the pc of the cond branch
+                            target = entry.target;
                             break;
                         }
                     }
@@ -634,7 +636,7 @@ struct FullBTBPrediction
                 }
             }
         }
-        return std::make_pair(pc, taken);
+        return std::make_tuple(pc, target, taken);
     }
 
 };

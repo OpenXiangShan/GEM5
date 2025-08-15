@@ -94,7 +94,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     struct AllocationResult {
         bool allocate_valid;             // Whether allocation is valid
         bitset allocate_mask;            // Mask for allocation
-        
+
         AllocationResult() : allocate_valid(false) {}
     };
 
@@ -157,7 +157,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     }
 
     // Update branch history
-    void doUpdateHist(const bitset &history, bool taken, Addr pc);
+    void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
 
     // Number of TAGE predictor tables
     const unsigned numPredictors;
@@ -254,7 +254,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
         statistics::Distribution updateTableHits;
         statistics::Scalar updateNoHitUseBim;
         statistics::Scalar updateUseAlt;
-    
+
         statistics::Scalar updateUseAltCorrect;
         statistics::Scalar updateUseAltWrong;
         statistics::Scalar updateAltDiffers;
@@ -283,7 +283,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
         TageStats(statistics::Group* parent, int numPredictors);
         void updateStatsWithTagePrediction(const TagePrediction &pred, bool when_pred);
     } ;
-    
+
     TageStats tageStats;
 
     TraceManager *tageMissTrace;
@@ -329,14 +329,14 @@ private:
     void recordUsefulMask(const Addr &startPC);
 
     // Helper method to generate prediction for a single BTB entry
-    TagePrediction generateSinglePrediction(const BTBEntry &btb_entry, 
+    TagePrediction generateSinglePrediction(const BTBEntry &btb_entry,
                                            const Addr &startPC);
 
     // Helper method to prepare BTB entries for update
     std::vector<BTBEntry> prepareUpdateEntries(const FetchStream &stream);
 
     // Helper method to update predictor state for a single entry
-    bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry, 
+    bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
                                  const FetchStream &stream);

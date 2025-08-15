@@ -79,7 +79,7 @@ class FoldedHist
      * @param shamt Number of bits to shift
      * @param taken Whether the branch was taken
      */
-    void update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Addr pc = 0);
+    void update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Addr pc = 0, Addr target = 0);
 
     /**
      * Recover the folded history from another instance

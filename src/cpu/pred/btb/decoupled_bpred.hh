@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
+#include "base/types.hh"
 #include "config/the_isa.hh"
 #include "cpu/o3/cpu_def.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
@@ -194,7 +195,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     // TODO: compare phr and ghr
     void histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history);
 
-    void pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc);
+    void pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc, Addr target);
 
     void printStream(const FetchStream &e)
     {

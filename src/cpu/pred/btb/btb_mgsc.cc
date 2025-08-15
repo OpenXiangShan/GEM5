@@ -920,7 +920,7 @@ BTBMGSC::satDecrement(int min, unsigned &counter)
  */
 void
 BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt,
-                        bool taken, std::vector<FoldedHist> &foldedHist, Addr pc)
+                        bool taken, std::vector<FoldedHist> &foldedHist, Addr pc, Addr target)
 {
     if (debugFlagOn) {
         std::string buf;
@@ -934,7 +934,7 @@ BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt,
     }
 
     for (int t = 0; t < foldedHist.size(); t++) {
-        foldedHist[t].update(history, shamt, taken, pc);
+        foldedHist[t].update(history, shamt, taken, pc, target);
     }
 }
 
@@ -975,10 +975,8 @@ BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPredictio
 void
 BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
-    Addr pc;
-    bool cond_taken;
-    std::tie(pc, cond_taken) = pred.getPHistInfo();
-    doUpdateHist(history, 1, cond_taken, indexPFoldedHist, pc); // only path history needs pc!
+    auto [pc, target, taken] = pred.getPHistInfo();
+    doUpdateHist(history, 2, taken, indexPFoldedHist, pc, target); // only path history needs pc!
 }
 
 
@@ -1092,7 +1090,7 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
     for (int i = 0; i < pTableNum; i++) {
         indexPFoldedHist[i].recover(predMeta->indexPFoldedHist[i]);
     }
-    doUpdateHist(history, 1, cond_taken, indexPFoldedHist, entry.getControlPC());
+    doUpdateHist(history, 2, cond_taken, indexPFoldedHist, entry.getControlPC(), entry.getTakenTarget());
 }
 
 /**

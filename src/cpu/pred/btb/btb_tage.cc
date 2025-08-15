@@ -7,6 +7,7 @@
 #include "base/debug_helper.hh"
 #include "base/intmath.hh"
 #include "base/trace.hh"
+#include "base/types.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "debug/TAGE.hh"
 
@@ -760,7 +761,7 @@ BTBTAGE::getUseAltIdx(Addr pc) {
  * @param taken Whether the branch was taken
  */
 void
-BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc)
+BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc, Addr target)
 {
     if (debugFlagOn) {
         std::string buf;
@@ -776,7 +777,7 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr p
         for (int type = 0; type < 3; type++) {
             auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
             // since we have folded path history, we can put arbitrary shamt here, and it wouldn't make a difference
-            foldedHist.update(history, 2, taken, pc);
+            foldedHist.update(history, 2, taken, pc, target);
         }
     }
 }
@@ -796,10 +797,8 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr p
 void
 BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
-    Addr pc;
-    bool cond_taken;
-    std::tie(pc, cond_taken) = pred.getPHistInfo();
-    doUpdateHist(history, cond_taken, pc);
+    auto [pc, target, taken] = pred.getPHistInfo();
+    doUpdateHist(history, taken, pc, target);
 }
 
 /**
@@ -825,7 +824,7 @@ BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, cond_taken, entry.getControlPC());
+    doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
 }
 
 // Check folded history after speculative update and recovery

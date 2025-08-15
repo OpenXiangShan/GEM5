@@ -55,7 +55,7 @@ FoldedHist::fold(const boost::dynamic_bitset<> &ghr)
  * - Then shift and set new bit
  */
 void
-FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Addr pc)
+FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Addr pc, Addr target)
 {
     assert(shamt >= 0);
     // Create mask for folded length
@@ -119,42 +119,51 @@ FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Ad
         }
         _folded = temp & foldedMask;
     } else if (type == HistoryType::PATH) {
+        assert(shamt == 2);
         if (taken) {
+            // Calculate path hash
+            const uint64_t hash_length = 30;
+            uint64_t path_hash = ((pc & ((1ULL << 15) - 1)) ^ (target & ((1ULL << 30) - 1)));
+            path_hash &= ((1ULL << hash_length) - 1);
+
+
             uint64_t temp = _folded;
             // Case 1: When folded length >= history length
             if (foldedLen >= histLen) {
                 // Simple shift and set case
-                temp <<= 2;
+                temp <<= shamt;
+                temp ^= path_hash;
                 // Clear any bits beyond histLen
                 temp &= ((1ULL << histLen) - 1);
-                // Set the newest bits based on PC
-                uint64_t pcBits = ((pc >> 1) ^ (pc >> 3) ^ (pc >> 5) ^ (pc >> 7));
-                temp |= (pcBits & 0b11);
             }
             // Case 2: When folded length < history length
             else {
-                assert(maxShamt >= 2);
-
-                int phrShamt = 2;  // hardcoded to be 2, the shamt passed in the arguments is ignored
+                assert(shamt <= maxShamt);
                 // Step 1: Handle the bits that would be lost in shift
-                for (int i = 0; i < phrShamt; i++) {
+                for (int i = 0; i < shamt; i++) {
                     // XOR the highest bits from GHR with corresponding positions in folded history
                     temp ^= (ghr[posHighestBitsInGhr[i]] << posHighestBitsInOldFoldedHist[i]);
                 }
 
                 // Step 2: Perform the shift
-                temp <<= phrShamt;
+                temp <<= shamt;
 
 
                 // Step 3: Copy the XORed bits back to lower positions
-                for (int i = 0; i < phrShamt; i++) {
+                for (int i = 0; i < shamt; i++) {
                     uint64_t highBit = (temp >> (foldedLen + i)) & 1;
                     temp |= (highBit << i);
                 }
 
                 // Step 4: Add new branch outcome
-                temp ^= (((pc >> 1) ^ (pc >> 3) ^ (pc >> 5) ^ (pc >> 7)) & 1);
-                temp ^= (((pc >> 1) ^ (pc >> 3) ^ (pc >> 5) ^ (pc >> 7)) & 2);
+                int bits_left = hash_length;
+                uint64_t folded_hash = 0;
+                while (bits_left > 0) {
+                    folded_hash ^= path_hash;
+                    path_hash >>= foldedLen;
+                    bits_left -= foldedLen;
+                }
+                temp ^= folded_hash;
 
                 // Mask to folded length
                 temp &= foldedMask;
