@@ -233,6 +233,9 @@ class DBISetAssoc : public BaseSetAssoc
      */
     void insertBlock(const PacketPtr pkt, CacheBlk *blk) override;
 
+    // Bring the base class findVictim functions into scope to avoid function hiding
+    using BaseSetAssoc::findVictim;
+
     /**
      * Find replacement victim based on packet.
      *
