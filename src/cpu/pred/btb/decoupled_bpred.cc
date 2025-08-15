@@ -1626,7 +1626,7 @@ DecoupledBPUWithBTB::validateFTQEnqueue()
     // 3. Get FTQ enqueue state and find corresponding stream
     auto &ftq_enq_state = fetchTargetQueue.getEnqState();
     auto streamIt = fetchStreamQueue.find(ftq_enq_state.streamId);
-    
+
     if (streamIt == fetchStreamQueue.end()) {
         dbpBtbStats.fsqNotValid++;
         DPRINTF(DecoupleBP, "Cannot enqueue - Stream ID %lu not found in FSQ\n",
@@ -1729,15 +1729,23 @@ DecoupledBPUWithBTB::histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> 
 }
 
 void
-DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc)
+DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc, Addr target)
 {
     if (shamt == 0) {
         return;
     }
     if(taken){
-        history <<= 2;
-        history[0] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 1);       // pc[1] ^ pc[3] ^ pc[5] ^ pc[7]
-        history[1] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 2) >> 1;  // pc[2] ^ pc[4] ^ pc[6] ^ pc[8]
+        // Calculate path hash
+        const uint64_t hash_length = 30;
+        uint64_t path_hash = ((pc & ((1ULL << 15) - 1)) ^ (target & ((1ULL << 30) - 1)));
+        path_hash &= ((1ULL << hash_length) - 1);
+
+        history <<= shamt;
+        assert(shamt == 2);
+        for (auto i = 0; i < hash_length && i < history.size(); i++) {
+            history[i] = (path_hash & 1) ^ history[i];
+            path_hash >>= 1;
+        }
     }
 }
 
@@ -1847,9 +1855,9 @@ DecoupledBPUWithBTB::makeNewPrediction(bool create_new_stream)
 
     // 7. Debug output and update statistics
     dumpFsq("after insert new stream");
-    DPRINTF(DecoupleBP, "Inserted fetch stream %lu starting at PC %#lx\n", 
+    DPRINTF(DecoupleBP, "Inserted fetch stream %lu starting at PC %#lx\n",
             fsqId, entry.startPC);
-    
+
     // 8. Update FSQ ID and increment statistics
     fsqId++;
     printStream(entry);
@@ -1961,15 +1969,13 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     std::tie(bw_shamt, bw_taken) = finalPred.getBwHistInfo();
 
     // Get prediction information for path history updates
-    bool p_taken;
-    Addr p_pc;
-    std::tie(p_pc, p_taken) = finalPred.getPHistInfo(); // p_taken = taken
+    auto [p_pc, p_target, p_taken]= finalPred.getPHistInfo(); // p_taken = taken
 
     // Update global backward history
     histShiftIn(bw_shamt, bw_taken, s0BwHistory);
 
     // Update path history
-    pHistShiftIn(1, taken, s0PHistory, p_pc);
+    pHistShiftIn(2, taken, s0PHistory, p_pc, p_target);
 #ifndef NDEBUG
     tage->checkFoldedHist(s0PHistory, "speculative update");
 #endif
@@ -2036,7 +2042,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     histShiftIn(real_shamt, real_taken, s0History);
 
     // Update path history with actual outcome
-    pHistShiftIn(1, real_taken, s0PHistory, squash_pc.instAddr());
+    pHistShiftIn(2, real_taken, s0PHistory, squash_pc.instAddr(), redirect_pc);
 
     // Update global backward history with actual outcome
     histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);

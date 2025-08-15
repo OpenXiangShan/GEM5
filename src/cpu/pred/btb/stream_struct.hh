@@ -67,7 +67,7 @@ enum class HistoryType
 
 /**
  * @brief Branch information structure containing branch properties and targets
- * 
+ *
  * Stores essential information about a branch instruction including:
  * - PC and target address
  * - Branch type (conditional, indirect, call, return)
@@ -152,7 +152,7 @@ struct BranchInfo
 
 /**
  * @brief Branch Target Buffer entry extending BranchInfo with prediction metadata
- * 
+ *
  * Contains branch information plus prediction state:
  * - Valid bit
  * - Always taken bit
@@ -262,7 +262,7 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 
 /**
  * @brief Fetch Stream representing a sequence of instructions with prediction info
- * 
+ *
  * Key structure for decoupled frontend that contains:
  * - Stream boundaries (start PC, end PC)
  * - Prediction information (branch info, targets)
@@ -395,7 +395,7 @@ struct FetchStream
         }
         return std::make_pair(shamt, cond_taken);
     }
-    
+
     // should be called before components update
     void setUpdateInstEndPC(unsigned predictWidth)
     {
@@ -425,7 +425,7 @@ struct FetchStream
 };
 /**
  * @brief Full branch prediction combining predictions from all predictors
- * 
+ *
  * Aggregates predictions from:
  * - BTB entries for targets
  * - Direction predictors for conditional branches
@@ -615,10 +615,11 @@ struct FullBTBPrediction
         return std::make_pair(shamt, taken);
     }
 
-    std::pair<Addr, bool> getPHistInfo() //path
+    std::tuple<Addr, Addr, bool> getPHistInfo() //path
     {
         bool taken = false;
         Addr pc = 0;
+        Addr target = 0;
         for (auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) {
@@ -628,6 +629,7 @@ struct FullBTBPrediction
                         if (it->second) {
                             taken = true;
                             pc = entry.pc; // get the pc of the cond branch
+                            target = entry.target;
                             break;
                         }
                     }
@@ -637,14 +639,14 @@ struct FullBTBPrediction
                 }
             }
         }
-        return std::make_pair(pc, taken);
+        return std::make_tuple(pc, target, taken);
     }
 
 };
 
 /**
  * @brief Fetch Target Queue entry representing a fetch block
- * 
+ *
  * Contains information needed for instruction fetch:
  * - Address range (start PC, end PC)
  * - Branch information (taken PC, target)

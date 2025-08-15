@@ -263,7 +263,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // Update branch history
     void doUpdateHist(const boost::dynamic_bitset<> &history, int shamt,
-        bool taken, std::vector<FoldedHist> &foldedHist, Addr pc=0);
+        bool taken, std::vector<FoldedHist> &foldedHist, Addr pc = 0, Addr target = 0);
 
     /** global backward branch history indexed tables */
     // number of global backward branch history indexed tables
