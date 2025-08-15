@@ -2128,7 +2128,7 @@ LSQUnit::storeBufferEvictToCache()
         }
         DPRINTF(StoreBuffer, "send packet successed\n");
         entry->sending = true;
-        lsq->setDcacheWriteStall(true);
+        lsq->sbufferWriteBank(entry->validMask);
         storeBufferWritebackInactive = 0;
     } else {
         // Timeout
@@ -2493,16 +2493,12 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
 bool
 LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, bool &tag_read_fail)
 {
-    // sbuffer do not call this
-    if (lsq->getLastConflictCheckTick() != curTick()) {
-        lsq->clearAddresses(curTick());
-    }
     bool ret = true;
     bool cache_got_blocked = false;
 
     LSQRequest *request = dynamic_cast<LSQRequest *>(data_pkt->senderState);
     if (isLoad) {
-        bank_conflict = lsq->bankConflictedCheck(data_pkt->req->getVaddr());
+        bank_conflict = lsq->loadBankConflictedCheck(data_pkt->req->getVaddr());
     }
     // Record the tick count at the time of sending to let
     // the subsequent cache understand the request's sending time.
@@ -2573,9 +2569,6 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
 bool
 LSQUnit::sbufferSendPacket(PacketPtr data_pkt)
 {
-    if (lsq->getLastConflictCheckTick() != curTick()) {
-        lsq->clearAddresses(curTick());
-    }
     bool ret = true;
     bool cache_got_blocked = false;
 

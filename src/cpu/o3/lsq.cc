@@ -89,9 +89,10 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     : cpu(cpu_ptr), iewStage(iew_ptr),
       _cacheBlocked(false),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
-      cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),lastConflictCheckTick(0),
+      cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),
       recentlyloadAddr(8),
       enableBankConflictCheck(params.BankConflictCheck),
+      sbufferBankWriteAccurately(params.sbufferBankWriteAccurately),
       _enableLdMissReplay(params.EnableLdMissReplay),
       _enablePipeNukeCheck(params.EnablePipeNukeCheck),
       _storeWbStage(params.StoreWbStage),
@@ -146,6 +147,8 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
         thread[tid].init(cpu, iew_ptr, params, this, tid);
         thread[tid].setDcachePort(&dcachePort);
     }
+
+    bankOccupied.resize(8, false);
 }
 
 
@@ -219,42 +222,35 @@ LSQ::tick()
     }
 
 }
-Tick
-LSQ::getLastConflictCheckTick()
-{
-    return lastConflictCheckTick;
-}
 
 void
-LSQ::clearAddresses(Tick time)
+LSQ::clearAddresses()
 {
-    lastConflictCheckTick = time;
-    l1dBankAddresses.clear();
+    std::fill(bankOccupied.begin(), bankOccupied.end(), false);
     recentlyloadAddr.clear();
 }
 
 bool
-LSQ::bankConflictedCheck(Addr vaddr)
+LSQ::loadBankConflictedCheck(Addr vaddr)
 {
-    if (dcacheWriteStall) {
-        return true;
-    }
     bool now_bank_conflict = false;
-    // 64KB Dcache 8way 128sets
     // [12:6]   [5:3]     [2:0]
     // setIndex bankIndex dataOffset
     const uint64_t cacheBankmask = 0b1111111111000;
+    const int bankIndex = bankNum(vaddr);
+
     if (enableBankConflictCheck) {
         if (recentlyloadAddr.contains((vaddr & cacheBankmask))) {
             recentlyloadAddr.get((vaddr & cacheBankmask));
             return false;
         }
-        auto bank_it = std::find(l1dBankAddresses.begin(), l1dBankAddresses.end(), bankNum(vaddr));
-        if (bank_it == l1dBankAddresses.end()) {
-            l1dBankAddresses.push_back(bankNum(vaddr));
-            recentlyloadAddr.insert((vaddr & cacheBankmask), {});
-        } else {
+        auto bank_occupied = bankOccupied.at(bankIndex);
+        if (bank_occupied) {
             now_bank_conflict = true;
+
+        } else {
+            bank_occupied = true;
+            recentlyloadAddr.insert((vaddr & cacheBankmask), {});
         }
     }
     return now_bank_conflict;
@@ -389,6 +385,10 @@ LSQ::writebackStoreBuffer()
 {
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
+
+    // after load sendpackets
+    // before sbuffer sendpackets
+    clearAddresses();
 
     while (threads != end) {
         ThreadID tid = *threads++;

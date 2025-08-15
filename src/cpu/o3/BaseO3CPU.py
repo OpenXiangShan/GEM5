@@ -199,6 +199,7 @@ class BaseO3CPU(BaseCPU):
     enable_storeSet_train = Param.Bool(True, "Training store set predictor")
 
     BankConflictCheck = Param.Bool(True, "open Bank conflict check")
+    sbufferBankWriteAccurately = Param.Bool(False, "Sbuffer write to memory with bank conflict check")
     EnableLdMissReplay = Param.Bool(True, "Replay Cache missed load instrution from ReplayQ if True")
     EnablePipeNukeCheck = Param.Bool(True, "Replay load if Raw violation is detected in loadPipe if True")
 

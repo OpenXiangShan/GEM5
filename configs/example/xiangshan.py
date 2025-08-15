@@ -360,6 +360,7 @@ def setKmhV3IdealParams(args, system):
         cpu.scheduler = KMHV3Scheduler()
 
         cpu.BankConflictCheck = True   # real bank conflict 0.2 score
+        cpu.sbufferBankWriteAccurately = True
         # cpu.EnableLdMissReplay = False
         # cpu.EnablePipeNukeCheck = False
         cpu.StoreWbStage = 4 # store writeback at s4

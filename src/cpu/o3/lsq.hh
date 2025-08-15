@@ -959,16 +959,29 @@ class LSQ
 
     /** The IEW stage pointer. */
     IEW *iewStage;
-    Tick getLastConflictCheckTick();
 
-    void clearAddresses(Tick time);
+    void clearAddresses();
 
     Addr bankNum(Addr a) const { return (a >> 3) & 0x7; };
 
-    bool bankConflictedCheck(Addr vaddr);
+    bool loadBankConflictedCheck(Addr vaddr);
 
-    void setDcacheWriteStall(bool stall) { dcacheWriteStall = stall; }
+    void sbufferWriteBank(std::vector<bool>& mask) {
+        assert(mask.size() == 8 * numBank);
+        dcacheWriteStall = true;
+        if (sbufferBankWriteAccurately) {
+            for (int i=0; i<numBank; i++) {
+                if (std::any_of(mask.begin() + 8 * i, mask.begin() + 8 * i + 8,
+                                [](bool v) { return v; })) {
+                    bankOccupied[i] = true;
+                }
+            }
+        } else {
+            std::fill(bankOccupied.begin(), bankOccupied.end(), true);
+        }
+    }
 
+    void setDcacheWriteStall(bool t) { dcacheWriteStall = t; }
     bool getDcacheWriteStall() { return dcacheWriteStall; }
 
     unsigned getLQEntries() const { return LQEntries; }
@@ -1006,14 +1019,15 @@ class LSQ
     /** The number of used cache ports in this cycle by loads. */
     int usedLoadPorts;
 
-    Tick lastConflictCheckTick;
-
+    const int numBank = 8;
     bool dcacheWriteStall = false;
-    std::vector<int64_t> l1dBankAddresses;
+    std::vector<bool> bankOccupied;
+
     struct NullStruct {};
     boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
 
     bool enableBankConflictCheck;
+    bool sbufferBankWriteAccurately;
 
     bool _enableLdMissReplay;
     bool _enablePipeNukeCheck;
