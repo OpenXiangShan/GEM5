@@ -37,6 +37,8 @@
 
 #include "mem/dramsim3.hh"
 
+#include <iomanip>
+
 #include "base/callback.hh"
 #include "base/trace.hh"
 #include "debug/DRAMsim3.hh"
