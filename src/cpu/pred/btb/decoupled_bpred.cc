@@ -1736,8 +1736,8 @@ DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<>
     }
     if(taken){
         // Calculate path hash
-        const uint64_t hash_length = 30;
-        uint64_t path_hash = ((pc & ((1ULL << 15) - 1)) ^ (target & ((1ULL << 30) - 1)));
+        const uint64_t hash_length = 15;
+        uint64_t path_hash = ((((pc >> 1) & ((1ULL << 9) - 1)) << 4) ^ ((target >> 2) & ((1ULL << 15) - 1)));
         path_hash &= ((1ULL << hash_length) - 1);
 
         history <<= shamt;
@@ -1975,7 +1975,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     histShiftIn(bw_shamt, bw_taken, s0BwHistory);
 
     // Update path history
-    pHistShiftIn(2, taken, s0PHistory, p_pc, p_target);
+    pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
 #ifndef NDEBUG
     tage->checkFoldedHist(s0PHistory, "speculative update");
 #endif

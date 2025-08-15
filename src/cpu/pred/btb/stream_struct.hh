@@ -632,6 +632,9 @@ struct FullBTBPrediction
                     }
                 } else {
                     // uncond
+                    taken = true;
+                    pc = entry.pc; // get the pc of the cond branch
+                    target = entry.target;
                     break;
                 }
             }
