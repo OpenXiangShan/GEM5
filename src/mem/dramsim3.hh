@@ -49,6 +49,7 @@
 
 #include <boost/heap/priority_queue.hpp>
 
+#include "base/output.hh"
 #include "mem/abstract_mem.hh"
 #include "mem/dramsim3_wrapper.hh"
 #include "mem/qport.hh"
