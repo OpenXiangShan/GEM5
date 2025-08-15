@@ -10,56 +10,59 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "debug/MGSC.hh"
 
-namespace gem5 {
+namespace gem5
+{
 
-namespace branch_prediction {
+namespace branch_prediction
+{
 
-namespace btb_pred{
+namespace btb_pred
+{
 
 // Constructor: Initialize MGSC predictor with given parameters
-BTBMGSC::BTBMGSC(const Params& p):
-TimedBaseBTBPredictor(p),
-bwTableNum(p.bwTableNum),
-bwTableIdxWidth(p.bwTableIdxWidth),
-bwHistLen(p.bwHistLen),
-bwWeightInitValue(p.bwWeightInitValue),
-numEntriesFirstLocalHistories(p.numEntriesFirstLocalHistories),
-lTableNum(p.lTableNum),
-lTableIdxWidth(p.lTableIdxWidth),
-lHistLen(p.lHistLen),
-lWeightInitValue(p.lWeightInitValue),
-iTableNum(p.iTableNum),
-iTableIdxWidth(p.iTableIdxWidth),
-iHistLen(p.iHistLen),
-iWeightInitValue(p.iWeightInitValue),
-gTableNum(p.gTableNum),
-gTableIdxWidth(p.gTableIdxWidth),
-gHistLen(p.gHistLen),
-gWeightInitValue(p.gWeightInitValue),
-pTableNum(p.pTableNum),
-pTableIdxWidth(p.pTableIdxWidth),
-pHistLen(p.pHistLen),
-pWeightInitValue(p.pWeightInitValue),
-biasTableNum(p.biasTableNum),
-biasTableIdxWidth(p.biasTableIdxWidth),
-scCountersWidth(p.scCountersWidth),
-thresholdTablelogSize(p.thresholdTablelogSize),
-updateThresholdWidth(p.updateThresholdWidth),
-pUpdateThresholdWidth(p.pUpdateThresholdWidth),
-initialUpdateThresholdValue(p.initialUpdateThresholdValue),
-extraWeightsWidth(p.extraWeightsWidth),
-weightTableIdxWidth(p.weightTableIdxWidth),
-numWays(p.numWays),
-enableMGSC(p.enableMGSC),
-mgscStats(this)
+BTBMGSC::BTBMGSC(const Params &p)
+    : TimedBaseBTBPredictor(p),
+      bwTableNum(p.bwTableNum),
+      bwTableIdxWidth(p.bwTableIdxWidth),
+      bwHistLen(p.bwHistLen),
+      bwWeightInitValue(p.bwWeightInitValue),
+      numEntriesFirstLocalHistories(p.numEntriesFirstLocalHistories),
+      lTableNum(p.lTableNum),
+      lTableIdxWidth(p.lTableIdxWidth),
+      lHistLen(p.lHistLen),
+      lWeightInitValue(p.lWeightInitValue),
+      iTableNum(p.iTableNum),
+      iTableIdxWidth(p.iTableIdxWidth),
+      iHistLen(p.iHistLen),
+      iWeightInitValue(p.iWeightInitValue),
+      gTableNum(p.gTableNum),
+      gTableIdxWidth(p.gTableIdxWidth),
+      gHistLen(p.gHistLen),
+      gWeightInitValue(p.gWeightInitValue),
+      pTableNum(p.pTableNum),
+      pTableIdxWidth(p.pTableIdxWidth),
+      pHistLen(p.pHistLen),
+      pWeightInitValue(p.pWeightInitValue),
+      biasTableNum(p.biasTableNum),
+      biasTableIdxWidth(p.biasTableIdxWidth),
+      scCountersWidth(p.scCountersWidth),
+      thresholdTablelogSize(p.thresholdTablelogSize),
+      updateThresholdWidth(p.updateThresholdWidth),
+      pUpdateThresholdWidth(p.pUpdateThresholdWidth),
+      initialUpdateThresholdValue(p.initialUpdateThresholdValue),
+      extraWeightsWidth(p.extraWeightsWidth),
+      weightTableIdxWidth(p.weightTableIdxWidth),
+      numWays(p.numWays),
+      enableMGSC(p.enableMGSC),
+      mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
     this->needMoreHistories = p.needMoreHistories;
     bwTable.resize(bwTableNum);
     for (unsigned int i = 0; i < bwTableNum; ++i) {
         assert(bwTable.size() >= bwTableNum);
-        bwTable[i].resize(std::pow(2,bwTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2,bwTableIdxWidth)); ++j) {
+        bwTable[i].resize(std::pow(2, bwTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2, bwTableIdxWidth)); ++j) {
             bwTable[i][j].resize(numWays);
         }
         indexBwFoldedHist.push_back(FoldedHist(bwHistLen[i], bwTableIdxWidth, 16, HistoryType::GLOBALBW));
@@ -70,8 +73,8 @@ mgscStats(this)
     indexLFoldedHist.resize(numEntriesFirstLocalHistories);
     for (unsigned int i = 0; i < lTableNum; ++i) {
         assert(lTable.size() >= lTableNum);
-        lTable[i].resize(std::pow(2,lTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2,lTableIdxWidth)); ++j) {
+        lTable[i].resize(std::pow(2, lTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2, lTableIdxWidth)); ++j) {
             lTable[i][j].resize(numWays);
         }
         for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
@@ -83,8 +86,8 @@ mgscStats(this)
     iTable.resize(iTableNum);
     for (unsigned int i = 0; i < iTableNum; ++i) {
         assert(iTable.size() >= iTableNum);
-        iTable[i].resize(std::pow(2,iTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2,iTableIdxWidth)); ++j) {
+        iTable[i].resize(std::pow(2, iTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2, iTableIdxWidth)); ++j) {
             iTable[i][j].resize(numWays);
         }
         indexIFoldedHist.push_back(FoldedHist(iHistLen[i], iTableIdxWidth, 16, HistoryType::IMLI));
@@ -94,8 +97,8 @@ mgscStats(this)
     gTable.resize(gTableNum);
     for (unsigned int i = 0; i < gTableNum; ++i) {
         assert(gTable.size() >= gTableNum);
-        gTable[i].resize(std::pow(2,gTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2,gTableIdxWidth)); ++j) {
+        gTable[i].resize(std::pow(2, gTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2, gTableIdxWidth)); ++j) {
             gTable[i][j].resize(numWays);
         }
         indexGFoldedHist.push_back(FoldedHist(gHistLen[i], gTableIdxWidth, 16, HistoryType::GLOBAL));
@@ -105,8 +108,8 @@ mgscStats(this)
     pTable.resize(pTableNum);
     for (unsigned int i = 0; i < pTableNum; ++i) {
         assert(pTable.size() >= pTableNum);
-        pTable[i].resize(std::pow(2,pTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2,pTableIdxWidth)); ++j) {
+        pTable[i].resize(std::pow(2, pTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2, pTableIdxWidth)); ++j) {
             pTable[i][j].resize(numWays);
         }
         indexPFoldedHist.push_back(FoldedHist(pHistLen[i], pTableIdxWidth, 2, HistoryType::PATH));
@@ -116,55 +119,52 @@ mgscStats(this)
     biasTable.resize(biasTableNum);
     for (unsigned int i = 0; i < biasTableNum; ++i) {
         assert(biasTable.size() >= biasTableNum);
-        biasTable[i].resize(std::pow(2,biasTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2,biasTableIdxWidth)); ++j) {
+        biasTable[i].resize(std::pow(2, biasTableIdxWidth));
+        for (unsigned int j = 0; j < (std::pow(2, biasTableIdxWidth)); ++j) {
             biasTable[i][j].resize(numWays);
         }
     }
     biasIndex.resize(biasTableNum);
 
-    bwWeightTable.resize(std::pow(2,weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
+    bwWeightTable.resize(std::pow(2, weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
         bwWeightTable[j].resize(numWays);
     }
 
-    lWeightTable.resize(std::pow(2,weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
+    lWeightTable.resize(std::pow(2, weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
         lWeightTable[j].resize(numWays);
     }
 
-    iWeightTable.resize(std::pow(2,weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
+    iWeightTable.resize(std::pow(2, weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
         iWeightTable[j].resize(numWays);
     }
 
-    gWeightTable.resize(std::pow(2,weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
+    gWeightTable.resize(std::pow(2, weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
         gWeightTable[j].resize(numWays);
     }
 
-    pWeightTable.resize(std::pow(2,weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
+    pWeightTable.resize(std::pow(2, weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
         pWeightTable[j].resize(numWays);
     }
 
-    biasWeightTable.resize(std::pow(2,weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2,weightTableIdxWidth)); ++j) {
+    biasWeightTable.resize(std::pow(2, weightTableIdxWidth));
+    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
         biasWeightTable[j].resize(numWays);
     }
 
-    pUpdateThreshold.resize(std::pow(2,thresholdTablelogSize));
-    for (unsigned int j = 0; j < (std::pow(2,thresholdTablelogSize)); ++j) {
+    pUpdateThreshold.resize(std::pow(2, thresholdTablelogSize));
+    for (unsigned int j = 0; j < (std::pow(2, thresholdTablelogSize)); ++j) {
         pUpdateThreshold[j].resize(numWays);
     }
 
     updateThreshold.resize(numWays);
-
 }
 
-BTBMGSC::~BTBMGSC()
-{
-}
+BTBMGSC::~BTBMGSC() {}
 
 // Set up tracing for debugging
 void
@@ -173,13 +173,18 @@ BTBMGSC::setTrace()
 }
 
 void
-BTBMGSC::tick() {}
+BTBMGSC::tick()
+{
+}
 
 void
-BTBMGSC::tickStart() {}
+BTBMGSC::tickStart()
+{
+}
 
 bool
-BTBMGSC::tagMatch(Addr pc_a, Addr pc_b, unsigned matchBits) {
+BTBMGSC::tagMatch(Addr pc_a, Addr pc_b, unsigned matchBits)
+{
     // Use bitwise operations directly to avoid overhead of creating bitset objects
     // Create mask: when matchBits=5, mask=0x1F (binary 11111)
     Addr mask = (1ULL << matchBits) - 1;
@@ -197,15 +202,14 @@ BTBMGSC::tagMatch(Addr pc_a, Addr pc_b, unsigned matchBits) {
  */
 int
 BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<MgscEntry>>> &table,
-                         const std::vector<Addr> &tableIndices,
-                         unsigned numTables,
-                         Addr pc) {
+                          const std::vector<Addr> &tableIndices, unsigned numTables, Addr pc)
+{
     int percsum = 0;
     for (unsigned int i = 0; i < numTables; ++i) {
         for (unsigned way = 0; way < numWays; way++) {
             auto &entry = table[i][tableIndices[i]][way];
             if (tagMatch(pc, entry.pc, 5) && entry.valid) {
-                percsum += (2 * entry.counter + 1); // 2*counter + 1 is always >= 0
+                percsum += (2 * entry.counter + 1);  // 2*counter + 1 is always >= 0
                 break;
             }
         }
@@ -221,9 +225,8 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<MgscEntry>>>
  * @return Found weight or 0 if not found
  */
 int
-BTBMGSC::findWeight(const std::vector<std::vector<MgscWeightEntry>> &weightTable,
-                   Addr tableIndex,
-                   Addr pc) {
+BTBMGSC::findWeight(const std::vector<std::vector<MgscWeightEntry>> &weightTable, Addr tableIndex, Addr pc)
+{
     for (unsigned way = 0; way < numWays; way++) {
         auto &entry = weightTable[tableIndex][way];
         if (tagMatch(pc, entry.pc, 5) && entry.valid) {
@@ -241,8 +244,9 @@ BTBMGSC::findWeight(const std::vector<std::vector<MgscWeightEntry>> &weightTable
  * @return Scaled percsum value
  */
 int
-BTBMGSC::calculateScaledPercsum(int weight, int percsum) {
-    return (double)((double)(weight + 32)/32.0) * percsum;
+BTBMGSC::calculateScaledPercsum(int weight, int percsum)
+{
+    return (double)((double)(weight + 32) / 32.0) * percsum;
 }
 
 /**
@@ -254,10 +258,9 @@ BTBMGSC::calculateScaledPercsum(int weight, int percsum) {
  * @return Found threshold or default value if not found
  */
 int
-BTBMGSC::findThreshold(const std::vector<std::vector<MgscThresEntry>> &thresholdTable,
-                      Addr tableIndex,
-                      Addr pc,
-                      int defaultValue) {
+BTBMGSC::findThreshold(const std::vector<std::vector<MgscThresEntry>> &thresholdTable, Addr tableIndex, Addr pc,
+                       int defaultValue)
+{
     for (unsigned way = 0; way < numWays; way++) {
         auto &entry = thresholdTable[tableIndex][way];
         if (tagMatch(pc, entry.pc, 5) && entry.valid) {
@@ -275,11 +278,12 @@ BTBMGSC::findThreshold(const std::vector<std::vector<MgscThresEntry>> &threshold
  * @return True if weight scale causes prediction to change
  */
 bool
-BTBMGSC::calculateWeightScaleDiff(int total_sum, int scale_percsum, int percsum) {
+BTBMGSC::calculateWeightScaleDiff(int total_sum, int scale_percsum, int percsum)
+{
     // First check if removing this table's contribution keeps the sum positive (predict taken)
     // Then check if doubling this table's contribution keeps the sum positive
     // If one is true and the other is false, the table's weight is crucial for prediction
-    return ((total_sum - scale_percsum) >= 0) != ((total_sum - scale_percsum + 2*percsum) >= 0);
+    return ((total_sum - scale_percsum) >= 0) != ((total_sum - scale_percsum + 2 * percsum) >= 0);
 }
 
 /**
@@ -290,11 +294,10 @@ BTBMGSC::calculateWeightScaleDiff(int total_sum, int scale_percsum, int percsum)
  * @return TagePrediction containing main and alternative predictions
  */
 BTBMGSC::MgscPrediction
-BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
-                                 const Addr &startPC,
-                                 const TageInfoForMGSC &tage_info) {
-    DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx, always taken %d\n",
-        btb_entry.pc, btb_entry.alwaysTaken);
+BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC, const TageInfoForMGSC &tage_info)
+{
+    DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx, always taken %d\n", btb_entry.pc,
+            btb_entry.alwaysTaken);
 
     // Calculate indices for all tables
     for (unsigned int i = 0; i < bwTableNum; ++i) {
@@ -303,7 +306,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
 
     for (unsigned int i = 0; i < lTableNum; ++i) {
         lIndex[i] = getHistIndex(startPC, lTableIdxWidth,
-                  indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
+                                 indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
     }
 
     for (unsigned int i = 0; i < iTableNum; ++i) {
@@ -320,7 +323,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
 
     for (unsigned int i = 0; i < biasTableNum; ++i) {
         biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth, tage_info.tage_pred_taken,
-                    tage_info.tage_pred_conf_low && tage_info.tage_pred_alt_diff);
+                                    tage_info.tage_pred_conf_low && tage_info.tage_pred_alt_diff);
     }
 
     // Calculate percsums and weights for all tables
@@ -351,18 +354,16 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
     int bias_scale_percsum = calculateScaledPercsum(bias_weight, bias_percsum);
 
     // Calculate total sum of all weighted percsums
-    int total_sum = bw_scale_percsum + l_scale_percsum + i_scale_percsum +
-               g_scale_percsum + p_scale_percsum + bias_scale_percsum;
+    int total_sum =
+        bw_scale_percsum + l_scale_percsum + i_scale_percsum + g_scale_percsum + p_scale_percsum + bias_scale_percsum;
 
     // Find thresholds
     // pc-indexed threshold table, default value = initialUpdateThresholdValue = 0
-    int p_update_thres = findThreshold(pUpdateThreshold,
-                                     getPcIndex(startPC, thresholdTablelogSize),
-                                     btb_entry.pc,
-                                     initialUpdateThresholdValue);
+    int p_update_thres = findThreshold(pUpdateThreshold, getPcIndex(startPC, thresholdTablelogSize), btb_entry.pc,
+                                       initialUpdateThresholdValue);
 
     // global threshold table
-    int update_thres = 35 << 3;     // default value = 35 << 3 ?
+    int update_thres = 35 << 3;  // default value = 35 << 3 ?
     for (unsigned way = 0; way < numWays; way++) {
         auto &entry = updateThreshold[way];
         if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
@@ -376,15 +377,15 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
     // Determine whether to use SC prediction based on confidence levels
     bool use_sc_pred = false;
     if (tage_info.tage_pred_conf_high) {
-        if (abs(total_sum) > total_thres/2) {
+        if (abs(total_sum) > total_thres / 2) {
             use_sc_pred = true;
         }
     } else if (tage_info.tage_pred_conf_mid) {
-        if (abs(total_sum) > total_thres/4) {
+        if (abs(total_sum) > total_thres / 4) {
             use_sc_pred = true;
         }
     } else if (tage_info.tage_pred_conf_low) {
-        if (abs(total_sum) > total_thres/8) {
+        if (abs(total_sum) > total_thres / 8) {
             use_sc_pred = true;
         }
     }
@@ -402,12 +403,10 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
 
     DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.pc, taken);
 
-    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken,
-                        tage_info.tage_pred_taken, total_thres,
-                        bwIndex, lIndex, iIndex, gIndex, pIndex, biasIndex,
-                        bw_weight_scale_diff, l_weight_scale_diff, i_weight_scale_diff,
-                        g_weight_scale_diff, p_weight_scale_diff, bias_weight_scale_diff,
-                        bw_percsum, l_percsum, i_percsum, g_percsum, p_percsum, bias_percsum);
+    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, tage_info.tage_pred_taken, total_thres, bwIndex,
+                          lIndex, iIndex, gIndex, pIndex, biasIndex, bw_weight_scale_diff, l_weight_scale_diff,
+                          i_weight_scale_diff, g_weight_scale_diff, p_weight_scale_diff, bias_weight_scale_diff,
+                          bw_percsum, l_percsum, i_percsum, g_percsum, p_percsum, bias_percsum);
 }
 
 /**
@@ -419,7 +418,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry,
  */
 void
 BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                      const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results)
+                      const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens &results)
 {
     DPRINTF(MGSC, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -428,7 +427,7 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
             auto tage_info = tageInfoForMgscs.find(btb_entry.pc);
-            if(tage_info != tageInfoForMgscs.end()){
+            if (tage_info != tageInfoForMgscs.end()) {
                 auto pred = generateSinglePrediction(btb_entry, startPC, tage_info->second);
                 meta->preds[btb_entry.pc] = pred;
                 results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
@@ -452,7 +451,8 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
  * @param stagePreds Vector of predictions for different pipeline stages
  */
 void
-BTBMGSC::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
+BTBMGSC::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds)
+{
     DPRINTF(MGSC, "putPCHistory startAddr: %#lx\n", stream_start);
 
     // IMPORTANT: when this function is called,
@@ -473,11 +473,11 @@ BTBMGSC::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
         stage_pred.condTakens.clear();
         lookupHelper(stream_start, stage_pred.btbEntries, stage_pred.tageInfoForMgscs, stage_pred.condTakens);
     }
-
 }
 
 std::shared_ptr<void>
-BTBMGSC::getPredictionMeta() {
+BTBMGSC::getPredictionMeta()
+{
     return meta;
 }
 
@@ -488,18 +488,18 @@ BTBMGSC::getPredictionMeta() {
  * @return Vector of BTB entries that need to be updated
  */
 std::vector<BTBEntry>
-BTBMGSC::prepareUpdateEntries(const FetchStream &stream) {
+BTBMGSC::prepareUpdateEntries(const FetchStream &stream)
+{
     auto all_entries = stream.updateBTBEntries;
 
     // Filter out non-conditional and always-taken branches
     auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-        [](const BTBEntry &e) { return !e.isCond && !e.alwaysTaken; });
+                                    [](const BTBEntry &e) { return !e.isCond && !e.alwaysTaken; });
     all_entries.erase(remove_it, all_entries.end());
 
     // Handle potential new BTB entry
     auto &potential_new_entry = stream.updateNewBTBEntry;
-    if (!stream.updateIsOldEntry && potential_new_entry.isCond &&
-        !potential_new_entry.alwaysTaken) {
+    if (!stream.updateIsOldEntry && potential_new_entry.isCond && !potential_new_entry.alwaysTaken) {
         all_entries.push_back(potential_new_entry);
     }
 
@@ -524,10 +524,9 @@ BTBMGSC::prepareUpdateEntries(const FetchStream &stream) {
  */
 void
 BTBMGSC::updateAndAllocatePredTable(std::vector<std::vector<std::vector<MgscEntry>>> &table,
-                                  const std::vector<Addr> &tableIndices,
-                                  unsigned numTables,
-                                  Addr pc,
-                                  bool actual_taken) {
+                                    const std::vector<Addr> &tableIndices, unsigned numTables, Addr pc,
+                                    bool actual_taken)
+{
     for (unsigned int i = 0; i < numTables; ++i) {
         bool found_entry = false;
         // Search all ways in the set for a matching entry
@@ -570,11 +569,9 @@ BTBMGSC::updateAndAllocatePredTable(std::vector<std::vector<std::vector<MgscEntr
  * @param percsum_matches_actual Whether the raw percsum correctly predicted the outcome
  */
 void
-BTBMGSC::updateAndAllocateWeightTable(std::vector<std::vector<MgscWeightEntry>> &weightTable,
-                                    Addr tableIndex,
-                                    Addr pc,
-                                    bool weight_scale_diff,
-                                    bool percsum_matches_actual) {
+BTBMGSC::updateAndAllocateWeightTable(std::vector<std::vector<MgscWeightEntry>> &weightTable, Addr tableIndex, Addr pc,
+                                      bool weight_scale_diff, bool percsum_matches_actual)
+{
     bool found_entry = false;
     // Search all ways in the set for a matching entry
     for (unsigned way = 0; way < numWays; way++) {
@@ -617,10 +614,8 @@ BTBMGSC::updateAndAllocateWeightTable(std::vector<std::vector<MgscWeightEntry>> 
  * @param update_direction Direction to update (true=increment, false=decrement)
  */
 void
-BTBMGSC::updatePCThresholdTable(Addr tableIndex,
-                                Addr pc,
-                                bool update_condition,
-                                bool update_direction) {
+BTBMGSC::updatePCThresholdTable(Addr tableIndex, Addr pc, bool update_condition, bool update_direction)
+{
     bool found_entry = false;
     // Search all ways in the set for a matching entry
     for (unsigned way = 0; way < numWays; way++) {
@@ -660,9 +655,8 @@ BTBMGSC::updatePCThresholdTable(Addr tableIndex,
  * @param update_direction Direction to update (true=increment, false=decrement)
  */
 void
-BTBMGSC::updateGlobalThreshold(Addr pc,
-                             bool update_condition,
-                             bool update_direction) {
+BTBMGSC::updateGlobalThreshold(Addr pc, bool update_condition, bool update_direction)
+{
     bool found_entry = false;
     // Search all ways for a matching entry
     for (unsigned way = 0; way < numWays; way++) {
@@ -699,16 +693,15 @@ BTBMGSC::updateGlobalThreshold(Addr pc,
  * @param stream The fetch stream containing update information
  */
 void
-BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry,
-                             bool actual_taken,
-                             const MgscPrediction &pred,
-                             const FetchStream &stream) {
+BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
+                                          const FetchStream &stream)
+{
     // Extract prediction information
     auto total_sum = pred.total_sum;
     auto use_mgsc = pred.use_mgsc;
     auto total_thres = pred.total_thres;
     auto sc_pred_taken = total_sum >= 0;
-    auto tage_pred_taken = pred.taken_before_sc;    // tage predictions
+    auto tage_pred_taken = pred.taken_before_sc;  // tage predictions
 
     // Update statistics
     if (use_mgsc) {
@@ -733,57 +726,46 @@ BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry,
 
         // Update BW tables
         updateAndAllocatePredTable(bwTable, pred.bwIndex, bwTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(
-            bwWeightTable, weightTableIdx, entry.pc, pred.bw_weight_scale_diff,
-            (pred.bw_percsum >= 0) == actual_taken);
+        updateAndAllocateWeightTable(bwWeightTable, weightTableIdx, entry.pc, pred.bw_weight_scale_diff,
+                                     (pred.bw_percsum >= 0) == actual_taken);
 
         // Update L tables
-        updateAndAllocatePredTable(
-            lTable, pred.lIndex, lTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(
-            lWeightTable, weightTableIdx, entry.pc, pred.l_weight_scale_diff,
-            (pred.l_percsum >= 0) == actual_taken);
+        updateAndAllocatePredTable(lTable, pred.lIndex, lTableNum, entry.pc, actual_taken);
+        updateAndAllocateWeightTable(lWeightTable, weightTableIdx, entry.pc, pred.l_weight_scale_diff,
+                                     (pred.l_percsum >= 0) == actual_taken);
 
         // Update I tables
-        updateAndAllocatePredTable(
-            iTable, pred.iIndex, iTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(
-            iWeightTable, weightTableIdx, entry.pc, pred.i_weight_scale_diff,
-            (pred.i_percsum >= 0) == actual_taken);
+        updateAndAllocatePredTable(iTable, pred.iIndex, iTableNum, entry.pc, actual_taken);
+        updateAndAllocateWeightTable(iWeightTable, weightTableIdx, entry.pc, pred.i_weight_scale_diff,
+                                     (pred.i_percsum >= 0) == actual_taken);
 
         // Update G tables
-        updateAndAllocatePredTable(
-            gTable, pred.gIndex, gTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(
-            gWeightTable, weightTableIdx, entry.pc, pred.g_weight_scale_diff,
-            (pred.g_percsum >= 0) == actual_taken);
+        updateAndAllocatePredTable(gTable, pred.gIndex, gTableNum, entry.pc, actual_taken);
+        updateAndAllocateWeightTable(gWeightTable, weightTableIdx, entry.pc, pred.g_weight_scale_diff,
+                                     (pred.g_percsum >= 0) == actual_taken);
 
         // Update P tables
-        updateAndAllocatePredTable(
-            pTable, pred.pIndex, pTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(
-            pWeightTable, weightTableIdx, entry.pc, pred.p_weight_scale_diff,
-            (pred.p_percsum >= 0) == actual_taken);
+        updateAndAllocatePredTable(pTable, pred.pIndex, pTableNum, entry.pc, actual_taken);
+        updateAndAllocateWeightTable(pWeightTable, weightTableIdx, entry.pc, pred.p_weight_scale_diff,
+                                     (pred.p_percsum >= 0) == actual_taken);
 
         // Update bias tables
-        updateAndAllocatePredTable(
-            biasTable, pred.biasIndex, biasTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(
-            biasWeightTable, weightTableIdx, entry.pc, pred.bias_weight_scale_diff,
-            (pred.bias_percsum >= 0) == actual_taken);
+        updateAndAllocatePredTable(biasTable, pred.biasIndex, biasTableNum, entry.pc, actual_taken);
+        updateAndAllocateWeightTable(biasWeightTable, weightTableIdx, entry.pc, pred.bias_weight_scale_diff,
+                                     (pred.bias_percsum >= 0) == actual_taken);
 
         // Update PC-indexed threshold table
-        updatePCThresholdTable(getPcIndex(stream.startPC, thresholdTablelogSize),
-            entry.pc, tage_pred_taken != sc_pred_taken, sc_pred_taken != actual_taken);
+        updatePCThresholdTable(getPcIndex(stream.startPC, thresholdTablelogSize), entry.pc,
+                               tage_pred_taken != sc_pred_taken, sc_pred_taken != actual_taken);
 
         // Update global threshold table
-        updateGlobalThreshold(entry.pc, tage_pred_taken != sc_pred_taken,
-                             sc_pred_taken != actual_taken);
+        updateGlobalThreshold(entry.pc, tage_pred_taken != sc_pred_taken, sc_pred_taken != actual_taken);
     }
 }
 
 void
-BTBMGSC::update(const FetchStream &stream) {
+BTBMGSC::update(const FetchStream &stream)
+{
     Addr startAddr = stream.getRealStartPC();
     DPRINTF(MGSC, "update startAddr: %#lx\n", startAddr);
 
@@ -812,9 +794,10 @@ BTBMGSC::update(const FetchStream &stream) {
 
 // Update signed counter with saturation
 void
-BTBMGSC::updateCounter(bool taken, unsigned width, short &counter) {
-    int max = (1 << (width-1)) - 1;
-    int min = -(1 << (width-1));
+BTBMGSC::updateCounter(bool taken, unsigned width, short &counter)
+{
+    int max = (1 << (width - 1)) - 1;
+    int min = -(1 << (width - 1));
     if (taken) {
         satIncrement(max, counter);
     } else {
@@ -824,7 +807,8 @@ BTBMGSC::updateCounter(bool taken, unsigned width, short &counter) {
 
 // Update unsigned counter with saturation
 void
-BTBMGSC::updateCounter(bool taken, unsigned width, unsigned &counter) {
+BTBMGSC::updateCounter(bool taken, unsigned width, unsigned &counter)
+{
     int max = (1 << width) - 1;
     int min = 0;
     if (taken) {
@@ -919,14 +903,13 @@ BTBMGSC::satDecrement(int min, unsigned &counter)
  * @param taken Whether the branch was taken
  */
 void
-BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt,
-                        bool taken, std::vector<FoldedHist> &foldedHist, Addr pc, Addr target)
+BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken,
+                      std::vector<FoldedHist> &foldedHist, Addr pc, Addr target)
 {
     if (debugFlagOn) {
         std::string buf;
         boost::to_string(history, buf);
-        DPRINTF(MGSC, "in doUpdateHist, shamt %d, taken %d, history %s\n",
-                shamt, taken, buf.c_str());
+        DPRINTF(MGSC, "in doUpdateHist, shamt %d, taken %d, history %s\n", shamt, taken, buf.c_str());
     }
     if (shamt == 0) {
         DPRINTF(MGSC, "shamt is 0, returning\n");
@@ -957,7 +940,7 @@ BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPredictio
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getHistInfo();
-    doUpdateHist(history, shamt, cond_taken, indexGFoldedHist); // use global history to update G folded history
+    doUpdateHist(history, shamt, cond_taken, indexGFoldedHist);  // use global history to update G folded history
 }
 
 /**
@@ -976,7 +959,7 @@ void
 BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, 2, taken, indexPFoldedHist, pc, target); // only path history needs pc!
+    doUpdateHist(history, 2, taken, indexPFoldedHist, pc, target);  // only path history needs pc!
 }
 
 
@@ -1040,8 +1023,7 @@ BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, Fu
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getHistInfo();
-    doUpdateHist(history[getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories))],
-                 shamt, cond_taken,
+    doUpdateHist(history[getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories))], shamt, cond_taken,
                  indexLFoldedHist[getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories))]);
 }
 
@@ -1059,8 +1041,7 @@ BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, Fu
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history,
-    const FetchStream &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < gTableNum; i++) {
@@ -1083,8 +1064,7 @@ BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history,
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchStream &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < pTableNum; i++) {
@@ -1107,8 +1087,7 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history,
-    const FetchStream &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < bwTableNum; i++) {
@@ -1131,8 +1110,7 @@ BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history,
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverIHist(const boost::dynamic_bitset<> &history,
-    const FetchStream &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverIHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < iTableNum; i++) {
@@ -1155,8 +1133,8 @@ BTBMGSC::recoverIHist(const boost::dynamic_bitset<> &history,
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history,
-    const FetchStream &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchStream &entry, int shamt,
+                      bool cond_taken)
 {
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
@@ -1165,23 +1143,26 @@ BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history,
         }
     }
     doUpdateHist(history[getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories))], shamt, cond_taken,
-                indexLFoldedHist[getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories))]);
+                 indexLFoldedHist[getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories))]);
 }
 
 // Constructor for TAGE statistics
-BTBMGSC::MgscStats::MgscStats(statistics::Group* parent):
-    statistics::Group(parent),
-     ADD_STAT(scCorrectTageWrong, statistics::units::Count::get(), "number of sc predict correct and tage predict wrong"),
-     ADD_STAT(scWrongTageCorrect, statistics::units::Count::get(), "number of sc predict wrong and tage predict correct"),
-     ADD_STAT(scCorrectTageCorrect, statistics::units::Count::get(), "number of sc predict correct and tage predict correct"),
-     ADD_STAT(scWrongTageWrong, statistics::units::Count::get(), "number of sc predict wrong and tage predict wrong"),
-     ADD_STAT(scUsed, statistics::units::Count::get(), "number of sc used"),
-     ADD_STAT(scNotUsed, statistics::units::Count::get(), "number of sc not used")
+BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(scCorrectTageWrong, statistics::units::Count::get(),
+               "number of sc predict correct and tage predict wrong"),
+      ADD_STAT(scWrongTageCorrect, statistics::units::Count::get(),
+               "number of sc predict wrong and tage predict correct"),
+      ADD_STAT(scCorrectTageCorrect, statistics::units::Count::get(),
+               "number of sc predict correct and tage predict correct"),
+      ADD_STAT(scWrongTageWrong, statistics::units::Count::get(), "number of sc predict wrong and tage predict wrong"),
+      ADD_STAT(scUsed, statistics::units::Count::get(), "number of sc used"),
+      ADD_STAT(scNotUsed, statistics::units::Count::get(), "number of sc not used")
 {
 }
 
 // Update LRU counters for a set
-template <typename T>
+template<typename T>
 void
 BTBMGSC::updateLRU(std::vector<std::vector<T>> &table, Addr index, unsigned way)
 {
@@ -1195,7 +1176,7 @@ BTBMGSC::updateLRU(std::vector<std::vector<T>> &table, Addr index, unsigned way)
     table[index][way].lruCounter = 0;
 }
 
-template <typename T>
+template<typename T>
 void
 BTBMGSC::updateLRU(std::vector<T> &table, unsigned way)
 {
@@ -1210,7 +1191,7 @@ BTBMGSC::updateLRU(std::vector<T> &table, unsigned way)
 }
 
 // Find the LRU victim in a set
-template <typename T>
+template<typename T>
 unsigned
 BTBMGSC::getLRUVictim(std::vector<std::vector<T>> &table, Addr index)
 {
@@ -1220,7 +1201,7 @@ BTBMGSC::getLRUVictim(std::vector<std::vector<T>> &table, Addr index)
     // Find the entry with the highest LRU counter
     for (unsigned i = 0; i < numWays; i++) {
         if (!table[index][i].valid) {
-            return i; // Use invalid entry if available
+            return i;  // Use invalid entry if available
         }
         if (table[index][i].lruCounter > maxLRU) {
             maxLRU = table[index][i].lruCounter;
@@ -1230,7 +1211,7 @@ BTBMGSC::getLRUVictim(std::vector<std::vector<T>> &table, Addr index)
     return victim;
 }
 
-template <typename T>
+template<typename T>
 unsigned
 BTBMGSC::getLRUVictim(std::vector<T> &table)
 {
@@ -1240,7 +1221,7 @@ BTBMGSC::getLRUVictim(std::vector<T> &table)
     // Find the entry with the highest LRU counter
     for (unsigned i = 0; i < numWays; i++) {
         if (!table[i].valid) {
-            return i; // Use invalid entry if available
+            return i;  // Use invalid entry if available
         }
         if (table[i].lruCounter > maxLRU) {
             maxLRU = table[i].lruCounter;
@@ -1255,7 +1236,7 @@ BTBMGSC::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
 }
 
-} // namespace btb_pred
+}  // namespace btb_pred
 
 }  // namespace branch_prediction
 
