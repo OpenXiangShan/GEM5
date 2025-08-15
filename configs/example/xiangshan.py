@@ -392,6 +392,7 @@ def setKmhV3IdealParams(args, system):
                 cpu.branchPred.tage.numWays = 2
 
             cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
+            cpu.branchPred.mgsc.enableMGSC = False
             cpu.branchPred.ftq_size = 256
             cpu.branchPred.fsq_size = 256
             cpu.branchPred.tage.numPredictors = 8
