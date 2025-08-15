@@ -63,7 +63,7 @@ from common import MemConfig
 from common.FileSystemConfig import config_filesystem
 from common.Caches import *
 from common.cpu2000 import *
-from common.FUScheduler import DefaultScheduler
+from common.FUScheduler import *
 
 def get_processes(args):
     """Interprets provided args and returns a list of processes"""
@@ -124,7 +124,50 @@ Options.addSEOptions(parser)
 if '--ruby' in sys.argv:
     Ruby.define_options(parser)
 
+def setDefaultArgs(args):
+    """Set default configurations to match xiangshan.py SE mode defaults"""
+
+    # Set defaults only if not already specified by user
+    defaults = {
+        'cpu_type': 'DerivO3CPU',
+        'mem_size': '8GB',
+        'mem_type': 'DRAMsim3',
+        'caches': True,
+        'cacheline_size': 64,
+        'l1i_size': '64kB',
+        'l1i_assoc': 8,
+        'l1d_size': '64kB',
+        'l1d_assoc': 4,
+        'l1d_hwp_type': 'XSCompositePrefetcher',
+        'l2cache': True,
+        'l2_size': '1MB',
+        'l2_assoc': 8,
+        'l2_hwp_type': 'WorkerPrefetcher',
+        'l3cache': True,
+        'l3_size': '16MB',
+        'l3_assoc': 16,
+        'l3_hwp_type': 'WorkerPrefetcher',
+        'l1_to_l2_pf_hint': True,
+        'l2_to_l3_pf_hint': True,
+        'bp_type': 'DecoupledBPUWithFTB',
+        'enable_loop_predictor': True,
+        'enable_jump_ahead_predictor': True,
+        'warmup_insts_no_switch': 100000
+    }   # default warmup 100k instructions!
+
+    for key, value in defaults.items():
+        # if not hasattr(args, key) or getattr(args, key) is None:
+        setattr(args, key, value)
+
+    # Set dramsim3_ini path
+    if not hasattr(args, 'dramsim3_ini') or args.dramsim3_ini is None:
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        args.dramsim3_ini = os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
+
 args = parser.parse_args()
+
+# Set default configurations
+setDefaultArgs(args)
 
 multiprocesses = []
 numThreads = 1
@@ -243,6 +286,100 @@ for i in range(np):
 
     system.cpu[i].createThreads()
 
+def setKmhV3IdealParams(args, system):
+    # Change to BTB for v3 and recreate branch predictors
+    args.bp_type = 'DecoupledBPUWithBTB'
+
+    for cpu in system.cpu:
+        # Recreate branch predictor with BTB
+        bpClass = ObjectList.bp_list.get('DecoupledBPUWithBTB')
+        cpu.branchPred = bpClass()
+
+        cpu.mmu.itb.size = 96
+
+        cpu.fetchWidth = 32     # 64byte fetch block have up to 32 instructions
+        cpu.commitToFetchDelay = 2
+        cpu.fetchQueueSize = 64
+        cpu.fetchToDecodeDelay = 2
+
+        cpu.decodeWidth = 8
+        cpu.renameWidth = 8
+        cpu.commitWidth = 12
+        cpu.squashWidth = 12
+        cpu.replayWidth = 12
+        cpu.LQEntries = 128
+        cpu.SQEntries = 64
+        cpu.SbufferEntries = 24
+        cpu.SbufferEvictThreshold = 16
+        # RAR/RAW replay queue thresholds
+        cpu.RARQEntries = 96 # set 72 in the RTL model.
+        cpu.RAWQEntries = 56 # set 32 in the RTL model.
+        cpu.LoadCompletionWidth = 8
+        cpu.StoreCompletionWidth = 4
+        cpu.RARDequeuePerCycle = 4
+        cpu.RAWDequeuePerCycle = 4
+        cpu.numPhysIntRegs = 224
+        cpu.numPhysFloatRegs = 256
+        cpu.phyregReleaseWidth = 12
+        cpu.RobCompressPolicy = 'kmhv3'
+        cpu.numROBEntries = 160
+        cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
+        cpu.enableDispatchStage = True
+        cpu.numDQEntries = [8, 8, 8]
+        cpu.dispWidth = [8, 8, 8]
+        cpu.scheduler = KMHV3Scheduler()
+
+        cpu.BankConflictCheck = True   # real bank conflict 0.2 score
+        # cpu.EnableLdMissReplay = False
+        # cpu.EnablePipeNukeCheck = False
+        cpu.StoreWbStage = 4 # store writeback at s4
+
+        # enable constant folding
+        cpu.enableConstantFolding = False
+
+        # ideal decoupled frontend
+        if args.bp_type == 'DecoupledBPUWithFTB' or args.bp_type == 'DecoupledBPUWithBTB':
+            if args.bp_type == 'DecoupledBPUWithFTB':
+                cpu.branchPred.enableTwoTaken = False
+                cpu.branchPred.numBr = 8    # numBr must be a power of 2, see getShuffledBrIndex()
+                cpu.branchPred.predictWidth = 64
+                cpu.branchPred.uftb.numEntries = 1024
+                cpu.branchPred.ftb.numEntries = 16384
+                cpu.branchPred.tage.baseTableSize = 16384
+                cpu.branchPred.tage.tableSizes = [2048] * 8
+            else:
+                cpu.branchPred.predictWidth = 64              # max width of a fetch block
+                cpu.branchPred.btb.numEntries = 16384
+                # TODO: BTB TAGE do not bave base table, do not support SC
+                cpu.branchPred.tage.tableSizes = [2048] * 8  # 2 way, 2048 sets
+                cpu.branchPred.tage.numWays = 2
+
+            cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
+            cpu.branchPred.ftq_size = 256
+            cpu.branchPred.fsq_size = 256
+            cpu.branchPred.tage.numPredictors = 8
+            cpu.branchPred.tage.TTagBitSizes = [13] * 8
+            cpu.branchPred.tage.TTagPcShifts = [1] * 8
+            cpu.branchPred.tage.histLengths = [4, 8, 15, 28, 50, 90, 160, 300]
+
+        # ideal l1 caches
+        if args.caches:
+            cpu.icache.size = '64kB'
+            cpu.dcache.size = '64kB'
+            cpu.dcache.tag_load_read_ports = 100 # 3->100
+            cpu.dcache.mshrs = 16
+
+    if args.l2cache:
+        for i in range(args.num_cpus):
+            system.l2_caches[i].size = '2MB'
+            system.l2_caches[i].slice_num = 0   # 4 -> 0, no slice
+            system.tol2bus_list[i].forward_latency = 0  # 3->0
+            system.tol2bus_list[i].response_latency = 0  # 3->0
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
+
+    if args.l3cache:
+        system.l3.mshrs = 128
+
 if args.ruby:
     Ruby.create_system(args, False, system)
     assert(args.num_cpus == len(system.ruby._cpu_ports))
@@ -271,6 +408,10 @@ system.workload = SEWorkload.init_compatible(mp0_path)
 
 if args.wait_gdb:
     system.workload.wait_for_remote_gdb = True
+
+# Set ideal parameters here with the highest priority, over command-line arguments
+if args.ideal_kmhv3:
+    setKmhV3IdealParams(args, system)
 
 root = Root(full_system = False, system = system)
 Simulation.run(args, root, system, FutureClass)

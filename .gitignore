@@ -65,3 +65,7 @@ CLAUDE.md
 node_modules/
 package-lock.json
 package.json
+
+microbench/build/
+microbench/output/
+microbench/dramsim3*
