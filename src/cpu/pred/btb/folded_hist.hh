@@ -28,17 +28,20 @@ class FoldedHist
 {
   private:
     constexpr static int staticMaxShamtLimit = 16;
-    int histLen;    // Length of the original history
-    int foldedLen;  // Length of the folded (compressed) history
-    int maxShamt;   // Maximum shift amount for history updates
+    std::size_t histLen;    // Length of the original history
+    std::size_t foldedLen;  // Length of the folded (compressed) history
+    std::size_t maxShamt;   // Maximum shift amount for history updates
     HistoryType type;
-    uint64_t folded;  // The folded history bits
+    uint64_t _folded;  // The folded history bits
 
     // Pre-calculated positions for efficient history updates
     // Use static sized type to avoid heap alloc
     // This class is very frequently used in fetch/BP, so ensure it is a fixed-sized object
     std::array<std::size_t, staticMaxShamtLimit> posHighestBitsInGhr;  // Positions of highest bits in global history
     std::array<std::size_t, staticMaxShamtLimit> posHighestBitsInOldFoldedHist;  // Positions in old folded history
+
+    // Perform a immediate fold on given history bitvec
+    uint64_t fold(const boost::dynamic_bitset<> &historyBitVec);
 
   public:
     /**
@@ -48,7 +51,7 @@ class FoldedHist
      * @param maxShamt Maximum number of bits to shift during updates
      */
     FoldedHist(int histLen, int foldedLen, int maxShamt, HistoryType type = HistoryType::GLOBAL)
-        : histLen(histLen), foldedLen(foldedLen), maxShamt(maxShamt), type(type), folded(0)
+        : histLen(histLen), foldedLen(foldedLen), maxShamt(maxShamt), type(type), _folded(0)
     {
         assert(maxShamt <= staticMaxShamtLimit);
         assert(foldedLen + maxShamt < 64);  // Ensure folded history fits in uint64_t
@@ -58,18 +61,17 @@ class FoldedHist
         }
     }
 
-  public:
     /**
      * Get the current folded history as uint64_t
      * @return The folded history bits
      */
-    uint64_t get() const { return folded; }
+    uint64_t get() const { return _folded; }
 
     /**
      * Get the current folded history as bitset for compatibility
      * @return The folded history as boost::dynamic_bitset
      */
-    boost::dynamic_bitset<> getAsBitset() const { return boost::dynamic_bitset<>(foldedLen, folded); }
+    boost::dynamic_bitset<> getAsBitset() const { return boost::dynamic_bitset<>(foldedLen, _folded); }
 
     /**
      * Update the folded history with a new branch outcome
