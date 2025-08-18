@@ -155,6 +155,7 @@ UBTB::fillSecondPrediction(const BranchInfo &branchInfo, Addr bbStart, FullBTBPr
     prediction.predSource = 0; // uBTB is stage 0
 
     // Create BTBEntry from BranchInfo
+    // alwaysTaken initialized to true here, which is consistent with the 2-taken design
     BTBEntry entry(branchInfo);
 
     // According to 2-taken design rules, the second branch should be either:
@@ -408,6 +409,7 @@ UBTB::createSecondPredictionMetaForMBTB(const BranchInfo& branch_info_2nd)
     mbtbSecondPredMeta = std::make_shared<DefaultBTB::BTBMeta>();
 
     // Convert BranchInfo to BTBEntry for MBTB - much simpler!
+    // alwaysTaken Initialized to True, which is consistent with 2-taken design
     BTBEntry btb_entry(branch_info_2nd);
 
     // Add to hit_entries (standard BTBMeta field)
@@ -479,11 +481,23 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
         return false;
     }
 
-    // 3. Rule: 'multi-target indirect' as 1st branch is not allowed.
-    if (firstBr.isIndirect) {
-        ubtbStats.twoTakenFailFirstIndirect++;
-        return false;
-    }
+    /*
+    * this rule is created with the following argument: since ubtb
+    * can't accurately predict a multi target indirect branch,
+    * there's no use predicting a second branch following it.
+
+    * however! in the rare but not impossible cases where ubtb's first
+    * prediction has the right target, our second prediction can come in handy.
+    * When the first target is wrong, and we have a intra flush
+    * we automatically discard the second prediction, according to the 2 taken design, creating no additional penalty.
+
+    * this is why we skip this rule in this version
+    */
+    // // 3. Rule: 'multi-target indirect' as 1st branch is not allowed.
+    // if (firstBr.isIndirect) {
+    //     ubtbStats.twoTakenFailFirstIndirect++;
+    //     return false;
+    // }
 
     // 4. Handle pt_2nd = false case: second FB has no branches (sequential execution)
     if (s3Pred.btbEntries.empty()) {
@@ -510,17 +524,19 @@ UBTB::check2TakenConditions(FullBTBPrediction& dff, const FullBTBPrediction& s3P
         return true;
     }
 
+    // isReturn implies isIndirect, therefore this rule is unnecessary
     // Rule: 'ret -> ret' is not allowed to avoid multiple RAS reads.
-    if (firstBr.isReturn && secondBr.isReturn) {
-        ubtbStats.twoTakenFailRetRet++;
-        return false;
-    }
+    // if (firstBr.isReturn && secondBr.isReturn) {
+    //     ubtbStats.twoTakenFailRetRet++;
+    //     return false;
+    // }
 
+    // we skip this rule for now
     // Rule: 'call -> call' is not allowed to avoid multiple RAS writes.
-    if (firstBr.isCall && secondBr.isCall) {
-        ubtbStats.twoTakenFailCallCall++;
-        return false;
-    }
+    // if (firstBr.isCall && secondBr.isCall) {
+    //     ubtbStats.twoTakenFailCallCall++;
+    //     return false;
+    // }
 
     // All conditions passed for pt_2nd = true case.
     ubtbStats.twoTakenAcceptOther++;

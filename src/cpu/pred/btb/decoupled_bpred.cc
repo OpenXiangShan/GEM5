@@ -533,6 +533,11 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     ADD_STAT(btbMiss, statistics::units::Count::get(), "btb misses (in predict block)"),
     ADD_STAT(btbEntriesWithDifferentStart, statistics::units::Count::get(), "number of btb entries with different start PC"),
     ADD_STAT(btbEntriesWithOnlyOneJump, statistics::units::Count::get(), "number of btb entries with different start PC starting with a jump"),
+    ADD_STAT(twoTakenHit, statistics::units::Count::get(), "2-taken prediction hits"),
+    ADD_STAT(twoTakenMiss, statistics::units::Count::get(), "2-taken prediction misses"),
+    ADD_STAT(twoTakenDiscardedByOverride, statistics::units::Count::get(), "2-taken predictions discarded due to override"),
+    ADD_STAT(twoTakenRemainsAfterOverride, statistics::units::Count::get(), "2-taken predictions remaining after override"),
+    ADD_STAT(totalPredCount, statistics::units::Count::get(), "total number of predictions made"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
     ADD_STAT(predTwoTakenRatio, statistics::units::Rate<
@@ -540,19 +545,28 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
                "Ratio of 2-taken BPU cycles to total BPU cycles"),
     ADD_STAT(commitSecondPredRatio, statistics::units::Rate<
                     statistics::units::Count, statistics::units::Count>::get(),
-               "Ratio of committed second predictions(in a 2 taken pair) to total FSQ entries")
+               "Ratio of committed second predictions(in a 2 taken pair) to total FSQ entries"),
+    ADD_STAT(twoTakenHitRatio, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Count>::get(),
+               "Ratio of 2-taken hits to total predictions"),
+    ADD_STAT(twoTakenRemainsRatio, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Count>::get(),
+               "Ratio of 2-taken predictions remaining after override to total predictions")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
-    commitOverrideBubbleNum = commitPredsFromEachStage[1] + 2 * commitPredsFromEachStage[2] ;
+    // TODO: count the third stage
+    commitOverrideBubbleNum = commitPredsFromEachStage[1] + 2 * commitPredsFromEachStage[2];
     commitOverrideCount = commitPredsFromEachStage[1] + commitPredsFromEachStage[2];
     fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
 
     // Initialize formula statistics
-    predTwoTakenRatio = predProduce2Taken / (predProduce2Taken + predProduce1Taken);
+    predTwoTakenRatio = predProduce2Taken / totalPredCount;
     commitSecondPredRatio = secondPredCommitted / fsqEntryCommitted;
+    twoTakenHitRatio = twoTakenHit / totalPredCount;
+    twoTakenRemainsRatio = twoTakenRemainsAfterOverride / totalPredCount;
 }
 
 DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchStream &stream, const DynInstPtr &inst, bool mispred)
@@ -589,6 +603,8 @@ DecoupledBPUWithBTB::tick()
     // 1. Request prediction, finalize it, and get ready to enqueue.
     // This all happens if we're idle and not blocked.
     if (bpuState == BpuState::IDLE && !streamQueueFull()) {
+        dbpBtbStats.totalPredCount++;
+
         requestNewPrediction();
 
         // The training logic runs here, based on the previous cycle's DFF state.
@@ -609,6 +625,10 @@ DecoupledBPUWithBTB::tick()
 
         // Check if the second prediction is still valid after overrides.
         validateSecondFBPrediction();
+
+        if (hasSecondPrediction) {
+            assert(finalPred.getTarget(predictWidth) == secondPrediction.bbStart);
+        }
 
         // If we still have a valid second FB, pad ABTB ahead-pipeline now.
         if (hasSecondPrediction && abtb && abtb->aheadPipelinedStages > 0) {
@@ -689,9 +709,11 @@ DecoupledBPUWithBTB::requestNewPrediction()
     // Reset prediction flags
     hasSecondPrediction = false;
     ubtbHitIndex = -1;
-    secondPrediction.btbEntries.clear();
     secondPrediction.predSource = 0;
     secondPrediction.overrideReason = OverrideReason::NO_OVERRIDE;
+    secondPrediction.condTakens.clear();
+    secondPrediction.indirectTargets.clear();
+    secondPrediction.btbEntries.clear();
 
     // Query each predictor component with current PC and history
     for (int i = 0; i < numComponents; i++) {
@@ -711,8 +733,10 @@ DecoupledBPUWithBTB::requestNewPrediction()
                            "Second prediction available but no first prediction found");
 
                     hasSecondPrediction = true;
+                    dbpBtbStats.twoTakenHit++;
                 } else {
                     hasSecondPrediction = false;
+                    dbpBtbStats.twoTakenMiss++;
                 }
             } else {
                 // Regular 1-taken prediction for uBTB
@@ -2229,12 +2253,16 @@ void DecoupledBPUWithBTB::validateSecondFBPrediction()
     // The second prediction is only valid if the first prediction from uBTB1
     // was not overridden by a later-stage predictor.
     // We check if the final prediction's source is stage 0.
+    // note that hasSecondPrediction implys that ubtb hit, which means
+    // predSource == 0 <==> predSource is ubtb
     if (finalPred.predSource != 0) {
         DPRINTF(DecoupleBP, "uBTB1 prediction was overridden (finalPred source is stage %d), "
                 "invalidating second FB prediction.\n", finalPred.predSource);
         hasSecondPrediction = false;
-        // We're clearing secondPrediction just to be tidy.
-        secondPrediction.btbEntries.clear();
+        dbpBtbStats.twoTakenDiscardedByOverride++;
+    } else {
+        // Second prediction remains valid after override check
+        dbpBtbStats.twoTakenRemainsAfterOverride++;
     }
 }
 

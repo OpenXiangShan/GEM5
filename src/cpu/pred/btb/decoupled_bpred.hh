@@ -397,12 +397,21 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar btbEntriesWithDifferentStart;
         statistics::Scalar btbEntriesWithOnlyOneJump;
 
+        // 2-taken prediction accuracy statistics
+        statistics::Scalar twoTakenHit;     ///< 2-taken prediction hits
+        statistics::Scalar twoTakenMiss;    ///< 2-taken prediction misses
+        statistics::Scalar twoTakenDiscardedByOverride;  ///< 2-taken predictions discarded due to override
+        statistics::Scalar twoTakenRemainsAfterOverride; ///< 2-taken predictions remaining after override
+
+        statistics::Scalar totalPredCount;              ///< Total number of predictions made
         statistics::Scalar predFalseHit;
         statistics::Scalar commitFalseHit;
 
         // Formula statistics for performance ratios
         statistics::Formula predTwoTakenRatio;        ///< Ratio of 2-taken predictions to total predictions
         statistics::Formula commitSecondPredRatio;      ///< Ratio of committed second predictions to total FSQ entries
+        statistics::Formula twoTakenHitRatio;         ///< Ratio of 2-taken hits to total predictions
+        statistics::Formula twoTakenRemainsRatio;     ///< Ratio of 2-taken predictions remaining after override
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;
