@@ -588,7 +588,7 @@ DecoupledBPUWithBTB::tick()
     }
 
     // Single iteration prediction logic (was inside while loop)
-    if (bpuState == BpuState::IDLE && fetchStreamQueue.size() < fetchStreamQueueSize - 1 && numOverrideBubbles == 0) {
+    if (bpuState == BpuState::IDLE && fetchStreamQueue.size() < fetchStreamQueueSize - 1) {
         requestNewPrediction();
         bpuState = BpuState::PREDICTOR_DONE;
     }
@@ -2100,7 +2100,6 @@ DecoupledBPUWithBTB::produce2ndPrediction()
 
     // Check the 3 conditions for 2-taken eligibility
     bool firstPredisFromUBTB = finalPred.predSource == 0 && finalPred.fromUBTB;
-    bool firstPredUBTBHit = finalPred.fromUBTB;
     bool satisfiesFirstCondition = satisfiesFirstPred2TakenCondition(finalPred);
 
 
@@ -2111,14 +2110,12 @@ DecoupledBPUWithBTB::produce2ndPrediction()
     requestNewPrediction();
     generateFinalPredAndCreateBubbles(); // Don't store override bubbles
 
-    bool secondPredUBTBHit = finalPred.fromUBTB;
     bool secondPredisFromUBTB = finalPred.predSource == 0 && finalPred.fromUBTB;
 
 
     // 2. Validate second prediction before enqueueing
-    if (!firstPredUBTBHit ||
+    if (
         !satisfiesFirstCondition ||
-        !secondPredUBTBHit ||
         !satisfiesSecondPred2TakenCondition(finalPred)
     ) {
         // Second prediction doesn't meet basic 2-taken conditions, restore abtb state and return
@@ -2138,19 +2135,16 @@ DecoupledBPUWithBTB::produce2ndPrediction()
     dbpBtbStats.twoTakenRemainsAfterOverride++;
 
     if (finalPred.predSource == 0 && finalPred.fromUBTB) {
-        DPRINTF(Override, "Second prediction validation passed, enqueueing\n");
-        dbpBtbStats.secondPredValidationPassed++;
-        dbpBtbStats.predProduce2Taken++;
-        tryEnqFetchTarget();
-        makeNewPrediction(true);
-    } else {
-        DPRINTF(Override, "Second prediction failed uBTB source check, adding penalty\n");
+        DPRINTF(Override, "Second prediction found in ubtb\n");
 
-        dbpBtbStats.secondPredValidationFailed++;
-        abtb->aheadReadBtbEntries = savedAheadReadBtbEntries;
-        handleSecondPredictionFailure();
+
+    } else {
+        DPRINTF(Override, "Second prediction not found in ubtb, still enqueue\n");
     }
-    // either way, we needs to update the ubtb with S3 pred
+    // either way, we needs to enqueue 2nd pred, and update the ubtb with S3 pred
+    dbpBtbStats.predProduce2Taken++;
+    tryEnqFetchTarget();
+    makeNewPrediction(true);
 
     if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
         ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
@@ -2171,16 +2165,6 @@ DecoupledBPUWithBTB::satisfiesFirstPred2TakenCondition(FullBTBPrediction& pred)
         return false;
     }
 
-    // Multi-target indirect as 1st branch is not allowed
-    // we disallow this because in our simplified model, this might give us an edge over
-    // the realistic model: we predicted FB A and use it as 1st pred, Then predict FB B using
-    // B as the S0PC. This is not achievable in the realistic model, in our realistic model, we need to
-    // make both predictions using the startAddr of A.
-    auto firstBr = pred.getTakenEntry();
-    if (firstBr.isIndirect) {
-        return false;
-    }
-
     return true;
 }
 
@@ -2192,26 +2176,22 @@ DecoupledBPUWithBTB::satisfiesSecondPred2TakenCondition(FullBTBPrediction& pred)
         return true;  // pt_2nd = false case (sequential execution)
     }
 
-    // If not empty, check second prediction specific rules
-    auto takenEntry = pred.getTakenEntry();
-    if (!takenEntry.valid) {
-        return false;  // No taken branch in second prediction
+    auto& secondBr = pred.btbEntries[0];
+
+    if (secondBr.isIndirect) {
+        return false;
     }
 
-    // No indirect branches as second branch
-    if (takenEntry.isIndirect) {
+    // Rule: 'cond' as 2nd branch is not allowed, except for alwaysTaken conditional branches.
+    if (secondBr.isCond && !secondBr.alwaysTaken) {
         return false;
+    } else if (secondBr.isCond && secondBr.alwaysTaken) {
+        return true;
     }
 
     return true;
 }
 
-void
-DecoupledBPUWithBTB::handleSecondPredictionFailure()
-{
-    numOverrideBubbles = 3;  // Penalty for failed 2-taken attempt
-    DPRINTF(Override, "Second prediction validation failed, adding 2 override bubbles\n");
-}
 
 
 }  // namespace btb_pred
