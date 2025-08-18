@@ -424,7 +424,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     // This prefetcher is a degree 1 prefetch, so it will only generate one
     // prefetch at most per access
     if (issuePrefetchRequests) {
-        Addr prefetch_addr = addr + (bestOffset << lBlkSize);
+        Addr prefetch_addr = addr + (bestOffset * (1ULL << lBlkSize));
         stats.issuedOffsetDist.sample(bestOffset);
         sendPFWithFilter(pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
         DPRINTF(BOPPrefetcher,

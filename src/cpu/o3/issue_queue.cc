@@ -535,7 +535,8 @@ IssueQue::selectInst()
                 continue;
             }
 
-            if (!(portBusy[pi] & (1llu << scheduler->getCorrectedOpLat(inst)))) {
+            if (!(portBusy[pi] &
+                  (scheduler->getCorrectedOpLat(inst) > 63 ? 0 : 1llu << scheduler->getCorrectedOpLat(inst)))) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
 
                 // get regfile write port
