@@ -341,13 +341,13 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar condNum;      ///< Number of conditional branches
         statistics::Scalar uncondNum;    ///< Number of unconditional branches
         statistics::Scalar returnNum;    ///< Number of return instructions
-        statistics::Scalar otherNum;     ///< Number of other control instructions
+        statistics::Scalar indirectNum;     ///< Number of other control instructions
 
         // Misprediction statistics
         statistics::Scalar condMiss;     ///< Conditional branch mispredictions
         statistics::Scalar uncondMiss;   ///< Unconditional branch mispredictions
         statistics::Scalar returnMiss;   ///< Return mispredictions
-        statistics::Scalar otherMiss;    ///< Other control mispredictions
+        statistics::Scalar IndirectMiss;    ///< Other control mispredictions
 
         // Branch coverage statistics
         statistics::Scalar staticBranchNum;           ///< Total static branches seen
@@ -880,7 +880,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         COND,     ///< Conditional branch
         UNCOND,   ///< Unconditional branch
         RETURN,   ///< Return instruction
-        OTHER     ///< Other control flow instruction
+        INDIRECT  ///< Other control flow instruction
     };
 
     void addCfi(CfiType type, bool mispred) {
@@ -900,10 +900,10 @@ class DecoupledBPUWithBTB : public BPredUnit
                 if (mispred)
                     dbpBtbStats.returnMiss++;
                 break;
-            case OTHER:
-                dbpBtbStats.otherNum++;
+            case INDIRECT:
+                dbpBtbStats.indirectNum++;
                 if (mispred)
-                    dbpBtbStats.otherMiss++;
+                    dbpBtbStats.IndirectMiss++;
                 break;
         }
         DPRINTF(DBPBTBStats, "Miss type: %d\n", type);

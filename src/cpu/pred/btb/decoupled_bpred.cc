@@ -484,11 +484,11 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     ADD_STAT(condNum, statistics::units::Count::get(), "the number of cond branches"),
     ADD_STAT(uncondNum, statistics::units::Count::get(), "the number of uncond branches"),
     ADD_STAT(returnNum, statistics::units::Count::get(), "the number of return branches"),
-    ADD_STAT(otherNum, statistics::units::Count::get(), "the number of other branches"),
+    ADD_STAT(indirectNum, statistics::units::Count::get(), "the number of indirect branches(including return)"),
     ADD_STAT(condMiss, statistics::units::Count::get(), "the number of cond branch misses"),
     ADD_STAT(uncondMiss, statistics::units::Count::get(), "the number of uncond branch misses"),
     ADD_STAT(returnMiss, statistics::units::Count::get(), "the number of return branch misses"),
-    ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses"),
+    ADD_STAT(IndirectMiss, statistics::units::Count::get(), "the number of indirect branch misses(including return miss)"),
     ADD_STAT(staticBranchNum, statistics::units::Count::get(), "the number of all (different) static branches"),
     ADD_STAT(staticBranchNumEverTaken, statistics::units::Count::get(), "the number of all (different) static branches that are once taken"),
     ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
@@ -1447,8 +1447,9 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     }
     if (inst->isReturn()) {
         addCfi(RETURN, mispred);
-    } else if (inst->isIndirectCtrl()) {
-        addCfi(OTHER, mispred);
+    }
+    if (inst->isIndirectCtrl()) {
+        addCfi(INDIRECT, mispred);
     }
 
     // ---------- Find corresponding fetch stream entry ----------
