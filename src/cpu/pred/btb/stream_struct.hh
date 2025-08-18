@@ -67,7 +67,7 @@ enum class HistoryType
 
 /**
  * @brief Branch information structure containing branch properties and targets
- * 
+ *
  * Stores essential information about a branch instruction including:
  * - PC and target address
  * - Branch type (conditional, indirect, call, return)
@@ -152,7 +152,7 @@ struct BranchInfo
 
 /**
  * @brief Branch Target Buffer entry extending BranchInfo with prediction metadata
- * 
+ *
  * Contains branch information plus prediction state:
  * - Valid bit
  * - Always taken bit
@@ -262,7 +262,7 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 
 /**
  * @brief Fetch Stream representing a sequence of instructions with prediction info
- * 
+ *
  * Key structure for decoupled frontend that contains:
  * - Stream boundaries (start PC, end PC)
  * - Prediction information (branch info, targets)
@@ -395,7 +395,7 @@ struct FetchStream
         }
         return std::make_pair(shamt, cond_taken);
     }
-    
+
     // should be called before components update
     void setUpdateInstEndPC(unsigned predictWidth)
     {
@@ -425,7 +425,7 @@ struct FetchStream
 };
 /**
  * @brief Full branch prediction combining predictions from all predictors
- * 
+ *
  * Aggregates predictions from:
  * - BTB entries for targets
  * - Direction predictors for conditional branches
@@ -560,9 +560,6 @@ struct FullBTBPrediction
         }
     }
 
-    std::vector<boost::dynamic_bitset<>> indexFoldedHist;
-    std::vector<boost::dynamic_bitset<>> tagFoldedHist;
-
     std::pair<int, bool> getHistInfo()  //global or local
     {
         int shamt = 0; // shamt is the number of bits to shift in history update
@@ -644,7 +641,7 @@ struct FullBTBPrediction
 
 /**
  * @brief Fetch Target Queue entry representing a fetch block
- * 
+ *
  * Contains information needed for instruction fetch:
  * - Address range (start PC, end PC)
  * - Branch information (taken PC, target)
