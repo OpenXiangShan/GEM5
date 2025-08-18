@@ -26,7 +26,7 @@ BaseWpu::BaseWpu(const BaseWpuParams &params)
     set_shift = blk_offset;
     set_mask = set_num - 1;
     tag_shift = blk_offset + floorLog2(set_num);
-    tag_mask = (1 << (addr_bits - tag_shift)) - 1;
+    tag_mask = (1ULL << (addr_bits - tag_shift)) - 1;
 }
 
 Addr
