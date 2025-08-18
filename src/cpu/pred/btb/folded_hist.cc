@@ -57,6 +57,7 @@ FoldedHist::fold(const boost::dynamic_bitset<> &ghr)
 void
 FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Addr pc)
 {
+    assert(shamt >= 0);
     // Create mask for folded length
     const uint64_t foldedMask = ((1ULL << foldedLen) - 1);
 
