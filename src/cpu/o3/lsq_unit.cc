@@ -1489,11 +1489,6 @@ LSQUnit::executeLoadPipeSx()
                 }
             }
 
-            // Clear forward packets when replayed
-            if (inst->needReplay()) {
-                inst->clearForwardPackets();
-            }
-
             // If inst was replyed, must clear inst in pipeline
             if (inst->needSTLFReplay() || inst->needCacheBlockedReplay() || inst->needRescheduleReplay()) {
                 DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
@@ -3061,6 +3056,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         DPRINTF(LoadPipeline, "Load [sn:%llu] local access, setSkipFollowingPipe",
                 load_inst->seqNum);
         return NoFault;
+    }
+
+    if (request) {
+        request->SQforwardPackets.clear();
     }
 
     // Check the SQ for any previous stores that might lead to forwarding

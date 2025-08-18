@@ -122,11 +122,11 @@ class StoreBufferEntry
 
 class StoreBuffer
 {
-    using mapIter = typename std::unordered_map<int, StoreBufferEntry*>::iterator;
+    using mapIter = typename std::unordered_map<uint64_t, StoreBufferEntry*>::iterator;
 
     // key = (paddr & cacheblockmask)
     uint64_t _size;
-    std::unordered_map<int, StoreBufferEntry*> data_map;
+    std::unordered_map<uint64_t, StoreBufferEntry*> data_map;
     std::vector<mapIter> crossRef;
     boost::circular_buffer<int> lru_index;
     boost::circular_buffer<int> free_list;
