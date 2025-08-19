@@ -3,8 +3,6 @@ name: gem5 Simple RVV Performance Test (Ideal BTB)
 on:
   push:
     branches: [ xs-dev ]
-  pull_request:
-    branches: [ xs-dev ]
 
 jobs:
   perf_test:
