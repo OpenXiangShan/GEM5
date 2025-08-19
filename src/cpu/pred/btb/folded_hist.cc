@@ -119,20 +119,16 @@ FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Ad
         }
         _folded = temp & foldedMask;
     } else if (type == HistoryType::PATH) {
-        assert(shamt == 2);
         if (taken) {
             // Calculate path hash
-            const uint64_t hash_length = 15;
-            uint64_t path_hash = ((((pc >> 1) & ((1ULL << 9) - 1)) << 4) ^ ((target >> 2) & ((1ULL << 15) - 1)));
-            path_hash &= ((1ULL << hash_length) - 1);
-
+            uint64_t hash = pathHash(pc, target);
 
             uint64_t temp = _folded;
             // Case 1: When folded length >= history length
             if (foldedLen >= histLen) {
                 // Simple shift and set case
                 temp <<= shamt;
-                temp ^= path_hash;
+                temp ^= hash;
                 // Clear any bits beyond histLen
                 temp &= ((1ULL << histLen) - 1);
             }
@@ -156,14 +152,7 @@ FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Ad
                 }
 
                 // Step 4: Add new branch outcome
-                int bits_left = hash_length;
-                uint64_t folded_hash = 0;
-                while (bits_left > 0) {
-                    folded_hash ^= path_hash;
-                    path_hash >>= foldedLen;
-                    bits_left -= foldedLen;
-                }
-                temp ^= folded_hash;
+                temp ^= foldHash(hash, foldedLen);
 
                 // Mask to folded length
                 temp &= foldedMask;

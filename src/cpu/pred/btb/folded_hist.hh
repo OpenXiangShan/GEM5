@@ -2,6 +2,7 @@
 #define __CPU_PRED_BTB_FOLDED_HIST_HH__
 
 #include <array>
+#include <cstdint>
 
 #include <boost/dynamic_bitset.hpp>
 
@@ -17,6 +18,30 @@ namespace branch_prediction
 
 namespace btb_pred
 {
+
+// PHR hash related
+constexpr static uint64_t pathHashLength = 15;
+
+inline uint64_t
+pathHash(const Addr branchPC, const Addr targetPC)
+{
+    uint64_t hash = ((((branchPC >> 1) & ((1ULL << 9) - 1)) << 4) ^ ((targetPC >> 2) & ((1ULL << 15) - 1)));
+    hash &= ((1ULL << pathHashLength) - 1);
+    return hash;
+}
+
+inline uint64_t
+foldHash(uint64_t hash, const std::size_t foldedLen)
+{
+    int bitsLeft = pathHashLength;
+    uint64_t foldedHash = 0;
+    while (bitsLeft > 0) {
+        foldedHash ^= hash;
+        hash >>= foldedLen;
+        bitsLeft -= foldedLen;
+    }
+    return foldedHash;
+}
 
 /**
  * FoldedHist implements a folded history mechanism for branch prediction.

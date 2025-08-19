@@ -1,15 +1,16 @@
 #include "cpu/pred/btb/decoupled_bpred.hh"
 
-#include "base/output.hh"
 #include "base/debug_helper.hh"
+#include "base/output.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
-#include "debug/DecoupleBPVerbose.hh"
-#include "debug/DecoupleBPHist.hh"
-#include "debug/Override.hh"
+#include "cpu/pred/btb/folded_hist.hh"
 #include "debug/BTB.hh"
+#include "debug/DecoupleBPHist.hh"
+#include "debug/DecoupleBPVerbose.hh"
 #include "debug/ITTAGE.hh"
 #include "debug/JumpAheadPredictor.hh"
+#include "debug/Override.hh"
 #include "debug/Profiling.hh"
 #include "sim/core.hh"
 
@@ -1736,15 +1737,12 @@ DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<>
     }
     if(taken){
         // Calculate path hash
-        const uint64_t hash_length = 15;
-        uint64_t path_hash = ((((pc >> 1) & ((1ULL << 9) - 1)) << 4) ^ ((target >> 2) & ((1ULL << 15) - 1)));
-        path_hash &= ((1ULL << hash_length) - 1);
+        uint64_t hash = pathHash(pc, target);
 
         history <<= shamt;
-        assert(shamt == 2);
-        for (auto i = 0; i < hash_length && i < history.size(); i++) {
-            history[i] = (path_hash & 1) ^ history[i];
-            path_hash >>= 1;
+        for (auto i = 0; i < pathHashLength && i < history.size(); i++) {
+            history[i] = (hash & 1) ^ history[i];
+            hash >>= 1;
         }
     }
 }
