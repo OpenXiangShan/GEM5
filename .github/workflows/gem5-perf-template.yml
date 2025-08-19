@@ -123,9 +123,9 @@ jobs:
             spec_all
       - name: Setup gem5_data_proc environment
         run: |
-          # 克隆数据处理仓库到 CI 工作目录
+          # 使用本地数据处理仓库，避免GitHub网络问题
           cd $GITHUB_WORKSPACE
-          git clone https://github.com/shinezyy/gem5_data_proc
+          cp -r /nfs/home/share/gem5_ci/gem5_data_proc .
       - name: Check performance test result
         run: |
           # 添加yanyue的 Python 包路径, 包含pandas等
@@ -210,9 +210,3 @@ jobs:
           
           echo "Performance data archived successfully"
           echo "Archive size: $(du -sh "$TARGET_DIR/spec_all.tar.gz" | cut -f1)"
-      - name: Upload score
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.config.outputs.artifact_name }}
-          path: ${{ github.workspace }}/score.txt 
