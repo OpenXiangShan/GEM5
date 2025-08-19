@@ -27,22 +27,20 @@
  */
 
 /*
- * Branch Target Buffer (BTB) Implementation
+ * Base BTB Implementation
  * 
- * The BTB is a cache-like structure that stores information about branches:
- * - Branch type (conditional, unconditional, indirect, call, return)
- * - Branch target address
- * - Branch prediction information (counter for conditional branches)
+ * This is the base class for all BTB implementations that provides common
+ * functionality including:
+ * - Basic BTB storage structure (sets and ways)
+ * - MRU replacement policy
+ * - Common helper functions
+ * - Shared statistics
  * 
- * Key Features:
- * - N-way set associative organization
- * - MRU (Most Recently Used) replacement policy
- * - Support for multiple branch types
- * - Support for multiple prediction stages (L0/L1 BTB)
+ * Derived classes (MBTB, ABTB) implement specific lookup and addressing logic.
  */
 
-#ifndef __CPU_PRED_BTB_BTB_HH__
-#define __CPU_PRED_BTB_BTB_HH__
+#ifndef __CPU_PRED_BTB_BASE_BTB_HH__
+#define __CPU_PRED_BTB_BASE_BTB_HH__
 
 #include <queue>
 
@@ -61,7 +59,6 @@
     #include "config/the_isa.hh"
     #include "debug/BTB.hh"
     #include "debug/BTBStats.hh"
-    #include "params/DefaultBTB.hh"
     #include "cpu/pred/btb/timed_base_pred.hh"
 #endif
 
@@ -79,22 +76,9 @@ namespace btb_pred
 namespace test {
 #endif
 
-class DefaultBTB : public TimedBaseBTBPredictor
+class BaseBTB : public TimedBaseBTBPredictor
 {
-  private:
-
   public:
-
-#ifdef UNIT_TEST
-    // Test constructor
-    DefaultBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay,
-               bool entryHalfAligned = false);
-#else
-    // Production constructor
-    typedef DefaultBTBParams Params;
-
-    DefaultBTB(const Params& p);
-#endif
 
     /*
      * BTB Entry with timestamp for MRU replacement
@@ -136,18 +120,13 @@ class DefaultBTB : public TimedBaseBTBPredictor
 #endif
 
     /*
-     * Main prediction function
+     * Main prediction function - virtual for derived classes to override
      * @param startAddr: start address of the fetch block
      * @param history: branch history register
      * @param stagePreds: predictions for each pipeline stage
-     * 
-     * This function:
-     * 1. Looks up BTB entries for the fetch block
-     * 2. Updates prediction statistics
-     * 3. Fills predictions for each pipeline stage
      */
-    void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds) override;
+    virtual void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
+                             std::vector<FullBTBPrediction> &stagePreds) override = 0;
 
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
@@ -160,33 +139,14 @@ class DefaultBTB : public TimedBaseBTBPredictor
     void recoverHist(const boost::dynamic_bitset<> &history,
         const FetchStream &entry, int shamt, bool cond_taken) override;
 
-#ifndef UNIT_TEST
-    /** Creates a BTB with the given number of entries, number of bits per
-     *  tag, and instruction offset amount.
-     *  @param numEntries Number of entries for the BTB.
-     *  @param tagBits Number of bits for each tag in the BTB.
-     *  @param instShiftAmt Offset amount for instructions to ignore alignment.
-     */
-    DefaultBTB(unsigned numEntries, unsigned tagBits,
-               unsigned instShiftAmt, unsigned numThreads);
-#endif
+    /** Updates the BTB with the branch info of a block and execution result. */
+    void update(const FetchStream &stream) override;
 
     /**
      * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
      *        only in L1BTB will this function be called before update
-     * 
-     * @param stream 
      */
     void getAndSetNewBTBEntry(FetchStream &stream);
-
-    /** Updates the BTB with the branch info of a block and execution result.
-     *  This function:
-     *  1. Updates existing entries with new information
-     *  2. Adds new entries if necessary
-     *  3. Updates MRU information
-     */
-    void update(const FetchStream &stream) override;
-
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
@@ -219,41 +179,35 @@ class DefaultBTB : public TimedBaseBTBPredictor
         }
     }
 
+  protected:
+    // Protected constructor for derived classes
+#ifdef UNIT_TEST
+    BaseBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay);
+#else
+    BaseBTB(const Params &p);
+#endif
 
+    /** Initialize BTB structure after parameters are set by derived class */
+    void initializeBTB();
 
-  private:
     /** Returns the index into the BTB, based on the branch's PC.
-     *  The index is calculated as: (pc >> idxShiftAmt) & idxMask
-     *  where idxShiftAmt is:
-     *  - log2(blockSize) if aligned to blockSize
-     *  - 1 if not aligned to blockSize
-     *  @param inst_PC The branch to look up.
-     *  @return Returns the index into the BTB.
+     *  Virtual to allow derived classes to customize indexing
      */
-    inline Addr getIndex(Addr instPC) {
+    virtual inline Addr getIndex(Addr instPC) {
         return (instPC >> idxShiftAmt) & idxMask;
     }
 
     /** Returns the tag bits of a given address.
-     *  The tag is calculated as: (pc >> tagShiftAmt) & tagMask
-     *  where tagShiftAmt = idxShiftAmt + log2(numSets)
-     *  @param inst_PC The branch's address.
-     *  @return Returns the tag bits.
+     *  Virtual to allow derived classes to customize tagging
      */
-    inline Addr getTag(Addr instPC) {
+    virtual inline Addr getTag(Addr instPC) {
         return (instPC >> tagShiftAmt) & tagMask;
     }
 
-    /** Helper function to check if this is L0 BTB
-     *  L0 BTB has zero delay (getDelay() == 0)
-     */
+    /** Helper function to check if this is L0 BTB */
     bool isL0() { return getDelay() == 0; }
 
-    /** Update the 2-bit saturating counter for conditional branches
-     *  Counter range: [-2, 1]
-     *  - Increment on taken (max 1)
-     *  - Decrement on not taken (min -2)
-     */
+    /** Update the 2-bit saturating counter for conditional branches */
     void updateCtr(int &ctr, bool taken) {
         if (taken && ctr < 1) {ctr++;}
         if (!taken && ctr > -2) {ctr--;}
@@ -271,62 +225,33 @@ class DefaultBTB : public TimedBaseBTBPredictor
 
     std::shared_ptr<BTBMeta> meta; // metadata for BTB, set in putPCHistory, used in update
 
-    /** Process BTB entries for prediction
-     *  @param entries Vector of BTB entries to process
-     *  @param startAddr Start address of the fetch block
-     *  @return Vector of processed entries in program order
-     */
+    /** Process BTB entries for prediction */
     std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries, 
                                               Addr startAddr);
 
-    /** Fill predictions for pipeline stages
-     *  @param entries Processed BTB entries
-     *  @param stagePreds Vector of predictions for each stage
-     */
-    void fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
+    /** Fill predictions for pipeline stages - virtual for derived classes to customize */
+    virtual void fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
+                                     std::vector<FullBTBPrediction>& stagePreds);
+
+    /** Update prediction metadata */
+    void updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
                              std::vector<FullBTBPrediction>& stagePreds);
 
-    /** Update prediction metadata
-     *  @param entries Processed BTB entries
-     */
-    void updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
-                               std::vector<FullBTBPrediction>& stagePreds);
-
-    /** Process prediction metadata and old entries
-     *  @param stream Fetch stream containing prediction info
-     *  @return Processed old BTB entries
-     */
+    /** Process prediction metadata and old entries */
     std::vector<BTBEntry> processOldEntries(const FetchStream &stream);
 
-    /** Get the previous PC from the fetch stream
-     *  @param stream Fetch stream containing prediction info
-     *  @return Previous PC
-     */
-    Addr getPreviousPC(const FetchStream &stream);
+    /** Check branch prediction hit status */
+    void checkPredictionHit(const FetchStream &stream, const BTBMeta* meta);
 
-    /** Check branch prediction hit status
-     *  @param stream Fetch stream containing execution results
-     *  @param meta BTB metadata from prediction
-     */
-    void checkPredictionHit(const FetchStream &stream,
-                           const BTBMeta* meta);
+    /** Collect entries that need to be updated */
+    std::vector<BTBEntry> collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
+                                               const FetchStream &stream);
 
-    /** Collect entries that need to be updated
-     *  @param old_entries Processed old entries
-     *  @param stream Fetch stream with update info
-     *  @return Vector of entries to update
-     */
-    std::vector<BTBEntry> collectEntriesToUpdate(
-        const std::vector<BTBEntry>& old_entries,
-        const FetchStream &stream);
-
-    /** Update or replace BTB entry
-     *  @param btb_idx Index of the BTB entry
-     *  @param btb_tag Tag of the BTB entry
-     *  @param entry Entry to update/replace
-     *  @param stream Fetch stream with update info
-     */
+    /** Update or replace BTB entry */
     void updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, const FetchStream &stream);
+
+    /** Virtual lookup function for derived classes to implement specific logic */
+    virtual std::vector<TickedBTBEntry> lookup(Addr block_pc) = 0;
 
     /*
      * Comparator for MRU heap
@@ -341,11 +266,7 @@ class DefaultBTB : public TimedBaseBTBPredictor
         }
     };
 
-    /**
-     * @brief check if the entries in the vector are in ascending order, means the pc is in ascending order
-     * 
-     * @param es 
-     */
+    /** Check if entries are in ascending PC order */
     void checkAscending(std::vector<BTBEntry> &es) {
         Addr last = 0;
         bool misorder = false;
@@ -361,33 +282,11 @@ class DefaultBTB : public TimedBaseBTBPredictor
         }
     }
 
-    /** Looks up an address for all possible entries in the BTB. Address are aligned in this function
-     *  @param inst_PC The address of the block to look up.
-     *  @return Returns all hit BTB entries.
-     */
-    std::vector<TickedBTBEntry> lookup(Addr block_pc);
-
-    /** Helper function to lookup entries in a single block
-     * @param block_pc The aligned PC to lookup
-     * @return Vector of matching BTB entries
-     */
-    std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc);
-
-    /** The BTB structure:
-     *  - Organized as numSets sets
-     *  - Each set has numWays ways
-     *  - Total size = numSets * numWays = numEntries
-     */
+    /** The BTB structure */
     std::vector<BTBSet> btb;
 
-    /** MRU tracking:
-     *  - One heap per set
-     *  - Each heap tracks the MRU order of entries in that set
-     *  - Oldest entry is at the top of heap
-     */
+    /** MRU tracking for each set */
     std::vector<BTBHeap> mruList;
-
-    std::queue<std::tuple<Addr, Addr, BTBSet>> aheadReadBtbEntries;
 
     /** BTB configuration parameters */
     unsigned numEntries;    // Total number of entries
@@ -397,12 +296,6 @@ class DefaultBTB : public TimedBaseBTBPredictor
 #ifdef UNIT_TEST
     uint64_t blockSize{32};  // max size in byte of a Fetch Block
 #endif
-    // Whether the entries are half-aligned, in other words, whether it is mBTB. Note that the global
-    // variable halfAligned in stream_common.hh is used to define the alignment of the fallthrough address
-    // of the a fetch block, and it is orthogonal to whether the entries are stored in 32B aligned blocks
-    bool entryHalfAligned;
-
-
 
     /** Address calculation masks and shifts */
     Addr idxMask;          // Mask for extracting index bits
@@ -415,7 +308,7 @@ class DefaultBTB : public TimedBaseBTBPredictor
     unsigned numBr;  // Number of branches seen
 
     enum Mode {
-        READ, WRITE, EVICT
+        read, WRITE, EVICT
     };
 
 #ifdef UNIT_TEST
@@ -449,10 +342,6 @@ class DefaultBTB : public TimedBaseBTBPredictor
 
         Scalar predUseL0OnL1Miss;
         Scalar updateUseL0OnL1Miss;
-
-        Scalar S0Predmiss;
-        Scalar S0PredUseUBTB;
-        Scalar S0PredUseABTB;
 
         // per branch statistics
         Scalar allBranchHits;
@@ -506,4 +395,4 @@ class DefaultBTB : public TimedBaseBTBPredictor
 } // namespace branch_prediction
 } // namespace gem5
 
-#endif // __CPU_PRED_BTB_BTB_HH__
+#endif // __CPU_PRED_BTB_BASE_BTB_HH__
