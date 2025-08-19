@@ -3,15 +3,17 @@ Import('*')
 # Add the test source files
 GTest('uras.test', 'uras_test.cc')
 
-# Add BTB test with minimal dependencies
-GTest('btb.test', 
-    '../btb.cc',
+# Add MBTB test with minimal dependencies
+GTest('mbtb.test',
+    '../base_btb.cc',
+    '../mbtb.cc',
     'btb.test.cc',
     'timed_base_pred.cc',
 )
 
 GTest('abtb.test',
-    '../btb.cc',
+    '../base_btb.cc',
+    '../abtb.cc',
     'abtb.test.cc',
     'timed_base_pred.cc',
 )
@@ -45,7 +47,9 @@ GTest('fetch_target_queue.test',
 GTest('decoupled_bpred.test',
     'decoupled_bpred.test.cc',
     'decoupled_bpred.cc',
-    '../btb.cc',
+    '../base_btb.cc',
+    '../mbtb.cc',
+    '../abtb.cc',
     'btb_tage.cc',
     '../folded_hist.cc',
     'timed_base_pred.cc',
@@ -62,7 +66,8 @@ GTest('ras.test',
 
 # Add the test to UNITTESTS target
 env.Append(UNITTESTS=['uras.test',
-        'btb.test',
+        'mbtb.test',
+        'abtb.test',
         'tage.test',
         'folded_hist.test',
         'jump_ahead.test',

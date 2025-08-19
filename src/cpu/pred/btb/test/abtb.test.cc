@@ -1,7 +1,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "cpu/pred/btb/btb.hh"
+#include "cpu/pred/btb/abtb.hh"
 
 namespace gem5
 {
@@ -16,7 +16,7 @@ namespace test
 {
 
 
-FetchStream createStream(Addr startPC, FullBTBPrediction &pred, DefaultBTB *abtb) {
+FetchStream createStream(Addr startPC, FullBTBPrediction &pred, ABTB *abtb) {
     FetchStream stream;
     stream.startPC = startPC;
     Addr fallThroughAddr = pred.getFallThrough(abtb->predictWidth);
@@ -38,34 +38,32 @@ void resolveStream(FetchStream &stream, bool taken, Addr brPc, Addr target, bool
     stream.exeTaken = taken;
 }
 
-FullBTBPrediction makePrediction(Addr startPC, DefaultBTB *abtb) {
+FullBTBPrediction makePrediction(Addr startPC, ABTB *abtb) {
     std::vector<FullBTBPrediction> stagePreds(2);  // 2 stages
     boost::dynamic_bitset<> history(8, 0); // history does not matter for BTB
     abtb->putPCHistory(startPC, history, stagePreds);
     return stagePreds[1];
 }
 
-void updateBTB(FetchStream &stream, DefaultBTB *abtb) {
+void updateBTB(FetchStream &stream, ABTB *abtb) {
     abtb->getAndSetNewBTBEntry(stream); // usually called by mbtb, here for testing purpose
     abtb->update(stream);
 }
 
 
-// Test fixture for Pipelined BTB tests
+// Test fixture for Ahead-pipelined BTB tests
 class ABTBTest : public ::testing::Test
 {
 protected:
     void SetUp() override {
-        // Create a BTB with 16 entries, 8-bit tags, 4-way associative, 1-cycle delay
-        // The last parameter (true) enables pipelined operation
-        abtb = new DefaultBTB(16, 20, 4, 1, false, 1);
-        // assert(!abtb->entryHalfAligned);
+        // Create a BTB with 16 entries, 8-bit tags, 4-way associative, 0-cycle delay, 1 ahead stage
+        abtb = new ABTB(16, 20, 4, 0, 1);
 
-        bigAbtb = new DefaultBTB(1024, 20, 1, 1, false, 1);
+        bigAbtb = new ABTB(1024, 20, 1, 0, 1);
     }
 
-    DefaultBTB* abtb;
-    DefaultBTB* bigAbtb;
+    ABTB* abtb;
+    ABTB* bigAbtb;
 };
 
 TEST_F(ABTBTest, BasicPredictionUpdateCycle){

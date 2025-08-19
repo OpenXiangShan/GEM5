@@ -122,7 +122,7 @@ class ABTB : public BaseBTB
 
     /** Get the previous PC from the fetch stream for ahead pipelining */
     Addr getPreviousPC(const FetchStream &stream);
-
+  public:
     /** Override update to handle ahead pipelining address calculation */
     void update(const FetchStream &stream) override;
 

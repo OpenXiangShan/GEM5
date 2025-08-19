@@ -180,35 +180,26 @@ ABTB::lookupSingleBlock(Addr block_pc)
     // In ahead-pipelined implementations, we do memory access first with
     // address of the previous block, and do tag compare with current address
     // thus we need to store the entry read from memory for later use
-    if (aheadPipelinedStages > 0) {
-        DPRINTF(AheadPipeline, "BTB: pushing set for ahead-pipelined stages %d, idx %ld\n",
-             aheadPipelinedStages, btb_idx);
-        aheadReadBtbEntries.push(std::make_tuple(block_pc, btb_idx, btb_set));
-    }
+    DPRINTF(AheadPipeline, "BTB: pushing set for ahead-pipelined stages %d, idx %ld\n",
+            aheadPipelinedStages, btb_idx);
+    aheadReadBtbEntries.push(std::make_tuple(block_pc, btb_idx, btb_set));
 
     Addr current_tag = getTag(block_pc);
     Addr current_pc = 0;
     Addr current_idx = 0;
     BTBSet current_set;
-    
-    if (aheadPipelinedStages == 0) {
-        current_pc = block_pc;
-        current_idx = btb_idx;
-        current_set = btb_set;
+    // Only if the ahead-pipeline is filled can we use the entry
+    if (aheadReadBtbEntries.size() >= aheadPipelinedStages + 1) {
+        // +1 because we pushed a new set in this cycle before
+        assert(aheadReadBtbEntries.size() == aheadPipelinedStages + 1);
+        std::tie(current_pc, current_idx, current_set) = aheadReadBtbEntries.front();
+        DPRINTF(AheadPipeline, "BTB: ahead-pipeline filled, using set %ld from pc %#lx\n",
+            current_idx, current_pc);
+        aheadReadBtbEntries.pop();
     } else {
-        // Only if the ahead-pipeline is filled can we use the entry
-        if (aheadReadBtbEntries.size() >= aheadPipelinedStages + 1) {
-            // +1 because we pushed a new set in this cycle before
-            assert(aheadReadBtbEntries.size() == aheadPipelinedStages + 1);
-            std::tie(current_pc, current_idx, current_set) = aheadReadBtbEntries.front();
-            DPRINTF(AheadPipeline, "BTB: ahead-pipeline filled, using set %ld from pc %#lx\n",
-                current_idx, current_pc);
-            aheadReadBtbEntries.pop();
-        } else {
-            DPRINTF(AheadPipeline, "BTB: ahead-pipeline not filled, only have %ld sets read,"
-                " skipping tag compare, assigning miss\n", aheadReadBtbEntries.size());
-            return res;
-        }
+        DPRINTF(AheadPipeline, "BTB: ahead-pipeline not filled, only have %ld sets read,"
+            " skipping tag compare, assigning miss\n", aheadReadBtbEntries.size());
+        return res;
     }
     
     DPRINTF(BTB, "BTB: Doing tag comparison for index 0x%lx tag %#lx\n",
@@ -270,18 +261,13 @@ ABTB::update(const FetchStream &stream)
         Addr btb_idx;
         Addr btb_tag;
 
-        if (aheadPipelinedStages > 0) {
-            Addr previousPC = getPreviousPC(stream);
-            if (previousPC == 0) {
-                DPRINTF(BTB, "ahead-pipeline: no previous PC, skipping update\n");
-                return;
-            }
-            btb_idx = getIndex(previousPC);
-            btb_tag = getTag(entryPC);
-        } else {
-            btb_idx = getIndex(entryPC);
-            btb_tag = getTag(entryPC);
+        Addr previousPC = getPreviousPC(stream);
+        if (previousPC == 0) {
+            DPRINTF(BTB, "ahead-pipeline: no previous PC, skipping update\n");
+            return;
         }
+        btb_idx = getIndex(previousPC);
+        btb_tag = getTag(stream.startPC);   // use startPC to calculate tag!
 
         updateBTBEntry(btb_idx, btb_tag, entry, stream);
     }
@@ -300,12 +286,6 @@ ABTB::ABTBStats::ABTBStats(statistics::Group* parent) :
     ADD_STAT(S0PredUseUBTB, statistics::units::Count::get(), "uBTB prediction used, i.e. uBTB hit"),
     ADD_STAT(S0PredUseABTB, statistics::units::Count::get(), "aBTB prediction used, i.e. uBTB miss and ABTB hit")
 {
-    auto abtb = dynamic_cast<branch_prediction::btb_pred::ABTB*>(parent);
-    if (abtb->aheadPipelinedStages == 0) {
-        S0Predmiss.prereq(S0Predmiss);
-        S0PredUseUBTB.prereq(S0PredUseUBTB);
-        S0PredUseABTB.prereq(S0PredUseABTB);
-    }
 }
 #endif
 

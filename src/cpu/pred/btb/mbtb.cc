@@ -65,8 +65,8 @@ MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned num
 {
     // Set shift amounts for half-aligned addressing
     idxShiftAmt = floorLog2(blockSize);
-    tagShiftAmt = idxShiftAmt + floorLog2(numSets);
-    
+    tagShiftAmt = idxShiftAmt + floorLog2(numEntries / numWays);
+
     // Initialize BTB structure
     initializeBTB();
 }
