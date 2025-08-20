@@ -1202,7 +1202,7 @@ BaseCache::getNextQueueEntry()
 
     // If we got a write buffer request ready, first priority is a
     // full write buffer, otherwise we favour the miss requests
-    if (wq_entry && (writeBuffer.isFull() || !miss_mshr)) {
+    if (wq_entry && (name() == "system.cpu.dcache" || writeBuffer.isFull() || !miss_mshr)) {
         // need to search MSHR queue for conflicting earlier miss.
         MSHR *conflict_mshr = mshrQueue.findPending(wq_entry);
 
