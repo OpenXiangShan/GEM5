@@ -63,7 +63,7 @@ namespace RiscvISA
 {
     class Walker : public ClockedObject
     {
-      protected:
+      public:
         // Port for accessing memory
         class WalkerPort : public RequestPort
         {
@@ -86,7 +86,7 @@ namespace RiscvISA
         class WalkerState
         {
           friend class Walker;
-          private:
+          public:
             enum State
             {
                 Ready,
@@ -103,6 +103,9 @@ namespace RiscvISA
                 bool fromBackPreReq;
                 Fault fault;
                 bool squashed;
+                BaseMMU::Mode mode;
+                Addr asid;
+
 
                 RequestorState()
                 {
@@ -145,6 +148,8 @@ namespace RiscvISA
             std::vector<PacketPtr> writes;
             Fault mainFault;
             BaseMMU::Mode mode;
+            bool canBeCoalesced;
+
             bool isHInst;
             bool isVsatp0Mode;
             SATP satp;
@@ -271,7 +276,12 @@ namespace RiscvISA
         friend class WalkerState;
         // State for timing and atomic accesses (need multiple per walker in
         // the case of multiple outstanding requests in timing mode)
-        std::list<WalkerState *> currStates;
+        //std::list<WalkerState *> currStates;
+        //in G
+        std::list<WalkerState *> sCurrStates;
+        std::list<WalkerState *> llCurrStates;
+        //in vsstage
+        std::list<WalkerState *> hCurrStates;
         // State for functional accesses (only need one of these per walker)
         WalkerState funcState;
 
@@ -290,6 +300,11 @@ namespace RiscvISA
                     bool frm_back_pre_req = false, int f_level = 2,
                     bool from_l2tlb = false, Addr asid = 0);
 
+        Fault splitPtwReq(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
+              const RequestPtr &_req, BaseMMU::Mode _mode, bool from_forward_pre_req,
+              bool from_back_pre_req, int f_level, bool from_l2tlb,
+              Addr asid,std::list<WalkerState*>& states, int& going_num, int default_num,bool& can_send);
+
         void doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc,
                                 BaseMMU::Translation *translation,
                                 BaseMMU::Mode mode, Addr Paddr,
@@ -303,7 +318,8 @@ namespace RiscvISA
                                            const RequestPtr &req,
                                            BaseMMU::Mode mode, bool from_l2tlb,
                                            Addr asid, bool from_forward_pre_req,
-                                           bool from_back_pre_req);
+                                           bool from_back_pre_req,
+                                           std::list<WalkerState*>& states);
 
         // Fault perm_check ();
 
@@ -325,6 +341,12 @@ namespace RiscvISA
         bool enableL1L2replace;
         bool ptwSquash;
         bool openNextLine;
+        int sPtwNum;
+        int goingSPtwNum;
+        int llPtwNum;
+        int goingLlPtwNum;
+        int hPtwNum;
+        int goingHPtwNum;
         bool autoOpenNextLine;
       public:
         bool openSv48;
@@ -376,6 +398,9 @@ namespace RiscvISA
             enableL1L2replace(params.enable_l1l2_replace),
             ptwSquash(params.ptw_squash),
             openNextLine(params.open_nextline),
+            sPtwNum(1),
+            llPtwNum(6),
+            hPtwNum(1),
             autoOpenNextLine(true),
             openSv48(false),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
