@@ -63,6 +63,7 @@
 #include "mem/port.hh"
 #include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
+#include "cpu/o3/trace/TraceReader.hh"
 
 namespace gem5
 {
@@ -518,6 +519,26 @@ class Fetch
     void performInstructionFetch(ThreadID tid);
 
     /**
+     * Initialize trace reader for trace-driven simulation
+     * @return true if trace reader initialized successfully
+     */
+    bool initializeTraceReader();
+
+    /**
+     * Fetch instruction from trace reader in trace mode
+     * @param tid Thread ID
+     * @return true if instruction was successfully fetched from trace
+     */
+    bool fetchInstructionFromTrace(ThreadID tid);
+
+    /**
+     * Create appropriate MachInst from trace instruction information
+     * @param traceInstr Trace instruction containing type and metadata
+     * @return RISC-V machine instruction encoding
+     */
+    MachInst createMachInstFromTrace(const o3::TraceInstruction &traceInstr);
+
+    /**
      * Processes a single instruction, including decoding, building the
      * dynamic instruction, handling branch prediction, and updating the PC.
      *
@@ -584,6 +605,11 @@ class Fetch
     branch_prediction::ftb_pred::DecoupledBPUWithFTB *dbpftb;
 
     branch_prediction::btb_pred::DecoupledBPUWithBTB *dbpbtb;
+
+    /** Trace reader for trace-driven simulation */
+    std::unique_ptr<o3::TraceReader> traceReader;
+    /** Whether trace mode is enabled */
+    bool traceMode;
 
     /** PC of each thread. */
     std::unique_ptr<PCStateBase> pc[MaxThreads];

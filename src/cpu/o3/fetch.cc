@@ -47,6 +47,8 @@
 #include <map>
 #include <queue>
 
+#include "cpu/o3/trace/TraceReader.hh"
+
 #include "arch/generic/tlb.hh"
 #include "arch/riscv/decoder.hh"
 #include "base/debug_helper.hh"
@@ -161,6 +163,20 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     // Get the size of an instruction.
     // stallReason size should be the same as decodeWidth,renameWidth,dispWidth
     stallReason.resize(decodeWidth, StallReason::NoStall);
+    
+    // Initialize trace mode
+    traceMode = params.enableTraceMode;
+    if (traceMode) {
+        DPRINTF(Fetch, "Trace mode enabled, file: %s, format: %s\n",
+                params.traceFile, params.traceFormat);
+        traceReader = createTraceReader(params.traceFormat, params.traceFile, 
+                                        cpu->name() + ".traceReader");
+        if (!traceReader) {
+            fatal("Failed to create trace reader for format: %s\n", params.traceFormat);
+        }
+    } else {
+        traceReader = nullptr;
+    }
 }
 
 std::string Fetch::name() const { return cpu->name() + ".fetch"; }
@@ -372,6 +388,13 @@ Fetch::startupStage()
     // Fetch needs to start fetching instructions at the very beginning,
     // so it must start up in active state.
     switchToActive();
+    
+    // Initialize trace reader if in trace mode
+    if (traceMode && traceReader) {
+        if (!initializeTraceReader()) {
+            fatal("Failed to initialize trace reader\n");
+        }
+    }
 }
 
 void
@@ -1979,6 +2002,18 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 void
 Fetch::performInstructionFetch(ThreadID tid)
 {
+    // Check if we're in trace mode and handle trace instruction fetching
+    if (traceMode) {
+        DPRINTF(Fetch, "[tid:%i] Trace mode: attempting to fetch from trace\n", tid);
+        while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize) {
+            if (!fetchInstructionFromTrace(tid)) {
+                DPRINTF(Fetch, "[tid:%i] Trace mode: no more instructions from trace\n", tid);
+                break;
+            }
+        }
+        return;
+    }
+    
     // Initialize local variables
     PCStateBase &pc_state = *pc[tid];
     StaticInstPtr &curMacroop = macroop[tid];
@@ -2431,6 +2466,137 @@ void
 Fetch::IcachePort::recvReqRetry()
 {
     fetch->recvReqRetry();
+}
+
+bool
+Fetch::initializeTraceReader()
+{
+    if (!traceReader) {
+        return false;
+    }
+    
+    DPRINTF(Fetch, "Initializing trace reader\n");
+    bool success = traceReader->init();
+    if (!success) {
+        warn("Failed to initialize trace reader\n");
+        return false;
+    }
+    
+    DPRINTF(Fetch, "Trace reader initialized successfully\n");
+    return true;
+}
+
+bool
+Fetch::fetchInstructionFromTrace(ThreadID tid)
+{
+    if (!traceMode || !traceReader || traceReader->isEOF()) {
+        return false;
+    }
+    
+    // Get next instruction from trace
+    o3::TraceInstruction traceInstr = traceReader->getNextInstruction();
+    if (!traceInstr.isValid()) {
+        DPRINTF(Fetch, "[tid:%i] No valid instruction from trace\n", tid);
+        return false;
+    }
+    
+    DPRINTF(Fetch, "[tid:%i] Fetched instruction from trace: PC=0x%llx, Type=%s\n",
+            tid, traceInstr.getPC(), traceInstr.getInstTypeStr());
+    
+    // Update PC to the trace instruction's PC
+    set(pc[tid], traceInstr.getPC());
+    
+    // Create appropriate instruction based on trace type
+    MachInst machInst = createMachInstFromTrace(traceInstr);
+    StaticInstPtr staticInst = cpu->getISA(tid)->decoder->decode(machInst, traceInstr.getPC());
+    
+    if (staticInst) {
+        DynInstPtr inst = buildInst(tid, staticInst, macroop[tid], 
+                                   *pc[tid], *pc[tid], true);
+        
+        if (inst) {
+            // Set trace-specific information for branches
+            if (traceInstr.isAnyBranch()) {
+                inst->setTaken(traceInstr.getBranchTaken());
+                // Set branch target if available
+                if (traceInstr.getHasBranchTarget()) {
+                    std::unique_ptr<PCStateBase> target_pc(pc[tid]->clone());
+                    set(target_pc.get(), traceInstr.getBranchTarget());
+                    inst->setPredTarg(*target_pc);
+                }
+            }
+            
+            // Set memory addresses for load/store instructions
+            if (traceInstr.getLoad() && !traceInstr.getLoadAddresses().empty()) {
+                // For loads, the effective address will be computed by the LSQ
+                // We can store the trace address for validation later
+                inst->setEffAddr(traceInstr.getLoadAddresses()[0]);
+            }
+            if (traceInstr.getStore() && !traceInstr.getStoreAddresses().empty()) {
+                inst->setEffAddr(traceInstr.getStoreAddresses()[0]);
+            }
+            
+            // Add to fetch queue
+            toDecode->insts[numInst] = inst;
+            toDecode->size++;
+            numInst++;
+            
+            // Update PC for next instruction  
+            advancePC(pc[tid], staticInst);
+            
+            fetchStats.insts++;
+            if (traceInstr.isAnyBranch()) {
+                fetchStats.branches++;
+                if (traceInstr.getBranchTaken()) {
+                    fetchStats.predictedBranches++;
+                }
+            }
+            
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+MachInst
+Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
+{
+    // Create appropriate RISC-V instruction based on trace type
+    switch (traceInstr.getInstType()) {
+        case o3::TraceInstruction::InstType::LOAD:
+            // RISC-V LW instruction: opcode=0x03, funct3=0x2
+            return 0x00002003;  // lw x0, 0(x0) - placeholder load
+            
+        case o3::TraceInstruction::InstType::STORE:
+            // RISC-V SW instruction: opcode=0x23, funct3=0x2
+            return 0x00002023;  // sw x0, 0(x0) - placeholder store
+            
+        case o3::TraceInstruction::InstType::COND_BRANCH:
+            // RISC-V BEQ instruction: opcode=0x63, funct3=0x0
+            return 0x00000063;  // beq x0, x0, 0 - placeholder conditional branch
+            
+        case o3::TraceInstruction::InstType::UNCOND_DIRECT_BRANCH:
+        case o3::TraceInstruction::InstType::CALL_DIRECT:
+            // RISC-V JAL instruction: opcode=0x6F
+            return 0x0000006F;  // jal x0, 0 - placeholder jump
+            
+        case o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH:
+        case o3::TraceInstruction::InstType::CALL_INDIRECT:
+        case o3::TraceInstruction::InstType::RETURN:
+            // RISC-V JALR instruction: opcode=0x67, funct3=0x0
+            return 0x00000067;  // jalr x0, 0(x0) - placeholder indirect jump
+            
+        case o3::TraceInstruction::InstType::FP:
+            // RISC-V FADD.S instruction: opcode=0x53, funct7=0x00, funct3=0x0
+            return 0x00000053;  // fadd.s f0, f0, f0 - placeholder FP
+            
+        case o3::TraceInstruction::InstType::ALU:
+        case o3::TraceInstruction::InstType::SLOW_ALU:
+        default:
+            // RISC-V ADDI instruction: opcode=0x13, funct3=0x0
+            return 0x00000013;  // addi x0, x0, 0 - NOP equivalent
+    }
 }
 
 } // namespace o3

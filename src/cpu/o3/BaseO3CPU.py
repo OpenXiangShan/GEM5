@@ -246,3 +246,8 @@ class BaseO3CPU(BaseCPU):
     store_prefetch_train = Param.Bool(True, "Training store prefetcher with store addresses")
 
     enableConstantFolding = Param.Bool(False, "Enable Constant Folding (add-immediate elimination)")
+
+    # Trace mode parameters for trace-driven simulation
+    enableTraceMode = Param.Bool(False, "Enable trace-driven simulation mode")
+    traceFile = Param.String("", "Path to trace file for trace-driven simulation")
+    traceFormat = Param.String("champsim", "Trace format (champsim, cbp2025)")
