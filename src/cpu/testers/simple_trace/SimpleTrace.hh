@@ -36,6 +36,10 @@
 
 #include "base/statistics.hh"
 #include "mem/port.hh"
+#include "mem/ruby/slicc_interface/AbstractController.hh"
+#include "mem/ruby/structures/SharingManager.hh"
+#include "mem/ruby/structures/SharingManagerProxy.hh"
+#include "mem/ruby/system/RubyPort.hh"
 #include "params/SimpleTrace.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
@@ -132,13 +136,20 @@ class SimpleTrace : public ClockedObject
     RequestorID requestorId;
     ContextID contextId;
 
+    bool enable;
+    Addr defaultAddr;
+    bool useTraceFile;
     std::string traceFile;
     std::ifstream traceStream;
-    bool enable;
+    int maxRequests; // Maximum number of requests to send (-1 for unlimited)
+    int requestsSent; // Counter for the number of requests sent
 
     void completeRequest(PacketPtr pkt);
 
     RequestInfo* getRequestInfo();
+    RequestInfo* getRequestInfoTrace();
+
+    void setupSharingManager();
 
     void generatePkt();
     void sendPkt(PacketPtr pkt);

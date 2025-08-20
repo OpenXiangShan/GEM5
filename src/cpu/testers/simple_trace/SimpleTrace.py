@@ -38,5 +38,11 @@ class SimpleTrace(ClockedObject):
                                             due to lack of progress")
     test = RequestPort("Port to the memory system to test")
     system = Param.System(Parent.any, "System we belong to")
-    id = Param.Int(0, "Context ID of this trace")
+    sim_cycles = Param.Int(1000, "Number of simulation cycles")
+
+    enable = Param.Bool(True, "Enable SimpleTrace")
+    id = Param.Addr(0, "Context ID of this trace")
     trace_file = Param.String("", "Trace file to use")
+    use_dummy_load = Param.Bool(True, "Use dummy load instead of trace file")
+    default_addr = Param.Addr(0x80000000, "Address for dummy load")
+    max_requests = Param.Int(100, "Maximum number of requests to send (-1 for unlimited)")

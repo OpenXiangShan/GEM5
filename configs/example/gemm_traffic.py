@@ -103,7 +103,9 @@ args.node_link_latency = 1
 args.mem_size = "8GB"
 
 cpus = [ SimpleTrace(
-    trace_file = args.trace_file if i == 0 else ""
+    trace_file = args.trace_file if i == 0 else "",
+    sim_cycles = args.sim_cycles,
+    max_requests = 1
 )
          for i in range(args.num_cpus) ]
 

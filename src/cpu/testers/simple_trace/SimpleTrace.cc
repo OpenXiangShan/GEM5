@@ -76,23 +76,29 @@ SimpleTrace::SimpleTrace(const Params &p)
       tickEvent([this] { tick(); }, "SimpleTrace tick", false, Event::CPU_Tick_Pri),
       cachePort("SimpleTrace", this),
       retryPkt(NULL),
+      simCycles(p.sim_cycles),
       numPacketsSent(0),
       responseLimit(p.response_limit),
       requestorId(p.system->getRequestorId(this)),
       contextId(p.id),
-      traceFile(p.trace_file)
+      enable(p.enable),
+      defaultAddr(p.default_addr),
+      useTraceFile(false),
+      traceFile(p.trace_file),
+      maxRequests(p.max_requests),
+      requestsSent(0)
 {
 
     DPRINTF(SimpleTrace, "Config Created: Name = %s , RequestorID = %d, ContextID = %d\n", name(), requestorId,
             contextId);
 
     if (traceFile == "") {
-        printf("No trace file for %s\n", name().c_str());
-        enable = false;
+        printf("No trace file for %s, default sequence is used\n", name().c_str());
+        useTraceFile = false;
     } else {
         traceStream.open(traceFile);
         traceStream.clear();
-        enable = true;
+        useTraceFile = true;
         printf("Trace file %s for %s\n", traceFile.c_str(), name().c_str());
         // Find the line that trace starts
         std::string line;
@@ -110,6 +116,7 @@ SimpleTrace::SimpleTrace(const Params &p)
 
     noResponseCycles = 0;
 
+    assert(!(enable && maxRequests == 0));
     if (completionMap.find(requestorId) == completionMap.end()) {
         completionMap[requestorId] = !enable;
     } else {
@@ -135,6 +142,7 @@ SimpleTrace::init()
 {
     numPacketsSent = 0;
     numTransCompleted = 0;
+    // do not setup sharing manager here because SharingManagerProxy is not initialized in slicc
 }
 
 
@@ -156,7 +164,21 @@ SimpleTrace::completeRequest(PacketPtr pkt)
 
 
 SimpleTrace::RequestInfo *
-SimpleTrace::getRequestInfo()
+SimpleTrace::getRequestInfo() {
+    if (requestsSent >= maxRequests) {
+        return nullptr;
+    }
+
+    if (useTraceFile) {
+        return getRequestInfoTrace();
+    } else {
+        return new RequestInfo{defaultAddr, TraceCmd::LOAD};
+    }
+}
+
+
+SimpleTrace::RequestInfo *
+SimpleTrace::getRequestInfoTrace()
 {
     // Read Trace file
     std::string line;
@@ -181,6 +203,9 @@ SimpleTrace::getRequestInfo()
 void
 SimpleTrace::tick()
 {
+    if (curCycle() == 0) {
+      setupSharingManager();
+    }
     if (++noResponseCycles >= responseLimit) {
         fatal("%s deadlocked at tick %d\n", name().c_str(), curTick());
     }
@@ -194,7 +219,7 @@ SimpleTrace::tick()
         return;
     }
     // Schedule wakeup
-    if (curTick() >= simCycles)
+    if (curCycle() >= simCycles)
         exitSimLoop("Simple Trace completed simCycles");
     else {
         if (!tickEvent.scheduled())
@@ -241,6 +266,7 @@ SimpleTrace::generatePkt()
     pkt->senderState = NULL;
 
     sendPkt(pkt);
+    requestsSent++;
     delete info;
 }
 
@@ -260,6 +286,56 @@ SimpleTrace::checkCompletion()
         printf("All requests completed, last requestor RequestorID is %d ContextID is %d\n", requestorId, contextId);
         exitSimLoop("Simple Trace completed all requests");
     }
+}
+
+void SimpleTrace::setupSharingManager() {
+  // 1. get ptr to cache's abstractcontroller via sequencer
+  // 2. get ptr to sharingmanager via controller's getSharingManagerPtr
+  // 3. setup sharing manager to let 0x80000000 size 0x1000 addr to share by direction row
+
+  // Check if the cachePort is connected to a peer
+  if (!cachePort.isConnected()) {
+    warn("cachePort is not connected to a peer, cannot setup sharing manager");
+    return;
+  }
+
+  // Get the peer port (should be connected to a Sequencer which is a RubyPort)
+  Port& peerPort = cachePort.getPeer();
+
+  // Cast the peer port to RubyPort to access the AbstractController
+  gem5::ruby::RubyPort::MemResponsePort* seqPort = dynamic_cast<gem5::ruby::RubyPort::MemResponsePort*>(&peerPort);
+  if (!seqPort){
+    fatal("Peer port cannot be converted to sequencer MemResponsePort");
+  }
+
+  gem5::ruby::RubyPort* rubyPort = dynamic_cast<gem5::ruby::RubyPort*>(&(seqPort->getOwner()));
+  if (!rubyPort) {
+    std::cout << "peer port type " << typeid(&peerPort).name() << "\n";
+    warn("Peer port is not a RubyPort, cannot setup sharing manager");
+    return;
+  }
+
+  // Get the AbstractController from the RubyPort
+  gem5::ruby::AbstractController* controller = rubyPort->getController();
+  if (!controller) {
+    warn("RubyPort does not have a controller, cannot setup sharing manager");
+    return;
+  }
+
+  // Get the SharingManagerProxy from the AbstractController
+  gem5::ruby::SharingManagerProxy smProxy = controller->getSharingManagerProxy();
+
+  // Get the SharingManager from the proxy
+  gem5::ruby::SharingManager* sharingManager = smProxy.getSharingManager();
+  if (!sharingManager) {
+    warn("SharingManagerProxy does not have a sharing manager, cannot setup sharing");
+    return;
+  }
+
+  // Setup sharing for address range 0x80000000 with size 0x1000 to share by row direction
+  sharingManager->setSharing(0x80000000, 0x1000, gem5::ruby::SharingDirection::ROW);
+
+  inform("Successfully setup sharing manager for address 0x80000000, size 0x1000, direction ROW");
 }
 
 void

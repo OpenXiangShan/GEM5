@@ -1600,6 +1600,14 @@ SharingManagerProxy getSharingManagerProxy() {
   return smProxy;
 }
 
+int getXid() {
+  return xid;
+}
+
+int getYid() {
+  return yid;
+}
+
 bool proxyCompleted(TBE tbe) {
   bool push_end_0 := !(tbe.has_upstream_0 && tbe.push_pending_1);
   bool push_end_1 := !(tbe.has_upstream_1 && tbe.push_pending_1);

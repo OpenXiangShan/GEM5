@@ -1,5 +1,6 @@
 #include "mem/ruby/structures/SharingManager.hh"
 
+#include "SharingManager.hh"
 #include "mem/ruby/slicc_interface/AbstractController.hh"
 #include "mem/ruby/structures/SharingManagerProxy.hh"
 
@@ -13,14 +14,13 @@ SharingManager::~SharingManager() = default;
 
 SharingManager::SharingManager(const Params &p) : SimObject(p), sharingTable()
 {
-    // TODO
-    controller = p.controller;
+    /*controller = p.controller;*/
     downstreamHNFs = p.downstream_hnfs;
     downstreamSNFs = p.downstream_snfs;
     if (p.xid < 0 || p.yid < 0) {
         fatal("SharingManager: xid and yid must be set\n");
     }
-    id = controller->getMachineID();
+    id = MachineID(); // TODO need a way to get current machine's MachineID
     coordinate = Coordinate(p.xid, p.yid);
 
     rowSize = p.row_size;
@@ -37,7 +37,7 @@ SharingManager::init()
             }
             hnfMap.insert(range, cntrl->getMachineID());
         }
-        slaveCoordinateMap.insert({cntrl->getMachineID(), cntrl->getSharingManagerProxy().getCoordinate()});
+        slaveCoordinateMap.insert({cntrl->getMachineID(), Coordinate(cntrl->getXid(), cntrl->getYid())});
     }
     for (AbstractController* cntrl : downstreamSNFs) {
         for (const AddrRange &range : cntrl->getAddrRanges()) {
@@ -48,10 +48,10 @@ SharingManager::init()
         }
         // TODO use gecoordinate instead
         // cannot figure out how to let sharingmanager slicc return sm pointer
-        slaveCoordinateMap.insert({cntrl->getMachineID(), cntrl->getSharingManagerProxy().getCoordinate()});
+        slaveCoordinateMap.insert({cntrl->getMachineID(), Coordinate(cntrl->getXid(), cntrl->getYid())});
     }
     for (AbstractController* cntrl : rnfs) {
-        Coordinate c = cntrl->getSharingManagerProxy().getCoordinate();
+        Coordinate c = Coordinate(cntrl->getXid(), cntrl->getYid());
         MachineID id = cntrl->getMachineID();
         RNFCoordinateMap.insert({c, id});
     }
@@ -149,6 +149,7 @@ SharingManager::getSlaveID(Addr addr) const {
 
 Coordinate
 SharingManager::getSlaveCoordinate(MachineID id) const {
+    DPRINTF(SharingManager, "Sharing manager: get slave coordinate @ %s", MachineIDToString(id));
     return slaveCoordinateMap.at(id);
 }
 
@@ -211,6 +212,7 @@ SharingManager::checkInsertNeighbour(Addr addr) {
 
       if (up_coord_0 != coordinate && validCoordinate(up_coord_0)) {
 
+        DPRINTF(SharingManager, "Setting upstream0 using coordinate %s", up_coord_0.toString());
         new_neighbour.upstream_0 = RNFCoordinateMap.at(up_coord_0);
         DPRINTF(SharingManager, "RNF %s upstream 0 is coordinate %s ID \n",
           coordinate.toString(), slaveCoordinate.toString(),
@@ -218,6 +220,7 @@ SharingManager::checkInsertNeighbour(Addr addr) {
       }
 
       if (up_coord_1 != coordinate && validCoordinate(up_coord_1)) {
+        DPRINTF(SharingManager, "Setting upstream1 using coordinate %s", up_coord_1.toString());
         new_neighbour.upstream_1 = RNFCoordinateMap.at(up_coord_1);
         DPRINTF(SharingManager, "RNF %s upstream 1 is coordinate %s ID \n",
           coordinate.toString(), slaveCoordinate.toString(),

@@ -188,6 +188,8 @@ class AbstractController : public ClockedObject, public Consumer, public HasDown
 
     virtual SharingManagerProxy getSharingManagerProxy()
       {panic("SharingManager not implemented in this class %s", name()); return SharingManagerProxy();};
+    virtual int getXid() {panic("This controller %s does not have xid", name()); return -1;}
+    virtual int getYid() {panic("This controller %s does not have yid", name()); return -1;}
 
     statistics::Histogram& getDelayHist() { return stats.delayHistogram; }
     statistics::Histogram& getDelayVCHist(uint32_t index)

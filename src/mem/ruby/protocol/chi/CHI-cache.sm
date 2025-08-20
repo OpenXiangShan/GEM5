@@ -184,8 +184,8 @@ machine(MachineType:Cache, "Cache coherency protocol") :
   bool enable_proxy := "False";
   SharingManager * sharingManager, constructor="this";
 
-  // int xid, default="-1";
-  // int yid, default="-1";
+  int xid, default="-1";
+  int yid, default="-1";
   // Message Queues
 
   // Interface to the network

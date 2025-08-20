@@ -55,6 +55,7 @@
 #include "mem/tport.hh"
 #include "params/RubyPort.hh"
 #include "sim/clocked_object.hh"
+#include "sim/sim_object.hh"
 
 namespace gem5
 {
@@ -95,6 +96,7 @@ class RubyPort : public ClockedObject
         void hitCallback(PacketPtr pkt);
         void customSignalCallback(PacketPtr pkt);
         void evictionCallback(Addr address);
+        SimObject& getOwner() const { return owner; }
 
       protected:
         bool recvTimingReq(PacketPtr pkt);
@@ -173,6 +175,7 @@ class RubyPort : public ClockedObject
     // A pointer to the controller is needed for atomic support.
     //
     void setController(AbstractController* _cntrl) { m_controller = _cntrl; }
+    AbstractController* getController() { return m_controller; }
     uint32_t getId() { return m_version; }
     DrainState drain() override;
 

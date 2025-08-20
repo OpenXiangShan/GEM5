@@ -51,38 +51,71 @@ class CustomMesh(SimpleTopology):
 
     def __init__(self, controllers):
         self.nodes = controllers
+        self.id_relation = []
 
-
-    # nodeID format is xid(4 bits) yid(4 bits)
+    # nodeID format
+    # xid is no. column, yid is no. row
+    # 1 type port xid yid
+    # routerID format
+    # mesh/calmesh xid yid
+    # linkID format
+    # int/ext vnet direction (attached router id)
+    #   2/3 0-3:west;45cal/mesh;01to/from mesh
+    # eg
+    # node id is               1[type][port][xid][yid]
+    # router id is             0[0-n][xid][yid]
+    # router to router link is 2[vnet][0-3]0[xid][yid]
+    # router to cal link is    2[vnet][4-5][1-n][xid][yid]
+    # router ext link is       [3][vnet][port]0[xid][yid]
+    # cal ext link is          [4][vnet][port]0[xid][yid]
+    # direction is 0 to mesh node; 1 from mesh node
+    # nodeID format is xid yid portid type in decimal
     def toNodeId(self, idx, portid, node_type):
         xid = idx % self.columns
         yid = idx // self.columns
-        return xid * (10 ** 3) + yid * (10 ** 2) + portid * 10 + node_type
+        return 10000 + node_type + portid * 100 + xid * 10 + yid
 
-    def toRouterId(self, idx, rnf_no = None):
+    def toRouterId(self, idx):
         xid = idx % self.columns
         yid = idx // self.columns
 
-        return xid * (10 ** 2) + yid * (10 ** 1) + 0 if rnf_no is None else rnf_no
+        return xid * 10 + yid
 
-    def toMeshLinkId(self, s_xid, s_yid, direction):
+    def toCalId(self, mesh_router_id, cal_no):
+        return (1 + cal_no) * 100 + mesh_router_id
+
+    def toMeshLinkId(self, s_idx, direction, vnet):
         # linkid format
         # source xid yid direction
         # direction 00: West (To larger xid)
         # direction 01: East (To smaller xid)
-        # direction 2 North (To smaller yid)
-        # direction 3: South (To smaller yid)
-        # direction 4: Mesh router and RNF router
-        return s_xid * (10 ** 3) + s_yid * (10 ** 2) + direction
+        # direction 2: South (To larger yid)
+        # direction 3: North (To smaller yid)
+        assert(direction < 4 and direction >= 0)
+        s_xid = s_idx % self.columns
+        s_yid = s_idx // self.columns
+        return 2 * 100000 + vnet * 10000 + direction * 1000 + s_xid * 10 + s_yid
 
-    def toIntLinkId(self, router, direction):
-        return router * 10 + direction
-    def toRNFRouterLinkID(self, src_router_id):
-        return src_router_id * 10 + 4
+    # There is another router between mesh router and nodes, just name it as CAL
+    # because they work similarily
+    # router id here is cal router id
+    def toCalLinkId(self, routerid, cal_to_mesh: bool, vnet):
+        # direction 4 Cal to mesh
+        # direction 5 mesh to CAL
+        assert (routerid >= 100)
+        return 2 * 100000 + vnet * 10000 + (4 if cal_to_mesh else 5) * 1000 + routerid
 
-    # Todo add port!
-    def toExtLinkId(self, router_id, port):
-        return router_id * 10 + port
+    # For all ext links
+    # 0: Node to router
+    # 1: router to node
+    # note that 1 cal only connects 1 rnf
+    def toCalExtLinkId(self, src_router_id, port, vnet):
+        assert(port < 10)
+        return 3 * 100000 + vnet * 10000 + port * 1000 + src_router_id
+
+    def toExtLinkId(self, src_router_id, port, vnet):
+        assert(port < 10)
+        return 4 * 100000 + vnet * 10000 + port * 1000 + src_router_id
         # Ext links
         # router xid, yid, direction
         # direction 0: Ext to int, inwards
@@ -98,7 +131,7 @@ class CustomMesh(SimpleTopology):
         # XY routing weights
         link_weights = [1, 1, 2, 2]
 
-        if num_rows > 16 or num_columns > 16:
+        if num_rows > 10 or num_columns > 10:
             fatal("CustomMesh topology does not support more than 16 nodes "
                   "in each dimension")
 
@@ -123,7 +156,10 @@ class CustomMesh(SimpleTopology):
                                             latency = llat,
                                             weight=link_weights[0],
                                             supported_vnets=[v]))
+                        self.id_relation.append(
+                                f"MeshIntLink {self._link_count} -> {self.toMeshLinkId(east_out, 0, v)}")
                         self._link_count += 1
+
 
         # West output to East input links
         for row in range(num_rows):
@@ -143,6 +179,8 @@ class CustomMesh(SimpleTopology):
                                             latency = llat,
                                             weight=link_weights[1],
                                             supported_vnets=[v]))
+                        self.id_relation.append(
+                                f"MeshIntLink {self._link_count} -> {self.toMeshLinkId(west_out, 1, v)}")
                         self._link_count += 1
 
         # North output to South input links
@@ -163,6 +201,8 @@ class CustomMesh(SimpleTopology):
                                             latency = llat,
                                             weight=link_weights[2],
                                             supported_vnets=[v]))
+                        self.id_relation.append(
+                                f"MeshIntLink {self._link_count} -> {self.toMeshLinkId(north_out, 2, v)}")
                         self._link_count += 1
 
         # South output to North input links
@@ -183,17 +223,20 @@ class CustomMesh(SimpleTopology):
                                             latency = llat,
                                             weight=link_weights[3],
                                             supported_vnets=[v]))
+                        self.id_relation.append(
+                                f"MeshIntLink {self._link_count} -> {self.toMeshLinkId(south_out, 3, v)}")
                         self._link_count += 1
 
     #--------------------------------------------------------------------------
     # distributeNodes
     #--------------------------------------------------------------------------
 
-    def _createRNFRouter(self, mesh_router):
+    def _createRNFRouter(self, mesh_router, mesh_router_id, cal_no):
         # Create a zero-latency router bridging node controllers
         # and the mesh router
-        node_router = self._Router(router_id = len(self._routers),
-                                    latency = 1)
+        rid = self.toCalId(mesh_router_id, cal_no)
+        node_router = self._Router(router_id = len(self._routers), latency = 1)
+        self.id_relation.append(f"CalRouter {len(self._routers)} -> {rid}")
         self._routers.append(node_router)
 
         # connect node_router <-> mesh router
@@ -204,6 +247,7 @@ class CustomMesh(SimpleTopology):
                                         dst_node = mesh_router,
                                 latency = self._router_link_latency,
                                 supported_vnets=[v]))
+            self.id_relation.append(f"CalIntLink {self._link_count} -> {self.toCalLinkId(rid, True, v)}")
             self._link_count += 1
 
             self._int_links.append(self._IntLink( \
@@ -212,6 +256,7 @@ class CustomMesh(SimpleTopology):
                                         dst_node = node_router,
                                 latency = self._router_link_latency,
                                 supported_vnets=[v]))
+            self.id_relation.append(f"CalIntLink {self._link_count} -> {self.toCalLinkId(rid, False, v)}")
             self._link_count += 1
 
         return node_router
@@ -259,25 +304,34 @@ class CustomMesh(SimpleTopology):
             for node in node_list:
                 ridx = router_idx_list[idx]
                 router = self._routers[ridx]
+                router_id = self._router_ids[ridx]
 
+                router_xid = ridx % self.columns
+                router_yid = ridx // self.columns
                 # here CHI is CHI_Config
                 if isinstance(node, CHI.CHI_RNF):
-                    router = self._createRNFRouter(router)
+                    router = self._createRNFRouter(router, router_id, self.router_node_cnt[ridx])
                 ctrls = node.getNetworkSideControllers()
                 for c in ctrls:
                     # Ext link is also object
                     # When creating links connection is made
                     # ext linkid format:
                     # xid yid portid type
-                    linkid = self.toExtLinkId(router.router_id, self.router_node_cnt[ridx])
                     for v in range(4):
+                        if (isinstance(node, CHI.CHI_RNF)):
+                            linkid = self.toCalExtLinkId(router_id, self.router_node_cnt[ridx], v)
+                        else:
+                            linkid = self.toExtLinkId(router_id, self.router_node_cnt[ridx], v)
                         self._ext_links.append(self._ExtLink( \
                                                     link_id = self._link_count,
                                                     ext_node = c,
                                                     int_node = router,
                                                 latency = self._node_link_latency,
                                                 supported_vnets=[v]))
+                        self.id_relation.append(f"ExtLink: {self._link_count} -> {linkid}")
                         self._link_count += 1
+
+                    c.setCoordinate(router_xid, router_yid)
                 self.router_node_cnt[ridx] += 1
                 idx = (idx + 1) % len(router_idx_list)
 
@@ -357,8 +411,16 @@ class CustomMesh(SimpleTopology):
                             .format(n.__class__.__name__))
 
         # Create all mesh routers
-        self._routers = [Router(router_id=i, latency = options.router_latency)\
-                                    for i in range(num_mesh_routers)]
+        # self._routers = [Router(router_id=self.toRouterId(i), latency = options.router_latency)\
+        #                             for i in range(num_mesh_routers)]
+        self._routers = []
+        self._router_ids = []
+        for i in range(num_mesh_routers):
+            rid = self.toRouterId(i)
+            router = Router(router_id=i, latency=options.router_latency)
+            self._routers.append(router)
+            self.id_relation.append(f"MeshRouter {i} -> {rid}")
+            self._router_ids.append(rid)
 
         self.router_node_cnt = [0 for i in range(num_mesh_routers)]
         self._link_count = 0
@@ -398,6 +460,11 @@ class CustomMesh(SimpleTopology):
             if r.has_parent():
                 r.get_parent().clear_child(r.get_name())
         network.routers = self._routers
+
+        # Output id_relation to file
+        with open('id_relation.txt', 'w') as f:
+            for item in self.id_relation:
+                f.write(f'{item}\n')
 
         pairing = getattr(options, 'pairing', None)
         if pairing != None:

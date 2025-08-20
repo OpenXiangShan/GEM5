@@ -168,9 +168,6 @@ class CHI_Node(SubSystem):
         cntrl.snpIn.in_port = self._network.out_port
         cntrl.datIn.in_port = self._network.out_port
 
-    def setCoordinate(self, xid, yid):
-        self.xid = xid
-        self.yid = yid
 
 class TriggerMessageBuffer(MessageBuffer):
     """
@@ -224,6 +221,7 @@ class CHI_Cache_Controller(Cache_Controller):
         # This should be set to true in the data cache controller to enable
         # timeouts on unique lines when a store conditional fails
         self.sc_lock_enabled = False
+        self.sharingManager = NULL
 
     def setPrefetcher(self, pf):
         self.prefetcher = pf
@@ -232,6 +230,9 @@ class CHI_Cache_Controller(Cache_Controller):
     def setCoordinate(self, xid, yid):
         self.xid = xid
         self.yid = yid
+        if (self.sharingManager != NULL):
+            self.sharingManager.xid = xid
+            self.sharingManager.yid = yid
 
 
 class CHI_L1Controller(CHI_Cache_Controller):
@@ -391,8 +392,7 @@ class CHI_MNController(MiscNode_Controller):
         self.upstream_destinations = l1d_caches
 
     def setCoordinate(self, xid, yid):
-        self.xid = xid
-        self.yid = yid
+        pass
 
 
 class CHI_DMAController(CHI_Cache_Controller):
@@ -714,6 +714,18 @@ class CHI_MN(CHI_Node):
         return [self._cntrl]
 
 
+class CHI_Mem_Controller(Memory_Controller):
+    """
+    Wrapper around Memory Controller to provide `setCoordinate` method
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def setCoordinate(self, xid, yid):
+        self.xid = xid
+        self.yid = yid
+
+
 class CHI_SNF_Base(CHI_Node):
     """
     Creates CHI node controllers for the memory controllers
@@ -727,7 +739,7 @@ class CHI_SNF_Base(CHI_Node):
         # _cntrl has an addr range
         # Set via setup_memory_controllers
         # but CHI_SNF_Base does not have this info
-        self._cntrl = Memory_Controller(
+        self._cntrl = CHI_Mem_Controller(
             version=Versions.getVersion(Memory_Controller),
             ruby_system=ruby_system,
             triggerQueue=TriggerMessageBuffer(),

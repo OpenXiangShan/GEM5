@@ -214,18 +214,6 @@ def setup_memory_controllers(system, ruby, dir_cntrls, options):
         ruby.crossbars = crossbars
 
 
-def setup_rnf_controller_mappings(rnfs, hnfs, snfs):
-    """Let RNF know it's location in mesh and which
-    memory controller or HNF it sends to"""
-    mode = "HNF"
-    for r in rnfs:
-        r.sharingManager = SharingManager(
-            downstream_hnfs=hnfs,
-            downstream_snfs=snfs,
-            xid=r.xid,
-            yid=r.yid
-        )
-
 
 def create_topology(controllers, options):
     """Called from create_system in configs/ruby/<protocol>.py
@@ -318,8 +306,6 @@ def create_system(
     system.system_port = system.sys_port_proxy.in_ports
 
     setup_memory_controllers(system, ruby, dir_cntrls, options)
-    # TODO
-    setup_rnf_controller_mappings(dirs, rnfs)
 
     # Connect the cpu sequencers and the piobus
     if piobus != None:

@@ -20,6 +20,9 @@ public:
                         SharingManager* _sm);
     Coordinate getCoordinate() const;
 
+    // Method to get the sharing manager
+    SharingManager* getSharingManager() const { return m_sharing_manager; }
+
 
 private:
     SharingManager* m_sharing_manager;

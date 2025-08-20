@@ -288,6 +288,12 @@ def create_system(
     if options.network == "simple":
         ruby_system.network.buffer_size = params.router_buffer_size
 
+    for r in ruby_system.rnf:
+        controller = r.getNetworkSideControllers()[0]
+
+        # controller.sharingManager.controller = controller
+
+
     # Incorporate the params into options so it's propagated to
     # makeTopology and create_topology the parent scripts
     for k in dir(params):
@@ -301,4 +307,11 @@ def create_system(
     else:
         m5.fatal(f"{options.topology} not supported!")
 
+    for r in ruby_system.rnf:
+        controller = r.getNetworkSideControllers()[0]
+        sm = SharingManager(
+            downstream_hnfs=[h.getAllControllers()[0] for h in ruby_system.hnf],
+            downstream_snfs=[s.getAllControllers()[0] for s in ruby_system.snf]
+        )
+        controller.sharingManager= sm
     return (cpu_sequencers, mem_cntrls, topology)
