@@ -105,6 +105,7 @@ class RubySystem : public ClockedObject
 
     void registerNetwork(Network*);
     void registerAbstractController(AbstractController*);
+    AbstractController *getAbstractController(MachineID);
     void registerMachineID(const MachineID& mach_id, Network* network);
     void registerRequestorIDs();
 

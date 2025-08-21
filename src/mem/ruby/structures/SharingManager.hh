@@ -13,6 +13,7 @@
 #include "mem/ruby/common/HasDownStream.hh"
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/protocol/MachineType.hh"
+// #include "mem/ruby/system/RubySystem.hh"
 #include "params/SharingManager.hh"
 #include "sim/sim_object.hh"
 
@@ -21,6 +22,8 @@ namespace gem5
 
 namespace ruby
 {
+
+class RubySystem;
 
 enum SharingDirection { NONE = 0, ROW, COL };
 
@@ -170,6 +173,7 @@ class SharingManager : public SimObject
     // MachineID id;
     // addr -> sharing direction, TODO use addr range map
     std::vector<SharingEntry> sharingTable;
+    RubySystem *m_ruby_system;
 
     std::unordered_map<ChainProperty, Neighbour, ChainPropertyHash> neighbourTable;
 public:
@@ -193,10 +197,12 @@ public:
 
 
 private:
+    MachineID rnf_id;
+    std::vector<MachineID> other_rnf_ids;
     AbstractController *controller;
     std::vector<AbstractController *> downstreamHNFs;
     std::vector<AbstractController *> downstreamSNFs;
-    std::vector<AbstractController *> rnfs;
+    std::vector<AbstractController *> other_rnfs;
     // Map Addr ranges to MachineID
     AddrRangeMap<MachineID, 3> hnfMap;
     AddrRangeMap<MachineID, 3> snfMap;

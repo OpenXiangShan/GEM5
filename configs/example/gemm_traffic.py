@@ -50,12 +50,6 @@ parser.add_argument("--synthetic", default="gemm",
                              'bit_reverse', 'bit_rotation', 'neighbor', \
                              'shuffle', 'transpose'])
 
-parser.add_argument("-i", "--injectionrate", type=float, default=0.5,
-                    metavar="I",
-                    help="Injection rate in packets per cycle per node. \
-                        Takes decimal value between 0 to 1 (eg. 0.225). \
-                        Number of digits after 0 depends upon --precision.")
-
 parser.add_argument("--precision", type=int, default=3,
                     help="Number of digits of precision after decimal point\
                         for injection rate")
@@ -70,16 +64,6 @@ parser.add_argument("--num-packets-max", type=int, default=-1,
 parser.add_argument("--single-sender-id", type=int, default=-1,
                     help="Only inject from this sender.\
                         Set to -1 to disable.")
-
-parser.add_argument("--single-dest-id", type=int, default=-1,
-                    help="Only send to this destination.\
-                        Set to -1 to disable.")
-
-parser.add_argument("--inj-vnet", type=int, default=0,
-                    choices=[-1,0,1,2],
-                    help="Only inject in this vnet (0, 1 or 2).\
-                        0 and 1 are 1-flit, 2 is 5-flit.\
-                        Set to -1 to inject randomly in all vnets.")
 
 parser.add_argument("--trace-file", default="", type=str, help="Trace file path")
 
@@ -97,6 +81,8 @@ args.simple_physical_channels = True
 args.chi_config = "configs/example/noc_config/GEMM.py"
 args.num_cpus = 16
 args.num_dirs = 8
+# args.num_rows = 6
+# args.num_columns = 4
 args.num_l3caches = 16
 args.router_link_latency = 0
 args.node_link_latency = 1

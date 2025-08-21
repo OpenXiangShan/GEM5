@@ -307,11 +307,16 @@ def create_system(
     else:
         m5.fatal(f"{options.topology} not supported!")
 
+    rnf_ids = [ r.getNetworkSideControllers()[0].version for r in ruby_system.rnf]
     for r in ruby_system.rnf:
         controller = r.getNetworkSideControllers()[0]
+        rnf_id = controller.version
+        other_rnf_ids = [i for i in rnf_ids if i != rnf_id]
         sm = SharingManager(
             downstream_hnfs=[h.getAllControllers()[0] for h in ruby_system.hnf],
-            downstream_snfs=[s.getAllControllers()[0] for s in ruby_system.snf]
+            downstream_snfs=[s.getAllControllers()[0] for s in ruby_system.snf],
+            rnf_id = rnf_id,
+            other_rnf_ids = other_rnf_ids
         )
         controller.sharingManager= sm
     return (cpu_sequencers, mem_cntrls, topology)

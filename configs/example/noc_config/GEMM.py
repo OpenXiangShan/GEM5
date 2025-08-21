@@ -55,8 +55,8 @@ from m5.objects import *
 # Default parameter are configs/ruby/CHI_config.py
 #
 class NoC_Params(CHI_config.NoC_Params):
-    num_rows = 4
-    num_cols = 6
+    num_rows = 6
+    num_cols = 4
 
 # Specialization of nodes to define bindings for each CHI node type
 # needed by CustomMesh.

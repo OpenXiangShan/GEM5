@@ -23,3 +23,6 @@ class SharingManager(SimObject):
     col_size = Param.Int(4, "Mesh number of columns")
 
     system = Param.RubySystem(Parent.any, "RubySystem")
+
+    rnf_id = Param.Int("Id of RNF that this SharingManager belongs to")
+    other_rnf_ids = VectorParam.Int([], "List of other RNFs")

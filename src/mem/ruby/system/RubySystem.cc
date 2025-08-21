@@ -112,6 +112,11 @@ RubySystem::registerAbstractController(AbstractController* cntrl)
     m_abstract_controls[id.getType()][id.getNum()] = cntrl;
 }
 
+AbstractController *
+RubySystem::getAbstractController(MachineID id) {
+  return m_abstract_controls.at(id.getType()).at(id.getNum());
+}
+
 void
 RubySystem::registerMachineID(const MachineID& mach_id, Network* network)
 {

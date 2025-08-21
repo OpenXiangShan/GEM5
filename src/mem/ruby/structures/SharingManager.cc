@@ -3,6 +3,7 @@
 #include "SharingManager.hh"
 #include "mem/ruby/slicc_interface/AbstractController.hh"
 #include "mem/ruby/structures/SharingManagerProxy.hh"
+#include "mem/ruby/system/RubySystem.hh"
 
 namespace gem5
 {
@@ -12,8 +13,15 @@ namespace ruby
 
 SharingManager::~SharingManager() = default;
 
-SharingManager::SharingManager(const Params &p) : SimObject(p), sharingTable()
+SharingManager::SharingManager(const Params &p) :
+  SimObject(p),
+  sharingTable(),
+  m_ruby_system(p.system)
 {
+    rnf_id = MachineID(MachineType_Cache, p.rnf_id);
+    for (auto id: p.other_rnf_ids) {
+      other_rnf_ids.emplace_back(MachineID(MachineType_Cache, id));
+    }
     /*controller = p.controller;*/
     downstreamHNFs = p.downstream_hnfs;
     downstreamSNFs = p.downstream_snfs;
@@ -62,9 +70,17 @@ SharingManager::init()
             cntrl->name(), MachineIDToString(id), coord.toString());
         slaveCoordinateMap.insert({id, coord});
     }
-    for (AbstractController* cntrl : rnfs) {
+
+    // get rnfs
+    controller = m_ruby_system->getAbstractController(rnf_id);
+    assert(controller->getXid() == coordinate.xid);
+    assert(controller->getYid() == coordinate.yid);
+    DPRINTF(SharingManager, "Set local rnf as %s id %s, coordinate %s\n",
+        controller->name(), MachineIDToString(rnf_id), coordinate.toString());
+
+    for (MachineID id : other_rnf_ids) {
+        AbstractController *cntrl = m_ruby_system->getAbstractController(id);
         Coordinate c = Coordinate(cntrl->getXid(), cntrl->getYid());
-        MachineID id = cntrl->getMachineID();
         RNFCoordinateMap.insert({c, id});
         DPRINTF(SharingManager, "Added rnf name %s id %s coordinate %s\n",
             cntrl->name(), MachineIDToString(id), c.toString());
@@ -196,11 +212,12 @@ SharingManager::checkInsertNeighbour(Addr addr) {
       auto n = neighbourTable.find(chainProp);
       if (n != neighbourTable.end()) {
         Neighbour neighbour = n->second;
-        DPRINTF(SharingManager, "Addr %s Found cached neighbour %s\n", addr, neighbour.toString());
+        DPRINTF(SharingManager, "Addr %lx Direction %s Found cached neighbour %s\n",
+            addr, std::to_string(direction), neighbour.toString());
         return neighbour;
       }
-      DPRINTF(SharingManager, "Inserting new neighbour for coordinate %s addr %lx\n",
-          coordinate.toString(), addr);
+      DPRINTF(SharingManager, "Inserting new neighbour for coordinate %s addr %lx direction %s\n",
+          coordinate.toString(), addr, std::to_string(direction));
       // Append new entry to neighbour Table
       Coordinate slaveCoordinate;
       Coordinate upCoord, downCoord;
