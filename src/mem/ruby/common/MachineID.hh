@@ -72,7 +72,11 @@ struct MachineID
 inline std::string
 MachineIDToString(MachineID machine)
 {
-    return csprintf("%s_%d", MachineType_to_string(machine.type), machine.num);
+    if (!machine.isValid()) {
+      return "invalid_id";
+    } else {
+      return csprintf("%s_%d", MachineType_to_string(machine.type), machine.num);
+    }
 }
 
 inline bool

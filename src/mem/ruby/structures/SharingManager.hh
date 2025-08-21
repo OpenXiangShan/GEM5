@@ -167,7 +167,7 @@ class SharingManager : public SimObject
 
   private:
   // current machineID
-    MachineID id;
+    // MachineID id;
     // addr -> sharing direction, TODO use addr range map
     std::vector<SharingEntry> sharingTable;
 

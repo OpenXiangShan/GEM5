@@ -53,6 +53,7 @@ if not env['CONF']['RUBY']:
     Return()
 
 DebugFlag('ProtocolTrace')
+DebugFlag('ProxyTransaction')
 DebugFlag('RubyCache')
 DebugFlag('RubyCacheTrace')
 DebugFlag('RubyDma')
@@ -75,6 +76,7 @@ CompoundFlag('Ruby', [ 'RubyQueue', 'RubyNetwork', 'RubyTester',
     'RubyGenerated', 'RubySlicc', 'RubySystem', 'RubyCache',
     'RubyDma', 'RubyPort', 'RubySequencer', 'RubyCacheTrace',
     'RubyPrefetcher', 'RubyProtocol', 'RubyHitMiss'])
+CompoundFlag('Proxy', [ 'ProxyTransaction', 'RubySlicc', 'SharingManager'])
 
 #
 # Link includes

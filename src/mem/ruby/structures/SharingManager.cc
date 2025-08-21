@@ -20,7 +20,7 @@ SharingManager::SharingManager(const Params &p) : SimObject(p), sharingTable()
     if (p.xid < 0 || p.yid < 0) {
         fatal("SharingManager: xid and yid must be set\n");
     }
-    id = MachineID(); // TODO need a way to get current machine's MachineID
+    // id = MachineID(); // TODO need a way to get current machine's MachineID
     coordinate = Coordinate(p.xid, p.yid);
 
     rowSize = p.row_size;
@@ -30,30 +30,44 @@ SharingManager::SharingManager(const Params &p) : SimObject(p), sharingTable()
 void
 SharingManager::init()
 {
+    DPRINTF(SharingManager, "Current coordinate is %s\n", coordinate.toString());
     for (AbstractController* cntrl : downstreamHNFs) {
+        MachineID id = cntrl->getMachineID();
+        DPRINTF(SharingManager, "Iterating through HNF %s\n", MachineIDToString(id));
         for (const AddrRange &range : cntrl->getAddrRanges()) {
             if (hnfMap.intersects(range) != hnfMap.end()) {
                 fatal("HNF %s range %s overlaps others\n", cntrl->name(), range.to_string());
             }
-            hnfMap.insert(range, cntrl->getMachineID());
+            DPRINTF(SharingManager, "Inserted addr range %s to hnfMap\n", range.to_string());
+            hnfMap.insert(range, id);
         }
-        slaveCoordinateMap.insert({cntrl->getMachineID(), Coordinate(cntrl->getXid(), cntrl->getYid())});
+        Coordinate coord = Coordinate(cntrl->getXid(), cntrl->getYid());
+        DPRINTF(SharingManager, "Inserted hnf name %s id %s coordinate %s\n",
+            cntrl->name(), MachineIDToString(id), coord.toString());
+        slaveCoordinateMap.insert({id, coord});
     }
     for (AbstractController* cntrl : downstreamSNFs) {
+        MachineID id = cntrl->getMachineID();
+        DPRINTF(SharingManager, "Iterating through SNF %s\n", MachineIDToString(id));
         for (const AddrRange &range : cntrl->getAddrRanges()) {
             if (snfMap.intersects(range) != snfMap.end()) {
                 fatal("SNF %s range %s overlaps others\n", cntrl->name(), range.to_string());
             }
+            DPRINTF(SharingManager, "Inserted addr range %s to snfMap\n", range.to_string());
             snfMap.insert(range, cntrl->getMachineID());
         }
         // TODO use gecoordinate instead
-        // cannot figure out how to let sharingmanager slicc return sm pointer
-        slaveCoordinateMap.insert({cntrl->getMachineID(), Coordinate(cntrl->getXid(), cntrl->getYid())});
+        Coordinate coord = Coordinate(cntrl->getXid(), cntrl->getYid());
+        DPRINTF(SharingManager, "Inserted snf name %s id %s coordinate %s\n",
+            cntrl->name(), MachineIDToString(id), coord.toString());
+        slaveCoordinateMap.insert({id, coord});
     }
     for (AbstractController* cntrl : rnfs) {
         Coordinate c = Coordinate(cntrl->getXid(), cntrl->getYid());
         MachineID id = cntrl->getMachineID();
         RNFCoordinateMap.insert({c, id});
+        DPRINTF(SharingManager, "Added rnf name %s id %s coordinate %s\n",
+            cntrl->name(), MachineIDToString(id), c.toString());
     }
 }
 
@@ -138,8 +152,8 @@ SharingManager::getSlaveID(Addr addr) const {
     auto slave_mapping = snfMap;
     std::map<AddrRange, MachineID>::iterator it = slave_mapping.contains(addr);
     if (it != slave_mapping.end()) {
-        DPRINTF(SharingManager, "Addr %lx current id  coord %s, slave id %d coord %s\n",
-            addr, MachineIDToString(id), coordinate.toString(), MachineIDToString(it->second));
+        DPRINTF(SharingManager, "GetSlaveID: Addr %lx current slave id %d\n",
+            addr, MachineIDToString(it->second));
         return it->second;
     } else {
         fatal("SharingManager: No downstream destination for %s\n", addr);
@@ -149,7 +163,8 @@ SharingManager::getSlaveID(Addr addr) const {
 
 Coordinate
 SharingManager::getSlaveCoordinate(MachineID id) const {
-    DPRINTF(SharingManager, "Sharing manager: get slave coordinate @ %s", MachineIDToString(id));
+    Coordinate c = slaveCoordinateMap.at(id);
+    DPRINTF(SharingManager, "get slave coordinate @ %s\n", c.toString());
     return slaveCoordinateMap.at(id);
 }
 
@@ -181,9 +196,11 @@ SharingManager::checkInsertNeighbour(Addr addr) {
       auto n = neighbourTable.find(chainProp);
       if (n != neighbourTable.end()) {
         Neighbour neighbour = n->second;
-        // TODO
-        return n->second;
+        DPRINTF(SharingManager, "Addr %s Found cached neighbour %s\n", addr, neighbour.toString());
+        return neighbour;
       }
+      DPRINTF(SharingManager, "Inserting new neighbour for coordinate %s addr %lx\n",
+          coordinate.toString(), addr);
       // Append new entry to neighbour Table
       Coordinate slaveCoordinate;
       Coordinate upCoord, downCoord;
@@ -204,33 +221,42 @@ SharingManager::checkInsertNeighbour(Addr addr) {
       // 1. Check if downstream is itself
       if (down_coord == coordinate) {
         //
-        DPRINTF(SharingManager, "RNF %s Adding downstream for Slave coordinate %s\n",
-          coordinate.toString(),
+        DPRINTF(SharingManager, "adding downstream SNF coordinate %s\n",
           slaveCoordinate.toString());
         new_neighbour.downstream = slaveID;
+      } else if (validCoordinate(down_coord)) {
+        DPRINTF(SharingManager, "adding downstream RNF coordinate %s\n",
+          down_coord.toString());
+        new_neighbour.downstream = RNFCoordinateMap.at(down_coord);
+      } else {
+        fatal("No valid downstream for addr %s current coord %s and naive down coord %s\n",
+          addr, coordinate.toString(), down_coord.toString());
       }
 
       if (up_coord_0 != coordinate && validCoordinate(up_coord_0)) {
 
-        DPRINTF(SharingManager, "Setting upstream0 using coordinate %s", up_coord_0.toString());
         new_neighbour.upstream_0 = RNFCoordinateMap.at(up_coord_0);
-        DPRINTF(SharingManager, "RNF %s upstream 0 is coordinate %s ID \n",
-          coordinate.toString(), slaveCoordinate.toString(),
-          MachineIDToString(new_neighbour.upstream_0));
+        DPRINTF(SharingManager, "adding upstream0 coordinate %s\n",
+          up_coord_0.toString());
+      } else {
+        DPRINTF(SharingManager, "No valid upstream0 for naive coord %s", up_coord_0.toString());
+        // new_neighbour.upstream_0 is MachineID()
       }
 
       if (up_coord_1 != coordinate && validCoordinate(up_coord_1)) {
-        DPRINTF(SharingManager, "Setting upstream1 using coordinate %s", up_coord_1.toString());
         new_neighbour.upstream_1 = RNFCoordinateMap.at(up_coord_1);
-        DPRINTF(SharingManager, "RNF %s upstream 1 is coordinate %s ID \n",
-          coordinate.toString(), slaveCoordinate.toString(),
-          MachineIDToString(new_neighbour.upstream_1));
+        DPRINTF(SharingManager, "adding upstream 1 coordinate %s \n",
+          up_coord_1.toString());
+      } else {
+        DPRINTF(SharingManager, "No valid upstream1 for naive coord %s", up_coord_1.toString());
       }
 
-      // Check if upstream exists
-      // xid/yid must be above zero and below max
+      // Check if downstream exists
+      assert (new_neighbour.downstream.isValid());
 
       neighbourTable.insert({chainProp, new_neighbour});
+      DPRINTF(SharingManager, "Added new neighbour addr %lx chainProp %s, neighbour%s\n",
+          addr, chainProp.toString(), new_neighbour.toString());
       return new_neighbour;
     }
 

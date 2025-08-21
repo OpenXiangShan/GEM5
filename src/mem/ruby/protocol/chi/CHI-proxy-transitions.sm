@@ -14,7 +14,7 @@
 transition(BUSY_BLKD, LoadMissProxy, BUSY_PROXY) {
   // TODO: Callback for load
   Initiate_Proxy;
-  Initiate_ReadProxy;
+  Send_ReadProxy;
   Register_ProxyLoad;
   ProcessNextState;
 }

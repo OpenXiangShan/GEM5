@@ -21,3 +21,5 @@ class SharingManager(SimObject):
 
     row_size = Param.Int(4, "Mesh number of rows")
     col_size = Param.Int(4, "Mesh number of columns")
+
+    system = Param.RubySystem(Parent.any, "RubySystem")

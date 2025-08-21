@@ -27,6 +27,7 @@ action(Pop_ReqInPort, desc="Remove req from raw RXREQ") {
     reqInPort.dequeue(clockEdge());
 }
 
+// BUG what is the difference between Register ProxyLoad???
 action(Register_LoadProxy, desc="Mark TBE for load callback") {
     tbe.load_pending := true;
 }
@@ -388,6 +389,7 @@ action(Set_PushCancelled, desc="Downstream receive CompDBIDRespCancel") {
 // Upstream Master
 // ----------------------------------
 
+// BUG: this is the handling of upstream reads
 action(Initiate_ReadProxy, desc="Send ReadProxy to downstream") {
     // mark read proxy pending
     peek(reqInPort, CHIRequestMsg) {
