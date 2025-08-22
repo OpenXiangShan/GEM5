@@ -40,6 +40,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       Opt(p.opt),
       Xsstream(p.xsstream),
       enableActivepage(p.enable_activepage),
+      enablePht(p.enable_pht),
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
       enableTemporal(p.enable_temporal),
@@ -224,7 +225,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                          pf_source == PrefetchSourceType::SPht || pf_source == PrefetchSourceType::IPCP_CPLX ||
                          pf_source == PrefetchSourceType::SPP || pf_source == PrefetchSourceType::Berti));
 
-        use_pht &= !pfi.isStore();
+        use_pht &= (!pfi.isStore()) && enablePht;
 
         bool trigger_pht = false;
         stride_pf_addr = phtPFAhead ? stride_pf_addr : 0;  // trigger addr sent to pht

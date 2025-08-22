@@ -186,6 +186,7 @@ class XSCompositePrefetcher : public Queued
 
 
     const bool enableActivepage;
+    const bool enablePht;
     const bool enableCPLX;
     const bool enableSPP;
     const bool enableTemporal;

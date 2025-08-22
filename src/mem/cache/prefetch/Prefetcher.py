@@ -1121,6 +1121,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     xsstream = Param.XsStreamPrefetcher(XsStreamPrefetcher(is_sub_prefetcher=True), "")
 
     enable_activepage = Param.Bool(True,"Enable activepage stream prefetcher")
+    enable_pht = Param.Bool(True,"Enable sms pht prefetcher")
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")
     enable_temporal = Param.Bool(False, "Enable temporal component")
