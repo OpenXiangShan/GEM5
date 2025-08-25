@@ -3484,6 +3484,9 @@ action(CheckCacheFill, desc="") {
 
 action(Finalize_DeallocateRequest, desc="") {
   assert(is_valid(tbe));
+  if (!tbe.actions.empty()) {
+    DPRINTF(RubySlicc, "Remaining tbe actions %s \n", tbe.actions);
+  }
   assert(tbe.actions.empty());
   wakeupPendingReqs(tbe);
   wakeupPendingSnps(tbe);

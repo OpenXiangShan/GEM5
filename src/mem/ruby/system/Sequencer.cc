@@ -252,9 +252,9 @@ Sequencer::wakeup()
             if (current_time - seq_req.issue_time < m_deadlock_threshold)
                 continue;
 
-            panic("Possible Deadlock detected. Aborting!\n version: %d "
+            panic("Possible Deadlock detected. Aborting!\n name %s version: %d "
                   "request.paddr: 0x%x m_readRequestTable: %d current time: "
-                  "%u issue_time: %d difference: %d\n", m_version,
+                  "%u issue_time: %d difference: %d\n", name(), m_version,
                   seq_req.pkt->getAddr(), table_entry.second.size(),
                   current_time * clockPeriod(), seq_req.issue_time
                   * clockPeriod(), (current_time * clockPeriod())
@@ -379,6 +379,7 @@ Sequencer::insertRequest(PacketPtr pkt, RubyRequestType primary_type,
     bool cache_block_busy = m_BusyBlocks.find(line_addr) != m_BusyBlocks.end();
 
     // Create a default entry
+    DPRINTF(RubySequencer, "Creating entry in seq_req_list for addr %lx\n", line_addr);
     seq_req_list.emplace_back(pkt, primary_type,
         secondary_type, curCycle());
     m_outstanding_count++;
@@ -574,6 +575,7 @@ Sequencer::writeCallback(Addr address, DataBlock& data,
                         initialRequestTime, forwardRequestTime,
                         firstResponseTime, !ruby_request);
         }
+        DPRINTF(RubySequencer, "Popping req on addr %lx\n", address);
         seq_req_list.pop_front();
     }
     m_BusyBlocks.erase(address);
@@ -629,6 +631,7 @@ Sequencer::readCallback(Addr address, DataBlock& data,
                     initialRequestTime, forwardRequestTime,
                     firstResponseTime, !ruby_request);
         ruby_request = false;
+        DPRINTF(RubySequencer, "readCallback: Popping req on addr %lx\n", address);
         seq_req_list.pop_front();
     }
     m_BusyBlocks.erase(address);

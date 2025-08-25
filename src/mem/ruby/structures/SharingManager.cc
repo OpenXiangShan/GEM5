@@ -165,7 +165,7 @@ Coordinate::naiveNeighbour(Coordinate slave, SharingDirection direction) const
 // addr -> slave MachineID
 MachineID
 SharingManager::getSlaveID(Addr addr) const {
-    auto slave_mapping = snfMap;
+    auto slave_mapping = hnfMap;
     std::map<AddrRange, MachineID>::iterator it = slave_mapping.contains(addr);
     if (it != slave_mapping.end()) {
         DPRINTF(SharingManager, "GetSlaveID: Addr %lx current slave id %d\n",
@@ -222,7 +222,6 @@ SharingManager::checkInsertNeighbour(Addr addr) {
       Coordinate slaveCoordinate;
       Coordinate upCoord, downCoord;
       MachineID upstream, downstream;
-      auto slave_mapping = snfMap;
       Neighbour new_neighbour;
 
       slaveCoordinate = getSlaveCoordinate(slaveID);
@@ -246,7 +245,7 @@ SharingManager::checkInsertNeighbour(Addr addr) {
           down_coord.toString());
         new_neighbour.downstream = RNFCoordinateMap.at(down_coord);
       } else {
-        fatal("No valid downstream for addr %s current coord %s and naive down coord %s\n",
+        fatal("No valid downstream for addr %lx current coord %s and naive down coord %s\n",
           addr, coordinate.toString(), down_coord.toString());
       }
 
@@ -256,7 +255,7 @@ SharingManager::checkInsertNeighbour(Addr addr) {
         DPRINTF(SharingManager, "adding upstream0 coordinate %s\n",
           up_coord_0.toString());
       } else {
-        DPRINTF(SharingManager, "No valid upstream0 for naive coord %s", up_coord_0.toString());
+        DPRINTF(SharingManager, "No valid upstream0 for naive coord %s\n", up_coord_0.toString());
         // new_neighbour.upstream_0 is MachineID()
       }
 
@@ -265,7 +264,7 @@ SharingManager::checkInsertNeighbour(Addr addr) {
         DPRINTF(SharingManager, "adding upstream 1 coordinate %s \n",
           up_coord_1.toString());
       } else {
-        DPRINTF(SharingManager, "No valid upstream1 for naive coord %s", up_coord_1.toString());
+        DPRINTF(SharingManager, "No valid upstream1 for naive coord %s\n", up_coord_1.toString());
       }
 
       // Check if downstream exists

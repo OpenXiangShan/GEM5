@@ -58,6 +58,7 @@ DebugFlag('RubyCache')
 DebugFlag('RubyCacheTrace')
 DebugFlag('RubyDma')
 DebugFlag('RubyGenerated')
+DebugFlag('RubyIntf')
 DebugFlag('RubyNetwork')
 DebugFlag('RubyPort')
 DebugFlag('RubyPrefetcher')
@@ -76,7 +77,8 @@ CompoundFlag('Ruby', [ 'RubyQueue', 'RubyNetwork', 'RubyTester',
     'RubyGenerated', 'RubySlicc', 'RubySystem', 'RubyCache',
     'RubyDma', 'RubyPort', 'RubySequencer', 'RubyCacheTrace',
     'RubyPrefetcher', 'RubyProtocol', 'RubyHitMiss'])
-CompoundFlag('Proxy', [ 'ProxyTransaction', 'RubySlicc', 'SharingManager'])
+CompoundFlag('Proxy', [ 'ProxyTransaction', 'RubySlicc', 'RubyGenerated',
+    'RubyIntf', 'SharingManager'])
 
 #
 # Link includes

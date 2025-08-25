@@ -316,7 +316,9 @@ def create_system(
             downstream_hnfs=[h.getAllControllers()[0] for h in ruby_system.hnf],
             downstream_snfs=[s.getAllControllers()[0] for s in ruby_system.snf],
             rnf_id = rnf_id,
-            other_rnf_ids = other_rnf_ids
+            other_rnf_ids = other_rnf_ids,
+            row_size = options.num_rows,
+            col_size = options.num_cols
         )
         controller.sharingManager= sm
     return (cpu_sequencers, mem_cntrls, topology)

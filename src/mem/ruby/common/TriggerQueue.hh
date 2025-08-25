@@ -127,6 +127,17 @@ template<class T>
 inline void
 TriggerQueue<T>::print(std::ostream& out) const
 {
+    out << "[";
+    for (auto it = queue.begin(); it != queue.end(); ++it) {
+        out << it->val;
+        if (it->non_blocking) {
+            out << "(NB)";
+        }
+        if (std::next(it) != queue.end()) {
+            out << ", ";
+        }
+    }
+    out << "]";
 }
 
 } // namespace ruby

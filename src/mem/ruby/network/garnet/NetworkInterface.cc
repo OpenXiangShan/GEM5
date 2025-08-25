@@ -36,6 +36,7 @@
 #include <cmath>
 
 #include "base/cast.hh"
+#include "debug/RubyIntf.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
 #include "mem/ruby/network/garnet/Credit.hh"
@@ -212,6 +213,7 @@ NetworkInterface::wakeup()
         if (b->isReady(curTime)) { // Is there a message waiting
             msg_ptr = b->peekMsgPtr();
             DPRINTF(RubyNetwork, "Message ready in protocol buffer:%s\n",*msg_ptr);
+            DPRINTF(RubyIntf, "Ready to send msg %s\n", *msg_ptr);
             if (flitisizeMessage(msg_ptr, vnet)) {
                 b->dequeue(curTime);
             }
@@ -231,6 +233,7 @@ NetworkInterface::wakeup()
         if (inNetLink->isReady(curTick())) {
             flit *t_flit = inNetLink->consumeLink();
             DPRINTF(RubyNetwork, "Recieved flit:%s\n", *t_flit);
+            DPRINTF(RubyIntf, "Received msg %s\n", *t_flit->get_msg_ptr());
             assert(t_flit->m_width == iPort->bitWidth());
 
             int vnet = t_flit->get_vnet();

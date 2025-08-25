@@ -454,7 +454,8 @@ void processNextState(Addr address, TBE tbe, CacheEntry cache_entry) {
                       tbe.expected_req_resp.expected(),
                       tbe.expected_snp_resp.expected(),
                       tbe.snd_pendEv, tbe.snd_pendBytes.count());
-
+  printProxyState(tbe);
+  DPRINTF(RubySlicc, "Remaining tbe actions %s \n", tbe.actions);
   // if no pending trigger and not expecting to receive anything, enqueue
   // next
   bool has_nb_trigger := (tbe.actions.empty() == false) &&
@@ -465,7 +466,12 @@ void processNextState(Addr address, TBE tbe, CacheEntry cache_entry) {
                         tbe.snd_pendBytes.count();
 
   bool proxy_completed := !tbe.is_proxy || proxyCompleted(tbe);
-  if ((tbe.pendAction == Event:null) && ((expected_msgs == 0) || has_nb_trigger)) {
+  // When proxy not completed and no pendaction, skip and wait
+  // When proxy completed and pendaction, do pend action
+  // When proxy not completed has pendaction, do pend action
+  // when proxy completed and no pendaction, do Final
+  if ((tbe.pendAction == Event:null) && ((expected_msgs == 0) || has_nb_trigger) &&
+      (proxy_completed || !tbe.actions.empty())) {
     Cycles trigger_latency := intToCycles(0);
     if (tbe.delayNextAction > curTick()) {
       trigger_latency := ticksToCycles(tbe.delayNextAction) -
@@ -482,6 +488,7 @@ void processNextState(Addr address, TBE tbe, CacheEntry cache_entry) {
       tbe.actions.pop();
     }
     assert(tbe.pendAction != Event:null);
+    DPRINTF(RubySlicc, "processNextState ready to trigger another action %s\n", tbe.pendAction);
     enqueue(triggerOutPort, TriggerMsg, trigger_latency) {
       out_msg.addr := tbe.addr;
       // TODO - put usesTxnId on the TBE?

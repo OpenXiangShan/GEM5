@@ -16,12 +16,21 @@ transition(BUSY_BLKD, LoadMissProxy, BUSY_PROXY) {
   Initiate_Proxy;
   Send_ReadProxy;
   Register_ProxyLoad;
+  Pop_TriggerQueue;
+  ProcessNextState_ClearPending;
+}
+
+// ----------------------------------
+// Handling of RXREQ when inside PROXY transaction
+// ----------------------------------
+// in_port(reqInPort) triggers this transaction with current active tbe
+// so no need to getCurrentActiveTBE again
+transition(BUSY_PROXY, AllocRequestWithCredit) {
+  Receive_ProxyReq;
+  // Pop_ReqInPort;
   ProcessNextState;
 }
 
-transition(BUSY_PROXY, AllocRequest) {
-  Find_ProxyTBE;
-}
 
 // ---------------------------------
 // Downstream Slave RX Transition [x]
@@ -32,16 +41,19 @@ transition({I, SC}, {ReadProxy}, BUSY_PROXY) {
   Initiate_ReadProxy;
   Initiate_Proxy;
   Allocate_DirEntry;
-  Pop_ReqRdyQueue;
-  ProcessNextState;
+  Pop_TriggerQueue;
+  Pop_ReqInPort;
+  ProcessNextState_ClearPending;
 }
 
 // no need tbe alloc
 transition({BUSY_PROXY}, {ReadProxy}) {
-  Mark_UpstreamRead; // If data is ready satisfy the request. If not, block until Compdata
+  Initiate_ReadProxy;
+  // Mark_UpstreamRead; // Merged into Initiate_ReadProxy
   Try_ReplyProxyRead;
-  Pop_ReqRdyQueue;
-  ProcessNextState;
+  Pop_TriggerQueue;
+  Pop_ReqInPort;
+  ProcessNextState_ClearPending;
 }
 
 // Current block may not be evicted and a load is in progress
@@ -58,7 +70,7 @@ transition({UC, UD, UD_T, SD, RSC, RSD, BUSY_INTR}, {ReadProxy}) {
 transition(BUSY_PROXY, ReplyProxyData) {
   Reply_ProxyData;
   Pop_TriggerQueue;
-  ProcessNextState;
+  ProcessNextState_ClearPending;
 }
 
 // ---------------------------------
@@ -69,8 +81,9 @@ transition({I, SC}, {PushProxy}, BUSY_PROXY) {
   Initiate_Proxy;
   Allocate_DirEntry;
   Handle_PushProxy;
-  Pop_ReqRdyQueue;
-  ProcessNextState;
+  Pop_TriggerQueue;
+  Pop_ReqInPort;
+  ProcessNextState_ClearPending;
 }
 
 transition({UC, UD, UD_T, SD, RSC, RSD, BUSY_INTR}, {PushProxy}) {
@@ -83,23 +96,27 @@ transition(BUSY_BLKD, PushProxy) {
 
 transition(BUSY_PROXY, PushProxy) {
   Handle_PushProxy;
+  Pop_TriggerQueue;
   Pop_ReqInPort;
-  ProcessNextState;
+  ProcessNextState_ClearPending;
 }
 
 transition(BUSY_PROXY, SendCompDBID) {
   Send_CompDBID;
   Pop_TriggerQueue;
-  ProcessNextState;
+  ProcessNextState_ClearPending;
 }
 
 transition(BUSY_PROXY, CBWrData_SC) {
-  Receive_ReqDataResp;
-  // Receive_ProxyData; // Original action might work
+  // Receive_ReqDataResp;
+  Receive_ProxyData; // Original action don't work
+  Mark_DataValid;
   Initiate_Push;
   // Check_DataWaitingPush; // Same as below
   Try_SatisfyLoad;
+  Try_ReplyProxyRead;
   Pop_DataInQueue;
+  Write_TagData;
   // Write_Cache; // This is done in CheckCacheFill, after all events completed
   ProcessNextState;
 }
@@ -122,25 +139,29 @@ transition(BUSY_PROXY, CancelDownstreamPush) {
 transition(BUSY_PROXY, SendReadProxy) {
   Send_ReadProxy;
   Pop_TriggerQueue;
-  ProcessNextState;
+  ProcessNextState_ClearPending;
 }
 
-transition(BUSY_PROXY, {CompData_SC}) {
-  // Receive_ProxyData;
-  Receive_ReqDataResp;
+transition(BUSY_PROXY, {CompData_SC, CompData_UC}) {
+  Receive_ProxyData;
+  // Receive_ReqDataResp;
+  Mark_DataValid;
   UpdateDataState_FromReqDataResp;
   Try_SatisfyLoad; // "Callback_Miss" For proxy transitions
+  Try_ReplyProxyRead;
   // Currently we choose to push data only when we have it
   Initiate_Push;
   // Check_DataWaitingPush;
   Pop_DataInQueue;
   // Write_Cache;
-  Check_ProxyEnd;
+  // Check_ProxyEnd;
+  Write_TagData;
+  Try_SendCompAck;
   // Profile_OutgoingEnd_DataResp;
   ProcessNextState;
 }
 
-transition(BUSY_PROXY, {CompData_I, CompData_UC, CompData_UD_PD, CompData_SD_PD}) {
+transition(BUSY_PROXY, {CompData_I, CompData_UD_PD, CompData_SD_PD}) {
   Proxy_Error;
 }
 
@@ -152,26 +173,26 @@ transition(BUSY_PROXY, {CompData_I, CompData_UC, CompData_UD_PD, CompData_SD_PD}
 transition(BUSY_PROXY, SendPushReq) {
   Send_PushReq;
   Pop_TriggerQueue;
-  ProcessNextState;
+  ProcessNextState_ClearPending;
 }
 
 transition({BUSY_PROXY}, CompDBIDResp) {
   Try_PushData; // If failed, RXDAT sees dbid_ready, then triggers push
-  Check_ProxyEnd;
+  // Check_ProxyEnd;
   Pop_RespInQueue;
   ProcessNextState;
 }
 
 transition(BUSY_PROXY, SendPushData) {
   Push_ProxyData;
-  Check_ProxyEnd;
+  // Check_ProxyEnd;
   Pop_TriggerQueue;
   ProcessNextState;
 }
 
 transition(BUSY_PROXY, CompDBIDRespCancel) {
   Set_PushCancelled;
-  Check_ProxyEnd;
+  // Check_ProxyEnd;
   Pop_RespInQueue;
   ProcessNextState;
 }
@@ -221,12 +242,6 @@ transition(BUSY_PROXY, DataArrayRead) {
   ProcessNextState_ClearPending;
 }
 
-transition(BUSY_PROXY, DataArrayWrite, BUSY_PROXY) {
-  Pop_TriggerQueue;
-  DataArrayWrite;
-  ProcessNextState_ClearPending;
-}
-
 transition(BUSY_PROXY, TagArrayWrite) {TagArrayWrite} {
   Pop_TriggerQueue;
   TagArrayWrite;
@@ -238,3 +253,24 @@ transition(BUSY_PROXY, TagArrayRead) {TagArrayRead} {
   TagArrayRead;
   ProcessNextState_ClearPending;
 }
+
+transition(BUSY_PROXY, FillPipe) {
+  Pop_TriggerQueue;
+  FillPipe;
+  ProcessNextState_ClearPending;
+}
+
+transition(BUSY_PROXY, DataArrayWrite) {DataArrayWrite} {
+  Pop_TriggerQueue;
+  DataArrayWrite;
+  ProcessNextState_ClearPending;
+}
+
+transition(BUSY_PROXY, DataArrayWriteOnFill) {DataArrayWrite} {
+  Pop_TriggerQueue;
+  Profile_Fill;
+  DataArrayWrite;
+  ProcessNextState_ClearPending;
+}
+
+

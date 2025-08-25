@@ -265,6 +265,9 @@ NetDest::print(std::ostream& out) const
 {
     out << "[NetDest (" << m_bits.size() << ") ";
 
+    // Print ID of only destination
+    out << "Smallest: " << MachineIDToString(smallestElement()) << " ";
+
     for (int i = 0; i < m_bits.size(); i++) {
         for (int j = 0; j < m_bits[i].getSize(); j++) {
             out << (bool) m_bits[i].isElement(j) << " ";
