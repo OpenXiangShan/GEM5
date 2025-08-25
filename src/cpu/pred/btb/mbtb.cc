@@ -87,26 +87,42 @@ MBTB::MBTB(const Params &p)
     // MBTB is always half-aligned: | tag | idx | block offset | instShiftAmt
     idxShiftAmt = floorLog2(blockSize);
 
-    assert(numEntries % numWays == 0);
-    numSets = numEntries / numWays;
-    // MBTB doesn't support ahead-pipelined stages
+    // For dual SRAM: each SRAM has numWays/2 ways, total still numWays*2
+    assert(numEntries % (numWays * 2) == 0);
+    numSets = numEntries / (numWays * 2); // Each SRAM has numSets sets
 
     if (!isPowerOf2(numEntries)) {
         fatal("BTB entries is not a power of 2!");
     }
 
-    // Initialize BTB structure and MRU tracking
-    btb.resize(numSets);
-    mruList.resize(numSets);
+    // Initialize dual SRAM BTB structure and MRU tracking
+    sram0.resize(numSets);
+    sram1.resize(numSets);
+    mru0.resize(numSets);
+    mru1.resize(numSets);
+    
+    // Initialize SRAM0
     for (unsigned i = 0; i < numSets; ++i) {
-        auto &set = btb[i];
+        auto &set = sram0[i];
         set.resize(numWays);
         auto it = set.begin();
         for (; it != set.end(); it++) {
             it->valid = false;
-            mruList[i].push_back(it);
+            mru0[i].push_back(it);
         }
-        std::make_heap(mruList[i].begin(), mruList[i].end(), older());
+        std::make_heap(mru0[i].begin(), mru0[i].end(), older());
+    }
+    
+    // Initialize SRAM1
+    for (unsigned i = 0; i < numSets; ++i) {
+        auto &set = sram1[i];
+        set.resize(numWays);
+        auto it = set.begin();
+        for (; it != set.end(); it++) {
+            it->valid = false;
+            mru1[i].push_back(it);
+        }
+        std::make_heap(mru1[i].begin(), mru1[i].end(), older());
     }
 
     // | tag | idx | block offset | instShiftAmt
@@ -221,11 +237,6 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
 {
 
     FillStageLoop(s) {
-        // if (!isL0() && !hit && stagePreds[s].valid) {
-        //     DPRINTF(BTB, "BTB: ubtb hit and btb miss, use ubtb result");
-        //     incNonL0Stat(btbStats.predUseL0OnL1Miss);
-        //     break;
-        // }
         DPRINTF(BTB, "BTB: assigning prediction for stage %d\n", s);
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
@@ -337,21 +348,24 @@ MBTB::lookupSingleBlock(Addr block_pc)
     if (block_pc & 0x1) {
         return res; // ignore false hit when lowest bit is 1
     }
+    // Select SRAM based on 32B-aligned address
+    int sram_id = getSRAMId(block_pc);
+    auto& target_sram = (sram_id == 0) ? sram0 : sram1;
+    auto& target_mru = (sram_id == 0) ? mru0 : mru1;
+    
     Addr btb_idx = getIndex(block_pc);
-    auto btb_set = btb[btb_idx];
+    auto btb_set = target_sram[btb_idx];
     assert(btb_idx < numSets);
 
     Addr current_tag = getTag(block_pc);
-    Addr current_pc = block_pc;
-    Addr current_idx = btb_idx;
-    BTBSet current_set = btb_set;
-    DPRINTF(BTB, "BTB: Doing tag comparison for index 0x%lx tag %#lx\n",
-        current_idx, current_tag);
-    for (auto &way : current_set) {
+    DPRINTF(BTB, "BTB: Doing tag comparison for SRAM%d index 0x%lx tag %#lx\n",
+        sram_id, btb_idx, current_tag);
+        
+    for (auto &way : btb_set) {
         if (way.valid && way.tag == current_tag) {
             res.push_back(way);
             way.tick = curTick();  // Update timestamp for MRU
-            std::make_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
+            std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
         }
     }
     return res;
@@ -523,26 +537,10 @@ MBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
 {
     auto all_entries = old_entries;
 
-    if (isL0()){
-        // since we don't want duplications in uBTB's entriesToUpdate,
-        // which causes its counter to update twice unintentionally
-        // we need to check if the new entry already exists in uBTB
-        bool pred_branch_hit = false;
-        for (auto &e: all_entries) {
-            if (stream.updateNewBTBEntry == e) {
-                pred_branch_hit = true;
-                break;
-            }
-        }
-        if (!pred_branch_hit) {
-            all_entries.push_back(stream.updateNewBTBEntry);
-        }
-
-    }else{
-        if (!stream.updateIsOldEntry) { // L0 BTB always updates
-            all_entries.push_back(stream.updateNewBTBEntry);
-        }
+    if (!stream.updateIsOldEntry) {
+        all_entries.push_back(stream.updateNewBTBEntry);
     }
+
     DPRINTF(BTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
     dumpBTBEntries(all_entries);
     return all_entries;
@@ -557,13 +555,22 @@ MBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
  * 5. Update MRU information
  */
 void
-MBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, const FetchStream &stream)
+MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
 {
+    // Select SRAM based on entry PC's 32B-aligned address
+    Addr alignedPC = entry.pc & ~(blockSize - 1);
+    int sram_id = getSRAMId(alignedPC);
+    auto& target_sram = (sram_id == 0) ? sram0 : sram1;
+    auto& target_mru = (sram_id == 0) ? mru0 : mru1;
+    
+    // Calculate index and tag for this entry
+    Addr btb_idx = getIndex(entry.pc);
+    Addr btb_tag = getTag(entry.pc);
 
-    // Look for matching entry
+    // Look for matching entry in the target SRAM
     bool found = false;
-    auto it = btb[btb_idx].begin();
-    for (; it != btb[btb_idx].end(); it++) {
+    auto it = target_sram[btb_idx].begin();
+    for (; it != target_sram[btb_idx].end(); it++) {
         if (*it == entry) {
             found = true;
             break;
@@ -579,11 +586,9 @@ MBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, const Fe
         if (!this_cond_taken) {
             entry_to_write.alwaysTaken = false;
         }
-        // if (isL0()) {  // only L0 BTB has saturating counter
         if(!entry_to_write.alwaysTaken) {
             updateCtr(entry_to_write.ctr, this_cond_taken);
         }
-        // }
     }
     // update indirect target if necessary
     if (entry_to_write.isIndirect && stream.exeTaken && stream.getControlPC() == entry_to_write.pc) {
@@ -604,11 +609,10 @@ MBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, const Fe
         btbStats.updateExisting++;
     } else {
         // Replace oldest entry in the set
-        DPRINTF(BTB, "trying to replace entry in set %#lx\n", btb_idx);
-        dumpMruList(mruList[btb_idx]);
+        DPRINTF(BTB, "trying to replace entry in SRAM%d set %#lx\n", sram_id, btb_idx);
         // put the oldest entry in this set to the back of heap
-        std::pop_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
-        const auto& entry_in_btb_now = mruList[btb_idx].back();
+        std::pop_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
+        const auto& entry_in_btb_now = target_mru[btb_idx].back();
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
@@ -634,9 +638,8 @@ MBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, const Fe
             btbTrace->write_record(rec);
         }
 #endif
-        dumpMruList(mruList[btb_idx]);
     }
-    std::make_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
+    std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
 }
 
 /*
@@ -661,26 +664,17 @@ MBTB::update(const FetchStream &stream)
     // 3. Collect entries to update
     auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
     
-    // 4. Update BTB entries - each entry uses its own PC to calculate index and tag
+    // 4. Update BTB entries - each entry uses its own PC to select SRAM and calculate index/tag
     for (auto &entry : entries_to_update) {
-        // Calculate 32-byte aligned address for this entry
-        Addr entryPC = entry.pc;
-        Addr btb_idx;
-        Addr btb_tag;
-
-        // MBTB always uses entryPC for index/tag calculation
-        btb_idx = getIndex(entryPC);
-        btb_tag = getTag(entryPC);
-
-        // MBTB doesn't support ahead-pipelined stages
-        updateBTBEntry(btb_idx, btb_tag, entry, stream);
-
+        updateBTBEntry(entry, stream);
     }
     
-    // Verify BTB state
+    // Verify dual SRAM BTB state
     for (unsigned i = 0; i < numSets; i++) {
-        assert(btb[i].size() <= numWays);
-        assert(mruList[i].size() <= numWays);
+        assert(sram0[i].size() <= numWays);
+        assert(sram1[i].size() <= numWays);
+        assert(mru0[i].size() <= numWays);
+        assert(mru1[i].size() <= numWays);
     }
 }
 

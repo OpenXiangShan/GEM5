@@ -299,12 +299,10 @@ class MBTB : public TimedBaseBTBPredictor
         const FetchStream &stream);
 
     /** Update or replace BTB entry
-     *  @param btb_idx Index of the BTB entry
-     *  @param btb_tag Tag of the BTB entry
-     *  @param entry Entry to update/replace
+     *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
      *  @param stream Fetch stream with update info
      */
-    void updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, const FetchStream &stream);
+    void updateBTBEntry(const BTBEntry& entry, const FetchStream &stream);
 
     /*
      * Comparator for MRU heap
@@ -351,24 +349,32 @@ class MBTB : public TimedBaseBTBPredictor
      */
     std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc);
 
-    /** The BTB structure:
-     *  - Organized as numSets sets
-     *  - Each set has numWays ways
-     *  - Total size = numSets * numWays = numEntries
+    /** Dual SRAM BTB structure:
+     *  - Two independent 4-way SRAMs (sram0 and sram1)
+     *  - Each SRAM organized as numSets sets with 4 ways
+     *  - Total size = numSets * 4 * 2 = numEntries (same as before)
+     *  - SRAM selection based on 32B-aligned PC[5]
      */
-    std::vector<BTBSet> btb;
+    std::vector<BTBSet> sram0, sram1;
 
-    /** MRU tracking:
-     *  - One heap per set
-     *  - Each heap tracks the MRU order of entries in that set
-     *  - Oldest entry is at the top of heap
+    /** Independent MRU tracking for each SRAM:
+     *  - mru0 for sram0, mru1 for sram1
+     *  - Each maintains MRU order within its own 4-way sets
+     *  - Oldest entry is at the top of each heap
      */
-    std::vector<BTBHeap> mruList;
+    std::vector<BTBHeap> mru0, mru1;
 
     /** BTB configuration parameters */
     unsigned numEntries;    // Total number of entries
-    unsigned numWays;       // Number of ways per set
-    unsigned numSets;       // Number of sets (numEntries/numWays)
+    unsigned numWays;       // Number of ways per SRAM (4 for dual-SRAM)
+    unsigned numSets;       // Number of sets per SRAM (numEntries/numWays/2)
+    
+    /** SRAM selection helper function */
+    inline int getSRAMId(Addr pc) {
+        // Use the bit after block offset to select SRAM
+        // For 32B blocks: bit 5 selects SRAM (blockSize=32, log2(32)=5)
+        return ((pc >> floorLog2(blockSize)) & 1);
+    }
 
 #ifdef UNIT_TEST
     uint64_t blockSize{32};  // max size in byte of a Fetch Block
