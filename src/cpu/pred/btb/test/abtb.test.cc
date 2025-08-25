@@ -58,10 +58,10 @@ protected:
     void SetUp() override {
         // Create a BTB with 16 entries, 8-bit tags, 4-way associative, 1-cycle delay
         // The last parameter (true) enables pipelined operation
-        abtb = new DefaultBTB(16, 20, 4, 1, false, 1);
+        abtb = new DefaultBTB(16, 20, 4, 1, true);
         // assert(!abtb->entryHalfAligned);
 
-        bigAbtb = new DefaultBTB(1024, 20, 1, 1, false, 1);
+        bigAbtb = new DefaultBTB(1024, 20, 1, 1, true);
     }
 
     DefaultBTB* abtb;

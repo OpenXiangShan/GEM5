@@ -13,6 +13,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/btb.hh"
+#include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
@@ -99,7 +100,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     UBTB *ubtb{};
     DefaultBTB *abtb{};
-    DefaultBTB *btb{};
+    MBTB *btb{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};
     BTBMGSC *mgsc{};
