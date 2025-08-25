@@ -983,9 +983,9 @@ class MBTB(TimedBaseBTBPredictor):
     blockSize = 32  # max 64 byte block, 32 byte aligned
     # MBTB is always half-aligned - no parameter needed
 
-class DefaultBTB(TimedBaseBTBPredictor):
-    type = 'DefaultBTB'
-    cxx_class = 'gem5::branch_prediction::btb_pred::DefaultBTB'
+class AheadBTB(TimedBaseBTBPredictor):
+    type = 'AheadBTB'
+    cxx_class = 'gem5::branch_prediction::btb_pred::AheadBTB'
     cxx_header = 'cpu/pred/btb/btb.hh'
 
     numEntries = Param.Unsigned(1024, "Number of entries in the BTB")
@@ -1149,7 +1149,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
     predictWidth = Param.Unsigned(64, "Maximum range in bytes that a single prediction can cover")
     numStages = Param.Unsigned(4, "Maximum number of stages in the pipeline")
     ubtb = Param.UBTB(UBTB(), "UBTB predictor")
-    abtb = Param.DefaultBTB(DefaultBTB(), "ABTB predictor")
+    abtb = Param.AheadBTB(AheadBTB(), "ABTB predictor")
     btb = Param.MBTB(MBTB(), "MBTB predictor")
     tage = Param.BTBTAGE(BTBTAGE(), "TAGE predictor")
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")

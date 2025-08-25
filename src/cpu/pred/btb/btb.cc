@@ -63,39 +63,33 @@ namespace test {
  * - Address calculation parameters (index/tag masks and shifts)
  */
 #ifdef UNIT_TEST
-// Test constructor for unit testing mode
-DefaultBTB::DefaultBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay,
-                       bool entryHalfAligned)
+// Test constructor for unit testing mode - fixed ahead-pipelined configuration
+AheadBTB::AheadBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay)
     : TimedBaseBTBPredictor(),
       numEntries(numEntries),
       numWays(numWays),
-      entryHalfAligned(entryHalfAligned),
       tagBits(tagBits)
 {
     setNumDelay(numDelay);
 #else
-// Production constructor
-DefaultBTB::DefaultBTB(const Params &p)
+// Production constructor - fixed ahead-pipelined configuration
+AheadBTB::AheadBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
     numEntries(p.numEntries),
     numWays(p.numWays),
-    entryHalfAligned(p.entryHalfAligned),
     tagBits(p.tagBits),
     btbStats(this)
 {
+    // AheadBTB supports configurable ahead-pipelined stages, but must be > 0
     this->aheadPipelinedStages = p.aheadPipelinedStages;
+    assert(this->aheadPipelinedStages > 0);
 #endif
-    // Calculate shift amounts for index calculation
-    if (entryHalfAligned) { // if half aligned, | tag | idx | block offset | instShiftAmt
-        idxShiftAmt = floorLog2(blockSize);
-    } else { // if not aligned to blockSize, | tag | idx | instShiftAmt
-        idxShiftAmt = 1;
-    }
+    // AheadBTB always uses single instruction alignment: | tag | idx | instShiftAmt
+    idxShiftAmt = 1;
 
     assert(numEntries % numWays == 0);
     numSets = numEntries / numWays;
-    // half-aligned should not be used with ahead-pipelined stages
-    assert(aheadPipelinedStages == 0 || !entryHalfAligned);
+    // AheadBTB always uses ahead-pipelined stages = 1
 
     if (!isPowerOf2(numEntries)) {
         fatal("BTB entries is not a power of 2!");
@@ -120,34 +114,30 @@ DefaultBTB::DefaultBTB(const Params &p)
     idxMask = numSets - 1;
 
     tagMask = (1UL << tagBits) - 1;
-    // if ahead-pipelined stages are enabled, tag starts from the second bit (PC[tagBits+1 :2])
-    tagShiftAmt = (aheadPipelinedStages > 0) ? idxShiftAmt : idxShiftAmt + floorLog2(numSets);
+    // AheadBTB always uses ahead-pipelined tag calculation: tag starts from the second bit
+    tagShiftAmt = idxShiftAmt;
 
     DPRINTF(BTB, "numEntries %d, numSets %d, numWays %d, tagBits %d, tagShiftAmt %d, idxMask %#lx, tagMask %#lx\n",
         numEntries, numSets, numWays, tagBits, tagShiftAmt, idxMask, tagMask);
 
 #ifndef UNIT_TEST
     hasDB = true;
-    switch (getDelay()) {
-        case 0: dbName = std::string("btb_0"); break;
-        case 1: dbName = std::string("btb_1"); break;
-        default: dbName = std::string("btb"); break;
-    }
+    dbName = std::string("AheadBTB");
 #endif
 }
 
 #ifndef UNIT_TEST
 void
-DefaultBTB::tickStart()
+AheadBTB::tickStart()
 {
     // nothing to do
 }
 
 void
-DefaultBTB::tick() {}
+AheadBTB::tick() {}
 
 void
-DefaultBTB::setTrace()
+AheadBTB::setTrace()
 {
     if (enableDB) {
         std::vector<std::pair<std::string, DataType>> fields_vec = {
@@ -158,11 +148,7 @@ DefaultBTB::setTrace()
             std::make_pair("mode", UINT64),
             std::make_pair("hit", UINT64)
         };
-        switch (getDelay()) {
-            case 0: btbTrace = _db->addAndGetTrace("BTBTrace_0", fields_vec); break;
-            case 1: btbTrace = _db->addAndGetTrace("BTBTrace_1", fields_vec); break;
-            default: btbTrace = _db->addAndGetTrace("BTBTrace", fields_vec); break;
-        }
+        btbTrace = _db->addAndGetTrace("ABTBTrace", fields_vec);
         btbTrace->init_table();
     }
 }
@@ -173,8 +159,8 @@ DefaultBTB::setTrace()
  * 1. Sort entries by PC order
  * 2. Remove entries before the start PC
  */
-std::vector<DefaultBTB::TickedBTBEntry>
-DefaultBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
+std::vector<AheadBTB::TickedBTBEntry>
+AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
 {
     int hitNum = entries.size();
     bool hit = hitNum > 0;
@@ -223,16 +209,15 @@ DefaultBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr star
  * 3. Set indirect branch targets
  */
 void
-DefaultBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
+AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
                                     std::vector<FullBTBPrediction>& stagePreds)
 {
-    // S0 prediction source statistic is tracked by ABTB
-    if (aheadPipelinedStages > 0) {
-        if (stagePreds[0].btbEntries.size() > 0) {
-            DPRINTF(BTB, "BTB: predsOfEachStage are already filled by uBTB, skipping ABTB prediction\n");
-            btbStats.S0PredUseUBTB++;
-            return;
-        }
+    // S0 prediction source statistic is tracked by AheadBTB
+    // AheadBTB always has aheadPipelinedStages > 0
+    if (stagePreds[0].btbEntries.size() > 0) {
+        DPRINTF(BTB, "AheadBTB: predsOfEachStage are already filled by uBTB, skipping AheadBTB prediction\n");
+        btbStats.S0PredUseUBTB++;
+        return;
     }
 
     FillStageLoop(s) {
@@ -281,13 +266,12 @@ DefaultBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         }
     }
 
-    // Update S0 prediction source statistics, if the control flow reached this point, we know that uBTB miss
-    if (aheadPipelinedStages > 0) {
-        if (entries.size() > 0) {
-            btbStats.S0PredUseABTB++;
-        } else {
-            btbStats.S0Predmiss++;
-        }
+    // Update S0 prediction source statistics for AheadBTB
+    // If control flow reached here, uBTB missed
+    if (entries.size() > 0) {
+        btbStats.S0PredUseABTB++;
+    } else {
+        btbStats.S0Predmiss++;
     }
 }
 
@@ -298,7 +282,7 @@ DefaultBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
  * 3. Save current BTB entries
  */
 void
-DefaultBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
+AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
                                    std::vector<FullBTBPrediction>& stagePreds)
 {
 
@@ -315,7 +299,7 @@ DefaultBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
 }
 
 void
-DefaultBTB::putPCHistory(Addr startAddr,
+AheadBTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
                          std::vector<FullBTBPrediction> &stagePreds)
 {
@@ -334,43 +318,21 @@ DefaultBTB::putPCHistory(Addr startAddr,
 }
 
 std::shared_ptr<void>
-DefaultBTB::getPredictionMeta()
+AheadBTB::getPredictionMeta()
 {
     return meta;
 }
 
 void
-DefaultBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
+AheadBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
 
 void
-DefaultBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
+AheadBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
     // clear ahead pipeline first
     while (!aheadReadBtbEntries.empty()) {
         aheadReadBtbEntries.pop();
     }
-    /*
-    // do ahead reads to fill the ahead-pipeline
-    // with the squashed stream we could only do one read
-    // if want to support more ahead stages, interface needs to be modified
-    auto startAddr = entry.startPC;
-    // access ftb memory, get a set
-    Addr ftb_read_idx = getIndex(startAddr);
-    auto ftb_read_set = ftb[ftb_read_idx];
-    assert(ftb_read_idx < numSets);
-    // in ahead-pipelined implementations, we do memory access first with
-    // address of the previous block, and do tag compare with current address
-    // thus we need to store the entry read from memory for later use
-    if (aheadPipelinedStages > 0) {
-        DPRINTF(AheadPipeline, "FTB: in recoverHist\n");
-        DPRINTF(AheadPipeline, "FTB: pushing set for ahead-pipelined stages %d,
-            idx %d\n", aheadPipelinedStages, ftb_read_idx);
-        DPRINTF(AheadPipeline, "FTB: dumping ftb set\n");
-        for (auto &entry : ftb_read_set) {
-            printTickedFTBEntry(entry.second);
-        }
-        aheadReadFtbEntries.push(std::make_tuple(startAddr, ftb_read_idx, ftb_read_set));
-    }*/
 }
 
 
@@ -379,8 +341,8 @@ DefaultBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchStrea
  * @param block_pc The aligned PC to lookup
  * @return Vector of matching BTB entries
  */
-std::vector<DefaultBTB::TickedBTBEntry>
-DefaultBTB::lookupSingleBlock(Addr block_pc)
+std::vector<AheadBTB::TickedBTBEntry>
+AheadBTB::lookupSingleBlock(Addr block_pc)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -389,46 +351,32 @@ DefaultBTB::lookupSingleBlock(Addr block_pc)
     Addr btb_idx = getIndex(block_pc);
     auto btb_set = btb[btb_idx];
     assert(btb_idx < numSets);
-    // in ahead-pipelined implementations, we do memory access first with
-    // address of the previous block, and do tag compare with current address
-    // thus we need to store the entry read from memory for later use
-    if (aheadPipelinedStages > 0) {
-        assert(!entryHalfAligned);
-        DPRINTF(AheadPipeline, "FTB: pushing set for ahead-pipelined stages %d, idx %ld\n",
-             aheadPipelinedStages, btb_idx);
-        // DPRINTF(AheadPipeline, "FTB: dumping ftb set\n");
-        // for (auto &entry : btb_set) {
-        //     printTickedBTBEntry(entry);
-        // }
-        aheadReadBtbEntries.push(std::make_tuple(block_pc, btb_idx, btb_set));
-    }
+    // AheadBTB always uses ahead-pipelined implementation:
+    // memory access with previous block PC, tag compare with current PC
+    DPRINTF(AheadPipeline, "AheadBTB: pushing set for ahead-pipelined stages, idx %ld\n", btb_idx);
+    aheadReadBtbEntries.push(std::make_tuple(block_pc, btb_idx, btb_set));
 
     Addr current_tag = getTag(block_pc);
     Addr current_pc = 0;
     Addr current_idx = 0;
     BTBSet current_set;
-    if (aheadPipelinedStages == 0) {
-        current_pc = block_pc;
-        current_idx = btb_idx;
-        current_set = btb_set;
-    } else {
-        // only if the ahead-pipeline is filled can we use the entry
-        if (aheadReadBtbEntries.size() >= aheadPipelinedStages+1) {
-            // +1 because we pushed a new set in this cycle before
-            // in case there are push without corresponding pop
-            assert(aheadReadBtbEntries.size() == aheadPipelinedStages+1);
-            std::tie(current_pc, current_idx, current_set) = aheadReadBtbEntries.front();
-            DPRINTF(AheadPipeline, "BTB: ahead-pipeline filled, using set %ld from pc %#lx\n",
-                current_idx, current_pc);
-            DPRINTF(AheadPipeline, "BTB: dumping btb set\n");
-            for (auto &entry : current_set) {
-                printTickedBTBEntry(entry);
-            }
-            aheadReadBtbEntries.pop();
-        } else {
-            DPRINTF(AheadPipeline, "BTB: ahead-pipeline not filled, only have %ld sets read,"
-                " skipping tag compare, assigning miss\n", aheadReadBtbEntries.size());
+    // AheadBTB always uses ahead-pipelined logic (aheadPipelinedStages > 0)
+    // only if the ahead-pipeline is filled can we use the entry
+    if (aheadReadBtbEntries.size() >= aheadPipelinedStages+1) {
+        // +1 because we pushed a new set in this cycle before
+        // in case there are push without corresponding pop
+        assert(aheadReadBtbEntries.size() == aheadPipelinedStages+1);
+        std::tie(current_pc, current_idx, current_set) = aheadReadBtbEntries.front();
+        DPRINTF(AheadPipeline, "AheadBTB: ahead-pipeline filled, using set %ld from pc %#lx\n",
+            current_idx, current_pc);
+        DPRINTF(AheadPipeline, "AheadBTB: dumping btb set\n");
+        for (auto &entry : current_set) {
+            printTickedBTBEntry(entry);
         }
+        aheadReadBtbEntries.pop();
+    } else {
+        DPRINTF(AheadPipeline, "AheadBTB: ahead-pipeline not filled, only have %ld sets read,"
+            " skipping tag compare, assigning miss\n", aheadReadBtbEntries.size());
     }
     DPRINTF(BTB, "BTB: Doing tag comparison for index 0x%lx tag %#lx\n",
         current_idx, current_tag);
@@ -442,98 +390,19 @@ DefaultBTB::lookupSingleBlock(Addr block_pc)
     return res;
 }
 
-std::vector<DefaultBTB::TickedBTBEntry>
-DefaultBTB::lookup(Addr block_pc)
+std::vector<AheadBTB::TickedBTBEntry>
+AheadBTB::lookup(Addr block_pc)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
         return res; // ignore false hit when lowest bit is 1
     }
 
-    if (entryHalfAligned) {
-        // Calculate 32B aligned address
-        Addr alignedPC = block_pc & ~(blockSize - 1);
-        // Lookup first 32B block
-        res = lookupSingleBlock(alignedPC);
-        // Lookup next 32B block
-        auto nextBlockRes = lookupSingleBlock(alignedPC + blockSize);
-        // Merge results
-        res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
-
-        // Sort entries by PC order
-        std::sort(res.begin(), res.end(),
-                 [](const TickedBTBEntry &a, const TickedBTBEntry &b) {
-                     return a.pc < b.pc;
-                 });
-
-        DPRINTF(BTB, "BTB: Half-aligned lookup results:\n");
-        dumpTickedBTBEntries(res);
-    } else {
-        res = lookupSingleBlock(block_pc);
-    }
+    // AheadBTB always uses single block lookup
+    res = lookupSingleBlock(block_pc);
     return res;
 }
 
-/*
- * Generate a new BTB entry or update an existing one based on execution results
- * 
- * This function is called during BTB update to:
- * 1. Check if the executed branch was predicted (hit in BTB)
- * 2. If hit, prepare to update the existing entry
- * 3. If miss and branch was taken:
- *    - Create a new entry
- *    - For conditional branches, initialize as always taken with counter = 1
- * 4. Set the tag and update stream metadata for later use in update()
- * 
- * Note: This is only called in L1 BTB during update
- */
-void
-DefaultBTB::getAndSetNewBTBEntry(FetchStream &stream)
-{
-    DPRINTF(BTB, "getAndSetNewBTBEntry called for pc %#lx\n", stream.startPC);
-    // Get prediction metadata from previous stages
-    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
-    auto &predBTBEntries = meta->hit_entries;
-    
-    // Check if this branch was predicted (exists in BTB)
-    bool pred_branch_hit = false;
-    BTBEntry entry_to_write = BTBEntry();
-    for (auto &e: predBTBEntries) {
-        if (stream.exeBranchInfo == e) {
-            pred_branch_hit = true;
-            entry_to_write = e;
-            break;
-        }
-    }
-    bool is_old_entry = pred_branch_hit;
-
-    // If branch was not predicted but was actually taken in execution, create new entry
-    if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n", stream.exeBranchInfo.pc);
-        BTBEntry new_entry = BTBEntry(stream.exeBranchInfo);
-        new_entry.valid = true;
-        // For conditional branches, initialize as always taken
-        if (new_entry.isCond) {
-            new_entry.alwaysTaken = true;
-            new_entry.ctr = 0;  // Start with positive prediction
-            incNonL0Stat(btbStats.newEntryWithCond);
-        } else {
-            incNonL0Stat(btbStats.newEntryWithUncond);
-        }
-        incNonL0Stat(btbStats.newEntry);
-        entry_to_write = new_entry;
-        is_old_entry = false;
-    } else {
-        DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, stream.exeTaken=%d\n",
-                pred_branch_hit, stream.exeTaken);
-        // Existing entries will be updated in update()
-    }
-
-    // Set tag and update stream metadata for use in update()
-    entry_to_write.tag = getTag(entry_to_write.pc);
-    stream.updateNewBTBEntry = entry_to_write;
-    stream.updateIsOldEntry = is_old_entry;
-}
 
 /**
  * Process old BTB entries from prediction metadata
@@ -541,7 +410,7 @@ DefaultBTB::getAndSetNewBTBEntry(FetchStream &stream)
  * 2. Remove entries that were not executed
  */
 std::vector<BTBEntry>
-DefaultBTB::processOldEntries(const FetchStream &stream)
+AheadBTB::processOldEntries(const FetchStream &stream)
 {
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     // hit entries whose corresponding insts are acutally executed
@@ -567,7 +436,7 @@ DefaultBTB::processOldEntries(const FetchStream &stream)
  * Also check L0 BTB prediction status
  */
 void
-DefaultBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
+AheadBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
@@ -606,7 +475,7 @@ DefaultBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
  * 2. Add new entry if necessary
  */
 std::vector<BTBEntry>
-DefaultBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
+AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
                                      const FetchStream &stream)
 {
     auto all_entries = old_entries;
@@ -645,7 +514,7 @@ DefaultBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
  * 5. Update MRU information
  */
 void
-DefaultBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, const FetchStream &stream)
+AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, const FetchStream &stream)
 {
 
     // Look for matching entry
@@ -737,7 +606,7 @@ DefaultBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, co
  * 5. Update MRU information
  */
 void
-DefaultBTB::update(const FetchStream &stream)
+AheadBTB::update(const FetchStream &stream)
 {
     // 1. Process old entries
     auto old_entries = processOldEntries(stream);
@@ -756,23 +625,18 @@ DefaultBTB::update(const FetchStream &stream)
         Addr btb_idx;
         Addr btb_tag;
 
-        if (entryHalfAligned) {
-            btb_idx = getIndex(entryPC);
-            btb_tag = getTag(entryPC);
-        } else{
-            Addr startPC = stream.getRealStartPC();
-            btb_idx = getIndex(startPC);
-            btb_tag = getTag(startPC);
-        }
+        // AheadBTB always uses startPC-based indexing (not half-aligned)
+        Addr startPC = stream.getRealStartPC();
+        btb_idx = getIndex(startPC);
+        btb_tag = getTag(startPC);
 
-        if (aheadPipelinedStages > 0) {
-            Addr previousPC = getPreviousPC(stream);
-            if (previousPC == 0) {
-                DPRINTF(BTB, "ahead-pipeline: no previous PC, skipping update\n");
-                return;
-            }
-            btb_idx = getIndex(previousPC);
+        // AheadBTB always uses ahead-pipelined update logic
+        Addr previousPC = getPreviousPC(stream);
+        if (previousPC == 0) {
+            DPRINTF(BTB, "AheadBTB: no previous PC, skipping update\n");
+            return;
         }
+        btb_idx = getIndex(previousPC);
         updateBTBEntry(btb_idx, btb_tag, entry, stream);
 
     }
@@ -790,7 +654,7 @@ DefaultBTB::update(const FetchStream &stream)
  * @return Previous PC, 0 if the stream is not filled
  */
 Addr
-DefaultBTB::getPreviousPC(const FetchStream &stream)
+AheadBTB::getPreviousPC(const FetchStream &stream)
 {
     // get pc from the nth previous block, the value of n is aheadPipelinedStages
     auto previous_pcs = stream.previousPCs;
@@ -811,7 +675,7 @@ DefaultBTB::getPreviousPC(const FetchStream &stream)
 
 #ifndef UNIT_TEST
 void
-DefaultBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+AheadBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &hit_entries = meta->hit_entries;
@@ -921,7 +785,7 @@ DefaultBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 #endif
 
 #ifndef UNIT_TEST
-DefaultBTB::BTBStats::BTBStats(statistics::Group* parent) :
+AheadBTB::BTBStats::BTBStats(statistics::Group* parent) :
     statistics::Group(parent),
     ADD_STAT(newEntry, statistics::units::Count::get(), "number of new btb entries generated"),
     ADD_STAT(newEntryWithCond, statistics::units::Count::get(), "number of new btb entries generated with conditional branch"),
@@ -970,7 +834,7 @@ DefaultBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
 
 {
-    auto btb = dynamic_cast<branch_prediction::btb_pred::DefaultBTB*>(parent);
+    auto btb = dynamic_cast<branch_prediction::btb_pred::AheadBTB*>(parent);
     // do not need counter below in L0 btb
     if (btb->isL0()) {
         predUseL0OnL1Miss.prereq(predUseL0OnL1Miss);
@@ -983,11 +847,6 @@ DefaultBTB::BTBStats::BTBStats(statistics::Group* parent) :
         oldEntryWithNewCond.prereq(oldEntryWithNewCond);
         oldEntryWithNewUncond.prereq(oldEntryWithNewUncond);
         eraseSlotBehindUncond.prereq(eraseSlotBehindUncond);
-    }
-    if (btb->aheadPipelinedStages == 0){
-        S0Predmiss.prereq(S0Predmiss);
-        S0PredUseUBTB.prereq(S0PredUseUBTB);
-        S0PredUseABTB.prereq(S0PredUseABTB);
     }
 }
 #endif

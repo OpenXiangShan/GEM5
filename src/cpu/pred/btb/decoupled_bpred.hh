@@ -99,7 +99,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     const Addr MaxAddr{~(0ULL)};
 
     UBTB *ubtb{};
-    DefaultBTB *abtb{};
+    AheadBTB *abtb{};
     MBTB *btb{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};

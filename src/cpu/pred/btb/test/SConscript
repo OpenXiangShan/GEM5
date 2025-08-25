@@ -5,7 +5,7 @@ GTest('uras.test', 'uras_test.cc')
 
 # Add BTB test with minimal dependencies
 GTest('btb.test', 
-    '../btb.cc',
+    '../mbtb.cc',
     'btb.test.cc',
     'timed_base_pred.cc',
 )

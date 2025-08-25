@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
-#include "cpu/pred/btb/btb.hh"
+#include "cpu/pred/btb/mbtb.hh"
 
 namespace gem5
 {
@@ -106,7 +106,7 @@ std::pair<bool, Addr> findIndirectTarget(const IndirectTargets& indirectTargets,
  * @return std::vector<FullBTBPrediction> Final stage predictions
  */
 std::vector<FullBTBPrediction>
-predictUpdateCycle(DefaultBTB* btb,
+predictUpdateCycle(MBTB* btb,
      Addr startPC,
      const BranchInfo& branch,
      bool taken,
@@ -165,19 +165,19 @@ class BTBTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Create a BTB with 16 entries, 8-bit tags, and 4-way set associative
-        mbtb_small = new DefaultBTB(16, 8, 4, 1, true); // mbtb (L1 BTB)
-        mbtb = new DefaultBTB (16384, 20, 8, 1, true);
+        mbtb_small = new MBTB(16, 8, 4, 1); // mbtb (L1 BTB)
+        mbtb = new MBTB (16384, 20, 8, 1);
     }
     
     
-    DefaultBTB* mbtb_small;
-    DefaultBTB* mbtb;
+    MBTB* mbtb_small;
+    MBTB* mbtb;
 };
 
 // Test basic initialization
 TEST_F(BTBTest, Initialization) {
     // Create a new BTB with different parameters
-    DefaultBTB testBtb(32, 12, 8, 0);
+    MBTB testBtb(32, 12, 8, 0);
     // Basic initialization test passes if no crashes/assertions
     SUCCEED();
 }

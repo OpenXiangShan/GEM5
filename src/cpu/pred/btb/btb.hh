@@ -27,18 +27,14 @@
  */
 
 /*
- * Branch Target Buffer (BTB) Implementation
- * 
- * The BTB is a cache-like structure that stores information about branches:
- * - Branch type (conditional, unconditional, indirect, call, return)
- * - Branch target address
- * - Branch prediction information (counter for conditional branches)
- * 
- * Key Features:
+ * Ahead Branch Target Buffer (AheadBTB) Implementation
+ *
+ * The AheadBTB is a specialized BTB for ahead-pipelined prediction:
+ * - Uses previous block PC for memory access, current block PC for tag comparison
+ * - Fixed ahead-pipelined stages = 1
  * - N-way set associative organization
  * - MRU (Most Recently Used) replacement policy
- * - Support for multiple branch types
- * - Support for multiple prediction stages (L0/L1 BTB)
+ * - Optimized for Ahead BTB use case only
  */
 
 #ifndef __CPU_PRED_BTB_BTB_HH__
@@ -61,7 +57,7 @@
     #include "config/the_isa.hh"
     #include "debug/BTB.hh"
     #include "debug/BTBStats.hh"
-    #include "params/DefaultBTB.hh"
+    #include "params/AheadBTB.hh"
     #include "cpu/pred/btb/timed_base_pred.hh"
 #endif
 
@@ -79,21 +75,20 @@ namespace btb_pred
 namespace test {
 #endif
 
-class DefaultBTB : public TimedBaseBTBPredictor
+class AheadBTB : public TimedBaseBTBPredictor
 {
   private:
 
   public:
 
 #ifdef UNIT_TEST
-    // Test constructor
-    DefaultBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay,
-               bool entryHalfAligned = false);
+    // Test constructor - fixed ahead-pipelined configuration
+    AheadBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay);
 #else
     // Production constructor
-    typedef DefaultBTBParams Params;
+    typedef AheadBTBParams Params;
 
-    DefaultBTB(const Params& p);
+    AheadBTB(const Params& p);
 #endif
 
     /*
@@ -167,17 +162,10 @@ class DefaultBTB : public TimedBaseBTBPredictor
      *  @param tagBits Number of bits for each tag in the BTB.
      *  @param instShiftAmt Offset amount for instructions to ignore alignment.
      */
-    DefaultBTB(unsigned numEntries, unsigned tagBits,
+    AheadBTB(unsigned numEntries, unsigned tagBits,
                unsigned instShiftAmt, unsigned numThreads);
 #endif
 
-    /**
-     * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
-     *        only in L1BTB will this function be called before update
-     * 
-     * @param stream 
-     */
-    void getAndSetNewBTBEntry(FetchStream &stream);
 
     /** Updates the BTB with the branch info of a block and execution result.
      *  This function:
@@ -397,10 +385,7 @@ class DefaultBTB : public TimedBaseBTBPredictor
 #ifdef UNIT_TEST
     uint64_t blockSize{32};  // max size in byte of a Fetch Block
 #endif
-    // Whether the entries are half-aligned, in other words, whether it is mBTB. Note that the global
-    // variable halfAligned in stream_common.hh is used to define the alignment of the fallthrough address
-    // of the a fetch block, and it is orthogonal to whether the entries are stored in 32B aligned blocks
-    bool entryHalfAligned;
+    // AheadBTB is never half-aligned, always uses single block lookup
 
 
 

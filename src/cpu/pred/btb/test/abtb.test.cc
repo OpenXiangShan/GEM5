@@ -16,7 +16,7 @@ namespace test
 {
 
 
-FetchStream createStream(Addr startPC, FullBTBPrediction &pred, DefaultBTB *abtb) {
+FetchStream createStream(Addr startPC, FullBTBPrediction &pred, AheadBTB *abtb) {
     FetchStream stream;
     stream.startPC = startPC;
     Addr fallThroughAddr = pred.getFallThrough(abtb->predictWidth);
@@ -38,14 +38,14 @@ void resolveStream(FetchStream &stream, bool taken, Addr brPc, Addr target, bool
     stream.exeTaken = taken;
 }
 
-FullBTBPrediction makePrediction(Addr startPC, DefaultBTB *abtb) {
+FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb) {
     std::vector<FullBTBPrediction> stagePreds(2);  // 2 stages
     boost::dynamic_bitset<> history(8, 0); // history does not matter for BTB
     abtb->putPCHistory(startPC, history, stagePreds);
     return stagePreds[1];
 }
 
-void updateBTB(FetchStream &stream, DefaultBTB *abtb) {
+void updateBTB(FetchStream &stream, AheadBTB *abtb) {
     abtb->getAndSetNewBTBEntry(stream); // usually called by mbtb, here for testing purpose
     abtb->update(stream);
 }
@@ -58,14 +58,14 @@ protected:
     void SetUp() override {
         // Create a BTB with 16 entries, 8-bit tags, 4-way associative, 1-cycle delay
         // The last parameter (true) enables pipelined operation
-        abtb = new DefaultBTB(16, 20, 4, 1, true);
-        // assert(!abtb->entryHalfAligned);
+        abtb = new AheadBTB(16, 20, 4, 1);
+        // AheadBTB never uses half-aligned mode
 
-        bigAbtb = new DefaultBTB(1024, 20, 1, 1, true);
+        bigAbtb = new AheadBTB(1024, 20, 1, 1);
     }
 
-    DefaultBTB* abtb;
-    DefaultBTB* bigAbtb;
+    AheadBTB* abtb;
+    AheadBTB* bigAbtb;
 };
 
 TEST_F(ABTBTest, BasicPredictionUpdateCycle){

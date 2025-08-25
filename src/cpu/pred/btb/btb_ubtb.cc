@@ -96,7 +96,7 @@ UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
         printTickedUBTBEntry(entry);
     } else {
         ubtbStats.predMiss++;
-        DPRINTF(BTB, "uBTB: lookup miss\n");
+        DPRINTF(UBTB, "uBTB: lookup miss\n");
     }
     return;
 }
@@ -284,7 +284,7 @@ UBTB::update(const FetchStream &stream)
 
     if (stream.exeTaken) {
         if (!pred_hit_entry.valid || pred_hit_entry != stream.exeBranchInfo) {
-            DPRINTF(BTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+            DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
             ubtbStats.updateMiss++;
         }
     }
