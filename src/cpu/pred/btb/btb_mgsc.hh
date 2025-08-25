@@ -1,6 +1,7 @@
 #ifndef __CPU_PRED_BTB_MGSC_HH__
 #define __CPU_PRED_BTB_MGSC_HH__
 
+#include <cstdint>
 #include <deque>
 #include <map>
 #include <utility>
@@ -32,57 +33,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
   public:
     typedef BTBMGSCParams Params;
-
-    // Represents a single entry in the MGSC prediction table
-    struct MgscEntry
-    {
-      public:
-        bool valid;
-        short counter;  // Prediction counter (-32 to 31), 6bits
-        Addr pc;        // branch pc, like branch position, for btb entry pc check
-        unsigned lruCounter;
-
-        MgscEntry() : valid(false), counter(0), pc(0), lruCounter(0) {}
-
-        MgscEntry(bool valid, short counter, Addr pc, unsigned lruCounter)
-            : valid(valid), counter(counter), pc(pc), lruCounter(lruCounter)
-        {
-        }
-        bool taken() const { return counter >= 0; }
-    };
-
-    // Represents a single entry in the MGSC weight table
-    struct MgscWeightEntry
-    {
-      public:
-        bool valid;
-        Addr pc;        // btb entry pc, same as mgsc entry pc
-        short counter;  // weight counter (-32 to 31), 6bits
-        unsigned lruCounter;
-
-        MgscWeightEntry() : valid(false), pc(0), counter(0), lruCounter(0) {}
-
-        MgscWeightEntry(bool valid, Addr pc, short counter, unsigned lruCounter)
-            : valid(valid), pc(pc), counter(counter), lruCounter(lruCounter)
-        {
-        }
-    };
-
-    struct MgscThresEntry
-    {
-      public:
-        bool valid;
-        Addr pc;           // btb entry pc, same as mgsc entry pc
-        unsigned counter;  // thres counter (0 to 255), 6bits
-        unsigned lruCounter;
-
-        MgscThresEntry() : valid(false), pc(0), counter(0), lruCounter(0) {}
-
-        MgscThresEntry(bool valid, Addr pc, unsigned counter, unsigned lruCounter)
-            : valid(valid), pc(pc), counter(counter), lruCounter(lruCounter)
-        {
-        }
-    };
 
     // Contains the complete prediction result
     struct MgscPrediction
@@ -226,13 +176,13 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Calculate percsum from a table for a given PC
      */
-    int calculatePercsum(const std::vector<std::vector<std::vector<MgscEntry>>> &table,
+    int calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &table,
                          const std::vector<Addr> &tableIndices, unsigned numTables, Addr pc);
 
     /**
      * Find weight in a weight table for a given PC
      */
-    int findWeight(const std::vector<std::vector<MgscWeightEntry>> &weightTable, Addr tableIndex, Addr pc);
+    int findWeight(const std::vector<std::vector<int16_t>> &weightTable, Addr tableIndex, Addr pc);
 
     /**
      * Calculate scaled percsum using weight
@@ -242,7 +192,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Find threshold in a threshold table for a given PC
      */
-    int findThreshold(const std::vector<std::vector<MgscThresEntry>> &thresholdTable, Addr tableIndex, Addr pc,
+    int findThreshold(const std::vector<std::vector<int16_t>> &thresholdTable, Addr tableIndex, Addr pc,
                       int defaultValue);
 
     /**
@@ -253,14 +203,14 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Update a prediction table and allocate new entry if needed
      */
-    void updateAndAllocatePredTable(std::vector<std::vector<std::vector<MgscEntry>>> &table,
+    void updateAndAllocatePredTable(std::vector<std::vector<std::vector<int16_t>>> &table,
                                     const std::vector<Addr> &tableIndices, unsigned numTables, Addr pc,
                                     bool actual_taken);
 
     /**
      * Update a weight table and allocate new entry if needed
      */
-    void updateAndAllocateWeightTable(std::vector<std::vector<MgscWeightEntry>> &weightTable, Addr tableIndex, Addr pc,
+    void updateAndAllocateWeightTable(std::vector<std::vector<int16_t>> &weightTable, Addr tableIndex, Addr pc,
                                       bool weight_scale_diff, bool percsum_matches_actual);
 
     /**
@@ -271,7 +221,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Update the global threshold table and allocate new entry if needed
      */
-    void updateGlobalThreshold(Addr pc, bool update_condition, bool update_direction);
+    void updateGlobalThreshold(Addr pc, bool update_direction);
 
   private:
     // Look up predictions in MGSC tables for a stream of instructions
@@ -350,8 +300,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /*weight table index width*/
     unsigned weightTableIdxWidth;
 
-    // Number of ways for set associative design
-    const unsigned numWays;
+    const unsigned numCtrsPerLine = 8;
 
     // Whether MGSC is enabled
     bool enableMGSC;
@@ -363,39 +312,39 @@ class BTBMGSC : public TimedBaseBTBPredictor
     std::vector<FoldedHist> indexGFoldedHist;
     std::vector<FoldedHist> indexPFoldedHist;
 
-    // The actual MGSC prediction tables (table x index x way)
-    std::vector<std::vector<std::vector<MgscEntry>>> bwTable;
-    // The actual MGSC prediction tables (index x way)
-    std::vector<std::vector<MgscWeightEntry>> bwWeightTable;
+    // The actual MGSC prediction tables (table x index x line)
+    std::vector<std::vector<std::vector<int16_t>>> bwTable;
+    // The actual MGSC prediction tables (index x line)
+    std::vector<std::vector<int16_t>> bwWeightTable;
 
-    // The actual MGSC prediction tables (table x index x way)
-    std::vector<std::vector<std::vector<MgscEntry>>> lTable;
-    // The actual MGSC prediction tables (index x way)
-    std::vector<std::vector<MgscWeightEntry>> lWeightTable;
+    // The actual MGSC prediction tables (table x index x line)
+    std::vector<std::vector<std::vector<int16_t>>> lTable;
+    // The actual MGSC prediction tables (index x line)
+    std::vector<std::vector<int16_t>> lWeightTable;
 
-    // The actual MGSC prediction tables (table x index x way)
-    std::vector<std::vector<std::vector<MgscEntry>>> iTable;
-    // The actual MGSC prediction tables (index x way)
-    std::vector<std::vector<MgscWeightEntry>> iWeightTable;
+    // The actual MGSC prediction tables (table x index x line)
+    std::vector<std::vector<std::vector<int16_t>>> iTable;
+    // The actual MGSC prediction tables (index x line)
+    std::vector<std::vector<int16_t>> iWeightTable;
 
-    // The actual MGSC prediction tables (table x index x way)
-    std::vector<std::vector<std::vector<MgscEntry>>> gTable;
-    // The actual MGSC prediction tables (index x way)
-    std::vector<std::vector<MgscWeightEntry>> gWeightTable;
+    // The actual MGSC prediction tables (table x index x line)
+    std::vector<std::vector<std::vector<int16_t>>> gTable;
+    // The actual MGSC prediction tables (index x line)
+    std::vector<std::vector<int16_t>> gWeightTable;
 
-    // The actual MGSC prediction tables (table x index x way)
-    std::vector<std::vector<std::vector<MgscEntry>>> pTable;
-    // The actual MGSC prediction tables (index x way)
-    std::vector<std::vector<MgscWeightEntry>> pWeightTable;
+    // The actual MGSC prediction tables (table x index x line)
+    std::vector<std::vector<std::vector<int16_t>>> pTable;
+    // The actual MGSC prediction tables (index x line)
+    std::vector<std::vector<int16_t>> pWeightTable;
 
-    // The actual MGSC prediction tables (table x index x way)
-    std::vector<std::vector<std::vector<MgscEntry>>> biasTable;
-    // The actual MGSC prediction tables (index x way)
-    std::vector<std::vector<MgscWeightEntry>> biasWeightTable;
+    // The actual MGSC prediction tables (table x index x line)
+    std::vector<std::vector<std::vector<int16_t>>> biasTable;
+    // The actual MGSC prediction tables (index x line)
+    std::vector<std::vector<int16_t>> biasWeightTable;
 
     // thres table
-    std::vector<std::vector<MgscThresEntry>> pUpdateThreshold;  // pc-indexed threshold table
-    std::vector<MgscThresEntry> updateThreshold;                // global threshold table
+    std::vector<std::vector<int16_t>> pUpdateThreshold;  // pc-indexed threshold table
+    uint64_t updateThreshold;                             // global threshold table
 
 
     // Debug flag
@@ -408,15 +357,15 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void updateCounter(bool taken, unsigned width, short &counter);
 
     // Update unsigned counter with saturation
-    void updateCounter(bool taken, unsigned width, unsigned &counter);
+    void updateCounter(bool taken, unsigned width, uint64_t &counter);
 
     // Increment counter with saturation
     bool satIncrement(int max, short &counter);
-    bool satIncrement(int max, unsigned &counter);
+    bool satIncrement(int max, uint64_t &counter);
 
     // Decrement counter with saturation
     bool satDecrement(int min, short &counter);
-    bool satDecrement(int min, unsigned &counter);
+    bool satDecrement(int min, uint64_t &counter);
 
     // Cache for MGSC indices
     std::vector<Addr> bwIndex;

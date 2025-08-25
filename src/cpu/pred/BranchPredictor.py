@@ -1096,7 +1096,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
 
     iTableNum = Param.Unsigned(1, "Num IMLI GEHL tables")
     iHistLen = VectorParam.Int([8], "IMLI history GEHL history lengths")
-    iTableIdxWidth = Param.Unsigned(11, "Log number of IMLI GEHL entries")
+    iTableIdxWidth = Param.Unsigned(12, "Log number of IMLI GEHL entries")
     iWeightInitValue = Param.Int(7,
         "Initial value of the weights of the IMLI history GEHL entries")
 
@@ -1119,7 +1119,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     thresholdTablelogSize = Param.Unsigned(6,
         "Log size of update threshold counters tables")
 
-    updateThresholdWidth = Param.Unsigned(12,
+    updateThresholdWidth = Param.Unsigned(15,
         "Number of bits for the update threshold counter")
 
     pUpdateThresholdWidth = Param.Unsigned(8,
@@ -1135,8 +1135,6 @@ class BTBMGSC(TimedBaseBTBPredictor):
 
     weightTableIdxWidth = Param.Unsigned(5,
         "Log size of weight table")
-
-    numWays = Param.Unsigned(8, "Number of ways per set")
 
     numDelay = 3
 

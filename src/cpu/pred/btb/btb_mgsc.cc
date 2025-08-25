@@ -1,7 +1,9 @@
 #include "cpu/pred/btb/btb_mgsc.hh"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <ctime>
 
 #include "base/debug_helper.hh"
@@ -52,20 +54,21 @@ BTBMGSC::BTBMGSC(const Params &p)
       initialUpdateThresholdValue(p.initialUpdateThresholdValue),
       extraWeightsWidth(p.extraWeightsWidth),
       weightTableIdxWidth(p.weightTableIdxWidth),
-      numWays(p.numWays),
       enableMGSC(p.enableMGSC),
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
     this->needMoreHistories = p.needMoreHistories;
+    assert(isPowerOf2(numCtrsPerLine));
     bwTable.resize(bwTableNum);
     for (unsigned int i = 0; i < bwTableNum; ++i) {
         assert(bwTable.size() >= bwTableNum);
-        bwTable[i].resize(std::pow(2, bwTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2, bwTableIdxWidth)); ++j) {
-            bwTable[i][j].resize(numWays);
+        bwTable[i].resize(std::pow(2, bwTableIdxWidth) / numCtrsPerLine);
+        for (unsigned int j = 0; j < bwTable[i].size(); ++j) {
+            bwTable[i][j].resize(numCtrsPerLine);
         }
-        indexBwFoldedHist.push_back(FoldedHist(bwHistLen[i], bwTableIdxWidth, 16, HistoryType::GLOBALBW));
+        indexBwFoldedHist.push_back(
+            FoldedHist(bwHistLen[i], bwTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::GLOBALBW));
     }
     bwIndex.resize(bwTableNum);
 
@@ -73,12 +76,13 @@ BTBMGSC::BTBMGSC(const Params &p)
     indexLFoldedHist.resize(numEntriesFirstLocalHistories);
     for (unsigned int i = 0; i < lTableNum; ++i) {
         assert(lTable.size() >= lTableNum);
-        lTable[i].resize(std::pow(2, lTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2, lTableIdxWidth)); ++j) {
-            lTable[i][j].resize(numWays);
+        lTable[i].resize(std::pow(2, lTableIdxWidth) / numCtrsPerLine);
+        for (unsigned int j = 0; j < lTable[i].size(); ++j) {
+            lTable[i][j].resize(numCtrsPerLine);
         }
         for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
-            indexLFoldedHist[k].push_back(FoldedHist(lHistLen[i], lTableIdxWidth, 16, HistoryType::LOCAL));
+            indexLFoldedHist[k].push_back(
+                FoldedHist(lHistLen[i], lTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::LOCAL));
         }
     }
     lIndex.resize(lTableNum);
@@ -86,82 +90,85 @@ BTBMGSC::BTBMGSC(const Params &p)
     iTable.resize(iTableNum);
     for (unsigned int i = 0; i < iTableNum; ++i) {
         assert(iTable.size() >= iTableNum);
-        iTable[i].resize(std::pow(2, iTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2, iTableIdxWidth)); ++j) {
-            iTable[i][j].resize(numWays);
+        iTable[i].resize(std::pow(2, iTableIdxWidth) / numCtrsPerLine);
+        for (unsigned int j = 0; j < iTable[i].size(); ++j) {
+            iTable[i][j].resize(numCtrsPerLine);
         }
-        indexIFoldedHist.push_back(FoldedHist(iHistLen[i], iTableIdxWidth, 16, HistoryType::IMLI));
+        indexIFoldedHist.push_back(
+            FoldedHist(iHistLen[i], iTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::IMLI));
     }
     iIndex.resize(iTableNum);
 
     gTable.resize(gTableNum);
     for (unsigned int i = 0; i < gTableNum; ++i) {
         assert(gTable.size() >= gTableNum);
-        gTable[i].resize(std::pow(2, gTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2, gTableIdxWidth)); ++j) {
-            gTable[i][j].resize(numWays);
+        gTable[i].resize(std::pow(2, gTableIdxWidth) / numCtrsPerLine);
+        for (unsigned int j = 0; j < gTable[i].size(); ++j) {
+            gTable[i][j].resize(numCtrsPerLine);
         }
-        indexGFoldedHist.push_back(FoldedHist(gHistLen[i], gTableIdxWidth, 16, HistoryType::GLOBAL));
+        indexGFoldedHist.push_back(
+            FoldedHist(gHistLen[i], gTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::GLOBAL));
     }
     gIndex.resize(gTableNum);
 
     pTable.resize(pTableNum);
     for (unsigned int i = 0; i < pTableNum; ++i) {
         assert(pTable.size() >= pTableNum);
-        pTable[i].resize(std::pow(2, pTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2, pTableIdxWidth)); ++j) {
-            pTable[i][j].resize(numWays);
+        pTable[i].resize(std::pow(2, pTableIdxWidth) / numCtrsPerLine);
+        for (unsigned int j = 0; j < pTable[i].size(); ++j) {
+            pTable[i][j].resize(numCtrsPerLine);
         }
-        indexPFoldedHist.push_back(FoldedHist(pHistLen[i], pTableIdxWidth, 2, HistoryType::PATH));
+        indexPFoldedHist.push_back(
+            FoldedHist(pHistLen[i], pTableIdxWidth - log2i(numCtrsPerLine), 2, HistoryType::PATH));
     }
     pIndex.resize(pTableNum);
 
     biasTable.resize(biasTableNum);
     for (unsigned int i = 0; i < biasTableNum; ++i) {
         assert(biasTable.size() >= biasTableNum);
-        biasTable[i].resize(std::pow(2, biasTableIdxWidth));
-        for (unsigned int j = 0; j < (std::pow(2, biasTableIdxWidth)); ++j) {
-            biasTable[i][j].resize(numWays);
+        biasTable[i].resize(std::pow(2, biasTableIdxWidth) / numCtrsPerLine);
+        for (unsigned int j = 0; j < biasTable[i].size(); ++j) {
+            biasTable[i][j].resize(numCtrsPerLine);
         }
     }
     biasIndex.resize(biasTableNum);
 
     bwWeightTable.resize(std::pow(2, weightTableIdxWidth));
     for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        bwWeightTable[j].resize(numWays);
+        bwWeightTable[j].resize(numCtrsPerLine);
     }
 
     lWeightTable.resize(std::pow(2, weightTableIdxWidth));
     for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        lWeightTable[j].resize(numWays);
+        lWeightTable[j].resize(numCtrsPerLine);
     }
 
     iWeightTable.resize(std::pow(2, weightTableIdxWidth));
     for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        iWeightTable[j].resize(numWays);
+        iWeightTable[j].resize(numCtrsPerLine);
     }
 
     gWeightTable.resize(std::pow(2, weightTableIdxWidth));
     for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        gWeightTable[j].resize(numWays);
+        gWeightTable[j].resize(numCtrsPerLine);
     }
 
     pWeightTable.resize(std::pow(2, weightTableIdxWidth));
     for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        pWeightTable[j].resize(numWays);
+        pWeightTable[j].resize(numCtrsPerLine);
     }
 
     biasWeightTable.resize(std::pow(2, weightTableIdxWidth));
     for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        biasWeightTable[j].resize(numWays);
+        biasWeightTable[j].resize(numCtrsPerLine);
     }
 
     pUpdateThreshold.resize(std::pow(2, thresholdTablelogSize));
     for (unsigned int j = 0; j < (std::pow(2, thresholdTablelogSize)); ++j) {
-        pUpdateThreshold[j].resize(numWays);
+        pUpdateThreshold[j].resize(numCtrsPerLine);
     }
 
-    updateThreshold.resize(numWays);
+    updateThreshold = 35;
 }
 
 BTBMGSC::~BTBMGSC() {}
@@ -182,14 +189,6 @@ BTBMGSC::tickStart()
 {
 }
 
-bool
-BTBMGSC::tagMatch(Addr pc_a, Addr pc_b, unsigned matchBits)
-{
-    // Use bitwise operations directly to avoid overhead of creating bitset objects
-    // Create mask: when matchBits=5, mask=0x1F (binary 11111)
-    Addr mask = (1ULL << matchBits) - 1;
-    return ((pc_a >> instShiftAmt) & mask) == ((pc_b >> instShiftAmt) & mask);
-}
 
 /**
  * Calculate perceptron sum from a table for a given PC
@@ -201,18 +200,15 @@ BTBMGSC::tagMatch(Addr pc_a, Addr pc_b, unsigned matchBits)
  * @return Calculated percsum value
  */
 int
-BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<MgscEntry>>> &table,
+BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &table,
                           const std::vector<Addr> &tableIndices, unsigned numTables, Addr pc)
 {
     int percsum = 0;
+    auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
     for (unsigned int i = 0; i < numTables; ++i) {
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &entry = table[i][tableIndices[i]][way];
-            if (tagMatch(pc, entry.pc, 5) && entry.valid) {
-                percsum += (2 * entry.counter + 1);  // 2*counter + 1 is always >= 0
-                break;
-            }
-        }
+        auto &entry = table[i][tableIndices[i]][pos];
+        percsum += (2 * entry + 1);  // align to zero center
+        break;
     }
     return percsum;
 }
@@ -225,15 +221,11 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<MgscEntry>>>
  * @return Found weight or 0 if not found
  */
 int
-BTBMGSC::findWeight(const std::vector<std::vector<MgscWeightEntry>> &weightTable, Addr tableIndex, Addr pc)
+BTBMGSC::findWeight(const std::vector<std::vector<int16_t>> &weightTable, Addr tableIndex, Addr pc)
 {
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = weightTable[tableIndex][way];
-        if (tagMatch(pc, entry.pc, 5) && entry.valid) {
-            return entry.counter;
-        }
-    }
-    return 0;
+    auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
+    auto &entry = weightTable[tableIndex][pos];
+    return entry;
 }
 
 /**
@@ -258,16 +250,12 @@ BTBMGSC::calculateScaledPercsum(int weight, int percsum)
  * @return Found threshold or default value if not found
  */
 int
-BTBMGSC::findThreshold(const std::vector<std::vector<MgscThresEntry>> &thresholdTable, Addr tableIndex, Addr pc,
+BTBMGSC::findThreshold(const std::vector<std::vector<int16_t>> &thresholdTable, Addr tableIndex, Addr pc,
                        int defaultValue)
 {
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = thresholdTable[tableIndex][way];
-        if (tagMatch(pc, entry.pc, 5) && entry.valid) {
-            return entry.counter;
-        }
-    }
-    return defaultValue;
+    auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
+    auto &entry = thresholdTable[tableIndex][pos];
+    return entry;
 }
 
 /**
@@ -301,105 +289,70 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     // Calculate indices for all tables
     for (unsigned int i = 0; i < bwTableNum; ++i) {
-        bwIndex[i] = getHistIndex(startPC, bwTableIdxWidth, indexBwFoldedHist[i].get());
+        bwIndex[i] = getHistIndex(startPC, bwTableIdxWidth - log2i(numCtrsPerLine), indexBwFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < lTableNum; ++i) {
-        lIndex[i] = getHistIndex(startPC, lTableIdxWidth,
+        lIndex[i] = getHistIndex(startPC, lTableIdxWidth - log2i(numCtrsPerLine),
                                  indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
     }
 
     for (unsigned int i = 0; i < iTableNum; ++i) {
-        iIndex[i] = getHistIndex(startPC, iTableIdxWidth, indexIFoldedHist[i].get());
+        iIndex[i] = getHistIndex(startPC, iTableIdxWidth - log2i(numCtrsPerLine), indexIFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < gTableNum; ++i) {
-        gIndex[i] = getHistIndex(startPC, gTableIdxWidth, indexGFoldedHist[i].get());
+        gIndex[i] = getHistIndex(startPC, gTableIdxWidth - log2i(numCtrsPerLine), indexGFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < pTableNum; ++i) {
-        pIndex[i] = getHistIndex(startPC, pTableIdxWidth, indexPFoldedHist[i].get());
+        pIndex[i] = getHistIndex(startPC, pTableIdxWidth - log2i(numCtrsPerLine), indexPFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < biasTableNum; ++i) {
-        biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth, tage_info.tage_pred_taken,
+        biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth - log2i(numCtrsPerLine), tage_info.tage_pred_taken,
                                     tage_info.tage_pred_conf_low && tage_info.tage_pred_alt_diff);
     }
 
-    // Calculate percsums and weights for all tables
-    Addr tableIndex = getPcIndex(startPC, weightTableIdxWidth);
-
     int bw_percsum = calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.pc);
-    int bw_weight = findWeight(bwWeightTable, tableIndex, btb_entry.pc);
-    int bw_scale_percsum = calculateScaledPercsum(bw_weight, bw_percsum);
 
     int l_percsum = calculatePercsum(lTable, lIndex, lTableNum, btb_entry.pc);
-    int l_weight = findWeight(lWeightTable, tableIndex, btb_entry.pc);
-    int l_scale_percsum = calculateScaledPercsum(l_weight, l_percsum);
 
     int i_percsum = calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc);
-    int i_weight = findWeight(iWeightTable, tableIndex, btb_entry.pc);
-    int i_scale_percsum = calculateScaledPercsum(i_weight, i_percsum);
 
     int g_percsum = calculatePercsum(gTable, gIndex, gTableNum, btb_entry.pc);
-    int g_weight = findWeight(gWeightTable, tableIndex, btb_entry.pc);
-    int g_scale_percsum = calculateScaledPercsum(g_weight, g_percsum);
 
     int p_percsum = calculatePercsum(pTable, pIndex, pTableNum, btb_entry.pc);
-    int p_weight = findWeight(pWeightTable, tableIndex, btb_entry.pc);
-    int p_scale_percsum = calculateScaledPercsum(p_weight, p_percsum);
 
     int bias_percsum = calculatePercsum(biasTable, biasIndex, biasTableNum, btb_entry.pc);
-    int bias_weight = findWeight(biasWeightTable, tableIndex, btb_entry.pc);
-    int bias_scale_percsum = calculateScaledPercsum(bias_weight, bias_percsum);
 
     // Calculate total sum of all weighted percsums
-    int total_sum =
-        bw_scale_percsum + l_scale_percsum + i_scale_percsum + g_scale_percsum + p_scale_percsum + bias_scale_percsum;
+    int total_sum = bw_percsum + l_percsum + i_percsum + g_percsum + p_percsum + bias_percsum;
 
     // Find thresholds
     // pc-indexed threshold table, default value = initialUpdateThresholdValue = 0
-    int p_update_thres = findThreshold(pUpdateThreshold, getPcIndex(startPC, thresholdTablelogSize), btb_entry.pc,
-                                       initialUpdateThresholdValue);
+    // int p_update_thres = findThreshold(pUpdateThreshold, getPcIndex(startPC, thresholdTablelogSize), btb_entry.pc,
+    //                                    initialUpdateThresholdValue);
 
-    // global threshold table
-    int update_thres = 35 << 3;  // default value = 35 << 3 ?
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = updateThreshold[way];
-        if (tagMatch(btb_entry.pc, entry.pc, 5) && entry.valid) {
-            update_thres = entry.counter;
-            break;
-        }
+    int total_thres = updateThreshold;
+
+    bool use_sc_pred = true;
+    if (tage_info.tage_pred_conf_high && abs(total_sum) < total_thres) {
+        use_sc_pred = false;
     }
-
-    int total_thres = (update_thres >> 3) + p_update_thres;  // total_thres = global_thres + pc_thres
-
-    // Determine whether to use SC prediction based on confidence levels
-    bool use_sc_pred = false;
-    if (tage_info.tage_pred_conf_high) {
-        if (abs(total_sum) > total_thres / 2) {
-            use_sc_pred = true;
-        }
-    } else if (tage_info.tage_pred_conf_mid) {
-        if (abs(total_sum) > total_thres / 4) {
-            use_sc_pred = true;
-        }
-    } else if (tage_info.tage_pred_conf_low) {
-        if (abs(total_sum) > total_thres / 8) {
-            use_sc_pred = true;
-        }
+    if (tage_info.tage_pred_conf_mid && abs(total_sum) < total_thres / 3) {
+        use_sc_pred = false;
     }
-
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
-    bool taken = (use_sc_pred && enableMGSC) ? (total_sum >= 0) : tage_info.tage_pred_taken;
+    bool taken = (enableMGSC && use_sc_pred) ? (total_sum >= 0) : tage_info.tage_pred_taken;
 
     // Calculate weight scale differences
-    bool bw_weight_scale_diff = calculateWeightScaleDiff(total_sum, bw_scale_percsum, bw_percsum);
-    bool l_weight_scale_diff = calculateWeightScaleDiff(total_sum, l_scale_percsum, l_percsum);
-    bool i_weight_scale_diff = calculateWeightScaleDiff(total_sum, i_scale_percsum, i_percsum);
-    bool g_weight_scale_diff = calculateWeightScaleDiff(total_sum, g_scale_percsum, g_percsum);
-    bool p_weight_scale_diff = calculateWeightScaleDiff(total_sum, p_scale_percsum, p_percsum);
-    bool bias_weight_scale_diff = calculateWeightScaleDiff(total_sum, bias_scale_percsum, bias_percsum);
+    bool bw_weight_scale_diff = false;
+    bool l_weight_scale_diff = false;
+    bool i_weight_scale_diff = false;
+    bool g_weight_scale_diff = false;
+    bool p_weight_scale_diff = false;
+    bool bias_weight_scale_diff = false;
 
     DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.pc, taken);
 
@@ -523,31 +476,14 @@ BTBMGSC::prepareUpdateEntries(const FetchStream &stream)
  * @param actual_taken Actual branch outcome (true=taken, false=not taken)
  */
 void
-BTBMGSC::updateAndAllocatePredTable(std::vector<std::vector<std::vector<MgscEntry>>> &table,
+BTBMGSC::updateAndAllocatePredTable(std::vector<std::vector<std::vector<int16_t>>> &table,
                                     const std::vector<Addr> &tableIndices, unsigned numTables, Addr pc,
                                     bool actual_taken)
 {
     for (unsigned int i = 0; i < numTables; ++i) {
-        bool found_entry = false;
-        // Search all ways in the set for a matching entry
-        for (unsigned way = 0; way < numWays; way++) {
-            auto &entry = table[i][tableIndices[i]][way];
-            if (tagMatch(pc, entry.pc, 5) && entry.valid) {
-                // Entry found - update its counter based on branch outcome
-                updateCounter(actual_taken, scCountersWidth, entry.counter);
-                found_entry = true;
-                updateLRU(table[i], tableIndices[i], way);
-                break;
-            }
-        }
-        // Allocate if not found - use LRU replacement policy
-        if (!found_entry) {
-            unsigned alloc_way = getLRUVictim(table[i], tableIndices[i]);
-            auto &entry_to_alloc = table[i][tableIndices[i]][alloc_way];
-            // Initialize counter based on branch outcome
-            short newCounter = actual_taken ? 0 : -1;
-            entry_to_alloc = MgscEntry(true, newCounter, pc, 0);
-        }
+        auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
+        auto &entry = table[i][tableIndices[i]][pos];
+        updateCounter(actual_taken, scCountersWidth, entry);
     }
 }
 
@@ -569,31 +505,15 @@ BTBMGSC::updateAndAllocatePredTable(std::vector<std::vector<std::vector<MgscEntr
  * @param percsum_matches_actual Whether the raw percsum correctly predicted the outcome
  */
 void
-BTBMGSC::updateAndAllocateWeightTable(std::vector<std::vector<MgscWeightEntry>> &weightTable, Addr tableIndex, Addr pc,
+BTBMGSC::updateAndAllocateWeightTable(std::vector<std::vector<int16_t>> &weightTable, Addr tableIndex, Addr pc,
                                       bool weight_scale_diff, bool percsum_matches_actual)
 {
-    bool found_entry = false;
-    // Search all ways in the set for a matching entry
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = weightTable[tableIndex][way];
-        if (tagMatch(pc, entry.pc, 5) && entry.valid) {
-            // Only update if weight scale could affect prediction
-            if (weight_scale_diff) {
-                // Increase weight if percsum was correct, decrease if incorrect
-                updateCounter(percsum_matches_actual, extraWeightsWidth, entry.counter);
-            }
-            found_entry = true;
-            updateLRU(weightTable, tableIndex, way);
-            break;
-        }
-    }
-
-    // Allocate if not found - use LRU replacement policy
-    if (!found_entry) {
-        unsigned alloc_way = getLRUVictim(weightTable, tableIndex);
-        auto &entry_to_alloc = weightTable[tableIndex][alloc_way];
-        // Initialize weight to neutral value (0)
-        entry_to_alloc = MgscWeightEntry(true, pc, 0, 0);
+    auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
+    auto &entry = weightTable[tableIndex][pos];
+    // Only update if weight scale could affect prediction
+    if (weight_scale_diff) {
+        // Increase weight if percsum was correct, decrease if incorrect
+        updateCounter(percsum_matches_actual, extraWeightsWidth, entry);
     }
 }
 
@@ -616,29 +536,9 @@ BTBMGSC::updateAndAllocateWeightTable(std::vector<std::vector<MgscWeightEntry>> 
 void
 BTBMGSC::updatePCThresholdTable(Addr tableIndex, Addr pc, bool update_condition, bool update_direction)
 {
-    bool found_entry = false;
-    // Search all ways in the set for a matching entry
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = pUpdateThreshold[tableIndex][way];
-        if (tagMatch(pc, entry.pc, 5) && entry.valid) {
-            // Only update if the update condition is met (TAGE and SC disagree)
-            if (update_condition) {
-                // Adjust threshold based on which prediction was correct
-                updateCounter(update_direction, pUpdateThresholdWidth, entry.counter);
-            }
-            found_entry = true;
-            updateLRU(pUpdateThreshold, tableIndex, way);
-            break;
-        }
-    }
-
-    // Allocate if not found - use LRU replacement policy
-    if (!found_entry) {
-        unsigned alloc_way = getLRUVictim(pUpdateThreshold, tableIndex);
-        auto &entry_to_alloc = pUpdateThreshold[tableIndex][alloc_way];
-        // Initialize with default value from class member
-        entry_to_alloc = MgscThresEntry(true, pc, initialUpdateThresholdValue, 0);
-    }
+    auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
+    auto &entry = pUpdateThreshold[tableIndex][pos];
+    updateCounter(update_direction, pUpdateThresholdWidth, entry);
 }
 
 /**
@@ -655,30 +555,9 @@ BTBMGSC::updatePCThresholdTable(Addr tableIndex, Addr pc, bool update_condition,
  * @param update_direction Direction to update (true=increment, false=decrement)
  */
 void
-BTBMGSC::updateGlobalThreshold(Addr pc, bool update_condition, bool update_direction)
+BTBMGSC::updateGlobalThreshold(Addr pc, bool update_direction)
 {
-    bool found_entry = false;
-    // Search all ways for a matching entry
-    for (unsigned way = 0; way < numWays; way++) {
-        auto &entry = updateThreshold[way];
-        if (tagMatch(pc, entry.pc, 5) && entry.valid) {
-            // Only update if the update condition is met
-            if (update_condition) {
-                updateCounter(update_direction, updateThresholdWidth, entry.counter);
-            }
-            found_entry = true;
-            updateLRU(updateThreshold, way);
-            break;
-        }
-    }
-
-    // Allocate if not found - use LRU replacement policy
-    if (!found_entry) {
-        unsigned alloc_way = getLRUVictim(updateThreshold);
-        auto &entry_to_alloc = updateThreshold[alloc_way];
-        // Initialize with default hard-coded value (35 << 3)
-        entry_to_alloc = MgscThresEntry(true, pc, 35 << 3, 0);
-    }
+    updateCounter(update_direction, updateThresholdWidth, updateThreshold);
 }
 
 /**
@@ -755,11 +634,11 @@ BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry, bool actual_tak
                                      (pred.bias_percsum >= 0) == actual_taken);
 
         // Update PC-indexed threshold table
-        updatePCThresholdTable(getPcIndex(stream.startPC, thresholdTablelogSize), entry.pc,
-                               tage_pred_taken != sc_pred_taken, sc_pred_taken != actual_taken);
+        // updatePCThresholdTable(getPcIndex(stream.startPC, thresholdTablelogSize), entry.pc,
+        //                        tage_pred_taken != sc_pred_taken, sc_pred_taken != actual_taken);
 
         // Update global threshold table
-        updateGlobalThreshold(entry.pc, tage_pred_taken != sc_pred_taken, sc_pred_taken != actual_taken);
+        updateGlobalThreshold(entry.pc, sc_pred_taken != actual_taken);
     }
 }
 
@@ -807,7 +686,7 @@ BTBMGSC::updateCounter(bool taken, unsigned width, short &counter)
 
 // Update unsigned counter with saturation
 void
-BTBMGSC::updateCounter(bool taken, unsigned width, unsigned &counter)
+BTBMGSC::updateCounter(bool taken, unsigned width, uint64_t &counter)
 {
     int max = (1 << width) - 1;
     int min = 0;
@@ -864,7 +743,7 @@ BTBMGSC::satIncrement(int max, short &counter)
 }
 
 bool
-BTBMGSC::satIncrement(int max, unsigned &counter)
+BTBMGSC::satIncrement(int max, uint64_t &counter)
 {
     if (counter < max) {
         ++counter;
@@ -882,7 +761,7 @@ BTBMGSC::satDecrement(int min, short &counter)
 }
 
 bool
-BTBMGSC::satDecrement(int min, unsigned &counter)
+BTBMGSC::satDecrement(int min, uint64_t &counter)
 {
     if (counter > min) {
         --counter;
@@ -1159,76 +1038,6 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
       ADD_STAT(scUsed, statistics::units::Count::get(), "number of sc used"),
       ADD_STAT(scNotUsed, statistics::units::Count::get(), "number of sc not used")
 {
-}
-
-// Update LRU counters for a set
-template<typename T>
-void
-BTBMGSC::updateLRU(std::vector<std::vector<T>> &table, Addr index, unsigned way)
-{
-    // Increment LRU counters for all entries in the set
-    for (unsigned i = 0; i < numWays; i++) {
-        if (i != way && table[index][i].valid) {
-            table[index][i].lruCounter++;
-        }
-    }
-    // Reset LRU counter for the accessed entry
-    table[index][way].lruCounter = 0;
-}
-
-template<typename T>
-void
-BTBMGSC::updateLRU(std::vector<T> &table, unsigned way)
-{
-    // Increment LRU counters for all entries in the set
-    for (unsigned i = 0; i < numWays; i++) {
-        if (i != way && table[i].valid) {
-            table[i].lruCounter++;
-        }
-    }
-    // Reset LRU counter for the accessed entry
-    table[way].lruCounter = 0;
-}
-
-// Find the LRU victim in a set
-template<typename T>
-unsigned
-BTBMGSC::getLRUVictim(std::vector<std::vector<T>> &table, Addr index)
-{
-    unsigned victim = 0;
-    unsigned maxLRU = 0;
-
-    // Find the entry with the highest LRU counter
-    for (unsigned i = 0; i < numWays; i++) {
-        if (!table[index][i].valid) {
-            return i;  // Use invalid entry if available
-        }
-        if (table[index][i].lruCounter > maxLRU) {
-            maxLRU = table[index][i].lruCounter;
-            victim = i;
-        }
-    }
-    return victim;
-}
-
-template<typename T>
-unsigned
-BTBMGSC::getLRUVictim(std::vector<T> &table)
-{
-    unsigned victim = 0;
-    unsigned maxLRU = 0;
-
-    // Find the entry with the highest LRU counter
-    for (unsigned i = 0; i < numWays; i++) {
-        if (!table[i].valid) {
-            return i;  // Use invalid entry if available
-        }
-        if (table[i].lruCounter > maxLRU) {
-            maxLRU = table[i].lruCounter;
-            victim = i;
-        }
-    }
-    return victim;
 }
 
 void
