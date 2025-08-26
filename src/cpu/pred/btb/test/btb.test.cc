@@ -166,7 +166,7 @@ protected:
     void SetUp() override {
         // Create a BTB with 16 entries, 8-bit tags, and 4-way set associative
         mbtb_small = new MBTB(16, 8, 4, 1); // mbtb (L1 BTB)
-        mbtb = new MBTB (16384, 20, 8, 1);
+        mbtb = new MBTB (2048, 20, 4, 1);  // 2 sram, 4 way each, total 8 ways
     }
     
     
@@ -400,10 +400,12 @@ TEST_F(BTBTest, HalfAlignedBasicTest) {
 
     // Add first branch
     std::vector<FullBTBPrediction> stagePreds =
-        predictUpdateCycle(mbtb, 0x100, branch1, true, boost::dynamic_bitset<>(64, 0), 0x140);
+        predictUpdateCycle(mbtb, 0x100, branch1, true, 
+            boost::dynamic_bitset<>(64, 0), 0x140);
 
     // Add second branch
-    stagePreds = predictUpdateCycle(mbtb, 0x100, branch2, true, boost::dynamic_bitset<>(64, 0), 0x140);
+    stagePreds = predictUpdateCycle(mbtb, 0x100, branch2, true, 
+        boost::dynamic_bitset<>(64, 0), 0x140);
 
     // Verify both branches are predicted
     std::vector<BranchInfo> expectedBranches = {branch1, branch2};
@@ -501,6 +503,42 @@ TEST_F(BTBTest, HalfAlignedMultipleUpdates) {
 
     // Verify branch is predicted with new target
     verifyPrediction(stagePreds, mbtb->getDelay(), {branch});
+}
+
+// Test entry replacement when too many branches in same SRAM
+TEST_F(BTBTest, SRAMOverflowReplacementTest) {
+    // Reset BTB stats to track replacements
+    unsigned initial_replace_valid = mbtb->btbStats.updateReplaceValidOne;
+
+    // Create 5 branches in same 32B block that all map to SRAM0
+    // Use addresses with bit[5]=0 to ensure they go to SRAM0
+    std::vector<BranchInfo> branches;
+    std::vector<Addr> branch_pcs = {0x100, 0x104, 0x108, 0x10C, 0x110};
+
+    for (int i = 0; i < 5; i++) {
+        Addr target = 0x200 + i * 0x10;
+        branches.push_back(createBranchInfo(branch_pcs[i], target, true));
+    }
+
+    // Add all 5 branches one by one
+    std::vector<FullBTBPrediction> stagePreds;
+    for (int i = 0; i < 5; i++) {
+        stagePreds = predictUpdateCycle(mbtb, 0x100, branches[i], true,
+            boost::dynamic_bitset<>(64, 0), 0x140);
+    }
+
+    // Check that replacement of valid entries occurred
+    // Since SRAM0 only has 4 ways, the 5th branch should cause replacement
+    unsigned final_replace_valid = mbtb->btbStats.updateReplaceValidOne;
+    EXPECT_GT(final_replace_valid, initial_replace_valid)
+        << "Expected replacement of valid entries when SRAM overflows";
+
+    // Verify the current BTB state after replacement
+    // The first branch (0x100) should be evicted, remaining 4 branches should be present
+    std::vector<BranchInfo> expected = {branches[1], branches[2], branches[3], branches[4]}; // branches 1-4
+    stagePreds = predictUpdateCycle(mbtb, 0x100, branches[4], true,
+        boost::dynamic_bitset<>(64, 0), 0x140);
+    verifyPrediction(stagePreds, mbtb->getDelay(), expected);
 }
 
 

@@ -401,6 +401,7 @@ class MBTB : public TimedBaseBTBPredictor
 #endif
 
 #ifdef UNIT_TEST
+public:
     struct BTBStats {
 #else
     struct BTBStats : public statistics::Group {

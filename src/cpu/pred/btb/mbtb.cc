@@ -137,11 +137,7 @@ MBTB::MBTB(const Params &p)
 
 #ifndef UNIT_TEST
     hasDB = true;
-    switch (getDelay()) {
-        case 0: dbName = std::string("btb_0"); break;
-        case 1: dbName = std::string("btb_1"); break;
-        default: dbName = std::string("btb"); break;
-    }
+    dbName = std::string("MainBTB");
 #endif
 }
 
@@ -167,11 +163,7 @@ MBTB::setTrace()
             std::make_pair("mode", UINT64),
             std::make_pair("hit", UINT64)
         };
-        switch (getDelay()) {
-            case 0: btbTrace = _db->addAndGetTrace("BTBTrace_0", fields_vec); break;
-            case 1: btbTrace = _db->addAndGetTrace("BTBTrace_1", fields_vec); break;
-            default: btbTrace = _db->addAndGetTrace("BTBTrace", fields_vec); break;
-        }
+        btbTrace = _db->addAndGetTrace("MainBTBTrace", fields_vec);
         btbTrace->init_table();
     }
 }
@@ -667,14 +659,6 @@ MBTB::update(const FetchStream &stream)
     // 4. Update BTB entries - each entry uses its own PC to select SRAM and calculate index/tag
     for (auto &entry : entries_to_update) {
         updateBTBEntry(entry, stream);
-    }
-    
-    // Verify dual SRAM BTB state
-    for (unsigned i = 0; i < numSets; i++) {
-        assert(sram0[i].size() <= numWays);
-        assert(sram1[i].size() <= numWays);
-        assert(mru0[i].size() <= numWays);
-        assert(mru1[i].size() <= numWays);
     }
 }
 

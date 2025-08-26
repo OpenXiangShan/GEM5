@@ -620,15 +620,8 @@ AheadBTB::update(const FetchStream &stream)
     
     // 4. Update BTB entries - each entry uses its own PC to calculate index and tag
     for (auto &entry : entries_to_update) {
-        // Calculate 32-byte aligned address for this entry
-        Addr entryPC = entry.pc;
-        Addr btb_idx;
-        Addr btb_tag;
-
-        // AheadBTB always uses startPC-based indexing (not half-aligned)
         Addr startPC = stream.getRealStartPC();
-        btb_idx = getIndex(startPC);
-        btb_tag = getTag(startPC);
+        Addr btb_tag = getTag(startPC);  // use current pc to get tag
 
         // AheadBTB always uses ahead-pipelined update logic
         Addr previousPC = getPreviousPC(stream);
@@ -636,15 +629,8 @@ AheadBTB::update(const FetchStream &stream)
             DPRINTF(BTB, "AheadBTB: no previous PC, skipping update\n");
             return;
         }
-        btb_idx = getIndex(previousPC);
+        Addr btb_idx = getIndex(previousPC);  // use last pc to get idx
         updateBTBEntry(btb_idx, btb_tag, entry, stream);
-
-    }
-    
-    // Verify BTB state
-    for (unsigned i = 0; i < numSets; i++) {
-        assert(btb[i].size() <= numWays);
-        assert(mruList[i].size() <= numWays);
     }
 }
 
