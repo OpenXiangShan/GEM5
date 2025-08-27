@@ -4,6 +4,7 @@
 #include "base/debug_helper.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/pred/btb/stream_struct.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/Override.hh"
@@ -12,6 +13,7 @@
 #include "debug/JumpAheadPredictor.hh"
 #include "debug/Profiling.hh"
 #include "sim/core.hh"
+#include <cstdio>
 
 namespace gem5
 {
@@ -141,42 +143,6 @@ DecoupledBPUWithBTB::initDB()
         bptrace = bpdb.addAndGetTrace("BPTRACE", fields_vec);
         bptrace->init_table();
         removeGivenSwitch(bpDBSwitches, std::string("basic"));
-        someDBenabled = true;
-    }
-
-    enablePredFSQTrace = checkGivenSwitch(bpDBSwitches, std::string("predfsq"));
-    if (enablePredFSQTrace) {
-        // Initialize prediction trace manager for recording predictions
-        std::vector<std::pair<std::string, DataType>> pred_fields_vec = {
-            std::make_pair("fsqId", UINT64),
-            std::make_pair("startPC", UINT64),
-            std::make_pair("predTaken", UINT64),
-            std::make_pair("predEndPC", UINT64),
-            std::make_pair("controlPC", UINT64),
-            std::make_pair("target", UINT64),
-            std::make_pair("predSource", UINT64),
-            std::make_pair("btbHit", UINT64)
-        };
-        predTraceManager = bpdb.addAndGetTrace("PREDTRACE", pred_fields_vec);
-        predTraceManager->init_table();
-        removeGivenSwitch(bpDBSwitches, std::string("predfsq"));
-        someDBenabled = true;
-    }
-
-    enablePredFTQTrace = checkGivenSwitch(bpDBSwitches, std::string("predftq"));
-    if (enablePredFTQTrace) {
-        std::vector<std::pair<std::string, DataType>> ftq_fields_vec = {
-            std::make_pair("ftqId", UINT64),
-            std::make_pair("fsqId", UINT64),
-            std::make_pair("startPC", UINT64),
-            std::make_pair("endPC", UINT64),
-            std::make_pair("takenPC", UINT64),
-            std::make_pair("taken", UINT64),
-            std::make_pair("target", UINT64)
-        };
-        ftqTraceManager = bpdb.addAndGetTrace("FTQTRACE", ftq_fields_vec);
-        ftqTraceManager->init_table();
-        removeGivenSwitch(bpDBSwitches, std::string("predftq"));
         someDBenabled = true;
     }
 
@@ -666,7 +632,7 @@ void DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
 unsigned
 DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 {
-    DPRINTF(Override, "In generateFinalPredAndCreateBubbles().\n");
+    DPRINTF(Override, "In generateFinalPredAndCreateBubble().\n");
 
     // 1. Debug output: dump predictions from all stages
     for (int i = 0; i < numStages; i++) {
@@ -706,7 +672,17 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 
     // update ubtb using mbtb prediction
     if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
+        printf("Updating UBTB using MBTB prediction\n");
         ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+        const DefaultBTB::BTBMeta* meta = static_cast<const DefaultBTB::BTBMeta*>(abtb->getPredictionMeta().get()); 
+        auto it = fetchStreamQueue.find(fsqId-1);
+        if (it != fetchStreamQueue.end()) {
+            auto previous_block_startpc = it->second.startPC;
+            printStreamFull(it->second);
+            abtb->updateUsingMbtb(predsOfEachStage[numStages - 1], meta, previous_block_startpc);
+        } else {
+             abtb->updateUsingMbtb(predsOfEachStage[numStages - 1], meta, 0);
+        }
     }
 
     // 4. Record override bubbles and update statistics

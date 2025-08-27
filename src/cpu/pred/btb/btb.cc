@@ -29,17 +29,15 @@
 
 #include "cpu/pred/btb/btb.hh"
 
-#include "base/intmath.hh"
+#include <cstdio>
 
-// Additional conditional includes based on build mode
-#ifdef UNIT_TEST
-    #include "cpu/pred/btb/test/test_dprintf.hh"
-#else
-    #include "base/trace.hh"
-    #include "cpu/o3/dyn_inst.hh"
-    #include "debug/AheadPipeline.hh"
-    #include "debug/Fetch.hh"
-#endif
+#include "base/intmath.hh"
+#include "base/stats/group.hh"
+#include "base/trace.hh"
+#include "base/types.hh"
+#include "cpu/o3/dyn_inst.hh"
+#include "debug/AheadPipeline.hh"
+#include "debug/Fetch.hh"
 
 namespace gem5
 {
@@ -714,14 +712,14 @@ DefaultBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, co
         DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
                 entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
         *entry_in_btb_now = ticked_entry;
-#ifndef UNIT_TEST
+
         if (enableDB) {
             BTBTrace rec;
             rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
                 entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
             btbTrace->write_record(rec);
         }
-#endif
+
         dumpMruList(mruList[btb_idx]);
     }
     std::make_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
@@ -745,35 +743,40 @@ DefaultBTB::update(const FetchStream &stream)
     // 2. Check prediction hit status, for stats recording
     checkPredictionHit(stream,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
+   if (!isL0()){//update mbtb
 
-    // 3. Collect entries to update
-    auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
-    
-    // 4. Update BTB entries - each entry uses its own PC to calculate index and tag
-    for (auto &entry : entries_to_update) {
-        // Calculate 32-byte aligned address for this entry
-        Addr entryPC = entry.pc;
-        Addr btb_idx;
-        Addr btb_tag;
+        // 3. Collect entries to update
+        auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
 
-        if (entryHalfAligned) {
-            btb_idx = getIndex(entryPC);
-            btb_tag = getTag(entryPC);
-        } else{
-            Addr startPC = stream.getRealStartPC();
-            btb_idx = getIndex(startPC);
-            btb_tag = getTag(startPC);
-        }
+        // 4. Update BTB entries - each entry uses its own PC to calculate index and tag
+        for (auto &entry : entries_to_update) {
+            // Calculate 32-byte aligned address for this entry
+            Addr entryPC = entry.pc;
+            Addr btb_idx;
+            Addr btb_tag;
 
-        if (aheadPipelinedStages > 0) {
-            Addr previousPC = getPreviousPC(stream);
-            if (previousPC == 0) {
-                DPRINTF(BTB, "ahead-pipeline: no previous PC, skipping update\n");
-                return;
+            if (entryHalfAligned) {
+                btb_idx = getIndex(entryPC);
+                btb_tag = getTag(entryPC);
+            } else{
+                Addr startPC = stream.getRealStartPC();
+                btb_idx = getIndex(startPC);
+                btb_tag = getTag(startPC);
             }
-            btb_idx = getIndex(previousPC);
+
+            if (aheadPipelinedStages > 0) {
+                Addr previousPC = getPreviousPC(stream);
+                if (previousPC == 0) {
+                    DPRINTF(BTB, "ahead-pipeline: no previous PC, skipping update\n");
+                    return;
+                }
+                btb_idx = getIndex(previousPC);
+            }
+            updateBTBEntry(btb_idx, btb_tag, entry, stream);
         }
-        updateBTBEntry(btb_idx, btb_tag, entry, stream);
+    }
+    else {
+        //abtb update using main btb
 
     }
     
@@ -782,6 +785,170 @@ DefaultBTB::update(const FetchStream &stream)
         assert(btb[i].size() <= numWays);
         assert(mruList[i].size() <= numWays);
     }
+}
+
+
+
+void
+DefaultBTB::updateUsingMbtb(FullBTBPrediction &mbtb_pred,const BTBMeta* meta,Addr previousPC)
+{
+
+    printf("try updating using MBTB prediction\n");
+
+    //auto old_entry=processOldEntries(stream);//预测的
+    auto old_entries=meta->hit_entries;
+    Addr end_inst_pc;
+    if (mbtb_pred.isTaken()) {
+        end_inst_pc = mbtb_pred.getTakenEntry().pc;
+    }
+    else {
+        end_inst_pc=mbtb_pred.bbStart + predictWidth -1;
+    }
+    auto remove_it = std::remove_if(old_entries.begin(), old_entries.end(),
+    [end_inst_pc](const BTBEntry &e) { return e.pc > end_inst_pc; });
+    old_entries.erase(remove_it, old_entries.end());
+    bool pred_branch_same=false;
+    BTBEntry entry_to_write = BTBEntry();
+    for ( auto &e:old_entries){
+        if (e==mbtb_pred.getTakenEntry()){
+            pred_branch_same=true;
+            entry_to_write = e;
+            break;
+        }
+    }
+    bool is_old_entry = pred_branch_same;
+
+    // If branch was not predicted but mbtb has a actually taken in pred, create new entry
+    if (!pred_branch_same && mbtb_pred.isTaken()) {
+        printf("mbtb pred is different from old entries, need to update abtb\n");
+        BTBEntry new_entry = BTBEntry(mbtb_pred.getTakenEntry());
+        new_entry.valid = true;
+        if (new_entry.isCond) {
+            new_entry.alwaysTaken = true;
+            new_entry.ctr = 0;  // Start with positive prediction
+            incNonL0Stat(btbStats.newEntryWithCond);
+        } else {
+            incNonL0Stat(btbStats.newEntryWithUncond);
+        }
+        incNonL0Stat(btbStats.newEntry);
+        entry_to_write = new_entry;
+        is_old_entry = false;
+    }else{
+
+    }
+    entry_to_write.tag = getTag(entry_to_write.pc);
+    auto entry_to_update=old_entries;
+
+    if (!is_old_entry) {
+    entry_to_update.push_back(entry_to_write);
+    }
+
+    for (auto &e:entry_to_update){
+        bool found=false;
+        Addr btb_idx;
+        Addr pred_tag;
+        Addr startPC;
+        auto pred_entry = mbtb_pred.getTakenEntry();
+        if (entryHalfAligned){
+            pred_tag = getTag(pred_entry.pc);
+            btb_idx=getIndex(pred_entry.pc);
+        }else{
+            startPC = mbtb_pred.bbStart;
+            btb_idx = getIndex(startPC);
+            pred_tag = getTag(startPC);
+        }
+
+        printf("pred_entry: pc=%#lx, valid=%d, isCond=%d, isIndirect=%d, ctr=%d, target=%#lx\n",
+        pred_entry.pc, pred_entry.valid, pred_entry.isCond, pred_entry.isIndirect, pred_entry.ctr, pred_entry.target);
+        auto update_entry=BTBEntry();
+        if (!pred_entry.valid) {
+            DPRINTF(BTB, "No taken entry found in MBTB predictions, skipping ABTB update\n");
+            break;
+        }
+        if (entryHalfAligned){
+            pred_tag = getTag(pred_entry.pc);
+            btb_idx=getIndex(pred_entry.pc);
+        }else{
+            startPC = mbtb_pred.bbStart;
+            btb_idx = getIndex(startPC);
+            pred_tag = getTag(startPC);
+        }
+        if (aheadPipelinedStages > 0) {
+            if (previousPC == 0) {
+                DPRINTF(BTB, "ahead-pipeline: no previous PC, skipping update\n");
+                btbStats.updateskippingahead++;
+                return;
+            }
+            btb_idx = getIndex(previousPC);
+        }
+        btbStats.updateUsingMbtbPred++;
+        bool pred_taken = pred_entry.ctr >= 0 || pred_entry.alwaysTaken;
+        auto it = btb[btb_idx].begin();
+        for (;it !=btb[btb_idx].end();it++){
+            if (*it==pred_entry){
+                found=true;
+                break;
+            }
+        }
+        update_entry=pred_entry.isCond && found ? BTBEntry(*it) : pred_entry;
+        update_entry.tag = pred_tag;   // update tag after found it!
+        if (update_entry.isCond) {
+            bool this_cond_pred_taken=pred_taken &&mbtb_pred.controlAddr()==update_entry.pc;
+            if (!this_cond_pred_taken) {
+                update_entry.alwaysTaken = false;
+            }
+            if (!update_entry.alwaysTaken) {
+                updateCtr(update_entry.ctr, pred_taken);
+            }
+        }
+        if (update_entry.isIndirect&&mbtb_pred.isTaken()&&mbtb_pred.controlAddr()==update_entry.pc) {
+            update_entry.target = mbtb_pred.getTakenEntry().target;
+        }
+        auto ticked_entry = TickedBTBEntry(update_entry, curTick());
+        if (found) {
+            *it = ticked_entry;
+            if (enableDB) {
+                BTBTrace rec;
+                rec.set(ticked_entry.pc, ticked_entry.getType(),
+                    ticked_entry.target, btb_idx, Mode::WRITE, 1);
+                btbTrace->write_record(rec);
+            }
+            btbStats.updateExisting++;
+        }else{
+            // Replace oldest entry in the set
+            DPRINTF(BTB, "trying to replace entry in set %#lx\n", btb_idx);
+
+            std::pop_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
+            const auto& entry_in_btb_now = mruList[btb_idx].back();
+            if (enableDB) {
+                    BTBTrace rec;
+                    rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
+                            entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
+                        btbTrace->write_record(rec);
+            }
+            if (entry_in_btb_now->valid) {
+                // if all ways are really occupied, we need to replace valid entry
+                // means 32B block is more than 4ways/ 4 branches
+                btbStats.updateReplaceValidOne++;
+            }
+            btbStats.updateReplace++;
+            DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
+                    entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
+            dumpMruList(mruList[btb_idx]);
+            *entry_in_btb_now = ticked_entry;
+            if (enableDB) {
+                BTBTrace rec;
+                rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
+                    entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
+                btbTrace->write_record(rec);
+            }
+            dumpMruList(mruList[btb_idx]);
+        }
+         printf("end abtb update");
+        std::make_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
+    }
+    //collect entries to update
+    //btbStats.updateUsingMbtbPred++;
 }
 
 /**
@@ -937,6 +1104,8 @@ DefaultBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(updateExisting, statistics::units::Count::get(), "existing entries updated"),
     ADD_STAT(updateReplace, statistics::units::Count::get(), "entries replaced"),
     ADD_STAT(updateReplaceValidOne, statistics::units::Count::get(), "entries replaced with valid entry"),
+    ADD_STAT(updateUsingMbtbPred,statistics::units::Count::get(), "abtb update using mbtb pred" ),
+    ADD_STAT(updateskippingahead,statistics::units::Count::get(), "abtb update skipping"),
     ADD_STAT(eraseSlotBehindUncond, statistics::units::Count::get(), "erase slots behind unconditional slot"),
     ADD_STAT(predUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when pred"),
     ADD_STAT(updateUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when update"),

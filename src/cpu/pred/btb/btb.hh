@@ -188,10 +188,10 @@ class DefaultBTB : public TimedBaseBTBPredictor
     void update(const FetchStream &stream) override;
 
 
-    void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
-        DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
+     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
+        DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, ctr:%d, \
             cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken, tick);
+            e.valid, e.pc, e.tag, e.size, e.target, e.ctr, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken, tick);
     }
 
     void printTickedBTBEntry(const TickedBTBEntry &e) {
@@ -219,7 +219,18 @@ class DefaultBTB : public TimedBaseBTBPredictor
         }
     }
 
+    typedef struct BTBMeta {
+        std::vector<BTBEntry> hit_entries;  // hit entries in L1 BTB
+        std::vector<BTBEntry> l0_hit_entries; // hit entries in L0 BTB
+        BTBMeta() {
+            std::vector<BTBEntry> es;
+            hit_entries = es;
+            l0_hit_entries = es;
+        }
+    }BTBMeta;
 
+    void updateUsingMbtb(FullBTBPrediction &mbtb_pred, const BTBMeta* meta,Addr previousPC);
+    std::shared_ptr<BTBMeta> meta; // metadata for BTB, set in putPCHistory, used in update
 
   private:
     /** Returns the index into the BTB, based on the branch's PC.
@@ -258,18 +269,6 @@ class DefaultBTB : public TimedBaseBTBPredictor
         if (taken && ctr < 1) {ctr++;}
         if (!taken && ctr > -2) {ctr--;}
     }
-
-    typedef struct BTBMeta {
-        std::vector<BTBEntry> hit_entries;  // hit entries in L1 BTB
-        std::vector<BTBEntry> l0_hit_entries; // hit entries in L0 BTB
-        BTBMeta() {
-            std::vector<BTBEntry> es;
-            hit_entries = es;
-            l0_hit_entries = es;
-        }
-    }BTBMeta;
-
-    std::shared_ptr<BTBMeta> meta; // metadata for BTB, set in putPCHistory, used in update
 
     /** Process BTB entries for prediction
      *  @param entries Vector of BTB entries to process
@@ -444,7 +443,8 @@ class DefaultBTB : public TimedBaseBTBPredictor
         Scalar updateExisting;
         Scalar updateReplace;
         Scalar updateReplaceValidOne;
-
+        Scalar updateUsingMbtbPred;
+        Scalar updateskippingahead;
         Scalar eraseSlotBehindUncond;
 
         Scalar predUseL0OnL1Miss;
