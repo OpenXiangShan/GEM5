@@ -67,6 +67,8 @@ namespace test {
 // Test constructor for unit testing mode
 MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay)
     : TimedBaseBTBPredictor(),
+      victimCacheSize(8),
+      victimCachePtr(0),
       numEntries(numEntries),
       numWays(numWays),
       tagBits(tagBits)
@@ -76,6 +78,8 @@ MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned num
 // Production constructor
 MBTB::MBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
+    victimCacheSize(16), // Default size, will be configurable later
+    victimCachePtr(0),
     numEntries(p.numEntries),
     numWays(p.numWays),
     tagBits(p.tagBits),
@@ -132,8 +136,16 @@ MBTB::MBTB(const Params &p)
     // MBTB uses standard tag shift calculation
     tagShiftAmt = idxShiftAmt + floorLog2(numSets);
 
-    DPRINTF(BTB, "numEntries %d, numSets %d, numWays %d, tagBits %d, tagShiftAmt %d, idxMask %#lx, tagMask %#lx\n",
-        numEntries, numSets, numWays, tagBits, tagShiftAmt, idxMask, tagMask);
+    // Initialize victim cache
+    victimCache.resize(victimCacheSize);
+    for (auto& entry : victimCache) {
+        entry.valid = false;
+        entry.tick = 0;
+    }
+
+    DPRINTF(BTB, "numEntries %d, numSets %d, numWays %d, tagBits %d, tagShiftAmt %d, "
+        "idxMask %#lx, tagMask %#lx, victimCacheSize %d\n",
+        numEntries, numSets, numWays, tagBits, tagShiftAmt, idxMask, tagMask, victimCacheSize);
 
 #ifndef UNIT_TEST
     hasDB = true;
@@ -236,7 +248,7 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
             stagePreds[s].btbEntries.push_back(BTBEntry(e));
         }
         checkAscending(stagePreds[s].btbEntries);
-        dumpBTBEntries(stagePreds[s].btbEntries);
+        if (s == getDelay()) dumpBTBEntries(stagePreds[s].btbEntries);
 
         stagePreds[s].predTick = curTick();
 
@@ -300,8 +312,8 @@ MBTB::putPCHistory(Addr startAddr,
 {
     meta = std::make_shared<BTBMeta>();
     // Lookup all matching entries in BTB
-    auto find_entries = lookup(startAddr);
-    
+    auto find_entries = lookup(startAddr, meta);
+
     // Process BTB entries
     auto processed_entries = processEntries(find_entries, startAddr);
     
@@ -346,7 +358,7 @@ MBTB::lookupSingleBlock(Addr block_pc)
     auto& target_mru = (sram_id == 0) ? mru0 : mru1;
     
     Addr btb_idx = getIndex(block_pc);
-    auto btb_set = target_sram[btb_idx];
+    auto& btb_set = target_sram[btb_idx];
     assert(btb_idx < numSets);
 
     Addr current_tag = getTag(block_pc);
@@ -364,7 +376,7 @@ MBTB::lookupSingleBlock(Addr block_pc)
 }
 
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookup(Addr block_pc)
+MBTB::lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -381,6 +393,19 @@ MBTB::lookup(Addr block_pc)
     // Merge results
     res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
 
+    // lookup victim cache if victim cache is enabled
+    if (victimCacheSize > 0) {
+        auto victimResults = lookupVictimCache(block_pc);
+        if (!victimResults.empty()) {
+            DPRINTF(BTB, "Victim cache hit for lookup at %#lx\n", block_pc);
+            incNonL0Stat(btbStats.victimCacheHit);
+            res.insert(res.end(), victimResults.begin(), victimResults.end()); // merge victim results
+            meta->victim_cache_hit_entries.insert(
+                meta->victim_cache_hit_entries.end(), victimResults.begin(), victimResults.end());
+            meta->had_victim_cache_hit = true;  // save prediction meta for later use in update()
+        }
+    }
+
     // Sort entries by PC order
     std::sort(res.begin(), res.end(),
              [](const TickedBTBEntry &a, const TickedBTBEntry &b) {
@@ -388,7 +413,7 @@ MBTB::lookup(Addr block_pc)
              });
 
     DPRINTF(BTB, "MBTB: Half-aligned lookup results:\n");
-    dumpTickedBTBEntries(res);
+    // dumpTickedBTBEntries(res);
     return res;
 }
 
@@ -507,13 +532,10 @@ MBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
             break;
         }
     }
-    if (!isL0()) {
-        bool l0_hit_l1_miss = pred_l0_branch_hit && !pred_branch_hit;
-        if (l0_hit_l1_miss) {
-            DPRINTF(BTB, "BTB: skipping entry write because of l0 hit\n");
-            incNonL0Stat(btbStats.updateUseL0OnL1Miss);
-            // return;
-        }
+    bool l0_hit_l1_miss = pred_l0_branch_hit && !pred_branch_hit;
+    if (l0_hit_l1_miss) {
+        DPRINTF(BTB, "BTB: skipping entry write because of l0 hit\n");
+        incNonL0Stat(btbStats.updateUseL0OnL1Miss);
     }
 }
 
@@ -568,9 +590,27 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
             break;
         }
     }
+    // Look for matching entry in victim cache
+    bool found_in_vc = false;
+    int vc_idx = -1;
+    for (int i = 0; i < (int)victimCache.size(); i++) {
+        auto &vc_entry = victimCache[i];
+        if (vc_entry.valid && vc_entry.pc == entry.pc) {    // pc is tag compared
+            found_in_vc = true;
+            vc_idx = i;
+            break;
+        }
+    }
     // if cond entry in btb now, use the one in btb, since we need the up-to-date counter
     // else use the recorded entry
-    auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
+    // Prefer freshest source: if MBTB already has it, use MBTB entry;
+    // else if VC has it, use VC entry; else use recorded entry
+    BTBEntry entry_to_write = entry;
+    if (entry.isCond && found) {
+        entry_to_write = BTBEntry(*it);
+    } else if (!found && found_in_vc) {
+        entry_to_write = BTBEntry(victimCache[vc_idx]);
+    }
     entry_to_write.tag = btb_tag;   // update tag after found it!
     // update saturating counter if necessary
     if (entry_to_write.isCond) {
@@ -599,6 +639,17 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
         }
 #endif
         btbStats.updateExisting++;
+        // If also present in VC, remove duplicate
+        if (found_in_vc) {
+            eraseFromVictimCacheByPC(entry.pc);
+        }
+        std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
+        return;
+    } else if (found_in_vc) {
+        // Centralized promotion policy: do NOT promote here.
+        // Only update the VC entry in place and return.
+        victimCache[vc_idx] = ticked_entry;
+        return;
     } else {
         // Replace oldest entry in the set
         DPRINTF(BTB, "trying to replace entry in SRAM%d set %#lx\n", sram_id, btb_idx);
@@ -617,6 +668,9 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
             // if all ways are really occupied, we need to replace valid entry
             // means 32B block is more than 4ways/ 4 branches
             btbStats.updateReplaceValidOne++;
+
+            // Insert evicted entry into victim cache
+            insertVictimCache(*entry_in_btb_now);
         }
         btbStats.updateReplace++;
         DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
@@ -646,6 +700,12 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
 void
 MBTB::update(const FetchStream &stream)
 {
+    // 0. Promote victim-cache hit entries observed during prediction back to MBTB
+    if (victimCacheSize > 0) {
+        auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
+        promoteVictimHits(meta->victim_cache_hit_entries);
+    }
+
     // 1. Process old entries
     auto old_entries = processOldEntries(stream);
     
@@ -662,7 +722,157 @@ MBTB::update(const FetchStream &stream)
     }
 }
 
-// MBTB doesn't need getPreviousPC function as it doesn't support ahead-pipelined stages
+/**
+ * Victim cache operations implementation
+ */
+std::vector<MBTB::TickedBTBEntry>
+MBTB::lookupVictimCache(Addr block_pc)
+{
+    std::vector<TickedBTBEntry> results;
+    Addr alignedPC = block_pc & ~(blockSize - 1);
+
+    // Check both 32B blocks for half-aligned lookup
+    for (auto &entry : victimCache) {
+        if (!entry.valid) continue;
+
+        Addr entryAlignedPC = entry.pc & ~(blockSize - 1);
+        // Check if this entry is in either of the two 32B blocks we're looking for
+        if (entryAlignedPC == alignedPC || entryAlignedPC == (alignedPC + blockSize)) {
+            Addr current_tag = getTag(entry.pc);
+            if (entry.tag == current_tag) {
+                results.push_back(entry);
+                DPRINTF(BTB, "Victim cache hit for pc %#lx\n", entry.pc);
+                // refresh LRU timestamp on hit
+                entry.tick = curTick();
+            }
+        }
+    }
+
+    return results;
+}
+
+void
+MBTB::promoteVictimHits(const std::vector<BTBEntry>& victim_hits)
+{
+    if (victimCacheSize == 0) return;
+
+    for (const auto &vc_hit_entry : victim_hits) {
+        Addr alignedPC = vc_hit_entry.pc & ~(blockSize - 1);
+        int sram_id = getSRAMId(alignedPC);
+        auto &target_sram = (sram_id == 0) ? sram0 : sram1;
+        auto &target_mru = (sram_id == 0) ? mru0 : mru1;
+
+        Addr btb_idx = getIndex(vc_hit_entry.pc);
+        Addr btb_tag = getTag(vc_hit_entry.pc);
+
+        // Check if already present in MBTB
+        bool found_in_btb = false;
+        auto it = target_sram[btb_idx].begin();
+        for (; it != target_sram[btb_idx].end(); it++) {
+            if (it->valid && it->pc == vc_hit_entry.pc) {
+                found_in_btb = true;
+                break;
+            }
+        }
+
+        TickedBTBEntry ticked_entry(vc_hit_entry, curTick());
+        ticked_entry.tag = btb_tag;
+
+        if (found_in_btb) {
+            *it = ticked_entry;
+#ifndef UNIT_TEST
+            if (enableDB) {
+                BTBTrace rec;
+                rec.set(it->pc, it->getType(), it->target, btb_idx, Mode::WRITE, 1);
+                btbTrace->write_record(rec);
+            }
+#endif
+            btbStats.victimCachePromote++;
+            std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
+        } else {
+            // Replace oldest entry in the set
+            std::pop_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
+            const auto &entry_in_btb_now = target_mru[btb_idx].back();
+#ifndef UNIT_TEST
+            if (enableDB) {
+                BTBTrace rec;
+                rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
+                        entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
+                btbTrace->write_record(rec);
+            }
+#endif
+            if (entry_in_btb_now->valid) {
+                insertVictimCache(*entry_in_btb_now);
+            }
+            *entry_in_btb_now = ticked_entry;
+#ifndef UNIT_TEST
+            if (enableDB) {
+                BTBTrace rec;
+                rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
+                        entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
+                btbTrace->write_record(rec);
+            }
+#endif
+            btbStats.victimCachePromote++;
+            std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
+        }
+
+        // Remove from VC
+        eraseFromVictimCacheByPC(vc_hit_entry.pc);
+    }
+}
+
+
+bool
+MBTB::eraseFromVictimCacheByPC(Addr pc)
+{
+    bool erased = false;
+    for (auto &entry : victimCache) {
+        if (entry.valid && entry.pc == pc) {
+            entry.valid = false;
+            erased = true;
+            break;
+        }
+    }
+    return erased;
+}
+
+void
+MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
+{
+    if (victimCacheSize == 0) return;
+
+    // 1) If same PC exists, update and refresh tick
+    for (auto &entry : victimCache) {
+        if (entry.valid && entry.pc == evicted_entry.pc) {
+            entry = evicted_entry;
+            entry.tick = curTick();
+            return;
+        }
+    }
+
+    // 2) Try to find an invalid slot first
+    for (auto &entry : victimCache) {
+        if (!entry.valid) {
+            entry = evicted_entry;
+            entry.tick = curTick();
+            entry.valid = true;
+            return;
+        }
+    }
+
+    // 3) No invalid slot: find LRU (smallest tick)
+    auto lru_it = victimCache.begin();
+    for (auto it = victimCache.begin(); it != victimCache.end(); ++it) {
+        if (it->tick < lru_it->tick) {
+            lru_it = it;
+        }
+    }
+    DPRINTF(BTB, "LRU replace in victim cache, evict pc %#lx with pc %#lx\n",
+            lru_it->pc, evicted_entry.pc);
+    *lru_it = evicted_entry;
+    lru_it->tick = curTick();
+}
 
 #ifndef UNIT_TEST
 void
@@ -822,7 +1032,10 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(callHits, statistics::units::Count::get(), "calls committed that was predicted hit"),
     ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
-    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
+    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
+
+    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits"),
+    ADD_STAT(victimCachePromote, statistics::units::Count::get(), "entries promoted from victim cache")
 
 {
 }

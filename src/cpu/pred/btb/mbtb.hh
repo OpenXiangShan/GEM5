@@ -246,10 +246,14 @@ class MBTB : public TimedBaseBTBPredictor
     typedef struct BTBMeta {
         std::vector<BTBEntry> hit_entries;  // hit entries in L1 BTB
         std::vector<BTBEntry> l0_hit_entries; // hit entries in L0 BTB
+        std::vector<BTBEntry> victim_cache_hit_entries; // hit entries from victim cache
+        bool had_victim_cache_hit; // flag to indicate if victim cache had hits
         BTBMeta() {
             std::vector<BTBEntry> es;
             hit_entries = es;
             l0_hit_entries = es;
+            victim_cache_hit_entries = es;
+            had_victim_cache_hit = false;
         }
     }BTBMeta;
 
@@ -341,13 +345,20 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The address of the block to look up.
      *  @return Returns all hit BTB entries.
      */
-    std::vector<TickedBTBEntry> lookup(Addr block_pc);
+    std::vector<TickedBTBEntry> lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta);
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
      * @return Vector of matching BTB entries
      */
     std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc);
+
+    /** Victim cache operations */
+    std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc);
+    void insertVictimCache(const TickedBTBEntry& evicted_entry);
+    bool promoteFromVictimCache(Addr block_pc, Addr tag);
+    bool eraseFromVictimCacheByPC(Addr pc);
+    void promoteVictimHits(const std::vector<BTBEntry>& victim_hits);
 
     /** Dual SRAM BTB structure:
      *  - Two independent 4-way SRAMs (sram0 and sram1)
@@ -363,6 +374,15 @@ class MBTB : public TimedBaseBTBPredictor
      *  - Oldest entry is at the top of each heap
      */
     std::vector<BTBHeap> mru0, mru1;
+
+    /** Victim cache for evicted entries:
+     *  - Small fully-associative cache for recently evicted entries
+     *  - Reduces conflict misses from SRAM capacity limitations
+     *  - Uses LRU replacement policy (based on tick)
+     */
+    std::vector<TickedBTBEntry> victimCache;
+    unsigned victimCacheSize;
+    unsigned victimCachePtr;
 
     /** BTB configuration parameters */
     unsigned numEntries;    // Total number of entries
@@ -461,6 +481,10 @@ public:
 
         Scalar returnHits;
         Scalar returnMisses;
+
+        // Victim cache statistics
+        Scalar victimCacheHit;
+        Scalar victimCachePromote;
 
 #ifndef UNIT_TEST
         BTBStats(statistics::Group* parent);
