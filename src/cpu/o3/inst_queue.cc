@@ -598,37 +598,6 @@ InstructionQueue::execLatencyCheck(const DynInstPtr& inst, uint32_t& op_latency)
                     return false;
             }
             return true;
-        case OpClass::FloatDiv:
-            rs1 = cpu->readArchFloatReg(inst->srcRegIdx(0).index(),
-                                        inst->threadNumber);
-            rs2 = cpu->readArchFloatReg(inst->srcRegIdx(1).index(),
-                                        inst->threadNumber);
-            switch (inst->staticInst->operWid()) {
-                case 32:
-                    if (__isnanf(*((float*)(&rs1))) ||
-                        __isnanf(*((float*)(&rs2))) ||
-                        __isinff(*((float*)(&rs1))) ||
-                        __isinff(*((float*)(&rs2)))) {
-                        op_latency = 2;
-                        break;
-                    }
-                    op_latency = 7;
-                    break;
-                case 64:
-                    if (__isnan(*((double*)(&rs1))) ||
-                        __isnan(*((double*)(&rs2))) ||
-                        __isinf(*((double*)(&rs1))) ||
-                        __isinf(*((double*)(&rs2)))) {
-                        op_latency = 2;
-                        break;
-                    }
-                    op_latency = 12;
-                    break;
-                default:
-                    panic("Unsupported float width\n");
-                    return false;
-            }
-            return true;
         default:
             return false;
     }

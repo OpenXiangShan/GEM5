@@ -536,7 +536,7 @@ IssueQue::selectInst()
             }
 
             if (!(portBusy[pi] &
-                  (scheduler->getCorrectedOpLat(inst) > 63 ? 0 : 1llu << scheduler->getCorrectedOpLat(inst)))) {
+                  (scheduler->getCorrectedOpLat(inst) > 63 ? -1 : (1llu << scheduler->getCorrectedOpLat(inst))))) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
 
                 // get regfile write port
@@ -1379,6 +1379,10 @@ Scheduler::getOpLatency(const DynInstPtr& inst)
     if (inst->opClass() == FloatCvtOp) [[unlikely]] {
         if (inst->destRegIdx(0).isFloatReg()) {
             return 2 + opExecTimeTable[inst->opClass()];
+        }
+    } else if (inst->opClass() == FloatDivOp) [[unlikely]] {
+        if (inst->staticInst->operWid() == 32) {
+            return 7;
         }
     }
     return opExecTimeTable[inst->opClass()];
