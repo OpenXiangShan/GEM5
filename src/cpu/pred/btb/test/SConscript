@@ -12,6 +12,7 @@ GTest('btb.test',
 
 GTest('abtb.test',
     '../btb.cc',
+    '../mbtb.cc',
     'abtb.test.cc',
     'timed_base_pred.cc',
 )

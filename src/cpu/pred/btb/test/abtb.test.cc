@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include "cpu/pred/btb/btb.hh"
+#include "cpu/pred/btb/mbtb.hh"
 
 namespace gem5
 {
@@ -45,8 +46,8 @@ FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb) {
     return stagePreds[1];
 }
 
-void updateBTB(FetchStream &stream, AheadBTB *abtb) {
-    abtb->getAndSetNewBTBEntry(stream); // usually called by mbtb, here for testing purpose
+void updateBTB(FetchStream &stream, AheadBTB *abtb, MBTB *mbtb) {
+    mbtb->getAndSetNewBTBEntry(stream); // usually called by mbtb, here for testing purpose
     abtb->update(stream);
 }
 
@@ -58,14 +59,16 @@ protected:
     void SetUp() override {
         // Create a BTB with 16 entries, 8-bit tags, 4-way associative, 1-cycle delay
         // The last parameter (true) enables pipelined operation
-        abtb = new AheadBTB(16, 20, 4, 1);
+        abtb = new AheadBTB(16, 20, 4, 0);
         // AheadBTB never uses half-aligned mode
 
-        bigAbtb = new AheadBTB(1024, 20, 1, 1);
+        bigAbtb = new AheadBTB(1024, 20, 1, 0);
+        mbtb = new MBTB (2048, 20, 4, 1);  // 2 sram, 4 way each, total 8 ways
     }
 
     AheadBTB* abtb;
     AheadBTB* bigAbtb;
+    MBTB* mbtb; // for getAndsetNewentry
 };
 
 TEST_F(ABTBTest, BasicPredictionUpdateCycle){
@@ -91,8 +94,8 @@ TEST_F(ABTBTest, BasicPredictionUpdateCycle){
     resolveStream(stream_A, true, brPC_A, target_A, true);
     resolveStream(stream_B, true, brPC_B, target_B, true);
     // update BTB with branch information
-    updateBTB(stream_A, abtb);
-    updateBTB(stream_B, abtb);
+    updateBTB(stream_A, abtb, mbtb);
+    updateBTB(stream_B, abtb, mbtb);
 
     // ---------------- testing phase ----------------
     // make predictions and check if BTB is updated correctly
@@ -136,8 +139,8 @@ TEST_F(ABTBTest, AliasAvoidance){
     resolveStream(stream_B, true, brPC_B, target_B, true);
     // update BTB with branch information
     // now aBTB ought to have a entry, indexed by startPC_A, tagged with startPC_B
-    updateBTB(stream_A, bigAbtb);
-    updateBTB(stream_B, bigAbtb);
+    updateBTB(stream_A, bigAbtb, mbtb);
+    updateBTB(stream_B, bigAbtb, mbtb);
 
     // ---------------- testing phase ----------------
     // when we've arrived at Fetch Block C, aBTB shouldn't return the entry trained with Fetch Block B

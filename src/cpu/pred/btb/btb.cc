@@ -71,6 +71,7 @@ AheadBTB::AheadBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsi
       tagBits(tagBits)
 {
     setNumDelay(numDelay);
+    this->aheadPipelinedStages = 1; // fixed ahead-pipelined stages = 1
 #else
 // Production constructor - fixed ahead-pipelined configuration
 AheadBTB::AheadBTB(const Params &p)
