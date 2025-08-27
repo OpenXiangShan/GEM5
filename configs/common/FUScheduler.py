@@ -156,11 +156,10 @@ class KunminghuScheduler(Scheduler):
         IssueQue(name='fpIQ2', inports=2, size=18, oports=[
             IssuePort(fu=[FP_ALU(), FP_MAC()], rp=[FpRD(6,0), FpRD(7,0), FpRD(8,0)])
         ], scheduleToExecDelay=2),
-        IssueQue(name='vecIQ0', inports=5, size=16+16+10, oports=[
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
-            IssuePort(fu=[SIMD_Unit()]),
+        IssueQue(name='vecIQ0', inports=2, size=18, oports=[
+            IssuePort(fu=[SIMD_Unit()])
+        ], scheduleToExecDelay=3),
+        IssueQue(name='vecIQ1', inports=2, size=18, oports=[
             IssuePort(fu=[SIMD_Unit()])
         ], scheduleToExecDelay=3)
     ]
