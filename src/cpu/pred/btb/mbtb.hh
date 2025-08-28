@@ -246,14 +246,10 @@ class MBTB : public TimedBaseBTBPredictor
     typedef struct BTBMeta {
         std::vector<BTBEntry> hit_entries;  // hit entries in L1 BTB
         std::vector<BTBEntry> l0_hit_entries; // hit entries in L0 BTB
-        std::vector<BTBEntry> victim_cache_hit_entries; // hit entries from victim cache
-        bool had_victim_cache_hit; // flag to indicate if victim cache had hits
         BTBMeta() {
             std::vector<BTBEntry> es;
             hit_entries = es;
             l0_hit_entries = es;
-            victim_cache_hit_entries = es;
-            had_victim_cache_hit = false;
         }
     }BTBMeta;
 
@@ -356,9 +352,7 @@ class MBTB : public TimedBaseBTBPredictor
     /** Victim cache operations */
     std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc);
     void insertVictimCache(const TickedBTBEntry& evicted_entry);
-    bool promoteFromVictimCache(Addr block_pc, Addr tag);
     bool eraseFromVictimCacheByPC(Addr pc);
-    void promoteVictimHits(const std::vector<BTBEntry>& victim_hits);
 
     /** Dual SRAM BTB structure:
      *  - Two independent 4-way SRAMs (sram0 and sram1)
@@ -382,7 +376,6 @@ class MBTB : public TimedBaseBTBPredictor
      */
     std::vector<TickedBTBEntry> victimCache;
     unsigned victimCacheSize;
-    unsigned victimCachePtr;
 
     /** BTB configuration parameters */
     unsigned numEntries;    // Total number of entries
@@ -484,7 +477,6 @@ public:
 
         // Victim cache statistics
         Scalar victimCacheHit;
-        Scalar victimCachePromote;
 
 #ifndef UNIT_TEST
         BTBStats(statistics::Group* parent);

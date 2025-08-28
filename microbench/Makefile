@@ -35,7 +35,7 @@ $(BUILD_DIR)/%.dump: $(BUILD_DIR)/%
 dumps: $(C_TARGETS:=.dump) $(S_TARGETS:=.dump)
 
 # gem5测试 (可选)
-GEM5_BIN = ../build/RISCV/gem5.debug
+GEM5_BIN = ../build/RISCV/gem5.opt
 GEM5_CONFIG = ../configs/example/se.py
 DEBUG_FLAGS ?=
 DEBUG_DIR = ./output
@@ -53,7 +53,7 @@ DEBUG_ARGS = $(if $(DEBUG_FLAGS),--debug-flags=$(DEBUG_FLAGS) --debug-file=$*.al
 run-%: $(BUILD_DIR)/%
 	@echo "运行测试: $<"
 	mkdir -p $(DEBUG_DIR)/$*
-	$(GEM5_BIN) $(DEBUG_ARGS) -d $(DEBUG_DIR)/$* $(GEM5_CONFIG) -c $<
+	$(GEM5_BIN) $(DEBUG_ARGS) -d $(DEBUG_DIR)/$* $(GEM5_CONFIG) --ideal-kmhv3 -c $<
 
 # 帮助
 help:

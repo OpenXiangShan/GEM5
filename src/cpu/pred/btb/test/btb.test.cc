@@ -581,43 +581,6 @@ TEST_F(BTBTest, VictimCacheFIFOTest) {
     verifyPrediction(stagePreds2, mbtb->getDelay(), {branches});
 }
 
-
-// Test: promotion increments stats and removes entry from victim cache
-TEST_F(BTBTest, VictimCachePromoteRemovesFromVC) {
-    // Prepare 5 branches mapping to same SRAM0 set
-    std::vector<BranchInfo> branches;
-    for (int i = 0; i < 5; i++) {
-        Addr pc = 0x100 + i * 4;
-        branches.push_back(createBranchInfo(pc, 0x400 + i * 0x10, true));
-    }
-
-    // Step 1: Insert 5 branches to create one victim entry
-    for (int i = 0; i < 5; i++) {
-        predictUpdateCycle(mbtb, 0x100, branches[i], true,
-            boost::dynamic_bitset<>(64, 0), 0x140);
-    }
-
-    auto before_promote_hit = mbtb->btbStats.victimCacheHit;
-    auto before_promote_cnt = mbtb->btbStats.victimCachePromote;
-
-    // Step 2: Access the first branch again to trigger promotion
-    auto stagePreds = predictUpdateCycle(mbtb, 0x100, branches[0], true,
-        boost::dynamic_bitset<>(64, 0), 0x140);
-
-    // Should have promoted from VC to MBTB exactly once
-    EXPECT_EQ(mbtb->btbStats.victimCachePromote, before_promote_cnt + 1);
-
-    // Step 3: Access again; now that it's in MBTB, VC should not be hit for the same branch
-    predictUpdateCycle(mbtb, 0x100, branches[0], true,
-        boost::dynamic_bitset<>(64, 0), 0x140);
-
-    // Victim cache hit count should not increase due to the same branch after promotion
-    EXPECT_GE(mbtb->btbStats.victimCacheHit, before_promote_hit + 1);
-
-    // And the branch should be predictable
-    verifyPrediction(stagePreds, mbtb->getDelay(), {branches});
-}
-
 // Test: update path when entry exists only in victim cache
 TEST_F(BTBTest, UpdateFromVictimCachePath) {
     // Prepare 5 branches mapping to same SRAM0 set

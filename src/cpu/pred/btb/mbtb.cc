@@ -68,7 +68,6 @@ namespace test {
 MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay)
     : TimedBaseBTBPredictor(),
       victimCacheSize(8),
-      victimCachePtr(0),
       numEntries(numEntries),
       numWays(numWays),
       tagBits(tagBits)
@@ -79,7 +78,6 @@ MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned num
 MBTB::MBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
     victimCacheSize(16), // Default size, will be configurable later
-    victimCachePtr(0),
     numEntries(p.numEntries),
     numWays(p.numWays),
     tagBits(p.tagBits),
@@ -400,9 +398,6 @@ MBTB::lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta)
             DPRINTF(BTB, "Victim cache hit for lookup at %#lx\n", block_pc);
             incNonL0Stat(btbStats.victimCacheHit);
             res.insert(res.end(), victimResults.begin(), victimResults.end()); // merge victim results
-            meta->victim_cache_hit_entries.insert(
-                meta->victim_cache_hit_entries.end(), victimResults.begin(), victimResults.end());
-            meta->had_victim_cache_hit = true;  // save prediction meta for later use in update()
         }
     }
 
@@ -601,16 +596,12 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
             break;
         }
     }
-    // if cond entry in btb now, use the one in btb, since we need the up-to-date counter
-    // else use the recorded entry
-    // Prefer freshest source: if MBTB already has it, use MBTB entry;
-    // else if VC has it, use VC entry; else use recorded entry
-    BTBEntry entry_to_write = entry;
-    if (entry.isCond && found) {
-        entry_to_write = BTBEntry(*it);
-    } else if (!found && found_in_vc) {
-        entry_to_write = BTBEntry(victimCache[vc_idx]);
+    // Simplify: if not found in MBTB but found in VC, do nothing and return
+    if (!found && found_in_vc) {
+        return;
     }
+
+    auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
     entry_to_write.tag = btb_tag;   // update tag after found it!
     // update saturating counter if necessary
     if (entry_to_write.isCond) {
@@ -639,17 +630,6 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
         }
 #endif
         btbStats.updateExisting++;
-        // If also present in VC, remove duplicate
-        if (found_in_vc) {
-            eraseFromVictimCacheByPC(entry.pc);
-        }
-        std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
-        return;
-    } else if (found_in_vc) {
-        // Centralized promotion policy: do NOT promote here.
-        // Only update the VC entry in place and return.
-        victimCache[vc_idx] = ticked_entry;
-        return;
     } else {
         // Replace oldest entry in the set
         DPRINTF(BTB, "trying to replace entry in SRAM%d set %#lx\n", sram_id, btb_idx);
@@ -700,11 +680,6 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
 void
 MBTB::update(const FetchStream &stream)
 {
-    // 0. Promote victim-cache hit entries observed during prediction back to MBTB
-    if (victimCacheSize > 0) {
-        auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
-        promoteVictimHits(meta->victim_cache_hit_entries);
-    }
 
     // 1. Process old entries
     auto old_entries = processOldEntries(stream);
@@ -749,77 +724,6 @@ MBTB::lookupVictimCache(Addr block_pc)
     }
 
     return results;
-}
-
-void
-MBTB::promoteVictimHits(const std::vector<BTBEntry>& victim_hits)
-{
-    if (victimCacheSize == 0) return;
-
-    for (const auto &vc_hit_entry : victim_hits) {
-        Addr alignedPC = vc_hit_entry.pc & ~(blockSize - 1);
-        int sram_id = getSRAMId(alignedPC);
-        auto &target_sram = (sram_id == 0) ? sram0 : sram1;
-        auto &target_mru = (sram_id == 0) ? mru0 : mru1;
-
-        Addr btb_idx = getIndex(vc_hit_entry.pc);
-        Addr btb_tag = getTag(vc_hit_entry.pc);
-
-        // Check if already present in MBTB
-        bool found_in_btb = false;
-        auto it = target_sram[btb_idx].begin();
-        for (; it != target_sram[btb_idx].end(); it++) {
-            if (it->valid && it->pc == vc_hit_entry.pc) {
-                found_in_btb = true;
-                break;
-            }
-        }
-
-        TickedBTBEntry ticked_entry(vc_hit_entry, curTick());
-        ticked_entry.tag = btb_tag;
-
-        if (found_in_btb) {
-            *it = ticked_entry;
-#ifndef UNIT_TEST
-            if (enableDB) {
-                BTBTrace rec;
-                rec.set(it->pc, it->getType(), it->target, btb_idx, Mode::WRITE, 1);
-                btbTrace->write_record(rec);
-            }
-#endif
-            btbStats.victimCachePromote++;
-            std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
-        } else {
-            // Replace oldest entry in the set
-            std::pop_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
-            const auto &entry_in_btb_now = target_mru[btb_idx].back();
-#ifndef UNIT_TEST
-            if (enableDB) {
-                BTBTrace rec;
-                rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                        entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
-                btbTrace->write_record(rec);
-            }
-#endif
-            if (entry_in_btb_now->valid) {
-                insertVictimCache(*entry_in_btb_now);
-            }
-            *entry_in_btb_now = ticked_entry;
-#ifndef UNIT_TEST
-            if (enableDB) {
-                BTBTrace rec;
-                rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                        entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
-                btbTrace->write_record(rec);
-            }
-#endif
-            btbStats.victimCachePromote++;
-            std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
-        }
-
-        // Remove from VC
-        eraseFromVictimCacheByPC(vc_hit_entry.pc);
-    }
 }
 
 
@@ -1034,8 +938,7 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
     ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
 
-    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits"),
-    ADD_STAT(victimCachePromote, statistics::units::Count::get(), "entries promoted from victim cache")
+    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits")
 
 {
 }
