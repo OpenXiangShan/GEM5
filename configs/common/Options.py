@@ -302,6 +302,15 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l1d-enable-cplx", action="store_true", default=False,
                         help="""
                         Enable complex stride component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-cmc", action="store_true", default=False,
+                        help="""
+                        Enable cmc component for L1 data prefetcher""")
+    parser.add_argument("--l1d-enable-triangel", action="store_true", default=False,
+                        help="""
+                        Enable triangel component for L1 data prefetcher""")
+    parser.add_argument("--l1d-triangel-no-use-cache-space", action="store_true", default=False,
+                        help="""
+                        Enable triangel component for L1 data prefetcher""")
     parser.add_argument("--short-stride-thres", action="store", default=0, type=int,
                         help="""
                         Ignore short strides when seen long strides for stride, 0 for turning off""")

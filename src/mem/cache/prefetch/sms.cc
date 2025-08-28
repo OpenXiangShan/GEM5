@@ -34,6 +34,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       learnedBOP(dynamic_cast<BOP *>(p.bop_learned)),
       spp(dynamic_cast<SignaturePath *>(p.spp)),
       ipcp(dynamic_cast<IPCP *>(p.ipcp)),
+      triangel(dynamic_cast<Triangel *>(p.triangel)),
       cmc(p.cmc),
       berti(p.berti),
       Sstride(p.sstride),
@@ -44,6 +45,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       enableCPLX(p.enable_cplx),
       enableSPP(p.enable_spp),
       enableTemporal(p.enable_temporal),
+      enableTriangel(p.enable_triangel),
       enableSstride(p.enable_sstride),
       enableBerti(p.enable_berti),
       enableBOP(p.enable_bop),
@@ -142,7 +144,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         }
     }
 
-    if ((pf_source == PrefetchSourceType::SStream || pf_source == PrefetchSourceType::StoreStream) || act_match_entry) {
+    if (pf_source == PrefetchSourceType::SStream ||
+        pf_source == PrefetchSourceType::StoreStream ||
+        act_match_entry) {
         auto it = act.begin();
         while (it != act.end()) {
             ACTEntry *it_entry = &(*it);
@@ -263,6 +267,12 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             if (is_first_shot && (pfi.isCacheMiss() || pfi.isPfFirstHit() || pf_source == PrefetchSourceType::CMC)) {
                 cmc->doPrefetch(pfi, addresses, late, pf_source, false);
             }
+        }
+
+        bool use_triangel = enableTriangel;
+        // && (pfi.isCacheMiss() || (pfi.isPfFirstHit() && pf_source == PrefetchSourceType::Triangel));
+        if (use_triangel) {
+            triangel->calculatePrefetch(pfi, addresses);
         }
     }
 }
@@ -654,6 +664,9 @@ XSCompositePrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccesso
 
     if (cmc)
         cmc->setParentInfo(sys, pm, _cache, blk_size);
+
+    if (triangel)
+        triangel->setParentInfo(sys, pm, _cache, blk_size);
 
     if (ipcp)
         ipcp->setParentInfo(sys, pm, _cache, blk_size);

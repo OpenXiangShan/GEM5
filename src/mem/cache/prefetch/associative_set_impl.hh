@@ -29,8 +29,13 @@
 #ifndef __CACHE_PREFETCH_ASSOCIATIVE_SET_IMPL_HH__
 #define __CACHE_PREFETCH_ASSOCIATIVE_SET_IMPL_HH__
 
+#include <vector>
+
 #include "base/intmath.hh"
 #include "mem/cache/prefetch/associative_set.hh"
+#include "mem/cache/replacement_policies/base.hh"
+#include "mem/cache/replacement_policies/replaceable_entry.hh"
+#include "mem/cache/replacement_policies/weighted_lru_rp.hh"
 
 namespace gem5
 {
@@ -39,7 +44,7 @@ template<class Entry>
 AssociativeSet<Entry>::AssociativeSet(int assoc, int num_entries,
         BaseIndexingPolicy *idx_policy, replacement_policy::Base *rpl_policy,
         Entry const &init_value)
-  : associativity(assoc), numEntries(num_entries), indexingPolicy(idx_policy),
+  : associativity(assoc), allocAssoc(assoc), numEntries(num_entries), indexingPolicy(idx_policy),
     replacementPolicy(rpl_policy), entries(numEntries, init_value)
 {
     fatal_if(!isPowerOf2(num_entries), "The number of entries of an "
@@ -79,14 +84,26 @@ AssociativeSet<Entry>::accessEntry(Entry *entry)
 }
 
 template<class Entry>
+void
+AssociativeSet<Entry>::weightedAccessEntry(Entry *entry, int weight, bool fill)
+{
+    gem5::replacement_policy::WeightedLRU* wlru =
+        dynamic_cast<gem5::replacement_policy::WeightedLRU*>(replacementPolicy);
+    if (wlru) wlru->touch(entry->replacementData, weight);
+    else if (!fill) accessEntry(entry);  //not fill for RRIPs
+}
+
+template<class Entry>
 Entry*
 AssociativeSet<Entry>::findVictim(Addr addr)
 {
     // Get possible entries to be victimized
     const std::vector<ReplaceableEntry*> selected_entries =
         indexingPolicy->getPossibleEntries(addr);
+    const std::vector<ReplaceableEntry*> available_entries =
+        std::vector<ReplaceableEntry*>(selected_entries.begin(), selected_entries.begin() + getWayAllocationMax());
     Entry* victim = static_cast<Entry*>(replacementPolicy->getVictim(
-                            selected_entries));
+                            available_entries));
     // There is only one eviction for this replacement
     invalidate(victim);
     return victim;
@@ -99,10 +116,13 @@ AssociativeSet<Entry>::getPossibleEntries(const Addr addr) const
 {
     std::vector<ReplaceableEntry *> selected_entries =
         indexingPolicy->getPossibleEntries(addr);
+
+    const std::vector<ReplaceableEntry*> available_entries =
+        std::vector<ReplaceableEntry*>(selected_entries.begin(), selected_entries.begin() + getWayAllocationMax());
     std::vector<Entry *> entries(selected_entries.size(), nullptr);
 
     unsigned int idx = 0;
-    for (auto &entry : selected_entries) {
+    for (auto &entry : available_entries) {
         entries[idx++] = static_cast<Entry *>(entry);
     }
     return entries;

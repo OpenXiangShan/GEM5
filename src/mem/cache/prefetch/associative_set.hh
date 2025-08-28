@@ -49,11 +49,14 @@ class AssociativeSet
 
     /** Associativity of the container */
     const int associativity;
+    int allocAssoc;
     /**
      * Total number of entries, entries are organized in sets of the provided
      * associativity. The number of associative sets is obtained by dividing
      * numEntries by associativity.
      */
+
+  public:
     const int numEntries;
     /** Pointer to the indexing policy */
     BaseIndexingPolicy* const indexingPolicy;
@@ -76,6 +79,23 @@ class AssociativeSet
         replacement_policy::Base *rpl_policy, Entry const &init_val = Entry());
 
     /**
+     * Sets the maximum number of ways available
+     */
+    void setWayAllocationMax(int ways)
+    {
+        allocAssoc = ways;
+    }
+
+    /**
+     * Get the way allocation mask limit.
+     * @return The maximum number of ways available for replacement.
+     */
+    int getWayAllocationMax() const
+    {
+        return allocAssoc;
+    }
+
+    /**
      * Find an entry within the set
      * @param addr key element
      * @param is_secure tag element
@@ -90,6 +110,8 @@ class AssociativeSet
      * @param entry the accessed entry
      */
     void accessEntry(Entry *entry);
+
+    void weightedAccessEntry(Entry *entry, int weight, bool fill);
 
     /**
      * Find a victim to be replaced

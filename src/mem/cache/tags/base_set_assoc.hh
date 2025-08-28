@@ -89,7 +89,7 @@ class BaseSetAssoc : public BaseTags
 
   public:
     /** Convenience typedef. */
-     typedef BaseSetAssocParams Params;
+    typedef BaseSetAssocParams Params;
 
     /**
      * Construct and initialize this tag store.
@@ -99,7 +99,7 @@ class BaseSetAssoc : public BaseTags
     /**
      * Destructor
      */
-    virtual ~BaseSetAssoc() {};
+    virtual ~BaseSetAssoc(){};
 
     /**
      * Initialize blocks as CacheBlk instances.
@@ -124,7 +124,7 @@ class BaseSetAssoc : public BaseTags
      * @param lat The latency of the tag lookup.
      * @return Pointer to the cache block if found.
      */
-    CacheBlk* accessBlock(const PacketPtr pkt, Cycles &lat) override
+    CacheBlk *accessBlock(const PacketPtr pkt, Cycles &lat) override
     {
         CacheBlk *blk = findBlock(pkt->getAddr(), pkt->isSecure());
 
@@ -169,17 +169,18 @@ class BaseSetAssoc : public BaseTags
      * @param evict_blks Cache blocks to be evicted.
      * @return Cache block to be replaced.
      */
-    CacheBlk* findVictim(Addr addr, const bool is_secure,
-                         const std::size_t size,
-                         std::vector<CacheBlk*>& evict_blks) override
+    CacheBlk *findVictim(Addr addr, const bool is_secure, const std::size_t size,
+                         std::vector<CacheBlk *> &evict_blks) override
     {
         // Get possible entries to be victimized
-        const std::vector<ReplaceableEntry*> entries =
-            indexingPolicy->getPossibleEntries(addr);
+        const std::vector<ReplaceableEntry *> entries = indexingPolicy->getPossibleEntries(addr);
+        const std::vector<ReplaceableEntry *> slice = std::vector<ReplaceableEntry *>(
+                                                        entries.begin(),
+                                                        entries.begin()+getWayAllocationMax()
+                                                    );
 
         // Choose replacement victim from replacement candidates
-        CacheBlk* victim = static_cast<CacheBlk*>(replacementPolicy->getVictim(
-                                entries));
+        CacheBlk *victim = static_cast<CacheBlk *>(replacementPolicy->getVictim(slice));
 
         // There is only one eviction for this replacement
         evict_blks.push_back(victim);
@@ -217,14 +218,21 @@ class BaseSetAssoc : public BaseTags
         allocAssoc = ways;
     }
 
+    virtual void clearSetWay(int set, int way) override
+    {
+        CacheBlk *blk = static_cast<CacheBlk *>(findBlockBySetAndWay(set, indexingPolicy->assoc - 1 - way));
+        if (!blk->isSet(CacheBlk::DirtyBit) && blk->isValid())
+            blk->invalidate();
+        // evictBlock(blk,writebacks);
+        else if (blk->isSet(CacheBlk::DirtyBit) && blk->isValid())
+            badBlocks.push_back(blk);
+    }
+
     /**
      * Get the way allocation mask limit.
      * @return The maximum number of ways available for replacement.
      */
-    virtual int getWayAllocationMax() const override
-    {
-        return allocAssoc;
-    }
+    virtual int getWayAllocationMax() const override { return allocAssoc; }
 
     /**
      * Regenerate the block address from the tag and indexing location.
@@ -232,19 +240,21 @@ class BaseSetAssoc : public BaseTags
      * @param block The block.
      * @return the block address.
      */
-    Addr regenerateBlkAddr(const CacheBlk* blk) const override
+    Addr regenerateBlkAddr(const CacheBlk *blk) const override
     {
         return indexingPolicy->regenerateAddr(blk->getTag(), blk);
     }
 
-    void forEachBlk(std::function<void(CacheBlk &)> visitor) override {
-        for (CacheBlk& blk : blks) {
+    void forEachBlk(std::function<void(CacheBlk &)> visitor) override
+    {
+        for (CacheBlk &blk : blks) {
             visitor(blk);
         }
     }
 
-    bool anyBlk(std::function<bool(CacheBlk &)> visitor) override {
-        for (CacheBlk& blk : blks) {
+    bool anyBlk(std::function<bool(CacheBlk &)> visitor) override
+    {
+        for (CacheBlk &blk : blks) {
             if (visitor(blk)) {
                 return true;
             }
@@ -253,6 +263,6 @@ class BaseSetAssoc : public BaseTags
     }
 };
 
-} // namespace gem5
+}  // namespace gem5
 
-#endif //__MEM_CACHE_TAGS_BASE_SET_ASSOC_HH__
+#endif  //__MEM_CACHE_TAGS_BASE_SET_ASSOC_HH__

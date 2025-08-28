@@ -81,7 +81,7 @@ class ReplaceableEntry;
  */
 class SetAssociative : public BaseIndexingPolicy
 {
-  protected:
+  public:
     /**
      * Apply a hash function to calculate address set.
      *

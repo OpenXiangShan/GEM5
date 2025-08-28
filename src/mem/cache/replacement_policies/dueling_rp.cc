@@ -112,8 +112,8 @@ Dueling::getVictim(const ReplacementCandidates& candidates) const
     // This function assumes that all candidates are either part of the same
     // sampled set, or are not samples.
     // @todo This should be improved at some point.
-    panic_if(candidates.size() != params().team_size, "We currently only "
-        "support team sizes that match the number of replacement candidates");
+    // panic_if(candidates.size() != params().team_size, "We currently only "
+    //     "support team sizes that match the number of replacement candidates");
 
     // The team with the most misses loses
     bool winner = !duelingMonitor.getWinner();
