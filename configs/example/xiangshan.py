@@ -108,6 +108,7 @@ def build_test_system(np, args):
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
         cpu.mmu.enable_sv48 = args.open_sv48
+        cpu.enable_sv48     = args.open_sv48
 
     # configure BP
     args.enable_loop_predictor = True
