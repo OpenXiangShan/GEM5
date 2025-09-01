@@ -12,10 +12,16 @@
 #include "cpu/pred/btb/folded_hist.hh"
 #include "cpu/pred/btb/stream_struct.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
-#include "debug/DecoupleBP.hh"
-#include "debug/TAGEUseful.hh"
-#include "params/BTBTAGE.hh"
-#include "sim/sim_object.hh"
+
+// Conditional includes based on build mode
+#ifdef UNIT_TEST
+    #include "cpu/pred/btb/test/test_dprintf.hh"
+#else
+    #include "debug/DecoupleBP.hh"
+    #include "debug/TAGEUseful.hh"
+    #include "params/BTBTAGE.hh"
+    #include "sim/sim_object.hh"
+#endif
 
 namespace gem5
 {
@@ -26,12 +32,23 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+// Conditional namespace wrapper for testing
+#ifdef UNIT_TEST
+namespace test {
+#endif
+
 class BTBTAGE : public TimedBaseBTBPredictor
 {
     using defer = std::shared_ptr<void>;
     using bitset = boost::dynamic_bitset<>;
   public:
+#ifdef UNIT_TEST
+    // Test constructor
+    BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2, unsigned tableSize = 1024);
+#else
+    // Production constructor
     typedef BTBTAGEParams Params;
+#endif
 
     // Represents a single entry in the TAGE prediction table
     struct TageEntry
@@ -98,8 +115,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
         AllocationResult() : allocate_valid(false) {}
     };
 
-  public:
+#ifndef UNIT_TEST
     BTBTAGE(const Params& p);
+#endif
     ~BTBTAGE();
 
     void tickStart() override;
@@ -121,19 +139,33 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void recoverPHist(const boost::dynamic_bitset<> &history,
                         const FetchStream &entry,int shamt, bool cond_taken) override;
 
+#ifdef UNIT_TEST
+    // API compatibility wrappers for testing
+    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {
+        specUpdatePHist(history, pred);
+    }
+
+    void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) {
+        recoverPHist(history, entry, shamt, cond_taken);
+    }
+#endif
+
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchStream &entry) override;
 
+#ifndef UNIT_TEST
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+#endif
 
     void setTrace() override;
 
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);
 
-
+#ifndef UNIT_TEST
   private:
+#endif
 
     // Look up predictions in TAGE tables for a stream of instructions
     void lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
@@ -246,47 +278,65 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Whether statistical corrector is enabled
     bool enableSC;
 
+#ifdef UNIT_TEST
+    typedef uint64_t Scalar;
+#else
+    typedef statistics::Scalar Scalar;
+#endif
+
     // Statistics for TAGE predictor
-    struct TageStats : public statistics::Group {
+#ifdef UNIT_TEST
+    struct TageStats
+    {
+#else
+    struct TageStats : public statistics::Group
+    {
+#endif
+        Scalar predNoHitUseBim;
+        Scalar predUseAlt;
+        Scalar updateNoHitUseBim;
+        Scalar updateUseAlt;
+        Scalar updateUseAltCorrect;
+        Scalar updateUseAltWrong;
+        Scalar updateAltDiffers;
+        Scalar updateUseAltOnNaUpdated;
+        Scalar updateUseAltOnNaInc;
+        Scalar updateUseAltOnNaDec;
+        Scalar updateProviderNa;
+        Scalar updateUseNaCorrect;
+        Scalar updateUseNaWrong;
+        Scalar updateUseAltOnNa;
+        Scalar updateUseAltOnNaCorrect;
+        Scalar updateUseAltOnNaWrong;
+        Scalar updateAllocFailure;
+        Scalar updateAllocFailureNoValidTable;
+        Scalar updateAllocSuccess;
+        Scalar updateMispred;
+        Scalar updateResetU;
+
+#ifndef UNIT_TEST
         statistics::Distribution predTableHits;
-        statistics::Scalar predNoHitUseBim;
-        statistics::Scalar predUseAlt;
         statistics::Distribution updateTableHits;
-        statistics::Scalar updateNoHitUseBim;
-        statistics::Scalar updateUseAlt;
-    
-        statistics::Scalar updateUseAltCorrect;
-        statistics::Scalar updateUseAltWrong;
-        statistics::Scalar updateAltDiffers;
-        statistics::Scalar updateUseAltOnNaUpdated;
-        statistics::Scalar updateUseAltOnNaInc;
-        statistics::Scalar updateUseAltOnNaDec;
-        statistics::Scalar updateProviderNa;
-        statistics::Scalar updateUseNaCorrect;
-        statistics::Scalar updateUseNaWrong;
-        statistics::Scalar updateUseAltOnNa;
-        statistics::Scalar updateUseAltOnNaCorrect;
-        statistics::Scalar updateUseAltOnNaWrong;
-        statistics::Scalar updateAllocFailure;
-        statistics::Scalar updateAllocFailureNoValidTable;
-        statistics::Scalar updateAllocSuccess;
-        statistics::Scalar updateMispred;
-        statistics::Scalar updateResetU;
         statistics::Distribution updateResetUCtrInc;
         statistics::Distribution updateResetUCtrDec;
 
         statistics::Vector updateTableMispreds;
+#endif
 
         int bankIdx;
         int numPredictors;
 
+#ifndef UNIT_TEST
         TageStats(statistics::Group* parent, int numPredictors);
+#endif
         void updateStatsWithTagePrediction(const TagePrediction &pred, bool when_pred);
     } ;
     
     TageStats tageStats;
 
+#ifndef UNIT_TEST
     TraceManager *tageMissTrace;
+#endif
 
 public:
 
@@ -295,7 +345,7 @@ public:
 
 public:
 
-private:
+
     // Metadata for TAGE predictions
     typedef struct TageMeta {
         std::unordered_map<Addr, TagePrediction> preds;
@@ -362,10 +412,16 @@ private:
 
     std::shared_ptr<TageMeta> meta;
 };
-}
 
-}
+// Close conditional namespace wrapper for testing
+#ifdef UNIT_TEST
+} // namespace test
+#endif
 
-}
+} // namespace btb_pred
+
+} // namespace branch_prediction
+
+} // namespace gem5
 
 #endif  // __CPU_PRED_BTB_TAGE_HH__

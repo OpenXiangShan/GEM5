@@ -4,18 +4,44 @@
 #include <cmath>
 #include <ctime>
 
+#ifndef UNIT_TEST
 #include "base/debug_helper.hh"
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "debug/TAGE.hh"
-
+#endif
 namespace gem5 {
 
 namespace branch_prediction {
 
 namespace btb_pred{
 
+#ifdef UNIT_TEST
+namespace test {
+#endif
+
+#ifdef UNIT_TEST
+// Test constructor for unit testing mode
+BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
+    : TimedBaseBTBPredictor(),
+      numPredictors(numPredictors),
+      numWays(numWays)
+{
+    setNumDelay(1);
+
+    // Initialize with default parameters for testing
+    tableSizes.resize(numPredictors, tableSize);
+    tableTagBits.resize(numPredictors, 8);
+    tablePcShifts.resize(numPredictors, 1);
+    histLengths.resize(numPredictors);
+    for (unsigned i = 0; i < numPredictors; ++i) {
+        histLengths[i] = (i + 1) * 4;
+    }
+    maxHistLen = histLengths[numPredictors-1];
+    numTablesToAlloc = 1;
+    enableSC = false;
+#else
 // Constructor: Initialize TAGE predictor with given parameters
 BTBTAGE::BTBTAGE(const Params& p):
 TimedBaseBTBPredictor(p),
@@ -30,15 +56,15 @@ numTablesToAlloc(p.numTablesToAlloc),
 enableSC(p.enableSC),
 tageStats(this, p.numPredictors)
 {
-    DPRINTF(TAGE, "BTBTAGE constructor\n");
     this->needMoreHistories = p.needMoreHistories;
+#endif
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
     tableIndexMasks.resize(numPredictors);
     tableTagBits.resize(numPredictors);
     tableTagMasks.resize(numPredictors);
     // baseTable.resize(2048); // need modify
-    for (unsigned int i = 0; i < p.numPredictors; ++i) {
+    for (unsigned int i = 0; i < numPredictors; ++i) {
         //initialize ittage predictor
         assert(tableSizes.size() >= numPredictors);
         tageTable[i].resize(tableSizes[i]);
@@ -67,8 +93,10 @@ tageStats(this, p.numPredictors)
 
     useAlt.resize(128);
 
+#ifndef UNIT_TEST
     hasDB = true;
     dbName = std::string("tage");
+#endif
 }
 
 BTBTAGE::~BTBTAGE()
@@ -79,6 +107,7 @@ BTBTAGE::~BTBTAGE()
 void
 BTBTAGE::setTrace()
 {
+#ifndef UNIT_TEST
     if (enableDB) {
         std::vector<std::pair<std::string, DataType>> fields_vec = {
             std::make_pair("startPC", UINT64),
@@ -102,6 +131,7 @@ BTBTAGE::setTrace()
         tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
         tageMissTrace->init_table();
     }
+#endif
 }
 
 void
@@ -396,7 +426,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     if (this_cond_mispred) {
         tageStats.updateMispred++;
         if (!used_alt && main_info.found) {
+#ifndef UNIT_TEST
             tageStats.updateTableMispreds[main_info.table]++;
+#endif
         }
     }
 
@@ -446,12 +478,16 @@ BTBTAGE::handleUsefulBitReset(const std::vector<bitset> &useful_mask, unsigned w
 
     // Update reset counter
     if (incUsefulResetCounter) {
+#ifndef UNIT_TEST
         tageStats.updateResetUCtrInc.sample(changeVal, 1);
+#endif
         usefulResetCnt = std::min(usefulResetCnt + changeVal, 128); // max is 128
         DPRINTF(TAGEUseful, "incUsefulResetCounter, changeVal %d, usefulResetCnt %d\n", 
                 changeVal, usefulResetCnt);
     } else if (decUsefulResetCounter) {
+#ifndef UNIT_TEST
         tageStats.updateResetUCtrDec.sample(changeVal, 1);
+#endif
         usefulResetCnt = std::max(usefulResetCnt - changeVal, 0); // min is 0
         DPRINTF(TAGEUseful, "decUsefulResetCounter, changeVal %d, usefulResetCnt %d\n", 
                 changeVal, usefulResetCnt);
@@ -644,6 +680,7 @@ BTBTAGE::update(const FetchStream &stream) {
                                    start_table, meta);
         }
 
+#ifndef UNIT_TEST
         if (enableDB) {
             TageMissTrace t;
             auto main_info = pred_it->second.mainInfo;
@@ -656,6 +693,7 @@ BTBTAGE::update(const FetchStream &stream) {
                 pred_it->second.useAlt, pred_it->second.taken, actual_taken, alloc_success);
             tageMissTrace->write_record(t);
         }
+#endif
     }
 
     DPRINTF(TAGE, "end update\n");
@@ -849,13 +887,12 @@ BTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
     }
 }
 
+#ifndef UNIT_TEST
 // Constructor for TAGE statistics
 BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors):
     statistics::Group(parent),
-    ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
     ADD_STAT(predNoHitUseBim, statistics::units::Count::get(), "use bimodal when no hit on prediction"),
     ADD_STAT(predUseAlt, statistics::units::Count::get(), "use alt on prediction"),
-    ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
     ADD_STAT(updateNoHitUseBim, statistics::units::Count::get(), "use bimodal when no hit on update"),
     ADD_STAT(updateUseAlt, statistics::units::Count::get(), "use alt on update"),
     ADD_STAT(updateUseAltCorrect, statistics::units::Count::get(), "use alt on update and correct"),
@@ -875,6 +912,8 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors):
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
+    ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
+    ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
     ADD_STAT(updateResetUCtrInc, statistics::units::Count::get(), "reset u ctr inc when update"),
     ADD_STAT(updateResetUCtrDec, statistics::units::Count::get(), "reset u ctr dec when update"),
     ADD_STAT(updateTableMispreds, statistics::units::Count::get(), "mispreds of each table when update")
@@ -885,6 +924,7 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors):
     updateResetUCtrDec.init(1, numPredictors, 1);
     updateTableMispreds.init(numPredictors);
 }
+#endif
 
 // Update statistics based on TAGE prediction
 void
@@ -895,7 +935,9 @@ BTBTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, bo
     bool useAlt = pred.useAlt;
     if (when_pred) {
         if (hit) {
+#ifndef UNIT_TEST
             predTableHits.sample(hit_table, 1);
+#endif
         } else {
             predNoHitUseBim++;
         }
@@ -904,7 +946,9 @@ BTBTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, bo
         }
     } else {
         if (hit) {
+#ifndef UNIT_TEST
             updateTableHits.sample(hit_table, 1);
+#endif
         } else {
             updateNoHitUseBim++;
         }
@@ -948,10 +992,16 @@ BTBTAGE::getLRUVictim(int table, Addr index)
     return victim;
 }
 
+#ifndef UNIT_TEST
 void
 BTBTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
 }
+#endif
+
+#ifdef UNIT_TEST
+} // namespace test
+#endif
 
 } // namespace btb_pred
 

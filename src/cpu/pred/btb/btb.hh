@@ -50,7 +50,7 @@
     #include <gmock/gmock.h>
     #include <gtest/gtest.h>
     #include "cpu/pred/btb/test/test_dprintf.hh"
-    #include "cpu/pred/btb/test/timed_base_pred.hh"
+    #include "cpu/pred/btb/timed_base_pred.hh"
 #else
     #include "arch/generic/pcstate.hh"
     #include "base/logging.hh"

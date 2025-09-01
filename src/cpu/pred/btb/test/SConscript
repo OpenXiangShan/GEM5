@@ -1,5 +1,8 @@
 Import('*')
 
+# all below tests must add --unit-test to enable unit test mode!
+# eg: scons build/RISCV/cpu/pred/btb/test/tage.test.debug --unit-test -j100
+
 # Add the test source files
 GTest('uras.test', 'uras_test.cc')
 
@@ -7,22 +10,22 @@ GTest('uras.test', 'uras_test.cc')
 GTest('btb.test', 
     '../mbtb.cc',
     'btb.test.cc',
-    'timed_base_pred.cc',
+    '../timed_base_pred.cc',
 )
 
 GTest('abtb.test',
     '../btb.cc',
     '../mbtb.cc',
     'abtb.test.cc',
-    'timed_base_pred.cc',
+    '../timed_base_pred.cc',
 )
 
 # Add TAGE test with necessary dependencies
 GTest('tage.test', 
-    'btb_tage.cc',
-    'btb_tage.test.cc', 
+    '../btb_tage.cc',
+    'btb_tage.test.cc',
     '../folded_hist.cc',
-    'timed_base_pred.cc',
+    '../timed_base_pred.cc',
 )
 
 GTest('folded_hist.test',
@@ -47,9 +50,9 @@ GTest('decoupled_bpred.test',
     'decoupled_bpred.test.cc',
     'decoupled_bpred.cc',
     '../btb.cc',
-    'btb_tage.cc',
+    '../btb_tage.cc',
     '../folded_hist.cc',
-    'timed_base_pred.cc',
+    '../timed_base_pred.cc',
     '../fetch_target_queue.cc',
     # '../../../../sim/serialize.cc',     # for PCStateBase
 )
@@ -58,7 +61,7 @@ GTest('decoupled_bpred.test',
 GTest('ras.test',
     'ras_test.cc',
     '../ras.cc',
-    'timed_base_pred.cc',
+    '../timed_base_pred.cc',
 )
 
 # Add the test to UNITTESTS target

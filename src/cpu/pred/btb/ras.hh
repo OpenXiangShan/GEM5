@@ -9,7 +9,7 @@
 #ifdef UNIT_TEST
     // Test mode includes
     #include "cpu/pred/btb/test/test_dprintf.hh"
-    #include "cpu/pred/btb/test/timed_base_pred.hh"
+    #include "cpu/pred/btb/timed_base_pred.hh"
 
     // Test mode type definitions
     namespace gem5 {
