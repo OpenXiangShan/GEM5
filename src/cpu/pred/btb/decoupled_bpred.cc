@@ -672,7 +672,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 
     // update ubtb using mbtb prediction
     if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
-        printf("Updating UBTB using MBTB prediction\n");
+        //printf("Updating UBTB using MBTB prediction\n");
         ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
         const DefaultBTB::BTBMeta* meta = static_cast<const DefaultBTB::BTBMeta*>(abtb->getPredictionMeta().get()); 
         auto it = fetchStreamQueue.find(fsqId-1);

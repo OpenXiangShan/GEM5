@@ -793,7 +793,6 @@ void
 DefaultBTB::updateUsingMbtb(FullBTBPrediction &mbtb_pred,const BTBMeta* meta,Addr previousPC)
 {
 
-    printf("try updating using MBTB prediction\n");
 
     //auto old_entry=processOldEntries(stream);//预测的
     auto old_entries=meta->hit_entries;
@@ -802,16 +801,16 @@ DefaultBTB::updateUsingMbtb(FullBTBPrediction &mbtb_pred,const BTBMeta* meta,Add
         end_inst_pc = mbtb_pred.getTakenEntry().pc;
     }
     else {
-        end_inst_pc=mbtb_pred.bbStart + predictWidth -1;
+        end_inst_pc = (mbtb_pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     }
     auto remove_it = std::remove_if(old_entries.begin(), old_entries.end(),
-    [end_inst_pc](const BTBEntry &e) { return e.pc > end_inst_pc; });
+                [end_inst_pc](const BTBEntry &e) { return e.pc > end_inst_pc; });
     old_entries.erase(remove_it, old_entries.end());
-    bool pred_branch_same=false;
+    bool pred_branch_same = false;
     BTBEntry entry_to_write = BTBEntry();
-    for ( auto &e:old_entries){
-        if (e==mbtb_pred.getTakenEntry()){
-            pred_branch_same=true;
+    for (auto &e : old_entries) {
+        if (e == mbtb_pred.getTakenEntry()) {
+            pred_branch_same = true;
             entry_to_write = e;
             break;
         }
@@ -820,7 +819,7 @@ DefaultBTB::updateUsingMbtb(FullBTBPrediction &mbtb_pred,const BTBMeta* meta,Add
 
     // If branch was not predicted but mbtb has a actually taken in pred, create new entry
     if (!pred_branch_same && mbtb_pred.isTaken()) {
-        printf("mbtb pred is different from old entries, need to update abtb\n");
+        //printf("mbtb pred is different from old entries, need to update abtb\n");
         BTBEntry new_entry = BTBEntry(mbtb_pred.getTakenEntry());
         new_entry.valid = true;
         if (new_entry.isCond) {
@@ -840,7 +839,7 @@ DefaultBTB::updateUsingMbtb(FullBTBPrediction &mbtb_pred,const BTBMeta* meta,Add
     auto entry_to_update=old_entries;
 
     if (!is_old_entry) {
-    entry_to_update.push_back(entry_to_write);
+        entry_to_update.push_back(entry_to_write);
     }
 
     for (auto &e:entry_to_update){
@@ -858,8 +857,6 @@ DefaultBTB::updateUsingMbtb(FullBTBPrediction &mbtb_pred,const BTBMeta* meta,Add
             pred_tag = getTag(startPC);
         }
 
-        printf("pred_entry: pc=%#lx, valid=%d, isCond=%d, isIndirect=%d, ctr=%d, target=%#lx\n",
-        pred_entry.pc, pred_entry.valid, pred_entry.isCond, pred_entry.isIndirect, pred_entry.ctr, pred_entry.target);
         auto update_entry=BTBEntry();
         if (!pred_entry.valid) {
             DPRINTF(BTB, "No taken entry found in MBTB predictions, skipping ABTB update\n");
@@ -885,7 +882,7 @@ DefaultBTB::updateUsingMbtb(FullBTBPrediction &mbtb_pred,const BTBMeta* meta,Add
         bool pred_taken = pred_entry.ctr >= 0 || pred_entry.alwaysTaken;
         auto it = btb[btb_idx].begin();
         for (;it !=btb[btb_idx].end();it++){
-            if (*it==pred_entry){
+            if (*it==e){
                 found=true;
                 break;
             }
@@ -944,7 +941,7 @@ DefaultBTB::updateUsingMbtb(FullBTBPrediction &mbtb_pred,const BTBMeta* meta,Add
             }
             dumpMruList(mruList[btb_idx]);
         }
-         printf("end abtb update");
+        //printf("end abtb update");
         std::make_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
     }
     //collect entries to update
