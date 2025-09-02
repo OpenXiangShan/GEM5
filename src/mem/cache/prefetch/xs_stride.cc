@@ -151,9 +151,9 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             unsigned start_depth = pfi.isCacheMiss() ? std::max(1, (entry->depth - 4)) : entry->depth;
             Addr pf_addr = 0;
             if (useXsDepth) {
-                sendPFWithFilter(pfi, blockAddress(lookupAddr + entry->stride * 2), addresses, 0,
+                sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 2)), addresses, 0,
                                  PrefetchSourceType::SStride, 1);
-                sendPFWithFilter(pfi, blockAddress(lookupAddr + entry->stride * 5), addresses, 0,
+                sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 5)), addresses, 0,
                                  PrefetchSourceType::SStride, 2);
             } else {
                 for (unsigned i = start_depth; i <= entry->depth; i++) {
