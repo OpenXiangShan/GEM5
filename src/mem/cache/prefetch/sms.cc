@@ -63,8 +63,10 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     learnedBOP->filter = &this->pfBlockLRUFilter;
     if (berti)
         berti->filter = &this->pfBlockLRUFilter;
-    if (Sstride)
+    if (Sstride) {
         Sstride->filter = &this->pfBlockLRUFilter;
+        Sstride->filterL2 = &this->pfPageLRUFilterL2;
+    }
 
     if (cmc)
         cmc->filter = &this->pfBlockLRUFilter;

@@ -239,17 +239,24 @@ void
 XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
                                       int prio, PrefetchSourceType src, int ahead_level)
 {
-    if (filter->contains(addr)) {
-        DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
-    } else {
-        DPRINTF(XSStridePrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
-        addresses.push_back(AddrPriority(addr, prio, src));
-        if (ahead_level > 1) {
+    if (ahead_level > 1){
+        if (filterL2->contains(addr)) {
+            DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
+        } else {
+            DPRINTF(XSStridePrefetcher, "Send pf: %lx\n", addr);
+            filterL2->insert(addr, 0);
+            addresses.push_back(AddrPriority(addr, prio, src));
             assert(ahead_level == 2 || ahead_level == 3);
             addresses.back().pfahead_host = ahead_level;
             addresses.back().pfahead = true;
+        }
+    } else {
+        if (filter->contains(addr)) {
+            DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
         } else {
+            DPRINTF(XSStridePrefetcher, "Send pf: %lx\n", addr);
+            filter->insert(addr, 0);
+            addresses.push_back(AddrPriority(addr, prio, src));
             addresses.back().pfahead = false;
         }
     }
