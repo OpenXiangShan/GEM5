@@ -103,6 +103,7 @@ class XSStridePrefetcher : public Queued
 
   public:
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
+    boost::compute::detail::lru_cache<Addr, Addr> *filterL2;
     XSStridePrefetcher(const XSStridePrefetcherParams &p);
 
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addressed) override
