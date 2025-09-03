@@ -1667,9 +1667,6 @@ IEW::executeInsts()
 
         DynInstPtr inst = instQueue.getInstToExecute();
 
-        DPRINTF(IEW, "Execute: Processing PC %s, [tid:%i] [sn:%llu].\n",
-                inst->pcState(), inst->threadNumber,inst->seqNum);
-
         // Notify potential listeners that this instruction has started
         // executing
         ppExecute->notify(inst);

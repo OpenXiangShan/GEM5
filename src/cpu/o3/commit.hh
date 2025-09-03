@@ -52,6 +52,7 @@
 #include "cpu/exetrace.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/comm.hh"
+#include "cpu/o3/decode.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
@@ -181,11 +182,14 @@ class Commit
     /** Sets the pointer to the IEW stage. */
     void setIEWStage(IEW *iew_stage);
 
+    void setDecodeStage(Decode *decode_stage);
+
     /** The pointer to the IEW stage. Used solely to ensure that
      * various events (traps, interrupts, syscalls) do not occur until
      * all stores have written back.
      */
     IEW *iewStage;
+    Decode *decodeStage;
 
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);

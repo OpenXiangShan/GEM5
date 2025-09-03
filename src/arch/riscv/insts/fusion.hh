@@ -7,6 +7,7 @@
 
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/regs/misc.hh"
+#include "arch/riscv/utility.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/static_inst.hh"
 
@@ -19,36 +20,48 @@ namespace RiscvISA
 class FusionInst : public RiscvStaticInst
 {
   protected:
-    o3::DynInst* fused = nullptr;// do not use DynInstPtr here, as it will cause a circular dependency
+    RegId destRegIdxArr[2];
+    RegId srcRegIdxArr[4];
+
+    const o3::DynInstPtr first, second;
+    o3::DynInst *fused = nullptr;  // do not use DynInstPtr here, as it will cause a circular dependency
   public:
-    FusionInst(const char *name, OpClass op)
-        : RiscvStaticInst(name, 0, op)
+    FusionInst(const char *name, OpClass op, const o3::DynInstPtr &first, const o3::DynInstPtr &second)
+        : RiscvStaticInst(name, 0, op), first(first), second(second)
     {
+        setRegIdxArrays(reinterpret_cast<RegIdArrayPtr>(&std::remove_pointer_t<decltype(this)>::srcRegIdxArr),
+                        reinterpret_cast<RegIdArrayPtr>(&std::remove_pointer_t<decltype(this)>::destRegIdxArr));
     }
 
-    void setFusedInst(o3::DynInstPtr& inst) {
+    void setFusedInst(o3::DynInstPtr &inst)
+    {
         flags[IsFusion] = true;
         fused = inst.get();
     }
-};
 
-// A x1, x2, x3 + B x1, x1, x4
-// => A fuseTmp, x2, x3 + B x1, fuseTmp, x4
-// => C x1, (x2, x3), (fuseTmp, x4)
-class ChainFusionInst : public FusionInst
-{
-    // only have one dst
-    RegId destRegIdxArr[1];
-    RegId srcRegIdxArr[4]; // max 4 src
+    // true if aligned
+    virtual bool correctMisalign(Addr addr) const { return false; }
 
-    o3::DynInstPtr first, second;
-    int firstNumSrcs = 0;
-  public:
-    ChainFusionInst(const char *name, OpClass op, o3::DynInstPtr first, o3::DynInstPtr second);
+    Addr getSecondPC() const;
 
-    Fault execute(ExecContext *xc, Trace::InstRecord *traceData) const override;
-
-    std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const override { return mnemonic; }
+    std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const override {
+        std::string str = std::string(mnemonic);
+        for (int i=0; i < _numDestRegs; i++) {
+            if (i == 0)
+                str += " (" + registerName(destRegIdxArr[i]);
+            else
+                str += "," + registerName(destRegIdxArr[i]);
+        }
+        str += ")";
+        for (int i=0; i < _numSrcRegs; i++) {
+            if (i == 0)
+                str += " (" + registerName(srcRegIdxArr[i]);
+            else
+                str += "," + registerName(srcRegIdxArr[i]);
+        }
+        str += ")";
+        return str;
+    }
 };
 
 struct FusionKey

@@ -48,6 +48,7 @@
 #include <list>
 #include <string>
 
+#include "arch/riscv/insts/fusion.hh"
 #include "arch/riscv/insts/vector.hh"
 #include "base/compiler.hh"
 #include "base/logging.hh"
@@ -1001,16 +1002,21 @@ LSQ::dumpInsts(ThreadID tid) const
 }
 
 bool
-LSQ::isMisaligned(const DynInstPtr& inst, LSQRequest* request)
+LSQ::isMisaligned(const DynInstPtr& inst, Addr vaddr, int size)
 {
     auto code = inst->isLoad() ? RiscvISA::ExceptionCode::LOAD_ADDR_MISALIGNED
                                               : RiscvISA::ExceptionCode::STORE_ADDR_MISALIGNED;
-    if (!inst->isVector() && request->mainReq()->getSize() > 1 &&
-        request->mainReq()->getVaddr() % request->mainReq()->getSize() != 0) {
+    if (!inst->isVector() && size > 1 &&
+        vaddr % size != 0) {
+        if (inst->staticInst->isFusion()) {
+            auto fusedInst = dynamic_cast<RiscvISA::FusionInst*>(inst->staticInst.get());
+            if (fusedInst->correctMisalign(vaddr)) {
+                return false;
+            }
+        }
         DPRINTF(LSQUnit, "[sn:%lld] misaligned: size: %u, Addr: %#lx, code: %d\n",
-                inst->seqNum, request->mainReq()->getSize(), request->mainReq()->getVaddr(), code);
-        inst->getFault() = std::make_shared<RiscvISA::AddressFault>(request->mainReq()->getVaddr(),
-                                                                    request->mainReq()->getgPaddr(), code);
+                inst->seqNum, size, vaddr, code);
+        inst->getFault() = std::make_shared<RiscvISA::AddressFault>(vaddr, 0, code);
         return true;
     }
     return false;
@@ -1025,6 +1031,11 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     // Atomic request has a corresponding pointer to its atomic memory
     // operation
     [[maybe_unused]] bool isAtomic = !isLoad && amo_op;
+
+    if (isMisaligned(inst, addr, size)) {
+        // inst->getFault() is set in isMisaligned()
+        return inst->getFault();
+    }
 
     ThreadID tid = cpu->contextToThread(inst->contextId());
     auto cacheLineSize = cpu->cacheLineSize();
@@ -1106,10 +1117,6 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
             // instruction as executed.
             inst->setExecuted();
         }
-        if (isMisaligned(inst, request)) {
-            // inst->getFault() is set in isMisaligned()
-            return inst->getFault();
-        }
     }
 
     if (inst->traceData)
@@ -1166,8 +1173,8 @@ LSQ::SingleDataRequest::finish(const Fault &fault, const RequestPtr &request,
 
         LSQRequest::_inst->fault = fault;
         LSQRequest::_inst->translationCompleted(true);
-        DPRINTF(LSQ, "Translation of inst %llu notified as completed\n",
-                LSQRequest::_inst->seqNum);
+        DPRINTF(LSQ, "Translation of inst %llu notified as %s\n",
+                LSQRequest::_inst->seqNum, fault == NoFault ? "successful" : "faulty");
     }
 }
 

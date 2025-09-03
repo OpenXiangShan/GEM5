@@ -72,6 +72,15 @@ initiateMemRead(XC *xc, Trace::InstRecord *traceData, Addr addr,
                            flags, byte_enable);
 }
 
+template <class XC, int size>
+Fault
+initiateMemReadSize(XC *xc, Trace::InstRecord *traceData, Addr addr, Request::Flags flags)
+{
+    static const std::vector<bool> byte_enable(size, true);
+    return initiateMemRead(xc, addr, size,
+                           flags, byte_enable);
+}
+
 /// Extract the data returned from a timing mode read.
 template <ByteOrder Order, class MemT>
 void

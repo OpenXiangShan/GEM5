@@ -555,6 +555,9 @@ class DynInst : public ExecContext, public RefCounted
     void dumpSNList();
 #endif
 
+
+    int32_t operWid() const { return staticInst->operWid(); }
+
     /** Renames a destination register to a physical register.  Also records
      *  the previous physical register that the logical register mapped to.
      */

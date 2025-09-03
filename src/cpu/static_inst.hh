@@ -225,6 +225,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     void setLastMicroop() { flags[IsLastMicroop] = true; }
     void setDelayedCommit() { flags[IsDelayedCommit] = true; }
     void setFlag(Flags f) { flags[f] = true; }
+    const std::bitset<Num_Flags>& getFlags() const { return flags; }
 
     /// Operation class.  Used to select appropriate function unit in issue.
     OpClass opClass() const { return _opClass; }

@@ -51,6 +51,10 @@ class MemInst : public RiscvStaticInst
     MemInst(const char *mnem, ExtMachInst _extMachInst, OpClass __opClass)
         : RiscvStaticInst(mnem, _extMachInst, __opClass), offset(0)
     {}
+
+    int64_t getImm() const override { return offset; }
+  public:
+    Request::Flags getMemAccessFlags() const { return memAccessFlags; }
 };
 
 class Load : public MemInst

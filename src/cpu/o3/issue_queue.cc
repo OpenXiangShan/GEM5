@@ -321,9 +321,11 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         // check bypass data ready or not
         if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
-            if (!dst_inst || !dst_inst->isLoad()) {
-                panic("dst[sn:%llu] is not load", dst_inst->seqNum);
-            }
+            assert(dst_inst);
+            if (!dst_inst->isLoad()) panic("dst[sn:%llu] is not load", dst_inst->seqNum);
+            warn_once(
+                "Tt's should not happen on classic cache, it may be wrong delay of load wake or missed loadcancel in "
+                "lsq\n");
             DPRINTF(Schedule, "[sn:%llu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum,
                     inst->srcRegIdx(i), dst_inst->genDisassembly());
             scheduler->loadCancel(dst_inst);
@@ -1072,8 +1074,10 @@ Scheduler::getInstByDstReg(RegIndex flatIdx)
 {
     for (auto iq : issueQues) {
         for (auto& inst : iq->instList) {
-            if (inst->numDestRegs() > 0 && inst->renamedDestIdx(0)->flatIndex() == flatIdx) {
-                return inst;
+            for (auto i = 0; i < inst->numDestRegs(); i++) {
+                if (inst->renamedDestIdx(i)->flatIndex() == flatIdx) {
+                    return inst;
+                }
             }
         }
     }
