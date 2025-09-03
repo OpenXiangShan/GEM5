@@ -206,8 +206,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 matching_way = way;
                 match = true;
 
-                // Update LRU counters
-                updateLRU(i, index, way);
+                // Do not use LRU; keep logic simple and align with CBP-style replacement
 
                 DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx\n",
                     i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc);
@@ -398,15 +397,14 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         // Update prediction counter
         updateCounter(actual_taken, 3, way.counter);
 
-        // Update LRU counter
-        updateLRU(main_info.table, main_info.index, main_info.way);
+        // No LRU maintenance
     }
 
     // Update alternative prediction provider
     if (used_alt && alt_info.found) {
         auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
         updateCounter(actual_taken, 3, way.counter);
-        updateLRU(alt_info.table, alt_info.index, alt_info.way);
+        // No LRU maintenance
     }
 
     // Update statistics
@@ -611,23 +609,40 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
         Addr newIndex = getTageIndex(alignedPC, ti, updateIndexFoldedHist[ti].get());
         Addr newTag = getTageTag(alignedPC, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get());
 
-        // Find a way to allocate (invalid entry or LRU victim)
-        unsigned way = getLRUVictim(ti, newIndex);
+        // Choose a way: first way with (invalid) or (useful==0 and counter is non-saturated/weak)
+        // If none, apply one-step age penalty on the first (useful==0 and strong counter) and do not allocate
+        auto &set = tageTable[ti][newIndex];
 
-        // Update the entry
-        auto &entry_to_update = tageTable[ti][newIndex][way];
-        short newCounter = actual_taken ? 0 : -1;
+        // First pass: pick allocation candidate
+        for (unsigned way = 0; way < numWays; ++way) {
+            auto &cand = set[way];
+            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,1,2,0,-1 considered non-saturated/weak
+            if (!cand.valid || (!cand.useful && weakish)) {
+                // Allocate here
+                short newCounter = actual_taken ? 0 : -1;
+                DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu, counter %d\n",
+                    ti, newIndex, way, newTag, newCounter);
+                cand = TageEntry(newTag, newCounter, entry.pc);
+                tageStats.updateAllocSuccess++;
+                return true;  // allocate only 1 entry
+            }
+        }
 
-        DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu, counter %d\n",
-            ti, newIndex, way, newTag, newCounter);
+        // Second pass: apply age penalty to one strong, not-useful entry if exists
+        for (unsigned way = 0; way < numWays; ++way) {
+            auto &cand = set[way];
+            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
+            if (!cand.useful && !weakish) {  // useful==0 and strong counter
+                if (cand.counter > 0) cand.counter--; else cand.counter++;
+                DPRINTF(TAGE, "age penalty applied on table %d[%lu][%u], new ctr %d\n",
+                        ti, newIndex, way, cand.counter);
+                break;
+            }
+        }
 
-        entry_to_update = TageEntry(newTag, newCounter, entry.pc);
-
-        // Reset LRU counter for the new entry
-        updateLRU(ti, newIndex, way);
-
-        tageStats.updateAllocSuccess++;
-        return true;  // allocate only 1 entry
+        // No allocation this table
+        tageStats.updateAllocFailure++;
+        continue;
     }
 
     // todo: fix update selection, select invalid way first or select not useful table first!
