@@ -168,8 +168,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
-    void lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
-                                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
+    void lookupHelper(const Addr &alignedPC, const std::vector<BTBEntry> &btbEntries,
+                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table);
@@ -376,11 +376,11 @@ public:
 
 private:
     // Helper method to record useful bit in all TAGE tables
-    void recordUsefulMask(const Addr &startPC);
+    void recordUsefulMask(const Addr &alignedPC);
 
     // Helper method to generate prediction for a single BTB entry
     TagePrediction generateSinglePrediction(const BTBEntry &btb_entry, 
-                                           const Addr &startPC);
+                                           const Addr &alignedPC);
 
     // Helper method to prepare BTB entries for update
     std::vector<BTBEntry> prepareUpdateEntries(const FetchStream &stream);
@@ -395,7 +395,7 @@ private:
     void handleUsefulBitReset(const std::vector<bitset> &useful_mask, unsigned way = 0, bool found = false);
 
     // Helper method to handle new entry allocation
-    bool handleNewEntryAllocation(const Addr &startPC,
+    bool handleNewEntryAllocation(const Addr &alignedPC,
                                  const BTBEntry &entry,
                                  bool actual_taken,
                                  const std::vector<bitset> &useful_mask,

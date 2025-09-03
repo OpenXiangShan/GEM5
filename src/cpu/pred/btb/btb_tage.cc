@@ -143,10 +143,10 @@ BTBTAGE::tickStart() {}
 /**
  * @brief Helper method to record useful bit in all TAGE tables
  *
- * @param startPC The starting PC address for lookup
+ * @param alignedPC The aligned PC address for lookup
  */
 void
-BTBTAGE::recordUsefulMask(const Addr &startPC) {
+BTBTAGE::recordUsefulMask(const Addr &alignedPC) {
     // Initialize all usefulMasks
     meta->usefulMask.resize(numWays);
     for (unsigned way = 0; way < numWays; way++) {
@@ -155,7 +155,7 @@ BTBTAGE::recordUsefulMask(const Addr &startPC) {
 
     // Look up entries in all TAGE tables
     for (int i = 0; i < numPredictors; ++i) {
-        Addr index = getTageIndex(startPC, i);
+        Addr index = getTageIndex(alignedPC, i);
         for (unsigned way = 0; way < numWays; way++) {
             auto &entry = tageTable[i][index][way];
             // Save useful bit to metadata
@@ -175,12 +175,12 @@ BTBTAGE::recordUsefulMask(const Addr &startPC) {
  * @brief Generate prediction for a single BTB entry by searching TAGE tables
  *
  * @param btb_entry The BTB entry to generate prediction for
- * @param startPC The starting PC address for calculating indices and tags
+ * @param alignedPC The aligned PC address for calculating indices and tags
  * @return TagePrediction containing main and alternative predictions
  */
 BTBTAGE::TagePrediction
-BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry, 
-                                 const Addr &startPC) {
+BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
+                                 const Addr &alignedPC) {
     DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx, always taken %d\n",
         btb_entry.pc, btb_entry.alwaysTaken);
     
@@ -191,8 +191,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Search from highest to lowest table for matches
     for (int i = numPredictors - 1; i >= 0; --i) {
-        Addr index = getTageIndex(startPC, i);
-        Addr tag = getTageTag(startPC, i); // use for tag comparison
+        Addr index = getTageIndex(alignedPC, i);
+        Addr tag = getTageTag(alignedPC, i); // use for tag comparison
         bool match = false; // for each table, only one way can be matched
         TageEntry matching_entry;
         unsigned matching_way = 0;
@@ -258,21 +258,21 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 /**
  * @brief Look up predictions in TAGE tables for a stream of instructions
  * 
- * @param startPC The starting PC address for the instruction stream
+ * @param alignedPC The aligned PC address for the instruction stream
  * @param btbEntries Vector of BTB entries to make predictions for
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+BTBTAGE::lookupHelper(const Addr &alignedPC, const std::vector<BTBEntry> &btbEntries,
                       std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results)
 {
-    DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
+    DPRINTF(TAGE, "lookupHelper alignedPC: %#lx\n", alignedPC);
 
     // Process each BTB entry to make predictions
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
-            auto pred = generateSinglePrediction(btb_entry, startPC);
+            auto pred = generateSinglePrediction(btb_entry, alignedPC);
             meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
@@ -304,7 +304,9 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
  */
 void
 BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
-    DPRINTF(TAGE, "putPCHistory startAddr: %#lx\n", stream_start);
+    // use 32byte(blockSize) aligned PC for prediction(get index and tag)
+    Addr alignedPC = stream_start & ~(blockSize - 1);
+    DPRINTF(TAGE, "putPCHistory startAddr: %#lx, alignedPC: %#lx\n", stream_start, alignedPC);
 
     // IMPORTANT: when this function is called,
     // btb entries should already be in stagePreds
@@ -317,13 +319,13 @@ BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     meta->indexFoldedHist = indexFoldedHist;
 
     // record useful bit to meta.usefulMask
-    recordUsefulMask(stream_start);
+    recordUsefulMask(alignedPC);
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
         stage_pred.condTakens.clear();
-        lookupHelper(stream_start, stage_pred.btbEntries, stage_pred.tageInfoForMgscs, stage_pred.condTakens);
+        lookupHelper(alignedPC, stage_pred.btbEntries, stage_pred.tageInfoForMgscs, stage_pred.condTakens);
     }
 
 }
@@ -553,7 +555,7 @@ BTBTAGE::generateAllocationMask(const bitset &useful_mask,
 /**
  * @brief Handle allocation of new entries
  * 
- * @param startPC The starting PC address
+ * @param alignedPC The aligned PC address
  * @param entry The BTB entry being updated
  * @param actual_taken The actual outcome of the branch
  * @param useful_mask The vector of useful masks
@@ -562,7 +564,7 @@ BTBTAGE::generateAllocationMask(const bitset &useful_mask,
  * @return true if allocation is successful
  */
 bool
-BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
+BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
                                  const BTBEntry &entry,
                                  bool actual_taken,
                                  const std::vector<bitset> &useful_mask,
@@ -606,8 +608,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         auto &updateIndexFoldedHist = meta->indexFoldedHist;
 
         // Compute index and tag for the new entry
-        Addr newIndex = getTageIndex(startPC, ti, updateIndexFoldedHist[ti].get());
-        Addr newTag = getTageTag(startPC, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get());
+        Addr newIndex = getTageIndex(alignedPC, ti, updateIndexFoldedHist[ti].get());
+        Addr newTag = getTageTag(alignedPC, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get());
 
         // Find a way to allocate (invalid entry or LRU victim)
         unsigned way = getLRUVictim(ti, newIndex);
@@ -642,7 +644,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 void
 BTBTAGE::update(const FetchStream &stream) {
     Addr startAddr = stream.getRealStartPC();
-    DPRINTF(TAGE, "update startAddr: %#lx\n", startAddr);
+    Addr alignedPC = startAddr & ~(blockSize - 1);
+    DPRINTF(TAGE, "update startAddr: %#lx, alignedPC: %#lx\n", startAddr, alignedPC);
 
     // Prepare BTB entries to update
     auto entries_to_update = prepareUpdateEntries(stream);
@@ -675,7 +678,7 @@ BTBTAGE::update(const FetchStream &stream) {
             if (main_info.found) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
-            alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
+            alloc_success = handleNewEntryAllocation(alignedPC, btb_entry, actual_taken,
                                    meta->usefulMask,
                                    start_table, meta);
         }
@@ -719,7 +722,7 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist)
     Addr mask = (1ULL << tableTagBits[t]) - 1;
 
     // Extract lower bits of PC directly
-    Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
+    Addr pcBits = (pc >> floorLog2(blockSize)) & mask; // pc is already aligned
 
     // Extract and prepare folded history bits
     Addr foldedBits = foldedHist & mask;
@@ -744,7 +747,7 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
     Addr mask = (1ULL << tableIndexBits[t]) - 1;
 
     // Extract lower bits of PC and XOR with folded history directly
-    Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
+    Addr pcBits = (pc >> floorLog2(blockSize)) & mask; // pc is already aligned
     Addr foldedBits = foldedHist & mask;
 
     return pcBits ^ foldedBits;
