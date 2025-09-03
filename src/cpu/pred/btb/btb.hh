@@ -262,10 +262,12 @@ class DefaultBTB : public TimedBaseBTBPredictor
     typedef struct BTBMeta {
         std::vector<BTBEntry> hit_entries;  // hit entries in L1 BTB
         std::vector<BTBEntry> l0_hit_entries; // hit entries in L0 BTB
+        bool aheadPipelineEmpty;  // true if aheadReadBtbEntries was empty during prediction
         BTBMeta() {
             std::vector<BTBEntry> es;
             hit_entries = es;
             l0_hit_entries = es;
+            aheadPipelineEmpty = false;
         }
     }BTBMeta;
 
@@ -453,6 +455,8 @@ class DefaultBTB : public TimedBaseBTBPredictor
         Scalar S0Predmiss;
         Scalar S0PredUseUBTB;
         Scalar S0PredUseABTB;
+
+        statistics::Scalar trainingSkippedAheadPipelineEmpty;
 
         // per branch statistics
         Scalar allBranchHits;

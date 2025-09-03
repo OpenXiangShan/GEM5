@@ -296,6 +296,7 @@ DefaultBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
  * 1. Clear old metadata
  * 2. Save L0 BTB entries for L1 BTB's reference
  * 3. Save current BTB entries
+ * 4. Set aheadPipelineEmpty flag
  */
 void
 DefaultBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
@@ -312,6 +313,8 @@ DefaultBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
     for (auto e: entries) {
         meta->hit_entries.push_back(BTBEntry(e));
     }
+
+    // Note: aheadPipelineEmpty flag is set in lookupSingleBlock when the else block is encountered
 }
 
 void
@@ -428,6 +431,10 @@ DefaultBTB::lookupSingleBlock(Addr block_pc)
         } else {
             DPRINTF(AheadPipeline, "BTB: ahead-pipeline not filled, only have %ld sets read,"
                 " skipping tag compare, assigning miss\n", aheadReadBtbEntries.size());
+            // Set flag to indicate ahead pipeline was empty during this prediction
+            if (meta) {
+                meta->aheadPipelineEmpty = true;
+            }
         }
     }
     DPRINTF(BTB, "BTB: Doing tag comparison for index 0x%lx tag %#lx\n",
@@ -739,6 +746,14 @@ DefaultBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, co
 void
 DefaultBTB::update(const FetchStream &stream)
 {
+    // Check if training should be skipped due to empty ahead pipeline
+    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
+    if (meta->aheadPipelineEmpty) {
+        btbStats.trainingSkippedAheadPipelineEmpty++;
+        DPRINTF(BTB, "Skipping BTB training due to empty ahead pipeline\n");
+        return;
+    }
+
     // 1. Process old entries
     auto old_entries = processOldEntries(stream);
     
@@ -943,6 +958,7 @@ DefaultBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(S0Predmiss, statistics::units::Count::get(), "misses encountered on S0 prediction, i.e. uBTB and ABTB miss"),
     ADD_STAT(S0PredUseUBTB, statistics::units::Count::get(), "uBTB prediction used, i.e. uBTB hit"),
     ADD_STAT(S0PredUseABTB, statistics::units::Count::get(), "aBTB prediction used, i.e. uBTB miss and ABTB hit"),
+    ADD_STAT(trainingSkippedAheadPipelineEmpty, statistics::units::Count::get(), "training skipped due to empty ahead pipeline"),
 
     ADD_STAT(allBranchHits, statistics::units::Count::get(), "all types of branches committed that was predicted hit"),
     ADD_STAT(allBranchHitTakens, statistics::units::Count::get(), "all types of taken branches committed was that predicted hit"),
