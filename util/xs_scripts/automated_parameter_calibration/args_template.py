@@ -18,11 +18,21 @@ class CliffArgsTemplate:
         #"configs/example/cliff.py",
         #"--no-l3cache",
         #"--arch-xlen={XLEN}",   # inline placeholder
+        "cpu.fetchWidth={FetchWidth}\n",
+        "cpu.fetchQueueSize={FtqSize}\n",
         "cpu.decodeWidth={DecodeWidth}\n",   # inline placeholder
         "cpu.renameWidth={RenameWidth}\n",
         "cpu.commitWidth={CommitWidth}\n",
         "cpu.LQEntries={VirtualLoadQueueSize}\n",
         "cpu.SQEntries={StoreQueueSize}\n",
+        "cpu.SbufferEntries={StoreBufferSize}\n",
+        "cpu.SbufferEvictThreshold={StoreBufferThreshold}\n",
+        "cpu.RARQEntries={LoadQueueRARSize}\n",
+        "cpu.RAWQEntries={LoadQueueRAWSize}\n",
+        "cpu.numROBEntries={RobSize}\n",
+        "cpu.numPhysIntRegs={intPreg}\n",
+        "cpu.numPhysFloatRegs={fpPreg}\n",
+        "cpu.numPhysVecRegs={vfPreg}\n",
         # more options...
     ]
 

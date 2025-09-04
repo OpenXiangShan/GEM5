@@ -16,11 +16,21 @@ TARGET_KEYS: Dict[str, str] = {
     "VLEN": "int",
     "HartId": "int",
     "HasPrefetch": "bool",
+    "FetchWidth": "int",
+    "FtqSize": "int",
     "DecodeWidth": "int",
     "RenameWidth": "int",
     "CommitWidth": "int",
     "VirtualLoadQueueSize": "int",
     "StoreQueueSize": "int",
+    "StoreBufferSize": "int",
+    "StoreBufferThreshold": "int",
+    "LoadQueueRARSize": "int",
+    "LoadQueueRAWSize": "int",
+    "RobSize": "int",
+    "intPreg": "int",
+    "fpPreg": "int",
+    "vfPreg": "int",
 }
 
 def strip_comments(code: str) -> str:
@@ -56,6 +66,27 @@ def normalize_value(raw: str) -> str:
         v = v[1:-1].strip()
     return v
 
+# New helper: scan the right-hand side after '=' until a top-level comma or ')'
+# This avoids premature cutoff when the value spans multiple lines or contains nested calls.
+def grab_rhs_until_top_comma(s: str, start: int) -> str:
+    depth = 0
+    j = start
+    while j < len(s):
+        c = s[j]
+        if c == '(':
+            depth += 1
+        elif c == ')':
+            if depth > 0:
+                depth -= 1
+            else:
+                # Reached a top-level closing parenthesis (should not happen for RHS, but keep for safety)
+                break
+        elif c == ',' and depth == 0:
+            break
+        j += 1
+    return s[start:j].strip()
+
+
 def parse_scalar(value: str, expected_type: str) -> Optional[Any]:
     """Convert the raw string value to the expected type (int or bool)."""
     v = value.strip()
@@ -79,11 +110,30 @@ def extract_values(params_block: str, targets: Dict[str, str]) -> Dict[str, Opti
     """Extract default values of the target keys from the parameter block."""
     results: Dict[str, Optional[Any]] = {k: None for k in targets}
     for key, expected_type in targets.items():
-        pat = rf"""\b{key}\b\s*(?::\s*[\w\[\]]+)?\s*=\s*(.+?)(?=,\s*[\w]|,\s*$|\n|$|\))"""
-        m = re.search(pat, params_block, flags=re.S)
-        if m:
-            raw = normalize_value(m.group(1))
-            results[key] = parse_scalar(raw, expected_type)
+        # Locate "key [: type] = " anchor
+        anchor = re.search(rf"""\b{key}\b\s*(?::\s*[\w\[\]]+)?\s*=\s*""", params_block)
+        if not anchor:
+            continue
+        start = anchor.end()
+
+        # Use bracket-depth scanning to grab the complete RHS,
+        # which may include nested parentheses, commas, and line breaks.
+        raw = grab_rhs_until_top_comma(params_block, start)
+        raw = normalize_value(raw)
+
+        # Special handling: if RHS is an object initialization like IntPregParams(...),
+        # extract the numEntries field.
+        if key == "intPreg" or key == "fpPreg" or key == "vfPreg":
+            m_ne = re.search(r"""numEntries\s*=\s*(0x[0-9a-fA-F]+|\d+)""", raw)
+            if m_ne:
+                try:
+                    results[key] = int(m_ne.group(1), 0)
+                    continue
+                except ValueError:
+                    pass  # fallback to scalar parsing if conversion fails
+
+        # Default: parse as scalar int/bool
+        results[key] = parse_scalar(raw, expected_type)
     return results
 
 def process_file(path: str) -> Optional[Dict[str, Optional[Any]]]:

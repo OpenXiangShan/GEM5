@@ -26,11 +26,23 @@ from example.xiangshan import *
 
 def autoCalibrateParams(args, system):
     for cpu in system.cpu:
+        cpu.fetchWidth=8
+        cpu.fetchQueueSize=64
         cpu.decodeWidth=6
         cpu.renameWidth=6
         cpu.commitWidth=8
         cpu.LQEntries=72
         cpu.SQEntries=56
+        cpu.SbufferEntries=16
+        cpu.SbufferEvictThreshold=7
+        cpu.RARQEntries=72
+        cpu.RAWQEntries=32
+        cpu.numROBEntries=160
+        cpu.numPhysIntRegs=224
+        cpu.numPhysFloatRegs=192
+        cpu.numPhysVecRegs=128
+
+
 
 
 
