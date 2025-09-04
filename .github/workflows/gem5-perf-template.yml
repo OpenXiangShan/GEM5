@@ -195,11 +195,11 @@ jobs:
           echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
           echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
           
-          # Auto cleanup: keep only last 50 runs for this benchmark type
-          if [ -d "$BENCHMARK_DIR" ] && [ $(ls -1 "$BENCHMARK_DIR" 2>/dev/null | wc -l) -gt 50 ]; then
-            echo "Cleaning up old performance data, keeping last 50 runs"
+          # Auto cleanup: keep only last 200 runs for this benchmark type
+          if [ -d "$BENCHMARK_DIR" ] && [ $(ls -1 "$BENCHMARK_DIR" 2>/dev/null | wc -l) -gt 200 ]; then
+            echo "Cleaning up old performance data, keeping last 200 runs"
             # Use absolute paths to avoid accidental deletion if cd fails
-            ls -1t "$BENCHMARK_DIR" | tail -n +51 | while read -r old_run; do
+            ls -1t "$BENCHMARK_DIR" | tail -n +201 | while read -r old_run; do
               if [ -n "$old_run" ] && [ -d "$BENCHMARK_DIR/$old_run" ]; then
                 rm -rf "$BENCHMARK_DIR/$old_run"
                 echo "Deleted: $BENCHMARK_DIR/$old_run"
