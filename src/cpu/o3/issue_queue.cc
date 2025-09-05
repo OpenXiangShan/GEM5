@@ -1382,7 +1382,11 @@ Scheduler::getOpLatency(const DynInstPtr& inst)
         }
     } else if (inst->opClass() == FloatDivOp) [[unlikely]] {
         if (inst->staticInst->operWid() == 32) {
-            return 7;
+            return 11;
+        }
+    } else if (inst->opClass() == FloatSqrtOp) [[unlikely]] {
+        if (inst->staticInst->operWid() == 32) {
+            return 13;
         }
     }
     return opExecTimeTable[inst->opClass()];
