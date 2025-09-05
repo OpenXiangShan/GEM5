@@ -1980,7 +1980,15 @@ void
 DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
 {
     auto it = fetchStreamQueue.find(inst->fsqId);
-    assert(it != fetchStreamQueue.end());
+    // In trace mode, instructions bypass fetch stream creation, so fsqId may not be valid
+    if (cpu->isTraceMode()) {
+        if (it == fetchStreamQueue.end()) {
+            // Skip BP notification for trace instructions without fetch stream entries
+            return;
+        }
+    } else {
+        assert(it != fetchStreamQueue.end());
+    }
     it->second.commitInstNum++;
     numInstCommitted++;
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",

@@ -72,6 +72,7 @@ BPredUnit::BPredUnit(const Params &params)
       instShiftAmt(params.instShiftAmt)
 {
     bpType = CoupledType;
+    DPRINTF(Branch, "BPredUnit created with bpType = CoupledType (isDecoupled = %d)\n", isDecoupled());
     for (auto& r : RAS)
         r.init(params.RASSize);
     // was for classical frontend
