@@ -251,3 +251,12 @@ class BaseO3CPU(BaseCPU):
     enableTraceMode = Param.Bool(False, "Enable trace-driven simulation mode")
     traceFile = Param.String("", "Path to trace file for trace-driven simulation")
     traceFormat = Param.String("champsim", "Trace format (champsim, cbp2025)")
+    enableDecoupledBPInTrace = Param.Bool(False, "Enable decoupled branch predictor in trace mode")
+    traceCheckpointInterval = Param.Unsigned(64, "Checkpoint interval for trace rollback")
+    traceBPValidation = Param.Bool(True, "Enable branch predictor validation against trace")
+
+    # Address mapping configuration for trace mode
+    traceAddrMapMode = Param.String("hash", "Address mapping mode for trace (hash|linear)")
+    traceAddrBase = Param.Addr(0x10000000, "Base address for trace address mapping")
+    traceAddrSize = Param.Addr(0x40000000, "Size of trace address mapping region (1GB)")
+    traceAddrPageAlign = Param.Bool(True, "Align trace addresses to page boundaries")

@@ -42,10 +42,13 @@
 #define __CPU_O3_FETCH_HH__
 
 #include <cstring>
+#include <memory>
+#include <unordered_map>
 #include <utility>
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
+#include "arch/riscv/types.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
 #include "cpu/o3/comm.hh"
@@ -460,6 +463,80 @@ class Fetch
 
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
+    /** Trace-driven simulation support methods */
+
+    /**
+     * Store trace instruction metadata for cache hierarchy integration
+     * @param seqNum Instruction sequence number
+     * @param traceInstr Trace instruction metadata
+     */
+    void storeTraceInstMetadata(InstSeqNum seqNum, const o3::TraceInstruction &traceInstr);
+
+    /**
+     * Get trace instruction metadata for a given sequence number
+     * @param seqNum Instruction sequence number
+     * @return Pointer to trace instruction if found, nullptr otherwise
+     */
+    const o3::TraceInstruction* getTraceInstMetadata(InstSeqNum seqNum) const;
+
+    /**
+     * Check if an instruction is from trace
+     * @param seqNum Instruction sequence number
+     * @return true if instruction is from trace
+     */
+    bool isTraceInstruction(InstSeqNum seqNum) const;
+
+    /**
+     * Clean up trace instruction metadata for squashed instructions
+     * @param seqNum Sequence number threshold - remove all instructions >= seqNum
+     */
+    void cleanupTraceMetadata(InstSeqNum seqNum);
+
+    /**
+     * Create a trace reader checkpoint if needed
+     * @param seqNum Current sequence number
+     */
+    void maybeCreateTraceCheckpoint(InstSeqNum seqNum);
+
+    /**
+     * Find trace instruction index for a given sequence number
+     * @param seqNum Sequence number to look up
+     * @return Trace instruction index, or 0 if not found
+     */
+    uint64_t findTraceIndexForSeqNum(InstSeqNum seqNum);
+
+    /**
+     * Rollback trace reader to handle misprediction
+     * @param seqNum Sequence number to rollback before
+     * @return true if rollback successful
+     */
+    bool rollbackTraceReader(InstSeqNum seqNum);
+
+    /**
+     * Validate branch predictor prediction against trace ground truth
+     * @param traceInstr Trace instruction with ground truth
+     * @param predictedPC Predicted next PC from branch predictor
+     * @param predictedTaken Predicted taken/not-taken from branch predictor
+     * @return true if prediction matches trace, false if misprediction
+     */
+    bool validateBPPrediction(const o3::TraceInstruction& traceInstr,
+                             Addr predictedPC, bool predictedTaken);
+
+    /**
+     * Feed trace branch outcome to branch predictor for immediate learning
+     * @param traceInstr Trace instruction with correct branch outcome
+     * @param currentPC Current PC of the branch
+     */
+    void feedTraceBranchToBP(const o3::TraceInstruction& traceInstr, Addr currentPC);
+
+    /**
+     * Feed trace branch outcome to decoupled BTB predictor
+     * Creates a FetchStream from trace information for comprehensive training
+     * @param traceInstr Trace instruction with correct branch outcome
+     * @param currentPC Current PC of the branch
+     */
+    void feedTraceToDecoupledBTB(const o3::TraceInstruction& traceInstr, Addr currentPC);
+
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
@@ -532,11 +609,18 @@ class Fetch
     bool fetchInstructionFromTrace(ThreadID tid);
 
     /**
+     * Supply FTQ with fetch targets derived from trace instructions
+     * This ensures the decoupled frontend has targets to fetch in trace mode
+     */
+    void supplyFTQWithTraceTargets();
+
+    /**
      * Create appropriate MachInst from trace instruction information
      * @param traceInstr Trace instruction containing type and metadata
      * @return RISC-V machine instruction encoding
      */
-    MachInst createMachInstFromTrace(const o3::TraceInstruction &traceInstr);
+    TheISA::MachInst createMachInstFromTrace(const o3::TraceInstruction &traceInstr);
+
 
     /**
      * Processes a single instruction, including decoding, building the
@@ -599,17 +683,35 @@ class Fetch
 
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
-    
+
     branch_prediction::stream_pred::DecoupledStreamBPU *dbsp;
 
     branch_prediction::ftb_pred::DecoupledBPUWithFTB *dbpftb;
 
     branch_prediction::btb_pred::DecoupledBPUWithBTB *dbpbtb;
 
+  public:
     /** Trace reader for trace-driven simulation */
     std::unique_ptr<o3::TraceReader> traceReader;
     /** Whether trace mode is enabled */
     bool traceMode;
+
+  private:
+
+    /** Map to store trace instruction metadata for cache hierarchy integration */
+    std::unordered_map<InstSeqNum, std::shared_ptr<const o3::TraceInstruction>> traceInstMap;
+
+    /** Map sequence numbers to trace instruction indices for rollback capability */
+    std::unordered_map<InstSeqNum, uint64_t> seqNumToTraceIndex;
+
+    /** Periodic checkpoints for trace reader rollback */
+    std::vector<o3::TraceReader::TraceCheckpoint> traceCheckpoints;
+
+    /** Sequence numbers corresponding to each checkpoint */
+    std::vector<InstSeqNum> checkpointSeqNums;
+
+    /** Checkpoint interval (instructions between checkpoints) */
+    static constexpr uint64_t CHECKPOINT_INTERVAL = 64;
 
     /** PC of each thread. */
     std::unique_ptr<PCStateBase> pc[MaxThreads];

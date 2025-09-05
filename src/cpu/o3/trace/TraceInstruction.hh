@@ -72,64 +72,68 @@ class TraceInstruction
   private:
     /** Program counter */
     Addr pc;
-    
+
     /** Instruction type */
     InstType instType;
-    
+
     /** Branch-specific information */
     bool isBranch;
     bool branchTaken;
     bool hasBranchTarget;
     Addr branchTarget;
-    
+
     /** Memory operation information */
     bool isLoad;
     bool isStore;
     std::vector<Addr> loadAddresses;
     std::vector<Addr> storeAddresses;
     std::vector<uint32_t> memSizes;
-    
+
+    /** Memory values from trace for cache simulation trick */
+    std::vector<uint64_t> loadValues;    // Values loaded from memory in trace
+    std::vector<uint64_t> storeValues;   // Values stored to memory in trace
+
     /** Register dependency information */
     std::vector<uint8_t> srcRegs;
     std::vector<uint8_t> dstRegs;
-    
+
     /** Unique sequence number for tracking */
     uint64_t seqNum;
     uint8_t piece;  // For CBP2025 multi-piece instructions
-    
+
     /** Additional instruction metadata for O3CPU */
     bool hasImmediateOperand;
     uint64_t immediateValue;
-    
+
     /** Additional metadata */
     bool valid;
 
   public:
     /** Default constructor */
-    TraceInstruction() : 
-        pc(0), instType(InstType::UNDEFINED), isBranch(false), 
+    TraceInstruction() :
+        pc(0), instType(InstType::UNDEFINED), isBranch(false),
         branchTaken(false), hasBranchTarget(false), branchTarget(0),
-        isLoad(false), isStore(false), 
+        isLoad(false), isStore(false),
         seqNum(0), piece(0), hasImmediateOperand(false), immediateValue(0),
         valid(false) {}
-    
+
     /** Constructor with basic fields */
     TraceInstruction(Addr _pc, InstType _type, uint64_t _seqNum = 0) :
         pc(_pc), instType(_type), isBranch(false), branchTaken(false),
         hasBranchTarget(false), branchTarget(0),
-        isLoad(_type == InstType::LOAD), 
+        isLoad(_type == InstType::LOAD),
         isStore(_type == InstType::STORE),
         seqNum(_seqNum), piece(0), hasImmediateOperand(false), immediateValue(0),
         valid(true)
     {
-        isBranch = (_type == InstType::COND_BRANCH || 
+        isBranch = (_type == InstType::COND_BRANCH ||
                    _type == InstType::UNCOND_DIRECT_BRANCH ||
                    _type == InstType::UNCOND_INDIRECT_BRANCH ||
                    _type == InstType::CALL_DIRECT ||
                    _type == InstType::CALL_INDIRECT ||
                    _type == InstType::RETURN);
     }
-    
+
     // Getters
     Addr getPC() const { return pc; }
     InstType getInstType() const { return instType; }
@@ -142,23 +146,25 @@ class TraceInstruction
     const std::vector<Addr>& getLoadAddresses() const { return loadAddresses; }
     const std::vector<Addr>& getStoreAddresses() const { return storeAddresses; }
     const std::vector<uint32_t>& getMemSizes() const { return memSizes; }
+    const std::vector<uint64_t>& getLoadValues() const { return loadValues; }
+    const std::vector<uint64_t>& getStoreValues() const { return storeValues; }
     const std::vector<uint8_t>& getSrcRegs() const { return srcRegs; }
     const std::vector<uint8_t>& getDstRegs() const { return dstRegs; }
     uint64_t getSeqNum() const { return seqNum; }
     uint8_t getPiece() const { return piece; }
     bool isValid() const { return valid; }
-    
+
     // Additional getters for O3CPU
     bool getHasImmediateOperand() const { return hasImmediateOperand; }
     uint64_t getImmediateValue() const { return immediateValue; }
-    
+
     // Setters
     void setPC(Addr _pc) { pc = _pc; }
-    void setInstType(InstType _type) { 
-        instType = _type; 
+    void setInstType(InstType _type) {
+        instType = _type;
         isLoad = (_type == InstType::LOAD);
         isStore = (_type == InstType::STORE);
-        isBranch = (_type == InstType::COND_BRANCH || 
+        isBranch = (_type == InstType::COND_BRANCH ||
                    _type == InstType::UNCOND_DIRECT_BRANCH ||
                    _type == InstType::UNCOND_INDIRECT_BRANCH ||
                    _type == InstType::CALL_DIRECT ||
@@ -166,34 +172,40 @@ class TraceInstruction
                    _type == InstType::RETURN);
     }
     void setBranchTaken(bool taken) { branchTaken = taken; }
-    void setBranchTarget(Addr target) { 
-        branchTarget = target; 
-        hasBranchTarget = true; 
+    void setBranchTarget(Addr target) {
+        branchTarget = target;
+        hasBranchTarget = true;
     }
-    void addLoadAddress(Addr addr, uint32_t size = 0) { 
-        loadAddresses.push_back(addr); 
+    void addLoadAddress(Addr addr, uint32_t size = 0) {
+        loadAddresses.push_back(addr);
         if (size > 0) memSizes.push_back(size);
     }
-    void addStoreAddress(Addr addr, uint32_t size = 0) { 
-        storeAddresses.push_back(addr); 
+    void addStoreAddress(Addr addr, uint32_t size = 0) {
+        storeAddresses.push_back(addr);
         if (size > 0) memSizes.push_back(size);
     }
-    void addSrcReg(uint8_t reg) { 
-        if (srcRegs.size() < MAX_SRC_REGS) srcRegs.push_back(reg); 
+    void addLoadValue(uint64_t value) {
+        loadValues.push_back(value);
     }
-    void addDstReg(uint8_t reg) { 
-        if (dstRegs.size() < MAX_DST_REGS) dstRegs.push_back(reg); 
+    void addStoreValue(uint64_t value) {
+        storeValues.push_back(value);
+    }
+    void addSrcReg(uint8_t reg) {
+        if (srcRegs.size() < MAX_SRC_REGS) srcRegs.push_back(reg);
+    }
+    void addDstReg(uint8_t reg) {
+        if (dstRegs.size() < MAX_DST_REGS) dstRegs.push_back(reg);
     }
     void setSeqNum(uint64_t _seqNum) { seqNum = _seqNum; }
     void setPiece(uint8_t _piece) { piece = _piece; }
     void setValid(bool _valid) { valid = _valid; }
-    
+
     // Additional setters for O3CPU
-    void setImmediateOperand(uint64_t value) { 
-        immediateValue = value; 
-        hasImmediateOperand = true; 
+    void setImmediateOperand(uint64_t value) {
+        immediateValue = value;
+        hasImmediateOperand = true;
     }
-    
+
     /** Reset instruction to invalid state */
     void reset() {
         pc = 0;
@@ -207,6 +219,8 @@ class TraceInstruction
         loadAddresses.clear();
         storeAddresses.clear();
         memSizes.clear();
+        loadValues.clear();
+        storeValues.clear();
         srcRegs.clear();
         dstRegs.clear();
         seqNum = 0;
@@ -215,22 +229,22 @@ class TraceInstruction
         immediateValue = 0;
         valid = false;
     }
-    
+
     /** Check if this is a conditional branch */
     bool isConditionalBranch() const {
         return instType == InstType::COND_BRANCH;
     }
-    
+
     /** Check if this is any type of branch */
     bool isAnyBranch() const {
         return isBranch;
     }
-    
+
     /** Check if this is a memory operation */
     bool isMemoryOp() const {
         return isLoad || isStore;
     }
-    
+
     /** Get string representation of instruction type */
     const char* getInstTypeStr() const {
         switch (instType) {
