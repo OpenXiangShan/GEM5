@@ -51,6 +51,10 @@ class CBP2025TraceReader : public TraceReader
     bool init() override { return false; }
     bool reset() override { return false; }
     std::string getFormat() const override { return "cbp2025"; }
+    TraceCheckpoint createCheckpoint() override { return {}; }
+    bool restoreCheckpoint(const TraceCheckpoint& checkpoint) override { return false; }
+    bool seekToInstruction(uint64_t instrIndex) override { return false; }
+    uint64_t getCurrentInstructionIndex() const override { return 0; }
 
   protected:
     size_t fillBuffer(size_t max_instructions) override { return 0; }

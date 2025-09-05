@@ -27,10 +27,11 @@
  */
 
 #include "cpu/o3/trace/TraceReader.hh"
-#include "cpu/o3/trace/ChampSimTraceReader.hh"
-#include "cpu/o3/trace/CBP2025TraceReader.hh"
 
 #include "base/trace.hh"
+#include "config/the_isa.hh"
+#include "cpu/o3/trace/CBP2025TraceReader.hh"
+#include "cpu/o3/trace/ChampSimTraceReader.hh"
 #include "debug/TraceReader.hh"
 
 namespace gem5
@@ -38,7 +39,7 @@ namespace gem5
 namespace o3
 {
 
-TraceReader::TraceReaderStats::TraceReaderStats(statistics::Group *parent, 
+TraceReader::TraceReaderStats::TraceReaderStats(statistics::Group *parent,
                                                  const std::string &name)
     : statistics::Group(parent, name.c_str()),
       ADD_STAT(instrRead, statistics::units::Count::get(),
@@ -55,10 +56,10 @@ TraceReader::TraceReaderStats::TraceReaderStats(statistics::Group *parent,
 }
 
 TraceReader::TraceReader(const std::string &trace_file, const std::string &name)
-    : traceFile(trace_file), eofReached(false), initialized(false),
-      currentSeqNum(0), stats(nullptr, name)
+    : statistics::Group(nullptr, name.c_str()), traceFile(trace_file), readerName(name),
+      eofReached(false), initialized(false), currentSeqNum(0), stats(this, name)
 {
-    DPRINTF(TraceReader, "Creating TraceReader for file: %s\n", trace_file);
+    // Debug output removed temporarily
 }
 
 TraceInstruction
@@ -68,34 +69,33 @@ TraceReader::getNextInstruction()
     if (instrBuffer.size() < MAX_BUFFER_SIZE / 4 && !eofReached) {
         fillBuffer(MAX_BUFFER_SIZE / 2);
     }
-    
+
     // Check if we have any instructions available
     if (instrBuffer.empty()) {
         if (!eofReached) {
             // Try to fill buffer one more time
             fillBuffer(1);
         }
-        
+
         if (instrBuffer.empty()) {
             stats.bufferUnderruns++;
-            DPRINTF(TraceReader, "Buffer underrun - no instructions available\n");
+            // Debug output removed temporarily
             // Return invalid instruction
             TraceInstruction invalid_instr;
             invalid_instr.setValid(false);
             return invalid_instr;
         }
     }
-    
+
     // Get instruction from buffer
     TraceInstruction instr = instrBuffer.front();
     instrBuffer.pop();
-    
+
     // Update statistics
     updateStats(instr);
-    
-    DPRINTF(TraceReader, "Returning instruction PC: 0x%llx, Type: %s, SeqNum: %llu\n",
-            instr.getPC(), instr.getInstTypeStr(), instr.getSeqNum());
-    
+
+    // Debug: Returning trace instruction
+
     return instr;
 }
 
@@ -103,28 +103,27 @@ void
 TraceReader::addToBuffer(const TraceInstruction &instr)
 {
     if (instrBuffer.size() >= MAX_BUFFER_SIZE) {
-        DPRINTF(TraceReader, "Warning: Instruction buffer full, dropping instruction\n");
+        // Debug output removed temporarily
         return;
     }
-    
+
     instrBuffer.push(instr);
-    DPRINTF(TraceReader, "Added instruction to buffer, size now: %zu\n", 
-            instrBuffer.size());
+    // Debug: Added instruction to buffer
 }
 
 void
 TraceReader::updateStats(const TraceInstruction &instr)
 {
     stats.instrRead++;
-    
+
     if (instr.isAnyBranch()) {
         stats.branchInstr++;
     }
-    
+
     if (instr.getLoad()) {
         stats.loadInstr++;
     }
-    
+
     if (instr.getStore()) {
         stats.storeInstr++;
     }
@@ -134,15 +133,14 @@ std::unique_ptr<TraceReader>
 createTraceReader(const std::string &format, const std::string &trace_file,
                   const std::string &name)
 {
-    DPRINTF(TraceReader, "Creating trace reader for format: %s, file: %s\n",
-            format, trace_file);
-    
+    // Debug: Creating trace reader
+
     if (format == "champsim") {
         return std::make_unique<ChampSimTraceReader>(trace_file, name);
     } else if (format == "cbp2025") {
         return std::make_unique<CBP2025TraceReader>(trace_file, name);
     } else {
-        DPRINTF(TraceReader, "Unsupported trace format: %s\n", format);
+        // Debug output removed temporarily
         return nullptr;
     }
 }

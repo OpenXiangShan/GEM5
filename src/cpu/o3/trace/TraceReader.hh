@@ -36,6 +36,7 @@
 
 #include "cpu/o3/trace/TraceInstruction.hh"
 #include "base/statistics.hh"
+#include "sim/sim_object.hh"
 
 namespace gem5
 {
@@ -44,51 +45,54 @@ namespace o3
 
 /**
  * Abstract base class for trace readers.
- * 
+ *
  * This class defines the interface that all trace format readers must
  * implement to provide instructions to the O3CPU fetch stage. Different
  * trace formats (ChampSim, CBP2025, etc.) can be supported by inheriting
  * from this class and implementing the pure virtual methods.
  */
-class TraceReader
+class TraceReader : public statistics::Group
 {
   protected:
     /** Path to the trace file */
     std::string traceFile;
-    
+
+    /** Name of this trace reader instance */
+    std::string readerName;
+
     /** Whether the trace has reached end-of-file */
     bool eofReached;
-    
+
     /** Whether the trace reader has been initialized */
     bool initialized;
-    
+
     /** Current instruction sequence number */
     uint64_t currentSeqNum;
-    
+
     /** Buffer for pre-fetched instructions */
     std::queue<TraceInstruction> instrBuffer;
-    
+
     /** Maximum size of instruction buffer */
     static constexpr size_t MAX_BUFFER_SIZE = 1024;
-    
+
     /** Statistics group for trace reader */
     struct TraceReaderStats : public statistics::Group
     {
         /** Number of instructions read from trace */
         statistics::Scalar instrRead;
-        
+
         /** Number of branch instructions encountered */
         statistics::Scalar branchInstr;
-        
+
         /** Number of load instructions encountered */
         statistics::Scalar loadInstr;
-        
+
         /** Number of store instructions encountered */
         statistics::Scalar storeInstr;
-        
+
         /** Number of buffer underruns */
         statistics::Scalar bufferUnderruns;
-        
+
         TraceReaderStats(statistics::Group *parent, const std::string &name);
     } stats;
 
@@ -99,51 +103,110 @@ class TraceReader
      * @param name Name for statistics
      */
     TraceReader(const std::string &trace_file, const std::string &name);
-    
+
     /** Virtual destructor */
     virtual ~TraceReader() = default;
-    
+
     /**
      * Initialize the trace reader
      * @return true if initialization successful, false otherwise
      */
     virtual bool init() = 0;
-    
+
     /**
      * Read the next instruction from the trace
      * @return TraceInstruction object, invalid if no more instructions
      */
     TraceInstruction getNextInstruction();
-    
+
     /**
      * Check if the trace has reached end-of-file
      * @return true if EOF reached, false otherwise
      */
     bool isEOF() const { return eofReached && instrBuffer.empty(); }
-    
+
     /**
      * Get the number of instructions currently buffered
      * @return Number of buffered instructions
      */
     size_t getBufferSize() const { return instrBuffer.size(); }
-    
+
+    /**
+     * Get the name of this trace reader
+     * @return Reader name
+     */
+    const std::string& name() const { return readerName; }
+
     /**
      * Reset the trace reader to the beginning of the trace
      * @return true if reset successful, false otherwise
      */
     virtual bool reset() = 0;
-    
+
     /**
      * Get trace format identifier
      * @return String identifying the trace format
      */
     virtual std::string getFormat() const = 0;
-    
+
     /**
      * Get trace file path
      * @return Path to the trace file
      */
     const std::string& getTraceFile() const { return traceFile; }
+
+    /**
+     * Checkpoint data structure for trace reader state
+     */
+    struct TraceCheckpoint
+    {
+        /** Instruction index in the trace */
+        uint64_t instructionIndex;
+
+        /** File position (for uncompressed files) */
+        std::streampos filePosition;
+
+        /** EOF state at checkpoint */
+        bool eofState;
+
+        /** Current sequence number at checkpoint */
+        uint64_t seqNum;
+
+        /** Buffer contents at checkpoint */
+        std::queue<TraceInstruction> bufferSnapshot;
+
+        /** Whether checkpoint is valid */
+        bool valid;
+
+        TraceCheckpoint() : instructionIndex(0), filePosition(0),
+                           eofState(false), seqNum(0), valid(false) {}
+    };
+
+    /**
+     * Create a checkpoint of the current trace reader state
+     * @return TraceCheckpoint containing current state
+     */
+    virtual TraceCheckpoint createCheckpoint() = 0;
+
+    /**
+     * Restore trace reader state from a checkpoint
+     * @param checkpoint The checkpoint to restore from
+     * @return true if restore successful, false otherwise
+     */
+    virtual bool restoreCheckpoint(const TraceCheckpoint& checkpoint) = 0;
+
+    /**
+     * Seek to a specific instruction index in the trace
+     * @param instrIndex The instruction index to seek to
+     * @return true if seek successful, false otherwise
+     */
+    virtual bool seekToInstruction(uint64_t instrIndex) = 0;
+
+    /**
+     * Get the current instruction index in the trace
+     * @return Current instruction index
+     */
+    virtual uint64_t getCurrentInstructionIndex() const = 0;
 
   protected:
     /**
@@ -154,7 +217,7 @@ class TraceReader
      * @return Number of instructions actually read
      */
     virtual size_t fillBuffer(size_t max_instructions) = 0;
-    
+
     /**
      * Parse a single instruction from the trace format
      * This method should be implemented by derived classes
@@ -162,25 +225,25 @@ class TraceReader
      * @return true if instruction was successfully parsed, false on EOF or error
      */
     virtual bool parseInstruction(TraceInstruction &instr) = 0;
-    
+
     /**
      * Check if the trace file is valid and can be opened
      * @return true if file is valid, false otherwise
      */
     virtual bool validateTraceFile() = 0;
-    
+
     /**
      * Add an instruction to the buffer
      * @param instr Instruction to add
      */
     void addToBuffer(const TraceInstruction &instr);
-    
+
     /**
      * Update statistics based on the instruction
      * @param instr Instruction to analyze
      */
     void updateStats(const TraceInstruction &instr);
-    
+
     /**
      * Get the next available sequence number
      * @return Next sequence number

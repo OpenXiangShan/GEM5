@@ -198,6 +198,12 @@ system.cpu.dcache.overall_hits    # Cache performance
 2. **CBP2025 Support**: Complete CBP2025 trace format implementation  
 3. **Multi-threading**: Support for multi-threaded trace replay
 4. **Validation**: Cross-validation with reference simulators
+
+## Contributor Guides
+
+- Trace capabilities and development log: [CLAUDE.md](./CLAUDE.md)
+- Contributor checklist and style for this module: [AGENTS.md](./AGENTS.md)
+- Local workflow and environment notes: [CLAUDE.local.md](/CLAUDE.local.md)
 5. **Memory Prefetching**: Integration with trace-driven prefetcher evaluation
 
 ## References
