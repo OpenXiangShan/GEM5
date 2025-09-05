@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 
 import m5
@@ -78,9 +79,49 @@ def build_test_system(np, args):
     test_sys.num_cpus = np
 
     test_sys.xiangshan_system = True
-    test_sys.enable_difftest = args.enable_difftest
+    # Disable difftest for trace mode - trace execution doesn't need verification with reference model
+    # Only enable difftest if not in trace mode - trace mode doesn't need reference model verification
+    test_sys.enable_difftest = (args.enable_difftest
+                                if not (hasattr(args, 'enable_trace_mode')
+                                        and args.enable_trace_mode)
+                                else False)
 
-    XSConfig.config_xiangshan_inputs(args, test_sys)
+    # Configure XiangShan inputs - skip checkpoint loading in trace mode
+    if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+        # For trace mode, we only need difftest configuration, skip checkpoint loading
+        ref_so = None
+        if args.enable_difftest and args.difftest_ref_so is None:
+            # Use same logic as XSConfig.config_xiangshan_inputs for ref_so
+            if "GCBV_REF_SO" in os.environ:
+                ref_so = os.environ["GCBV_REF_SO"]
+                print("Obtained ref_so from GCBV_REF_SO: ", ref_so)
+            elif "NEMU_HOME" in os.environ:
+                ref_so = os.path.join(os.environ["NEMU_HOME"], "build/riscv64-nemu-interpreter-so")
+                print("Obtained ref_so from NEMU_HOME: ", ref_so)
+            else:
+                fatal("No valid ref_so file specified for trace mode difftest")
+        elif args.enable_difftest and args.difftest_ref_so is not None:
+            ref_so = args.difftest_ref_so
+            print("Obtained ref_so from args.difftest_ref_so: ", ref_so)
+
+        args.difftest_ref_so = ref_so
+
+        # Configure trace mode specific workload - no checkpoint loading
+        # Use proper RISC-V bootloader (bbl) for trace mode
+        test_sys.workload.bootloader = '/nfs/home/goulingrui/project/riscv-environments/riscv-pk/build/bbl'
+        test_sys.workload.xiangshan_cpt = False  # No checkpoint in trace mode
+        test_sys.restore_from_gcpt = False       # Disable GCPT restoration
+
+        # Configure DRAMsim3 if needed (from XSConfig logic)
+        if args.mem_type == 'DRAMsim3' and args.dramsim3_ini is None:
+            root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            args.dramsim3_ini = os.path.join(root_dir,
+                                             'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
+
+        print("Trace mode: Skipped checkpoint configuration")
+    else:
+        # Standard checkpoint-based configuration
+        XSConfig.config_xiangshan_inputs(args, test_sys)
 
      # Set the cache line size for the entire system
     test_sys.cache_line_size = args.cacheline_size
@@ -158,6 +199,40 @@ def build_test_system(np, args):
 
     for cpu in test_sys.cpu:
         cpu.store_prefetch_train = not args.kmh_align
+
+    # Configure trace mode if enabled
+    if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+        print(f"Configuring CPUs for trace mode...")
+        for cpu in test_sys.cpu:
+            # Enable trace mode
+            cpu.enableTraceMode = True
+            cpu.traceFile = args.trace_file
+            cpu.traceFormat = args.trace_format
+            cpu.max_insts_any_thread = args.trace_max_insts
+
+            # Disable strict memory ordering for trace mode compatibility
+            # Trace instructions may not follow strict ordering requirements
+            cpu.needsTSO = False
+
+            # Note: Difftest configured at system level, not CPU level
+
+            # Configure trace-specific parameters
+            if hasattr(args, 'trace_enable_decoupled_bp') and args.trace_enable_decoupled_bp:
+                cpu.enableDecoupledBPInTrace = True
+            else:
+                cpu.enableDecoupledBPInTrace = False
+
+            cpu.traceCheckpointInterval = (args.trace_checkpoint_interval
+                                           if hasattr(args, 'trace_checkpoint_interval')
+                                           else 64)
+            cpu.traceBPValidation = not (hasattr(args, 'trace_disable_bp_validation')
+                                         and args.trace_disable_bp_validation)
+
+        print(f"  Trace file: {args.trace_file}")
+        print(f"  Trace format: {args.trace_format}")
+        print(f"  Max instructions: {args.trace_max_insts}")
+        print(f"  Decoupled BP: {hasattr(args, 'trace_enable_decoupled_bp') and args.trace_enable_decoupled_bp}")
+
     # ruby will overwrite the store_prefetch_train
     if ruby:
         test_sys._dma_ports = []
@@ -418,7 +493,54 @@ if __name__ == '__m5_main__':
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
 
+    # Add trace-specific arguments for trace-driven simulation
+    parser.add_argument('--enable-trace-mode', action='store_true',
+                       help='Enable trace-driven simulation mode (alternative to checkpoints)')
+    parser.add_argument('--trace-file', type=str,
+                       help='Path to the trace file (required for trace mode)')
+    parser.add_argument('--trace-format', type=str, default='champsim',
+                       choices=['champsim', 'cbp2025'],
+                       help='Trace format (default: champsim)')
+    parser.add_argument('--trace-max-insts', type=int, default=1000000,
+                       help='Maximum instructions to simulate in trace mode (default: 1M)')
+
+    # Decoupled branch predictor options for trace mode
+    parser.add_argument('--trace-enable-decoupled-bp', action='store_true',
+                       help='Enable decoupled branch predictor in trace mode')
+    parser.add_argument('--trace-checkpoint-interval', type=int, default=64,
+                       help='Checkpoint interval for trace rollback (default: 64)')
+    parser.add_argument('--trace-disable-bp-validation', action='store_true',
+                       help='Disable branch predictor validation against trace')
+
+    # Check for trace mode before parsing to make generic-rv-cpt conditional
+    if '--enable-trace-mode' in sys.argv:
+        # In trace mode, make generic-rv-cpt optional by providing a dummy value
+        # Find the generic-rv-cpt action and remove its required flag
+        for action in parser._actions:
+            if action.dest == 'generic_rv_cpt':
+                action.required = False
+                action.default = "trace_mode_dummy"
+                break
+
     args = parser.parse_args()
+
+    # Validate trace mode arguments
+    if args.enable_trace_mode:
+        if not args.trace_file:
+            fatal("--trace-file is required when --enable-trace-mode is specified")
+        if not os.path.exists(args.trace_file):
+            fatal(f"Trace file not found: {args.trace_file}")
+
+        print(f"Trace mode enabled:")
+        print(f"  Trace file: {args.trace_file}")
+        print(f"  Trace format: {args.trace_format}")
+        print(f"  Max instructions: {args.trace_max_insts}")
+    else:
+        # In checkpoint mode, ensure generic_rv_cpt is provided and valid
+        if args.generic_rv_cpt == "trace_mode_dummy":
+            fatal("--generic-rv-cpt is required for checkpoint mode")
+        if not os.path.exists(args.generic_rv_cpt):
+            fatal(f"Checkpoint file not found: {args.generic_rv_cpt}")
 
     if args.xiangshan_ecore:
         FutureClass = None
@@ -427,7 +549,12 @@ if __name__ == '__m5_main__':
         FutureClass = None
 
     args.xiangshan_system = True
-    args.enable_difftest = True
+    # Only enable difftest if not in trace mode - trace mode doesn't need reference model verification
+    if not (hasattr(args, 'enable_trace_mode') and args.enable_trace_mode):
+        args.enable_difftest = True
+    else:
+        args.enable_difftest = False
+        print("Trace mode: Difftest disabled for trace execution")
     args.enable_riscv_vector = True
 
     assert not args.external_memory_system
@@ -443,4 +570,18 @@ if __name__ == '__m5_main__':
 
     root = Root(full_system=True, system=test_sys)
 
-    Simulation.run_vanilla(args, root, test_sys, FutureClass)
+    # Run simulation - different execution paths for trace mode vs checkpoint mode
+    if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+        print("Starting trace-driven simulation...")
+        print("This will replay the trace through the XiangShan pipeline")
+        print("and generate detailed performance statistics.")
+
+        # For trace mode, we still use run_vanilla but may need to modify some parameters
+        # The trace infrastructure will handle the actual trace execution
+        Simulation.run_vanilla(args, root, test_sys, FutureClass)
+
+        print("Trace simulation completed.")
+        print(f"Statistics available in m5out/stats.txt")
+    else:
+        # Standard checkpoint-based simulation (existing functionality)
+        Simulation.run_vanilla(args, root, test_sys, FutureClass)
