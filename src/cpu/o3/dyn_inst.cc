@@ -48,6 +48,7 @@
 #include "base/intmath.hh"
 #include "debug/DynInst.hh"
 #include "debug/IQ.hh"
+#include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
 
 namespace gem5

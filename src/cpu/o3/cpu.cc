@@ -53,6 +53,7 @@
 #include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_context.hh"
+#include "cpu/o3/trace/TraceReader.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/thread_context.hh"
@@ -309,6 +310,28 @@ CPU::CPU(const BaseO3CPUParams &params)
 
         // Add the TC to the CPU's list of TC's.
         threadContexts.push_back(tc);
+    }
+
+    // Initialize trace reader if trace mode is enabled
+    if (params.enableTraceMode && !params.traceFile.empty()) {
+        fetch.traceMode = true;
+        fetch.traceReader = o3::createTraceReader(params.traceFormat, params.traceFile, name());
+        if (!fetch.traceReader) {
+            fatal("Failed to create trace reader for format '%s', file '%s'\n",
+                  params.traceFormat, params.traceFile);
+        }
+        DPRINTF(O3CPU, "Trace mode enabled: format=%s, file=%s\n",
+                params.traceFormat, params.traceFile);
+
+        // In trace mode, prevent TC squashes that interfere with trace replay
+        // by setting noSquashFromTC = true for all threads
+        for (ThreadID tid = 0; tid < numThreads; tid++) {
+            thread[tid]->noSquashFromTC = true;
+            DPRINTF(O3CPU, "Trace mode: Set noSquashFromTC=true for thread %d\n", tid);
+        }
+    } else {
+        fetch.traceMode = false;
+        fetch.traceReader = nullptr;
     }
 
     // O3CPU always requires an interrupt controller.
@@ -612,9 +635,15 @@ CPU::init()
         thread[tid]->noSquashFromTC = true;
     }
 
-    // Clear noSquashFromTC.
-    for (int tid = 0; tid < numThreads; ++tid)
-        thread[tid]->noSquashFromTC = false;
+    // Clear noSquashFromTC, but keep it true in trace mode to prevent
+    // spurious TC squashes that interfere with trace replay
+    for (int tid = 0; tid < numThreads; ++tid) {
+        if (!isTraceMode()) {
+            thread[tid]->noSquashFromTC = false;
+        } else {
+            DPRINTF(O3CPU, "Trace mode: Keeping noSquashFromTC=true for thread %d during init\n", tid);
+        }
+    }
 
     commit.setThreads(thread);
 }
@@ -1756,6 +1785,18 @@ CPU::readArchVecReg(int reg_idx, uint64_t *val,ThreadID tid)
     DPRINTF(Commit, "Get map: v%i -> p%i\n", reg_idx, phys_reg->flatIndex());
 
     regFile.getReg(phys_reg, val);
+}
+
+bool
+CPU::isTraceInstruction(InstSeqNum seqNum) const
+{
+    return fetch.isTraceInstruction(seqNum);
+}
+
+const o3::TraceInstruction*
+CPU::getTraceInstMetadata(InstSeqNum seqNum) const
+{
+    return fetch.getTraceInstMetadata(seqNum);
 }
 
 } // namespace o3

@@ -90,6 +90,7 @@ namespace o3
 {
 
 class ThreadContext;
+class TraceInstruction;
 
 /**
  * O3CPU class, has each of the stages (fetch through commit)
@@ -258,6 +259,10 @@ class CPU : public BaseCPU
     /** Is the thread trying to exit? */
     bool isThreadExiting(ThreadID tid) const;
 
+    /** Trace-driven simulation support */
+    bool isTraceInstruction(InstSeqNum seqNum) const;
+    const o3::TraceInstruction* getTraceInstMetadata(InstSeqNum seqNum) const;
+
     /**
      *  If a thread is trying to exit and its corresponding trap event
      *  has been completed, schedule an event to terminate the thread.
@@ -355,6 +360,9 @@ class CPU : public BaseCPU
 
     /** Reads the commit PC state of a specific thread. */
     const PCStateBase &pcState(ThreadID tid);
+
+    /** Check if the CPU is in trace mode */
+    bool isTraceMode() const { return fetch.traceMode; }
 
     /** Initiates a squash of all in-flight instructions for a given
      * thread.  The source of the squash is an external update of
