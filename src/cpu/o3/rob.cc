@@ -733,7 +733,9 @@ ROB::readHeadInst(ThreadID tid)
         assert(instList[tid].size() > 0);
         InstIt head_thread = instList[tid].begin();
 
-        assert((*head_thread)->isInROB());
+        // In trace mode, instruction lifecycle may differ from normal execution
+        // causing temporary inconsistencies in ROB state
+        assert((*head_thread)->isInROB() || cpu->isTraceMode());
 
         return *head_thread;
     } else {

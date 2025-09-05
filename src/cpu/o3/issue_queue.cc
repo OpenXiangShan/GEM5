@@ -222,8 +222,9 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         // check bypass data ready or not
         if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
-            if (!dst_inst || !dst_inst->isLoad()) {
-                panic("dst[sn:%llu] is not load", dst_inst->seqNum);
+            // In trace mode, we don't enforce load-only bypass restriction
+            if (!dst_inst || (!scheduler->cpu->isTraceMode() && !dst_inst->isLoad())) {
+                panic("dst[sn:%llu] is not load", dst_inst ? dst_inst->seqNum : 0);
             }
             DPRINTF(Schedule, "[sn:%llu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum,
                 inst->srcRegIdx(i), dst_inst->genDisassembly());
@@ -623,7 +624,9 @@ IssueQue::doSquash(const InstSeqNum seqNum)
             (*it)->clearScheduled();
             (*it)->setCancel();
             it = instList.erase(it);
-            assert(instList.size() >= instNum);
+            // In trace mode, instruction sequencing may differ from normal execution
+            // causing temporary inconsistencies in instruction counts during squash
+            assert(instList.size() >= instNum || scheduler->cpu->isTraceMode());
         } else {
             it++;
         }

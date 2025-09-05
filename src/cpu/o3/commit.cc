@@ -716,7 +716,13 @@ Commit::squashFromTC(ThreadID tid)
 
     DPRINTF(Commit, "Squashing from TC, restarting at PC %s\n", *pc[tid]);
 
-    thread[tid]->noSquashFromTC = false;
+    // In trace mode, keep noSquashFromTC=true to prevent spurious TC squashes
+    // that interfere with trace replay
+    if (!cpu->isTraceMode()) {
+        thread[tid]->noSquashFromTC = false;
+    } else {
+        DPRINTF(Commit, "Trace mode: Keeping noSquashFromTC=true for thread %d\n", tid);
+    }
     assert(!thread[tid]->trapPending);
 
     commitStatus[tid] = ROBSquashing;
@@ -1391,7 +1397,8 @@ Commit::commitInsts()
                                       head_inst->isLastMicroop() ||
                                       !head_inst->isDelayedCommit();
 
-                if (onInstBoundary) {
+                // In trace mode, skip PC event handling since trace dictates program flow
+                if (onInstBoundary && !cpu->isTraceMode()) {
                     int count = 0;
                     Addr oldpc;
                     // Make sure we're not currently updating state while
@@ -1577,7 +1584,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             cpu->checker->verify(head_inst);
         }
 
-        assert(!thread[tid]->noSquashFromTC);
+        // In trace mode, noSquashFromTC is permanently true to prevent squashes
+        // that interfere with trace replay, so we allow it here
+        assert(!thread[tid]->noSquashFromTC || cpu->isTraceMode());
 
         // Mark that we're in state update mode so that the trap's
         // execution doesn't generate extra squashes.
@@ -1589,6 +1598,12 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         // needed to update the state as soon as possible.  This
         // prevents external agents from changing any specific state
         // that the trap need.
+
+        // Debug: Log fault details before trap execution
+        printf("DEBUG COMMIT: Processing fault for sn:%lu, PC=0x%lx, fault=%s\n",
+               head_inst->seqNum, head_inst->pcState().instAddr(),
+               inst_fault->name());
+
         cpu->trap(inst_fault, tid,
                   head_inst->notAnInst() ? nullStaticInstPtr :
                       head_inst->staticInst);

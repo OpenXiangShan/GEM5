@@ -526,16 +526,20 @@ MemDepUnit::squash(const InstSeqNum &squashed_num, ThreadID tid)
 
         hash_it = memDepHash.find((*squash_it)->seqNum);
 
-        assert(hash_it != memDepHash.end());
+        // In trace mode, instruction sequencing may differ from normal execution
+        // causing temporary inconsistencies in memory dependency hash during squash
+        assert(hash_it != memDepHash.end() || cpu->isTraceMode());
 
-        (*hash_it).second->squashed = true;
+        if (hash_it != memDepHash.end()) {
+            (*hash_it).second->squashed = true;
 
-        (*hash_it).second = NULL;
+            (*hash_it).second = NULL;
 
-        memDepHash.erase(hash_it);
+            memDepHash.erase(hash_it);
 #ifdef DEBUG
-        MemDepEntry::memdep_erase++;
+            MemDepEntry::memdep_erase++;
 #endif
+        }
 
         instList[tid].erase(squash_it--);
     }

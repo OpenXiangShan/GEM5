@@ -326,6 +326,9 @@ void
 LSQ::insertLoad(const DynInstPtr &load_inst)
 {
     ThreadID tid = load_inst->threadNumber;
+    DPRINTF(LSQ, "[Trace][LSQ] insertLoad tid:%d sn:%lli PC:%s effAddr=0x%lx valid=%d\n",
+            tid, load_inst->seqNum, load_inst->pcState(), load_inst->effAddr,
+            load_inst->effAddrValid());
 
     thread[tid].insertLoad(load_inst);
 }
@@ -334,6 +337,9 @@ void
 LSQ::insertStore(const DynInstPtr &store_inst)
 {
     ThreadID tid = store_inst->threadNumber;
+    DPRINTF(LSQ, "[Trace][LSQ] insertStore tid:%d sn:%lli PC:%s effAddr=0x%lx valid=%d\n",
+            tid, store_inst->seqNum, store_inst->pcState(), store_inst->effAddr,
+            store_inst->effAddrValid());
 
     thread[tid].insertStore(store_inst);
 }
@@ -1209,6 +1215,15 @@ LSQ::SingleDataRequest::initiateTranslation()
     assert(_reqs.size() == 0);
 
     addReq(_addr, _size, _byteEnable);
+
+    // Debug: Check xsMeta validity before accessing it
+    if (!_inst->xsMeta) {
+        panic("LSQ ERROR: _inst->xsMeta is NULL for sn:%lu", _inst->seqNum);
+    }
+
+    // Debug: Additional validation
+    printf("DEBUG: LSQ accessing xsMeta for sn:%lu at address %p\n",
+           _inst->seqNum, _inst->xsMeta.get());
 
     _inst->xsMeta->instAddr = _inst->pcState().instAddr();
 
