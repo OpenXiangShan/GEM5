@@ -10,6 +10,7 @@
 #include "base/trace.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "debug/TAGE.hh"
+#include "debug/CBPShadow.hh"
 #endif
 namespace gem5 {
 
@@ -93,6 +94,16 @@ tageStats(this, p.numPredictors)
 
     useAlt.resize(128);
 
+    // Shadow CBP params (default disabled)
+    #ifndef UNIT_TEST
+    enableShadowCBP = p.enableShadowCBP;
+    usePureTageShadow = p.usePureTageShadow;
+    shadowLogDiffOnly = p.shadowLogDiffOnly;
+    shadowSampleRate = p.shadowSampleRate;
+    #endif
+    if (enableShadowCBP) {
+        shadow = std::make_unique<cbp_pred::ShadowCBPTageAdapter>();
+    }
 #ifndef UNIT_TEST
     hasDB = true;
     dbName = std::string("tage");
@@ -325,6 +336,37 @@ BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
         auto &stage_pred = stagePreds[s];
         stage_pred.condTakens.clear();
         lookupHelper(alignedPC, stage_pred.btbEntries, stage_pred.tageInfoForMgscs, stage_pred.condTakens);
+
+        // Shadow CBP online comparison (aggregation only, no per-event logs)
+        if (enableShadowCBP && shadow && shadowSampleRate > 0 && s == getDelay()) {
+            for (auto &btb_entry : stage_pred.btbEntries) {
+                if (!(btb_entry.isCond && btb_entry.valid)) continue;
+                // Find our prediction for this pc
+                auto it = meta->preds.find(btb_entry.pc);
+                if (it == meta->preds.end()) continue;
+                // Generate a unique seq_no and call shadow predict
+                const uint64_t seq = ++shadowSeqNo;
+                shadow->snapshot(seq);
+                const bool cbp_taken = shadow->predict(seq, 0, btb_entry.pc);
+                // speculative history advance according to our prediction
+                int brtype = (btb_entry.isCond ? 1 : 0) | (btb_entry.isIndirect ? 2 : 0);
+                bool pred_taken = it->second.taken;     // gem5 tage prediction
+                Addr next_pc = pred_taken ? btb_entry.target : btb_entry.getEnd();
+                shadow->speculativeUpdate(seq, btb_entry.pc, brtype, pred_taken, next_pc);
+                meta->shadowSeq[btb_entry.pc].push_back(seq);
+                meta->cbpPreds[btb_entry.pc] = cbp_taken;
+            }
+            // Hard cap: if entries to update later cannot consume all, proactively drop oldest snapshots
+            const size_t kMaxSeqPerPC = 4;
+            for (auto &kv : meta->shadowSeq) {
+                auto &dq = kv.second;
+                while (dq.size() > kMaxSeqPerPC) {
+                    uint64_t old = dq.front();
+                    dq.pop_front();
+                    shadow->cleanupSeq(old);
+                }
+            }
+        }
     }
 
 }
@@ -676,6 +718,46 @@ BTBTAGE::update(const FetchStream &stream) {
         
         if (pred_it == preds.end()) {
             continue;
+        }
+
+        // Shadow CBP update and finalize speculative history
+        if (enableShadowCBP && shadow) {
+            uint64_t seq = 0;
+            auto sit = meta->shadowSeq.find(btb_entry.pc);
+            if (sit != meta->shadowSeq.end() && !sit->second.empty()) {
+                seq = sit->second.front();
+                sit->second.pop_front();
+            } else {
+                // no snapshot found; skip finalize to avoid inconsistencies
+                // and also skip aggregation
+                // fallthrough: do nothing
+            }
+            const bool predDir = (pred_it != preds.end()) ? pred_it->second.taken : false;
+            // nextPC per actual outcome
+            Addr next_pc_actual = actual_taken ? btb_entry.target : btb_entry.getEnd();
+            // finalize speculative history (restore on mispred, then advance with actual)
+            int brtype = (btb_entry.isCond ? 1 : 0) | (btb_entry.isIndirect ? 2 : 0);
+            shadow->finalizeUpdate(seq, btb_entry.pc, brtype, predDir, actual_taken, next_pc_actual);
+            // keep cbp core trained via its own update (uses pred-time snapshot)
+            shadow->update(seq, 0, btb_entry.pc, actual_taken, predDir, next_pc_actual);
+
+            // Aggregation counting focused on MPKI: only when GEM5 mispredicts this branch
+            const bool cbp_pred = meta->cbpPreds.count(btb_entry.pc) ? meta->cbpPreds[btb_entry.pc] : predDir;
+            if (predDir != actual_taken) {
+                if (cbp_pred == actual_taken) {
+                    tageStats.shadowRightGem5Wrong++;
+                    pcShadowRightGem5Wrong[btb_entry.pc]++;
+                    DPRINTF(CBPShadow, "[CBPShadow] pc=%#lx gem5_wrong cbp_right pred=%d actual=%d\n", btb_entry.pc, (int)predDir, (int)actual_taken);
+                } else {
+                    tageStats.bothWrong++;
+                }
+            } else {
+                if (cbp_pred != actual_taken) {
+                    tageStats.shadowWrongGem5Right++;
+                } else {
+                    tageStats.bothRight++;
+                }
+            }
         }
 
         // Update predictor state and check if need to allocate new entry

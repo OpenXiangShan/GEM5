@@ -22,6 +22,7 @@
     #include "params/BTBTAGE.hh"
     #include "sim/sim_object.hh"
 #endif
+#include "cpu/pred/btb/cbp/shadow_cbp_tage.hh"
 
 namespace gem5
 {
@@ -275,8 +276,27 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Cache for TAGE tags
     std::vector<Addr> tageTag;
 
+    // Shadow CBP for online comparison (disabled by default)
+    bool enableShadowCBP {true};
+    bool usePureTageShadow {true};
+    bool shadowLogDiffOnly {true};
+    uint64_t shadowSampleRate {1};
+    uint64_t shadowSeqNo {0};
+    std::unique_ptr<cbp_pred::ShadowCBPTageAdapter> shadow;
+
+    // Aggregation counters for shadow comparator
+    // Per-PC counters (top-N)
+    std::unordered_map<Addr, uint64_t> pcShadowRightGem5Wrong;
+
     // Whether statistical corrector is enabled
     bool enableSC;
+
+    // Global update epoch for lifetime/recency statistics
+    uint64_t updateEpoch {0};
+    // Regret detection window (in update events)
+    uint64_t regretWindow {8192};
+    // Track last eviction epoch per PC for regret measurement
+    std::unordered_map<Addr, uint64_t> evictedAtEpoch;
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
@@ -352,6 +372,10 @@ public:
         std::vector<bitset> usefulMask;  // Vector of usefulMasks for different ways
         unsigned hitWay;      // hit way index
         bool hitFound;        // whether a hit was found
+        // Mapping from PC to shadow CBP seq_no list used at predict time (for update)
+        std::unordered_map<Addr, std::deque<uint64_t>> shadowSeq;
+        // Cache shadow cbp prediction at predict time
+        std::unordered_map<Addr, bool> cbpPreds;
         std::vector<FoldedHist> tagFoldedHist;
         std::vector<FoldedHist> altTagFoldedHist;
         std::vector<FoldedHist> indexFoldedHist;

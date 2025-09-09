@@ -1048,6 +1048,11 @@ class BTBTAGE(TimedBaseBTBPredictor):
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numWays = Param.Unsigned(2, "Number of ways per set")
     numDelay = 2
+    # Shadow CBP online comparator (disabled by default)
+    enableShadowCBP = Param.Bool(False, 'Enable shadow CBP-TAGE online comparator')
+    usePureTageShadow = Param.Bool(True, 'Use pure TAGE variant of CBP')
+    shadowLogDiffOnly = Param.Bool(True, 'Log only when predictions differ')
+    shadowSampleRate = Param.Unsigned(1, 'Sampling rate for shadow comparison')
 
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'
