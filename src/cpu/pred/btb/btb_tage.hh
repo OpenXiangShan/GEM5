@@ -400,7 +400,8 @@ private:
                                  bool actual_taken,
                                  const std::vector<bitset> &useful_mask,
                                  unsigned main_table,
-                                 std::shared_ptr<TageMeta> meta);
+                                 std::shared_ptr<TageMeta> meta,
+                                 uint64_t &allocated_table);
 
     // Helper method to generate allocation mask
     AllocationResult generateAllocationMask(const bitset &useful_mask,
