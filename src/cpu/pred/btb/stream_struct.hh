@@ -684,7 +684,8 @@ struct TageMissTrace : public Record {
     void set(uint64_t startPC, uint64_t branchPC, uint64_t wayIdx,
         uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful, uint64_t mainTable, uint64_t mainIndex,
         uint64_t altFound, uint64_t altCounter, uint64_t altUseful, uint64_t altTable, uint64_t altIndex,
-        uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess)
+        uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess,
+        uint64_t allocTable)
     {
         _tick = curTick();
         _uint64_data["startPC"] = startPC;
@@ -704,6 +705,7 @@ struct TageMissTrace : public Record {
         _uint64_data["predTaken"] = predTaken;
         _uint64_data["actualTaken"] = actualTaken;
         _uint64_data["allocSuccess"] = allocSuccess;
+        _uint64_data["allocTable"] = allocTable;
     }
 };
 

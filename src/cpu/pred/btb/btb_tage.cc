@@ -128,6 +128,7 @@ BTBTAGE::setTrace()
             std::make_pair("predTaken", UINT64),
             std::make_pair("actualTaken", UINT64),
             std::make_pair("allocSuccess", UINT64),
+            std::make_pair("allocTable", UINT64),
         };
         tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
         tageMissTrace->init_table();
@@ -347,7 +348,7 @@ BTBTAGE::prepareUpdateEntries(const FetchStream &stream) {
     
     // Filter out non-conditional and always-taken branches
     auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-        [](const BTBEntry &e) { return !e.isCond && !e.alwaysTaken; });
+        [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
     all_entries.erase(remove_it, all_entries.end());
 
     // Handle potential new BTB entry
@@ -568,7 +569,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
                                  bool actual_taken,
                                  const std::vector<bitset> &useful_mask,
                                  unsigned start_table,
-                                 std::shared_ptr<TageMeta> meta) {
+                                 std::shared_ptr<TageMeta> meta,
+                                 uint64_t &allocated_table) {
     // Select which usefulMask to use based on whether a hit was found
     unsigned way_to_use = meta->hitFound ? meta->hitWay : 0;
 
@@ -625,6 +627,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
                     ti, newIndex, way, newTag, newCounter);
                 cand = TageEntry(newTag, newCounter, entry.pc);
                 tageStats.updateAllocSuccess++;
+                allocated_table = ti;
                 return true;  // allocate only 1 entry
             }
         }
@@ -684,6 +687,7 @@ BTBTAGE::update(const FetchStream &stream) {
 
         // Handle new entry allocation if needed
         bool alloc_success = false;
+        uint64_t allocated_table = 0;
         if (need_allocate) {
             // Handle useful bit reset
             handleUsefulBitReset(meta->usefulMask, meta->hitWay, meta->hitFound);
@@ -696,7 +700,7 @@ BTBTAGE::update(const FetchStream &stream) {
             }
             alloc_success = handleNewEntryAllocation(alignedPC, btb_entry, actual_taken,
                                    meta->usefulMask,
-                                   start_table, meta);
+                                   start_table, meta, allocated_table);
         }
 
 #ifndef UNIT_TEST
@@ -709,7 +713,8 @@ BTBTAGE::update(const FetchStream &stream) {
                 main_info.table, main_info.index,
                 alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
                 alt_info.table, alt_info.index,
-                pred_it->second.useAlt, pred_it->second.taken, actual_taken, alloc_success);
+                pred_it->second.useAlt, pred_it->second.taken, actual_taken, alloc_success,
+                allocated_table);
             tageMissTrace->write_record(t);
         }
 #endif
