@@ -459,7 +459,8 @@ struct FullBTBPrediction
         predSource(0),
         predTick(0) {}
 
-    BTBEntry getTakenEntry() {
+    BTBEntry getTakenEntry() const
+    {
         // IMPORTANT: assume entries are sorted
         for (auto &entry : this->btbEntries) {
             // hit
@@ -483,7 +484,8 @@ struct FullBTBPrediction
         return BTBEntry(); // not found, return empty entry
     }
 
-    bool isTaken() {
+    bool isTaken() const
+    {
         return getTakenEntry().valid;   // if find a taken entry, return true
     }
 
@@ -525,9 +527,7 @@ struct FullBTBPrediction
     }
 
 
-    Addr controlAddr() {
-        return getTakenEntry().pc;
-    }
+    Addr controlAddr() const { return getTakenEntry().pc; }
 
     std::pair<bool, OverrideReason> match(FullBTBPrediction &other, Addr predictWidth)
     {

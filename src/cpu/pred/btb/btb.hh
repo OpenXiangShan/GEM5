@@ -108,7 +108,7 @@ class AheadBTB : public TimedBaseBTBPredictor
         TickedBTBEntry(const BTBEntry &entry, uint64_t tick)
             : BTBEntry(entry), tick(tick) {}
         TickedBTBEntry() : tick(0) {}
-    }TickedBTBEntry;
+    } TickedBTBEntry;
 
     // A BTB set is a vector of entries (ways)
     using BTBSet = std::vector<TickedBTBEntry>;
@@ -155,6 +155,20 @@ class AheadBTB : public TimedBaseBTBPredictor
     void recoverHist(const boost::dynamic_bitset<> &history,
         const FetchStream &entry, int shamt, bool cond_taken) override;
 
+
+    typedef struct BTBMeta
+    {
+        std::vector<BTBEntry> hit_entries;     // hit entries in L1 BTB
+        std::vector<BTBEntry> l0_hit_entries;  // hit entries in L0 BTB
+        BTBMeta()
+        {
+            std::vector<BTBEntry> es;
+            hit_entries = es;
+            l0_hit_entries = es;
+        }
+    } BTBMeta;
+
+
 #ifndef UNIT_TEST
     /** Creates a BTB with the given number of entries, number of bits per
      *  tag, and instruction offset amount.
@@ -175,7 +189,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     void update(const FetchStream &stream) override;
 
-
+    void updateWithMbtb(FullBTBPrediction &mbtb_pred, const BTBMeta *meta, Addr previousPC);
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
@@ -247,15 +261,7 @@ class AheadBTB : public TimedBaseBTBPredictor
         if (!taken && ctr > -2) {ctr--;}
     }
 
-    typedef struct BTBMeta {
-        std::vector<BTBEntry> hit_entries;  // hit entries in L1 BTB
-        std::vector<BTBEntry> l0_hit_entries; // hit entries in L0 BTB
-        BTBMeta() {
-            std::vector<BTBEntry> es;
-            hit_entries = es;
-            l0_hit_entries = es;
-        }
-    }BTBMeta;
+
 
     std::shared_ptr<BTBMeta> meta; // metadata for BTB, set in putPCHistory, used in update
 
@@ -284,7 +290,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param stream Fetch stream containing prediction info
      *  @return Processed old BTB entries
      */
-    std::vector<BTBEntry> processOldEntries(const FetchStream &stream);
+    std::vector<BTBEntry> processOldEntries(const FullBTBPrediction &mbtb_pred, const BTBMeta *meta);
 
     /** Get the previous PC from the fetch stream
      *  @param stream Fetch stream containing prediction info
@@ -304,9 +310,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param stream Fetch stream with update info
      *  @return Vector of entries to update
      */
-    std::vector<BTBEntry> collectEntriesToUpdate(
-        const std::vector<BTBEntry>& old_entries,
-        const FetchStream &stream);
+    std::vector<BTBEntry> collectEntriesToUpdate(const std::vector<BTBEntry> &old_entries,
+                                                 const FullBTBPrediction &mbtb_pred);
 
     /** Update or replace BTB entry
      *  @param btb_idx Index of the BTB entry
@@ -314,7 +319,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param entry Entry to update/replace
      *  @param stream Fetch stream with update info
      */
-    void updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, const FetchStream &stream);
+    void updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry &entry, const FullBTBPrediction &mbtb_pred);
 
     /*
      * Comparator for MRU heap

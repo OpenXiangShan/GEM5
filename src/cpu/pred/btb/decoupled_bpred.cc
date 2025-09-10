@@ -1,15 +1,15 @@
 #include "cpu/pred/btb/decoupled_bpred.hh"
-
-#include "base/output.hh"
 #include "base/debug_helper.hh"
+#include "base/output.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
-#include "debug/DecoupleBPVerbose.hh"
-#include "debug/DecoupleBPHist.hh"
-#include "debug/Override.hh"
+#include "cpu/pred/btb/stream_struct.hh"
 #include "debug/BTB.hh"
+#include "debug/DecoupleBPHist.hh"
+#include "debug/DecoupleBPVerbose.hh"
 #include "debug/ITTAGE.hh"
 #include "debug/JumpAheadPredictor.hh"
+#include "debug/Override.hh"
 #include "debug/Profiling.hh"
 #include "sim/core.hh"
 
@@ -707,6 +707,15 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     // update ubtb using mbtb prediction
     if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
         ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+        const AheadBTB::BTBMeta *meta = static_cast<const AheadBTB::BTBMeta *>(abtb->getPredictionMeta().get());
+        auto it = fetchStreamQueue.find(fsqId - 1);
+        if (it != fetchStreamQueue.end()) {
+            auto previous_block_startpc = it->second.startPC;
+            printStreamFull(it->second);
+            abtb->updateWithMbtb(predsOfEachStage[numStages - 1], meta, previous_block_startpc);
+        } else {
+            abtb->updateWithMbtb(predsOfEachStage[numStages - 1], meta, 0);
+        }
     }
 
     // 4. Record override bubbles and update statistics
