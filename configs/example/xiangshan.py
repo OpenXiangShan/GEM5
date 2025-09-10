@@ -253,7 +253,7 @@ def build_test_system(np, args):
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
-        test_sys.arch_db.dump_lifetime = False
+        test_sys.arch_db.dump_lifetime = True
         test_sys.arch_db.table_cmds = [
             "CREATE TABLE L1MissTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
@@ -399,6 +399,8 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.tage.TTagBitSizes = [13] * 8
             cpu.branchPred.tage.TTagPcShifts = [1] * 8
             cpu.branchPred.tage.histLengths = [4, 8, 15, 28, 50, 90, 160, 300]
+            if args.disable_ittage:
+                cpu.branchPred.ittage = NULL
 
         # ideal l1 caches
         if args.caches:

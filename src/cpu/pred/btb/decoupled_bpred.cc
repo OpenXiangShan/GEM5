@@ -54,8 +54,10 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     // components.push_back(uras);
     components.push_back(btb);
     components.push_back(tage);
-    components.push_back(ras);
-    components.push_back(ittage);
+    if (ras)
+        components.push_back(ras);
+    if (ittage)
+        components.push_back(ittage);
     components.push_back(mgsc);
     numComponents = components.size();
     for (int i = 0; i < numComponents; i++) {
