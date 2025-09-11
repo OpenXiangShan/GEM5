@@ -5,6 +5,7 @@
 #include <map>
 #include <vector>
 #include <utility>
+#include <cstdint>
 
 #include "base/sat_counter.hh"
 #include "base/types.hh"
@@ -57,14 +58,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool valid;      // Whether this entry is valid
             Addr tag;       // Tag for matching
             short counter;  // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
-            bool useful;    // Whether this entry is useful for prediction, set true if alt differs from main and main is correct
+            uint8_t useful;    // 2-bit usefulness counter; >0 means useful
             Addr pc;        // branch pc, like branch position, for btb entry pc check
             unsigned lruCounter; // Counter for LRU replacement policy
 
-            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0), lruCounter(0) {}
+            TageEntry() : valid(false), tag(0), counter(0), useful(0), pc(0), lruCounter(0) {}
 
             TageEntry(Addr tag, short counter, Addr pc) :
-                      valid(true), tag(tag), counter(counter), useful(false), pc(pc), lruCounter(0) {}
+                      valid(true), tag(tag), counter(counter), useful(0), pc(pc), lruCounter(0) {}
             bool taken() const {
                 return counter >= 0;
             }
@@ -401,7 +402,9 @@ private:
                                  const std::vector<bitset> &useful_mask,
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
-                                 uint64_t &allocated_table);
+                                 uint64_t &allocated_table,
+                                 uint64_t &allocated_index,
+                                 uint64_t &allocated_way);
 
     // Helper method to generate allocation mask
     AllocationResult generateAllocationMask(const bitset &useful_mask,

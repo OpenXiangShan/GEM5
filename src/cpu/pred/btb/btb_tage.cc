@@ -129,6 +129,8 @@ BTBTAGE::setTrace()
             std::make_pair("actualTaken", UINT64),
             std::make_pair("allocSuccess", UINT64),
             std::make_pair("allocTable", UINT64),
+            std::make_pair("allocIndex", UINT64),
+            std::make_pair("allocWay", UINT64),
         };
         tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
         tageMissTrace->init_table();
@@ -161,7 +163,7 @@ BTBTAGE::recordUsefulMask(const Addr &alignedPC) {
         for (unsigned way = 0; way < numWays; way++) {
             auto &entry = tageTable[i][index][way];
             // Save useful bit to metadata
-            meta->usefulMask[way][i] = entry.useful;
+            meta->usefulMask[way][i] = (entry.useful > 0);
         }
     }
     if (debugFlagOn) {
@@ -392,7 +394,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         // Update useful bit if predictions differ
         
         if (main_info.taken() != alt_taken) {
-            way.useful = actual_taken == main_info.taken();
+            if (actual_taken == main_info.taken()) {
+                if (way.useful < 3) way.useful++;
+            }
         }
         DPRINTF(TAGE, "useful bit set to %d\n", way.useful);
         
@@ -502,7 +506,7 @@ BTBTAGE::handleUsefulBitReset(const std::vector<bitset> &useful_mask, unsigned w
         for (auto &table : tageTable) {
             for (auto &set : table) {
                 for (auto &way : set) {
-                    way.useful = 0;
+                    way.useful >>= 1; // divide by 2
                 }
             }
         }
@@ -570,7 +574,9 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
                                  const std::vector<bitset> &useful_mask,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
-                                 uint64_t &allocated_table) {
+                                 uint64_t &allocated_table,
+                                 uint64_t &allocated_index,
+                                 uint64_t &allocated_way) {
     // Select which usefulMask to use based on whether a hit was found
     unsigned way_to_use = meta->hitFound ? meta->hitWay : 0;
 
@@ -626,8 +632,11 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
                 DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu, counter %d\n",
                     ti, newIndex, way, newTag, newCounter);
                 cand = TageEntry(newTag, newCounter, entry.pc);
+                cand.useful = 1;    // new entry useful is set to 1, only evict useful = 0 entries
                 tageStats.updateAllocSuccess++;
                 allocated_table = ti;
+                allocated_index = newIndex;
+                allocated_way = way;
                 return true;  // allocate only 1 entry
             }
         }
@@ -688,7 +697,11 @@ BTBTAGE::update(const FetchStream &stream) {
         // Handle new entry allocation if needed
         bool alloc_success = false;
         uint64_t allocated_table = 0;
+        uint64_t allocated_index = 0;
+        uint64_t allocated_way = 0;
         if (need_allocate) {
+            // Refresh usefulMask on-the-fly before decisions
+            recordUsefulMask(startAddr);
             // Handle useful bit reset
             handleUsefulBitReset(meta->usefulMask, meta->hitWay, meta->hitFound);
 
@@ -700,7 +713,7 @@ BTBTAGE::update(const FetchStream &stream) {
             }
             alloc_success = handleNewEntryAllocation(alignedPC, btb_entry, actual_taken,
                                    meta->usefulMask,
-                                   start_table, meta, allocated_table);
+                                   start_table, meta, allocated_table, allocated_index, allocated_way);
         }
 
 #ifndef UNIT_TEST
@@ -714,7 +727,7 @@ BTBTAGE::update(const FetchStream &stream) {
                 alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
                 alt_info.table, alt_info.index,
                 pred_it->second.useAlt, pred_it->second.taken, actual_taken, alloc_success,
-                allocated_table);
+                allocated_table, allocated_index, allocated_way);
             tageMissTrace->write_record(t);
         }
 #endif

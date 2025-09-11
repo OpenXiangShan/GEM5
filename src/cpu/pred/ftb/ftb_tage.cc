@@ -121,7 +121,9 @@ FTBTAGE::setTrace()
             std::make_pair("predUseSC", UINT64),
             std::make_pair("predSCDisagree", UINT64),
             std::make_pair("predSCCorrect", UINT64),
-            std::make_pair("allocTable", UINT64)
+            std::make_pair("allocTable", UINT64),
+            std::make_pair("allocIndex", UINT64),
+            std::make_pair("allocWay", UINT64),
         };
         tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
         tageMissTrace->init_table();
@@ -466,6 +468,8 @@ FTBTAGE::update(const FetchStream &entry)
         bool allocSuccess = false;
         bool allocFailure = false;
         uint64_t allocTable = 0;
+        uint64_t allocIndex = 0;
+        uint64_t allocWay = 0;
         if (needToAllocate) {
             // allocate new entry
             unsigned maskMaxNum = std::pow(2, (numPredictors - (pred.table + 1)));
@@ -494,6 +498,8 @@ FTBTAGE::update(const FetchStream &entry)
                             ti, newIndex, newTag, newCounter);
                         entry = TageEntry(newTag, newCounter);
                         allocTable = ti;
+                        allocIndex = newIndex;
+                        allocWay = 0;
                         break; // allocate only 1 entry
                     }
                 }
@@ -509,12 +515,12 @@ FTBTAGE::update(const FetchStream &entry)
                     pred.mainUseful, pred.altCounter, pred.table, pred.index, getBaseTableIndex(startAddr),
                     pred.tag, pred.useAlt, pred.taken, this_cond_actually_taken, allocSuccess, allocFailure,
                     scMeta.scPreds[b].scUsed, scMeta.scPreds[b].scPred != scMeta.scPreds[b].tageTaken,
-                    scMeta.scPreds[b].scPred == this_cond_actually_taken, allocTable);
+                    scMeta.scPreds[b].scPred == this_cond_actually_taken, allocTable, allocIndex, allocWay);
             } else {
                 t.set(startAddr, ftb_entry.slots[b].pc, b, phyBrIdx, mainFound, pred.mainCounter,
                     pred.mainUseful, pred.altCounter, pred.table, pred.index, getBaseTableIndex(startAddr),
                     pred.tag, pred.useAlt, pred.taken, this_cond_actually_taken, allocSuccess, allocFailure,
-                    0, 0, 0, allocTable);
+                    0, 0, 0, allocTable, allocIndex, allocWay);
             }
             tageMissTrace->write_record(t);
         }
