@@ -251,7 +251,7 @@ public:
         void set(uint64_t startPC, uint64_t branchPC, uint64_t lgcBank, uint64_t phyBank, uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful,
             uint64_t altCounter, uint64_t mainTable, uint64_t mainIndex, uint64_t altIndex, uint64_t tag,
             uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess, uint64_t allocFailure,
-            uint64_t predUseSC, uint64_t predSCDisagree, uint64_t predSCCorrect, uint64_t allocTable)
+            uint64_t predUseSC, uint64_t predSCDisagree, uint64_t predSCCorrect, uint64_t allocTable, uint64_t allocIndex, uint64_t allocWay)
         {
             _tick = curTick();
             _uint64_data["startPC"] = startPC;
@@ -275,6 +275,8 @@ public:
             _uint64_data["predSCDisagree"] = predSCDisagree;
             _uint64_data["predSCCorrect"] = predSCCorrect;
             _uint64_data["allocTable"] = allocTable;
+            _uint64_data["allocIndex"] = allocIndex;
+            _uint64_data["allocWay"] = allocWay;
         }
     };
 public:
