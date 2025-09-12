@@ -1,0 +1,10 @@
+Import('*')
+
+GTest('bop.test',
+    'bop.test.cc',
+    'bop.cc',
+)
+
+
+# Add the test to UNITTESTS target
+env.Append(UNITTESTS=['bop.test'])
