@@ -43,6 +43,7 @@ class FusionInst : public RiscvStaticInst
     virtual bool correctMisalign(Addr addr) const { return false; }
 
     Addr getSecondPC() const;
+    virtual int getType() { return 0; }
 
     std::string generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const override {
         std::string str = std::string(mnemonic);

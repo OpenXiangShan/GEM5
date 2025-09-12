@@ -558,6 +558,13 @@ class Commit
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
 
+        statistics::Distribution fuse_dist;
+        statistics::Scalar num_fusion;
+        statistics::Scalar num_fusion_alu_alu;
+        statistics::Scalar num_fusion_alu_load;
+        statistics::Scalar num_fusion_load_load;
+
+
         statistics::Distribution segUnitStrideNF;
         statistics::Distribution segStrideNF;
         statistics::Distribution segIndexedNF;

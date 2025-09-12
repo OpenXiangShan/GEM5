@@ -80,6 +80,7 @@
 #include "sim/cur_tick.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
+#include "arch//riscv/insts/fusion.hh"
 
 namespace gem5
 {
@@ -252,6 +253,11 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Class of committed instruction"),
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
                "number cycles where commit BW limit reached"),
+      ADD_STAT(fuse_dist, statistics::units::Count::get(), "Distribution of fused instructions"),
+      ADD_STAT(num_fusion, statistics::units::Count::get(), "Number of fused instructions"),
+      ADD_STAT(num_fusion_alu_alu, statistics::units::Count::get(), "Number of fused ALU-ALU instructions"),
+      ADD_STAT(num_fusion_alu_load, statistics::units::Count::get(), "Number of fused ALU-Load instructions"),
+      ADD_STAT(num_fusion_load_load, statistics::units::Count::get(), "Number of fused Load-Load instructions"),
       ADD_STAT(segUnitStrideNF, statistics::units::Count::get(),
                "Distribution of segment unit stride NF"),
       ADD_STAT(segStrideNF, statistics::units::Count::get(),
@@ -280,6 +286,9 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Total number of squash")
 {
     using namespace statistics;
+
+    fuse_dist.init(0, 64, 1)
+        .flags(pdf).flags(nozero);
 
     commitSquashedInsts.prereq(commitSquashedInsts);
     commitNonSpecStalls.prereq(commitNonSpecStalls);
@@ -1112,6 +1121,50 @@ Commit::updateMstatusSd(ThreadID tid){
     cpu->setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_STATUS, (RegVal)mstatus, tid);
 }
 
+StaticInstPtr
+checkAndFuseInsts(DynInstPtr& last, DynInstPtr& cur)
+{
+    if (last->faulted() || cur->faulted()) {
+        return nullptr;
+    }
+
+    // first search
+    auto first = (StaticInst*)last->staticInst.get();
+    std::type_index first_type = typeid(0);
+    auto it = RiscvISA::deCompressMap.find(typeid(*first));
+    if (it != RiscvISA::deCompressMap.end()) {
+        first_type = it->second;
+    } else {
+        first_type = typeid(*first);
+    }
+    auto finder = RiscvISA::fusionMap.find(RiscvISA::FusionKey(first_type, first->getImm()));
+    if (finder == RiscvISA::fusionMap.end()) return nullptr; // no fusion
+
+    // second search
+    assert(finder->second.index() == 1);
+
+    auto second = cur->staticInst.get();
+    std::type_index typeid_second = typeid(0);
+    auto it_second = RiscvISA::deCompressMap.find(typeid(*second));
+    if (it_second != RiscvISA::deCompressMap.end()) {
+        typeid_second = it_second->second;
+    } else {
+        typeid_second = typeid(*second);
+    }
+    auto map = std::get<1>(finder->second);
+    finder = map->find(RiscvISA::FusionKey(typeid_second, second->getImm()));
+    if (finder == map->end()) return nullptr; // no fusion
+
+    assert(finder->second.index() == 0);
+    auto creator = std::get<0>(finder->second);
+
+    const std::vector<DynInstPtr> inst_pair = {last, cur};
+    auto fused_inst = creator(inst_pair);
+    if (!fused_inst) return nullptr;
+
+    return fused_inst;
+}
+
 void
 Commit::commitInsts()
 {
@@ -1196,6 +1249,39 @@ Commit::commitInsts()
             bool commit_success = commitHead(head_inst, num_committed);
 
             if (commit_success) {
+                static std::vector<DynInstPtr> _basicblock;
+
+                int i=0;
+                for (auto it=  _basicblock.rbegin(); it!=_basicblock.rend(); ++it) {
+                    auto fused = checkAndFuseInsts(*it, head_inst);
+                    if (fused) {
+                        auto t = dynamic_cast<RiscvISA::FusionInst*>(fused.get());
+
+                        if (t->getType() == 0) {
+                            stats.num_fusion_alu_alu++;
+                        } else if (t->getType() == 1) {
+                            stats.num_fusion_alu_load++;
+                        } else if (t->getType() == 2) {
+                            stats.num_fusion_load_load++;
+                        } else {
+                            panic("unknown fusion type\n");
+                        }
+
+                        stats.fuse_dist.sample(i);
+                        break;
+                    } else if (head_inst->isDependentOn(*it)) {
+                        // make sure the source regs of head_inst was not modified 
+                        break;
+                    }
+                    i++;
+                }
+
+                if (head_inst->isControl() || _basicblock.size() >= 64) {
+                    _basicblock.clear(); // end of one basicblock
+                } else {
+                    _basicblock.push_back(head_inst);
+                }
+
                 cpu->perfCCT->updateInstPos(head_inst->seqNum, PerfRecord::AtCommit);
                 cpu->perfCCT->commitMeta(head_inst->seqNum);
                 head_inst->printDisassemblyAndResult(cpu->name());

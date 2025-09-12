@@ -917,6 +917,7 @@ Decode::decodeInsts(ThreadID tid)
 void
 Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
 {
+    return;
     if (vec.empty()) {
         return;
     }

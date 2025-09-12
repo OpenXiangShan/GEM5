@@ -50,6 +50,8 @@ class ChainFusionInst : public FusionInst
         flags = first->staticInst->getFlags() | second->staticInst->getFlags();
     }
 
+    int getType() override { return 0; }
+
     Fault execute(ExecContext *xc, Trace::InstRecord *traceData) const override
     {
         assert(fused);
@@ -116,6 +118,8 @@ class AluLoadFusionInst : public FusionInst
 
         flags = second->staticInst->getFlags();
     }
+
+    int getType() override { return 1; }
 
     Fault execute(ExecContext *xc, Trace::InstRecord *traceData) const override
     {
@@ -188,6 +192,8 @@ class SeqLoadFusionInst : public FusionInst
 
         flags = first->staticInst->getFlags() | second->staticInst->getFlags();
     }
+
+    int getType() override { return 2; }
 
     Fault execute(ExecContext *xc, Trace::InstRecord *traceData) const override
     {
