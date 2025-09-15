@@ -124,6 +124,8 @@ FTBTAGE::setTrace()
             std::make_pair("allocTable", UINT64),
             std::make_pair("allocIndex", UINT64),
             std::make_pair("allocWay", UINT64),
+            std::make_pair("history", TEXT),
+            std::make_pair("indexFoldedHist", UINT64),
         };
         tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
         tageMissTrace->init_table();
@@ -262,6 +264,7 @@ FTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     meta.tagFoldedHist = tagFoldedHist;
     meta.altTagFoldedHist = altTagFoldedHist;
     meta.indexFoldedHist = indexFoldedHist;
+    meta.history = history;
     // DPRINTF(TAGE, "putPCHistory end\n");
 }
 
@@ -310,6 +313,7 @@ FTBTAGE::update(const FetchStream &entry)
     auto meta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     auto preds = meta->preds;
     auto scMeta = meta->scMeta;
+    auto history = meta->history;
     std::vector<bool> actualTakens;
     actualTakens.resize(numBr, false);
 
@@ -510,17 +514,25 @@ FTBTAGE::update(const FetchStream &entry)
         }
         if (enableDB) {
             TageMissTrace t;
+            std::string history_str;
+            boost::dynamic_bitset<> history_low50 = history;
+            if (history_low50.size() > 50) {
+                history_low50.resize(50);  // get the lower 50 bits of history
+            }
+            boost::to_string(history_low50, history_str);
             if (enableSC) {
                 t.set(startAddr, ftb_entry.slots[b].pc, b, phyBrIdx, mainFound, pred.mainCounter,
                     pred.mainUseful, pred.altCounter, pred.table, pred.index, getBaseTableIndex(startAddr),
                     pred.tag, pred.useAlt, pred.taken, this_cond_actually_taken, allocSuccess, allocFailure,
                     scMeta.scPreds[b].scUsed, scMeta.scPreds[b].scPred != scMeta.scPreds[b].tageTaken,
-                    scMeta.scPreds[b].scPred == this_cond_actually_taken, allocTable, allocIndex, allocWay);
+                    scMeta.scPreds[b].scPred == this_cond_actually_taken, allocTable, allocIndex, allocWay, 
+                    history_str, updateIndexFoldedHist[mainFound ? pred.table : 0].get().to_ulong());
             } else {
                 t.set(startAddr, ftb_entry.slots[b].pc, b, phyBrIdx, mainFound, pred.mainCounter,
                     pred.mainUseful, pred.altCounter, pred.table, pred.index, getBaseTableIndex(startAddr),
                     pred.tag, pred.useAlt, pred.taken, this_cond_actually_taken, allocSuccess, allocFailure,
-                    0, 0, 0, allocTable, allocIndex, allocWay);
+                    0, 0, 0, allocTable, allocIndex, allocWay, 
+                    history_str, updateIndexFoldedHist[mainFound ? pred.table : 0].get().to_ulong());
             }
             tageMissTrace->write_record(t);
         }

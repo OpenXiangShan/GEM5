@@ -356,12 +356,13 @@ public:
         std::vector<FoldedHist> tagFoldedHist;
         std::vector<FoldedHist> altTagFoldedHist;
         std::vector<FoldedHist> indexFoldedHist;
+        bitset history;     // for viewing
         TageMeta(std::unordered_map<Addr, TagePrediction> preds, std::vector<bitset> usefulMask,
                 unsigned hitWay, bool hitFound, std::vector<FoldedHist> tagFoldedHist,
-                std::vector<FoldedHist> altTagFoldedHist, std::vector<FoldedHist> indexFoldedHist) :
+                std::vector<FoldedHist> altTagFoldedHist, std::vector<FoldedHist> indexFoldedHist, bitset &history) :
             preds(preds), usefulMask(usefulMask), hitWay(hitWay), hitFound(hitFound),
             tagFoldedHist(tagFoldedHist), altTagFoldedHist(altTagFoldedHist),
-            indexFoldedHist(indexFoldedHist) {}
+            indexFoldedHist(indexFoldedHist), history(history) {}
         TageMeta() : hitWay(0), hitFound(false) {}
         TageMeta(const TageMeta &other) {
             preds = other.preds;
@@ -371,6 +372,7 @@ public:
             tagFoldedHist = other.tagFoldedHist;
             altTagFoldedHist = other.altTagFoldedHist;
             indexFoldedHist = other.indexFoldedHist;
+            history = other.history;
             // scMeta = other.scMeta;
         }
     } TageMeta;

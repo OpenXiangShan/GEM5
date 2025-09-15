@@ -131,6 +131,8 @@ BTBTAGE::setTrace()
             std::make_pair("allocTable", UINT64),
             std::make_pair("allocIndex", UINT64),
             std::make_pair("allocWay", UINT64),
+            std::make_pair("history", TEXT),
+            std::make_pair("indexFoldedHist", UINT64),
         };
         tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
         tageMissTrace->init_table();
@@ -320,6 +322,7 @@ BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     meta->tagFoldedHist = tagFoldedHist;
     meta->altTagFoldedHist = altTagFoldedHist;
     meta->indexFoldedHist = indexFoldedHist;
+    meta->history = history;
 
     // record useful bit to meta.usefulMask
     recordUsefulMask(alignedPC);
@@ -719,6 +722,12 @@ BTBTAGE::update(const FetchStream &stream) {
 #ifndef UNIT_TEST
         if (enableDB) {
             TageMissTrace t;
+            std::string history_str;
+            boost::dynamic_bitset<> history_low50 = meta->history;
+            if (history_low50.size() > 50) {
+                history_low50.resize(50);  // get the lower 50 bits of history
+            }
+            boost::to_string(history_low50, history_str);
             auto main_info = pred_it->second.mainInfo;
             auto alt_info = pred_it->second.altInfo;
             t.set(startAddr, btb_entry.pc, meta->hitWay,
@@ -727,7 +736,8 @@ BTBTAGE::update(const FetchStream &stream) {
                 alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
                 alt_info.table, alt_info.index,
                 pred_it->second.useAlt, pred_it->second.taken, actual_taken, alloc_success,
-                allocated_table, allocated_index, allocated_way);
+                allocated_table, allocated_index, allocated_way, 
+                history_str, meta->indexFoldedHist[main_info.table].get());
             tageMissTrace->write_record(t);
         }
 #endif

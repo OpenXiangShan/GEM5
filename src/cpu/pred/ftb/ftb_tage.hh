@@ -5,6 +5,7 @@
 #include <map>
 #include <vector>
 #include <utility>
+#include <string>
 
 #include "base/sat_counter.hh"
 #include "base/types.hh"
@@ -251,7 +252,8 @@ public:
         void set(uint64_t startPC, uint64_t branchPC, uint64_t lgcBank, uint64_t phyBank, uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful,
             uint64_t altCounter, uint64_t mainTable, uint64_t mainIndex, uint64_t altIndex, uint64_t tag,
             uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess, uint64_t allocFailure,
-            uint64_t predUseSC, uint64_t predSCDisagree, uint64_t predSCCorrect, uint64_t allocTable, uint64_t allocIndex, uint64_t allocWay)
+            uint64_t predUseSC, uint64_t predSCDisagree, uint64_t predSCCorrect, uint64_t allocTable, uint64_t allocIndex, uint64_t allocWay,
+            std::string history, uint64_t indexFoldedHist)
         {
             _tick = curTick();
             _uint64_data["startPC"] = startPC;
@@ -277,6 +279,8 @@ public:
             _uint64_data["allocTable"] = allocTable;
             _uint64_data["allocIndex"] = allocIndex;
             _uint64_data["allocWay"] = allocWay;
+            _text_data["history"] = history;
+            _uint64_data["indexFoldedHist"] = indexFoldedHist;
         }
     };
 public:
@@ -390,10 +394,11 @@ private:
         std::vector<FoldedHist> altTagFoldedHist;
         std::vector<FoldedHist> indexFoldedHist;
         SCMeta scMeta;
+        bitset history;   // for viewing
         TageMeta(std::vector<TagePrediction> preds, std::vector<FoldedHist> tagFoldedHist,
-            std::vector<FoldedHist> altTagFoldedHist, std::vector<FoldedHist> indexFoldedHist, SCMeta scMeta) :
+            std::vector<FoldedHist> altTagFoldedHist, std::vector<FoldedHist> indexFoldedHist, SCMeta scMeta, bitset &history) :
             preds(preds), tagFoldedHist(tagFoldedHist), altTagFoldedHist(altTagFoldedHist), indexFoldedHist(indexFoldedHist),
-            scMeta(scMeta) {}
+            scMeta(scMeta), history(history) {}
         TageMeta() {}
         TageMeta(const TageMeta &other) {
             preds = other.preds;
@@ -401,6 +406,7 @@ private:
             altTagFoldedHist = other.altTagFoldedHist;
             indexFoldedHist = other.indexFoldedHist;
             scMeta = other.scMeta;
+            history = other.history;
         }
     } TageMeta;
 
