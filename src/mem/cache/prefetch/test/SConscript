@@ -5,6 +5,11 @@ GTest('bop.test',
     'bop.cc',
 )
 
+GTest('cmc.test',
+    'cmc.test.cc',
+    'cmc.cc',
+)
 
 # Add the test to UNITTESTS target
-env.Append(UNITTESTS=['bop.test'])
+env.Append(UNITTESTS=['cmc.test',
+                      'bop.test'])
