@@ -344,7 +344,7 @@ FTBTAGE::update(const FetchStream &entry)
         bool mainFound = pred.mainFound;
         bool mainTaken = pred.mainCounter >= 0;
         bool mainWeak = pred.mainCounter == 0 || pred.mainCounter == -1;
-        bool altTaken = baseTable.at(getBaseTableIndex(startAddr))[phyBrIdx] >= 0;
+        bool altTaken = pred.altCounter >= 0;   // set in TagePrediction constructor
 
         // update useful bit, counter and predTaken for main entry
         if (mainFound) { // updateProvided
@@ -353,7 +353,9 @@ FTBTAGE::update(const FetchStream &entry)
             auto &way = tageTable[pred.table][pred.index][phyBrIdx];
 
             if (mainTaken != altTaken) { // updateAltDiffers
-                way.useful = this_cond_actually_taken == mainTaken; // updateProviderCorrect
+                if (this_cond_actually_taken == mainTaken) {
+                    way.useful = true;
+                }
             }
             DPRINTF(TAGE, "useful bit set to %d\n", way.useful);
 
