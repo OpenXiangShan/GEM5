@@ -79,7 +79,8 @@ jobs:
         run: |
           export GEM5_HOME=$(pwd)
           cd ext/dramsim3
-          git clone https://github.com/umd-memsys/DRAMsim3.git DRAMsim3
+          # 使用本地数据处理仓库，避免GitHub网络问题
+          cp -r /nfs/home/share/gem5_ci/DRAMsim3 .
           cd DRAMsim3 && mkdir -p build
           cd build
           cmake ..
