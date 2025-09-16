@@ -76,13 +76,27 @@ void
 CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool is_first_shot)
 {
+    if (!pfi.hasPC()) {
+        DPRINTF(CMCPrefetcher, "No PC, skip prefetch\n");
+        return;
+    }
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        DPRINTF(CMCPrefetcher, "Skip prefetching due to use vaddr train, but invalid vaddr\n");
+        return;
+    }
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        DPRINTF(CMCPrefetcher, "Skip prefetching due to use paddr train, but invalid paddr\n");
+        return;
+    }
+
     bool can_prefetch = cache->level() == 1 ? (!pfi.isWrite() && pfi.hasPC()) : true;
     if (!can_prefetch) {
         return;
     }
+
     Addr pc = pfi.hasPC() ? pfi.getPC() : 0;
 
-    Addr vaddr = pfi.getAddr();
+    Addr vaddr = pfi.getVAddr();
     Addr block_addr = blockAddress(vaddr);
     bool is_secure = pfi.isSecure();
     int prefetchSource = pf_source;
@@ -137,11 +151,11 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
             if (sendPFWithFilter(pfi, addr, addresses, priority, PrefetchSourceType::CMC)) {
                 num_send++;
                 if (num_send > 24) {
-                    addresses.back().pfahead = true;
-                    addresses.back().pfahead_host = 3;
+                    addresses.back().isCrossLevel = true;
+                    addresses.back().targetLevel = 3;
                 } else if (num_send > 4) {
-                    addresses.back().pfahead = true;
-                    addresses.back().pfahead_host = 2;
+                    addresses.back().isCrossLevel = true;
+                    addresses.back().targetLevel = 2;
                 }
             }
             if (enableDB) {
@@ -273,13 +287,13 @@ bool
 CMCPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                                 PrefetchSourceType src)
 {
-    if (filter->contains(addr)) {
+    if (filter->contains(addr, useVirtualAddresses)) {
         DPRINTF(CMCPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(CMCPrefetcher, "CMC: send pf: %lx\n", addr);
-        filter->insert(addr, 0);
-        addresses.push_back(AddrPriority(addr, prio, src));
+        filter->insert(addr, useVirtualAddresses);
+        addresses.push_back(AddrPriority(addr, prio, true, src));
         return true;
     }
     return false;

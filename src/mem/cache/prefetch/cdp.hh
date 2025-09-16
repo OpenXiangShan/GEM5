@@ -534,7 +534,7 @@ class CDP : public Queued
     };
 
 
-    boost::compute::detail::lru_cache<Addr, Addr> *pfLRUFilter;
+    PrefetchFilter *pfLRUFilter;
     std::list<DeferredPacket> localBuffer;
     unsigned depth{4};
 

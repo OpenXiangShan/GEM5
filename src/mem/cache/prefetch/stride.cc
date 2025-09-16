@@ -127,15 +127,23 @@ Stride::calculatePrefetch(const PrefetchInfo &pfi,
         DPRINTF(StridePrefetcher, "Ignoring request with no PC.\n");
         return;
     }
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        DPRINTF(StridePrefetcher, "Ignoring request with no valid vaddr.\n");
+        return;
+    }
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        DPRINTF(StridePrefetcher, "Ignoring request with no valid paddr.\n");
+        return;
+    }
 
     // Get required packet info
-    Addr pf_addr = blockAddress(pfi.getAddr());
+    Addr pf_addr = blockAddress(pfi.getVAddr());
 
-    if (blockLRUFilter.contains(pf_addr)) {
+    if (blockLRUFilter.contains(pf_addr, useVirtualAddresses)) {
         DPRINTF(StridePrefetcher, "Ignoring recently prefetched address %#x.\n", pf_addr);
         return;
     } else {
-        blockLRUFilter.insert(pf_addr, pf_addr);
+        blockLRUFilter.insert(pf_addr, useVirtualAddresses);
     }
 
     Addr pc = pfi.getPC();
@@ -188,7 +196,8 @@ Stride::calculatePrefetch(const PrefetchInfo &pfi,
 
             Addr new_addr = pf_addr + d * prefetch_stride;
             DPRINTF(StridePrefetcher, "Prefetch: PC %#x for addr %#x\n", pc, new_addr);
-            addresses.push_back(AddrPriority(new_addr, 0));
+            addresses.push_back(AddrPriority(new_addr, 0, true,
+                                             PrefetchSourceType::Stride));
         }
     } else {
         // Miss in table

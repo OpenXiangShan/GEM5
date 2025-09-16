@@ -32,6 +32,7 @@
 #include "debug/BOPOffsets.hh"
 #include "debug/BOPPrefetcher.hh"
 #include "mem/cache/base.hh"
+#include "mem/cache/prefetch/base.hh"
 #include "params/BOPPrefetcher.hh"
 
 namespace gem5
@@ -316,7 +317,8 @@ BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
     auto [exist, rr_entry] = testRR(lookup_addr);
     if (exist) {
         if (archDBer) {
-            archDBer->bopTrainTraceWrite(curTick(), rr_entry.fullAddr, pfi.getAddr(), offset,
+            Addr curAddr = useVirtualAddresses ? pfi.getVAddr() : pfi.getPaddr();
+            archDBer->bopTrainTraceWrite(curTick(), rr_entry.fullAddr, curAddr, offset,
                                         offsetsListIterator->score + 1, pfi.isCacheMiss());
         }
 
@@ -405,11 +407,23 @@ void
 BOP::calculatePrefetch(const PrefetchInfo &pfi,
         std::vector<AddrPriority> &addresses, bool late)
 {
-    Addr addr = blockAddress(pfi.getAddr());
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        DPRINTF(BOPPrefetcher, "Skip prefetching due to use vaddr train, but invalid vaddr\n");
+        return;
+    }
+
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        DPRINTF(BOPPrefetcher, "Skip prefetching due to use paddr train, but invalid paddr\n");
+        return;
+    }
+
+
+    Addr addr = blockAddress(useVirtualAddresses ? pfi.getVAddr() : pfi.getPaddr());
     Addr tag_x = tag(addr);
 
     DPRINTF(BOPPrefetcher,
-            "Train prefetcher with addr %#lx tag %#lx\n", addr, tag_x);
+            "Train prefetcher with %s %#lx tag %#lx\n",
+            useVirtualAddresses ? "vaddr" : "paddr", addr, tag_x);
 
     if (delayQueueEnabled) {
         insertIntoDelayQueue(addr, tag_x);
@@ -448,19 +462,21 @@ bool
 BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                       PrefetchSourceType src)
 {
-    if (!samePage(pfi.getAddr(), addr) && !crossPage) {
+    if (!Base::samePage(useVirtualAddresses ? pfi.getVAddr() : pfi.getPaddr(), addr) && !crossPage) {
         return false;
     }
     if (archDBer && cache->level() == 1) {
-        archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
+        archDBer->l1PFTraceWrite(curTick(), pfi.getPC(),
+        useVirtualAddresses ? pfi.getVAddr() : pfi.getPaddr(),
+        addr, src);
     }
-    if (filter->contains(addr)) {
+    if (filter->contains(addr,useVirtualAddresses)) {
         DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(BOPPrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
-        addresses.push_back(AddrPriority(addr, prio, src));
+        filter->insert(addr, useVirtualAddresses);
+        addresses.push_back(AddrPriority(addr, prio, useVirtualAddresses, src));
         return true;
     }
 }

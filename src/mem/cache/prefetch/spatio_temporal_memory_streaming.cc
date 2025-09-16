@@ -142,15 +142,23 @@ STeMS::calculatePrefetch(const PrefetchInfo &pfi,
         DPRINTF(HWPrefetch, "Ignoring request with no PC.\n");
         return;
     }
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        DPRINTF(HWPrefetch, "Ignoring request with no valid vaddr.\n");
+        return;
+    }
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        DPRINTF(HWPrefetch, "Ignoring request with no valid paddr.\n");
+        return;
+    }
 
     Addr pc = pfi.getPC();
     bool is_secure = pfi.isSecure();
     // Spatial region address
-    Addr sr_addr = pfi.getAddr() / spatialRegionSize;
+    Addr sr_addr = pfi.getVAddr() / spatialRegionSize;
     Addr paddr = pfi.getPaddr();
 
     // Offset in cachelines within the spatial region
-    Addr sr_offset = (pfi.getAddr() % spatialRegionSize) / blkSize;
+    Addr sr_offset = (pfi.getVAddr() % spatialRegionSize) / blkSize;
 
     // Check if any active generation has ended
     checkForActiveGenerationsEnd();
@@ -261,7 +269,8 @@ STeMS::reconstructSequence(
 
     for (Addr pf_addr : reconstruction) {
         if (pf_addr != MaxAddr) {
-            addresses.push_back(AddrPriority(pf_addr, 0));
+            addresses.push_back(AddrPriority(pf_addr, 0, true,
+                PrefetchSourceType::STeMS));
         }
     }
 }

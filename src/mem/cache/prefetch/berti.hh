@@ -155,7 +155,7 @@ class BertiPrefetcher : public Queued
     int lastUsedBestDelta;
     int evictedBestDelta;
 
-    boost::compute::detail::lru_cache<Addr, Addr> trainBlockFilter;
+    PrefetchFilter trainBlockFilter;
 
     std::unordered_map<int64_t, uint64_t> topDeltas;
 
@@ -165,7 +165,7 @@ class BertiPrefetcher : public Queued
 
   public:
 
-    boost::compute::detail::lru_cache<Addr, Addr> *filter;
+    PrefetchFilter *filter;
 
     BertiPrefetcher(const BertiPrefetcherParams &p);
 

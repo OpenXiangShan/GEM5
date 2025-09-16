@@ -77,7 +77,7 @@ class DespacitoStreamPrefetcher : public Queued
     void updatePatternTable(SamplerEntry *sampler_entry);
 
   public:
-    boost::compute::detail::lru_cache<Addr, Addr> *filter;
+    PrefetchFilter *filter;
 
     DespacitoStreamPrefetcher(const DespacitoStreamPrefetcherParams &p);
 

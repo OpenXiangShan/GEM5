@@ -26,7 +26,7 @@ DespacitoStreamPrefetcher::DespacitoStreamPrefetcher(const DespacitoStreamPrefet
 void
 DespacitoStreamPrefetcher::updateSampler(const PrefetchInfo &pfi)
 {
-    Addr block_index = blockIndex(pfi.getAddr());
+    Addr block_index = blockIndex(pfi.getVAddr());
 
     SamplerEntry *sampler_entry = sampler.findEntry(block_index - 1, false);
 
@@ -79,10 +79,16 @@ DespacitoStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vecto
     if (!pfi.hasPC()) {
         return;
     }
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        return;
+    }
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        return;
+    }
 
     Addr pc = pfi.getPC();
 
-    Addr block_addr = blockAddress(pfi.getAddr());
+    Addr block_addr = blockAddress(pfi.getVAddr());
 
     PatternEntry *pattern_entry = patterns.findEntry(pc, false);
 
@@ -101,15 +107,15 @@ DespacitoStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, 
                                             int prio, PrefetchSourceType src)
 {
     if (archDBer && cache->level() == 1) {
-        archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
+        archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getVAddr(), addr, src);
     }
-    if (filter->contains(addr)) {
+    if (filter->contains(addr, useVirtualAddresses)) {
         DPRINTF(DespacitoStreamPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
         DPRINTF(DespacitoStreamPrefetcher, "Send pf: %lx\n", addr);
-        filter->insert(addr, 0);
-        addresses.push_back(AddrPriority(addr, prio, src));
+        filter->insert(addr, useVirtualAddresses);
+        addresses.push_back(AddrPriority(addr, prio, true, src));
         return true;
     }
 }

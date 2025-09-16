@@ -34,22 +34,45 @@ void
 WorkerPrefetcher::rxHint(BaseMMU::Translation *dpp)
 {
     auto ptr = reinterpret_cast<DeferredPacket *>(dpp);
+    bool isVaddrValid = ptr->pkt->req->hasVaddr();
+    bool isPaddrValid = ptr->pkt->req->hasPaddr();
+    Addr recvVAddr = isVaddrValid ? ptr->pkt->req->getVaddr() : 0;
+    Addr recvPAddr = isPaddrValid ? ptr->pkt->req->getPaddr() : 0;
 
     // ignore if pfahead_host > itself level
-    if ((ptr->pfahead ? (ptr->pfahead_host <= cache->level()) : true) &&
+    if ((ptr->isCrossLevel ? (ptr->targetLevel <= cache->level()) : true) &&
         (ptr->pfInfo.getXsMetadata().prefetchSource == PrefetchSourceType::SStream)) {
-        if (pfLRUFilter.contains(ptr->pfInfo.getAddr())) {
-            DPRINTF(WorkerPref, "Worker: offload: [%lx, %d] skip recently in localBuffer\n", ptr->pfInfo.getAddr(), ptr->pfahead_host);
+        if (isVaddrValid && pfLRUFilter.contains(recvVAddr, isVaddrValid)) {
+            DPRINTF(WorkerPref, "Worker: offload vaddr: [%lx, %d] skip recently in localBuffer\n",
+                recvVAddr, ptr->targetLevel);
+            return;
+        } else if (isPaddrValid && pfLRUFilter.contains(recvPAddr, isPaddrValid)) {
+            DPRINTF(WorkerPref, "Worker: offload paddr: [%lx, %d] skip recently in localBuffer\n",
+                isVaddrValid ? "vaddr":"paddr", recvPAddr, ptr->targetLevel);
             return;
         }
-        pfLRUFilter.insert(ptr->pfInfo.getAddr(),0);
+        if (isVaddrValid) {
+            pfLRUFilter.insert(recvVAddr,isVaddrValid);
+        } else if (isPaddrValid) {
+            pfLRUFilter.insert(recvPAddr,isVaddrValid);
+        }
+
     }
 
     workerStats.hintsReceived++;
 
-    DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n", ptr->pfInfo.getAddr(), ptr->pfahead_host,
-            localBuffer.size());
+    if (isVaddrValid) {
+        DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n",
+                recvVAddr, ptr->targetLevel, localBuffer.size());
+    } else if (isPaddrValid) {
+        DPRINTF(WorkerPref, "Worker: put [%lx, %d] into localBuffer(size:%lu)\n",
+                recvPAddr, ptr->targetLevel, localBuffer.size());
+    }
     localBuffer.push_back(*ptr);
+
+    if (!transferEvent->scheduled()){
+        schedule(transferEvent, nextCycle());
+    }
 }
 
 void
@@ -58,29 +81,33 @@ WorkerPrefetcher::transfer()
     // ignore information of pfi, grab the information from the local buffer
     unsigned count = 0;
     auto dpp_it = localBuffer.begin();
-    while (count < depth && !localBuffer.empty()) {
+    while (count < transferDepth && !localBuffer.empty()) {
         if (queueFilter) {
-            if (alreadyInQueue(pfq, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(), dpp_it->priority)) {
-                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
-                        dpp_it->pfahead_host);
-            } else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(),
+            if (alreadyInQueue(pfq, dpp_it->pfInfo, dpp_it->priority)) {
+                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getVAddr(),
+                        dpp_it->targetLevel);
+            } else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo,
                                       dpp_it->priority)) {
-                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
-                        dpp_it->pfahead_host);
+                DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getVAddr(),
+                        dpp_it->targetLevel);
             } else {
                 addToQueue(pfq, *dpp_it);
-                DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
-                        dpp_it->pfahead_host);
+                DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getVAddr(),
+                        dpp_it->targetLevel);
             }
         } else {
             addToQueue(pfq, *dpp_it);
-            DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getAddr(),
-                    dpp_it->pfahead_host);
+            DPRINTF(WorkerPref, "Worker: put [%lx, %d] into local pfq\n", dpp_it->pfInfo.getVAddr(),
+                    dpp_it->targetLevel);
         }
         dpp_it = localBuffer.erase(dpp_it);
         count++;
     }
-    schedule(transferEvent, nextCycle());
+
+    if (!localBuffer.empty()) {
+        schedule(transferEvent, nextCycle());
+    }
+
 }
 
 }  // namespace prefetch

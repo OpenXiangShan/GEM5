@@ -155,16 +155,16 @@ class XSCompositePrefetcher : public Queued
   private:
     const unsigned pfFilterSize{256};
     const unsigned pfPageFilterSize{16};
-    boost::compute::detail::lru_cache<Addr, Addr> pfBlockLRUFilter;
+    PrefetchFilter pfBlockLRUFilter;
 
-    boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilter;
-    boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL2;
-    boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL3;
+    PrefetchFilter pfPageLRUFilter;
+    PrefetchFilter pfPageLRUFilterL2;
+    PrefetchFilter pfPageLRUFilterL3;
 
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           PrefetchSourceType src, int ahead_level = -1);
     void sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, std::vector<AddrPriority> &addresses,
-                      boost::compute::detail::lru_cache<Addr, Addr> &Filter, bool decr, int pf_level);
+                      PrefetchFilter &Filter, bool decr, int pf_level);
     void updatePhtBits(bool accessed, bool early_update, bool re_act_mode, uint8_t hist_idx,
                        XSCompositePrefetcher::ACTEntry *act_entry, XSCompositePrefetcher::PhtEntry *pht_entry);
 

@@ -85,6 +85,15 @@ enum PrefetchSourceType
     CDP,
     SOpt,
     DespacitoStream,
+    SBOOE,
+    AMPM,
+    DCPT,
+    IndirectMemory,
+    IrregularStreamBuffer,
+    PIF,
+    STeMS,
+    Stride,
+    Tagged,
     NUM_PF_SOURCES
 };
 

@@ -76,7 +76,7 @@ CDP::CDP(const CDPParams &p)
         enable_prf_filter.push_back(false);
     }
     prefetchStatsPtr = &prefetchStats;
-    pfLRUFilter = new boost::compute::detail::lru_cache<Addr, Addr>(128);
+    pfLRUFilter = new PrefetchFilter(128);
     // filterEntryGranularity should be power of 2, and greater than cache block size
     assert((p.filter_entry_granularity % 2) == 0 && p.filter_entry_granularity >= 64);
     assert(filterRegionBlks % 2 == 0);
@@ -123,7 +123,14 @@ CDP::CDPStats::CDPStats(statistics::Group *parent)
 void
 CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses)
 {
-    Addr addr = pfi.getAddr();
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        return;
+    }
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        return;
+    }
+
+    Addr addr = pfi.getVAddr();
     bool miss = pfi.isCacheMiss();
     int page_offset, vpn0, vpn1, vpn2;
     PrefetchSourceType pf_source = pfi.getXsMetadata().prefetchSource;
@@ -187,7 +194,7 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
     }
     if (!is_l1_prefetch && !is_l2_prefetch) {
         recordUsedPrefetch(pfi.getPaddr());
-        addToVpnTable(pfi.getAddr(), pf_hit_cdp);
+        addToVpnTable(pfi.getVAddr(), pf_hit_cdp);
     }
     return;
 }
@@ -347,11 +354,11 @@ bool
 CDP::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource,
                       int pf_depth)
 {
-    if (pfLRUFilter->contains((addr))) {
+    if (pfLRUFilter->contains((addr), useVirtualAddresses)) {
         return false;
     } else {
-        pfLRUFilter->insert((addr), 0);
-        AddrPriority addr_prio = AddrPriority(addr, prio, pfSource);
+        pfLRUFilter->insert((addr), useVirtualAddresses);
+        AddrPriority addr_prio = AddrPriority(addr, prio, true, pfSource);
         addr_prio.depth = pf_depth;
         addresses.push_back(addr_prio);
         cdpStats.passedFilter++;

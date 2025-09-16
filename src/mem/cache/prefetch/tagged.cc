@@ -33,6 +33,7 @@
 
 #include "mem/cache/prefetch/tagged.hh"
 
+#include "mem/request.hh"
 #include "params/TaggedPrefetcher.hh"
 
 namespace gem5
@@ -52,11 +53,17 @@ void
 Tagged::calculatePrefetch(const PrefetchInfo &pfi,
     std::vector<AddrPriority> &addresses)
 {
-    Addr blkAddr = blockAddress(pfi.getAddr());
+    if (useVirtualAddresses && !pfi.isVaddrValid()) {
+        return;
+    }
+    if (!useVirtualAddresses && !pfi.isPaddrValid()) {
+        return;
+    }
+    Addr blkAddr = blockAddress(pfi.getVAddr());
 
     for (int d = 1; d <= degree; d++) {
         Addr newAddr = blkAddr + d*(blkSize);
-        addresses.push_back(AddrPriority(newAddr,0));
+        addresses.push_back(AddrPriority(newAddr,0, true, PrefetchSourceType::Tagged));
     }
 }
 

@@ -66,7 +66,7 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
 
     bool is_secure = pfi.isSecure();
     Addr pc = pfi.getPC();
-    Addr addr = pfi.getAddr();
+    Addr addr = pfi.getVAddr();
     bool miss = pfi.isCacheMiss();
 
     checkAccessMatchOnActiveEntries(addr);
@@ -92,7 +92,8 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
                 if (pt_entry->streamCounter >= streamCounterThreshold) {
                     int64_t delta = addr - pt_entry->address;
                     for (unsigned int i = 1; i <= streamingDistance; i += 1) {
-                        addresses.push_back(AddrPriority(addr + delta * i, 0));
+                        addresses.push_back(AddrPriority(addr + delta * i, 0, true,
+                                                          PrefetchSourceType::IndirectMemory));
                     }
                 }
                 pt_entry->address = addr;
@@ -147,7 +148,8 @@ IndirectMemory::calculatePrefetch(const PrefetchInfo &pfi,
                             for (int delta = 1; delta < distance; delta += 1) {
                                 Addr pf_addr = pt_entry->baseAddr +
                                     (pt_entry->index << pt_entry->shift);
-                                addresses.push_back(AddrPriority(pf_addr, 0));
+                                addresses.push_back(AddrPriority(pf_addr, 0, true,
+                                                                  PrefetchSourceType::IndirectMemory));
                             }
                         }
                     }

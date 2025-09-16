@@ -19,14 +19,6 @@ class CompositeWithWorkerPrefetcher: public WorkerPrefetcher
   public:
     CompositeWithWorkerPrefetcher(const CompositeWithWorkerPrefetcherParams &p);
 
-    void rxHint(BaseMMU::Translation *dpp) override;
-
-    bool hasHintsWaiting() override { return !localBuffer.empty(); }
-
-    void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size) override;
-
-    void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
-
     void postNotifyInsert(const PacketPtr &trigger_pkt, std::vector<AddrPriority> &addresses);
     // TODO: This code is redundant with queued.cc, seperate it in queued
 

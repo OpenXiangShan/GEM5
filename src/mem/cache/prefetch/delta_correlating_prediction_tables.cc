@@ -116,7 +116,8 @@ DeltaCorrelatingPredictionTables::DCPTEntry::getCandidates(
             while (it != deltas.end()) {
                 const int pf_delta = *(it++);
                 addr += pf_delta;
-                pfs.push_back(Queued::AddrPriority(addr, 0));
+                pfs.push_back(Queued::AddrPriority(addr, 0, true,
+                    PrefetchSourceType::DCPT));
             }
             break;
         }
@@ -132,7 +133,10 @@ DeltaCorrelatingPredictionTables::calculatePrefetch(
         DPRINTF(HWPrefetch, "Ignoring request with no PC.\n");
         return;
     }
-    Addr address = pfi.getAddr();
+    if (!pfi.isVaddrValid()) {
+        return;
+    }
+    Addr address = pfi.getVAddr();
     Addr pc = pfi.getPC();
     // Look up table entry, is_secure is unused in findEntry because we
     // index using the pc

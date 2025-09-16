@@ -79,7 +79,7 @@ class OptPrefetcher : public Queued
                             PrefetchSourceType src, int ahead_level);
 
     public:
-      boost::compute::detail::lru_cache<Addr, Addr> *filter;
+      PrefetchFilter *filter;
       OptPrefetcher(const OptPrefetcherParams &p);
 
       using Queued::calculatePrefetch;

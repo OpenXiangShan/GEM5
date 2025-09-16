@@ -41,8 +41,6 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
 
     void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size) override;
 
-    void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override;
-
     void recvCustomInfoFrmUpStream(CustomPfInfo& info) override;
 
     void notifyFill(const PacketPtr &pkt) override;

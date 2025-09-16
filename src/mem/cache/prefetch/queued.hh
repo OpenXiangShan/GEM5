@@ -65,26 +65,47 @@ class Queued : public Base
         Addr addr;
         int32_t priority;
         bool isVA;
-        bool isBOP;
-        int pfahead_host = 0; // which level should process pfahead (e.g 2 is l2...)
-        bool pfahead = false;
-        int depth=0;
         PrefetchSourceType pfSource;
-        PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
+
+        /**
+         * Indicate the level that is responsible for processing this
+         * prefetch request.
+         * if level is 0, it means this prefetch is not a cross-level
+         * prefetch, and should be processed by the current level.
+         */
+        uint8_t targetLevel;
+
+        /**
+         * Indicates whether this prefetch request is a cross-level
+         * prefetch request.
+         */
+        bool isCrossLevel;
+
+        int depth;
+
+        PrefetchCmd(Addr a, int32_t p, bool isVA, PrefetchSourceType src,
+                    uint8_t level = 0, bool isCrossLevel = false, int depth = 0)
+            : addr(a), priority(p), isVA(isVA), pfSource(src),
+              targetLevel(level), isCrossLevel(isCrossLevel), depth(depth)
         {
-            panic("PrefetchCmd: no source specified");
-        }
-        PrefetchCmd(Addr a, int32_t p, PrefetchSourceType src)
-            : addr(a), priority(p), isVA(true), isBOP(false), pfSource(src)
-        {
-        }
-        PrefetchCmd(Addr a, int32_t p, PrefetchSourceType src, bool va, bool bop)
-            : addr(a), priority(p), isVA(va), isBOP(bop), pfSource(src)
-        {
+
         }
     };
     // using AddrPriority = std::pair<Addr, int32_t>;
     using AddrPriority = PrefetchCmd;
+
+    bool
+    samePage(PrefetchInfo const &a, AddrPriority const &b) const
+    {
+        if (a.isVaddrValid() && b.isVA) {
+            return Base::samePage(a.getVAddr(), b.addr);
+        } else if (a.isPaddrValid() && !b.isVA) {
+            return Base::samePage(a.getPaddr(), b.addr);
+        } else {
+            return false;
+        }
+    }
+
 
   protected:
     struct DeferredPacket : public BaseMMU::Translation
@@ -99,8 +120,8 @@ class Queued : public Base
         PacketPtr pkt;
         /** The priority of this prefetch */
         int32_t priority;
-        bool pfahead;
-        int pfahead_host;
+        bool isCrossLevel;
+        int targetLevel;
         /** Request used when a translation is needed */
         RequestPtr translationRequest;
         ThreadContext *tc;
@@ -201,7 +222,7 @@ class Queued : public Base
     const bool cacheSnoop;
 
     /** Tag prefetch with PC of generating access? */
-    const bool tagPrefetch;
+    const bool tagPrefetchWithPC;
 
     /** Percentage of requests that can be throttled */
     const unsigned int throttleControlPct;
@@ -282,8 +303,16 @@ class Queued : public Base
      */
     bool alreadyInQueue(std::list<DeferredPacket> &queue,
                         const PrefetchInfo &pfi, int32_t priority);
-    bool alreadyInQueue(std::list<DeferredPacket> &queue,
-                                    Addr addr, bool isSecure, int32_t priority);
+
+
+    /**
+     * Checks whether the provided prefetch request has been already
+     * in cache or mshr.
+     * @param paddr physical address of the prefetch request
+     * @param is_secure whether the prefetch request is secure or not
+     * @return True if the prefetch request has been already prefetched
+     */
+    bool shouldDropPrefetch(Addr paddr, bool is_secure);
 
     /**
      * Returns the maxmimum number of prefetch requests that are allowed

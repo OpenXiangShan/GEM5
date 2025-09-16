@@ -121,14 +121,16 @@ PIF::CompactorEntry::getPredictedAddresses(unsigned int log_blk_size,
         // Address from the preceding blocks to issue a prefetch
         if (prec[i]) {
             const Addr prec_addr = (trigger_blk - (i+1)) << log_blk_size;
-            addresses.push_back(AddrPriority(prec_addr, 0));
+            addresses.push_back(AddrPriority(prec_addr, 0, true,
+                                            PrefetchSourceType::PIF));
         }
     }
     for (int i = 0; i < succ.size(); i++) {
         // Address from the succeding blocks to issue a prefetch
         if (succ[i]) {
             const Addr succ_addr = (trigger_blk + (i+1)) << log_blk_size;
-            addresses.push_back(AddrPriority(succ_addr, 0));
+            addresses.push_back(AddrPriority(succ_addr, 0, true,
+                                            PrefetchSourceType::PIF));
         }
     }
 }

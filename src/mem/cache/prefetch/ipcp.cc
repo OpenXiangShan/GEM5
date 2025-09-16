@@ -23,7 +23,7 @@ IPCP::IPCP(const IPCPrefetcherParams &p)
     assert((ipt_size & (ipt_size - 1)) == 0);
     assert((cspt_size & (cspt_size - 1)) == 0);
     if (p.use_rrf) {
-        rrf = new boost::compute::detail::lru_cache<Addr, Addr>(32);
+        rrf = new PrefetchFilter(32);
     }
 
     ipt.resize(ipt_size);
@@ -57,13 +57,13 @@ IPCP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPrior
                        PrefetchSourceType pfSource)
 {
     assert(rrf);
-    if (rrf->contains(addr)) {
+    if (rrf->contains(addr, useVirtualAddresses)) {
         DPRINTF(IPCP, "IPCP PF filtered\n");
         ipcpStats.pf_filtered++;
         return false;
     } else {
-        rrf->insert(addr, 0);
-        addresses.push_back(AddrPriority(addr, prio, pfSource));
+        rrf->insert(addr, useVirtualAddresses);
+        addresses.push_back(AddrPriority(addr, prio, true, pfSource));
         return true;
     }
     return false;
@@ -194,8 +194,8 @@ IPCP::doLookup(const PrefetchInfo &pfi, PrefetchSourceType pf_source)
     if (!can_prefetch) {
         return;
     }
-    DPRINTF(IPCP, "IPCP lookup pc: %lx, vaddr: %lx\n", pfi.getPC(), pfi.getAddr());
-    Addr pf_addr = blockAddress(pfi.getAddr());
+    DPRINTF(IPCP, "IPCP lookup pc: %lx, vaddr: %lx\n", pfi.getPC(), pfi.getVAddr());
+    Addr pf_addr = blockAddress(pfi.getVAddr());
     int new_stride = -1;
 
     Classifier type = NO_PREFETCH;
@@ -229,7 +229,8 @@ IPCP::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, 
         Addr base_addr = saved_pfAddr;
         for (int i = 1; i <= cs_degree; i++) {
             base_addr = base_addr + (saved_ip->cs_stride << lBlkSize);
-            DPRINTF(IPCP, "IPCP CS Send pf: %lx, cur stride: %d, conf: %d\n", base_addr, saved_ip->cs_stride, saved_ip->cs_confidence);
+            DPRINTF(IPCP, "IPCP CS Send pf: %lx, cur stride: %d, conf: %d\n",
+                base_addr, saved_ip->cs_stride, saved_ip->cs_confidence);
             sendPFWithFilter(pfi, base_addr, addresses, 1, PrefetchSourceType::IPCP_CS);
         }
     } else if (saved_type == CLASS_CPLX) {

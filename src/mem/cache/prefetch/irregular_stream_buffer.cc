@@ -75,7 +75,7 @@ IrregularStreamBuffer::calculatePrefetch(const PrefetchInfo &pfi,
     }
     bool is_secure = pfi.isSecure();
     Addr pc = pfi.getPC();
-    Addr addr = blockIndex(pfi.getAddr());
+    Addr addr = blockIndex(pfi.getVAddr());
 
     // Training, if the entry exists, then we found a correlation between
     // the entry lastAddress (named as correlated_addr_A) and the address of
@@ -165,7 +165,8 @@ IrregularStreamBuffer::calculatePrefetch(const PrefetchInfo &pfi,
                 //generate prefetch
                 if (spm.counter > 0) {
                     Addr pf_addr = spm.address << lBlkSize;
-                    addresses.push_back(AddrPriority(pf_addr, 0));
+                    addresses.push_back(AddrPriority(pf_addr, 0, true,
+                        PrefetchSourceType::IrregularStreamBuffer));
                 }
             }
         }
