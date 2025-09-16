@@ -189,7 +189,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     void update(const FetchStream &stream) override;
 
-    void updateWithMbtb(FullBTBPrediction &mbtb_pred, const BTBMeta *meta, Addr previousPC);
+    void updateWithS3Pred(FullBTBPrediction &mbtb_pred, const BTBMeta *meta, Addr previousPC);
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
@@ -382,21 +382,25 @@ class AheadBTB : public TimedBaseBTBPredictor
 
     std::queue<std::tuple<Addr, Addr, BTBSet>> aheadReadBtbEntries;
 
+    // /** Store current prediction block's start PC for next cycle's previous PC */
+    // Addr previousBlockStartPC;
+
     /** BTB configuration parameters */
     unsigned numEntries;    // Total number of entries
     unsigned numWays;       // Number of ways per set
     unsigned numSets;       // Number of sets (numEntries/numWays)
+    unsigned tagBits;      // Number of tag bits
+    Addr currentStartPC;        // Current PC for ahead-pipelined tag comparison
+    /** Store current prediction block's start PC for next cycle's previous PC */
+    Addr previousBlockStartPC;
 
 #ifdef UNIT_TEST
     uint64_t blockSize{32};  // max size in byte of a Fetch Block
 #endif
     // AheadBTB is never half-aligned, always uses single block lookup
 
-
-
     /** Address calculation masks and shifts */
     Addr idxMask;          // Mask for extracting index bits
-    unsigned tagBits;      // Number of tag bits
     Addr tagMask;          // Mask for extracting tag bits
     unsigned idxShiftAmt;  // Amount to shift PC for index
     unsigned tagShiftAmt;  // Amount to shift PC for tag

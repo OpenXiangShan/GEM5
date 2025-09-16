@@ -712,9 +712,9 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
         if (it != fetchStreamQueue.end()) {
             auto previous_block_startpc = it->second.startPC;
             printStreamFull(it->second);
-            abtb->updateWithMbtb(predsOfEachStage[numStages - 1], meta, previous_block_startpc);
+            abtb->updateWithS3Pred(predsOfEachStage[numStages - 1], meta, previous_block_startpc);
         } else {
-            abtb->updateWithMbtb(predsOfEachStage[numStages - 1], meta, 0);
+            abtb->updateWithS3Pred(predsOfEachStage[numStages - 1], meta, 0);
         }
     }
 
