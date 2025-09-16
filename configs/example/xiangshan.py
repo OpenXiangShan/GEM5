@@ -331,6 +331,10 @@ def build_test_system(np, args):
     return test_sys
 
 def setKmhV3IdealParams(args, system):
+    # Change to BTB for v3 and recreate branch predictors
+    if args.bp_type is None:
+        args.bp_type = 'DecoupledBPUWithBTB'
+
     for cpu in system.cpu:
 
         cpu.mmu.itb.size = 96
