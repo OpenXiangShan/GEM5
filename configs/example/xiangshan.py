@@ -391,6 +391,7 @@ def setKmhV3IdealParams(args, system):
                 # TODO: BTB TAGE do not bave base table, do not support SC
                 cpu.branchPred.tage.tableSizes = [2048] * 8  # 2 way, 2048 sets
                 cpu.branchPred.tage.numWays = 2
+                cpu.branchPred.mgsc.enableMGSC = not args.disable_mgsc
 
             cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
             cpu.branchPred.ftq_size = 256
