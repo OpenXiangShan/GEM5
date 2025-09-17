@@ -28,23 +28,22 @@
 
 
 #include "cpu/pred/btb/btb.hh"
-
 #include <boost/exception/exception.hpp>
-
 #include "base/intmath.hh"
 #include "base/types.hh"
 #include "cpu/pred/btb/stream_struct.hh"
 #include "debug/ABTB.hh"
 #include "params/AheadBTB.hh"
-
 // Additional conditional includes based on build mode
 #ifdef UNIT_TEST
-    #include "cpu/pred/btb/test/test_dprintf.hh"
+#include "cpu/pred/btb/test/test_dprintf.hh"
+
 #else
-    #include "base/trace.hh"
-    #include "cpu/o3/dyn_inst.hh"
-    #include "debug/AheadPipeline.hh"
-    #include "debug/Fetch.hh"
+#include "base/trace.hh"
+#include "cpu/o3/dyn_inst.hh"
+#include "debug/AheadPipeline.hh"
+#include "debug/Fetch.hh"
+
 #endif
 
 namespace gem5
@@ -58,7 +57,8 @@ namespace btb_pred
 
 // Conditional namespace wrapper for testing
 #ifdef UNIT_TEST
-namespace test {
+namespace test
+{
 #endif
 
 /*
@@ -71,21 +71,14 @@ namespace test {
 #ifdef UNIT_TEST
 // Test constructor for unit testing mode - fixed ahead-pipelined configuration
 AheadBTB::AheadBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay)
-    : TimedBaseBTBPredictor(),
-      numEntries(numEntries),
-      numWays(numWays),
-      tagBits(tagBits)
+    : TimedBaseBTBPredictor(), numEntries(numEntries), numWays(numWays), tagBits(tagBits)
 {
     setNumDelay(numDelay);
-    this->aheadPipelinedStages = 1; // fixed ahead-pipelined stages = 1
+    this->aheadPipelinedStages = 1;  // fixed ahead-pipelined stages = 1
 #else
 // Production constructor - fixed ahead-pipelined configuration
 AheadBTB::AheadBTB(const Params &p)
-    : TimedBaseBTBPredictor(p),
-    numEntries(p.numEntries),
-    numWays(p.numWays),
-    tagBits(p.tagBits),
-    btbStats(this)
+    : TimedBaseBTBPredictor(p), numEntries(p.numEntries), numWays(p.numWays), tagBits(p.tagBits), btbStats(this)
 {
     // AheadBTB supports configurable ahead-pipelined stages, but must be > 0
     this->aheadPipelinedStages = p.aheadPipelinedStages;
@@ -125,7 +118,7 @@ AheadBTB::AheadBTB(const Params &p)
     tagShiftAmt = idxShiftAmt;
 
     DPRINTF(ABTB, "numEntries %d, numSets %d, numWays %d, tagBits %d, tagShiftAmt %d, idxMask %#lx, tagMask %#lx\n",
-        numEntries, numSets, numWays, tagBits, tagShiftAmt, idxMask, tagMask);
+            numEntries, numSets, numWays, tagBits, tagShiftAmt, idxMask, tagMask);
 
 #ifndef UNIT_TEST
     hasDB = true;
@@ -141,20 +134,17 @@ AheadBTB::tickStart()
 }
 
 void
-AheadBTB::tick() {}
+AheadBTB::tick()
+{
+}
 
 void
 AheadBTB::setTrace()
 {
     if (enableDB) {
         std::vector<std::pair<std::string, DataType>> fields_vec = {
-            std::make_pair("pc", UINT64),
-            std::make_pair("brType", UINT64),
-            std::make_pair("target", UINT64),
-            std::make_pair("idx", UINT64),
-            std::make_pair("mode", UINT64),
-            std::make_pair("hit", UINT64)
-        };
+            std::make_pair("pc", UINT64),  std::make_pair("brType", UINT64), std::make_pair("target", UINT64),
+            std::make_pair("idx", UINT64), std::make_pair("mode", UINT64),   std::make_pair("hit", UINT64)};
         btbTrace = _db->addAndGetTrace("ABTBTrace", fields_vec);
         btbTrace->init_table();
     }
@@ -167,16 +157,16 @@ AheadBTB::setTrace()
  * 2. Remove entries before the start PC
  */
 std::vector<AheadBTB::TickedBTBEntry>
-AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
+AheadBTB::processEntries(const std::vector<TickedBTBEntry> &entries, Addr startAddr)
 {
     int hitNum = entries.size();
     bool hit = hitNum > 0;
-    
+
     // Update prediction statistics
     if (hit) {
         DPRINTF(ABTB, "BTB: lookup hit, dumping hit entry\n");
         btbStats.predHit += hitNum;
-        for (auto &entry: entries) {
+        for (auto &entry : entries) {
             printTickedBTBEntry(entry);
         }
     } else {
@@ -185,26 +175,20 @@ AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startA
     }
 
     auto processed_entries = entries;
-    
+
     // Sort by instruction order
-    std::sort(processed_entries.begin(), processed_entries.end(), 
-             [](const BTBEntry &a, const BTBEntry &b) {
-                 return a.pc < b.pc;
-             });
-    
+    std::sort(processed_entries.begin(), processed_entries.end(),
+              [](const BTBEntry &a, const BTBEntry &b) { return a.pc < b.pc; });
+
     // Remove entries before the start PC
     auto it = std::remove_if(processed_entries.begin(), processed_entries.end(),
-                           [startAddr](const BTBEntry &e) {
-                               return e.pc < startAddr;
-                           });
+                             [startAddr](const BTBEntry &e) { return e.pc < startAddr; });
     processed_entries.erase(it, processed_entries.end());
 
     // remove entries after the range of mBTB
     Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     it = std::remove_if(processed_entries.begin(), processed_entries.end(),
-                        [mbtb_end](const BTBEntry &e) {
-                            return e.pc >= mbtb_end;
-                        });
+                        [mbtb_end](const BTBEntry &e) { return e.pc >= mbtb_end; });
     processed_entries.erase(it, processed_entries.end());
     return processed_entries;
 }
@@ -216,8 +200,7 @@ AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startA
  * 3. Set indirect branch targets
  */
 void
-AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
-                                    std::vector<FullBTBPrediction>& stagePreds)
+AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry> &entries, std::vector<FullBTBPrediction> &stagePreds)
 {
     // S0 prediction source statistic is tracked by AheadBTB
     // AheadBTB always has aheadPipelinedStages > 0
@@ -227,7 +210,8 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         return;
     }
 
-    FillStageLoop(s) {
+    FillStageLoop(s)
+    {
         // if (!isL0() && !hit && stagePreds[s].valid) {
         //     DPRINTF(BTB, "BTB: ubtb hit and btb miss, use ubtb result");
         //     incNonL0Stat(btbStats.predUseL0OnL1Miss);
@@ -287,8 +271,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
  * 3. Save current BTB entries
  */
 void
-AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
-                                   std::vector<FullBTBPrediction>& stagePreds)
+AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry> &entries, std::vector<FullBTBPrediction> &stagePreds)
 {
 
     // Save L0 BTB entries for L1 BTB's reference
@@ -298,26 +281,25 @@ AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
     }
 
     // Save current BTB entries
-    for (auto e: entries) {
+    for (auto e : entries) {
         meta->hit_entries.push_back(BTBEntry(e));
     }
 }
 
 void
-AheadBTB::putPCHistory(Addr startAddr,
-                         const boost::dynamic_bitset<> &history,
-                         std::vector<FullBTBPrediction> &stagePreds)
+AheadBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
+                       std::vector<FullBTBPrediction> &stagePreds)
 {
     meta = std::make_shared<BTBMeta>();
     // Lookup all matching entries in BTB
     auto find_entries = lookup(startAddr);
-    
+
     // Process BTB entries
     auto processed_entries = processEntries(find_entries, startAddr);
-    
+
     // Fill predictions for each pipeline stage
     fillStagePredictions(processed_entries, stagePreds);
-    
+
     // Update metadata for later stages
     updatePredictionMeta(processed_entries, stagePreds);
 }
@@ -329,7 +311,9 @@ AheadBTB::getPredictionMeta()
 }
 
 void
-AheadBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
+AheadBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+{
+}
 
 void
 AheadBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
@@ -351,7 +335,7 @@ AheadBTB::lookupSingleBlock(Addr block_pc)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
-        return res; // ignore false hit when lowest bit is 1
+        return res;  // ignore false hit when lowest bit is 1
     }
     Addr btb_idx = getIndex(block_pc);
     auto btb_set = btb[btb_idx];
@@ -366,24 +350,25 @@ AheadBTB::lookupSingleBlock(Addr block_pc)
     BTBSet current_set;
     // AheadBTB always uses ahead-pipelined logic (aheadPipelinedStages > 0)
     // only if the ahead-pipeline is filled can we use the entry
-    if (aheadReadBtbEntries.size() >= aheadPipelinedStages+1) {
+    if (aheadReadBtbEntries.size() >= aheadPipelinedStages + 1) {
         // +1 because we pushed a new set in this cycle before
         // in case there are push without corresponding pop
-        assert(aheadReadBtbEntries.size() == aheadPipelinedStages+1);
+        assert(aheadReadBtbEntries.size() == aheadPipelinedStages + 1);
         std::tie(current_pc, current_idx, current_set) = aheadReadBtbEntries.front();
-        DPRINTF(AheadPipeline, "AheadBTB: ahead-pipeline filled, using set %ld from pc %#lx\n",
-            current_idx, current_pc);
+        DPRINTF(AheadPipeline, "AheadBTB: ahead-pipeline filled, using set %ld from pc %#lx\n", current_idx,
+                current_pc);
         DPRINTF(AheadPipeline, "AheadBTB: dumping btb set\n");
         for (auto &entry : current_set) {
             printTickedBTBEntry(entry);
         }
         aheadReadBtbEntries.pop();
     } else {
-        DPRINTF(AheadPipeline, "AheadBTB: ahead-pipeline not filled, only have %ld sets read,"
-            " skipping tag compare, assigning miss\n", aheadReadBtbEntries.size());
+        DPRINTF(AheadPipeline,
+                "AheadBTB: ahead-pipeline not filled, only have %ld sets read,"
+                " skipping tag compare, assigning miss\n",
+                aheadReadBtbEntries.size());
     }
-    DPRINTF(ABTB, "BTB: Doing tag comparison for index 0x%lx tag %#lx\n",
-        current_idx, current_tag);
+    DPRINTF(ABTB, "BTB: Doing tag comparison for index 0x%lx tag %#lx\n", current_idx, current_tag);
     for (auto &way : current_set) {
         if (way.valid && way.tag == current_tag) {
             res.push_back(way);
@@ -399,7 +384,7 @@ AheadBTB::lookup(Addr block_pc)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
-        return res; // ignore false hit when lowest bit is 1
+        return res;  // ignore false hit when lowest bit is 1
     }
 
     // AheadBTB always uses single block lookup
@@ -422,7 +407,8 @@ AheadBTB::processOldEntries(const FullBTBPrediction &s3_pred, const BTBMeta *met
     if (s3_pred.isTaken()) {
         end_inst_pc = s3_pred.getTakenEntry().pc;
     } else {
-        end_inst_pc = (s3_pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);// align to next half block
+        end_inst_pc =
+            (s3_pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);  // align to next half block
     }
 
     DPRINTF(ABTB, "end_inst_pc: %#lx\n", end_inst_pc);
@@ -431,13 +417,13 @@ AheadBTB::processOldEntries(const FullBTBPrediction &s3_pred, const BTBMeta *met
     DPRINTF(ABTB, "old_entries.size(): %lu\n", old_entries.size());
     dumpBTBEntries(old_entries);
     auto remove_it = std::remove_if(old_entries.begin(), old_entries.end(),
-        [end_inst_pc](const BTBEntry &e) { return e.pc > end_inst_pc; });
+                                    [end_inst_pc](const BTBEntry &e) { return e.pc > end_inst_pc; });
     old_entries.erase(remove_it, old_entries.end());
     DPRINTF(ABTB, "after removing not executed insts, old_entries.size(): %lu\n", old_entries.size());
     dumpBTBEntries(old_entries);
 
     btbStats.updateHit += old_entries.size();
-    
+
     return old_entries;
 }
 
@@ -446,7 +432,7 @@ AheadBTB::processOldEntries(const FullBTBPrediction &s3_pred, const BTBMeta *met
  * Also check L0 BTB prediction status
  */
 void
-AheadBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
+AheadBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta *meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
@@ -496,6 +482,9 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry> &old_entries, const
             break;
         }
     }
+
+    auto all_entries_to_update = old_entries;
+
     if (!update_is_old_entry && s3_pred.isTaken()) {
         DPRINTF(ABTB, "mbtb pred is different from old entries, need to update abtb\n");
         BTBEntry new_entry = BTBEntry(s3_pred.getTakenEntry());
@@ -509,14 +498,15 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry> &old_entries, const
         }
         incNonL0Stat(btbStats.newEntry);
         entry_to_write = new_entry;
-        // is_old_entry = false;
-    }
-    entry_to_write.tag = getTag(entry_to_write.pc);
 
-    auto all_entries_to_update = old_entries;
-    if (!update_is_old_entry) {
+        entry_to_write.tag = getTag(entry_to_write.pc);
         all_entries_to_update.push_back(entry_to_write);
     }
+    // entry_to_write.tag = getTag(entry_to_write.pc);
+    // auto all_entries_to_update = old_entries;
+    // if (!update_is_old_entry) {
+    //     all_entries_to_update.push_back(entry_to_write);
+    // }
 
     DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries_to_update.size());
     dumpBTBEntries(all_entries_to_update);
@@ -544,22 +534,22 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry &entry, cons
             break;
         }
     }
+
     // if cond entry in btb now, use the one in btb, since we need the up-to-date counter
     // else use the recorded entry
     auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
-    entry_to_write.tag = btb_tag;   // update tag after found it!
+    entry_to_write.tag = btb_tag;  // update tag after found it!
     // update saturating counter if necessary
     if (entry_to_write.isCond) {
         bool this_cond_taken = s3_pred.isTaken() && s3_pred.controlAddr() == entry_to_write.pc;
         if (!this_cond_taken) {
             entry_to_write.alwaysTaken = false;
         }
-        // if (isL0()) {  // only L0 BTB has saturating counter
-        if(!entry_to_write.alwaysTaken) {
+        if (!entry_to_write.alwaysTaken) {
             updateCtr(entry_to_write.ctr, this_cond_taken);
         }
-        // }
     }
+
     // update indirect target if necessary
     if (pred_taken_entry.isIndirect && s3_pred.isTaken() && pred_taken_entry.pc == entry_to_write.pc) {
         entry_to_write.target = s3_pred.getTakenEntry().target;
@@ -576,24 +566,25 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry &entry, cons
                 entry_to_write.target = it->second;
                 DPRINTF(ABTB, "abtb update indirect target to %#lx\n", it->second);
             }
-        }else{
+        } else {  // is return using RAS
             DPRINTF(ABTB, "isIndirect and return\n");
-            if (returnTarget != 0){
+            if (returnTarget != 0) {
                 entry_to_write.target = returnTarget;
                 DPRINTF(ABTB, "abtb update return target to %#lx\n", returnTarget);
             }
             DPRINTF(ABTB, "isIndirect and return\n");
         }
     }
+
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
+
     if (found) {
         // Update existing entry
         *it = ticked_entry;
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(ticked_entry.pc, ticked_entry.getType(),
-                ticked_entry.target, btb_idx, Mode::WRITE, 1);
+            rec.set(ticked_entry.pc, ticked_entry.getType(), ticked_entry.target, btb_idx, Mode::WRITE, 1);
             btbTrace->write_record(rec);
         }
 #endif
@@ -603,18 +594,19 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry &entry, cons
             ticked_entry.alwaysTaken = pred_taken_entry.alwaysTaken;
             ticked_entry.ctr = pred_taken_entry.ctr;
         }
+
         // Replace oldest entry in the set
         DPRINTF(BTB, "trying to replace entry in set %#lx\n", btb_idx);
         dumpMruList(mruList[btb_idx]);
         // put the oldest entry in this set to the back of heap
         std::pop_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
-        const auto& entry_in_btb_now = mruList[btb_idx].back();
+        const auto &entry_in_btb_now = mruList[btb_idx].back();
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                    entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
-                btbTrace->write_record(rec);
+            rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(), entry_in_btb_now->target, btb_idx, Mode::EVICT,
+                    0);
+            btbTrace->write_record(rec);
         }
 #endif
         if (entry_in_btb_now->valid) {
@@ -623,14 +615,14 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry &entry, cons
             btbStats.updateReplaceValidOne++;
         }
         btbStats.updateReplace++;
-        DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
-                entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
+        DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n", entry_in_btb_now->tag,
+                entry_in_btb_now->pc, btb_idx);
         *entry_in_btb_now = ticked_entry;
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
+            rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(), entry_in_btb_now->target, btb_idx, Mode::WRITE,
+                    0);
             btbTrace->write_record(rec);
         }
 #endif
@@ -655,8 +647,7 @@ AheadBTB::update(const FetchStream &stream)
     // auto old_entries = processOldEntries(stream);
 
     // 2. Check prediction hit status, for stats recording
-    checkPredictionHit(stream,
-        std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
+    checkPredictionHit(stream, std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
     // 3. Collect entries to update
     // auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
@@ -713,12 +704,16 @@ AheadBTB::getPreviousPC(const FetchStream &stream)
     auto previous_pcs = stream.previousPCs;
     if (previous_pcs.size() < aheadPipelinedStages) {
         // if the stream is not filled, we cannot update ftb
-        DPRINTF(AheadPipeline, "FTB: ahead-pipeline not filled, only have %ld pcs read,"
-            " skipping ftb update\n", previous_pcs.size());
+        DPRINTF(AheadPipeline,
+                "FTB: ahead-pipeline not filled, only have %ld pcs read,"
+                " skipping ftb update\n",
+                previous_pcs.size());
         return 0;
     } else {
-        DPRINTF(AheadPipeline, "FTB: ahead-pipeline filled, using pc %d blocks before,"
-            " prevoiusPC.size() %ld\n", aheadPipelinedStages, previous_pcs.size());
+        DPRINTF(AheadPipeline,
+                "FTB: ahead-pipeline filled, using pc %d blocks before,"
+                " prevoiusPC.size() %ld\n",
+                aheadPipelinedStages, previous_pcs.size());
         while (previous_pcs.size() > aheadPipelinedStages) {
             previous_pcs.pop();
         }
@@ -746,7 +741,7 @@ AheadBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
     }
     // bool this_branch_miss = !this_branch_hit;
     bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc; // all uncond should be taken
+    bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc;  // all uncond should be taken
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         btbStats.allBranchHits++;
@@ -763,12 +758,12 @@ AheadBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
                 btbStats.condHitNotTakens++;
             }
             // if (isL0()) {
-                bool pred_taken = entry.ctr >= 0;
-                if (pred_taken == this_branch_taken) {
-                    btbStats.condPredCorrect++;
-                } else {
-                    btbStats.condPredWrong++;
-                }
+            bool pred_taken = entry.ctr >= 0;
+            if (pred_taken == this_branch_taken) {
+                btbStats.condPredCorrect++;
+            } else {
+                btbStats.condPredWrong++;
+            }
             // }
         }
         if (inst->isUncondCtrl()) {
@@ -804,16 +799,16 @@ AheadBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
             if (this_branch_taken) {
                 btbStats.condMissTakens++;
                 // if (isL0()) {
-                    // only L0 BTB has saturating counters to predict conditional branches
-                    // taken branches that is missed in btb must have been mispredicted
-                    btbStats.condPredWrong++;
+                // only L0 BTB has saturating counters to predict conditional branches
+                // taken branches that is missed in btb must have been mispredicted
+                btbStats.condPredWrong++;
                 // }
             } else {
                 btbStats.condMissNotTakens++;
                 // if (isL0()) {
-                    // only L0 BTB has saturating counters to predict conditional branches
-                    // taken branches that is missed in btb must have been mispredicted
-                    btbStats.condPredCorrect++;
+                // only L0 BTB has saturating counters to predict conditional branches
+                // taken branches that is missed in btb must have been mispredicted
+                btbStats.condPredCorrect++;
                 // }
             }
         }
@@ -838,56 +833,77 @@ AheadBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 #endif
 
 #ifndef UNIT_TEST
-AheadBTB::BTBStats::BTBStats(statistics::Group* parent) :
-    statistics::Group(parent),
-    ADD_STAT(newEntry, statistics::units::Count::get(), "number of new btb entries generated"),
-    ADD_STAT(newEntryWithCond, statistics::units::Count::get(), "number of new btb entries generated with conditional branch"),
-    ADD_STAT(newEntryWithUncond, statistics::units::Count::get(), "number of new btb entries generated with unconditional branch"),
-    ADD_STAT(oldEntry, statistics::units::Count::get(), "number of old btb entries updated"),
-    ADD_STAT(oldEntryIndirectTargetModified, statistics::units::Count::get(), "number of old btb entries with indirect target modified"),
-    ADD_STAT(oldEntryWithNewCond, statistics::units::Count::get(), "number of old btb entries with new conditional branches"),
-    ADD_STAT(oldEntryWithNewUncond, statistics::units::Count::get(), "number of old btb entries with new unconditional branches"),
-    ADD_STAT(predMiss, statistics::units::Count::get(), "misses encountered on prediction"),
-    ADD_STAT(predHit, statistics::units::Count::get(), "hits encountered on prediction"),
-    ADD_STAT(updateMiss, statistics::units::Count::get(), "misses encountered on update"),
-    ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
-    ADD_STAT(updateExisting, statistics::units::Count::get(), "existing entries updated"),
-    ADD_STAT(updateReplace, statistics::units::Count::get(), "entries replaced"),
-    ADD_STAT(updateReplaceValidOne, statistics::units::Count::get(), "entries replaced with valid entry"),
-    ADD_STAT(eraseSlotBehindUncond, statistics::units::Count::get(), "erase slots behind unconditional slot"),
-    ADD_STAT(predUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when pred"),
-    ADD_STAT(updateUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when update"),
-    ADD_STAT(S0Predmiss, statistics::units::Count::get(), "misses encountered on S0 prediction, i.e. uBTB and ABTB miss"),
-    ADD_STAT(S0PredUseUBTB, statistics::units::Count::get(), "uBTB prediction used, i.e. uBTB hit"),
-    ADD_STAT(S0PredUseABTB, statistics::units::Count::get(), "aBTB prediction used, i.e. uBTB miss and ABTB hit"),
+AheadBTB::BTBStats::BTBStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(newEntry, statistics::units::Count::get(), "number of new btb entries generated"),
+      ADD_STAT(newEntryWithCond, statistics::units::Count::get(),
+               "number of new btb entries generated with conditional branch"),
+      ADD_STAT(newEntryWithUncond, statistics::units::Count::get(),
+               "number of new btb entries generated with unconditional branch"),
+      ADD_STAT(oldEntry, statistics::units::Count::get(), "number of old btb entries updated"),
+      ADD_STAT(oldEntryIndirectTargetModified, statistics::units::Count::get(),
+               "number of old btb entries with indirect target modified"),
+      ADD_STAT(oldEntryWithNewCond, statistics::units::Count::get(),
+               "number of old btb entries with new conditional branches"),
+      ADD_STAT(oldEntryWithNewUncond, statistics::units::Count::get(),
+               "number of old btb entries with new unconditional branches"),
+      ADD_STAT(predMiss, statistics::units::Count::get(), "misses encountered on prediction"),
+      ADD_STAT(predHit, statistics::units::Count::get(), "hits encountered on prediction"),
+      ADD_STAT(updateMiss, statistics::units::Count::get(), "misses encountered on update"),
+      ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
+      ADD_STAT(updateExisting, statistics::units::Count::get(), "existing entries updated"),
+      ADD_STAT(updateReplace, statistics::units::Count::get(), "entries replaced"),
+      ADD_STAT(updateReplaceValidOne, statistics::units::Count::get(), "entries replaced with valid entry"),
+      ADD_STAT(eraseSlotBehindUncond, statistics::units::Count::get(), "erase slots behind unconditional slot"),
+      ADD_STAT(predUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when pred"),
+      ADD_STAT(updateUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when update"),
+      ADD_STAT(S0Predmiss, statistics::units::Count::get(),
+               "misses encountered on S0 prediction, i.e. uBTB and ABTB miss"),
+      ADD_STAT(S0PredUseUBTB, statistics::units::Count::get(), "uBTB prediction used, i.e. uBTB hit"),
+      ADD_STAT(S0PredUseABTB, statistics::units::Count::get(), "aBTB prediction used, i.e. uBTB miss and ABTB hit"),
 
-    ADD_STAT(allBranchHits, statistics::units::Count::get(), "all types of branches committed that was predicted hit"),
-    ADD_STAT(allBranchHitTakens, statistics::units::Count::get(), "all types of taken branches committed was that predicted hit"),
-    ADD_STAT(allBranchHitNotTakens, statistics::units::Count::get(), "all types of not taken branches committed was that predicted hit"),
-    ADD_STAT(allBranchMisses, statistics::units::Count::get(), "all types of branches committed that was predicted miss"),
-    ADD_STAT(allBranchMissTakens, statistics::units::Count::get(), "all types of taken branches committed was that predicted miss"),
-    ADD_STAT(allBranchMissNotTakens, statistics::units::Count::get(), "all types of not taken branches committed was that predicted miss"),
-    ADD_STAT(condHits, statistics::units::Count::get(), "conditional branches committed that was predicted hit"),
-    ADD_STAT(condHitTakens, statistics::units::Count::get(), "taken conditional branches committed was that predicted hit"),
-    ADD_STAT(condHitNotTakens, statistics::units::Count::get(), "not taken conditional branches committed was that predicted hit"),
-    ADD_STAT(condMisses, statistics::units::Count::get(), "conditional branches committed that was predicted miss"),
-    ADD_STAT(condMissTakens, statistics::units::Count::get(), "taken conditional branches committed was that predicted miss"),
-    ADD_STAT(condMissNotTakens, statistics::units::Count::get(), "not taken conditional branches committed was that predicted miss"),
-    ADD_STAT(condPredCorrect, statistics::units::Count::get(), "conditional branches committed was that correctly predicted by btb"),
-    ADD_STAT(condPredWrong, statistics::units::Count::get(), "conditional branches committed was that mispredicted by btb"),
-    ADD_STAT(uncondHits, statistics::units::Count::get(), "unconditional branches committed that was predicted hit"),
-    ADD_STAT(uncondMisses, statistics::units::Count::get(), "unconditional branches committed that was predicted miss"),
-    ADD_STAT(indirectHits, statistics::units::Count::get(), "indirect branches committed that was predicted hit"),
-    ADD_STAT(indirectMisses, statistics::units::Count::get(), "indirect branches committed that was predicted miss"),
-    ADD_STAT(indirectPredCorrect, statistics::units::Count::get(), "indirect branches committed whose target was correctly predicted by btb"),
-    ADD_STAT(indirectPredWrong, statistics::units::Count::get(), "indirect branches committed whose target was mispredicted by btb"),
-    ADD_STAT(callHits, statistics::units::Count::get(), "calls committed that was predicted hit"),
-    ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
-    ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
-    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
+      ADD_STAT(allBranchHits, statistics::units::Count::get(),
+               "all types of branches committed that was predicted hit"),
+      ADD_STAT(allBranchHitTakens, statistics::units::Count::get(),
+               "all types of taken branches committed was that predicted hit"),
+      ADD_STAT(allBranchHitNotTakens, statistics::units::Count::get(),
+               "all types of not taken branches committed was that predicted hit"),
+      ADD_STAT(allBranchMisses, statistics::units::Count::get(),
+               "all types of branches committed that was predicted miss"),
+      ADD_STAT(allBranchMissTakens, statistics::units::Count::get(),
+               "all types of taken branches committed was that predicted miss"),
+      ADD_STAT(allBranchMissNotTakens, statistics::units::Count::get(),
+               "all types of not taken branches committed was that predicted miss"),
+      ADD_STAT(condHits, statistics::units::Count::get(), "conditional branches committed that was predicted hit"),
+      ADD_STAT(condHitTakens, statistics::units::Count::get(),
+               "taken conditional branches committed was that predicted hit"),
+      ADD_STAT(condHitNotTakens, statistics::units::Count::get(),
+               "not taken conditional branches committed was that predicted hit"),
+      ADD_STAT(condMisses, statistics::units::Count::get(), "conditional branches committed that was predicted miss"),
+      ADD_STAT(condMissTakens, statistics::units::Count::get(),
+               "taken conditional branches committed was that predicted miss"),
+      ADD_STAT(condMissNotTakens, statistics::units::Count::get(),
+               "not taken conditional branches committed was that predicted miss"),
+      ADD_STAT(condPredCorrect, statistics::units::Count::get(),
+               "conditional branches committed was that correctly predicted by btb"),
+      ADD_STAT(condPredWrong, statistics::units::Count::get(),
+               "conditional branches committed was that mispredicted by btb"),
+      ADD_STAT(uncondHits, statistics::units::Count::get(), "unconditional branches committed that was predicted hit"),
+      ADD_STAT(uncondMisses, statistics::units::Count::get(),
+               "unconditional branches committed that was predicted miss"),
+      ADD_STAT(indirectHits, statistics::units::Count::get(), "indirect branches committed that was predicted hit"),
+      ADD_STAT(indirectMisses, statistics::units::Count::get(), "indirect branches committed that was predicted miss"),
+      ADD_STAT(indirectPredCorrect, statistics::units::Count::get(),
+               "indirect branches committed whose target was correctly predicted by btb"),
+      ADD_STAT(indirectPredWrong, statistics::units::Count::get(),
+               "indirect branches committed whose target was mispredicted by btb"),
+      ADD_STAT(callHits, statistics::units::Count::get(), "calls committed that was predicted hit"),
+      ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
+      ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
+      ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
 
 {
-    auto btb = dynamic_cast<branch_prediction::btb_pred::AheadBTB*>(parent);
+    auto btb = dynamic_cast<branch_prediction::btb_pred::AheadBTB *>(parent);
     // do not need counter below in L0 btb
     if (btb->isL0()) {
         predUseL0OnL1Miss.prereq(predUseL0OnL1Miss);
@@ -906,9 +922,9 @@ AheadBTB::BTBStats::BTBStats(statistics::Group* parent) :
 
 // Close conditional namespace wrapper for testing
 #ifdef UNIT_TEST
-} // namespace test
+}  // namespace test
 #endif
 //}//don't know where lose one
-} // namespace btb_pred
-} // namespace branch_prediction
-} // namespace gem5
+}  // namespace btb_pred
+}  // namespace branch_prediction
+}  // namespace gem5
