@@ -27,7 +27,9 @@ namespace test {
 BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
     : TimedBaseBTBPredictor(),
       numPredictors(numPredictors),
-      numWays(numWays)
+      numWays(numWays),
+      baseTableSize(2048),
+      maxBranchPositions(32)
 {
     setNumDelay(1);
 
@@ -53,6 +55,8 @@ tablePcShifts(p.TTagPcShifts),
 histLengths(p.histLengths),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
+baseTableSize(p.baseTableSize),
+maxBranchPositions(p.maxBranchPositions),
 numTablesToAlloc(p.numTablesToAlloc),
 enableSC(p.enableSC),
 tageStats(this, p.numPredictors)
@@ -64,7 +68,12 @@ tageStats(this, p.numPredictors)
     tableIndexMasks.resize(numPredictors);
     tableTagBits.resize(numPredictors);
     tableTagMasks.resize(numPredictors);
-    // baseTable.resize(2048); // need modify
+    // Initialize base table for fallback predictions
+    baseTable.resize(baseTableSize);
+    for (unsigned i = 0; i < baseTable.size(); ++i) {
+        baseTable[i].resize(maxBranchPositions, 0);  // Initialize counters to 0 (weakly taken)
+    }
+
     for (unsigned int i = 0; i < numPredictors; ++i) {
         //initialize ittage predictor
         assert(tableSizes.size() >= numPredictors);
@@ -87,9 +96,6 @@ tageStats(this, p.numPredictors)
         altTagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16, HistoryType::PATH));
         indexFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16, HistoryType::PATH));
     }
-    // for (unsigned i = 0; i < baseTable.size(); ++i) {
-    //     baseTable[i].resize(numBr);
-    // }
     usefulResetCnt = 0;
 
     useAlt.resize(128);
@@ -241,7 +247,10 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     // Generate final prediction
     bool main_taken = main_info.taken();
     bool alt_taken = alt_info.taken();
-    bool base_taken = btb_entry.ctr >= 0;
+    // Use base table instead of btb_entry.ctr
+    Addr base_idx = getBaseTableIndex(alignedPC);
+    unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, alignedPC);
+    bool base_taken = baseTable[base_idx][branch_idx] >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
     bool use_alt = main_info.entry.counter == 0 ||
                    main_info.entry.counter == -1 ||
@@ -379,7 +388,12 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     auto &main_info = pred.mainInfo;
     auto &alt_info = pred.altInfo;
     bool used_alt = pred.useAlt;
-    bool alt_taken = alt_info.found ? alt_info.taken() : entry.ctr >= 0;
+    // Use base table instead of entry.ctr for fallback prediction
+    Addr alignedPC = stream.getRealStartPC() & ~(blockSize - 1);
+    Addr base_idx = getBaseTableIndex(alignedPC);
+    unsigned branch_idx = getBranchIndexInBlock(entry.pc, alignedPC);
+    bool base_taken = baseTable[base_idx][branch_idx] >= 0;
+    bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
 
     // Update main prediction provider
     if (main_info.found) {
@@ -406,6 +420,13 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
         updateCounter(actual_taken, 3, way.counter);
         // No LRU maintenance
+    }
+
+    // Update base table counter if used as fallback
+    if (used_alt && !alt_info.found) {
+        DPRINTF(TAGE, "prediction provided by base table idx %lu, branch %u, updating corresponding entry\n",
+                base_idx, branch_idx);
+        updateCounter(actual_taken, 2, baseTable[base_idx][branch_idx]);
     }
 
     // Update statistics
@@ -802,6 +823,21 @@ BTBTAGE::satDecrement(int min, short &counter)
 Addr
 BTBTAGE::getUseAltIdx(Addr pc) {
     return (pc >> instShiftAmt) & (useAlt.size() - 1); // need modify
+}
+
+Addr
+BTBTAGE::getBaseTableIndex(Addr pc) {
+    // Use 32-byte aligned address as index, covering 64-byte range
+    return ((pc >> 5) & (baseTableSize - 1));  // 32-byte alignment (2^5 = 32)
+}
+
+unsigned
+BTBTAGE::getBranchIndexInBlock(Addr pc, Addr alignedPC) {
+    // Calculate branch position within the 64-byte block (0-31)
+    // alignedPC is guaranteed to be 32-byte aligned
+    Addr offset = (pc - alignedPC) >> 1;  // Position index 0-31
+    assert(offset < maxBranchPositions);
+    return offset;
 }
 
 /**
