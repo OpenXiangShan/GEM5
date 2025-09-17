@@ -92,7 +92,7 @@ class L1_DCache(L1Cache):
     demand_mshr_reserve = 6
 
 class L2Cache(Cache):
-    mshrs = 16
+    mshrs = 64
     tgts_per_mshr = 20
     clusivity='mostly_incl'
     # always writeback clean when lower level is exclusive
@@ -112,7 +112,8 @@ class L2Cache(Cache):
 
     cache_level = 2
 
-    # NOTE: slice stall is implemented in L2CacheWrapper now
+    # NOTE: slice stall is implemented in L2CacheWrapper now,
+    #       so this parameter has no effect in L2Cache.
     # slice_num = 4
 
 class L3Cache(Cache):
@@ -186,8 +187,8 @@ class L2ToL3Bus(CoherentXBar):
     # Assume that most of this is covered by the cache latencies, with
     # no more than a single pipeline stage for any packet.
     frontend_latency = 0
-    forward_latency = 3
-    response_latency = 3
+    forward_latency = 5
+    response_latency = 5
     snoop_response_latency = 1
 
     # Use a snoop-filter by default, and set the latency to zero as
