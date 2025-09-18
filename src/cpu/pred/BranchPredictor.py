@@ -1047,7 +1047,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numWays = Param.Unsigned(2, "Number of ways per set")
-    baseTableSize = Param.Unsigned(2048, "Base table size")
+    baseTableSize = Param.Unsigned(256, "Base table size")  # 256 * 32 = 8192 entries
     maxBranchPositions = Param.Unsigned(32, "Maximum branch positions per 64-byte block")
     numDelay = 2
 
