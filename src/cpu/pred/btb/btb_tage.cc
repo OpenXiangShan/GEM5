@@ -391,7 +391,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         // Update useful bit if predictions differ
         
         if (main_info.taken() != alt_taken) {
-            way.useful = actual_taken == main_info.taken();
+            if (actual_taken == main_info.taken()) {
+                way.useful = 1; // only inc useful if main is correct
+            }
         }
         DPRINTF(TAGE, "useful bit set to %d\n", way.useful);
         
