@@ -144,6 +144,8 @@ def build_test_system(np, args):
                                             )
             test_sys.cpu[i].branchPred.tage.enableSC = not args.disable_sc
             test_sys.cpu[i].branchPred.isDumpMisspredPC = True
+
+            test_sys.cpu[i].branchPred.microtage.enableSC = not args.disable_sc
         else:
             test_sys.cpu[i].branchPred = ObjectList.bp_list.get(args.bp_type)
 
@@ -391,15 +393,22 @@ def setKmhV3IdealParams(args, system):
                 # TODO: BTB TAGE do not bave base table, do not support SC
                 cpu.branchPred.tage.tableSizes = [2048] * 8  # 2 way, 2048 sets
                 cpu.branchPred.tage.numWays = 2
-                cpu.branchPred.mgsc.enableMGSC = not args.disable_mgsc
-
-            cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
+                cpu.branchPred.microtage.tableSizes = [1024] * 4  # 2 way, 512 sets
+                cpu.branchPred.microtage.numWays = 2
+            cpu.branchPred.tage.enableSC = True # TODO(bug): When numBr changes, enabling SC will trigger an assert
             cpu.branchPred.ftq_size = 256
             cpu.branchPred.fsq_size = 256
             cpu.branchPred.tage.numPredictors = 8
             cpu.branchPred.tage.TTagBitSizes = [11] * 8
             cpu.branchPred.tage.TTagPcShifts = [1] * 8
             cpu.branchPred.tage.histLengths = [4, 9, 17, 29, 56, 109, 211, 397]
+
+            cpu.branchPred.microtage.enableSC = False
+
+            cpu.branchPred.microtage.numPredictors = 4
+            cpu.branchPred.microtage.TTagBitSizes = [13] * 4
+            cpu.branchPred.microtage.TTagPcShifts = [1] * 4
+            cpu.branchPred.microtage.histLengths = [4, 15, 50,160]
 
         # ideal l1 caches
         if args.caches:

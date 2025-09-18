@@ -102,6 +102,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     UBTB *ubtb{};
     AheadBTB *abtb{};
     MBTB *btb{};
+    BTBTAGE *microtage{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};
     BTBMGSC *mgsc{};

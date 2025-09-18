@@ -29,6 +29,9 @@ from m5.SimObject import SimObject
 from m5.params import *
 from m5.proxy import *
 
+# 导入所需的参数类型
+from m5.params import Param, VectorParam, Unsigned, Int, Bool, String, Enum
+
 class BpType(Enum):
     vals = ['Coupled', 'DecoupledStream', 'DecoupledFTB', 'DecoupledBTB']
 
@@ -1043,7 +1046,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     TTagPcShifts = VectorParam.Unsigned([1] * 4, "when the T0~Tn entry's tag generating, PC right shift")
     blockSize = 32 # tage index function uses 32B aligned block address
 
-    histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the FTB TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned([8, 13, 32, 119], "the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numWays = Param.Unsigned(2, "Number of ways per set")
@@ -1052,6 +1055,22 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numDelay = 2
+
+class MicroTAGE(BTBTAGE):
+    """A smaller TAGE predictor configuration to assist uBTB"""
+    needMoreHistories = True
+    enableSC = False
+    numPredictors = 4
+    tableSizes = [4096]*4
+    TTagBitSizes = [8]*4
+    TTagPcShifts = [1] * 4
+    blockSize = 32 # tage index function uses 32B aligned block address
+
+    histLengths = [8, 13,32,119]
+    maxHistLen = 970
+    numTablesToAlloc = 1
+    numWays = 2
+    numDelay = 0
 
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'
@@ -1154,6 +1173,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
     numStages = Param.Unsigned(4, "Maximum number of stages in the pipeline")
     ubtb = Param.UBTB(UBTB(), "UBTB predictor")
     abtb = Param.AheadBTB(AheadBTB(), "ABTB predictor")
+    microtage = Param.BTBTAGE(MicroTAGE(), "MicroTAGE predictor to assist uBTB")
     btb = Param.MBTB(MBTB(), "MBTB predictor")
     tage = Param.BTBTAGE(BTBTAGE(), "TAGE predictor")
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")

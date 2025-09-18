@@ -303,7 +303,7 @@ struct FetchStream
 
     // prediction metas
     // FIXME: use vec
-    std::array<std::shared_ptr<void>, 7> predMetas; // each component has a meta, TODO
+    std::array<std::shared_ptr<void>, 8> predMetas; // each component has a meta, TODO
 
     Tick predTick;         // tick of the prediction
     boost::dynamic_bitset<> history; // record GHR/s0History
