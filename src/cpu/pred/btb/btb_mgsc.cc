@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <ctime>
+#include <type_traits>
 
 #include "base/debug_helper.hh"
 #include "base/intmath.hh"
@@ -164,9 +165,6 @@ BTBMGSC::BTBMGSC(const Params &p)
     }
 
     pUpdateThreshold.resize(std::pow(2, thresholdTablelogSize));
-    for (unsigned int j = 0; j < (std::pow(2, thresholdTablelogSize)); ++j) {
-        pUpdateThreshold[j].resize(numCtrsPerLine);
-    }
 
     updateThreshold = 35;
 }
@@ -250,11 +248,11 @@ BTBMGSC::calculateScaledPercsum(int weight, int percsum)
  * @return Found threshold or default value if not found
  */
 int
-BTBMGSC::findThreshold(const std::vector<std::vector<int16_t>> &thresholdTable, Addr tableIndex, Addr pc,
-                       int defaultValue)
+BTBMGSC::findThreshold(const std::vector<uint16_t> &thresholdTable, Addr pc)
 {
-    auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
-    auto &entry = thresholdTable[tableIndex][pos];
+    auto mask = (1 << thresholdTablelogSize) - 1;
+    auto pcHash = ((pc >> instShiftAmt) ^ (pc >> instShiftAmt >> 2)) & mask;
+    auto &entry = thresholdTable[pcHash];
     return entry;
 }
 
@@ -330,11 +328,10 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     int total_sum = bw_percsum + l_percsum + i_percsum + g_percsum + p_percsum + bias_percsum;
 
     // Find thresholds
-    // pc-indexed threshold table, default value = initialUpdateThresholdValue = 0
-    // int p_update_thres = findThreshold(pUpdateThreshold, getPcIndex(startPC, thresholdTablelogSize), btb_entry.pc,
-    //                                    initialUpdateThresholdValue);
+    // pc-indexed threshold table
+    int p_update_thres = findThreshold(pUpdateThreshold, btb_entry.pc);
 
-    int total_thres = updateThreshold;
+    int total_thres = (updateThreshold >> 3) + p_update_thres;
 
     bool use_sc_pred = true;
     if (tage_info.tage_pred_conf_high && abs(total_sum) < total_thres) {
@@ -534,10 +531,11 @@ BTBMGSC::updateAndAllocateWeightTable(std::vector<std::vector<int16_t>> &weightT
  * @param update_direction Direction to update (true=increment, false=decrement)
  */
 void
-BTBMGSC::updatePCThresholdTable(Addr tableIndex, Addr pc, bool update_condition, bool update_direction)
+BTBMGSC::updatePCThresholdTable(Addr pc, bool update_direction)
 {
-    auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
-    auto &entry = pUpdateThreshold[tableIndex][pos];
+    auto mask = (1 << thresholdTablelogSize) - 1;
+    auto pcHash = ((pc >> instShiftAmt) ^ (pc >> instShiftAmt >> 2)) & mask;
+    auto &entry = pUpdateThreshold[pcHash];
     updateCounter(update_direction, pUpdateThresholdWidth, entry);
 }
 
@@ -634,8 +632,7 @@ BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry, bool actual_tak
                                      (pred.bias_percsum >= 0) == actual_taken);
 
         // Update PC-indexed threshold table
-        // updatePCThresholdTable(getPcIndex(stream.startPC, thresholdTablelogSize), entry.pc,
-        //                        tage_pred_taken != sc_pred_taken, sc_pred_taken != actual_taken);
+        updatePCThresholdTable(entry.pc, sc_pred_taken != actual_taken);
 
         // Update global threshold table
         updateGlobalThreshold(entry.pc, sc_pred_taken != actual_taken);
@@ -671,31 +668,49 @@ BTBMGSC::update(const FetchStream &stream)
     DPRINTF(MGSC, "end update\n");
 }
 
-// Update signed counter with saturation
+// Update counter with saturation (template for all integer types)
+template<typename T>
 void
-BTBMGSC::updateCounter(bool taken, unsigned width, short &counter)
+BTBMGSC::updateCounter(bool taken, unsigned width, T &counter)
 {
-    int max = (1 << (width - 1)) - 1;
-    int min = -(1 << (width - 1));
-    if (taken) {
-        satIncrement(max, counter);
+    static_assert(std::is_integral<T>::value, "Counter type must be integral");
+
+    if constexpr (std::is_signed<T>::value) {
+        T max = static_cast<T>((1LL << (width - 1)) - 1);
+        T min = static_cast<T>(-(1LL << (width - 1)));
+        if (taken) {
+            satIncrement(max, counter);
+        } else {
+            satDecrement(min, counter);
+        }
     } else {
-        satDecrement(min, counter);
+        T max = static_cast<T>((1LL << width) - 1);
+        T min = static_cast<T>(0);
+        if (taken) {
+            satIncrement(max, counter);
+        } else {
+            satDecrement(min, counter);
+        }
     }
 }
 
-// Update unsigned counter with saturation
-void
-BTBMGSC::updateCounter(bool taken, unsigned width, uint64_t &counter)
-{
-    int max = (1 << width) - 1;
-    int min = 0;
-    if (taken) {
-        satIncrement(max, counter);
-    } else {
-        satDecrement(min, counter);
-    }
-}
+// Explicit instantiations for commonly used types
+template void
+BTBMGSC::updateCounter<int8_t>(bool taken, unsigned width, int8_t &counter);
+template void
+BTBMGSC::updateCounter<int16_t>(bool taken, unsigned width, int16_t &counter);
+template void
+BTBMGSC::updateCounter<int32_t>(bool taken, unsigned width, int32_t &counter);
+template void
+BTBMGSC::updateCounter<int64_t>(bool taken, unsigned width, int64_t &counter);
+template void
+BTBMGSC::updateCounter<uint8_t>(bool taken, unsigned width, uint8_t &counter);
+template void
+BTBMGSC::updateCounter<uint16_t>(bool taken, unsigned width, uint16_t &counter);
+template void
+BTBMGSC::updateCounter<uint32_t>(bool taken, unsigned width, uint32_t &counter);
+template void
+BTBMGSC::updateCounter<uint64_t>(bool taken, unsigned width, uint64_t &counter);
 
 
 Addr
@@ -733,41 +748,63 @@ BTBMGSC::getPcIndex(Addr pc, unsigned tableIndexBits)
     return (pc >> floorLog2(blockSize)) & mask;
 }
 
+template<typename T>
 bool
-BTBMGSC::satIncrement(int max, short &counter)
+BTBMGSC::satIncrement(T max, T &counter)
 {
+    static_assert(std::is_integral<T>::value, "Counter type must be integral");
     if (counter < max) {
         ++counter;
     }
     return counter == max;
 }
 
-bool
-BTBMGSC::satIncrement(int max, uint64_t &counter)
-{
-    if (counter < max) {
-        ++counter;
-    }
-    return counter == max;
-}
+// Explicit instantiations for commonly used types
+template bool
+BTBMGSC::satIncrement<int8_t>(int8_t max, int8_t &counter);
+template bool
+BTBMGSC::satIncrement<int16_t>(int16_t max, int16_t &counter);
+template bool
+BTBMGSC::satIncrement<int32_t>(int32_t max, int32_t &counter);
+template bool
+BTBMGSC::satIncrement<int64_t>(int64_t max, int64_t &counter);
+template bool
+BTBMGSC::satIncrement<uint8_t>(uint8_t max, uint8_t &counter);
+template bool
+BTBMGSC::satIncrement<uint16_t>(uint16_t max, uint16_t &counter);
+template bool
+BTBMGSC::satIncrement<uint32_t>(uint32_t max, uint32_t &counter);
+template bool
+BTBMGSC::satIncrement<uint64_t>(uint64_t max, uint64_t &counter);
 
+template<typename T>
 bool
-BTBMGSC::satDecrement(int min, short &counter)
+BTBMGSC::satDecrement(T min, T &counter)
 {
+    static_assert(std::is_integral<T>::value, "Counter type must be integral");
     if (counter > min) {
         --counter;
     }
     return counter == min;
 }
 
-bool
-BTBMGSC::satDecrement(int min, uint64_t &counter)
-{
-    if (counter > min) {
-        --counter;
-    }
-    return counter == min;
-}
+// Explicit instantiations for commonly used types
+template bool
+BTBMGSC::satDecrement<int8_t>(int8_t min, int8_t &counter);
+template bool
+BTBMGSC::satDecrement<int16_t>(int16_t min, int16_t &counter);
+template bool
+BTBMGSC::satDecrement<int32_t>(int32_t min, int32_t &counter);
+template bool
+BTBMGSC::satDecrement<int64_t>(int64_t min, int64_t &counter);
+template bool
+BTBMGSC::satDecrement<uint8_t>(uint8_t min, uint8_t &counter);
+template bool
+BTBMGSC::satDecrement<uint16_t>(uint16_t min, uint16_t &counter);
+template bool
+BTBMGSC::satDecrement<uint32_t>(uint32_t min, uint32_t &counter);
+template bool
+BTBMGSC::satDecrement<uint64_t>(uint64_t min, uint64_t &counter);
 
 /**
  * @brief Updates branch history for speculative execution

@@ -192,8 +192,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Find threshold in a threshold table for a given PC
      */
-    int findThreshold(const std::vector<std::vector<int16_t>> &thresholdTable, Addr tableIndex, Addr pc,
-                      int defaultValue);
+    int findThreshold(const std::vector<uint16_t> &thresholdTable, Addr pc);
 
     /**
      * Calculate if weight scale causes prediction difference
@@ -216,7 +215,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Update a threshold table and allocate new entry if needed
      */
-    void updatePCThresholdTable(Addr tableIndex, Addr pc, bool update_condition, bool update_direction);
+    void updatePCThresholdTable(Addr pc, bool update_direction);
 
     /**
      * Update the global threshold table and allocate new entry if needed
@@ -343,8 +342,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     std::vector<std::vector<int16_t>> biasWeightTable;
 
     // thres table
-    std::vector<std::vector<int16_t>> pUpdateThreshold;  // pc-indexed threshold table
-    uint64_t updateThreshold;                             // global threshold table
+    std::vector<uint16_t> pUpdateThreshold;  // pc-indexed threshold table
+    uint16_t updateThreshold;                // global threshold table
 
 
     // Debug flag
@@ -353,19 +352,17 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Instruction shift amount
     unsigned instShiftAmt{1};
 
-    // Update signed counter with saturation
-    void updateCounter(bool taken, unsigned width, short &counter);
+    // Update counter with saturation (template for all integer types)
+    template<typename T>
+    void updateCounter(bool taken, unsigned width, T &counter);
 
-    // Update unsigned counter with saturation
-    void updateCounter(bool taken, unsigned width, uint64_t &counter);
+    // Increment counter with saturation (template for all integer types)
+    template<typename T>
+    bool satIncrement(T max, T &counter);
 
-    // Increment counter with saturation
-    bool satIncrement(int max, short &counter);
-    bool satIncrement(int max, uint64_t &counter);
-
-    // Decrement counter with saturation
-    bool satDecrement(int min, short &counter);
-    bool satDecrement(int min, uint64_t &counter);
+    // Decrement counter with saturation (template for all integer types)
+    template<typename T>
+    bool satDecrement(T min, T &counter);
 
     // Cache for MGSC indices
     std::vector<Addr> bwIndex;

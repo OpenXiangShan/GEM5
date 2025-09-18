@@ -1122,7 +1122,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     updateThresholdWidth = Param.Unsigned(15,
         "Number of bits for the update threshold counter")
 
-    pUpdateThresholdWidth = Param.Unsigned(8,
+    pUpdateThresholdWidth = Param.Unsigned(13,
         "Number of bits for the pUpdate threshold counters")
 
     extraWeightsWidth = Param.Unsigned(6,
