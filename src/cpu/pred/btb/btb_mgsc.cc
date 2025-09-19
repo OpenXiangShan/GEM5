@@ -332,12 +332,19 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     int total_thres = (updateThreshold / 8) + p_update_thres;
 
-    bool use_sc_pred = true;
-    if (tage_info.tage_pred_conf_high && abs(total_sum) < total_thres) {
-        use_sc_pred = false;
-    }
-    if (tage_info.tage_pred_conf_mid && abs(total_sum) < total_thres / 3) {
-        use_sc_pred = false;
+    bool use_sc_pred = false;
+    if (tage_info.tage_pred_conf_high) {
+        if (abs(total_sum) > total_thres / 2) {
+            use_sc_pred = true;
+        }
+    } else if (tage_info.tage_pred_conf_mid) {
+        if (abs(total_sum) > total_thres / 4) {
+            use_sc_pred = true;
+        }
+    } else if (tage_info.tage_pred_conf_low) {
+        if (abs(total_sum) > total_thres / 8) {
+            use_sc_pred = true;
+        }
     }
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
     bool taken = (enableMGSC && use_sc_pred) ? (total_sum >= 0) : tage_info.tage_pred_taken;
