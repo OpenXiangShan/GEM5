@@ -1128,7 +1128,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     extraWeightsWidth = Param.Unsigned(6,
         "Number of bits for the extra weights")
 
-    scCountersWidth = Param.Unsigned(6, "Statistical corrector counters width")
+    scCountersWidth = Param.Unsigned(8, "Statistical corrector counters width")
 
     initialUpdateThresholdValue = Param.Int(0,
         "Initial pUpdate threshold counter value")
