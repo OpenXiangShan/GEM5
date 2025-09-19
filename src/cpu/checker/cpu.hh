@@ -298,6 +298,7 @@ class CheckerCPU : public BaseCPU, public ExecContext
         return thread->readMiscReg(misc_reg);
     }
 
+    using BaseCPU::setMiscRegNoEffect;
     void
     setMiscRegNoEffect(int misc_reg, RegVal val)
     {
