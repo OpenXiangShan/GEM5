@@ -166,7 +166,7 @@ BTBMGSC::BTBMGSC(const Params &p)
 
     pUpdateThreshold.resize(std::pow(2, thresholdTablelogSize));
 
-    updateThreshold = 35;
+    updateThreshold = 35 * 8;
 }
 
 BTBMGSC::~BTBMGSC() {}
@@ -247,7 +247,7 @@ BTBMGSC::calculateScaledPercsum(int weight, int percsum)
  * @return Found threshold or default value if not found
  */
 int
-BTBMGSC::findThreshold(const std::vector<uint16_t> &thresholdTable, Addr pc)
+BTBMGSC::findThreshold(const std::vector<int16_t> &thresholdTable, Addr pc)
 {
     auto mask = (1 << thresholdTablelogSize) - 1;
     auto pcHash = ((pc >> instShiftAmt) ^ (pc >> instShiftAmt >> 2)) & mask;
@@ -330,7 +330,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     // pc-indexed threshold table
     int p_update_thres = findThreshold(pUpdateThreshold, btb_entry.pc);
 
-    int total_thres = (updateThreshold >> 3) + p_update_thres;
+    int total_thres = (updateThreshold / 8) + p_update_thres;
 
     bool use_sc_pred = true;
     if (tage_info.tage_pred_conf_high && abs(total_sum) < total_thres) {
@@ -676,7 +676,7 @@ BTBMGSC::updateCounter(bool taken, unsigned width, T &counter)
 
     if constexpr (std::is_signed<T>::value) {
         T max = static_cast<T>((1LL << (width - 1)) - 1);
-        T min = static_cast<T>(-(1LL << (width - 1)));
+        T min = static_cast<T>(-((1LL << (width - 1)) - 1));
         if (taken) {
             satIncrement(max, counter);
         } else {
@@ -754,6 +754,8 @@ BTBMGSC::satIncrement(T max, T &counter)
     static_assert(std::is_integral<T>::value, "Counter type must be integral");
     if (counter < max) {
         ++counter;
+    } else {
+        counter = max;
     }
     return counter == max;
 }
@@ -783,6 +785,8 @@ BTBMGSC::satDecrement(T min, T &counter)
     static_assert(std::is_integral<T>::value, "Counter type must be integral");
     if (counter > min) {
         --counter;
+    } else {
+        counter = min;
     }
     return counter == min;
 }

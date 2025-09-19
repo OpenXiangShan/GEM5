@@ -42,7 +42,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         bool use_mgsc;                // Whether to use MGSC prediction
         bool taken;                   // Final prediction = (use sc pred) ? (total_sum >= 0) : tage prediction
         bool taken_before_sc;         // Tage prediction (before SC)
-        unsigned total_thres;         // Combined threshold
+        int16_t total_thres;         // Combined threshold
         std::vector<Addr> bwIndex;    // BW table indices
         std::vector<Addr> lIndex;     // L table indices
         std::vector<Addr> iIndex;     // I table indices
@@ -192,7 +192,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Find threshold in a threshold table for a given PC
      */
-    int findThreshold(const std::vector<uint16_t> &thresholdTable, Addr pc);
+    int findThreshold(const std::vector<int16_t> &thresholdTable, Addr pc);
 
     /**
      * Calculate if weight scale causes prediction difference
@@ -342,8 +342,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     std::vector<std::vector<int16_t>> biasWeightTable;
 
     // thres table
-    std::vector<uint16_t> pUpdateThreshold;  // pc-indexed threshold table
-    uint16_t updateThreshold;                // global threshold table
+    std::vector<int16_t> pUpdateThreshold;  // pc-indexed threshold table
+    int16_t updateThreshold;                // global threshold table
 
 
     // Debug flag
