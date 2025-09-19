@@ -135,35 +135,11 @@ BTBMGSC::BTBMGSC(const Params &p)
     biasIndex.resize(biasTableNum);
 
     bwWeightTable.resize(std::pow(2, weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        bwWeightTable[j].resize(numCtrsPerLine);
-    }
-
     lWeightTable.resize(std::pow(2, weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        lWeightTable[j].resize(numCtrsPerLine);
-    }
-
     iWeightTable.resize(std::pow(2, weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        iWeightTable[j].resize(numCtrsPerLine);
-    }
-
     gWeightTable.resize(std::pow(2, weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        gWeightTable[j].resize(numCtrsPerLine);
-    }
-
     pWeightTable.resize(std::pow(2, weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        pWeightTable[j].resize(numCtrsPerLine);
-    }
-
     biasWeightTable.resize(std::pow(2, weightTableIdxWidth));
-    for (unsigned int j = 0; j < (std::pow(2, weightTableIdxWidth)); ++j) {
-        biasWeightTable[j].resize(numCtrsPerLine);
-    }
-
     pUpdateThreshold.resize(std::pow(2, thresholdTablelogSize));
 
     updateThreshold = 35 * 8;
@@ -218,16 +194,17 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &
  * @return Found weight or 0 if not found
  */
 int
-BTBMGSC::findWeight(const std::vector<std::vector<int16_t>> &weightTable, Addr tableIndex, Addr pc)
+BTBMGSC::findWeight(const std::vector<int16_t> &weightTable, Addr pc)
 {
-    auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
-    auto &entry = weightTable[tableIndex][pos];
+    auto mask = (1 << weightTableIdxWidth) - 1;
+    auto pcHash = ((pc >> instShiftAmt) ^ (pc >> instShiftAmt >> 2)) & mask;
+    auto &entry = weightTable[pcHash];
     return entry;
 }
 
 /**
  * Calculate scaled percsum using weight
- * weight range is [-32, 31], return value range is [0, 2 * percsum]
+ * weight range is [-32, 31], return value range is percsum or 2x percsum
  * @param weight Weight value
  * @param percsum Original percsum value
  * @return Scaled percsum value
@@ -235,7 +212,7 @@ BTBMGSC::findWeight(const std::vector<std::vector<int16_t>> &weightTable, Addr t
 int
 BTBMGSC::calculateScaledPercsum(int weight, int percsum)
 {
-    return (double)((double)(weight + 32) / 32.0) * percsum;
+    return ((weight + 64) / 32) * percsum;
 }
 
 /**
@@ -312,19 +289,32 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     }
 
     int bw_percsum = calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.pc);
+    int bw_weight = findWeight(bwWeightTable, btb_entry.pc);
+    int bw_scaled_percsum = calculateScaledPercsum(bw_weight, bw_percsum);
 
     int l_percsum = calculatePercsum(lTable, lIndex, lTableNum, btb_entry.pc);
+    int l_weight = findWeight(lWeightTable, btb_entry.pc);
+    int l_scaled_percsum = calculateScaledPercsum(l_weight, l_percsum);
 
     int i_percsum = calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc);
+    int i_weight = findWeight(iWeightTable, btb_entry.pc);
+    int i_scaled_percsum = calculateScaledPercsum(i_weight, i_percsum);
 
     int g_percsum = calculatePercsum(gTable, gIndex, gTableNum, btb_entry.pc);
+    int g_weight = findWeight(gWeightTable, btb_entry.pc);
+    int g_scaled_percsum = calculateScaledPercsum(g_weight, g_percsum);
 
     int p_percsum = calculatePercsum(pTable, pIndex, pTableNum, btb_entry.pc);
+    int p_weight = findWeight(pWeightTable, btb_entry.pc);
+    int p_scaled_percsum = calculateScaledPercsum(p_weight, p_percsum);
 
     int bias_percsum = calculatePercsum(biasTable, biasIndex, biasTableNum, btb_entry.pc);
+    int bias_weight = findWeight(biasWeightTable, btb_entry.pc);
+    int bias_scaled_percsum = calculateScaledPercsum(bias_weight, bias_percsum);
 
     // Calculate total sum of all weighted percsums
-    int total_sum = bw_percsum + l_percsum + i_percsum + g_percsum + p_percsum + bias_percsum;
+    int total_sum = bw_scaled_percsum + l_scaled_percsum + i_scaled_percsum + g_scaled_percsum + p_scaled_percsum +
+                    bias_scaled_percsum;
 
     // Find thresholds
     // pc-indexed threshold table
@@ -350,12 +340,12 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     bool taken = (enableMGSC && use_sc_pred) ? (total_sum >= 0) : tage_info.tage_pred_taken;
 
     // Calculate weight scale differences
-    bool bw_weight_scale_diff = false;
-    bool l_weight_scale_diff = false;
-    bool i_weight_scale_diff = false;
-    bool g_weight_scale_diff = false;
-    bool p_weight_scale_diff = false;
-    bool bias_weight_scale_diff = false;
+    bool bw_weight_scale_diff = calculateWeightScaleDiff(total_sum, bw_scaled_percsum, bw_percsum);
+    bool l_weight_scale_diff = calculateWeightScaleDiff(total_sum, l_scaled_percsum, l_percsum);
+    bool i_weight_scale_diff = calculateWeightScaleDiff(total_sum, i_scaled_percsum, i_percsum);
+    bool g_weight_scale_diff = calculateWeightScaleDiff(total_sum, g_scaled_percsum, g_percsum);
+    bool p_weight_scale_diff = calculateWeightScaleDiff(total_sum, p_scaled_percsum, p_percsum);
+    bool bias_weight_scale_diff = calculateWeightScaleDiff(total_sum, bias_scaled_percsum, bias_percsum);
 
     DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.pc, taken);
 
@@ -508,11 +498,12 @@ BTBMGSC::updateAndAllocatePredTable(std::vector<std::vector<std::vector<int16_t>
  * @param percsum_matches_actual Whether the raw percsum correctly predicted the outcome
  */
 void
-BTBMGSC::updateAndAllocateWeightTable(std::vector<std::vector<int16_t>> &weightTable, Addr tableIndex, Addr pc,
+BTBMGSC::updateAndAllocateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, Addr pc,
                                       bool weight_scale_diff, bool percsum_matches_actual)
 {
-    auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
-    auto &entry = weightTable[tableIndex][pos];
+    auto mask = (1 << weightTableIdxWidth) - 1;
+    auto pcHash = ((pc >> instShiftAmt) ^ (pc >> instShiftAmt >> 2)) & mask;
+    auto &entry = weightTable[pcHash];
     // Only update if weight scale could affect prediction
     if (weight_scale_diff) {
         // Increase weight if percsum was correct, decrease if incorrect

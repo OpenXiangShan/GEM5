@@ -42,7 +42,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         bool use_mgsc;                // Whether to use MGSC prediction
         bool taken;                   // Final prediction = (use sc pred) ? (total_sum >= 0) : tage prediction
         bool taken_before_sc;         // Tage prediction (before SC)
-        int16_t total_thres;         // Combined threshold
+        int16_t total_thres;          // Combined threshold
         std::vector<Addr> bwIndex;    // BW table indices
         std::vector<Addr> lIndex;     // L table indices
         std::vector<Addr> iIndex;     // I table indices
@@ -182,7 +182,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Find weight in a weight table for a given PC
      */
-    int findWeight(const std::vector<std::vector<int16_t>> &weightTable, Addr tableIndex, Addr pc);
+    int findWeight(const std::vector<int16_t> &weightTable, Addr pc);
 
     /**
      * Calculate scaled percsum using weight
@@ -209,7 +209,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Update a weight table and allocate new entry if needed
      */
-    void updateAndAllocateWeightTable(std::vector<std::vector<int16_t>> &weightTable, Addr tableIndex, Addr pc,
+    void updateAndAllocateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, Addr pc,
                                       bool weight_scale_diff, bool percsum_matches_actual);
 
     /**
@@ -314,32 +314,32 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // The actual MGSC prediction tables (table x index x line)
     std::vector<std::vector<std::vector<int16_t>>> bwTable;
     // The actual MGSC prediction tables (index x line)
-    std::vector<std::vector<int16_t>> bwWeightTable;
+    std::vector<int16_t> bwWeightTable;
 
     // The actual MGSC prediction tables (table x index x line)
     std::vector<std::vector<std::vector<int16_t>>> lTable;
     // The actual MGSC prediction tables (index x line)
-    std::vector<std::vector<int16_t>> lWeightTable;
+    std::vector<int16_t> lWeightTable;
 
     // The actual MGSC prediction tables (table x index x line)
     std::vector<std::vector<std::vector<int16_t>>> iTable;
     // The actual MGSC prediction tables (index x line)
-    std::vector<std::vector<int16_t>> iWeightTable;
+    std::vector<int16_t> iWeightTable;
 
     // The actual MGSC prediction tables (table x index x line)
     std::vector<std::vector<std::vector<int16_t>>> gTable;
     // The actual MGSC prediction tables (index x line)
-    std::vector<std::vector<int16_t>> gWeightTable;
+    std::vector<int16_t> gWeightTable;
 
     // The actual MGSC prediction tables (table x index x line)
     std::vector<std::vector<std::vector<int16_t>>> pTable;
     // The actual MGSC prediction tables (index x line)
-    std::vector<std::vector<int16_t>> pWeightTable;
+    std::vector<int16_t> pWeightTable;
 
     // The actual MGSC prediction tables (table x index x line)
     std::vector<std::vector<std::vector<int16_t>>> biasTable;
     // The actual MGSC prediction tables (index x line)
-    std::vector<std::vector<int16_t>> biasWeightTable;
+    std::vector<int16_t> biasWeightTable;
 
     // thres table
     std::vector<int16_t> pUpdateThreshold;  // pc-indexed threshold table
