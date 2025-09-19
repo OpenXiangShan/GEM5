@@ -693,6 +693,7 @@ class BaseCPU : public ClockedObject
     int dumpStartNum;
     bool enableRVV{false};
     bool enableRVHDIFF{false};
+    bool enableSkipCSR{false};
     std::shared_ptr<DiffAllStates> diffAllStates{};
 
     enum  diffRegConfig
@@ -733,6 +734,7 @@ class BaseCPU : public ClockedObject
     struct
     {
         gem5::StaticInstPtr inst;
+        Fault instFault;
         // the result of currently inst
         std::vector<gem5::RegVal> scalarResults;
         uint64_t vecResult[RiscvISA::NumVecElemPerVecReg];
@@ -764,6 +766,12 @@ class BaseCPU : public ClockedObject
     {
         panic("difftest:readGem5Regs() is not implemented\n");
         return 0;
+    }
+
+
+    virtual void setMiscRegNoEffect(int misc_reg, RegVal val, ThreadID tid)
+    {
+        panic("difftest:setGem5Regs() is not implemented\n");
     }
 
     void difftestStep(ThreadID tid) { difftestStep(tid, 0);}

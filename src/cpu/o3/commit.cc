@@ -1456,6 +1456,7 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
     }
     cpu->diffInfo.inst = inst->staticInst;
     cpu->diffInfo.pc = &inst->pcState();
+    cpu->diffInfo.instFault = inst->getFault();
     for (int i = 0; i < inst->numDestRegs(); i++) {
         const auto &dest = inst->destRegIdx(i);
         if ((dest.isFloatReg() || dest.isIntReg()) && !dest.isZeroReg()) {

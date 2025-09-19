@@ -166,6 +166,7 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       dumpStartNum(p.dump_start),
       enableRVV(p.enable_riscv_vector),
       enableRVHDIFF(p.enable_riscv_h),
+      enableSkipCSR(p.enable_skip_csr),
       noHypeMode(false),
       enableMemDedup(p.enable_mem_dedup)
 {
@@ -1183,31 +1184,49 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     }
 
     if (enableRVHDIFF){
-        //h difftest
-        //mtval2
+        // h difftest
+        // mtval2
+        // no_sync
+        bool enable_csrnemu = false;
+        if ((diffInfo.instFault == NoFault) && enableSkipCSR) {
+            enable_csrnemu = true;
+        }
         auto gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL2, tid);
         diffAllStates->gem5RegFile.mtval2 = gem5_val;
         auto ref_val = diffAllStates->referenceRegFile.mtval2;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mtval2, diffAllStates->gem5RegFile.mtval2, seq, "mtval2",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MTVAL2, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mtval2, diffAllStates->gem5RegFile.mtval2, seq,
+                               "mtval2", diff_at);
+            }
         }
         //mtinst
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTINST, tid);
         diffAllStates->gem5RegFile.mtinst = gem5_val;
         ref_val = diffAllStates->referenceRegFile.mtinst;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mtinst, diffAllStates->gem5RegFile.mtinst, seq, "mtinst",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MTINST, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::mtinst, diffAllStates->gem5RegFile.mtinst, seq,
+                               "mtinst", diff_at);
+            }
         }
         //hstatus
+        //no_sync
         gem5_val = readMiscRegNoEffect(
         RiscvISA::MiscRegIndex::MISCREG_HSTATUS, tid);
         diffAllStates->gem5RegFile.hstatus = gem5_val;
         ref_val = diffAllStates->referenceRegFile.hstatus;
-        if ((gem5_val != ref_val)) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hstatus, diffAllStates->gem5RegFile.hstatus, seq, "hstatus",
-                           diff_at);
+        if (gem5_val != ref_val) {
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HSTATUS, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hstatus, diffAllStates->gem5RegFile.hstatus, seq,
+                               "hstatus", diff_at);
+            }
         }
         //hideleg
         gem5_val = readMiscRegNoEffect(
@@ -1215,24 +1234,36 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->gem5RegFile.hideleg = gem5_val;
         ref_val = diffAllStates->referenceRegFile.hideleg;
         if ((gem5_val != ref_val)) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hideleg, diffAllStates->gem5RegFile.hideleg, seq, "hideleg",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HIDELEG, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hideleg, diffAllStates->gem5RegFile.hideleg, seq,
+                               "hideleg", diff_at);
+            }
         }
-        //hedeleg
+        // hedeleg
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_HEDELEG, tid);
         diffAllStates->gem5RegFile.hedeleg = gem5_val;
         ref_val = diffAllStates->referenceRegFile.hedeleg;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hedeleg, diffAllStates->gem5RegFile.hedeleg, seq, "hedeleg",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HEDELEG, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hedeleg, diffAllStates->gem5RegFile.hedeleg, seq,
+                               "hedeleg", diff_at);
+            }
         }
         //hcounteren
         gem5_val = readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HCOUNTEREN, tid);
         diffAllStates->gem5RegFile.hcounteren = gem5_val;
         ref_val = diffAllStates->referenceRegFile.hcounteren;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hcounteren, diffAllStates->gem5RegFile.hcounteren, seq,
-                           "hcounteren", diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HCOUNTEREN, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hcounteren, diffAllStates->gem5RegFile.hcounteren, seq,
+                               "hcounteren", diff_at);
+            }
         }
 
         //htval
@@ -1240,8 +1271,12 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->gem5RegFile.htval = gem5_val;
         ref_val = diffAllStates->referenceRegFile.htval;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::htval, diffAllStates->gem5RegFile.htval, seq, "htval",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HTVAL, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::htval, diffAllStates->gem5RegFile.htval, seq, "htval",
+                               diff_at);
+            }
         }
 
         // htinst
@@ -1249,56 +1284,84 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->gem5RegFile.htinst = gem5_val;
         ref_val = diffAllStates->referenceRegFile.htinst;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::htinst, diffAllStates->gem5RegFile.htinst, seq, "htinst",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HTINST, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::htinst, diffAllStates->gem5RegFile.htinst, seq,
+                               "htinst", diff_at);
+            }
         }
         // hgatp
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_HGATP, tid);
         diffAllStates->gem5RegFile.hgatp = gem5_val;
         ref_val = diffAllStates->referenceRegFile.hgatp;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hgatp, diffAllStates->gem5RegFile.hgatp, seq, "hgatp",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HGATP, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::hgatp, diffAllStates->gem5RegFile.hgatp, seq, "hgatp",
+                               diff_at);
+            }
         }
         // vsstatus
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, tid);
         diffAllStates->gem5RegFile.vsstatus = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vsstatus;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsstatus, diffAllStates->gem5RegFile.vsstatus, seq,
-                           "vsstatus", diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSTATUS, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsstatus, diffAllStates->gem5RegFile.vsstatus, seq,
+                               "vsstatus", diff_at);
+            }
         }
         // vstvec
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTVEC, tid);
         diffAllStates->gem5RegFile.vstvec = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vstvec;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vstvec, diffAllStates->gem5RegFile.vstvec, seq, "vstvec",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSTVEC, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vstvec, diffAllStates->gem5RegFile.vstvec, seq,
+                               "vstvec", diff_at);
+            }
         }
         // vsepc
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSEPC, tid);
         diffAllStates->gem5RegFile.vsepc = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vsepc;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsepc, diffAllStates->gem5RegFile.vsepc, seq, "vsepc",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSEPC, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsepc, diffAllStates->gem5RegFile.vsepc, seq, "vsepc",
+                               diff_at);
+            }
         }
         // vscause
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSCAUSE, tid);
         diffAllStates->gem5RegFile.vscause = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vscause;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vscause, diffAllStates->gem5RegFile.vscause, seq, "vscause",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSCAUSE, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vscause, diffAllStates->gem5RegFile.vscause, seq,
+                               "vscause", diff_at);
+            }
         }
         // vstval
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VSTVAL, tid);
         diffAllStates->gem5RegFile.vstval = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vstval;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vstval, diffAllStates->gem5RegFile.vstval, seq, "vstval",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSTVAL, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vstval, diffAllStates->gem5RegFile.vstval, seq,
+                               "vstval", diff_at);
+            }
         }
 
         // vsatp
@@ -1306,8 +1369,12 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->gem5RegFile.vsatp = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vsatp;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsatp, diffAllStates->gem5RegFile.vsatp, seq, "vsatp",
-                           diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSATP, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsatp, diffAllStates->gem5RegFile.vsatp, seq, "vsatp",
+                               diff_at);
+            }
         }
 
         // vsscratch
@@ -1315,8 +1382,12 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
         diffAllStates->gem5RegFile.vsscratch = gem5_val;
         ref_val = diffAllStates->referenceRegFile.vsscratch;
         if (gem5_val != ref_val) {
-            csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsscratch, diffAllStates->gem5RegFile.vsscratch, seq,
-                           "vsscratch", diff_at);
+            if (enable_csrnemu) {
+                setMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VSSCRATCH, ref_val, tid);
+            } else {
+                csrDiffMessage(gem5_val, ref_val, CsrRegIndex::vsscratch, diffAllStates->gem5RegFile.vsscratch, seq,
+                               "vsscratch", diff_at);
+            }
         }
         // cpu.v diff
         gem5_val = readMiscReg(RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);

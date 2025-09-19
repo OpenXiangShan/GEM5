@@ -321,7 +321,7 @@ class CPU : public BaseCPU
     RegVal readMiscReg(int misc_reg, ThreadID tid) override;
 
     /** Sets a miscellaneous register. */
-    void setMiscRegNoEffect(int misc_reg, RegVal val, ThreadID tid);
+    void setMiscRegNoEffect(int misc_reg, RegVal val, ThreadID tid) override;
 
     /** Sets a misc. register, including any side effects the write
      * might have as defined by the architecture.
