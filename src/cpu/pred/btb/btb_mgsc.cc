@@ -206,7 +206,6 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &
     for (unsigned int i = 0; i < numTables; ++i) {
         auto &entry = table[i][tableIndices[i]][pos];
         percsum += (2 * entry + 1);  // align to zero center
-        break;
     }
     return percsum;
 }
