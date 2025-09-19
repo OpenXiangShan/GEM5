@@ -260,7 +260,11 @@ class TraceReader : public statistics::Group
  */
 std::unique_ptr<TraceReader> createTraceReader(const std::string &format,
                                                const std::string &trace_file,
-                                               const std::string &name);
+                                               const std::string &name,
+                                               uint64_t addrBase = 0x10000000,
+                                               uint64_t addrSize = 0x40000000,
+                                               const std::string &addrMapMode = "hash",
+                                               bool pageAlign = true);
 
 } // namespace o3
 } // namespace gem5

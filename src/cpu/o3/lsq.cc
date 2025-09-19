@@ -1413,14 +1413,18 @@ LSQ::LSQRequest::addReq(Addr addr, unsigned size,
            const std::vector<bool>& byte_enable)
 {
     if (isAnyActiveElement(byte_enable.begin(), byte_enable.end())) {
+        // Preserve full memory simulation: use the original request flags
+        // and allow normal translation/memory hierarchy behavior.
+        Request::Flags eff_flags = _flags;
+
         auto req = std::make_shared<Request>(
-                addr, size, _flags, _inst->requestorId(),
+                addr, size, eff_flags, _inst->requestorId(),
                 _inst->pcState().instAddr(), _inst->contextId(),
                 std::move(_amo_op));
         req->setByteEnable(byte_enable);
 
         /* If the request is marked as NO_ACCESS, setup a local access */
-        if (_flags.isSet(Request::NO_ACCESS)) {
+        if (eff_flags.isSet(Request::NO_ACCESS)) {
             req->setLocalAccessor(
                 [this, req](gem5::ThreadContext *tc, PacketPtr pkt) -> Cycles
                 {
@@ -1557,24 +1561,47 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     }
 
     assert(_numOutstandingPackets == 1);
+    const bool traceMode = lsq->cpu->isTraceMode();
+    DPRINTF(LSQ, "SingleDataRequest::recvTimingResp [sn:%llu] traceMode:%d cacheHit:%d waitingRefill:%d\n",
+            _inst->seqNum, traceMode, cacheHit, LSQRequest::_inst->waitingCacheRefill());
+
     if (enableLdMissReplay && isNormalLd) {
         DPRINTF(Hint, "[sn:%ld] Recv TimingResp\n", pkt->req->getReqInstSeqNum());
         if (cacheHit) {
             DPRINTF(LSQ, "[sn:%ld] %s hit\n", _inst->seqNum, "cache");
             // Cache hit, the subsequent processing will be carried out in s2.
             instruction()->setCacheHit();
+            if (traceMode) {
+                instruction()->setWakeUpEarly();
+                DPRINTF(LSQ, "[Trace] cache hit response woke load [sn:%llu]\n",
+                        _inst->seqNum);
+            }
         } else if (LSQRequest::_inst->waitingCacheRefill()) {
             // Missed Data is ready at lsq side data bus, wake up missed load in replay queue
             // Handle the missed early wake-up here.
             DPRINTF(LSQ, "[sn:%ld] waitingCacheRefill\n", pkt->req->getReqInstSeqNum());
+            lsq->bus[_inst->seqNum] = pkt->getAddr();
+            _port.getStats()->busAppendTimes++;
             LSQRequest::_inst->waitingCacheRefill(false);
             discard();
+            if (traceMode) {
+                instruction()->setCacheHit();
+                instruction()->setWakeUpEarly();
+                DPRINTF(LSQ, "[Trace] refill wake for load [sn:%llu]\n",
+                        _inst->seqNum);
+            }
         } else {
             DPRINTF(LSQ, "[sn:%ld] addToBus\n", _inst->seqNum);
             // Cache miss refill, make data stable on data bus
             lsq->bus[_inst->seqNum] = pkt->getAddr();
             _port.getStats()->busAppendTimes++;
             discard();
+            if (traceMode) {
+                instruction()->setCacheHit();
+                instruction()->setWakeUpEarly();
+                DPRINTF(LSQ, "[Trace] bus data ready for load [sn:%llu]\n",
+                        _inst->seqNum);
+            }
         }
     } else {
         // When enableLdMissReplay is false, the specific execution stage of

@@ -1,45 +1,15 @@
 /*
- * Copyright (c) 2014 Advanced Micro Devices, Inc.
- * Copyright (c) 2003 The Regents of The University of Michigan
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met: redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer;
- * redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution;
- * neither the name of the copyright holders nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * EmulationPageTable implementation (SE-mode page table)
  */
 
-/**
- * @file
- * Definitions of functional page table.
- */
 #include "mem/page_table.hh"
 
-#include <string>
+#include <algorithm>
 
-#include "base/compiler.hh"
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/MMU.hh"
 #include "sim/faults.hh"
-#include "sim/serialize.hh"
 
 namespace gem5
 {
@@ -47,27 +17,19 @@ namespace gem5
 void
 EmulationPageTable::map(Addr vaddr, Addr paddr, int64_t size, uint64_t flags)
 {
-    bool clobber = flags & Clobber;
     // starting address must be page aligned
     assert(pageOffset(vaddr) == 0);
+    assert(pageOffset(paddr) == 0);
+    assert(size > 0);
 
-    DPRINTF(MMU, "Allocating Page: %#x-%#x\n", vaddr, vaddr + size);
-
-    while (size > 0) {
-        auto it = pTable.find(vaddr);
-        if (it != pTable.end()) {
-            // already mapped
-            panic_if(!clobber,
-                     "EmulationPageTable::allocate: addr %#x already mapped",
-                     vaddr);
-            it->second = Entry(paddr, flags);
-        } else {
-            pTable.emplace(vaddr, Entry(paddr, flags));
+    for (int64_t offset = 0; offset < size; offset += _pageSize) {
+        Addr vpage = vaddr + offset;
+        Addr ppage = paddr + offset;
+        if (pTable.find(vpage) != pTable.end()) {
+            if (!(flags & MappingFlags::Clobber))
+                panic("EmulationPageTable: remapping virtual page %#x without clobber", vpage);
         }
-
-        size -= _pageSize;
-        vaddr += _pageSize;
-        paddr += _pageSize;
+        pTable[vpage] = Entry(ppage, flags);
     }
 }
 
@@ -76,56 +38,33 @@ EmulationPageTable::remap(Addr vaddr, int64_t size, Addr new_vaddr)
 {
     assert(pageOffset(vaddr) == 0);
     assert(pageOffset(new_vaddr) == 0);
-
-    DPRINTF(MMU, "moving pages from vaddr %08p to %08p, size = %d\n", vaddr,
-            new_vaddr, size);
-
-    while (size > 0) {
-        [[maybe_unused]] auto new_it = pTable.find(new_vaddr);
-        auto old_it = pTable.find(vaddr);
-        assert(old_it != pTable.end() && new_it == pTable.end());
-
-        pTable.emplace(new_vaddr, old_it->second);
-        pTable.erase(old_it);
-        size -= _pageSize;
-        vaddr += _pageSize;
-        new_vaddr += _pageSize;
+    for (int64_t offset = 0; offset < size; offset += _pageSize) {
+        auto it = pTable.find(vaddr + offset);
+        if (it != pTable.end()) {
+            auto e = it->second;
+            pTable.erase(it);
+            pTable[new_vaddr + offset] = e;
+        }
     }
-}
-
-void
-EmulationPageTable::getMappings(std::vector<std::pair<Addr, Addr>> *addr_maps)
-{
-    for (auto &iter : pTable)
-        addr_maps->push_back(std::make_pair(iter.first, iter.second.paddr));
 }
 
 void
 EmulationPageTable::unmap(Addr vaddr, int64_t size)
 {
     assert(pageOffset(vaddr) == 0);
-
-    DPRINTF(MMU, "Unmapping page: %#x-%#x\n", vaddr, vaddr + size);
-
-    while (size > 0) {
-        auto it = pTable.find(vaddr);
-        assert(it != pTable.end());
-        pTable.erase(it);
-        size -= _pageSize;
-        vaddr += _pageSize;
+    for (int64_t offset = 0; offset < size; offset += _pageSize) {
+        pTable.erase(vaddr + offset);
     }
 }
 
 bool
 EmulationPageTable::isUnmapped(Addr vaddr, int64_t size)
 {
-    // starting address must be page aligned
     assert(pageOffset(vaddr) == 0);
-
-    for (int64_t offset = 0; offset < size; offset += _pageSize)
+    for (int64_t offset = 0; offset < size; offset += _pageSize) {
         if (pTable.find(vaddr + offset) != pTable.end())
             return false;
-
+    }
     return true;
 }
 
@@ -133,7 +72,7 @@ const EmulationPageTable::Entry *
 EmulationPageTable::lookup(Addr vaddr)
 {
     Addr page_addr = pageAlign(vaddr);
-    PTableItr iter = pTable.find(page_addr);
+    auto iter = pTable.find(page_addr);
     if (iter == pTable.end())
         return nullptr;
     return &(iter->second);
@@ -159,7 +98,12 @@ EmulationPageTable::translate(const RequestPtr &req)
     assert(pageAlign(req->getVaddr() + req->getSize() - 1) ==
            pageAlign(req->getVaddr()));
     if (!translate(req->getVaddr(), paddr))
+    {
+        int ctx = req->hasContextId() ? req->contextId() : -1;
+        DPRINTF(MMU, "[PT] translate fault: vaddr=%#x size=%u ctx=%d\n",
+                req->getVaddr(), req->getSize(), ctx);
         return Fault(new GenericPageTableFault(req->getVaddr()));
+    }
     req->setPaddr(paddr);
     if ((paddr & (_pageSize - 1)) + req->getSize() > _pageSize) {
         panic("Request spans page boundaries!\n");
@@ -168,18 +112,24 @@ EmulationPageTable::translate(const RequestPtr &req)
     return NoFault;
 }
 
-void
-EmulationPageTable::PageTableTranslationGen::translate(Range &range) const
+const std::string
+EmulationPageTable::externalize() const
 {
-    const Addr page_size = pt->pageSize();
+    std::string out;
+    for (const auto &kv : pTable) {
+        out += csprintf("%#x:%#x;", kv.first, kv.second.paddr);
+    }
+    return out;
+}
 
-    Addr next = roundUp(range.vaddr, page_size);
-    if (next == range.vaddr)
-        next += page_size;
-    range.size = std::min(range.size, next - range.vaddr);
-
-    if (!pt->translate(range.vaddr, range.paddr))
-        range.fault = Fault(new GenericPageTableFault(range.vaddr));
+void
+EmulationPageTable::getMappings(std::vector<std::pair<Addr, Addr>> *addr_mappings)
+{
+    addr_mappings->clear();
+    addr_mappings->reserve(pTable.size());
+    for (const auto &kv : pTable) {
+        addr_mappings->emplace_back(kv.first, kv.second.paddr);
+    }
 }
 
 void
@@ -187,16 +137,13 @@ EmulationPageTable::serialize(CheckpointOut &cp) const
 {
     ScopedCheckpointSection sec(cp, "ptable");
     paramOut(cp, "size", pTable.size());
-
-    PTable::size_type count = 0;
+    size_t count = 0;
     for (auto &pte : pTable) {
-        ScopedCheckpointSection sec(cp, csprintf("Entry%d", count++));
-
+        ScopedCheckpointSection ent(cp, csprintf("Entry%d", count++));
         paramOut(cp, "vaddr", pte.first);
         paramOut(cp, "paddr", pte.second.paddr);
         paramOut(cp, "flags", pte.second.flags);
     }
-    assert(count == pTable.size());
 }
 
 void
@@ -205,29 +152,14 @@ EmulationPageTable::unserialize(CheckpointIn &cp)
     int count;
     ScopedCheckpointSection sec(cp, "ptable");
     paramIn(cp, "size", count);
-
     for (int i = 0; i < count; ++i) {
-        ScopedCheckpointSection sec(cp, csprintf("Entry%d", i));
-
-        Addr vaddr;
-        UNSERIALIZE_SCALAR(vaddr);
-        Addr paddr;
-        uint64_t flags;
-        UNSERIALIZE_SCALAR(paddr);
-        UNSERIALIZE_SCALAR(flags);
-
+        ScopedCheckpointSection ent(cp, csprintf("Entry%d", i));
+        Addr vaddr; Addr paddr; uint64_t flags;
+        paramIn(cp, "vaddr", vaddr);
+        paramIn(cp, "paddr", paddr);
+        paramIn(cp, "flags", flags);
         pTable.emplace(vaddr, Entry(paddr, flags));
     }
-}
-
-const std::string
-EmulationPageTable::externalize() const
-{
-    std::stringstream ss;
-    for (PTable::const_iterator it=pTable.begin(); it != pTable.end(); ++it) {
-        ss << std::hex << it->first << ":" << it->second.paddr << ";";
-    }
-    return ss.str();
 }
 
 } // namespace gem5

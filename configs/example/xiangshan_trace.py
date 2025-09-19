@@ -84,8 +84,8 @@ def build_test_system():
     # Set memory mode to timing for O3CPU
     system.mem_mode = 'timing'
 
-    # Memory ranges - CRITICAL FIX: Ensure memory doesn't start at 0 to avoid virtual address 0 faults
-    # Start at 4KB (0x1000) to leave zero page unmapped (standard practice)
+    # Memory ranges - ensure physical memory covers the trace mapping region.
+    # Start at 4KB (0x1000) to keep zero page unmapped (standard practice).
     system.mem_ranges = [AddrRange(start=0x1000, size='32GB')]
 
     # Create XiangShan CPU with trace mode enabled
@@ -139,8 +139,7 @@ def build_test_system():
     system.cpu.createThreads()
     system.cpu.createInterruptController()
 
-    # Set up minimal system workload for SE mode
-    # Required for SE mode process infrastructure
+    # Set up minimal system workload for SE mode (required for SE infra)
     from m5.objects import SEWorkload
     hello_binary = "tests/test-progs/hello/bin/riscv/linux/hello"
     system.workload = SEWorkload.init_compatible(hello_binary)
@@ -176,6 +175,18 @@ def main():
     parser.add_argument('--disable-bp-validation', action='store_true',
                        help='Disable branch predictor validation against trace')
 
+    # Trace address mapping options (must align with TraceReader settings)
+    parser.add_argument('--trace-addr-base', type=lambda x: int(x, 0), default=0x10000000,
+                       help='Virtual base address for mapped trace addresses (default: 0x10000000)')
+    parser.add_argument('--trace-addr-size', type=lambda x: int(x, 0), default=0x40000000,
+                       help='Size of mapped trace address region in bytes (default: 0x40000000 = 1GB)')
+    parser.add_argument('--trace-addr-map-mode', type=str, choices=['hash', 'linear'], default='hash',
+                       help='Address mapping mode used by TraceReader (default: hash)')
+    parser.add_argument('--no-trace-addr-page-align', action='store_true',
+                       help='Disable page alignment when mapping trace addresses (default: aligned)')
+    parser.add_argument('--trace-map-zero-page', action='store_true',
+                       help='Map a single zero page (vaddr 0x0) to avoid null-pointer page faults in trace mode')
+
     args = parser.parse_args()
 
     # Validate trace file exists
@@ -205,6 +216,14 @@ def main():
     system.cpu.traceCheckpointInterval = args.trace_checkpoint_interval
     system.cpu.traceBPValidation = not args.disable_bp_validation
 
+    # Apply trace address mapping parameters to the CPU (consumed by TraceReader)
+    system.cpu.traceAddrBase = args.trace_addr_base
+    system.cpu.traceAddrSize = args.trace_addr_size
+    system.cpu.traceAddrMapMode = args.trace_addr_map_mode
+    system.cpu.traceAddrPageAlign = (not args.no_trace_addr_page_align)
+    # Optional: map zero page to avoid SE-mode faults from stray vaddr=0 accesses
+    # (argument already declared above; avoid duplicate add_argument)
+
     # If decoupled BP is enabled, switch to decoupled branch predictor
     if args.enable_decoupled_bp:
         print("  Enabling decoupled branch predictor for trace mode")
@@ -216,12 +235,36 @@ def main():
     print(f"  Decoupled BP enabled: {args.enable_decoupled_bp}")
     print(f"  Checkpoint interval: {args.trace_checkpoint_interval}")
     print(f"  BP validation: {not args.disable_bp_validation}")
+    print("  Trace address mapping:")
+    print(f"    base=0x{args.trace_addr_base:x}, size=0x{args.trace_addr_size:x}, "
+          f"mode={args.trace_addr_map_mode}, page_align={not args.no_trace_addr_page_align}")
 
     # Set up root and instantiate
     root = Root(full_system=False, system=system)
 
     # Instantiate all SimObjects
     m5.instantiate()
+
+    # After instantiation, explicitly map the trace virtual address window into
+    # the SE process page table to avoid page faults during LSQ translations.
+    try:
+        process = system.cpu.workload[0]
+        # Identity map: vaddr == paddr for simplicity.
+        process.map(args.trace_addr_base, args.trace_addr_base, int(args.trace_addr_size), True)
+    except Exception as e:
+        fatal(
+            "Failed to map trace addr region into process page table: "
+            f"base=0x{args.trace_addr_base:x}, size=0x{args.trace_addr_size:x}, error={e}"
+        )
+
+    # Optional: map zero page to avoid SE-mode faults from traces or special ops
+    if args.trace_map_zero_page:
+        try:
+            # Map one page at vaddr 0x0 to a safe physical page (e.g., at 0x1000)
+            process.map(0x0, 0x1000, 0x1000, True)
+            print("  Zero page mapped: vaddr=0x0 -> paddr=0x1000 size=0x1000")
+        except Exception as e:
+            warn(f"Failed to map zero page: {e}")
 
     print("Starting trace-driven simulation...")
     print("This will replay the trace through the XiangShan pipeline")

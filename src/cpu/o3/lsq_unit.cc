@@ -1110,13 +1110,25 @@ LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
     // Reset DTB translation state
     inst->translationStarted(false);
     inst->translationCompleted(false);
-    // clear request in loadQueue
-    loadQueue[inst->lqIdx].setRequest(nullptr);
-    if (dropReqNow) {
-        // discard this request
-        request->discard();
-        // TODO: is this essential?
-        inst->savedRequest = nullptr;
+    const bool preserveRequest = cpu->isTraceMode() && request &&
+                                  request->isNormalLd();
+
+    if (!preserveRequest) {
+        // clear request in loadQueue
+        loadQueue[inst->lqIdx].setRequest(nullptr);
+    }
+
+    if (dropReqNow && request) {
+        if (preserveRequest) {
+            // Keep the outstanding request alive so the pending response
+            // can still be matched with this instruction in trace mode.
+            inst->savedRequest = request;
+        } else {
+            // discard this request
+            request->discard();
+            // TODO: is this essential?
+            inst->savedRequest = nullptr;
+        }
     }
 
     DPRINTF(LoadPipeline, "Load [sn:%ld] set replay, dropReqNow: %d\n", inst->seqNum, dropReqNow);
@@ -1266,13 +1278,17 @@ Fault
 LSQUnit::loadDoRecvData(const DynInstPtr &inst)
 {
     Fault fault = inst->getFault();
-    DPRINTF(LoadPipeline, "loadDoRecvData: load [sn:%lli]\n", inst->seqNum);
+    DPRINTF(LoadPipeline,
+            "loadDoRecvData: load [sn:%lli] wake:%d pending:%d cacheHit:%d fullForward:%d\n",
+            inst->seqNum, inst->wakeUpEarly(), inst->hasPendingCacheReq(),
+            inst->cacheHit(), inst->fullForward());
 
     assert(!inst->isSquashed());
     LSQRequest* request = inst->savedRequest;
+    LSQ* lsq = getLsq();
 
     if (inst->wakeUpEarly()) {
-        auto& bus = getLsq()->bus;
+        auto& bus = lsq->bus;
         bool busFwdSuccess = bus.find(inst->seqNum) != bus.end();
         if (inst->hasPendingCacheReq() || !busFwdSuccess) {
             // Load has been waken up too early, even no TimingResp at load s2
@@ -1298,7 +1314,8 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
 
     // check if cache hit & get cache response?
     // NOTE: cache miss replay has higher priority than nuke replay!
-    if (lsq->enableLdMissReplay() && request && request->isNormalLd() && !inst->fullForward() && !inst->cacheHit()) {
+    if (lsq->enableLdMissReplay() && request && request->isNormalLd() &&
+        !inst->fullForward() && !inst->cacheHit()) {
         // cannot get cache data at load s2, replay this load
         loadSetReplay(inst, request, false);
         inst->setCacheMissReplay();
@@ -2776,8 +2793,10 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     // A bit of a hackish way to get strictly ordered accesses to work
     // only if they're at the head of the LSQ and are ready to commit
     // (at the head of the ROB too).
+    // TRACE MODE FIX: Bypass strict ordering check for trace mode
     if (request->mainReq()->isStrictlyOrdered() &&
-        (load_idx != loadQueue.head() || !load_inst->isAtCommit())) {
+        (load_idx != loadQueue.head() || !load_inst->isAtCommit()) &&
+        !cpu->isTraceMode()) {
         // should not enter this
         // Tell IQ/mem dep unit that this instruction will need to be
         // rescheduled eventually

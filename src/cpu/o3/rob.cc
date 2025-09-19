@@ -417,6 +417,7 @@ ROB::retireHead(ThreadID tid)
     // @todo: A special case is needed if the instruction being
     // retired is the only instruction in the ROB; otherwise the tail
     // iterator will become invalidated.
+    printf("[TRACE-DEBUG] ROB::retireHead: Calling removeFrontInst for [sn:%llu]\n", (unsigned long long)head_inst->seqNum);
     cpu->removeFrontInst(head_inst);
 }
 
@@ -474,6 +475,8 @@ ROB::numFreeEntries(ThreadID tid)
 void
 ROB::doSquash(ThreadID tid)
 {
+    printf("[TRACE-DEBUG] ROB::doSquash: ENTRY for tid=%d, instList[%d].size()=%zu, doneSquashing[%d]=%d, squashedSeqNum=%llu\n", 
+           tid, tid, instList[tid].size(), tid, doneSquashing[tid], (unsigned long long)squashedSeqNum[tid]);
     stats.writes++;
     DPRINTF(ROB, "[tid:%i] Squashing instructions until [sn:%llu].\n",
             tid, squashedSeqNum[tid]);
@@ -503,62 +506,84 @@ ROB::doSquash(ThreadID tid)
         num_insts_to_squash = numEntries * instsPerGroup;
     }
 
+    // FIXED: Use collect-then-erase pattern to avoid iterator invalidation
+    std::vector<InstIt> toErase;
+    
+    // First pass: collect iterators and process instructions
+    auto currentIt = squashIt[tid];
     for (int numSquashed = 0;
          numSquashed < num_insts_to_squash &&
-         squashIt[tid] != instList[tid].end() &&
-         (*squashIt[tid])->seqNum > squashedSeqNum[tid];
+         currentIt != instList[tid].end() &&
+         (*currentIt)->seqNum > squashedSeqNum[tid];
          ++numSquashed)
     {
-        DPRINTF(ROB, "[tid:%i] Squashing instruction PC %s, seq num %i.\n",
-                (*squashIt[tid])->threadNumber,
-                (*squashIt[tid])->pcState(),
-                (*squashIt[tid])->seqNum);
+        printf("[TRACE-DEBUG] ROB::doSquash: Loop iteration %d, processing [sn:%llu]\n", 
+               numSquashed, (unsigned long long)(*currentIt)->seqNum);
+        DPRINTF(ROB, "[tid:%i] Squashing instruction PC %s, seq num %llu.\n",
+                (*currentIt)->threadNumber,
+                (*currentIt)->pcState(),
+                (unsigned long long)(*currentIt)->seqNum);
 
         // Mark the instruction as squashed, and ready to commit so that
         // it can drain out of the pipeline.
-        (*squashIt[tid])->setSquashed();
-
-        (*squashIt[tid])->setCanCommit();
-
-        // printf("[ROB] squash seqNum %ld\n", (*squashIt[tid])->seqNum);
-
-        auto prevIt = std::prev(squashIt[tid]);
+        (*currentIt)->setSquashed();
+        (*currentIt)->setCanCommit();
+        (*currentIt)->clearInROB();
+        
         --numInstsInROB;
+        squashGroup(*currentIt, tid);
 
-        //Update Group Size
-        squashGroup(*squashIt[tid], tid);
+        printf("[TRACE-DEBUG] ROB::doSquash: Calling removeFrontInst for [sn:%llu]\n", (unsigned long long)(*currentIt)->seqNum);
+        cpu->removeFrontInst(*currentIt);
 
-        (*squashIt[tid])->clearInROB();
-        // head_inst->setCommitted();
-        cpu->removeFrontInst(*squashIt[tid]);
+        // Collect iterator for later erasure
+        toErase.push_back(currentIt);
 
-        if (instList[tid].empty() || squashIt[tid] == instList[tid].begin()) {
-            DPRINTF(ROB, "Reached head of instruction list while "
-                    "squashing.\n");
-
-            instList[tid].erase(squashIt[tid]);
-
-            squashIt[tid] = instList[tid].end();
-
+        // Check for special cases - must do this BEFORE decrementing currentIt
+        bool atBeginning = (currentIt == instList[tid].begin());
+        if (instList[tid].empty() || atBeginning) {
             doneSquashing[tid] = true;
-
-            return;
+            printf("[TRACE-DEBUG] ROB::doSquash: Stopping - at beginning or empty list\n");
+            break;
         }
 
+        // Check if we need to update tail
         InstIt tail_thread = instList[tid].end();
         tail_thread--;
-
-        if ((*squashIt[tid]) == (*tail_thread))
+        if ((*currentIt) == (*tail_thread))
             robTailUpdate = true;
 
-        instList[tid].erase(squashIt[tid]);
+        // Move to previous instruction (backwards iteration)
+        auto prevIt = currentIt;
+        --currentIt;
+        if (currentIt != instList[tid].end()) {
+            printf("[TRACE-DEBUG] ROB::doSquash: Moving from [sn:%llu] to [sn:%llu]\n", 
+                   (unsigned long long)(*prevIt)->seqNum,
+                   (unsigned long long)(*currentIt)->seqNum);
+        } else {
+            printf("[TRACE-DEBUG] ROB::doSquash: Moving from [sn:%llu] to [end]\n",
+                   (unsigned long long)(*prevIt)->seqNum);
+        }
+    }
 
-        squashIt[tid] = prevIt;
+    // Second pass: safely erase all collected iterators
+    for (auto it : toErase) {
+        instList[tid].erase(it);
+    }
+
+    // Update squashIt to the next instruction to process
+    if (doneSquashing[tid] || currentIt == instList[tid].end() || 
+        (*currentIt)->seqNum <= squashedSeqNum[tid]) {
+        squashIt[tid] = instList[tid].end();
+        doneSquashing[tid] = true;
+    } else {
+        squashIt[tid] = currentIt;
     }
 
 
     // Check if ROB is done squashing.
-    if ((*squashIt[tid])->seqNum <= squashedSeqNum[tid]) {
+    if (squashIt[tid] != instList[tid].end() && 
+        (*squashIt[tid])->seqNum <= squashedSeqNum[tid]) {
         DPRINTF(ROB, "[tid:%i] Done squashing instructions.\n",
                 tid);
 
@@ -570,6 +595,8 @@ ROB::doSquash(ThreadID tid)
     if (robTailUpdate) {
         updateTail();
     }
+    printf("[TRACE-DEBUG] ROB::doSquash: EXIT for tid=%d, doneSquashing[%d]=%d\n", 
+           tid, tid, doneSquashing[tid]);
 }
 
 

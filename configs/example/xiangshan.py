@@ -75,7 +75,18 @@ def build_test_system(np, args):
     ruby = False
     if hasattr(args, 'ruby') and args.ruby:
         ruby = True
+    
+    # Create system using FS mode with trace-specific memory configuration
     test_sys = makeBareMetalXiangshanSystem('timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
+    
+    # CRITICAL FIX: Configure trace-specific memory ranges and functional TLB for trace mode
+    if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+        print("Trace mode: Using FS mode with functional TLB to bypass MMU translation issues")
+        print("Trace mode: Configuring expanded memory ranges for trace address mapping")
+        # Force functional TLB to bypass complex MMU translation
+        args.functional_tlb = True
+    else:
+        print("Checkpoint mode: Using standard FS mode with normal MMU translation")
     test_sys.num_cpus = np
 
     test_sys.xiangshan_system = True
@@ -86,9 +97,9 @@ def build_test_system(np, args):
                                         and args.enable_trace_mode)
                                 else False)
 
-    # Configure XiangShan inputs - skip checkpoint loading in trace mode
+    # Configure XiangShan inputs - skip checkpoint loading in trace mode  
     if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
-        # For trace mode, we only need difftest configuration, skip checkpoint loading
+        # For trace mode in SE mode, we skip most FS-specific configuration
         ref_so = None
         if args.enable_difftest and args.difftest_ref_so is None:
             # Use same logic as XSConfig.config_xiangshan_inputs for ref_so
@@ -106,19 +117,18 @@ def build_test_system(np, args):
 
         args.difftest_ref_so = ref_so
 
-        # Configure trace mode specific workload - no checkpoint loading
-        # Use proper RISC-V bootloader (bbl) for trace mode
+        # Trace mode FS configuration with functional TLB - bootloader needed but no checkpoint
         test_sys.workload.bootloader = '/nfs/home/goulingrui/project/riscv-environments/riscv-pk/build/bbl'
         test_sys.workload.xiangshan_cpt = False  # No checkpoint in trace mode
         test_sys.restore_from_gcpt = False       # Disable GCPT restoration
-
-        # Configure DRAMsim3 if needed (from XSConfig logic)
+        
+        # Configure DRAMsim3 if needed for memory controller
         if args.mem_type == 'DRAMsim3' and args.dramsim3_ini is None:
             root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
             args.dramsim3_ini = os.path.join(root_dir,
                                              'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
 
-        print("Trace mode: Skipped checkpoint configuration")
+        print("Trace mode: FS mode with functional TLB configured to bypass MMU translation issues")
     else:
         # Standard checkpoint-based configuration
         XSConfig.config_xiangshan_inputs(args, test_sys)
@@ -144,10 +154,21 @@ def build_test_system(np, args):
     # For now, assign all the CPUs to the same clock domain
     test_sys.cpu = [TestCPUClass(clk_domain=test_sys.cpu_clk_domain, cpu_id=i)
                     for i in range(np)]
+    # Configure MMU for trace-aware FS mode
     for cpu in test_sys.cpu:
-        cpu.mmu.pma_checker = PMAChecker(
-            uncacheable=[AddrRange(0, size=0x80000000)])
-        cpu.mmu.functional = args.functional_tlb
+        if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+            # Trace mode: Ensure trace memory region (0x80000000+) is cacheable
+            # PMAChecker excludes regions from being cacheable, so avoid trace region
+            # Physical memory starts at 0x80000000, so make everything below that uncacheable
+            cpu.mmu.pma_checker = PMAChecker(
+                uncacheable=[AddrRange(0x1000, size=0x80000000-0x1000)])  # Exclude everything below physical memory
+            cpu.mmu.functional = True  # Use functional TLB for reliable trace address translation
+            print(f"Trace mode: CPU {cpu.cpu_id} configured with trace-aware PMAChecker and functional TLB")
+        else:
+            # Standard FS mode: Standard PMAChecker configuration  
+            cpu.mmu.pma_checker = PMAChecker(
+                uncacheable=[AddrRange(0x1000, size=0x80000000-0x1000)])
+            cpu.mmu.functional = args.functional_tlb
 
     # configure BP
     args.enable_loop_predictor = True
@@ -209,10 +230,19 @@ def build_test_system(np, args):
             cpu.traceFile = args.trace_file
             cpu.traceFormat = args.trace_format
             cpu.max_insts_any_thread = args.trace_max_insts
+            
+            # Trace address mapping: Map to existing physical memory range
+            # System physical memory starts at 0x80000000, so map trace addresses there
+            cpu.traceAddrBase = 0x80000000  # Start of physical memory
+            cpu.traceAddrSize = 0x40000000  # 1GB window within physical memory
 
             # Disable strict memory ordering for trace mode compatibility
             # Trace instructions may not follow strict ordering requirements
             cpu.needsTSO = False
+
+            # Trace mispredict modeling controls
+            cpu.traceMispredictPenalty = args.trace_mispredict_penalty
+            cpu.traceEnableWrongPath = (not args.trace_disable_wrongpath)
 
             # Note: Difftest configured at system level, not CPU level
 
@@ -511,6 +541,10 @@ if __name__ == '__m5_main__':
                        help='Checkpoint interval for trace rollback (default: 64)')
     parser.add_argument('--trace-disable-bp-validation', action='store_true',
                        help='Disable branch predictor validation against trace')
+    parser.add_argument('--trace-mispredict-penalty', type=int, default=8,
+                       help='Cycles to penalize on mispredict (default: 8)')
+    parser.add_argument('--trace-disable-wrongpath', action='store_true',
+                       help='Disable explicit wrong-path injection (use stall model)')
 
     # Check for trace mode before parsing to make generic-rv-cpt conditional
     if '--enable-trace-mode' in sys.argv:
@@ -568,6 +602,7 @@ if __name__ == '__m5_main__':
     if args.ideal_kmhv3:
         setKmhV3IdealParams(args, test_sys)
 
+    # FS mode for both checkpoint and trace simulation (with expanded memory ranges for trace)
     root = Root(full_system=True, system=test_sys)
 
     # Run simulation - different execution paths for trace mode vs checkpoint mode

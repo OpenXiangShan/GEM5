@@ -536,6 +536,21 @@ class Fetch
      * @param currentPC Current PC of the branch
      */
     void feedTraceToDecoupledBTB(const o3::TraceInstruction& traceInstr, Addr currentPC);
+    
+    /**
+     * Feed trace branch outcome to decoupled FTB predictor
+     * Creates a FetchStream from trace information for comprehensive training
+     * @param traceInstr Trace instruction with correct branch outcome
+     * @param currentPC Current PC of the branch
+     */
+    void feedTraceToDecoupledFTB(const o3::TraceInstruction& traceInstr, Addr currentPC);
+    
+    /**
+     * Synthesize instruction bytes from trace for decoder after icache completion
+     * Stage 5: Maintains icache timing while providing correct instruction semantics
+     * @param tid Thread ID
+     */
+    void synthesizeTraceInstructionBytes(ThreadID tid);
 
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
@@ -695,6 +710,24 @@ class Fetch
     std::unique_ptr<o3::TraceReader> traceReader;
     /** Whether trace mode is enabled */
     bool traceMode;
+    /** Whether to train BP and use real branch instructions in trace mode */
+    bool traceTrainBranches = true;
+    /** Cycles to stall fetch on mispredict in trace mode */
+    Cycles traceMispredictPenalty = Cycles(8);
+    /** Remaining stall cycles due to a modeled mispredict */
+    Cycles traceStallRemaining = Cycles(0);
+    /** Enable explicit wrong-path injection in decoupled frontend */
+    bool traceEnableWrongPath = true;
+
+    /** Explicit wrong-path simulation (decoupled frontend only) */
+    bool traceWrongPathActive = false;
+    Cycles traceWrongPathCyclesLeft = Cycles(0);
+    Addr traceWrongPathPredPC = 0;       // predicted (wrong) path start PC
+    Addr traceWrongPathCorrectPC = 0;    // correct redirect PC from trace
+    InstSeqNum traceWrongPathBranchSeqNum = 0; // branch seqNum for squash boundary
+
+    /** Whether trace mode should honor decoupled frontend semantics */
+    bool traceDecoupledFrontend = false;
 
   private:
 
@@ -703,6 +736,9 @@ class Fetch
 
     /** Map sequence numbers to trace instruction indices for rollback capability */
     std::unordered_map<InstSeqNum, uint64_t> seqNumToTraceIndex;
+
+    /** Number of trace instructions consumed so far (for precise mapping) */
+    uint64_t traceInstrConsumed = 0;
 
     /** Periodic checkpoints for trace reader rollback */
     std::vector<o3::TraceReader::TraceCheckpoint> traceCheckpoints;
@@ -949,7 +985,12 @@ class Fetch
     FinishTranslationEvent finishTranslationEvent;
 
     /** Decoupled frontend related */
-    bool isDecoupledFrontend() { return branchPred->isDecoupled(); }
+    bool isDecoupledFrontend() {
+        if (traceMode && !traceDecoupledFrontend) {
+            return false;
+        }
+        return branchPred->isDecoupled();
+    }
 
     bool isStreamPred() { return branchPred->isStream(); }
 

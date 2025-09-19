@@ -131,12 +131,17 @@ TraceReader::updateStats(const TraceInstruction &instr)
 
 std::unique_ptr<TraceReader>
 createTraceReader(const std::string &format, const std::string &trace_file,
-                  const std::string &name)
+                  const std::string &name, uint64_t addrBase, uint64_t addrSize,
+                  const std::string &addrMapMode, bool pageAlign)
 {
-    // Debug: Creating trace reader
+    // Debug: Creating trace reader with mapping parameters
+    // Note: name is passed as parameter, not from object method
 
     if (format == "champsim") {
-        return std::make_unique<ChampSimTraceReader>(trace_file, name);
+        auto reader = std::make_unique<ChampSimTraceReader>(trace_file, name);
+        // Configure address mapping parameters
+        reader->setAddressMapping(addrBase, addrSize, addrMapMode, pageAlign);
+        return reader;
     } else if (format == "cbp2025") {
         return std::make_unique<CBP2025TraceReader>(trace_file, name);
     } else {

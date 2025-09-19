@@ -257,6 +257,22 @@ class BaseO3CPU(BaseCPU):
 
     # Address mapping configuration for trace mode
     traceAddrMapMode = Param.String("hash", "Address mapping mode for trace (hash|linear)")
-    traceAddrBase = Param.Addr(0x10000000, "Base address for trace address mapping")
+    traceAddrBase = Param.Addr(0x80000000, "Base address for trace address mapping (within physical memory)")
     traceAddrSize = Param.Addr(0x40000000, "Size of trace address mapping region (1GB)")
     traceAddrPageAlign = Param.Bool(True, "Align trace addresses to page boundaries")
+
+    # Trace-driven branch predictor training and control-flow modeling
+    traceTrainBranches = Param.Bool(True,
+        "Enable BP training and use real branch opcodes under trace mode")
+
+    # On a branch misprediction (predicted vs. trace ground truth), stall
+    # the fetch stage for this many cycles to emulate redirect/recovery cost.
+    traceMispredictPenalty = Param.Cycles(8,
+        "Cycles to stall fetch on mispredict in trace mode")
+
+    # Enable explicit wrong-path fetch/ decode/ cancel injection in decoupled frontend
+    traceEnableWrongPath = Param.Bool(True,
+        "Enable wrong-path injection on BP mispredict for decoupled frontend")
+
+    # Trace mode control (exec bypass reserved for future use)
+    traceExecBypass = Param.Bool(False, "Bypass real execute for non-mem/non-ctrl ops in trace mode; only consume timing (experimental)")

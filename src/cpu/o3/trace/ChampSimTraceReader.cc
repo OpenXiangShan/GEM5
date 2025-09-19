@@ -51,6 +51,7 @@ ChampSimTraceReader::ChampSimTraceReader(const std::string &trace_file,
       addrMapSize(map_size), addrPageAlign(page_align)
 {
     compressed = isCompressed(trace_file);
+    hasPendingInstr = false;
 
     // Address mapping configuration initialized
     // mode=%s, base=0x%lx, size=0x%lx, page_align=%d
@@ -150,6 +151,7 @@ ChampSimTraceReader::reset()
     eofReached = false;
     currentSeqNum = 0;
     instructionIndex = 0;
+    hasPendingInstr = false;
 
     // Clear instruction buffer and checkpoints
     while (!instrBuffer.empty()) {
@@ -194,18 +196,27 @@ ChampSimTraceReader::fillBuffer(size_t max_instructions)
         return 0;
     }
 
-    DPRINTF(TraceReader, "fillBuffer: Starting to read %lu instructions (compressed=%d)\n",
+    DPRINTF(TraceReader, "fillBuffer: Starting to read (target push %lu) (compressed=%d)\n",
             max_instructions, compressed);
 
-    size_t instructions_read = 0;
+    size_t pushed = 0;
 
-    while (instructions_read < max_instructions && !eofReached) {
-        TraceInstruction trace_instr;
-        if (parseInstruction(trace_instr)) {
-            addToBuffer(trace_instr);
-            instructions_read++;
-            DPRINTF(TraceReader, "fillBuffer: Read instruction %lu, PC=0x%lx\n",
-                    instructions_read, trace_instr.getPC());
+    while (pushed < max_instructions && !eofReached) {
+        TraceInstruction current;
+        if (parseInstruction(current)) {
+            if (hasPendingInstr) {
+                // If the pending instruction is a taken branch, set its target as nextPC
+                if (pendingInstr.isAnyBranch() && pendingInstr.getBranchTaken()) {
+                    pendingInstr.setBranchTarget(current.getPC());
+                    DPRINTF(TraceReader, "fillBuffer: Set branch target from nextPC: 0x%lx\n",
+                            current.getPC());
+                }
+                addToBuffer(pendingInstr);
+                pushed++;
+            }
+            // Stage current as next pending
+            pendingInstr = current;
+            hasPendingInstr = true;
         } else {
             DPRINTF(TraceReader, "fillBuffer: parseInstruction failed, setting EOF\n");
             eofReached = true;
@@ -213,9 +224,17 @@ ChampSimTraceReader::fillBuffer(size_t max_instructions)
         }
     }
 
-    DPRINTF(TraceReader, "fillBuffer: Completed, read %lu instructions\n", instructions_read);
+    // If we've reached EOF, flush the final pending instruction (no target derivable)
+    if (eofReached && hasPendingInstr && pushed < max_instructions) {
+        addToBuffer(pendingInstr);
+        pushed++;
+        hasPendingInstr = false;
+        DPRINTF(TraceReader, "fillBuffer: Flushed final pending instruction at EOF\n");
+    }
 
-    return instructions_read;
+    DPRINTF(TraceReader, "fillBuffer: Completed, pushed %lu instructions\n", pushed);
+
+    return pushed;
 }
 
 bool
@@ -309,20 +328,8 @@ ChampSimTraceReader::convertInstruction(const ChampSimInstr &cs_instr,
     // Set branch information
     if (cs_instr.is_branch) {
         trace_instr.setBranchTaken(cs_instr.branch_taken != 0);
-
-        // Estimate branch target since ChampSim format doesn't provide it directly
-        // This is a simplified approach - in real implementation we'd use:
-        // 1. Instruction decoding for direct branches (PC + immediate)
-        // 2. Historical tracking for indirect branches
-        // 3. Return address stack for returns
-        if (cs_instr.branch_taken != 0) {
-            uint64_t estimated_target = estimateBranchTarget(cs_instr);
-            if (estimated_target != 0) {
-                trace_instr.setBranchTarget(mapTraceAddressToVirtual(estimated_target));
-                DPRINTF(TraceReader, "convertInstruction: Estimated branch target 0x%lx -> 0x%lx\n",
-                        estimated_target, mapTraceAddressToVirtual(estimated_target));
-            }
-        }
+        // Do not estimate target; real target will be derived via look-ahead
+        // when the next instruction's PC becomes available in fillBuffer.
     }
 
     // Extract memory operations
@@ -719,6 +726,18 @@ ChampSimTraceReader::estimateBranchTarget(const ChampSimInstr &cs_instr)
     // For not-taken branches, target is typically fall-through (next instruction)
     // Assume 4-byte instruction size for RISC-V
     return cs_instr.ip + 4;
+}
+
+void
+ChampSimTraceReader::setAddressMapping(uint64_t base, uint64_t size, const std::string &mode, bool pageAlign)
+{
+    addrMapBase = base;
+    addrMapSize = size;
+    addrMapMode = mode;
+    addrPageAlign = pageAlign;
+    
+    DPRINTF(TraceReader, "Address mapping configured: base=0x%x, size=0x%x, mode=%s, pageAlign=%s\n",
+            base, size, mode, pageAlign ? "true" : "false");
 }
 
 } // namespace o3

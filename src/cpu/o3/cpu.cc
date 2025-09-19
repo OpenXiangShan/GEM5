@@ -315,7 +315,9 @@ CPU::CPU(const BaseO3CPUParams &params)
     // Initialize trace reader if trace mode is enabled
     if (params.enableTraceMode && !params.traceFile.empty()) {
         fetch.traceMode = true;
-        fetch.traceReader = o3::createTraceReader(params.traceFormat, params.traceFile, name());
+        fetch.traceReader = o3::createTraceReader(params.traceFormat, params.traceFile, name(),
+                                                  params.traceAddrBase, params.traceAddrSize,
+                                                  params.traceAddrMapMode, params.traceAddrPageAlign);
         if (!fetch.traceReader) {
             fatal("Failed to create trace reader for format '%s', file '%s'\n",
                   params.traceFormat, params.traceFile);
@@ -1421,10 +1423,26 @@ CPU::removeFrontInst(const DynInstPtr &inst)
             "[sn:%lli]\n",
             inst->threadNumber, inst->pcState(), inst->seqNum);
 
+    // Check if instruction has already been marked for removal
+    auto inst_it = inst->getInstListIt();
+    bool is_end = (inst_it == instList.end());
+    printf("[TRACE-DEBUG] removeFrontInst: [sn:%llu] iterator=%s, isSquashed=%d\n",
+           (unsigned long long)inst->seqNum,
+           is_end ? "<end>" : "<valid>", inst->isSquashed());
+
+    if (is_end) {
+        // Already erased or never enqueued into CPU instList; nothing to do.
+        return;
+    }
+
     removeInstsThisCycle = true;
 
-    // Remove the front instruction.
-    removeList.push(inst->getInstListIt());
+    // Queue the iterator for removal at end of cycle.
+    // Invalidate the back-pointer immediately to prevent duplicate enqueues.
+    inst->setInstListIt(instList.end());
+    printf("[TRACE-DEBUG] removeFrontInst: Pushing iterator for [sn:%llu] to removeList (size before=%zu)\n",
+           (unsigned long long)inst->seqNum, removeList.size());
+    removeList.push(inst_it);
 }
 
 void
@@ -1509,12 +1527,17 @@ CPU::squashInstIt(const ListIt &instIt, ThreadID tid)
                 (*instIt)->seqNum,
                 (*instIt)->pcState());
 
+        printf("[TRACE-DEBUG] squashInstIt: [sn:%llu] isSquashed=%d, pushing to removeList (size before=%zu)\n",
+               (unsigned long long)(*instIt)->seqNum, (*instIt)->isSquashed(), removeList.size());
+
         // Mark it as squashed.
         (*instIt)->setSquashed();
 
         // @todo: Formulate a consistent method for deleting
         // instructions from the instruction list
         // Remove the instruction from the list.
+        // Invalidate the back-pointer immediately to prevent duplicate enqueues.
+        (*instIt)->setInstListIt(instList.end());
         removeList.push(instIt);
     }
 }
@@ -1529,16 +1552,43 @@ CPU::flushTLBs()
 void
 CPU::cleanUpRemovedInsts()
 {
+    printf("[TRACE-DEBUG] cleanUpRemovedInsts: Processing removeList with %zu entries, instList size=%zu\n", 
+           removeList.size(), instList.size());
+    int count = 0;
     while (!removeList.empty()) {
-        DPRINTF(O3CPU, "Removing instruction, "
-                "[tid:%i] [sn:%lli] PC %s\n",
-                (*removeList.front())->threadNumber,
-                (*removeList.front())->seqNum,
-                (*removeList.front())->pcState());
-
-        instList.erase(removeList.front());
-
+        auto inst_it = removeList.front();
         removeList.pop();
+        
+        printf("[TRACE-DEBUG] cleanUpRemovedInsts: Entry %d - checking iterator validity\n", count);
+        fflush(stdout);  // Force flush to see output before potential crash
+        
+        if (inst_it == instList.end()) {
+            printf("[TRACE-DEBUG] cleanUpRemovedInsts: Entry %d is instList.end(), skipping\n", count);
+        } else {
+            // Try to access the iterator carefully
+            try {
+                auto inst_ptr = *inst_it;
+                if (!inst_ptr) {
+                    printf("[TRACE-DEBUG] cleanUpRemovedInsts: Entry %d points to nullptr, skipping\n", count);
+                } else {
+                    printf("[TRACE-DEBUG] cleanUpRemovedInsts: Entry %d removing [sn:%llu]\n", 
+                           count, (unsigned long long)inst_ptr->seqNum);
+                    DPRINTF(O3CPU, "Removing instruction, "
+                            "[tid:%i] [sn:%lli] PC %s\n",
+                            inst_ptr->threadNumber,
+                            inst_ptr->seqNum,
+                            inst_ptr->pcState());
+
+                    instList.erase(inst_it);
+                    // Invalidate the back-pointer so future removals are ignored safely
+                    inst_ptr->setInstListIt(instList.end());
+                }
+            } catch (...) {
+                printf("[TRACE-DEBUG] cleanUpRemovedInsts: Entry %d - EXCEPTION accessing iterator!\n", count);
+                fflush(stdout);
+            }
+        }
+        count++;
     }
 
     removeInstsThisCycle = false;

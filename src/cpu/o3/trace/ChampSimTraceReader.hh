@@ -97,6 +97,13 @@ class ChampSimTraceReader : public TraceReader
     bool addrPageAlign;             ///< Whether to align to page boundaries
     static constexpr uint64_t PAGE_SIZE = 4096; ///< Page size for alignment
 
+    /**
+     * Look-ahead staging: hold the last parsed instruction until the next
+     * one is available so we can derive branch target as nextPC for taken branches.
+     */
+    bool hasPendingInstr = false;
+    TraceInstruction pendingInstr;
+
   public:
     /**
      * Constructor
@@ -159,6 +166,15 @@ class ChampSimTraceReader : public TraceReader
      * @return Current instruction index
      */
     uint64_t getCurrentInstructionIndex() const override;
+
+    /**
+     * Configure address mapping parameters after construction
+     * @param base Base address for mapping
+     * @param size Size of mapping region  
+     * @param mode Address mapping mode ("hash" or "linear")
+     * @param pageAlign Whether to align to page boundaries
+     */
+    void setAddressMapping(uint64_t base, uint64_t size, const std::string &mode, bool pageAlign);
 
   protected:
     /**
