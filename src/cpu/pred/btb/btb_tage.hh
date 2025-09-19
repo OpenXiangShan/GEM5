@@ -387,9 +387,10 @@ private:
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
-                                 bool actual_taken,
-                                 const TagePrediction &pred,
-                                 const FetchStream &stream);
+                                bool actual_taken,
+                                const TagePrediction &pred,
+                                const FetchStream &stream,
+                                const std::shared_ptr<TageMeta> &pred_meta);
 
     // Helper method to handle useful bit reset
     void handleUsefulBitReset(const std::vector<bitset> &useful_mask, unsigned way = 0, bool found = false);

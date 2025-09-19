@@ -373,7 +373,8 @@ bool
 BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchStream &stream) {
+                             const FetchStream &stream,
+                             const std::shared_ptr<TageMeta> &pred_meta) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -395,17 +396,26 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         }
         DPRINTF(TAGE, "useful bit set to %d\n", way.useful);
         
-        // Update prediction counter
-        updateCounter(actual_taken, 3, way.counter);
-
+        // Skip counter updates here; we will rescan all tables below
         // No LRU maintenance
     }
 
-    // Update alternative prediction provider
-    if (used_alt && alt_info.found) {
-        auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
-        updateCounter(actual_taken, 3, way.counter);
-        // No LRU maintenance
+    // Rescan all tables from high to low and update counters for every matching entry
+    {
+        Addr alignedPC = stream.getRealStartPC() & ~(blockSize - 1);
+
+        for (int ti = numPredictors - 1; ti >= 0; --ti) {
+            Addr idx = getTageIndex(alignedPC, ti, pred_meta->indexFoldedHist[ti].get()); // use pred-time snapshot
+            Addr tag = getTageTag(alignedPC, ti,
+                pred_meta->tagFoldedHist[ti].get(), pred_meta->altTagFoldedHist[ti].get());
+            auto &set = tageTable[ti][idx];
+            for (unsigned wayIdx = 0; wayIdx < numWays; ++wayIdx) {
+                auto &e = set[wayIdx];
+                if (e.valid && e.tag == tag && e.pc == entry.pc) {
+                    updateCounter(actual_taken, 3, e.counter);
+                }
+            }
+        }
     }
 
     // Update statistics
@@ -680,7 +690,8 @@ BTBTAGE::update(const FetchStream &stream) {
         }
 
         // Update predictor state and check if need to allocate new entry
-        bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, pred_it->second, stream);
+        bool need_allocate = updatePredictorStateAndCheckAllocation(
+            btb_entry, actual_taken, pred_it->second, stream, meta);
 
         // Handle new entry allocation if needed
         bool alloc_success = false;
