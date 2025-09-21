@@ -1106,9 +1106,9 @@ class BTBMGSC(TimedBaseBTBPredictor):
     gWeightInitValue = Param.Int(7,
         "Initial value of the weights of the global history GEHL entries")
 
-    pTableNum = Param.Unsigned(2, "Num global branch path history tables")
-    pHistLen = VectorParam.Int([8, 16], "Global branch path history lengths")
-    pTableIdxWidth = Param.Unsigned(11,
+    pTableNum = Param.Unsigned(4, "Num global branch path history tables")
+    pHistLen = VectorParam.Int([4, 10, 22, 46], "Global branch path history lengths")
+    pTableIdxWidth = Param.Unsigned(10,
                     "Log number of global branch path history entries")
     pWeightInitValue = Param.Int(7,
         "Initial value of the weights of the path history GEHL entries")
