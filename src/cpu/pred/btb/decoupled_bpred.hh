@@ -808,6 +808,8 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void resetPC(Addr new_pc);
 
+    void commitStream(unsigned stream_id);
+
     // Helper functions for update
     void updatePredictorComponents(FetchStream &stream);
     void updateStatistics(const FetchStream &stream);

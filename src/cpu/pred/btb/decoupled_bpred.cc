@@ -1028,8 +1028,10 @@ DecoupledBPUWithBTB::trapSquash(unsigned target_id, unsigned stream_id,
     handleSquash(target_id, stream_id, SQUASH_TRAP, inst_pc, inst_pc.instAddr());
 }
 
-void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
+void
+DecoupledBPUWithBTB::commitStream(unsigned stream_id)
 {
+
     // No need to dequeue when queue is empty
     if (fetchStreamQueue.empty())
         return;
@@ -1041,12 +1043,11 @@ void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
         auto &stream = it->second;
 
         DPRINTF(DecoupleBP,
-            "Commit stream start %#lx, which is predicted, "
-            "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
-            "pred target: %#lx\n",
-            stream.startPC,
-            stream.exeBranchInfo.pc, stream.exeBranchInfo.target,
-            stream.predBranchInfo.pc, stream.predBranchInfo.target);
+                "Commit stream start %#lx, which is predicted, "
+                "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
+                "pred target: %#lx\n",
+                stream.startPC, stream.exeBranchInfo.pc, stream.exeBranchInfo.target, stream.predBranchInfo.pc,
+                stream.predBranchInfo.target);
 
         // Update statistics
         updateStatistics(stream);
@@ -1058,14 +1059,18 @@ void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
         dbpBtbStats.fsqEntryCommitted++;
     }
 
-    DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
-            fetchStreamQueue.size());
+    DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n", fetchStreamQueue.size());
 
     if (it != fetchStreamQueue.end()) {
         printStream(it->second);
     }
 
     historyManager.commit(stream_id);
+}
+
+void
+DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
+{
 }
 
 void

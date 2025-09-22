@@ -1503,6 +1503,7 @@ Fetch::handleCommitSignals(ThreadID tid)
                 dbpftb->update(fromCommit->commitInfo[tid].doneFsqId, tid);
             } else if (isBTBPred()) {
                 assert(dbpbtb);
+                dbpbtb->commitStream(fromCommit->commitInfo[tid].doneFsqId);
                 dbpbtb->update(fromCommit->commitInfo[tid].doneFsqId, tid);
             }
         }
