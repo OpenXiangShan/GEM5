@@ -193,7 +193,15 @@ void
 FoldedHist::check(const boost::dynamic_bitset<> &historyBitVec)
 {
     // Verify our folded history matches ideal
-    assert(_folded == fold(historyBitVec));
+    auto expected = fold(historyBitVec);
+    if (_folded != expected) {
+        std::string hist_str;
+        boost::to_string(historyBitVec, hist_str);
+        warn("FoldedHist check failed: foldedLen=%d, histLen=%d, type=%d, \
+            expected=0x%lx, actual=0x%lx, history=%s\n",
+            foldedLen, histLen, static_cast<int>(type), expected, _folded, hist_str.c_str());
+    }
+    assert(_folded == expected);
 }
 
 }  // namespace btb_pred

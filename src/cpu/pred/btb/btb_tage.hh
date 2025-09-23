@@ -20,6 +20,7 @@
 #else
     #include "debug/DecoupleBP.hh"
     #include "debug/TAGEUseful.hh"
+    #include "debug/TAGEHistory.hh"
     #include "params/BTBTAGE.hh"
     #include "sim/sim_object.hh"
 #endif
@@ -260,7 +261,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void setTag(Addr &dest, Addr src, int table);
 
     // Debug flag
-    bool debugFlagOn{false};
+    bool debugFlagOn{true};
 
     // Number of tables to allocate on misprediction
     unsigned numTablesToAlloc;

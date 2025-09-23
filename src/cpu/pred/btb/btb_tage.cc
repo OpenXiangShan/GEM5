@@ -886,10 +886,10 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr p
     if (debugFlagOn) {
         std::string buf;
         boost::to_string(history, buf);
-        DPRINTF(TAGE, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
+        DPRINTF(TAGEHistory, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
     }
     if (!taken) {
-        DPRINTF(TAGE, "not updating folded history, since FB not taken\n");
+        DPRINTF(TAGEHistory, "not updating folded history, since FB not taken\n");
         return;
     }
 
@@ -898,6 +898,7 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr p
             auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
             // since we have folded path history, we can put arbitrary shamt here, and it wouldn't make a difference
             foldedHist.update(history, 2, taken, pc, target);
+            DPRINTF(TAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist.get());
         }
     }
 }
@@ -955,12 +956,10 @@ BTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
     if (debugFlagOn) {
         std::string hist_str;
         boost::to_string(hist, hist_str);
-        DPRINTF(TAGE, "history:\t%s\n", hist_str.c_str());
+        DPRINTF(TAGEHistory, "history:\t%s\n", hist_str.c_str());
     }
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 3; type++) {
-
-            // DPRINTF(TAGE, "t: %d, type: %d\n", t, type);
             std::string buf2, buf3;
             auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
             foldedHist.check(hist);
