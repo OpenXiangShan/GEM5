@@ -152,7 +152,12 @@ FoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Ad
                 }
 
                 // Step 4: Add new branch outcome
-                temp ^= foldHash(hash, foldedLen);
+                uint64_t effectiveHash = hash;
+                if (histLen < pathHashLength) {
+                    const uint64_t mask = (1ULL << histLen) - 1;
+                    effectiveHash &= mask;
+                }
+                temp ^= foldHash(effectiveHash, foldedLen);
 
                 // Mask to folded length
                 temp &= foldedMask;
