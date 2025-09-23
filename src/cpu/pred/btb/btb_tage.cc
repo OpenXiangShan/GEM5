@@ -565,7 +565,20 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
     // - Prefer invalid ways; else choose any way with useful==0 and weak counter.
     // - If none, apply a one-step age penalty to a strong, not-useful way (no allocation).
 
-    for (unsigned ti = start_table; ti < numPredictors; ++ti) {
+    // Randomize starting table using LFSR to reduce systematic bias.
+    // We do a simple rotated scan: pick a random offset in [0, n),
+    // then scan tables in order with that offset.
+    unsigned n = (start_table < numPredictors) ? (numPredictors - start_table) : 0;
+    if (n == 0) {
+        DPRINTF(TAGE, "no eligible way found for allocation starting from table %d\n", start_table);
+        tageStats.updateAllocFailureNoValidTable++;
+        return false;
+    }
+    // Use current state (already stepped in update())
+    unsigned off = allocLFSR.lfsr % n;
+
+    for (unsigned step = 0; step < n; ++step) {
+        unsigned ti = start_table + ((off + step) % n);
         Addr newIndex = getTageIndex(alignedPC, ti, meta->indexFoldedHist[ti].get());
         Addr newTag = getTageTag(alignedPC, ti, meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get());
 
@@ -621,7 +634,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
         tageStats.updateAllocFailure++;
     }
 
-    DPRINTF(TAGE, "no eligible way found for allocation starting from table %d\n", start_table);
+    DPRINTF(TAGE, "no eligible way found for allocation after scanning %u tables from start %u\n", n, start_table);
     tageStats.updateAllocFailureNoValidTable++;
     return false;
 }
@@ -636,6 +649,9 @@ BTBTAGE::update(const FetchStream &stream) {
     Addr startAddr = stream.getRealStartPC();
     Addr alignedPC = startAddr & ~(blockSize - 1);
     DPRINTF(TAGE, "update startAddr: %#lx, alignedPC: %#lx\n", startAddr, alignedPC);
+
+    // Step LFSR once per update to drive randomized decisions deterministically
+    allocLFSR.next();
 
     // Prepare BTB entries to update
     auto entries_to_update = prepareUpdateEntries(stream);
