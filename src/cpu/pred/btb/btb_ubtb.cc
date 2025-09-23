@@ -116,16 +116,6 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
     }
 
     if (entry.valid) {
-        // push back dummy conditional branches before the taken branch, to create the correct speculative history
-        // information, these dummy entries are not taken, thanks to them not being in stagePreds.condTakens.
-        for (int i = 0; i < entry.numNTConds; i++) {
-            auto dummy = BTBEntry();
-            dummy.valid = true;
-            dummy.isCond = true;
-            dummy.pc = 0xdeadbeef;  // a magic number to indicate a dummy entry
-            FillStageLoop(s) stagePreds[s].btbEntries.push_back(dummy);
-        }
-
         FillStageLoop(s) stagePreds[s].btbEntries.push_back(BTBEntry(entry));
         if (entry.isCond) {
             // the always taken field of BTBEntry is ignored in uBTB
@@ -199,14 +189,6 @@ UBTB::replaceOldEntry(UBTBIter oldEntryIter, FullBTBPrediction &newPrediction)
     newEntry.target = newPrediction.getTarget(predictWidth);
     // important: update tag (mbtb and ubtb have different tags, even diffferent tag length)
     newEntry.tag = getTag(newPrediction.bbStart);
-    /*  save the number of conditional branches before the taken branch
-     *  this is useful in the prediction phase: to generate the correct speculative history information
-     */
-    newEntry.numNTConds = newPrediction.getHistInfo().first;
-    if (newPrediction.getTakenEntry().isCond) {
-        newEntry.numNTConds--;
-        assert(newEntry.numNTConds >= 0);
-    }
     *oldEntryIter = newEntry;
 }
 

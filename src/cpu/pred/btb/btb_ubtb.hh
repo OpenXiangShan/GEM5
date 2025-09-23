@@ -88,15 +88,13 @@ class UBTB : public TimedBaseBTBPredictor
      * - uctr: 2-bit saturation counter used in replacement policy
      * - tag: tag bits from branch address [23:1]
      * - tick: timestamp used for MRU (Most Recently Used) replacement policy
-     * - numNTConds: number of not-taken conditional branches before the taken branch
      */
     typedef struct TickedUBTBEntry : public BTBEntry
     {
         unsigned uctr; //2-bit saturation counter used in replacement policy
         uint64_t tick;  // timestamp for MRU replacement
-        int  numNTConds; // number of conditional branches before the taken branch
-        TickedUBTBEntry() : BTBEntry(), uctr(0), tick(0), numNTConds(0) {}
-        TickedUBTBEntry(const BTBEntry &be, uint64_t tick) : BTBEntry(be), uctr(0), tick(tick), numNTConds(0) {}
+        TickedUBTBEntry() : BTBEntry(), uctr(0), tick(0) {}
+        TickedUBTBEntry(const BTBEntry &be, uint64_t tick) : BTBEntry(be), uctr(0), tick(tick) {}
     }TickedUBTBEntry;
 
     using UBTBIter = typename std::vector<TickedUBTBEntry>::iterator;

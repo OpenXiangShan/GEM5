@@ -545,13 +545,6 @@ struct FullBTBPrediction
                 else if (this->getTarget(predictWidth) != other.getTarget(predictWidth)) {
                     return std::make_pair(false, OverrideReason::TARGET);
                 }
-                else if (this->getEnd(predictWidth) != other.getEnd(predictWidth)) {
-                    // execution will never come here
-                    return std::make_pair(false, OverrideReason::END);
-                }
-                else if (this->getHistInfo() != other.getHistInfo()) {
-                    return std::make_pair(false, OverrideReason::HIST_INFO);
-                }
                 else {
                     return std::make_pair(true, btb_pred::OverrideReason::NO_OVERRIDE);
                 }
