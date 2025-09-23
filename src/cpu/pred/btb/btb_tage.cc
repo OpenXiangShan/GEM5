@@ -538,47 +538,6 @@ BTBTAGE::handleUsefulBitReset(const std::vector<bitset> &useful_mask, unsigned w
     }
 }
 
-/**
- * @brief Generate allocation mask for new entries
- * 
- * @param useful_mask The mask of useful bits
- * @param start_table The starting table for allocation
- * @return AllocationResult containing allocation information
- */
-BTBTAGE::AllocationResult
-BTBTAGE::generateAllocationMask(const bitset &useful_mask,
-                               unsigned start_table) {
-    AllocationResult result;
-    
-    // Check if allocation is possible
-    auto flipped_usefulMask = ~useful_mask;
-    result.allocate_valid = flipped_usefulMask.any();
-    
-    if (!result.allocate_valid) {
-        DPRINTF(TAGEUseful, "no valid table to allocate, all of them are useful\n");
-        return result;
-    }
-
-    // Generate allocation mask using LFSR
-    unsigned alloc_table_num = numPredictors - start_table; // number of tables to allocate
-    unsigned maskMaxNum = std::pow(2, alloc_table_num); // max number of masks
-    unsigned mask = allocLFSR.get() % maskMaxNum; // generate a random mask
-    
-    bitset allocateLFSR(alloc_table_num, mask); // generate a mask using LFSR
-    bitset masked = allocateLFSR & flipped_usefulMask; // apply the mask to the useful mask
-    result.allocate_mask = masked.any() ? masked : flipped_usefulMask; // if there is any 1 in the mask, use the mask, otherwise use the useful mask
-    if (debugFlagOn) {
-        std::string buf;
-        boost::to_string(allocateLFSR, buf);
-        DPRINTF(TAGEUseful, "allocateLFSR %s, size %lu\n", buf.c_str(), allocateLFSR.size());
-        boost::to_string(masked, buf);
-        DPRINTF(TAGEUseful, "masked %s, size %lu\n", buf.c_str(), masked.size());
-        boost::to_string(result.allocate_mask, buf);
-        DPRINTF(TAGEUseful, "allocate %s, size %lu\n", buf.c_str(), result.allocate_mask.size());
-    }
-
-    return result;
-}
 
 /**
  * @brief Handle allocation of new entries
@@ -601,89 +560,68 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way) {
-    // Select which usefulMask to use based on whether a hit was found
-    unsigned way_to_use = meta->hitFound ? meta->hitWay : 0;
+    // Simple set-associative allocation (no LFSR, no per-way table gating):
+    // - For each table from start_table upward, check the set at computed index.
+    // - Prefer invalid ways; else choose any way with useful==0 and weak counter.
+    // - If none, apply a one-step age penalty to a strong, not-useful way (no allocation).
 
-    if (way_to_use >= useful_mask.size()) {
-        way_to_use = 0;
-    }
+    for (unsigned ti = start_table; ti < numPredictors; ++ti) {
+        Addr newIndex = getTageIndex(alignedPC, ti, meta->indexFoldedHist[ti].get());
+        Addr newTag = getTageTag(alignedPC, ti, meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get());
 
-    // Get a copy of the selected mask
-    bitset working_mask = useful_mask[way_to_use];
-
-    // Adjust mask for the starting table if needed
-    if (start_table > 0) {
-        working_mask >>= start_table; // only allocate tables after the starting table
-        working_mask.resize(numPredictors - start_table);
-    }
-
-    // Generate allocation mask
-    auto alloc_result = generateAllocationMask(working_mask, start_table);
-
-    if (!alloc_result.allocate_valid) {
-        DPRINTF(TAGE, "no valid table to allocate, all of them are useful\n");
-        tageStats.updateAllocFailure++;
-        return false;
-    }
-
-    DPRINTF(TAGE, "allocate new entry\n");
-    // Try to allocate in each table according to allocation mask
-    for (unsigned ti = start_table; ti < numPredictors; ti++) {
-        if (!alloc_result.allocate_mask[ti - start_table]) {
-            continue;
-        }
-
-        // Get necessary history for index and tag computation
-        auto &updateTagFoldedHist = meta->tagFoldedHist;
-        auto &updateAltTagFoldedHist = meta->altTagFoldedHist;
-        auto &updateIndexFoldedHist = meta->indexFoldedHist;
-
-        // Compute index and tag for the new entry
-        Addr newIndex = getTageIndex(alignedPC, ti, updateIndexFoldedHist[ti].get());
-        Addr newTag = getTageTag(alignedPC, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get());
-
-        // Choose a way: first way with (invalid) or (useful==0 and counter is non-saturated/weak)
-        // If none, apply one-step age penalty on the first (useful==0 and strong counter) and do not allocate
         auto &set = tageTable[ti][newIndex];
 
-        // First pass: pick allocation candidate
+        // 1) Allocate into invalid way if available
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
-            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,1,2,0,-1 considered non-saturated/weak
-            if (!cand.valid || (!cand.useful && weakish)) {
-                // Allocate here
+            if (!cand.valid) {
                 short newCounter = actual_taken ? 0 : -1;
                 DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu, counter %d\n",
-                    ti, newIndex, way, newTag, newCounter);
+                        ti, newIndex, way, newTag, newCounter);
                 cand = TageEntry(newTag, newCounter, entry.pc);
-                cand.useful = 1;    // new entry useful is set to 1, only evict useful = 0 entries
+                cand.useful = 1;
                 tageStats.updateAllocSuccess++;
                 allocated_table = ti;
                 allocated_index = newIndex;
                 allocated_way = way;
-                return true;  // allocate only 1 entry
+                return true;
             }
         }
 
-        // Second pass: apply age penalty to one strong, not-useful entry if exists
+        // 2) Try a not-useful and weak counter way
+        for (unsigned way = 0; way < numWays; ++way) {
+            auto &cand = set[way];
+            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
+            if (!cand.useful && weakish) {
+                short newCounter = actual_taken ? 0 : -1;
+                DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu, counter %d\n",
+                        ti, newIndex, way, newTag, newCounter);
+                cand = TageEntry(newTag, newCounter, entry.pc);
+                cand.useful = 1;
+                tageStats.updateAllocSuccess++;
+                allocated_table = ti;
+                allocated_index = newIndex;
+                allocated_way = way;
+                return true;
+            }
+        }
+
+        // 3) Apply age penalty to one strong, not-useful way to make it replacable later
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-            if (!cand.useful && !weakish) {  // useful==0 and strong counter
+            if (!cand.useful && !weakish) {
                 if (cand.counter > 0) cand.counter--; else cand.counter++;
                 DPRINTF(TAGE, "age penalty applied on table %d[%lu][%u], new ctr %d\n",
                         ti, newIndex, way, cand.counter);
-                break;
+                break; // one penalty per table per update
             }
         }
 
-        // No allocation this table
         tageStats.updateAllocFailure++;
-        continue;
     }
 
-    // todo: fix update selection, select invalid way first or select not useful table first!
-    DPRINTF(TAGE, "no valid(useful = 0) table after starting table %d\n", start_table);
+    DPRINTF(TAGE, "no eligible way found for allocation starting from table %d\n", start_table);
     tageStats.updateAllocFailureNoValidTable++;
     return false;
 }

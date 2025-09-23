@@ -109,13 +109,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
                             useAlt(useAlt), taken(taken), altPred(altPred) {}
     };
 
-    // Structure to hold allocation results
-    struct AllocationResult {
-        bool allocate_valid;             // Whether allocation is valid
-        bitset allocate_mask;            // Mask for allocation
-
-        AllocationResult() : allocate_valid(false) {}
-    };
 
 #ifndef UNIT_TEST
     BTBTAGE(const Params& p);
@@ -422,9 +415,6 @@ private:
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way);
 
-    // Helper method to generate allocation mask
-    AllocationResult generateAllocationMask(const bitset &useful_mask,
-                                          unsigned start_table);
 
     // Helper methods for LRU management
     void updateLRU(int table, Addr index, unsigned way);
