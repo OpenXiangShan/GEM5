@@ -98,7 +98,8 @@ tageStats(this, p.numPredictors)
     }
     usefulResetCnt = 0;
 
-    useAlt.resize(128);
+    // initialize use_alt_on_na table
+    useAlt.resize(useAltOnNaSize, 0);
 
 #ifndef UNIT_TEST
     hasDB = true;
@@ -257,9 +258,20 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, alignedPC);
     bool base_taken = baseTable[base_idx][branch_idx] >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
-    bool use_alt = main_info.entry.counter == 0 ||
-                   main_info.entry.counter == -1 ||
-                   !provided;   // main prediction is weak or not provided
+
+    // use_alt_on_na gating: when provider weak, consult per-PC counter
+    bool use_alt = false;
+    if (!provided) {
+        use_alt = true;
+    } else {
+        bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
+        if (main_weak) {
+            Addr uidx = getUseAltIdx(btb_entry.pc);
+            use_alt = (useAlt[uidx] >= 0);
+        } else {
+            use_alt = false;
+        }
+    }
     bool taken = use_alt ? alt_pred : main_taken;
 
     DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
@@ -400,6 +412,23 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     unsigned branch_idx = getBranchIndexInBlock(entry.pc, alignedPC);
     bool base_taken = baseTable[base_idx][branch_idx] >= 0;
     bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
+
+    // Update use_alt_on_na when provider is weak (0 or -1)
+    if (main_info.found) {
+        bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
+        if (main_weak) {
+            tageStats.updateProviderNa++;
+            Addr uidx = getUseAltIdx(entry.pc);
+            bool alt_correct = (alt_taken == actual_taken);
+            updateCounter(alt_correct, useAltOnNaWidth, useAlt[uidx]);
+            tageStats.updateUseAltOnNaUpdated++;
+            if (alt_correct) {
+                tageStats.updateUseAltOnNaCorrect++;
+            } else {
+                tageStats.updateUseAltOnNaWrong++;
+            }
+        }
+    }
 
     // Update main prediction provider
     if (main_info.found) {
@@ -917,12 +946,9 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors):
     ADD_STAT(updateUseAltWrong, statistics::units::Count::get(), "use alt on update and wrong"),
     ADD_STAT(updateAltDiffers, statistics::units::Count::get(), "alt differs on update"),
     ADD_STAT(updateUseAltOnNaUpdated, statistics::units::Count::get(), "use alt on na ctr updated when update"),
-    ADD_STAT(updateUseAltOnNaInc, statistics::units::Count::get(), "use alt on na ctr inc when update"),
-    ADD_STAT(updateUseAltOnNaDec, statistics::units::Count::get(), "use alt on na ctr dec when update"),
     ADD_STAT(updateProviderNa, statistics::units::Count::get(), "provider weak when update"),
     ADD_STAT(updateUseNaCorrect, statistics::units::Count::get(), "use na on update and correct"),
     ADD_STAT(updateUseNaWrong, statistics::units::Count::get(), "use na on update and wrong"),
-    ADD_STAT(updateUseAltOnNa, statistics::units::Count::get(), "use alt on na when update"),
     ADD_STAT(updateUseAltOnNaCorrect, statistics::units::Count::get(), "use alt on na correct when update"),
     ADD_STAT(updateUseAltOnNaWrong, statistics::units::Count::get(), "use alt on na wrong when update"),
     ADD_STAT(updateAllocFailure, statistics::units::Count::get(), "alloc failure when update"),

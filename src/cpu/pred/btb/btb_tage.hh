@@ -244,8 +244,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
     const unsigned baseTableSize;  // Base table size
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
 
-    // Table for tracking when to use alternative prediction
-    std::vector<std::vector<short>> useAlt;
+    // Table for tracking when to use alternative prediction on provider weak
+    // use_alt_on_na: indexed by PC, 7-bit signed saturating counter [-64, 63]
+    static constexpr unsigned useAltOnNaSize = 128;
+    static constexpr unsigned useAltOnNaWidth = 7;
+    std::vector<short> useAlt;
 
     // Check if a tag matches
     bool matchTag(Addr expected, Addr found);
@@ -308,12 +311,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateUseAltWrong;
         Scalar updateAltDiffers;
         Scalar updateUseAltOnNaUpdated;
-        Scalar updateUseAltOnNaInc;
-        Scalar updateUseAltOnNaDec;
         Scalar updateProviderNa;
         Scalar updateUseNaCorrect;
         Scalar updateUseNaWrong;
-        Scalar updateUseAltOnNa;
         Scalar updateUseAltOnNaCorrect;
         Scalar updateUseAltOnNaWrong;
         Scalar updateAllocFailure;
