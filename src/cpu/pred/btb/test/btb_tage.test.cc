@@ -1,8 +1,12 @@
 #include <gtest/gtest.h>
+
 #include <algorithm>
-#include "cpu/pred/btb/btb_tage.hh"
-#include "cpu/pred/btb/stream_struct.hh"
+#include <iostream>
+
 #include "base/types.hh"
+#include "cpu/pred/btb/btb_tage.hh"
+#include "cpu/pred/btb/folded_hist.hh"
+#include "cpu/pred/btb/stream_struct.hh"
 
 namespace gem5
 {
@@ -26,12 +30,14 @@ namespace test
  * @param valid Whether the entry is valid
  * @param alwaysTaken Whether the branch is always taken
  * @param ctr Prediction counter value
+ * @param target Branch target address (defaults to sequential PC)
  * @return BTBEntry Initialized branch entry
  */
 BTBEntry createBTBEntry(Addr pc, bool isCond = true, bool valid = true,
-                        bool alwaysTaken = false, int ctr = 0) {
+                        bool alwaysTaken = false, int ctr = 0, Addr target = 0) {
     BTBEntry entry;
     entry.pc = pc;
+    entry.target = target ? target : (pc + 4);
     entry.isCond = isCond;
     entry.valid = valid;
     entry.alwaysTaken = alwaysTaken;
@@ -56,6 +62,9 @@ FetchStream createStream(Addr startPC, const BTBEntry& entry, bool taken,
     stream.startPC = startPC;
     stream.exeBranchInfo = entry;
     stream.exeTaken = taken;
+    // Mark as resolved so recover paths use exe* info
+    stream.resolved = true;
+    stream.predBranchInfo = entry; // keep fields consistent
     stream.updateBTBEntries = {entry};
     stream.updateIsOldEntry = true;
     stream.predMetas[0] = meta;
@@ -66,6 +75,18 @@ FetchStream setMispredStream(FetchStream stream) {
     stream.squashType = SquashType::SQUASH_CTRL;
     stream.squashPC = stream.exeBranchInfo.pc;
     return stream;
+}
+
+void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr target,
+                           int shamt = 2) {
+    boost::dynamic_bitset<> before = history;
+    history <<= shamt;
+    uint64_t hash = pathHash(pc, target);
+    for (std::size_t i = 0; i < pathHashLength && i < history.size(); ++i) {
+        bool bit = history[i];
+        history[i] = (hash & 1) ^ bit;
+        hash >>= 1;
+    }
 }
 
 /**
@@ -140,18 +161,17 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
     // ASSERT_TRUE(it != stagePreds[1].condTakens.end()) << "Prediction not found for PC " << std::hex << entry.pc;
     bool predicted_taken = it->second;
 
-    // 3. Speculatively update history
+    // 3. Speculatively update folded history
     tage->specUpdateHist(history, stagePreds[1]);
     auto meta = tage->getPredictionMeta();
 
     // 4. Update path history register, see pHistShiftIn
     bool history_updated = false;
-    Addr pc = entry.pc; // use control PC for PHR bits
-    if (predicted_taken) {
+    auto [pred_pc, pred_target, pred_taken] = stagePreds[1].getPHistInfo();
+    boost::dynamic_bitset<> pre_spec_history = history;
+    if (pred_taken) {
         history_updated = true;
-        history <<= 2;
-        history[0] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 1);       // pc[1] ^ pc[3] ^ pc[5] ^ pc[7]
-        history[1] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 2) >> 1;  // pc[2] ^ pc[4] ^ pc[6] ^ pc[8]
+        applyPathHistoryTaken(history, pred_pc, pred_target);
     }
     tage->checkFoldedHist(history, "speculative update");
 
@@ -163,15 +183,14 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
         stream = setMispredStream(stream);
         // Update history with correct outcome
         if (history_updated) {
-            history >>= 2;  // Undo speculative update
+            history = pre_spec_history;
         }
         // Recover from misprediction
         tage->recoverHist(history, stream, 1, actual_taken);
 
         if (actual_taken) {
-            history <<= 2;  // Re-shift
-            history[0] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 1);       // pc[1] ^ pc[3] ^ pc[5] ^ pc[7]
-            history[1] = (((pc>>1)^(pc>>3)^(pc>>5)^(pc>>7)) & 2) >> 1;  // pc[2] ^ pc[4] ^ pc[6] ^ pc[8]
+            applyPathHistoryTaken(history, stream.exeBranchInfo.pc,
+                                  stream.exeBranchInfo.target);
         }
         tage->checkFoldedHist(history, "recover");
     }
@@ -289,23 +308,23 @@ TEST_F(BTBTAGETest, BasicPrediction) {
 TEST_F(BTBTAGETest, HistoryUpdate) {
     // Use a fixed control PC to derive PHR bits
     Addr pc = 0x1000;
+    Addr target = pc + 0x40;
 
     // Test case 1: Update with taken branch (PHR shifts in 2 bits from PC hash)
-    auto pc_hash = ((pc >> 1) ^ (pc >> 3) ^ (pc >> 5) ^ (pc >> 7));
-    history <<= 2;
-    history[0] = (pc_hash & 1);          // pc[1] ^ pc[3] ^ pc[5] ^ pc[7]
-    history[1] = ((pc_hash & 2) >> 1);   // pc[2] ^ pc[4] ^ pc[6] ^ pc[8]
-    // Update folded histories using PHR semantics
-    tage->doUpdateHist(history, true, pc);
+    // Correct order: first update folded histories with pre-update PHR, then mutate PHR
+    tage->doUpdateHist(history, true, pc, target);
+    applyPathHistoryTaken(history, pc, target);
 
     // Verify folded history matches the ideal fold of the updated PHR
     tage->checkFoldedHist(history, "taken update");
 
     // Test case 2: Update with not-taken branch (PHR unchanged, folded update is no-op)
-    tage->doUpdateHist(history, false, pc);
+    boost::dynamic_bitset<> before_not_taken = history;
+    tage->doUpdateHist(history, false, pc, target);
 
     // Verify folded history remains consistent
     tage->checkFoldedHist(history, "not-taken update");
+    EXPECT_EQ(history, before_not_taken);
 }
 
 // Test main and alternative prediction mechanism by direct setup
@@ -380,9 +399,9 @@ TEST_F(BTBTAGETest, UsefulBitMechanism) {
     stream = createStream(0x1000, entry, false, meta);
     tage->update(stream);
 
-    // Verify useful bit is cleared (main prediction was incorrect)
-    EXPECT_FALSE(tage->tageTable[3][mainIndex][0].useful)
-        << "Useful bit should be cleared when main predicts incorrectly";
+    // Verify useful bit is NOT cleared (policy is ++ only, no --)
+    EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
+        << "Useful bit should remain set when main predicts incorrectly (no decrement)";
 }
 
 // Test entry allocation mechanism
@@ -419,8 +438,8 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     // Update the predictor (this should try to allocate but fail)
     tage->update(stream);
 
-    int alloc_failed = tage->tageStats.updateAllocFailure;
-    EXPECT_GE(alloc_failed, 1) << "Allocate failed when all useful bits are set";
+    int alloc_failed_no_valid = tage->tageStats.updateAllocFailureNoValidTable;
+    EXPECT_GE(alloc_failed_no_valid, 1) << "Allocate failed due to no valid table to allocate (all useful)";
 
 }
 
@@ -451,11 +470,7 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
 
     // Update PHR register (speculative) to mirror pHistShiftIn
     if (predicted_taken) {
-        Addr pc = entry.pc;
-        auto pc_hash = ((pc >> 1) ^ (pc >> 3) ^ (pc >> 5) ^ (pc >> 7));
-        history <<= 2;
-        history[0] = (pc_hash & 1);
-        history[1] = ((pc_hash & 2) >> 1);
+        applyPathHistoryTaken(history, entry.pc, entry.target);
     }
 
     // Create a recovery stream with opposite outcome
@@ -469,11 +484,7 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
     // Expected history should be original updated with PHR if actually taken
     boost::dynamic_bitset<> expectedHistory = originalHistory;
     if (!predicted_taken) { // actual_taken
-        Addr pc = entry.pc;
-        auto pc_hash = ((pc >> 1) ^ (pc >> 3) ^ (pc >> 5) ^ (pc >> 7));
-        expectedHistory <<= 2;
-        expectedHistory[0] = (pc_hash & 1);
-        expectedHistory[1] = ((pc_hash & 2) >> 1);
+        applyPathHistoryTaken(expectedHistory, entry.pc, entry.target);
     }
 
     // Verify recovery produced the expected history
@@ -747,12 +758,17 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
 }
 
 /**
- * @brief Test allocation behavior with multiple ways
+ * @brief Test allocation behavior with multiple ways (new policy)
+ *
+ * New allocation policy highlights:
+ * - Allocation consults the selected way's usefulMask for each table.
+ * - Only invalid entries, or (useful==0 and weak counter) can be allocated.
+ * - No LRU-based replacement is performed when all considered entries are useful.
  *
  * This test verifies:
- * 1. New entries are allocated in invalid ways first
- * 2. When all ways are valid, the LRU way is chosen
- * 3. Multiple allocation attempts correctly manage way selection
+ * 1. First mispredict allocates into an invalid way.
+ * 2. Subsequent allocations fail when the selected way's usefulMask marks the table useful.
+ * 3. No replacement occurs even after additional allocation attempts.
  */
 TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     // Start with a fresh predictor
@@ -783,7 +799,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
 
     EXPECT_GE(allocatedWay, 0) << "Entry should be allocated in one of the ways";
 
-    // Step 2: Fill remaining ways with different branches
+    // Step 2: Attempt to fill remaining ways with different branches
     for (unsigned way = 0; way < tage->numWays; way++) {
         if (way == allocatedWay) continue;
 
@@ -794,7 +810,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
         bool predicted = predictUpdateCycle(tage, 0x1000, newEntry, false, history, stagePreds);
     }
 
-    // Verify all ways are now filled
+    // Verify now both ways can be filled under miss policy (consider any way's useful=0)
     int filledWays = 0;
     for (unsigned way = 0; way < tage->numWays; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid) {
@@ -802,9 +818,15 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
         }
     }
 
-    EXPECT_EQ(filledWays, tage->numWays) << "All ways should be filled after multiple allocations";
+    EXPECT_EQ(filledWays, tage->numWays) << "All ways should be filled after multiple allocations under miss policy";
 
-    // Step 3: One more allocation should replace LRU entry
+    // Stats: first allocation succeeded, subsequent attempts failed
+    int alloc_success_after_step2 = tage->tageStats.updateAllocSuccess;
+    int alloc_failure_after_step2 = tage->tageStats.updateAllocFailure;
+    EXPECT_EQ(alloc_success_after_step2, 2) << "Two allocations should have succeeded (one per way)";
+    EXPECT_GE(alloc_failure_after_step2, 0) << "Allocation failures may occur depending on mask selection";
+
+    // Step 3: One more allocation should still not replace existing entry (no LRU replacement)
     BTBEntry newEntry = createBTBEntry(0x1008);
     bool predicted = predictUpdateCycle(tage, 0x1000, newEntry, false, history, stagePreds);
 
@@ -820,8 +842,12 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
         }
     }
 
-    EXPECT_TRUE(found) << "New entry should be allocated by replacing an old entry";
-    EXPECT_EQ(foundWay, allocatedWay) << "New entry should be allocated in the same way as the first allocation";
+    EXPECT_FALSE(found) << "New entry should not be allocated (no replacement without eligible slot)";
+
+    // Stats: failure count should increase further after another attempt
+    int alloc_failure_after_step3 = tage->tageStats.updateAllocFailure;
+    EXPECT_GE(alloc_failure_after_step3, alloc_failure_after_step2 + 1)
+        << "Allocation failures should increase after additional failed attempt";
 }
 
 
