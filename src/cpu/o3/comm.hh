@@ -241,6 +241,9 @@ struct TimeStruct
         StallReason blockReason;
         StallReason lqHeadStallReason;
         StallReason sqHeadStallReason;
+
+        std::vector<uint64_t> resolvedFSQId; // *F
+
     };
 
     IewComm iewInfo[MaxThreads];
