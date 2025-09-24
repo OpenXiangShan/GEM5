@@ -1053,7 +1053,7 @@ DecoupledBPUWithBTB::commitStream(unsigned stream_id)
         updateStatistics(stream);
 
         // Update predictor components
-        updatePredictorComponents(stream);
+        // updatePredictorComponents(stream);
 
         it = fetchStreamQueue.erase(it);
         dbpBtbStats.fsqEntryCommitted++;
@@ -1162,8 +1162,16 @@ DecoupledBPUWithBTB::updateStatistics(const FetchStream &stream)
 }
 
 void
-DecoupledBPUWithBTB::updatePredictorComponents(FetchStream &stream)
+DecoupledBPUWithBTB::updatePredictorComponents(unsigned &stream_id)
 {
+
+    auto stream_it = fetchStreamQueue.find(stream_id);
+    if (stream_it == fetchStreamQueue.end()) {
+        DPRINTF(DecoupleBP, "Stream id %u not found in fetchStreamQueue, cannot update predictors\n", stream_id);
+        return;
+    }
+    auto &stream = stream_it->second;
+
     // Update predictor components only if the stream is hit or taken
     if (stream.isHit || stream.exeTaken) {
         // Prepare stream for update

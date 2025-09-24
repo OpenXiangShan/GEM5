@@ -811,7 +811,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void commitStream(unsigned stream_id);
 
     // Helper functions for update
-    void updatePredictorComponents(FetchStream &stream);
+    void updatePredictorComponents(unsigned &stream_id);
     void updateStatistics(const FetchStream &stream);
 
     // Helper function to process FTQ entry completion

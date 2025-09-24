@@ -1440,16 +1440,17 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         stalls[tid].decode = false;
     }
 
-    // iterate resolvedFSQId and get FetchStream, push to ResolveQueue
-    if (isBTBPred()) {
-      for (const uint64_t &fsq_id : fromDecode->iewInfo->resolvedFSQId) {
-          // dbpbtb->resolveFetchStream(fsq_id, tid);
-      }
-    }
-
     // Check squash signals from commit.
     if (handleCommitSignals(tid)) {
         return true;
+    }
+
+    // iterate resolvedFSQId and get FetchStream, push to ResolveQueue
+    if (isBTBPred()) {
+      for (const uint64_t &fsq_id : fromDecode->iewInfo->resolvedFSQId) {
+          unsigned int stream_id = fsq_id;
+          dbpbtb->updatePredictorComponents(stream_id);
+      }
     }
 
     if (handleDecodeSquash(tid)) {
