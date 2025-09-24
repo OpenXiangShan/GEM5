@@ -53,7 +53,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     // problem: btb->getAndSetNewBTBEntry
     components.push_back(ubtb);
     components.push_back(abtb);
-    components.push_back(microtage);  // Add microtage after abtb
+    components.push_back(microtage);
     // components.push_back(uras);
     components.push_back(btb);
     //components.push_back(microtage);
@@ -1979,7 +1979,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
 #ifndef NDEBUG
     tage->checkFoldedHist(s0PHistory, "speculative update");
-    //microtage->checkFoldedHist(s0PHistory, "speculative update");
+    microtage->checkFoldedHist(s0PHistory, "speculative update");
 #endif
     // Update imli history
     histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
@@ -2069,9 +2069,9 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     tage->checkFoldedHist(s0PHistory,
         squash_type == SQUASH_CTRL ? "control squash" :
         squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
-    // microtage->checkFoldedHist(s0PHistory,
-    //     squash_type == SQUASH_CTRL ? "control squash" :
-    //     squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+    microtage->checkFoldedHist(s0PHistory,
+        squash_type == SQUASH_CTRL ? "control squash" :
+        squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
 #endif
 }
 
