@@ -161,5 +161,45 @@ PrefetcherForwarder::nextPrefetchReadyTime() const
     return curTick();
 }
 
+void
+PrefetcherForwarder::incrDemandMhsrMisses()
+{
+    if (real_pf) {
+        real_pf->incrDemandMhsrMisses();
+    }
+}
+
+void
+PrefetcherForwarder::prefetchUnused(PrefetchSourceType pf_type)
+{
+    if (real_pf) {
+        real_pf->prefetchUnused(pf_type);
+    }
+}
+
+void
+PrefetcherForwarder::pfHitInMSHR(PrefetchSourceType pf_type)
+{
+    if (real_pf) {
+        real_pf->pfHitInMSHR(pf_type);
+    }
+}
+
+void
+PrefetcherForwarder::pfHitInCache(PrefetchSourceType pf_type)
+{
+    if (real_pf) {
+        real_pf->pfHitInCache(pf_type);
+    }
+}
+
+void
+PrefetcherForwarder::pfHitInWB(PrefetchSourceType pf_type)
+{
+    if (real_pf) {
+        real_pf->pfHitInWB(pf_type);
+    }
+}
+
 } // namespace prefetch
 } // namespace gem5

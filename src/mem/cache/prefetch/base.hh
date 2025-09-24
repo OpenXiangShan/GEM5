@@ -494,7 +494,7 @@ class Base : public ClockedObject
 
     virtual void recvPrefetchFromCache(const PacketPtr &pkt) {}
 
-    void
+    virtual void
     prefetchUnused(PrefetchSourceType pfSource)
     {
         prefetchStats.pfUnused++;
@@ -503,13 +503,13 @@ class Base : public ClockedObject
 
     virtual void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) { prefetchUnused(pfSource); }
 
-    void
+    virtual void
     incrDemandMhsrMisses()
     {
         prefetchStats.demandMshrMisses++;
     }
 
-    void
+    virtual void
     pfHitInCache(PrefetchSourceType pf_type)
     {
         prefetchStats.pfHitInCache++;
@@ -517,7 +517,7 @@ class Base : public ClockedObject
         prefetchStats.late_srcs[pf_type]++;
     }
 
-    void
+    virtual void
     pfHitInMSHR(PrefetchSourceType pf_type)
     {
         prefetchStats.pfHitInMSHR++;
@@ -525,7 +525,7 @@ class Base : public ClockedObject
         prefetchStats.late_srcs[pf_type]++;
     }
 
-    void
+    virtual void
     pfHitInWB(PrefetchSourceType pf_type)
     {
         prefetchStats.pfHitInWB++;

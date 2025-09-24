@@ -54,6 +54,13 @@ class PrefetcherForwarder : public Base
     void offloadToDownStream() override;
     bool hasHintsWaiting() override;
 
+    // stats
+    void incrDemandMhsrMisses() override;
+    void prefetchUnused(PrefetchSourceType pf_type) override;
+    void pfHitInMSHR(PrefetchSourceType pf_type) override;
+    void pfHitInCache(PrefetchSourceType pf_type) override;
+    void pfHitInWB(PrefetchSourceType pf_type) override;
+
     void recvPrefetchFromCache(const PacketPtr &pkt) override;
 };
 
