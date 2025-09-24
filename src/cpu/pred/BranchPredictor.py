@@ -1136,7 +1136,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     weightTableIdxWidth = Param.Unsigned(5,
         "Log size of weight table")
 
-    numDelay = 3
+    numDelay = 2
 
 class DecoupledBPUWithBTB(BranchPredictor):
     type = 'DecoupledBPUWithBTB'
