@@ -57,6 +57,8 @@ maxHistLen(p.maxHistLen),
 numWays(p.numWays),
 baseTableSize(p.baseTableSize),
 maxBranchPositions(p.maxBranchPositions),
+useAltOnNaSize(p.useAltOnNaSize),
+useAltOnNaWidth(p.useAltOnNaWidth),
 numTablesToAlloc(p.numTablesToAlloc),
 enableSC(p.enableSC),
 tageStats(this, p.numPredictors)
@@ -175,7 +177,7 @@ BTBTAGE::recordUsefulMask(const Addr &alignedPC) {
             meta->usefulMask[way][i] = (entry.useful > 0);
         }
     }
-    if (debugFlagOn) {
+    if (debug::TAGEUseful) {
         std::string buf;
         for (unsigned way = 0; way < numWays; way++) {
             boost::to_string(meta->usefulMask[way], buf);
@@ -518,7 +520,7 @@ BTBTAGE::handleUsefulBitReset(const std::vector<bitset> &useful_mask, unsigned w
 
     const bitset &mask_to_use = useful_mask[way_to_use];
 
-    if (debugFlagOn) {
+    if (debug::TAGEUseful) {
         std::string useful_str;
         boost::to_string(mask_to_use, useful_str);
         DPRINTF(TAGEUseful, "useful mask for way %u: %s\n", way_to_use, useful_str.c_str());
@@ -850,7 +852,7 @@ BTBTAGE::getBranchIndexInBlock(Addr pc, Addr alignedPC) {
 void
 BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc, Addr target)
 {
-    if (debugFlagOn) {
+    if (debug::TAGEHistory) {   // if debug flag is off, do not use to_string since it's too slow
         std::string buf;
         boost::to_string(history, buf);
         DPRINTF(TAGEHistory, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
@@ -920,7 +922,7 @@ void
 BTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
 {
     DPRINTF(TAGE, "checking folded history when %s\n", when);
-    if (debugFlagOn) {
+    if (debug::TAGEHistory) {
         std::string hist_str;
         boost::to_string(hist, hist_str);
         DPRINTF(TAGEHistory, "history:\t%s\n", hist_str.c_str());

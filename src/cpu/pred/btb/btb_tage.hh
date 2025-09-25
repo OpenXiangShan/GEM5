@@ -246,8 +246,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Table for tracking when to use alternative prediction on provider weak
     // use_alt_on_na: indexed by PC, 7-bit signed saturating counter [-64, 63]
-    static constexpr unsigned useAltOnNaSize = 128;
-    static constexpr unsigned useAltOnNaWidth = 7;
+    const unsigned useAltOnNaSize;
+    const unsigned useAltOnNaWidth;
     std::vector<short> useAlt;
 
     // Check if a tag matches
@@ -255,9 +255,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Set tag bits for a given table
     void setTag(Addr &dest, Addr src, int table);
-
-    // Debug flag
-    bool debugFlagOn{true};
 
     // Number of tables to allocate on misprediction
     unsigned numTablesToAlloc;

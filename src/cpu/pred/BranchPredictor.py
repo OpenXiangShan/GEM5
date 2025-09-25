@@ -1049,6 +1049,8 @@ class BTBTAGE(TimedBaseBTBPredictor):
     numWays = Param.Unsigned(2, "Number of ways per set")
     baseTableSize = Param.Unsigned(256, "Base table size")  # 256 * 32 = 8192 entries
     maxBranchPositions = Param.Unsigned(32, "Maximum branch positions per 64-byte block")
+    useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
+    useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numDelay = 2
 
 class BTBITTAGE(TimedBaseBTBPredictor):
