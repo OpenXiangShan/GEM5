@@ -70,8 +70,7 @@ BTBMGSC::BTBMGSC(const Params &p)
     assert(bwTableSize > numCtrsPerLine);
     for (unsigned int i = 0; i < bwTableNum; ++i) {
         bwTable[i].resize(bwTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexBwFoldedHist.push_back(
-            FoldedHist(bwHistLen[i], bwTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::GLOBALBW));
+        indexBwFoldedHist.push_back(FoldedHist(bwHistLen[i], bwTableIdxWidth, 16, HistoryType::GLOBALBW));
     }
     bwIndex.resize(bwTableNum);
 
@@ -82,8 +81,7 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < lTableNum; ++i) {
         lTable[i].resize(lTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
-            indexLFoldedHist[k].push_back(
-                FoldedHist(lHistLen[i], lTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::LOCAL));
+            indexLFoldedHist[k].push_back(FoldedHist(lHistLen[i], lTableIdxWidth, 16, HistoryType::LOCAL));
         }
     }
     lIndex.resize(lTableNum);
@@ -92,10 +90,9 @@ BTBMGSC::BTBMGSC(const Params &p)
     auto iTableSize = std::pow(2, iTableIdxWidth);
     assert(iTableSize > numCtrsPerLine);
     for (unsigned int i = 0; i < iTableNum; ++i) {
-        assert(std::pow(2, iHistLen[i]) <= iTableSize / numCtrsPerLine);
+        assert(std::pow(2, iHistLen[i]) <= iTableSize);
         iTable[i].resize(iTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexIFoldedHist.push_back(
-            FoldedHist(iHistLen[i], iTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::IMLI));
+        indexIFoldedHist.push_back(FoldedHist(iHistLen[i], iTableIdxWidth, 16, HistoryType::IMLI));
     }
     iIndex.resize(iTableNum);
 
@@ -105,8 +102,7 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < gTableNum; ++i) {
         assert(gTable.size() >= gTableNum);
         gTable[i].resize(gTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexGFoldedHist.push_back(
-            FoldedHist(gHistLen[i], gTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::GLOBAL));
+        indexGFoldedHist.push_back(FoldedHist(gHistLen[i], gTableIdxWidth, 16, HistoryType::GLOBAL));
     }
     gIndex.resize(gTableNum);
 
@@ -116,8 +112,7 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < pTableNum; ++i) {
         assert(pTable.size() >= pTableNum);
         pTable[i].resize(pTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexPFoldedHist.push_back(
-            FoldedHist(pHistLen[i], pTableIdxWidth - log2i(numCtrsPerLine), 2, HistoryType::PATH));
+        indexPFoldedHist.push_back(FoldedHist(pHistLen[i], pTableIdxWidth, 2, HistoryType::PATH));
     }
     pIndex.resize(pTableNum);
 
@@ -170,12 +165,12 @@ BTBMGSC::tickStart()
  */
 int
 BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &table,
-                          const std::vector<Addr> &tableIndices, unsigned numTables, Addr pc)
+                          const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc)
 {
     int percsum = 0;
-    auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
     for (unsigned int i = 0; i < numTables; ++i) {
-        auto &entry = table[i][tableIndices[i]][pos];
+        auto [idx1, idx2] = posHash(pc, tableIndices[i]);
+        auto &entry = table[i][idx1][idx2];
         percsum += (2 * entry + 1);  // align to zero center
     }
     return percsum;
@@ -465,12 +460,12 @@ BTBMGSC::prepareUpdateEntries(const FetchStream &stream)
  */
 void
 BTBMGSC::updateAndAllocatePredTable(std::vector<std::vector<std::vector<int16_t>>> &table,
-                                    const std::vector<Addr> &tableIndices, unsigned numTables, Addr pc,
+                                    const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc,
                                     bool actual_taken)
 {
     for (unsigned int i = 0; i < numTables; ++i) {
-        auto pos = (pc >> 2) & ((uint64_t)numCtrsPerLine - 1);
-        auto &entry = table[i][tableIndices[i]][pos];
+        auto [idx1, idx2] = posHash(pc, tableIndices[i]);
+        auto &entry = table[i][idx1][idx2];
         updateCounter(actual_taken, scCountersWidth, entry);
     }
 }

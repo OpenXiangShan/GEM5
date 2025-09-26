@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -37,19 +38,19 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Contains the complete prediction result
     struct MgscPrediction
     {
-        Addr btb_pc;                  // BTB entry PC
-        int total_sum;                // Total weighted sum
-        bool use_mgsc;                // Whether to use MGSC prediction
-        bool taken;                   // Final prediction = (use sc pred) ? (total_sum >= 0) : tage prediction
-        bool taken_before_sc;         // Tage prediction (before SC)
-        int16_t total_thres;          // Combined threshold
-        std::vector<Addr> bwIndex;    // BW table indices
-        std::vector<Addr> lIndex;     // L table indices
-        std::vector<Addr> iIndex;     // I table indices
-        std::vector<Addr> gIndex;     // G table indices
-        std::vector<Addr> pIndex;     // P table indices
-        std::vector<Addr> biasIndex;  // Bias table indices
-                                      // Weight scale difference flags and percsum values
+        Addr btb_pc;                      // BTB entry PC
+        int total_sum;                    // Total weighted sum
+        bool use_mgsc;                    // Whether to use MGSC prediction
+        bool taken;                       // Final prediction = (use sc pred) ? (total_sum >= 0) : tage prediction
+        bool taken_before_sc;             // Tage prediction (before SC)
+        int16_t total_thres;              // Combined threshold
+        std::vector<unsigned> bwIndex;    // BW table indices
+        std::vector<unsigned> lIndex;     // L table indices
+        std::vector<unsigned> iIndex;     // I table indices
+        std::vector<unsigned> gIndex;     // G table indices
+        std::vector<unsigned> pIndex;     // P table indices
+        std::vector<unsigned> biasIndex;  // Bias table indices
+                                          // Weight scale difference flags and percsum values
         bool bw_weight_scale_diff;
         bool l_weight_scale_diff;
         bool i_weight_scale_diff;
@@ -92,9 +93,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
         }
 
         MgscPrediction(Addr btb_pc, int total_sum, bool use_mgsc, bool taken, bool taken_before_sc,
-                       unsigned total_thres, std::vector<Addr> bwIndex, std::vector<Addr> lIndex,
-                       std::vector<Addr> iIndex, std::vector<Addr> gIndex, std::vector<Addr> pIndex,
-                       std::vector<Addr> biasIndex, bool bw_weight_scale_diff, bool l_weight_scale_diff,
+                       unsigned total_thres, std::vector<unsigned> bwIndex, std::vector<unsigned> lIndex,
+                       std::vector<unsigned> iIndex, std::vector<unsigned> gIndex, std::vector<unsigned> pIndex,
+                       std::vector<unsigned> biasIndex, bool bw_weight_scale_diff, bool l_weight_scale_diff,
                        bool i_weight_scale_diff, bool g_weight_scale_diff, bool p_weight_scale_diff,
                        bool bias_weight_scale_diff, int bw_percsum, int l_percsum, int i_percsum, int g_percsum,
                        int p_percsum, int bias_percsum)
@@ -177,7 +178,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
      * Calculate percsum from a table for a given PC
      */
     int calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &table,
-                         const std::vector<Addr> &tableIndices, unsigned numTables, Addr pc);
+                         const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc);
 
     /**
      * Find weight in a weight table for a given PC
@@ -203,7 +204,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
      * Update a prediction table and allocate new entry if needed
      */
     void updateAndAllocatePredTable(std::vector<std::vector<std::vector<int16_t>>> &table,
-                                    const std::vector<Addr> &tableIndices, unsigned numTables, Addr pc,
+                                    const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc,
                                     bool actual_taken);
 
     /**
@@ -239,6 +240,11 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Update branch history
     void doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken,
                       std::vector<FoldedHist> &foldedHist, Addr pc = 0, Addr target = 0);
+
+    std::tuple<unsigned, unsigned> posHash(Addr pc, unsigned tableIdx)
+    {
+        return {tableIdx >> numCtrsPerLineBits, ((pc >> instShiftAmt) ^ tableIdx) & (numCtrsPerLine - 1)};
+    }
 
     /** global backward branch history indexed tables */
     // number of global backward branch history indexed tables
@@ -366,12 +372,12 @@ class BTBMGSC : public TimedBaseBTBPredictor
     bool satDecrement(T min, T &counter);
 
     // Cache for MGSC indices
-    std::vector<Addr> bwIndex;
-    std::vector<Addr> lIndex;
-    std::vector<Addr> iIndex;
-    std::vector<Addr> gIndex;
-    std::vector<Addr> pIndex;
-    std::vector<Addr> biasIndex;
+    std::vector<unsigned> bwIndex;
+    std::vector<unsigned> lIndex;
+    std::vector<unsigned> iIndex;
+    std::vector<unsigned> gIndex;
+    std::vector<unsigned> pIndex;
+    std::vector<unsigned> biasIndex;
 
     // Statistics for MGSC predictor
     struct MgscStats : public statistics::Group
