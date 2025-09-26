@@ -509,7 +509,8 @@ class Fetch
     void profileStall(ThreadID tid);
 
 
-    bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
+    // FTQ availability is indicated by usedUpFetchTargets when decoupled.
+    // Remove ftqEmpty() helper to avoid redundant states.
 
     /** Set the reasons of all fetch stalls. */
     void setAllFetchStalls(StallReason stall);
@@ -548,7 +549,7 @@ class Fetch
      * @param curMacroop The current macro-op being processed (if any).
      * @return true if a branch was predicted.
      */
-    bool
+    DynInstPtr
     processSingleInstruction(ThreadID tid, PCStateBase &pc,
                              StaticInstPtr &curMacroop);
 
@@ -564,16 +565,8 @@ class Fetch
                                  const StaticInstPtr &curMacroop);
 
 
-    /**
-     * Looks up the branch predictor, gets a prediction, and updates the PC.
-     * @param inst The dynamic instruction object.
-     * @param next_pc The PC state to update with the prediction.
-     * @param predictedBranch Flag indicating if a branch was predicted.
-     * @param newMacro Flag indicating if we are moving to a new macro-op.
-     */
-    void
-    lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
-                         bool &predictedBranch, bool &newMacro);
+    // lookupAndUpdateNextPC legacy variant (with predictedBranch/newMacro)
+    // removed in favor of FTQ-driven fetch in performInstructionFetch().
 
   private:
     /** Pointer to the O3CPU. */

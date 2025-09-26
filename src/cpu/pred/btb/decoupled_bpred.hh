@@ -493,6 +493,12 @@ class DecoupledBPUWithBTB : public BPredUnit
         return fetchTargetQueue.getSupplyingStreamId();
     }
 
+    // Finish current supplying FTQ entry (consumed by fetch)
+    void finishSupplyingFetchTarget()
+    {
+        fetchTargetQueue.finishCurrentFetchTarget();
+    }
+
     void dumpFsq(const char *when);
 
     // Dummy overriding

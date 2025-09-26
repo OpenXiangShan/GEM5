@@ -1925,16 +1925,12 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
     return StallReason::NoStall;
 }
 
-bool
+DynInstPtr
 Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                                StaticInstPtr &curMacroop)
 {
     auto *dec_ptr = decoder[tid];
-    bool predictedBranch = false;
     bool newMacroop = false;
-
-    // Create a copy of the current PC state to calculate the next PC.
-    std::unique_ptr<PCStateBase> next_pc(pc.clone());
 
     // Decode the instruction, handling macro-op transitions.
     StaticInstPtr staticInst = nullptr;
@@ -1956,8 +1952,9 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         newMacroop = staticInst->isLastMicroop();
     }
 
-    // Build the dynamic instruction and add it to the fetch queue
-    DynInstPtr instruction = buildInst(tid, staticInst, curMacroop, pc, *next_pc, true);
+    // Build the dynamic instruction and add it to the fetch queue.
+    // Pass current PC as both this_pc and placeholder pred_pc; caller will set pred later.
+    DynInstPtr instruction = buildInst(tid, staticInst, curMacroop, pc, pc, true);
 
     // Special handling for RISC-V vector configuration instructions.
     if (staticInst->isVectorConfig()) {
@@ -1976,33 +1973,13 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     }
 #endif
 
-    // Save current PC to next_pc first
-    set(next_pc, pc);
-
-    // Handle branch prediction for non-decoupled frontend
-    if (!isDecoupledFrontend()) {
-        predictedBranch = pc.branching();
-    } else { // decoupled frontend
-        predictedBranch = lookupAndUpdateNextPC(instruction, *next_pc);
-    }
-
-    if (predictedBranch) {
-        DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
-                instruction->threadNumber, pc, *next_pc);
-    }
-
-    // A new macro-op also begins if the PC changes discontinuously.
-    newMacroop |= pc.instAddr() != next_pc->instAddr();
+    // A new macro-op also begins if this is the last micro-op.
     if (newMacroop) {
         curMacroop = NULL;
         DPRINTF(Fetch, "[tid:%i] New macroop transition, PC=%s\n",
                 tid, pc);
     }
-
-    // Update the main PC state for the next instruction.
-    set(pc, *next_pc);
-
-    return predictedBranch;
+    return instruction;
 }
 
 void
@@ -2012,15 +1989,12 @@ Fetch::performInstructionFetch(ThreadID tid)
     PCStateBase &pc_state = *pc[tid];
     StaticInstPtr &curMacroop = macroop[tid];
 
-    // Control flags for main fetch loop
-    bool predictedBranch = false;
-
     DPRINTF(Fetch, "[tid:%i] Adding instructions to queue to decode.\n", tid);
 
     // Main instruction fetch loop - process until fetch width or other limits
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
+           (!isDecoupledFrontend() || !usedUpFetchTargets) && !waitForVsetvl) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
@@ -2032,12 +2006,61 @@ Fetch::performInstructionFetch(ThreadID tid)
         // memory. This is primarily for macro-op instructions, which decode
         // into multiple micro-ops.
         do {
-            // Process a single instruction, from decoding to PC update.
-            predictedBranch = processSingleInstruction(tid, pc_state, curMacroop);
+            // Decode and create a single instruction
+            DynInstPtr instruction = processSingleInstruction(tid, pc_state, curMacroop);
+
+            if (isDecoupledFrontend()) {
+                auto handleFtq = [&](const auto &entry) {
+                    assert(entry.startPC <= pc_state.instAddr() && pc_state.instAddr() < entry.endPC);
+                    std::unique_ptr<PCStateBase> next_pc(pc_state.clone());
+                    const bool taken = (pc_state.instAddr() == entry.takenPC) && entry.taken;
+                    auto &n = next_pc->as<GenericISA::PCStateWithNext>();
+                    bool run_out = false;
+                    if (taken) {
+                        n.pc(entry.target);
+                        n.npc(entry.target + 4);
+                        n.uReset();
+                        run_out = true;
+                    } else {
+                        instruction->staticInst->advancePC(*next_pc);
+                        if (next_pc->instAddr() >= entry.endPC) run_out = true;
+                    }
+                    instruction->setPredTarg(*next_pc);
+                    instruction->setPredTaken(taken);
+                    set(pc_state, *next_pc);
+                    if (run_out) {
+                        usedUpFetchTargets = true;
+                        DPRINTF(DecoupleBP, "Used up fetch targets.\n");
+                        fetchBuffer[tid].valid = false;
+                        // Consume current FTQ entry to advance to the next
+                        if (isBTBPred()) {
+                            dbpbtb->finishSupplyingFetchTarget();
+                        } else {
+                            dbpftb->finishSupplyingFetchTarget();
+                        }
+                    }
+                };
+
+                if (isBTBPred()) {
+                    const auto &entry = dbpbtb->getSupplyingFetchTarget();
+                    handleFtq(entry);
+                } else {
+                    const auto &entry = dbpftb->getSupplyingFetchTarget();
+                    handleFtq(entry);
+                }
+            } else {
+                // Non-decoupled: default fall-through
+                std::unique_ptr<PCStateBase> next_pc(pc_state.clone());
+                instruction->staticInst->advancePC(*next_pc);
+                instruction->setPredTarg(*next_pc);
+                instruction->setPredTaken(false);
+                set(pc_state, *next_pc);
+            }
 
         } while (curMacroop &&
                  numInst < fetchWidth &&
-                 fetchQueue[tid].size() < fetchQueueSize);
+                 fetchQueue[tid].size() < fetchQueueSize &&
+                 (!isDecoupledFrontend() || !usedUpFetchTargets));
     }
 
     // Debug output for fetch queue contents
@@ -2052,13 +2075,13 @@ Fetch::performInstructionFetch(ThreadID tid)
     }
 
     // Log why fetch stopped
-    if (predictedBranch) {
-        DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch instruction encountered.\n", tid);
-    } else if (numInst >= fetchWidth) {
+    if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth for this cycle.\n", tid);
     } else if (stall != StallReason::NoStall) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, stalled due to %s.\n", tid,
                 stall == StallReason::IcacheStall ? "ICache" : "other reasons");
+    } else if (isDecoupledFrontend() && usedUpFetchTargets) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, FTQ entry exhausted.\n", tid);
     } else {
         DPRINTF(Fetch, "[tid:%i] Done fetching, no more instructions to fetch.\n", tid);
     }
