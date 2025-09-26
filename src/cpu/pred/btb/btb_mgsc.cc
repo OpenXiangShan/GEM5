@@ -55,19 +55,21 @@ BTBMGSC::BTBMGSC(const Params &p)
       initialUpdateThresholdValue(p.initialUpdateThresholdValue),
       extraWeightsWidth(p.extraWeightsWidth),
       weightTableIdxWidth(p.weightTableIdxWidth),
+      numCtrsPerLine(p.numCtrsPerLine),
       enableMGSC(p.enableMGSC),
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
     this->needMoreHistories = p.needMoreHistories;
+
     assert(isPowerOf2(numCtrsPerLine));
+    numCtrsPerLineBits = log2i(numCtrsPerLine);
+
     bwTable.resize(bwTableNum);
+    auto bwTableSize = std::pow(2, bwTableIdxWidth);
+    assert(bwTableSize > numCtrsPerLine);
     for (unsigned int i = 0; i < bwTableNum; ++i) {
-        assert(bwTable.size() >= bwTableNum);
-        bwTable[i].resize(std::pow(2, bwTableIdxWidth) / numCtrsPerLine);
-        for (unsigned int j = 0; j < bwTable[i].size(); ++j) {
-            bwTable[i][j].resize(numCtrsPerLine);
-        }
+        bwTable[i].resize(bwTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         indexBwFoldedHist.push_back(
             FoldedHist(bwHistLen[i], bwTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::GLOBALBW));
     }
@@ -75,12 +77,10 @@ BTBMGSC::BTBMGSC(const Params &p)
 
     lTable.resize(lTableNum);
     indexLFoldedHist.resize(numEntriesFirstLocalHistories);
+    auto lTableSize = std::pow(2, lTableIdxWidth);
+    assert(lTableSize > numCtrsPerLine);
     for (unsigned int i = 0; i < lTableNum; ++i) {
-        assert(lTable.size() >= lTableNum);
-        lTable[i].resize(std::pow(2, lTableIdxWidth) / numCtrsPerLine);
-        for (unsigned int j = 0; j < lTable[i].size(); ++j) {
-            lTable[i][j].resize(numCtrsPerLine);
-        }
+        lTable[i].resize(lTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
             indexLFoldedHist[k].push_back(
                 FoldedHist(lHistLen[i], lTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::LOCAL));
@@ -89,48 +89,43 @@ BTBMGSC::BTBMGSC(const Params &p)
     lIndex.resize(lTableNum);
 
     iTable.resize(iTableNum);
+    auto iTableSize = std::pow(2, iTableIdxWidth);
+    assert(iTableSize > numCtrsPerLine);
     for (unsigned int i = 0; i < iTableNum; ++i) {
-        assert(iTable.size() >= iTableNum);
-        iTable[i].resize(std::pow(2, iTableIdxWidth) / numCtrsPerLine);
-        for (unsigned int j = 0; j < iTable[i].size(); ++j) {
-            iTable[i][j].resize(numCtrsPerLine);
-        }
+        assert(std::pow(2, iHistLen[i]) <= iTableSize / numCtrsPerLine);
+        iTable[i].resize(iTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         indexIFoldedHist.push_back(
             FoldedHist(iHistLen[i], iTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::IMLI));
     }
     iIndex.resize(iTableNum);
 
     gTable.resize(gTableNum);
+    auto gTableSize = std::pow(2, gTableIdxWidth);
+    assert(gTableSize > numCtrsPerLine);
     for (unsigned int i = 0; i < gTableNum; ++i) {
         assert(gTable.size() >= gTableNum);
-        gTable[i].resize(std::pow(2, gTableIdxWidth) / numCtrsPerLine);
-        for (unsigned int j = 0; j < gTable[i].size(); ++j) {
-            gTable[i][j].resize(numCtrsPerLine);
-        }
+        gTable[i].resize(gTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         indexGFoldedHist.push_back(
             FoldedHist(gHistLen[i], gTableIdxWidth - log2i(numCtrsPerLine), 16, HistoryType::GLOBAL));
     }
     gIndex.resize(gTableNum);
 
     pTable.resize(pTableNum);
+    auto pTableSize = std::pow(2, pTableIdxWidth);
+    assert(pTableSize > numCtrsPerLine);
     for (unsigned int i = 0; i < pTableNum; ++i) {
         assert(pTable.size() >= pTableNum);
-        pTable[i].resize(std::pow(2, pTableIdxWidth) / numCtrsPerLine);
-        for (unsigned int j = 0; j < pTable[i].size(); ++j) {
-            pTable[i][j].resize(numCtrsPerLine);
-        }
+        pTable[i].resize(pTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         indexPFoldedHist.push_back(
             FoldedHist(pHistLen[i], pTableIdxWidth - log2i(numCtrsPerLine), 2, HistoryType::PATH));
     }
     pIndex.resize(pTableNum);
 
     biasTable.resize(biasTableNum);
+    auto biasTableSize = std::pow(2, biasTableIdxWidth);
+    assert(biasTableSize > numCtrsPerLine);
     for (unsigned int i = 0; i < biasTableNum; ++i) {
-        assert(biasTable.size() >= biasTableNum);
-        biasTable[i].resize(std::pow(2, biasTableIdxWidth) / numCtrsPerLine);
-        for (unsigned int j = 0; j < biasTable[i].size(); ++j) {
-            biasTable[i][j].resize(numCtrsPerLine);
-        }
+        biasTable[i].resize(biasTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
     }
     biasIndex.resize(biasTableNum);
 

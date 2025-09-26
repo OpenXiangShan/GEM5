@@ -299,7 +299,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /*weight table index width*/
     unsigned weightTableIdxWidth;
 
-    const unsigned numCtrsPerLine = 8;
+    unsigned numCtrsPerLine;
+    unsigned numCtrsPerLineBits;
 
     // Whether MGSC is enabled
     bool enableMGSC;

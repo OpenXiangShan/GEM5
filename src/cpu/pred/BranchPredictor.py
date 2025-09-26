@@ -1136,6 +1136,9 @@ class BTBMGSC(TimedBaseBTBPredictor):
     weightTableIdxWidth = Param.Unsigned(5,
         "Log size of weight table")
 
+    # How many counters readed per prediction (usually per cycle)
+    numCtrsPerLine = Param.Unsigned(8, "Counters per SRAM line")
+
     numDelay = 2
 
 class DecoupledBPUWithBTB(BranchPredictor):
