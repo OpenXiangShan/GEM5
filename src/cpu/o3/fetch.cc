@@ -1979,12 +1979,8 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     // Save current PC to next_pc first
     set(next_pc, pc);
 
-    // Handle branch prediction for non-decoupled frontend
-    if (!isDecoupledFrontend()) {
-        predictedBranch = pc.branching();
-    } else { // decoupled frontend
-        predictedBranch = lookupAndUpdateNextPC(instruction, *next_pc);
-    }
+    // Handle branch prediction and update next_pc for both modes
+    predictedBranch = lookupAndUpdateNextPC(instruction, *next_pc);
 
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
@@ -2076,19 +2072,39 @@ Fetch::performInstructionFetch(ThreadID tid)
 
 void
 Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
-    if (!needNewFTQEntry(tid)) return;
+    if (isDecoupledFrontend()) {
+        if (!needNewFTQEntry(tid)) return;
 
-    Addr ftq_start_pc = isDecoupledFrontend() ?
-            getNextFTQStartPC(tid) : pc_state.instAddr();
-    if (ftq_start_pc == 0) {
-        DPRINTF(Fetch, "[tid:%i] No FTQ entry available for next fetch\n", tid);
+        Addr ftq_start_pc = getNextFTQStartPC(tid);
+        if (ftq_start_pc == 0) {
+            DPRINTF(Fetch, "[tid:%i] No FTQ entry available for next fetch\n", tid);
+            return;
+        }
+        DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FTQ entry, "
+                    "starting at PC %#x (original PC %s)\n",
+                    tid, ftq_start_pc, pc_state);
+        fetchCacheLine(ftq_start_pc, tid, pc_state.instAddr());
         return;
     }
-    DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FTQ entry, "
-                "starting at PC %#x (original PC %s)\n",
-                tid, ftq_start_pc, pc_state);
 
-    fetchCacheLine(ftq_start_pc, tid, pc_state.instAddr());
+    // Non-decoupled frontend: fetch next cache block when current PC is
+    // outside the buffered range or buffer is invalid.
+    Addr pc = pc_state.instAddr();
+    bool buffer_invalid = !fetchBuffer[tid].valid;
+    bool pc_before = pc < fetchBuffer[tid].startPC;
+    bool pc_after = pc + 4 > fetchBuffer[tid].startPC + fetchBufferSize;
+    bool need_new = buffer_invalid || pc_before || pc_after;
+
+    DPRINTF(Fetch, "[tid:%i] Non-decoupled sendNextCacheRequest: pc=%#x, "
+            "start=%#x, size=%u, invalid=%d, before=%d, after=%d, need_new=%d\n",
+            tid, pc, fetchBuffer[tid].startPC, fetchBufferSize,
+            buffer_invalid, pc_before, pc_after, need_new);
+
+    if (!need_new) return;
+
+    DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for next fetch, "
+            "starting at PC %#x\n", tid, pc);
+    fetchCacheLine(pc, tid, pc);
 }
 
 void

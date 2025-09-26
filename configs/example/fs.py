@@ -320,7 +320,8 @@ def build_test_system(np):
                     test_sys.cpu[i].branchPred.tage.enableSC = not args.disable_sc
                     test_sys.cpu[i].branchPred.isDumpMisspredPC = True
                 else:
-                    test_sys.cpu[i].branchPred = ObjectList.bp_list.get(args.bp_type)
+                    bpClass = ObjectList.bp_list.get(args.bp_type)
+                    test_sys.cpu[i].branchPred = bpClass()
 
                 if args.indirect_bp_type:
                     IndirectBPClass = ObjectList.indirect_bp_list.get(
