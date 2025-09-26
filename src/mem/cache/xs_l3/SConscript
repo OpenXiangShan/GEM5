@@ -1,0 +1,18 @@
+Import('*')
+
+SimObject('CacheWrapper.py', sim_objects=[
+    'CacheWrapper', 'L2CacheSlice', 'L2CacheWrapper'
+])
+
+Source('CacheWrapper.cc')
+Source('L2CacheSlice.cc')
+Source('L2CacheWrapper.cc')
+Source('L2MainPipe.cc')
+Source('RequestBuffer.cc')
+Source('RequestArbiter.cc')
+Source('SlicedCacheAccessor.cc')
+
+DebugFlag('CacheWrapper')
+DebugFlag('L2CacheSlice')
+DebugFlag('L2CacheWrapper')
+DebugFlag('L2MainPipe')
