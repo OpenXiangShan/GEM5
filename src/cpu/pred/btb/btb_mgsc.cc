@@ -704,7 +704,7 @@ BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist)
     Addr mask = (1ULL << tableIndexBits) - 1;
 
     // Extract lower bits of PC and XOR with folded history directly
-    Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
+    Addr pcBits = ((pc >> floorLog2(blockSize)) << numCtrsPerLineBits) & mask;
     Addr foldedBits = foldedHist & mask;
 
     return pcBits ^ foldedBits;
@@ -948,7 +948,7 @@ void
 BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
     if (!enableMGSC) {
-        return; // No recover when disabled
+        return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < gTableNum; i++) {
@@ -974,7 +974,7 @@ void
 BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
     if (!enableMGSC) {
-        return; // No recover when disabled
+        return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < pTableNum; i++) {
@@ -1000,7 +1000,7 @@ void
 BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
     if (!enableMGSC) {
-        return; // No recover when disabled
+        return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < bwTableNum; i++) {
@@ -1026,7 +1026,7 @@ void
 BTBMGSC::recoverIHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
     if (!enableMGSC) {
-        return; // No recover when disabled
+        return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < iTableNum; i++) {
@@ -1053,7 +1053,7 @@ BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const
                       bool cond_taken)
 {
     if (!enableMGSC) {
-        return; // No recover when disabled
+        return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
