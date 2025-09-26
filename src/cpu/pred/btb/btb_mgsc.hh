@@ -8,15 +8,14 @@
 #include <utility>
 #include <vector>
 
+#include <boost/dynamic_bitset/dynamic_bitset.hpp>
+
 #include "base/sat_counter.hh"
 #include "base/types.hh"
-#include "cpu/inst_seq.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 #include "cpu/pred/btb/stream_struct.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
-#include "debug/DecoupleBP.hh"
 #include "params/BTBMGSC.hh"
-#include "sim/sim_object.hh"
 
 namespace gem5
 {
@@ -29,9 +28,6 @@ namespace btb_pred
 
 class BTBMGSC : public TimedBaseBTBPredictor
 {
-    using defer = std::shared_ptr<void>;
-    using bitset = boost::dynamic_bitset<>;
-
   public:
     typedef BTBMGSCParams Params;
 
@@ -168,11 +164,12 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void setTrace() override;
 
     // check folded hists after speculative update and recover
-    void checkFoldedHist(const bitset &history, const char *when);
+    void checkFoldedHist(const boost::dynamic_bitset<> &history, const char *when);
 
     // Calculate MGSC weight index
     Addr getPcIndex(Addr pc, unsigned tableIndexBits);
 
+  private:
     // Utility functions for reducing code duplication
     /**
      * Calculate percsum from a table for a given PC
@@ -203,15 +200,14 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Update a prediction table and allocate new entry if needed
      */
-    void updateAndAllocatePredTable(std::vector<std::vector<std::vector<int16_t>>> &table,
-                                    const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc,
-                                    bool actual_taken);
+    void updatePredTable(std::vector<std::vector<std::vector<int16_t>>> &table,
+                         const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc, bool actual_taken);
 
     /**
      * Update a weight table and allocate new entry if needed
      */
-    void updateAndAllocateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, Addr pc,
-                                      bool weight_scale_diff, bool percsum_matches_actual);
+    void updateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, Addr pc, bool weight_scale_diff,
+                           bool percsum_matches_actual);
 
     /**
      * Update a threshold table and allocate new entry if needed
@@ -223,7 +219,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
      */
     void updateGlobalThreshold(Addr pc, bool update_direction);
 
-  private:
     // Look up predictions in MGSC tables for a stream of instructions
     void lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
                       const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens &results);
@@ -241,10 +236,27 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken,
                       std::vector<FoldedHist> &foldedHist, Addr pc = 0, Addr target = 0);
 
+    /*
+     * Mix position and table index into two indexes,
+     * first index is used to access SRAM, second one is used to choose from the result
+     * @param pc the raw program counter
+     * @param tableIdx the table index
+     * @return a tuple of two unsigned integers representing the two indexes
+     */
     std::tuple<unsigned, unsigned> posHash(Addr pc, unsigned tableIdx)
     {
         return {tableIdx >> numCtrsPerLineBits, ((pc >> instShiftAmt) ^ tableIdx) & (numCtrsPerLine - 1)};
     }
+
+    // Helper method to generate prediction for a single BTB entry
+    MgscPrediction generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
+                                            const TageInfoForMGSC &tage_info);
+
+    // Helper method to prepare BTB entries for update
+    std::vector<BTBEntry> prepareUpdateEntries(const FetchStream &stream);
+
+    void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
+                               const FetchStream &stream);
 
     /** global backward branch history indexed tables */
     // number of global backward branch history indexed tables
@@ -253,7 +265,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
     unsigned bwTableIdxWidth;
     // global backward branch history length
     std::vector<int> bwHistLen;
-    int bwWeightInitValue;
 
     /** First local history indexed tables param*/
     // number of entries for first local histories
@@ -264,25 +275,21 @@ class BTBMGSC : public TimedBaseBTBPredictor
     unsigned lTableIdxWidth;
     // local history lengths for all first local history indexed tables
     std::vector<int> lHistLen;
-    int lWeightInitValue;
 
     /** loop counter indexed tables param*/
     unsigned iTableNum;
     unsigned iTableIdxWidth;
     std::vector<int> iHistLen;
-    int iWeightInitValue;
 
     /** global history indexed table param*/
     unsigned gTableNum;
     unsigned gTableIdxWidth;
     std::vector<int> gHistLen;
-    int gWeightInitValue;
 
     /** path history indexed table param*/
     unsigned pTableNum;
     unsigned pTableIdxWidth;
     std::vector<int> pHistLen;
-    int pWeightInitValue;
 
     /** bias table param*/
     unsigned biasTableNum;
@@ -297,8 +304,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
     unsigned updateThresholdWidth;
     /*Number of bits for the pUpdate threshold counters*/
     unsigned pUpdateThresholdWidth;
-    /*Initial pUpdate threshold counter value*/
-    unsigned initialUpdateThresholdValue;
 
     /*Number of bits for the extra weights*/
     unsigned extraWeightsWidth;
@@ -352,10 +357,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
     std::vector<int16_t> pUpdateThreshold;  // pc-indexed threshold table
     int16_t updateThreshold;                // global threshold table
 
-
-    // Debug flag
-    bool debugFlagOn{false};
-
     // Instruction shift amount
     unsigned instShiftAmt{1};
 
@@ -398,10 +399,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
   public:
     // Recover folded history after misprediction
-    void recoverFoldedHist(const bitset &history);
+    void recoverFoldedHist(const boost::dynamic_bitset<> &history);
     unsigned getNumEntriesFirstLocalHistories() { return numEntriesFirstLocalHistories; };
 
-  public:
   private:
     // Metadata for MGSC predictions
     typedef struct MgscMeta
@@ -434,29 +434,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
             indexPFoldedHist = other.indexPFoldedHist;
         }
     } MgscMeta;
-
-  private:
-    // Helper method to generate prediction for a single BTB entry
-    bool tagMatch(Addr pc_a, Addr pc_b, unsigned matchBits);
-    MgscPrediction generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
-                                            const TageInfoForMGSC &tage_info);
-
-    // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchStream &stream);
-
-    void updateAndAllocateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                                          const FetchStream &stream);
-    template<typename T>
-    void updateLRU(std::vector<std::vector<T>> &table, Addr index, unsigned way);
-
-    template<typename T>
-    void updateLRU(std::vector<T> &table, unsigned way);
-
-    template<typename T>
-    unsigned getLRUVictim(std::vector<std::vector<T>> &table, Addr index);
-
-    template<typename T>
-    unsigned getLRUVictim(std::vector<T> &table);
 
     std::shared_ptr<MgscMeta> meta;
 };

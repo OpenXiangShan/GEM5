@@ -1082,8 +1082,6 @@ class BTBMGSC(TimedBaseBTBPredictor):
     bwHistLen = VectorParam.Int([4, 8], "Global backward branch GEHL history lengths")
     bwTableIdxWidth = Param.Unsigned(11,
             "Log num of global backward branch GEHL entries")
-    bwWeightInitValue = Param.Int(7,
-     "Initial value of the weights of the global backward branch GEHL entries") # not used
 
     numEntriesFirstLocalHistories = Param.Unsigned(32,
         "Number of entries for first local histories")
@@ -1091,27 +1089,19 @@ class BTBMGSC(TimedBaseBTBPredictor):
     lHistLen = VectorParam.Int([4, 8], "First local history GEHL history lengths")
     lTableIdxWidth = Param.Unsigned(11,
             "Log number of first local history GEHL entries")
-    lWeightInitValue = Param.Int(7,
-        "Initial value of the weights of the first local history GEHL entries")
 
     iTableNum = Param.Unsigned(1, "Num IMLI GEHL tables")
     iHistLen = VectorParam.Int([8], "IMLI history GEHL history lengths")
     iTableIdxWidth = Param.Unsigned(12, "Log number of IMLI GEHL entries")
-    iWeightInitValue = Param.Int(7,
-        "Initial value of the weights of the IMLI history GEHL entries")
 
     gTableNum = Param.Unsigned(2, "Num global branch GEHL tables")
     gHistLen = VectorParam.Int([8, 16], "Global branch GEHL history lengths")
     gTableIdxWidth = Param.Unsigned(11, "Log number of global branch GEHL entries")
-    gWeightInitValue = Param.Int(7,
-        "Initial value of the weights of the global history GEHL entries")
 
     pTableNum = Param.Unsigned(4, "Num global branch path history tables")
     pHistLen = VectorParam.Int([4, 10, 22, 46], "Global branch path history lengths")
     pTableIdxWidth = Param.Unsigned(11,
                     "Log number of global branch path history entries")
-    pWeightInitValue = Param.Int(7,
-        "Initial value of the weights of the path history GEHL entries")
 
     biasTableNum = Param.Unsigned(1, "Num bias tables")
     biasTableIdxWidth = Param.Unsigned(11, "Log number of bias entries")
@@ -1129,9 +1119,6 @@ class BTBMGSC(TimedBaseBTBPredictor):
         "Number of bits for the extra weights")
 
     scCountersWidth = Param.Unsigned(8, "Statistical corrector counters width")
-
-    initialUpdateThresholdValue = Param.Int(0,
-        "Initial pUpdate threshold counter value")
 
     weightTableIdxWidth = Param.Unsigned(5,
         "Log size of weight table")

@@ -7,10 +7,6 @@
 #include <ctime>
 #include <type_traits>
 
-#include "base/debug_helper.hh"
-#include "base/intmath.hh"
-#include "base/trace.hh"
-#include "cpu/o3/dyn_inst.hh"
 #include "debug/MGSC.hh"
 
 namespace gem5
@@ -28,31 +24,25 @@ BTBMGSC::BTBMGSC(const Params &p)
       bwTableNum(p.bwTableNum),
       bwTableIdxWidth(p.bwTableIdxWidth),
       bwHistLen(p.bwHistLen),
-      bwWeightInitValue(p.bwWeightInitValue),
       numEntriesFirstLocalHistories(p.numEntriesFirstLocalHistories),
       lTableNum(p.lTableNum),
       lTableIdxWidth(p.lTableIdxWidth),
       lHistLen(p.lHistLen),
-      lWeightInitValue(p.lWeightInitValue),
       iTableNum(p.iTableNum),
       iTableIdxWidth(p.iTableIdxWidth),
       iHistLen(p.iHistLen),
-      iWeightInitValue(p.iWeightInitValue),
       gTableNum(p.gTableNum),
       gTableIdxWidth(p.gTableIdxWidth),
       gHistLen(p.gHistLen),
-      gWeightInitValue(p.gWeightInitValue),
       pTableNum(p.pTableNum),
       pTableIdxWidth(p.pTableIdxWidth),
       pHistLen(p.pHistLen),
-      pWeightInitValue(p.pWeightInitValue),
       biasTableNum(p.biasTableNum),
       biasTableIdxWidth(p.biasTableIdxWidth),
       scCountersWidth(p.scCountersWidth),
       thresholdTablelogSize(p.thresholdTablelogSize),
       updateThresholdWidth(p.updateThresholdWidth),
       pUpdateThresholdWidth(p.pUpdateThresholdWidth),
-      initialUpdateThresholdValue(p.initialUpdateThresholdValue),
       extraWeightsWidth(p.extraWeightsWidth),
       weightTableIdxWidth(p.weightTableIdxWidth),
       numCtrsPerLine(p.numCtrsPerLine),
@@ -387,7 +377,8 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
  * @param stagePreds Vector of predictions for different pipeline stages
  */
 void
-BTBMGSC::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds)
+BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
+                      std::vector<FullBTBPrediction> &stagePreds)
 {
     DPRINTF(MGSC, "putPCHistory startAddr: %#lx\n", stream_start);
 
@@ -459,9 +450,8 @@ BTBMGSC::prepareUpdateEntries(const FetchStream &stream)
  * @param actual_taken Actual branch outcome (true=taken, false=not taken)
  */
 void
-BTBMGSC::updateAndAllocatePredTable(std::vector<std::vector<std::vector<int16_t>>> &table,
-                                    const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc,
-                                    bool actual_taken)
+BTBMGSC::updatePredTable(std::vector<std::vector<std::vector<int16_t>>> &table,
+                         const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc, bool actual_taken)
 {
     for (unsigned int i = 0; i < numTables; ++i) {
         auto [idx1, idx2] = posHash(pc, tableIndices[i]);
@@ -488,8 +478,8 @@ BTBMGSC::updateAndAllocatePredTable(std::vector<std::vector<std::vector<int16_t>
  * @param percsum_matches_actual Whether the raw percsum correctly predicted the outcome
  */
 void
-BTBMGSC::updateAndAllocateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, Addr pc,
-                                      bool weight_scale_diff, bool percsum_matches_actual)
+BTBMGSC::updateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, Addr pc, bool weight_scale_diff,
+                           bool percsum_matches_actual)
 {
     auto mask = (1 << weightTableIdxWidth) - 1;
     auto pcHash = ((pc >> instShiftAmt) ^ (pc >> instShiftAmt >> 2)) & mask;
@@ -557,8 +547,8 @@ BTBMGSC::updateGlobalThreshold(Addr pc, bool update_direction)
  * @param stream The fetch stream containing update information
  */
 void
-BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                                          const FetchStream &stream)
+BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
+                               const FetchStream &stream)
 {
     // Extract prediction information
     auto total_sum = pred.total_sum;
@@ -589,34 +579,34 @@ BTBMGSC::updateAndAllocateSinglePredictor(const BTBEntry &entry, bool actual_tak
         Addr weightTableIdx = getPcIndex(stream.startPC, weightTableIdxWidth);
 
         // Update BW tables
-        updateAndAllocatePredTable(bwTable, pred.bwIndex, bwTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(bwWeightTable, weightTableIdx, entry.pc, pred.bw_weight_scale_diff,
-                                     (pred.bw_percsum >= 0) == actual_taken);
+        updatePredTable(bwTable, pred.bwIndex, bwTableNum, entry.pc, actual_taken);
+        updateWeightTable(bwWeightTable, weightTableIdx, entry.pc, pred.bw_weight_scale_diff,
+                          (pred.bw_percsum >= 0) == actual_taken);
 
         // Update L tables
-        updateAndAllocatePredTable(lTable, pred.lIndex, lTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(lWeightTable, weightTableIdx, entry.pc, pred.l_weight_scale_diff,
-                                     (pred.l_percsum >= 0) == actual_taken);
+        updatePredTable(lTable, pred.lIndex, lTableNum, entry.pc, actual_taken);
+        updateWeightTable(lWeightTable, weightTableIdx, entry.pc, pred.l_weight_scale_diff,
+                          (pred.l_percsum >= 0) == actual_taken);
 
         // Update I tables
-        updateAndAllocatePredTable(iTable, pred.iIndex, iTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(iWeightTable, weightTableIdx, entry.pc, pred.i_weight_scale_diff,
-                                     (pred.i_percsum >= 0) == actual_taken);
+        updatePredTable(iTable, pred.iIndex, iTableNum, entry.pc, actual_taken);
+        updateWeightTable(iWeightTable, weightTableIdx, entry.pc, pred.i_weight_scale_diff,
+                          (pred.i_percsum >= 0) == actual_taken);
 
         // Update G tables
-        updateAndAllocatePredTable(gTable, pred.gIndex, gTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(gWeightTable, weightTableIdx, entry.pc, pred.g_weight_scale_diff,
-                                     (pred.g_percsum >= 0) == actual_taken);
+        updatePredTable(gTable, pred.gIndex, gTableNum, entry.pc, actual_taken);
+        updateWeightTable(gWeightTable, weightTableIdx, entry.pc, pred.g_weight_scale_diff,
+                          (pred.g_percsum >= 0) == actual_taken);
 
         // Update P tables
-        updateAndAllocatePredTable(pTable, pred.pIndex, pTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(pWeightTable, weightTableIdx, entry.pc, pred.p_weight_scale_diff,
-                                     (pred.p_percsum >= 0) == actual_taken);
+        updatePredTable(pTable, pred.pIndex, pTableNum, entry.pc, actual_taken);
+        updateWeightTable(pWeightTable, weightTableIdx, entry.pc, pred.p_weight_scale_diff,
+                          (pred.p_percsum >= 0) == actual_taken);
 
         // Update bias tables
-        updateAndAllocatePredTable(biasTable, pred.biasIndex, biasTableNum, entry.pc, actual_taken);
-        updateAndAllocateWeightTable(biasWeightTable, weightTableIdx, entry.pc, pred.bias_weight_scale_diff,
-                                     (pred.bias_percsum >= 0) == actual_taken);
+        updatePredTable(biasTable, pred.biasIndex, biasTableNum, entry.pc, actual_taken);
+        updateWeightTable(biasWeightTable, weightTableIdx, entry.pc, pred.bias_weight_scale_diff,
+                          (pred.bias_percsum >= 0) == actual_taken);
 
         // Update PC-indexed threshold table
         updatePCThresholdTable(entry.pc, sc_pred_taken != actual_taken);
@@ -649,7 +639,7 @@ BTBMGSC::update(const FetchStream &stream)
         }
 
         // Update predictor state and check if need to allocate new entry
-        updateAndAllocateSinglePredictor(btb_entry, actual_taken, pred_it->second, stream);
+        updateSinglePredictor(btb_entry, actual_taken, pred_it->second, stream);
     }
 
     DPRINTF(MGSC, "end update\n");
@@ -813,7 +803,7 @@ void
 BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken,
                       std::vector<FoldedHist> &foldedHist, Addr pc, Addr target)
 {
-    if (debugFlagOn) {
+    if (debug::MGSC) {
         std::string buf;
         boost::to_string(history, buf);
         DPRINTF(MGSC, "in doUpdateHist, shamt %d, taken %d, history %s\n", shamt, taken, buf.c_str());
