@@ -243,28 +243,28 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     // Calculate indices for all tables
     for (unsigned int i = 0; i < bwTableNum; ++i) {
-        bwIndex[i] = getHistIndex(startPC, bwTableIdxWidth - log2i(numCtrsPerLine), indexBwFoldedHist[i].get());
+        bwIndex[i] = getHistIndex(startPC, bwTableIdxWidth, indexBwFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < lTableNum; ++i) {
-        lIndex[i] = getHistIndex(startPC, lTableIdxWidth - log2i(numCtrsPerLine),
+        lIndex[i] = getHistIndex(startPC, lTableIdxWidth,
                                  indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
     }
 
     for (unsigned int i = 0; i < iTableNum; ++i) {
-        iIndex[i] = getHistIndex(startPC, iTableIdxWidth - log2i(numCtrsPerLine), indexIFoldedHist[i].get());
+        iIndex[i] = getHistIndex(startPC, iTableIdxWidth, indexIFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < gTableNum; ++i) {
-        gIndex[i] = getHistIndex(startPC, gTableIdxWidth - log2i(numCtrsPerLine), indexGFoldedHist[i].get());
+        gIndex[i] = getHistIndex(startPC, gTableIdxWidth, indexGFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < pTableNum; ++i) {
-        pIndex[i] = getHistIndex(startPC, pTableIdxWidth - log2i(numCtrsPerLine), indexPFoldedHist[i].get());
+        pIndex[i] = getHistIndex(startPC, pTableIdxWidth, indexPFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < biasTableNum; ++i) {
-        biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth - log2i(numCtrsPerLine), tage_info.tage_pred_taken,
+        biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth, tage_info.tage_pred_taken,
                                     tage_info.tage_pred_conf_low && tage_info.tage_pred_alt_diff);
     }
 
