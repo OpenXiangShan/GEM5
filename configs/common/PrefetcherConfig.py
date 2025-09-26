@@ -37,7 +37,7 @@ def create_prefetcher(cpu, cache_level, options):
         prefetcher.fuzzy_stride_matching = False
         prefetcher.stream_pf_ahead = True
 
-        prefetcher.enable_bop = not options.kmh_align
+        prefetcher.enable_bop = False
         prefetcher.bop_large.delay_queue_enable = True
         prefetcher.bop_large.bad_score = 10
         prefetcher.bop_small.delay_queue_enable = True
@@ -61,6 +61,7 @@ def create_prefetcher(cpu, cache_level, options):
 
     if cache_level == 'l2':
         if options.classic_l2:
+            prefetcher.enable_bop = True
             if options.kmh_align:
                 assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
                 prefetcher.enable_cmc = False
@@ -77,6 +78,7 @@ def create_prefetcher(cpu, cache_level, options):
 
     if cache_level == 'l2_wrapper':
         if not options.classic_l2:
+            prefetcher.enable_bop = True
             if options.kmh_align:
                 assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
                 prefetcher.enable_cmc = False

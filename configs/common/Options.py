@@ -312,7 +312,7 @@ def addCommonOptions(parser, configure_xiangshan=False):
     parser.add_argument("--short-stride-thres", action="store", default=0, type=int,
                         help="""
                         Ignore short strides when seen long strides for stride, 0 for turning off""")
-    parser.add_argument("--pht-pf-level", action="store", default=1,
+    parser.add_argument("--pht-pf-level", action="store", default=2,
                         help="""
                         Prefetching cache level for SMS'pht""")
 
