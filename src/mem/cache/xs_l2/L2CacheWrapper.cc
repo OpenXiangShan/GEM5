@@ -185,6 +185,22 @@ L2CacheWrapper::SliceCPUSidePort::recvTimingSnoopReq(PacketPtr pkt)
     owner.cpu_side_port.sendTimingSnoopReq(pkt);
 }
 
+void
+L2CacheWrapper::SliceCPUSidePort::recvFunctionalSnoop(PacketPtr pkt)
+{
+    DPRINTF(L2CacheWrapper, "Got functional snoop req for addr %#x from slice %d,"
+                            " forwarding to CPU\n", pkt->getAddr(), id);
+    owner.cpu_side_port.sendFunctionalSnoop(pkt);
+}
+
+Tick
+L2CacheWrapper::SliceCPUSidePort::recvAtomicSnoop(PacketPtr pkt)
+{
+    DPRINTF(L2CacheWrapper, "Got atomic snoop req for addr %#x from slice %d,"
+                            " forwarding to CPU\n", pkt->getAddr(), id);
+    return owner.cpu_side_port.sendAtomicSnoop(pkt);
+}
+
 bool
 L2CacheWrapper::SliceCPUSidePort::recvTimingResp(PacketPtr pkt)
 {

@@ -116,6 +116,20 @@ CacheWrapper::innerCpuPortRecvTimingSnoopReq(PacketPtr pkt)
 }
 
 void
+CacheWrapper::innerCpuPortRecvFunctionalSnoop(PacketPtr pkt)
+{
+    DPRINTF(CacheWrapper, "Got functional snoop from inner cache for addr: %#x\n", pkt->getAddr());
+    cpu_side_port.sendFunctionalSnoop(pkt);
+}
+
+Tick
+CacheWrapper::innerCpuPortRecvAtomicSnoop(PacketPtr pkt)
+{
+    DPRINTF(CacheWrapper, "Got atomic snoop from inner cache for addr: %#x\n", pkt->getAddr());
+    return cpu_side_port.sendAtomicSnoop(pkt);
+}
+
+void
 CacheWrapper::innerCpuPortRecvRangeChange()
 {
     DPRINTF(CacheWrapper, "Got range change from inner cache\n");
@@ -211,6 +225,20 @@ CacheWrapper::memSidePortRecvRangeChange()
 {
     DPRINTF(CacheWrapper, "Got range change from memory side\n");
     inner_mem_port.sendRangeChange();
+}
+
+void
+CacheWrapper::memSidePortRecvFunctionalSnoop(PacketPtr pkt)
+{
+    DPRINTF(CacheWrapper, "Got functional snoop from memory side for addr: %#x\n", pkt->getAddr());
+    inner_mem_port.sendFunctionalSnoop(pkt);
+}
+
+Tick
+CacheWrapper::memSidePortRecvAtomicSnoop(PacketPtr pkt)
+{
+    DPRINTF(CacheWrapper, "Got atomic snoop from memory side for addr: %#x\n", pkt->getAddr());
+    return inner_mem_port.sendAtomicSnoop(pkt);
 }
 
 } // namespace gem5

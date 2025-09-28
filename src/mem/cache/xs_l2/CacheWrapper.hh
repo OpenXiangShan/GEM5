@@ -56,6 +56,12 @@ class CacheWrapper : public ClockedObject
         void recvTimingSnoopReq(PacketPtr pkt) override {
           return owner->memSidePortRecvTimingSnoopReq(pkt);
         }
+        void recvFunctionalSnoop(PacketPtr pkt) override {
+          return owner->memSidePortRecvFunctionalSnoop(pkt);
+        }
+        Tick recvAtomicSnoop(PacketPtr pkt) override {
+          return owner->memSidePortRecvAtomicSnoop(pkt);
+        }
         void recvRangeChange() override {
           return owner->memSidePortRecvRangeChange();
         }
@@ -79,6 +85,12 @@ class CacheWrapper : public ClockedObject
         }
         void recvTimingSnoopReq(PacketPtr pkt) override {
           return owner->innerCpuPortRecvTimingSnoopReq(pkt);
+        }
+        void recvFunctionalSnoop(PacketPtr pkt) override {
+          return owner->innerCpuPortRecvFunctionalSnoop(pkt);
+        }
+        Tick recvAtomicSnoop(PacketPtr pkt) override {
+          return owner->innerCpuPortRecvAtomicSnoop(pkt);
         }
         void recvRangeChange() override {
           return owner->innerCpuPortRecvRangeChange();
@@ -138,12 +150,16 @@ class CacheWrapper : public ClockedObject
     virtual bool memSidePortRecvTimingResp(PacketPtr pkt);
     virtual void memSidePortRecvReqRetry();
     virtual void memSidePortRecvTimingSnoopReq(PacketPtr pkt);
+    virtual void memSidePortRecvFunctionalSnoop(PacketPtr pkt);
+    virtual Tick memSidePortRecvAtomicSnoop(PacketPtr pkt);
     virtual void memSidePortRecvRangeChange();
 
     // Inner CPU side port methods
     virtual bool innerCpuPortRecvTimingResp(PacketPtr pkt);
     virtual void innerCpuPortRecvReqRetry();
     virtual void innerCpuPortRecvTimingSnoopReq(PacketPtr pkt);
+    virtual void innerCpuPortRecvFunctionalSnoop(PacketPtr pkt);
+    virtual Tick innerCpuPortRecvAtomicSnoop(PacketPtr pkt);
     virtual void innerCpuPortRecvRangeChange();
 
     // Inner Mem side port methods

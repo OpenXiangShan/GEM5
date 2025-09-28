@@ -130,6 +130,8 @@ class L2CacheWrapper : public ClockedObject
         void recvReqRetry() override;
         void recvRangeChange() override;
         void recvTimingSnoopReq(PacketPtr pkt) override;
+        void recvFunctionalSnoop(PacketPtr pkt) override;
+        Tick recvAtomicSnoop(PacketPtr pkt) override;
         bool isSnooping() const override { return true;}
     };
 
