@@ -1563,6 +1563,8 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 {
     ThreadID tid = inst->threadNumber;
 
+    toFetch->iewInfo[tid].resolvedInstPC.push_back(inst->getPC());
+
     bool resolvedFSQIdNotInToFetch =
         find(toFetch->iewInfo[tid].resolvedFSQId.begin(), toFetch->iewInfo[tid].resolvedFSQId.end(),
              inst->getFsqId()) == toFetch->iewInfo[tid].resolvedFSQId.end();
@@ -1663,9 +1665,10 @@ IEW::executeInsts()
     // @todo This doesn't actually work anymore, we should fix it.
 //    printAvailableInsts();
 
-    // Clear resolvedFSQId since they are already handled in frontend
+    // Clear resolvedFSQId and resolvedInstPC since they are already handled in frontend
     ThreadID tid = *activeThreads->begin();
     toFetch->iewInfo[tid].resolvedFSQId.clear();
+    toFetch->iewInfo[tid].resolvedInstPC.clear();
 
     // Execute/writeback any instructions that are available.
     int insts_to_execute = fromIssue->size;

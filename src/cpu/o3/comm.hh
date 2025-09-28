@@ -243,6 +243,7 @@ struct TimeStruct
         StallReason sqHeadStallReason;
 
         std::vector<uint64_t> resolvedFSQId; // *F
+        std::vector<uint64_t> resolvedInstPC; // *F
 
     };
 
