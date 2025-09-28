@@ -427,7 +427,11 @@ def setKmhV3IdealParams(args, system):
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
 
     if args.l3cache:
-        system.l3.mshrs = 128
+        if args.newl3cache:
+            for i in range(args.l3_slices):
+                system.l3_wrapper.slices[i].inner_cache.mshrs = 128
+        else:
+            system.l3.mshrs = 128
 
 if __name__ == '__m5_main__':
     # Add args

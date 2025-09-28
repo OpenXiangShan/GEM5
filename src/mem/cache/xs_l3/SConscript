@@ -1,18 +1,18 @@
 Import('*')
 
-SimObject('CacheWrapper.py', sim_objects=[
-    'CacheWrapper', 'L2CacheSlice', 'L2CacheWrapper'
+SimObject('BaseCacheWrapper.py', sim_objects=[
+    'BaseCacheWrapper', 'L3CacheSlice', 'L3CacheWrapper'
 ])
 
-Source('CacheWrapper.cc')
-Source('L2CacheSlice.cc')
-Source('L2CacheWrapper.cc')
-Source('L2MainPipe.cc')
-Source('RequestBuffer.cc')
-Source('RequestArbiter.cc')
-Source('SlicedCacheAccessor.cc')
+Source('BaseCacheWrapper.cc')
+Source('L3CacheSlice.cc')
+Source('L3CacheWrapper.cc')
+Source('L3MainPipe.cc')
+Source('L3RequestBuffer.cc')
+Source('L3RequestArbiter.cc')
+Source('L3SlicedCacheAccessor.cc')
 
-DebugFlag('CacheWrapper')
-DebugFlag('L2CacheSlice')
-DebugFlag('L2CacheWrapper')
-DebugFlag('L2MainPipe')
+DebugFlag('BaseCacheWrapper')
+DebugFlag('L3CacheSlice')
+DebugFlag('L3CacheWrapper')
+DebugFlag('L3MainPipe')

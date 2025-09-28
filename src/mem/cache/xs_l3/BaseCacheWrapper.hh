@@ -1,24 +1,24 @@
-#ifndef __MEM_CACHE_CACHE_WRAPPER_HH__
-#define __MEM_CACHE_CACHE_WRAPPER_HH__
+#ifndef __MEM_CACHE_XS_L3_CACHE_WRAPPER_HH__
+#define __MEM_CACHE_XS_L3_CACHE_WRAPPER_HH__
 
 #include "mem/packet.hh"
 #include "mem/port.hh"
-#include "params/CacheWrapper.hh"
+#include "params/BaseCacheWrapper.hh"
 #include "sim/clocked_object.hh"
 #include "sim/port.hh"
 
 namespace gem5
 {
 
-class CacheWrapper : public ClockedObject
+class BaseCacheWrapper : public ClockedObject
 {
   private:
     class CPUSidePort : public ResponsePort
     {
       private:
-        CacheWrapper *owner;
+        BaseCacheWrapper *owner;
       public:
-        CPUSidePort(const std::string& name, CacheWrapper *owner);
+        CPUSidePort(const std::string& name, BaseCacheWrapper *owner);
       protected:
         bool recvTimingReq(PacketPtr pkt) override {
           return owner->cpuSidePortRecvTimingReq(pkt);
@@ -43,9 +43,9 @@ class CacheWrapper : public ClockedObject
     class MemSidePort : public RequestPort
     {
       private:
-        CacheWrapper *owner;
+        BaseCacheWrapper *owner;
       public:
-        MemSidePort(const std::string& name, CacheWrapper *owner);
+        MemSidePort(const std::string& name, BaseCacheWrapper *owner);
       protected:
         bool recvTimingResp(PacketPtr pkt) override {
           return owner->memSidePortRecvTimingResp(pkt);
@@ -67,9 +67,9 @@ class CacheWrapper : public ClockedObject
     class InnerCPUSidePort : public RequestPort
     {
       private:
-        CacheWrapper *owner;
+        BaseCacheWrapper *owner;
       public:
-        InnerCPUSidePort(const std::string& name, CacheWrapper *owner);
+        InnerCPUSidePort(const std::string& name, BaseCacheWrapper *owner);
       protected:
         bool recvTimingResp(PacketPtr pkt) override {
           return owner->innerCpuPortRecvTimingResp(pkt);
@@ -91,9 +91,9 @@ class CacheWrapper : public ClockedObject
     class InnerMemSidePort : public ResponsePort
     {
       private:
-        CacheWrapper *owner;
+        BaseCacheWrapper *owner;
       public:
-        InnerMemSidePort(const std::string& name, CacheWrapper *owner);
+        InnerMemSidePort(const std::string& name, BaseCacheWrapper *owner);
       protected:
         bool recvTimingReq(PacketPtr pkt) override {
           return owner->innerMemPortRecvTimingReq(pkt);
@@ -155,7 +155,7 @@ class CacheWrapper : public ClockedObject
     virtual AddrRangeList innerMemPortGetAddrRanges() const;
 
   public:
-    CacheWrapper(const CacheWrapperParams &p);
+    BaseCacheWrapper(const BaseCacheWrapperParams &p);
 
     Port &getPort(const std::string &if_name, PortID idx = InvalidPortID) override;
 };

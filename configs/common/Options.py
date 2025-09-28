@@ -159,9 +159,13 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l2_slices", type=int, default=4)
     parser.add_argument("--classic-l2", action="store_true", default=False,
                         help="use classic L2 cache, instead of RTL aligned L2 cache")
+    parser.add_argument("--newl3cache", default = False, action="store_true",
+                        help="use pipelined L3 cache, instead of classic L3 cache ") #Added for new L3 cache
+
 
     parser.add_argument("--l3_size", type=str, default="16MB")
     parser.add_argument("--l3_assoc", type=int, default=16)
+    parser.add_argument("--l3_slices", type=int, default=1) #Added for new L3 cache
 
     parser.add_argument("--cacheline_size", type=int, default=64)
     parser.add_argument("--ideal-cache", action="store_true")
@@ -176,8 +180,10 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         choices=ObjectList.hwp_list.get_names(), help="L2 cache hardware prefetcher")
     parser.add_argument("--l2-wrapper-hwp-type", default='L2CompositeWithWorkerPrefetcher',
                         choices=ObjectList.hwp_list.get_names(), help="L2 wrapper cache hardware prefetcher")
-    parser.add_argument("--l3-hwp-type", default='WorkerPrefetcher',
+    parser.add_argument("--l3-hwp-type", default='PrefetcherForwarder',
                         choices=ObjectList.hwp_list.get_names(), help="L3 cache hardware prefetcher")
+    parser.add_argument("--l3-wrapper-hwp-type", default='WorkerPrefetcher',
+                        choices=ObjectList.hwp_list.get_names(), help="L3 wrapper cache hardware prefetcher")
 
     # Run duration options
     parser.add_argument("-m", "--abs-max-tick", type=int, default=m5.MaxTick,
