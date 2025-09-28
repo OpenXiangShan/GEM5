@@ -336,18 +336,6 @@ BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     Addr alignedPC = stream_start & ~(blockSize - 1);
     DPRINTF(TAGE, "putPCHistory startAddr: %#lx, alignedPC: %#lx\n", stream_start, alignedPC);
 
-
-    // if (getDelay()==0) {//this is microtage
-    //     // for microtage, only predict for s0 entries
-    //     auto &s0_pred_entries=stagePreds[0].btbEntries;
-    //     if (!s0_pred_entries.empty() && s0_pred_entries[0].pc==0xdeadbeef) {
-    //         // dummy entries means this stage prediction is from uBTB,so do not predict
-    //         DPRINTF(TAGE, "dummy entries means this stage prediction is from uBTB,so do not predict\n");
-    //         return;
-    //     }
-
-    // }
-
     // IMPORTANT: when this function is called,
     // btb entries should already be in stagePreds
     // get prediction and save it

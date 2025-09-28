@@ -29,9 +29,6 @@ from m5.SimObject import SimObject
 from m5.params import *
 from m5.proxy import *
 
-# 导入所需的参数类型
-from m5.params import Param, VectorParam, Unsigned, Int, Bool, String, Enum
-
 class BpType(Enum):
     vals = ['Coupled', 'DecoupledStream', 'DecoupledFTB', 'DecoupledBTB']
 

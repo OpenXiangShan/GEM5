@@ -1,6 +1,7 @@
 #include "cpu/pred/btb/btb_mgsc.hh"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <ctime>
 
@@ -432,6 +433,8 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                 auto pred = generateSinglePrediction(btb_entry, startPC, tage_info->second);
                 meta->preds[btb_entry.pc] = pred;
                 results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            }else {
+             assert(false);
             }
         }
     }

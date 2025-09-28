@@ -28,10 +28,6 @@
 
 
 #include "cpu/pred/btb/btb.hh"
-
-#include <cassert>
-#include <cstdio>
-
 #include "base/intmath.hh"
 #include "stream_struct.hh"
 
@@ -216,21 +212,20 @@ AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startA
 void
 AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
                                     std::vector<FullBTBPrediction>& stagePreds)
-{
+{    // S0 prediction source statistic is tracked by AheadBTB
+    // AheadBTB always has aheadPipelinedStages > 0
     BTBEntry ubtb_pred_entry;
     bool hit = false;
     std::vector<TickedBTBEntry> sorted_entries;
-
+    // if ubtb has prediction，add ubtb entry to aBTB entries
     if (stagePreds[0].btbEntries.size() > 0) {
-            DPRINTF(BTB, "AheadBTB: predsOfEachStage are already filled by uBTB, skipping AheadBTB prediction\n");
-            btbStats.S0PredUseUBTB++;
-                //if ubtb has prediction，add ubtb entry to aBTB entries
+        DPRINTF(BTB, "AheadBTB: predsOfEachStage are already filled by uBTB, skipping AheadBTB prediction\n");
+        btbStats.S0PredUseUBTB++;
+        //if ubtb has prediction，add ubtb entry to aBTB entries
         if (!stagePreds[0].btbEntries.empty()&& stagePreds[0].btbEntries.back().valid) {
             ubtb_pred_entry = stagePreds[0].btbEntries.back();
             DPRINTF(BTB, "ubtb_pred_entry: pc %#lx, target %#lx\n", ubtb_pred_entry.pc, ubtb_pred_entry.target);
-
             assert(ubtb_pred_entry.pc != 0xdeadbeef && ubtb_pred_entry.valid);
-
             for (auto &entry : entries) {
                 // Process each entry
                 if (entry.pc == ubtb_pred_entry.pc && entry.valid) {
@@ -251,8 +246,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         }else {//if ubtb has no prediction use
             sorted_entries = entries;
         }
-
-
+        // Fill all later stages with the mix prediction from uBTB and aBTB
         for (int s = getDelay()+1; s < stagePreds.size(); ++s) {
             stagePreds[s].btbEntries.clear();
             for (auto e: sorted_entries) {
@@ -280,7 +274,6 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         dumpBTBEntries(stagePreds[s].btbEntries);
 
         stagePreds[s].predTick = curTick();
-
         stagePreds[s].condTakens.clear();
         stagePreds[s].indirectTargets.clear();
     }
