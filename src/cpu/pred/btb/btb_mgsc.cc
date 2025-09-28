@@ -1,7 +1,6 @@
 #include "cpu/pred/btb/btb_mgsc.hh"
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <ctime>
 
