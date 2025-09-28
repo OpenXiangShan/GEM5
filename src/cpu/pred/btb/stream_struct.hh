@@ -170,11 +170,15 @@ struct BTBEntry : BranchInfo
     // it's necessary to know whether the branch is resolved and skip
     // the BTB entry or not.
     bool resolved;
+    bool tageTrained;
     int ctr;
     Addr tag;
     // Addr offset; // retrived from lowest bits of pc
-    BTBEntry() : valid(false), alwaysTaken(false), resolved(false), ctr(0), tag(0) {}
-    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), resolved(false), ctr(0) {}
+    BTBEntry() : valid(false), alwaysTaken(false), resolved(false), tageTrained(false), ctr(0), tag(0) {}
+    BTBEntry(const BranchInfo &bi)
+        : BranchInfo(bi), valid(true), alwaysTaken(true), resolved(false), tageTrained(false), ctr(0)
+    {
+    }
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
 };
 

@@ -358,15 +358,15 @@ BTBTAGE::getPredictionMeta() {
 std::vector<BTBEntry>
 BTBTAGE::prepareUpdateEntries(const FetchStream &stream) {
     auto all_entries = stream.updateBTBEntries;
-    
+
     // Filter out non-conditional and always-taken branches
     auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-        [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
+        [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved && !e.tageTrained); });
     all_entries.erase(remove_it, all_entries.end());
 
     // Handle potential new BTB entry
     auto &potential_new_entry = stream.updateNewBTBEntry;
-    if (!stream.updateIsOldEntry && potential_new_entry.isCond && 
+    if (!stream.updateIsOldEntry && potential_new_entry.isCond &&
         !potential_new_entry.alwaysTaken) {
         all_entries.push_back(potential_new_entry);
     }
@@ -606,6 +606,8 @@ BTBTAGE::update(const FetchStream &stream) {
 
     // Process each BTB entry
     for (auto &btb_entry : entries_to_update) {
+        btb_entry.tageTrained = true; // mark this entry as trained by TAGE
+
         bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot

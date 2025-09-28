@@ -1187,6 +1187,20 @@ DecoupledBPUWithBTB::updateTAGEOnly(unsigned &stream_id)
 }
 
 void
+DecoupledBPUWithBTB::markInstResolved(unsigned &stream_id, uint64_t resolvedInstPC)
+{
+
+    auto stream_it = fetchStreamQueue.find(stream_id);
+    if (stream_it == fetchStreamQueue.end()) {
+        DPRINTF(DecoupleBP, "Stream id %u not found in fetchStreamQueue, cannot update predictors\n", stream_id);
+        return;
+    }
+    auto &stream = stream_it->second;
+
+    stream.markBTBEntryResolved(resolvedInstPC);
+}
+
+void
 DecoupledBPUWithBTB::updatePredictorComponents(unsigned &stream_id)
 {
 
