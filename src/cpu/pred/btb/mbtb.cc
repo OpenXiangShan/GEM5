@@ -464,11 +464,14 @@ MBTB::getAndSetNewBTBEntry(FetchStream &stream)
     } else {
         DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, stream.exeTaken=%d\n",
                 pred_branch_hit, stream.exeTaken);
-        // Existing entries will be updated in update()
+        // No insertion intention; treat as old (even if miss+not-taken).
+        is_old_entry = true;
     }
 
     // Set tag and update stream metadata for use in update()
-    entry_to_write.tag = getTag(entry_to_write.pc);
+    if (entry_to_write.valid) {
+        entry_to_write.tag = getTag(entry_to_write.pc);
+    }
     stream.updateNewBTBEntry = entry_to_write;
     stream.updateIsOldEntry = is_old_entry;
 }
@@ -558,10 +561,10 @@ MBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
 /**
  * Update or replace BTB entry
  * 1. Look for matching entry
- * 2. for cond entry, if found, use the one in btb, since we need the up-to-date counter
- * 3. for indirect entry, update target if necessary
- * 4. Update existing entry or replace oldest entry
- * 5. Update MRU information
+ * 2. On hit: only correct target when this branch executed and target mismatches
+ *    (applies to both direct and indirect branches); no ctr updates in MBTB
+ * 3. On miss: replace oldest entry in the set (insert new)
+ * 4. Update MRU information
  */
 void
 MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
@@ -600,26 +603,40 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
     if (!found && found_in_vc) {
         return;
     }
+    // Base the write on the entry in BTB if present; otherwise on the provided entry
+    auto entry_to_write = found ? BTBEntry(*it) : entry;
+    entry_to_write.tag = btb_tag;   // update tag after locating it
 
-    auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
-    entry_to_write.tag = btb_tag;   // update tag after found it!
-    // update saturating counter if necessary
-    if (entry_to_write.isCond) {
-        bool this_cond_taken = stream.exeTaken && stream.getControlPC() == entry_to_write.pc;
-        if (!this_cond_taken) {
-            entry_to_write.alwaysTaken = false;
-        }
-        if(!entry_to_write.alwaysTaken) {
-            updateCtr(entry_to_write.ctr, this_cond_taken);
-        }
-    }
-    // update indirect target if necessary
-    if (entry_to_write.isIndirect && stream.exeTaken && stream.getControlPC() == entry_to_write.pc) {
-        entry_to_write.target = stream.exeBranchInfo.target;
-    }
-    auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
     if (found) {
-        // Update existing entry
+        // Only update when this branch actually executed (taken or not-taken)
+        bool executed_this_branch = stream.resolved &&
+                                    (stream.getControlPC() == entry_to_write.pc);
+
+        bool need_target_fix = false;
+        bool need_always_taken_fix = false;
+        Addr actual_target = entry_to_write.target;
+        if (executed_this_branch) {
+            // 1) Target correction (for both direct and indirect)
+            actual_target = stream.exeBranchInfo.target;
+            if (entry_to_write.target != actual_target) {
+                entry_to_write.target = actual_target;
+                need_target_fix = true;
+            }
+
+            // 2) alwaysTaken demotion for conditional branches
+            if (entry_to_write.isCond && !stream.exeTaken && entry_to_write.alwaysTaken) {
+                entry_to_write.alwaysTaken = false;
+                need_always_taken_fix = true;
+            }
+        }
+
+        if (!need_target_fix && !need_always_taken_fix) {
+            // Hit but nothing to update (MBTB does not update ctr)
+            return;
+        }
+
+        auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
+        // Update existing entry with corrected target and/or alwaysTaken
         *it = ticked_entry;
 #ifndef UNIT_TEST
         if (enableDB) {
@@ -655,6 +672,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
         btbStats.updateReplace++;
         DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
                 entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
+        auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
         *entry_in_btb_now = ticked_entry;
 #ifndef UNIT_TEST
         if (enableDB) {
@@ -680,20 +698,23 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
 void
 MBTB::update(const FetchStream &stream)
 {
-
-    // 1. Process old entries
-    auto old_entries = processOldEntries(stream);
-    
-    // 2. Check prediction hit status, for stats recording
+    // 1) Stats: record hit/miss status
     checkPredictionHit(stream,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
-    // 3. Collect entries to update
-    auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
-    
-    // 4. Update BTB entries - each entry uses its own PC to select SRAM and calculate index/tag
-    for (auto &entry : entries_to_update) {
-        updateBTBEntry(entry, stream);
+    // 2) Only update the necessary single entry:
+    //    - If miss and taken: insert new entry
+    //    - Else if hit and executed (taken or not-taken):
+    //        * fix target on mismatch; and/or demote alwaysTaken on not-taken
+    const BTBEntry &candidate = stream.updateNewBTBEntry;
+    if (!stream.updateIsOldEntry) {
+        // Miss and taken: insert
+        updateBTBEntry(candidate, stream);
+    } else if (stream.resolved && (stream.getControlPC() == candidate.pc)) {
+        // Hit: possible target correction and/or alwaysTaken demotion
+        updateBTBEntry(candidate, stream);
+    } else {
+        // Nothing to update for main BTB in other cases
     }
 }
 
