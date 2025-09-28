@@ -392,7 +392,7 @@ def setKmhV3IdealParams(args, system):
                 # TODO: BTB TAGE do not bave base table, do not support SC
                 cpu.branchPred.tage.tableSizes = [2048] * 8  # 2 way, 2048 sets
                 cpu.branchPred.tage.numWays = 2
-                cpu.branchPred.microtage.tableSizes = [2048] * 8  # 2 way, 512 sets
+                cpu.branchPred.microtage.tableSizes = [512]   # 2 way, 512 sets
                 cpu.branchPred.microtage.numWays = 2
             cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
             cpu.branchPred.ftq_size = 256
@@ -404,10 +404,10 @@ def setKmhV3IdealParams(args, system):
 
             # cpu.branchPred.microtage.enableSC = False
 
-            cpu.branchPred.microtage.numPredictors = 8
-            cpu.branchPred.microtage.TTagBitSizes = [13] * 8
-            cpu.branchPred.microtage.TTagPcShifts = [1] * 8
-            cpu.branchPred.microtage.histLengths = [4, 8, 15, 28, 50, 90, 160, 300]
+            cpu.branchPred.microtage.numPredictors = 1
+            cpu.branchPred.microtage.TTagBitSizes = [13]
+            cpu.branchPred.microtage.TTagPcShifts = [1]
+            cpu.branchPred.microtage.histLengths = [16]
 
         # ideal l1 caches
         if args.caches:
