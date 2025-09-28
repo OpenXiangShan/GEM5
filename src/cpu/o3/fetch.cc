@@ -1482,6 +1482,22 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     return false;
 }
 
+void
+Fetch::btbTrainTAGE(){
+
+    // iterate resolvedFSQId and get FetchStream, push to ResolveQueue
+    if (isBTBPred()) {
+      for (const uint64_t &fsq_id : fromDecode->iewInfo->resolvedFSQId) {
+          unsigned int stream_id = fsq_id;
+          for (uint64_t &resolvedInstPC : fromDecode->iewInfo->resolvedInstPC) {
+              dbpbtb->markInstResolved(stream_id, resolvedInstPC);
+          }
+          dbpbtb->updateTAGEOnly(stream_id);
+      }
+    }
+
+}
+
 bool
 Fetch::handleCommitSignals(ThreadID tid)
 {
