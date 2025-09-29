@@ -29,7 +29,6 @@
 
 #include "cpu/pred/btb/btb.hh"
 
-#include <cassert>
 
 #include "base/intmath.hh"
 #include "sim/cur_tick.hh"
@@ -220,11 +219,11 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     // AheadBTB always has aheadPipelinedStages > 0
     BTBEntry ubtb_pred_entry;
     std::vector<TickedBTBEntry> mixed_entries;
-    // if ubtb has prediction，add ubtb entry to aBTB entries
+    // if ubtb has prediction,add ubtb entry to aBTB entries
     if (stagePreds[0].btbEntries.size() > 0) {
         DPRINTF(BTB, "AheadBTB: predsOfEachStage are already filled by uBTB, skipping AheadBTB prediction\n");
         btbStats.S0PredUseUBTB++;
-        //if ubtb has prediction，add ubtb entry to aBTB entries
+        //if ubtb has prediction,add ubtb entry to aBTB entries
         ubtb_pred_entry = stagePreds[0].btbEntries[0];
         assert(ubtb_pred_entry.valid);
         mixed_entries = entries;
