@@ -812,7 +812,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // Helper functions for update
     void updateTAGEOnly(unsigned &stream_id);
-    void markInstResolved(unsigned &stream_id, uint64_t resolvedInstPC);
+    void markCFIResolved(unsigned &stream_id, uint64_t resolvedInstPC);
     void updatePredictorComponents(unsigned &stream_id);
     void updateStatistics(const FetchStream &stream);
 

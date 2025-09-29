@@ -933,8 +933,6 @@ DecoupledBPUWithBTB::handleSquash(unsigned target_id,
     // Clear predictions for next cycle
     clearPreds();
 
-    updatePredictorComponents(stream_id);
-
     // Update PC and stream ID
     s0PC = redirect_pc;
     fsqId = stream_id + 1;
@@ -1173,7 +1171,7 @@ DecoupledBPUWithBTB::updateTAGEOnly(unsigned &stream_id)
         return;
     }
 
-  auto &stream = stream_it->second;
+    auto &stream = stream_it->second;
 
     // Update predictor components only if the stream is hit or taken
     if (stream.isHit || stream.exeTaken) {
@@ -1187,7 +1185,7 @@ DecoupledBPUWithBTB::updateTAGEOnly(unsigned &stream_id)
 }
 
 void
-DecoupledBPUWithBTB::markInstResolved(unsigned &stream_id, uint64_t resolvedInstPC)
+DecoupledBPUWithBTB::markCFIResolved(unsigned &stream_id, uint64_t resolvedInstPC)
 {
 
     auto stream_it = fetchStreamQueue.find(stream_id);
@@ -1222,7 +1220,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(unsigned &stream_id)
 
         // Update all predictor components
         for (int i = 0; i < numComponents; ++i) {
-            if (components[i]==tage)
+            if (components[i] == tage)
                 continue;
             components[i]->update(stream);
         }

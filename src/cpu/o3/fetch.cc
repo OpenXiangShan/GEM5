@@ -1483,19 +1483,16 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 }
 
 void
-Fetch::btbTrainTAGE(){
-
+Fetch::btbTrainTAGE()
+{
     // iterate resolvedFSQId and get FetchStream, push to ResolveQueue
-    if (isBTBPred()) {
-      for (const uint64_t &fsq_id : fromDecode->iewInfo->resolvedFSQId) {
-          unsigned int stream_id = fsq_id;
-          for (uint64_t &resolvedInstPC : fromDecode->iewInfo->resolvedInstPC) {
-              dbpbtb->markInstResolved(stream_id, resolvedInstPC);
-          }
-          dbpbtb->updateTAGEOnly(stream_id);
-      }
+    for (const uint64_t &fsq_id : fromDecode->iewInfo->resolvedFSQId) {
+        unsigned int stream_id = fsq_id;
+        for (uint64_t &resolvedInstPC : fromDecode->iewInfo->resolvedInstPC) {
+            dbpbtb->markCFIResolved(stream_id, resolvedInstPC);
+        }
+        dbpbtb->updateTAGEOnly(stream_id);
     }
-
 }
 
 bool
@@ -1521,6 +1518,7 @@ Fetch::handleCommitSignals(ThreadID tid)
                 assert(dbpbtb);
                 dbpbtb->commitStream(fromCommit->commitInfo[tid].doneFsqId);
                 dbpbtb->update(fromCommit->commitInfo[tid].doneFsqId, tid);
+                btbTrainTAGE();
             }
         }
         return false;
