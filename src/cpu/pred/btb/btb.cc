@@ -28,7 +28,11 @@
 
 
 #include "cpu/pred/btb/btb.hh"
+
+#include <cassert>
+
 #include "base/intmath.hh"
+#include "sim/cur_tick.hh"
 #include "stream_struct.hh"
 
 // Additional conditional includes based on build mode
@@ -215,41 +219,31 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
 {    // S0 prediction source statistic is tracked by AheadBTB
     // AheadBTB always has aheadPipelinedStages > 0
     BTBEntry ubtb_pred_entry;
-    bool hit = false;
-    std::vector<TickedBTBEntry> sorted_entries;
+    std::vector<TickedBTBEntry> mixed_entries;
     // if ubtb has prediction，add ubtb entry to aBTB entries
     if (stagePreds[0].btbEntries.size() > 0) {
         DPRINTF(BTB, "AheadBTB: predsOfEachStage are already filled by uBTB, skipping AheadBTB prediction\n");
         btbStats.S0PredUseUBTB++;
         //if ubtb has prediction，add ubtb entry to aBTB entries
-        if (!stagePreds[0].btbEntries.empty()&& stagePreds[0].btbEntries.back().valid) {
-            ubtb_pred_entry = stagePreds[0].btbEntries.back();
-            DPRINTF(BTB, "ubtb_pred_entry: pc %#lx, target %#lx\n", ubtb_pred_entry.pc, ubtb_pred_entry.target);
-            assert(ubtb_pred_entry.pc != 0xdeadbeef && ubtb_pred_entry.valid);
-            for (auto &entry : entries) {
-                // Process each entry
-                if (entry.pc == ubtb_pred_entry.pc && entry.valid) {
-                    hit = true;
-                    break;
-                }
-            }
-            sorted_entries = entries;
-            if (!hit) {
-                if (ubtb_pred_entry.valid) {
-                    sorted_entries.push_back(TickedBTBEntry(ubtb_pred_entry, curTick()));
-                }
-                std::sort(sorted_entries.begin(), sorted_entries.end(),
-                            [](const TickedBTBEntry &a, const TickedBTBEntry &b) {
-                    return a.pc < b.pc;
-                });
-            }
-        }else {//if ubtb has no prediction use
-            sorted_entries = entries;
-        }
+        ubtb_pred_entry = stagePreds[0].btbEntries[0];
+        assert(ubtb_pred_entry.valid);
+        mixed_entries = entries;
+        mixed_entries.push_back(TickedBTBEntry(ubtb_pred_entry, curTick()));
+        // Deduplicate entries by pc (order can change)
+        std::sort(mixed_entries.begin(), mixed_entries.end(),
+              [](const TickedBTBEntry& a, const TickedBTBEntry& b) {
+                  return a.pc < b.pc;
+              });
+        // Remove duplicates
+        mixed_entries.erase(std::unique(mixed_entries.begin(), mixed_entries.end(),
+              [](const TickedBTBEntry& a, const TickedBTBEntry& b) {
+                  return a.pc == b.pc;
+              }),
+              mixed_entries.end());
         // Fill all later stages with the mix prediction from uBTB and aBTB
         for (int s = getDelay()+1; s < stagePreds.size(); ++s) {
             stagePreds[s].btbEntries.clear();
-            for (auto e: sorted_entries) {
+            for (auto e: mixed_entries) {
                 stagePreds[s].btbEntries.push_back(BTBEntry(e));
             }
             checkAscending(stagePreds[s].btbEntries);
@@ -682,12 +676,12 @@ AheadBTB::getPreviousPC(const FetchStream &stream)
     // get pc from the nth previous block, the value of n is aheadPipelinedStages
     auto previous_pcs = stream.previousPCs;
     if (previous_pcs.size() < aheadPipelinedStages) {
-        // if the stream is not filled, we cannot update ftb
-        DPRINTF(AheadPipeline, "FTB: ahead-pipeline not filled, only have %ld pcs read,"
-            " skipping ftb update\n", previous_pcs.size());
+        // if the stream is not filled, we cannot update btb
+        DPRINTF(AheadPipeline, "BTB: ahead-pipeline not filled, only have %ld pcs read,"
+            " skipping btb update\n", previous_pcs.size());
         return 0;
     } else {
-        DPRINTF(AheadPipeline, "FTB: ahead-pipeline filled, using pc %d blocks before,"
+        DPRINTF(AheadPipeline, "BTB: ahead-pipeline filled, using pc %d blocks before,"
             " prevoiusPC.size() %ld\n", aheadPipelinedStages, previous_pcs.size());
         while (previous_pcs.size() > aheadPipelinedStages) {
             previous_pcs.pop();
