@@ -29,9 +29,7 @@
 
 #include "cpu/pred/btb/btb.hh"
 
-
 #include "base/intmath.hh"
-#include "sim/cur_tick.hh"
 #include "stream_struct.hh"
 
 // Additional conditional includes based on build mode
