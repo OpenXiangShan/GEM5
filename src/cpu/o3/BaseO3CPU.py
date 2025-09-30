@@ -172,8 +172,8 @@ class BaseO3CPU(BaseCPU):
     forwardComSize = Param.Unsigned(10,
             "Time buffer size for forward communication")
 
-    LQEntries = Param.Unsigned(80, "Number of load queue entries")
-    SQEntries = Param.Unsigned(64, "Number of store queue entries")
+    LQEntries = Param.Unsigned(72, "Number of load queue entries")
+    SQEntries = Param.Unsigned(56, "Number of store queue entries")
 
     LdPipeStages = Param.Unsigned(4, "Number of load pipeline stages")
     StPipeStages = Param.Unsigned(5, "Number of store pipeline stages")
