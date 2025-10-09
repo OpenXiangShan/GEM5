@@ -217,11 +217,12 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     // AheadBTB always has aheadPipelinedStages > 0
     BTBEntry ubtb_pred_entry;
     std::vector<TickedBTBEntry> mixed_entries;
-    // if ubtb has prediction,add ubtb entry to aBTB entries
+
+    // if ubtb has prediction, add ubtb entry to aBTB entries
     if (stagePreds[0].btbEntries.size() > 0) {
         DPRINTF(BTB, "AheadBTB: predsOfEachStage are already filled by uBTB, skipping AheadBTB prediction\n");
         btbStats.S0PredUseUBTB++;
-        //if ubtb has prediction,add ubtb entry to aBTB entries
+        //if ubtb has prediction, add ubtb entry to aBTB entries
         ubtb_pred_entry = stagePreds[0].btbEntries[0];
         assert(ubtb_pred_entry.valid);
         mixed_entries = entries;
@@ -238,15 +239,22 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
               }),
               mixed_entries.end());
         // Fill all later stages with the mix prediction from uBTB and aBTB
-        for (int s = getDelay()+1; s < stagePreds.size(); ++s) {
-            stagePreds[s].btbEntries.clear();
-            for (auto e: mixed_entries) {
-                stagePreds[s].btbEntries.push_back(BTBEntry(e));
-            }
-            checkAscending(stagePreds[s].btbEntries);
-            dumpBTBEntries(stagePreds[s].btbEntries);
+        // for (int s = getDelay(); s < stagePreds.size(); ++s) {
+        //     stagePreds[s].btbEntries.clear();
+        //     for (auto e: mixed_entries) {
+        //         stagePreds[s].btbEntries.push_back(BTBEntry(e));
+        //     }
+        //     checkAscending(stagePreds[s].btbEntries);
+        //     dumpBTBEntries(stagePreds[s].btbEntries);
+        // }
+        // return;
+    } else {// no uBTB prediction, only use aBTB prediction
+        mixed_entries = entries;
+        if (entries.size() > 0) {
+            btbStats.S0PredUseABTB++;
+        } else {
+            btbStats.S0Predmiss++;
         }
-        return;
     }
 
     FillStageLoop(s) {
@@ -258,7 +266,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         DPRINTF(BTB, "BTB: assigning prediction for stage %d\n", s);
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
-        for (auto e : entries) {
+        for (auto e : mixed_entries) {
             stagePreds[s].btbEntries.push_back(BTBEntry(e));
         }
         checkAscending(stagePreds[s].btbEntries);
@@ -270,7 +278,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     }
 
     // Set predictions for each branch
-    for (auto &e : entries) {
+    for (auto &e : mixed_entries) {
         assert(e.valid);
         if (e.isCond) {
             // TODO: a performance bug here, mbtb should not update condTakens!
@@ -294,13 +302,13 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         }
     }
 
-    // Update S0 prediction source statistics for AheadBTB
-    // If control flow reached here, uBTB missed
-    if (entries.size() > 0) {
-        btbStats.S0PredUseABTB++;
-    } else {
-        btbStats.S0Predmiss++;
-    }
+    // // Update S0 prediction source statistics for AheadBTB
+    // // If control flow reached here, uBTB missed
+    // if (entries.size() > 0) {
+    //     btbStats.S0PredUseABTB++;
+    // } else {
+    //     btbStats.S0Predmiss++;
+    // }
 }
 
 /**
@@ -679,7 +687,7 @@ AheadBTB::getPreviousPC(const FetchStream &stream)
         return 0;
     } else {
         DPRINTF(AheadPipeline, "BTB: ahead-pipeline filled, using pc %d blocks before,"
-            " prevoiusPC.size() %ld\n", aheadPipelinedStages, previous_pcs.size());
+            " previousPC.size() %ld\n", aheadPipelinedStages, previous_pcs.size());
         while (previous_pcs.size() > aheadPipelinedStages) {
             previous_pcs.pop();
         }
