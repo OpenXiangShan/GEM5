@@ -245,7 +245,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
      */
     std::tuple<unsigned, unsigned> posHash(Addr pc, unsigned tableIdx)
     {
-        return {tableIdx >> numCtrsPerLineBits, ((pc >> (instShiftAmt + 1)) ^ tableIdx) & (numCtrsPerLine - 1)};
+        return {tableIdx, (pc >> (instShiftAmt + 1)) & (numCtrsPerLine - 1)};
     }
 
     // Helper method to generate prediction for a single BTB entry

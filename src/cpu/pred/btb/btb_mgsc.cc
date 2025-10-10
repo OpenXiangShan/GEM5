@@ -60,7 +60,8 @@ BTBMGSC::BTBMGSC(const Params &p)
     assert(bwTableSize > numCtrsPerLine);
     for (unsigned int i = 0; i < bwTableNum; ++i) {
         bwTable[i].resize(bwTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexBwFoldedHist.push_back(FoldedHist(bwHistLen[i], bwTableIdxWidth, 16, HistoryType::GLOBALBW));
+        indexBwFoldedHist.push_back(
+            FoldedHist(bwHistLen[i], bwTableIdxWidth - numCtrsPerLineBits, 16, HistoryType::GLOBALBW));
     }
     bwIndex.resize(bwTableNum);
 
@@ -71,7 +72,8 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < lTableNum; ++i) {
         lTable[i].resize(lTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
-            indexLFoldedHist[k].push_back(FoldedHist(lHistLen[i], lTableIdxWidth, 16, HistoryType::LOCAL));
+            indexLFoldedHist[k].push_back(
+                FoldedHist(lHistLen[i], lTableIdxWidth - numCtrsPerLineBits, 16, HistoryType::LOCAL));
         }
     }
     lIndex.resize(lTableNum);
@@ -82,7 +84,8 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < iTableNum; ++i) {
         assert(std::pow(2, iHistLen[i]) <= iTableSize);
         iTable[i].resize(iTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexIFoldedHist.push_back(FoldedHist(iHistLen[i], iTableIdxWidth, 16, HistoryType::IMLI));
+        indexIFoldedHist.push_back(
+            FoldedHist(iHistLen[i], iTableIdxWidth - numCtrsPerLineBits, 16, HistoryType::IMLI));
     }
     iIndex.resize(iTableNum);
 
@@ -92,7 +95,8 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < gTableNum; ++i) {
         assert(gTable.size() >= gTableNum);
         gTable[i].resize(gTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexGFoldedHist.push_back(FoldedHist(gHistLen[i], gTableIdxWidth, 16, HistoryType::GLOBAL));
+        indexGFoldedHist.push_back(
+            FoldedHist(gHistLen[i], gTableIdxWidth - numCtrsPerLineBits, 16, HistoryType::GLOBAL));
     }
     gIndex.resize(gTableNum);
 
@@ -102,7 +106,7 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < pTableNum; ++i) {
         assert(pTable.size() >= pTableNum);
         pTable[i].resize(pTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexPFoldedHist.push_back(FoldedHist(pHistLen[i], pTableIdxWidth, 2, HistoryType::PATH));
+        indexPFoldedHist.push_back(FoldedHist(pHistLen[i], pTableIdxWidth - numCtrsPerLineBits, 2, HistoryType::PATH));
     }
     pIndex.resize(pTableNum);
 
@@ -243,28 +247,28 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     // Calculate indices for all tables
     for (unsigned int i = 0; i < bwTableNum; ++i) {
-        bwIndex[i] = getHistIndex(startPC, bwTableIdxWidth, indexBwFoldedHist[i].get());
+        bwIndex[i] = getHistIndex(startPC, bwTableIdxWidth - numCtrsPerLineBits, indexBwFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < lTableNum; ++i) {
-        lIndex[i] = getHistIndex(startPC, lTableIdxWidth,
+        lIndex[i] = getHistIndex(startPC, lTableIdxWidth - numCtrsPerLineBits,
                                  indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
     }
 
     for (unsigned int i = 0; i < iTableNum; ++i) {
-        iIndex[i] = getHistIndex(startPC, iTableIdxWidth, indexIFoldedHist[i].get());
+        iIndex[i] = getHistIndex(startPC, iTableIdxWidth - numCtrsPerLineBits, indexIFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < gTableNum; ++i) {
-        gIndex[i] = getHistIndex(startPC, gTableIdxWidth, indexGFoldedHist[i].get());
+        gIndex[i] = getHistIndex(startPC, gTableIdxWidth - numCtrsPerLineBits, indexGFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < pTableNum; ++i) {
-        pIndex[i] = getHistIndex(startPC, pTableIdxWidth, indexPFoldedHist[i].get());
+        pIndex[i] = getHistIndex(startPC, pTableIdxWidth - numCtrsPerLineBits, indexPFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < biasTableNum; ++i) {
-        biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth, tage_info.tage_pred_taken,
+        biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth - numCtrsPerLineBits, tage_info.tage_pred_taken,
                                     tage_info.tage_pred_conf_low && tage_info.tage_pred_alt_diff);
     }
 
