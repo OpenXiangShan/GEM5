@@ -708,7 +708,7 @@ BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist)
     Addr mask = (1ULL << tableIndexBits) - 1;
 
     // Extract lower bits of PC and XOR with folded history directly
-    Addr pcBits = ((pc >> floorLog2(blockSize)) << numCtrsPerLineBits) & mask;
+    Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
     Addr foldedBits = foldedHist & mask;
 
     return pcBits ^ foldedBits;
