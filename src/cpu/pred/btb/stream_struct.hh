@@ -179,19 +179,19 @@ struct BTBEntry : BranchInfo
 struct TageInfoForMGSC
 {
     // tage info
-    bool tage_pred_taken;
+    bool tage_main_taken;
     bool tage_pred_conf_high;
     bool tage_pred_conf_mid;
     bool tage_pred_conf_low;
     bool tage_pred_alt_diff;
 
     // Addr offset; // retrived from lowest bits of pc
-    TageInfoForMGSC() : tage_pred_taken(false), tage_pred_conf_high(false),
+    TageInfoForMGSC() : tage_main_taken(false), tage_pred_conf_high(false),
                         tage_pred_conf_mid(false), tage_pred_conf_low(false),
                         tage_pred_alt_diff(false){}
     TageInfoForMGSC(bool tage_pred_taken, bool tage_pred_conf_high, bool tage_pred_conf_mid,
                     bool tage_pred_conf_low, bool tage_pred_alt_diff) :
-                    tage_pred_taken(tage_pred_taken), tage_pred_conf_high(tage_pred_conf_high),
+                    tage_main_taken(tage_pred_taken), tage_pred_conf_high(tage_pred_conf_high),
                     tage_pred_conf_mid(tage_pred_conf_mid), tage_pred_conf_low(tage_pred_conf_low),
                     tage_pred_alt_diff(tage_pred_alt_diff) {}
 
@@ -679,7 +679,7 @@ struct TageMissTrace : public Record {
         uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful, uint64_t mainTable, uint64_t mainIndex,
         uint64_t altFound, uint64_t altCounter, uint64_t altUseful, uint64_t altTable, uint64_t altIndex,
         uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess,
-        uint64_t allocTable, uint64_t allocIndex, uint64_t allocWay, 
+        uint64_t allocTable, uint64_t allocIndex, uint64_t allocWay,
         std::string history, uint64_t indexFoldedHist)
     {
         _tick = curTick();

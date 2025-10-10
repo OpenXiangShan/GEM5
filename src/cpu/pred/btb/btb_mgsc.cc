@@ -268,8 +268,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     }
 
     for (unsigned int i = 0; i < biasTableNum; ++i) {
-        biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth - numCtrsPerLineBits, tage_info.tage_pred_taken,
-                                    tage_info.tage_pred_conf_low && tage_info.tage_pred_alt_diff);
+        biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth - numCtrsPerLineBits, tage_info.tage_main_taken,
+                                    tage_info.tage_pred_conf_low);
     }
 
     int bw_percsum = calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.pc);
@@ -321,7 +321,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
         }
     }
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
-    bool taken = use_sc_pred ? (total_sum >= 0) : tage_info.tage_pred_taken;
+    bool taken = use_sc_pred ? (total_sum >= 0) : tage_info.tage_main_taken;
 
     // Calculate weight scale differences
     bool bw_weight_scale_diff = calculateWeightScaleDiff(total_sum, bw_scaled_percsum, bw_percsum);
@@ -333,7 +333,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.pc, taken);
 
-    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, tage_info.tage_pred_taken, total_thres, bwIndex,
+    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, tage_info.tage_main_taken, total_thres, bwIndex,
                           lIndex, iIndex, gIndex, pIndex, biasIndex, bw_weight_scale_diff, l_weight_scale_diff,
                           i_weight_scale_diff, g_weight_scale_diff, p_weight_scale_diff, bias_weight_scale_diff,
                           bw_percsum, l_percsum, i_percsum, g_percsum, p_percsum, bias_percsum);

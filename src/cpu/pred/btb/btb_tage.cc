@@ -304,7 +304,7 @@ BTBTAGE::lookupHelper(const Addr &alignedPC, const std::vector<BTBEntry> &btbEnt
             meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
-            tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
+            tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
                                          abs(pred.mainInfo.entry.counter*2 + 1) == 7; // counter saturated, -4 or 3
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_mid = pred.mainInfo.found &&
