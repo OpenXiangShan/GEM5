@@ -89,7 +89,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         }
 
         MgscPrediction(Addr btb_pc, int total_sum, bool use_mgsc, bool taken, bool taken_before_sc,
-                       unsigned total_thres, std::vector<unsigned> bwIndex, std::vector<unsigned> lIndex,
+                       int16_t total_thres, std::vector<unsigned> bwIndex, std::vector<unsigned> lIndex,
                        std::vector<unsigned> iIndex, std::vector<unsigned> gIndex, std::vector<unsigned> pIndex,
                        std::vector<unsigned> biasIndex, bool bw_weight_scale_diff, bool l_weight_scale_diff,
                        bool i_weight_scale_diff, bool g_weight_scale_diff, bool p_weight_scale_diff,

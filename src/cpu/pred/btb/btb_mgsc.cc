@@ -665,7 +665,7 @@ BTBMGSC::updateCounter(bool taken, unsigned width, T &counter)
 
     if constexpr (std::is_signed<T>::value) {
         T max = static_cast<T>((1LL << (width - 1)) - 1);
-        T min = static_cast<T>(-((1LL << (width - 1)) - 1));
+        T min = static_cast<T>(-(1LL << (width - 1)));
         if (taken) {
             satIncrement(max, counter);
         } else {
