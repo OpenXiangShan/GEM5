@@ -179,6 +179,7 @@ struct BTBEntry : BranchInfo
 struct TageInfoForMGSC
 {
     // tage info
+    bool tage_pred_taken;
     bool tage_main_taken;
     bool tage_pred_conf_high;
     bool tage_pred_conf_mid;
@@ -186,15 +187,25 @@ struct TageInfoForMGSC
     bool tage_pred_alt_diff;
 
     // Addr offset; // retrived from lowest bits of pc
-    TageInfoForMGSC() : tage_main_taken(false), tage_pred_conf_high(false),
-                        tage_pred_conf_mid(false), tage_pred_conf_low(false),
-                        tage_pred_alt_diff(false){}
-    TageInfoForMGSC(bool tage_pred_taken, bool tage_pred_conf_high, bool tage_pred_conf_mid,
-                    bool tage_pred_conf_low, bool tage_pred_alt_diff) :
-                    tage_main_taken(tage_pred_taken), tage_pred_conf_high(tage_pred_conf_high),
-                    tage_pred_conf_mid(tage_pred_conf_mid), tage_pred_conf_low(tage_pred_conf_low),
-                    tage_pred_alt_diff(tage_pred_alt_diff) {}
-
+    TageInfoForMGSC()
+        : tage_pred_taken(false),
+            tage_main_taken(false),
+            tage_pred_conf_high(false),
+            tage_pred_conf_mid(false),
+            tage_pred_conf_low(false),
+            tage_pred_alt_diff(false)
+    {
+    }
+    TageInfoForMGSC(bool tage_pred_taken, bool tage_main_taken, bool tage_pred_conf_high, bool tage_pred_conf_mid,
+                    bool tage_pred_conf_low, bool tage_pred_alt_diff)
+        : tage_pred_taken(tage_pred_taken),
+            tage_main_taken(tage_main_taken),
+            tage_pred_conf_high(tage_pred_conf_high),
+            tage_pred_conf_mid(tage_pred_conf_mid),
+            tage_pred_conf_low(tage_pred_conf_low),
+            tage_pred_alt_diff(tage_pred_alt_diff)
+    {
+    }
 };
 
 struct LFSR64
