@@ -1518,7 +1518,6 @@ Fetch::handleCommitSignals(ThreadID tid)
                 assert(dbpbtb);
                 dbpbtb->commitStream(fromCommit->commitInfo[tid].doneFsqId);
                 dbpbtb->update(fromCommit->commitInfo[tid].doneFsqId, tid);
-                btbTrainTAGE();
             }
         }
         return false;
