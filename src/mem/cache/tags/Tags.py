@@ -37,6 +37,7 @@ from m5.params import *
 from m5.proxy import *
 from m5.objects.ClockedObject import ClockedObject
 from m5.objects.IndexingPolicies import *
+from m5.objects.ReplacementPolicies import *
 
 class BaseTags(ClockedObject):
     type = 'BaseTags'
@@ -90,6 +91,42 @@ class VIPTSetAssoc(BaseSetAssoc):
     cxx_class = 'gem5::VIPTSetAssoc'
 
     page_size = Param.Int(4096, "page size in bytes")
+
+class DBISetAssoc(BaseSetAssoc):
+    type = 'DBISetAssoc'
+    cxx_header = "mem/cache/tags/dbi_set_assoc.hh"
+    cxx_class = 'gem5::DBISetAssoc'
+
+    row_mask = Param.MemorySize(
+        "0xffffffffffffff30",
+        "mask for row address"
+    )
+
+    granularity = Param.MemorySize(
+        "64",
+        "length of dirty vector"
+    )
+
+    dbi_assoc = Param.Int(
+        16, 
+        "associativity of dirty block index table entries"
+    )
+
+    dbi_entries = Param.MemorySize(
+        "2048",
+        "num of dirty block index table entries"
+    )
+    dbi_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.dbi_assoc,
+            size=Parent.dbi_entries),
+        "Indexing policy of dirty block index table"
+    )
+    dbi_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of dirty block index table"
+    )
 
 class SectorTags(BaseTags):
     type = 'SectorTags'

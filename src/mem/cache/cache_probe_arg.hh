@@ -72,6 +72,8 @@ struct CacheAccessor
     /** Determine if address is in cache miss queue */
     virtual bool inMissQueue(Addr addr, bool is_secure) const = 0;
 
+    virtual bool inWriteQueue(Addr addr, bool is_secure) const = 0;
+
     /** Determine if cache is coalescing writes */
     virtual bool coalesce() const = 0;
 

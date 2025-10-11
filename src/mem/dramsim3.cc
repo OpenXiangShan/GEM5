@@ -37,6 +37,8 @@
 
 #include "mem/dramsim3.hh"
 
+#include <iomanip>
+
 #include "base/callback.hh"
 #include "base/trace.hh"
 #include "debug/DRAMsim3.hh"
@@ -56,7 +58,8 @@ DRAMsim3::DRAMsim3(const Params &p) :
                       this, 0, std::placeholders::_1)),
     write_cb(std::bind(&DRAMsim3::writeComplete,
                        this, 0, std::placeholders::_1)),
-    wrapper(p.configFile, p.filePath, read_cb, write_cb),
+    wrapper(p.configFile, simout.directory(), read_cb, write_cb),
+    _ideal_write(p.ideal_write), _enable_tracer(p.enable_tracer), 
     retryReq(false), retryResp(false), startTick(0),
     nbrOutstandingReads(0), nbrOutstandingWrites(0),
     sendResponseEvent([this]{ sendResponse(); }, name()),
@@ -230,9 +233,11 @@ DRAMsim3::recvTimingReq(PacketPtr pkt)
         }
     } else if (pkt->isWrite()) {
         if (can_accept) {
-            outstandingWrites[pkt->getAddr()].push(pkt);
 
-            ++nbrOutstandingWrites;
+            if (!_ideal_write) {
+                outstandingWrites[pkt->getAddr()].push(pkt);
+                ++nbrOutstandingWrites;
+            }
 
             // perform the access for writes
             accessAndRespond(pkt);
@@ -253,7 +258,19 @@ DRAMsim3::recvTimingReq(PacketPtr pkt)
         // @todo what about the granularity here, implicit assumption that
         // a transaction matches the burst size of the memory (which we
         // cannot determine without parsing the ini file ourselves)
-        wrapper.enqueue(pkt->getAddr(), pkt->isWrite());
+        if (!_ideal_write || !pkt->isWrite()) {
+            wrapper.enqueue(pkt->getAddr(), pkt->isWrite());
+        }
+
+        if (_enable_tracer) {
+            auto& stream = *_tracer->stream();
+
+            stream << "0x" << std::setw(8) << std::setfill('0') << std::hex << pkt->getAddr()
+                   << std::dec << std::setfill(' ')
+                   << (pkt->isWrite() ? " WRITE " : " READ ")
+                   << curCycle()
+                   << std::endl;
+        }
 
         return true;
     } else {

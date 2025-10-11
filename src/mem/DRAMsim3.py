@@ -48,5 +48,8 @@ class DRAMsim3(AbstractMemory):
 
     configFile = Param.String("xiangshan_DDR4_8Gb_x8_2400.ini",
                               "The configuration file to use with DRAMSim3")
-    filePath = Param.String("ext/dramsim3/DRAMsim3/",
-                            "Directory to prepend to file names")
+
+    enable_tracer = Param.Bool(False, "Enable the tracer")
+
+    ideal_write = Param.Bool(False, "Ideal write - zero write latency and,"
+                                    "infinite bandwidth")

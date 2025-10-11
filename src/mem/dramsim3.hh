@@ -49,6 +49,7 @@
 
 #include <boost/heap/priority_queue.hpp>
 
+#include "base/output.hh"
 #include "mem/abstract_mem.hh"
 #include "mem/dramsim3_wrapper.hh"
 #include "mem/qport.hh"
@@ -106,6 +107,21 @@ class DRAMsim3 : public AbstractMemory
      * The actual DRAMsim3 wrapper
      */
     DRAMsim3Wrapper wrapper;
+
+    /**
+     * Is the write ideal(not send to dramsim for timing simulation)?
+     */
+    bool _ideal_write;
+
+    /**
+     * Is the tracer enabled?
+     */
+    bool _enable_tracer;
+
+    /**
+     * The tracer
+     */
+    OutputStream* _tracer;
 
     /**
      * Is the connected port waiting for a retry from us

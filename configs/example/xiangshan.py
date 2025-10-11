@@ -427,7 +427,12 @@ def setKmhV3IdealParams(args, system):
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
 
     if args.l3cache:
+        system.l3.tags = DBISetAssoc()
+        system.l3.tags.dbi_entries = "8192"
+        system.l3.tags.row_mask = "0xffffffffffffff30"
+        system.l3.write_buffers = 128
         system.l3.mshrs = 128
+
 
 if __name__ == '__m5_main__':
     # Add args

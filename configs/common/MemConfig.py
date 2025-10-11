@@ -141,6 +141,8 @@ def config_mem(options, system):
     opt_xor_low_bit = getattr(options, "xor_low_bit", 0)
 
     opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
+    opt_trace_dramsim3 = getattr(options, 'trace_dramsim3', False)
+    opt_ideal_write = getattr(options, 'ideal_write', False)
 
     if opt_mem_type == "HMC_2500_1x32":
         HMChost = HMC.config_hmc_host_ctrl(options, system)
@@ -228,6 +230,10 @@ def config_mem(options, system):
                 if hasattr(m5.objects, 'DRAMsim3') and issubclass(intf, m5.objects.DRAMsim3):
                     if opt_dramsim3_ini:
                         dram_intf.configFile = opt_dramsim3_ini
+                    if opt_trace_dramsim3:
+                        dram_intf.enable_tracer = True
+                    if opt_ideal_write:
+                        dram_intf.ideal_write = True
                     mem_ctrl = dram_intf
                 else:
                     mem_ctrl = dram_intf.controller()
@@ -256,7 +262,7 @@ def config_mem(options, system):
 
     # hook up NVM interface when channel is shared with DRAM + NVM
     for i in range(len(nvm_intfs)):
-        mem_ctrls[i].nvm = nvm_intfs[i];
+        mem_ctrls[i].nvm = nvm_intfs[i]
 
     # Connect the controller to the xbar port
     for i in range(len(mem_ctrls)):
