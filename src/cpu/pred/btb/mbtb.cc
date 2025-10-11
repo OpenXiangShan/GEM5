@@ -456,6 +456,7 @@ MBTB::getAndSetNewBTBEntry(FetchStream &stream)
         // For conditional branches, initialize as always taken
         if (new_entry.isCond) {
             new_entry.alwaysTaken = true;
+            new_entry.resolved = true;
             new_entry.ctr = 0;  // Start with positive prediction
             incNonL0Stat(btbStats.newEntryWithCond);
         } else {
