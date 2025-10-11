@@ -1098,8 +1098,8 @@ class BTBMGSC(TimedBaseBTBPredictor):
     gHistLen = VectorParam.Int([8, 16], "Global branch GEHL history lengths")
     gTableIdxWidth = Param.Unsigned(11, "Log number of global branch GEHL entries")
 
-    pTableNum = Param.Unsigned(4, "Num global branch path history tables")
-    pHistLen = VectorParam.Int([4, 10, 22, 46], "Global branch path history lengths")
+    pTableNum = Param.Unsigned(2, "Num global branch path history tables")
+    pHistLen = VectorParam.Int([8, 16], "Global branch path history lengths")
     pTableIdxWidth = Param.Unsigned(11,
                     "Log number of global branch path history entries")
 
@@ -1118,7 +1118,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     extraWeightsWidth = Param.Unsigned(6,
         "Number of bits for the extra weights")
 
-    scCountersWidth = Param.Unsigned(8, "Statistical corrector counters width")
+    scCountersWidth = Param.Unsigned(6, "Statistical corrector counters width")
 
     weightTableIdxWidth = Param.Unsigned(5,
         "Log size of weight table")
