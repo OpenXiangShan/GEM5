@@ -144,9 +144,9 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     std::vector<bitset> tableTagMasks;
     std::vector<unsigned> tablePcShifts;
     std::vector<unsigned> histLengths;
-    std::vector<FoldedHist> tagFoldedHist;
-    std::vector<FoldedHist> altTagFoldedHist;
-    std::vector<FoldedHist> indexFoldedHist;
+    std::vector<GlobalFoldedHist> tagFoldedHist;
+    std::vector<GlobalFoldedHist> altTagFoldedHist;
+    std::vector<GlobalFoldedHist> indexFoldedHist;
 
     LFSR64 allocLFSR;
 
@@ -177,17 +177,26 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     int usefulResetCnt;
 
-    typedef struct TageMeta {
+    typedef struct TageMeta
+    {
         std::unordered_map<Addr, TagePrediction> preds;
         bitset usefulMask;
-        std::vector<FoldedHist> tagFoldedHist;
-        std::vector<FoldedHist> altTagFoldedHist;
-        std::vector<FoldedHist> indexFoldedHist;
-        TageMeta(std::unordered_map<Addr, TagePrediction> preds, bitset usefulMask, std::vector<FoldedHist> tagFoldedHist,
-            std::vector<FoldedHist> altTagFoldedHist, std::vector<FoldedHist> indexFoldedHist) :
-            preds(preds), usefulMask(usefulMask), tagFoldedHist(tagFoldedHist), altTagFoldedHist(altTagFoldedHist), indexFoldedHist(indexFoldedHist) {}
+        std::vector<GlobalFoldedHist> tagFoldedHist;
+        std::vector<GlobalFoldedHist> altTagFoldedHist;
+        std::vector<GlobalFoldedHist> indexFoldedHist;
+        TageMeta(std::unordered_map<Addr, TagePrediction> preds, bitset usefulMask,
+                 std::vector<GlobalFoldedHist> tagFoldedHist, std::vector<GlobalFoldedHist> altTagFoldedHist,
+                 std::vector<GlobalFoldedHist> indexFoldedHist)
+            : preds(preds),
+              usefulMask(usefulMask),
+              tagFoldedHist(tagFoldedHist),
+              altTagFoldedHist(altTagFoldedHist),
+              indexFoldedHist(indexFoldedHist)
+        {
+        }
         TageMeta() {}
-        TageMeta(const TageMeta &other) {
+        TageMeta(const TageMeta &other)
+        {
             preds = other.preds;
             usefulMask = other.usefulMask;
             tagFoldedHist = other.tagFoldedHist;

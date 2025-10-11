@@ -61,7 +61,7 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < bwTableNum; ++i) {
         bwTable[i].resize(bwTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         indexBwFoldedHist.push_back(
-            FoldedHist(bwHistLen[i], bwTableIdxWidth - numCtrsPerLineBits, 16, HistoryType::GLOBALBW));
+            GlobalBwFoldedHist(bwHistLen[i], bwTableIdxWidth - numCtrsPerLineBits, 16));
     }
     bwIndex.resize(bwTableNum);
 
@@ -73,7 +73,7 @@ BTBMGSC::BTBMGSC(const Params &p)
         lTable[i].resize(lTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
             indexLFoldedHist[k].push_back(
-                FoldedHist(lHistLen[i], lTableIdxWidth - numCtrsPerLineBits, 16, HistoryType::LOCAL));
+                LocalFoldedHist(lHistLen[i], lTableIdxWidth - numCtrsPerLineBits, 16));
         }
     }
     lIndex.resize(lTableNum);
@@ -85,7 +85,7 @@ BTBMGSC::BTBMGSC(const Params &p)
         assert(std::pow(2, iHistLen[i]) <= iTableSize);
         iTable[i].resize(iTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         indexIFoldedHist.push_back(
-            FoldedHist(iHistLen[i], iTableIdxWidth - numCtrsPerLineBits, 16, HistoryType::IMLI));
+            ImliFoldedHist(iHistLen[i], iTableIdxWidth - numCtrsPerLineBits, 16));
     }
     iIndex.resize(iTableNum);
 
@@ -96,7 +96,7 @@ BTBMGSC::BTBMGSC(const Params &p)
         assert(gTable.size() >= gTableNum);
         gTable[i].resize(gTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         indexGFoldedHist.push_back(
-            FoldedHist(gHistLen[i], gTableIdxWidth - numCtrsPerLineBits, 16, HistoryType::GLOBAL));
+            GlobalFoldedHist(gHistLen[i], gTableIdxWidth - numCtrsPerLineBits, 16));
     }
     gIndex.resize(gTableNum);
 
@@ -106,7 +106,7 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < pTableNum; ++i) {
         assert(pTable.size() >= pTableNum);
         pTable[i].resize(pTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexPFoldedHist.push_back(FoldedHist(pHistLen[i], pTableIdxWidth - numCtrsPerLineBits, 2, HistoryType::PATH));
+        indexPFoldedHist.push_back(PathFoldedHist(pHistLen[i], pTableIdxWidth - numCtrsPerLineBits, 2));
     }
     pIndex.resize(pTableNum);
 
@@ -810,9 +810,10 @@ BTBMGSC::satDecrement<uint64_t>(uint64_t min, uint64_t &counter);
  * @param shamt The number of bits to shift
  * @param taken Whether the branch was taken
  */
+template<typename T>
 void
 BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken,
-                      std::vector<FoldedHist> &foldedHist, Addr pc, Addr target)
+                      std::vector<T> &foldedHist, Addr pc, Addr target)
 {
     if (debug::MGSC) {
         std::string buf;

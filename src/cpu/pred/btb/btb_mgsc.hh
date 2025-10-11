@@ -232,9 +232,11 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) { return (pc & (blockSize - 1)) >> 1; }
 
+    // Helper functions to create pointer vectors from concrete types
     // Update branch history
-    void doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken,
-                      std::vector<FoldedHist> &foldedHist, Addr pc = 0, Addr target = 0);
+    template<typename T>
+    void doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken, std::vector<T> &foldedHist,
+                      Addr pc = 0, Addr target = 0);
 
     /*
      * Mix position and table index into two indexes,
@@ -317,11 +319,11 @@ class BTBMGSC : public TimedBaseBTBPredictor
     bool enableMGSC;
 
     // Folded history for index calculation
-    std::vector<FoldedHist> indexBwFoldedHist;
-    std::vector<std::vector<FoldedHist>> indexLFoldedHist;
-    std::vector<FoldedHist> indexIFoldedHist;
-    std::vector<FoldedHist> indexGFoldedHist;
-    std::vector<FoldedHist> indexPFoldedHist;
+    std::vector<GlobalBwFoldedHist> indexBwFoldedHist;
+    std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist;
+    std::vector<ImliFoldedHist> indexIFoldedHist;
+    std::vector<GlobalFoldedHist> indexGFoldedHist;
+    std::vector<PathFoldedHist> indexPFoldedHist;
 
     // The actual MGSC prediction tables (table x index x line)
     std::vector<std::vector<std::vector<int16_t>>> bwTable;
@@ -407,14 +409,15 @@ class BTBMGSC : public TimedBaseBTBPredictor
     typedef struct MgscMeta
     {
         std::unordered_map<Addr, MgscPrediction> preds;
-        std::vector<FoldedHist> indexBwFoldedHist;
-        std::vector<std::vector<FoldedHist>> indexLFoldedHist;
-        std::vector<FoldedHist> indexIFoldedHist;
-        std::vector<FoldedHist> indexGFoldedHist;
-        std::vector<FoldedHist> indexPFoldedHist;
-        MgscMeta(std::unordered_map<Addr, MgscPrediction> preds, std::vector<FoldedHist> indexBwFoldedHist,
-                 std::vector<std::vector<FoldedHist>> indexLFoldedHist, std::vector<FoldedHist> indexIFoldedHist,
-                 std::vector<FoldedHist> indexGFoldedHist, std::vector<FoldedHist> indexPFoldedHist)
+        std::vector<GlobalBwFoldedHist> indexBwFoldedHist;
+        std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist;
+        std::vector<ImliFoldedHist> indexIFoldedHist;
+        std::vector<GlobalFoldedHist> indexGFoldedHist;
+        std::vector<PathFoldedHist> indexPFoldedHist;
+        MgscMeta(std::unordered_map<Addr, MgscPrediction> preds, std::vector<GlobalBwFoldedHist> indexBwFoldedHist,
+                 std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist,
+                 std::vector<ImliFoldedHist> indexIFoldedHist, std::vector<GlobalFoldedHist> indexGFoldedHist,
+                 std::vector<PathFoldedHist> indexPFoldedHist)
             : preds(preds),
               indexBwFoldedHist(indexBwFoldedHist),
               indexLFoldedHist(indexLFoldedHist),

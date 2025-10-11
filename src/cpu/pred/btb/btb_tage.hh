@@ -217,13 +217,13 @@ class BTBTAGE : public TimedBaseBTBPredictor
     std::vector<unsigned> histLengths;
 
     // Folded history for tag calculation
-    std::vector<FoldedHist> tagFoldedHist;
+    std::vector<PathFoldedHist> tagFoldedHist;
 
     // Folded history for alternative tag calculation
-    std::vector<FoldedHist> altTagFoldedHist;
+    std::vector<PathFoldedHist> altTagFoldedHist;
 
     // Folded history for index calculation
-    std::vector<FoldedHist> indexFoldedHist;
+    std::vector<PathFoldedHist> indexFoldedHist;
 
     // Linear feedback shift register for allocation
     LFSR64 allocLFSR;
@@ -352,12 +352,13 @@ public:
 public:
 
 
-    // Metadata for TAGE predictions
-    typedef struct TageMeta {
+    // Metadata for TAGE prediction
+    typedef struct TageMeta
+    {
         std::unordered_map<Addr, TagePrediction> preds;
-        std::vector<FoldedHist> tagFoldedHist;
-        std::vector<FoldedHist> altTagFoldedHist;
-        std::vector<FoldedHist> indexFoldedHist;
+        std::vector<PathFoldedHist> tagFoldedHist;
+        std::vector<PathFoldedHist> altTagFoldedHist;
+        std::vector<PathFoldedHist> indexFoldedHist;
         bitset history;     // for viewing
         TageMeta() {}
     } TageMeta;

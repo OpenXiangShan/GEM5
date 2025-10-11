@@ -108,9 +108,9 @@ tageStats(this, p.numPredictors)
 
         assert(tablePcShifts.size() >= numPredictors);
 
-        tagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i], 16, HistoryType::PATH));
-        altTagFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16, HistoryType::PATH));
-        indexFoldedHist.push_back(FoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16, HistoryType::PATH));
+        tagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i], 16));
+        altTagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16));
+        indexFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16));
     }
     usefulResetCnt = 0;
 
