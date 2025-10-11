@@ -181,7 +181,7 @@ int
 BTBMGSC::findWeight(const std::vector<int16_t> &weightTable, Addr pc)
 {
     auto mask = (1 << weightTableIdxWidth) - 1;
-    auto pcHash = ((pc >> instShiftAmt) ^ (pc >> instShiftAmt >> 2)) & mask;
+    auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
     auto &entry = weightTable[pcHash];
     return entry;
 }
@@ -211,7 +211,7 @@ int
 BTBMGSC::findThreshold(const std::vector<int16_t> &thresholdTable, Addr pc)
 {
     auto mask = (1 << thresholdTablelogSize) - 1;
-    auto pcHash = ((pc >> instShiftAmt) ^ (pc >> instShiftAmt >> 2)) & mask;
+    auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
     auto &entry = thresholdTable[pcHash];
     return entry;
 }
@@ -490,7 +490,7 @@ BTBMGSC::updateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, A
                            bool percsum_matches_actual)
 {
     auto mask = (1 << weightTableIdxWidth) - 1;
-    auto pcHash = ((pc >> instShiftAmt) ^ (pc >> instShiftAmt >> 2)) & mask;
+    auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
     auto &entry = weightTable[pcHash];
     // Only update if weight scale could affect prediction
     if (weight_scale_diff) {
@@ -519,7 +519,7 @@ void
 BTBMGSC::updatePCThresholdTable(Addr pc, bool update_direction)
 {
     auto mask = (1 << thresholdTablelogSize) - 1;
-    auto pcHash = ((pc >> instShiftAmt) ^ (pc >> instShiftAmt >> 2)) & mask;
+    auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
     auto &entry = pUpdateThreshold[pcHash];
     updateCounter(update_direction, pUpdateThresholdWidth, entry);
 }
