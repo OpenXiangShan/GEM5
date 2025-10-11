@@ -1195,6 +1195,10 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &stream_id, uint64_t resolvedInstP
     }
     auto &stream = stream_it->second;
 
+    // Prepare stream for update
+    stream.setUpdateInstEndPC(predictWidth);
+    stream.setUpdateBTBEntries();
+
     stream.markBTBEntryResolved(resolvedInstPC);
 }
 
