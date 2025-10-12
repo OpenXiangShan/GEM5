@@ -1,0 +1,24 @@
+# This file includes code adapted from the open-source implementation at
+# https://github.com/CMU-SAFARI/ramulator2
+# All credits to the original authors.
+
+import os
+
+Import('env')
+
+if not os.path.exists(Dir('.').srcnode().abspath + '/ramulator2'):
+  env['HAVE_RAMULATOR2'] = False
+  Return()
+
+env['HAVE_RAMULATOR2'] = True
+ramulator2_path = os.path.join(Dir('#').abspath, 'ext/ramulator2/ramulator2/')
+env.Prepend(CPPPATH=Dir('.').srcnode())
+env.Append(
+  LIBS=['ramulator'],
+  LIBPATH=[ramulator2_path],
+  RPATH=[ramulator2_path],
+  CPPPATH=[
+  ramulator2_path+'/src/',
+  ramulator2_path+'/ext/spdlog/include',
+  ramulator2_path+'/ext/yaml-cpp/include'
+])

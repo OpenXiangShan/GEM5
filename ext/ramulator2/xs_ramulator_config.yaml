@@ -1,0 +1,35 @@
+Frontend:
+  impl: GEM5
+  clock_ratio: 8
+
+MemorySystem:
+  impl: GenericDRAM
+  clock_ratio: 3
+
+  DRAM:
+    impl: DDR5
+    org:
+      preset: DDR5_8Gb_x8
+      channel: 2
+      rank: 4
+      row: 65536
+      columns: 1024
+
+    timing:
+      preset: DDR5_3200AN
+    RFM:
+      BRC: 1
+
+  Controller:
+    impl: Generic
+    Scheduler:
+      impl: FRFCFS
+    RefreshManager:
+      impl: AllBank
+    RowPolicy:
+      impl: OpenRowPolicy
+      cap: 32
+    plugins:
+
+  AddrMapper:
+    impl: RoBaRaCoCh

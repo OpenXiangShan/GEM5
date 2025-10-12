@@ -38,6 +38,7 @@ from common import ObjectList
 from common import HMC
 
 
+
 def create_mem_intf(intf, r, i, intlv_bits, intlv_size,
                     xor_low_bit):
     """
@@ -64,7 +65,10 @@ def create_mem_intf(intf, r, i, intlv_bits, intlv_size,
     interface = intf()
 
     # Only do this for DRAMs
-    if issubclass(intf, m5.objects.DRAMInterface):
+    if issubclass(intf, m5.objects.Ramulator2):
+        print("Ramulator2 system")
+
+    elif issubclass(intf, m5.objects.DRAMInterface):
         # If the channel bits are appearing after the column
         # bits, we need to add the appropriate number of bits
         # for the row buffer size
@@ -141,6 +145,7 @@ def config_mem(options, system):
     opt_xor_low_bit = getattr(options, "xor_low_bit", 0)
 
     opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
+    opt_ramulator2_ini = getattr(options, 'ramulator2_ini', None)
 
     if opt_mem_type == "HMC_2500_1x32":
         HMChost = HMC.config_hmc_host_ctrl(options, system)
@@ -224,10 +229,15 @@ def config_mem(options, system):
                     print("For elastic trace, over-riding Simple Memory "
                         "latency to 1ns.")
 
-                # Create the controller that will drive the interface
+                #Create the controller that will drive the interface
                 if hasattr(m5.objects, 'DRAMsim3') and issubclass(intf, m5.objects.DRAMsim3):
                     if opt_dramsim3_ini:
                         dram_intf.configFile = opt_dramsim3_ini
+                    mem_ctrl = dram_intf
+                elif hasattr(m5.objects, 'Ramulator2') and issubclass(intf, m5.objects.Ramulator2):
+                    print("Ramulator2 mem_ctrl is connected \n")
+                    if opt_ramulator2_ini:
+                        dram_intf.config_path = opt_ramulator2_ini
                     mem_ctrl = dram_intf
                 else:
                     mem_ctrl = dram_intf.controller()

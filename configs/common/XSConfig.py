@@ -112,8 +112,12 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
         # use relative path to find the dramsim3 ini file, from configs/common/ to root
         root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         args.dramsim3_ini = os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
-    return gcpt_restorer, ref_so
 
+    if args.mem_type == 'Ramulator2' and args.ramulator2_ini is None:
+        # use relative path to find the ramulator ini file, from configs/common/ to root
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        args.ramulator2_ini = os.path.join(root_dir, 'ext/ramulator2/xs_ramulator_config.yaml')
+    return gcpt_restorer, ref_so
 
 def config_difftest(cpu_list, args, sys):
     if not args.enable_difftest:

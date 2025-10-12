@@ -1,0 +1,15 @@
+# Reference: https://github.com/CMU-SAFARI/ramulator2
+Follow these steps to get Ramulator as part of XS-GEM5
+
+1.Download Ramulator2
+    1.1  Go to ext/ramulator2 (this directory)
+    1.2  Clone Ramulator2: git@github.com:CMU-SAFARI/ramulator2.git
+    1.3  cd ramulator2 && mkdir build
+    1.4  cmake ..
+    1.5  make -j
+
+
+2. Compile gem5
+    2.1 cd gem5
+    2.2 Business as usual
+
