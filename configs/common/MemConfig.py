@@ -65,7 +65,7 @@ def create_mem_intf(intf, r, i, intlv_bits, intlv_size,
     interface = intf()
 
     # Only do this for DRAMs
-    if issubclass(intf, m5.objects.Ramulator2):
+    if hasattr(m5.objects, 'Ramulator2') and issubclass(intf, m5.objects.Ramulator2):
         print("Ramulator2 system")
 
     elif issubclass(intf, m5.objects.DRAMInterface):
