@@ -53,6 +53,13 @@ class IntALU(FUDesc):
 class IntBRU(FUDesc):
     opList = [ OpDesc(opClass='IntBr') ]
 
+class IntJPU(FUDesc):
+    opList = [ OpDesc(opClass='IntJp') ]
+
+class IntBJU(FUDesc):
+    opList = [ OpDesc(opClass='IntBr'),
+               OpDesc(opClass='IntJp') ]
+
 class IntMultDiv(FUDesc):
     opList = [ OpDesc(opClass='IntMult', opLat=3),
                OpDesc(opClass='IntDiv', opLat=20, pipelined=False) ]

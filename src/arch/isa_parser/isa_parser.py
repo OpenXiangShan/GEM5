@@ -435,6 +435,8 @@ class InstObjParams:
                 self.op_class = 'SimdAddOp'
             elif 'IsCondControl' in self.flags:
                 self.op_class = 'IntBrOp'
+            elif 'IsUncondControl' in self.flags:
+                self.op_class = 'IntJpOp'
             else:
                 self.op_class = 'IntAluOp'
 
