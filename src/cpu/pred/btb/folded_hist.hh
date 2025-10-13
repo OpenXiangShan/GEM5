@@ -43,26 +43,47 @@ foldHash(uint64_t hash, const std::size_t foldedLen)
     return foldedHash;
 }
 
+/**
+ * FoldedHistBase implements a folded history mechanism for branch prediction.
+ * It maintains a compressed version of branch history by XORing multiple history bits
+ * into a smaller number of bits, which helps reduce storage while preserving
+ * correlation information.
+ *
+ * This is an abstract base class. Concrete implementations include:
+ * - DirectionFoldedHist: For branch direction histories (global, global backward, local)
+ * - ImliFoldedHist: For IMLI (Irregular Multiple-Loop Iteration) history
+ * - PathFoldedHist: For path history tracking branch targets
+ */
 class FoldedHistBase
 {
   protected:
     constexpr static int staticMaxShamtLimit = 16;
-    std::size_t histLen;
-    std::size_t foldedLen;
-    std::size_t maxShamt;
-    uint64_t _folded;
+    std::size_t histLen;    // Length of the original history
+    std::size_t foldedLen;  // Length of the folded (compressed) history
+    std::size_t maxShamt;   // Maximum shift amount for history updates
+    uint64_t _folded;       // The folded history bits
 
-    std::array<std::size_t, staticMaxShamtLimit> posHighestBitsInGhr;
-    std::array<std::size_t, staticMaxShamtLimit> posHighestBitsInOldFoldedHist;
+    // Pre-calculated positions for efficient history updates
+    // Use static sized type to avoid heap alloc
+    // This class is very frequently used in fetch/BP, so ensure it is a fixed-sized object
+    std::array<std::size_t, staticMaxShamtLimit> posHighestBitsInGhr;  // Positions of highest bits in global history
+    std::array<std::size_t, staticMaxShamtLimit> posHighestBitsInOldFoldedHist;  // Positions in old folded history
 
+    // Perform an immediate fold on given history bitvec
     uint64_t fold(const boost::dynamic_bitset<> &historyBitVec);
 
   public:
+    /**
+     * Constructor for FoldedHistBase
+     * @param histLen Length of the original branch history
+     * @param foldedLen Length of the folded (compressed) history
+     * @param maxShamt Maximum number of bits to shift during updates
+     */
     FoldedHistBase(int histLen, int foldedLen, int maxShamt)
         : histLen(histLen), foldedLen(foldedLen), maxShamt(maxShamt), _folded(0)
     {
         assert(maxShamt <= staticMaxShamtLimit);
-        assert(foldedLen + maxShamt < 64);
+        assert(foldedLen + maxShamt < 64);  // Ensure folded history fits in uint64_t
         for (int i = 0; i < maxShamt; i++) {
             posHighestBitsInGhr[i] = histLen - 1 - i;
             posHighestBitsInOldFoldedHist[i] = (histLen - 1 - i) % foldedLen;
@@ -71,19 +92,51 @@ class FoldedHistBase
 
     virtual ~FoldedHistBase() = default;
 
+    /**
+     * Get the current folded history as uint64_t
+     * @return The folded history bits
+     */
     uint64_t get() const { return _folded; }
 
+    /**
+     * Get the current folded history as bitset for compatibility
+     * @return The folded history as boost::dynamic_bitset
+     */
     boost::dynamic_bitset<> getAsBitset() const { return boost::dynamic_bitset<>(foldedLen, _folded); }
 
+    /**
+     * Update the folded history with a new branch outcome
+     * @param ghr Global history register
+     * @param shamt Number of bits to shift
+     * @param taken Whether the branch was taken
+     * @param pc Branch PC (used only for path history update)
+     * @param target Branch target (used only for path history update)
+     */
     virtual void update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Addr pc = 0, Addr target = 0) = 0;
 
+    /**
+     * Recover the folded history from another instance
+     * Used during branch misprediction recovery
+     * @param other The FoldedHistBase to recover from
+     */
     void recover(FoldedHistBase &other);
 
+    /**
+     * Verify that the folded history is consistent with the global history
+     * @param ghr Global history register to check against
+     */
     void check(const boost::dynamic_bitset<> &ghr);
 };
 
-// Common implementation for branch direction history types
-// (global, global backward, and local all share the same update logic)
+/**
+ * DirectionFoldedHist: Common implementation for branch direction history types.
+ * This class handles the standard folded history update algorithm used for:
+ * - Global history (all branches)
+ * - Global backward history (backward branches only)
+ * - Local history (per-branch history)
+ *
+ * All three types share identical update logic for tracking branch direction (taken/not taken).
+ */
 class DirectionFoldedHist : public FoldedHistBase
 {
   public:

@@ -232,7 +232,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) { return (pc & (blockSize - 1)) >> 1; }
 
-    // Helper functions to create pointer vectors from concrete types
     // Update branch history
     template<typename T>
     void doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken, std::vector<T> &foldedHist,
