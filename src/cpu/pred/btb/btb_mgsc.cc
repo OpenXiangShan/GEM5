@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <ctime>
 #include <type_traits>
+#include <vector>
 
 #include "debug/MGSC.hh"
 
@@ -60,8 +61,7 @@ BTBMGSC::BTBMGSC(const Params &p)
     assert(bwTableSize > numCtrsPerLine);
     for (unsigned int i = 0; i < bwTableNum; ++i) {
         bwTable[i].resize(bwTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexBwFoldedHist.push_back(
-            GlobalBwFoldedHist(bwHistLen[i], bwTableIdxWidth - numCtrsPerLineBits, 16));
+        indexBwFoldedHist.push_back(GlobalBwFoldedHist(bwHistLen[i], bwTableIdxWidth - numCtrsPerLineBits, 16));
     }
     bwIndex.resize(bwTableNum);
 
@@ -72,8 +72,7 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < lTableNum; ++i) {
         lTable[i].resize(lTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
         for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
-            indexLFoldedHist[k].push_back(
-                LocalFoldedHist(lHistLen[i], lTableIdxWidth - numCtrsPerLineBits, 16));
+            indexLFoldedHist[k].push_back(LocalFoldedHist(lHistLen[i], lTableIdxWidth - numCtrsPerLineBits, 16));
         }
     }
     lIndex.resize(lTableNum);
@@ -84,8 +83,7 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < iTableNum; ++i) {
         assert(std::pow(2, iHistLen[i]) <= iTableSize);
         iTable[i].resize(iTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexIFoldedHist.push_back(
-            ImliFoldedHist(iHistLen[i], iTableIdxWidth - numCtrsPerLineBits, 16));
+        indexIFoldedHist.push_back(ImliFoldedHist(iHistLen[i], iTableIdxWidth - numCtrsPerLineBits, 16));
     }
     iIndex.resize(iTableNum);
 
@@ -95,8 +93,7 @@ BTBMGSC::BTBMGSC(const Params &p)
     for (unsigned int i = 0; i < gTableNum; ++i) {
         assert(gTable.size() >= gTableNum);
         gTable[i].resize(gTableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
-        indexGFoldedHist.push_back(
-            GlobalFoldedHist(gHistLen[i], gTableIdxWidth - numCtrsPerLineBits, 16));
+        indexGFoldedHist.push_back(GlobalFoldedHist(gHistLen[i], gTableIdxWidth - numCtrsPerLineBits, 16));
     }
     gIndex.resize(gTableNum);
 
@@ -812,8 +809,8 @@ BTBMGSC::satDecrement<uint64_t>(uint64_t min, uint64_t &counter);
  */
 template<typename T>
 void
-BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken,
-                      std::vector<T> &foldedHist, Addr pc, Addr target)
+BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken, std::vector<T> &foldedHist,
+                      Addr pc, Addr target)
 {
     if (debug::MGSC) {
         std::string buf;
@@ -1088,6 +1085,33 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
 void
 BTBMGSC::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
+}
+
+void
+BTBMGSC::checkFoldedHist(const boost::dynamic_bitset<> &Ghistory, const boost::dynamic_bitset<> &PHistory,
+                         const std::vector<boost::dynamic_bitset<>> &LHistory, const char *when)
+{
+    DPRINTF(MGSC, "checking folded history when %s\n", when);
+    if (debug::MGSC) {
+        std::string hist_str;
+        boost::to_string(Ghistory, hist_str);
+        DPRINTF(MGSC, "history:\t%s\n", hist_str.c_str());
+    }
+    for (int t = 0; t < gTableNum; t++) {
+        auto &foldedHist = indexGFoldedHist[t];
+        foldedHist.check(Ghistory);
+    }
+    for (int t = 0; t < pTableNum; t++) {
+        auto &foldedHist = indexPFoldedHist[t];
+        foldedHist.check(PHistory);
+    }
+    for (int t = 0; t < lTableNum; t++) {
+        assert(LHistory.size() == indexLFoldedHist.size());
+        for (int i = 0; i < LHistory.size(); i++) {
+            auto &foldedHist = indexLFoldedHist[i][t];
+            foldedHist.check(LHistory[i]);
+        }
+    }
 }
 
 }  // namespace btb_pred

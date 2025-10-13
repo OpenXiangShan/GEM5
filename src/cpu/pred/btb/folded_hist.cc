@@ -103,7 +103,7 @@ DirectionFoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool 
 
     // Case 1: shamt >= history length, calculate completely new folded
     if (shamt >= histLen) {
-        _folded = fold(ghr);
+        temp = taken ? 0b1 : 0b0;  // last bit is 1/0 (T/NT), all others are 0
     }
     // Case 2: When folded length >= history length
     else if (foldedLen >= histLen) {
@@ -177,6 +177,9 @@ PathFoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken
 
         const uint64_t foldedMask = ((1ULL << foldedLen) - 1);
         uint64_t temp = _folded;
+
+        assert(shamt <= foldedLen);
+        assert(shamt <= histLen);
 
         // Case 1: When folded length >= history length
         if (foldedLen >= histLen) {

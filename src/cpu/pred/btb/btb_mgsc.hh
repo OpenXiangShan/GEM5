@@ -164,7 +164,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void setTrace() override;
 
     // check folded hists after speculative update and recover
-    void checkFoldedHist(const boost::dynamic_bitset<> &history, const char *when);
+    void checkFoldedHist(const boost::dynamic_bitset<> &Ghistory, const boost::dynamic_bitset<> &PHistory,
+                         const std::vector<boost::dynamic_bitset<>> &LHistory, const char *when);  // Check GHR folded
 
     // Calculate MGSC weight index
     Addr getPcIndex(Addr pc, unsigned tableIndexBits);

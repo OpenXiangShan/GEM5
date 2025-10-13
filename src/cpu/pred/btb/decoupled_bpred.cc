@@ -1976,16 +1976,19 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
 
     // Update path history
     pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
-#ifndef NDEBUG
-    tage->checkFoldedHist(s0PHistory, "speculative update");
-    microtage->checkFoldedHist(s0PHistory, "speculative update");
-#endif
+
     // Update imli history
     histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
 
     // Update local history
     histShiftIn(shamt, taken,
         s0LHistory[mgsc->getPcIndex(finalPred.bbStart, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
+
+#ifndef NDEBUG
+    tage->checkFoldedHist(s0PHistory, "speculative update");
+    microtage->checkFoldedHist(s0PHistory, "speculative update");
+    mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, "specualtive update");
+#endif
 }
 
 /**
@@ -2069,6 +2072,9 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
         squash_type == SQUASH_CTRL ? "control squash" :
         squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
     microtage->checkFoldedHist(s0PHistory,
+        squash_type == SQUASH_CTRL ? "control squash" :
+        squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+    mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory,
         squash_type == SQUASH_CTRL ? "control squash" :
         squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
 #endif
