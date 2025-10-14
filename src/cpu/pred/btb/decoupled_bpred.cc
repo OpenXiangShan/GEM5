@@ -1175,13 +1175,24 @@ DecoupledBPUWithBTB::updateTAGEOnly(unsigned &stream_id)
 
     // Update predictor components only if the stream is hit or taken
     if (stream.isHit || stream.exeTaken) {
-        // Prepare stream for update
-        stream.setUpdateInstEndPC(predictWidth);
-        stream.setUpdateBTBEntries();
-
         // Update TAGE predictor only
         tage->update(stream);
     }
+}
+
+void
+DecoupledBPUWithBTB::prepareMarkCFIEntries(unsigned &stream_id)
+{
+    auto stream_it = fetchStreamQueue.find(stream_id);
+    if (stream_it == fetchStreamQueue.end()) {
+        DPRINTF(DecoupleBP, "Stream id %u not found in fetchStreamQueue, cannot update predictors\n", stream_id);
+        return;
+    }
+    auto &stream = stream_it->second;
+
+    // Prepare stream for update
+    stream.setUpdateInstEndPC(predictWidth);
+    stream.setUpdateBTBEntries();
 }
 
 void
@@ -1194,10 +1205,6 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &stream_id, uint64_t resolvedInstP
         return;
     }
     auto &stream = stream_it->second;
-
-    // Prepare stream for update
-    stream.setUpdateInstEndPC(predictWidth);
-    stream.setUpdateBTBEntries();
 
     stream.markBTBEntryResolved(resolvedInstPC);
 }
@@ -1224,9 +1231,9 @@ DecoupledBPUWithBTB::updatePredictorComponents(unsigned &stream_id)
 
         // Update all predictor components
         for (int i = 0; i < numComponents; ++i) {
-            if (components[i] == tage)
-                continue;
-            components[i]->update(stream);
+            if (components[i] != tage) {
+                components[i]->update(stream);
+            }
         }
     }
 }
