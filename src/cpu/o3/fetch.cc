@@ -1488,6 +1488,7 @@ Fetch::btbTrainTAGE()
     // iterate resolvedFSQId and get FetchStream, push to ResolveQueue
     for (const uint64_t &fsq_id : fromIEW->iewInfo->resolvedFSQId) {
         unsigned int stream_id = fsq_id;
+        dbpbtb->prepareMarkCFIEntries(stream_id);
         for (uint64_t &resolvedInstPC : fromIEW->iewInfo->resolvedInstPC) {
             dbpbtb->markCFIResolved(stream_id, resolvedInstPC);
         }

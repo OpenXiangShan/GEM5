@@ -361,7 +361,7 @@ BTBTAGE::prepareUpdateEntries(const FetchStream &stream) {
 
     // Filter out non-conditional and always-taken branches
     auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-        [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved && !e.tageTrained); });
+        [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
     all_entries.erase(remove_it, all_entries.end());
 
     // Handle potential new BTB entry
@@ -606,8 +606,6 @@ BTBTAGE::update(const FetchStream &stream) {
 
     // Process each BTB entry
     for (auto &btb_entry : entries_to_update) {
-        btb_entry.tageTrained = true; // mark this entry as trained by TAGE
-
         bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
