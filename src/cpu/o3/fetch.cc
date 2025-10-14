@@ -1441,7 +1441,11 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     }
 
     // Check squash signals from commit.
-    if (handleCommitSignals(tid)) {
+    bool commitSquashed = handleCommitSignals(tid);
+
+    handleIEWSignals();
+
+    if (commitSquashed) {
         return true;
     }
 
@@ -1483,8 +1487,13 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 }
 
 void
-Fetch::btbTrainTAGE()
+Fetch::handleIEWSignals()
 {
+    // Currently TAGE resolve stage training is a btb only feature
+    if (!isBTBPred()) {
+        return;
+    }
+
     // iterate resolvedFSQId and get FetchStream, push to ResolveQueue
     for (const uint64_t &fsq_id : fromIEW->iewInfo->resolvedFSQId) {
         unsigned int stream_id = fsq_id;
@@ -1494,6 +1503,8 @@ Fetch::btbTrainTAGE()
         }
         dbpbtb->updateTAGEOnly(stream_id);
     }
+
+    return;
 }
 
 bool

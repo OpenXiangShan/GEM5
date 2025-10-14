@@ -453,12 +453,15 @@ class Fetch
      */
     bool checkSignalsAndUpdate(ThreadID tid);
 
-    void btbTrainTAGE();
-
     /** Handles commit signals including squash and update operations.
      *  @return: Returns true if squash occurred and immediate return needed.
      */
     bool handleCommitSignals(ThreadID tid);
+
+    /** Handles iew signals including resolved cfi, mark their btb entries
+     *  and train TAGE predictor.
+     */
+    void handleIEWSignals();
 
     /** Handles decode squash signals.
      *  @return: Returns true if squash occurred and immediate return needed.
