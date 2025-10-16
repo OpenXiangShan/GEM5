@@ -51,6 +51,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     bpType = DecoupledBTBType;
     // TODO: better impl (use vector to assign in python)
     // problem: btb->getAndSetNewBTBEntry
+    tage->setResolvedUpdate();
     components.push_back(ubtb);
     components.push_back(abtb);
     components.push_back(microtage);

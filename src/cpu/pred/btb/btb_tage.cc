@@ -75,6 +75,7 @@ useAltOnNaWidth(p.useAltOnNaWidth),
 numTablesToAlloc(p.numTablesToAlloc),
 enableSC(p.enableSC),
 updateOnRead(p.updateOnRead),
+resolvedUpdate(false),
 tageStats(this, p.numPredictors)
 {
     this->needMoreHistories = p.needMoreHistories;
@@ -360,9 +361,15 @@ BTBTAGE::prepareUpdateEntries(const FetchStream &stream) {
     auto all_entries = stream.updateBTBEntries;
 
     // Filter out non-conditional and always-taken branches
-    auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-        [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
-    all_entries.erase(remove_it, all_entries.end());
+    if (resolvedUpdate) {
+      auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
+          [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
+      all_entries.erase(remove_it, all_entries.end());
+    } else {
+      auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
+          [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
+      all_entries.erase(remove_it, all_entries.end());
+    }
 
     // Handle potential new BTB entry
     auto &potential_new_entry = stream.updateNewBTBEntry;
