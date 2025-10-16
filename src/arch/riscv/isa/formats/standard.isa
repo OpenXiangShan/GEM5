@@ -352,6 +352,8 @@ def template CSRExecute {{
                     csprintf("%s is not accessible in %s\n", csrName, pm),
                     machInst);
         }
+
+        auto* isa = dynamic_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
         switch (csr) {
           case CSR_SATP: {
             STATUS status = xc->readMiscReg(MISCREG_STATUS);
@@ -363,11 +365,10 @@ def template CSRExecute {{
             break;
           }
           case CSR_TIME: {
-                std::string error = csprintf(
-                    "force accessing to time CSR generate fault\n");
-                olddata = 0;
-                return std::make_shared<IllegalInstFault>(error, machInst);
-                break;
+            if (!isa->hpmCounterEnabled(MISCREG_TIME)) {
+                return std::make_shared<HVFault>();
+            }
+            break;
           }
           default:
             break;

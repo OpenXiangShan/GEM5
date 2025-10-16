@@ -79,8 +79,6 @@ class ISA : public BaseISA
   protected:
     std::vector<RegVal> miscRegFile;
 
-    bool hpmCounterEnabled(int counter) const;
-
   public:
     using Params = RiscvISAParams;
 
@@ -93,6 +91,7 @@ class ISA : public BaseISA
     }
 
   public:
+    bool hpmCounterEnabled(int counter) const;
     RegVal readMiscRegNoEffect(int misc_reg) const;
     RegVal readMiscReg(int misc_reg);
     void setMiscRegNoEffect(int misc_reg, RegVal val);

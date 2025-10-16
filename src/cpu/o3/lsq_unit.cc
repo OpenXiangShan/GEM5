@@ -1297,6 +1297,7 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
             inst->setExecuted();
         }
         inst->setSkipFollowingPipe();
+        inst->setCanCommit();
         return load_fault;
     }
 

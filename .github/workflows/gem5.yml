@@ -51,11 +51,7 @@ jobs:
         run: |
           CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
       - name: Run paralel h autotest script
-        run: |
-          export GCBH_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h-u/riscv64-nemu-interpreter-so"
-          export GCBV_REF_SO="/nfs-nvme/home/share/zhenhao/ref-h-u/riscv64-nemu-interpreter-so"
-          export GCB_RESTORER="None"
-          python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5-h.cfg
+        run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5-h.cfg
 
   valgrind_memory_check:
     runs-on: [self-hosted, open]
@@ -230,7 +226,7 @@ jobs:
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
-          export GCBH_REF_SO="/nfs/home/share/gem5_ci/ref/h/riscv64-nemu-interpreter-so"
+          export GCBH_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
           export GCBH_RESTORER="/nfs/home/share/gem5_ci/tools/gcpt.bin"
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_h

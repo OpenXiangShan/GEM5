@@ -289,7 +289,7 @@ class SyscallFault : public RiscvFault
 class HVFault : public RiscvFault
 {
   public:
-    HVFault() : RiscvFault("System call", FaultType::OTHERS, VIRTUAL_INST) {}
+    HVFault() : RiscvFault("HVFault", FaultType::OTHERS, VIRTUAL_INST) {}
     void invokeSE(ThreadContext *tc, const StaticInstPtr &inst) override;
 };
 } // namespace RiscvISA

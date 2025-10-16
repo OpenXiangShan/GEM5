@@ -354,11 +354,15 @@ ISA::hpmCounterEnabled(int misc_reg) const
     if (hpmcounter < 0 || hpmcounter > 31)
         panic("Illegal HPM counter %d\n", hpmcounter);
     RegVal counteren;
+    bool v = readMiscRegNoEffect(MISCREG_VIRMODE) == 1;
     switch (readMiscRegNoEffect(MISCREG_PRV)) {
       case PRV_M:
         return true;
       case PRV_S:
         counteren = miscRegFile[MISCREG_MCOUNTEREN];
+        if (v) {
+            counteren &= miscRegFile[MISCREG_HCOUNTEREN];
+        }
         break;
       case PRV_U:
         counteren = miscRegFile[MISCREG_SCOUNTEREN] & miscRegFile[MISCREG_MCOUNTEREN];
@@ -440,7 +444,6 @@ ISA::readMiscReg(int misc_reg)
                     tc->getCpuPtr()->curCycle());
             return tc->getCpuPtr()->curCycle();
         } else {
-            warn("Cycle counter disabled.\n");
             return 0;
         }
       case MISCREG_TIME:
@@ -449,7 +452,6 @@ ISA::readMiscReg(int misc_reg)
                     std::time(nullptr));
             return readMiscRegNoEffect(MISCREG_TIME);
         } else {
-            warn("Wall clock disabled.\n");
             return 0;
         }
       case MISCREG_INSTRET:
@@ -458,7 +460,6 @@ ISA::readMiscReg(int misc_reg)
                     tc->getCpuPtr()->totalInsts());
             return tc->getCpuPtr()->totalInsts();
         } else {
-            warn("Instruction counter disabled.\n");
             return 0;
         }
       case MISCREG_IP:
