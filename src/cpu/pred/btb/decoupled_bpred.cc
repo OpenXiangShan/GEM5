@@ -52,14 +52,14 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     // TODO: better impl (use vector to assign in python)
     // problem: btb->getAndSetNewBTBEntry
     components.push_back(ubtb);
-    components.push_back(abtb);
-    components.push_back(microtage);
+    // components.push_back(abtb);
+    // components.push_back(microtage);
     // components.push_back(uras);
     components.push_back(mbtb);
-    components.push_back(tage);
-    components.push_back(ras);
-    components.push_back(ittage);
-    components.push_back(mgsc);
+    // components.push_back(tage);
+    // components.push_back(ras);
+    // components.push_back(ittage);
+    // components.push_back(mgsc);
     numComponents = components.size();
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
@@ -1977,8 +1977,8 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     // Update path history
     pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
 #ifndef NDEBUG
-    tage->checkFoldedHist(s0PHistory, "speculative update");
-    microtage->checkFoldedHist(s0PHistory, "speculative update");
+    // tage->checkFoldedHist(s0PHistory, "speculative update");
+    // microtage->checkFoldedHist(s0PHistory, "speculative update");
 #endif
     // Update imli history
     histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
@@ -2065,12 +2065,12 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG
     checkHistory(s0History);
-    tage->checkFoldedHist(s0PHistory,
-        squash_type == SQUASH_CTRL ? "control squash" :
-        squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
-    microtage->checkFoldedHist(s0PHistory,
-        squash_type == SQUASH_CTRL ? "control squash" :
-        squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+    // tage->checkFoldedHist(s0PHistory,
+    //     squash_type == SQUASH_CTRL ? "control squash" :
+    //     squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+    // microtage->checkFoldedHist(s0PHistory,
+    //     squash_type == SQUASH_CTRL ? "control squash" :
+    //     squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
 #endif
 }
 
