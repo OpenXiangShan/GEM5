@@ -683,7 +683,7 @@ decode QUADRANT {
 
         0x05: LUIOp::auipc({{
             Rd = PC + imm;
-        }});
+        }}, IntJpOp);
 
         0x06: decode FUNCT3 {
             format IOp {
