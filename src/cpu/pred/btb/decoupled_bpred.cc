@@ -55,7 +55,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     // components.push_back(abtb);
     // components.push_back(microtage);
     // components.push_back(uras);
-    // components.push_back(mbtb);
+    components.push_back(mbtb);
     // components.push_back(tage);
     // components.push_back(ras);
     // components.push_back(ittage);
