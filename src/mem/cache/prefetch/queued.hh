@@ -206,6 +206,8 @@ class Queued : public Base
     /** Percentage of requests that can be throttled */
     const unsigned int throttleControlPct;
 
+    const int TLBTransRegionShift;
+
     EventFunctionWrapper tlbReqEvent;
 
     struct QueuedStats : public statistics::Group
