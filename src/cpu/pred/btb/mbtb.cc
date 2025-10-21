@@ -671,6 +671,11 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
 #endif
     btbStats.updateExisting++;
     std::make_heap(heap.begin(), heap.end(), older());
+
+    // Ensure single source of truth: remove duplicate from victim cache if any
+    if (eraseFromVictimCacheByPC(ticked_entry.pc)) {
+        DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM update, pc %#lx\n", ticked_entry.pc);
+    }
 }
 
 void
@@ -713,6 +718,11 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
     }
 #endif
     std::make_heap(heap.begin(), heap.end(), older());
+
+    // Ensure single source of truth: remove duplicate from victim cache if any
+    if (eraseFromVictimCacheByPC(ticked_entry.pc)) {
+        DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM replace, pc %#lx\n", ticked_entry.pc);
+    }
 }
 
 void
