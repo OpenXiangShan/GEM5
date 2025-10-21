@@ -205,11 +205,14 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     auto s3TakenEntry = s3Pred.getTakenEntry();
     if (s0EntryIter != ubtb.end() && !s3TakenEntry.valid) {
         // S0 has a hit entry, but S3 predicts fall through
+        ubtbStats.s1Hits3FallThrough++;
         updateUCtr(s0EntryIter->uctr, false);
         if (s0EntryIter->uctr == 0) {
+            ubtbStats.s1InvalidatedEntries++;
             s0EntryIter->valid = false;
         }
     } else if (s0EntryIter == ubtb.end() && s3TakenEntry.valid) {
+        ubtbStats.s1Misses3Taken++;
         /* S0 misses, but S3 predicts taken,
          * generate new entry and replace another using LRU
          */
@@ -237,6 +240,7 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
         replaceOldEntry(toBeReplacedIter, s3Pred);
 
     } else if (s0EntryIter != ubtb.end() && s3TakenEntry.valid) {
+        ubtbStats.s1Hits3Taken++;
         // both S0 and S3 predict taken
         if (s0EntryIter->pc != s3Pred.controlAddr() || s0EntryIter->target != s3Pred.getTarget(predictWidth)) {
             // S0 and S3 predict different branch instruction
@@ -250,6 +254,7 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
             updateUCtr(s0EntryIter->uctr, true);
         }
     } else {
+        ubtbStats.s1Misses3FallThrough++;
         // both S0 and S3 predict fall through, do nothing
     }
 }
@@ -412,7 +417,12 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(callHits, statistics::units::Count::get(), "calls committed that was predicted hit"),
       ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
       ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
-      ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
+      ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
+      ADD_STAT(s1Hits3FallThrough, statistics::units::Count::get(), "s1 hits s3 predicted fall through"),
+      ADD_STAT(s1Misses3Taken, statistics::units::Count::get(), "s1 misses s3 predicted taken"),
+      ADD_STAT(s1Hits3Taken, statistics::units::Count::get(), "s1 hits s3 predicted taken"),
+      ADD_STAT(s1Misses3FallThrough, statistics::units::Count::get(), "s1 misses s3 predicted fall through"),
+      ADD_STAT(s1InvalidatedEntries, statistics::units::Count::get(), "s1 invalidated entries")
 {
 }
 

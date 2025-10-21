@@ -77,7 +77,7 @@ MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned num
 // Production constructor
 MBTB::MBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
-    victimCacheSize(16), // Default size, will be configurable later
+    victimCacheSize(p.victimCacheSize),
     numEntries(p.numEntries),
     numWays(p.numWays),
     tagBits(p.tagBits),
@@ -596,76 +596,132 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
             break;
         }
     }
-    // Simplify: if not found in MBTB but found in VC, do nothing and return
-    if (!found && found_in_vc) {
-        return;
+    // Build updated entry using existing state (MBTB hit or VC hit) when applicable
+    const BTBEntry* existing_ptr = nullptr;
+    if (found) {
+        existing_ptr = static_cast<const BTBEntry*>(&(*it));
+    } else if (found_in_vc) {
+        existing_ptr = static_cast<const BTBEntry*>(&victimCache[vc_idx]);
     }
 
-    auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
-    entry_to_write.tag = btb_tag;   // update tag after found it!
-    // update saturating counter if necessary
+    auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream, btb_tag);
+    auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
+
+    if (found) {
+        // Update in-place in SRAM set
+        updateExistingInSRAMSet(btb_idx, target_mru[btb_idx], it, ticked_entry);
+    } else if (found_in_vc) {
+        // In-place update in victim cache to avoid ping-ponging between MBTB and VC
+        commitToVictimCache(vc_idx, ticked_entry);
+        return;
+    } else {
+        // Not found anywhere, replace oldest in SRAM set
+        replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx], ticked_entry);
+    }
+}
+
+BTBEntry
+MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
+                        const BTBEntry* existing_entry,
+                        const FetchStream &stream,
+                        Addr btb_tag)
+{
+    // For conditional branches, prefer the existing entry to preserve up-to-date ctr
+    auto entry_to_write = (req_entry.isCond && existing_entry)
+                              ? BTBEntry(*existing_entry)
+                              : req_entry;
+    entry_to_write.tag = btb_tag;   // update tag
+
+    // Update saturating counter and alwaysTaken
     if (entry_to_write.isCond) {
         bool this_cond_taken = stream.exeTaken && stream.getControlPC() == entry_to_write.pc;
         if (!this_cond_taken) {
             entry_to_write.alwaysTaken = false;
+            DPRINTF(BTB, "BTB: unset alwaysTaken, pc %#lx, alwaysTaken %d\n",
+                    entry_to_write.pc, entry_to_write.alwaysTaken);
         }
-        if(!entry_to_write.alwaysTaken) {
+        if (!entry_to_write.alwaysTaken) {
             updateCtr(entry_to_write.ctr, this_cond_taken);
         }
     }
-    // update indirect target if necessary
+
+    // Update indirect target if necessary
     if (entry_to_write.isIndirect && stream.exeTaken && stream.getControlPC() == entry_to_write.pc) {
         entry_to_write.target = stream.exeBranchInfo.target;
     }
-    auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
-    if (found) {
-        // Update existing entry
-        *it = ticked_entry;
-#ifndef UNIT_TEST
-        if (enableDB) {
-            BTBTrace rec;
-            rec.set(ticked_entry.pc, ticked_entry.getType(),
-                ticked_entry.target, btb_idx, Mode::WRITE, 1);
-            btbTrace->write_record(rec);
-        }
-#endif
-        btbStats.updateExisting++;
-    } else {
-        // Replace oldest entry in the set
-        DPRINTF(BTB, "trying to replace entry in SRAM%d set %#lx\n", sram_id, btb_idx);
-        // put the oldest entry in this set to the back of heap
-        std::pop_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
-        const auto& entry_in_btb_now = target_mru[btb_idx].back();
-#ifndef UNIT_TEST
-        if (enableDB) {
-            BTBTrace rec;
-            rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                    entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
-                btbTrace->write_record(rec);
-        }
-#endif
-        if (entry_in_btb_now->valid) {
-            // if all ways are really occupied, we need to replace valid entry
-            // means 32B block is more than 4ways/ 4 branches
-            btbStats.updateReplaceValidOne++;
 
-            // Insert evicted entry into victim cache
-            insertVictimCache(*entry_in_btb_now);
-        }
-        btbStats.updateReplace++;
-        DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
-                entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
-        *entry_in_btb_now = ticked_entry;
+    return entry_to_write;
+}
+
+void
+MBTB::updateExistingInSRAMSet(Addr btb_idx,
+                              BTBHeap &heap,
+                              BTBSetIter it_found,
+                              const TickedBTBEntry &ticked_entry)
+{
+    // Update existing entry
+    *it_found = ticked_entry;
 #ifndef UNIT_TEST
-        if (enableDB) {
-            BTBTrace rec;
-            rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
-            btbTrace->write_record(rec);
-        }
-#endif
+    if (enableDB) {
+        BTBTrace rec;
+        rec.set(ticked_entry.pc, ticked_entry.getType(),
+                ticked_entry.target, btb_idx, Mode::WRITE, 1);
+        btbTrace->write_record(rec);
     }
-    std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
+#endif
+    btbStats.updateExisting++;
+    std::make_heap(heap.begin(), heap.end(), older());
+}
+
+void
+MBTB::replaceOldestInSRAMSet(int sram_id,
+                             Addr btb_idx,
+                             BTBHeap &heap,
+                             const TickedBTBEntry &ticked_entry)
+{
+    // Replace oldest entry in the set
+    DPRINTF(BTB, "trying to replace entry in SRAM%d set %#lx\n", sram_id, btb_idx);
+    // put the oldest entry in this set to the back of heap
+    std::pop_heap(heap.begin(), heap.end(), older());
+    const auto& entry_in_btb_now = heap.back();
+#ifndef UNIT_TEST
+    if (enableDB) {
+        BTBTrace rec;
+        rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
+                entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
+        btbTrace->write_record(rec);
+    }
+#endif
+    if (entry_in_btb_now->valid) {
+        // if all ways are really occupied, we need to replace valid entry
+        // means 32B block is more than 4ways/ 4 branches
+        btbStats.updateReplaceValidOne++;
+
+        // Insert evicted entry into victim cache
+        insertVictimCache(*entry_in_btb_now);
+    }
+    btbStats.updateReplace++;
+    DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
+            entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
+    *entry_in_btb_now = ticked_entry;
+#ifndef UNIT_TEST
+    if (enableDB) {
+        BTBTrace rec;
+        rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
+                entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
+        btbTrace->write_record(rec);
+    }
+#endif
+    std::make_heap(heap.begin(), heap.end(), older());
+}
+
+void
+MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
+{
+    if (vc_idx >= 0 && (size_t)vc_idx < victimCache.size()) {
+        victimCache[vc_idx] = ticked_entry;
+        victimCache[vc_idx].valid = true;
+    }
 }
 
 /*
@@ -680,7 +736,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
 void
 MBTB::update(const FetchStream &stream)
 {
-
+    DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
     // 1. Process old entries
     auto old_entries = processOldEntries(stream);
     
@@ -895,10 +951,6 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(newEntry, statistics::units::Count::get(), "number of new btb entries generated"),
     ADD_STAT(newEntryWithCond, statistics::units::Count::get(), "number of new btb entries generated with conditional branch"),
     ADD_STAT(newEntryWithUncond, statistics::units::Count::get(), "number of new btb entries generated with unconditional branch"),
-    ADD_STAT(oldEntry, statistics::units::Count::get(), "number of old btb entries updated"),
-    ADD_STAT(oldEntryIndirectTargetModified, statistics::units::Count::get(), "number of old btb entries with indirect target modified"),
-    ADD_STAT(oldEntryWithNewCond, statistics::units::Count::get(), "number of old btb entries with new conditional branches"),
-    ADD_STAT(oldEntryWithNewUncond, statistics::units::Count::get(), "number of old btb entries with new unconditional branches"),
     ADD_STAT(predMiss, statistics::units::Count::get(), "misses encountered on prediction"),
     ADD_STAT(predHit, statistics::units::Count::get(), "hits encountered on prediction"),
     ADD_STAT(updateMiss, statistics::units::Count::get(), "misses encountered on update"),
@@ -906,7 +958,6 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(updateExisting, statistics::units::Count::get(), "existing entries updated"),
     ADD_STAT(updateReplace, statistics::units::Count::get(), "entries replaced"),
     ADD_STAT(updateReplaceValidOne, statistics::units::Count::get(), "entries replaced with valid entry"),
-    ADD_STAT(eraseSlotBehindUncond, statistics::units::Count::get(), "erase slots behind unconditional slot"),
     ADD_STAT(predUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when pred"),
     ADD_STAT(updateUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when update"),
     ADD_STAT(S0Predmiss, statistics::units::Count::get(), "misses encountered on S0 prediction, i.e. uBTB and ABTB miss"),

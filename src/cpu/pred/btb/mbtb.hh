@@ -304,6 +304,27 @@ class MBTB : public TimedBaseBTBPredictor
      */
     void updateBTBEntry(const BTBEntry& entry, const FetchStream &stream);
 
+    // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
+    BTBEntry buildUpdatedEntry(const BTBEntry& req_entry,
+                               const BTBEntry* existing_entry,
+                               const FetchStream &stream,
+                               Addr btb_tag);
+
+    // Helper: update an existing entry in SRAM set
+    void updateExistingInSRAMSet(Addr btb_idx,
+                                 BTBHeap &heap,
+                                 BTBSetIter it_found,
+                                 const TickedBTBEntry &ticked_entry);
+
+    // Helper: replace the oldest entry in SRAM set
+    void replaceOldestInSRAMSet(int sram_id,
+                                Addr btb_idx,
+                                BTBHeap &heap,
+                                const TickedBTBEntry &ticked_entry);
+
+    // Helper: commit/update an entry in victim cache at given index
+    void commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry);
+
     /*
      * Comparator for MRU heap
      * Returns true if a's timestamp is larger than b's
@@ -422,10 +443,6 @@ public:
         Scalar newEntry;
         Scalar newEntryWithCond;
         Scalar newEntryWithUncond;
-        Scalar oldEntry;
-        Scalar oldEntryIndirectTargetModified;
-        Scalar oldEntryWithNewCond;
-        Scalar oldEntryWithNewUncond;
 
         Scalar predMiss;
         Scalar predHit;
@@ -434,8 +451,6 @@ public:
         Scalar updateExisting;
         Scalar updateReplace;
         Scalar updateReplaceValidOne;
-
-        Scalar eraseSlotBehindUncond;
 
         Scalar predUseL0OnL1Miss;
         Scalar updateUseL0OnL1Miss;

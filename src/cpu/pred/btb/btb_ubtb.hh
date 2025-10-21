@@ -314,6 +314,12 @@ class UBTB : public TimedBaseBTBPredictor
         statistics::Scalar returnHits;
         statistics::Scalar returnMisses;
 
+        statistics::Scalar s1Hits3FallThrough;
+        statistics::Scalar s1Misses3Taken;
+        statistics::Scalar s1Hits3Taken;
+        statistics::Scalar s1Misses3FallThrough;
+        statistics::Scalar s1InvalidatedEntries;
+
         UBTBStats(statistics::Group* parent);
     } ubtbStats;
 

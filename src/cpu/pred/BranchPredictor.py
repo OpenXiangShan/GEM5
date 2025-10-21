@@ -982,6 +982,7 @@ class MBTB(TimedBaseBTBPredictor):
     numDelay = 2
     blockSize = 32  # max 64 byte block, 32 byte aligned
     # MBTB is always half-aligned - no parameter needed
+    victimCacheSize = Param.Unsigned(16, "Number of entries in the victim cache")
 
 class AheadBTB(TimedBaseBTBPredictor):
     type = 'AheadBTB'
