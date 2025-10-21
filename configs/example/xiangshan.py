@@ -229,8 +229,9 @@ def build_test_system(np, args):
             cpu.enableTraceMode = True
             cpu.traceFile = args.trace_file
             cpu.traceFormat = args.trace_format
-            cpu.max_insts_any_thread = args.trace_max_insts
-            
+            # Unify with normal mode option: use --maxinsts
+            cpu.max_insts_any_thread = args.maxinsts
+
             # Trace address mapping: Map to existing physical memory range
             # System physical memory starts at 0x80000000, so map trace addresses there
             cpu.traceAddrBase = 0x80000000  # Start of physical memory
@@ -260,7 +261,7 @@ def build_test_system(np, args):
 
         print(f"  Trace file: {args.trace_file}")
         print(f"  Trace format: {args.trace_format}")
-        print(f"  Max instructions: {args.trace_max_insts}")
+        print(f"  Max instructions: {args.maxinsts}")
         print(f"  Decoupled BP: {hasattr(args, 'trace_enable_decoupled_bp') and args.trace_enable_decoupled_bp}")
 
     # ruby will overwrite the store_prefetch_train
@@ -531,8 +532,7 @@ if __name__ == '__m5_main__':
     parser.add_argument('--trace-format', type=str, default='champsim',
                        choices=['champsim', 'cbp2025'],
                        help='Trace format (default: champsim)')
-    parser.add_argument('--trace-max-insts', type=int, default=1000000,
-                       help='Maximum instructions to simulate in trace mode (default: 1M)')
+    # Use the common --maxinsts option provided by common Options; no trace-specific max
 
     # Decoupled branch predictor options for trace mode
     parser.add_argument('--trace-enable-decoupled-bp', action='store_true',
@@ -568,7 +568,7 @@ if __name__ == '__m5_main__':
         print(f"Trace mode enabled:")
         print(f"  Trace file: {args.trace_file}")
         print(f"  Trace format: {args.trace_format}")
-        print(f"  Max instructions: {args.trace_max_insts}")
+        print(f"  Max instructions: {args.maxinsts}")
     else:
         # In checkpoint mode, ensure generic_rv_cpt is provided and valid
         if args.generic_rv_cpt == "trace_mode_dummy":

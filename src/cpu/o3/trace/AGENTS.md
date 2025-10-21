@@ -3,16 +3,16 @@
 Contributor guide for the O3 trace subsystem, aligned with the capabilities in `CLAUDE.md`. Keep changes focused, reproducible, and covered by tests.
 
 ## Project Structure & Module Organization
-- `src/cpu/o3/trace/`: Core classes — `TraceReader`, `TraceInstruction`, `ChampSimTraceReader`, `CBP2025TraceReader`. Address mapping lives in `ChampSimTraceReader` (maps to 0x10000000+).
-- `configs/example/xiangshan.py` (FS mode) and `configs/example/xiangshan_trace.py` (SE mode): trace‑driven run configs.
+- `src/cpu/o3/trace/`: Core classes — `TraceReader`, `TraceInstruction`, `ChampSimTraceReader`, `CBP2025TraceReader`. Address mapping aligns with FS config (maps to 0x80000000+).
+- `configs/example/xiangshan.py`: Single entrypoint for trace‑driven (FS) runs.
 - Results and tooling: `build/` (binaries), `m5out/` (stats/logs), `tests/` (harness via `tests/main.py`).
 
 ## Build, Test, and Development Commands
 - Build (RISCV, opt): `scons -j$(nproc) --gold-linker build/RISCV/gem5.opt`
-- Run (FS mode): `./build/RISCV/gem5.opt configs/example/xiangshan.py --enable-trace-mode --trace-file=/path/to/trace.gz --trace-format=champsim --trace-max-insts=100000`
-- Run (SE mode): `./build/RISCV/gem5.opt configs/example/xiangshan_trace.py --trace-file=/path/to/trace.gz --trace-format=champsim --max-insts=1000000`
+- Run (FS mode): `./build/RISCV/gem5.opt configs/example/xiangshan.py --enable-trace-mode --trace-file=/path/to/trace.gz --trace-format=champsim --maxinsts=100000`
+  (SE‑specific script removed; use `xiangshan.py` with `--enable-trace-mode`.)
 - Internal trace path: `/nfs/home/share/glr/champsim_traces/` (e.g., `cvp1_public/compute_int_0.gz`)
-- Prefer FS mode (`xiangshan.py`) for validation; use SE mode only for fast repro.
+- Prefer FS mode (`xiangshan.py`) for validation; for fast repro, reduce `--maxinsts`.
 - Helpful: add `--debug-flags=Fetch,TraceReader,O3CPU` when diagnosing.
 - Unit tests: `scons build/NULL/unittests.opt`; system quick sweep: `cd tests && ./main.py run --length quick --isa RISCV --variant opt -j $(nproc)`.
 
