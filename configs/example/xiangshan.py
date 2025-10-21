@@ -403,13 +403,6 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.tage.TTagPcShifts = [1] * 8
             cpu.branchPred.tage.histLengths = [4, 9, 17, 29, 56, 109, 211, 397]
 
-            # cpu.branchPred.microtage.enableSC = False
-
-            cpu.branchPred.microtage.numPredictors = 1
-            cpu.branchPred.microtage.TTagBitSizes = [13]
-            cpu.branchPred.microtage.TTagPcShifts = [1]
-            cpu.branchPred.microtage.histLengths = [16]
-
         # ideal l1 caches
         if args.caches:
             cpu.icache.size = '64kB'
