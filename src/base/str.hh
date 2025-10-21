@@ -251,6 +251,25 @@ startswith(const std::string &s, const std::string &prefix)
     return (s.compare(0, prefix.size(), prefix) == 0);
 }
 
+
+inline std::string
+hexToString(uint8_t *data, size_t size)
+{
+    static const char hexChars[] = "0123456789abcdef";
+
+    std::string str;
+    str.reserve(size * 2 + 4);
+
+    str += "0x";
+    for (int i = size - 1; i>=0 ; --i) {
+        uint8_t byte = data[i];
+        str.push_back(hexChars[(byte >> 4) & 0x0F]);
+        str.push_back(hexChars[byte & 0x0F]);
+    }
+
+    return str;
+}
+
 } // namespace gem5
 
 #endif //__BASE_STR_HH__

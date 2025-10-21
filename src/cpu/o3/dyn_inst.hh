@@ -559,6 +559,9 @@ class DynInst : public ExecContext, public RefCounted
     void dumpSNList();
 #endif
 
+
+    int32_t operWid() const { return staticInst->operWid(); }
+
     /** Renames a destination register to a physical register.  Also records
      *  the previous physical register that the logical register mapped to.
      */
@@ -647,6 +650,7 @@ class DynInst : public ExecContext, public RefCounted
     //
     bool isSplitStoreAddr()   const { return staticInst->isSplitStoreAddr(); }
     bool isSplitStoreData() const { return opClass() == StoreDataOp; }
+    bool isFusion()       const { return staticInst->isFusion(); }
     bool isNop()          const { return staticInst->isNop(); }
     bool isMemRef()       const { return staticInst->isMemRef(); }
     bool isLoad()         const { return staticInst->isLoad(); }

@@ -367,6 +367,9 @@ def setKmhV3IdealParams(args, system):
         cpu.dispWidth = [8, 8, 8]
         cpu.scheduler = KMHV3Scheduler()
 
+        # fusion
+        cpu.enable_loadFusion = True
+
         cpu.BankConflictCheck = True   # real bank conflict 0.2 score
         cpu.sbufferBankWriteAccurately = True
         # cpu.EnableLdMissReplay = False

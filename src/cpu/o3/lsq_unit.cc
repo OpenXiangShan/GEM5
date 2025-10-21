@@ -1063,92 +1063,97 @@ Fault
 LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
         const DynInstPtr& inst)
 {
-    Addr inst_eff_addr1 = inst->physEffAddr >> depCheckShift;
-    Addr inst_eff_addr2 = (inst->physEffAddr + inst->effSize - 1) >> depCheckShift;
+    auto saved_it = loadIt;
+    for (auto req0 : inst->savedRequest->_reqs) {
+        Addr inst_eff_addr1 = req0->getPaddr() >> depCheckShift;
+        Addr inst_eff_addr2 = (req0->getPaddr() + req0->getSize() - 1) >> depCheckShift;
 
-    /** @todo in theory you only need to check an instruction that has executed
-     * however, there isn't a good way in the pipeline at the moment to check
-     * all instructions that will execute before the store writes back. Thus,
-     * like the implementation that came before it, we're overly conservative.
-     */
-    DPRINTF(LSQUnit, "Checking for violations for store [sn:%lli], addr: %#lx\n",
-            inst->seqNum, inst->physEffAddr);
-    while (loadIt != loadQueue.end()) {
-        DynInstPtr ld_inst = loadIt->instruction();
-        if (!ld_inst->effAddrValid() || ld_inst->strictlyOrdered()) {
-            ++loadIt;
-            continue;
-        }
+        /** @todo in theory you only need to check an instruction that has executed
+            * however, there isn't a good way in the pipeline at the moment to check
+            * all instructions that will execute before the store writes back. Thus,
+            * like the implementation that came before it, we're overly conservative.
+            */
+        DPRINTF(LSQUnit, "Checking for violations for [sn:%lli], addr: %#lx\n",
+                inst->seqNum, req0->getPaddr());
+        loadIt = saved_it;
+        while (loadIt != loadQueue.end()) {
+            DynInstPtr ld_inst = loadIt->instruction();
+            if (!ld_inst->effAddrValid() || ld_inst->strictlyOrdered()) {
+                ++loadIt;
+                continue;
+            }
 
-        Addr ld_eff_addr1 = ld_inst->physEffAddr >> depCheckShift;
-        Addr ld_eff_addr2 =
-            (ld_inst->physEffAddr + ld_inst->effSize - 1) >> depCheckShift;
+            for (auto req1 : loadIt->request()->_reqs) {
+                Addr ld_eff_addr1 = req1->getPaddr() >> depCheckShift;
+                Addr ld_eff_addr2 = (req1->getPaddr() + req1->getSize() - 1) >> depCheckShift;
 
-        DPRINTF(LSQUnit, "Checking for violations for load [sn:%lli], addr: %#lx\n",
-                ld_inst->seqNum, ld_inst->physEffAddr);
-        if (inst_eff_addr2 >= ld_eff_addr1 && inst_eff_addr1 <= ld_eff_addr2) {
-            if (inst->isLoad()) {
-                // If this load is to the same block as an external snoop
-                // invalidate that we've observed then the load needs to be
-                // squashed as it could have newer data
-                if (ld_inst->hitExternalSnoop()) {
-                    if (!memDepViolator ||
-                            ld_inst->seqNum < memDepViolator->seqNum) {
-                        DPRINTF(LSQUnit, "Detected fault with inst [sn:%lli] "
-                                "and [sn:%lli] at address %#x\n",
+                DPRINTF(LSQUnit, "Checking for violations for load [sn:%lli], addr: %#lx\n",
+                        ld_inst->seqNum, req1->getPaddr());
+                if (inst_eff_addr2 >= ld_eff_addr1 && inst_eff_addr1 <= ld_eff_addr2) {
+                    if (inst->isLoad()) {
+                        // If this load is to the same block as an external snoop
+                        // invalidate that we've observed then the load needs to be
+                        // squashed as it could have newer data
+                        if (ld_inst->hitExternalSnoop()) {
+                            if (!memDepViolator ||
+                                    ld_inst->seqNum < memDepViolator->seqNum) {
+                                DPRINTF(LSQUnit, "Detected fault with inst [sn:%lli] "
+                                        "and [sn:%lli] at address %#x\n",
+                                        inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
+                                memDepViolator = ld_inst;
+
+                                ++stats.memOrderViolation;
+
+                                return std::make_shared<GenericISA::M5PanicFault>(
+                                    "Detected fault with inst [sn:%lli] and "
+                                    "[sn:%lli] at address %#x\n",
+                                    inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
+                            }
+                        }
+
+                        // Otherwise, mark the load has a possible load violation and
+                        // if we see a snoop before it's commited, we need to squash
+                        ld_inst->possibleLoadViolation(true);
+                        DPRINTF(LSQUnit, "Found possible load violation at addr: %#x"
+                                " between instructions [sn:%lli] and [sn:%lli]\n",
+                                inst_eff_addr1, inst->seqNum, ld_inst->seqNum);
+                        break;
+                    } else {
+                        // A load/store incorrectly passed this store.
+                        // Check if we already have a violator, or if it's newer
+                        // squash and refetch.
+                        if (memDepViolator && ld_inst->seqNum > memDepViolator->seqNum) {
+                            return NoFault;
+                        }
+
+                        // if this load has been marked as Nuke, the load will then be replayed
+                        // So next time this load replaying to pipeline will forward from store correctly
+                        // And no RAW violation happens
+                        if (ld_inst->needNukeReplay()) {
+                            break;
+                        }
+
+                        DPRINTF(LSQUnit,
+                                "ld_eff_addr1: %#x, ld_eff_addr2: %#x, "
+                                "inst_eff_addr1: %#x, inst_eff_addr2: %#x\n",
+                                ld_eff_addr1, ld_eff_addr2, inst_eff_addr1,
+                                inst_eff_addr2);
+                        DPRINTF(LSQUnit, "Detected fault with inst [sn:%lli] and "
+                                "[sn:%lli] at address %#x\n",
                                 inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
                         memDepViolator = ld_inst;
 
                         ++stats.memOrderViolation;
 
                         return std::make_shared<GenericISA::M5PanicFault>(
-                            "Detected fault with inst [sn:%lli] and "
-                            "[sn:%lli] at address %#x\n",
+                            "Detected fault with "
+                            "inst [sn:%lli] and [sn:%lli] at address %#x\n",
                             inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
                     }
                 }
-
-                // Otherwise, mark the load has a possible load violation and
-                // if we see a snoop before it's commited, we need to squash
-                ld_inst->possibleLoadViolation(true);
-                DPRINTF(LSQUnit, "Found possible load violation at addr: %#x"
-                        " between instructions [sn:%lli] and [sn:%lli]\n",
-                        inst_eff_addr1, inst->seqNum, ld_inst->seqNum);
-            } else {
-                // A load/store incorrectly passed this store.
-                // Check if we already have a violator, or if it's newer
-                // squash and refetch.
-                if (memDepViolator && ld_inst->seqNum > memDepViolator->seqNum)
-                    break;
-
-                // if this load has been marked as Nuke, the load will then be replayed
-                // So next time this load replaying to pipeline will forward from store correctly
-                // And no RAW violation happens
-                if (ld_inst->needNukeReplay()) {
-                    ++loadIt;
-                    continue;
-                }
-
-                DPRINTF(LSQUnit,
-                        "ld_eff_addr1: %#x, ld_eff_addr2: %#x, "
-                        "inst_eff_addr1: %#x, inst_eff_addr2: %#x\n",
-                        ld_eff_addr1, ld_eff_addr2, inst_eff_addr1,
-                        inst_eff_addr2);
-                DPRINTF(LSQUnit, "Detected fault with inst [sn:%lli] and "
-                        "[sn:%lli] at address %#x\n",
-                        inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
-                memDepViolator = ld_inst;
-
-                ++stats.memOrderViolation;
-
-                return std::make_shared<GenericISA::M5PanicFault>(
-                    "Detected fault with "
-                    "inst [sn:%lli] and [sn:%lli] at address %#x\n",
-                    inst->seqNum, ld_inst->seqNum, ld_eff_addr1);
             }
+            ++loadIt;
         }
-
-        ++loadIt;
     }
     return NoFault;
 }

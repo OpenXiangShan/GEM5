@@ -97,6 +97,11 @@ class Decode
     /** Per-thread status. */
     ThreadStatus decodeStatus[MaxThreads];
 
+    Addr ignoreFusionPC = 0;
+
+    const int keepIgnoreFusionCycles = 10;
+    Tick lastSetIgnoreTick = 0;
+
   public:
     /** Decode constructor. */
     Decode(CPU *_cpu, const BaseO3CPUParams &params);
@@ -150,6 +155,8 @@ class Decode
      * correct.
      */
     void decodeInsts(ThreadID tid);
+
+    void setIgnoreNextFusion(Addr pc) { ignoreFusionPC = pc; lastSetIgnoreTick = curTick(); }
 
   private:
 
@@ -305,6 +312,8 @@ class Decode
      *  instruction (used for MIPS).
      */
     bool squashAfterDelaySlot[MaxThreads];
+
+    bool enableLoadFusion;
 
     struct DecodeStats : public statistics::Group
     {

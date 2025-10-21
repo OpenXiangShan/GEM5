@@ -244,7 +244,7 @@ class LSQ
             Fault,
             PartialFault,
         };
-        State _state;
+        State _state = State::NotIssued;
         void setState(const State& newState) { _state = newState; }
 
         uint32_t numTranslatedFragments;
@@ -910,7 +910,7 @@ class LSQ
     /** Debugging function to print out instructions from a specific thread. */
     void dumpInsts(ThreadID tid) const;
 
-    bool isMisaligned(const DynInstPtr& inst, LSQRequest* request);
+    bool isMisaligned(const DynInstPtr& inst, Addr vaddr, int size);
 
     /** Executes a read operation, using the load specified at the load
      * index.

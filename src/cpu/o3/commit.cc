@@ -411,6 +411,12 @@ Commit::setIEWStage(IEW *iew_stage)
 }
 
 void
+Commit::setDecodeStage(Decode *decode_stage)
+{
+    decodeStage = decode_stage;
+}
+
+void
 Commit::setActiveThreads(std::list<ThreadID> *at_ptr)
 {
     activeThreads = at_ptr;
@@ -1550,14 +1556,10 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     }
 
     if (inst_fault != NoFault) {
-        DPRINTF(CommitTrace, "[sn:%lu pc:%#lx] %s has a fault, mepc: %#lx, mcause: %#lx, mtval: %#lx\n",
+        DPRINTF(CommitTrace, "[sn:%lu pc:%#lx] %s has a fault: %s\n",
                 head_inst->seqNum, head_inst->pcState().instAddr(),
-                head_inst->staticInst->disassemble(head_inst->pcState().instAddr()),
-                cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MEPC, tid),
-                cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid),
-                cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid)
-                );
-
+                head_inst->genDisassembly(),
+                inst_fault->name());
         if (!iewStage->flushAllStores(tid) || inst_num > 0) {
             DPRINTF(Commit,
                     "[tid:%i] [sn:%llu] "
@@ -1565,6 +1567,16 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                     tid, head_inst->seqNum);
             return false;
         }
+
+        if (head_inst->staticInst->isFusion()) {
+            // re-execute the fusion instruction and notify decode
+            // do not fuse again
+            inst_fault = std::make_shared<ReExec>();
+            decodeStage->setIgnoreNextFusion(head_inst->getPC());
+            DPRINTF(Commit, "Fault on fusion instruction, re-execute without fusion, PC %s\n",
+                    head_inst->pcState());
+        }
+
         if (faultNum.find(inst_fault->exception()) != faultNum.end()) {
             stats.pagefaulttimes[tid]++;
         }

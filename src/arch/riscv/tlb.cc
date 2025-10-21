@@ -2134,54 +2134,6 @@ TLB::hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::M
     int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
     return (req->get_h_inst()) || (status.mprv && status.mpv) || v_mode;
 }
-Fault
-TLB::misalignDataAddrCheck(const RequestPtr &req, BaseMMU::Mode mode)
-{
-    Addr vaddr = req->getVaddr();
-    auto size = req->getSize();
-    if (mode != BaseMMU::Execute) {
-        if (size <= 8) {
-            if ((vaddr & (size - 1)) != 0) {
-                if (mode == BaseMMU::Write)
-                    return std::make_shared<AddressFault>(req->getVaddr() & 0x7FFFFFFFFF, 0,
-                                                          ExceptionCode::STORE_ADDR_MISALIGNED);
-                else
-                    return std::make_shared<AddressFault>(req->getVaddr() & 0x7FFFFFFFFF, 0,
-                                                          ExceptionCode::LOAD_ADDR_MISALIGNED);
-            }
-        }
-    }
-
-    return NoFault;
-}
-
-Fault
-TLB::misalignDataAddrCheck(const RequestPtr &req, BaseMMU::Mode mode, uint8_t satp_mode)
-{
-    Addr vaddr = req->getVaddr();
-    auto size = req->getSize();
-    if (mode != BaseMMU::Execute) {
-        if (size <= 8) {
-            if ((vaddr & (size - 1)) != 0) {
-                Addr fault_addr;
-                switch (satp_mode){
-                    case AddrXlateMode::BARE: fault_addr = req->getVaddr(); break;
-                    case AddrXlateMode::SV39: fault_addr = req->getVaddr() & ((1ull << 39) - 1); break;
-                    case AddrXlateMode::SV48: fault_addr = req->getVaddr() & ((1ull << 48) - 1); break;
-                    default: panic("satp mode should be BARE/SV39/SV48.");
-                }
-                if (mode == BaseMMU::Write)
-                    return std::make_shared<AddressFault>(fault_addr, 0,
-                                                          ExceptionCode::STORE_ADDR_MISALIGNED);
-                else
-                    return std::make_shared<AddressFault>(fault_addr, 0,
-                                                          ExceptionCode::LOAD_ADDR_MISALIGNED);
-            }
-        }
-    }
-
-    return NoFault;
-}
 
 MMUMode
 TLB::isaMMUCheck(ThreadContext *tc, Addr vaddr, BaseMMU::Mode mode)
@@ -2249,10 +2201,6 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
         } else {
             two_stage_translation = hasTwoStageTranslation(tc, req, mode);
             if (two_stage_translation) {
-                fault = misalignDataAddrCheck(req, mode, satp.mode);
-                if (fault != NoFault) {
-                    return fault;
-                }
                 assert((vsatp.mode == NEMU_SATP_SV39) || (hgatp.mode == NEMU_SATP_SV39)
                        || (vsatp.mode == NEMU_SATP_SV48) || (hgatp.mode == NEMU_SATP_SV48));
                 fault = doTwoStageTranslate(req, tc, translation, mode, delayed);

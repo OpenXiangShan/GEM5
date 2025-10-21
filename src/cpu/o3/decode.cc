@@ -74,6 +74,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       fetchToDecodeDelay(params.fetchToDecodeDelay),
       decodeWidth(params.decodeWidth),
       numThreads(params.numThreads),
+      enableLoadFusion(params.enable_loadFusion),
       stats(_cpu)
 {
     if (decodeWidth > MaxWidth)
@@ -100,6 +101,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
             this->stats.fusedInsts[idx] = it.second;
             idx++;
         }
+        this->fusionType.clear();
     });
 }
 
@@ -919,8 +921,17 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     if (vec.empty()) {
         return;
     }
-
     if (vec.back()->faulted() || cur->faulted()) {
+        return;
+    }
+    if (!enableLoadFusion && (vec.back()->isLoad() || cur->isLoad())) {
+        return;
+    }
+    if (vec.back()->getPC() >= ignoreFusionPC && vec.back()->getPC() < ignoreFusionPC + 8) {
+        // ignore fusion for this pc range
+        if (cpu->ticksToCycles(curTick() - lastSetIgnoreTick) > keepIgnoreFusionCycles) {
+            ignoreFusionPC = 0;
+        }
         return;
     }
 
@@ -963,15 +974,23 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     arrays.numSrcs = fused_inst->numSrcRegs();
     arrays.numDests = fused_inst->numDestRegs();
 
+    // ugly but works for now
+    RiscvISA::PCState thispc, predPC;
+    thispc.set(inst_pair[0]->getPC());
+    thispc.setNPC(inst_pair[1]->getNPC());
+    predPC.update(thispc);
+    predPC.advance();
+
     // Create a new DynInst from the instruction fetched.
     DynInstPtr instruction = new (arrays) DynInst(
-            arrays, fused_inst, fused_inst, *inst_pair[0]->pcState().clone(), *inst_pair[0]->predPC->clone(), inst_pair[0]->seqNum, cpu);
+            arrays, fused_inst, fused_inst, thispc, predPC, inst_pair[0]->seqNum, cpu);
 
-    instruction->setVersion(inst_pair[0]->getVersion());
-    instruction->setTid(inst_pair[0]->threadNumber);
-    instruction->thread = inst_pair[0]->thread;
-    instruction->setFsqId(inst_pair[0]->fsqId);
-    instruction->setFtqId(inst_pair[0]->ftqId);
+
+    instruction->setVersion(inst_pair[1]->getVersion());
+    instruction->setTid(inst_pair[1]->threadNumber);
+    instruction->thread = inst_pair[1]->thread;
+    instruction->setFsqId(inst_pair[1]->fsqId);
+    instruction->setFtqId(inst_pair[1]->ftqId);
 
     instruction->instListIt = cpu->instList.insert(inst_pair[0]->instListIt, instruction);
     cpu->instList.erase(inst_pair[0]->instListIt);

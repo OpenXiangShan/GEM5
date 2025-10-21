@@ -68,7 +68,7 @@ decode QUADRANT {
                 Fp2_bits = Mem;
             }}, {{
                 EA = Rp1 + offset;
-            }});
+            }}, inst_flags=[IsOper64]);
             0x2: c_lw({{
                 offset = CIMM2<1:1> << 2 |
                          CIMM3 << 3 |
@@ -77,14 +77,14 @@ decode QUADRANT {
                 Rp2_sd = Mem_sw;
             }}, {{
                 EA = Rp1 + offset;
-            }});
+            }}, inst_flags=[IsOper32]);
             0x3: c_ld({{
                 offset = CIMM3 << 3 | CIMM2 << 6;
             }}, {{
                 Rp2_sd = Mem_sd;
             }}, {{
                 EA = Rp1 + offset;
-            }});
+            }}, inst_flags=[IsOper64]);
         }
         0x4: decode CFUNCT6LOW3 {
             format CompressedLoad {
@@ -94,7 +94,7 @@ decode QUADRANT {
                     Rp2 = Mem_ub;
                 }}, {{
                     EA = (Rp1 + offset);
-                }});
+                }}, inst_flags=[IsOper8]);
                 0x1: decode CFUNCT1BIT6 {
                     0x0: c_lhu({{
                         offset = CIMM2<0:0> << 1;
@@ -102,14 +102,14 @@ decode QUADRANT {
                         Rp2 = Mem_uh;
                     }}, {{
                         EA = (Rp1 + offset);
-                    }});
+                    }}, inst_flags=[IsOper16]);
                     0x1: c_lh({{
                         offset = CIMM2<0:0> << 1;
                     }}, {{
                         Rp2_sd = Mem_sh;
                     }}, {{
                         EA = (Rp1 + offset);
-                    }});
+                    }}, inst_flags=[IsOper16]);
                 }
             }
             format CompressedStore {
@@ -358,7 +358,7 @@ decode QUADRANT {
                 Fc1_bits = Mem;
             }}, {{
                 EA = sp + offset;
-            }});
+            }}, inst_flags=[IsOper64]);
             0x2: c_lwsp({{
                 offset = CIMM5<4:2> << 2 |
                          CIMM1 << 5 |
@@ -371,7 +371,7 @@ decode QUADRANT {
                 Rc1_sd = Mem_sw;
             }}, {{
                 EA = sp + offset;
-            }});
+            }}, inst_flags=[IsOper32]);
             0x3: c_ldsp({{
                 offset = CIMM5<4:3> << 3 |
                          CIMM1 << 5 |
@@ -384,7 +384,7 @@ decode QUADRANT {
                 Rc1_sd = Mem_sd;
             }}, {{
                 EA = sp + offset;
-            }});
+            }}, inst_flags=[IsOper64]);
         }
         0x4: decode CFUNCT1 {
             0x0: decode RC2 {
@@ -458,25 +458,25 @@ decode QUADRANT {
             format Load {
                 0x0: lb({{
                     Rd_sd = Mem_sb;
-                }});
+                }}, inst_flags=[IsOper8]);
                 0x1: lh({{
                     Rd_sd = Mem_sh;
-                }});
+                }}, inst_flags=[IsOper16]);
                 0x2: lw({{
                     Rd_sd = Mem_sw;
-                }});
+                }}, inst_flags=[IsOper32]);
                 0x3: ld({{
                     Rd_sd = Mem_sd;
-                }});
+                }}, inst_flags=[IsOper64]);
                 0x4: lbu({{
                     Rd = Mem_ub;
-                }});
+                }}, inst_flags=[IsOper8]);
                 0x5: lhu({{
                     Rd = Mem_uh;
-                }});
+                }}, inst_flags=[IsOper16]);
                 0x6: lwu({{
                     Rd = Mem_uw;
-                }});
+                }}, inst_flags=[IsOper32]);
             }
         }
 
@@ -490,7 +490,7 @@ decode QUADRANT {
                     freg_t fd;
                     fd = freg(f16(Mem_uh));
                     Fd_bits = fd.v;
-                }}, inst_flags=FloatMemReadOp);
+                }}, inst_flags=[FloatMemReadOp, IsOper16]);
                 0x2: flw({{
                     STATUS status = xc->readMiscReg(MISCREG_STATUS);
                     if (status.fs == FPUStatus::OFF) {
@@ -508,7 +508,7 @@ decode QUADRANT {
                     freg_t fd;
                     fd = freg(f32(Mem_uw));
                     Fd_bits = fd.v;
-                }}, inst_flags=FloatMemReadOp);
+                }}, inst_flags=[FloatMemReadOp, IsOper32]);
                 0x3: fld({{
                     STATUS status = xc->readMiscReg(MISCREG_STATUS);
                     if (status.fs == FPUStatus::OFF) {
@@ -526,7 +526,7 @@ decode QUADRANT {
                     freg_t fd;
                     fd = freg(f64(Mem));
                     Fd_bits = fd.v;
-                }}, inst_flags=FloatMemReadOp);
+                }}, inst_flags=[FloatMemReadOp, IsOper64]);
             }
         }
 

@@ -926,6 +926,19 @@ class Packet : public Printable
         cmd = MemCmd::ReadReq;
     }
 
+    // tmp packet, do not new or delete
+    Packet(PacketDataPtr data, int size)
+        :  cmd(0), id(0), req(0),
+           data(data), addr(0), _isSecure(false), size(size),
+           _qosValue(0),
+           htmReturnReason(HtmCacheFailure::NO_FAIL),
+           htmTransactionUid(0),
+           headerDelay(0), snoopDelay(0),
+           payloadDelay(0), senderState(NULL)
+    {
+        flags.set(STATIC_DATA);
+    }
+
     /**
      * Constructor. Note that a Request object must be constructed
      * first, but the Requests's physical address and size fields need
@@ -1365,6 +1378,13 @@ class Packet : public Printable
             // one to the other, e.g. a forwarded response to a response
             std::memcpy(getPtr<uint8_t>(), p, getSize());
         }
+    }
+
+    // be careful with this function
+    void setPtr(const uint8_t* p, int size) {
+        data = const_cast<uint8_t*>(p);
+        flags.set(STATIC_DATA);
+        this->size = size;
     }
 
     void

@@ -48,6 +48,7 @@
 #include <string>
 
 #include "arch/generic/tlb.hh"
+#include "arch/riscv/insts/fusion.hh"
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "base/cprintf.hh"
@@ -911,7 +912,9 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
         uint64_t next_pc = diffAllStates->diff.nemu_reg->pc;
         // replace with "this pc" for checking
-        diffAllStates->diff.nemu_commit_inst_pc = diffInfo.pc->instAddr();
+        Addr t = diffInfo.inst->isFusion() ? dynamic_cast<RiscvISA::FusionInst *>(diffInfo.inst.get())->getSecondPC()
+                                           : diffInfo.pc->instAddr();
+        diffAllStates->diff.nemu_commit_inst_pc = t;
         diffAllStates->diff.nemu_this_pc = next_pc;
         diffAllStates->diff.npc = next_pc;
         return std::make_pair(NoneDiff, true);
@@ -1467,13 +1470,6 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                             "Difference might be caused by box,"
                             " ignore it\n");
                 } else {
-                    for (int i = 0; i < diffInfo.inst->numSrcRegs(); i++) {
-                        const auto &src = diffInfo.inst->srcRegIdx(i);
-                        warn("Src%d %s = %lx\n", i,
-                                reg_name[src.index()],
-                                diffInfo.getSrcReg(src));
-                        // threadContexts[curThread]->getReg(src));
-                    }
                     bool skipCSR = false;
                     for (auto iter : skipCSRs) {
                         if ((machInst & 0xfff00073) == iter) {
@@ -1484,19 +1480,20 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                             break;
                         }
                     }
-                    diffMsg << csprintf("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
-                    diffMsg << csprintf(
-                        "Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, "
-                        "GEM5 value: \033[31m%#lx\033[0m\n",
-                        reg_name[dest_tag], nemu_val, gem5_val);
-                    diffInfo.errorRegsValue[dest_tag] = 1;
-                    if (dest_tag < 32)
-                        diffAllStates->gem5RegFile.gpr[dest_tag]._64 = gem5_val;
-                    else if (dest_tag >= 32 && dest_tag < 64)
-                        diffAllStates->gem5RegFile.fpr[dest_tag - 32]._64 = gem5_val;
-
-                    diffAllStates->gem5RegFile.pc = gem5_pc;
                     if (!diff_at && !skipCSR) {
+                        diffMsg << csprintf("Inst [sn:%lli] pc: %#lx\n", seq, diffInfo.pc->instAddr());
+                        diffMsg << csprintf(
+                            "Diff at \033[31m%s\033[0m Ref value: \033[31m%#lx\033[0m, "
+                            "GEM5 value: \033[31m%#lx\033[0m\n",
+                            reg_name[dest_tag], nemu_val, gem5_val);
+                        diffInfo.errorRegsValue[dest_tag] = 1;
+                        if (dest_tag < 32)
+                            diffAllStates->gem5RegFile.gpr[dest_tag]._64 = gem5_val;
+                        else if (dest_tag >= 32 && dest_tag < 64)
+                            diffAllStates->gem5RegFile.fpr[dest_tag - 32]._64 = gem5_val;
+
+                        diffAllStates->gem5RegFile.pc = gem5_pc;
+
                         diff_at = ValueDiff;
                     }
                 }
