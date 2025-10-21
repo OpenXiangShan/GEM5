@@ -146,7 +146,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
             params.SbufferEvictThreshold, params.storeBufferInactiveThreshold,
             params.LdPipeStages, params.StPipeStages, params.RARQEntries, params.RAWQEntries,
             params.RARDequeuePerCycle, params.RAWDequeuePerCycle, params.LoadCompletionWidth,
-            params.StoreCompletionWidth);
+            params.StoreCompletionWidth, params.enablePointerChasingOpt);
         thread[tid].init(cpu, iew_ptr, params, this, tid);
         thread[tid].setDcachePort(&dcachePort);
     }

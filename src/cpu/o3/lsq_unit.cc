@@ -555,7 +555,8 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
 LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries, uint32_t sbufferEvictThreshold,
     uint64_t storeBufferInactiveThreshold, uint32_t ldPipeStages, uint32_t stPipeStages,
     uint32_t maxRARQEntries, uint32_t maxRAWQEntries, unsigned rarDequeuePerCycle,
-    unsigned rawDequeuePerCycle, unsigned loadCompletionWidth, unsigned storeCompletionWidth)
+    unsigned rawDequeuePerCycle, unsigned loadCompletionWidth, unsigned storeCompletionWidth,
+    bool enablePointerChasingOpt)
     : sbufferEvictThreshold(sbufferEvictThreshold),
       sbufferEntries(sbufferEntries),
       numSBufferRequest(0),
@@ -587,6 +588,7 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
       rawDequeuePerCycle(rawDequeuePerCycle),
       loadCompletionWidth(loadCompletionWidth),
       storeCompletionWidth(storeCompletionWidth),
+      enablePointerChasingOpt(enablePointerChasingOpt),
       stats(nullptr)
 {
     // reserve space, we want if sq will be full, sbuffer will start evicting
@@ -758,6 +760,7 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
       ADD_STAT(forwardSTDNotReady, "Number of load forward but store data not ready"),
       ADD_STAT(STAReadyFirst, "Number of store addr ready first"),
       ADD_STAT(STDReadyFirst, "Number of store data ready first"),
+      ADD_STAT(pointerChasingFastPath, "Number of fast path executed pointer chasing load"),
       ADD_STAT(nonUnitStrideCross16Byte, "Number of vector non unitStride cross 16-byte boundary"),
       ADD_STAT(unitStrideCross16Byte, "Number of vector unitStride cross 16-byte boundary"),
       ADD_STAT(unitStrideAligned, "Number of vector unitStride 16-byte aligned"),
@@ -1443,6 +1446,36 @@ LSQUnit::loadDoWriteback(const DynInstPtr &inst)
 }
 
 void
+LSQUnit::tryPointerChasing()
+{
+    auto& loadWriteBackStage = loadPipeSx[loadPipeStages - 1];
+    auto& loadFirstStage = loadPipeSx[0];
+    for (int i = 0; i < loadWriteBackStage->size; i++) {
+        // for each load in write back stage (producer)
+        auto& inst = loadWriteBackStage->insts[i];
+        bool canTryPointerChasing = inst && !inst->isSquashed() && inst->isNormalLd() && (inst->fault == NoFault);
+        if (canTryPointerChasing) {
+            // if load s0 has any slot to execute
+            for (int j = 0; j < (MaxPipeWidth - loadFirstStage->size); j++) {
+                // find if any load is about to issue to loadpipe next cycle (consumer)
+                auto possiblePointerLoad = iewStage->getScheduler()->getPossiblePointerLoad(inst);
+                if (possiblePointerLoad) {
+                    DPRINTF(LoadPipeline, "Found possible pointer load [sn:%lu], producer: [sn:%lu]\n",
+                            possiblePointerLoad->seqNum, inst->seqNum);
+                    // use the s0 slot to execute the pointer chasing load
+                    issueToLoadPipe(possiblePointerLoad);
+                    // execute this load in load s0 (loadDoTranslate)
+                    loadDoTranslate(possiblePointerLoad);
+                    stats.pointerChasingFastPath++;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void
 LSQUnit::executeLoadPipeSx()
 {
     // TODO: execute operations in each load pipelines
@@ -1538,6 +1571,10 @@ LSQUnit::executeLoadPipeSx()
                         inst->seqNum);
             }
         }
+    }
+
+    if (enablePointerChasingOpt) {
+        tryPointerChasing();
     }
 }
 

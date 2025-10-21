@@ -185,6 +185,9 @@ class BaseO3CPU(BaseCPU):
     LoadCompletionWidth = Param.Unsigned(8, "Number of loads to complete per cycle")
     StoreCompletionWidth = Param.Unsigned(4, "Number of stores to complete per cycle")
 
+    enablePointerChasingOpt = Param.Bool(False, "Enable pointer chasing optimization, "
+                                         "to reduce 1 cycle latency for pointer chasing load")
+
     SbufferEntries = Param.Unsigned(16, "Number of store buffer entries")
     SbufferEvictThreshold = Param.Unsigned(7, "store buffer eviction threshold")
     storeBufferInactiveThreshold = Param.Unsigned(800, "store buffer writeback timeout threshold")
