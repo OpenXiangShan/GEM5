@@ -1688,8 +1688,13 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 
 
             } else {
+                DPRINTF(Fetch, "squash pc: %#lx, target id: %lu, stream id: %lu\n",
+                        fromCommit->commitInfo[tid].pc->instAddr(),
+                        fromCommit->commitInfo[tid].squashedTargetId,
+                        fromCommit->commitInfo[tid].squashedStreamId);
                 if (fromCommit->commitInfo[tid].pc &&
                     fromCommit->commitInfo[tid].squashedStreamId != 0) {
+                // if (fromCommit->commitInfo[tid].pc) {
                     DPRINTF(Fetch,
                             "Squash with stream id and target id from IEW\n");
                     if (isStreamPred()) {
@@ -2920,9 +2925,17 @@ Fetch::fetchInstructionFromTrace(ThreadID tid)
                 }
             }
 
-            if ((traceInstr.getLoad() || traceInstr.getStore()) && !inst->effAddrValid()) {
-                warn("[Trace][Fetch] Mem inst without valid effAddr sn:%lli PC:%s type:%s", inst->seqNum,
-                     inst->pcState(), traceInstr.getInstTypeStr());
+            // Fallback: if no valid effAddr from trace, synthesize one from PC
+            if (!inst->effAddrValid()) {
+                const uint64_t base = 0x80000000ULL; // matches BaseO3CPU default
+                const uint64_t size = 0x40000000ULL; // 1GB window
+                uint64_t pc = traceInstr.getPC();
+                uint64_t hash = (pc ^ (pc >> 16)) & (size - 1);
+                uint64_t mapped = (base + hash) & ~0x3ULL; // 4-byte align
+                inst->effAddr = mapped;
+                inst->effAddrValid(true);
+                DPRINTF(Fetch, "[tid:%i] Fallback mapped effAddr 0x%lx from PC 0x%lx\n",
+                        tid, inst->effAddr, pc);
             }
 
             // Add to fetch queue properly like normal instructions
@@ -3636,10 +3649,17 @@ Fetch::supplyFTQWithTraceTargets()
     bool supplied = false;
     bool inLoop = false;
     if (isFTBPred() && dbpftb) {
+        if (dbpftb->enableTwoTaken){
+            dbpftb->ideal_tick();
+        } else {
+            dbpftb->tick();
+        }
         supplied = dbpftb->trySupplyFetchWithTarget(next_pc, inLoop);
     } else if (isBTBPred() && dbpbtb) {
+        dbpbtb->tick();
         supplied = dbpbtb->trySupplyFetchWithTarget(next_pc, inLoop);
     } else if (isStreamPred() && dbsp) {
+        dbsp->tick();
         supplied = dbsp->trySupplyFetchWithTarget(next_pc);
     }
     

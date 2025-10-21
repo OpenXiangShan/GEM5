@@ -716,13 +716,10 @@ Commit::squashFromTC(ThreadID tid)
 
     DPRINTF(Commit, "Squashing from TC, restarting at PC %s\n", *pc[tid]);
 
-    // In trace mode, keep noSquashFromTC=true to prevent spurious TC squashes
-    // that interfere with trace replay
-    if (!cpu->isTraceMode()) {
-        thread[tid]->noSquashFromTC = false;
-    } else {
-        DPRINTF(Commit, "Trace mode: Keeping noSquashFromTC=true for thread %d\n", tid);
-    }
+    // Always clear noSquashFromTC here. If TC interactions require
+    // protection, they must use short critical sections that set and
+    // promptly clear this flag around the specific operation.
+    thread[tid]->noSquashFromTC = false;
     assert(!thread[tid]->trapPending);
 
     commitStatus[tid] = ROBSquashing;
@@ -1397,8 +1394,7 @@ Commit::commitInsts()
                                       head_inst->isLastMicroop() ||
                                       !head_inst->isDelayedCommit();
 
-                // In trace mode, skip PC event handling since trace dictates program flow
-                if (onInstBoundary && !cpu->isTraceMode()) {
+                if (onInstBoundary) {
                     int count = 0;
                     Addr oldpc;
                     // Make sure we're not currently updating state while
@@ -1600,9 +1596,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         // that the trap need.
 
         // Debug: Log fault details before trap execution
-        printf("DEBUG COMMIT: Processing fault for sn:%lu, PC=0x%lx, fault=%s\n",
-               head_inst->seqNum, head_inst->pcState().instAddr(),
-               inst_fault->name());
+        // verbose debug removed
 
         cpu->trap(inst_fault, tid,
                   head_inst->notAnInst() ? nullStaticInstPtr :

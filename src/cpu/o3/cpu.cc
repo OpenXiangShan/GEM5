@@ -325,12 +325,6 @@ CPU::CPU(const BaseO3CPUParams &params)
         DPRINTF(O3CPU, "Trace mode enabled: format=%s, file=%s\n",
                 params.traceFormat, params.traceFile);
 
-        // In trace mode, prevent TC squashes that interfere with trace replay
-        // by setting noSquashFromTC = true for all threads
-        for (ThreadID tid = 0; tid < numThreads; tid++) {
-            thread[tid]->noSquashFromTC = true;
-            DPRINTF(O3CPU, "Trace mode: Set noSquashFromTC=true for thread %d\n", tid);
-        }
     } else {
         fetch.traceMode = false;
         fetch.traceReader = nullptr;
@@ -637,14 +631,11 @@ CPU::init()
         thread[tid]->noSquashFromTC = true;
     }
 
-    // Clear noSquashFromTC, but keep it true in trace mode to prevent
-    // spurious TC squashes that interfere with trace replay
+    // Clear noSquashFromTC for all threads after init. Do not keep it
+    // permanently true even in trace mode; only use short critical sections
+    // to guard TC interactions when necessary.
     for (int tid = 0; tid < numThreads; ++tid) {
-        if (!isTraceMode()) {
-            thread[tid]->noSquashFromTC = false;
-        } else {
-            DPRINTF(O3CPU, "Trace mode: Keeping noSquashFromTC=true for thread %d during init\n", tid);
-        }
+        thread[tid]->noSquashFromTC = false;
     }
 
     commit.setThreads(thread);
@@ -1426,9 +1417,6 @@ CPU::removeFrontInst(const DynInstPtr &inst)
     // Check if instruction has already been marked for removal
     auto inst_it = inst->getInstListIt();
     bool is_end = (inst_it == instList.end());
-    printf("[TRACE-DEBUG] removeFrontInst: [sn:%llu] iterator=%s, isSquashed=%d\n",
-           (unsigned long long)inst->seqNum,
-           is_end ? "<end>" : "<valid>", inst->isSquashed());
 
     if (is_end) {
         // Already erased or never enqueued into CPU instList; nothing to do.
@@ -1440,11 +1428,8 @@ CPU::removeFrontInst(const DynInstPtr &inst)
     // Queue the iterator for removal at end of cycle.
     // Invalidate the back-pointer immediately to prevent duplicate enqueues.
     inst->setInstListIt(instList.end());
-    printf("[TRACE-DEBUG] removeFrontInst: Pushing iterator for [sn:%llu] to removeList (size before=%zu)\n",
-           (unsigned long long)inst->seqNum, removeList.size());
     removeList.push(inst_it);
 }
-
 void
 CPU::removeInstsNotInROB(ThreadID tid)
 {
@@ -1527,12 +1512,8 @@ CPU::squashInstIt(const ListIt &instIt, ThreadID tid)
                 (*instIt)->seqNum,
                 (*instIt)->pcState());
 
-        printf("[TRACE-DEBUG] squashInstIt: [sn:%llu] isSquashed=%d, pushing to removeList (size before=%zu)\n",
-               (unsigned long long)(*instIt)->seqNum, (*instIt)->isSquashed(), removeList.size());
-
         // Mark it as squashed.
         (*instIt)->setSquashed();
-
         // @todo: Formulate a consistent method for deleting
         // instructions from the instruction list
         // Remove the instruction from the list.
@@ -1552,81 +1533,23 @@ CPU::flushTLBs()
 void
 CPU::cleanUpRemovedInsts()
 {
-    printf("[TRACE-DEBUG] cleanUpRemovedInsts: Processing removeList with %zu entries, instList size=%zu\n", 
-           removeList.size(), instList.size());
-    int count = 0;
     while (!removeList.empty()) {
         auto inst_it = removeList.front();
         removeList.pop();
-        
-        printf("[TRACE-DEBUG] cleanUpRemovedInsts: Entry %d - checking iterator validity\n", count);
-        fflush(stdout);  // Force flush to see output before potential crash
-        
         if (inst_it == instList.end()) {
-            printf("[TRACE-DEBUG] cleanUpRemovedInsts: Entry %d is instList.end(), skipping\n", count);
-        } else {
-            // Try to access the iterator carefully
-            try {
-                auto inst_ptr = *inst_it;
-                if (!inst_ptr) {
-                    printf("[TRACE-DEBUG] cleanUpRemovedInsts: Entry %d points to nullptr, skipping\n", count);
-                } else {
-                    printf("[TRACE-DEBUG] cleanUpRemovedInsts: Entry %d removing [sn:%llu]\n", 
-                           count, (unsigned long long)inst_ptr->seqNum);
-                    DPRINTF(O3CPU, "Removing instruction, "
-                            "[tid:%i] [sn:%lli] PC %s\n",
-                            inst_ptr->threadNumber,
-                            inst_ptr->seqNum,
-                            inst_ptr->pcState());
-
-                    instList.erase(inst_it);
-                    // Invalidate the back-pointer so future removals are ignored safely
-                    inst_ptr->setInstListIt(instList.end());
-                }
-            } catch (...) {
-                printf("[TRACE-DEBUG] cleanUpRemovedInsts: Entry %d - EXCEPTION accessing iterator!\n", count);
-                fflush(stdout);
-            }
+            continue;
         }
-        count++;
+        auto inst_ptr = *inst_it;
+        if (inst_ptr) {
+            DPRINTF(O3CPU, "Removing instruction, [tid:%i] [sn:%lli] PC %s\n",
+                    inst_ptr->threadNumber, inst_ptr->seqNum, inst_ptr->pcState());
+            instList.erase(inst_it);
+            inst_ptr->setInstListIt(instList.end());
+        }
     }
-
     removeInstsThisCycle = false;
 }
-/*
-void
-CPU::removeAllInsts()
-{
-    instList.clear();
-}
-*/
-void
-CPU::dumpInsts()
-{
-    int num = 0;
 
-    ListIt inst_list_it = instList.begin();
-
-    cprintf("Dumping Instruction List\n");
-
-    while (inst_list_it != instList.end()) {
-        cprintf("Instruction:%i\nPC:%#x\n[tid:%i]\n[sn:%lli]\nIssued:%i\n"
-                "Squashed:%i\n\n",
-                num, (*inst_list_it)->pcState().instAddr(),
-                (*inst_list_it)->threadNumber,
-                (*inst_list_it)->seqNum, (*inst_list_it)->isIssued(),
-                (*inst_list_it)->isSquashed());
-        inst_list_it++;
-        ++num;
-    }
-}
-/*
-void
-CPU::wakeDependents(const DynInstPtr &inst)
-{
-    iew.wakeDependents(inst);
-}
-*/
 void
 CPU::wakeCPU()
 {
@@ -1634,20 +1557,8 @@ CPU::wakeCPU()
         DPRINTF(Activity, "CPU already running.\n");
         return;
     }
-
-    DPRINTF(Activity, "Waking up CPU\n");
-
-    Cycles cycles(curCycle() - lastRunningCycle);
-    // @todo: This is an oddity that is only here to match the stats
-    if (cycles > 1) {
-        --cycles;
-        cpuStats.idleCycles += cycles;
-        baseStats.numCycles += cycles;
-    }
-
-    schedule(tickEvent, clockEdge());
+    schedule(tickEvent, clockEdge(Cycles(1)));
 }
-
 void
 CPU::wakeup(ThreadID tid)
 {

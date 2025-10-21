@@ -1110,25 +1110,15 @@ LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
     // Reset DTB translation state
     inst->translationStarted(false);
     inst->translationCompleted(false);
-    const bool preserveRequest = cpu->isTraceMode() && request &&
-                                  request->isNormalLd();
-
-    if (!preserveRequest) {
-        // clear request in loadQueue
+    // clear request in loadQueue (do not preserve outstanding request)
+    if (request) {
         loadQueue[inst->lqIdx].setRequest(nullptr);
     }
 
     if (dropReqNow && request) {
-        if (preserveRequest) {
-            // Keep the outstanding request alive so the pending response
-            // can still be matched with this instruction in trace mode.
-            inst->savedRequest = request;
-        } else {
-            // discard this request
-            request->discard();
-            // TODO: is this essential?
-            inst->savedRequest = nullptr;
-        }
+        // discard this request; do not preserve across replay
+        request->discard();
+        inst->savedRequest = nullptr;
     }
 
     DPRINTF(LoadPipeline, "Load [sn:%ld] set replay, dropReqNow: %d\n", inst->seqNum, dropReqNow);
@@ -2194,6 +2184,16 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
               htmStarts, htmStops);
         }
 
+        // Also clear any per-load bus entry for this squashed instruction
+        // so that bus bookkeeping does not exceed LQ capacity.
+        {
+            auto &bus = getLsq()->bus;
+            auto it = bus.find(loadQueue.back().instruction()->seqNum);
+            if (it != bus.end()) {
+                bus.erase(it);
+            }
+        }
+
         // Clear the smart pointer to make sure it is decremented.
         loadQueue.back().instruction()->setSquashed();
         loadQueue.back().clear();
@@ -2375,6 +2375,16 @@ LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
 
             DPRINTF(LSQUnit, "Not completing instruction [sn:%lli] access "
                     "due to pending fault.\n", inst->seqNum);
+        }
+    }
+
+    // This load is about to finish; ensure any per-load bus entry
+    // is cleared to prevent lingering entries after it leaves the LQ.
+    {
+        auto &bus = getLsq()->bus;
+        auto it = bus.find(inst->seqNum);
+        if (it != bus.end()) {
+            bus.erase(it);
         }
     }
 
@@ -2748,6 +2758,15 @@ LSQUnit::forwardFromBus(DynInstPtr inst, LSQRequest *request)
     // So there is no need to access Dcache
 
     inst->setFullForward();
+    // The bus entry is specific to this load's seqNum. Once data is
+    // consumed, remove the entry to avoid accumulation beyond LQ size.
+    {
+        auto &bus = getLsq()->bus;
+        auto it = bus.find(inst->seqNum);
+        if (it != bus.end()) {
+            bus.erase(it);
+        }
+    }
     stats.busForwardSuccess++;
 }
 
@@ -2793,10 +2812,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     // A bit of a hackish way to get strictly ordered accesses to work
     // only if they're at the head of the LSQ and are ready to commit
     // (at the head of the ROB too).
-    // TRACE MODE FIX: Bypass strict ordering check for trace mode
     if (request->mainReq()->isStrictlyOrdered() &&
-        (load_idx != loadQueue.head() || !load_inst->isAtCommit()) &&
-        !cpu->isTraceMode()) {
+        (load_idx != loadQueue.head() || !load_inst->isAtCommit())) {
         // should not enter this
         // Tell IQ/mem dep unit that this instruction will need to be
         // rescheduled eventually

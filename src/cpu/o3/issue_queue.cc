@@ -222,18 +222,8 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         // check bypass data ready or not
         if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
-            // In trace mode, we relax the load-only restriction but ensure instruction validity
-            if (!dst_inst) {
-                // If no destination instruction found, this indicates a dependency issue
-                if (!scheduler->cpu->isTraceMode()) {
-                    panic("dst[sn:%llu] is not load", dst_inst ? dst_inst->seqNum : 0);
-                }
-                // In trace mode, continue without panic but log the issue
-                DPRINTF(Schedule, "[sn:%llu] Missing dst inst for src %s in trace mode\n", 
-                        inst->seqNum, inst->srcRegIdx(i));
-                continue; // Skip this source register
-            } else if (!dst_inst->isLoad() && !scheduler->cpu->isTraceMode()) {
-                panic("dst[sn:%llu] is not load", dst_inst->seqNum);
+            if (!dst_inst || !dst_inst->isLoad()) {
+                panic("dst[sn:%llu] is not load", dst_inst ? dst_inst->seqNum : 0);
             }
             DPRINTF(Schedule, "[sn:%llu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum,
                 inst->srcRegIdx(i), dst_inst->genDisassembly());
@@ -248,12 +238,6 @@ void
 IssueQue::addToFu(const DynInstPtr& inst)
 {
     if (inst->isIssued()) [[unlikely]] {
-        // In trace mode, handle double-issue gracefully due to different instruction flow patterns
-        if (scheduler->cpu->isTraceMode()) {
-            DPRINTF(Schedule, "%s [sn:%llu] already issued, skipping in trace mode\n", 
-                    enums::OpClassStrings[inst->opClass()], inst->seqNum);
-            return; // Skip re-issuing the same instruction
-        }
         panic("%s [sn:%llu] has alreayd been issued\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
     }
     inst->setIssued();
@@ -639,9 +623,7 @@ IssueQue::doSquash(const InstSeqNum seqNum)
             (*it)->clearScheduled();
             (*it)->setCancel();
             it = instList.erase(it);
-            // In trace mode, instruction sequencing may differ from normal execution
-            // causing temporary inconsistencies in instruction counts during squash
-            assert(instList.size() >= instNum || scheduler->cpu->isTraceMode());
+            assert(instList.size() >= instNum);
         } else {
             it++;
         }

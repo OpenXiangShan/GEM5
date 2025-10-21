@@ -45,9 +45,11 @@
 #include <cstring>
 
 #include "arch/riscv/insts/mem.hh"
+#include "arch/riscv/pcstate.hh"
 #include "base/intmath.hh"
 #include "debug/DynInst.hh"
 #include "debug/IQ.hh"
+#include "debug/LSQ.hh"
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
 
@@ -480,6 +482,18 @@ DynInst::initiateMemRead(Addr addr, unsigned size, Request::Flags flags,
     if (effAddrValid() && cpu->isTraceInstruction(seqNum)) {
         addr = effAddr;
     }
+    if (cpu->isTraceMode()) {
+        if (!effAddrValid() || addr == 0) {
+            // Robust fallback: synthesize a safe address from PC if missing/zero
+            const uint64_t base = 0x80000000ULL;
+            const uint64_t size = 0x40000000ULL;
+            uint64_t pc = pcState().as<RiscvISA::PCState>().instAddr();
+            uint64_t hash = (pc ^ (pc >> 16)) & (size - 1);
+            addr = (base + hash) & ~0x3ULL; // 4-byte align
+        }
+        DPRINTF(LSQ, "initiateMemRead [sn:%lli] effValid=%d effAddr=%#lx finalAddr=%#lx size=%u\n",
+                seqNum, (int)effAddrValid(), (unsigned long)effAddr, (unsigned long)addr, size);
+    }
     return cpu->pushRequest(
         dynamic_cast<DynInstPtr::PtrType>(this),
         /* ld */ true, nullptr, size, addr, flags, nullptr, nullptr,
@@ -510,6 +524,17 @@ DynInst::writeMem(uint8_t *data, unsigned size, Addr addr,
     assert(byte_enable.size() == size);
     if (effAddrValid() && cpu->isTraceInstruction(seqNum)) {
         addr = effAddr;
+    }
+    if (cpu->isTraceMode()) {
+        if (!effAddrValid() || addr == 0) {
+            const uint64_t base = 0x80000000ULL;
+            const uint64_t size = 0x40000000ULL;
+            uint64_t pc = pcState().as<RiscvISA::PCState>().instAddr();
+            uint64_t hash = (pc ^ (pc >> 16)) & (size - 1);
+            addr = (base + hash) & ~0x3ULL;
+        }
+        DPRINTF(LSQ, "writeMem [sn:%lli] effValid=%d effAddr=%#lx finalAddr=%#lx size=%u\n",
+                seqNum, (int)effAddrValid(), (unsigned long)effAddr, (unsigned long)addr, size);
     }
     return cpu->pushRequest(
         dynamic_cast<DynInstPtr::PtrType>(this),

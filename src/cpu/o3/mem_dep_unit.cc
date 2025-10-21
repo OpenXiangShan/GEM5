@@ -526,9 +526,7 @@ MemDepUnit::squash(const InstSeqNum &squashed_num, ThreadID tid)
 
         hash_it = memDepHash.find((*squash_it)->seqNum);
 
-        // In trace mode, instruction sequencing may differ from normal execution
-        // causing temporary inconsistencies in memory dependency hash during squash
-        assert(hash_it != memDepHash.end() || cpu->isTraceMode());
+        assert(hash_it != memDepHash.end());
 
         if (hash_it != memDepHash.end()) {
             (*hash_it).second->squashed = true;
