@@ -66,7 +66,10 @@ skipPerfCntCsr()
     }
 }
 
-NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bool enable_mem_dedup, bool multi_core)
+NemuProxy::NemuProxy(
+    int coreid,const char *ref_so,
+    bool enable_sdcard_diff, bool enable_mem_dedup, bool enable_gen_trace,
+    bool multi_core)
 {
     handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
     printf("Using %s for difftest\n", ref_so);
@@ -133,6 +136,17 @@ NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bo
         sdcard_init = (void (*)(const char *, const char *))dlsym(
             handle, "difftest_sdcard_init");
         assert(sdcard_init);
+    }
+
+    if (enable_gen_trace) {
+        set_log_path = (void (*)(const char *))dlsym(handle, "difftest_set_log_path");
+        set_skip_flag = (void (*)())dlsym(handle, "difftest_set_skip_flag");
+        assert(set_log_path != nullptr &&
+            "Directory for generating traces has been specified. "
+            "Please ensure you are using NEMU and have executed this API.");
+        assert(set_skip_flag != nullptr &&
+            "Directory for generating traces has been specified. "
+            "Please ensure you are using NEMU and have executed this API.");
     }
 
     skipPerfCntCsr();

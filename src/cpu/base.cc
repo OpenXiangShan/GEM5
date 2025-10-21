@@ -168,6 +168,8 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       enableRVV(p.enable_riscv_vector),
       enableRVHDIFF(p.enable_riscv_h),
       enableSkipCSR(p.enable_skip_csr),
+      enableSimFrontend(p.system->params().use_ideal_frontend),
+      notRespInter(!p.system->params().gen_instr_trace_name.empty() || p.system->params().use_ideal_frontend),
       noHypeMode(false),
       enableMemDedup(p.enable_mem_dedup)
 {
@@ -226,6 +228,7 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
             diffAllStates->proxy =
                 new NemuProxy(params().cpu_id, params().difftest_ref_so.c_str(),
                               params().nemuSDimg.size() && params().nemuSDCptBin.size(), system->enabledMemDedup(),
+                              !params().system->params().gen_instr_trace_name.empty(),
                               system->multiCore());
         }
 
@@ -394,6 +397,10 @@ BaseCPU::init()
 void
 BaseCPU::startup()
 {
+    if (!params().system->params().gen_instr_trace_name.empty()) {
+        diffAllStates->proxy->set_log_path(params().system->params().gen_instr_trace_name.c_str());
+    }
+
     if (params().progress_interval) {
         new CPUProgressEvent(this, params().progress_interval);
     }
@@ -894,6 +901,11 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
     }
 
     if (diffAllStates->diff.will_handle_intr) {
+        assert(!notRespInter &&
+            "Interrupts cannot be triggered when generating the trace instr or running the ideal frontend.");
+        if (diffAllStates->proxy->set_skip_flag != nullptr) {
+            diffAllStates->proxy->set_skip_flag();
+        }
         diffAllStates->proxy->regcpy(diffAllStates->diff.nemu_reg, REF_TO_DIFFTEST);
         diffAllStates->diff.nemu_this_pc = diffAllStates->diff.nemu_reg->pc;
         diffAllStates->diff.will_handle_intr = false;
@@ -907,6 +919,9 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
             const auto &dest = diffInfo.inst->destRegIdx(0);
             unsigned index = dest.index() + (dest.isFloatReg() ? FPRegIndexBase : IntRegIndexBase);
             diffAllStates->referenceRegFile[index] = diffInfo.scalarResults[0];
+        }
+        if (diffAllStates->proxy->set_skip_flag != nullptr) {
+            diffAllStates->proxy->set_skip_flag();
         }
         diffAllStates->proxy->regcpy(&(diffAllStates->referenceRegFile), DUT_TO_REF);
 

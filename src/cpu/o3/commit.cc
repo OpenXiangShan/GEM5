@@ -1671,6 +1671,16 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
         }
 
+        // I don't know why squash uses inaccurate fsq and ftq values during trapping,
+        // but that shouldn't be my concern.
+        // To make the ideal frontend run more reasonably,
+        // i only do this when the ideal frontend is running.
+        if (cpu->simFrontEnabled()) {
+            committedStreamId = head_inst->getFsqId();
+            committedTargetId = head_inst->getFtqId();
+            committedLoopIter = head_inst->getLoopIteration();
+        }
+
         // Generate trap squash event.
         generateTrapEvent(tid, inst_fault);
         return false;

@@ -105,8 +105,13 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
       icachePort(this, _cpu),
-      finishTranslationEvent(this), fetchStats(_cpu, this)
+      finishTranslationEvent(this), fetchStats(_cpu, this),
+      useSimFrontend(params.system->params().use_ideal_frontend),
+      traceFilename(params.system->params().inst_trace_file)
 {
+    if (useSimFrontend) {
+        simFetch = std::make_unique<SimFetch>(traceFilename);
+    }
     if (numThreads > MaxThreads)
         fatal("numThreads (%d) is larger than compiled limit (%d),\n"
               "\tincrease MaxThreads in src/cpu/o3/limits.hh\n",
@@ -127,6 +132,9 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     }
 
     branchPred = params.branchPred;
+    if (useSimFrontend) {
+        branchPred->bpType = CoupledType;
+    }
 
     if (isStreamPred()) {
         dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(branchPred);
@@ -1205,14 +1213,29 @@ Fetch::squash(PCStateBase &new_pc, const InstSeqNum seq_num,
 void
 Fetch::tick()
 {
-    // Initialize state for this tick cycle
-    bool status_change = initializeTickState();
+    if (useSimFrontend) {
+        // Initialize state for this tick cycle
+        // check single(commit/redirect)
+        bool status_change = simInitializeTickState();
 
-    // Perform fetch operations and instruction delivery
-    fetchAndProcessInstructions(status_change);
+        if (status_change) {
+            // Change the fetch stage status if there was a status change.
+            _status = updateFetchStatus();
+        }
 
-    // Handle branch prediction updates
-    updateBranchPredictors();
+        simFetchAndProcessInstructions();
+
+        sendInstructionsToDecode();
+    } else {
+        // Initialize state for this tick cycle
+        bool status_change = initializeTickState();
+
+        // Perform fetch operations and instruction delivery
+        fetchAndProcessInstructions(status_change);
+
+        // Handle branch prediction updates
+        updateBranchPredictors();
+    }
 }
 
 bool
@@ -1440,17 +1463,24 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         stalls[tid].decode = false;
     }
 
-    // Check squash signals from commit.
-    bool commitSquashed = handleCommitSignals(tid);
 
-    handleIEWSignals();
+    if (useSimFrontend) {
+        if (simHandleCommitSignals(tid)) {
+            return true;
+        }
+    } else {
+        // Check squash signals from commit.
+        bool commitSquashed = handleCommitSignals(tid);
 
-    if (commitSquashed) {
-        return true;
-    }
+        handleIEWSignals();
 
-    if (handleDecodeSquash(tid)) {
-        return true;
+        if (commitSquashed) {
+            return true;
+        }
+
+        if (handleDecodeSquash(tid)) {
+            return true;
+        }
     }
 
     if (checkStall(tid) && !hasPendingCacheRequests(tid)) {
@@ -2519,6 +2549,344 @@ Fetch::cancelAllCacheRequests(ThreadID tid)
     DPRINTF(Fetch, "[tid:%d] cancelAllCacheRequests: status after cancel: %s\n",
             tid, cacheReq[tid].getStatusSummary().c_str());
 
+}
+
+
+bool
+Fetch::simHandleCommitSignals(ThreadID tid)
+{
+    // Check squash signals from commit.
+    if (fromCommit->commitInfo[tid].squash) {
+
+        DPRINTF(Fetch, "[tid:%i] Sim Squashing instructions due to squash "
+                "from commit.\n",tid);
+        // In any case, squash.
+        squash(*fromCommit->commitInfo[tid].pc,
+               fromCommit->commitInfo[tid].doneSeqNum,
+               fromCommit->commitInfo[tid].squashInst, tid);
+
+        localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
+        DPRINTF(Fetch, "Updating squash version to %u\n",
+                localSquashVer.getVersion());
+
+        auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
+        if (mispred_inst) {
+            DPRINTF(Fetch, "Use mispred inst to redirect. "
+                           "FsqId: %d, FtqId: %d, Target: 0x%lx\n",
+                           mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                           fromCommit->commitInfo[tid].pc->instAddr());
+
+            simFetch->redirect(mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                fromCommit->commitInfo[tid].pc->instAddr(), true);
+
+        } else if (fromCommit->commitInfo[tid].isTrapSquash) {
+            DPRINTF(Fetch, "Use trap inst to redirect."
+               "FsqId: %ld, FtqId: %ld, Target: 0x%lx\n",
+               fromCommit->commitInfo[tid].squashedTargetId, fromCommit->commitInfo[tid].squashedStreamId,
+               fromCommit->commitInfo[tid].pc->instAddr());
+
+            simFetch->redirect(fromCommit->commitInfo[tid].squashedTargetId,
+                fromCommit->commitInfo[tid].squashedStreamId,
+                fromCommit->commitInfo[tid].pc->instAddr(), true);
+
+        } else {
+            DPRINTF(Fetch, "Use IEW inst to redirect. "
+               "FsqId: %ld, FtqId: %ld, Target: 0x%lx\n",
+               fromCommit->commitInfo[tid].squashedTargetId, fromCommit->commitInfo[tid].squashedStreamId,
+               fromCommit->commitInfo[tid].pc->instAddr());
+
+            simFetch->redirect(fromCommit->commitInfo[tid].squashedTargetId,
+                fromCommit->commitInfo[tid].squashedStreamId,
+                fromCommit->commitInfo[tid].pc->instAddr(), false);
+        }
+
+        return true;
+    } else if (fromCommit->commitInfo[tid].doneSeqNum) {
+        DPRINTF(Fetch, "Commit Fsq: %ld, commit pc: 0x%lx\n",
+            fromCommit->commitInfo[tid].doneFsqId, fromCommit->commitInfo[tid].committedPC);
+
+        simFetch->commit(fromCommit->commitInfo[tid].doneFsqId);
+
+        return false;
+    }
+
+    // =============================================
+    // Check squash signals from decode.
+    // =============================================
+    if (fromDecode->decodeInfo[tid].squash) {
+        DPRINTF(Fetch, "[tid:%i] Squashing instructions due to squash "
+                "from decode.\n",tid);
+
+        auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
+
+        if (fetchStatus[tid] != Squashing) {
+            DPRINTF(Fetch, "Squashing from decode with PC = 0x%lx\n",
+                fromDecode->decodeInfo[tid].nextPC->instAddr());
+            // Squash unless we're already squashing
+            simFetch->redirect(mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                fromDecode->decodeInfo[tid].nextPC->instAddr(), true);
+
+            squashFromDecode(*fromDecode->decodeInfo[tid].nextPC,
+                 fromDecode->decodeInfo[tid].squashInst,
+                 fromDecode->decodeInfo[tid].doneSeqNum,
+                 tid);
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool
+Fetch::simInitializeTickState()
+{
+    std::list<ThreadID>::iterator threads = activeThreads->begin();
+    std::list<ThreadID>::iterator end = activeThreads->end();
+    bool status_change = false;
+
+    wroteToTimeBuffer = false;
+
+    // get the distribution of fetch status
+    fetchStats.fetchStatusDist[fetchStatus[0]]++;
+
+    // Check signal updates for all active threads
+    while (threads != end) {
+        ThreadID tid = *threads++;
+
+        // Check the signals for each thread to determine the proper status
+        // for each thread.
+        bool updated_status = checkSignalsAndUpdate(tid);
+        status_change =  status_change || updated_status;
+    }
+
+    DPRINTF(Fetch, "Running stage.\n");
+
+    if (fromCommit->commitInfo[0].emptyROB) {
+        waitForVsetvl = false;
+    }
+
+    return status_change;
+
+    assert(false);
+}
+
+void
+Fetch::simFetchAndProcessInstructions()
+{
+    if (!simFetch) {
+        fatal("simFetch is not initialized");
+    }
+
+    ThreadID tid = selectFetchThread();
+    if (tid == InvalidThreadID) {
+        return;
+    }
+
+    bool need_stall = false;
+    StaticInstPtr &curMacroop = macroop[tid];
+    ++fetchStats.cycles;
+
+    if (!need_stall) {
+        simFetch->fillNextFTQ();
+
+        for (int i = 0; i < fetchWidth; ++i) {
+            bool newMacroop = false;
+
+            if (simFetch->traceQueue.empty()) {
+                stallReason[i] = OtherFetchStall;
+                DPRINTF(Fetch, " Trace queue shortage causing stall.\n");
+                break;
+            }
+            if (fetchQueue[tid].size() >= fetchQueueSize) {
+                DPRINTF(Fetch, "Fetch queue full.\n");
+                break;
+            }
+
+            uint64_t trace_queue_idx = simFetch->getTraceQueueIdx();
+            auto trace_info_opt = simFetch->getTraceInfo(true);
+
+            if (!trace_info_opt.has_value()) {
+                DPRINTF(Fetch, "Not get trace info.\n");
+                break;
+            }
+
+            TraceInfo trace_info = trace_info_opt.value();
+            assert(trace_info.ftqIdx == simFetch->getFtqReadIdx());
+            Addr current_pc = trace_info.pc;
+            uint32_t current_inst = trace_info.inst;
+
+            PCStateBase &this_pc = *pc[tid];
+            // this_pc.
+            // StaticInstPtr &curMacroop = macroop[tid];
+            auto &sim_fetch_pc = this_pc.as<GenericISA::PCStateWithNext>();
+
+            // auto &xx_fetch_pc = this_pc.as<GenericISA::SimplePCState>>();
+
+            sim_fetch_pc.pc(current_pc);
+            sim_fetch_pc.npc(trace_info.npc);
+            DPRINTF(Fetch, "Fetch this_pc: %s, sim_fetch_pc: %s, current pc: 0x%lx, tr npc: 0x%lx\n",
+                this_pc, sim_fetch_pc, current_pc, trace_info.npc);
+
+            Addr fetch_pc = sim_fetch_pc.instAddr();
+
+            // ******************`
+            // Process Instr
+            // ******************
+
+            auto *dec_ptr = decoder[tid];
+            if (!curMacroop) {
+                Addr offset_in_buffer = fetch_pc - fetchBuffer[tid].startPC;
+                memcpy(dec_ptr->moreBytesPtr(), &current_inst, 4);
+
+                DPRINTF(Fetch, "[tid:%i] Supplying 4 bytes from fetchBuffer at PC %#x Inst 0x%lx\n",
+                        tid, fetch_pc, current_inst);
+
+                // Call decoder with the actual instruction PC
+                decoder[tid]->moreBytes(this_pc, fetch_pc);
+            }
+
+            // Create a copy of the current PC state to calculate the next PC.
+            std::unique_ptr<PCStateBase> next_pc(this_pc.clone());
+
+            // Decode the instruction, handling macro-op transitions.
+            StaticInstPtr staticInst = nullptr;
+
+            set(pc[tid], this_pc);
+
+            if (!curMacroop) {
+                staticInst = dec_ptr->decode(this_pc);
+                ++fetchStats.insts;
+
+                if (staticInst->isMacroop()) {
+                    curMacroop = staticInst;
+                    DPRINTF(Fetch, "[tid:%i] Macroop instruction decoded\n", tid);
+                }
+            }
+
+            if (curMacroop) {
+                // Fetch the next micro-op from the current macro-op.
+                staticInst = curMacroop->fetchMicroop(pc[tid]->microPC());
+                DPRINTF(Fetch, "[tid:%i] Fetched macroop microop\n", tid);
+                // Check if this is the last micro-op.
+                newMacroop = staticInst->isLastMicroop();
+            }
+
+            // ******************
+            // Build Instr
+            // ******************
+
+            InstSeqNum seq = cpu->getAndIncrementInstSeq();
+
+            DynInst::Arrays arrays;
+            arrays.numSrcs = staticInst->numSrcRegs();
+            arrays.numDests = staticInst->numDestRegs();
+
+            // Create a new DynInst from the instruction fetched.
+            DynInstPtr instruction = new (arrays) DynInst(
+                    arrays, staticInst, curMacroop, this_pc, *next_pc, seq, cpu);
+
+
+            DPRINTF(Fetch, "Fetch start: Processing PC %s PC addr 0x%lx, [tid:%i] [sn:%llu].\n",
+                instruction->pcState(), instruction->getPC(), instruction->threadNumber,instruction->seqNum);
+            cpu->perfCCT->createMeta(instruction);
+            cpu->perfCCT->updateInstPos(instruction->seqNum, PerfRecord::AtFetch);
+
+            instruction->setTid(tid);
+
+            instruction->setThreadState(cpu->thread[tid]);
+
+            DPRINTF(Fetch, "[tid:%i] Sim Instruction PC %s created [sn:%lli].\n",
+                    tid, this_pc, seq);
+
+            DPRINTF(Fetch, "[tid:%i] Instruction is: %s\n", tid,
+                    instruction->staticInst->disassemble(this_pc.instAddr()));
+
+            DPRINTF(Fetch, "Is nop: %i, is move: %i\n", instruction->isNop(),
+                    instruction->isMov());
+
+            // We use traceQueueReadId as the FsqId, which enables faster redirection.
+            instruction->setFsqId(trace_queue_idx);
+            // O3 FtqId is simFrontend FtqId.
+            instruction->setFtqId(trace_info.ftqIdx);
+
+            if (!curMacroop || newMacroop) {
+                auto &sim_next_pc = next_pc->as<GenericISA::PCStateWithNext>();
+                sim_next_pc.as<RiscvISA::PCState>().set(trace_info.npc);
+                instruction->setPredTarg(*next_pc);
+                instruction->setPredTaken(trace_info.isJumpOrTaken);
+            } else {
+                instruction->staticInst->advancePC(*next_pc);
+                instruction->setPredTarg(*next_pc);
+                instruction->setPredTaken(false);
+            }
+
+#if TRACING_ON
+            instruction->traceData = cpu->getTracer()->getInstRecord(curTick(), cpu->tcBase(tid),
+                           instruction->staticInst, this_pc, curMacroop);
+
+#else
+            instruction->traceData = NULL;
+#endif
+
+            // Add instruction to the CPU's list of instructions.
+            instruction->setInstListIt(cpu->addInst(instruction));
+
+            // Write the instruction to the first slot in the queue
+            // that heads to decode.
+            assert(numInst < fetchWidth);
+            fetchQueue[tid].push_back(instruction);
+            assert(fetchQueue[tid].size() <= fetchQueueSize);
+            DPRINTF(Fetch, "[tid:%i] Fetch queue entry created (%i/%i).\n",
+                    tid, fetchQueue[tid].size(), fetchQueueSize);
+            //toDecode->insts[toDecode->size++] = instruction;
+
+            // Keep track of if we can take an interrupt at this boundary
+            delayedCommit[tid] = instruction->isDelayedCommit();
+
+            instruction->fallThruPC = this_pc.getFallThruPC();
+
+            instruction->setVersion(localSquashVer);
+            ppFetch->notify(instruction);
+
+#if TRACING_ON
+            if (debug::O3PipeView) {
+                instruction->fetchTick = curTick();
+            }
+#endif
+            numInst++;
+            fetchStats.nisnDist.sample(numInst);
+
+
+
+            if (newMacroop) {
+                curMacroop = NULL;
+
+                DPRINTF(Fetch, "[tid:%i] New macroop transition, PC=%s\n",
+                        tid, this_pc);
+            }
+
+            if (!curMacroop) {
+                if (trace_info.isLastFtqEntry) {
+                    simFetch->advanceFtqReadIdx();
+                }
+                simFetch->advanceTraceQueueReadIdx();
+            }
+
+            set(pc[tid], next_pc);
+
+            DPRINTF(Fetch, "Fetch finish: Processing PC %s PC addr 0x%lx, FtqId: %lu, FsqId: %lu, "
+                           "is pred taken: %d [tid:%i] [sn:%llu].\n",
+                    instruction->pcState(), instruction->getPC(), instruction->getFtqId(), instruction->getFsqId(),
+                    trace_info.isJumpOrTaken, instruction->threadNumber,instruction->seqNum);
+        }
+
+        macroop[tid] = curMacroop;
+
+        if (numInst > 0) {
+            wroteToTimeBuffer = true;
+        }
+    }
 }
 
 } // namespace o3

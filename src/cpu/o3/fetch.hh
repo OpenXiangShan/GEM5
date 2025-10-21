@@ -51,6 +51,7 @@
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/simFetch.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
@@ -1099,6 +1100,17 @@ class Fetch
 
     SquashVersion localSquashVer;
 
+    const bool useSimFrontend;
+
+    const std::string traceFilename;
+
+    // Anzo sim frontend logic
+
+    std::unique_ptr<SimFetch> simFetch;
+
+    bool simHandleCommitSignals(ThreadID tid);
+    bool simInitializeTickState();
+    void simFetchAndProcessInstructions();
 public:
     const FetchStatGroup &getFetchStats() { return fetchStats; }
 

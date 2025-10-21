@@ -194,6 +194,8 @@ class RefProxy
     void (*debug_mem_sync)(paddr_t addr, void *bytes, size_t size) = nullptr;
     void (*sdcard_init)(const char *img_path,
                         const char *sd_cpt_bin_path) = nullptr;
+    void (*set_skip_flag)() = nullptr;
+    void (*set_log_path)(const char *img_path) = nullptr;
     virtual void initState(int coreid, uint8_t *golden_mem) = 0;
 
   protected:
@@ -205,7 +207,10 @@ class RefProxy
 class NemuProxy : public RefProxy
 {
   public:
-    NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bool enable_mem_dedup, bool multi_core);
+    NemuProxy(
+              int coreid, const char *ref_so,
+              bool enable_sdcard_diff, bool enable_mem_dedup, bool enable_gen_trace,
+              bool multi_core);
 
     void initState(int coreid, uint8_t *golden_mem) override;
 };

@@ -672,3 +672,10 @@ def addXiangshanFSOptions(parser):
                         action="store",
                         default=None,
                         help="The shared lib file used to do difftest")
+
+    parser.add_argument("--ideal-fetch", action="store_true", default=False,
+                        help="Use ideal frontend model inside Fetch stage.")
+    parser.add_argument("--inst-trace-file", action="store", type=str, default="",
+                        help="Instruction trace file for the ideal frontend.")
+    parser.add_argument("--gen-instr-trace-name", action="store", type=str, default="",
+                        help="Generate trace paths using NEMU")

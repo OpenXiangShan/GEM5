@@ -146,3 +146,8 @@ class System(SimObject):
     num_cpus = Param.Unsigned(1, "Number of CPUs in the system")
     enable_difftest = Param.Bool(False, "Enable RISC-V difftest")
     enable_sv48 = Param.Bool(False, "enable sv48")
+
+    # Sim/Ideal frontend.
+    use_ideal_frontend = Param.Bool(False, "Let fetch stage read instructions from a trace file")
+    inst_trace_file = Param.String("", "Instruction trace file for the ideal frontend")
+    gen_instr_trace_name = Param.String("", "Generate trace paths using NEMU")

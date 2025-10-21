@@ -694,6 +694,8 @@ class BaseCPU : public ClockedObject
     bool enableRVV{false};
     bool enableRVHDIFF{false};
     bool enableSkipCSR{false};
+    bool enableSimFrontend;
+    bool notRespInter;
     std::shared_ptr<DiffAllStates> diffAllStates{};
 
     enum  diffRegConfig
@@ -779,6 +781,7 @@ class BaseCPU : public ClockedObject
     void difftestStep(ThreadID tid, InstSeqNum seq);
 
     inline bool difftestEnabled() const { return enableDifftest; }
+    inline bool simFrontEnabled() const { return enableSimFrontend; }
 
     void displayGem5Regs();
 
