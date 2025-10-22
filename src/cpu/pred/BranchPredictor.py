@@ -987,7 +987,7 @@ class MBTB(TimedBaseBTBPredictor):
 class AheadBTB(TimedBaseBTBPredictor):
     type = 'AheadBTB'
     cxx_class = 'gem5::branch_prediction::btb_pred::AheadBTB'
-    cxx_header = 'cpu/pred/btb/btb.hh'
+    cxx_header = 'cpu/pred/btb/abtb.hh'
 
     numEntries = Param.Unsigned(1024, "Number of entries in the BTB")
     tagBits = Param.Unsigned(38, "Number of bits in the tag")
