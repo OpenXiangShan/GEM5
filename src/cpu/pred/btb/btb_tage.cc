@@ -4,6 +4,16 @@
 #include <cmath>
 #include <ctime>
 
+#ifdef UNIT_TEST
+// Define debug flags for unit testing
+namespace gem5 {
+namespace debug {
+    bool TAGEUseful = true;
+    bool TAGEHistory = true;
+}
+}
+#endif
+
 #ifndef UNIT_TEST
 #include "base/debug_helper.hh"
 #include "base/intmath.hh"
@@ -29,7 +39,9 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
       numPredictors(numPredictors),
       numWays(numWays),
       baseTableSize(2048),
-      maxBranchPositions(32)
+      maxBranchPositions(32),
+      useAltOnNaSize(1024),
+      useAltOnNaWidth(7)
 {
     setNumDelay(1);
 

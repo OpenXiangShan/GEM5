@@ -20,8 +20,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB()
       fetchStreamQueueSize(20),
       predictWidth(64),
       historyBits(128), // TODO: for test!
-      ubtb(new DefaultBTB(32, 38, 32, 0, true)),
-      btb(new DefaultBTB(2048, 20, 8, 1, true)),
+    //   ubtb(new DefaultBTB(32, 38, 32, 0, true)),
+      btb(new MBTB (2048, 20, 4, 1)),
       tage(new BTBTAGE()),
       numStages(3),
       historyManager(16), // TODO: fix this
@@ -30,7 +30,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB()
     numStages = 3;
     // TODO: better impl (use vector to assign in python)
     // problem: btb->getAndSetNewBTBEntry
-    components.push_back(ubtb);
+    // components.push_back(ubtb);
     // components.push_back(uras);
     components.push_back(btb);
     components.push_back(tage);

@@ -15,7 +15,7 @@ TEST_F(FoldedHistTest, BasicInit) {
     FoldedHist hist(8, 4, 2);
     
     // Initial state should be all zeros
-    auto &folded = hist.get();
+    auto folded = hist.getAsBitset();
     EXPECT_EQ(folded.size(), 4);  // foldedLen = 4
     EXPECT_EQ(folded.count(), 0); // All bits should be 0
 }
@@ -31,7 +31,7 @@ TEST_F(FoldedHistTest, BasicUpdate) {
     hist.update(ghr, 1, true);
     
     // After update, bit 0 should be 1, others 0
-    auto &folded = hist.get();
+    auto folded = hist.getAsBitset();
     EXPECT_TRUE(folded[0]);
     EXPECT_FALSE(folded[1]);
     EXPECT_FALSE(folded[2]);
@@ -57,7 +57,7 @@ TEST_F(FoldedHistTest, MultipleUpdates) {
     }
     
     // Verify final state
-    auto &folded = hist.get();
+    auto folded = hist.getAsBitset();
     EXPECT_TRUE(folded[0]);   // Latest update (taken)
     EXPECT_FALSE(folded[1]);  // Second update (not taken)
     EXPECT_TRUE(folded[2]);   // First update (taken)
@@ -135,7 +135,7 @@ TEST_F(FoldedHistTest, CheckXORPatterns) {
         // Position 2: 1 XOR 1 = 0 (bits 2,6)
         // Position 3: 0 XOR 0 = 0 (bits 3,7)
         EXPECT_NO_THROW(hist.check(ghr));
-        auto &folded = hist.get();
+        auto folded = hist.getAsBitset();
         EXPECT_FALSE(folded[0]);
         EXPECT_FALSE(folded[1]);
         EXPECT_FALSE(folded[2]);
@@ -159,7 +159,7 @@ TEST_F(FoldedHistTest, CheckXORPatterns) {
         // Position 2: 1 XOR 1 = 0 (bits 2,6)
         // Position 3: 1 XOR 1 = 0 (bits 3,7)
         EXPECT_NO_THROW(hist.check(ghr));
-        auto &folded = hist.get();
+        auto folded = hist.getAsBitset();
         EXPECT_FALSE(folded[0]);
         EXPECT_FALSE(folded[1]);
         EXPECT_FALSE(folded[2]);
@@ -186,7 +186,7 @@ TEST_F(FoldedHistTest, CheckXORPatterns) {
         // Position 2: 1 XOR 0 = 1 (bits 2,6)
         // Position 3: 1 XOR 0 = 1 (bits 3,7)
         EXPECT_NO_THROW(hist.check(ghr));
-        auto &folded = hist.get();
+        auto folded = hist.getAsBitset();
         EXPECT_TRUE(folded[0]);
         EXPECT_TRUE(folded[1]);
         EXPECT_TRUE(folded[2]);
@@ -211,7 +211,7 @@ TEST_F(FoldedHistTest, CheckXORPatterns) {
         // Position 2: 0 XOR 1 = 1 (bits 2,6)
         // Position 3: 0 XOR 0 = 0 (bits 3,7)
         EXPECT_NO_THROW(hist.check(ghr));
-        auto &folded = hist.get();
+        auto folded = hist.getAsBitset();
         EXPECT_FALSE(folded[0]);
         EXPECT_TRUE(folded[1]);
         EXPECT_TRUE(folded[2]);
@@ -246,13 +246,13 @@ TEST_F(FoldedHistTest, CheckXORPatterns) {
             // Update folded history
             hist.update(temp_ghr, 1, ghr[i]);
             
-            auto &current_folded = hist.get();
+            auto current_folded = hist.getAsBitset();
             std::cout << "Current folded history: " << current_folded << std::endl;
         }
         
         std::cout << "\nFinal state:\n";
         std::cout << "Final GHR: " << ghr << std::endl;
-        auto &final_folded = hist.get();
+        auto final_folded = hist.getAsBitset();
         std::cout << "Final folded history: " << final_folded << std::endl;
         
         // Calculate expected idealFolded manually for verification

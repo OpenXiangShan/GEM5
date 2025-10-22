@@ -773,6 +773,7 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
 TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     // Start with a fresh predictor
     tage = new BTBTAGE(1, 2, 10); // only 1 predictor table, 2 ways
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
     history.resize(64, false);
     stagePreds.resize(2);
 
