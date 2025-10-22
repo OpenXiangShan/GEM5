@@ -97,3 +97,5 @@ class Scheduler(SimObject):
     xbarWakeup = Param.Bool(False, "use xbar wakeup network, (will override specWakeupNetwork)")
     useOldDisp = Param.Bool(False, "Use old dispatch algorithm")
     enableMainRdpOpt = Param.Bool(False, "Enable TX dynamic read port optimization")
+
+    intRegfileBanks = Param.Int(1, "number of integer register file banks")

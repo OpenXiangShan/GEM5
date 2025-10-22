@@ -268,6 +268,8 @@ class KMHV3Scheduler(Scheduler):
         ], scheduleToExecDelay=3),
     ]
 
+    intRegfileBanks = 2
+
     IQs = __intIQs + __memIQs + __fpIQs
     __int_bank = [i.name for i in __intIQs]
     __mem_bank = [i.name for i in __memIQs]

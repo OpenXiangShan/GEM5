@@ -259,6 +259,7 @@ class Scheduler : public SimObject
     LSQ* lsq;
     const int intel_fewops = 4;
     bool old_disp = false;
+    const int intRegfileBanks;
 
     struct SchedulerStats : public statistics::Group
     {
@@ -292,9 +293,9 @@ class Scheduler : public SimObject
     std::vector<bool> bypassScoreboard;
     std::vector<bool> scoreboard;
 
-
     // typePortId : [inst : priority]
-    std::vector<std::pair<DynInstPtr, int>> rdRfPortOccupancy;
+    using OccupancyType = std::vector<std::pair<DynInstPtr, int>>;
+    std::vector<OccupancyType> rdRfPortOccupancy;
     // typePortId : [inst : priority : time]
     std::vector<std::tuple<DynInstPtr, int, int>> wrRfPortOccupancy;
 
@@ -335,7 +336,6 @@ class Scheduler : public SimObject
     void addToFU(const DynInstPtr& inst);
     DynInstPtr getInstToFU();
 
-    bool checkRfPortBusy(int typePortId, int pri);
     void useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri);
     void useRfWrPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri);
 

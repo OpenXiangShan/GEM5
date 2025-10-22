@@ -813,7 +813,8 @@ Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
 }
 
 Scheduler::Scheduler(const SchedulerParams& params)
-    : SimObject(params), old_disp(params.useOldDisp), stats(this), issueQues(params.IQs)
+    : SimObject(params), old_disp(params.useOldDisp),
+      intRegfileBanks(params.intRegfileBanks), stats(this), issueQues(params.IQs)
 {
     dispTable.resize(enums::OpClass::Num_OpClass);
     opExecTimeTable.resize(enums::OpClass::Num_OpClass, 1);
@@ -864,7 +865,12 @@ Scheduler::Scheduler(const SchedulerParams& params)
     maxWrTypePortId += 1;
     assert(maxRdTypePortId <= MAXVAL_TYPEPORTID);
     assert(maxWrTypePortId <= MAXVAL_TYPEPORTID);
-    rdRfPortOccupancy.resize(maxRdTypePortId, {nullptr, 0});
+
+    rdRfPortOccupancy.resize(intRegfileBanks);
+    for (int i = 0; i < intRegfileBanks; i++) {
+        rdRfPortOccupancy[i].resize(maxRdTypePortId, {nullptr, 0});
+    }
+
     wrRfPortOccupancy.resize(maxWrTypePortId, {nullptr, 0, 0});
 
     // Set TX dynamic read port optimization for all IssueQues
@@ -971,7 +977,9 @@ Scheduler::issueAndSelect()
         it->selectInst();
     }
 
-    std::fill(rdRfPortOccupancy.begin(), rdRfPortOccupancy.end(), std::make_pair(nullptr, 0));
+    for (auto &it : rdRfPortOccupancy) {
+        std::fill(it.begin(), it.end(), std::make_pair(nullptr, 0));
+    }
     std::fill(wrRfPortOccupancy.begin(), wrRfPortOccupancy.end(), std::make_tuple(nullptr, 0, 0));
 
     for (auto it : issueQues) {
@@ -1212,15 +1220,6 @@ Scheduler::getInstToFU()
     return ret;
 }
 
-bool
-Scheduler::checkRfPortBusy(int typePortId, int pri)
-{
-    if (rdRfPortOccupancy[typePortId].first && rdRfPortOccupancy[typePortId].second > pri) {
-        return false;
-    }
-    return true;
-}
-
 void
 Scheduler::useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri)
 {
@@ -1230,9 +1229,17 @@ Scheduler::useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int ty
             return;
         }
     }
-    assert(typePortId < rdRfPortOccupancy.size());
-    auto& t_inst = rdRfPortOccupancy[typePortId].first;
-    auto& t_pri = rdRfPortOccupancy[typePortId].second;
+
+    int bankid = 0;
+    if (regid->isIntReg()) {
+        bankid = regid->index() % intRegfileBanks;
+    }
+
+    auto& occupancy = rdRfPortOccupancy[bankid];
+
+    assert(typePortId < occupancy.size());
+    auto& t_inst = occupancy[typePortId].first;
+    auto& t_pri = occupancy[typePortId].second;
 
     if (t_inst) {
         if (t_pri < pri) {  // smaller is higher priority
