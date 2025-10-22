@@ -748,18 +748,24 @@ MBTB::update(const FetchStream &stream)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
     // 1. Process old entries
-    auto old_entries = processOldEntries(stream);
-    
+    // auto old_entries = processOldEntries(stream);
+
     // 2. Check prediction hit status, for stats recording
     checkPredictionHit(stream,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
-    // 3. Collect entries to update
-    auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
-    
-    // 4. Update BTB entries - each entry uses its own PC to select SRAM and calculate index/tag
-    for (auto &entry : entries_to_update) {
-        updateBTBEntry(entry, stream);
+    // // 3. Collect entries to update
+    // auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
+
+    // // 4. Update BTB entries - each entry uses its own PC to select SRAM and calculate index/tag
+    // for (auto &entry : entries_to_update) {
+    //     updateBTBEntry(entry, stream);
+    // }
+
+    // only update btb entry for control squash T-> NT or NT -> T
+    if (stream.squashType == SQUASH_CTRL) {
+        warn_if(stream.exeBranchInfo.pc > stream.updateEndInstPC, "exeBranchInfo.pc > updateEndInstPC");
+        updateBTBEntry(stream.exeBranchInfo, stream);
     }
 }
 

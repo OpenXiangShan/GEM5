@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include "cpu/pred/btb/mbtb.hh"
+#include "cpu/pred/btb/stream_struct.hh"
 
 namespace gem5
 {
@@ -61,6 +62,7 @@ FetchStream setupStream(Addr startPC, const BranchInfo& branch, bool taken,
     stream.exeTaken = taken;
     stream.predMetas[0] = meta;
     stream.updateEndInstPC = endInstPC;
+    stream.squashType = SQUASH_CTRL; // mispredict default
     return stream;
 }
 
