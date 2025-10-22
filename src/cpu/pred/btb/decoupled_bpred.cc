@@ -1194,6 +1194,9 @@ DecoupledBPUWithBTB::prepareMarkCFIEntries(unsigned &stream_id)
     // Prepare stream for update
     stream.setUpdateInstEndPC(predictWidth);
     stream.setUpdateBTBEntries();
+
+    // only mbtb can generate new entry
+    btb->getAndSetNewBTBEntry(stream);
 }
 
 void
