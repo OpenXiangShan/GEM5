@@ -1,7 +1,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "cpu/pred/btb/btb.hh"
+#include "cpu/pred/btb/abtb.hh"
 #include "cpu/pred/btb/mbtb.hh"
 
 namespace gem5

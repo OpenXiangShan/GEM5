@@ -27,7 +27,7 @@
  */
 
 
-#include "cpu/pred/btb/btb.hh"
+#include "cpu/pred/btb/abtb.hh"
 
 #include "base/intmath.hh"
 #include "stream_struct.hh"

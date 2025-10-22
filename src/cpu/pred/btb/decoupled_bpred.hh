@@ -13,7 +13,7 @@
 #include "cpu/o3/cpu_def.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
-#include "cpu/pred/btb/btb.hh"
+#include "cpu/pred/btb/abtb.hh"
 #include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_tage.hh"
