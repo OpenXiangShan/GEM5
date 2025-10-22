@@ -4,12 +4,13 @@
 #include <cstdio>
 
 // Define debug namespace and flags to avoid compilation errors
-// Note: Commented out to avoid conflicts with real gem5 debug symbols
-// namespace gem5 {
-// namespace debug {
-//     extern bool BTB;
-// }
-// }
+namespace gem5 {
+namespace debug {
+    extern bool TAGEUseful;
+    extern bool TAGEHistory;
+    // extern bool DecoupleBP;
+}
+}
 
 // Undefine existing macros first to avoid redefinition errors
 #ifdef DPRINTF

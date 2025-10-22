@@ -7,17 +7,19 @@
 #include <utility>
 #include <vector>
 
+#include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/fetch_target_queue.hh"
 #include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/jump_ahead_predictor.hh"
 #include "cpu/pred/btb/loop_buffer.hh"
 #include "cpu/pred/btb/loop_predictor.hh"
 #include "cpu/pred/btb/stream_struct.hh"
-#include "cpu/pred/btb/test/btb_tage.hh"
 #include "cpu/pred/btb/test/mock_PCState.hh"
-#include "cpu/pred/btb/abtb.hh"
+
+// #include "cpu/pred/btb/btb_ubtb.hh"
+#include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/test/test_dprintf.hh"
-#include "cpu/pred/btb/test/timed_base_pred.hh"
+#include "cpu/pred/btb/timed_base_pred.hh"
 
 namespace gem5
 {
@@ -71,9 +73,9 @@ class DecoupledBPUWithBTB
 
     const Addr MaxAddr{~(0ULL)};
 
-    DefaultBTB *ubtb{};
+    // UBTB *ubtb{};
     // DefaultBTB *abtb{};
-    DefaultBTB *btb{};
+    MBTB *btb{};
     BTBTAGE *tage{};
 
     // bool enableDB;

@@ -2,7 +2,7 @@ name: gem5 Ideal BTB Performance Test (no SC)
 
 on:
   push:
-    branches: [ xs-dev, '*-perf' ]  # xs-dev for normal CI, *-perf for BTB-only performance testing
+    branches: [ xs-dev]
   pull_request:
     branches: [ xs-dev ]
   workflow_dispatch:

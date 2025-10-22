@@ -44,13 +44,13 @@
 
 #include "base/types.hh"
 #include "cpu/pred/btb/stream_struct.hh"
+#include "cpu/pred/btb/timed_base_pred.hh"
 
 // Conditional includes based on build mode
 #ifdef UNIT_TEST
     #include <gmock/gmock.h>
     #include <gtest/gtest.h>
     #include "cpu/pred/btb/test/test_dprintf.hh"
-    #include "cpu/pred/btb/test/timed_base_pred.hh"
 #else
     #include "arch/generic/pcstate.hh"
     #include "base/logging.hh"
@@ -58,7 +58,6 @@
     #include "debug/BTB.hh"
     #include "debug/BTBStats.hh"
     #include "params/MBTB.hh"
-    #include "cpu/pred/btb/timed_base_pred.hh"
 #endif
 
 namespace gem5
