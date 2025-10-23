@@ -3027,6 +3027,7 @@ BaseCache::CacheStats::regStats()
     blockedCauses.init(NUM_BLOCKED_CAUSES);
     blockedCauses
         .subname(Blocked_NoMSHRs, "no_mshrs")
+        .subname(Blocked_NoWBBuffers, "no_WriteBuffer")
         .subname(Blocked_NoTargets, "no_targets")
         ;
 

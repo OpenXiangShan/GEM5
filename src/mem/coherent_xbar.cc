@@ -50,6 +50,7 @@
 #include "base/trace.hh"
 #include "debug/AddrRanges.hh"
 #include "debug/CoherentXBar.hh"
+#include "mem/layer_bandwidth_config.hh"
 #include "mem/request.hh"
 #include "sim/system.hh"
 
@@ -67,6 +68,10 @@ CoherentXBar::CoherentXBar(const CoherentXBarParams &p)
 
       ADD_STAT(snoops, statistics::units::Count::get(), "Total snoops"),
       ADD_STAT(snoopTraffic, statistics::units::Byte::get(), "Total snoop traffic"),
+      ADD_STAT(blockedReqCountByCmd, statistics::units::Count::get(),
+               "Request blocked count by command type"),
+      ADD_STAT(blockedRespCountByCmd, statistics::units::Count::get(),
+               "Response blocked count by command type"),
       ADD_STAT(snoopFanout, statistics::units::Count::get(),
                "Request fanout histogram")
 {
@@ -108,6 +113,30 @@ CoherentXBar::CoherentXBar(const CoherentXBarParams &p)
         respLayers.push_back(new RespLayer(*bp, *this,
                                            csprintf("respLayer%d", i)));
         snoopRespPorts.push_back(new SnoopRespPort(*bp, *this));
+    }
+
+    // Apply layer bandwidth configurations
+    for (auto config : p.layer_bandwidth_configs) {
+        if (config->direction == "req") {
+            if (config->portIndex < reqLayers.size()) {
+                reqLayers[config->portIndex]->setMaxRequestsPerCycle(
+                    config->maxPerCycle);
+            } else {
+                warn("LayerBandwidthConfig: req port index %d out of range "
+                     "(max %d)", config->portIndex, reqLayers.size() - 1);
+            }
+        } else if (config->direction == "resp") {
+            if (config->portIndex < respLayers.size()) {
+                respLayers[config->portIndex]->setMaxRequestsPerCycle(
+                    config->maxPerCycle);
+            } else {
+                warn("LayerBandwidthConfig: resp port index %d out of range "
+                     "(max %d)", config->portIndex, respLayers.size() - 1);
+            }
+        } else {
+            warn("LayerBandwidthConfig: unknown direction '%s', "
+                 "expected 'req' or 'resp'", config->direction);
+        }
     }
 }
 
@@ -170,6 +199,7 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
         !reqLayers[mem_side_port_id]->tryTiming(src_port)) {
         DPRINTF(CoherentXBar, "%s: src %s packet %s BUSY\n", __func__,
                 src_port->name(), pkt->print());
+        blockedReqCountByCmd[pkt->cmdToIndex()]++;
         return false;
     }
 
@@ -483,6 +513,7 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
     if (!respLayers[cpu_side_port_id]->tryTiming(src_port)) {
         DPRINTF(CoherentXBar, "%s: src %s packet %s BUSY\n", __func__,
                 src_port->name(), pkt->print());
+        blockedRespCountByCmd[pkt->cmdToIndex()]++;
         return false;
     }
 
@@ -1162,6 +1193,22 @@ CoherentXBar::regStats()
     BaseXBar::regStats();
 
     snoopFanout.init(0, snoopPorts.size(), 1);
+
+    // Initialize blocked transaction count by command vectors
+    blockedReqCountByCmd
+        .init(MemCmd::NUM_MEM_CMDS)
+        .flags(statistics::nozero);
+    blockedRespCountByCmd
+        .init(MemCmd::NUM_MEM_CMDS)
+        .flags(statistics::nozero);
+
+    // Set subnames for command types
+    for (int i = 0; i < MemCmd::NUM_MEM_CMDS; i++) {
+        MemCmd cmd(i);
+        const std::string &cstr = cmd.toString();
+        blockedReqCountByCmd.subname(i, cstr);
+        blockedRespCountByCmd.subname(i, cstr);
+    }
 }
 
 } // namespace gem5

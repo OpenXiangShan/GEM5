@@ -62,7 +62,7 @@ SimObject('CfiMemory.py', sim_objects=['CfiMemory'])
 SimObject('SharedMemoryServer.py', sim_objects=['SharedMemoryServer'])
 SimObject('SimpleMemory.py', sim_objects=['SimpleMemory'])
 SimObject('XBar.py', sim_objects=[
-    'BaseXBar', 'NoncoherentXBar', 'CoherentXBar', 'SnoopFilter'])
+    'LayerBandwidthConfig', 'BaseXBar', 'NoncoherentXBar', 'CoherentXBar', 'SnoopFilter'])
 SimObject('HMCController.py', sim_objects=['HMCController'])
 SimObject('SerialLink.py', sim_objects=['SerialLink'])
 SimObject('MemDelay.py', sim_objects=['MemDelay', 'SimpleMemDelay'])

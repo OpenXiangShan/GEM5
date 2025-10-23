@@ -50,6 +50,7 @@
 #include "debug/AddrRanges.hh"
 #include "debug/Drain.hh"
 #include "debug/XBar.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5
 {
@@ -146,7 +147,8 @@ BaseXBar::Layer<SrcType, DstType>::Layer(DstType& _port, BaseXBar& _xbar,
                                        const std::string& _name) :
     statistics::Group(&_xbar, _name.c_str()),
     port(_port), xbar(_xbar), _name(xbar.name() + "." + _name), state(IDLE),
-    waitingForPeer(NULL), releaseEvent([this]{ releaseLayer(); }, name()),
+    waitingForPeer(NULL), maxRequestsPerCycle(1), currentCycleReqCount(0),
+    releaseEvent([this]{ releaseLayer(); }, name()),
     ADD_STAT(occupancy, statistics::units::Tick::get(), "Layer occupancy (ticks)"),
     ADD_STAT(utilization, statistics::units::Ratio::get(), "Layer utilization")
 {
@@ -171,28 +173,51 @@ void BaseXBar::Layer<SrcType, DstType>::occupyLayer(Tick until)
 
     // until should never be 0 as express snoops never occupy the layer
     assert(until != 0);
-    xbar.schedule(releaseEvent, until);
 
-    // account for the occupied ticks
-    occupancy += until - curTick();
+    // Only schedule release event if not already scheduled (first request only)
+    if (!releaseEvent.scheduled()) {
+        // First request: should have count == 1
+        assert(currentCycleReqCount == 1);
 
-    DPRINTF(BaseXBar, "The crossbar layer is now busy from tick %d to %d\n",
-            curTick(), until);
+        xbar.schedule(releaseEvent, until);
+
+        // Only account occupancy for the first request to avoid double-counting
+        occupancy += until - curTick();
+
+        DPRINTF(BaseXBar, "Scheduling release event at tick %d, occupancy += %d\n",
+                until, until - curTick());
+    } else {
+        // Subsequent requests: should have count > 1
+        assert(currentCycleReqCount > 1);
+
+        DPRINTF(BaseXBar, "Release event already scheduled at %d, "
+                "skipping request %d (until=%d)\n",
+                releaseEvent.when(), currentCycleReqCount, until);
+    }
 }
 
 template <typename SrcType, typename DstType>
 bool
 BaseXBar::Layer<SrcType, DstType>::tryTiming(SrcType* src_port)
 {
+    // Multi-port support: allow additional requests if under capacity
+    if (state == BUSY &&
+        waitingForPeer == NULL &&
+        currentCycleReqCount < maxRequestsPerCycle) {
+        currentCycleReqCount++;
+        DPRINTF(BaseXBar, "%s: Multi-port request %d/%d from %s\n",
+                name(), currentCycleReqCount, maxRequestsPerCycle,
+                src_port->name());
+        return true;
+    }
+
     // if we are in the retry state, we will not see anything but the
     // retrying port (or in the case of the snoop ports the snoop
     // response port that mirrors the actual CPU-side port) as we leave
     // this state again in zero time if the peer does not immediately
     // call the layer when receiving the retry
 
-    // first we see if the layer is busy, next we check if the
-    // destination port is already engaged in a transaction waiting
-    // for a retry from the peer
+    // Block if layer is busy (capacity exhausted) or waiting for peer retry
     if (state == BUSY || waitingForPeer != NULL) {
         // the port should not be waiting already
         assert(std::find(waitingForLayer.begin(), waitingForLayer.end(),
@@ -206,8 +231,9 @@ BaseXBar::Layer<SrcType, DstType>::tryTiming(SrcType* src_port)
         return false;
     }
 
+    // Layer is idle, accept first request
     state = BUSY;
-
+    currentCycleReqCount = 1;
     return true;
 }
 
@@ -255,6 +281,8 @@ BaseXBar::Layer<SrcType, DstType>::releaseLayer()
 
     // update the state
     state = IDLE;
+    // Clear multi-request counter when layer becomes idle
+    currentCycleReqCount = 0;
 
     // bus layer is now idle, so if someone is waiting we can retry
     if (!waitingForLayer.empty()) {
@@ -298,7 +326,7 @@ BaseXBar::Layer<SrcType, DstType>::retryWaiting()
         // update the state to busy and reset the retrying port, we
         // have done our bit and sent the retry
         state = BUSY;
-
+        currentCycleReqCount = 1;
         // occupy the crossbar layer until the next clock edge
         occupyLayer(xbar.clockEdge());
     }

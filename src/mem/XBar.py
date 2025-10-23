@@ -43,6 +43,15 @@ from m5.SimObject import SimObject
 
 from m5.objects.ClockedObject import ClockedObject
 
+class LayerBandwidthConfig(SimObject):
+    type = 'LayerBandwidthConfig'
+    cxx_class = 'gem5::LayerBandwidthConfig'
+    cxx_header = "mem/layer_bandwidth_config.hh"
+
+    direction = Param.String("Layer direction: 'req' or 'resp'")
+    port_index = Param.Int("Port index (0-based)")
+    max_per_cycle = Param.Unsigned("Max transactions per cycle")
+
 class BaseXBar(ClockedObject):
     type = 'BaseXBar'
     abstract = True
@@ -94,6 +103,10 @@ class BaseXBar(ClockedObject):
     # xbar configuration.
     use_default_range = Param.Bool(False, "Perform address mapping for " \
                                        "the default port")
+
+    # Layer bandwidth configuration
+    layer_bandwidth_configs = VectorParam.LayerBandwidthConfig([],
+        "Per-layer bandwidth configurations")
 
 class NoncoherentXBar(BaseXBar):
     type = 'NoncoherentXBar'

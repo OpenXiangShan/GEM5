@@ -54,6 +54,7 @@
 #include "mem/qport.hh"
 #include "params/BaseXBar.hh"
 #include "sim/clocked_object.hh"
+#include "sim/sim_object.hh"
 #include "sim/stats.hh"
 
 namespace gem5
@@ -217,12 +218,26 @@ class BaseXBar : public ClockedObject
         SrcType* waitingForPeer;
 
         /**
+         * Multi-request support: track requests in current cycle
+         * to allow multiple concurrent transactions up to maxRequestsPerCycle
+         */
+        unsigned maxRequestsPerCycle;      // Max requests per cycle for this layer
+        unsigned currentCycleReqCount;     // Current cycle request count
+
+        /**
          * Release the layer after being occupied and return to an
          * idle state where we proceed to send a retry to any
          * potential waiting port, or drain if asked to do so.
          */
         void releaseLayer();
         EventFunctionWrapper releaseEvent;
+
+      public:
+        /**
+         * Set the maximum requests per cycle for this layer.
+         * Used by XBar to configure layer bandwidth after construction.
+         */
+        void setMaxRequestsPerCycle(unsigned max) { maxRequestsPerCycle = max; }
 
         /**
          * Stats for occupancy and utilization. These stats capture

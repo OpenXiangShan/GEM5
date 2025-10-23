@@ -183,7 +183,8 @@ PacketQueue::schedSendEvent(Tick when)
         if (sendRightAway) {
             when = std::max(when, curTick());
         } else {
-            when = std::max(when, curTick() + 1);
+            // TODO: If possible, send immediately and delete redundant code.
+            when = std::max(when, curTick());
             // @todo Revisit the +1
         }
 

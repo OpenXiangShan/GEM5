@@ -238,6 +238,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
                 DPRINTF(CachePort, "Waiting for snoop response to be "
                         "sent\n");
                 Tick when = snoopRespQueue.deferredPacketReadyTime();
+                if (when <= curTick()) {
+                  when = cache.clockEdge(Cycles(1));
+                }
                 schedSendEvent(when);
                 return true;
             }

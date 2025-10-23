@@ -57,6 +57,7 @@ namespace gem5
 {
 
 class SimObject;
+class BaseXBar;
 
 /** Forward declaration */
 class MasterPort;

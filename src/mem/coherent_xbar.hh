@@ -445,6 +445,11 @@ class CoherentXBar : public BaseXBar
 
     statistics::Scalar snoops;
     statistics::Scalar snoopTraffic;
+
+    // Request type statistics for blocked transactions
+    statistics::Vector blockedReqCountByCmd;
+    statistics::Vector blockedRespCountByCmd;
+
     statistics::Distribution snoopFanout;
 
   public:
