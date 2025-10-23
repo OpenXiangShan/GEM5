@@ -81,7 +81,7 @@ MBTB::MBTB(const Params &p)
     numEntries(p.numEntries),
     numWays(p.numWays),
     tagBits(p.tagBits),
-    btbStats(this)
+    btbStats(this, p.numWays)
 {
     // MBTB doesn't support ahead-pipelined stages
 #endif
@@ -187,21 +187,6 @@ MBTB::setTrace()
 std::vector<MBTB::TickedBTBEntry>
 MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
 {
-    int hitNum = entries.size();
-    bool hit = hitNum > 0;
-    
-    // Update prediction statistics
-    if (hit) {
-        DPRINTF(BTB, "BTB: lookup hit, dumping hit entry\n");
-        btbStats.predHit += hitNum;
-        for (auto &entry: entries) {
-            printTickedBTBEntry(entry);
-        }
-    } else {
-        btbStats.predMiss++;
-        DPRINTF(BTB, "BTB: lookup miss\n");
-    }
-
     auto processed_entries = entries;
     
     // Sort by instruction order
@@ -224,6 +209,22 @@ MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
                             return e.pc >= mbtb_end;
                         });
     processed_entries.erase(it, processed_entries.end());
+
+    int hitNum = processed_entries.size();
+    bool hit = hitNum > 0;
+    // Update prediction statistics
+    if (hit) {
+        DPRINTF(BTB, "BTB: lookup hit, dumping hit entry\n");
+        btbStats.predHit++;
+        btbStats.predHitNum += hitNum;
+        btbStats.predHitCount.sample(hitNum);
+        for (auto &entry: processed_entries) {
+            printTickedBTBEntry(entry);
+        }
+    } else {
+        btbStats.predMiss++;
+        DPRINTF(BTB, "BTB: lookup miss\n");
+    }
     return processed_entries;
 }
 
@@ -474,33 +475,6 @@ MBTB::getAndSetNewBTBEntry(FetchStream &stream)
 }
 
 /**
- * Process old BTB entries from prediction metadata
- * 1. Get prediction metadata
- * 2. Remove entries that were not executed
- */
-std::vector<BTBEntry>
-MBTB::processOldEntries(const FetchStream &stream)
-{
-    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
-    // hit entries whose corresponding insts are acutally executed
-    Addr end_inst_pc = stream.updateEndInstPC;
-    DPRINTF(BTB, "end_inst_pc: %#lx\n", end_inst_pc);
-    // remove not executed btb entries, pc > end_inst_pc
-    auto old_entries = meta->hit_entries;
-    DPRINTF(BTB, "old_entries.size(): %lu\n", old_entries.size());
-    dumpBTBEntries(old_entries);
-    auto remove_it = std::remove_if(old_entries.begin(), old_entries.end(),
-        [end_inst_pc](const BTBEntry &e) { return e.pc > end_inst_pc; });
-    old_entries.erase(remove_it, old_entries.end());
-    DPRINTF(BTB, "after removing not executed insts, old_entries.size(): %lu\n", old_entries.size());
-    dumpBTBEntries(old_entries);
-
-    btbStats.updateHit += old_entries.size();
-    
-    return old_entries;
-}
-
-/**
  * Check if the branch was predicted correctly
  * Also check L0 BTB prediction status
  */
@@ -517,6 +491,8 @@ MBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
     if (!pred_branch_hit && stream.exeTaken) {
         DPRINTF(BTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
         btbStats.updateMiss++;
+    } else {
+        btbStats.updateHit++;
     }
 
     // Check if L0 BTB had a hit but L1 BTB missed
@@ -536,26 +512,6 @@ MBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
 
 
 /**
- * Collect all entries that need to be updated
- * 1. Process old entries
- * 2. Add new entry if necessary
- */
-std::vector<BTBEntry>
-MBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
-                                     const FetchStream &stream)
-{
-    auto all_entries = old_entries;
-
-    if (!stream.updateIsOldEntry) {
-        all_entries.push_back(stream.updateNewBTBEntry);
-    }
-
-    DPRINTF(BTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
-    dumpBTBEntries(all_entries);
-    return all_entries;
-}
-
-/**
  * Update or replace BTB entry
  * 1. Look for matching entry
  * 2. for cond entry, if found, use the one in btb, since we need the up-to-date counter
@@ -566,6 +522,7 @@ MBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
 void
 MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
 {
+    btbStats.updateTotal++;
     // Select SRAM based on entry PC's 32B-aligned address
     Addr alignedPC = entry.pc & ~(blockSize - 1);
     int sram_id = getSRAMId(alignedPC);
@@ -732,6 +689,7 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
         victimCache[vc_idx] = ticked_entry;
         victimCache[vc_idx].valid = true;
     }
+    btbStats.updateInVC++;
 }
 
 /*
@@ -747,20 +705,9 @@ void
 MBTB::update(const FetchStream &stream)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
-    // 1. Process old entries
-    // auto old_entries = processOldEntries(stream);
-
-    // 2. Check prediction hit status, for stats recording
+    // 1. Check prediction hit status, for stats recording
     checkPredictionHit(stream,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
-
-    // // 3. Collect entries to update
-    // auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
-
-    // // 4. Update BTB entries - each entry uses its own PC to select SRAM and calculate index/tag
-    // for (auto &entry : entries_to_update) {
-    //     updateBTBEntry(entry, stream);
-    // }
 
     // only update btb entry for control squash T-> NT or NT -> T
     if (stream.squashType == SQUASH_CTRL) {
@@ -962,18 +909,21 @@ MBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 #endif
 
 #ifndef UNIT_TEST
-MBTB::BTBStats::BTBStats(statistics::Group* parent) :
+MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     statistics::Group(parent),
     ADD_STAT(newEntry, statistics::units::Count::get(), "number of new btb entries generated"),
     ADD_STAT(newEntryWithCond, statistics::units::Count::get(), "number of new btb entries generated with conditional branch"),
     ADD_STAT(newEntryWithUncond, statistics::units::Count::get(), "number of new btb entries generated with unconditional branch"),
     ADD_STAT(predMiss, statistics::units::Count::get(), "misses encountered on prediction"),
     ADD_STAT(predHit, statistics::units::Count::get(), "hits encountered on prediction"),
+    ADD_STAT(predHitNum, statistics::units::Count::get(), "number of hits encountered on prediction"),
     ADD_STAT(updateMiss, statistics::units::Count::get(), "misses encountered on update"),
     ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
     ADD_STAT(updateExisting, statistics::units::Count::get(), "existing entries updated"),
     ADD_STAT(updateReplace, statistics::units::Count::get(), "entries replaced"),
     ADD_STAT(updateReplaceValidOne, statistics::units::Count::get(), "entries replaced with valid entry"),
+    ADD_STAT(updateInVC, statistics::units::Count::get(), "entries updated in victim cache"),
+    ADD_STAT(updateTotal, statistics::units::Count::get(), "total number of entries updated"),
     ADD_STAT(predUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when pred"),
     ADD_STAT(updateUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when update"),
     ADD_STAT(S0Predmiss, statistics::units::Count::get(), "misses encountered on S0 prediction, i.e. uBTB and ABTB miss"),
@@ -1005,9 +955,11 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
     ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
 
-    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits")
+    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits"),
+    ADD_STAT(predHitCount, statistics::units::Count::get(), "number of hit entries encountered on mbtb hit")
 
 {
+    predHitCount.init(0, numWays * 2, 1);   // max 4ways * 2(halfAligned) + VC
 }
 #endif
 

@@ -275,27 +275,12 @@ class MBTB : public TimedBaseBTBPredictor
     void updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
                                std::vector<FullBTBPrediction>& stagePreds);
 
-    /** Process prediction metadata and old entries
-     *  @param stream Fetch stream containing prediction info
-     *  @return Processed old BTB entries
-     */
-    std::vector<BTBEntry> processOldEntries(const FetchStream &stream);
-
     /** Check branch prediction hit status
      *  @param stream Fetch stream containing execution results
      *  @param meta BTB metadata from prediction
      */
     void checkPredictionHit(const FetchStream &stream,
                            const BTBMeta* meta);
-
-    /** Collect entries that need to be updated
-     *  @param old_entries Processed old entries
-     *  @param stream Fetch stream with update info
-     *  @return Vector of entries to update
-     */
-    std::vector<BTBEntry> collectEntriesToUpdate(
-        const std::vector<BTBEntry>& old_entries,
-        const FetchStream &stream);
 
     /** Update or replace BTB entry
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
@@ -445,11 +430,14 @@ public:
 
         Scalar predMiss;
         Scalar predHit;
+        Scalar predHitNum;
         Scalar updateMiss;
         Scalar updateHit;
         Scalar updateExisting;
         Scalar updateReplace;
         Scalar updateReplaceValidOne;
+        Scalar updateInVC;
+        Scalar updateTotal;
 
         Scalar predUseL0OnL1Miss;
         Scalar updateUseL0OnL1Miss;
@@ -493,7 +481,8 @@ public:
         Scalar victimCacheHit;
 
 #ifndef UNIT_TEST
-        BTBStats(statistics::Group* parent);
+        statistics::Distribution predHitCount;
+        BTBStats(statistics::Group* parent, int numWays);
 #endif
     } btbStats;
 

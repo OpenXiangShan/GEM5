@@ -1155,7 +1155,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
     ubtb = Param.UBTB(UBTB(), "UBTB predictor")
     abtb = Param.AheadBTB(AheadBTB(), "ABTB predictor")
     microtage = Param.BTBTAGE(MicroTAGE(), "MicroTAGE predictor to assist uBTB")
-    btb = Param.MBTB(MBTB(), "MBTB predictor")
+    mbtb = Param.MBTB(MBTB(), "MBTB predictor")
     tage = Param.BTBTAGE(BTBTAGE(), "TAGE predictor")
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")
     mgsc = Param.BTBMGSC(BTBMGSC(), "MGSC predictor")
