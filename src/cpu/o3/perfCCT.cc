@@ -63,6 +63,17 @@ PerfCCT::updateInstPos(InstSeqNum sn, const PerfRecord pos)
 }
 
 void
+PerfCCT::simFrontendSetFetch(InstSeqNum sn, Tick pre_tick)
+{
+    if (!enableCCT) [[likely]] {
+        return;
+    }
+    auto meta = getMeta(sn);
+    if (meta->posTick.at((int)PerfRecord::AtFetch)) return;
+    meta->posTick.at((int)PerfRecord::AtFetch) = curTick() - pre_tick;
+}
+
+void
 PerfCCT::commitMeta(InstSeqNum sn)
 {
     if (!enableCCT) [[likely]] {

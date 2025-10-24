@@ -790,6 +790,12 @@ Decode::decodeInsts(ThreadID tid)
         ++toRenameIndex;
         ++stats.decodedInsts;
         --insts_available;
+
+        // To align with RTL, simply set the fetch state one cycle before the decode state.
+        if (cpu->simFrontEnabled()) {
+            cpu->perfCCT->createMeta(inst);
+            cpu->perfCCT->simFrontendSetFetch(inst->seqNum, cpu->params().clk_domain->clockPeriod());
+        }
         cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtDecode);
 #if TRACING_ON
         if (debug::O3PipeView) {

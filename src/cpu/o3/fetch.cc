@@ -2789,8 +2789,6 @@ Fetch::simFetchAndProcessInstructions()
 
             DPRINTF(Fetch, "Fetch start: Processing PC %s PC addr 0x%lx, [tid:%i] [sn:%llu].\n",
                 instruction->pcState(), instruction->getPC(), instruction->threadNumber,instruction->seqNum);
-            cpu->perfCCT->createMeta(instruction);
-            cpu->perfCCT->updateInstPos(instruction->seqNum, PerfRecord::AtFetch);
 
             instruction->setTid(tid);
 
@@ -2856,7 +2854,6 @@ Fetch::simFetchAndProcessInstructions()
 #endif
             numInst++;
             fetchStats.nisnDist.sample(numInst);
-
 
 
             if (newMacroop) {

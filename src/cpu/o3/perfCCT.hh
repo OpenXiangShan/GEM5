@@ -47,6 +47,8 @@ class PerfCCT
 
     void updateInstPos(InstSeqNum sn, const PerfRecord pos);
 
+    void simFrontendSetFetch(InstSeqNum sn, Tick pre_tick);
+
     // void updateInstMeta
 
     void commitMeta(InstSeqNum sn);
