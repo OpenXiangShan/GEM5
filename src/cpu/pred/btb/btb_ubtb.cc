@@ -53,6 +53,7 @@ UBTB::UBTB(const Params &p)
       numEntries(p.numEntries),
       tagBits(p.tagBits),
       tagMask((1UL << p.tagBits) - 1),
+      usingS3Pred(p.usingS3Pred),
       ubtbStats(this)
 {
     if (!isPowerOf2(numEntries)) {
@@ -181,14 +182,14 @@ UBTB::lookup(Addr startAddr)
 
 
 void
-UBTB::replaceOldEntry(UBTBIter oldEntryIter, FullBTBPrediction &newPrediction)
+UBTB::replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry, Addr startAddr)
 {
-    assert(newPrediction.getTakenEntry().valid);
-    TickedUBTBEntry newEntry = TickedUBTBEntry(newPrediction.getTakenEntry(), curTick());
+    assert(newTakenEntry.valid);
+    TickedUBTBEntry newEntry = TickedUBTBEntry(newTakenEntry, curTick());
     // important! this is so that target set by RAS or ITTAGE is used
-    newEntry.target = newPrediction.getTarget(predictWidth);
+    newEntry.target = newTakenEntry.target;
     // important: update tag (mbtb and ubtb have different tags, even diffferent tag length)
-    newEntry.tag = getTag(newPrediction.bbStart);
+    newEntry.tag = getTag(startAddr);
     *oldEntryIter = newEntry;
 }
 
@@ -196,67 +197,78 @@ UBTB::replaceOldEntry(UBTBIter oldEntryIter, FullBTBPrediction &newPrediction)
 void
 UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 {
-
-
-    UBTBIter s0EntryIter = lastPred.hit_entry;
-    if (s0EntryIter != ubtb.end()) {
-        assert(s0EntryIter->valid); //lookup() should only return valid entry
+    if (usingS3Pred) {
+        auto takenEntry = s3Pred.getTakenEntry();
+        auto startAddr = s3Pred.bbStart;
+        UBTBIter oldEntryIter = lastPred.hit_entry;
+        updateNewEntry(oldEntryIter, takenEntry, startAddr);
+    } else {
+        //using commit result to update ubtb
     }
-    auto s3TakenEntry = s3Pred.getTakenEntry();
-    if (s0EntryIter != ubtb.end() && !s3TakenEntry.valid) {
-        // S0 has a hit entry, but S3 predicts fall through
-        ubtbStats.s1Hits3FallThrough++;
-        updateUCtr(s0EntryIter->uctr, false);
-        if (s0EntryIter->uctr == 0) {
-            ubtbStats.s1InvalidatedEntries++;
-            s0EntryIter->valid = false;
-        }
-    } else if (s0EntryIter == ubtb.end() && s3TakenEntry.valid) {
-        ubtbStats.s1Misses3Taken++;
-        /* S0 misses, but S3 predicts taken,
-         * generate new entry and replace another using LRU
-         */
-        UBTBIter toBeReplacedIter;
-        // First try to find an invalid entry in the set
-        bool foundInvalidEntry = false;
+}
 
-        for (auto it = ubtb.begin(); it != ubtb.end(); ++it) {
-            if (!it->valid) {
-                toBeReplacedIter = it;
-                foundInvalidEntry = true;
-                break;
+
+
+void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry, const Addr startAddr)
+{
+    //using the FB final taken branch to update uBTB
+    if (oldEntryIter != ubtb.end()) {
+        assert(oldEntryIter->valid); //lookup() should only return valid entry
+    }
+    if (oldEntryIter != ubtb.end() && !takenEntry.valid) {
+            // S0 has a hit entry, but S3 predicts fall through
+            ubtbStats.s1Hits3FallThrough++;
+            updateUCtr(oldEntryIter->uctr, false);
+            if (oldEntryIter->uctr == 0) {
+                ubtbStats.s1InvalidatedEntries++;
+                oldEntryIter->valid = false;
             }
-        }
+        } else if (oldEntryIter == ubtb.end() && takenEntry.valid) {
+            ubtbStats.s1Misses3Taken++;
+            /* S0 misses, but S3 predicts taken,
+            * generate new entry and replace another using LRU
+            */
+            UBTBIter toBeReplacedIter;
+            // First try to find an invalid entry in the set
+            bool foundInvalidEntry = false;
 
-        // If no invalid entry found, use LRU policy
-        // TODO: consider using LRU only among the entries with the least confidence(smallest uctr)
-        if (!foundInvalidEntry) {
-            // Find the least recently used entry
-            std::make_heap(mruList.begin(), mruList.end(), older());
-            toBeReplacedIter = mruList.front();
-        }
+            for (auto it = ubtb.begin(); it != ubtb.end(); ++it) {
+                if (!it->valid) {
+                    toBeReplacedIter = it;
+                    foundInvalidEntry = true;
+                    break;
+                }
+            }
 
-        // Replace the entry with the new prediction
-        replaceOldEntry(toBeReplacedIter, s3Pred);
+            // If no invalid entry found, use LRU policy
+            // TODO: consider using LRU only among the entries with the least confidence(smallest uctr)
+            if (!foundInvalidEntry) {
+                // Find the least recently used entry
+                std::make_heap(mruList.begin(), mruList.end(), older());
+                toBeReplacedIter = mruList.front();
+            }
 
-    } else if (s0EntryIter != ubtb.end() && s3TakenEntry.valid) {
-        ubtbStats.s1Hits3Taken++;
-        // both S0 and S3 predict taken
-        if (s0EntryIter->pc != s3Pred.controlAddr() || s0EntryIter->target != s3Pred.getTarget(predictWidth)) {
-            // S0 and S3 predict different branch instruction
-            updateUCtr(s0EntryIter->uctr, false);
-            if (s0EntryIter->uctr == 0) {
-                // replace the old entry with the new one
-                replaceOldEntry(s0EntryIter, s3Pred);
+            // Replace the entry with the new prediction
+            replaceOldEntry(toBeReplacedIter, takenEntry, startAddr);
+
+        } else if (oldEntryIter != ubtb.end() && takenEntry.valid) {
+            ubtbStats.s1Hits3Taken++;
+            // both S0 and S3 predict taken
+            if (oldEntryIter->pc != takenEntry.pc || oldEntryIter->target != takenEntry.target) {
+                // S0 and S3 predict different branch instruction
+                updateUCtr(oldEntryIter->uctr, false);
+                if (oldEntryIter->uctr == 0) {
+                    // replace the old entry with the new one
+                    replaceOldEntry(oldEntryIter, takenEntry, startAddr);
+                }
+            } else {
+                // S0 and S3 predict the same (brpc and target)
+                updateUCtr(oldEntryIter->uctr, true);
             }
         } else {
-            // S0 and S3 predict the same (brpc and target)
-            updateUCtr(s0EntryIter->uctr, true);
+            ubtbStats.s1Misses3FallThrough++;
+            // both S0 and S3 predict fall through, do nothing
         }
-    } else {
-        ubtbStats.s1Misses3FallThrough++;
-        // both S0 and S3 predict fall through, do nothing
-    }
 }
 
 
@@ -268,6 +280,19 @@ UBTB::update(const FetchStream &stream)
     Addr end_inst_pc = stream.updateEndInstPC;
 
     auto pred_hit_entry = meta->hit_entry;
+    // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
+     // Use BTBEntry instead of BranchInfo; make it invalid when not taken
+    BTBEntry takenEntry = stream.exeTaken ? BTBEntry(stream.exeBranchInfo) : BTBEntry();
+    auto startAddr = stream.getRealStartPC();
+    Addr oldtag = getTag(startAddr);
+
+    UBTBIter oldEntryIter = ubtb.end();
+    if (takenEntry.valid) {
+         oldEntryIter = std::find_if(ubtb.begin(), ubtb.end(), [oldtag](const TickedUBTBEntry &e) {
+            return e.valid && e.tag == oldtag;
+        });
+
+    }
 
     if (stream.exeTaken) {
         if (!pred_hit_entry.valid || pred_hit_entry != stream.exeBranchInfo) {
@@ -278,6 +303,9 @@ UBTB::update(const FetchStream &stream)
 
     // Verify uBTB state
     assert(ubtb.size() <= numEntries);
+    if (!usingS3Pred) {
+        updateNewEntry(oldEntryIter, takenEntry, startAddr);
+    }
 }
 
 void

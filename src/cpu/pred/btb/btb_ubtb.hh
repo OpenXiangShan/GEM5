@@ -251,7 +251,10 @@ class UBTB : public TimedBaseBTBPredictor
      * @param oldEntry Iterator to the entry to replace
      * @param newPrediction The new prediction to store
      */
-    void replaceOldEntry(UBTBIter oldEntry, FullBTBPrediction & newPrediction);
+    void replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry, Addr startAddr);
+
+    //using the FB final taken branch to update uBTB
+    void updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry, const Addr startAddr);
 
 
     /** The uBTB structure:
@@ -274,6 +277,7 @@ class UBTB : public TimedBaseBTBPredictor
     /** Address calculation masks and shifts */
     unsigned tagBits;      // Number of tag bits
     Addr tagMask;          // Mask for extracting tag bits
+    bool usingS3Pred;    // using S3 prediction to update uBTB
 
 
     struct UBTBStats : public statistics::Group
