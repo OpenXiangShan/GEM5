@@ -506,6 +506,11 @@ class Fetch
     uint64_t findTraceIndexForSeqNum(InstSeqNum seqNum);
 
     /**
+     * Legacy lookup API: returns true if a mapping exists and writes index.
+     */
+    bool lookupTraceIndexForSeqNum(InstSeqNum seqNum, uint64_t &index) const;
+
+    /**
      * Rollback trace reader to handle misprediction
      * @param seqNum Sequence number to rollback before
      * @return true if rollback successful
@@ -711,7 +716,8 @@ class Fetch
     /** Whether trace mode is enabled */
     bool traceMode;
     /** Whether to train BP and use real branch instructions in trace mode */
-    bool traceTrainBranches = true;
+    // Default off per design: trace 不显式训练预测器，改由普通 commit 路径训练
+    bool traceTrainBranches = false;
     /** Cycles to stall fetch on mispredict in trace mode */
     Cycles traceMispredictPenalty = Cycles(8);
     /** Remaining stall cycles due to a modeled mispredict */
@@ -739,6 +745,14 @@ class Fetch
 
     /** Number of trace instructions consumed so far (for precise mapping) */
     uint64_t traceInstrConsumed = 0;
+
+    /**
+     * Pending single trace instruction for on-demand consumption.
+     * 按需消费：在 checkMemoryNeeds/decode 前取一条并暂存，
+     * 在 buildInst 之后绑定到 DynInst 并清空。
+     */
+    bool pendingTraceValid = false;
+    o3::TraceInstruction pendingTraceInstr;
 
     /** Periodic checkpoints for trace reader rollback */
     std::vector<o3::TraceReader::TraceCheckpoint> traceCheckpoints;

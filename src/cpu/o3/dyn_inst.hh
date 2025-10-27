@@ -626,6 +626,40 @@ class DynInst : public ExecContext, public RefCounted
         instFlags[PredTaken] = predicted_taken;
     }
 
+    // ---- Trace branch ground-truth (used by EXE for redirect in trace mode)
+    bool traceBranchInfoValid = false;
+    bool traceBranchTakenValue = false;
+    bool traceBranchHasTargetValue = false;
+    Addr traceBranchTargetValue = 0;
+    Addr traceBranchNextPCValue = 0;
+
+    void clearTraceBranchInfo()
+    {
+        traceBranchInfoValid = false;
+        traceBranchTakenValue = false;
+        traceBranchHasTargetValue = false;
+        traceBranchTargetValue = 0;
+        traceBranchNextPCValue = 0;
+    }
+
+    void setTraceBranchInfo(bool taken, bool hasTarget, Addr branchTarget,
+                            Addr fallthrough)
+    {
+        traceBranchInfoValid = true;
+        traceBranchTakenValue = taken;
+        traceBranchHasTargetValue = hasTarget;
+        traceBranchTargetValue = hasTarget ? branchTarget : 0;
+        traceBranchNextPCValue = taken ?
+            (hasTarget ? branchTarget : fallthrough) :
+            fallthrough;
+    }
+
+    bool hasTraceBranchInfo() const { return traceBranchInfoValid; }
+    bool traceBranchTaken() const { return traceBranchInfoValid && traceBranchTakenValue; }
+    bool traceBranchHasTarget() const { return traceBranchInfoValid && traceBranchHasTargetValue; }
+    Addr traceBranchTarget() const { return traceBranchHasTargetValue ? traceBranchTargetValue : 0; }
+    Addr traceBranchNextPC() const { return traceBranchInfoValid ? traceBranchNextPCValue : 0; }
+
     /** Returns whether the instruction mispredicted. */
     bool
     mispredicted()

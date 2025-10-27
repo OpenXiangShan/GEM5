@@ -171,10 +171,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     if (traceMode) {
         DPRINTF(Fetch, "Trace mode enabled, file: %s, format: %s\n",
                 params.traceFile, params.traceFormat);
-        // Set training switch (default True from params)
-        traceTrainBranches = params.traceTrainBranches;
-        traceMispredictPenalty = params.traceMispredictPenalty;
-        traceEnableWrongPath = params.traceEnableWrongPath;
+        // Trace 模式下不进行显式 BP 训练，训练交由普通 commit 通路
+        traceTrainBranches = false;
         traceDecoupledFrontend = params.enableDecoupledBPInTrace;
         traceReader = createTraceReader(params.traceFormat, params.traceFile,
                                         cpu->name() + ".traceReader",
@@ -689,16 +687,10 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
     assert(!cpu->switchedOut());
 
-    // Stage 5: Preserve icache timing; decode from trace on icache return
-    // On cache completion, synthesize instruction bytes from trace for decoder
+    // Trace 按需消费：不在 icache 完成时写入 trace 指令码，避免批量消费
+    // 保留 icache 时序，但由 checkMemoryNeeds/解码时从 traceReader 逐条供给
     if (traceMode && traceReader) {
-        // Stage 7: Validation & Instrumentation - icache completion gates decode
-        DPRINTF(Override, "[TRACE-FTB] Icache completion gates decode: fetchBuffer ready at PC=0x%x\n",
-                fetchBuffer[tid].startPC);
-        
-        synthesizeTraceInstructionBytes(tid);
-        
-        DPRINTF(Override, "[TRACE-FTB] Trace instruction bytes synthesized for decoder\n");
+        DPRINTF(Override, "[TRACE] Icache completion: keep timing only; no trace bytes injection\n");
     }
 
     // Reset usedUpFetchTargets flag when we get new fetch data
@@ -2041,6 +2033,37 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
         return StallReason::NoStall;
     }
 
+    // Trace 按需消费：在 decode 前逐条从 traceReader 取指并供给解码器
+    if (traceMode && traceReader) {
+        // 如果没有挂起的 trace 指令，则尝试拉取一条
+        if (!pendingTraceValid) {
+            o3::TraceInstruction ti = traceReader->getNextInstruction();
+            if (!ti.isValid()) {
+                DPRINTF(Fetch, "[tid:%i] Trace on-demand: no valid instruction (EOF=%d)\n", tid, traceReader->isEOF());
+                return StallReason::IcacheStall;
+            }
+            pendingTraceInstr = ti;
+            pendingTraceValid = true;
+            DPRINTF(Fetch, "[tid:%i] Trace on-demand: fetched PC=0x%llx, type=%s\n",
+                    tid, (unsigned long long)pendingTraceInstr.getPC(), pendingTraceInstr.getInstTypeStr());
+        }
+
+        // 生成 RISC-V 指令码并供给解码器
+        TheISA::MachInst machInst = createMachInstFromTrace(pendingTraceInstr);
+        auto *dec_ptr = decoder[tid];
+        memcpy(dec_ptr->moreBytesPtr(), &machInst, sizeof(machInst));
+        decoder[tid]->moreBytes(this_pc, pendingTraceInstr.getPC());
+
+        // 可选：对齐 fetchBuffer 起始 PC（仅用于调试/一致性）
+        fetchBuffer[tid].startPC = pendingTraceInstr.getPC();
+        fetchBuffer[tid].valid = true;
+
+        DPRINTF(Fetch, "[tid:%i] Trace on-demand: supplied 4B to decoder at PC=0x%llx\n",
+                tid, (unsigned long long)pendingTraceInstr.getPC());
+
+        return StallReason::NoStall;
+    }
+
     Addr fetch_pc = this_pc.instAddr();
 
     // Check if fetch buffer is valid and contains this PC
@@ -2106,6 +2129,32 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Build the dynamic instruction and add it to the fetch queue
     DynInstPtr instruction = buildInst(tid, staticInst, curMacroop, pc, *next_pc, true);
+
+    // 在按需 trace 模式下，将挂起的 trace 元数据绑定到 DynInst
+    if (instruction && traceMode && pendingTraceValid) {
+        // 记录元数据映射（seqNum -> trace 指令）
+        storeTraceInstMetadata(instruction->seqNum, pendingTraceInstr);
+        seqNumToTraceIndex[instruction->seqNum] = traceInstrConsumed;
+        traceInstrConsumed++;
+
+        // 为 EXE 阶段提供分支真值以按普通路径重定向
+        if (pendingTraceInstr.isAnyBranch()) {
+            const bool taken = pendingTraceInstr.getBranchTaken();
+            const bool hasTarget = pendingTraceInstr.getHasBranchTarget();
+            const Addr target = hasTarget ? pendingTraceInstr.getBranchTarget() : 0;
+            const Addr fallthrough = pendingTraceInstr.getPC() + 4;
+            instruction->setTraceBranchInfo(taken, hasTarget, target, fallthrough);
+            DPRINTF(Fetch,
+                    "[tid:%i] Bind trace-branch info to [sn:%lli]: taken=%d, hasTgt=%d\n",
+                    tid, instruction->seqNum, taken, hasTarget);
+            DPRINTF(Fetch,
+                    "[tid:%i] trace tgt=0x%llx, ft=0x%llx\n",
+                    tid, (unsigned long long)target,
+                    (unsigned long long)fallthrough);
+        }
+
+        pendingTraceValid = false;
+    }
 
     // Special handling for RISC-V vector configuration instructions.
     if (staticInst->isVectorConfig()) {
@@ -2265,12 +2314,9 @@ Fetch::performInstructionFetch(ThreadID tid)
             return;
         }
         
-        // Stage 5: Preserve icache timing - unify on the normal fetch flow
-        // Do not inject instructions when the fetch buffer is invalid. Let the
-        // core issue I-cache requests and gate decode on I-cache completion.
-        // Trace bytes are synthesized in processCacheCompletion() via
-        // synthesizeTraceInstructionBytes().
-        DPRINTF(Override, "[TRACE-FTB] Trace mode: unified with I-cache-gated fetch flow\n");
+    // 按需消费改造：不再在 icache 完成时批量写 trace 指令码，
+    // decode 前由 checkMemoryNeeds 逐条供给，保持 KISS/DRY。
+    DPRINTF(Override, "[TRACE] Trace mode: on-demand feed before decode\n");
     }
 
     // Initialize local variables
@@ -2990,26 +3036,17 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
             return (0x00 << 25) | (rs2 << 20) | (rs1 << 15) | (0x2 << 12) | (0x00 << 7) | 0x23;
 
         case o3::TraceInstruction::InstType::COND_BRANCH:
-            if (!traceTrainBranches) {
-                return 0x00000013u; // NOP
-            }
             // RISC-V BEQ rs1, rs2, 0 (fall-through target modeled via trace PC handling)
             return (0x00 << 25) | (rs2 << 20) | (rs1 << 15) | (0x0 << 12) | (0x00 << 7) | 0x63;
 
         case o3::TraceInstruction::InstType::UNCOND_DIRECT_BRANCH:
         case o3::TraceInstruction::InstType::CALL_DIRECT:
-            if (!traceTrainBranches) {
-                return 0x00000013u; // NOP
-            }
             // RISC-V JAL rd, 0 (target bookkeeping via inst->setPredTarg if available)
             return (0x00000 << 12) | (rd << 7) | 0x6F;
 
         case o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH:
         case o3::TraceInstruction::InstType::CALL_INDIRECT:
         case o3::TraceInstruction::InstType::RETURN:
-            if (!traceTrainBranches) {
-                return 0x00000013u; // NOP
-            }
             // RISC-V JALR rd, 0(rs1)
             return (0x000 << 20) | (rs1 << 15) | (0x0 << 12) | (rd << 7) | 0x67;
 
@@ -3137,6 +3174,18 @@ Fetch::findTraceIndexForSeqNum(InstSeqNum seqNum)
             seqNum, bestSeqNum, bestTraceIndex);
 
     return bestTraceIndex;
+}
+
+bool
+Fetch::lookupTraceIndexForSeqNum(InstSeqNum seqNum, uint64_t &index) const
+{
+    auto it = seqNumToTraceIndex.find(seqNum);
+    if (it != seqNumToTraceIndex.end()) {
+        index = it->second;
+        return true;
+    }
+    index = 0;
+    return false;
 }
 
 bool
