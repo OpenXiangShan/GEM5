@@ -1407,6 +1407,54 @@ Commit::commitInsts()
                                   (unsigned long)expected_trace_pc);
                         }
                     }
+
+                    // 3) For branch instructions, further compare taken/target
+                    if (const o3::TraceInstruction* ti_br = cpu->getTraceInstMetadata(head_inst->seqNum)) {
+                        if (ti_br->getBranch()) {
+                            auto &rvpc = head_inst->pcState().as<RiscvISA::PCState>();
+                            const Addr actual_next = rvpc.npc();
+                            const Addr fall_through = rvpc.getFallThruPC();
+                            const bool actual_taken = (actual_next != fall_through);
+
+                            const bool expect_taken = ti_br->getBranchTaken();
+                            const bool expect_has_tgt = ti_br->getHasBranchTarget();
+                            const Addr expect_tgt = expect_has_tgt ? ti_br->getBranchTarget() : fall_through;
+
+                            if (actual_taken != expect_taken) {
+                                DPRINTF(CommitTrace,
+                                        "[tid:%d idx:%llu sn:%llu] Branch taken mismatch: actual=%d expect=%d\n",
+                                        tid,
+                                        (unsigned long long)traceCommitIndex[tid],
+                                        head_inst->seqNum,
+                                        actual_taken,
+                                        expect_taken);
+                            }
+                            // If taken, check target; if not taken, check fall-through.
+                            if (expect_taken) {
+                                if (actual_next != expect_tgt) {
+                                    DPRINTF(CommitTrace,
+                                            "[tid:%d idx:%llu sn:%llu] Branch target mismatch: "
+                                            "actual=0x%lx expect=0x%lx\n",
+                                            tid,
+                                            (unsigned long long)traceCommitIndex[tid],
+                                            head_inst->seqNum,
+                                            (unsigned long)actual_next,
+                                            (unsigned long)expect_tgt);
+                                }
+                            } else {
+                                if (actual_next != fall_through) {
+                                    DPRINTF(CommitTrace,
+                                            "[tid:%d idx:%llu sn:%llu] Branch fall-through mismatch: "
+                                            "actual=0x%lx fall=0x%lx\n",
+                                            tid,
+                                            (unsigned long long)traceCommitIndex[tid],
+                                            head_inst->seqNum,
+                                            (unsigned long)actual_next,
+                                            (unsigned long)fall_through);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 head_inst->staticInst->advancePC(*pc[tid]);

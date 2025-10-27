@@ -111,6 +111,24 @@ Examples:
   ./util/xs_scripts/trace_example.sh -d "Fetch,TraceReader" trace.bin
 ```
 
+### Dumping ChampSim Traces Offline
+
+Inspect raw ChampSim traces without running gem5:
+
+```bash
+python3 util/dump_champsim_trace.py --trace /path/to/trace.[bin|gz] --limit 20
+
+# With memory and address mapping
+python3 util/dump_champsim_trace.py -t trace.bin --show-mem \
+  --map-mode hash --addr-base 0x80000000 --addr-size 0x40000000 --page-align
+
+# JSON output for tooling
+python3 util/dump_champsim_trace.py -t trace.gz -n 50 --json --show-mem
+```
+
+Columns (table mode): idx, pc, br, type (cond/jump/indirect/call/return/load/store/alu),
+taken, dst_regs, src_regs; with `--show-mem`, also prints dst_mem/src_mem (compact hex).
+
 ### Advanced Configuration
 
 #### Python Configuration Script
