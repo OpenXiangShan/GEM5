@@ -1383,10 +1383,16 @@ Commit::commitInsts()
                     // We approximate expected PC by peeking metadata for the current commit index if it exists.
                     // If not available, fall back to current head inst metadata.
 
-                    // 1) Prefer using current head's trace metadata if present
-                    if (const o3::TraceInstruction* ti_cur = cpu->getTraceInstMetadata(head_inst->seqNum)) {
-                        expected_trace_pc = ti_cur->getPC();
-                        have_expected = ti_cur->isValid();
+                    // 1) Prefer using global trace index (read-only peek)
+                    expected_trace_pc = cpu->getTracePCByIndex(traceCommitIndex[tid]);
+                    have_expected = (expected_trace_pc != 0);
+
+                    // 2) Fallback: use current head's trace metadata if present
+                    if (!have_expected) {
+                        if (const o3::TraceInstruction* ti_cur = cpu->getTraceInstMetadata(head_inst->seqNum)) {
+                            expected_trace_pc = ti_cur->getPC();
+                            have_expected = ti_cur->isValid();
+                        }
                     }
 
                     // 2) Compare with committed PC

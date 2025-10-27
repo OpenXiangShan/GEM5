@@ -1750,5 +1750,11 @@ CPU::getTraceIndexForSeqNum(InstSeqNum seqNum) const
     return fetch.findTraceIndexForSeqNum(seqNum);
 }
 
+Addr
+CPU::getTracePCByIndex(uint64_t index)
+{
+    return fetch.getTracePCByIndex(index);
+}
+
 } // namespace o3
 } // namespace gem5

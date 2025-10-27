@@ -511,6 +511,13 @@ class Fetch
     bool lookupTraceIndexForSeqNum(InstSeqNum seqNum, uint64_t &index) const;
 
     /**
+     * Read-only access to trace PC by global trace instruction index.
+     * Implementation must not alter the ongoing reader stream state.
+     * Returns 0 if unavailable.
+     */
+    Addr getTracePCByIndex(uint64_t index);
+
+    /**
      * Rollback trace reader to handle misprediction
      * @param seqNum Sequence number to rollback before
      * @return true if rollback successful

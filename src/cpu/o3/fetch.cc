@@ -3740,3 +3740,23 @@ Fetch::supplyFTQWithTraceTargets()
 
 } // namespace o3
 } // namespace gem5
+Addr
+Fetch::getTracePCByIndex(uint64_t index)
+{
+    if (!traceMode || !traceReader) {
+        return 0;
+    }
+    // Use checkpoint/restore to avoid observable side effects.
+    auto ckpt = traceReader->createCheckpoint();
+    Addr pc_val = 0;
+    bool ok = traceReader->seekToInstruction(index);
+    if (ok) {
+        auto ti = traceReader->getNextInstruction();
+        if (ti.isValid()) {
+            pc_val = ti.getPC();
+        }
+    }
+    // Restore regardless of success.
+    traceReader->restoreCheckpoint(ckpt);
+    return pc_val;
+}
