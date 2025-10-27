@@ -476,24 +476,6 @@ DynInst::initiateMemRead(Addr addr, unsigned size, Request::Flags flags,
                                const std::vector<bool> &byte_enable)
 {
     assert(byte_enable.size() == size);
-    // Trace mode: override address with trace-provided effective address
-    // to avoid using architectural register computed EA (which is
-    // meaningless under trace replay).
-    if (effAddrValid() && cpu->isTraceInstruction(seqNum)) {
-        addr = effAddr;
-    }
-    if (cpu->isTraceMode()) {
-        if (!effAddrValid() || addr == 0) {
-            // Robust fallback: synthesize a safe address from PC if missing/zero
-            const uint64_t base = 0x80000000ULL;
-            const uint64_t size = 0x40000000ULL;
-            uint64_t pc = pcState().as<RiscvISA::PCState>().instAddr();
-            uint64_t hash = (pc ^ (pc >> 16)) & (size - 1);
-            addr = (base + hash) & ~0x3ULL; // 4-byte align
-        }
-        DPRINTF(LSQ, "initiateMemRead [sn:%lli] effValid=%d effAddr=%#lx finalAddr=%#lx size=%u\n",
-                seqNum, (int)effAddrValid(), (unsigned long)effAddr, (unsigned long)addr, size);
-    }
     return cpu->pushRequest(
         dynamic_cast<DynInstPtr::PtrType>(this),
         /* ld */ true, nullptr, size, addr, flags, nullptr, nullptr,
@@ -504,12 +486,6 @@ Fault
 DynInst::initiateMemMgmtCmd(Request::Flags flags)
 {
     const unsigned int size = 8;
-    // In trace mode, management commands (TLBI/HTM etc.) do not need to
-    // generate real memory/translation traffic. Preserve timing-only by
-    // bypassing the request. This avoids SE-mode page faults on vaddr=0.
-    if (cpu->isTraceInstruction(seqNum)) {
-        return NoFault;
-    }
     return cpu->pushRequest(
             dynamic_cast<DynInstPtr::PtrType>(this),
             /* ld */ true, nullptr, size, 0x0ul, flags, nullptr, nullptr,
@@ -522,20 +498,6 @@ DynInst::writeMem(uint8_t *data, unsigned size, Addr addr,
                         const std::vector<bool> &byte_enable)
 {
     assert(byte_enable.size() == size);
-    if (effAddrValid() && cpu->isTraceInstruction(seqNum)) {
-        addr = effAddr;
-    }
-    if (cpu->isTraceMode()) {
-        if (!effAddrValid() || addr == 0) {
-            const uint64_t base = 0x80000000ULL;
-            const uint64_t size = 0x40000000ULL;
-            uint64_t pc = pcState().as<RiscvISA::PCState>().instAddr();
-            uint64_t hash = (pc ^ (pc >> 16)) & (size - 1);
-            addr = (base + hash) & ~0x3ULL;
-        }
-        DPRINTF(LSQ, "writeMem [sn:%lli] effValid=%d effAddr=%#lx finalAddr=%#lx size=%u\n",
-                seqNum, (int)effAddrValid(), (unsigned long)effAddr, (unsigned long)addr, size);
-    }
     return cpu->pushRequest(
         dynamic_cast<DynInstPtr::PtrType>(this),
         /* st */ false, data, size, addr, flags, res, nullptr,
