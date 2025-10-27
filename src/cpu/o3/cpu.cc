@@ -312,23 +312,7 @@ CPU::CPU(const BaseO3CPUParams &params)
         threadContexts.push_back(tc);
     }
 
-    // Initialize trace reader if trace mode is enabled
-    if (params.enableTraceMode && !params.traceFile.empty()) {
-        fetch.traceMode = true;
-        fetch.traceReader = o3::createTraceReader(params.traceFormat, params.traceFile, name(),
-                                                  params.traceAddrBase, params.traceAddrSize,
-                                                  params.traceAddrMapMode, params.traceAddrPageAlign);
-        if (!fetch.traceReader) {
-            fatal("Failed to create trace reader for format '%s', file '%s'\n",
-                  params.traceFormat, params.traceFile);
-        }
-        DPRINTF(O3CPU, "Trace mode enabled: format=%s, file=%s\n",
-                params.traceFormat, params.traceFile);
-
-    } else {
-        fetch.traceMode = false;
-        fetch.traceReader = nullptr;
-    }
+    // Fetch owns trace-mode initialization; keep CPU agnostic to avoid duplication.
 
     // O3CPU always requires an interrupt controller.
     if (!params.switched_out && interrupts.empty()) {
