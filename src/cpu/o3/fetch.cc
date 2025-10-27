@@ -3161,7 +3161,7 @@ Fetch::maybeCreateTraceCheckpoint(InstSeqNum seqNum)
 }
 
 uint64_t
-Fetch::findTraceIndexForSeqNum(InstSeqNum seqNum)
+Fetch::findTraceIndexForSeqNum(InstSeqNum seqNum) const
 {
     // First try direct lookup
     auto it = seqNumToTraceIndex.find(seqNum);
@@ -3740,8 +3740,8 @@ Fetch::supplyFTQWithTraceTargets()
 
 } // namespace o3
 } // namespace gem5
-Addr
-Fetch::getTracePCByIndex(uint64_t index)
+gem5::Addr
+gem5::o3::Fetch::getTracePCByIndex(uint64_t index)
 {
     if (!traceMode || !traceReader) {
         return 0;

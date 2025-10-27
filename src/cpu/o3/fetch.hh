@@ -503,7 +503,7 @@ class Fetch
      * @param seqNum Sequence number to look up
      * @return Trace instruction index, or 0 if not found
      */
-    uint64_t findTraceIndexForSeqNum(InstSeqNum seqNum);
+    uint64_t findTraceIndexForSeqNum(InstSeqNum seqNum) const;
 
     /**
      * Legacy lookup API: returns true if a mapping exists and writes index.
