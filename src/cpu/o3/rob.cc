@@ -417,7 +417,6 @@ ROB::retireHead(ThreadID tid)
     // @todo: A special case is needed if the instruction being
     // retired is the only instruction in the ROB; otherwise the tail
     // iterator will become invalidated.
-    // verbose debug removed
     cpu->removeFrontInst(head_inst);
 }
 
@@ -482,8 +481,11 @@ ROB::doSquash(ThreadID tid)
     assert(squashIt[tid] != instList[tid].end());
 
     if ((*squashIt[tid])->seqNum < squashedSeqNum[tid]) {
-        DPRINTF(ROB, "[tid:%i] Done squashing instructions.\n", tid);
+        DPRINTF(ROB, "[tid:%i] Done squashing instructions.\n",
+                tid);
+
         squashIt[tid] = instList[tid].end();
+
         doneSquashing[tid] = true;
         return;
     }
@@ -493,54 +495,75 @@ ROB::doSquash(ThreadID tid)
     assert(dynSquashWidth);
     unsigned int num_insts_to_squash = dynSquashWidth;
 
-    if (cpu->isThreadExiting(tid)) {
+    // If the CPU is exiting, squash all of the instructions
+    // it is told to, even if that exceeds the squashWidth.
+    // Set the number to the number of entries (the max).
+    if (cpu->isThreadExiting(tid))
+    {
         num_insts_to_squash = numEntries * instsPerGroup;
     }
 
-    while (num_insts_to_squash > 0 &&
-           squashIt[tid] != instList[tid].end() &&
-           (*squashIt[tid])->seqNum > squashedSeqNum[tid]) {
-        auto it = squashIt[tid];
-        DynInstPtr inst = *it;
+    for (int numSquashed = 0;
+         numSquashed < num_insts_to_squash &&
+         squashIt[tid] != instList[tid].end() &&
+         (*squashIt[tid])->seqNum > squashedSeqNum[tid];
+         ++numSquashed)
+    {
+        DPRINTF(ROB, "[tid:%i] Squashing instruction PC %s, seq num %i.\n",
+                (*squashIt[tid])->threadNumber,
+                (*squashIt[tid])->pcState(),
+                (*squashIt[tid])->seqNum);
 
-        DPRINTF(ROB, "[tid:%i] Squashing instruction PC %s, seq num %llu.\n",
-                inst->threadNumber, inst->pcState(), (unsigned long long)inst->seqNum);
+        // Mark the instruction as squashed, and ready to commit so that
+        // it can drain out of the pipeline.
+        (*squashIt[tid])->setSquashed();
 
-        inst->setSquashed();
-        inst->setCanCommit();
-        inst->clearInROB();
-        // Keep frontend/global tracking consistent for squashed insts
-        cpu->removeFrontInst(inst);
+        (*squashIt[tid])->setCanCommit();
 
+        // printf("[ROB] squash seqNum %ld\n", (*squashIt[tid])->seqNum);
+
+        auto prevIt = std::prev(squashIt[tid]);
         --numInstsInROB;
-        squashGroup(inst, tid);
 
-        // Update tail if needed
-        InstIt tail_thread = instList[tid].end();
-        tail_thread--;
-        if (it == tail_thread)
-            robTailUpdate = true;
+        //Update Group Size
+        squashGroup(*squashIt[tid], tid);
 
-        // Move iterator backward before erase
-        if (it == instList[tid].begin()) {
-            instList[tid].erase(it);
+        (*squashIt[tid])->clearInROB();
+        // head_inst->setCommitted();
+        cpu->removeFrontInst(*squashIt[tid]);
+
+        if (instList[tid].empty() || squashIt[tid] == instList[tid].begin()) {
+            DPRINTF(ROB, "Reached head of instruction list while "
+                    "squashing.\n");
+
+            instList[tid].erase(squashIt[tid]);
+
             squashIt[tid] = instList[tid].end();
+
             doneSquashing[tid] = true;
-            break;
-        } else {
-            auto prev = it;
-            --prev;
-            instList[tid].erase(it);
-            squashIt[tid] = prev;
+
+            return;
         }
 
-        --num_insts_to_squash;
+        InstIt tail_thread = instList[tid].end();
+        tail_thread--;
+
+        if ((*squashIt[tid]) == (*tail_thread))
+            robTailUpdate = true;
+
+        instList[tid].erase(squashIt[tid]);
+
+        squashIt[tid] = prevIt;
     }
 
-    if (squashIt[tid] != instList[tid].end() &&
-        (*squashIt[tid])->seqNum <= squashedSeqNum[tid]) {
-        DPRINTF(ROB, "[tid:%i] Done squashing instructions.\n", tid);
+
+    // Check if ROB is done squashing.
+    if ((*squashIt[tid])->seqNum <= squashedSeqNum[tid]) {
+        DPRINTF(ROB, "[tid:%i] Done squashing instructions.\n",
+                tid);
+
         squashIt[tid] = instList[tid].end();
+
         doneSquashing[tid] = true;
     }
 
@@ -548,6 +571,7 @@ ROB::doSquash(ThreadID tid)
         updateTail();
     }
 }
+
 
 void
 ROB::updateHead()

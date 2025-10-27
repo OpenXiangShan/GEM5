@@ -528,16 +528,14 @@ MemDepUnit::squash(const InstSeqNum &squashed_num, ThreadID tid)
 
         assert(hash_it != memDepHash.end());
 
-        if (hash_it != memDepHash.end()) {
-            (*hash_it).second->squashed = true;
+        (*hash_it).second->squashed = true;
 
-            (*hash_it).second = NULL;
+        (*hash_it).second = NULL;
 
-            memDepHash.erase(hash_it);
+        memDepHash.erase(hash_it);
 #ifdef DEBUG
-            MemDepEntry::memdep_erase++;
+        MemDepEntry::memdep_erase++;
 #endif
-        }
 
         instList[tid].erase(squash_it--);
     }

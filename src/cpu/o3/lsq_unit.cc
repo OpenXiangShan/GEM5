@@ -58,6 +58,7 @@
 #include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
+#include "cpu/o3/trace/TraceInstruction.hh"
 #include "cpu/utils.hh"
 #include "debug/Activity.hh"
 #include "debug/Diff.hh"
@@ -503,6 +504,23 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
     }
 
     cpu->ppDataAccessComplete->notify(std::make_pair(inst, pkt));
+
+    // Trace-mode: If this is a load, replace returning data with trace value.
+    // KISS: only if metadata exists and value present; DRY: reuse CPU API.
+    if (!cpu->switchedOut() && cpu->isTraceMode() && inst->isLoad()) {
+        const o3::TraceInstruction* ti = cpu->getTraceInstMetadata(inst->seqNum);
+        if (ti && ti->getLoad() && !ti->getLoadValues().empty()) {
+            // Use the first value; respect packet size to avoid overruns.
+            const auto &vals = ti->getLoadValues();
+            const size_t copy_sz = std::min<size_t>(pkt->getSize(), sizeof(uint64_t));
+            uint8_t *dst = pkt->getPtr<uint8_t>();
+            // Values recorded are per-access; reinterpret as little-endian bytes.
+            uint64_t v = vals[0];
+            std::memcpy(dst, &v, copy_sz);
+            DPRINTF(LoadPipeline, "[sn:%llu] Trace overrides load data to 0x%llx (bytes=%zu)\n",
+                    inst->seqNum, (unsigned long long)v, copy_sz);
+        }
+    }
 
     assert(!cpu->switchedOut());
     if (!inst->isSquashed()) {
@@ -1110,14 +1128,12 @@ LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
     // Reset DTB translation state
     inst->translationStarted(false);
     inst->translationCompleted(false);
-    // clear request in loadQueue (do not preserve outstanding request)
-    if (request) {
-        loadQueue[inst->lqIdx].setRequest(nullptr);
-    }
-
-    if (dropReqNow && request) {
-        // discard this request; do not preserve across replay
+    // clear request in loadQueue
+    loadQueue[inst->lqIdx].setRequest(nullptr);
+    if (dropReqNow) {
+        // discard this request
         request->discard();
+        // TODO: is this essential?
         inst->savedRequest = nullptr;
     }
 
@@ -1268,17 +1284,13 @@ Fault
 LSQUnit::loadDoRecvData(const DynInstPtr &inst)
 {
     Fault fault = inst->getFault();
-    DPRINTF(LoadPipeline,
-            "loadDoRecvData: load [sn:%lli] wake:%d pending:%d cacheHit:%d fullForward:%d\n",
-            inst->seqNum, inst->wakeUpEarly(), inst->hasPendingCacheReq(),
-            inst->cacheHit(), inst->fullForward());
+    DPRINTF(LoadPipeline, "loadDoRecvData: load [sn:%lli]\n", inst->seqNum);
 
     assert(!inst->isSquashed());
     LSQRequest* request = inst->savedRequest;
-    LSQ* lsq = getLsq();
 
     if (inst->wakeUpEarly()) {
-        auto& bus = lsq->bus;
+        auto& bus = getLsq()->bus;
         bool busFwdSuccess = bus.find(inst->seqNum) != bus.end();
         if (inst->hasPendingCacheReq() || !busFwdSuccess) {
             // Load has been waken up too early, even no TimingResp at load s2
@@ -1304,8 +1316,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
 
     // check if cache hit & get cache response?
     // NOTE: cache miss replay has higher priority than nuke replay!
-    if (lsq->enableLdMissReplay() && request && request->isNormalLd() &&
-        !inst->fullForward() && !inst->cacheHit()) {
+    if (lsq->enableLdMissReplay() && request && request->isNormalLd() && !inst->fullForward() && !inst->cacheHit()) {
         // cannot get cache data at load s2, replay this load
         loadSetReplay(inst, request, false);
         inst->setCacheMissReplay();
@@ -2184,16 +2195,6 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
               htmStarts, htmStops);
         }
 
-        // Also clear any per-load bus entry for this squashed instruction
-        // so that bus bookkeeping does not exceed LQ capacity.
-        {
-            auto &bus = getLsq()->bus;
-            auto it = bus.find(loadQueue.back().instruction()->seqNum);
-            if (it != bus.end()) {
-                bus.erase(it);
-            }
-        }
-
         // Clear the smart pointer to make sure it is decremented.
         loadQueue.back().instruction()->setSquashed();
         loadQueue.back().clear();
@@ -2375,16 +2376,6 @@ LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
 
             DPRINTF(LSQUnit, "Not completing instruction [sn:%lli] access "
                     "due to pending fault.\n", inst->seqNum);
-        }
-    }
-
-    // This load is about to finish; ensure any per-load bus entry
-    // is cleared to prevent lingering entries after it leaves the LQ.
-    {
-        auto &bus = getLsq()->bus;
-        auto it = bus.find(inst->seqNum);
-        if (it != bus.end()) {
-            bus.erase(it);
         }
     }
 
@@ -2758,15 +2749,6 @@ LSQUnit::forwardFromBus(DynInstPtr inst, LSQRequest *request)
     // So there is no need to access Dcache
 
     inst->setFullForward();
-    // The bus entry is specific to this load's seqNum. Once data is
-    // consumed, remove the entry to avoid accumulation beyond LQ size.
-    {
-        auto &bus = getLsq()->bus;
-        auto it = bus.find(inst->seqNum);
-        if (it != bus.end()) {
-            bus.erase(it);
-        }
-    }
     stats.busForwardSuccess++;
 }
 

@@ -579,10 +579,14 @@ class Commit
 
     ArchDBer *archDBer;
 
+    // Trace-mode commit stream index per thread: expected next trace instruction index
+    uint64_t traceCommitIndex[MaxThreads] = {0};
+
     void dumpTicks(const DynInstPtr &inst);
 
 public:
     const CommitStats& getCommitStats() const { return stats; }
+    uint64_t getTraceCommitIndex(ThreadID tid) const { return traceCommitIndex[tid]; }
 };
 
 } // namespace o3

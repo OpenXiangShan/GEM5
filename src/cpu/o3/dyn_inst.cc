@@ -47,6 +47,7 @@
 #include "arch/riscv/insts/mem.hh"
 #include "arch/riscv/pcstate.hh"
 #include "base/intmath.hh"
+#include "cpu/o3/trace/TraceInstruction.hh"
 #include "debug/DynInst.hh"
 #include "debug/IQ.hh"
 #include "debug/LSQ.hh"
@@ -476,6 +477,17 @@ DynInst::initiateMemRead(Addr addr, unsigned size, Request::Flags flags,
                                const std::vector<bool> &byte_enable)
 {
     assert(byte_enable.size() == size);
+    // In trace-mode, prefer the address recorded in the trace (if any)
+    // KISS: override only when metadata exists; YAGNI: first address only.
+    if (cpu->isTraceMode()) {
+        const o3::TraceInstruction* ti = cpu->getTraceInstMetadata(seqNum);
+        if (ti && ti->getLoad() && !ti->getLoadAddresses().empty()) {
+            Addr trace_addr = ti->getLoadAddresses()[0];
+            if (trace_addr != 0) {
+                addr = trace_addr;
+            }
+        }
+    }
     return cpu->pushRequest(
         dynamic_cast<DynInstPtr::PtrType>(this),
         /* ld */ true, nullptr, size, addr, flags, nullptr, nullptr,

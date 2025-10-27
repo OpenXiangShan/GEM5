@@ -435,7 +435,7 @@ Fetch::startupStage()
                 if (isDecoupledFrontend() && branchPred) {
                     DPRINTF(Fetch, "Trace mode: Priming decoupled BPU with start PC 0x%llx\n",
                             firstInstr.getPC());
-                    
+
                     // Get the initial FSQ size for debugging
                     size_t fsq_size_before = 0;
                     if (isFTBPred() || isBTBPred()) {
@@ -443,8 +443,18 @@ Fetch::startupStage()
                         fsq_size_before = 0;
                     }
                     
-                    // Prime the BPU by supplying initial PC as a fetch target
-                    // This ensures FSQ has at least one entry before any squash
+                    // First, reset BPU's internal PC to the trace start PC.
+                    // trySupplyFetchWithTarget does not reset predictor's PC.
+                    if (isFTBPred() && dbpftb) {
+                        dbpftb->resetPC(firstInstr.getPC());
+                    } else if (isBTBPred() && dbpbtb) {
+                        dbpbtb->resetPC(firstInstr.getPC());
+                    } else if (isStreamPred() && dbsp) {
+                        dbsp->resetPC(firstInstr.getPC());
+                    }
+
+                    // Then, optionally prime the FTQ by supplying initial PC as a fetch target
+                    // to ensure FSQ has at least one entry before any squash
                     bool primed = false;
                     bool inLoop = false;
                     if (isFTBPred() && dbpftb) {

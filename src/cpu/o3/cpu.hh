@@ -262,6 +262,7 @@ class CPU : public BaseCPU
     /** Trace-driven simulation support */
     bool isTraceInstruction(InstSeqNum seqNum) const;
     const o3::TraceInstruction* getTraceInstMetadata(InstSeqNum seqNum) const;
+    uint64_t getTraceIndexForSeqNum(InstSeqNum seqNum) const;
 
     /**
      *  If a thread is trying to exit and its corresponding trap event

@@ -667,7 +667,6 @@ class LSQUnit
     };
 
     bool enableStorePrefetchTrain;
-    // Trace handling controls (reserved)
 
   public:
     /**

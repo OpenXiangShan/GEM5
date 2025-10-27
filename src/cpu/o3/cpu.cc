@@ -1744,5 +1744,11 @@ CPU::getTraceInstMetadata(InstSeqNum seqNum) const
     return fetch.getTraceInstMetadata(seqNum);
 }
 
+uint64_t
+CPU::getTraceIndexForSeqNum(InstSeqNum seqNum) const
+{
+    return fetch.findTraceIndexForSeqNum(seqNum);
+}
+
 } // namespace o3
 } // namespace gem5

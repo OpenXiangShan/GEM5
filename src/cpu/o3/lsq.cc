@@ -109,7 +109,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
                   params.smtLSQThreshold)),
       dcachePort(this, cpu_ptr),
       numThreads(params.numThreads)
-  {
+{
     assert(numThreads > 0 && numThreads <= MaxThreads);
     if (!_enableLdMissReplay && _enablePipeNukeCheck) {
         panic("LSQ can not support pipeline nuke replay when EnableLdMissReplay is False");
@@ -326,9 +326,6 @@ void
 LSQ::insertLoad(const DynInstPtr &load_inst)
 {
     ThreadID tid = load_inst->threadNumber;
-    DPRINTF(LSQ, "[Trace][LSQ] insertLoad tid:%d sn:%lli PC:%s effAddr=0x%lx valid=%d\n",
-            tid, load_inst->seqNum, load_inst->pcState(), load_inst->effAddr,
-            load_inst->effAddrValid());
 
     thread[tid].insertLoad(load_inst);
 }
@@ -337,9 +334,6 @@ void
 LSQ::insertStore(const DynInstPtr &store_inst)
 {
     ThreadID tid = store_inst->threadNumber;
-    DPRINTF(LSQ, "[Trace][LSQ] insertStore tid:%d sn:%lli PC:%s effAddr=0x%lx valid=%d\n",
-            tid, store_inst->seqNum, store_inst->pcState(), store_inst->effAddr,
-            store_inst->effAddrValid());
 
     thread[tid].insertStore(store_inst);
 }
@@ -1216,14 +1210,6 @@ LSQ::SingleDataRequest::initiateTranslation()
 
     addReq(_addr, _size, _byteEnable);
 
-    // Debug: Check xsMeta validity before accessing it
-    if (!_inst->xsMeta) {
-        panic("LSQ ERROR: _inst->xsMeta is NULL for sn:%lu", _inst->seqNum);
-    }
-
-    // Debug: Additional validation
-    // verbose debug removed
-
     _inst->xsMeta->instAddr = _inst->pcState().instAddr();
 
     if (_reqs.size() > 0) {
@@ -1412,18 +1398,14 @@ LSQ::LSQRequest::addReq(Addr addr, unsigned size,
            const std::vector<bool>& byte_enable)
 {
     if (isAnyActiveElement(byte_enable.begin(), byte_enable.end())) {
-        // Preserve full memory simulation: use the original request flags
-        // and allow normal translation/memory hierarchy behavior.
-        Request::Flags eff_flags = _flags;
-
         auto req = std::make_shared<Request>(
-                addr, size, eff_flags, _inst->requestorId(),
+                addr, size, _flags, _inst->requestorId(),
                 _inst->pcState().instAddr(), _inst->contextId(),
                 std::move(_amo_op));
         req->setByteEnable(byte_enable);
 
         /* If the request is marked as NO_ACCESS, setup a local access */
-        if (eff_flags.isSet(Request::NO_ACCESS)) {
+        if (_flags.isSet(Request::NO_ACCESS)) {
             req->setLocalAccessor(
                 [this, req](gem5::ThreadContext *tc, PacketPtr pkt) -> Cycles
                 {
@@ -1560,9 +1542,6 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     }
 
     assert(_numOutstandingPackets == 1);
-    DPRINTF(LSQ, "SingleDataRequest::recvTimingResp [sn:%llu] cacheHit:%d waitingRefill:%d\n",
-            _inst->seqNum, cacheHit, LSQRequest::_inst->waitingCacheRefill());
-
     if (enableLdMissReplay && isNormalLd) {
         DPRINTF(Hint, "[sn:%ld] Recv TimingResp\n", pkt->req->getReqInstSeqNum());
         if (cacheHit) {
@@ -1573,8 +1552,6 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
             // Missed Data is ready at lsq side data bus, wake up missed load in replay queue
             // Handle the missed early wake-up here.
             DPRINTF(LSQ, "[sn:%ld] waitingCacheRefill\n", pkt->req->getReqInstSeqNum());
-            lsq->bus[_inst->seqNum] = pkt->getAddr();
-            _port.getStats()->busAppendTimes++;
             LSQRequest::_inst->waitingCacheRefill(false);
             discard();
         } else {
@@ -2067,4 +2044,3 @@ LSQ::write(LSQRequest* request, uint8_t *data, ssize_t store_idx)
 
 } // namespace o3
 } // namespace gem5
-// Keep LSQ behavior identical in both normal and trace modes.

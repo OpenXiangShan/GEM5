@@ -61,6 +61,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_state.hh"
+#include "cpu/o3/trace/TraceInstruction.hh"
 #include "cpu/timebuf.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
@@ -168,6 +169,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         renameMap[tid] = nullptr;
         htmStarts[tid] = 0;
         htmStops[tid] = 0;
+        traceCommitIndex[tid] = 0;
     }
     interrupt = NoFault;
 
@@ -716,9 +718,6 @@ Commit::squashFromTC(ThreadID tid)
 
     DPRINTF(Commit, "Squashing from TC, restarting at PC %s\n", *pc[tid]);
 
-    // Always clear noSquashFromTC here. If TC interactions require
-    // protection, they must use short critical sections that set and
-    // promptly clear this flag around the specific operation.
     thread[tid]->noSquashFromTC = false;
     assert(!thread[tid]->trapPending);
 
@@ -1367,6 +1366,43 @@ Commit::commitInsts()
 
                 cpu->traceFunctions(pc[tid]->instAddr());
 
+                // Trace-mode: commit stream difftest by an expected trace index
+                if (cpu->isTraceMode()) {
+                    // Initialize/align expected trace index from fetch mapping on first use
+                    uint64_t mapped_idx = cpu->getTraceIndexForSeqNum(head_inst->seqNum);
+                    if (traceCommitIndex[tid] == 0 && mapped_idx != 0) {
+                        traceCommitIndex[tid] = mapped_idx;
+                    }
+                    // Retrieve expected trace PC by commit-local index; fall back to per-inst metadata
+                    Addr expected_trace_pc = 0;
+                    bool have_expected = false;
+
+                    // Try reading directly from fetch's trace reader via CPU API if available in future;
+                    // For now, reusing metadata of the ROB head seqNum can be inconsistent if prefetch exists.
+                    // Maintain a local monotonic index to avoid relying on ROB seqNum mapping here.
+                    // We approximate expected PC by peeking metadata for the current commit index if it exists.
+                    // If not available, fall back to current head inst metadata.
+
+                    // 1) Prefer using current head's trace metadata if present
+                    if (const o3::TraceInstruction* ti_cur = cpu->getTraceInstMetadata(head_inst->seqNum)) {
+                        expected_trace_pc = ti_cur->getPC();
+                        have_expected = ti_cur->isValid();
+                    }
+
+                    // 2) Compare with committed PC
+                    if (have_expected) {
+                        Addr commit_pc = head_inst->pcState().instAddr();
+                        if (commit_pc != expected_trace_pc) {
+                            panic("[Commit][tid:%d idx:%llu sn:%llu] PC mismatch: commit=0x%lx, trace=0x%lx",
+                                  tid,
+                                  (unsigned long long)traceCommitIndex[tid],
+                                  head_inst->seqNum,
+                                  (unsigned long)commit_pc,
+                                  (unsigned long)expected_trace_pc);
+                        }
+                    }
+                }
+
                 head_inst->staticInst->advancePC(*pc[tid]);
 
                 // Keep track of the last sequence number commited
@@ -1411,6 +1447,10 @@ Commit::commitInsts()
                         DPRINTF(Commit,
                                 "PC skip function event, stopping commit\n");
                         break;
+                    }
+                    // Advance expected trace index only when a full macro-inst commits
+                    if (cpu->isTraceMode()) {
+                        traceCommitIndex[tid]++;
                     }
                 }
 
@@ -1580,9 +1620,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
             cpu->checker->verify(head_inst);
         }
 
-        // In trace mode, noSquashFromTC is permanently true to prevent squashes
-        // that interfere with trace replay, so we allow it here
-        assert(!thread[tid]->noSquashFromTC || cpu->isTraceMode());
+        assert(!thread[tid]->noSquashFromTC);
 
         // Mark that we're in state update mode so that the trap's
         // execution doesn't generate extra squashes.
@@ -1594,10 +1632,6 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         // needed to update the state as soon as possible.  This
         // prevents external agents from changing any specific state
         // that the trap need.
-
-        // Debug: Log fault details before trap execution
-        // verbose debug removed
-
         cpu->trap(inst_fault, tid,
                   head_inst->notAnInst() ? nullStaticInstPtr :
                       head_inst->staticInst);

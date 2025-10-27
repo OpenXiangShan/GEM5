@@ -223,7 +223,7 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
             if (!dst_inst || !dst_inst->isLoad()) {
-                panic("dst[sn:%llu] is not load", dst_inst ? dst_inst->seqNum : 0);
+                panic("dst[sn:%llu] is not load", dst_inst->seqNum);
             }
             DPRINTF(Schedule, "[sn:%llu] %s can't get data from bypassNetwork, dst inst: %s\n", inst->seqNum,
                 inst->srcRegIdx(i), dst_inst->genDisassembly());
