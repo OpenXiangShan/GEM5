@@ -42,9 +42,11 @@
 #define __CPU_O3_COMMIT_HH__
 
 #include <cstdint>
+#include <deque>
 #include <list>
 #include <map>
 #include <queue>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -495,6 +497,8 @@ class Commit
     /** Updates commit stats based on this instruction. */
     void updateComInstStats(const DynInstPtr &inst);
 
+    void updateLoadHistoryStats(const DynInstPtr &inst);
+
     // Difftest
     void diffInst(ThreadID tid, const DynInstPtr &inst);
 
@@ -507,6 +511,15 @@ class Commit
     uint64_t committedStreamId{};
     uint64_t committedTargetId{};
     uint64_t committedLoopIter{};
+
+    static const unsigned loadHistorySize = 15;
+    struct LoadHistory
+    {
+        std::deque<Addr> addresses;
+        std::deque<RegVal> datas;
+    };
+
+    std::unordered_map<Addr, LoadHistory> loadHistoryMap;
 
     struct CommitStats : public statistics::Group
     {
@@ -573,6 +586,9 @@ class Commit
         statistics::Scalar squashDueToTC;
         statistics::Scalar squashDueToSquashAfter;
         statistics::Formula totalSquash;
+
+        statistics::Vector loadAddrSameHist;
+        statistics::Vector loadDataSameHist;
     } stats;
 
     bool ismispred = false;

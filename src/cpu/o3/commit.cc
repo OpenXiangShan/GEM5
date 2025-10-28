@@ -53,6 +53,8 @@
 #include "base/loader/symtab.hh"
 #include "base/logging.hh"
 #include "base/output.hh"
+#include "base/stats/units.hh"
+#include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
@@ -277,7 +279,11 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(squashDueToSquashAfter, statistics::units::Count::get(),
                "Number of squash due to squash after"),
       ADD_STAT(totalSquash, statistics::units::Count::get(),
-               "Total number of squash")
+               "Total number of squash"),
+      ADD_STAT(loadAddrSameHist, statistics::units::Count::get(),
+               "Number of times load address is same as N previous loads from same PC"),
+      ADD_STAT(loadDataSameHist, statistics::units::Count::get(),
+               "Number of times load data is same as N previous loads from same PC")
 {
     using namespace statistics;
 
@@ -357,6 +363,16 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
 
     totalSquash = squashDueToBranch + squashDueToOrderViolation + \
         squashDueToTrap + squashDueToTC + squashDueToSquashAfter;
+
+    loadAddrSameHist
+        .init(commit->loadHistorySize)
+        .desc("Number of times load address is same as N previous loads from same PC")
+        .flags(statistics::nozero);
+
+    loadDataSameHist
+        .init(commit->loadHistorySize)
+        .desc("Number of times load data is same as N previous loads from same PC")
+        .flags(statistics::nozero);
 }
 
 void
@@ -1735,6 +1751,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 head_inst->extRenamedDestIdx(i).toString());
     }
 
+    // Update load history stats after rename map is updated.
+    updateLoadHistoryStats(head_inst);
+
     // hardware transactional memory
     // the HTM UID is purely for correctness and debugging purposes
     if (head_inst->isHtmStart())
@@ -1933,6 +1952,53 @@ Commit::updateComInstStats(const DynInstPtr &inst)
     if (inst->isCall())
         stats.functionCalls[tid]++;
 
+}
+
+void
+Commit::updateLoadHistoryStats(const DynInstPtr &inst)
+{
+    if (inst->isLoad() && !inst->isVector()) {
+        ThreadID tid = inst->threadNumber;
+        Addr pc = inst->pcState().instAddr();
+        Addr eff_addr = inst->effAddr;
+
+        RegVal data = 0;
+        if (inst->numDestRegs() > 0) {
+            const auto &dest_reg = inst->destRegIdx(0);
+            if ((dest_reg.isFloatReg() || dest_reg.isIntReg()) && !dest_reg.isZeroReg())
+            {
+                data = cpu->getArchReg(dest_reg, tid);
+            }
+        }
+
+        auto& history = loadHistoryMap[pc];
+
+        for (size_t i = 0; i < history.addresses.size(); ++i) {
+            if (eff_addr == history.addresses[i]) {
+                stats.loadAddrSameHist[i]++;
+            } else {
+                break;
+            }
+        }
+
+        for (size_t i = 0; i < history.datas.size(); ++i) {
+            if (data == history.datas[i]) {
+                stats.loadDataSameHist[i]++;
+            } else {
+                break;
+            }
+        }
+
+        history.addresses.push_front(eff_addr);
+        if (history.addresses.size() > loadHistorySize) {
+            history.addresses.pop_back();
+        }
+
+        history.datas.push_front(data);
+        if (history.datas.size() > loadHistorySize) {
+            history.datas.pop_back();
+        }
+    }
 }
 
 ////////////////////////////////////////
