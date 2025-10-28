@@ -1177,6 +1177,7 @@ DecoupledBPUWithBTB::updateTAGEOnly(unsigned &stream_id)
     // Update predictor components only if the stream is hit or taken
     if (stream.isHit || stream.exeTaken) {
         // Update TAGE predictor only
+        mbtb->update(stream);
         tage->update(stream);
     }
 }
@@ -1237,7 +1238,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(unsigned &stream_id)
 
         // Update all predictor components
         for (int i = 0; i < numComponents; ++i) {
-            if (components[i] != tage) {
+            if (components[i] != tage || components[i] != mbtb) {
                 components[i]->update(stream);
             }
         }
