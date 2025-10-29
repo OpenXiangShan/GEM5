@@ -30,6 +30,7 @@
 #include "cpu/pred/btb/abtb.hh"
 
 #include "base/intmath.hh"
+#include "debug/ABTB.hh"
 #include "stream_struct.hh"
 
 // Additional conditional includes based on build mode
@@ -119,7 +120,7 @@ AheadBTB::AheadBTB(const Params &p)
     // AheadBTB always uses ahead-pipelined tag calculation: tag starts from the second bit
     tagShiftAmt = idxShiftAmt;
 
-    DPRINTF(BTB, "numEntries %d, numSets %d, numWays %d, tagBits %d, tagShiftAmt %d, idxMask %#lx, tagMask %#lx\n",
+    DPRINTF(ABTB, "numEntries %d, numSets %d, numWays %d, tagBits %d, tagShiftAmt %d, idxMask %#lx, tagMask %#lx\n",
         numEntries, numSets, numWays, tagBits, tagShiftAmt, idxMask, tagMask);
 
 #ifndef UNIT_TEST
@@ -169,14 +170,14 @@ AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startA
     
     // Update prediction statistics
     if (hit) {
-        DPRINTF(BTB, "BTB: lookup hit, dumping hit entry\n");
+        DPRINTF(ABTB, "BTB: lookup hit, dumping hit entry\n");
         btbStats.predHit += hitNum;
         for (auto &entry: entries) {
             printTickedBTBEntry(entry);
         }
     } else {
         btbStats.predMiss++;
-        DPRINTF(BTB, "BTB: lookup miss\n");
+        DPRINTF(ABTB, "BTB: lookup miss\n");
     }
 
     auto processed_entries = entries;
@@ -186,21 +187,6 @@ AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startA
              [](const BTBEntry &a, const BTBEntry &b) {
                  return a.pc < b.pc;
              });
-    
-    // Remove entries before the start PC
-    auto it = std::remove_if(processed_entries.begin(), processed_entries.end(),
-                           [startAddr](const BTBEntry &e) {
-                               return e.pc < startAddr;
-                           });
-    processed_entries.erase(it, processed_entries.end());
-
-    // remove entries after the range of mBTB
-    Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
-    it = std::remove_if(processed_entries.begin(), processed_entries.end(),
-                        [mbtb_end](const BTBEntry &e) {
-                            return e.pc >= mbtb_end;
-                        });
-    processed_entries.erase(it, processed_entries.end());
     return processed_entries;
 }
 
@@ -220,7 +206,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
 
     // if ubtb has prediction, add ubtb entry to aBTB entries
     if (stagePreds[0].btbEntries.size() > 0) {
-        DPRINTF(BTB, "AheadBTB: predsOfEachStage are already filled by uBTB, skipping AheadBTB prediction\n");
+        DPRINTF(ABTB, "AheadBTB: predsOfEachStage are already filled by uBTB, skipping AheadBTB prediction\n");
         btbStats.S0PredUseUBTB++;
         //if ubtb has prediction, add ubtb entry to aBTB entries
         ubtb_pred_entry = stagePreds[0].btbEntries[0];
@@ -259,11 +245,11 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
 
     FillStageLoop(s) {
         // if (!isL0() && !hit && stagePreds[s].valid) {
-        //     DPRINTF(BTB, "BTB: ubtb hit and btb miss, use ubtb result");
+        //     DPRINTF(ABTB, "BTB: ubtb hit and btb miss, use ubtb result");
         //     incNonL0Stat(btbStats.predUseL0OnL1Miss);
         //     break;
         // }
-        DPRINTF(BTB, "BTB: assigning prediction for stage %d\n", s);
+        DPRINTF(ABTB, "BTB: assigning prediction for stage %d\n", s);
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
         for (auto e : mixed_entries) {
@@ -281,17 +267,13 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     for (auto &e : mixed_entries) {
         assert(e.valid);
         if (e.isCond) {
-            // TODO: a performance bug here, mbtb should not update condTakens!
-            // if (isL0()) {  // only L0 BTB has saturating counter
-            // use saturating counter of L0 BTB
 
             FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
 
-            // } else {  // L1 BTB condTakens depends on the TAGE predictor
-            // }
+
         } else if (e.isIndirect) {
             // Set predicted target for indirect branches
-            DPRINTF(BTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
+            DPRINTF(ABTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
 
             FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.pc, e.target});
 
@@ -322,11 +304,7 @@ AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
                                    std::vector<FullBTBPrediction>& stagePreds)
 {
 
-    // Save L0 BTB entries for L1 BTB's reference
-    if (getDelay() >= 1) {
-        // L0 should be zero-bubble
-        meta->l0_hit_entries = stagePreds[0].btbEntries;
-    }
+
 
     // Save current BTB entries
     for (auto e: entries) {
@@ -392,21 +370,21 @@ AheadBTB::lookupSingleBlock(Addr block_pc)
     DPRINTF(AheadPipeline, "AheadBTB: pushing set for ahead-pipelined stages, idx %ld\n", btb_idx);
     aheadReadBtbEntries.push(std::make_tuple(block_pc, btb_idx, btb_set));
 
-    Addr current_tag = getTag(block_pc);
-    Addr current_pc = 0;
-    Addr current_idx = 0;
-    BTBSet current_set;
+    Addr tag_curStartpc = getTag(block_pc);// abtb uses current FB pc to get tag
+    Addr pc = 0;
+    Addr idx_prvStartpc = 0;// abtb uses previous FB pc to get index
+    BTBSet set;
     // AheadBTB always uses ahead-pipelined logic (aheadPipelinedStages > 0)
     // only if the ahead-pipeline is filled can we use the entry
     if (aheadReadBtbEntries.size() >= aheadPipelinedStages+1) {
         // +1 because we pushed a new set in this cycle before
         // in case there are push without corresponding pop
         assert(aheadReadBtbEntries.size() == aheadPipelinedStages+1);
-        std::tie(current_pc, current_idx, current_set) = aheadReadBtbEntries.front();
+        std::tie(pc, idx_prvStartpc, set) = aheadReadBtbEntries.front();
         DPRINTF(AheadPipeline, "AheadBTB: ahead-pipeline filled, using set %ld from pc %#lx\n",
-            current_idx, current_pc);
+            idx_prvStartpc, pc);
         DPRINTF(AheadPipeline, "AheadBTB: dumping btb set\n");
-        for (auto &entry : current_set) {
+        for (auto &entry : set) {
             printTickedBTBEntry(entry);
         }
         aheadReadBtbEntries.pop();
@@ -414,10 +392,10 @@ AheadBTB::lookupSingleBlock(Addr block_pc)
         DPRINTF(AheadPipeline, "AheadBTB: ahead-pipeline not filled, only have %ld sets read,"
             " skipping tag compare, assigning miss\n", aheadReadBtbEntries.size());
     }
-    DPRINTF(BTB, "BTB: Doing tag comparison for index 0x%lx tag %#lx\n",
-        current_idx, current_tag);
-    for (auto &way : current_set) {
-        if (way.valid && way.tag == current_tag) {
+    DPRINTF(ABTB, "BTB: Doing tag comparison for index 0x%lx tag %#lx\n",
+        idx_prvStartpc, tag_curStartpc);
+    for (auto &way : set) {
+        if (way.valid && way.tag == tag_curStartpc) {
             res.push_back(way);
             way.tick = curTick();  // Update timestamp for MRU
             std::make_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
@@ -451,15 +429,15 @@ AheadBTB::processOldEntries(const FetchStream &stream)
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     // hit entries whose corresponding insts are acutally executed
     Addr end_inst_pc = stream.updateEndInstPC;
-    DPRINTF(BTB, "end_inst_pc: %#lx\n", end_inst_pc);
+    DPRINTF(ABTB, "end_inst_pc: %#lx\n", end_inst_pc);
     // remove not executed btb entries, pc > end_inst_pc
     auto old_entries = meta->hit_entries;
-    DPRINTF(BTB, "old_entries.size(): %lu\n", old_entries.size());
+    DPRINTF(ABTB, "old_entries.size(): %lu\n", old_entries.size());
     dumpBTBEntries(old_entries);
     auto remove_it = std::remove_if(old_entries.begin(), old_entries.end(),
         [end_inst_pc](const BTBEntry &e) { return e.pc > end_inst_pc; });
     old_entries.erase(remove_it, old_entries.end());
-    DPRINTF(BTB, "after removing not executed insts, old_entries.size(): %lu\n", old_entries.size());
+    DPRINTF(ABTB, "after removing not executed insts, old_entries.size(): %lu\n", old_entries.size());
     dumpBTBEntries(old_entries);
 
     btbStats.updateHit += old_entries.size();
@@ -482,26 +460,10 @@ AheadBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
         }
     }
     if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(BTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+        DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
         btbStats.updateMiss++;
     }
 
-    // Check if L0 BTB had a hit but L1 BTB missed
-    bool pred_l0_branch_hit = false;
-    for (auto &e : meta->l0_hit_entries) {
-        if (stream.exeBranchInfo == e) {
-            pred_l0_branch_hit = true;
-            break;
-        }
-    }
-    if (!isL0()) {
-        bool l0_hit_l1_miss = pred_l0_branch_hit && !pred_branch_hit;
-        if (l0_hit_l1_miss) {
-            DPRINTF(BTB, "BTB: skipping entry write because of l0 hit\n");
-            incNonL0Stat(btbStats.updateUseL0OnL1Miss);
-            // return;
-        }
-    }
 }
 
 
@@ -516,27 +478,21 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
 {
     auto all_entries = old_entries;
 
-    if (isL0()){
-        // since we don't want duplications in uBTB's entriesToUpdate,
-        // which causes its counter to update twice unintentionally
-        // we need to check if the new entry already exists in uBTB
-        bool pred_branch_hit = false;
-        for (auto &e: all_entries) {
-            if (stream.updateNewBTBEntry == e) {
-                pred_branch_hit = true;
-                break;
-            }
-        }
-        if (!pred_branch_hit) {
-            all_entries.push_back(stream.updateNewBTBEntry);
-        }
-
-    }else{
-        if (!stream.updateIsOldEntry) { // L0 BTB always updates
-            all_entries.push_back(stream.updateNewBTBEntry);
+    // since we don't want duplications in uBTB's entriesToUpdate,
+    // which causes its counter to update twice unintentionally
+    // we need to check if the new entry already exists in uBTB
+    bool pred_branch_hit = false;
+    for (auto &e: all_entries) {
+        if (stream.updateNewBTBEntry == e) {
+            pred_branch_hit = true;
+            break;
         }
     }
-    DPRINTF(BTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
+    if (!pred_branch_hit) {
+        all_entries.push_back(stream.updateNewBTBEntry);
+    }
+
+    DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
     dumpBTBEntries(all_entries);
     return all_entries;
 }
@@ -597,7 +553,7 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, cons
         btbStats.updateExisting++;
     } else {
         // Replace oldest entry in the set
-        DPRINTF(BTB, "trying to replace entry in set %#lx\n", btb_idx);
+        DPRINTF(ABTB, "trying to replace entry in set %#lx\n", btb_idx);
         dumpMruList(mruList[btb_idx]);
         // put the oldest entry in this set to the back of heap
         std::pop_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
@@ -616,7 +572,7 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, cons
             btbStats.updateReplaceValidOne++;
         }
         btbStats.updateReplace++;
-        DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
+        DPRINTF(ABTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
                 entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
         *entry_in_btb_now = ticked_entry;
 #ifndef UNIT_TEST
@@ -662,7 +618,7 @@ AheadBTB::update(const FetchStream &stream)
         // AheadBTB always uses ahead-pipelined update logic
         Addr previousPC = getPreviousPC(stream);
         if (previousPC == 0) {
-            DPRINTF(BTB, "AheadBTB: no previous PC, skipping update\n");
+            DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
             return;
         }
         Addr btb_idx = getIndex(previousPC);  // use last pc to get idx
