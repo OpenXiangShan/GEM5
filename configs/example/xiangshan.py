@@ -369,7 +369,7 @@ def setKmhV3IdealParams(args, system):
         cpu.scheduler = KMHV3Scheduler()
 
         # fusion
-        cpu.enable_loadFusion = True
+        cpu.enable_loadFusion = False
 
         cpu.BankConflictCheck = True   # real bank conflict 0.2 score
         cpu.sbufferBankWriteAccurately = True
