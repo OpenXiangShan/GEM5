@@ -88,6 +88,8 @@ class BasePrefetcher(ClockedObject):
 
     is_sub_prefetcher = Param.Bool(False, "Is this a sub-prefetcher")
 
+    training_buffer_size = Param.Unsigned(32,
+        "Maximum number of training requests buffered per cycle")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

@@ -47,7 +47,9 @@
 #define __MEM_CACHE_PREFETCH_BASE_HH__
 
 #include <cstdint>
-#include <memory>
+#include <deque>
+#include <unordered_set>
+#include <vector>
 
 #include "arch/generic/tlb.hh"
 #include "base/compiler.hh"
@@ -626,6 +628,156 @@ class Base : public ClockedObject
         bool lastPfLate{false};
     };
   protected:
+    /**
+     * TrainFilter: ROB-order training request filtering and reordering
+     *
+     * The TrainFilter collects training requests within a cycle, reorders them
+     * by ROB sequence number (Load first, then Store), filters duplicates, and
+     * feeds them into a FIFO training buffer at a rate of one per cycle.
+     */
+    struct TrainingRequest
+    {
+        RequestPtr req;
+        MemCmd cmd;
+        PacketDataPtr dataCopy;         // Deep copy of packet data
+        unsigned dataSize;              // Size of data copied
+
+        Addr addr;                      // Training address
+        bool miss;
+        Request::XsMetadata xsMetadata;
+        bool everPrefetched;
+        bool pfFirstHit;
+        bool pfHit;
+        bool squashMark;                // Request after squash
+
+        // TrainFilter fields for ROB-order training
+        InstSeqNum seqNum;              // ROB sequence number for ordering
+        Addr blockAddr;                 // Cache block address for filtering
+        bool isLoad;
+
+        // Constructor: Extract copies from PacketPtr
+        TrainingRequest(PacketPtr pkt, Addr _addr, bool _miss,
+                       const Request::XsMetadata &_xsMetadata,
+                       bool _everPrefetched, bool _pfFirstHit,
+                       bool _pfHit, bool _squashMark,
+                       InstSeqNum _seqNum, Addr _blockAddr, bool _isLoad)
+            : req(pkt->req),
+              cmd(pkt->cmd),
+              dataCopy(nullptr),
+              dataSize(pkt->getSize()),
+              addr(_addr),
+              miss(_miss),
+              xsMetadata(_xsMetadata),
+              everPrefetched(_everPrefetched),
+              pfFirstHit(_pfFirstHit),
+              pfHit(_pfHit),
+              squashMark(_squashMark),
+              seqNum(_seqNum),
+              blockAddr(_blockAddr),
+              isLoad(_isLoad)
+        {
+            // Deep copy packet data if present
+            if (pkt->flags.isSet(Packet::STATIC_DATA | Packet::DYNAMIC_DATA)) {
+                dataCopy = new uint8_t[dataSize];
+                std::memcpy(dataCopy, pkt->getConstPtr<uint8_t>(), dataSize);
+            }
+        }
+
+        // Destructor: Free our owned data copy
+        ~TrainingRequest() {
+            if (dataCopy) {
+                delete[] dataCopy;
+                dataCopy = nullptr;
+            }
+        }
+
+        // Move constructor: Transfer ownership of dataCopy
+        TrainingRequest(TrainingRequest&& other) noexcept
+            : req(std::move(other.req)),
+              cmd(other.cmd),
+              dataCopy(other.dataCopy),
+              dataSize(other.dataSize),
+              addr(other.addr),
+              miss(other.miss),
+              xsMetadata(other.xsMetadata),
+              everPrefetched(other.everPrefetched),
+              pfFirstHit(other.pfFirstHit),
+              pfHit(other.pfHit),
+              squashMark(other.squashMark),
+              seqNum(other.seqNum),
+              blockAddr(other.blockAddr),
+              isLoad(other.isLoad)
+        {
+            other.dataCopy = nullptr;  // Transfer ownership
+        }
+
+        // Move assignment: Transfer ownership of dataCopy
+        TrainingRequest& operator=(TrainingRequest&& other) noexcept {
+            if (this != &other) {
+                // Free our old data
+                if (dataCopy) delete[] dataCopy;
+
+                // Transfer everything from other
+                req = std::move(other.req);
+                cmd = other.cmd;
+                dataCopy = other.dataCopy;
+                dataSize = other.dataSize;
+                addr = other.addr;
+                miss = other.miss;
+                xsMetadata = other.xsMetadata;
+                everPrefetched = other.everPrefetched;
+                pfFirstHit = other.pfFirstHit;
+                pfHit = other.pfHit;
+                squashMark = other.squashMark;
+                seqNum = other.seqNum;
+                blockAddr = other.blockAddr;
+                isLoad = other.isLoad;
+
+                other.dataCopy = nullptr;
+            }
+            return *this;
+        }
+
+        // Disable copy constructor/assignment
+        TrainingRequest(const TrainingRequest&) = delete;
+        TrainingRequest& operator=(const TrainingRequest&) = delete;
+    };
+
+    std::vector<TrainingRequest> currentCycleLoads;
+    std::vector<TrainingRequest> currentCycleStores;
+    std::deque<TrainingRequest> trainingBuffer;
+
+    std::unordered_set<Addr> trainingBufferBlockAddrs;
+
+    /** Maximum size of the training buffer */
+    const unsigned trainingBufferSize;
+
+
+    /**
+     * Periodic event that fires every cycle
+     * Handles: 1) flush previous cycle requests, 2) train one request
+     * This ensures training progresses even when there are no cache accesses
+     */
+    EventFunctionWrapper cycleEvent;
+
+    void processCycle();
+
+    void flushCurrentCycleRequests();
+
+    /**
+     * Train one request from the front of trainingBuffer
+     * Dequeues one request and calls notify() to train the prefetcher
+     */
+    void processTraining();
+
+    /** Whether to use training buffer (can be overridden by subclasses) */
+    virtual bool useTrainingBuffer() const { return false; }
+
+    Addr getBlockAddr(Addr addr) const { return blockAddress(addr); }
+
+    InstSeqNum getSeqNum(const PacketPtr &pkt) const;
+
+    bool isLoadRequest(const PacketPtr &pkt) const;
 
     bool isSubPrefetcher;
 

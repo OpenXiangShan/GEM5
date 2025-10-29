@@ -63,7 +63,7 @@ namespace o3
 DynInst::DynInst(const Arrays &arrays, const StaticInstPtr &static_inst,
         const StaticInstPtr &_macroop, InstSeqNum seq_num, CPU *_cpu)
     : seqNum(seq_num), staticInst(static_inst),
-      xsMeta(new XsDynInstMeta()),
+      xsMeta(new XsDynInstMeta(seq_num)),
       cpu(_cpu),
       _numSrcs(arrays.numSrcs), _numDests(arrays.numDests),
       _flatDestIdx(arrays.flatDestIdx), _destIdx(arrays.destIdx),
