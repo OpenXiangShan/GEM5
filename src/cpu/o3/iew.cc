@@ -1572,6 +1572,12 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
         // that have not been executed.
         bool loadNotExecuted = !inst->isExecuted() && inst->isLoad();
 
+        if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+            std::unique_ptr<PCStateBase> new_pc(inst->pcState().clone());
+            new_pc->as<RiscvISA::PCState>().npc(inst->traceBranchNextPC());
+            inst->pcState(*new_pc);
+        }
+
         if (inst->mispredicted() && !loadNotExecuted) {
             fetchRedirect[tid] = true;
 
