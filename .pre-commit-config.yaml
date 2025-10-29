@@ -63,3 +63,12 @@ repos:
   rev: 22.6.0
   hooks:
     - id: black
+  
+- repo: local
+  hooks:
+    - id: recycle-bin-enforce-delete
+      name: Enforce recycle bin for deletions
+      entry: bash util/hooks/check_recycle_bin.sh
+      language: system
+      pass_filenames: false
+      stages: [commit]

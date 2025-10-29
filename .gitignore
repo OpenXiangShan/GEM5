@@ -65,3 +65,56 @@ CLAUDE.md
 node_modules/
 package-lock.json
 package.json
+
+# --- GEM5/XS 项目常见忽略项（补充） ---
+# SCons/编译缓存
+.sconsign.dblite
+.ccache/
+
+# CMake（部分外部组件可能使用）
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+
+# Python 缓存/虚拟环境
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+.env/
+*.egg-info/
+.eggs/
+
+# IDE/编辑器
+.idea/
+*.code-workspace
+
+# 运行产物与本地测试输出
+m5out_insts/
+m5out_*/
+tmp/
+trace_testing/
+trace_testing_results/
+trace_test/
+
+# 本仓库常见临时文件与日志/补丁
+*.log
+build*.log
+diff-*.patch*
+*.patch.new
+
+# 外部依赖的构建输出（保守规则）
+ext/**/build*/
+ext/**/bin/
+ext/**/out/
+
+# 可选：本地 agent/工具元数据（如无需提交可忽略）
+.serena/
+
+# 测试用 trace 文件（仅限本地 test_traces 目录）
+test_traces/*.gz
+test_traces/*.bin
+
+# Recycle bin (track folder, ignore contents)
+.recycle_bin/*
+!.recycle_bin/.gitkeep
