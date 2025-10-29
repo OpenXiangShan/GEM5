@@ -348,12 +348,44 @@ ChampSimTraceReader::convertInstruction(const ChampSimInstr &cs_instr,
 TraceInstruction::InstType
 ChampSimTraceReader::determineInstType(const ChampSimInstr &cs_instr)
 {
-    // Check if it's a branch instruction first
-    if (cs_instr.is_branch) {
-        // For now, assume all branches in ChampSim traces are conditional
-        // In a more sophisticated implementation, we could analyze the PC pattern
-        // or use additional metadata to distinguish between branch types
-        return TraceInstruction::InstType::COND_BRANCH;
+    // Classify branches per ChampSim's instruction.h logic using special regs
+    auto contains = [](const auto& arr, uint8_t v) {
+        for (auto x : arr) {
+            if (x == v) return true;
+        }
+        return false;
+    };
+
+    constexpr uint8_t REG_SP = 6;    // champsim::REG_STACK_POINTER
+    constexpr uint8_t REG_FL = 25;   // champsim::REG_FLAGS
+    constexpr uint8_t REG_IP = 26;   // champsim::REG_INSTRUCTION_POINTER
+
+    bool writes_sp = contains(cs_instr.destination_registers, REG_SP);
+    bool writes_ip = contains(cs_instr.destination_registers, REG_IP);
+    bool reads_sp  = contains(cs_instr.source_registers, REG_SP);
+    bool reads_fl  = contains(cs_instr.source_registers, REG_FL);
+    bool reads_ip  = contains(cs_instr.source_registers, REG_IP);
+    bool reads_other = false;
+    for (auto r : cs_instr.source_registers) {
+        if (r != 0 && r != REG_SP && r != REG_FL && r != REG_IP) { reads_other = true; break; }
+    }
+
+    if (cs_instr.is_branch || writes_ip) {
+        if (!reads_sp && !reads_fl && writes_ip && !reads_other) {
+            return TraceInstruction::InstType::UNCOND_DIRECT_BRANCH; // direct jump
+        } else if (!reads_sp && !reads_fl && writes_ip && reads_other) {
+            return TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH; // indirect branch
+        } else if (!reads_sp && reads_ip && !writes_sp && writes_ip && reads_fl && !reads_other) {
+            return TraceInstruction::InstType::COND_BRANCH; // conditional branch
+        } else if (reads_sp && reads_ip && writes_sp && writes_ip && !reads_fl && !reads_other) {
+            return TraceInstruction::InstType::CALL_DIRECT; // direct call
+        } else if (reads_sp && reads_ip && writes_sp && writes_ip && !reads_fl && reads_other) {
+            return TraceInstruction::InstType::CALL_INDIRECT; // indirect call
+        } else if (reads_sp && !reads_ip && writes_sp && writes_ip) {
+            return TraceInstruction::InstType::RETURN; // return
+        } else if (writes_ip) {
+            return TraceInstruction::InstType::COND_BRANCH; // other branch types
+        }
     }
 
     // Check if it has memory operations

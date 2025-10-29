@@ -44,6 +44,11 @@ from typing import Iterable, Iterator, Tuple
 # Little-endian struct with exact layout (no padding needed given field order)
 REC_STRUCT = struct.Struct("<Q B B 2B 4B 2Q 4Q")
 
+# ChampSim special registers (from inc/trace_instruction.h)
+REG_STACK_POINTER = 6
+REG_FLAGS = 25
+REG_INSTRUCTION_POINTER = 26
+
 
 def open_maybe_gz(path: str) -> io.BufferedReader:
     if path.endswith(".gz"):
@@ -95,6 +100,8 @@ def parse_args() -> argparse.Namespace:
                     help="Heuristics for branch type classification (default: riscv)")
     ap.add_argument("--ra-reg", type=int, default=1,
                     help="Return-address register id for call/ret detection (default: 1 for RISC-V ra)")
+    ap.add_argument("--reg-abi", choices=["arm64", "raw"], default="arm64",
+                    help="Register naming in output (arm64 ABI names or raw numbers; default: arm64)")
     ap.add_argument("--map-mode", choices=["raw", "linear", "hash"], default="raw",
                     help="Address mapping mode for PC/memory")
     ap.add_argument("--addr-base", type=lambda s: int(s, 0), default=0,
@@ -164,17 +171,38 @@ def main() -> int:
                 dst_regs = [dst_reg0, dst_reg1]
                 src_regs = [src_reg0, src_reg1, src_reg2, src_reg3]
                 if is_branch:
-                    # RISC-V style call/return detection
-                    if args.arch == "riscv":
-                        if args.ra_reg in dst_regs:
-                            return "call"
-                        if args.ra_reg in src_regs and args.ra_reg not in dst_regs:
-                            return "return"
-                    # indirect if source regs likely contribute to target
-                    if any(r != 0 for r in src_regs):
+                    writes_sp = REG_STACK_POINTER in dst_regs
+                    writes_ip = REG_INSTRUCTION_POINTER in dst_regs
+                    reads_sp = REG_STACK_POINTER in src_regs
+                    reads_flags = REG_FLAGS in src_regs
+                    reads_ip = REG_INSTRUCTION_POINTER in src_regs
+                    reads_other = any(
+                        r not in (0, REG_STACK_POINTER, REG_FLAGS, REG_INSTRUCTION_POINTER) for r in src_regs
+                    )
+                    # Mirror ChampSim's classification logic
+                    if (not reads_sp) and (not reads_flags) and writes_ip and (not reads_other):
+                        return "jump"  # direct jump
+                    elif (not reads_sp) and (not reads_flags) and writes_ip and reads_other:
                         return "indirect"
-                    # fallback: conditional
-                    return "cond"
+                    elif (
+                        (not reads_sp)
+                        and reads_ip
+                        and (not writes_sp)
+                        and writes_ip
+                        and reads_flags
+                        and (not reads_other)
+                    ):
+                        return "cond"
+                    elif reads_sp and reads_ip and writes_sp and writes_ip and (not reads_flags) and (not reads_other):
+                        return "call"  # direct call
+                    elif reads_sp and reads_ip and writes_sp and writes_ip and (not reads_flags) and reads_other:
+                        return "call"  # indirect call
+                    elif reads_sp and (not reads_ip) and writes_sp and writes_ip:
+                        return "return"
+                    elif writes_ip:
+                        return "cond"  # other branch types
+                    else:
+                        return "cond"
                 # Non-branch: use memory fields
                 any_smem = any(x != 0 for x in smem)
                 any_dmem = any(x != 0 for x in dmem)
@@ -186,6 +214,23 @@ def main() -> int:
 
             itype = classify_type()
 
+            # Register naming
+            def reg_name(r: int) -> str:
+                if args.reg_abi == "raw":
+                    return str(r)
+                # ARM64 ABI-style naming (heuristic)
+                if r in (REG_STACK_POINTER, 31):
+                    return "sp"
+                if r == 30:
+                    return "lr"
+                if r == REG_INSTRUCTION_POINTER:
+                    return "pc"
+                if 0 <= r <= 29:
+                    return f"x{r}"
+                if r == REG_FLAGS:
+                    return "pstate"
+                return f"r{r}"
+
             if args.json:
                 obj = {
                     "ip": mip,
@@ -194,6 +239,8 @@ def main() -> int:
                     "type": itype,
                     "dst_regs": [dst_reg0, dst_reg1],
                     "src_regs": [src_reg0, src_reg1, src_reg2, src_reg3],
+                    "dst_regs_names": [reg_name(dst_reg0), reg_name(dst_reg1)],
+                    "src_regs_names": [reg_name(src_reg0), reg_name(src_reg1), reg_name(src_reg2), reg_name(src_reg3)],
                 }
                 if args.show_mem:
                     obj["dst_mem"] = dmem_m
@@ -208,36 +255,46 @@ def main() -> int:
                         ("br", 3),
                         ("type", 9),
                         ("taken", 6),
-                        ("dst_regs", 14),
-                        ("src_regs", 22),
+                        ("dst_regs", 20),
+                        ("src_regs", 30),
                     ]
                     if args.show_mem:
-                        headers += [("dst_mem", 37), ("src_mem", 73)]
+                        # Narrower columns for memory lists (compact hex, non-zero only)
+                        headers += [("dst_mem", 28), ("src_mem", 48)]
                     def fmt_hdr(cols):
                         return " ".join(name.ljust(w) for name, w in cols)
                     print(fmt_hdr(headers))
                     print("-" * (sum(w for _, w in headers) + len(headers) - 1))
 
                 idx_str = f"{args.skip + total - 1:>6d}"
-                pc_str = f"0x{mip:016x}"
+                # Compact hex for PC (no leading zeros)
+                pc_str = fmt_hex(mip)
                 br_str = f"{int(is_branch)}"
                 type_str = itype
-                taken_str = f"{int(branch_taken)}"
-                dst_regs_str = f"[{dst_reg0},{dst_reg1}]"
-                src_regs_str = f"[{src_reg0},{src_reg1},{src_reg2},{src_reg3}]"
+                taken_str = f"{int(bool(branch_taken))}" if is_branch else ""
+                dst_regs_str = "[" + ",".join(
+                    reg_name(r) for r in [dst_reg0, dst_reg1] if r != 0
+                ) + "]"
+                src_regs_str = "[" + ",".join(
+                    reg_name(r)
+                    for r in [src_reg0, src_reg1, src_reg2, src_reg3]
+                    if r != 0
+                ) + "]"
                 row = [
                     (idx_str, 8),
                     (pc_str, 18),
                     (br_str, 3),
                     (type_str, 9),
                     (taken_str, 6),
-                    (dst_regs_str, 14),
-                    (src_regs_str, 22),
+                    (dst_regs_str, 20),
+                    (src_regs_str, 30),
                 ]
                 if args.show_mem:
-                    dst_mem_str = "[" + ",".join(fmt_hex(x) for x in dmem_m) + "]"
-                    src_mem_str = "[" + ",".join(fmt_hex(x) for x in smem_m) + "]"
-                    row += [(dst_mem_str, 37), (src_mem_str, 73)]
+                    nz_dmem = [x for x in dmem_m if x != 0]
+                    nz_smem = [x for x in smem_m if x != 0]
+                    dst_mem_str = "[" + ",".join(fmt_hex(x) for x in nz_dmem) + "]" if nz_dmem else ""
+                    src_mem_str = "[" + ",".join(fmt_hex(x) for x in nz_smem) + "]" if nz_smem else ""
+                    row += [(dst_mem_str, 28), (src_mem_str, 48)]
 
                 def fmt_row(cols):
                     return " ".join(str(val)[:w].ljust(w) for val, w in cols)
