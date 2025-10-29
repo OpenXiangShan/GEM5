@@ -84,8 +84,8 @@ class IntMult(FUDesc):
     opList = [ OpDesc(opClass='IntMult', opLat=3) ]
 
 class FP_SLOW(FUDesc):
-    opList = [ OpDesc(opClass='FloatDiv', opLat=14),
-               OpDesc(opClass='FloatSqrt', opLat=17)]
+    opList = [ OpDesc(opClass='FloatDiv', opLat=12),
+               OpDesc(opClass='FloatSqrt', opLat=sys.maxsize, pipelined=False)]
 
 class FP_ALU(FUDesc):
     opList = [ OpDesc(opClass='FloatCmp', opLat=3),
