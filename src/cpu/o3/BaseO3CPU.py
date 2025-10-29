@@ -274,5 +274,11 @@ class BaseO3CPU(BaseCPU):
     traceEnableWrongPath = Param.Bool(True,
         "Enable wrong-path injection on BP mispredict for decoupled frontend")
 
+    # Wrong-path injection mode: use trace instructions vs. always NOPs
+    # False (default): inject NOPs and keep reader position unchanged
+    # True: advance reader and use trace PCs during injection; restore reader at squash
+    traceWrongPathUseTraceInst = Param.Bool(False,
+        "Use trace instructions for wrong-path injection (advance + checkpoint/restore); default False uses NOPs")
+
     # Trace mode control (exec bypass reserved for future use)
     traceExecBypass = Param.Bool(False, "Bypass real execute for non-mem/non-ctrl ops in trace mode; only consume timing (experimental)")

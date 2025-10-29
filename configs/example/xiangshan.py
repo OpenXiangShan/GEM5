@@ -244,6 +244,8 @@ def build_test_system(np, args):
             # Trace mispredict modeling controls
             cpu.traceMispredictPenalty = args.trace_mispredict_penalty
             cpu.traceEnableWrongPath = (not args.trace_disable_wrongpath)
+            if hasattr(args, 'trace_wrongpath_use_traceinst') and args.trace_wrongpath_use_traceinst:
+                cpu.traceWrongPathUseTraceInst = True
 
             # Note: Difftest configured at system level, not CPU level
 
@@ -545,6 +547,8 @@ if __name__ == '__m5_main__':
                        help='Cycles to penalize on mispredict (default: 8)')
     parser.add_argument('--trace-disable-wrongpath', action='store_true',
                        help='Disable explicit wrong-path injection (use stall model)')
+    parser.add_argument('--trace-wrongpath-use-traceinst', action='store_true',
+                       help='Wrong-path injection uses trace instructions with checkpoint/restore (default: NOPs)')
 
     # Check for trace mode before parsing to make generic-rv-cpt conditional
     if '--enable-trace-mode' in sys.argv:

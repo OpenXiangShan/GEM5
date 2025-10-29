@@ -556,13 +556,6 @@ class Fetch
      * @param currentPC Current PC of the branch
      */
     void feedTraceToDecoupledFTB(const o3::TraceInstruction& traceInstr, Addr currentPC);
-    
-    /**
-     * Synthesize instruction bytes from trace for decoder after icache completion
-     * Stage 5: Maintains icache timing while providing correct instruction semantics
-     * @param tid Thread ID
-     */
-    void synthesizeTraceInstructionBytes(ThreadID tid);
 
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
@@ -627,13 +620,6 @@ class Fetch
      * @return true if trace reader initialized successfully
      */
     bool initializeTraceReader();
-
-    /**
-     * Fetch instruction from trace reader in trace mode
-     * @param tid Thread ID
-     * @return true if instruction was successfully fetched from trace
-     */
-    bool fetchInstructionFromTrace(ThreadID tid);
 
     /**
      * Supply FTQ with fetch targets derived from trace instructions
@@ -725,6 +711,8 @@ class Fetch
     /** Whether to train BP and use real branch instructions in trace mode */
     // Default off per design: trace 不显式训练预测器，改由普通 commit 路径训练
     bool traceTrainBranches = false;
+    /** Whether to validate BP against trace to trigger wrong-path mode */
+    bool traceBPValidation = true;
     /** Cycles to stall fetch on mispredict in trace mode */
     Cycles traceMispredictPenalty = Cycles(8);
     /** Remaining stall cycles due to a modeled mispredict */
@@ -738,6 +726,11 @@ class Fetch
     Addr traceWrongPathPredPC = 0;       // predicted (wrong) path start PC
     Addr traceWrongPathCorrectPC = 0;    // correct redirect PC from trace
     InstSeqNum traceWrongPathBranchSeqNum = 0; // branch seqNum for squash boundary
+
+    /** Wrong-path injection mode: use trace instructions instead of NOPs */
+    bool traceWrongPathUseTraceInst = false;
+    /** Checkpoint for wrong-path (only used when traceWrongPathUseTraceInst is enabled) */
+    o3::TraceReader::TraceCheckpoint traceWrongPathCheckpoint;
 
     /** Whether trace mode should honor decoupled frontend semantics */
     bool traceDecoupledFrontend = false;

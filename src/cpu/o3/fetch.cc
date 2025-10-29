@@ -174,6 +174,13 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         // Trace 模式下不进行显式 BP 训练，训练交由普通 commit 通路
         traceTrainBranches = false;
         traceDecoupledFrontend = params.enableDecoupledBPInTrace;
+        // Wire CPU params to fetch trace modeling knobs
+        traceMispredictPenalty = params.traceMispredictPenalty;
+        traceEnableWrongPath = params.traceEnableWrongPath;
+        // Wrong-path injection mode (default NOPs)
+        traceWrongPathUseTraceInst = params.traceWrongPathUseTraceInst;
+        // Enable BP-vs-trace validation independent of training
+        traceBPValidation = params.traceBPValidation;
         traceReader = createTraceReader(params.traceFormat, params.traceFile,
                                         cpu->name() + ".traceReader",
                                         params.traceAddrBase, params.traceAddrSize,
@@ -1586,6 +1593,8 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 
         DPRINTF(Fetch, "[tid:%i] Squashing instructions due to squash "
                 "from commit.\n",tid);
+        // End wrong-path injection upon external squash; fetch does not self-squash
+        traceWrongPathActive = false;
         // In any case, squash.
         squash(*fromCommit->commitInfo[tid].pc,
                fromCommit->commitInfo[tid].doneSeqNum,
@@ -1749,6 +1758,8 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     if (fromDecode->decodeInfo[tid].squash) {
         DPRINTF(Fetch, "[tid:%i] Squashing instructions due to squash "
                 "from decode.\n",tid);
+        // End wrong-path injection upon external squash; fetch does not self-squash
+        traceWrongPathActive = false;
 
         // Update the branch predictor.
         if (!isDecoupledFrontend()) {
@@ -2141,9 +2152,12 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     DynInstPtr instruction = buildInst(tid, staticInst, curMacroop, pc, *next_pc, true);
 
     // 在按需 trace 模式下，将挂起的 trace 元数据绑定到 DynInst
+    // 保留一份本条指令的 trace 记录用于后续 BP 校验
+    o3::TraceInstruction traceForThisInst;
     if (instruction && traceMode && pendingTraceValid) {
         // 记录元数据映射（seqNum -> trace 指令）
         storeTraceInstMetadata(instruction->seqNum, pendingTraceInstr);
+        traceForThisInst = pendingTraceInstr;
         seqNumToTraceIndex[instruction->seqNum] = traceInstrConsumed;
         traceInstrConsumed++;
 
@@ -2163,7 +2177,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                     (unsigned long long)fallthrough);
         }
 
-        pendingTraceValid = false;
+        // 先不要清空 pendingTraceValid，后面需要用 traceForThisInst 做 BP 校验
     }
 
     // Special handling for RISC-V vector configuration instructions.
@@ -2196,6 +2210,54 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Branch detected with PC = %s, target = %s\n",
                 instruction->threadNumber, pc, *next_pc);
+    }
+
+    // 若启用 BP 校验，则将 BPU 预测与 trace 真值对比，决定是否进入 wrong-path
+    if (traceMode && traceBPValidation && instruction &&
+        traceForThisInst.isValid() && traceForThisInst.isAnyBranch()) {
+        const Addr predictedPC = next_pc->instAddr();
+        const Addr ft_pc = traceForThisInst.getPC() + 4;
+        const bool predictedTaken = (predictedPC != ft_pc);
+        const bool ok = validateBPPrediction(traceForThisInst, predictedPC, predictedTaken);
+
+        if (!ok) {
+            if (isDecoupledFrontend() && traceEnableWrongPath) {
+                traceWrongPathActive = true;
+                DPRINTF(Fetch,
+                        "[tid:%i] Start wrong-path injection (follow BP stream; "
+                        "no local squash) predPC=0x%llx\n",
+                        tid, (unsigned long long)predictedPC);
+            } else {
+                traceStallRemaining = traceMispredictPenalty;
+                DPRINTF(Override, "[TRACE-FTB] Stall model on mispredict: %llu cycles remaining\n",
+                        (unsigned long long)traceStallRemaining);
+            }
+
+            // 更正 BPU 历史（ground truth）
+            std::unique_ptr<PCStateBase> corr_pc(pc.clone());
+            Addr corr_target = traceForThisInst.getBranchTaken() && traceForThisInst.getHasBranchTarget()
+                                ? traceForThisInst.getBranchTarget()
+                                : ft_pc;
+            corr_pc->as<RiscvISA::PCState>().set(corr_target);
+            branchPred->squash(instruction->seqNum, *corr_pc, traceForThisInst.getBranchTaken(), tid);
+
+            auto stall_pen = (unsigned long long) traceMispredictPenalty;
+            DPRINTF(Fetch,
+                    "[tid:%i] Modeled BP mispredict: predicted (pc=0x%llx) vs "
+                    "trace (pc=0x%llx); penalty=%llu cycles, mode=%s\n",
+                    tid, (unsigned long long)predictedPC,
+                    (unsigned long long)corr_target,
+                    stall_pen,
+                    isDecoupledFrontend() ? "wrong-path" : "stall");
+        }
+
+        // 将真值反馈给预测器（BTB/FTB 等）
+        feedTraceBranchToBP(traceForThisInst, traceForThisInst.getPC());
+    }
+
+    // 清除 pending 标记
+    if (traceMode && pendingTraceValid) {
+        pendingTraceValid = false;
     }
 
     // A new macro-op also begins if the PC changes discontinuously.
@@ -2240,16 +2302,25 @@ Fetch::performInstructionFetch(ThreadID tid)
                 // Synthesize a NOP as wrong-path inst: addi x0, x0, 0
                 TheISA::MachInst nop = 0x00000013u;
 
+                // Always follow BP-provided stream; do not maintain a separate inject PC
+                Addr injectPC = pc[tid]->as<RiscvISA::PCState>().pc();
+
+                // Optionally advance trace reader to stay on correct path (bytes still NOP)
+                if (traceWrongPathUseTraceInst && traceReader) {
+                    auto ti = traceReader->getNextInstruction();
+                    (void)ti;
+                }
+
                 // Prepare PC state for wrong-path instruction
                 std::unique_ptr<PCStateBase> this_pc(pc[tid]->clone());
                 std::unique_ptr<PCStateBase> next_pc(pc[tid]->clone());
-                this_pc->as<RiscvISA::PCState>().set(traceWrongPathPredPC);
-                next_pc->as<RiscvISA::PCState>().set(traceWrongPathPredPC + 4);
+                this_pc->as<RiscvISA::PCState>().set(injectPC);
+                next_pc->as<RiscvISA::PCState>().set(injectPC + 4);
 
-                // Feed decoder
+                // Feed decoder (still use a NOP opcode for simplicity/YAGNI)
                 std::unique_ptr<PCStateBase> decode_pc(pc[tid]->clone());
                 memcpy(decoder[tid]->moreBytesPtr(), &nop, sizeof(nop));
-                decoder[tid]->moreBytes(*decode_pc, traceWrongPathPredPC);
+                decoder[tid]->moreBytes(*decode_pc, injectPC);
                 StaticInstPtr staticInst = decoder[tid]->decode(*decode_pc);
 
                 if (!staticInst) {
@@ -2272,45 +2343,7 @@ Fetch::performInstructionFetch(ThreadID tid)
                 assert(fetchQueue[tid].size() <= fetchQueueSize);
                 fetchStats.insts++;
 
-                DPRINTF(Fetch, "[tid:%i] Wrong-path inst enqueued at PC=0x%lx\n", tid, traceWrongPathPredPC);
-
-                // Advance wrong-path PC
-                traceWrongPathPredPC += 4;
-            }
-
-            // One cycle of wrong-path feed completed
-            if (traceWrongPathCyclesLeft > Cycles(0)) {
-                traceWrongPathCyclesLeft = traceWrongPathCyclesLeft - Cycles(1);
-            }
-
-            // If done, squash younger than branch and redirect to correct PC
-            if (traceWrongPathCyclesLeft == Cycles(0)) {
-                // Perform a local squash without rewinding the trace reader
-                PCStateBase &new_pc = *pc[tid];
-                new_pc.as<RiscvISA::PCState>().set(traceWrongPathCorrectPC);
-
-                DPRINTF(Fetch, "[tid:%i] Wrong-path complete. Local squash to PC=0x%lx; remove sn>=%lli\n",
-                        tid, traceWrongPathCorrectPC, traceWrongPathBranchSeqNum);
-
-                // Reset decoder/macroop and clear buffers
-                macroop[tid] = NULL;
-                decoder[tid]->reset();
-                cacheReq[tid].reset();
-                fetchBuffer[tid].reset();
-                fetchQueue[tid].clear();
-
-                // Update fetch status and stalls
-                fetchStatus[tid] = Squashing;
-                setAllFetchStalls(StallReason::BpStall);
-                delayedCommit[tid] = true;
-                usedUpFetchTargets = isDecoupledFrontend();
-
-                // Remove younger instructions
-                cpu->removeInstsUntil(traceWrongPathBranchSeqNum, tid);
-
-                // Set fetch PC
-                set(pc[tid], new_pc);
-                traceWrongPathActive = false;
+                DPRINTF(Fetch, "[tid:%i] Wrong-path inst enqueued at PC=0x%lx\n", tid, injectPC);
             }
             return;
         }
@@ -2820,6 +2853,7 @@ Fetch::initializeTraceReader()
     return true;
 }
 
+#if 0 // removed: unused fetchInstructionFromTrace
 bool
 Fetch::fetchInstructionFromTrace(ThreadID tid)
 {
@@ -2893,7 +2927,7 @@ Fetch::fetchInstructionFromTrace(ThreadID tid)
             // Branch handling: prediction compare + training
             if (traceInstr.isAnyBranch()) {
                 // If enabled, first obtain predictor's decision and compare to trace
-                if (traceTrainBranches) {
+                if (traceBPValidation) {
                     // Clone PC for prediction, pointing at this trace PC
                     std::unique_ptr<PCStateBase> pred_pc(pc[tid]->clone());
                     pred_pc->as<RiscvISA::PCState>().set(traceInstr.getPC());
@@ -2909,22 +2943,10 @@ Fetch::fetchInstructionFromTrace(ThreadID tid)
                         // For decoupled frontend, inject wrong-path stream; otherwise, stall
                         if (isDecoupledFrontend() && traceEnableWrongPath) {
                             traceWrongPathActive = true;
-                            traceWrongPathCyclesLeft = traceMispredictPenalty;
-                            traceWrongPathPredPC = predictedPC; // start wrong-path at predicted target/fall-through
-                            traceWrongPathBranchSeqNum = inst->seqNum;
-                            traceWrongPathCorrectPC = (traceInstr.getBranchTaken() && traceInstr.getHasBranchTarget())
-                                                        ? traceInstr.getBranchTarget() : (traceInstr.getPC() + 4);
-                            DPRINTF(Fetch, "[tid:%i] Start wrong-path injection: predPC=0x%llx, corrPC=0x%llx, cycles=%llu\n",
-                                    tid, (unsigned long long)traceWrongPathPredPC,
-                                    (unsigned long long)traceWrongPathCorrectPC,
-                                    (unsigned long long)traceWrongPathCyclesLeft);
-                            
-                            // Stage 7: Validation & Instrumentation - wrong-path injection
-                            DPRINTF(Override, "[TRACE-FTB] Wrong-path injection started: predPC=0x%llx, "
-                                    "corrPC=0x%llx, penalty=%llu cycles\n",
-                                    (unsigned long long)traceWrongPathPredPC,
-                                    (unsigned long long)traceWrongPathCorrectPC,
-                                    (unsigned long long)traceWrongPathCyclesLeft);
+                            DPRINTF(Fetch,
+                                    "[tid:%i] Start wrong-path injection (follow BP stream; "
+                                    "no local squash) predPC=0x%llx\n",
+                                    tid, (unsigned long long)predictedPC);
                         } else {
                             traceStallRemaining = traceMispredictPenalty;
                             
@@ -3020,6 +3042,7 @@ Fetch::fetchInstructionFromTrace(ThreadID tid)
 
     return false;
 }
+#endif // removed: fetchInstructionFromTrace
 
 TheISA::MachInst
 Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
@@ -3554,6 +3577,7 @@ Fetch::feedTraceToDecoupledFTB(const o3::TraceInstruction& traceInstr, Addr curr
             currentPC, currentFsqId);
 }
 
+#if 0 // removed: unused synthesizeTraceInstructionBytes
 void
 Fetch::synthesizeTraceInstructionBytes(ThreadID tid)
 {
@@ -3675,6 +3699,7 @@ Fetch::synthesizeTraceInstructionBytes(ThreadID tid)
                 tid, fetchBuffer[tid].startPC);
     }
 }
+#endif // removed: synthesizeTraceInstructionBytes
 
 void
 Fetch::supplyFTQWithTraceTargets()
