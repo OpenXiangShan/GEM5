@@ -46,6 +46,7 @@
 #include "mem/cache/prefetch/base.hh"
 
 #include <cassert>
+#include <cstring>
 
 #include "base/intmath.hh"
 #include "debug/HWPrefetch.hh"
@@ -197,7 +198,10 @@ Base::PrefetchListener::notify(const PacketPtr &pkt)
 
 Base::Base(const BasePrefetcherParams &p)
     : ClockedObject(p),
-      listeners(), isSubPrefetcher(p.is_sub_prefetcher),
+      listeners(),
+      trainingBufferSize(p.training_buffer_size),
+      cycleEvent([this]{ processCycle(); }, name()),  // TrainFilter cycle event
+      isSubPrefetcher(p.is_sub_prefetcher),
       archDBer(p.arch_db), blkSize(p.block_size),
       lBlkSize(floorLog2(blkSize)), onMiss(p.on_miss), onRead(p.on_read),
       onWrite(p.on_write), onData(p.on_data), onInst(p.on_inst),
@@ -456,14 +460,56 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
         if (!useVirtualAddresses || pkt->req->hasVaddr()) {
             // condition1:  useVirtualAddresses && pkt->req->hasVaddr()
             // condition2: !useVirtualAddresses
-            PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
-                             Request::XsMetadata(pf_source, pf_depth));
-            pfi.setReqAfterSquash(squashMark);
-            pfi.setEverPrefetched(hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
-            pfi.setPfFirstHit(!miss && hasBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
-            pfi.setPfHit(!miss && hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure()));
+
+            Addr addr = pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr();
+            Request::XsMetadata xsMetadata(pf_source, pf_depth);
+
+            // Query and save all state information needed for training
+            bool everPrefetched = hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure());
+            bool pfFirstHit = !miss && hasBeenPrefetched(pkt->getAddr(), pkt->isSecure());
+            bool pfHit = !miss && everPrefetched;
+            bool currentSquashMark = squashMark;
             squashMark = false;
-            notify(pkt, pfi);
+
+            // TrainFilter: Collect training requests into temporary buffers
+            if (useTrainingBuffer()) {
+                // Extract ROB sequence number from packet metadata
+                InstSeqNum seqNum = getSeqNum(pkt);
+                Addr blockAddr = getBlockAddr(addr);
+                bool isLoad = isLoadRequest(pkt);
+
+                // Collect into Load or Store temporary buffer based on request type
+                if (isLoad) {
+                    currentCycleLoads.emplace_back(
+                        pkt, addr, miss, xsMetadata,
+                        everPrefetched, pfFirstHit, pfHit, currentSquashMark,
+                        seqNum, blockAddr, isLoad
+                    );
+                    DPRINTF(HWPrefetch, "TrainFilter: Collected Load [seq=%lu, blk=%#x]\n",
+                            seqNum, blockAddr);
+                } else {
+                    currentCycleStores.emplace_back(
+                        pkt, addr, miss, xsMetadata,
+                        everPrefetched, pfFirstHit, pfHit, currentSquashMark,
+                        seqNum, blockAddr, isLoad
+                    );
+                    DPRINTF(HWPrefetch, "TrainFilter: Collected Store [seq=%lu, blk=%#x]\n",
+                            seqNum, blockAddr);
+                }
+
+                if (!cycleEvent.scheduled()) {
+                    schedule(cycleEvent, clockEdge(Cycles(1)));
+                    DPRINTF(HWPrefetch, "TrainFilter: Scheduled processCycle for next cycle\n");
+                }
+            } else {
+                // When not using buffer, create PrefetchInfo immediately and train
+                PrefetchInfo pfi(pkt, addr, miss, xsMetadata);
+                pfi.setReqAfterSquash(currentSquashMark);
+                pfi.setEverPrefetched(everPrefetched);
+                pfi.setPfFirstHit(pfFirstHit);
+                pfi.setPfHit(pfHit);
+                notify(pkt, pfi);
+            }
         } else {
             DPRINTF(HWPrefetch, "Skip req addr %x, has vaddr: %i\n",
                     pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), pkt->req->hasVaddr());
@@ -472,6 +518,175 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
         DPRINTF(HWPrefetch, "Skip req addr %x, miss: %x for prefetcher\n",
                 pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss);
     }
+}
+
+void
+Base::processCycle()
+{
+    DPRINTF(HWPrefetch, "=== TrainFilter Cycle @ Tick %lu ===\n", curTick());
+
+    // Step 1: Flush previous cycle's collected requests into trainingBuffer
+    if (!currentCycleLoads.empty() || !currentCycleStores.empty()) {
+        flushCurrentCycleRequests();
+    }
+
+    // Step 2: Train one request from trainingBuffer (if available)
+    if (!trainingBuffer.empty()) {
+        processTraining();
+    }
+
+    bool hasWork = !currentCycleLoads.empty() ||
+                   !currentCycleStores.empty() ||
+                   !trainingBuffer.empty();
+
+    if (hasWork && !cycleEvent.scheduled()) {
+        schedule(cycleEvent, clockEdge(Cycles(1)));
+        DPRINTF(HWPrefetch, "TrainFilter: Rescheduled (pending work: %d loads, %d stores, %d in buffer)\n",
+                currentCycleLoads.size(), currentCycleStores.size(), trainingBuffer.size());
+    } else if (!hasWork) {
+        DPRINTF(HWPrefetch, "TrainFilter: No work remaining, stopping cycle event\n");
+    }
+}
+
+void
+Base::flushCurrentCycleRequests()
+{
+    if (currentCycleLoads.empty() && currentCycleStores.empty()) {
+        return;
+    }
+
+    DPRINTF(HWPrefetch, "TrainFilter: Flushing %d Loads, %d Stores\n",
+            currentCycleLoads.size(), currentCycleStores.size());
+
+    // Step 1: Sort Load group by ROB order (oldest first)
+    std::sort(currentCycleLoads.begin(), currentCycleLoads.end(),
+              [](const TrainingRequest &a, const TrainingRequest &b) {
+                  return a.seqNum < b.seqNum;  // Ascending order (oldest first)
+              });
+
+    // Step 2: Sort Store group by ROB order (oldest first)
+    std::sort(currentCycleStores.begin(), currentCycleStores.end(),
+              [](const TrainingRequest &a, const TrainingRequest &b) {
+                  return a.seqNum < b.seqNum;
+              });
+
+    // Step 3: Merge into [Loads..., Stores...] sequence
+    std::vector<TrainingRequest> sortedRequests;
+    sortedRequests.reserve(currentCycleLoads.size() + currentCycleStores.size());
+
+    for (auto &req : currentCycleLoads) {
+        sortedRequests.push_back(std::move(req));
+    }
+
+    for (auto &req : currentCycleStores) {
+        sortedRequests.push_back(std::move(req));
+    }
+
+    DPRINTF(HWPrefetch, "TrainFilter: Reordered sequence: ");
+    for (const auto &req : sortedRequests) {
+        DPRINTFR(HWPrefetch, "[%s%lu] ", req.isLoad ? "L" : "S", req.seqNum);
+    }
+    DPRINTFR(HWPrefetch, "\n");
+
+    // Step 4: Filter and insert into trainingBuffer
+    for (auto &req : sortedRequests) {
+        Addr blockAddr = req.blockAddr;
+
+        if (trainingBufferBlockAddrs.count(blockAddr) > 0) {
+            DPRINTF(HWPrefetch, "  TrainFilter: Drop [%s%lu, %#x] - in buffer\n",
+                    req.isLoad ? "L" : "S", req.seqNum, blockAddr);
+            continue;
+        }
+
+        if (trainingBuffer.size() >= trainingBufferSize) {
+            DPRINTF(HWPrefetch, "  TrainFilter: Drop [%s%lu, %#x] - buffer full\n",
+                    req.isLoad ? "L" : "S", req.seqNum, blockAddr);
+            continue;
+        }
+
+        bool isLoad = req.isLoad;
+        InstSeqNum seqNum = req.seqNum;
+
+        trainingBuffer.push_back(std::move(req));
+        trainingBufferBlockAddrs.insert(blockAddr);
+
+        DPRINTF(HWPrefetch, "  TrainFilter: Enqueue [%s%lu, %#x] (buffer: %d)\n",
+                isLoad ? "L" : "S", seqNum, blockAddr,
+                trainingBuffer.size());
+    }
+
+    currentCycleLoads.clear();
+    currentCycleStores.clear();
+}
+
+void
+Base::processTraining()
+{
+    if (trainingBuffer.empty()) {
+        return;
+    }
+
+    TrainingRequest &req = trainingBuffer.front();
+
+    DPRINTF(HWPrefetch, ">>> TrainFilter: Training [%s%lu, %#x] (remaining: %d)\n",
+            req.isLoad ? "L" : "S", req.seqNum, req.blockAddr,
+            trainingBuffer.size() - 1);
+
+    PacketPtr temp_pkt = new Packet(req.req, req.cmd);
+
+    bool isWrite = temp_pkt->isWrite();
+    bool willAccessData = (isWrite || !req.miss) && !temp_pkt->isStorePFTrain();
+
+    if (req.dataCopy != nullptr) {
+        temp_pkt->dataDynamic(req.dataCopy);
+
+        const_cast<TrainingRequest&>(req).dataCopy = nullptr;
+
+        DPRINTF(HWPrefetch, "  TrainFilter: Packet with data (%d bytes)\n", req.dataSize);
+    } else if (willAccessData) {
+        DPRINTF(HWPrefetch, "  TrainFilter: WARNING - Creating dummy data buffer "
+                "(original packet had no data, miss=%d, isWrite=%d)\n",
+                req.miss, isWrite);
+
+        uint8_t *dummyData = new uint8_t[req.dataSize];
+        std::memset(dummyData, 0, req.dataSize);
+        temp_pkt->dataDynamic(dummyData);
+    } else {
+        DPRINTF(HWPrefetch, "  TrainFilter: Packet without data (miss=%d, isWrite=%d)\n",
+                req.miss, isWrite);
+    }
+
+    PrefetchInfo pfi(temp_pkt, req.addr, req.miss, req.xsMetadata);
+    pfi.setReqAfterSquash(req.squashMark);
+    pfi.setEverPrefetched(req.everPrefetched);
+    pfi.setPfFirstHit(req.pfFirstHit);
+    pfi.setPfHit(req.pfHit);
+    notify(temp_pkt, pfi);
+
+    delete temp_pkt;
+
+    trainingBufferBlockAddrs.erase(req.blockAddr);
+
+    trainingBuffer.pop_front();
+}
+
+InstSeqNum
+Base::getSeqNum(const PacketPtr &pkt) const
+{
+    // Try to get seqNum from XsMeta data
+    if (pkt->req->getXsMetadata().validXsMetadata &&
+        pkt->req->getXsMetadata().instXsMetadata) {
+        return pkt->req->getXsMetadata().instXsMetadata->seqNum;
+    }
+
+    panic("cannot get valid seqNum\n");
+
+}
+
+bool
+Base::isLoadRequest(const PacketPtr &pkt) const
+{
+    return pkt->isRead() && !pkt->isWrite();
 }
 
 void
