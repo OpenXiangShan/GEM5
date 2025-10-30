@@ -1563,13 +1563,21 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 {
     ThreadID tid = inst->threadNumber;
 
-    toFetch->iewInfo[tid].resolvedInstPC.push_back(inst->getPC());
+    uint64_t fsqId = inst->getFsqId();
+    uint64_t pc = inst->getPC();
+    bool found = false;
+    for (auto &entry : toFetch->iewInfo[tid].resolveQueue) {
+        if (entry.resolvedFSQId == fsqId) {
+            entry.resolvedInstPC.push_back(pc);
+            found = true;
+        }
+    }
 
-    bool resolvedFSQIdNotInToFetch =
-        find(toFetch->iewInfo[tid].resolvedFSQId.begin(), toFetch->iewInfo[tid].resolvedFSQId.end(),
-             inst->getFsqId()) == toFetch->iewInfo[tid].resolvedFSQId.end();
-    if (inst->isControl() && resolvedFSQIdNotInToFetch) {
-        toFetch->iewInfo[tid].resolvedFSQId.push_back(inst->getFsqId());
+    if (!found) {
+        ResolveQueueEntry newEntry;
+        newEntry.resolvedFSQId = fsqId;
+        newEntry.resolvedInstPC.push_back(pc);
+        toFetch->iewInfo[tid].resolveQueue.push_back(newEntry);
     }
 
     if (!fetchRedirect[tid] ||
@@ -1667,8 +1675,7 @@ IEW::executeInsts()
 
     // Clear resolvedFSQId and resolvedInstPC since they are already handled in frontend
     ThreadID tid = *activeThreads->begin();
-    toFetch->iewInfo[tid].resolvedFSQId.clear();
-    toFetch->iewInfo[tid].resolvedInstPC.clear();
+    toFetch->iewInfo[tid].resolveQueue.clear();
 
     // Execute/writeback any instructions that are available.
     int insts_to_execute = fromIssue->size;
