@@ -1495,10 +1495,10 @@ Fetch::handleIEWSignals()
     }
 
     // iterate resolvedFSQId and get FetchStream, push to ResolveQueue
-    for (const uint64_t &fsq_id : fromIEW->iewInfo->resolvedFSQId) {
-        unsigned int stream_id = fsq_id;
+    for (auto entry : fromIEW->iewInfo->resolveQueue) {
+        unsigned int stream_id = entry.resolvedFSQId;
         dbpbtb->prepareMarkCFIEntries(stream_id);
-        for (uint64_t &resolvedInstPC : fromIEW->iewInfo->resolvedInstPC) {
+        for (uint64_t &resolvedInstPC : entry.resolvedInstPC) {
             dbpbtb->markCFIResolved(stream_id, resolvedInstPC);
         }
         dbpbtb->updateTAGEOnly(stream_id);

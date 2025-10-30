@@ -194,6 +194,12 @@ struct SquashVersion
     SquashVersion() : version(0) {}
 };
 
+struct ResolveQueueEntry
+{
+    uint64_t resolvedFSQId;
+    std::vector<uint64_t> resolvedInstPC;
+};
+
 /** Struct that defines all backwards communication. */
 struct TimeStruct
 {
@@ -242,9 +248,7 @@ struct TimeStruct
         StallReason lqHeadStallReason;
         StallReason sqHeadStallReason;
 
-        std::vector<uint64_t> resolvedFSQId; // *F
-        std::vector<uint64_t> resolvedInstPC; // *F
-
+        std::vector<ResolveQueueEntry> resolveQueue;  // *F
     };
 
     IewComm iewInfo[MaxThreads];
