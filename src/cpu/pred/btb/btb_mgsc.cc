@@ -352,18 +352,41 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
 {
     DPRINTF(MGSC, "lookupHelper startAddr: %#lx\n", startPC);
 
-    // Process each BTB entry to make predictions
-    for (auto &btb_entry : btbEntries) {
-        // Only predict for valid conditional branches
+    // Find a representative TAGE info for the entire fetch block to generate a shared bias index.
+    // We select the first conditional branch, but prioritize the one that is predicted taken by TAGE.
+    const BTBEntry* representative_entry = nullptr;
+    for (const auto& btb_entry : btbEntries) {
         if (btb_entry.isCond && btb_entry.valid) {
-            auto tage_info = tageInfoForMgscs.find(btb_entry.pc);
-            if (tage_info != tageInfoForMgscs.end()) {
-                auto pred = generateSinglePrediction(btb_entry, startPC, tage_info->second);
-                meta->preds[btb_entry.pc] = pred;
-                results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
-            } else {
-                assert(false);
+            if (!representative_entry) {
+                // Record the first conditional branch as a fallback.
+                representative_entry = &btb_entry;
             }
+            auto it = tageInfoForMgscs.find(btb_entry.pc);
+            if (it != tageInfoForMgscs.end() && it->second.tage_pred_taken) {
+                // Found a TAGE-predicted taken branch, this is our priority.
+                representative_entry = &btb_entry;
+                break;
+            }
+        }
+    }
+
+    if (!representative_entry) {
+        DPRINTF(MGSC, "No valid conditional branch found in the block.\n");
+        return;
+    }
+
+    auto it = tageInfoForMgscs.find(representative_entry->pc);
+    assert(it != tageInfoForMgscs.end());
+    const TageInfoForMGSC& representative_tage_info = it->second;
+    DPRINTF(MGSC, "Using branch at %#lx as representative for bias calculation.\n", representative_entry->pc);
+
+    // Process each BTB entry to make predictions using the shared representative TAGE info
+    for (auto &btb_entry : btbEntries) {
+        // Only predict for valid conditional branches that have TAGE info.
+        if (btb_entry.isCond && btb_entry.valid && tageInfoForMgscs.count(btb_entry.pc)) {
+            auto pred = generateSinglePrediction(btb_entry, startPC, representative_tage_info);
+            meta->preds[btb_entry.pc] = pred;
+            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
         }
     }
 }
