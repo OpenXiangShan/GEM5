@@ -276,7 +276,8 @@ class KMHV3Scheduler(Scheduler):
     __fp_bank = [i.name for i in __fpIQs]
     specWakeupNetwork = [
         SpecWakeupChannel(srcs=__int_bank + __mem_bank, dsts=__int_bank + __mem_bank),
-        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank)
+        SpecWakeupChannel(srcs=__mem_bank, dsts=__fp_bank),
+        SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank + ['std0', 'std1'])
     ]
 
     enableMainRdpOpt = True  # TX dynamic read port optimization
