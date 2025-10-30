@@ -103,6 +103,7 @@ class BertiPrefetcher : public Queued
     {
       public:
         bool hysteresis = false;
+        // bool decrMode = false;
         Addr pc = ~(0UL);
         /** FIFO of demand miss history. */
         std::list<HistoryInfo> history;
@@ -187,7 +188,7 @@ class BertiPrefetcher : public Queued
     int getBestDelta() { return lastUsedBestDelta; }
 
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                          PrefetchSourceType src, bool using_best_delta_and_confident);
+                          PrefetchSourceType src, bool using_best_delta_and_confident, bool ahead = false);
 
     void notifyFill(const PacketPtr &pkt) override;
 

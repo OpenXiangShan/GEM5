@@ -99,6 +99,9 @@ BertiPrefetcher::updateHistoryTable(const PrefetchInfo &pfi)
         bool found_addr_in_hist =
             std::find(entry->history.begin(), entry->history.end(), new_info) != entry->history.end();
         if (!found_addr_in_hist) {
+            // if (entry->history.size() > 0){
+            //     entry->decrMode = new_info.vAddr < entry->history.back().vAddr;
+            // }
             if (entry->history.size() >= maxAddrListSize) {
                 entry->history.erase(entry->history.begin());
             }
@@ -151,6 +154,8 @@ void BertiPrefetcher::searchTimelyDeltas(
     int delta_thres = useByteAddr ? blkSize : 8;
     for (auto it = entry.history.rbegin(); it != entry.history.rend(); it++) {
         int64_t delta = trigger_addr - it->vAddr;
+        // if (entry.decrMode) delta = delta < 0 ? delta : -delta;
+        // else delta = delta > 0 ? delta : -delta;
         DPRINTF(BertiPrefetcher, "delta (%x - %x) = %ld\n", trigger_addr, it->vAddr, delta);
 
         // skip short deltas
@@ -200,9 +205,9 @@ void BertiPrefetcher::searchTimelyDeltas(
         }
     }
 
-    if (entry.counter >= 6) {
+    if (entry.counter >= 2) {
         entry.updateStatus();
-        if (entry.counter >= 16) {
+        if (entry.counter > 6) {
             entry.resetConfidence(false);
         }
     }
@@ -246,8 +251,9 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
                     int64_t delta = delta_info.delta;
                     Addr pf_addr =
                         useByteAddr ? pfi.getAddr() + delta : (blockIndex(pfi.getAddr()) + delta) << lBlkSize;
+                    bool ahead = delta_info.status != L1_PREF;
                     sendPFWithFilter(pfi, pf_addr, addresses, 32, PrefetchSourceType::Berti,
-                                     delta == entry->bestDelta.delta && entry->bestDelta.coverageCounter >= 8);
+                                     delta == entry->bestDelta.delta && entry->bestDelta.coverageCounter >= 8, ahead);
                 }
             }
         } else {
@@ -255,8 +261,9 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
                 DPRINTF(BertiPrefetcher, "Using best delta %d to prefetch\n", entry->bestDelta.delta);
                 Addr pf_addr = useByteAddr ? pfi.getAddr() + entry->bestDelta.delta
                                            : (blockIndex(pfi.getAddr()) + entry->bestDelta.delta) << lBlkSize;
+                bool ahead = entry->bestDelta.status != L1_PREF;
                 sendPFWithFilter(pfi, pf_addr, addresses, 32, PrefetchSourceType::Berti,
-                                 entry->bestDelta.coverageCounter >= 8);
+                                 entry->bestDelta.coverageCounter >= 8, ahead);
                 if (triggerPht && entry->bestDelta.coverageCounter > 5) {
                     local_delta_pf_addr = pf_addr;
                 }
@@ -267,7 +274,7 @@ BertiPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPrio
 
 bool
 BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                                  PrefetchSourceType src, bool using_best_delta_and_confident)
+                                  PrefetchSourceType src, bool using_best_delta_and_confident, bool ahead)
 {
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
@@ -284,6 +291,10 @@ BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vecto
         DPRINTF(BertiPrefetcher, "Send pf: %lx\n", addr);
         filter->insert(addr, 0);
         addresses.push_back(AddrPriority(addr, prio, src));
+        if (ahead){
+            addresses.back().pfahead = true;
+            addresses.back().pfahead_host = cache->level() + 1;
+        }
         return true;
     }
 }
