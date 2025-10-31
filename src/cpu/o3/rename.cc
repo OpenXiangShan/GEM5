@@ -66,7 +66,8 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       renameWidth(params.renameWidth),
       releaseWidth(params.phyregReleaseWidth),
       numThreads(params.numThreads),
-      stats(_cpu)
+      stats(_cpu),
+      valuePred(params.valuePred)
 {
     if (renameWidth > MaxWidth)
         fatal("renameWidth (%d) is larger than compiled limit (%d),\n"
@@ -931,6 +932,31 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
                             rename_result.second);
 
         ++stats.renamedOperands;
+
+        if (valuePred) {
+            if (num_dest_regs != 1 || !inst->canLVP()) {
+                inst->vpSupported = false;
+                inst->vpResult.speculative = false;
+                inst->vpResult.value = 0xdeadbeefULL;
+                continue;
+            }
+
+            inst->vpSupported = true;
+            if (inst->vpResult.speculative) {
+                // set the scoreboard, let the back-to-back rename inst mark reg ready
+                scoreboard->setReg(rename_result.first.PhyReg());
+                inst->setRegOperand(inst->staticInst.get(), 0, inst->vpResult.value);
+                // must pop result here
+                inst->popResult();
+                DPRINTF(Rename,
+                        "Rename-Stage instruction[%s] generate "
+                        "prediction value."
+                        "seq num: %lu pc: %lX "
+                        "prediction value: %lu \n",
+                        inst->staticInst->disassemble(inst->getPC()),
+                        inst->seqNum, inst->getPC(), inst->vpResult.value);
+            }
+        }
     }
 }
 
