@@ -45,6 +45,7 @@
 
 #include "cpu/o3/iew.hh"
 
+#include <cassert>
 #include <queue>
 
 #include "arch/riscv/pcstate.hh"
@@ -79,6 +80,7 @@ namespace o3
 IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     : dqSize(params.numDQEntries),
       issueToExecQueue(params.backComSize, params.forwardComSize),
+      valuePred(params.valuePred),
       cpu(_cpu),
       scheduler(params.scheduler),
       instQueue(_cpu, this, params),
@@ -458,6 +460,21 @@ IEW::setScoreboard(Scoreboard *sb_ptr)
     scoreboard = sb_ptr;
 }
 
+void
+IEW::lvpWakeDependents(const DynInstPtr &inst) {
+    assert(inst->numDestRegs() == 1);
+    for (int i = 0; i < inst->numDestRegs(); i++) {
+        auto dest = inst->renamedDestIdx(i);
+        if (dest->isFixedMapping()) {
+            continue;
+        }
+
+        scheduler->setAllScoreBoard(dest);
+
+        DPRINTF(IEW,"[sn:%llu] vp set scoreboard to true\n", inst->seqNum);
+    }
+}
+
 bool
 IEW::isDrained() const
 {
@@ -627,6 +644,43 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
 }
 
 void
+IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
+{
+    DPRINTF(IEW,
+            "[tid:%i] value prediction error, squashing violator and younger "
+            "insts, PC: %s [sn:%llu].\n",
+            tid, inst->pcState(), inst->seqNum);
+    if (!toCommit->squash[tid] ||
+            inst->seqNum < toCommit->squashedSeqNum[tid]) {
+        toCommit->squash[tid] = true;
+
+        toCommit->valuePredictionError[tid] = true;
+        toCommit->squashedSeqNum[tid] = inst->seqNum;
+        toCommit->squashedTargetId[tid] = inst->getFtqId();
+        toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
+        set(toCommit->pc[tid], inst->pcState());
+
+        // advance pc to next instruction
+        inst->staticInst->advancePC(*toCommit->pc[tid]);
+
+        toCommit->mispredictInst[tid] = NULL;
+
+        // Even speculatively executed value prediction instructions cannot
+        // be squashed after obtaining a correct result.
+        toCommit->includeSquashInst[tid] = false;
+
+        wroteToTimeBuffer = true;
+
+        DPRINTF(DecoupleBP,
+                "value prediction error (pc=%#lx) set target id "
+                "to %lu, loop iter to %u\n",
+                toCommit->pc[tid]->instAddr(),
+                toCommit->squashedTargetId[tid],
+                toCommit->squashedLoopIter[tid]);
+    }
+}
+
+void
 IEW::block(ThreadID tid)
 {
     DPRINTF(IEW, "[tid:%i] Blocking.\n", tid);
@@ -725,6 +779,15 @@ IEW::readyToFinish(const DynInstPtr& inst)
 
     scheduler->bypassWriteback(inst);
     inst->completionTick = curTick();
+
+    ThreadID tid = inst->threadNumber;
+    if (inst->vpMisprediction) {
+        if (!fetchRedirect[tid] || !toCommit->squash[tid] || toCommit->squashedSeqNum[tid] > inst->seqNum) {
+            // deal with value prediction error
+            fetchRedirect[tid] = true;
+            squashDueToValuePrediction(inst, tid);
+        }
+    }
 
     DPRINTF(IEW, "Current wb cycle: %i, width: %i, numInst: %i\nwbActual:%i\n",
             wbCycle, wbWidth, wbNumInst, wbCycle * wbWidth + wbNumInst);
@@ -1156,6 +1219,9 @@ IEW::dispatchInstFromRename(ThreadID tid)
 
                 ldstQueue.insertLoad(inst);
                 add_to_iq = true;
+                if (valuePred && inst->vpSupported && inst->vpResult.speculative) {
+                    lvpWakeDependents(inst);
+                }
             } else if (inst->isStore()) {
                 DPRINTF(IEW,
                         "[tid:%i] Dispatch: Memory instruction "
@@ -1339,6 +1405,10 @@ IEW::classifyInstToDispQue(ThreadID tid)
 
             inst->enterDQTick = curTick();
             cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtDispQue);
+
+            if (valuePred && inst->vpSupported && inst->vpResult.speculative) {
+                lvpWakeDependents(inst);
+            }
 
             insts_to_dispatch.pop_front();
             dispatched++;

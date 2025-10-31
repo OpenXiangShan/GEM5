@@ -64,6 +64,7 @@
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/pred/stream/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/valuepred/valuepred_unit.hh"
 #include "enums/CommitPolicy.hh"
 #include "sim/arch_db.hh"
 #include "sim/probe/probe.hh"
@@ -435,6 +436,9 @@ private:
 
     branch_prediction::BPredUnit *bp;
 
+    /** Value predictor */
+    valuepred::VPUnit *valuePred;
+
     /** Vector of all of the threads. */
     std::vector<ThreadState *> thread;
 
@@ -627,6 +631,7 @@ private:
 
         statistics::Scalar squashDueToBranch;
         statistics::Scalar squashDueToOrderViolation;
+        statistics::Scalar squashDueToValuePrediction;
         statistics::Scalar squashDueToTrap;
         statistics::Scalar squashDueToTC;
         statistics::Scalar squashDueToSquashAfter;

@@ -110,7 +110,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
       icachePort(this, _cpu),
-      finishTranslationEvent(this), fetchStats(_cpu, this)
+      finishTranslationEvent(this), fetchStats(_cpu, this),
+      valuePred(params.valuePred)
 {
     if (numThreads > MaxThreads)
         fatal("numThreads (%d) is larger than compiled limit (%d),\n"
@@ -1958,6 +1959,17 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Update the main PC state for the next instruction.
     set(pc, *next_pc);
+
+    // Do the value prediction
+    if (valuePred && instruction->canLVP()) {
+        valuepred::VPPredMetaData* vpPredMetaData = valuepred::VPDataStructFactory::
+                                                        buildPredMetaData(valuePred->getValuePredictorType());
+
+        vpPredMetaData->pc = instruction->getPC();
+        vpPredMetaData->seq_no = instruction->seqNum;
+        instruction->vpResult = valuePred->valuePredict(vpPredMetaData);
+        delete vpPredMetaData;
+    }
 
     return predictedBranch;
 }

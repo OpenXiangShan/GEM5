@@ -53,6 +53,7 @@
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/valuepred/valuepred_unit.hh"
 #include "sim/probe/probe.hh"
 
 namespace gem5
@@ -571,6 +572,9 @@ class Rename
     StallReason checkRenameStallFromIEW(ThreadID tid);
 
     SquashVersion localSquashVer;
+
+    /** Value predictor */
+    valuepred::VPUnit *valuePred;
 };
 
 } // namespace o3

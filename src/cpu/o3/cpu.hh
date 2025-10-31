@@ -71,6 +71,7 @@
 #include "cpu/o3/thread_state.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/valuepred/valuepred_unit.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/process.hh"
@@ -735,6 +736,15 @@ class CPU : public BaseCPU
 
     //difftest virtual function
     void readGem5Regs() override;
+
+  private:
+    /** Value predictor */
+    valuepred::VPUnit *valuePred;
+
+  public:
+    bool isValuePredictorEnabled() const { return valuePred != nullptr; }
+
+    valuepred::VPUnit *getValuePredictor() const { return valuePred; }
 };
 
 } // namespace o3
