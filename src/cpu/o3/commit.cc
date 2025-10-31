@@ -125,6 +125,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       }, "CommitStuckCheckEvent"),
       cpu(_cpu),
       bp(_bp),
+      valuePred(params.valuePred),
       iewToCommitDelay(params.iewToCommitDelay),
       commitToIEWDelay(params.commitToIEWDelay),
       renameToROBDelay(params.renameToROBDelay),
@@ -272,6 +273,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of squash due to branch"),
       ADD_STAT(squashDueToOrderViolation, statistics::units::Count::get(),
                "Number of squash due to order violation"),
+      ADD_STAT(squashDueToValuePrediction, statistics::units::Count::get(),
+               "Number of squash due to value prediction"),
       ADD_STAT(squashDueToTrap, statistics::units::Count::get(),
                "Number of squash due to trap"),
       ADD_STAT(squashDueToTC, statistics::units::Count::get(),
@@ -362,7 +365,7 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
     committedInstType.ysubnames(enums::OpClassStrings);
 
     totalSquash = squashDueToBranch + squashDueToOrderViolation + \
-        squashDueToTrap + squashDueToTC + squashDueToSquashAfter;
+        squashDueToValuePrediction + squashDueToTrap + squashDueToTC + squashDueToSquashAfter;
 
     loadAddrSameHist
         .init(commit->loadHistorySize)
@@ -684,6 +687,9 @@ Commit::squashAll(ThreadID tid)
     rob->squash(squashed_inst, tid);
     changedROBNumEntries[tid] = true;
 
+    if (valuePred)
+        valuePred->squash(squashed_inst);
+
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
     toIEW->commitInfo[tid].doneMemSeqNum = squashed_inst;
@@ -1002,6 +1008,11 @@ Commit::commit()
                     fromIEW->mispredictInst[tid]->pcState().instAddr(),
                     fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToBranch++;
+            } else if (fromIEW->valuePredictionError[tid]) {
+                DPRINTF(Commit,
+                    "[tid:%i] Squashing due to value prediction error [sn:%llu]\n",
+                    tid, fromIEW->squashedSeqNum[tid]);
+                stats.squashDueToValuePrediction++;
             } else {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
@@ -1028,6 +1039,9 @@ Commit::commit()
 
             rob->squash(squashed_inst, tid);
             changedROBNumEntries[tid] = true;
+
+            if (valuePred)
+                valuePred->squash(squashed_inst);
 
             toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
             toIEW->commitInfo[tid].doneMemSeqNum = squashed_inst;
@@ -1758,6 +1772,25 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     // the HTM UID is purely for correctness and debugging purposes
     if (head_inst->isHtmStart())
         iewStage->setLastRetiredHtmUid(tid, head_inst->getHtmTransactionUid());
+
+    if (valuePred && head_inst->canLVP() && (inst_fault == NoFault)) {
+        valuepred::VPUpdateMetaData *updateMetaData = valuepred::
+                    VPDataStructFactory::buildUpdateMetaData(valuePred->getValuePredictorType());
+        updateMetaData->pc = head_inst->getPC();
+        updateMetaData->seq_no = head_inst->seqNum;
+        updateMetaData->actualValue = head_inst->actualValue;
+        updateMetaData->isMisprediction = head_inst->vpMisprediction;
+        valuePred->updateValuePredictor(updateMetaData);
+        valuePred->stats.VPsupported++;
+        if (head_inst->vpResult.speculative) {
+            valuePred->stats.VPpredicted++;
+            if (!head_inst->vpMisprediction) {
+                valuePred->stats.VPcorrected++;
+            }
+        }
+
+        delete updateMetaData;
+    }
 
     // Finally clear the head ROB entry.
     rob->retireHead(tid);

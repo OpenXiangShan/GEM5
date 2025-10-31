@@ -7,6 +7,8 @@ from m5.objects import *
 from m5.util import addToPath, fatal, warn
 from m5.util.fdthelper import *
 
+from m5.objects.ValuePredictor import *
+
 addToPath('../')
 
 from ruby import Ruby
@@ -376,6 +378,9 @@ def setKmhV3IdealParams(args, system):
         # cpu.EnableLdMissReplay = False
         # cpu.EnablePipeNukeCheck = False
         cpu.StoreWbStage = 4 # store writeback at s4
+
+        # value predictor
+        cpu.valuePred = IdealConstantLVP()
 
         # enable constant folding
         cpu.enableConstantFolding = False

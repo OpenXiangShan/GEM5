@@ -320,6 +320,7 @@ class Scheduler : public SimObject
     Scheduler(const SchedulerParams& params);
     void setCPU(CPU* cpu, LSQ* lsq);
     void resetDepGraph(uint64_t numPhysRegs);
+    void setAllScoreBoard(PhysRegIdPtr reg);
     void setMemDepUnit(MemDepUnit* memDepUnit) { this->memDepUnit = memDepUnit; }
     void setMainRdpOpt(bool enable);
 
