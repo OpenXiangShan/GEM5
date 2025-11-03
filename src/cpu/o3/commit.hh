@@ -584,6 +584,9 @@ class Commit
 
     void dumpTicks(const DynInstPtr &inst);
 
+    // Trace-mode: perform commit-time difftest against trace metadata
+    void traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst);
+
 public:
     const CommitStats& getCommitStats() const { return stats; }
     uint64_t getTraceCommitIndex(ThreadID tid) const { return traceCommitIndex[tid]; }
