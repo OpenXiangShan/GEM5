@@ -22,7 +22,7 @@ from common import ObjectList
 from common import XSConfig
 from common.Caches import *
 from common import Options
-from example.xiangshan import *
+from common.xiangshan import *
 
 def autoCalibrateParams(args, system):
     for cpu in system.cpu:
@@ -49,22 +49,9 @@ def autoCalibrateParams(args, system):
 
 
 if __name__ == '__m5_main__':
+    args = xiangsha_system_init()
 
-    # Add args
-    parser = argparse.ArgumentParser()
-    Options.addCommonOptions(parser, configure_xiangshan=True)
-    Options.addXiangshanFSOptions(parser)
-
-    # Add the ruby specific and protocol specific args
-    if '--ruby' in sys.argv:
-        Ruby.define_options(parser)
-
-    args = parser.parse_args()
-
-    args.xiangshan_system = True
     args.enable_difftest = False
-    args.enable_riscv_vector = True
-
     args.raw_cpt = True
     args.no_pf = True
 
@@ -87,10 +74,7 @@ if __name__ == '__m5_main__':
     else:
         FutureClass = None
 
-    # Match the memories with the CPUs, based on the options for the test system
-    TestMemClass = Simulation.setMemClass(args)
-
-    test_sys = build_test_system(args.num_cpus, args)
+    test_sys = build_xiangshan_system(args)
     autoCalibrateParams(args, test_sys)
 
     root = Root(full_system=True, system=test_sys)

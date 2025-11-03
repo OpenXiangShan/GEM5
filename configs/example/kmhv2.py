@@ -15,31 +15,12 @@ from common.FSConfig import *
 from common.SysPaths import *
 from common.Benchmarks import *
 from common import Simulation
-from common import CacheConfig
-from common import CpuConfig
-from common import MemConfig
-from common import ObjectList
-from common import XSConfig
 from common.Caches import *
-from common import Options
-from example.xiangshan import *
+from common.xiangshan import *
 
 if __name__ == '__m5_main__':
 
-    # Add args
-    parser = argparse.ArgumentParser()
-    Options.addCommonOptions(parser, configure_xiangshan=True)
-    Options.addXiangshanFSOptions(parser)
-
-    # Add the ruby specific and protocol specific args
-    if '--ruby' in sys.argv:
-        Ruby.define_options(parser)
-
-    args = parser.parse_args()
-
-    args.xiangshan_system = True
-    args.enable_difftest = True
-    args.enable_riscv_vector = True
+    args = xiangsha_system_init()
 
     # l1cache prefetcher use stream, stride
     # l2cache prefetcher use pht, bop, cmc
@@ -59,10 +40,7 @@ if __name__ == '__m5_main__':
     else:
         FutureClass = None
 
-    # Match the memories with the CPUs, based on the options for the test system
-    TestMemClass = Simulation.setMemClass(args)
-
-    test_sys = build_test_system(args.num_cpus, args)
+    test_sys = build_xiangshan_system(args)
 
     root = Root(full_system=True, system=test_sys)
 

@@ -7,4 +7,4 @@ for var in GCBV_REF_SO GCB_RESTORER gem5_home; do
     checkForVariable $var
 done
 
-$gem5 $gem5_home/configs/example/xiangshan.py --generic-rv-cpt=$1 --bp-type=DecoupledBPUWithBTB --ideal-kmhv3
+$gem5 $gem5_home/configs/example/idealkmhv3.py --generic-rv-cpt=$1

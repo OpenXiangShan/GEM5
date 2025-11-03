@@ -7,8 +7,6 @@ from m5.objects import *
 from m5.util import addToPath, fatal, warn
 from m5.util.fdthelper import *
 
-addToPath('../')
-
 from ruby import Ruby
 
 from common.FSConfig import *
@@ -19,7 +17,6 @@ from common import CacheConfig
 from common import CpuConfig
 from common import MemConfig
 from common import ObjectList
-from common import XSConfig
 from common.Caches import *
 from common import Options
 from common.FUScheduler import *
@@ -61,7 +58,145 @@ class XiangshanECore2Read(XiangshanCore):
     numPhysRMiscRegs = 40
     scheduler = ECore2ReadScheduler()
 
-def build_test_system(np, args):
+import argparse
+import os
+
+import m5
+from m5.defines import buildEnv
+from m5.objects import *
+from m5.util import addToPath, fatal, warn
+from m5.util.fdthelper import *
+
+addToPath('../')
+
+
+def config_xiangshan_inputs(args: argparse.Namespace, sys):
+    ref_so = None
+
+    # configure difftest input
+    if args.enable_difftest and args.difftest_ref_so is None:
+        # ref so should be either provided from the command line or from the env
+        if args.num_cpus > 1 and "GCBV_MULTI_CORE_REF_SO" in os.environ:
+            ref_so = os.environ["GCBV_MULTI_CORE_REF_SO"]
+            print("Obtained ref_so from GCBV_MULTI_CORE_REF_SO: ", ref_so)
+        elif "GCBV_REF_SO" in os.environ:
+            ref_so = os.environ["GCBV_REF_SO"]
+            print("Obtained ref_so from GCBV_REF_SO: ", ref_so)
+        elif "GCBH_REF_SO" in os.environ:
+            ref_so = os.environ["GCBH_REF_SO"]
+            print("Obtained ref_so from GCBH_REF_SO: ", ref_so)
+        elif "NEMU_HOME" in os.environ:
+            ref_so = os.path.join(os.environ["NEMU_HOME"], "build/riscv64-nemu-interpreter-so")
+            print("Obtained ref_so from NEMU_HOME: ", ref_so)
+        else:
+            if "GCBV_REF_SO" in os.environ:
+                print("Currently XS-GEM5 always turn on RVV and require a ref_so with RVV support")
+            fatal("No valid ref_so file specified for the functional model to "
+                  "compare against. Please 1) either specify a valid ref_so file using "
+                  "the --difftest-ref-so option;\n"
+                  "2) or specify GCBV_REF_SO/GCBV_MULTI_CORE_REF_SO/GCBH_REF_SO that points to the ref_so file;\n"
+                  "3) or specify NEMU_HOME that contains build/riscv64-nemu-interpreter-so")
+    elif args.enable_difftest and args.difftest_ref_so is not None:
+        ref_so = args.difftest_ref_so
+        print("Obtained ref_so from args.difftest_ref_so: ", ref_so)
+
+    args.difftest_ref_so = ref_so
+
+    if args.gcpt_restorer is None:
+        if args.raw_cpt:
+            # If using raw binary, no restorer is needed.
+            gcpt_restorer = None
+        elif args.num_cpus > 1:
+            if "GCB_MULTI_CORE_RESTORER" in os.environ:
+                gcpt_restorer = os.environ["GCB_MULTI_CORE_RESTORER"]
+                print("Obtained gcpt_restorer from GCB_MULTI_CORE_RESTORER: ", gcpt_restorer)
+            else:
+                fatal("Plz set $GCB_MULTI_CORE_RESTORER when model Xiangshan with multi-core")
+        elif args.restore_rvv_cpt:
+            if "GCBV_RESTORER" in os.environ:
+                gcpt_restorer = os.environ["GCBV_RESTORER"]
+                print("Obtained gcpt_restorer from GCBV_RESTORER: ", gcpt_restorer)
+            else:
+                fatal("Plz set $GCBV_RESTORER when running RVV checkpoints")
+        elif args.restore_rvh_cpt:
+            if "GCBH_RESTORER" in os.environ:
+                gcpt_restorer = os.environ["GCBH_RESTORER"]
+                print("Obtained gcpt_restorer from GCBH_RESTORER: ", gcpt_restorer)
+            else:
+                fatal("Plz set $GCBH_RESTORER when running RVH checkpoints")
+        else:
+            if "GCB_RESTORER" in os.environ:
+                gcpt_restorer = os.environ["GCB_RESTORER"]
+                print("Obtained gcpt_restorer from GCB_RESTORER: ", gcpt_restorer)
+            else:
+                fatal("Plz set $GCB_RESTORER or pass it through --gcpt-restorer"
+                      " when running non-RVV checkpoints")
+    else:
+        print("Obtained gcpt_restorer from args.gcpt_restorer: ", args.gcpt_restorer)
+        gcpt_restorer = args.gcpt_restorer
+
+    if args.num_cpus > 1:
+        print("Simulating a multi-core system, demanding a larger GCPT restorer size (2M).")
+        sys.gcpt_restorer_size_limit = 2**20
+    elif args.restore_rvv_cpt:
+        print("Simulating single core with RVV, demanding GCPT restorer size of 0x1000.")
+        sys.gcpt_restorer_size_limit = 0x1000
+    elif args.restore_rvh_cpt:
+        print("Simulating single core with RVH, demanding GCPT restorer size of 0x1000.")
+        sys.gcpt_restorer_size_limit = 0x1000
+    else:
+        print("Simulating single core without RVV, demanding GCPT restorer size of 0x700.")
+        sys.gcpt_restorer_size_limit = 0x700
+
+    # configure gcpt input
+    if args.generic_rv_cpt is not None:
+        assert(buildEnv['TARGET_ISA'] == "riscv")
+        sys.restore_from_gcpt = True
+        sys.gcpt_file = args.generic_rv_cpt
+
+        sys.workload.bootloader = ''
+        sys.workload.xiangshan_cpt = True
+
+        if args.raw_cpt:
+            assert not args.gcpt_restorer  # raw_cpt and gcpt_restorer are exclusive
+            print('Using raw bbl', args.generic_rv_cpt)
+            sys.map_to_raw_cpt = True
+            sys.workload.raw_bootloader = True
+        else:
+            sys.gcpt_restorer_file = gcpt_restorer
+    # enable h checkpoint
+    if args.enable_h_gcpt:
+        sys.enable_h_gcpt = True
+    # configure DRAMSim input
+    if args.mem_type == 'DRAMsim3' and args.dramsim3_ini is None:
+        # use relative path to find the dramsim3 ini file, from configs/common/ to root
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        args.dramsim3_ini = os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
+
+    if args.mem_type == 'Ramulator2' and args.ramulator2_ini is None:
+        # use relative path to find the ramulator ini file, from configs/common/ to root
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        args.ramulator2_ini = os.path.join(root_dir, 'ext/ramulator2/xs_ramulator_config.yaml')
+    return gcpt_restorer, ref_so
+
+def config_difftest(cpu_list, args, sys):
+    if not args.enable_difftest:
+        return
+    else:
+        if len(cpu_list) > 1:
+            sys.enable_mem_dedup = True
+            for cpu in cpu_list:
+                cpu.enable_mem_dedup = True
+                cpu.enable_difftest = True
+                cpu.difftest_ref_so = args.difftest_ref_so
+        else:
+            # sys.enable_mem_dedup = True
+            # cpu_list[0].enable_mem_dedup = True
+            cpu_list[0].enable_difftest = True
+            cpu_list[0].difftest_ref_so = args.difftest_ref_so
+
+def build_xiangshan_system(args):
+    np = args.num_cpus
     assert buildEnv['TARGET_ISA'] == "riscv"
 
     # override cpu class and clock
@@ -80,7 +215,7 @@ def build_test_system(np, args):
     test_sys.xiangshan_system = True
     test_sys.enable_difftest = args.enable_difftest
 
-    XSConfig.config_xiangshan_inputs(args, test_sys)
+    config_xiangshan_inputs(args, test_sys)
 
      # Set the cache line size for the entire system
     test_sys.cache_line_size = args.cacheline_size
@@ -226,7 +361,7 @@ def build_test_system(np, args):
             cpu.nemuSDCptBin = mmc.cpt_bin_path
             cpu.nemuSDimg = mmc.img_path
 
-    XSConfig.config_difftest(test_sys.cpu, args, test_sys)
+    config_difftest(test_sys.cpu, args, test_sys)
 
     # configure vector
     if args.enable_riscv_vector:
@@ -332,158 +467,22 @@ def build_test_system(np, args):
 
     return test_sys
 
-def setKmhV3IdealParams(args, system):
-    for cpu in system.cpu:
 
-        cpu.mmu.itb.size = 96
-
-        cpu.fetchWidth = 32     # 64byte fetch block have up to 32 instructions
-        cpu.commitToFetchDelay = 2
-        cpu.fetchQueueSize = 64
-        cpu.fetchToDecodeDelay = 2
-
-        cpu.decodeWidth = 8
-        cpu.renameWidth = 8
-        cpu.commitWidth = 12
-        cpu.squashWidth = 12
-        cpu.replayWidth = 12
-        cpu.LQEntries = 128
-        cpu.SQEntries = 64
-        cpu.SbufferEntries = 24
-        cpu.SbufferEvictThreshold = 16
-        # RAR/RAW replay queue thresholds
-        cpu.RARQEntries = 96 # set 72 in the RTL model.
-        cpu.RAWQEntries = 56 # set 32 in the RTL model.
-        cpu.LoadCompletionWidth = 8
-        cpu.StoreCompletionWidth = 4
-        cpu.RARDequeuePerCycle = 4
-        cpu.RAWDequeuePerCycle = 4
-        cpu.numPhysIntRegs = 224
-        cpu.numPhysFloatRegs = 256
-        cpu.RobCompressPolicy = 'kmhv3'
-        cpu.numROBEntries = 160
-        cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
-        cpu.enableDispatchStage = True
-        cpu.numDQEntries = [8, 8, 8]
-        cpu.dispWidth = [8, 8, 8]
-        cpu.scheduler = KMHV3Scheduler()
-
-        # fusion
-        cpu.enable_loadFusion = True
-
-        cpu.BankConflictCheck = True   # real bank conflict 0.2 score
-        cpu.sbufferBankWriteAccurately = True
-        # cpu.EnableLdMissReplay = False
-        # cpu.EnablePipeNukeCheck = False
-        cpu.StoreWbStage = 4 # store writeback at s4
-
-        # enable constant folding
-        cpu.enableConstantFolding = False
-
-        # ideal decoupled frontend
-        if args.bp_type == 'DecoupledBPUWithFTB' or args.bp_type == 'DecoupledBPUWithBTB':
-            if args.bp_type == 'DecoupledBPUWithFTB':
-                cpu.branchPred.enableTwoTaken = False
-                cpu.branchPred.numBr = 8    # numBr must be a power of 2, see getShuffledBrIndex()
-                cpu.branchPred.predictWidth = 64
-                cpu.branchPred.uftb.numEntries = 1024
-                cpu.branchPred.ftb.numEntries = 16384
-                cpu.branchPred.tage.baseTableSize = 16384
-                cpu.branchPred.tage.tableSizes = [2048] * 8
-            else:
-                cpu.branchPred.predictWidth = 64              # max width of a fetch block
-                cpu.branchPred.mbtb.numEntries = 8192
-                # TODO: BTB TAGE do not bave base table, do not support SC
-                cpu.branchPred.tage.tableSizes = [2048] * 8  # 2 way, 2048 sets
-                cpu.branchPred.tage.numWays = 2
-                cpu.branchPred.microtage.tableSizes = [512]   # 2 way, 512 sets
-                cpu.branchPred.microtage.numWays = 2
-                cpu.branchPred.mgsc.enableMGSC = not args.disable_mgsc
-            cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
-            cpu.branchPred.ftq_size = 256
-            cpu.branchPred.fsq_size = 256
-            cpu.branchPred.tage.numPredictors = 8
-            cpu.branchPred.tage.TTagBitSizes = [11] * 8
-            cpu.branchPred.tage.TTagPcShifts = [1] * 8
-            cpu.branchPred.tage.histLengths = [4, 9, 17, 29, 56, 109, 211, 397]
-
-        # ideal l1 caches
-        if args.caches:
-            cpu.icache.size = '64kB'
-            cpu.dcache.size = '64kB'
-            cpu.dcache.tag_load_read_ports = 100 # 3->100
-            cpu.dcache.mshrs = 16
-
-    if args.l2cache:
-        for i in range(args.num_cpus):
-            if args.classic_l2:
-                system.l2_caches[i].size = '2MB'
-                system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
-            else:
-                l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.data_sram_banks = 2
-                l2_wrapper.dir_sram_banks = 2
-                l2_wrapper.pipe_dir_write_stage = 4
-                l2_wrapper.dir_read_bypass = True
-                for j in range(args.l2_slices):
-                    l2cache = l2_wrapper.slices[j].inner_cache
-                    l2cache.size = '2MB'
-            system.tol2bus_list[i].forward_latency = 0  # 3->0
-            system.tol2bus_list[i].response_latency = 0  # 3->0
-            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
-
-            # Enable dual-port for DCache → L2 communication
-            # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
-            # RespLayer[1]: L2 → DCache, allow 2 responses per cycle
-            system.tol2bus_list[i].layer_bandwidth_configs = [
-                LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
-                LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
-            ]
-
-    if args.l3cache:
-        system.l3.mshrs = 128
-
-if __name__ == '__m5_main__':
+def xiangsha_system_init():
     # Add args
     parser = argparse.ArgumentParser()
     Options.addCommonOptions(parser, configure_xiangshan=True)
     Options.addXiangshanFSOptions(parser)
-
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
-
     args = parser.parse_args()
 
-    if args.xiangshan_ecore:
-        FutureClass = None
-        args.cpu_clock = '2.4GHz'
-    else:
-        FutureClass = None
+    # Match the memories with the CPUs, based on the options for the test system
+    TestMemClass = Simulation.setMemClass(args)
 
     args.xiangshan_system = True
     args.enable_difftest = True
     args.enable_riscv_vector = True
 
-    assert not args.external_memory_system
-
-    # Set default bp_type based on ideal_kmhv3 flag
-    # If user didn't specify bp_type, set default based on ideal_kmhv3
-    if args.bp_type is None:
-        if args.ideal_kmhv3:
-            args.bp_type = 'DecoupledBPUWithBTB'
-        else:
-            args.bp_type = 'DecoupledBPUWithFTB'
-
-    # Match the memories with the CPUs, based on the options for the test system
-    TestMemClass = Simulation.setMemClass(args)
-
-    test_sys = build_test_system(args.num_cpus, args)
-
-    # Set ideal parameters here with the highest priority, over command-line arguments
-    if args.ideal_kmhv3:
-        setKmhV3IdealParams(args, test_sys)
-
-    root = Root(full_system=True, system=test_sys)
-
-    Simulation.run_vanilla(args, root, test_sys, FutureClass)
+    return args

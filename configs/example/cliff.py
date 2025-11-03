@@ -22,7 +22,7 @@ from common import ObjectList
 from common import XSConfig
 from common.Caches import *
 from common import Options
-from example.xiangshan import *
+from common.xiangshan import *
 
 if __name__ == '__m5_main__':
 
@@ -65,7 +65,7 @@ if __name__ == '__m5_main__':
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 
-    test_sys = build_test_system(args.num_cpus, args)
+    test_sys = build_xiangshan_system(args)
 
     root = Root(full_system=True, system=test_sys)
 

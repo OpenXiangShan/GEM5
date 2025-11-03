@@ -7,4 +7,4 @@ for var in GCBV_REF_SO GCBV_RESTORER gem5_home; do
     checkForVariable $var
 done
 
-$gem5 $gem5_home/configs/example/xiangshan.py --generic-rv-cpt=$1 --restore-rvv-cpt
+$gem5 $gem5_home/configs/example/kmhv2.py --generic-rv-cpt=$1 --restore-rvv-cpt

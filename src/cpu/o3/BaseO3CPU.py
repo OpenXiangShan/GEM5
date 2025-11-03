@@ -159,8 +159,7 @@ class BaseO3CPU(BaseCPU):
     renameToROBDelay = Param.Cycles(1, "Rename to reorder buffer delay")
     commitWidth = Param.Unsigned(8, "Commit width")
 
-    squashWidth = Param.Unsigned(8, "Squash width with rollback rob walk")
-    replayWidth = Param.Unsigned(8, "Squash width with redo rob walk")
+    squashWidth = Param.Unsigned(8, "Squash width with rollback/redo rob walk")
     ConstSquashCycle = Param.Unsigned(1, "Squash width with redo rob walk")
     robWalkPolicy = Param.ROBWalkPolicy('Replay', "Squash with a specific policy")
 

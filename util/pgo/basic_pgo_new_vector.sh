@@ -44,8 +44,8 @@ cd llvm-pgo
 export LLVM_PROFILE_FILE=$(pwd)/default.profraw
 
 $gem5_home/build/RISCV/gem5.fast \
-     $gem5_home/configs/example/xiangshan.py \
-     --ideal-kmhv3 --raw-cpt \
+     $gem5_home/configs/example/idealkmhv3.py \
+     --raw-cpt \
      --generic-rv-cpt=$GEM5_PGO_CPT
 check $?
 

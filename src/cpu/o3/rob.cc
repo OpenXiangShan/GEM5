@@ -136,7 +136,7 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       numEntries(params.numROBEntries),
       instsPerGroup(params.CROB_instPerGroup),
       rollbackWidth(params.squashWidth),
-      replayWidth(params.replayWidth),
+      replayWidth(params.squashWidth),
       constSquashCycle(params.ConstSquashCycle),
       numInstsInROB(0),
       numThreads(params.numThreads),
