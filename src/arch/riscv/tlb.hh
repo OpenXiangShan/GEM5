@@ -171,6 +171,7 @@ class TLB : public BaseTLB
   public:
     PMAChecker *pma;
     PMP *pmp;
+    ArchDBer *archDBer;
 
   public:
     typedef RiscvTLBParams Params;

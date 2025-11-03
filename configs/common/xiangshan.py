@@ -390,6 +390,7 @@ def build_xiangshan_system(args):
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
+        test_sys.arch_db.dump_vaddr_trace = False
         test_sys.arch_db.dump_lifetime = False
         test_sys.arch_db.table_cmds = [
             "CREATE TABLE L1MissTrace(" \
@@ -407,6 +408,14 @@ def build_xiangshan_system(args):
             "PADDR INT NOT NULL," \
             "STAMP INT NOT NULL," \
             "Level INT NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE vaddrTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "PC INT NOT NULL," \
+            "VADDR INT NOT NULL," \
+            "Hit INT NOT NULL," \
+            "Tick INT NOT NULL," \
             "SITE TEXT);"
             ,
             "CREATE TABLE MemTrace(" \

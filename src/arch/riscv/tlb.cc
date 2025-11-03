@@ -103,6 +103,7 @@ TLB::TLB(const Params &p) :
     lastVaddr(0),lastPc(0), traceFlag(false),
     stats(this), pma(p.pma_checker),
     pmp(p.pmp),
+    archDBer(p.arch_db),
     tlbL2L3(l2TlbL3Size *l2tlbLineSize),tlbL2L2(l2TlbL2Size *l2tlbLineSize),
     tlbL2L1(l2TlbL1Size *l2tlbLineSize),tlbL2L0(l2TlbL0Size *l2tlbLineSize),
     tlbL2Sp(l2TlbSpSize *l2tlbLineSize),
@@ -1917,6 +1918,12 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         back_pre[i_e] = l2tlb->lookupL2TLB(back_pre_block, satp.asid, mode, true, i_e, true, direct);
     }
     bool return_flag = false;
+    if (archDBer && req->hasPC()) {
+        Addr pc = req->getPC();
+        Addr vaddr = req->hasVaddr() ? req->getVaddr() : 0;
+        uint64_t curCycle = curTick();
+        archDBer->vaddrTrace(curCycle, pc, vaddr, (e[0] || e[L_L2L0]));
+    }
 
     if (!e[0]) {  // look up l2tlb
         if (e[L_L2L0] && e[L_L2L0]->pte.v) {  // if hit in l2l0 (leaf 4KB page)
