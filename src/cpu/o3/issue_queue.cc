@@ -336,6 +336,12 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
 }
 
 void
+IssueQue::iqPopInst(const DynInstPtr& inst)
+{
+    POPINST(inst);
+}
+
+void
 IssueQue::addToFu(const DynInstPtr& inst)
 {
     if (inst->isIssued()) [[unlikely]] {
@@ -828,6 +834,7 @@ Scheduler::Scheduler(const SchedulerParams& params)
     int maxRdTypePortId = 0;
     int maxWrTypePortId = 0;
     for (int i = 0; i < issueQues.size(); i++) {
+        bool isLdIq = false;
         issueQues[i]->setIQID(i);
         issueQues[i]->scheduler = this;
         combinedFus += issueQues[i]->outports;
@@ -838,7 +845,14 @@ Scheduler::Scheduler(const SchedulerParams& params)
                 opPipelined[op->opClass] = op->pipelined;
                 dispTable[op->opClass].push_back(issueQues[i]);
                 opChecker.set(op->opClass);
+                if (op->opClass >= MemReadOp && op->opClass <= VectorWholeRegisterLoadOp) {
+                    isLdIq = true;
+                }
             }
+        }
+
+        if (isLdIq) {
+            ldIqs.push_back(issueQues[i]);
         }
 
         // read port check
@@ -1086,6 +1100,32 @@ Scheduler::getInstByDstReg(RegIndex flatIdx)
                 if (inst->renamedDestIdx(i)->flatIndex() == flatIdx) {
                     return inst;
                 }
+            }
+        }
+    }
+    return nullptr;
+}
+
+bool
+Scheduler::isWokenUpBy(const DynInstPtr& consumer, const DynInstPtr& producer)
+{
+    return (consumer->isLoad() && producer->isLoad() &&
+           (consumer->renamedSrcIdx(0)->flatIndex() == producer->renamedDestIdx(0)->flatIndex()));
+}
+
+DynInstPtr
+Scheduler::getPossiblePointerLoad(const DynInstPtr& producer)
+{
+    // find each insts in load IQs' `toFu`, which may be issued to loadpipe next cycle
+    for (auto iq : ldIqs) {
+        for (int i = 0; i < iq->toFu->size; i++) {
+            DynInstPtr consumer = iq->toFu->insts[i];
+            // if this inst is woken up by producer, remove from `toFu`, return this inst
+            if (consumer && !consumer->isSquashed() && isWokenUpBy(consumer, producer)) {
+                iq->toFu->insts[i] = nullptr;
+                consumer->setIssued();
+                iq->iqPopInst(consumer);
+                return consumer;
             }
         }
     }

@@ -376,6 +376,7 @@ def setKmhV3IdealParams(args, system):
         # cpu.EnableLdMissReplay = False
         # cpu.EnablePipeNukeCheck = False
         cpu.StoreWbStage = 4 # store writeback at s4
+        cpu.enablePointerChasingOpt = True
 
         # enable constant folding
         cpu.enableConstantFolding = False

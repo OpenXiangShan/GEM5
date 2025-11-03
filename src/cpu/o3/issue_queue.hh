@@ -203,6 +203,8 @@ class IssueQue : public SimObject
     void setMainRdpOpt(bool enable) { enableMainRdpOpt = enable; }
     void resetDepGraph(int numPhysRegs);
 
+    void iqPopInst(const DynInstPtr& inst);
+
     void tick();
     bool ready();
     int emptyEntries() const { return iqsize - instNum; }
@@ -284,6 +286,7 @@ class Scheduler : public SimObject
     std::vector<bool> opPipelined;
     std::vector<DispPolicy> dispTable;
     std::vector<IssueQue*> issueQues;
+    std::vector<IssueQue*> ldIqs;
     std::vector<std::vector<IssueQue*>> wakeMatrix;
     uint32_t combinedFus;
 
@@ -328,6 +331,12 @@ class Scheduler : public SimObject
     void lookahead(std::deque<DynInstPtr>& insts);
     bool ready(const DynInstPtr& inst, int disp_seq);
     DynInstPtr getInstByDstReg(RegIndex flatIdx);
+
+    /** Check if the consumer is woken up by the producer (only for load inst) */
+    bool isWokenUpBy(const DynInstPtr& consumer, const DynInstPtr& producer);
+
+    /** Get the possible pointer load for the producer */
+    DynInstPtr getPossiblePointerLoad(const DynInstPtr& producer);
 
     void addProducer(const DynInstPtr& inst);
     // return true if insert successful

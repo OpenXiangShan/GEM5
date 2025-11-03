@@ -337,7 +337,8 @@ class LSQUnit
       uint32_t sbufferEvictThreshold, uint64_t storeBufferInactiveThreshold,
       uint32_t ldPipeStages, uint32_t stPipeStages, uint32_t maxRARQEntries, uint32_t maxRAWQEntries,
       unsigned rarDequeuePerCycle, unsigned rawDequeuePerCycle,
-      unsigned loadCompletionWidth, unsigned storeCompletionWidth);
+      unsigned loadCompletionWidth, unsigned storeCompletionWidth,
+      bool enablePointerChasingOpt);
 
     /** We cannot copy LSQUnit because it has stats for which copy
      * contructor is deleted explicitly. However, STL vector requires
@@ -589,6 +590,9 @@ class LSQUnit
     Fault loadDoRecvData(const DynInstPtr &inst);
     Fault loadDoWriteback(const DynInstPtr &inst);
 
+    /** Try to execute pointer chasing load in fast path */
+    void tryPointerChasing();
+
     /** Process instructions in each store pipeline stages. */
     void executeStorePipeSx();
 
@@ -705,7 +709,7 @@ class LSQUnit
     /** Points to the last position of continuously completed instructions from the beginning in storeQueue */
     size_t storeCompletedIdx;
 
-    const static int MaxPipeWidth = 4;
+    const static int MaxPipeWidth = 3;
 
     /** Struct that defines the information passed through Load Pipeline. */
     struct LoadPipeStruct
@@ -813,6 +817,9 @@ class LSQUnit
     /** Number of stores to complete per cycle */
     const unsigned storeCompletionWidth;
 
+    /** If enable pointer chasing optimization */
+    bool enablePointerChasingOpt;
+
     /** RARReplayQueue for instructions waiting due to RAR dependency */
     std::list<DynInstPtr> RARReplayQueue;
 
@@ -893,6 +900,8 @@ class LSQUnit
         statistics::Scalar forwardSTDNotReady;
         statistics::Scalar STAReadyFirst;
         statistics::Scalar STDReadyFirst;
+
+        statistics::Scalar pointerChasingFastPath;
 
         statistics::Scalar nonUnitStrideCross16Byte;
         statistics::Scalar unitStrideCross16Byte;
