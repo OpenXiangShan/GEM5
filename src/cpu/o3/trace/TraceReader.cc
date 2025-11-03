@@ -39,6 +39,40 @@ namespace gem5
 namespace o3
 {
 
+void
+TraceReader::dumpInstrBuffer(const char* tag) const
+{
+    std::queue<TraceInstruction> tmp = instrBuffer; // copy for non-destructive dump
+    size_t sz = tmp.size();
+    DPRINTF(TraceReader, "instrBuffer dump (%s): size=%lu\n", tag, (unsigned long)sz);
+    size_t idx = 0;
+    // panic if there are seqNum discontinuity
+    uint64_t previousSeqNum = 0, firstSeqNum = 0, discontinuityPos = 0;
+    while (!tmp.empty()) {
+        const auto &ti = tmp.front();
+        if (firstSeqNum == 0) {
+            firstSeqNum = ti.getSeqNum();
+        }
+        if (previousSeqNum != 0) {
+            if (ti.getSeqNum() != previousSeqNum + 1) {
+                discontinuityPos = ti.getSeqNum();
+                DPRINTF(TraceReader,
+                        "TraceReader::dumpInstrBuffer: seqNum discontinuity "
+                        "at idx=%lu: last=%llu current=%llu\n",
+                        (unsigned long)idx,
+                        (unsigned long long)previousSeqNum,
+                        (unsigned long long)ti.getSeqNum());
+            }
+        }
+        previousSeqNum = ti.getSeqNum();
+        tmp.pop();
+        ++idx;
+    }
+    if (discontinuityPos != 0) {
+        panic("TraceReader::dumpInstrBuffer: seqNum discontinuity detected");
+    }
+}
+
 TraceReader::TraceReaderStats::TraceReaderStats(statistics::Group *parent,
                                                  const std::string &name)
     : statistics::Group(parent, name.c_str()),
@@ -83,18 +117,25 @@ TraceReader::getNextInstruction()
             // Return invalid instruction
             TraceInstruction invalid_instr;
             invalid_instr.setValid(false);
+            DPRINTF(TraceReader, "getNextInstruction: No valid instruction available\n");
             return invalid_instr;
         }
     }
 
     // Get instruction from buffer
+    dumpInstrBuffer("before_pop");
     TraceInstruction instr = instrBuffer.front();
     instrBuffer.pop();
 
     // Update statistics
     updateStats(instr);
 
-    // Debug: Returning trace instruction
+    // Debug: Returning trace instruction and dump after
+    DPRINTF(TraceReader,
+            "getNextInstruction: RETURN pc=0x%llx sn=%llu\n",
+            (unsigned long long)instr.getPC(),
+            (unsigned long long)instr.getSeqNum());
+    dumpInstrBuffer("after_pop");
 
     return instr;
 }
@@ -102,13 +143,23 @@ TraceReader::getNextInstruction()
 void
 TraceReader::addToBuffer(const TraceInstruction &instr)
 {
+    // Dump before modification
+    dumpInstrBuffer("before_push");
+
     if (instrBuffer.size() >= MAX_BUFFER_SIZE) {
         // Debug output removed temporarily
+        DPRINTF(TraceReader, "addToBuffer: Buffer full, dropping instruction PC=0x%lx (sn:%llu)\n",
+                instr.getPC(), (unsigned long long)instr.getSeqNum());
         return;
     }
 
     instrBuffer.push(instr);
+    DPRINTF(TraceReader, "addToBuffer: Added instruction PC=0x%lx (sn:%llu) to buffer\n",
+            instr.getPC(), (unsigned long long)instr.getSeqNum());
     // Debug: Added instruction to buffer
+
+    // Dump after modification
+    dumpInstrBuffer("after_push");
 }
 
 void

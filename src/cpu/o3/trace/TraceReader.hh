@@ -72,6 +72,9 @@ class TraceReader : public statistics::Group
     /** Buffer for pre-fetched instructions */
     std::queue<TraceInstruction> instrBuffer;
 
+    /** Dump current instruction buffer contents for debugging */
+    void dumpInstrBuffer(const char* tag) const;
+
     /** Maximum size of instruction buffer */
     static constexpr size_t MAX_BUFFER_SIZE = 1024;
 
@@ -175,11 +178,16 @@ class TraceReader : public statistics::Group
         /** Buffer contents at checkpoint */
         std::queue<TraceInstruction> bufferSnapshot;
 
+        /** Pending instruction snapshot (for readers with lookahead) */
+        bool hasPending;
+        TraceInstruction pending;
+
         /** Whether checkpoint is valid */
         bool valid;
 
         TraceCheckpoint() : instructionIndex(0), filePosition(0),
-                           eofState(false), seqNum(0), valid(false) {}
+                           eofState(false), seqNum(0), hasPending(false),
+                           valid(false) {}
     };
 
     /**

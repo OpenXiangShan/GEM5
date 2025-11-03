@@ -122,6 +122,9 @@ ChampSimTraceReader::reset()
 {
     DPRINTF(TraceReader, "reset: Resetting trace reader (compressed=%d)\n", compressed);
 
+    // Dump buffer before reset clears it
+    dumpInstrBuffer("before_reset");
+
     if (compressed) {
         // For gzipped files, we need to close and reopen since seeking doesn't work reliably
         if (gzTraceStream.is_open()) {
@@ -161,6 +164,8 @@ ChampSimTraceReader::reset()
 
     DPRINTF(TraceReader, "reset: Reset completed, eofReached=%d, buffer size=%lu\n",
             eofReached, instrBuffer.size());
+    // Dump buffer after reset
+    dumpInstrBuffer("after_reset");
     return true;
 }
 
@@ -319,6 +324,7 @@ ChampSimTraceReader::convertInstruction(const ChampSimInstr &cs_instr,
     DPRINTF(TraceReader, "convertInstruction: Mapping PC 0x%lx -> 0x%lx\n", cs_instr.ip, mapped_pc);
     trace_instr.setPC(mapped_pc);
     trace_instr.setSeqNum(getNextSeqNum());
+    DPRINTF(TraceReader, "convertInstruction: Assigned SeqNum %lu\n", trace_instr.getSeqNum());
     trace_instr.setValid(true);
 
     // Determine instruction type
@@ -592,6 +598,11 @@ ChampSimTraceReader::createCheckpoint()
     checkpoint.seqNum = currentSeqNum;
     checkpoint.eofState = eofReached;
     checkpoint.bufferSnapshot = instrBuffer;
+    // Save pending instruction state (if any)
+    checkpoint.hasPending = hasPendingInstr;
+    if (hasPendingInstr) {
+        checkpoint.pending = pendingInstr;
+    }
 
     if (!compressed && traceStream.is_open()) {
         // For uncompressed files, we can save the file position
@@ -610,6 +621,13 @@ ChampSimTraceReader::createCheckpoint()
         DPRINTF(TraceReader, "createCheckpoint: Failed to create checkpoint - stream not open\n");
     }
 
+    // Debug: also print pending status to verify snapshot coverage
+    DPRINTF(TraceReader,
+            "createCheckpoint: hasPendingInstr=%d, pending_sn=%llu, pending_pc=0x%llx\n",
+            hasPendingInstr,
+            (unsigned long long)(hasPendingInstr ? pendingInstr.getSeqNum() : 0ULL),
+            (unsigned long long)(hasPendingInstr ? pendingInstr.getPC() : 0ULL));
+
     return checkpoint;
 }
 
@@ -623,6 +641,16 @@ ChampSimTraceReader::restoreCheckpoint(const TraceCheckpoint& checkpoint)
 
     DPRINTF(TraceReader, "restoreCheckpoint: Restoring to instrIndex=%lu\n",
             checkpoint.instructionIndex);
+
+    // Debug: print pending status BEFORE restoring
+    DPRINTF(TraceReader,
+            "restoreCheckpoint: BEFORE restore hasPendingInstr=%d, pending_sn=%llu, pending_pc=0x%llx\n",
+            hasPendingInstr,
+            (unsigned long long)(hasPendingInstr ? pendingInstr.getSeqNum() : 0ULL),
+            (unsigned long long)(hasPendingInstr ? pendingInstr.getPC() : 0ULL));
+
+    // Dump buffer before restore overwrites it
+    dumpInstrBuffer("before_restore");
 
     if (!compressed && traceStream.is_open()) {
         // For uncompressed files, seek to the saved position
@@ -666,8 +694,28 @@ ChampSimTraceReader::restoreCheckpoint(const TraceCheckpoint& checkpoint)
     }
     instrBuffer = checkpoint.bufferSnapshot;
 
+    // Restore pending instruction state so that the next fillBuffer() will
+    // first flush this pending into instrBuffer, preserving sequence continuity.
+    hasPendingInstr = checkpoint.hasPending;
+    if (hasPendingInstr) {
+        pendingInstr = checkpoint.pending;
+    } else {
+        // Make sure no stale pending remains
+        pendingInstr.reset();
+    }
+
     DPRINTF(TraceReader, "restoreCheckpoint: Restored to instrIndex=%lu, seqNum=%lu, bufferSize=%lu\n",
             instructionIndex, currentSeqNum, instrBuffer.size());
+
+    // Debug: print pending status AFTER restoring
+    DPRINTF(TraceReader,
+            "restoreCheckpoint: AFTER restore hasPendingInstr=%d, pending_sn=%llu, pending_pc=0x%llx\n",
+            hasPendingInstr,
+            (unsigned long long)(hasPendingInstr ? pendingInstr.getSeqNum() : 0ULL),
+            (unsigned long long)(hasPendingInstr ? pendingInstr.getPC() : 0ULL));
+
+    // Dump buffer after restore
+    dumpInstrBuffer("after_restore");
 
     return true;
 }
@@ -677,6 +725,17 @@ ChampSimTraceReader::seekToInstruction(uint64_t instrIndex)
 {
     DPRINTF(TraceReader, "seekToInstruction: Seeking to instruction %lu (current=%lu)\n",
             instrIndex, instructionIndex);
+
+    // Support a 0 index as "beginning of trace" sentinel to make 1-based
+    // external indexing convenient (seek(0) -> before first instruction).
+    if (instrIndex == 0) {
+        if (!reset()) {
+            return false;
+        }
+        // Ensure we are at start-of-trace state; instructionIndex remains 0 here.
+        DPRINTF(TraceReader, "seekToInstruction: Reset to beginning (index=0)\n");
+        return true;
+    }
 
     // Find the closest checkpoint before or at the target
     TraceCheckpoint bestCheckpoint;
@@ -705,14 +764,36 @@ ChampSimTraceReader::seekToInstruction(uint64_t instrIndex)
         }
     }
 
-    // Read forward to the exact target if needed
+    // Debug: BEFORE fast-forward status
+    DPRINTF(TraceReader,
+            "seekToInstruction: BEFORE FF idx=%lu, seq=%lu, bufSize=%lu, "
+            "hasPending=%d, pending_sn=%llu, pending_pc=0x%llx\n",
+            instructionIndex, currentSeqNum, instrBuffer.size(),
+            hasPendingInstr,
+            (unsigned long long)(hasPendingInstr ? pendingInstr.getSeqNum() : 0ULL),
+            (unsigned long long)(hasPendingInstr ? pendingInstr.getPC() : 0ULL));
+
+    // Read forward to the exact target if needed (fast-forward parse only; NOT enqueued)
     while (instructionIndex < instrIndex && !eofReached) {
         TraceInstruction dummy;
         if (!parseInstruction(dummy)) {
             DPRINTF(TraceReader, "seekToInstruction: Failed to read to target instruction\n");
             return false;
         }
+        DPRINTF(TraceReader,
+                "seekToInstruction: FF parsed PC=0x%llx (sn:%llu) - NOT enqueued\n",
+                (unsigned long long)dummy.getPC(),
+                (unsigned long long)dummy.getSeqNum());
     }
+
+    // Debug: AFTER fast-forward status
+    DPRINTF(TraceReader,
+            "seekToInstruction: AFTER FF idx=%lu, seq=%lu, bufSize=%lu, "
+            "hasPending=%d, pending_sn=%llu, pending_pc=0x%llx\n",
+            instructionIndex, currentSeqNum, instrBuffer.size(),
+            hasPendingInstr,
+            (unsigned long long)(hasPendingInstr ? pendingInstr.getSeqNum() : 0ULL),
+            (unsigned long long)(hasPendingInstr ? pendingInstr.getPC() : 0ULL));
 
     DPRINTF(TraceReader, "seekToInstruction: Successfully sought to instruction %lu\n", instructionIndex);
     return instructionIndex == instrIndex;
