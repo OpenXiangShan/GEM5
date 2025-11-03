@@ -1,0 +1,20 @@
+name: gem5 Ideal BTB Performance Test
+
+on:
+  push:
+    branches: [ xs-dev, '*-align' ]  # xs-dev for normal CI, *-align for BTB-only performance testing (align to RTL)
+  pull_request:
+    branches: [ xs-dev ]
+  workflow_dispatch:
+    inputs:
+      branch_name:
+        description: 'Branch to test (leave empty for current branch)'
+        required: false
+        type: string
+
+jobs:
+  perf_test:
+    uses: ./.github/workflows/gem5-perf-template.yml
+    with:
+      script_path: ../kmh_v3_btb.sh
+      benchmark_type: "spec06-0.3c"
