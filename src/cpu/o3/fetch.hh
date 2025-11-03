@@ -42,6 +42,7 @@
 #define __CPU_O3_FETCH_HH__
 
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -54,6 +55,7 @@
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/trace/TraceReader.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
@@ -66,7 +68,6 @@
 #include "mem/port.hh"
 #include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
-#include "cpu/o3/trace/TraceReader.hh"
 
 namespace gem5
 {
@@ -744,7 +745,21 @@ class Fetch
     std::unordered_map<InstSeqNum, uint64_t> seqNumToTraceIndex;
 
     /** Number of trace instructions consumed so far (for precise mapping) */
-    uint64_t traceInstrConsumed = 0;
+    // Trace instruction index mapping now uses 1-based indexing to align with reader semantics
+    uint64_t traceInstrConsumed = 1;
+
+    // Expected correct-path trace stream (per-thread), filled ahead for diff
+    std::deque<o3::TraceInstruction> traceExpectedStream[MaxThreads];
+    static constexpr size_t TRACE_STREAM_MIN_FILL = 16;
+    void ensureTraceStreamFilled(ThreadID tid, size_t min_count);
+
+    /**
+     * Fetch-side expected next trace index on the correct path (per-thread).
+     * Used to verify that, when not in wrong-path mode, each built instruction
+     * follows the trace stream strictly: first correct-path inst uses index 1,
+     * and subsequent ones increment by 1.
+     */
+    uint64_t traceFetchExpectedCorrectIdx[MaxThreads];
 
     /**
      * Pending single trace instruction for on-demand consumption.
