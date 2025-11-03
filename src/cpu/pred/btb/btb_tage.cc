@@ -270,7 +270,10 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     // Use base table instead of btb_entry.ctr
     Addr base_idx = getBaseTableIndex(alignedPC);
     unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, alignedPC);
-    bool base_taken = baseTable[base_idx][branch_idx] >= 0;
+    bool base_taken = false;
+    if (base_idx < baseTable.size() && branch_idx < baseTable[base_idx].size()) {//for microtage basetable = 0
+        base_taken = baseTable[base_idx][branch_idx] >= 0;
+    }
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
 
     // use_alt_on_na gating: when provider weak, consult per-PC counter
@@ -425,7 +428,10 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     Addr alignedPC = stream.getRealStartPC() & ~(blockSize - 1);
     Addr base_idx = getBaseTableIndex(alignedPC);
     unsigned branch_idx = getBranchIndexInBlock(entry.pc, alignedPC);
-    bool base_taken = baseTable[base_idx][branch_idx] >= 0;
+    bool base_taken = false;
+    if (base_idx < baseTable.size() && branch_idx < baseTable[base_idx].size()) {
+        base_taken = baseTable[base_idx][branch_idx] >= 0;
+    }
     bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
 
     // Update use_alt_on_na when provider is weak (0 or -1)
@@ -478,7 +484,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     if (used_alt && !alt_info.found) {
         DPRINTF(TAGE, "prediction provided by base table idx %lu, branch %u, updating corresponding entry\n",
                 base_idx, branch_idx);
-        updateCounter(actual_taken, 2, baseTable[base_idx][branch_idx]);
+        if (base_idx < baseTable.size() && branch_idx < baseTable[base_idx].size()) {
+            updateCounter(actual_taken, 2, baseTable[base_idx][branch_idx]);
+        }
     }
 
     // Update statistics
@@ -837,6 +845,11 @@ BTBTAGE::getUseAltIdx(Addr pc) {
 
 Addr
 BTBTAGE::getBaseTableIndex(Addr pc) {
+    // Guard zero-sized base tables (can happen when disabled via params)
+    if (baseTableSize == 0) {
+        return 0;
+    }
+
     // Use 32-byte aligned address as index, covering 64-byte range
     return ((pc >> 5) & (baseTableSize - 1));  // 32-byte alignment (2^5 = 32)
 }

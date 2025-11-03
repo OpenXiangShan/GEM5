@@ -1062,7 +1062,7 @@ class MicroTAGE(BTBTAGE):
     tableSizes = [512]
     TTagBitSizes = [16]
     TTagPcShifts = [1]
-
+    baseTableSize = 0
     histLengths = [16]
     numDelay = 0
 
