@@ -36,9 +36,7 @@ jobs:
 
       - name: Difftest smoke test
         run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/error/riscv64-nemu-interpreter-so"
-          export GCB_RESTORER="/nfs/home/share/gem5_ci/tools/normal-gcb-restorer.bin"
-          export GEM5_HOME=$(pwd)
+          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
           
           ./build/RISCV/gem5.opt ./configs/example/idealkmhv3.py --raw-cpt --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin || exit_code=$?
           
