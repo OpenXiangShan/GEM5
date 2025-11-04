@@ -99,22 +99,39 @@ TraceReader::TraceReader(const std::string &trace_file, const std::string &name)
 TraceInstruction
 TraceReader::getNextInstruction()
 {
-    // Fill buffer if it's getting low
+    // 1) Soft replay path: serve from history when active
+    if (replayActive) {
+        const uint64_t winBegin = historyStartIndex;
+        const uint64_t winEnd = historyStartIndex + (historyWindow.empty() ? 0 : (historyWindow.size() - 1));
+        if (replayIndex >= winBegin && replayIndex <= winEnd && !historyWindow.empty()) {
+            const size_t off = static_cast<size_t>(replayIndex - historyStartIndex);
+            auto instr = historyWindow[off];
+            // Do not update nextLogicalIndex on replay; only move replay cursor.
+            replayIndex++;
+            DPRINTF(TraceReader,
+                    "getNextInstruction[replay]: RETURN pc=0x%llx sn=%llu (idx=%llu)\n",
+                    (unsigned long long)instr.getPC(),
+                    (unsigned long long)instr.getSeqNum(),
+                    (unsigned long long)(replayIndex - 1));
+            return instr;
+        }
+        // Replay exhausted window, turn off and continue with normal path
+        replayActive = false;
+        replayIndex = 0;
+    }
+
+    // 2) Normal path: fill buffer if it's getting low
     if (instrBuffer.size() < MAX_BUFFER_SIZE / 4 && !eofReached) {
         fillBuffer(MAX_BUFFER_SIZE / 2);
     }
 
-    // Check if we have any instructions available
+    // Ensure availability
     if (instrBuffer.empty()) {
         if (!eofReached) {
-            // Try to fill buffer one more time
             fillBuffer(1);
         }
-
         if (instrBuffer.empty()) {
             stats.bufferUnderruns++;
-            // Debug output removed temporarily
-            // Return invalid instruction
             TraceInstruction invalid_instr;
             invalid_instr.setValid(false);
             DPRINTF(TraceReader, "getNextInstruction: No valid instruction available\n");
@@ -122,7 +139,7 @@ TraceReader::getNextInstruction()
         }
     }
 
-    // Get instruction from buffer
+    // 3) Pop next and append to history window
     dumpInstrBuffer("before_pop");
     TraceInstruction instr = instrBuffer.front();
     instrBuffer.pop();
@@ -130,7 +147,14 @@ TraceReader::getNextInstruction()
     // Update statistics
     updateStats(instr);
 
-    // Debug: Returning trace instruction and dump after
+    // Track history
+    historyWindow.push_back(instr);
+    if (historyWindow.size() > HISTORY_CAPACITY) {
+        historyWindow.pop_front();
+        historyStartIndex++;
+    }
+    nextLogicalIndex++;
+
     DPRINTF(TraceReader,
             "getNextInstruction: RETURN pc=0x%llx sn=%llu\n",
             (unsigned long long)instr.getPC(),
@@ -199,6 +223,88 @@ createTraceReader(const std::string &format, const std::string &trace_file,
         // Debug output removed temporarily
         return nullptr;
     }
+}
+
+bool
+TraceReader::softSeekToInstruction(uint64_t instrIndex)
+{
+    // Match ChampSimTraceReader::seekToInstruction semantics:
+    // after seek(N), the next getNextInstruction() returns instruction N+1 (1-based).
+
+    const uint64_t winBegin = historyStartIndex;
+    const uint64_t winEnd = historyStartIndex + (historyWindow.empty() ? 0 : (historyWindow.size() - 1));
+    const uint64_t logicalNext = historyStartIndex + historyWindow.size(); // next index to return
+
+    // 1) If (N+1) is inside history window, just replay from there
+    const uint64_t want = instrIndex + 1;
+    if (!historyWindow.empty() && want >= winBegin && want <= winEnd) {
+        replayActive = true;
+        replayIndex = want;
+        DPRINTF(TraceReader,
+                "softSeekToInstruction: replay to (idx+1)=%llu within window [%llu,%llu]",
+                (unsigned long long)want,
+                (unsigned long long)winBegin,
+                (unsigned long long)winEnd);
+        return true;
+    }
+
+    // 2) If (N+1) is the current logical next, nothing to do
+    if (want == logicalNext) {
+        DPRINTF(TraceReader, "softSeekToInstruction: already aligned at (idx+1)=%llu",
+                (unsigned long long)want);
+        return true;
+    }
+
+    // 3) If (N+1) is ahead but inside buffered future, drop-ahead
+    if (want > logicalNext) {
+        uint64_t drop = want - logicalNext;
+        while (drop > 0 && !instrBuffer.empty()) {
+            auto tmp = instrBuffer.front();
+            instrBuffer.pop();
+            // Move dropped items into history
+            historyWindow.push_back(tmp);
+            if (historyWindow.size() > HISTORY_CAPACITY) {
+                historyWindow.pop_front();
+                historyStartIndex++;
+            }
+            drop--;
+        }
+        if (drop == 0) {
+            DPRINTF(TraceReader, "softSeekToInstruction: drop-ahead to (idx+1)=%llu using buffer",
+                    (unsigned long long)want);
+            return true;
+        }
+        // else, not enough buffered, fall through
+    }
+
+    // 4) Fallback to hard seek
+    const bool ok = seekToInstruction(instrIndex);
+    if (ok) {
+        // After hard seek, clear runtime buffers/history to keep state consistent
+        std::queue<TraceInstruction> empty;
+        std::swap(instrBuffer, empty);
+        historyWindow.clear();
+        // After seek(N), next to return is N+1; with empty history, make logicalNext == N
+        historyStartIndex = instrIndex;
+        replayActive = false;
+        replayIndex = 0;
+        nextLogicalIndex = instrIndex;
+    }
+    return ok;
+}
+
+
+void
+TraceReader::resetHistory()
+{
+    // Clear buffer and history state; caller is responsible for calling init()/fill later
+    std::queue<TraceInstruction> empty;
+    std::swap(instrBuffer, empty);
+    historyWindow.clear();
+    historyStartIndex = 1;
+    replayActive = false;
+    replayIndex = 0;
+    nextLogicalIndex = 1;
 }
 
 } // namespace o3

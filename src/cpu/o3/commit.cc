@@ -1497,13 +1497,17 @@ Commit::traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst)
     }
 
     // 1) Resolve expected trace PC
-    Addr expected_trace_pc = cpu->getTracePCByIndex(traceCommitIndex[tid]);
-    bool have_expected = (expected_trace_pc != 0);
-    if (!have_expected) {
-        if (const o3::TraceInstruction* ti_cur = cpu->getTraceInstMetadata(head_inst->seqNum)) {
-            expected_trace_pc = ti_cur->getPC();
-            have_expected = ti_cur->isValid();
-        }
+    // Prefer O(1) metadata lookup (seqNum -> TraceInstruction) to avoid
+    // expensive checkpoint/seek on each diff. Fallback to index-based
+    // lookup only when metadata is unavailable.
+    Addr expected_trace_pc = 0;
+    bool have_expected = false;
+    if (const o3::TraceInstruction* ti_cur = cpu->getTraceInstMetadata(head_inst->seqNum)) {
+        expected_trace_pc = ti_cur->getPC();
+        have_expected = ti_cur->isValid();
+    } else {
+        expected_trace_pc = cpu->getTracePCByIndex(traceCommitIndex[tid]);
+        have_expected = (expected_trace_pc != 0);
     }
 
     Addr commit_pc = head_inst->pcState().instAddr();

@@ -29,13 +29,14 @@
 #ifndef __CPU_O3_TRACE_TRACE_READER_HH__
 #define __CPU_O3_TRACE_TRACE_READER_HH__
 
-#include <memory>
-#include <string>
+#include <deque>
 #include <fstream>
+#include <memory>
 #include <queue>
+#include <string>
 
-#include "cpu/o3/trace/TraceInstruction.hh"
 #include "base/statistics.hh"
+#include "cpu/o3/trace/TraceInstruction.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
@@ -71,6 +72,18 @@ class TraceReader : public statistics::Group
 
     /** Buffer for pre-fetched instructions */
     std::queue<TraceInstruction> instrBuffer;
+
+    /** History window for soft replay (recently returned instructions) */
+    std::deque<TraceInstruction> historyWindow;
+    /** 1-based index of the first element in history window */
+    uint64_t historyStartIndex = 1;
+    /** Next logical index to be returned by getNextInstruction (when not replaying) */
+    uint64_t nextLogicalIndex = 1;
+    /** Soft replay mode flag and cursor (1-based) */
+    bool replayActive = false;
+    uint64_t replayIndex = 0;
+    /** Window capacity */
+    static constexpr size_t HISTORY_CAPACITY = 4096;
 
     /** Dump current instruction buffer contents for debugging */
     void dumpInstrBuffer(const char* tag) const;
@@ -121,6 +134,16 @@ class TraceReader : public statistics::Group
      * @return TraceInstruction object, invalid if no more instructions
      */
     TraceInstruction getNextInstruction();
+
+    /**
+     * Try a soft seek using in-memory history/window.
+     * If target is within history or buffered future, switch replay mode or drop-ahead.
+     * Otherwise fall back to hard seek.
+     */
+    virtual bool softSeekToInstruction(uint64_t instrIndex);
+
+    /** Clear runtime buffers/history (used on init/reset) */
+    void resetHistory();
 
     /**
      * Check if the trace has reached end-of-file

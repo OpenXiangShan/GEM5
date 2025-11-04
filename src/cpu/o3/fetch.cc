@@ -1277,11 +1277,13 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
         if (allow_rb) {
             const int trace_rb_seqnum = squash_itself ? seqNum - 1 : seqNum; // A hack for insts squashing itself
+            DPRINTF(Fetch, "[tid:%i] Rolling back trace reader to seqNum %llu\n",
+                    tid, (unsigned long long)trace_rb_seqnum);
             cleanupTraceMetadata(trace_rb_seqnum);
             // Rollback trace reader to handle misprediction
             if (!rollbackTraceReader(trace_rb_seqnum)) {
                 DPRINTF(Fetch, "[tid:%i] Warning: Failed to rollback trace reader to seqNum %llu\n",
-                        tid, trace_rb_seqnum);
+                        tid, (unsigned long long)trace_rb_seqnum);
             }
             // 回滚后清空期望流，避免与reader位置不一致
             traceExpectedStream[tid].clear();
@@ -2896,6 +2898,8 @@ Fetch::initializeTraceReader()
     }
 
     DPRINTF(Fetch, "Trace reader initialized successfully\n");
+    // 同步清理 reader 内部缓冲/历史窗口，保持状态一致
+    traceReader->resetHistory();
     return true;
 }
 
@@ -3331,24 +3335,18 @@ Fetch::rollbackTraceReader(InstSeqNum seqNum)
     }
 
     // Find trace index to rollback to (1-based). We want the next getNextInstruction()
-    // to return the instruction at 'index', so seek to (index-1).
-    uint64_t index = findTraceIndexForSeqNum(seqNum);
-    uint64_t seek_index = index;
+    // to return the instruction at 'index'.
+    const uint64_t index = findTraceIndexForSeqNum(seqNum);
 
-    DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Rolling back to trace index %lu (seek=%lu)\n",
-            seqNum, index, seek_index);
-
-    // Use trace reader's seek functionality
-    bool success = traceReader->seekToInstruction(seek_index);
-
-    if (success) {
-        DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Successfully rolled back to trace index %lu\n",
-                seqNum, index);
-    } else {
-        DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Failed to rollback to trace index %lu\n",
-                seqNum, index);
+    if (index == 0) {
+        DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: No mapped trace index (skip)\n", seqNum);
+        return false;
     }
 
+    // 交由 TraceReader 软回滚（命中本地历史窗口则不触碰文件指针），超界时内部自行降级
+    const bool success = traceReader->softSeekToInstruction(index);
+    DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: softSeekToInstruction(index=%lu) => %d\n",
+            seqNum, index, (int)success);
     return success;
 }
 
