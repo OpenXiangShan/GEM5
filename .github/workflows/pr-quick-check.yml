@@ -41,9 +41,9 @@ jobs:
           exit_code=0
           ./build/RISCV/gem5.opt ./configs/example/idealkmhv3.py --raw-cpt --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin || exit_code=$?
           
-          # 验证 difftest 应该报错
-          if [ "${exit_code}" -eq 0 ]; then 
-            echo "❌ Difftest is broken, it should report error!"
+          # 验证 difftest 正常运行
+          if [ "${exit_code}" -ne 0 ]; then 
+            echo "❌ Difftest failed with exit code ${exit_code}!"
             exit 1
           fi
           
@@ -70,8 +70,8 @@ jobs:
           exit_code=0
           ./build/RISCV/gem5.opt ./configs/example/idealkmhv3.py --raw-cpt --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin || exit_code=$?
           
-          if [ "${exit_code}" -eq 0 ]; then 
-            echo "❌ Base branch difftest is broken!"
+          if [ "${exit_code}" -ne 0 ]; then 
+            echo "❌ Base branch difftest failed with exit code ${exit_code}!"
             exit 1
           fi
           
