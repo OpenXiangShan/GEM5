@@ -4,6 +4,12 @@ on:
   push:
     branches: [ xs-dev ]
   # Removed pull_request trigger
+  workflow_dispatch:
+    inputs:
+      branch_name:
+        description: 'Branch to test (leave empty for current branch)'
+        required: false
+        type: string
 
 jobs:
   vector-test:

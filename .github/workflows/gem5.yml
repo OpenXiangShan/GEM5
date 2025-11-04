@@ -4,6 +4,13 @@ on:
   push:
     branches: [ xs-dev ]
   # Removed pull_request trigger - moved to pr-quick-check.yml (Tier 1)
+  # can be triggered manually
+  workflow_dispatch:
+    inputs:
+      branch_name:
+        description: 'Branch to test (leave empty for current branch)'
+        required: false
+        type: string
 
 jobs:
   paralel_cpt_test:
