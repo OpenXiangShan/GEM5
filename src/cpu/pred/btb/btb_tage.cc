@@ -257,7 +257,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
         if (main_weak) {
             Addr uidx = getUseAltIdx(btb_entry.pc);
-            use_alt = (useAlt[uidx] >= 0);
+            uint8_t mainUseful = tageTable[main_info.table][main_info.index][main_info.way].useful;
+            use_alt = mainUseful == 3 ? false : (useAlt[uidx] >= 0);
         } else {
             use_alt = false;
         }
