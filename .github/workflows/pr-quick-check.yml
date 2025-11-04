@@ -3,6 +3,10 @@ name: PR Quick Check (Tier 1)
 on:
   pull_request:
     branches: [ xs-dev ]
+    # 如果只修改了文档，不跑CI
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 permissions:
   pull-requests: write
@@ -63,8 +67,11 @@ jobs:
           git fetch origin ${{ github.base_ref }}
           git checkout origin/${{ github.base_ref }}
           
-          # 重新编译基线分支
-          CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+          # 重新编译基线分支，如果失败则重试一次(scons 依赖处理不好)
+          if ! CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64; then
+            echo "⚠️ Compilation failed, retrying..."
+            CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+          fi
           
           # 运行测试
           exit_code=0
