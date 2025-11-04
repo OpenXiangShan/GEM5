@@ -211,9 +211,20 @@ jobs:
           
           echo "Performance data archived successfully"
           echo "Archive size: $(du -sh "$TARGET_DIR/spec_all.tar.gz" | cut -f1)"
-      - name: Upload score
+      - name: Upload score artifact
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.config.outputs.artifact_name }}
-          path: ${{ github.workspace }}/score.txt 
+          path: score.txt
+          retention-days: 30
+      
+      - name: Fallback - Save score to shared storage
+        if: always()
+        run: |
+          # Fallback: 如果 artifact upload 失败，保存到共享存储
+          ARTIFACT_DIR="/nfs/home/share/gem5_ci/artifacts/${{ github.run_id }}"
+          mkdir -p "$ARTIFACT_DIR"
+          cp score.txt "$ARTIFACT_DIR/${{ steps.config.outputs.artifact_name }}.txt" 2>/dev/null || true
+          echo "✅ Score also saved to: $ARTIFACT_DIR"

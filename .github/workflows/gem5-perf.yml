@@ -1,10 +1,9 @@
-name: gem5 Performance Test
+name: gem5 Performance Test (Tier 2 - Post-Merge)
 
 on:
   push:
     branches: [ xs-dev ]
-  pull_request:
-    branches: [ xs-dev ]
+  # Removed pull_request trigger - use /run-spec for on-demand testing
 
 jobs:
   perf_test:

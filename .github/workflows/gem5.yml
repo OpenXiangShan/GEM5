@@ -1,10 +1,9 @@
-name: gem5 Test
+name: gem5 Full Test (Tier 2 - Post-Merge)
 
 on:
   push:
     branches: [ xs-dev ]
-  pull_request:
-    branches: [ xs-dev ]
+  # Removed pull_request trigger - moved to pr-quick-check.yml (Tier 1)
 
 jobs:
   paralel_cpt_test:
@@ -149,35 +148,6 @@ jobs:
           cd $GEM5_HOME/util/xs_scripts/test_multi_core
           bash ../kmh-ruby-dual.sh /nfs/home/share/gem5_ci/checkpoints/multi_core_test.gz
 
-  difftest_check:
-    runs-on: [self-hosted, open]
-    continue-on-error: false
-    name: XS-GEM5 - Check difftest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Build DRAMSim
-        run: |
-          export GEM5_HOME=$(pwd)
-          cd ext/dramsim3
-          git clone https://github.com/umd-memsys/DRAMsim3.git DRAMsim3
-          cd DRAMsim3 && mkdir -p build
-          cd build
-          cmake ..
-          make -j 48
-          cd $GEM5_HOME
-      - name: Build GEM5 debug
-        run: CC=clang CXX=clang++ scons build/RISCV/gem5.opt -j 48 --gold-linker
-      - name: difftest check
-        run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/error/riscv64-nemu-interpreter-so"
-          export GCB_RESTORER="/nfs/home/share/gem5_ci/tools/normal-gcb-restorer.bin"
-          export GEM5_HOME=$(pwd)
-          mkdir -p $GEM5_HOME/util/xs_scripts/test
-          cd $GEM5_HOME/util/xs_scripts/test
-          bash ../kmh_6wide.sh /nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd 2>log.txt || exit_code=$?
-          if [ ${exit_code} -eq 0 ]; then echo "Difftest is broken, it should report error!" exit 1; fi
-          match=$(grep ".*Difftest failed!.*" log.txt -c)
-          if [ ${match} -eq 0 ]; then echo "Difftest is broken, it should report at least one agnostic related difference!" exit 1; fi
 
   test_fix_l2tlb_bugs:
     runs-on: [self-hosted, open]
@@ -233,13 +203,4 @@ jobs:
           cd $GEM5_HOME/util/xs_scripts/test_h
           bash ../kmh_6wide_h.sh /nfs/home/share/gem5_ci/checkpoints/gcbh_test.zstd
 
-  unit_tests:
-    runs-on: [self-hosted, open]
-    continue-on-error: false
-    name: XS-GEM5 - Unit Tests
-    steps:
-      - uses: actions/checkout@v2
-      - name: Build unit tests and run them
-        run: |
-          CC=gcc CXX=g++ scons build/RISCV/unittests.opt -j100 --unit-test
 

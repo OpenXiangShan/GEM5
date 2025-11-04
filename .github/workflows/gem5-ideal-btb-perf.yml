@@ -1,10 +1,12 @@
 name: gem5 Ideal BTB Performance Test
 
 on:
+  # Tier 2: Post-Merge testing
   push:
-    branches: [ xs-dev, '*-perf' ]  # xs-dev for normal CI, *-perf for BTB-only performance testing
-  pull_request:
-    branches: [ xs-dev ]
+    branches: [ xs-dev, '*-perf' ]  # xs-dev for post-merge CI, *-perf for auto performance testing
+  # Removed pull_request trigger - use /run-spec for on-demand testing
+  
+  # Support manual trigger
   workflow_dispatch:
     inputs:
       branch_name:

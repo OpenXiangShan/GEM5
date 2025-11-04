@@ -1,10 +1,7 @@
-name: gem5 Ideal BTB Performance Test (no SC)
+name: gem5 Ideal BTB Performance Test (no SC) (Tier 2 - Post-Merge)
 
 on:
-  push:
-    branches: [ xs-dev]
-  pull_request:
-    branches: [ xs-dev ]
+  # only can be triggered manually
   workflow_dispatch:
     inputs:
       branch_name:

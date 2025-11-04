@@ -1,10 +1,9 @@
-name: gem5 vector Test
+name: gem5 Vector Test (Tier 2 - Post-Merge)
 
 on:
   push:
     branches: [ xs-dev ]
-  pull_request:
-    branches: [ xs-dev ]
+  # Removed pull_request trigger
 
 jobs:
   vector-test:
