@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [ xs-dev ]
 
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   quick_check:
     runs-on: [self-hosted, node]
@@ -44,9 +48,33 @@ jobs:
             exit 1
           fi
           
-          # grep ipc
-          grep "cpu.ipc" ./m5out/stats.txt 
-          echo "Coremark IPC is shown above."
+          # 提取 IPC
+          IPC=$(grep "cpu.ipc" ./m5out/stats.txt | awk '{print $2}')
+          echo "Coremark IPC: ${IPC}"
           
-          echo "✅ Difftest smoke test passed!"
+          # 写入 GitHub summary
+          echo "## 🚀 Coremark Smoke Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Coremark IPC:** \`${IPC}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Difftest smoke test passed!" >> $GITHUB_STEP_SUMMARY
+          
+          # 保存 IPC 供下一步使用
+          echo "${IPC}" > /tmp/coremark_ipc.txt
+      
+      - name: Comment IPC to PR
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const ipc = fs.readFileSync('/tmp/coremark_ipc.txt', 'utf8').trim();
+            
+            const comment = `## 🚀 Coremark Smoke Test Results\n\n**Coremark IPC:** \`${ipc}\`\n\n✅ Difftest smoke test passed!`;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
 
