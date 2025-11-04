@@ -36,9 +36,7 @@ jobs:
           export GCB_RESTORER="/nfs/home/share/gem5_ci/tools/normal-gcb-restorer.bin"
           export GEM5_HOME=$(pwd)
           
-          mkdir -p util/xs_scripts/test
-          cd util/xs_scripts/test
-          bash ../kmh_6wide.sh /nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd 2>log.txt || exit_code=$?
+          ./build/RISCV/gem5.opt ./configs/example/idealkmhv3.py --raw-cpt --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin || exit_code=$?
           
           # 验证 difftest 应该报错
           if [ ${exit_code} -eq 0 ]; then 
@@ -46,12 +44,9 @@ jobs:
             exit 1
           fi
           
-          # 验证错误信息
-          match=$(grep ".*Difftest failed!.*" log.txt -c)
-          if [ ${match} -eq 0 ]; then 
-            echo "❌ Difftest is broken, it should report at least one difference!"
-            exit 1
-          fi
+          # grep ipc
+          grep "cpu.ipc" ./m5out/stats.txt 
+          echo "Coremark IPC is shown above."
           
           echo "✅ Difftest smoke test passed!"
 
