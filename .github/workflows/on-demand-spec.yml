@@ -1,29 +1,17 @@
 name: On-Demand SPEC Test (Tier 1.5)
 
-# ============================================================================
-# 触发: PR评论 `/run-spec [benchmark_type]`
-# 
-# 示例:
-#   /run-spec                    -> 默认 spec06-0.8c
-#   /run-spec spec06-1.0c        -> 指定benchmark类型
-#
-# 权限: OWNER/MEMBER/COLLABORATOR
-# 
-# 注意: benchmark_type的有效值由gem5-perf-template.yml定义，
-#       无需在此重复验证，template会自动检查
-# ============================================================================
-
 on:
-  issue_comment:
-    types: [created]
+  # Label触发: 添加 'perf' 标签自动跑 spec06-0.8c
+  pull_request_target:
+    types: [labeled]
   
-  # 手动触发，用于测试或紧急运行
+  # 手动触发: 可选择PR和benchmark类型
   workflow_dispatch:
     inputs:
       pr_number:
         description: 'PR number'
         required: true
-        type: string
+        type: number
       benchmark_type:
         description: 'Benchmark type'
         required: false
@@ -37,83 +25,65 @@ on:
           - spec06int-rvv-0.8c
 
 jobs:
-  check_and_trigger:
+  trigger:
     name: Trigger SPEC Test
     runs-on: ubuntu-latest
-    
-    # 评论触发需要检查权限，手动触发跳过
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event.issue.pull_request &&
-       contains(github.event.comment.body, '/run-spec') &&
-       (github.event.comment.author_association == 'OWNER' || 
-        github.event.comment.author_association == 'MEMBER' ||
-        github.event.comment.author_association == 'COLLABORATOR'))
+      (github.event_name == 'pull_request_target' && 
+       github.event.label.name == 'perf' && 
+       github.event.pull_request.base.ref == 'xs-dev')
     
     outputs:
-      benchmark_type: ${{ steps.parse.outputs.benchmark }}
-      vector_type: ${{ steps.parse.outputs.vector_type }}
-      pr_ref: ${{ steps.pr.outputs.ref }}
+      benchmark_type: ${{ steps.setup.outputs.benchmark }}
+      vector_type: ${{ steps.setup.outputs.vector_type }}
+      pr_ref: ${{ steps.setup.outputs.pr_ref }}
     
     steps:
-      - name: Get PR info
-        id: pr
+      - name: Setup parameters
+        id: setup
         uses: actions/github-script@v7
         with:
           script: |
-            let prNumber;
+            let prNumber, benchmark, prRef;
             
             if (context.eventName === 'workflow_dispatch') {
-              // 手动触发，转换字符串为数字
-              prNumber = parseInt(context.payload.inputs.pr_number, 10);
-            } else {
-              // 评论触发
-              prNumber = context.issue.number;
-            }
-            
-            const pr = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber
-            });
-            core.setOutput('ref', pr.data.head.ref);
-            
-            // 只在评论触发时添加reaction
-            if (context.eventName === 'issue_comment') {
-              github.rest.reactions.createForIssueComment({
+              // 手动触发
+              prNumber = context.payload.inputs.pr_number;
+              benchmark = context.payload.inputs.benchmark_type;
+              
+              const pr = await github.rest.pulls.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                comment_id: context.payload.comment.id,
-                content: 'rocket'
+                pull_number: prNumber
+              });
+              prRef = pr.data.head.ref;
+            } else {
+              // Label触发 (pull_request_target)
+              prNumber = context.payload.pull_request.number;
+              benchmark = 'spec06-0.8c';
+              prRef = context.payload.pull_request.head.ref;
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: '🚀 Performance test triggered: **spec06-0.8c**'
               });
             }
-      
-      - name: Parse benchmark type
-        id: parse
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # 手动触发
-            BENCHMARK="${{ github.event.inputs.benchmark_type }}"
-          else
-            # 评论触发
-            COMMENT="${{ github.event.comment.body }}"
-            BENCHMARK=$(echo "$COMMENT" | grep -oP '/run-spec\s+\K\S+' || echo "spec06-0.8c")
-          fi
-          
-          VECTOR_TYPE=""
-          if [[ "$BENCHMARK" == *"rvv"* ]]; then
-            VECTOR_TYPE="simple"
-          fi
-          
-          echo "benchmark=$BENCHMARK" >> $GITHUB_OUTPUT
-          echo "vector_type=$VECTOR_TYPE" >> $GITHUB_OUTPUT
+            
+            const vectorType = benchmark.includes('rvv') ? 'simple' : '';
+            
+            core.setOutput('benchmark', benchmark);
+            core.setOutput('vector_type', vectorType);
+            core.setOutput('pr_ref', prRef);
 
   run_spec_test:
     name: Run SPEC Test
-    needs: check_and_trigger
+    needs: trigger
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       script_path: ../kmh_v3_btb.sh
-      benchmark_type: ${{ needs.check_and_trigger.outputs.benchmark_type }}
-      vector_type: ${{ needs.check_and_trigger.outputs.vector_type }}
-      pr_ref: ${{ needs.check_and_trigger.outputs.pr_ref }}
+      benchmark_type: ${{ needs.trigger.outputs.benchmark_type }}
+      vector_type: ${{ needs.trigger.outputs.vector_type }}
+      pr_ref: ${{ needs.trigger.outputs.pr_ref }}
