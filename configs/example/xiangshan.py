@@ -293,6 +293,20 @@ def build_test_system(np, args):
             # Ruby D-cache does not support store prefetch yet
             cpu.store_prefetch_train = False
 
+        # Align trace address mapping window to physical memory size (Ruby path)
+        if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+            try:
+                base = int(test_sys.mem_ranges[0].start)
+                total = 0
+                for r in test_sys.mem_ranges:
+                    total += int(r.size())
+                for cpu in test_sys.cpu:
+                    cpu.traceAddrBase = base
+                    cpu.traceAddrSize = total
+                print(f"Trace mode: Align trace mapping to mem: base=0x{base:x}, size=0x{total:x}")
+            except Exception as e:
+                print(f"Warning: failed to align trace mapping to mem (Ruby path): {e}")
+
     else:
         if args.caches or args.l2cache:
             # By default the IOCache runs at the system clock
@@ -323,6 +337,20 @@ def build_test_system(np, args):
         CacheConfig.config_cache(args, test_sys)
 
         MemConfig.config_mem(args, test_sys)
+
+        # Align trace address mapping window to physical memory size (classic cache path)
+        if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+            try:
+                base = int(test_sys.mem_ranges[0].start)
+                total = 0
+                for r in test_sys.mem_ranges:
+                    total += int(r.size())
+                for cpu in test_sys.cpu:
+                    cpu.traceAddrBase = base
+                    cpu.traceAddrSize = total
+                print(f"Trace mode: Align trace mapping to mem: base=0x{base:x}, size=0x{total:x}")
+            except Exception as e:
+                print(f"Warning: failed to align trace mapping to mem: {e}")
 
     if args.mmc_img:
         for mmc, cpu in zip(test_sys.mmcs, test_sys.cpu):
