@@ -494,6 +494,13 @@ class IEW
     /** Maximum size of the skid buffer. */
     unsigned skidBufferMax;
 
+    std::vector<ResolveQueueEntry> resolveQueue;
+    static inline bool resolveQueueEntryCompare(const ResolveQueueEntry &a, const ResolveQueueEntry &b)
+    {
+        return a.resolvedFSQId > b.resolvedFSQId;
+    };
+    inline void sortResolveQueue() { std::sort(resolveQueue.begin(), resolveQueue.end(), resolveQueueEntryCompare); };
+
 
     struct IEWStats : public statistics::Group
     {

@@ -1566,7 +1566,7 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
     uint64_t fsqId = inst->getFsqId();
     uint64_t pc = inst->getPC();
     bool found = false;
-    for (auto &entry : toFetch->iewInfo[tid].resolveQueue) {
+    for (auto &entry : resolveQueue) {
         if (entry.resolvedFSQId == fsqId) {
             entry.resolvedInstPC.push_back(pc);
             found = true;
@@ -1577,7 +1577,7 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
         ResolveQueueEntry newEntry;
         newEntry.resolvedFSQId = fsqId;
         newEntry.resolvedInstPC.push_back(pc);
-        toFetch->iewInfo[tid].resolveQueue.push_back(newEntry);
+        resolveQueue.push_back(newEntry);
     }
 
     if (!fetchRedirect[tid] ||
@@ -1791,6 +1791,13 @@ IEW::executeInsts()
             // call this in `lsq_unit.cc` after execution
             SquashCheckAfterExe(inst);
         }
+    }
+
+    sortResolveQueue();
+    if (!resolveQueue.empty()) {
+        ResolveQueueEntry entry = resolveQueue.back();
+        resolveQueue.pop_back();
+        toFetch->iewInfo[tid].resolveQueue.push_back(entry);
     }
 
     ldstQueue.executePipeSx();
