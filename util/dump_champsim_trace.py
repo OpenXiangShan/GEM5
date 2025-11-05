@@ -37,8 +37,16 @@ import io
 import json
 import os
 import struct
+import subprocess
 import sys
-from typing import Iterable, Iterator, Tuple
+from typing import Iterator, Tuple
+
+try:
+    import lzma  # type: ignore
+    _HAS_LZMA = True
+except Exception:
+    lzma = None  # type: ignore
+    _HAS_LZMA = False
 
 
 # Little-endian struct with exact layout (no padding needed given field order)
@@ -50,9 +58,60 @@ REG_FLAGS = 25
 REG_INSTRUCTION_POINTER = 26
 
 
-def open_maybe_gz(path: str) -> io.BufferedReader:
+class _XZPipeReader:
+    """Context-managed reader for .xz via external `xz -dc` (fallback).
+
+    Provides a file-like object supporting read(), and ensures proper
+    process cleanup when leaving the context manager.
+    """
+
+    def __init__(self, path: str):
+        # Use `--` to stop option parsing in case path looks like an option
+        self._p = subprocess.Popen([
+            "xz", "-dc", "--", path
+        ], stdout=subprocess.PIPE)
+        if self._p.stdout is None:
+            raise OSError("failed to open xz pipe: no stdout")
+        self._r = self._p.stdout
+
+    def read(self, n: int) -> bytes:
+        return self._r.read(n)
+
+    # Fallback skip for streams without seek
+    def _consume(self, n: int) -> None:
+        to_read = n
+        chunk = 1 << 20
+        while to_read > 0:
+            data = self._r.read(min(chunk, to_read))
+            if not data:
+                break
+            to_read -= len(data)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            try:
+                self._r.close()
+            finally:
+                # Terminate if still running to avoid zombies
+                if self._p.poll() is None:
+                    self._p.terminate()
+                # Wait to reap process
+                self._p.wait(timeout=5)
+        except Exception:
+            pass
+
+
+def open_trace(path: str):
     if path.endswith(".gz"):
         return gzip.open(path, "rb")  # type: ignore[return-value]
+    if path.endswith(".xz"):
+        if _HAS_LZMA:
+            return lzma.open(path, "rb")  # type: ignore[return-value]
+        # Fallback to external xz
+        return _XZPipeReader(path)
     return open(path, "rb")  # type: ignore[return-value]
 
 
@@ -79,9 +138,21 @@ def map_addr_hash(addr: int, base: int, size: int, page_align: bool) -> int:
     return mapped
 
 
-def iter_records(f: io.BufferedReader, skip: int = 0) -> Iterator[Tuple[int, ...]]:
+def iter_records(f, skip: int = 0) -> Iterator[Tuple[int, ...]]:
     if skip:
-        f.seek(skip * REC_STRUCT.size, io.SEEK_CUR)
+        offset = skip * REC_STRUCT.size
+        # Try to seek if supported, otherwise consume
+        try:
+            f.seek(offset, io.SEEK_CUR)
+        except Exception:
+            # Stream without seeking (e.g., xz pipe)
+            to_read = offset
+            chunk = 1 << 20
+            while to_read > 0:
+                data = f.read(min(chunk, to_read))
+                if not data:
+                    return
+                to_read -= len(data)
     while True:
         buf = f.read(REC_STRUCT.size)
         if not buf or len(buf) < REC_STRUCT.size:
@@ -91,7 +162,7 @@ def iter_records(f: io.BufferedReader, skip: int = 0) -> Iterator[Tuple[int, ...
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Dump ChampSim trace instructions")
-    ap.add_argument("--trace", "-t", required=True, help="Path to ChampSim trace (.bin or .gz)")
+    ap.add_argument("--trace", "-t", required=True, help="Path to ChampSim trace (.bin, .gz or .xz)")
     ap.add_argument("--limit", "-n", type=int, default=0, help="Max records to print (0=all)")
     ap.add_argument("--skip", type=int, default=0, help="Skip initial N records")
     ap.add_argument("--json", action="store_true", help="Output JSON lines instead of text")
@@ -128,7 +199,7 @@ def main() -> int:
     mapper = get_mapper(args.map_mode)
 
     try:
-        f = open_maybe_gz(args.trace)
+        f = open_trace(args.trace)
     except OSError as e:
         print(f"error: cannot open {args.trace}: {e}", file=sys.stderr)
         return 2
