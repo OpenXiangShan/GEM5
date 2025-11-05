@@ -29,6 +29,7 @@
 #ifndef __CPU_O3_TRACE_CHAMPSIM_TRACE_READER_HH__
 #define __CPU_O3_TRACE_CHAMPSIM_TRACE_READER_HH__
 
+#include <cstdio>
 #include <fstream>
 #include <string>
 
@@ -80,6 +81,12 @@ class ChampSimTraceReader : public TraceReader
 
     /** Whether file is compressed */
     bool compressed;
+
+    /** Whether file is xz-compressed */
+    bool xzCompressed;
+
+    /** Pipe handle for xz-decompressed stream (xz -dc) */
+    FILE* xzPipe;
 
     /** Current position in file for debugging */
     std::streampos currentPos;
@@ -257,7 +264,8 @@ class ChampSimTraceReader : public TraceReader
      * @param filename File path to check
      * @return true if file appears to be compressed
      */
-    bool isCompressed(const std::string &filename);
+    bool isGzip(const std::string &filename);
+    bool isXz(const std::string &filename);
 
     /**
      * Estimate branch target address for a taken branch instruction

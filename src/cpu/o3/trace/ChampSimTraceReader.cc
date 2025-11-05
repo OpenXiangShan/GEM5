@@ -46,11 +46,12 @@ ChampSimTraceReader::ChampSimTraceReader(const std::string &trace_file,
                                          uint64_t base_addr,
                                          uint64_t map_size,
                                          bool page_align)
-    : TraceReader(trace_file, name), compressed(false), currentPos(0),
+    : TraceReader(trace_file, name), compressed(false), xzCompressed(false), xzPipe(nullptr), currentPos(0),
       instructionIndex(0), addrMapMode(map_mode), addrMapBase(base_addr),
       addrMapSize(map_size), addrPageAlign(page_align)
 {
-    compressed = isCompressed(trace_file);
+    compressed = isGzip(trace_file);
+    xzCompressed = isXz(trace_file);
     hasPendingInstr = false;
 
     // Address mapping configuration initialized
@@ -62,8 +63,12 @@ ChampSimTraceReader::~ChampSimTraceReader()
 {
     if (compressed && gzTraceStream.is_open()) {
         gzTraceStream.close();
-    } else if (!compressed && traceStream.is_open()) {
+    } else if (!compressed && !xzCompressed && traceStream.is_open()) {
         traceStream.close();
+    }
+    if (xzCompressed && xzPipe) {
+        pclose(xzPipe);
+        xzPipe = nullptr;
     }
 }
 
@@ -93,6 +98,23 @@ ChampSimTraceReader::init()
         // For gzipped files, seeking to end for size is not reliable
         currentPos = 0;
         DPRINTF(TraceReader, "init: Compressed trace file opened successfully\n");
+    } else if (xzCompressed) {
+        DPRINTF(TraceReader, "init: Opening xz-compressed trace via pipe: %s\n", traceFile.c_str());
+        // Build a shell-safe command with quoting and `--` to stop option parsing
+        std::string safe = traceFile;
+        size_t pos = 0;
+        while ((pos = safe.find("'", pos)) != std::string::npos) {
+            safe.replace(pos, 1, "'\\''");
+            pos += 4;
+        }
+        std::string cmd = std::string("xz -dc -- '") + safe + "'";
+        xzPipe = popen(cmd.c_str(), "r");
+        if (!xzPipe) {
+            DPRINTF(TraceReader, "init: Failed to open xz pipe for trace file\n");
+            return false;
+        }
+        currentPos = 0;
+        DPRINTF(TraceReader, "init: xz pipe opened successfully\n");
     } else {
         DPRINTF(TraceReader, "init: Opening regular trace file: %s\n", traceFile.c_str());
         traceStream.open(traceFile, std::ios::binary);
@@ -120,7 +142,7 @@ ChampSimTraceReader::init()
 bool
 ChampSimTraceReader::reset()
 {
-    DPRINTF(TraceReader, "reset: Resetting trace reader (compressed=%d)\n", compressed);
+    DPRINTF(TraceReader, "reset: Resetting trace reader (gzip=%d, xz=%d)\n", compressed, xzCompressed);
 
     // Dump buffer before reset clears it
     dumpInstrBuffer("before_reset");
@@ -140,6 +162,25 @@ ChampSimTraceReader::reset()
         }
         currentPos = 0;
         DPRINTF(TraceReader, "reset: Reopened compressed stream successfully\n");
+    } else if (xzCompressed) {
+        if (xzPipe) {
+            pclose(xzPipe);
+            DPRINTF(TraceReader, "reset: Closed xz pipe\n");
+        }
+        std::string safe = traceFile;
+        size_t pos = 0;
+        while ((pos = safe.find("'", pos)) != std::string::npos) {
+            safe.replace(pos, 1, "'\\''");
+            pos += 4;
+        }
+        std::string cmd = std::string("xz -dc -- '") + safe + "'";
+        xzPipe = popen(cmd.c_str(), "r");
+        if (!xzPipe) {
+            DPRINTF(TraceReader, "reset: Failed to reopen xz pipe\n");
+            return false;
+        }
+        currentPos = 0;
+        DPRINTF(TraceReader, "reset: Reopened xz pipe successfully\n");
     } else {
         if (!traceStream.is_open()) {
             DPRINTF(TraceReader, "reset: Regular stream not open\n");
@@ -194,15 +235,16 @@ size_t
 ChampSimTraceReader::fillBuffer(size_t max_instructions)
 {
     if (eofReached || (compressed && !gzTraceStream.is_open()) ||
-        (!compressed && !traceStream.is_open())) {
+        (xzCompressed && xzPipe == nullptr) ||
+        (!compressed && !xzCompressed && !traceStream.is_open())) {
         DPRINTF(TraceReader, "fillBuffer: Cannot read - eofReached=%d, compressed=%d, stream_open=%d\n",
-                eofReached, compressed,
-                compressed ? gzTraceStream.is_open() : traceStream.is_open());
+                eofReached, (int)(compressed || xzCompressed),
+                compressed ? gzTraceStream.is_open() : (!xzCompressed && traceStream.is_open()));
         return 0;
     }
 
     DPRINTF(TraceReader, "fillBuffer: Starting to read (target push %lu) (compressed=%d)\n",
-            max_instructions, compressed);
+            max_instructions, (int)(compressed || xzCompressed));
 
     size_t pushed = 0;
 
@@ -263,10 +305,11 @@ bool
 ChampSimTraceReader::readChampSimInstruction(ChampSimInstr &cs_instr)
 {
     if (eofReached || (compressed && !gzTraceStream.is_open()) ||
-        (!compressed && !traceStream.is_open())) {
+        (xzCompressed && xzPipe == nullptr) ||
+        (!compressed && !xzCompressed && !traceStream.is_open())) {
         DPRINTF(TraceReader, "readChampSimInstruction: Cannot read - eofReached=%d, compressed=%d, stream_open=%d\n",
-                eofReached, compressed,
-                compressed ? gzTraceStream.is_open() : traceStream.is_open());
+                eofReached, (int)(compressed || xzCompressed),
+                compressed ? gzTraceStream.is_open() : (!xzCompressed && traceStream.is_open()));
         return false;
     }
 
@@ -287,6 +330,18 @@ ChampSimTraceReader::readChampSimInstruction(ChampSimInstr &cs_instr)
                 // Debug output removed temporarily
             } else {
                 // Debug: Error reading compressed ChampSim instruction
+            }
+            return false;
+        }
+    } else if (xzCompressed) {
+        DPRINTF(TraceReader, "readChampSimInstruction: Reading %lu bytes from xz pipe\n",
+                sizeof(ChampSimInstr));
+        bytes_read = std::fread(reinterpret_cast<char*>(&cs_instr), 1, sizeof(ChampSimInstr), xzPipe);
+        if (bytes_read != (std::streamsize)sizeof(ChampSimInstr)) {
+            if (feof(xzPipe)) {
+                eofReached = true;
+            } else {
+                // Debug: Error reading from xz pipe
             }
             return false;
         }
@@ -519,11 +574,17 @@ ChampSimTraceReader::generateSimulatedMemoryValues(const ChampSimInstr &cs_instr
 }
 
 bool
-ChampSimTraceReader::isCompressed(const std::string &filename)
+ChampSimTraceReader::isGzip(const std::string &filename)
 {
     // Simple check for .gz extension
-    return filename.size() > 3 &&
-           filename.substr(filename.size() - 3) == ".gz";
+    return filename.size() > 3 && filename.substr(filename.size() - 3) == ".gz";
+}
+
+bool
+ChampSimTraceReader::isXz(const std::string &filename)
+{
+    // Simple check for .xz extension
+    return filename.size() > 3 && filename.substr(filename.size() - 3) == ".xz";
 }
 
 uint64_t
@@ -604,13 +665,13 @@ ChampSimTraceReader::createCheckpoint()
         checkpoint.pending = pendingInstr;
     }
 
-    if (!compressed && traceStream.is_open()) {
+    if (!compressed && !xzCompressed && traceStream.is_open()) {
         // For uncompressed files, we can save the file position
         checkpoint.filePosition = traceStream.tellg();
         checkpoint.valid = true;
         DPRINTF(TraceReader, "createCheckpoint: Created checkpoint at instrIndex=%lu, filePos=%ld\n",
                 checkpoint.instructionIndex, checkpoint.filePosition);
-    } else if (compressed) {
+    } else if (compressed || xzCompressed) {
         // For compressed files, we can only checkpoint at current position
         checkpoint.filePosition = std::streampos(0);
         checkpoint.valid = true;
@@ -652,7 +713,7 @@ ChampSimTraceReader::restoreCheckpoint(const TraceCheckpoint& checkpoint)
     // Dump buffer before restore overwrites it
     dumpInstrBuffer("before_restore");
 
-    if (!compressed && traceStream.is_open()) {
+    if (!compressed && !xzCompressed && traceStream.is_open()) {
         // For uncompressed files, seek to the saved position
         traceStream.clear();
         traceStream.seekg(checkpoint.filePosition);
@@ -662,7 +723,7 @@ ChampSimTraceReader::restoreCheckpoint(const TraceCheckpoint& checkpoint)
             return false;
         }
         currentPos = traceStream.tellg();
-    } else if (compressed) {
+    } else if (compressed || xzCompressed) {
         // For compressed files, we need to reset and re-read to the checkpoint
         if (!reset()) {
             DPRINTF(TraceReader, "restoreCheckpoint: Failed to reset compressed stream\n");
