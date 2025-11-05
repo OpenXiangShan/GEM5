@@ -68,6 +68,12 @@ ChampSim traces contain:
 - Memory addresses for loads/stores
 - Register dependencies
 
+**Compression**
+
+- Supported inputs: `.bin` (uncompressed), `.gz`, `.xz`
+- `.gz` is read natively; `.xz` is supported via a light-weight pipe to `xz -dc`
+  to avoid extra library dependencies.
+
 **Structure** (from ChampSim's `input_instr`):
 ```cpp
 struct input_instr {

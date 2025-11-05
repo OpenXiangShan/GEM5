@@ -44,7 +44,7 @@ grep "system.cpu.numCycles" m5out/stats.txt
 #### ChampSim Traces (Fully Supported)
 - **Format**: Binary instruction traces from ChampSim simulator
 - **Content**: PC, branch info, memory addresses, register dependencies
-- **File Extension**: Usually `.bin` or `.trace`
+- **File Extensions**: `.bin` (uncompressed), `.gz`, `.xz`
 - **Source**: ChampSim tracer or compatible tools
 
 ```bash
@@ -113,17 +113,17 @@ Examples:
 
 ### Dumping ChampSim Traces Offline
 
-Inspect raw ChampSim traces without running gem5:
+Inspect raw ChampSim traces without running gem5 (supports .bin, .gz, .xz):
 
 ```bash
-python3 util/dump_champsim_trace.py --trace /path/to/trace.[bin|gz] --limit 20
+python3 util/dump_champsim_trace.py --trace /path/to/trace.[bin|gz|xz] --limit 20
 
 # With memory and address mapping
 python3 util/dump_champsim_trace.py -t trace.bin --show-mem \
   --map-mode hash --addr-base 0x80000000 --addr-size 0x40000000 --page-align
 
 # JSON output for tooling
-python3 util/dump_champsim_trace.py -t trace.gz -n 50 --json --show-mem
+python3 util/dump_champsim_trace.py -t trace.xz -n 50 --json --show-mem
 ```
 
 Columns (table mode): idx, pc, br, type (cond/jump/indirect/call/return/load/store/alu),
