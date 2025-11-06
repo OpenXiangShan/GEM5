@@ -42,7 +42,8 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
-      updateOnRead(false)
+      updateOnRead(false),
+      resolvedUpdate(false)
 {
     setNumDelay(1);
 
