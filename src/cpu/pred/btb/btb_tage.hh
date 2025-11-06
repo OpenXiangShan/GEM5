@@ -136,11 +136,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
 #ifdef UNIT_TEST
     // API compatibility wrappers for testing
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {
+    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override
+    {
         specUpdatePHist(history, pred);
     }
 
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) {
+    void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt,
+                     bool cond_taken) override
+    {
         recoverPHist(history, entry, shamt, cond_taken);
     }
 #endif
