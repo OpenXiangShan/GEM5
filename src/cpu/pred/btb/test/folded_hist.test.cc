@@ -12,8 +12,8 @@ protected:
 // Test basic initialization
 TEST_F(FoldedHistTest, BasicInit) {
     // Create a folded history with histLen=8, foldedLen=4, maxShamt=2
-    FoldedHist hist(8, 4, 2);
-    
+    DirectionFoldedHist hist(8, 4, 2);
+
     // Initial state should be all zeros
     auto folded = hist.getAsBitset();
     EXPECT_EQ(folded.size(), 4);  // foldedLen = 4
@@ -22,8 +22,8 @@ TEST_F(FoldedHistTest, BasicInit) {
 
 // Test basic update with single bit
 TEST_F(FoldedHistTest, BasicUpdate) {
-    FoldedHist hist(8, 4, 2);
-    
+    DirectionFoldedHist hist(8, 4, 2);
+
     // Create a global history register (all zeros)
     boost::dynamic_bitset<> ghr(8, 0);
     
@@ -40,7 +40,7 @@ TEST_F(FoldedHistTest, BasicUpdate) {
 
 // Test multiple updates
 TEST_F(FoldedHistTest, MultipleUpdates) {
-    FoldedHist hist(8, 4, 2);
+    DirectionFoldedHist hist(8, 4, 2);
     boost::dynamic_bitset<> ghr(8, 0);
     boost::dynamic_bitset<> temp_ghr(8, 0);
     
@@ -72,9 +72,9 @@ TEST_F(FoldedHistTest, MultipleUpdates) {
 
 // Test recovery functionality
 TEST_F(FoldedHistTest, BasicRecover) {
-    FoldedHist hist1(8, 4, 2);
-    FoldedHist hist2(8, 4, 2);
-    
+    DirectionFoldedHist hist1(8, 4, 2);
+    DirectionFoldedHist hist2(8, 4, 2);
+
     // Create a test pattern
     boost::dynamic_bitset<> ghr(8);
     ghr[0] = 1; ghr[3] = 1; ghr[6] = 1;
@@ -100,8 +100,8 @@ TEST_F(FoldedHistTest, BasicRecover) {
 
 // Test check functionality
 TEST_F(FoldedHistTest, BasicCheck) {
-    FoldedHist hist(8, 4, 2);
-    
+    DirectionFoldedHist hist(8, 4, 2);
+
     // Create a global history register
     boost::dynamic_bitset<> ghr(8, 0);
     ghr[0] = 1;  // Set lowest bit
@@ -117,7 +117,7 @@ TEST_F(FoldedHistTest, BasicCheck) {
 TEST_F(FoldedHistTest, CheckXORPatterns) {
     // Test 1: Basic alternating pattern
     {
-        FoldedHist hist(8, 4, 2);
+        DirectionFoldedHist hist(8, 4, 2);
         boost::dynamic_bitset<> ghr(8);
         // Set alternating pattern: 1,0,1,0,1,0,1,0
         for (int i = 0; i < 8; i += 2) {
@@ -144,7 +144,7 @@ TEST_F(FoldedHistTest, CheckXORPatterns) {
 
     // Test 2: All ones pattern
     {
-        FoldedHist hist(8, 4, 2);
+        DirectionFoldedHist hist(8, 4, 2);
         boost::dynamic_bitset<> ghr(8);
         ghr.set(); // Set all bits to 1
         
@@ -168,7 +168,7 @@ TEST_F(FoldedHistTest, CheckXORPatterns) {
 
     // Test 3: First half ones, second half zeros
     {
-        FoldedHist hist(8, 4, 2);
+        DirectionFoldedHist hist(8, 4, 2);
         boost::dynamic_bitset<> ghr(8);
         // Set pattern: 1,1,1,1,0,0,0,0
         for (int i = 0; i < 4; i++) {
@@ -195,7 +195,7 @@ TEST_F(FoldedHistTest, CheckXORPatterns) {
 
     // Test 4: Complex pattern
     {
-        FoldedHist hist(8, 4, 2);
+        DirectionFoldedHist hist(8, 4, 2);
         boost::dynamic_bitset<> ghr(8);
         // Set pattern: 1,1,0,0,1,0,1,0
         ghr[0] = 1; ghr[1] = 1; ghr[4] = 1; ghr[6] = 1;
@@ -220,7 +220,7 @@ TEST_F(FoldedHistTest, CheckXORPatterns) {
 
     // Test 5: Odd length history
     {
-        FoldedHist hist(7, 3, 2);
+        DirectionFoldedHist hist(7, 3, 2);
         boost::dynamic_bitset<> ghr(7);
         // Set pattern: 1,1,0,1,0,1,1 (from LSB to MSB)
         ghr[0] = 1; ghr[1] = 1; ghr[3] = 1; ghr[5] = 1; ghr[6] = 1;
@@ -283,24 +283,24 @@ TEST_F(FoldedHistTest, CheckXORPatterns) {
 // Test different history lengths
 TEST_F(FoldedHistTest, DifferentLengths) {
     // Test case where histLen < foldedLen
-    FoldedHist hist1(4, 8, 2);
+    DirectionFoldedHist hist1(4, 8, 2);
     boost::dynamic_bitset<> ghr1(4, 0);
     EXPECT_NO_THROW(hist1.update(ghr1, 1, true));
     
     // Test case where histLen = foldedLen
-    FoldedHist hist2(8, 8, 2);
+    DirectionFoldedHist hist2(8, 8, 2);
     boost::dynamic_bitset<> ghr2(8, 0);
     EXPECT_NO_THROW(hist2.update(ghr2, 1, true));
     
     // Test case where histLen > foldedLen
-    FoldedHist hist3(16, 4, 2);
+    DirectionFoldedHist hist3(16, 4, 2);
     boost::dynamic_bitset<> ghr3(16, 0);
     EXPECT_NO_THROW(hist3.update(ghr3, 1, true));
 }
 
 // Test maximum shift amount
 TEST_F(FoldedHistTest, MaxShift) {
-    FoldedHist hist(8, 4, 2);
+    DirectionFoldedHist hist(8, 4, 2);
     boost::dynamic_bitset<> ghr(8, 0);
     
     // Test shift amount equal to maxShamt
@@ -313,14 +313,14 @@ TEST_F(FoldedHistTest, MaxShift) {
 TEST_F(FoldedHistTest, BoundaryConditions) {
     // Test 1: histLen = 1
     {
-        FoldedHist hist(1, 1, 1);
+        DirectionFoldedHist hist(1, 1, 1);
         boost::dynamic_bitset<> ghr(1, 1);
         EXPECT_NO_THROW(hist.update(ghr, 1, true));
     }
     
     // Test 2: foldedLen = 1
     {
-        FoldedHist hist(8, 1, 1);
+        DirectionFoldedHist hist(8, 1, 1);
         boost::dynamic_bitset<> ghr(8, 0xFF);
         boost::dynamic_bitset<> temp_ghr(8, 0);
         for (int i = 7; i >= 0; i--) {
@@ -333,10 +333,10 @@ TEST_F(FoldedHistTest, BoundaryConditions) {
 }
 
 TEST_F(FoldedHistTest, ChainedRecovery) {
-    FoldedHist hist1(8, 4, 2);
-    FoldedHist hist2(8, 4, 2);
-    FoldedHist hist3(8, 4, 2);
-    
+    DirectionFoldedHist hist1(8, 4, 2);
+    DirectionFoldedHist hist2(8, 4, 2);
+    DirectionFoldedHist hist3(8, 4, 2);
+
     // Set up initial state
     boost::dynamic_bitset<> ghr(8);
     ghr[0] = 1; ghr[3] = 1; ghr[6] = 1;

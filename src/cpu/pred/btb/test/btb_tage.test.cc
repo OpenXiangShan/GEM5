@@ -451,9 +451,9 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
     boost::dynamic_bitset<> originalHistory = history;
 
     // Store original folded history state
-    std::vector<FoldedHist> originalTagFoldedHist;
-    std::vector<FoldedHist> originalAltTagFoldedHist;
-    std::vector<FoldedHist> originalIndexFoldedHist;
+    std::vector<PathFoldedHist> originalTagFoldedHist;
+    std::vector<PathFoldedHist> originalAltTagFoldedHist;
+    std::vector<PathFoldedHist> originalIndexFoldedHist;
 
     for (int i = 0; i < tage->numPredictors; i++) {
         originalTagFoldedHist.push_back(tage->tagFoldedHist[i]);
