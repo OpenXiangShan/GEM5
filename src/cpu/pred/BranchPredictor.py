@@ -981,7 +981,6 @@ class MBTB(TimedBaseBTBPredictor):
     numThreads = Param.Unsigned(1, "Number of threads")
     numWays = Param.Unsigned(4, "Number of ways per set") # for 2 SRAMs, 4 ways per SRAM
     numDelay = 2
-    resolvedUpdate = True
     blockSize = 32  # max 64 byte block, 32 byte aligned
     # MBTB is always half-aligned - no parameter needed
     victimCacheSize = Param.Unsigned(16, "Number of entries in the victim cache")
@@ -1057,7 +1056,6 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numDelay = 2
-    resolvedUpdate = True
 
 class MicroTAGE(BTBTAGE):
     """A smaller TAGE predictor configuration to assist uBTB"""
@@ -1069,7 +1067,6 @@ class MicroTAGE(BTBTAGE):
 
     histLengths = [16]
     numDelay = 0
-    resolvedUpdate = False
 
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'
