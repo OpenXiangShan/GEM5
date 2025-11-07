@@ -39,7 +39,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ittage(p.ittage),
       mgsc(p.mgsc),
       ras(p.ras),
-    //   uras(p.uras),
+      // uras(p.uras),
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
       historyManager(16), // TODO: fix this
@@ -51,7 +51,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     bpType = DecoupledBTBType;
     // TODO: better impl (use vector to assign in python)
     // problem: btb->getAndSetNewBTBEntry
-    tage->setResolvedUpdate();
     components.push_back(ubtb);
     components.push_back(abtb);
     components.push_back(microtage);
@@ -1164,7 +1163,7 @@ DecoupledBPUWithBTB::updateStatistics(const FetchStream &stream)
 }
 
 void
-DecoupledBPUWithBTB::updateTAGEOnly(unsigned &stream_id)
+DecoupledBPUWithBTB::resolveUpdate(unsigned &stream_id)
 {
     auto stream_it = fetchStreamQueue.find(stream_id);
     if (stream_it == fetchStreamQueue.end()) {
@@ -1177,8 +1176,13 @@ DecoupledBPUWithBTB::updateTAGEOnly(unsigned &stream_id)
     // Update predictor components only if the stream is hit or taken
     if (stream.isHit || stream.exeTaken) {
         // Update TAGE predictor only
-        mbtb->update(stream);
-        tage->update(stream);
+        if (mbtb->getResolvedUpdate()) {
+            mbtb->update(stream);
+        }
+
+        if (tage->getResolvedUpdate()) {
+            tage->update(stream);
+        }
     }
 }
 
@@ -1235,6 +1239,14 @@ DecoupledBPUWithBTB::updatePredictorComponents(unsigned &stream_id)
 
         // only mbtb can generate new entry
         mbtb->getAndSetNewBTBEntry(stream);
+
+        if (!mbtb->getResolvedUpdate()) {
+            mbtb->update(stream);
+        }
+
+        if (!tage->getResolvedUpdate()) {
+            tage->update(stream);
+        }
 
         // Update all predictor components
         for (int i = 0; i < numComponents; ++i) {

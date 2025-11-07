@@ -974,6 +974,7 @@ class MBTB(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::MBTB'
     cxx_header = 'cpu/pred/btb/mbtb.hh'
 
+    resolvedUpdate = Param.Bool(True, "Enable resolved update, no need to wait until commit")
     numEntries = Param.Unsigned(2048, "Number of entries in the MBTB")
     tagBits = Param.Unsigned(20, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
@@ -1040,6 +1041,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     needMoreHistories = Param.Bool(True, "BTBTAGE needs more histories")
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
     updateOnRead = Param.Bool(True, "Enable update on read, no need to save tage meta in FTQ")
+    resolvedUpdate = Param.Bool(True, "Enable resolved update, no need to wait until commit")
     numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([2048]*4, "the TAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
@@ -1059,6 +1061,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
 class MicroTAGE(BTBTAGE):
     """A smaller TAGE predictor configuration to assist uBTB"""
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
+    resolvedUpdate = False
     numPredictors = 1
     tableSizes = [512]
     TTagBitSizes = [16]

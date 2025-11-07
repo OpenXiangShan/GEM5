@@ -1501,7 +1501,7 @@ Fetch::handleIEWSignals()
         for (uint64_t &resolvedInstPC : entry.resolvedInstPC) {
             dbpbtb->markCFIResolved(stream_id, resolvedInstPC);
         }
-        dbpbtb->updateTAGEOnly(stream_id);
+        dbpbtb->resolveUpdate(stream_id);
     }
 
     return;

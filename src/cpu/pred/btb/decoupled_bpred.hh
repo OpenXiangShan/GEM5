@@ -811,7 +811,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void commitStream(unsigned stream_id);
 
     // Helper functions for update
-    void updateTAGEOnly(unsigned &stream_id);
+    void resolveUpdate(unsigned &stream_id);
     void prepareMarkCFIEntries(unsigned &stream_id);
     void markCFIResolved(unsigned &stream_id, uint64_t resolvedInstPC);
     void updatePredictorComponents(unsigned &stream_id);

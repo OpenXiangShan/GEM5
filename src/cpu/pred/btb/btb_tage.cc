@@ -76,7 +76,7 @@ useAltOnNaWidth(p.useAltOnNaWidth),
 numTablesToAlloc(p.numTablesToAlloc),
 enableSC(p.enableSC),
 updateOnRead(p.updateOnRead),
-resolvedUpdate(false),
+resolvedUpdate(p.resolvedUpdate),
 tageStats(this, p.numPredictors)
 {
     this->needMoreHistories = p.needMoreHistories;

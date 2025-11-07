@@ -145,8 +145,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     }
 #endif
 
-
-    void setResolvedUpdate() { resolvedUpdate = true; }
+    inline bool getResolvedUpdate() { return resolvedUpdate; }
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchStream &entry) override;

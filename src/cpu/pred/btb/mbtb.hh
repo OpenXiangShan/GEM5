@@ -170,6 +170,7 @@ class MBTB : public TimedBaseBTBPredictor
      */
     void update(const FetchStream &stream) override;
 
+    inline bool getResolvedUpdate() { return resolvedUpdate; }
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
@@ -381,6 +382,8 @@ class MBTB : public TimedBaseBTBPredictor
      */
     std::vector<TickedBTBEntry> victimCache;
     unsigned victimCacheSize;
+
+    bool resolvedUpdate;
 
     /** BTB configuration parameters */
     unsigned numEntries;    // Total number of entries
