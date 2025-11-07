@@ -20,7 +20,7 @@ from common.xiangshan import *
 
 if __name__ == '__m5_main__':
 
-    args = xiangsha_system_init()
+    args = xiangshan_system_init()
 
     # l1cache prefetcher use stream, stride
     # l2cache prefetcher use pht, bop, cmc

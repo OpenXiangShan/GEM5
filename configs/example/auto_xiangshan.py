@@ -49,7 +49,7 @@ def autoCalibrateParams(args, system):
 
 
 if __name__ == '__m5_main__':
-    args = xiangsha_system_init()
+    args = xiangshan_system_init()
 
     args.enable_difftest = False
     args.raw_cpt = True

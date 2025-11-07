@@ -477,7 +477,7 @@ def build_xiangshan_system(args):
     return test_sys
 
 
-def xiangsha_system_init():
+def xiangshan_system_init():
     # Add args
     parser = argparse.ArgumentParser()
     Options.addCommonOptions(parser, configure_xiangshan=True)
