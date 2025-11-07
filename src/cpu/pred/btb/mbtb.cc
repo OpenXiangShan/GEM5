@@ -78,7 +78,6 @@ MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned num
 MBTB::MBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
     victimCacheSize(p.victimCacheSize),
-    resolvedUpdate(p.resolvedUpdate),
     numEntries(p.numEntries),
     numWays(p.numWays),
     tagBits(p.tagBits),

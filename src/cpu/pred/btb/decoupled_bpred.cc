@@ -1175,13 +1175,11 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &stream_id)
 
     // Update predictor components only if the stream is hit or taken
     if (stream.isHit || stream.exeTaken) {
-        // Update TAGE predictor only
-        if (mbtb->getResolvedUpdate()) {
-            mbtb->update(stream);
-        }
-
-        if (tage->getResolvedUpdate()) {
-            tage->update(stream);
+        // Update predictor components
+        for (int i = 0; i < numComponents; ++i) {
+            if (components[i]->getResolvedUpdate()) {
+                components[i]->update(stream);
+            }
         }
     }
 }
@@ -1240,17 +1238,9 @@ DecoupledBPUWithBTB::updatePredictorComponents(unsigned &stream_id)
         // only mbtb can generate new entry
         mbtb->getAndSetNewBTBEntry(stream);
 
-        if (!mbtb->getResolvedUpdate()) {
-            mbtb->update(stream);
-        }
-
-        if (!tage->getResolvedUpdate()) {
-            tage->update(stream);
-        }
-
-        // Update all predictor components
+        // Update predictor components
         for (int i = 0; i < numComponents; ++i) {
-            if (components[i] != tage || components[i] != mbtb) {
+            if (!components[i]->getResolvedUpdate()) {
                 components[i]->update(stream);
             }
         }

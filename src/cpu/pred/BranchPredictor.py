@@ -968,19 +968,20 @@ class TimedBaseBTBPredictor(SimObject):
     blockSize = Param.Unsigned(Parent.predictWidth, "Block size in bytes")
     predictWidth = Param.Unsigned(Parent.predictWidth, "Maximum range in bytes that a single prediction can cover")
     numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
+    resolvedUpdate = Param.Bool(False, "Enable resolved update, no need to wait until commit")
 
 class MBTB(TimedBaseBTBPredictor):
     type = 'MBTB'
     cxx_class = 'gem5::branch_prediction::btb_pred::MBTB'
     cxx_header = 'cpu/pred/btb/mbtb.hh'
 
-    resolvedUpdate = Param.Bool(True, "Enable resolved update, no need to wait until commit")
     numEntries = Param.Unsigned(2048, "Number of entries in the MBTB")
     tagBits = Param.Unsigned(20, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
     numThreads = Param.Unsigned(1, "Number of threads")
     numWays = Param.Unsigned(4, "Number of ways per set") # for 2 SRAMs, 4 ways per SRAM
     numDelay = 2
+    resolvedUpdate = True
     blockSize = 32  # max 64 byte block, 32 byte aligned
     # MBTB is always half-aligned - no parameter needed
     victimCacheSize = Param.Unsigned(16, "Number of entries in the victim cache")
@@ -1041,7 +1042,6 @@ class BTBTAGE(TimedBaseBTBPredictor):
     needMoreHistories = Param.Bool(True, "BTBTAGE needs more histories")
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
     updateOnRead = Param.Bool(True, "Enable update on read, no need to save tage meta in FTQ")
-    resolvedUpdate = Param.Bool(True, "Enable resolved update, no need to wait until commit")
     numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([2048]*4, "the TAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([8]*4, "the T0~Tn entry's tag bit size")
@@ -1057,11 +1057,11 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numDelay = 2
+    resolvedUpdate = True
 
 class MicroTAGE(BTBTAGE):
     """A smaller TAGE predictor configuration to assist uBTB"""
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
-    resolvedUpdate = False
     numPredictors = 1
     tableSizes = [512]
     TTagBitSizes = [16]
@@ -1069,6 +1069,7 @@ class MicroTAGE(BTBTAGE):
 
     histLengths = [16]
     numDelay = 0
+    resolvedUpdate = False
 
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'

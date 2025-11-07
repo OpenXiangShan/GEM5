@@ -74,6 +74,7 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchStream &entry, int shamt, bool cond_taken) {}
     virtual void update(const FetchStream &entry) {}
     virtual unsigned getDelay() {return numDelay;}
+    virtual bool getResolvedUpdate() {return resolvedUpdate;}
 #ifndef UNIT_TEST
     // do some statistics on a per-branch and per-predictor basis
     virtual void commitBranch(const FetchStream &entry, const DynInstPtr &inst) {}
@@ -101,6 +102,7 @@ class TimedBaseBTBPredictor: public SimObject
 
 private:
     unsigned numDelay;
+    bool resolvedUpdate;
 };
 
 // Close conditional namespace wrapper for testing

@@ -145,8 +145,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
     }
 #endif
 
-    inline bool getResolvedUpdate() { return resolvedUpdate; }
-
     // Update predictor state based on actual branch outcomes
     void update(const FetchStream &entry) override;
 
@@ -289,7 +287,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Whether to update on read
     bool updateOnRead;
-    bool resolvedUpdate;
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;

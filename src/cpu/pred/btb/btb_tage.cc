@@ -42,8 +42,7 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
-      updateOnRead(false),
-      resolvedUpdate(false)
+      updateOnRead(false)
 {
     setNumDelay(1);
 
@@ -76,7 +75,6 @@ useAltOnNaWidth(p.useAltOnNaWidth),
 numTablesToAlloc(p.numTablesToAlloc),
 enableSC(p.enableSC),
 updateOnRead(p.updateOnRead),
-resolvedUpdate(p.resolvedUpdate),
 tageStats(this, p.numPredictors)
 {
     this->needMoreHistories = p.needMoreHistories;
@@ -362,7 +360,7 @@ BTBTAGE::prepareUpdateEntries(const FetchStream &stream) {
     auto all_entries = stream.updateBTBEntries;
 
     // Filter out non-conditional and always-taken branches
-    if (resolvedUpdate) {
+    if (getResolvedUpdate()) {
       auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
           [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
       all_entries.erase(remove_it, all_entries.end());
