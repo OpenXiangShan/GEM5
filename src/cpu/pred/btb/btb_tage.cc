@@ -660,8 +660,8 @@ BTBTAGE::update(const FetchStream &stream) {
         }
 #endif
     }
-    if (getDelay() != 2){
-        //sort microtage predictions by pc to find the first taken branch
+    if (getDelay() != 2){// use for microtage updatemispred counting
+        // sort microtage predictions by pc to find the first taken branch
         std::vector<std::pair<Addr, TagePrediction>> lastPreds;
         lastPreds.reserve(predMeta->preds.size());
         for (auto &kv : predMeta->preds) {
@@ -684,7 +684,7 @@ BTBTAGE::update(const FetchStream &stream) {
         bool branch_mispred = stream.exeTaken && first_taken_pc != stream.exeBranchInfo.pc;
         if (fallthrough_mispred || branch_mispred) {
             tageStats.updateMispred++;
-    }
+        }
     }
     DPRINTF(TAGE, "end update\n");
 }
