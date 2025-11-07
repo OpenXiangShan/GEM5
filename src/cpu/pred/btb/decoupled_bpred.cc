@@ -1029,9 +1029,8 @@ DecoupledBPUWithBTB::trapSquash(unsigned target_id, unsigned stream_id,
 }
 
 void
-DecoupledBPUWithBTB::commitStream(unsigned stream_id)
+DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
 {
-
     // No need to dequeue when queue is empty
     if (fetchStreamQueue.empty())
         return;
@@ -1053,8 +1052,7 @@ DecoupledBPUWithBTB::commitStream(unsigned stream_id)
         updateStatistics(stream);
 
         // Update predictor components
-        unsigned int currentFtqEntryInstNum = it->first;
-        updatePredictorComponents(currentFtqEntryInstNum);
+        updatePredictorComponents(stream);
 
         it = fetchStreamQueue.erase(it);
         dbpBtbStats.fsqEntryCommitted++;
@@ -1067,11 +1065,6 @@ DecoupledBPUWithBTB::commitStream(unsigned stream_id)
     }
 
     historyManager.commit(stream_id);
-}
-
-void
-DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
-{
 }
 
 void
@@ -1185,7 +1178,7 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &stream_id)
 }
 
 void
-DecoupledBPUWithBTB::prepareMarkCFIEntries(unsigned &stream_id)
+DecoupledBPUWithBTB::prepareResolveUpdateEntries(unsigned &stream_id)
 {
     auto stream_it = fetchStreamQueue.find(stream_id);
     if (stream_it == fetchStreamQueue.end()) {
@@ -1219,16 +1212,8 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &stream_id, uint64_t resolvedInstP
 }
 
 void
-DecoupledBPUWithBTB::updatePredictorComponents(unsigned &stream_id)
+DecoupledBPUWithBTB::updatePredictorComponents(FetchStream &stream)
 {
-
-    auto stream_it = fetchStreamQueue.find(stream_id);
-    if (stream_it == fetchStreamQueue.end()) {
-        DPRINTF(DecoupleBP, "Stream id %u not found in fetchStreamQueue, cannot update predictors\n", stream_id);
-        return;
-    }
-    auto &stream = stream_it->second;
-
     // Update predictor components only if the stream is hit or taken
     if (stream.isHit || stream.exeTaken) {
         // Prepare stream for update

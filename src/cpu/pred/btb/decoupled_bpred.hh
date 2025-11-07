@@ -808,13 +808,11 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void resetPC(Addr new_pc);
 
-    void commitStream(unsigned stream_id);
-
     // Helper functions for update
     void resolveUpdate(unsigned &stream_id);
-    void prepareMarkCFIEntries(unsigned &stream_id);
+    void prepareResolveUpdateEntries(unsigned &stream_id);
     void markCFIResolved(unsigned &stream_id, uint64_t resolvedInstPC);
-    void updatePredictorComponents(unsigned &stream_id);
+    void updatePredictorComponents(FetchStream &stream);
     void updateStatistics(const FetchStream &stream);
 
     // Helper function to process FTQ entry completion

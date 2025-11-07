@@ -459,7 +459,7 @@ class Fetch
     bool handleCommitSignals(ThreadID tid);
 
     /** Handles iew signals including resolved cfi, mark their btb entries
-     *  and train TAGE predictor.
+     *  and train predictors if they are configured to update in resolve stage.
      */
     void handleIEWSignals();
 

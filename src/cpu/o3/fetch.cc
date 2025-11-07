@@ -1489,15 +1489,15 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 void
 Fetch::handleIEWSignals()
 {
-    // Currently TAGE resolve stage training is a btb only feature
+    // Currently resolve stage training is a btb-only feature
     if (!isBTBPred()) {
         return;
     }
 
-    // iterate resolvedFSQId and get FetchStream, push to ResolveQueue
+    // iterate resolved stream_id and PC value from ResolveQueue
     for (auto entry : fromIEW->iewInfo->resolveQueue) {
         unsigned int stream_id = entry.resolvedFSQId;
-        dbpbtb->prepareMarkCFIEntries(stream_id);
+        dbpbtb->prepareResolveUpdateEntries(stream_id);
         for (uint64_t &resolvedInstPC : entry.resolvedInstPC) {
             dbpbtb->markCFIResolved(stream_id, resolvedInstPC);
         }
@@ -1528,7 +1528,6 @@ Fetch::handleCommitSignals(ThreadID tid)
                 dbpftb->update(fromCommit->commitInfo[tid].doneFsqId, tid);
             } else if (isBTBPred()) {
                 assert(dbpbtb);
-                dbpbtb->commitStream(fromCommit->commitInfo[tid].doneFsqId);
                 dbpbtb->update(fromCommit->commitInfo[tid].doneFsqId, tid);
             }
         }
