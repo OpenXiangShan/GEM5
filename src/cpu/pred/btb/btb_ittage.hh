@@ -177,7 +177,45 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     int usefulResetCnt;
 
-    typedef struct TageMeta {
+#ifdef UNIT_TEST
+    typedef uint64_t Scalar;
+#else
+    typedef statistics::Scalar Scalar;
+#endif
+
+    // Statistics for ITTAGE predictor
+#ifdef UNIT_TEST
+    struct IttageStats
+    {
+#else
+    struct IttageStats : public statistics::Group
+    {
+#endif
+        // Prediction phase counters
+        Scalar predNoHitUseBTB;
+        Scalar predUseAlt;
+        Scalar predTargetHit;
+
+        // Update phase counters
+        Scalar updateMispred;
+        Scalar updateAllocSuccess;
+        Scalar updateAllocFailure;
+        Scalar updateResetU;
+        Scalar updateUseAltCorrect;
+
+#ifndef UNIT_TEST
+        statistics::Distribution predTableHits;
+        statistics::Distribution updateTableHits;
+
+        int numPredictors;
+        IttageStats(statistics::Group* parent, int numPredictors);
+#endif
+    };
+
+    IttageStats ittageStats;
+
+    typedef struct TageMeta
+    {
         std::unordered_map<Addr, TagePrediction> preds;
         bitset usefulMask;
         std::vector<FoldedHist> tagFoldedHist;

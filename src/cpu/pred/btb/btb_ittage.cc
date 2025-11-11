@@ -27,7 +27,8 @@ tableTagBits(p.TTagBitSizes),
 tablePcShifts(p.TTagPcShifts),
 histLengths(p.histLengths),
 maxHistLen(p.maxHistLen),
-numTablesToAlloc(p.numTablesToAlloc)
+numTablesToAlloc(p.numTablesToAlloc),
+ittageStats(this, p.numPredictors)
 {
     DPRINTF(ITTAGE, "BTBITTAGE constructor numBr=%d\n", numBr);
     tageTable.resize(numPredictors);
@@ -135,6 +136,16 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
             }
             DPRINTF(ITTAGE, "tage predict %#lx target %#lx\n", btb_entry.pc, target);
 
+            // Update prediction statistics
+            if (!provided) {
+                ittageStats.predNoHitUseBTB++;
+            }
+            if (use_alt) {
+                ittageStats.predUseAlt++;
+            }
+            ittageStats.predTableHits.sample(main_info.table, 1);
+            // Note: predTargetHit will be updated in the update phase when we know the actual target
+
             TagePrediction pred(btb_entry.pc, main_info, alt_info, use_alt, main_target);
             meta->preds[btb_entry.pc] = pred;
         }
@@ -228,6 +239,11 @@ BTBITTAGE::update(const FetchStream &stream)
         bool mispred = stream.squashType == SQUASH_CTRL && stream.squashPC == btb_entry.pc;
         Addr exe_target = stream.exeBranchInfo.target;
         auto &main_info = pred.mainInfo;
+
+        // Update misprediction statistics
+        if (mispred) {
+            ittageStats.updateMispred++;
+        }
         bool &main_found = main_info.found;
         auto &main_counter = main_info.entry.counter;
         bool main_taken = main_info.taken();
@@ -251,12 +267,20 @@ BTBITTAGE::update(const FetchStream &stream)
                 way.useful = exe_target == main_target;
             }
 
+            // Update target hit statistics
+            if (main_target == exe_target) {
+                ittageStats.predTargetHit++;
+            }
+
             if (used_alt && mispred) {
                 auto &alt_way = tageTable[pred.altInfo.table][pred.altInfo.index];
                 updateCounter(false, 2, alt_way.counter);
                 if (alt_way.counter == 0) {
                     alt_way.target = exe_target;
                 }
+            } else if (used_alt && alt_info.found && alt_info.entry.target == exe_target) {
+                // Update alternative prediction correct statistics
+                ittageStats.updateUseAltCorrect++;
             }
             DPRINTF(ITTAGE, "useful bit set to %d\n", way.useful);
         }
@@ -295,6 +319,7 @@ BTBITTAGE::update(const FetchStream &stream)
                         entry.useful = 0;
                     }
                 }
+                ittageStats.updateResetU++;
                 usefulResetCnt = 0;
             }
         }
@@ -335,9 +360,12 @@ BTBITTAGE::update(const FetchStream &stream)
                         DPRINTF(ITTAGE, "found allocatable entry, table %d, index %d, tag %d, counter %d\n",
                             ti, newIndex, newTag, 2);
                         newEntry = TageEntry(newTag, exe_target, 2, btb_entry.pc);
+                        ittageStats.updateAllocSuccess++;
                         break; // allocate only 1 entry
                     }
                 }
+            } else if (needToAllocate && !allocateValid) {
+                ittageStats.updateAllocFailure++;
             }
         }
     }
@@ -489,6 +517,26 @@ void
 BTBITTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
 }
+
+#ifndef UNIT_TEST
+// Constructor for ITTAGE statistics
+BTBITTAGE::IttageStats::IttageStats(statistics::Group* parent, int numPredictors) :
+    statistics::Group(parent),
+    ADD_STAT(predNoHitUseBTB, statistics::units::Count::get(), "use BTB target when no TAGE hit on prediction"),
+    ADD_STAT(predUseAlt, statistics::units::Count::get(), "use alternative prediction on prediction"),
+    ADD_STAT(predTargetHit, statistics::units::Count::get(), "TAGE target matches actual target on prediction"),
+    ADD_STAT(updateMispred, statistics::units::Count::get(), "target misprediction on update"),
+    ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "successful allocation when update"),
+    ADD_STAT(updateAllocFailure, statistics::units::Count::get(), "allocation failure when update"),
+    ADD_STAT(updateResetU, statistics::units::Count::get(), "reset useful bits when update"),
+    ADD_STAT(updateUseAltCorrect, statistics::units::Count::get(), "use alternative prediction and correct on update"),
+    ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
+    ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update")
+{
+    predTableHits.init(0, numPredictors-1, 1);
+    updateTableHits.init(0, numPredictors-1, 1);
+}
+#endif
 
 } // namespace btb_pred
 
