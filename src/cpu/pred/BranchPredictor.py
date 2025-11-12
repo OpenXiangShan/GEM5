@@ -969,6 +969,7 @@ class TimedBaseBTBPredictor(SimObject):
     predictWidth = Param.Unsigned(Parent.predictWidth, "Maximum range in bytes that a single prediction can cover")
     numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
     resolvedUpdate = Param.Bool(False, "Enable resolved update, no need to wait until commit")
+    enabled = Param.Bool(True, "Enable this predictor component")
 
 class MBTB(TimedBaseBTBPredictor):
     type = 'MBTB'

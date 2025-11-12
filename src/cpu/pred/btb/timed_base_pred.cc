@@ -20,7 +20,8 @@ TimedBaseBTBPredictor::TimedBaseBTBPredictor(const Params &p)
       blockSize(p.blockSize),
       predictWidth(p.predictWidth),
       numDelay(p.numDelay),
-      resolvedUpdate(p.resolvedUpdate)
+      resolvedUpdate(p.resolvedUpdate),
+      enabled(p.enabled)
 {
 }
 #endif

@@ -100,9 +100,13 @@ class TimedBaseBTBPredictor: public SimObject
 #endif
     virtual void setTrace() {}
 
+    // Check if this component is enabled
+    bool isEnabled() const { return enabled; }
+
 private:
     unsigned numDelay;
     bool resolvedUpdate;
+    bool enabled;
 };
 
 // Close conditional namespace wrapper for testing
