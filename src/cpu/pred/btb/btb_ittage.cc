@@ -143,7 +143,9 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
             if (use_alt) {
                 ittageStats.predUseAlt++;
             }
-            ittageStats.predTableHits.sample(main_info.table, 1);
+            if (provided) {
+                ittageStats.predTableHits.sample(main_info.table, 1);
+            }
             // Note: predTargetHit will be updated in the update phase when we know the actual target
 
             TagePrediction pred(btb_entry.pc, main_info, alt_info, use_alt, main_target);
@@ -271,6 +273,7 @@ BTBITTAGE::update(const FetchStream &stream)
             if (main_target == exe_target) {
                 ittageStats.predTargetHit++;
             }
+            ittageStats.updateTableHits.sample(main_info.table, 1);
 
             if (used_alt && mispred) {
                 auto &alt_way = tageTable[pred.altInfo.table][pred.altInfo.index];
@@ -524,7 +527,7 @@ BTBITTAGE::IttageStats::IttageStats(statistics::Group* parent, int numPredictors
     statistics::Group(parent),
     ADD_STAT(predNoHitUseBTB, statistics::units::Count::get(), "use BTB target when no TAGE hit on prediction"),
     ADD_STAT(predUseAlt, statistics::units::Count::get(), "use alternative prediction on prediction"),
-    ADD_STAT(predTargetHit, statistics::units::Count::get(), "TAGE target matches actual target on prediction"),
+    ADD_STAT(predTargetHit, statistics::units::Count::get(), "TAGE target matches actual target (verified during update)"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "target misprediction on update"),
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "successful allocation when update"),
     ADD_STAT(updateAllocFailure, statistics::units::Count::get(), "allocation failure when update"),
