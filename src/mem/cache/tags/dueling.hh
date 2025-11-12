@@ -202,6 +202,8 @@ class DuelingMonitor
      * @param dueler The entry to be initialized.
      */
     void initEntry(Dueler* dueler);
+
+    uint64_t getID() const { return id; }
 };
 
 } // namespace gem5

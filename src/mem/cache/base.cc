@@ -140,7 +140,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       writeBuffer("write buffer", p.write_buffers, p.mshrs, p.name),
       tags(p.tags),
       tagLoadReadPorts(p.tag_load_read_ports),
-      sliceNum(p.slice_num),
+      sliceNum(p.num_slices),
       freeTagLoadReadPorts(p.tag_load_read_ports),
       lastTagAccessCheckCycle(0),
       lastMSHRAllocCycle(0),
