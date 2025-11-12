@@ -359,26 +359,25 @@ std::vector<BTBEntry>
 BTBTAGE::prepareUpdateEntries(const FetchStream &stream) {
     auto all_entries = stream.updateBTBEntries;
 
-    // Filter out non-conditional and always-taken branches
-    if (getResolvedUpdate()) {
-      auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-          [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
-      all_entries.erase(remove_it, all_entries.end());
-    } else {
-      auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-          [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
-      all_entries.erase(remove_it, all_entries.end());
+    // Add potential new BTB entry if it's a btb miss during prediction
+    if (!stream.updateIsOldEntry) {
+        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
+        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
+        if (!new_entry_taken) {
+            potential_new_entry.alwaysTaken = false;
+        }
+        all_entries.push_back(potential_new_entry);
     }
 
-    // Handle potential new BTB entry
-    BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-    bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
-    if (!new_entry_taken) {
-        potential_new_entry.alwaysTaken = false;
-    }
-    if (!stream.updateIsOldEntry && potential_new_entry.isCond &&
-        !potential_new_entry.alwaysTaken) {
-        all_entries.push_back(potential_new_entry);
+    // Filter: only keep conditional branches that are not always taken
+    if (getResolvedUpdate()) {
+        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
+            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
+        all_entries.erase(remove_it, all_entries.end());
+    } else {
+        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
+            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
+        all_entries.erase(remove_it, all_entries.end());
     }
 
     return all_entries;

@@ -211,16 +211,16 @@ BTBITTAGE::update(const FetchStream &stream)
     DPRINTF(ITTAGE, "update startAddr: %#lx\n", startAddr);
     // update at the basis of btb entries
     auto all_entries_to_update = stream.updateBTBEntries;
-    // only update conditional branches that is not always taken
+
+    // add new entry if it's a btb miss during prediction
+    if (!stream.updateIsOldEntry) {
+        all_entries_to_update.push_back(stream.updateNewBTBEntry);
+    }
+
+    // only update indirect branches that are not returns
     auto remove_it = std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
         [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn); });
     all_entries_to_update.erase(remove_it, all_entries_to_update.end());
-
-    // check if pred btb miss branch need to be updated
-    auto &potential_new_entry = stream.updateNewBTBEntry;
-    if (!stream.updateIsOldEntry && !(potential_new_entry.isIndirect && !potential_new_entry.isReturn)) {
-        all_entries_to_update.push_back(potential_new_entry);
-    }
 
     // get tage predictions from meta
     // TODO: use component idx
