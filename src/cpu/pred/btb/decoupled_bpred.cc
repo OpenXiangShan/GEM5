@@ -52,7 +52,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     // TODO: better impl (use vector to assign in python)
     // problem: btb->getAndSetNewBTBEntry
     components.push_back(ubtb);
-    // components.push_back(abtb);
+    components.push_back(abtb);
     // components.push_back(microtage);
     // components.push_back(uras);
     components.push_back(mbtb);
