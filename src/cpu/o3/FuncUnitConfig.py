@@ -44,7 +44,7 @@ from m5.params import *
 from m5.objects.FuncUnit import *
 
 class IntMisc(FUDesc):
-    opList = [ OpDesc(opClass='No_OpClass', opLat=2),
+    opList = [ OpDesc(opClass='No_OpClass', opLat=5, pipelined=False),
                OpDesc(opClass='VectorConfig') ]
 
 class IntALU(FUDesc):
@@ -88,14 +88,14 @@ class FP_SLOW(FUDesc):
                OpDesc(opClass='FloatSqrt', opLat=17)]
 
 class FP_ALU(FUDesc):
-    opList = [ OpDesc(opClass='FloatCmp', opLat=3),
-               OpDesc(opClass='FloatAdd', opLat=2),
+    opList = [ OpDesc(opClass='FloatAdd', opLat=2),
                OpDesc(opClass='FloatMisc', opLat=2),
                OpDesc(opClass='FloatMult', opLat=4)]
 
 class FP_MISC(FUDesc):
-    opList = [ OpDesc(opClass='FloatCvt', opLat=5), # float -> int 5 cycles, int -> float 7 cycle
-               OpDesc(opClass='FloatMv', opLat=5)]
+    opList = [ OpDesc(opClass='FloatCvt', opLat=4),
+               OpDesc(opClass='FloatCmp', opLat=4),
+               OpDesc(opClass='FloatMv', opLat=4)]
 
 class FP_MAC(FUDesc):
     opList = [ OpDesc(opClass='FloatMultAcc', opLat=4)]
