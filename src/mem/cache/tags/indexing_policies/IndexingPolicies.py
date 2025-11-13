@@ -40,6 +40,11 @@ class BaseIndexingPolicy(SimObject):
     # Get the entry size from the parent (tags)
     entry_size = Param.Int(Parent.entry_size, "entry size in bytes")
 
+    num_slices = Param.Int(0,
+                           "Cache slice shift amount, slice size = cache size / num_slices, so the slice set_index must shift by log2(num_slices)")
+
+    slice_idx = Param.Int(0, "Cache slice index")
+
     # Get the associativity
     assoc = Param.Int(Parent.assoc, "associativity")
 

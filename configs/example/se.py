@@ -372,7 +372,7 @@ def setKmhV3IdealParams(args, system):
     if args.l2cache:
         for i in range(args.num_cpus):
             system.l2_caches[i].size = '2MB'
-            system.l2_caches[i].slice_num = 0   # 4 -> 0, no slice
+            system.l2_caches[i].num_slices = 0   # 4 -> 0, no slice
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0

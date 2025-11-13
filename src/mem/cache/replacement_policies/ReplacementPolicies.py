@@ -39,6 +39,10 @@ class DuelingRP(BaseReplacementPolicy):
     cxx_class = 'gem5::replacement_policy::Dueling'
     cxx_header = "mem/cache/replacement_policies/dueling_rp.hh"
 
+    num_ways = Param.Int(Parent.assoc, "Number of ways in the cache")
+    num_slices = Param.Int(0, "Number of slices in the cache")
+    num_sets_per_slice = Param.Int(0, "Number of sets per slice")
+
     constituency_size = Param.Unsigned(
         "The size of a region containing one sample")
     team_size = Param.Unsigned(
@@ -94,7 +98,7 @@ class BRRIPRP(BaseReplacementPolicy):
     num_bits = Param.Int(2, "Number of bits per RRPV")
     hit_priority = Param.Bool(False,
         "Prioritize evicting blocks that havent had a hit recently")
-    btp = Param.Percent(3,
+    btp = Param.Percent(0,
         "Percentage of blocks to be inserted with long RRPV")
 
 class RRIPRP(BRRIPRP):
@@ -107,8 +111,8 @@ class DRRIPRP(DuelingRP):
     # The paper assumes that:
     #     num_dueling_sets = 32
     #     team_size = num_entries_per_set
-    replacement_policy_a = BRRIPRP()
-    replacement_policy_b = RRIPRP()
+    replacement_policy_a = RRIPRP()
+    replacement_policy_b = BRRIPRP()
 
 class NRURP(BRRIPRP):
     btp = 100
