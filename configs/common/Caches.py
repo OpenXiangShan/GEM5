@@ -109,7 +109,7 @@ class L2Cache(Cache):
     # recvTimingResp serviceMSHR latency
     response_latency = 0
 
-    replacement_policy = DRRIPRP(constituency_size = 64, team_size = 8)
+    replacement_policy = DRRIPRP(constituency_size = 16, team_size = 8)
 
     # reduce 2 cycles when way prediction is correct
     wpu = UTagWpu(utag_bits = 8, cycle_reduction = 2)
@@ -118,7 +118,7 @@ class L2Cache(Cache):
 
     # NOTE: slice stall is implemented in L2CacheWrapper now,
     #       so this parameter has no effect in L2Cache.
-    # slice_num = 4
+    # num_slices = 4
 
 class L3Cache(Cache):
     mshrs = 64

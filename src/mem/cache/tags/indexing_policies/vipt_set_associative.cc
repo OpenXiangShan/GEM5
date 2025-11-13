@@ -56,6 +56,7 @@ namespace gem5
 VIPTSetAssociative::VIPTSetAssociative(const Params &p)
     : SetAssociative(p)
 {
+    assert(sliceShift == 0);
     if (tagShift > floorLog2(p.page_size)) {
         aliasBits = tagShift - floorLog2(p.page_size);
     } else {

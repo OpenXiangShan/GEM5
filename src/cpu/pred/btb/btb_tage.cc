@@ -245,7 +245,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     // Use base table instead of btb_entry.ctr
     Addr base_idx = getBaseTableIndex(alignedPC);
     unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, alignedPC);
-    bool base_taken = baseTable[base_idx][branch_idx] >= 0;
+    bool base_taken = getDelay() != 0 ? baseTable[base_idx][branch_idx] >= 0 : btb_entry.ctr >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
 
     // use_alt_on_na gating: when provider weak, consult per-PC counter
@@ -358,17 +358,26 @@ BTBTAGE::getPredictionMeta() {
 std::vector<BTBEntry>
 BTBTAGE::prepareUpdateEntries(const FetchStream &stream) {
     auto all_entries = stream.updateBTBEntries;
-    
-    // Filter out non-conditional and always-taken branches
-    auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-        [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
-    all_entries.erase(remove_it, all_entries.end());
 
-    // Handle potential new BTB entry
-    auto &potential_new_entry = stream.updateNewBTBEntry;
-    if (!stream.updateIsOldEntry && potential_new_entry.isCond && 
-        !potential_new_entry.alwaysTaken) {
+    // Add potential new BTB entry if it's a btb miss during prediction
+    if (!stream.updateIsOldEntry) {
+        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
+        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
+        if (!new_entry_taken) {
+            potential_new_entry.alwaysTaken = false;
+        }
         all_entries.push_back(potential_new_entry);
+    }
+
+    // Filter: only keep conditional branches that are not always taken
+    if (getResolvedUpdate()) {
+        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
+            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
+        all_entries.erase(remove_it, all_entries.end());
+    } else {
+        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
+            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
+        all_entries.erase(remove_it, all_entries.end());
     }
 
     return all_entries;
@@ -482,14 +491,16 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // check if need to allocate new entry
-    bool this_cond_mispred = stream.squashType == SquashType::SQUASH_CTRL && 
+    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
                                stream.squashPC == entry.pc;
-    if (this_cond_mispred) {
-        tageStats.updateMispred++;
-        if (!used_alt && main_info.found) {
+    if (getDelay() == 2){
+        if (this_fb_mispred) {
+            tageStats.updateMispred++;
+            if (!used_alt && main_info.found) {
 #ifndef UNIT_TEST
-            tageStats.updateTableMispreds[main_info.table]++;
+                tageStats.updateTableMispreds[main_info.table]++;
 #endif
+            }
         }
     }
 
@@ -498,7 +509,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                         main_info.taken() == actual_taken;
 
     // return true if need to allocate new entry = mispred and main was incorrect
-    return this_cond_mispred && !use_alt_on_main_found_correct;
+    return this_fb_mispred && !use_alt_on_main_found_correct;
 }
 
 /**
@@ -658,7 +669,32 @@ BTBTAGE::update(const FetchStream &stream) {
         }
 #endif
     }
-
+    if (getDelay() != 2){// use for microtage updatemispred counting
+        // sort microtage predictions by pc to find the first taken branch
+        std::vector<std::pair<Addr, TagePrediction>> lastPreds;
+        lastPreds.reserve(predMeta->preds.size());
+        for (auto &kv : predMeta->preds) {
+            lastPreds.emplace_back(kv.first, kv.second);
+        }
+        std::sort(lastPreds.begin(), lastPreds.end(),
+                [](const std::pair<Addr, TagePrediction> &a,
+                    const std::pair<Addr, TagePrediction> &b) {
+                    return a.first < b.first;
+                });
+        Addr first_taken_pc = 0;
+        for (auto &entry_info : lastPreds) {
+            if (entry_info.second.taken) {
+                first_taken_pc = entry_info.first;
+                break;
+            }
+        }
+        bool fallthrough_mispred = (first_taken_pc == 0 && stream.exeTaken) ||
+                                    (first_taken_pc != 0 && !stream.exeTaken);
+        bool branch_mispred = stream.exeTaken && first_taken_pc != stream.exeBranchInfo.pc;
+        if (fallthrough_mispred || branch_mispred) {
+            tageStats.updateMispred++;
+        }
+    }
     DPRINTF(TAGE, "end update\n");
 }
 

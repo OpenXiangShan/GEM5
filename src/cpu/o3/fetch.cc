@@ -1441,7 +1441,11 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     }
 
     // Check squash signals from commit.
-    if (handleCommitSignals(tid)) {
+    bool commitSquashed = handleCommitSignals(tid);
+
+    handleIEWSignals();
+
+    if (commitSquashed) {
         return true;
     }
 
@@ -1480,6 +1484,27 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     // If we've reached this point, we have not gotten any signals that
     // cause fetch to change its status.  Fetch remains the same as before.
     return false;
+}
+
+void
+Fetch::handleIEWSignals()
+{
+    // Currently resolve stage training is a btb-only feature
+    if (!isBTBPred()) {
+        return;
+    }
+
+    // iterate resolved stream_id and PC value from ResolveQueue
+    for (auto entry : fromIEW->iewInfo->resolveQueue) {
+        unsigned int stream_id = entry.resolvedFSQId;
+        dbpbtb->prepareResolveUpdateEntries(stream_id);
+        for (uint64_t &resolvedInstPC : entry.resolvedInstPC) {
+            dbpbtb->markCFIResolved(stream_id, resolvedInstPC);
+        }
+        dbpbtb->resolveUpdate(stream_id);
+    }
+
+    return;
 }
 
 bool

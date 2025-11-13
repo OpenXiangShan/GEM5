@@ -809,6 +809,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void resetPC(Addr new_pc);
 
     // Helper functions for update
+    void resolveUpdate(unsigned &stream_id);
+    void prepareResolveUpdateEntries(unsigned &stream_id);
+    void markCFIResolved(unsigned &stream_id, uint64_t resolvedInstPC);
     void updatePredictorComponents(FetchStream &stream);
     void updateStatistics(const FetchStream &stream);
 

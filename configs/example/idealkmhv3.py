@@ -25,6 +25,7 @@ def setKmhV3IdealParams(args, system):
         # fetch
         cpu.mmu.itb.size = 96
         cpu.fetchWidth = 32
+        cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
         cpu.fetchToDecodeDelay = 2
@@ -111,7 +112,6 @@ def setKmhV3IdealParams(args, system):
     if args.l2cache:
         for i in range(args.num_cpus):
             if args.classic_l2:
-                system.l2_caches[i].size = '2MB'
                 system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
             else:
                 l2_wrapper = system.l2_wrappers[i]
@@ -119,9 +119,6 @@ def setKmhV3IdealParams(args, system):
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
-                for j in range(args.l2_slices):
-                    l2cache = l2_wrapper.slices[j].inner_cache
-                    l2cache.size = '2MB'
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
@@ -141,13 +138,14 @@ def setKmhV3IdealParams(args, system):
 if __name__ == '__m5_main__':
     FutureClass = None
 
-    args = xiangsha_system_init()
+    args = xiangshan_system_init()
 
     assert not args.external_memory_system
 
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
+    args.l2_size = '2MB'
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)

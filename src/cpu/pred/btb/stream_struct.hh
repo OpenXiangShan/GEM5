@@ -157,6 +157,7 @@ struct BranchInfo
  * Contains branch information plus prediction state:
  * - Valid bit
  * - Always taken bit
+ * - Resolved bit
  * - Counter for prediction
  * - Tag for BTB lookup
  */
@@ -164,13 +165,17 @@ struct BTBEntry : BranchInfo
 {
     bool valid;
     bool alwaysTaken;
+    // An independent resolved bit to indicate whether CFI is resolved
+    // or not for TAGE training, which is trained in resolve stage so
+    // it's necessary to know whether the branch is resolved and skip
+    // the BTB entry or not.
+    bool resolved;
     int ctr;
     Addr tag;
     // Addr offset; // retrived from lowest bits of pc
-    BTBEntry() : valid(false), alwaysTaken(false), ctr(0), tag(0) {}
-    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0) {}
+    BTBEntry() : valid(false), alwaysTaken(false), resolved(false), ctr(0), tag(0) {}
+    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), resolved(false), ctr(0) {}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
-
 };
 
 /**
@@ -434,6 +439,16 @@ struct FetchStream
         }
     }
 
+    // Argument resolved pc could not match any BTB entry branch pc,
+    // Just ignore it in that case.
+    void markBTBEntryResolved(Addr resolvedInstPC)
+    {
+        for (auto &entry : updateBTBEntries) {
+            if (entry.valid && entry.pc == resolvedInstPC) {
+                entry.resolved = true;
+            }
+        }
+    }
 };
 /**
  * @brief Full branch prediction combining predictions from all predictors

@@ -59,14 +59,14 @@ SetAssociative::SetAssociative(const Params &p)
 uint32_t
 SetAssociative::extractSet(const Addr addr) const
 {
-    return (addr >> setShift) & setMask;
+    return (addr >> (setShift + sliceShift)) & setMask;
 }
 
 Addr
 SetAssociative::regenerateAddr(const Addr tag, const ReplaceableEntry* entry)
                                                                         const
 {
-    return (tag << tagShift) | (entry->getSet() << setShift);
+    return (tag << tagShift) | (((entry->getSet() << sliceShift) | slice_idx) << setShift);
 }
 
 std::vector<ReplaceableEntry*>

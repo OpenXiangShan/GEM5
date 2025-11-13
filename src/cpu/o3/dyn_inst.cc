@@ -460,7 +460,7 @@ DynInstPtr DynInst::createStoreDataUop()
     arrays.numSrcs = 1;
     arrays.numDests = 0;
     StaticInstPtr stdinst = new RiscvISA::StoreData(this->staticInst);
-    DynInstPtr stduop = new (arrays) DynInst(arrays, stdinst, macroop, this->seqNum, cpu);
+    DynInstPtr stduop = new (arrays) DynInst(arrays, stdinst, macroop, *this->pc, *this->predPC, this->seqNum, cpu);
 
     stduop->thread = this->thread;
     stduop->renameSrcReg(0, this->extRenamedSrcIdx(1));

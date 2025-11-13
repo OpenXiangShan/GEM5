@@ -39,7 +39,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ittage(p.ittage),
       mgsc(p.mgsc),
       ras(p.ras),
-    //   uras(p.uras),
+      // uras(p.uras),
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
       historyManager(16), // TODO: fix this
@@ -49,17 +49,15 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
         initDB();
     }
     bpType = DecoupledBTBType;
-    // TODO: better impl (use vector to assign in python)
-    // problem: btb->getAndSetNewBTBEntry
-    components.push_back(ubtb);
-    components.push_back(abtb);
-    components.push_back(microtage);
-    // components.push_back(uras);
-    components.push_back(mbtb);
-    components.push_back(tage);
-    components.push_back(ras);
-    components.push_back(ittage);
-    components.push_back(mgsc);
+    // Only add enabled components to the list
+    if (ubtb->isEnabled()) components.push_back(ubtb);
+    if (abtb->isEnabled()) components.push_back(abtb);
+    if (microtage->isEnabled()) components.push_back(microtage);
+    if (mbtb->isEnabled()) components.push_back(mbtb);
+    if (tage->isEnabled()) components.push_back(tage);
+    if (ras->isEnabled()) components.push_back(ras);
+    if (ittage->isEnabled()) components.push_back(ittage);
+    if (mgsc->isEnabled()) components.push_back(mgsc);
     numComponents = components.size();
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
@@ -1028,7 +1026,8 @@ DecoupledBPUWithBTB::trapSquash(unsigned target_id, unsigned stream_id,
     handleSquash(target_id, stream_id, SQUASH_TRAP, inst_pc, inst_pc.instAddr());
 }
 
-void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
+void
+DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
 {
     // No need to dequeue when queue is empty
     if (fetchStreamQueue.empty())
@@ -1041,12 +1040,11 @@ void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
         auto &stream = it->second;
 
         DPRINTF(DecoupleBP,
-            "Commit stream start %#lx, which is predicted, "
-            "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
-            "pred target: %#lx\n",
-            stream.startPC,
-            stream.exeBranchInfo.pc, stream.exeBranchInfo.target,
-            stream.predBranchInfo.pc, stream.predBranchInfo.target);
+                "Commit stream start %#lx, which is predicted, "
+                "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
+                "pred target: %#lx\n",
+                stream.startPC, stream.exeBranchInfo.pc, stream.exeBranchInfo.target, stream.predBranchInfo.pc,
+                stream.predBranchInfo.target);
 
         // Update statistics
         updateStatistics(stream);
@@ -1058,8 +1056,7 @@ void DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
         dbpBtbStats.fsqEntryCommitted++;
     }
 
-    DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n",
-            fetchStreamQueue.size());
+    DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n", fetchStreamQueue.size());
 
     if (it != fetchStreamQueue.end()) {
         printStream(it->second);
@@ -1157,6 +1154,64 @@ DecoupledBPUWithBTB::updateStatistics(const FetchStream &stream)
 }
 
 void
+DecoupledBPUWithBTB::resolveUpdate(unsigned &stream_id)
+{
+    auto stream_it = fetchStreamQueue.find(stream_id);
+    if (stream_it == fetchStreamQueue.end()) {
+        DPRINTF(DecoupleBP, "Stream id %u not found in fetchStreamQueue, cannot update predictors\n", stream_id);
+        return;
+    }
+
+    auto &stream = stream_it->second;
+
+    // Update predictor components only if the stream is hit or taken
+    if (stream.isHit || stream.exeTaken) {
+        // Update predictor components
+        for (int i = 0; i < numComponents; ++i) {
+            if (components[i]->getResolvedUpdate()) {
+                components[i]->update(stream);
+            }
+        }
+    }
+}
+
+void
+DecoupledBPUWithBTB::prepareResolveUpdateEntries(unsigned &stream_id)
+{
+    auto stream_it = fetchStreamQueue.find(stream_id);
+    if (stream_it == fetchStreamQueue.end()) {
+        DPRINTF(DecoupleBP, "Stream id %u not found in fetchStreamQueue, cannot update predictors\n", stream_id);
+        return;
+    }
+    auto &stream = stream_it->second;
+
+    if (stream.isHit || stream.exeTaken) {
+        // Prepare stream for update
+        stream.setUpdateInstEndPC(predictWidth);
+        stream.setUpdateBTBEntries();
+
+        // only mbtb can generate new entry
+        if (mbtb->isEnabled()) {
+            mbtb->getAndSetNewBTBEntry(stream);
+        }
+    }
+}
+
+void
+DecoupledBPUWithBTB::markCFIResolved(unsigned &stream_id, uint64_t resolvedInstPC)
+{
+
+    auto stream_it = fetchStreamQueue.find(stream_id);
+    if (stream_it == fetchStreamQueue.end()) {
+        DPRINTF(DecoupleBP, "Stream id %u not found in fetchStreamQueue, cannot update predictors\n", stream_id);
+        return;
+    }
+    auto &stream = stream_it->second;
+
+    stream.markBTBEntryResolved(resolvedInstPC);
+}
+
+void
 DecoupledBPUWithBTB::updatePredictorComponents(FetchStream &stream)
 {
     // Update predictor components only if the stream is hit or taken
@@ -1166,11 +1221,15 @@ DecoupledBPUWithBTB::updatePredictorComponents(FetchStream &stream)
         stream.setUpdateBTBEntries();
 
         // only mbtb can generate new entry
-        mbtb->getAndSetNewBTBEntry(stream);
+        if (mbtb->isEnabled()) {
+            mbtb->getAndSetNewBTBEntry(stream);
+        }
 
-        // Update all predictor components
+        // Update predictor components
         for (int i = 0; i < numComponents; ++i) {
-            components[i]->update(stream);
+            if (!components[i]->getResolvedUpdate()) {
+                components[i]->update(stream);
+            }
         }
     }
 }
@@ -1977,6 +2036,14 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     // Update path history
     pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
 
+#ifndef NDEBUG
+    if (tage->isEnabled()) {
+        tage->checkFoldedHist(s0PHistory, "speculative update");
+    }
+    if (microtage->isEnabled()) {
+        microtage->checkFoldedHist(s0PHistory, "speculative update");
+    }
+#endif
     // Update imli history
     histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
 
@@ -2068,15 +2135,21 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG
     checkHistory(s0History);
-    tage->checkFoldedHist(s0PHistory,
-        squash_type == SQUASH_CTRL ? "control squash" :
-        squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
-    microtage->checkFoldedHist(s0PHistory,
-        squash_type == SQUASH_CTRL ? "control squash" :
-        squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
-    mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory,
-        squash_type == SQUASH_CTRL ? "control squash" :
-        squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+    if (tage->isEnabled()) {
+        tage->checkFoldedHist(s0PHistory,
+            squash_type == SQUASH_CTRL ? "control squash" :
+            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+    }
+    if (microtage->isEnabled()) {
+        microtage->checkFoldedHist(s0PHistory,
+            squash_type == SQUASH_CTRL ? "control squash" :
+            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+    }
+    if (mgsc->isEnabled()) {
+        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory,
+            squash_type == SQUASH_CTRL ? "control squash" :
+            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+    }
 #endif
 }
 

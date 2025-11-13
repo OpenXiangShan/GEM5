@@ -53,20 +53,27 @@ namespace replacement_policy
 class Dueling : public Base
 {
   protected:
+
+    int block_num = 0;
+
+    const int num_slices = 0;
+    const int num_sets_per_slice = 0;
+    const int num_ways_per_slice = 0;
+
+    unsigned set_shift = 0;
+    unsigned set_mask = 0;
+
     /**
      * Dueler-specific implementation of replacement data. Contains all
      * sub-replacement policies' replacement data.
      */
     struct DuelerReplData : ReplacementData, Dueler
     {
-        std::shared_ptr<ReplacementData> replDataA;
-        std::shared_ptr<ReplacementData> replDataB;
+        std::shared_ptr<ReplacementData> replData;
 
         /** Default constructor. Initialize sub-replacement data. */
-        DuelerReplData(const std::shared_ptr<ReplacementData>& repl_data_a,
-            const std::shared_ptr<ReplacementData>& repl_data_b)
-          : ReplacementData(), Dueler(), replDataA(repl_data_a),
-            replDataB(repl_data_b)
+        DuelerReplData(const std::shared_ptr<ReplacementData>& repl_data)
+          : ReplacementData(), Dueler(), replData(repl_data)
         {
         }
     };
@@ -111,6 +118,8 @@ class Dueling : public Base
     ReplaceableEntry* getVictim(const ReplacementCandidates& candidates) const
                                                                      override;
     std::shared_ptr<ReplacementData> instantiateEntry() override;
+
+    bool getReplType(Dueler* dueler) const;
 };
 
 } // namespace replacement_policy

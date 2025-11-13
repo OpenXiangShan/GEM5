@@ -148,6 +148,13 @@ def config_aligned_l2(options, system, l2_cache_class):
             # Apply original per-L2-cache configurations to each slice's inner cache
             cache_slice = l2_wrapper.slices[j]
             inner_cache = cache_slice.inner_cache
+            # real cache size is divided by number of slices
+            inner_cache.size = inner_cache.size / num_l2_slices
+            inner_cache.tags.indexing_policy.num_slices = num_l2_slices
+            inner_cache.tags.indexing_policy.slice_idx = j
+            if isinstance(inner_cache.replacement_policy, DRRIPRP):
+                inner_cache.replacement_policy.num_slices = num_l2_slices
+                inner_cache.replacement_policy.num_sets_per_slice = inner_cache.size // (64 * inner_cache.assoc)
 
             l2_wrapper.addCacheAccessor(inner_cache)
             l2_wrapper.addSliceAccessor(cache_slice)

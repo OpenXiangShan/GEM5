@@ -188,6 +188,7 @@ UBTB::replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry, Addr
     TickedUBTBEntry newEntry = TickedUBTBEntry(newTakenEntry, curTick());
     // important! this is so that target set by RAS or ITTAGE is used
     newEntry.target = newTakenEntry.target;
+    newEntry.ctr = 0; // have a bug here:ubtb will accept ctr from mbtb, reset it to 0 at here
     // important: update tag (mbtb and ubtb have different tags, even diffferent tag length)
     newEntry.tag = getTag(startAddr);
     *oldEntryIter = newEntry;

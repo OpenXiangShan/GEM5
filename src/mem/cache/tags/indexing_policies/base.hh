@@ -82,6 +82,10 @@ class BaseIndexingPolicy : public SimObject
      */
     const int setShift;
 
+    const int sliceShift;
+
+    const int slice_idx;
+
     /**
      * Mask out all bits that aren't part of the set index.
      */

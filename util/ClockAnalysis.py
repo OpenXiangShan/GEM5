@@ -97,7 +97,7 @@ def IsBranchInst(instr: str) -> bool:
     return any(instr.split()[0].startswith(branch) for branch in branch_instructions)
 
 
-def ExtractBasicBlocks(pc_inst_list: tuple[str, str]) -> Counter:
+def ExtractBasicBlocks(pc_inst_list) -> Counter:
     basic_blocks = Counter()
     current_block = []
 
@@ -143,7 +143,7 @@ def bbl_main(inst_info, inst_avg_clock_info, inter_gap, inner_gap):
                 print(f"  {pc:18} : {instr:30} ")
 
 
-def perfcct_main(inst_info, inst_pos_clock_info, start_pc, end_pc, attention_pc: list[str], only_attention: bool):
+def perfcct_main(inst_info, inst_pos_clock_info, start_pc, end_pc, attention_pc, only_attention: bool):
 
     for i, (pc, asm) in enumerate(inst_info):
         pos = inst_pos_clock_info[i]
