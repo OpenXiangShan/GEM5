@@ -56,12 +56,12 @@ def setKmhV3Params(args, system):
         cpu.scheduler.IQs[0].oports[1].rp = [IntRD(0, 1), IntRD(1, 1)]
 
         # intiq1
-        cpu.scheduler.IQs[0].oports[0].rp = [IntRD(2, 0), IntRD(3, 0)]
-        cpu.scheduler.IQs[0].oports[1].rp = [IntRD(2, 1), IntRD(3, 1)]
+        cpu.scheduler.IQs[1].oports[0].rp = [IntRD(2, 0), IntRD(3, 0)]
+        cpu.scheduler.IQs[1].oports[1].rp = [IntRD(2, 1), IntRD(3, 1)]
 
         # intiq2
-        cpu.scheduler.IQs[0].oports[0].rp = [IntRD(4, 0), IntRD(5, 0)]
-        cpu.scheduler.IQs[0].oports[1].rp = [IntRD(4, 1), IntRD(5, 1)]
+        cpu.scheduler.IQs[2].oports[0].rp = [IntRD(4, 0), IntRD(5, 0)]
+        cpu.scheduler.IQs[2].oports[1].rp = [IntRD(4, 1), IntRD(5, 1)]
 
         # rob
         cpu.commitWidth = 8
