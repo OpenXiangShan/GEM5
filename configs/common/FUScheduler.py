@@ -195,13 +195,13 @@ class KMHV3Scheduler(Scheduler):
         IssueQue(name='intIQ1', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU()],
                       rp=[IntRD(2, 0), IntRD(3, 0), IntWR(1, 0)]),
-            IssuePort(fu=[IntBRU()],
+            IssuePort(fu=[IntBJU()],
                       rp=[IntRD(3, 1), IntRD(9, 2), IntWR(1, 1)])
         ]),
         IssueQue(name='intIQ2', inports=2, size=16, oports=[
             IssuePort(fu=[IntALU()],
                       rp=[IntRD(4, 0), IntRD(5, 0), IntWR(2, 0)]),
-            IssuePort(fu=[IntBRU()],
+            IssuePort(fu=[IntBJU()],
                       rp=[IntRD(5, 1), IntRD(11, 2), IntWR(2, 1)])
         ]),
         IssueQue(name='intIQ3', inports=2, size=16, oports=[
@@ -220,44 +220,47 @@ class KMHV3Scheduler(Scheduler):
     __memIQs = [
         IssueQue(name='ld0', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()],
-                      rp=[IntRD(7, 0)])]),
+                      rp=[IntRD(7, 0)])
+        ]),
         IssueQue(name='ld1', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()],
-                      rp=[IntRD(9, 0)])]),
+                      rp=[IntRD(9, 0)])
+        ]),
         IssueQue(name='ld2', inports=2, size=16, oports=[
             IssuePort(fu=[ReadPort()],
-                      rp=[IntRD(11, 0)])]),
+                      rp=[IntRD(11, 0)])
+        ]),
         IssueQue(name='sta0', inports=2, size=16, oports=[
             IssuePort(fu=[WritePort()],
-                      rp=[IntRD(6, 1)])]),
+                      rp=[IntRD(6, 1)])
+        ]),
         IssueQue(name='sta1', inports=2, size=16, oports=[
             IssuePort(fu=[WritePort()],
-                      rp=[IntRD(8, 1)])]),
+                      rp=[IntRD(8, 1)])
+        ]),
         IssueQue(name='std0', inports=2, size=16, oports=[
             IssuePort(fu=[StoreDataPort()],
-                      rp=[IntRD(0, 1), FpRD(12, 0)])]),
+                      rp=[IntRD(0, 1), FpRD(12, 0)])
+        ]),
         IssueQue(name='std1', inports=2, size=16, oports=[
             IssuePort(fu=[StoreDataPort()],
-                      rp=[IntRD(2, 1), FpRD(13, 0)])]),
+                      rp=[IntRD(2, 1), FpRD(13, 0)])
+        ]),
     ]
     __fpIQs = [
-        IssueQue(name='fpIQ0', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()],
+        IssueQue(name='fpIQ0', inports=2, size=20, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC(), FP_MISC()],
                       rp=[FpRD(0,0), FpRD(1, 0), FpRD(2,0)]),
-            IssuePort(fu=[FP_SLOW()],
-                      rp=[FpRD(2,1), FpRD(5,1)])
         ]),
-        IssueQue(name='fpIQ1', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()],
-                      rp=[FpRD(3,0), FpRD(4,0), FpRD(5,0)]),
-            IssuePort(fu=[FP_SLOW()],
-                      rp=[FpRD(8,1), FpRD(11,1)]),
+        IssueQue(name='fpIQ1', inports=2, size=20, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC(), FP_SLOW()],
+                      rp=[FpRD(3,0), FpRD(4,0), FpRD(5,0)])
         ]),
-        IssueQue(name='fpIQ2', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()],
+        IssueQue(name='fpIQ2', inports=2, size=20, oports=[
+            IssuePort(fu=[FP_ALU(), FP_MAC(), FP_SLOW()],
                       rp=[FpRD(6,0), FpRD(7,0), FpRD(8,0)])
         ]),
-        IssueQue(name='fpIQ3', inports=2, size=18, oports=[
+        IssueQue(name='fpIQ3', inports=2, size=20, oports=[
             IssuePort(fu=[FP_ALU(), FP_MAC()],
                       rp=[FpRD(9,0), FpRD(10,0), FpRD(11,0)])
         ]),
@@ -333,7 +336,7 @@ class IdealScheduler(Scheduler):
             IssuePort(fu=[FP_ALU(), FP_MISC(), FP_MAC()])
         ], scheduleToExecDelay=3),
         IssueQue(name='fpIQ1', inports=2, size=18, oports=[
-            IssuePort(fu=[FP_ALU(), FP_MAC()])
+            IssuePort(fu=[FP_ALU(), FP_MAC(), FP_MISC()])
         ], scheduleToExecDelay=3),
         IssueQue(name='fpIQ2', inports=2, size=18, oports=[
             IssuePort(fu=[FP_ALU(), FP_MAC()])

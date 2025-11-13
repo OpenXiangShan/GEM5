@@ -1387,14 +1387,14 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
 uint32_t
 Scheduler::getOpLatency(const DynInstPtr& inst)
 {
-    if (inst->opClass() == FloatCvtOp) [[unlikely]] {
-        if (inst->destRegIdx(0).isFloatReg()) {
-            if (inst->srcRegIdx(0).isFloatReg()){
-                return 2;
-            }
-            return 2 + opExecTimeTable[inst->opClass()];
-        }
-    }
+    // if (inst->opClass() == FloatCvtOp) [[unlikely]] {
+    //     if (inst->destRegIdx(0).isFloatReg()) {
+    //         if (inst->srcRegIdx(0).isFloatReg()){
+    //             return 2;
+    //         }
+    //         return 2 + opExecTimeTable[inst->opClass()];
+    //     }
+    // }
     return opExecTimeTable[inst->opClass()];
 }
 
