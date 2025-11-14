@@ -282,6 +282,14 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Frontend Bandwidth Bound",
              frontendBound - frontendLatencyBound)
+   , ADD_STAT(traceMetaStores, statistics::units::Count::get(),
+             "Number of stored trace metadata records (seqNum -> traceInst)")
+   , ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
+             "Number of times cleanup was called due to squash/rollback")
+   , ADD_STAT(traceMetaCleanupSquashEntries, statistics::units::Count::get(),
+             "Total entries erased by squash/rollback cleanups")
+   , ADD_STAT(traceMetaCleanupCommitCalls, statistics::units::Count::get(),
+             "Number of times cleanup was called on successful commit")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -366,6 +374,14 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .flags(statistics::total);
         frontendBandwidthBound
             .flags(statistics::total);
+        traceMetaStores
+            .prereq(traceMetaStores);
+        traceMetaCleanupSquashCalls
+            .prereq(traceMetaCleanupSquashCalls);
+        traceMetaCleanupSquashEntries
+            .prereq(traceMetaCleanupSquashEntries);
+        traceMetaCleanupCommitCalls
+            .prereq(traceMetaCleanupCommitCalls);
 }
 void
 Fetch::setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer)
@@ -1162,8 +1178,12 @@ void
 Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
         ThreadID tid)
 {
-    DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s.\n",
-            tid, new_pc);
+    DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s. seqNum: %lu\n",
+            tid, new_pc, seqNum);
+    if (squashInst) {
+        DPRINTF(Fetch, "[tid:%i] Squash caused by inst at PC: %s, seqNum: %lu\n",
+                tid, squashInst->pcState(), squashInst->seqNum);
+    }
 
     // restore vtype
     uint8_t restored_vtype = cpu->readMiscReg(RiscvISA::MISCREG_VTYPE, tid);
@@ -1241,23 +1261,47 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     if (traceMode) {
         bool allow_rb = true;
         bool squash_itself = false;
+        auto trace_rb_seqnum = seqNum;
         if (traceWrongPathActive) {
-            // 处于wrong-path：仅当边界分支的squash到来时才回滚trace reader
+            // 处于 wrong-path：优先处理边界分支产生的 squash。
+            // 注意：也可能出现非边界的 squash（例如 TLB/page fault、trap、重放），
+            // 此时 squashInst 可能为空。对这类情况不应 panic，而是温和退出 wrong-path。
+            DPRINTF(Fetch, "[tid:%i] In wrong-path, processing squash for trace rollback, wrong path seqnum is %llu\n",
+                tid, (unsigned long long)traceWrongPathBranchSeqNum);
             if (squashInst) {
+                DPRINTF(Fetch, "[tid:%i] In wrong-path, detected squash from inst (sn:%llu->tracesn:%llu)\n",
+                        tid,
+                        (unsigned long long)squashInst->seqNum,
+                        findTraceIndexForSeqNum(squashInst->seqNum));
                 if (squashInst->seqNum == traceWrongPathBranchSeqNum) {
                     DPRINTF(Fetch,
                             "[tid:%i] In wrong-path, detected squash from "
-                            "mispredicted inst (sn:%llu), trigger trace rollback\n",
+                            "mispredicted inst (sn:%llu->tracesn:%llu), trigger trace rollback\n",
                             tid,
-                            (unsigned long long)traceWrongPathBranchSeqNum);
-                    traceWrongPathActive = false;
+                            (unsigned long long)traceWrongPathBranchSeqNum,
+                            findTraceIndexForSeqNum(traceWrongPathBranchSeqNum));
+                    // check whether new pc is correct
+                    bool is_correct_target = new_pc.instAddr() == traceWrongPathCorrectPC;
+                    if (is_correct_target) {
+                        DPRINTF(Fetch,
+                                "[tid:%i] Squash target PC (0x%#lx) matches correct PC (0x%#lx)\n",
+                                tid, new_pc.instAddr(), traceWrongPathCorrectPC);
+                        traceWrongPathActive = false;
+                    } else {
+                        DPRINTF(Fetch,
+                                "[tid:%i] Warning: Squash target PC (0x%#lx) does not match "
+                                "correct PC (0x%#lx)\n",
+                                tid, new_pc.instAddr(), traceWrongPathCorrectPC);
+                    }
                 } else if (squashInst->seqNum < traceWrongPathBranchSeqNum) {
                     DPRINTF(Fetch,
                             "[tid:%i] In wrong-path, detected squash from inst "
-                            "(sn:%llu) prior to mispredicted inst (sn:%llu)\n",
+                            "(sn:%llu->tracesn:%llu) prior to mispredicted inst (sn:%llu)\n",
                             tid,
                             (unsigned long long)squashInst->seqNum,
+                            findTraceIndexForSeqNum(squashInst->seqNum),
                             (unsigned long long)traceWrongPathBranchSeqNum);
+                    traceWrongPathActive = false; // squashing inst before mispredicted branch, exit wrong-path
                 } else {
                     allow_rb = false;
                     DPRINTF(Fetch,
@@ -1271,17 +1315,64 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
                         squashInst->getPC());
                 }
             } else {
-                panic("Unexpected squash in wrong-path without squashInst");
+                DPRINTF(Fetch, "[tid:%i] In wrong-path, detected squash from non-inst event (sn:%llu->tracesn:%llu)\n",
+                        tid,
+                        (unsigned long long)seqNum,
+                        findTraceIndexForSeqNum(seqNum));
+                if (seqNum <= traceWrongPathBranchSeqNum) {
+                    DPRINTF(Fetch,
+                            "[tid:%i] In wrong-path, detected squash from "
+                            "non-inst event (sn:%llu->tracesn:%llu) prior to mispredicted inst (sn:%llu), "
+                            "trigger trace rollback\n",
+                            tid,
+                            (unsigned long long)seqNum,
+                            findTraceIndexForSeqNum(seqNum),
+                            (unsigned long long)traceWrongPathBranchSeqNum);
+                    traceWrongPathActive = false; // squashing inst before mispredicted branch, exit wrong-path
+                    trace_rb_seqnum = seqNum + 1; // for non-inst squash before branch, rollback to seqNum + 1
+                    squash_itself = true;
+                    // this would happen for memory violation
+                } else {
+                    allow_rb = false;
+                    DPRINTF(Fetch,
+                            "[tid:%i] In wrong-path, skip trace rollback for "
+                            "non-boundary squash (sn:%llu) without squashInst\n",
+                            tid, (unsigned long long)seqNum);
+                }
+                // panic("Unexpected squash in wrong-path without squashInst");
+            }
+        } else {
+            // not in wrong-path: normal squash, rollback to squashInst seqNum
+            if (squashInst) {
+                trace_rb_seqnum = squashInst->seqNum;
+                DPRINTF(Fetch, "[tid:%i] Normal squash to seqNum %llu from inst (sn:%llu->tracesn:%llu)\n",
+                        tid,
+                        (unsigned long long)trace_rb_seqnum,
+                        (unsigned long long)squashInst->seqNum,
+                        findTraceIndexForSeqNum(squashInst->seqNum));
+                if (squashInst->getPC() == new_pc.instAddr()) {
+                    squash_itself = true;
+                    DPRINTF(Fetch, "Squashing inst squashing itself, probably load replay (pc: 0x%#lx)\n",
+                        squashInst->getPC());
+                }
+            } else {
+                // non-inst squash (e.g., TLB/page fault, trap, replay)
+                trace_rb_seqnum = seqNum + 1;
+                DPRINTF(Fetch, "[tid:%i] Normal squash to seqNum %llu from non-inst event (sn:%llu->tracesn:%llu)\n",
+                        tid,
+                        (unsigned long long)trace_rb_seqnum,
+                        (unsigned long long)seqNum,
+                        findTraceIndexForSeqNum(seqNum));
+                squash_itself = true;
             }
         }
 
         if (allow_rb) {
-            const int trace_rb_seqnum = squash_itself ? seqNum - 1 : seqNum; // A hack for insts squashing itself
             DPRINTF(Fetch, "[tid:%i] Rolling back trace reader to seqNum %llu\n",
                     tid, (unsigned long long)trace_rb_seqnum);
             cleanupTraceMetadata(trace_rb_seqnum);
             // Rollback trace reader to handle misprediction
-            if (!rollbackTraceReader(trace_rb_seqnum)) {
+            if (!rollbackTraceReader(trace_rb_seqnum, squash_itself)) {
                 DPRINTF(Fetch, "[tid:%i] Warning: Failed to rollback trace reader to seqNum %llu\n",
                         tid, (unsigned long long)trace_rb_seqnum);
             }
@@ -2222,7 +2313,8 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     }
 
     // Build the dynamic instruction and add it to the fetch queue
-    DynInstPtr instruction = buildInst(tid, staticInst, curMacroop, pc, *next_pc, true);
+    DynInstPtr instruction =
+        buildInst(tid, staticInst, curMacroop, pc, *next_pc, true);
 
     // 在按需 trace 模式下，将挂起的 trace 元数据绑定到 DynInst
     // 保留一份本条指令的 trace 记录用于后续 BP 校验
@@ -2231,7 +2323,15 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         // 记录元数据映射（seqNum -> trace 指令）
         storeTraceInstMetadata(instruction->seqNum, pendingTraceInstr);
         traceForThisInst = pendingTraceInstr;
-        seqNumToTraceIndex[instruction->seqNum] = traceInstrConsumed;
+        seqNumToTraceIndex[instruction->seqNum] = pendingTraceInstr.getSeqNum() + 1;
+        DPRINTF(Fetch,
+                "[tid:%i] Bind trace metadata to [sn:%lli]->[tracesn:%lli]: "
+                "pc=0x%llx, taken=%d, traceInstrConsumed=%llu\n",
+                tid, instruction->seqNum,
+                (unsigned long long)pendingTraceInstr.getSeqNum(),
+                (unsigned long long)pendingTraceInstr.getPC(),
+                pendingTraceInstr.getBranchTaken(),
+                (unsigned long long)traceInstrConsumed);
         traceInstrConsumed++;
 
         // 为 EXE 阶段提供分支真值以按普通路径重定向
@@ -2326,10 +2426,11 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                     traceWrongPathCorrectPC = corr_target;
                     DPRINTF(Fetch,
                             "[tid:%i] Enter wrong-path mode; skip local BP "
-                            "squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu)\n",
+                            "squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu, tracesn:%llu)\n",
                             tid, (unsigned long long)predictedPC,
                             (unsigned long long)corr_target,
-                            (unsigned long long)traceWrongPathBranchSeqNum);
+                            (unsigned long long)traceWrongPathBranchSeqNum,
+                            (unsigned long long)traceForThisInst.getSeqNum());
                 } else {
                     DPRINTF(Fetch,
                             "[tid:%i] Already in wrong-path mode; continue "
@@ -2903,209 +3004,6 @@ Fetch::initializeTraceReader()
     return true;
 }
 
-#if 0 // removed: unused fetchInstructionFromTrace
-bool
-Fetch::fetchInstructionFromTrace(ThreadID tid)
-{
-    if (!traceMode || !traceReader || traceReader->isEOF()) {
-        return false;
-    }
-
-    // Get next instruction from trace
-    DPRINTF(Fetch, "[tid:%i] Calling traceReader->getNextInstruction(), isEOF=%d\n", tid, traceReader->isEOF());
-    o3::TraceInstruction traceInstr = traceReader->getNextInstruction();
-    if (!traceInstr.isValid()) {
-        DPRINTF(Fetch, "[tid:%i] No valid instruction from trace (isEOF=%d)\n", tid, traceReader->isEOF());
-        return false;
-    }
-    DPRINTF(Fetch, "[tid:%i] Got valid trace instruction PC=0x%lx\n", tid, traceInstr.getPC());
-
-    DPRINTF(Fetch, "[tid:%i] Fetched instruction from trace: PC=0x%llx, Type=%s\n",
-            tid, traceInstr.getPC(), traceInstr.getInstTypeStr());
-
-    // Create appropriate instruction based on trace type
-    TheISA::MachInst machInst = createMachInstFromTrace(traceInstr);
-
-    // Create a temporary PC state for this trace instruction
-    std::unique_ptr<PCStateBase> trace_pc(pc[tid]->clone());
-
-    // Set up fetchBuffer with the synthetic instruction for decoder
-    fetchBuffer[tid].reset();
-    fetchBuffer[tid].startPC = traceInstr.getPC();
-    fetchBuffer[tid].valid = true;
-    memcpy(fetchBuffer[tid].data, &machInst, sizeof(machInst));
-
-    // Set up the decoder with instruction bytes and decode using public interface
-    // Create a temporary PC state for decoding
-    std::unique_ptr<PCStateBase> decode_pc(pc[tid]->clone());
-
-    // First copy instruction bytes to decoder's buffer (like checkMemoryNeeds does)
-    memcpy(decoder[tid]->moreBytesPtr(), &machInst, sizeof(machInst));
-
-    // Then provide the instruction bytes to the decoder
-    decoder[tid]->moreBytes(*decode_pc, traceInstr.getPC());
-
-    // Decode the instruction using the public interface
-    StaticInstPtr staticInst = decoder[tid]->decode(*decode_pc);
-
-    if (staticInst) {
-        // Update PC state with trace instruction address
-        std::unique_ptr<PCStateBase> this_pc(pc[tid]->clone());
-        std::unique_ptr<PCStateBase> next_pc(pc[tid]->clone());
-
-        // Set the PC to the actual trace instruction address
-        auto& riscv_this_pc = this_pc->as<RiscvISA::PCState>();
-        auto& riscv_next_pc = next_pc->as<RiscvISA::PCState>();
-        riscv_this_pc.set(traceInstr.getPC());
-        riscv_next_pc.set(traceInstr.getPC() + 4);  // Simple increment for next PC
-
-        DynInstPtr inst = buildInst(tid, staticInst, macroop[tid],
-                                   *this_pc, *next_pc, true);
-
-        if (inst) {
-            // Store trace instruction metadata using safe shared_ptr approach
-            storeTraceInstMetadata(inst->seqNum, traceInstr);
-
-            // Record seqNum → trace index mapping for accurate rollback
-            // We count consumed trace instructions at fetch time, independent of prefetching
-            seqNumToTraceIndex[inst->seqNum] = traceInstrConsumed;
-            traceInstrConsumed++;
-
-            // Optionally create periodic checkpoints to bound rollback cost
-            maybeCreateTraceCheckpoint(inst->seqNum);
-
-            // Branch handling: prediction compare + training
-            if (traceInstr.isAnyBranch()) {
-                // If enabled, first obtain predictor's decision and compare to trace
-                if (traceBPValidation) {
-                    // Clone PC for prediction, pointing at this trace PC
-                    std::unique_ptr<PCStateBase> pred_pc(pc[tid]->clone());
-                    pred_pc->as<RiscvISA::PCState>().set(traceInstr.getPC());
-
-                    bool predictedTaken = false;
-                    // The predictor API will advance pred_pc to predicted target/fall-through
-                    predictedTaken = branchPred->predict(staticInst, inst->seqNum, *pred_pc, tid);
-
-                    const Addr predictedPC = pred_pc->instAddr();
-                    const bool ok = validateBPPrediction(traceInstr, predictedPC, predictedTaken);
-
-                    if (!ok) {
-                        // decoupled/wrong-path：仅进入 wrong-path 模式，不在此处自发 squash/训练
-                        if (isDecoupledFrontend() && traceEnableWrongPath) {
-                            traceWrongPathActive = true;
-                            traceWrongPathBranchSeqNum = inst->seqNum;
-                            Addr corr_target = traceInstr.getBranchTaken() && traceInstr.getHasBranchTarget()
-                                                ? traceInstr.getBranchTarget()
-                                                : (traceInstr.getPC() + 4);
-                            traceWrongPathPredPC = predictedPC;
-                            traceWrongPathCorrectPC = corr_target;
-                            DPRINTF(Fetch,
-                                    "[tid:%i] Enter wrong-path mode; skip local BP "
-                                    "squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu)\n",
-                                    tid, (unsigned long long)predictedPC,
-                                    (unsigned long long)corr_target,
-                                    (unsigned long long)traceWrongPathBranchSeqNum);
-                        } else {
-                            // coupled：维持原 stall 模型与本地校正
-                            traceStallRemaining = traceMispredictPenalty;
-                            DPRINTF(Override, "[TRACE-FTB] Stall model on mispredict: %llu cycles remaining\n",
-                                    (unsigned long long)traceStallRemaining);
-
-                            // Correct predictor history with ground truth
-                            std::unique_ptr<PCStateBase> corr_pc(pc[tid]->clone());
-                            Addr corr_target = traceInstr.getBranchTaken() && traceInstr.getHasBranchTarget()
-                                                ? traceInstr.getBranchTarget()
-                                                : (traceInstr.getPC() + 4);
-                            corr_pc->as<RiscvISA::PCState>().set(corr_target);
-                            branchPred->squash(inst->seqNum, *corr_pc, traceInstr.getBranchTaken(), tid);
-                            auto stall_pen = (unsigned long long) traceMispredictPenalty;
-                            DPRINTF(Fetch,
-                                    "[tid:%i] Modeled BP mispredict: predicted (taken=%d, pc=0x%llx) "
-                                    "vs trace (taken=%d, pc=0x%llx); penalty=%llu cycles, mode=%s\n",
-                                    tid, predictedTaken, (unsigned long long)predictedPC,
-                                    traceInstr.getBranchTaken(), (unsigned long long)corr_target,
-                                    stall_pen, isDecoupledFrontend() ? "wrong-path" : "stall");
-                        }
-                    }
-
-                    // decoupled/wrong-path：不在检测处训练 BP，由后端自然流程处理
-                    if (!(isDecoupledFrontend() && traceEnableWrongPath)) {
-                        // Feed ground truth (taken+target) to BTB and others
-                        feedTraceBranchToBP(traceInstr, traceInstr.getPC());
-                    }
-                    // Set bookkeeping predicted target to the trace target if available
-                    if (traceInstr.getHasBranchTarget()) {
-                        std::unique_ptr<PCStateBase> target_pc(pc[tid]->clone());
-                        target_pc->as<RiscvISA::PCState>().set(traceInstr.getBranchTarget());
-                        inst->setPredTarg(*target_pc);
-                    }
-                } else {
-                    // No training: ensure no control-flow effects
-                    // Nothing extra needed beyond instruction synthesis
-                }
-            }
-
-            // Set memory addresses for load/store instructions with proper mapping
-            if (traceInstr.getLoad() && !traceInstr.getLoadAddresses().empty()) {
-                // Address is already mapped by the trace reader; avoid zero
-                // which will cause SE-mode page faults.
-                inst->effAddr = traceInstr.getLoadAddresses()[0];
-                inst->effAddrValid(true);
-                DPRINTF(Fetch, "[tid:%i] Set load effective address to 0x%lx\n", tid, inst->effAddr);
-                if (inst->effAddr == 0) {
-                    warn("[Trace][Fetch] Load effAddr is 0 for sn:%lli PC:%s", inst->seqNum, inst->pcState());
-                }
-            }
-            if (traceInstr.getStore() && !traceInstr.getStoreAddresses().empty()) {
-                inst->effAddr = traceInstr.getStoreAddresses()[0];
-                inst->effAddrValid(true);
-                DPRINTF(Fetch, "[tid:%i] Set store effective address to 0x%lx\n", tid, inst->effAddr);
-                if (inst->effAddr == 0) {
-                    warn("[Trace][Fetch] Store effAddr is 0 for sn:%lli PC:%s", inst->seqNum, inst->pcState());
-                }
-            }
-
-            // Fallback: if no valid effAddr from trace, synthesize one from PC
-            if (!inst->effAddrValid()) {
-                const uint64_t base = 0x80000000ULL; // matches BaseO3CPU default
-                const uint64_t size = 0x40000000ULL; // 1GB window
-                uint64_t pc = traceInstr.getPC();
-                uint64_t hash = (pc ^ (pc >> 16)) & (size - 1);
-                uint64_t mapped = (base + hash) & ~0x3ULL; // 4-byte align
-                inst->effAddr = mapped;
-                inst->effAddrValid(true);
-                DPRINTF(Fetch, "[tid:%i] Fallback mapped effAddr 0x%lx from PC 0x%lx\n",
-                        tid, inst->effAddr, pc);
-            }
-
-            // Add to fetch queue properly like normal instructions
-            fetchQueue[tid].push_back(inst);
-            assert(fetchQueue[tid].size() <= fetchQueueSize);
-
-            DPRINTF(Fetch, "[tid:%i] Trace instruction added to fetch queue (%i/%i).\n",
-                    tid, fetchQueue[tid].size(), fetchQueueSize);
-            // SEGFAULT FIX: Remove redundant numInst++ - buildInst already increments it
-
-            // Update PC for next instruction (simple increment for trace mode)
-            // For trace mode, PC advancement will be handled by the trace reader
-            // when fetching the next instruction
-
-            fetchStats.insts++;
-            if (traceInstr.isAnyBranch()) {
-                fetchStats.branches++;
-                if (traceInstr.getBranchTaken()) {
-                    fetchStats.predictedBranches++;
-                }
-            }
-
-            return true;
-        }
-    }
-
-    return false;
-}
-#endif // removed: fetchInstructionFromTrace
-
 TheISA::MachInst
 Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
 {
@@ -3178,15 +3076,34 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
                 off64 = 0;
             }
             uint32_t imm_enc = encode_j_imm((int32_t)off64);
-            uint32_t inst = imm_enc | (rd << 7) | 0x6F; // JAL
+            // For correct classification:
+            //  - CALL_DIRECT must write RA (x1)
+            //  - UNCOND_DIRECT_BRANCH must write x0
+            uint8_t rd_out = (traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_DIRECT) ? 1 : 0;
+            uint32_t inst = imm_enc | (rd_out << 7) | 0x6F; // JAL
             return inst;
         }
 
         case o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH:
         case o3::TraceInstruction::InstType::CALL_INDIRECT:
-        case o3::TraceInstruction::InstType::RETURN:
+        case o3::TraceInstruction::InstType::RETURN: {
             // RISC-V JALR rd, 0(rs1)
-            return (0x000 << 20) | (rs1 << 15) | (0x0 << 12) | (rd << 7) | 0x67;
+            // Ensure proper rd/rs1 for correct decode classification:
+            //  - CALL_INDIRECT: rd=x1
+            //  - UNCOND_INDIRECT_BRANCH: rd=x0
+            //  - RETURN: rd=x0, rs1=x1
+            uint8_t rd_out = 0;
+            uint8_t rs1_out = rs1;
+            if (traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_INDIRECT) {
+                rd_out = 1; // write RA
+            } else if (traceInstr.getInstType() == o3::TraceInstruction::InstType::RETURN) {
+                rd_out = 0;
+                rs1_out = 1; // return from RA
+            } else {
+                rd_out = 0; // branch
+            }
+            return (0x000 << 20) | (rs1_out << 15) | (0x0 << 12) | (rd_out << 7) | 0x67;
+        }
 
         case o3::TraceInstruction::InstType::FP:
             // RISC-V FADD.S instruction: fadd.s rd, rs1, rs2
@@ -3215,6 +3132,9 @@ Fetch::storeTraceInstMetadata(InstSeqNum seqNum, const o3::TraceInstruction &tra
     auto traceInstrPtr = std::make_shared<const o3::TraceInstruction>(traceInstr);
     traceInstMap[seqNum] = traceInstrPtr;
 
+    // Stats: count stored metadata records
+    fetchStats.traceMetaStores++;
+
     DPRINTF(Fetch, "[sn:%lli] Stored trace instruction metadata (shared_ptr at %p)\n",
             seqNum, traceInstrPtr.get());
 }
@@ -3239,11 +3159,13 @@ void
 Fetch::cleanupTraceMetadata(InstSeqNum seqNum)
 {
     // Remove trace metadata for all instructions with seqNum >= threshold
+    Counter removed = 0;
     auto it = traceInstMap.begin();
     while (it != traceInstMap.end()) {
         if (it->first > seqNum) {
             DPRINTF(Fetch, "[sn:%lli] Removing trace metadata due to squash\n", it->first);
             it = traceInstMap.erase(it);
+            ++removed;
         } else {
             ++it;
         }
@@ -3255,10 +3177,67 @@ Fetch::cleanupTraceMetadata(InstSeqNum seqNum)
         if (seqIt->first > seqNum) {
             DPRINTF(Fetch, "[sn:%lli] Removing seqNum to trace index mapping due to squash\n", seqIt->first);
             seqIt = seqNumToTraceIndex.erase(seqIt);
+            ++removed;
         } else {
             ++seqIt;
         }
     }
+
+    // Stats: record cleanup calls and total removed entries
+    fetchStats.traceMetaCleanupSquashCalls++;
+    fetchStats.traceMetaCleanupSquashEntries += removed;
+}
+
+void
+Fetch::cleanupTraceMetadataOnCommit(InstSeqNum /*seqNum*/)
+{
+    // Sliding-window cleanup: keep a guard window behind the oldest in-flight
+    // instruction and (if active) behind the wrong-path boundary. This avoids
+    // removing metadata that may still be needed by a late-arriving squash.
+
+    static constexpr uint64_t TRACE_META_GUARD = 256; // conservative default
+
+    const InstSeqNum oldest_inflight = cpu->getOldestInFlightSeqNum();
+    const InstSeqNum wp_boundary = traceWrongPathActive ? traceWrongPathBranchSeqNum
+                                                        : std::numeric_limits<InstSeqNum>::max();
+    const InstSeqNum keep_min = std::min(oldest_inflight, wp_boundary);
+    const InstSeqNum safe_threshold = (keep_min > TRACE_META_GUARD)
+                                          ? (keep_min - TRACE_META_GUARD)
+                                          : 0;
+
+    Counter removed = 0;
+
+    // Erase entries with seqNum strictly less than safe_threshold
+    for (auto it = traceInstMap.begin(); it != traceInstMap.end(); ) {
+        if (it->first < safe_threshold) {
+            it = traceInstMap.erase(it);
+            ++removed;
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = seqNumToTraceIndex.begin(); it != seqNumToTraceIndex.end(); ) {
+        if (it->first < safe_threshold) {
+            it = seqNumToTraceIndex.erase(it);
+            ++removed;
+        } else {
+            ++it;
+        }
+    }
+
+    DPRINTF(Fetch,
+            "[TraceMetaCleanup] oldest_inflight=%llu wp_active=%d wp_boundary=%llu "
+            "guard=%llu threshold=%llu removed=%llu\n",
+            (unsigned long long)oldest_inflight,
+            (int)traceWrongPathActive,
+            (unsigned long long)wp_boundary,
+            (unsigned long long)TRACE_META_GUARD,
+            (unsigned long long)safe_threshold,
+            (unsigned long long)removed);
+
+    // Stats: count commit-side cleanups
+    fetchStats.traceMetaCleanupCommitCalls++;
 }
 
 void
@@ -3294,6 +3273,8 @@ Fetch::findTraceIndexForSeqNum(InstSeqNum seqNum) const
     // First try direct lookup
     auto it = seqNumToTraceIndex.find(seqNum);
     if (it != seqNumToTraceIndex.end()) {
+        DPRINTF(Fetch, "findTraceIndexForSeqNum[sn:%lli]: Direct mapping found: traceIndex=%lu\n",
+                seqNum, it->second);
         return it->second;
     }
 
@@ -3327,7 +3308,7 @@ Fetch::lookupTraceIndexForSeqNum(InstSeqNum seqNum, uint64_t &index) const
 }
 
 bool
-Fetch::rollbackTraceReader(InstSeqNum seqNum)
+Fetch::rollbackTraceReader(InstSeqNum seqNum, bool squash_itself)
 {
     if (!traceMode || !traceReader) {
         DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Not in trace mode\n", seqNum);
@@ -3336,11 +3317,22 @@ Fetch::rollbackTraceReader(InstSeqNum seqNum)
 
     // Find trace index to rollback to (1-based). We want the next getNextInstruction()
     // to return the instruction at 'index'.
-    const uint64_t index = findTraceIndexForSeqNum(seqNum);
+    uint64_t index = findTraceIndexForSeqNum(seqNum);
 
     if (index == 0) {
         DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: No mapped trace index (skip)\n", seqNum);
         return false;
+    }
+
+    if (squash_itself) {
+        // If squashing the instruction itself, we need to go back one more instruction
+        if (index > 0) {
+            DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Squashing itself, moving back one instruction\n", seqNum);
+            --index;
+        } else {
+            DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Cannot move back before start of trace\n", seqNum);
+            return false;
+        }
     }
 
     // 交由 TraceReader 软回滚（命中本地历史窗口则不触碰文件指针），超界时内部自行降级
@@ -3360,7 +3352,16 @@ Fetch::validateBPPrediction(const o3::TraceInstruction& traceInstr,
     }
 
     // For branch instructions, compare prediction with trace ground truth
-    bool traceCorrect = (predictedTaken == traceInstr.getBranchTaken());
+    // bool traceCorrect = (!predictedTaken && !traceInstr.getBranchTaken()) ||
+    //     (traceInstr.getBranchTaken() && traceInstr.getBranchTarget() == predictedPC && predictedTaken);
+    bool traceWrong = (!traceInstr.getBranchTaken() && predictedTaken) || (
+        traceInstr.getBranchTaken() && traceInstr.getBranchTarget() != predictedPC);
+    DPRINTF(Fetch,
+            "validateBPPrediction: PC=0x%lx, predictedPC=0x%lx, actualTarget=0x%lx, "
+            "predictedTaken=%d, actualTaken=%d\n",
+            traceInstr.getPC(), predictedPC,
+            traceInstr.getBranchTarget(),
+            predictedTaken, traceInstr.getBranchTaken());
 
     if (traceInstr.getBranchTaken()) {
         // If branch was taken in trace, also check target PC
@@ -3373,12 +3374,12 @@ Fetch::validateBPPrediction(const o3::TraceInstruction& traceInstr,
                 predictedTaken, traceInstr.getBranchTaken());
     }
 
-    if (!traceCorrect) {
+    if (traceWrong) {
         DPRINTF(Fetch, "validateBPPrediction: MISPREDICTION detected - predicted=%d, actual=%d\n",
                 predictedTaken, traceInstr.getBranchTaken());
     }
 
-    return traceCorrect;
+    return !traceWrong;
 }
 
 void
@@ -3677,130 +3678,6 @@ Fetch::feedTraceToDecoupledFTB(const o3::TraceInstruction& traceInstr, Addr curr
     DPRINTF(Fetch, "feedTraceToDecoupledFTB: Training completed for PC=0x%lx (FSQ ID=%lu)\n",
             currentPC, currentFsqId);
 }
-
-#if 0 // removed: unused synthesizeTraceInstructionBytes
-void
-Fetch::synthesizeTraceInstructionBytes(ThreadID tid)
-{
-    // Stage 5: Synthesize instruction bytes from trace for decoder
-    // This maintains icache timing while providing correct instruction semantics
-    
-    DPRINTF(Fetch, "[tid:%i] Synthesizing trace instruction bytes for decoder\n", tid);
-    
-    if (!traceReader || traceReader->isEOF() || !fetchBuffer[tid].valid) {
-        DPRINTF(Fetch, "[tid:%i] Cannot synthesize: trace EOF or invalid fetchBuffer\n", tid);
-        return;
-    }
-    
-    // Get the current PC from fetchBuffer (this came from FTQ/icache timing)
-    Addr fetch_pc = fetchBuffer[tid].startPC;
-    DPRINTF(Fetch, "[tid:%i] Synthesizing for fetchBuffer PC=0x%lx\n", tid, fetch_pc);
-    
-    // Collect trace instructions that should be at this fetch PC
-    // We need to synthesize bytes for the entire fetchBuffer block
-    std::vector<uint32_t> instruction_bytes;
-    Addr current_pc = fetch_pc;
-    
-    // Fill the fetchBuffer with trace instruction bytes
-    // Typically we want to fill up to fetchWidth instructions or one cache line
-    for (int i = 0; i < fetchWidth && !traceReader->isEOF(); i++) {
-        o3::TraceInstruction traceInstr = traceReader->getNextInstruction();
-        
-        if (!traceInstr.isValid()) {
-            DPRINTF(Fetch, "[tid:%i] Invalid trace instruction at index %d\n", tid, i);
-            break;
-        }
-        
-        // Convert trace instruction to machine instruction bytes
-        // For RISC-V, we synthesize a 4-byte instruction
-        uint32_t machInst = 0;
-        
-        // Synthesize instruction based on trace instruction type
-        switch (traceInstr.getInstType()) {
-            case o3::TraceInstruction::InstType::ALU:
-                // Use ADD instruction as representative ALU (0x00000033: add x0, x0, x0)
-                machInst = 0x00000033;
-                break;
-            case o3::TraceInstruction::InstType::LOAD:
-                // Use LW instruction as representative load (0x00002003: lw x0, 0(x0))
-                machInst = 0x00002003;
-                break;
-            case o3::TraceInstruction::InstType::STORE:
-                // Use SW instruction as representative store (0x00002023: sw x0, 0(x0))
-                machInst = 0x00002023;
-                break;
-            case o3::TraceInstruction::InstType::COND_BRANCH:
-                // Use BEQ instruction (0x00000063: beq x0, x0, 0)
-                machInst = 0x00000063;
-                break;
-            case o3::TraceInstruction::InstType::UNCOND_DIRECT_BRANCH:
-                // Use JAL instruction (0x0000006f: jal x0, 0)
-                machInst = 0x0000006f;
-                break;
-            case o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH:
-                // Use JALR instruction (0x00000067: jalr x0, x0, 0)
-                machInst = 0x00000067;
-                break;
-            case o3::TraceInstruction::InstType::CALL_DIRECT:
-                // Use JAL with x1 (0x000000ef: jal x1, 0)
-                machInst = 0x000000ef;
-                break;
-            case o3::TraceInstruction::InstType::CALL_INDIRECT:
-                // Use JALR with x1 (0x00000067: jalr x1, x0, 0)
-                machInst = 0x00000067;
-                break;
-            case o3::TraceInstruction::InstType::RETURN:
-                // Use JALR x0, x1, 0 (0x00008067)
-                machInst = 0x00008067;
-                break;
-            default:
-                // Default to NOP (0x00000013: addi x0, x0, 0)
-                machInst = 0x00000013;
-                break;
-        }
-        
-        instruction_bytes.push_back(machInst);
-        current_pc += 4;
-        
-        DPRINTF(Fetch, "[tid:%i] Synthesized instruction %d: PC=0x%lx, machInst=0x%08x, type=%d\n",
-                tid, i, current_pc - 4, machInst, (int)traceInstr.getInstType());
-    }
-    
-    // Now feed the synthesized bytes to the decoder
-    // We overwrite the fetchBuffer data with our synthesized instruction bytes
-    if (!instruction_bytes.empty()) {
-        uint8_t* data_ptr = fetchBuffer[tid].data;
-        size_t bytes_written = 0;
-        
-        for (uint32_t inst : instruction_bytes) {
-            // Write instruction in little-endian format
-            if (bytes_written + 4 <= fetchBufferSize) {
-                data_ptr[bytes_written++] = inst & 0xFF;
-                data_ptr[bytes_written++] = (inst >> 8) & 0xFF;
-                data_ptr[bytes_written++] = (inst >> 16) & 0xFF;
-                data_ptr[bytes_written++] = (inst >> 24) & 0xFF;
-            }
-        }
-        
-        // Update fetchBuffer size
-        fetchBuffer[tid].size = bytes_written;
-        
-        DPRINTF(Fetch, "[tid:%i] Synthesized %zu instruction bytes into fetchBuffer\n",
-                tid, bytes_written);
-        
-        // Reset decoder pointers to process the synthesized bytes
-        for (ThreadID tid_i = 0; tid_i < numThreads; tid_i++) {
-            // Use moreBytes method to feed bytes to decoder with correct PCState
-            std::unique_ptr<PCStateBase> decode_pc(pc[tid_i]->clone());
-            decode_pc->as<RiscvISA::PCState>().set(fetchBuffer[tid].startPC);
-            decoder[tid_i]->moreBytes(*decode_pc, fetchBuffer[tid].startPC);
-        }
-        
-        DPRINTF(Fetch, "[tid:%i] Decoder pointers reset for synthesized bytes at PC=0x%lx\n",
-                tid, fetchBuffer[tid].startPC);
-    }
-}
-#endif // removed: synthesizeTraceInstructionBytes
 
 void
 Fetch::supplyFTQWithTraceTargets()

@@ -262,6 +262,9 @@ class CPU : public BaseCPU
     /** Trace-driven simulation support */
     bool isTraceInstruction(InstSeqNum seqNum) const;
     const o3::TraceInstruction* getTraceInstMetadata(InstSeqNum seqNum) const;
+
+    /** Cleanup trace metadata for a committed instruction (trace mode only). */
+    void cleanupTraceMetadataOnCommit(InstSeqNum seqNum);
     uint64_t getTraceIndexForSeqNum(InstSeqNum seqNum) const;
     Addr getTracePCByIndex(uint64_t index);
 
@@ -411,6 +414,13 @@ class CPU : public BaseCPU
     void readArchVecReg(int reg_idx, uint64_t *val,ThreadID tid);
 
     uint32_t getIQInsts() { return iew.getIQInsts(); }
+
+    /**
+     * Return the oldest in-flight instruction sequence number.
+     * If there are no in-flight instructions, returns the maximum value
+     * of InstSeqNum to indicate no lower bound (safe for cleanup).
+     */
+    InstSeqNum getOldestInFlightSeqNum() const;
 
   public:
 #ifndef NDEBUG

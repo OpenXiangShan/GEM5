@@ -494,6 +494,13 @@ class Fetch
     void cleanupTraceMetadata(InstSeqNum seqNum);
 
     /**
+     * Clean up trace instruction metadata for a committed instruction.
+     * Removes only the entry that matches the provided sequence number
+     * and its auxiliary mapping, without touching younger in-flight ones.
+     */
+    void cleanupTraceMetadataOnCommit(InstSeqNum seqNum);
+
+    /**
      * Create a trace reader checkpoint if needed
      * @param seqNum Current sequence number
      */
@@ -523,7 +530,7 @@ class Fetch
      * @param seqNum Sequence number to rollback before
      * @return true if rollback successful
      */
-    bool rollbackTraceReader(InstSeqNum seqNum);
+    bool rollbackTraceReader(InstSeqNum seqNum, bool squash_itself);
 
     /**
      * Validate branch predictor prediction against trace ground truth
@@ -1118,6 +1125,16 @@ class Fetch
         statistics::Formula frontendLatencyBound;
         /** Frontend Bandwidth Bound */
         statistics::Formula frontendBandwidthBound;
+
+        // Trace metadata accounting (trace mode)
+        /** Number of stored trace metadata records (seqNum -> traceInst). */
+        statistics::Scalar traceMetaStores;
+        /** Number of times cleanup was called due to squash/rollback. */
+        statistics::Scalar traceMetaCleanupSquashCalls;
+        /** Total entries erased by squash/rollback cleanups. */
+        statistics::Scalar traceMetaCleanupSquashEntries;
+        /** Number of times cleanup was called on successful commit. */
+        statistics::Scalar traceMetaCleanupCommitCalls;
     } fetchStats;
 
     SquashVersion localSquashVer;

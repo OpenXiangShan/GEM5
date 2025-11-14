@@ -43,6 +43,7 @@
 #include "cpu/o3/cpu.hh"
 
 #include <cassert>
+#include <limits>
 
 #include "arch/riscv/regs/misc.hh"
 #include "config/the_isa.hh"
@@ -1754,6 +1755,24 @@ Addr
 CPU::getTracePCByIndex(uint64_t index)
 {
     return fetch.getTracePCByIndex(index);
+}
+
+void
+CPU::cleanupTraceMetadataOnCommit(InstSeqNum seqNum)
+{
+    if (isTraceMode()) {
+        fetch.cleanupTraceMetadataOnCommit(seqNum);
+    }
+}
+
+InstSeqNum
+CPU::getOldestInFlightSeqNum() const
+{
+    if (!instList.empty()) {
+        return instList.front()->seqNum;
+    }
+    // No in-flight instructions: return a large value so cleanup can proceed.
+    return std::numeric_limits<InstSeqNum>::max();
 }
 
 } // namespace o3

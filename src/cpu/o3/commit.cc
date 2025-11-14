@@ -693,6 +693,12 @@ Commit::squashAll(ThreadID tid)
 void
 Commit::squashFromTrap(ThreadID tid)
 {
+    DPRINTF(Commit,
+            "[tid:%i] [squash-source=trap] tick=%llu committedPC=%#lx newPC=%s\n",
+            tid,
+            (unsigned long long)curTick(),
+            (unsigned long)committedPC[tid],
+            *pc[tid]);
     squashAll(tid);
 
     toIEW->commitInfo[tid].isTrapSquash = true;
@@ -714,6 +720,11 @@ Commit::squashFromTrap(ThreadID tid)
 void
 Commit::squashFromTC(ThreadID tid)
 {
+    DPRINTF(Commit,
+            "[tid:%i] [squash-source=tc] tick=%llu newPC=%s\n",
+            tid,
+            (unsigned long long)curTick(),
+            *pc[tid]);
     squashAll(tid);
 
     DPRINTF(Commit, "Squashing from TC, restarting at PC %s\n", *pc[tid]);
@@ -731,8 +742,20 @@ Commit::squashFromTC(ThreadID tid)
 void
 Commit::squashFromSquashAfter(ThreadID tid)
 {
-    DPRINTF(Commit, "Squashing after squash after request, "
-            "restarting at PC %s\n", *pc[tid]);
+    if (squashAfterInst[tid]) {
+        DPRINTF(Commit,
+                "[tid:%i] [squash-source=squashAfter] tick=%llu newPC=%s inst=[sn:%llu]\n",
+                tid,
+                (unsigned long long)curTick(),
+                *pc[tid],
+                (unsigned long long)squashAfterInst[tid]->seqNum);
+    } else {
+        DPRINTF(Commit,
+                "[tid:%i] [squash-source=squashAfter] tick=%llu newPC=%s inst=[null]\n",
+                tid,
+                (unsigned long long)curTick(),
+                *pc[tid]);
+    }
 
     squashAll(tid);
     // Make sure to inform the fetch stage of which instruction caused
@@ -1369,6 +1392,14 @@ Commit::commitInsts()
                 // Trace-mode: commit-time difftest against trace metadata
                 if (cpu->isTraceMode()) {
                     traceCommitDifftest(tid, head_inst);
+
+                    // In trace mode, release per-instruction trace metadata on
+                    // commit to prevent unbounded growth of fetch-side metadata
+                    // structures. The actual cleanup uses a sliding window based
+                    // on the oldest in-flight seqNum and a guard distance.
+                    if (cpu->isTraceInstruction(head_inst->seqNum)) {
+                        cpu->cleanupTraceMetadataOnCommit(head_inst->seqNum);
+                    }
                 }
 
                 head_inst->staticInst->advancePC(*pc[tid]);
@@ -1531,6 +1562,14 @@ Commit::traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst)
     }
 
     // 2.1) Strong check on instruction type (if metadata available)
+    // metadata must be available for this check
+    if (!cpu->isTraceInstruction(head_inst->seqNum)) {
+        panic("[Commit][tid:%d idx:%llu sn:%llu] Missing trace metadata for instruction type difftest (pc=0x%lx)",
+              tid,
+              (unsigned long long)traceCommitIndex[tid],
+              head_inst->seqNum,
+              (unsigned long)commit_pc);
+    }
     if (const o3::TraceInstruction* ti_meta = cpu->getTraceInstMetadata(head_inst->seqNum)) {
         auto classifyInstType = [](const StaticInstPtr &si) -> o3::TraceInstruction::InstType {
             if (!si) return o3::TraceInstruction::InstType::UNDEFINED;
