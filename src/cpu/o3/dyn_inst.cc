@@ -453,7 +453,14 @@ DynInstPtr DynInst::createStoreDataUop()
     StaticInstPtr stdinst = new RiscvISA::StoreData(this->staticInst);
     DynInstPtr stduop = new (arrays) DynInst(arrays, stdinst, macroop, this->seqNum, cpu);
 
-    stduop->thread = this->thread;
+    // Propagate essential execution context to the data uop.
+    // KISS: copy only what downstream stages require (PC/predPC/tid/thread).
+    stduop->pcState(this->pcState());
+    stduop->setPredTarg(this->readPredTarg());
+    stduop->setPredTaken(this->readPredTaken());
+    stduop->setTid(this->threadNumber);
+    stduop->setThreadState(this->thread);
+
     stduop->renameSrcReg(0, this->extRenamedSrcIdx(1));
 
     if (this->readySrcIdx(1)) {
@@ -510,6 +517,16 @@ DynInst::writeMem(uint8_t *data, unsigned size, Addr addr,
                         const std::vector<bool> &byte_enable)
 {
     assert(byte_enable.size() == size);
+    // In trace-mode, prefer the store address recorded in trace (if any).
+    if (cpu->isTraceMode()) {
+        const o3::TraceInstruction* ti = cpu->getTraceInstMetadata(seqNum);
+        if (ti && ti->getStore() && !ti->getStoreAddresses().empty()) {
+            Addr trace_addr = ti->getStoreAddresses()[0];
+            if (trace_addr != 0) {
+                addr = trace_addr;
+            }
+        }
+    }
     return cpu->pushRequest(
         dynamic_cast<DynInstPtr::PtrType>(this),
         /* st */ false, data, size, addr, flags, res, nullptr,

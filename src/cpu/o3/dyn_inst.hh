@@ -820,7 +820,13 @@ class DynInst : public ExecContext, public RefCounted
     std::unique_ptr<PCStateBase>
     branchTarget() const
     {
-        return staticInst->branchTarget(*pc);
+        if (traceBranchHasTarget()) {
+            // Construct a concrete PCState for the current ISA to hold the
+            // absolute target address, then return it as PCStateBase.
+            return std::make_unique<TheISA::PCState>(traceBranchTarget());
+        } else {
+            return staticInst->branchTarget(*pc);
+        }
     }
 
     /** Returns the number of source registers. */
