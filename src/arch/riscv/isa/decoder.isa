@@ -1810,7 +1810,7 @@ decode QUADRANT {
                             vsstatus.fs = 3;
                             xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                         }
-                        }}, FloatCvtOp);
+                        }}, Int2FpOp);
                     0x1: fcvt_s_wu({{
                         RM_REQUIRED;
                         freg_t fd;
@@ -1823,7 +1823,7 @@ decode QUADRANT {
                             vsstatus.fs = 3;
                             xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                         }
-                        }}, FloatCvtOp);
+                        }}, Int2FpOp);
                     0x2: fcvt_s_l({{
                         RM_REQUIRED;
                         freg_t fd;
@@ -1836,7 +1836,7 @@ decode QUADRANT {
                             vsstatus.fs = 3;
                             xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                         }
-                        }}, FloatCvtOp);
+                        }}, Int2FpOp);
                     0x3: fcvt_s_lu({{
                         RM_REQUIRED;
                         freg_t fd;
@@ -1849,7 +1849,7 @@ decode QUADRANT {
                             vsstatus.fs = 3;
                             xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                         }
-                        }}, FloatCvtOp);
+                        }}, Int2FpOp);
                 }
                 0x69: decode CONV_SGN {
                     0x0: fcvt_d_w({{
@@ -1862,7 +1862,7 @@ decode QUADRANT {
                             vsstatus.fs = 3;
                             xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                         }
-                    }}, FloatCvtOp);
+                    }}, Int2FpOp);
                     0x1: fcvt_d_wu({{
                         RM_REQUIRED;
                         Fd = (double)Rs1_uw;
@@ -1873,7 +1873,7 @@ decode QUADRANT {
                             vsstatus.fs = 3;
                             xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                         }
-                    }}, FloatCvtOp);
+                    }}, Int2FpOp);
                     0x2: fcvt_d_l({{
                         RM_REQUIRED;
                         Fd = (double)Rs1_sd;
@@ -1884,7 +1884,7 @@ decode QUADRANT {
                             vsstatus.fs = 3;
                             xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                         }
-                    }}, FloatCvtOp);
+                    }}, Int2FpOp);
                     0x3: fcvt_d_lu({{
                         RM_REQUIRED;
                         Fd = (double)Rs1;
@@ -1895,7 +1895,7 @@ decode QUADRANT {
                             vsstatus.fs = 3;
                             xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                         }
-                    }}, FloatCvtOp);
+                    }}, Int2FpOp);
                 }
                 0x6a: decode CONV_SGN {
                     0x0: fcvt_h_w({{
@@ -1903,25 +1903,25 @@ decode QUADRANT {
                         freg_t fd;
                         fd = freg(i32_to_f16((int32_t)Rs1_sw));
                         Fd_bits = fd.v;
-                        }}, FloatCvtOp);
+                        }}, Int2FpOp);
                     0x1: fcvt_h_wu({{
                         RM_REQUIRED;
                         freg_t fd;
                         fd = freg(ui32_to_f16((uint32_t)Rs1_uw));
                         Fd_bits = fd.v;
-                        }}, FloatCvtOp);
+                        }}, Int2FpOp);
                     0x2: fcvt_h_l({{
                         RM_REQUIRED;
                         freg_t fd;
                         fd = freg(i64_to_f16(Rs1_ud));
                         Fd_bits = fd.v;
-                        }}, FloatCvtOp);
+                        }}, Int2FpOp);
                     0x3: fcvt_h_lu({{
                         RM_REQUIRED;
                         freg_t fd;
                         fd = freg(ui64_to_f16(Rs1));
                         Fd_bits = fd.v;
-                        }}, FloatCvtOp);
+                        }}, Int2FpOp);
                 }
                 0x70: decode ROUND_MODE {
                     0x0: fmv_x_w({{

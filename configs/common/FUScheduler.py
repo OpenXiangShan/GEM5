@@ -199,7 +199,7 @@ class KMHV3Scheduler(Scheduler):
                       rp=[IntRD(3, 1), IntRD(9, 2), IntWR(1, 1)])
         ]),
         IssueQue(name='intIQ2', inports=2, size=16, oports=[
-            IssuePort(fu=[IntALU()],
+            IssuePort(fu=[IntALU(), IntCvt()],
                       rp=[IntRD(4, 0), IntRD(5, 0), IntWR(2, 0)]),
             IssuePort(fu=[IntBRU()],
                       rp=[IntRD(5, 1), IntRD(11, 2), IntWR(2, 1)])

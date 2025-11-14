@@ -47,6 +47,9 @@ class IntMisc(FUDesc):
     opList = [ OpDesc(opClass='No_OpClass', opLat=5, pipelined=False),
                OpDesc(opClass='VectorConfig') ]
 
+class IntCvt(FUDesc):
+    opList = [ OpDesc(opClass='Int2Fp', opLat=4) ]
+
 class IntALU(FUDesc):
     opList = [ OpDesc(opClass='IntAlu') ]
 
