@@ -10,9 +10,6 @@
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/fetch_target_queue.hh"
 #include "cpu/pred/btb/history_manager.hh"
-#include "cpu/pred/btb/jump_ahead_predictor.hh"
-#include "cpu/pred/btb/loop_buffer.hh"
-#include "cpu/pred/btb/loop_predictor.hh"
 #include "cpu/pred/btb/stream_struct.hh"
 #include "cpu/pred/btb/test/mock_PCState.hh"
 
@@ -328,8 +325,7 @@ class DecoupledBPUWithBTB
 
     std::pair<bool, bool> decoupledPredict(const StaticInstPtr &inst,
                                            const InstSeqNum &seqNum,
-                                           PCStateBase &pc, ThreadID tid,
-                                           unsigned &currentLoopIter);
+                                           PCStateBase &pc, ThreadID tid);
 
     // redirect the stream
     void controlSquash(unsigned ftq_id, unsigned fsq_id,
@@ -337,18 +333,17 @@ class DecoupledBPUWithBTB
                        const PCStateBase &target_pc,
                        const StaticInstPtr &static_inst, unsigned inst_bytes,
                        bool actually_taken, const InstSeqNum &squashed_sn,
-                       ThreadID tid, const unsigned &currentLoopIter,
-                       const bool fromCommit);
+                       ThreadID tid, const bool fromCommit);
 
     // keep the stream: original prediction might be right
     // For memory violation, stream continues after squashing
     void nonControlSquash(unsigned ftq_id, unsigned fsq_id,
                           const PCStateBase &inst_pc, const InstSeqNum seq,
-                          ThreadID tid, const unsigned &currentLoopIter);
+                          ThreadID tid);
 
     // Not a control. But stream is actually disturbed
     void trapSquash(unsigned ftq_id, unsigned fsq_id, Addr last_committed_pc,
-                    const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
+                    const PCStateBase &inst_pc, ThreadID tid);
 
     void update(unsigned fsqID, ThreadID tid);
 

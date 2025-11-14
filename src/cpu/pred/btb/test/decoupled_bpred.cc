@@ -260,7 +260,7 @@ DecoupledBPUWithBTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_
 std::pair<bool, bool>
 DecoupledBPUWithBTB::decoupledPredict(const StaticInstPtr &inst,
                                const InstSeqNum &seqNum, PCStateBase &pc,
-                               ThreadID tid, unsigned &currentLoopIter)
+                               ThreadID tid)
 {
     DPRINTF(DecoupleBP, "looking up pc %#lx, Supplying target ID %lu\n",
         pc.instAddr(), fetchTargetQueue.getSupplyingTargetId());
@@ -453,7 +453,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id, unsigned stream_id,
                             const StaticInstPtr &static_inst,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid,
-                            const unsigned &currentLoopIter, const bool fromCommit)
+                            const bool fromCommit)
 {
     dbpBtbStats.controlSquash++;
 
@@ -492,7 +492,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id, unsigned stream_id,
 void
 DecoupledBPUWithBTB::nonControlSquash(unsigned target_id, unsigned stream_id,
                                const PCStateBase &inst_pc,
-                               const InstSeqNum seq, ThreadID tid, const unsigned &currentLoopIter)
+                               const InstSeqNum seq, ThreadID tid)
 {
     dbpBtbStats.nonControlSquash++;
     DPRINTF(DecoupleBP,
@@ -507,7 +507,7 @@ DecoupledBPUWithBTB::nonControlSquash(unsigned target_id, unsigned stream_id,
 void
 DecoupledBPUWithBTB::trapSquash(unsigned target_id, unsigned stream_id,
                          Addr last_committed_pc, const PCStateBase &inst_pc,
-                         ThreadID tid, const unsigned &currentLoopIter)
+                         ThreadID tid)
 {
     dbpBtbStats.trapSquash++;
     DPRINTF(DecoupleBP,

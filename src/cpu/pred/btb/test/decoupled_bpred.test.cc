@@ -198,10 +198,9 @@ bool checkBranchInFSQ(DecoupledBPUWithBTB* dbpu, Addr pc) {
     StaticInstPtr inst = std::make_shared<MockStaticInst>();
     InstSeqNum seq = 1;
     PCStateBase pcState(pc);
-    unsigned currentLoopIter = 0;
 
     // Use decoupledPredict to check if the branch is predicted
-    auto [taken, run_out] = dbpu->decoupledPredict(inst, seq, pcState, 0, currentLoopIter);
+    auto [taken, run_out] = dbpu->decoupledPredict(inst, seq, pcState, 0);
 
     // For branches that are in the predictor, the prediction would return meaningful results
     // This is a simplistic check but works for basic testing
