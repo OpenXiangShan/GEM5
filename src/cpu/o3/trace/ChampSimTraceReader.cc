@@ -28,9 +28,10 @@
 
 #include "cpu/o3/trace/ChampSimTraceReader.hh"
 
-#include <iostream>
 #include <algorithm>
+#include <iostream>
 
+#include "arch/riscv/page_size.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "debug/TraceReader.hh"
@@ -606,8 +607,9 @@ ChampSimTraceReader::mapAddressHash(uint64_t trace_addr)
     uint64_t mapped_addr = addrMapBase + (hash % addrMapSize);
 
     if (addrPageAlign) {
-        // Align to page boundaries to avoid TLB issues
-        mapped_addr = (mapped_addr / PAGE_SIZE) * PAGE_SIZE + (trace_addr % PAGE_SIZE);
+        // Align to ISA page boundaries to avoid TLB issues and keep offsets
+        const uint64_t PageSz = TheISA::PageBytes;
+        mapped_addr = (mapped_addr / PageSz) * PageSz + (trace_addr % PageSz);
         // Ensure we stay within our region
         if ((mapped_addr - addrMapBase) >= addrMapSize) {
             mapped_addr = addrMapBase + (trace_addr % addrMapSize);
@@ -629,23 +631,25 @@ ChampSimTraceReader::mapAddressLinear(uint64_t trace_addr)
     uint64_t mapped_addr;
 
     if (addrPageAlign) {
-        // For page-aligned mapping, preserve page offsets
-        uint64_t page_offset = trace_addr % PAGE_SIZE;
-        uint64_t trace_page = trace_addr / PAGE_SIZE;
+        // For page-aligned mapping, preserve page offsets with ISA-defined page size
+        const uint64_t PageSz = TheISA::PageBytes;
+        const uint64_t page_offset = trace_addr % PageSz;
+        const uint64_t trace_page = trace_addr / PageSz;
 
-        // Map the page linearly within our region
-        uint64_t mapped_page = (trace_page % (addrMapSize / PAGE_SIZE));
-        mapped_addr = addrMapBase + (mapped_page * PAGE_SIZE) + page_offset;
+        // Ensure the mapping region is page-aligned in size to avoid discontinuities
+        const uint64_t pages_in_region = (addrMapSize / PageSz);
+        const uint64_t mapped_page = (pages_in_region ? (trace_page % pages_in_region) : 0);
+        mapped_addr = addrMapBase + (mapped_page * PageSz) + page_offset;
     } else {
-        // Simple linear mapping within the region
+        // Simple linear mapping within the region based on full-byte offset
         mapped_addr = addrMapBase + (trace_addr % addrMapSize);
     }
 
     // Ensure 4-byte alignment for RISC-V
     mapped_addr = mapped_addr & ~0x3UL;
 
-    DPRINTF(TraceReader, "mapAddressLinear: 0x%lx -> 0x%lx (page_align=%d)\n",
-            trace_addr, mapped_addr, addrPageAlign);
+    DPRINTF(TraceReader, "mapAddressLinear: 0x%lx -> 0x%lx (page_align=%d, PageSz=%llu)\n",
+            trace_addr, mapped_addr, addrPageAlign, (unsigned long long)TheISA::PageBytes);
 
     return mapped_addr;
 }
