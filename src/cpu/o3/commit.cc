@@ -1400,6 +1400,47 @@ Commit::commitInsts()
                     if (cpu->isTraceInstruction(head_inst->seqNum)) {
                         cpu->cleanupTraceMetadataOnCommit(head_inst->seqNum);
                     }
+
+                    // Trace 模式下，若本条指令触发了 "非分支或 cond 分支后的控制流改变"，
+                    // 则将其视为 trace 驱动的 trap：通过 squashFromTrap 触发统一的
+                    // trapSquash 流（包括 decoupled BPU 的 trapSquash）。
+                    if (const o3::TraceInstruction *ti_meta =
+                            cpu->getTraceInstMetadata(head_inst->seqNum)) {
+
+                        auto isApproxFallthrough = [](Addr pc, Addr next_pc) {
+                            return next_pc == pc + 2 || next_pc == pc + 4;
+                        };
+
+                        const bool nonBranchTrap =
+                            ti_meta->isCtrlFlowChange() && !ti_meta->isAnyBranch();
+
+                        const bool condTrap =
+                            ti_meta->isCtrlFlowChange() &&
+                            ti_meta->isAnyBranch() &&
+                            !ti_meta->getBranchTaken() &&
+                            !isApproxFallthrough(ti_meta->getPC(),
+                                                 ti_meta->getCtrlFlowTarget());
+
+                        if (nonBranchTrap || condTrap) {
+                            auto &pc_state = pc[tid]->as<RiscvISA::PCState>();
+                            pc_state.set(ti_meta->getCtrlFlowTarget());
+
+                            DPRINTF(CommitTrace,
+                                    "[tid:%d idx:%llu sn:%llu] Trace-driven %s trap "
+                                    "ctrl-flow change: commitPC=0x%lx -> target=0x%lx\n",
+                                    tid,
+                                    (unsigned long long)traceCommitIndex[tid],
+                                    head_inst->seqNum,
+                                    nonBranchTrap ? "non-branch" : "cond",
+                                    (unsigned long)head_inst->pcState().instAddr(),
+                                    (unsigned long)ti_meta->getCtrlFlowTarget());
+
+                            squashFromTrap(tid);
+                            // squashFromTrap 将设置 isTrapSquash 并触发前端/decoupled BPU
+                            // 的 trapSquash；当前 head_inst 已经提交，后续指令将被统一清理。
+                            return;
+                        }
+                    }
                 }
 
                 head_inst->staticInst->advancePC(*pc[tid]);

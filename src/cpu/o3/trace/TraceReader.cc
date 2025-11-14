@@ -241,7 +241,7 @@ TraceReader::softSeekToInstruction(uint64_t instrIndex)
         replayActive = true;
         replayIndex = want;
         DPRINTF(TraceReader,
-                "softSeekToInstruction: replay to (idx+1)=%llu within window [%llu,%llu]",
+                "softSeekToInstruction: replay to (idx+1)=%llu within window [%llu,%llu]\n",
                 (unsigned long long)want,
                 (unsigned long long)winBegin,
                 (unsigned long long)winEnd);
@@ -270,7 +270,7 @@ TraceReader::softSeekToInstruction(uint64_t instrIndex)
             drop--;
         }
         if (drop == 0) {
-            DPRINTF(TraceReader, "softSeekToInstruction: drop-ahead to (idx+1)=%llu using buffer",
+            DPRINTF(TraceReader, "softSeekToInstruction: drop-ahead to (idx+1)=%llu using buffer\n",
                     (unsigned long long)want);
             return true;
         }

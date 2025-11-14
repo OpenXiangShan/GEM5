@@ -1368,8 +1368,8 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
         }
 
         if (allow_rb) {
-            DPRINTF(Fetch, "[tid:%i] Rolling back trace reader to seqNum %llu\n",
-                    tid, (unsigned long long)trace_rb_seqnum);
+            DPRINTF(Fetch, "[tid:%i] Rolling back trace reader to seqNum %llu, squash_itself=%d\n",
+                    tid, (unsigned long long)trace_rb_seqnum, squash_itself);
             cleanupTraceMetadata(trace_rb_seqnum);
             // Rollback trace reader to handle misprediction
             if (!rollbackTraceReader(trace_rb_seqnum, squash_itself)) {
@@ -2328,7 +2328,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                 "[tid:%i] Bind trace metadata to [sn:%lli]->[tracesn:%lli]: "
                 "pc=0x%llx, taken=%d, traceInstrConsumed=%llu\n",
                 tid, instruction->seqNum,
-                (unsigned long long)pendingTraceInstr.getSeqNum(),
+                (unsigned long long)pendingTraceInstr.getSeqNum()+1,
                 (unsigned long long)pendingTraceInstr.getPC(),
                 pendingTraceInstr.getBranchTaken(),
                 (unsigned long long)traceInstrConsumed);
@@ -2466,6 +2466,52 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         if (!(isDecoupledFrontend() && traceEnableWrongPath)) {
             // 将真值反馈给预测器（BTB/FTB 等）
             feedTraceBranchToBP(traceForThisInst, traceForThisInst.getPC());
+        }
+    }
+
+    // 非分支或 cond-trap 控制流改变（例如异常/陷入）在 decoupled + wrong-path 模式下视为
+    // "trace 驱动的 trap wrong-path"：从该指令之后沿 BPU 预测路径走的指令
+    // 对 traceReader 而言都是 wrong-path，后续由 commit 触发 trap squash 统一纠正。
+    if (traceMode && instruction && traceForThisInst.isValid() &&
+        traceForThisInst.isCtrlFlowChange() &&
+        isDecoupledFrontend() && traceEnableWrongPath) {
+
+        auto isApproxFallthrough = [](Addr pc, Addr next_pc) {
+            return next_pc == pc + 2 || next_pc == pc + 4;
+        };
+
+        const bool nonBranchTrap = !traceForThisInst.isAnyBranch();
+
+        const bool condTrap =
+            traceForThisInst.isAnyBranch() &&
+            !traceForThisInst.getBranchTaken() &&
+            !isApproxFallthrough(traceForThisInst.getPC(),
+                                 traceForThisInst.getCtrlFlowTarget());
+
+        if (nonBranchTrap || condTrap) {
+            const Addr predicted_pc = next_pc->instAddr();
+            const Addr corr_pc      = traceForThisInst.getCtrlFlowTarget();
+
+            if (!traceWrongPathActive) {
+                traceWrongPathActive       = true;
+                traceWrongPathBranchSeqNum = instruction->seqNum;
+                traceWrongPathPredPC       = predicted_pc;
+                traceWrongPathCorrectPC    = corr_pc;
+                DPRINTF(Fetch,
+                        "[tid:%i] Enter %s-trap wrong-path; skip local BP "
+                        "squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu, tracesn:%llu)\n",
+                        tid,
+                        nonBranchTrap ? "non-branch" : "cond",
+                        (unsigned long long)predicted_pc,
+                        (unsigned long long)corr_pc,
+                        (unsigned long long)traceWrongPathBranchSeqNum,
+                        (unsigned long long)traceForThisInst.getSeqNum());
+            } else {
+                DPRINTF(Fetch,
+                        "[tid:%i] Already in trap-wrong-path mode; continue "
+                        "without changes (predPC=0x%llx)\n",
+                        tid, (unsigned long long)predicted_pc);
+            }
         }
     }
 
@@ -3292,6 +3338,14 @@ Fetch::findTraceIndexForSeqNum(InstSeqNum seqNum) const
     DPRINTF(Fetch, "findTraceIndexForSeqNum[sn:%lli]: Found closest checkpoint at seqNum=%lli, traceIndex=%lu\n",
             seqNum, bestSeqNum, bestTraceIndex);
 
+    // dump seqNumToTraceIndex
+    DPRINTF(Fetch, seqNumToTraceIndex.size() == 0 ?
+            "  seqNumToTraceIndex is empty\n" :
+            "  seqNumToTraceIndex contents:\n");
+    for (const auto& pair : seqNumToTraceIndex) {
+        DPRINTF(Fetch, "  seqNum=%lli => traceIndex=%lu\n", pair.first, pair.second);
+    }
+
     return bestTraceIndex;
 }
 
@@ -3315,16 +3369,30 @@ Fetch::rollbackTraceReader(InstSeqNum seqNum, bool squash_itself)
         return false;
     }
 
+    bool need_to_decrement_index = squash_itself;
     // Find trace index to rollback to (1-based). We want the next getNextInstruction()
     // to return the instruction at 'index'.
     uint64_t index = findTraceIndexForSeqNum(seqNum);
-
-    if (index == 0) {
-        DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: No mapped trace index (skip)\n", seqNum);
-        return false;
+    bool found = index != 0;
+    if (!found) {
+        if (squash_itself) {
+            // If squashing the instruction itself, try one earlier
+            DPRINTF(Fetch,
+                    "rollbackTraceReader[sn:%lli]: No mapped trace index, "
+                    "trying earlier instruction\n",
+                    seqNum);
+            index = findTraceIndexForSeqNum(seqNum - 1);
+            if (index != 0) {
+                found = true;
+                need_to_decrement_index = false; // already moved back
+            } else {
+                DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: No mapped trace index (skip)\n", seqNum);
+                return false;
+            }
+        }
     }
 
-    if (squash_itself) {
+    if (need_to_decrement_index) {
         // If squashing the instruction itself, we need to go back one more instruction
         if (index > 0) {
             DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Squashing itself, moving back one instruction\n", seqNum);

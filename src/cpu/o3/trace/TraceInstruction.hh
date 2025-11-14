@@ -82,6 +82,11 @@ class TraceInstruction
     bool hasBranchTarget;
     Addr branchTarget;
 
+    /** Non-branch control-flow change information (e.g., traps/exceptions) */
+    bool ctrlFlowChange;
+    bool hasCtrlFlowTarget;
+    Addr ctrlFlowTarget;
+
     /** Memory operation information */
     bool isLoad;
     bool isStore;
@@ -113,6 +118,7 @@ class TraceInstruction
     TraceInstruction() :
         pc(0), instType(InstType::UNDEFINED), isBranch(false),
         branchTaken(false), hasBranchTarget(false), branchTarget(0),
+        ctrlFlowChange(false), hasCtrlFlowTarget(false), ctrlFlowTarget(0),
         isLoad(false), isStore(false),
         seqNum(0), piece(0), hasImmediateOperand(false), immediateValue(0),
         valid(false) {}
@@ -121,6 +127,7 @@ class TraceInstruction
     TraceInstruction(Addr _pc, InstType _type, uint64_t _seqNum = 0) :
         pc(_pc), instType(_type), isBranch(false), branchTaken(false),
         hasBranchTarget(false), branchTarget(0),
+        ctrlFlowChange(false), hasCtrlFlowTarget(false), ctrlFlowTarget(0),
         isLoad(_type == InstType::LOAD),
         isStore(_type == InstType::STORE),
         seqNum(_seqNum), piece(0), hasImmediateOperand(false), immediateValue(0),
@@ -158,6 +165,11 @@ class TraceInstruction
     bool getHasImmediateOperand() const { return hasImmediateOperand; }
     uint64_t getImmediateValue() const { return immediateValue; }
 
+    // Non-branch control-flow change getters
+    bool isCtrlFlowChange() const { return ctrlFlowChange; }
+    bool getHasCtrlFlowTarget() const { return hasCtrlFlowTarget; }
+    Addr getCtrlFlowTarget() const { return ctrlFlowTarget; }
+
     // Setters
     void setPC(Addr _pc) { pc = _pc; }
     void setInstType(InstType _type) {
@@ -175,6 +187,14 @@ class TraceInstruction
     void setBranchTarget(Addr target) {
         branchTarget = target;
         hasBranchTarget = true;
+    }
+
+    // Non-branch control-flow change setters
+    void setCtrlFlowChange(bool v) { ctrlFlowChange = v; }
+    void setCtrlFlowTarget(Addr target)
+    {
+        ctrlFlowTarget = target;
+        hasCtrlFlowTarget = true;
     }
     void addLoadAddress(Addr addr, uint32_t size = 0) {
         loadAddresses.push_back(addr);
@@ -214,6 +234,9 @@ class TraceInstruction
         branchTaken = false;
         hasBranchTarget = false;
         branchTarget = 0;
+        ctrlFlowChange = false;
+        hasCtrlFlowTarget = false;
+        ctrlFlowTarget = 0;
         isLoad = false;
         isStore = false;
         loadAddresses.clear();
