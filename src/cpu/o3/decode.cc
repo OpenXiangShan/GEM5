@@ -807,6 +807,22 @@ Decode::decodeInsts(ThreadID tid)
             ++stats.branchResolved;
 
             std::unique_ptr<PCStateBase> target = inst->branchTarget();
+            // In trace mode, prefer ground-truth next PC from trace to avoid
+            // relying on possibly out-of-range immediates (e.g., JAL 20-bit).
+            if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+                auto &t_override = target->as<RiscvISA::PCState>();
+                Addr trace_next = inst->traceBranchNextPC();
+                if (trace_next != t_override.pc()) {
+                    DPRINTF(DecoupleBP,
+                            "[tid:%i] [sn:%llu] Branch pc %s, Override target by trace: %s -> npc=%#lx\n",
+                            tid, inst->seqNum, inst->pcState(), *target, trace_next);
+                    t_override.pc(trace_next);
+                    t_override.npc(trace_next + 4); // assuming 4-byte instruction
+                    DPRINTF(DecoupleBP,
+                            "[tid:%i] [sn:%llu] After override target: %s, inst->branchTarget: %s\n",
+                            tid, inst->seqNum, *target, *inst->branchTarget());
+                }
+            }
             auto &t = target->as<RiscvISA::PCState>();
             auto &pred = inst->readPredTarg().as<RiscvISA::PCState>();
             if (t.start_equals(pred) && !t.equals(pred)) {
