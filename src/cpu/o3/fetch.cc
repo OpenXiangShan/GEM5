@@ -765,17 +765,16 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
             if (isFTBPred()) {
                 std::tie(predict_taken, usedUpFetchTargets) =
                     dbpftb->decoupledPredict(
-                        inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);
+                        inst->staticInst, inst->seqNum, next_pc, tid);
             } else if (isBTBPred()) {
                 std::tie(predict_taken, usedUpFetchTargets) =
                     dbpbtb->decoupledPredict(
-                        inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);
+                        inst->staticInst, inst->seqNum, next_pc, tid);
             }
             if (usedUpFetchTargets) {
                 DPRINTF(DecoupleBP, "Used up fetch targets.\n");
                 fetchBuffer[tid].valid = false;  // Invalidate fetch buffer when FTQ entry exhausted
             }
-            inst->setLoopIteration(currentLoopIter);
         }
     }
 
@@ -1418,11 +1417,11 @@ Fetch::updateBranchPredictors()
         } else {
             dbpftb->tick();
         }
-        usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
+        usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr());
     } else if (isBTBPred()) {
         assert(dbpbtb);
         dbpbtb->tick();
-        usedUpFetchTargets = !dbpbtb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
+        usedUpFetchTargets = !dbpbtb->trySupplyFetchWithTarget(pc[0]->instAddr());
     }
 }
 
@@ -1572,12 +1571,12 @@ Fetch::handleCommitSignals(ThreadID tid)
             dbpftb->controlSquash(mispred_inst->getFtqId(), mispred_inst->getFsqId(), mispred_inst->pcState(),
                                   *fromCommit->commitInfo[tid].pc, mispred_inst->staticInst,
                                   mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
-                                  mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
+                                  mispred_inst->seqNum, tid, true);
         } else if (isBTBPred()) {
             dbpbtb->controlSquash(mispred_inst->getFtqId(), mispred_inst->getFsqId(), mispred_inst->pcState(),
                                   *fromCommit->commitInfo[tid].pc, mispred_inst->staticInst,
                                   mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
-                                  mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
+                                  mispred_inst->seqNum, tid, true);
         }
     } else if (fromCommit->commitInfo[tid].isTrapSquash) {
         DPRINTF(Fetch, "Treating as trap squash\n", tid);
@@ -1588,11 +1587,11 @@ Fetch::handleCommitSignals(ThreadID tid)
         } else if (isFTBPred()) {
             dbpftb->trapSquash(fromCommit->commitInfo[tid].squashedTargetId,
                                fromCommit->commitInfo[tid].squashedStreamId, fromCommit->commitInfo[tid].committedPC,
-                               *fromCommit->commitInfo[tid].pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+                               *fromCommit->commitInfo[tid].pc, tid);
         } else if (isBTBPred()) {
             dbpbtb->trapSquash(fromCommit->commitInfo[tid].squashedTargetId,
                                fromCommit->commitInfo[tid].squashedStreamId, fromCommit->commitInfo[tid].committedPC,
-                               *fromCommit->commitInfo[tid].pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+                               *fromCommit->commitInfo[tid].pc, tid);
         }
     } else {
         if (fromCommit->commitInfo[tid].pc && fromCommit->commitInfo[tid].squashedStreamId != 0) {
@@ -1604,11 +1603,11 @@ Fetch::handleCommitSignals(ThreadID tid)
             } else if (isFTBPred()) {
                 dbpftb->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId,
                                          fromCommit->commitInfo[tid].squashedStreamId, *fromCommit->commitInfo[tid].pc,
-                                         0, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+                                         0, tid);
             } else if (isBTBPred()) {
                 dbpbtb->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId,
                                          fromCommit->commitInfo[tid].squashedStreamId, *fromCommit->commitInfo[tid].pc,
-                                         0, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+                                         0, tid);
             }
         } else {
             DPRINTF(Fetch, "Dont squash dbq because no meaningful stream\n");
@@ -1656,7 +1655,7 @@ Fetch::handleDecodeSquash(ThreadID tid)
                         *fromDecode->decodeInfo[tid].nextPC,
                         mispred_inst->staticInst, mispred_inst->getInstBytes(),
                         fromDecode->decodeInfo[tid].branchTaken,
-                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
+                        mispred_inst->seqNum, tid,
                         false);
                 } else if (isBTBPred()) {
                     dbpbtb->controlSquash(
@@ -1665,7 +1664,7 @@ Fetch::handleDecodeSquash(ThreadID tid)
                         *fromDecode->decodeInfo[tid].nextPC,
                         mispred_inst->staticInst, mispred_inst->getInstBytes(),
                         fromDecode->decodeInfo[tid].branchTaken,
-                        mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
+                        mispred_inst->seqNum, tid,
                         false);
                 }
             } else {

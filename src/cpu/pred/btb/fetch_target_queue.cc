@@ -128,7 +128,7 @@ FetchTargetQueue::finishCurrentFetchTarget()
  * @return true if a target was successfully located and supplied
  */
 bool
-FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop)
+FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc)
 {
     // If we don't already have a valid supply state matching the demand
     if (!supplyFetchTargetState.valid ||
@@ -148,7 +148,6 @@ FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop)
                 it = ftq.erase(it);  // Remove current target
                 if (it == ftq.end()) {
                     // No next target available
-                    in_loop = false;
                     return false;
                 }
                 DPRINTFR(DecoupleBP,
@@ -180,7 +179,6 @@ FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop)
                 }
                 assert(it->first < fetchDemandTargetId);
             }
-            in_loop = false;
             return false;
         }
     }

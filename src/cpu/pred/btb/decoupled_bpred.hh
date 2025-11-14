@@ -20,9 +20,6 @@
 #include "cpu/pred/btb/btb_ubtb.hh"
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/fetch_target_queue.hh"
-#include "cpu/pred/btb/jump_ahead_predictor.hh"
-#include "cpu/pred/btb/loop_buffer.hh"
-#include "cpu/pred/btb/loop_predictor.hh"
 #include "cpu/pred/btb/ras.hh"
 #include "cpu/pred/general_arch_db.hh"
 
@@ -37,10 +34,6 @@
 #include "debug/DecoupleBPRAS.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPuRAS.hh"
-#include "debug/JumpAheadPredictor.hh"
-#include "debug/LoopBuffer.hh"
-#include "debug/LoopPredictor.hh"
-#include "debug/LoopPredictorVerbose.hh"
 #include "params/DecoupledBPUWithBTB.hh"
 
 namespace gem5
@@ -72,14 +65,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     typedef DecoupledBPUWithBTBParams Params;
 
     DecoupledBPUWithBTB(const Params &params);
-    // TODO: remove loop predictor and loop buffer, jap, now fetch.cc need them
-    LoopPredictor lp;
-    LoopBuffer lb;
-    bool enableLoopBuffer{false};
-    bool enableLoopPredictor{false};
-
-    JumpAheadPredictor jap;
-    bool enableJumpAheadPredictor{false};
 
   private:
     std::string _name;
@@ -371,7 +356,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      */
     void tick();
 
-    bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetchTargetInLoop);
+    bool trySupplyFetchWithTarget(Addr fetch_demand_pc);
 
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {
@@ -449,8 +434,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     std::pair<bool, bool> decoupledPredict(const StaticInstPtr &inst,
                                            const InstSeqNum &seqNum,
-                                           PCStateBase &pc, ThreadID tid,
-                                           unsigned &currentLoopIter);
+                                           PCStateBase &pc, ThreadID tid);
 
     // redirect the stream
     void controlSquash(unsigned ftq_id, unsigned fsq_id,
@@ -458,18 +442,17 @@ class DecoupledBPUWithBTB : public BPredUnit
                        const PCStateBase &target_pc,
                        const StaticInstPtr &static_inst, unsigned inst_bytes,
                        bool actually_taken, const InstSeqNum &squashed_sn,
-                       ThreadID tid, const unsigned &currentLoopIter,
-                       const bool fromCommit);
+                       ThreadID tid, const bool fromCommit);
 
     // keep the stream: original prediction might be right
     // For memory violation, stream continues after squashing
     void nonControlSquash(unsigned ftq_id, unsigned fsq_id,
                           const PCStateBase &inst_pc, const InstSeqNum seq,
-                          ThreadID tid, const unsigned &currentLoopIter);
+                          ThreadID tid);
 
     // Not a control. But stream is actually disturbed
     void trapSquash(unsigned ftq_id, unsigned fsq_id, Addr last_committed_pc,
-                    const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
+                    const PCStateBase &inst_pc, ThreadID tid);
 
     void update(unsigned fsqID, ThreadID tid);
 

@@ -916,8 +916,6 @@ class Fetch
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];
 
-    unsigned currentLoopIter{0};  // todo: remove this
-
     /** Icache stall statistics. */
     Counter lastIcacheStall[MaxThreads];
 
@@ -957,8 +955,6 @@ class Fetch
 
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;
-
-    bool currentFetchTargetInLoop{false};
 
     std::pair<Addr, std::vector<branch_prediction::ftb_pred::LoopBuffer::InstDesc>> currentFtqEntryInsts;
 

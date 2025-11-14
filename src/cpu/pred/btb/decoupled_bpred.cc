@@ -9,7 +9,6 @@
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/ITTAGE.hh"
-#include "debug/JumpAheadPredictor.hh"
 #include "debug/Override.hh"
 #include "debug/Profiling.hh"
 #include "sim/core.hh"
@@ -23,9 +22,6 @@ namespace btb_pred
 
 DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     : BPredUnit(p),
-      enableLoopBuffer(p.enableLoopBuffer),
-      enableLoopPredictor(p.enableLoopPredictor),
-      enableJumpAheadPredictor(p.enableJumpAheadPredictor),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
       predictWidth(p.predictWidth),
@@ -103,14 +99,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     squashing = true;
     bpuState = BpuState::IDLE;
 
-    lp = LoopPredictor(16, 4, enableLoopDB);
-    lb.setLp(&lp);
-
-    jap = JumpAheadPredictor(16, 4);
-
-    if (!enableLoopPredictor && enableLoopBuffer) {
-        fatal("loop buffer cannot be enabled without loop predictor\n");
-    }
     commitFsqEntryHasInstsVector.resize(maxInstsNum+1, 0);
     lastPhaseFsqEntryNumCommittedInstDist.resize(maxInstsNum+1, 0);
     commitFsqEntryFetchedInstsVector.resize(maxInstsNum+1, 0);
@@ -731,9 +719,9 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 }
 
 bool
-DecoupledBPUWithBTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_target_in_loop)
+DecoupledBPUWithBTB::trySupplyFetchWithTarget(Addr fetch_demand_pc)
 {
-    return fetchTargetQueue.trySupplyFetchWithTarget(fetch_demand_pc, fetch_target_in_loop);
+    return fetchTargetQueue.trySupplyFetchWithTarget(fetch_demand_pc);
 }
 
 /**
@@ -763,7 +751,7 @@ DecoupledBPUWithBTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_
 std::pair<bool, bool>
 DecoupledBPUWithBTB::decoupledPredict(const StaticInstPtr &inst,
                                const InstSeqNum &seqNum, PCStateBase &pc,
-                               ThreadID tid, unsigned &currentLoopIter)
+                               ThreadID tid)
 {
     DPRINTF(DecoupleBP, "looking up pc %#lx, Supplying target ID %lu\n",
         pc.instAddr(), fetchTargetQueue.getSupplyingTargetId());
@@ -957,7 +945,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id, unsigned stream_id,
                             const StaticInstPtr &static_inst,
                             unsigned control_inst_size, bool actually_taken,
                             const InstSeqNum &seq, ThreadID tid,
-                            const unsigned &currentLoopIter, const bool fromCommit)
+                            const bool fromCommit)
 {
     if (fromCommit) {
         dbpBtbStats.controlSquashFromCommit++;
@@ -1000,7 +988,7 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id, unsigned stream_id,
 void
 DecoupledBPUWithBTB::nonControlSquash(unsigned target_id, unsigned stream_id,
                                const PCStateBase &inst_pc,
-                               const InstSeqNum seq, ThreadID tid, const unsigned &currentLoopIter)
+                               const InstSeqNum seq, ThreadID tid)
 {
     dbpBtbStats.nonControlSquash++;
     DPRINTF(DecoupleBP,
@@ -1015,7 +1003,7 @@ DecoupledBPUWithBTB::nonControlSquash(unsigned target_id, unsigned stream_id,
 void
 DecoupledBPUWithBTB::trapSquash(unsigned target_id, unsigned stream_id,
                          Addr last_committed_pc, const PCStateBase &inst_pc,
-                         ThreadID tid, const unsigned &currentLoopIter)
+                         ThreadID tid)
 {
     dbpBtbStats.trapSquash++;
     DPRINTF(DecoupleBP,

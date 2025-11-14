@@ -164,7 +164,7 @@ class FetchTargetQueue
      * @param in_loop Output parameter indicating if we're in a loop
      * @return true if a target was found and supplied
      */
-    bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop);
+    bool trySupplyFetchWithTarget(Addr fetch_demand_pc);
 
 
     bool empty() const { return ftq.empty(); }
