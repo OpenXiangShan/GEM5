@@ -303,6 +303,7 @@ def build_test_system(np, args):
                 for cpu in test_sys.cpu:
                     cpu.traceAddrBase = base
                     cpu.traceAddrSize = total
+                    cpu.traceAddrMapMode = "linear"
                 print(f"Trace mode: Align trace mapping to mem: base=0x{base:x}, size=0x{total:x}")
             except Exception as e:
                 print(f"Warning: failed to align trace mapping to mem (Ruby path): {e}")

@@ -256,7 +256,7 @@ class BaseO3CPU(BaseCPU):
     traceBPValidation = Param.Bool(True, "Enable branch predictor validation against trace")
 
     # Address mapping configuration for trace mode
-    traceAddrMapMode = Param.String("hash", "Address mapping mode for trace (hash|linear)")
+    traceAddrMapMode = Param.String("linear", "Address mapping mode for trace (hash|linear)")
     traceAddrBase = Param.Addr(0x80000000, "Base address for trace address mapping (within physical memory)")
     traceAddrSize = Param.Addr(0x40000000, "Size of trace address mapping region (1GB)")
     traceAddrPageAlign = Param.Bool(True, "Align trace addresses to page boundaries")
