@@ -744,7 +744,7 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
     Addr mask = (1ULL << tableIndexBits[t]) - 1;
 
     // Extract lower bits of PC and XOR with folded history directly
-    Addr pcBits = (pc >> floorLog2(blockSize)) & mask; // pc is already aligned
+    Addr pcBits = (pc >> floorLog2(blockSize * 2)) & mask; // pc is already aligned
     Addr foldedBits = foldedHist & mask;
 
     return pcBits ^ foldedBits;
