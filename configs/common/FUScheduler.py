@@ -113,7 +113,7 @@ class KunminghuScheduler(Scheduler):
             IssuePort(fu=[IntBJU()], rp=[IntRD(4, 1), IntRD(5, 1)])
         ]),
         IssueQue(name='intIQ2', inports=2, size=2*12, oports=[
-            IssuePort(fu=[IntALU()], rp=[IntRD(4, 0), IntRD(5, 0)]),
+            IssuePort(fu=[IntALU(), IntCvt()], rp=[IntRD(4, 0), IntRD(5, 0)]),
             IssuePort(fu=[IntBJU(), IntMisc()], rp=[IntRD(2, 1), IntRD(3, 1)])
         ]),
         IssueQue(name='intIQ3', inports=2, size=2*12, oports=[
@@ -303,7 +303,7 @@ class IdealScheduler(Scheduler):
             IssuePort(fu=[IntBJU()])
         ]),
         IssueQue(name='intIQ2', inports=2, size=2*24, oports=[
-            IssuePort(fu=[IntALU()]),
+            IssuePort(fu=[IntALU(), IntCvt()]),
             IssuePort(fu=[IntBJU(), IntMisc()])
         ]),
         IssueQue(name='intIQ3', inports=2, size=2*24, oports=[
