@@ -37,6 +37,12 @@ def parse_args():
     p.add_argument("--no-squash", action="store_false", dest="squash")
     p.add_argument("--commit", action="store_true", default=True, help="Include commit events (default on)")
     p.add_argument("--no-commit", action="store_false", dest="commit")
+    # Trace metadata bind events (for ChampSim trace debug)
+    p.add_argument(
+        "--bind", action="store_true", default=True,
+        help="Include trace metadata bind events (default on)",
+    )
+    p.add_argument("--no-bind", action="store_false", dest="bind")
     # Patterns (overridable)
     p.add_argument(
         "--build-pattern", default=r"Instruction PC.*created",
@@ -49,6 +55,10 @@ def parse_args():
     p.add_argument(
         "--commit-pattern", default=r"Committing instruction with PC",
         help="Regex for commit",
+    )
+    p.add_argument(
+        "--bind-pattern", default=r"Bind trace metadata",
+        help="Regex for trace metadata bind events",
     )
     # Wrong-path enter/exit events
     p.add_argument(
@@ -92,6 +102,8 @@ def main():
         pats.append(("SQUASH", compile_pat(args.squash_pattern)))
     if args.commit:
         pats.append(("COMMIT", compile_pat(args.commit_pattern)))
+    if args.bind:
+        pats.append(("BIND", compile_pat(args.bind_pattern)))
     if args.wp_enter:
         pats.append(("WP_ENTER", compile_pat(args.wp_enter_pattern)))
     if args.wp_exit:
@@ -145,12 +157,13 @@ def main():
         eprint(f"  from_tick     : {args.from_tick}")
         eprint("  toggles       : "
                 f"build={args.build}, squash={args.squash}, "
-                f"commit={args.commit}, wp_enter={args.wp_enter}, "
-                f"wp_exit={args.wp_exit}")
+                f"commit={args.commit}, bind={args.bind}, "
+                f"wp_enter={args.wp_enter}, wp_exit={args.wp_exit}")
         eprint("  patterns      :")
         eprint(f"    BUILD   : {args.build_pattern}")
         eprint(f"    SQUASH  : {args.squash_pattern}")
         eprint(f"    COMMIT  : {args.commit_pattern}")
+        eprint(f"    BIND    : {args.bind_pattern}")
         eprint(f"    WP_ENTER: {args.wp_enter_pattern}")
         eprint(f"    WP_EXIT : {args.wp_exit_pattern}")
         eprint("  counts        :")

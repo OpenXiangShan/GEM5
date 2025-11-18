@@ -165,6 +165,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--trace", "-t", required=True, help="Path to ChampSim trace (.bin, .gz or .xz)")
     ap.add_argument("--limit", "-n", type=int, default=0, help="Max records to print (0=all)")
     ap.add_argument("--skip", type=int, default=0, help="Skip initial N records")
+    ap.add_argument("--start-index", type=int, default=None,
+                    help="Start at record index (0-based, overrides --skip if set)")
+    ap.add_argument("--count", type=int, default=None,
+                    help="Number of records to print (overrides --limit if set)")
     ap.add_argument("--json", action="store_true", help="Output JSON lines instead of text")
     ap.add_argument("--show-mem", action="store_true", help="Include memory addresses in output")
     ap.add_argument("--arch", choices=["riscv", "generic"], default="riscv",
@@ -198,6 +202,15 @@ def main() -> int:
 
     mapper = get_mapper(args.map_mode)
 
+    # 计算有效的 skip / limit：如果指定了 --start-index/--count，则优先使用
+    effective_skip = args.skip
+    if args.start_index is not None and args.start_index > 0:
+        effective_skip = args.start_index
+
+    effective_limit = args.limit
+    if args.count is not None and args.count > 0:
+        effective_limit = args.count
+
     try:
         f = open_trace(args.trace)
     except OSError as e:
@@ -207,7 +220,7 @@ def main() -> int:
     printed = 0
     total = 0
     with f:
-        for rec in iter_records(f, skip=args.skip):
+        for rec in iter_records(f, skip=effective_skip):
             total += 1
             (
                 ip,
@@ -337,7 +350,7 @@ def main() -> int:
                     print(fmt_hdr(headers))
                     print("-" * (sum(w for _, w in headers) + len(headers) - 1))
 
-                idx_str = f"{args.skip + total - 1:>6d}"
+                idx_str = f"{effective_skip + total - 1:>6d}"
                 # Compact hex for PC (no leading zeros)
                 pc_str = fmt_hex(mip)
                 br_str = f"{int(is_branch)}"
@@ -372,7 +385,7 @@ def main() -> int:
                 print(fmt_row(row))
 
             printed += 1
-            if args.limit and printed >= args.limit:
+            if effective_limit and printed >= effective_limit:
                 break
 
     return 0
