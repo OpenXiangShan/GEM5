@@ -369,6 +369,19 @@ class CPU : public BaseCPU
     /** Check if the CPU is in trace mode */
     bool isTraceMode() const { return fetch.traceMode; }
 
+    /** Check if the trace reader has reached EOF (trace mode only). */
+    bool isTraceEOF() const
+    {
+        return fetch.traceMode && fetch.traceReader && fetch.traceReader->isEOF();
+    }
+
+    /**
+     * Wrapper for internal drain check used by trace-mode helpers.
+     * Keeps isCpuDrained() private while still allowing components
+     * like Commit to query whether the entire O3 pipeline is empty.
+     */
+    bool isTracePipelineDrained() const { return isCpuDrained(); }
+
     /** Initiates a squash of all in-flight instructions for a given
      * thread.  The source of the squash is an external update of
      * state through the TC.

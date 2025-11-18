@@ -1319,7 +1319,22 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
                         tid,
                         (unsigned long long)seqNum,
                         findTraceIndexForSeqNum(seqNum));
-                if (seqNum <= traceWrongPathBranchSeqNum) {
+                if (new_pc.instAddr() == traceWrongPathCorrectPC) {
+                    // non-inst squash (例如 trap squash) 把 PC 直接带回了正确路径
+                    // traceReader 在 wrong-path 期间未前进，因此此处无需回滚，只需退出
+                    // wrong-path 模式即可。
+                    traceWrongPathActive = false;
+                    squash_itself = false;
+                    trace_rb_seqnum = traceWrongPathBranchSeqNum;
+                    // allow_rb = false; // 不需要触碰 traceReader
+                    DPRINTF(Fetch,
+                            "[tid:%i] In wrong-path, non-inst squash reached "
+                            "correct PC (0x%#llx); exit wrong-path without rollback "
+                            "(sn:%llu)\n",
+                            tid,
+                            (unsigned long long)new_pc.instAddr(),
+                            (unsigned long long)seqNum);
+                } else if (seqNum <= traceWrongPathBranchSeqNum) {
                     DPRINTF(Fetch,
                             "[tid:%i] In wrong-path, detected squash from "
                             "non-inst event (sn:%llu->tracesn:%llu) prior to mispredicted inst (sn:%llu), "
@@ -2334,6 +2349,10 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                 (unsigned long long)traceInstrConsumed);
         traceInstrConsumed++;
 
+        // 为后端提供 trace 侧的 trap/异常控制流信息，用于跳过 decode 阶段的
+        // 分支目标校验，由 trap/wrong-path 逻辑统一处理。
+        instruction->setTraceCtrlFlowChange(pendingTraceInstr.isCtrlFlowChange());
+
         // 为 EXE 阶段提供分支真值以按普通路径重定向
         if (pendingTraceInstr.isAnyBranch()) {
             const bool taken = pendingTraceInstr.getBranchTaken();
@@ -2405,70 +2424,6 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                 instruction->threadNumber, pc, *next_pc);
     }
 
-    // 若启用 BP 校验，则将 BPU 预测与 trace 真值对比，决定是否进入 wrong-path
-    if (traceMode && traceBPValidation && instruction &&
-        traceForThisInst.isValid() && traceForThisInst.isAnyBranch()) {
-        const Addr predictedPC = next_pc->instAddr();
-        const Addr ft_pc = traceForThisInst.getPC() + 4;
-        const bool predictedTaken = (predictedPC != ft_pc);
-        const bool ok = validateBPPrediction(traceForThisInst, predictedPC, predictedTaken);
-
-        if (!ok) {
-            if (isDecoupledFrontend() && traceEnableWrongPath) {
-                if (!traceWrongPathActive) {
-                    // decoupled/wrong-path：仅进入 wrong-path 模式，不在此处自发 squash/训练
-                    traceWrongPathActive = true;
-                    traceWrongPathBranchSeqNum = instruction->seqNum;
-                    traceWrongPathPredPC = predictedPC;
-                    Addr corr_target = traceForThisInst.getBranchTaken() && traceForThisInst.getHasBranchTarget()
-                                        ? traceForThisInst.getBranchTarget()
-                                        : ft_pc;
-                    traceWrongPathCorrectPC = corr_target;
-                    DPRINTF(Fetch,
-                            "[tid:%i] Enter wrong-path mode; skip local BP "
-                            "squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu, tracesn:%llu)\n",
-                            tid, (unsigned long long)predictedPC,
-                            (unsigned long long)corr_target,
-                            (unsigned long long)traceWrongPathBranchSeqNum,
-                            (unsigned long long)traceForThisInst.getSeqNum());
-                } else {
-                    DPRINTF(Fetch,
-                            "[tid:%i] Already in wrong-path mode; continue "
-                            "without changes (predPC=0x%llx)\n",
-                            tid, (unsigned long long)predictedPC);
-                }
-            } else {
-                // coupled：维持原 stall 模型与本地 BP 校正
-                traceStallRemaining = traceMispredictPenalty;
-                DPRINTF(Override, "[TRACE-FTB] Stall model on mispredict: %llu cycles remaining\n",
-                        (unsigned long long)traceStallRemaining);
-
-                // 更正 BPU 历史（ground truth）
-                std::unique_ptr<PCStateBase> corr_pc(pc.clone());
-                Addr corr_target = traceForThisInst.getBranchTaken() && traceForThisInst.getHasBranchTarget()
-                                    ? traceForThisInst.getBranchTarget()
-                                    : ft_pc;
-                corr_pc->as<RiscvISA::PCState>().set(corr_target);
-                branchPred->squash(instruction->seqNum, *corr_pc, traceForThisInst.getBranchTaken(), tid);
-
-                auto stall_pen = (unsigned long long) traceMispredictPenalty;
-                DPRINTF(Fetch,
-                        "[tid:%i] Modeled BP mispredict: predicted (pc=0x%llx) "
-                        "vs trace (pc=0x%llx); penalty=%llu cycles, mode=%s\n",
-                        tid, (unsigned long long)predictedPC,
-                        (unsigned long long)corr_target,
-                        stall_pen,
-                        isDecoupledFrontend() ? "wrong-path" : "stall");
-            }
-        }
-
-        // decoupled/wrong-path：不在检测处训练 BP，由后端自然流程处理
-        if (!(isDecoupledFrontend() && traceEnableWrongPath)) {
-            // 将真值反馈给预测器（BTB/FTB 等）
-            feedTraceBranchToBP(traceForThisInst, traceForThisInst.getPC());
-        }
-    }
-
     // 非分支或 cond-trap 控制流改变（例如异常/陷入）在 decoupled + wrong-path 模式下视为
     // "trace 驱动的 trap wrong-path"：从该指令之后沿 BPU 预测路径走的指令
     // 对 traceReader 而言都是 wrong-path，后续由 commit 触发 trap squash 统一纠正。
@@ -2511,6 +2466,99 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                         "[tid:%i] Already in trap-wrong-path mode; continue "
                         "without changes (predPC=0x%llx)\n",
                         tid, (unsigned long long)predicted_pc);
+            }
+        }
+    }
+
+    // 若启用 BP 校验，则将 BPU 预测与 trace 真值对比，决定是否进入 wrong-path。
+    // 注意：带异常/陷入（ctrlFlowChange）的指令由上方 trap wrong-path 逻辑统一处理，
+    // 这里仅处理“正常控制流”的分支/非分支指令，避免重复、语义混淆。
+    if (traceMode && traceBPValidation && instruction &&
+        traceForThisInst.isValid() &&
+        !traceForThisInst.isCtrlFlowChange()) {
+        const Addr predictedPC = next_pc->instAddr();
+        const Addr ft_pc = traceForThisInst.getPC() + 4;
+        const bool predictedTaken = (predictedPC != ft_pc);
+
+        if (traceForThisInst.isAnyBranch()) {
+            const bool ok = validateBPPrediction(traceForThisInst, predictedPC, predictedTaken);
+
+            if (!ok) {
+                if (isDecoupledFrontend() && traceEnableWrongPath) {
+                    if (!traceWrongPathActive) {
+                        // decoupled/wrong-path：仅进入 wrong-path 模式，不在此处自发 squash/训练
+                        traceWrongPathActive = true;
+                        traceWrongPathBranchSeqNum = instruction->seqNum;
+                        traceWrongPathPredPC = predictedPC;
+                        Addr corr_target = traceForThisInst.getBranchTaken() && traceForThisInst.getHasBranchTarget()
+                                            ? traceForThisInst.getBranchTarget()
+                                            : ft_pc;
+                        traceWrongPathCorrectPC = corr_target;
+                        DPRINTF(Fetch,
+                                "[tid:%i] Enter wrong-path mode; skip local BP "
+                                "squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu, tracesn:%llu)\n",
+                                tid, (unsigned long long)predictedPC,
+                                (unsigned long long)corr_target,
+                                (unsigned long long)traceWrongPathBranchSeqNum,
+                                (unsigned long long)traceForThisInst.getSeqNum());
+                    } else {
+                        DPRINTF(Fetch,
+                                "[tid:%i] Already in wrong-path mode; continue "
+                                "without changes (predPC=0x%llx)\n",
+                                tid, (unsigned long long)predictedPC);
+                    }
+                } else {
+                    // coupled：维持原 stall 模型与本地 BP 校正
+                    traceStallRemaining = traceMispredictPenalty;
+                    DPRINTF(Override, "[TRACE-FTB] Stall model on mispredict: %llu cycles remaining\n",
+                            (unsigned long long)traceStallRemaining);
+
+                    // 更正 BPU 历史（ground truth）
+                    std::unique_ptr<PCStateBase> corr_pc(pc.clone());
+                    Addr corr_target = traceForThisInst.getBranchTaken() && traceForThisInst.getHasBranchTarget()
+                                        ? traceForThisInst.getBranchTarget()
+                                        : ft_pc;
+                    corr_pc->as<RiscvISA::PCState>().set(corr_target);
+                    branchPred->squash(instruction->seqNum, *corr_pc, traceForThisInst.getBranchTaken(), tid);
+
+                    auto stall_pen = (unsigned long long) traceMispredictPenalty;
+                    DPRINTF(Fetch,
+                            "[tid:%i] Modeled BP mispredict: predicted (pc=0x%llx) "
+                            "vs trace (pc=0x%llx); penalty=%llu cycles, mode=%s\n",
+                            tid, (unsigned long long)predictedPC,
+                            (unsigned long long)corr_target,
+                            stall_pen,
+                            isDecoupledFrontend() ? "wrong-path" : "stall");
+                }
+            }
+
+            // decoupled/wrong-path：不在检测处训练 BP，由后端自然流程处理
+            if (!(isDecoupledFrontend() && traceEnableWrongPath)) {
+                // 将真值反馈给预测器（BTB/FTB 等）
+                feedTraceBranchToBP(traceForThisInst, traceForThisInst.getPC());
+            }
+        } else if (isDecoupledFrontend() && traceEnableWrongPath &&
+                   predictedBranch && predictedTaken) {
+            // BP 可能将非 branch 指令错误预测为 taken，
+            // 此时也应进入 wrong-path，由后端 decode squash 纠正。
+            if (!traceWrongPathActive) {
+                traceWrongPathActive = true;
+                traceWrongPathBranchSeqNum = instruction->seqNum;
+                traceWrongPathPredPC = predictedPC;
+                traceWrongPathCorrectPC = ft_pc; // 真值为顺序执行 PC
+                DPRINTF(Fetch,
+                        "[tid:%i] Enter non-branch-predicted wrong-path; "
+                        "skip local BP squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu, tracesn:%llu)\n",
+                        tid,
+                        (unsigned long long)predictedPC,
+                        (unsigned long long)ft_pc,
+                        (unsigned long long)traceWrongPathBranchSeqNum,
+                        (unsigned long long)traceForThisInst.getSeqNum());
+            } else {
+                DPRINTF(Fetch,
+                        "[tid:%i] Already in wrong-path mode; continue "
+                        "after non-branch taken prediction (predPC=0x%llx)\n",
+                        tid, (unsigned long long)predictedPC);
             }
         }
     }

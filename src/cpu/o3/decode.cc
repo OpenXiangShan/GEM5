@@ -801,7 +801,13 @@ Decode::decodeInsts(ThreadID tid)
         // Go ahead and compute any PC-relative branches.
         // This includes direct unconditional control and
         // direct conditional control that is predicted taken.
-        if (inst->isDirectCtrl() &&
+        //
+        // 在 trace 模式下，如果 trace 已标记该指令会触发 trap/异常等控制流改变
+        //（hasTraceCtrlFlowChange），则交由 trap/wrong-path 逻辑处理，不在 decode
+        // 再做一次基于静态分支目标的校验，避免把 cond->trap 误统计为普通分支
+        // mispredict，或在这里产生“错误”的 redirect。
+        if (!(cpu->isTraceMode() && inst->hasTraceCtrlFlowChange()) &&
+            inst->isDirectCtrl() &&
            (inst->isUncondCtrl() || inst->readPredTaken()))
         {
             ++stats.branchResolved;

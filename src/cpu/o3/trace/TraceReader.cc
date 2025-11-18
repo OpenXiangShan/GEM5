@@ -42,6 +42,10 @@ namespace o3
 void
 TraceReader::dumpInstrBuffer(const char* tag) const
 {
+    // Avoid expensive buffer dumps unless the TraceReader debug flag is enabled.
+    if (!debug::TraceReader)
+        return;
+
     std::queue<TraceInstruction> tmp = instrBuffer; // copy for non-destructive dump
     size_t sz = tmp.size();
     DPRINTF(TraceReader, "instrBuffer dump (%s): size=%lu\n", tag, (unsigned long)sz);

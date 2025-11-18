@@ -81,6 +81,7 @@
 #include "sim/cur_tick.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
+#include "sim/sim_exit.hh"
 
 namespace gem5
 {
@@ -103,6 +104,18 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       stuckCheckEvent([this](){
         static std::vector<DynInstPtr> debug_insts;
         if (cpu->curCycle() - this->lastCommitCycle > 40000) {
+            // In trace mode, it's possible to drain the entire pipeline once
+            // the trace reaches EOF while maxinsts is still larger than the
+            // total number of trace instructions. In that case we should
+            // terminate the simulation cleanly instead of treating it as
+            // a hard hang in the commit stage.
+            if (cpu->isTraceMode() && cpu->isTracePipelineDrained()) {
+                warn("[Commit] Trace mode pipeline drained without further commits; "
+                     "treating as normal exit instead of CommitStuck panic.\n");
+                exitSimLoop("Trace-driven CPU drained (EOF or maxinsts)");
+                return;
+            }
+
             if (auto inst = rob->readHeadInst(0)) {
                 warn("can't commit inst %s\n", inst->genDisassembly());
                 debug_insts.insert(debug_insts.begin(),rob->getInstList(0).begin(), rob->getInstList(0).end());
@@ -860,6 +873,17 @@ Commit::tick()
     }
 
     updateStatus();
+
+    // In trace-driven mode, if the trace reader has reached EOF and the
+    // entire out-of-order pipeline is drained, we can terminate the
+    // simulation immediately after the last instruction commits instead of
+    // waiting for the CommitStuckCheckEvent to fire. This avoids an
+    // artificial 40,000-cycle "idle" tail that would otherwise skew stats.
+    if (cpu->isTraceMode() && cpu->isTraceEOF() && cpu->isTracePipelineDrained()) {
+        warn("[Commit] Trace mode reached EOF and pipeline drained; exiting cleanly.\n");
+        exitSimLoop("Trace-driven CPU reached EOF and drained");
+        return;
+    }
 }
 
 void

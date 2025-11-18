@@ -626,12 +626,14 @@ class DynInst : public ExecContext, public RefCounted
         instFlags[PredTaken] = predicted_taken;
     }
 
-    // ---- Trace branch ground-truth (used by EXE for redirect in trace mode)
+    // ---- Trace branch/control-flow ground-truth (used by Decode/EXE in trace mode)
     bool traceBranchInfoValid = false;
     bool traceBranchTakenValue = false;
     bool traceBranchHasTargetValue = false;
     Addr traceBranchTargetValue = 0;
     Addr traceBranchNextPCValue = 0;
+    // trace 侧标记该指令是否触发非普通顺序的控制流改变（例如 trap/异常）。
+    bool traceCtrlFlowChangeValue = false;
 
     void clearTraceBranchInfo()
     {
@@ -640,6 +642,7 @@ class DynInst : public ExecContext, public RefCounted
         traceBranchHasTargetValue = false;
         traceBranchTargetValue = 0;
         traceBranchNextPCValue = 0;
+        traceCtrlFlowChangeValue = false;
     }
 
     void setTraceBranchInfo(bool taken, bool hasTarget, Addr branchTarget,
@@ -654,11 +657,17 @@ class DynInst : public ExecContext, public RefCounted
             fallthrough;
     }
 
+    void setTraceCtrlFlowChange(bool hasCtrlFlowChange)
+    {
+        traceCtrlFlowChangeValue = hasCtrlFlowChange;
+    }
+
     bool hasTraceBranchInfo() const { return traceBranchInfoValid; }
     bool traceBranchTaken() const { return traceBranchInfoValid && traceBranchTakenValue; }
     bool traceBranchHasTarget() const { return traceBranchInfoValid && traceBranchHasTargetValue; }
     Addr traceBranchTarget() const { return traceBranchHasTargetValue ? traceBranchTargetValue : 0; }
     Addr traceBranchNextPC() const { return traceBranchInfoValid ? traceBranchNextPCValue : 0; }
+    bool hasTraceCtrlFlowChange() const { return traceCtrlFlowChangeValue; }
 
     /** Returns whether the instruction mispredicted. */
     bool
