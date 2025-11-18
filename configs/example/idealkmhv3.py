@@ -87,6 +87,7 @@ def setKmhV3IdealParams(args, system):
             else:
                 cpu.branchPred.predictWidth = 64              # max width of a fetch block
                 cpu.branchPred.mbtb.numEntries = 8192
+                cpu.branchPred.mbtb.victimCacheSize = 0
                 # TODO: BTB TAGE do not bave base table, do not support SC
                 cpu.branchPred.tage.tableSizes = [2048] * 8  # 2 way, 2048 sets
                 cpu.branchPred.tage.numWays = 2
