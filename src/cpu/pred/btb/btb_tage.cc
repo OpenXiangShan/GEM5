@@ -495,7 +495,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         }
     }
 
-    // check if need to allocate new entry
+    // Check if misprediction occurred
     bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
                                stream.squashPC == entry.pc;
     if (getDelay() == 2){
@@ -509,12 +509,20 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         }
     }
 
-    // check if we used alt prediction and main was correct(main is weak so used alt, no need to allocate new entry)
-    bool use_alt_on_main_found_correct = used_alt && main_info.found &&
-                                        main_info.taken() == actual_taken;
+    // No allocation if no misprediction
+    if (!this_fb_mispred) {
+        return false;
+    }
 
-    // return true if need to allocate new entry = mispred and main was incorrect
-    return this_fb_mispred && !use_alt_on_main_found_correct;
+    // Special case: provider is weak but direction is correct
+    // In this case, provider just needs more training, not a longer history table
+    // This avoids wasteful allocation and prevents ping-pong effects
+    if (used_alt && main_info.found && main_info.taken() == actual_taken) {
+        return false;
+    }
+
+    // All other cases: allocate longer history table
+    return true;
 }
 
 /**
