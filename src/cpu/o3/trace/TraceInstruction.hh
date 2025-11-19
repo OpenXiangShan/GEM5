@@ -113,6 +113,9 @@ class TraceInstruction
     /** Additional metadata */
     bool valid;
 
+    /** Whether this is the last instruction in the trace stream */
+    bool lastInTrace;
+
   public:
     /** Default constructor */
     TraceInstruction() :
@@ -121,7 +124,7 @@ class TraceInstruction
         ctrlFlowChange(false), hasCtrlFlowTarget(false), ctrlFlowTarget(0),
         isLoad(false), isStore(false),
         seqNum(0), piece(0), hasImmediateOperand(false), immediateValue(0),
-        valid(false) {}
+        valid(false), lastInTrace(false) {}
 
     /** Constructor with basic fields */
     TraceInstruction(Addr _pc, InstType _type, uint64_t _seqNum = 0) :
@@ -131,7 +134,7 @@ class TraceInstruction
         isLoad(_type == InstType::LOAD),
         isStore(_type == InstType::STORE),
         seqNum(_seqNum), piece(0), hasImmediateOperand(false), immediateValue(0),
-        valid(true)
+        valid(true), lastInTrace(false)
     {
         isBranch = (_type == InstType::COND_BRANCH ||
                    _type == InstType::UNCOND_DIRECT_BRANCH ||
@@ -164,6 +167,8 @@ class TraceInstruction
     // Additional getters for O3CPU
     bool getHasImmediateOperand() const { return hasImmediateOperand; }
     uint64_t getImmediateValue() const { return immediateValue; }
+
+    bool isLastInTrace() const { return lastInTrace; }
 
     // Non-branch control-flow change getters
     bool isCtrlFlowChange() const { return ctrlFlowChange; }
@@ -220,6 +225,8 @@ class TraceInstruction
     void setPiece(uint8_t _piece) { piece = _piece; }
     void setValid(bool _valid) { valid = _valid; }
 
+    void setLastInTrace(bool v) { lastInTrace = v; }
+
     // Additional setters for O3CPU
     void setImmediateOperand(uint64_t value) {
         immediateValue = value;
@@ -251,6 +258,7 @@ class TraceInstruction
         hasImmediateOperand = false;
         immediateValue = 0;
         valid = false;
+        lastInTrace = false;
     }
 
     /** Check if this is a conditional branch */

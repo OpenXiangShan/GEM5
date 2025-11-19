@@ -157,6 +157,9 @@ class DynInst : public ExecContext, public RefCounted
     /** InstRecord that tracks this instructions. */
     Trace::InstRecord *traceData = nullptr;
 
+    /** Whether this dynamic instruction is the last one in the trace stream. */
+    bool lastTraceInstFlag = false;
+
   protected:
     enum Status
     {
@@ -668,6 +671,11 @@ class DynInst : public ExecContext, public RefCounted
     Addr traceBranchTarget() const { return traceBranchHasTargetValue ? traceBranchTargetValue : 0; }
     Addr traceBranchNextPC() const { return traceBranchInfoValid ? traceBranchNextPCValue : 0; }
     bool hasTraceCtrlFlowChange() const { return traceCtrlFlowChangeValue; }
+
+    // 标记并查询该动态指令是否对应 trace 流中的最后一条，用于
+    // 在 commit 阶段识别“最后一条 trace 指令已提交”，实现自然退出。
+    void setLastTraceInst(bool v) { lastTraceInstFlag = v; }
+    bool isLastTraceInst() const { return lastTraceInstFlag; }
 
     /** Returns whether the instruction mispredicted. */
     bool

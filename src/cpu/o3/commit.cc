@@ -1299,6 +1299,16 @@ Commit::commitInsts()
                     }
                     dbbtb->notifyInstCommit(head_inst);
                 }
+                // 如果这是 trace 流中的最后一条动态指令，则在其提交后
+                // 立即正常退出模拟，避免依赖 CommitStuck 检测或 drain
+                // 逻辑才能终止 trace 驱动的仿真。
+                if (cpu->isTraceMode() && head_inst->isLastTraceInst()) {
+                    warn("[Commit] Committed LAST trace-driven instruction [sn:%llu]; exiting cleanly.\n",
+                         head_inst->seqNum);
+                    exitSimLoop("Trace-driven CPU committed last traced instruction");
+                    return;
+                }
+
                 if (head_inst->isUpdateVsstatusSd()) {
                     auto v = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);
                     RiscvISA::HSTATUS hstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HSTATUS, tid);

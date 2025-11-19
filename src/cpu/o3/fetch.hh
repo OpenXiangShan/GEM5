@@ -630,12 +630,6 @@ class Fetch
     bool initializeTraceReader();
 
     /**
-     * Supply FTQ with fetch targets derived from trace instructions
-     * This ensures the decoupled frontend has targets to fetch in trace mode
-     */
-    void supplyFTQWithTraceTargets();
-
-    /**
      * Create appropriate MachInst from trace instruction information
      * @param traceInstr Trace instruction containing type and metadata
      * @return RISC-V machine instruction encoding

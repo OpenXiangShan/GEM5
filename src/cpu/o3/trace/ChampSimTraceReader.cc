@@ -305,6 +305,10 @@ ChampSimTraceReader::fillBuffer(size_t max_instructions)
 
     // If we've reached EOF, flush the final pending instruction (no target derivable)
     if (eofReached && hasPendingInstr && pushed < max_instructions) {
+        // Mark this instruction as the last one in the trace stream so
+        // downstream components (e.g., O3 commit stage) can terminate
+        // cleanly once it commits.
+        pendingInstr.setLastInTrace(true);
         addToBuffer(pendingInstr);
         pushed++;
         hasPendingInstr = false;

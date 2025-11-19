@@ -1719,29 +1719,57 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
 void
 Fetch::updateBranchPredictors()
 {
-    // In trace mode, we need to populate FTQ with targets from trace
+    // Trace 模式下要求 traceReader 已初始化；是否 EOF 由更高层
+    // 的 trace 流程处理，这里不做判定。
     if (traceMode) {
-        supplyFTQWithTraceTargets();
-        return;
+        assert(traceReader);
     }
 
-    if (isStreamPred()) {
-        assert(dbsp);
-        dbsp->tick();
-        usedUpFetchTargets = !dbsp->trySupplyFetchWithTarget(pc[0]->instAddr());
-    } else if (isFTBPred()) {
-        assert(dbpftb);
-        // TODO: remove ideal_tick()
-        if (dbpftb->enableTwoTaken){
-            dbpftb->ideal_tick();
-        } else {
-            dbpftb->tick();
+    // 对 decoupled 前端：优先使用 fetchBuffer 中的起始 PC；
+    // 对非 decoupled 前端：使用架构 PC。
+    Addr bp_pc = pc[0]->instAddr();
+    if (isDecoupledFrontend() && fetchBuffer[0].valid) {
+        bp_pc = fetchBuffer[0].startPC;
+    }
+    DPRINTF(Fetch, "Updating branch predictors with PC 0x%lx\n", bp_pc);
+    DPRINTF(Fetch, "pc[0]->instAddr %#lx, fetchBuffer[0].startPC %#lx\n",
+            pc[0]->instAddr(), fetchBuffer[0].startPC);
+
+    bool supplied = false;
+    if (isDecoupledFrontend()) {
+        if (isStreamPred()) {
+            assert(dbsp);
+            dbsp->tick();
+            supplied = dbsp->trySupplyFetchWithTarget(bp_pc);
+        } else if (isFTBPred()) {
+            assert(dbpftb);
+            // TODO: remove ideal_tick()
+            if (dbpftb->enableTwoTaken) {
+                dbpftb->ideal_tick();
+            } else {
+                dbpftb->tick();
+            }
+            supplied =
+                dbpftb->trySupplyFetchWithTarget(bp_pc, currentFetchTargetInLoop);
+        } else if (isBTBPred()) {
+            assert(dbpbtb);
+            dbpbtb->tick();
+            supplied =
+                dbpbtb->trySupplyFetchWithTarget(bp_pc, currentFetchTargetInLoop);
         }
-        usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
-    } else if (isBTBPred()) {
-        assert(dbpbtb);
-        dbpbtb->tick();
-        usedUpFetchTargets = !dbpbtb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
+        usedUpFetchTargets = !supplied;
+        if (traceMode) {
+            if (supplied) {
+                DPRINTF(Fetch,
+                        "Trace mode: Supplied FTQ with PC 0x%lx, "
+                        "usedUpFetchTargets=false\n",
+                        bp_pc);
+            } else {
+                DPRINTF(Fetch,
+                        "Trace mode: Failed to supply FTQ, "
+                        "usedUpFetchTargets=true\n");
+            }
+        }
     }
 }
 
@@ -2367,6 +2395,16 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                     "[tid:%i] trace tgt=0x%llx, ft=0x%llx\n",
                     tid, (unsigned long long)target,
                     (unsigned long long)fallthrough);
+        }
+
+        // 如果该 trace 指令被标记为整个 trace 流中的最后一条，则将对应的
+        // DynInst 也打上“最后一条 trace 指令”的标记，便于 Commit 阶段在其
+        // 提交时执行自然退出逻辑。
+        if (pendingTraceInstr.isLastInTrace()) {
+            instruction->setLastTraceInst(true);
+            DPRINTF(Fetch,
+                    "[tid:%i] Mark [sn:%lli] as LAST trace-driven instruction\n",
+                    tid, instruction->seqNum);
         }
 
         // 先不要清空 pendingTraceValid，后面需要用 traceForThisInst 做 BP 校验
@@ -3795,70 +3833,6 @@ Fetch::feedTraceToDecoupledFTB(const o3::TraceInstruction& traceInstr, Addr curr
             currentPC, currentFsqId);
 }
 
-void
-Fetch::supplyFTQWithTraceTargets()
-{
-    if (!traceMode || !traceReader || traceReader->isEOF()) {
-        usedUpFetchTargets = true;
-        // Invalidate fetch buffer to maintain state consistency
-        for (ThreadID tid = 0; tid < numThreads; tid++) {
-            fetchBuffer[tid].valid = false;
-        }
-        return;
-    }
-
-    // Stage 2: Implement real supply for FTB/BTB using getSupplyingFetchTarget() and tick()
-    // This ensures FTQ/FSQ always has entries available for trace execution
-    
-    if (!isDecoupledFrontend() || !branchPred) {
-        // Not using decoupled frontend, mark as used up
-        usedUpFetchTargets = true;
-        // Invalidate fetch buffer to maintain state consistency
-        for (ThreadID tid = 0; tid < numThreads; tid++) {
-            fetchBuffer[tid].valid = false;
-        }
-        return;
-    }
-
-    // Use current fetchBuffer PC if valid, otherwise use PC from CPU state
-    Addr next_pc = fetchBuffer[0].valid ? fetchBuffer[0].startPC : pc[0]->instAddr();
-    
-    // Try to supply the fetch target using appropriate decoupled predictor
-    bool supplied = false;
-    bool inLoop = false;
-    if (isFTBPred() && dbpftb) {
-        if (dbpftb->enableTwoTaken){
-            dbpftb->ideal_tick();
-        } else {
-            dbpftb->tick();
-        }
-        supplied = dbpftb->trySupplyFetchWithTarget(next_pc, inLoop);
-    } else if (isBTBPred() && dbpbtb) {
-        dbpbtb->tick();
-        supplied = dbpbtb->trySupplyFetchWithTarget(next_pc, inLoop);
-    } else if (isStreamPred() && dbsp) {
-        dbsp->tick();
-        supplied = dbsp->trySupplyFetchWithTarget(next_pc);
-    }
-    
-    if (supplied) {
-        // Successfully supplied a target, clear the flag
-        usedUpFetchTargets = false;
-        
-        DPRINTF(Fetch, "Trace mode: Supplied FTQ with PC 0x%lx, usedUpFetchTargets=false\n",
-                next_pc);
-    } else {
-        // Failed to supply, mark as used up and invalidate fetch buffer for consistency
-        usedUpFetchTargets = true;
-        for (ThreadID tid = 0; tid < numThreads; tid++) {
-            fetchBuffer[tid].valid = false;
-        }
-        DPRINTF(Fetch, "Trace mode: Failed to supply FTQ, usedUpFetchTargets=true, fetchBuffer invalidated\n");
-    }
-}
-
-} // namespace o3
-} // namespace gem5
 gem5::Addr
 gem5::o3::Fetch::getTracePCByIndex(uint64_t index)
 {
@@ -3887,3 +3861,6 @@ gem5::o3::Fetch::getTracePCByIndex(uint64_t index)
     traceReader->restoreCheckpoint(ckpt);
     return pc_val;
 }
+
+} // namespace o3
+} // namespace gem5
