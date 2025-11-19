@@ -19,7 +19,7 @@
 
 ## 1. 批量跑 ChampSim trace
 
-### 1.1 单条 trace 封装：`util/xs_scripts/run_trace_champsim.sh`
+### 1.1 单条 trace 封装：`util/xs_scripts/trace/run_trace_champsim.sh`
 
 **作用**
 
@@ -45,7 +45,7 @@
 ```bash
 XS_WARMUP_INSTS_NO_SWITCH=50000000 \
 XS_MAX_INSTS=50000000 \
-bash util/xs_scripts/run_trace_champsim.sh \
+bash util/xs_scripts/trace/run_trace_champsim.sh \
   /nfs/home/share/glr/champsim_traces/ipc1_public/ipc_client_002.champsimtrace.xz
 ```
 
@@ -64,13 +64,13 @@ $gem5 --outdir=$PWD --stats-file=$PWD/stats.txt \
 
 ---
 
-### 1.2 并行控制：`util/xs_scripts/parallel_sim.sh`
+### 1.2 并行控制：`util/xs_scripts/trace/parallel_trace_sim.sh`
 
 **作用**
 
 - 从 workload 列表读取 trace 路径 + warmup/sample 配置。
-- 调用 arch_script（通常是 `run_trace_champsim.sh`）并行跑一批 workload。
-- 支持 `.gz/.xz` 自动识别，支持输出根目录重定向。
+- 调用 arch_script（通常是 `util/xs_scripts/trace/run_trace_champsim.sh`）并行跑一批 workload。
+- 支持 `.gz/.zstd/.xz` 自动识别，支持输出根目录重定向（`XSGEM5_WORK_ROOT`）。
 
 **workload 列表格式**
 
@@ -87,27 +87,29 @@ workload_name  checkpoint_path  skip  fw  dw  sample
 - `dw`：detailed_warmup insts。
 - `sample`：正式统计阶段指令数。
 
-**warmup/sample 传递逻辑**
+**warmup/sample 传递逻辑（在 `parallel_trace_sim.sh` 中完成）**
 
 ```bash
-# name path skip fw dw sample
-all_args=("$@")
-skip=${all_args[2]:-0}
-fw=${all_args[3]:-0}
-dw=${all_args[4]:-0}
-sample=${all_args[5]:-0}
+# workload 行字段：name path skip fw dw sample
+IFS=' ' read -r task task_path skip fw dw sample <<< "${line}"
+
+skip=${skip:-0}
+fw=${fw:-0}
+dw=${dw:-0}
+sample=${sample:-0}
 
 warmup=$((fw + dw))
+total=$((warmup + sample))
 
-XS_MAX_INSTS="$sample" XS_WARMUP_INSTS_NO_SWITCH="$warmup" \
-    run "$checkpoint" "$work_dir" >"$work_dir/$log_file" 2>&1
+XS_MAX_INSTS="${total}" XS_WARMUP_INSTS_NO_SWITCH="${warmup}" \\
+    run "${checkpoint}" "${work_dir}" >"${work_dir}/${log_file}" 2>&1
 ```
 
-**输出根目录指定**
+**输出根目录指定（`XSGEM5_WORK_ROOT`）**
 
-- 默认：结果落在当前目录下的 `$tag` 中：
-  - `full_work_dir=$(pwd)/$tag`。
-- 可以通过 `XSGEM5_WORK_ROOT` 覆盖：
+- 默认：结果落在调用脚本目录下的 `$tag` 中：
+  - `full_work_dir=$PWD/$tag`。
+- 可以通过 `XSGEM5_WORK_ROOT` 覆盖 trace 结果根目录：
 
 ```bash
 export XSGEM5_WORK_ROOT=/nfs/home/goulingrui/expri_results/gem5_trace
@@ -150,9 +152,9 @@ bash util/xs_scripts/gen_champsim_workloads.sh \
 export xsgem5_para_jobs=32
 export XSGEM5_WORK_ROOT=/nfs/home/goulingrui/expri_results/gem5_trace
 
-# 3) 并行跑
-bash util/xs_scripts/parallel_sim.sh \
-  util/xs_scripts/run_trace_champsim.sh \
+# 3) 并行跑（trace 专用 parallel_trace_sim.sh）
+bash util/xs_scripts/trace/parallel_trace_sim.sh \
+  util/xs_scripts/trace/run_trace_champsim.sh \
   ./ipc1_public_traces.lst \
   /nfs/home/share/glr/champsim_traces \
   trace_ipc1_50M_50M

@@ -13,7 +13,8 @@
 set -euo pipefail
 
 script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
-source "${script_dir}/common.sh"
+# common.sh 仍位于 util/xs_scripts/ 下，这里从 trace 子目录回到上一级再引用。
+source "${script_dir}/../common.sh"
 
 MAX_INSTS=${XS_MAX_INSTS:-1000000}
 TRACE_FORMAT="champsim"
