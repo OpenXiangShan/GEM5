@@ -34,7 +34,7 @@ namespace test {
 
 #ifdef UNIT_TEST
 // Test constructor for unit testing mode
-BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
+BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize, unsigned numBanks)
     : TimedBaseBTBPredictor(),
       numPredictors(numPredictors),
       numWays(numWays),
@@ -42,7 +42,13 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
-      updateOnRead(false)
+      updateOnRead(false),
+      numBanks(numBanks),
+      bankIdWidth(ceilLog2(numBanks)),
+      bankIdShift(floorLog2(blockSize)),
+      indexShift(floorLog2(blockSize) + ceilLog2(numBanks)),
+      lastPredBankId(0),
+      predBankValid(false)
 {
     setNumDelay(1);
 
@@ -75,9 +81,20 @@ useAltOnNaWidth(p.useAltOnNaWidth),
 numTablesToAlloc(p.numTablesToAlloc),
 enableSC(p.enableSC),
 updateOnRead(p.updateOnRead),
+numBanks(p.numBanks),
+bankIdWidth(ceilLog2(p.numBanks)),
+bankIdShift(floorLog2(blockSize)),
+indexShift(floorLog2(blockSize) + ceilLog2(p.numBanks)),
+lastPredBankId(0),
+predBankValid(false),
 tageStats(this, p.numPredictors)
 {
     this->needMoreHistories = p.needMoreHistories;
+
+    // Warn if updateOnRead is disabled (bank simulation works better with it enabled)
+    if (!p.updateOnRead) {
+        warn("BTBTAGE: Bank simulation works better with updateOnRead=true");
+    }
 #endif
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
@@ -326,7 +343,13 @@ void
 BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
     // use 32byte(blockSize) aligned PC for prediction(get index and tag)
     Addr alignedPC = stream_start & ~(blockSize - 1);
-    DPRINTF(TAGE, "putPCHistory startAddr: %#lx, alignedPC: %#lx\n", stream_start, alignedPC);
+
+    // Record prediction bank for next tick's conflict detection
+    lastPredBankId = getBankId(alignedPC);
+    predBankValid = true;
+
+    DPRINTF(TAGE, "putPCHistory startAddr: %#lx, alignedPC: %#lx, bank: %u\n",
+            stream_start, alignedPC, lastPredBankId);
 
     // IMPORTANT: when this function is called,
     // btb entries should already be in stagePreds
@@ -619,8 +642,39 @@ void
 BTBTAGE::update(const FetchStream &stream) {
     Addr startAddr = stream.getRealStartPC();
     Addr alignedPC = startAddr & ~(blockSize - 1);
-    DPRINTF(TAGE, "update startAddr: %#lx, alignedPC: %#lx\n", startAddr, alignedPC);
+    unsigned updateBank = getBankId(alignedPC);
 
+    DPRINTF(TAGE, "update startAddr: %#lx, alignedPC: %#lx, bank: %u\n",
+            startAddr, alignedPC, updateBank);
+
+    // ========== Bank Conflict Detection ==========
+    // Check if this update conflicts with the last prediction
+    // Conflict happens when:
+    //   1. There was a valid prediction in this or previous tick (predBankValid)
+    //   2. Update and prediction target the same bank (updateBank == lastPredBankId)
+    //
+    // Note: This assumes one update() call per tick (guaranteed by fetch stage)
+    if (predBankValid && updateBank == lastPredBankId) {
+        tageStats.updateBankConflict++;
+        tageStats.updateDroppedDueToConflict++;
+
+        DPRINTF(TAGE, "Bank conflict detected: update bank %u conflicts with "
+                      "prediction bank %u, dropping this update\n",
+                      updateBank, lastPredBankId);
+
+        // Clear prediction state after consuming it
+        predBankValid = false;
+        return;  // Drop this update entirely
+    }
+
+    // If no conflict, clear prediction state (prediction has been consumed)
+    if (predBankValid) {
+        DPRINTF(TAGE, "No bank conflict: update bank %u != prediction bank %u\n",
+                      updateBank, lastPredBankId);
+    }
+    predBankValid = false;
+
+    // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
     auto entries_to_update = prepareUpdateEntries(stream);
     
@@ -758,8 +812,13 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
     // Create mask for tableIndexBits[t] to limit result size
     Addr mask = (1ULL << tableIndexBits[t]) - 1;
 
-    // Extract lower bits of PC and XOR with folded history directly
-    Addr pcBits = (pc >> floorLog2(blockSize)) & mask; // pc is already aligned
+    // Index calculation skips bank bits to avoid bank aliasing
+    // For 32B blocks (5 bits) with 4 banks (2 bits):
+    //   - pc[4:0]: block offset (ignored)
+    //   - pc[6:5]: bank ID (skipped)
+    //   - pc[N:7]: used for index calculation
+    // Each bank effectively manages 1/4 of the PC space with the same table size
+    Addr pcBits = (pc >> indexShift) & mask;  // Skip blockSize + bank bits
     Addr foldedBits = foldedHist & mask;
 
     return pcBits ^ foldedBits;
@@ -813,6 +872,16 @@ BTBTAGE::getBranchIndexInBlock(Addr pc, Addr alignedPC) {
     Addr offset = (pc - alignedPC) >> 1;  // Position index 0-31
     assert(offset < maxBranchPositions);
     return offset;
+}
+
+unsigned
+BTBTAGE::getBankId(Addr alignedPC) const
+{
+    // Extract bank ID bits from aligned PC
+    // bankIdShift is the starting bit position (5 for 32B blocks)
+    // bankIdWidth is the number of bits (2 for 4 banks)
+    // Example: pc[6:5] for 32B blocks with 4 banks
+    return (alignedPC >> bankIdShift) & ((1 << bankIdWidth) - 1);
 }
 
 /**
@@ -936,6 +1005,8 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors):
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
+    ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
+    ADD_STAT(updateDroppedDueToConflict, statistics::units::Count::get(), "number of updates dropped due to bank conflict"),
     ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
     ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
     ADD_STAT(updateTableMispreds, statistics::units::Count::get(), "mispreds of each table when update")
