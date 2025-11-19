@@ -517,9 +517,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     // Special case: provider is weak but direction is correct
     // In this case, provider just needs more training, not a longer history table
     // This avoids wasteful allocation and prevents ping-pong effects
-    if (used_alt && main_info.found && main_info.taken() == actual_taken) {
-        return false;
-    }
+    // if (used_alt && main_info.found && main_info.taken() == actual_taken) {
+    //     return false;
+    // }
 
     // All other cases: allocate longer history table
     return true;
