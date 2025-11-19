@@ -1055,6 +1055,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     maxBranchPositions = Param.Unsigned(32, "Maximum branch positions per 64-byte block")
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
+    numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
     numDelay = 2
 
 class MicroTAGE(BTBTAGE):

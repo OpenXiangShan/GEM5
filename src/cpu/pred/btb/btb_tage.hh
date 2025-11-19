@@ -46,7 +46,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
   public:
 #ifdef UNIT_TEST
     // Test constructor
-    BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2, unsigned tableSize = 1024);
+    BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2, unsigned tableSize = 1024, unsigned numBanks = 4);
 #else
     // Production constructor
     typedef BTBTAGEParams Params;
@@ -193,6 +193,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Get branch index within a prediction block
     unsigned getBranchIndexInBlock(Addr pc, Addr alignedPC);
 
+    // Get bank ID from aligned PC
+    // Extract pc[bankIdShift+bankIdWidth-1 : bankIdShift]
+    // For 32B blocks with 4 banks: pc[6:5]
+    unsigned getBankId(Addr alignedPC) const;
+
     // Update branch history
     void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
 
@@ -293,6 +298,18 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Whether to update on read
     bool updateOnRead;
 
+    // ========== Bank Configuration ==========
+    // Bank mechanism to simulate hardware bank conflicts
+    // When prediction and update access the same bank in one cycle, update is dropped
+    const unsigned numBanks;         // Number of banks (e.g., 4)
+    const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
+    const unsigned bankIdShift;      // floorLog2(blockSize), e.g., 5 for 32B blocks
+    const unsigned indexShift;       // bankIdShift + bankIdWidth, e.g., 7 for 32B + 4 banks
+
+    // Track last prediction bank for conflict detection
+    unsigned lastPredBankId;         // Bank ID of last prediction
+    bool predBankValid;              // Whether lastPredBankId is valid
+
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
 #else
@@ -325,6 +342,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateAllocSuccess;
         Scalar updateMispred;
         Scalar updateResetU;
+
+        // Bank conflict statistics
+        Scalar updateBankConflict;           // Number of bank conflicts detected
+        Scalar updateDroppedDueToConflict;   // Number of updates dropped due to bank conflict
 
 #ifndef UNIT_TEST
         statistics::Distribution predTableHits;
