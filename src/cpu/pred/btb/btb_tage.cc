@@ -193,13 +193,17 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     TageTableInfo main_info, alt_info;
 
     // Search from highest to lowest table for matches
+    // Calculate branch position within the block (like RTL's cfiPosition)
+    unsigned position = getBranchIndexInBlock(btb_entry.pc, alignedPC);
+
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
+        // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
         Addr index = predMeta ? getTageIndex(alignedPC, i, predMeta->indexFoldedHist[i].get())
                           : getTageIndex(alignedPC, i);
         Addr tag = predMeta ? getTageTag(alignedPC, i,
-                            predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get())
-                        : getTageTag(alignedPC, i);
+                            predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(), position)
+                        : getTageTag(alignedPC, i, position);
 
         bool match = false; // for each table, only one way can be matched
         TageEntry matching_entry;
@@ -208,16 +212,16 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         // Search all ways for a matching entry
         for (unsigned way = 0; way < numWays; way++) {
             auto &entry = tageTable[i][index][way];
-            // entry valid, tag match, branch pc/pos match!
-            if (entry.valid && tag == entry.tag && btb_entry.pc == entry.pc) {
+            // entry valid, tag match (position already encoded in tag, no need to check pc)
+            if (entry.valid && tag == entry.tag) {
                 matching_entry = entry;
                 matching_way = way;
                 match = true;
 
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
-                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc);
+                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
+                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
                 break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
             }
         }
@@ -234,8 +238,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 break;
             }
         } else {
-            DPRINTF(TAGE, "miss table %d[%lu] for tag %lu, btb_pc %#lx\n",
-                i, index, tag, btb_entry.pc);
+            DPRINTF(TAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
+                i, index, tag, position, btb_entry.pc);
         }
     }
 
@@ -537,9 +541,13 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
     // - Prefer invalid ways; else choose any way with useful==0 and weak counter.
     // - If none, apply a one-step age penalty to a strong, not-useful way (no allocation).
 
+    // Calculate branch position within the block (like RTL's cfiPosition)
+    unsigned position = getBranchIndexInBlock(entry.pc, alignedPC);
+
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(alignedPC, ti, meta->indexFoldedHist[ti].get());
-        Addr newTag = getTageTag(alignedPC, ti, meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get());
+        Addr newTag = getTageTag(alignedPC, ti,
+            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
 
         auto &set = tageTable[ti][newIndex];
 
@@ -549,8 +557,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
             if (!cand.valid || (!cand.useful && weakish)) {
                 short newCounter = actual_taken ? 0 : -1;
-                DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu, counter %d\n",
-                        ti, newIndex, way, newTag, newCounter);
+                DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
+                        ti, newIndex, way, newTag, position, newCounter, entry.pc);
                 cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
                 tageStats.updateAllocSuccess++;
                 allocated_table = ti;
@@ -713,7 +721,7 @@ BTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 
 // Calculate TAGE tag with folded history - optimized version using bitwise operations
 Addr
-BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist)
+BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist, Addr position)
 {
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
@@ -727,14 +735,14 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist)
     // Extract alt tag bits and shift left by 1
     Addr altTagBits = (altFoldedHist << 1) & mask;
 
-    // XOR all components together
-    return pcBits ^ foldedBits ^ altTagBits;
+    // XOR all components together, including position (like RTL)
+    return pcBits ^ foldedBits ^ altTagBits ^ position;
 }
 
 Addr
-BTBTAGE::getTageTag(Addr pc, int t)
+BTBTAGE::getTageTag(Addr pc, int t, Addr position)
 {
-    return getTageTag(pc, t, tagFoldedHist[t].get(), altTagFoldedHist[t].get());
+    return getTageTag(pc, t, tagFoldedHist[t].get(), altTagFoldedHist[t].get(), position);
 }
 
 Addr

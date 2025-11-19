@@ -175,10 +175,12 @@ class BTBTAGE : public TimedBaseBTBPredictor
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
 
     // Calculate TAGE tag for a given PC and table
-    Addr getTageTag(Addr pc, int table);
+    // position: branch position within the block (xored into tag like RTL)
+    Addr getTageTag(Addr pc, int table, Addr position = 0);
 
     // Calculate TAGE tag with folded history (uint64_t version for performance)
-    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist);
+    // position: branch position within the block (xored into tag like RTL)
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) {
