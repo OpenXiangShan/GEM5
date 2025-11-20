@@ -75,6 +75,10 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void update(const FetchStream &entry) {}
     virtual unsigned getDelay() {return numDelay;}
     virtual bool getResolvedUpdate() {return resolvedUpdate;}
+
+    // Window blocking mechanism: return true if this predictor needs to block
+    // the next prediction cycle (e.g., for priority update after bank conflicts)
+    virtual bool needBlockPrediction() { return false; }
 #ifndef UNIT_TEST
     // do some statistics on a per-branch and per-predictor basis
     virtual void commitBranch(const FetchStream &entry, const DynInstPtr &inst) {}
