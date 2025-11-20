@@ -1059,6 +1059,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(True, "Enable bank conflict simulation")
+    windowBlockThreshold = Param.Unsigned(8, "Threshold for window blocking on consecutive bank conflicts")
     numDelay = 2
 
 class MicroTAGE(BTBTAGE):

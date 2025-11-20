@@ -139,8 +139,23 @@ DecoupledBPUWithBTB::tick()
 
     // 1. Request new prediction if FSQ not full and we are idle
     if (bpuState == BpuState::IDLE && !streamQueueFull()) {
-        requestNewPrediction();
-        bpuState = BpuState::PREDICTOR_DONE;
+        // Check if any predictor component requests to block prediction
+        // (e.g., TAGE window blocking for priority update after bank conflicts)
+        bool blocked = false;
+        for (int i = 0; i < numComponents; i++) {
+            if (components[i]->needBlockPrediction()) {
+                blocked = true;
+                DPRINTF(Override, "Prediction blocked by component %d for window update\n", i);
+                dbpBtbStats.predictionBlockedForUpdate++;
+                break;
+            }
+        }
+
+        if (!blocked) {
+            requestNewPrediction();
+            bpuState = BpuState::PREDICTOR_DONE;
+        }
+        // If blocked: stay in IDLE, s0PC unchanged, no FSQ write (like RTL FTQ ready=false)
     }
 
     // 2. Handle pending prediction if available

@@ -50,7 +50,8 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize, u
       indexShift(bankBaseShift + ceilLog2(numBanks)),
       enableBankConflict(false),
       lastPredBankId(0),
-      predBankValid(false)
+      predBankValid(false),
+      windowBlockThreshold(8)
 {
     setNumDelay(1);
 
@@ -91,6 +92,7 @@ indexShift(bankBaseShift + ceilLog2(p.numBanks)),
 enableBankConflict(p.enableBankConflict),
 lastPredBankId(0),
 predBankValid(false),
+windowBlockThreshold(p.windowBlockThreshold),
 tageStats(this, p.numPredictors, p.numBanks)
 {
     this->needMoreHistories = p.needMoreHistories;
@@ -137,6 +139,8 @@ tageStats(this, p.numPredictors, p.numBanks)
 
     // initialize use_alt_on_na table
     useAlt.resize(useAltOnNaSize, 0);
+
+    updateBlockedCount.resize(numBanks, 0);
 
 #ifndef UNIT_TEST
     hasDB = true;
@@ -674,20 +678,33 @@ BTBTAGE::update(const FetchStream &stream) {
             tageStats.updateBankConflictPerBank[updateBank]++;
 #endif
 
+            // Window blocking mechanism: track consecutive conflicts per bank
+            updateBlockedCount[updateBank]++;
+            if (updateBlockedCount[updateBank] >= windowBlockThreshold) {
+                // Request to block next prediction cycle
+                forceBlockPrediction = true;
+                updateBlockedCount[updateBank] = 0;
+                tageStats.windowBlockTriggered++;
+                DPRINTF(TAGE, "Window block triggered for bank %u after %u consecutive conflicts\n",
+                              updateBank, windowBlockThreshold);
+            }
+
             DPRINTF(TAGE, "Bank conflict detected: update bank %u conflicts with "
-                          "prediction bank %u, dropping this update\n",
-                          updateBank, lastPredBankId);
+                          "prediction bank %u, dropping this update (blocked count: %u)\n",
+                          updateBank, lastPredBankId, updateBlockedCount[updateBank]);
 
             // Clear prediction state after consuming it
             predBankValid = false;
             return;  // Drop this update entirely
         }
 
-        // If no conflict, clear prediction state (prediction has been consumed)
+        // If no conflict, clear prediction state and reset blocked count for this bank
         if (predBankValid) {
             DPRINTF(TAGE, "No bank conflict: update bank %u != prediction bank %u\n",
                           updateBank, lastPredBankId);
         }
+        // Update succeeded, reset blocked count for this bank
+        updateBlockedCount[updateBank] = 0;
         predBankValid = false;
     }
 
@@ -790,6 +807,20 @@ BTBTAGE::checkUtageUpdateMisspred(const FetchStream &stream) {
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }
+}
+
+// Window blocking mechanism: return true if prediction should be blocked
+// to allow priority update after consecutive bank conflicts
+bool
+BTBTAGE::needBlockPrediction() {
+    bool need = forceBlockPrediction;
+    forceBlockPrediction = false;  // Consume and clear the request
+
+    if (need) {
+        DPRINTF(TAGE, "Window blocking triggered, blocking next prediction cycle\n");
+    }
+
+    return need;
 }
 
 // Update prediction counter with saturation
@@ -1024,6 +1055,7 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
     ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
     ADD_STAT(updateDroppedDueToConflict, statistics::units::Count::get(), "number of updates dropped due to bank conflict"),
+    ADD_STAT(windowBlockTriggered, statistics::units::Count::get(), "number of times window blocking was triggered"),
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
     ADD_STAT(updateAccessPerBank, statistics::units::Count::get(), "update accesses per bank"),
     ADD_STAT(predAccessPerBank, statistics::units::Count::get(), "prediction accesses per bank"),
