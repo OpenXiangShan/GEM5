@@ -47,6 +47,7 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize, u
       bankIdWidth(ceilLog2(numBanks)),
       bankIdShift(floorLog2(blockSize)),
       indexShift(floorLog2(blockSize) + ceilLog2(numBanks)),
+      enableBankConflict(false),
       lastPredBankId(0),
       predBankValid(false)
 {
@@ -85,9 +86,10 @@ numBanks(p.numBanks),
 bankIdWidth(ceilLog2(p.numBanks)),
 bankIdShift(floorLog2(blockSize)),
 indexShift(floorLog2(blockSize) + ceilLog2(p.numBanks)),
+enableBankConflict(p.enableBankConflict),
 lastPredBankId(0),
 predBankValid(false),
-tageStats(this, p.numPredictors)
+tageStats(this, p.numPredictors, p.numBanks)
 {
     this->needMoreHistories = p.needMoreHistories;
 
@@ -347,6 +349,11 @@ BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Full
     // Record prediction bank for next tick's conflict detection
     lastPredBankId = getBankId(alignedPC);
     predBankValid = true;
+
+#ifndef UNIT_TEST
+    // Record prediction access per bank
+    tageStats.predAccessPerBank[lastPredBankId]++;
+#endif
 
     DPRINTF(TAGE, "putPCHistory startAddr: %#lx, alignedPC: %#lx, bank: %u\n",
             stream_start, alignedPC, lastPredBankId);
@@ -647,32 +654,45 @@ BTBTAGE::update(const FetchStream &stream) {
     DPRINTF(TAGE, "update startAddr: %#lx, alignedPC: %#lx, bank: %u\n",
             startAddr, alignedPC, updateBank);
 
+#ifndef UNIT_TEST
+    // Record update access per bank
+    tageStats.updateAccessPerBank[updateBank]++;
+#endif
+
     // ========== Bank Conflict Detection ==========
     // Check if this update conflicts with the last prediction
-    // Conflict happens when:
-    //   1. There was a valid prediction in this or previous tick (predBankValid)
-    //   2. Update and prediction target the same bank (updateBank == lastPredBankId)
-    //
-    // Note: This assumes one update() call per tick (guaranteed by fetch stage)
-    if (predBankValid && updateBank == lastPredBankId) {
-        tageStats.updateBankConflict++;
-        tageStats.updateDroppedDueToConflict++;
+    // Only perform conflict detection if enableBankConflict is true
+    if (enableBankConflict) {
+        // Conflict happens when:
+        //   1. There was a valid prediction in this or previous tick (predBankValid)
+        //   2. Update and prediction target the same bank (updateBank == lastPredBankId)
+        //
+        // Note: This assumes one update() call per tick (guaranteed by fetch stage)
+        if (predBankValid && updateBank == lastPredBankId) {
+            tageStats.updateBankConflict++;
+            tageStats.updateDroppedDueToConflict++;
 
-        DPRINTF(TAGE, "Bank conflict detected: update bank %u conflicts with "
-                      "prediction bank %u, dropping this update\n",
-                      updateBank, lastPredBankId);
+#ifndef UNIT_TEST
+            // Record conflict for this specific bank
+            tageStats.updateBankConflictPerBank[updateBank]++;
+#endif
 
-        // Clear prediction state after consuming it
+            DPRINTF(TAGE, "Bank conflict detected: update bank %u conflicts with "
+                          "prediction bank %u, dropping this update\n",
+                          updateBank, lastPredBankId);
+
+            // Clear prediction state after consuming it
+            predBankValid = false;
+            return;  // Drop this update entirely
+        }
+
+        // If no conflict, clear prediction state (prediction has been consumed)
+        if (predBankValid) {
+            DPRINTF(TAGE, "No bank conflict: update bank %u != prediction bank %u\n",
+                          updateBank, lastPredBankId);
+        }
         predBankValid = false;
-        return;  // Drop this update entirely
     }
-
-    // If no conflict, clear prediction state (prediction has been consumed)
-    if (predBankValid) {
-        DPRINTF(TAGE, "No bank conflict: update bank %u != prediction bank %u\n",
-                      updateBank, lastPredBankId);
-    }
-    predBankValid = false;
 
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
@@ -985,7 +1005,7 @@ BTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
 
 #ifndef UNIT_TEST
 // Constructor for TAGE statistics
-BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors):
+BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int numBanks):
     statistics::Group(parent),
     ADD_STAT(predNoHitUseBim, statistics::units::Count::get(), "use bimodal when no hit on prediction"),
     ADD_STAT(predUseAlt, statistics::units::Count::get(), "use alt on prediction"),
@@ -1007,6 +1027,9 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors):
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
     ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
     ADD_STAT(updateDroppedDueToConflict, statistics::units::Count::get(), "number of updates dropped due to bank conflict"),
+    ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
+    ADD_STAT(updateAccessPerBank, statistics::units::Count::get(), "update accesses per bank"),
+    ADD_STAT(predAccessPerBank, statistics::units::Count::get(), "prediction accesses per bank"),
     ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
     ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
     ADD_STAT(updateTableMispreds, statistics::units::Count::get(), "mispreds of each table when update")
@@ -1014,6 +1037,11 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors):
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);
     updateTableMispreds.init(numPredictors);
+
+    // Initialize per-bank statistics vectors
+    updateBankConflictPerBank.init(numBanks);
+    updateAccessPerBank.init(numBanks);
+    predAccessPerBank.init(numBanks);
 }
 #endif
 

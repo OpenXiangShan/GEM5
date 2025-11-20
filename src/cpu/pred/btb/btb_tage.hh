@@ -305,6 +305,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
     const unsigned bankIdShift;      // floorLog2(blockSize), e.g., 5 for 32B blocks
     const unsigned indexShift;       // bankIdShift + bankIdWidth, e.g., 7 for 32B + 4 banks
+    bool enableBankConflict;         // Enable/disable bank conflict simulation
 
     // Track last prediction bank for conflict detection
     unsigned lastPredBankId;         // Bank ID of last prediction
@@ -348,6 +349,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateDroppedDueToConflict;   // Number of updates dropped due to bank conflict
 
 #ifndef UNIT_TEST
+        // Fine-grained per-bank statistics
+        statistics::Vector updateBankConflictPerBank;  // Conflicts per bank
+        statistics::Vector updateAccessPerBank;        // Update accesses per bank
+        statistics::Vector predAccessPerBank;          // Prediction accesses per bank
+
         statistics::Distribution predTableHits;
         statistics::Distribution updateTableHits;
 
@@ -356,9 +362,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
         int bankIdx;
         int numPredictors;
+        int numBanks;
 
 #ifndef UNIT_TEST
-        TageStats(statistics::Group* parent, int numPredictors);
+        TageStats(statistics::Group* parent, int numPredictors, int numBanks);
 #endif
         void updateStatsWithTagePrediction(const TagePrediction &pred, bool when_pred);
     } ;
