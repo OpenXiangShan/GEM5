@@ -90,6 +90,7 @@ def setKmhV3IdealParams(args, system):
                 # TODO: BTB TAGE do not bave base table, do not support SC
                 cpu.branchPred.tage.tableSizes = [2048] * 8  # 2 way, 2048 sets
                 cpu.branchPred.tage.numWays = 2
+                cpu.branchPred.tage.resolvedUpdate = True
                 cpu.branchPred.microtage.tableSizes = [512]   # 2 way, 512 sets
                 cpu.branchPred.microtage.numWays = 2
                 cpu.branchPred.mgsc.enableMGSC = not args.disable_mgsc
