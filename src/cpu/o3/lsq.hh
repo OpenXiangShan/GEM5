@@ -1007,6 +1007,18 @@ class LSQ
     bool enablePipeNukeCheck() const { return _enablePipeNukeCheck; }
     int storeWbStage() const { return _storeWbStage; }
 
+  public:
+    struct NullStruct {};
+    boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
+    std::vector<bool> bankOccupied;
+
+    bool pendingDcacheRefill = false;
+    uint32_t dcacheRefillDataRead = 0;
+    uint32_t dcacheRefillDataWrite = 0;
+    uint32_t dcacheRefillTagWrite = 0;
+
+    bool isDcacheRefillTagWrite() const { return dcacheRefillTagWrite & 0b1; }
+
   protected:
     /** D-cache is blocked */
     bool _cacheBlocked;
@@ -1021,10 +1033,6 @@ class LSQ
 
     const int numBank = 8;
     bool dcacheWriteStall = false;
-    std::vector<bool> bankOccupied;
-
-    struct NullStruct {};
-    boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
 
     bool enableBankConflictCheck;
     bool sbufferBankWriteAccurately;

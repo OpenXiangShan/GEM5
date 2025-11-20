@@ -182,6 +182,11 @@ class BaseCache(ClockedObject):
         "Replacement policy of active generation table"
     )
 
+    simulate_dcache_refill = Param.Bool(
+        False,
+        "If true, simulate Dcache refill behavior (LSQ pending flag/stats) on L1 fills",
+    )
+
 class Cache(BaseCache):
     type = 'Cache'
     cxx_header = 'mem/cache/cache.hh'
