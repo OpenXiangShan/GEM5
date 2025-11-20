@@ -717,11 +717,16 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
     // Use a specific table and index for testing
     int testTable = 1;
     Addr testIndex = tage->getTageIndex(startPC, testTable);
-    Addr testTag = tage->getTageTag(startPC, testTable);
 
-    // Manually create entries with the same index same tag, but different branch PC/pos
-    createManualTageEntry(tage, testTable, testIndex, 0, testTag, 2, false, 0x1000, 0); // Way 0: Strong taken
-    createManualTageEntry(tage, testTable, testIndex, 1, testTag, -2, false, 0x1004, 1); // Way 1: Strong not taken
+    // Calculate correct tags for each entry (tag includes position XOR)
+    // entry1: PC=0x1000, position=0
+    Addr testTag1 = tage->getTageTag(startPC, testTable, 0);
+    // entry2: PC=0x1004, position=2 (calculated as (0x1004-0x1000)>>1)
+    Addr testTag2 = tage->getTageTag(startPC, testTable, 2);
+
+    // Manually create entries with the same index but different tags (due to position)
+    createManualTageEntry(tage, testTable, testIndex, 0, testTag1, 2, false, 0x1000, 0); // Way 0: Strong taken
+    createManualTageEntry(tage, testTable, testIndex, 1, testTag2, -2, false, 0x1004, 1); // Way 1: Strong not taken
 
     // Make predictions and verify directly
     // For entry1 (should predict taken)
@@ -862,6 +867,79 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     int alloc_failure_after_step3 = tage->tageStats.updateAllocFailure;
     EXPECT_GE(alloc_failure_after_step3, alloc_failure_after_step2 + 1)
         << "Allocation failures should increase after additional failed attempt";
+}
+
+/**
+ * @brief Test bank conflict detection
+ *
+ * Verifies:
+ * 1. Same bank access causes conflict and drops update (when enabled)
+ * 2. Different bank access has no conflict
+ * 3. Disabled flag prevents conflict detection
+ */
+TEST_F(BTBTAGETest, BankConflict) {
+    // Create TAGE with 4 banks
+    BTBTAGE *bankTage = new BTBTAGE(4, 2, 1024, 4);
+    boost::dynamic_bitset<> testHistory(128);
+    std::vector<FullBTBPrediction> testStagePreds(5);
+
+    // Bank ID: pc[6:5] for 32B blocks
+    // Bank 0: 0x0, 0x80, 0x100...  Bank 1: 0x20, 0xa0, 0x120...
+    // Bank 2: 0x40, 0xc0, 0x140... Bank 3: 0x60, 0xe0, 0x160...
+
+    // Test 1: Same bank conflict (enabled)
+    bankTage->enableBankConflict = true;
+    {
+        // Predict on bank 1 (0x20), then update on bank 1 (0xa0)
+        testStagePreds[1].btbEntries = {createBTBEntry(0x20)};
+        bankTage->putPCHistory(0x20, testHistory, testStagePreds);
+        EXPECT_TRUE(bankTage->predBankValid);
+
+        auto meta = bankTage->getPredictionMeta();
+        FetchStream stream = createStream(0xa0, createBTBEntry(0xa0), true, meta);
+        setupTageEntry(bankTage, 0xa0, 0, 1, false);
+
+        uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
+        bankTage->update(stream);
+
+        // Should detect conflict and drop update
+        EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before + 1);
+        EXPECT_FALSE(bankTage->predBankValid);
+    }
+
+    // Test 2: Different bank, no conflict
+    {
+        // Predict on bank 0 (0x100), update on bank 2 (0x140)
+        testStagePreds[1].btbEntries = {createBTBEntry(0x100)};
+        bankTage->putPCHistory(0x100, testHistory, testStagePreds);
+
+        auto meta = bankTage->getPredictionMeta();
+        FetchStream stream = createStream(0x140, createBTBEntry(0x140), true, meta);
+
+        uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
+        bankTage->update(stream);
+
+        // Should not detect conflict
+        EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
+    }
+
+    // Test 3: Disabled flag prevents conflict
+    bankTage->enableBankConflict = false;
+    {
+        // Same bank (0x20 and 0xa0), but conflict disabled
+        testStagePreds[1].btbEntries = {createBTBEntry(0x20)};
+        bankTage->putPCHistory(0x20, testHistory, testStagePreds);
+
+        auto meta = bankTage->getPredictionMeta();
+        FetchStream stream = createStream(0xa0, createBTBEntry(0xa0), true, meta);
+        setupTageEntry(bankTage, 0xa0, 0, 1, false);
+
+        uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
+        bankTage->update(stream);
+
+        // No conflict even with same bank
+        EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
+    }
 }
 
 
