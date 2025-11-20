@@ -165,6 +165,7 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
       ADD_STAT(canceledInst, statistics::units::Count::get(), "count of canceled insts"),
       ADD_STAT(loadmiss, statistics::units::Count::get(), "count of load miss"),
       ADD_STAT(arbFailed, statistics::units::Count::get(), "count of arbitration failed"),
+      ADD_STAT(tagRefillBlock, statistics::units::Count::get(), "count of blocked due to tag refill"),
       ADD_STAT(issueOccupy, statistics::units::Count::get(), "count of replayQ blocked"),
       ADD_STAT(insertDist, statistics::units::Count::get(), "distruibution of insert"),
       ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue"),
@@ -356,11 +357,19 @@ IssueQue::issueToFu()
     int issuedLoad = 0;
     int issuedStore = 0;
 
+    bool incTagRefillBlockStats = false;
+
     // replay first
     for (; !replayQ.empty() && replayed < outports; replayed++) {
         auto& inst = replayQ.front();
 
         if (inst->isLoad()) {
+            // Check if tag write is happening in the next cycle
+            // if so, load cannot be issued to load pipeline
+            if (scheduler->lsq->isDcacheRefillTagWrite()) {
+                incTagRefillBlockStats = true;
+                break;
+            }
             if (issuedLoad >= numLoadPipe) {
                 break;
             }
@@ -384,8 +393,15 @@ IssueQue::issueToFu()
         if (!inst) {
             continue;
         }
+        // Check if tag write is happening in the next cycle
+        // if so, load cannot be issued to load pipeline
+        bool blockLoad = inst->isLoad() && scheduler->lsq->isDcacheRefillTagWrite();
+        if (blockLoad) {
+            incTagRefillBlockStats = true;
+        }
+
         if ((i + replayed >= outports) || (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
-            (inst->isStore() && (issuedStore >= numStorePipe))) {
+            (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad) {
             inst->clearScheduled();
             // only for load/store
             READYQ_PUSH(inst);
@@ -412,6 +428,9 @@ IssueQue::issueToFu()
     }
     if (replayed) {
         iqstats->issueOccupy += replayed;
+    }
+    if (incTagRefillBlockStats) {
+        iqstats->tagRefillBlock++;
     }
 }
 

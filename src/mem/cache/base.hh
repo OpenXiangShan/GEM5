@@ -1325,6 +1325,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
          */
         statistics::Scalar MSHRArbFails;
 
+        statistics::Scalar DcacheRefillTimes;
+
         /** Number of MSHR Alias fails (VA diff) . */
         statistics::Scalar MSHRAliasFails;
 
@@ -1617,6 +1619,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     std::set<Addr> forceHitPCs{};
 
     const bool forceHit;
+    const bool simulateDcacheRefill;
 
 public:
     /**

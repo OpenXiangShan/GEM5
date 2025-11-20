@@ -57,6 +57,7 @@
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/lsq.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -184,6 +185,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       stats(*this),
       cacheLevel(p.cache_level),
       forceHit(p.force_hit),
+      simulateDcacheRefill(p.simulate_dcache_refill),
       doFastWriteline(p.do_fast_writeline)
 {
     // the MSHR queue has no reserve entries as we check the MSHR
@@ -918,6 +920,12 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
         const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
             writeAllocator->allocate() : mshr->allocOnFill();
+        // Optionally indicate that the Dcache received a refill request
+        // to drive LSQ-side modelling.
+        if (simulateDcacheRefill && cacheLevel == 1 && pkt->getLSQPtr()) {
+            pkt->getLSQPtr()->pendingDcacheRefill = true;
+            stats.DcacheRefillTimes++;
+        }
         blk = handleFill(pkt, blk, writebacks, allocate);
         assert(blk != nullptr);
         ppFill->notify(pkt);
@@ -2880,6 +2888,8 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of load Tag read fail because of prefetcher"),
     ADD_STAT(MSHRArbFails,statistics::units::Count::get(),
              "number of MSHR arbitration fails (one miss per cycle)"),
+    ADD_STAT(DcacheRefillTimes, statistics::units::Count::get(),
+             "number of Dcache refill events"),
     ADD_STAT(MSHRAliasFails, statistics::units::Count::get(),
              "number of MSHR Alias fails (VA diff)"),
     ADD_STAT(FindHitInWriteBuffer, statistics::units::Count::get(),

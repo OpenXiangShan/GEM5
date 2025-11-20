@@ -176,6 +176,7 @@ class IssueQue : public SimObject
         statistics::Scalar canceledInst;
         statistics::Scalar loadmiss;
         statistics::Scalar arbFailed;
+        statistics::Scalar tagRefillBlock;
         statistics::Scalar issueOccupy;
         statistics::Vector insertDist;
         statistics::Vector issueDist;

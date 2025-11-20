@@ -89,10 +89,10 @@ std::list<LSQ::SingleDataRequest*> LSQ::SingleDataRequest::singleList;
 
 LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     : cpu(cpu_ptr), iewStage(iew_ptr),
+      recentlyloadAddr(8),
       _cacheBlocked(false),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
       cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),
-      recentlyloadAddr(8),
       enableBankConflictCheck(params.BankConflictCheck),
       sbufferBankWriteAccurately(params.sbufferBankWriteAccurately),
       _enableLdMissReplay(params.EnableLdMissReplay),
@@ -230,7 +230,36 @@ LSQ::tick()
 void
 LSQ::clearAddresses()
 {
-    std::fill(bankOccupied.begin(), bankOccupied.end(), false);
+    // Check if the current cycle is already occupied by previous operations (e.g. delayed writeback)
+    bool currentCycleBusy = (dcacheRefillDataRead | dcacheRefillDataWrite) & 0x1;
+
+    if (pendingDcacheRefill) {
+        // If current cycle is busy, we stall the new request (keep pendingDcacheRefill = true)
+        // If free, we issue the new request
+        if (!currentCycleBusy) {
+            pendingDcacheRefill = false;
+            // Data Read at current cycle (Bit 0)
+            dcacheRefillDataRead |= 0x1;
+            // Tag Write at 3 cycles later (Bit 3)
+            dcacheRefillTagWrite |= (1 << 3);
+            // Data Write at 4 cycles later (Bit 4)
+            dcacheRefillDataWrite |= (1 << 4);
+
+            // We just occupied the current cycle
+            currentCycleBusy = true;
+        }
+    }
+
+    // Advance the pipeline for the next cycle
+    dcacheRefillDataRead >>= 1;
+    dcacheRefillTagWrite >>= 1;
+    dcacheRefillDataWrite >>= 1;
+
+    if (currentCycleBusy) {
+        std::fill(bankOccupied.begin(), bankOccupied.end(), true);
+    } else {
+        std::fill(bankOccupied.begin(), bankOccupied.end(), false);
+    }
     recentlyloadAddr.clear();
 }
 
@@ -238,9 +267,9 @@ bool
 LSQ::loadBankConflictedCheck(Addr vaddr)
 {
     bool now_bank_conflict = false;
-    // [12:6]   [5:3]     [2:0]
+    // [13:6]   [5:3]     [2:0]
     // setIndex bankIndex dataOffset
-    const uint64_t cacheBankmask = 0b1111111111000;
+    const uint64_t cacheBankmask = 0b11111111111000;
     const int bankIndex = bankNum(vaddr);
 
     if (enableBankConflictCheck) {
@@ -1814,6 +1843,7 @@ LSQ::SbufferRequest::sendPacketToCache()
     bool success = _port.sbufferSendPacket(_packets.at(0));
     DPRINTF(StoreBuffer, "Sbuffer Req::sendPacketToCache: entry[%#x]\n", _packets[0]->getAddr());
     if (success) {
+        _packets[0]->setLSQPtr(lsqUnit()->getLsq());
         _numOutstandingPackets = 1;
     }
 
@@ -1832,6 +1862,7 @@ LSQ::SingleDataRequest::sendPacketToCache()
     bool success = lsqUnit()->trySendPacket(isLoad(), _packets.at(0), bank_conflict,
                                             tag_read_fail, mshr_used, mshr_alias_fail, hit_in_write_buffer);
     if (success) {
+        _packets[0]->setLSQPtr(lsqUnit()->getLsq());
         if (isLoad()) {
             assert(lsqUnit()->inflightLoads.size() < lsqUnit()->numLoads() + 4);
             lsqUnit()->inflightLoads.emplace_back(this);
@@ -1886,6 +1917,7 @@ LSQ::SplitDataRequest::sendPacketToCache()
                                                 bank_conflict, tag_read_fail, mshr_used,
                                                 mshr_alias_fail, hit_in_write_buffer);
         if (success) {
+            _packets[numReceivedPackets + _numOutstandingPackets]->setLSQPtr(lsqUnit()->getLsq());
             _numOutstandingPackets++;
         } else {
             break;
