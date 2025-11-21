@@ -94,8 +94,8 @@ def setKmhV3IdealParams(args, system):
                 cpu.branchPred.microtage.numWays = 2
                 cpu.branchPred.mgsc.enableMGSC = not args.disable_mgsc
             cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
-            cpu.branchPred.ftq_size = 256
-            cpu.branchPred.fsq_size = 256
+            cpu.branchPred.ftq_size = 64
+            cpu.branchPred.fsq_size = 64
             cpu.branchPred.tage.numPredictors = 8
             cpu.branchPred.tage.TTagBitSizes = [13] * 8
             cpu.branchPred.tage.TTagPcShifts = [1] * 8
