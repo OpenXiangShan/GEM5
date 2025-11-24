@@ -13,7 +13,7 @@
 #   1) 在 WORK_ROOT 下递归查找所有包含 debug/log.txt 的目录；
 #   2) 对于包含 "Trace stream PC mismatch" 的 debug/log.txt，解析
 #      abort_tick（Program aborted at tick）并计算 from_tick = abort_tick-WINDOW；
-#   3) 调用 $GEM5_HOME/util/extract_gem5_events.py 生成
+#   3) 调用 $GEM5_HOME/util/trace/extract_trace_events.py 生成
 #        debug/events_panic.txt；
 #   4) 调用 util/align_trace_bind_events.py 生成
 #        debug/bind_align_panic.tsv。
@@ -41,11 +41,11 @@ fi
 script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
 GEM5_HOME=${GEM5_HOME:-$(readlink -f "${script_dir}/../..")}
 
-EXTRACT_SCRIPT="${GEM5_HOME}/util/extract_gem5_events.py"
+EXTRACT_SCRIPT="${GEM5_HOME}/util/trace/extract_trace_events.py"
 ALIGN_SCRIPT="${GEM5_HOME}/util/trace/align_trace_bind_events.py"
 
 if [[ ! -f "${EXTRACT_SCRIPT}" ]]; then
-    echo "Error: extract_gem5_events.py not found at ${EXTRACT_SCRIPT}" >&2
+    echo "Error: extract_trace_events.py not found at ${EXTRACT_SCRIPT}" >&2
     exit 1
 fi
 if [[ ! -f "${ALIGN_SCRIPT}" ]]; then

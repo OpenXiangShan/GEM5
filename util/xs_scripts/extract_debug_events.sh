@@ -15,7 +15,7 @@
 #      再否则退化为最后一条包含 "tick" 的行）。
 #   2) 计算 from_tick = last_tick - 10000（不小于 0）。
 #   3) 运行：
-#        $GEM5_HOME/util/extract_gem5_events.py log.txt --from-tick from_tick
+#        $GEM5_HOME/util/trace/extract_trace_events.py log.txt --from-tick from_tick
 #      并将输出重定向到同一 debug 目录下的 events.txt。
 
 set -euo pipefail
@@ -37,9 +37,9 @@ fi
 script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
 GEM5_HOME=${GEM5_HOME:-$(readlink -f "${script_dir}/../..")}
 
-EXTRACT_SCRIPT="${GEM5_HOME}/util/extract_gem5_events.py"
+EXTRACT_SCRIPT="${GEM5_HOME}/util/trace/extract_trace_events.py"
 if [[ ! -f "${EXTRACT_SCRIPT}" ]]; then
-    echo "Error: extract_gem5_events.py not found at ${EXTRACT_SCRIPT}" >&2
+    echo "Error: extract_trace_events.py not found at ${EXTRACT_SCRIPT}" >&2
     exit 1
 fi
 
@@ -97,4 +97,3 @@ find "${ROOT_DIR}" -type d -name debug | while read -r dbg; do
     out_file="${dbg}/events.txt"
     python3 "${EXTRACT_SCRIPT}" "${log_file}" --from-tick "${from_tick}" > "${out_file}"
 done
-

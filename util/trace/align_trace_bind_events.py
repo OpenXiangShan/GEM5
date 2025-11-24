@@ -2,12 +2,12 @@
 
 """Align BUILD and BIND trace events per sn/tracesn.
 
-本脚本用于解析由 ``util/extract_gem5_events.py`` 生成的 events.txt，
+本脚本用于解析由 ``util/trace/extract_trace_events.py`` 生成的 events.txt，
 对齐指令构建事件（BUILD）与 trace 元数据绑定事件（BIND），
 生成一张按 sn 索引的表，便于分析 ChampSim trace 对应的 gem5
 执行行为。
 
-输入行格式（来自 extract_gem5_events.py）：
+输入行格式（来自 extract_trace_events.py）：
 
     <tick>\t[<LABEL>] <原始 gem5 日志行>
 
@@ -31,7 +31,7 @@
 用法示例：
 
   # 对某个 debug 目录下的 events.txt 对齐
-  python3 util/align_trace_bind_events.py \
+  python3 util/trace/align_trace_bind_events.py \
       /path/to/debug/events.txt > /path/to/debug/bind_align.tsv
 """
 
@@ -60,9 +60,9 @@ class BindInfo:
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
-        description="Align BUILD and BIND events per sn from extract_gem5_events output.",
+        description="Align BUILD and BIND events per sn from extract_trace_events output.",
     )
-    ap.add_argument("events", help="Path to events.txt (output of extract_gem5_events.py)")
+    ap.add_argument("events", help="Path to events.txt (output of extract_trace_events.py)")
     return ap.parse_args()
 
 
@@ -151,4 +151,3 @@ def main() -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
-
