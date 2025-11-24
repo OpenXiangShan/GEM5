@@ -130,6 +130,10 @@ class CPU : public BaseCPU
 
   private:
 
+    bool dump_done = false;
+    bool warmup_done = false;
+
+
     /** The tick event used for scheduling CPU ticks. */
     EventFunctionWrapper tickEvent;
 

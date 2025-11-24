@@ -1377,11 +1377,14 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
             cpi_r.roll(1);
         }
 
-        if (this->nextDumpInstCount
-                && totalInsts() == this->nextDumpInstCount) {
+        uint64_t committedInsts = totalInsts();
+
+        if (this->nextDumpInstCount && !dump_done
+                && committedInsts >= this->nextDumpInstCount) {
             fprintf(stderr, "Will trigger stat dump and reset\n");
             statistics::schedStatEvent(true, true, curTick(), 0);
             scheduleInstStop(tid,0,"Will trigger stat dump and reset");
+            dump_done = true;
 
             /*if (this->repeatDumpInstCount) {
                 this->nextDumpInstCount += this->repeatDumpInstCount;
@@ -1391,10 +1394,11 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         // Check for instruction-count-based events.
         thread[tid]->comInstEventQueue.serviceEvents(thread[tid]->numInst);
 
-        if (this->warmupInstCount && totalInsts() == this->warmupInstCount) {
+        if (this->warmupInstCount && !warmup_done && committedInsts >= this->warmupInstCount) {
             fprintf(stderr, "Will trigger stat dump and reset\n");
             statistics::schedStatEvent(true, true, curTick(), 0);
             scheduleInstStop(tid,0,"Will trigger stat dump and reset");
+            warmup_done = true;
         }
     }
 
