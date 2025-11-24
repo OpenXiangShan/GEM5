@@ -1496,7 +1496,8 @@ LSQUnit::executeLoadPipeSx()
             }
 
             // If inst was replyed, must clear inst in pipeline
-            if (inst->needSTLFReplay() || inst->needCacheBlockedReplay() || inst->needRescheduleReplay()) {
+            if (inst->needSTLFReplay() || inst->needCacheBlockedReplay() || inst->needRescheduleReplay() ||
+                inst->needRAWReplay() || inst->needRARReplay()) {
                 DPRINTF(LoadPipeline, "Load [sn:%llu] replayed\n", inst->seqNum);
                 // record replay stats
                 assert(inst->getReplayType());
