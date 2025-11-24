@@ -97,13 +97,13 @@ def setKmhV3Params(args, system):
             cpu.branchPred.fsq_size = 256
 
             cpu.branchPred.ubtb.enabled = True
-            cpu.branchPred.abtb.enabled = False
+            cpu.branchPred.abtb.enabled = True
             cpu.branchPred.microtage.enabled = False
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
-            cpu.branchPred.mgsc.enabled = False
-            cpu.branchPred.ras.enabled = False
+            cpu.branchPred.mgsc.enabled = True
+            cpu.branchPred.ras.enabled = True
 
         # l1 cache per core
         if args.caches:
