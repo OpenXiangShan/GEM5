@@ -423,10 +423,28 @@ ChampSimTraceReader::convertInstruction(const ChampSimInstr &cs_instr,
     trace_instr.setInstType(inst_type);
 
     // Set branch information
-    if (cs_instr.is_branch) {
-        trace_instr.setBranchTaken(cs_instr.branch_taken != 0);
-        // Do not estimate target; real target will be derived via look-ahead
-        // when the next instruction's PC becomes available in fillBuffer.
+    bool eff_taken = false;
+    switch (inst_type) {
+      case TraceInstruction::InstType::COND_BRANCH:
+        eff_taken = cs_instr.branch_taken != 0;
+        break;
+      case TraceInstruction::InstType::UNCOND_DIRECT_BRANCH:
+      case TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH:
+      case TraceInstruction::InstType::CALL_DIRECT:
+      case TraceInstruction::InstType::CALL_INDIRECT:
+      case TraceInstruction::InstType::RETURN:
+        eff_taken = true;
+        break;
+      default:
+        eff_taken = false;
+        break;
+    }
+    if (cs_instr.is_branch || inst_type == TraceInstruction::InstType::RETURN ||
+        inst_type == TraceInstruction::InstType::CALL_DIRECT ||
+        inst_type == TraceInstruction::InstType::CALL_INDIRECT ||
+        inst_type == TraceInstruction::InstType::UNCOND_DIRECT_BRANCH ||
+        inst_type == TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH) {
+        trace_instr.setBranchTaken(eff_taken);
     }
 
     // Extract memory operations
@@ -456,6 +474,7 @@ ChampSimTraceReader::determineInstType(const ChampSimInstr &cs_instr)
     constexpr uint8_t REG_SP = 6;    // champsim::REG_STACK_POINTER
     constexpr uint8_t REG_FL = 25;   // champsim::REG_FLAGS
     constexpr uint8_t REG_IP = 26;   // champsim::REG_INSTRUCTION_POINTER
+    constexpr uint8_t REG_RA = 1;    // RISC-V return-address (ABI), used in traces for jalr/ret
 
     bool writes_sp = contains(cs_instr.destination_registers, REG_SP);
     bool writes_ip = contains(cs_instr.destination_registers, REG_IP);
@@ -463,11 +482,17 @@ ChampSimTraceReader::determineInstType(const ChampSimInstr &cs_instr)
     bool reads_fl  = contains(cs_instr.source_registers, REG_FL);
     bool reads_ip  = contains(cs_instr.source_registers, REG_IP);
     bool reads_other = false;
+    // bool reads_ra = contains(cs_instr.source_registers, REG_RA);
     for (auto r : cs_instr.source_registers) {
         if (r != 0 && r != REG_SP && r != REG_FL && r != REG_IP) { reads_other = true; break; }
     }
 
     if (cs_instr.is_branch || writes_ip) {
+        // // RISC-V ret pattern (jalr x0,x1,0) has only RA as meaningful source,
+        // // no SP/flags traffic and still writes IP.
+        // if (!reads_sp && !reads_fl && !writes_sp && writes_ip && reads_ra && !reads_other) {
+        //     return TraceInstruction::InstType::RETURN;
+        // }
         if (!reads_sp && !reads_fl && writes_ip && !reads_other) {
             return TraceInstruction::InstType::UNCOND_DIRECT_BRANCH; // direct jump
         } else if (!reads_sp && !reads_fl && writes_ip && reads_other) {
@@ -481,7 +506,7 @@ ChampSimTraceReader::determineInstType(const ChampSimInstr &cs_instr)
         } else if (reads_sp && !reads_ip && writes_sp && writes_ip) {
             return TraceInstruction::InstType::RETURN; // return
         } else if (writes_ip) {
-            return TraceInstruction::InstType::COND_BRANCH; // other branch types
+            return TraceInstruction::InstType::COND_BRANCH; // branch_other fallback
         }
     }
 
@@ -570,17 +595,36 @@ void
 ChampSimTraceReader::extractRegisterDeps(const ChampSimInstr &cs_instr,
                                          TraceInstruction &trace_instr)
 {
-    // Extract source registers
+    auto mapIntReg = [&](uint8_t r) -> uint8_t {
+        // ChampSim: 6=SP, 25=FLAGS, 26=IP. No dedicated RA semantic.
+        if (r == 0)  return 0;
+        if (r == 25) return 0;   // FLAGS
+        if (r == 26) return 0;   // IP is not a GPR
+        if (r == 6)  return 2;   // SP
+        if (r == 1)  return 3;   // avoid x1 (RA) semantics; map to gp (x3)
+        if (r == 5)  return 3;   // avoid x5 as alt RA; steer to non-RA reg
+        if (r < 32)  return r;   // generic GPRs keep number
+        DPRINTF(TraceReader, "[TRACE-ENC] ChampSim reg %u unmapped -> x0\n", r);
+        return 0;                // higher IDs -> x0 to avoid false deps
+    };
+    auto mapFpReg = [mapIntReg](uint8_t r) -> uint8_t {
+        // ChampSim traces don't encode FP regs explicitly; fallback to int mapping.
+        return mapIntReg(r);
+    };
+
+    // Extract source registers with normalization
     for (size_t i = 0; i < ChampSimInstr::NUM_INSTR_SOURCES; i++) {
         if (cs_instr.source_registers[i] != 0) {
-            trace_instr.addSrcReg(cs_instr.source_registers[i]);
+            auto mapped = mapIntReg(cs_instr.source_registers[i]);
+            trace_instr.addSrcReg(mapped);
         }
     }
 
-    // Extract destination registers
+    // Extract destination registers with normalization
     for (size_t i = 0; i < ChampSimInstr::NUM_INSTR_DESTINATIONS; i++) {
         if (cs_instr.destination_registers[i] != 0) {
-            trace_instr.addDstReg(cs_instr.destination_registers[i]);
+            auto mapped = mapFpReg(cs_instr.destination_registers[i]);
+            trace_instr.addDstReg(mapped);
         }
     }
 }

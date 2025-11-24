@@ -170,6 +170,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
     // Initialize trace mode
     traceMode = params.enableTraceMode;
+    traceFormat = params.traceFormat;
     if (traceMode) {
         DPRINTF(Fetch, "Trace mode enabled, file: %s, format: %s\n",
                 params.traceFile, params.traceFormat);
@@ -448,6 +449,10 @@ Fetch::startupStage()
                 auto* tc0 = cpu->getContext(0);
                 if (tc0) {
                     tc0->pcState(*tracePC);
+                    // Enable FP state so FP-encoded placeholder instructions don't trap.
+                    auto status = tc0->readMiscReg(RiscvISA::MISCREG_STATUS);
+                    status |= RiscvISA::STATUS_FS_MASK; // FS = Dirty (0b11)
+                    tc0->setMiscReg(RiscvISA::MISCREG_STATUS, status);
                 }
 
                 DPRINTF(Fetch, "Trace mode: Set initial PC to 0x%llx from first trace instruction\n",
@@ -3143,10 +3148,10 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
     const auto& srcRegs = traceInstr.getSrcRegs();
     const auto& dstRegs = traceInstr.getDstRegs();
 
-    // Map to RISC-V register numbers (modulo 32 to stay within valid range)
-    uint8_t rs1 = srcRegs.empty() ? 0 : (srcRegs[0] % 32);
-    uint8_t rs2 = srcRegs.size() < 2 ? 0 : (srcRegs[1] % 32);
-    uint8_t rd = dstRegs.empty() ? 0 : (dstRegs[0] % 32);
+    // Default integer mappings
+    uint8_t rs1 = srcRegs.empty() ? 0 : srcRegs[0];
+    uint8_t rs2 = srcRegs.size() < 2 ? 0 : srcRegs[1];
+    uint8_t rd  = dstRegs.empty() ? 0 : dstRegs[0];
 
     // Helpers to encode PC-relative immediates for branches/jumps
     auto clamp_to_even = [](int64_t v) -> int64_t { return (v & ~1LL); };
@@ -3172,12 +3177,20 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
         case o3::TraceInstruction::InstType::LOAD:
             // RISC-V LW instruction: lw rd, 0(rs1)
             // Format: imm[11:0] | rs1[4:0] | 010 | rd[4:0] | 0000011
-            return (0x000 << 20) | (rs1 << 15) | (0x2 << 12) | (rd << 7) | 0x03;
+            {
+                TheISA::MachInst inst = (0x000 << 20) | (rs1 << 15) | (0x2 << 12) | (rd << 7) | 0x03;
+                DPRINTF(Fetch, "[TRACE-ENC] load lw rs1=%u rd=%u\n", rs1, rd);
+                return inst;
+            }
 
         case o3::TraceInstruction::InstType::STORE:
             // RISC-V SW instruction: sw rs2, 0(rs1)
             // Format: imm[11:5] | rs2[4:0] | rs1[4:0] | 010 | imm[4:0] | 0100011
-            return (0x00 << 25) | (rs2 << 20) | (rs1 << 15) | (0x2 << 12) | (0x00 << 7) | 0x23;
+            {
+                TheISA::MachInst inst = (0x00 << 25) | (rs2 << 20) | (rs1 << 15) | (0x2 << 12) | (0x00 << 7) | 0x23;
+                DPRINTF(Fetch, "[TRACE-ENC] store sw rs1=%u rs2=%u\n", rs1, rs2);
+                return inst;
+            }
 
         case o3::TraceInstruction::InstType::COND_BRANCH: {
             // RISC-V BEQ rs1, rs2, imm (PC-relative)
@@ -3192,6 +3205,8 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
             }
             uint32_t imm_enc = encode_b_imm((int32_t)off64);
             uint32_t inst = imm_enc | (rs2 << 20) | (rs1 << 15) | (0x0 << 12) | (0x00 << 7) | 0x63; // BEQ
+            DPRINTF(Fetch, "[TRACE-ENC] beq pc=0x%lx tgt=0x%lx off=%lld rs1=%u rs2=%u\n",
+                    (unsigned long)pc, (unsigned long)tgt, (long long)off64, rs1, rs2);
             return inst;
         }
 
@@ -3213,6 +3228,9 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
             //  - UNCOND_DIRECT_BRANCH must write x0
             uint8_t rd_out = (traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_DIRECT) ? 1 : 0;
             uint32_t inst = imm_enc | (rd_out << 7) | 0x6F; // JAL
+            DPRINTF(Fetch, "[TRACE-ENC] jal type=%d pc=0x%lx tgt=0x%lx off=%lld rd=%u\n",
+                    static_cast<int>(traceInstr.getInstType()), (unsigned long)pc, (unsigned long)tgt,
+                    (long long)off64, rd_out);
             return inst;
         }
 
@@ -3234,13 +3252,28 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
             } else {
                 rd_out = 0; // branch
             }
-            return (0x000 << 20) | (rs1_out << 15) | (0x0 << 12) | (rd_out << 7) | 0x67;
+            // Avoid accidental RET pattern for generic indirect branches
+            if (traceInstr.getInstType() == o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH &&
+                (rs1_out == 1 || rs1_out == 5)) {
+                rs1_out = 3; // steer away from RA/alt-RA
+            }
+            TheISA::MachInst inst = (0x000 << 20) | (rs1_out << 15) | (0x0 << 12) | (rd_out << 7) | 0x67;
+            DPRINTF(Fetch, "[TRACE-ENC] branch jalr type=%d rs1=%u rd=%u\n",
+                    static_cast<int>(traceInstr.getInstType()), rs1_out, rd_out);
+            return inst;
         }
 
         case o3::TraceInstruction::InstType::FP:
             // RISC-V FADD.S instruction: fadd.s rd, rs1, rs2
-            // Format: 0000000 | rs2[4:0] | rs1[4:0] | 000 | rd[4:0] | 1010011
-            return (0x00 << 25) | (rs2 << 20) | (rs1 << 15) | (0x0 << 12) | (rd << 7) | 0x53;
+            // Use FP reg mapping when available.
+            {
+                uint8_t frd = dstRegs.empty() ? 0 : dstRegs[0];
+                uint8_t frs1 = srcRegs.empty() ? 0 : srcRegs[0];
+                uint8_t frs2 = srcRegs.size() < 2 ? 0 : srcRegs[1];
+                TheISA::MachInst inst = (0x00 << 25) | (frs2 << 20) | (frs1 << 15) | (0x0 << 12) | (frd << 7) | 0x53;
+                DPRINTF(Fetch, "[TRACE-ENC] fp fadd rs1=f%u rs2=f%u rd=f%u\n", frs1, frs2, frd);
+                return inst;
+            }
 
         case o3::TraceInstruction::InstType::ALU:
         case o3::TraceInstruction::InstType::SLOW_ALU:
@@ -3248,11 +3281,15 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
             if (srcRegs.size() >= 2) {
                 // RISC-V ADD instruction: add rd, rs1, rs2
                 // Format: 0000000 | rs2[4:0] | rs1[4:0] | 000 | rd[4:0] | 0110011
-                return (0x00 << 25) | (rs2 << 20) | (rs1 << 15) | (0x0 << 12) | (rd << 7) | 0x33;
+                TheISA::MachInst inst = (0x00 << 25) | (rs2 << 20) | (rs1 << 15) | (0x0 << 12) | (rd << 7) | 0x33;
+                DPRINTF(Fetch, "[TRACE-ENC] sn=? type=ALU rs1=%u rs2=%u rd=%u\n", rs1, rs2, rd);
+                return inst;
             } else {
                 // RISC-V ADDI instruction: addi rd, rs1, 1
                 // Format: imm[11:0] | rs1[4:0] | 000 | rd[4:0] | 0010011
-                return (0x001 << 20) | (rs1 << 15) | (0x0 << 12) | (rd << 7) | 0x13;
+                TheISA::MachInst inst = (0x001 << 20) | (rs1 << 15) | (0x0 << 12) | (rd << 7) | 0x13;
+                DPRINTF(Fetch, "[TRACE-ENC] sn=? type=ALU-imm rs1=%u rd=%u imm=1\n", rs1, rd);
+                return inst;
             }
     }
 }

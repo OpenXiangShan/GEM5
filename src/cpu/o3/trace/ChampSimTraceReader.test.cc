@@ -287,6 +287,29 @@ TEST(ChampSimTraceReaderTest, ExtractsMemoryAndRegisterState)
     EXPECT_EQ(std::vector<uint8_t>({10}), dst_regs);
 }
 
+TEST(ChampSimTraceReaderTest, NormalizesRegistersToRiscVAbi)
+{
+    const std::string path = "champsim_reader_test_regmap.bin";
+    TraceFileGuard guard(path);
+    // src: SP(6)->x2, FLAGS(25)->x0, IP(26)->x0, reg1->x3 (avoid RA), reg5->x3 (avoid alt RA), >32 -> x0
+    // dst: SP(6)->x2, FLAGS(25)->x0
+    CSInstr rmap = makeInstr(0x7000, false, false,
+                             /*src_mem*/{},
+                             /*dst_mem*/{},
+                             /*src_regs*/{6, 25, 26, 1, 5},
+                             /*dst_regs*/{6, 25});
+    ASSERT_TRUE(writeTraceFile(path, {rmap}));
+
+    ChampSimTraceReader reader(path, "unit.reader.regmap");
+    ASSERT_TRUE(reader.init());
+
+    auto instr = reader.getNextInstruction();
+    ASSERT_TRUE(instr.isValid());
+
+    EXPECT_EQ(instr.getSrcRegs(), (std::vector<uint8_t>{2, 0, 0, 3, 3}));
+    EXPECT_EQ(instr.getDstRegs(), (std::vector<uint8_t>{2, 0}));
+}
+
 TEST(ChampSimTraceReaderTest, HashMappingWrapsWithinConfiguredWindow)
 {
     const std::string path = "champsim_reader_test_hash_wrap.bin";
