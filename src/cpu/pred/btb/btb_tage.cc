@@ -217,9 +217,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
-        // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
-        Addr index = predMeta ? getTageIndex(alignedPC, i, predMeta->indexFoldedHist[i].get())
-                          : getTageIndex(alignedPC, i);
+        // Both index and tag include position XOR to distinguish branches in same block
+        Addr index = predMeta ? getTageIndex(alignedPC, i, predMeta->indexFoldedHist[i].get(), position)
+                          : getTageIndex(alignedPC, i, position);
         Addr tag = predMeta ? getTageTag(alignedPC, i,
                             predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(), position)
                         : getTageTag(alignedPC, i, position);
@@ -582,7 +582,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
     unsigned position = getBranchIndexInBlock(entry.pc, alignedPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
-        Addr newIndex = getTageIndex(alignedPC, ti, meta->indexFoldedHist[ti].get());
+        Addr newIndex = getTageIndex(alignedPC, ti, meta->indexFoldedHist[ti].get(), position);
         Addr newTag = getTageTag(alignedPC, ti,
             meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
 
@@ -827,7 +827,7 @@ BTBTAGE::getTageTag(Addr pc, int t, Addr position)
 }
 
 Addr
-BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
+BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, Addr position)
 {
     // Create mask for tableIndexBits[t] to limit result size
     Addr mask = (1ULL << tableIndexBits[t]) - 1;
@@ -841,13 +841,13 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
     Addr pcBits = (pc >> indexShift) & mask;  // Skip blockSize + bank bits
     Addr foldedBits = foldedHist & mask;
 
-    return pcBits ^ foldedBits;
+    return pcBits ^ foldedBits ^ position;
 }
 
 Addr
-BTBTAGE::getTageIndex(Addr pc, int t)
+BTBTAGE::getTageIndex(Addr pc, int t, Addr position)
 {
-    return getTageIndex(pc, t, indexFoldedHist[t].get());
+    return getTageIndex(pc, t, indexFoldedHist[t].get(), position);
 }
 
 bool

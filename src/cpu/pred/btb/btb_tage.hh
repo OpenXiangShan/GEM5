@@ -169,10 +169,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
                       std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
 
     // Calculate TAGE index for a given PC and table
-    Addr getTageIndex(Addr pc, int table);
+    Addr getTageIndex(Addr pc, int table, Addr position = 0);
 
     // Calculate TAGE index with folded history (uint64_t version for performance)
-    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
+    // position: branch position within the block (xored into index)
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, Addr position);
 
     // Calculate TAGE tag for a given PC and table
     // position: branch position within the block (xored into tag like RTL)
