@@ -28,7 +28,6 @@ def setKmhV3Params(args, system):
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
-        cpu.fetchToDecodeDelay = 2
 
         # decode
         cpu.decodeWidth = 8
@@ -153,7 +152,7 @@ if __name__ == '__m5_main__':
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '1MB'
-    args.kmh_align = True
+    args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
