@@ -101,7 +101,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = False
             cpu.branchPred.mgsc.enabled = False
-            cpu.branchPred.ras.enabled = True
+            cpu.branchPred.ras.enabled = False
 
         # l1 cache per core
         if args.caches:
