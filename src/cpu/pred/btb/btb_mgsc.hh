@@ -315,9 +315,6 @@ class BTBMGSC : public TimedBaseBTBPredictor
     unsigned numCtrsPerLine;
     unsigned numCtrsPerLineBits;
 
-    // Whether MGSC is enabled
-    bool enableMGSC;
-
     // Folded history for index calculation
     std::vector<GlobalBwFoldedHist> indexBwFoldedHist;
     std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist;

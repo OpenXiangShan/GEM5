@@ -1090,8 +1090,6 @@ class BTBMGSC(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBMGSC'
     cxx_header = "cpu/pred/btb/btb_mgsc.hh"
 
-    enableMGSC = Param.Bool(True, "Enable MGSC or not")
-
     needMoreHistories = Param.Bool(True, "MGSC needs more histories")
 
     bwTableNum = Param.Unsigned(2, "Num global backward branch GEHL tables")

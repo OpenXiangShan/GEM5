@@ -47,7 +47,6 @@ BTBMGSC::BTBMGSC(const Params &p)
       extraWeightsWidth(p.extraWeightsWidth),
       weightTableIdxWidth(p.weightTableIdxWidth),
       numCtrsPerLine(p.numCtrsPerLine),
-      enableMGSC(p.enableMGSC),
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
@@ -387,7 +386,7 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
     // btb entries should already be in stagePreds
     // get prediction and save it
 
-    if (!enableMGSC) {
+    if (!isEnabled()) {
         return;  // Just return if MGSC is disabled
     }
 
@@ -624,7 +623,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 void
 BTBMGSC::update(const FetchStream &stream)
 {
-    if (!enableMGSC) {
+    if (!isEnabled()) {
         return;  // No update if disabled
     }
     Addr startAddr = stream.getRealStartPC();
@@ -949,7 +948,7 @@ BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, Fu
 void
 BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
-    if (!enableMGSC) {
+    if (!isEnabled()) {
         return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
@@ -975,7 +974,7 @@ BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &
 void
 BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
-    if (!enableMGSC) {
+    if (!isEnabled()) {
         return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
@@ -1001,7 +1000,7 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchStream 
 void
 BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
-    if (!enableMGSC) {
+    if (!isEnabled()) {
         return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
@@ -1027,7 +1026,7 @@ BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchStream
 void
 BTBMGSC::recoverIHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
-    if (!enableMGSC) {
+    if (!isEnabled()) {
         return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
@@ -1054,7 +1053,7 @@ void
 BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchStream &entry, int shamt,
                       bool cond_taken)
 {
-    if (!enableMGSC) {
+    if (!isEnabled()) {
         return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);

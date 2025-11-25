@@ -2051,7 +2051,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
         microtage->checkFoldedHist(s0PHistory, "speculative update");
     }
     if (mgsc->isEnabled()) {
-        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, "specualtive update");
+        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, "speculative update");
     }
 #endif
 }

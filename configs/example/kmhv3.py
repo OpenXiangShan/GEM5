@@ -92,7 +92,6 @@ def setKmhV3Params(args, system):
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
-            cpu.branchPred.mgsc.enableMGSC = not args.disable_mgsc
             cpu.branchPred.ftq_size = 256
             cpu.branchPred.fsq_size = 256
 
