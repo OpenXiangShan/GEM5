@@ -42,9 +42,9 @@ AssociativeSet<Entry>::AssociativeSet(int assoc, int num_entries,
   : associativity(assoc), numEntries(num_entries), indexingPolicy(idx_policy),
     replacementPolicy(rpl_policy), entries(numEntries, init_value)
 {
-    fatal_if(!isPowerOf2(num_entries), "The number of entries of an "
+    warn_if(!isPowerOf2(num_entries), "The number of entries of an "
              "AssociativeSet<> must be a power of 2");
-    fatal_if(!isPowerOf2(assoc), "The associativity of an AssociativeSet<> "
+    warn_if(!isPowerOf2(assoc), "The associativity of an AssociativeSet<> "
              "must be a power of 2");
     for (unsigned int entry_idx = 0; entry_idx < numEntries; entry_idx += 1) {
         Entry* entry = &entries[entry_idx];
