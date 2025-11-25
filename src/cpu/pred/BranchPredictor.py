@@ -1044,7 +1044,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     updateOnRead = Param.Bool(True, "Enable update on read, no need to save tage meta in FTQ")
     numPredictors = Param.Unsigned(8, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([2048]*8, "the TAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([11]*8, "the T0~Tn entry's tag bit size")
+    TTagBitSizes = VectorParam.Unsigned([13]*8, "the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 8, "when the T0~Tn entry's tag generating, PC right shift")
     blockSize = 32 # tage index function uses 32B aligned block address
 
@@ -1056,6 +1056,8 @@ class BTBTAGE(TimedBaseBTBPredictor):
     maxBranchPositions = Param.Unsigned(32, "Maximum branch positions per 64-byte block")
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
+    numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
+    enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
     numDelay = 2
 
 class MicroTAGE(BTBTAGE):

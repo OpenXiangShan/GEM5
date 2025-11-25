@@ -46,7 +46,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
   public:
 #ifdef UNIT_TEST
     // Test constructor
-    BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2, unsigned tableSize = 1024);
+    BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2, unsigned tableSize = 1024, unsigned numBanks = 4);
 #else
     // Production constructor
     typedef BTBTAGEParams Params;
@@ -175,10 +175,12 @@ class BTBTAGE : public TimedBaseBTBPredictor
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
 
     // Calculate TAGE tag for a given PC and table
-    Addr getTageTag(Addr pc, int table);
+    // position: branch position within the block (xored into tag like RTL)
+    Addr getTageTag(Addr pc, int table, Addr position = 0);
 
     // Calculate TAGE tag with folded history (uint64_t version for performance)
-    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist);
+    // position: branch position within the block (xored into tag like RTL)
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) {
@@ -190,6 +192,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Get branch index within a prediction block
     unsigned getBranchIndexInBlock(Addr pc, Addr alignedPC);
+
+    // Get bank ID from aligned PC
+    // Extract pc[bankIdShift+bankIdWidth-1 : bankIdShift]
+    // For 32B blocks with 4 banks: pc[6:5]
+    unsigned getBankId(Addr alignedPC) const;
 
     // Update branch history
     void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
@@ -291,6 +298,19 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Whether to update on read
     bool updateOnRead;
 
+    // ========== Bank Configuration ==========
+    // Bank mechanism to simulate hardware bank conflicts
+    // When prediction and update access the same bank in one cycle, update is dropped
+    const unsigned numBanks;         // Number of banks (e.g., 4)
+    const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
+    const unsigned bankIdShift;      // floorLog2(blockSize), e.g., 5 for 32B blocks
+    const unsigned indexShift;       // bankIdShift + bankIdWidth, e.g., 7 for 32B + 4 banks
+    bool enableBankConflict;         // Enable/disable bank conflict simulation
+
+    // Track last prediction bank for conflict detection
+    unsigned lastPredBankId;         // Bank ID of last prediction
+    bool predBankValid;              // Whether lastPredBankId is valid
+
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
 #else
@@ -324,7 +344,16 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateMispred;
         Scalar updateResetU;
 
+        // Bank conflict statistics
+        Scalar updateBankConflict;           // Number of bank conflicts detected
+        Scalar updateDroppedDueToConflict;   // Number of updates dropped due to bank conflict
+
 #ifndef UNIT_TEST
+        // Fine-grained per-bank statistics
+        statistics::Vector updateBankConflictPerBank;  // Conflicts per bank
+        statistics::Vector updateAccessPerBank;        // Update accesses per bank
+        statistics::Vector predAccessPerBank;          // Prediction accesses per bank
+
         statistics::Distribution predTableHits;
         statistics::Distribution updateTableHits;
 
@@ -333,9 +362,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
         int bankIdx;
         int numPredictors;
+        int numBanks;
 
 #ifndef UNIT_TEST
-        TageStats(statistics::Group* parent, int numPredictors);
+        TageStats(statistics::Group* parent, int numPredictors, int numBanks);
 #endif
         void updateStatsWithTagePrediction(const TagePrediction &pred, bool when_pred);
     } ;
