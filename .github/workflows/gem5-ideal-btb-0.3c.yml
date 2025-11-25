@@ -3,8 +3,8 @@ name: gem5 Ideal BTB Performance Test
 on:
   push:
     branches: [ xs-dev, '*-align' ]  # xs-dev for normal CI, *-align for BTB-only performance testing (align to RTL)
-  pull_request:
-    branches: [ xs-dev ]
+  # Removed pull_request trigger, only can be triggered use *-align branches
+
   workflow_dispatch:
     inputs:
       branch_name:
