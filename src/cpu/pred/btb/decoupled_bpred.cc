@@ -2036,14 +2036,6 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     // Update path history
     pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
 
-#ifndef NDEBUG
-    if (tage->isEnabled()) {
-        tage->checkFoldedHist(s0PHistory, "speculative update");
-    }
-    if (microtage->isEnabled()) {
-        microtage->checkFoldedHist(s0PHistory, "speculative update");
-    }
-#endif
     // Update imli history
     histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
 
@@ -2052,9 +2044,15 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
         s0LHistory[mgsc->getPcIndex(finalPred.bbStart, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
 
 #ifndef NDEBUG
-    tage->checkFoldedHist(s0PHistory, "speculative update");
-    microtage->checkFoldedHist(s0PHistory, "speculative update");
-    mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, "specualtive update");
+    if (tage->isEnabled()) {
+        tage->checkFoldedHist(s0PHistory, "speculative update");
+    }
+    if (microtage->isEnabled()) {
+        microtage->checkFoldedHist(s0PHistory, "speculative update");
+    }
+    if (mgsc->isEnabled()) {
+        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, "specualtive update");
+    }
 #endif
 }
 
