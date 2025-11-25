@@ -696,6 +696,7 @@ void createManualTageEntry(BTBTAGE* tage, int table, Addr index, int way,
     entry.tag = tag;
     entry.counter = counter;
     entry.useful = useful;
+    entry.newborn = false;
     entry.pc = pc;
     entry.lruCounter = lruCounter;
 }

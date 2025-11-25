@@ -60,13 +60,17 @@ class BTBTAGE : public TimedBaseBTBPredictor
             Addr tag;       // Tag for matching
             short counter;  // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
             bool useful;    // 1-bit usefulness counter; true means useful
+            bool newborn;   // Guard bit: 1 when newly allocated and protected
             Addr pc;        // branch pc, like branch position, for btb entry pc check
             unsigned lruCounter; // Counter for LRU replacement policy
 
-            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0), lruCounter(0) {}
+            TageEntry() :
+                valid(false), tag(0), counter(0), useful(false),
+                newborn(false), pc(0), lruCounter(0) {}
 
             TageEntry(Addr tag, short counter, Addr pc) :
-                      valid(true), tag(tag), counter(counter), useful(false), pc(pc), lruCounter(0) {}
+                      valid(true), tag(tag), counter(counter),
+                      useful(false), newborn(true), pc(pc), lruCounter(0) {}
             bool taken() const {
                 return counter >= 0;
             }

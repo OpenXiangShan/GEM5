@@ -591,8 +591,26 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
         // Allocate into invalid way or not-useful and weak way
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
+            if (!cand.valid) {
+                short newCounter = actual_taken ? 0 : -1;
+                DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
+                        ti, newIndex, way, newTag, position, newCounter, entry.pc);
+                cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+                tageStats.updateAllocSuccess++;
+                allocated_table = ti;
+                allocated_index = newIndex;
+                allocated_way = way;
+                usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+                return true;
+            }
+
+            if (cand.newborn) {
+                cand.newborn = false; // Give one grace period before being a victim
+                continue;
+            }
+
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
-            if (!cand.valid || (!cand.useful && weakish)) {
+            if (!cand.useful && weakish) {
                 short newCounter = actual_taken ? 0 : -1;
                 DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
                         ti, newIndex, way, newTag, position, newCounter, entry.pc);
