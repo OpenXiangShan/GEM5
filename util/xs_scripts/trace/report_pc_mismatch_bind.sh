@@ -35,6 +35,7 @@ fi
 script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
 GEM5_HOME=${GEM5_HOME:-$(readlink -f "${script_dir}/../..")}
 DUMP_SCRIPT="${GEM5_HOME}/util/trace/dump_champsim_trace.py"
+DEFAULT_TRACE_FORMAT=${TRACE_FORMAT:-champsim}
 
 if [[ ! -f "${DUMP_SCRIPT}" ]]; then
     echo "Error: dump_champsim_trace.py not found at ${DUMP_SCRIPT}" >&2
@@ -138,6 +139,15 @@ for d in "${WORK_ROOT}"/*; do
         fi
 
         if [[ -n "${trace_file}" && -f "${trace_file}" ]]; then
+            trace_fmt="${DEFAULT_TRACE_FORMAT}"
+            fmt_line=$(grep -m1 'Trace format:' "${log_file}" || true)
+            if [[ -n "${fmt_line}" ]]; then
+                cand=$(echo "${fmt_line}" | awk '{print $3}')
+                if [[ -n "${cand}" ]]; then
+                    trace_fmt="${cand}"
+                fi
+            fi
+
             # 以 panic 对应的 trace_idx 为窗口尾，将前 100 条指令作为上下文
             # start = max(0, trace_idx - 99), count = 100
             start=0
@@ -147,8 +157,9 @@ for d in "${WORK_ROOT}"/*; do
             count=100
 
             out_snip="${d}/panic_trace_snippet.txt"
-            echo "[SNIPPET] ${name}: trace_file=${trace_file}, index=${trace_idx}, start=${start}, count=${count}" >&2
+            echo "[SNIPPET] ${name}: trace_file=${trace_file}, format=${trace_fmt}, index=${trace_idx}, start=${start}, count=${count}" >&2
             python3 "${DUMP_SCRIPT}" --trace "${trace_file}" \
+                --format "${trace_fmt}" \
                 --start-index "${start}" --count "${count}" \
                 > "${out_snip}" || echo "[WARN] Failed to dump trace snippet for ${name}" >&2
         else

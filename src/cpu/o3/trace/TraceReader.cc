@@ -222,7 +222,12 @@ createTraceReader(const std::string &format, const std::string &trace_file,
         reader->setAddressMapping(addrBase, addrSize, addrMapMode, pageAlign);
         return reader;
     } else if (format == "cbp2025") {
-        return std::make_unique<CBP2025TraceReader>(trace_file, name);
+        auto reader = std::make_unique<CBP2025TraceReader>(trace_file, name,
+                                                           addrMapMode,
+                                                           addrBase,
+                                                           addrSize,
+                                                           pageAlign);
+        return reader;
     } else {
         // Debug output removed temporarily
         return nullptr;

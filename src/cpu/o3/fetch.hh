@@ -710,6 +710,8 @@ class Fetch
     std::unique_ptr<o3::TraceReader> traceReader;
     /** Whether trace mode is enabled */
     bool traceMode;
+    /** Trace format string (e.g., champsim, cbp2025) */
+    std::string traceFormat{"champsim"};
     /** Whether to train BP and use real branch instructions in trace mode */
     // Default off per design: trace 不显式训练预测器，改由普通 commit 路径训练
     bool traceTrainBranches = false;

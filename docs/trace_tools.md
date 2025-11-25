@@ -4,6 +4,17 @@
 
 ---
 
+**常用流程（ChampSim/CBP2025，一条龙）**
+
+1) 统计指令数（可选）：`TRACE_FORMAT=cbp2025 bash util/xs_scripts/trace/count_traces_from_list_parallel.sh <lst> <trace_root> <out.tsv>`.
+2) 生成 workload 列表（默认 warmup=sample=50M）：`bash util/xs_scripts/gen_champsim_workloads.sh <trace_root> <out.lst>`（已支持 champsim/cbp）。
+3) 并行跑 trace：`TRACE_FORMAT=cbp2025 bash util/xs_scripts/trace/parallel_trace_sim.sh util/xs_scripts/trace/run_trace_champsim.sh <workload.lst> <trace_root> <tag>`.
+4) 查看运行状态：`bash util/xs_scripts/check_parallel_runs.sh <work_root>/<tag> [--details]`.
+5) Debug：panic/PC mismatch 时用 `util/xs_scripts/trace/report_pc_mismatch_bind.sh`（必要时先 `extract_panic_events.sh`/`extract_debug_events.sh`）。
+   - `TRACE_FORMAT` 贯穿计数/跑批/片段抽取，默认 `champsim`，CBP 时显式设置 `TRACE_FORMAT=cbp2025`。
+
+---
+
 **0. 总体目标与关键概念**
 
 - 批量跑 XiangShan trace（ChampSim 格式），支持：
@@ -17,13 +28,13 @@
 
 ---
 
-## 1. 批量跑 ChampSim trace
+## 1. 批量跑 trace（ChampSim / CBP2025）
 
-### 1.1 单条 trace 封装：`util/xs_scripts/trace/run_trace_champsim.sh`
+### 1.1 单条 trace 封装：`util/xs_scripts/trace/run_trace_champsim.sh`（支持 champsim/cbp2025）
 
 **作用**
 
-- 封装一条 XiangShan trace 模式的 gem5 命令，支持通过环境变量控制 maxinsts 和 warmup，无需手写长命令。
+- 封装一条 XiangShan trace 模式的 gem5 命令，支持 champsim/cbp2025，支持通过环境变量控制 maxinsts 和 warmup，无需手写长命令。
 
 **环境变量**
 
@@ -31,6 +42,11 @@
   - 解释：正式统计阶段指令数。
   - 映射：`--maxinsts=${XS_MAX_INSTS}`。
   - 默认：`1000000`。
+
+- `TRACE_FORMAT`
+  - 解释：trace 格式，`champsim` 或 `cbp2025`。
+  - 映射：`--trace-format=${TRACE_FORMAT}`。
+  - 默认：`champsim`。
 
 - `XS_WARMUP_INSTS_NO_SWITCH`
   - 解释：warmup 指令数（不换 CPU、只 reset stats）。
@@ -45,8 +61,19 @@
 ```bash
 XS_WARMUP_INSTS_NO_SWITCH=50000000 \
 XS_MAX_INSTS=50000000 \
+TRACE_FORMAT=champsim \
 bash util/xs_scripts/trace/run_trace_champsim.sh \
   /nfs/home/share/glr/champsim_traces/ipc1_public/ipc_client_002.champsimtrace.xz
+```
+
+CBP 示例（保持命令一致，仅切换 TRACE_FORMAT+trace 文件）：
+
+```bash
+XS_WARMUP_INSTS_NO_SWITCH=50000000 \
+XS_MAX_INSTS=50000000 \
+TRACE_FORMAT=cbp2025 \
+bash util/xs_scripts/trace/run_trace_champsim.sh \
+  /nfs/home/share/glr/cbp_traces/compress/compress_0_trace.gz
 ```
 
 脚本最终会调用：
@@ -105,6 +132,8 @@ XS_MAX_INSTS="${total}" XS_WARMUP_INSTS_NO_SWITCH="${warmup}" \\
     run "${checkpoint}" "${work_dir}" >"${work_dir}/${log_file}" 2>&1
 ```
 
+> 如需 CBP trace，将 `TRACE_FORMAT=cbp2025` 置于并行命令前，arch_script 会继承该环境变量。
+
 **输出根目录指定（`XSGEM5_WORK_ROOT`）**
 
 - 默认：结果落在调用脚本目录下的 `$tag` 中：
@@ -118,11 +147,11 @@ export XSGEM5_WORK_ROOT=/nfs/home/goulingrui/expri_results/gem5_trace
 
 ---
 
-### 1.3 生成 workload 列表：`util/xs_scripts/gen_champsim_workloads.sh`
+### 1.3 生成 workload 列表：`util/xs_scripts/gen_champsim_workloads.sh`（champsim/cbp 均可）
 
 **作用**
 
-- 扫描一个目录下的所有 `*.champsimtrace.xz`，生成 workload 列表，默认 warmup=50M、sample=50M。
+- 扫描一个目录下的所有压缩/未压缩 trace（`.xz/.gz/.champsimtrace`），生成 workload 列表，默认 warmup=50M、sample=50M。用于 champsim/cbp 均可。
 
 **用法示例**
 
@@ -168,6 +197,61 @@ bash util/xs_scripts/trace/parallel_trace_sim.sh \
 
 ---
 
+### 1.5 分布式调度（多机，NFS 共享）：`util/xs_scripts/trace/distributed_trace_scheduler.py`
+
+**作用**
+
+- 读取 workload 列表与机器列表，按机器实时 load 与逻辑核数（取 cores/2）分配任务。
+- 全局并行度上限 + 每机并行上限，可通过 `TRACE_FORMAT` 支持 champsim/cbp。
+- 在共享 NFS 下调度，输出 dispatch 日志，任务状态文件复用已有监控脚本。
+
+**前提**
+
+- 机器间共享 NFS（工作目录、trace、脚本可直接访问）。
+- 可免密 SSH 到机器列表内的 host（端口 22）。
+- 假设超线程开启，容量=logical/2；当下发任务 n 时要求 n+load <= logical/2。
+
+**服务器列表示例（servers.txt）**
+
+```
+node-a
+node-b
+node-c
+```
+
+**运行示例（CBP）**
+
+```bash
+python3 util/xs_scripts/trace/distributed_trace_scheduler.py \
+  --arch-script util/xs_scripts/trace/run_trace_champsim.sh \
+  --workload-list cbp_traces.lst \
+  --trace-root /nfs/home/share/glr/cbp_traces \
+  --server-list servers.txt \
+  --tag cbp_run \
+  --max-global 64 \
+  --max-threads-per-host 8 \
+  --poll-seconds 30 \
+  --trace-format cbp2025   # 或设置环境变量 TRACE_FORMAT
+```
+
+- 工作根目录：`$XSGEM5_WORK_ROOT/<tag>`（默认当前目录/<tag>）。
+- 日志：`dispatch.tsv`（task, host, trace_path, warmup, sample, status, start_ts, end_ts）。
+- 任务目录：`<work_root>/<task>/` 下的 `running/completed/abort/log.txt`，可用现有 `check_parallel_runs.sh` 监控。
+
+**调度规则**
+
+- 每轮获取 host(t) 的 load1、逻辑核数，容量= min(max_threads_per_host, floor(cores/2 - load1))。
+- 仅当容量>running 时才补充任务；全局并行度不超过 `--max-global`。
+- 任务启动命令：SSH 到目标 host，`OUTDIR=$work_dir TRACE_FORMAT=$TRACE_FORMAT XS_MAX_INSTS/XS_WARMUP_INSTS_NO_SWITCH` 调用 `run_trace_champsim.sh`，完成后在 `work_dir` 写 `completed` 或 `abort`。
+- 周期性轮询（默认 30s）task 状态与负载，持续补位，直至全部完成。
+- 启动是在远端后台执行（nohup + &），SSH 会快速返回；若节点暂时不可用会在调度日志中看到 launch 警告。
+- 控制台输出：每次获取机器容量都会打印 `[CAP] host cores/load/cap` 行；每次派发打印 `[DISPATCH] task -> host warmup/sample total ...`；任务完成/失败打印 `[DONE] task on host status=... elapsed=...s ...`。
+- 启动时会输出总任务数 `[INFO] total tasks=N`，派发行包含 `progress=done/total` 方便观测整体完成度。
+- 若工作目录下某任务已存在 `completed` 标记，调度器会跳过该任务并在控制台输出 `[SKIP]`；取消后重启时不会重复跑已完成的任务。
+- Ctrl-C 中断时会尝试向已派发任务的远端 PID 发送 `kill -TERM`，并在任务目录标记 `abort`。
+
+---
+
 ## 2. 监控与统计
 
 ### 2.1 批跑状态汇总：`util/xs_scripts/check_parallel_runs.sh`
@@ -197,13 +281,24 @@ bash util/xs_scripts/check_parallel_runs.sh "$WORK_ROOT" --details
 
 **作用**
 
-- 统计 ChampSim trace 内记录条数（指令数）。
+- 统计 trace 内记录条数（指令数），支持 champsim/cbp2025（`--format` 或环境变量 `TRACE_FORMAT`）。
 
 **单个 trace**
 
 ```bash
 python3 util/trace/count_champsim_trace_insts.py \
-  --trace /nfs/home/share/glr/champsim_traces/ipc1_public/ipc_client_002.champsimtrace.xz
+  --trace /nfs/home/share/glr/champsim_traces/ipc1_public/ipc_client_002.champsimtrace.xz \
+  --format champsim
+
+TRACE_FORMAT=cbp2025 python3 util/trace/count_champsim_trace_insts.py \
+  --trace /nfs/home/share/glr/cbp_traces/compress/compress_0_trace.gz
+```
+
+批量计数：
+
+```bash
+TRACE_FORMAT=cbp2025 bash util/xs_scripts/trace/count_traces_from_list_parallel.sh \
+  cbp_traces.lst /nfs/home/share/glr/cbp_traces cbp_trace_inst_counts.tsv 16
 ```
 
 输出：一个整数，例如 `100003840`。
@@ -225,6 +320,12 @@ python3 util/trace/dump_champsim_trace.py \
   --trace /nfs/home/share/glr/champsim_traces/ipc1_public/ipc_client_002.champsimtrace.xz \
   --start-index "$start" \
   --count 100
+
+# CBP 请额外指定格式
+python3 util/trace/dump_champsim_trace.py \
+  --format cbp2025 \
+  --trace /nfs/home/share/glr/cbp_traces/compress/compress_0_trace.gz \
+  --limit 10
 ```
 
 ---
@@ -254,45 +355,52 @@ workload_name\tabort_tick\treason_line
 
 ---
 
-### 3.2 对 ABORTED workload 带 debug 重跑：`util/xs_scripts/rerun_aborted_with_debug.sh`
+### 3.2 对 ABORTED workload 带 debug 重跑：`util/xs_scripts/trace/distributed_rerun_aborted_with_debug.py`
 
 **作用**
 
-- 对所有 ABORTED workload：
-  - 从顶层 `log.txt` 解析 abort_tick 和 trace_file。
-  - 设置 `XS_DEBUG_FLAGS/XS_DEBUG_START/XS_DEBUG_END`。
-  - 调用 `run_trace_champsim.sh` 在 `debug/` 子目录下重跑。
+- 分布式（多机）重跑 ABORTED workload：
+  - 扫描 `work_root/*`，只处理存在 `abort` 标记的任务。
+  - 从顶层 `log.txt` 解析 abort_tick、trace_file、(可选) CommitStuck 建议窗口、maxinsts。
+  - 设置 `XS_DEBUG_FLAGS/XS_DEBUG_START/XS_DEBUG_END`，调用 `run_trace_champsim.sh` 在 `debug/` 子目录下重跑。
+  - 通过 SSH 下发到 `server_list` 中的机器，按照 cores/2 - load1 估算容量；支持全局/每机并发上限。
+  - 支持 Ctrl-C：主控退出时会尝试对正在运行的远端任务发送 SIGTERM（基于远端记录的 pid）。
+  - 支持清理旧 abort 标记：`--clear-old-abort` 会在派发前移除 `abort` 文件（保留为 `abort.prev` 以防丢信息），便于区分“新 abort”。
+  - 旧的 `util/xs_scripts/rerun_aborted_with_debug.sh` 已废弃，仅保留提示信息。
 
 **参数**
 
-- 第 1 个参数：`WORK_ROOT`。
-- 第 2 个参数（可选）：`DEBUG_FLAGS`，默认：
-
-  ```text
-  IEW,Fetch,Commit,CommitTrace,DecoupleBP,TraceReader,Decode
-  ```
-
-- 并行度：`xsgem5_para_jobs`（默认 8）。
+- `--work-root`：批跑结果根目录。
+- `--server-list`：服务器列表（每行一个 host，可免密 SSH）。
+- `--arch-script`：trace 跑批脚本，默认 `util/xs_scripts/trace/run_trace_champsim.sh`。
+- `--debug-flags`：逗号分隔，默认 `IEW,Fetch,Commit,CommitTrace,DecoupleBP,TraceReader,Decode`。
+- `--max-global` / `--max-threads-per-host`：全局并发与每机并发上限。
+- `--poll-seconds`：轮询间隔，默认 20。
 
 **用法**
 
 ```bash
-export xsgem5_para_jobs=8
-
-bash util/xs_scripts/rerun_aborted_with_debug.sh \
-  /nfs/home/goulingrui/expri_results/gem5_trace/trace_ipc1_50M_50M
+python3 util/xs_scripts/trace/distributed_rerun_aborted_with_debug.py \
+  --work-root /nfs/home/goulingrui/expri_results/gem5_trace/trace_ipc1_50M_50M \
+  --server-list servers.txt \
+  --arch-script util/xs_scripts/trace/run_trace_champsim.sh \
+  --max-global 16 \
+  --max-threads-per-host 4 \
+  --trace-format cbp2025   # 如需 CBP，可用参数或环境变量 TRACE_FORMAT
+  --clear-old-abort        # 可选：清理旧 abort 标记，重跑后新 abort 才会体现
 ```
 
 每个 ABORTED workload 目录下会生成：
 
 - `debug/log.txt`
 - `debug/stats.txt`
+- 状态文件 `debug/running|completed|abort`（由分布式脚本用于轮询）。
 
 ---
 
 ## 4. BUILD/BIND 与 trace 对齐工具链
 
-### 4.1 `util/extract_gem5_events.py`（增强版）
+### 4.1 `util/trace/extract_trace_events.py`（trace 专用；`util/extract_gem5_events.py` 为兼容入口）
 
 **作用**
 
@@ -320,7 +428,7 @@ bash util/xs_scripts/rerun_aborted_with_debug.sh \
 - 对 `ROOT_DIR` 下所有 `*/debug/log.txt`：
   - 找到最后一条 tick（`Exiting @ tick` 或 `Program aborted at tick`）。
   - 取 `from_tick = last_tick - 10000`。
-  - 调用 `extract_gem5_events.py` 生成 `debug/events.txt`。
+  - 调用 `util/trace/extract_trace_events.py` 生成 `debug/events.txt`（脚本内部已指向新路径）。
 
 **用法**
 
@@ -360,7 +468,7 @@ sn  build_tick  build_pc  bind_tick  trace_pc  taken  tracesn
 - 只处理含 `Trace stream PC mismatch` panic 的 debug 日志：
   - 从顶层 `log.txt` 提取 `abort_tick`。
   - 使用 `from_tick = abort_tick - WINDOW`（默认 1e6）。
-  - 调用 `extract_gem5_events.py` 生成 `events_panic.txt`。
+  - 调用 `util/trace/extract_trace_events.py` 生成 `events_panic.txt`（脚本内部已指向新路径）。
   - 调用 `align_trace_bind_events.py` 生成 `bind_align_panic.tsv`。
 
 **用法**

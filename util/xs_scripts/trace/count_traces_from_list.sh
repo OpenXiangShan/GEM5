@@ -9,6 +9,8 @@
 #   name  rel_path_prefix  skip  fw  dw  sample
 # TRACE_ROOT 为 trace 根目录，例如：/nfs/home/share/glr/champsim_traces
 # OUT_FILE   为统计结果输出文件路径。
+# 环境变量（可选）：
+#   TRACE_FORMAT   champsim | cbp2025（默认 champsim）
 #
 # 输出格式（TSV）：
 #   name  rel_path_prefix  trace_path  inst_count
@@ -23,6 +25,8 @@ fi
 LIST_FILE=$1
 TRACE_ROOT=$2
 OUT_FILE=$3
+
+TRACE_FORMAT=${TRACE_FORMAT:-champsim}
 
 if [[ ! -f "${LIST_FILE}" ]]; then
     echo "Error: LIST_FILE not found: ${LIST_FILE}" >&2
@@ -45,7 +49,7 @@ if [[ ! -f "${COUNT_SCRIPT}" ]]; then
 fi
 
 echo "Using GEM5_HOME=${GEM5_HOME}" >&2
-echo "Reading list from ${LIST_FILE}, trace root=${TRACE_ROOT}" >&2
+echo "Reading list from ${LIST_FILE}, trace root=${TRACE_ROOT}, format=${TRACE_FORMAT}" >&2
 
 : > "${OUT_FILE}"
 
@@ -79,8 +83,8 @@ while read -r line; do
         continue
     fi
 
-    echo "[COUNT] ${name}: ${trace_path}" >&2
-    count=$(python3 "${COUNT_SCRIPT}" --trace "${trace_path}" || echo "ERR")
+    echo "[COUNT] ${name}: ${trace_path} (fmt=${TRACE_FORMAT})" >&2
+    count=$(python3 "${COUNT_SCRIPT}" --trace "${trace_path}" --format "${TRACE_FORMAT}" || echo "ERR")
 
     printf '%s\t%s\t%s\t%s\n' "${name}" "${rel}" "${trace_path}" "${count}" >> "${OUT_FILE}"
 done < "${LIST_FILE}"

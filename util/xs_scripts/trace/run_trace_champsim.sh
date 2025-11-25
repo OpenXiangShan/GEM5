@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
-# Trace-driven XiangShan simulation for a single ChampSim trace.
+# Trace-driven XiangShan simulation for a single trace (ChampSim / CBP2025).
 #
 # Usage:
 #   bash run_trace_champsim.sh [OPTIONS] <trace_file>
 #
 # Options:
 #   -n, --maxinsts N   Total instructions to simulate (default: 100000000)
-#   -f, --format FMT   Trace format (default: champsim)
+#   -f, --format FMT   Trace format (default: $TRACE_FORMAT or champsim)
 #   -h, --help         Show this help message
 
 set -euo pipefail
@@ -17,7 +17,7 @@ script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
 source "${script_dir}/../common.sh"
 
 MAX_INSTS=${XS_MAX_INSTS:-1000000}
-TRACE_FORMAT="champsim"
+TRACE_FORMAT=${TRACE_FORMAT:-"champsim"}
 DEBUG_FLAGS=${XS_DEBUG_FLAGS:-""}
 DEBUG_START=${XS_DEBUG_START:-""}
 DEBUG_END=${XS_DEBUG_END:-""}
@@ -40,6 +40,7 @@ Environment:
   XS_DEBUG_START     Optional debug start tick (requires XS_DEBUG_FLAGS)
   XS_DEBUG_END       Optional debug end tick (requires XS_DEBUG_FLAGS)
   XS_WARMUP_INSTS_NO_SWITCH  Warmup insts before stats reset (no CPU switch)
+  TRACE_FORMAT       champsim | cbp2025 (default: champsim)
 
 Notes:
   - This script is intended to be used with util/xs_scripts/parallel_sim.sh.
@@ -106,7 +107,7 @@ fi
 OUTDIR=${OUTDIR:-"$(pwd)"}
 
 echo "============================================="
-echo "XiangShan Trace-Driven Simulation (ChampSim)"
+echo "XiangShan Trace-Driven Simulation (ChampSim/CBP2025)"
 echo "============================================="
 echo "Trace file:      ${TRACE_FILE}"
 echo "Trace format:    ${TRACE_FORMAT}"

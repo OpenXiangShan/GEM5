@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Trace-only parallel driver for XiangShan + ChampSim traces.
+# Trace-only parallel driver for XiangShan + trace inputs (ChampSim / CBP2025).
 #
 # 目标：
 #   - 保持公用 util/xs_scripts/parallel_sim.sh 原样不动；
@@ -10,6 +10,7 @@
 #       3) 从 workload 列表中解析 skip/fw/dw/sample，将其映射为
 #          XS_WARMUP_INSTS_NO_SWITCH / XS_MAX_INSTS 传给 arch_script
 #          （例如 run_trace_champsim.sh），而不改动公共脚本。
+#   - 通过环境变量 TRACE_FORMAT 可传递格式给 arch_script。
 #
 # 用法（与 parallel_sim.sh 保持一致）：
 #   bash util/xs_scripts/trace/parallel_trace_sim.sh \\
@@ -29,6 +30,9 @@ if [[ -z "${4:-}" ]]; then
 fi
 
 set -x
+
+TRACE_FORMAT=${TRACE_FORMAT:-champsim}
+export TRACE_FORMAT
 
 export arch_script=$(realpath "$1")
 export workload_list=$(realpath "$2")

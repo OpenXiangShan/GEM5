@@ -29,6 +29,11 @@
 #ifndef __CPU_O3_TRACE_CBP2025_TRACE_READER_HH__
 #define __CPU_O3_TRACE_CBP2025_TRACE_READER_HH__
 
+#include <cstdio>
+#include <fstream>
+#include <string>
+#include <vector>
+
 #include "cpu/o3/trace/TraceReader.hh"
 
 namespace gem5
@@ -37,29 +42,106 @@ namespace o3
 {
 
 /**
- * CBP2025 trace reader implementation (stub).
- * 
- * This is a placeholder implementation for CBP2025 traces.
- * To be fully implemented in future iterations.
+ * CBP2025 trace reader implementation.
+ *
+ * This reader consumes CBP2025 binary traces (see cbp2025/lib/trace_reader.h)
+ * and converts them into TraceInstruction objects understood by O3CPU.
+ *
+ * Design goals (KISS/YAGNI):
+ * - Only one TraceInstruction per CBP macro-op (no further cracking yet).
+ * - Support uncompressed and .gz traces; map trace PCs/VAs into the simulated
+ *   address space using the same hash/linear strategy as ChampSim reader.
+ * - Preserve last-in-trace marker so commit can exit cleanly.
  */
 class CBP2025TraceReader : public TraceReader
 {
   public:
-    CBP2025TraceReader(const std::string &trace_file, const std::string &name)
-        : TraceReader(trace_file, name) {}
-    
-    bool init() override { return false; }
-    bool reset() override { return false; }
+    CBP2025TraceReader(const std::string &trace_file, const std::string &name,
+                      const std::string &map_mode = "hash",
+                      uint64_t base_addr = 0x80000000ULL,
+                      uint64_t map_size = 0x40000000ULL,
+                      bool page_align = true);
+
+    ~CBP2025TraceReader() override;
+
+    bool init() override;
+    bool reset() override;
     std::string getFormat() const override { return "cbp2025"; }
-    TraceCheckpoint createCheckpoint() override { return {}; }
-    bool restoreCheckpoint(const TraceCheckpoint& checkpoint) override { return false; }
-    bool seekToInstruction(uint64_t instrIndex) override { return false; }
-    uint64_t getCurrentInstructionIndex() const override { return 0; }
+    TraceCheckpoint createCheckpoint() override;
+    bool restoreCheckpoint(const TraceCheckpoint& checkpoint) override;
+    bool seekToInstruction(uint64_t instrIndex) override;
+    uint64_t getCurrentInstructionIndex() const override { return instructionIndex; }
 
   protected:
-    size_t fillBuffer(size_t max_instructions) override { return 0; }
-    bool parseInstruction(TraceInstruction &instr) override { return false; }
-    bool validateTraceFile() override { return false; }
+    size_t fillBuffer(size_t max_instructions) override;
+    bool parseInstruction(TraceInstruction &instr) override;
+    bool validateTraceFile() override;
+
+  private:
+    // CBP trace encoded instruction (macro-op)
+    struct CBPInstr
+    {
+        uint64_t pc = 0;
+        uint64_t nextPc = 0;
+        uint64_t effAddr = 0;
+        uint8_t memSize = 0;
+        uint8_t baseUpd = 0;
+        uint8_t hasRegOffset = 0;
+        uint8_t type = 0;
+        bool taken = false;
+        uint8_t numInRegs = 0;
+        std::vector<uint8_t> inRegs;
+        uint8_t numOutRegs = 0;
+        std::vector<uint8_t> outRegs;
+    };
+
+    enum class CBPInstClass : uint8_t
+    {
+        ALU = 0,
+        LOAD = 1,
+        STORE = 2,
+        COND_BR = 3,
+        UNCOND_DIR_BR = 4,
+        UNCOND_IND_BR = 5,
+        FP = 6,
+        SLOW_ALU = 7,
+        UNDEF = 8,
+        CALL_DIR = 9,
+        CALL_IND = 10,
+        RET = 11,
+    };
+
+    // Stream helpers
+    bool isGzip(const std::string &filename) const;
+    bool readBytes(void *dst, size_t size);
+    bool readCBPInstruction(CBPInstr &out);
+
+    // Type helpers
+    static bool isLoad(CBPInstClass t);
+    static bool isStore(CBPInstClass t);
+    static bool isMem(CBPInstClass t);
+    static bool isBranch(CBPInstClass t);
+    static bool isCondBranch(CBPInstClass t);
+    static bool regIsInt(uint8_t reg);
+    TraceInstruction::InstType mapInstType(CBPInstClass t) const;
+
+    // Address mapping (reuse ChampSim style)
+    uint64_t mapTraceAddressToVirtual(uint64_t trace_addr);
+    uint64_t mapAddressHash(uint64_t trace_addr);
+    uint64_t mapAddressLinear(uint64_t trace_addr);
+
+  private:
+    bool compressed;
+    std::ifstream traceStream;
+    FILE *gzPipe;
+    bool hasPendingInstr;
+    TraceInstruction pendingInstr;
+    uint64_t instructionIndex;
+
+    std::string addrMapMode;
+    uint64_t addrMapBase;
+    uint64_t addrMapSize;
+    bool addrPageAlign;
 };
 
 } // namespace o3

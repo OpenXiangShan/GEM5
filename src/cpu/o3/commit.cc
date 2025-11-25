@@ -846,7 +846,7 @@ Commit::tick()
 
             [[maybe_unused]] const DynInstPtr &inst = rob->readHeadInst(tid);
 
-            DPRINTF(Commit,"[tid:%i] Instruction [sn:%llu] %s PC %s is head of"
+            DPRINTF(Commit,"[tid:%i] Instruction [sn:%llu] PC %s is head of"
                     " ROB and ready to commit\n",
                     tid, inst->seqNum, inst->pcState());
 
