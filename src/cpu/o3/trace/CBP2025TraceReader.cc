@@ -504,7 +504,7 @@ CBP2025TraceReader::mapAddressHash(uint64_t trace_addr)
         }
     }
 
-    mapped_addr = mapped_addr & ~0x3UL;
+    // Keep mapped address as-is to preserve compressed instruction spacing
     return mapped_addr;
 }
 
@@ -524,7 +524,6 @@ CBP2025TraceReader::mapAddressLinear(uint64_t trace_addr)
         mapped_addr = addrMapBase + (trace_addr % addrMapSize);
     }
 
-    mapped_addr = mapped_addr & ~0x3UL;
     DPRINTF(TraceReader, "CBP mapAddressLinear: 0x%lx -> 0x%lx (page_align=%d)\n",
             trace_addr, mapped_addr, addrPageAlign);
     return mapped_addr;

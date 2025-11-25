@@ -695,9 +695,6 @@ ChampSimTraceReader::mapAddressHash(uint64_t trace_addr)
         }
     }
 
-    // Ensure the mapped address is properly aligned (4-byte aligned for RISC-V)
-    mapped_addr = mapped_addr & ~0x3UL;
-
     return mapped_addr;
 }
 
@@ -723,9 +720,6 @@ ChampSimTraceReader::mapAddressLinear(uint64_t trace_addr)
         // Simple linear mapping within the region based on full-byte offset
         mapped_addr = addrMapBase + (trace_addr % addrMapSize);
     }
-
-    // Ensure 4-byte alignment for RISC-V
-    mapped_addr = mapped_addr & ~0x3UL;
 
     DPRINTF(TraceReader, "mapAddressLinear: 0x%lx -> 0x%lx (page_align=%d, PageSz=%llu)\n",
             trace_addr, mapped_addr, addrPageAlign, (unsigned long long)TheISA::PageBytes);
