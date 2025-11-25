@@ -28,7 +28,6 @@ def setKmhV3Params(args, system):
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
-        cpu.fetchToDecodeDelay = 2
 
         # decode
         cpu.decodeWidth = 8
@@ -78,10 +77,10 @@ def setKmhV3Params(args, system):
         cpu.sbufferBankWriteAccurately = False
 
         # lsq
-        cpu.LQEntries = 120
-        cpu.SQEntries = 64
-        cpu.RARQEntries = 96
-        cpu.RAWQEntries = 56
+        cpu.LQEntries = 72
+        cpu.SQEntries = 56
+        cpu.RARQEntries = 72
+        cpu.RAWQEntries = 32
         cpu.LoadCompletionWidth = 8
         cpu.StoreCompletionWidth = 4
         cpu.RARDequeuePerCycle = 4
@@ -94,6 +93,15 @@ def setKmhV3Params(args, system):
         if args.bp_type == 'DecoupledBPUWithBTB':
             cpu.branchPred.ftq_size = 256
             cpu.branchPred.fsq_size = 256
+
+            cpu.branchPred.ubtb.enabled = True
+            cpu.branchPred.abtb.enabled = True
+            cpu.branchPred.microtage.enabled = False
+            cpu.branchPred.mbtb.enabled = True
+            cpu.branchPred.tage.enabled = True
+            cpu.branchPred.ittage.enabled = True
+            cpu.branchPred.mgsc.enabled = True
+            cpu.branchPred.ras.enabled = True
 
         # l1 cache per core
         if args.caches:
@@ -142,7 +150,8 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '2MB'
+    args.l2_size = '1MB'
+    args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
