@@ -19,10 +19,10 @@ on:
         type: boolean
         description: "Whether to check result (failed ckpts)"
         default: true
-      pr_ref:
+      pr_sha:
         required: false
         type: string
-        description: "PR branch ref (for issue_comment trigger)"
+        description: "Specific commit SHA to checkout (takes precedence)"
 jobs:
   run_performance_test:
     runs-on: [self-hosted, node]
@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          ref: ${{ inputs.pr_ref || github.ref }}
+          ref: ${{ inputs.pr_sha || github.sha }}
       
       - name: Set benchmark configuration
         id: config

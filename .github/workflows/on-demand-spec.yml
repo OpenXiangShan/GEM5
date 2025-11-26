@@ -37,7 +37,7 @@ jobs:
     outputs:
       benchmark_type: ${{ steps.setup.outputs.benchmark }}
       vector_type: ${{ steps.setup.outputs.vector_type }}
-      pr_ref: ${{ steps.setup.outputs.pr_ref }}
+      pr_sha: ${{ steps.setup.outputs.pr_sha }}
     
     steps:
       - name: Setup parameters
@@ -45,7 +45,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            let prNumber, benchmark, prRef;
+            let prNumber, benchmark, prSha;
             
             if (context.eventName === 'workflow_dispatch') {
               // 手动触发
@@ -57,12 +57,12 @@ jobs:
                 repo: context.repo.repo,
                 pull_number: prNumber
               });
-              prRef = pr.data.head.ref;
+              prSha = pr.data.head.sha;
             } else {
               // Label触发 (pull_request_target)
               prNumber = context.payload.pull_request.number;
               benchmark = 'spec06-0.8c';
-              prRef = context.payload.pull_request.head.ref;
+              prSha = context.payload.pull_request.head.sha;
               
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
@@ -76,7 +76,7 @@ jobs:
             
             core.setOutput('benchmark', benchmark);
             core.setOutput('vector_type', vectorType);
-            core.setOutput('pr_ref', prRef);
+            core.setOutput('pr_sha', prSha);
 
   run_spec_test:
     name: Run SPEC Test
@@ -86,4 +86,4 @@ jobs:
       script_path: ../kmh_v3_ideal.sh
       benchmark_type: ${{ needs.trigger.outputs.benchmark_type }}
       vector_type: ${{ needs.trigger.outputs.vector_type }}
-      pr_ref: ${{ needs.trigger.outputs.pr_ref }}
+      pr_sha: ${{ needs.trigger.outputs.pr_sha }}

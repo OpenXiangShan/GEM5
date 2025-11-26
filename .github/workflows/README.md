@@ -39,7 +39,7 @@
 
 **目标**: 在合入前，按需检查有性能风险的 PR
 
-**触发**: 在 PR 评论中输入命令
+**触发**: 在 PR 上添加 `perf` 标签（默认跑 spec06-0.8c），或手动触发 workflow 选择 benchmark
 
 ### 支持的命令
 
@@ -54,6 +54,11 @@
 ### 权限控制
 
 仅以下角色可触发：OWNER / MEMBER / COLLABORATOR
+
+### 当前实现
+
+- 添加 `perf` 标签会自动触发 spec06-0.8c，workflow 会记录标签创建时 PR 的 head SHA 确保结果对应正确的 commit
+- 需要其他 benchmark 时，可通过 Actions -> On-Demand SPEC workflow 手动输入 PR 号和类型
 
 ### 性能结果
 
