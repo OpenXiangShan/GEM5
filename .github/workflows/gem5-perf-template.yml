@@ -216,6 +216,11 @@ jobs:
           
           echo "Performance data archived successfully"
           echo "Archive size: $(du -sh "$TARGET_DIR/spec_all.tar.gz" | cut -f1)"
+          {
+            echo "### Archive output"
+            echo "- Path: \`$TARGET_DIR\`"
+            echo "- Size: $(du -sh "$TARGET_DIR/spec_all.tar.gz" | cut -f1)"
+          } >> $GITHUB_STEP_SUMMARY
       - name: Upload score artifact
         if: always()
         continue-on-error: true
