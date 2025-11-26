@@ -89,7 +89,7 @@ private:
     const unsigned numBanks;         // Number of banks (e.g., 4)
     const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
     const unsigned bankIdShift;      // floorLog2(blockSize), e.g., 5 for 32B blocks
-    const unsigned indexShift;       // bankIdShift + bankIdWidth, e.g., 7 for 32B + 4 banks
+    const unsigned indexShift;       // bankIdShift + bankIdWidth when enabled; fallback uses bankIdShift
 
     // Track last prediction bank for conflict detection
     unsigned lastPredBankId;         // Bank ID of last prediction
@@ -143,7 +143,7 @@ Addr getTageIndex(Addr pc, int t, uint64_t foldedHist) {
 }
 ```
 
-**修改为（使用indexShift）**：
+**修改为（依据 enableBankConflict 动态选择 shift）**：
 ```cpp
 Addr
 BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
@@ -157,7 +157,8 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
     //   - pc[6:5]: bank ID (skipped)
     //   - pc[N:7]: used for index calculation
     // Each bank effectively manages 1/4 of the PC space with the same table size
-    Addr pcBits = (pc >> indexShift) & mask;  // Skip blockSize + bank bits
+    const unsigned pcShift = enableBankConflict ? indexShift : bankIdShift;
+    Addr pcBits = (pc >> pcShift) & mask;  // Skip blockSize + bank bits only when enabled
     Addr foldedBits = foldedHist & mask;
 
     return pcBits ^ foldedBits;
@@ -259,7 +260,7 @@ BTBTAGE::BTBTAGE(const Params& p):
 3. ✅ 验证bank计算正确性（debug输出显示bank ID正确）
 
 ### 阶段2: 修改index计算 ✅
-1. ✅ 修改 `getTageIndex()` 从 `pc >> floorLog2(blockSize)` 改为 `pc >> indexShift`
+1. ✅ 修改 `getTageIndex()`：在启用 bank 模拟时使用 `indexShift`，关闭时退回 `pc >> floorLog2(blockSize)`
 2. ✅ 运行测试，确认功能正确性（编译通过，运行成功）
 
 ### 阶段3: 添加bank冲突检测 ✅
@@ -354,7 +355,7 @@ private:
   0x80000140 (pc[6:5]=10b) -> bank 2 ✓
   0x80000180 (pc[6:5]=00b) -> bank 0 ✓
   ```
-- ✅ **index计算正确**：使用indexShift跳过bank位，编译运行无误
+- ✅ **index计算正确**：启用bank模拟时跳过 bank 位，关闭后退回旧逻辑
 - ✅ **冲突检测正确**：统计显示检测到bank冲突并丢弃更新
 
 ### 性能指标 ✅

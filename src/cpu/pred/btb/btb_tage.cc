@@ -832,13 +832,16 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
     // Create mask for tableIndexBits[t] to limit result size
     Addr mask = (1ULL << tableIndexBits[t]) - 1;
 
-    // Index calculation skips bank bits to avoid bank aliasing
+    // Index calculation skips bank bits to avoid bank aliasing only when
+    // bank conflict simulation is enabled.
     // For 32B blocks (5 bits) with 4 banks (2 bits):
     //   - pc[4:0]: block offset (ignored)
     //   - pc[6:5]: bank ID (skipped)
     //   - pc[N:7]: used for index calculation
-    // Each bank effectively manages 1/4 of the PC space with the same table size
-    Addr pcBits = (pc >> indexShift) & mask;  // Skip blockSize + bank bits
+    // Each bank effectively manages 1/4 of the PC space with the same table
+    // size when enabled; otherwise we fall back to legacy indexing.
+    const unsigned pcShift = enableBankConflict ? indexShift : bankIdShift;
+    Addr pcBits = (pc >> pcShift) & mask;
     Addr foldedBits = foldedHist & mask;
 
     return pcBits ^ foldedBits;
