@@ -51,6 +51,7 @@ def setKmhV3IdealParams(args, system):
         # rob
         cpu.commitWidth = 12
         cpu.squashWidth = 12
+        cpu.phyregReleaseWidth = 8
         cpu.RobCompressPolicy = 'kmhv3'
         cpu.numROBEntries = 160
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
