@@ -1225,6 +1225,9 @@ LSQUnit::loadDoTranslate(const DynInstPtr &inst)
 
     if (inst->savedRequest && inst->savedRequest->isTranslationComplete()) {
         inst->setNormalLd(inst->savedRequest->isNormalLd());
+
+        cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::VAddress, inst->effAddr);
+        cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::PAddress, inst->physEffAddr);
     }
 
     return load_fault;
@@ -1503,6 +1506,20 @@ LSQUnit::executeLoadPipeSx()
                 assert(inst->getReplayType());
                 stats.loadReplayEvents[*inst->getReplayType()]++;
 
+                if (inst->needCacheBlockedReplay()) {
+                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_DcacheStall);
+                }
+                else if (inst->needRARReplay()) {
+                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_RARReplay);
+                }
+                else if (inst->needRAWReplay()) {
+                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_RAWReplay);
+                }
+                else {
+                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_OtherReplay);
+                }
+                cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::LastReplay, curTick());
+
                 iewStage->loadCancel(inst);
                 inst->endPipelining();
                 inst = nullptr;
@@ -1529,6 +1546,23 @@ LSQUnit::executeLoadPipeSx()
                     inst->issueQue->retryMem(inst);
                 }
                 else if (inst->needTLBMissReplay()) iewStage->deferMemInst(inst);
+
+
+                if (inst->needTLBMissReplay()) {
+                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_TLBMiss);
+                }
+                else if (inst->needCacheMissReplay()) {
+                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_CacheMiss);
+                }
+                else if (inst->needBankConflicyReplay()) {
+                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_BankConflict);
+                }
+                else if (inst->needNukeReplay()) {
+                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_Nuke);
+                } else {
+                    cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_OtherReplay);
+                }
+                cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::LastReplay, curTick());
 
                 iewStage->loadCancel(inst);
                 inst->endPipelining();

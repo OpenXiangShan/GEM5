@@ -151,8 +151,6 @@ if __name__ == '__main__':
                     if col_name[i].startswith('at'):
                         pos.append(val // tick_per_cycle)
                     elif col_name[i].startswith('pc'):
-                        if val < 0:
-                            val = val + (1 << 64)
                         records.append(hex(val))
                     else:
                         records.append(val)

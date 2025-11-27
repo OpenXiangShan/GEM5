@@ -13,14 +13,52 @@ namespace gem5
 namespace o3
 {
 
+enum class InstDetail
+{
+    VAddress,
+    PAddress,
+    LastReplay,
+    ReplayStr,
+};
+
+enum ReplayReason
+{
+    TT_CacheMiss,
+    TT_TLBMiss,
+    TT_BankConflict,
+    TT_Nuke,
+    TT_DcacheStall,
+    TT_RARReplay,
+    TT_RAWReplay,
+    TT_OtherReplay,
+    TT_NumReplay
+};
+
+static char ReplayReasonStr[] = {
+    'C',
+    'T',
+    'B',
+    'N',
+    'S',
+    'R',
+    'W',
+    'O'
+};
 
 class InstMeta
 {
+
     friend class PerfCCT;
     InstSeqNum sn;
-    std::vector<uint64_t> posTick;
+    std::vector<Tick> posTick;
     std::string disasm;
     Addr pc;
+
+    bool isload;
+    Addr vaddr;
+    Addr paddr;
+    Tick lastReplay;
+    std::stringstream replayStr;
   public:
 
     void reset(const DynInstPtr inst);
@@ -33,7 +71,9 @@ class PerfCCT
     bool enableCCT;
     ArchDBer* archdb;
     std::string sql_insert_cmd;
+    std::string ld_insert_cmd;
 
+    uint64_t id = 0;
     std::vector<InstMeta> metas;
 
     std::stringstream ss;
@@ -47,7 +87,7 @@ class PerfCCT
 
     void updateInstPos(InstSeqNum sn, const PerfRecord pos);
 
-    // void updateInstMeta
+    void updateInstMeta(InstSeqNum sn, const InstDetail detail, const uint64_t val);
 
     void commitMeta(InstSeqNum sn);
 };

@@ -372,12 +372,25 @@ def build_xiangshan_system(args):
     # config arch db
     if args.enable_arch_db:
         perfCCT_cmd = "CREATE TABLE LifeTimeCommitTrace(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
-        perfCCT_cmd += PerfRecord.vals[0] + " INT NOT NULL"
+        perfCCT_cmd += PerfRecord.vals[0] + " bigint unsigned NOT NULL"
         for i in range(1, len(PerfRecord.vals)):
             name = PerfRecord.vals[i]
-            type_str = "INT" if name.lower().startswith(('at', 'pc')) else "CHAR(20)"
+            type_str = "bigint unsigned" if name.lower().startswith(('at', 'pc')) else "char(20)"
             perfCCT_cmd += "," + name + " " + type_str + " NOT NULL"
         perfCCT_cmd += ");"
+
+        perfCCT_cmd += """
+CREATE TABLE LoadLifeTimeCommitTrace(
+    ID int unsigned PRIMARY KEY,
+    VAddress bigint unsigned not null,
+    PAddress bigint unsigned not null,
+    LastReplay bigint unsigned not null,
+    ReplayStr char(10) not null,
+    constraint fk_id
+        foreign key (ID) references LifeTimeCommitTrace(ID)
+);
+
+"""
 
         test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)
         test_sys.arch_db.dump_from_start = args.arch_db_fromstart

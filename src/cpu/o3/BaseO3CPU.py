@@ -69,11 +69,6 @@ class PerfRecord(ScopedEnum):
         'Disasm', 'PC'
     ]
 
-class PerfDetail(ScopedEnum):
-    vals = [
-        'pdst', 'psrcs', 'result', 'ldstAddr', 'cachemisslevel', 'arbfail'
-    ]
-
 class BaseO3CPU(BaseCPU):
     type = 'BaseO3CPU'
     cxx_class = 'gem5::o3::CPU'
