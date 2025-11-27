@@ -2,6 +2,7 @@
 #define __CPU_PRED_BTB_DECOUPLED_BPRED_HH__
 
 #include <array>
+#include <cstdint>
 #include <queue>
 #include <stack>
 #include <utility>
@@ -308,6 +309,11 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar uncondMiss;   ///< Unconditional branch mispredictions
         statistics::Scalar returnMiss;   ///< Return mispredictions
         statistics::Scalar otherMiss;    ///< Other control mispredictions
+
+        // Fine-grained branch classification statistics
+        statistics::Vector branchClassCounts; ///< Classified branch occurrences
+        statistics::Vector branchClassMisses; ///< Mispredictions per class
+        statistics::Vector controlSquashByClass; ///< Commit/Resolve-path squashes per class
 
         // Branch coverage statistics
         statistics::Scalar staticBranchNum;           ///< Total static branches seen
@@ -829,6 +835,24 @@ class DecoupledBPUWithBTB : public BPredUnit
         OTHER     ///< Other control flow instruction
     };
 
+    /**
+     * @brief Fine-grained branch classes used to tie stats to predictors
+     */
+    enum class BranchClass : uint8_t
+    {
+        CondBranch = 0,   ///< Conditional direct branches (TAGE focus)
+        DirectCall,       ///< Direct call instructions (RAS + BTB)
+        IndirectCall,     ///< Indirect call instructions (ITTAGE + RAS)
+        Return,           ///< Return instructions (RAS)
+        DirectJump,       ///< Direct, non-call control transfers (BTB)
+        IndirectJump,     ///< Indirect jumps that are not calls/returns (ITTAGE)
+        Unknown,          ///< Fallback for unexpected classifications
+        NumClasses        ///< Sentinel used for sizing stat containers
+    };
+
+    static constexpr size_t NumBranchClasses =
+        static_cast<size_t>(BranchClass::NumClasses);
+
     void addCfi(CfiType type, bool mispred) {
         switch (type) {
             case COND:
@@ -854,6 +878,12 @@ class DecoupledBPUWithBTB : public BPredUnit
         }
         DPRINTF(DBPBTBStats, "Miss type: %d\n", type);
     }
+
+    BranchClass classifyBranch(const DynInstPtr &inst) const;
+    BranchClass classifyBranch(const StaticInstPtr &inst) const;
+    static const char *branchClassName(BranchClass cls);
+    void addBranchClassStat(BranchClass cls, bool mispred);
+    void addControlSquashCommitStat(BranchClass cls);
 
     void addFtqNotValid() {
         dbpBtbStats.ftqNotValid++;

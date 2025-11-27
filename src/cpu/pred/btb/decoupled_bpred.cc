@@ -1,5 +1,7 @@
 #include "cpu/pred/btb/decoupled_bpred.hh"
 
+#include <array>
+
 #include "base/debug_helper.hh"
 #include "base/output.hh"
 #include "cpu/o3/cpu.hh"
@@ -478,7 +480,57 @@ DecoupledBPUWithBTB::dumpStats()
     }
 }
 
-DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum):
+namespace {
+
+constexpr std::array<const char*, DecoupledBPUWithBTB::NumBranchClasses>
+    BranchClassLabels = {
+        "cond_branch",
+        "direct_call",
+        "indirect_call",
+        "return",
+        "direct_jump",
+        "indirect_jump",
+        "unknown"
+    };
+
+template <typename InstPtr>
+DecoupledBPUWithBTB::BranchClass
+classifyBranchImpl(const InstPtr &inst)
+{
+    using BranchClass = DecoupledBPUWithBTB::BranchClass;
+
+    if (!inst || !inst->isControl()) {
+        return BranchClass::Unknown;
+    }
+
+    if (inst->isReturn()) {
+        return BranchClass::Return;
+    }
+
+    if (inst->isCall()) {
+        return inst->isIndirectCtrl() ? BranchClass::IndirectCall
+                                      : BranchClass::DirectCall;
+    }
+
+    if (inst->isCondCtrl()) {
+        return BranchClass::CondBranch;
+    }
+
+    if (inst->isIndirectCtrl()) {
+        return BranchClass::IndirectJump;
+    }
+
+    if (inst->isDirectCtrl() || inst->isUncondCtrl()) {
+        return BranchClass::DirectJump;
+    }
+
+    return BranchClass::Unknown;
+}
+
+} // anonymous namespace
+
+DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
+    statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum):
     statistics::Group(parent),
     ADD_STAT(condNum, statistics::units::Count::get(), "the number of cond branches"),
     ADD_STAT(uncondNum, statistics::units::Count::get(), "the number of uncond branches"),
@@ -488,6 +540,9 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     ADD_STAT(uncondMiss, statistics::units::Count::get(), "the number of uncond branch misses"),
     ADD_STAT(returnMiss, statistics::units::Count::get(), "the number of return branch misses"),
     ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses"),
+    ADD_STAT(branchClassCounts, statistics::units::Count::get(), "branch counts by fine-grained class"),
+    ADD_STAT(branchClassMisses, statistics::units::Count::get(), "branch mispredictions by fine-grained class"),
+    ADD_STAT(controlSquashByClass, statistics::units::Count::get(), "commit/resolve-path squashes by branch class"),
     ADD_STAT(staticBranchNum, statistics::units::Count::get(), "the number of all (different) static branches"),
     ADD_STAT(staticBranchNumEverTaken, statistics::units::Count::get(), "the number of all (different) static branches that are once taken"),
     ADD_STAT(predsOfEachStage, statistics::units::Count::get(), "the number of preds of each stage that account for final pred"),
@@ -538,6 +593,14 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group* parent, unsigne
     fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
+    branchClassCounts.init(NumBranchClasses);
+    branchClassMisses.init(NumBranchClasses);
+    controlSquashByClass.init(NumBranchClasses);
+    for (size_t i = 0; i < NumBranchClasses; ++i) {
+        branchClassCounts.subname(i, BranchClassLabels[i]);
+        branchClassMisses.subname(i, BranchClassLabels[i]);
+        controlSquashByClass.subname(i, BranchClassLabels[i]);
+    }
 }
 
 DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchStream &stream, const DynInstPtr &inst, bool mispred)
@@ -961,6 +1024,8 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id, unsigned stream_id,
 {
     if (fromCommit) {
         dbpBtbStats.controlSquashFromCommit++;
+        auto branchClass = classifyBranch(static_inst);
+        addControlSquashCommitStat(branchClass);
     } else {
         dbpBtbStats.controlSquashFromDecode++;
     }
@@ -1350,6 +1415,63 @@ DecoupledBPUWithBTB::trackTakenBranch(Addr branchAddr)
     updateBranchMap(currentSubPhaseTakenBranches);
 }
 
+DecoupledBPUWithBTB::BranchClass
+DecoupledBPUWithBTB::classifyBranch(const DynInstPtr &inst) const
+{
+    return classifyBranchImpl(inst);
+}
+
+DecoupledBPUWithBTB::BranchClass
+DecoupledBPUWithBTB::classifyBranch(const StaticInstPtr &inst) const
+{
+    return classifyBranchImpl(inst);
+}
+
+const char *
+DecoupledBPUWithBTB::branchClassName(BranchClass cls)
+{
+    auto idx = static_cast<size_t>(cls);
+    if (idx < BranchClassLabels.size()) {
+        return BranchClassLabels[idx];
+    }
+    return "invalid";
+}
+
+void
+DecoupledBPUWithBTB::addBranchClassStat(BranchClass cls, bool mispred)
+{
+    auto idx = static_cast<size_t>(cls);
+    if (idx >= NumBranchClasses) {
+        DPRINTF(DBPBTBStats, "Skip invalid branch class stats update %d\n",
+                static_cast<int>(cls));
+        return;
+    }
+
+    dbpBtbStats.branchClassCounts[idx]++;
+    if (mispred) {
+        dbpBtbStats.branchClassMisses[idx]++;
+    }
+
+    DPRINTF(DBPBTBStats, "Branch classified as %s, mispred=%d\n",
+            branchClassName(cls), mispred);
+}
+
+void
+DecoupledBPUWithBTB::addControlSquashCommitStat(BranchClass cls)
+{
+    auto idx = static_cast<size_t>(cls);
+    if (idx >= NumBranchClasses) {
+        DPRINTF(DBPBTBStats,
+                "Skip invalid commit squash class stats update %d\n",
+                static_cast<int>(cls));
+        return;
+    }
+
+    dbpBtbStats.controlSquashByClass[idx]++;
+    DPRINTF(DBPBTBStats, "Commit squash classified as %s\n",
+            branchClassName(cls));
+}
+
 void
 DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
 {
@@ -1365,6 +1487,9 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     } else if (inst->isIndirectCtrl()) {
         addCfi(OTHER, mispred);
     }
+
+    auto branchClass = classifyBranch(inst);
+    addBranchClassStat(branchClass, mispred);
 
     // ---------- Find corresponding fetch stream entry ----------
     auto streamIt = fetchStreamQueue.find(inst->fsqId);
