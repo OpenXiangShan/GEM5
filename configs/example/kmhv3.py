@@ -94,6 +94,8 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ftq_size = 256
             cpu.branchPred.fsq_size = 256
 
+            cpu.branchPred.tage.resolvedUpdate = True
+
             cpu.branchPred.ubtb.enabled = True
             cpu.branchPred.abtb.enabled = False
             cpu.branchPred.microtage.enabled = False
