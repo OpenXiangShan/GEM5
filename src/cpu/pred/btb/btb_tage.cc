@@ -243,8 +243,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     bool main_taken = main_info.taken();
     bool alt_taken = alt_info.taken();
     // Use base table instead of btb_entry.ctr
-    Addr base_idx = getBaseTableIndex(alignedPC);
-    unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, alignedPC);
+    Addr alignPC = alignedPC & ~(blockSize - 1);   // aligned again
+    Addr base_idx = getBaseTableIndex(alignPC);
+    unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, alignPC);
     bool base_taken = getDelay() != 0 ? baseTable[base_idx][branch_idx] >= 0 : btb_entry.ctr >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
 
@@ -321,7 +322,7 @@ BTBTAGE::lookupHelper(const Addr &alignedPC, const std::vector<BTBEntry> &btbEnt
 void
 BTBTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
     // use 32byte(blockSize) aligned PC for prediction(get index and tag)
-    Addr alignedPC = stream_start & ~(blockSize - 1);
+    Addr alignedPC = stream_start;
     DPRINTF(TAGE, "putPCHistory startAddr: %#lx, alignedPC: %#lx\n", stream_start, alignedPC);
 
     // IMPORTANT: when this function is called,
@@ -403,7 +404,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     auto &alt_info = pred.altInfo;
     bool used_alt = pred.useAlt;
     // Use base table instead of entry.ctr for fallback prediction
-    Addr alignedPC = stream.getRealStartPC() & ~(blockSize - 1);
+    Addr alignedPC = stream.getRealStartPC();
     Addr base_idx = getBaseTableIndex(alignedPC);
     unsigned branch_idx = getBranchIndexInBlock(entry.pc, alignedPC);
     bool base_taken = baseTable[base_idx][branch_idx] >= 0;
@@ -602,7 +603,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &alignedPC,
 void
 BTBTAGE::update(const FetchStream &stream) {
     Addr startAddr = stream.getRealStartPC();
-    Addr alignedPC = startAddr & ~(blockSize - 1);
+    Addr alignedPC = startAddr;
     DPRINTF(TAGE, "update startAddr: %#lx, alignedPC: %#lx\n", startAddr, alignedPC);
 
     // Prepare BTB entries to update
@@ -717,8 +718,8 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist)
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
 
-    // Extract lower bits of PC directly
-    Addr pcBits = (pc >> floorLog2(blockSize)) & mask; // pc is already aligned
+    // Extract lower bits of PC directly, shift by 1 to remove lowest bit (2-byte alignment)
+    Addr pcBits = (pc >> 1) & mask;
 
     // Extract and prepare folded history bits
     Addr foldedBits = foldedHist & mask;
@@ -743,7 +744,7 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
     Addr mask = (1ULL << tableIndexBits[t]) - 1;
 
     // Extract lower bits of PC and XOR with folded history directly
-    Addr pcBits = (pc >> floorLog2(blockSize)) & mask; // pc is already aligned
+    Addr pcBits = (pc >> 1) & mask;
     Addr foldedBits = foldedHist & mask;
 
     return pcBits ^ foldedBits;
