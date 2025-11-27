@@ -20,6 +20,15 @@ from common.xiangshan import *
 
 
 def setKmhV3IdealParams(args, system):
+    """
+    Apply KMHv3-like ideal/performance-oriented parameter overrides to CPUs and caches in the provided system.
+    
+    Adjusts per-CPU pipeline widths, buffer sizes, scheduler/ROB/LSU/LSQ settings, branch predictor sizes, and optional L1/L2/L3 cache parameters to enforce an idealized KMHv3 configuration used for performance-oriented simulation.
+    
+    Parameters:
+        args: Parsed simulation arguments containing flags and options used to decide which cache and branch-predictor adjustments to apply (e.g., `bp_type`, `caches`, `l2cache`, `l3cache`, `num_cpus`, `classic_l2`).
+        system: The simulation System object whose CPUs and cache components will be modified in place.
+    """
     for cpu in system.cpu:
 
         # fetch

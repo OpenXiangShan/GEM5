@@ -20,6 +20,15 @@ from common.xiangshan import *
 
 
 def setKmhV3Params(args, system):
+    """
+    Apply KMHv3-style microarchitectural parameter defaults to each CPU and selected caches in the given system.
+    
+    Modifies CPU and cache configuration objects in-place based on `args`. Controls per-core fetch/decode/rename/dispatch/scheduler/ROB/LSU/LSQ/branch-predictor/L1 settings and optional L2/L3 cache wrapper parameters.
+    
+    Parameters:
+        args (argparse.Namespace): Simulation arguments that influence which features are configured (e.g., `bp_type`, `caches`, `l2cache`, `l3cache`, `classic_l2`, `num_cpus`, `l2_slices`).
+        system: Simulation `system` object whose `cpu`, `l2_caches`, `l2_wrappers`, `tol2bus_list`, and `l3` members will be configured.
+    """
     for cpu in system.cpu:
 
         # fetch (idealfetch not care)
