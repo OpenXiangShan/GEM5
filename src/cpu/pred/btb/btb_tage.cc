@@ -536,6 +536,8 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 #endif
             }
         }
+    }else{
+        checkUtageUpdateMisspred(stream);
     }
 
     // No allocation if no misprediction
@@ -759,33 +761,37 @@ BTBTAGE::update(const FetchStream &stream) {
         }
 #endif
     }
-    if (getDelay() != 2){// use for microtage updatemispred counting
-        // sort microtage predictions by pc to find the first taken branch
-        std::vector<std::pair<Addr, TagePrediction>> lastPreds;
-        lastPreds.reserve(predMeta->preds.size());
-        for (auto &kv : predMeta->preds) {
-            lastPreds.emplace_back(kv.first, kv.second);
-        }
-        std::sort(lastPreds.begin(), lastPreds.end(),
-                [](const std::pair<Addr, TagePrediction> &a,
-                    const std::pair<Addr, TagePrediction> &b) {
-                    return a.first < b.first;
-                });
-        Addr first_taken_pc = 0;
-        for (auto &entry_info : lastPreds) {
-            if (entry_info.second.taken) {
-                first_taken_pc = entry_info.first;
-                break;
-            }
-        }
-        bool fallthrough_mispred = (first_taken_pc == 0 && stream.exeTaken) ||
-                                    (first_taken_pc != 0 && !stream.exeTaken);
-        bool branch_mispred = stream.exeTaken && first_taken_pc != stream.exeBranchInfo.pc;
-        if (fallthrough_mispred || branch_mispred) {
-            tageStats.updateMispred++;
+    DPRINTF(TAGE, "end update\n");
+}
+
+void
+BTBTAGE::checkUtageUpdateMisspred(const FetchStream &stream) {
+    auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+    // use for microtage updatemispred counting
+    // sort microtage predictions by pc to find the first taken branch
+    std::vector<std::pair<Addr, TagePrediction>> lastPreds;
+    lastPreds.reserve(predMeta->preds.size());
+    for (auto &kv : predMeta->preds) {
+        lastPreds.emplace_back(kv.first, kv.second);
+    }
+    std::sort(lastPreds.begin(), lastPreds.end(),
+            [](const std::pair<Addr, TagePrediction> &a,
+                const std::pair<Addr, TagePrediction> &b) {
+                return a.first < b.first;
+            });
+    Addr first_taken_pc = 0;
+    for (auto &entry_info : lastPreds) {
+        if (entry_info.second.taken) {
+            first_taken_pc = entry_info.first;
+            break;
         }
     }
-    DPRINTF(TAGE, "end update\n");
+    bool fallthrough_mispred = (first_taken_pc == 0 && stream.exeTaken) ||
+                                (first_taken_pc != 0 && !stream.exeTaken);
+    bool branch_mispred = stream.exeTaken && first_taken_pc != stream.exeBranchInfo.pc;
+    if (fallthrough_mispred || branch_mispred) {
+        tageStats.updateMispred++;
+    }
 }
 
 // Update prediction counter with saturation
