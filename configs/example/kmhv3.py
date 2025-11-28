@@ -148,6 +148,7 @@ def setKmhV3Params(args, system):
     if args.l3cache:
         system.l3.mshrs = 64
         system.l3.do_fast_writeline = False
+        system.l3.num_slices = 4
 
 if __name__ == '__m5_main__':
     FutureClass = None
