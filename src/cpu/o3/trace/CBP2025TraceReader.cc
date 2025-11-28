@@ -402,10 +402,55 @@ CBP2025TraceReader::fillBuffer(size_t max_instructions)
     }
 
     size_t pushed = 0;
+    auto isApproxFallthrough = [](Addr pc, Addr next_pc) {
+        return next_pc == pc + 2 || next_pc == pc + 4;
+    };
     while (pushed < max_instructions && !eofReached) {
         TraceInstruction current;
         if (parseInstruction(current)) {
             if (hasPendingInstr) {
+                Addr next_pc = current.getPC();
+                const Addr curr_pc = pendingInstr.getPC();
+                const bool pending_taken_branch =
+                    pendingInstr.isAnyBranch() && pendingInstr.getBranchTaken();
+
+                // 健壮性兜底：非分支且下一条 PC 非 2B 对齐时，按顺序流 pc+4 处理，
+                // 避免异常 PC 打乱后续长度推断 / fallthrough。
+                if (!pendingInstr.isAnyBranch() && (next_pc & 0x1)) {
+                    Addr corrected_pc = curr_pc + 4;
+                    current.setPC(corrected_pc);
+                    next_pc = corrected_pc;
+                }
+                if (!pending_taken_branch && next_pc >= curr_pc) {
+                    const uint64_t delta = next_pc - curr_pc;
+                    // 捕获 2B/4B 等小步进以供 Fetch 生成正确指令长度。
+                    if (delta > 0 && delta <= 8) {
+                        pendingInstr.setInstSizeBytes(
+                            static_cast<uint8_t>(delta));
+                    }
+                }
+
+                if (pendingInstr.isAnyBranch()) {
+                    if (!pending_taken_branch &&
+                        !isApproxFallthrough(pendingInstr.getPC(), next_pc)) {
+                        pendingInstr.setCtrlFlowChange(true);
+                        pendingInstr.setCtrlFlowTarget(next_pc);
+                        DPRINTF(TraceReader,
+                                "CBP fillBuffer: mark branch-not-taken "
+                                "ctrl-flow change pc=0x%lx -> nextPC=0x%lx\n",
+                                pendingInstr.getPC(), next_pc);
+                    }
+                } else {
+                    if (!isApproxFallthrough(pendingInstr.getPC(), next_pc)) {
+                        pendingInstr.setCtrlFlowChange(true);
+                        pendingInstr.setCtrlFlowTarget(next_pc);
+                        DPRINTF(TraceReader,
+                                "CBP fillBuffer: mark non-branch ctrl-flow "
+                                "change pc=0x%lx -> nextPC=0x%lx\n",
+                                pendingInstr.getPC(), next_pc);
+                    }
+                }
+
                 addToBuffer(pendingInstr);
                 pushed++;
             }
