@@ -284,6 +284,18 @@ class ChampSimTraceReader : public TraceReader
     uint64_t mapTraceAddressToVirtual(uint64_t trace_addr);
 
     /**
+     * Map trace PC to virtual address (keeps full mapping, no extra alignment).
+     */
+    uint64_t mapTracePcToVirtual(uint64_t trace_pc);
+
+    /**
+     * Map trace memory address to virtual address and enforce minimal alignment
+     * so that scalar memory operations (e.g., sw) do not trigger RISC-V
+     * misaligned address faults in trace mode.
+     */
+    uint64_t mapTraceMemToVirtual(uint64_t trace_addr);
+
+    /**
      * Hash-based address mapping (original implementation)
      * @param trace_addr Original address from trace
      * @return Hashed and mapped virtual address

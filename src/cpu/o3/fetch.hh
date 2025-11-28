@@ -730,6 +730,8 @@ class Fetch
     Addr traceWrongPathPredPC = 0;       // predicted (wrong) path start PC
     Addr traceWrongPathCorrectPC = 0;    // correct redirect PC from trace
     InstSeqNum traceWrongPathBranchSeqNum = 0; // branch seqNum for squash boundary
+    // For trap-driven wrong-path where trace lacks reliable next PC, force 2B steps.
+    bool traceWrongPathForceMinStep = false;
 
     /** Wrong-path injection mode: use trace instructions instead of NOPs */
     bool traceWrongPathUseTraceInst = false;

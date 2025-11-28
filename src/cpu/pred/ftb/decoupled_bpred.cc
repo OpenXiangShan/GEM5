@@ -922,6 +922,9 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
     // supplying ftq entry might be taken before pc
     // because it might just be updated last cycle
     // but last cycle ftq tells fetch that this is a miss stream
+    if (!(pc.instAddr() < end && pc.instAddr() >= start)) {
+        DPRINTF(DecoupleBP, "pc %#lx with [%#lx, %#lx)\n", pc.instAddr(), start, end);
+    }
     assert(pc.instAddr() < end && pc.instAddr() >= start);
     bool raw_taken = pc.instAddr() == taken_pc && target_to_fetch.taken;
     bool taken = raw_taken;

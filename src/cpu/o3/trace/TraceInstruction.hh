@@ -110,6 +110,9 @@ class TraceInstruction
     bool hasImmediateOperand;
     uint64_t immediateValue;
 
+    /** Instruction size in bytes (e.g., 2 for compressed, 4 for standard) */
+    uint8_t instSizeBytes;
+
     /** Additional metadata */
     bool valid;
 
@@ -124,6 +127,7 @@ class TraceInstruction
         ctrlFlowChange(false), hasCtrlFlowTarget(false), ctrlFlowTarget(0),
         isLoad(false), isStore(false),
         seqNum(0), piece(0), hasImmediateOperand(false), immediateValue(0),
+        instSizeBytes(4),
         valid(false), lastInTrace(false) {}
 
     /** Constructor with basic fields */
@@ -134,6 +138,7 @@ class TraceInstruction
         isLoad(_type == InstType::LOAD),
         isStore(_type == InstType::STORE),
         seqNum(_seqNum), piece(0), hasImmediateOperand(false), immediateValue(0),
+        instSizeBytes(4),
         valid(true), lastInTrace(false)
     {
         isBranch = (_type == InstType::COND_BRANCH ||
@@ -163,6 +168,7 @@ class TraceInstruction
     uint64_t getSeqNum() const { return seqNum; }
     uint8_t getPiece() const { return piece; }
     bool isValid() const { return valid; }
+    uint8_t getInstSizeBytes() const { return instSizeBytes; }
 
     // Additional getters for O3CPU
     bool getHasImmediateOperand() const { return hasImmediateOperand; }
@@ -223,7 +229,10 @@ class TraceInstruction
     }
     void setSeqNum(uint64_t _seqNum) { seqNum = _seqNum; }
     void setPiece(uint8_t _piece) { piece = _piece; }
+    void setInstSizeBytes(uint8_t size) { instSizeBytes = size; }
     void setValid(bool _valid) { valid = _valid; }
+
+    Addr getFallThroughPC() const { return pc + instSizeBytes; }
 
     void setLastInTrace(bool v) { lastInTrace = v; }
 
@@ -257,6 +266,7 @@ class TraceInstruction
         piece = 0;
         hasImmediateOperand = false;
         immediateValue = 0;
+        instSizeBytes = 4;
         valid = false;
         lastInTrace = false;
     }

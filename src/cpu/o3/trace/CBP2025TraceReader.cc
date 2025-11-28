@@ -333,24 +333,34 @@ CBP2025TraceReader::parseInstruction(TraceInstruction &instr)
     const CBPInstClass cls = static_cast<CBPInstClass>(raw.type);
 
     // Map PC/nextPc through VA mapping to keep FS happy.
-    const Addr mapped_pc = mapTraceAddressToVirtual(raw.pc);
+    const Addr mapped_pc = mapTracePcToVirtual(raw.pc);
     instr.setPC(mapped_pc);
     instr.setSeqNum(getNextSeqNum());
     instr.setValid(true);
+    instr.setInstSizeBytes(4);
     instr.setInstType(mapInstType(cls));
     instr.setPiece(0);
 
     if (isBranch(cls)) {
         instr.setBranchTaken(raw.taken);
         if (raw.taken) {
-            instr.setBranchTarget(mapTraceAddressToVirtual(raw.nextPc));
+            instr.setBranchTarget(mapTracePcToVirtual(raw.nextPc));
+        }
+    }
+    if (!isBranch(cls) || (isCondBranch(cls) && !raw.taken)) {
+        const Addr mapped_next = mapTracePcToVirtual(raw.nextPc);
+        if (mapped_next >= mapped_pc) {
+            const uint64_t delta = mapped_next - mapped_pc;
+            if (delta > 0 && delta <= 8) {
+                instr.setInstSizeBytes(static_cast<uint8_t>(delta));
+            }
         }
     }
 
     if (isLoad(cls)) {
-        instr.addLoadAddress(mapTraceAddressToVirtual(raw.effAddr), raw.memSize);
+        instr.addLoadAddress(mapTraceMemToVirtual(raw.effAddr), raw.memSize);
     } else if (isStore(cls)) {
-        instr.addStoreAddress(mapTraceAddressToVirtual(raw.effAddr), raw.memSize);
+        instr.addStoreAddress(mapTraceMemToVirtual(raw.effAddr), raw.memSize);
     }
 
     auto mapIntReg = [&](uint8_t r) -> uint8_t {
@@ -488,6 +498,27 @@ CBP2025TraceReader::mapTraceAddressToVirtual(uint64_t trace_addr)
     } else {
         return mapAddressHash(trace_addr);
     }
+}
+
+uint64_t
+CBP2025TraceReader::mapTracePcToVirtual(uint64_t trace_pc)
+{
+    // PC keeps the full mapping (page alignment etc.) so that PC sequences
+    // stay consistent for external tools and difftest.
+    return mapTraceAddressToVirtual(trace_pc);
+}
+
+uint64_t
+CBP2025TraceReader::mapTraceMemToVirtual(uint64_t trace_addr)
+{
+    // Memory addresses reuse the same mapping but we additionally enforce
+    // a minimal alignment so that scalar memory operations do not
+    // systematically trigger RISC-V misaligned-address faults in trace mode.
+    uint64_t mapped = mapTraceAddressToVirtual(trace_addr);
+    // For now align to 4 bytes, which is enough for 32-bit accesses and
+    // matches the ChampSim trace reader behaviour.
+    mapped &= ~static_cast<uint64_t>(0x3);
+    return mapped;
 }
 
 uint64_t

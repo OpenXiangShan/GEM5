@@ -1292,6 +1292,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
                                 "[tid:%i] Squash target PC (0x%#lx) matches correct PC (0x%#lx)\n",
                                 tid, new_pc.instAddr(), traceWrongPathCorrectPC);
                         traceWrongPathActive = false;
+                        traceWrongPathForceMinStep = false;
                     } else {
                         DPRINTF(Fetch,
                                 "[tid:%i] Warning: Squash target PC (0x%#lx) does not match "
@@ -1307,6 +1308,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
                             findTraceIndexForSeqNum(squashInst->seqNum),
                             (unsigned long long)traceWrongPathBranchSeqNum);
                     traceWrongPathActive = false; // squashing inst before mispredicted branch, exit wrong-path
+                    traceWrongPathForceMinStep = false;
                 } else {
                     allow_rb = false;
                     DPRINTF(Fetch,
@@ -1329,6 +1331,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
                     // traceReader 在 wrong-path 期间未前进，因此此处无需回滚，只需退出
                     // wrong-path 模式即可。
                     traceWrongPathActive = false;
+                    traceWrongPathForceMinStep = false;
                     squash_itself = false;
                     trace_rb_seqnum = traceWrongPathBranchSeqNum;
                     // allow_rb = false; // 不需要触碰 traceReader
@@ -1349,6 +1352,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
                             findTraceIndexForSeqNum(seqNum),
                             (unsigned long long)traceWrongPathBranchSeqNum);
                     traceWrongPathActive = false; // squashing inst before mispredicted branch, exit wrong-path
+                    traceWrongPathForceMinStep = false;
                     trace_rb_seqnum = seqNum + 1; // for non-inst squash before branch, rollback to seqNum + 1
                     squash_itself = true;
                     // this would happen for memory violation
@@ -1385,6 +1389,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
                         findTraceIndexForSeqNum(seqNum));
                 squash_itself = true;
             }
+            traceWrongPathForceMinStep = false;
         }
 
         if (allow_rb) {
@@ -2272,9 +2277,46 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
 
         const bool wrong_path = (isDecoupledFrontend() && traceEnableWrongPath && traceWrongPathActive);
         if (wrong_path) {
-            // Wrong-path NOP：不前进 traceReader 指针，不消费 trace 指令
-            TheISA::MachInst nop = static_cast<TheISA::MachInst>(0x00000013u);
-            supply_to_decoder(nop, this_pc.instAddr(), "supplied NOP without advancing reader");
+            // Wrong-path NOP：不前进 traceReader 指针，不消费 trace 指令。
+            // 默认 2B，以避免跨过 BP 预测的 taken 位置；若预测 takenPC 对应 4B 指令，则在该 PC 上用 4B nop。
+            auto choose_nop_size = [&](Addr pc) -> unsigned {
+                if (traceWrongPathForceMinStep) {
+                    return 2;
+                }
+                unsigned sz = 2;
+                if (isDecoupledFrontend()) {
+                    Addr block_end = 0;
+                    Addr taken_pc = 0;
+                    bool taken = false;
+                    if (isFTBPred()) {
+                        const auto &ftq = dbpftb->getSupplyingFetchTarget();
+                        block_end = ftq.endPC;
+                        taken_pc = ftq.takenPC;
+                        taken = ftq.taken;
+                    } else if (isBTBPred()) {
+                        const auto &ftq = dbpbtb->getSupplyingFetchTarget();
+                        block_end = ftq.endPC;
+                        taken_pc = ftq.takenPC;
+                        taken = ftq.taken;
+                    }
+                    // 如果当前 PC 正好是预测的 takenPC，且该指令应为 4B（默认假定 RISC-V 分支 4B），用 4B nop。
+                    if (taken && taken_pc && pc == taken_pc) {
+                        sz = 4;
+                    } else if (block_end && pc + 2 == block_end) {
+                        sz = 2;
+                    }
+                }
+                return sz;
+            };
+
+            const unsigned nop_size = choose_nop_size(this_pc.instAddr());
+            // RISC-V 32b nop: 0x00000013; 16b compressed nop: 0x0001
+            TheISA::MachInst nop = (nop_size == 2)
+                ? static_cast<TheISA::MachInst>(0x0001u)
+                : static_cast<TheISA::MachInst>(0x00000013u);
+            supply_to_decoder(nop, this_pc.instAddr(),
+                              nop_size == 2 ? "supplied 2B NOP without advancing reader"
+                                            : "supplied 4B NOP without advancing reader (pred takenPC)");
             return StallReason::NoStall;
         }
 
@@ -2284,7 +2326,13 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
             DPRINTF(Fetch, "[tid:%i] Trace on-demand: expected stream empty (EOF=%d)\n", tid, traceReader->isEOF());
             return StallReason::IcacheStall;
         }
-        const auto &head = traceExpectedStream[tid].front();
+        auto head = traceExpectedStream[tid].front();
+        // 对非分支/异常类 ctrl-flow-change，在 decoupled + wrong-path 校验场景下，
+        // 若缺乏可靠 nextPC，保守将长度标为 2B，避免后续进入 wrong-path 时跨过块内预测点。
+        if (isDecoupledFrontend() && traceEnableWrongPath && traceBPValidation &&
+            head.isCtrlFlowChange() && !head.isAnyBranch()) {
+            head.setInstSizeBytes(2);
+        }
         pendingTraceInstr = head;
         pendingTraceValid = true;
         TheISA::MachInst machInst = createMachInstFromTrace(head);
@@ -2313,8 +2361,38 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
     auto *dec_ptr = decoder[tid];
     Addr offset_in_buffer = fetch_pc - fetchBuffer[tid].startPC;
     if (traceMode && isDecoupledFrontend() && traceEnableWrongPath && traceWrongPathActive) {
-        // wrong-path 模式：替换为 NOP 指令码（addi x0, x0, 0），保持 PC/FTQ 流转不变
-        TheISA::MachInst nop = static_cast<TheISA::MachInst>(0x00000013u);
+        // wrong-path 模式：替换为 NOP 指令码（默认 2B，若命中预测 takenPC 则用 4B），保持 PC/FTQ 流转不变
+        auto choose_nop_size = [&](Addr pc) -> unsigned {
+            if (traceWrongPathForceMinStep) {
+                return 2;
+            }
+            unsigned sz = 2;
+            Addr block_end = 0;
+            Addr taken_pc = 0;
+            bool taken = false;
+            if (isFTBPred()) {
+                const auto &ftq = dbpftb->getSupplyingFetchTarget();
+                block_end = ftq.endPC;
+                taken_pc = ftq.takenPC;
+                taken = ftq.taken;
+            } else if (isBTBPred()) {
+                const auto &ftq = dbpbtb->getSupplyingFetchTarget();
+                block_end = ftq.endPC;
+                taken_pc = ftq.takenPC;
+                taken = ftq.taken;
+            }
+            if (taken && taken_pc && pc == taken_pc) {
+                sz = 4;
+            } else if (block_end && pc + 2 == block_end) {
+                sz = 2;
+            }
+            return sz;
+        };
+
+        const unsigned nop_size = choose_nop_size(fetch_pc);
+        TheISA::MachInst nop = (nop_size == 2)
+            ? static_cast<TheISA::MachInst>(0x0001u)
+            : static_cast<TheISA::MachInst>(0x00000013u);
         memcpy(dec_ptr->moreBytesPtr(), &nop, sizeof(nop));
     } else {
         memcpy(dec_ptr->moreBytesPtr(), fetchBuffer[tid].data + offset_in_buffer, 4);
@@ -2391,7 +2469,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
             const bool taken = pendingTraceInstr.getBranchTaken();
             const bool hasTarget = pendingTraceInstr.getHasBranchTarget();
             const Addr target = hasTarget ? pendingTraceInstr.getBranchTarget() : 0;
-            const Addr fallthrough = pendingTraceInstr.getPC() + 4;
+            const Addr fallthrough = pendingTraceInstr.getFallThroughPC();
             instruction->setTraceBranchInfo(taken, hasTarget, target, fallthrough);
             DPRINTF(Fetch,
                     "[tid:%i] Bind trace-branch info to [sn:%lli]: taken=%d, hasTgt=%d\n",
@@ -2487,23 +2565,27 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                                  traceForThisInst.getCtrlFlowTarget());
 
         if (nonBranchTrap || condTrap) {
-            const Addr predicted_pc = next_pc->instAddr();
+            Addr predicted_pc = next_pc->instAddr();
             const Addr corr_pc      = traceForThisInst.getCtrlFlowTarget();
 
             if (!traceWrongPathActive) {
                 traceWrongPathActive       = true;
                 traceWrongPathBranchSeqNum = instruction->seqNum;
+                // 非分支/condTrap ctrlFlowChange：trace 无可靠 next_pc，保守采用 2B 步进。
+                // 将预测 PC 也折算成“pc+2”以免跨过块内的预测点。
+                predicted_pc = instruction->pcState().instAddr() + 2;
                 traceWrongPathPredPC       = predicted_pc;
                 traceWrongPathCorrectPC    = corr_pc;
+                traceWrongPathForceMinStep = true; // 没有可靠 next_pc，用最小步长
                 DPRINTF(Fetch,
                         "[tid:%i] Enter %s-trap wrong-path; skip local BP "
                         "squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu, tracesn:%llu)\n",
-                        tid,
-                        nonBranchTrap ? "non-branch" : "cond",
-                        (unsigned long long)predicted_pc,
-                        (unsigned long long)corr_pc,
-                        (unsigned long long)traceWrongPathBranchSeqNum,
-                        (unsigned long long)traceForThisInst.getSeqNum());
+                            tid,
+                            nonBranchTrap ? "non-branch" : "cond",
+                            (unsigned long long)predicted_pc,
+                            (unsigned long long)corr_pc,
+                            (unsigned long long)traceWrongPathBranchSeqNum,
+                            (unsigned long long)traceForThisInst.getSeqNum());
             } else {
                 DPRINTF(Fetch,
                         "[tid:%i] Already in trap-wrong-path mode; continue "
@@ -2520,7 +2602,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         traceForThisInst.isValid() &&
         !traceForThisInst.isCtrlFlowChange()) {
         const Addr predictedPC = next_pc->instAddr();
-        const Addr ft_pc = traceForThisInst.getPC() + 4;
+        const Addr ft_pc = traceForThisInst.getFallThroughPC();
         const bool predictedTaken = (predictedPC != ft_pc);
 
         if (traceForThisInst.isAnyBranch()) {
@@ -2533,6 +2615,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                         traceWrongPathActive = true;
                         traceWrongPathBranchSeqNum = instruction->seqNum;
                         traceWrongPathPredPC = predictedPC;
+                        traceWrongPathForceMinStep = false;
                         Addr corr_target = traceForThisInst.getBranchTaken() && traceForThisInst.getHasBranchTarget()
                                             ? traceForThisInst.getBranchTarget()
                                             : ft_pc;
@@ -3147,6 +3230,15 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
     // Extract register information from trace
     const auto& srcRegs = traceInstr.getSrcRegs();
     const auto& dstRegs = traceInstr.getDstRegs();
+    const uint8_t instSize = traceInstr.getInstSizeBytes() ? traceInstr.getInstSizeBytes() : 4;
+
+    if (instSize != 2 && instSize != 4) {
+        panic("[TRACE-ENC] Unsupported instruction size %u at PC=0x%llx (type=%d, sn=%llu)",
+              instSize, (unsigned long long)traceInstr.getPC(),
+              static_cast<int>(traceInstr.getInstType()),
+              (unsigned long long)traceInstr.getSeqNum());
+    }
+    const bool compressed = instSize == 2;
 
     // Default integer mappings
     uint8_t rs1 = srcRegs.empty() ? 0 : srcRegs[0];
@@ -3172,32 +3264,211 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
         return (bit20 << 31) | (bits19_12 << 12) | (bit11 << 20) | (bits10_1 << 21);
     };
 
+    auto encode_cj_imm = [](int32_t off) -> uint16_t {
+        uint16_t bits = 0;
+        bits |= ((off >> 11) & 0x1) << 12;
+        bits |= ((off >> 4)  & 0x1) << 11;
+        bits |= ((off >> 9)  & 0x3) << 9;
+        bits |= ((off >> 10) & 0x1) << 8;
+        bits |= ((off >> 6)  & 0x1) << 7;
+        bits |= ((off >> 7)  & 0x1) << 6;
+        bits |= ((off >> 3)  & 0x1) << 5;
+        bits |= ((off >> 1)  & 0x3) << 3;
+        bits |= ((off >> 5)  & 0x1) << 2;
+        return bits;
+    };
+
+    auto encode_cb_imm = [](int32_t off) -> uint16_t {
+        uint16_t bits = 0;
+        bits |= ((off >> 8) & 0x1) << 12;
+        bits |= ((off >> 3) & 0x3) << 10;
+        bits |= ((off >> 6) & 0x3) << 5;
+        bits |= ((off >> 1) & 0x3) << 3;
+        bits |= ((off >> 5) & 0x1) << 2;
+        return bits;
+    };
+
+    auto toCompressedReg = [](uint8_t reg) -> uint8_t {
+        if (reg >= 8 && reg <= 15) {
+            return reg - 8;
+        }
+        return reg & 0x7;
+    };
+
+    auto encode_c_addi = [](uint8_t rd_out, int imm) -> uint16_t {
+        int imm6 = std::max(-32, std::min(31, imm));
+        uint16_t inst = 0;
+        inst |= (0b000 << 13);
+        inst |= ((imm6 >> 5) & 0x1) << 12;
+        inst |= (rd_out & 0x1F) << 7;
+        inst |= (imm6 & 0x1F) << 2;
+        inst |= 0b01;
+        return inst;
+    };
+
+    auto encode_c_add = [](uint8_t rd_out, uint8_t rs2_out) -> uint16_t {
+        uint16_t inst = 0;
+        inst |= (0b100 << 13);
+        inst |= (1 << 12);
+        inst |= (rd_out & 0x1F) << 7;
+        inst |= (rs2_out & 0x1F) << 2;
+        inst |= 0b10;
+        return inst;
+    };
+
+    auto encode_c_lw = [&](uint8_t rd_out, uint8_t rs1_out) -> uint16_t {
+        uint16_t inst = 0;
+        inst |= (0b010 << 13);
+        inst |= (toCompressedReg(rs1_out) & 0x7) << 7;
+        inst |= (toCompressedReg(rd_out) & 0x7) << 2;
+        inst |= 0b00;
+        return inst;
+    };
+
+    auto encode_c_sw = [&](uint8_t rs2_out, uint8_t rs1_out) -> uint16_t {
+        uint16_t inst = 0;
+        inst |= (0b110 << 13);
+        inst |= (toCompressedReg(rs1_out) & 0x7) << 7;
+        inst |= (toCompressedReg(rs2_out) & 0x7) << 2;
+        inst |= 0b00;
+        return inst;
+    };
+
+    auto encode_cj = [&](int32_t off, bool link) -> uint16_t {
+        uint16_t inst = 0;
+        inst |= ((link ? 0b001 : 0b101) << 13);
+        inst |= encode_cj_imm(off);
+        inst |= 0b01;
+        return inst;
+    };
+
+    auto encode_cb = [&](int32_t off, bool bne, uint8_t rs1_c) -> uint16_t {
+        uint16_t inst = 0;
+        inst |= ((bne ? 0b111 : 0b110) << 13);
+        inst |= encode_cb_imm(off);
+        inst |= (rs1_c & 0x7) << 7;
+        inst |= 0b01;
+        return inst;
+    };
+
+    auto encode_c_jr = [](uint8_t rs1_out, bool link) -> uint16_t {
+        uint16_t inst = 0;
+        inst |= (0b100 << 13);
+        inst |= (link ? 1 : 0) << 12;
+        inst |= (rs1_out & 0x1F) << 7;
+        inst |= 0b10;
+        return inst;
+    };
+
+    if (compressed) {
+        switch (traceInstr.getInstType()) {
+            case o3::TraceInstruction::InstType::LOAD: {
+                uint16_t inst = encode_c_lw(rd, rs1);
+                DPRINTF(Fetch, "[TRACE-ENC] (C) load lw rs1=%u rd=%u size=%u\n", rs1, rd, instSize);
+                return inst;
+            }
+            case o3::TraceInstruction::InstType::STORE: {
+                uint16_t inst = encode_c_sw(rs2, rs1);
+                DPRINTF(Fetch, "[TRACE-ENC] (C) store sw rs1=%u rs2=%u size=%u\n", rs1, rs2, instSize);
+                return inst;
+            }
+            case o3::TraceInstruction::InstType::COND_BRANCH: {
+                Addr pc = traceInstr.getPC();
+                Addr tgt = traceInstr.getHasBranchTarget() ? traceInstr.getBranchTarget() : (pc + instSize);
+                int64_t off64 = clamp_to_even((int64_t)tgt - (int64_t)pc);
+                if (off64 < -256 || off64 > 254) {
+                    panic("[TRACE-ENC] (C) branch imm out of range: pc=0x%lx tgt=0x%lx off=%lld",
+                          (unsigned long)pc, (unsigned long)tgt, (long long)off64);
+                }
+                const bool taken = traceInstr.getBranchTaken();
+                uint16_t inst = encode_cb(static_cast<int32_t>(off64), taken, toCompressedReg(rs1));
+                DPRINTF(Fetch, "[TRACE-ENC] (C) cond branch pc=0x%lx tgt=0x%lx off=%lld rs1=%u taken=%d\n",
+                        (unsigned long)pc, (unsigned long)tgt, (long long)off64, rs1, taken);
+                return inst;
+            }
+            case o3::TraceInstruction::InstType::UNCOND_DIRECT_BRANCH:
+            case o3::TraceInstruction::InstType::CALL_DIRECT: {
+                Addr pc = traceInstr.getPC();
+                Addr tgt = traceInstr.getHasBranchTarget() ? traceInstr.getBranchTarget() : (pc + instSize);
+                int64_t off64 = clamp_to_even((int64_t)tgt - (int64_t)pc);
+                if (off64 < -2048 || off64 > 2046) {
+                    panic("[TRACE-ENC] (C) jump imm out of range: pc=0x%lx tgt=0x%lx off=%lld",
+                          (unsigned long)pc, (unsigned long)tgt, (long long)off64);
+                }
+                if (traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_DIRECT) {
+                    panic("[TRACE-ENC] (C) CALL_DIRECT not supported as "
+                          "compressed on RV64: pc=0x%lx",
+                          (unsigned long)pc);
+                }
+                uint16_t inst = encode_cj(static_cast<int32_t>(off64), false);
+                DPRINTF(Fetch, "[TRACE-ENC] (C) jump type=%d pc=0x%lx tgt=0x%lx off=%lld\n",
+                        static_cast<int>(traceInstr.getInstType()), (unsigned long)pc,
+                        (unsigned long)tgt, (long long)off64);
+                return inst;
+            }
+            case o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH:
+            case o3::TraceInstruction::InstType::CALL_INDIRECT:
+            case o3::TraceInstruction::InstType::RETURN: {
+                uint8_t rs1_out = rs1;
+                if (traceInstr.getInstType() == o3::TraceInstruction::InstType::RETURN) {
+                    rs1_out = 1;
+                }
+                const bool link = traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_INDIRECT;
+                uint16_t inst = encode_c_jr(rs1_out, link);
+                DPRINTF(Fetch, "[TRACE-ENC] (C) jalr/jr type=%d rs1=%u link=%d\n",
+                        static_cast<int>(traceInstr.getInstType()), rs1_out, link);
+                return inst;
+            }
+            case o3::TraceInstruction::InstType::ALU:
+            case o3::TraceInstruction::InstType::SLOW_ALU: {
+                if (srcRegs.size() >= 2) {
+                    // c.add/c.mv 压缩 ALU 要求 rd/rs2 非 x0，否则可能被解码为 c.ebreak。
+                    if (rd == 0 || rs2 == 0) {
+                        uint16_t inst = 0x0001u; // c.nop
+                        DPRINTF(Fetch, "[TRACE-ENC] (C) alu not compressible (rd=%u, rs2=%u), fallback to c.nop\n",
+                                rd, rs2);
+                        return inst;
+                    }
+                    uint16_t inst = encode_c_add(rd, rs2);
+                    DPRINTF(Fetch, "[TRACE-ENC] (C) alu add rs1/rd=%u rs2=%u\n", rd, rs2);
+                    return inst;
+                } else {
+                    if (rd == 0) {
+                        uint16_t inst = 0x0001u; // c.nop
+                        DPRINTF(Fetch, "[TRACE-ENC] (C) alu addi not compressible (rd=0), fallback to c.nop\n");
+                        return inst;
+                    } else {
+                        uint16_t inst = encode_c_addi(rd, 1);
+                        DPRINTF(Fetch, "[TRACE-ENC] (C) alu addi rd=%u imm=1\n", rd);
+                        return inst;
+                    }
+                }
+            }
+            default:
+                panic("[TRACE-ENC] Unsupported compressed inst type=%d at PC=0x%llx",
+                      static_cast<int>(traceInstr.getInstType()),
+                      (unsigned long long)traceInstr.getPC());
+        }
+    }
+
     // Create semantically appropriate RISC-V instruction using actual register mappings
     switch (traceInstr.getInstType()) {
         case o3::TraceInstruction::InstType::LOAD:
-            // RISC-V LW instruction: lw rd, 0(rs1)
-            // Format: imm[11:0] | rs1[4:0] | 010 | rd[4:0] | 0000011
             {
                 TheISA::MachInst inst = (0x000 << 20) | (rs1 << 15) | (0x2 << 12) | (rd << 7) | 0x03;
                 DPRINTF(Fetch, "[TRACE-ENC] load lw rs1=%u rd=%u\n", rs1, rd);
                 return inst;
             }
-
         case o3::TraceInstruction::InstType::STORE:
-            // RISC-V SW instruction: sw rs2, 0(rs1)
-            // Format: imm[11:5] | rs2[4:0] | rs1[4:0] | 010 | imm[4:0] | 0100011
             {
                 TheISA::MachInst inst = (0x00 << 25) | (rs2 << 20) | (rs1 << 15) | (0x2 << 12) | (0x00 << 7) | 0x23;
                 DPRINTF(Fetch, "[TRACE-ENC] store sw rs1=%u rs2=%u\n", rs1, rs2);
                 return inst;
             }
-
         case o3::TraceInstruction::InstType::COND_BRANCH: {
-            // RISC-V BEQ rs1, rs2, imm (PC-relative)
             Addr pc = traceInstr.getPC();
-            Addr tgt = traceInstr.getHasBranchTarget() ? traceInstr.getBranchTarget() : (pc + 4);
+            Addr tgt = traceInstr.getHasBranchTarget() ? traceInstr.getBranchTarget() : (pc + instSize);
             int64_t off64 = clamp_to_even((int64_t)tgt - (int64_t)pc);
-            // B-type immediate range: [-4096, +4094]
             if (off64 < -4096 || off64 > 4094) {
                 DPRINTF(Fetch, "[TRACE-ENC] B-imm out of range: pc=0x%lx tgt=0x%lx off=%lld; fallback to 0\n",
                         (unsigned long)pc, (unsigned long)tgt, (long long)off64);
@@ -3209,23 +3480,17 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
                     (unsigned long)pc, (unsigned long)tgt, (long long)off64, rs1, rs2);
             return inst;
         }
-
         case o3::TraceInstruction::InstType::UNCOND_DIRECT_BRANCH:
         case o3::TraceInstruction::InstType::CALL_DIRECT: {
-            // RISC-V JAL rd, imm (PC-relative)
             Addr pc = traceInstr.getPC();
-            Addr tgt = traceInstr.getHasBranchTarget() ? traceInstr.getBranchTarget() : (pc + 4);
+            Addr tgt = traceInstr.getHasBranchTarget() ? traceInstr.getBranchTarget() : (pc + instSize);
             int64_t off64 = clamp_to_even((int64_t)tgt - (int64_t)pc);
-            // J-type immediate range: [-(1<<20), (1<<20)-2]
             if (off64 < -(1<<20) || off64 > ((1<<20) - 2)) {
                 DPRINTF(Fetch, "[TRACE-ENC] J-imm out of range: pc=0x%lx tgt=0x%lx off=%lld; fallback to 0\n",
                         (unsigned long)pc, (unsigned long)tgt, (long long)off64);
                 off64 = 0;
             }
             uint32_t imm_enc = encode_j_imm((int32_t)off64);
-            // For correct classification:
-            //  - CALL_DIRECT must write RA (x1)
-            //  - UNCOND_DIRECT_BRANCH must write x0
             uint8_t rd_out = (traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_DIRECT) ? 1 : 0;
             uint32_t inst = imm_enc | (rd_out << 7) | 0x6F; // JAL
             DPRINTF(Fetch, "[TRACE-ENC] jal type=%d pc=0x%lx tgt=0x%lx off=%lld rd=%u\n",
@@ -3233,15 +3498,9 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
                     (long long)off64, rd_out);
             return inst;
         }
-
         case o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH:
         case o3::TraceInstruction::InstType::CALL_INDIRECT:
         case o3::TraceInstruction::InstType::RETURN: {
-            // RISC-V JALR rd, 0(rs1)
-            // Ensure proper rd/rs1 for correct decode classification:
-            //  - CALL_INDIRECT: rd=x1
-            //  - UNCOND_INDIRECT_BRANCH: rd=x0
-            //  - RETURN: rd=x0, rs1=x1
             uint8_t rd_out = 0;
             uint8_t rs1_out = rs1;
             if (traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_INDIRECT) {
@@ -3252,7 +3511,6 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
             } else {
                 rd_out = 0; // branch
             }
-            // Avoid accidental RET pattern for generic indirect branches
             if (traceInstr.getInstType() == o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH &&
                 (rs1_out == 1 || rs1_out == 5)) {
                 rs1_out = 3; // steer away from RA/alt-RA
@@ -3262,10 +3520,7 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
                     static_cast<int>(traceInstr.getInstType()), rs1_out, rd_out);
             return inst;
         }
-
         case o3::TraceInstruction::InstType::FP:
-            // RISC-V FADD.S instruction: fadd.s rd, rs1, rs2
-            // Use FP reg mapping when available.
             {
                 uint8_t frd = dstRegs.empty() ? 0 : dstRegs[0];
                 uint8_t frs1 = srcRegs.empty() ? 0 : srcRegs[0];
@@ -3274,19 +3529,14 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
                 DPRINTF(Fetch, "[TRACE-ENC] fp fadd rs1=f%u rs2=f%u rd=f%u\n", frs1, frs2, frd);
                 return inst;
             }
-
         case o3::TraceInstruction::InstType::ALU:
         case o3::TraceInstruction::InstType::SLOW_ALU:
         default:
             if (srcRegs.size() >= 2) {
-                // RISC-V ADD instruction: add rd, rs1, rs2
-                // Format: 0000000 | rs2[4:0] | rs1[4:0] | 000 | rd[4:0] | 0110011
                 TheISA::MachInst inst = (0x00 << 25) | (rs2 << 20) | (rs1 << 15) | (0x0 << 12) | (rd << 7) | 0x33;
                 DPRINTF(Fetch, "[TRACE-ENC] sn=? type=ALU rs1=%u rs2=%u rd=%u\n", rs1, rs2, rd);
                 return inst;
             } else {
-                // RISC-V ADDI instruction: addi rd, rs1, 1
-                // Format: imm[11:0] | rs1[4:0] | 000 | rd[4:0] | 0010011
                 TheISA::MachInst inst = (0x001 << 20) | (rs1 << 15) | (0x0 << 12) | (rd << 7) | 0x13;
                 DPRINTF(Fetch, "[TRACE-ENC] sn=? type=ALU-imm rs1=%u rd=%u imm=1\n", rs1, rd);
                 return inst;

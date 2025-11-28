@@ -257,7 +257,27 @@ ChampSimTraceReader::fillBuffer(size_t max_instructions)
         TraceInstruction current;
         if (parseInstruction(current)) {
             if (hasPendingInstr) {
-                const Addr next_pc = current.getPC();
+                Addr next_pc = current.getPC();
+                const Addr curr_pc = pendingInstr.getPC();
+                const bool pending_taken_branch =
+                    pendingInstr.isAnyBranch() && pendingInstr.getBranchTaken();
+
+                // 健壮性兜底：非分支指令且下一条 PC 非 2 字节对齐时，强制认为顺序流 pc+4。
+                // 避免 trace 中异常 PC 破坏后续长度推断 / fallthrough。
+                if (!pendingInstr.isAnyBranch() && (next_pc & 0x1)) {
+                    Addr corrected_pc = curr_pc + 4;
+                    current.setPC(corrected_pc);
+                    next_pc = corrected_pc;
+                }
+                if (!pending_taken_branch && next_pc >= curr_pc) {
+                    const uint64_t delta = next_pc - curr_pc;
+                    // Trace may contain 2-byte (compressed) and 4-byte instructions.
+                    // Capture the observed delta when it's a small forward step so
+                    // Fetch can emit the proper encoding.
+                    if (delta > 0 && delta <= 8) {
+                        pendingInstr.setInstSizeBytes(static_cast<uint8_t>(delta));
+                    }
+                }
 
                 if (pendingInstr.isAnyBranch()) {
                     const bool taken = pendingInstr.getBranchTaken();
@@ -411,10 +431,11 @@ ChampSimTraceReader::convertInstruction(const ChampSimInstr &cs_instr,
 
     // Set basic fields
     // CRITICAL FIX: Apply address mapping to PC to avoid page table faults
-    uint64_t mapped_pc = mapTraceAddressToVirtual(cs_instr.ip);
+    uint64_t mapped_pc = mapTracePcToVirtual(cs_instr.ip);
     DPRINTF(TraceReader, "convertInstruction: Mapping PC 0x%lx -> 0x%lx\n", cs_instr.ip, mapped_pc);
     trace_instr.setPC(mapped_pc);
     trace_instr.setSeqNum(getNextSeqNum());
+    trace_instr.setInstSizeBytes(4);
     DPRINTF(TraceReader, "convertInstruction: Assigned SeqNum %lu\n", trace_instr.getSeqNum());
     trace_instr.setValid(true);
 
@@ -572,7 +593,7 @@ ChampSimTraceReader::extractMemoryOps(const ChampSimInstr &cs_instr,
     for (size_t i = 0; i < ChampSimInstr::NUM_INSTR_DESTINATIONS; i++) {
         if (cs_instr.destination_memory[i] != 0) {
             // Map trace addresses to a safe memory region (e.g., starting at 0x10000000)
-            uint64_t mapped_addr = mapTraceAddressToVirtual(cs_instr.destination_memory[i]);
+            uint64_t mapped_addr = mapTraceMemToVirtual(cs_instr.destination_memory[i]);
             DPRINTF(TraceReader, "extractMemoryOps: Store addr 0x%lx -> 0x%lx for PC 0x%lx\n",
                     cs_instr.destination_memory[i], mapped_addr, cs_instr.ip);
             trace_instr.addStoreAddress(mapped_addr);
@@ -583,7 +604,7 @@ ChampSimTraceReader::extractMemoryOps(const ChampSimInstr &cs_instr,
     for (size_t i = 0; i < ChampSimInstr::NUM_INSTR_SOURCES; i++) {
         if (cs_instr.source_memory[i] != 0) {
             // Map trace addresses to a safe memory region
-            uint64_t mapped_addr = mapTraceAddressToVirtual(cs_instr.source_memory[i]);
+            uint64_t mapped_addr = mapTraceMemToVirtual(cs_instr.source_memory[i]);
             DPRINTF(TraceReader, "extractMemoryOps: Load addr 0x%lx -> 0x%lx for PC 0x%lx\n",
                     cs_instr.source_memory[i], mapped_addr, cs_instr.ip);
             trace_instr.addLoadAddress(mapped_addr);
@@ -675,6 +696,28 @@ ChampSimTraceReader::mapTraceAddressToVirtual(uint64_t trace_addr)
     } else {
         return mapAddressHash(trace_addr);
     }
+}
+
+uint64_t
+ChampSimTraceReader::mapTracePcToVirtual(uint64_t trace_pc)
+{
+    // PC uses the full mapping (page alignment etc.) so that external
+    // tools and difftest can correlate PCs 1:1 with trace addresses.
+    return mapTraceAddressToVirtual(trace_pc);
+}
+
+uint64_t
+ChampSimTraceReader::mapTraceMemToVirtual(uint64_t trace_addr)
+{
+    // Memory addresses reuse the same mapping but we additionally enforce
+    // a minimal alignment so that scalar memory operations (e.g., sw) do
+    // not systematically trigger RISC-V misaligned-address faults.
+    uint64_t mapped = mapTraceAddressToVirtual(trace_addr);
+    // For now we conservatively align to 4 bytes, which is enough for
+    // 32-bit accesses and significantly reduces misaligned faults coming
+    // from arbitrary ChampSim addresses.
+    mapped &= ~static_cast<uint64_t>(0x3);
+    return mapped;
 }
 
 uint64_t

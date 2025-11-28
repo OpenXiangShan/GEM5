@@ -127,6 +127,11 @@ class CBP2025TraceReader : public TraceReader
 
     // Address mapping (reuse ChampSim style)
     uint64_t mapTraceAddressToVirtual(uint64_t trace_addr);
+
+    // Separate helpers so we can treat PCs and memory addresses differently.
+    uint64_t mapTracePcToVirtual(uint64_t trace_pc);
+    uint64_t mapTraceMemToVirtual(uint64_t trace_addr);
+
     uint64_t mapAddressHash(uint64_t trace_addr);
     uint64_t mapAddressLinear(uint64_t trace_addr);
 
