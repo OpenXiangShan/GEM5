@@ -659,41 +659,6 @@ BTBTAGE::update(const FetchStream &stream) {
     tageStats.updateAccessPerBank[updateBank]++;
 #endif
 
-    // ========== Bank Conflict Detection ==========
-    // Check if this update conflicts with the last prediction
-    // Only perform conflict detection if enableBankConflict is true
-    if (enableBankConflict) {
-        // Conflict happens when:
-        //   1. There was a valid prediction in this or previous tick (predBankValid)
-        //   2. Update and prediction target the same bank (updateBank == lastPredBankId)
-        //
-        // Note: This assumes one update() call per tick (guaranteed by fetch stage)
-        if (predBankValid && updateBank == lastPredBankId) {
-            tageStats.updateBankConflict++;
-            tageStats.updateDroppedDueToConflict++;
-
-#ifndef UNIT_TEST
-            // Record conflict for this specific bank
-            tageStats.updateBankConflictPerBank[updateBank]++;
-#endif
-
-            DPRINTF(TAGE, "Bank conflict detected: update bank %u conflicts with "
-                          "prediction bank %u, dropping this update\n",
-                          updateBank, lastPredBankId);
-
-            // Clear prediction state after consuming it
-            predBankValid = false;
-            return;  // Drop this update entirely
-        }
-
-        // If no conflict, clear prediction state (prediction has been consumed)
-        if (predBankValid) {
-            DPRINTF(TAGE, "No bank conflict: update bank %u != prediction bank %u\n",
-                          updateBank, lastPredBankId);
-        }
-        predBankValid = false;
-    }
-
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
     auto entries_to_update = prepareUpdateEntries(stream);
@@ -705,15 +670,82 @@ BTBTAGE::update(const FetchStream &stream) {
         return;
     }
 
-    // Process each BTB entry
+    struct EntryUpdateContext
+    {
+        bool actualTaken = false;
+        const TagePrediction* storedPred = nullptr;
+        bool needRead = false;
+    };
+
+    std::vector<EntryUpdateContext> entryContexts;
+    entryContexts.reserve(entries_to_update.size());
+    bool streamNeedsRead = false;
     for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+        EntryUpdateContext ctx;
+        ctx.actualTaken = stream.exeTaken && (stream.exeBranchInfo == btb_entry);
+        auto predIt = predMeta->preds.find(btb_entry.pc);
+        if (predIt != predMeta->preds.end()) {
+            ctx.storedPred = &predIt->second;
+        }
+        bool canReuseMeta = ctx.storedPred &&
+                            ctx.storedPred->mainInfo.found &&
+                            !ctx.storedPred->useAlt &&
+                            (ctx.storedPred->taken == ctx.actualTaken);
+        ctx.needRead = updateOnRead && !canReuseMeta;
+        streamNeedsRead = streamNeedsRead || ctx.needRead;
+        entryContexts.emplace_back(ctx);
+    }
+
+    // ========== Bank Conflict Detection ==========
+    // Only perform conflict detection when the update will re-read TAGE tables.
+    if (enableBankConflict) {
+        if (streamNeedsRead) {
+            if (predBankValid && updateBank == lastPredBankId) {
+                tageStats.updateBankConflict++;
+                tageStats.updateDroppedDueToConflict++;
+
+#ifndef UNIT_TEST
+                // Record conflict for this specific bank
+                tageStats.updateBankConflictPerBank[updateBank]++;
+#endif
+
+                DPRINTF(TAGE, "Bank conflict detected: update bank %u conflicts with "
+                              "prediction bank %u, dropping this update\n",
+                              updateBank, lastPredBankId);
+
+                // Clear prediction state after consuming it
+                predBankValid = false;
+                return;  // Drop this update entirely
+            }
+
+            // If no conflict, clear prediction state (prediction has been consumed)
+            if (predBankValid) {
+                DPRINTF(TAGE, "No bank conflict: update bank %u != prediction bank %u\n",
+                              updateBank, lastPredBankId);
+            }
+            predBankValid = false;
+        } else {
+            if (predBankValid) {
+                DPRINTF(TAGE, "Skip bank conflict check: no update-side read needed "
+                              "(update bank %u, prediction bank %u)\n",
+                              updateBank, lastPredBankId);
+            }
+            predBankValid = false;
+        }
+    }
+
+    // Process each BTB entry
+    for (size_t idx = 0; idx < entries_to_update.size(); ++idx) {
+        auto &btb_entry = entries_to_update[idx];
+        const auto &ctx = entryContexts[idx];
+        const bool actual_taken = ctx.actualTaken;
         TagePrediction recomputed;
-        if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
-            // Re-read providers using snapshot (do not rely on prediction-time main/alt)
+        if (updateOnRead && ctx.needRead) {
             recomputed = generateSinglePrediction(btb_entry, alignedPC, predMeta);
-        } else { // otherwise, use the prediction from the prediction-time main/alt
-            recomputed = predMeta->preds[btb_entry.pc];
+        } else if (ctx.storedPred) {
+            recomputed = *(ctx.storedPred);
+        } else {
+            recomputed = TagePrediction();
         }
 
         // Update predictor state and check if need to allocate new entry
