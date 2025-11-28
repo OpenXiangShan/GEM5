@@ -410,11 +410,14 @@ CBP2025TraceReader::fillBuffer(size_t max_instructions)
                     if (pending_taken_branch &&
                         pendingInstr.getHasBranchTarget() &&
                         pendingInstr.getBranchTarget() != next_pc) {
+                        // Taken branch target与下一条PC不符：视为异常式跳转，
+                        // 纠正目标到下一条PC并标记 ctrlFlowChange。
+                        pendingInstr.setBranchTarget(next_pc);
                         pendingInstr.setCtrlFlowChange(true);
                         pendingInstr.setCtrlFlowTarget(next_pc);
                         DPRINTF(TraceReader,
                                 "CBP fillBuffer: mark taken branch ctrl-flow "
-                                "change pc=0x%lx tgt=0x%lx nextPC=0x%lx\n",
+                                "change pc=0x%lx tgt_fix=0x%lx nextPC=0x%lx\n",
                                 pendingInstr.getPC(),
                                 pendingInstr.getBranchTarget(), next_pc);
                     } else if (!pending_taken_branch &&
