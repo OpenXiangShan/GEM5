@@ -1262,9 +1262,9 @@ BaseCache::getNextQueueEntry()
     MSHR *miss_mshr  = mshrQueue.getNext();
     WriteQueueEntry *wq_entry = writeBuffer.getNext();
 
-    // If we got a write buffer request ready, first priority is a
-    // full write buffer, otherwise we favour the miss requests
-    if (wq_entry && (writeBuffer.isFull() || !miss_mshr)) {
+    // In order to align with the Tilelink protocol,
+    // we will adjust the priority of the write-back to the highest.
+    if (wq_entry) {
         // need to search MSHR queue for conflicting earlier miss.
         MSHR *conflict_mshr = mshrQueue.findPending(wq_entry);
 
