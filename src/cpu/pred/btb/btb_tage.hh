@@ -274,6 +274,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Instruction shift amount
     unsigned instShiftAmt {1};
 
+    // use for microtage updatemispred counting
+    void checkUtageUpdateMisspred(const FetchStream &stream);
+
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);
 
