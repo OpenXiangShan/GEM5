@@ -396,6 +396,35 @@ python3 util/xs_scripts/trace/distributed_rerun_aborted_with_debug.py \
 - `debug/stats.txt`
 - 状态文件 `debug/running|completed|abort`（由分布式脚本用于轮询）。
 
+### 3.3 单个 ABORTED workload 本地重跑：`util/xs_scripts/trace/rerun_aborted_with_debug.py`
+
+**作用**
+
+- 针对单个 workload 目录（含 `log.txt` + `abort` 标记），解析 abort tick / 建议 debug 窗口 / trace 路径 / maxinsts，并在本机 `debug/` 子目录下重跑。
+- 环境变量与分布式脚本保持一致：`XS_DEBUG_FLAGS/XS_DEBUG_START/XS_DEBUG_END/XS_MAX_INSTS/TRACE_FORMAT`，状态文件 `debug/running|completed|abort|exit_code` 与 `log.txt`。
+- 默认 arch 脚本 `util/xs_scripts/trace/run_trace_champsim.sh`；默认 debug flags 同分布式脚本。
+
+**参数**
+
+- `--work-dir`：单个 workload 目录。
+- `--arch-script`：trace 跑批脚本，默认 `util/xs_scripts/trace/run_trace_champsim.sh`。
+- `--debug-flags`：默认 `IEW,Fetch,Commit,CommitTrace,DecoupleBP,TraceReader,Decode`。
+- `--trace-format`：默认环境变量 `TRACE_FORMAT` 或 `champsim`。
+- `--clear-old`：清理 `debug/` 下的旧标记（running/completed/abort/exit_code）。
+- `--allow-missing-abort`：缺失顶层 `abort` 时也允许重跑（例如手动清理过）。
+
+**用法**
+
+```bash
+python3 util/xs_scripts/trace/rerun_aborted_with_debug.py \
+  --work-dir /nfs/home/goulingrui/expri_results/gem5_trace/trace_ipc1_50M_50M/foo_workload \
+  --arch-script util/xs_scripts/trace/run_trace_champsim.sh \
+  --trace-format champsim \
+  --debug-flags IEW,Fetch,Commit,CommitTrace,DecoupleBP,TraceReader,Decode
+```
+
+运行产物：`<work-dir>/debug/log.txt`、状态文件 `running|completed|abort|exit_code` 与常规输出（stats 等）。
+
 ---
 
 ## 4. BUILD/BIND 与 trace 对齐工具链

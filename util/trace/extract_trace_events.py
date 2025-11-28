@@ -93,7 +93,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    pat_tick = re.compile(r"^(\d+):\s*(.*)$")
+    pat_tick = re.compile(r"^\s*(\d+):\s*(.*)$")
 
     pats: List[Tuple[str, re.Pattern]] = []
     if args.build:

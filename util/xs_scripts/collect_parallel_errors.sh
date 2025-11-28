@@ -54,13 +54,16 @@ collect() {
         # "error" 或 "fatal" 的行，最后退化为 log 的最后一行。
         line=$(grep -m1 'panic:' "${log_file}" || true)
         if [[ -z "${line}" ]]; then
-            line=$(grep -m1 'Program aborted at tick' "${log_file}" || true)
-        fi
-        if [[ -z "${line}" ]]; then
             line=$(grep -m1 -i 'error:' "${log_file}" || true)
         fi
         if [[ -z "${line}" ]]; then
             line=$(grep -m1 -i 'fatal' "${log_file}" || true)
+        fi
+        if [[ -z "${line}" ]]; then
+            line=$(grep -m1 -i 'Assertion' "${log_file}" || true)
+        fi
+        if [[ -z "${line}" ]]; then
+            line=$(grep -m1 'Program aborted at tick' "${log_file}" || true)
         fi
         if [[ -z "${line}" ]]; then
             line=$(tail -n 1 "${log_file}" || true)
