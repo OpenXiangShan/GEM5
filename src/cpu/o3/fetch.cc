@@ -2557,31 +2557,30 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         };
 
         const bool nonBranchTrap = !traceForThisInst.isAnyBranch();
+        const bool branchTrap = traceForThisInst.isAnyBranch();
 
-        const bool condTrap =
-            traceForThisInst.isAnyBranch() &&
-            !traceForThisInst.getBranchTaken() &&
-            !isApproxFallthrough(traceForThisInst.getPC(),
-                                 traceForThisInst.getCtrlFlowTarget());
-
-        if (nonBranchTrap || condTrap) {
+        if (nonBranchTrap || branchTrap) {
             Addr predicted_pc = next_pc->instAddr();
             const Addr corr_pc      = traceForThisInst.getCtrlFlowTarget();
 
             if (!traceWrongPathActive) {
                 traceWrongPathActive       = true;
                 traceWrongPathBranchSeqNum = instruction->seqNum;
-                // 非分支/condTrap ctrlFlowChange：trace 无可靠 next_pc，保守采用 2B 步进。
-                // 将预测 PC 也折算成“pc+2”以免跨过块内的预测点。
-                predicted_pc = instruction->pcState().instAddr() + 2;
+                // 非分支或未 taken/异常式 ctrlFlowChange：trace 无可靠 next_pc，保守采用 2B 步进。
+                // 将预测 PC 折算成“pc+2”以免跨过块内的预测点。
+                if (nonBranchTrap || !traceForThisInst.getBranchTaken()) {
+                    predicted_pc = instruction->pcState().instAddr() + 2;
+                    traceWrongPathForceMinStep = true; // 没有可靠 next_pc，用最小步长
+                } else {
+                    traceWrongPathForceMinStep = false;
+                }
                 traceWrongPathPredPC       = predicted_pc;
                 traceWrongPathCorrectPC    = corr_pc;
-                traceWrongPathForceMinStep = true; // 没有可靠 next_pc，用最小步长
                 DPRINTF(Fetch,
                         "[tid:%i] Enter %s-trap wrong-path; skip local BP "
                         "squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu, tracesn:%llu)\n",
                             tid,
-                            nonBranchTrap ? "non-branch" : "cond",
+                            nonBranchTrap ? "non-branch" : "branch",
                             (unsigned long long)predicted_pc,
                             (unsigned long long)corr_pc,
                             (unsigned long long)traceWrongPathBranchSeqNum,

@@ -407,8 +407,19 @@ CBP2025TraceReader::fillBuffer(size_t max_instructions)
                 }
 
                 if (pendingInstr.isAnyBranch()) {
-                    if (!pending_taken_branch &&
-                        !isApproxFallthrough(pendingInstr.getPC(), next_pc)) {
+                    if (pending_taken_branch &&
+                        pendingInstr.getHasBranchTarget() &&
+                        pendingInstr.getBranchTarget() != next_pc) {
+                        pendingInstr.setCtrlFlowChange(true);
+                        pendingInstr.setCtrlFlowTarget(next_pc);
+                        DPRINTF(TraceReader,
+                                "CBP fillBuffer: mark taken branch ctrl-flow "
+                                "change pc=0x%lx tgt=0x%lx nextPC=0x%lx\n",
+                                pendingInstr.getPC(),
+                                pendingInstr.getBranchTarget(), next_pc);
+                    } else if (!pending_taken_branch &&
+                               !isApproxFallthrough(pendingInstr.getPC(),
+                                                    next_pc)) {
                         pendingInstr.setCtrlFlowChange(true);
                         pendingInstr.setCtrlFlowTarget(next_pc);
                         DPRINTF(TraceReader,
