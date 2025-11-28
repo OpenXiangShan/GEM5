@@ -363,31 +363,7 @@ CBP2025TraceReader::parseInstruction(TraceInstruction &instr)
         instr.addStoreAddress(mapTraceMemToVirtual(raw.effAddr), raw.memSize);
     }
 
-    auto mapIntReg = [&](uint8_t r) -> uint8_t {
-        // CBP2025: 31=SP, 30=LR, 64=flags, 65=zero, 32-63=SIMD/FP
-        if (r == 0 || r == 65) return 0;
-        if (r == 64) return 0;   // flags best-effort to x0
-        if (r == 31) return 2;   // SP
-        if (r == 30) return 1;   // LR
-        // IP not defined as GPR; keep 0
-        if (r == 26) return 0;
-        if (r < 32)  return r;   // general purpose
-        DPRINTF(TraceReader, "[TRACE-ENC] CBP reg %u unmapped -> x0\n", r);
-        return 0;
-    };
-    auto mapFpReg = [](uint8_t r) -> uint8_t {
-        if (r >= 32 && r < 64) return static_cast<uint8_t>(r - 32); // f0..f31
-        return 0;
-    };
-
-    for (auto reg : raw.inRegs) {
-        auto mapped = regIsInt(reg) ? mapIntReg(reg) : mapFpReg(reg);
-        instr.addSrcReg(mapped);
-    }
-    for (auto reg : raw.outRegs) {
-        auto mapped = regIsInt(reg) ? mapIntReg(reg) : mapFpReg(reg);
-        instr.addDstReg(mapped);
-    }
+    extractRegisterDeps(raw, cls, instr);
 
     instructionIndex++;
     return true;
@@ -564,6 +540,40 @@ CBP2025TraceReader::mapTraceMemToVirtual(uint64_t trace_addr)
     // matches the ChampSim trace reader behaviour.
     mapped &= ~static_cast<uint64_t>(0x3);
     return mapped;
+}
+
+void
+CBP2025TraceReader::extractRegisterDeps(const CBPInstr &raw, CBPInstClass cls,
+                                        TraceInstruction &instr)
+{
+    auto mapIntReg = [&](uint8_t r) -> uint8_t {
+        // CBP2025: 31=SP, 30=LR, 64=flags, 65=zero, 32-63=SIMD/FP
+        if (r == 0 || r == 65) return 0;
+        if (r == 64) return 0;   // flags best-effort to x0
+        if (r == 31) return 2;   // SP
+        if (r == 30) return 1;   // LR (AArch64 x30) -> RISC-V RA(x1)
+        // On some ARM-origin traces, CALL_IND may carry x5 as a dummy source
+        // (not link register). Avoid interpreting it as a special reg; keep as-is.
+        if (cls == CBPInstClass::CALL_IND && r == 5) return 5;
+        // IP not defined as GPR; keep 0
+        if (r == 26) return 0;
+        if (r < 32)  return r;   // general purpose
+        DPRINTF(TraceReader, "[TRACE-ENC] CBP reg %u unmapped -> x0\n", r);
+        return 0;
+    };
+    auto mapFpReg = [](uint8_t r) -> uint8_t {
+        if (r >= 32 && r < 64) return static_cast<uint8_t>(r - 32); // f0..f31
+        return 0;
+    };
+
+    for (auto reg : raw.inRegs) {
+        auto mapped = regIsInt(reg) ? mapIntReg(reg) : mapFpReg(reg);
+        instr.addSrcReg(mapped);
+    }
+    for (auto reg : raw.outRegs) {
+        auto mapped = regIsInt(reg) ? mapIntReg(reg) : mapFpReg(reg);
+        instr.addDstReg(mapped);
+    }
 }
 
 uint64_t

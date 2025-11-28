@@ -132,6 +132,9 @@ class CBP2025TraceReader : public TraceReader
     uint64_t mapTracePcToVirtual(uint64_t trace_pc);
     uint64_t mapTraceMemToVirtual(uint64_t trace_addr);
 
+    void extractRegisterDeps(const CBPInstr &raw, CBPInstClass cls,
+                             TraceInstruction &instr);
+
     uint64_t mapAddressHash(uint64_t trace_addr);
     uint64_t mapAddressLinear(uint64_t trace_addr);
 
