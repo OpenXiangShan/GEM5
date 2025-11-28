@@ -552,13 +552,14 @@ CBP2025TraceReader::extractRegisterDeps(const CBPInstr &raw, CBPInstClass cls,
         if (r == 64) return 0;   // flags best-effort to x0
         if (r == 31) return 2;   // SP
         if (r == 30) return 1;   // LR (AArch64 x30) -> RISC-V RA(x1)
-        // Some ARM-origin CALL_IND traces carry x5 (not link reg). Map to x0 to
-        // avoid treating it as RISC-V alt-RA (x5).
+        // Some ARM-origin CALL_IND traces carry x5 (not link reg). Map to a
+        // benign GPR (x28=t3) to avoid alt-RA semantics while retaining deps.
         if (cls == CBPInstClass::CALL_IND && r == 5) {
+            constexpr uint8_t harmless = 28;
             DPRINTF(TraceReader,
-                    "[TRACE-ENC] CBP CALL_IND reg %u mapped to x0 to avoid alt-RA\n",
-                    r);
-            return 0;
+                    "[TRACE-ENC] CBP CALL_IND reg %u mapped to x%u to avoid alt-RA\n",
+                    r, harmless);
+            return harmless;
         }
         // IP not defined as GPR; keep 0
         if (r == 26) return 0;
