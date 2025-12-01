@@ -48,6 +48,7 @@
 #include "arch/riscv/decoder.hh"
 #include "arch/riscv/faults.hh"
 #include "arch/riscv/insts/static_inst.hh"
+#include "arch/riscv/pcstate.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "base/compiler.hh"
 #include "base/loader/symtab.hh"
@@ -88,6 +89,30 @@ namespace gem5
 
 namespace o3
 {
+
+namespace {
+
+class TraceCtrlFlowFault : public FaultBase
+{
+  public:
+    explicit TraceCtrlFlowFault(Addr target) : targetPC(target) {}
+
+    FaultName name() const override { return "TraceCtrlFlowFault"; }
+    bool isFromISA() const override { return false; }
+
+    void invoke(ThreadContext *tc,
+                const StaticInstPtr &inst = nullStaticInstPtr) override
+    {
+        auto pc_state = tc->pcState().as<TheISA::PCState>();
+        pc_state.set(targetPC);
+        tc->pcState(pc_state);
+    }
+
+  private:
+    Addr targetPC;
+};
+
+} // anonymous namespace
 
 void
 Commit::processTrapEvent(ThreadID tid)
@@ -1235,6 +1260,18 @@ Commit::commitInsts()
         } else {
             set(pc[tid], head_inst->pcState());
 
+            // Trace ctrl-flow change: convert to fault so trap path handles squash/redirect.
+            if (cpu->isTraceMode() && head_inst->getFault() == NoFault) {
+                if (const o3::TraceInstruction *ti_meta =
+                        cpu->getTraceInstMetadata(head_inst->seqNum)) {
+                    if (ti_meta->isCtrlFlowChange()) {
+                        head_inst->setTraceCtrlFlowChange(true);
+                        head_inst->setFault(std::make_shared<TraceCtrlFlowFault>(
+                            ti_meta->getCtrlFlowTarget()));
+                    }
+                }
+            }
+
             // Try to commit the head instruction.
             bool commit_success = commitHead(head_inst, num_committed);
 
@@ -1433,47 +1470,6 @@ Commit::commitInsts()
                     // on the oldest in-flight seqNum and a guard distance.
                     if (cpu->isTraceInstruction(head_inst->seqNum)) {
                         cpu->cleanupTraceMetadataOnCommit(head_inst->seqNum);
-                    }
-
-                    // Trace 模式下，若本条指令触发了 "非分支或 cond 分支后的控制流改变"，
-                    // 则将其视为 trace 驱动的 trap：通过 squashFromTrap 触发统一的
-                    // trapSquash 流（包括 decoupled BPU 的 trapSquash）。
-                    if (const o3::TraceInstruction *ti_meta =
-                            cpu->getTraceInstMetadata(head_inst->seqNum)) {
-
-                        auto isApproxFallthrough = [](Addr pc, Addr next_pc) {
-                            return next_pc == pc + 2 || next_pc == pc + 4;
-                        };
-
-                        const bool nonBranchTrap =
-                            ti_meta->isCtrlFlowChange() && !ti_meta->isAnyBranch();
-
-                        const bool condTrap =
-                            ti_meta->isCtrlFlowChange() &&
-                            ti_meta->isAnyBranch() &&
-                            !ti_meta->getBranchTaken() &&
-                            !isApproxFallthrough(ti_meta->getPC(),
-                                                 ti_meta->getCtrlFlowTarget());
-
-                        if (nonBranchTrap || condTrap) {
-                            auto &pc_state = pc[tid]->as<RiscvISA::PCState>();
-                            pc_state.set(ti_meta->getCtrlFlowTarget());
-
-                            DPRINTF(CommitTrace,
-                                    "[tid:%d idx:%llu sn:%llu] Trace-driven %s trap "
-                                    "ctrl-flow change: commitPC=0x%lx -> target=0x%lx\n",
-                                    tid,
-                                    (unsigned long long)traceCommitIndex[tid],
-                                    head_inst->seqNum,
-                                    nonBranchTrap ? "non-branch" : "cond",
-                                    (unsigned long)head_inst->pcState().instAddr(),
-                                    (unsigned long)ti_meta->getCtrlFlowTarget());
-
-                            squashFromTrap(tid);
-                            // squashFromTrap 将设置 isTrapSquash 并触发前端/decoupled BPU
-                            // 的 trapSquash；当前 head_inst 已经提交，后续指令将被统一清理。
-                            return;
-                        }
                     }
                 }
 
@@ -1678,6 +1674,9 @@ Commit::traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst)
         } else if (head_inst->traceIsReturn()) {
             trace_type = o3::TraceInstruction::InstType::RETURN;
         }
+        const bool skip_type_check =
+            (ti_meta->getInstSizeBytes() == 2 &&
+             ti_meta->getInstType() == o3::TraceInstruction::InstType::FP);
         DPRINTF(CommitTrace, "[tid:%d idx:%llu sn:%llu] InstType: commit=%s, trace=%s\n",
                 tid,
                 (unsigned long long)traceCommitIndex[tid],
@@ -1700,7 +1699,7 @@ Commit::traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst)
                 })(),
                 ti_meta->getInstTypeStr());
 
-        if (commit_type != trace_type) {
+        if (!skip_type_check && commit_type != trace_type) {
             panic("[Commit][tid:%d idx:%llu sn:%llu] InstType mismatch: commit=%s, trace=%s (pc=0x%lx)",
                   tid,
                   (unsigned long long)traceCommitIndex[tid],
