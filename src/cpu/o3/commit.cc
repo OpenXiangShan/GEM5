@@ -63,6 +63,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_state.hh"
 #include "cpu/o3/trace/TraceInstruction.hh"
+#include "cpu/thread_context.hh"
 #include "cpu/timebuf.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
@@ -100,7 +101,7 @@ class TraceCtrlFlowFault : public FaultBase
     FaultName name() const override { return "TraceCtrlFlowFault"; }
     bool isFromISA() const override { return false; }
 
-    void invoke(ThreadContext *tc,
+    void invoke(::gem5::ThreadContext *tc,
                 const StaticInstPtr &inst = nullStaticInstPtr) override
     {
         auto pc_state = tc->pcState().as<TheISA::PCState>();
@@ -1266,8 +1267,9 @@ Commit::commitInsts()
                         cpu->getTraceInstMetadata(head_inst->seqNum)) {
                     if (ti_meta->isCtrlFlowChange()) {
                         head_inst->setTraceCtrlFlowChange(true);
-                        head_inst->setFault(std::make_shared<TraceCtrlFlowFault>(
-                            ti_meta->getCtrlFlowTarget()));
+                        head_inst->getFault() =
+                            std::make_shared<TraceCtrlFlowFault>(
+                                ti_meta->getCtrlFlowTarget());
                     }
                 }
             }
