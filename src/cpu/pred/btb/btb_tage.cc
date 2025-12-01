@@ -536,8 +536,6 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 #endif
             }
         }
-    }else{
-        checkUtageUpdateMisspred(stream);
     }
 
     // No allocation if no misprediction
@@ -760,6 +758,9 @@ BTBTAGE::update(const FetchStream &stream) {
             tageMissTrace->write_record(t);
         }
 #endif
+    }
+    if (getDelay() <2){
+        checkUtageUpdateMisspred(stream);
     }
     DPRINTF(TAGE, "end update\n");
 }

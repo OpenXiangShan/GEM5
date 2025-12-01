@@ -169,8 +169,10 @@ UBTB::lookup(Addr startAddr)
         auto duplicate = std::find_if(std::next(it), ubtb.end(), [current_tag](const TickedUBTBEntry &way) {
             return way.valid && way.tag == current_tag;
         });
-        assert(duplicate == ubtb.end() && "Multiple hits found in uBTB for the same tag!");
-
+        if (duplicate != ubtb.end()) {
+            DPRINTF(UBTB, "UBTB: Multiple hits found in uBTB for the same tag %#lx\n", current_tag);
+            duplicate->valid = false;  // invalidate the duplicate entry
+        }
         // go on to update the mruList
         it->tick = curTick();  // Update timestamp for MRU
         // might be unnecessary, considering the heap is updated on every reaplacement
@@ -288,12 +290,11 @@ UBTB::update(const FetchStream &stream)
     Addr oldtag = getTag(startAddr);
 
     UBTBIter oldEntryIter = ubtb.end();
-    if (takenEntry.valid) {
-         oldEntryIter = std::find_if(ubtb.begin(), ubtb.end(), [oldtag](const TickedUBTBEntry &e) {
-            return e.valid && e.tag == oldtag;
-        });
 
-    }
+    oldEntryIter = meta->hit_entry.valid ?
+                    std::find_if(ubtb.begin(), ubtb.end(), [oldtag](const TickedUBTBEntry &e) {
+                        return e.valid && e.tag == oldtag;
+                    }) : ubtb.end();
 
     if (stream.exeTaken) {
         if (!pred_hit_entry.valid || pred_hit_entry != stream.exeBranchInfo) {

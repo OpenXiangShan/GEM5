@@ -696,7 +696,7 @@ class MultiperspectivePerceptronTAGE(MultiperspectivePerceptron):
     threshold = -1
     initial_ghist_length = 0
     ignore_path_size = True
-    n_sign_bits = 1;
+    n_sign_bits = 1
 
     tage = Param.TAGEBase("Tage object")
     loop_predictor = Param.LoopPredictor("Loop predictor")
