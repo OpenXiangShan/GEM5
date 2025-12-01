@@ -2471,6 +2471,16 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
             const Addr target = hasTarget ? pendingTraceInstr.getBranchTarget() : 0;
             const Addr fallthrough = pendingTraceInstr.getFallThroughPC();
             instruction->setTraceBranchInfo(taken, hasTarget, target, fallthrough);
+            // Trace hints for branch classification (used to override static decode in trace mode)
+            instruction->setTraceIsCall(
+                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_DIRECT ||
+                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_INDIRECT);
+            instruction->setTraceIsReturn(
+                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::RETURN);
+            instruction->setTraceIsIndirect(
+                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH ||
+                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_INDIRECT ||
+                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::RETURN);
             DPRINTF(Fetch,
                     "[tid:%i] Bind trace-branch info to [sn:%lli]: taken=%d, hasTgt=%d\n",
                     tid, instruction->seqNum, taken, hasTarget);

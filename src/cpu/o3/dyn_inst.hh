@@ -637,6 +637,9 @@ class DynInst : public ExecContext, public RefCounted
     Addr traceBranchNextPCValue = 0;
     // trace 侧标记该指令是否触发非普通顺序的控制流改变（例如 trap/异常）。
     bool traceCtrlFlowChangeValue = false;
+    bool traceIsCallValue = false;
+    bool traceIsReturnValue = false;
+    bool traceIsIndirectValue = false;
 
     void clearTraceBranchInfo()
     {
@@ -646,6 +649,9 @@ class DynInst : public ExecContext, public RefCounted
         traceBranchTargetValue = 0;
         traceBranchNextPCValue = 0;
         traceCtrlFlowChangeValue = false;
+        traceIsCallValue = false;
+        traceIsReturnValue = false;
+        traceIsIndirectValue = false;
     }
 
     void setTraceBranchInfo(bool taken, bool hasTarget, Addr branchTarget,
@@ -664,6 +670,9 @@ class DynInst : public ExecContext, public RefCounted
     {
         traceCtrlFlowChangeValue = hasCtrlFlowChange;
     }
+    void setTraceIsCall(bool v) { traceIsCallValue = v; }
+    void setTraceIsReturn(bool v) { traceIsReturnValue = v; }
+    void setTraceIsIndirect(bool v) { traceIsIndirectValue = v; }
 
     bool hasTraceBranchInfo() const { return traceBranchInfoValid; }
     bool traceBranchTaken() const { return traceBranchInfoValid && traceBranchTakenValue; }
@@ -671,6 +680,9 @@ class DynInst : public ExecContext, public RefCounted
     Addr traceBranchTarget() const { return traceBranchHasTargetValue ? traceBranchTargetValue : 0; }
     Addr traceBranchNextPC() const { return traceBranchInfoValid ? traceBranchNextPCValue : 0; }
     bool hasTraceCtrlFlowChange() const { return traceCtrlFlowChangeValue; }
+    bool traceIsCall() const { return traceIsCallValue; }
+    bool traceIsReturn() const { return traceIsReturnValue; }
+    bool traceIsIndirect() const { return traceIsIndirectValue; }
 
     // 标记并查询该动态指令是否对应 trace 流中的最后一条，用于
     // 在 commit 阶段识别“最后一条 trace 指令已提交”，实现自然退出。

@@ -1670,6 +1670,14 @@ Commit::traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst)
 
         auto commit_type = classifyInstType(head_inst->staticInst);
         auto trace_type = ti_meta->getInstType();
+        // Allow trace hints to override static decode for call/return/indirect
+        if (head_inst->traceIsCall()) {
+            trace_type = head_inst->traceIsIndirect()
+                ? o3::TraceInstruction::InstType::CALL_INDIRECT
+                : o3::TraceInstruction::InstType::CALL_DIRECT;
+        } else if (head_inst->traceIsReturn()) {
+            trace_type = o3::TraceInstruction::InstType::RETURN;
+        }
         DPRINTF(CommitTrace, "[tid:%d idx:%llu sn:%llu] InstType: commit=%s, trace=%s\n",
                 tid,
                 (unsigned long long)traceCommitIndex[tid],
