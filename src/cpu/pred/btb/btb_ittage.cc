@@ -462,8 +462,9 @@ BTBITTAGE::satDecrement(int min, short &counter)
  * - Index folded history: Used for table index computation
  *
  * @param history The current branch history
- * @param shamt The number of bits to shift
  * @param taken Whether the branch was taken
+ * @param pc The program counter of the branch
+ * @param target The target address of the branch
  */
 void
 BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc, Addr target)
