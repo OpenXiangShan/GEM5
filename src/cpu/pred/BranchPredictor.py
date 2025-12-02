@@ -1076,6 +1076,7 @@ class BTBITTAGE(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBITTAGE'
     cxx_header = "cpu/pred/btb/btb_ittage.hh"
 
+    needMoreHistories = Param.Bool(True, "BTBITTAGE needs more histories")
     numPredictors = Param.Unsigned(5, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([256]*2 + [512]*3, "the ITTAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([9]*5, "the T0~Tn entry's tag bit size")

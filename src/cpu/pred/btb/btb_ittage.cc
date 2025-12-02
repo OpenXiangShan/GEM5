@@ -12,6 +12,7 @@
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPUseful.hh"
 #include "debug/ITTAGE.hh"
+#include "debug/ITTAGEHistory.hh"
 
 namespace gem5 {
 
@@ -30,6 +31,7 @@ maxHistLen(p.maxHistLen),
 numTablesToAlloc(p.numTablesToAlloc),
 ittageStats(this, p.numPredictors)
 {
+    this->needMoreHistories = p.needMoreHistories;
     DPRINTF(ITTAGE, "BTBITTAGE constructor numBr=%d\n", numBr);
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
@@ -451,50 +453,83 @@ BTBITTAGE::satDecrement(int min, short &counter)
     return counter == min;
 }
 
+/**
+ * @brief Updates branch history for speculative execution
+ *
+ * This function updates three types of folded histories:
+ * - Tag folded history: Used for tag computation
+ * - Alternative tag folded history: Used for alternative tag computation
+ * - Index folded history: Used for table index computation
+ *
+ * @param history The current branch history
+ * @param shamt The number of bits to shift
+ * @param taken Whether the branch was taken
+ */
 void
-BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool taken)
+BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc, Addr target)
 {
-    if (debugFlag) {
+    if (debug::ITTAGEHistory) {  // if debug flag is off, do not use to_string since it's too slow
         std::string buf;
         boost::to_string(history, buf);
-        DPRINTF(ITTAGE, "in doUpdateHist, shamt %d, taken %d, history %s\n", shamt, taken, buf);
+        DPRINTF(ITTAGEHistory, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
     }
-    if (shamt == 0) {
-        DPRINTF(ITTAGE, "shamt is 0, returning\n");
+    if (!taken) {
+        DPRINTF(ITTAGEHistory, "not updating folded history, since FB not taken\n");
         return;
     }
 
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 3; type++) {
-            DPRINTF(ITTAGE, "t: %d, type: %d\n", t, type);
-
             auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
-            foldedHist.update(history, shamt, taken);
+            // since we have folded path history, we can put arbitrary shamt here, and it wouldn't make a difference
+            foldedHist.update(history, 2, taken, pc, target);
+            DPRINTF(ITTAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist.get());
         }
     }
 }
 
+/**
+ * @brief Updates branch history for speculative execution
+ *
+ * This function updates the branch history for speculative execution
+ * based on the provided history and prediction information.
+ *
+ * It first retrieves the history information from the prediction metadata
+ * and then calls the doUpdateHist function to update the folded histories.
+ *
+ * @param history The current branch history
+ * @param pred The prediction metadata containing history information
+ */
 void
-BTBITTAGE::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
-    int shamt;
-    bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getHistInfo();
-    doUpdateHist(history, shamt, cond_taken);
+    auto [pc, target, taken] = pred.getPHistInfo();
+    doUpdateHist(history, taken, pc, target);
 }
 
+/**
+ * @brief Recovers branch history state after a misprediction
+ *
+ * This function:
+ * 1. Restores the folded histories from the saved metadata
+ * 2. Updates the histories with the correct branch outcome
+ * 3. Ensures predictor state is consistent after recovery
+ *
+ * @param history The branch history to recover to
+ * @param entry The fetch stream entry containing recovery information
+ * @param shamt Number of bits to shift in history update
+ * @param cond_taken The actual branch outcome
+ */
 void
-BTBITTAGE::recoverHist(const boost::dynamic_bitset<> &history,
-    const FetchStream &entry, int shamt, bool cond_taken)
+BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
 {
-    // TODO: need to get idx
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
         tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
         altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, shamt, cond_taken);
+    doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
 }
 
 void
