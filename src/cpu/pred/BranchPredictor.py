@@ -1000,6 +1000,7 @@ class AheadBTB(TimedBaseBTBPredictor):
     entryHalfAligned = Param.Bool(False, "Whether the entries are half-aligned")
     blockSize = 64
     numDelay = 0
+    usingS3Pred = Param.Bool(True, "Whether using S3 predictor to update AheadBTB")
 
 class UBTB(TimedBaseBTBPredictor):
     type = 'UBTB'

@@ -81,6 +81,7 @@ AheadBTB::AheadBTB(const Params &p)
     numEntries(p.numEntries),
     numWays(p.numWays),
     tagBits(p.tagBits),
+    usingS3Pred(p.usingS3Pred),
     btbStats(this)
 {
     // AheadBTB supports configurable ahead-pipelined stages, but must be > 0
@@ -424,14 +425,14 @@ AheadBTB::lookup(Addr block_pc)
  * 2. Remove entries that were not executed
  */
 std::vector<BTBEntry>
-AheadBTB::processOldEntries(const FetchStream &stream)
+AheadBTB::processOldEntries(const BTBMeta& meta, Addr end_inst_pc)
 {
-    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
-    // hit entries whose corresponding insts are acutally executed
-    Addr end_inst_pc = stream.updateEndInstPC;
+    // auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
+    // // hit entries whose corresponding insts are acutally executed
+    // Addr end_inst_pc = stream.updateEndInstPC;
     DPRINTF(ABTB, "end_inst_pc: %#lx\n", end_inst_pc);
     // remove not executed btb entries, pc > end_inst_pc
-    auto old_entries = meta->hit_entries;
+    auto old_entries = meta.hit_entries;
     DPRINTF(ABTB, "old_entries.size(): %lu\n", old_entries.size());
     dumpBTBEntries(old_entries);
     auto remove_it = std::remove_if(old_entries.begin(), old_entries.end(),
@@ -506,7 +507,8 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
  * 5. Update MRU information
  */
 void
-AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, const FetchStream &stream)
+AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
+                                        const BranchInfo takenbranchinfo,const bool isTaken)
 {
 
     // Look for matching entry
@@ -524,7 +526,7 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, cons
     entry_to_write.tag = btb_tag;   // update tag after found it!
     // update saturating counter if necessary
     if (entry_to_write.isCond) {
-        bool this_cond_taken = stream.exeTaken && stream.getControlPC() == entry_to_write.pc;
+        bool this_cond_taken = isTaken && takenbranchinfo.pc == entry_to_write.pc;
         if (!this_cond_taken) {
             entry_to_write.alwaysTaken = false;
         }
@@ -535,8 +537,8 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, cons
         // }
     }
     // update indirect target if necessary
-    if (entry_to_write.isIndirect && stream.exeTaken && stream.getControlPC() == entry_to_write.pc) {
-        entry_to_write.target = stream.exeBranchInfo.target;
+    if (entry_to_write.isIndirect && isTaken && takenbranchinfo.pc == entry_to_write.pc) {
+        entry_to_write.target = takenbranchinfo.target;
     }
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
     if (found) {
@@ -588,6 +590,73 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, cons
     std::make_heap(mruList[btb_idx].begin(), mruList[btb_idx].end(), older());
 }
 
+
+void
+AheadBTB::updateUsingS3Pred( FullBTBPrediction &mbtb_pred,const Addr previousPC)
+{
+    if (!usingS3Pred) {
+        DPRINTF(ABTB, "AheadBTB: not using S3 prediction for update, skipping\n");
+        return;
+    }
+    auto meta = static_cast<const BTBMeta*>(getPredictionMeta().get());
+    Addr end_inst_pc =mbtb_pred.isTaken() ? mbtb_pred.getTakenEntry().pc :
+                            (mbtb_pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
+
+    // AheadBTB use S3 prediction for update
+    auto old_entries= processOldEntries(*meta, end_inst_pc);
+
+    // checkPredictionHit(stream, meta);//todo
+    //auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
+    //can't use this function the new entry is from stream and it update when we get resvol
+
+    auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries,mbtb_pred);
+
+    for (auto &entry : entries_to_update) {
+        Addr startPC = mbtb_pred.bbStart;
+        Addr btb_tag = getTag(startPC);  // use last pc to get tag
+        if (previousPC == 0) {
+            DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
+            return;
+        }
+        Addr btb_idx = getIndex(previousPC);  // use last pc to get idx
+        BranchInfo takenbranchinfo;
+        takenbranchinfo.pc = mbtb_pred.getTakenEntry().pc;
+        takenbranchinfo.target = mbtb_pred.getTakenEntry().target;
+
+        updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo, mbtb_pred.isTaken());
+    }
+}
+
+std::vector<BTBEntry>
+AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entries,
+                                     FullBTBPrediction &mbtb_pred)
+{
+    auto all_entries = old_entries;
+    BTBEntry new_entry = BTBEntry();
+    // which causes its counter to update twice unintentionally
+    // we need to check if the new entry already exists in uBTB
+    bool pred_branch_hit = false;
+    for (auto &e: old_entries) {
+        if (mbtb_pred.getTakenEntry() == e) {
+            pred_branch_hit = true;
+            break;
+        }
+    }
+    if (!pred_branch_hit&& mbtb_pred.isTaken()) {
+        new_entry = mbtb_pred.getTakenEntry();
+        new_entry.valid = true;
+
+        if (new_entry.isCond) {
+            new_entry.alwaysTaken = true;
+            new_entry.ctr = 0;
+        }
+        all_entries.push_back(new_entry);
+    }
+
+    DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
+    return all_entries;
+}
+
 /*
  * Update BTB with execution results
  * Steps:
@@ -600,9 +669,16 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry, cons
 void
 AheadBTB::update(const FetchStream &stream)
 {
+    if (usingS3Pred) {
+        DPRINTF(ABTB, "AheadBTB: using S3 prediction for update, skipping AheadBTB update\n");
+        return;
+    }
+    auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get();
+    Addr end_inst_pc = stream.updateEndInstPC;
+
     // 1. Process old entries
-    auto old_entries = processOldEntries(stream);
-    
+    auto old_entries = processOldEntries(*meta, end_inst_pc);
+
     // 2. Check prediction hit status, for stats recording
     checkPredictionHit(stream,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
@@ -622,7 +698,7 @@ AheadBTB::update(const FetchStream &stream)
             return;
         }
         Addr btb_idx = getIndex(previousPC);  // use last pc to get idx
-        updateBTBEntry(btb_idx, btb_tag, entry, stream);
+        updateBTBEntry(btb_idx, btb_tag, entry, stream.exeBranchInfo, stream.exeTaken);
     }
 }
 
