@@ -346,6 +346,9 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--page-align", action="store_true", help="4-byte align mapped addresses")
     ap.add_argument("--dump-raw-struct", action="store_true",
                     help="Print raw record tuple fields for each entry")
+    ap.add_argument("--analyze-len-reg", action="store_true",
+                    help="Analyze length vs src/dst reg count (ChampSim/CBP); "
+                         "reports anomalies and exits")
     return ap.parse_args()
 
 
@@ -403,6 +406,190 @@ def classify_champsim_branch(dst_regs, src_regs, is_branch_flag, branch_taken_ra
     return "alu", bool(is_branch_flag), False
 
 
+def analyze_len_reg_champsim(f, skip: int, limit: int) -> int:
+    """
+    逐条扫描 ChampSim trace，检查：非 taken 分支/非分支指令的 npc-this_pc 作为长度，
+    - 若长度不在 {2,4}，输出异常条目；
+    - 若长度=2 且源寄存器数量>1，输出异常条目。
+    """
+    rec_iter = iter_records(f, skip=skip)
+    idx = skip
+    try:
+        prev = next(rec_iter)
+    except StopIteration:
+        print("no records", file=sys.stderr)
+        return 0
+
+    seen_len = set()       # PCs already reported for delta not in {2,4}
+    seen_len2 = set()      # PCs already reported for delta=2 & src>1
+    total_checked = 0
+
+    def to_int(val):
+        if isinstance(val, int):
+            return val
+        try:
+            return int(val)
+        except Exception:
+            if isinstance(val, (list, tuple)) and val:
+                try:
+                    return int(val[0])
+                except Exception:
+                    return 0
+            return 0
+
+    def print_header_if_needed(state):
+        if state.get("printed_header"):
+            return
+        print("Anomaly: length not in {2,4} or len=2 with src_cnt>1 (unique per PC)")
+        print(" idx      pc              next_pc         delta  type   taken  src_regs           dst_regs")
+        print("-------------------------------------------------------------------------------------------")
+        state["printed_header"] = True
+
+    header_state = {"printed_header": False}
+
+    while True:
+        try:
+            curr = next(rec_iter)
+        except StopIteration:
+            break
+        idx += 1
+        if limit and (idx - skip) > limit:
+            break
+
+        # prev fields
+        (
+            ip,
+            is_branch,
+            branch_taken,
+            dst_reg0,
+            dst_reg1,
+            src_reg0,
+            src_reg1,
+            src_reg2,
+            src_reg3,
+            dst_mem0,
+            dst_mem1,
+            src_mem0,
+            src_mem1,
+            src_mem2,
+            src_mem3,
+        ) = prev
+
+        branch_type, is_branch_eff, branch_taken_eff = classify_champsim_branch(
+            [dst_reg0, dst_reg1],
+            [src_reg0, src_reg1, src_reg2, src_reg3],
+            is_branch,
+            branch_taken,
+        )
+
+        # 跳过 taken 分支
+        if is_branch_eff and branch_taken_eff:
+            prev = curr
+            continue
+
+        next_ip = curr[0]
+        delta = next_ip - ip
+        total_checked += 1
+
+        src_regs = [r for r in (src_reg0, src_reg1, src_reg2, src_reg3) if r != 0]
+        src_cnt = len(src_regs)
+
+        if delta not in (2, 4):
+            if ip not in seen_len:
+                print_header_if_needed(header_state)
+                msg = (
+                    f" {idx-1:>6d} 0x{to_int(ip):016x} 0x{to_int(next_ip):016x} "
+                    f"{to_int(delta):>6d} "
+                    f"{'br' if is_branch_eff else 'nb':<5s} {str(branch_taken_eff):<5s} "
+                    f"{str(src_regs):<18} {[r for r in (dst_reg0, dst_reg1) if r != 0]}"
+                )
+                print(msg)
+                seen_len.add(ip)
+        elif delta == 2 and src_cnt > 1:
+            if ip not in seen_len2:
+                print_header_if_needed(header_state)
+                msg = (
+                    f" {idx-1:>6d} 0x{to_int(ip):016x} 0x{to_int(next_ip):016x} "
+                    f"{to_int(delta):>6d} "
+                    f"{'nb':<5s} {str(branch_taken_eff):<5s} "
+                    f"{str(src_regs):<18} {[r for r in (dst_reg0, dst_reg1) if r != 0]}"
+                )
+                print(msg)
+                seen_len2.add(ip)
+
+        prev = curr
+
+    print(f"Checked {total_checked} records (skip={skip}, limit={'all' if not limit else limit}); "
+          f"anomaly_len={len(seen_len)}, anomaly_len2_src={len(seen_len2)}")
+    return 0
+
+
+def analyze_len_reg_cbp(f, skip: int, limit: int) -> int:
+    rec_iter = iter_records_cbp2025(f, skip=skip)
+    prev = None
+    idx = skip
+    seen_len = set()
+    seen_len2 = set()
+    total_checked = 0
+
+    def print_header_if_needed(state):
+        if state.get("printed_header"):
+            return
+        print("Anomaly: length not in {2,4} or len=2 with src_cnt>1 (unique per PC)")
+        print(" idx      pc              next_pc         delta  type   taken  src_regs           dst_regs")
+        print("-------------------------------------------------------------------------------------------")
+        state["printed_header"] = True
+
+    header_state = {"printed_header": False}
+
+    for rec in rec_iter:
+        if prev is None:
+            prev = rec
+            idx += 1
+            continue
+        if limit and (idx - skip) >= limit:
+            break
+
+        # prev rec fields
+        pc = prev["pc"]
+        next_pc = prev["next_pc"]
+        is_branch = prev["is_branch"]
+        taken = prev["taken"]
+        src_regs = [r for r in prev["in_regs"] if r != 0]
+        dst_regs = [r for r in prev["out_regs"] if r != 0]
+
+        # 跳过 taken 分支
+        if is_branch and taken:
+            prev = rec
+            idx += 1
+            continue
+
+        # 对于 CBP trace，next_pc 已在记录中；若缺失则退化为 pc+4
+        if next_pc is None:
+            next_pc = pc + 4
+        delta = next_pc - pc
+        total_checked += 1
+        src_cnt = len(src_regs)
+
+        if delta not in (2, 4):
+            if pc not in seen_len:
+                print_header_if_needed(header_state)
+                print(f" {idx:>6d} 0x{pc:016x} 0x{next_pc:016x} {delta:>6d} "
+                      f"{'br' if is_branch else 'nb':<5s} {str(taken):<5s} {str(src_regs):<18} {dst_regs}")
+                seen_len.add(pc)
+        elif delta == 2 and src_cnt > 1:
+            if pc not in seen_len2:
+                print_header_if_needed(header_state)
+                print(f" {idx:>6d} 0x{pc:016x} 0x{next_pc:016x} {delta:>6d} "
+                      f"{'nb':<5s} {str(taken):<5s} {str(src_regs):<18} {dst_regs}")
+                seen_len2.add(pc)
+
+        prev = rec
+        idx += 1
+
+    print(f"Checked {total_checked} records (skip={skip}, limit={'all' if not limit else limit}); "
+          f"anomaly_len={len(seen_len)}, anomaly_len2_src={len(seen_len2)}")
+    return 0
 def main() -> int:
     args = parse_args()
 
@@ -426,6 +613,15 @@ def main() -> int:
     printed = 0
     total = 0
     with f:
+        if args.analyze_len_reg:
+            if args.format == "champsim":
+                return analyze_len_reg_champsim(f, skip=effective_skip, limit=effective_limit)
+            elif args.format == "cbp2025":
+                return analyze_len_reg_cbp(f, skip=effective_skip, limit=effective_limit)
+            else:
+                print("--analyze-len-reg unsupported format", file=sys.stderr)
+                return 1
+
         rec_iter = iter_records(f, skip=effective_skip) if args.format == "champsim" \
             else iter_records_cbp2025(f, skip=effective_skip)
 
