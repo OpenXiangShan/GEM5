@@ -1150,6 +1150,9 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     if (tage->isEnabled()) {
         tage->checkFoldedHist(s0PHistory, "speculative update");
     }
+    if (ittage->isEnabled()) {
+        ittage->checkFoldedHist(s0PHistory, "speculative update");
+    }
     if (microtage->isEnabled()) {
         microtage->checkFoldedHist(s0PHistory, "speculative update");
     }
@@ -1238,6 +1241,11 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     checkHistory(s0History);
     if (tage->isEnabled()) {
         tage->checkFoldedHist(s0PHistory,
+            squash_type == SQUASH_CTRL ? "control squash" :
+            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+    }
+    if (ittage->isEnabled()) {
+        ittage->checkFoldedHist(s0PHistory,
             squash_type == SQUASH_CTRL ? "control squash" :
             squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
     }
