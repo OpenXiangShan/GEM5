@@ -425,14 +425,14 @@ AheadBTB::lookup(Addr block_pc)
  * 2. Remove entries that were not executed
  */
 std::vector<BTBEntry>
-AheadBTB::processOldEntries(const BTBMeta& meta, Addr end_inst_pc)
+AheadBTB::processOldEntries(const BTBMeta* meta, Addr end_inst_pc)
 {
     // auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     // // hit entries whose corresponding insts are acutally executed
     // Addr end_inst_pc = stream.updateEndInstPC;
     DPRINTF(ABTB, "end_inst_pc: %#lx\n", end_inst_pc);
     // remove not executed btb entries, pc > end_inst_pc
-    auto old_entries = meta.hit_entries;
+    auto old_entries = meta->hit_entries;
     DPRINTF(ABTB, "old_entries.size(): %lu\n", old_entries.size());
     dumpBTBEntries(old_entries);
     auto remove_it = std::remove_if(old_entries.begin(), old_entries.end(),
@@ -592,18 +592,18 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
 
 
 void
-AheadBTB::updateUsingS3Pred( FullBTBPrediction &mbtb_pred,const Addr previousPC)
+AheadBTB::updateUsingS3Pred( FullBTBPrediction &mbtb_pred,const BTBMeta* meta,const Addr previousPC)
 {
     if (!usingS3Pred) {
         DPRINTF(ABTB, "AheadBTB: not using S3 prediction for update, skipping\n");
         return;
     }
-    auto meta = static_cast<const BTBMeta*>(getPredictionMeta().get());
+    // auto meta = static_cast<const BTBMeta*>(getPredictionMeta().get());
     Addr end_inst_pc =mbtb_pred.isTaken() ? mbtb_pred.getTakenEntry().pc :
                             (mbtb_pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
 
     // AheadBTB use S3 prediction for update
-    auto old_entries= processOldEntries(*meta, end_inst_pc);
+    auto old_entries= processOldEntries(meta, end_inst_pc);
 
     // checkPredictionHit(stream, meta);//todo
     //auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
@@ -677,7 +677,7 @@ AheadBTB::update(const FetchStream &stream)
     Addr end_inst_pc = stream.updateEndInstPC;
 
     // 1. Process old entries
-    auto old_entries = processOldEntries(*meta, end_inst_pc);
+    auto old_entries = processOldEntries(meta, end_inst_pc);
 
     // 2. Check prediction hit status, for stats recording
     checkPredictionHit(stream,

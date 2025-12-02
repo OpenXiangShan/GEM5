@@ -175,7 +175,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     void update(const FetchStream &stream) override;
 
-    void updateUsingS3Pred(FullBTBPrediction &mbtb_pred,const Addr previousPC);
+
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
@@ -211,7 +211,18 @@ class AheadBTB : public TimedBaseBTBPredictor
         }
     }
 
+    typedef struct BTBMeta
+    {
+        std::vector<BTBEntry> hit_entries;  // hit entries in L1 BTB
+        std::vector<BTBEntry> l0_hit_entries; // hit entries in L0 BTB
+        BTBMeta() {
+            std::vector<BTBEntry> es;
+            hit_entries = es;
+            l0_hit_entries = es;
+        }
+    }BTBMeta;
 
+    void updateUsingS3Pred(FullBTBPrediction &mbtb_pred,const BTBMeta* meta,const Addr previousPC);
 
   private:
     /** Returns the index into the BTB, based on the branch's PC.
@@ -251,15 +262,6 @@ class AheadBTB : public TimedBaseBTBPredictor
         if (!taken && ctr > -2) {ctr--;}
     }
 
-    typedef struct BTBMeta {
-        std::vector<BTBEntry> hit_entries;  // hit entries in L1 BTB
-        std::vector<BTBEntry> l0_hit_entries; // hit entries in L0 BTB
-        BTBMeta() {
-            std::vector<BTBEntry> es;
-            hit_entries = es;
-            l0_hit_entries = es;
-        }
-    }BTBMeta;
 
     std::shared_ptr<BTBMeta> meta; // metadata for BTB, set in putPCHistory, used in update
 
@@ -289,7 +291,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param end_inst_pc End PC of the executed instructions
      *  @return Processed old BTB entries
      */
-    std::vector<BTBEntry> processOldEntries(const BTBMeta& meta, Addr end_inst_pc);
+    std::vector<BTBEntry> processOldEntries(const BTBMeta* meta, Addr end_inst_pc);
 
     /** Get the previous PC from the fetch stream
      *  @param stream Fetch stream containing prediction info
