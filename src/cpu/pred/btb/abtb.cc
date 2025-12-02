@@ -335,6 +335,11 @@ AheadBTB::putPCHistory(Addr startAddr,
 std::shared_ptr<void>
 AheadBTB::getPredictionMeta()
 {
+    // Lazy-initialize meta so callers never observe a null pointer
+    // This avoids early-cycle crashes when prediction hasn't populated meta yet
+    if (!meta) {
+        meta = std::make_shared<BTBMeta>();
+    }
     return meta;
 }
 
@@ -434,12 +439,12 @@ AheadBTB::processOldEntries(const BTBMeta* meta, Addr end_inst_pc)
     // remove not executed btb entries, pc > end_inst_pc
     auto old_entries = meta->hit_entries;
     DPRINTF(ABTB, "old_entries.size(): %lu\n", old_entries.size());
-    dumpBTBEntries(old_entries);
+    //dumpBTBEntries(old_entries);
     auto remove_it = std::remove_if(old_entries.begin(), old_entries.end(),
         [end_inst_pc](const BTBEntry &e) { return e.pc > end_inst_pc; });
     old_entries.erase(remove_it, old_entries.end());
     DPRINTF(ABTB, "after removing not executed insts, old_entries.size(): %lu\n", old_entries.size());
-    dumpBTBEntries(old_entries);
+    //dumpBTBEntries(old_entries);
 
     btbStats.updateHit += old_entries.size();
     
@@ -598,7 +603,7 @@ AheadBTB::updateUsingS3Pred( FullBTBPrediction &mbtb_pred,const BTBMeta* meta,co
         DPRINTF(ABTB, "AheadBTB: not using S3 prediction for update, skipping\n");
         return;
     }
-    // auto meta = static_cast<const BTBMeta*>(getPredictionMeta().get());
+    meta = static_cast<const BTBMeta*>(getPredictionMeta().get());
     Addr end_inst_pc =mbtb_pred.isTaken() ? mbtb_pred.getTakenEntry().pc :
                             (mbtb_pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
 
