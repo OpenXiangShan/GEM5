@@ -151,9 +151,9 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     std::vector<bitset> tableTagMasks;
     std::vector<unsigned> tablePcShifts;
     std::vector<unsigned> histLengths;
-    std::vector<GlobalFoldedHist> tagFoldedHist;
-    std::vector<GlobalFoldedHist> altTagFoldedHist;
-    std::vector<GlobalFoldedHist> indexFoldedHist;
+    std::vector<PathFoldedHist> tagFoldedHist;
+    std::vector<PathFoldedHist> altTagFoldedHist;
+    std::vector<PathFoldedHist> indexFoldedHist;
 
     LFSR64 allocLFSR;
 
@@ -225,12 +225,12 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     {
         std::unordered_map<Addr, TagePrediction> preds;
         bitset usefulMask;
-        std::vector<GlobalFoldedHist> tagFoldedHist;
-        std::vector<GlobalFoldedHist> altTagFoldedHist;
-        std::vector<GlobalFoldedHist> indexFoldedHist;
+        std::vector<PathFoldedHist> tagFoldedHist;
+        std::vector<PathFoldedHist> altTagFoldedHist;
+        std::vector<PathFoldedHist> indexFoldedHist;
         TageMeta(std::unordered_map<Addr, TagePrediction> preds, bitset usefulMask,
-                 std::vector<GlobalFoldedHist> tagFoldedHist, std::vector<GlobalFoldedHist> altTagFoldedHist,
-                 std::vector<GlobalFoldedHist> indexFoldedHist)
+                 std::vector<PathFoldedHist> tagFoldedHist, std::vector<PathFoldedHist> altTagFoldedHist,
+                 std::vector<PathFoldedHist> indexFoldedHist)
             : preds(preds),
               usefulMask(usefulMask),
               tagFoldedHist(tagFoldedHist),

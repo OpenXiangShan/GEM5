@@ -53,9 +53,9 @@ ittageStats(this, p.numPredictors)
 
         assert(tablePcShifts.size() >= numPredictors);
 
-        tagFoldedHist.push_back(GlobalFoldedHist((int)histLengths[i], (int)tableTagBits[i], (int)16));
-        altTagFoldedHist.push_back(GlobalFoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, (int)16));
-        indexFoldedHist.push_back(GlobalFoldedHist((int)histLengths[i], (int)tableIndexBits[i], (int)16));
+        tagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i], (int)16));
+        altTagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, (int)16));
+        indexFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableIndexBits[i], (int)16));
     }
     // useAlt.resize(128);
     // for (unsigned i = 0; i < useAlt.size(); ++i) {
