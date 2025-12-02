@@ -187,6 +187,10 @@ class Commit
      */
     IEW *iewStage;
 
+    /** Trace ctrl-flow fault bookkeeping: seqNum to notify fetch rollback. */
+    InstSeqNum traceCtrlFaultSeqNum[MaxThreads]{};
+    bool traceCtrlFaultPending[MaxThreads]{};
+
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
 
@@ -500,8 +504,8 @@ class Commit
 
     // committed Stream and Target
 
-    uint64_t committedStreamId{};
-    uint64_t committedTargetId{};
+    uint64_t committedStreamId{1};
+    uint64_t committedTargetId{0};
     uint64_t committedLoopIter{};
 
     struct CommitStats : public statistics::Group

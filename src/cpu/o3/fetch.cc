@@ -1803,10 +1803,21 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         DPRINTF(Fetch, "[tid:%i] Squashing instructions due to squash "
                 "from commit.\n",tid);
 
+        InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
+        DynInstPtr squash_inst = fromCommit->commitInfo[tid].squashInst;
+        if (fromCommit->commitInfo[tid].isTrapSquash &&
+            fromCommit->commitInfo[tid].traceTrapSkipInst) {
+            squash_seq = fromCommit->commitInfo[tid].traceTrapSeqNum;
+            squash_inst = nullptr;
+            DPRINTF(Fetch,
+                    "[tid:%i] Trap squash with trace ctrl-flow fault: rollback seq=%llu (skip head)\n",
+                    tid, static_cast<unsigned long long>(squash_seq));
+        }
+
         // In any case, squash.
         squash(*fromCommit->commitInfo[tid].pc,
-               fromCommit->commitInfo[tid].doneSeqNum,
-               fromCommit->commitInfo[tid].squashInst, tid);
+               squash_seq,
+               squash_inst, tid);
 
         localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
         DPRINTF(Fetch, "Updating squash version to %u\n",
@@ -3468,6 +3479,12 @@ Fetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
                         return inst;
                     }
                 }
+            }
+            case o3::TraceInstruction::InstType::FP: {
+                // 压缩 FP 指令退化为 c.nop，避免访存副作用。
+                uint16_t inst = 0x0001u;
+                DPRINTF(Fetch, "[TRACE-ENC] (C) fp compressed -> c.nop (skip mem side-effects)\n");
+                return inst;
             }
             default:
                 // 退化为 c.nop，保持指令长度，不中断仿真。

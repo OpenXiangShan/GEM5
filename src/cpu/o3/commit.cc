@@ -694,6 +694,10 @@ Commit::squashAll(ThreadID tid)
     // all instructions of this thread.
     InstSeqNum squashed_inst = rob->isEmpty(tid) ?
         lastCommitedSeqNum[tid] : rob->readHeadInst(tid)->seqNum - 1;
+    InstSeqNum notify_done_seq = squashed_inst;
+    if (traceCtrlFaultPending[tid]) {
+        notify_done_seq = std::max(notify_done_seq, traceCtrlFaultSeqNum[tid]);
+    }
 
     // All younger instructions will be squashed. Set the sequence
     // number as the youngest instruction in the ROB (0 in this case.
@@ -706,6 +710,9 @@ Commit::squashAll(ThreadID tid)
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
     toIEW->commitInfo[tid].doneMemSeqNum = squashed_inst;
+    // For trace ctrl-flow faults, notify fetch rollback to skip the faulting inst.
+    toIEW->commitInfo[tid].traceTrapSeqNum = notify_done_seq;
+    toIEW->commitInfo[tid].traceTrapSkipInst = traceCtrlFaultPending[tid];
 
     // Send back the squash signal to tell stages that they should
     // squash.
@@ -727,6 +734,8 @@ Commit::squashAll(ThreadID tid)
     cpu->mmu->useNewPriv(cpu->getContext(tid));
 
     squashInflightAndUpdateVersion(tid);
+
+    traceCtrlFaultPending[tid] = false;
 }
 
 void
@@ -1267,9 +1276,17 @@ Commit::commitInsts()
                         cpu->getTraceInstMetadata(head_inst->seqNum)) {
                     if (ti_meta->isCtrlFlowChange()) {
                         head_inst->setTraceCtrlFlowChange(true);
+                        traceCtrlFaultPending[tid] = true;
+                        traceCtrlFaultSeqNum[tid] = head_inst->seqNum;
                         head_inst->getFault() =
                             std::make_shared<TraceCtrlFlowFault>(
                                 ti_meta->getCtrlFlowTarget());
+                        DPRINTF(CommitTrace,
+                                "[tid:%d idx:%llu sn:%llu] Trace ctrl-flow change -> inject fault to target 0x%lx\n",
+                                tid,
+                                (unsigned long long)traceCommitIndex[tid],
+                                head_inst->seqNum,
+                                (unsigned long)ti_meta->getCtrlFlowTarget());
                     }
                 }
             }

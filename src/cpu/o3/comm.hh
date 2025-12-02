@@ -318,6 +318,10 @@ struct TimeStruct
         /// the IEW stage.
         bool strictlyOrdered; // *I
 
+        // Trace ctrl-flow faults: notify fetch how far to rollback trace reader.
+        InstSeqNum traceTrapSeqNum; // *F
+        bool traceTrapSkipInst;     // *F
+
     };
 
     CommitComm commitInfo[MaxThreads];
