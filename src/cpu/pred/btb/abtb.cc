@@ -603,7 +603,7 @@ AheadBTB::updateUsingS3Pred( FullBTBPrediction &mbtb_pred,const BTBMeta* meta,co
         DPRINTF(ABTB, "AheadBTB: not using S3 prediction for update, skipping\n");
         return;
     }
-    meta = static_cast<const BTBMeta*>(getPredictionMeta().get());
+
     Addr end_inst_pc =mbtb_pred.isTaken() ? mbtb_pred.getTakenEntry().pc :
                             (mbtb_pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
 
