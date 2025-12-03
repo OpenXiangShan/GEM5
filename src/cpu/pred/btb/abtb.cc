@@ -311,6 +311,8 @@ AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
     for (auto e: entries) {
         meta->hit_entries.push_back(BTBEntry(e));
     }
+
+    lastPredEntries = meta->hit_entries;
 }
 
 void
@@ -430,14 +432,15 @@ AheadBTB::lookup(Addr block_pc)
  * 2. Remove entries that were not executed
  */
 std::vector<BTBEntry>
-AheadBTB::processOldEntries(const BTBMeta* meta, Addr end_inst_pc)
+AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
+                            Addr end_inst_pc)
 {
     // auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     // // hit entries whose corresponding insts are acutally executed
     // Addr end_inst_pc = stream.updateEndInstPC;
     DPRINTF(ABTB, "end_inst_pc: %#lx\n", end_inst_pc);
     // remove not executed btb entries, pc > end_inst_pc
-    auto old_entries = meta->hit_entries;
+    auto old_entries = hit_entries;
     DPRINTF(ABTB, "old_entries.size(): %lu\n", old_entries.size());
     //dumpBTBEntries(old_entries);
     auto remove_it = std::remove_if(old_entries.begin(), old_entries.end(),
@@ -597,27 +600,28 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
 
 
 void
-AheadBTB::updateUsingS3Pred( FullBTBPrediction &mbtb_pred,const BTBMeta* meta,const Addr previousPC)
+AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
 {
     if (!usingS3Pred) {
         DPRINTF(ABTB, "AheadBTB: not using S3 prediction for update, skipping\n");
         return;
     }
-    meta = static_cast<const BTBMeta*>(getPredictionMeta().get());
-    Addr end_inst_pc =mbtb_pred.isTaken() ? mbtb_pred.getTakenEntry().pc :
-                            (mbtb_pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
+
+    if (lastPredEntries.empty()) {
+        DPRINTF(ABTB, "AheadBTB: no cached entries for fast-train update\n");
+        return;
+    }
+
+    Addr end_inst_pc = s3Pred.isTaken() ? s3Pred.getTakenEntry().pc :
+                            (s3Pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
 
     // AheadBTB use S3 prediction for update
-    auto old_entries= processOldEntries(meta, end_inst_pc);
+    auto old_entries= processOldEntries(lastPredEntries, end_inst_pc);
 
-    // checkPredictionHit(stream, meta);//todo
-    //auto entries_to_update = collectEntriesToUpdate(old_entries, stream);
-    //can't use this function the new entry is from stream and it update when we get resvol
-
-    auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries,mbtb_pred);
+    auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries,s3Pred);
 
     for (auto &entry : entries_to_update) {
-        Addr startPC = mbtb_pred.bbStart;
+        Addr startPC = s3Pred.bbStart;
         Addr btb_tag = getTag(startPC);  // use last pc to get tag
         if (previousPC == 0) {
             DPRINTF(ABTB, "AheadBTB: no previous PC, skipping update\n");
@@ -625,16 +629,15 @@ AheadBTB::updateUsingS3Pred( FullBTBPrediction &mbtb_pred,const BTBMeta* meta,co
         }
         Addr btb_idx = getIndex(previousPC);  // use last pc to get idx
         BranchInfo takenbranchinfo;
-        takenbranchinfo.pc = mbtb_pred.getTakenEntry().pc;
-        takenbranchinfo.target = mbtb_pred.getTakenEntry().target;
+        takenbranchinfo.pc = s3Pred.getTakenEntry().pc;
+        takenbranchinfo.target = s3Pred.getTakenEntry().target;
 
-        updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo, mbtb_pred.isTaken());
+        updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo, s3Pred.isTaken());
     }
 }
-
 std::vector<BTBEntry>
 AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entries,
-                                     FullBTBPrediction &mbtb_pred)
+                                     FullBTBPrediction &s3Pred)
 {
     auto all_entries = old_entries;
     BTBEntry new_entry = BTBEntry();
@@ -642,13 +645,13 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
     // we need to check if the new entry already exists in uBTB
     bool pred_branch_hit = false;
     for (auto &e: old_entries) {
-        if (mbtb_pred.getTakenEntry() == e) {
+        if (s3Pred.getTakenEntry() == e) {
             pred_branch_hit = true;
             break;
         }
     }
-    if (!pred_branch_hit&& mbtb_pred.isTaken()) {
-        new_entry = mbtb_pred.getTakenEntry();
+    if (!pred_branch_hit&& s3Pred.isTaken()) {
+        new_entry = s3Pred.getTakenEntry();
         new_entry.valid = true;
 
         if (new_entry.isCond) {
@@ -682,7 +685,7 @@ AheadBTB::update(const FetchStream &stream)
     Addr end_inst_pc = stream.updateEndInstPC;
 
     // 1. Process old entries
-    auto old_entries = processOldEntries(meta, end_inst_pc);
+    auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
 
     // 2. Check prediction hit status, for stats recording
     checkPredictionHit(stream,

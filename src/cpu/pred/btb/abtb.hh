@@ -183,8 +183,9 @@ class AheadBTB : public TimedBaseBTBPredictor
             e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken, tick);
     }
 
-    std::vector<BTBEntry>collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entries,
-                                        FullBTBPrediction &mbtb_pred);
+    std::vector<BTBEntry> collectEntriesToUpdateFromS3Pred(
+        const std::vector<BTBEntry>& old_entries,
+        FullBTBPrediction &s3Pred);
 
     void printTickedBTBEntry(const TickedBTBEntry &e) {
         printBTBEntry(e, e.tick);
@@ -222,7 +223,7 @@ class AheadBTB : public TimedBaseBTBPredictor
         }
     }BTBMeta;
 
-    void updateUsingS3Pred(FullBTBPrediction &mbtb_pred,const BTBMeta* meta,const Addr previousPC);
+    void updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC);
 
   private:
     /** Returns the index into the BTB, based on the branch's PC.
@@ -264,6 +265,7 @@ class AheadBTB : public TimedBaseBTBPredictor
 
 
     std::shared_ptr<BTBMeta> meta; // metadata for BTB, set in putPCHistory, used in update
+    std::vector<BTBEntry> lastPredEntries; // cached hit entries for the latest prediction
 
     /** Process BTB entries for prediction
      *  @param entries Vector of BTB entries to process
@@ -291,7 +293,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param end_inst_pc End PC of the executed instructions
      *  @return Processed old BTB entries
      */
-    std::vector<BTBEntry> processOldEntries(const BTBMeta* meta, Addr end_inst_pc);
+    std::vector<BTBEntry> processOldEntries(const std::vector<BTBEntry>& hit_entries,
+                                            Addr end_inst_pc);
 
     /** Get the previous PC from the fetch stream
      *  @param stream Fetch stream containing prediction info
