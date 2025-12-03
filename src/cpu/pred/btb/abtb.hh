@@ -212,16 +212,6 @@ class AheadBTB : public TimedBaseBTBPredictor
         }
     }
 
-    typedef struct BTBMeta
-    {
-        std::vector<BTBEntry> hit_entries;  // hit entries in L1 BTB
-        std::vector<BTBEntry> l0_hit_entries; // hit entries in L0 BTB
-        BTBMeta() {
-            std::vector<BTBEntry> es;
-            hit_entries = es;
-            l0_hit_entries = es;
-        }
-    }BTBMeta;
 
     void updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC);
 
@@ -263,8 +253,25 @@ class AheadBTB : public TimedBaseBTBPredictor
         if (!taken && ctr > -2) {ctr--;}
     }
 
+        typedef struct BTBMeta
+    {
+        std::vector<BTBEntry> hit_entries;  // hit entries in L1 BTB
+        std::vector<BTBEntry> l0_hit_entries; // hit entries in L0 BTB
+        BTBMeta() {
+            std::vector<BTBEntry> es;
+            hit_entries = es;
+            l0_hit_entries = es;
+        }
+    }BTBMeta;
 
     std::shared_ptr<BTBMeta> meta; // metadata for BTB, set in putPCHistory, used in update
+
+    /**
+    * lastPredEntries is using in updateusingS3pred() to store the hit entries during prediction
+    * it is using to hold the hit entries for later use in S3 update
+    * because in gem5 generat pred and updateusingS3pred finish in the same cycle
+    * so we can use this instead of using BTBMeta
+    */
     std::vector<BTBEntry> lastPredEntries; // cached hit entries for the latest prediction
 
     /** Process BTB entries for prediction

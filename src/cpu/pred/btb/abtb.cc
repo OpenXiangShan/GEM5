@@ -607,11 +607,6 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         return;
     }
 
-    if (lastPredEntries.empty()) {
-        DPRINTF(ABTB, "AheadBTB: no cached entries for fast-train update\n");
-        return;
-    }
-
     Addr end_inst_pc = s3Pred.isTaken() ? s3Pred.getTakenEntry().pc :
                             (s3Pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
 
