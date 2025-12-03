@@ -50,6 +50,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
       delayQueueSize(p.delay_queue_size),
       delayTicks(cyclesToTicks(p.delay_queue_cycles)),
       crossPage(p.crossPage),
+      enableAdaptOffset(p.enable_adaptoffset),
       victimListSize(p.victimOffsetsListSize),
       restoreCycle(p.restoreCycle),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
@@ -124,7 +125,7 @@ BOP::delayQueueEventWrapper()
 unsigned int
 BOP::hash(Addr addr, unsigned int way) const
 {
-    Addr hash1 = addr >> way;
+    Addr hash1 = addr;
     Addr hash2 = hash1 >> floorLog2(rrEntries);
     return (hash1 ^ hash2) & (Addr)(rrEntries - 1);
 }
@@ -322,32 +323,34 @@ BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
 
         DPRINTF(BOPPrefetcher, "Address %#lx found in the RR table\n", x);
         offsetsListIterator->score++;
-
-        if (offsetsListIterator->score >= round / 2) {
-            if (late) {
-                offsetsListIterator->late += 2;
-            } else {
-                offsetsListIterator->late--;
-            }
-
-            auto best_it = getBestOffsetIter();
-            bool update_depth = false;
-            if (offsetsListIterator->late > (uint8_t)42) {
-                offsetsListIterator->depth++;
-                update_depth = true;
-            }
-            if (offsetsListIterator->late < (uint8_t)4) {
-                offsetsListIterator->depth = std::max(1, offsetsListIterator->depth - 1);
-                update_depth = true;
-            }
-
-            if (update_depth) {
-                if (best_it == offsetsListIterator) {
-                    bestOffset = best_it->calcOffset();
+        if (enableAdaptOffset) {
+            if (offsetsListIterator->score >= round / 2) {
+                if (late) {
+                    offsetsListIterator->late += 2;
+                } else {
+                    offsetsListIterator->late--;
                 }
-                DPRINTF(BOPPrefetcher, "Late saturates %u, offset updated to %d * %d\n",
-                        (uint8_t)offsetsListIterator->late, offsetsListIterator->offset, offsetsListIterator->depth);
-                offsetsListIterator->late.reset();
+
+                auto best_it = getBestOffsetIter();
+                bool update_depth = false;
+                if (offsetsListIterator->late > (uint8_t)42) {
+                    offsetsListIterator->depth++;
+                    update_depth = true;
+                }
+                if (offsetsListIterator->late < (uint8_t)4) {
+                    offsetsListIterator->depth = std::max(1, offsetsListIterator->depth - 1);
+                    update_depth = true;
+                }
+
+                if (update_depth) {
+                    if (best_it == offsetsListIterator) {
+                        bestOffset = best_it->calcOffset();
+                    }
+                    DPRINTF(BOPPrefetcher, "Late saturates %u, offset updated to %d * %d\n",
+                            (uint8_t)offsetsListIterator->late, offsetsListIterator->offset,
+                            offsetsListIterator->depth);
+                    offsetsListIterator->late.reset();
+                }
             }
         }
 

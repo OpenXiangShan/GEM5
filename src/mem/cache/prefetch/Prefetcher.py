@@ -737,6 +737,7 @@ class BOPPrefetcher(QueuedPrefetcher):
                               150, 160, 162, 180, 192, 200, 216, 225, 240, 243, 250, 256], "Predefined offsets")
 
     crossPage = Param.Bool(True, "Cross page prefetching")
+    enable_adaptoffset = Param.Bool(True, "enable adapt offset")
     victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
 
