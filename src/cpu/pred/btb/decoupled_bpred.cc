@@ -768,16 +768,15 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
         overrideReason = reason;
     }
 
-    // update ubtb using mbtb prediction
+    // update ubtb/abtb using final S3 prediction
     if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
         ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-        const AheadBTB::BTBMeta* meta = static_cast<const AheadBTB::BTBMeta*>(abtb->getPredictionMeta().get());
         auto it = fetchStreamQueue.find(fsqId-1);
         if (it != fetchStreamQueue.end()) {
             auto previous_block_startpc = it->second.startPC;
-            abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], meta,previous_block_startpc);
+            abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], previous_block_startpc);
         } else {
-            abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], meta, 0);
+            abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], 0);
         }
 
     }
