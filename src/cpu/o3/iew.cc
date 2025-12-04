@@ -1564,13 +1564,13 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 {
     ThreadID tid = inst->threadNumber;
 
-    // if (inst->isControl()) {
+    if (inst->isControl()) {
         auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
         TimeStruct::IewComm::ResolvedCFIEntry entry;
         entry.fsqId = inst->getFsqId();
         entry.pc = inst->getPC();
         resolved_cfis.push_back(entry);
-    // }
+    }
 
     if (!fetchRedirect[tid] ||
         !execWB->squash[tid] ||
