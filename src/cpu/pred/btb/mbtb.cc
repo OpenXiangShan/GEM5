@@ -422,7 +422,7 @@ MBTB::getAndSetNewBTBEntry(FetchStream &stream)
     // Get prediction metadata from previous stages
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &predBTBEntries = meta->hit_entries;
-    
+
     // Check if this branch was predicted (exists in BTB)
     bool pred_branch_hit = false;
     BTBEntry entry_to_write = BTBEntry();
@@ -450,6 +450,7 @@ MBTB::getAndSetNewBTBEntry(FetchStream &stream)
         }
         btbStats.newEntry++;
         entry_to_write = new_entry;
+        entry_to_write.resolved = stream.exeBranchInfo.resolved;
         is_old_entry = false;
     } else {
         DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, stream.exeTaken=%d\n",
@@ -564,6 +565,7 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
                               ? BTBEntry(*existing_entry)
                               : req_entry;
     entry_to_write.tag = btb_tag;   // update tag
+    entry_to_write.resolved = false; // reset resolved status
 
     // Update saturating counter and alwaysTaken
     if (entry_to_write.isCond) {

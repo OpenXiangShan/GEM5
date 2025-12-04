@@ -472,6 +472,7 @@ DecoupledBPUWithBTB::handleSquash(unsigned target_id,
     if (squash_type == SQUASH_CTRL && static_inst) {
         // Use full branch info with static_inst if available
         stream.exeBranchInfo = BranchInfo(squash_pc.instAddr(), redirect_pc, static_inst, control_inst_size);
+        stream.exeBranchInfo.resolved = true;
         dumpFsq("Before control squash");
     }
 
@@ -640,6 +641,7 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &stream_id)
             }
         }
     }
+    stream.exeBranchInfo.resolved = false;
 }
 
 void
