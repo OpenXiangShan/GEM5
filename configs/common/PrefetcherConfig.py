@@ -69,8 +69,8 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_bop = True
                 prefetcher.enable_cdp = False
                 prefetcher.enable_despacito_stream = False
-                prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True)
-                prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True)
+                prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
+                prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
             if options.l1_to_l2_pf_hint:
                 prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
@@ -87,8 +87,8 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_bop = True
                 prefetcher.enable_cdp = False
                 prefetcher.enable_despacito_stream = False
-                prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True)
-                prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True)
+                prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
+                prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
             if options.l1_to_l2_pf_hint:
                 prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
