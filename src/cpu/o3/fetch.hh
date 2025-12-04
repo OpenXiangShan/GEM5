@@ -42,6 +42,7 @@
 #define __CPU_O3_FETCH_HH__
 
 #include <cstring>
+#include <deque>
 #include <utility>
 
 #include "arch/generic/decoder.hh"
@@ -612,6 +613,12 @@ class Fetch
 
     branch_prediction::btb_pred::DecoupledBPUWithBTB *dbpbtb;
 
+    /** Maximum number of resolve entries buffered in fetch before training. */
+    const unsigned resolveQueueSize;
+
+    /** FIFO storing resolve entries waiting for BPU training. */
+    std::deque<ResolveQueueEntry> resolveQueue;
+
     /** PC of each thread. */
     std::unique_ptr<PCStateBase> pc[MaxThreads];
 
@@ -1095,6 +1102,12 @@ class Fetch
         statistics::Formula frontendLatencyBound;
         /** Frontend Bandwidth Bound */
         statistics::Formula frontendBandwidthBound;
+        /** Stat for total cycles the resolve queue is full. */
+        statistics::Scalar resolveQueueFullCycles;
+        /** Stat for total events of the resolve queue becomes full. */
+        statistics::Scalar resolveQueueFullEvents;
+        /** Stat for total number of resolve enqueue fail events. */
+        statistics::Scalar resolveEnqueueFailEvent;
     } fetchStats;
 
     SquashVersion localSquashVer;

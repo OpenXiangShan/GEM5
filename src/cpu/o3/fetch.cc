@@ -91,6 +91,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     : fetchPolicy(params.smtFetchPolicy),
       cpu(_cpu),
       branchPred(nullptr),
+      resolveQueueSize(params.resolveQueueSize),
       decodeToFetchDelay(params.decodeToFetchDelay),
       renameToFetchDelay(params.renameToFetchDelay),
       iewToFetchDelay(params.iewToFetchDelay),
@@ -249,7 +250,13 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(frontendBandwidthBound, statistics::units::Rate<
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Frontend Bandwidth Bound",
-             frontendBound - frontendLatencyBound)
+             frontendBound - frontendLatencyBound),
+    ADD_STAT(resolveQueueFullCycles, statistics::units::Count::get(),
+             "Number of cycles the resolve queue is full"),
+    ADD_STAT(resolveQueueFullEvents, statistics::units::Count::get(),
+             "Number of events the resolve queue becomes full"),
+    ADD_STAT(resolveEnqueueFailEvent, statistics::units::Count::get(),
+             "Number of times an entry could not be enqueued to the resolve queue")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -1494,17 +1501,43 @@ Fetch::handleIEWSignals()
         return;
     }
 
-    // iterate resolved stream_id and PC value from ResolveQueue
-    for (auto entry : fromIEW->iewInfo->resolveQueue) {
+    auto &incoming = fromIEW->iewInfo->resolvedCFIs;
+
+    for (const auto &resolved : incoming) {
+        bool merged = false;
+        for (auto &queued : resolveQueue) {
+            if (queued.resolvedFSQId == resolved.fsqId) {
+                queued.resolvedInstPC.push_back(resolved.pc);
+                merged = true;
+                break;
+            }
+        }
+
+        if (merged) {
+            continue;
+        }
+
+        if (resolveQueueSize && resolveQueue.size() >= resolveQueueSize) {
+            fetchStats.resolveQueueFullEvents++;
+            continue;
+        }
+
+        ResolveQueueEntry new_entry;
+        new_entry.resolvedFSQId = resolved.fsqId;
+        new_entry.resolvedInstPC.push_back(resolved.pc);
+        resolveQueue.push_back(std::move(new_entry));
+    }
+
+    if (!resolveQueue.empty()) {
+        auto &entry = resolveQueue.front();
         unsigned int stream_id = entry.resolvedFSQId;
         dbpbtb->prepareResolveUpdateEntries(stream_id);
-        for (uint64_t &resolvedInstPC : entry.resolvedInstPC) {
+        for (const auto resolvedInstPC : entry.resolvedInstPC) {
             dbpbtb->markCFIResolved(stream_id, resolvedInstPC);
         }
         dbpbtb->resolveUpdate(stream_id);
+        resolveQueue.pop_front();
     }
-
-    return;
 }
 
 bool
