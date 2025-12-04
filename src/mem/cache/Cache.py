@@ -163,6 +163,8 @@ class BaseCache(ClockedObject):
 
     num_slices = Param.Int(-1, "slice number (-1 is disable)")
 
+    pipe_latency = Param.Cycles(0, "pipeline latency")
+
     force_hit = Param.Bool(False, "Force some PC to hit in L1")
     way_entries = Param.MemorySize(
         "64",

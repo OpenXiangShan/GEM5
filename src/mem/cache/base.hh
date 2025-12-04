@@ -1035,6 +1035,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
     /** The latency to fill a cache block */
     const Cycles fillLatency;
 
+    const Cycles pipeLatency;
+
     /**
      * The latency of sending reponse to its upper level cache/core on
      * a linefill. The responseLatency parameter captures this

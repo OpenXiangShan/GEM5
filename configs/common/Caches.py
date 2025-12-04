@@ -76,6 +76,7 @@ class L1_DCache(L1Cache):
     # aligned latency:
     tag_latency = 1
     data_latency = 1
+    pipe_latency = 3
     sequential_access = False
     # recvTimingResp serviceMSHR latency, not really response latency
     response_latency = 0
