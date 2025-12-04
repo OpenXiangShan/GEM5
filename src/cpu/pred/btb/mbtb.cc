@@ -262,13 +262,9 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         assert(e.valid);
         if (e.isCond) {
             // TODO: a performance bug here, mbtb should not update condTakens!
-            // if (isL0()) {  // only L0 BTB has saturating counter
-            // use saturating counter of L0 BTB
 
             FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
 
-            // } else {  // L1 BTB condTakens depends on the TAGE predictor
-            // }
         } else if (e.isIndirect) {
             // Set predicted target for indirect branches
             DPRINTF(BTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
@@ -286,20 +282,12 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
 /**
  * Update metadata for later stages:
  * 1. Clear old metadata
- * 2. Save L0 BTB entries for L1 BTB's reference
- * 3. Save current BTB entries
+ * 2. Save current BTB entries
  */
 void
 MBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
                                    std::vector<FullBTBPrediction>& stagePreds)
 {
-
-    // Save L0 BTB entries for L1 BTB's reference
-    if (getDelay() >= 1) {
-        // L0 should be zero-bubble
-        meta->l0_hit_entries = stagePreds[0].btbEntries;
-    }
-
     // Save current BTB entries
     for (auto e: entries) {
         meta->hit_entries.push_back(BTBEntry(e));
@@ -399,7 +387,7 @@ MBTB::lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta)
         auto victimResults = lookupVictimCache(block_pc);
         if (!victimResults.empty()) {
             DPRINTF(BTB, "Victim cache hit for lookup at %#lx\n", block_pc);
-            incNonL0Stat(btbStats.victimCacheHit);
+            btbStats.victimCacheHit++;
             res.insert(res.end(), victimResults.begin(), victimResults.end()); // merge victim results
         }
     }
@@ -457,11 +445,11 @@ MBTB::getAndSetNewBTBEntry(FetchStream &stream)
         if (new_entry.isCond) {
             new_entry.alwaysTaken = true;
             new_entry.ctr = 0;  // Start with positive prediction
-            incNonL0Stat(btbStats.newEntryWithCond);
+            btbStats.newEntryWithCond++;
         } else {
-            incNonL0Stat(btbStats.newEntryWithUncond);
+            btbStats.newEntryWithUncond++;
         }
-        incNonL0Stat(btbStats.newEntry);
+        btbStats.newEntry++;
         entry_to_write = new_entry;
         is_old_entry = false;
     } else {
@@ -478,7 +466,7 @@ MBTB::getAndSetNewBTBEntry(FetchStream &stream)
 
 /**
  * Check if the branch was predicted correctly
- * Also check L0 BTB prediction status
+ * Also check BTB prediction status
  */
 void
 MBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
@@ -497,19 +485,6 @@ MBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
         btbStats.updateHit++;
     }
 
-    // Check if L0 BTB had a hit but L1 BTB missed
-    bool pred_l0_branch_hit = false;
-    for (auto &e : meta->l0_hit_entries) {
-        if (stream.exeBranchInfo == e) {
-            pred_l0_branch_hit = true;
-            break;
-        }
-    }
-    bool l0_hit_l1_miss = pred_l0_branch_hit && !pred_branch_hit;
-    if (l0_hit_l1_miss) {
-        DPRINTF(BTB, "BTB: skipping entry write because of l0 hit\n");
-        incNonL0Stat(btbStats.updateUseL0OnL1Miss);
-    }
 }
 
 
@@ -835,14 +810,14 @@ MBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
             } else {
                 btbStats.condHitNotTakens++;
             }
-            // if (isL0()) {
-                bool pred_taken = entry.ctr >= 0;
-                if (pred_taken == this_branch_taken) {
-                    btbStats.condPredCorrect++;
-                } else {
-                    btbStats.condPredWrong++;
-                }
-            // }
+
+            bool pred_taken = entry.ctr >= 0;
+            if (pred_taken == this_branch_taken) {
+                btbStats.condPredCorrect++;
+            } else {
+                btbStats.condPredWrong++;
+            }
+
         }
         if (inst->isUncondCtrl()) {
             btbStats.uncondHits++;
@@ -876,18 +851,11 @@ MBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
             btbStats.condMisses++;
             if (this_branch_taken) {
                 btbStats.condMissTakens++;
-                // if (isL0()) {
-                    // only L0 BTB has saturating counters to predict conditional branches
-                    // taken branches that is missed in btb must have been mispredicted
-                    btbStats.condPredWrong++;
-                // }
+                btbStats.condPredWrong++;
+
             } else {
                 btbStats.condMissNotTakens++;
-                // if (isL0()) {
-                    // only L0 BTB has saturating counters to predict conditional branches
-                    // taken branches that is missed in btb must have been mispredicted
-                    btbStats.condPredCorrect++;
-                // }
+                btbStats.condPredCorrect++;
             }
         }
         if (inst->isUncondCtrl()) {
@@ -926,11 +894,6 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     ADD_STAT(updateReplaceValidOne, statistics::units::Count::get(), "entries replaced with valid entry"),
     ADD_STAT(updateInVC, statistics::units::Count::get(), "entries updated in victim cache"),
     ADD_STAT(updateTotal, statistics::units::Count::get(), "total number of entries updated"),
-    ADD_STAT(predUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when pred"),
-    ADD_STAT(updateUseL0OnL1Miss, statistics::units::Count::get(), "use l0 result on l1 miss when update"),
-    ADD_STAT(S0Predmiss, statistics::units::Count::get(), "misses encountered on S0 prediction, i.e. uBTB and ABTB miss"),
-    ADD_STAT(S0PredUseUBTB, statistics::units::Count::get(), "uBTB prediction used, i.e. uBTB hit"),
-    ADD_STAT(S0PredUseABTB, statistics::units::Count::get(), "aBTB prediction used, i.e. uBTB miss and ABTB hit"),
 
     ADD_STAT(allBranchHits, statistics::units::Count::get(), "all types of branches committed that was predicted hit"),
     ADD_STAT(allBranchHitTakens, statistics::units::Count::get(), "all types of taken branches committed was that predicted hit"),

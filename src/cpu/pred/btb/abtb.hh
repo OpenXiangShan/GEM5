@@ -238,10 +238,6 @@ class AheadBTB : public TimedBaseBTBPredictor
         return (instPC >> tagShiftAmt) & tagMask;
     }
 
-    /** Helper function to check if this is L0 BTB
-     *  L0 BTB has zero delay (getDelay() == 0)
-     */
-    bool isL0() { return getDelay() == 0; }
 
     /** Update the 2-bit saturating counter for conditional branches
      *  Counter range: [-2, 1]
@@ -255,12 +251,10 @@ class AheadBTB : public TimedBaseBTBPredictor
 
         typedef struct BTBMeta
     {
-        std::vector<BTBEntry> hit_entries;  // hit entries in L1 BTB
-        std::vector<BTBEntry> l0_hit_entries; // hit entries in L0 BTB
+        std::vector<BTBEntry> hit_entries;
         BTBMeta() {
             std::vector<BTBEntry> es;
             hit_entries = es;
-            l0_hit_entries = es;
         }
     }BTBMeta;
 
@@ -433,13 +427,6 @@ class AheadBTB : public TimedBaseBTBPredictor
 #else
     struct BTBStats : public statistics::Group {
 #endif
-        Scalar newEntry;
-        Scalar newEntryWithCond;
-        Scalar newEntryWithUncond;
-        Scalar oldEntry;
-        Scalar oldEntryIndirectTargetModified;
-        Scalar oldEntryWithNewCond;
-        Scalar oldEntryWithNewUncond;
 
         Scalar predMiss;
         Scalar predHit;
@@ -448,11 +435,6 @@ class AheadBTB : public TimedBaseBTBPredictor
         Scalar updateExisting;
         Scalar updateReplace;
         Scalar updateReplaceValidOne;
-
-        Scalar eraseSlotBehindUncond;
-
-        Scalar predUseL0OnL1Miss;
-        Scalar updateUseL0OnL1Miss;
 
         Scalar S0Predmiss;
         Scalar S0PredUseUBTB;
@@ -494,11 +476,6 @@ class AheadBTB : public TimedBaseBTBPredictor
 #endif
     } btbStats;
 
-    void incNonL0Stat(Scalar &stat) {
-        if (!isL0()) {
-            stat++;
-        }
-    }
 };
 
 // Close conditional namespace wrapper for testing
