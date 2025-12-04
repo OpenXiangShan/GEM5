@@ -555,6 +555,7 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
 void
 BTBITTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
+
 }
 
 #ifndef UNIT_TEST

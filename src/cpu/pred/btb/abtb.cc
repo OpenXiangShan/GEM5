@@ -254,10 +254,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     for (auto &e : mixed_entries) {
         assert(e.valid);
         if (e.isCond) {
-
             FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
-
-
         } else if (e.isIndirect) {
             // Set predicted target for indirect branches
             DPRINTF(ABTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
@@ -271,13 +268,6 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         }
     }
 
-    // // Update S0 prediction source statistics for AheadBTB
-    // // If control flow reached here, uBTB missed
-    // if (entries.size() > 0) {
-    //     btbStats.S0PredUseABTB++;
-    // } else {
-    //     btbStats.S0Predmiss++;
-    // }
 }
 
 /**
@@ -787,7 +777,6 @@ AheadBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
                 btbStats.condPredWrong++;
             } else {
                 btbStats.condMissNotTakens++;
-
                 btbStats.condPredCorrect++;
             }
         }
