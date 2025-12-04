@@ -165,6 +165,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       dataLatency(p.data_latency),
       forwardLatency(p.tag_latency),
       fillLatency(p.data_latency),
+      pipeLatency(p.pipe_latency),
       responseLatency(p.response_latency),
       sequentialAccess(p.sequential_access),
       numTarget(p.tgts_per_mshr),
@@ -2128,7 +2129,7 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
         updateBlockData(blk, pkt, has_old_data);
     }
     // The block will be ready when the payload arrives and the fill is done
-    blk->setWhenReady(clockEdge(fillLatency) + pkt->headerDelay +
+    blk->setWhenReady(clockEdge(dataLatency + pipeLatency) + pkt->headerDelay +
                       pkt->payloadDelay);
 
     // NOTE: Dcache sends the block address back to lsu
@@ -2139,7 +2140,7 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
         customPkt->setAddr(addr);
         // set `deletePkt` as true to ensure that the customPkt will be deleted finally.
         SendCustomEvent* clearEvent = new SendCustomEvent(this, customPkt, DcacheRespType::Bus_Clear, true);
-        schedule(clearEvent, clockEdge(fillLatency) + pkt->headerDelay +
+        schedule(clearEvent, clockEdge(dataLatency + pipeLatency) + pkt->headerDelay +
                         pkt->payloadDelay);
     }
 
