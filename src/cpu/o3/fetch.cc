@@ -425,92 +425,83 @@ Fetch::startupStage()
     // so it must start up in active state.
     switchToActive();
 
-    // Initialize trace reader if in trace mode
-    if (traceMode && traceReader) {
-        if (!initializeTraceReader()) {
-            fatal("Failed to initialize trace reader\n");
-        }
-
-        // Set CPU's PC state to first trace instruction to avoid TC squash conflicts
-        if (!traceReader->isEOF()) {
-            o3::TraceInstruction firstInstr = traceReader->getNextInstruction();
-            if (firstInstr.isValid()) {
-                // Reset the trace reader for normal operation
-                traceReader->reset();
-                if (!initializeTraceReader()) {
-                    fatal("Failed to re-initialize trace reader after peek\n");
-                }
-
-                // Set the CPU's PC to the first trace instruction PC
-                std::unique_ptr<PCStateBase> tracePC(pc[0]->clone());
-                auto& riscv_pc = tracePC->as<RiscvISA::PCState>();
-                riscv_pc.set(firstInstr.getPC());
-                set(pc[0], *tracePC);
-                cpu->pcState(*tracePC, 0);
-
-                // Also ensure thread context PC matches to avoid squashes
-                auto* tc0 = cpu->getContext(0);
-                if (tc0) {
-                    tc0->pcState(*tracePC);
-                    // Enable FP state so FP-encoded placeholder instructions don't trap.
-                    auto status = tc0->readMiscReg(RiscvISA::MISCREG_STATUS);
-                    status |= RiscvISA::STATUS_FS_MASK; // FS = Dirty (0b11)
-                    tc0->setMiscReg(RiscvISA::MISCREG_STATUS, status);
-                }
-
-                DPRINTF(Fetch, "Trace mode: Set initial PC to 0x%llx from first trace instruction\n",
-                        firstInstr.getPC());
-                DPRINTF(Fetch, "Trace mode: fetch PC = 0x%llx, cpu PC = 0x%llx, TC PC = 0x%llx\n",
-                        pc[0]->instAddr(), cpu->pcState(0).instAddr(),
-                        cpu->getContext(0)->pcState().instAddr());
-
-                // Stage 2: Prime decoupled BP with trace PC to ensure FSQ has entries
-                if (isDecoupledFrontend() && branchPred) {
-                    DPRINTF(Fetch, "Trace mode: Priming decoupled BPU with start PC 0x%llx\n",
-                            firstInstr.getPC());
-
-                    // Get the initial FSQ size for debugging
-                    size_t fsq_size_before = 0;
-                    if (isFTBPred() || isBTBPred()) {
-                        // Note: We'd need BP API to query FSQ size, using placeholder
-                        fsq_size_before = 0;
-                    }
-                    
-                    // First, reset BPU's internal PC to the trace start PC.
-                    // trySupplyFetchWithTarget does not reset predictor's PC.
-                    if (isFTBPred() && dbpftb) {
-                        dbpftb->resetPC(firstInstr.getPC());
-                    } else if (isBTBPred() && dbpbtb) {
-                        dbpbtb->resetPC(firstInstr.getPC());
-                    } else if (isStreamPred() && dbsp) {
-                        dbsp->resetPC(firstInstr.getPC());
-                    }
-
-                    // Then, optionally prime the FTQ by supplying initial PC as a fetch target
-                    // to ensure FSQ has at least one entry before any squash
-                    bool primed = false;
-                    bool inLoop = false;
-                    if (isFTBPred() && dbpftb) {
-                        primed = dbpftb->trySupplyFetchWithTarget(firstInstr.getPC(), inLoop);
-                    } else if (isBTBPred() && dbpbtb) {
-                        primed = dbpbtb->trySupplyFetchWithTarget(firstInstr.getPC(), inLoop);
-                    }
-                    
-                    if (primed) {
-                        // Reset usedUpFetchTargets since we just supplied a target
-                        usedUpFetchTargets = false;
-                        
-                        // Stage 7: Validation & Instrumentation - usedUpFetchTargets toggling
-                        DPRINTF(Override, "[TRACE-FTB] usedUpFetchTargets toggled: false (after priming)\n");
-                        
-                        DPRINTF(Fetch, "Trace-FTB prime: FSQ primed with PC 0x%llx\n",
-                                firstInstr.getPC());
-                    }
-                }
-            }
-        }
+    if (traceMode && traceReader && !initTraceMode()) {
+        fatal("Failed to initialize trace mode\n");
     }
 }
+
+bool
+Fetch::initTraceMode()
+{
+    if (!initializeTraceReader()) {
+        return false;
+    }
+
+    if (traceReader->isEOF()) {
+        return true;
+    }
+
+    o3::TraceInstruction firstInstr = traceReader->getNextInstruction();
+    if (!firstInstr.isValid()) {
+        return false;
+    }
+
+    traceReader->reset();
+    if (!initializeTraceReader()) {
+        return false;
+    }
+
+    std::unique_ptr<PCStateBase> tracePC(pc[0]->clone());
+    auto& riscv_pc = tracePC->as<RiscvISA::PCState>();
+    riscv_pc.set(firstInstr.getPC());
+    set(pc[0], *tracePC);
+    cpu->pcState(*tracePC, 0);
+
+    if (auto* tc0 = cpu->getContext(0)) {
+        tc0->pcState(*tracePC);
+        auto status = tc0->readMiscReg(RiscvISA::MISCREG_STATUS);
+        status |= RiscvISA::STATUS_FS_MASK;
+        tc0->setMiscReg(RiscvISA::MISCREG_STATUS, status);
+    }
+
+    DPRINTF(Fetch, "Trace mode: Set initial PC to 0x%llx from first trace instruction\n",
+            firstInstr.getPC());
+    DPRINTF(Fetch, "Trace mode: fetch PC = 0x%llx, cpu PC = 0x%llx, TC PC = 0x%llx\n",
+            pc[0]->instAddr(), cpu->pcState(0).instAddr(),
+            cpu->getContext(0)->pcState().instAddr());
+
+    if (isDecoupledFrontend() && branchPred) {
+        DPRINTF(Fetch, "Trace mode: Priming decoupled BPU with start PC 0x%llx\n",
+                firstInstr.getPC());
+
+        if (isFTBPred() && dbpftb) {
+            dbpftb->resetPC(firstInstr.getPC());
+        } else if (isBTBPred() && dbpbtb) {
+            dbpbtb->resetPC(firstInstr.getPC());
+        } else if (isStreamPred() && dbsp) {
+            dbsp->resetPC(firstInstr.getPC());
+        }
+
+        bool primed = false;
+        bool inLoop = false;
+        if (isFTBPred() && dbpftb) {
+            primed = dbpftb->trySupplyFetchWithTarget(firstInstr.getPC(), inLoop);
+        } else if (isBTBPred() && dbpbtb) {
+            primed = dbpbtb->trySupplyFetchWithTarget(firstInstr.getPC(), inLoop);
+        }
+
+        if (primed) {
+            usedUpFetchTargets = false;
+            DPRINTF(Override, "[TRACE-FTB] usedUpFetchTargets toggled: false (after priming)\n");
+            DPRINTF(Fetch, "Trace-FTB prime: FSQ primed with PC 0x%llx\n",
+                    firstInstr.getPC());
+        }
+    }
+
+    return true;
+}
+
+
 
 void
 Fetch::clearStates(ThreadID tid)

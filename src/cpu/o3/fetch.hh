@@ -236,6 +236,8 @@ class Fetch
 
     /** Initialize stage. */
     void startupStage();
+    /** Trace-mode helper: initialize reader, set PC, prime frontend */
+    bool initTraceMode();
 
     /** Clear all thread-specific states*/
     void clearStates(ThreadID tid);
