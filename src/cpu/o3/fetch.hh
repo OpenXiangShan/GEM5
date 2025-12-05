@@ -527,6 +527,10 @@ class Fetch
      */
     Addr getTracePCByIndex(uint64_t index);
 
+    /** Handle trace-specific rollback/metadata cleanup during squash. */
+    void handleTraceSquash(ThreadID tid, const PCStateBase &new_pc,
+                           const DynInstPtr squashInst, InstSeqNum seqNum);
+
     /**
      * Rollback trace reader to handle misprediction
      * @param seqNum Sequence number to rollback before
