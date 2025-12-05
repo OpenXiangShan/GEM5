@@ -542,29 +542,6 @@ class Fetch
     bool validateBPPrediction(const o3::TraceInstruction& traceInstr,
                              Addr predictedPC, bool predictedTaken);
 
-    /**
-     * Feed trace branch outcome to branch predictor for immediate learning
-     * @param traceInstr Trace instruction with correct branch outcome
-     * @param currentPC Current PC of the branch
-     */
-    void feedTraceBranchToBP(const o3::TraceInstruction& traceInstr, Addr currentPC);
-
-    /**
-     * Feed trace branch outcome to decoupled BTB predictor
-     * Creates a FetchStream from trace information for comprehensive training
-     * @param traceInstr Trace instruction with correct branch outcome
-     * @param currentPC Current PC of the branch
-     */
-    void feedTraceToDecoupledBTB(const o3::TraceInstruction& traceInstr, Addr currentPC);
-    
-    /**
-     * Feed trace branch outcome to decoupled FTB predictor
-     * Creates a FetchStream from trace information for comprehensive training
-     * @param traceInstr Trace instruction with correct branch outcome
-     * @param currentPC Current PC of the branch
-     */
-    void feedTraceToDecoupledFTB(const o3::TraceInstruction& traceInstr, Addr currentPC);
-
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
