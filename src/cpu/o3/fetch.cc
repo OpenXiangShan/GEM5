@@ -2260,6 +2260,95 @@ Fetch::fetch(bool &status_change)
 }
 
 StallReason
+Fetch::fetchTraceInstruction(ThreadID tid, const PCStateBase &this_pc)
+{
+    const bool wrong_path = (isDecoupledFrontend() &&
+                             traceEnableWrongPath &&
+                             traceWrongPathActive);
+    if (wrong_path) {
+        const unsigned nop_size =
+            chooseWrongPathNopSize(tid, this_pc.instAddr());
+        // RISC-V 32b nop: 0x00000013; 16b compressed nop: 0x0001
+        TheISA::MachInst nop = (nop_size == 2)
+            ? static_cast<TheISA::MachInst>(0x0001u)
+            : static_cast<TheISA::MachInst>(0x00000013u);
+        supplyTraceToDecoder(
+            tid, this_pc, nop, this_pc.instAddr(),
+            nop_size == 2 ? "supplied 2B NOP without advancing reader"
+                          : "supplied 4B NOP without advancing reader (pred takenPC)");
+        return StallReason::NoStall;
+    }
+
+    // 正确路径：填充期望指令流并供码（不在此处消费流，仅在构建后比对并消耗）
+    ensureTraceStreamFilled(tid, TRACE_STREAM_MIN_FILL);
+    if (traceExpectedStream[tid].empty()) {
+        DPRINTF(Fetch, "[tid:%i] Trace on-demand: expected stream empty (EOF=%d)\n",
+                tid, traceReader->isEOF());
+        return StallReason::IcacheStall;
+    }
+    auto head = traceExpectedStream[tid].front();
+    // 对非分支/异常类 ctrl-flow-change，在 decoupled + wrong-path 校验场景下，
+    // 若缺乏可靠 nextPC，保守将长度标为 2B，避免后续进入 wrong-path 时跨过块内预测点。
+    if (isDecoupledFrontend() && traceEnableWrongPath && traceBPValidation &&
+        head.isCtrlFlowChange() && !head.isAnyBranch()) {
+        head.setInstSizeBytes(2);
+    }
+    pendingTraceInstr = head;
+    pendingTraceValid = true;
+    TheISA::MachInst machInst = createMachInstFromTrace(head);
+    supplyTraceToDecoder(tid, this_pc, machInst, head.getPC(),
+                         "supplied 4B to decoder (from expected stream head)");
+    return StallReason::NoStall;
+}
+
+void
+Fetch::supplyTraceToDecoder(ThreadID tid, const PCStateBase &this_pc,
+                            TheISA::MachInst machInst, Addr instrPC,
+                            const char *tag)
+{
+    auto *dec_ptr = decoder[tid];
+    memcpy(dec_ptr->moreBytesPtr(), &machInst, sizeof(machInst));
+    decoder[tid]->moreBytes(this_pc, instrPC);
+    fetchBuffer[tid].startPC = instrPC;
+    fetchBuffer[tid].valid = true;
+    DPRINTF(Fetch, "[tid:%i] Trace on-demand: %s at PC=0x%llx\n",
+            tid, tag, (unsigned long long)instrPC);
+}
+
+unsigned
+Fetch::chooseWrongPathNopSize(ThreadID tid, Addr pc)
+{
+    static_cast<void>(tid);
+    if (traceWrongPathForceMinStep) {
+        return 2;
+    }
+    unsigned sz = 2;
+    if (isDecoupledFrontend()) {
+        Addr block_end = 0;
+        Addr taken_pc = 0;
+        bool taken = false;
+        if (isFTBPred()) {
+            const auto &ftq = dbpftb->getSupplyingFetchTarget();
+            block_end = ftq.endPC;
+            taken_pc = ftq.takenPC;
+            taken = ftq.taken;
+        } else if (isBTBPred()) {
+            const auto &ftq = dbpbtb->getSupplyingFetchTarget();
+            block_end = ftq.endPC;
+            taken_pc = ftq.takenPC;
+            taken = ftq.taken;
+        }
+        // 如果当前 PC 正好是预测的 takenPC，且该指令应为 4B（默认假定 RISC-V 分支 4B），用 4B nop。
+        if (taken && taken_pc && pc == taken_pc) {
+            sz = 4;
+        } else if (block_end && pc + 2 == block_end) {
+            sz = 2;
+        }
+    }
+    return sz;
+}
+
+StallReason
 Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
                         const StaticInstPtr &curMacroop)
 {
@@ -2270,79 +2359,11 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
     }
 
     // Trace 按需消费：在 decode 前逐条从 traceReader 取指并供给解码器
-    if (traceMode && traceReader) {
-        auto supply_to_decoder = [&](TheISA::MachInst mi, Addr instrPC, const char* tag) {
-            auto *dec_ptr = decoder[tid];
-            memcpy(dec_ptr->moreBytesPtr(), &mi, sizeof(mi));
-            decoder[tid]->moreBytes(this_pc, instrPC);
-            fetchBuffer[tid].startPC = instrPC;
-            fetchBuffer[tid].valid = true;
-            DPRINTF(Fetch, "[tid:%i] Trace on-demand: %s at PC=0x%llx\n", tid, tag, (unsigned long long)instrPC);
-        };
-
-        const bool wrong_path = (isDecoupledFrontend() && traceEnableWrongPath && traceWrongPathActive);
-        if (wrong_path) {
-            // Wrong-path NOP：不前进 traceReader 指针，不消费 trace 指令。
-            // 默认 2B，以避免跨过 BP 预测的 taken 位置；若预测 takenPC 对应 4B 指令，则在该 PC 上用 4B nop。
-            auto choose_nop_size = [&](Addr pc) -> unsigned {
-                if (traceWrongPathForceMinStep) {
-                    return 2;
-                }
-                unsigned sz = 2;
-                if (isDecoupledFrontend()) {
-                    Addr block_end = 0;
-                    Addr taken_pc = 0;
-                    bool taken = false;
-                    if (isFTBPred()) {
-                        const auto &ftq = dbpftb->getSupplyingFetchTarget();
-                        block_end = ftq.endPC;
-                        taken_pc = ftq.takenPC;
-                        taken = ftq.taken;
-                    } else if (isBTBPred()) {
-                        const auto &ftq = dbpbtb->getSupplyingFetchTarget();
-                        block_end = ftq.endPC;
-                        taken_pc = ftq.takenPC;
-                        taken = ftq.taken;
-                    }
-                    // 如果当前 PC 正好是预测的 takenPC，且该指令应为 4B（默认假定 RISC-V 分支 4B），用 4B nop。
-                    if (taken && taken_pc && pc == taken_pc) {
-                        sz = 4;
-                    } else if (block_end && pc + 2 == block_end) {
-                        sz = 2;
-                    }
-                }
-                return sz;
-            };
-
-            const unsigned nop_size = choose_nop_size(this_pc.instAddr());
-            // RISC-V 32b nop: 0x00000013; 16b compressed nop: 0x0001
-            TheISA::MachInst nop = (nop_size == 2)
-                ? static_cast<TheISA::MachInst>(0x0001u)
-                : static_cast<TheISA::MachInst>(0x00000013u);
-            supply_to_decoder(nop, this_pc.instAddr(),
-                              nop_size == 2 ? "supplied 2B NOP without advancing reader"
-                                            : "supplied 4B NOP without advancing reader (pred takenPC)");
-            return StallReason::NoStall;
-        }
-
-        // 正确路径：填充期望指令流并供码（不在此处消费流，仅在构建后比对并消耗）
-        ensureTraceStreamFilled(tid, TRACE_STREAM_MIN_FILL);
-        if (traceExpectedStream[tid].empty()) {
-            DPRINTF(Fetch, "[tid:%i] Trace on-demand: expected stream empty (EOF=%d)\n", tid, traceReader->isEOF());
-            return StallReason::IcacheStall;
-        }
-        auto head = traceExpectedStream[tid].front();
-        // 对非分支/异常类 ctrl-flow-change，在 decoupled + wrong-path 校验场景下，
-        // 若缺乏可靠 nextPC，保守将长度标为 2B，避免后续进入 wrong-path 时跨过块内预测点。
-        if (isDecoupledFrontend() && traceEnableWrongPath && traceBPValidation &&
-            head.isCtrlFlowChange() && !head.isAnyBranch()) {
-            head.setInstSizeBytes(2);
-        }
-        pendingTraceInstr = head;
-        pendingTraceValid = true;
-        TheISA::MachInst machInst = createMachInstFromTrace(head);
-        supply_to_decoder(machInst, head.getPC(), "supplied 4B to decoder (from expected stream head)");
-        return StallReason::NoStall;
+    if (traceMode) {
+        // 防御：正常情况下 traceMode 必然伴随有效的 traceReader
+        panic_if(!traceReader,
+                 "traceMode enabled but traceReader is unavailable");
+        return fetchTraceInstruction(tid, this_pc);
     }
 
     Addr fetch_pc = this_pc.instAddr();
@@ -2365,43 +2386,7 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
     // Supply bytes to decoder - always provide 4 bytes for RISC-V
     auto *dec_ptr = decoder[tid];
     Addr offset_in_buffer = fetch_pc - fetchBuffer[tid].startPC;
-    if (traceMode && isDecoupledFrontend() && traceEnableWrongPath && traceWrongPathActive) {
-        // wrong-path 模式：替换为 NOP 指令码（默认 2B，若命中预测 takenPC 则用 4B），保持 PC/FTQ 流转不变
-        auto choose_nop_size = [&](Addr pc) -> unsigned {
-            if (traceWrongPathForceMinStep) {
-                return 2;
-            }
-            unsigned sz = 2;
-            Addr block_end = 0;
-            Addr taken_pc = 0;
-            bool taken = false;
-            if (isFTBPred()) {
-                const auto &ftq = dbpftb->getSupplyingFetchTarget();
-                block_end = ftq.endPC;
-                taken_pc = ftq.takenPC;
-                taken = ftq.taken;
-            } else if (isBTBPred()) {
-                const auto &ftq = dbpbtb->getSupplyingFetchTarget();
-                block_end = ftq.endPC;
-                taken_pc = ftq.takenPC;
-                taken = ftq.taken;
-            }
-            if (taken && taken_pc && pc == taken_pc) {
-                sz = 4;
-            } else if (block_end && pc + 2 == block_end) {
-                sz = 2;
-            }
-            return sz;
-        };
-
-        const unsigned nop_size = choose_nop_size(fetch_pc);
-        TheISA::MachInst nop = (nop_size == 2)
-            ? static_cast<TheISA::MachInst>(0x0001u)
-            : static_cast<TheISA::MachInst>(0x00000013u);
-        memcpy(dec_ptr->moreBytesPtr(), &nop, sizeof(nop));
-    } else {
-        memcpy(dec_ptr->moreBytesPtr(), fetchBuffer[tid].data + offset_in_buffer, 4);
-    }
+    memcpy(dec_ptr->moreBytesPtr(), fetchBuffer[tid].data + offset_in_buffer, 4);
 
     DPRINTF(Fetch, "[tid:%i] Supplying 4 bytes from fetchBuffer at PC %#x (offset %d)\n",
             tid, fetch_pc, offset_in_buffer);

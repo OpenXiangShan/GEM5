@@ -615,6 +615,23 @@ class Fetch
      */
     TheISA::MachInst createMachInstFromTrace(const o3::TraceInstruction &traceInstr);
 
+    /** Select NOP size for wrong-path injection when trace enforces minimal steps */
+    unsigned chooseWrongPathNopSize(ThreadID tid, Addr pc);
+
+    /**
+     * Feed trace-driven instruction (or wrong-path NOP) to decoder on demand.
+     * @return StallReason if stalled, NoStall otherwise
+     */
+    StallReason fetchTraceInstruction(ThreadID tid, const PCStateBase &this_pc);
+
+    /**
+     * Helper to copy provided instruction bits to decoder and mark fetchBuffer
+     * as valid for the supplied PC (used only in trace on-demand flow).
+     */
+    void supplyTraceToDecoder(ThreadID tid, const PCStateBase &this_pc,
+                              TheISA::MachInst machInst, Addr instrPC,
+                              const char *tag);
+
 
     /**
      * Processes a single instruction, including decoding, building the
