@@ -100,8 +100,8 @@ function prepare_env() {
     local task="$1"
     local task_path="$2"
 
-    # 同时匹配 gz zstd xz 后缀
-    local suffixes=("gz" "zstd" "xz")
+    # 同时匹配 gz zstd xz 以及未压缩的 champsimtrace 后缀
+    local suffixes=("gz" "zstd" "xz" "champsimtrace")
     checkpoint=""
     for suffix in "${suffixes[@]}"; do
         checkpoint=$(find -L "${cpt_dir}" -wholename "*${task_path}*.${suffix}" | head -n 1)
