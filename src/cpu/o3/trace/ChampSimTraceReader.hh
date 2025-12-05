@@ -125,7 +125,8 @@ class ChampSimTraceReader : public TraceReader
                        const std::string &map_mode = "hash",
                        uint64_t base_addr = 0x10000000UL,
                        uint64_t map_size = 0x40000000UL,
-                       bool page_align = true);
+                       bool page_align = true,
+                       statistics::Group *parent = nullptr);
 
     /** Destructor */
     ~ChampSimTraceReader();

@@ -184,10 +184,13 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         traceWrongPathUseTraceInst = params.traceWrongPathUseTraceInst;
         // Enable BP-vs-trace validation independent of training
         traceBPValidation = params.traceBPValidation;
+        // Note: pass CPU as parent stats group; keep reader name simple to avoid
+        // duplicated prefixes in stats paths.
         traceReader = createTraceReader(params.traceFormat, params.traceFile,
-                                        cpu->name() + ".traceReader",
+                                        "traceReader",
                                         params.traceAddrBase, params.traceAddrSize,
-                                        params.traceAddrMapMode, params.traceAddrPageAlign);
+                                        params.traceAddrMapMode, params.traceAddrPageAlign,
+                                        cpu);
         if (!traceReader) {
             fatal("Failed to create trace reader for format: %s\n", params.traceFormat);
         }

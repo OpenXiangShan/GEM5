@@ -60,7 +60,8 @@ class CBP2025TraceReader : public TraceReader
                       const std::string &map_mode = "hash",
                       uint64_t base_addr = 0x80000000ULL,
                       uint64_t map_size = 0x40000000ULL,
-                      bool page_align = true);
+                      bool page_align = true,
+                      statistics::Group *parent = nullptr);
 
     ~CBP2025TraceReader() override;
 

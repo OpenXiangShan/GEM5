@@ -93,9 +93,10 @@ TraceReader::TraceReaderStats::TraceReaderStats(statistics::Group *parent,
 {
 }
 
-TraceReader::TraceReader(const std::string &trace_file, const std::string &name)
-    : statistics::Group(nullptr, name.c_str()), traceFile(trace_file), readerName(name),
-      eofReached(false), initialized(false), currentSeqNum(0), stats(this, name)
+TraceReader::TraceReader(const std::string &trace_file, const std::string &name,
+                         statistics::Group *parent)
+    : statistics::Group(parent, name.c_str()), traceFile(trace_file), readerName(name),
+      eofReached(false), initialized(false), currentSeqNum(0), stats(this, "stats")
 {
     // Debug output removed temporarily
 }
@@ -211,13 +212,19 @@ TraceReader::updateStats(const TraceInstruction &instr)
 std::unique_ptr<TraceReader>
 createTraceReader(const std::string &format, const std::string &trace_file,
                   const std::string &name, uint64_t addrBase, uint64_t addrSize,
-                  const std::string &addrMapMode, bool pageAlign)
+                  const std::string &addrMapMode, bool pageAlign,
+                  statistics::Group *parent)
 {
     // Debug: Creating trace reader with mapping parameters
     // Note: name is passed as parameter, not from object method
 
     if (format == "champsim") {
-        auto reader = std::make_unique<ChampSimTraceReader>(trace_file, name);
+        auto reader = std::make_unique<ChampSimTraceReader>(trace_file, name,
+                                                            addrMapMode,
+                                                            addrBase,
+                                                            addrSize,
+                                                            pageAlign,
+                                                            parent);
         // Configure address mapping parameters
         reader->setAddressMapping(addrBase, addrSize, addrMapMode, pageAlign);
         return reader;
@@ -226,7 +233,8 @@ createTraceReader(const std::string &format, const std::string &trace_file,
                                                            addrMapMode,
                                                            addrBase,
                                                            addrSize,
-                                                           pageAlign);
+                                                           pageAlign,
+                                                           parent);
         return reader;
     } else {
         // Debug output removed temporarily

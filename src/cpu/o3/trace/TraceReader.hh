@@ -118,7 +118,8 @@ class TraceReader : public statistics::Group
      * @param trace_file Path to the trace file
      * @param name Name for statistics
      */
-    TraceReader(const std::string &trace_file, const std::string &name);
+    TraceReader(const std::string &trace_file, const std::string &name,
+                statistics::Group *parent = nullptr);
 
     /** Virtual destructor */
     virtual ~TraceReader() = default;
@@ -295,7 +296,8 @@ std::unique_ptr<TraceReader> createTraceReader(const std::string &format,
                                                uint64_t addrBase = 0x10000000,
                                                uint64_t addrSize = 0x40000000,
                                                const std::string &addrMapMode = "hash",
-                                               bool pageAlign = true);
+                                               bool pageAlign = true,
+                                               statistics::Group *parent = nullptr);
 
 } // namespace o3
 } // namespace gem5

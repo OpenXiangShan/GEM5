@@ -47,8 +47,9 @@ CBP2025TraceReader::CBP2025TraceReader(const std::string &trace_file,
                                        const std::string &map_mode,
                                        uint64_t base_addr,
                                        uint64_t map_size,
-                                       bool page_align)
-  : TraceReader(trace_file, name),
+                                       bool page_align,
+                                       statistics::Group *parent)
+  : TraceReader(trace_file, name, parent),
     compressed(false),
     gzPipe(nullptr),
     hasPendingInstr(false),
@@ -101,7 +102,8 @@ CBP2025TraceReader::init()
             safe.replace(pos, 1, "'\\''");
             pos += 4;
         }
-        std::string cmd = std::string("gzip -dc -- '") + safe + "'";
+        // Use quiet mode and silence stderr to suppress SIGPIPE warnings when reader stops early.
+        std::string cmd = std::string("gzip -dcq -- '") + safe + "' 2>/dev/null";
         gzPipe = popen(cmd.c_str(), "r");
         if (!gzPipe) {
             DPRINTF(TraceReader, "CBP2025TraceReader::init failed to open gzip pipe: %s\n", strerror(errno));
@@ -145,7 +147,8 @@ CBP2025TraceReader::reset()
             safe.replace(pos, 1, "'\\''");
             pos += 4;
         }
-        std::string cmd = std::string("gzip -dc -- '") + safe + "'";
+        // Use quiet mode and silence stderr to suppress SIGPIPE warnings when reader stops early.
+        std::string cmd = std::string("gzip -dcq -- '") + safe + "' 2>/dev/null";
         gzPipe = popen(cmd.c_str(), "r");
         if (!gzPipe) {
             return false;

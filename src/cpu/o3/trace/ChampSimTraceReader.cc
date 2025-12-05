@@ -46,8 +46,9 @@ ChampSimTraceReader::ChampSimTraceReader(const std::string &trace_file,
                                          const std::string &map_mode,
                                          uint64_t base_addr,
                                          uint64_t map_size,
-                                         bool page_align)
-    : TraceReader(trace_file, name), compressed(false), xzCompressed(false), xzPipe(nullptr), currentPos(0),
+                                         bool page_align,
+                                         statistics::Group *parent)
+    : TraceReader(trace_file, name, parent), compressed(false), xzCompressed(false), xzPipe(nullptr), currentPos(0),
       instructionIndex(0), addrMapMode(map_mode), addrMapBase(base_addr),
       addrMapSize(map_size), addrPageAlign(page_align)
 {
