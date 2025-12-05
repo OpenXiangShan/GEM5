@@ -636,6 +636,11 @@ class Fetch
                               TheISA::MachInst machInst, Addr instrPC,
                               const char *tag);
 
+    /** Enter trace wrong-path mode with unified state updates/logging. */
+    void enterTraceWrongPath(ThreadID tid, InstSeqNum branchSeqNum, Addr predPC,
+                             Addr corrPC, bool forceMinStep,
+                             const char *reason, uint64_t traceSeqNum);
+
 
     /**
      * Processes a single instruction, including decoding, building the

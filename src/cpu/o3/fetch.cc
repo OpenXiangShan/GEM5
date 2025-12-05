@@ -2324,6 +2324,25 @@ Fetch::supplyTraceToDecoder(ThreadID tid, const PCStateBase &this_pc,
             tid, tag, (unsigned long long)instrPC);
 }
 
+void
+Fetch::enterTraceWrongPath(ThreadID tid, InstSeqNum branchSeqNum, Addr predPC,
+                           Addr corrPC, bool forceMinStep,
+                           const char *reason, uint64_t traceSeqNum)
+{
+    traceWrongPathActive       = true;
+    traceWrongPathBranchSeqNum = branchSeqNum;
+    traceWrongPathForceMinStep = forceMinStep;
+    traceWrongPathPredPC       = predPC;
+    traceWrongPathCorrectPC    = corrPC;
+    DPRINTF(Fetch,
+            "[tid:%i] %s (predPC=0x%llx, corrPC=0x%llx, sn:%llu, tracesn:%llu)\n",
+            tid, reason,
+            (unsigned long long)predPC,
+            (unsigned long long)corrPC,
+            (unsigned long long)traceWrongPathBranchSeqNum,
+            (unsigned long long)traceSeqNum);
+}
+
 unsigned
 Fetch::chooseWrongPathNopSize(ThreadID tid, Addr pc)
 {
@@ -2573,27 +2592,19 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
             const Addr corr_pc      = traceForThisInst.getCtrlFlowTarget();
 
             if (!traceWrongPathActive) {
-                traceWrongPathActive       = true;
-                traceWrongPathBranchSeqNum = instruction->seqNum;
                 // 非分支或未 taken/异常式 ctrlFlowChange：trace 无可靠 next_pc，保守采用 2B 步进。
                 // 将预测 PC 折算成“pc+2”以免跨过块内的预测点。
+                bool force_min_step = false;
                 if (nonBranchTrap || !traceForThisInst.getBranchTaken()) {
                     predicted_pc = instruction->pcState().instAddr() + 2;
-                    traceWrongPathForceMinStep = true; // 没有可靠 next_pc，用最小步长
-                } else {
-                    traceWrongPathForceMinStep = false;
+                    force_min_step = true; // 没有可靠 next_pc，用最小步长
                 }
-                traceWrongPathPredPC       = predicted_pc;
-                traceWrongPathCorrectPC    = corr_pc;
-                DPRINTF(Fetch,
-                        "[tid:%i] Enter %s-trap wrong-path; skip local BP "
-                        "squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu, tracesn:%llu)\n",
-                            tid,
-                            nonBranchTrap ? "non-branch" : "branch",
-                            (unsigned long long)predicted_pc,
-                            (unsigned long long)corr_pc,
-                            (unsigned long long)traceWrongPathBranchSeqNum,
-                            (unsigned long long)traceForThisInst.getSeqNum());
+                enterTraceWrongPath(
+                    tid, instruction->seqNum, predicted_pc, corr_pc,
+                    force_min_step,
+                    nonBranchTrap ? "Enter non-branch-trap wrong-path; skip local BP squash/train"
+                                  : "Enter branch-trap wrong-path; skip local BP squash/train",
+                    traceForThisInst.getSeqNum());
             } else {
                 DPRINTF(Fetch,
                         "[tid:%i] Already in trap-wrong-path mode; continue "
@@ -2619,22 +2630,15 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
             if (!ok) {
                 if (isDecoupledFrontend() && traceEnableWrongPath) {
                     if (!traceWrongPathActive) {
-                        // decoupled/wrong-path：仅进入 wrong-path 模式，不在此处自发 squash/训练
-                        traceWrongPathActive = true;
-                        traceWrongPathBranchSeqNum = instruction->seqNum;
-                        traceWrongPathPredPC = predictedPC;
-                        traceWrongPathForceMinStep = false;
                         Addr corr_target = traceForThisInst.getBranchTaken() && traceForThisInst.getHasBranchTarget()
                                             ? traceForThisInst.getBranchTarget()
                                             : ft_pc;
-                        traceWrongPathCorrectPC = corr_target;
-                        DPRINTF(Fetch,
-                                "[tid:%i] Enter wrong-path mode; skip local BP "
-                                "squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu, tracesn:%llu)\n",
-                                tid, (unsigned long long)predictedPC,
-                                (unsigned long long)corr_target,
-                                (unsigned long long)traceWrongPathBranchSeqNum,
-                                (unsigned long long)traceForThisInst.getSeqNum());
+                        // decoupled/wrong-path：仅进入 wrong-path 模式，不在此处自发 squash/训练
+                        enterTraceWrongPath(
+                            tid, instruction->seqNum, predictedPC, corr_target,
+                            false,
+                            "Enter wrong-path mode; skip local BP squash/train",
+                            traceForThisInst.getSeqNum());
                     } else {
                         DPRINTF(Fetch,
                                 "[tid:%i] Already in wrong-path mode; continue "
@@ -2663,18 +2667,11 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
             // BP 可能将非 branch 指令错误预测为 taken，
             // 此时也应进入 wrong-path，由后端 decode squash 纠正。
             if (!traceWrongPathActive) {
-                traceWrongPathActive = true;
-                traceWrongPathBranchSeqNum = instruction->seqNum;
-                traceWrongPathPredPC = predictedPC;
-                traceWrongPathCorrectPC = ft_pc; // 真值为顺序执行 PC
-                DPRINTF(Fetch,
-                        "[tid:%i] Enter non-branch-predicted wrong-path; "
-                        "skip local BP squash/train (predPC=0x%llx, corrPC=0x%llx, sn:%llu, tracesn:%llu)\n",
-                        tid,
-                        (unsigned long long)predictedPC,
-                        (unsigned long long)ft_pc,
-                        (unsigned long long)traceWrongPathBranchSeqNum,
-                        (unsigned long long)traceForThisInst.getSeqNum());
+                enterTraceWrongPath(
+                    tid, instruction->seqNum, predictedPC, ft_pc,
+                    false,
+                    "Enter non-branch-predicted wrong-path; skip local BP squash/train",
+                    traceForThisInst.getSeqNum());
             } else {
                 DPRINTF(Fetch,
                         "[tid:%i] Already in wrong-path mode; continue "
