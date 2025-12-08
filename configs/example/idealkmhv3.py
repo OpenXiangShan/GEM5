@@ -92,28 +92,31 @@ def setKmhV3IdealParams(args, system):
     if args.l2cache:
         for i in range(args.num_cpus):
             if args.classic_l2:
-                system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                system.l2_caches[i].slice_num = 4
+                system.l2_caches[i].wpu = NULL
             else:
                 l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.data_sram_banks = 2
-                l2_wrapper.dir_sram_banks = 2
-                l2_wrapper.pipe_dir_write_stage = 4
-                l2_wrapper.dir_read_bypass = True
-            system.tol2bus_list[i].forward_latency = 0  # 3->0
-            system.tol2bus_list[i].response_latency = 0  # 3->0
-            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
+                l2_wrapper.data_sram_banks = 1
+                l2_wrapper.dir_sram_banks = 1
+                l2_wrapper.pipe_dir_write_stage = 3
+                l2_wrapper.dir_read_bypass = False
+                for j in range(args.l2_slices):
+                    l2_wrapper.slices[j].inner_cache.wpu = NULL
+            system.tol2bus_list[i].forward_latency = 3  # 3->0
+            system.tol2bus_list[i].response_latency = 3  # 3->0
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 2  # 2->0
 
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
             # RespLayer[1]: L2 → DCache, allow 2 responses per cycle
-            system.tol2bus_list[i].layer_bandwidth_configs = [
-                LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
-                LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
-            ]
+            # system.tol2bus_list[i].layer_bandwidth_configs = [
+            #     LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
+            #     LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
+            # ]
 
     # l3 cache
     if args.l3cache:
-        system.l3.mshrs = 128
+        system.l3.mshrs = 64
 
 if __name__ == '__m5_main__':
     FutureClass = None
