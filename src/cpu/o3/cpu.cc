@@ -1536,6 +1536,19 @@ CPU::cleanUpRemovedInsts()
 }
 
 void
+CPU::dumpInsts()
+{
+    DPRINTF(O3CPU, "Dumping in-flight instructions (count=%zu)\n",
+            instList.size());
+    for (const auto &inst : instList) {
+        DPRINTF(O3CPU,
+                " [tid:%i] [sn:%lli] PC %s squashed=%d issued=%d\n",
+                inst->threadNumber, inst->seqNum, inst->pcState(),
+                inst->isSquashed(), inst->isIssued());
+    }
+}
+
+void
 CPU::wakeCPU()
 {
     if (activityRec.active() || tickEvent.scheduled()) {
