@@ -64,16 +64,17 @@ def setKmhV3IdealParams(args, system):
         cpu.sbufferBankWriteAccurately = True
 
         # lsq
-        cpu.LQEntries = 128
-        cpu.SQEntries = 64
-        cpu.RARQEntries = 96
-        cpu.RAWQEntries = 56
+        cpu.LQEntries = 72
+        cpu.SQEntries = 56
+        cpu.RARQEntries = 72
+        cpu.RAWQEntries = 32
         cpu.LoadCompletionWidth = 8
         cpu.StoreCompletionWidth = 4
         cpu.RARDequeuePerCycle = 4
         cpu.RAWDequeuePerCycle = 4
-        cpu.SbufferEntries = 24
-        cpu.SbufferEvictThreshold = 16
+        cpu.SbufferEntries = 16
+        cpu.SbufferEvictThreshold = 7
+        cpu.store_prefetch_train = False
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
