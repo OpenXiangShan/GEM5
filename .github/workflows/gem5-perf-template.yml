@@ -38,7 +38,7 @@ jobs:
         run: |
           case "${{ inputs.benchmark_type }}" in
               "spec06-0.3c")
-              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec06_0.3c_int.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec_1c_int.lst" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
