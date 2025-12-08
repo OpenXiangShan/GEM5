@@ -1320,13 +1320,13 @@ Fetch::handleTraceSquash(ThreadID tid, const PCStateBase &new_pc,
                     DPRINTF(Fetch,
                             "[tid:%i] Squash target PC (0x%#lx) matches correct PC (0x%#lx)\n",
                             tid, new_pc.instAddr(), traceWrongPathCorrectPC);
-                    traceWrongPathActive = false;
-                    traceWrongPathForceMinStep = false;
+                    exitTraceWrongPath(tid, "mispred boundary squash reaches correct PC");
                 } else {
                     DPRINTF(Fetch,
                             "[tid:%i] Warning: Squash target PC (0x%#lx) does not match "
                             "correct PC (0x%#lx)\n",
                             tid, new_pc.instAddr(), traceWrongPathCorrectPC);
+                    // stay in wrong-path, let later squash handle
                 }
             } else if (squashInst->seqNum < traceWrongPathBranchSeqNum) {
                 DPRINTF(Fetch,
@@ -1336,8 +1336,7 @@ Fetch::handleTraceSquash(ThreadID tid, const PCStateBase &new_pc,
                         (unsigned long long)squashInst->seqNum,
                         findTraceIndexForSeqNum(squashInst->seqNum),
                         (unsigned long long)traceWrongPathBranchSeqNum);
-                traceWrongPathActive = false; // squashing inst before mispredicted branch, exit wrong-path
-                traceWrongPathForceMinStep = false;
+                exitTraceWrongPath(tid, "squash before mispredicted branch");
             } else {
                 allow_rb = false;
                 DPRINTF(Fetch,
@@ -1359,8 +1358,7 @@ Fetch::handleTraceSquash(ThreadID tid, const PCStateBase &new_pc,
                 // non-inst squash (例如 trap squash) 把 PC 直接带回了正确路径
                 // traceReader 在 wrong-path 期间未前进，因此此处无需回滚，只需退出
                 // wrong-path 模式即可。
-                traceWrongPathActive = false;
-                traceWrongPathForceMinStep = false;
+                exitTraceWrongPath(tid, "non-inst squash reached correct PC");
                 squash_itself = false;
                 trace_rb_seqnum = traceWrongPathBranchSeqNum;
                 // allow_rb = false; // 不需要触碰 traceReader
@@ -1380,8 +1378,7 @@ Fetch::handleTraceSquash(ThreadID tid, const PCStateBase &new_pc,
                         (unsigned long long)seqNum,
                         findTraceIndexForSeqNum(seqNum),
                         (unsigned long long)traceWrongPathBranchSeqNum);
-                traceWrongPathActive = false; // squashing inst before mispredicted branch, exit wrong-path
-                traceWrongPathForceMinStep = false;
+                exitTraceWrongPath(tid, "non-inst squash before mispredicted branch");
                 trace_rb_seqnum = seqNum + 1; // for non-inst squash before branch, rollback to seqNum + 1
                 squash_itself = true;
                 // this would happen for memory violation
@@ -2341,6 +2338,17 @@ Fetch::enterTraceWrongPath(ThreadID tid, InstSeqNum branchSeqNum, Addr predPC,
             (unsigned long long)corrPC,
             (unsigned long long)traceWrongPathBranchSeqNum,
             (unsigned long long)traceSeqNum);
+}
+
+void
+Fetch::exitTraceWrongPath(ThreadID tid, const char *reason)
+{
+    DPRINTF(Fetch, "[tid:%i] Exit wrong-path mode: %s\n", tid, reason);
+    traceWrongPathActive = false;
+    traceWrongPathForceMinStep = false;
+    traceWrongPathPredPC = 0;
+    traceWrongPathCorrectPC = 0;
+    traceWrongPathBranchSeqNum = 0;
 }
 
 unsigned

@@ -641,6 +641,9 @@ class Fetch
                              Addr corrPC, bool forceMinStep,
                              const char *reason, uint64_t traceSeqNum);
 
+    /** Unified exit from trace wrong-path mode with logging. */
+    void exitTraceWrongPath(ThreadID tid, const char *reason);
+
 
     /**
      * Processes a single instruction, including decoding, building the
