@@ -150,10 +150,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchStream &entry) override;
-
-    // Window blocking mechanism: return true if prediction should be blocked
-    // to allow priority update after consecutive bank conflicts
-    bool needBlockPrediction() override;
+    bool tryResolveUpdate(const FetchStream &entry) override;
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
@@ -318,13 +315,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
     unsigned lastPredBankId;         // Bank ID of last prediction
     bool predBankValid;              // Whether lastPredBankId is valid
 
-    // ========== Window Blocking Mechanism ==========
-    // When updates are consecutively blocked by bank conflicts, force block
-    // prediction to let the update execute (like RTL's FTQ ready=false)
-    std::vector<unsigned> updateBlockedCount;  // Per-bank blocked count
-    unsigned windowBlockThreshold;              // Threshold from params
-    bool forceBlockPrediction = false;          // Request to block next prediction
-
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
 #else
@@ -361,7 +351,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
         // Bank conflict statistics
         Scalar updateBankConflict;           // Number of bank conflicts detected
         Scalar updateDroppedDueToConflict;   // Number of updates dropped due to bank conflict
-        Scalar windowBlockTriggered;         // Number of times window blocking was triggered
 
 #ifndef UNIT_TEST
         // Fine-grained per-bank statistics

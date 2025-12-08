@@ -165,6 +165,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool squashing{false};
 
     HistoryManager historyManager;
+    bool blockPredictionPending{false};
+    unsigned resolveDequeueFailCounter{0};
+    const unsigned resolveBlockThreshold;
 
     unsigned numOverrideBubbles{0};
 
@@ -818,11 +821,14 @@ class DecoupledBPUWithBTB : public BPredUnit
     void resetPC(Addr new_pc);
 
     // Helper functions for update
-    void resolveUpdate(unsigned &stream_id);
+    bool resolveUpdate(unsigned &stream_id);
     void prepareResolveUpdateEntries(unsigned &stream_id);
     void markCFIResolved(unsigned &stream_id, uint64_t resolvedInstPC);
     void updatePredictorComponents(FetchStream &stream);
     void updateStatistics(const FetchStream &stream);
+    void notifyResolveSuccess();
+    void notifyResolveFailure();
+    void blockPredictionOnce();
 
     // Helper function to process FTQ entry completion
     void processFetchTargetCompletion(const FtqEntry &target_to_fetch);

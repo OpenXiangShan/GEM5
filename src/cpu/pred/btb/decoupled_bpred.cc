@@ -44,6 +44,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
       historyManager(16), // TODO: fix this
+      resolveBlockThreshold(p.resolveBlockThreshold),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
 {
     if (bpDBSwitches.size() > 0) {
@@ -139,23 +140,14 @@ DecoupledBPUWithBTB::tick()
 
     // 1. Request new prediction if FSQ not full and we are idle
     if (bpuState == BpuState::IDLE && !streamQueueFull()) {
-        // Check if any predictor component requests to block prediction
-        // (e.g., TAGE window blocking for priority update after bank conflicts)
-        bool blocked = false;
-        for (int i = 0; i < numComponents; i++) {
-            if (components[i]->needBlockPrediction()) {
-                blocked = true;
-                DPRINTF(Override, "Prediction blocked by component %d for window update\n", i);
-                dbpBtbStats.predictionBlockedForUpdate++;
-                break;
-            }
-        }
-
-        if (!blocked) {
+        if (blockPredictionPending) {
+            DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
+            dbpBtbStats.predictionBlockedForUpdate++;
+            blockPredictionPending = false;
+        } else {
             requestNewPrediction();
             bpuState = BpuState::PREDICTOR_DONE;
         }
-        // If blocked: stay in IDLE, s0PC unchanged, no FSQ write (like RTL FTQ ready=false)
     }
 
     // 2. Handle pending prediction if available
@@ -634,26 +626,53 @@ DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
     historyManager.commit(stream_id);
 }
 
-void
+bool
 DecoupledBPUWithBTB::resolveUpdate(unsigned &stream_id)
 {
     auto stream_it = fetchStreamQueue.find(stream_id);
     if (stream_it == fetchStreamQueue.end()) {
         DPRINTF(DecoupleBP, "Stream id %u not found in fetchStreamQueue, cannot update predictors\n", stream_id);
-        return;
+        return false;
     }
 
     auto &stream = stream_it->second;
 
     // Update predictor components only if the stream is hit or taken
-    if (stream.isHit || stream.exeTaken) {
-        // Update predictor components
-        for (int i = 0; i < numComponents; ++i) {
-            if (components[i]->getResolvedUpdate()) {
-                components[i]->update(stream);
+    if (!(stream.isHit || stream.exeTaken)) {
+        return true;
+    }
+
+    for (int i = 0; i < numComponents; ++i) {
+        if (components[i]->getResolvedUpdate()) {
+            bool success = components[i]->tryResolveUpdate(stream);
+            if (!success) {
+                return false;
             }
         }
     }
+    return true;
+}
+
+void
+DecoupledBPUWithBTB::notifyResolveSuccess()
+{
+    resolveDequeueFailCounter = 0;
+}
+
+void
+DecoupledBPUWithBTB::notifyResolveFailure()
+{
+    resolveDequeueFailCounter++;
+    if (resolveDequeueFailCounter >= resolveBlockThreshold) {
+        blockPredictionOnce();
+        resolveDequeueFailCounter = 0;
+    }
+}
+
+void
+DecoupledBPUWithBTB::blockPredictionOnce()
+{
+    blockPredictionPending = true;
 }
 
 void
