@@ -57,6 +57,7 @@
 #include "cpu/o3/fu_pool.hh"
 #include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/op_class.hh"
 #include "cpu/timebuf.hh"
 #include "debug/Activity.hh"
 #include "debug/Counters.hh"
@@ -2202,6 +2203,10 @@ IEW::getInstDQType(const DynInstPtr &inst)
 {
     if (inst->isMemRef() || inst->isReadBarrier() || inst->isWriteBarrier() || inst->isNonSpeculative()) {
         return MemDQ;
+    }
+    // FIX: fcvt_s_w (Int2Fp) reads INT register, needs INT read port -> should go to IntDQ
+    if (inst->opClass() == Int2FpOp) {
+        return IntDQ;
     }
     if (inst->isFloating() || inst->isVector()) {
         return FVDQ;

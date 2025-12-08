@@ -217,6 +217,14 @@ class BTBITTAGE : public TimedBaseBTBPredictor
         int numPredictors;
         IttageStats(statistics::Group* parent, int numPredictors);
 #endif
+        Scalar commitHits;
+        Scalar callHits;
+        Scalar commitMisses;
+        Scalar callMisses;
+        Scalar commitPredCorrect;
+        Scalar commitPredWrong;
+        Scalar callPredCorrect;
+        Scalar callPredWrong;
     };
 
     IttageStats ittageStats;

@@ -219,10 +219,17 @@ BTBITTAGE::update(const FetchStream &stream)
         all_entries_to_update.push_back(stream.updateNewBTBEntry);
     }
 
-    // only update indirect branches that are not returns
-    auto remove_it = std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
-        [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn); });
-    all_entries_to_update.erase(remove_it, all_entries_to_update.end());
+    // // only update indirect branches that are not returns
+    if (getResolvedUpdate()) {
+        auto remove_it =
+            std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
+                           [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn && e.resolved); });
+        all_entries_to_update.erase(remove_it, all_entries_to_update.end());
+    } else {
+        auto remove_it = std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
+                                        [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn); });
+        all_entries_to_update.erase(remove_it, all_entries_to_update.end());
+    }
 
     // get tage predictions from meta
     // TODO: use component idx
@@ -555,6 +562,48 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
 void
 BTBITTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
+    if (!(inst->isIndirectCtrl() && !inst->isReturn())) {
+        // ittage only cares about indirect non-return branches
+        return;
+    }
+    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+    auto pc = inst->getPC();
+    auto npc = inst->getNPC();
+    auto pred_it = meta->preds.find(pc);
+    bool this_branch_hit = false;
+    if (pred_it != meta->preds.end()) {
+        this_branch_hit = true;
+    }
+    auto pred_npc = (pred_it->second).target;
+    bool iscalled = inst->isCall();
+
+     // Update commit statistics
+    if (this_branch_hit) {
+        ittageStats.commitHits++;
+        if (pred_npc == npc) {
+            ittageStats.commitPredCorrect++;
+            if (iscalled) {
+                ittageStats.callPredCorrect++;
+            }
+        } else {
+            ittageStats.commitPredWrong++;
+            if (iscalled) {
+                ittageStats.callPredWrong++;
+            }
+        }
+        if (iscalled) {
+            ittageStats.callHits++;
+        }
+    }else {
+        ittageStats.commitMisses++;
+        ittageStats.commitPredWrong++;
+        if (iscalled) {
+            ittageStats.callMisses++;
+            ittageStats.callPredWrong++;
+        }
+    }
+
+
 }
 
 #ifndef UNIT_TEST
@@ -570,7 +619,16 @@ BTBITTAGE::IttageStats::IttageStats(statistics::Group* parent, int numPredictors
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset useful bits when update"),
     ADD_STAT(updateUseAltCorrect, statistics::units::Count::get(), "use alternative prediction and correct on update"),
     ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
-    ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update")
+    ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
+
+    ADD_STAT(commitHits, statistics::units::Count::get(), "number of indirect branch commits that hit in ITTAGE"),
+    ADD_STAT(callHits, statistics::units::Count::get(), "number of call commits that hit in ITTAGE"),
+    ADD_STAT(commitMisses, statistics::units::Count::get(), "number of indirect branch commits that missed in ITTAGE"),
+    ADD_STAT(callMisses, statistics::units::Count::get(), "number of call commits that missed in ITTAGE"),
+    ADD_STAT(commitPredCorrect, statistics::units::Count::get(), "number of indirect branch commits with correct predictions in ITTAGE"),
+    ADD_STAT(commitPredWrong, statistics::units::Count::get(), "number of indirect branch commits with wrong predictions in ITTAGE"),
+    ADD_STAT(callPredCorrect, statistics::units::Count::get(), "number of call commits with correct predictions in ITTAGE"),
+    ADD_STAT(callPredWrong, statistics::units::Count::get(), "number of call commits with wrong predictions in ITTAGE")
 {
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);

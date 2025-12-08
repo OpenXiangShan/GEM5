@@ -363,6 +363,13 @@ class BTBTAGE : public TimedBaseBTBPredictor
         statistics::Vector updateTableMispreds;
 #endif
 
+        Scalar condPredwrong;
+        Scalar condMissTakens;
+        Scalar condCorrect;
+        Scalar condMissNoTakens;
+        Scalar predHit;
+        Scalar predMiss;
+
         int bankIdx;
         int numPredictors;
         int numBanks;

@@ -1029,7 +1029,14 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(predAccessPerBank, statistics::units::Count::get(), "prediction accesses per bank"),
     ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
     ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
-    ADD_STAT(updateTableMispreds, statistics::units::Count::get(), "mispreds of each table when update")
+    ADD_STAT(updateTableMispreds, statistics::units::Count::get(), "mispreds of each table when update"),
+
+    ADD_STAT(condPredwrong, statistics::units::Count::get(), "number of conditional branch mispredictions committed"),
+    ADD_STAT(condMissTakens, statistics::units::Count::get(), "number of conditional branch mispredictions committed with no prediction"),
+    ADD_STAT(condCorrect, statistics::units::Count::get(), "number of conditional branch correct predictions committed"),
+    ADD_STAT(condMissNoTakens, statistics::units::Count::get(), "number of conditional branch correct predictions committed with no prediction"),
+    ADD_STAT(predHit, statistics::units::Count::get(), "number of conditional branch predictions that hit"),
+    ADD_STAT(predMiss, statistics::units::Count::get(), "number of conditional branch predictions that miss")
 {
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);
@@ -1112,6 +1119,38 @@ BTBTAGE::getLRUVictim(int table, Addr index)
 void
 BTBTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
+    if (!inst->isCondCtrl()) {
+        // tage olnly deals with conditional branches
+        return;
+    }
+    auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+    auto pc = inst->pcState().instAddr();
+    auto it = meta->preds.find(pc);
+    bool pred_taken = false;
+    bool pred_hit = false;
+    if (it != meta->preds.end()) {
+        pred_taken = it->second.taken;
+        pred_hit = true;
+    }
+    bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    bool predcorrect = (pred_taken == this_cond_taken);
+    if (!predcorrect) {
+        tageStats.condPredwrong++;
+        if (!pred_hit) {
+            tageStats.condMissTakens++;
+        }
+    }else{
+        tageStats.condCorrect++;
+        if (!pred_hit) {
+            tageStats.condMissNoTakens++;
+        }
+    }
+
+    if (pred_hit) {
+        tageStats.predHit++;
+    } else {
+        tageStats.predMiss++;
+    }
 }
 #endif
 

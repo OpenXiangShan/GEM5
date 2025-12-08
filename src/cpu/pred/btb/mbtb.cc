@@ -252,7 +252,6 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         if (s == getDelay()) dumpBTBEntries(stagePreds[s].btbEntries);
 
         stagePreds[s].predTick = curTick();
-
         stagePreds[s].condTakens.clear();
         stagePreds[s].indirectTargets.clear();
     }
