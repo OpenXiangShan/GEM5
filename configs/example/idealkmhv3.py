@@ -32,28 +32,43 @@ def setKmhV3IdealParams(args, system):
 
         # decode
         cpu.decodeWidth = 8
-        cpu.enable_loadFusion = True
+        cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
 
         # rename
         cpu.renameWidth = 8
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
+        cpu.enable_storeSet_train = False
 
         # dispatch
-        cpu.enableDispatchStage = True
+        cpu.enableDispatchStage = False
         cpu.numDQEntries = [8, 8, 8]
         cpu.dispWidth = [8, 8, 8]
 
         # scheduler
         cpu.scheduler = KMHV3Scheduler()
+        cpu.scheduler.disableAllRegArb()
+        cpu.scheduler.enableMainRdpOpt = False
+        cpu.scheduler.intRegfileBanks = 1
+        # intiq0
+        cpu.scheduler.IQs[0].oports[0].rp = [IntRD(0, 0), IntRD(1, 0)]
+        cpu.scheduler.IQs[0].oports[1].rp = [IntRD(0, 1), IntRD(1, 1)]
+
+        # intiq1
+        cpu.scheduler.IQs[1].oports[0].rp = [IntRD(2, 0), IntRD(3, 0)]
+        cpu.scheduler.IQs[1].oports[1].rp = [IntRD(2, 1), IntRD(3, 1)]
+
+        # intiq2
+        cpu.scheduler.IQs[2].oports[0].rp = [IntRD(4, 0), IntRD(5, 0)]
+        cpu.scheduler.IQs[2].oports[1].rp = [IntRD(4, 1), IntRD(5, 1)]
 
         # rob
-        cpu.commitWidth = 12
-        cpu.squashWidth = 12
+        cpu.commitWidth = 8
+        cpu.squashWidth = 8
         cpu.phyregReleaseWidth = 8
-        cpu.RobCompressPolicy = 'kmhv3'
-        cpu.numROBEntries = 160
+        cpu.RobCompressPolicy = 'none'
+        cpu.numROBEntries = 352
         cpu.CROB_instPerGroup = 2 # 1 if not using ROB compression
 
         # lsu
@@ -61,7 +76,7 @@ def setKmhV3IdealParams(args, system):
         cpu.EnableLdMissReplay = True
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
-        cpu.sbufferBankWriteAccurately = True
+        cpu.sbufferBankWriteAccurately = False
 
         # lsq
         cpu.LQEntries = 72
