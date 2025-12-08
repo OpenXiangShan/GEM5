@@ -286,7 +286,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
             use_alt = false;
         }
     }
-    bool taken = use_alt ? alt_pred : main_taken;
+    bool taken = base_taken;
 
     DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
     DPRINTF(TAGE, "tage use_alt %d ? (alt_provided %d ? alt_taken %d : base_taken %d) : main_taken %d\n",
@@ -507,8 +507,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     if (used_alt && !alt_info.found) {
         DPRINTF(TAGE, "prediction provided by base table idx %lu, branch %u, updating corresponding entry\n",
                 base_idx, branch_idx);
-        updateCounter(actual_taken, 2, baseTable[base_idx][branch_idx]);
+        //updateCounter(actual_taken, 2, baseTable[base_idx][branch_idx]);
     }
+    updateCounter(actual_taken, 2, baseTable[base_idx][branch_idx]);
 
     // Update statistics
     if (used_alt) {
