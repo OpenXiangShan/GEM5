@@ -640,7 +640,6 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &stream_id)
             }
         }
     }
-    stream.exeBranchInfo.resolved = false;
 }
 
 void
@@ -676,8 +675,8 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &stream_id, uint64_t resolvedInstP
     }
     auto &stream = stream_it->second;
 
-    if (stream.exeBranchInfo.pc == resolvedInstPC) {
-        stream.exeBranchInfo.resolved = true;
+    if (stream.updateNewBTBEntry.pc == resolvedInstPC) {
+        stream.updateNewBTBEntry.resolved = true;
     }
 
     stream.markBTBEntryResolved(resolvedInstPC);
