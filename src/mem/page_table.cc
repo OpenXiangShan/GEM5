@@ -39,12 +39,12 @@ EmulationPageTable::remap(Addr vaddr, int64_t size, Addr new_vaddr)
     assert(pageOffset(vaddr) == 0);
     assert(pageOffset(new_vaddr) == 0);
     for (int64_t offset = 0; offset < size; offset += _pageSize) {
-        auto it = pTable.find(vaddr + offset);
-        if (it != pTable.end()) {
-            auto e = it->second;
-            pTable.erase(it);
-            pTable[new_vaddr + offset] = e;
-        }
+        auto new_it = pTable.find(new_vaddr + offset);
+        auto old_it = pTable.find(vaddr + offset);
+        assert(old_it != pTable.end() && new_it == pTable.end());
+        auto e = old_it->second;
+        pTable.erase(old_it);
+        pTable[new_vaddr + offset] = e;
     }
 }
 
@@ -53,7 +53,9 @@ EmulationPageTable::unmap(Addr vaddr, int64_t size)
 {
     assert(pageOffset(vaddr) == 0);
     for (int64_t offset = 0; offset < size; offset += _pageSize) {
-        pTable.erase(vaddr + offset);
+        auto it = pTable.find(vaddr + offset);
+        assert(it != pTable.end());
+        pTable.erase(it);
     }
 }
 
@@ -110,6 +112,20 @@ EmulationPageTable::translate(const RequestPtr &req)
         return NoFault;
     }
     return NoFault;
+}
+
+void
+EmulationPageTable::PageTableTranslationGen::translate(Range &range) const
+{
+    const Addr page_size = pt->pageSize();
+
+    Addr next = roundUp(range.vaddr, page_size);
+    if (next == range.vaddr)
+        next += page_size;
+    range.size = std::min(range.size, next - range.vaddr);
+
+    if (!pt->translate(range.vaddr, range.paddr))
+        range.fault = Fault(new GenericPageTableFault(range.vaddr));
 }
 
 const std::string

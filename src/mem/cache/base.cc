@@ -105,13 +105,6 @@ BaseCache::SendCustomEvent::SendCustomEvent(BaseCache* cache, PacketPtr pkt, int
 void
 BaseCache::SendCustomEvent::process()
 {
-    // One-time DPRINTF (limited) to confirm Bus_Clear signal dispatch on cache side
-    static int __bus_clear_send_log = 0;
-    if (sig == DcacheRespType::Bus_Clear && __bus_clear_send_log < 16) {
-        DPRINTF(Cache, "BusClear process: sending addr=%#lx at tick=%llu\n",
-                pkt ? pkt->getAddr() : 0UL, (unsigned long long)curTick());
-        __bus_clear_send_log++;
-    }
     cache->cpuSidePort.sendCustomSignal(pkt, sig);
     if (deletePkt)
         delete pkt;
@@ -2076,17 +2069,6 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
     blk->setWhenReady(clockEdge(fillLatency) + pkt->headerDelay +
                       pkt->payloadDelay);
 
-    // Minimal diagnostics: confirm L1D data fill path is reached (limited prints)
-    static int __l1d_fill_log = 0;
-    if (cacheLevel == 1 && __l1d_fill_log < 32) {
-        DPRINTF(Cache, "L1D fill: ro=%d cmd=%s addr=%#lx hDelay=%llu pDelay=%llu now=%llu\n",
-                (int)isReadOnly, pkt->cmdString(), addr,
-                (unsigned long long)pkt->headerDelay,
-                (unsigned long long)pkt->payloadDelay,
-                (unsigned long long)curTick());
-        __l1d_fill_log++;
-    }
-
     // NOTE: Dcache sends the block address back to lsu
     // notify lsu to clear data on data bus
     // when the block is ready in dcache (load can get data from cache directly)
@@ -2095,15 +2077,8 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
         customPkt->setAddr(addr);
         // set `deletePkt` as true to ensure that the customPkt will be deleted finally.
         SendCustomEvent* clearEvent = new SendCustomEvent(this, customPkt, DcacheRespType::Bus_Clear, true);
-        Tick sched_tick = clockEdge(fillLatency) + pkt->headerDelay + pkt->payloadDelay;
-        // One-time DPRINTF (limited) to verify Bus_Clear scheduling reaches cache side
-        static int __bus_clear_sched_log = 0;
-        if (__bus_clear_sched_log < 16) {
-            DPRINTF(Cache, "BusClear schedule: addr=%#lx sched_tick=%llu now=%llu\n",
-                    addr, (unsigned long long)sched_tick, (unsigned long long)curTick());
-            __bus_clear_sched_log++;
-        }
-        schedule(clearEvent, sched_tick);
+        schedule(clearEvent, clockEdge(fillLatency) + pkt->headerDelay +
+                        pkt->payloadDelay);
     }
 
     Request::XsMetadata blk_meta = blk->getXsMetadata();
@@ -3220,13 +3195,6 @@ CpuSidePort::CpuSidePort(const std::string &_name, BaseCache *_cache,
 bool
 BaseCache::MemSidePort::recvTimingResp(PacketPtr pkt)
 {
-    // One-time diagnostics to confirm DCache receives timing responses
-    static int __dcache_recv_tresp_log = 0;
-    if (__dcache_recv_tresp_log < 32) {
-        DPRINTF(Cache, "%s: recvTimingResp cmd=%s addr=%#lx\n",
-                cache->name(), pkt->cmdString(), pkt->getAddr());
-        __dcache_recv_tresp_log++;
-    }
     cache->recvTimingResp(pkt);
     return true;
 }
