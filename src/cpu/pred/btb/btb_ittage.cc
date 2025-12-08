@@ -490,7 +490,7 @@ BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
         for (int type = 0; type < 3; type++) {
             auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
             // since we have folded path history, we can put arbitrary shamt here, and it wouldn't make a difference
-            foldedHist.update(history, 2, taken, pc, target);
+            foldedHist.update(history, 3, taken, pc, target);
             DPRINTF(ITTAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist.get());
         }
     }

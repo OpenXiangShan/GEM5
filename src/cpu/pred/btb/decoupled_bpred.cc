@@ -1146,7 +1146,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
     histShiftIn(bw_shamt, bw_taken, s0BwHistory);
 
     // Update path history
-    pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
+    pHistShiftIn(3, p_taken, s0PHistory, p_pc, p_target);
 
     // Update imli history
     histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
@@ -1226,7 +1226,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     histShiftIn(real_shamt, real_taken, s0History);
 
     // Update path history with actual outcome
-    pHistShiftIn(2, real_taken, s0PHistory, squash_pc.instAddr(), redirect_pc);
+    pHistShiftIn(3, real_taken, s0PHistory, squash_pc.instAddr(), redirect_pc);
 
     // Update global backward history with actual outcome
     histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);
