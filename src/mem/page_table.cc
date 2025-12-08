@@ -182,24 +182,16 @@ EmulationPageTable::PageTableTranslationGen::translate(Range &range) const
         range.fault = Fault(new GenericPageTableFault(range.vaddr));
 }
 
-const std::string
-EmulationPageTable::externalize() const
-{
-    std::stringstream ss;
-    for (PTable::const_iterator it=pTable.begin(); it != pTable.end(); ++it) {
-        ss << std::hex << it->first << ":" << it->second.paddr << ";";
-    }
-    return ss.str();
-}
-
 void
 EmulationPageTable::serialize(CheckpointOut &cp) const
 {
     ScopedCheckpointSection sec(cp, "ptable");
     paramOut(cp, "size", pTable.size());
+
     PTable::size_type count = 0;
     for (auto &pte : pTable) {
         ScopedCheckpointSection sec(cp, csprintf("Entry%d", count++));
+
         paramOut(cp, "vaddr", pte.first);
         paramOut(cp, "paddr", pte.second.paddr);
         paramOut(cp, "flags", pte.second.flags);
@@ -213,6 +205,7 @@ EmulationPageTable::unserialize(CheckpointIn &cp)
     int count;
     ScopedCheckpointSection sec(cp, "ptable");
     paramIn(cp, "size", count);
+
     for (int i = 0; i < count; ++i) {
         ScopedCheckpointSection sec(cp, csprintf("Entry%d", i));
 
@@ -222,8 +215,19 @@ EmulationPageTable::unserialize(CheckpointIn &cp)
         uint64_t flags;
         UNSERIALIZE_SCALAR(paddr);
         UNSERIALIZE_SCALAR(flags);
+
         pTable.emplace(vaddr, Entry(paddr, flags));
     }
+}
+
+const std::string
+EmulationPageTable::externalize() const
+{
+    std::stringstream ss;
+    for (PTable::const_iterator it=pTable.begin(); it != pTable.end(); ++it) {
+        ss << std::hex << it->first << ":" << it->second.paddr << ";";
+    }
+    return ss.str();
 }
 
 } // namespace gem5
