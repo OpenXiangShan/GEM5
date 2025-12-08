@@ -556,6 +556,19 @@ class Fetch
     /** Validate and consume expected trace stream on correct path. */
     void validateAndConsumeTraceStream(ThreadID tid, const PCStateBase &pc);
 
+    /** Handle ctrl-flow-change trace wrong-path entry for decoupled frontend. */
+    void maybeEnterTraceCtrlFlowWrongPath(ThreadID tid,
+                                          const DynInstPtr &instruction,
+                                          const o3::TraceInstruction &traceInstr,
+                                          PCStateBase &pc,
+                                          PCStateBase &next_pc);
+
+    /** Handle trace-vs-BP validation and possible wrong-path entry. */
+    void handleTraceBPValidation(ThreadID tid, const DynInstPtr &instruction,
+                                 const o3::TraceInstruction &traceInstr,
+                                 const PCStateBase &next_pc,
+                                 bool predictedBranch);
+
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
