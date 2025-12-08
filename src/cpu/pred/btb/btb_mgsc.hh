@@ -389,6 +389,15 @@ class BTBMGSC : public TimedBaseBTBPredictor
         statistics::Scalar scUsed;
         statistics::Scalar scNotUsed;
 
+        statistics::Scalar predHit;
+        statistics::Scalar predMiss;
+        statistics::Scalar scPredCorrect;
+        statistics::Scalar scPredWrong;
+        statistics::Scalar scPredMissTaken;
+        statistics::Scalar scPredMissNotTaken;
+        statistics::Scalar scPredCorrectTageWrong;
+        statistics::Scalar scPredWrongTageCorrect;
+
         MgscStats(statistics::Group *parent);
     };
 

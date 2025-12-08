@@ -1,5 +1,10 @@
 #include "cpu/pred/btb/btb_mgsc.hh"
 
+#ifndef UNIT_TEST
+#include "cpu/o3/dyn_inst.hh"
+
+#endif
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -1077,13 +1082,67 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
                "number of sc predict correct and tage predict correct"),
       ADD_STAT(scWrongTageWrong, statistics::units::Count::get(), "number of sc predict wrong and tage predict wrong"),
       ADD_STAT(scUsed, statistics::units::Count::get(), "number of sc used"),
-      ADD_STAT(scNotUsed, statistics::units::Count::get(), "number of sc not used")
+      ADD_STAT(scNotUsed, statistics::units::Count::get(), "number of sc not used"),
+
+      ADD_STAT(predHit, statistics::units::Count::get(), "number of sc prediction hit"),
+      ADD_STAT(predMiss, statistics::units::Count::get(), "number of sc prediction miss"),
+      ADD_STAT(scPredCorrect, statistics::units::Count::get(), "number of sc prediction correct"),
+      ADD_STAT(scPredWrong, statistics::units::Count::get(), "number of sc prediction wrong"),
+      ADD_STAT(scPredMissTaken, statistics::units::Count::get(), "number of sc prediction miss taken"),
+      ADD_STAT(scPredMissNotTaken, statistics::units::Count::get(), "number of sc prediction miss not taken"),
+      ADD_STAT(scPredCorrectTageWrong, statistics::units::Count::get(),"number of sc prediction correct and tage wrong"),
+      ADD_STAT(scPredWrongTageCorrect, statistics::units::Count::get(),"number of sc prediction wrong and tage correct")
 {
 }
 
 void
 BTBMGSC::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
+    if (!inst->isCondCtrl()) {
+        // tage olnly deals with conditional branches
+        return;
+    }
+    auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
+    auto pc = inst->pcState().instAddr();
+    auto pred_it = meta->preds.find(pc);
+    bool pred_hit = false;
+
+    if (pred_it != meta->preds.end()) {
+        pred_hit = true;
+    }
+    auto sc_taken =pred_it->second.taken;
+    auto tage_taken = pred_it->second.taken_before_sc;
+    auto actual_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    if (pred_hit) {
+        mgscStats.predHit++;
+        if (sc_taken == actual_taken) {
+            mgscStats.scPredCorrect++;
+            if (sc_taken != tage_taken) {
+                mgscStats.scPredCorrectTageWrong++;
+            }
+        } else {
+            mgscStats.scPredWrong++;
+            if (tage_taken == actual_taken) {
+                mgscStats.scPredWrongTageCorrect++;
+            }
+        }
+    }else {
+        mgscStats.predMiss++;
+        if (actual_taken) {
+            mgscStats.scPredMissTaken++;
+            mgscStats.scPredWrong++;
+            if (actual_taken == tage_taken) {
+                mgscStats.scWrongTageCorrect++;
+            }
+        } else {
+            mgscStats.scPredMissNotTaken++;
+            mgscStats.scPredCorrect++;
+            if (sc_taken != tage_taken) {
+                mgscStats.scPredCorrectTageWrong++;
+            }
+        }
+    }
+
 }
 
 void
