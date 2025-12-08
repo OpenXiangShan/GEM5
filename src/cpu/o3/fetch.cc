@@ -2472,81 +2472,13 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     // 保留一份本条指令的 trace 记录用于后续 BP 校验
     o3::TraceInstruction traceForThisInst;
     if (instruction && traceMode && pendingTraceValid) {
-        // 记录元数据映射（seqNum -> trace 指令）
-        storeTraceInstMetadata(instruction->seqNum, pendingTraceInstr);
+        bindTraceMetadata(instruction, pendingTraceInstr, tid);
         traceForThisInst = pendingTraceInstr;
-        seqNumToTraceIndex[instruction->seqNum] = pendingTraceInstr.getSeqNum() + 1;
-        DPRINTF(Fetch,
-                "[tid:%i] Bind trace metadata to [sn:%lli]->[tracesn:%lli]: "
-                "pc=0x%llx, taken=%d, traceInstrConsumed=%llu\n",
-                tid, instruction->seqNum,
-                (unsigned long long)pendingTraceInstr.getSeqNum()+1,
-                (unsigned long long)pendingTraceInstr.getPC(),
-                pendingTraceInstr.getBranchTaken(),
-                (unsigned long long)traceInstrConsumed);
-        traceInstrConsumed++;
-
-        // 为后端提供 trace 侧的 trap/异常控制流信息，用于跳过 decode 阶段的
-        // 分支目标校验，由 trap/wrong-path 逻辑统一处理。
-        instruction->setTraceCtrlFlowChange(pendingTraceInstr.isCtrlFlowChange());
-
-        // 为 EXE 阶段提供分支真值以按普通路径重定向
-        if (pendingTraceInstr.isAnyBranch()) {
-            const bool taken = pendingTraceInstr.getBranchTaken();
-            const bool hasTarget = pendingTraceInstr.getHasBranchTarget();
-            const Addr target = hasTarget ? pendingTraceInstr.getBranchTarget() : 0;
-            const Addr fallthrough = pendingTraceInstr.getFallThroughPC();
-            instruction->setTraceBranchInfo(taken, hasTarget, target, fallthrough);
-            // Trace hints for branch classification (used to override static decode in trace mode)
-            instruction->setTraceIsCall(
-                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_DIRECT ||
-                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_INDIRECT);
-            instruction->setTraceIsReturn(
-                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::RETURN);
-            instruction->setTraceIsIndirect(
-                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH ||
-                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_INDIRECT ||
-                pendingTraceInstr.getInstType() == o3::TraceInstruction::InstType::RETURN);
-            DPRINTF(Fetch,
-                    "[tid:%i] Bind trace-branch info to [sn:%lli]: taken=%d, hasTgt=%d\n",
-                    tid, instruction->seqNum, taken, hasTarget);
-            DPRINTF(Fetch,
-                    "[tid:%i] trace tgt=0x%llx, ft=0x%llx\n",
-                    tid, (unsigned long long)target,
-                    (unsigned long long)fallthrough);
-        }
-
-        // 如果该 trace 指令被标记为整个 trace 流中的最后一条，则将对应的
-        // DynInst 也打上“最后一条 trace 指令”的标记，便于 Commit 阶段在其
-        // 提交时执行自然退出逻辑。
-        if (pendingTraceInstr.isLastInTrace()) {
-            instruction->setLastTraceInst(true);
-            DPRINTF(Fetch,
-                    "[tid:%i] Mark [sn:%lli] as LAST trace-driven instruction\n",
-                    tid, instruction->seqNum);
-        }
-
-        // 先不要清空 pendingTraceValid，后面需要用 traceForThisInst 做 BP 校验
     }
 
     // Fetch-side严格顺序校验（流式）：正确路径构建指令后，与期望流head对比并消耗
     if (instruction && traceMode && isDecoupledFrontend() && traceEnableWrongPath && !traceWrongPathActive) {
-        if (!traceExpectedStream[tid].empty()) {
-            const auto &head = traceExpectedStream[tid].front();
-            Addr built_pc = pc.instAddr();
-            DPRINTF(Fetch, "[TraceStream] Built PC=0x%lx vs Expected PC=0x%lx (sn:%llu)\n",
-                    (unsigned long)built_pc, (unsigned long)head.getPC(),
-                    (unsigned long long)head.getSeqNum());
-            if (built_pc != head.getPC()) {
-                panic("[Fetch][tid:%d] Trace stream PC mismatch: built=0x%lx expect=0x%lx (sn:%llu)",
-                      tid, (unsigned long)built_pc, (unsigned long)head.getPC(),
-                      (unsigned long long)head.getSeqNum());
-            }
-            // 可选：加上 MachInst 内容对比（同 createMachInstFromTrace(head)）
-            traceExpectedStream[tid].pop_front();
-        } else {
-            panic("[Fetch][tid:%d] Trace expected stream unexpectedly empty on correct path", tid);
-        }
+        validateAndConsumeTraceStream(tid, pc);
     }
 
     // Special handling for RISC-V vector configuration instructions.
@@ -3874,6 +3806,87 @@ gem5::o3::Fetch::getTracePCByIndex(uint64_t index)
     // Restore regardless of success.
     traceReader->restoreCheckpoint(ckpt);
     return pc_val;
+}
+
+void
+Fetch::bindTraceMetadata(const DynInstPtr &instruction,
+                         const o3::TraceInstruction &traceInstr,
+                         ThreadID tid)
+{
+    // 记录元数据映射（seqNum -> trace 指令）
+    storeTraceInstMetadata(instruction->seqNum, traceInstr);
+    seqNumToTraceIndex[instruction->seqNum] = traceInstr.getSeqNum() + 1;
+    DPRINTF(Fetch,
+            "[tid:%i] Bind trace metadata to [sn:%lli]->[tracesn:%lli]: "
+            "pc=0x%llx, taken=%d, traceInstrConsumed=%llu\n",
+            tid, instruction->seqNum,
+            (unsigned long long)traceInstr.getSeqNum()+1,
+            (unsigned long long)traceInstr.getPC(),
+            traceInstr.getBranchTaken(),
+            (unsigned long long)traceInstrConsumed);
+    traceInstrConsumed++;
+
+    // 为后端提供 trace 侧的 trap/异常控制流信息，用于跳过 decode 阶段的
+    // 分支目标校验，由 trap/wrong-path 逻辑统一处理。
+    instruction->setTraceCtrlFlowChange(traceInstr.isCtrlFlowChange());
+
+    // 为 EXE 阶段提供分支真值以按普通路径重定向
+    if (traceInstr.isAnyBranch()) {
+        const bool taken = traceInstr.getBranchTaken();
+        const bool hasTarget = traceInstr.getHasBranchTarget();
+        const Addr target = hasTarget ? traceInstr.getBranchTarget() : 0;
+        const Addr fallthrough = traceInstr.getFallThroughPC();
+        instruction->setTraceBranchInfo(taken, hasTarget, target, fallthrough);
+        // Trace hints for branch classification (used to override static decode in trace mode)
+        instruction->setTraceIsCall(
+            traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_DIRECT ||
+            traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_INDIRECT);
+        instruction->setTraceIsReturn(
+            traceInstr.getInstType() == o3::TraceInstruction::InstType::RETURN);
+        instruction->setTraceIsIndirect(
+            traceInstr.getInstType() == o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH ||
+            traceInstr.getInstType() == o3::TraceInstruction::InstType::CALL_INDIRECT ||
+            traceInstr.getInstType() == o3::TraceInstruction::InstType::RETURN);
+        DPRINTF(Fetch,
+                "[tid:%i] Bind trace-branch info to [sn:%lli]: taken=%d, hasTgt=%d\n",
+                tid, instruction->seqNum, taken, hasTarget);
+        DPRINTF(Fetch,
+                "[tid:%i] trace tgt=0x%llx, ft=0x%llx\n",
+                tid, (unsigned long long)target,
+                (unsigned long long)fallthrough);
+    }
+
+    // 如果该 trace 指令被标记为整个 trace 流中的最后一条，则将对应的
+    // DynInst 也打上“最后一条 trace 指令”的标记，便于 Commit 阶段在其
+    // 提交时执行自然退出逻辑。
+    if (traceInstr.isLastInTrace()) {
+        instruction->setLastTraceInst(true);
+        DPRINTF(Fetch,
+                "[tid:%i] Mark [sn:%lli] as LAST trace-driven instruction\n",
+                tid, instruction->seqNum);
+    }
+}
+
+void
+Fetch::validateAndConsumeTraceStream(ThreadID tid, const PCStateBase &pc)
+{
+    if (traceExpectedStream[tid].empty()) {
+        panic("[Fetch][tid:%d] Trace expected stream unexpectedly empty on correct path", tid);
+    }
+
+    const auto &head = traceExpectedStream[tid].front();
+    Addr built_pc = pc.instAddr();
+    DPRINTF(Fetch, "[TraceStream] Built PC=0x%lx vs Expected PC=0x%lx (sn:%llu)\n",
+            (unsigned long)built_pc, (unsigned long)head.getPC(),
+            (unsigned long long)head.getSeqNum());
+    if (built_pc != head.getPC()) {
+        panic("[Fetch][tid:%d] Trace stream PC mismatch: built=0x%lx expect=0x%lx (sn:%llu)",
+              tid, (unsigned long)built_pc, (unsigned long)head.getPC(),
+              (unsigned long long)head.getSeqNum());
+    }
+
+    // 可选：加上 MachInst 内容对比（同 createMachInstFromTrace(head)）
+    traceExpectedStream[tid].pop_front();
 }
 
 } // namespace o3

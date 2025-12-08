@@ -548,6 +548,14 @@ class Fetch
     bool validateBPPrediction(const o3::TraceInstruction& traceInstr,
                              Addr predictedPC, bool predictedTaken);
 
+    /** Bind pending trace metadata to dyn inst (branch info, flags, maps). */
+    void bindTraceMetadata(const DynInstPtr &inst,
+                           const o3::TraceInstruction &traceInstr,
+                           ThreadID tid);
+
+    /** Validate and consume expected trace stream on correct path. */
+    void validateAndConsumeTraceStream(ThreadID tid, const PCStateBase &pc);
+
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
