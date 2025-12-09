@@ -643,14 +643,22 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &stream_id)
         return true;
     }
 
+    // Phase 1: probe all resolved-update components to ensure no blocker
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {
-            bool success = components[i]->tryResolveUpdate(stream);
-            if (!success) {
+            if (!components[i]->canResolveUpdate(stream)) {
                 return false;
             }
         }
     }
+
+    // Phase 2: all clear, perform updates once
+    for (int i = 0; i < numComponents; ++i) {
+        if (components[i]->getResolvedUpdate()) {
+            components[i]->doResolveUpdate(stream);
+        }
+    }
+
     return true;
 }
 

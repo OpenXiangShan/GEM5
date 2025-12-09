@@ -639,11 +639,11 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 }
 
 /**
- * @brief Attempt a resolved update with bank-conflict awareness.
+ * @brief Probe resolved update for bank conflicts without mutating state.
  * Returns false if the update cannot proceed due to a bank conflict.
  */
 bool
-BTBTAGE::tryResolveUpdate(const FetchStream &stream) {
+BTBTAGE::canResolveUpdate(const FetchStream &stream) {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
@@ -665,12 +665,19 @@ BTBTAGE::tryResolveUpdate(const FetchStream &stream) {
         return false;
     }
 
+    return true;
+}
+
+/**
+ * @brief Perform resolved update after probe success.
+ */
+void
+BTBTAGE::doResolveUpdate(const FetchStream &stream) {
     if (enableBankConflict && predBankValid) {
+        // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
     }
-
     update(stream);
-    return true;
 }
 
 /**
