@@ -225,13 +225,13 @@ namespace btb_pred {
     struct RASStats : public statistics::Group
     {
 #endif
-        Scalar rasPredWrong;
-        Scalar rasMispredWithSctr;
-        Scalar rasPredCorrect;
-        Scalar rasCorrectWithSctr;
+        Scalar PredWrong;
+        Scalar MispredWithSctr;
+        Scalar PredCorrect;
+        Scalar CorrectWithSctr;
 
-        Scalar rasPushes;
-        Scalar rasPops;
+        Scalar Pushes;
+        Scalar Pops;
 
 #ifndef UNIT_TEST
         RASStats(statistics::Group* parent);

@@ -564,10 +564,11 @@ BTBITTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
     auto npc = inst->getNPC();
     auto pred_it = meta->preds.find(pc);
     bool this_branch_hit = false;
+    Addr pred_npc;
     if (pred_it != meta->preds.end()) {
         this_branch_hit = true;
+        pred_npc = (pred_it->second).target;
     }
-    auto pred_npc = (pred_it->second).target;
     bool iscalled = inst->isCall();
 
      // Update commit statistics

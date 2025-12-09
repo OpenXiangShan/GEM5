@@ -1103,15 +1103,16 @@ BTBMGSC::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
         return;
     }
     auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
-    auto pc = inst->pcState().instAddr();
+    auto pc = inst->getPC();
     auto pred_it = meta->preds.find(pc);
     bool pred_hit = false;
-
+    bool sc_taken = false;
+    bool tage_taken = false;
     if (pred_it != meta->preds.end()) {
+        sc_taken =pred_it->second.taken;
+        tage_taken = pred_it->second.taken_before_sc;
         pred_hit = true;
     }
-    auto sc_taken =pred_it->second.taken;
-    auto tage_taken = pred_it->second.taken_before_sc;
     auto actual_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
     if (pred_hit) {
         mgscStats.predHit++;

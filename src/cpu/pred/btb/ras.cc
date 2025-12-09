@@ -239,7 +239,7 @@ BTBRAS::push_stack(Addr retAddr)
 void
 BTBRAS::push(Addr retAddr)
 {
-    rasStats.rasPushes++;
+    rasStats.Pushes++;
     DPRINTF(RAS, "doing push ");
     // update ssp and sctr first
     // meta has recorded their old value
@@ -283,7 +283,7 @@ void
 BTBRAS::pop()
 {
     // DPRINTFR(RAS, "doing pop ndepth = %d", ndepth);
-    rasStats.rasPops++;
+    rasStats.Pops++;
     // pop may need to deal with committed stack
     if (inflightInRange(TOSR)) {
         DPRINTF(RAS, "Select from inflight, addr %lx\n", inflightStack[TOSR].data.retAddr);
@@ -435,21 +435,21 @@ BTBRAS::getTopAddrFromMetas(const FetchStream &stream)
 void
 BTBRAS::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
-    if (!inst->isReturn()) {
+    if (!inst->isReturn() || inst->isNop()) {
         // ras only cares about return instructions
         return;
     }
     auto meta = std::static_pointer_cast<RASMeta>(stream.predMetas[getComponentIdx()]);
     auto npc = inst->getNPC();
     if (npc != meta->target) {
-        rasStats.rasPredWrong++;
+        rasStats.PredWrong++;
         if (meta->sctr) {
-            rasStats.rasMispredWithSctr++;
+            rasStats.MispredWithSctr++;
         }
     } else {
-        rasStats.rasPredCorrect++;
+        rasStats.PredCorrect++;
         if (meta->sctr) {
-            rasStats.rasCorrectWithSctr++;
+            rasStats.CorrectWithSctr++;
         }
     }
 }
@@ -457,13 +457,13 @@ BTBRAS::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 #ifndef UNIT_TEST
 BTBRAS::RASStats::RASStats(statistics::Group *parent):
     statistics::Group(parent),
-    ADD_STAT(rasPredWrong, statistics::units::Count::get(),"number of RAS mispredictions"),
-    ADD_STAT(rasMispredWithSctr, statistics::units::Count::get(),"number of RAS mispredictions when sctr > 0"),
-    ADD_STAT(rasPredCorrect, statistics::units::Count::get(),"number of RAS correct predictions"),
-    ADD_STAT(rasCorrectWithSctr, statistics::units::Count::get(),"number of RAS correct predictions when sctr > 0"),
+    ADD_STAT(PredWrong, statistics::units::Count::get(),"number of RAS mispredictions"),
+    ADD_STAT(MispredWithSctr, statistics::units::Count::get(),"number of RAS mispredictions when sctr > 0"),
+    ADD_STAT(PredCorrect, statistics::units::Count::get(),"number of RAS correct predictions"),
+    ADD_STAT(CorrectWithSctr, statistics::units::Count::get(),"number of RAS correct predictions when sctr > 0"),
 
-    ADD_STAT(rasPushes, statistics::units::Count::get(),"number of RAS pushes"),
-    ADD_STAT(rasPops, statistics::units::Count::get(),"number of RAS pops")
+    ADD_STAT(Pushes, statistics::units::Count::get(),"number of RAS pushes"),
+    ADD_STAT(Pops, statistics::units::Count::get(),"number of RAS pops")
 
 {}
 
