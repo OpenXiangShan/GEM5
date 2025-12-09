@@ -31,6 +31,7 @@
 #include <cerrno>
 #include <cstring>
 #include <fstream>
+#include <functional>
 
 #include "arch/riscv/page_size.hh"
 #include "base/trace.hh"
@@ -426,6 +427,35 @@ TraceReader::validateTraceFileSize(const std::string &path,
         return false;
     }
     return file.tellg() >= minSize;
+}
+
+bool
+TraceReader::restoreCheckpointCommon(const TraceCheckpoint& checkpoint,
+                                     TraceStream &stream, TraceStream::Mode mode,
+                                     bool allowCompressedRewind,
+                                     std::function<bool(uint64_t)> fastForward,
+                                     uint64_t &instructionIndexRef)
+{
+    if (!checkpoint.valid) {
+        return false;
+    }
+
+    // Attempt to seek to saved position if raw; otherwise allow compressed rewind.
+    if (stream.isOpen() && mode == TraceStream::Mode::Raw) {
+        if (!stream.seek(checkpoint.filePosition)) {
+            return false;
+        }
+    } else if (stream.isOpen() && allowCompressedRewind) {
+        if (!fastForward(checkpoint.instructionIndex)) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    applyCheckpointState(checkpoint, instrBuffer, hasPendingInstr, pendingInstr,
+                         instructionIndexRef, currentSeqNum, eofReached);
+    return true;
 }
 
 

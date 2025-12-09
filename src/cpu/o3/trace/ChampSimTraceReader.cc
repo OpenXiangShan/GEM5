@@ -493,69 +493,25 @@ ChampSimTraceReader::createCheckpoint()
 bool
 ChampSimTraceReader::restoreCheckpoint(const TraceCheckpoint& checkpoint)
 {
-    if (!checkpoint.valid) {
-        DPRINTF(TraceReader, "restoreCheckpoint: Invalid checkpoint\n");
-        return false;
-    }
-
-    DPRINTF(TraceReader, "restoreCheckpoint: Restoring to instrIndex=%lu\n",
-            checkpoint.instructionIndex);
-
-    // Debug: print pending status BEFORE restoring
-    DPRINTF(TraceReader,
-            "restoreCheckpoint: BEFORE restore hasPendingInstr=%d, pending_sn=%llu, pending_pc=0x%llx\n",
-            hasPendingInstr,
-            (unsigned long long)(hasPendingInstr ? pendingInstr.getSeqNum() : 0ULL),
-            (unsigned long long)(hasPendingInstr ? pendingInstr.getPC() : 0ULL));
-
-    // Dump buffer before restore overwrites it
-    dumpInstrBuffer("before_restore");
-
-    if (traceStream.isOpen() && streamMode == TraceStream::Mode::Raw) {
-        if (!traceStream.seek(checkpoint.filePosition)) {
-            DPRINTF(TraceReader, "restoreCheckpoint: Failed to seek to position %ld\n",
-                    checkpoint.filePosition);
-            return false;
-        }
-        currentPos = traceStream.tell();
-    } else if (traceStream.isOpen()) {
-        if (!reset()) {
-            DPRINTF(TraceReader, "restoreCheckpoint: Failed to reset compressed stream\n");
-            return false;
-        }
-
-        // Re-read to the checkpoint position
-        uint64_t targetIndex = checkpoint.instructionIndex;
+    auto ff = [this](uint64_t targetIndex) -> bool {
+        resetBufferState();
+        instructionIndex = 0;
         while (instructionIndex < targetIndex && !eofReached) {
             TraceInstruction dummy;
             if (!parseInstruction(dummy)) {
-                DPRINTF(TraceReader, "restoreCheckpoint: Failed to re-read to checkpoint\n");
                 return false;
             }
         }
-    } else {
-        DPRINTF(TraceReader, "restoreCheckpoint: Stream not open\n");
-        return false;
+        return true;
+    };
+
+    const bool ok = restoreCheckpointCommon(checkpoint, traceStream, streamMode,
+                                            /*allowCompressedRewind=*/true, ff,
+                                            instructionIndex);
+    if (ok && streamMode == TraceStream::Mode::Raw && traceStream.isOpen()) {
+        currentPos = traceStream.tell();
     }
-
-    // Restore state
-    applyCheckpointState(checkpoint, instrBuffer, hasPendingInstr, pendingInstr,
-                         instructionIndex, currentSeqNum, eofReached);
-
-    DPRINTF(TraceReader, "restoreCheckpoint: Restored to instrIndex=%lu, seqNum=%lu, bufferSize=%lu\n",
-            instructionIndex, currentSeqNum, instrBuffer.size());
-
-    // Debug: print pending status AFTER restoring
-    DPRINTF(TraceReader,
-            "restoreCheckpoint: AFTER restore hasPendingInstr=%d, pending_sn=%llu, pending_pc=0x%llx\n",
-            hasPendingInstr,
-            (unsigned long long)(hasPendingInstr ? pendingInstr.getSeqNum() : 0ULL),
-            (unsigned long long)(hasPendingInstr ? pendingInstr.getPC() : 0ULL));
-
-    // Dump buffer after restore
-    dumpInstrBuffer("after_restore");
-
-    return true;
+    return ok;
 }
 
 bool

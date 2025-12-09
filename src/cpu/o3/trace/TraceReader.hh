@@ -213,6 +213,11 @@ class TraceReader : public statistics::Group
                            std::streampos *outPos);
     static bool validateTraceFileSize(const std::string &path,
                                       std::streamsize minSize);
+    bool restoreCheckpointCommon(const TraceCheckpoint& checkpoint,
+                                 TraceStream &stream, TraceStream::Mode mode,
+                                 bool allowCompressedRewind,
+                                 std::function<bool(uint64_t)> fastForward,
+                                 uint64_t &instructionIndexRef);
 
     virtual size_t fillBuffer(size_t max_instructions) = 0;
     virtual bool parseInstruction(TraceInstruction &instr) = 0;

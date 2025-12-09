@@ -369,27 +369,24 @@ CBP2025TraceReader::createCheckpoint()
 bool
 CBP2025TraceReader::restoreCheckpoint(const TraceCheckpoint& checkpoint)
 {
-    if (!checkpoint.valid) {
-        return false;
-    }
+    auto ff = [this](uint64_t targetIndex) -> bool {
+        resetBufferState();
+        instructionIndex = 0;
+        while (instructionIndex < targetIndex && !eofReached) {
+            TraceInstruction dummy;
+            if (!parseInstruction(dummy)) {
+                return false;
+            }
+        }
+        return true;
+    };
 
-    if (streamMode != TraceStream::Mode::Raw || !traceStream.isOpen()) {
+    if (!restoreCheckpointCommon(checkpoint, traceStream, streamMode,
+                                 /*allowCompressedRewind=*/false, ff,
+                                 instructionIndex)) {
         return false;
     }
-
-    if (!traceStream.seek(checkpoint.filePosition)) {
-        return false;
-    }
-    eofReached = checkpoint.eofState;
-    currentSeqNum = checkpoint.seqNum;
-    instructionIndex = checkpoint.instructionIndex;
-    applyCheckpointState(checkpoint, instrBuffer, hasPendingInstr, pendingInstr,
-                         instructionIndex, currentSeqNum, eofReached);
-    historyWindow.clear();
-    historyStartIndex = 1;
-    nextLogicalIndex = instructionIndex + 1;
-    replayActive = false;
-    replayIndex = 0;
+    resetHistoryWindow(instructionIndex + 1);
     return true;
 }
 
