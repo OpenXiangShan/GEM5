@@ -71,6 +71,12 @@ ChampSimTraceReader::~ChampSimTraceReader()
     traceStream.close();
 }
 
+TraceReader::AddrMapConfig
+ChampSimTraceReader::addrCfg() const
+{
+    return {addrMapBase, addrMapSize, addrMapMode, addrPageAlign};
+}
+
 bool
 ChampSimTraceReader::init()
 {
@@ -176,68 +182,13 @@ ChampSimTraceReader::fillBuffer(size_t max_instructions)
             max_instructions, (int)compressedLike);
 
     size_t pushed = 0;
-
-    auto isApproxFallthrough = [](Addr pc, Addr next_pc) {
-        return next_pc == pc + 2 || next_pc == pc + 4;
-    };
+    PendingResolveConfig resolveCfg;
 
     while (pushed < max_instructions && !eofReached) {
         TraceInstruction current;
         if (parseInstruction(current)) {
             if (hasPendingInstr) {
-                Addr next_pc = current.getPC();
-                const Addr curr_pc = pendingInstr.getPC();
-                const bool pending_taken_branch =
-                    pendingInstr.isAnyBranch() && pendingInstr.getBranchTaken();
-
-                // 健壮性兜底：非分支指令且下一条 PC 非 2 字节对齐时，强制认为顺序流 pc+4。
-                // 避免 trace 中异常 PC 破坏后续长度推断 / fallthrough。
-                if (!pendingInstr.isAnyBranch() && (next_pc & 0x1)) {
-                    Addr corrected_pc = curr_pc + 4;
-                    current.setPC(corrected_pc);
-                    next_pc = corrected_pc;
-                }
-                if (!pending_taken_branch && next_pc >= curr_pc) {
-                    const uint64_t delta = next_pc - curr_pc;
-                    // Trace may contain 2-byte (compressed) and 4-byte instructions.
-                    // Capture the observed delta when it's a small forward step so
-                    // Fetch can emit the proper encoding.
-                    if (delta > 0 && delta <= 8) {
-                        pendingInstr.setInstSizeBytes(static_cast<uint8_t>(delta));
-                    }
-                }
-
-                if (pendingInstr.isAnyBranch()) {
-                    const bool taken = pendingInstr.getBranchTaken();
-                    if (taken) {
-                        // 正常 taken 分支：next_pc 作为分支目标
-                        pendingInstr.setBranchTarget(next_pc);
-                        DPRINTF(TraceReader,
-                                "fillBuffer: Set branch target from nextPC: 0x%lx\n",
-                                next_pc);
-                    } else {
-                        // not-taken 分支，但 next_pc 不是近似顺序流（pc+2/pc+4）：视为 cond-trap
-                        if (!isApproxFallthrough(pendingInstr.getPC(), next_pc)) {
-                            pendingInstr.setCtrlFlowChange(true);
-                            pendingInstr.setCtrlFlowTarget(next_pc);
-                            DPRINTF(TraceReader,
-                                    "fillBuffer: Mark branch-not-taken ctrl-flow change: "
-                                    "pc=0x%lx -> nextPC=0x%lx\n",
-                                    pendingInstr.getPC(), next_pc);
-                        }
-                    }
-                } else {
-                    // 非分支 + next_pc 不是近似顺序流：视为非分支 trap/异常控制流改变
-                    if (!isApproxFallthrough(pendingInstr.getPC(), next_pc)) {
-                        pendingInstr.setCtrlFlowChange(true);
-                        pendingInstr.setCtrlFlowTarget(next_pc);
-                        DPRINTF(TraceReader,
-                                "fillBuffer: Mark non-branch ctrl-flow change: "
-                                "pc=0x%lx -> nextPC=0x%lx\n",
-                                pendingInstr.getPC(), next_pc);
-                    }
-                }
-
+                reconcilePendingWithNext(pendingInstr, current, resolveCfg);
                 addToBuffer(pendingInstr);
                 pushed++;
             }
@@ -313,10 +264,11 @@ ChampSimTraceReader::convertInstruction(const ChampSimInstr &cs_instr,
 {
     // Reset the instruction
     trace_instr.reset();
+    const auto cfg = addrCfg();
 
     // Set basic fields
     // CRITICAL FIX: Apply address mapping to PC to avoid page table faults
-    uint64_t mapped_pc = mapTracePcToVirtual(cs_instr.ip);
+    uint64_t mapped_pc = mapTracePcToVirtual(cs_instr.ip, cfg);
     DPRINTF(TraceReader, "convertInstruction: Mapping PC 0x%lx -> 0x%lx\n", cs_instr.ip, mapped_pc);
     trace_instr.setPC(mapped_pc);
     trace_instr.setSeqNum(getNextSeqNum());
@@ -474,11 +426,13 @@ void
 ChampSimTraceReader::extractMemoryOps(const ChampSimInstr &cs_instr,
                                       TraceInstruction &trace_instr)
 {
+    const auto cfg = addrCfg();
+
     // Extract store addresses (destination memory) with address mapping for trace mode
     for (size_t i = 0; i < ChampSimInstr::NUM_INSTR_DESTINATIONS; i++) {
         if (cs_instr.destination_memory[i] != 0) {
             // Map trace addresses to a safe memory region (e.g., starting at 0x10000000)
-            uint64_t mapped_addr = mapTraceMemToVirtual(cs_instr.destination_memory[i]);
+            uint64_t mapped_addr = mapTraceMemToVirtual(cs_instr.destination_memory[i], cfg);
             DPRINTF(TraceReader, "extractMemoryOps: Store addr 0x%lx -> 0x%lx for PC 0x%lx\n",
                     cs_instr.destination_memory[i], mapped_addr, cs_instr.ip);
             trace_instr.addStoreAddress(mapped_addr);
@@ -489,7 +443,7 @@ ChampSimTraceReader::extractMemoryOps(const ChampSimInstr &cs_instr,
     for (size_t i = 0; i < ChampSimInstr::NUM_INSTR_SOURCES; i++) {
         if (cs_instr.source_memory[i] != 0) {
             // Map trace addresses to a safe memory region
-            uint64_t mapped_addr = mapTraceMemToVirtual(cs_instr.source_memory[i]);
+            uint64_t mapped_addr = mapTraceMemToVirtual(cs_instr.source_memory[i], cfg);
             DPRINTF(TraceReader, "extractMemoryOps: Load addr 0x%lx -> 0x%lx for PC 0x%lx\n",
                     cs_instr.source_memory[i], mapped_addr, cs_instr.ip);
             trace_instr.addLoadAddress(mapped_addr);
@@ -571,88 +525,6 @@ ChampSimTraceReader::isXz(const std::string &filename)
 {
     // Simple check for .xz extension
     return filename.size() > 3 && filename.substr(filename.size() - 3) == ".xz";
-}
-
-uint64_t
-ChampSimTraceReader::mapTraceAddressToVirtual(uint64_t trace_addr)
-{
-    if (addrMapMode == "linear") {
-        return mapAddressLinear(trace_addr);
-    } else {
-        return mapAddressHash(trace_addr);
-    }
-}
-
-uint64_t
-ChampSimTraceReader::mapTracePcToVirtual(uint64_t trace_pc)
-{
-    // PC uses the full mapping (page alignment etc.) so that external
-    // tools and difftest can correlate PCs 1:1 with trace addresses.
-    return mapTraceAddressToVirtual(trace_pc);
-}
-
-uint64_t
-ChampSimTraceReader::mapTraceMemToVirtual(uint64_t trace_addr)
-{
-    // Memory addresses reuse the same mapping but we additionally enforce
-    // a minimal alignment so that scalar memory operations (e.g., sw) do
-    // not systematically trigger RISC-V misaligned-address faults.
-    uint64_t mapped = mapTraceAddressToVirtual(trace_addr);
-    // For now we conservatively align to 4 bytes, which is enough for
-    // 32-bit accesses and significantly reduces misaligned faults coming
-    // from arbitrary ChampSim addresses.
-    mapped &= ~static_cast<uint64_t>(0x3);
-    return mapped;
-}
-
-uint64_t
-ChampSimTraceReader::mapAddressHash(uint64_t trace_addr)
-{
-    // Original hash-based mapping implementation (configurable)
-    // Use a simple hash to map the trace address within the safe region
-    uint64_t hash = (trace_addr ^ (trace_addr >> 16)) & 0x3FFFFFFFUL;
-    uint64_t mapped_addr = addrMapBase + (hash % addrMapSize);
-
-    if (addrPageAlign) {
-        // Align to ISA page boundaries to avoid TLB issues and keep offsets
-        const uint64_t PageSz = TheISA::PageBytes;
-        mapped_addr = (mapped_addr / PageSz) * PageSz + (trace_addr % PageSz);
-        // Ensure we stay within our region
-        if ((mapped_addr - addrMapBase) >= addrMapSize) {
-            mapped_addr = addrMapBase + (trace_addr % addrMapSize);
-        }
-    }
-
-    return mapped_addr;
-}
-
-uint64_t
-ChampSimTraceReader::mapAddressLinear(uint64_t trace_addr)
-{
-    // Linear mapping preserves address relationships and locality
-    // Better for cache/TLB research but may have more address conflicts
-
-    uint64_t mapped_addr;
-
-    if (addrPageAlign) {
-        // For page-aligned mapping, preserve page offsets with ISA-defined page size
-        const uint64_t PageSz = TheISA::PageBytes;
-        const uint64_t page_offset = trace_addr % PageSz;
-        const uint64_t trace_page = trace_addr / PageSz;
-
-        // Ensure the mapping region is page-aligned in size to avoid discontinuities
-        const uint64_t pages_in_region = (addrMapSize / PageSz);
-        const uint64_t mapped_page = (pages_in_region ? (trace_page % pages_in_region) : 0);
-        mapped_addr = addrMapBase + (mapped_page * PageSz) + page_offset;
-    } else {
-        // Simple linear mapping within the region based on full-byte offset
-        mapped_addr = addrMapBase + (trace_addr % addrMapSize);
-    }
-
-    DPRINTF(TraceReader, "mapAddressLinear: 0x%lx -> 0x%lx (page_align=%d, PageSz=%llu)\n",
-            trace_addr, mapped_addr, addrPageAlign, (unsigned long long)TheISA::PageBytes);
-
-    return mapped_addr;
 }
 
 TraceReader::TraceCheckpoint

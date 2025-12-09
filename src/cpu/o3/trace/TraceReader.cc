@@ -31,6 +31,7 @@
 #include <cerrno>
 #include <cstring>
 
+#include "arch/riscv/page_size.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/o3/trace/CBP2025TraceReader.hh"
@@ -163,6 +164,115 @@ TraceReader::TraceStream::tell() const
         return std::streampos(0);
     // tellg() is non-const; cast is safe because we don't mutate stream state.
     return const_cast<std::ifstream&>(rawStream).tellg();
+}
+
+uint64_t
+TraceReader::mapAddressHash(uint64_t trace_addr, const AddrMapConfig &cfg)
+{
+    uint64_t hash = (trace_addr ^ (trace_addr >> 16)) & 0x3FFFFFFFUL;
+    uint64_t mapped_addr = cfg.base + (hash % cfg.size);
+
+    if (cfg.pageAlign) {
+        const uint64_t PageSz = TheISA::PageBytes;
+        mapped_addr = (mapped_addr / PageSz) * PageSz + (trace_addr % PageSz);
+        if ((mapped_addr - cfg.base) >= cfg.size) {
+            mapped_addr = cfg.base + (trace_addr % cfg.size);
+        }
+    }
+
+    return mapped_addr;
+}
+
+uint64_t
+TraceReader::mapAddressLinear(uint64_t trace_addr, const AddrMapConfig &cfg)
+{
+    uint64_t mapped_addr;
+
+    if (cfg.pageAlign) {
+        const uint64_t PageSz = TheISA::PageBytes;
+        const uint64_t page_offset = trace_addr % PageSz;
+        const uint64_t trace_page = trace_addr / PageSz;
+        const uint64_t pages_in_region = (cfg.size / PageSz);
+        const uint64_t mapped_page = (pages_in_region ? (trace_page % pages_in_region) : 0);
+        mapped_addr = cfg.base + (mapped_page * PageSz) + page_offset;
+    } else {
+        mapped_addr = cfg.base + (trace_addr % cfg.size);
+    }
+
+    return mapped_addr;
+}
+
+uint64_t
+TraceReader::mapTraceAddressToVirtual(uint64_t trace_addr, const AddrMapConfig &cfg)
+{
+    if (cfg.mode == "linear") {
+        return mapAddressLinear(trace_addr, cfg);
+    } else {
+        return mapAddressHash(trace_addr, cfg);
+    }
+}
+
+uint64_t
+TraceReader::mapTracePcToVirtual(uint64_t trace_pc, const AddrMapConfig &cfg)
+{
+    return mapTraceAddressToVirtual(trace_pc, cfg);
+}
+
+uint64_t
+TraceReader::mapTraceMemToVirtual(uint64_t trace_addr, const AddrMapConfig &cfg)
+{
+    uint64_t mapped = mapTraceAddressToVirtual(trace_addr, cfg);
+    mapped &= ~static_cast<uint64_t>(0x3);
+    return mapped;
+}
+
+bool
+TraceReader::isApproxFallthrough(Addr pc, Addr next_pc)
+{
+    return next_pc == pc + 2 || next_pc == pc + 4;
+}
+
+void
+TraceReader::reconcilePendingWithNext(TraceInstruction &pending,
+                                      TraceInstruction &next,
+                                      const PendingResolveConfig &cfg)
+{
+    Addr next_pc = next.getPC();
+    const Addr curr_pc = pending.getPC();
+    const bool pending_taken_branch =
+        pending.isAnyBranch() && pending.getBranchTaken();
+
+    if (!pending.isAnyBranch() && (next_pc & 0x1)) {
+        Addr corrected_pc = curr_pc + 4;
+        next.setPC(corrected_pc);
+        next_pc = corrected_pc;
+    }
+
+    if (!pending_taken_branch && next_pc >= curr_pc) {
+        const uint64_t delta = next_pc - curr_pc;
+        if (delta > 0 && delta <= 8) {
+            pending.setInstSizeBytes(static_cast<uint8_t>(delta));
+        }
+    }
+
+    if (pending.isAnyBranch()) {
+        if (pending_taken_branch) {
+            if (!pending.getHasBranchTarget()) {
+                pending.setBranchTarget(next_pc);
+            } else if (cfg.fixTakenTargetMismatch &&
+                       pending.getBranchTarget() != next_pc) {
+                pending.setBranchTarget(next_pc);
+                pending.setCtrlFlowChange(true);
+                pending.setCtrlFlowTarget(next_pc);
+            }
+        } else if (!isApproxFallthrough(curr_pc, next_pc)) {
+            pending.setCtrlFlowChange(true);
+            pending.setCtrlFlowTarget(next_pc);
+        }
+    } else if (!isApproxFallthrough(curr_pc, next_pc)) {
+        pending.setCtrlFlowChange(true);
+        pending.setCtrlFlowTarget(next_pc);
+    }
 }
 
 

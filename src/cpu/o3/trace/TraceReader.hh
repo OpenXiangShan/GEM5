@@ -148,6 +148,39 @@ class TraceReader : public statistics::Group
         TraceReaderStats(statistics::Group *parent, const std::string &name);
     } stats;
 
+    /** Address mapping parameters shared by trace readers */
+    struct AddrMapConfig
+    {
+        uint64_t base;
+        uint64_t size;
+        std::string mode;
+        bool pageAlign;
+    };
+
+    /** Pending-instruction reconciliation options */
+    struct PendingResolveConfig
+    {
+        bool fixTakenTargetMismatch = false;
+    };
+
+    /** Shared address mapping helpers */
+    static uint64_t mapAddressHash(uint64_t trace_addr,
+                                   const AddrMapConfig &cfg);
+    static uint64_t mapAddressLinear(uint64_t trace_addr,
+                                     const AddrMapConfig &cfg);
+    static uint64_t mapTraceAddressToVirtual(uint64_t trace_addr,
+                                             const AddrMapConfig &cfg);
+    static uint64_t mapTracePcToVirtual(uint64_t trace_pc,
+                                        const AddrMapConfig &cfg);
+    static uint64_t mapTraceMemToVirtual(uint64_t trace_addr,
+                                         const AddrMapConfig &cfg);
+
+    /** Shared pending-instruction reconciliation helper */
+    static bool isApproxFallthrough(Addr pc, Addr next_pc);
+    static void reconcilePendingWithNext(TraceInstruction &pending,
+                                         TraceInstruction &next,
+                                         const PendingResolveConfig &cfg);
+
   public:
     /**
      * Constructor

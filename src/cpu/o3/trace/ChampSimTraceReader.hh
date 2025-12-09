@@ -88,7 +88,7 @@ class ChampSimTraceReader : public TraceReader
     uint64_t addrMapBase;           ///< Base address for mapping
     uint64_t addrMapSize;           ///< Size of mapping region
     bool addrPageAlign;             ///< Whether to align to page boundaries
-    static constexpr uint64_t PAGE_SIZE = 4096; ///< Page size for alignment
+    TraceReader::AddrMapConfig addrCfg() const;
 
     /**
      * Look-ahead staging: hold the last parsed instruction until the next
@@ -262,39 +262,6 @@ class ChampSimTraceReader : public TraceReader
      * @return Estimated branch target address (0 if cannot estimate)
      */
     uint64_t estimateBranchTarget(const ChampSimInstr &cs_instr);
-
-    /**
-     * Map trace address to a valid virtual address for the simulation
-     * @param trace_addr Original address from trace
-     * @return Mapped virtual address that won't cause page table faults
-     */
-    uint64_t mapTraceAddressToVirtual(uint64_t trace_addr);
-
-    /**
-     * Map trace PC to virtual address (keeps full mapping, no extra alignment).
-     */
-    uint64_t mapTracePcToVirtual(uint64_t trace_pc);
-
-    /**
-     * Map trace memory address to virtual address and enforce minimal alignment
-     * so that scalar memory operations (e.g., sw) do not trigger RISC-V
-     * misaligned address faults in trace mode.
-     */
-    uint64_t mapTraceMemToVirtual(uint64_t trace_addr);
-
-    /**
-     * Hash-based address mapping (original implementation)
-     * @param trace_addr Original address from trace
-     * @return Hashed and mapped virtual address
-     */
-    uint64_t mapAddressHash(uint64_t trace_addr);
-
-    /**
-     * Linear address mapping with optional page alignment
-     * @param trace_addr Original address from trace
-     * @return Linearly mapped virtual address
-     */
-    uint64_t mapAddressLinear(uint64_t trace_addr);
 };
 
 } // namespace o3
