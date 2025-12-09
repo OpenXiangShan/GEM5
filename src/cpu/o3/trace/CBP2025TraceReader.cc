@@ -50,8 +50,7 @@ CBP2025TraceReader::CBP2025TraceReader(const std::string &trace_file,
                                        bool page_align,
                                        statistics::Group *parent)
   : TraceReader(trace_file, name, parent),
-    compressed(false),
-    gzPipe(nullptr),
+    streamMode(TraceStream::Mode::Raw),
     hasPendingInstr(false),
     instructionIndex(0),
     addrMapMode(map_mode),
@@ -59,17 +58,16 @@ CBP2025TraceReader::CBP2025TraceReader(const std::string &trace_file,
     addrMapSize(map_size),
     addrPageAlign(page_align)
 {
+    if (isGzip(trace_file)) {
+        streamMode = TraceStream::Mode::Gzip;
+    } else {
+        streamMode = TraceStream::Mode::Raw;
+    }
 }
 
 CBP2025TraceReader::~CBP2025TraceReader()
 {
-    if (compressed && gzPipe) {
-        pclose(gzPipe);
-        gzPipe = nullptr;
-    }
-    if (!compressed && traceStream.is_open()) {
-        traceStream.close();
-    }
+    traceStream.close();
 }
 
 bool
@@ -93,28 +91,9 @@ CBP2025TraceReader::init()
         return false;
     }
 
-    compressed = isGzip(traceFile);
-
-    if (compressed) {
-        std::string safe = traceFile;
-        size_t pos = 0;
-        while ((pos = safe.find("'", pos)) != std::string::npos) {
-            safe.replace(pos, 1, "'\\''");
-            pos += 4;
-        }
-        // Use quiet mode and silence stderr to suppress SIGPIPE warnings when reader stops early.
-        std::string cmd = std::string("gzip -dcq -- '") + safe + "' 2>/dev/null";
-        gzPipe = popen(cmd.c_str(), "r");
-        if (!gzPipe) {
-            DPRINTF(TraceReader, "CBP2025TraceReader::init failed to open gzip pipe: %s\n", strerror(errno));
-            return false;
-        }
-    } else {
-        traceStream.open(traceFile, std::ios::binary);
-        if (!traceStream.is_open()) {
-            DPRINTF(TraceReader, "CBP2025TraceReader::init failed to open trace\n");
-            return false;
-        }
+    if (!traceStream.open(traceFile, streamMode)) {
+        DPRINTF(TraceReader, "CBP2025TraceReader::init failed to open trace stream\n");
+        return false;
     }
 
     eofReached = false;
@@ -136,33 +115,8 @@ CBP2025TraceReader::reset()
         return init();
     }
 
-    if (compressed) {
-        if (gzPipe) {
-            pclose(gzPipe);
-            gzPipe = nullptr;
-        }
-        std::string safe = traceFile;
-        size_t pos = 0;
-        while ((pos = safe.find("'", pos)) != std::string::npos) {
-            safe.replace(pos, 1, "'\\''");
-            pos += 4;
-        }
-        // Use quiet mode and silence stderr to suppress SIGPIPE warnings when reader stops early.
-        std::string cmd = std::string("gzip -dcq -- '") + safe + "' 2>/dev/null";
-        gzPipe = popen(cmd.c_str(), "r");
-        if (!gzPipe) {
-            return false;
-        }
-    } else {
-        if (traceStream.is_open()) {
-            traceStream.clear();
-            traceStream.seekg(0, std::ios::beg);
-        } else {
-            traceStream.open(traceFile, std::ios::binary);
-            if (!traceStream.is_open()) {
-                return false;
-            }
-        }
+    if (!traceStream.reopen()) {
+        return false;
     }
 
     eofReached = false;
@@ -197,31 +151,21 @@ CBP2025TraceReader::validateTraceFile()
 bool
 CBP2025TraceReader::readBytes(void *dst, size_t size)
 {
-    if (compressed) {
-        if (!gzPipe) {
-            return false;
-        }
-        size_t n = std::fread(dst, 1, size, gzPipe);
-        if (n != size) {
-            return false;
-        }
-        return true;
-    } else {
-        if (!traceStream.is_open()) {
-            return false;
-        }
-        traceStream.read(reinterpret_cast<char*>(dst), size);
-        if (traceStream.gcount() != static_cast<std::streamsize>(size)) {
-            return false;
-        }
-        return true;
+    if (!traceStream.readExact(dst, size)) {
+        eofReached = traceStream.eof();
+        return false;
     }
+    return true;
 }
 
 bool
 CBP2025TraceReader::readCBPInstruction(CBPInstr &out)
 {
     out = CBPInstr();
+
+    if (eofReached || !traceStream.isOpen()) {
+        return false;
+    }
 
     if (!readBytes(&out.pc, sizeof(out.pc))) {
         eofReached = true;
@@ -375,8 +319,7 @@ CBP2025TraceReader::parseInstruction(TraceInstruction &instr)
 size_t
 CBP2025TraceReader::fillBuffer(size_t max_instructions)
 {
-    if (eofReached || (compressed && !gzPipe) ||
-        (!compressed && !traceStream.is_open())) {
+    if (eofReached || !traceStream.isOpen()) {
         return 0;
     }
 
@@ -480,8 +423,8 @@ CBP2025TraceReader::createCheckpoint()
         cp.pending = pendingInstr;
     }
 
-    if (!compressed && traceStream.is_open()) {
-        cp.filePosition = traceStream.tellg();
+    if (traceStream.isOpen() && streamMode == TraceStream::Mode::Raw) {
+        cp.filePosition = traceStream.tell();
         cp.valid = true;
     } else {
         cp.valid = false;
@@ -496,17 +439,13 @@ CBP2025TraceReader::restoreCheckpoint(const TraceCheckpoint& checkpoint)
         return false;
     }
 
-    if (compressed) {
-        // Not supported
+    if (streamMode != TraceStream::Mode::Raw || !traceStream.isOpen()) {
         return false;
     }
 
-    if (!traceStream.is_open()) {
+    if (!traceStream.seek(checkpoint.filePosition)) {
         return false;
     }
-
-    traceStream.clear();
-    traceStream.seekg(checkpoint.filePosition);
     eofReached = checkpoint.eofState;
     currentSeqNum = checkpoint.seqNum;
     instructionIndex = checkpoint.instructionIndex;

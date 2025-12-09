@@ -30,11 +30,9 @@
 #define __CPU_O3_TRACE_CHAMPSIM_TRACE_READER_HH__
 
 #include <cstdio>
-#include <fstream>
 #include <string>
 
 #include "cpu/o3/trace/TraceReader.hh"
-#include "ext/iostream3/zfstream.h"
 
 namespace gem5
 {
@@ -73,22 +71,10 @@ class ChampSimTraceReader : public TraceReader
         uint64_t source_memory[NUM_INSTR_SOURCES];
     };
 
-    /** Input file stream */
-    std::ifstream traceStream;
-
-    /** Gzipped input file stream */
-    gzifstream gzTraceStream;
-
-    /** Whether file is compressed */
-    bool compressed;
-
-    /** Whether file is xz-compressed */
-    bool xzCompressed;
-
-    /** Pipe handle for xz-decompressed stream (xz -dc) */
-    FILE* xzPipe;
-
-    /** Current position in file for debugging */
+    /** Unified trace stream (raw/gzip/xz) */
+    TraceStream traceStream;
+    TraceStream::Mode streamMode;
+    /** Current position in file for debugging (raw only) */
     std::streampos currentPos;
 
     /** Current instruction index in the trace */

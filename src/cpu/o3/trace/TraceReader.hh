@@ -29,6 +29,7 @@
 #ifndef __CPU_O3_TRACE_TRACE_READER_HH__
 #define __CPU_O3_TRACE_TRACE_READER_HH__
 
+#include <cstdio>
 #include <deque>
 #include <fstream>
 #include <memory>
@@ -55,6 +56,41 @@ namespace o3
 class TraceReader : public statistics::Group
 {
   protected:
+    /**
+     * Minimal stream helper supporting raw, gzip (via popen gzip -dcq), and xz.
+     * Unified封装用于两个具体 TraceReader，避免重复打开/重置逻辑。
+     */
+    class TraceStream
+    {
+      public:
+        enum class Mode { Raw, Gzip, Xz };
+
+        TraceStream();
+        ~TraceStream();
+
+        bool open(const std::string &path, Mode mode);
+        bool reopen();
+        void close();
+
+        bool readExact(void *dst, size_t size);
+        bool seekBegin();
+        bool seek(std::streampos pos);
+
+        bool isOpen() const;
+        bool eof() const { return eofFlag; }
+        std::streampos tell() const;
+        Mode mode() const { return modeFlag; }
+
+      private:
+        static std::string escapePath(const std::string &path);
+
+        std::string path;
+        Mode modeFlag;
+        std::ifstream rawStream;
+        FILE *pipeHandle;
+        bool eofFlag;
+    };
+
     /** Path to the trace file */
     std::string traceFile;
 

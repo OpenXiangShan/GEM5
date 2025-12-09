@@ -28,6 +28,9 @@
 
 #include "cpu/o3/trace/TraceReader.hh"
 
+#include <cerrno>
+#include <cstring>
+
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/o3/trace/CBP2025TraceReader.hh"
@@ -38,6 +41,130 @@ namespace gem5
 {
 namespace o3
 {
+
+TraceReader::TraceStream::TraceStream()
+    : modeFlag(Mode::Raw), pipeHandle(nullptr), eofFlag(false)
+{
+}
+
+TraceReader::TraceStream::~TraceStream()
+{
+    close();
+}
+
+std::string
+TraceReader::TraceStream::escapePath(const std::string &p)
+{
+    std::string safe = p;
+    size_t pos = 0;
+    while ((pos = safe.find("'", pos)) != std::string::npos) {
+        safe.replace(pos, 1, "'\\''");
+        pos += 4;
+    }
+    return safe;
+}
+
+bool
+TraceReader::TraceStream::open(const std::string &p, Mode mode)
+{
+    close();
+    path = p;
+    modeFlag = mode;
+    eofFlag = false;
+
+    if (modeFlag == Mode::Raw) {
+        rawStream.open(path, std::ios::binary);
+        return rawStream.is_open();
+    }
+
+    const std::string safe = escapePath(path);
+    std::string cmd;
+    if (modeFlag == Mode::Gzip) {
+        // quiet stderr to avoid SIGPIPE noise when consumer stops early
+        cmd = std::string("gzip -dcq -- '") + safe + "' 2>/dev/null";
+    } else {
+        cmd = std::string("xz -dc -- '") + safe + "'";
+    }
+    pipeHandle = popen(cmd.c_str(), "r");
+    return pipeHandle != nullptr;
+}
+
+bool
+TraceReader::TraceStream::reopen()
+{
+    if (path.empty())
+        return false;
+    return open(path, modeFlag);
+}
+
+void
+TraceReader::TraceStream::close()
+{
+    if (rawStream.is_open()) {
+        rawStream.close();
+    }
+    if (pipeHandle) {
+        pclose(pipeHandle);
+        pipeHandle = nullptr;
+    }
+    eofFlag = false;
+}
+
+bool
+TraceReader::TraceStream::readExact(void *dst, size_t size)
+{
+    if (!isOpen())
+        return false;
+
+    if (modeFlag == Mode::Raw) {
+        rawStream.read(reinterpret_cast<char*>(dst), size);
+        auto got = rawStream.gcount();
+        eofFlag = rawStream.eof();
+        return got == static_cast<std::streamsize>(size);
+    }
+
+    size_t n = std::fread(dst, 1, size, pipeHandle);
+    eofFlag = feof(pipeHandle);
+    return n == size;
+}
+
+bool
+TraceReader::TraceStream::seekBegin()
+{
+    if (modeFlag != Mode::Raw || !rawStream.is_open())
+        return false;
+    rawStream.clear();
+    rawStream.seekg(0, std::ios::beg);
+    eofFlag = false;
+    return !rawStream.fail();
+}
+
+bool
+TraceReader::TraceStream::seek(std::streampos pos)
+{
+    if (modeFlag != Mode::Raw || !rawStream.is_open())
+        return false;
+    rawStream.clear();
+    rawStream.seekg(pos);
+    eofFlag = false;
+    return !rawStream.fail();
+}
+
+bool
+TraceReader::TraceStream::isOpen() const
+{
+    return (modeFlag == Mode::Raw) ? rawStream.is_open() : pipeHandle != nullptr;
+}
+
+std::streampos
+TraceReader::TraceStream::tell() const
+{
+    if (modeFlag != Mode::Raw || !rawStream.is_open())
+        return std::streampos(0);
+    // tellg() is non-const; cast is safe because we don't mutate stream state.
+    return const_cast<std::ifstream&>(rawStream).tellg();
+}
+
 
 void
 TraceReader::dumpInstrBuffer(const char* tag) const

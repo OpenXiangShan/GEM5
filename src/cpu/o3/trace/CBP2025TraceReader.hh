@@ -29,8 +29,6 @@
 #ifndef __CPU_O3_TRACE_CBP2025_TRACE_READER_HH__
 #define __CPU_O3_TRACE_CBP2025_TRACE_READER_HH__
 
-#include <cstdio>
-#include <fstream>
 #include <string>
 #include <vector>
 
@@ -140,9 +138,8 @@ class CBP2025TraceReader : public TraceReader
     uint64_t mapAddressLinear(uint64_t trace_addr);
 
   private:
-    bool compressed;
-    std::ifstream traceStream;
-    FILE *gzPipe;
+    TraceStream traceStream;
+    TraceStream::Mode streamMode;
     bool hasPendingInstr;
     TraceInstruction pendingInstr;
     uint64_t instructionIndex;
