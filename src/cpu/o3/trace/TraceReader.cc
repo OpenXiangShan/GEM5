@@ -377,9 +377,15 @@ TraceReader::resetBufferState()
     std::queue<TraceInstruction> empty;
     std::swap(instrBuffer, empty);
 
+    resetHistoryWindow(1);
+}
+
+void
+TraceReader::resetHistoryWindow(uint64_t startIndex)
+{
     historyWindow.clear();
-    historyStartIndex = 1;
-    nextLogicalIndex = 1;
+    historyStartIndex = startIndex;
+    nextLogicalIndex = startIndex;
     replayActive = false;
     replayIndex = 0;
 }
@@ -647,12 +653,7 @@ TraceReader::softSeekToInstruction(uint64_t instrIndex)
         // After hard seek, clear runtime buffers/history to keep state consistent
         std::queue<TraceInstruction> empty;
         std::swap(instrBuffer, empty);
-        historyWindow.clear();
-        // After seek(N), next to return is N+1; with empty history, make logicalNext == N
-        historyStartIndex = instrIndex;
-        replayActive = false;
-        replayIndex = 0;
-        nextLogicalIndex = instrIndex;
+        resetHistoryWindow(instrIndex);
     }
     return ok;
 }

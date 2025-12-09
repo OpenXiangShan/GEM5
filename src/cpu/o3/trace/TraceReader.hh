@@ -206,6 +206,7 @@ class TraceReader : public statistics::Group
                                 const PendingResolveConfig &resolveCfg,
                                 bool markLastInTrace);
     void resetBufferState();
+    void resetHistoryWindow(uint64_t startIndex = 1);
 
     virtual size_t fillBuffer(size_t max_instructions) = 0;
     virtual bool parseInstruction(TraceInstruction &instr) = 0;
