@@ -252,6 +252,7 @@ def build_xiangshan_system(args):
     for i in range(np):
         if args.kmh_align:
             test_sys.cpu[i].enable_storeSet_train = False
+        test_sys.cpu[i].enable_storeSet_train = False
 
         if args.bp_type is None or args.bp_type == 'DecoupledBPUWithFTB' or args.bp_type == 'DecoupledBPUWithBTB':
             enable_bp_db = len(args.enable_bp_db) > 1
