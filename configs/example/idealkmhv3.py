@@ -28,7 +28,6 @@ def setKmhV3IdealParams(args, system):
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
-        cpu.fetchToDecodeDelay = 2
 
         # decode
         cpu.decodeWidth = 8
@@ -95,6 +94,19 @@ def setKmhV3IdealParams(args, system):
         if args.bp_type == 'DecoupledBPUWithBTB':
             cpu.branchPred.ftq_size = 256
             cpu.branchPred.fsq_size = 256
+
+            cpu.branchPred.mbtb.resolvedUpdate = True
+            cpu.branchPred.tage.resolvedUpdate = True
+            cpu.branchPred.ittage.resolvedUpdate = True
+
+            cpu.branchPred.ubtb.enabled = True
+            cpu.branchPred.abtb.enabled = True
+            cpu.branchPred.microtage.enabled = False
+            cpu.branchPred.mbtb.enabled = True
+            cpu.branchPred.tage.enabled = True
+            cpu.branchPred.ittage.enabled = True
+            cpu.branchPred.mgsc.enabled = True
+            cpu.branchPred.ras.enabled = True
 
         # l1 cache per core
         if args.caches:
