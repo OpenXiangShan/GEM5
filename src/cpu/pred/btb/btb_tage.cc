@@ -137,7 +137,6 @@ tageStats(this, p.numPredictors, p.numBanks)
 
     // initialize use_alt_on_na table
     useAlt.resize(useAltOnNaSize, 0);
-
 #ifndef UNIT_TEST
     hasDB = true;
     switch (getDelay()) {
@@ -640,6 +639,41 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 }
 
 /**
+ * @brief Attempt a resolved update with bank-conflict awareness.
+ * Returns false if the update cannot proceed due to a bank conflict.
+ */
+bool
+BTBTAGE::tryResolveUpdate(const FetchStream &stream) {
+    Addr startAddr = stream.getRealStartPC();
+    unsigned updateBank = getBankId(startAddr);
+
+#ifndef UNIT_TEST
+    // Record attempted update access per bank (even if it conflicts)
+    tageStats.updateAccessPerBank[updateBank]++;
+#endif
+
+    if (enableBankConflict && predBankValid && updateBank == lastPredBankId) {
+        tageStats.updateBankConflict++;
+        tageStats.updateDeferredDueToConflict++;
+#ifndef UNIT_TEST
+        tageStats.updateBankConflictPerBank[updateBank]++;
+#endif
+        DPRINTF(TAGE, "Bank conflict detected: update bank %u conflicts with prediction bank %u, "
+                      "deferring this update (will retry after blocking prediction)\n",
+                      updateBank, lastPredBankId);
+        predBankValid = false;
+        return false;
+    }
+
+    if (enableBankConflict && predBankValid) {
+        predBankValid = false;
+    }
+
+    update(stream);
+    return true;
+}
+
+/**
  * @brief Updates the TAGE predictor state based on actual branch execution results
  * 
  * @param stream The fetch stream containing branch execution information
@@ -650,46 +684,6 @@ BTBTAGE::update(const FetchStream &stream) {
     unsigned updateBank = getBankId(startAddr);
 
     DPRINTF(TAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
-
-#ifndef UNIT_TEST
-    // Record update access per bank
-    tageStats.updateAccessPerBank[updateBank]++;
-#endif
-
-    // ========== Bank Conflict Detection ==========
-    // Check if this update conflicts with the last prediction
-    // Only perform conflict detection if enableBankConflict is true
-    if (enableBankConflict) {
-        // Conflict happens when:
-        //   1. There was a valid prediction in this or previous tick (predBankValid)
-        //   2. Update and prediction target the same bank (updateBank == lastPredBankId)
-        //
-        // Note: This assumes one update() call per tick (guaranteed by fetch stage)
-        if (predBankValid && updateBank == lastPredBankId) {
-            tageStats.updateBankConflict++;
-            tageStats.updateDroppedDueToConflict++;
-
-#ifndef UNIT_TEST
-            // Record conflict for this specific bank
-            tageStats.updateBankConflictPerBank[updateBank]++;
-#endif
-
-            DPRINTF(TAGE, "Bank conflict detected: update bank %u conflicts with "
-                          "prediction bank %u, dropping this update\n",
-                          updateBank, lastPredBankId);
-
-            // Clear prediction state after consuming it
-            predBankValid = false;
-            return;  // Drop this update entirely
-        }
-
-        // If no conflict, clear prediction state (prediction has been consumed)
-        if (predBankValid) {
-            DPRINTF(TAGE, "No bank conflict: update bank %u != prediction bank %u\n",
-                          updateBank, lastPredBankId);
-        }
-        predBankValid = false;
-    }
 
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
@@ -1023,7 +1017,7 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
     ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
-    ADD_STAT(updateDroppedDueToConflict, statistics::units::Count::get(), "number of updates dropped due to bank conflict"),
+    ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(), "number of updates deferred due to bank conflict (retried later)"),
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
     ADD_STAT(updateAccessPerBank, statistics::units::Count::get(), "update accesses per bank"),
     ADD_STAT(predAccessPerBank, statistics::units::Count::get(), "prediction accesses per bank"),

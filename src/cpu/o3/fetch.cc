@@ -1535,8 +1535,13 @@ Fetch::handleIEWSignals()
         for (const auto resolvedInstPC : entry.resolvedInstPC) {
             dbpbtb->markCFIResolved(stream_id, resolvedInstPC);
         }
-        dbpbtb->resolveUpdate(stream_id);
-        resolveQueue.pop_front();
+        bool success = dbpbtb->resolveUpdate(stream_id);
+        if (success) {
+            dbpbtb->notifyResolveSuccess();
+            resolveQueue.pop_front();
+        } else {
+            dbpbtb->notifyResolveFailure();
+        }
     }
 }
 
