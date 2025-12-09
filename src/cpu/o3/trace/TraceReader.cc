@@ -275,6 +275,65 @@ TraceReader::reconcilePendingWithNext(TraceInstruction &pending,
     }
 }
 
+TraceReader::TraceCheckpoint
+TraceReader::buildCheckpoint(uint64_t instructionIndex,
+                             uint64_t currentSeqNum,
+                             bool eofState,
+                             const std::queue<TraceInstruction> &buffer,
+                             bool hasPending,
+                             const TraceInstruction &pending,
+                             const TraceStream &stream,
+                             TraceStream::Mode mode,
+                             bool allowCompressed) const
+{
+    TraceCheckpoint cp;
+    cp.instructionIndex = instructionIndex;
+    cp.seqNum = currentSeqNum;
+    cp.eofState = eofState;
+    cp.bufferSnapshot = buffer;
+    cp.hasPending = hasPending;
+    if (hasPending) {
+        cp.pending = pending;
+    }
+
+    if (stream.isOpen()) {
+        if (mode == TraceStream::Mode::Raw) {
+            cp.filePosition = stream.tell();
+            cp.valid = true;
+        } else if (allowCompressed) {
+            cp.filePosition = std::streampos(0);
+            cp.valid = true;
+        }
+    }
+
+    return cp;
+}
+
+void
+TraceReader::applyCheckpointState(const TraceCheckpoint &checkpoint,
+                                  std::queue<TraceInstruction> &buffer,
+                                  bool &hasPending,
+                                  TraceInstruction &pending,
+                                  uint64_t &instructionIndex,
+                                  uint64_t &currentSeqNum,
+                                  bool &eofReached)
+{
+    instructionIndex = checkpoint.instructionIndex;
+    currentSeqNum = checkpoint.seqNum;
+    eofReached = checkpoint.eofState;
+
+    std::queue<TraceInstruction> empty;
+    std::swap(buffer, empty);
+    buffer = checkpoint.bufferSnapshot;
+
+    hasPending = checkpoint.hasPending;
+    if (hasPending) {
+        pending = checkpoint.pending;
+    } else {
+        pending.reset();
+    }
+}
+
 
 void
 TraceReader::dumpInstrBuffer(const char* tag) const
@@ -333,7 +392,8 @@ TraceReader::TraceReaderStats::TraceReaderStats(statistics::Group *parent,
 TraceReader::TraceReader(const std::string &trace_file, const std::string &name,
                          statistics::Group *parent)
     : statistics::Group(parent, name.c_str()), traceFile(trace_file), readerName(name),
-      eofReached(false), initialized(false), currentSeqNum(0), stats(this, "stats")
+      eofReached(false), initialized(false), currentSeqNum(0), addrCfg({0, 0, "hash", false}),
+      stats(this, "stats")
 {
     // Debug output removed temporarily
 }

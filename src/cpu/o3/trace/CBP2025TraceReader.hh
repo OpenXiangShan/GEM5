@@ -127,7 +127,7 @@ class CBP2025TraceReader : public TraceReader
     void extractRegisterDeps(const CBPInstr &raw, CBPInstClass cls,
                              TraceInstruction &instr);
 
-    TraceReader::AddrMapConfig addrCfg() const;
+    TraceReader::AddrMapConfig addrCfgSnapshot() const;
 
   private:
     TraceStream traceStream;
@@ -137,9 +137,6 @@ class CBP2025TraceReader : public TraceReader
     uint64_t instructionIndex;
 
     std::string addrMapMode;
-    uint64_t addrMapBase;
-    uint64_t addrMapSize;
-    bool addrPageAlign;
 };
 
 } // namespace o3

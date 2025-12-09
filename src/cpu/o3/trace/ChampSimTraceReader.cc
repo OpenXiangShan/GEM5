@@ -49,8 +49,7 @@ ChampSimTraceReader::ChampSimTraceReader(const std::string &trace_file,
                                          bool page_align,
                                          statistics::Group *parent)
     : TraceReader(trace_file, name, parent), streamMode(TraceStream::Mode::Raw), currentPos(0),
-      instructionIndex(0), addrMapMode(map_mode), addrMapBase(base_addr),
-      addrMapSize(map_size), addrPageAlign(page_align)
+      instructionIndex(0)
 {
     if (isXz(trace_file)) {
         streamMode = TraceStream::Mode::Xz;
@@ -60,6 +59,7 @@ ChampSimTraceReader::ChampSimTraceReader(const std::string &trace_file,
         streamMode = TraceStream::Mode::Raw;
     }
     hasPendingInstr = false;
+    setAddrMapConfig({base_addr, map_size, map_mode, page_align});
 
     // Address mapping configuration initialized
     // mode=%s, base=0x%lx, size=0x%lx, page_align=%d
@@ -72,9 +72,9 @@ ChampSimTraceReader::~ChampSimTraceReader()
 }
 
 TraceReader::AddrMapConfig
-ChampSimTraceReader::addrCfg() const
+ChampSimTraceReader::addrCfgSnapshot() const
 {
-    return {addrMapBase, addrMapSize, addrMapMode, addrPageAlign};
+    return getAddrMapConfig();
 }
 
 bool
@@ -264,7 +264,7 @@ ChampSimTraceReader::convertInstruction(const ChampSimInstr &cs_instr,
 {
     // Reset the instruction
     trace_instr.reset();
-    const auto cfg = addrCfg();
+    const auto cfg = getAddrMapConfig();
 
     // Set basic fields
     // CRITICAL FIX: Apply address mapping to PC to avoid page table faults
@@ -426,7 +426,7 @@ void
 ChampSimTraceReader::extractMemoryOps(const ChampSimInstr &cs_instr,
                                       TraceInstruction &trace_instr)
 {
-    const auto cfg = addrCfg();
+    const auto cfg = getAddrMapConfig();
 
     // Extract store addresses (destination memory) with address mapping for trace mode
     for (size_t i = 0; i < ChampSimInstr::NUM_INSTR_DESTINATIONS; i++) {
@@ -530,33 +530,9 @@ ChampSimTraceReader::isXz(const std::string &filename)
 TraceReader::TraceCheckpoint
 ChampSimTraceReader::createCheckpoint()
 {
-    TraceCheckpoint checkpoint;
-
-    checkpoint.instructionIndex = instructionIndex;
-    checkpoint.seqNum = currentSeqNum;
-    checkpoint.eofState = eofReached;
-    checkpoint.bufferSnapshot = instrBuffer;
-    // Save pending instruction state (if any)
-    checkpoint.hasPending = hasPendingInstr;
-    if (hasPendingInstr) {
-        checkpoint.pending = pendingInstr;
-    }
-
-    if (traceStream.isOpen() && streamMode == TraceStream::Mode::Raw) {
-        checkpoint.filePosition = traceStream.tell();
-        checkpoint.valid = true;
-        DPRINTF(TraceReader, "createCheckpoint: Created checkpoint at instrIndex=%lu, filePos=%ld\n",
-                checkpoint.instructionIndex, checkpoint.filePosition);
-    } else if (traceStream.isOpen()) {
-        checkpoint.filePosition = std::streampos(0);
-        checkpoint.valid = true;
-        DPRINTF(TraceReader, "createCheckpoint: Created checkpoint at instrIndex=%lu (compressed)\n",
-                checkpoint.instructionIndex);
-    } else {
-        checkpoint.valid = false;
-        DPRINTF(TraceReader, "createCheckpoint: Failed to create checkpoint - stream not open\n");
-    }
-
+    TraceCheckpoint checkpoint = buildCheckpoint(
+        instructionIndex, currentSeqNum, eofReached, instrBuffer, hasPendingInstr,
+        pendingInstr, traceStream, streamMode, /*allowCompressed=*/true);
     // Debug: also print pending status to verify snapshot coverage
     DPRINTF(TraceReader,
             "createCheckpoint: hasPendingInstr=%d, pending_sn=%llu, pending_pc=0x%llx\n",
@@ -616,25 +592,8 @@ ChampSimTraceReader::restoreCheckpoint(const TraceCheckpoint& checkpoint)
     }
 
     // Restore state
-    instructionIndex = checkpoint.instructionIndex;
-    currentSeqNum = checkpoint.seqNum;
-    eofReached = checkpoint.eofState;
-
-    // Restore buffer (clear first)
-    while (!instrBuffer.empty()) {
-        instrBuffer.pop();
-    }
-    instrBuffer = checkpoint.bufferSnapshot;
-
-    // Restore pending instruction state so that the next fillBuffer() will
-    // first flush this pending into instrBuffer, preserving sequence continuity.
-    hasPendingInstr = checkpoint.hasPending;
-    if (hasPendingInstr) {
-        pendingInstr = checkpoint.pending;
-    } else {
-        // Make sure no stale pending remains
-        pendingInstr.reset();
-    }
+    applyCheckpointState(checkpoint, instrBuffer, hasPendingInstr, pendingInstr,
+                         instructionIndex, currentSeqNum, eofReached);
 
     DPRINTF(TraceReader, "restoreCheckpoint: Restored to instrIndex=%lu, seqNum=%lu, bufferSize=%lu\n",
             instructionIndex, currentSeqNum, instrBuffer.size());
@@ -776,11 +735,8 @@ ChampSimTraceReader::estimateBranchTarget(const ChampSimInstr &cs_instr)
 void
 ChampSimTraceReader::setAddressMapping(uint64_t base, uint64_t size, const std::string &mode, bool pageAlign)
 {
-    addrMapBase = base;
-    addrMapSize = size;
-    addrMapMode = mode;
-    addrPageAlign = pageAlign;
-    
+    setAddrMapConfig({base, size, mode, pageAlign});
+
     DPRINTF(TraceReader, "Address mapping configured: base=0x%x, size=0x%x, mode=%s, pageAlign=%s\n",
             base, size, mode, pageAlign ? "true" : "false");
 }

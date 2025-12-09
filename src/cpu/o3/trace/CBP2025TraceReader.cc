@@ -52,17 +52,14 @@ CBP2025TraceReader::CBP2025TraceReader(const std::string &trace_file,
   : TraceReader(trace_file, name, parent),
     streamMode(TraceStream::Mode::Raw),
     hasPendingInstr(false),
-    instructionIndex(0),
-    addrMapMode(map_mode),
-    addrMapBase(base_addr),
-    addrMapSize(map_size),
-    addrPageAlign(page_align)
+    instructionIndex(0)
 {
     if (isGzip(trace_file)) {
         streamMode = TraceStream::Mode::Gzip;
     } else {
         streamMode = TraceStream::Mode::Raw;
     }
+    setAddrMapConfig({base_addr, map_size, map_mode, page_align});
 }
 
 CBP2025TraceReader::~CBP2025TraceReader()
@@ -71,9 +68,9 @@ CBP2025TraceReader::~CBP2025TraceReader()
 }
 
 TraceReader::AddrMapConfig
-CBP2025TraceReader::addrCfg() const
+CBP2025TraceReader::addrCfgSnapshot() const
 {
-    return {addrMapBase, addrMapSize, addrMapMode, addrPageAlign};
+    return getAddrMapConfig();
 }
 
 bool
@@ -284,7 +281,7 @@ CBP2025TraceReader::parseInstruction(TraceInstruction &instr)
 
     instr.reset();
     const CBPInstClass cls = static_cast<CBPInstClass>(raw.type);
-    const auto cfg = addrCfg();
+    const auto cfg = getAddrMapConfig();
 
     // Map PC/nextPc through VA mapping to keep FS happy.
     const Addr mapped_pc = mapTracePcToVirtual(raw.pc, cfg);
@@ -404,23 +401,10 @@ CBP2025TraceReader::createCheckpoint()
 {
     // For compressed traces we cannot reliably seek; allow checkpointing only
     // for uncompressed files by saving the file offset.
-    TraceCheckpoint cp;
-    cp.instructionIndex = instructionIndex;
-    cp.seqNum = currentSeqNum;
-    cp.eofState = eofReached;
-    cp.bufferSnapshot = instrBuffer;
-    cp.hasPending = hasPendingInstr;
-    if (hasPendingInstr) {
-        cp.pending = pendingInstr;
-    }
-
-    if (traceStream.isOpen() && streamMode == TraceStream::Mode::Raw) {
-        cp.filePosition = traceStream.tell();
-        cp.valid = true;
-    } else {
-        cp.valid = false;
-    }
-    return cp;
+    return buildCheckpoint(instructionIndex, currentSeqNum, eofReached,
+                           instrBuffer, hasPendingInstr, pendingInstr,
+                           traceStream, streamMode,
+                           /*allowCompressed=*/false);
 }
 
 bool
@@ -440,9 +424,8 @@ CBP2025TraceReader::restoreCheckpoint(const TraceCheckpoint& checkpoint)
     eofReached = checkpoint.eofState;
     currentSeqNum = checkpoint.seqNum;
     instructionIndex = checkpoint.instructionIndex;
-    instrBuffer = checkpoint.bufferSnapshot;
-    hasPendingInstr = checkpoint.hasPending;
-    pendingInstr = checkpoint.pending;
+    applyCheckpointState(checkpoint, instrBuffer, hasPendingInstr, pendingInstr,
+                         instructionIndex, currentSeqNum, eofReached);
     historyWindow.clear();
     historyStartIndex = 1;
     nextLogicalIndex = instructionIndex + 1;

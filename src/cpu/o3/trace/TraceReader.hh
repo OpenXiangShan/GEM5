@@ -55,11 +55,59 @@ namespace o3
  */
 class TraceReader : public statistics::Group
 {
+  public:
+    struct TraceCheckpoint
+    {
+        uint64_t instructionIndex;
+        std::streampos filePosition;
+        bool eofState;
+        uint64_t seqNum;
+        std::queue<TraceInstruction> bufferSnapshot;
+        bool hasPending;
+        TraceInstruction pending;
+        bool valid;
+
+        TraceCheckpoint() : instructionIndex(0), filePosition(0),
+                            eofState(false), seqNum(0), hasPending(false),
+                            pending(), valid(false) {}
+    };
+
+    struct AddrMapConfig
+    {
+        uint64_t base;
+        uint64_t size;
+        std::string mode;
+        bool pageAlign;
+    };
+
+    struct PendingResolveConfig
+    {
+        bool fixTakenTargetMismatch = false;
+    };
+
+    TraceReader(const std::string &trace_file, const std::string &name,
+                statistics::Group *parent = nullptr);
+    virtual ~TraceReader() = default;
+
+    virtual bool init() = 0;
+    TraceInstruction getNextInstruction();
+    virtual bool softSeekToInstruction(uint64_t instrIndex);
+    void resetHistory();
+    bool isEOF() const { return eofReached && instrBuffer.empty(); }
+    size_t getBufferSize() const { return instrBuffer.size(); }
+    const std::string& name() const { return readerName; }
+    virtual bool reset() = 0;
+    virtual std::string getFormat() const = 0;
+    const std::string& getTraceFile() const { return traceFile; }
+
+    const AddrMapConfig& getAddrMapConfig() const { return addrCfg; }
+    void setAddrMapConfig(const AddrMapConfig &cfg) { addrCfg = cfg; }
+    virtual TraceCheckpoint createCheckpoint() = 0;
+    virtual bool restoreCheckpoint(const TraceCheckpoint& checkpoint) = 0;
+    virtual bool seekToInstruction(uint64_t instrIndex) = 0;
+    virtual uint64_t getCurrentInstructionIndex() const = 0;
+
   protected:
-    /**
-     * Minimal stream helper supporting raw, gzip (via popen gzip -dcq), and xz.
-     * Unified封装用于两个具体 TraceReader，避免重复打开/重置逻辑。
-     */
     class TraceStream
     {
       public:
@@ -91,79 +139,34 @@ class TraceReader : public statistics::Group
         bool eofFlag;
     };
 
-    /** Path to the trace file */
     std::string traceFile;
-
-    /** Name of this trace reader instance */
     std::string readerName;
-
-    /** Whether the trace has reached end-of-file */
     bool eofReached;
-
-    /** Whether the trace reader has been initialized */
     bool initialized;
-
-    /** Current instruction sequence number */
     uint64_t currentSeqNum;
-
-    /** Buffer for pre-fetched instructions */
+    AddrMapConfig addrCfg;
     std::queue<TraceInstruction> instrBuffer;
-
-    /** History window for soft replay (recently returned instructions) */
     std::deque<TraceInstruction> historyWindow;
-    /** 1-based index of the first element in history window */
     uint64_t historyStartIndex = 1;
-    /** Next logical index to be returned by getNextInstruction (when not replaying) */
     uint64_t nextLogicalIndex = 1;
-    /** Soft replay mode flag and cursor (1-based) */
     bool replayActive = false;
     uint64_t replayIndex = 0;
-    /** Window capacity */
     static constexpr size_t HISTORY_CAPACITY = 4096;
 
-    /** Dump current instruction buffer contents for debugging */
     void dumpInstrBuffer(const char* tag) const;
-
-    /** Maximum size of instruction buffer */
     static constexpr size_t MAX_BUFFER_SIZE = 1024;
 
-    /** Statistics group for trace reader */
     struct TraceReaderStats : public statistics::Group
     {
-        /** Number of instructions read from trace */
         statistics::Scalar instrRead;
-
-        /** Number of branch instructions encountered */
         statistics::Scalar branchInstr;
-
-        /** Number of load instructions encountered */
         statistics::Scalar loadInstr;
-
-        /** Number of store instructions encountered */
         statistics::Scalar storeInstr;
-
-        /** Number of buffer underruns */
         statistics::Scalar bufferUnderruns;
 
         TraceReaderStats(statistics::Group *parent, const std::string &name);
     } stats;
 
-    /** Address mapping parameters shared by trace readers */
-    struct AddrMapConfig
-    {
-        uint64_t base;
-        uint64_t size;
-        std::string mode;
-        bool pageAlign;
-    };
-
-    /** Pending-instruction reconciliation options */
-    struct PendingResolveConfig
-    {
-        bool fixTakenTargetMismatch = false;
-    };
-
-    /** Shared address mapping helpers */
     static uint64_t mapAddressHash(uint64_t trace_addr,
                                    const AddrMapConfig &cfg);
     static uint64_t mapAddressLinear(uint64_t trace_addr,
@@ -175,180 +178,34 @@ class TraceReader : public statistics::Group
     static uint64_t mapTraceMemToVirtual(uint64_t trace_addr,
                                          const AddrMapConfig &cfg);
 
-    /** Shared pending-instruction reconciliation helper */
     static bool isApproxFallthrough(Addr pc, Addr next_pc);
     static void reconcilePendingWithNext(TraceInstruction &pending,
                                          TraceInstruction &next,
                                          const PendingResolveConfig &cfg);
 
-  public:
-    /**
-     * Constructor
-     * @param trace_file Path to the trace file
-     * @param name Name for statistics
-     */
-    TraceReader(const std::string &trace_file, const std::string &name,
-                statistics::Group *parent = nullptr);
+    TraceCheckpoint buildCheckpoint(uint64_t instructionIndex,
+                                    uint64_t currentSeqNum,
+                                    bool eofState,
+                                    const std::queue<TraceInstruction> &buffer,
+                                    bool hasPending,
+                                    const TraceInstruction &pending,
+                                    const TraceStream &stream,
+                                    TraceStream::Mode mode,
+                                    bool allowCompressed) const;
 
-    /** Virtual destructor */
-    virtual ~TraceReader() = default;
+    static void applyCheckpointState(const TraceCheckpoint &checkpoint,
+                                     std::queue<TraceInstruction> &buffer,
+                                     bool &hasPending,
+                                     TraceInstruction &pending,
+                                     uint64_t &instructionIndex,
+                                     uint64_t &currentSeqNum,
+                                     bool &eofReached);
 
-    /**
-     * Initialize the trace reader
-     * @return true if initialization successful, false otherwise
-     */
-    virtual bool init() = 0;
-
-    /**
-     * Read the next instruction from the trace
-     * @return TraceInstruction object, invalid if no more instructions
-     */
-    TraceInstruction getNextInstruction();
-
-    /**
-     * Try a soft seek using in-memory history/window.
-     * If target is within history or buffered future, switch replay mode or drop-ahead.
-     * Otherwise fall back to hard seek.
-     */
-    virtual bool softSeekToInstruction(uint64_t instrIndex);
-
-    /** Clear runtime buffers/history (used on init/reset) */
-    void resetHistory();
-
-    /**
-     * Check if the trace has reached end-of-file
-     * @return true if EOF reached, false otherwise
-     */
-    bool isEOF() const { return eofReached && instrBuffer.empty(); }
-
-    /**
-     * Get the number of instructions currently buffered
-     * @return Number of buffered instructions
-     */
-    size_t getBufferSize() const { return instrBuffer.size(); }
-
-    /**
-     * Get the name of this trace reader
-     * @return Reader name
-     */
-    const std::string& name() const { return readerName; }
-
-    /**
-     * Reset the trace reader to the beginning of the trace
-     * @return true if reset successful, false otherwise
-     */
-    virtual bool reset() = 0;
-
-    /**
-     * Get trace format identifier
-     * @return String identifying the trace format
-     */
-    virtual std::string getFormat() const = 0;
-
-    /**
-     * Get trace file path
-     * @return Path to the trace file
-     */
-    const std::string& getTraceFile() const { return traceFile; }
-
-    /**
-     * Checkpoint data structure for trace reader state
-     */
-    struct TraceCheckpoint
-    {
-        /** Instruction index in the trace */
-        uint64_t instructionIndex;
-
-        /** File position (for uncompressed files) */
-        std::streampos filePosition;
-
-        /** EOF state at checkpoint */
-        bool eofState;
-
-        /** Current sequence number at checkpoint */
-        uint64_t seqNum;
-
-        /** Buffer contents at checkpoint */
-        std::queue<TraceInstruction> bufferSnapshot;
-
-        /** Pending instruction snapshot (for readers with lookahead) */
-        bool hasPending;
-        TraceInstruction pending;
-
-        /** Whether checkpoint is valid */
-        bool valid;
-
-        TraceCheckpoint() : instructionIndex(0), filePosition(0),
-                           eofState(false), seqNum(0), hasPending(false),
-                           valid(false) {}
-    };
-
-    /**
-     * Create a checkpoint of the current trace reader state
-     * @return TraceCheckpoint containing current state
-     */
-    virtual TraceCheckpoint createCheckpoint() = 0;
-
-    /**
-     * Restore trace reader state from a checkpoint
-     * @param checkpoint The checkpoint to restore from
-     * @return true if restore successful, false otherwise
-     */
-    virtual bool restoreCheckpoint(const TraceCheckpoint& checkpoint) = 0;
-
-    /**
-     * Seek to a specific instruction index in the trace
-     * @param instrIndex The instruction index to seek to
-     * @return true if seek successful, false otherwise
-     */
-    virtual bool seekToInstruction(uint64_t instrIndex) = 0;
-
-    /**
-     * Get the current instruction index in the trace
-     * @return Current instruction index
-     */
-    virtual uint64_t getCurrentInstructionIndex() const = 0;
-
-  protected:
-    /**
-     * Read instructions from the trace file and fill the buffer
-     * This method should be implemented by derived classes to read
-     * format-specific trace data and convert it to TraceInstruction objects
-     * @param max_instructions Maximum number of instructions to read
-     * @return Number of instructions actually read
-     */
     virtual size_t fillBuffer(size_t max_instructions) = 0;
-
-    /**
-     * Parse a single instruction from the trace format
-     * This method should be implemented by derived classes
-     * @param instr Reference to TraceInstruction to populate
-     * @return true if instruction was successfully parsed, false on EOF or error
-     */
     virtual bool parseInstruction(TraceInstruction &instr) = 0;
-
-    /**
-     * Check if the trace file is valid and can be opened
-     * @return true if file is valid, false otherwise
-     */
     virtual bool validateTraceFile() = 0;
-
-    /**
-     * Add an instruction to the buffer
-     * @param instr Instruction to add
-     */
     void addToBuffer(const TraceInstruction &instr);
-
-    /**
-     * Update statistics based on the instruction
-     * @param instr Instruction to analyze
-     */
     void updateStats(const TraceInstruction &instr);
-
-    /**
-     * Get the next available sequence number
-     * @return Next sequence number
-     */
     uint64_t getNextSeqNum() { return currentSeqNum++; }
 };
 

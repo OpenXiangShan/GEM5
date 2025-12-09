@@ -84,11 +84,7 @@ class ChampSimTraceReader : public TraceReader
     std::vector<TraceCheckpoint> checkpoints;
 
     /** Address mapping configuration */
-    std::string addrMapMode;        ///< Address mapping mode ("hash" or "linear")
-    uint64_t addrMapBase;           ///< Base address for mapping
-    uint64_t addrMapSize;           ///< Size of mapping region
-    bool addrPageAlign;             ///< Whether to align to page boundaries
-    TraceReader::AddrMapConfig addrCfg() const;
+    TraceReader::AddrMapConfig addrCfgSnapshot() const;
 
     /**
      * Look-ahead staging: hold the last parsed instruction until the next
