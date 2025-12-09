@@ -80,7 +80,7 @@ bash util/xs_scripts/trace/run_trace_champsim.sh \
 
 ```bash
 $gem5 --outdir=$PWD --stats-file=$PWD/stats.txt \
-  $gem5_home/configs/example/xiangshan.py \
+$gem5_home/configs/example/xiangshan.py \
   --enable-trace-mode \
   --trace-file=...ipc_client_002.champsimtrace.xz \
   --trace-format=champsim \
@@ -88,6 +88,8 @@ $gem5 --outdir=$PWD --stats-file=$PWD/stats.txt \
   --maxinsts=50000000 \
   --trace-enable-decoupled-bp
 ```
+
+补充：`xiangshan.py` 还提供 `--trace-checkpoint-interval`（默认 64）、`--trace-disable-bp-validation`、`--trace-mispredict-penalty`、`--trace-disable-wrongpath`、`--trace-wrongpath-use-traceinst` 等开关，默认地址映射为 `linear @ 0x80000000`（1 GiB，page-align）；如需实验可手动追加到命令行。
 
 ---
 
