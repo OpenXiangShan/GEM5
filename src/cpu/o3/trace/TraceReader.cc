@@ -30,6 +30,7 @@
 
 #include <cerrno>
 #include <cstring>
+#include <fstream>
 
 #include "arch/riscv/page_size.hh"
 #include "base/trace.hh"
@@ -388,6 +389,43 @@ TraceReader::resetHistoryWindow(uint64_t startIndex)
     nextLogicalIndex = startIndex;
     replayActive = false;
     replayIndex = 0;
+}
+
+bool
+TraceReader::openTraceStream(TraceStream &stream, TraceStream::Mode mode,
+                             std::streampos *outPos)
+{
+    if (!stream.open(traceFile, mode)) {
+        return false;
+    }
+    if (outPos) {
+        *outPos = (mode == TraceStream::Mode::Raw) ? stream.tell() : std::streampos(0);
+    }
+    return true;
+}
+
+bool
+TraceReader::reopenTraceStream(TraceStream &stream, TraceStream::Mode mode,
+                               std::streampos *outPos)
+{
+    if (!stream.reopen()) {
+        return false;
+    }
+    if (outPos) {
+        *outPos = (mode == TraceStream::Mode::Raw) ? stream.tell() : std::streampos(0);
+    }
+    return true;
+}
+
+bool
+TraceReader::validateTraceFileSize(const std::string &path,
+                                   std::streamsize minSize)
+{
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        return false;
+    }
+    return file.tellg() >= minSize;
 }
 
 

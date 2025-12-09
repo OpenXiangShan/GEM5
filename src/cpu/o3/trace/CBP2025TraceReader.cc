@@ -93,7 +93,7 @@ CBP2025TraceReader::init()
         return false;
     }
 
-    if (!traceStream.open(traceFile, streamMode)) {
+    if (!openTraceStream(traceStream, streamMode, nullptr)) {
         DPRINTF(TraceReader, "CBP2025TraceReader::init failed to open trace stream\n");
         return false;
     }
@@ -115,7 +115,7 @@ CBP2025TraceReader::reset()
         return init();
     }
 
-    if (!traceStream.reopen()) {
+    if (!reopenTraceStream(traceStream, streamMode, nullptr)) {
         return false;
     }
 
@@ -129,13 +129,8 @@ CBP2025TraceReader::reset()
 bool
 CBP2025TraceReader::validateTraceFile()
 {
-    std::ifstream f(traceFile, std::ios::binary);
-    if (!f.is_open()) {
-        return false;
-    }
-    f.seekg(0, std::ios::end);
-    auto sz = f.tellg();
-    return sz > 0;
+    return validateTraceFileSize(traceFile,
+                                 static_cast<std::streamsize>(sizeof(CBPInstr)));
 }
 
 bool

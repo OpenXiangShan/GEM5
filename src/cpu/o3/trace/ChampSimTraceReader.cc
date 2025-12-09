@@ -95,14 +95,9 @@ ChampSimTraceReader::init()
     const bool compressedLike = streamMode != TraceStream::Mode::Raw;
     DPRINTF(TraceReader, "init: Opening trace file (%s): %s\n",
             compressedLike ? "compressed" : "raw", traceFile.c_str());
-    if (!traceStream.open(traceFile, streamMode)) {
+    if (!openTraceStream(traceStream, streamMode, &currentPos)) {
         DPRINTF(TraceReader, "init: Failed to open trace stream\n");
         return false;
-    }
-    if (streamMode == TraceStream::Mode::Raw) {
-        currentPos = traceStream.tell();
-    } else {
-        currentPos = 0;
     }
     DPRINTF(TraceReader, "init: ChampSim trace file opened successfully\n");
 
@@ -126,8 +121,10 @@ ChampSimTraceReader::reset()
         DPRINTF(TraceReader, "reset: Failed to reopen trace stream\n");
         return false;
     }
-    currentPos = (streamMode == TraceStream::Mode::Raw) ? traceStream.tell()
-                                                        : std::streampos(0);
+    if (!reopenTraceStream(traceStream, streamMode, &currentPos)) {
+        DPRINTF(TraceReader, "reset: Failed to reopen trace stream\n");
+        return false;
+    }
 
     resetBufferState();
     instructionIndex = 0;
@@ -143,22 +140,8 @@ ChampSimTraceReader::reset()
 bool
 ChampSimTraceReader::validateTraceFile()
 {
-    std::ifstream testFile(traceFile, std::ios::binary);
-    if (!testFile.is_open()) {
-        return false;
-    }
-
-    // Check if file has reasonable size (at least one ChampSim instruction)
-    testFile.seekg(0, std::ios::end);
-    auto fileSize = testFile.tellg();
-    testFile.close();
-
-    if (fileSize < static_cast<std::streampos>(sizeof(ChampSimInstr))) {
-        // Debug: ChampSim trace file too small
-        return false;
-    }
-
-    return true;
+    return validateTraceFileSize(traceFile,
+                                 static_cast<std::streamsize>(sizeof(ChampSimInstr)));
 }
 
 size_t

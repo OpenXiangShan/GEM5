@@ -207,6 +207,12 @@ class TraceReader : public statistics::Group
                                 bool markLastInTrace);
     void resetBufferState();
     void resetHistoryWindow(uint64_t startIndex = 1);
+    bool openTraceStream(TraceStream &stream, TraceStream::Mode mode,
+                         std::streampos *outPos);
+    bool reopenTraceStream(TraceStream &stream, TraceStream::Mode mode,
+                           std::streampos *outPos);
+    static bool validateTraceFileSize(const std::string &path,
+                                      std::streamsize minSize);
 
     virtual size_t fillBuffer(size_t max_instructions) = 0;
     virtual bool parseInstruction(TraceInstruction &instr) = 0;
