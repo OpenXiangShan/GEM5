@@ -366,6 +366,24 @@ TraceReader::applyCheckpointState(const TraceCheckpoint &checkpoint,
     }
 }
 
+void
+TraceReader::resetBufferState()
+{
+    eofReached = false;
+    currentSeqNum = 0;
+    hasPendingInstr = false;
+    pendingInstr.reset();
+
+    std::queue<TraceInstruction> empty;
+    std::swap(instrBuffer, empty);
+
+    historyWindow.clear();
+    historyStartIndex = 1;
+    nextLogicalIndex = 1;
+    replayActive = false;
+    replayIndex = 0;
+}
+
 
 void
 TraceReader::dumpInstrBuffer(const char* tag) const

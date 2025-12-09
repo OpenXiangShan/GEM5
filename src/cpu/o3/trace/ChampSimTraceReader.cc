@@ -106,9 +106,9 @@ ChampSimTraceReader::init()
     }
     DPRINTF(TraceReader, "init: ChampSim trace file opened successfully\n");
 
+    resetBufferState();
+    instructionIndex = 0;
     initialized = true;
-    eofReached = false;
-    currentSeqNum = 0;
 
     return true;
 }
@@ -129,15 +129,8 @@ ChampSimTraceReader::reset()
     currentPos = (streamMode == TraceStream::Mode::Raw) ? traceStream.tell()
                                                         : std::streampos(0);
 
-    eofReached = false;
-    currentSeqNum = 0;
+    resetBufferState();
     instructionIndex = 0;
-    hasPendingInstr = false;
-
-    // Clear instruction buffer and checkpoints
-    while (!instrBuffer.empty()) {
-        instrBuffer.pop();
-    }
     checkpoints.clear();
 
     DPRINTF(TraceReader, "reset: Reset completed, eofReached=%d, buffer size=%lu\n",

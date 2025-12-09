@@ -98,11 +98,9 @@ CBP2025TraceReader::init()
         return false;
     }
 
-    eofReached = false;
-    initialized = true;
-    currentSeqNum = 0;
+    resetBufferState();
     instructionIndex = 0;
-    hasPendingInstr = false;
+    initialized = true;
 
     return true;
 }
@@ -121,18 +119,8 @@ CBP2025TraceReader::reset()
         return false;
     }
 
-    eofReached = false;
-    currentSeqNum = 0;
+    resetBufferState();
     instructionIndex = 0;
-    hasPendingInstr = false;
-    while (!instrBuffer.empty()) {
-        instrBuffer.pop();
-    }
-    historyWindow.clear();
-    historyStartIndex = 1;
-    nextLogicalIndex = 1;
-    replayActive = false;
-    replayIndex = 0;
 
     dumpInstrBuffer("after_reset");
     return true;
