@@ -51,7 +51,6 @@ CBP2025TraceReader::CBP2025TraceReader(const std::string &trace_file,
                                        statistics::Group *parent)
   : TraceReader(trace_file, name, parent),
     streamMode(TraceStream::Mode::Raw),
-    hasPendingInstr(false),
     instructionIndex(0)
 {
     if (isGzip(trace_file)) {
@@ -367,33 +366,10 @@ CBP2025TraceReader::fillBuffer(size_t max_instructions)
         return 0;
     }
 
-    size_t pushed = 0;
     PendingResolveConfig resolveCfg;
     resolveCfg.fixTakenTargetMismatch = true;
-    while (pushed < max_instructions && !eofReached) {
-        TraceInstruction current;
-        if (parseInstruction(current)) {
-            if (hasPendingInstr) {
-                reconcilePendingWithNext(pendingInstr, current, resolveCfg);
-                addToBuffer(pendingInstr);
-                pushed++;
-            }
-            pendingInstr = current;
-            hasPendingInstr = true;
-        } else {
-            eofReached = true;
-            break;
-        }
-    }
-
-    if (eofReached && hasPendingInstr && pushed < max_instructions) {
-        pendingInstr.setLastInTrace(true);
-        addToBuffer(pendingInstr);
-        pushed++;
-        hasPendingInstr = false;
-    }
-
-    return pushed;
+    return drainPendingToBuffer(max_instructions, resolveCfg,
+                                /*markLastInTrace=*/true);
 }
 
 TraceReader::TraceCheckpoint

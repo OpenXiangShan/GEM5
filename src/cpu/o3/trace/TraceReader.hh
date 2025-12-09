@@ -145,6 +145,8 @@ class TraceReader : public statistics::Group
     bool initialized;
     uint64_t currentSeqNum;
     AddrMapConfig addrCfg;
+    bool hasPendingInstr = false;
+    TraceInstruction pendingInstr;
     std::queue<TraceInstruction> instrBuffer;
     std::deque<TraceInstruction> historyWindow;
     uint64_t historyStartIndex = 1;
@@ -200,6 +202,9 @@ class TraceReader : public statistics::Group
                                      uint64_t &instructionIndex,
                                      uint64_t &currentSeqNum,
                                      bool &eofReached);
+    size_t drainPendingToBuffer(size_t max_instructions,
+                                const PendingResolveConfig &resolveCfg,
+                                bool markLastInTrace);
 
     virtual size_t fillBuffer(size_t max_instructions) = 0;
     virtual bool parseInstruction(TraceInstruction &instr) = 0;

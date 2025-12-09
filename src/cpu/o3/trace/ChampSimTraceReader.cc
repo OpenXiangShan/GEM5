@@ -181,38 +181,9 @@ ChampSimTraceReader::fillBuffer(size_t max_instructions)
     DPRINTF(TraceReader, "fillBuffer: Starting to read (target push %lu) (compressed=%d)\n",
             max_instructions, (int)compressedLike);
 
-    size_t pushed = 0;
     PendingResolveConfig resolveCfg;
-
-    while (pushed < max_instructions && !eofReached) {
-        TraceInstruction current;
-        if (parseInstruction(current)) {
-            if (hasPendingInstr) {
-                reconcilePendingWithNext(pendingInstr, current, resolveCfg);
-                addToBuffer(pendingInstr);
-                pushed++;
-            }
-            // Stage current as next pending
-            pendingInstr = current;
-            hasPendingInstr = true;
-        } else {
-            DPRINTF(TraceReader, "fillBuffer: parseInstruction failed, setting EOF\n");
-            eofReached = true;
-            break;
-        }
-    }
-
-    // If we've reached EOF, flush the final pending instruction (no target derivable)
-    if (eofReached && hasPendingInstr && pushed < max_instructions) {
-        // Mark this instruction as the last one in the trace stream so
-        // downstream components (e.g., O3 commit stage) can terminate
-        // cleanly once it commits.
-        pendingInstr.setLastInTrace(true);
-        addToBuffer(pendingInstr);
-        pushed++;
-        hasPendingInstr = false;
-        DPRINTF(TraceReader, "fillBuffer: Flushed final pending instruction at EOF\n");
-    }
+    const size_t pushed = drainPendingToBuffer(max_instructions, resolveCfg,
+                                               /*markLastInTrace=*/true);
 
     DPRINTF(TraceReader, "fillBuffer: Completed, pushed %lu instructions\n", pushed);
 

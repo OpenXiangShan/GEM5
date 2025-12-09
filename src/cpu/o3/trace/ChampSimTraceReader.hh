@@ -82,16 +82,8 @@ class ChampSimTraceReader : public TraceReader
 
     /** Checkpoints for rollback capability */
     std::vector<TraceCheckpoint> checkpoints;
-
     /** Address mapping configuration */
     TraceReader::AddrMapConfig addrCfgSnapshot() const;
-
-    /**
-     * Look-ahead staging: hold the last parsed instruction until the next
-     * one is available so we can derive branch target as nextPC for taken branches.
-     */
-    bool hasPendingInstr = false;
-    TraceInstruction pendingInstr;
 
   public:
     /**

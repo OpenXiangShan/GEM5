@@ -275,6 +275,38 @@ TraceReader::reconcilePendingWithNext(TraceInstruction &pending,
     }
 }
 
+size_t
+TraceReader::drainPendingToBuffer(size_t max_instructions,
+                                  const PendingResolveConfig &resolveCfg,
+                                  bool markLastInTrace)
+{
+    size_t pushed = 0;
+    while (pushed < max_instructions && !eofReached) {
+        TraceInstruction current;
+        if (parseInstruction(current)) {
+            if (hasPendingInstr) {
+                reconcilePendingWithNext(pendingInstr, current, resolveCfg);
+                addToBuffer(pendingInstr);
+                pushed++;
+            }
+            pendingInstr = current;
+            hasPendingInstr = true;
+        } else {
+            eofReached = true;
+            break;
+        }
+    }
+
+    if (markLastInTrace && eofReached && hasPendingInstr && pushed < max_instructions) {
+        pendingInstr.setLastInTrace(true);
+        addToBuffer(pendingInstr);
+        pushed++;
+        hasPendingInstr = false;
+    }
+
+    return pushed;
+}
+
 TraceReader::TraceCheckpoint
 TraceReader::buildCheckpoint(uint64_t instructionIndex,
                              uint64_t currentSeqNum,

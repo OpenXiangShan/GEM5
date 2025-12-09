@@ -132,8 +132,6 @@ class CBP2025TraceReader : public TraceReader
   private:
     TraceStream traceStream;
     TraceStream::Mode streamMode;
-    bool hasPendingInstr;
-    TraceInstruction pendingInstr;
     uint64_t instructionIndex;
 
     std::string addrMapMode;
