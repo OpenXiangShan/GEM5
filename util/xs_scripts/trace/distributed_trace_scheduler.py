@@ -339,65 +339,75 @@ def main() -> int:
                 )
 
             made_progress = False
-            for host in hosts:
-                if global_avail <= 0 or pending_idx >= len(tasks):
-                    break
-                avail = host_caps.get(host, 0)
-                while avail > 0 and global_avail > 0 and pending_idx < len(tasks):
-                    name, rel, warmup, sample = tasks[pending_idx]
-                    if task_status.get(name):
-                        pending_idx += 1
-                        continue
-                    trace_path = find_trace(trace_root, rel)
-                    if not trace_path:
-                        print(
-                            f"[WARN] trace not found for {name}: {rel}",
-                            file=sys.stderr,
-                        )
-                        task_status[name] = "missing_trace"
-                        pending_idx += 1
-                        continue
-                    tdir = work_root / name
-                    tdir.mkdir(parents=True, exist_ok=True)
-                    ok, pid = launch_task(
-                        host,
-                        arch_script,
-                        tdir,
-                        trace_path,
-                        warmup,
-                        sample,
-                        trace_format,
-                    )
-                    if not ok:
-                        task_status[name] = "launch_failed"
-                        pending_idx += 1
-                        continue
-                    task_status[name] = "running"
-                    task_host[name] = host
-                    task_paths[name] = trace_path
-                    start_ts[name] = time.time()
-                    warmup_map[name] = warmup
-                    sample_map[name] = sample
-                    if pid is not None:
-                        running_pids[name] = pid
-                    running[host] = running.get(host, 0) + 1
-                    avail -= 1
-                    global_avail -= 1
+            while global_avail > 0:
+                while pending_idx < len(tasks) and task_status.get(
+                    tasks[pending_idx][0]
+                ):
                     pending_idx += 1
-                    made_progress = True
-                    done_cnt = sum(
-                        1
-                        for s in task_status.values()
-                        if s
-                        in ("completed", "abort", "launch_failed", "missing_trace")
-                    )
+                if pending_idx >= len(tasks):
+                    break
+
+                candidates = [h for h, avail in host_caps.items() if avail > 0]
+                if not candidates:
+                    break
+                # Bias toward spreading tasks: choose host with fewest running tasks,
+                # then with more remaining capacity.
+                host = min(
+                    candidates,
+                    key=lambda h: (running.get(h, 0), -host_caps[h], h),
+                )
+
+                name, rel, warmup, sample = tasks[pending_idx]
+                trace_path = find_trace(trace_root, rel)
+                if not trace_path:
                     print(
-                        f"[DISPATCH] {name} -> {host} warmup={warmup} "
-                        f"sample={sample} total={warmup+sample} "
-                        f"running={running[host]} "
-                        f"global_running={sum(running.values())} "
-                        f"progress={done_cnt}/{total_tasks}"
+                        f"[WARN] trace not found for {name}: {rel}",
+                        file=sys.stderr,
                     )
+                    task_status[name] = "missing_trace"
+                    pending_idx += 1
+                    continue
+                tdir = work_root / name
+                tdir.mkdir(parents=True, exist_ok=True)
+                ok, pid = launch_task(
+                    host,
+                    arch_script,
+                    tdir,
+                    trace_path,
+                    warmup,
+                    sample,
+                    trace_format,
+                )
+                if not ok:
+                    task_status[name] = "launch_failed"
+                    pending_idx += 1
+                    continue
+                task_status[name] = "running"
+                task_host[name] = host
+                task_paths[name] = trace_path
+                start_ts[name] = time.time()
+                warmup_map[name] = warmup
+                sample_map[name] = sample
+                if pid is not None:
+                    running_pids[name] = pid
+                running[host] = running.get(host, 0) + 1
+                host_caps[host] = max(0, host_caps[host] - 1)
+                global_avail -= 1
+                pending_idx += 1
+                made_progress = True
+                done_cnt = sum(
+                    1
+                    for s in task_status.values()
+                    if s
+                    in ("completed", "abort", "launch_failed", "missing_trace")
+                )
+                print(
+                    f"[DISPATCH] {name} -> {host} warmup={warmup} "
+                    f"sample={sample} total={warmup+sample} "
+                    f"running={running[host]} "
+                    f"global_running={sum(running.values())} "
+                    f"progress={done_cnt}/{total_tasks}"
+                )
             if not made_progress:
                 time.sleep(args.poll_seconds)
     except KeyboardInterrupt:
