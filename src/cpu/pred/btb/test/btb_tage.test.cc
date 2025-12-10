@@ -901,10 +901,11 @@ TEST_F(BTBTAGETest, BankConflict) {
         setupTageEntry(bankTage, 0xa0, 0, 1, false);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bankTage->update(stream);
+        bool can_update = bankTage->canResolveUpdate(stream);
 
-        // Should detect conflict and drop update
+        // Should detect conflict and defer update
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before + 1);
+        EXPECT_FALSE(can_update);
         EXPECT_FALSE(bankTage->predBankValid);
     }
 
@@ -918,7 +919,9 @@ TEST_F(BTBTAGETest, BankConflict) {
         FetchStream stream = createStream(0x104, createBTBEntry(0x104), true, meta);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bankTage->update(stream);
+        bool can_update = bankTage->canResolveUpdate(stream);
+        ASSERT_TRUE(can_update);
+        bankTage->doResolveUpdate(stream);
 
         // Should not detect conflict
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
@@ -936,7 +939,9 @@ TEST_F(BTBTAGETest, BankConflict) {
         setupTageEntry(bankTage, 0xa0, 0, 1, false);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bankTage->update(stream);
+        bool can_update = bankTage->canResolveUpdate(stream);
+        ASSERT_TRUE(can_update);
+        bankTage->doResolveUpdate(stream);
 
         // No conflict even with same bank
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
