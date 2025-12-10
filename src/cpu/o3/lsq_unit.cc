@@ -611,6 +611,30 @@ LSQUnit::tick()
 {
     loadPipe.advance();
     storePipe.advance();
+
+    // Update pipeline stages for instructions in the load pipe
+    for (int i = 0; i < loadPipeSx.size(); ++i) {
+        if (loadPipeSx[i]->size > 0) {
+            for (int j = 0; j < loadPipeSx[i]->size; ++j) {
+                DynInstPtr &inst = loadPipeSx[i]->insts[j];
+                if (inst) {
+                    inst->pipelineStage = i;
+                }
+            }
+        }
+    }
+
+    // Update pipeline stages for instructions in the store pipe
+    for (int i = 0; i < storePipeSx.size(); ++i) {
+        if (storePipeSx[i]->size > 0) {
+            for (int j = 0; j < storePipeSx[i]->size; ++j) {
+                DynInstPtr &inst = storePipeSx[i]->insts[j];
+                if (inst) {
+                    inst->pipelineStage = i;
+                }
+            }
+        }
+    }
 }
 
 void
@@ -761,6 +785,7 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
       ADD_STAT(nonUnitStrideCross16Byte, "Number of vector non unitStride cross 16-byte boundary"),
       ADD_STAT(unitStrideCross16Byte, "Number of vector unitStride cross 16-byte boundary"),
       ADD_STAT(unitStrideAligned, "Number of vector unitStride 16-byte aligned"),
+      ADD_STAT(skipRawWhenLoadAtS0, "Number of times RAW check skipped because load is at S0"),
       ADD_STAT(RARQueueFull, "Number of times RAR queue was full"),
       ADD_STAT(RARQueueReplay, "Number of instructions replayed from RAR queue"),
       ADD_STAT(RARQueueLatency, statistics::units::Cycle::get(), "RAR queue latency distribution"),
@@ -1130,6 +1155,13 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                         // So next time this load replaying to pipeline will forward from store correctly
                         // And no RAW violation happens
                         if (ld_inst->needNukeReplay()) {
+                            break;
+                        }
+
+                        // If load is at stage 0 while store is at stage 1, no RAW violation
+                        // should occur since the load can forward data from store later
+                        if (ld_inst->pipelineStage == 0) {
+                            ++stats.skipRawWhenLoadAtS0;
                             break;
                         }
 

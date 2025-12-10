@@ -143,6 +143,9 @@ class DynInst : public ExecContext, public RefCounted
     /** The sequence number of the instruction. */
     InstSeqNum seqNum = 0;
 
+    /** The current pipeline stage of the instruction. -1 if not in pipeline. */
+    int8_t pipelineStage = -1;
+
     /** The StaticInst used by this BaseDynInst. */
     const StaticInstPtr staticInst;
 
@@ -947,10 +950,12 @@ class DynInst : public ExecContext, public RefCounted
                     (1 << SkipFollowingPipe));
         status.set(InPipe);
         clearReplayType();
+        pipelineStage = 0;
     }
 
     void endPipelining() {
         status.reset(InPipe);
+        pipelineStage = -1;
     }
 
     bool inPipe() const { return status[InPipe]; }
