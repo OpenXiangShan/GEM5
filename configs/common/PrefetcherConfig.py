@@ -93,6 +93,12 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
 
+            prefetcher.enable_cmc = False
+            prefetcher.enable_bop = True
+            prefetcher.enable_cdp = False
+            prefetcher.enable_despacito_stream = False
+            prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
+            prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
     if cache_level == 'l3':
         if options.l2_to_l3_pf_hint:
             prefetcher.queue_size = 64
