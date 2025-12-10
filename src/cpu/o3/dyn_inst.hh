@@ -188,6 +188,7 @@ class DynInst : public ExecContext, public RefCounted
         FullForward,
         LocalAccess,
         NeedReplay,
+        DoRawCheck,
         SkipFollowingPipe,
 
         // load/store pipe state end
@@ -960,6 +961,7 @@ class DynInst : public ExecContext, public RefCounted
 
     void setReplay(LdStReplayType type) {
         setNeedReplay();
+        clearDoRawCheck();
         replayType = type;
     }
     std::optional<LdStReplayType> getReplayType() const {
@@ -1020,6 +1022,11 @@ class DynInst : public ExecContext, public RefCounted
 
     void setSkipFollowingPipe() { status.set(SkipFollowingPipe); }
     bool replayOrSkipFollowingPipe() const { return status[SkipFollowingPipe] || status[NeedReplay]; }
+
+    void setDoRawCheck() { status.set(DoRawCheck); }
+    void clearDoRawCheck() { status.reset(DoRawCheck); }
+    bool doRawCheck() const { return status[DoRawCheck]; }
+    bool skipRawCheck() const { return !status[DoRawCheck]; }
 
     /** True if inst is waiting for Dcache refill. */
     bool waitingCacheRefill() const { return instFlags[WaitingCacheRefill]; }
