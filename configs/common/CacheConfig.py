@@ -91,7 +91,7 @@ def config_classic_l2(options, system, l2_cache_class):
         # system.tol2bus_list.append(L2XBar(clk_domain = system.cpu_clk_domain, width=256))
         system.l2_caches[i].cpu_side = system.tol2bus_list[i].mem_side_ports
         system.tol2bus_list[i].snoop_filter.max_capacity = "16MB"
-        system.l2_caches[i].do_fast_writeline = not options.kmh_align
+        system.l2_caches[i].do_fast_writeline = False
         if options.ideal_cache:
             system.l2_caches[i].response_latency = 0
             system.l2_caches[i].tag_latency = 1
@@ -168,7 +168,7 @@ def config_aligned_l2(options, system, l2_cache_class):
             inner_cache.mshrs = int(inner_cache.mshrs) // num_l2_slices
 
 
-            inner_cache.do_fast_writeline = not options.kmh_align
+            inner_cache.do_fast_writeline = False
             if options.ideal_cache:
                 inner_cache.response_latency = 0
                 inner_cache.tag_latency = 1
@@ -273,7 +273,7 @@ def config_cache(options, system):
             system.l3.cpu_side = system.tol3bus.mem_side_ports
             system.l3.mem_side = system.membus.cpu_side_ports
 
-            system.l3.do_fast_writeline = not options.kmh_align
+            system.l3.do_fast_writeline = False
 
         for i in range(options.num_cpus):
             if options.l3cache:
@@ -303,7 +303,7 @@ def config_cache(options, system):
                 icache.response_latency = 0
                 dcache.response_latency = 0
 
-            dcache.do_fast_writeline = not options.kmh_align
+            dcache.do_fast_writeline = False
             l2_prefetcher = system.l2_caches[i].prefetcher if options.classic_l2 else system.l2_wrappers[i].prefetcher
             if (not options.no_pf) and options.l1_to_l2_pf_hint:
                 assert dcache.prefetcher != NULL and \
