@@ -761,6 +761,7 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
       ADD_STAT(nonUnitStrideCross16Byte, "Number of vector non unitStride cross 16-byte boundary"),
       ADD_STAT(unitStrideCross16Byte, "Number of vector unitStride cross 16-byte boundary"),
       ADD_STAT(unitStrideAligned, "Number of vector unitStride 16-byte aligned"),
+      ADD_STAT(skipRawWhenLoadAtS0, "Number of times RAW check skipped because load is at S0"),
       ADD_STAT(RARQueueFull, "Number of times RAR queue was full"),
       ADD_STAT(RARQueueReplay, "Number of instructions replayed from RAR queue"),
       ADD_STAT(RARQueueLatency, statistics::units::Cycle::get(), "RAR queue latency distribution"),
@@ -1133,6 +1134,13 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                             break;
                         }
 
+                        // If load is at stage 0 while store is at stage 1, no RAW violation
+                        // should occur since the load can forward data from store later
+                        if (ld_inst->skipRawCheck()) {
+                            ++stats.skipRawWhenLoadAtS0;
+                            break;
+                        }
+
                         DPRINTF(LSQUnit,
                                 "ld_eff_addr1: %#x, ld_eff_addr2: %#x, "
                                 "inst_eff_addr1: %#x, inst_eff_addr2: %#x\n",
@@ -1185,6 +1193,7 @@ LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
     assert(loadPipeSx[0]->size < MaxPipeWidth);
     panic_if(inst->inPipe(), "load [sn:%llu] is already in pipeline", inst->seqNum);
     inst->beginPipelining();
+    inst->setSkipRawCheck();
 
     int idx = loadPipeSx[0]->size;
     loadPipeSx[0]->insts[idx] = inst;
@@ -1453,7 +1462,6 @@ LSQUnit::loadDoWriteback(const DynInstPtr &inst)
 void
 LSQUnit::executeLoadPipeSx()
 {
-    // TODO: execute operations in each load pipelines
     Fault fault = NoFault;
     for (int i = 0; i < loadPipeSx.size(); i++) {
         auto& stage = loadPipeSx[i];
@@ -1461,6 +1469,9 @@ LSQUnit::executeLoadPipeSx()
             auto& inst = stage->insts[j];
             if (!inst) {
                 continue;
+            }
+            if (i > 0 && inst->skipRawCheck()) {
+                inst->clearSkipRawCheck();
             }
             if (inst->isSquashed()) {
                 DPRINTF(LoadPipeline, "Instruction was squashed. PC: %s, [tid:%i]"
@@ -1690,7 +1701,6 @@ LSQUnit::emptyStorePipeSx(const DynInstPtr &inst, uint64_t stage)
 void
 LSQUnit::executeStorePipeSx()
 {
-    // TODO: execute operations in each store pipelines
     Fault fault = NoFault;
     for (int i = 0; i < storePipeSx.size(); i++) {
         auto& stage = storePipeSx[i];

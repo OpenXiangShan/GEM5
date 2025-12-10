@@ -898,6 +898,8 @@ class LSQUnit
         statistics::Scalar unitStrideCross16Byte;
         statistics::Scalar unitStrideAligned;
 
+        statistics::Scalar skipRawWhenLoadAtS0;
+
         /** RAR replay queue related stats */
         statistics::Scalar RARQueueFull;
         statistics::Scalar RARQueueReplay;

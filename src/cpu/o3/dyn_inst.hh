@@ -188,6 +188,7 @@ class DynInst : public ExecContext, public RefCounted
         FullForward,
         LocalAccess,
         NeedReplay,
+        SkipRawCheck,
         SkipFollowingPipe,
 
         // load/store pipe state end
@@ -1020,6 +1021,10 @@ class DynInst : public ExecContext, public RefCounted
 
     void setSkipFollowingPipe() { status.set(SkipFollowingPipe); }
     bool replayOrSkipFollowingPipe() const { return status[SkipFollowingPipe] || status[NeedReplay]; }
+
+    void setSkipRawCheck() { status.set(SkipRawCheck); }
+    void clearSkipRawCheck() { status.reset(SkipRawCheck); }
+    bool skipRawCheck() const { return status[SkipRawCheck]; }
 
     /** True if inst is waiting for Dcache refill. */
     bool waitingCacheRefill() const { return instFlags[WaitingCacheRefill]; }
