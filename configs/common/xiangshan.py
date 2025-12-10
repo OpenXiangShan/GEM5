@@ -296,7 +296,7 @@ def build_xiangshan_system(args):
         assert args.dramsim3_ini is not None
 
     for cpu in test_sys.cpu:
-        cpu.store_prefetch_train = not args.kmh_align
+        cpu.store_prefetch_train = False
     # ruby will overwrite the store_prefetch_train
     if ruby:
         test_sys._dma_ports = []
