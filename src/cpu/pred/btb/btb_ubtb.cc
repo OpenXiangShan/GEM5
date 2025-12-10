@@ -206,9 +206,9 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
 
     auto takenEntry = s3Pred.getTakenEntry();
     if (takenEntry.valid) {
-        ubtbStats.s3Hits++;
+        ubtbStats.s3UpdateHits++;
     }else {
-        ubtbStats.s3Misses++;
+        ubtbStats.s3UpdateMisses++;
     }
     auto startAddr = s3Pred.bbStart;
     UBTBIter oldEntryIter = lastPred.hit_entry;
@@ -416,9 +416,8 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(predHit, statistics::units::Count::get(), "hits encountered on prediction"),
       ADD_STAT(updateMiss, statistics::units::Count::get(), "misses encountered on update"),
       ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
-      ADD_STAT(s3Hits, statistics::units::Count::get(), "number of s3 predictions that are taken"),
-      ADD_STAT(s3Misses, statistics::units::Count::get(), "number of s3 predictions that are not taken"),
-
+      ADD_STAT(s3UpdateHits, statistics::units::Count::get(), "hits encountered on S3 update"),
+      ADD_STAT(s3UpdateMisses, statistics::units::Count::get(), "misses encountered on S3 update"),
 
       ADD_STAT(allBranchHits, statistics::units::Count::get(),
                "all types of branches committed that was predicted hit"),
