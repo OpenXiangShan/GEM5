@@ -114,6 +114,7 @@ def setKmhV3Params(args, system):
             cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 3
             cpu.dcache.mshrs = 16
+            cpu.dcache.do_fast_writeline = False
 
     # l2 caches
     if args.l2cache:
@@ -121,6 +122,7 @@ def setKmhV3Params(args, system):
             if args.classic_l2:
                 system.l2_caches[i].slice_num = 4
                 system.l2_caches[i].wpu = NULL
+                system.l2_caches[i].do_fast_writeline = False
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 1
@@ -129,6 +131,7 @@ def setKmhV3Params(args, system):
                 l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
+                    l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
             system.tol2bus_list[i].forward_latency = 3  # 3->0
             system.tol2bus_list[i].response_latency = 3  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 2  # 2->0
@@ -144,6 +147,7 @@ def setKmhV3Params(args, system):
     # l3 cache
     if args.l3cache:
         system.l3.mshrs = 64
+        system.l3.do_fast_writeline = False
 
 if __name__ == '__m5_main__':
     FutureClass = None
