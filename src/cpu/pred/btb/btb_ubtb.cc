@@ -415,7 +415,7 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(predMiss, statistics::units::Count::get(), "misses encountered on prediction"),
       ADD_STAT(predHit, statistics::units::Count::get(), "hits encountered on prediction"),
       ADD_STAT(updateMiss, statistics::units::Count::get(), "misses encountered on update"),
-       ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
+      ADD_STAT(updateHit, statistics::units::Count::get(), "hits encountered on update"),
       ADD_STAT(s3Hits, statistics::units::Count::get(), "number of s3 predictions that are taken"),
       ADD_STAT(s3Misses, statistics::units::Count::get(), "number of s3 predictions that are not taken"),
 
