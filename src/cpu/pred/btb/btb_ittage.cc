@@ -219,10 +219,17 @@ BTBITTAGE::update(const FetchStream &stream)
         all_entries_to_update.push_back(stream.updateNewBTBEntry);
     }
 
-    // only update indirect branches that are not returns
-    auto remove_it = std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
-        [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn); });
-    all_entries_to_update.erase(remove_it, all_entries_to_update.end());
+    // // only update indirect branches that are not returns
+    if (getResolvedUpdate()) {
+        auto remove_it =
+            std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
+                           [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn && e.resolved); });
+        all_entries_to_update.erase(remove_it, all_entries_to_update.end());
+    } else {
+        auto remove_it = std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
+                                        [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn); });
+        all_entries_to_update.erase(remove_it, all_entries_to_update.end());
+    }
 
     // get tage predictions from meta
     // TODO: use component idx

@@ -992,8 +992,8 @@ class DynInst : public ExecContext, public RefCounted
     void setCacheBlockedReplay() { setReplay(LdStReplayType::CacheBlockedReplay); }
     bool needCacheBlockedReplay() const { return getReplayType() == LdStReplayType::CacheBlockedReplay; }
 
-    void setBankConflicyReplay() { setReplay(LdStReplayType::BankConflictReplay); }
-    bool needBankConflicyReplay() const { return getReplayType() == LdStReplayType::BankConflictReplay; }
+    void setBankConflictReplay() { setReplay(LdStReplayType::BankConflictReplay); }
+    bool needBankConflictReplay() const { return getReplayType() == LdStReplayType::BankConflictReplay; }
 
     // MSHR Replay
     void setMshrArbFailReplay() { setReplay(LdStReplayType::MshrArbFailReplay); }

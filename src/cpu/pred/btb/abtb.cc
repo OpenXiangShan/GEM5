@@ -502,6 +502,7 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
     // if cond entry in btb now, use the one in btb, since we need the up-to-date counter
     // else use the recorded entry
     auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
+    entry_to_write.resolved = false; // reset resolved bit on update
     entry_to_write.tag = btb_tag;   // update tag after found it!
     // update saturating counter if necessary
     if (entry_to_write.isCond) {

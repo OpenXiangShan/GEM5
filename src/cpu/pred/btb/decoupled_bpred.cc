@@ -251,15 +251,16 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 
     // update ubtb/abtb using final S3 prediction
     if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
-        ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
-        auto it = fetchStreamQueue.find(fsqId-1);
-        if (it != fetchStreamQueue.end()) {
+        if (ubtb->isEnabled()) {
+            ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
+        }
+        auto it = fetchStreamQueue.find(fsqId - 1);
+        if (it != fetchStreamQueue.end() && abtb->isEnabled()) {
             auto previous_block_startpc = it->second.startPC;
             abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], previous_block_startpc);
-        } else {
+        } else if (abtb->isEnabled()) {
             abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], 0);
         }
-
     }
 
     // 4. Record override bubbles and update statistics
@@ -673,6 +674,10 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &stream_id, uint64_t resolvedInstP
         return;
     }
     auto &stream = stream_it->second;
+
+    if (stream.updateNewBTBEntry.pc == resolvedInstPC) {
+        stream.updateNewBTBEntry.resolved = true;
+    }
 
     stream.markBTBEntryResolved(resolvedInstPC);
 }

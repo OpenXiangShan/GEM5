@@ -93,7 +93,6 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       wbWidth(params.wbWidth),
       enableStoreSetTrain(params.enable_storeSet_train),
       numThreads(params.numThreads),
-      resolveQueueSize(params.resolveQueueSize),
       iewStats(cpu)
 {
     if (wbWidth > MaxWidth)
@@ -181,13 +180,6 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of branches that were predicted taken incorrectly"),
     ADD_STAT(predictedNotTakenIncorrect, statistics::units::Count::get(),
              "Number of branches that were predicted not taken incorrectly"),
-    ADD_STAT(resolveQueueFullCycles, statistics::units::Count::get(),
-             "Number of cycles the resolve queue is full"),
-    ADD_STAT(resolveQueueFullEvents, statistics::units::Count::get(),
-             "Number of events the resolve queue becomes full"),
-    ADD_STAT(resolveEnqueueFailEvent, statistics::units::Count::get(),
-             "Number of times an instruction could not be enqueued to the "
-             "resolve queue"),
     ADD_STAT(branchMispredicts, statistics::units::Count::get(),
              "Number of branch mispredicts detected at execute",
              predictedTakenIncorrect + predictedNotTakenIncorrect),
@@ -1572,31 +1564,12 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 {
     ThreadID tid = inst->threadNumber;
 
-    uint64_t fsqId = inst->getFsqId();
-    uint64_t pc = inst->getPC();
-    bool found = false;
-    for (auto &entry : resolveQueue) {
-        if (entry.resolvedFSQId == fsqId) {
-            entry.resolvedInstPC.push_back(pc);
-            found = true;
-        }
-    }
-
-    if (!found && resolveQueue.size() < resolveQueueSize) {
-        ResolveQueueEntry newEntry;
-        newEntry.resolvedFSQId = fsqId;
-        newEntry.resolvedInstPC.push_back(pc);
-        resolveQueue.push_back(newEntry);
-        if (resolveQueue.size() == resolveQueueSize) {
-            iewStats.resolveQueueFullEvents++;
-        }
-    }
-
-    if (resolveQueue.size() >= resolveQueueSize) {
-        if (!found) {
-            iewStats.resolveEnqueueFailEvent++;
-        }
-        iewStats.resolveQueueFullCycles++;
+    if (inst->isControl()) {
+        auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
+        TimeStruct::IewComm::ResolvedCFIEntry entry;
+        entry.fsqId = inst->getFsqId();
+        entry.pc = inst->getPC();
+        resolved_cfis.push_back(entry);
     }
 
     if (!fetchRedirect[tid] ||
@@ -1694,7 +1667,7 @@ IEW::executeInsts()
 
     // Clear resolvedFSQId and resolvedInstPC since they are already handled in frontend
     ThreadID tid = *activeThreads->begin();
-    toFetch->iewInfo[tid].resolveQueue.clear();
+    toFetch->iewInfo[tid].resolvedCFIs.clear();
 
     // Execute/writeback any instructions that are available.
     int insts_to_execute = fromIssue->size;
@@ -1810,12 +1783,6 @@ IEW::executeInsts()
             // call this in `lsq_unit.cc` after execution
             SquashCheckAfterExe(inst);
         }
-    }
-
-    if (!resolveQueue.empty()) {
-        ResolveQueueEntry entry = resolveQueue.front();
-        resolveQueue.erase(resolveQueue.begin());
-        toFetch->iewInfo[tid].resolveQueue.push_back(entry);
     }
 
     ldstQueue.executePipeSx();

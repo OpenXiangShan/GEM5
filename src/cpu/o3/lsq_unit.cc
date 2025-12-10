@@ -1367,8 +1367,8 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         return fault;
     } else if (inst->isNormalLd() && !request) {
         loadSetReplay(inst, request, false);
-        inst->setBankConflicyReplay();// fast replay
-        DPRINTF(LoadPipeline, "Load [sn:%llu] setBankConflicyReplay\n", inst->seqNum);
+        inst->setBankConflictReplay();// fast replay
+        DPRINTF(LoadPipeline, "Load [sn:%llu] setBankConflictReplay\n", inst->seqNum);
         return fault;
     }
 
@@ -1532,7 +1532,7 @@ LSQUnit::executeLoadPipeSx()
                 assert(inst->getReplayType());
                 stats.loadReplayEvents[*inst->getReplayType()]++;
 
-                if (inst->needBankConflicyReplay()) inst->issueQue->retryMem(inst);
+                if (inst->needBankConflictReplay()) inst->issueQue->retryMem(inst);
                 else if (inst->needMshrArbFailReplay()) inst->issueQue->retryMem(inst);
                 else if (inst->needMshrAliasFailReplay()) inst->issueQue->retryMem(inst);
                 else if (inst->needHitInWriteBufferReplay()) inst->issueQue->retryMem(inst);
@@ -1554,7 +1554,7 @@ LSQUnit::executeLoadPipeSx()
                 else if (inst->needCacheMissReplay()) {
                     cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_CacheMiss);
                 }
-                else if (inst->needBankConflicyReplay()) {
+                else if (inst->needBankConflictReplay()) {
                     cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_BankConflict);
                 }
                 else if (inst->needNukeReplay()) {
@@ -3369,7 +3369,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         request->buildPackets();
         // if the cache is not blocked, do cache access
         request->sendPacketToCache();
-        if (!request->isSent() && !load_inst->needBankConflicyReplay() && !load_inst->needMshrArbFailReplay() &&
+        if (!request->isSent() && !load_inst->needBankConflictReplay() && !load_inst->needMshrArbFailReplay() &&
             !load_inst->needMshrAliasFailReplay() &&!load_inst->needHitInWriteBufferReplay()) {
             iewStage->blockMemInst(load_inst);
             load_inst->setCacheBlockedReplay();

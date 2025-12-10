@@ -66,7 +66,7 @@ class PerfRecord(ScopedEnum):
         # position tick
         'AtFetch', 'AtDecode', 'AtRename', 'AtDispQue', 'AtIssueQue', 'AtIssueArb', 'AtIssueReadReg',
         'AtFU', 'AtBypassVal', 'AtWriteVal', 'AtCommit',
-        'Disasm', 'PC'
+        'DisAsm', 'PC'
     ]
 
 class BaseO3CPU(BaseCPU):

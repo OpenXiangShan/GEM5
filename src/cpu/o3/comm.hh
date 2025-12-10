@@ -248,7 +248,13 @@ struct TimeStruct
         StallReason lqHeadStallReason;
         StallReason sqHeadStallReason;
 
-        std::vector<ResolveQueueEntry> resolveQueue;  // *F
+        struct ResolvedCFIEntry
+        {
+            uint64_t fsqId;
+            uint64_t pc;
+        };
+        /** Resolved control-flow PCs produced this cycle (fetch buffers/merges). */
+        std::vector<ResolvedCFIEntry> resolvedCFIs;  // *F
     };
 
     IewComm iewInfo[MaxThreads];

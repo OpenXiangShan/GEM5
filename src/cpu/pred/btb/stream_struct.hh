@@ -71,6 +71,7 @@ enum class HistoryType
  *
  * Stores essential information about a branch instruction including:
  * - PC and target address
+ * - Resolved bit
  * - Branch type (conditional, indirect, call, return)
  * - Instruction size
  */
@@ -78,6 +79,11 @@ struct BranchInfo
 {
     Addr pc;
     Addr target;
+    // An independent resolved bit to indicate whether CFI is resolved
+    // or not for training, which is trained in resolve stage so
+    // it's necessary to know whether the branch is resolved and skip
+    // the BTB entry or not.
+    bool resolved;
     bool isCond;
     bool isIndirect;
     bool isCall;
@@ -85,20 +91,23 @@ struct BranchInfo
     uint8_t size;
     bool isUncond() const { return !this->isCond; }
     Addr getEnd() { return this->pc + this->size; }
-    BranchInfo() : pc(0), target(0), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0) {}
+    BranchInfo()
+        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0)
+    {
+    }
     // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
     // pc(pc), target(target_pc), isCond(is_cond), isIndirect(false), isCall(false), isReturn(false), size(0) {}
-    BranchInfo (const Addr &control_pc,
-                const Addr &target_pc,
-                const StaticInstPtr &static_inst,
-                unsigned size) :
-        pc(control_pc),
-        target(target_pc),
-        isCond(static_inst->isCondCtrl()),
-        isIndirect(static_inst->isIndirectCtrl()),
-        isCall(static_inst->isCall()),
-        isReturn(static_inst->isReturn() && !static_inst->isNonSpeculative() && !static_inst->isDirectCtrl()),
-        size(size) {}
+    BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
+        : pc(control_pc),
+          target(target_pc),
+          resolved(false),
+          isCond(static_inst->isCondCtrl()),
+          isIndirect(static_inst->isIndirectCtrl()),
+          isCall(static_inst->isCall()),
+          isReturn(static_inst->isReturn() && !static_inst->isNonSpeculative() && !static_inst->isDirectCtrl()),
+          size(size)
+    {
+    }
     int getType() const {
         if (isCond) {
             return BR_COND;
@@ -157,7 +166,6 @@ struct BranchInfo
  * Contains branch information plus prediction state:
  * - Valid bit
  * - Always taken bit
- * - Resolved bit
  * - Counter for prediction
  * - Tag for BTB lookup
  */
@@ -165,16 +173,11 @@ struct BTBEntry : BranchInfo
 {
     bool valid;
     bool alwaysTaken;
-    // An independent resolved bit to indicate whether CFI is resolved
-    // or not for TAGE training, which is trained in resolve stage so
-    // it's necessary to know whether the branch is resolved and skip
-    // the BTB entry or not.
-    bool resolved;
     int ctr;
     Addr tag;
     // Addr offset; // retrived from lowest bits of pc
-    BTBEntry() : valid(false), alwaysTaken(false), resolved(false), ctr(0), tag(0) {}
-    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), resolved(false), ctr(0) {}
+    BTBEntry() : BranchInfo(), valid(false), alwaysTaken(false), ctr(0), tag(0) {}
+    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0) {}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
 };
 

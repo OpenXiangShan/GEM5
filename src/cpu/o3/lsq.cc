@@ -1846,8 +1846,8 @@ LSQ::SingleDataRequest::sendPacketToCache()
         }
     }
     if (bank_conflict) {
-        instruction()->setBankConflicyReplay();
-        DPRINTF(LoadPipeline, "Load [sn:%ld] setBankConflicyReplay\n",
+        instruction()->setBankConflictReplay();
+        DPRINTF(LoadPipeline, "Load [sn:%ld] setBankConflictReplay\n",
                 _inst->seqNum);
     }
     if (mshr_used) {
