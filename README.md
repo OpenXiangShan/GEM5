@@ -46,6 +46,19 @@ XS-GEM5 is enhanced with
 - CSR fixes
 - Other functional or performance bug fixes.
 
+## Kunminghu configuration variants and CI coverage
+
+We maintain three main Kunminghu configuration scripts to mirror RTL progress and performance targets. Each is covered by a distinct CI workflow so their results are easy to track (SPECCPU06 coverage shown in parentheses).
+
+- `configs/example/kmhv2.py`: Kunminghu V2 baseline; used by the Tier 2 post-merge regression workflow `gem5 Performance Test (Tier 2 - Post-Merge)` (spec06-0.8c).
+- `configs/example/kmhv3.py`: Kunminghu V3 RTL-aligned mainline; keeps some BPU/backend/performance knobs conservative to match the in-progress RTL, so scores are currently close to V2. CI: `gem5 Align BTB Performance Test(0.3c)` (spec06-0.3c). 
+- `configs/example/idealkmhv3.py`: Ideal/performance-tuned V3 with aggressive microarchitectural settings enabled; currently the highest-scoring variant. CI: `gem5 Ideal BTB Performance Test` (spec06-0.8c).
+
+Note: 
+- The V3 RTL BPU predictor and backend updates are still being implemented. Several performance switches remain off in `kmhv3.py` to stay aligned with the RTL snapshot; as RTL work lands, we will re-enable them and expect the mainline V3 scores to pull ahead of V2.
+- A score with 0.3c would be 1 point higher by default than a score with 0.8c, and 1.2 points higher by default than a score with 1c, so benchmark scores with different coverage cannot be directly compared.
+- You can trigger kmhv3.py by *-align* branch suffix, e.g., `feature-xyz-align`. trigger idealkmhv3.py by *-perf* suffix.
+
 ## Branches
 
 Because XS-GEM5 is currently under internal development, we have several branches for different purposes:
