@@ -134,7 +134,7 @@ def setKmhV3Params(args, system):
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
             system.tol2bus_list[i].forward_latency = 3  # 3->0
             system.tol2bus_list[i].response_latency = 3  # 3->0
-            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 2  # 2->0
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 1->0
 
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
