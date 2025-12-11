@@ -191,6 +191,10 @@ class Commit
     IEW *iewStage;
     Decode *decodeStage;
 
+    /** Trace ctrl-flow fault bookkeeping: seqNum to notify fetch rollback. */
+    InstSeqNum traceCtrlFaultSeqNum[MaxThreads]{};
+    bool traceCtrlFaultPending[MaxThreads]{};
+
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
 
@@ -504,8 +508,8 @@ class Commit
 
     // committed Stream and Target
 
-    uint64_t committedStreamId{};
-    uint64_t committedTargetId{};
+    uint64_t committedStreamId{1};
+    uint64_t committedTargetId{0};
     uint64_t committedLoopIter{};
 
     struct CommitStats : public statistics::Group
@@ -583,10 +587,17 @@ class Commit
 
     ArchDBer *archDBer;
 
+    // Trace-mode commit stream index per thread: expected next trace instruction index
+    uint64_t traceCommitIndex[MaxThreads] = {0};
+
     void dumpTicks(const DynInstPtr &inst);
+
+    // Trace-mode: perform commit-time difftest against trace metadata
+    void traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst);
 
 public:
     const CommitStats& getCommitStats() const { return stats; }
+    uint64_t getTraceCommitIndex(ThreadID tid) const { return traceCommitIndex[tid]; }
 };
 
 } // namespace o3

@@ -59,6 +59,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
 #include "cpu/o3/replay_events.hh"
+#include "cpu/o3/trace/TraceInstruction.hh"
 #include "cpu/utils.hh"
 #include "debug/Activity.hh"
 #include "debug/Diff.hh"
@@ -504,6 +505,23 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
     }
 
     cpu->ppDataAccessComplete->notify(std::make_pair(inst, pkt));
+
+    // Trace-mode: If this is a load, replace returning data with trace value.
+    // KISS: only if metadata exists and value present; DRY: reuse CPU API.
+    if (!cpu->switchedOut() && cpu->isTraceMode() && inst->isLoad()) {
+        const o3::TraceInstruction* ti = cpu->getTraceInstMetadata(inst->seqNum);
+        if (ti && ti->getLoad() && !ti->getLoadValues().empty()) {
+            // Use the first value; respect packet size to avoid overruns.
+            const auto &vals = ti->getLoadValues();
+            const size_t copy_sz = std::min<size_t>(pkt->getSize(), sizeof(uint64_t));
+            uint8_t *dst = pkt->getPtr<uint8_t>();
+            // Values recorded are per-access; reinterpret as little-endian bytes.
+            uint64_t v = vals[0];
+            std::memcpy(dst, &v, copy_sz);
+            DPRINTF(LoadPipeline, "[sn:%llu] Trace overrides load data to 0x%llx (bytes=%zu)\n",
+                    inst->seqNum, (unsigned long long)v, copy_sz);
+        }
+    }
 
     assert(!cpu->switchedOut());
     if (!inst->isSquashed()) {

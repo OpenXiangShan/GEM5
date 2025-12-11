@@ -672,3 +672,38 @@ def addXiangshanFSOptions(parser):
                         action="store",
                         default=None,
                         help="The shared lib file used to do difftest")
+
+def addXiangshanTraceOptions(parser):
+    # Add trace-specific arguments for trace-driven simulation
+    parser.add_argument('--enable-trace-mode', action='store_true',
+                       help='Enable trace-driven simulation mode (alternative to checkpoints)')
+    parser.add_argument('--trace-file', type=str,
+                       help='Path to the trace file (required for trace mode)')
+    parser.add_argument('--trace-format', type=str, default='champsim',
+                       choices=['champsim', 'cbp2025'],
+                       help='Trace format (default: champsim)')
+    # Use the common --maxinsts option provided by common Options; no trace-specific max
+
+    # Decoupled branch predictor options for trace mode
+    parser.add_argument('--trace-enable-decoupled-bp', action='store_true',
+                       help='Enable decoupled branch predictor in trace mode')
+    parser.add_argument('--trace-checkpoint-interval', type=int, default=64,
+                       help='Checkpoint interval for trace rollback (default: 64)')
+    parser.add_argument('--trace-disable-bp-validation', action='store_true',
+                       help='Disable branch predictor validation against trace')
+    parser.add_argument('--trace-mispredict-penalty', type=int, default=8,
+                       help='Cycles to penalize on mispredict (default: 8)')
+    parser.add_argument('--trace-disable-wrongpath', action='store_true',
+                       help='Disable explicit wrong-path injection (use stall model)')
+    parser.add_argument('--trace-wrongpath-use-traceinst', action='store_true',
+                       help='Wrong-path injection uses trace instructions with checkpoint/restore (default: NOPs)')
+
+    # Check for trace mode before parsing to make generic-rv-cpt conditional
+    if '--enable-trace-mode' in sys.argv:
+        # In trace mode, make generic-rv-cpt optional by providing a dummy value
+        # Find the generic-rv-cpt action and remove its required flag
+        for action in parser._actions:
+            if action.dest == 'generic_rv_cpt':
+                action.required = False
+                action.default = "trace_mode_dummy"
+                break

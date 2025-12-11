@@ -47,6 +47,7 @@
 
 #include <queue>
 
+#include "arch/riscv/pcstate.hh"
 #include "base/output.hh"
 #include "base/stats/info.hh"
 #include "config/the_isa.hh"
@@ -1580,6 +1581,12 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
         // that have not been executed.
         bool loadNotExecuted = !inst->isExecuted() && inst->isLoad();
 
+        if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+            std::unique_ptr<PCStateBase> new_pc(inst->pcState().clone());
+            new_pc->as<RiscvISA::PCState>().npc(inst->traceBranchNextPC());
+            inst->pcState(*new_pc);
+        }
+
         if (inst->mispredicted() && !loadNotExecuted) {
             fetchRedirect[tid] = true;
 
@@ -2043,6 +2050,13 @@ IEW::checkMisprediction(const DynInstPtr& inst)
     if (!fetchRedirect[tid] ||
         !execWB->squash[tid] ||
         execWB->squashedSeqNum[tid] > inst->seqNum) {
+        // In trace mode, override npc with trace nextPC so that
+        // mispredicted() and squash use standard advancePC logic.
+        if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+            std::unique_ptr<PCStateBase> new_pc(inst->pcState().clone());
+            new_pc->as<RiscvISA::PCState>().npc(inst->traceBranchNextPC());
+            inst->pcState(*new_pc);
+        }
 
         if (inst->mispredicted()) {
             fetchRedirect[tid] = true;

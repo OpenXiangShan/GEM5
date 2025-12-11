@@ -48,6 +48,7 @@
 #include "arch/riscv/decoder.hh"
 #include "arch/riscv/faults.hh"
 #include "arch/riscv/insts/static_inst.hh"
+#include "arch/riscv/pcstate.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "base/compiler.hh"
 #include "base/loader/symtab.hh"
@@ -61,6 +62,8 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_state.hh"
+#include "cpu/o3/trace/TraceInstruction.hh"
+#include "cpu/thread_context.hh"
 #include "cpu/timebuf.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
@@ -80,12 +83,37 @@
 #include "sim/cur_tick.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
+#include "sim/sim_exit.hh"
 
 namespace gem5
 {
 
 namespace o3
 {
+
+namespace {
+
+class TraceCtrlFlowFault : public FaultBase
+{
+  public:
+    explicit TraceCtrlFlowFault(Addr target) : targetPC(target) {}
+
+    FaultName name() const override { return "TraceCtrlFlowFault"; }
+    bool isFromISA() const override { return false; }
+
+    void invoke(::gem5::ThreadContext *tc,
+                const StaticInstPtr &inst = nullStaticInstPtr) override
+    {
+        auto pc_state = tc->pcState().as<TheISA::PCState>();
+        pc_state.set(targetPC);
+        tc->pcState(pc_state);
+    }
+
+  private:
+    Addr targetPC;
+};
+
+} // anonymous namespace
 
 void
 Commit::processTrapEvent(ThreadID tid)
@@ -102,6 +130,18 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       stuckCheckEvent([this](){
         static std::vector<DynInstPtr> debug_insts;
         if (cpu->curCycle() - this->lastCommitCycle > 40000) {
+            // In trace mode, it's possible to drain the entire pipeline once
+            // the trace reaches EOF while maxinsts is still larger than the
+            // total number of trace instructions. In that case we should
+            // terminate the simulation cleanly instead of treating it as
+            // a hard hang in the commit stage.
+            if (cpu->isTraceMode() && cpu->isTracePipelineDrained()) {
+                warn("[Commit] Trace mode pipeline drained without further commits; "
+                     "treating as normal exit instead of CommitStuck panic.\n");
+                exitSimLoop("Trace-driven CPU drained (EOF or maxinsts)");
+                return;
+            }
+
             if (auto inst = rob->readHeadInst(0)) {
                 warn("can't commit inst %s\n", inst->genDisassembly());
                 debug_insts.insert(debug_insts.begin(),rob->getInstList(0).begin(), rob->getInstList(0).end());
@@ -168,6 +208,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         renameMap[tid] = nullptr;
         htmStarts[tid] = 0;
         htmStops[tid] = 0;
+        traceCommitIndex[tid] = 0;
     }
     interrupt = NoFault;
 
@@ -659,6 +700,10 @@ Commit::squashAll(ThreadID tid)
     // all instructions of this thread.
     InstSeqNum squashed_inst = rob->isEmpty(tid) ?
         lastCommitedSeqNum[tid] : rob->readHeadInst(tid)->seqNum - 1;
+    InstSeqNum notify_done_seq = squashed_inst;
+    if (traceCtrlFaultPending[tid]) {
+        notify_done_seq = std::max(notify_done_seq, traceCtrlFaultSeqNum[tid]);
+    }
 
     // All younger instructions will be squashed. Set the sequence
     // number as the youngest instruction in the ROB (0 in this case.
@@ -671,6 +716,9 @@ Commit::squashAll(ThreadID tid)
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
     toIEW->commitInfo[tid].doneMemSeqNum = squashed_inst;
+    // For trace ctrl-flow faults, notify fetch rollback to skip the faulting inst.
+    toIEW->commitInfo[tid].traceTrapSeqNum = notify_done_seq;
+    toIEW->commitInfo[tid].traceTrapSkipInst = traceCtrlFaultPending[tid];
 
     // Send back the squash signal to tell stages that they should
     // squash.
@@ -692,11 +740,19 @@ Commit::squashAll(ThreadID tid)
     cpu->mmu->useNewPriv(cpu->getContext(tid));
 
     squashInflightAndUpdateVersion(tid);
+
+    traceCtrlFaultPending[tid] = false;
 }
 
 void
 Commit::squashFromTrap(ThreadID tid)
 {
+    DPRINTF(Commit,
+            "[tid:%i] [squash-source=trap] tick=%llu committedPC=%#lx newPC=%s\n",
+            tid,
+            (unsigned long long)curTick(),
+            (unsigned long)committedPC[tid],
+            *pc[tid]);
     squashAll(tid);
 
     toIEW->commitInfo[tid].isTrapSquash = true;
@@ -718,6 +774,11 @@ Commit::squashFromTrap(ThreadID tid)
 void
 Commit::squashFromTC(ThreadID tid)
 {
+    DPRINTF(Commit,
+            "[tid:%i] [squash-source=tc] tick=%llu newPC=%s\n",
+            tid,
+            (unsigned long long)curTick(),
+            *pc[tid]);
     squashAll(tid);
 
     DPRINTF(Commit, "Squashing from TC, restarting at PC %s\n", *pc[tid]);
@@ -735,8 +796,20 @@ Commit::squashFromTC(ThreadID tid)
 void
 Commit::squashFromSquashAfter(ThreadID tid)
 {
-    DPRINTF(Commit, "Squashing after squash after request, "
-            "restarting at PC %s\n", *pc[tid]);
+    if (squashAfterInst[tid]) {
+        DPRINTF(Commit,
+                "[tid:%i] [squash-source=squashAfter] tick=%llu newPC=%s inst=[sn:%llu]\n",
+                tid,
+                (unsigned long long)curTick(),
+                *pc[tid],
+                (unsigned long long)squashAfterInst[tid]->seqNum);
+    } else {
+        DPRINTF(Commit,
+                "[tid:%i] [squash-source=squashAfter] tick=%llu newPC=%s inst=[null]\n",
+                tid,
+                (unsigned long long)curTick(),
+                *pc[tid]);
+    }
 
     squashAll(tid);
     // Make sure to inform the fetch stage of which instruction caused
@@ -814,7 +887,7 @@ Commit::tick()
 
             [[maybe_unused]] const DynInstPtr &inst = rob->readHeadInst(tid);
 
-            DPRINTF(Commit,"[tid:%i] Instruction [sn:%llu] %s PC %s is head of"
+            DPRINTF(Commit,"[tid:%i] Instruction [sn:%llu] PC %s is head of"
                     " ROB and ready to commit\n",
                     tid, inst->seqNum, inst->pcState());
 
@@ -841,6 +914,17 @@ Commit::tick()
     }
 
     updateStatus();
+
+    // In trace-driven mode, if the trace reader has reached EOF and the
+    // entire out-of-order pipeline is drained, we can terminate the
+    // simulation immediately after the last instruction commits instead of
+    // waiting for the CommitStuckCheckEvent to fire. This avoids an
+    // artificial 40,000-cycle "idle" tail that would otherwise skew stats.
+    if (cpu->isTraceMode() && cpu->isTraceEOF() && cpu->isTracePipelineDrained()) {
+        warn("[Commit] Trace mode reached EOF and pipeline drained; exiting cleanly.\n");
+        exitSimLoop("Trace-driven CPU reached EOF and drained");
+        return;
+    }
 }
 
 void
@@ -1192,6 +1276,27 @@ Commit::commitInsts()
         } else {
             set(pc[tid], head_inst->pcState());
 
+            // Trace ctrl-flow change: convert to fault so trap path handles squash/redirect.
+            if (cpu->isTraceMode() && head_inst->getFault() == NoFault) {
+                if (const o3::TraceInstruction *ti_meta =
+                        cpu->getTraceInstMetadata(head_inst->seqNum)) {
+                    if (ti_meta->isCtrlFlowChange()) {
+                        head_inst->setTraceCtrlFlowChange(true);
+                        traceCtrlFaultPending[tid] = true;
+                        traceCtrlFaultSeqNum[tid] = head_inst->seqNum;
+                        head_inst->getFault() =
+                            std::make_shared<TraceCtrlFlowFault>(
+                                ti_meta->getCtrlFlowTarget());
+                        DPRINTF(CommitTrace,
+                                "[tid:%d idx:%llu sn:%llu] Trace ctrl-flow change -> inject fault to target 0x%lx\n",
+                                tid,
+                                (unsigned long long)traceCommitIndex[tid],
+                                head_inst->seqNum,
+                                (unsigned long)ti_meta->getCtrlFlowTarget());
+                    }
+                }
+            }
+
             // Try to commit the head instruction.
             bool commit_success = commitHead(head_inst, num_committed);
 
@@ -1256,6 +1361,16 @@ Commit::commitInsts()
                     }
                     dbbtb->notifyInstCommit(head_inst);
                 }
+                // 如果这是 trace 流中的最后一条动态指令，则在其提交后
+                // 立即正常退出模拟，避免依赖 CommitStuck 检测或 drain
+                // 逻辑才能终止 trace 驱动的仿真。
+                if (cpu->isTraceMode() && head_inst->isLastTraceInst()) {
+                    warn("[Commit] Committed LAST trace-driven instruction [sn:%llu]; exiting cleanly.\n",
+                         head_inst->seqNum);
+                    exitSimLoop("Trace-driven CPU committed last traced instruction");
+                    return;
+                }
+
                 if (head_inst->isUpdateVsstatusSd()) {
                     auto v = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);
                     RiscvISA::HSTATUS hstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HSTATUS, tid);
@@ -1370,6 +1485,19 @@ Commit::commitInsts()
 
                 cpu->traceFunctions(pc[tid]->instAddr());
 
+                // Trace-mode: commit-time difftest against trace metadata
+                if (cpu->isTraceMode()) {
+                    traceCommitDifftest(tid, head_inst);
+
+                    // In trace mode, release per-instruction trace metadata on
+                    // commit to prevent unbounded growth of fetch-side metadata
+                    // structures. The actual cleanup uses a sliding window based
+                    // on the oldest in-flight seqNum and a guard distance.
+                    if (cpu->isTraceInstruction(head_inst->seqNum)) {
+                        cpu->cleanupTraceMetadataOnCommit(head_inst->seqNum);
+                    }
+                }
+
                 head_inst->staticInst->advancePC(*pc[tid]);
 
                 // Keep track of the last sequence number commited
@@ -1414,6 +1542,10 @@ Commit::commitInsts()
                         DPRINTF(Commit,
                                 "PC skip function event, stopping commit\n");
                         break;
+                    }
+                    // Advance expected trace index only when a full macro-inst commits
+                    if (cpu->isTraceMode()) {
+                        traceCommitIndex[tid]++;
                     }
                 }
 
@@ -1479,6 +1611,240 @@ Commit::diffInst(ThreadID tid, const DynInstPtr &inst) {
     cpu->difftestStep(tid, inst->seqNum);
 }
 
+
+// Perform trace-mode commit difftest and logging (PC, InstType, memory ops, branch info)
+void
+Commit::traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst)
+{
+    // Initialize/align expected trace index from fetch mapping on first use
+    uint64_t mapped_idx = cpu->getTraceIndexForSeqNum(head_inst->seqNum);
+    if (traceCommitIndex[tid] == 0 && mapped_idx != 0) {
+        traceCommitIndex[tid] = mapped_idx;
+        DPRINTF(CommitTrace, "[tid:%d] Init traceCommitIndex -> %llu (sn:%llu)\n",
+                tid, (unsigned long long)traceCommitIndex[tid], head_inst->seqNum);
+    }
+
+    // 1) Resolve expected trace PC
+    // Prefer O(1) metadata lookup (seqNum -> TraceInstruction) to avoid
+    // expensive checkpoint/seek on each diff. Fallback to index-based
+    // lookup only when metadata is unavailable.
+    Addr expected_trace_pc = 0;
+    bool have_expected = false;
+    if (const o3::TraceInstruction* ti_cur = cpu->getTraceInstMetadata(head_inst->seqNum)) {
+        expected_trace_pc = ti_cur->getPC();
+        have_expected = ti_cur->isValid();
+    } else {
+        expected_trace_pc = cpu->getTracePCByIndex(traceCommitIndex[tid]);
+        have_expected = (expected_trace_pc != 0);
+    }
+
+    Addr commit_pc = head_inst->pcState().instAddr();
+    DPRINTF(CommitTrace,
+            "[tid:%d idx:%llu sn:%llu] Commit vs Trace PC: commit=0x%lx expect=0x%lx (have=%d)\n",
+            tid,
+            (unsigned long long)traceCommitIndex[tid],
+            head_inst->seqNum,
+            (unsigned long)commit_pc,
+            (unsigned long)expected_trace_pc,
+            have_expected);
+
+    // 2) Strong check on PC
+    if (have_expected && commit_pc != expected_trace_pc) {
+        panic("[Commit][tid:%d idx:%llu sn:%llu] PC mismatch: commit=0x%lx, trace=0x%lx",
+              tid,
+              (unsigned long long)traceCommitIndex[tid],
+              head_inst->seqNum,
+              (unsigned long)commit_pc,
+              (unsigned long)expected_trace_pc);
+    }
+
+    // 2.1) Strong check on instruction type (if metadata available)
+    // metadata must be available for this check
+    if (!cpu->isTraceInstruction(head_inst->seqNum)) {
+        panic("[Commit][tid:%d idx:%llu sn:%llu] Missing trace metadata for instruction type difftest (pc=0x%lx)",
+              tid,
+              (unsigned long long)traceCommitIndex[tid],
+              head_inst->seqNum,
+              (unsigned long)commit_pc);
+    }
+    if (const o3::TraceInstruction* ti_meta = cpu->getTraceInstMetadata(head_inst->seqNum)) {
+        auto classifyInstType = [](const StaticInstPtr &si) -> o3::TraceInstruction::InstType {
+            if (!si) return o3::TraceInstruction::InstType::UNDEFINED;
+            if (si->isLoad()) return o3::TraceInstruction::InstType::LOAD;
+            if (si->isStore()) return o3::TraceInstruction::InstType::STORE;
+            if (si->isControl()) {
+                if (si->isReturn()) return o3::TraceInstruction::InstType::RETURN;
+                if (si->isCall()) {
+                    return si->isIndirectCtrl()
+                        ? o3::TraceInstruction::InstType::CALL_INDIRECT
+                        : o3::TraceInstruction::InstType::CALL_DIRECT;
+                }
+                if (si->isUncondCtrl()) {
+                    return si->isIndirectCtrl()
+                        ? o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH
+                        : o3::TraceInstruction::InstType::UNCOND_DIRECT_BRANCH;
+                }
+                return o3::TraceInstruction::InstType::COND_BRANCH;
+            }
+            if (si->isFloating() || si->isVector()) return o3::TraceInstruction::InstType::FP;
+            return o3::TraceInstruction::InstType::ALU;
+        };
+
+        auto commit_type = classifyInstType(head_inst->staticInst);
+        auto trace_type = ti_meta->getInstType();
+        // Allow trace hints to override static decode for call/return/indirect
+        if (head_inst->traceIsCall()) {
+            trace_type = head_inst->traceIsIndirect()
+                ? o3::TraceInstruction::InstType::CALL_INDIRECT
+                : o3::TraceInstruction::InstType::CALL_DIRECT;
+        } else if (head_inst->traceIsReturn()) {
+            trace_type = o3::TraceInstruction::InstType::RETURN;
+        }
+        const bool skip_type_check =
+            (ti_meta->getInstSizeBytes() == 2 &&
+             ti_meta->getInstType() == o3::TraceInstruction::InstType::FP);
+        DPRINTF(CommitTrace, "[tid:%d idx:%llu sn:%llu] InstType: commit=%s, trace=%s\n",
+                tid,
+                (unsigned long long)traceCommitIndex[tid],
+                head_inst->seqNum,
+                ([&](){
+                    switch (commit_type) {
+                        case o3::TraceInstruction::InstType::ALU: return "ALU";
+                        case o3::TraceInstruction::InstType::LOAD: return "LOAD";
+                        case o3::TraceInstruction::InstType::STORE: return "STORE";
+                        case o3::TraceInstruction::InstType::COND_BRANCH: return "COND_BRANCH";
+                        case o3::TraceInstruction::InstType::UNCOND_DIRECT_BRANCH: return "UNCOND_DIRECT_BRANCH";
+                        case o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH: return "UNCOND_INDIRECT_BRANCH";
+                        case o3::TraceInstruction::InstType::FP: return "FP";
+                        case o3::TraceInstruction::InstType::SLOW_ALU: return "SLOW_ALU";
+                        case o3::TraceInstruction::InstType::CALL_DIRECT: return "CALL_DIRECT";
+                        case o3::TraceInstruction::InstType::CALL_INDIRECT: return "CALL_INDIRECT";
+                        case o3::TraceInstruction::InstType::RETURN: return "RETURN";
+                        default: return "UNDEFINED";
+                    }
+                })(),
+                ti_meta->getInstTypeStr());
+
+        if (!skip_type_check && commit_type != trace_type) {
+            panic("[Commit][tid:%d idx:%llu sn:%llu] InstType mismatch: commit=%s, trace=%s (pc=0x%lx)",
+                  tid,
+                  (unsigned long long)traceCommitIndex[tid],
+                  head_inst->seqNum,
+                  ([&](){
+                      switch (commit_type) {
+                          case o3::TraceInstruction::InstType::ALU: return "ALU";
+                          case o3::TraceInstruction::InstType::LOAD: return "LOAD";
+                          case o3::TraceInstruction::InstType::STORE: return "STORE";
+                          case o3::TraceInstruction::InstType::COND_BRANCH: return "COND_BRANCH";
+                          case o3::TraceInstruction::InstType::UNCOND_DIRECT_BRANCH: return "UNCOND_DIRECT_BRANCH";
+                          case o3::TraceInstruction::InstType::UNCOND_INDIRECT_BRANCH: return "UNCOND_INDIRECT_BRANCH";
+                          case o3::TraceInstruction::InstType::FP: return "FP";
+                          case o3::TraceInstruction::InstType::SLOW_ALU: return "SLOW_ALU";
+                          case o3::TraceInstruction::InstType::CALL_DIRECT: return "CALL_DIRECT";
+                          case o3::TraceInstruction::InstType::CALL_INDIRECT: return "CALL_INDIRECT";
+                          case o3::TraceInstruction::InstType::RETURN: return "RETURN";
+                          default: return "UNDEFINED";
+                      }
+                  })(),
+                  ti_meta->getInstTypeStr(),
+                  (unsigned long)commit_pc);
+        }
+
+        // 2.2) Optional memory diffs (non-fatal)
+        if (ti_meta->isMemoryOp()) {
+            if (!ti_meta->getLoadAddresses().empty() || !ti_meta->getStoreAddresses().empty()) {
+                Addr trace_addr = 0;
+                if (ti_meta->getLoad()) {
+                    trace_addr = ti_meta->getLoadAddresses().empty() ? 0 : ti_meta->getLoadAddresses()[0];
+                } else if (ti_meta->getStore()) {
+                    trace_addr = ti_meta->getStoreAddresses().empty() ? 0 : ti_meta->getStoreAddresses()[0];
+                }
+                if (head_inst->effAddrValid()) {
+                    Addr commit_addr = head_inst->effAddr;
+                    if (trace_addr != 0 && commit_addr != trace_addr) {
+                        DPRINTF(CommitTrace,
+                                "[tid:%d idx:%llu sn:%llu] Mem addr mismatch: commit=0x%lx trace=0x%lx (pc=0x%lx)\n",
+                                tid,
+                                (unsigned long long)traceCommitIndex[tid],
+                                head_inst->seqNum,
+                                (unsigned long)commit_addr,
+                                (unsigned long)trace_addr,
+                                (unsigned long)commit_pc);
+                    }
+                }
+            }
+
+            if (!ti_meta->getMemSizes().empty()) {
+                uint32_t trace_size = ti_meta->getMemSizes()[0];
+                if (head_inst->effSize != 0 && head_inst->effSize != trace_size) {
+                    DPRINTF(CommitTrace,
+                            "[tid:%d idx:%llu sn:%llu] Mem size mismatch: commit=%uB trace=%uB (pc=0x%lx)\n",
+                            tid,
+                            (unsigned long long)traceCommitIndex[tid],
+                            head_inst->seqNum,
+                            head_inst->effSize,
+                            trace_size,
+                            (unsigned long)commit_pc);
+                }
+            }
+        }
+    }
+
+    // 3) Branch info (non-fatal)
+    if (const o3::TraceInstruction* ti_br = cpu->getTraceInstMetadata(head_inst->seqNum)) {
+        if (ti_br->getBranch()) {
+            auto &rvpc = head_inst->pcState().as<RiscvISA::PCState>();
+            const Addr actual_next = rvpc.npc();
+            const Addr fall_through = rvpc.getFallThruPC();
+            const bool actual_taken = (actual_next != fall_through);
+            const bool expect_taken = ti_br->getBranchTaken();
+            const bool expect_has_tgt = ti_br->getHasBranchTarget();
+            const Addr expect_tgt = expect_has_tgt ? ti_br->getBranchTarget() : fall_through;
+
+            DPRINTF(CommitTrace,
+                    "[tid:%d idx:%llu sn:%llu] Branch: actual_taken=%d "
+                    "expect_taken=%d next=0x%lx tgt=0x%lx ft=0x%lx\n",
+                    tid,
+                    (unsigned long long)traceCommitIndex[tid],
+                    head_inst->seqNum,
+                    actual_taken, expect_taken,
+                    (unsigned long)actual_next,
+                    (unsigned long)expect_tgt,
+                    (unsigned long)fall_through);
+
+            if (actual_taken != expect_taken) {
+                DPRINTF(CommitTrace,
+                        "[tid:%d idx:%llu sn:%llu] Branch taken mismatch: actual=%d expect=%d\n",
+                        tid,
+                        (unsigned long long)traceCommitIndex[tid],
+                        head_inst->seqNum,
+                        actual_taken,
+                        expect_taken);
+            }
+            if (expect_taken) {
+                if (actual_next != expect_tgt) {
+                    DPRINTF(CommitTrace,
+                            "[tid:%d idx:%llu sn:%llu] Branch target mismatch: actual=0x%lx expect=0x%lx\n",
+                            tid,
+                            (unsigned long long)traceCommitIndex[tid],
+                            head_inst->seqNum,
+                            (unsigned long)actual_next,
+                            (unsigned long)expect_tgt);
+                }
+            } else {
+                if (actual_next != fall_through) {
+                    DPRINTF(CommitTrace,
+                            "[tid:%d idx:%llu sn:%llu] Branch fall-through mismatch: actual=0x%lx fall=0x%lx\n",
+                            tid,
+                            (unsigned long long)traceCommitIndex[tid],
+                            head_inst->seqNum,
+                            (unsigned long)actual_next,
+                            (unsigned long)fall_through);
+                }
+            }
+        }
+    }
+}
 
 bool
 Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)

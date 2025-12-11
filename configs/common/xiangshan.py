@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 
 import m5
@@ -209,13 +210,47 @@ def build_xiangshan_system(args):
     ruby = False
     if hasattr(args, 'ruby') and args.ruby:
         ruby = True
+
+    # Create system using FS mode with trace-specific memory configuration
     test_sys = makeBareMetalXiangshanSystem('timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
+
+    # CRITICAL FIX: Configure trace-specific memory ranges and functional TLB for trace mode
+    if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+        print("Trace mode: Using FS mode with functional TLB to bypass MMU translation issues")
+        print("Trace mode: Configuring expanded memory ranges for trace address mapping")
+        # Force functional TLB to bypass complex MMU translation
+        args.functional_tlb = True
+    else:
+        print("Checkpoint mode: Using standard FS mode with normal MMU translation")
     test_sys.num_cpus = np
 
     test_sys.xiangshan_system = True
-    test_sys.enable_difftest = args.enable_difftest
+    # Disable difftest for trace mode - trace execution doesn't need verification with reference model
+    # Only enable difftest if not in trace mode - trace mode doesn't need reference model verification
+    test_sys.enable_difftest = (args.enable_difftest
+                                if not (hasattr(args, 'enable_trace_mode')
+                                        and args.enable_trace_mode)
+                                else False)
 
-    config_xiangshan_inputs(args, test_sys)
+    # Configure XiangShan inputs - skip checkpoint loading in trace mode
+    if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+        args.difftest_ref_so = None
+
+        # Trace mode FS configuration with functional TLB - bootloader needed but no checkpoint
+        test_sys.workload.bootloader = '/nfs/home/goulingrui/project/riscv-environments/riscv-pk/build/bbl'
+        test_sys.workload.xiangshan_cpt = False  # No checkpoint in trace mode
+        test_sys.restore_from_gcpt = False       # Disable GCPT restoration
+
+        # Configure DRAMsim3 if needed for memory controller
+        if args.mem_type == 'DRAMsim3' and args.dramsim3_ini is None:
+            root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            args.dramsim3_ini = os.path.join(root_dir,
+                                             'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
+
+        print("Trace mode: FS mode with functional TLB configured to bypass MMU translation issues")
+    else:
+        # Standard checkpoint-based configuration
+        config_xiangshan_inputs(args, test_sys)
 
      # Set the cache line size for the entire system
     test_sys.cache_line_size = args.cacheline_size
@@ -238,11 +273,16 @@ def build_xiangshan_system(args):
     # For now, assign all the CPUs to the same clock domain
     test_sys.cpu = [TestCPUClass(clk_domain=test_sys.cpu_clk_domain, cpu_id=i)
                     for i in range(np)]
+    # Configure MMU for trace-aware FS mode
     for cpu in test_sys.cpu:
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
         cpu.mmu.enable_sv48 = args.open_sv48
+
+        if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+            cpu.mmu.functional = True  # Use functional TLB for reliable trace address translation
+            print(f"Trace mode: CPU {cpu.cpu_id} configured with trace-aware PMAChecker and functional TLB")
 
     # configure BP
     args.enable_loop_predictor = True
@@ -296,6 +336,52 @@ def build_xiangshan_system(args):
 
     for cpu in test_sys.cpu:
         cpu.store_prefetch_train = not args.kmh_align
+
+    # Configure trace mode if enabled
+    if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+        print(f"Configuring CPUs for trace mode...")
+        for cpu in test_sys.cpu:
+            # Enable trace mode
+            cpu.enableTraceMode = True
+            cpu.traceFile = args.trace_file
+            cpu.traceFormat = args.trace_format
+            # Unify with normal mode option: use --maxinsts
+            cpu.max_insts_any_thread = args.maxinsts
+
+            # Trace address mapping: Map to existing physical memory range
+            # System physical memory starts at 0x80000000, so map trace addresses there
+            cpu.traceAddrBase = 0x80000000  # Start of physical memory
+            cpu.traceAddrSize = 0x40000000  # 1GB window within physical memory
+
+            # Disable strict memory ordering for trace mode compatibility
+            # Trace instructions may not follow strict ordering requirements
+            cpu.needsTSO = False
+
+            # Trace mispredict modeling controls
+            cpu.traceMispredictPenalty = args.trace_mispredict_penalty
+            cpu.traceEnableWrongPath = (not args.trace_disable_wrongpath)
+            if hasattr(args, 'trace_wrongpath_use_traceinst') and args.trace_wrongpath_use_traceinst:
+                cpu.traceWrongPathUseTraceInst = True
+
+            # Note: Difftest configured at system level, not CPU level
+
+            # Configure trace-specific parameters
+            if hasattr(args, 'trace_enable_decoupled_bp') and args.trace_enable_decoupled_bp:
+                cpu.enableDecoupledBPInTrace = True
+            else:
+                cpu.enableDecoupledBPInTrace = False
+
+            cpu.traceCheckpointInterval = (args.trace_checkpoint_interval
+                                           if hasattr(args, 'trace_checkpoint_interval')
+                                           else 64)
+            cpu.traceBPValidation = not (hasattr(args, 'trace_disable_bp_validation')
+                                         and args.trace_disable_bp_validation)
+
+        print(f"  Trace file: {args.trace_file}")
+        print(f"  Trace format: {args.trace_format}")
+        print(f"  Max instructions: {args.maxinsts}")
+        print(f"  Decoupled BP: {hasattr(args, 'trace_enable_decoupled_bp') and args.trace_enable_decoupled_bp}")
+
     # ruby will overwrite the store_prefetch_train
     if ruby:
         test_sys._dma_ports = []
@@ -322,6 +408,21 @@ def build_xiangshan_system(args):
 
             # Ruby D-cache does not support store prefetch yet
             cpu.store_prefetch_train = False
+
+        # Align trace address mapping window to physical memory size (Ruby path)
+        if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+            try:
+                base = int(test_sys.mem_ranges[0].start)
+                total = 0
+                for r in test_sys.mem_ranges:
+                    total += int(r.size())
+                for cpu in test_sys.cpu:
+                    cpu.traceAddrBase = base
+                    cpu.traceAddrSize = total
+                    cpu.traceAddrMapMode = "linear"
+                print(f"Trace mode: Align trace mapping to mem: base=0x{base:x}, size=0x{total:x}")
+            except Exception as e:
+                print(f"Warning: failed to align trace mapping to mem (Ruby path): {e}")
 
     else:
         if args.caches or args.l2cache:
@@ -353,6 +454,20 @@ def build_xiangshan_system(args):
         CacheConfig.config_cache(args, test_sys)
 
         MemConfig.config_mem(args, test_sys)
+
+        # Align trace address mapping window to physical memory size (classic cache path)
+        if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+            try:
+                base = int(test_sys.mem_ranges[0].start)
+                total = 0
+                for r in test_sys.mem_ranges:
+                    total += int(r.size())
+                for cpu in test_sys.cpu:
+                    cpu.traceAddrBase = base
+                    cpu.traceAddrSize = total
+                print(f"Trace mode: Align trace mapping to mem: base=0x{base:x}, size=0x{total:x}")
+            except Exception as e:
+                print(f"Warning: failed to align trace mapping to mem: {e}")
 
     if args.mmc_img:
         for mmc, cpu in zip(test_sys.mmcs, test_sys.cpu):
@@ -495,6 +610,8 @@ def xiangshan_system_init():
     parser = argparse.ArgumentParser()
     Options.addCommonOptions(parser, configure_xiangshan=True)
     Options.addXiangshanFSOptions(parser)
+    Options.addXiangshanTraceOptions(parser)
+
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)
@@ -504,7 +621,12 @@ def xiangshan_system_init():
     TestMemClass = Simulation.setMemClass(args)
 
     args.xiangshan_system = True
-    args.enable_difftest = True
+    # Only enable difftest if not in trace mode - trace mode doesn't need reference model verification
+    if not (hasattr(args, 'enable_trace_mode') and args.enable_trace_mode):
+        args.enable_difftest = True
+    else:
+        args.enable_difftest = False
+        print("Trace mode: Difftest disabled for trace execution")
     args.enable_riscv_vector = True
 
     return args

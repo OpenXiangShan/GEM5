@@ -43,15 +43,19 @@
 
 #include <cstring>
 #include <deque>
+#include <memory>
+#include <unordered_map>
 #include <utility>
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
+#include "arch/riscv/types.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/trace/TraceReader.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
@@ -250,6 +254,8 @@ class Fetch
 
     /** Initialize stage. */
     void startupStage();
+    /** Trace-mode helper: initialize reader, set PC, prime frontend */
+    bool initTraceMode();
 
     /** Clear all thread-specific states*/
     void clearStates(ThreadID tid);
@@ -487,6 +493,109 @@ class Fetch
 
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
+    /** Trace-driven simulation support methods */
+
+    /**
+     * Store trace instruction metadata for cache hierarchy integration
+     * @param seqNum Instruction sequence number
+     * @param traceInstr Trace instruction metadata
+     */
+    void storeTraceInstMetadata(InstSeqNum seqNum, const o3::TraceInstruction &traceInstr);
+
+    /**
+     * Get trace instruction metadata for a given sequence number
+     * @param seqNum Instruction sequence number
+     * @return Pointer to trace instruction if found, nullptr otherwise
+     */
+    const o3::TraceInstruction* getTraceInstMetadata(InstSeqNum seqNum) const;
+
+    /**
+     * Check if an instruction is from trace
+     * @param seqNum Instruction sequence number
+     * @return true if instruction is from trace
+     */
+    bool isTraceInstruction(InstSeqNum seqNum) const;
+
+    /**
+     * Clean up trace instruction metadata for squashed instructions
+     * @param seqNum Sequence number threshold - remove all instructions >= seqNum
+     */
+    void cleanupTraceMetadata(InstSeqNum seqNum);
+
+    /**
+     * Clean up trace instruction metadata for a committed instruction.
+     * Removes only the entry that matches the provided sequence number
+     * and its auxiliary mapping, without touching younger in-flight ones.
+     */
+    void cleanupTraceMetadataOnCommit(InstSeqNum seqNum);
+
+    /**
+     * Create a trace reader checkpoint if needed
+     * @param seqNum Current sequence number
+     */
+    void maybeCreateTraceCheckpoint(InstSeqNum seqNum);
+
+    /**
+     * Find trace instruction index for a given sequence number
+     * @param seqNum Sequence number to look up
+     * @return Trace instruction index, or 0 if not found
+     */
+    uint64_t findTraceIndexForSeqNum(InstSeqNum seqNum) const;
+
+    /**
+     * Legacy lookup API: returns true if a mapping exists and writes index.
+     */
+    bool lookupTraceIndexForSeqNum(InstSeqNum seqNum, uint64_t &index) const;
+
+    /**
+     * Read-only access to trace PC by global trace instruction index.
+     * Implementation must not alter the ongoing reader stream state.
+     * Returns 0 if unavailable.
+     */
+    Addr getTracePCByIndex(uint64_t index);
+
+    /** Handle trace-specific rollback/metadata cleanup during squash. */
+    void handleTraceSquash(ThreadID tid, const PCStateBase &new_pc,
+                           const DynInstPtr squashInst, InstSeqNum seqNum);
+
+    /**
+     * Rollback trace reader to handle misprediction
+     * @param seqNum Sequence number to rollback before
+     * @return true if rollback successful
+     */
+    bool rollbackTraceReader(InstSeqNum seqNum, bool squash_itself);
+
+    /**
+     * Validate branch predictor prediction against trace ground truth
+     * @param traceInstr Trace instruction with ground truth
+     * @param predictedPC Predicted next PC from branch predictor
+     * @param predictedTaken Predicted taken/not-taken from branch predictor
+     * @return true if prediction matches trace, false if misprediction
+     */
+    bool validateBPPrediction(const o3::TraceInstruction& traceInstr,
+                             Addr predictedPC, bool predictedTaken);
+
+    /** Bind pending trace metadata to dyn inst (branch info, flags, maps). */
+    void bindTraceMetadata(const DynInstPtr &inst,
+                           const o3::TraceInstruction &traceInstr,
+                           ThreadID tid);
+
+    /** Validate and consume expected trace stream on correct path. */
+    void validateAndConsumeTraceStream(ThreadID tid, const PCStateBase &pc);
+
+    /** Handle ctrl-flow-change trace wrong-path entry for decoupled frontend. */
+    void maybeEnterTraceCtrlFlowWrongPath(ThreadID tid,
+                                          const DynInstPtr &instruction,
+                                          const o3::TraceInstruction &traceInstr,
+                                          PCStateBase &pc,
+                                          PCStateBase &next_pc);
+
+    /** Handle trace-vs-BP validation and possible wrong-path entry. */
+    void handleTraceBPValidation(ThreadID tid, const DynInstPtr &instruction,
+                                 const o3::TraceInstruction &traceInstr,
+                                 const PCStateBase &next_pc,
+                                 bool predictedBranch);
+
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
@@ -544,6 +653,45 @@ class Fetch
      * @param tid The thread ID to fetch for.
      */
     void performInstructionFetch(ThreadID tid);
+
+    /**
+     * Initialize trace reader for trace-driven simulation
+     * @return true if trace reader initialized successfully
+     */
+    bool initializeTraceReader();
+
+    /**
+     * Create appropriate MachInst from trace instruction information
+     * @param traceInstr Trace instruction containing type and metadata
+     * @return RISC-V machine instruction encoding
+     */
+    TheISA::MachInst createMachInstFromTrace(const o3::TraceInstruction &traceInstr);
+
+    /** Select NOP size for wrong-path injection when trace enforces minimal steps */
+    unsigned chooseWrongPathNopSize(ThreadID tid, Addr pc);
+
+    /**
+     * Feed trace-driven instruction (or wrong-path NOP) to decoder on demand.
+     * @return StallReason if stalled, NoStall otherwise
+     */
+    StallReason fetchTraceInstruction(ThreadID tid, const PCStateBase &this_pc);
+
+    /**
+     * Helper to copy provided instruction bits to decoder and mark fetchBuffer
+     * as valid for the supplied PC (used only in trace on-demand flow).
+     */
+    void supplyTraceToDecoder(ThreadID tid, const PCStateBase &this_pc,
+                              TheISA::MachInst machInst, Addr instrPC,
+                              const char *tag);
+
+    /** Enter trace wrong-path mode with unified state updates/logging. */
+    void enterTraceWrongPath(ThreadID tid, InstSeqNum branchSeqNum, Addr predPC,
+                             Addr corrPC, bool forceMinStep,
+                             const char *reason, uint64_t traceSeqNum);
+
+    /** Unified exit from trace wrong-path mode with logging. */
+    void exitTraceWrongPath(ThreadID tid, const char *reason);
+
 
     /**
      * Processes a single instruction, including decoding, building the
@@ -606,7 +754,7 @@ class Fetch
 
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
-    
+
     branch_prediction::stream_pred::DecoupledStreamBPU *dbsp;
 
     branch_prediction::ftb_pred::DecoupledBPUWithFTB *dbpftb;
@@ -618,6 +766,84 @@ class Fetch
 
     /** FIFO storing resolve entries waiting for BPU training. */
     std::deque<ResolveQueueEntry> resolveQueue;
+
+  public:
+    /** Trace reader for trace-driven simulation */
+    std::unique_ptr<o3::TraceReader> traceReader;
+    /** Whether trace mode is enabled */
+    bool traceMode;
+    /** Trace format string (e.g., champsim, cbp2025) */
+    std::string traceFormat{"champsim"};
+    /** Whether to train BP and use real branch instructions in trace mode */
+    // Default off per design: trace 不显式训练预测器，改由普通 commit 路径训练
+    bool traceTrainBranches = false;
+    /** Whether to validate BP against trace to trigger wrong-path mode */
+    bool traceBPValidation = true;
+    /** Cycles to stall fetch on mispredict in trace mode */
+    Cycles traceMispredictPenalty = Cycles(8);
+    /** Remaining stall cycles due to a modeled mispredict */
+    Cycles traceStallRemaining = Cycles(0);
+    /** Enable explicit wrong-path injection in decoupled frontend */
+    bool traceEnableWrongPath = true;
+
+    /** Explicit wrong-path simulation (decoupled frontend only) */
+    bool traceWrongPathActive = false;
+    Cycles traceWrongPathCyclesLeft = Cycles(0);
+    Addr traceWrongPathPredPC = 0;       // predicted (wrong) path start PC
+    Addr traceWrongPathCorrectPC = 0;    // correct redirect PC from trace
+    InstSeqNum traceWrongPathBranchSeqNum = 0; // branch seqNum for squash boundary
+    // For trap-driven wrong-path where trace lacks reliable next PC, force 2B steps.
+    bool traceWrongPathForceMinStep = false;
+
+    /** Wrong-path injection mode: use trace instructions instead of NOPs */
+    bool traceWrongPathUseTraceInst = false;
+    /** Checkpoint for wrong-path (only used when traceWrongPathUseTraceInst is enabled) */
+    o3::TraceReader::TraceCheckpoint traceWrongPathCheckpoint;
+
+    /** Whether trace mode should honor decoupled frontend semantics */
+    bool traceDecoupledFrontend = false;
+
+  private:
+
+    /** Map to store trace instruction metadata for cache hierarchy integration */
+    std::unordered_map<InstSeqNum, std::shared_ptr<const o3::TraceInstruction>> traceInstMap;
+
+    /** Map sequence numbers to trace instruction indices for rollback capability */
+    std::unordered_map<InstSeqNum, uint64_t> seqNumToTraceIndex;
+
+    /** Number of trace instructions consumed so far (for precise mapping) */
+    // Trace instruction index mapping now uses 1-based indexing to align with reader semantics
+    uint64_t traceInstrConsumed = 1;
+
+    // Expected correct-path trace stream (per-thread), filled ahead for diff
+    std::deque<o3::TraceInstruction> traceExpectedStream[MaxThreads];
+    static constexpr size_t TRACE_STREAM_MIN_FILL = 16;
+    void ensureTraceStreamFilled(ThreadID tid, size_t min_count);
+
+    /**
+     * Fetch-side expected next trace index on the correct path (per-thread).
+     * Used to verify that, when not in wrong-path mode, each built instruction
+     * follows the trace stream strictly: first correct-path inst uses index 1,
+     * and subsequent ones increment by 1.
+     */
+    uint64_t traceFetchExpectedCorrectIdx[MaxThreads];
+
+    /**
+     * Pending single trace instruction for on-demand consumption.
+     * 按需消费：在 checkMemoryNeeds/decode 前取一条并暂存，
+     * 在 buildInst 之后绑定到 DynInst 并清空。
+     */
+    bool pendingTraceValid = false;
+    o3::TraceInstruction pendingTraceInstr;
+
+    /** Periodic checkpoints for trace reader rollback */
+    std::vector<o3::TraceReader::TraceCheckpoint> traceCheckpoints;
+
+    /** Sequence numbers corresponding to each checkpoint */
+    std::vector<InstSeqNum> checkpointSeqNums;
+
+    /** Checkpoint interval (instructions between checkpoints) */
+    static constexpr uint64_t CHECKPOINT_INTERVAL = 64;
 
     /** PC of each thread. */
     std::unique_ptr<PCStateBase> pc[MaxThreads];
@@ -952,7 +1178,12 @@ class Fetch
     FinishTranslationEvent finishTranslationEvent;
 
     /** Decoupled frontend related */
-    bool isDecoupledFrontend() { return branchPred->isDecoupled(); }
+    bool isDecoupledFrontend() {
+        if (traceMode && !traceDecoupledFrontend) {
+            return false;
+        }
+        return branchPred->isDecoupled();
+    }
 
     bool isStreamPred() { return branchPred->isStream(); }
 
@@ -1108,6 +1339,16 @@ class Fetch
         statistics::Scalar resolveQueueFullEvents;
         /** Stat for total number of resolve enqueue fail events. */
         statistics::Scalar resolveEnqueueFailEvent;
+
+        // Trace metadata accounting (trace mode)
+        /** Number of stored trace metadata records (seqNum -> traceInst). */
+        statistics::Scalar traceMetaStores;
+        /** Number of times cleanup was called due to squash/rollback. */
+        statistics::Scalar traceMetaCleanupSquashCalls;
+        /** Total entries erased by squash/rollback cleanups. */
+        statistics::Scalar traceMetaCleanupSquashEntries;
+        /** Number of times cleanup was called on successful commit. */
+        statistics::Scalar traceMetaCleanupCommitCalls;
     } fetchStats;
 
     SquashVersion localSquashVer;

@@ -43,6 +43,7 @@
 #include "cpu/o3/cpu.hh"
 
 #include <cassert>
+#include <limits>
 
 #include "arch/riscv/regs/misc.hh"
 #include "config/the_isa.hh"
@@ -53,6 +54,7 @@
 #include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_context.hh"
+#include "cpu/o3/trace/TraceReader.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/thread_context.hh"
@@ -1782,6 +1784,48 @@ CPU::readArchVecReg(int reg_idx, uint64_t *val,ThreadID tid)
     DPRINTF(Commit, "Get map: v%i -> p%i\n", reg_idx, phys_reg->flatIndex());
 
     regFile.getReg(phys_reg, val);
+}
+
+bool
+CPU::isTraceInstruction(InstSeqNum seqNum) const
+{
+    return fetch.isTraceInstruction(seqNum);
+}
+
+const o3::TraceInstruction*
+CPU::getTraceInstMetadata(InstSeqNum seqNum) const
+{
+    return fetch.getTraceInstMetadata(seqNum);
+}
+
+uint64_t
+CPU::getTraceIndexForSeqNum(InstSeqNum seqNum) const
+{
+    return fetch.findTraceIndexForSeqNum(seqNum);
+}
+
+Addr
+CPU::getTracePCByIndex(uint64_t index)
+{
+    return fetch.getTracePCByIndex(index);
+}
+
+void
+CPU::cleanupTraceMetadataOnCommit(InstSeqNum seqNum)
+{
+    if (isTraceMode()) {
+        fetch.cleanupTraceMetadataOnCommit(seqNum);
+    }
+}
+
+InstSeqNum
+CPU::getOldestInFlightSeqNum() const
+{
+    if (!instList.empty()) {
+        return instList.front()->seqNum;
+    }
+    // No in-flight instructions: return a large value so cleanup can proceed.
+    return std::numeric_limits<InstSeqNum>::max();
 }
 
 } // namespace o3

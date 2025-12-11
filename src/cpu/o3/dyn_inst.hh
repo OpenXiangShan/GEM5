@@ -163,6 +163,9 @@ class DynInst : public ExecContext, public RefCounted
     /** InstRecord that tracks this instructions. */
     Trace::InstRecord *traceData = nullptr;
 
+    /** Whether this dynamic instruction is the last one in the trace stream. */
+    bool lastTraceInstFlag = false;
+
   protected:
     enum Status
     {
@@ -634,6 +637,66 @@ class DynInst : public ExecContext, public RefCounted
         instFlags[PredTaken] = predicted_taken;
     }
 
+    // ---- Trace branch/control-flow ground-truth (used by Decode/EXE in trace mode)
+    bool traceBranchInfoValid = false;
+    bool traceBranchTakenValue = false;
+    bool traceBranchHasTargetValue = false;
+    Addr traceBranchTargetValue = 0;
+    Addr traceBranchNextPCValue = 0;
+    // trace 侧标记该指令是否触发非普通顺序的控制流改变（例如 trap/异常）。
+    bool traceCtrlFlowChangeValue = false;
+    bool traceIsCallValue = false;
+    bool traceIsReturnValue = false;
+    bool traceIsIndirectValue = false;
+
+    void clearTraceBranchInfo()
+    {
+        traceBranchInfoValid = false;
+        traceBranchTakenValue = false;
+        traceBranchHasTargetValue = false;
+        traceBranchTargetValue = 0;
+        traceBranchNextPCValue = 0;
+        traceCtrlFlowChangeValue = false;
+        traceIsCallValue = false;
+        traceIsReturnValue = false;
+        traceIsIndirectValue = false;
+    }
+
+    void setTraceBranchInfo(bool taken, bool hasTarget, Addr branchTarget,
+                            Addr fallthrough)
+    {
+        traceBranchInfoValid = true;
+        traceBranchTakenValue = taken;
+        traceBranchHasTargetValue = hasTarget;
+        traceBranchTargetValue = hasTarget ? branchTarget : 0;
+        traceBranchNextPCValue = taken ?
+            (hasTarget ? branchTarget : fallthrough) :
+            fallthrough;
+    }
+
+    void setTraceCtrlFlowChange(bool hasCtrlFlowChange)
+    {
+        traceCtrlFlowChangeValue = hasCtrlFlowChange;
+    }
+    void setTraceIsCall(bool v) { traceIsCallValue = v; }
+    void setTraceIsReturn(bool v) { traceIsReturnValue = v; }
+    void setTraceIsIndirect(bool v) { traceIsIndirectValue = v; }
+
+    bool hasTraceBranchInfo() const { return traceBranchInfoValid; }
+    bool traceBranchTaken() const { return traceBranchInfoValid && traceBranchTakenValue; }
+    bool traceBranchHasTarget() const { return traceBranchInfoValid && traceBranchHasTargetValue; }
+    Addr traceBranchTarget() const { return traceBranchHasTargetValue ? traceBranchTargetValue : 0; }
+    Addr traceBranchNextPC() const { return traceBranchInfoValid ? traceBranchNextPCValue : 0; }
+    bool hasTraceCtrlFlowChange() const { return traceCtrlFlowChangeValue; }
+    bool traceIsCall() const { return traceIsCallValue; }
+    bool traceIsReturn() const { return traceIsReturnValue; }
+    bool traceIsIndirect() const { return traceIsIndirectValue; }
+
+    // 标记并查询该动态指令是否对应 trace 流中的最后一条，用于
+    // 在 commit 阶段识别“最后一条 trace 指令已提交”，实现自然退出。
+    void setLastTraceInst(bool v) { lastTraceInstFlag = v; }
+    bool isLastTraceInst() const { return lastTraceInstFlag; }
+
     /** Returns whether the instruction mispredicted. */
     bool
     mispredicted()
@@ -795,7 +858,13 @@ class DynInst : public ExecContext, public RefCounted
     std::unique_ptr<PCStateBase>
     branchTarget() const
     {
-        return staticInst->branchTarget(*pc);
+        if (traceBranchHasTarget()) {
+            // Construct a concrete PCState for the current ISA to hold the
+            // absolute target address, then return it as PCStateBase.
+            return std::make_unique<TheISA::PCState>(traceBranchTarget());
+        } else {
+            return staticInst->branchTarget(*pc);
+        }
     }
 
     /** Returns the number of source registers. */

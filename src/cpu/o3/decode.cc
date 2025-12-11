@@ -819,12 +819,34 @@ Decode::decodeInsts(ThreadID tid)
         // Go ahead and compute any PC-relative branches.
         // This includes direct unconditional control and
         // direct conditional control that is predicted taken.
-        if (inst->isDirectCtrl() &&
+        //
+        // 在 trace 模式下，如果 trace 已标记该指令会触发 trap/异常等控制流改变
+        //（hasTraceCtrlFlowChange），则交由 trap/wrong-path 逻辑处理，不在 decode
+        // 再做一次基于静态分支目标的校验，避免把 cond->trap 误统计为普通分支
+        // mispredict，或在这里产生“错误”的 redirect。
+        if (!(cpu->isTraceMode() && inst->hasTraceCtrlFlowChange()) &&
+            inst->isDirectCtrl() &&
            (inst->isUncondCtrl() || inst->readPredTaken()))
         {
             ++stats.branchResolved;
 
             std::unique_ptr<PCStateBase> target = inst->branchTarget();
+            // In trace mode, prefer ground-truth next PC from trace to avoid
+            // relying on possibly out-of-range immediates (e.g., JAL 20-bit).
+            if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {
+                auto &t_override = target->as<RiscvISA::PCState>();
+                Addr trace_next = inst->traceBranchNextPC();
+                if (trace_next != t_override.pc()) {
+                    DPRINTF(DecoupleBP,
+                            "[tid:%i] [sn:%llu] Branch pc %s, Override target by trace: %s -> npc=%#lx\n",
+                            tid, inst->seqNum, inst->pcState(), *target, trace_next);
+                    t_override.pc(trace_next);
+                    t_override.npc(trace_next + 4); // assuming 4-byte instruction
+                    DPRINTF(DecoupleBP,
+                            "[tid:%i] [sn:%llu] After override target: %s, inst->branchTarget: %s\n",
+                            tid, inst->seqNum, *target, *inst->branchTarget());
+                }
+            }
             auto &t = target->as<RiscvISA::PCState>();
             auto &pred = inst->readPredTarg().as<RiscvISA::PCState>();
             if (t.start_equals(pred) && !t.equals(pred)) {
