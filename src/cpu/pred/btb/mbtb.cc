@@ -576,7 +576,7 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
                     entry_to_write.pc, entry_to_write.alwaysTaken);
         }
         if (!entry_to_write.alwaysTaken) {
-            updateCtr(entry_to_write.ctr, this_cond_taken);
+            //updateCtr(entry_to_write.ctr, this_cond_taken);
         }
     }
 
