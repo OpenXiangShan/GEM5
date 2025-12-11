@@ -2206,7 +2206,7 @@ decode QUADRANT {
                         Rd = data;
                         data = Rs1;
                         write = RS1 != 0;
-                    }}, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter,IsNonSpeculative, No_OpClass);
                     0x100:csrrw_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2230,7 +2230,7 @@ decode QUADRANT {
                         Rd = data;
                         data |= Rs1_use;
                         write = RS1 != 0;
-                    }}, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     0x100:csrrs_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2258,7 +2258,7 @@ decode QUADRANT {
                         Rd = data;
                         data &= ~Rs1_use;
                         write = RS1 != 0;
-                    }}, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     0x100:csrrc_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2282,7 +2282,7 @@ decode QUADRANT {
                         Rd = data;
                         data = uimm;
                         write = uimm != 0;
-                    }}, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     0x100:csrrwi_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2306,7 +2306,7 @@ decode QUADRANT {
                         Rd = data;
                         data |= uimm_use;
                         write = uimm != 0;
-                    }}, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     0x100:csrrsi_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
@@ -2330,7 +2330,7 @@ decode QUADRANT {
                         Rd = data;
                         data &= ~uimm;
                         write = uimm != 0;
-                    }}, IsNonSpeculative, No_OpClass);
+                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                     0x100:csrrci_s({{
                         auto v = xc->readMiscReg(MISCREG_VIRMODE);
                         if(v)
