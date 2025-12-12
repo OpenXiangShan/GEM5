@@ -198,6 +198,7 @@ struct ResolveQueueEntry
 {
     uint64_t resolvedFSQId;
     std::vector<uint64_t> resolvedInstPC;
+    bool squashed = false;
 };
 
 /** Struct that defines all backwards communication. */

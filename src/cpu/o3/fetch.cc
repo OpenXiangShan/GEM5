@@ -1433,6 +1433,19 @@ Fetch::updateBranchPredictors()
     }
 }
 
+void
+Fetch::markResolveQueueSquashed(uint64_t squashedStreamId)
+{
+    if (!isBTBPred() || squashedStreamId == 0)
+        return;
+
+    for (auto &entry : resolveQueue) {
+        if (entry.resolvedFSQId > squashedStreamId) {
+            entry.squashed = true;
+        }
+    }
+}
+
 bool
 Fetch::checkSignalsAndUpdate(ThreadID tid)
 {
@@ -1505,15 +1518,20 @@ Fetch::handleIEWSignals()
 
     for (const auto &resolved : incoming) {
         bool merged = false;
+        bool blocked_by_squash = false;
         for (auto &queued : resolveQueue) {
             if (queued.resolvedFSQId == resolved.fsqId) {
+                if (queued.squashed) {
+                    blocked_by_squash = true;
+                    break;
+                }
                 queued.resolvedInstPC.push_back(resolved.pc);
                 merged = true;
                 break;
             }
         }
 
-        if (merged) {
+        if (merged || blocked_by_squash) {
             continue;
         }
 
@@ -1530,6 +1548,10 @@ Fetch::handleIEWSignals()
 
     if (!resolveQueue.empty()) {
         auto &entry = resolveQueue.front();
+        if (entry.squashed) {
+            resolveQueue.pop_front();
+            return;
+        }
         unsigned int stream_id = entry.resolvedFSQId;
         dbpbtb->prepareResolveUpdateEntries(stream_id);
         for (const auto resolvedInstPC : entry.resolvedInstPC) {
@@ -1598,9 +1620,11 @@ Fetch::handleCommitSignals(ThreadID tid)
     }
 
     auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
+    uint64_t squashed_stream_id = 0;
     // TODO: write dbpftb conditions
     if (mispred_inst) {
         DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
+        squashed_stream_id = mispred_inst->getFsqId();
         if (isStreamPred()) {
             dbsp->controlSquash(mispred_inst->getFtqId(), mispred_inst->getFsqId(), mispred_inst->pcState(),
                                 *fromCommit->commitInfo[tid].pc, mispred_inst->staticInst,
@@ -1619,6 +1643,7 @@ Fetch::handleCommitSignals(ThreadID tid)
         }
     } else if (fromCommit->commitInfo[tid].isTrapSquash) {
         DPRINTF(Fetch, "Treating as trap squash\n", tid);
+        squashed_stream_id = fromCommit->commitInfo[tid].squashedStreamId;
         if (isStreamPred()) {
             dbsp->trapSquash(fromCommit->commitInfo[tid].squashedTargetId,
                              fromCommit->commitInfo[tid].squashedStreamId, fromCommit->commitInfo[tid].committedPC,
@@ -1635,6 +1660,7 @@ Fetch::handleCommitSignals(ThreadID tid)
     } else {
         if (fromCommit->commitInfo[tid].pc && fromCommit->commitInfo[tid].squashedStreamId != 0) {
             DPRINTF(Fetch, "Squash with stream id and target id from IEW\n");
+            squashed_stream_id = fromCommit->commitInfo[tid].squashedStreamId;
             if (isStreamPred()) {
                 dbsp->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId,
                                        fromCommit->commitInfo[tid].squashedStreamId, *fromCommit->commitInfo[tid].pc,
@@ -1651,6 +1677,10 @@ Fetch::handleCommitSignals(ThreadID tid)
         } else {
             DPRINTF(Fetch, "Dont squash dbq because no meaningful stream\n");
         }
+    }
+
+    if (isDecoupledFrontend() && isBTBPred() && squashed_stream_id) {
+        markResolveQueueSquashed(squashed_stream_id);
     }
 
     return true;
@@ -1705,6 +1735,7 @@ Fetch::handleDecodeSquash(ThreadID tid)
                         fromDecode->decodeInfo[tid].branchTaken,
                         mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
                         false);
+                    markResolveQueueSquashed(mispred_inst->getFsqId());
                 }
             } else {
                 warn("Unexpected non-control squash from decode.\n");

@@ -581,6 +581,12 @@ class Fetch
     lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc,
                          bool &predictedBranch, bool &newMacro);
 
+    /**
+     * Mark resolve queue entries newer than a squashed stream as squashed so
+     * they no longer accept merged resolved CFIs.
+     */
+    void markResolveQueueSquashed(uint64_t squashedStreamId);
+
   private:
     /** Pointer to the O3CPU. */
     CPU *cpu;
