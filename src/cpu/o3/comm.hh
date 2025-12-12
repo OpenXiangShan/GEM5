@@ -196,9 +196,22 @@ struct SquashVersion
 
 struct ResolveQueueEntry
 {
-    uint64_t resolvedFSQId;
+    bool valid = false;
+    uint64_t resolvedFSQId = 0;
+    uint64_t expectedBranches = 0;
+    uint64_t doneBranches = 0;
     std::vector<uint64_t> resolvedInstPC;
     bool squashed = false;
+
+    void reset()
+    {
+        valid = false;
+        resolvedFSQId = 0;
+        expectedBranches = 0;
+        doneBranches = 0;
+        resolvedInstPC.clear();
+        squashed = false;
+    }
 };
 
 /** Struct that defines all backwards communication. */

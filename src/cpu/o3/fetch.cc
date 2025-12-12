@@ -92,6 +92,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       cpu(_cpu),
       branchPred(nullptr),
       resolveQueueSize(params.resolveQueueSize),
+      resolveQueue(resolveQueueSize),
       decodeToFetchDelay(params.decodeToFetchDelay),
       renameToFetchDelay(params.renameToFetchDelay),
       iewToFetchDelay(params.iewToFetchDelay),
@@ -1433,6 +1434,36 @@ Fetch::updateBranchPredictors()
     }
 }
 
+ResolveQueueEntry *
+Fetch::getResolveSlot(uint64_t fsqId)
+{
+    if (resolveQueue.empty()) {
+        return nullptr;
+    }
+    return &resolveQueue[fsqId % resolveQueue.size()];
+}
+
+void
+Fetch::seedResolveSlot(uint64_t fsqId, uint64_t expectedBranches,
+                       const std::vector<uint64_t> &branchPCs)
+{
+    if (!isBTBPred())
+        return;
+
+    (void)branchPCs;
+
+    auto *slot = getResolveSlot(fsqId);
+    if (!slot)
+        return;
+
+    slot->valid = true;
+    slot->resolvedFSQId = fsqId;
+    slot->expectedBranches = expectedBranches;
+    slot->doneBranches = 0;
+    slot->resolvedInstPC.clear();
+    slot->squashed = false;
+}
+
 void
 Fetch::markResolveQueueSquashed(uint64_t squashedStreamId)
 {
@@ -1440,8 +1471,8 @@ Fetch::markResolveQueueSquashed(uint64_t squashedStreamId)
         return;
 
     for (auto &entry : resolveQueue) {
-        if (entry.resolvedFSQId > squashedStreamId) {
-            entry.squashed = true;
+        if (entry.valid && entry.resolvedFSQId > squashedStreamId) {
+            entry.reset();
         }
     }
 }
@@ -1516,54 +1547,80 @@ Fetch::handleIEWSignals()
 
     auto &incoming = fromIEW->iewInfo->resolvedCFIs;
 
+    // Enqueue incoming resolved CFIs into indexed slots.
     for (const auto &resolved : incoming) {
-        bool merged = false;
-        bool blocked_by_squash = false;
-        for (auto &queued : resolveQueue) {
-            if (queued.resolvedFSQId == resolved.fsqId) {
-                if (queued.squashed) {
-                    blocked_by_squash = true;
-                    break;
-                }
-                queued.resolvedInstPC.push_back(resolved.pc);
-                merged = true;
-                break;
-            }
-        }
-
-        if (merged || blocked_by_squash) {
+        auto *slot = getResolveSlot(resolved.fsqId);
+        if (!slot) {
+            fetchStats.resolveEnqueueFailEvent++;
             continue;
         }
 
-        if (resolveQueueSize && resolveQueue.size() >= resolveQueueSize) {
+        // Slot collision means queue is effectively full (wrap-around).
+        if (slot->valid && slot->resolvedFSQId != resolved.fsqId) {
             fetchStats.resolveQueueFullEvents++;
             continue;
         }
 
-        ResolveQueueEntry new_entry;
-        new_entry.resolvedFSQId = resolved.fsqId;
-        new_entry.resolvedInstPC.push_back(resolved.pc);
-        resolveQueue.push_back(std::move(new_entry));
+        if (!slot->valid) {
+            slot->reset();
+            slot->valid = true;
+            slot->resolvedFSQId = resolved.fsqId;
+        }
+
+        if (slot->squashed) {
+            continue;
+        }
+
+        slot->resolvedInstPC.push_back(resolved.pc);
+        slot->doneBranches++;
+
+        // Fallback: if no metadata is seeded, assume branch count equals
+        // number of resolves seen so far.
+        if (slot->expectedBranches < slot->doneBranches) {
+            slot->expectedBranches = slot->doneBranches;
+        }
     }
 
-    if (!resolveQueue.empty()) {
-        auto &entry = resolveQueue.front();
-        if (entry.squashed) {
-            resolveQueue.pop_front();
-            return;
+    // Track full cycles based on slot occupancy.
+    if (resolveQueueSize &&
+        std::count_if(resolveQueue.begin(), resolveQueue.end(),
+                      [](const ResolveQueueEntry &e) { return e.valid; }) >=
+            resolveQueueSize) {
+        fetchStats.resolveQueueFullCycles++;
+    }
+
+    // Strict in-order: find the smallest fsqId among valid entries.
+    ResolveQueueEntry *head = nullptr;
+    for (auto &entry : resolveQueue) {
+        if (!entry.valid || entry.squashed) {
+            continue;
         }
-        unsigned int stream_id = entry.resolvedFSQId;
-        dbpbtb->prepareResolveUpdateEntries(stream_id);
-        for (const auto resolvedInstPC : entry.resolvedInstPC) {
-            dbpbtb->markCFIResolved(stream_id, resolvedInstPC);
+        if (!head || entry.resolvedFSQId < head->resolvedFSQId) {
+            head = &entry;
         }
-        bool success = dbpbtb->resolveUpdate(stream_id);
-        if (success) {
-            dbpbtb->notifyResolveSuccess();
-            resolveQueue.pop_front();
-        } else {
-            dbpbtb->notifyResolveFailure();
-        }
+    }
+
+    if (!head) {
+        return;
+    }
+
+    bool ready =
+        head->expectedBranches > 0 && head->doneBranches >= head->expectedBranches;
+    if (!ready) {
+        return;
+    }
+
+    unsigned int stream_id = head->resolvedFSQId;
+    dbpbtb->prepareResolveUpdateEntries(stream_id);
+    for (const auto resolvedInstPC : head->resolvedInstPC) {
+        dbpbtb->markCFIResolved(stream_id, resolvedInstPC);
+    }
+    bool success = dbpbtb->resolveUpdate(stream_id);
+    if (success) {
+        dbpbtb->notifyResolveSuccess();
+        head->reset();
+    } else {
+        dbpbtb->notifyResolveFailure();
     }
 }
 

@@ -622,8 +622,14 @@ class Fetch
     /** Maximum number of resolve entries buffered in fetch before training. */
     const unsigned resolveQueueSize;
 
-    /** FIFO storing resolve entries waiting for BPU training. */
-    std::deque<ResolveQueueEntry> resolveQueue;
+    /** Indexed resolve queue slots, keyed by fsqId modulo queue size. */
+    std::vector<ResolveQueueEntry> resolveQueue;
+
+    /** Helper to locate/allocate a slot for a given fsqId. */
+    ResolveQueueEntry *getResolveSlot(uint64_t fsqId);
+    /** Optional metadata hook: pre-populate expectedBranches and PC list. */
+    void seedResolveSlot(uint64_t fsqId, uint64_t expectedBranches,
+                         const std::vector<uint64_t> &branchPCs);
 
     /** PC of each thread. */
     std::unique_ptr<PCStateBase> pc[MaxThreads];
