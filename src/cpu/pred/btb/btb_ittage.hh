@@ -219,12 +219,16 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 #endif
         Scalar commitHits;
         Scalar callHits;
+        Scalar otherHits;
         Scalar commitMisses;
         Scalar callMisses;
+        Scalar otherMisses;
         Scalar commitPredCorrect;
         Scalar commitPredWrong;
         Scalar callPredCorrect;
+        Scalar otherPredCorrect;
         Scalar callPredWrong;
+        Scalar otherPredWrong;
     };
 
     IttageStats ittageStats;
