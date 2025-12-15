@@ -6,8 +6,6 @@
 
 #include "base/debug_helper.hh"
 #include "base/intmath.hh"
-#include "base/stats/group.hh"
-#include "base/stats/units.hh"
 #include "base/trace.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "debug/DecoupleBP.hh"
