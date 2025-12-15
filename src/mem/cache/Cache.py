@@ -181,6 +181,10 @@ class BaseCache(ClockedObject):
         LRURP(),
         "Replacement policy of active generation table"
     )
+    prefetch_can_offload = Param.Bool(
+        True,
+        "Whether this cache can offload prefetches to downstream caches when mshr is full"
+    )
 
     simulate_dcache_refill = Param.Bool(
         False,

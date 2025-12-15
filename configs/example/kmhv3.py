@@ -116,6 +116,7 @@ def setKmhV3Params(args, system):
             cpu.dcache.mshrs = 16
             cpu.dcache.do_fast_writeline = False
             cpu.dcache.simulate_dcache_refill = True
+            cpu.dcache.prefetch_can_offload = False
 
     # l2 caches
     if args.l2cache:
@@ -124,6 +125,7 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].slice_num = 4
                 system.l2_caches[i].wpu = NULL
                 system.l2_caches[i].do_fast_writeline = False
+                system.l2_caches[i].prefetch_can_offload = False
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 1
@@ -133,6 +135,7 @@ def setKmhV3Params(args, system):
                 for j in range(args.l2_slices):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
+                    l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
             system.tol2bus_list[i].forward_latency = 3  # 3->0
             system.tol2bus_list[i].response_latency = 3  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 1->0
@@ -149,6 +152,7 @@ def setKmhV3Params(args, system):
     if args.l3cache:
         system.l3.mshrs = 64
         system.l3.do_fast_writeline = False
+        system.l3.prefetch_can_offload = False
         system.l3.num_slices = 4
 
 if __name__ == '__m5_main__':
