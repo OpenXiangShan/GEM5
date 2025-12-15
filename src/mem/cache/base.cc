@@ -186,7 +186,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       cacheLevel(p.cache_level),
       forceHit(p.force_hit),
       simulateDcacheRefill(p.simulate_dcache_refill),
-      doFastWriteline(p.do_fast_writeline)
+      doFastWriteline(p.do_fast_writeline),
+      Prefetch_CanOffload(p.prefetch_can_offload)
 {
     // the MSHR queue has no reserve entries as we check the MSHR
     // queue on every single allocation, whereas the write queue has
@@ -1376,7 +1377,8 @@ BaseCache::getNextQueueEntry()
         }
     }
 
-    if (prefetcher && (!mshrQueue.canPrefetch() || isBlocked()) && prefetcher->hasHintDownStream()) {
+    if (prefetcher && (!mshrQueue.canPrefetch() || isBlocked()) &&
+        prefetcher->hasHintDownStream() && Prefetch_CanOffload) {
         DPRINTF(HWPrefetch, "Offloading prefetch to downstream cache\n");
         prefetcher->offloadToDownStream();
     }

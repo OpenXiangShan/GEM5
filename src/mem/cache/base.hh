@@ -1681,6 +1681,8 @@ public:
         auto blk = tags->findBlock(addr, is_secure);
         return blk ? blk->data: nullptr;
     }
+    private:
+    const bool Prefetch_CanOffload;
 };
 
 /**
