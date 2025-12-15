@@ -76,9 +76,31 @@ def setKmhV3IdealParams(args, system):
         cpu.SbufferEvictThreshold = 16
 
         # branch predictor
-        if args.bp_type == 'DecoupledBPUWithBTB':
+        if args.bp_type == 'DecoupledBPUWithFTB' or args.bp_type == 'DecoupledBPUWithBTB':
+            if args.bp_type == 'DecoupledBPUWithFTB':
+                cpu.branchPred.enableTwoTaken = False
+                cpu.branchPred.numBr = 8    # numBr must be a power of 2, see getShuffledBrIndex()
+                cpu.branchPred.predictWidth = 64
+                cpu.branchPred.uftb.numEntries = 1024
+                cpu.branchPred.ftb.numEntries = 16384
+                cpu.branchPred.tage.baseTableSize = 16384
+                cpu.branchPred.tage.tableSizes = [2048] * 8
+            else:
+                cpu.branchPred.predictWidth = 64              # max width of a fetch block
+                cpu.branchPred.mbtb.numEntries = 8192
+                # TODO: BTB TAGE do not bave base table, do not support SC
+                cpu.branchPred.tage.tableSizes = [2048] * 8  # 2 way, 2048 sets
+                cpu.branchPred.tage.numWays = 2
+                cpu.branchPred.microtage.tableSizes = [512]   # 2 way, 512 sets
+                cpu.branchPred.microtage.numWays = 2
+                cpu.branchPred.mgsc.enableMGSC = not args.disable_mgsc
+            cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
             cpu.branchPred.ftq_size = 256
             cpu.branchPred.fsq_size = 256
+            cpu.branchPred.tage.numPredictors = 8
+            cpu.branchPred.tage.TTagBitSizes = [11] * 8
+            cpu.branchPred.tage.TTagPcShifts = [1] * 8
+            cpu.branchPred.tage.histLengths = [4, 9, 17, 29, 56, 109, 211, 397]
 
         # l1 cache per core
         if args.caches:
@@ -123,7 +145,7 @@ if __name__ == '__m5_main__':
 
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
-    args.bp_type = 'DecoupledBPUWithBTB'
+    args.bp_type = 'DecoupledBPUWithFTB'
     args.l2_size = '2MB'
 
     # Match the memories with the CPUs, based on the options for the test system
