@@ -1,69 +1,52 @@
 from collections import Counter
+from functools import lru_cache
 import sqlite3 as sql
 import argparse
 import numpy as np
 import subprocess
+import pandas as pd
 from tqdm import tqdm
 
+pd.set_option('display.width', 1000) # 设置显示宽度
+pd.set_option('display.max_columns', None) # 显示所有列
+pd.set_option('display.float_format', '{:.2f}'.format)
 
 StageNameShort = ['f', 'd', 'r', 'D', 'i', 'a', 'g', 'e', 'b', 'w', 'c']
 StageNameLong = ['fetch', 'decode', 'rename', 'dispatch', 'issue',
                  'arb', 'read', 'execute', 'bypass', 'writeback', 'commit']
 
-
+@lru_cache(maxsize=None)
 def DisAssemble(val):
-    # print(val)
+    if type(val) == str:
+        return val
     hex_val = hex(val).lower()
     command = f'echo "DASM({hex_val})" | spike-dasm'
     asm = subprocess.run(command, shell=True, capture_output=True,
                          text=True, check=True).stdout.strip()
-    # print(val, hex_val, asm)
     return asm
 
-
-def ReadDB(sqldb, start_clock: int, end_clock: int, period: int, inter_gap: bool, inner_gap: bool):
+def ReadDB(sqldb, start_clock: int, end_clock: int, inter_gap: bool, inner_gap: bool):
     inst_pos_clock = []
     inst_records = []
-    inst_translate_map = {}
 
     with sql.connect(sqldb) as con:
-        cur = con.cursor()
-
-        clock_pick_cmd = f"WHERE AtCommit >= {start_clock*period} "
+        clock_pick_cmd = f"and AtCommit >= {start_clock*period} "
         if end_clock >= start_clock:
             clock_pick_cmd += f"AND AtCommit <= {end_clock*period} "
 
-        cur.execute(
-            f"SELECT * FROM LifeTimeCommitTrace {clock_pick_cmd} ORDER BY ID ASC")
-        col_name = [i[0].lower() for i in cur.description[1:]]
-        rows = cur.fetchall()
+        df = pd.read_sql_query(f"SELECT * FROM LifeTimeCommitTrace where AtCommit != 0 {clock_pick_cmd} ORDER BY ID ASC", con)
+        col_name = [i.lower() for i in df.columns]
+        rows = df.to_numpy()
+
+    pos_begin = col_name.index('atfetch')
+    pos_end = col_name.index('atcommit') + 1
+    disasm_idx = col_name.index('disasm')
+    pc_idx = col_name.index('pc')
 
     for row in tqdm(rows, desc='Reading DB'):
-        row = row[1:]
-        pos_clock_cycles = []
-        pos_index = 0
-        pc = None
-        asm = None
-
-        for val in row:
-            # print(f"{col_name[pos_index]}, {val}")
-            if col_name[pos_index].startswith('at'):
-                pos_clock_cycles.append(float(val//period))
-            elif col_name[pos_index].startswith('pc'):
-                if val < 0:
-                    # pc is unsigned, but sqlite3 only supports signed integer [-2^63, 2^63-1]
-                    # if real pc > 2^63-1, it will be stored as negative number (real pc - 2^64)
-                    # when read a negtive pc, real pc = negtive pc + 2^64
-                    val = val + (1 << 64)
-                pc = hex(val)
-            elif col_name[pos_index].startswith('disasm'):
-                if args.platform == 'rtl':
-                    if val not in inst_translate_map:
-                        inst_translate_map[val] = DisAssemble(val)
-                    asm = inst_translate_map[val]
-                else:
-                    asm = val
-            pos_index += 1
+        pos_clock_cycles = row[pos_begin:pos_end]
+        pc = hex(row[pc_idx])
+        asm = DisAssemble(row[disasm_idx])
 
         inst_pos_clock.append(pos_clock_cycles)
         inst_records.append(tuple([pc, asm]))
@@ -77,24 +60,23 @@ def ReadDB(sqldb, start_clock: int, end_clock: int, period: int, inter_gap: bool
 
     inst_clock_info: dict = {}
     for inst_index in range(len(inst_records)):
-        if inst_records[inst_index] not in inst_clock_info:
-            inst_clock_info[inst_records[inst_index]] = []
-        inst_clock_info[inst_records[inst_index]].append(
+        pc = inst_records[inst_index][0]
+        if pc not in inst_clock_info:
+            inst_clock_info[pc] = []
+
+        inst_clock_info[pc].append(
             inst_pos_clock[inst_index])
 
     inst_avg_clock_info: dict = {}
     for key in inst_clock_info.keys():
         inst_avg_clock_info[key] = np.mean(inst_clock_info[key], axis=0)
-
     return inst_records, inst_pos_clock, inst_avg_clock_info
 
 
 def IsBranchInst(instr: str) -> bool:
     branch_instructions = ['beq', 'bne', 'blt', 'bge', 'bltu',
-                           'bgeu', 'beqz', 'bnez', 'j', 'jal', 'jalr', 'ret']
-    branch_instructions += ['c_beqz', 'c_bnez',
-                            'c_j', 'c_jal', 'c_jr', 'c_jalr']
-    return any(instr.split()[0].startswith(branch) for branch in branch_instructions)
+                           'bgeu', 'beqz', 'bnez', 'j', 'jr', 'jal', 'jalr', 'ret']
+    return any(branch in instr for branch in branch_instructions)
 
 
 def ExtractBasicBlocks(pc_inst_list) -> Counter:
@@ -103,7 +85,7 @@ def ExtractBasicBlocks(pc_inst_list) -> Counter:
 
     for i, (pc, inst) in tqdm(enumerate(pc_inst_list), desc='Analyzing Traces'):
         current_block.append((pc, inst))
-        if IsBranchInst(inst) and current_block:
+        if IsBranchInst(inst):
             basic_blocks[tuple(current_block)] += 1
             current_block = []
     if current_block:
@@ -118,30 +100,20 @@ def bbl_main(inst_info, inst_avg_clock_info, inter_gap, inner_gap):
     mode_str = "inter-gap" if inter_gap else "inner-gap" if inner_gap else "normal"
 
     print(f"Top 10 most common basic blocks (mode:{mode_str}):")
+    if inner_gap:
+        global StageNameLong
+        StageNameLong = StageNameLong[1:]
     for block, count in basic_blocks.most_common(10):
+        df_col_name = ['PC', 'Instruction'] + StageNameLong
+        df_data = [[pc, instr] + (inst_avg_clock_info[pc] / period).tolist() for pc, instr in block]
+        df = pd.DataFrame(df_data, columns=df_col_name)
+        # 对每列数据的commit时间求和
+        total_commit_time = sum([row[-1] for row in df_data])
+
         print()
-        print(f"Count: {count}")
+        print(f"Count: {count}, Total Commit Time: {total_commit_time:.2f} cycles")
         print("Instructions:")
-        pc_header = f"{'PC':18}"
-        instr_header = f"{'Instruction':30}"
-        clock_head = ":".join([f"{stage_name:>9}" for stage_name in StageNameLong])
-
-        if inter_gap or inner_gap:
-            header = f"  {pc_header} : {instr_header} : {clock_head}"
-        else:
-            header = f"  {pc_header} : {instr_header} "
-
-        print(header)
-
-        for pc, instr in block:
-            if inter_gap or inner_gap:
-                formatted_clock = [
-                    f"{clock:9.2f}" for clock in inst_avg_clock_info[(pc, instr)]]
-                formatted_clock = ":".join(formatted_clock)
-                print(f"  {pc:18} : {instr:30} : {formatted_clock}")
-            else:
-                print(f"  {pc:18} : {instr:30} ")
-
+        print(df)
 
 def perfcct_main(inst_info, inst_pos_clock_info, start_pc, end_pc, attention_pc, only_attention: bool):
 
@@ -225,8 +197,10 @@ if __name__ == "__main__":
     if args.inter_gap and args.inner_gap:
         raise ValueError("Cannot set both inter-gap and inner-gap to True")
 
+    period = args.period
+
     inst_info, inst_pos_clock_info, inst_avg_clock_info = ReadDB(
-        args.sqldb, args.start_clock, args.end_clock, args.period, args.inter_gap, args.inner_gap)
+        args.sqldb, args.start_clock, args.end_clock, args.inter_gap, args.inner_gap)
 
     if args.tool == 'perfcct':
         perfcct_main(inst_info, inst_pos_clock_info, args.start_pc,
