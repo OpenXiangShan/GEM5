@@ -136,6 +136,13 @@ cpu-simple:
     - Jason Lowe-Power <jason@lowepower.com>
     - Gabe Black <gabe.black@gmail.com>
 
+bpu:
+  desc: >-
+    Branch prediction units
+  status: maintained
+  maintainers:
+    - Yan Yue <1131531947@qq.com>
+
 dev:
   status: maintained
   maintainers:
