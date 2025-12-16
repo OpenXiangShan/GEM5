@@ -17,4 +17,4 @@ jobs:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       script_path: ../kmh_v3_btb.sh
-      benchmark_type: "spec06-0.3c"
+      benchmark_type: "spec06-1.0c"
