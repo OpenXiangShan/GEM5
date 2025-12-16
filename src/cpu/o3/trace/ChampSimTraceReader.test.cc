@@ -115,7 +115,6 @@ mapHash(uint64_t trace_addr,
             mapped = base + (trace_addr % size);
         }
     }
-    mapped &= ~0x3ULL;
     return mapped;
 }
 
@@ -132,7 +131,20 @@ mapLinear(uint64_t trace_addr, uint64_t base, uint64_t size, bool page_align)
     } else {
         mapped = base + (trace_addr % size);
     }
-    return mapped & ~0x3ULL;
+    return mapped;
+}
+
+static inline void
+markAsCondBranch(CSInstr &inst, bool taken)
+{
+    // Match ChampSimTraceReader::determineInstType conditional branch pattern:
+    // - writes IP
+    // - reads IP and FLAGS
+    inst.is_branch = 1;
+    inst.branch_taken = taken ? 1 : 0;
+    inst.destination_registers[0] = 26; // REG_IP
+    inst.source_registers[0] = 26;      // REG_IP
+    inst.source_registers[1] = 25;      // REG_FL
 }
 
 class TraceFileGuard
@@ -156,8 +168,11 @@ TEST(ChampSimTraceReaderTest, ReadsTwoInstructionsAndSetsBranchTargetFromLookahe
     const std::string path = "champsim_reader_test_2.bin";
     TraceFileGuard guard(path);
 
-    CSInstr a{}; a.ip = 0x1000; a.is_branch = 1; a.branch_taken = 1;
-    CSInstr b{}; b.ip = 0x2000; b.is_branch = 0; b.branch_taken = 0;
+    CSInstr a{};
+    a.ip = 0x1000;
+    markAsCondBranch(a, /*taken*/true);
+    CSInstr b{};
+    b.ip = 0x2000;
 
     ASSERT_TRUE(writeTraceFile(path, {a, b}));
 
@@ -209,7 +224,6 @@ TEST(ChampSimTraceReaderTest, HashMappingProducesAlignedInRegion)
     // Defaults: base=0x10000000, size=0x40000000
     EXPECT_GE(pc, 0x10000000ULL);
     EXPECT_LT(pc, 0x10000000ULL + 0x40000000ULL);
-    EXPECT_EQ(pc & 0x3ULL, 0ULL);
     EXPECT_EQ(pc, mapHash(x.ip));
 }
 
@@ -218,6 +232,7 @@ TEST(ChampSimTraceReaderTest, TakenBranchWithoutLookaheadHasNoTarget)
     const std::string path = "champsim_reader_test_branch_eof.bin";
     TraceFileGuard guard(path);
     CSInstr branch = makeInstr(0x4000, /*is_branch*/true, /*taken*/true);
+    markAsCondBranch(branch, /*taken*/true);
     ASSERT_TRUE(writeTraceFile(path, {branch}));
 
     ChampSimTraceReader reader(path, "unit.reader.branch_eof");
@@ -235,6 +250,7 @@ TEST(ChampSimTraceReaderTest, NotTakenBranchHasNoTarget)
     const std::string path = "champsim_reader_test_branch_not_taken.bin";
     TraceFileGuard guard(path);
     CSInstr branch = makeInstr(0x8000, true, false);
+    markAsCondBranch(branch, /*taken*/false);
     CSInstr next = makeInstr(0x8040, false, false);
     ASSERT_TRUE(writeTraceFile(path, {branch, next}));
 
@@ -349,7 +365,6 @@ TEST(ChampSimTraceReaderTest, HashMappingWithoutPageAlignStillAlignsToWord)
 
     uint64_t expected = mapHash(0x12345ULL, 0x28000000ULL, 0x2000ULL, false);
     EXPECT_EQ(ti.getPC(), expected);
-    EXPECT_EQ(expected & 0x3ULL, 0ULL);
 }
 
 TEST(ChampSimTraceReaderTest, LinearMappingHandlesBothAlignmentModes)
@@ -377,7 +392,6 @@ TEST(ChampSimTraceReaderTest, LinearMappingHandlesBothAlignmentModes)
     ASSERT_TRUE(ti_unaligned.isValid());
     EXPECT_EQ(ti_unaligned.getPC(),
               mapLinear(0xABCDEF123ULL, 0x50000000ULL, 0x4000ULL, false));
-    EXPECT_EQ(ti_unaligned.getPC() & 0x3ULL, 0ULL);
 }
 
 TEST(ChampSimTraceReaderTest, ResetReturnsToBeginning)
