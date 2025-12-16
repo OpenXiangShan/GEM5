@@ -109,6 +109,7 @@ if env['CONF']['TARGET_ISA'] == 'null':
           'trace/ChampSimTraceReader.test.cc',
           'trace/TraceReader.cc',
           'trace/ChampSimTraceReader.cc',
+          'trace/CBP2025TraceReader.cc',
           # pull in stats primitives used by TraceReader::TraceReaderStats
           '../../base/stats/group.cc',
           '../../base/stats/info.cc',
@@ -127,6 +128,7 @@ else:
           'trace/ChampSimTraceReader.test.cc',
           'trace/TraceReader.cc',
           'trace/ChampSimTraceReader.cc',
+          'trace/CBP2025TraceReader.cc',
           # pull in stats primitives (some environments require explicit objs)
           '../../base/stats/group.cc',
           '../../base/stats/info.cc',

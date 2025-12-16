@@ -826,7 +826,7 @@ Decode::decodeInsts(ThreadID tid)
         // mispredict，或在这里产生“错误”的 redirect。
         if (!(cpu->isTraceMode() && inst->hasTraceCtrlFlowChange()) &&
             inst->isDirectCtrl() &&
-           (inst->isUncondCtrl() || inst->readPredTaken()))
+            (inst->isUncondCtrl() || inst->readPredTaken()))
         {
             ++stats.branchResolved;
 
@@ -841,7 +841,8 @@ Decode::decodeInsts(ThreadID tid)
                             "[tid:%i] [sn:%llu] Branch pc %s, Override target by trace: %s -> npc=%#lx\n",
                             tid, inst->seqNum, inst->pcState(), *target, trace_next);
                     t_override.pc(trace_next);
-                    t_override.npc(trace_next + 4); // assuming 4-byte instruction
+                    // assuming 4-byte instruction for now since we don't have this trace inst
+                    t_override.npc(trace_next + 4);
                     DPRINTF(DecoupleBP,
                             "[tid:%i] [sn:%llu] After override target: %s, inst->branchTarget: %s\n",
                             tid, inst->seqNum, *target, *inst->branchTarget());

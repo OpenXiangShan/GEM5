@@ -449,18 +449,27 @@ Fetch::initTraceMode()
     set(pc[0], *tracePC);
     cpu->pcState(*tracePC, 0);
 
-    if (auto* tc0 = cpu->getContext(0)) {
+    auto* tc0 = cpu->getContext(0);
+    if (tc0) {
         tc0->pcState(*tracePC);
         auto status = tc0->readMiscReg(RiscvISA::MISCREG_STATUS);
         status |= RiscvISA::STATUS_FS_MASK;
         tc0->setMiscReg(RiscvISA::MISCREG_STATUS, status);
     }
 
-    DPRINTF(Fetch, "Trace mode: Set initial PC to 0x%llx from first trace instruction\n",
+    DPRINTF(Fetch,
+            "Trace mode: Set initial PC to 0x%llx from first trace instruction\n",
             firstInstr.getPC());
-    DPRINTF(Fetch, "Trace mode: fetch PC = 0x%llx, cpu PC = 0x%llx, TC PC = 0x%llx\n",
-            pc[0]->instAddr(), cpu->pcState(0).instAddr(),
-            cpu->getContext(0)->pcState().instAddr());
+    if (tc0) {
+        DPRINTF(Fetch,
+                "Trace mode: fetch PC = 0x%llx, cpu PC = 0x%llx, TC PC = 0x%llx\n",
+                pc[0]->instAddr(), cpu->pcState(0).instAddr(),
+                tc0->pcState().instAddr());
+    } else {
+        DPRINTF(Fetch,
+                "Trace mode: fetch PC = 0x%llx, cpu PC = 0x%llx (no TC)\n",
+                pc[0]->instAddr(), cpu->pcState(0).instAddr());
+    }
 
     if (isDecoupledFrontend() && branchPred) {
         DPRINTF(Fetch, "Trace mode: Priming decoupled BPU with start PC 0x%llx\n",

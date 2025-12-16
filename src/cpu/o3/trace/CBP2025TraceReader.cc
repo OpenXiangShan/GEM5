@@ -75,9 +75,12 @@ CBP2025TraceReader::addrCfgSnapshot() const
 bool
 CBP2025TraceReader::isGzip(const std::string &filename) const
 {
-    return filename.size() > 3 &&
-           (filename.substr(filename.size() - 3) == ".gz" ||
-            filename.substr(filename.size() - 7) == ".tar.gz");
+    if (filename.size() >= 7 &&
+        filename.substr(filename.size() - 7) == ".tar.gz") {
+        return true;
+    }
+    return filename.size() >= 3 &&
+           filename.substr(filename.size() - 3) == ".gz";
 }
 
 bool

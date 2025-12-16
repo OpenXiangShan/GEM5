@@ -33,7 +33,7 @@ if [[ ! -d "${WORK_ROOT}" ]]; then
 fi
 
 script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
-GEM5_HOME=${GEM5_HOME:-$(readlink -f "${script_dir}/../..")}
+GEM5_HOME=${GEM5_HOME:-$(readlink -f "${script_dir}/../../..")}
 DUMP_SCRIPT="${GEM5_HOME}/util/trace/dump_champsim_trace.py"
 DEFAULT_TRACE_FORMAT=${TRACE_FORMAT:-champsim}
 

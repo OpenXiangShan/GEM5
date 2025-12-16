@@ -59,15 +59,6 @@ class XiangshanECore2Read(XiangshanCore):
     numPhysRMiscRegs = 40
     scheduler = ECore2ReadScheduler()
 
-import argparse
-import os
-
-import m5
-from m5.defines import buildEnv
-from m5.objects import *
-from m5.util import addToPath, fatal, warn
-from m5.util.fdthelper import *
-
 addToPath('../')
 
 
@@ -236,10 +227,16 @@ def build_xiangshan_system(args):
     if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
         args.difftest_ref_so = None
 
-        # Trace mode FS configuration with functional TLB - bootloader needed but no checkpoint
-        test_sys.workload.bootloader = '/nfs/home/goulingrui/project/riscv-environments/riscv-pk/build/bbl'
-        test_sys.workload.xiangshan_cpt = False  # No checkpoint in trace mode
+        # Trace mode FS configuration with functional TLB.
+        # We run without a bootloader but must still set the bootloader
+        # parameter explicitly, since RiscvBareMetal.bootloader has no
+        # default. An empty string is treated as "no bootloader" and we
+        # reuse the xiangshan_cpt flag to take the no-bootloader path in
+        # the BareMetal workload implementation.
+        test_sys.workload.bootloader = ''
+        test_sys.workload.xiangshan_cpt = True   # Reuse GCPT path to skip bootloader
         test_sys.restore_from_gcpt = False       # Disable GCPT restoration
+        print("Trace mode: Running without bootloader (no GCPT)")
 
         # Configure DRAMsim3 if needed for memory controller
         if args.mem_type == 'DRAMsim3' and args.dramsim3_ini is None:

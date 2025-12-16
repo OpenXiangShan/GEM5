@@ -34,6 +34,7 @@
 #include <functional>
 
 #include "arch/riscv/page_size.hh"
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "config/the_isa.hh"
 #include "cpu/o3/trace/CBP2025TraceReader.hh"
@@ -207,6 +208,9 @@ TraceReader::mapAddressLinear(uint64_t trace_addr, const AddrMapConfig &cfg)
 uint64_t
 TraceReader::mapTraceAddressToVirtual(uint64_t trace_addr, const AddrMapConfig &cfg)
 {
+    panic_if(cfg.size == 0,
+             "TraceReader address map size must be non-zero for address mapping");
+
     if (cfg.mode == "linear") {
         return mapAddressLinear(trace_addr, cfg);
     } else {

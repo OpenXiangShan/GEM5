@@ -640,8 +640,12 @@ ChampSimTraceReader::setAddressMapping(uint64_t base, uint64_t size, const std::
 {
     setAddrMapConfig({base, size, mode, pageAlign});
 
-    DPRINTF(TraceReader, "Address mapping configured: base=0x%x, size=0x%x, mode=%s, pageAlign=%s\n",
-            base, size, mode, pageAlign ? "true" : "false");
+    DPRINTF(TraceReader,
+            "Address mapping configured: base=0x%llx, size=0x%llx, "
+            "mode=%s, pageAlign=%s\n",
+            static_cast<unsigned long long>(base),
+            static_cast<unsigned long long>(size),
+            mode.c_str(), pageAlign ? "true" : "false");
 }
 
 } // namespace o3

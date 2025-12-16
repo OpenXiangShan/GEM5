@@ -67,7 +67,7 @@ def get_host_capacity(host: str, max_threads: int) -> Tuple[int, str]:
         return 0, f"nproc failed: {err or out_core}"
     try:
         logical = int(out_core.strip().split()[0])
-    except Exception:
+    except (ValueError, IndexError):
         return 0, f"parse cores failed: {out_core}"
     # load1 from /proc/loadavg
     rc, out_load, err = ssh(host, "awk '{print $1}' /proc/loadavg", timeout=5)
@@ -75,7 +75,7 @@ def get_host_capacity(host: str, max_threads: int) -> Tuple[int, str]:
         return 0, f"loadavg failed: {err or out_load}"
     try:
         load1 = float(out_load.strip().split()[0])
-    except Exception:
+    except (ValueError, IndexError):
         return 0, f"parse load failed: {out_load}"
     half = logical / 2.0
     avail = math.floor(half - load1)
@@ -165,8 +165,11 @@ echo $pid
     pid: Optional[int] = None
     try:
         pid = int(out.strip().split()[-1])
-    except Exception:
-        pass
+    except (ValueError, IndexError):
+        print(
+            f"[WARN] could not parse PID from output: {out!r}",
+            file=sys.stderr,
+        )
     return True, pid
 
 
@@ -260,12 +263,13 @@ def main() -> int:
         Path(os.environ.get("XSGEM5_WORK_ROOT", os.getcwd())).resolve() / args.tag
     )
     work_root.mkdir(parents=True, exist_ok=True)
-    (work_root / "dispatch.tsv").write_text(
-        "task\thost\ttrace_path\twarmup\tsample\tstatus\tstart_ts\tend_ts\n",
-        encoding="utf-8",
-    )
 
     dispatch_log = work_root / "dispatch.tsv"
+    if not dispatch_log.exists() or dispatch_log.stat().st_size == 0:
+        dispatch_log.write_text(
+            "task\thost\ttrace_path\twarmup\tsample\tstatus\tstart_ts\tend_ts\n",
+            encoding="utf-8",
+        )
 
     pending_idx = 0
     running: Dict[str, int] = {h: 0 for h in hosts}
@@ -278,7 +282,7 @@ def main() -> int:
     running_pids: Dict[str, int] = {}
 
     # Skip tasks already completed on disk
-    for name, rel, warmup, sample in tasks:
+    for name, _rel, warmup, sample in tasks:
         tdir = work_root / name
         if (tdir / "completed").exists():
             task_status[name] = "completed"
@@ -289,7 +293,7 @@ def main() -> int:
     try:
         while True:
             # Update finished tasks
-            for name, rel, warmup, sample in tasks:
+            for name, _rel, warmup, sample in tasks:
                 status = task_status.get(name, "pending")
                 if status != "running":
                     continue

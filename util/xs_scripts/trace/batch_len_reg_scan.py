@@ -26,10 +26,10 @@ from typing import Iterable, List, Tuple
 
 def list_traces(root: Path) -> List[Path]:
     pats = ("*.xz", "*.gz", "*")
-    found: List[Path] = []
+    found: set[Path] = set()
     for pat in pats:
-        found.extend(root.rglob(pat))
-    # filter out directories
+        found.update(root.rglob(pat))
+    # filter out directories and remove duplicates caused by overlapping globs
     return [p for p in found if p.is_file()]
 
 

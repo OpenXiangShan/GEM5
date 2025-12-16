@@ -37,6 +37,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import argparse
+import sys
 
 import m5
 from m5.defines import buildEnv
@@ -698,10 +699,13 @@ def addXiangshanTraceOptions(parser):
     parser.add_argument('--trace-wrongpath-use-traceinst', action='store_true',
                        help='Wrong-path injection uses trace instructions with checkpoint/restore (default: NOPs)')
 
-    # Check for trace mode before parsing to make generic-rv-cpt conditional
+    # NOTE: This heuristic relies on using real sys.argv with argparse. If a
+    # custom args list is passed to parse_args, the caller should adjust
+    # generic-rv-cpt's required flag explicitly instead of relying on this.
+    # Check for trace mode before parsing to make generic-rv-cpt conditional.
     if '--enable-trace-mode' in sys.argv:
-        # In trace mode, make generic-rv-cpt optional by providing a dummy value
-        # Find the generic-rv-cpt action and remove its required flag
+        # In trace mode, make generic-rv-cpt optional by providing a dummy value.
+        # Find the generic-rv-cpt action and remove its required flag.
         for action in parser._actions:
             if action.dest == 'generic_rv_cpt':
                 action.required = False
