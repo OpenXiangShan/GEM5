@@ -126,9 +126,8 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     vaddr, region_offset, is_active_page, decr);
             if (is_active_page && enableActivepage) {
                 origin_depth = act_match_entry->depth;
-                int depth = 16;
                 // active page
-                pf_tgt_addr = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;  // depth here?
+                pf_tgt_addr = decr ? block_addr - origin_depth * blkSize : block_addr + origin_depth * blkSize;
                 sendStreamPF(pfi, pf_tgt_addr, addresses, pfPageLRUFilter, decr, 1);
             }
         }
