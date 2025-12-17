@@ -177,7 +177,7 @@ struct BTBEntry : BranchInfo
     Addr tag;
     // Addr offset; // retrived from lowest bits of pc
     BTBEntry() : BranchInfo(), valid(false), alwaysTaken(false), ctr(0), tag(0) {}
-    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0) {}
+    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(false), ctr(0) {}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
 };
 
