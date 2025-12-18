@@ -1503,7 +1503,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 "at the head of the ROB, PC %s.\n",
                 tid, head_inst->seqNum, head_inst->pcState());
 
-        if (inst_num > 0 || !iewStage->flushAllStores(tid)) {
+        if (head_inst->isMemRef() && (inst_num > 0 || !iewStage->flushAllStores(tid))) {
             DPRINTF(Commit,
                     "[tid:%i] [sn:%llu] "
                     "Waiting for all stores to writeback.\n",
