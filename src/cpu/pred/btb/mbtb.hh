@@ -430,6 +430,7 @@ public:
         Scalar updateReplaceValidOne;
         Scalar updateInVC;
         Scalar updateTotal;
+        Scalar updateFixTarget;
 
         // per branch statistics
         Scalar allBranchHits;
