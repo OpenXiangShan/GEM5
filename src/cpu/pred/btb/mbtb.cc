@@ -688,7 +688,7 @@ MBTB::update(const FetchStream &stream)
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
     // only update btb entry for control squash T-> NT or NT -> T
-    if (stream.squashType == SQUASH_CTRL) {
+    if (stream.squashType == SQUASH_CTRL && !stream.exeBranchInfo.isReturn) {
         warn_if(stream.exeBranchInfo.pc > stream.updateEndInstPC, "exeBranchInfo.pc > updateEndInstPC");
         updateBTBEntry(stream.exeBranchInfo, stream);
     }
