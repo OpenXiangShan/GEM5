@@ -151,12 +151,13 @@ BTBMGSC::tickStart()
 
 /**
  * Calculate perceptron sum from a table for a given PC
- * perceptron sum is the sum of the (2*counter + 1) of the matching entries
+ * Counter range: [-2^(w-1), 2^(w-1)-1], e.g., [-32, 31] for w=6
+ * Percsum = sum of (2*counter + 1), transforms to odd numbers, e.g., [-63, 63] per entry
  * @param table The table to search in
  * @param tableIndices Indices to use for each table component
  * @param numTables Number of tables to search
  * @param pc PC to match against
- * @return Calculated percsum value
+ * @return Calculated percsum value (positive=taken bias, negative=not-taken bias)
  */
 int
 BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &table,
@@ -166,7 +167,7 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &
     for (unsigned int i = 0; i < numTables; ++i) {
         auto [idx1, idx2] = posHash(pc, tableIndices[i]);
         auto &entry = table[i][idx1][idx2];
-        percsum += (2 * entry + 1);  // align to zero center
+        percsum += (2 * entry + 1);  // transform to odd numbers, avoid zero
     }
     return percsum;
 }
@@ -189,10 +190,13 @@ BTBMGSC::findWeight(const std::vector<int16_t> &weightTable, Addr pc)
 
 /**
  * Calculate scaled percsum using weight
- * weight range is [-32, 31], return value range is percsum or 2x percsum
+ * Weight range: [-2^(w-1), 2^(w-1)-1], e.g., [-32, 31] for w=6
+ * Scaling formula: ((weight + 64) / 32) * percsum
+ *   weight in [-32, -1]: (32~63)/32 = 1 → 1x percsum (reduce importance)
+ *   weight in [0, 31]:   (64~95)/32 = 2 → 2x percsum (increase importance)
  * @param weight Weight value
  * @param percsum Original percsum value
- * @return Scaled percsum value
+ * @return Scaled percsum value (1x or 2x)
  */
 int
 BTBMGSC::calculateScaledPercsum(int weight, int percsum)
@@ -334,10 +338,11 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.pc, taken);
 
-    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, tage_info.tage_pred_taken, total_thres, bwIndex,
-                          lIndex, iIndex, gIndex, pIndex, biasIndex, bw_weight_scale_diff, l_weight_scale_diff,
-                          i_weight_scale_diff, g_weight_scale_diff, p_weight_scale_diff, bias_weight_scale_diff,
-                          bw_percsum, l_percsum, i_percsum, g_percsum, p_percsum, bias_percsum);
+    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, tage_info.tage_pred_taken,
+                          tage_info.tage_pred_conf_high, tage_info.tage_pred_conf_mid, tage_info.tage_pred_conf_low,
+                          total_thres, bwIndex, lIndex, iIndex, gIndex, pIndex, biasIndex, bw_weight_scale_diff,
+                          l_weight_scale_diff, i_weight_scale_diff, g_weight_scale_diff, p_weight_scale_diff,
+                          bias_weight_scale_diff, bw_percsum, l_percsum, i_percsum, g_percsum, p_percsum, bias_percsum);
 }
 
 /**
@@ -544,6 +549,93 @@ BTBMGSC::updateGlobalThreshold(Addr pc, bool update_direction)
     updateCounter(update_direction, updateThresholdWidth, updateThreshold);
 }
 
+void
+BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,
+                               bool tage_pred_taken)
+{
+    auto tage_conf_high = pred.tage_conf_high;
+    auto tage_conf_mid = pred.tage_conf_mid;
+    auto tage_conf_low = pred.tage_conf_low;
+
+    // SC vs TAGE outcomes
+    if (pred.use_mgsc) {
+        mgscStats.scUsed++;
+        if (sc_pred_taken == actual_taken && tage_pred_taken != actual_taken) {
+            mgscStats.scCorrectTageWrong++;
+        } else if (sc_pred_taken != actual_taken && tage_pred_taken == actual_taken) {
+            mgscStats.scWrongTageCorrect++;
+        } else if (sc_pred_taken == actual_taken && tage_pred_taken == actual_taken) {
+            mgscStats.scCorrectTageCorrect++;
+        } else if (sc_pred_taken != actual_taken && tage_pred_taken != actual_taken) {
+            mgscStats.scWrongTageWrong++;
+        }
+    } else {
+        mgscStats.scNotUsed++;  // sc confidence is low
+    }
+
+    // Record raw percsum correctness and weight criticality for each table
+    auto recordPercsum = [&](int percsum, statistics::Scalar &correct, statistics::Scalar &wrong) {
+        if ((percsum >= 0) == actual_taken) {
+            correct++;
+        } else {
+            wrong++;
+        }
+    };
+    if (pred.bw_weight_scale_diff) {
+        mgscStats.bwWeightScaleDiff++;
+    }
+    recordPercsum(pred.bw_percsum, mgscStats.bwPercsumCorrect, mgscStats.bwPercsumWrong);
+
+    if (pred.l_weight_scale_diff) {
+        mgscStats.lWeightScaleDiff++;
+    }
+    recordPercsum(pred.l_percsum, mgscStats.lPercsumCorrect, mgscStats.lPercsumWrong);
+
+    if (pred.i_weight_scale_diff) {
+        mgscStats.iWeightScaleDiff++;
+    }
+    recordPercsum(pred.i_percsum, mgscStats.iPercsumCorrect, mgscStats.iPercsumWrong);
+
+    if (pred.g_weight_scale_diff) {
+        mgscStats.gWeightScaleDiff++;
+    }
+    recordPercsum(pred.g_percsum, mgscStats.gPercsumCorrect, mgscStats.gPercsumWrong);
+
+    if (pred.p_weight_scale_diff) {
+        mgscStats.pWeightScaleDiff++;
+    }
+    recordPercsum(pred.p_percsum, mgscStats.pPercsumCorrect, mgscStats.pPercsumWrong);
+
+    if (pred.bias_weight_scale_diff) {
+        mgscStats.biasWeightScaleDiff++;
+    }
+    recordPercsum(pred.bias_percsum, mgscStats.biasPercsumCorrect, mgscStats.biasPercsumWrong);
+
+    // SC usage under TAGE confidence buckets
+    auto recordConfOutcome = [&](bool conf_high, bool conf_mid, bool conf_low, bool use, bool correct) {
+        if (conf_high) {
+            if (use) {
+                correct ? mgscStats.scHighUseCorrect++ : mgscStats.scHighUseWrong++;
+            } else {
+                mgscStats.scHighBypass++;
+            }
+        } else if (conf_mid) {
+            if (use) {
+                correct ? mgscStats.scMidUseCorrect++ : mgscStats.scMidUseWrong++;
+            } else {
+                mgscStats.scMidBypass++;
+            }
+        } else if (conf_low) {
+            if (use) {
+                correct ? mgscStats.scLowUseCorrect++ : mgscStats.scLowUseWrong++;
+            } else {
+                mgscStats.scLowBypass++;
+            }
+        }
+    };
+    recordConfOutcome(tage_conf_high, tage_conf_mid, tage_conf_low, pred.use_mgsc, sc_pred_taken == actual_taken);
+}
+
 /**
  * @brief Update predictor for a single entry and allocate new entries if needed
  *
@@ -566,26 +658,20 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
     auto sc_pred_taken = total_sum >= 0;
     auto tage_pred_taken = pred.taken_before_sc;  // tage predictions
 
-    // Update statistics
-    if (use_mgsc) {
-        mgscStats.scUsed++;
-        if (sc_pred_taken == actual_taken && tage_pred_taken != actual_taken) {
-            mgscStats.scCorrectTageWrong++;
-        } else if (sc_pred_taken != actual_taken && tage_pred_taken == actual_taken) {
-            mgscStats.scWrongTageCorrect++;
-        } else if (sc_pred_taken == actual_taken && tage_pred_taken == actual_taken) {
-            mgscStats.scCorrectTageCorrect++;
-        } else if (sc_pred_taken != actual_taken && tage_pred_taken != actual_taken) {
-            mgscStats.scWrongTageWrong++;
-        }
-    } else {
-        mgscStats.scNotUsed++;  // sc confidence is low
-    }
+    recordPredictionStats(pred, actual_taken, sc_pred_taken, tage_pred_taken);
 
     // Only update tables if prediction was wrong or confidence was low
     if (sc_pred_taken != actual_taken || abs(total_sum) < total_thres) {
         // get weight table index from startPC
         Addr weightTableIdx = getPcIndex(stream.startPC, weightTableIdxWidth);
+        bool threshold_inc = (sc_pred_taken != actual_taken);
+        if (threshold_inc) {
+            mgscStats.pcThresholdInc++;
+            mgscStats.globalThresholdInc++;
+        } else {
+            mgscStats.pcThresholdDec++;
+            mgscStats.globalThresholdDec++;
+        }
 
         // Update BW tables
         updatePredTable(bwTable, pred.bwIndex, bwTableNum, entry.pc, actual_taken);
@@ -1091,7 +1177,42 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
       ADD_STAT(scPredMissTaken, statistics::units::Count::get(), "number of sc prediction miss taken"),
       ADD_STAT(scPredMissNotTaken, statistics::units::Count::get(), "number of sc prediction miss not taken"),
       ADD_STAT(scPredCorrectTageWrong, statistics::units::Count::get(),"number of sc prediction correct and tage wrong"),
-      ADD_STAT(scPredWrongTageCorrect, statistics::units::Count::get(),"number of sc prediction wrong and tage correct")
+      ADD_STAT(scPredWrongTageCorrect, statistics::units::Count::get(),"number of sc prediction wrong and tage correct"),
+
+      ADD_STAT(bwWeightScaleDiff, statistics::units::Count::get(), "bw table weight scaling decisive"),
+      ADD_STAT(lWeightScaleDiff, statistics::units::Count::get(), "l table weight scaling decisive"),
+      ADD_STAT(iWeightScaleDiff, statistics::units::Count::get(), "i table weight scaling decisive"),
+      ADD_STAT(gWeightScaleDiff, statistics::units::Count::get(), "g table weight scaling decisive"),
+      ADD_STAT(pWeightScaleDiff, statistics::units::Count::get(), "p table weight scaling decisive"),
+      ADD_STAT(biasWeightScaleDiff, statistics::units::Count::get(), "bias table weight scaling decisive"),
+
+      ADD_STAT(bwPercsumCorrect, statistics::units::Count::get(), "bw table raw percsum sign correct"),
+      ADD_STAT(bwPercsumWrong, statistics::units::Count::get(), "bw table raw percsum sign wrong"),
+      ADD_STAT(lPercsumCorrect, statistics::units::Count::get(), "l table raw percsum sign correct"),
+      ADD_STAT(lPercsumWrong, statistics::units::Count::get(), "l table raw percsum sign wrong"),
+      ADD_STAT(iPercsumCorrect, statistics::units::Count::get(), "i table raw percsum sign correct"),
+      ADD_STAT(iPercsumWrong, statistics::units::Count::get(), "i table raw percsum sign wrong"),
+      ADD_STAT(gPercsumCorrect, statistics::units::Count::get(), "g table raw percsum sign correct"),
+      ADD_STAT(gPercsumWrong, statistics::units::Count::get(), "g table raw percsum sign wrong"),
+      ADD_STAT(pPercsumCorrect, statistics::units::Count::get(), "p table raw percsum sign correct"),
+      ADD_STAT(pPercsumWrong, statistics::units::Count::get(), "p table raw percsum sign wrong"),
+      ADD_STAT(biasPercsumCorrect, statistics::units::Count::get(), "bias table raw percsum sign correct"),
+      ADD_STAT(biasPercsumWrong, statistics::units::Count::get(), "bias table raw percsum sign wrong"),
+
+      ADD_STAT(pcThresholdInc, statistics::units::Count::get(), "pc threshold increment"),
+      ADD_STAT(pcThresholdDec, statistics::units::Count::get(), "pc threshold decrement"),
+      ADD_STAT(globalThresholdInc, statistics::units::Count::get(), "global threshold increment"),
+      ADD_STAT(globalThresholdDec, statistics::units::Count::get(), "global threshold decrement"),
+
+      ADD_STAT(scHighUseCorrect, statistics::units::Count::get(), "tage high conf, sc used, correct"),
+      ADD_STAT(scHighUseWrong, statistics::units::Count::get(), "tage high conf, sc used, wrong"),
+      ADD_STAT(scMidUseCorrect, statistics::units::Count::get(), "tage mid conf, sc used, correct"),
+      ADD_STAT(scMidUseWrong, statistics::units::Count::get(), "tage mid conf, sc used, wrong"),
+      ADD_STAT(scLowUseCorrect, statistics::units::Count::get(), "tage low conf, sc used, correct"),
+      ADD_STAT(scLowUseWrong, statistics::units::Count::get(), "tage low conf, sc used, wrong"),
+      ADD_STAT(scHighBypass, statistics::units::Count::get(), "tage high conf, sc not used"),
+      ADD_STAT(scMidBypass, statistics::units::Count::get(), "tage mid conf, sc not used"),
+      ADD_STAT(scLowBypass, statistics::units::Count::get(), "tage low conf, sc not used")
 {
 }
 
