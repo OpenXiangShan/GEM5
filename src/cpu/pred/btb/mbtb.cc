@@ -30,7 +30,6 @@
 #include "cpu/pred/btb/mbtb.hh"
 
 #include "base/intmath.hh"
-#include "base/stats/group.hh"
 
 // Additional conditional includes based on build mode
 #ifdef UNIT_TEST
