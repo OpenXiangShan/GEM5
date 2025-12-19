@@ -39,6 +39,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
         bool use_mgsc;                    // Whether to use MGSC prediction
         bool taken;                       // Final prediction = (use sc pred) ? (total_sum >= 0) : tage prediction
         bool taken_before_sc;             // Tage prediction (before SC)
+        bool tage_conf_high;
+        bool tage_conf_mid;
+        bool tage_conf_low;
         int16_t total_thres;              // Combined threshold
         std::vector<unsigned> bwIndex;    // BW table indices
         std::vector<unsigned> lIndex;     // L table indices
@@ -66,6 +69,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
               use_mgsc(false),
               taken(false),
               taken_before_sc(false),
+              tage_conf_high(false),
+              tage_conf_mid(false),
+              tage_conf_low(false),
               total_thres(0),
               bwIndex(0),
               lIndex(0),
@@ -89,17 +95,20 @@ class BTBMGSC : public TimedBaseBTBPredictor
         }
 
         MgscPrediction(Addr btb_pc, int total_sum, bool use_mgsc, bool taken, bool taken_before_sc,
-                       int16_t total_thres, std::vector<unsigned> bwIndex, std::vector<unsigned> lIndex,
-                       std::vector<unsigned> iIndex, std::vector<unsigned> gIndex, std::vector<unsigned> pIndex,
-                       std::vector<unsigned> biasIndex, bool bw_weight_scale_diff, bool l_weight_scale_diff,
-                       bool i_weight_scale_diff, bool g_weight_scale_diff, bool p_weight_scale_diff,
-                       bool bias_weight_scale_diff, int bw_percsum, int l_percsum, int i_percsum, int g_percsum,
-                       int p_percsum, int bias_percsum)
+                       bool tage_conf_high, bool tage_conf_mid, bool tage_conf_low, int16_t total_thres,
+                       std::vector<unsigned> bwIndex, std::vector<unsigned> lIndex, std::vector<unsigned> iIndex,
+                       std::vector<unsigned> gIndex, std::vector<unsigned> pIndex, std::vector<unsigned> biasIndex,
+                       bool bw_weight_scale_diff, bool l_weight_scale_diff, bool i_weight_scale_diff,
+                       bool g_weight_scale_diff, bool p_weight_scale_diff, bool bias_weight_scale_diff, int bw_percsum,
+                       int l_percsum, int i_percsum, int g_percsum, int p_percsum, int bias_percsum)
             : btb_pc(btb_pc),
               total_sum(total_sum),
               use_mgsc(use_mgsc),
               taken(taken),
               taken_before_sc(taken_before_sc),
+              tage_conf_high(tage_conf_high),
+              tage_conf_mid(tage_conf_mid),
+              tage_conf_low(tage_conf_low),
               total_thres(total_thres),
               bwIndex(bwIndex),
               lIndex(lIndex),
@@ -259,6 +268,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     void updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
                                const FetchStream &stream);
+    void recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bool sc_pred_taken,
+                               bool tage_pred_taken);
 
     /** global backward branch history indexed tables */
     // number of global backward branch history indexed tables
@@ -397,6 +408,45 @@ class BTBMGSC : public TimedBaseBTBPredictor
         statistics::Scalar scPredMissNotTaken;
         statistics::Scalar scPredCorrectTageWrong;
         statistics::Scalar scPredWrongTageCorrect;
+
+        // Weight scale sensitivity (how often this table is decisive)
+        statistics::Scalar bwWeightScaleDiff;
+        statistics::Scalar lWeightScaleDiff;
+        statistics::Scalar iWeightScaleDiff;
+        statistics::Scalar gWeightScaleDiff;
+        statistics::Scalar pWeightScaleDiff;
+        statistics::Scalar biasWeightScaleDiff;
+
+        // Raw percsum correctness per table
+        statistics::Scalar bwPercsumCorrect;
+        statistics::Scalar bwPercsumWrong;
+        statistics::Scalar lPercsumCorrect;
+        statistics::Scalar lPercsumWrong;
+        statistics::Scalar iPercsumCorrect;
+        statistics::Scalar iPercsumWrong;
+        statistics::Scalar gPercsumCorrect;
+        statistics::Scalar gPercsumWrong;
+        statistics::Scalar pPercsumCorrect;
+        statistics::Scalar pPercsumWrong;
+        statistics::Scalar biasPercsumCorrect;
+        statistics::Scalar biasPercsumWrong;
+
+        // Threshold updates
+        statistics::Scalar pcThresholdInc;
+        statistics::Scalar pcThresholdDec;
+        statistics::Scalar globalThresholdInc;
+        statistics::Scalar globalThresholdDec;
+
+        // Use/non-use of SC under different TAGE confidences
+        statistics::Scalar scHighUseCorrect;
+        statistics::Scalar scHighUseWrong;
+        statistics::Scalar scMidUseCorrect;
+        statistics::Scalar scMidUseWrong;
+        statistics::Scalar scLowUseCorrect;
+        statistics::Scalar scLowUseWrong;
+        statistics::Scalar scHighBypass;
+        statistics::Scalar scMidBypass;
+        statistics::Scalar scLowBypass;
 
         MgscStats(statistics::Group *parent);
     };
