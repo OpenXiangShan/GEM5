@@ -594,6 +594,9 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
                               BTBSetIter it_found,
                               const TickedBTBEntry &ticked_entry)
 {
+    if (it_found->target != ticked_entry.target) {
+        btbStats.updateFixTarget++;
+    }
     // Update existing entry
     *it_found = ticked_entry;
 #ifndef UNIT_TEST
@@ -895,6 +898,7 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     ADD_STAT(updateReplaceValidOne, statistics::units::Count::get(), "entries replaced with valid entry"),
     ADD_STAT(updateInVC, statistics::units::Count::get(), "entries updated in victim cache"),
     ADD_STAT(updateTotal, statistics::units::Count::get(), "total number of entries updated"),
+    ADD_STAT(updateFixTarget, statistics::units::Count::get(), "the number of fix entries target when update"),
 
     ADD_STAT(allBranchHits, statistics::units::Count::get(), "all types of branches committed that was predicted hit"),
     ADD_STAT(allBranchHitTakens, statistics::units::Count::get(), "all types of taken branches committed was that predicted hit"),
