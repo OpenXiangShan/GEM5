@@ -58,6 +58,7 @@ Note:
 - The V3 RTL BPU predictor and backend updates are still being implemented. Several performance switches remain off in `kmhv3.py` to stay aligned with the RTL snapshot; as RTL work lands, we will re-enable them and expect the mainline V3 scores to pull ahead of V2.
 - A score with 0.3c would be 1 point higher by default than a score with 0.8c, and 1.2 points higher by default than a score with 1c, so benchmark scores with different coverage cannot be directly compared.
 - You can trigger kmhv3.py by *-align* branch suffix, e.g., `feature-xyz-align`. trigger idealkmhv3.py by *-perf* suffix.
+- You can also manually trigger a performance test with custom configuration and coverage via the `Manual Performance Test` CI in the Actions tab.
 
 ## Branches
 
