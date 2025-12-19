@@ -309,8 +309,8 @@ BertiPrefetcher::notifyFill(const PacketPtr &pkt)
     }
 
     // fill latency
-    Cycles miss_refill_search_lat = Cycles(0);
-    hitSearchLatency = Cycles(0);
+    Cycles miss_refill_search_lat = Cycles(200);
+    hitSearchLatency = Cycles(50);
 
     HistoryTableEntry *entry =
         historyTable.findEntry(pcHash(pkt->req->getPC()), pkt->req->isSecure());
