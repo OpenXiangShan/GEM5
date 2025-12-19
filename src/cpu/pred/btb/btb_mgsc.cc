@@ -191,17 +191,27 @@ BTBMGSC::findWeight(const std::vector<int16_t> &weightTable, Addr pc)
 /**
  * Calculate scaled percsum using weight
  * Weight range: [-2^(w-1), 2^(w-1)-1], e.g., [-32, 31] for w=6
- * Scaling formula: ((weight + 64) / 32) * percsum
- *   weight in [-32, -1]: (32~63)/32 = 1 → 1x percsum (reduce importance)
- *   weight in [0, 31]:   (64~95)/32 = 2 → 2x percsum (increase importance)
+ * Scaling formula with 4-level granularity:
+ *   weight in [-32, -17]: percsum / 2       → 0.5x (suppress noisy tables)
+ *   weight in [-16, -1]:  percsum           → 1.0x (reduce importance)
+ *   weight in [0, 15]:    percsum * 3 / 2   → 1.5x (standard importance)
+ *   weight in [16, 31]:   percsum * 2       → 2.0x (increase importance)
  * @param weight Weight value
  * @param percsum Original percsum value
- * @return Scaled percsum value (1x or 2x)
+ * @return Scaled percsum value (0.5x/1x/1.5x/2x)
  */
 int
 BTBMGSC::calculateScaledPercsum(int weight, int percsum)
 {
-    return ((weight + 64) / 32) * percsum;
+    if (weight < -16) {
+        return percsum / 2;
+    } else if (weight < 0) {
+        return percsum;
+    } else if (weight < 16) {
+        return (percsum * 3) / 2;
+    } else {
+        return percsum * 2;
+    }
 }
 
 /**
