@@ -187,7 +187,7 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
 
         validSSIT[store_index] = true;
 
-        SSIT[store_index] = sd_new_set;
+        SSIT[store_index] = calcSSID(load_PC);
 
         assert(sd_new_set < LFSTSize);
 
@@ -200,7 +200,7 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
 
         validSSIT[load_index] = true;
 
-        SSIT[load_index] = ld_new_set;
+        SSIT[load_index] = calcSSID(store_PC);
 
         DPRINTF(StoreSet, "StoreSet: Store had a valid store set: %i for "
                 "load %#x, store %#x\n",
