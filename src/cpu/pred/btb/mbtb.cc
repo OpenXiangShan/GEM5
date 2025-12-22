@@ -271,7 +271,7 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
             FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.pc, e.target});
 
             if (e.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = e.target;
+                //FillStageLoop(s) stagePreds[s].returnTarget = e.target;
             }
             break;
         }
