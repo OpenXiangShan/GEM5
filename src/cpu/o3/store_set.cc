@@ -166,14 +166,15 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
         // Calculate a new SSID here.
         SSID ld_new_set = calcSSID(load_PC);
         SSID sd_new_set = calcSSID(store_PC);
+        SSID update_ssid = ld_new_set < sd_new_set ? ld_new_set : sd_new_set;
 
         validSSIT[load_index] = true;
 
-        SSIT[load_index] = ld_new_set;
+        SSIT[load_index] = update_ssid;
 
         validSSIT[store_index] = true;
 
-        SSIT[store_index] = sd_new_set;
+        SSIT[store_index] = update_ssid;
 
         assert(ld_new_set < LFSTSize);
         assert(sd_new_set < LFSTSize);
