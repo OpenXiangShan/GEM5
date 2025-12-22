@@ -251,12 +251,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Frontend Bandwidth Bound",
              frontendBound - frontendLatencyBound),
-    ADD_STAT(resolveQueueFullCycles, statistics::units::Count::get(),
-             "Number of cycles the resolve queue is full"),
     ADD_STAT(resolveQueueFullEvents, statistics::units::Count::get(),
              "Number of events the resolve queue becomes full"),
     ADD_STAT(resolveEnqueueFailEvent, statistics::units::Count::get(),
-             "Number of times an entry could not be enqueued to the resolve queue")
+             "Number of times an entry could not be enqueued to the resolve queue"),
+    ADD_STAT(resolveDequeueCount, statistics::units::Count::get(),
+             "Number of times an entry is dequeued from the resolve queue"),
+    ADD_STAT(resolveEnqueueCount, statistics::units::Count::get(),
+             "Number of times an entry is enqueued to the resolve queue"),
+    ADD_STAT(resolveQueueOccupancy, statistics::units::Count::get(),
+             "Number of entries in the resolve queue")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -326,6 +330,10 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .flags(statistics::total);
         frontendBandwidthBound
             .flags(statistics::total);
+        resolveEnqueueCount
+            .init(1, 8, 1);
+        resolveQueueOccupancy
+            .init(0, 32, 1);
 }
 void
 Fetch::setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer)
@@ -1502,31 +1510,38 @@ Fetch::handleIEWSignals()
     }
 
     auto &incoming = fromIEW->iewInfo->resolvedCFIs;
+    uint8_t enqueueSize = fromIEW->iewInfo->resolvedCFIs.size();
+    uint8_t enqueueCount = 0;
 
-    for (const auto &resolved : incoming) {
-        bool merged = false;
-        for (auto &queued : resolveQueue) {
-            if (queued.resolvedFSQId == resolved.fsqId) {
-                queued.resolvedInstPC.push_back(resolved.pc);
-                merged = true;
-                break;
+    if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
+        fetchStats.resolveQueueFullEvents++;
+        fetchStats.resolveEnqueueFailEvent += enqueueSize;
+    } else {
+
+        for (const auto &resolved : incoming) {
+            bool merged = false;
+            for (auto &queued : resolveQueue) {
+                if (queued.resolvedFSQId == resolved.fsqId) {
+                    queued.resolvedInstPC.push_back(resolved.pc);
+                    merged = true;
+                    break;
+                }
             }
-        }
 
-        if (merged) {
-            continue;
-        }
+            if (merged) {
+                continue;
+            }
 
-        if (resolveQueueSize && resolveQueue.size() >= resolveQueueSize) {
-            fetchStats.resolveQueueFullEvents++;
-            continue;
+            ResolveQueueEntry new_entry;
+            new_entry.resolvedFSQId = resolved.fsqId;
+            new_entry.resolvedInstPC.push_back(resolved.pc);
+            resolveQueue.push_back(std::move(new_entry));
+            enqueueCount++;
         }
-
-        ResolveQueueEntry new_entry;
-        new_entry.resolvedFSQId = resolved.fsqId;
-        new_entry.resolvedInstPC.push_back(resolved.pc);
-        resolveQueue.push_back(std::move(new_entry));
+        fetchStats.resolveEnqueueCount.sample(enqueueCount);
     }
+
+    fetchStats.resolveQueueOccupancy.sample(resolveQueue.size());
 
     if (!resolveQueue.empty()) {
         auto &entry = resolveQueue.front();
@@ -1539,6 +1554,7 @@ Fetch::handleIEWSignals()
         if (success) {
             dbpbtb->notifyResolveSuccess();
             resolveQueue.pop_front();
+            fetchStats.resolveDequeueCount++;
         } else {
             dbpbtb->notifyResolveFailure();
         }
