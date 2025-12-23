@@ -110,6 +110,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
                         const FetchStream &entry,int shamt, bool cond_taken) override;
 
     void update(const FetchStream &entry) override;
+    bool canResolveUpdate(const FetchStream &entry) override;
 
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
 
@@ -183,6 +184,10 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     bool satDecrement(int min, short &counter);
 
     int usefulResetCnt;
+
+    // ========== Bank Configuration ==========
+    unsigned lastPredBankId;
+    bool predBankValid;              // Whether lastPredBankId is valid
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;

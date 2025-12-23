@@ -29,6 +29,8 @@ tablePcShifts(p.TTagPcShifts),
 histLengths(p.histLengths),
 maxHistLen(p.maxHistLen),
 numTablesToAlloc(p.numTablesToAlloc),
+lastPredBankId(0),
+predBankValid(false),
 ittageStats(this, p.numPredictors)
 {
     this->needMoreHistories = p.needMoreHistories;
@@ -158,6 +160,8 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
 
 void
 BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
+    lastPredBankId = 0;
+    predBankValid = true;
     if (debugPC == stream_start) {
         debugFlag = true;
     }
@@ -201,6 +205,18 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
 std::shared_ptr<void>
 BTBITTAGE::getPredictionMeta() {
     return meta;
+}
+
+bool
+BTBITTAGE::canResolveUpdate(const FetchStream &stream)
+{
+
+    if (predBankValid) {
+        predBankValid = false;
+        return false;
+    }
+
+    return true;
 }
 
 void
