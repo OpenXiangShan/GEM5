@@ -539,8 +539,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
     }
 
     auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream, btb_tag);
-    bool this_entry_taken = entry_to_write.pc == stream.exeBranchInfo.pc;
-    auto ticked_entry = TickedBTBEntry(entry_to_write, this_entry_taken ? curTick() : it->tick);
+    auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
 
     if (found) {
         // Update in-place in SRAM set
