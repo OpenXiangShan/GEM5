@@ -210,13 +210,19 @@ BTBITTAGE::getPredictionMeta() {
 bool
 BTBITTAGE::canResolveUpdate(const FetchStream &stream)
 {
+    return true;
+}
+
+void
+BTBITTAGE::doResolveUpdate(const FetchStream &stream)
+{
 
     if (predBankValid) {
         predBankValid = false;
-        return false;
+        return;
     }
 
-    return true;
+    update(stream);
 }
 
 void

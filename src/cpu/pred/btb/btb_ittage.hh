@@ -111,6 +111,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     void update(const FetchStream &entry) override;
     bool canResolveUpdate(const FetchStream &entry) override;
+    void doResolveUpdate(const FetchStream &entry) override;
 
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
 
