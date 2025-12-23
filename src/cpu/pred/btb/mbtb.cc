@@ -356,7 +356,7 @@ MBTB::lookupSingleBlock(Addr block_pc)
     for (auto &way : btb_set) {
         if (way.valid && way.tag == current_tag) {
             res.push_back(way);
-            way.tick = curTick();  // Update timestamp for MRU
+            //way.tick = curTick();  // Update timestamp for MRU
             std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
         }
     }
@@ -539,7 +539,8 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
     }
 
     auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream, btb_tag);
-    auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
+    bool this_entry_taken = entry_to_write.pc == stream.exeBranchInfo.pc;
+    auto ticked_entry = TickedBTBEntry(entry_to_write, this_entry_taken ? curTick() : it->tick);
 
     if (found) {
         // Update in-place in SRAM set
