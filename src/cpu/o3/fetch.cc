@@ -1510,36 +1510,37 @@ Fetch::handleIEWSignals()
     }
 
     auto &incoming = fromIEW->iewInfo->resolvedCFIs;
-    uint8_t enqueueSize = fromIEW->iewInfo->resolvedCFIs.size();
     uint8_t enqueueCount = 0;
 
-    if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
-        fetchStats.resolveQueueFullEvents++;
-        fetchStats.resolveEnqueueFailEvent += enqueueSize;
-    } else {
-
-        for (const auto &resolved : incoming) {
-            bool merged = false;
-            for (auto &queued : resolveQueue) {
-                if (queued.resolvedFSQId == resolved.fsqId) {
-                    queued.resolvedInstPC.push_back(resolved.pc);
-                    merged = true;
-                    break;
-                }
+    for (const auto &resolved : incoming) {
+        bool merged = false;
+        for (auto &queued : resolveQueue) {
+            if (queued.resolvedFSQId == resolved.fsqId) {
+                queued.resolvedInstPC.push_back(resolved.pc);
+                merged = true;
+                break;
             }
-
-            if (merged) {
-                continue;
-            }
-
-            ResolveQueueEntry new_entry;
-            new_entry.resolvedFSQId = resolved.fsqId;
-            new_entry.resolvedInstPC.push_back(resolved.pc);
-            resolveQueue.push_back(std::move(new_entry));
-            enqueueCount++;
         }
-        fetchStats.resolveEnqueueCount.sample(enqueueCount);
+
+        if (merged) {
+            continue;
+        }
+
+
+        if (resolveQueue.size() >= resolveQueueSize) {
+            fetchStats.resolveQueueFullEvents++;
+            fetchStats.resolveEnqueueFailEvent++;
+            continue;
+        }
+
+        ResolveQueueEntry new_entry;
+        new_entry.resolvedFSQId = resolved.fsqId;
+        new_entry.resolvedInstPC.push_back(resolved.pc);
+        resolveQueue.push_back(std::move(new_entry));
+        enqueueCount++;
     }
+
+    fetchStats.resolveEnqueueCount.sample(enqueueCount);
 
     fetchStats.resolveQueueOccupancy.sample(resolveQueue.size());
 
