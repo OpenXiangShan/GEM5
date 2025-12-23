@@ -190,11 +190,11 @@ class BaseO3CPU(BaseCPU):
     LSQCheckLoads = Param.Bool(True,
         "Should dependency violations be checked for "
         "loads & stores or just stores")
-    store_set_clear_period = Param.Unsigned(250000,
+    store_set_clear_period = Param.Unsigned(8192,
             "Number of load/store insts before the dep predictor "
             "should be invalidated")
     LFSTSize = Param.Unsigned(32, "Last fetched store table size")
-    store_set_clear_thres = Param.Unsigned(1048576,"")
+    store_set_clear_thres = Param.Unsigned(8192,"")
     LFSTEntrySize = Param.Unsigned(1,"The number of store table inst in every entry of LFST can contain")
     SSITSize = Param.Unsigned(1024, "Store set ID table size")
     enable_storeSet_train = Param.Bool(True, "Training store set predictor")
