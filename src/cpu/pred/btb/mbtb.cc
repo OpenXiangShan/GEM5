@@ -691,10 +691,39 @@ MBTB::update(const FetchStream &stream)
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
 
     // only update btb entry for control squash T-> NT or NT -> T
-    if (stream.squashType == SQUASH_CTRL) {
-        warn_if(stream.exeBranchInfo.pc > stream.updateEndInstPC, "exeBranchInfo.pc > updateEndInstPC");
-        updateBTBEntry(stream.exeBranchInfo, stream);
+    // if (stream.squashType == SQUASH_CTRL) {
+    //     warn_if(stream.exeBranchInfo.pc > stream.updateEndInstPC, "exeBranchInfo.pc > updateEndInstPC");
+    //     updateBTBEntry(stream.exeBranchInfo, stream);
+    // }
+    auto entries_need_update = prepareUpdateEntries(stream);
+    for (auto &entry : entries_need_update) {
+        updateBTBEntry(entry, stream);
     }
+}
+
+
+std::vector<BTBEntry>
+MBTB::prepareUpdateEntries(const FetchStream &stream) {
+    auto all_entries = stream.updateBTBEntries;
+
+    // Add potential new BTB entry if it's a btb miss during prediction
+    if (!stream.updateIsOldEntry) {
+        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
+        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
+        if (!new_entry_taken) {
+            potential_new_entry.alwaysTaken = false;
+        }
+        all_entries.push_back(potential_new_entry);
+    }
+
+    // Filter: only keep conditional branches that are not always taken
+    if (getResolvedUpdate()) {
+        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
+            [](const BTBEntry &e) { return !( e.resolved); });
+        all_entries.erase(remove_it, all_entries.end());
+    }
+
+    return all_entries;
 }
 
 /**

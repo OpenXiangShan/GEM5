@@ -170,6 +170,8 @@ class MBTB : public TimedBaseBTBPredictor
      */
     void update(const FetchStream &stream) override;
 
+    std::vector<BTBEntry> prepareUpdateEntries(const FetchStream &stream);
+
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
