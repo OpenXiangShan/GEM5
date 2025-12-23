@@ -356,7 +356,8 @@ MBTB::lookupSingleBlock(Addr block_pc)
     for (auto &way : btb_set) {
         if (way.valid && way.tag == current_tag) {
             res.push_back(way);
-            way.tick = curTick();  // Update timestamp for MRU
+            bool this_branch_taken = way.isIndirect||way.isDirect||way.alwaysTaken||(way.ctr >= 0);
+            way.tick = this_branch_taken ? curTick() : way.tick;  // Update timestamp for MRU
             std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
         }
     }
