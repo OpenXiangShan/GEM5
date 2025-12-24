@@ -726,7 +726,7 @@ MBTB::prepareUpdateEntries(const FetchStream &stream) {
     // Filter: only keep conditional branches that are not always taken
     if (getResolvedUpdate()) {
         auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !( e.resolved); });
+            [](const BTBEntry &e) { return !e.resolved; });
         all_entries.erase(remove_it, all_entries.end());
     }
 
