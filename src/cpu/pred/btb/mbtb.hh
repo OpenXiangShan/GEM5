@@ -395,6 +395,7 @@ class MBTB : public TimedBaseBTBPredictor
     /** Address calculation masks and shifts */
     Addr idxMask;          // Mask for extracting index bits
     unsigned tagBits;      // Number of tag bits
+    bool usingBasetable;   // Whether using basetable for either MBTB or TAGE
     Addr tagMask;          // Mask for extracting tag bits
     unsigned idxShiftAmt;  // Amount to shift PC for index
     unsigned tagShiftAmt;  // Amount to shift PC for tag

@@ -315,6 +315,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Track last prediction bank for conflict detection
     unsigned lastPredBankId;         // Bank ID of last prediction
     bool predBankValid;              // Whether lastPredBankId is valid
+    bool usingBasetable;          // Whether using basetable for either MBTB or TAGE
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;

@@ -81,6 +81,7 @@ MBTB::MBTB(const Params &p)
     numEntries(p.numEntries),
     numWays(p.numWays),
     tagBits(p.tagBits),
+    usingBasetable(p.usingMbtbBaseEiterTage),
     btbStats(this, p.numWays)
 {
     // MBTB doesn't support ahead-pipelined stages
@@ -696,16 +697,19 @@ MBTB::update(const FetchStream &stream)
     // 1. Check prediction hit status, for stats recording
     checkPredictionHit(stream,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
-
-    // only update btb entry for control squash T-> NT or NT -> T
-    // if (stream.squashType == SQUASH_CTRL) {
-    //     warn_if(stream.exeBranchInfo.pc > stream.updateEndInstPC, "exeBranchInfo.pc > updateEndInstPC");
-    //     updateBTBEntry(stream.exeBranchInfo, stream);
-    // }
-    auto entries_need_update = prepareUpdateEntries(stream);
-    for (auto &entry : entries_need_update) {
-        updateBTBEntry(entry, stream);
+    if (!usingBasetable) {
+        // only update btb entry for control squash T-> NT or NT -> T
+        if (stream.squashType == SQUASH_CTRL) {
+            warn_if(stream.exeBranchInfo.pc > stream.updateEndInstPC, "exeBranchInfo.pc > updateEndInstPC");
+            updateBTBEntry(stream.exeBranchInfo, stream);
+        }
+    }else {
+        auto entries_need_update = prepareUpdateEntries(stream);
+        for (auto &entry : entries_need_update) {
+            updateBTBEntry(entry, stream);
+        }
     }
+
 }
 
 

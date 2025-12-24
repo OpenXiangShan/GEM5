@@ -108,6 +108,10 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mgsc.enabled = False
             cpu.branchPred.ras.enabled = True
 
+            usingMbtbBaseEiterTage = True
+            cpu.branchPred.mbtb.usingMbtbBaseEiterTage = usingMbtbBaseEiterTage
+            cpu.branchPred.tage.usingMbtbBaseEiterTage = usingMbtbBaseEiterTage
+
         # l1 cache per core
         if args.caches:
             cpu.icache.size = '64kB'
