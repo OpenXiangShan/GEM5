@@ -555,7 +555,9 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
         return;
     } else {
         // Not found anywhere, replace oldest in SRAM set
-        replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx], ticked_entry);
+        if (stream.exeTaken && stream.exeBranchInfo.pc == ticked_entry.pc) {
+            replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx], ticked_entry);
+        }
     }
 }
 
