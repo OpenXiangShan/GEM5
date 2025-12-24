@@ -540,9 +540,10 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
     }
 
     auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream, btb_tag);
-    auto ticked_entry = TickedBTBEntry(entry_to_write, it->tick);
-    if (stream.exeBranchInfo.pc == ticked_entry.pc && stream.exeTaken) {
-        ticked_entry.tick = curTick();
+    auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
+    if (stream.exeBranchInfo.pc != ticked_entry.pc) {
+        // do not update tick if this entry is not for the executed branch
+        ticked_entry.tick = it->tick;
     }
 
     if (found) {
