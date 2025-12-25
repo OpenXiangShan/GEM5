@@ -177,6 +177,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     }
 
 
+    Addr stride_pf_addr = 0;
     if (pf_source != PrefetchSourceType::SStream && !is_active_page) {
         bool use_bop = enableBOP && ((pfi.isPfFirstHit() && (pf_source == PrefetchSourceType::HWP_BOP ||
                                                              pf_source == PrefetchSourceType::IPCP_CPLX ||
@@ -192,7 +193,6 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             stats.bopTrainCount++;
         }
 
-        Addr stride_pf_addr = 0;
         bool covered_by_stride = false;
         //NOTICE:don't open berti & stride at the same time
         assert(!(enableBerti && enableSstride));
@@ -209,16 +209,6 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
                     smallBOP->tryAddOffset(t);
                 }
             }
-        }
-
-        bool use_stride = !pfi.isStore() && (pfi.isCacheMiss() || pfi.isPfFirstHit()) && enableSstride;
-        if (use_stride){
-            DPRINTF(XSCompositePrefetcher, "Do Sstride traing/prefetching...\n");
-            int64_t learned_bop_offset = 0;
-            Sstride->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, enter_new_region, is_first_shot,
-                                       stride_pf_addr, learned_bop_offset);
-            if (learned_bop_offset != 0)
-                learnedBOP->tryAddOffset(learned_bop_offset);
         }
 
         bool use_pht = pfi.isCacheMiss() ||
@@ -267,6 +257,17 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
             }
         }
     }
+
+    bool use_stride = !pfi.isStore() && (pfi.isCacheMiss() || pfi.isPfFirstHit()) && enableSstride;
+    if (use_stride){
+        DPRINTF(XSCompositePrefetcher, "Do Sstride traing/prefetching...\n");
+        int64_t learned_bop_offset = 0;
+        Sstride->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, enter_new_region, is_first_shot,
+                                   stride_pf_addr, learned_bop_offset);
+        if (learned_bop_offset != 0)
+            learnedBOP->tryAddOffset(learned_bop_offset);
+    }
+
 }
 
 XSCompositePrefetcher::ACTEntry *
