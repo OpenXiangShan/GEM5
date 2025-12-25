@@ -283,8 +283,7 @@ class MBTB : public TimedBaseBTBPredictor
     // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
     BTBEntry buildUpdatedEntry(const BTBEntry& req_entry,
                                const BTBEntry* existing_entry,
-                               const FetchStream &stream,
-                               Addr btb_tag);
+                               const FetchStream &stream);
 
     // Helper: update an existing entry in SRAM set
     void updateExistingInSRAMSet(Addr btb_idx,

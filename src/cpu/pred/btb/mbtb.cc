@@ -508,7 +508,6 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
     
     // Calculate index and tag for this entry
     Addr btb_idx = getIndex(entry.pc);
-    Addr btb_tag = getTag(entry.pc);
 
     // Look for matching entry in the target SRAM
     bool found = false;
@@ -538,7 +537,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
         existing_ptr = static_cast<const BTBEntry*>(&victimCache[vc_idx]);
     }
 
-    auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream, btb_tag);
+    auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream);
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
 
     if (found) {
@@ -557,14 +556,14 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
 BTBEntry
 MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
                         const BTBEntry* existing_entry,
-                        const FetchStream &stream,
-                        Addr btb_tag)
+                        const FetchStream &stream)
 {
     // For conditional branches, prefer the existing entry to preserve up-to-date ctr
     auto entry_to_write = (req_entry.isCond && existing_entry)
                               ? BTBEntry(*existing_entry)
                               : req_entry;
-    entry_to_write.tag = btb_tag;   // update tag
+    // Always recalculate tag based on the actual PC being written
+    entry_to_write.tag = getTag(entry_to_write.pc);
     entry_to_write.resolved = false; // reset resolved status
 
     // Update saturating counter and alwaysTaken
