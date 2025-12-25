@@ -357,8 +357,7 @@ MBTB::lookupSingleBlock(Addr block_pc)
     for (auto &way : btb_set) {
         if (way.valid && way.tag == current_tag) {
             res.push_back(way);
-            bool this_branch_taken = way.isIndirect||way.isDirect||way.alwaysTaken||(way.ctr >= 0);
-            way.tick = this_branch_taken ? curTick() : way.tick;  // Update timestamp for MRU
+            way.tick = curTick(); // Update timestamp for MRU
             std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
         }
     }
@@ -542,10 +541,6 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
 
     auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream, btb_tag);
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
-    if (stream.exeBranchInfo.pc != ticked_entry.pc) {
-        // do not update tick if this entry is not for the executed branch
-        ticked_entry.tick = it->tick;
-    }
 
     if (found) {
         // Update in-place in SRAM set
@@ -556,9 +551,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
         return;
     } else {
         // Not found anywhere, replace oldest in SRAM set
-        if (stream.exeTaken && stream.exeBranchInfo.pc == ticked_entry.pc) {
-            replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx], ticked_entry);
-        }
+        replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx], ticked_entry);
     }
 }
 
