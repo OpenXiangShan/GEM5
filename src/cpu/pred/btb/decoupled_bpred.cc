@@ -133,6 +133,7 @@ DecoupledBPUWithBTB::tick()
     if (squashing) {
         bpuState = BpuState::IDLE;
         numOverrideBubbles = 0;
+        tage->dryRunCycle(s0PC);
         DPRINTF(Override, "Squashing, BPU state updated.\n");
         squashing = false;
         return;
