@@ -538,9 +538,13 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
     } else if (found_in_vc) {
         existing_ptr = static_cast<const BTBEntry*>(&victimCache[vc_idx]);
     }
-
+    TickedBTBEntry ticked_entry;
     auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream, btb_tag);
-    auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
+    if (!found || (entry_to_write.isIndirect && !entry_to_write.isReturn)) {
+        ticked_entry = TickedBTBEntry(entry_to_write, curTick());
+    }else {
+        ticked_entry = TickedBTBEntry(entry_to_write, it->tick);
+    }
 
     if (found) {
         // Update in-place in SRAM set
