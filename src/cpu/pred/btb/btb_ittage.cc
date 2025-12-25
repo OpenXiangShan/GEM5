@@ -157,6 +157,11 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
 }
 
 void
+BTBITTAGE::dryRunCycle(Addr startPC) {
+  return;
+}
+
+void
 BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
     if (debugPC == stream_start) {
         debugFlag = true;

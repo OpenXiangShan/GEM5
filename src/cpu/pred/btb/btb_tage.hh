@@ -118,6 +118,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void tickStart() override;
 
     void tick() override;
+    void dryRunCycle(Addr startAddr) override;
     // Make predictions for a stream of instructions and record in stage preds
     void putPCHistory(Addr startAddr,
                       const boost::dynamic_bitset<> &history,
