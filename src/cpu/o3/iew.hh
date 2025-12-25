@@ -402,9 +402,6 @@ class IEW
     /** Wire to write infromation heading to commit. */
     TimeBuffer<IEWStruct>::wire toCommit;
 
-    TimeBuffer<IEWStruct>::wire execBypass;
-    TimeBuffer<IEWStruct>::wire execWB;
-
     /** Queue of all instructions coming from rename this cycle. */
     std::deque<DynInstPtr> insts[MaxThreads];
 
