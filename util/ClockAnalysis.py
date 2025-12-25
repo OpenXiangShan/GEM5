@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 pd.set_option('display.width', 1000) # 设置显示宽度
 pd.set_option('display.max_columns', None) # 显示所有列
+pd.set_option('display.max_rows', None) # 显示所有行
 pd.set_option('display.float_format', '{:.2f}'.format)
 
 StageNameShort = ['f', 'd', 'r', 'D', 'i', 'a', 'g', 'e', 'b', 'w', 'c']
@@ -44,11 +45,9 @@ def ReadDB(sqldb, start_clock: int, end_clock: int, inter_gap: bool, inner_gap: 
     pc_idx = col_name.index('pc')
 
     for row in tqdm(rows, desc='Reading DB'):
-        pos_clock_cycles = row[pos_begin:pos_end]
-        pc = hex(row[pc_idx])
+        pc = row[pc_idx]
         asm = DisAssemble(row[disasm_idx])
-
-        inst_pos_clock.append(pos_clock_cycles)
+        inst_pos_clock.append(row[pos_begin:pos_end])
         inst_records.append(tuple([pc, asm]))
 
     if inter_gap:
@@ -82,20 +81,28 @@ def IsBranchInst(instr: str) -> bool:
 def ExtractBasicBlocks(pc_inst_list) -> Counter:
     basic_blocks = Counter()
     current_block = []
+    jmp_map = {} # target -> br's pc
 
+    last_jmppc = 0
     for i, (pc, inst) in tqdm(enumerate(pc_inst_list), desc='Analyzing Traces'):
+
+        if len(current_block) == 0:
+            if pc not in jmp_map:
+                jmp_map[pc] = set()
+            jmp_map[pc].add(last_jmppc)
+
         current_block.append((pc, inst))
         if IsBranchInst(inst):
             basic_blocks[tuple(current_block)] += 1
             current_block = []
+            last_jmppc = pc
     if current_block:
         basic_blocks[tuple(current_block)] += 1
 
-    return basic_blocks
-
+    return basic_blocks, jmp_map
 
 def bbl_main(inst_info, inst_avg_clock_info, inter_gap, inner_gap):
-    basic_blocks = ExtractBasicBlocks(inst_info)
+    basic_blocks, jmp_map = ExtractBasicBlocks(inst_info)
 
     mode_str = "inter-gap" if inter_gap else "inner-gap" if inner_gap else "normal"
 
@@ -103,15 +110,22 @@ def bbl_main(inst_info, inst_avg_clock_info, inter_gap, inner_gap):
     if inner_gap:
         global StageNameLong
         StageNameLong = StageNameLong[1:]
-    for block, count in basic_blocks.most_common(10):
+    for block, count in basic_blocks.most_common():
         df_col_name = ['PC', 'Instruction'] + StageNameLong
-        df_data = [[pc, instr] + (inst_avg_clock_info[pc] / period).tolist() for pc, instr in block]
+        start_pc = block[0][0]
+        prev_block_pc = jmp_map.get(start_pc, [])
+        if prev_block_pc:
+            prev_block_pc = ', '.join([hex(pc) for pc in prev_block_pc])
+        else:
+            prev_block_pc = 'N/A'
+
+        df_data = [[hex(pc), instr] + (inst_avg_clock_info[pc] / period).tolist() for pc, instr in block]
         df = pd.DataFrame(df_data, columns=df_col_name)
         # 对每列数据的commit时间求和
         total_commit_time = sum([row[-1] for row in df_data])
 
         print()
-        print(f"Count: {count}, Total Commit Time: {total_commit_time:.2f} cycles")
+        print(f"Count: {count}, Total commit time: {total_commit_time:.2f} cycles, jumped from: {prev_block_pc}")
         print("Instructions:")
         print(df)
 
