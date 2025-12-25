@@ -89,7 +89,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       renameWidth(params.renameWidth),
       wbNumInst(0),
       wbCycle(0),
-      wbDelay(params.executeToWriteBackDelay),
+      iewToCommitDelay(params.iewToCommitDelay),
       wbWidth(params.wbWidth),
       enableStoreSetTrain(params.enable_storeSet_train),
       numThreads(params.numThreads),
@@ -435,11 +435,11 @@ IEW::setIEWQueue(TimeBuffer<IEWStruct> *iq_ptr)
 
     // Setup wire to write instructions and squash signals to commit.
     // Note: This wire is named "toCommit" (previously "execWB") to clarify its purpose.
-    // Since wbDelay == iewToCommitDelay == 1, IEW writes to position [-1] and Commit
-    // reads from position [-1] in the same cycle, achieving zero-cycle latency for
+    // Since iewToCommitDelay == 1, IEW writes to position [-1] and Commit reads from
+    // position [-1] (via fromIEW) in the same cycle, achieving zero-cycle latency for
     // IEW→Commit communication. This allows Commit to immediately arbitrate squash
     // signals from IEW (e.g., branch mispredictions) before forwarding to Fetch.
-    toCommit = iewQueue->getWire(-wbDelay);
+    toCommit = iewQueue->getWire(-iewToCommitDelay);
 }
 
 void

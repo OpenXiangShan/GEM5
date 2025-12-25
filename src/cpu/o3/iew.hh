@@ -476,7 +476,8 @@ class IEW
      */
     unsigned wbCycle;
 
-    const unsigned wbDelay;
+    /** IEW to Commit delay. */
+    const Cycles iewToCommitDelay;
 
     /** Writeback width. */
     unsigned wbWidth;
