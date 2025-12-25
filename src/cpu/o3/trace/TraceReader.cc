@@ -33,6 +33,7 @@
 #include <fstream>
 #include <functional>
 
+#include "arch/null/page_size.hh"
 #include "arch/riscv/page_size.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"

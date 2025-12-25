@@ -64,6 +64,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('trace/TraceReader.cc')
     Source('trace/ChampSimTraceReader.cc')
     Source('trace/CBP2025TraceReader.cc')
+    Source('trace/TraceFetch.cc')
 
     DebugFlag('CommitRate')
     DebugFlag('IEW')

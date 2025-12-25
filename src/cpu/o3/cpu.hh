@@ -371,12 +371,12 @@ class CPU : public BaseCPU
     const PCStateBase &pcState(ThreadID tid);
 
     /** Check if the CPU is in trace mode */
-    bool isTraceMode() const { return fetch.traceMode; }
+    bool isTraceMode() const { return fetch.isTraceMode(); }
 
     /** Check if the trace reader has reached EOF (trace mode only). */
     bool isTraceEOF() const
     {
-        return fetch.traceMode && fetch.traceReader && fetch.traceReader->isEOF();
+        return fetch.isTraceEOF();
     }
 
     /**
