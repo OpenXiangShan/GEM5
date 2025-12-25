@@ -86,6 +86,7 @@ struct BranchInfo
     bool resolved;
     bool isCond;
     bool isIndirect;
+    bool isDirect;
     bool isCall;
     bool isReturn;
     uint8_t size;
@@ -103,6 +104,7 @@ struct BranchInfo
           resolved(false),
           isCond(static_inst->isCondCtrl()),
           isIndirect(static_inst->isIndirectCtrl()),
+          isDirect(static_inst->isDirectCtrl()),
           isCall(static_inst->isCall()),
           isReturn(static_inst->isReturn() && !static_inst->isNonSpeculative() && !static_inst->isDirectCtrl()),
           size(size)
