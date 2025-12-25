@@ -496,7 +496,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(btbEntriesWithDifferentStart, statistics::units::Count::get(), "number of btb entries with different start PC"),
     ADD_STAT(btbEntriesWithOnlyOneJump, statistics::units::Count::get(), "number of btb entries with different start PC starting with a jump"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
-    ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit")
+    ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
+    ADD_STAT(predictionBlockedForUpdate, statistics::units::Count::get(), "prediction blocked for update priority")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);

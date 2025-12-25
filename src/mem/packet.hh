@@ -66,6 +66,10 @@
 namespace gem5
 {
 
+namespace o3 {
+    class LSQ;
+}
+
 class Packet;
 typedef Packet *PacketPtr;
 typedef uint8_t* PacketDataPtr;
@@ -562,6 +566,8 @@ class Packet : public Printable
      */
     SenderState *senderState;
 
+    o3::LSQ *lsqPtr = nullptr;
+
     /**
      * Push a new sender state to the packet and make the current
      * sender state the predecessor of the new one. This should be
@@ -804,6 +810,9 @@ class Packet : public Printable
     void setHitInWriteBuffer() { flags.set(HIT_IN_WRITE_BUFFER); }
     bool isHitInWriteBuffer() const { return flags.isSet(HIT_IN_WRITE_BUFFER); }
     void clearHitInWriteBuffer() { flags.clear(HIT_IN_WRITE_BUFFER); }
+
+    void setLSQPtr(o3::LSQ *lsq) { lsqPtr = lsq; }
+    o3::LSQ *getLSQPtr() const { return lsqPtr; }
 
     /**
      * QoS Value getter

@@ -163,6 +163,8 @@ class BaseCache(ClockedObject):
 
     num_slices = Param.Int(-1, "slice number (-1 is disable)")
 
+    pipe_latency = Param.Cycles(0, "pipeline latency")
+
     force_hit = Param.Bool(False, "Force some PC to hit in L1")
     way_entries = Param.MemorySize(
         "64",
@@ -178,6 +180,15 @@ class BaseCache(ClockedObject):
     way_replacement_policy = Param.BaseReplacementPolicy(
         LRURP(),
         "Replacement policy of active generation table"
+    )
+    prefetch_can_offload = Param.Bool(
+        True,
+        "Whether this cache can offload prefetches to downstream caches when mshr is full"
+    )
+
+    simulate_dcache_refill = Param.Bool(
+        False,
+        "If true, simulate Dcache refill behavior (LSQ pending flag/stats) on L1 fills",
     )
 
 class Cache(BaseCache):

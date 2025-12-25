@@ -30,8 +30,8 @@
 #define POPINST(x)                        \
     do {                                  \
         assert(instNum != 0);             \
-        assert(opNum[x->opClass()] != 0); \
-        opNum[x->opClass()]--;            \
+        assert((*instNumClassify[x->opClass()]) != 0); \
+        (*instNumClassify[x->opClass()])--;            \
         instNum--;                        \
         selector->deallocate(x);          \
     } while (0)
@@ -68,7 +68,7 @@ IssuePort::IssuePort(const IssuePortParams& params) : SimObject(params), rp(para
 {
     for (auto it0 : params.fu) {
         for (auto it1 : it0->opDescList) {
-            mask.set(it1->opClass);
+            opbits.set(it1->opClass);
         }
     }
 }
@@ -165,6 +165,7 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
       ADD_STAT(canceledInst, statistics::units::Count::get(), "count of canceled insts"),
       ADD_STAT(loadmiss, statistics::units::Count::get(), "count of load miss"),
       ADD_STAT(arbFailed, statistics::units::Count::get(), "count of arbitration failed"),
+      ADD_STAT(tagRefillBlock, statistics::units::Count::get(), "count of blocked due to tag refill"),
       ADD_STAT(issueOccupy, statistics::units::Count::get(), "count of replayQ blocked"),
       ADD_STAT(insertDist, statistics::units::Count::get(), "distruibution of insert"),
       ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue"),
@@ -199,7 +200,6 @@ IssueQue::IssueQue(const IssueQueParams& params)
         panic("%s: outports > 8 is not supported\n", iqname);
     }
 
-    opNum.resize(enums::Num_OpClass, 0);
     portBusy.resize(outports, 0);
 
     intRdRfTPI.resize(outports);
@@ -209,9 +209,10 @@ IssueQue::IssueQue(const IssueQueParams& params)
     readyQs.resize(outports, nullptr);
 
     readyQclassify.resize(Num_OpClasses, nullptr);
+    instNumClassify.resize(enums::Num_OpClass, nullptr);
     opPipelined.resize(Num_OpClasses, false);
 
-    std::unordered_map<std::bitset<Num_OpClasses>, ReadyQue*> readyQmap;
+    std::unordered_map<std::bitset<Num_OpClasses>, std::pair<ReadyQue*, uint8_t*>> readyQmap;
     for (int i = 0; i < outports; i++) {
         auto oport = params.oports[i];
 
@@ -256,28 +257,33 @@ IssueQue::IssueQue(const IssueQueParams& params)
 
         // safety check for outports
         for (int j = i + 1; j < outports; j++) {
-            if ((oport->mask != params.oports[j]->mask) && (oport->mask & params.oports[j]->mask).any()) {
+            if ((oport->opbits != params.oports[j]->opbits) && (oport->opbits & params.oports[j]->opbits).any()) {
                 panic("%s: Found the same opClass in different FU, portid: %d and %d\n", iqname, i, j);
             }
         }
         fuDescs.insert(fuDescs.begin(), oport->fu.begin(), oport->fu.end());
+        portFuDescs.push_back(oport->opbits);
 
-        auto it = readyQmap.find(oport->mask);
-        ReadyQue* t = nullptr;
+        auto it = readyQmap.find(oport->opbits);
+        ReadyQue* readyQ = nullptr;
+        uint8_t* counter = nullptr;
         if (it == readyQmap.end()) {
             // create a new ReadyQue
-            t = new ReadyQue;
-            readyQmap[oport->mask] = t;
+            readyQ = new ReadyQue;
+            counter = new uint8_t(0);
+            readyQmap[oport->opbits] = std::make_pair(readyQ, counter);
         } else {
             // use the existing one
-            t = it->second;
+            readyQ = it->second.first;
+            counter = it->second.second;
         }
-        readyQs[i] = t;
+        readyQs[i] = readyQ;
 
         bool storePipeAcc = false, loadPipeAcc = false;
         for (auto fu : oport->fu) {
             for (auto op : fu->opDescList) {
-                readyQclassify[op->opClass] = t;
+                readyQclassify[op->opClass] = readyQ;
+                instNumClassify[op->opClass] = counter;
                 opPipelined[op->opClass] = op->pipelined;
 
                 if (op->opClass >= MemReadOp && op->opClass <= VectorWholeRegisterLoadOp) {
@@ -356,11 +362,19 @@ IssueQue::issueToFu()
     int issuedLoad = 0;
     int issuedStore = 0;
 
+    bool incTagRefillBlockStats = false;
+
     // replay first
     for (; !replayQ.empty() && replayed < outports; replayed++) {
         auto& inst = replayQ.front();
 
         if (inst->isLoad()) {
+            // Check if tag write is happening in the next cycle
+            // if so, load cannot be issued to load pipeline
+            if (scheduler->lsq->isDcacheRefillTagWrite()) {
+                incTagRefillBlockStats = true;
+                break;
+            }
             if (issuedLoad >= numLoadPipe) {
                 break;
             }
@@ -384,8 +398,15 @@ IssueQue::issueToFu()
         if (!inst) {
             continue;
         }
+        // Check if tag write is happening in the next cycle
+        // if so, load cannot be issued to load pipeline
+        bool blockLoad = inst->isLoad() && scheduler->lsq->isDcacheRefillTagWrite();
+        if (blockLoad) {
+            incTagRefillBlockStats = true;
+        }
+
         if ((i + replayed >= outports) || (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
-            (inst->isStore() && (issuedStore >= numStorePipe))) {
+            (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad) {
             inst->clearScheduled();
             // only for load/store
             READYQ_PUSH(inst);
@@ -412,6 +433,9 @@ IssueQue::issueToFu()
     }
     if (replayed) {
         iqstats->issueOccupy += replayed;
+    }
+    if (incTagRefillBlockStats) {
+        iqstats->tagRefillBlock++;
     }
 }
 
@@ -537,8 +561,9 @@ IssueQue::selectInst()
                 continue;
             }
 
-            if (!(portBusy[pi] &
-                  (scheduler->getCorrectedOpLat(inst) > 63 ? -1 : (1llu << scheduler->getCorrectedOpLat(inst))))) {
+            int lat = scheduler->getCorrectedOpLat(inst);
+            uint64_t busy_bit = (lat > 63 ? -1 : (1llu << lat));
+            if (!(portBusy[pi] & busy_bit)) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
 
                 // get regfile write port
@@ -661,7 +686,7 @@ void
 IssueQue::insert(const DynInstPtr& inst)
 {
     assert(instNum < iqsize);
-    opNum[inst->opClass()]++;
+    (*instNumClassify[inst->opClass()])++;
     instNum++;
     instNumInsert++;
 
@@ -809,8 +834,8 @@ bool
 Scheduler::disp_policy::operator()(IssueQue* a, IssueQue* b) const
 {
     // initNum smaller first
-    int p0 = a->opNum[disp_op];
-    int p1 = b->opNum[disp_op];
+    int p0 = *a->instNumClassify[disp_op];
+    int p1 = *b->instNumClassify[disp_op];
     return p0 < p1;
 }
 
@@ -872,8 +897,41 @@ Scheduler::Scheduler(const SchedulerParams& params)
     for (int i = 0; i < intRegfileBanks; i++) {
         rdRfPortOccupancy[i].resize(maxRdTypePortId, {nullptr, 0});
     }
-
     wrRfPortOccupancy.resize(maxWrTypePortId, {nullptr, 0, 0});
+
+
+    // dispatch distance counter allocate
+    dispOpdist.resize(Num_OpClasses, nullptr);
+    totalDispCounter.reserve(Num_OpClasses);
+    std::vector<std::vector<OpClass>> reuse_table;
+    for (int i = 0; i < Num_OpClasses; i++) {
+        bool counter_reuse = false;
+        int reuse_op = 0;
+        for (int j = 0; j < Num_OpClasses; j++) {
+            if (dispTable[i] == dispTable[j]) {
+                counter_reuse = true;
+                reuse_op = j;  // op "i" can reuse the "j" counter
+                break;
+            }
+        }
+
+        if (counter_reuse && dispOpdist[reuse_op]) {
+            dispOpdist[i] = dispOpdist[reuse_op];
+        } else {
+            totalDispCounter.push_back(0);
+            dispOpdist[i] = &totalDispCounter.back();
+            reuse_table.push_back(std::vector<OpClass>());
+        }
+        reuse_table.back().push_back((OpClass)i);
+    }
+
+    for (auto it : reuse_table) {
+        std::cout << "Dispatch Grouping: ";
+        for (auto op : it) {
+            std::cout << enums::OpClassStrings[op] << " ";
+        }
+        std::cout << std::endl;
+    }
 
     // Set TX dynamic read port optimization for all IssueQues
     setMainRdpOpt(params.enableMainRdpOpt);
@@ -1011,8 +1069,7 @@ Scheduler::lookahead(std::deque<DynInstPtr>& insts)
     if (old_disp) {
         // donothing
     } else {
-        uint8_t disp_op_num[Num_OpClasses];
-        std::memset(disp_op_num, 0, Num_OpClasses);
+        std::fill(totalDispCounter.begin(), totalDispCounter.end(), 0);
         int i = 0;
         for (auto& it : insts) {
             auto& iqs = dispTable[it->opClass()];
@@ -1022,8 +1079,8 @@ Scheduler::lookahead(std::deque<DynInstPtr>& insts)
                 std::sort(iqs.begin(), iqs.end(), disp_policy(StoreDataOp));
             }
 
-            dispSeqVec[i] = disp_op_num[it->opClass()] % dispTable[it->opClass()].size();
-            disp_op_num[it->opClass()]++;
+            dispSeqVec[i] = (*dispOpdist[it->opClass()]) % iqs.size();
+            (*dispOpdist[it->opClass()])++;
             i++;
         }
     }

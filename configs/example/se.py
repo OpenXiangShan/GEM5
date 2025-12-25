@@ -300,7 +300,6 @@ def setKmhV3IdealParams(args, system):
         cpu.fetchWidth = 32     # 64byte fetch block have up to 32 instructions
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
-        cpu.fetchToDecodeDelay = 2
 
         cpu.decodeWidth = 8
         cpu.renameWidth = 8

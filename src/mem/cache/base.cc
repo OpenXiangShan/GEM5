@@ -57,6 +57,7 @@
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/lsq.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -165,6 +166,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       dataLatency(p.data_latency),
       forwardLatency(p.tag_latency),
       fillLatency(p.data_latency),
+      pipeLatency(p.pipe_latency),
       responseLatency(p.response_latency),
       sequentialAccess(p.sequential_access),
       numTarget(p.tgts_per_mshr),
@@ -183,7 +185,9 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       stats(*this),
       cacheLevel(p.cache_level),
       forceHit(p.force_hit),
-      doFastWriteline(p.do_fast_writeline)
+      simulateDcacheRefill(p.simulate_dcache_refill),
+      doFastWriteline(p.do_fast_writeline),
+      Prefetch_CanOffload(p.prefetch_can_offload)
 {
     // the MSHR queue has no reserve entries as we check the MSHR
     // queue on every single allocation, whereas the write queue has
@@ -917,6 +921,12 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
         const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
             writeAllocator->allocate() : mshr->allocOnFill();
+        // Optionally indicate that the Dcache received a refill request
+        // to drive LSQ-side modelling.
+        if (simulateDcacheRefill && cacheLevel == 1 && pkt->getLSQPtr()) {
+            pkt->getLSQPtr()->pendingDcacheRefill = true;
+            stats.DcacheRefillTimes++;
+        }
         blk = handleFill(pkt, blk, writebacks, allocate);
         assert(blk != nullptr);
         ppFill->notify(pkt);
@@ -1367,7 +1377,8 @@ BaseCache::getNextQueueEntry()
         }
     }
 
-    if (prefetcher && (!mshrQueue.canPrefetch() || isBlocked()) && prefetcher->hasHintDownStream()) {
+    if (prefetcher && (!mshrQueue.canPrefetch() || isBlocked()) &&
+        prefetcher->hasHintDownStream() && Prefetch_CanOffload) {
         DPRINTF(HWPrefetch, "Offloading prefetch to downstream cache\n");
         prefetcher->offloadToDownStream();
     }
@@ -2128,7 +2139,7 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
         updateBlockData(blk, pkt, has_old_data);
     }
     // The block will be ready when the payload arrives and the fill is done
-    blk->setWhenReady(clockEdge(fillLatency) + pkt->headerDelay +
+    blk->setWhenReady(clockEdge(dataLatency + pipeLatency) + pkt->headerDelay +
                       pkt->payloadDelay);
 
     // NOTE: Dcache sends the block address back to lsu
@@ -2139,7 +2150,7 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
         customPkt->setAddr(addr);
         // set `deletePkt` as true to ensure that the customPkt will be deleted finally.
         SendCustomEvent* clearEvent = new SendCustomEvent(this, customPkt, DcacheRespType::Bus_Clear, true);
-        schedule(clearEvent, clockEdge(fillLatency) + pkt->headerDelay +
+        schedule(clearEvent, clockEdge(dataLatency + pipeLatency) + pkt->headerDelay +
                         pkt->payloadDelay);
     }
 
@@ -2879,6 +2890,8 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of load Tag read fail because of prefetcher"),
     ADD_STAT(MSHRArbFails,statistics::units::Count::get(),
              "number of MSHR arbitration fails (one miss per cycle)"),
+    ADD_STAT(DcacheRefillTimes, statistics::units::Count::get(),
+             "number of Dcache refill events"),
     ADD_STAT(MSHRAliasFails, statistics::units::Count::get(),
              "number of MSHR Alias fails (VA diff)"),
     ADD_STAT(FindHitInWriteBuffer, statistics::units::Count::get(),

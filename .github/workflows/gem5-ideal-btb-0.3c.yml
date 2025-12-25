@@ -1,4 +1,4 @@
-name: gem5 Ideal BTB Performance Test
+name: gem5 Align BTB Performance Test(0.3c)
 
 on:
   push:

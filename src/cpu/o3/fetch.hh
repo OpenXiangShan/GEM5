@@ -1125,11 +1125,16 @@ class Fetch
         /** Frontend Bandwidth Bound */
         statistics::Formula frontendBandwidthBound;
         /** Stat for total cycles the resolve queue is full. */
-        statistics::Scalar resolveQueueFullCycles;
-        /** Stat for total events of the resolve queue becomes full. */
         statistics::Scalar resolveQueueFullEvents;
         /** Stat for total number of resolve enqueue fail events. */
         statistics::Scalar resolveEnqueueFailEvent;
+
+        /** Stat for total number of resolve dequeue events. */
+        statistics::Scalar resolveDequeueCount;
+        /** Stat for total number of resolve enqueue events. */
+        statistics::Distribution resolveEnqueueCount;
+        /** Stat for entry occupancy distribution of the resolve queue. */
+        statistics::Distribution resolveQueueOccupancy;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */

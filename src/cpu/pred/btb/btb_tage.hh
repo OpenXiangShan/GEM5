@@ -150,6 +150,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchStream &entry) override;
+    bool canResolveUpdate(const FetchStream &entry) override;
+    void doResolveUpdate(const FetchStream &entry) override;
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
@@ -349,7 +351,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
         // Bank conflict statistics
         Scalar updateBankConflict;           // Number of bank conflicts detected
-        Scalar updateDroppedDueToConflict;   // Number of updates dropped due to bank conflict
+        Scalar updateDeferredDueToConflict;  // Number of updates deferred due to bank conflict (retried later)
 
 #ifndef UNIT_TEST
         // Fine-grained per-bank statistics

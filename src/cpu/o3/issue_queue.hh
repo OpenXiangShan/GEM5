@@ -67,7 +67,7 @@ class IssuePort : public SimObject
   public:
     std::vector<int> rp;  // [typeid, portid]
     std::vector<FUDesc*> fu;
-    std::bitset<Num_OpClasses> mask;
+    std::bitset<Num_OpClasses> opbits;
     IssuePort(const IssuePortParams& params);
 };
 
@@ -112,6 +112,7 @@ class IssueQue : public SimObject
     const int replayQsize = 32;
     const int scheduleToExecDelay;
     const std::string iqname;
+    std::vector<std::bitset<Num_OpClasses>> portFuDescs;
     std::vector<FUDesc*> fuDescs;
     std::vector<bool> opPipelined;
     int IQID = -1;
@@ -139,7 +140,8 @@ class IssueQue : public SimObject
 
     std::list<DynInstPtr> instList;
     uint64_t instNumInsert = 0;
-    std::vector<uint8_t> opNum;
+
+    std::vector<uint8_t*> instNumClassify;
     uint64_t instNum = 0;
 
     // issueport : regfileport : priority
@@ -176,6 +178,7 @@ class IssueQue : public SimObject
         statistics::Scalar canceledInst;
         statistics::Scalar loadmiss;
         statistics::Scalar arbFailed;
+        statistics::Scalar tagRefillBlock;
         statistics::Scalar issueOccupy;
         statistics::Vector insertDist;
         statistics::Vector issueDist;
@@ -278,14 +281,17 @@ class Scheduler : public SimObject
         disp_policy(OpClass op) : disp_op(op) {}
         bool operator()(IssueQue* a, IssueQue* b) const;
     };
-    using DispPolicy = std::vector<IssueQue*>;
+    using IQGroup = std::vector<IssueQue*>;
 
     std::vector<int> opExecTimeTable;
     std::vector<bool> opPipelined;
-    std::vector<DispPolicy> dispTable;
+    std::vector<IQGroup> dispTable;
     std::vector<IssueQue*> issueQues;
     std::vector<std::vector<IssueQue*>> wakeMatrix;
     uint32_t combinedFus;
+
+    std::vector<uint8_t> totalDispCounter;
+    std::vector<uint8_t*> dispOpdist;
 
     std::vector<DynInstPtr> instsToFu;
 

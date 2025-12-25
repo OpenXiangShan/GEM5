@@ -585,15 +585,21 @@ BTBITTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
             ittageStats.commitPredCorrect++;
             if (iscalled) {
                 ittageStats.callPredCorrect++;
+            }else {
+            ittageStats.otherPredCorrect++;
             }
         } else {
             ittageStats.commitPredWrong++;
             if (iscalled) {
                 ittageStats.callPredWrong++;
+            }else {
+                ittageStats.otherPredWrong++;
             }
         }
         if (iscalled) {
             ittageStats.callHits++;
+        }else {
+            ittageStats.otherHits++;
         }
     }else {
         ittageStats.commitMisses++;
@@ -601,6 +607,9 @@ BTBITTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
         if (iscalled) {
             ittageStats.callMisses++;
             ittageStats.callPredWrong++;
+        }else {
+            ittageStats.otherMisses++;
+            ittageStats.otherPredWrong++;
         }
     }
 
@@ -624,12 +633,27 @@ BTBITTAGE::IttageStats::IttageStats(statistics::Group* parent, int numPredictors
 
     ADD_STAT(commitHits, statistics::units::Count::get(), "number of indirect branch commits that hit in ITTAGE"),
     ADD_STAT(callHits, statistics::units::Count::get(), "number of call commits that hit in ITTAGE"),
+    ADD_STAT(otherHits, statistics::units::Count::get(), "number of other (excpet call) commits that hit in ITTAGE"),
     ADD_STAT(commitMisses, statistics::units::Count::get(), "number of indirect branch commits that missed in ITTAGE"),
     ADD_STAT(callMisses, statistics::units::Count::get(), "number of call commits that missed in ITTAGE"),
-    ADD_STAT(commitPredCorrect, statistics::units::Count::get(), "number of indirect branch commits with correct predictions in ITTAGE"),
-    ADD_STAT(commitPredWrong, statistics::units::Count::get(), "number of indirect branch commits with wrong predictions in ITTAGE"),
-    ADD_STAT(callPredCorrect, statistics::units::Count::get(), "number of call commits with correct predictions in ITTAGE"),
-    ADD_STAT(callPredWrong, statistics::units::Count::get(), "number of call commits with wrong predictions in ITTAGE")
+    ADD_STAT(otherMisses, statistics::units::Count::get(),
+             "number of other (excpet call) commits that missed in ITTAGE"),
+    ADD_STAT(commitPredCorrect, statistics::units::Count::get(),
+             "number of indirect branch commits with correct predictions in "
+             "ITTAGE"),
+    ADD_STAT(commitPredWrong, statistics::units::Count::get(),
+             "number of indirect branch commits with wrong predictions in "
+             "ITTAGE"),
+    ADD_STAT(callPredCorrect, statistics::units::Count::get(),
+             "number of call commits with correct predictions in ITTAGE"),
+    ADD_STAT(otherPredCorrect, statistics::units::Count::get(),
+             "number of other (except call) commits with correct predictions in "
+             "ITTAGE"),
+    ADD_STAT(callPredWrong, statistics::units::Count::get(),
+             "number of call commits with wrong predictions in ITTAGE"),
+    ADD_STAT(otherPredWrong, statistics::units::Count::get(),
+             "number of other (except call) commits with wrong predictions in "
+             "ITTAGE")
 {
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);

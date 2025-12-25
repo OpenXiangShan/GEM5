@@ -275,7 +275,7 @@ class KMHV3Scheduler(Scheduler):
     __mem_bank = [i.name for i in __memIQs]
     __fp_bank = [i.name for i in __fpIQs]
     specWakeupNetwork = [
-        SpecWakeupChannel(srcs=__int_bank + __mem_bank, dsts=__int_bank + __mem_bank),
+        SpecWakeupChannel(srcs=__int_bank + __mem_bank + ['fpIQ0'], dsts=__int_bank + __mem_bank),
         SpecWakeupChannel(srcs=__mem_bank, dsts=__fp_bank),
         SpecWakeupChannel(srcs=__fp_bank, dsts=__fp_bank + ['std0', 'std1'])
     ]

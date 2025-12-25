@@ -1,0 +1,80 @@
+name: Manual Performance Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: 'Choose Kunminghu configuration'
+        required: true
+        type: choice
+        default: 'idealkmhv3.py'
+        options:
+          - 'kmhv2.py'
+          - 'kmhv3.py'
+          - 'idealkmhv3.py'
+      benchmark_type:
+        description: 'Benchmark coverage type'
+        required: true
+        type: choice
+        default: 'spec06-0.8c'
+        options:
+          - spec06-0.3c
+          - spec06-0.8c
+          - spec06-1.0c
+          - spec17-1.0c
+          - spec06-rvv-1.0c
+          - spec06int-rvv-0.8c
+      vector_type:
+        description: 'Vector decode strategy (only for rvv benchmarks)'
+        required: false
+        type: choice
+        default: 'base'
+        options:
+          - base
+          - simple
+      branch:
+        description: 'Branch, tag or SHA to test (leave empty for current branch)'
+        required: false
+        type: string
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      script_path: ${{ steps.resolve.outputs.script_path }}
+      pr_sha: ${{ steps.resolve.outputs.pr_sha }}
+    steps:
+      - name: Resolve parameters
+        id: resolve
+        run: |
+          case "${{ github.event.inputs.configuration }}" in
+            "kmhv2.py")
+              echo "script_path=../kmh_6wide.sh" >> $GITHUB_OUTPUT
+              ;;
+            "kmhv3.py")
+              echo "script_path=../kmh_v3_btb.sh" >> $GITHUB_OUTPUT
+              ;;
+            "idealkmhv3.py")
+              echo "script_path=../kmh_v3_ideal.sh" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "Error: unsupported configuration '${{ github.event.inputs.configuration }}'" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ -n "${{ github.event.inputs.branch }}" ]; then
+            echo "pr_sha=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+          else
+            echo "pr_sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+  perf_test:
+    needs: setup
+    uses: ./.github/workflows/gem5-perf-template.yml
+    with:
+      script_path: ${{ needs.setup.outputs.script_path }}
+      benchmark_type: ${{ github.event.inputs.benchmark_type }}
+      vector_type: ${{ github.event.inputs.vector_type }}
+      pr_sha: ${{ needs.setup.outputs.pr_sha }}
+      check_result: true

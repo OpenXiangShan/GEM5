@@ -153,3 +153,14 @@ class WeightedLRURP(LRURP):
     type = "WeightedLRURP"
     cxx_class = 'gem5::replacement_policy::WeightedLRU'
     cxx_header = "mem/cache/replacement_policies/weighted_lru_rp.hh"
+
+# XiangShan RRIP replacement policy series (unified implementation)
+class XSDRRIPRP(BaseReplacementPolicy):
+    type = 'XSDRRIPRP'
+    cxx_class = 'gem5::replacement_policy::XSDRRIP'
+    cxx_header = "mem/cache/replacement_policies/xs_drrip_rp.hh"
+
+    # Working mode: 0=SRRIP, 1=BRRIP, 2=DRRIP
+    mode = Param.Int(2, "Mode: 0=SRRIP, 1=BRRIP, 2=DRRIP (Set Dueling)")
+    num_sets = Param.Int(0, "Number of sets in the cache (required for DRRIP mode)")
+    num_ways = Param.Int(Parent.assoc, "Number of ways in each set")

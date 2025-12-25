@@ -1035,6 +1035,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
     /** The latency to fill a cache block */
     const Cycles fillLatency;
 
+    const Cycles pipeLatency;
+
     /**
      * The latency of sending reponse to its upper level cache/core on
      * a linefill. The responseLatency parameter captures this
@@ -1322,6 +1324,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
          * one-miss-per-cycle limit.
          */
         statistics::Scalar MSHRArbFails;
+
+        statistics::Scalar DcacheRefillTimes;
 
         /** Number of MSHR Alias fails (VA diff) . */
         statistics::Scalar MSHRAliasFails;
@@ -1615,6 +1619,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     std::set<Addr> forceHitPCs{};
 
     const bool forceHit;
+    const bool simulateDcacheRefill;
 
 public:
     /**
@@ -1676,6 +1681,8 @@ public:
         auto blk = tags->findBlock(addr, is_secure);
         return blk ? blk->data: nullptr;
     }
+    private:
+    const bool Prefetch_CanOffload;
 };
 
 /**

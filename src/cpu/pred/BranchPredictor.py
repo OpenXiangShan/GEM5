@@ -984,7 +984,7 @@ class MBTB(TimedBaseBTBPredictor):
     numDelay = 2
     blockSize = 32  # max 64 byte block, 32 byte aligned
     # MBTB is always half-aligned - no parameter needed
-    victimCacheSize = Param.Unsigned(16, "Number of entries in the victim cache")
+    victimCacheSize = Param.Unsigned(0, "Number of entries in the victim cache")
 
 class AheadBTB(TimedBaseBTBPredictor):
     type = 'AheadBTB'
@@ -1171,3 +1171,4 @@ class DecoupledBPUWithBTB(BranchPredictor):
     enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")
     enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
     enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
+    resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
