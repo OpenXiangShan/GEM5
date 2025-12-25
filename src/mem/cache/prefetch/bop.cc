@@ -109,7 +109,7 @@ BOP::BOP(const BOPPrefetcherParams &p)
 void
 BOP::delayQueueEventWrapper()
 {
-    while (!delayQueue.empty() &&
+    if (!delayQueue.empty() &&
             delayQueue.front().processTick <= curTick())
     {
         insertIntoRR(delayQueue.front().rrEntry, RRWay::Left);
@@ -117,7 +117,9 @@ BOP::delayQueueEventWrapper()
     }
 
     // Schedule an event for the next element if there is one
-    if (!delayQueue.empty()) {
+    if (!delayQueue.empty() && (delayQueue.front().processTick <= curTick())) {
+        schedule(delayQueueEvent, nextCycle());
+    } else if (!delayQueue.empty()) {
         schedule(delayQueueEvent, delayQueue.front().processTick);
     }
 }
