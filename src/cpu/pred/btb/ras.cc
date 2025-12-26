@@ -433,6 +433,11 @@ BTBRAS::getTopAddrFromMetas(const FetchStream &stream)
 }
 
 void
+BTBRAS::predwrongSource()
+{
+}
+
+void
 BTBRAS::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
     if (!inst->isReturn() || inst->isNop()) {

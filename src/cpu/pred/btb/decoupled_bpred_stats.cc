@@ -497,7 +497,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(btbEntriesWithOnlyOneJump, statistics::units::Count::get(), "number of btb entries with different start PC starting with a jump"),
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
-    ADD_STAT(predictionBlockedForUpdate, statistics::units::Count::get(), "prediction blocked for update priority")
+    ADD_STAT(predictionBlockedForUpdate, statistics::units::Count::get(), "prediction blocked for update priority"),
+    ADD_STAT(s1Predwrongfullthrough, statistics::units::Count::get(), "S1pred wrong full throughs")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
@@ -858,6 +859,16 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     // ---------- Update predictor components ----------
     for (auto component : components) {
         component->commitBranch(entry, inst);
+    }
+    //here add final counter
+    if (mispred) {
+        int s1MisspredSource = entry.s1Source;
+        if (s1MisspredSource >= 0) {
+            components[s1MisspredSource]->predwrongSource();
+        }else {
+            dbpBtbStats.s1Predwrongfullthrough++;
+        }
+
     }
 }
 

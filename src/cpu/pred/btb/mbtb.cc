@@ -809,6 +809,9 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
     *lru_it = evicted_entry;
     lru_it->tick = curTick();
 }
+void
+MBTB::predwrongSource(){}
+
 
 #ifndef UNIT_TEST
 void

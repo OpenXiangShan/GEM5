@@ -1119,6 +1119,11 @@ BTBTAGE::getLRUVictim(int table, Addr index)
     return victim;
 }
 
+void
+BTBTAGE::predwrongSource(){
+
+}
+
 #ifndef UNIT_TEST
 void
 BTBTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)

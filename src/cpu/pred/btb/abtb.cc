@@ -213,16 +213,21 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         ubtb_pred_entry = stagePreds[0].btbEntries[0];
         assert(ubtb_pred_entry.valid);
         mixed_entries = entries;
+        for (auto &entry : mixed_entries) {
+            if (entry.pc == ubtb_pred_entry.pc) {
+                entry.valid = false; // invalidate duplicated entry from aBTB
+            }
+        }
         mixed_entries.push_back(TickedBTBEntry(ubtb_pred_entry, curTick()));
         // Deduplicate entries by pc (order can change)
         std::sort(mixed_entries.begin(), mixed_entries.end(),
               [](const TickedBTBEntry& a, const TickedBTBEntry& b) {
                   return a.pc < b.pc;
               });
-        // Remove duplicates
-        mixed_entries.erase(std::unique(mixed_entries.begin(), mixed_entries.end(),
-              [](const TickedBTBEntry& a, const TickedBTBEntry& b) {
-                  return a.pc == b.pc;
+        // Drop entries invalidated during deduplication above
+        mixed_entries.erase(std::remove_if(mixed_entries.begin(), mixed_entries.end(),
+              [](const TickedBTBEntry& entry) {
+                  return !entry.valid;
               }),
               mixed_entries.end());
         // return;
@@ -596,6 +601,7 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         BranchInfo takenbranchinfo;
         takenbranchinfo.pc = s3Pred.getTakenEntry().pc;
         takenbranchinfo.target = s3Pred.getTakenEntry().target;
+        entry.setsource(getComponentIdx()); // mark the entry source as AheadBTB
 
         updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo, s3Pred.isTaken());
     }
@@ -671,6 +677,7 @@ AheadBTB::update(const FetchStream &stream)
             return;
         }
         Addr btb_idx = getIndex(previousPC);  // use last pc to get idx
+        entry.setsource(getComponentIdx()); // mark the entry source as AheadBTB
         updateBTBEntry(btb_idx, btb_tag, entry, stream.exeBranchInfo, stream.exeTaken);
     }
 }
@@ -698,6 +705,11 @@ AheadBTB::getPreviousPC(const FetchStream &stream)
         }
         return previous_pcs.front();
     }
+}
+
+void
+AheadBTB::predwrongSource(){
+    btbStats.s1PredwrongAbtb++;
 }
 
 #ifndef UNIT_TEST
@@ -840,7 +852,8 @@ AheadBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(callHits, statistics::units::Count::get(), "calls committed that was predicted hit"),
     ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
-    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
+    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
+    ADD_STAT(s1PredwrongAbtb, statistics::units::Count::get(), "S1 predictions that were wrong due to abtb source")
 
 {
 }

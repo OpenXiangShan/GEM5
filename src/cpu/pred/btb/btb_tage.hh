@@ -153,6 +153,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     bool canResolveUpdate(const FetchStream &entry) override;
     void doResolveUpdate(const FetchStream &entry) override;
 
+    void predwrongSource() override;
+
 #ifndef UNIT_TEST
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
 #endif

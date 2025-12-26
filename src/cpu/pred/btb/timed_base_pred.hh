@@ -82,6 +82,7 @@ class TimedBaseBTBPredictor: public SimObject
     // do some statistics on a per-branch and per-predictor basis
     virtual void commitBranch(const FetchStream &entry, const DynInstPtr &inst) {}
 #endif
+    virtual void predwrongSource() {}
 
     int componentIdx{0};
     unsigned aheadPipelinedStages{0};

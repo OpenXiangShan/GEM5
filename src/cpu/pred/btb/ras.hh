@@ -102,6 +102,8 @@ namespace btb_pred {
 
         void update(const FetchStream &entry) override;
 
+        void predwrongSource() override;
+
         // commitBranch method - override only in production mode
 #ifdef UNIT_TEST
         void commitBranch(const FetchStream &stream, const DynInstPtr &inst);

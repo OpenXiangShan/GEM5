@@ -159,6 +159,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Update predictor state based on actual branch outcomes
     void update(const FetchStream &entry) override;
 
+    void predwrongSource() override;
+
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
 
     void setTrace() override;

@@ -132,6 +132,8 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void update(const FetchStream &stream) override;
 
+    void predwrongSource() override;
+
     /** for statistics only
      * @param stream The fetch stream containing execution results
      * @param inst The dynamic instruction being committed
@@ -326,6 +328,8 @@ class UBTB : public TimedBaseBTBPredictor
         statistics::Scalar s1Hits3Taken;
         statistics::Scalar s1Misses3FallThrough;
         statistics::Scalar s1InvalidatedEntries;
+
+        statistics::Scalar s1PredwrongUbtb;
 
         UBTBStats(statistics::Group* parent);
     } ubtbStats;

@@ -212,6 +212,7 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     }
     auto startAddr = s3Pred.bbStart;
     UBTBIter oldEntryIter = lastPred.hit_entry;
+    takenEntry.setsource(getComponentIdx());
     updateNewEntry(oldEntryIter, takenEntry, startAddr);
 
 }
@@ -316,6 +317,11 @@ UBTB::update(const FetchStream &stream)
     if (!usingS3Pred) {
         updateNewEntry(oldEntryIter, takenEntry, startAddr);
     }
+}
+
+void
+UBTB::predwrongSource(){
+    ubtbStats.s1PredwrongUbtb++;
 }
 
 void

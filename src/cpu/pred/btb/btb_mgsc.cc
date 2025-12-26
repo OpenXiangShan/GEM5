@@ -1096,6 +1096,9 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
 }
 
 void
+BTBMGSC::predwrongSource(){}
+
+void
 BTBMGSC::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
     if (!inst->isCondCtrl()) {

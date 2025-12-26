@@ -560,6 +560,9 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
 }
 
 void
+BTBITTAGE::predwrongSource(){}
+
+void
 BTBITTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
     if (!(inst->isIndirectCtrl() && !inst->isReturn())) {

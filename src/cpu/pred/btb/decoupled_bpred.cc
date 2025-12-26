@@ -241,6 +241,18 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     // Store the chosen prediction as our final prediction
     finalPred = *chosenPrediction;
 
+    if (predsOfEachStage[0].btbEntries.size() == 0) {
+        finalPred.s1Source = 0; // fallthrough
+    }else{
+        finalPred.s1Source = 0;
+        for (auto entry : predsOfEachStage[0].btbEntries){
+            if (entry.isIndirect || entry.isDirect || entry.ctr >=0 ){
+                finalPred.s1Source = entry.getsource();
+                break;
+            }
+        }
+    }
+
     // 3. Calculate override bubbles needed for pipeline consistency
     // Override bubbles are needed when earlier stages predict differently from later stages
     unsigned first_hit_stage = 0;
@@ -1005,6 +1017,8 @@ DecoupledBPUWithBTB::createFetchStreamEntry()
     entry.predTick = finalPred.predTick;
     entry.predSource = finalPred.predSource;
     entry.overrideReason = finalPred.overrideReason;
+
+    entry.s1Source = finalPred.s1Source;
 
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {

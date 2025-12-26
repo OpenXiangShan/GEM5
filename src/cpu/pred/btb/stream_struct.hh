@@ -177,10 +177,19 @@ struct BTBEntry : BranchInfo
     bool alwaysTaken;
     int ctr;
     Addr tag;
+    int source;//only use for countering the source of the entry
     // Addr offset; // retrived from lowest bits of pc
-    BTBEntry() : BranchInfo(), valid(false), alwaysTaken(false), ctr(0), tag(0) {}
-    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0) {}
+    BTBEntry() : BranchInfo(), valid(false), alwaysTaken(false), ctr(0), tag(0) ,source(0){}
+    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0),source(0){}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
+
+    int getsource() const {
+        return (source - 1);
+    }
+
+    void setsource(int src) {
+        source = src + 1;
+    }
 };
 
 /**
@@ -338,6 +347,9 @@ struct FetchStream
     int fetchInstNum;
     int commitInstNum;
 
+    int s1Source; // which stage the prediction comes from
+    int s3Source; // which stage the prediction comes from
+
    FetchStream()
        : startPC(0),
          predTaken(false),
@@ -361,7 +373,9 @@ struct FetchStream
          ihistory(),
          lhistory(),
          fetchInstNum(0),
-         commitInstNum(0)
+         commitInstNum(0),
+         s1Source(0),
+         s3Source(0)
    {
        predMetas.fill(nullptr);
        predBTBEntries.clear();
@@ -481,6 +495,10 @@ struct FullBTBPrediction
     OverrideReason overrideReason;
     Tick predTick;
 
+    //only use for countering the source of the prediction
+    int s1Source;
+    int s3Source;
+
     FullBTBPrediction() :
         bbStart(0),
         btbEntries(),
@@ -489,7 +507,9 @@ struct FullBTBPrediction
         returnTarget(0),
         tageInfoForMgscs(),
         predSource(0),
-        predTick(0) {}
+        predTick(0),
+        s1Source(0),
+        s3Source(0) {}
 
     BTBEntry getTakenEntry() {
         // IMPORTANT: assume entries are sorted
