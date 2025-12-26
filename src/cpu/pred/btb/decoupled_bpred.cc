@@ -163,6 +163,10 @@ DecoupledBPUWithBTB::tick()
         }
     }
 
+    if (bpuState == BpuState::PREDICTION_OUTSTANDING && numOverrideBubbles > 0) {
+        tage->dryRunCycle(s0PC);
+    }
+
     // 3. Process enqueue operations and bubble counter
     tryEnqFetchTarget();
 
