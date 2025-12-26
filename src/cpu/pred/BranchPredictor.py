@@ -985,6 +985,7 @@ class MBTB(TimedBaseBTBPredictor):
     blockSize = 32  # max 64 byte block, 32 byte aligned
     # MBTB is always half-aligned - no parameter needed
     victimCacheSize = Param.Unsigned(0, "Number of entries in the victim cache")
+    usingMbtbBaseEiterTage = Param.Bool(True, "Whether using MBTB basetable either TAGE ")
 
 class AheadBTB(TimedBaseBTBPredictor):
     type = 'AheadBTB'
@@ -1060,6 +1061,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(True, "Enable bank conflict simulation")
     numDelay = 2
+    usingMbtbBaseEiterTage = Param.Bool(True, "Whether using MBTB basetable either TAGE ")
 
 class MicroTAGE(BTBTAGE):
     """A smaller TAGE predictor configuration to assist uBTB"""

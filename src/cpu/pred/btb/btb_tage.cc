@@ -91,6 +91,7 @@ indexShift(bankBaseShift + ceilLog2(p.numBanks)),
 enableBankConflict(p.enableBankConflict),
 lastPredBankId(0),
 predBankValid(false),
+usingBasetable( !p.usingMbtbBaseEiterTage),
 tageStats(this, p.numPredictors, p.numBanks)
 {
     this->needMoreHistories = p.needMoreHistories;
@@ -269,7 +270,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     // Use base table instead of btb_entry.ctr
     Addr base_idx = getBaseTableIndex(startPC);
     unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, startPC);
-    bool base_taken = getDelay() != 0 ? baseTable[base_idx][branch_idx] >= 0 : btb_entry.ctr >= 0;
+    bool base_taken = getDelay() != 0 ? (usingBasetable ? baseTable[base_idx][branch_idx] >= 0 : btb_entry.ctr >= 0)
+                                                                                     : btb_entry.ctr >= 0;
+    //bool base_taken = btb_entry.ctr >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
 
     // use_alt_on_na gating: when provider weak, consult per-PC counter
