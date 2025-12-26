@@ -350,6 +350,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateMispred;
         Scalar updateResetU;
 
+        // Recomputed prediction difference statistics (per fetchBlock)
+        Scalar recomputedVsActualDiff;   // recomputed.taken != actual_taken
+        Scalar recomputedVsOriginalDiff; // recomputed.taken != original pred.taken
+
         // Bank conflict statistics
         Scalar updateBankConflict;           // Number of bank conflicts detected
         Scalar updateDeferredDueToConflict;  // Number of updates deferred due to bank conflict (retried later)
