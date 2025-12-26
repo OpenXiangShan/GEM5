@@ -179,16 +179,16 @@ struct BTBEntry : BranchInfo
     Addr tag;
     int source;//only use for countering the source of the entry
     // Addr offset; // retrived from lowest bits of pc
-    BTBEntry() : BranchInfo(), valid(false), alwaysTaken(false), ctr(0), tag(0) ,source(0){}
-    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0),source(0){}
+    BTBEntry() : BranchInfo(), valid(false), alwaysTaken(false), ctr(0), tag(0) ,source(-1){}
+    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0),source(-1){}
     BranchInfo getBranchInfo() { return BranchInfo(*this); }
 
     int getsource() const {
-        return (source - 1);
+        return source;
     }
 
     void setsource(int src) {
-        source = src + 1;
+        source = src;
     }
 };
 
