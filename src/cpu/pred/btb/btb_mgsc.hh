@@ -326,6 +326,15 @@ class BTBMGSC : public TimedBaseBTBPredictor
     unsigned numCtrsPerLine;
     unsigned numCtrsPerLineBits;
 
+    // Test switches for SC tables
+    bool forceUseSC;
+    bool enableBwTable;
+    bool enableLTable;
+    bool enableITable;
+    bool enableGTable;
+    bool enablePTable;
+    bool enableBiasTable;
+
     // Folded history for index calculation
     std::vector<GlobalBwFoldedHist> indexBwFoldedHist;
     std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist;

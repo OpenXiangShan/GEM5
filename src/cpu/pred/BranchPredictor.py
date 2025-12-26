@@ -1146,6 +1146,15 @@ class BTBMGSC(TimedBaseBTBPredictor):
     # How many counters readed per prediction (usually per cycle)
     numCtrsPerLine = Param.Unsigned(8, "Counters per SRAM line")
 
+    # Test switches for SC tables
+    forceUseSC = Param.Bool(False, "Force use SC prediction, ignore TAGE confidence")
+    enableBwTable = Param.Bool(True, "Enable BW (backward) table")
+    enableLTable = Param.Bool(True, "Enable L (local) table")
+    enableITable = Param.Bool(True, "Enable I (IMLI) table")
+    enableGTable = Param.Bool(True, "Enable G (global) table")
+    enablePTable = Param.Bool(True, "Enable P (path) table")
+    enableBiasTable = Param.Bool(True, "Enable Bias table")
+
     numDelay = 2
 
 class DecoupledBPUWithBTB(BranchPredictor):

@@ -52,6 +52,13 @@ BTBMGSC::BTBMGSC(const Params &p)
       extraWeightsWidth(p.extraWeightsWidth),
       weightTableIdxWidth(p.weightTableIdxWidth),
       numCtrsPerLine(p.numCtrsPerLine),
+      forceUseSC(p.forceUseSC),
+      enableBwTable(p.enableBwTable),
+      enableLTable(p.enableLTable),
+      enableITable(p.enableITable),
+      enableGTable(p.enableGTable),
+      enablePTable(p.enablePTable),
+      enableBiasTable(p.enableBiasTable),
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
@@ -268,27 +275,27 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
                                     tage_info.tage_pred_conf_low);
     }
 
-    int bw_percsum = calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.pc);
+    int bw_percsum = enableBwTable ? calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.pc) : 0;
     int bw_weight = findWeight(bwWeightTable, btb_entry.pc);
     int bw_scaled_percsum = calculateScaledPercsum(bw_weight, bw_percsum);
 
-    int l_percsum = calculatePercsum(lTable, lIndex, lTableNum, btb_entry.pc);
+    int l_percsum = enableLTable ? calculatePercsum(lTable, lIndex, lTableNum, btb_entry.pc) : 0;
     int l_weight = findWeight(lWeightTable, btb_entry.pc);
     int l_scaled_percsum = calculateScaledPercsum(l_weight, l_percsum);
 
-    int i_percsum = calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc);
+    int i_percsum = enableITable ? calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc) : 0;
     int i_weight = findWeight(iWeightTable, btb_entry.pc);
     int i_scaled_percsum = calculateScaledPercsum(i_weight, i_percsum);
 
-    int g_percsum = calculatePercsum(gTable, gIndex, gTableNum, btb_entry.pc);
+    int g_percsum = enableGTable ? calculatePercsum(gTable, gIndex, gTableNum, btb_entry.pc) : 0;
     int g_weight = findWeight(gWeightTable, btb_entry.pc);
     int g_scaled_percsum = calculateScaledPercsum(g_weight, g_percsum);
 
-    int p_percsum = calculatePercsum(pTable, pIndex, pTableNum, btb_entry.pc);
+    int p_percsum = enablePTable ? calculatePercsum(pTable, pIndex, pTableNum, btb_entry.pc) : 0;
     int p_weight = findWeight(pWeightTable, btb_entry.pc);
     int p_scaled_percsum = calculateScaledPercsum(p_weight, p_percsum);
 
-    int bias_percsum = calculatePercsum(biasTable, biasIndex, biasTableNum, btb_entry.pc);
+    int bias_percsum = enableBiasTable ? calculatePercsum(biasTable, biasIndex, biasTableNum, btb_entry.pc) : 0;
     int bias_weight = findWeight(biasWeightTable, btb_entry.pc);
     int bias_scaled_percsum = calculateScaledPercsum(bias_weight, bias_percsum);
 
@@ -302,18 +309,20 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     int total_thres = (updateThreshold / 8) + p_update_thres;
 
-    bool use_sc_pred = false;
-    if (tage_info.tage_pred_conf_high) {
-        if (abs(total_sum) > total_thres / 2) {
-            use_sc_pred = true;
-        }
-    } else if (tage_info.tage_pred_conf_mid) {
-        if (abs(total_sum) > total_thres / 4) {
-            use_sc_pred = true;
-        }
-    } else if (tage_info.tage_pred_conf_low) {
-        if (abs(total_sum) > total_thres / 8) {
-            use_sc_pred = true;
+    bool use_sc_pred = forceUseSC;  // Force use SC if configured
+    if (!use_sc_pred) {
+        if (tage_info.tage_pred_conf_high) {
+            if (abs(total_sum) > total_thres / 2) {
+                use_sc_pred = true;
+            }
+        } else if (tage_info.tage_pred_conf_mid) {
+            if (abs(total_sum) > total_thres / 4) {
+                use_sc_pred = true;
+            }
+        } else if (tage_info.tage_pred_conf_low) {
+            if (abs(total_sum) > total_thres / 8) {
+                use_sc_pred = true;
+            }
         }
     }
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
