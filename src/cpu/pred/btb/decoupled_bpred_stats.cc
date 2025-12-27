@@ -885,7 +885,6 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
 
         auto s3WrongBranchSource = exeBranch.source;
         if (s3WrongBranchSource >= 0) {
-            assert(s3WrongBranchSource >2);
             components[s3WrongBranchSource]->predwrongSource();
 
         } else {
