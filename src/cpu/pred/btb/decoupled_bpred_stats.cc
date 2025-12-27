@@ -876,8 +876,8 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
 
         auto exeBranchinfo = entry.exeBranchInfo;
         auto exeBranch = BTBEntry();
-        for(auto btb_entry: entry.predBTBEntries){//find the exe branch in the btb entries
-            if(btb_entry.pc == exeBranchinfo.pc){
+        for (auto btb_entry: entry.predBTBEntries){//find the exe branch in the btb entries
+            if (btb_entry.pc == exeBranchinfo.pc){
                 exeBranch = btb_entry;
                 break;
             }
@@ -887,7 +887,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
         if (s3WrongBranchSource >= 0) {
             assert(s3WrongBranchSource >2);
             components[s3WrongBranchSource]->predwrongSource();
-            
+
         } else {
             dbpBtbStats.s3Predwrongfullthrough++;
         }
