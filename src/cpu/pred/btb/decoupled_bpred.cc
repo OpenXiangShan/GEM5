@@ -241,13 +241,25 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     // Store the chosen prediction as our final prediction
     finalPred = *chosenPrediction;
 
+    finalPred.s1Source = -1;//meaning fallthrough
+    finalPred.s3Source = -1;
+
     if (predsOfEachStage[0].btbEntries.size() == 0) {
-        finalPred.s1Source = -1; // fallthrough
+
     }else{
-        finalPred.s1Source = -1;
         for (auto entry : predsOfEachStage[0].btbEntries){
             if (entry.isIndirect || entry.isDirect || entry.ctr >=0 ){
-                finalPred.s1Source = entry.getsource();
+                finalPred.s1Source = entry.source;
+                break;
+            }
+        }
+    }
+
+    if (predsOfEachStage[3].btbEntries.size() == 0) {
+    }else {
+        for (auto entry : predsOfEachStage[3].btbEntries){
+            if (entry.isIndirect || entry.isDirect || entry.ctr >=0 ){
+                finalPred.s3Source = entry.source;
                 break;
             }
         }

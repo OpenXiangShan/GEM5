@@ -100,13 +100,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool useAlt;           // Whether to use alternative prediction, true if main is weak or no main prediction
             bool taken;            // Final prediction (taken/not taken) = use_alt ? alt_provided ? alt_taken : base_taken : main_taken
             bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
+            bool tageCovered;     // whether tage covered this branch
 
-            TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false) {}
+            TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false), tageCovered(false) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
-                            bool useAlt, bool taken, bool altPred) :
+                            bool useAlt, bool taken, bool altPred, bool tageCovered) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
-                            useAlt(useAlt), taken(taken), altPred(altPred) {}
+                            useAlt(useAlt), taken(taken), altPred(altPred), tageCovered(tageCovered) {}
     };
 
 
@@ -153,9 +154,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     bool canResolveUpdate(const FetchStream &entry) override;
     void doResolveUpdate(const FetchStream &entry) override;
 
-    void predwrongSource() override;
-
 #ifndef UNIT_TEST
+    void predwrongSource() override;
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
 #endif
 
@@ -169,7 +169,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
-    void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+    void lookupHelper(const Addr &startPC, std::vector<BTBEntry> &btbEntries,
                     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
 
     // Calculate TAGE index for a given PC and table
@@ -374,6 +374,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar condMissNoTakens;
         Scalar predHit;
         Scalar predMiss;
+
+        Scalar s3PredwrongTage;
 
         int bankIdx;
         int numPredictors;

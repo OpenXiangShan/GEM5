@@ -602,7 +602,7 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         BranchInfo takenbranchinfo;
         takenbranchinfo.pc = s3Pred.getTakenEntry().pc;
         takenbranchinfo.target = s3Pred.getTakenEntry().target;
-        entry.setsource(getComponentIdx()); // mark the entry source as AheadBTB
+        entry.source = getComponentIdx(); // mark the entry source as AheadBTB
 
         updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo, s3Pred.isTaken());
     }
@@ -678,7 +678,7 @@ AheadBTB::update(const FetchStream &stream)
             return;
         }
         Addr btb_idx = getIndex(previousPC);  // use last pc to get idx
-        entry.setsource(getComponentIdx()); // mark the entry source as AheadBTB
+        entry.source = getComponentIdx(); // mark the entry source as AheadBTB
         updateBTBEntry(btb_idx, btb_tag, entry, stream.exeBranchInfo, stream.exeTaken);
     }
 }
@@ -708,12 +708,14 @@ AheadBTB::getPreviousPC(const FetchStream &stream)
     }
 }
 
+
+#ifndef UNIT_TEST
+
 void
 AheadBTB::predwrongSource(){
     btbStats.s1PredwrongAbtb++;
 }
 
-#ifndef UNIT_TEST
 void
 AheadBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {

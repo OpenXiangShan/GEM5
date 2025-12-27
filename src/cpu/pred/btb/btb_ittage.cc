@@ -73,7 +73,7 @@ void
 BTBITTAGE::tick() {}
 
 void
-BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries, IndirectTargets& results)
+BTBITTAGE::lookupHelper(Addr startAddr, std::vector<BTBEntry> &btbEntries, IndirectTargets& results)
 {
     DPRINTF(ITTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
     std::vector<TagePrediction> preds;
@@ -149,7 +149,9 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
                 ittageStats.predTableHits.sample(main_info.table, 1);
             }
             // Note: predTargetHit will be updated in the update phase when we know the actual target
-
+            if (!(use_alt && !alt_provided)) {
+                btb_entry.source = getComponentIdx();
+            } 
             TagePrediction pred(btb_entry.pc, main_info, alt_info, use_alt, main_target);
             meta->preds[btb_entry.pc] = pred;
         }
@@ -560,7 +562,9 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
 }
 
 void
-BTBITTAGE::predwrongSource(){}
+BTBITTAGE::predwrongSource(){
+    ittageStats.s3PredwrongIttage++;
+}
 
 void
 BTBITTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
@@ -645,7 +649,8 @@ BTBITTAGE::IttageStats::IttageStats(statistics::Group* parent, int numPredictors
     ADD_STAT(callPredCorrect, statistics::units::Count::get(), "number of call commits with correct predictions in ITTAGE"),
     ADD_STAT(otherPredCorrect, statistics::units::Count::get(), "number of other (except call) commits with correct predictions in ITTAGE"),
     ADD_STAT(callPredWrong, statistics::units::Count::get(), "number of call commits with wrong predictions in ITTAGE"),
-    ADD_STAT(otherPredWrong, statistics::units::Count::get(), "number of other (except call) commits with wrong predictions in ITTAGE")
+    ADD_STAT(otherPredWrong, statistics::units::Count::get(), "number of other (except call) commits with wrong predictions in ITTAGE"),
+    ADD_STAT(s3PredwrongIttage, statistics::units::Count::get(), "number of stage 3 conditional branch mispredictions by ittage")
 {
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);

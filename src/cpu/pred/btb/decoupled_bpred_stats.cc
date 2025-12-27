@@ -454,6 +454,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(otherMiss, statistics::units::Count::get(), "the number of other branch misses"),
     ADD_STAT(branchClassCounts, statistics::units::Count::get(), "branch counts by fine-grained class"),
     ADD_STAT(branchClassMisses, statistics::units::Count::get(), "branch mispredictions by fine-grained class"),
+    ADD_STAT(branchClassCountsTotal, statistics::units::Count::get(), "total number of classified branches"),
     ADD_STAT(controlSquashByClass, statistics::units::Count::get(), "commit/resolve-path squashes by branch class"),
     ADD_STAT(staticBranchNum, statistics::units::Count::get(), "the number of all (different) static branches"),
     ADD_STAT(staticBranchNumEverTaken, statistics::units::Count::get(), "the number of all (different) static branches that are once taken"),
@@ -498,7 +499,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
     ADD_STAT(predictionBlockedForUpdate, statistics::units::Count::get(), "prediction blocked for update priority"),
-    ADD_STAT(s1Predwrongfullthrough, statistics::units::Count::get(), "S1pred wrong full throughs")
+    ADD_STAT(s1Predwrongfullthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
+    ADD_STAT(s3Predwrongfullthrough, statistics::units::Count::get(), "S2pred wrong full throughs")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
@@ -701,6 +703,7 @@ DecoupledBPUWithBTB::addBranchClassStat(BranchClass cls, bool mispred)
     dbpBtbStats.branchClassCounts[idx]++;
     if (mispred) {
         dbpBtbStats.branchClassMisses[idx]++;
+        dbpBtbStats.branchClassCountsTotal++;
     }
 
     DPRINTF(DBPBTBStats, "Branch classified as %s, mispred=%d\n",
@@ -862,11 +865,31 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     }
     //here add final counter
     if (mispred) {
-        int s1MisspredSource = entry.s1Source;
-        if (s1MisspredSource >= 0) {
-            components[s1MisspredSource]->predwrongSource();
+        int s1PredSource = entry.s1Source;
+        if (s1PredSource >= 0) {
+            assert(s1PredSource < 2);
+            components[s1PredSource]->predwrongSource();
+
         }else {
             dbpBtbStats.s1Predwrongfullthrough++;
+        }
+
+        auto exeBranchinfo = entry.exeBranchInfo;
+        auto exeBranch = BTBEntry();
+        for(auto btb_entry: entry.predBTBEntries){//find the exe branch in the btb entries
+            if(btb_entry.pc == exeBranchinfo.pc){
+                exeBranch = btb_entry;
+                break;
+            }
+        }
+
+        auto s3WrongBranchSource = exeBranch.source;
+        if (s3WrongBranchSource >= 0) {
+            assert(s3WrongBranchSource >2);
+            components[s3WrongBranchSource]->predwrongSource();
+            
+        } else {
+            dbpBtbStats.s3Predwrongfullthrough++;
         }
 
     }

@@ -316,6 +316,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         // Fine-grained branch classification statistics
         statistics::Vector branchClassCounts; ///< Classified branch occurrences
         statistics::Vector branchClassMisses; ///< Mispredictions per class
+        statistics::Scalar branchClassCountsTotal; ///< Total classified branches
         statistics::Vector controlSquashByClass; ///< Commit/Resolve-path squashes per class
 
         // Branch coverage statistics
@@ -369,6 +370,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar predictionBlockedForUpdate;  // Times prediction was blocked for update priority
 
         statistics::Scalar s1Predwrongfullthrough;
+        statistics::Scalar s3Predwrongfullthrough;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;

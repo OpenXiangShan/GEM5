@@ -584,7 +584,7 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
     if (entry_to_write.isIndirect && stream.exeTaken && stream.getControlPC() == entry_to_write.pc) {
         entry_to_write.target = stream.exeBranchInfo.target;
     }
-
+    entry_to_write.source = getComponentIdx();
     return entry_to_write;
 }
 
@@ -809,11 +809,16 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
     *lru_it = evicted_entry;
     lru_it->tick = curTick();
 }
-void
-MBTB::predwrongSource(){}
+
 
 
 #ifndef UNIT_TEST
+
+void
+MBTB::predwrongSource(){
+    btbStats.s3PredwrongMbtb++;
+}
+
 void
 MBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
@@ -961,7 +966,7 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
 
     ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits"),
-    ADD_STAT(predHitCount, statistics::units::Count::get(), "number of hit entries encountered on mbtb hit")
+    ADD_STAT(s3PredwrongMbtb, statistics::units::Count::get(), "number of stage 3 conditional branch mispredictions by mbtb")
 
 {
     predHitCount.init(0, numWays * 2, 1);   // max 4ways * 2(halfAligned) + VC

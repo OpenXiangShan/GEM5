@@ -293,8 +293,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
     DPRINTF(TAGE, "tage use_alt %d ? (alt_provided %d ? alt_taken %d : base_taken %d) : main_taken %d\n",
         use_alt, alt_provided, alt_taken, base_taken, main_taken);
+    bool tageCovered = !(use_alt && !alt_provided);
 
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred);
+    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred, tageCovered);
 }
 
 /**
@@ -305,7 +306,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+BTBTAGE::lookupHelper(const Addr &startPC, std::vector<BTBEntry> &btbEntries,
                       std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results)
 {
     DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
@@ -318,6 +319,9 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            if(getDelay() == 3) {
+                btb_entry.source = pred.tageCovered ? getComponentIdx() : btb_entry.source;
+            }
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
@@ -1040,7 +1044,8 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(condCorrect, statistics::units::Count::get(), "number of conditional branch correct predictions committed"),
     ADD_STAT(condMissNoTakens, statistics::units::Count::get(), "number of conditional branch correct predictions committed with no prediction"),
     ADD_STAT(predHit, statistics::units::Count::get(), "number of conditional branch predictions that hit"),
-    ADD_STAT(predMiss, statistics::units::Count::get(), "number of conditional branch predictions that miss")
+    ADD_STAT(predMiss, statistics::units::Count::get(), "number of conditional branch predictions that miss"),
+    ADD_STAT(s3PredwrongTage,statistics::units::Count::get(),"number of stage 3 conditional branch mispredictions by tage ")
 {
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);
@@ -1119,12 +1124,13 @@ BTBTAGE::getLRUVictim(int table, Addr index)
     return victim;
 }
 
+#ifndef UNIT_TEST
+
 void
 BTBTAGE::predwrongSource(){
-
+    tageStats.s3PredwrongTage++;
 }
 
-#ifndef UNIT_TEST
 void
 BTBTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {

@@ -101,6 +101,12 @@ void
 BTBRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                   std::vector<FullBTBPrediction> &stagePreds)
 {
+    for (auto &btb_entry : stagePreds[getDelay()].btbEntries) {
+        if (btb_entry.isReturn) {
+            btb_entry.source = getComponentIdx();
+            break;
+        }
+    }
     assert(getDelay() < stagePreds.size());
     meta = std::make_shared<RASMeta>();
     DPRINTFR(RAS, "putPC startAddr %lx", startAddr);
@@ -435,6 +441,7 @@ BTBRAS::getTopAddrFromMetas(const FetchStream &stream)
 void
 BTBRAS::predwrongSource()
 {
+    rasStats.s3PredwrongRas++;
 }
 
 void
@@ -468,7 +475,8 @@ BTBRAS::RASStats::RASStats(statistics::Group *parent):
     ADD_STAT(CorrectWithSctr, statistics::units::Count::get(),"number of RAS correct predictions when sctr > 0"),
 
     ADD_STAT(Pushes, statistics::units::Count::get(),"number of RAS pushes"),
-    ADD_STAT(Pops, statistics::units::Count::get(),"number of RAS pops")
+    ADD_STAT(Pops, statistics::units::Count::get(),"number of RAS pops"),
+    ADD_STAT(s3PredwrongRas, statistics::units::Count::get(),"number of stage 3 conditional branch mispredictions by RAS")
 
 {}
 

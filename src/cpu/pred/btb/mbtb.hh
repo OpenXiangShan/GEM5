@@ -470,6 +470,7 @@ public:
 
         // Victim cache statistics
         Scalar victimCacheHit;
+        Scalar s3PredwrongMbtb;
 
 #ifndef UNIT_TEST
         statistics::Distribution predHitCount;

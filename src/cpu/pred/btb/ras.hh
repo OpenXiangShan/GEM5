@@ -235,6 +235,8 @@ namespace btb_pred {
         Scalar Pushes;
         Scalar Pops;
 
+        Scalar s3PredwrongRas;
+
 #ifndef UNIT_TEST
         RASStats(statistics::Group* parent);
 #endif

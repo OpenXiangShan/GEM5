@@ -212,7 +212,7 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     }
     auto startAddr = s3Pred.bbStart;
     UBTBIter oldEntryIter = lastPred.hit_entry;
-    takenEntry.setsource(getComponentIdx());
+    takenEntry.source = getComponentIdx();
     updateNewEntry(oldEntryIter, takenEntry, startAddr);
 
 }
