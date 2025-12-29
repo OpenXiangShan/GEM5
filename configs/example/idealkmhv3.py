@@ -97,9 +97,9 @@ def setKmhV3IdealParams(args, system):
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
-            system.tol2bus_list[i].forward_latency = 0  # 3->0
-            system.tol2bus_list[i].response_latency = 0  # 3->0
-            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
+            system.tol2bus_list[i].forward_latency = 3  # 3->0
+            system.tol2bus_list[i].response_latency = 3  # 3->0
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 2->0
 
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
