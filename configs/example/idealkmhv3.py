@@ -31,7 +31,7 @@ def setKmhV3IdealParams(args, system):
 
         # decode
         cpu.decodeWidth = 8
-        cpu.enable_loadFusion = True
+        cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
 
         # rename
@@ -46,6 +46,7 @@ def setKmhV3IdealParams(args, system):
 
         # scheduler
         cpu.scheduler = KMHV3Scheduler()
+        cpu.scheduler.intRegfileBanks = 1
 
         # rob
         cpu.commitWidth = 12
@@ -60,7 +61,7 @@ def setKmhV3IdealParams(args, system):
         cpu.EnableLdMissReplay = True
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
-        cpu.sbufferBankWriteAccurately = True
+        cpu.sbufferBankWriteAccurately = False
 
         # lsq
         cpu.LQEntries = 128
@@ -73,6 +74,7 @@ def setKmhV3IdealParams(args, system):
         cpu.RAWDequeuePerCycle = 4
         cpu.SbufferEntries = 24
         cpu.SbufferEvictThreshold = 16
+        cpu.store_prefetch_train = False
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
@@ -85,18 +87,22 @@ def setKmhV3IdealParams(args, system):
             cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
+            cpu.dcache.simulate_dcache_refill = True
 
     # l2 caches
     if args.l2cache:
         for i in range(args.num_cpus):
             if args.classic_l2:
                 system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                system.l2_caches[i].wpu = NULL
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 2
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
+                for j in range(args.l2_slices):
+                    l2_wrapper.slices[j].inner_cache.wpu = NULL
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
