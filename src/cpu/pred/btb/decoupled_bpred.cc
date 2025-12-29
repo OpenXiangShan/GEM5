@@ -177,7 +177,6 @@ DecoupledBPUWithBTB::tick()
         bpuState = BpuState::IDLE;
     }
 
-
     // Decrement override bubbles counter
     if (numOverrideBubbles > 0) {
         numOverrideBubbles--;
@@ -242,24 +241,11 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     finalPred = *chosenPrediction;
 
     finalPred.s1Source = -1;//meaning fallthrough
-    finalPred.s3Source = -1;
 
-    if (predsOfEachStage[0].btbEntries.size() == 0) {
-
-    }else{
+    if (predsOfEachStage[0].btbEntries.size() != 0) {
         for (auto entry : predsOfEachStage[0].btbEntries){
-            if (entry.isIndirect || entry.isDirect || entry.ctr >=0 ){
+            if (entry.isIndirect || entry.isDirect || entry.ctr >=0 ||entry.alwaysTaken){
                 finalPred.s1Source = entry.source;
-                break;
-            }
-        }
-    }
-
-    if (predsOfEachStage[3].btbEntries.size() == 0) {
-    }else {
-        for (auto entry : predsOfEachStage[3].btbEntries){
-            if (entry.isIndirect || entry.isDirect || entry.ctr >=0 ){
-                finalPred.s3Source = entry.source;
                 break;
             }
         }
