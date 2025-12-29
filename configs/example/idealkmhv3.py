@@ -85,18 +85,23 @@ def setKmhV3IdealParams(args, system):
             cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
+            cpu.dcache.prefetch_can_offload = False
+
 
     # l2 caches
     if args.l2cache:
         for i in range(args.num_cpus):
             if args.classic_l2:
                 system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                system.l2_caches[i].prefetch_can_offload = False
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 2
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
+                for j in range(args.l2_slices):
+                    l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
@@ -112,6 +117,7 @@ def setKmhV3IdealParams(args, system):
     # l3 cache
     if args.l3cache:
         system.l3.mshrs = 128
+        system.l3.prefetch_can_offload = False
 
 if __name__ == '__m5_main__':
     FutureClass = None
