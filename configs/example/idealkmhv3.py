@@ -93,10 +93,10 @@ def setKmhV3IdealParams(args, system):
                 system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
             else:
                 l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.data_sram_banks = 2
-                l2_wrapper.dir_sram_banks = 2
-                l2_wrapper.pipe_dir_write_stage = 4
-                l2_wrapper.dir_read_bypass = True
+                l2_wrapper.data_sram_banks = 1
+                l2_wrapper.dir_sram_banks = 1
+                l2_wrapper.pipe_dir_write_stage = 3
+                l2_wrapper.dir_read_bypass = False
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
