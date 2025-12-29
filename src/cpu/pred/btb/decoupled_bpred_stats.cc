@@ -865,42 +865,48 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
         component->commitBranch(entry, inst);
     }
     //here add final counter
+
     if (mispred) {
-        int s1PredSource = entry.s1Source;
-        if (s1PredSource >= 0) {
-            assert(s1PredSource < 2);
-            components[s1PredSource]->predwrongSource();
-
-        }else {
-            dbpBtbStats.s1Predwrongfallthrough++;
-        }
-
-        auto exeBranchinfo = entry.exeBranchInfo;
-        auto exeBranch = BTBEntry();
-        for (auto btb_entry: entry.predBTBEntries){//find the exe branch in the btb entries
-            if (btb_entry.pc == exeBranchinfo.pc){
-                exeBranch = btb_entry;
-                break;
-            }
-        }
-
-        auto s3WrongBranchSource = exeBranch.source;
-        if (s3WrongBranchSource >= 0) {
-            if (s3WrongBranchSource == 0||s3WrongBranchSource ==1) {
-                //final pred from s1 stage because mbtb miss
-                dbpBtbStats.s3Predwrongfallthrough++;
-                dbpBtbStats.s3fallthroughbuts1hit++;
-            }else {
-                components[s3WrongBranchSource]->predwrongSource();
-            }
-
-        } else {
-            dbpBtbStats.s3Predwrongfallthrough++;
-        }
-
+        commitPredWrongSource(entry);
     }
+
 }
 
+void
+DecoupledBPUWithBTB::commitPredWrongSource(const FetchStream &entry)
+{
+    int mbtbid = mbtb->getComponentIdx();
+    // handle S1 wrong source
+    int s1PredSource = entry.s1Source;
+    if (s1PredSource >= 0) {
+        assert(s1PredSource < mbtbid);
+        components[s1PredSource]->predwrongSource();
+    }else {
+        dbpBtbStats.s1Predwrongfallthrough++;
+    }
+
+    auto exeBranchinfo = entry.exeBranchInfo;
+    auto exeBranch = BTBEntry();
+    for (auto btb_entry: entry.predBTBEntries){//find the exe branch in the btb entries
+        if (btb_entry.pc == exeBranchinfo.pc){
+            exeBranch = btb_entry;
+            break;
+        }
+    }
+    //handle S3 wrong source
+    auto s3WrongBranchSource = exeBranch.source;
+    if (s3WrongBranchSource >= 0) {
+        if (s3WrongBranchSource < mbtbid) {
+            //final pred from s1 stage because mbtb miss
+            dbpBtbStats.s3Predwrongfallthrough++;
+            dbpBtbStats.s3fallthroughbuts1hit++;
+        }else {
+            components[s3WrongBranchSource]->predwrongSource();
+        }
+    } else {
+        dbpBtbStats.s3Predwrongfallthrough++;
+    }
+}
 
 /**
  * @brief Handle instruction commits and phase-based statistics
