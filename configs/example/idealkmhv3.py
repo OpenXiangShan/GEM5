@@ -38,6 +38,7 @@ def setKmhV3IdealParams(args, system):
         cpu.renameWidth = 8
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
+        cpu.enable_storeSet_train = False
 
         # dispatch
         cpu.enableDispatchStage = True
@@ -63,16 +64,16 @@ def setKmhV3IdealParams(args, system):
         cpu.sbufferBankWriteAccurately = True
 
         # lsq
-        cpu.LQEntries = 128
-        cpu.SQEntries = 64
-        cpu.RARQEntries = 96
-        cpu.RAWQEntries = 56
+        cpu.LQEntries = 72
+        cpu.SQEntries = 56
+        cpu.RARQEntries = 72
+        cpu.RAWQEntries = 32
         cpu.LoadCompletionWidth = 8
         cpu.StoreCompletionWidth = 4
         cpu.RARDequeuePerCycle = 4
         cpu.RAWDequeuePerCycle = 4
-        cpu.SbufferEntries = 24
-        cpu.SbufferEvictThreshold = 16
+        cpu.SbufferEntries = 16
+        cpu.SbufferEvictThreshold = 7
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
@@ -123,7 +124,7 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '2MB'
+    args.l2_size = '1MB'
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
