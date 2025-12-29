@@ -39,8 +39,9 @@ def setKmhV3IdealParams(args, system):
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
 
+
         # dispatch
-        cpu.enableDispatchStage = True
+        cpu.enableDispatchStage = False
         cpu.numDQEntries = [8, 8, 8]
         cpu.dispWidth = [8, 8, 8]
 
