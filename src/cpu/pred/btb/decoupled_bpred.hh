@@ -369,8 +369,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         // Window blocking statistics
         statistics::Scalar predictionBlockedForUpdate;  // Times prediction was blocked for update priority
 
-        statistics::Scalar s1Predwrongfullthrough;
-        statistics::Scalar s3Predwrongfullthrough;
+        statistics::Scalar s1Predwrongfallthrough;
+        statistics::Scalar s3Predwrongfallthrough;
+        statistics::Scalar s3fallthroughbuts1hit;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;

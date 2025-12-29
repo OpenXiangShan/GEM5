@@ -319,7 +319,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, std::vector<BTBEntry> &btbEntries,
             meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
-            if (getDelay() == 3) {
+            if (getDelay() == 2) {
                 btb_entry.source = pred.tageCovered ? getComponentIdx() : btb_entry.source;
             }
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;

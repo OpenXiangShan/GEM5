@@ -499,8 +499,9 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
     ADD_STAT(predictionBlockedForUpdate, statistics::units::Count::get(), "prediction blocked for update priority"),
-    ADD_STAT(s1Predwrongfullthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
-    ADD_STAT(s3Predwrongfullthrough, statistics::units::Count::get(), "S2pred wrong full throughs")
+    ADD_STAT(s1Predwrongfallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
+    ADD_STAT(s3Predwrongfallthrough, statistics::units::Count::get(), "S3pred wrong full throughs"),
+    ADD_STAT(s3fallthroughbuts1hit,statistics::units::Count::get(), "S3full throug but s1 hit" )
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
@@ -871,7 +872,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
             components[s1PredSource]->predwrongSource();
 
         }else {
-            dbpBtbStats.s1Predwrongfullthrough++;
+            dbpBtbStats.s1Predwrongfallthrough++;
         }
 
         auto exeBranchinfo = entry.exeBranchInfo;
@@ -885,10 +886,16 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
 
         auto s3WrongBranchSource = exeBranch.source;
         if (s3WrongBranchSource >= 0) {
-            components[s3WrongBranchSource]->predwrongSource();
+            if (s3WrongBranchSource == 0||s3WrongBranchSource ==1) {
+                //final pred from s1 stage because mbtb miss
+                dbpBtbStats.s3Predwrongfallthrough++;
+                dbpBtbStats.s3fallthroughbuts1hit++;
+            }else {
+                components[s3WrongBranchSource]->predwrongSource();
+            }
 
         } else {
-            dbpBtbStats.s3Predwrongfullthrough++;
+            dbpBtbStats.s3Predwrongfallthrough++;
         }
 
     }
