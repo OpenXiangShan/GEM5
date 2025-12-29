@@ -59,6 +59,7 @@ BTBMGSC::BTBMGSC(const Params &p)
       enableGTable(p.enableGTable),
       enablePTable(p.enablePTable),
       enableBiasTable(p.enableBiasTable),
+      enablePCThreshold(p.enablePCThreshold),
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
@@ -304,8 +305,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
                     bias_scaled_percsum;
 
     // Find thresholds
-    // pc-indexed threshold table
-    int p_update_thres = findThreshold(pUpdateThreshold, btb_entry.pc);
+    // pc-indexed threshold table (only if enabled)
+    int p_update_thres = enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.pc) : 0;
 
     int total_thres = (updateThreshold / 8) + p_update_thres;
 
@@ -703,8 +704,10 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
         updateWeightTable(biasWeightTable, weightTableIdx, entry.pc, pred.bias_weight_scale_diff,
                           (pred.bias_percsum >= 0) == actual_taken);
 
-        // Update PC-indexed threshold table
-        updatePCThresholdTable(entry.pc, sc_pred_taken != actual_taken);
+        // Update PC-indexed threshold table (only if enabled)
+        if (enablePCThreshold) {
+            updatePCThresholdTable(entry.pc, sc_pred_taken != actual_taken);
+        }
 
         // Update global threshold table
         updateGlobalThreshold(entry.pc, sc_pred_taken != actual_taken);

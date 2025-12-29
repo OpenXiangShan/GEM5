@@ -334,6 +334,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     bool enableGTable;
     bool enablePTable;
     bool enableBiasTable;
+    bool enablePCThreshold;
 
     // Folded history for index calculation
     std::vector<GlobalBwFoldedHist> indexBwFoldedHist;
