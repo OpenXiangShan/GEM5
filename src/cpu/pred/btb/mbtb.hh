@@ -40,11 +40,13 @@
 #ifndef __CPU_PRED_BTB_MBTB_HH__
 #define __CPU_PRED_BTB_MBTB_HH__
 
+#include <memory>
 #include <queue>
 
 #include "base/types.hh"
 #include "cpu/pred/btb/stream_struct.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
+#include "cpu/pred/btb/tree_plru.hh"
 
 // Conditional includes based on build mode
 #ifdef UNIT_TEST
@@ -91,7 +93,7 @@ class MBTB : public TimedBaseBTBPredictor
 #endif
 
     /*
-     * BTB Entry with timestamp for MRU replacement
+     * BTB Entry with way index for PLRU replacement
      * Inherits from BTBEntry which contains:
      * - valid: whether this entry is valid
      * - pc: branch instruction address
@@ -103,17 +105,16 @@ class MBTB : public TimedBaseBTBPredictor
      */
     typedef struct TickedBTBEntry : public BTBEntry
     {
-        uint64_t tick;  // timestamp for MRU replacement
-        TickedBTBEntry(const BTBEntry &entry, uint64_t tick)
-            : BTBEntry(entry), tick(tick) {}
-        TickedBTBEntry() : tick(0) {}
+        uint64_t tick;  // kept for victim cache LRU
+        unsigned wayIdx;  // way index within the set for PLRU
+        TickedBTBEntry(const BTBEntry &entry, uint64_t tick, unsigned wayIdx = 0)
+            : BTBEntry(entry), tick(tick), wayIdx(wayIdx) {}
+        TickedBTBEntry() : tick(0), wayIdx(0) {}
     }TickedBTBEntry;
 
     // A BTB set is a vector of entries (ways)
     using BTBSet = std::vector<TickedBTBEntry>;
     using BTBSetIter = typename BTBSet::iterator;
-    // MRU heap for each set
-    using BTBHeap = std::vector<BTBSetIter>;
 
 #ifdef UNIT_TEST
     unsigned tick{0};
@@ -196,12 +197,6 @@ class MBTB : public TimedBaseBTBPredictor
         }
     }
 
-    void dumpMruList(const BTBHeap &list) {
-        DPRINTF(BTB, "MRU list:\n");
-        for (const auto &it: list) {
-            printTickedBTBEntry(*it);
-        }
-    }
 
 
 
@@ -288,37 +283,23 @@ class MBTB : public TimedBaseBTBPredictor
                                const FetchStream &stream);
 
     // Helper: update an existing entry in SRAM set
-    void updateExistingInSRAMSet(Addr btb_idx,
-                                 BTBHeap &heap,
+    void updateExistingInSRAMSet(int sram_id,
+                                 Addr btb_idx,
                                  BTBSetIter it_found,
                                  const TickedBTBEntry &ticked_entry);
 
-    // Helper: replace the oldest entry in SRAM set
-    void replaceOldestInSRAMSet(int sram_id,
+    // Helper: replace the victim entry in SRAM set (selected by PLRU)
+    void replaceVictimInSRAMSet(int sram_id,
                                 Addr btb_idx,
-                                BTBHeap &heap,
                                 const TickedBTBEntry &ticked_entry);
 
     // Helper: commit/update an entry in victim cache at given index
     void commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry);
 
-    /*
-     * Comparator for MRU heap
-     * Returns true if a's timestamp is larger than b's
-     * This creates a min-heap where the oldest entry is at the top
-     */
-    struct older
-    {
-        bool operator()(const BTBSetIter &a, const BTBSetIter &b) const
-        {
-            return a->tick > b->tick;
-        }
-    };
-
     /**
      * @brief check if the entries in the vector are in ascending order, means the pc is in ascending order
-     * 
-     * @param es 
+     *
+     * @param es
      */
     void checkAscending(std::vector<BTBEntry> &es) {
         Addr last = 0;
@@ -360,12 +341,8 @@ class MBTB : public TimedBaseBTBPredictor
      */
     std::vector<BTBSet> sram0, sram1;
 
-    /** Independent MRU tracking for each SRAM:
-     *  - mru0 for sram0, mru1 for sram1
-     *  - Each maintains MRU order within its own 4-way sets
-     *  - Oldest entry is at the top of each heap
-     */
-    std::vector<BTBHeap> mru0, mru1;
+    /** Tree-PLRU replacement policy for each SRAM */
+    std::unique_ptr<TreePLRU> plru0, plru1;
 
     /** Victim cache for evicted entries:
      *  - Small fully-associative cache for recently evicted entries

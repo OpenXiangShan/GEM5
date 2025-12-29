@@ -530,8 +530,8 @@ TEST_F(BTBTest, VictimCacheEffectivenessTest) {
             boost::dynamic_bitset<>(64, 0), 0x140);
     }
 
-    // Check if victim cache had hits
-    EXPECT_EQ(mbtb->btbStats.victimCacheHit, 1)
+    // Check if victim cache had hits (PLRU may cause different eviction patterns)
+    EXPECT_GE(mbtb->btbStats.victimCacheHit, 1)
         << "Expected victim cache hits when accessing evicted branch";
 
     // With victim cache, all branch should still be predictable

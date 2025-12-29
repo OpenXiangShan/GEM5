@@ -6,9 +6,16 @@ Import('*')
 # Add the test source files
 GTest('uras.test', 'uras_test.cc')
 
+# Add TreePLRU test
+GTest('tree_plru.test',
+    '../tree_plru.cc',
+    'tree_plru.test.cc',
+)
+
 # Add BTB test with minimal dependencies
-GTest('btb.test', 
+GTest('btb.test',
     '../mbtb.cc',
+    '../tree_plru.cc',
     'btb.test.cc',
     '../timed_base_pred.cc',
 )
@@ -16,6 +23,7 @@ GTest('btb.test',
 GTest('abtb.test',
     '../abtb.cc',
     '../mbtb.cc',
+    '../tree_plru.cc',
     'abtb.test.cc',
     '../timed_base_pred.cc',
 )
@@ -50,6 +58,7 @@ GTest('decoupled_bpred.test',
     'decoupled_bpred.test.cc',
     'decoupled_bpred.cc',
     '../mbtb.cc',
+    '../tree_plru.cc',
     '../btb_tage.cc',
     '../folded_hist.cc',
     '../timed_base_pred.cc',
@@ -67,6 +76,7 @@ GTest('decoupled_bpred.test',
 
 # Add the test to UNITTESTS target
 env.Append(UNITTESTS=['uras.test',
+        'tree_plru.test',
         'btb.test',
         'tage.test',
         'folded_hist.test',

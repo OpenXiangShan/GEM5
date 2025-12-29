@@ -59,7 +59,7 @@ namespace test {
  * MBTB Constructor
  * Initializes:
  * - MBTB structure (sets and ways)
- * - MRU tracking for each set
+ * - Tree-PLRU replacement policy for each SRAM
  * - Address calculation parameters (index/tag masks and shifts)
  * - Always uses half-aligned mode (64-byte block coverage)
  */
@@ -98,35 +98,33 @@ MBTB::MBTB(const Params &p)
         fatal("BTB entries is not a power of 2!");
     }
 
-    // Initialize dual SRAM BTB structure and MRU tracking
+    // Initialize dual SRAM BTB structure
     sram0.resize(numSets);
     sram1.resize(numSets);
-    mru0.resize(numSets);
-    mru1.resize(numSets);
-    
+
     // Initialize SRAM0
     for (unsigned i = 0; i < numSets; ++i) {
         auto &set = sram0[i];
         set.resize(numWays);
-        auto it = set.begin();
-        for (; it != set.end(); it++) {
-            it->valid = false;
-            mru0[i].push_back(it);
+        for (unsigned w = 0; w < numWays; ++w) {
+            set[w].valid = false;
+            set[w].wayIdx = w;
         }
-        std::make_heap(mru0[i].begin(), mru0[i].end(), older());
     }
-    
+
     // Initialize SRAM1
     for (unsigned i = 0; i < numSets; ++i) {
         auto &set = sram1[i];
         set.resize(numWays);
-        auto it = set.begin();
-        for (; it != set.end(); it++) {
-            it->valid = false;
-            mru1[i].push_back(it);
+        for (unsigned w = 0; w < numWays; ++w) {
+            set[w].valid = false;
+            set[w].wayIdx = w;
         }
-        std::make_heap(mru1[i].begin(), mru1[i].end(), older());
     }
+
+    // Initialize Tree-PLRU for each SRAM
+    plru0 = std::make_unique<TreePLRU>(numSets, numWays);
+    plru1 = std::make_unique<TreePLRU>(numSets, numWays);
 
     // | tag | idx | block offset | instShiftAmt
     idxMask = numSets - 1;
@@ -344,8 +342,8 @@ MBTB::lookupSingleBlock(Addr block_pc)
     // Select SRAM based on 32B-aligned address
     int sram_id = getSRAMId(block_pc);
     auto& target_sram = (sram_id == 0) ? sram0 : sram1;
-    auto& target_mru = (sram_id == 0) ? mru0 : mru1;
-    
+    auto& target_plru = (sram_id == 0) ? plru0 : plru1;
+
     Addr btb_idx = getIndex(block_pc);
     auto& btb_set = target_sram[btb_idx];
     assert(btb_idx < numSets);
@@ -353,14 +351,18 @@ MBTB::lookupSingleBlock(Addr block_pc)
     Addr current_tag = getTag(block_pc);
     DPRINTF(BTB, "BTB: Doing tag comparison for SRAM%d index 0x%lx tag %#lx\n",
         sram_id, btb_idx, current_tag);
-        
+
+    // Collect hit ways for PLRU touch
+    std::vector<unsigned> hit_ways;
     for (auto &way : btb_set) {
         if (way.valid && way.tag == current_tag) {
             res.push_back(way);
-            way.tick = curTick(); // Update timestamp for MRU
-            std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
+            hit_ways.push_back(way.wayIdx);
         }
     }
+    // Touch all hit ways in PLRU (in order)
+    target_plru->touchMultiple(btb_idx, hit_ways);
+
     return res;
 }
 
@@ -494,8 +496,7 @@ MBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
  * 1. Look for matching entry
  * 2. for cond entry, if found, use the one in btb, since we need the up-to-date counter
  * 3. for indirect entry, update target if necessary
- * 4. Update existing entry or replace oldest entry
- * 5. Update MRU information
+ * 4. Update existing entry or replace victim entry (selected by PLRU)
  */
 void
 MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
@@ -505,8 +506,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
     Addr alignedPC = entry.pc & ~(blockSize - 1);
     int sram_id = getSRAMId(alignedPC);
     auto& target_sram = (sram_id == 0) ? sram0 : sram1;
-    auto& target_mru = (sram_id == 0) ? mru0 : mru1;
-    
+
     // Calculate index and tag for this entry
     Addr btb_idx = getIndex(entry.pc);
 
@@ -542,15 +542,16 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
 
     if (found) {
-        // Update in-place in SRAM set
-        updateExistingInSRAMSet(btb_idx, target_mru[btb_idx], it, ticked_entry);
+        // Update in-place in SRAM set, preserve wayIdx
+        ticked_entry.wayIdx = it->wayIdx;
+        updateExistingInSRAMSet(sram_id, btb_idx, it, ticked_entry);
     } else if (found_in_vc) {
         // In-place update in victim cache to avoid ping-ponging between MBTB and VC
         commitToVictimCache(vc_idx, ticked_entry);
         return;
     } else {
-        // Not found anywhere, replace oldest in SRAM set
-        replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx], ticked_entry);
+        // Not found anywhere, replace victim in SRAM set (selected by PLRU)
+        replaceVictimInSRAMSet(sram_id, btb_idx, ticked_entry);
     }
 }
 
@@ -589,8 +590,8 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
 }
 
 void
-MBTB::updateExistingInSRAMSet(Addr btb_idx,
-                              BTBHeap &heap,
+MBTB::updateExistingInSRAMSet(int sram_id,
+                              Addr btb_idx,
                               BTBSetIter it_found,
                               const TickedBTBEntry &ticked_entry)
 {
@@ -608,7 +609,10 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
     }
 #endif
     btbStats.updateExisting++;
-    std::make_heap(heap.begin(), heap.end(), older());
+
+    // Touch PLRU for this way
+    auto& target_plru = (sram_id == 0) ? plru0 : plru1;
+    target_plru->touch(btb_idx, ticked_entry.wayIdx);
 
     // Ensure single source of truth: remove duplicate from victim cache if any
     if (eraseFromVictimCacheByPC(ticked_entry.pc)) {
@@ -617,45 +621,55 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
 }
 
 void
-MBTB::replaceOldestInSRAMSet(int sram_id,
+MBTB::replaceVictimInSRAMSet(int sram_id,
                              Addr btb_idx,
-                             BTBHeap &heap,
                              const TickedBTBEntry &ticked_entry)
 {
-    // Replace oldest entry in the set
-    DPRINTF(BTB, "trying to replace entry in SRAM%d set %#lx\n", sram_id, btb_idx);
-    // put the oldest entry in this set to the back of heap
-    std::pop_heap(heap.begin(), heap.end(), older());
-    const auto& entry_in_btb_now = heap.back();
+    auto& target_sram = (sram_id == 0) ? sram0 : sram1;
+    auto& target_plru = (sram_id == 0) ? plru0 : plru1;
+
+    // Get victim way from PLRU
+    unsigned victim_way = target_plru->getVictim(btb_idx);
+    auto& victim_entry = target_sram[btb_idx][victim_way];
+
+    DPRINTF(BTB, "trying to replace entry in SRAM%d set %#lx way %d\n", sram_id, btb_idx, victim_way);
+
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;
-        rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
+        rec.set(victim_entry.pc, victim_entry.getType(),
+                victim_entry.target, btb_idx, Mode::EVICT, 0);
         btbTrace->write_record(rec);
     }
 #endif
-    if (entry_in_btb_now->valid) {
+    if (victim_entry.valid) {
         // if all ways are really occupied, we need to replace valid entry
         // means 32B block is more than 4ways/ 4 branches
         btbStats.updateReplaceValidOne++;
 
         // Insert evicted entry into victim cache
-        insertVictimCache(*entry_in_btb_now);
+        insertVictimCache(victim_entry);
     }
     btbStats.updateReplace++;
     DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
-            entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
-    *entry_in_btb_now = ticked_entry;
+            victim_entry.tag, victim_entry.pc, btb_idx);
+
+    // Write new entry and preserve wayIdx
+    auto new_entry = ticked_entry;
+    new_entry.wayIdx = victim_way;
+    victim_entry = new_entry;
+
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;
-        rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
+        rec.set(victim_entry.pc, victim_entry.getType(),
+                victim_entry.target, btb_idx, Mode::WRITE, 0);
         btbTrace->write_record(rec);
     }
 #endif
-    std::make_heap(heap.begin(), heap.end(), older());
+
+    // Touch PLRU for the newly written way
+    target_plru->touch(btb_idx, victim_way);
 
     // Ensure single source of truth: remove duplicate from victim cache if any
     if (eraseFromVictimCacheByPC(ticked_entry.pc)) {
