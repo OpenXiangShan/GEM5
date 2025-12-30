@@ -48,8 +48,8 @@ def setKmhV3IdealParams(args, system):
         cpu.scheduler = KMHV3Scheduler()
 
         # rob
-        cpu.commitWidth = 12
-        cpu.squashWidth = 12
+        cpu.commitWidth = 8
+        cpu.squashWidth = 8
         cpu.phyregReleaseWidth = 8
         cpu.RobCompressPolicy = 'kmhv3'
         cpu.numROBEntries = 160
