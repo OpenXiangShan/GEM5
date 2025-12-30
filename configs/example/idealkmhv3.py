@@ -43,6 +43,7 @@ def setKmhV3IdealParams(args, system):
         cpu.enableDispatchStage = True
         cpu.numDQEntries = [8, 8, 8]
         cpu.dispWidth = [8, 8, 8]
+        cpu.enable_storeSet_train = False
 
         # scheduler
         cpu.scheduler = KMHV3Scheduler()
