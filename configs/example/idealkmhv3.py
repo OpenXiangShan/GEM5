@@ -73,6 +73,7 @@ def setKmhV3IdealParams(args, system):
         cpu.RAWDequeuePerCycle = 4
         cpu.SbufferEntries = 24
         cpu.SbufferEvictThreshold = 16
+        cpu.store_prefetch_train = False
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
