@@ -31,7 +31,7 @@ def setKmhV3IdealParams(args, system):
 
         # decode
         cpu.decodeWidth = 8
-        cpu.enable_loadFusion = True
+        cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
 
         # rename
