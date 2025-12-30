@@ -60,7 +60,7 @@ def setKmhV3IdealParams(args, system):
         cpu.EnableLdMissReplay = True
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
-        cpu.sbufferBankWriteAccurately = True
+        cpu.sbufferBankWriteAccurately = False
 
         # lsq
         cpu.LQEntries = 128
