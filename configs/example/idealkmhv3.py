@@ -46,6 +46,7 @@ def setKmhV3IdealParams(args, system):
 
         # scheduler
         cpu.scheduler = KMHV3Scheduler()
+        cpu.scheduler.intRegfileBanks = 1
 
         # rob
         cpu.commitWidth = 12
