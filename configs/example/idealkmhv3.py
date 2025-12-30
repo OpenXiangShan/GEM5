@@ -91,12 +91,15 @@ def setKmhV3IdealParams(args, system):
         for i in range(args.num_cpus):
             if args.classic_l2:
                 system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                system.l2_caches[i].wpu = NULL
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 2
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
+                for j in range(args.l2_slices):
+                    l2_wrapper.slices[j].inner_cache.wpu = NULL
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
