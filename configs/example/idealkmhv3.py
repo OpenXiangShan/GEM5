@@ -34,6 +34,8 @@ def setKmhV3IdealParams(args, system):
         cpu.enable_loadFusion = True
         cpu.enableConstantFolding = False
 
+        cpu.enable_storeSet_train = False
+
         # rename
         cpu.renameWidth = 8
         cpu.numPhysIntRegs = 224
