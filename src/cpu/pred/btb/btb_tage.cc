@@ -293,9 +293,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
     DPRINTF(TAGE, "tage use_alt %d ? (alt_provided %d ? alt_taken %d : base_taken %d) : main_taken %d\n",
         use_alt, alt_provided, alt_taken, base_taken, main_taken);
-    bool tageCovered = !(use_alt && !alt_provided);
 
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred, tageCovered);
+    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred);
 }
 
 /**
@@ -319,9 +318,6 @@ BTBTAGE::lookupHelper(const Addr &startPC, std::vector<BTBEntry> &btbEntries,
             meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
-            if (getDelay() == 2) {
-                btb_entry.source = pred.tageCovered ? getComponentIdx() : btb_entry.source;
-            }
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&

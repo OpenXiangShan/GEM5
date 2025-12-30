@@ -876,38 +876,58 @@ void
 DecoupledBPUWithBTB::commitPredWrongSource(const FetchStream &entry)
 {
     int mbtbid = mbtb->getComponentIdx();
-    // handle S1 wrong source
+    int tageid = tage->getComponentIdx();
+    int ittageid = ittage->getComponentIdx();
+    int rasid = ras->getComponentIdx();
+
     int s1PredSource = entry.s1Source;
+    int s3PredSource = entry.s3Source;
+
+    auto exeBranchInfo = entry.exeBranchInfo;
+
+    bool onlyDirectionWrong = entry.exeTaken != entry.predTaken;
     if (s1PredSource >= 0) {
         assert(s1PredSource < mbtbid);
         components[s1PredSource]->predwrongSource();
     }else {
         dbpBtbStats.s1Predwrongfallthrough++;
     }
-
-    auto exeBranchinfo = entry.exeBranchInfo;
-    auto exeBranch = BTBEntry();
-    for (auto btb_entry: entry.predBTBEntries){//find the exe branch in the btb entries
-        if (btb_entry.pc == exeBranchinfo.pc){
-            exeBranch = btb_entry;
-            break;
+    int s3blame = mbtbid;
+    if (s3PredSource == rasid) {
+        if (exeBranchInfo.isCond) {
+            s3blame = tageid;
+        } else if (exeBranchInfo.isReturn) {
+            s3blame = rasid;
+        } else {
+            s3blame = mbtbid;
         }
-    }
-    //handle S3 wrong source
-    auto s3WrongBranchSource = exeBranch.source;
-    if (s3WrongBranchSource >= 0) {
-        if (s3WrongBranchSource < mbtbid) {
-            //final pred from s1 stage because mbtb miss
-            dbpBtbStats.s3Predwrongfallthrough++;
-            dbpBtbStats.s3fallthroughbuts1hit++;
-        }else {
-            components[s3WrongBranchSource]->predwrongSource();
+    } else if (s3PredSource == ittageid) {
+        if (exeBranchInfo.isIndirect) {
+            s3blame = ittageid;
+        } else if (exeBranchInfo.isCond) {
+            s3blame = tageid;
+        } else {
+            s3blame = mbtbid;
         }
-    } else {
-        dbpBtbStats.s3Predwrongfallthrough++;
+    } else if (s3PredSource == tageid) {
+        if (exeBranchInfo.isCond) {
+            s3blame = onlyDirectionWrong ? tageid : mbtbid;
+        } else {
+            s3blame = mbtbid;
+        }
+    }else if (s3PredSource == mbtbid) {
+        if (exeBranchInfo.isCond) {
+            s3blame = onlyDirectionWrong ? tageid : mbtbid;
+        } else if (exeBranchInfo.isIndirect) {
+            s3blame = ittageid;
+        } else {
+            s3blame = mbtbid;
+        }
+    }else if (s3PredSource == -1) {
+        s3blame = mbtbid;
     }
+    components[s3blame]->predwrongSource();
 }
-
 /**
  * @brief Handle instruction commits and phase-based statistics
  *

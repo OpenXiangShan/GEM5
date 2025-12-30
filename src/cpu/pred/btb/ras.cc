@@ -101,12 +101,6 @@ void
 BTBRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                   std::vector<FullBTBPrediction> &stagePreds)
 {
-    for (auto &btb_entry : stagePreds[getDelay()].btbEntries) {
-        if (btb_entry.isReturn) {
-            btb_entry.source = getComponentIdx();
-            break;
-        }
-    }
     assert(getDelay() < stagePreds.size());
     meta = std::make_shared<RASMeta>();
     DPRINTFR(RAS, "putPC startAddr %lx", startAddr);

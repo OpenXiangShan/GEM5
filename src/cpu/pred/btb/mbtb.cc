@@ -584,7 +584,6 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
     if (entry_to_write.isIndirect && stream.exeTaken && stream.getControlPC() == entry_to_write.pc) {
         entry_to_write.target = stream.exeBranchInfo.target;
     }
-    entry_to_write.source = getComponentIdx();
     return entry_to_write;
 }
 

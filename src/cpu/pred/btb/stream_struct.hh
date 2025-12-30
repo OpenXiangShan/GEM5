@@ -348,6 +348,7 @@ struct FetchStream
     int commitInstNum;
 
     int s1Source; // which stage the prediction comes from
+    int s3Source; // which stage the prediction comes from
 
    FetchStream()
        : startPC(0),
@@ -373,7 +374,8 @@ struct FetchStream
          lhistory(),
          fetchInstNum(0),
          commitInstNum(0),
-         s1Source(0)
+         s1Source(-1),
+         s3Source(-1)
    {
        predMetas.fill(nullptr);
        predBTBEntries.clear();
@@ -495,6 +497,7 @@ struct FullBTBPrediction
 
     //only use for countering the source of the prediction
     int s1Source;
+    int s3Source;
 
     FullBTBPrediction() :
         bbStart(0),
@@ -505,7 +508,8 @@ struct FullBTBPrediction
         tageInfoForMgscs(),
         predSource(0),
         predTick(0),
-        s1Source(0) {}
+        s1Source(-1),
+        s3Source(-1) {}
 
     BTBEntry getTakenEntry() {
         // IMPORTANT: assume entries are sorted

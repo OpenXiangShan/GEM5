@@ -241,6 +241,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     finalPred = *chosenPrediction;
 
     finalPred.s1Source = -1;//meaning fallthrough
+    finalPred.s3Source = -1;
 
     if (predsOfEachStage[0].btbEntries.size() != 0) {
         for (auto entry : predsOfEachStage[0].btbEntries){
@@ -250,6 +251,36 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
             }
         }
     }
+
+    if (predsOfEachStage[2].btbEntries.size() != 0) {
+        auto pred_taken_entry = finalPred.getTakenEntry();
+        if (pred_taken_entry.valid) {
+            if (pred_taken_entry.isReturn) {
+                finalPred.s3Source = ras->getComponentIdx();
+            } else if (pred_taken_entry.isIndirect) {
+                finalPred.s3Source = ittage->getComponentIdx();
+            }else if (pred_taken_entry.isCond) {
+                finalPred.s3Source = tage->getComponentIdx();
+            } else {
+                finalPred.s3Source = mbtb->getComponentIdx();
+            }
+        }else {
+            bool found = false;
+            for (auto entry : predsOfEachStage[2].btbEntries) {
+                if (entry.isCond){
+                    found = true;
+                    break;
+                }
+            }
+            if (found) {
+                finalPred.s3Source = tage->getComponentIdx();
+            }else {
+                finalPred.s3Source = -1;
+            }
+        }
+    }
+
+
 
     // 3. Calculate override bubbles needed for pipeline consistency
     // Override bubbles are needed when earlier stages predict differently from later stages
@@ -1017,6 +1048,7 @@ DecoupledBPUWithBTB::createFetchStreamEntry()
     entry.overrideReason = finalPred.overrideReason;
 
     entry.s1Source = finalPred.s1Source;
+    entry.s3Source = finalPred.s3Source;
 
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {

@@ -149,9 +149,6 @@ BTBITTAGE::lookupHelper(Addr startAddr, std::vector<BTBEntry> &btbEntries, Indir
                 ittageStats.predTableHits.sample(main_info.table, 1);
             }
             // Note: predTargetHit will be updated in the update phase when we know the actual target
-            if (!(use_alt && !alt_provided)) {
-                btb_entry.source = getComponentIdx();
-            }
             TagePrediction pred(btb_entry.pc, main_info, alt_info, use_alt, main_target);
             meta->preds[btb_entry.pc] = pred;
         }
