@@ -251,7 +251,7 @@ def build_xiangshan_system(args):
 
     for i in range(np):
         if args.kmh_align:
-            test_sys.cpu[i].enable_storeSet_train = False
+            test_sys.cpu[i].enable_storeSet_train = True
 
         if args.bp_type is None or args.bp_type == 'DecoupledBPUWithFTB' or args.bp_type == 'DecoupledBPUWithBTB':
             enable_bp_db = len(args.enable_bp_db) > 1
@@ -295,7 +295,7 @@ def build_xiangshan_system(args):
         assert args.dramsim3_ini is not None
 
     for cpu in test_sys.cpu:
-        cpu.store_prefetch_train = not args.kmh_align
+        cpu.store_prefetch_train = True
     # ruby will overwrite the store_prefetch_train
     if ruby:
         test_sys._dma_ports = []
