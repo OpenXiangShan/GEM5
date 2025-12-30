@@ -58,7 +58,6 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_sstride = True
             prefetcher.enable_activepage = False
             prefetcher.enable_xsstream = True
-        prefetcher.enable_berti = False
 
     if cache_level == 'l2':
         if options.classic_l2:
@@ -75,7 +74,6 @@ def create_prefetcher(cpu, cache_level, options):
             if options.l1_to_l2_pf_hint:
                 prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
-            prefetcher.enable_despacito_stream = False
             prefetcher.enable_cdp = False
         else:
             assert prefetcher_name == 'PrefetcherForwarder'
@@ -95,7 +93,6 @@ def create_prefetcher(cpu, cache_level, options):
             if options.l1_to_l2_pf_hint:
                 prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
-            prefetcher.enable_despacito_stream = False
             prefetcher.enable_cdp = False
 
     if cache_level == 'l3':
