@@ -58,6 +58,8 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_sstride = True
             prefetcher.enable_activepage = False
             prefetcher.enable_xsstream = True
+        prefetcher.enable_berti = False
+        prefetcher.enable_sstride = True
 
     if cache_level == 'l2':
         if options.classic_l2:
