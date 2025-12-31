@@ -194,7 +194,7 @@ class BaseO3CPU(BaseCPU):
             "should be invalidated")
     LFSTSize = Param.Unsigned(32, "Last fetched store table size")
     store_set_clear_thres = Param.Unsigned(1048576,"")
-    LFSTEntrySize = Param.Unsigned(4,"The number of store table inst in every entry of LFST can contain")
+    LFSTEntrySize = Param.Unsigned(8,"The number of store table inst in every entry of LFST can contain")
     SSITSize = Param.Unsigned(1024, "Store set ID table size")
     enable_storeSet_train = Param.Bool(True, "Training store set predictor")
 
