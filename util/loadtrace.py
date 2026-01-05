@@ -57,13 +57,7 @@ def DisAssemble(val):
 
 with sqlite3.connect(args.sqldb) as db:
     cur = db.cursor()
-    cur.execute(
-        "SELECT LifeTimeCommitTrace.*, LoadLifeTimeCommitTrace.* "
-        "FROM LifeTimeCommitTrace "
-        "INNER JOIN LoadLifeTimeCommitTrace "
-        "ON LifeTimeCommitTrace.ID = LoadLifeTimeCommitTrace.ID "
-        "WHERE LifeTimeCommitTrace.AtCommit != 0;"
-    )
+    cur.execute("SELECT LifeTimeCommitTrace.*, LoadLifeTimeCommitTrace.* from LifeTimeCommitTrace INNER JOIN LoadLifeTimeCommitTrace ON LifeTimeCommitTrace.ID = LoadLifeTimeCommitTrace.ID WHERE LifeTimeCommitTrace.AtCommit != 0;")
     col_name = [i[0] for i in cur.description]
     pc_idx = col_name.index('PC')
     asm_idx = col_name.index('DisAsm')
@@ -113,3 +107,4 @@ with sqlite3.connect(args.sqldb) as db:
     pd.set_option('expand_frame_repr', False)
     pd.set_option('display.max_columns', None)
     print(df)
+

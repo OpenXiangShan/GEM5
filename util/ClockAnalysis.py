@@ -35,11 +35,7 @@ def ReadDB(sqldb, start_clock: int, end_clock: int, inter_gap: bool, inner_gap: 
         if end_clock >= start_clock:
             clock_pick_cmd += f"AND AtCommit <= {end_clock*period} "
 
-        df = pd.read_sql_query(
-            f"SELECT * FROM LifeTimeCommitTrace where AtCommit != 0 "
-            f"{clock_pick_cmd} ORDER BY ID ASC",
-            con,
-        )
+        df = pd.read_sql_query(f"SELECT * FROM LifeTimeCommitTrace where AtCommit != 0 {clock_pick_cmd} ORDER BY ID ASC", con)
         col_name = [i.lower() for i in df.columns]
         rows = df.to_numpy()
 

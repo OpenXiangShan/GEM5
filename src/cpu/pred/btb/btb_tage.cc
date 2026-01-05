@@ -91,6 +91,7 @@ indexShift(bankBaseShift + ceilLog2(p.numBanks)),
 enableBankConflict(p.enableBankConflict),
 lastPredBankId(0),
 predBankValid(false),
+usingBasetable( !p.usingMbtbBaseEiterTage),
 tageStats(this, p.numPredictors, p.numBanks)
 {
     this->needMoreHistories = p.needMoreHistories;
@@ -269,7 +270,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     // Use base table instead of btb_entry.ctr
     Addr base_idx = getBaseTableIndex(startPC);
     unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, startPC);
-    bool base_taken = getDelay() != 0 ? baseTable[base_idx][branch_idx] >= 0 : btb_entry.ctr >= 0;
+    bool base_taken = getDelay() != 0 ? (usingBasetable ? baseTable[base_idx][branch_idx] >= 0 : btb_entry.ctr >= 0)
+                                                                                     : btb_entry.ctr >= 0;
+    //bool base_taken = btb_entry.ctr >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
 
     // use_alt_on_na gating: when provider weak, consult per-PC counter
@@ -296,7 +299,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
 /**
  * @brief Look up predictions in TAGE tables for a stream of instructions
- *
+ * 
  * @param startPC The starting PC address for the instruction stream
  * @param btbEntries Vector of BTB entries to make predictions for
  * @return Map of branch PC addresses to their predicted outcomes
@@ -330,9 +333,19 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
     }
 }
 
+void
+BTBTAGE::dryRunCycle(Addr startPC) {
+    // No operation in dry run cycle for BTBTAGE
+    // Record prediction bank for next tick's conflict detection
+    lastPredBankId = getBankId(startPC);
+    predBankValid = true;
+
+    return;
+}
+
 /**
  * @brief Makes predictions for a stream of instructions using TAGE predictor
- *
+ * 
  * This function is called during the prediction stage and:
  * 1. Uses lookupHelper to get predictions for all BTB entries
  * 2. Stores predictions in the stage prediction structure
@@ -682,7 +695,7 @@ BTBTAGE::doResolveUpdate(const FetchStream &stream) {
 
 /**
  * @brief Updates the TAGE predictor state based on actual branch execution results
- *
+ * 
  * @param stream The fetch stream containing branch execution information
  */
 void
@@ -1024,9 +1037,7 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
     ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
-    ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(),
-             "number of updates deferred due to bank conflict "
-             "(retried later)"),
+    ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(), "number of updates deferred due to bank conflict (retried later)"),
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
     ADD_STAT(updateAccessPerBank, statistics::units::Count::get(), "update accesses per bank"),
     ADD_STAT(predAccessPerBank, statistics::units::Count::get(), "prediction accesses per bank"),
