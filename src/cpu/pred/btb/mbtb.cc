@@ -814,11 +814,6 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
 #ifndef UNIT_TEST
 
 void
-MBTB::predwrongSource(){
-    btbStats.s3PredwrongMbtb++;
-}
-
-void
 MBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
@@ -964,8 +959,7 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
     ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
 
-    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits"),
-    ADD_STAT(s3PredwrongMbtb, statistics::units::Count::get(), "number of stage 3 conditional branch mispredictions by mbtb")
+    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits")
 
 {
     predHitCount.init(0, numWays * 2, 1);   // max 4ways * 2(halfAligned) + VC

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
+#include "base/statistics.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
 #include "cpu/o3/cpu_def.hh"
@@ -369,9 +370,13 @@ class DecoupledBPUWithBTB : public BPredUnit
         // Window blocking statistics
         statistics::Scalar predictionBlockedForUpdate;  // Times prediction was blocked for update priority
 
-        statistics::Scalar s1Predwrongfallthrough;
-        statistics::Scalar s3Predwrongfallthrough;
-        statistics::Scalar s3fallthroughbuts1hit;
+        statistics::Scalar s1PredWrongFallthrough;
+        statistics::Scalar s1PredWrongUbtb;
+        statistics::Scalar s1PredWrongAbtb;
+        statistics::Scalar s3PredWrongMbtb;
+        statistics::Scalar s3PredWrongTage;
+        statistics::Scalar s3PredWrongIttage;
+        statistics::Scalar s3PredWrongRas;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;

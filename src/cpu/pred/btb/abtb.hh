@@ -126,7 +126,6 @@ class AheadBTB : public TimedBaseBTBPredictor
 
     void tick() override;
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
-    void predwrongSource() override;
     void setTrace() override;
     TraceManager *btbTrace;
 #endif
@@ -471,7 +470,6 @@ class AheadBTB : public TimedBaseBTBPredictor
 
         Scalar returnHits;
         Scalar returnMisses;
-        Scalar s1PredwrongAbtb;
 
 #ifndef UNIT_TEST
         BTBStats(statistics::Group* parent);

@@ -559,11 +559,6 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
 }
 
 void
-BTBITTAGE::predwrongSource(){
-    ittageStats.s3PredwrongIttage++;
-}
-
-void
 BTBITTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
     if (!(inst->isIndirectCtrl() && !inst->isReturn())) {
@@ -646,8 +641,7 @@ BTBITTAGE::IttageStats::IttageStats(statistics::Group* parent, int numPredictors
     ADD_STAT(callPredCorrect, statistics::units::Count::get(), "number of call commits with correct predictions in ITTAGE"),
     ADD_STAT(otherPredCorrect, statistics::units::Count::get(), "number of other (except call) commits with correct predictions in ITTAGE"),
     ADD_STAT(callPredWrong, statistics::units::Count::get(), "number of call commits with wrong predictions in ITTAGE"),
-    ADD_STAT(otherPredWrong, statistics::units::Count::get(), "number of other (except call) commits with wrong predictions in ITTAGE"),
-    ADD_STAT(s3PredwrongIttage, statistics::units::Count::get(), "number of stage 3 conditional branch mispredictions by ittage")
+    ADD_STAT(otherPredWrong, statistics::units::Count::get(), "number of other (except call) commits with wrong predictions in ITTAGE")
 {
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);

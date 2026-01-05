@@ -320,11 +320,6 @@ UBTB::update(const FetchStream &stream)
 }
 
 void
-UBTB::predwrongSource(){
-    ubtbStats.s1PredwrongUbtb++;
-}
-
-void
 UBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
@@ -468,8 +463,7 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(s1Misses3Taken, statistics::units::Count::get(), "s1 misses s3 predicted taken"),
       ADD_STAT(s1Hits3Taken, statistics::units::Count::get(), "s1 hits s3 predicted taken"),
       ADD_STAT(s1Misses3FallThrough, statistics::units::Count::get(), "s1 misses s3 predicted fall through"),
-      ADD_STAT(s1InvalidatedEntries, statistics::units::Count::get(), "s1 invalidated entries"),
-      ADD_STAT(s1PredwrongUbtb, statistics::units::Count::get(), "s1 predicted wrong in uBTB")
+      ADD_STAT(s1InvalidatedEntries, statistics::units::Count::get(), "s1 invalidated entries")
 {
 }
 

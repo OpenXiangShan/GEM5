@@ -712,11 +712,6 @@ AheadBTB::getPreviousPC(const FetchStream &stream)
 #ifndef UNIT_TEST
 
 void
-AheadBTB::predwrongSource(){
-    btbStats.s1PredwrongAbtb++;
-}
-
-void
 AheadBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
@@ -855,8 +850,7 @@ AheadBTB::BTBStats::BTBStats(statistics::Group* parent) :
     ADD_STAT(callHits, statistics::units::Count::get(), "calls committed that was predicted hit"),
     ADD_STAT(callMisses, statistics::units::Count::get(), "calls committed that was predicted miss"),
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
-    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
-    ADD_STAT(s1PredwrongAbtb, statistics::units::Count::get(), "S1 predictions that were wrong due to abtb source")
+    ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss")
 
 {
 }

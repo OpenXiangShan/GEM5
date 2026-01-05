@@ -3,6 +3,8 @@
 #include <tuple>
 
 #include "base/output.hh"
+#include "base/stats/group.hh"
+#include "base/stats/units.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
 #include "debug/BTB.hh"
@@ -499,9 +501,14 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
     ADD_STAT(predictionBlockedForUpdate, statistics::units::Count::get(), "prediction blocked for update priority"),
-    ADD_STAT(s1Predwrongfallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
-    ADD_STAT(s3Predwrongfallthrough, statistics::units::Count::get(), "S3pred wrong full throughs"),
-    ADD_STAT(s3fallthroughbuts1hit,statistics::units::Count::get(), "S3full throug but s1 hit" )
+    ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
+    ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
+    ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),
+    ADD_STAT(s3PredWrongMbtb, statistics::units::Count::get(), "S3pred wrong blame mbtb "),
+    ADD_STAT(s3PredWrongTage, statistics::units::Count::get(), "S3pred wrong blame tage "),
+    ADD_STAT(s3PredWrongIttage, statistics::units::Count::get(), "S3pred wrong blame ittage "),
+    ADD_STAT(s3PredWrongRas, statistics::units::Count::get(), "S3pred wrong blame ras ")
+
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);
@@ -875,6 +882,8 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
 void
 DecoupledBPUWithBTB::commitPredWrongSource(const FetchStream &entry)
 {
+    int ubtbid = ubtb->getComponentIdx();
+    int abtbid = abtb->getComponentIdx();
     int mbtbid = mbtb->getComponentIdx();
     int tageid = tage->getComponentIdx();
     int ittageid = ittage->getComponentIdx();
@@ -886,47 +895,59 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchStream &entry)
     auto exeBranchInfo = entry.exeBranchInfo;
 
     bool onlyDirectionWrong = entry.exeTaken != entry.predTaken;
-    if (s1PredSource >= 0) {
-        assert(s1PredSource < mbtbid);
-        components[s1PredSource]->predwrongSource();
+
+    assert(s1PredSource < mbtbid);
+    if (s1PredSource == ubtbid) {
+        dbpBtbStats.s1PredWrongUbtb++;
+    } else if (s1PredSource == abtbid) {
+        dbpBtbStats.s1PredWrongAbtb++;
     }else {
-        dbpBtbStats.s1Predwrongfallthrough++;
+        dbpBtbStats.s1PredWrongFallthrough++;
     }
+
     int s3blame = mbtbid;
     if (s3PredSource == rasid) {
         if (exeBranchInfo.isCond) {
-            s3blame = tageid;
+            dbpBtbStats.s3PredWrongTage++;
         } else if (exeBranchInfo.isReturn) {
-            s3blame = rasid;
+            dbpBtbStats.s3PredWrongRas++;
         } else {
-            s3blame = mbtbid;
+            dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == ittageid) {
         if (exeBranchInfo.isIndirect) {
-            s3blame = ittageid;
+            dbpBtbStats.s3PredWrongIttage++;
         } else if (exeBranchInfo.isCond) {
-            s3blame = tageid;
+            dbpBtbStats.s3PredWrongTage++;
         } else {
-            s3blame = mbtbid;
+            dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == tageid) {
         if (exeBranchInfo.isCond) {
-            s3blame = onlyDirectionWrong ? tageid : mbtbid;
+            if (onlyDirectionWrong) {
+                dbpBtbStats.s3PredWrongTage++;
+            } else {
+                dbpBtbStats.s3PredWrongMbtb++;
+            }
         } else {
-            s3blame = mbtbid;
+            dbpBtbStats.s3PredWrongMbtb++;
         }
     }else if (s3PredSource == mbtbid) {
         if (exeBranchInfo.isCond) {
-            s3blame = onlyDirectionWrong ? tageid : mbtbid;
+            if (onlyDirectionWrong) {
+                dbpBtbStats.s3PredWrongTage++;
+            } else {
+                dbpBtbStats.s3PredWrongMbtb++;
+            }
         } else if (exeBranchInfo.isIndirect) {
-            s3blame = ittageid;
+            dbpBtbStats.s3PredWrongIttage++;
         } else {
-            s3blame = mbtbid;
+            dbpBtbStats.s3PredWrongMbtb++;
         }
     }else if (s3PredSource == -1) {
-        s3blame = mbtbid;
+        dbpBtbStats.s3PredWrongMbtb++;
     }
-    components[s3blame]->predwrongSource();
+    //components[s3blame]->predwrongSource();
 }
 /**
  * @brief Handle instruction commits and phase-based statistics

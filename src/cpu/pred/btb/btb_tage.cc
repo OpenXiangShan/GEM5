@@ -1040,8 +1040,7 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(condCorrect, statistics::units::Count::get(), "number of conditional branch correct predictions committed"),
     ADD_STAT(condMissNoTakens, statistics::units::Count::get(), "number of conditional branch correct predictions committed with no prediction"),
     ADD_STAT(predHit, statistics::units::Count::get(), "number of conditional branch predictions that hit"),
-    ADD_STAT(predMiss, statistics::units::Count::get(), "number of conditional branch predictions that miss"),
-    ADD_STAT(s3PredwrongTage,statistics::units::Count::get(),"number of stage 3 conditional branch mispredictions by tage ")
+    ADD_STAT(predMiss, statistics::units::Count::get(), "number of conditional branch predictions that miss")
 {
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);
@@ -1121,11 +1120,6 @@ BTBTAGE::getLRUVictim(int table, Addr index)
 }
 
 #ifndef UNIT_TEST
-
-void
-BTBTAGE::predwrongSource(){
-    tageStats.s3PredwrongTage++;
-}
 
 void
 BTBTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)

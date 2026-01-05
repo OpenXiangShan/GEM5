@@ -125,8 +125,6 @@ class MBTB : public TimedBaseBTBPredictor
 
     void tick() override;
 
-    void predwrongSource() override;
-
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
     void setTrace() override;
     TraceManager *btbTrace;
@@ -470,7 +468,6 @@ public:
 
         // Victim cache statistics
         Scalar victimCacheHit;
-        Scalar s3PredwrongMbtb;
 
 #ifndef UNIT_TEST
         statistics::Distribution predHitCount;

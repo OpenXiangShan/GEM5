@@ -111,8 +111,6 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     void update(const FetchStream &entry) override;
 
-    void predwrongSource() override;
-
     void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
 
     // check folded hists after speculative update and recover
@@ -231,7 +229,6 @@ class BTBITTAGE : public TimedBaseBTBPredictor
         Scalar otherPredCorrect;
         Scalar callPredWrong;
         Scalar otherPredWrong;
-        Scalar s3PredwrongIttage;
     };
 
     IttageStats ittageStats;
