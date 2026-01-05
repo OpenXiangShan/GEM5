@@ -495,6 +495,21 @@ BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
     }
 }
 
+bool
+BTBITTAGE::tageHit()
+{
+    auto meta = getPredictionMeta();
+    auto preds = std::static_pointer_cast<TageMeta>(meta)->preds;
+    bool hit = false;
+    for (auto & [pc, pred] : preds) {
+        if (pred.mainInfo.found) {
+            hit = true;
+            break;
+        }
+    }
+    return hit;
+}
+
 /**
  * @brief Updates branch history for speculative execution
  *

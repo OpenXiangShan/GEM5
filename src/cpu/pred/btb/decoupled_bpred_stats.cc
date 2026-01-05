@@ -905,7 +905,6 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchStream &entry)
         dbpBtbStats.s1PredWrongFallthrough++;
     }
 
-    int s3blame = mbtbid;
     if (s3PredSource == rasid) {
         if (exeBranchInfo.isCond) {
             dbpBtbStats.s3PredWrongTage++;
@@ -947,7 +946,6 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchStream &entry)
     }else if (s3PredSource == -1) {
         dbpBtbStats.s3PredWrongMbtb++;
     }
-    //components[s3blame]->predwrongSource();
 }
 /**
  * @brief Handle instruction commits and phase-based statistics
