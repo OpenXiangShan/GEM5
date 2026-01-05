@@ -208,10 +208,10 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  std::shared_ptr<TageMeta> predMeta) {
     DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
 
-    // Find main and alternative predictions
+    // Find main prediction only (alt provider disabled).
     bool provided = false;
-    bool alt_provided = false;
-    TageTableInfo main_info, alt_info;
+    TageTableInfo main_info;
+    TageTableInfo alt_info; // kept for metadata/DB schema compatibility; always empty.
 
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
@@ -248,16 +248,10 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         }
 
         if (match) {
-            if (!provided) {
-                // First match becomes main prediction
-                main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
-                provided = true;
-            } else if (!alt_provided) {
-                // Second match becomes alternative prediction
-                alt_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
-                alt_provided = true;
-                break;
-            }
+            // First match becomes main prediction; alt provider is disabled
+            main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
+            provided = true;
+            break;
         } else {
             DPRINTF(TAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
                 i, index, tag, position, btb_entry.pc);
@@ -265,17 +259,20 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     }
 
     // Generate final prediction
-    bool main_taken = main_info.taken();
-    bool alt_taken = alt_info.taken();
-    // Use base table instead of btb_entry.ctr
+    const bool main_taken = main_info.taken();
+    // Use base table instead of btb_entry.ctr.
     Addr base_idx = getBaseTableIndex(startPC);
     unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, startPC);
-    bool base_taken = getDelay() != 0 ? (usingBasetable ? baseTable[base_idx][branch_idx] >= 0 : btb_entry.ctr >= 0)
-                                                                                     : btb_entry.ctr >= 0;
-    //bool base_taken = btb_entry.ctr >= 0;
-    bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
+    const bool base_taken =
+        getDelay() != 0 ?
+            (usingBasetable ? baseTable[base_idx][branch_idx] >= 0 : btb_entry.ctr >= 0) :
+            btb_entry.ctr >= 0;
 
-    // use_alt_on_na gating: when provider weak, consult per-PC counter
+    // With alt provider disabled, "alt" always means the base fallback.
+    const bool alt_taken = base_taken;
+    const bool alt_pred = base_taken;
+
+    // With alt disabled, allow use_alt_on_na to choose base vs main when main is weak.
     bool use_alt = false;
     if (!provided) {
         use_alt = true;
@@ -291,8 +288,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     bool taken = use_alt ? alt_pred : main_taken;
 
     DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
-    DPRINTF(TAGE, "tage use_alt %d ? (alt_provided %d ? alt_taken %d : base_taken %d) : main_taken %d\n",
-        use_alt, alt_provided, alt_taken, base_taken, main_taken);
+    DPRINTF(TAGE, "tage use_alt %d ? base_taken %d : main_taken %d\n",
+        use_alt, base_taken, main_taken);
 
     return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred);
 }
@@ -442,7 +439,8 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     Addr base_idx = getBaseTableIndex(startPC);
     unsigned branch_idx = getBranchIndexInBlock(entry.pc, startPC);
     bool base_taken = baseTable[base_idx][branch_idx] >= 0;
-    bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
+    // Alt provider disabled: "alt" is always the base fallback.
+    const bool alt_taken = base_taken;
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
@@ -473,9 +471,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
         // Update useful bit based on several conditions
         bool main_is_correct = main_info.taken() == actual_taken;
-        bool alt_is_correct_and_strong = alt_info.found &&
-                                     (alt_info.taken() == actual_taken) &&
-                                     (abs(2 * alt_info.entry.counter + 1) == 7);
+        const bool alt_is_correct_and_strong = false; // no alt provider
 
         // a. Special reset (humility mechanism)
         if (alt_is_correct_and_strong && main_is_correct) {
@@ -498,12 +494,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         // No LRU maintenance
     }
 
-    // Update alternative prediction provider
-    if (used_alt && alt_info.found) {
-        auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
-        updateCounter(actual_taken, 3, way.counter);
-        // No LRU maintenance
-    }
+    // Alt provider disabled: no alternative provider counter updates.
 
     // Update base table counter if used as fallback
     if (used_alt && !alt_info.found) {
