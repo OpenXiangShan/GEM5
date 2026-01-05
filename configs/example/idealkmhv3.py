@@ -31,7 +31,7 @@ def setKmhV3IdealParams(args, system):
 
         # decode
         cpu.decodeWidth = 8
-        cpu.enable_loadFusion = True
+        cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
 
         # rename
@@ -73,6 +73,7 @@ def setKmhV3IdealParams(args, system):
         cpu.RAWDequeuePerCycle = 4
         cpu.SbufferEntries = 24
         cpu.SbufferEvictThreshold = 16
+        cpu.store_prefetch_train = False
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
@@ -85,6 +86,7 @@ def setKmhV3IdealParams(args, system):
             cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
+            cpu.dcache.simulate_dcache_refill = True
 
     # l2 caches
     if args.l2cache:
@@ -97,6 +99,10 @@ def setKmhV3IdealParams(args, system):
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
+                for j in range(args.l2_slices):
+                    # Configure XSDRRIP replacement policy (DRRIP mode)
+                    # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
+                    l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
             system.tol2bus_list[i].forward_latency = 0  # 3->0
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0

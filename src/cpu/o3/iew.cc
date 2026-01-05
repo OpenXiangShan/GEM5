@@ -90,7 +90,7 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
       renameWidth(params.renameWidth),
       wbNumInst(0),
       wbCycle(0),
-      wbDelay(params.executeToWriteBackDelay),
+      iewToCommitDelay(params.iewToCommitDelay),
       wbWidth(params.wbWidth),
       enableStoreSetTrain(params.enable_storeSet_train),
       numThreads(params.numThreads),
@@ -434,11 +434,13 @@ IEW::setIEWQueue(TimeBuffer<IEWStruct> *iq_ptr)
 {
     iewQueue = iq_ptr;
 
-    // Setup wire to write instructions to commit.
-    toCommit = iewQueue->getWire(0);
-
-    execBypass = iewQueue->getWire(0);
-    execWB = iewQueue->getWire(-wbDelay);
+    // Setup wire to write instructions and squash signals to commit.
+    // Note: This wire is named "toCommit" (previously "execWB") to clarify its purpose.
+    // Since iewToCommitDelay == 1, IEW writes to position [-1] and Commit reads from
+    // position [-1] (via fromIEW) in the same cycle, achieving zero-cycle latency for
+    // IEW→Commit communication. This allows Commit to immediately arbitrate squash
+    // signals from IEW (e.g., branch mispredictions) before forwarding to Fetch.
+    toCommit = iewQueue->getWire(-iewToCommitDelay);
 }
 
 void
@@ -561,30 +563,30 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
             " PC: %s "
             "\n", tid, inst->seqNum, inst->pcState() );
 
-    if (!execWB->squash[tid] ||
-            inst->seqNum < execWB->squashedSeqNum[tid]) {
-        execWB->squash[tid] = true;
-        execWB->squashedSeqNum[tid] = inst->seqNum;
-        execWB->squashedStreamId[tid] = inst->getFsqId();
-        execWB->squashedTargetId[tid] = inst->getFtqId();
-        execWB->squashedLoopIter[tid] = inst->getLoopIteration();
-        execWB->branchTaken[tid] = inst->pcState().branching();
+    if (!toCommit->squash[tid] ||
+            inst->seqNum < toCommit->squashedSeqNum[tid]) {
+        toCommit->squash[tid] = true;
+        toCommit->squashedSeqNum[tid] = inst->seqNum;
+        toCommit->squashedStreamId[tid] = inst->getFsqId();
+        toCommit->squashedTargetId[tid] = inst->getFtqId();
+        toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
+        toCommit->branchTaken[tid] = inst->pcState().branching();
 
-        set(execWB->pc[tid], inst->pcState());
-        inst->staticInst->advancePC(*execWB->pc[tid]);
+        set(toCommit->pc[tid], inst->pcState());
+        inst->staticInst->advancePC(*toCommit->pc[tid]);
 
-        execWB->mispredictInst[tid] = inst;
-        execWB->includeSquashInst[tid] = false;
+        toCommit->mispredictInst[tid] = inst;
+        toCommit->includeSquashInst[tid] = false;
 
         wroteToTimeBuffer = true;
 
         DPRINTF(DecoupleBP,
                 "Branch misprediction (pc=%#lx) set stream id to %lu, target "
                 "id to %lu, loop iter to %u\n",
-                execWB->pc[tid]->instAddr(),
-                execWB->squashedStreamId[tid],
-                execWB->squashedTargetId[tid],
-                execWB->squashedLoopIter[tid]);
+                toCommit->pc[tid]->instAddr(),
+                toCommit->squashedStreamId[tid],
+                toCommit->squashedTargetId[tid],
+                toCommit->squashedLoopIter[tid]);
     }
 
 }
@@ -600,29 +602,29 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
     // case the memory violator should take precedence over the branch
     // misprediction because it requires the violator itself to be included in
     // the squash.
-    if (!execWB->squash[tid] ||
-            inst->seqNum <= execWB->squashedSeqNum[tid]) {
-        execWB->squash[tid] = true;
+    if (!toCommit->squash[tid] ||
+            inst->seqNum <= toCommit->squashedSeqNum[tid]) {
+        toCommit->squash[tid] = true;
 
-        execWB->squashedSeqNum[tid] = inst->seqNum;
-        execWB->squashedStreamId[tid] = inst->getFsqId();
-        execWB->squashedTargetId[tid] = inst->getFtqId();
-        execWB->squashedLoopIter[tid] = inst->getLoopIteration();
-        set(execWB->pc[tid], inst->pcState());
-        execWB->mispredictInst[tid] = NULL;
+        toCommit->squashedSeqNum[tid] = inst->seqNum;
+        toCommit->squashedStreamId[tid] = inst->getFsqId();
+        toCommit->squashedTargetId[tid] = inst->getFtqId();
+        toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
+        set(toCommit->pc[tid], inst->pcState());
+        toCommit->mispredictInst[tid] = NULL;
 
         // Must include the memory violator in the squash.
-        execWB->includeSquashInst[tid] = true;
+        toCommit->includeSquashInst[tid] = true;
 
         wroteToTimeBuffer = true;
 
         DPRINTF(DecoupleBP,
                 "Memory violation (pc=%#lx) set stream id to %lu, target id "
                 "to %lu, loop iter to %u\n",
-                execWB->pc[tid]->instAddr(),
-                execWB->squashedStreamId[tid],
-                execWB->squashedTargetId[tid],
-                execWB->squashedLoopIter[tid]);
+                toCommit->pc[tid]->instAddr(),
+                toCommit->squashedStreamId[tid],
+                toCommit->squashedTargetId[tid],
+                toCommit->squashedLoopIter[tid]);
 
 
     }
@@ -1574,8 +1576,8 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
     }
 
     if (!fetchRedirect[tid] ||
-        !execWB->squash[tid] ||
-        execWB->squashedSeqNum[tid] > inst->seqNum) {
+        !toCommit->squash[tid] ||
+        toCommit->squashedSeqNum[tid] > inst->seqNum) {
 
         // Prevent testing for misprediction on load instructions,
         // that have not been executed.
@@ -1822,8 +1824,8 @@ IEW::writebackInsts()
     // as part of backwards communication.
 
     for (int inst_num = 0; inst_num < wbWidth &&
-             execWB->insts[inst_num]; inst_num++) {
-        DynInstPtr inst = execWB->insts[inst_num];
+             toCommit->insts[inst_num]; inst_num++) {
+        DynInstPtr inst = toCommit->insts[inst_num];
         ThreadID tid = inst->threadNumber;
 
         if (inst->savedRequest && inst->isLoad()) {
@@ -2048,8 +2050,8 @@ IEW::checkMisprediction(const DynInstPtr& inst)
     ThreadID tid = inst->threadNumber;
 
     if (!fetchRedirect[tid] ||
-        !execWB->squash[tid] ||
-        execWB->squashedSeqNum[tid] > inst->seqNum) {
+        !toCommit->squash[tid] ||
+        toCommit->squashedSeqNum[tid] > inst->seqNum) {
         // In trace mode, override npc with trace nextPC so that
         // mispredicted() and squash use standard advancePC logic.
         if (cpu->isTraceMode() && inst->hasTraceBranchInfo()) {

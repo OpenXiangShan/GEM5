@@ -750,7 +750,7 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     negative_offsets_enable = False
     delay_queue_enable = True
     delay_queue_size = 16
-    delay_queue_cycles = 175
+    delay_queue_cycles = 300
     crossPage = False
 
     offsets = [x for i in [
@@ -766,7 +766,7 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     negative_offsets_enable = False
     delay_queue_enable = True
     delay_queue_size = 16
-    delay_queue_cycles = 175
+    delay_queue_cycles = 300
 
     offsets = [x for i in [
         1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30, 32, 36, 40, 45, 48,

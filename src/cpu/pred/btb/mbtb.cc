@@ -81,6 +81,7 @@ MBTB::MBTB(const Params &p)
     numEntries(p.numEntries),
     numWays(p.numWays),
     tagBits(p.tagBits),
+    usingBasetable(p.usingMbtbBaseEiterTage),
     btbStats(this, p.numWays)
 {
     // MBTB doesn't support ahead-pipelined stages
@@ -356,7 +357,7 @@ MBTB::lookupSingleBlock(Addr block_pc)
     for (auto &way : btb_set) {
         if (way.valid && way.tag == current_tag) {
             res.push_back(way);
-            way.tick = curTick();  // Update timestamp for MRU
+            way.tick = curTick(); // Update timestamp for MRU
             std::make_heap(target_mru[btb_idx].begin(), target_mru[btb_idx].end(), older());
         }
     }
@@ -508,7 +509,6 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
     
     // Calculate index and tag for this entry
     Addr btb_idx = getIndex(entry.pc);
-    Addr btb_tag = getTag(entry.pc);
 
     // Look for matching entry in the target SRAM
     bool found = false;
@@ -538,7 +538,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
         existing_ptr = static_cast<const BTBEntry*>(&victimCache[vc_idx]);
     }
 
-    auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream, btb_tag);
+    auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, stream);
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
 
     if (found) {
@@ -557,14 +557,14 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
 BTBEntry
 MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
                         const BTBEntry* existing_entry,
-                        const FetchStream &stream,
-                        Addr btb_tag)
+                        const FetchStream &stream)
 {
     // For conditional branches, prefer the existing entry to preserve up-to-date ctr
     auto entry_to_write = (req_entry.isCond && existing_entry)
                               ? BTBEntry(*existing_entry)
                               : req_entry;
-    entry_to_write.tag = btb_tag;   // update tag
+    // Always recalculate tag based on the actual PC being written
+    entry_to_write.tag = getTag(entry_to_write.pc);
     entry_to_write.resolved = false; // reset resolved status
 
     // Update saturating counter and alwaysTaken
@@ -689,12 +689,44 @@ MBTB::update(const FetchStream &stream)
     // 1. Check prediction hit status, for stats recording
     checkPredictionHit(stream,
         std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get());
-
-    // only update btb entry for control squash T-> NT or NT -> T
-    if (stream.squashType == SQUASH_CTRL) {
-        warn_if(stream.exeBranchInfo.pc > stream.updateEndInstPC, "exeBranchInfo.pc > updateEndInstPC");
-        updateBTBEntry(stream.exeBranchInfo, stream);
+    if (!usingBasetable) {
+        // only update btb entry for control squash T-> NT or NT -> T
+        if (stream.squashType == SQUASH_CTRL) {
+            warn_if(stream.exeBranchInfo.pc > stream.updateEndInstPC, "exeBranchInfo.pc > updateEndInstPC");
+            updateBTBEntry(stream.exeBranchInfo, stream);
+        }
+    }else {
+        auto entries_need_update = prepareUpdateEntries(stream);
+        for (auto &entry : entries_need_update) {
+            updateBTBEntry(entry, stream);
+        }
     }
+
+}
+
+
+std::vector<BTBEntry>
+MBTB::prepareUpdateEntries(const FetchStream &stream) {
+    auto all_entries = stream.updateBTBEntries;
+
+    // Add potential new BTB entry if it's a btb miss during prediction
+    if (!stream.updateIsOldEntry) {
+        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
+        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
+        if (!new_entry_taken) {
+            potential_new_entry.alwaysTaken = false;
+        }
+        all_entries.push_back(potential_new_entry);
+    }
+
+    // Filter: only keep conditional branches that are not always taken
+    if (getResolvedUpdate()) {
+        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
+            [](const BTBEntry &e) { return !e.resolved; });
+        all_entries.erase(remove_it, all_entries.end());
+    }
+
+    return all_entries;
 }
 
 /**

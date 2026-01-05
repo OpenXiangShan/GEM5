@@ -170,6 +170,8 @@ class MBTB : public TimedBaseBTBPredictor
      */
     void update(const FetchStream &stream) override;
 
+    std::vector<BTBEntry> prepareUpdateEntries(const FetchStream &stream);
+
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
@@ -283,8 +285,7 @@ class MBTB : public TimedBaseBTBPredictor
     // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
     BTBEntry buildUpdatedEntry(const BTBEntry& req_entry,
                                const BTBEntry* existing_entry,
-                               const FetchStream &stream,
-                               Addr btb_tag);
+                               const FetchStream &stream);
 
     // Helper: update an existing entry in SRAM set
     void updateExistingInSRAMSet(Addr btb_idx,
@@ -393,6 +394,7 @@ class MBTB : public TimedBaseBTBPredictor
     /** Address calculation masks and shifts */
     Addr idxMask;          // Mask for extracting index bits
     unsigned tagBits;      // Number of tag bits
+    bool usingBasetable;   // Whether using basetable for either MBTB or TAGE
     Addr tagMask;          // Mask for extracting tag bits
     unsigned idxShiftAmt;  // Amount to shift PC for index
     unsigned tagShiftAmt;  // Amount to shift PC for tag

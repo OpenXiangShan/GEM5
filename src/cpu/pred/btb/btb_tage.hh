@@ -118,6 +118,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void tickStart() override;
 
     void tick() override;
+    void dryRunCycle(Addr startAddr) override;
     // Make predictions for a stream of instructions and record in stage preds
     void putPCHistory(Addr startAddr,
                       const boost::dynamic_bitset<> &history,
@@ -315,6 +316,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Track last prediction bank for conflict detection
     unsigned lastPredBankId;         // Bank ID of last prediction
     bool predBankValid;              // Whether lastPredBankId is valid
+    bool usingBasetable;          // Whether using basetable for either MBTB or TAGE
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
