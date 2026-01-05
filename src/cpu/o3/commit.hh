@@ -590,6 +590,21 @@ class Commit
     // Trace-mode commit stream index per thread: expected next trace instruction index
     uint64_t traceCommitIndex[MaxThreads] = {0};
 
+    // Trace-mode helpers (implementation in src/cpu/o3/trace/CommitTrace.cc)
+    bool traceMaybeExitOnPipelineDrainFromStuckCheck();
+    bool traceMaybeExitOnEofDrainFromTick();
+    void traceUpdateSquashInfo(ThreadID tid, InstSeqNum squashed_inst);
+    void traceMaybeInjectCtrlFlowChangeFault(
+        ThreadID tid, const DynInstPtr &head_inst);
+    bool traceMaybeExitOnLastTraceInst(const DynInstPtr &head_inst);
+    void traceOnCommit(ThreadID tid, const DynInstPtr &head_inst);
+    void traceOnMacroCommit(ThreadID tid);
+    void traceLogHandleInterrupt();
+    void traceLogInstFault(const DynInstPtr &head_inst, const Fault &inst_fault);
+    void traceLogPrivReturn(const DynInstPtr &head_inst, ThreadID tid);
+    void traceLogCommitBlockedCycles(
+        const DynInstPtr &head_inst, uint64_t delta);
+
     void dumpTicks(const DynInstPtr &inst);
 
     // Trace-mode: perform commit-time difftest against trace metadata
