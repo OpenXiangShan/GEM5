@@ -133,6 +133,7 @@ DecoupledBPUWithBTB::tick()
     if (squashing) {
         bpuState = BpuState::IDLE;
         numOverrideBubbles = 0;
+        tage->dryRunCycle(s0PC);
         DPRINTF(Override, "Squashing, BPU state updated.\n");
         squashing = false;
         return;
@@ -160,6 +161,10 @@ DecoupledBPUWithBTB::tick()
         for (int i = 0; i < numStages; i++) {
             predsOfEachStage[i].btbEntries.clear();
         }
+    }
+
+    if (bpuState == BpuState::PREDICTION_OUTSTANDING && numOverrideBubbles > 0) {
+        tage->dryRunCycle(s0PC);
     }
 
     // 3. Process enqueue operations and bubble counter

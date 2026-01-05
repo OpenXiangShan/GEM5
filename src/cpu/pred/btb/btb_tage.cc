@@ -333,6 +333,16 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
     }
 }
 
+void
+BTBTAGE::dryRunCycle(Addr startPC) {
+    // No operation in dry run cycle for BTBTAGE
+    // Record prediction bank for next tick's conflict detection
+    lastPredBankId = getBankId(startPC);
+    predBankValid = true;
+
+    return;
+}
+
 /**
  * @brief Makes predictions for a stream of instructions using TAGE predictor
  * 
