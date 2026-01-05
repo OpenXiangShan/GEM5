@@ -73,7 +73,7 @@ void
 BTBITTAGE::tick() {}
 
 void
-BTBITTAGE::lookupHelper(Addr startAddr, std::vector<BTBEntry> &btbEntries, IndirectTargets& results)
+BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries, IndirectTargets& results)
 {
     DPRINTF(ITTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
     std::vector<TagePrediction> preds;

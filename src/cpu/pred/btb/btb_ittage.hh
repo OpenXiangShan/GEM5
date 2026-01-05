@@ -119,7 +119,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
   private:
 
     // return provided
-    void lookupHelper(Addr stream_start, std::vector<BTBEntry> &btbEntries, IndirectTargets& results);
+    void lookupHelper(Addr stream_start, const std::vector<BTBEntry> &btbEntries, IndirectTargets& results);
 
     // use blockPC
     Addr getTageIndex(Addr pc, int table);

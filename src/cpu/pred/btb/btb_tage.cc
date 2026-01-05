@@ -305,7 +305,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-BTBTAGE::lookupHelper(const Addr &startPC, std::vector<BTBEntry> &btbEntries,
+BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
                       std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results)
 {
     DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);

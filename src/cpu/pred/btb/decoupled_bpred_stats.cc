@@ -3,8 +3,6 @@
 #include <tuple>
 
 #include "base/output.hh"
-#include "base/stats/group.hh"
-#include "base/stats/units.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
 #include "debug/BTB.hh"

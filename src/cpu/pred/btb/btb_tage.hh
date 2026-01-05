@@ -168,7 +168,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
-    void lookupHelper(const Addr &startPC, std::vector<BTBEntry> &btbEntries,
+    void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
                     std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
 
     // Calculate TAGE index for a given PC and table
