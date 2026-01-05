@@ -1070,7 +1070,7 @@ class MicroTAGE(BTBTAGE):
     TTagPcShifts = [1]
 
     histLengths = [16]
-    numDelay = 0
+    numDelay = 1
 
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'
