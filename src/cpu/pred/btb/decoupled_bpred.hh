@@ -19,6 +19,7 @@
 #include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_tage.hh"
+#include "cpu/pred/btb/microtage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/jump_ahead_predictor.hh"
@@ -94,7 +95,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     UBTB *ubtb{};
     AheadBTB *abtb{};
     MBTB *mbtb{};
-    BTBTAGE *microtage{};
+    MicroTAGE *microtage{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};
     BTBMGSC *mgsc{};
