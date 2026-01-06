@@ -85,7 +85,7 @@ enableSC(p.enableSC),
 updateOnRead(p.updateOnRead),
 numBanks(p.numBanks),
 bankIdWidth(ceilLog2(p.numBanks)),
-blockWidth(floorLog2(blockSize)),
+blockWidth(p.blockSize ? floorLog2(p.blockSize) : 0),
 bankBaseShift(instShiftAmt), // strip instruction alignment bits before indexing
 indexShift(bankBaseShift + ceilLog2(p.numBanks)),
 enableBankConflict(p.enableBankConflict),
