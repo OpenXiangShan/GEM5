@@ -902,10 +902,26 @@ MicroTAGE::getBaseTableIndex(Addr pc) {
 unsigned
 MicroTAGE::getBranchIndexInBlock(Addr branchPC, Addr startPC) {
     // Calculate branch position within the fetch block (0 .. maxBranchPositions-1)
-    Addr alignedPC = startPC & ~(blockSize - 1);
-    Addr offset = (branchPC - alignedPC) >> instShiftAmt;
-    assert(offset < maxBranchPositions);
-    return offset;
+    const Addr alignedPC = startPC & ~(blockSize - 1);
+
+    unsigned position = 0;
+    if (branchPC >= alignedPC) {
+        const Addr byteOffset = branchPC - alignedPC;
+        position = byteOffset >> instShiftAmt;
+    } else {
+        warn_once("MicroTAGE: branch %#lx precedes block start %#lx; treating as offset 0",
+                  branchPC, startPC);
+    }
+
+    if (position >= maxBranchPositions) {
+        warn_once("MicroTAGE: branch %#lx exceeds block [%#lx, %#lx) (blockSize=%lu, instShift=%u, maxPositions=%u); clamping index",
+                  branchPC, alignedPC,
+                  alignedPC + blockSize,
+                  static_cast<unsigned long>(blockSize), instShiftAmt, maxBranchPositions);
+        position %= maxBranchPositions;
+    }
+
+    return position;
 }
 
 unsigned
