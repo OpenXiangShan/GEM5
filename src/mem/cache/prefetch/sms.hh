@@ -49,7 +49,9 @@ class XSCompositePrefetcher : public Queued
     const unsigned int regionSize;
     const unsigned int regionBlks;
 
-    bool useTrainingBuffer() const override { return true; }
+    const bool enableTrainFilter;  // Enable TrainFilter for ROB-order training
+
+    bool useTrainingBuffer() const override { return enableTrainFilter; }
 
     Addr regionAddress(Addr a) { return a / regionSize; };
 

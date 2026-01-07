@@ -241,10 +241,15 @@ void
 XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
                                       int prio, PrefetchSourceType src, int ahead_level)
 {
+    // Count generated prefetch
+    prefetchStats.pfGenerated++;
+
     if (ahead_level > 1){
         stridestream_pfFilter_l2l3->Insert(regionAddress(addr), uint64_t(1) << regionOffset(addr),0,true,false,pfi.isSecure(),ahead_level, &pfi.trigger_info);
         if (filterL2->contains(addr)) {
             DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
+            // Count filtered prefetch
+            prefetchStats.pfFiltered++;
         } else {
             DPRINTF(XSStridePrefetcher, "Send pf: %lx\n", addr);
             filterL2->insert(addr, 0);
@@ -257,6 +262,8 @@ XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
         stridestream_pfFilter_l1->Insert(regionAddress(addr), uint64_t(1) << regionOffset(addr),0,true,false,pfi.isSecure(),ahead_level, &pfi.trigger_info);
         if (filter->contains(addr)) {
             DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
+            // Count filtered prefetch
+            prefetchStats.pfFiltered++;
         } else {
             DPRINTF(XSStridePrefetcher, "Send pf: %lx\n", addr);
             filter->insert(addr, 0);

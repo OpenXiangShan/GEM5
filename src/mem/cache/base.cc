@@ -514,6 +514,13 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                     pkt->pfSource = mshr->getPFSource();
                     pkt->pfDepth = mshr->getPFDepth();
 
+                    // Demand request merging into prefetch-only MSHR
+                    if (pkt->isDemand()) {
+                        stats.demandMergedIntoPfMSHR++;
+                        DPRINTF(Cache, "Demand request %#lx merged into prefetch MSHR\n",
+                                pkt->getAddr());
+                    }
+
                 } else if (mshr->hasFromCPU()) {
                     // no pkt in mshr originated from cache; all of them are from cpu
                     pkt->coalescingMSHR = true;
@@ -2887,6 +2894,12 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of squashed dead block replacements"),
     ADD_STAT(squashedLiveBlockReplacements, statistics::units::Count::get(),
                 "number of squashed live block replacements"),
+    ADD_STAT(pfMergedWithDemand, statistics::units::Count::get(),
+             "number of MSHR completions where prefetch was merged with demand"),
+    ADD_STAT(pfOnlyFill, statistics::units::Count::get(),
+             "number of MSHR completions with only prefetch (no demand merge)"),
+    ADD_STAT(demandMergedIntoPfMSHR, statistics::units::Count::get(),
+             "number of demand requests that merged into prefetch MSHR"),
     ADD_STAT(squashedDemandHits, statistics::units::Count::get(),
              "number of squashed inst block demand hits"),
     ADD_STAT(loadTagReadFails, statistics::units::Count::get(),

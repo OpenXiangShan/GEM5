@@ -20,6 +20,7 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     : Queued(p),
       regionSize(p.region_size),
       regionBlks(p.region_size / p.block_size),
+      enableTrainFilter(p.enable_train_filter),
       act(p.act_entries, p.act_entries, p.act_indexing_policy,
           p.act_replacement_policy, ACTEntry(SatCounter8(2, 1))),
       re_act(p.re_act_entries, p.re_act_entries, p.re_act_indexing_policy,
@@ -641,20 +642,31 @@ bool
 XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
                                         int prio, PrefetchSourceType src, int ahead_level)
 {
+    // Count generated prefetch
+    prefetchStats.pfGenerated++;
+
     if (ahead_level < 2 && pfPageLRUFilter.contains(regionAddress(addr))) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L1 prefetched page: %lx\n", regionAddress(addr));
+        // Count filtered prefetch
+        prefetchStats.pfFiltered++;
         return false;
 
     } else if (ahead_level == 2 && pfPageLRUFilterL2.contains(regionAddress(addr))) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L2 prefetched page: %lx\n", regionAddress(addr));
+        // Count filtered prefetch
+        prefetchStats.pfFiltered++;
         return false;
 
     } else if (ahead_level == 3 && pfPageLRUFilterL3.contains(regionAddress(addr))) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L3 prefetched page: %lx\n", regionAddress(addr));
+        // Count filtered prefetch
+        prefetchStats.pfFiltered++;
         return false;
 
     } else if (pfBlockLRUFilter.contains(addr)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently prefetched: %lx\n", addr);
+        // Count filtered prefetch
+        prefetchStats.pfFiltered++;
         return false;
 
     } else {
