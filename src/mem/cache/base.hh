@@ -1313,6 +1313,13 @@ class BaseCache : public ClockedObject, public CacheAccessor
         /** Number of replacements of blocks from squashed inst but reused. */
         statistics::Scalar squashedLiveBlockReplacements;
 
+        /** Number of MSHR completions where prefetch was merged with demand */
+        statistics::Scalar pfMergedWithDemand;
+        /** Number of MSHR completions with only prefetch (no demand merge) */
+        statistics::Scalar pfOnlyFill;
+        /** Number of demand requests that merged into prefetch MSHR */
+        statistics::Scalar demandMergedIntoPfMSHR;
+
         /** Number of demand hits that accessed squashed inst blocks. */
         statistics::Scalar squashedDemandHits;
 

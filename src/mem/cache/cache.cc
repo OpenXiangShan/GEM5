@@ -988,6 +988,12 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         blk->setPrefetched();
         blk->setXsMetadata(pkt->req->getXsMetadata());
         DPRINTF(Cache, "Marking block as prefetched from prefetcher %i\n", blk->getXsMetadata().prefetchSource);
+        stats.pfOnlyFill++;  // Pure prefetch fill (no demand merge)
+    } else if (blk && from_core && from_pref) {
+        // Prefetch was merged with demand - won't be marked as prefetched
+        stats.pfMergedWithDemand++;
+        DPRINTF(Cache, "Prefetch merged with demand for %#lx - not marking as prefetched\n",
+                blk->getTag());
     }
 
     if (!mshr->hasLockedRMWReadTarget()) {
