@@ -136,14 +136,40 @@ BTBMGSC::BTBMGSC(const Params &p)
     pUpdateThreshold.resize(std::pow(2, thresholdTablelogSize));
 
     updateThreshold = 35 * 8;
-}
 
+    hasDB = true;
+    dbName = std::string("mgsc");
+}
 BTBMGSC::~BTBMGSC() {}
 
 // Set up tracing for debugging
 void
 BTBMGSC::setTrace()
 {
+#ifndef UNIT_TEST
+    if (enableDB) {
+        std::vector<std::pair<std::string, DataType>> fields_vec = {
+            std::make_pair("branchPC", UINT64),
+            std::make_pair("tagePred", UINT64),
+            std::make_pair("tageConfHigh", UINT64),
+            std::make_pair("tageConfMid", UINT64),
+            std::make_pair("tageConfLow", UINT64),
+            std::make_pair("bwPercsum", UINT64),
+            std::make_pair("lPercsum", UINT64),
+            std::make_pair("iPercsum", UINT64),
+            std::make_pair("gPercsum", UINT64),
+            std::make_pair("pPercsum", UINT64),
+            std::make_pair("biasPercsum", UINT64),
+            std::make_pair("totalSum", UINT64),
+            std::make_pair("totalThres", UINT64),
+            std::make_pair("useSc", UINT64),
+            std::make_pair("scPred", UINT64),
+            std::make_pair("actualTaken", UINT64),
+        };
+        mgscMissTrace = _db->addAndGetTrace("MGSCTRACE", fields_vec);
+        mgscMissTrace->init_table();
+    }
+#endif
 }
 
 void
@@ -660,6 +686,20 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
     auto tage_pred_taken = pred.taken_before_sc;  // tage predictions
 
     recordPredictionStats(pred, actual_taken, sc_pred_taken, tage_pred_taken);
+
+#ifndef UNIT_TEST
+    // Write trace record
+    if (enableDB) {
+        MgscTrace t;
+        t.set(entry.pc,
+            tage_pred_taken, pred.tage_conf_high, pred.tage_conf_mid, pred.tage_conf_low,
+            pred.bw_percsum, pred.l_percsum, pred.i_percsum,
+            pred.g_percsum, pred.p_percsum, pred.bias_percsum,
+            total_sum, total_thres, use_mgsc, sc_pred_taken,
+            actual_taken);
+        mgscMissTrace->write_record(t);
+    }
+#endif
 
     // Only update tables if prediction was wrong or confidence was low
     if (sc_pred_taken != actual_taken || abs(total_sum) < total_thres) {

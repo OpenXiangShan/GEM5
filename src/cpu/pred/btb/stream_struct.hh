@@ -798,6 +798,43 @@ struct BTBTrace : public Record {
     }
 };
 
+struct MgscTrace : public Record
+{
+    void set(uint64_t branchPC,
+        // TAGE prediction info
+        uint64_t tagePred, uint64_t tageConfHigh, uint64_t tageConfMid, uint64_t tageConfLow,
+        // Percsum for each table (signed values stored as int64)
+        int64_t bwPercsum, int64_t lPercsum, int64_t iPercsum,
+        int64_t gPercsum, int64_t pPercsum, int64_t biasPercsum,
+        // SC decision
+        int64_t totalSum, int64_t totalThres, uint64_t useSc, uint64_t scPred,
+        // Result
+        uint64_t actualTaken)
+    {
+        _tick = curTick();
+        _uint64_data["branchPC"] = branchPC;
+        // TAGE info
+        _uint64_data["tagePred"] = tagePred;
+        _uint64_data["tageConfHigh"] = tageConfHigh;
+        _uint64_data["tageConfMid"] = tageConfMid;
+        _uint64_data["tageConfLow"] = tageConfLow;
+        // Percsum values (cast signed to uint64 for storage)
+        _uint64_data["bwPercsum"] = static_cast<uint64_t>(bwPercsum);
+        _uint64_data["lPercsum"] = static_cast<uint64_t>(lPercsum);
+        _uint64_data["iPercsum"] = static_cast<uint64_t>(iPercsum);
+        _uint64_data["gPercsum"] = static_cast<uint64_t>(gPercsum);
+        _uint64_data["pPercsum"] = static_cast<uint64_t>(pPercsum);
+        _uint64_data["biasPercsum"] = static_cast<uint64_t>(biasPercsum);
+        // SC decision
+        _uint64_data["totalSum"] = static_cast<uint64_t>(totalSum);
+        _uint64_data["totalThres"] = static_cast<uint64_t>(totalThres);
+        _uint64_data["useSc"] = useSc;
+        _uint64_data["scPred"] = scPred;
+        // Result
+        _uint64_data["actualTaken"] = actualTaken;
+    }
+};
+
 }  // namespace btb_pred
 
 }  // namespace branch_prediction
