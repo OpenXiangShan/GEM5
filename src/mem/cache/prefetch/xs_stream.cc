@@ -10,6 +10,8 @@ namespace prefetch
 
 XsStreamPrefetcher::XsStreamPrefetcher(const XsStreamPrefetcherParams &p)
     : Queued(p),
+      regionSize(p.region_size),
+      regionBlks(p.region_size / p.block_size),    
       depth(p.xs_stream_depth),
       badPreNum(0),
       enableAutoDepth(p.enable_auto_depth),
@@ -52,14 +54,14 @@ XsStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
 
     if (in_active_page) {
         Addr pf_stream_l1 = decr ? block_addr - depth * blkSize : block_addr + depth * blkSize;
-        sendPFWithFilter(pfi, pf_stream_l1, addresses, 1, stream_type, L1BLKDEGREE, 1);
+        sendPFWithFilter(pfi, pf_stream_l1, addresses, 1, stream_type, L1BLKDEGREE, 1, entry);
         Addr pf_stream_l2 =
             decr ? block_addr - (depth << l2Ratio) * blkSize : block_addr + (depth << l2Ratio) * blkSize;
-        sendPFWithFilter(pfi, pf_stream_l2, addresses, 1, stream_type, L2BLKDEGREE, 2);
+        sendPFWithFilter(pfi, pf_stream_l2, addresses, 1, stream_type, L2BLKDEGREE, 2, entry);
         if (enableL3StreamPre) {
             Addr pf_stream_l3 =
                 decr ? block_addr - (depth << l3Ratio) * blkSize : block_addr + (depth << l3Ratio) * blkSize;
-            sendPFWithFilter(pfi, pf_stream_l3, addresses, 1, stream_type, L3BLKDEGREE, 3);
+            sendPFWithFilter(pfi, pf_stream_l3, addresses, 1, stream_type, L3BLKDEGREE, 3, entry);
         }
     }
 }
@@ -110,10 +112,12 @@ XsStreamPrefetcher::streamLookup(const PrefetchInfo &pfi, bool &in_active_page, 
 
 void
 XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
-                                     int prio, PrefetchSourceType src, int pf_degree, int ahead_level)
+                                     int prio, PrefetchSourceType src, int pf_degree, int ahead_level, STREAMEntry *entry)
 {
+    uint64_t region_bit = 0;
     for (int i = 0; i < pf_degree; i++) {
         Addr pf_addr = addr + i * blkSize;
+        region_bit |= (uint64_t(1) << regionOffset(pf_addr));
         if (filter->contains(pf_addr)) {
             DPRINTF(XsStreamPrefetcher, "Skip recently prefetched: %lx\n", pf_addr);
         } else {
@@ -129,6 +133,11 @@ XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
                 addresses.back().pfahead = false;
             }
         }
+    }
+    if (ahead_level > 1) {
+        stridestream_pfFilter_l2l3->Insert(regionAddress(addr), region_bit,0,true,entry->decrMode,pfi.isSecure(),ahead_level, &pfi.trigger_info);
+    } else {
+        stridestream_pfFilter_l1->Insert(regionAddress(addr), region_bit,0,true,entry->decrMode,pfi.isSecure(),ahead_level, &pfi.trigger_info);
     }
 }
 

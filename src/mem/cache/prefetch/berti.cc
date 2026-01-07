@@ -275,6 +275,9 @@ BertiPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vecto
     if (using_best_delta_and_confident) {
         lastUsedBestDelta = blockIndex(addr) - blockIndex(pfi.getAddr());
     }
+    // buffered prefetch
+    InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
+    
     if (filter->contains(addr)) {
         DPRINTF(BertiPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;

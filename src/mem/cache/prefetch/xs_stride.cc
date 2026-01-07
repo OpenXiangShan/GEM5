@@ -16,6 +16,8 @@ XSStridePrefetcher::XSStridePrefetcher(const XSStridePrefetcherParams &p)
       shortStrideThres(p.short_stride_thres),
       strideDynDepth(p.stride_dyn_depth),
       enableNonStrideFilter(p.enable_non_stride_filter),
+      regionSize(p.region_size),
+      regionBlks(p.region_size / p.block_size),     
       strideUnique(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
              p.stride_replacement_policy, StrideEntry()),
       strideRedundant(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
@@ -240,6 +242,7 @@ XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
                                       int prio, PrefetchSourceType src, int ahead_level)
 {
     if (ahead_level > 1){
+        stridestream_pfFilter_l2l3->Insert(regionAddress(addr), uint64_t(1) << regionOffset(addr),0,true,false,pfi.isSecure(),ahead_level, &pfi.trigger_info);
         if (filterL2->contains(addr)) {
             DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
         } else {
@@ -251,6 +254,7 @@ XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
             addresses.back().pfahead = true;
         }
     } else {
+        stridestream_pfFilter_l1->Insert(regionAddress(addr), uint64_t(1) << regionOffset(addr),0,true,false,pfi.isSecure(),ahead_level, &pfi.trigger_info);
         if (filter->contains(addr)) {
             DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
         } else {

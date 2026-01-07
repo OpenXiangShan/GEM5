@@ -186,6 +186,8 @@ class QueuedPrefetcher(BasePrefetcher):
         that can be throttled depending on the accuracy of the prefetcher.")
 
     max_pfahead_recv = Param.Int(1,"Maximum number of pfahead received")
+    use_pf_buffer = Param.Bool(False, "use prefetch buffer to filter prefetches")
+    max_pf_buffer_size = Param.Int(16, "size of prefetch buffer")
 
 
 class XSStridePrefetcher(QueuedPrefetcher):
@@ -199,6 +201,7 @@ class XSStridePrefetcher(QueuedPrefetcher):
     on_write = False
     on_data = True
     on_inst = False
+    region_size = Param.Int(1024, "region size")
 
     use_xs_depth = Param.Bool(True,"use xs rtl stride depth")
     fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
@@ -274,7 +277,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     type = "XsStreamPrefetcher"
     cxx_class = "gem5::prefetch::XsStreamPrefetcher"
     cxx_header = "mem/cache/prefetch/xs_stream.hh"
-
+    region_size = Param.Int(1024, "region size")
     use_virtual_addresses = True
     prefetch_on_pf_hit = True
     on_read = True
@@ -296,7 +299,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
         "Indexing policy of active generation table"
     )
     xs_stream_replacement_policy = Param.BaseReplacementPolicy(
-        LRURP(),
+         TreePLRURP(num_leaves = Parent.xs_stream_entries),
         "Replacement policy of active generation table"
     )
 
@@ -1059,6 +1062,57 @@ class XSCompositePrefetcher(QueuedPrefetcher):
             size=Parent.re_act_entries),
         "Indexing policy of recently active generation table"
     )
+    sms_filter_entries = Param.MemorySize(
+        "16",
+        "num of pattern history table entries"
+    )
+    sms_filter_assoc = Param.Int(16, "Associativity of the pattern history table")
+    sms_filter_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.sms_filter_assoc,
+            size=Parent.sms_filter_entries),
+        "Indexing policy of filter table"
+    )
+    sms_filter_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.sms_filter_entries),
+        "Replacement policy of filter table"
+    )
+
+    stridestream_L1_filter_entries = Param.MemorySize(
+        "16",
+        "num of pattern history table entries"
+    )
+    stridestream_L1_filter_assoc = Param.Int(16, "Associativity of the pattern history table")
+    stridestream_L1_filter_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.stridestream_L1_filter_assoc,
+            size=Parent.stridestream_L1_filter_entries),
+        "Indexing policy of filter table"
+    )
+    stridestream_L1_filter_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.stridestream_L1_filter_entries),
+        "Replacement policy of filter table"
+    )
+    
+    stridestream_L2L3_filter_entries = Param.MemorySize(
+        "16",
+        "num of pattern history table entries"
+    )
+    stridestream_L2L3_filter_assoc = Param.Int(16, "Associativity of the pattern history table")
+    stridestream_L2L3_filter_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.stridestream_L2L3_filter_assoc,
+            size=Parent.stridestream_L2L3_filter_entries),
+        "Indexing policy of filter table"
+    )
+    stridestream_L2L3_filter_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.stridestream_L2L3_filter_entries),
+        "Replacement policy of filter table"
+    )
+    vaddr_hash_width = Param.Int(5, "Width of virtual address hash")
     re_act_replacement_policy = Param.BaseReplacementPolicy(
         FIFORP(),
         "Replacement policy of recently active generation table"
@@ -1110,6 +1164,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         "Indexing policy of pattern history table"
     )
     pht_replacement_policy = Param.BaseReplacementPolicy(
+        # TreePLRURP(num_leaves=Parent.pht_entries),
         LRURP(),
         "Replacement policy of pattern history table"
     )

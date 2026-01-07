@@ -6,6 +6,8 @@
 #define GEM5_SMS_HH
 
 #include <vector>
+#include <cstdint>
+#include <memory>
 
 #include <boost/compute/detail/lru_cache.hpp>
 
@@ -30,10 +32,16 @@
 namespace gem5
 {
 struct XSCompositePrefetcherParams;
+class BaseIndexingPolicy;
+namespace replacement_policy { class Base; }
 
 GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
+
+// PrefetchFilter is implemented in its own header/source to keep sms.
+#include "mem/cache/prefetch/prefetch_filter.hh"
+
 
 class XSCompositePrefetcher : public Queued
 {
@@ -109,8 +117,9 @@ class XSCompositePrefetcher : public Queued
       public:
         std::vector<SatCounter8> hist;
         Addr pc;
+        bool decr_mode;
         PhtEntry(const size_t sz, const SatCounter8 &conf)
-            : TaggedEntry(), hist(sz, conf)
+            : TaggedEntry(), hist(sz, conf), decr_mode(false)
         {
         }
     };
@@ -135,6 +144,9 @@ class XSCompositePrefetcher : public Queued
         statistics::Scalar actMNum;
         statistics::Scalar refillNotifyCount;
         statistics::Scalar bopTrainCount;
+        statistics::Scalar smsCurRegionoverride;
+        statistics::Scalar smsIncrRegionoverride;
+        statistics::Scalar smsDecrRegionoverride;
     } stats;
 
   public:
@@ -156,6 +168,10 @@ class XSCompositePrefetcher : public Queued
     const unsigned pfFilterSize{256};
     const unsigned pfPageFilterSize{16};
     boost::compute::detail::lru_cache<Addr, Addr> pfBlockLRUFilter;
+
+    PrefetchFilter sms_pfFilter;
+    PrefetchFilter stridestream_pfFilter_l1;
+    PrefetchFilter stridestream_pfFilter_l2l3;
 
     boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilter;
     boost::compute::detail::lru_cache<Addr, Addr> pfPageLRUFilterL2;
@@ -206,6 +222,42 @@ class XSCompositePrefetcher : public Queued
         }
     }
     void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size) override;
+
+  protected:
+    using TriggerInfo = Base::PFtriggerInfo;
+    struct phtsentInfo {
+        bool valid;
+        Addr region_addr;
+        uint64_t region_bits;
+        uint8_t alias_bits;
+        bool paddr_valid;
+        bool decr_mode;
+        bool is_secure;
+        uint64_t PFlevel;
+        TriggerInfo trigger;
+        // phtsentInfo()
+        //     : valid(false), region_addr(0), region_bits(0), alias_bits(0), paddr_valid(false),
+        //       decr_mode(false), is_secure(false), PFlevel(0), trigger() {};
+        phtsentInfo(Addr region_addr = 0, uint64_t region_bits = 0, uint8_t alias_bits = 0,
+              bool paddr_valid = false, bool decr_mode = false,
+              bool is_secure = false, uint64_t PFlevel = 0,
+              const TriggerInfo *trigger = nullptr)
+            : valid(true), region_addr(region_addr), region_bits(region_bits), alias_bits(alias_bits),
+              paddr_valid(paddr_valid), decr_mode(decr_mode), is_secure(is_secure),
+              PFlevel(PFlevel), trigger(trigger == nullptr ? TriggerInfo() : *trigger) {};
+        ~phtsentInfo() = default;
+    };
+    std::vector<phtsentInfo> phtSentPrefetch;//0 cur ,1 inc ,2 dec
+    /** Event to handle the pht sending */
+    void phtSendEventWrapper();
+    EventFunctionWrapper phtReqSendEvent;
+  protected:
+    void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{
+      panic("SMS:InsertPFRequestToBuffer not implemented");
+    };
+  public:
+    bool GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) override;
+    bool hasPFRequestsInBuffer() override;
 };
 
 }

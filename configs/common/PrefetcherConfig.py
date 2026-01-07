@@ -20,6 +20,10 @@ def create_prefetcher(cpu, cache_level, options):
         prefetcher = _get_hwp(prefetcher_name)
         print(f"create_prefetcher at {cache_level}: {prefetcher_name}")
 
+    if prefetcher != NULL and getattr(options, 'enable_pf_buffer', False):
+        if hasattr(prefetcher, 'use_pf_buffer'):
+            prefetcher.use_pf_buffer = True
+
     if prefetcher == NULL:
         return NULL
 
@@ -91,7 +95,7 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
                 prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
             if options.l1_to_l2_pf_hint:
-                prefetcher.queue_size = 64
+                prefetcher.queue_size = 32
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
 
     if cache_level == 'l3':

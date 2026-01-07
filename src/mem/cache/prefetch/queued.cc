@@ -38,10 +38,12 @@
 #include "mem/cache/prefetch/queued.hh"
 
 #include <cassert>
+#include <linux/limits.h>
 
 #include "arch/generic/tlb.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
+#include "cmc.hh"
 #include "debug/HWPrefetch.hh"
 #include "debug/HWPrefetchOther.hh"
 #include "debug/HWPrefetchQueue.hh"
@@ -129,7 +131,14 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       tlbReqEvent(
           [this]{ processMissingTranslations(queueSize); },
           name()),
-      statsQueued(this)
+      statsQueued(this),
+      usePFBuffer(p.use_pf_buffer),
+      PFRequestBuffer(),
+      max_pf_buffer_size(p.max_pf_buffer_size),
+      PFReqSendEvent(
+          [this]{ PFSendEventWrapper(); },
+          name())
+      
 {
 }
 
@@ -243,10 +252,18 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
     // Calculate prefetches given this access
     std::vector<AddrPriority> addresses;
     // if (!pkt->coalescingMSHR) {  // hit to Other cpu access
+    pfi.setTriggerInfo(pkt);
     calculatePrefetch(pfi, addresses, pfi.isCacheMiss() && (late_in_mshr || late_in_pfq), pf_source,
                       pkt->coalescingMSHR);
     // }
-
+    if (usePFBuffer) {
+        //PFs supposed to be stored in buffer,just trigger PF send event
+        if (!PFReqSendEvent.scheduled()) {
+            //even if this cycle has trained,we assume it take 1 cycle to generate PFs
+            schedule(PFReqSendEvent, nextCycle()); 
+        } 
+        return;
+    }
     // Get the maximu number of prefetches that we are allowed to generate
     size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
 
@@ -283,7 +300,60 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
         }
     }
 }
+void
+Queued::PFSendEventWrapper()
+{
+    std::vector<AddrPriority> addresses;
+    GetPFRequestsFromBuffer(addresses);
 
+    // there may be more than 1 req in addresses because we are trying to allow max 1 PF to every cache level
+    // assert(addresses.size()==1);
+    // Get the maximu number of prefetches that we are allowed to generate
+    size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
+
+    // Queue up generated prefetches
+    size_t num_pfs = 0;
+    for (AddrPriority& addr_prio : addresses) {
+            
+        PacketPtr pkt = addr_prio.pf_trigger_info.pkt;
+        PrefetchInfo pfi = PrefetchInfo(*addr_prio.pf_trigger_info.pfi_old);
+        //override address's prio to 1 
+        addr_prio.priority = 1;
+        // Block align prefetch address
+        addr_prio.addr = blockAddress(addr_prio.addr);
+
+        if (!samePage(addr_prio.addr, pfi.getAddr())) {
+            statsQueued.pfSpanPage += 1;
+
+            if (hasBeenPrefetched(pkt->getAddr(), pkt->isSecure())) {
+                statsQueued.pfUsefulSpanPage += 1;
+            }
+        }
+
+        bool can_cross_page = (tlb != nullptr);
+        if (can_cross_page || samePage(addr_prio.addr, pfi.getAddr())) {
+            PrefetchInfo new_pfi(pfi, addr_prio.addr);
+            new_pfi.setXsMetadata(Request::XsMetadata(addr_prio.pfSource,addr_prio.depth));
+            statsQueued.pfIdentified++;
+            DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
+                    "inserting into prefetch queue.\n", new_pfi.getAddr());
+            // if (archDBer && cache->level() == 2) {
+            //     archDBer->l2PFTraceGenWrite(curTick(), 0, 0, addr_prio.addr, addr_prio.pfSource);
+            // }
+            // Create and insert the request
+            insert(pkt, new_pfi, addr_prio);
+            num_pfs += 1;
+            if (num_pfs == max_pfs) {
+                break;
+            }
+        } else {
+            DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
+        }
+    }
+    if (hasPFRequestsInBuffer() && !PFReqSendEvent.scheduled()) {
+        schedule(PFReqSendEvent, nextCycle()); // schedule next PF send event
+    } 
+}
 bool
 Queued::hasPendingPacket()
 {
@@ -554,7 +624,7 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
             return;
         }
     }
-    if (has_target_pa && cacheSnoop &&
+    if (has_target_pa && cacheSnoop && queueFilter &&
             (inCache(target_paddr, new_pfi.isSecure()) ||
             inMissQueue(target_paddr, new_pfi.isSecure()))) {
         statsQueued.pfInCache++;
