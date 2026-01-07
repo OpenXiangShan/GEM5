@@ -453,7 +453,12 @@ bool
 BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                       PrefetchSourceType src)
 {
+    // Count generated prefetch
+    prefetchStats.pfGenerated++;
+
     if (!samePage(pfi.getAddr(), addr) && !crossPage) {
+        // Count filtered prefetch (cross-page)
+        prefetchStats.pfFiltered++;
         return false;
     }
     if (archDBer && cache->level() == 1) {
@@ -461,6 +466,8 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
     }
     if (filter->contains(addr)) {
         DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
+        // Count filtered prefetch
+        prefetchStats.pfFiltered++;
         return false;
     } else {
         InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));

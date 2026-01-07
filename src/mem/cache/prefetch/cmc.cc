@@ -285,8 +285,13 @@ bool
 CMCPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                                 PrefetchSourceType src)
 {
+    // Count generated prefetch
+    prefetchStats.pfGenerated++;
+
     if (filter->contains(addr)) {
         DPRINTF(CMCPrefetcher, "Skip recently prefetched: %lx\n", addr);
+        // Count filtered prefetch
+        prefetchStats.pfFiltered++;
         return false;
     } else {
         DPRINTF(CMCPrefetcher, "CMC: send pf: %lx\n", addr);

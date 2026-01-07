@@ -118,8 +118,14 @@ XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
     for (int i = 0; i < pf_degree; i++) {
         Addr pf_addr = addr + i * blkSize;
         region_bit |= (uint64_t(1) << regionOffset(pf_addr));
+
+        // Count generated prefetch
+        prefetchStats.pfGenerated++;
+
         if (filter->contains(pf_addr)) {
             DPRINTF(XsStreamPrefetcher, "Skip recently prefetched: %lx\n", pf_addr);
+            // Count filtered prefetch
+            prefetchStats.pfFiltered++;
         } else {
             DPRINTF(XsStreamPrefetcher, "Send pf: %lx\n", pf_addr);
             filter->insert(pf_addr, 0);
