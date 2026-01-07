@@ -61,6 +61,49 @@ class XiangshanECore2Read(XiangshanCore):
 
 addToPath('../')
 
+def _trace_timing_ptw_settings(args: argparse.Namespace):
+    enabled = bool(getattr(args, 'trace_timing_ptw', False))
+    if not enabled:
+        return False, 0, 0
+
+    reserved_bytes = int(getattr(args, 'trace_ptw_reserved_bytes', 64 * 1024 * 1024))
+    if reserved_bytes <= 0:
+        fatal(f"--trace-ptw-reserved-bytes must be > 0 (got {reserved_bytes})")
+
+    page_size = getattr(args, 'trace_ptw_page_size', '4k')
+    if page_size == '4k':
+        leaf_page_size = 4 * 1024
+    elif page_size == '2m':
+        leaf_page_size = 2 * 1024 * 1024
+    else:
+        fatal(f"Unsupported --trace-ptw-page-size: {page_size}")
+
+    return True, reserved_bytes, leaf_page_size
+
+
+def _apply_trace_timing_ptw_cpu_params(args: argparse.Namespace, cpus, *, shrink_window: bool = True):
+    enabled, reserved_bytes, leaf_page_size = _trace_timing_ptw_settings(args)
+    if not enabled:
+        return
+
+    for cpu in cpus:
+        cpu.traceTimingPTW = True
+        cpu.tracePTReservedBytes = reserved_bytes
+        cpu.tracePTLeafPageSize = leaf_page_size
+
+    if not shrink_window:
+        return
+
+    for cpu in cpus:
+        if int(cpu.traceAddrSize) <= reserved_bytes:
+            fatal(
+                "Trace timing PTW requires traceAddrSize > reserved bytes "
+                f"(traceAddrSize=0x{int(cpu.traceAddrSize):x}, "
+                f"reserved=0x{reserved_bytes:x})."
+            )
+
+        cpu.traceAddrSize = int(cpu.traceAddrSize) - reserved_bytes
+
 
 def config_xiangshan_inputs(args: argparse.Namespace, sys):
     ref_so = None
@@ -207,7 +250,10 @@ def build_xiangshan_system(args):
 
     # CRITICAL FIX: Configure trace-specific memory ranges and functional TLB for trace mode
     if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
-        print("Trace mode: Using FS mode with functional TLB to bypass MMU translation issues")
+        if bool(getattr(args, 'trace_timing_ptw', False)):
+            print("Trace mode: Using FS mode with timing MMU (timing-PTW enabled)")
+        else:
+            print("Trace mode: Using FS mode with functional TLB to bypass MMU translation issues")
         print("Trace mode: Configuring expanded memory ranges for trace address mapping")
         # Force functional TLB to bypass complex MMU translation
         args.functional_tlb = True
@@ -244,7 +290,10 @@ def build_xiangshan_system(args):
             args.dramsim3_ini = os.path.join(root_dir,
                                              'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini')
 
-        print("Trace mode: FS mode with functional TLB configured to bypass MMU translation issues")
+        if bool(getattr(args, 'trace_timing_ptw', False)):
+            print("Trace mode: Timing MMU will be applied for timing-PTW")
+        else:
+            print("Trace mode: FS mode with functional TLB configured to bypass MMU translation issues")
     else:
         # Standard checkpoint-based configuration
         config_xiangshan_inputs(args, test_sys)
@@ -278,8 +327,10 @@ def build_xiangshan_system(args):
         cpu.mmu.enable_sv48 = args.open_sv48
 
         if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
-            cpu.mmu.functional = True  # Use functional TLB for reliable trace address translation
-            print(f"Trace mode: CPU {cpu.cpu_id} configured with trace-aware PMAChecker and functional TLB")
+            timing_ptw = bool(getattr(args, 'trace_timing_ptw', False))
+            cpu.mmu.functional = not timing_ptw
+            mode_str = "timing" if timing_ptw else "functional"
+            print(f"Trace mode: CPU {cpu.cpu_id} configured with {mode_str} translation")
 
     # configure BP
     args.enable_loop_predictor = True
@@ -374,10 +425,18 @@ def build_xiangshan_system(args):
             cpu.traceBPValidation = not (hasattr(args, 'trace_disable_bp_validation')
                                          and args.trace_disable_bp_validation)
 
+        _apply_trace_timing_ptw_cpu_params(args, test_sys.cpu, shrink_window=False)
+
         print(f"  Trace file: {args.trace_file}")
         print(f"  Trace format: {args.trace_format}")
         print(f"  Max instructions: {args.maxinsts}")
         print(f"  Decoupled BP: {hasattr(args, 'trace_enable_decoupled_bp') and args.trace_enable_decoupled_bp}")
+        if bool(getattr(args, 'trace_timing_ptw', False)):
+            print(
+                "  Timing PTW: enabled "
+                f"(ptw_page_size={getattr(args, 'trace_ptw_page_size', '4k')}, "
+                f"reserved_bytes=0x{int(getattr(args, 'trace_ptw_reserved_bytes', 0)):x})"
+            )
 
     # ruby will overwrite the store_prefetch_train
     if ruby:
@@ -408,6 +467,8 @@ def build_xiangshan_system(args):
 
         # Align trace address mapping window to physical memory size (Ruby path)
         if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+            aligned_base = None
+            aligned_total = None
             try:
                 base = int(test_sys.mem_ranges[0].start)
                 total = 0
@@ -417,9 +478,24 @@ def build_xiangshan_system(args):
                     cpu.traceAddrBase = base
                     cpu.traceAddrSize = total
                     cpu.traceAddrMapMode = "linear"
-                print(f"Trace mode: Align trace mapping to mem: base=0x{base:x}, size=0x{total:x}")
+                aligned_base = base
+                aligned_total = total
             except Exception as e:
                 print(f"Warning: failed to align trace mapping to mem (Ruby path): {e}")
+            _apply_trace_timing_ptw_cpu_params(args, test_sys.cpu)
+            if aligned_base is not None:
+                final_size = int(test_sys.cpu[0].traceAddrSize)
+                reserved_bytes = int(getattr(args, 'trace_ptw_reserved_bytes', 0))
+                if bool(getattr(args, 'trace_timing_ptw', False)):
+                    print(
+                        f"Trace mode: Align trace mapping to mem: base=0x{aligned_base:x}, "
+                        f"size=0x{final_size:x} (reserved=0x{reserved_bytes:x})"
+                    )
+                else:
+                    print(
+                        f"Trace mode: Align trace mapping to mem: base=0x{aligned_base:x}, "
+                        f"size=0x{aligned_total:x}"
+                    )
 
     else:
         if args.caches or args.l2cache:
@@ -454,6 +530,8 @@ def build_xiangshan_system(args):
 
         # Align trace address mapping window to physical memory size (classic cache path)
         if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+            aligned_base = None
+            aligned_total = None
             try:
                 base = int(test_sys.mem_ranges[0].start)
                 total = 0
@@ -462,9 +540,24 @@ def build_xiangshan_system(args):
                 for cpu in test_sys.cpu:
                     cpu.traceAddrBase = base
                     cpu.traceAddrSize = total
-                print(f"Trace mode: Align trace mapping to mem: base=0x{base:x}, size=0x{total:x}")
+                aligned_base = base
+                aligned_total = total
             except Exception as e:
                 print(f"Warning: failed to align trace mapping to mem: {e}")
+            _apply_trace_timing_ptw_cpu_params(args, test_sys.cpu)
+            if aligned_base is not None:
+                final_size = int(test_sys.cpu[0].traceAddrSize)
+                reserved_bytes = int(getattr(args, 'trace_ptw_reserved_bytes', 0))
+                if bool(getattr(args, 'trace_timing_ptw', False)):
+                    print(
+                        f"Trace mode: Align trace mapping to mem: base=0x{aligned_base:x}, "
+                        f"size=0x{final_size:x} (reserved=0x{reserved_bytes:x})"
+                    )
+                else:
+                    print(
+                        f"Trace mode: Align trace mapping to mem: base=0x{aligned_base:x}, "
+                        f"size=0x{aligned_total:x}"
+                    )
 
     if args.mmc_img:
         for mmc, cpu in zip(test_sys.mmcs, test_sys.cpu):

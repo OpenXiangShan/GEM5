@@ -29,21 +29,54 @@
 #include "cpu/o3/trace/TraceFetch.hh"
 
 #include <algorithm>
+#include <array>
 #include <limits>
 
+#include "arch/riscv/isa.hh"
+#include "arch/riscv/pagetable.hh"
 #include "arch/riscv/pcstate.hh"
 #include "arch/riscv/regs/misc.hh"
+#include "base/intmath.hh"
 #include "base/logging.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/fetch.hh"
 #include "debug/Fetch.hh"
 #include "debug/Override.hh"
+#include "sim/system.hh"
 
 namespace gem5
 {
 namespace o3
 {
+
+namespace
+{
+
+uint64_t
+sv39NonLeafPte(Addr next_level_table_pa)
+{
+    RiscvISA::PTE pte = 0;
+    pte.v = 1;
+    pte.ppn = next_level_table_pa >> RiscvISA::PGSHFT;
+    return static_cast<uint64_t>(pte);
+}
+
+uint64_t
+sv39LeafPte(Addr pa, bool readable, bool writable, bool executable)
+{
+    RiscvISA::PTE pte = 0;
+    pte.v = 1;
+    pte.r = readable ? 1 : 0;
+    pte.w = writable ? 1 : 0;
+    pte.x = executable ? 1 : 0;
+    pte.a = 1;
+    pte.d = 1;
+    pte.ppn = pa >> RiscvISA::PGSHFT;
+    return static_cast<uint64_t>(pte);
+}
+
+} // anonymous namespace
 
 TraceFetch::TraceFetch(Fetch &fetch_, const BaseO3CPUParams &params)
     : fetch(fetch_)
@@ -54,6 +87,11 @@ TraceFetch::TraceFetch(Fetch &fetch_, const BaseO3CPUParams &params)
 
     traceMode = params.enableTraceMode;
     traceFormat = params.traceFormat;
+    traceTimingPTW = params.traceTimingPTW;
+    tracePTReservedBytes = params.tracePTReservedBytes;
+    tracePTLeafPageSize = params.tracePTLeafPageSize;
+    traceAddrBase = params.traceAddrBase;
+    traceAddrSize = params.traceAddrSize;
     if (traceMode) {
         DPRINTF(Fetch, "Trace mode enabled, file: %s, format: %s\n",
                 params.traceFile, params.traceFormat);
@@ -105,6 +143,161 @@ TraceFetch::initializeTraceReader()
     return true;
 }
 
+void
+TraceFetch::setupTraceTimingPTW(::gem5::ThreadContext *tc)
+{
+    if (!traceMode || !traceTimingPTW) {
+        return;
+    }
+
+    if (!tc) {
+        fatal("Trace timing PTW enabled but ThreadContext is null\n");
+    }
+
+    if (tracePTReservedBytes == 0) {
+        fatal("Trace timing PTW enabled but tracePTReservedBytes is 0\n");
+    }
+
+    if (tracePTLeafPageSize != 4 * 1024 && tracePTLeafPageSize != 2 * 1024 * 1024) {
+        fatal("Trace timing PTW: unsupported tracePTLeafPageSize=%llu\n",
+              (unsigned long long)tracePTLeafPageSize);
+    }
+
+    constexpr Addr kPageSize = 4 * 1024;
+    constexpr size_t kEntriesPerPt = 512;
+    constexpr Addr kL0Coverage = static_cast<Addr>(kEntriesPerPt) * kPageSize;   // 2MiB
+    constexpr Addr kL1Coverage = static_cast<Addr>(kEntriesPerPt) * kL0Coverage; // 1GiB
+
+    Addr va_start = roundDown(traceAddrBase, kPageSize);
+    Addr va_end = roundUp(traceAddrBase + traceAddrSize, kPageSize);
+    if (va_end <= va_start) {
+        fatal("Trace timing PTW: invalid trace mapping window base=0x%llx size=0x%llx\n",
+              (unsigned long long)traceAddrBase, (unsigned long long)traceAddrSize);
+    }
+
+    Addr pt_region_base = traceAddrBase + traceAddrSize;
+    if (pt_region_base % kPageSize) {
+        fatal("Trace timing PTW: page table region base is not 4KiB-aligned "
+              "(base=0x%llx)\n",
+              (unsigned long long)pt_region_base);
+    }
+    Addr pt_region_end = pt_region_base + tracePTReservedBytes;
+
+    if (pt_region_base < va_end) {
+        fatal("Trace timing PTW: page table region overlaps trace mapping window "
+              "(trace=[0x%llx,0x%llx), pt=[0x%llx,0x%llx))\n",
+              (unsigned long long)va_start, (unsigned long long)va_end,
+              (unsigned long long)pt_region_base, (unsigned long long)pt_region_end);
+    }
+
+    auto *system = tc->getSystemPtr();
+    if (!system) {
+        fatal("Trace timing PTW enabled but System is null\n");
+    }
+
+    PortProxy &phys = system->physProxy;
+    phys.memsetBlob(pt_region_base, 0, tracePTReservedBytes);
+
+    const uint64_t first_vpn2 = va_start / kL1Coverage;
+    const uint64_t last_vpn2 = (va_end - 1) / kL1Coverage;
+    const uint64_t num_l1_pages = last_vpn2 - first_vpn2 + 1;
+
+    uint64_t num_leaf_pages = 0;
+    if (tracePTLeafPageSize == kPageSize) {
+        const uint64_t first_vpn1 = va_start / kL0Coverage;
+        const uint64_t last_vpn1 = (va_end - 1) / kL0Coverage;
+        num_leaf_pages = last_vpn1 - first_vpn1 + 1;
+    }
+
+    const uint64_t total_pt_pages =
+        1 + num_l1_pages + (tracePTLeafPageSize == kPageSize ? num_leaf_pages : 0);
+    const uint64_t required_bytes = total_pt_pages * kPageSize;
+    if (required_bytes > tracePTReservedBytes) {
+        fatal("Trace timing PTW: reserved region too small "
+              "(required=0x%llx, reserved=0x%llx)\n",
+              (unsigned long long)required_bytes,
+              (unsigned long long)tracePTReservedBytes);
+    }
+
+    Addr root_pa = pt_region_base;
+    Addr next_free = root_pa + kPageSize;
+
+    std::array<uint64_t, kEntriesPerPt> root_entries{};
+    root_entries.fill(0);
+
+    for (uint64_t vpn2 = first_vpn2; vpn2 <= last_vpn2; ++vpn2) {
+        Addr l1_pa = next_free;
+        next_free += kPageSize;
+
+        const uint64_t vpn2_idx = vpn2 & (kEntriesPerPt - 1);
+        root_entries[vpn2_idx] = sv39NonLeafPte(l1_pa);
+
+        std::array<uint64_t, kEntriesPerPt> l1_entries{};
+        l1_entries.fill(0);
+
+        Addr v2_base = vpn2 * kL1Coverage;
+        Addr v2_start = std::max(va_start, v2_base);
+        Addr v2_end = std::min(va_end, v2_base + kL1Coverage);
+        if (v2_start >= v2_end) {
+            continue;
+        }
+
+        const uint64_t first_vpn1 = v2_start / kL0Coverage;
+        const uint64_t last_vpn1 = (v2_end - 1) / kL0Coverage;
+
+        for (uint64_t vpn1 = first_vpn1; vpn1 <= last_vpn1; ++vpn1) {
+            Addr v1_base = vpn1 * kL0Coverage;
+            Addr v1_start = std::max(v2_start, v1_base);
+            Addr v1_end = std::min(v2_end, v1_base + kL0Coverage);
+
+            const uint64_t vpn1_idx = vpn1 & (kEntriesPerPt - 1);
+
+            if (tracePTLeafPageSize == kL0Coverage) {
+                l1_entries[vpn1_idx] = sv39LeafPte(v1_base, true, true, true);
+                continue;
+            }
+
+            Addr l0_pa = next_free;
+            next_free += kPageSize;
+            l1_entries[vpn1_idx] = sv39NonLeafPte(l0_pa);
+
+            std::array<uint64_t, kEntriesPerPt> l0_entries{};
+            l0_entries.fill(0);
+
+            const uint64_t first_vpn0 = v1_start / kPageSize;
+            const uint64_t last_vpn0 = (v1_end - 1) / kPageSize;
+            for (uint64_t vpn0 = first_vpn0; vpn0 <= last_vpn0; ++vpn0) {
+                const uint64_t vpn0_idx = vpn0 & (kEntriesPerPt - 1);
+                Addr page_base = vpn0 * kPageSize;
+                l0_entries[vpn0_idx] = sv39LeafPte(page_base, true, true, true);
+            }
+
+            phys.writeBlob(l0_pa, l0_entries.data(), kPageSize);
+        }
+
+        phys.writeBlob(l1_pa, l1_entries.data(), kPageSize);
+    }
+
+    phys.writeBlob(root_pa, root_entries.data(), kPageSize);
+
+    tc->setMiscReg(RiscvISA::MiscRegIndex::MISCREG_PRV,
+                   static_cast<RegVal>(RiscvISA::PrivilegeMode::PRV_S));
+    RiscvISA::SATP satp = 0;
+    satp.mode = RiscvISA::AddrXlateMode::SV39;
+    satp.asid = 0;
+    satp.ppn = root_pa >> RiscvISA::PGSHFT;
+    tc->setMiscReg(RiscvISA::MiscRegIndex::MISCREG_SATP,
+                   static_cast<RegVal>(satp));
+
+    DPRINTF(Fetch,
+            "Trace timing PTW: installed SATP(root=0x%llx), PRV=S, "
+            "trace=[0x%llx,0x%llx), pt=[0x%llx,0x%llx), leaf=%llu\n",
+            (unsigned long long)root_pa,
+            (unsigned long long)va_start, (unsigned long long)va_end,
+            (unsigned long long)pt_region_base, (unsigned long long)pt_region_end,
+            (unsigned long long)tracePTLeafPageSize);
+}
+
 bool
 TraceFetch::initTraceMode()
 {
@@ -138,6 +331,12 @@ TraceFetch::initTraceMode()
         RegVal status = tc0->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_STATUS);
         status |= RiscvISA::STATUS_FS_MASK;
         tc0->setMiscReg(RiscvISA::MiscRegIndex::MISCREG_STATUS, status);
+    }
+
+    if (tc0) {
+        setupTraceTimingPTW(tc0);
+    } else if (traceTimingPTW) {
+        fatal("Trace timing PTW enabled but ThreadContext[0] is null\n");
     }
 
     DPRINTF(Fetch,

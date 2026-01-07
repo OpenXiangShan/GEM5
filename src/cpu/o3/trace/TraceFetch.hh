@@ -50,6 +50,7 @@ namespace gem5
 {
 
 class PCStateBase;
+class ThreadContext;
 struct BaseO3CPUParams;
 
 namespace o3
@@ -160,12 +161,21 @@ class TraceFetch
                                  const PCStateBase &next_pc,
                                  bool predictedBranch);
 
+    void setupTraceTimingPTW(::gem5::ThreadContext *tc);
+
     /** Trace reader for trace-driven simulation */
     std::unique_ptr<o3::TraceReader> traceReader;
     /** Whether trace mode is enabled */
     bool traceMode = false;
     /** Trace format string (e.g., champsim, cbp2025) */
     std::string traceFormat{"champsim"};
+
+    /** Trace timing PTW/TLB cost modeling (opt-in). */
+    bool traceTimingPTW = false;
+    uint64_t tracePTReservedBytes = 0;
+    uint64_t tracePTLeafPageSize = 4 * 1024;
+    Addr traceAddrBase = 0;
+    Addr traceAddrSize = 0;
     /** Whether to train BP and use real branch instructions in trace mode */
     bool traceTrainBranches = false;
     /** Whether to validate BP against trace to trigger wrong-path mode */

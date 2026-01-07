@@ -678,6 +678,14 @@ def addXiangshanTraceOptions(parser):
     # Add trace-specific arguments for trace-driven simulation
     parser.add_argument('--enable-trace-mode', action='store_true',
                        help='Enable trace-driven simulation mode (alternative to checkpoints)')
+    parser.add_argument('--trace-timing-ptw', action='store_true',
+                       help='In trace mode, use timing TLB/PTW (static page table; default: off)')
+    parser.add_argument('--trace-ptw-reserved-bytes', type=int,
+                       default=64 * 1024 * 1024,
+                       help='Bytes reserved at top of trace-mapped memory for page tables (default: 64MiB)')
+    parser.add_argument('--trace-ptw-page-size', type=str, default='4k',
+                       choices=['4k', '2m'],
+                       help='Synthetic mapping page size for trace timing PTW (default: 4k)')
     parser.add_argument('--trace-file', type=str,
                        help='Path to the trace file (required for trace mode)')
     parser.add_argument('--trace-format', type=str, default='champsim',

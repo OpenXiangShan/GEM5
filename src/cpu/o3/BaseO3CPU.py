@@ -266,6 +266,14 @@ class BaseO3CPU(BaseCPU):
     traceAddrSize = Param.Addr(0x40000000, "Size of trace address mapping region (1GB)")
     traceAddrPageAlign = Param.Bool(True, "Align trace addresses to page boundaries")
 
+    # Trace timing PTW/TLB cost modeling (opt-in; default off)
+    traceTimingPTW = Param.Bool(False,
+        "In trace mode, use timing TLB/PTW with a synthetic static page table")
+    tracePTReservedBytes = Param.UInt64(64 * 1024 * 1024,
+        "Bytes reserved at top of trace-mapped memory for page tables")
+    tracePTLeafPageSize = Param.UInt64(4 * 1024,
+        "Synthetic mapping page size for trace timing PTW (4KiB or 2MiB)")
+
     # Trace-driven branch predictor training and control-flow modeling
     traceTrainBranches = Param.Bool(True,
         "Enable BP training and use real branch opcodes under trace mode")

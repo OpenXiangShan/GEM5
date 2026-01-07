@@ -25,6 +25,9 @@ scons -j$(nproc) --gold-linker build/RISCV/gem5.opt
 ## 2. Trace 专用命令行参数（configs/example/kmhv3.py）
 
 - `--enable-trace-mode`：开启 trace 回放（同时放宽 `--generic-rv-cpt` 要求并关闭 difftest）。
+- `--trace-timing-ptw`：**可选**，在 trace 模式下启用 timing TLB/PTW（默认关闭；使用静态页表模拟硬件 PTW 成本，不模拟 Linux 行为）。
+- `--trace-ptw-reserved-bytes=<N>`：为页表预留的物理内存大小（默认 64MiB），并从 trace 地址映射窗口尾部扣除以避免别名。
+- `--trace-ptw-page-size={4k,2m}`：静态映射页大小（默认 `4k`；`2m` 为 superpage 粗粒度映射）。
 - `--trace-file=<path>`（必需） / `--trace-format={champsim,cbp2025}`（默认 `champsim`）。
 - `--warmup-insts-no-switch=<N>`：仅重置统计的 warmup（不换 CPU）。
 - `--maxinsts=<N>`：统计阶段指令数，复用通用参数。
@@ -36,6 +39,50 @@ scons -j$(nproc) --gold-linker build/RISCV/gem5.opt
 
 地址映射（CPU 参数，可在配置脚本中设置）：
 `traceAddrMapMode`（`linear|hash`，默认 `linear`）、`traceAddrBase=0x80000000`、`traceAddrSize=0x40000000`、`traceAddrPageAlign=true`。
+
+开启 `--trace-timing-ptw` 后：
+- 配置脚本会保持 `cpu.mmu.functional=False`（走 timing 翻译路径），并在 trace 初始化阶段安装静态页表（SV39）。
+- `traceAddrSize` 会减去 `--trace-ptw-reserved-bytes`，页表放在映射窗口尾部预留区间，避免 trace 地址映射别名到页表页。
+
+### 2.1 Timing-PTW：静态页表如何构建、如何让 PTW 去访问
+
+该功能的核心目标是：在**无 OS/无 bootloader** 的 trace 回放环境中，仍让 TLB miss 触发 gem5 的 timing page-table walker，从而把 PTW 的 cache/memory 访问成本计入统计。
+
+#### 2.1.1 映射策略：identity-map 覆盖 trace window
+
+- 只为 trace 地址映射窗口 `[traceAddrBase, traceAddrBase + traceAddrSize)` 构建静态映射。
+- 采用 **SV39** 三层页表，并做 **VA==PA** 的 identity mapping：
+  - leaf PTE 设置 `V=1, R/W/X=1, A/D=1`；
+  - PPN 直接由物理页基址得到（`PPN = PA >> PGSHFT`）。
+- `--trace-ptw-page-size` 控制 leaf 粒度：
+  - `4k`（默认）：填充 L0 leaf（4KiB 页）。
+  - `2m`：使用 2MiB superpage，在 L1 直接放 leaf（减少 PTW 流量和页表占用）。
+
+#### 2.1.2 页表放置：预留物理区 + shrink trace window 避免别名
+
+trace mode 的地址映射可能是 modulo/线性映射，为避免 trace 地址落入页表页导致自毁，需要把页表放在“永远不会被 trace 映射命中”的物理区：
+
+- 开启 `--trace-timing-ptw` 时，配置脚本会从 `traceAddrSize` 尾部扣除 `--trace-ptw-reserved-bytes`。
+- 页表区域固定放在扣除后的窗口尾部：`pt_region_base = traceAddrBase + traceAddrSize`，范围为 `[pt_region_base, pt_region_base + reserved_bytes)`。
+- trace 初始化阶段会检查该页表区域与 trace window 不重叠，并用 `System.physProxy` 直接把页表页写入物理内存（这一步发生在仿真开始前，不属于 PTW 的“访问成本”本身）。
+
+#### 2.1.3 触发 PTW：安装 PRV/SATP + 使用 timing 翻译路径
+
+要让 walker 真正去“走内存层级”读 PTE，必须同时满足：
+
+- 安装翻译上下文：trace 初始化时写 `MISCREG_PRV=PRV_S` 并设置 `MISCREG_SATP` 为 `SV39`，`satp.ppn` 指向 root page table 的物理页号。
+- 让翻译走 timing 路径：配置脚本在 timing-PTW 模式下设置 `cpu.mmu.functional=False`，使 ITB/DTB miss 触发 timing TLB/PTW。
+
+满足以上条件后，TLB miss 会触发 page-table walker 按 `SATP` 指向的 root/L1/L0 去内存读取 PTE；由于这些 PTE 页位于正常物理内存空间，walker 的读取请求会经过 cache/NoC/DRAM（含 DRAMSim3）并自然体现在统计中（例如 `*_walker_cache.*Accesses/*Misses`）。
+
+#### 2.1.4 Prefetcher 的翻译路径一致性
+
+本仓库的硬件 prefetcher 对虚拟地址 prefetch 也需要地址翻译；其翻译模式与 `cpu.mmu.functional` 绑定：
+
+- default trace（functional MMU）：prefetch 翻译走 functional。
+- timing-PTW：prefetch 翻译走 timing，从而与 TLB/PTW 的设定一致。
+
+实现入口可参考：`src/cpu/o3/trace/TraceFetch.cc`、`configs/common/xiangshan.py`、`configs/common/PrefetcherConfig.py`、`src/mem/cache/prefetch/queued.cc`。
 
 ## 3. Reader 行为概览
 
