@@ -309,6 +309,11 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="""
                         Prefetching cache level for SMS'pht""")
 
+    parser.add_argument("--enable-pf-buffer", action="store_true", default=False,
+                        help="""
+                        Force all hardware prefetchers to enable their
+                        optional prefetch buffer (QueuedPrefetcher.use_pf_buffer).""")
+
     parser.add_argument("--cpu-clock", action="store", type=str,
                         default='3GHz',
                         help="Clock for blocks running at CPU speed")

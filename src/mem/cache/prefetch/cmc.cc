@@ -1,5 +1,7 @@
 #include "mem/cache/prefetch/cmc.hh"
 
+#include <memory>
+
 #include "base/output.hh"
 #include "debug/CMCPrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
@@ -70,6 +72,8 @@ CMCPrefetcher::CMCPrefetcher(const CMCPrefetcherParams &p)
             db.save_db(simout.resolve("cmc.db").c_str());
         }
     });
+    sendingEntry.invalidate();
+    sendIDX_PTR = 0;
 }
 
 void
@@ -130,7 +134,13 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
         match_entry->refcnt++;
         int priority = recorder->nr_entry;
         uint32_t id = match_entry->id;
-
+        //create a copy , insert to tpdataqueue
+        StorageEntry entry_copy = StorageEntry(*match_entry);
+        entry_copy.trigger = std::make_unique<TriggerInfo>(pfi.trigger_info);
+        if( tpDataQueue.size() >= maxTpDataQueueSize){
+            tpDataQueue.pop_front();
+        }
+        tpDataQueue.push_back(entry_copy);
         int num_send = 0;
         for (auto addr: match_entry->addresses) {
             // addresses.push_back(AddrPriority(addr, mixedNum, PrefetchSourceType::CMC));
@@ -299,6 +309,66 @@ CMCPrefetcher::StorageEntry::invalidate() {
         }
     }
     TaggedEntry::invalidate();
+}
+void 
+CMCPrefetcher::InsertPFRequestToBuffer(const AddrPriority &addr_prio) {
+    panic("CMCPrefetcher: InsertPFRequestToBuffer not implemented");
+}
+bool
+CMCPrefetcher::hasPFRequestsInBuffer() {
+    return !tpDataQueue.empty() || sendingEntry.isValid();
+}
+bool
+CMCPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) {
+    //if sendingEntry is valid, send next addr
+    if(sendingEntry.isValid()){
+        if(sendIDX_PTR < sendingEntry.addresses.size()){
+            Addr addr = sendingEntry.addresses[sendIDX_PTR];
+            sendIDX_PTR++;
+            if (sendingEntry.trigger) {
+                addresses.push_back(AddrPriority(addr,
+                    recorder->nr_entry - sendIDX_PTR + 1,
+                    PrefetchSourceType::CMC,
+                    *(sendingEntry.trigger)));
+            } else {
+                addresses.push_back(AddrPriority(addr,
+                    recorder->nr_entry - sendIDX_PTR + 1,
+                    PrefetchSourceType::CMC));
+            }
+            return true;
+        }else{
+            //finished sending this entry
+            sendingEntry = StorageEntry();
+            sendingEntry.invalidate();
+            sendIDX_PTR = 0;
+        }
+    }
+    //load next entry from tpDataQueue
+    if(!tpDataQueue.empty()){
+        //copy front entry to sendingEntry
+        sendingEntry = StorageEntry(tpDataQueue.front());
+        tpDataQueue.pop_front();
+        sendIDX_PTR = 0;
+        if(sendIDX_PTR < sendingEntry.addresses.size()){
+            Addr addr = sendingEntry.addresses[sendIDX_PTR];
+            sendIDX_PTR++;
+            if (sendingEntry.trigger) {
+                addresses.push_back(AddrPriority(addr,
+                    recorder->nr_entry - sendIDX_PTR + 1,
+                    PrefetchSourceType::CMC,
+                    *(sendingEntry.trigger)));
+            } else {
+                addresses.push_back(AddrPriority(addr,
+                    recorder->nr_entry - sendIDX_PTR + 1,
+                    PrefetchSourceType::CMC));
+            }
+            return true;
+        }else{
+            //should not happen
+            panic("CMCPrefetcher: empty addresses in sendingEntry");
+        }
+    }
+    return false;
 }
 
 }  // prefetch

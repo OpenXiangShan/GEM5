@@ -85,6 +85,7 @@ class WorkerPrefetcher : public Queued
     std::list<DeferredPacket> localBuffer;
 
     unsigned depth{4};
+    Tick latestTransferTick{0};
 };
 
 }  // namespace prefetch
