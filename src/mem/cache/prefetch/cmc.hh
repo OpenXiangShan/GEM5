@@ -3,6 +3,9 @@
 
 #include <boost/circular_buffer.hpp>
 #include <boost/compute/detail/lru_cache.hpp>
+#include <list>
+#include <memory>
+#include <vector>
 
 #include "base/types.hh"
 #include "cpu/pred/general_arch_db.hh"
@@ -25,6 +28,7 @@ namespace prefetch
 class CMCPrefetcher : public Queued
 {
   public:
+        using TriggerInfo = PFTriggerInfo;
     class StorageEntry;
     class RecordEntry
     {
@@ -48,7 +52,7 @@ class CMCPrefetcher : public Queued
 
             bool train_entry(Addr, bool, bool*);
             void reset();
-            const int nr_entry = 16;
+            const int nr_entry = 12;
         private:
     };
 
@@ -59,6 +63,41 @@ class CMCPrefetcher : public Queued
             int refcnt;
             uint64_t id;
             void invalidate() override;
+            std::unique_ptr<TriggerInfo> trigger;
+            StorageEntry() : addresses(), refcnt(0), id(0), trigger(nullptr) {}
+
+            // copy constructor
+            StorageEntry(const StorageEntry &other)
+                : TaggedEntry(other),
+                  addresses(other.addresses),
+                  refcnt(other.refcnt),
+                  id(other.id)
+            {
+                if (other.trigger) {
+                    trigger = std::make_unique<TriggerInfo>(*(other.trigger));
+                }
+            }
+
+            // copy assignment
+            StorageEntry& operator=(const StorageEntry &other)
+            {
+                if (this != &other) {
+                    TaggedEntry::operator=(other);
+                    addresses = other.addresses;
+                    refcnt = other.refcnt;
+                    id = other.id;
+                    if (other.trigger) {
+                        trigger = std::make_unique<TriggerInfo>(*(other.trigger));
+                    } else {
+                        trigger.reset();
+                    }
+                }
+                return *this;
+            }
+
+            StorageEntry(StorageEntry &&) noexcept = default;
+            StorageEntry& operator=(StorageEntry &&) noexcept = default;
+            ~StorageEntry() = default;
     };
   private:
     Recorder *recorder;
@@ -95,6 +134,15 @@ class CMCPrefetcher : public Queued
     static const int STACK_SIZE = 4;
     boost::circular_buffer<RecordEntry> trigger;
     // RecordEntry trigger_stack[STACK_SIZE];
+    protected:
+    std::list<StorageEntry> tpDataQueue;
+    const int maxTpDataQueueSize = 8;
+    StorageEntry sendingEntry;
+    int sendIDX_PTR = 0;// point to the next idx of sendingEntry 
+    void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override;
+    public:
+    bool GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) override;
+    bool hasPFRequestsInBuffer() override;
 };
 
 struct TriggerTrace : public Record

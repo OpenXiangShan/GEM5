@@ -47,6 +47,7 @@
 #define __MEM_CACHE_PREFETCH_BASE_HH__
 
 #include <cstdint>
+#include <memory>
 
 #include "arch/generic/tlb.hh"
 #include "base/compiler.hh"
@@ -77,6 +78,11 @@ struct CustomPfInfo
 
 class Base : public ClockedObject
 {
+    public:
+    struct PFtriggerInfo;
+    class PrefetchInfo;
+    class PrefetchInfo_old;
+    private:
     friend class PrefetcherForwarder;
     class PrefetchListener : public ProbeListenerArgBase<PacketPtr>
     {
@@ -99,13 +105,52 @@ class Base : public ClockedObject
     std::vector<PrefetchListener *> listeners;
 
   public:
-
+    struct PFtriggerInfo{
+        PacketPtr pkt;
+        std::unique_ptr<PrefetchInfo_old> pfi_old; 
+        PFtriggerInfo() : pkt(nullptr), pfi_old(nullptr) {}
+        PFtriggerInfo(PacketPtr p, const PrefetchInfo &a)
+            : pkt(p ? new Packet(p, false, false) : nullptr), pfi_old(std::make_unique<PrefetchInfo_old>(a)) {}
+        PFtriggerInfo(const PFtriggerInfo &other)
+            : pkt(other.pkt ? new Packet(other.pkt, false, false) : nullptr),
+              pfi_old(other.pfi_old ? std::make_unique<PrefetchInfo_old>(*(other.pfi_old)) : nullptr) {}
+        PFtriggerInfo& operator=(const PFtriggerInfo &other)
+        {
+            if (this != &other) {
+                delete pkt;
+                pkt = other.pkt ? new Packet(other.pkt, false, false) : nullptr;
+                pfi_old = std::make_unique<PrefetchInfo_old>(*(other.pfi_old));
+            }
+            return *this;
+        }
+        // PFtriggerInfo(PFtriggerInfo &&other) noexcept
+        //     : pkt(other.pkt), pfi_old(std::move(other.pfi_old))
+        // {
+        //     other.pkt = nullptr;
+        // }
+        // PFtriggerInfo& operator=(PFtriggerInfo &&other) noexcept
+        // {
+        //     if (this != &other) {
+        //         delete pkt;
+        //         pkt = other.pkt;
+        //         pfi_old = std::move(other.pfi_old);
+        //         other.pkt = nullptr;
+        //     }
+        //     return *this;
+        // }
+        ~PFtriggerInfo()
+        {
+            delete pkt;
+            pfi_old.reset();
+        }
+    };
     /**
      * Class containing the information needed by the prefetch to train and
      * generate new prefetch requests.
      */
     class PrefetchInfo
     {
+        friend class PrefetchInfo_old;
         /** The address used to train and generate prefetches */
         Addr address;
         /** The program counter that generated this address. */
@@ -327,6 +372,7 @@ class Base : public ClockedObject
          * @param addr the address value of the new object
          */
         PrefetchInfo(PrefetchInfo const &pfi, Addr addr);
+        PrefetchInfo(PrefetchInfo_old const &pfi);
 
         ~PrefetchInfo()
         {
@@ -334,8 +380,251 @@ class Base : public ClockedObject
         }
 
         bool lastPfLate{false};
+        mutable PFtriggerInfo trigger_info{};
+        void setTriggerInfo(const PacketPtr &pkt) const {
+            trigger_info = PFtriggerInfo(pkt, *this);
+        }
     };
+    /**
+     * Class containing the information needed by the prefetch to train and
+     * generate new prefetch requests. this is only used by PFtriggerInfo
+     */
+    class PrefetchInfo_old
+    {
+        friend class PrefetchInfo;
+        /** The address used to train and generate prefetches */
+        Addr address;
+        /** The program counter that generated this address. */
+        Addr pc;
+        /** The requestor ID that generated this address. */
+        RequestorID requestorId;
+        /** Validity bit for the PC of this address. */
+        bool validPC;
+        /** Whether this address targets the secure memory space. */
+        bool secure;
+        /** Size in bytes of the request triggering this event */
+        unsigned int size;
+        /** Whether this event comes from a write request */
+        bool write;
+        /** Physical address, needed because address can be virtual */
+        Addr paddress;
+        /** Whether this event comes from a cache miss */
+        bool cacheMiss;
+        /** Pointer to the associated request data */
+        uint8_t *data;
+        /** XiangShan metadata of the block*/
+        Request::XsMetadata xsMetadata;
 
+        bool reqAfterSquash{false};
+
+        bool everPrefetched{false};
+
+        bool pfFirstHit{false};
+
+        bool pfHit{false};
+
+        bool storePFTrain{ false };
+
+        uint64_t *data_ptr;
+
+      public:
+        uint64_t * getDataPtr()const{
+            return data_ptr;
+        }
+        /**
+         * Obtains the address value of this Prefetcher address.
+         * @return the addres value.
+         */
+        Addr getAddr() const
+        {
+            return address;
+        }
+
+        /**
+         * Returns true if the address targets the secure memory space.
+         * @return true if the address targets the secure memory space.
+         */
+        bool isSecure() const
+        {
+            return secure;
+        }
+
+        /**
+         * Returns the program counter that generated this request.
+         * @return the pc value
+         */
+        Addr getPC() const
+        {
+            assert(hasPC());
+            return pc;
+        }
+
+        /**
+         * Returns true if the associated program counter is valid
+         * @return true if the program counter has a valid value
+         */
+        bool hasPC() const
+        {
+            return validPC;
+        }
+
+        /**
+         * Gets the requestor ID that generated this address
+         * @return the requestor ID that generated this address
+         */
+        RequestorID getRequestorId() const
+        {
+            return requestorId;
+        }
+
+        /**
+         * Gets the size of the request triggering this event
+         * @return the size in bytes of the request triggering this event
+         */
+        unsigned int getSize() const
+        {
+            return size;
+        }
+
+        /**
+         * Checks if the request that caused this prefetch event was a write
+         * request come from committed store inst
+         * @return true if the request causing this event is a write request
+         */
+        bool isWrite() const
+        {
+            return write;
+        }
+
+        // is come from store prefetch train trigger
+        bool isStore() const
+        {
+            return storePFTrain;
+        }
+
+        /**
+         * Gets the physical address of the request
+         * @return physical address of the request
+         */
+        Addr getPaddr() const
+        {
+            return paddress;
+        }
+
+        /**
+         * Check if this event comes from a cache miss
+         * @result true if this event comes from a cache miss
+         */
+        bool isCacheMiss() const
+        {
+            return cacheMiss;
+        }
+
+        /**
+         * Gets the associated data of the request triggering the event
+         * @param Byte ordering of the stored data
+         * @return the data
+         */
+        template <typename T>
+        inline T
+        get(ByteOrder endian) const
+        {
+            if (data == nullptr) {
+                panic("PrefetchInfo::get called with a request with no data.");
+            }
+            switch (endian) {
+                case ByteOrder::big:
+                    return betoh(*(T*)data);
+
+                case ByteOrder::little:
+                    return letoh(*(T*)data);
+
+                default:
+                    panic("Illegal byte order in PrefetchInfo::get()\n");
+            };
+        }
+
+        /**
+         * Check for equality
+         * @param pfi PrefetchInfo to compare against
+         * @return True if this object and the provided one are equal
+         */
+        bool sameAddr(PrefetchInfo_old const &pfi) const
+        {
+            return this->getAddr() == pfi.getAddr() &&
+                this->isSecure() == pfi.isSecure();
+        }
+
+        bool sameAddr(Addr addr, bool isSecure) const
+        {
+            return this->getAddr() == addr &&
+                this->isSecure() == isSecure;
+        }
+
+        Request::XsMetadata getXsMetadata() const
+        {
+            return xsMetadata;
+        }
+
+        void setXsMetadata(const Request::XsMetadata &xs_metadata)
+        {
+            this->xsMetadata = xs_metadata;
+        }
+
+        bool isReqAfterSquash() const
+        {
+            return reqAfterSquash;
+        }
+
+        void setReqAfterSquash(bool req_after_squash)
+        {
+            reqAfterSquash = req_after_squash;
+        }
+
+        bool isEverPrefetched() const { return everPrefetched; }
+
+        void setEverPrefetched(bool prefetched) { everPrefetched = prefetched; }
+
+        bool isPfHit() const { return pfHit; }
+
+        void setPfHit(bool hit) { pfHit = hit; }
+
+        bool isPfFirstHit() const { return pfFirstHit; }
+
+        void setPfFirstHit(bool hit) { pfFirstHit = hit; }
+
+        void setStorePftrain(bool s) { storePFTrain = s; }
+
+        /**
+         * Constructs a PrefetchInfo using a PacketPtr.
+         * @param pkt PacketPtr used to generate the PrefetchInfo
+         * @param addr the address value of the new object, this address is
+         *        used to train the prefetcher
+         * @param miss whether this event comes from a cache miss
+         */
+        PrefetchInfo_old(PacketPtr pkt, Addr addr, bool miss);
+
+        PrefetchInfo_old(PacketPtr pkt, Addr addr, bool miss, Request::XsMetadata xsMeta);
+
+        /**
+         * Constructs a PrefetchInfo using a new address value and
+         * another PrefetchInfo as a reference.
+         * @param pfi PrefetchInfo used to generate this new object
+         * @param addr the address value of the new object
+         */
+        PrefetchInfo_old(PrefetchInfo_old const &pfi, Addr addr);
+
+        PrefetchInfo_old(PrefetchInfo_old const &other);
+
+        PrefetchInfo_old(PrefetchInfo const &pfi);
+        
+        ~PrefetchInfo_old()
+        {
+            delete[] data;
+        }
+
+        bool lastPfLate{false};
+    };
   protected:
 
     bool isSubPrefetcher;

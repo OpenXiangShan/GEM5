@@ -150,6 +150,7 @@ DespacitoStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, 
         DPRINTF(DespacitoStreamPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
+        InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
         DPRINTF(DespacitoStreamPrefetcher, "Send pf: %lx\n", addr);
         filter->insert(addr, 0);
         addresses.push_back(AddrPriority(addr, prio, src));

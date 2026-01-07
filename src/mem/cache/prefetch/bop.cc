@@ -396,11 +396,11 @@ BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
             resetScores();
             //issuePrefetchRequests = true;
             return true;
-        } else if ((round >= roundMax/2) && (bestOffset != phaseBestOffset) && (bestScore <= badScore)) {
-            DPRINTF(BOPPrefetcher, "last round offset has not enough confidence, early stop\n");
-            DPRINTF(BOPPrefetcher, "score %u <  badScore %u\n", bestScore, badScore);
-            issuePrefetchRequests = false;
-        }
+         } //else if ((round >= roundMax/2) && (bestOffset != phaseBestOffset) && (bestScore <= badScore)) {
+        //     DPRINTF(BOPPrefetcher, "last round offset has not enough confidence, early stop\n");
+        //     DPRINTF(BOPPrefetcher, "score %u <  badScore %u\n", bestScore, badScore);
+        //     issuePrefetchRequests = false;
+        // }
     }
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
     return false;
@@ -463,6 +463,7 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
         DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
+        InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
         DPRINTF(BOPPrefetcher, "Send pf: %lx\n", addr);
         filter->insert(addr, 0);
         addresses.push_back(AddrPriority(addr, prio, src));

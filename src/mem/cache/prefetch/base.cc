@@ -111,7 +111,78 @@ Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
     data(nullptr),data_ptr(nullptr)
 {
 }
+Base::PrefetchInfo::PrefetchInfo(PrefetchInfo_old const &pfi)
+  : address(pfi.address), pc(pfi.pc), requestorId(pfi.requestorId),
+    validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
+    write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
+    data(nullptr),data_ptr(nullptr)
+{
+}
+Base::PrefetchInfo_old::PrefetchInfo_old(PacketPtr pkt, Addr addr, bool miss)
+  : address(addr), pc(pkt->req->hasPC() ? pkt->req->getPC() : 0),
+    requestorId(pkt->req->requestorId()), validPC(pkt->req->hasPC()),
+    secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
+    paddress(pkt->req->getPaddr()), cacheMiss(miss)
+{
+    unsigned int req_size = pkt->req->getSize();
+    if (!write && miss) {
+        data = nullptr;
+        data_ptr = nullptr;
+    } else if (pkt->isStorePFTrain()) {
+        data = nullptr;
+        data_ptr = nullptr;
+    } else {
+        data = new uint8_t[req_size];
+        Addr offset = pkt->req->getPaddr() - pkt->getAddr();
+        std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
+        data_ptr=(uint64_t*)pkt->getPtr<uint64_t>();
+    }
+}
 
+Base::PrefetchInfo_old::PrefetchInfo_old(
+    PacketPtr pkt, Addr addr, bool miss,
+    Request::XsMetadata xsMeta
+) : address(addr), pc(pkt->req->hasPC() ? pkt->req->getPC() : 0),
+    requestorId(pkt->req->requestorId()), validPC(pkt->req->hasPC()),
+    secure(pkt->isSecure()), size(pkt->req->getSize()), write(pkt->isWrite()),
+    paddress(pkt->req->getPaddr()), cacheMiss(miss), xsMetadata(xsMeta)
+{
+    unsigned int req_size = pkt->req->getSize();
+    if (!write && miss) {
+        data = nullptr;
+        data_ptr = nullptr;
+    } else if (pkt->isStorePFTrain()) {
+        data = nullptr;
+        data_ptr = nullptr;
+    } else {
+        data = new uint8_t[req_size];
+        Addr offset = pkt->req->getPaddr() - pkt->getAddr();
+        std::memcpy(data, &(pkt->getConstPtr<uint8_t>()[offset]), req_size);
+        data_ptr=(uint64_t*)pkt->getPtr<uint64_t>();
+    }
+}
+Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo_old const &other)
+  : address(other.address), pc(other.pc), requestorId(other.requestorId),
+    validPC(other.validPC), secure(other.secure), size(other.size),
+    write(other.write), paddress(other.paddress), cacheMiss(other.cacheMiss),
+    data(nullptr),data_ptr(nullptr)
+{
+
+}
+Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo_old const &pfi, Addr addr)
+  : address(addr), pc(pfi.pc), requestorId(pfi.requestorId),
+    validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
+    write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
+    data(nullptr),data_ptr(nullptr)
+{
+}
+Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo const &pfi)
+  : address(pfi.address), pc(pfi.pc), requestorId(pfi.requestorId),
+    validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
+    write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
+    data(nullptr),data_ptr(nullptr)
+{
+}
 void
 Base::PrefetchListener::notify(const PacketPtr &pkt)
 {
