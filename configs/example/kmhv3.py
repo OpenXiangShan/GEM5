@@ -112,7 +112,7 @@ def setKmhV3Params(args, system):
 
             # RTL alignment: only enable bias and path tables, disable PC threshold
             cpu.branchPred.mgsc.enableBwTable = True
-            cpu.branchPred.mgsc.enableLTable = False
+            cpu.branchPred.mgsc.enableLTable = True
             cpu.branchPred.mgsc.enableITable = True
             cpu.branchPred.mgsc.enableGTable = True
             cpu.branchPred.mgsc.enablePTable = True
