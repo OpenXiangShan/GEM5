@@ -182,7 +182,6 @@ DecoupledBPUWithBTB::tick()
         bpuState = BpuState::IDLE;
     }
 
-
     // Decrement override bubbles counter
     if (numOverrideBubbles > 0) {
         numOverrideBubbles--;
@@ -245,6 +244,53 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 
     // Store the chosen prediction as our final prediction
     finalPred = *chosenPrediction;
+
+    finalPred.s1Source = -1;//meaning fallthrough
+    finalPred.s3Source = -1;
+
+    if (predsOfEachStage[0].btbEntries.size() != 0) {
+        for (auto entry : predsOfEachStage[0].btbEntries){
+            if (entry.isIndirect || entry.isDirect || entry.ctr >= 0 ||entry.alwaysTaken){
+                finalPred.s1Source = entry.source;
+                break;
+            }
+        }
+    }
+
+    bool found_s3_taken = false;
+    bool na_s3_taken_but_have_cond = false;
+
+    for (BTBEntry entry : predsOfEachStage[2].btbEntries) {
+        if (entry.isDirect || entry.isIndirect || entry.ctr >= 0 || entry.alwaysTaken) {
+            found_s3_taken = true;
+        }else if (entry.isCond){
+            //only use when there's no taken prediction in s3
+            na_s3_taken_but_have_cond = true;
+        }
+    }
+
+    if (found_s3_taken) {
+        auto pred_taken_entry = finalPred.getTakenEntry();
+        if (pred_taken_entry.valid) {
+            if (pred_taken_entry.isReturn) {
+                finalPred.s3Source = ras->getComponentIdx();
+            } else if (pred_taken_entry.isIndirect && ittage->tageHit()) {
+                finalPred.s3Source = ittage->getComponentIdx();
+            }else if (pred_taken_entry.isCond) {
+                finalPred.s3Source = tage->getComponentIdx();
+            } else {
+                finalPred.s3Source = mbtb->getComponentIdx();
+            }
+        }else {
+            if (na_s3_taken_but_have_cond) {
+                finalPred.s3Source = tage->getComponentIdx();
+            }else {
+                finalPred.s3Source = -1;
+            }
+        }
+    }
+
+
 
     // 3. Calculate override bubbles needed for pipeline consistency
     // Override bubbles are needed when earlier stages predict differently from later stages
@@ -1010,6 +1056,9 @@ DecoupledBPUWithBTB::createFetchStreamEntry()
     entry.predTick = finalPred.predTick;
     entry.predSource = finalPred.predSource;
     entry.overrideReason = finalPred.overrideReason;
+
+    entry.s1Source = finalPred.s1Source;
+    entry.s3Source = finalPred.s3Source;
 
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {

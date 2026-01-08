@@ -141,7 +141,6 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     // Update branch history
     void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
 
-
     const unsigned numPredictors;
 
     std::vector<unsigned> tableSizes;
@@ -271,6 +270,7 @@ public:
     bool debugFlag = false;
 
     void recoverFoldedHist(const bitset& history);
+    bool tageHit();
 
     // void checkFoldedHist(const bitset& history);
 };

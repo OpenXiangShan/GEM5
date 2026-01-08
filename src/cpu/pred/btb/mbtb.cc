@@ -584,7 +584,6 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
     if (entry_to_write.isIndirect && stream.exeTaken && stream.getControlPC() == entry_to_write.pc) {
         entry_to_write.target = stream.exeBranchInfo.target;
     }
-
     return entry_to_write;
 }
 
@@ -811,6 +810,7 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
 }
 
 #ifndef UNIT_TEST
+
 void
 MBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
@@ -957,8 +957,7 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
     ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
 
-    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits"),
-    ADD_STAT(predHitCount, statistics::units::Count::get(), "number of hit entries encountered on mbtb hit")
+    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits")
 
 {
     predHitCount.init(0, numWays * 2, 1);   // max 4ways * 2(halfAligned) + VC

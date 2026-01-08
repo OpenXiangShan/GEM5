@@ -101,12 +101,13 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool taken;            // Final prediction (taken/not taken) = use_alt ? alt_provided ? alt_taken : base_taken : main_taken
             bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
 
+
             TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
                             bool useAlt, bool taken, bool altPred) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
-                            useAlt(useAlt), taken(taken), altPred(altPred) {}
+                            useAlt(useAlt), taken(taken), altPred(altPred){}
     };
 
 
@@ -373,6 +374,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar condMissNoTakens;
         Scalar predHit;
         Scalar predMiss;
+
+        Scalar s3PredwrongTage;
 
         int bankIdx;
         int numPredictors;

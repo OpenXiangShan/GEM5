@@ -316,6 +316,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         // Fine-grained branch classification statistics
         statistics::Vector branchClassCounts; ///< Classified branch occurrences
         statistics::Vector branchClassMisses; ///< Mispredictions per class
+        statistics::Scalar branchClassCountsTotal; ///< Total classified branches
         statistics::Vector controlSquashByClass; ///< Commit/Resolve-path squashes per class
 
         // Branch coverage statistics
@@ -367,6 +368,14 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         // Window blocking statistics
         statistics::Scalar predictionBlockedForUpdate;  // Times prediction was blocked for update priority
+
+        statistics::Scalar s1PredWrongFallthrough;
+        statistics::Scalar s1PredWrongUbtb;
+        statistics::Scalar s1PredWrongAbtb;
+        statistics::Scalar s3PredWrongMbtb;
+        statistics::Scalar s3PredWrongTage;
+        statistics::Scalar s3PredWrongIttage;
+        statistics::Scalar s3PredWrongRas;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;
@@ -907,6 +916,9 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @param miss Whether the branch was mispredicted
      */
     void commitBranch(const DynInstPtr &inst, bool miss);
+
+
+    void commitPredWrongSource(const FetchStream &entry);
 
     /**
      * @brief Process branch misprediction, determine type and update statistics

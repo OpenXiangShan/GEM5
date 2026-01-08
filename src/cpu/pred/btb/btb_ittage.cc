@@ -149,7 +149,6 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
                 ittageStats.predTableHits.sample(main_info.table, 1);
             }
             // Note: predTargetHit will be updated in the update phase when we know the actual target
-
             TagePrediction pred(btb_entry.pc, main_info, alt_info, use_alt, main_target);
             meta->preds[btb_entry.pc] = pred;
         }
@@ -499,6 +498,21 @@ BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
             DPRINTF(ITTAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist.get());
         }
     }
+}
+
+bool
+BTBITTAGE::tageHit()
+{
+    auto meta = getPredictionMeta();
+    auto preds = std::static_pointer_cast<TageMeta>(meta)->preds;
+    bool hit = false;
+    for (auto & [pc, pred] : preds) {
+        if (pred.mainInfo.found) {
+            hit = true;
+            break;
+        }
+    }
+    return hit;
 }
 
 /**
