@@ -1078,7 +1078,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
     histLengths = VectorParam.Unsigned([18],"the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970,"The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
-    numWays = Param.Unsigned(2, "Number of ways per set")
+    numWays = Param.Unsigned(1, "Number of ways per set")
     baseTableSize = Param.Unsigned(256,"Base table size")
     maxBranchPositions = Param.Unsigned(32,"Maximum branch positions per 64-byte block")
     useAltOnNaSize = Param.Unsigned(128,"Size of the useAltOnNa table")
