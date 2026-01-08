@@ -32,6 +32,7 @@
 #include <cmath>
 #include <list>
 #include <map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -132,6 +133,10 @@ class StoreSet
     // { return ((PC ^ (PC >> 10)) % LFSTSize); }
     inline SSID calcSSID(Addr pc)
     { return XORFold(XORFold(pc,log2(SSITSize)),log2(LFSTSize)); }
+
+    /** Track PCs that have seen violations. */
+    std::unordered_set<Addr> violatingLoads;
+    std::unordered_set<Addr> violatingStores;
 
     /** The Store Set ID Table. */
     std::vector<SSID> SSIT;

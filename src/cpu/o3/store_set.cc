@@ -154,6 +154,10 @@ StoreSet::init(uint64_t clear_period, int clear_period_thres, int _SSIT_size, in
 void
 StoreSet::violation(Addr store_PC, Addr load_PC)
 {
+    // Record violating PCs so only these are gated by SSIT/LFST later.
+    violatingLoads.insert(load_PC);
+    violatingStores.insert(store_PC);
+
     int load_index = calcIndexSSIT(load_PC);
     int store_index = calcIndexSSIT(store_PC);
 
@@ -264,6 +268,12 @@ StoreSet::insertStore(Addr store_PC, InstSeqNum store_seq_num, ThreadID tid, Cyc
     // checkClear();
     int victim_inst;
     checkClear(curCycle);
+
+    // Only stores with prior violations participate in SSIT/LFST.
+    if (violatingStores.find(store_PC) == violatingStores.end()) {
+        return;
+    }
+
     assert(index < SSITSize);
 
     if (!validSSIT[index]) {
@@ -294,6 +304,10 @@ StoreSet::insertStore(Addr store_PC, InstSeqNum store_seq_num, ThreadID tid, Cyc
 bool
 StoreSet::checkInstStrict(Addr pc)
 {
+    if (violatingLoads.find(pc) == violatingLoads.end()) {
+        return false;
+    }
+
     int index = calcIndexSSIT(pc);
     bool inst_strict;
     assert(index < SSITSize);
@@ -308,6 +322,10 @@ StoreSet::checkInstStrict(Addr pc)
 std::vector<InstSeqNum>
 StoreSet::checkInst(Addr PC)
 {
+    if (violatingLoads.find(PC) == violatingLoads.end()) {
+        return {};
+    }
+
     int index = calcIndexSSIT(PC);
 
     int inst_SSID;
@@ -416,6 +434,9 @@ StoreSet::squash(InstSeqNum squashed_num, ThreadID tid)
 void
 StoreSet::clear()
 {
+    violatingLoads.clear();
+    violatingStores.clear();
+
     for (int i = 0; i < SSITSize; ++i) {
         validSSIT[i] = false;
     }
