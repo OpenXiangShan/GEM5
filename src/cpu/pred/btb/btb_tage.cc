@@ -38,7 +38,6 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize, u
     : TimedBaseBTBPredictor(),
       numPredictors(numPredictors),
       numWays(numWays),
-      baseTableSize(2048),
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
@@ -76,7 +75,6 @@ tablePcShifts(p.TTagPcShifts),
 histLengths(p.histLengths),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
-baseTableSize(p.baseTableSize),
 maxBranchPositions(p.maxBranchPositions),
 useAltOnNaSize(p.useAltOnNaSize),
 useAltOnNaWidth(p.useAltOnNaWidth),
@@ -91,7 +89,6 @@ indexShift(bankBaseShift + ceilLog2(p.numBanks)),
 enableBankConflict(p.enableBankConflict),
 lastPredBankId(0),
 predBankValid(false),
-usingBasetable( !p.usingMbtbBaseEiterTage),
 tageStats(this, p.numPredictors, p.numBanks)
 {
     this->needMoreHistories = p.needMoreHistories;
@@ -106,11 +103,6 @@ tageStats(this, p.numPredictors, p.numBanks)
     tableIndexMasks.resize(numPredictors);
     tableTagBits.resize(numPredictors);
     tableTagMasks.resize(numPredictors);
-    // Initialize base table for fallback predictions
-    baseTable.resize(baseTableSize);
-    for (unsigned i = 0; i < baseTable.size(); ++i) {
-        baseTable[i].resize(maxBranchPositions, 0);  // Initialize counters to 0 (weakly taken)
-    }
 
     for (unsigned int i = 0; i < numPredictors; ++i) {
         //initialize ittage predictor
@@ -268,10 +260,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     bool main_taken = main_info.taken();
     bool alt_taken = alt_info.taken();
     // Use base table instead of btb_entry.ctr
-    Addr base_idx = getBaseTableIndex(startPC);
-    unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, startPC);
-    bool base_taken = getDelay() != 0 ? (usingBasetable ? baseTable[base_idx][branch_idx] >= 0 : btb_entry.ctr >= 0)
-                                                                                     : btb_entry.ctr >= 0;
+    bool base_taken = btb_entry.ctr >= 0;
     //bool base_taken = btb_entry.ctr >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
 
@@ -449,9 +438,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     bool used_alt = pred.useAlt;
     // Use base table instead of entry.ctr for fallback prediction
     Addr startPC = stream.getRealStartPC();
-    Addr base_idx = getBaseTableIndex(startPC);
-    unsigned branch_idx = getBranchIndexInBlock(entry.pc, startPC);
-    bool base_taken = baseTable[base_idx][branch_idx] >= 0;
+    bool base_taken = entry.ctr >= 0;
     bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
 
     // Update use_alt_on_na when provider is weak (0 or -1)
@@ -513,13 +500,6 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
         updateCounter(actual_taken, 3, way.counter);
         // No LRU maintenance
-    }
-
-    // Update base table counter if used as fallback
-    if (used_alt && !alt_info.found) {
-        DPRINTF(TAGE, "prediction provided by base table idx %lu, branch %u, updating corresponding entry\n",
-                base_idx, branch_idx);
-        updateCounter(actual_taken, 2, baseTable[base_idx][branch_idx]);
     }
 
     // Update statistics
@@ -891,12 +871,6 @@ Addr
 BTBTAGE::getUseAltIdx(Addr pc) {
     Addr shiftedPc = pc >> instShiftAmt;
     return shiftedPc & (useAltOnNaSize - 1);
-}
-
-Addr
-BTBTAGE::getBaseTableIndex(Addr pc) {
-    // Use blockSize-aligned address as index; block offset bits captured by blockWidth
-    return ((pc >> blockWidth) & (baseTableSize - 1));
 }
 
 unsigned
