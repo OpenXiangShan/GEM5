@@ -140,10 +140,7 @@ tageStats(this, p.numPredictors, p.numBanks)
     useAlt.resize(useAltOnNaSize, 0);
 #ifndef UNIT_TEST
     hasDB = true;
-    switch (getDelay()) {
-        case 0: dbName = std::string("microtage"); break;
-        default: dbName = std::string("tage"); break;
-    }
+    dbName = std::string("microtage");
 #endif
 }
 
@@ -270,11 +267,10 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     // Use base table instead of btb_entry.ctr
     Addr base_idx = getBaseTableIndex(startPC);
     unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, startPC);
-    bool base_taken = getDelay() != 0 ? (usingBasetable ? baseTable[base_idx][branch_idx] >= 0 : btb_entry.ctr >= 0)
-                                                                                     : btb_entry.ctr >= 0;
-    //bool base_taken = btb_entry.ctr >= 0;
-    bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
+    bool base_taken = btb_entry.ctr >= 0;
 
+    //bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
+    bool alt_pred = base_taken;
     // use_alt_on_na gating: when provider weak, consult per-PC counter
     bool use_alt = false;
     if (!provided) {
@@ -538,16 +534,16 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     // Check if misprediction occurred
     bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
                                stream.squashPC == entry.pc;
-    if (getDelay() == 2){
-        if (this_fb_mispred) {
-            tageStats.updateMispred++;
-            if (!used_alt && main_info.found) {
-#ifndef UNIT_TEST
-                tageStats.updateTableMispreds[main_info.table]++;
-#endif
-            }
-        }
-    }
+//     if (getDelay() == 2){
+//         if (this_fb_mispred) {
+//             tageStats.updateMispred++;
+//             if (!used_alt && main_info.found) {
+// #ifndef UNIT_TEST
+//                 tageStats.updateTableMispreds[main_info.table]++;
+// #endif
+//             }
+//         }
+//     }
 
     // No allocation if no misprediction
     if (!this_fb_mispred) {
@@ -770,9 +766,7 @@ MicroTAGE::update(const FetchStream &stream) {
         }
 #endif
     }
-    if (getDelay() <2){
-        checkUtageUpdateMisspred(stream);
-    }
+    checkUtageUpdateMisspred(stream);
     DPRINTF(TAGE, "end update\n");
 }
 
@@ -1150,7 +1144,7 @@ void
 MicroTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
 {
     if (!inst->isCondCtrl()) {
-        // tage olnly deals with conditional branches
+        // tage only deals with conditional branches
         return;
     }
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
