@@ -1072,7 +1072,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
     needMoreHistories = Param.Bool(True, "MicroTAGE needs more histories")
     enableSC = Param.Bool(False, "Enable SC or not")
     updateOnRead = Param.Bool(True,"Enable update on read, no need to save tage meta in FTQ")
-    numPredictors = Param.Unsigned(1, "Number of TAGE predictors")
+    numPredictors = Param.Unsigned(2, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([512],"the TAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([16],"the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 1,"when the T0~Tn entry's tag generating, PC right shift")
@@ -1081,15 +1081,14 @@ class MicroTAGE(TimedBaseBTBPredictor):
     histLengths = VectorParam.Unsigned([16],"the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970,"The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
-    numWays = Param.Unsigned(2, "Number of ways per set")
+    numWays = Param.Unsigned(1, "Number of ways per set")
     baseTableSize = Param.Unsigned(256,"Base table size")
     maxBranchPositions = Param.Unsigned(32,"Maximum branch positions per 64-byte block")
     useAltOnNaSize = Param.Unsigned(128,"Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7,"Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4,"Number of banks for bank conflict simulation")
-    enableBankConflict = Param.Bool(True,"Enable bank conflict simulation")
+    enableBankConflict = Param.Bool(False,"Enable bank conflict simulation")
     numDelay = Param.Unsigned(0,"Prediction latency in cycles")
-    usingMbtbBaseEiterTage = Param.Bool(True,"Whether using MBTB basetable either TAGE")
 
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'
