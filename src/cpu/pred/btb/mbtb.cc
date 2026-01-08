@@ -81,7 +81,6 @@ MBTB::MBTB(const Params &p)
     numEntries(p.numEntries),
     numWays(p.numWays),
     tagBits(p.tagBits),
-    usingBasetable(p.usingMbtbBaseEiterTage),
     btbStats(this, p.numWays)
 {
     // MBTB doesn't support ahead-pipelined stages
