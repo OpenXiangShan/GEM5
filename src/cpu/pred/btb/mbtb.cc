@@ -694,9 +694,6 @@ MBTB::update(const FetchStream &stream)
     }
 }
 
-
-
-
 std::vector<BTBEntry>
 MBTB::prepareUpdateEntries(const FetchStream &stream) {
     auto all_entries = stream.updateBTBEntries;

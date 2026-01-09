@@ -136,6 +136,8 @@ predictUpdateCycle(MBTB* btb,
         entry.resolved = true;
     }
 
+    btb->getAndSetNewBTBEntry(stream);
+
     btb->update(stream);
 
     // Return final predictions after update
