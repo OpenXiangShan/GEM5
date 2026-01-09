@@ -96,17 +96,16 @@ class MicroTAGE : public TimedBaseBTBPredictor
         public:
             Addr btb_pc;           // btb entry pc, same as tage entry pc
             TageTableInfo mainInfo; // Main prediction info
-            TageTableInfo altInfo;  // Alternative prediction info
-            bool useAlt;           // Whether to use alternative prediction, true if main is weak or no main prediction
-            bool taken;            // Final prediction (taken/not taken) = use_alt ? alt_provided ? alt_taken : base_taken : main_taken
+            //TageTableInfo altInfo;  // Alternative prediction info
+            bool mainprovided;    // Whether to use alternative prediction, true if main is weak or no main prediction
+            bool taken;           // Final prediction outcome
             bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
 
-            TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false) {}
-
-            TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
-                            bool useAlt, bool taken, bool altPred) :
-                            btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
-                            useAlt(useAlt), taken(taken), altPred(altPred) {}
+            TagePrediction() : btb_pc(0), mainprovided(false), taken(false), altPred(false) {}
+            TagePrediction(Addr btb_pc, TageTableInfo mainInfo,
+                            bool mainprovided, bool taken, bool altPred) :
+                            btb_pc(btb_pc), mainInfo(mainInfo),
+                            mainprovided(mainprovided), taken(taken), altPred(altPred) {}
     };
 
 
@@ -190,9 +189,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
         return (pc & (blockSize - 1)) >> 1;
     }
 
-    // Get base table index for a given PC
-    Addr getBaseTableIndex(Addr pc);
-
     // Get branch index within a prediction block
     unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC);
 
@@ -248,11 +244,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // The actual TAGE prediction tables (table x index x way)
     std::vector<std::vector<std::vector<TageEntry>>> tageTable;
 
-    // Base table for fallback predictions (index x position)
-    // Index based on 32-byte aligned address, covers 64-byte block
-    // Each entry supports up to maxBranchPositions branch positions within the block
-    std::vector<std::vector<short>> baseTable;
-    const unsigned baseTableSize;  // Base table size
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
 
     // Table for tracking when to use alternative prediction on provider weak
@@ -316,7 +307,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Track last prediction bank for conflict detection
     unsigned lastPredBankId;         // Bank ID of last prediction
     bool predBankValid;              // Whether lastPredBankId is valid
-    bool usingBasetable;          // Whether using basetable for either MBTB or TAGE
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
