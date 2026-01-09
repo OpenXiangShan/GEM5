@@ -161,6 +161,9 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     if (!L2PFsent && smallBOP->hasPFRequestsInBuffer()){
         L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
     }
+    if (!L2PFsent && cdp->hasPFRequestsInBuffer()){
+        L2PFsent = cdp->GetPFRequestsFromBuffer(addresses);
+    }
     if (!L2PFsent && cmc->hasPFRequestsInBuffer()){
         L2PFsent = cmc->GetPFRequestsFromBuffer(addresses);
     }
@@ -178,6 +181,7 @@ bool L2CompositeWithWorkerPrefetcher::hasPFRequestsInBuffer() {
     return  largeBOP->hasPFRequestsInBuffer() ||
             smallBOP->hasPFRequestsInBuffer() ||
             cmc->hasPFRequestsInBuffer() ||
+            cdp->hasPFRequestsInBuffer() ||
             despacitoStream->hasPFRequestsInBuffer();
         }
 }  // namespace prefetch

@@ -23,6 +23,9 @@ def create_prefetcher(cpu, cache_level, options):
     if prefetcher != NULL and getattr(options, 'enable_pf_buffer', False):
         if hasattr(prefetcher, 'use_pf_buffer'):
             prefetcher.use_pf_buffer = True
+        # disable unecessary filter to align with RTL when in pf_buffer mode
+        if hasattr(prefetcher, 'queue_filter'):
+            prefetcher.queue_filter = False
 
     if prefetcher == NULL:
         return NULL

@@ -110,18 +110,22 @@ class Base : public ClockedObject
     struct PFtriggerInfo{
         PacketPtr pkt;
         std::unique_ptr<PrefetchInfo_old> pfi_old; 
-        PFtriggerInfo() : pkt(nullptr), pfi_old(nullptr) {}
+        PrefetchSourceType pfSourceType;
+        PFtriggerInfo() : pkt(nullptr), pfi_old(nullptr), pfSourceType(PrefetchSourceType::PF_NONE) {}
         PFtriggerInfo(PacketPtr p, const PrefetchInfo &a)
-            : pkt(p ? new Packet(p, false, false) : nullptr), pfi_old(std::make_unique<PrefetchInfo_old>(a)) {}
+            : pkt(p ? new Packet(p, false, false) : nullptr),
+            pfi_old(std::make_unique<PrefetchInfo_old>(a)), pfSourceType(PrefetchSourceType::PF_NONE) {}
         PFtriggerInfo(const PFtriggerInfo &other)
             : pkt(other.pkt ? new Packet(other.pkt, false, false) : nullptr),
-              pfi_old(other.pfi_old ? std::make_unique<PrefetchInfo_old>(*(other.pfi_old)) : nullptr) {}
+              pfi_old(other.pfi_old ? std::make_unique<PrefetchInfo_old>(*(other.pfi_old)) : nullptr),
+              pfSourceType(other.pfSourceType) {}
         PFtriggerInfo& operator=(const PFtriggerInfo &other)
         {
             if (this != &other) {
                 delete pkt;
                 pkt = other.pkt ? new Packet(other.pkt, false, false) : nullptr;
                 pfi_old = std::make_unique<PrefetchInfo_old>(*(other.pfi_old));
+                pfSourceType = other.pfSourceType;
             }
             return *this;
         }
@@ -385,6 +389,9 @@ class Base : public ClockedObject
         mutable PFtriggerInfo trigger_info{};
         void setTriggerInfo(const PacketPtr &pkt) const {
             trigger_info = PFtriggerInfo(pkt, *this);
+        }
+        void setTriggerInfo_PFsrc(const PrefetchSourceType pfSource) const {
+            trigger_info.pfSourceType = pfSource;
         }
     };
     /**

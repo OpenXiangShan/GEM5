@@ -146,11 +146,11 @@ DespacitoStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, 
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
     }
+    InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
     if (filter->contains(addr)) {
         DPRINTF(DespacitoStreamPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;
     } else {
-        InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
         DPRINTF(DespacitoStreamPrefetcher, "Send pf: %lx\n", addr);
         filter->insert(addr, 0);
         addresses.push_back(AddrPriority(addr, prio, src));

@@ -140,6 +140,7 @@ XsStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
             }
         }
     }
+    pfi.setTriggerInfo_PFsrc(src);
     if (ahead_level > 1) {
         stridestream_pfFilter_l2l3->Insert(regionAddress(addr), region_bit,0,true,entry->decrMode,pfi.isSecure(),ahead_level, &pfi.trigger_info);
     } else {

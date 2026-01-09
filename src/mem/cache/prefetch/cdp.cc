@@ -169,13 +169,13 @@ CDP::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addre
                 vpn2 = BITS(pt_addr, 38, 30);
                 vpn1 = BITS(pt_addr, 29, 21);
                 vpnTable.update(vpn2, vpn1, enable_thro, isLowConfidence());
-                sendPFWithFilter(blockAddress(pt_addr), addresses, 30, PrefetchSourceType::CDP, 1);
+                sendPFWithFilter(pfi, blockAddress(pt_addr), addresses, 30, PrefetchSourceType::CDP, 1);
                 for (int i = 1; i < degree; i++) {
                     if (getCdpTrueAccuracy() > 0.05) {
                         Addr next_pf_addr = blockAddress(pt_addr) + (i * 0x40);
                         vpnTable.update(BITS(next_pf_addr, 38, 30), BITS(next_pf_addr, 29, 21),
                                         enable_thro, isLowConfidence());
-                        sendPFWithFilter(next_pf_addr, addresses, 1, PrefetchSourceType::CDP, 1);
+                        sendPFWithFilter(pfi, next_pf_addr, addresses, 1, PrefetchSourceType::CDP, 1);
                     }
                 }
                 cdpStats.triggeredInCalcPf++;
@@ -302,14 +302,14 @@ CDP::notifyWithData(const PacketPtr &pkt, bool is_l1_use, std::vector<AddrPriori
                     next_depth = pf_depth + 1;
                 }
                 vpnTable.update(vpn2, vpn1, enable_thro, isLowConfidence());
-                sendPFWithFilter(blockAddress(test_addr2), addresses, 29 + next_depth, PrefetchSourceType::CDP,
+                sendPFWithFilter(pkt, blockAddress(test_addr2), addresses, 29 + next_depth, PrefetchSourceType::CDP,
                                  next_depth);
                 for (int i = 1; i < degree; i++) {
                     if (trueAccuracy > 0.05) {
                         Addr next_pf_addr = blockAddress(test_addr2) + (i * 0x40);
                         vpnTable.update(BITS(next_pf_addr, 38, 30), BITS(next_pf_addr, 29, 21),
                                         enable_thro, isLowConfidence());
-                        sendPFWithFilter(next_pf_addr, addresses, 1, PrefetchSourceType::CDP,
+                        sendPFWithFilter(pkt, next_pf_addr, addresses, 1, PrefetchSourceType::CDP,
                                      next_depth);
                     }
                 }
@@ -344,9 +344,32 @@ CDP::pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &
 }
 
 bool
-CDP::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource,
-                      int pf_depth)
+CDP::sendPFWithFilter(const PacketPtr &pkt, Addr addr, std::vector<AddrPriority> &addresses,
+    int prio, PrefetchSourceType pfSource, int pf_depth)
 {
+    //fake a PrefetchInfo, thus this reill pf will use Queued::PFSendEventWrapper to send out pf req
+    PrefetchInfo pfi(pkt, pkt->req->getVaddr(), false);
+    pfi.setTriggerInfo(pkt);
+
+    InsertPFRequestToBuffer(AddrPriority(addr, prio, pfSource, pfi.trigger_info));
+    if (pfLRUFilter->contains((addr))) {
+        return false;
+    } else {
+        pfLRUFilter->insert((addr), 0);
+        AddrPriority addr_prio = AddrPriority(addr, prio, pfSource);
+        addr_prio.depth = pf_depth;
+        addresses.push_back(addr_prio);
+        cdpStats.passedFilter++;
+        return true;
+    }
+    return false;
+}
+
+bool
+CDP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
+    int prio, PrefetchSourceType pfSource, int pf_depth)
+{
+    InsertPFRequestToBuffer(AddrPriority(addr, prio, pfSource, pfi.trigger_info));
     if (pfLRUFilter->contains((addr))) {
         return false;
     } else {

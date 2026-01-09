@@ -414,8 +414,10 @@ class CDP : public Queued
     {
         rivalCoverage = info.coverage;
     }
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio, PrefetchSourceType pfSource,
-                          int pf_depth);
+    bool sendPFWithFilter(const PacketPtr &pkt, Addr addr, std::vector<AddrPriority> &addresses,
+        int prio, PrefetchSourceType pfSource, int pf_depth);
+    bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
+        int prio, PrefetchSourceType pfSource, int pf_depth);
 
     CDP(const CDPParams &p);
 
