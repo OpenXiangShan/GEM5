@@ -1069,13 +1069,14 @@ class MicroTAGE(TimedBaseBTBPredictor):
     needMoreHistories = Param.Bool(True, "MicroTAGE needs more histories")
     enableSC = Param.Bool(False, "Enable SC or not")
     updateOnRead = Param.Bool(True,"Enable update on read, no need to save tage meta in FTQ")
+    # Keep vector parameters consistent with numPredictors to avoid constructor asserts.
     numPredictors = Param.Unsigned(2, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([512],"the TAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([16],"the T0~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Unsigned([1] * 1,"when the T0~Tn entry's tag generating, PC right shift")
+    tableSizes = VectorParam.Unsigned([512]*2,"the TAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([16] * 2,"the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned([1] * 2,"when the T0~Tn entry's tag generating, PC right shift")
     blockSize = Param.Unsigned(32,"tage index function uses 32B aligned block address")
 
-    histLengths = VectorParam.Unsigned([16],"the BTB TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned([7, 16],"the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970,"The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numWays = Param.Unsigned(1, "Number of ways per set")
