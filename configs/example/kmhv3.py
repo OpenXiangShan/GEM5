@@ -105,12 +105,12 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
-            cpu.branchPred.mgsc.enabled = True
+            cpu.branchPred.mgsc.enabled = False
             cpu.branchPred.ras.enabled = True
 
             cpu.branchPred.mgsc.forceUseSC = True
 
-            # RTL alignment: only enable bias and path tables, disable PC threshold
+            # RTL alignment: disable PC threshold, waiting to merge master
             cpu.branchPred.mgsc.enableBwTable = True
             cpu.branchPred.mgsc.enableLTable = True
             cpu.branchPred.mgsc.enableITable = True
