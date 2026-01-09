@@ -191,9 +191,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
         return (pc & (blockSize - 1)) >> 1;
     }
 
-    // Get base table index for a given PC
-    Addr getBaseTableIndex(Addr pc);
-
     // Get branch index within a prediction block
     unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC);
 
@@ -249,11 +246,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // The actual TAGE prediction tables (table x index x way)
     std::vector<std::vector<std::vector<TageEntry>>> tageTable;
 
-    // Base table for fallback predictions (index x position)
-    // Index based on 32-byte aligned address, covers 64-byte block
-    // Each entry supports up to maxBranchPositions branch positions within the block
-    std::vector<std::vector<short>> baseTable;
-    const unsigned baseTableSize;  // Base table size
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
 
     // Table for tracking when to use alternative prediction on provider weak
@@ -317,7 +309,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Track last prediction bank for conflict detection
     unsigned lastPredBankId;         // Bank ID of last prediction
     bool predBankValid;              // Whether lastPredBankId is valid
-    bool usingBasetable;          // Whether using basetable for either MBTB or TAGE
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
