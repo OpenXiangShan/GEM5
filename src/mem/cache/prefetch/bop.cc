@@ -464,13 +464,13 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
     }
+    InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
     if (filter->contains(addr)) {
         DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
         // Count filtered prefetch
         prefetchStats.pfFiltered++;
         return false;
     } else {
-        InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
         DPRINTF(BOPPrefetcher, "Send pf: %lx\n", addr);
         filter->insert(addr, 0);
         addresses.push_back(AddrPriority(addr, prio, src));
