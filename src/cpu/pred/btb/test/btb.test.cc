@@ -126,17 +126,18 @@ predictUpdateCycle(MBTB* btb,
 
     // Update phase
     FetchStream stream = setupStream(startPC, branch, taken, meta, endInstPC);
-
-    // Only L1 BTB needs this step
-    if (btb->getDelay() > 0) {
-        btb->getAndSetNewBTBEntry(stream);
+    // Populate predicted BTB entries in stream from stage predictions
+    // Use entries from the first valid stage (delay)
+    if (btb->getDelay() < stagePreds.size()) {
+        stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
     }
+    stream.setUpdateBTBEntries();
+    btb->getAndSetNewBTBEntry(stream);
 
     for (auto &entry : stream.updateBTBEntries) {
         entry.resolved = true;
     }
-
-    btb->getAndSetNewBTBEntry(stream);
+    stream.updateNewBTBEntry.resolved = true;
 
     btb->update(stream);
 
@@ -365,6 +366,10 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     auto meta = mbtb->getPredictionMeta();
 
     FetchStream stream = setupStream(0x1000, branch2, true, meta, 0x1008);
+    // Populate predicted BTB entries for update from stage predictions
+    if (mbtb->getDelay() < tempPreds.size()) {
+        stream.predBTBEntries = tempPreds[mbtb->getDelay()].btbEntries;
+    }
     mbtb->getAndSetNewBTBEntry(stream);
     mbtb->update(stream);
     
