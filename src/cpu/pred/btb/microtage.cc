@@ -104,6 +104,11 @@ tageStats(this, p.numPredictors, p.numBanks)
     tableIndexMasks.resize(numPredictors);
     tableTagBits.resize(numPredictors);
     tableTagMasks.resize(numPredictors);
+    // Ensure PC shift vector has entries for all predictors (fallback default = 1)
+    if (tablePcShifts.size() < numPredictors) {
+        tablePcShifts.resize(numPredictors, 1);
+    }
+
     // Initialize base table for fallback predictions
     for (unsigned int i = 0; i < numPredictors; ++i) {
         //initialize ittage predictor
