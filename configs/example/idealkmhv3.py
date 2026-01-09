@@ -31,7 +31,7 @@ def setKmhV3IdealParams(args, system):
 
         # decode
         cpu.decodeWidth = 8
-        cpu.enable_loadFusion = False
+        cpu.enable_loadFusion = True
         cpu.enableConstantFolding = False
 
         # rename
@@ -73,7 +73,7 @@ def setKmhV3IdealParams(args, system):
         cpu.RAWDequeuePerCycle = 4
         cpu.SbufferEntries = 24
         cpu.SbufferEvictThreshold = 16
-        cpu.store_prefetch_train = False
+        cpu.store_prefetch_train = True
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
