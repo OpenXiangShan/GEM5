@@ -154,8 +154,8 @@ PrefetchFilter::GetPFAddrL1(std::vector<AddrPriority> &addresses)
         // construct AddrPriority. Use a simple priority scheme: closer blocks get higher priority.
         int prio = static_cast<int>(regionBlks) - static_cast<int>(region_offset);
         if (has_trigger) {
-            addresses.emplace_back(AddrPriority(pf_addr, prio, pfSourceType,
-                                   trigger_info));
+            addresses.emplace_back(AddrPriority(pf_addr, prio,
+                trigger_info.pfSourceType == PrefetchSourceType::PF_NONE ? pfSourceType : trigger_info.pfSourceType, trigger_info));
         } else {
             addresses.emplace_back(AddrPriority(pf_addr, prio, pfSourceType));
         }
@@ -231,8 +231,8 @@ PrefetchFilter::GetPFAddrL2(std::vector<AddrPriority> &addresses)
         // construct AddrPriority. Use a simple priority scheme: closer blocks get higher priority.
         int prio = static_cast<int>(regionBlks) - static_cast<int>(region_offset);
         if (has_trigger) {
-            addresses.emplace_back(AddrPriority(pf_addr, prio, pfSourceType,
-                                   trigger_info));
+            addresses.emplace_back(AddrPriority(pf_addr, prio,
+                trigger_info.pfSourceType == PrefetchSourceType::PF_NONE ? pfSourceType : trigger_info.pfSourceType, trigger_info));
         } else {
             addresses.emplace_back(AddrPriority(pf_addr, prio, pfSourceType));
         }
@@ -310,8 +310,8 @@ PrefetchFilter::GetPFAddrL3(std::vector<AddrPriority> &addresses)
         // construct AddrPriority. Use a simple priority scheme: closer blocks get higher priority.
         int prio = static_cast<int>(regionBlks) - static_cast<int>(region_offset);
         if (has_trigger) {
-            addresses.emplace_back(AddrPriority(pf_addr, prio, pfSourceType,
-                                   trigger_info));
+            addresses.emplace_back(AddrPriority(pf_addr, prio,
+                trigger_info.pfSourceType == PrefetchSourceType::PF_NONE ? pfSourceType : trigger_info.pfSourceType, trigger_info));
         } else {
             addresses.emplace_back(AddrPriority(pf_addr, prio, pfSourceType));
         }
