@@ -39,7 +39,6 @@ MicroTAGE::MicroTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSiz
     : TimedBaseBTBPredictor(),
       numPredictors(numPredictors),
       numWays(numWays),
-      baseTableSize(2048),
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
@@ -77,7 +76,6 @@ tablePcShifts(p.TTagPcShifts),
 histLengths(p.histLengths),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
-baseTableSize(p.baseTableSize),
 maxBranchPositions(p.maxBranchPositions),
 useAltOnNaSize(p.useAltOnNaSize),
 useAltOnNaWidth(p.useAltOnNaWidth),
@@ -107,11 +105,6 @@ tageStats(this, p.numPredictors, p.numBanks)
     tableTagBits.resize(numPredictors);
     tableTagMasks.resize(numPredictors);
     // Initialize base table for fallback predictions
-    baseTable.resize(baseTableSize);
-    for (unsigned i = 0; i < baseTable.size(); ++i) {
-        baseTable[i].resize(maxBranchPositions, 0);  // Initialize counters to 0 (weakly taken)
-    }
-
     for (unsigned int i = 0; i < numPredictors; ++i) {
         //initialize ittage predictor
         assert(tableSizes.size() >= numPredictors);
@@ -137,7 +130,7 @@ tageStats(this, p.numPredictors, p.numBanks)
     usefulResetCnt = 0;
 
     // initialize use_alt_on_na table
-    useAlt.resize(useAltOnNaSize, 0);
+
 #ifndef UNIT_TEST
     hasDB = true;
     dbName = std::string("microtage");
@@ -207,8 +200,8 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Find main and alternative predictions
     bool provided = false;
-    bool alt_provided = false;
-    TageTableInfo main_info, alt_info;
+    // bool alt_provided = true;
+    TageTableInfo main_info;
 
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
@@ -249,12 +242,13 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 // First match becomes main prediction
                 main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
                 provided = true;
-            } else if (!alt_provided) {
-                // Second match becomes alternative prediction
-                alt_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
-                alt_provided = true;
-                break;
             }
+            // else if (!alt_provided) {
+            //     // Second match becomes alternative prediction
+            //     alt_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
+            //     alt_provided = true;
+            //     break;
+            // }
         } else {
             DPRINTF(TAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
                 i, index, tag, position, btb_entry.pc);
@@ -263,34 +257,21 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Generate final prediction
     bool main_taken = main_info.taken();
-    bool alt_taken = alt_info.taken();
+    // bool alt_taken = alt_info.taken();
     // Use base table instead of btb_entry.ctr
-    Addr base_idx = getBaseTableIndex(startPC);
-    unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, startPC);
-    bool base_taken = btb_entry.ctr >= 0;
+    // Addr base_idx = getBaseTableIndex(startPC);
+    // unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, startPC);
+    //bool base_taken = btb_entry.ctr >= 0;
 
     //bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
-    bool alt_pred = base_taken;
-    // use_alt_on_na gating: when provider weak, consult per-PC counter
-    bool use_alt = false;
-    if (!provided) {
-        use_alt = true;
-    } else {
-        bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
-        if (main_weak) {
-            Addr uidx = getUseAltIdx(btb_entry.pc);
-            use_alt = (useAlt[uidx] >= 0);
-        } else {
-            use_alt = false;
-        }
-    }
-    bool taken = use_alt ? alt_pred : main_taken;
+    bool alt_pred = btb_entry.ctr >= 0; // use base table as alt prediction
+
+    bool taken = provided ? main_taken : alt_pred;
 
     DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
-    DPRINTF(TAGE, "tage use_alt %d ? (alt_provided %d ? alt_taken %d : base_taken %d) : main_taken %d\n",
-        use_alt, alt_provided, alt_taken, base_taken, main_taken);
+    DPRINTF(TAGE, "tage main prvided %d ?  base_taken %d : main_taken %d\n", provided, alt_pred, main_taken);
 
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred);
+    return TagePrediction(btb_entry.pc, main_info, provided, taken, alt_pred);
 }
 
 /**
@@ -441,14 +422,12 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
-    auto &alt_info = pred.altInfo;
-    bool used_alt = pred.useAlt;
+    auto &alt_pred = pred.altPred;
+    bool used_alt = !pred.mainprovided;
     // Use base table instead of entry.ctr for fallback prediction
     Addr startPC = stream.getRealStartPC();
-    Addr base_idx = getBaseTableIndex(startPC);
-    unsigned branch_idx = getBranchIndexInBlock(entry.pc, startPC);
-    bool base_taken = baseTable[base_idx][branch_idx] >= 0;
-    bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
+    bool base_taken = entry.ctr >= 0;
+    bool alt_taken =  base_taken;
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
@@ -457,7 +436,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
             tageStats.updateProviderNa++;
             Addr uidx = getUseAltIdx(entry.pc);
             bool alt_correct = (alt_taken == actual_taken);
-            updateCounter(alt_correct, useAltOnNaWidth, useAlt[uidx]);
+            //updateCounter(alt_correct, useAltOnNaWidth, useAlt[uidx]);
             tageStats.updateUseAltOnNaUpdated++;
             if (alt_correct) {
                 tageStats.updateUseAltOnNaCorrect++;
@@ -479,9 +458,9 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
         // Update useful bit based on several conditions
         bool main_is_correct = main_info.taken() == actual_taken;
-        bool alt_is_correct_and_strong = alt_info.found &&
-                                     (alt_info.taken() == actual_taken) &&
-                                     (abs(2 * alt_info.entry.counter + 1) == 7);
+        bool alt_is_correct_and_strong =
+                                     (alt_pred == actual_taken) &&
+                                     (abs(2 * entry.ctr + 1) == 5);
 
         // a. Special reset (humility mechanism)
         if (alt_is_correct_and_strong && main_is_correct) {
@@ -504,19 +483,6 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         // No LRU maintenance
     }
 
-    // Update alternative prediction provider
-    if (used_alt && alt_info.found) {
-        auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
-        updateCounter(actual_taken, 3, way.counter);
-        // No LRU maintenance
-    }
-
-    // Update base table counter if used as fallback
-    if (used_alt && !alt_info.found) {
-        DPRINTF(TAGE, "prediction provided by base table idx %lu, branch %u, updating corresponding entry\n",
-                base_idx, branch_idx);
-        updateCounter(actual_taken, 2, baseTable[base_idx][branch_idx]);
-    }
 
     // Update statistics
     if (used_alt) {
@@ -744,26 +710,23 @@ MicroTAGE::update(const FetchStream &stream) {
         }
 
 #ifndef UNIT_TEST
-        if (enableDB) {
-            TageMissTrace t;
-            std::string history_str;
-            boost::dynamic_bitset<> history_low50 = predMeta->history;
-            if (history_low50.size() > 50) {
-                history_low50.resize(50);  // get the lower 50 bits of history
-            }
-            boost::to_string(history_low50, history_str);
-            auto main_info = recomputed.mainInfo;
-            auto alt_info = recomputed.altInfo;
-            t.set(startAddr, btb_entry.pc, main_info.way,
-                main_info.found, main_info.entry.counter, main_info.entry.useful,
-                main_info.table, main_info.index,
-                alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
-                alt_info.table, alt_info.index,
-                recomputed.useAlt, recomputed.taken, actual_taken, alloc_success,
-                allocated_table, allocated_index, allocated_way,
-                history_str, predMeta->indexFoldedHist[main_info.table].get());
-            tageMissTrace->write_record(t);
-        }
+        // if (enableDB) {
+        //     TageMissTrace t;
+        //     std::string history_str;
+        //     boost::dynamic_bitset<> history_low50 = predMeta->history;
+        //     if (history_low50.size() > 50) {
+        //         history_low50.resize(50);  // get the lower 50 bits of history
+        //     }
+        //     boost::to_string(history_low50, history_str);
+        //     auto main_info = recomputed.mainInfo;
+        //     t.set(startAddr, btb_entry.pc, main_info.way,
+        //         main_info.found, main_info.entry.counter, main_info.entry.useful,
+        //         main_info.table, main_info.index,
+        //         recomputed.useAlt, recomputed.taken, actual_taken, alloc_success,
+        //         allocated_table, allocated_index, allocated_way,
+        //         history_str, predMeta->indexFoldedHist[main_info.table].get());
+        //     tageMissTrace->write_record(t);
+        // }
 #endif
     }
     checkUtageUpdateMisspred(stream);
@@ -885,12 +848,6 @@ Addr
 MicroTAGE::getUseAltIdx(Addr pc) {
     Addr shiftedPc = pc >> instShiftAmt;
     return shiftedPc & (useAltOnNaSize - 1);
-}
-
-Addr
-MicroTAGE::getBaseTableIndex(Addr pc) {
-    // Use blockSize-aligned address as index; block offset bits captured by blockWidth
-    return ((pc >> blockWidth) & (baseTableSize - 1));
 }
 
 unsigned
@@ -1079,7 +1036,7 @@ MicroTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, 
 {
     bool hit = pred.mainInfo.found;
     unsigned hit_table = pred.mainInfo.table;
-    bool useAlt = pred.useAlt;
+    bool useAlt = pred.mainprovided ? false : true;
     if (when_pred) {
         if (hit) {
 #ifndef UNIT_TEST
