@@ -133,8 +133,6 @@ tageStats(this, p.numPredictors, p.numBanks)
     }
     usefulResetCnt = 0;
 
-    // initialize use_alt_on_na table
-
 #ifndef UNIT_TEST
     hasDB = true;
     dbName = std::string("microtage");
@@ -217,8 +215,8 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         Addr index = predMeta ? getTageIndex(startPC, i, predMeta->indexFoldedHist[i].get())
                           : getTageIndex(startPC, i);
         Addr tag = predMeta ? getTageTag(startPC, i,
-                            predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(), position)
-                        : getTageTag(startPC, i, position);
+                            predMeta->tagFoldedHist[i].get(), position)
+                        : getTageTag(startPC, i, tagFoldedHist[i].get(),position);
 
         bool match = false; // for each table, only one way can be matched
         TageEntry matching_entry;
@@ -247,12 +245,6 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
                 provided = true;
             }
-            // else if (!alt_provided) {
-            //     // Second match becomes alternative prediction
-            //     alt_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
-            //     alt_provided = true;
-            //     break;
-            // }
         } else {
             DPRINTF(TAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
                 i, index, tag, position, btb_entry.pc);
@@ -261,21 +253,14 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Generate final prediction
     bool main_taken = main_info.taken();
-    // bool alt_taken = alt_info.taken();
-    // Use base table instead of btb_entry.ctr
-    // Addr base_idx = getBaseTableIndex(startPC);
-    // unsigned branch_idx = getBranchIndexInBlock(btb_entry.pc, startPC);
-    //bool base_taken = btb_entry.ctr >= 0;
+    bool base_pred = btb_entry.ctr >= 0;
 
-    //bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
-    bool alt_pred = btb_entry.ctr >= 0; // use base table as alt prediction
-
-    bool taken = provided ? main_taken : alt_pred;
+    bool taken = provided ? main_taken : base_pred;
 
     DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
-    DPRINTF(TAGE, "tage main prvided %d ?  base_taken %d : main_taken %d\n", provided, alt_pred, main_taken);
+    DPRINTF(TAGE, "tage main prvided %d ?  main_taken %d : base_taken %d\n", provided, main_taken, base_pred);
 
-    return TagePrediction(btb_entry.pc, main_info, provided, taken, alt_pred);
+    return TagePrediction(btb_entry.pc, main_info, provided, taken, base_pred);
 }
 
 /**
@@ -286,8 +271,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results)
+MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries, CondTakens& results)
 {
     DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -299,17 +283,6 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
             meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
-            tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
-            tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) == 7; // counter saturated, -4 or 3
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_mid = pred.mainInfo.found &&
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) < 7 &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_low = !pred.mainInfo.found ||
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
-            // main predict is different from alt predict/base predict
-            tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
         }
     }
 }
@@ -357,7 +330,6 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     // Clear old prediction metadata and save current history state
     meta = std::make_shared<TageMeta>();
     meta->tagFoldedHist = tagFoldedHist;
-    meta->altTagFoldedHist = altTagFoldedHist;
     meta->indexFoldedHist = indexFoldedHist;
     meta->history = history;
 
@@ -365,7 +337,7 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
         stage_pred.condTakens.clear();
-        lookupHelper(startPC, stage_pred.btbEntries, stage_pred.tageInfoForMgscs, stage_pred.condTakens);
+        lookupHelper(startPC, stage_pred.btbEntries, stage_pred.condTakens);
     }
 
 }
@@ -426,12 +398,10 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
-    auto &alt_pred = pred.altPred;
-    bool used_alt = !pred.mainprovided;
+    bool used_base = !pred.mainprovided;
     // Use base table instead of entry.ctr for fallback prediction
     Addr startPC = stream.getRealStartPC();
     bool base_taken = entry.ctr >= 0;
-    bool alt_taken =  base_taken;
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
@@ -439,10 +409,10 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         if (main_weak) {
             tageStats.updateProviderNa++;
             Addr uidx = getUseAltIdx(entry.pc);
-            bool alt_correct = (alt_taken == actual_taken);
-            //updateCounter(alt_correct, useAltOnNaWidth, useAlt[uidx]);
+            bool base_correct = (base_taken == actual_taken);
+            //updateCounter(base_correct, useAltOnNaWidth, useAlt[uidx]);
             tageStats.updateUseAltOnNaUpdated++;
-            if (alt_correct) {
+            if (base_correct) {
                 tageStats.updateUseAltOnNaCorrect++;
             } else {
                 tageStats.updateUseAltOnNaWrong++;
@@ -462,15 +432,15 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
         // Update useful bit based on several conditions
         bool main_is_correct = main_info.taken() == actual_taken;
-        bool alt_is_correct_and_strong =
-                                     (alt_pred == actual_taken) &&
+        bool base_is_correct_and_strong =
+                                     (base_taken == actual_taken) &&
                                      (abs(2 * entry.ctr + 1) == 5);
 
         // a. Special reset (humility mechanism)
-        if (alt_is_correct_and_strong && main_is_correct) {
+        if (base_is_correct_and_strong && main_is_correct) {
             way.useful = 0;
             DPRINTF(TAGEUseful, "useful bit reset to 0 due to humility rule\n");
-        } else if (main_info.taken() != alt_taken) {
+        } else if (main_info.taken() != base_taken) {
             // b. Original logic to set useful bit high
             if (main_is_correct) {
                 way.useful = 1;
@@ -489,14 +459,14 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
 
     // Update statistics
-    if (used_alt) {
-        bool alt_correct = alt_taken == actual_taken;
-        if (alt_correct) {
+    if (used_base) {
+        bool base_correct = base_taken == actual_taken;
+        if (base_correct) {
             tageStats.updateUseAltCorrect++;
         } else {
             tageStats.updateUseAltWrong++;
         }
-        if (main_info.found && main_info.taken() != alt_taken) {
+        if (main_info.found && main_info.taken() != base_taken) {
             tageStats.updateAltDiffers++;
         }
     }
@@ -504,26 +474,8 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     // Check if misprediction occurred
     bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
                                stream.squashPC == entry.pc;
-//     if (getDelay() == 2){
-//         if (this_fb_mispred) {
-//             tageStats.updateMispred++;
-//             if (!used_alt && main_info.found) {
-// #ifndef UNIT_TEST
-//                 tageStats.updateTableMispreds[main_info.table]++;
-// #endif
-//             }
-//         }
-//     }
-
     // No allocation if no misprediction
     if (!this_fb_mispred) {
-        return false;
-    }
-
-    // Special case: provider is weak but direction is correct
-    // In this case, provider just needs more training, not a longer history table
-    // This avoids wasteful allocation and prevents ping-pong effects
-    if (used_alt && main_info.found && main_info.taken() == actual_taken) {
         return false;
     }
 
@@ -561,7 +513,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get());
         Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
+            meta->tagFoldedHist[ti].get(), position);
 
         auto &set = tageTable[ti][newIndex];
 
@@ -781,7 +733,7 @@ MicroTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 
 // Calculate TAGE tag with folded history - optimized version using bitwise operations
 Addr
-MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist, Addr position)
+MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, Addr position)
 {
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
@@ -792,17 +744,14 @@ MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHis
     // Extract and prepare folded history bits
     Addr foldedBits = foldedHist & mask;
 
-    // Extract alt tag bits and shift left by 1
-    Addr altTagBits = (altFoldedHist << 1) & mask;
-
     // XOR all components together, including position (like RTL)
-    return pcBits ^ foldedBits ^ altTagBits ^ position;
+    return pcBits ^ foldedBits ^ position;
 }
 
 Addr
 MicroTAGE::getTageTag(Addr pc, int t, Addr position)
 {
-    return getTageTag(pc, t, tagFoldedHist[t].get(), altTagFoldedHist[t].get(), position);
+    return getTageTag(pc, t, tagFoldedHist[t].get(), position);
 }
 
 Addr
@@ -960,7 +909,6 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
         tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
-        altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
     doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
