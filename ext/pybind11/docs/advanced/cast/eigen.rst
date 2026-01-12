@@ -52,7 +52,7 @@ can be mapped *and* if the numpy array is writeable (that is
 the passed variable will be transparently carried out directly on the
 ``numpy.ndarray``.
 
-This means you can can write code such as the following and have it work as
+This means you can write code such as the following and have it work as
 expected:
 
 .. code-block:: cpp
@@ -259,7 +259,7 @@ copying to take place:
         "small"_a            // <- This one can be copied if needed
     );
 
-With the above binding code, attempting to call the the ``some_method(m)``
+With the above binding code, attempting to call the ``some_method(m)``
 method on a ``MyClass`` object, or attempting to call ``some_function(m, m2)``
 will raise a ``RuntimeError`` rather than making a temporary copy of the array.
 It will, however, allow the ``m2`` argument to be copied into a temporary if
