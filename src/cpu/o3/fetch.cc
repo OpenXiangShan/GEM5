@@ -2070,7 +2070,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     // Main instruction fetch loop - process until fetch width or other limits
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
+           !shouldStopFetchThisCycle(predictedBranch)) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);

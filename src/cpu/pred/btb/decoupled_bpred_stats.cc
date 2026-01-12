@@ -505,8 +505,13 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(s3PredWrongMbtb, statistics::units::Count::get(), "S3pred wrong blame mbtb "),
     ADD_STAT(s3PredWrongTage, statistics::units::Count::get(), "S3pred wrong blame tage "),
     ADD_STAT(s3PredWrongIttage, statistics::units::Count::get(), "S3pred wrong blame ittage "),
-    ADD_STAT(s3PredWrongRas, statistics::units::Count::get(), "S3pred wrong blame ras ")
-
+    ADD_STAT(s3PredWrongRas, statistics::units::Count::get(), "S3pred wrong blame ras "),
+    ADD_STAT(fetch2Attempts, statistics::units::Count::get(), "Number of 2fetch attempts"),
+    ADD_STAT(fetch2Successes, statistics::units::Count::get(), "Number of successful 2fetch cycles"),
+    ADD_STAT(fetch2SpanTooLarge, statistics::units::Count::get(), "Rejected due to span > maxFetchBytes"),
+    ADD_STAT(fetch2NoNextFTQ, statistics::units::Count::get(), "Rejected due to no next FTQ entry"),
+    ADD_STAT(fetch2FirstNotTaken, statistics::units::Count::get(), "Rejected due to current FTQ is not taken"),
+    ADD_STAT(fetch2FirstNotAtStart, statistics::units::Count::get(), "Rejected due to PC is != next FTQ start")
 {
     predsOfEachStage.init(numStages);
     commitPredsFromEachStage.init(numStages+1);

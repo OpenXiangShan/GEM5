@@ -514,8 +514,21 @@ class Fetch
     /** Profile the reasons of fetch stall. */
     void profileStall(ThreadID tid);
 
-
-    bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
+    /**
+     * Decide whether fetch should stop for this cycle based on frontend mode.
+     * - Decoupled frontend stops when the current FTQ supply is exhausted.
+     * - Non-decoupled frontend stops when a branch is predicted taken.
+     */
+    bool shouldStopFetchThisCycle(bool predictedBranch)
+    {
+        if (waitForVsetvl) {
+            return true;
+        }
+        if (isDecoupledFrontend()) {
+            return usedUpFetchTargets;
+        }
+        return predictedBranch;
+    }
 
     /** Set the reasons of all fetch stalls. */
     void setAllFetchStalls(StallReason stall);
