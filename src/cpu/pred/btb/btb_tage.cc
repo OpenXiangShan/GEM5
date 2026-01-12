@@ -805,8 +805,9 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
 
-    // Extract lower bits of PC directly (remove instruction alignment bits)
-    Addr pcBits = (pc >> bankBaseShift) & mask;
+    unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
+    pcShift += tableIndexBits[t] - 1;   // since tableIndexBits = log(2048) = 11, RTL is 10
+    Addr pcBits = (pc >> pcShift) & mask;
 
     // Extract and prepare folded history bits
     Addr foldedBits = foldedHist & mask;
