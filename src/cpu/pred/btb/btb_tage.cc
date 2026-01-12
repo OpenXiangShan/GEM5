@@ -697,14 +697,24 @@ BTBTAGE::update(const FetchStream &stream) {
     }
 
     // Process each BTB entry
+    bool hasRecomputedVsActualDiff = false;
+    bool hasRecomputedVsOriginalDiff = false;
     for (auto &btb_entry : entries_to_update) {
         bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta);
+            // Track differences for statistics
+            auto it = predMeta->preds.find(btb_entry.pc);
+            if (it != predMeta->preds.end() && recomputed.taken != it->second.taken) {
+                hasRecomputedVsOriginalDiff = true;
+            }
         } else { // otherwise, use the prediction from the prediction-time main/alt
             recomputed = predMeta->preds[btb_entry.pc];
+        }
+        if (recomputed.taken != actual_taken) {
+            hasRecomputedVsActualDiff = true;
         }
 
         // Update predictor state and check if need to allocate new entry
@@ -749,6 +759,13 @@ BTBTAGE::update(const FetchStream &stream) {
             tageMissTrace->write_record(t);
         }
 #endif
+    }
+    // Update recomputed difference statistics (per fetchBlock)
+    if (hasRecomputedVsActualDiff) {
+        tageStats.recomputedVsActualDiff++;
+    }
+    if (hasRecomputedVsOriginalDiff) {
+        tageStats.recomputedVsOriginalDiff++;
     }
     if (getDelay() <2){
         checkUtageUpdateMisspred(stream);
@@ -1011,6 +1028,8 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
+    ADD_STAT(recomputedVsActualDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != actual_taken"),
+    ADD_STAT(recomputedVsOriginalDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != original pred.taken"),
     ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
     ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(), "number of updates deferred due to bank conflict (retried later)"),
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
