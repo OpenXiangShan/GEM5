@@ -54,9 +54,12 @@ StoreSet::StoreSet(uint64_t clear_period, int _SSIT_size, int _LFST_size,int _st
     SSIT.resize(SSITSize);
 
     validSSIT.resize(SSITSize);
+    SSITStrict.resize(SSITSize);
 
-    for (int i = 0; i < SSITSize; ++i)
+    for (int i = 0; i < SSITSize; ++i) {
         validSSIT[i] = false;
+        SSITStrict[i] = false;
+    }
 
     if (!isPowerOf2(LFSTSize)) {
         fatal("Invalid LFST size!\n");
@@ -68,6 +71,7 @@ StoreSet::StoreSet(uint64_t clear_period, int _SSIT_size, int _LFST_size,int _st
     validLFSTLarge.resize(LFSTSize);
     //validLFST.resize(LFSTSize);
     VictimEntryID.resize(LFSTSize);
+    pendingStores.clear();
 
     for (int i = 0; i < LFSTSize; ++i) {
         // validLFST[i] = false;
@@ -120,6 +124,7 @@ StoreSet::init(uint64_t clear_period, int clear_period_thres, int _SSIT_size, in
     LFSTLargePC.resize(LFSTSize);
     validLFSTLarge.resize(LFSTSize);
     VictimEntryID.resize(LFSTSize);
+    pendingStores.clear();
 
 
     // LFST.resize(LFSTSize);
@@ -170,10 +175,12 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
         validSSIT[load_index] = true;
 
         SSIT[load_index] = ld_new_set;
+        SSITStrict[load_index] = false;
 
         validSSIT[store_index] = true;
 
         SSIT[store_index] = sd_new_set;
+        SSITStrict[store_index] = false;
 
         assert(ld_new_set < LFSTSize);
         assert(sd_new_set < LFSTSize);
@@ -187,6 +194,7 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
         validSSIT[store_index] = true;
 
         SSIT[store_index] = sd_new_set;
+        SSITStrict[store_index] = false;
 
         assert(sd_new_set < LFSTSize);
 
@@ -200,6 +208,7 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
         validSSIT[load_index] = true;
 
         SSIT[load_index] = ld_new_set;
+        SSITStrict[load_index] = false;
 
         DPRINTF(StoreSet, "StoreSet: Store had a valid store set: %i for "
                 "load %#x, store %#x\n",
@@ -213,6 +222,7 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
         // The store set with the lower number wins
         if (store_SSID > load_SSID) {
             SSIT[store_index] = load_SSID;
+            SSITStrict[store_index] = false;
 
             DPRINTF(StoreSet, "StoreSet: Load had smaller store set: %i; "
                     "for load %#x, store %#x\n",
@@ -220,9 +230,7 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
         } else {
             SSIT[load_index] = store_SSID;
 
-            if (store_SSID == load_SSID) {
-                SSITStrict[load_index] = true;
-            }
+            SSITStrict[load_index] = (store_SSID == load_SSID);
 
             DPRINTF(StoreSet, "StoreSet: Store had smaller store set: %i; "
                     "for load %#x, store %#x\n",
@@ -264,6 +272,7 @@ StoreSet::insertStore(Addr store_PC, InstSeqNum store_seq_num, ThreadID tid, Cyc
     // checkClear();
     int victim_inst;
     checkClear(curCycle);
+    pendingStores.insert(store_seq_num);
     assert(index < SSITSize);
 
     if (!validSSIT[index]) {
@@ -327,6 +336,16 @@ StoreSet::checkInst(Addr PC)
 
         assert(inst_SSID < LFSTSize);
 
+        if (enableStrictWait && checkInstStrict(PC)) {
+            vec.insert(vec.end(),
+                       pendingStores.begin(),
+                       pendingStores.end());
+            DPRINTF(StoreSet,
+                    "Strict inst %#x with index=%i, ssid=%i, had %lu outstanding stores\n",
+                    PC, index, inst_SSID, vec.size());
+            return vec;
+        }
+
         // if (!validLFST[inst_SSID]) {
 
         //     DPRINTF(StoreSet, "Inst %#x with index %i and SSID %i had no "
@@ -357,6 +376,8 @@ StoreSet::issued(Addr issued_PC, InstSeqNum issued_seq_num, bool is_store)
     if (!is_store) {
         return;
     }
+
+    pendingStores.erase(issued_seq_num);
 
     int index = calcIndexSSIT(issued_PC);
 
@@ -398,6 +419,14 @@ StoreSet::issued(Addr issued_PC, InstSeqNum issued_seq_num, bool is_store)
 void
 StoreSet::squash(InstSeqNum squashed_num, ThreadID tid)
 {
+    for (auto it = pendingStores.begin(); it != pendingStores.end();) {
+        if (*it > squashed_num) {
+            it = pendingStores.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     for (int i=0;i<LFSTSize;++i) {
         for (int j=0; j<LFSTEntrySize; ++j) {
             if (validLFSTLarge[i][j] && LFSTLarge[i][j] > squashed_num) {
@@ -418,6 +447,7 @@ StoreSet::clear()
 {
     for (int i = 0; i < SSITSize; ++i) {
         validSSIT[i] = false;
+        SSITStrict[i] = false;
     }
 
     for (int i = 0; i < LFSTSize; ++i) {
@@ -425,6 +455,7 @@ StoreSet::clear()
             validLFSTLarge[i][j] = false;
         }
     }
+    pendingStores.clear();
 
 }
 
