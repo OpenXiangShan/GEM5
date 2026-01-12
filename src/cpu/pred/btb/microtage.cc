@@ -286,15 +286,15 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
             meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             //if have strong counter, then record the prediction else flase
-            pred_results.push_back({btb_entry.pc, pred.haveStrongCtr ? pred.taken : false});
+            pred_results.push_back({btb_entry.pc, pred.haveStrongCtr ? pred.taken : pred.haveStrongCtr});
             haveStrongCtr = haveStrongCtr || pred.haveStrongCtr;
         }
     }
-    if (haveStrongCtr) {
-        //if have strong counter, change the results to tage prediction else keep the original from abtb
-        results.clear();
-        results = pred_results;
-    }
+    // if (haveStrongCtr) {
+    //     //if have strong counter, change the results to tage prediction else keep the original from abtb
+    //     results.clear();
+    //     results = pred_results;
+    // }
 }
 
 void
@@ -346,7 +346,7 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        //stage_pred.condTakens.clear();
+        stage_pred.condTakens.clear();
         lookupHelper(startPC, stage_pred.btbEntries, stage_pred.condTakens);
     }
 
