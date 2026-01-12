@@ -99,13 +99,13 @@ class MicroTAGE : public TimedBaseBTBPredictor
             //TageTableInfo altInfo;  // Alternative prediction info
             bool mainprovided;    // Whether to use alternative prediction, true if main is weak or no main prediction
             bool taken;           // Final prediction outcome
-            bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
+            bool basePred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
 
-            TagePrediction() : btb_pc(0), mainprovided(false), taken(false), altPred(false) {}
+            TagePrediction() : btb_pc(0), mainprovided(false), taken(false), basePred(false) {}
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo,
-                            bool mainprovided, bool taken, bool altPred) :
+                            bool mainprovided, bool taken, bool basePred) :
                             btb_pc(btb_pc), mainInfo(mainInfo),
-                            mainprovided(mainprovided), taken(taken), altPred(altPred) {}
+                            mainprovided(mainprovided), taken(taken), basePred(basePred) {}
     };
 
 
@@ -167,8 +167,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
-    void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
+    void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries, CondTakens& results);
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table);
@@ -182,7 +181,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     // Calculate TAGE tag with folded history (uint64_t version for performance)
     // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0);
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, Addr position = 0);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) {
@@ -393,7 +392,6 @@ public:
     {
         std::unordered_map<Addr, TagePrediction> preds;
         std::vector<PathFoldedHist> tagFoldedHist;
-        std::vector<PathFoldedHist> altTagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
         bitset history;     // for viewing
         TageMeta() {}
