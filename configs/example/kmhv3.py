@@ -108,17 +108,6 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mgsc.enabled = False
             cpu.branchPred.ras.enabled = True
 
-            cpu.branchPred.mgsc.forceUseSC = True
-
-            # RTL alignment: disable PC threshold, waiting to merge master
-            cpu.branchPred.mgsc.enableBwTable = True
-            cpu.branchPred.mgsc.enableLTable = True
-            cpu.branchPred.mgsc.enableITable = True
-            cpu.branchPred.mgsc.enableGTable = True
-            cpu.branchPred.mgsc.enablePTable = True
-            cpu.branchPred.mgsc.enableBiasTable = True
-            cpu.branchPred.mgsc.enablePCThreshold = False
-
         # l1 cache per core
         if args.caches:
             cpu.icache.size = '64kB'

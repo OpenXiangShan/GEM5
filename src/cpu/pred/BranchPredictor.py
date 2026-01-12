@@ -1154,7 +1154,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     enableGTable = Param.Bool(True, "Enable G (global) table")
     enablePTable = Param.Bool(True, "Enable P (path) table")
     enableBiasTable = Param.Bool(True, "Enable Bias table")
-    enablePCThreshold = Param.Bool(True, "Enable PC-indexed threshold table")
+    enablePCThreshold = Param.Bool(False, "Enable PC-indexed threshold table")
 
     numDelay = 2
 
