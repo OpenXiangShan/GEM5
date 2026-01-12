@@ -254,6 +254,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     // Generate final prediction
     bool main_taken = main_info.taken();
+    bool main_strong = provided && (abs(2 * main_info.entry.counter + 1) >= 7); // strong if counter is 3 or -4
     bool base_pred = btb_entry.ctr >= 0;
 
     bool taken = provided ? main_taken : base_pred;
@@ -261,7 +262,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
     DPRINTF(TAGE, "tage main prvided %d ?  main_taken %d : base_taken %d\n", provided, main_taken, base_pred);
 
-    return TagePrediction(btb_entry.pc, main_info, provided, taken, base_pred);
+    return TagePrediction(btb_entry.pc, main_info, provided, taken,main_strong, base_pred);
 }
 
 /**
@@ -275,7 +276,8 @@ void
 MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries, CondTakens& results)
 {
     DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
-
+    CondTakens pred_results;
+    bool haveStrongCtr = false;
     // Process each BTB entry to make predictions
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
@@ -283,8 +285,15 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
             auto pred = generateSinglePrediction(btb_entry, startPC);
             meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            //if have strong counter, then record the prediction else flase
+            pred_results.push_back({btb_entry.pc, pred.haveStrongCtr ? pred.taken : false});
+            haveStrongCtr = haveStrongCtr || pred.haveStrongCtr;
         }
+    }
+    if (haveStrongCtr) {
+        //if have strong counter, change the results to tage prediction else keep the original from abtb
+        results.clear();
+        results = pred_results;
     }
 }
 
@@ -337,7 +346,7 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
-        stage_pred.condTakens.clear();
+        //stage_pred.condTakens.clear();
         lookupHelper(startPC, stage_pred.btbEntries, stage_pred.condTakens);
     }
 

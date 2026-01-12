@@ -99,13 +99,14 @@ class MicroTAGE : public TimedBaseBTBPredictor
             //TageTableInfo altInfo;  // Alternative prediction info
             bool mainprovided;    // Whether to use alternative prediction, true if main is weak or no main prediction
             bool taken;           // Final prediction outcome
+            bool haveStrongCtr;
             bool basePred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
 
-            TagePrediction() : btb_pc(0), mainprovided(false), taken(false), basePred(false) {}
+            TagePrediction() : btb_pc(0), mainprovided(false), taken(false),haveStrongCtr(false), basePred(false) {}
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo,
-                            bool mainprovided, bool taken, bool basePred) :
-                            btb_pc(btb_pc), mainInfo(mainInfo),
-                            mainprovided(mainprovided), taken(taken), basePred(basePred) {}
+                            bool mainprovided, bool taken, bool haveStrongCtr, bool basePred) :
+                            btb_pc(btb_pc), mainInfo(mainInfo),mainprovided(mainprovided),
+                            taken(taken), haveStrongCtr(haveStrongCtr), basePred(basePred) {}
     };
 
 
