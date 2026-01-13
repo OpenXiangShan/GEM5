@@ -194,6 +194,11 @@ TraceReader::mapAddressLinear(uint64_t trace_addr, const AddrMapConfig &cfg)
 
     if (cfg.pageAlign) {
         const uint64_t PageSz = TheISA::PageBytes;
+        panic_if(cfg.size < PageSz,
+                 "TraceReader address map size (%llu) must be >= page size (%llu) "
+                 "when pageAlign is enabled",
+                 static_cast<unsigned long long>(cfg.size),
+                 static_cast<unsigned long long>(PageSz));
         const uint64_t page_offset = trace_addr % PageSz;
         const uint64_t trace_page = trace_addr / PageSz;
         const uint64_t pages_in_region = (cfg.size / PageSz);

@@ -262,12 +262,8 @@ def build_xiangshan_system(args):
     test_sys.num_cpus = np
 
     test_sys.xiangshan_system = True
-    # Disable difftest for trace mode - trace execution doesn't need verification with reference model
-    # Only enable difftest if not in trace mode - trace mode doesn't need reference model verification
-    test_sys.enable_difftest = (args.enable_difftest
-                                if not (hasattr(args, 'enable_trace_mode')
-                                        and args.enable_trace_mode)
-                                else False)
+    # args.enable_difftest should be normalized by xiangshan_system_init().
+    test_sys.enable_difftest = args.enable_difftest
 
     # Configure XiangShan inputs - skip checkpoint loading in trace mode
     if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:

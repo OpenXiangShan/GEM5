@@ -72,6 +72,7 @@
 #include "debug/FetchVerbose.hh"
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/TraceReader.hh"
 #include "mem/packet.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/byteswap.hh"
@@ -656,7 +657,8 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
     // Trace 按需消费：不在 icache 完成时写入 trace 指令码，避免批量消费。
     if (isTraceMode()) {
-        DPRINTF(Override, "[TRACE] Icache completion: keep timing only; no trace bytes injection\n");
+        DPRINTF(TraceReader,
+                "[TRACE] Icache completion: keep timing only; no trace bytes injection\n");
     }
 
     // Reset usedUpFetchTargets flag when we get new fetch data
@@ -680,7 +682,8 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
             // Stage 7: Validation & Instrumentation - fetchBuffer.startPC alignment
             if (isTraceMode()) {
-                DPRINTF(Override, "[TRACE-FTB] fetchBuffer.startPC aligned: 0x%x == FTQ.startPC 0x%x\n",
+                DPRINTF(TraceReader,
+                        "[TRACE-FTB] fetchBuffer.startPC aligned: 0x%x == FTQ.startPC 0x%x\n",
                         fetchBuffer[tid].startPC, ftq_entry.startPC);
             }
         } else if (isFTBPred() && dbpftb->fetchTargetAvailable()) {
@@ -694,7 +697,8 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
             // Stage 7: Validation & Instrumentation - fetchBuffer.startPC alignment
             if (isTraceMode()) {
-                DPRINTF(Override, "[TRACE-FTB] fetchBuffer.startPC aligned: 0x%x == FTQ.startPC 0x%x\n",
+                DPRINTF(TraceReader,
+                        "[TRACE-FTB] fetchBuffer.startPC aligned: 0x%x == FTQ.startPC 0x%x\n",
                         fetchBuffer[tid].startPC, ftq_entry.startPC);
             }
         }
@@ -2517,7 +2521,7 @@ Fetch::needNewFTQEntry(ThreadID tid)
 
     // Stage 7: Validation & Instrumentation - FTQ entry issuing tracking
     if (need_new && isTraceMode() && isDecoupledFrontend()) {
-        DPRINTF(Override, "[TRACE-FTB] FTQ entry will be issued: tid=%d, "
+        DPRINTF(TraceReader, "[TRACE-FTB] FTQ entry will be issued: tid=%d, "
                 "usedUpFetchTargets=%d, fetchBuffer.valid=%d\n",
                 tid, usedUpFetchTargets, fetchBuffer[tid].valid);
     }
@@ -2552,7 +2556,8 @@ Fetch::getNextFTQStartPC(ThreadID tid)
 
             // Stage 7: Validation & Instrumentation - FSQ state after supply
             if (isTraceMode()) {
-                DPRINTF(Override, "[TRACE-FTB] FSQ supplied successfully: usedUpFetchTargets=%d, "
+                DPRINTF(TraceReader,
+                        "[TRACE-FTB] FSQ supplied successfully: usedUpFetchTargets=%d, "
                         "fetchBuffer.valid=%d\n", usedUpFetchTargets, fetchBuffer[tid].valid);
             }
         } else {
