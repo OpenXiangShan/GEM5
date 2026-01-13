@@ -38,7 +38,6 @@ def setKmhV3Params(args, system):
         cpu.renameWidth = 8
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
-        cpu.enable_storeSet_train = False
 
         # dispatch
         cpu.enableDispatchStage = False
