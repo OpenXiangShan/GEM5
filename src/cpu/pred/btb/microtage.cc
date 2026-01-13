@@ -402,7 +402,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     bool used_base = !pred.mainprovided;
     // Use base table instead of entry.ctr for fallback prediction
     Addr startPC = stream.getRealStartPC();
-    bool base_taken = entry.ctr >= 0;
+    bool base_taken = pred.basePred;
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
@@ -440,20 +440,29 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         // a. Special reset (humility mechanism)
         if (base_is_correct_and_strong && main_is_correct) {
             way.useful = 0;
+            updateCounter(0, 2, way.useful); // reset useful bit
             DPRINTF(TAGEUseful, "useful bit reset to 0 due to humility rule\n");
         } else if (main_info.taken() != base_taken) {
             // b. Original logic to set useful bit high
             if (main_is_correct) {
-                way.useful = 1;
+                updateCounter(1, 2, way.useful);
+                DPRINTF(TAGEUseful, "useful bit incremented due to main differs from base and being correct\n");
             }
+            // else {
+            //     updateCounter(0, 2, way.useful);
+            //     DPRINTF(TAGEUseful, "useful bit decremented due to main differs from base and being wrong\n");
+            // }
         }
 
         // c. Reset u on counter sign flip (becomes weak)
-        if (way.counter == 0 || way.counter == -1) {
-            way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
+        // if (way.counter == 0 || way.counter == -1) {
+        //     way.useful = 0;
+        //     DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
+        // }
+        // DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
+        if (!main_is_correct) {
+            updateCounter(0, 2, way.useful);
         }
-        DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
 
         // No LRU maintenance
     }
@@ -522,7 +531,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
-            if (!cand.valid || (!cand.useful && weakish)) {
+            if (!cand.valid || (cand.useful == -2 && weakish)) {
                 short newCounter = actual_taken ? 0 : -1;
                 DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
                         ti, newIndex, way, newTag, position, newCounter, entry.pc);
@@ -540,7 +549,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-            if (!cand.useful && !weakish) {
+            if (cand.useful == -2 && !weakish) {
                 if (cand.counter > 0) cand.counter--; else cand.counter++;
                 DPRINTF(TAGE, "age penalty applied on table %d[%lu][%u], new ctr %d\n",
                         ti, newIndex, way, cand.counter);
@@ -559,7 +568,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
         for (auto &table : tageTable) {
             for (auto &set : table) {
                 for (auto &way : set) {
-                    way.useful = false;
+                    way.useful = -2;
                 }
             }
         }
