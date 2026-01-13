@@ -521,32 +521,36 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
         if (stats) {
             stats->violationCreateNew++;
         }
-        SSID new_set_load = allocSSID();
-        SSID new_set_store = allocSSID();
-        updateSSITEntry(load_PC, new_set_load, false);
-        updateSSITEntry(store_PC, new_set_store, false);
+        // Classic store-set behavior: assign both PCs to the same new SSID.
+        SSID new_ssid = allocSSID();
+        updateSSITEntry(load_PC, new_ssid, false);
+        updateSSITEntry(store_PC, new_ssid, false);
 
         DPRINTF(StoreSet,
-                "StoreSet: New store set SSID_ld=%i SSID_st=%i for load %#x, store %#x\n",
-                new_set_load, new_set_store, load_PC, store_PC);
+                "StoreSet: New store set SSID=%i for load %#x, store %#x\n",
+                new_ssid, load_PC, store_PC);
     } else if (valid_load_SSID && !valid_store_SSID) {
         if (stats) {
             stats->violationAttachStore++;
         }
-        SSID new_set_store = allocSSID();
-        updateSSITEntry(store_PC, new_set_store, false);
+        // Attach the store to the load's existing store set.
+        SSID ssid = load_entry->ssid;
+        assert(ssid < (SSID)LFSTSize);
+        updateSSITEntry(store_PC, ssid, false);
         DPRINTF(StoreSet,
                 "StoreSet: Adding store %#x to existing SSID=%i (load %#x)\n",
-                store_PC, new_set_store, load_PC);
+                store_PC, ssid, load_PC);
     } else if (!valid_load_SSID && valid_store_SSID) {
         if (stats) {
             stats->violationAttachLoad++;
         }
-        SSID new_set_load = allocSSID();
-        updateSSITEntry(load_PC, new_set_load, false);
+        // Attach the load to the store's existing store set.
+        SSID ssid = store_entry->ssid;
+        assert(ssid < (SSID)LFSTSize);
+        updateSSITEntry(load_PC, ssid, false);
         DPRINTF(StoreSet,
                 "StoreSet: Adding load %#x to existing SSID=%i (store %#x)\n",
-                load_PC, new_set_load, store_PC);
+                load_PC, ssid, store_PC);
     } else {
         SSID load_SSID = load_entry->ssid;
         SSID store_SSID = store_entry->ssid;
