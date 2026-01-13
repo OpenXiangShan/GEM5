@@ -50,8 +50,7 @@ class SimpleIndirectPredictor(IndirectPredictor):
     indirectSets = Param.Unsigned(256, "Cache sets for indirect predictor")
     indirectWays = Param.Unsigned(2, "Ways for indirect predictor")
     indirectTagSize = Param.Unsigned(16, "Indirect target cache tag bits")
-    indirectPathLength = Param.Unsigned(3,
-        "Previous indirect targets to use for path history")
+    indirectPathLength = Param.Unsigned(3,"Previous indirect targets to use for path history")
     indirectGHRBits = Param.Unsigned(13, "Indirect GHR number of bits")
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
 

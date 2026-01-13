@@ -286,8 +286,8 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
             meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             //if have strong counter, then record the prediction else flase
-            pred_results.push_back({btb_entry.pc, pred.haveStrongCtr ? pred.taken : pred.haveStrongCtr});
-            haveStrongCtr = haveStrongCtr || pred.haveStrongCtr;
+            pred_results.push_back({btb_entry.pc, pred.haveStrongCtr ? pred.taken : pred.basePred});
+            //haveStrongCtr = haveStrongCtr || pred.haveStrongCtr;
         }
     }
     // if (haveStrongCtr) {
