@@ -35,6 +35,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/statistics.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "mem/cache/tags/tagged_entry.hh"
@@ -127,6 +128,8 @@ class StoreSet
     /** Debug function to dump the contents of the store list. */
     void dump();
     bool checkInstStrict(Addr pc);
+
+    void regStats(statistics::Group *parent);
   private:
 
     uint64_t lastClearPeriodCycle=0;
@@ -158,6 +161,34 @@ class StoreSet
     SSITEntry* findSSITEntry(Addr pc);
     void updateSSITEntry(Addr pc, SSID ssid, bool strict);
     void ssitEntryInvalidated(SSID ssid);
+
+    struct StoreSetStats : public statistics::Group
+    {
+        StoreSetStats(statistics::Group *parent);
+
+        statistics::Scalar ssitLookups;
+        statistics::Scalar ssitHits;
+        statistics::Scalar ssitMisses;
+        statistics::Scalar ssitInserts;
+        statistics::Scalar ssitVictimizations;
+        statistics::Scalar ssitInvalidations;
+
+        statistics::Scalar violationCreateNew;
+        statistics::Scalar violationAttachStore;
+        statistics::Scalar violationAttachLoad;
+        statistics::Scalar violationSameSSIDStrict;
+        statistics::Scalar violationMerge;
+
+        statistics::Scalar ssidAllocations;
+        statistics::Scalar ssidAllocFromFreeList;
+        statistics::Scalar ssidAllocFromReclaim;
+        statistics::Formula ssidAllocExhaustRate;
+
+        statistics::Scalar ssidReclaims;
+        statistics::Scalar ssidMerges;
+        statistics::Scalar ssidReleases;
+    };
+    std::unique_ptr<StoreSetStats> stats;
 
     std::unique_ptr<SetAssociativeParams> ssitIndexingParams;
     std::unique_ptr<TreePLRURPParams> ssitReplacementParams;

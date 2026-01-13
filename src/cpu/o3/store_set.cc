@@ -99,9 +99,64 @@ StoreSet::~StoreSet()
 }
 
 void
+StoreSet::regStats(statistics::Group *parent)
+{
+    if (!parent || stats) {
+        return;
+    }
+    stats = std::make_unique<StoreSetStats>(parent);
+}
+
+StoreSet::StoreSetStats::StoreSetStats(statistics::Group *parent)
+    : statistics::Group(parent, "storeSet"),
+      ADD_STAT(ssitLookups, statistics::units::Count::get(),
+               "Number of SSIT lookups."),
+      ADD_STAT(ssitHits, statistics::units::Count::get(),
+               "Number of SSIT lookup hits."),
+      ADD_STAT(ssitMisses, statistics::units::Count::get(),
+               "Number of SSIT lookup misses."),
+      ADD_STAT(ssitInserts, statistics::units::Count::get(),
+               "Number of SSIT insertions (including overwrites)."),
+      ADD_STAT(ssitVictimizations, statistics::units::Count::get(),
+               "Number of SSIT victim selections for insertions."),
+      ADD_STAT(ssitInvalidations, statistics::units::Count::get(),
+               "Number of SSIT entry invalidations (evict/clear)."),
+      ADD_STAT(violationCreateNew, statistics::units::Count::get(),
+               "Violations that create new store sets."),
+      ADD_STAT(violationAttachStore, statistics::units::Count::get(),
+               "Violations that attach a store to an existing store set."),
+      ADD_STAT(violationAttachLoad, statistics::units::Count::get(),
+               "Violations that attach a load to an existing store set."),
+      ADD_STAT(violationSameSSIDStrict, statistics::units::Count::get(),
+               "Violations within the same SSID that set strict for the load."),
+      ADD_STAT(violationMerge, statistics::units::Count::get(),
+               "Violations that merge two different SSIDs."),
+      ADD_STAT(ssidAllocations, statistics::units::Count::get(),
+               "Number of SSID allocations requested."),
+      ADD_STAT(ssidAllocFromFreeList, statistics::units::Count::get(),
+               "Number of SSID allocations served from the free list."),
+      ADD_STAT(ssidAllocFromReclaim, statistics::units::Count::get(),
+               "Number of SSID allocations served by reclaiming an in-use SSID "
+               "(free list exhausted)."),
+      ADD_STAT(ssidAllocExhaustRate, statistics::units::Ratio::get(),
+               "Rate of SSID allocations that hit free list exhaustion.",
+               ssidAllocFromReclaim / ssidAllocations),
+      ADD_STAT(ssidReclaims, statistics::units::Count::get(),
+               "Number of SSID reclaims performed (evict SSIT mappings)."),
+      ADD_STAT(ssidMerges, statistics::units::Count::get(),
+               "Number of SSID merges performed."),
+      ADD_STAT(ssidReleases, statistics::units::Count::get(),
+               "Number of SSIDs released back to the free list.")
+{
+}
+
+void
 StoreSet::SSITEntry::invalidate()
 {
     if (owner && isValid()) {
+        if (owner->stats) {
+            owner->stats->ssitInvalidations++;
+        }
         owner->ssitEntryInvalidated(ssid);
     }
     TaggedEntry::invalidate();
@@ -112,14 +167,27 @@ StoreSet::SSITEntry::invalidate()
 StoreSet::SSITEntry*
 StoreSet::findSSITEntry(Addr pc)
 {
+    if (stats) {
+        stats->ssitLookups++;
+    }
     if (!ssit) {
+        if (stats) {
+            stats->ssitMisses++;
+        }
         return nullptr;
     }
 
     Addr key = ssitKey(pc);
     SSITEntry* entry = ssit->findEntry(key, false);
     if (entry) {
+        if (stats) {
+            stats->ssitHits++;
+        }
         ssit->accessEntry(entry);
+    } else {
+        if (stats) {
+            stats->ssitMisses++;
+        }
     }
     return entry;
 }
@@ -167,11 +235,17 @@ StoreSet::maybeReleaseSSID(SSID ssid)
     ssidLastUse[ssid] = 0;
     ssidFreeList.push_back(ssid);
     clearLFSTEntry(ssid);
+    if (stats) {
+        stats->ssidReleases++;
+    }
 }
 
 void
 StoreSet::reclaimSSID(SSID ssid)
 {
+    if (stats) {
+        stats->ssidReclaims++;
+    }
     if (ssit) {
         for (auto& entry : *ssit) {
             if (entry.isValid() && entry.ssid == ssid) {
@@ -189,6 +263,9 @@ StoreSet::reclaimSSID(SSID ssid)
 StoreSet::SSID
 StoreSet::allocSSID()
 {
+    if (stats) {
+        stats->ssidAllocations++;
+    }
     if (!ssidFreeList.empty()) {
         SSID ssid = ssidFreeList.back();
         ssidFreeList.pop_back();
@@ -196,10 +273,16 @@ StoreSet::allocSSID()
         ssidRefCount[ssid] = 0;
         touchSSID(ssid);
         clearLFSTEntry(ssid);
+        if (stats) {
+            stats->ssidAllocFromFreeList++;
+        }
         return ssid;
     }
 
     // SSID pool exhausted: reclaim the least-recently used SSID.
+    if (stats) {
+        stats->ssidAllocFromReclaim++;
+    }
     SSID victim = 0;
     uint64_t oldest = std::numeric_limits<uint64_t>::max();
     bool found = false;
@@ -235,6 +318,9 @@ StoreSet::mergeSSIDs(SSID winner, SSID loser)
 {
     if (winner == loser) {
         return;
+    }
+    if (stats) {
+        stats->ssidMerges++;
     }
 
     // Merge the SSIT mappings.
@@ -297,11 +383,17 @@ StoreSet::updateSSITEntry(Addr pc, SSID ssid, bool strict)
             entry->strict = true;
         }
     } else {
+        if (stats) {
+            stats->ssitVictimizations++;
+        }
         entry = ssit->findVictim(key);
         entry->ssid = ssid;
         entry->strict = strict;
         ssit->insertEntry(key, false, entry);
         ssidRefCount[ssid]++;
+        if (stats) {
+            stats->ssitInserts++;
+        }
     }
 
     touchSSID(ssid);
@@ -426,6 +518,9 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
     const bool valid_store_SSID = store_entry != nullptr;
 
     if (!valid_load_SSID && !valid_store_SSID) {
+        if (stats) {
+            stats->violationCreateNew++;
+        }
         SSID new_set_load = allocSSID();
         SSID new_set_store = allocSSID();
         updateSSITEntry(load_PC, new_set_load, false);
@@ -435,12 +530,18 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
                 "StoreSet: New store set SSID_ld=%i SSID_st=%i for load %#x, store %#x\n",
                 new_set_load, new_set_store, load_PC, store_PC);
     } else if (valid_load_SSID && !valid_store_SSID) {
+        if (stats) {
+            stats->violationAttachStore++;
+        }
         SSID new_set_store = allocSSID();
         updateSSITEntry(store_PC, new_set_store, false);
         DPRINTF(StoreSet,
                 "StoreSet: Adding store %#x to existing SSID=%i (load %#x)\n",
                 store_PC, new_set_store, load_PC);
     } else if (!valid_load_SSID && valid_store_SSID) {
+        if (stats) {
+            stats->violationAttachLoad++;
+        }
         SSID new_set_load = allocSSID();
         updateSSITEntry(load_PC, new_set_load, false);
         DPRINTF(StoreSet,
@@ -453,6 +554,9 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
         assert(load_SSID < LFSTSize && store_SSID < LFSTSize);
 
         if (load_SSID == store_SSID) {
+            if (stats) {
+                stats->violationSameSSIDStrict++;
+            }
             updateSSITEntry(load_PC, load_SSID, true);
             DPRINTF(StoreSet,
                     "StoreSet: Same SSID=%i, setting load %#x strict\n",
@@ -460,6 +564,9 @@ StoreSet::violation(Addr store_PC, Addr load_PC)
             return;
         }
 
+        if (stats) {
+            stats->violationMerge++;
+        }
         SSID winner = std::min(load_SSID, store_SSID);
         SSID loser = (winner == load_SSID) ? store_SSID : load_SSID;
 
