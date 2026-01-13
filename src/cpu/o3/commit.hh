@@ -45,6 +45,7 @@
 #include <list>
 #include <map>
 #include <queue>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -99,7 +100,51 @@ class ThreadState;
  * supports multiple cycle squashing, to model a ROB that can only
  * remove a certain number of instructions per cycle.
  */
-class Commit
+struct LoadKey
+{
+    Addr pc;
+    Addr addr;
+    uint64_t value;
+    bool operator==(const LoadKey& o) const {
+        return pc == o.pc && addr == o.addr && value == o.value;
+    }
+};
+
+struct LoadKeyHash
+{
+    std::size_t operator()(const LoadKey& k) const {
+        std::size_t h1 = std::hash<Addr>{}(k.pc);
+        std::size_t h2 = std::hash<Addr>{}(k.addr);
+        std::size_t h3 = std::hash<uint64_t>{}(k.value);
+        return h1 ^ (h2 << 1) ^ (h3 << 2);
+    }
+};
+
+class LoadTripleCounter
+{
+public:
+    bool update(Addr pc, Addr addr, uint64_t value) {
+        LoadKey key{pc, addr, value};
+        auto it = table.find(key);
+        if (it != table.end()) {
+            it->second++;
+            totalCount++;
+            return true;
+        } else {
+            table.emplace(key, 1);
+            totalCount++;
+            return false;
+        }
+    }
+    uint64_t size() const { return table.size(); }
+    uint64_t total() const { return totalCount; }
+
+private:
+    std::unordered_map<LoadKey, uint64_t, LoadKeyHash> table;
+    uint64_t totalCount = 0;
+};
+
+ class Commit
 {
   public:
     /** Overall commit status. Used to determine if the CPU can deschedule
@@ -152,6 +197,7 @@ class Commit
 
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);
+    LoadTripleCounter loadTripleCounter;
 
   public:
     /** Construct a Commit with the given parameters. */
@@ -557,6 +603,8 @@ class Commit
 
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
+        /** Number of load get the same pc && addr && value*/
+        statistics::Scalar loadTriple;
 
         statistics::Distribution segUnitStrideNF;
         statistics::Distribution segStrideNF;
