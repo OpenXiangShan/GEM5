@@ -448,10 +448,10 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                 updateCounter(1, 2, way.useful);
                 DPRINTF(TAGEUseful, "useful bit incremented due to main differs from base and being correct\n");
             }
-            // else {
-            //     updateCounter(0, 2, way.useful);
-            //     DPRINTF(TAGEUseful, "useful bit decremented due to main differs from base and being wrong\n");
-            // }
+            else {
+                updateCounter(0, 2, way.useful);
+                DPRINTF(TAGEUseful, "useful bit decremented due to main differs from base and being wrong\n");
+            }
         }
 
         // c. Reset u on counter sign flip (becomes weak)
@@ -460,9 +460,9 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         //     DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
         // }
         // DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
-        if (!main_is_correct) {
-            updateCounter(0, 2, way.useful);
-        }
+        // if (!main_is_correct) {
+        //     updateCounter(0, 2, way.useful);
+        // }
 
         // No LRU maintenance
     }
@@ -531,7 +531,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
-            if (!cand.valid || (cand.useful == -2 && weakish)) {
+            if (!cand.valid || (cand.useful == -2 )) {
                 short newCounter = actual_taken ? 0 : -1;
                 DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
                         ti, newIndex, way, newTag, position, newCounter, entry.pc);
