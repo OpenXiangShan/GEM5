@@ -245,12 +245,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
 
-    // Table for tracking when to use alternative prediction on provider weak
-    // use_alt_on_na: indexed by PC, 7-bit signed saturating counter [-64, 63]
-    const unsigned useAltOnNaSize;
-    const unsigned useAltOnNaWidth;
-    std::vector<short> useAlt;
-
     // useful bit reset counter, when cnt >= 256, reset useful bit of all entries
     int usefulResetCnt{0};
 
@@ -278,17 +272,11 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Decrement counter with saturation
     bool satDecrement(int min, short &counter);
 
-    // Get index for useAlt table
-    Addr getUseAltIdx(Addr pc);
-
     // Cache for TAGE indices
     std::vector<Addr> tageIndex;
 
     // Cache for TAGE tags
     std::vector<Addr> tageTag;
-
-    // Whether statistical corrector is enabled
-    bool enableSC;
 
     // Whether to update on read
     bool updateOnRead;

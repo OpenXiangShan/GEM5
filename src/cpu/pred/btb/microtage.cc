@@ -39,8 +39,6 @@ MicroTAGE::MicroTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSiz
       numPredictors(numPredictors),
       numWays(numWays),
       maxBranchPositions(32),
-      useAltOnNaSize(1024),
-      useAltOnNaWidth(7),
       updateOnRead(false),
       numBanks(numBanks),
       bankIdWidth(ceilLog2(numBanks)),
@@ -63,7 +61,6 @@ MicroTAGE::MicroTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSiz
     }
     maxHistLen = histLengths[numPredictors-1];
     numTablesToAlloc = 1;
-    enableSC = false;
 #else
 // Constructor: Initialize TAGE predictor with given parameters
 MicroTAGE::MicroTAGE(const Params& p):
@@ -76,10 +73,7 @@ histLengths(p.histLengths),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
 maxBranchPositions(p.maxBranchPositions),
-useAltOnNaSize(p.useAltOnNaSize),
-useAltOnNaWidth(p.useAltOnNaWidth),
 numTablesToAlloc(p.numTablesToAlloc),
-enableSC(p.enableSC),
 updateOnRead(p.updateOnRead),
 numBanks(p.numBanks),
 bankIdWidth(ceilLog2(p.numBanks)),
@@ -200,9 +194,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  std::shared_ptr<TageMeta> predMeta) {
     DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
 
-    // Find main and alternative predictions
     bool provided = false;
-    // bool alt_provided = true;
     TageTableInfo main_info;
 
     // Search from highest to lowest table for matches
@@ -408,7 +400,6 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
         if (main_weak) {
             tageStats.updateProviderNa++;
-            Addr uidx = getUseAltIdx(entry.pc);
             bool base_correct = (base_taken == actual_taken);
             //updateCounter(base_correct, useAltOnNaWidth, useAlt[uidx]);
             tageStats.updateUseAltOnNaUpdated++;
@@ -749,12 +740,6 @@ MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, Addr position)
 }
 
 Addr
-MicroTAGE::getTageTag(Addr pc, int t, Addr position)
-{
-    return getTageTag(pc, t, tagFoldedHist[t].get(), position);
-}
-
-Addr
 MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
 {
     // Create mask for tableIndexBits[t] to limit result size
@@ -795,12 +780,6 @@ MicroTAGE::satDecrement(int min, short &counter)
         --counter;
     }
     return counter == min;
-}
-
-Addr
-MicroTAGE::getUseAltIdx(Addr pc) {
-    Addr shiftedPc = pc >> instShiftAmt;
-    return shiftedPc & (useAltOnNaSize - 1);
 }
 
 unsigned
