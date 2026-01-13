@@ -220,7 +220,8 @@ class TraceFetch
     std::vector<o3::TraceReader::TraceCheckpoint> traceCheckpoints;
     std::vector<InstSeqNum> checkpointSeqNums;
 
-    static constexpr uint64_t CHECKPOINT_INTERVAL = 64;
+    /** Trace checkpoint cadence (0 disables checkpointing). */
+    uint64_t traceCheckpointInterval = 64;
 };
 
 } // namespace o3

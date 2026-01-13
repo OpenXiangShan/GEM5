@@ -29,6 +29,8 @@
 #ifndef __CPU_O3_TRACE_TRACE_READER_HH__
 #define __CPU_O3_TRACE_TRACE_READER_HH__
 
+#include <sys/types.h>
+
 #include <cstdio>
 #include <deque>
 #include <fstream>
@@ -136,6 +138,7 @@ class TraceReader : public statistics::Group
         Mode modeFlag;
         std::ifstream rawStream;
         FILE *pipeHandle;
+        pid_t pipePid = -1;
         bool eofFlag;
     };
 

@@ -28,7 +28,12 @@
 
 #include "cpu/o3/trace/TraceReader.hh"
 
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <cerrno>
+#include <csignal>
 #include <cstring>
 #include <fstream>
 #include <functional>
@@ -82,16 +87,58 @@ TraceReader::TraceStream::open(const std::string &p, Mode mode)
         return rawStream.is_open();
     }
 
-    const std::string safe = escapePath(path);
-    std::string cmd;
-    if (modeFlag == Mode::Gzip) {
-        // quiet stderr to avoid SIGPIPE noise when consumer stops early
-        cmd = std::string("gzip -dcq -- '") + safe + "' 2>/dev/null";
-    } else {
-        cmd = std::string("xz -dc -- '") + safe + "'";
+    int fds[2];
+    if (pipe(fds) != 0) {
+        return false;
     }
-    pipeHandle = popen(cmd.c_str(), "r");
-    return pipeHandle != nullptr;
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        ::close(fds[0]);
+        ::close(fds[1]);
+        return false;
+    }
+
+    if (pid == 0) {
+        // Child: decompress to stdout.
+        ::close(fds[0]);
+        if (dup2(fds[1], STDOUT_FILENO) < 0) {
+            _exit(127);
+        }
+        ::close(fds[1]);
+
+        int devnull = ::open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDERR_FILENO);
+            ::close(devnull);
+        }
+
+        const char *prog = (modeFlag == Mode::Gzip) ? "gzip" : "xz";
+        const char *arg1 = (modeFlag == Mode::Gzip) ? "-dcq" : "-dc";
+        char *const argv[] = {
+            const_cast<char*>(prog),
+            const_cast<char*>(arg1),
+            const_cast<char*>("--"),
+            const_cast<char*>(path.c_str()),
+            nullptr,
+        };
+        execvp(prog, argv);
+        _exit(127);
+    }
+
+    // Parent: consume decompressed bytes from pipe.
+    ::close(fds[1]);
+    FILE *fp = fdopen(fds[0], "r");
+    if (!fp) {
+        ::close(fds[0]);
+        kill(pid, SIGKILL);
+        waitpid(pid, nullptr, 0);
+        return false;
+    }
+
+    pipeHandle = fp;
+    pipePid = pid;
+    return true;
 }
 
 bool
@@ -109,8 +156,12 @@ TraceReader::TraceStream::close()
         rawStream.close();
     }
     if (pipeHandle) {
-        pclose(pipeHandle);
+        fclose(pipeHandle);
         pipeHandle = nullptr;
+    }
+    if (pipePid > 0) {
+        waitpid(pipePid, nullptr, 0);
+        pipePid = -1;
     }
     eofFlag = false;
 }
@@ -456,6 +507,9 @@ TraceReader::restoreCheckpointCommon(const TraceCheckpoint& checkpoint,
             return false;
         }
     } else if (stream.isOpen() && allowCompressedRewind) {
+        if (!reopenTraceStream(stream, mode, nullptr)) {
+            return false;
+        }
         if (!fastForward(checkpoint.instructionIndex)) {
             return false;
         }
@@ -607,10 +661,11 @@ TraceReader::addToBuffer(const TraceInstruction &instr)
     dumpInstrBuffer("before_push");
 
     if (instrBuffer.size() >= MAX_BUFFER_SIZE) {
-        // Debug output removed temporarily
-        DPRINTF(TraceReader, "addToBuffer: Buffer full, dropping instruction PC=0x%lx (sn:%llu)\n",
-                instr.getPC(), (unsigned long long)instr.getSeqNum());
-        return;
+        panic("TraceReader::addToBuffer: buffer overflow (MAX_BUFFER_SIZE=%lu) at "
+              "PC=0x%lx (sn:%llu)",
+              (unsigned long)MAX_BUFFER_SIZE,
+              instr.getPC(),
+              (unsigned long long)instr.getSeqNum());
     }
 
     instrBuffer.push(instr);

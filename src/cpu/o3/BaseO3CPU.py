@@ -257,7 +257,7 @@ class BaseO3CPU(BaseCPU):
     traceFile = Param.String("", "Path to trace file for trace-driven simulation")
     traceFormat = Param.String("champsim", "Trace format (champsim, cbp2025)")
     enableDecoupledBPInTrace = Param.Bool(False, "Enable decoupled branch predictor in trace mode")
-    traceCheckpointInterval = Param.Unsigned(64, "Checkpoint interval for trace rollback")
+    traceCheckpointInterval = Param.Unsigned(64, "Checkpoint interval for trace rollback (0 disables)")
     traceBPValidation = Param.Bool(True, "Enable branch predictor validation against trace")
 
     # Address mapping configuration for trace mode
@@ -270,7 +270,7 @@ class BaseO3CPU(BaseCPU):
     traceTimingPTW = Param.Bool(False,
         "In trace mode, use timing TLB/PTW with a synthetic static page table")
     tracePTReservedBytes = Param.UInt64(64 * 1024 * 1024,
-        "Bytes reserved at top of trace-mapped memory for page tables")
+        "Bytes reserved above trace-mapped region for synthetic page tables")
     tracePTLeafPageSize = Param.UInt64(4 * 1024,
         "Synthetic mapping page size for trace timing PTW (4KiB or 2MiB)")
 
@@ -291,7 +291,7 @@ class BaseO3CPU(BaseCPU):
     # False (default): inject NOPs and keep reader position unchanged
     # True: advance reader and use trace PCs during injection; restore reader at squash
     traceWrongPathUseTraceInst = Param.Bool(False,
-        "Use trace instructions for wrong-path injection (advance + checkpoint/restore); default False uses NOPs")
+        "Use trace instructions for wrong-path injection (advance + checkpoint/restore); currently unimplemented")
 
     # Trace mode control (exec bypass reserved for future use)
     traceExecBypass = Param.Bool(False,

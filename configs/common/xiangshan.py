@@ -383,6 +383,8 @@ def build_xiangshan_system(args):
 
     # Configure trace mode if enabled
     if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
+        if not getattr(args, 'trace_file', None):
+            fatal("--trace-file is required when --enable-trace-mode is set")
         print(f"Configuring CPUs for trace mode...")
         for cpu in test_sys.cpu:
             # Enable trace mode

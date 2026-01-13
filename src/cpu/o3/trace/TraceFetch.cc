@@ -95,14 +95,16 @@ TraceFetch::TraceFetch(Fetch &fetch_, const BaseO3CPUParams &params)
     if (traceMode) {
         DPRINTF(Fetch, "Trace mode enabled, file: %s, format: %s\n",
                 params.traceFile, params.traceFormat);
-        // Trace 模式下不进行显式 BP 训练，训练交由普通 commit 通路
-        traceTrainBranches = false;
+        traceTrainBranches = params.traceTrainBranches;
         traceDecoupledFrontend = params.enableDecoupledBPInTrace;
+        traceCheckpointInterval = params.traceCheckpointInterval;
         // Wire CPU params to fetch trace modeling knobs
         traceMispredictPenalty = params.traceMispredictPenalty;
         traceEnableWrongPath = params.traceEnableWrongPath;
         // Wrong-path injection mode (default NOPs)
         traceWrongPathUseTraceInst = params.traceWrongPathUseTraceInst;
+        fatal_if(traceWrongPathUseTraceInst,
+                 "traceWrongPathUseTraceInst is currently unimplemented");
         // Enable BP-vs-trace validation independent of training
         traceBPValidation = params.traceBPValidation;
         // Note: pass CPU as parent stats group; keep reader name simple to avoid
@@ -182,6 +184,11 @@ TraceFetch::setupTraceTimingPTW(::gem5::ThreadContext *tc)
               (unsigned long long)pt_region_base);
     }
     Addr pt_region_end = pt_region_base + tracePTReservedBytes;
+    fatal_if(pt_region_end <= pt_region_base,
+             "Trace timing PTW: invalid page table region "
+             "(base=0x%llx, end=0x%llx)\n",
+             (unsigned long long)pt_region_base,
+             (unsigned long long)pt_region_end);
 
     if (pt_region_base < va_end) {
         fatal("Trace timing PTW: page table region overlaps trace mapping window "
@@ -194,6 +201,12 @@ TraceFetch::setupTraceTimingPTW(::gem5::ThreadContext *tc)
     if (!system) {
         fatal("Trace timing PTW enabled but System is null\n");
     }
+    fatal_if(!system->isMemAddr(pt_region_base) ||
+             !system->isMemAddr(pt_region_end - 1),
+             "Trace timing PTW: page table region is outside physical memory "
+             "(pt=[0x%llx,0x%llx))\n",
+             (unsigned long long)pt_region_base,
+             (unsigned long long)pt_region_end);
 
     PortProxy &phys = system->physProxy;
     phys.memsetBlob(pt_region_base, 0, tracePTReservedBytes);
@@ -892,8 +905,8 @@ TraceFetch::maybeCreateTraceCheckpoint(InstSeqNum seqNum)
         return;
     }
 
-    // Create checkpoint every CHECKPOINT_INTERVAL instructions
-    if (seqNum % CHECKPOINT_INTERVAL == 0) {
+    // Create checkpoint every traceCheckpointInterval instructions.
+    if (traceCheckpointInterval != 0 && (seqNum % traceCheckpointInterval) == 0) {
         auto checkpoint = traceReader->createCheckpoint();
         if (checkpoint.valid) {
             traceCheckpoints.push_back(checkpoint);
@@ -923,20 +936,6 @@ TraceFetch::findTraceIndexForSeqNum(InstSeqNum seqNum) const
         return it->second;
     }
 
-    // Find the closest checkpoint before this seqNum
-    uint64_t bestTraceIndex = 0;
-    InstSeqNum bestSeqNum = 0;
-
-    for (size_t i = 0; i < checkpointSeqNums.size(); ++i) {
-        if (checkpointSeqNums[i] <= seqNum && checkpointSeqNums[i] > bestSeqNum) {
-            bestSeqNum = checkpointSeqNums[i];
-            bestTraceIndex = traceCheckpoints[i].instructionIndex;
-        }
-    }
-
-    DPRINTF(Fetch, "findTraceIndexForSeqNum[sn:%lli]: Found closest checkpoint at seqNum=%lli, traceIndex=%lu\n",
-            seqNum, bestSeqNum, bestTraceIndex);
-
     // dump seqNumToTraceIndex
     DPRINTF(Fetch, seqNumToTraceIndex.size() == 0 ?
             "  seqNumToTraceIndex is empty\n" :
@@ -945,7 +944,8 @@ TraceFetch::findTraceIndexForSeqNum(InstSeqNum seqNum) const
         DPRINTF(Fetch, "  seqNum=%lli => traceIndex=%lu\n", pair.first, pair.second);
     }
 
-    return bestTraceIndex;
+    DPRINTF(Fetch, "findTraceIndexForSeqNum[sn:%lli]: No direct mapping\n", seqNum);
+    return 0;
 }
 
 bool
@@ -1003,9 +1003,10 @@ TraceFetch::rollbackTraceReader(InstSeqNum seqNum, bool squash_itself)
     }
 
     // 交由 TraceReader 软回滚（命中本地历史窗口则不触碰文件指针），超界时内部自行降级
-    const bool success = traceReader->softSeekToInstruction(index);
-    DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: softSeekToInstruction(index=%lu) => %d\n",
-            seqNum, index, (int)success);
+    const uint64_t seek_cursor = (index > 0) ? (index - 1) : 0;
+    const bool success = traceReader->softSeekToInstruction(seek_cursor);
+    DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: softSeekToInstruction(index=%lu,cursor=%lu) => %d\n",
+            seqNum, index, seek_cursor, (int)success);
     return success;
 }
 
@@ -1272,6 +1273,11 @@ TraceFetch::createMachInstFromTrace(const o3::TraceInstruction &traceInstr)
               (unsigned long long)traceInstr.getSeqNum());
     }
     const bool compressed = instSize == 2;
+
+    if (!traceTrainBranches && traceInstr.isAnyBranch()) {
+        return compressed ? static_cast<TheISA::MachInst>(0x0001u)
+                          : static_cast<TheISA::MachInst>(0x00000013u);
+    }
 
     // Default integer mappings
     uint8_t rs1 = srcRegs.empty() ? 0 : srcRegs[0];
