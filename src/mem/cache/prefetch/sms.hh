@@ -150,6 +150,9 @@ class XSCompositePrefetcher : public Queued
         statistics::Scalar smsCurRegionoverride;
         statistics::Scalar smsIncrRegionoverride;
         statistics::Scalar smsDecrRegionoverride;
+        statistics::Scalar strideTrainCount;
+        statistics::Scalar streamTrainCount;
+        statistics::Scalar totalTrainCount;
     } stats;
 
   public:

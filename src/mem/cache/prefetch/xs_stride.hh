@@ -81,7 +81,7 @@ class XSStridePrefetcher : public Queued
 
     bool strideLookup(AssociativeSet<StrideEntry> &stride, const PrefetchInfo &pfi, std::vector<AddrPriority> &address,
                       bool late, Addr &pf_addr, PrefetchSourceType src, bool enter_new_region, bool miss_repeat,
-                      int64_t &learned_bop_offset);
+                      int64_t &learned_bop_offset, bool is_first_shot);
 
     AssociativeSet<StrideEntry> strideUnique;
 
@@ -124,6 +124,22 @@ class XSStridePrefetcher : public Queued
                            Addr &pf_addr, int64_t &learned_bop_offset);
   PrefetchFilter* stridestream_pfFilter_l1;
   PrefetchFilter* stridestream_pfFilter_l2l3;
+
+  struct XSstrideStats : public statistics::Group
+  {
+      XSstrideStats(statistics::Group *parent);
+      statistics::Scalar strideUniquequeryCount;
+      statistics::Scalar strideUniquehitCount;
+      statistics::Scalar strideUniquemissCount;
+      statistics::Scalar strideUniquepfCount;
+      statistics::Scalar strideUniquereplaceusefulCount;
+      statistics::Scalar strideRedundantqueryCount;
+      statistics::Scalar strideRedundanthitCount;
+      statistics::Scalar strideRedundantmissCount;
+      statistics::Scalar strideRedundantpfCount;
+      statistics::Scalar strideRedundantreplaceusefulCount;
+
+  } stats;
 };
 }
 

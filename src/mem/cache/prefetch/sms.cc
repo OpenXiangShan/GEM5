@@ -125,6 +125,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     if (!can_prefetch) {
         return;
     }
+    stats.totalTrainCount++;
 
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
@@ -147,8 +148,10 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     bool is_first_64 = false;
     if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
         assert(!(enableActivepage && enableXsstream));
-        if (enableXsstream)
+        if (enableXsstream) {
             Xsstream->calculatePrefetch(pfi, addresses, streamlatenum);
+            stats.streamTrainCount++;
+        }
         act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);
         if (enableOpt){
             assert(Opt);
@@ -297,6 +300,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     if (use_stride){
         DPRINTF(XSCompositePrefetcher, "Do Sstride traing/prefetching...\n");
         int64_t learned_bop_offset = 0;
+        stats.strideTrainCount++;
         Sstride->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, enter_new_region, is_first_shot,
                                    stride_pf_addr, learned_bop_offset);
         if (learned_bop_offset != 0)
@@ -749,7 +753,10 @@ XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *par
       ADD_STAT(bopTrainCount, statistics::units::Count::get(), "bop train count"),
       ADD_STAT(smsCurRegionoverride, statistics::units::Count::get(), "sms current region override prefetches"),
       ADD_STAT(smsIncrRegionoverride, statistics::units::Count::get(), "sms increased region override prefetches"),
-      ADD_STAT(smsDecrRegionoverride, statistics::units::Count::get(), "sms decreased region override prefetches")
+      ADD_STAT(smsDecrRegionoverride, statistics::units::Count::get(), "sms decreased region override prefetches"),
+      ADD_STAT(strideTrainCount, statistics::units::Count::get(), "stride train count"),
+      ADD_STAT(streamTrainCount, statistics::units::Count::get(), "stream train count"),
+      ADD_STAT(totalTrainCount, statistics::units::Count::get(), "total train count")
 {
 }
 
