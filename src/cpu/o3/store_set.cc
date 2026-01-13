@@ -28,10 +28,19 @@
 
 #include "cpu/o3/store_set.hh"
 
+#include <algorithm>
+#include <limits>
+#include <string>
+
 #include "base/intmath.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/StoreSet.hh"
+#include "mem/cache/prefetch/associative_set_impl.hh"
+#include "mem/cache/replacement_policies/tree_plru_rp.hh"
+#include "mem/cache/tags/indexing_policies/set_associative.hh"
+#include "params/SetAssociative.hh"
+#include "params/TreePLRURP.hh"
 
 namespace gem5
 {
@@ -39,55 +48,50 @@ namespace gem5
 namespace o3
 {
 
-StoreSet::StoreSet(uint64_t clear_period, int _SSIT_size, int _LFST_size,int _store_set_clear_thres, int _LFSTEntrySize)
-    : clearPeriod(clear_period), SSITSize(_SSIT_size), LFSTSize(_LFST_size),LFSTEntrySize(_LFSTEntrySize),
-      clearPeriodThreshold(_store_set_clear_thres)
+uint64_t StoreSet::ssitInstanceCounter = 0;
+
+namespace
 {
-    DPRINTF(StoreSet, "StoreSet: Creating store set object.\n");
-    DPRINTF(StoreSet, "StoreSet: SSIT size: %i, LFST size: %i.\n",
-            SSITSize, LFSTSize);
 
-    if (!isPowerOf2(SSITSize)) {
-        fatal("Invalid SSIT size!\n");
+class StoreSetMDPSetAssociative : public SetAssociative
+{
+  private:
+    // splitmix64 finalizer: small, fast, good avalanche for hashed indexing.
+    static uint64_t
+    mix64(uint64_t x)
+    {
+        x += 0x9e3779b97f4a7c15ULL;
+        x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+        return x ^ (x >> 31);
     }
 
-    SSIT.resize(SSITSize);
-
-    validSSIT.resize(SSITSize);
-
-    for (int i = 0; i < SSITSize; ++i)
-        validSSIT[i] = false;
-
-    if (!isPowerOf2(LFSTSize)) {
-        fatal("Invalid LFST size!\n");
+  protected:
+    uint32_t extractSet(const Addr addr) const override
+    {
+        return static_cast<uint32_t>(mix64(static_cast<uint64_t>(addr)) &
+                                     setMask);
     }
 
-    //LFST.resize(LFSTSize);
-    LFSTLarge.resize(LFSTSize);
-    LFSTLargePC.resize(LFSTSize);
-    validLFSTLarge.resize(LFSTSize);
-    //validLFST.resize(LFSTSize);
-    VictimEntryID.resize(LFSTSize);
+    Addr extractTag(const Addr addr) const override { return addr; }
 
-    for (int i = 0; i < LFSTSize; ++i) {
-        // validLFST[i] = false;
-        // LFST[i] = 0;
-        LFSTLarge[i].resize(LFSTEntrySize);
-        LFSTLargePC[i].resize(LFSTEntrySize);
-        validLFSTLarge[i].resize(LFSTEntrySize);
-        VictimEntryID[i]=0;
-        for (int j=0;j<LFSTEntrySize;++j) {
-            validLFSTLarge[i][j] = 0;
-            LFSTLarge[i][j] = 0;
-            LFSTLargePC[i][j] = 0;
-        }
+  public:
+    StoreSetMDPSetAssociative(const SetAssociativeParams &p)
+      : SetAssociative(p)
+    {
     }
+    ~StoreSetMDPSetAssociative() = default;
+};
 
-    indexMask = SSITSize - 1;
+} // namespace
 
-    offsetBits = 2;
+StoreSet::StoreSet() = default;
 
-    memOpsPred = 0;
+StoreSet::StoreSet(uint64_t clear_period, int _SSIT_size, int _LFST_size,
+                   int _store_set_clear_thres, int _LFSTEntrySize)
+{
+    init(clear_period, _store_set_clear_thres, _SSIT_size, _LFST_size,
+         _LFSTEntrySize);
 }
 
 StoreSet::~StoreSet()
@@ -95,139 +99,376 @@ StoreSet::~StoreSet()
 }
 
 void
-StoreSet::init(uint64_t clear_period, int clear_period_thres, int _SSIT_size, int _LFST_size, int _LFST_entry_size)
+StoreSet::SSITEntry::invalidate()
 {
-    SSITSize = _SSIT_size;
-    LFSTSize = _LFST_size;
+    if (owner && isValid()) {
+        owner->ssitEntryInvalidated(ssid);
+    }
+    TaggedEntry::invalidate();
+    ssid = 0;
+    strict = false;
+}
+
+StoreSet::SSITEntry*
+StoreSet::findSSITEntry(Addr pc)
+{
+    if (!ssit) {
+        return nullptr;
+    }
+
+    Addr key = ssitKey(pc);
+    SSITEntry* entry = ssit->findEntry(key, false);
+    if (entry) {
+        ssit->accessEntry(entry);
+    }
+    return entry;
+}
+
+void
+StoreSet::ssitEntryInvalidated(SSID ssid)
+{
+    assert(ssid < (SSID)LFSTSize);
+    if (!ssidInUse[ssid]) {
+        return;
+    }
+    assert(ssidRefCount[ssid] > 0);
+    ssidRefCount[ssid]--;
+    maybeReleaseSSID(ssid);
+}
+
+void
+StoreSet::touchSSID(SSID ssid)
+{
+    if (ssid < ssidLastUse.size() && ssidInUse[ssid]) {
+        ssidLastUse[ssid] = ++ssidUseCounter;
+    }
+}
+
+void
+StoreSet::clearLFSTEntry(SSID ssid)
+{
+    assert(ssid < (SSID)LFSTSize);
+    VictimEntryID[ssid] = 0;
+    for (int j = 0; j < LFSTEntrySize; ++j) {
+        validLFSTLarge[ssid][j] = false;
+        LFSTLarge[ssid][j] = 0;
+        LFSTLargePC[ssid][j] = 0;
+    }
+}
+
+void
+StoreSet::maybeReleaseSSID(SSID ssid)
+{
+    if (!ssidInUse[ssid] || ssidRefCount[ssid] != 0) {
+        return;
+    }
+
+    ssidInUse[ssid] = false;
+    ssidLastUse[ssid] = 0;
+    ssidFreeList.push_back(ssid);
+    clearLFSTEntry(ssid);
+}
+
+void
+StoreSet::reclaimSSID(SSID ssid)
+{
+    if (ssit) {
+        for (auto& entry : *ssit) {
+            if (entry.isValid() && entry.ssid == ssid) {
+                // inorder not to release the ssid, set owner to nullptr
+                entry.owner = nullptr;
+                ssit->invalidate(&entry);
+                entry.owner = this;
+            }
+        }
+    }
+    ssidRefCount[ssid] = 0;
+    clearLFSTEntry(ssid);
+}
+
+StoreSet::SSID
+StoreSet::allocSSID()
+{
+    if (!ssidFreeList.empty()) {
+        SSID ssid = ssidFreeList.back();
+        ssidFreeList.pop_back();
+        ssidInUse[ssid] = true;
+        ssidRefCount[ssid] = 0;
+        touchSSID(ssid);
+        clearLFSTEntry(ssid);
+        return ssid;
+    }
+
+    // SSID pool exhausted: reclaim the least-recently used SSID.
+    SSID victim = 0;
+    uint64_t oldest = std::numeric_limits<uint64_t>::max();
+    bool found = false;
+    for (SSID ssid = 0; ssid < (SSID)LFSTSize; ++ssid) {
+        if (!ssidInUse[ssid]) {
+            continue;
+        }
+        found = true;
+        if (ssidLastUse[ssid] < oldest) {
+            oldest = ssidLastUse[ssid];
+            victim = ssid;
+        }
+    }
+
+    if (!found) {
+        fatal("StoreSet: SSID allocator is inconsistent (free list empty "
+              "and no SSID marked in-use)!\n");
+    }
+
+    DPRINTF(StoreSet,
+            "StoreSet: SSID pool exhausted, reclaiming SSID=%u (lastUse=%lu)\n",
+            victim, oldest);
+
+    reclaimSSID(victim);
+    ssidInUse[victim] = true;
+    ssidRefCount[victim] = 0;
+    touchSSID(victim);
+    return victim;
+}
+
+void
+StoreSet::mergeSSIDs(SSID winner, SSID loser)
+{
+    if (winner == loser) {
+        return;
+    }
+
+    // Merge the SSIT mappings.
+    if (ssit) {
+        for (auto& entry : *ssit) {
+            if (!entry.isValid() || entry.ssid != loser) {
+                continue;
+            }
+            assert(ssidRefCount[loser] > 0);
+            ssidRefCount[loser]--;
+            ssidRefCount[winner]++;
+            entry.ssid = winner;
+        }
+    }
+
+    // Merge LFST state: try to keep as many producers as possible.
+    for (int j = 0; j < LFSTEntrySize; ++j) {
+        if (!validLFSTLarge[loser][j]) {
+            continue;
+        }
+
+        InstSeqNum seq = LFSTLarge[loser][j];
+        bool already_present = false;
+        for (int k = 0; k < LFSTEntrySize; ++k) {
+            if (validLFSTLarge[winner][k] && LFSTLarge[winner][k] == seq) {
+                already_present = true;
+                break;
+            }
+        }
+        if (already_present) {
+            continue;
+        }
+
+        int victim = findVictimInLFSTEntry(winner);
+        LFSTLarge[winner][victim] = seq;
+        LFSTLargePC[winner][victim] = LFSTLargePC[loser][j];
+        validLFSTLarge[winner][victim] = true;
+    }
+
+    maybeReleaseSSID(loser);
+    touchSSID(winner);
+}
+
+void
+StoreSet::updateSSITEntry(Addr pc, SSID ssid, bool strict)
+{
+    assert(ssid < (SSID)LFSTSize);
+    Addr key = ssitKey(pc);
+
+    SSITEntry* entry = ssit->findEntry(key, false);
+    if (entry) {
+        ssit->accessEntry(entry);
+
+        if (entry->ssid != ssid) {
+            ssitEntryInvalidated(entry->ssid);
+            ssidRefCount[ssid]++;
+            entry->ssid = ssid;
+        }
+        if (strict) {
+            entry->strict = true;
+        }
+    } else {
+        entry = ssit->findVictim(key);
+        entry->ssid = ssid;
+        entry->strict = strict;
+        ssit->insertEntry(key, false, entry);
+        ssidRefCount[ssid]++;
+    }
+
+    touchSSID(ssid);
+}
+
+void
+StoreSet::init(uint64_t clear_period, int clear_period_thres, int _SSIT_size,
+               int _LFST_size, int _LFST_entry_size)
+{
     clearPeriod = clear_period;
     clearPeriodThreshold = clear_period_thres;
+
+    // This class is initialized twice in the current O3 pipeline: once in the
+    // MemDepUnit constructor and again in MemDepUnit::init(). We must avoid
+    // recreating SimObject-based helper policies (and leaving dangling pointers
+    // in the global SimObject list).
+    if (ssit) {
+        fatal_if(_SSIT_size != SSITSize,
+                 "StoreSet: re-init with a different SSIT size is unsupported "
+                 "(old=%d new=%d)\n",
+                 SSITSize, _SSIT_size);
+        fatal_if(_LFST_size != LFSTSize,
+                 "StoreSet: re-init with a different LFST size is unsupported "
+                 "(old=%d new=%d)\n",
+                 LFSTSize, _LFST_size);
+        fatal_if(_LFST_entry_size != LFSTEntrySize,
+                 "StoreSet: re-init with a different LFST entry size is "
+                 "unsupported (old=%d new=%d)\n",
+                 LFSTEntrySize, _LFST_entry_size);
+
+        clear();
+        memOpsPred = 0;
+        lastClearPeriodCycle = 0;
+        return;
+    }
+
+    SSITSize = _SSIT_size;
+    LFSTSize = _LFST_size;
     LFSTEntrySize = _LFST_entry_size;
 
     DPRINTF(StoreSet, "StoreSet: Creating store set object.\n");
     DPRINTF(StoreSet, "StoreSet: SSIT size: %i, LFST size: %i.\n",
             SSITSize, LFSTSize);
 
-    SSIT.resize(SSITSize);
-
-    validSSIT.resize(SSITSize);
-
-    SSITStrict.resize(SSITSize);
-    for (int i = 0; i < SSITSize; ++i) {
-        validSSIT[i] = false;
-        SSITStrict[i] = false;
+    if (SSITSize % SSITAssoc != 0) {
+        fatal("Invalid SSIT size (must be multiple of %d)!\n", SSITAssoc);
     }
+    if (!isPowerOf2(SSITSize / SSITAssoc)) {
+        fatal("Invalid SSIT size (numSets must be power of 2)!\n");
+    }
+
+    if (!isPowerOf2(LFSTSize)) {
+        fatal("Invalid LFST size!\n");
+    }
+
+    ssidInUse.assign(LFSTSize, false);
+    ssidRefCount.assign(LFSTSize, 0);
+    ssidLastUse.assign(LFSTSize, 0);
+    ssidFreeList.clear();
+    ssidFreeList.reserve(LFSTSize);
+    for (SSID ssid = 0; ssid < (SSID)LFSTSize; ++ssid) {
+        ssidFreeList.push_back(ssid);
+    }
+    ssidUseCounter = 0;
+
     LFSTLarge.resize(LFSTSize);
     LFSTLargePC.resize(LFSTSize);
     validLFSTLarge.resize(LFSTSize);
     VictimEntryID.resize(LFSTSize);
 
-
-    // LFST.resize(LFSTSize);
-
-    // validLFST.resize(LFSTSize);
-
-
     for (int i = 0; i < LFSTSize; ++i) {
-        // validLFST[i] = false;
-        // LFST[i] = 0;
         LFSTLarge[i].resize(LFSTEntrySize);
         LFSTLargePC[i].resize(LFSTEntrySize);
         validLFSTLarge[i].resize(LFSTEntrySize);
-        VictimEntryID[i]=0;
-        for (int j=0;j<LFSTEntrySize;++j) {
+        VictimEntryID[i] = 0;
+        for (int j = 0; j < LFSTEntrySize; ++j) {
             validLFSTLarge[i][j] = false;
             LFSTLarge[i][j] = 0;
             LFSTLargePC[i][j] = 0;
         }
     }
 
-    indexMask = SSITSize - 1;
+    const uint64_t ssit_id = ++ssitInstanceCounter;
 
-    offsetBits = 2;
+    ssitIndexingParams = std::make_unique<SetAssociativeParams>();
+    ssitIndexingParams->name =
+        "store_set_ssit_indexing_" + std::to_string(ssit_id);
+    ssitIndexingParams->eventq_index = 0;
+    ssitIndexingParams->assoc = SSITAssoc;
+    ssitIndexingParams->entry_size = 1;
+    ssitIndexingParams->size = SSITSize;
+    ssitIndexingParams->num_slices = 1;
+    ssitIndexingParams->slice_idx = 0;
+
+    ssitIndexingPolicy =
+        std::make_unique<StoreSetMDPSetAssociative>(*ssitIndexingParams);
+
+    ssitReplacementParams = std::make_unique<TreePLRURPParams>();
+    ssitReplacementParams->name =
+        "store_set_ssit_repl_" + std::to_string(ssit_id);
+    ssitReplacementParams->eventq_index = 0;
+    ssitReplacementParams->num_leaves = SSITAssoc;
+
+    ssitReplacementPolicy = std::make_unique<replacement_policy::TreePLRU>(
+        *ssitReplacementParams);
+
+    ssit = std::make_unique<SSITTable>(
+        SSITAssoc, SSITSize, ssitIndexingPolicy.get(),
+        ssitReplacementPolicy.get(), SSITEntry(this));
 
     memOpsPred = 0;
-
     lastClearPeriodCycle = 0;
 }
-
 
 void
 StoreSet::violation(Addr store_PC, Addr load_PC)
 {
-    int load_index = calcIndexSSIT(load_PC);
-    int store_index = calcIndexSSIT(store_PC);
+    auto* load_entry = findSSITEntry(load_PC);
+    auto* store_entry = findSSITEntry(store_PC);
 
-    assert(load_index < SSITSize && store_index < SSITSize);
-
-    bool valid_load_SSID = validSSIT[load_index];
-    bool valid_store_SSID = validSSIT[store_index];
+    const bool valid_load_SSID = load_entry != nullptr;
+    const bool valid_store_SSID = store_entry != nullptr;
 
     if (!valid_load_SSID && !valid_store_SSID) {
-        // Calculate a new SSID here.
-        SSID ld_new_set = calcSSID(load_PC);
-        SSID sd_new_set = calcSSID(store_PC);
+        SSID new_set_load = allocSSID();
+        SSID new_set_store = allocSSID();
+        updateSSITEntry(load_PC, new_set_load, false);
+        updateSSITEntry(store_PC, new_set_store, false);
 
-        validSSIT[load_index] = true;
-
-        SSIT[load_index] = ld_new_set;
-
-        validSSIT[store_index] = true;
-
-        SSIT[store_index] = sd_new_set;
-
-        assert(ld_new_set < LFSTSize);
-        assert(sd_new_set < LFSTSize);
-        // DPRINTF(StoreSet, "StoreSet: Neither load nor store had a valid "
-        //         "storeset, creating a new one: %i for load %#x, store %#x\n",
-        //         new_set, load_PC, store_PC);
+        DPRINTF(StoreSet,
+                "StoreSet: New store set SSID_ld=%i SSID_st=%i for load %#x, store %#x\n",
+                new_set_load, new_set_store, load_PC, store_PC);
     } else if (valid_load_SSID && !valid_store_SSID) {
-        SSID load_SSID = SSIT[load_index];
-        SSID sd_new_set = calcSSID(store_PC);
-
-        validSSIT[store_index] = true;
-
-        SSIT[store_index] = sd_new_set;
-
-        assert(sd_new_set < LFSTSize);
-
-        DPRINTF(StoreSet, "StoreSet: Load had a valid store set.  Adding "
-                "store to that set: %i for load %#x, store %#x\n",
-                load_SSID, load_PC, store_PC);
+        SSID new_set_store = allocSSID();
+        updateSSITEntry(store_PC, new_set_store, false);
+        DPRINTF(StoreSet,
+                "StoreSet: Adding store %#x to existing SSID=%i (load %#x)\n",
+                store_PC, new_set_store, load_PC);
     } else if (!valid_load_SSID && valid_store_SSID) {
-        SSID store_SSID = SSIT[store_index];
-        SSID ld_new_set = calcSSID(load_PC);
-
-        validSSIT[load_index] = true;
-
-        SSIT[load_index] = ld_new_set;
-
-        DPRINTF(StoreSet, "StoreSet: Store had a valid store set: %i for "
-                "load %#x, store %#x\n",
-                store_SSID, load_PC, store_PC);
+        SSID new_set_load = allocSSID();
+        updateSSITEntry(load_PC, new_set_load, false);
+        DPRINTF(StoreSet,
+                "StoreSet: Adding load %#x to existing SSID=%i (store %#x)\n",
+                load_PC, new_set_load, store_PC);
     } else {
-        SSID load_SSID = SSIT[load_index];
-        SSID store_SSID = SSIT[store_index];
+        SSID load_SSID = load_entry->ssid;
+        SSID store_SSID = store_entry->ssid;
 
         assert(load_SSID < LFSTSize && store_SSID < LFSTSize);
 
-        // The store set with the lower number wins
-        if (store_SSID > load_SSID) {
-            SSIT[store_index] = load_SSID;
-
-            DPRINTF(StoreSet, "StoreSet: Load had smaller store set: %i; "
-                    "for load %#x, store %#x\n",
-                    load_SSID, load_PC, store_PC);
-        } else {
-            SSIT[load_index] = store_SSID;
-
-            if (store_SSID == load_SSID) {
-                SSITStrict[load_index] = true;
-            }
-
-            DPRINTF(StoreSet, "StoreSet: Store had smaller store set: %i; "
-                    "for load %#x, store %#x\n",
-                    store_SSID, load_PC, store_PC);
+        if (load_SSID == store_SSID) {
+            updateSSITEntry(load_PC, load_SSID, true);
+            DPRINTF(StoreSet,
+                    "StoreSet: Same SSID=%i, setting load %#x strict\n",
+                    load_SSID, load_PC);
+            return;
         }
+
+        SSID winner = std::min(load_SSID, store_SSID);
+        SSID loser = (winner == load_SSID) ? store_SSID : load_SSID;
+
+        DPRINTF(StoreSet,
+                "StoreSet: Merging SSIDs winner=%i loser=%i for load %#x, "
+                "store %#x\n",
+                winner, loser, load_PC, store_PC);
+
+        mergeSSIDs(winner, loser);
     }
 }
 
@@ -236,9 +477,6 @@ StoreSet::checkClear(Cycles curCycle)
 {
     uint64_t delta_cycle = (uint64_t)curCycle - lastClearPeriodCycle;
     memOpsPred++;
-    // if (memOpsPred > clearPeriod) {
-        // DPRINTF(StoreSet, "Wiping predictor state beacuse %d ld/st executed\n",
-        //         clearPeriod);
     if (delta_cycle > clearPeriodThreshold) {
         memOpsPred = 0;
         clear();
@@ -247,107 +485,69 @@ StoreSet::checkClear(Cycles curCycle)
 }
 
 void
-StoreSet::insertLoad(Addr load_PC, InstSeqNum load_seq_num,Cycles curCycle)
+StoreSet::insertLoad(Addr load_PC, InstSeqNum load_seq_num, Cycles curCycle)
 {
     checkClear(curCycle);
-    // Does nothing.
     return;
 }
 
 void
-StoreSet::insertStore(Addr store_PC, InstSeqNum store_seq_num, ThreadID tid, Cycles curCycle)
+StoreSet::insertStore(Addr store_PC, InstSeqNum store_seq_num, ThreadID tid,
+                      Cycles curCycle)
 {
-    int index = calcIndexSSIT(store_PC);
-
-    int store_SSID;
-
-    // checkClear();
-    int victim_inst;
     checkClear(curCycle);
-    assert(index < SSITSize);
-
-    if (!validSSIT[index]) {
+    auto* entry = findSSITEntry(store_PC);
+    if (!entry) {
         // Do nothing if there's no valid entry.
         return;
-    } else {
-        store_SSID = SSIT[index];
-
-        assert(store_SSID < LFSTSize);
-
-        // Update the last store that was fetched with the current one.
-        // LFST[store_SSID] = store_seq_num;
-        victim_inst = findVictimInLFSTEntry(store_SSID);
-        LFSTLarge[store_SSID][victim_inst] = store_seq_num;
-
-        // validLFST[store_SSID] = 1;
-        LFSTLargePC[store_SSID][victim_inst] = store_PC;
-
-        // storeList[store_seq_num] = store_SSID;
-        validLFSTLarge[store_SSID][victim_inst] = 1;
-
-        DPRINTF(StoreSet, "Store %#x sn:%lu updated the LFST[SSID=%i][%i]\n",
-                store_PC, store_seq_num, store_SSID, victim_inst);
-        dump();
     }
+
+    SSID store_SSID = entry->ssid;
+    assert(store_SSID < LFSTSize);
+    touchSSID(store_SSID);
+
+    int victim_inst = findVictimInLFSTEntry(store_SSID);
+    LFSTLarge[store_SSID][victim_inst] = store_seq_num;
+    LFSTLargePC[store_SSID][victim_inst] = store_PC;
+    validLFSTLarge[store_SSID][victim_inst] = true;
+
+    DPRINTF(StoreSet, "Store %#x sn:%lu updated the LFST[SSID=%i][%i]\n",
+            store_PC, store_seq_num, store_SSID, victim_inst);
+    dump();
 }
 
 bool
 StoreSet::checkInstStrict(Addr pc)
 {
-    int index = calcIndexSSIT(pc);
-    bool inst_strict;
-    assert(index < SSITSize);
-
-    if (!validSSIT[index]) {
+    auto* entry = findSSITEntry(pc);
+    if (!entry) {
         return false;
     }
-    inst_strict = SSITStrict[index];
-    return inst_strict;
+    return entry->strict;
 }
 
 std::vector<InstSeqNum>
 StoreSet::checkInst(Addr PC)
 {
-    int index = calcIndexSSIT(PC);
-
-    int inst_SSID;
-
-    assert(index < SSITSize);
-
     std::vector<InstSeqNum> vec = {};
-
-    if (!validSSIT[index]) {
-        DPRINTF(StoreSet, "Inst %#x with index %i had no SSID\n",
-                PC, index);
-
-        // Return 0 if there's no valid entry.
-        return vec;
-    } else {
-        inst_SSID = SSIT[index];
-
-        assert(inst_SSID < LFSTSize);
-
-        // if (!validLFST[inst_SSID]) {
-
-        //     DPRINTF(StoreSet, "Inst %#x with index %i and SSID %i had no "
-        //             "dependency\n", PC, index, inst_SSID);
-
-        //     return 0;
-        // } else {
-        //     DPRINTF(StoreSet, "Inst %#x with index %i and SSID %i had LFST "
-        //             "inum of %i\n", PC, index, inst_SSID, LFST[inst_SSID]);
-
-        //     return LFST[inst_SSID];
-        // }
-        for (int j = 0; j < LFSTEntrySize; ++j) {
-            if (validLFSTLarge[inst_SSID][j]) {
-                vec.push_back(LFSTLarge[inst_SSID][j]);
-            }
-        }
-        DPRINTF(StoreSet, "Inst %#x with index=%i, ssid=%i, had %lu valid producer\n",
-                PC, index, inst_SSID, vec.size());
+    auto* entry = findSSITEntry(PC);
+    if (!entry) {
+        DPRINTF(StoreSet, "Inst %#x had no SSID\n", PC);
         return vec;
     }
+
+    SSID inst_SSID = entry->ssid;
+    assert(inst_SSID < LFSTSize);
+    touchSSID(inst_SSID);
+
+    for (int j = 0; j < LFSTEntrySize; ++j) {
+        if (validLFSTLarge[inst_SSID][j]) {
+            vec.push_back(LFSTLarge[inst_SSID][j]);
+        }
+    }
+    DPRINTF(StoreSet, "Inst %#x with ssid=%i, had %lu valid producer\n",
+            PC, inst_SSID, vec.size());
+    return vec;
 }
 
 void
@@ -358,36 +558,18 @@ StoreSet::issued(Addr issued_PC, InstSeqNum issued_seq_num, bool is_store)
         return;
     }
 
-    int index = calcIndexSSIT(issued_PC);
-
-    int store_SSID;
-
-    assert(index < SSITSize);
-
-    // SeqNumMapIt store_list_it = storeList.find(issued_seq_num);
-
-    // if (store_list_it != storeList.end()) {
-    //     storeList.erase(store_list_it);
-    // }
-
-    // Make sure the SSIT still has a valid entry for the issued store.
-    if (!validSSIT[index]) {
+    auto* entry = findSSITEntry(issued_PC);
+    if (!entry) {
         return;
     }
 
-    store_SSID = SSIT[index];
-
+    SSID store_SSID = entry->ssid;
     assert(store_SSID < LFSTSize);
+    touchSSID(store_SSID);
 
-    // If the last fetched store in the store set refers to the store that
-    // was just issued, then invalidate the entry.
-    // if (validLFST[store_SSID] && LFST[store_SSID] == issued_seq_num) {
-    //     DPRINTF(StoreSet, "StoreSet: store invalidated itself in LFST.\n");
-    //     validLFST[store_SSID] = false;
-    // }
-
-    for (int j=0;j<LFSTEntrySize;++j) {
-        if (validLFSTLarge[store_SSID][j] && LFSTLarge[store_SSID][j] == issued_seq_num) {
+    for (int j = 0; j < LFSTEntrySize; ++j) {
+        if (validLFSTLarge[store_SSID][j] &&
+            LFSTLarge[store_SSID][j] == issued_seq_num) {
             validLFSTLarge[store_SSID][j] = false;
             LFSTLarge[store_SSID][j] = 0;
             LFSTLargePC[store_SSID][j] = 0;
@@ -398,14 +580,13 @@ StoreSet::issued(Addr issued_PC, InstSeqNum issued_seq_num, bool is_store)
 void
 StoreSet::squash(InstSeqNum squashed_num, ThreadID tid)
 {
-    for (int i=0;i<LFSTSize;++i) {
-        for (int j=0; j<LFSTEntrySize; ++j) {
+    for (int i = 0; i < LFSTSize; ++i) {
+        for (int j = 0; j < LFSTEntrySize; ++j) {
             if (validLFSTLarge[i][j] && LFSTLarge[i][j] > squashed_num) {
-                LFSTLarge[i][j] =0;
+                LFSTLarge[i][j] = 0;
                 LFSTLargePC[i][j] = 0;
                 validLFSTLarge[i][j] = false;
-            }
-            else if (!validLFSTLarge[i][j]) {
+            } else if (!validLFSTLarge[i][j]) {
                 LFSTLarge[i][j] = 0;
                 LFSTLargePC[i][j] = 0;
             }
@@ -416,38 +597,42 @@ StoreSet::squash(InstSeqNum squashed_num, ThreadID tid)
 void
 StoreSet::clear()
 {
-    for (int i = 0; i < SSITSize; ++i) {
-        validSSIT[i] = false;
-    }
-
-    for (int i = 0; i < LFSTSize; ++i) {
-        for (int j=0;j<LFSTEntrySize;++j) {
-            validLFSTLarge[i][j] = false;
+    if (ssit) {
+        for (auto& entry : *ssit) {
+            entry.owner = nullptr;
+        }
+        for (auto& entry : *ssit) {
+            ssit->invalidate(&entry);
+        }
+        for (auto& entry : *ssit) {
+            entry.owner = this;
         }
     }
 
+    ssidInUse.assign(LFSTSize, false);
+    ssidRefCount.assign(LFSTSize, 0);
+    ssidLastUse.assign(LFSTSize, 0);
+    ssidFreeList.clear();
+    ssidFreeList.reserve(LFSTSize);
+    for (SSID ssid = 0; ssid < (SSID)LFSTSize; ++ssid) {
+        ssidFreeList.push_back(ssid);
+    }
+    ssidUseCounter = 0;
+
+    for (int i = 0; i < LFSTSize; ++i) {
+        clearLFSTEntry(i);
+    }
 }
 
 void
 StoreSet::dump()
 {
-    // cprintf("storeList.size(): %i\n", storeList.size());
-    // SeqNumMapIt store_list_it = storeList.begin();
-
-    // int num = 0;
-
-    // while (store_list_it != storeList.end()) {
-    //     cprintf("%i: [sn:%lli] SSID:%i\n",
-    //             num, (*store_list_it).first, (*store_list_it).second);
-    //     num++;
-    //     store_list_it++;
-    // }
 }
 
 int
 StoreSet::findVictimInLFSTEntry(int store_SSID)
 {
-    for (int j=0;j<LFSTEntrySize;++j) {
+    for (int j = 0; j < LFSTEntrySize; ++j) {
         if (!validLFSTLarge[store_SSID][j]) {
             return j;
         }
@@ -457,23 +642,6 @@ StoreSet::findVictimInLFSTEntry(int store_SSID)
         VictimEntryID[store_SSID] %= LFSTEntrySize;
     }
     return VictimEntryID[store_SSID];
-}
-
-Addr
-StoreSet::XORFold(Addr pc, uint64_t resetWidth)
-{
-    uint64_t pcWidth = sizeof(pc)*8;
-    uint64_t fold_range = (pcWidth + resetWidth -1)/resetWidth;
-    uint64_t xored = 0;
-    uint64_t value_low;
-
-    do {
-        value_low = pc & ((1<<resetWidth)-1);
-        xored ^= value_low;
-        pc >>= resetWidth;
-        fold_range--;
-    }while (fold_range !=0);
-    return xored;
 }
 
 } // namespace o3

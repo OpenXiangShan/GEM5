@@ -29,17 +29,29 @@
 #ifndef __CPU_O3_STORE_SET_HH__
 #define __CPU_O3_STORE_SET_HH__
 
-#include <cmath>
 #include <list>
 #include <map>
+#include <memory>
 #include <utility>
 #include <vector>
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "mem/cache/tags/tagged_entry.hh"
 
 namespace gem5
 {
+
+class BaseIndexingPolicy;
+template<class Entry>
+class AssociativeSet;
+struct SetAssociativeParams;
+struct TreePLRURPParams;
+
+namespace replacement_policy
+{
+class Base;
+} // namespace replacement_policy
 
 namespace o3
 {
@@ -67,7 +79,7 @@ class StoreSet
 
   public:
     /** Default constructor.  init() must be called prior to use. */
-    StoreSet() { };
+    StoreSet();
 
     /** Creates store set predictor with given table sizes. */
     StoreSet(uint64_t clear_period, int SSIT_size, int LFST_size,int _store_set_clear_thres, int _LFSTEntrySize);
@@ -118,26 +130,53 @@ class StoreSet
   private:
 
     uint64_t lastClearPeriodCycle=0;
-    Addr XORFold(Addr pc, uint64_t resetWidth);
     int findVictimInLFSTEntry(int store_SSID);
 
-    /** Calculates the index into the SSIT based on the PC. */
-    // inline int calcIndex(Addr PC)
-    // { return (PC >> offsetBits) & indexMask; }
-    inline int calcIndexSSIT(Addr pc)
-    { return XORFold(pc,log2(SSITSize)); }
+    static constexpr int SSITAssoc = 4;
+    // RISC-V can have 16-bit compressed instructions, so PC is at least 2B
+    // aligned. Only drop bit0 to avoid aliasing between PC and PC+2.
+    static constexpr int SSITPcShift = 1;
 
-    /** Calculates a Store Set ID based on the PC. */
-    // inline SSID calcSSID(Addr PC)
-    // { return ((PC ^ (PC >> 10)) % LFSTSize); }
-    inline SSID calcSSID(Addr pc)
-    { return XORFold(XORFold(pc,log2(SSITSize)),log2(LFSTSize)); }
+    static uint64_t ssitInstanceCounter;
 
-    /** The Store Set ID Table. */
-    std::vector<SSID> SSIT;
+    struct SSITEntry : public TaggedEntry
+    {
+        StoreSet* owner = nullptr;
+        SSID ssid = 0;
+        bool strict = false;
 
-    /** Bit vector to tell if the SSIT has a valid entry. */
-    std::vector<bool> validSSIT,SSITStrict;
+        SSITEntry(StoreSet* owner = nullptr) : TaggedEntry(), owner(owner)
+        {
+        }
+
+        void invalidate() override;
+    };
+
+    using SSITTable = AssociativeSet<SSITEntry>;
+
+    Addr ssitKey(Addr pc) const { return pc >> SSITPcShift; }
+    SSITEntry* findSSITEntry(Addr pc);
+    void updateSSITEntry(Addr pc, SSID ssid, bool strict);
+    void ssitEntryInvalidated(SSID ssid);
+
+    std::unique_ptr<SetAssociativeParams> ssitIndexingParams;
+    std::unique_ptr<TreePLRURPParams> ssitReplacementParams;
+    std::unique_ptr<BaseIndexingPolicy> ssitIndexingPolicy;
+    std::unique_ptr<replacement_policy::Base> ssitReplacementPolicy;
+    std::unique_ptr<SSITTable> ssit;
+
+    SSID allocSSID();
+    void touchSSID(SSID ssid);
+    void maybeReleaseSSID(SSID ssid);
+    void reclaimSSID(SSID ssid);
+    void clearLFSTEntry(SSID ssid);
+    void mergeSSIDs(SSID winner, SSID loser);
+
+    std::vector<bool> ssidInUse;
+    std::vector<int> ssidRefCount;
+    std::vector<uint64_t> ssidLastUse;
+    std::vector<SSID> ssidFreeList;
+    uint64_t ssidUseCounter = 0;
 
     /** Last Fetched Store Table. */
     std::vector<std::vector<InstSeqNum>> LFSTLarge,LFSTLargePC;
@@ -166,12 +205,6 @@ class StoreSet
 
     int LFSTEntrySize;
     uint64_t clearPeriodThreshold;
-
-    /** Mask to obtain the index. */
-    int indexMask;
-
-    // HACK: Hardcoded for now.
-    int offsetBits;
 
     /** Number of memory operations predicted since last clear of predictor */
     int memOpsPred;
