@@ -52,6 +52,7 @@
 #include "arch/riscv/insts/fusion.hh"
 #include "arch/riscv/insts/vector.hh"
 #include "base/compiler.hh"
+#include "base/intmath.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
@@ -89,12 +90,16 @@ std::list<LSQ::SingleDataRequest*> LSQ::SingleDataRequest::singleList;
 
 LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     : cpu(cpu_ptr), iewStage(iew_ptr),
-      recentlyloadAddr(8),
+      recentlyloadAddr(8 * (params.DcacheSetDivNum ? params.DcacheSetDivNum : 1)),
       _cacheBlocked(false),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
       cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),
       enableBankConflictCheck(params.BankConflictCheck),
       sbufferBankWriteAccurately(params.sbufferBankWriteAccurately),
+      dcacheSetBits(params.DcacheSetBits),
+      dcacheSetDivNum(params.DcacheSetDivNum),
+      dcacheLineBits(floorLog2(cpu_ptr->cacheLineSize())),
+      dcacheSetBankBits(params.DcacheSetBits + 3),
       _enableLdMissReplay(params.EnableLdMissReplay),
       _enablePipeNukeCheck(params.EnablePipeNukeCheck),
       _storeWbStage(params.StoreWbStage),
@@ -115,6 +120,16 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
         panic("LSQ can not support pipeline nuke replay when EnableLdMissReplay is False");
     }
     assert(_storeWbStage >= 2 && _storeWbStage <= 4);
+    panic_if(dcacheSetDivNum == 0, "DcacheSetDivNum must be >= 1\n");
+    panic_if(!isPowerOf2(dcacheSetDivNum),
+             "DcacheSetDivNum must be power of two (got %u)\n",
+             dcacheSetDivNum);
+    panic_if(dcacheSetBankBits >= 64,
+             "DcacheSetBits too large for bank conflict model (setBits=%u)\n",
+             dcacheSetBits);
+    panic_if(dcacheSetDivNum > (1ULL << dcacheSetBits),
+             "DcacheSetDivNum (%u) must be <= num_sets (2^%u)\n",
+             dcacheSetDivNum, dcacheSetBits);
 
     //**********************************************
     //************ Handle SMT Parameters ***********
@@ -152,7 +167,11 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
         thread[tid].setDcachePort(&dcachePort);
     }
 
-    bankOccupied.resize(8, false);
+    bankOccupied.resize(dcacheSetDivNum, std::vector<bool>(numBank, false));
+    pendingDcacheRefill.resize(dcacheSetDivNum, false);
+    dcacheRefillDataRead.resize(dcacheSetDivNum, 0);
+    dcacheRefillDataWrite.resize(dcacheSetDivNum, 0);
+    dcacheRefillTagWrite.resize(dcacheSetDivNum, 0);
 }
 
 
@@ -230,63 +249,89 @@ LSQ::tick()
 void
 LSQ::clearAddresses()
 {
-    // Check if the current cycle is already occupied by previous operations (e.g. delayed writeback)
-    bool currentCycleBusy = (dcacheRefillDataRead | dcacheRefillDataWrite) & 0x1;
+    for (unsigned div = 0; div < dcacheSetDivNum; div++) {
+        // Check if the current cycle is already occupied by previous operations
+        // (e.g. delayed writeback).
+        bool currentCycleBusy =
+            (dcacheRefillDataRead[div] | dcacheRefillDataWrite[div]) & 0x1;
 
-    if (pendingDcacheRefill) {
-        // If current cycle is busy, we stall the new request (keep pendingDcacheRefill = true)
-        // If free, we issue the new request
-        if (!currentCycleBusy) {
-            pendingDcacheRefill = false;
-            // Data Read at current cycle (Bit 0)
-            dcacheRefillDataRead |= 0x1;
-            // Tag Write at 3 cycles later (Bit 3)
-            dcacheRefillTagWrite |= (1 << 3);
-            // Data Write at 4 cycles later (Bit 4)
-            dcacheRefillDataWrite |= (1 << 4);
+        if (pendingDcacheRefill[div]) {
+            // If current cycle is busy, we stall the new request (keep pending).
+            // If free, we issue the new request.
+            if (!currentCycleBusy) {
+                pendingDcacheRefill[div] = false;
+                // Data Read at current cycle (Bit 0)
+                dcacheRefillDataRead[div] |= 0x1;
+                // Tag Write at 3 cycles later (Bit 3)
+                dcacheRefillTagWrite[div] |= (1 << 3);
+                // Data Write at 4 cycles later (Bit 4)
+                dcacheRefillDataWrite[div] |= (1 << 4);
 
-            // We just occupied the current cycle
-            currentCycleBusy = true;
+                // We just occupied the current cycle.
+                currentCycleBusy = true;
+            }
         }
-    }
 
-    // Advance the pipeline for the next cycle
-    dcacheRefillDataRead >>= 1;
-    dcacheRefillTagWrite >>= 1;
-    dcacheRefillDataWrite >>= 1;
+        // Advance the pipeline for the next cycle.
+        dcacheRefillDataRead[div] >>= 1;
+        dcacheRefillTagWrite[div] >>= 1;
+        dcacheRefillDataWrite[div] >>= 1;
 
-    if (currentCycleBusy) {
-        std::fill(bankOccupied.begin(), bankOccupied.end(), true);
-    } else {
-        std::fill(bankOccupied.begin(), bankOccupied.end(), false);
+        std::fill(bankOccupied[div].begin(), bankOccupied[div].end(),
+                  currentCycleBusy);
     }
     recentlyloadAddr.clear();
+}
+
+unsigned
+LSQ::getDcacheDiv(Addr vaddr) const
+{
+    return (vaddr >> dcacheLineBits) & (dcacheSetDivNum - 1);
+}
+
+uint64_t
+LSQ::getDcacheBankSetKey(Addr vaddr) const
+{
+    // [setIndex][bankIndex][dataOffset]
+    //         ^ (cacheLineBits)   ^ (3 bits)
+    return (vaddr >> 3) & ((1ULL << dcacheSetBankBits) - 1);
+}
+
+uint64_t
+LSQ::getDcacheDivBankSetKey(Addr vaddr) const
+{
+    return (static_cast<uint64_t>(getDcacheDiv(vaddr)) << dcacheSetBankBits) |
+        getDcacheBankSetKey(vaddr);
 }
 
 bool
 LSQ::loadBankConflictedCheck(Addr vaddr)
 {
     bool now_bank_conflict = false;
-    // [13:6]   [5:3]     [2:0]
-    // setIndex bankIndex dataOffset
-    const uint64_t cacheBankmask = 0b11111111111000;
     const int bankIndex = bankNum(vaddr);
+    const unsigned div = getDcacheDiv(vaddr);
+    const uint64_t key = getDcacheDivBankSetKey(vaddr);
 
     if (enableBankConflictCheck) {
-        if (recentlyloadAddr.contains((vaddr & cacheBankmask))) {
-            recentlyloadAddr.get((vaddr & cacheBankmask));
+        if (recentlyloadAddr.contains(key)) {
+            recentlyloadAddr.get(key);
             return false;
         }
-        auto bank_occupied = bankOccupied.at(bankIndex);
-        if (bank_occupied) {
+        if (bankOccupied[div][bankIndex]) {
             now_bank_conflict = true;
 
         } else {
-            bank_occupied = true;
-            recentlyloadAddr.insert((vaddr & cacheBankmask), {});
+            bankOccupied[div][bankIndex] = true;
+            recentlyloadAddr.insert(key, {});
         }
     }
     return now_bank_conflict;
+}
+
+void
+LSQ::notifyDcacheRefill(Addr addr)
+{
+    pendingDcacheRefill.at(getDcacheDiv(addr)) = true;
 }
 
 unsigned

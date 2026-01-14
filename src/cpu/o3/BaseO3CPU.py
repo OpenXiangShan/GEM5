@@ -200,6 +200,8 @@ class BaseO3CPU(BaseCPU):
 
     BankConflictCheck = Param.Bool(True, "open Bank conflict check")
     sbufferBankWriteAccurately = Param.Bool(False, "Sbuffer write to memory with bank conflict check")
+    DcacheSetBits = Param.Unsigned(8, "Dcache set bits for LSQ bank conflict model")
+    DcacheSetDivNum = Param.Unsigned(1, "Dcache set div num for LSQ bank conflict model (power of two)")
     EnableLdMissReplay = Param.Bool(True, "Replay Cache missed load instrution from ReplayQ if True")
     EnablePipeNukeCheck = Param.Bool(True, "Replay load if Raw violation is detected in loadPipe if True")
 
