@@ -223,7 +223,6 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 matching_entry = entry;
                 matching_way = way;
                 match = true;
-
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
                 DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
@@ -538,11 +537,9 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
                 break; // one penalty per table per update
             }
         }
-
         tageStats.updateAllocFailure++;
         usefulResetCnt++;
     }
-
     if (usefulResetCnt >= 256) {
         usefulResetCnt = 0;
         tageStats.updateResetU++;
@@ -840,12 +837,35 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
         return;
     }
 
-    for (int t = 0; t < numPredictors; t++) {
-        for (int type = 0; type < 3; type++) {
-            auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
-            // since we have folded path history, we can put arbitrary shamt here, and it wouldn't make a difference
-            foldedHist.update(history, 2, taken, pc, target);
-            DPRINTF(TAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist.get());
+    // for (int t = 0; t < numPredictors; t++) {
+    //     for (int type = 0; type < 3; type++) {
+    //         auto foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
+    //         // since we have folded path history, we can put arbitrary shamt here, and it wouldn't make a difference
+    //         foldedHist.update(history, 2, taken, pc, target);
+    //         DPRINTF(TAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist.get());
+    //     }
+    // }
+    for (int type = 0; type < 2; type++) {
+        auto &foldedHistqueue = type == 0 ? aheadindexFoldedHist : aheadtagFoldedHist;
+        auto &foldedHist =type == 0 ? indexFoldedHist : tagFoldedHist;
+        if (foldedHistqueue.empty()) {
+            break;
+        }
+        foldedHist = foldedHistqueue.front();
+    }
+
+
+    for (int type = 0; type < 2; type++) {
+        auto foldedHist = type == 0 ? indexFoldedHist : tagFoldedHist;
+        auto &foldedHistqueue = type == 0 ? aheadindexFoldedHist : aheadtagFoldedHist;
+        for (int t = 0; t < numPredictors; t++) {
+            foldedHist[t].update(history, 2, taken, pc, target);
+            DPRINTF(TAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist[t].get());
+        }
+        foldedHistqueue.push(foldedHist);
+        assert(foldedHistqueue.size() <= 2);
+        if (foldedHistqueue.size() > 1) {
+            foldedHistqueue.pop();
         }
     }
 }
@@ -887,10 +907,15 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
-    for (int i = 0; i < numPredictors; i++) {
-        tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
-        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+
+    for (int type = 0; type < 2; type++) {
+        auto &foldedHistQueuefront = type == 0 ? aheadindexFoldedHist.front() : aheadtagFoldedHist.front();
+        auto predFoldedHist =type == 0 ? predMeta->indexFoldedHist : predMeta->tagFoldedHist;
+        for (int i = 0; i < numPredictors; i++) {
+            foldedHistQueuefront[i].recover(predFoldedHist[i]);
+        }
     }
+
     doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
 }
 
