@@ -12,7 +12,13 @@ namespace btb_pred
 #ifdef UNIT_TEST
 namespace test
 {
-TimedBaseBTBPredictor::TimedBaseBTBPredictor() : blockSize(32), predictWidth(64), numDelay(0), resolvedUpdate(false) {}
+TimedBaseBTBPredictor::TimedBaseBTBPredictor()
+    : blockSize(32),
+      predictWidth(64),
+      numDelay(0),
+      resolvedUpdate(false),
+      enabled(true)
+{}
 }  // namespace test
 #else
 TimedBaseBTBPredictor::TimedBaseBTBPredictor(const Params &p)
