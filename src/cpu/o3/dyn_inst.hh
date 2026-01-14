@@ -160,6 +160,8 @@ class DynInst : public ExecContext, public RefCounted
     /** The kind of fault this instruction has generated. */
     Fault fault = NoFault;
 
+    bool everTLBMissed = false;
+
     /** InstRecord that tracks this instructions. */
     Trace::InstRecord *traceData = nullptr;
 
@@ -975,7 +977,7 @@ class DynInst : public ExecContext, public RefCounted
     }
     bool needReplay() const { return status[NeedReplay]; }
 
-    void setTLBMissReplay() { setReplay(LdStReplayType::TLBMissReplay); }
+    void setTLBMissReplay() { setReplay(LdStReplayType::TLBMissReplay); everTLBMissed = true; }
     bool needTLBMissReplay() const { return getReplayType() == LdStReplayType::TLBMissReplay; }
 
     void setCacheMissReplay() { setReplay(LdStReplayType::CacheMissReplay); }

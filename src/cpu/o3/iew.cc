@@ -1621,7 +1621,11 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
 
             // Tell the instruction queue that a violation has occured.
             if (enableStoreSetTrain) {
-                instQueue.violation(inst, violator);
+                if (inst->isStore() && inst->everTLBMissed) {
+                    // Don't train store sets on stores who has ever TLB missed
+                } else {
+                    instQueue.violation(inst, violator);
+                }
             }
 
             // Squash.
