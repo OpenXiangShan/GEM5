@@ -1,4 +1,5 @@
 #include "cpu/pred/btb/folded_hist.hh"
+// #include "debug/MGSC.hh"
 
 namespace gem5
 {
@@ -152,15 +153,20 @@ ImliFoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken
     const uint64_t foldedMask = ((1ULL << foldedLen) - 1);
     uint64_t temp = _folded;
 
-    // Simple shift and set case
-    if (taken && temp < ((1ULL << histLen) - 1) && shamt == 1) {  // backward taken, inner most loop
-        temp = temp + 1;                                          // counter++ (index++)
-    } else if (taken && shamt > 1) {                              // backward taken, not inner most loop
-        temp = 1;
-    } else if (!taken) {  // backward not taken, hist = 0
+    // For IMLI, we treat "taken" as a backward-taken event (i.e., loop continues).
+    // Update rule (CBP-like):
+    // - backward taken: counter++
+    // - otherwise: counter = 0 (loop exits or no backward-taken event)
+    if (taken) {
+        const uint64_t max = ((1ULL << histLen) - 1);
+        if (temp < max) {
+            temp++;
+        }
+    } else {
         temp = 0;
     }
     _folded = temp & foldedMask;
+    // DPRINTF(MGSC, "IMLI FoldedHist update: shamt %d, taken %d, folded %ld\n", shamt, taken, _folded);
 }
 
 /**
