@@ -65,6 +65,17 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             miss_repeat);
     bool should_cover = false;
     if (entry) {
+        if (archDBer){
+            archDBer->strideTraceWrite(curTick(), lookupAddr, pfi.getPC(), stride_hash_pc,
+                                       true, is_first_shot, pfi.isCacheMiss(), true);
+        }
+    }else{
+        if (archDBer){
+            archDBer->strideTraceWrite(curTick(), lookupAddr, pfi.getPC(), stride_hash_pc,
+                                       false, is_first_shot, pfi.isCacheMiss(), true);
+        }
+    }
+    if (entry) {
         if (is_first_shot) {
             stats.strideUniquehitCount++;
         } else {
@@ -173,6 +184,12 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                     stats.strideUniquepfCount += 2;
                 } else {
                     stats.strideRedundantpfCount += 2;
+                }
+                if (archDBer){
+                    archDBer->strideTraceWrite(curTick(),  blockAddress(lookupAddr + (entry->stride << 2)), pfi.getPC(), stride_hash_pc,
+                                            true, is_first_shot, pfi.isCacheMiss(), false);
+                    archDBer->strideTraceWrite(curTick(),  blockAddress(lookupAddr + (entry->stride << 5)), pfi.getPC(), stride_hash_pc,
+                                            true, is_first_shot, pfi.isCacheMiss(), false);
                 }
             } else {
                 for (unsigned i = start_depth; i <= entry->depth; i++) {
