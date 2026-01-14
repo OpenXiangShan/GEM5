@@ -500,6 +500,54 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void recoverFoldedHist(const boost::dynamic_bitset<> &history);
     unsigned getNumEntriesFirstLocalHistories() { return numEntriesFirstLocalHistories; };
 
+#ifdef UNIT_TEST
+    struct TestAccess
+    {
+        static unsigned numCtrsPerLine(const BTBMGSC &mgsc) { return mgsc.numCtrsPerLine; }
+        static unsigned numCtrsPerLineBits(const BTBMGSC &mgsc) { return mgsc.numCtrsPerLineBits; }
+
+        static unsigned bwTableIdxWidth(const BTBMGSC &mgsc) { return mgsc.bwTableIdxWidth; }
+        static unsigned lTableIdxWidth(const BTBMGSC &mgsc) { return mgsc.lTableIdxWidth; }
+        static unsigned iTableIdxWidth(const BTBMGSC &mgsc) { return mgsc.iTableIdxWidth; }
+        static unsigned gTableIdxWidth(const BTBMGSC &mgsc) { return mgsc.gTableIdxWidth; }
+        static unsigned pTableIdxWidth(const BTBMGSC &mgsc) { return mgsc.pTableIdxWidth; }
+        static unsigned biasTableIdxWidth(const BTBMGSC &mgsc) { return mgsc.biasTableIdxWidth; }
+
+        static bool &forceUseSC(BTBMGSC &mgsc) { return mgsc.forceUseSC; }
+
+        static auto &bwTable(BTBMGSC &mgsc) { return mgsc.bwTable; }
+        static auto &lTable(BTBMGSC &mgsc) { return mgsc.lTable; }
+        static auto &iTable(BTBMGSC &mgsc) { return mgsc.iTable; }
+        static auto &gTable(BTBMGSC &mgsc) { return mgsc.gTable; }
+        static auto &pTable(BTBMGSC &mgsc) { return mgsc.pTable; }
+        static auto &biasTable(BTBMGSC &mgsc) { return mgsc.biasTable; }
+
+        static auto &updateThreshold(BTBMGSC &mgsc) { return mgsc.updateThreshold; }
+        static auto &pUpdateThreshold(BTBMGSC &mgsc) { return mgsc.pUpdateThreshold; }
+
+        static Addr getHistIndex(BTBMGSC &mgsc, Addr pc, unsigned tableIndexBits, uint64_t foldedHist)
+        {
+            return mgsc.getHistIndex(pc, tableIndexBits, foldedHist);
+        }
+
+        static Addr getBiasIndex(BTBMGSC &mgsc, Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbit1)
+        {
+            return mgsc.getBiasIndex(pc, tableIndexBits, lowbit0, lowbit1);
+        }
+
+        static std::tuple<unsigned, unsigned> posHash(BTBMGSC &mgsc, Addr pc, unsigned tableIdx)
+        {
+            return mgsc.posHash(pc, tableIdx);
+        }
+
+        static const std::unordered_map<Addr, MgscPrediction> &preds(const BTBMGSC &mgsc)
+        {
+            assert(mgsc.meta);
+            return mgsc.meta->preds;
+        }
+    };
+#endif
+
   private:
     void initStorage();
 
