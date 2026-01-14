@@ -83,6 +83,7 @@ jobs:
           git checkout ${CURRENT_BRANCH}
       
       - name: Comment IPC comparison to PR
+        continue-on-error: true  # Fork PRs don't have write permission
         uses: actions/github-script@v6
         with:
           script: |
