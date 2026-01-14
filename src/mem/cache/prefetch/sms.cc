@@ -588,6 +588,7 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
                 stats.smsCurRegionoverride++;
             }
             phtSentPrefetch[0] = phtsentInfo(region_addr, region_bit_cur ,0, true,pht_entry->decr_mode,secure,phtPFLevel, &pfi.trigger_info);
+            phtSentPrefetch[0].trigger.pfSourceType = PrefetchSourceType::SPht;
         }
         found = false;
         for (uint8_t i = 0; i < regionBlks - 1; i++) {
@@ -606,6 +607,7 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
                 stats.smsIncrRegionoverride++;
             }
             phtSentPrefetch[1] = phtsentInfo(region_inc_addr, region_bit_inc ,0, true,pht_entry->decr_mode,secure,phtPFLevel, &pfi.trigger_info);
+            phtSentPrefetch[1].trigger.pfSourceType = PrefetchSourceType::SPht;
         }
         
         found = false;
@@ -625,6 +627,7 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
                 stats.smsDecrRegionoverride++;
             }
             phtSentPrefetch[2] = phtsentInfo(region_dec_addr, region_bit_dec ,0, true,pht_entry->decr_mode,secure,phtPFLevel, &pfi.trigger_info);
+            phtSentPrefetch[2].trigger.pfSourceType = PrefetchSourceType::SPht;
         }
         if (!phtReqSendEvent.scheduled()){
             phtSendEventWrapper();
