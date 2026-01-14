@@ -106,12 +106,15 @@ class IssueQue : public SimObject
     friend class PAgeSelector;
 
     std::string _name;
+  public:
     const int inports;
     const int outports;
     const int iqsize;
     const int replayQsize = 32;
     const int scheduleToExecDelay;
     const std::string iqname;
+
+  private:
     std::vector<std::bitset<Num_OpClasses>> portFuDescs;
     std::vector<FUDesc*> fuDescs;
     std::vector<bool> opPipelined;
@@ -133,10 +136,8 @@ class IssueQue : public SimObject
         DynInstPtr pop();
     };
 
-    std::vector<DynInstPtr> skidBuffer;
-    TimeBuffer<IssueStream> inflightIssues;
-    TimeBuffer<IssueStream>::wire toIssue;
-    TimeBuffer<IssueStream>::wire toFu;
+    std::vector<TimeBuffer<DynInstPtr>::wire> toIssue;
+    std::vector<TimeBuffer<DynInstPtr>::wire> toFu;
 
     std::list<DynInstPtr> instList;
     uint64_t instNumInsert = 0;
@@ -196,9 +197,20 @@ class IssueQue : public SimObject
     void scheduleInst();
     void addIfReady(const DynInstPtr& inst);
     void cancel(const DynInstPtr& inst);
+    inline void readyQInsert(const DynInstPtr& x) {
+        x->setInReadyQ();
+        auto& readyQ = readyQclassify[x->opClass()];
+        auto it = std::lower_bound(readyQ->begin(), readyQ->end(), x, select_policy());
+        readyQ->insert(it, x);
+    }
+
 
   public:
     inline void clearBusy(uint32_t pi) { portBusy.at(pi) = 0; }
+    inline void setIssuePipe(TimeBuffer<DynInstPtr>& issuepipe, int pi) {
+      toIssue[pi] = issuepipe.getWire(scheduleToExecDelay);
+      toFu[pi] = issuepipe.getWire(0);
+    }
 
     IssueQue(const IssueQueParams& params);
     void setIQID(int id) { IQID = id; }
@@ -288,11 +300,12 @@ class Scheduler : public SimObject
     std::vector<IQGroup> dispTable;
     std::vector<IssueQue*> issueQues;
     std::vector<std::vector<IssueQue*>> wakeMatrix;
-    uint32_t combinedFus;
 
     std::vector<uint8_t> totalDispCounter;
     std::vector<uint8_t*> dispOpdist;
 
+    // Centralized management
+    std::vector<TimeBuffer<DynInstPtr>> inflightIssues;
     std::vector<DynInstPtr> instsToFu;
 
     std::vector<bool> earlyScoreboard;

@@ -36,14 +36,6 @@
         selector->deallocate(x);          \
     } while (0)
 
-#define READYQ_PUSH(x)                                                                    \
-    do {                                                                                  \
-        (x)->setInReadyQ();                                                               \
-        auto& readyQ = readyQclassify[(x)->opClass()];                                    \
-        auto it = std::lower_bound(readyQ->begin(), readyQ->end(), (x), select_policy()); \
-        readyQ->insert(it, (x));                                                          \
-    } while (0)
-
 // must be consistent with FUScheduler.py
 // rfTypePortId = regfile typeid + portid
 #define MAXVAL_TYPEPORTID (1 << (2 + 4))  // [5:4] is typeid, [3:0] is portid
@@ -191,21 +183,18 @@ IssueQue::IssueQue(const IssueQueParams& params)
       iqsize(params.size),
       scheduleToExecDelay(params.scheduleToExecDelay),
       iqname(params.name),
-      inflightIssues(scheduleToExecDelay, 0),
       selector(params.sel)
 {
-    toIssue = inflightIssues.getWire(0);
-    toFu = inflightIssues.getWire(-scheduleToExecDelay);
     if (outports > 8) {
         panic("%s: outports > 8 is not supported\n", iqname);
     }
+    toIssue.resize(outports);
+    toFu.resize(outports);
 
     portBusy.resize(outports, 0);
-
     intRdRfTPI.resize(outports);
     fpRdRfTPI.resize(outports);
     intWrRfTPI.resize(outports);
-
     readyQs.resize(outports, nullptr);
 
     readyQclassify.resize(Num_OpClasses, nullptr);
@@ -355,7 +344,6 @@ IssueQue::addToFu(const DynInstPtr& inst)
 void
 IssueQue::issueToFu()
 {
-    int size = toFu->size;
     int replayed = 0;
     int issued = 0;
 
@@ -393,8 +381,8 @@ IssueQue::issueToFu()
         issued++;
     }
 
-    for (int i = 0; i < size; i++) {
-        auto inst = toFu->pop();
+    for (int i = 0; i < outports; i++) {
+        auto& inst = *toFu[i];
         if (!inst) {
             continue;
         }
@@ -409,7 +397,7 @@ IssueQue::issueToFu()
             (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad) {
             inst->clearScheduled();
             // only for load/store
-            READYQ_PUSH(inst);
+            readyQInsert(inst);
             DPRINTF(Schedule, "[sn:%llu] issue failed due to being occupied\n", inst->seqNum);
             continue;
         }
@@ -526,7 +514,7 @@ IssueQue::addIfReady(const DynInstPtr& inst)
         DPRINTF(Schedule, "[sn:%llu] add to readyInstsQue\n", inst->seqNum);
         inst->clearCancel();
         if (!inst->inReadyQ()) {
-            READYQ_PUSH(inst);
+            readyQInsert(inst);
         }
     }
 }
@@ -629,12 +617,12 @@ IssueQue::scheduleInst()
             iqstats->arbFailed++;
             assert(inst->readyToIssue());
 
-            READYQ_PUSH(inst);
+            readyQInsert(inst);
         } else [[likely]] {
             DPRINTF(Schedule, "[sn:%llu] no conflict, scheduled\n", inst->seqNum);
             iqstats->portissued[pi]++;
             inst->setScheduled();
-            toIssue->push(inst);
+            *toIssue[pi] = inst;
             inst->issueportid = pi;
 
             if (!opPipelined[inst->opClass()]) {
@@ -661,7 +649,6 @@ IssueQue::tick()
     instNumInsert = 0;
 
     scheduleInst();
-    inflightIssues.advance();
 
     for (auto& t : portBusy) {
         t = t >> 1;
@@ -774,16 +761,6 @@ IssueQue::doSquash(const InstSeqNum seqNum)
         }
     }
 
-    for (int i = 0; i <= getIssueStages(); i++) {
-        int size = inflightIssues[-i].size;
-        for (int j = 0; j < size; j++) {
-            auto& inst = inflightIssues[-i].insts[j];
-            if (inst && inst->isSquashed()) {
-                inst = nullptr;
-            }
-        }
-    }
-
     // clear in depGraph
     for (auto& entrys : subDepGraph) {
         for (auto it = entrys.begin(); it != entrys.end();) {
@@ -853,10 +830,13 @@ Scheduler::Scheduler(const SchedulerParams& params)
     int maxRdTypePortId = 0;
     int maxWrTypePortId = 0;
     for (int i = 0; i < issueQues.size(); i++) {
+        auto iq = issueQues[i];
         issueQues[i]->setIQID(i);
         issueQues[i]->scheduler = this;
-        combinedFus += issueQues[i]->outports;
         panic_if(issueQues[i]->fuDescs.size() == 0, "Empty config IssueQue: " + issueQues[i]->getName());
+        for (int j = 0; j < iq->outports; j++) {
+            inflightIssues.push_back(TimeBuffer<DynInstPtr>(0, iq->scheduleToExecDelay));
+        }
         for (auto fu : issueQues[i]->fuDescs) {
             for (auto op : fu->opDescList) {
                 opExecTimeTable[op->opClass] = op->opLat;
@@ -899,6 +879,13 @@ Scheduler::Scheduler(const SchedulerParams& params)
     }
     wrRfPortOccupancy.resize(maxWrTypePortId, {nullptr, 0, 0});
 
+    int portid = 0;
+    for (auto iq : issueQues) {
+        for (int i = 0; i < iq->outports; i++) {
+            iq->setIssuePipe(inflightIssues[portid], i);
+            portid++;
+        }
+    }
 
     // dispatch distance counter allocate
     dispOpdist.resize(Num_OpClasses, nullptr);
@@ -1026,6 +1013,10 @@ Scheduler::tick()
     cpu->activateStage(CPU::IEWIdx);
     for (auto it : issueQues) {
         it->tick();
+    }
+
+    for (auto& it : inflightIssues) {
+        it.advance();
     }
 }
 
@@ -1392,14 +1383,11 @@ Scheduler::loadCancel(const DynInstPtr& inst)
         }
     }
 
-    for (auto iq : issueQues) {
-        for (int i = 0; i <= iq->getIssueStages(); i++) {
-            int size = iq->inflightIssues[-i].size;
-            for (int j = 0; j < size; j++) {
-                auto& inst = iq->inflightIssues[-i].insts[j];
-                if (inst && inst->canceled()) {
-                    inst = nullptr;
-                }
+    for (auto& it : inflightIssues) {
+        for (int i = 0; i < it.getSize(); i++) {
+            auto& inst = it[i];
+            if (inst && inst->canceled()) {
+                inst = nullptr;
             }
         }
     }
@@ -1499,6 +1487,15 @@ Scheduler::doSquash(const InstSeqNum seqNum)
     DPRINTF(Schedule, "doSquash until seqNum %lu\n", seqNum);
     for (auto it : issueQues) {
         it->doSquash(seqNum);
+    }
+
+    for (auto& it : inflightIssues) {
+        for (int i = 0; i < it.getSize(); i++) {
+            auto& inst = it[i];
+            if (inst && inst->isSquashed()) {
+                inst = nullptr;
+            }
+        }
     }
 }
 
