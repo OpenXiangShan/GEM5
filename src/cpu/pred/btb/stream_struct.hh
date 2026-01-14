@@ -339,7 +339,6 @@ struct FetchStream
     boost::dynamic_bitset<> history; // record GHR/s0History
     boost::dynamic_bitset<> phistory; // record PATH/s0History
     boost::dynamic_bitset<> bwhistory; // record BWHR/s0History
-    boost::dynamic_bitset<> ihistory; // record IHR/s0History
     std::vector<boost::dynamic_bitset<>> lhistory; // record LHR/s0History
     std::queue<Addr> previousPCs; // previous PCs, used by ahead BTB
 
@@ -370,7 +369,6 @@ struct FetchStream
          history(),
          phistory(),
          bwhistory(),
-         ihistory(),
          lhistory(),
          fetchInstNum(0),
          commitInstNum(0),

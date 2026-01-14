@@ -149,7 +149,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
     void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
     void specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
-    void specUpdateIHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+    void specUpdateIHist(FullBTBPrediction &pred) override;
     void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred) override;
 
     // Recover all folded history after a misprediction, then update all folded history according to history and
@@ -160,7 +160,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
                       bool cond_taken) override;
     void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt,
                        bool cond_taken) override;
-    void recoverIHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt,
+    void recoverIHist(const FetchStream &entry, int shamt,
                       bool cond_taken) override;
     void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchStream &entry, int shamt,
                       bool cond_taken) override;

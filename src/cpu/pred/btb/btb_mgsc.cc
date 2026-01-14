@@ -1027,21 +1027,23 @@ BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPredict
  * @brief Updates IMLI branch history for speculative execution
  *
  * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
+ * based on the prediction information.
  *
  * It first retrieves the history information from the prediction metadata
  * and then calls the doUpdateHist function to update the folded histories.
+ * Note: IMLI only uses counter, not history bits.
  *
- * @param history The current imli branch history
  * @param pred The prediction metadata containing history information
  */
 void
-BTBMGSC::specUpdateIHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBMGSC::specUpdateIHist(FullBTBPrediction &pred)
 {
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getBwHistInfo();
-    doUpdateHist(history, shamt, cond_taken, indexIFoldedHist);
+    // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
+    boost::dynamic_bitset<> dummy;
+    doUpdateHist(dummy, shamt, cond_taken, indexIFoldedHist);
 }
 
 /**
@@ -1151,14 +1153,14 @@ BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchStream
  * 1. Restores the folded histories from the saved metadata
  * 2. Updates the histories with the correct branch outcome
  * 3. Ensures predictor state is consistent after recovery
+ * Note: IMLI only uses counter, not history bits.
  *
- * @param history The branch history to recover to
  * @param entry The fetch stream entry containing recovery information
  * @param shamt Number of bits to shift in history update
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverIHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverIHist(const FetchStream &entry, int shamt, bool cond_taken)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
@@ -1167,7 +1169,9 @@ BTBMGSC::recoverIHist(const boost::dynamic_bitset<> &history, const FetchStream 
     for (int i = 0; i < iTableNum; i++) {
         indexIFoldedHist[i].recover(predMeta->indexIFoldedHist[i]);
     }
-    doUpdateHist(history, shamt, cond_taken, indexIFoldedHist);
+    // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
+    boost::dynamic_bitset<> dummy;
+    doUpdateHist(dummy, shamt, cond_taken, indexIFoldedHist);
 }
 
 /**

@@ -156,7 +156,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     boost::dynamic_bitset<> s0History;  ///< global History bits
     boost::dynamic_bitset<> s0PHistory;  ///< path History bits
     boost::dynamic_bitset<> s0BwHistory;  ///< global backward History bits
-    boost::dynamic_bitset<> s0IHistory;  ///< IMLI History bits
     std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
     FullBTBPrediction finalPred;      ///< Final prediction
 
