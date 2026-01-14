@@ -218,13 +218,13 @@ class KMHV3Scheduler(Scheduler):
         ]),
     ]
     __memIQs = [
-        IssueQue(name='ld0', inports=2, size=16, oports=[
+        IssueQue(name='ld0', inports=3, size=16, oports=[
             IssuePort(fu=[ReadPort()],
                       rp=[IntRD(7, 0)])]),
-        IssueQue(name='ld1', inports=2, size=16, oports=[
+        IssueQue(name='ld1', inports=3, size=16, oports=[
             IssuePort(fu=[ReadPort()],
                       rp=[IntRD(9, 0)])]),
-        IssueQue(name='ld2', inports=2, size=16, oports=[
+        IssueQue(name='ld2', inports=3, size=16, oports=[
             IssuePort(fu=[ReadPort()],
                       rp=[IntRD(11, 0)])]),
         IssueQue(name='sta0', inports=2, size=16, oports=[
@@ -233,10 +233,10 @@ class KMHV3Scheduler(Scheduler):
         IssueQue(name='sta1', inports=2, size=16, oports=[
             IssuePort(fu=[WritePort()],
                       rp=[IntRD(8, 1)])]),
-        IssueQue(name='std0', inports=2, size=16, oports=[
+        IssueQue(name='std0', inports=4, size=16, oports=[
             IssuePort(fu=[StoreDataPort()],
                       rp=[IntRD(0, 1), FpRD(12, 0)])]),
-        IssueQue(name='std1', inports=2, size=16, oports=[
+        IssueQue(name='std1', inports=4, size=16, oports=[
             IssuePort(fu=[StoreDataPort()],
                       rp=[IntRD(2, 1), FpRD(13, 0)])]),
     ]
