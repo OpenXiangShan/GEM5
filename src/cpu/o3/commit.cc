@@ -42,6 +42,7 @@
 #include "cpu/o3/commit.hh"
 
 #include <algorithm>
+#include <cstring>
 #include <set>
 #include <string>
 
@@ -252,6 +253,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Class of committed instruction"),
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
                "number cycles where commit BW limit reached"),
+      ADD_STAT(loadTriple, statistics::units::Cycle::get(),
+               "load trip number"),
       ADD_STAT(segUnitStrideNF, statistics::units::Count::get(),
                "Distribution of segment unit stride NF"),
       ADD_STAT(segStrideNF, statistics::units::Count::get(),
@@ -1206,6 +1209,7 @@ Commit::commitInsts()
                 if (head_inst->mispredicted()) {
                     ismispred = true;
                 }
+
                 lastCommitCycle = cpu->curCycle();
                 const auto &head_rv_pc = head_inst->pcState().as<RiscvISA::PCState>();
                 if (bp->isStream()) {
@@ -1361,6 +1365,18 @@ Commit::commitInsts()
                 if (cpu->difftestEnabled()) {
                     diffInst(tid, head_inst);
                 }
+
+                if (head_inst->isLoad()) {
+                    Addr load_pc = head_inst->pcState().instAddr();
+                    Addr load_addr = head_inst->physEffAddr;
+                    Addr load_value = head_inst->memData ? *((uint64_t *)head_inst->memData) : 0;
+                    bool hit = loadTripleCounter.update(load_pc, load_addr, load_value);
+                    if (hit) {
+                        // same PC && same addr && same value
+                        stats.loadTriple++;
+                    }
+                }
+
 
                 // Check instruction execution if it successfully commits and
                 // is not carrying a fault.
