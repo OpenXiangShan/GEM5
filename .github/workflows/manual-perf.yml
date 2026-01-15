@@ -7,11 +7,12 @@ on:
         description: 'Choose Kunminghu configuration'
         required: true
         type: choice
-        default: 'idealkmhv3.py'
+        default: 'kmhv3_18.py'
         options:
           - 'kmhv2.py'
-          - 'kmhv3.py'
-          - 'idealkmhv3.py'
+          - 'kmhv3_align.py'
+          - 'kmhv3_18.py'
+          - 'kmhv3_22.py'
       benchmark_type:
         description: 'Benchmark coverage type'
         required: true
@@ -51,11 +52,14 @@ jobs:
             "kmhv2.py")
               echo "script_path=../kmh_6wide.sh" >> $GITHUB_OUTPUT
               ;;
-            "kmhv3.py")
-              echo "script_path=../kmh_v3_btb.sh" >> $GITHUB_OUTPUT
+            "kmhv3_align.py")
+              echo "script_path=../kmh_v3_btb_align.sh" >> $GITHUB_OUTPUT
               ;;
-            "idealkmhv3.py")
-              echo "script_path=../kmh_v3_ideal.sh" >> $GITHUB_OUTPUT
+            "kmhv3_18.py")
+              echo "script_path=../kmh_v3_btb_18.sh" >> $GITHUB_OUTPUT
+              ;;
+            "kmhv3_22.py")
+              echo "script_path=../kmh_v3_btb_22.sh" >> $GITHUB_OUTPUT
               ;;
             *)
               echo "Error: unsupported configuration '${{ github.event.inputs.configuration }}'" >&2
