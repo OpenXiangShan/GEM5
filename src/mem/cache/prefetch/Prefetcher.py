@@ -1221,6 +1221,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
                                      "Small BOP used in composite prefetcher ")
     bop_learned = Param.BasePrefetcher(LearnedBOPPrefetcher(is_sub_prefetcher=True),
                                        "Learned BOP used in composite prefetcher ")
+    bop_pf_level = Param.Int(2, "L1 BOP prefetch target level")
     spp = Param.BasePrefetcher(SignaturePathPrefetcher(is_sub_prefetcher=True),
                                "SPP used in composite prefetcher")
     ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False, is_sub_prefetcher=True), "")
