@@ -71,7 +71,8 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       neighborPhtUpdate(p.neighbor_pht_update),
       phtSentPrefetch(),
       phtReqSendEvent([this]{ phtSendEventWrapper(); },
-          name())
+          name()),
+      BOPPFlevel(p.bop_pf_level)
 {
     assert(largeBOP);
     assert(smallBOP);
@@ -783,7 +784,7 @@ XSCompositePrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccesso
 bool XSCompositePrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) 
 {
     //here we decide which to send for this cycle
-    //L1 Streamstride>berti>SMS>CMC
+    //L1 Streamstride>berti>SMS>CMC>learnedBOP>smallBOP>largeBOP
     //L2 Streamstride>SMS>BOP>TP
     //first we get 1 L1PF
     bool L1PFsent = false;
@@ -799,12 +800,45 @@ bool XSCompositePrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &a
     if(!L1PFsent && cmc->hasPFRequestsInBuffer()){
         L1PFsent = cmc->GetPFRequestsFromBuffer(addresses);
     }
+    if (BOPPFlevel == 1 && !L1PFsent && learnedBOP->hasPFRequestsInBuffer()){
+        L1PFsent = learnedBOP->GetPFRequestsFromBuffer(addresses);
+    }
+    if (BOPPFlevel == 1 && !L1PFsent && smallBOP->hasPFRequestsInBuffer()){
+        L1PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
+    }
+    if (BOPPFlevel == 1 && !L1PFsent && largeBOP->hasPFRequestsInBuffer()){
+        L1PFsent = largeBOP->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L1PFsent && spp->hasPFRequestsInBuffer()){
+        L1PFsent = spp->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L1PFsent && ipcp->hasPFRequestsInBuffer()){
+        L1PFsent = ipcp->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L1PFsent && Opt->hasPFRequestsInBuffer()){
+        L1PFsent = Opt->GetPFRequestsFromBuffer(addresses);
+    }
     bool L2PFsent = false;
     if (stridestream_pfFilter_l2l3.hasPFRequestsInBuffer()){
         L2PFsent = stridestream_pfFilter_l2l3.GetPFAddrL2(addresses);
     }
     if (!L2PFsent && sms_pfFilter.hasPFRequestsInBuffer()){
         L2PFsent = sms_pfFilter.GetPFAddrL2(addresses);
+    }
+    if (BOPPFlevel == 2 && !L2PFsent && largeBOP->hasPFRequestsInBuffer()){
+        L2PFsent = largeBOP->GetPFRequestsFromBuffer(addresses);
+        addresses.back().pfahead_host = 2;
+        addresses.back().pfahead = true;
+    }
+    if (BOPPFlevel == 2 && !L2PFsent && smallBOP->hasPFRequestsInBuffer()){
+        L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
+        addresses.back().pfahead_host = 2;
+        addresses.back().pfahead = true;
+    }
+    if (BOPPFlevel == 2 && !L2PFsent && learnedBOP->hasPFRequestsInBuffer()){
+        L2PFsent = learnedBOP->GetPFRequestsFromBuffer(addresses);
+        addresses.back().pfahead_host = 2;
+        addresses.back().pfahead = true;
     }
     bool L3PFsent = false;
     L3PFsent = stridestream_pfFilter_l2l3.GetPFAddrL3(addresses);
@@ -817,9 +851,9 @@ bool XSCompositePrefetcher::hasPFRequestsInBuffer() {
     return sms_pfFilter.hasPFRequestsInBuffer() ||
             stridestream_pfFilter_l1.hasPFRequestsInBuffer() ||
             stridestream_pfFilter_l2l3.hasPFRequestsInBuffer() ||
-            // largeBOP->hasPFRequestsInBuffer() ||
-            // smallBOP->hasPFRequestsInBuffer() ||
-            // learnedBOP->hasPFRequestsInBuffer() ||
+            largeBOP->hasPFRequestsInBuffer() ||
+            smallBOP->hasPFRequestsInBuffer() ||
+            learnedBOP->hasPFRequestsInBuffer() ||
             berti->hasPFRequestsInBuffer() ||
             cmc->hasPFRequestsInBuffer() ||
             spp->hasPFRequestsInBuffer() ||

@@ -264,6 +264,8 @@ class XSCompositePrefetcher : public Queued
   public:
     bool GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) override;
     bool hasPFRequestsInBuffer() override;
+  protected:
+    const int BOPPFlevel;
 };
 
 }
