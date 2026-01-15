@@ -152,6 +152,45 @@ struct MgscHarness
         BTBMGSC::TestAccess::forceUseSC(mgsc) = true;
     }
 
+    void
+    setOnlyBwTable()
+    {
+        BTBMGSC::TestAccess::enableBwTable(mgsc) = true;
+        BTBMGSC::TestAccess::enableLTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableITable(mgsc) = false;
+        BTBMGSC::TestAccess::enableGTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableBiasTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePCThreshold(mgsc) = false;
+        BTBMGSC::TestAccess::forceUseSC(mgsc) = true;
+    }
+
+    void
+    setOnlyITable()
+    {
+        BTBMGSC::TestAccess::enableBwTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableLTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableITable(mgsc) = true;
+        BTBMGSC::TestAccess::enableGTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableBiasTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePCThreshold(mgsc) = false;
+        BTBMGSC::TestAccess::forceUseSC(mgsc) = true;
+    }
+
+    void
+    setOnlyBiasTable()
+    {
+        BTBMGSC::TestAccess::enableBwTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableLTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableITable(mgsc) = false;
+        BTBMGSC::TestAccess::enableGTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableBiasTable(mgsc) = true;
+        BTBMGSC::TestAccess::enablePCThreshold(mgsc) = false;
+        BTBMGSC::TestAccess::forceUseSC(mgsc) = true;
+    }
+
     struct StepResult
     {
         bool predicted_taken{false};
@@ -227,6 +266,9 @@ struct MgscHarness
             FetchStream recover_stream;
             recover_stream.startPC = start_pc;
             recover_stream.predMetas[mgsc.getComponentIdx()] = meta;
+            recover_stream.resolved = true;
+            recover_stream.exeBranchInfo = entry;
+            recover_stream.exeTaken = actual_taken;
 
             mgsc.recoverHist(ghr, recover_stream, shamt, actual_taken);
             mgsc.recoverPHist(phr, recover_stream, 2, actual_taken);
@@ -507,6 +549,151 @@ TEST(BTBMGSCTest, GTableLearnsAlternatingPattern)
     // After enough training, accuracy should be noticeably better than a constant predictor (~50%).
     double acc = static_cast<double>(correct_after_warmup) / static_cast<double>(total_after_warmup);
     EXPECT_GE(acc, 0.80) << "Accuracy too low for alternating pattern: " << acc;
+}
+
+TEST(BTBMGSCTest, BwTableLearnsAlternatingPatternOnBackwardBranches)
+{
+    MgscHarness h;
+    h.setOnlyBwTable();
+
+    const Addr start_pc = 0x1000;
+    const Addr branch_pc = 0x1000;
+    auto entry = makeCondBTBEntry(branch_pc);
+    entry.target = branch_pc - 4; // backward branch so bw_taken == taken
+
+    const TageInfoForMGSC tage_info(
+        /*tage_pred_taken=*/false,
+        /*tage_main_taken=*/false,
+        /*tage_pred_conf_high=*/true,
+        /*tage_pred_conf_mid=*/false,
+        /*tage_pred_conf_low=*/false,
+        /*tage_pred_alt_diff=*/false);
+
+    const int iters = 200;
+    const int warmup = 100;
+    int correct_after_warmup = 0;
+    int total_after_warmup = 0;
+    std::set<unsigned> seen_bw_indices;
+
+    for (int i = 0; i < iters; ++i) {
+        bool actual_taken = (i % 2) == 0;
+        auto step = h.step(start_pc, entry, tage_info, actual_taken);
+
+        if (!step.mgsc_pred.bwIndex.empty()) {
+            seen_bw_indices.insert(step.mgsc_pred.bwIndex[0]);
+        }
+
+        if (i >= warmup) {
+            total_after_warmup++;
+            if (step.predicted_taken == actual_taken) {
+                correct_after_warmup++;
+            }
+        }
+    }
+
+    EXPECT_GE(seen_bw_indices.size(), 2u);
+    double acc = static_cast<double>(correct_after_warmup) / static_cast<double>(total_after_warmup);
+    EXPECT_GE(acc, 0.80) << "Accuracy too low for alternating backward branches: " << acc;
+}
+
+TEST(BTBMGSCTest, ITableLearnsFixedTripCountLoop)
+{
+    MgscHarness h;
+    h.setOnlyITable();
+
+    const Addr start_pc = 0x1000;
+    const Addr branch_pc = 0x1000;
+    auto entry = makeCondBTBEntry(branch_pc);
+    entry.target = branch_pc - 4; // backward loop branch
+
+    const TageInfoForMGSC tage_info(
+        /*tage_pred_taken=*/false,
+        /*tage_main_taken=*/false,
+        /*tage_pred_conf_high=*/true,
+        /*tage_pred_conf_mid=*/false,
+        /*tage_pred_conf_low=*/false,
+        /*tage_pred_alt_diff=*/false);
+
+    // Loop pattern: T, T, T, N, repeat. IMLI counter (consecutive backward-taken count) should separate phases.
+    const int iters = 400;
+    const int warmup = 200;
+    int correct_after_warmup = 0;
+    int total_after_warmup = 0;
+    std::set<unsigned> seen_i_indices;
+
+    for (int i = 0; i < iters; ++i) {
+        bool actual_taken = (i % 4) != 3;
+        auto step = h.step(start_pc, entry, tage_info, actual_taken);
+
+        if (!step.mgsc_pred.iIndex.empty()) {
+            seen_i_indices.insert(step.mgsc_pred.iIndex[0]);
+        }
+
+        if (i >= warmup) {
+            total_after_warmup++;
+            if (step.predicted_taken == actual_taken) {
+                correct_after_warmup++;
+            }
+        }
+    }
+
+    EXPECT_GE(seen_i_indices.size(), 3u);
+    double acc = static_cast<double>(correct_after_warmup) / static_cast<double>(total_after_warmup);
+    EXPECT_GE(acc, 0.85) << "Accuracy too low for fixed-trip loop: " << acc;
+}
+
+TEST(BTBMGSCTest, BiasTableLearnsTwoTageContexts)
+{
+    MgscHarness h;
+    h.setOnlyBiasTable();
+
+    const Addr start_pc = 0x1000;
+    const Addr branch_pc = 0x1000;
+    auto entry = makeCondBTBEntry(branch_pc);
+
+    // Two contexts keyed by (tage_main_taken, tage_pred_conf_low). Bias table should learn separate counters.
+    const TageInfoForMGSC ctx_a(
+        /*tage_pred_taken=*/false,
+        /*tage_main_taken=*/false,
+        /*tage_pred_conf_high=*/false,
+        /*tage_pred_conf_mid=*/false,
+        /*tage_pred_conf_low=*/false,
+        /*tage_pred_alt_diff=*/false);
+    const TageInfoForMGSC ctx_b(
+        /*tage_pred_taken=*/false,
+        /*tage_main_taken=*/true,
+        /*tage_pred_conf_high=*/false,
+        /*tage_pred_conf_mid=*/false,
+        /*tage_pred_conf_low=*/true,
+        /*tage_pred_alt_diff=*/false);
+
+    const int iters = 200;
+    const int warmup = 100;
+    int correct_after_warmup = 0;
+    int total_after_warmup = 0;
+    std::set<unsigned> seen_bias_indices;
+
+    for (int i = 0; i < iters; ++i) {
+        bool use_a = (i % 2) == 0;
+        const auto &tage_info = use_a ? ctx_a : ctx_b;
+        bool actual_taken = use_a; // ctx_a => taken, ctx_b => not taken
+
+        auto step = h.step(start_pc, entry, tage_info, actual_taken);
+        if (!step.mgsc_pred.biasIndex.empty()) {
+            seen_bias_indices.insert(step.mgsc_pred.biasIndex[0]);
+        }
+
+        if (i >= warmup) {
+            total_after_warmup++;
+            if (step.predicted_taken == actual_taken) {
+                correct_after_warmup++;
+            }
+        }
+    }
+
+    EXPECT_GE(seen_bias_indices.size(), 2u);
+    double acc = static_cast<double>(correct_after_warmup) / static_cast<double>(total_after_warmup);
+    EXPECT_GE(acc, 0.90) << "Accuracy too low for two-context bias learning: " << acc;
 }
 
 }  // namespace test

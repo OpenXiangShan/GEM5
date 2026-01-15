@@ -116,7 +116,8 @@ BTBMGSC::initStorage()
 BTBMGSC::BTBMGSC()
     : TimedBaseBTBPredictor(),
       bwTableNum(1),
-      bwTableIdxWidth(5),
+      // Use a slightly larger idx width so foldedLen is not too small (helps pattern-learning tests).
+      bwTableIdxWidth(6),
       bwHistLen({4}),
       numEntriesFirstLocalHistories(4),
       lTableNum(1),
@@ -126,7 +127,8 @@ BTBMGSC::BTBMGSC()
       iTableIdxWidth(5),
       // `ImliFoldedHist` requires foldedLen >= histLen. With `numCtrsPerLine=8` and `iTableIdxWidth=5`,
       // foldedLen is small (5 - log2(8) = 2), so keep histLen=1 for unit tests.
-      iHistLen({1}),
+      // Also keep it >= 2 so we can build loop-trip-count tests on IMLI.
+      iHistLen({2}),
       gTableNum(1),
       // Use a slightly larger idx width so foldedLen is not too small (helps pattern-learning tests).
       gTableIdxWidth(6),
