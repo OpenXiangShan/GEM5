@@ -95,6 +95,169 @@ findCondTaken(const CondTakens &condTakens, Addr pc)
     return {true, it->second};
 }
 
+void
+histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history)
+{
+    if (shamt == 0) {
+        return;
+    }
+    history <<= shamt;
+    history[0] = taken;
+}
+
+void
+pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc, Addr target)
+{
+    if (shamt == 0) {
+        return;
+    }
+    if (taken) {
+        uint64_t hash = pathHash(pc, target);
+        history <<= shamt;
+        for (std::size_t i = 0; i < pathHashLength && i < history.size(); i++) {
+            history[i] = (hash & 1) ^ history[i];
+            hash >>= 1;
+        }
+    }
+}
+
+struct MgscHarness
+{
+    BTBMGSC mgsc;
+    boost::dynamic_bitset<> ghr;
+    boost::dynamic_bitset<> phr;
+    boost::dynamic_bitset<> bwhr;
+    std::vector<boost::dynamic_bitset<>> lhr;
+    std::vector<FullBTBPrediction> stage_preds;
+
+    explicit MgscHarness(std::size_t hist_len = 64)
+        : mgsc(),
+          ghr(hist_len, 0),
+          phr(hist_len, 0),
+          bwhr(hist_len, 0),
+          lhr(mgsc.getNumEntriesFirstLocalHistories(), boost::dynamic_bitset<>(hist_len, 0)),
+          stage_preds(2)
+    {}
+
+    void
+    setOnlyGTable()
+    {
+        BTBMGSC::TestAccess::enableBwTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableLTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableITable(mgsc) = false;
+        BTBMGSC::TestAccess::enableGTable(mgsc) = true;
+        BTBMGSC::TestAccess::enablePTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableBiasTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePCThreshold(mgsc) = false;
+        BTBMGSC::TestAccess::forceUseSC(mgsc) = true;
+    }
+
+    struct StepResult
+    {
+        bool predicted_taken{false};
+        BTBMGSC::MgscPrediction mgsc_pred{};
+    };
+
+    StepResult
+    step(Addr start_pc, const BTBEntry &entry, const TageInfoForMGSC &tage_info, bool actual_taken)
+    {
+        for (auto &pred : stage_preds) {
+            pred.bbStart = start_pc;
+            pred.btbEntries = {entry};
+            pred.tageInfoForMgscs.clear();
+            pred.tageInfoForMgscs[entry.pc] = tage_info;
+        }
+
+        // Prediction
+        boost::dynamic_bitset<> ghr_before = ghr;
+        boost::dynamic_bitset<> phr_before = phr;
+        boost::dynamic_bitset<> bwhr_before = bwhr;
+        auto lhr_before = lhr;
+
+        mgsc.putPCHistory(start_pc, ghr, stage_preds);
+        auto meta = mgsc.getPredictionMeta();
+
+        auto [found, pred_taken] = findCondTaken(stage_preds[1].condTakens, entry.pc);
+        EXPECT_TRUE(found);
+
+        // Snapshot per-branch MGSC prediction info (indexes/percsums/thresholds).
+        StepResult result;
+        result.predicted_taken = pred_taken;
+        {
+            const auto &preds = BTBMGSC::TestAccess::preds(mgsc);
+            auto it = preds.find(entry.pc);
+            EXPECT_NE(it, preds.end());
+            if (it != preds.end()) {
+                result.mgsc_pred = it->second;
+            }
+        }
+
+        // Speculative folded-history update (use pre-update histories, like DecoupledBPUWithBTB does).
+        mgsc.specUpdateHist(ghr_before, stage_preds[1]);
+        mgsc.specUpdatePHist(phr_before, stage_preds[1]);
+        mgsc.specUpdateBwHist(bwhr_before, stage_preds[1]);
+        mgsc.specUpdateIHist(stage_preds[1]);
+        mgsc.specUpdateLHist(lhr_before, stage_preds[1]);
+
+        // Speculative external history update using predicted outcome.
+        int shamt;
+        bool cond_taken;
+        std::tie(shamt, cond_taken) = stage_preds[1].getHistInfo();
+        histShiftIn(shamt, cond_taken, ghr);
+
+        int bw_shamt;
+        bool bw_taken;
+        std::tie(bw_shamt, bw_taken) = stage_preds[1].getBwHistInfo();
+        histShiftIn(bw_shamt, bw_taken, bwhr);
+
+        auto [p_pc, p_target, p_taken] = stage_preds[1].getPHistInfo();
+        pHistShiftIn(2, p_taken, phr, p_pc, p_target);
+
+        unsigned lhr_idx =
+            mgsc.getPcIndex(stage_preds[1].bbStart, log2(mgsc.getNumEntriesFirstLocalHistories()));
+        histShiftIn(shamt, cond_taken, lhr[lhr_idx]);
+
+        // If mispredicted, recover folded histories and external histories with actual outcome.
+        if (pred_taken != actual_taken) {
+            ghr = ghr_before;
+            phr = phr_before;
+            bwhr = bwhr_before;
+            lhr = lhr_before;
+
+            FetchStream recover_stream;
+            recover_stream.startPC = start_pc;
+            recover_stream.predMetas[mgsc.getComponentIdx()] = meta;
+
+            mgsc.recoverHist(ghr, recover_stream, shamt, actual_taken);
+            mgsc.recoverPHist(phr, recover_stream, 2, actual_taken);
+
+            bool actual_bw_taken = actual_taken && (entry.target < entry.pc);
+            mgsc.recoverBwHist(bwhr, recover_stream, bw_shamt, actual_bw_taken);
+            mgsc.recoverIHist(recover_stream, bw_shamt, actual_bw_taken);
+            mgsc.recoverLHist(lhr, recover_stream, shamt, actual_taken);
+
+            // Apply correct external history update.
+            histShiftIn(shamt, actual_taken, ghr);
+            histShiftIn(bw_shamt, actual_bw_taken, bwhr);
+            pHistShiftIn(2, actual_taken, phr, entry.pc, entry.target);
+            histShiftIn(shamt, actual_taken, lhr[lhr_idx]);
+        }
+
+        // Training update using prediction meta
+        FetchStream update_stream;
+        update_stream.startPC = start_pc;
+        update_stream.updateBTBEntries = {entry};
+        update_stream.updateIsOldEntry = true;
+        update_stream.resolved = true;
+        update_stream.exeBranchInfo = entry;
+        update_stream.exeTaken = actual_taken;
+        update_stream.predMetas[mgsc.getComponentIdx()] = meta;
+        mgsc.update(update_stream);
+
+        return result;
+    }
+};
+
 } // namespace
 
 TEST(BTBMGSCTest, CanConstructAndCreateMetaOnEmptyInput)
@@ -294,6 +457,56 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         mgsc.update(stream);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], static_cast<int16_t>(before - 1));
     }
+}
+
+TEST(BTBMGSCTest, GTableLearnsAlternatingPattern)
+{
+    MgscHarness h;
+    h.setOnlyGTable();
+
+    const Addr start_pc = 0x1000;
+    const Addr branch_pc = 0x1000;
+    auto entry = makeCondBTBEntry(branch_pc);
+
+    // TAGE info is required by MGSC, but forceUseSC makes final decision depend on SC only.
+    const TageInfoForMGSC tage_info(
+        /*tage_pred_taken=*/false,
+        /*tage_main_taken=*/false,
+        /*tage_pred_conf_high=*/true,
+        /*tage_pred_conf_mid=*/false,
+        /*tage_pred_conf_low=*/false,
+        /*tage_pred_alt_diff=*/false);
+
+    // Alternating pattern: T, N, T, N... This is a classic case where pure bias can't do better than 50%,
+    // while a global-history indexed table can learn distinct counters for different GHR contexts.
+    const int iters = 200;
+    const int warmup = 100;
+    int correct_after_warmup = 0;
+    int total_after_warmup = 0;
+    std::set<unsigned> seen_g_indices;
+
+    for (int i = 0; i < iters; ++i) {
+        bool actual_taken = (i % 2) == 0;
+        auto step = h.step(start_pc, entry, tage_info, actual_taken);
+
+        if (!step.mgsc_pred.gIndex.empty()) {
+            seen_g_indices.insert(step.mgsc_pred.gIndex[0]);
+        }
+
+        if (i >= warmup) {
+            total_after_warmup++;
+            if (step.predicted_taken == actual_taken) {
+                correct_after_warmup++;
+            }
+        }
+    }
+
+    // Ensure the global table actually observes more than one context (history affects index).
+    EXPECT_GE(seen_g_indices.size(), 2u);
+
+    // After enough training, accuracy should be noticeably better than a constant predictor (~50%).
+    double acc = static_cast<double>(correct_after_warmup) / static_cast<double>(total_after_warmup);
+    EXPECT_GE(acc, 0.80) << "Accuracy too low for alternating pattern: " << acc;
 }
 
 }  // namespace test

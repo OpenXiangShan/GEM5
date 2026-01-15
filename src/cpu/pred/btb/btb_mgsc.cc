@@ -128,7 +128,8 @@ BTBMGSC::BTBMGSC()
       // foldedLen is small (5 - log2(8) = 2), so keep histLen=1 for unit tests.
       iHistLen({1}),
       gTableNum(1),
-      gTableIdxWidth(5),
+      // Use a slightly larger idx width so foldedLen is not too small (helps pattern-learning tests).
+      gTableIdxWidth(6),
       gHistLen({4}),
       pTableNum(1),
       pTableIdxWidth(5),
@@ -155,7 +156,9 @@ BTBMGSC::BTBMGSC()
       mgscStats()
 {
     // Test-only small config: keep tables tiny and deterministic for fast unit tests.
-    needMoreHistories = false;
+    // MGSC uses multiple histories (GHR/PHR/BWHR/LHR). Keep it enabled in unit tests so we can
+    // build training-loop style tests that exercise each table.
+    needMoreHistories = true;
 
     initStorage();
     updateThreshold = 35 * 8;
@@ -422,6 +425,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     }
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
     bool taken = use_sc_pred ? (total_sum >= 0) : tage_info.tage_pred_taken;
+
+    DPRINTF(MGSC, "global tag_index: %d, global_percsum: %d, total_sum: %d\n", gIndex[0], g_percsum, total_sum);
 
     // Calculate weight scale differences
     bool bw_weight_scale_diff = calculateWeightScaleDiff(total_sum, bw_scaled_percsum, bw_percsum);

@@ -514,6 +514,13 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static unsigned biasTableIdxWidth(const BTBMGSC &mgsc) { return mgsc.biasTableIdxWidth; }
 
         static bool &forceUseSC(BTBMGSC &mgsc) { return mgsc.forceUseSC; }
+        static bool &enableBwTable(BTBMGSC &mgsc) { return mgsc.enableBwTable; }
+        static bool &enableLTable(BTBMGSC &mgsc) { return mgsc.enableLTable; }
+        static bool &enableITable(BTBMGSC &mgsc) { return mgsc.enableITable; }
+        static bool &enableGTable(BTBMGSC &mgsc) { return mgsc.enableGTable; }
+        static bool &enablePTable(BTBMGSC &mgsc) { return mgsc.enablePTable; }
+        static bool &enableBiasTable(BTBMGSC &mgsc) { return mgsc.enableBiasTable; }
+        static bool &enablePCThreshold(BTBMGSC &mgsc) { return mgsc.enablePCThreshold; }
 
         static auto &bwTable(BTBMGSC &mgsc) { return mgsc.bwTable; }
         static auto &lTable(BTBMGSC &mgsc) { return mgsc.lTable; }
