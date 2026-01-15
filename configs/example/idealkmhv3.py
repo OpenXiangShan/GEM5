@@ -80,6 +80,7 @@ def setKmhV3IdealParams(args, system):
         if args.bp_type == 'DecoupledBPUWithBTB':
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
+            cpu.branchPred.microtage.enabled = False
 
         # l1 cache per core
         if args.caches:
