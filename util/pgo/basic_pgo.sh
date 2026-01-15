@@ -63,7 +63,7 @@ $gem5_home/build/RISCV/gem5.opt \
  --l1-to-l2-pf-hint --l2-hwp-type=WorkerPrefetcher \
  --l2-to-l3-pf-hint --l3-hwp-type=WorkerPrefetcher \
  --mem-type=DRAMsim3 \
- --dramsim3-ini=$gem5_home/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini \
+ --dramsim3-ini=$gem5_home/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini \
  --bp-type=DecoupledBPUWithFTB --enable-loop-predictor \
  --generic-rv-cpt=$GEM5_PGO_CPT \
  --gcpt-restorer=$GCPT_RESTORER \

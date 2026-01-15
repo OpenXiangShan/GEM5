@@ -22,7 +22,7 @@ WORKLOAD_PATH=$1
     --l2-to-l3-pf-hint \
     --l3-hwp-type=WorkerPrefetcher \
     --mem-type=DRAMsim3 \
-    --dramsim3-ini=./ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini \
+    --dramsim3-ini=./ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini \
     --bp-type=DecoupledBPUWithFTB \
     --enable-loop-predictor \
     --enable-jump-ahead-predictor \
