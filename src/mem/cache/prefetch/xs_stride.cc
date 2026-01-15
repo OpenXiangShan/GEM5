@@ -13,16 +13,17 @@ namespace prefetch
 {
 
 XSStridePrefetcher::XSStridePrefetcher(const XSStridePrefetcherParams &p)
-    : Queued(p),useXsDepth(p.use_xs_depth),fuzzyStrideMatching(p.fuzzy_stride_matching),
+    : Queued(p),useXsDepth(p.use_xs_depth),useRedundantTable(p.use_redundant_table),
+      fuzzyStrideMatching(p.fuzzy_stride_matching),
       shortStrideThres(p.short_stride_thres),
       strideDynDepth(p.stride_dyn_depth),
       enableNonStrideFilter(p.enable_non_stride_filter),
       regionSize(p.region_size),
       regionBlks(p.region_size / p.block_size),     
-      strideUnique(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
-             p.stride_replacement_policy, StrideEntry()),
-      strideRedundant(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
-             p.stride_replacement_policy, StrideEntry()),
+      strideUnique(p.stride_entries, p.stride_entries, p.stride_unique_indexing_policy,
+             p.stride_unique_replacement_policy, StrideEntry()),
+      strideRedundant(p.stride_entries, p.stride_entries, p.stride_redundant_indexing_policy,
+             p.stride_redundant_replacement_policy, StrideEntry()),
       nonStridePCs(p.non_stride_assoc, p.non_stride_entries, p.non_stride_indexing_policy,
              p.non_stride_replacement_policy, NonStrideEntry()),
       stats(this)
@@ -35,7 +36,7 @@ XSStridePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
                                        PrefetchSourceType pf_source, bool miss_repeat, bool enter_new_region,
                                        bool is_first_shot, Addr &pf_addr, int64_t &learned_bop_offset)
 {
-    if (is_first_shot) {
+    if (is_first_shot ||!useRedundantTable) {
         DPRINTF(XSStridePrefetcher, "Do stride lookup for first shot acc ...\n");
         strideLookup(strideUnique, pfi, addresses, late, pf_addr, pf_source, enter_new_region, miss_repeat,
                      learned_bop_offset, is_first_shot);
