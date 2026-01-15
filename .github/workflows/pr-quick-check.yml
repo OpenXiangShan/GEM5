@@ -35,7 +35,7 @@ jobs:
           export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
           
           exit_code=0
-          ./build/RISCV/gem5.opt ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin || exit_code=$?
+          ./build/RISCV/gem5.opt ./configs/example/kmhv3_align.py --raw-cpt --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin || exit_code=$?
           
           # 验证 difftest 正常运行
           if [ "${exit_code}" -ne 0 ]; then 
@@ -67,7 +67,7 @@ jobs:
           
           # 运行测试
           exit_code=0
-          ./build/RISCV/gem5.opt ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin || exit_code=$?
+          ./build/RISCV/gem5.opt ./configs/example/kmhv3_align.py --raw-cpt --generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin || exit_code=$?
           
           if [ "${exit_code}" -ne 0 ]; then 
             echo "❌ Base branch difftest failed with exit code ${exit_code}!"
