@@ -2276,7 +2276,7 @@ LSQUnit::storeBufferEvictToCache()
         }
         DPRINTF(StoreBuffer, "send packet successed\n");
         entry->sending = true;
-        lsq->sbufferWriteBank(entry->validMask);
+        lsq->sbufferWriteBank(entry->blockVaddr, entry->validMask);
         storeBufferWritebackInactive = 0;
     } else {
         // Timeout

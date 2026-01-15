@@ -962,22 +962,33 @@ class LSQ
 
     void clearAddresses();
 
+    unsigned
+    getDcacheDiv(Addr vaddr) const;
+
+    uint64_t
+    getDcacheBankSetKey(Addr vaddr) const;
+
+    uint64_t
+    getDcacheDivBankSetKey(Addr vaddr) const;
+
     Addr bankNum(Addr a) const { return (a >> 3) & 0x7; };
 
     bool loadBankConflictedCheck(Addr vaddr);
 
-    void sbufferWriteBank(std::vector<bool>& mask) {
+    void sbufferWriteBank(Addr vaddr, const std::vector<bool>& mask) {
         assert(mask.size() == 8 * numBank);
         dcacheWriteStall = true;
+        const unsigned div = getDcacheDiv(vaddr);
         if (sbufferBankWriteAccurately) {
             for (int i=0; i<numBank; i++) {
                 if (std::any_of(mask.begin() + 8 * i, mask.begin() + 8 * i + 8,
                                 [](bool v) { return v; })) {
-                    bankOccupied[i] = true;
+                    bankOccupied.at(div).at(i) = true;
                 }
             }
         } else {
-            std::fill(bankOccupied.begin(), bankOccupied.end(), true);
+            std::fill(bankOccupied.at(div).begin(), bankOccupied.at(div).end(),
+                      true);
         }
     }
 
@@ -1010,14 +1021,23 @@ class LSQ
   public:
     struct NullStruct {};
     boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
-    std::vector<bool> bankOccupied;
+    std::vector<std::vector<bool>> bankOccupied;
 
-    bool pendingDcacheRefill = false;
-    uint32_t dcacheRefillDataRead = 0;
-    uint32_t dcacheRefillDataWrite = 0;
-    uint32_t dcacheRefillTagWrite = 0;
+    void notifyDcacheRefill(Addr addr);
 
-    bool isDcacheRefillTagWrite() const { return dcacheRefillTagWrite & 0b1; }
+    std::vector<bool> pendingDcacheRefill;
+    std::vector<uint32_t> dcacheRefillDataRead;
+    std::vector<uint32_t> dcacheRefillDataWrite;
+    std::vector<uint32_t> dcacheRefillTagWrite;
+
+    bool isDcacheRefillTagWrite() const
+    {
+        for (auto stage : dcacheRefillTagWrite) {
+            if (stage & 0x1)
+                return true;
+        }
+        return false;
+    }
 
   protected:
     /** D-cache is blocked */
@@ -1036,6 +1056,11 @@ class LSQ
 
     bool enableBankConflictCheck;
     bool sbufferBankWriteAccurately;
+
+    const unsigned dcacheSetBits;
+    const unsigned dcacheSetDivNum;
+    const unsigned dcacheLineBits;
+    const unsigned dcacheSetBankBits;
 
     bool _enableLdMissReplay;
     bool _enablePipeNukeCheck;

@@ -44,6 +44,7 @@ import math
 import m5
 from m5.objects import *
 from common.Caches import *
+from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
 from common import ObjectList
 from common.PrefetcherConfig import *
 
@@ -369,6 +370,7 @@ def config_cache(options, system):
                         ExternalCache("cpu%d.dcache" % i))
 
         system.cpu[i].createInterruptController()
+        set_lsq_bank_conflict_cache_params(system.cpu[i], system)
         if options.l2cache:
             system.cpu[i].connectAllPorts(
                 system.tol2bus_list[i].cpu_side_ports,

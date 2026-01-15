@@ -924,7 +924,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         // Optionally indicate that the Dcache received a refill request
         // to drive LSQ-side modelling.
         if (simulateDcacheRefill && cacheLevel == 1 && pkt->getLSQPtr()) {
-            pkt->getLSQPtr()->pendingDcacheRefill = true;
+            const Addr refill_addr =
+                pkt->req && pkt->req->hasVaddr() ? pkt->req->getVaddr() :
+                pkt->getAddr();
+            pkt->getLSQPtr()->notifyDcacheRefill(refill_addr);
             stats.DcacheRefillTimes++;
         }
         blk = handleFill(pkt, blk, writebacks, allocate);

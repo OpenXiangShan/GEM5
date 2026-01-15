@@ -10,6 +10,7 @@ from m5.util.fdthelper import *
 addToPath('../')
 
 from ruby import Ruby
+from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
 
 from common.FSConfig import *
 from common.SysPaths import *
@@ -17,7 +18,6 @@ from common.Benchmarks import *
 from common import Simulation
 from common.Caches import *
 from common.xiangshan import *
-
 
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
@@ -61,6 +61,7 @@ def setKmhV3IdealParams(args, system):
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
+        cpu.DcacheSetDivNum = 2
 
         # lsq
         cpu.LQEntries = 128
@@ -87,6 +88,7 @@ def setKmhV3IdealParams(args, system):
             cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
             cpu.dcache.simulate_dcache_refill = True
+            set_lsq_bank_conflict_cache_params(cpu, system)
 
     # l2 caches
     if args.l2cache:
