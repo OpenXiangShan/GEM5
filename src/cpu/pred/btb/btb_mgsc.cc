@@ -121,7 +121,8 @@ BTBMGSC::BTBMGSC()
       bwHistLen({4}),
       numEntriesFirstLocalHistories(4),
       lTableNum(1),
-      lTableIdxWidth(5),
+      // Use a slightly larger idx width so foldedLen is not too small (helps pattern-learning tests).
+      lTableIdxWidth(6),
       lHistLen({4}),
       iTableNum(1),
       iTableIdxWidth(5),
@@ -134,7 +135,8 @@ BTBMGSC::BTBMGSC()
       gTableIdxWidth(6),
       gHistLen({4}),
       pTableNum(1),
-      pTableIdxWidth(5),
+      // Use a slightly larger idx width so foldedLen is not too small (helps pattern-learning tests).
+      pTableIdxWidth(6),
       pHistLen({4}),
       biasTableNum(1),
       biasTableIdxWidth(5),
@@ -357,6 +359,9 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
         lIndex[i] = getHistIndex(startPC, lTableIdxWidth - numCtrsPerLineBits,
                                  indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
     }
+    // std::string buf;
+    // boost::to_string(indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][0].getAsBitset(), buf);
+    // DPRINTF(MGSC, "startPC: %#lx, local index: %d, local_folded_hist: %s\n", startPC, lIndex[0], buf.c_str());
 
     for (unsigned int i = 0; i < iTableNum; ++i) {
         iIndex[i] = getHistIndex(startPC, iTableIdxWidth - numCtrsPerLineBits, indexIFoldedHist[i].get());
@@ -428,7 +433,9 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
     bool taken = use_sc_pred ? (total_sum >= 0) : tage_info.tage_pred_taken;
 
-    DPRINTF(MGSC, "global tag_index: %d, global_percsum: %d, total_sum: %d\n", gIndex[0], g_percsum, total_sum);
+    // DPRINTF(MGSC, "global tag_index: %d, global_percsum: %d, total_sum: %d\n", gIndex[0], g_percsum, total_sum);
+    // DPRINTF(MGSC, "local tag_index: %d, local_percsum: %d, total_sum: %d\n", lIndex[0], l_percsum, total_sum);
+    // DPRINTF(MGSC, "path tag_index: %d, path_percsum: %d, total_sum: %d\n", pIndex[0], p_percsum, total_sum);
 
     // Calculate weight scale differences
     bool bw_weight_scale_diff = calculateWeightScaleDiff(total_sum, bw_scaled_percsum, bw_percsum);

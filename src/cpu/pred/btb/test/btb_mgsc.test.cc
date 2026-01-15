@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <iostream>
 #include <vector>
 
 #include <boost/dynamic_bitset.hpp>
@@ -191,6 +192,32 @@ struct MgscHarness
         BTBMGSC::TestAccess::forceUseSC(mgsc) = true;
     }
 
+    void
+    setOnlyLTable()
+    {
+        BTBMGSC::TestAccess::enableBwTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableLTable(mgsc) = true;
+        BTBMGSC::TestAccess::enableITable(mgsc) = false;
+        BTBMGSC::TestAccess::enableGTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableBiasTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePCThreshold(mgsc) = false;
+        BTBMGSC::TestAccess::forceUseSC(mgsc) = true;
+    }
+
+    void
+    setOnlyPTable()
+    {
+        BTBMGSC::TestAccess::enableBwTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableLTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableITable(mgsc) = false;
+        BTBMGSC::TestAccess::enableGTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePTable(mgsc) = true;
+        BTBMGSC::TestAccess::enableBiasTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePCThreshold(mgsc) = false;
+        BTBMGSC::TestAccess::forceUseSC(mgsc) = true;
+    }
+
     struct StepResult
     {
         bool predicted_taken{false};
@@ -255,6 +282,11 @@ struct MgscHarness
         unsigned lhr_idx =
             mgsc.getPcIndex(stage_preds[1].bbStart, log2(mgsc.getNumEntriesFirstLocalHistories()));
         histShiftIn(shamt, cond_taken, lhr[lhr_idx]);
+
+        // std::string buf;
+        // boost::to_string(lhr[lhr_idx], buf);
+        // std::cout << "lhr_idx: " << lhr_idx << ", lhr: " << buf.c_str() << std::endl;
+
 
         // If mispredicted, recover folded histories and external histories with actual outcome.
         if (pred_taken != actual_taken) {
@@ -694,6 +726,124 @@ TEST(BTBMGSCTest, BiasTableLearnsTwoTageContexts)
     EXPECT_GE(seen_bias_indices.size(), 2u);
     double acc = static_cast<double>(correct_after_warmup) / static_cast<double>(total_after_warmup);
     EXPECT_GE(acc, 0.90) << "Accuracy too low for two-context bias learning: " << acc;
+}
+
+TEST(BTBMGSCTest, LTableLearnsTwoIndependentLocalHistories)
+{
+    MgscHarness h;
+    h.setOnlyLTable();
+
+    // Two different fetch-block starts map to different local-history slots.
+    const Addr start_pc_a = 0x1000;
+    const Addr branch_pc_a = 0x1000;
+    auto entry_a = makeCondBTBEntry(branch_pc_a);
+
+    const Addr start_pc_b = 0x1020;  // +32B (blockSize) => different `getPcIndex()` with 4 local-history entries
+    const Addr branch_pc_b = 0x1020;
+    auto entry_b = makeCondBTBEntry(branch_pc_b);
+
+    const unsigned lhr_bits = log2(h.mgsc.getNumEntriesFirstLocalHistories());
+    EXPECT_NE(h.mgsc.getPcIndex(start_pc_a, lhr_bits), h.mgsc.getPcIndex(start_pc_b, lhr_bits));
+
+    const TageInfoForMGSC tage_info(
+        /*tage_pred_taken=*/false,
+        /*tage_main_taken=*/false,
+        /*tage_pred_conf_high=*/true,
+        /*tage_pred_conf_mid=*/false,
+        /*tage_pred_conf_low=*/false,
+        /*tage_pred_alt_diff=*/false);
+
+    // Interleave two branches with opposite-phase alternating patterns. LTable should learn each one using
+    // its own local history, despite the interleaving.
+    const int iters = 300;
+    const int warmup = 150;
+    int correct_after_warmup = 0;
+    int total_after_warmup = 0;
+    std::set<unsigned> seen_l_indices_a;
+    std::set<unsigned> seen_l_indices_b;
+
+    for (int i = 0; i < iters; ++i) {
+        bool actual_taken_a = (i % 2) == 0;
+        auto step_a = h.step(start_pc_a, entry_a, tage_info, actual_taken_a);
+        if (!step_a.mgsc_pred.lIndex.empty()) {
+            seen_l_indices_a.insert(step_a.mgsc_pred.lIndex[0]);
+        }
+
+        bool actual_taken_b = (i % 2) != 0;
+        auto step_b = h.step(start_pc_b, entry_b, tage_info, actual_taken_b);
+        if (!step_b.mgsc_pred.lIndex.empty()) {
+            seen_l_indices_b.insert(step_b.mgsc_pred.lIndex[0]);
+        }
+
+        if (i >= warmup) {
+            total_after_warmup += 2;
+            correct_after_warmup += (step_a.predicted_taken == actual_taken_a);
+            correct_after_warmup += (step_b.predicted_taken == actual_taken_b);
+        }
+    }
+
+    EXPECT_GE(seen_l_indices_a.size(), 2u);
+    EXPECT_GE(seen_l_indices_b.size(), 2u);
+    double acc = static_cast<double>(correct_after_warmup) / static_cast<double>(total_after_warmup);
+    EXPECT_GE(acc, 0.80) << "Accuracy too low for LTable local-history learning: " << acc;
+}
+
+TEST(BTBMGSCTest, PTableLearnsOutcomeFromPreviousTakenBranchTarget)
+{
+    MgscHarness h;
+    h.setOnlyPTable();
+
+    // A: always taken, but its target alternates => different path-hash contexts.
+    const Addr start_pc_a = 0x1000;
+    const Addr branch_pc_a = 0x1000;
+    auto entry_a = makeCondBTBEntry(branch_pc_a);
+    const Addr target0 = 0x2000;
+    const Addr target1 = 0x3000;
+
+    // B: outcome depends on the path context created by A's target.
+    const Addr start_pc_b = 0x1020;
+    const Addr branch_pc_b = 0x1020;
+    auto entry_b = makeCondBTBEntry(branch_pc_b);
+
+    const TageInfoForMGSC tage_info(
+        /*tage_pred_taken=*/false,
+        /*tage_main_taken=*/false,
+        /*tage_pred_conf_high=*/true,
+        /*tage_pred_conf_mid=*/false,
+        /*tage_pred_conf_low=*/false,
+        /*tage_pred_alt_diff=*/false);
+
+    const int iters = 400;
+    const int warmup = 200;
+    int correct_after_warmup = 0;
+    int total_after_warmup = 0;
+    std::set<unsigned> seen_p_indices_b;
+
+    for (int i = 0; i < iters; ++i) {
+        bool use_target0 = (i % 2) == 0;
+        entry_a.target = use_target0 ? target0 : target1;
+
+        // Step A: always taken so path history is updated with its (pc,target) hash.
+        (void)h.step(start_pc_a, entry_a, tage_info, /*actual_taken=*/true);
+
+        // Step B: taken iff the previous taken branch (A) used target0.
+        bool actual_taken_b = use_target0;
+        auto step_b = h.step(start_pc_b, entry_b, tage_info, actual_taken_b);
+        if (!step_b.mgsc_pred.pIndex.empty()) {
+            seen_p_indices_b.insert(step_b.mgsc_pred.pIndex[0]);
+        }
+
+        if (i >= warmup) {
+            total_after_warmup++;
+            if (step_b.predicted_taken == actual_taken_b) {
+                correct_after_warmup++;
+            }
+        }
+    }
+
+    EXPECT_GE(seen_p_indices_b.size(), 2u);
+    double acc = static_cast<double>(correct_after_warmup) / static_cast<double>(total_after_warmup);
+    EXPECT_GE(acc, 0.80) << "Accuracy too low for PTable path-target learning: " << acc;
 }
 
 }  // namespace test
