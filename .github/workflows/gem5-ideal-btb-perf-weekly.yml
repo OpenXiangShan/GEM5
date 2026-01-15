@@ -23,13 +23,13 @@ jobs:
   perf_test_spec06:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      script_path: ../kmh_v3_btb_22.sh
+      script_path: ../kmh_v3_btb_18.sh
       benchmark_type: "spec06-1.0c"
   
   perf_test_spec17:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      script_path: ../kmh_v3_btb_22.sh
+      script_path: ../kmh_v3_btb_18.sh
       benchmark_type: "spec17-1.0c" 
 
   perf_test_22_spec06:
