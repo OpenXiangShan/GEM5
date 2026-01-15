@@ -86,8 +86,9 @@ class SignaturePathV2 : public SignaturePath
      * In this version of the Signature Path Prefetcher, there is no auxiliary
      * prefetcher, so this function does not perform any actions.
      */
-    void auxiliaryPrefetcher(Addr ppn, stride_t current_block, bool is_secure, std::vector<AddrPriority> &addresses,
-                             boost::compute::detail::lru_cache<Addr, Addr> &filter) override
+    void auxiliaryPrefetcher(const PrefetchInfo &pfi, Addr ppn, stride_t current_block, bool is_secure,
+         std::vector<AddrPriority> &addresses,
+         boost::compute::detail::lru_cache<Addr, Addr> &filter) override
     {}
 
     virtual void handlePageCrossingLookahead(signature_t signature,
