@@ -22,7 +22,7 @@ valgrind -s --track-origins=yes --log-file=valgrind-out.txt --error-limit=no \
     --l2-wrapper-hwp-type=CompositeWithWorkerPrefetcher \
     --l2-to-l3-pf-hint --l3-hwp-type=WorkerPrefetcher \
     --mem-type=DRAMsim3 \
-    --dramsim3-ini=$gem5_home/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini \
+    --dramsim3-ini=$gem5_home/ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini \
     --bp-type=DecoupledBPUWithFTB --enable-loop-predictor \
     --enable-difftest --difftest-ref-so=$ref_so_path \
     --generic-rv-cpt=$test_cpt \
