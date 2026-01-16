@@ -1070,7 +1070,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
     cxx_header = "cpu/pred/btb/microtage.hh"
 
     needMoreHistories = Param.Bool(True, "MicroTAGE needs more histories")
-    updateOnRead = Param.Bool(True,"Enable update on read, no need to save tage meta in FTQ")
+    updateOnRead = Param.Bool(False,"Enable update on read, no need to save tage meta in FTQ")
     # Keep vector parameters consistent with numPredictors to avoid constructor asserts.
     numPredictors = Param.Unsigned(1, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([512],"the TAGE T0~Tn length")
