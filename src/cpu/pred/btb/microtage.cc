@@ -445,7 +445,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
             DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
         }
         DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
-
+       
         // No LRU maintenance
 
         if (!main_is_correct) {
