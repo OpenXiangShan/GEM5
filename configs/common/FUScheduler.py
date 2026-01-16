@@ -227,10 +227,10 @@ class KMHV3Scheduler(Scheduler):
         IssueQue(name='ld2', inports=3, size=16, oports=[
             IssuePort(fu=[ReadPort()],
                       rp=[IntRD(11, 0)])]),
-        IssueQue(name='sta0', inports=2, size=16, oports=[
+        IssueQue(name='sta0', inports=4, size=16, oports=[
             IssuePort(fu=[WritePort()],
                       rp=[IntRD(6, 1)])]),
-        IssueQue(name='sta1', inports=2, size=16, oports=[
+        IssueQue(name='sta1', inports=4, size=16, oports=[
             IssuePort(fu=[WritePort()],
                       rp=[IntRD(8, 1)])]),
         IssueQue(name='std0', inports=4, size=16, oports=[
