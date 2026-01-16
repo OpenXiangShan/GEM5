@@ -322,6 +322,7 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     // Clear old prediction metadata and save current history state
     meta = std::make_shared<TageMeta>();
     meta->tagFoldedHist = tagFoldedHist;
+    meta->altTagFoldedHist = altTagFoldedHist;
     meta->indexFoldedHist = indexFoldedHist;
     meta->history = history;
 
@@ -444,7 +445,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
             DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
         }
         DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
-       
+
         // No LRU maintenance
 
         if (!main_is_correct) {
