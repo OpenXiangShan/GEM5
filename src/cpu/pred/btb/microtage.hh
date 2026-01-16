@@ -328,6 +328,9 @@ class MicroTAGE : public TimedBaseBTBPredictor
         Scalar updateMispred;
         Scalar updateResetU;
 
+        Scalar updateUtageHit;
+        Scalar updateUtageWrong;
+
         // Bank conflict statistics
         Scalar updateBankConflict;           // Number of bank conflicts detected
         Scalar updateDeferredDueToConflict;  // Number of updates deferred due to bank conflict (retried later)

@@ -445,8 +445,12 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
             DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
         }
         DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
-
+       
         // No LRU maintenance
+
+        if (!main_is_correct) {
+            tageStats.updateUtageWrong++;
+        }
     }
 
 
@@ -457,6 +461,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
             tageStats.updateUseAltCorrect++;
         } else {
             tageStats.updateUseAltWrong++;
+            tageStats.updateUtageWrong++;
         }
         if (main_info.found && main_info.taken() != base_taken) {
             tageStats.updateAltDiffers++;
@@ -626,6 +631,7 @@ MicroTAGE::update(const FetchStream &stream) {
         return;
     }
 
+    bool utage_hit = false;
     // Process each BTB entry
     for (auto &btb_entry : entries_to_update) {
         bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
@@ -636,7 +642,9 @@ MicroTAGE::update(const FetchStream &stream) {
         } else { // otherwise, use the prediction from the prediction-time main/alt
             recomputed = predMeta->preds[btb_entry.pc];
         }
-
+        if (recomputed.mainprovided) {
+            utage_hit = true;
+        }
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
 
@@ -676,6 +684,9 @@ MicroTAGE::update(const FetchStream &stream) {
         //     tageMissTrace->write_record(t);
         // }
 #endif
+    }
+    if (utage_hit){
+        tageStats.updateUtageHit++;//for RTL align pred Accuracy
     }
     checkUtageUpdateMisspred(stream);
     DPRINTF(TAGE, "end update\n");
@@ -938,6 +949,10 @@ MicroTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, in
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
+
+    ADD_STAT(updateUtageHit, statistics::units::Count::get(), "number of updates where utage provided the main prediction"),
+    ADD_STAT(updateUtageWrong, statistics::units::Count::get(), "number of updates where utage prediction was wrong"),
+
     ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
     ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(), "number of updates deferred due to bank conflict (retried later)"),
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
