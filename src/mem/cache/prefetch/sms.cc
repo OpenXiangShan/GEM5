@@ -701,6 +701,7 @@ void
 XSCompositePrefetcher::sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, std::vector<AddrPriority> &addresses,
                                     boost::compute::detail::lru_cache<Addr, Addr> &Filter, bool decr, int pf_level)
 {
+    uint64_t region_bit = 0;
     Addr pf_tgt_region = regionAddress(pf_tgt_addr);
     Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
     PrefetchSourceType stream_type = PrefetchSourceType::SStream;
@@ -711,10 +712,21 @@ XSCompositePrefetcher::sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, s
     DPRINTF(XSCompositePrefetcher, "tgt addr: %x, offset: %d ,page: %lx\n", pf_tgt_addr, pf_tgt_offset, pf_tgt_region);
     for (int i = 0; i < regionBlks; i++) {
         Addr cur = pf_tgt_region * regionSize + i * blkSize;
+        region_bit |= (uint64_t(1) << regionOffset(cur));
         sendPFWithFilter(pfi, cur, addresses, regionBlks - i, stream_type, pf_level);
         DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d] pf_level %d\n", cur, i, pf_level);
         fatal_if(i < 0, "i < 0\n");
     }
+    //use for act to insert PFfilter
+    pfi.setTriggerInfo_PFsrc(stream_type);
+    if (pf_level > 1) {
+        stridestream_pfFilter_l2l3.Insert(regionAddress(pf_tgt_addr),
+        region_bit,0,true,decr,pfi.isSecure(),pf_level, &pfi.trigger_info);
+    } else {
+        stridestream_pfFilter_l1.Insert(regionAddress(pf_tgt_addr),
+        region_bit,0,true,decr,pfi.isSecure(),pf_level, &pfi.trigger_info);
+    }
+
     Filter.insert(pf_tgt_region, 0);
 }
 
