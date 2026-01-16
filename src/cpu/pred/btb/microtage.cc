@@ -207,8 +207,8 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         Addr index = predMeta ? getTageIndex(startPC, i, predMeta->indexFoldedHist[i].get())
                           : getTageIndex(startPC, i);
         Addr tag = predMeta ? getTageTag(startPC, i,
-                            predMeta->tagFoldedHist[i].get(), position)
-                        : getTageTag(startPC, i, tagFoldedHist[i].get(),position);
+                            predMeta->tagFoldedHist[i].get(),predMeta->altTagFoldedHist[i].get(), position)
+                        : getTageTag(startPC, i, tagFoldedHist[i].get(),altTagFoldedHist[i].get(), position);
 
         bool match = false; // for each table, only one way can be matched
         TageEntry matching_entry;
@@ -504,7 +504,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get());
         Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), position);
+            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
 
         auto &set = tageTable[ti][newIndex];
 
@@ -724,7 +724,7 @@ MicroTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 
 // Calculate TAGE tag with folded history - optimized version using bitwise operations
 Addr
-MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, Addr position)
+MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist, Addr position)
 {
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
@@ -735,8 +735,11 @@ MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, Addr position)
     // Extract and prepare folded history bits
     Addr foldedBits = foldedHist & mask;
 
+    // Extract alt tag bits and shift left by 1
+    Addr altTagBits = (altFoldedHist << 1) & mask;
+
     // XOR all components together, including position (like RTL)
-    return pcBits ^ foldedBits ^ position;
+    return pcBits ^ foldedBits ^ position ^ altTagBits;
 }
 
 Addr

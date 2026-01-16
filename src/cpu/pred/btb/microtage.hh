@@ -181,7 +181,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     // Calculate TAGE tag with folded history (uint64_t version for performance)
     // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, Addr position = 0);
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) {
@@ -381,6 +381,7 @@ public:
         std::unordered_map<Addr, TagePrediction> preds;
         std::vector<PathFoldedHist> tagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
+        std::vector<PathFoldedHist> altTagFoldedHist;
         bitset history;     // for viewing
         TageMeta() {}
     } TageMeta;
