@@ -108,6 +108,8 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mgsc.enabled = False
             cpu.branchPred.ras.enabled = True
 
+            cpu.branchPred.enable2Fetch = True
+
         # l1 cache per core
         if args.caches:
             cpu.icache.size = '64kB'

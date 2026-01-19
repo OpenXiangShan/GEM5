@@ -1961,6 +1961,18 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
         fetch_pc + 4 > fetchBuffer[tid].startPC + fetchBufferSize) {
         DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
                 tid, fetch_pc, fetchBuffer[tid].startPC, fetchBuffer[tid].startPC + fetchBufferSize);
+        if (isDecoupledFrontend()) {
+            // In decoupled-frontend mode, the I-cache fetch address is driven by
+            // FTQ entries. If the architectural fetch PC escapes the currently
+            // buffered FTQ window (e.g., due to redirect/loop), we must force a
+            // new FTQ entry and invalidate the current buffer, otherwise fetch
+            // can deadlock in an ICache stall without issuing a new request.
+            usedUpFetchTargets = true;
+            fetchBuffer[tid].valid = false;
+            DPRINTF(Fetch, "[tid:%i] Decoupled frontend: invalidating fetchBuffer and "
+                    "forcing new FTQ entry (pc=%#x, bufStart=%#x)\n",
+                    tid, fetch_pc, fetchBuffer[tid].startPC);
+        }
         return StallReason::IcacheStall;
     }
 
@@ -2070,7 +2082,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     // Main instruction fetch loop - process until fetch width or other limits
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
+           !shouldStopFetchThisCycle(predictedBranch)) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);

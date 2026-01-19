@@ -341,7 +341,16 @@ bool isFTBPred() { return branchPred->isFTB(); }
 bool isBTBPred() { return branchPred->isBTB(); }  // 主要使用的预测器类型
 
 // Track if FTQ is empty
-bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
+bool shouldStopFetchThisCycle(bool predictedBranch)
+{
+    if (waitForVsetvl) {
+        return true;
+    }
+    if (isDecoupledFrontend()) {
+        return usedUpFetchTargets;
+    }
+    return predictedBranch;
+}
 ```
 
 ### DecoupledBPUWithBTB 工作流程：
@@ -573,7 +582,7 @@ void fetch(bool &status_change) {
 void performInstructionFetch(ThreadID tid, Addr fetch_addr, bool &status_change) {
     // 主循环: 处理直到fetch宽度或其他限制
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
+           !shouldStopFetchThisCycle(predictedBranch)) {
         
         // 1. 检查内存需求并供给decoder
         stall = checkMemoryNeeds(tid, this_pc, curMacroop);
