@@ -155,6 +155,8 @@ class IEW
     ProbePointArg<DynInstPtr> *ppToCommit;
 
     bool disp_stall = false;
+    bool bypassDispatchActive = false;
+    unsigned bypassedInstsThisCycle = 0;
 
   public:
     /** Constructs a IEW with the given parameters. */
@@ -507,6 +509,12 @@ class IEW
         statistics::Scalar unblockCycles;
         /** Stat for total number of instructions dispatched. */
         statistics::Scalar dispatchedInsts;
+        /** Stat for total number of instructions bypassed to IQ. */
+        statistics::Scalar bypassedInsts;
+        /** Stat for number of instructions bypassed to IQ per DQ type. */
+        statistics::Vector bypassedInstsByType;
+        /** Stat for number of cycles with bypassed instructions. */
+        statistics::Scalar bypassCycles;
         /** Stat for total number of squashed instructions dispatch skips. */
         statistics::Scalar dispSquashedInsts;
         /** Stat for total number of dispatched load instructions. */

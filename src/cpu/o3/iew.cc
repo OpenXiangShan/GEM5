@@ -162,6 +162,12 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of cycles IEW is unblocking"),
     ADD_STAT(dispatchedInsts, statistics::units::Count::get(),
              "Number of instructions dispatched to IQ"),
+    ADD_STAT(bypassedInsts, statistics::units::Count::get(),
+             "Number of instructions bypassed to IQ"),
+    ADD_STAT(bypassedInstsByType, statistics::units::Count::get(),
+             "Number of instructions bypassed to IQ per DQ type"),
+    ADD_STAT(bypassCycles, statistics::units::Cycle::get(),
+             "Number of cycles with bypassed instructions"),
     ADD_STAT(dispSquashedInsts, statistics::units::Count::get(),
              "Number of squashed instructions skipped by dispatch"),
     ADD_STAT(dispLoadInsts, statistics::units::Count::get(),
@@ -234,6 +240,13 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     wbFanout
         .flags(statistics::total);
     wbFanout = producerInst / consumerInst;
+
+    bypassedInstsByType
+        .init(NumDQ)
+        .flags(statistics::total);
+    bypassedInstsByType.subname(IntDQ, "IntDQ");
+    bypassedInstsByType.subname(FVDQ, "FVDQ");
+    bypassedInstsByType.subname(MemDQ, "MemDQ");
 
     stallEvents
         .init(StallEventCount)
@@ -1033,8 +1046,20 @@ void
 IEW::dispatchInsts(ThreadID tid)
 {
     if (enableDispatchStage) {
-        dispatchInstFromDispQue(tid);
-        classifyInstToDispQue(tid);
+        bool dq_empty = dispQue[IntDQ].empty() &&
+            dispQue[FVDQ].empty() &&
+            dispQue[MemDQ].empty();
+        bool iq_empty = instQueue.isDrained();
+        bool allow_bypass = dq_empty && iq_empty;
+        if (allow_bypass) {
+            classifyInstToDispQue(tid);
+            bypassDispatchActive = true;
+            dispatchInstFromDispQue(tid);
+            bypassDispatchActive = false;
+        } else {
+            dispatchInstFromDispQue(tid);
+            classifyInstToDispQue(tid);
+        }
     } else {
         dispatchInstFromRename(tid);
     }
@@ -1532,6 +1557,12 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
     #endif
             ppDispatch->notify(inst);
 
+            if (bypassDispatchActive) {
+                ++iewStats.bypassedInsts;
+                iewStats.bypassedInstsByType[i]++;
+                ++bypassedInstsThisCycle;
+            }
+
             dispQue[i].pop_front();
             dispatched++;
         }
@@ -1881,6 +1912,8 @@ IEW::tick()
 
     wbNumInst = 0;
     wbCycle = 0;
+    bypassDispatchActive = false;
+    bypassedInstsThisCycle = 0;
 
     wroteToTimeBuffer = false;
     updatedQueues = false;
@@ -2003,6 +2036,10 @@ IEW::tick()
 
     DPRINTF(IEW,"LQ has %i free entries. SQ has %i free entries.\n",
             ldstQueue.numFreeLoadEntries(), ldstQueue.numFreeStoreEntries());
+
+    if (bypassedInstsThisCycle > 0) {
+        ++iewStats.bypassCycles;
+    }
 
     updateStatus();
 
