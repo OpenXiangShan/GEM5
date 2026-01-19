@@ -136,6 +136,7 @@ class IEW
 
     /** The dispatch queue capacity */
     std::vector<uint32_t> dqSize;
+    std::vector<uint32_t> dispWidthUsed;
 
     /** Overall stage status. */
     Status _status;
@@ -507,6 +508,10 @@ class IEW
         statistics::Scalar unblockCycles;
         /** Stat for total number of instructions dispatched. */
         statistics::Scalar dispatchedInsts;
+        /** Stat for total number of instructions bypassed to IQ. */
+        statistics::Scalar bypassedInsts;
+        /** Stat for number of instructions bypassed to IQ per DQ type. */
+        statistics::Vector bypassedInstsByType;
         /** Stat for total number of squashed instructions dispatch skips. */
         statistics::Scalar dispSquashedInsts;
         /** Stat for total number of dispatched load instructions. */

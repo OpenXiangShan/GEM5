@@ -77,6 +77,7 @@ namespace o3
 
 IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     : dqSize(params.numDQEntries),
+      dispWidthUsed(params.dispWidth.size(), 0),
       issueToExecQueue(params.backComSize, params.forwardComSize),
       cpu(_cpu),
       scheduler(params.scheduler),
@@ -162,6 +163,10 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of cycles IEW is unblocking"),
     ADD_STAT(dispatchedInsts, statistics::units::Count::get(),
              "Number of instructions dispatched to IQ"),
+    ADD_STAT(bypassedInsts, statistics::units::Count::get(),
+             "Number of instructions bypassed to IQ"),
+    ADD_STAT(bypassedInstsByType, statistics::units::Count::get(),
+             "Number of instructions bypassed to IQ per DQ type"),
     ADD_STAT(dispSquashedInsts, statistics::units::Count::get(),
              "Number of squashed instructions skipped by dispatch"),
     ADD_STAT(dispLoadInsts, statistics::units::Count::get(),
@@ -234,6 +239,13 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     wbFanout
         .flags(statistics::total);
     wbFanout = producerInst / consumerInst;
+
+    bypassedInstsByType
+        .init(NumDQ)
+        .flags(statistics::total);
+    bypassedInstsByType.subname(IntDQ, "IntDQ");
+    bypassedInstsByType.subname(FVDQ, "FVDQ");
+    bypassedInstsByType.subname(MemDQ, "MemDQ");
 
     stallEvents
         .init(StallEventCount)
@@ -1275,49 +1287,155 @@ IEW::classifyInstToDispQue(ThreadID tid)
     std::queue<StallReason> dispatch_stalls;
     StallReason breakDispatch = StallReason::NoStall;
     unsigned dispatched = 0;
+    bool force_to_dq[NumDQ] = {false};
+    int disp_seq = -1;
+    scheduler->lookahead(insts_to_dispatch);
     while (!insts_to_dispatch.empty()) {
         auto& inst = insts_to_dispatch.front();
+        disp_seq++;
         int ins = cpu->cpuStats.committedInsts.total();
         if (cpu->hasHintDownStream() && ins % 10000 == 1) {
             cpu->hintDownStream->notifyIns(ins);
         }
         int id = getInstDQType(inst);
-        if (dispQue[id].size() < dqSize[id]) {
-            if (inst->isSquashed()) {
-                ++iewStats.dispSquashedInsts;
-                //Tell Rename That An Instruction has been processed
-                if (inst->isLoad()) {
-                    toRename->iewInfo[tid].dispatchedToLQ++;
-                }
-                if (inst->isStore() || inst->isAtomic()) {
-                    toRename->iewInfo[tid].dispatchedToSQ++;
-                }
-                toRename->iewInfo[tid].dispatched++;
-                insts_to_dispatch.pop_front();
-
-                dispatch_stalls.push(StallReason::InstSquashed);
-                continue;
+        if (inst->isSquashed()) {
+            ++iewStats.dispSquashedInsts;
+            //Tell Rename That An Instruction has been processed
+            if (inst->isLoad()) {
+                toRename->iewInfo[tid].dispatchedToLQ++;
             }
-
-            if ((inst->isSerializeBefore() && !inst->isSerializeHandled()) ? !emptyROB : false) {
-                dispatch_stalls.push(StallReason::SerializeStall);
-                breakDispatch = StallReason::SerializeStall;
-                blockReason = breakDispatch;
-                break;
+            if (inst->isStore() || inst->isAtomic()) {
+                toRename->iewInfo[tid].dispatchedToSQ++;
             }
+            toRename->iewInfo[tid].dispatched++;
+            insts_to_dispatch.pop_front();
 
-            // hardware transactional memory
-            // CPU needs to track transactional state in program order.
-            const int numHtmStarts = ldstQueue.numHtmStarts(tid);
-            const int numHtmStops = ldstQueue.numHtmStops(tid);
-            const int htmDepth = numHtmStarts - numHtmStops;
-            if (htmDepth > 0) {
-                inst->setHtmTransactionalState(ldstQueue.getLatestHtmUid(tid),
-                                                htmDepth);
+            dispatch_stalls.push(StallReason::InstSquashed);
+            continue;
+        }
+
+        if ((inst->isSerializeBefore() && !inst->isSerializeHandled()) ? !emptyROB : false) {
+            dispatch_stalls.push(StallReason::SerializeStall);
+            breakDispatch = StallReason::SerializeStall;
+            blockReason = breakDispatch;
+            break;
+        }
+
+        // hardware transactional memory
+        // CPU needs to track transactional state in program order.
+        const int numHtmStarts = ldstQueue.numHtmStarts(tid);
+        const int numHtmStops = ldstQueue.numHtmStops(tid);
+        const int htmDepth = numHtmStarts - numHtmStops;
+        if (htmDepth > 0) {
+            inst->setHtmTransactionalState(ldstQueue.getLatestHtmUid(tid),
+                                            htmDepth);
+        } else {
+            inst->clearHtmTransactionalState();
+        }
+
+        if (dispWidthUsed[id] >= dispWidth[id]) {
+            force_to_dq[id] = true;
+        }
+
+        bool bypass = false;
+        if (!force_to_dq[id] && dispQue[id].empty()) {
+            if (scheduler->ready(inst, disp_seq)) {
+                bool lsq_ready = true;
+                if ((inst->isAtomic() && ldstQueue.sqFull(tid)) ||
+                    (inst->isLoad() && ldstQueue.lqFull(tid)) ||
+                    (inst->isStore() && ldstQueue.sqFull(tid))) {
+                    lsq_ready = false;
+                }
+                bypass = lsq_ready;
             } else {
-                inst->clearHtmTransactionalState();
+                force_to_dq[id] = true;
+            }
+        }
+
+        if (bypass) {
+            bool add_to_iq = false;
+            if (inst->isAtomic()) {
+                ++iewStats.dispStoreInsts;
+                ++iewStats.dispNonSpecInsts;
+                toRename->iewInfo[tid].dispatchedToSQ++;
+            } else if (inst->isLoad()) {
+                ++iewStats.dispLoadInsts;
+                toRename->iewInfo[tid].dispatchedToLQ++;
+            } else if (inst->isStore()) {
+                ++iewStats.dispStoreInsts;
+                if (inst->isStoreConditional()) {
+                    ++iewStats.dispNonSpecInsts;
+                }
+                toRename->iewInfo[tid].dispatchedToSQ++;
+            }
+            toRename->iewInfo[tid].dispatched++;
+            ++iewStats.dispatchedInsts;
+            ++iewStats.bypassedInsts;
+            iewStats.bypassedInstsByType[id]++;
+
+            if (!inst->isNop() && !inst->isEliminated()) {
+                scheduler->addProducer(inst);
             }
 
+            inst->enterDQTick = curTick();
+            cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtDispQue);
+
+            if (inst->isAtomic()) {
+                ldstQueue.insertStore(inst);
+                inst->setCanCommit();
+                instQueue.insertNonSpec(inst);
+                add_to_iq = false;
+            } else if (inst->isLoad()) {
+                ldstQueue.insertLoad(inst);
+                add_to_iq = true;
+            } else if (inst->isStore()) {
+                ldstQueue.insertStore(inst);
+                if (inst->isStoreConditional()) {
+                    inst->setCanCommit();
+                    instQueue.insertNonSpec(inst);
+                    add_to_iq = false;
+                } else {
+                    add_to_iq = true;
+                }
+            } else if (inst->isReadBarrier() || inst->isWriteBarrier()) {
+                inst->setCanCommit();
+                instQueue.insertBarrier(inst);
+                add_to_iq = false;
+            } else if (inst->isNop() || inst->isEliminated()) {
+                inst->setIssued();
+                inst->setExecuted();
+                inst->setCanCommit();
+                iewStats.executedInstStats.numNop[tid]++;
+                add_to_iq = false;
+            } else {
+                assert(!inst->isExecuted());
+                add_to_iq = true;
+            }
+
+            if (add_to_iq && inst->isNonSpeculative()) {
+                inst->setCanCommit();
+                instQueue.insertNonSpec(inst);
+                add_to_iq = false;
+            }
+
+            if (add_to_iq) {
+                instQueue.insert(inst, disp_seq);
+            }
+
+            inst->exitDQTick = curTick();
+
+    #if TRACING_ON
+            inst->dispatchTick = curTick() - inst->fetchTick;
+    #endif
+            ppDispatch->notify(inst);
+
+            insts_to_dispatch.pop_front();
+            dispatched++;
+            dispWidthUsed[id]++;
+            continue;
+        }
+
+        if (dispQue[id].size() < dqSize[id]) {
             if (inst->isAtomic()) {
                 ++iewStats.dispStoreInsts;
                 ++iewStats.dispNonSpecInsts;
@@ -1532,6 +1650,7 @@ IEW::dispatchInstFromDispQue(ThreadID tid)
     #endif
             ppDispatch->notify(inst);
 
+            dispWidthUsed[i]++;
             dispQue[i].pop_front();
             dispatched++;
         }
@@ -1881,6 +2000,9 @@ IEW::tick()
 
     wbNumInst = 0;
     wbCycle = 0;
+    for (auto &used : dispWidthUsed) {
+        used = 0;
+    }
 
     wroteToTimeBuffer = false;
     updatedQueues = false;
