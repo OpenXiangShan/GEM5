@@ -82,6 +82,11 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.fsq_size = 256
 
             cpu.branchPred.microtage.enabled = False
+            # cpu.branchPred.microtage.enableBankConflict = False
+            # cpu.branchPred.tage.enableBankConflict = False
+            cpu.branchPred.tage.numDelay = 0
+            cpu.branchPred.mbtb.numDelay = 0
+            # cpu.branchPred.mgsc.enabled = False
 
         # l1 cache per core
         if args.caches:
