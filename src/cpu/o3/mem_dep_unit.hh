@@ -256,6 +256,9 @@ class MemDepUnit
     /** Pointer to the IQ. */
     InstructionQueue *iqPtr;
 
+    /** If true, loads do not stall in IQ on store-set prediction. */
+    bool enableReplayBasedMDP = false;
+
     /** The thread id of this memory dependence unit. */
     int id;
     struct MemDepUnitStats : public statistics::Group

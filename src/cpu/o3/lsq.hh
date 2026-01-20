@@ -1016,6 +1016,7 @@ class LSQ
 
     bool enableLdMissReplay() const { return _enableLdMissReplay; }
     bool enablePipeNukeCheck() const { return _enablePipeNukeCheck; }
+    bool enableReplayBasedMDP() const { return _enableReplayBasedMDP; }
     int storeWbStage() const { return _storeWbStage; }
 
   public:
@@ -1064,6 +1065,7 @@ class LSQ
 
     bool _enableLdMissReplay;
     bool _enablePipeNukeCheck;
+    bool _enableReplayBasedMDP;
 
     int _storeWbStage;
 

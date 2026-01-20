@@ -100,6 +100,8 @@ MemDepUnit::init(const BaseO3CPUParams &params, ThreadID tid, CPU *cpu)
     depPred.init(params.store_set_clear_period, params.store_set_clear_thres, params.SSITSize,
             params.LFSTSize, params.LFSTEntrySize);
 
+    enableReplayBasedMDP = params.EnableReplayBasedMDP;
+
     std::string stats_group_name = csprintf("MemDepUnit__%i", tid);
     cpu->addStatGroup(stats_group_name.c_str(), &stats);
     this->cpu = cpu;
@@ -211,6 +213,8 @@ MemDepUnit::insert(const DynInstPtr &inst)
     // Check any barriers and the dependence predictor for any
     // producing memrefs/stores.
     std::vector<InstSeqNum>  producing_stores;
+    bool store_set_pred = false;
+    bool strict_wait = false;
     if ((inst->isLoad() || inst->isAtomic()) && hasLoadBarrier()) {
         DPRINTF(MemDepUnit, "%d load barriers in flight\n",
                 loadBarrierSNs.size());
@@ -224,14 +228,20 @@ MemDepUnit::insert(const DynInstPtr &inst)
                                 std::begin(storeBarrierSNs),
                                 std::end(storeBarrierSNs));
     } else {
-        std::vector<InstSeqNum> dep = {};
         if (inst->isLoad()) {
-            dep = depPred.checkInst(inst->pcState().instAddr());
+            store_set_pred = true;
+            producing_stores = depPred.checkInst(inst->pcState().instAddr());
+            strict_wait = depPred.checkInstStrict(inst->pcState().instAddr());
         }
-        if (!dep.empty()) {
-            for (int i=0;i<dep.size();i++) {
-                producing_stores.push_back(dep[i]);
-            }
+    }
+
+    if (enableReplayBasedMDP && inst->isLoad()) {
+        if (store_set_pred) {
+            inst->mdpProducingStores = producing_stores;
+            inst->mdpPredStrictWait = strict_wait;
+        } else {
+            inst->mdpProducingStores.clear();
+            inst->mdpPredStrictWait = false;
         }
     }
 
@@ -258,6 +268,17 @@ MemDepUnit::insert(const DynInstPtr &inst)
         assert(inst_entry->memDeps == 0);
 
         inst->issueQue->markMemDepDone(inst);
+    } else if (enableReplayBasedMDP && inst->isLoad() && store_set_pred) {
+        // Replay-based MDP: do not stall loads in IQ. Carry the prediction
+        // to load pipe and potentially replay there.
+        DPRINTF(MemDepUnit, "Replay-based MDP: bypass IQ stall for load PC "
+                "%s [sn:%lli], predicted producers: %lu, strict: %d\n",
+                inst->pcState(), inst->seqNum, producing_stores.size(),
+                strict_wait);
+
+        inst->issueQue->markMemDepDone(inst);
+
+        ++stats.conflictingLoads;
     } else {
         // Otherwise make the instruction dependent on the store/barrier.
         DPRINTF(MemDepUnit, "Adding to dependency list\n");

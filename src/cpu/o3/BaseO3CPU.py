@@ -204,6 +204,9 @@ class BaseO3CPU(BaseCPU):
     DcacheSetDivNum = Param.Unsigned(1, "Dcache set div num for LSQ bank conflict model (power of two)")
     EnableLdMissReplay = Param.Bool(True, "Replay Cache missed load instrution from ReplayQ if True")
     EnablePipeNukeCheck = Param.Bool(True, "Replay load if Raw violation is detected in loadPipe if True")
+    EnableReplayBasedMDP = Param.Bool(True,
+        "Use replay-based mem dependency prediction (loads don't stall in IQ, "
+        "but may replay in load pipe)")
 
     numPhysIntRegs = Param.Unsigned(224,
             "Number of physical integer registers")

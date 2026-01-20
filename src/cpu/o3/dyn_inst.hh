@@ -431,6 +431,12 @@ class DynInst : public ExecContext, public RefCounted
     ssize_t sqIdx = -1;
     typename LSQUnit::SQIterator sqIt;
 
+    /** Store-set predicted producing stores (for replay-based MDP). */
+    std::vector<InstSeqNum> mdpProducingStores;
+
+    /** Whether this load is predicted to strictly wait for prior store addrs. */
+    bool mdpPredStrictWait = false;
+
     /** If load data is from cache then it must be golden */
     uint8_t goldenData[8] = {0};
 
@@ -986,6 +992,9 @@ class DynInst : public ExecContext, public RefCounted
 
     void setSTLFReplay() { setReplay(LdStReplayType::STLFReplay); }
     bool needSTLFReplay() const { return getReplayType() == LdStReplayType::STLFReplay; }
+
+    void setMdpAddrReplay() { setReplay(LdStReplayType::MdpAddrReplay); }
+    bool needMdpAddrReplay() const { return getReplayType() == LdStReplayType::MdpAddrReplay; }
 
     void setNukeReplay() { setReplay(LdStReplayType::NukeReplay); }
     bool needNukeReplay() const { return getReplayType() == LdStReplayType::NukeReplay; }
