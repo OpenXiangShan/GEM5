@@ -90,6 +90,7 @@ namespace o3
 {
 
 class ThreadContext;
+class TraceInstruction;
 
 /**
  * O3CPU class, has each of the stages (fetch through commit)
@@ -262,6 +263,15 @@ class CPU : public BaseCPU
     /** Is the thread trying to exit? */
     bool isThreadExiting(ThreadID tid) const;
 
+    /** Trace-driven simulation support */
+    bool isTraceInstruction(InstSeqNum seqNum) const;
+    const o3::TraceInstruction* getTraceInstMetadata(InstSeqNum seqNum) const;
+
+    /** Cleanup trace metadata for a committed instruction (trace mode only). */
+    void cleanupTraceMetadataOnCommit(InstSeqNum seqNum);
+    uint64_t getTraceIndexForSeqNum(InstSeqNum seqNum) const;
+    Addr getTracePCByIndex(uint64_t index);
+
     /**
      *  If a thread is trying to exit and its corresponding trap event
      *  has been completed, schedule an event to terminate the thread.
@@ -360,6 +370,22 @@ class CPU : public BaseCPU
     /** Reads the commit PC state of a specific thread. */
     const PCStateBase &pcState(ThreadID tid);
 
+    /** Check if the CPU is in trace mode */
+    bool isTraceMode() const { return fetch.isTraceMode(); }
+
+    /** Check if the trace reader has reached EOF (trace mode only). */
+    bool isTraceEOF() const
+    {
+        return fetch.isTraceEOF();
+    }
+
+    /**
+     * Wrapper for internal drain check used by trace-mode helpers.
+     * Keeps isCpuDrained() private while still allowing components
+     * like Commit to query whether the entire O3 pipeline is empty.
+     */
+    bool isTracePipelineDrained() const { return isCpuDrained(); }
+
     /** Initiates a squash of all in-flight instructions for a given
      * thread.  The source of the squash is an external update of
      * state through the TC.
@@ -405,6 +431,13 @@ class CPU : public BaseCPU
     void readArchVecReg(int reg_idx, uint64_t *val,ThreadID tid);
 
     uint32_t getIQInsts() { return iew.getIQInsts(); }
+
+    /**
+     * Return the oldest in-flight instruction sequence number.
+     * If there are no in-flight instructions, returns the maximum value
+     * of InstSeqNum to indicate no lower bound (safe for cleanup).
+     */
+    InstSeqNum getOldestInFlightSeqNum() const;
 
   public:
 #ifndef NDEBUG

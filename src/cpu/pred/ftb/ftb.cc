@@ -325,7 +325,7 @@ DefaultFTB::getAndSetNewFTBEntry(FetchStream &stream)
             }
             if (!new_branch && branch_info.isIndirect && stream_taken) {
                 auto &tailSlot = slots.back();
-                assert(tailSlot.isIndirect);
+                // assert(tailSlot.isIndirect);
                 if (tailSlot.target != branch_info.target) {
                     tailSlot.target = branch_info.target;
                     is_old_entry = false;

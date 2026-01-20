@@ -49,6 +49,7 @@
 #include "arch/riscv/decoder.hh"
 #include "arch/riscv/faults.hh"
 #include "arch/riscv/insts/static_inst.hh"
+#include "arch/riscv/pcstate.hh"
 #include "arch/riscv/regs/misc.hh"
 #include "base/compiler.hh"
 #include "base/loader/symtab.hh"
@@ -62,11 +63,11 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_state.hh"
+#include "cpu/thread_context.hh"
 #include "cpu/timebuf.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
-#include "debug/CommitTrace.hh"
 #include "debug/Counters.hh"
 #include "debug/Diff.hh"
 #include "debug/Drain.hh"
@@ -81,6 +82,7 @@
 #include "sim/cur_tick.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
+#include "sim/sim_exit.hh"
 
 namespace gem5
 {
@@ -100,15 +102,22 @@ Commit::processTrapEvent(ThreadID tid)
 
 Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
-      stuckCheckEvent([this](){
+      stuckCheckEvent([this]() {
         static std::vector<DynInstPtr> debug_insts;
         if (cpu->curCycle() - this->lastCommitCycle > 40000) {
+            if (traceMaybeExitOnPipelineDrainFromStuckCheck()) {
+                return;
+            }
+
             if (auto inst = rob->readHeadInst(0)) {
                 warn("can't commit inst %s\n", inst->genDisassembly());
-                debug_insts.insert(debug_insts.begin(),rob->getInstList(0).begin(), rob->getInstList(0).end());
+                debug_insts.insert(
+                    debug_insts.begin(), rob->getInstList(0).begin(),
+                    rob->getInstList(0).end());
                 warn("dump rob front 10 insts\n");
                 int i = 0;
-                for (auto inst = debug_insts.begin(); inst != debug_insts.end() && i < 10; inst++, i++) {
+                for (auto inst = debug_insts.begin();
+                     inst != debug_insts.end() && i < 10; inst++, i++) {
                     warn("%s\n", (*inst)->genDisassembly());
                 }
             } else {
@@ -116,8 +125,10 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
             }
             panic(
                 "Commit stage is stucked for more than 40,000 cycles!\n"
-                "Last commit cycle: %lu, current cycle: %lu, suggested --debug-start=%llu --debug-end=%llu\n",
-                lastCommitCycle, cpu->curCycle(), cpu->cyclesToTicks(Cycles(lastCommitCycle - 200)),
+                "Last commit cycle: %lu, current cycle: %lu, suggested "
+                "--debug-start=%llu --debug-end=%llu\n",
+                lastCommitCycle, cpu->curCycle(),
+                cpu->cyclesToTicks(Cycles(lastCommitCycle - 200)),
                 cpu->cyclesToTicks(Cycles(lastCommitCycle + 50)));
         }
         cpu->schedule(this->stuckCheckEvent, cpu->clockEdge(Cycles(40010)));
@@ -169,6 +180,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         renameMap[tid] = nullptr;
         htmStarts[tid] = 0;
         htmStops[tid] = 0;
+        traceCommitIndex[tid] = 0;
     }
     interrupt = NoFault;
 
@@ -674,6 +686,7 @@ Commit::squashAll(ThreadID tid)
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
     toIEW->commitInfo[tid].doneMemSeqNum = squashed_inst;
+    traceUpdateSquashInfo(tid, squashed_inst);
 
     // Send back the squash signal to tell stages that they should
     // squash.
@@ -700,6 +713,12 @@ Commit::squashAll(ThreadID tid)
 void
 Commit::squashFromTrap(ThreadID tid)
 {
+    DPRINTF(Commit,
+            "[tid:%i] [squash-source=trap] tick=%llu committedPC=%#lx newPC=%s\n",
+            tid,
+            (unsigned long long)curTick(),
+            (unsigned long)committedPC[tid],
+            *pc[tid]);
     squashAll(tid);
 
     toIEW->commitInfo[tid].isTrapSquash = true;
@@ -721,6 +740,11 @@ Commit::squashFromTrap(ThreadID tid)
 void
 Commit::squashFromTC(ThreadID tid)
 {
+    DPRINTF(Commit,
+            "[tid:%i] [squash-source=tc] tick=%llu newPC=%s\n",
+            tid,
+            (unsigned long long)curTick(),
+            *pc[tid]);
     squashAll(tid);
 
     DPRINTF(Commit, "Squashing from TC, restarting at PC %s\n", *pc[tid]);
@@ -738,8 +762,20 @@ Commit::squashFromTC(ThreadID tid)
 void
 Commit::squashFromSquashAfter(ThreadID tid)
 {
-    DPRINTF(Commit, "Squashing after squash after request, "
-            "restarting at PC %s\n", *pc[tid]);
+    if (squashAfterInst[tid]) {
+        DPRINTF(Commit,
+                "[tid:%i] [squash-source=squashAfter] tick=%llu newPC=%s inst=[sn:%llu]\n",
+                tid,
+                (unsigned long long)curTick(),
+                *pc[tid],
+                (unsigned long long)squashAfterInst[tid]->seqNum);
+    } else {
+        DPRINTF(Commit,
+                "[tid:%i] [squash-source=squashAfter] tick=%llu newPC=%s inst=[null]\n",
+                tid,
+                (unsigned long long)curTick(),
+                *pc[tid]);
+    }
 
     squashAll(tid);
     // Make sure to inform the fetch stage of which instruction caused
@@ -817,7 +853,7 @@ Commit::tick()
 
             [[maybe_unused]] const DynInstPtr &inst = rob->readHeadInst(tid);
 
-            DPRINTF(Commit,"[tid:%i] Instruction [sn:%llu] %s PC %s is head of"
+            DPRINTF(Commit,"[tid:%i] Instruction [sn:%llu] PC %s is head of"
                     " ROB and ready to commit\n",
                     tid, inst->seqNum, inst->pcState());
 
@@ -844,6 +880,9 @@ Commit::tick()
     }
 
     updateStatus();
+    if (traceMaybeExitOnEofDrainFromTick()) {
+        return;
+    }
 }
 
 void
@@ -882,8 +921,7 @@ Commit::handleInterrupt()
         if (cpu->difftestEnabled()) {
             cpu->difftestRaiseIntr(cpu->getInterruptsNO() | (1ULL << 63));
         }
-
-        DPRINTF(CommitTrace, "Handle interrupt No.%lx\n", cpu->getInterruptsNO() | (1ULL << 63));
+        traceLogHandleInterrupt();
         cpu->processInterrupts(cpu->getInterrupts());
 
         cpu->mmu->setOldPriv(cpu->getContext(0));
@@ -1194,6 +1232,7 @@ Commit::commitInsts()
             changedROBNumEntries[tid] = true;
         } else {
             set(pc[tid], head_inst->pcState());
+            traceMaybeInjectCtrlFlowChangeFault(tid, head_inst);
 
             // Try to commit the head instruction.
             bool commit_success = commitHead(head_inst, num_committed);
@@ -1260,6 +1299,10 @@ Commit::commitInsts()
                     }
                     dbbtb->notifyInstCommit(head_inst);
                 }
+                    if (traceMaybeExitOnLastTraceInst(head_inst)) {
+                        return;
+                    }
+
                 if (head_inst->isUpdateVsstatusSd()) {
                     auto v = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_VIRMODE, tid);
                     RiscvISA::HSTATUS hstatus = cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_HSTATUS, tid);
@@ -1385,6 +1428,7 @@ Commit::commitInsts()
                 }
 
                 cpu->traceFunctions(pc[tid]->instAddr());
+                traceOnCommit(tid, head_inst);
 
                 head_inst->staticInst->advancePC(*pc[tid]);
 
@@ -1431,7 +1475,8 @@ Commit::commitInsts()
                                 "PC skip function event, stopping commit\n");
                         break;
                     }
-                }
+                        traceOnMacroCommit(tid);
+                    }
 
                 // Check if an instruction just enabled interrupts and we've
                 // previously had an interrupt pending that was not handled
@@ -1573,10 +1618,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     }
 
     if (inst_fault != NoFault) {
-        DPRINTF(CommitTrace, "[sn:%lu pc:%#lx] %s has a fault: %s\n",
-                head_inst->seqNum, head_inst->pcState().instAddr(),
-                head_inst->genDisassembly(),
-                inst_fault->name());
+        traceLogInstFault(head_inst, inst_fault);
         if (!iewStage->flushAllStores(tid) || inst_num > 0) {
             DPRINTF(Commit,
                     "[tid:%i] [sn:%llu] "
@@ -1694,11 +1736,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     }
 
     // if (IsSerializeAfter, IsNonSpeculative, IsReturn)
-    if (head_inst->isSerializeAfter() && head_inst->isNonSpeculative() && head_inst->isReturn()) {
-        DPRINTF(CommitTrace, "Priv return [sn:%llu] PC %s: %s, mepc: %#lx, sepc: %#lx\n", head_inst->seqNum,
-                head_inst->pcState(), head_inst->staticInst->disassemble(head_inst->pcState().instAddr()),
-                cpu->readMiscRegNoEffect(RiscvISA::MISCREG_MEPC, tid),
-                cpu->readMiscRegNoEffect(RiscvISA::MISCREG_SEPC, tid));
+    if (head_inst->isSerializeAfter() && head_inst->isNonSpeculative() &&
+        head_inst->isReturn()) {
+        traceLogPrivReturn(head_inst, tid);
     }
 
     committedPC[tid] = head_inst->pcState().instAddr();
@@ -1708,8 +1748,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     // head_inst->printDisassembly();
     uint64_t delta = (curTick() - lastCommitTick) / 500;
     if (head_inst->isLoad() && (delta > 250)) {
-        DPRINTF(CommitTrace, "Inst[sn:%lu] commit blocked cycles: %lu\n",
-                head_inst->seqNum, delta);
+        traceLogCommitBlockedCycles(head_inst, delta);
     }
 
     if (archDBer && head_inst->isMemRef())

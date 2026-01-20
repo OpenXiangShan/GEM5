@@ -43,10 +43,12 @@
 
 #include <cstring>
 #include <deque>
+#include <memory>
 #include <utility>
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
+#include "arch/riscv/types.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
 #include "cpu/o3/comm.hh"
@@ -74,6 +76,8 @@ namespace o3
 {
 
 class CPU;
+class TraceFetch;
+class TraceInstruction;
 
 /**
  * Fetch class handles both single threaded and SMT fetch. Its
@@ -211,6 +215,8 @@ class Fetch
     };
 
   private:
+    friend class TraceFetch;
+
     /** Fetch status. */
     FetchStatus _status;
 
@@ -231,6 +237,7 @@ class Fetch
   public:
     /** Fetch constructor. */
     Fetch(CPU *_cpu, const BaseO3CPUParams &params);
+    ~Fetch();
 
     /** Returns the name of fetch. */
     std::string name() const;
@@ -250,6 +257,9 @@ class Fetch
 
     /** Initialize stage. */
     void startupStage();
+    /** Trace-mode status (delegated to TraceFetch). */
+    bool isTraceMode() const;
+    bool isTraceEOF() const;
 
     /** Clear all thread-specific states*/
     void clearStates(ThreadID tid);
@@ -487,6 +497,14 @@ class Fetch
 
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
+    /** Trace-driven simulation metadata accessors (used by CPU/Commit). */
+    const o3::TraceInstruction* getTraceInstMetadata(InstSeqNum seqNum) const;
+    bool isTraceInstruction(InstSeqNum seqNum) const;
+    void cleanupTraceMetadataOnCommit(InstSeqNum seqNum);
+    uint64_t findTraceIndexForSeqNum(InstSeqNum seqNum) const;
+    bool lookupTraceIndexForSeqNum(InstSeqNum seqNum, uint64_t &index) const;
+    Addr getTracePCByIndex(uint64_t index);
+
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
@@ -544,6 +562,7 @@ class Fetch
      * @param tid The thread ID to fetch for.
      */
     void performInstructionFetch(ThreadID tid);
+
 
     /**
      * Processes a single instruction, including decoding, building the
@@ -606,7 +625,7 @@ class Fetch
 
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
-    
+
     branch_prediction::stream_pred::DecoupledStreamBPU *dbsp;
 
     branch_prediction::ftb_pred::DecoupledBPUWithFTB *dbpftb;
@@ -618,6 +637,9 @@ class Fetch
 
     /** FIFO storing resolve entries waiting for BPU training. */
     std::deque<ResolveQueueEntry> resolveQueue;
+
+    /** Trace-mode implementation owner (optional, enabled by params). */
+    std::unique_ptr<TraceFetch> traceFetch;
 
     /** PC of each thread. */
     std::unique_ptr<PCStateBase> pc[MaxThreads];
@@ -952,13 +974,13 @@ class Fetch
     FinishTranslationEvent finishTranslationEvent;
 
     /** Decoupled frontend related */
-    bool isDecoupledFrontend() { return branchPred->isDecoupled(); }
+    bool isDecoupledFrontend();
 
-    bool isStreamPred() { return branchPred->isStream(); }
+    bool isStreamPred() const { return branchPred->isStream(); }
 
-    bool isFTBPred() { return branchPred->isFTB(); }
+    bool isFTBPred() const { return branchPred->isFTB(); }
 
-    bool isBTBPred() {return branchPred->isBTB(); }
+    bool isBTBPred() const { return branchPred->isBTB(); }
 
     bool usedUpFetchTargets;
 
@@ -1106,12 +1128,23 @@ class Fetch
         statistics::Scalar resolveQueueFullEvents;
         /** Stat for total number of resolve enqueue fail events. */
         statistics::Scalar resolveEnqueueFailEvent;
+
         /** Stat for total number of resolve dequeue events. */
         statistics::Scalar resolveDequeueCount;
         /** Stat for total number of resolve enqueue events. */
         statistics::Distribution resolveEnqueueCount;
         /** Stat for entry occupancy distribution of the resolve queue. */
         statistics::Distribution resolveQueueOccupancy;
+
+        // Trace metadata accounting (trace mode)
+        /** Number of stored trace metadata records (seqNum -> traceInst). */
+        statistics::Scalar traceMetaStores;
+        /** Number of times cleanup was called due to squash/rollback. */
+        statistics::Scalar traceMetaCleanupSquashCalls;
+        /** Total entries erased by squash/rollback cleanups. */
+        statistics::Scalar traceMetaCleanupSquashEntries;
+        /** Number of times cleanup was called on successful commit. */
+        statistics::Scalar traceMetaCleanupCommitCalls;
     } fetchStats;
 
     SquashVersion localSquashVer;

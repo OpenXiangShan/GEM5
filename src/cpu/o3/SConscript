@@ -60,6 +60,13 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('issue_queue.cc')
     Source('perfCCT.cc')
 
+    # Trace reader sources for trace-driven simulation
+    Source('trace/TraceReader.cc')
+    Source('trace/ChampSimTraceReader.cc')
+    Source('trace/CBP2025TraceReader.cc')
+    Source('trace/TraceFetch.cc')
+    Source('trace/CommitTrace.cc')
+
     DebugFlag('CommitRate')
     DebugFlag('IEW')
     DebugFlag('IQ')
@@ -84,10 +91,61 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('Dispatch')
     DebugFlag('LoadPipeline')
     DebugFlag('StorePipeline')
+    DebugFlag('TraceReader')
 
     CompoundFlag('O3CPUAll', [ 'Fetch', 'Decode', 'Rename', 'IEW', 'Commit',
         'IQ', 'ROB', 'FreeList', 'LSQ', 'LSQUnit', 'StoreSet', 'MemDepUnit',
         'DynInst', 'O3CPU', 'Activity', 'Scoreboard', 'Writeback' ])
 
+
     SimObject('BaseO3Checker.py', sim_objects=['BaseO3Checker'])
     Source('checker.cc')
+
+# Unit tests for trace reader (ChampSim)
+# Keep this outside the ISA guard so it can build under NULL for unittests
+if env['CONF']['TARGET_ISA'] == 'null':
+    # Generate required debug flag headers for reader in NULL builds
+    DebugFlag('TraceReader')
+    env.Append(LIBS=['z'])
+    GTest('champsim_trace_reader.test',
+          'trace/ChampSimTraceReader.test.cc',
+          'trace/TraceReader.cc',
+          'trace/ChampSimTraceReader.cc',
+          'trace/CBP2025TraceReader.cc',
+          # pull in stats primitives used by TraceReader::TraceReaderStats
+          '../../base/stats/group.cc',
+          '../../base/stats/info.cc',
+          '../../base/stats/storage.cc',
+          '../../base/statistics.cc',
+          # bring in tracing/logger and helpers
+          with_tag('gem5 trace'),
+          # curTick reference + Stats Root for tests
+          '../../sim/cur_tick.cc',
+          '../../sim/root.cc')
+else:
+    # Under real ISAs, link against common trace infra and avoid duplicate
+    # compilation of cur_tick and stats glue (already provided by libs).
+    env.Append(LIBS=['z'])
+    GTest('champsim_trace_reader.test',
+          'trace/ChampSimTraceReader.test.cc',
+          'trace/TraceReader.cc',
+          'trace/ChampSimTraceReader.cc',
+          'trace/CBP2025TraceReader.cc',
+          # pull in stats primitives (some environments require explicit objs)
+          '../../base/stats/group.cc',
+          '../../base/stats/info.cc',
+          '../../base/stats/storage.cc',
+          '../../base/statistics.cc',
+          # Root depends on the core SimObject/time infrastructure when we
+          # link an ISA-enabled variant, so add the minimal objects that
+          # provide those symbols explicitly.
+          '../../base/time.cc',
+          '../../base/hostinfo.cc',
+          '../../base/output.cc',
+          '../../sim/core.cc',
+          '../../sim/sim_object.cc',
+          '../../sim/globals.cc',
+          '../../sim/tags.cc',
+          # Stats Root is required when constructing statistics::Group in tests
+          '../../sim/root.cc',
+          with_tag('gem5 trace'))

@@ -49,6 +49,7 @@
 
 #include "arch/generic/tlb.hh"
 #include "arch/riscv/decoder.hh"
+#include "arch/riscv/pcstate.hh"
 #include "base/debug_helper.hh"
 #include "base/random.hh"
 #include "base/types.hh"
@@ -59,6 +60,9 @@
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/trace/TraceFetch.hh"
+#include "cpu/pred/btb/decoupled_bpred.hh"
+#include "cpu/pred/btb/stream_struct.hh"
 #include "debug/Activity.hh"
 #include "debug/Counters.hh"
 #include "debug/DecoupleBPProbe.hh"
@@ -68,6 +72,7 @@
 #include "debug/FetchVerbose.hh"
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/TraceReader.hh"
 #include "mem/packet.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/byteswap.hh"
@@ -162,6 +167,38 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
     // Get the size of an instruction.
     // stallReason size should be the same as decodeWidth,renameWidth,dispWidth
     stallReason.resize(decodeWidth, StallReason::NoStall);
+
+    traceFetch = std::make_unique<TraceFetch>(*this, params);
+}
+
+Fetch::~Fetch() = default;
+
+bool
+Fetch::isTraceMode() const
+{
+    return traceFetch && traceFetch->enabled();
+}
+
+bool
+Fetch::isTraceEOF() const
+{
+    return traceFetch && traceFetch->isEOF();
+}
+
+bool
+Fetch::isDecoupledFrontend()
+{
+    if (!branchPred || !branchPred->isDecoupled()) {
+        return false;
+    }
+
+    // In trace mode, decoupled frontend behavior is opt-in to preserve the
+    // historical coupled-fetch behavior unless explicitly enabled.
+    if (isTraceMode() && traceFetch && !traceFetch->allowDecoupledFrontend()) {
+        return false;
+    }
+
+    return true;
 }
 
 std::string Fetch::name() const { return cpu->name() + ".fetch"; }
@@ -260,7 +297,15 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(resolveEnqueueCount, statistics::units::Count::get(),
              "Number of times an entry is enqueued to the resolve queue"),
     ADD_STAT(resolveQueueOccupancy, statistics::units::Count::get(),
-             "Number of entries in the resolve queue")
+             "Number of entries in the resolve queue"),
+    ADD_STAT(traceMetaStores, statistics::units::Count::get(),
+             "Number of stored trace metadata records (seqNum -> traceInst)"),
+    ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
+             "Number of times cleanup was called due to squash/rollback"),
+    ADD_STAT(traceMetaCleanupSquashEntries, statistics::units::Count::get(),
+             "Total entries erased by squash/rollback cleanups"),
+    ADD_STAT(traceMetaCleanupCommitCalls, statistics::units::Count::get(),
+             "Number of times cleanup was called on successful commit")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -334,6 +379,14 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .init(1, 8, 1);
         resolveQueueOccupancy
             .init(0, 32, 1);
+        traceMetaStores
+            .prereq(traceMetaStores);
+        traceMetaCleanupSquashCalls
+            .prereq(traceMetaCleanupSquashCalls);
+        traceMetaCleanupSquashEntries
+            .prereq(traceMetaCleanupSquashEntries);
+        traceMetaCleanupCommitCalls
+            .prereq(traceMetaCleanupCommitCalls);
 }
 void
 Fetch::setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer)
@@ -372,6 +425,10 @@ Fetch::startupStage()
     // Fetch needs to start fetching instructions at the very beginning,
     // so it must start up in active state.
     switchToActive();
+
+    if (isTraceMode() && !traceFetch->initTraceMode()) {
+        fatal("Failed to initialize trace mode\n");
+    }
 }
 
 void
@@ -422,10 +479,15 @@ Fetch::resetStage()
     wroteToTimeBuffer = false;
     _status = Inactive;
 
-    // Initialize usedUpFetchTargets to force getting initial FTQ entry
-    usedUpFetchTargets = true;
+    // Initialize usedUpFetchTargets for decoupled frontend (including trace mode)
+    usedUpFetchTargets = isDecoupledFrontend();
+    if (traceFetch) {
+        traceFetch->resetStage();
+    }
 
-    DPRINTF(Fetch, "resetStage: set usedUpFetchTargets=true for initial FTQ setup\n");
+    DPRINTF(Fetch, "resetStage: set usedUpFetchTargets=%d for %s frontend (trace mode: %d)\n",
+            usedUpFetchTargets, isDecoupledFrontend() ? "decoupled" : "coupled",
+            (int)isTraceMode());
 
     if (isStreamPred()) {
         dbsp->resetPC(pc[0]->instAddr());
@@ -593,6 +655,12 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
     assert(!cpu->switchedOut());
 
+    // Trace 按需消费：不在 icache 完成时写入 trace 指令码，避免批量消费。
+    if (isTraceMode()) {
+        DPRINTF(TraceReader,
+                "[TRACE] Icache completion: keep timing only; no trace bytes injection\n");
+    }
+
     // Reset usedUpFetchTargets flag when we get new fetch data
     // This allows fetch to continue with the current FTQ entry
     if (usedUpFetchTargets) {
@@ -611,6 +679,13 @@ Fetch::processCacheCompletion(PacketPtr pkt)
             }
             DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
                     tid, fetchBuffer[tid].startPC, ftq_entry.startPC);
+
+            // Stage 7: Validation & Instrumentation - fetchBuffer.startPC alignment
+            if (isTraceMode()) {
+                DPRINTF(TraceReader,
+                        "[TRACE-FTB] fetchBuffer.startPC aligned: 0x%x == FTQ.startPC 0x%x\n",
+                        fetchBuffer[tid].startPC, ftq_entry.startPC);
+            }
         } else if (isFTBPred() && dbpftb->fetchTargetAvailable()) {
             auto& ftq_entry = dbpftb->getSupplyingFetchTarget();
             if (fetchBuffer[tid].startPC != ftq_entry.startPC) {
@@ -619,6 +694,13 @@ Fetch::processCacheCompletion(PacketPtr pkt)
             }
             DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
                     tid, fetchBuffer[tid].startPC, ftq_entry.startPC);
+
+            // Stage 7: Validation & Instrumentation - fetchBuffer.startPC alignment
+            if (isTraceMode()) {
+                DPRINTF(TraceReader,
+                        "[TRACE-FTB] fetchBuffer.startPC aligned: 0x%x == FTQ.startPC 0x%x\n",
+                        fetchBuffer[tid].startPC, ftq_entry.startPC);
+            }
         }
     }
 
@@ -762,7 +844,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // Do branch prediction check here.
     // A bit of a misnomer...next_PC is actually the current PC until
     // this function updates it.
-    bool predict_taken;
+    bool predict_taken = false;
 
     //  BP  =>  FSQ  =>  FTB  => Fetch
     ThreadID tid = inst->threadNumber;
@@ -1034,8 +1116,12 @@ void
 Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqNum seqNum,
         ThreadID tid)
 {
-    DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s.\n",
-            tid, new_pc);
+    DPRINTF(Fetch, "[tid:%i] Squashing, setting PC to: %s. seqNum: %lu\n",
+            tid, new_pc, seqNum);
+    if (squashInst) {
+        DPRINTF(Fetch, "[tid:%i] Squash caused by inst at PC: %s, seqNum: %lu\n",
+                tid, squashInst->pcState(), squashInst->seqNum);
+    }
 
     // restore vtype
     uint8_t restored_vtype = cpu->readMiscReg(RiscvISA::MISCREG_VTYPE, tid);
@@ -1109,11 +1195,16 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // some opportunities to handle interrupts may be missed.
     delayedCommit[tid] = true;
 
-    // Set usedUpFetchTargets to force getting new FTQ entry after squash
-    usedUpFetchTargets = true;
+    // Set usedUpFetchTargets only for decoupled frontend after squash
+    usedUpFetchTargets = isDecoupledFrontend();
     fetchBuffer[tid].valid = false;  // clear fetch buffer valid
 
-    DPRINTF(Fetch, "[tid:%i] Squash: set usedUpFetchTargets=true, will need new FTQ entry\n", tid);
+    DPRINTF(Fetch, "[tid:%i] Squash: set usedUpFetchTargets=%d for %s frontend\n",
+            tid, usedUpFetchTargets, isDecoupledFrontend() ? "decoupled" : "coupled");
+
+    if (traceFetch) {
+        traceFetch->handleTraceSquash(tid, new_pc, squashInst, seqNum);
+    }
 
     ++fetchStats.squashCycles;
 }
@@ -1421,23 +1512,51 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
 void
 Fetch::updateBranchPredictors()
 {
-    if (isStreamPred()) {
-        assert(dbsp);
-        dbsp->tick();
-        usedUpFetchTargets = !dbsp->trySupplyFetchWithTarget(pc[0]->instAddr());
-    } else if (isFTBPred()) {
-        assert(dbpftb);
-        // TODO: remove ideal_tick()
-        if (dbpftb->enableTwoTaken){
-            dbpftb->ideal_tick();
-        } else {
-            dbpftb->tick();
+    // 对 decoupled 前端：优先使用 fetchBuffer 中的起始 PC；
+    // 对非 decoupled 前端：使用架构 PC。
+    Addr bp_pc = pc[0]->instAddr();
+    if (isDecoupledFrontend() && fetchBuffer[0].valid) {
+        bp_pc = fetchBuffer[0].startPC;
+    }
+    DPRINTF(Fetch, "Updating branch predictors with PC 0x%lx\n", bp_pc);
+    DPRINTF(Fetch, "pc[0]->instAddr %#lx, fetchBuffer[0].startPC %#lx\n",
+            pc[0]->instAddr(), fetchBuffer[0].startPC);
+
+    bool supplied = false;
+    if (isDecoupledFrontend()) {
+        if (isStreamPred()) {
+            assert(dbsp);
+            dbsp->tick();
+            supplied = dbsp->trySupplyFetchWithTarget(bp_pc);
+        } else if (isFTBPred()) {
+            assert(dbpftb);
+            // TODO: remove ideal_tick()
+            if (dbpftb->enableTwoTaken) {
+                dbpftb->ideal_tick();
+            } else {
+                dbpftb->tick();
+            }
+            supplied =
+                dbpftb->trySupplyFetchWithTarget(bp_pc, currentFetchTargetInLoop);
+        } else if (isBTBPred()) {
+            assert(dbpbtb);
+            dbpbtb->tick();
+            supplied =
+                dbpbtb->trySupplyFetchWithTarget(bp_pc, currentFetchTargetInLoop);
         }
-        usedUpFetchTargets = !dbpftb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
-    } else if (isBTBPred()) {
-        assert(dbpbtb);
-        dbpbtb->tick();
-        usedUpFetchTargets = !dbpbtb->trySupplyFetchWithTarget(pc[0]->instAddr(), currentFetchTargetInLoop);
+        usedUpFetchTargets = !supplied;
+        if (isTraceMode()) {
+            if (supplied) {
+                DPRINTF(Fetch,
+                        "Trace mode: Supplied FTQ with PC 0x%lx, "
+                        "usedUpFetchTargets=false\n",
+                        bp_pc);
+            } else {
+                DPRINTF(Fetch,
+                        "Trace mode: Failed to supply FTQ, "
+                        "usedUpFetchTargets=true\n");
+            }
+        }
     }
 }
 
@@ -1593,9 +1712,21 @@ Fetch::handleCommitSignals(ThreadID tid)
             "[tid:%i] Squashing instructions due to squash "
             "from commit.\n",
             tid);
+
+        InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
+        DynInstPtr squash_inst = fromCommit->commitInfo[tid].squashInst;
+        if (fromCommit->commitInfo[tid].isTrapSquash &&
+            fromCommit->commitInfo[tid].traceTrapSkipInst) {
+            squash_seq = fromCommit->commitInfo[tid].traceTrapSeqNum;
+            squash_inst = nullptr;
+            DPRINTF(Fetch,
+                    "[tid:%i] Trap squash with trace ctrl-flow fault: rollback seq=%llu (skip head)\n",
+                    tid, static_cast<unsigned long long>(squash_seq));
+        }
+
     // In any case, squash.
-    squash(*fromCommit->commitInfo[tid].pc, fromCommit->commitInfo[tid].doneSeqNum,
-           fromCommit->commitInfo[tid].squashInst, tid);
+    squash(*fromCommit->commitInfo[tid].pc, squash_seq,
+           squash_inst, tid);
 
     localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
     DPRINTF(Fetch, "Updating squash version to %u\n", localSquashVer.getVersion());
@@ -1614,54 +1745,58 @@ Fetch::handleCommitSignals(ThreadID tid)
     }
 
     auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
+
     // TODO: write dbpftb conditions
     if (mispred_inst) {
         DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
+        const auto corr_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         if (isStreamPred()) {
             dbsp->controlSquash(mispred_inst->getFtqId(), mispred_inst->getFsqId(), mispred_inst->pcState(),
-                                *fromCommit->commitInfo[tid].pc, mispred_inst->staticInst,
+                                corr_pc, mispred_inst->staticInst,
                                 mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
                                 mispred_inst->seqNum, tid);
         } else if (isFTBPred()) {
             dbpftb->controlSquash(mispred_inst->getFtqId(), mispred_inst->getFsqId(), mispred_inst->pcState(),
-                                  *fromCommit->commitInfo[tid].pc, mispred_inst->staticInst,
+                                  corr_pc, mispred_inst->staticInst,
                                   mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
                                   mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
         } else if (isBTBPred()) {
             dbpbtb->controlSquash(mispred_inst->getFtqId(), mispred_inst->getFsqId(), mispred_inst->pcState(),
-                                  *fromCommit->commitInfo[tid].pc, mispred_inst->staticInst,
+                                  corr_pc, mispred_inst->staticInst,
                                   mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
                                   mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
         }
     } else if (fromCommit->commitInfo[tid].isTrapSquash) {
         DPRINTF(Fetch, "Treating as trap squash\n", tid);
+        const auto trap_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         if (isStreamPred()) {
             dbsp->trapSquash(fromCommit->commitInfo[tid].squashedTargetId,
                              fromCommit->commitInfo[tid].squashedStreamId, fromCommit->commitInfo[tid].committedPC,
-                             *fromCommit->commitInfo[tid].pc, tid);
+                             trap_pc, tid);
         } else if (isFTBPred()) {
             dbpftb->trapSquash(fromCommit->commitInfo[tid].squashedTargetId,
                                fromCommit->commitInfo[tid].squashedStreamId, fromCommit->commitInfo[tid].committedPC,
-                               *fromCommit->commitInfo[tid].pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+                               trap_pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
         } else if (isBTBPred()) {
             dbpbtb->trapSquash(fromCommit->commitInfo[tid].squashedTargetId,
                                fromCommit->commitInfo[tid].squashedStreamId, fromCommit->commitInfo[tid].committedPC,
-                               *fromCommit->commitInfo[tid].pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+                               trap_pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
         }
     } else {
         if (fromCommit->commitInfo[tid].pc && fromCommit->commitInfo[tid].squashedStreamId != 0) {
             DPRINTF(Fetch, "Squash with stream id and target id from IEW\n");
+            const auto nc_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
             if (isStreamPred()) {
                 dbsp->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId,
-                                       fromCommit->commitInfo[tid].squashedStreamId, *fromCommit->commitInfo[tid].pc,
+                                       fromCommit->commitInfo[tid].squashedStreamId, nc_pc,
                                        0, tid);
             } else if (isFTBPred()) {
                 dbpftb->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId,
-                                         fromCommit->commitInfo[tid].squashedStreamId, *fromCommit->commitInfo[tid].pc,
+                                         fromCommit->commitInfo[tid].squashedStreamId, nc_pc,
                                          0, tid, fromCommit->commitInfo[tid].squashedLoopIter);
             } else if (isBTBPred()) {
                 dbpbtb->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId,
-                                         fromCommit->commitInfo[tid].squashedStreamId, *fromCommit->commitInfo[tid].pc,
+                                         fromCommit->commitInfo[tid].squashedStreamId, nc_pc,
                                          0, tid, fromCommit->commitInfo[tid].squashedLoopIter);
             }
         } else {
@@ -1692,14 +1827,15 @@ Fetch::handleDecodeSquash(ThreadID tid)
                                    tid);
             }
         // TODO: write dbpftb conditions
-        } else {
-            auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
+            } else {
+                auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
             if (fromDecode->decodeInfo[tid].branchMispredict) {
+                const auto next_pc = fromDecode->decodeInfo[tid].nextPC->as<RiscvISA::PCState>();
                 if (isStreamPred()) {
                     dbsp->controlSquash(
                         mispred_inst->getFtqId(), mispred_inst->getFsqId(),
                         mispred_inst->pcState(),
-                        *fromDecode->decodeInfo[tid].nextPC,
+                        next_pc,
                         mispred_inst->staticInst, mispred_inst->getInstBytes(),
                         fromDecode->decodeInfo[tid].branchTaken,
                         mispred_inst->seqNum, tid);
@@ -1707,7 +1843,7 @@ Fetch::handleDecodeSquash(ThreadID tid)
                     dbpftb->controlSquash(
                         mispred_inst->getFtqId(), mispred_inst->getFsqId(),
                         mispred_inst->pcState(),
-                        *fromDecode->decodeInfo[tid].nextPC,
+                        next_pc,
                         mispred_inst->staticInst, mispred_inst->getInstBytes(),
                         fromDecode->decodeInfo[tid].branchTaken,
                         mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
@@ -1716,7 +1852,7 @@ Fetch::handleDecodeSquash(ThreadID tid)
                     dbpbtb->controlSquash(
                         mispred_inst->getFtqId(), mispred_inst->getFsqId(),
                         mispred_inst->pcState(),
-                        *fromDecode->decodeInfo[tid].nextPC,
+                        next_pc,
                         mispred_inst->staticInst, mispred_inst->getInstBytes(),
                         fromDecode->decodeInfo[tid].branchTaken,
                         mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
@@ -1852,20 +1988,20 @@ Fetch::checkDecoupledFrontend(ThreadID tid)
     }
 
     if (isStreamPred()) {
-        if (!dbsp->fetchTargetAvailable()) {
+        if (!isTraceMode() && !dbsp->fetchTargetAvailable()) {
             DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
             setAllFetchStalls(StallReason::FTQBubble);
             return false;
         }
     } else if (isFTBPred()) {
-        if (!dbpftb->fetchTargetAvailable()) {
+        if (!isTraceMode() && !dbpftb->fetchTargetAvailable()) {
             dbpftb->addFtqNotValid();
             DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
             setAllFetchStalls(StallReason::FTQBubble);
             return false;
         }
     } else if (isBTBPred()) {
-        if (!dbpbtb->fetchTargetAvailable()) {
+        if (!isTraceMode() && !dbpbtb->fetchTargetAvailable()) {
             dbpbtb->addFtqNotValid();
             DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
             return false;
@@ -1947,6 +2083,12 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
         return StallReason::NoStall;
     }
 
+    // Trace 按需消费：在 decode 前逐条供给解码器。
+    if (isTraceMode()) {
+        assert(traceFetch);
+        return traceFetch->checkMemoryNeeds(tid, this_pc);
+    }
+
     Addr fetch_pc = this_pc.instAddr();
 
     // Check if fetch buffer is valid and contains this PC
@@ -1967,8 +2109,7 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
     // Supply bytes to decoder - always provide 4 bytes for RISC-V
     auto *dec_ptr = decoder[tid];
     Addr offset_in_buffer = fetch_pc - fetchBuffer[tid].startPC;
-    memcpy(dec_ptr->moreBytesPtr(),
-           fetchBuffer[tid].data + offset_in_buffer, 4);
+    memcpy(dec_ptr->moreBytesPtr(), fetchBuffer[tid].data + offset_in_buffer, 4);
 
     DPRINTF(Fetch, "[tid:%i] Supplying 4 bytes from fetchBuffer at PC %#x (offset %d)\n",
             tid, fetch_pc, offset_in_buffer);
@@ -2011,7 +2152,14 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     }
 
     // Build the dynamic instruction and add it to the fetch queue
-    DynInstPtr instruction = buildInst(tid, staticInst, curMacroop, pc, *next_pc, true);
+    DynInstPtr instruction =
+        buildInst(tid, staticInst, curMacroop, pc, *next_pc, true);
+
+    o3::TraceInstruction traceForThisInst;
+    if (isTraceMode()) {
+        assert(traceFetch);
+        traceFetch->bindPendingTraceMetadata(tid, instruction, pc, traceForThisInst);
+    }
 
     // Special handling for RISC-V vector configuration instructions.
     if (staticInst->isVectorConfig()) {
@@ -2041,6 +2189,11 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                 instruction->threadNumber, pc, *next_pc);
     }
 
+    if (isTraceMode()) {
+        assert(traceFetch);
+        traceFetch->postBranchPredict(tid, instruction, traceForThisInst, pc, *next_pc, predictedBranch);
+    }
+
     // A new macro-op also begins if the PC changes discontinuously.
     newMacroop |= pc.instAddr() != next_pc->instAddr();
     if (newMacroop) {
@@ -2058,6 +2211,13 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 void
 Fetch::performInstructionFetch(ThreadID tid)
 {
+    if (isTraceMode()) {
+        assert(traceFetch);
+        if (traceFetch->maybeStallFetch(tid)) {
+            return;
+        }
+    }
+
     // Initialize local variables
     PCStateBase &pc_state = *pc[tid];
     StaticInstPtr &curMacroop = macroop[tid];
@@ -2068,9 +2228,11 @@ Fetch::performInstructionFetch(ThreadID tid)
     DPRINTF(Fetch, "[tid:%i] Adding instructions to queue to decode.\n", tid);
 
     // Main instruction fetch loop - process until fetch width or other limits
+    // For decoupled frontend (including trace mode), check FTQ availability
+    // For coupled frontend, always allow fetch
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
+           !predictedBranch && (!isDecoupledFrontend() || !ftqEmpty()) && !waitForVsetvl) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
@@ -2338,6 +2500,10 @@ Fetch::branchCount()
 bool
 Fetch::needNewFTQEntry(ThreadID tid)
 {
+    // Stage 1: Allow FTQ/FSQ flow in trace mode - removed early return
+    // In trace mode with decoupled frontend, we still need FTQ entries
+    // to maintain proper fetch buffer management and allow BP training
+
     // Check if we need a new FTQ entry based on:
     // 1. Used up current FTQ targets (decoupled frontend)
     // 2. Invalid fetch buffer (cache miss or initial state)
@@ -2352,6 +2518,13 @@ Fetch::needNewFTQEntry(ThreadID tid)
     DPRINTF(Fetch, "[tid:%i] needNewFTQEntry: usedUpFetchTargets=%d, "
             "fetchBufferValid=%d, result=%d\n",
             tid, usedUpFetchTargets, fetchBuffer[tid].valid, need_new);
+
+    // Stage 7: Validation & Instrumentation - FTQ entry issuing tracking
+    if (need_new && isTraceMode() && isDecoupledFrontend()) {
+        DPRINTF(TraceReader, "[TRACE-FTB] FTQ entry will be issued: tid=%d, "
+                "usedUpFetchTargets=%d, fetchBuffer.valid=%d\n",
+                tid, usedUpFetchTargets, fetchBuffer[tid].valid);
+    }
 
     return need_new;
 }
@@ -2380,6 +2553,13 @@ Fetch::getNextFTQStartPC(ThreadID tid)
             DPRINTF(Fetch, "[tid:%i] Successfully got next FTQ entry, resetting usedUpFetchTargets\n", tid);
             usedUpFetchTargets = false;  // Reset flag since we got a new FTQ entry
             // Note: fetchBufferValid[tid] will be set to true later when cache line is fetched
+
+            // Stage 7: Validation & Instrumentation - FSQ state after supply
+            if (isTraceMode()) {
+                DPRINTF(TraceReader,
+                        "[TRACE-FTB] FSQ supplied successfully: usedUpFetchTargets=%d, "
+                        "fetchBuffer.valid=%d\n", usedUpFetchTargets, fetchBuffer[tid].valid);
+            }
         } else {
             DPRINTF(Fetch, "[tid:%i] Failed to get next FTQ entry, should stall fetch until FTQ available\n", tid);
             // Don't fallback to old address, return 0 to indicate stall needed
@@ -2573,6 +2753,49 @@ Fetch::cancelAllCacheRequests(ThreadID tid)
     DPRINTF(Fetch, "[tid:%d] cancelAllCacheRequests: status after cancel: %s\n",
             tid, cacheReq[tid].getStatusSummary().c_str());
 
+}
+
+
+const o3::TraceInstruction*
+Fetch::getTraceInstMetadata(InstSeqNum seqNum) const
+{
+    return traceFetch ? traceFetch->getTraceInstMetadata(seqNum) : nullptr;
+}
+
+bool
+Fetch::isTraceInstruction(InstSeqNum seqNum) const
+{
+    return traceFetch ? traceFetch->isTraceInstruction(seqNum) : false;
+}
+
+void
+Fetch::cleanupTraceMetadataOnCommit(InstSeqNum seqNum)
+{
+    if (traceFetch) {
+        traceFetch->cleanupTraceMetadataOnCommit(seqNum);
+    }
+}
+
+uint64_t
+Fetch::findTraceIndexForSeqNum(InstSeqNum seqNum) const
+{
+    return traceFetch ? traceFetch->findTraceIndexForSeqNum(seqNum) : 0;
+}
+
+bool
+Fetch::lookupTraceIndexForSeqNum(InstSeqNum seqNum, uint64_t &index) const
+{
+    if (!traceFetch) {
+        index = 0;
+        return false;
+    }
+    return traceFetch->lookupTraceIndexForSeqNum(seqNum, index);
+}
+
+Addr
+Fetch::getTracePCByIndex(uint64_t index)
+{
+    return traceFetch ? traceFetch->getTracePCByIndex(index) : 0;
 }
 
 } // namespace o3

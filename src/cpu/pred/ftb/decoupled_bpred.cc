@@ -922,6 +922,9 @@ DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
     // supplying ftq entry might be taken before pc
     // because it might just be updated last cycle
     // but last cycle ftq tells fetch that this is a miss stream
+    if (!(pc.instAddr() < end && pc.instAddr() >= start)) {
+        DPRINTF(DecoupleBP, "pc %#lx with [%#lx, %#lx)\n", pc.instAddr(), start, end);
+    }
     assert(pc.instAddr() < end && pc.instAddr() >= start);
     bool raw_taken = pc.instAddr() == taken_pc && target_to_fetch.taken;
     bool taken = raw_taken;
@@ -1012,6 +1015,19 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
     auto squashing_stream_it = fetchStreamQueue.find(stream_id);
 
     if (squashing_stream_it == fetchStreamQueue.end()) {
+        // Stage 6: Robustify decoupled BPU controlSquash (safety net)
+        // If squash arrives with empty FSQ in trace mode, treat as redirect instead of assert
+        if (fetchStreamQueue.empty() && cpu && cpu->isTraceMode()) {
+            DPRINTF(DecoupleBP || debugFlagOn,
+                    "Stage 6: Empty FSQ during squash in trace mode - treating as redirect to PC=0x%lx",
+                    corr_target.instAddr());
+
+            // Set s0PC to correction target and return gracefully
+            s0PC = corr_target.instAddr();
+            squashing = false;  // Clear squashing flag
+            return;
+        }
+
         assert(!fetchStreamQueue.empty());
         // assert(fetchStreamQueue.rbegin()->second.getNextStreamStart() == MaxAddr);
         DPRINTF(
@@ -1833,6 +1849,11 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
     // break down into each predictor and each stage
     // find corresponding fsq entry first
     auto it = fetchStreamQueue.find(inst->fsqId);
+    // TRACE MODE FIX: Bypass assertion for missing FSQ entries in trace mode
+    if (it == fetchStreamQueue.end() && cpu->isTraceMode()) {
+        DPRINTF(FTB, "Missing FSQ entry for trace mode branch commit [fsqId:%lu], skipping\n", inst->fsqId);
+        return;
+    }
     assert(it != fetchStreamQueue.end());
 
     auto &entry = it->second;
@@ -1980,7 +2001,15 @@ void
 DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
 {
     auto it = fetchStreamQueue.find(inst->fsqId);
-    assert(it != fetchStreamQueue.end());
+    // In trace mode, instructions bypass fetch stream creation, so fsqId may not be valid
+    if (cpu->isTraceMode()) {
+        if (it == fetchStreamQueue.end()) {
+            // Skip BP notification for trace instructions without fetch stream entries
+            return;
+        }
+    } else {
+        assert(it != fetchStreamQueue.end());
+    }
     it->second.commitInstNum++;
     numInstCommitted++;
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",

@@ -237,6 +237,10 @@ private:
     IEW *iewStage;
     Decode *decodeStage;
 
+    /** Trace ctrl-flow fault bookkeeping: seqNum to notify fetch rollback. */
+    InstSeqNum traceCtrlFaultSeqNum[MaxThreads]{};
+    bool traceCtrlFaultPending[MaxThreads]{};
+
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
 
@@ -550,8 +554,8 @@ private:
 
     // committed Stream and Target
 
-    uint64_t committedStreamId{};
-    uint64_t committedTargetId{};
+    uint64_t committedStreamId{1};
+    uint64_t committedTargetId{0};
     uint64_t committedLoopIter{};
 
     struct CommitStats : public statistics::Group
@@ -631,10 +635,32 @@ private:
 
     ArchDBer *archDBer;
 
+    // Trace-mode commit stream index per thread: expected next trace instruction index
+    uint64_t traceCommitIndex[MaxThreads] = {0};
+
+    // Trace-mode helpers (implementation in src/cpu/o3/trace/CommitTrace.cc)
+    bool traceMaybeExitOnPipelineDrainFromStuckCheck();
+    bool traceMaybeExitOnEofDrainFromTick();
+    void traceUpdateSquashInfo(ThreadID tid, InstSeqNum squashed_inst);
+    void traceMaybeInjectCtrlFlowChangeFault(
+        ThreadID tid, const DynInstPtr &head_inst);
+    bool traceMaybeExitOnLastTraceInst(const DynInstPtr &head_inst);
+    void traceOnCommit(ThreadID tid, const DynInstPtr &head_inst);
+    void traceOnMacroCommit(ThreadID tid);
+    void traceLogHandleInterrupt();
+    void traceLogInstFault(const DynInstPtr &head_inst, const Fault &inst_fault);
+    void traceLogPrivReturn(const DynInstPtr &head_inst, ThreadID tid);
+    void traceLogCommitBlockedCycles(
+        const DynInstPtr &head_inst, uint64_t delta);
+
     void dumpTicks(const DynInstPtr &inst);
+
+    // Trace-mode: perform commit-time difftest against trace metadata
+    void traceCommitDifftest(ThreadID tid, const DynInstPtr &head_inst);
 
 public:
     const CommitStats& getCommitStats() const { return stats; }
+    uint64_t getTraceCommitIndex(ThreadID tid) const { return traceCommitIndex[tid]; }
 };
 
 } // namespace o3

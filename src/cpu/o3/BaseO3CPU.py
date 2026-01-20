@@ -253,3 +253,48 @@ class BaseO3CPU(BaseCPU):
 
     enableConstantFolding = Param.Bool(False, "Enable Constant Folding (add-immediate elimination)")
     enableMovImmElimination = Param.Bool(False, "Enable MOVI elimination")
+
+    # Trace mode parameters for trace-driven simulation
+    enableTraceMode = Param.Bool(False, "Enable trace-driven simulation mode")
+    traceFile = Param.String("", "Path to trace file for trace-driven simulation")
+    traceFormat = Param.String("champsim", "Trace format (champsim, cbp2025)")
+    enableDecoupledBPInTrace = Param.Bool(False, "Enable decoupled branch predictor in trace mode")
+    traceCheckpointInterval = Param.Unsigned(64, "Checkpoint interval for trace rollback (0 disables)")
+    traceBPValidation = Param.Bool(True, "Enable branch predictor validation against trace")
+
+    # Address mapping configuration for trace mode
+    traceAddrMapMode = Param.String("linear", "Address mapping mode for trace (hash|linear)")
+    traceAddrBase = Param.Addr(0x80000000, "Base address for trace address mapping (within physical memory)")
+    traceAddrSize = Param.Addr(0x40000000, "Size of trace address mapping region (1GB)")
+    traceAddrPageAlign = Param.Bool(True, "Align trace addresses to page boundaries")
+
+    # Trace timing PTW/TLB cost modeling (opt-in; default off)
+    traceTimingPTW = Param.Bool(False,
+        "In trace mode, use timing TLB/PTW with a synthetic static page table")
+    tracePTReservedBytes = Param.UInt64(64 * 1024 * 1024,
+        "Bytes reserved above trace-mapped region for synthetic page tables")
+    tracePTLeafPageSize = Param.UInt64(4 * 1024,
+        "Synthetic mapping page size for trace timing PTW (4KiB or 2MiB)")
+
+    # Trace-driven branch predictor training and control-flow modeling
+    traceTrainBranches = Param.Bool(True,
+        "Enable BP training and use real branch opcodes under trace mode")
+
+    # On a branch misprediction (predicted vs. trace ground truth), stall
+    # the fetch stage for this many cycles to emulate redirect/recovery cost.
+    traceMispredictPenalty = Param.Cycles(8,
+        "Cycles to stall fetch on mispredict in trace mode")
+
+    # Enable explicit wrong-path fetch/ decode/ cancel injection in decoupled frontend
+    traceEnableWrongPath = Param.Bool(True,
+        "Enable wrong-path injection on BP mispredict for decoupled frontend")
+
+    # Wrong-path injection mode: use trace instructions vs. always NOPs
+    # False (default): inject NOPs and keep reader position unchanged
+    # True: advance reader and use trace PCs during injection; restore reader at squash
+    traceWrongPathUseTraceInst = Param.Bool(False,
+        "Use trace instructions for wrong-path injection (advance + checkpoint/restore); currently unimplemented")
+
+    # Trace mode control (exec bypass reserved for future use)
+    traceExecBypass = Param.Bool(False,
+        "Bypass real execute for non-mem/non-ctrl ops in trace mode; only consume timing (experimental)")
