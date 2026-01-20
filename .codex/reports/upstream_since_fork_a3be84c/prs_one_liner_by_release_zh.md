@@ -1,0 +1,1573 @@
+# upstream PR 一句话摘要（按 release tag）
+
+- 说明：每条为基于 PR 标题的自动中文化归纳，用于快速扫读；精确信息以 PR 链接/代表 commit 为准。
+- 范围：`a3be84cb1b854da51716d6399ca139016714bd54..upstream/stable`
+- PR 数量（可识别）：1495；无 PR 号的 commits：2900
+
+| release tag | 日期 | PR 数 |
+|---|---|---:|
+| `v22.0.0.1` | 2022-06-18 | 0 |
+| `v22.0.0.2` | 2022-07-27 | 0 |
+| `v22.1.0.0` | 2022-12-30 | 0 |
+| `v23.0.0.0` | 2023-07-07 | 0 |
+| `v23.0.0.1` | 2023-07-10 | 0 |
+| `v23.0.1.0` | 2023-08-11 | 15 |
+| `v23.1.0.0` | 2023-12-28 | 350 |
+| `v24.0.0.0` | 2024-06-27 | 318 |
+| `v24.0.0.1` | 2024-08-08 | 4 |
+| `v24.1.0.0` | 2024-12-07 | 242 |
+| `v24.1.0.1` | 2024-12-19 | 5 |
+| `v24.1.0.2` | 2025-02-12 | 2 |
+| `v24.1.0.3` | 2025-04-11 | 2 |
+| `v25.0.0.0` | 2025-06-18 | 274 |
+| `v25.0.0.1` | 2025-08-11 | 9 |
+| `v25.1.0.0` | 2025-12-31 | 274 |
+
+## v22.0.0.1 (2022-06-18)
+
+- （该版本区间无可识别 PR）
+
+## v22.0.0.2 (2022-07-27)
+
+- （该版本区间无可识别 PR）
+
+## v22.1.0.0 (2022-12-30)
+
+- （该版本区间无可识别 PR）
+
+## v23.0.0.0 (2023-07-07)
+
+- （该版本区间无可识别 PR）
+
+## v23.0.0.1 (2023-07-10)
+
+- （该版本区间无可识别 PR）
+
+## v23.0.1.0 (2023-08-11)
+
+- #75 【修复/纠错】arch-arm：修复UQRSHL shiftAmt==0 时的断言失败。（subsys=arch; arch=arm; churn=8；https://github.com/gem5/gem5/pull/75）
+- #79 【测试】tests：改进Pyunit tests gem5 Resources' downloads。（subsys=tests; arch=-; churn=76；https://github.com/gem5/gem5/pull/79）
+- #87 【CI】util：新增"Improving stability" sec to github-vagrant-runner。（subsys=util; arch=-; churn=28；https://github.com/gem5/gem5/pull/87）
+- #71 【文档/示例】misc：更新README/README.md。（subsys=README, README.md, build_tools, src; arch=-; churn=282；https://github.com/gem5/gem5/pull/71）
+- #93 【CI】python：修复main.py (github #78) 中的 fatal。（subsys=python; arch=-; churn=14；https://github.com/gem5/gem5/pull/93）
+- #104 【新增/支持】scons：新增--no-duplicate-sources 时的 extra parent dir to CPPPATH。（subsys=src; arch=-; churn=16；https://github.com/gem5/gem5/pull/104）
+- #95 【其他】cpu-kvm：使在使用 KVM CPU 时使用 perf 变为可选。（subsys=cpu, configs; arch=-; churn=500；https://github.com/gem5/gem5/pull/95）
+- #72 【修复/纠错】mem-garnet：修复flit 中的 packet_id val。（subsys=mem; arch=-; churn=4；https://github.com/gem5/gem5/pull/72）
+- #122 【CI】misc：Merge develop .github into stable。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/122）
+- #139 【其他】misc：Merge stable into minor-release-staging-v23-0-1-0。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/139）
+- #125 【更新/依赖】misc：更新version to v23.0.1.0。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/125）
+- #128 【更新/依赖】misc：更新RELEASE-NOTES.md for v23.0.1.0。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/128）
+- #103 【其他】misc：Merge cherry-picked commits from develop。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/103）
+- #168 【CI】misc：Merge develop .github into stable。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/168）
+- #174 【其他】misc：Minor release v23.0.1.0。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/174）
+
+## v23.1.0.0 (2023-12-28)
+
+- #64 【测试】gpu-compute, tests：修复GPU_X86 compilation, 新增 compiler tests。（subsys=.github, arch, cpu, dev, tests; arch=amdgpu; churn=24；https://github.com/gem5/gem5/pull/64）
+- #70 【其他】Sanitizer libraries static linking。（subsys=SConstruct; arch=-; churn=8；https://github.com/gem5/gem5/pull/70）
+- #65 【其他】misc：Merge v23.0.0.1 Hotfix into develop。（subsys=RELEASE-NOTES.md; arch=-; churn=12；https://github.com/gem5/gem5/pull/65）
+- #63 【其他】stdlib：Deviding range for linear multicore.。（subsys=python; arch=-; churn=34；https://github.com/gem5/gem5/pull/63）
+- #81 【修复/纠错】arch-riscv：修复clearLoadReservation merge。（subsys=arch; arch=generic, riscv; churn=7；https://github.com/gem5/gem5/pull/81）
+- #67 【其他】mem-ruby：新增 WIB State to VIPER TCC Cache。（subsys=mem; arch=-; churn=32；https://github.com/gem5/gem5/pull/67）
+- #90 【新增/支持】新增feature to output citations automatically based on configuration。（subsys=mem, python, gpu-compute; arch=-; churn=365；https://github.com/gem5/gem5/pull/90）
+- #92 【修复/纠错】configs：修复GPU's default number of HW barrier/CU。（subsys=gpu-compute; arch=-; churn=2；https://github.com/gem5/gem5/pull/92）
+- #68 【修复/纠错】scons：Use pkgconfig to get correct Protobuf dependency。（subsys=src; arch=-; churn=14；https://github.com/gem5/gem5/pull/68）
+- #76 【其他】base：Find lsb set generalization 与 optimization。（subsys=base; arch=-; churn=117；https://github.com/gem5/gem5/pull/76）
+- #88 【测试】misc：更新CI test workflow。（subsys=.github; arch=-; churn=164；https://github.com/gem5/gem5/pull/88）
+- #85 【新增/支持】misc：新增bug report template。（subsys=.github; arch=-; churn=62；https://github.com/gem5/gem5/pull/85）
+- #80 【移除/弃用】misc：移除older compilers 与 Ubuntu 18.04。（subsys=util, .github, tests; arch=-; churn=172；https://github.com/gem5/gem5/pull/80）
+- #99 【其他】base：新增 missing backup dummy __has_builtin definition。（subsys=base; arch=-; churn=7；https://github.com/gem5/gem5/pull/99）
+- #73 【测试】base：单元测试 miscellaneous patches。（subsys=base, sim; arch=-; churn=273；https://github.com/gem5/gem5/pull/73）
+- #98 【其他】arch-riscv：Set default check alignment True。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/98）
+- #101 【新增/支持】mem-ruby：新增支持 for non-system-scope atomics in VIPER。（subsys=mem; arch=-; churn=117；https://github.com/gem5/gem5/pull/101）
+- #91 【其他】stdlib：调整resource compatibility warning。（subsys=python, tests; arch=-; churn=28；https://github.com/gem5/gem5/pull/91）
+- #102 【测试】stdlib,configs,tests：移除deprecated Resource classes usage。（subsys=configs, tests, python; arch=-; churn=146；https://github.com/gem5/gem5/pull/102）
+- #77 【其他】base：Ostream helpers (iterable, tuple, pair, enum, pointers, 可选)。（subsys=base; arch=-; churn=93；https://github.com/gem5/gem5/pull/77）
+- #96 【CI】misc：新增workflow to close stale issues。（subsys=.github; arch=-; churn=19；https://github.com/gem5/gem5/pull/96）
+- #110 【新增/支持】mem-ruby,configs：新增GLC Atomic Latency VIPER Parameter。（subsys=mem, configs; arch=-; churn=58；https://github.com/gem5/gem5/pull/110）
+- #111 【测试】misc：更新ci-tests.yaml to always clean runner。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/111）
+- #114 【其他】arch-arm：Hook TLBIOS instructions to the TlbiShareable obj。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/114）
+- #109 【新增/支持】base：新增`maybe_unused` to `findLsbSetFallback`。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/109）
+- #107 【其他】cpu-minor：Check pc valid before printing。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/107）
+- #126 【测试】tests：Deprecate Gerrit/Jenkins testing scripts。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/126）
+- #121 【其他】misc：Updating TESTING.md。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/121）
+- #124 【其他】mem：Make functional request a response when satisfied by queue。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/124）
+- #105 【测试】misc：Split up tests in daily-tests.yaml。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/105）
+- #133 【其他】cpu：Set SLC bit for GPU tester。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/133）
+- #135 【文档/示例】learning-gem5：新增a missing override。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/135）
+- #136 【测试】misc：新增missing dependency to daily tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/136）
+- #134 【其他】util：Ignore line length check for #include pragma in C/C++ files。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/134）
+- #130 【其他】misc：Sync CONTRIBUTING.md with website。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/130）
+- #113 【重命名/迁移】arch-x86：迁移CPUID values to python。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/113）
+- #140 【其他】gpu-compute："<random>" -> "base/random.hh" in testers/gpu...。（subsys=cpu; arch=-; churn=9；https://github.com/gem5/gem5/pull/140）
+- #142 【新增/支持】arch-vega：修复vop2Helper scalar 支持。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/142）
+- #129 【修复/纠错】arch-vega, dev-amdgpu：修复for 内存泄漏s。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/129）
+- #143 【修复/纠错】mem：Minor typo 修复 in packet.hh。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/143）
+- #141 【新增/支持】dev-amdgpu：支持 for ROCm 5.4+ 与 MI200。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/141）
+- #150 【新增/支持】stdlib,resources：启用loading of local Resources data via JSON file path。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/150）
+- #83 【新增/支持】arch-riscv：Relation chain on RVV 支持。（subsys=arch; arch=mips, power, sparc, x86; churn=8；https://github.com/gem5/gem5/pull/83）
+- #153 【修复/纠错】stdlib, resources：修复 keyerror: 'is_zipped' bug。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/153）
+- #149 【其他】stdlib, resources：修复 style issue in isa.hh。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/149）
+- #152 【测试】tests：download_check.py to rm each resource after check。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/152）
+- #115 【修复/纠错】util：修复PR #83 中的 cpt upgrader for rvv changes。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/115）
+- #137 【其他】arch-riscv：Implemented zicbom/zicboz extensions for RISC V。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/137）
+- #158 【测试】misc：修复daily tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/158）
+- #156 【测试】tests：重构test configs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/156）
+- #160 【测试】misc：重构weekly-tests.yaml。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/160）
+- #164 【测试】tests：Temporarily cease using PARSEC disk image in tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/164）
+- #163 【CI】misc：更新workflow files 中的 where runners are cleaned。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/163）
+- #170 【新增/支持】arch-riscv：新增checking CSR condition for RVV instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/170）
+- #169 【修复/纠错】cpu：修复using debug flags Branch 时的 segment fault。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/169）
+- #172 【重命名/迁移】cpu-o3：bugfix of rename squash when SMT。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/172）
+- #155 【更新/依赖】misc：更新MAINTAINERS.yaml。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/155）
+- #173 【测试】tests：迁移replacement policy 与 simulator config files。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/173）
+- #175 【新增/支持】misc：新增continue-on-error to matrix runs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/175）
+- #179 【CI】misc：Sync GitHub Workflow files from develop to stable。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/179）
+- #185 【其他】mem：Fixing 内存大小 type issue in port proxy.。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/185）
+- #180 【其他】mem：Port trace in xbar when address error。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/180）
+- #183 【新增/支持】fastmodel：新增option to retry licence server connection.。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/183）
+- #184 【其他】gpu-compute：调整kernel-based exit location。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/184）
+- #190 【更新/依赖】util-docker：修复clang-version-8 docker container。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/190）
+- #189 【修复/纠错】arch-x86,cpu-kvm：修复unused variable 导致的 gem5.fast。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/189）
+- #187 【其他】arch-riscv：Check CSR before executing VMem instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/187）
+- #166 【修复/纠错】修复SE mode 中的 reporting traps (faults) to GDB。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/166）
+- #195 【其他】stdlib：Allow passing of func as Exit Event generator。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/195）
+- #194 【测试】misc：更新scheduled tests 中的 matrix runs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/194）
+- #167 【测试】tests：新增checkpoint tests for all ISAs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/167）
+- #202 【文档/示例】ext：更新DRAMSys README。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/202）
+- #196 【更新/依赖】arch-riscv,systemc：更新cxx_config_cc.py to use is port.is_source。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/196）
+- #205 【其他】mem-cache：Allow clflush's uncacheable requests on classic cache。（subsys=mem/cache; arch=-; churn=25；https://github.com/gem5/gem5/pull/205）
+- #198 【测试】misc：新增DRAMSys tests to our weekly tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/198）
+- #203 【修复/纠错】base：Make 'findLsbSetFallback' constexpr to 修复 gcc-8 comp。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/203）
+- #206 【测试】tests：更新asmtest script 与新增 more test binaries。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/206）
+- #209 【其他】ext：Specialize GDBSignal MACRO to gem5。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/209）
+- #223 【修复/纠错】gpu-compute,arch-vega：修复ALU-only LDS counters。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/223）
+- #217 【修复/纠错】mem-ruby：修复CHI Evict race condition。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/217）
+- #210 【其他】sim：provide a signal constructor with an init_state。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/210）
+- #225 【其他】cpu-minor：Separate the reg_index of VecClassReg 与 VecElemReg。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/225）
+- #186 【测试】tests, gpu-compute：Updating weekly.sh to use mmapped version of FW。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/186）
+- #224 【新增/支持】dev-amdgpu：Tell OS about PCIe atomic 支持。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/224）
+- #222 【测试】misc：迁移compiler tests to run on 'build' runners。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/222）
+- #230 【其他】gpu-compute：Use timing DMAs for GPUFS HSA signals。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/230）
+- #231 【修复/纠错】gpu-compute：Flat scratch 实现与 bug 修复。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/231）
+- #220 【其他】mem-ruby：改进Ruby/CHI stats for in/out trans。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/220）
+- #229 【测试】misc：更新CI tests to not run on draft PRs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/229）
+- #218 【修复/纠错】mem-ruby：修复assert on CHI ReadUnique。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/218）
+- #219 【修复/纠错】mem-ruby：修复CHI sending the wrong snoop response。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/219）
+- #211 【更新/依赖】util：更新m5stats2streamline.py 中的 & 修复 bug。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/211）
+- #204 【新增/支持】resources, stdlib：增加对obtain_resource 中的 local files的支持。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/204）
+- #236 【CI】util-docker：新增GitHub Action to create Docker Images。（subsys=util, .github; arch=-; churn=144；https://github.com/gem5/gem5/pull/236）
+- #200 【其他】mem：Atomic ops to same address。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/200）
+- #243 【CI】misc：Copy .github directory from develop to stable。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/243）
+- #247 【其他】gpu-compute：Set LDS/scratch aperture base register。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/247）
+- #245 【测试】misc：移除'run-name' from compiler-tests.yaml。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/245）
+- #251 【修复/纠错】arch-x86：修复wrong x86 assembly。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/251）
+- #248 【新增/支持】util：新增gdb to gcn-gpu Dockerfile。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/248）
+- #255 【其他】mem-ruby：Reorder SLC atomic 与 response actions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/255）
+- #268 【CI】misc：改进".github/ISSUE_TEMPLATE/bug_report.md"。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/268）
+- #275 【CI】misc：修复Workflow re-triggered 时的 CI GitHub Action to stop。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/275）
+- #270 【修复/纠错】misc：修复buggy special path comparisons。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/270）
+- #267 【其他】ext：Stop excluding 'ext/testlib' from pre-commit 与 format。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/267）
+- #279 【新增/支持】sim：新增bypass_on_change to the set() of a signal。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/279）
+- #273 【其他】util-docker：Proof-of-concept using Docker buildx。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/273）
+- #271 【CI】util：新增docker prune cron to GitHub runners。（subsys=util; arch=-; churn=4；https://github.com/gem5/gem5/pull/271）
+- #212 【新增/支持】resources,stdlib：新增工作负载 to resource specialization 与 deprecate 工作负载.py。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/212）
+- #233 【文档/示例】misc：新增test status badges to README.md。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/233）
+- #277 【修复/纠错】sim-se：修复chdirFunc() on nonexistent directory 中的崩溃。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/277）
+- #244 【新增/支持】scons：新增an option specifying the path to mold linker binary。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/244）
+- #221 【其他】redirect_path patch for restoring cpt。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/221）
+- #299 【CI】util：Revert "新增 docker prune cron to GitHub..."。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/299）
+- #290 【更新/依赖】util：更新gcn-gpu Dockerfile。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/290）
+- #228 【新增/支持】arch-riscv：启用Minor 与 O3 CPU 中的 RVV run。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/228）
+- #298 【其他】cpu-kvm：properly set x86 xsave header on gem5->KVM transition。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/298）
+- #286 【修复/纠错】sim-se：修复handling signal argument 中的 tgkill logic bug。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/286）
+- #283 【其他】sim-se：Use tgt_stat64 instead of tgt_stat in newfstatatFunc。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/283）
+- #302 【修复/纠错】cpu, configs：修复TraceCPU after multi-ISA addition。（subsys=util; arch=-; churn=30；https://github.com/gem5/gem5/pull/302）
+- #310 【修复/纠错】util：修复TLM configs making use of TraceCPU replayer。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/310）
+- #304 【修复/纠错】arch-x86：initialize 与 correct bitwidth for FPU tag word。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/304）
+- #294 【其他】mem-ruby：This commit patches an error in AbstractController.cc。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/294）
+- #285 【修复/纠错】misc,util-docker：修复docker-build.yaml。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/285）
+- #313 【新增/支持】scons：Revert "新增 an option specifying the path to mold linker binary"。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/313）
+- #319 【CI】misc：修复docker build workflow。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/319）
+- #320 【其他】misc：Use 'workdir' for docker-build.yaml。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/320）
+- #314 【修复/纠错】configs：'memoy' -> 'memory' spelling mistake 修复。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/314）
+- #274 【修复/纠错】mem-cache：修复classic cache while clflush 中的 bug。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/274）
+- #322 【更新/依赖】misc：更新docker-build.yaml artifact actions to v3。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/322）
+- #318 【测试】misc,tests：移除duplicate running of daily `gem5_library_tests`。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/318）
+- #321 【测试】misc,tests：Use GitHub Docker registry for 22.04 all-deps。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/321）
+- #317 【新增/支持】util,resources,stdlib：新增'obtain-resource.py' utility to easily obtain resources from the CLI。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/317）
+- #316 【其他】mem-ruby：patch 修复 a protocol error in MOESI_CMP_Directory。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/316）
+- #258 【测试】misc：新增HACC GPU tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/258）
+- #332 【修复/纠错】arch-x86：修复PACK micro-op 中的 negative overflow check bug。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/332）
+- #328 【修复/纠错】dev-amdgpu：Handle GPU atomics on host memory addresses。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/328）
+- #325 【修复/纠错】arch-riscv：修复inst flags for jal 与 jalr。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/325）
+- #307 【新增/支持】python,util：新增Python MyPy Stubgen to enable Pylance IntelliSense。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/307）
+- #337 【其他】configs：修复 Typo。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/337）
+- #351 【新增/支持】arch：启用customized decoder class name。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/351）
+- #348 【新增/支持】cpu：新增override to TraceCPU init function。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/348）
+- #350 【其他】arch-riscv：Make RISC-V decodeInst overridable。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/350）
+- #288 【其他】mem-ruby：start using txnid 与 DBID identifiers in CHI transactions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/288）
+- #356 【其他】sim：Probe listener template with lambda。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/356）
+- #345 【其他】arch-x86：make popx87 micro-op actually pop st(0)。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/345）
+- #347 【其他】arch-x86：properly initialize the auxv platform string。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/347）
+- #360 【其他】cpu-o3：Mark getWritableRegOperand() in O3CPU as a regwrite。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/360）
+- #263 【测试】misc,ext,tests：Automatically split CI TestLib tests across GitHub Action jobs。（subsys=configs; arch=-; churn=1；https://github.com/gem5/gem5/pull/263）
+- #361 【新增/支持】base：新增failing to insert a whole symbol table 时的 a warning。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/361）
+- #323 【其他】stdlib, resources：新增 pretty printing resource。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/323）
+- #250 【其他】misc：'sim{out/err}' -> 'sim{out/err}.txt'。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/250）
+- #370 【更新/依赖】arch-riscv：更新doing floating point loads 时的 FS bits。（subsys=arch; arch=riscv; churn=18；https://github.com/gem5/gem5/pull/370）
+- #363 【修复/纠错】misc：修复g++13 overloaded-virtual warning。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/363）
+- #265 【修复/纠错】mem：修复3-level cache 中的 bug。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/265）
+- #369 【新增/支持】python：新增importer to standalone gem5py_m5。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/369）
+- #381 【其他】arch-riscv：FS bits -> DIRTY for more floating point loads。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/381）
+- #357 【新增/支持】arch：新增instruction size 与 PC set methods。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/357）
+- #365 【更新/依赖】misc：更新gem5 to use clang-15 与 clang-16。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/365）
+- #399 【新增/支持】arch-riscv：实现Zcb instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/399）
+- #391 【测试】gpu-compute：修复dynamic scratch size test。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/391）
+- #334 【新增/支持】arch-arm：实现FEAT_FGT。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/334）
+- #191 【其他】resources, stdlib：Adding 'suite' category to gem5。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/191）
+- #389 【新增/支持】configs：新增可配置 GPU L1,L2 num banks 与 L2 latencies。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/389）
+- #177 【新增/支持】mem-ruby：新增CHI 中的新增 feature far atomics。（subsys=mem; arch=-; churn=3；https://github.com/gem5/gem5/pull/177）
+- #371 【CI】util：更新the GitHub Self-Hosted Runners。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/371）
+- #407 【修复/纠错】mem-ruby：Far atomics 修复。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/407）
+- #343 【其他】sim-se：zero out memory allocated via brk()。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/343）
+- #411 【其他】cpu-kvm, arch-x86：flush TLB after syscalls。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/411）
+- #414 【新增/支持】arch-arm：实现FEAT_TLBIRANGE extension。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/414）
+- #412 【其他】cpu：Restructure BTB。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/412）
+- #402 【其他】stdlib：Del comment stating SE mode limited to single thread。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/402）
+- #151 【新增/支持】新增 function to kernel_disk_workload to allow 新增 disk device location。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/151）
+- #400 【测试】tests,misc：修复compilation tests failures。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/400）
+- #415 【新增/支持】configs：新增an example elastic trace generation script。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/415）
+- #410 【新增/支持】dev-amdgpu,gpu-compute：实现GPU 与 HSA timestamps。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/410）
+- #423 【新增/支持】misc,python：新增yaml formatter to pre commit。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/423）
+- #425 【测试】configs,tests：移除simpoint-se-checkpoint.py 中的 `mkdir`。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/425）
+- #430 【修复/纠错】arch-arm：Make interrupt masking handle VHE/SEL2 cases。（subsys=arch; arch=arm; churn=83；https://github.com/gem5/gem5/pull/430）
+- #377 【新增/支持】dev-amdgpu,mem-ruby：新增GPUFS 中的支持 to checkpoint 与 restore between kernels。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/377）
+- #341 【移除/弃用】arch,arch-riscv：移除VecRegOperand 中的 setRegOperand。（subsys=arch, cpu/o3; arch=isa_parser, riscv; churn=6；https://github.com/gem5/gem5/pull/341）
+- #427 【修复/纠错】stdlib：修复md5_utils.py 中的 use internal _hashlib。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/427）
+- #417 【测试】tests：更新test workflows for 新增 runners。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/417）
+- #422 【新增/支持】misc,python：新增`requirements-txt-fixer` to pre-commit。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/422）
+- #401 【文档/示例】Learning-gem5：修复formatting。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/401）
+- #404 【其他】stdlib：改进Atlas request failures 中的 handing of errors。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/404）
+- #419 【其他】misc：Run `pre-commit autoupdate`。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/419）
+- #416 【新增/支持】arch-arm：实现FEAT_TCR2 与 FEAT_SCTLR2。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/416）
+- #408 【更新/依赖】gpu-compute：更新tokens for flat global/scratch。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/408）
+- #424 【新增/支持】misc,python：新增`pyupgrade` to pre-commit。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/424）
+- #396 【其他】configs,ext：Updated the gem5 SST Bridge to use SST 13.0.0。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/396）
+- #433 【其他】configs：GPUFS option to disable KVM perf counters。（subsys=configs; arch=-; churn=13；https://github.com/gem5/gem5/pull/433）
+- #438 【其他】arch-vega：Ignore s_setprio instruction instead of panic。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/438）
+- #439 【新增/支持】arch-vega：实现buffer_atomic_cmpswap。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/439）
+- #444 【测试】misc,tests：新增dummy jobs to workflows for status checks。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/444）
+- #429 【重构/整理】cpu：重构indirect predictor。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/429）
+- #441 【测试】tests：updated the nightly tests to use SST 13.0.0。（subsys=util, .github, tests; arch=-; churn=22；https://github.com/gem5/gem5/pull/441）
+- #448 【更新/依赖】mem-ruby：更新cache recorder to use RubyPort 与移除 BUILD_GPU guards。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/448）
+- #443 【修复/纠错】arch-riscv：修复write back register issue of vmask_mv_micro。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/443）
+- #367 【其他】mem-ruby：Always pass on GPU atomics to dir in write-through TCC。（subsys=mem, configs; arch=-; churn=42；https://github.com/gem5/gem5/pull/367）
+- #457 【修复/纠错】configs：修复missing param exchange for GPUFS。（subsys=configs; arch=-; churn=1；https://github.com/gem5/gem5/pull/457）
+- #453 【新增/支持】python：启用-m switch on gem5 binary。（subsys=python; arch=-; churn=96；https://github.com/gem5/gem5/pull/453）
+- #458 【CI】misc：Copy .github directory from develop to stable。（subsys=.github; arch=-; churn=1238；https://github.com/gem5/gem5/pull/458）
+- #364 【新增/支持】arch-arm：移除Jazelle state + ThumbEE 支持。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/364）
+- #454 【修复/纠错】misc：修复clang13 overloaded-virtual warning。（subsys=src; arch=-; churn=10；https://github.com/gem5/gem5/pull/454）
+- #329 【其他】cpu：Explicitly define cache_line_size -> 64-bit unsigned int。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/329）
+- #465 【新增/支持】cpu, arch-arm：新增IsPseudo tag for gem5 pseudo instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/465）
+- #459 【修复/纠错】arch-arm：修复misc.cc 中的 line-length error。（subsys=arch; arch=arm; churn=32；https://github.com/gem5/gem5/pull/459）
+- #460 【修复/纠错】util：修复runners to extent to max disk size。（subsys=util; arch=-; churn=1；https://github.com/gem5/gem5/pull/460）
+- #466 【其他】stdlib,resources：Generalize exception for request retry。（subsys=python; arch=-; churn=3；https://github.com/gem5/gem5/pull/466）
+- #463 【其他】arch-riscv：Mark vector configuration insts as vector insts。（subsys=arch; arch=riscv; churn=4；https://github.com/gem5/gem5/pull/463）
+- #462 【文档/示例】misc：新增missing RISCV valid ISA option to README.md。（subsys=README.md; arch=-; churn=4；https://github.com/gem5/gem5/pull/462）
+- #376 【其他】arch-riscv：调整to VS bits to DIRTY for rvv insts changing vregs。（subsys=arch; arch=riscv; churn=128；https://github.com/gem5/gem5/pull/376）
+- #468 【修复/纠错】arch-arm：修复(other) line-length errors。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/468）
+- #336 【其他】dockerfiles：multi-platform setup。（subsys=util; arch=-; churn=24；https://github.com/gem5/gem5/pull/336）
+- #428 【其他】cpu：Restructure RAS。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/428）
+- #470 【CI】util：改进GitHub Action runners: Enable KVM; Better Cleanup; Better Tooling。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/470）
+- #390 【新增/支持】arch-riscv：新增bootloader+kernel 工作负载。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/390）
+- #477 【测试】tests：Changed percent atomics to 0 in memtest to 修复 daily test。（subsys=cpu; arch=-; churn=2；https://github.com/gem5/gem5/pull/477）
+- #479 【其他】arch-riscv：Copy Misc Regs when swiching cpus。（subsys=arch; arch=riscv; churn=4；https://github.com/gem5/gem5/pull/479）
+- #420 【新增/支持】misc：新增additional `pre-commit` hook checks。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/420）
+- #418 【CI】docker-images：Use GitHub Container Registry。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/418）
+- #256 【测试】misc：新增LULESH GPU tests。（subsys=.github; arch=-; churn=39；https://github.com/gem5/gem5/pull/256）
+- #485 【CI】misc：Copy .github directory from develop to stable。（subsys=.github; arch=-; churn=67；https://github.com/gem5/gem5/pull/485）
+- #171 【新增/支持】arch-riscv：新增dynamic VLEN 与 ELEN configuration 支持 to RVV path。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/171）
+- #489 【测试】mem,tests：Set Ruby Mem Test atomic percent to 0。（subsys=configs; arch=-; churn=2；https://github.com/gem5/gem5/pull/489）
+- #490 【其他】scons：Explicit some config options HAVE_* to boolean type。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/490）
+- #488 【测试】misc：修复weekly-tests.yaml container uris。（subsys=.github; arch=-; churn=4；https://github.com/gem5/gem5/pull/488）
+- #494 【其他】misc：Integrate a Capstone Disassembler in gem5。（subsys=src, cpu; arch=-; churn=31；https://github.com/gem5/gem5/pull/494）
+- #486 【修复/纠错】arch-arm：修复KVM Failed to set register (0x603000000013808c)。（subsys=arch; arch=arm; churn=26；https://github.com/gem5/gem5/pull/486）
+- #495 【CI】misc：Merge develop .github dir to stable。（subsys=.github; arch=-; churn=4；https://github.com/gem5/gem5/pull/495）
+- #496 【新增/支持】util：新增'sudo' to rm WORK_DIR command。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/496）
+- #497 【CI】misc：新增GitHub Runner API rate limiting。（subsys=util; arch=-; churn=14；https://github.com/gem5/gem5/pull/497）
+- #455 【其他】cpu：分支预测器 Refactoring。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/455）
+- #475 【修复/纠错】misc：修复MAINTAINERS.yaml 中的 spelling error。（subsys=MAINTAINERS.yaml; arch=-; churn=4；https://github.com/gem5/gem5/pull/475）
+- #500 【重命名/迁移】arch-riscv：迁移RVV 实现 from header to source。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/500）
+- #515 【其他】arch-arm：Set UNCACHEABLE flag in Request in SE mode。（subsys=arch; arch=arm; churn=15；https://github.com/gem5/gem5/pull/515）
+- #511 【修复/纠错】arch-riscv：Correct BootloaderKernelWorkload symbol table。（subsys=arch; arch=riscv; churn=3；https://github.com/gem5/gem5/pull/511）
+- #514 【修复/纠错】mem-ruby, stdlib：Far atomics 修复。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/514）
+- #464 【新增/支持】arch-riscv：Dynamically 新增 V extension to device tree。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/464）
+- #519 【修复/纠错】arch-riscv：修复line length of CSRData declaration。（subsys=arch; arch=riscv; churn=702；https://github.com/gem5/gem5/pull/519）
+- #498 【新增/支持】gpu-compute,dev-hsa：ROCm 5.5+ 支持。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/498）
+- #534 【修复/纠错】修复bytes 中的 calculation of compressed size。（subsys=mem/cache; arch=-; churn=2；https://github.com/gem5/gem5/pull/534）
+- #521 【修复/纠错】python：Handle unicode characters in config files。（subsys=python; arch=-; churn=4；https://github.com/gem5/gem5/pull/521）
+- #541 【修复/纠错】arch-arm,kvm：修复copy-paste error。（subsys=arch; arch=arm; churn=2；https://github.com/gem5/gem5/pull/541）
+- #530 【更新/依赖】mem-ruby, gpu-compute：更新GPU L1I$ MRU info。（subsys=mem; arch=-; churn=6；https://github.com/gem5/gem5/pull/530）
+- #507 【其他】configs,ext：gem5 SST bridge calls m5.instantiate() in gem5。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/507）
+- #397 【其他】mem-ruby：SLICC 修复 to GLC Atomics in WB L2。（subsys=mem; arch=-; churn=120；https://github.com/gem5/gem5/pull/397）
+- #537 【更新/依赖】mem-ruby：更新RubyRequest print to include GPU fields。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/537）
+- #517 【其他】arch-riscv：Fixing CMO instructions 与 allowing using CMO instructions in FS mode。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/517）
+- #512 【新增/支持】base,sim：新增the SymbolType field to the Symbol object。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/512）
+- #538 【修复/纠错】mem-ruby, gpu-compute：修复GPU SQC/TCP Ruby formatting。（subsys=mem; arch=-; churn=27；https://github.com/gem5/gem5/pull/538）
+- #561 【修复/纠错】mem-ruby：修复CacheMemory 中的 hex print。（subsys=mem; arch=-; churn=2；https://github.com/gem5/gem5/pull/561）
+- #529 【修复/纠错】gpu-compute：修复typo with GPUTLB print。（subsys=arch; arch=amdgpu; churn=2；https://github.com/gem5/gem5/pull/529）
+- #535 【修复/纠错】mem-ruby, gpu-compute：修复GPU coalescer 死锁 print 中的 typo。（subsys=mem; arch=-; churn=3；https://github.com/gem5/gem5/pull/535）
+- #536 【修复/纠错】mem-ruby, gpu-compute：修复formatting of TCC。（subsys=mem; arch=-; churn=47；https://github.com/gem5/gem5/pull/536）
+- #556 【测试】tests,util-docker：移除gcc 9 支持。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/556）
+- #560 【修复/纠错】python,util：修复decode_inst_dep_trace.py 中的 magic number check。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/560）
+- #552 【移除/弃用】cpu：移除SLC bit restraint for GPU tester。（subsys=cpu; arch=-; churn=1；https://github.com/gem5/gem5/pull/552）
+- #432 【测试】tests,misc：新增"build/ALL/gem5.fast" Clang compilation to CI。（subsys=.github; arch=-; churn=16；https://github.com/gem5/gem5/pull/432）
+- #520 【修复/纠错】systemc：修复gcc13 systemC compilation error。（subsys=src; arch=-; churn=5；https://github.com/gem5/gem5/pull/520）
+- #120 【新增/支持】mem-ruby,configs：新增GPU GLC Atomic Resource Constraints。（subsys=mem, configs; arch=-; churn=247；https://github.com/gem5/gem5/pull/120）
+- #546 【修复/纠错】mem-ruby：修复for not creating log entries on atomic no return requests。（subsys=mem; arch=-; churn=194；https://github.com/gem5/gem5/pull/546）
+- #542 【修复/纠错】systemc：修复gem5-to-tlm bridge 中的 two bugs。（subsys=src; arch=-; churn=4；https://github.com/gem5/gem5/pull/542）
+- #525 【更新/依赖】configs,ext,stdlib：更新DRAMSys integration。（subsys=mem, ext, configs, python, .github; arch=-; churn=467；https://github.com/gem5/gem5/pull/525）
+- #563 【测试】tests,gpu-compute：修复Lulesh 'Obtain LULESH' step。（subsys=.github; arch=-; churn=1；https://github.com/gem5/gem5/pull/563）
+- #562 【测试】tests：移除多 suites per job for Weekly tests。（subsys=.github; arch=-; churn=2；https://github.com/gem5/gem5/pull/562）
+- #566 【CI】misc：Merge develop .github dir to stable。（subsys=.github; arch=-; churn=23；https://github.com/gem5/gem5/pull/566）
+- #565 【其他】gpu-compute：Minor edits for atomic no returns 与 stores。（subsys=mem; arch=-; churn=2；https://github.com/gem5/gem5/pull/565）
+- #554 【重命名/迁移】arch-riscv：迁移fault handler addr logic to ISA。（subsys=arch; arch=riscv; churn=18；https://github.com/gem5/gem5/pull/554）
+- #386 【新增/支持】dev：新增register bank. 中的 debug flag。（subsys=dev; arch=-; churn=154；https://github.com/gem5/gem5/pull/386）
+- #568 【新增/支持】arch-riscv：新增overrides to RISC-V Interrupts class。（subsys=arch; arch=riscv; churn=16；https://github.com/gem5/gem5/pull/568）
+- #532 【更新/依赖】stdlib, resources：更新工作负载中的 JSON data。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/532）
+- #540 【修复/纠错】mem-ruby, gpu-compute：修复SQC/TCP requests to same line。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/540）
+- #545 【其他】mem-ruby：AtomicNoReturn should check comp_anr instead of comp_wu。（subsys=mem; arch=-; churn=6；https://github.com/gem5/gem5/pull/545）
+- #564 【其他】mem-cache：预取器改进。（subsys=mem/cache/prefetch, mem/cache; arch=-; churn=43；https://github.com/gem5/gem5/pull/564）
+- #571 【更新/依赖】util：更新GPUFS build docker to 5.4.2。（subsys=util; arch=-; churn=6；https://github.com/gem5/gem5/pull/571）
+- #582 【修复/纠错】dev：修复reg_bank.hh 中的 `std::min` type mismatch。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/582）
+- #579 【修复/纠错】mem-ruby：修复CHI's Send_CompI 中的 typo。（subsys=mem; arch=-; churn=1；https://github.com/gem5/gem5/pull/579）
+- #570 【新增/支持】dev-amdgpu：新增VMID map to checkpoint。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/570）
+- #585 【新增/支持】mem-ruby：修复VIPER TCC 中的 for 新增 AtomicWait event。（subsys=mem; arch=-; churn=3；https://github.com/gem5/gem5/pull/585）
+- #584 【修复/纠错】arch-arm：修复secure mode 中的 Virtual Interrupt logic。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/584）
+- #581 【其他】mem-cache：Revert "预取器改进"。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/581）
+- #599 【其他】arch-vega,arch-gcn3：Bugfix V_PERM_B32 与 V_OR3_B32。（subsys=arch; arch=amdgpu; churn=6；https://github.com/gem5/gem5/pull/599）
+- #600 【测试】tests：修复lulesh。（subsys=.github; arch=-; churn=2；https://github.com/gem5/gem5/pull/600）
+- #577 【测试】ext,github,tests：更新DRAMSys tests to v5.0 与 handle 新增 dependencies。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/577）
+- #597 【其他】dev-amdgpu：Writeback PM4 queue rptr when empty。（subsys=dev; arch=-; churn=19；https://github.com/gem5/gem5/pull/597）
+- #69 【其他】scons：调整to Kconfig build system。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/69）
+- #608 【CI】misc：Merge develop .github dir to stable。（subsys=.github; arch=-; churn=35；https://github.com/gem5/gem5/pull/608）
+- #493 【其他】cpu：Require BTB hit to detect branches.。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/493）
+- #593 【修复/纠错】arch-x86：修复mov instructions 中的 misc 寄存器。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/593）
+- #610 【修复/纠错】arch-riscv：修复tlb bug。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/610）
+- #614 【修复/纠错】cpu-o3：修复discarded requests str-ld forwarding。（subsys=cpu/o3; arch=-; churn=8；https://github.com/gem5/gem5/pull/614）
+- #606 【修复/纠错】arch-riscv：修复RVV isa files 中的 narrow datatypes。（subsys=arch; arch=riscv; churn=230；https://github.com/gem5/gem5/pull/606）
+- #522 【新增/支持】arch-riscv：支持 combination of privilege modes configuration。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/522）
+- #617 【重命名/迁移】scons：迁移CPPPATH systemc_home to "src/systemc" folder。（subsys=arch, src; arch=arm; churn=11；https://github.com/gem5/gem5/pull/617）
+- #601 【新增/支持】scons：新增an option to reduce memory usage of ld。（subsys=SConstruct; arch=-; churn=10；https://github.com/gem5/gem5/pull/601）
+- #592 【其他】arch-x86：修复page fault for CLFLUSH on write-protected pages。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/592）
+- #611 【其他】stdlib, resources：移除 deprecated if statement in obtain_resource for 工作负载 resources。（subsys=python; arch=-; churn=24；https://github.com/gem5/gem5/pull/611）
+- #620 【测试】tests：switch lulesh/hacc to use vega_x86。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/620）
+- #626 【CI】misc：Merge .github directory from develop to stable。（subsys=.github; arch=-; churn=24；https://github.com/gem5/gem5/pull/626）
+- #431 【新增/支持】misc,python：新增`isort` hook to pre-commit。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/431）
+- #531 【其他】sim,python：Restore sigint handler in python。（subsys=sim; arch=-; churn=35；https://github.com/gem5/gem5/pull/531）
+- #629 【其他】scons：Limit adding fastmodel files 与 libpath。（subsys=arch; arch=arm; churn=20；https://github.com/gem5/gem5/pull/629）
+- #502 【新增/支持】支持 for classic 预取器 in Ruby。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/502）
+- #627 【更新/依赖】util-docker：Enforce cmake version >=3.24 for DRAMSys。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/627）
+- #631 【更新/依赖】misc, stdlib：更新文档 to adhere to RST formatting.。（subsys=python; arch=-; churn=1989；https://github.com/gem5/gem5/pull/631）
+- #598 【其他】mem-ruby：Unused L3CacheCntrl freed。（subsys=configs, mem; arch=-; churn=3；https://github.com/gem5/gem5/pull/598）
+- #634 【修复/纠错】misc：修复precommit install。（subsys=scons; arch=-; churn=1；https://github.com/gem5/gem5/pull/634）
+- #637 【更新/依赖】mem-ruby：更新CacheMemory RubyCache debug prints。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/637）
+- #638 【测试】tests：修复HACC tests 中的 artifact reference。（subsys=.github; arch=-; churn=2；https://github.com/gem5/gem5/pull/638）
+- #615 【其他】systemc：Bugfix in TlmToGem5Bridge。（subsys=src; arch=-; churn=1；https://github.com/gem5/gem5/pull/615）
+- #630 【其他】stdlib：Integrate BootloaderKernelWorkload。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/630）
+- #625 【新增/支持】stdlib：Mv resource download to `get_local_path` 与新增 `ShadowResource`。（subsys=python; arch=-; churn=12；https://github.com/gem5/gem5/pull/625）
+- #642 【新增/支持】misc：新增gem5_build/ to .gitignore。（subsys=.gitignore; arch=-; churn=1；https://github.com/gem5/gem5/pull/642）
+- #639 【重构/整理】sim：重构the Linux Kernel exit events。（subsys=src, sim, arch; arch=arm; churn=150；https://github.com/gem5/gem5/pull/639）
+- #636 【修复/纠错】修复for gem5 Issue #550。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/636）
+- #643 【CI】misc：更新stable from develop 中的 .github dir。（subsys=.github; arch=-; churn=2；https://github.com/gem5/gem5/pull/643）
+- #607 【更新/依赖】misc：更新gapbs example to use suites。（subsys=configs; arch=-; churn=73；https://github.com/gem5/gem5/pull/607）
+- #553 【其他】arch-arm：Only build ArmCapstoneDisassembler when ISA is arm。（subsys=cpu, arch; arch=arm; churn=20；https://github.com/gem5/gem5/pull/553）
+- #641 【修复/纠错】arch-riscv：修复spinlock bug 中的 o3 cpu 卡住。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/641）
+- #587 【更新/依赖】misc：更新x86-npb-benchmarks.py to use suites。（subsys=configs; arch=-; churn=40；https://github.com/gem5/gem5/pull/587）
+- #645 【新增/支持】stdlib：新增comment to ShadowResource。（subsys=python; arch=-; churn=6；https://github.com/gem5/gem5/pull/645）
+- #646 【修复/纠错】mem-ruby：修复chi-dvm-funcs 中的编译错误。（subsys=mem; arch=-; churn=10；https://github.com/gem5/gem5/pull/646）
+- #635 【新增/支持】arch-riscv：correctly pass arguments to kernel with 新增 bootloader+kernel。（subsys=python; arch=-; churn=2；https://github.com/gem5/gem5/pull/635）
+- #241 【测试】configs,stdlib,tests：移除get_runtime_isa()。（subsys=configs, python, tests; arch=-; churn=303；https://github.com/gem5/gem5/pull/241）
+- #651 【修复/纠错】configs：修复apu_se.py CPU type checks。（subsys=configs; arch=-; churn=29；https://github.com/gem5/gem5/pull/651）
+- #652 【修复/纠错】configs：修复issues after get_runtime_isa() #241 移除。（subsys=configs; arch=-; churn=77；https://github.com/gem5/gem5/pull/652）
+- #573 【新增/支持】arch-riscv：新增PCEvent for RISCV FS 工作负载 kernel panic/oops。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/573）
+- #662 【更新/依赖】misc：更新version to v23.1.0.0。（subsys=src, base; arch=-; churn=4；https://github.com/gem5/gem5/pull/662）
+- #658 【测试】stdlib：修复the chi protocol of arm boot tests。（subsys=python; arch=-; churn=10；https://github.com/gem5/gem5/pull/658）
+- #655 【其他】configs：Make riscv/fs_linux work in build/ALL/gem5.opt。（subsys=configs; arch=-; churn=92；https://github.com/gem5/gem5/pull/655）
+- #671 【测试】tests：修复gapbs 与 npb tests。（subsys=tests; arch=-; churn=14；https://github.com/gem5/gem5/pull/671）
+- #677 【修复/纠错】arch-riscv：修复riscv matched board for se mode。（subsys=python; arch=-; churn=40；https://github.com/gem5/gem5/pull/677）
+- #682 【其他】misc：Cherry-pick from `develop` to `release-staging-v23-1` [Nov 13th]。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/682）
+- #666 【修复/纠错】arch-x86：修复two_byte_opcodes.isa `0x6` -> `0x0`。（subsys=arch; arch=x86; churn=4；https://github.com/gem5/gem5/pull/666）
+- #683 【其他】misc：Cherry-pick PR #666 from `develop` to `release-staging-v23-1`。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/683）
+- #684 【修复/纠错】configs：修复SMT cpu type checking。（subsys=configs; arch=-; churn=4；https://github.com/gem5/gem5/pull/684）
+- #689 【移除/弃用】sim：移除trailing / from proc/meminfo special path。（subsys=sim; arch=-; churn=8；https://github.com/gem5/gem5/pull/689）
+- #510 【其他】util：新增 script to copy resources from mongodb。（subsys=util; arch=-; churn=612；https://github.com/gem5/gem5/pull/510）
+- #699 【其他】misc：Cherry pick changes from develop to the v23.1 staging branch。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/699）
+- #696 【其他】misc：Turn off 'maybe-uninitialized' warn for regex include。（subsys=src; arch=-; churn=40；https://github.com/gem5/gem5/pull/696）
+- #706 【修复/纠错】misc：修复'maybe-uninitialized' warn turn off。（subsys=src; arch=-; churn=20；https://github.com/gem5/gem5/pull/706）
+- #705 【其他】mem：Updated bytesRead 与 bytesWritten stat。（subsys=mem; arch=-; churn=66；https://github.com/gem5/gem5/pull/705）
+- #707 【其他】misc：Cherry-pick commits from develop to v23.1 staging。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/707）
+- #708 【移除/弃用】scons：移除warnings-as-errors comp feature for v23.1。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/708）
+- #447 【更新/依赖】misc：新增release notes for version 23.1。（subsys=RELEASE-NOTES.md; arch=-; churn=128；https://github.com/gem5/gem5/pull/447）
+- #714 【修复/纠错】misc：修复kconfig section format of RELEASE-NOTE.md。（subsys=RELEASE-NOTES.md; arch=-; churn=8；https://github.com/gem5/gem5/pull/714）
+- #717 【其他】misc：Merge `stable` into `release-staging-v23-1`。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/717）
+- #711 【其他】misc：Merge `release-staging-v23-1` into `stable`。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/711）
+
+## v24.0.0.0 (2024-06-27)
+
+- #596 【新增/支持】arch-arm：新增Sve mla 与 mls indexed。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/596）
+- #654 【更新/依赖】arch-riscv：更新riscv matched board。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/654）
+- #674 【修复/纠错】arch,arch-riscv：修复inst flag of RISC-V vector store macro instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/674）
+- #656 【新增/支持】mem：新增a flag on AbstractMemory to control 统计 collection。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/656）
+- #657 【其他】arch-arm：Partial SVE2 实现。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/657）
+- #672 【其他】arch-riscv：squash walks with tlb hits in startWalkWrapper。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/672）
+- #675 【修复/纠错】stdlib,resources：修复obtaining gem5 Looppoint resources。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/675）
+- #688 【新增/支持】mem-ruby：实现a dummy StashOnceShared/Unique。（subsys=mem; arch=-; churn=38；https://github.com/gem5/gem5/pull/688）
+- #679 【测试】tests：Silence Clang 16 warnings。（subsys=base; arch=-; churn=4；https://github.com/gem5/gem5/pull/679）
+- #692 【新增/支持】mem-ruby：实现WriteUniqueZero CHI transaction。（subsys=mem; arch=-; churn=69；https://github.com/gem5/gem5/pull/692）
+- #695 【测试】tests：修复Daily memory tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/695）
+- #704 【新增/支持】mem-ruby,configs：启用Ruby with NULL build。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/704）
+- #698 【修复/纠错】configs：修复SMT cpu type checking。（subsys=configs; arch=-; churn=4；https://github.com/gem5/gem5/pull/698）
+- #716 【其他】misc：Merge v23.1 staging branch into develop。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/716）
+- #680 【新增/支持】scons：新增option to use libc++。（subsys=SConstruct, scons; arch=-; churn=22；https://github.com/gem5/gem5/pull/680）
+- #732 【修复/纠错】arch-arm：Handle invalid case for encodeAArch64SysReg。（subsys=arch; arch=arm; churn=21；https://github.com/gem5/gem5/pull/732）
+- #734 【修复/纠错】mem-ruby：修复missing txnId for prefetch requests。（subsys=mem; arch=-; churn=1；https://github.com/gem5/gem5/pull/734）
+- #730 【新增/支持】gpu-compute：新增 register file cache 支持。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/730）
+- #731 【其他】gpu-compute：WAX dependency detection。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/731）
+- #735 【修复/纠错】fastmodel：修复the Fastmodel RemoteGDB initial。（subsys=arch; arch=arm; churn=2；https://github.com/gem5/gem5/pull/735）
+- #691 【重命名/迁移】arch-riscv：迁移PMAChecker 与 PMP to RiscvISA namespace。（subsys=arch; arch=riscv; churn=46；https://github.com/gem5/gem5/pull/691）
+- #764 【新增/支持】configs：新增o3 --cpu choice to the starter_se.py script。（subsys=configs; arch=-; churn=13；https://github.com/gem5/gem5/pull/764）
+- #701 【其他】mem-ruby：allow comparison of int 与 Addr in SLICC。（subsys=mem; arch=-; churn=10；https://github.com/gem5/gem5/pull/701）
+- #756 【移除/弃用】arch-riscv：移除the check of bit 63 of the physical address。（subsys=arch; arch=riscv; churn=14；https://github.com/gem5/gem5/pull/756）
+- #733 【新增/支持】gpu-compute：支持 for MI200 GPU model。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/733）
+- #774 【修复/纠错】arch-vega：修复newer compilers 中的 upsize cast error。（subsys=arch; arch=amdgpu; churn=18；https://github.com/gem5/gem5/pull/774）
+- #773 【修复/纠错】mem-ruby：修复ruby startup() to reset exit event correctly。（subsys=mem; arch=-; churn=5；https://github.com/gem5/gem5/pull/773）
+- #715 【修复/纠错】arch-riscv：修复VectorIntMaskMacroConstructor 时的 issue 中的 vl=0。（subsys=arch; arch=riscv; churn=6；https://github.com/gem5/gem5/pull/715）
+- #780 【重构/整理】arch-riscv：重构the RISC-V multiplication utility。（subsys=arch; arch=riscv; churn=108；https://github.com/gem5/gem5/pull/780）
+- #784 【修复/纠错】arch-arm：修复kvm 中的编译错误。（subsys=arch; arch=arm; churn=14；https://github.com/gem5/gem5/pull/784）
+- #647 【测试】misc：Merge Weekly GPU tests into Weekly Tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/647）
+- #789 【重构/整理】arch-vega：Reorganize inst 与 misc files。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/789）
+- #737 【其他】util：updated resource manager dependencies。（subsys=util; arch=-; churn=10；https://github.com/gem5/gem5/pull/737）
+- #801 【移除/弃用】arch-vega：移除deleted instruction.cc from build。（subsys=arch; arch=amdgpu; churn=1；https://github.com/gem5/gem5/pull/801）
+- #792 【其他】dev-amdgpu：Check privledge bit for SDMA RLC queues。（subsys=dev; arch=-; churn=29；https://github.com/gem5/gem5/pull/792）
+- #803 【新增/支持】arch-vega：实现memory aperture operands。（subsys=arch; arch=amdgpu; churn=58；https://github.com/gem5/gem5/pull/803）
+- #793 【其他】arch-riscv：Simply 实现 of vector multiply 与 divide instructions。（subsys=arch; arch=riscv; churn=95；https://github.com/gem5/gem5/pull/793）
+- #805 【修复/纠错】arch-riscv：修复vsadd_vi 与 vsaddu_vi to match v-spec。（subsys=arch; arch=riscv; churn=4；https://github.com/gem5/gem5/pull/805）
+- #781 【移除/弃用】arch-gcn3：移除gcn3。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/781）
+- #786 【修复/纠错】base：修复AddrRange 中的 Integer overflow。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/786）
+- #739 【更新/依赖】misc：更新.mailmap file。（subsys=.mailmap; arch=-; churn=130；https://github.com/gem5/gem5/pull/739）
+- #806 【其他】dev-amdgpu：Limit SDMA NOP count to wptr boundary。（subsys=dev; arch=-; churn=10；https://github.com/gem5/gem5/pull/806）
+- #767 【其他】misc：新增 dependabot config file。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/767）
+- #810 【其他】arch-arm：Replace CRYPTO extension with canonical names。（subsys=arch; arch=arm; churn=63；https://github.com/gem5/gem5/pull/810）
+- #814 【修复/纠错】arch-riscv：修复RVV instructions vmsbf/vmsif/vmsof。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/814）
+- #812 【CI】misc：迁移dependabot.yml to .github。（subsys=.github; arch=-; churn=0；https://github.com/gem5/gem5/pull/812）
+- #653 【新增/支持】util：新增scripts that help maintain mongoDB。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/653）
+- #676 【测试】tests：新增 tests for suites。（subsys=tests; arch=-; churn=278；https://github.com/gem5/gem5/pull/676）
+- #816 【修复/纠错】arch-riscv：修复O3 CPU 中的 fence.i instruction。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/816）
+- #819 【测试】tests：移除GCN3_X86 from compiler tests。（subsys=.github; arch=-; churn=5；https://github.com/gem5/gem5/pull/819）
+- #725 【新增/支持】arm,stdlib：新增 kvm 支持 to the ARM board。（subsys=configs, python, util; arch=-; churn=163；https://github.com/gem5/gem5/pull/725）
+- #804 【更新/依赖】util：更新gcn-gpu to 移除 GCN3 新增 gfx902。（subsys=util; arch=-; churn=1；https://github.com/gem5/gem5/pull/804）
+- #817 【测试】tests：Switch to vega_x86 from gcn3_x86 in daily tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/817）
+- #762 【其他】cpu,stdlib：Updating strided generator。（subsys=cpu, python; arch=-; churn=348；https://github.com/gem5/gem5/pull/762）
+- #824 【修复/纠错】dev：修复IDE controller PCI register allocation 中的 off-by-one。（subsys=dev; arch=-; churn=3；https://github.com/gem5/gem5/pull/824）
+- #831 【CI】misc：Merge develop .github dir into stable。（subsys=.github; arch=-; churn=238；https://github.com/gem5/gem5/pull/831）
+- #829 【新增/支持】arch-arm：Adopt 新增 TranslationRegime data type in MMU translations。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/829）
+- #840 【测试】tests：修复wget link for gpu tests。（subsys=.github; arch=-; churn=4；https://github.com/gem5/gem5/pull/840）
+- #832 【更新/依赖】misc：更新pre-commit from 2.20.0 to 3.6.0。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/832）
+- #841 【CI】misc：Merge .github dir from develop to stable。（subsys=.github; arch=-; churn=4；https://github.com/gem5/gem5/pull/841）
+- #844 【修复/纠错】arch-riscv：修复VectorFloatMaskMacroConstructor 中的 control flow。（subsys=arch; arch=riscv; churn=6；https://github.com/gem5/gem5/pull/844）
+- #843 【修复/纠错】arch-riscv：修复RVV instructions vmv.s.x/vfmv.s.f。（subsys=arch; arch=riscv; churn=10；https://github.com/gem5/gem5/pull/843）
+- #837 【更新/依赖】misc：更新mypy from 1.5.1 to 1.8.0。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/837）
+- #836 【更新/依赖】misc：更新actions/checkout from v3 to v4。（subsys=.github; arch=-; churn=48；https://github.com/gem5/gem5/pull/836）
+- #833 【更新/依赖】misc：更新tqdm from 4.64.1 to 4.66.1。（subsys=optional-requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/833）
+- #795 【其他】systemc：Reduce unnecessary backdoor request in atomic transaction。（subsys=src; arch=-; churn=56；https://github.com/gem5/gem5/pull/795）
+- #848 【其他】arch-arm：Crypto instruction execution requires SIMD to be enabled。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/848）
+- #835 【其他】sim：Updating Process::Map。（subsys=sim; arch=-; churn=4；https://github.com/gem5/gem5/pull/835）
+- #849 【移除/弃用】arch-arm：移除unused/unimplemented TLB methods。（subsys=arch; arch=arm; churn=8；https://github.com/gem5/gem5/pull/849）
+- #846 【新增/支持】arch-riscv：新增BasePMAChecker to 支持 customized PMA。（subsys=arch; arch=riscv; churn=51；https://github.com/gem5/gem5/pull/846）
+- #847 【测试】tests：Allow pyunit tests to run on specific directories。（subsys=tests; arch=-; churn=15；https://github.com/gem5/gem5/pull/847）
+- #850 【测试】misc：新增'workflow_dispatch' to daily tests。（subsys=.github; arch=-; churn=2；https://github.com/gem5/gem5/pull/850）
+- #845 【测试】tests：迁移to obtain-resources from wget。（subsys=.github; arch=-; churn=10；https://github.com/gem5/gem5/pull/845）
+- #813 【新增/支持】arch-riscv：adding 支持 for local interrupts。（subsys=arch; arch=riscv; churn=478；https://github.com/gem5/gem5/pull/813）
+- #855 【修复/纠错】stdlib：修复error message 中的 typo。（subsys=python; arch=-; churn=2；https://github.com/gem5/gem5/pull/855）
+- #794 【新增/支持】arch-riscv：新增unit-stride fault-only-first loads (i.e. vle*ff)。（subsys=arch; arch=riscv; churn=212；https://github.com/gem5/gem5/pull/794）
+- #856 【新增/支持】util：移除action runner 新增-apt-repo git-core/ppa。（subsys=util; arch=-; churn=1；https://github.com/gem5/gem5/pull/856）
+- #859 【修复/纠错】arch-riscv：修复load 与 store to use EEW instead of SEW。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/859）
+- #830 【修复/纠错】arch-riscv：修复mask load/store (i.e vlm.v/vsm.v) 中的 vl。（subsys=arch; arch=riscv; churn=6；https://github.com/gem5/gem5/pull/830）
+- #857 【修复/纠错】mem-cache：修复QoS mem 中的 circular dependency。（subsys=mem; arch=-; churn=10；https://github.com/gem5/gem5/pull/857）
+- #852 【新增/支持】arch-vega,gpu-compute,mem-ruby：SQC Invalidation 支持。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/852）
+- #842 【新增/支持】cpu-o3：新增PerThreadUnifiedThreadMap to O3 CPU。（subsys=cpu/o3; arch=-; churn=17；https://github.com/gem5/gem5/pull/842）
+- #866 【移除/弃用】arch-riscv：移除unnecessary assert。（subsys=arch; arch=riscv; churn=1；https://github.com/gem5/gem5/pull/866）
+- #871 【修复/纠错】mem-cache：修复base 预取器中的 possible 崩溃。（subsys=mem/cache/prefetch; arch=-; churn=4；https://github.com/gem5/gem5/pull/871）
+- #828 【修复/纠错】cpu-o3, arch：修复SMT bug arising from v23.0 与 make gem5 more robust with SMT。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/828）
+- #878 【移除/弃用】dev-arm：移除the dependency of Platform for ArmSigInterruptPin。（subsys=dev; arch=-; churn=4；https://github.com/gem5/gem5/pull/878）
+- #877 【其他】arch-x86, cpu-kvm：initialize x87 FCW。（subsys=arch; arch=x86; churn=3；https://github.com/gem5/gem5/pull/877）
+- #873 【新增/支持】arch-arm：新增FEAT_FGT trapping for debug 寄存器。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/873）
+- #888 【测试】tests：更新checkpoint tests to 新增 checkpoints。（subsys=tests, configs; arch=-; churn=8；https://github.com/gem5/gem5/pull/888）
+- #868 【修复/纠错】arch-riscv：修复O3 CPU 中的 fflags 行为 of float inst.。（subsys=arch; arch=riscv; churn=35；https://github.com/gem5/gem5/pull/868）
+- #890 【新增/支持】stdlib：新增get_last_exit_event_code to get m5 exit status code。（subsys=python; arch=-; churn=6；https://github.com/gem5/gem5/pull/890）
+- #880 【修复/纠错】python,util：修复SimObjectParams default constructor 与 destructor。（subsys=build_tools; arch=-; churn=3；https://github.com/gem5/gem5/pull/880）
+- #791 【修复/纠错】mem-ruby：修复CHI 中的 ReadShared hit on UD line 时的 possible dirty line loss。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/791）
+- #891 【测试】tests：Exit riscv_asmtest script with simulator status code。（subsys=tests; arch=-; churn=3；https://github.com/gem5/gem5/pull/891）
+- #886 【更新/依赖】arch-riscv,dev：更新the PLIC 实现。（subsys=dev, python; arch=-; churn=221；https://github.com/gem5/gem5/pull/886）
+- #875 【其他】configs：Ensure m5ops base doesn't overlap physical mem in KVM。（subsys=configs; arch=-; churn=2；https://github.com/gem5/gem5/pull/875）
+- #858 【测试】tests：新增compiler test for gcc 13。（subsys=util, .github; arch=-; churn=64；https://github.com/gem5/gem5/pull/858）
+- #889 【修复/纠错】mem：QoS q_policy assertions 修复。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/889）
+- #861 【更新/依赖】util：更新list_changes.py to 支持多 Change-Ids。（subsys=util; arch=-; churn=48；https://github.com/gem5/gem5/pull/861）
+- #894 【新增/支持】mem-ruby：新增missing transition for SLC writes to VIPER TCC。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/894）
+- #899 【新增/支持】mem-ruby：新增TCC 中的 categorization of bypassed atomics。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/899）
+- #797 【其他】Increased packets sanity check limit to 1024。（subsys=mem; arch=-; churn=4；https://github.com/gem5/gem5/pull/797）
+- #892 【其他】sim-se, arch-x86：initialize max stack size from parameter。（subsys=arch; arch=x86; churn=2；https://github.com/gem5/gem5/pull/892）
+- #895 【新增/支持】arch-vega：实现accumulation offset。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/895）
+- #826 【其他】python：Adding fatal statement to notify user mistakes.。（subsys=python; arch=-; churn=15；https://github.com/gem5/gem5/pull/826）
+- #902 【其他】dev：RegisterBank addRegistersAt for fragmented reg banks。（subsys=dev; arch=-; churn=175；https://github.com/gem5/gem5/pull/902）
+- #904 【修复/纠错】stdlib：修复lupv_board 中的 initialization for self.pic.hart_config。（subsys=python; arch=-; churn=4；https://github.com/gem5/gem5/pull/904）
+- #903 【其他】sim-se：Catch None value if binary is not compatible with gem5。（subsys=sim; arch=-; churn=6；https://github.com/gem5/gem5/pull/903）
+- #872 【其他】mem-cache：预取器改进。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/872）
+- #765 【新增/支持】mem-cache：增加对partitioning caches的支持。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/765）
+- #869 【其他】arch-riscv：adding stats to show completed page walks。（subsys=arch; arch=riscv; churn=37；https://github.com/gem5/gem5/pull/869）
+- #908 【其他】misc：Tag checkpoints with the ISA of the CPUs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/908）
+- #912 【CI】misc：Copy the develop .github dir to stable。（subsys=.github; arch=-; churn=66；https://github.com/gem5/gem5/pull/912）
+- #851 【其他】arch-riscv：adding vector unit-stride segment loads to RISC-V。（subsys=arch, cpu, cpu/minor; arch=riscv; churn=711；https://github.com/gem5/gem5/pull/851）
+- #906 【更新/依赖】misc：更新tqdm from 4.66.1 to 4.66.2。（subsys=optional-requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/906）
+- #905 【更新/依赖】misc：更新pre-commit from 3.6.0 to 3.6.2。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/905）
+- #853 【更新/依赖】build(deps)：更新/util/gem5-resources-manager 中的 cryptography from 39.0.2 to 42.0.0。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/853）
+- #920 【新增/支持】dev-arm：Handle translation aborts 与新增 IRQ 支持 to the SMMU。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/920）
+- #922 【修复/纠错】READ_MODIFY_WRITE flag 修复。（subsys=mem; arch=-; churn=2；https://github.com/gem5/gem5/pull/922）
+- #924 【测试】misc：修复weekly tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/924）
+- #929 【更新/依赖】build(deps)：更新/util/gem5-resources-manager 中的 cryptography from 42.0.0 to 42.0.4。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/929）
+- #928 【CI】misc：Sync stable .github dir with develop。（subsys=.github; arch=-; churn=6；https://github.com/gem5/gem5/pull/928）
+- #934 【修复/纠错】dev-arm：修复SMMUv3 DTB autogen。（subsys=dev; arch=-; churn=2；https://github.com/gem5/gem5/pull/934）
+- #938 【修复/纠错】mem：修复port wrapper 中的 callback of functional access。（subsys=mem; arch=-; churn=2；https://github.com/gem5/gem5/pull/938）
+- #914 【重命名/迁移】arch-riscv：迁移alignment check to Physical Memory Attribute(PMA)。（subsys=arch; arch=riscv; churn=298；https://github.com/gem5/gem5/pull/914）
+- #935 【测试】stdlib, tests, configs：新增a 新增 PrivateL1PrivateL2WalkCache hierarchy。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/935）
+- #939 【新增/支持】gpu-compute：支持 cache line sizes >64B in GPUFS。（subsys=configs, gpu-compute; arch=-; churn=14；https://github.com/gem5/gem5/pull/939）
+- #940 【新增/支持】gpu-compute：增加对skipping GPU kernels的支持。（subsys=gpu-compute, configs; arch=-; churn=131；https://github.com/gem5/gem5/pull/940）
+- #952 【新增/支持】misc：新增".DS_Store" to .gitignore。（subsys=.gitignore; arch=-; churn=1；https://github.com/gem5/gem5/pull/952）
+- #901 【测试】tests：更新tests to use specific resource versions。（subsys=tests; arch=-; churn=108；https://github.com/gem5/gem5/pull/901）
+- #953 【新增/支持】arch-vega：实现flat_load_sbyte instruction。（subsys=arch; arch=amdgpu; churn=28；https://github.com/gem5/gem5/pull/953）
+- #950 【新增/支持】arch-vega：Various vega 修复 to enable nanogpt。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/950）
+- #926 【新增/支持】dev-amdgpu：支持 for ROCm 6.0。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/926）
+- #913 【其他】arch-riscv：adding vector unit-stride segment stores to RISC-V。（subsys=arch, cpu; arch=riscv; churn=597；https://github.com/gem5/gem5/pull/913）
+- #956 【修复/纠错】sim-se,cpu-kvm：修复SE 工作负载 setup on KVM CPUs。（subsys=python; arch=-; churn=9；https://github.com/gem5/gem5/pull/956）
+- #975 【新增/支持】arch：新增BaseISA 中的 getIsaName。（subsys=arch; arch=generic; churn=1；https://github.com/gem5/gem5/pull/975）
+- #976 【移除/弃用】dev：移除duplicate virtio files。（subsys=dev; arch=-; churn=191；https://github.com/gem5/gem5/pull/976）
+- #864 【新增/支持】stdlib：新增socks proxy to atlas client。（subsys=python; arch=-; churn=91；https://github.com/gem5/gem5/pull/864）
+- #863 【修复/纠错】arch-riscv：This commit 修复 bug in vfmv.f.s impl. in riscv。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/863）
+- #887 【新增/支持】sim-se：实现statx 系统调用 for Linux x86-64。（subsys=arch, sim; arch=x86; churn=153；https://github.com/gem5/gem5/pull/887）
+- #955 【其他】arch-vega：Operand selectors for accumulation 寄存器。（subsys=arch; arch=amdgpu; churn=2；https://github.com/gem5/gem5/pull/955）
+- #977 【新增/支持】util-m5：新增default M5OP_ADDR to arm64。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/977）
+- #985 【其他】arch-riscv：Use TeX's escape seq in Python instead of Unicode。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/985）
+- #979 【CI】misc,github：更新checkout 与 upload/download-artifact Actions to latest version。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/979）
+- #959 【修复/纠错】base：修复'doGzipLoad' str manipulation。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/959）
+- #989 【修复/纠错】sim-se：修复copyOutStatxBuf 编译错误。（subsys=sim; arch=-; churn=60；https://github.com/gem5/gem5/pull/989）
+- #987 【CI】misc：Sync develop .github to stable。（subsys=.github; arch=-; churn=50；https://github.com/gem5/gem5/pull/987）
+- #986 【其他】arch-arm,stdlib：ARM release for_kvm is moved to configs。（subsys=configs, python; arch=-; churn=13；https://github.com/gem5/gem5/pull/986）
+- #984 【更新/依赖】misc：更新pre-commit from 3.6.2 to 3.7.0。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/984）
+- #964 【修复/纠错】arch-riscv：修复the RiscvBareMetal parameter reset_vect。（subsys=arch; arch=riscv; churn=14；https://github.com/gem5/gem5/pull/964）
+- #945 【其他】mem-ruby：Copyback UD_RU line when evicted in CHI protocol。（subsys=mem; arch=-; churn=37；https://github.com/gem5/gem5/pull/945）
+- #993 【新增/支持】python：新增is_subset to the AddrRange param class。（subsys=python; arch=-; churn=5；https://github.com/gem5/gem5/pull/993）
+- #972 【修复/纠错】stdlib：修复'nozero' for Scalar SimStats。（subsys=python; arch=-; churn=9；https://github.com/gem5/gem5/pull/972）
+- #971 【其他】stdlib：Specify typing for SimStat Scalar value。（subsys=python; arch=-; churn=2；https://github.com/gem5/gem5/pull/971）
+- #970 【重命名/迁移】stdlib：迁移SimStat 'unit' 与 'datatype' field to Scalar。（subsys=python; arch=-; churn=29；https://github.com/gem5/gem5/pull/970）
+- #983 【更新/依赖】misc：更新mypy from 1.8.0 to 1.9.0。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/983）
+- #951 【其他】scons：禁用Address Sanitizer for GCC。（subsys=SConstruct; arch=-; churn=34；https://github.com/gem5/gem5/pull/951）
+- #973 【测试】stdlib,tests：新增StatTester SimObject 与 Scalar tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/973）
+- #1005 【修复/纠错】arch-riscv：修复c.fsw source register。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/1005）
+- #998 【修复/纠错】arch-riscv：修复c.fswsp source register。（subsys=arch; arch=riscv; churn=3；https://github.com/gem5/gem5/pull/998）
+- #900 【修复/纠错】arch-riscv,sim：m5ops argument / return 修复 for 32 bit RISC-V。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/900）
+- #966 【修复/纠错】mem-cache, configs, arch-arm：Handle partitioning policies through a PartitionManager。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/966）
+- #967 【新增/支持】stdlib：新增tree structure to the AbstractCacheHierarchy。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/967）
+- #1010 【移除/弃用】arch-riscv：移除a tab character。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/1010）
+- #1006 【其他】arch-riscv：Make c.flwsp destination register more maintainable。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/1006）
+- #745 【新增/支持】新增a generic cache template library。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/745）
+- #589 【新增/支持】cpu,arch-arm,arch-riscv：adding 新增 instruction types to RISC-V。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/589）
+- #1007 【其他】cpu-o3, arch-x86：initialize interrupts for all SMT threads。（subsys=cpu; arch=-; churn=20；https://github.com/gem5/gem5/pull/1007）
+- #1013 【修复/纠错】cpu：修复KVM false negative warning after Kconfig transition。（subsys=cpu; arch=-; churn=14；https://github.com/gem5/gem5/pull/1013）
+- #911 【新增/支持】misc：新增a DevContainer specification to the gem5 repo。（subsys=.devcontainer, util; arch=-; churn=165；https://github.com/gem5/gem5/pull/911）
+- #1017 【更新/依赖】util-docker：更新docker-compose URLs to 'ghcr.io/gem5'。（subsys=util; arch=-; churn=48；https://github.com/gem5/gem5/pull/1017）
+- #1015 【更新/依赖】util：更新resource manager dependencies。（subsys=util; arch=-; churn=4；https://github.com/gem5/gem5/pull/1015）
+- #1027 【更新/依赖】misc：更新/util/gem5-resource-manager 中的 dnspython。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/1027）
+- #1030 【其他】dev-arm：Do not mark the MpamMSC as abstract。（subsys=dev; arch=-; churn=1；https://github.com/gem5/gem5/pull/1030）
+- #1022 【CI】github：更新'ubuntu-22.04' to 'ubuntu-latest'。（subsys=.github; arch=-; churn=12；https://github.com/gem5/gem5/pull/1022）
+- #1011 【新增/支持】mem,gpu-compute：实现GPU TCC directed invalidate。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1011）
+- #1023 【修复/纠错】arch-vega：修复output warnings, gem5.fast。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1023）
+- #1018 【测试】tests,util-docker,github：新增Ubuntu 24.04 Docker image & updated tests/actions to use it。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1018）
+- #1021 【测试】tests,github：更新CI Tests' GitHub Actions versions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1021）
+- #1025 【更新/依赖】util-docker：更新gpu-fs build docker to ROCm 6.0.2。（subsys=util; arch=-; churn=70；https://github.com/gem5/gem5/pull/1025）
+- #931 【测试】tests,arch-riscv：更新bitmanip asmtest binaries。（subsys=tests; arch=-; churn=150；https://github.com/gem5/gem5/pull/931）
+- #1035 【修复/纠错】cpu：修复Ruby/x86 pio port connections。（subsys=cpu; arch=-; churn=17；https://github.com/gem5/gem5/pull/1035）
+- #1009 【修复/纠错】dev：修复uart8250 中的 interrupt logic。（subsys=dev; arch=-; churn=83；https://github.com/gem5/gem5/pull/1009）
+- #1024 【其他】arch-x86：Movfp account for dataSize=4。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1024）
+- #994 【新增/支持】mem-ruby：实现CHI 中的 no_alloc Far Atomics。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/994）
+- #1038 【修复/纠错】misc：修复jq install for testlib-quick-matrix。（subsys=.github; arch=-; churn=6；https://github.com/gem5/gem5/pull/1038）
+- #1026 【测试】github,tests：新增Pyunit tests to CI GitHub Action Workflow。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1026）
+- #1043 【CI】misc：Merge .github develop dir to stable。（subsys=.github; arch=-; churn=87；https://github.com/gem5/gem5/pull/1043）
+- #1041 【其他】configs：GPUFS: Turn off SSE4 与 fancy XSAVEs。（subsys=configs; arch=-; churn=4；https://github.com/gem5/gem5/pull/1041）
+- #1048 【测试】misc,tests：移除zip step from Workflows。（subsys=.github; arch=-; churn=29；https://github.com/gem5/gem5/pull/1048）
+- #1051 【CI】misc：Sync stable .github with develop。（subsys=.github; arch=-; churn=29；https://github.com/gem5/gem5/pull/1051）
+- #1046 【新增/支持】util：启用m5term Apple Mac OS Compilation。（subsys=util; arch=-; churn=6；https://github.com/gem5/gem5/pull/1046）
+- #779 【新增/支持】stdlib：启用bundled resource requests from the databases。（subsys=python; arch=-; churn=1159；https://github.com/gem5/gem5/pull/779）
+- #1067 【测试】stdlib：Tests 修复/Disable pyunit tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1067）
+- #1061 【移除/弃用】mem-cache：移除power-of-2 requirement for TreePLRU num leaves。（subsys=mem/cache/rp; arch=-; churn=3；https://github.com/gem5/gem5/pull/1061）
+- #1060 【重构/整理】arch-arm：重构PTW。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1060）
+- #1063 【测试】tests：修复gem5 testlib compilation。（subsys=tests; arch=-; churn=30；https://github.com/gem5/gem5/pull/1063）
+- #1069 【测试】tests：Revert "tests: Move the arm+ruby tests to not use ALL"。（subsys=tests; arch=-; churn=38；https://github.com/gem5/gem5/pull/1069）
+- #1065 【新增/支持】cpu-kvm：支持 perf counters on hybrid host architectures。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1065）
+- #1072 【新增/支持】arch-arm：新增misc_accessor templated functions to read/write regs at different ELs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1072）
+- #1070 【测试】tests：修复pyunit tests 中的 persistence issue。（subsys=tests; arch=-; churn=1526；https://github.com/gem5/gem5/pull/1070）
+- #1045 【修复/纠错】mem-ruby：修复functional reads for MESI Three-Level messages。（subsys=mem; arch=-; churn=5；https://github.com/gem5/gem5/pull/1045）
+- #1047 【其他】cpu-o3：Clear current macro-op in fetch if squashing after last micro-op。（subsys=cpu/o3; arch=-; churn=3；https://github.com/gem5/gem5/pull/1047）
+- #1056 【其他】cpu-o3：prioritize exiting threads when committing。（subsys=cpu/o3; arch=-; churn=18；https://github.com/gem5/gem5/pull/1056）
+- #1059 【移除/弃用】systemc：移除Gem5ToTlmBridgeBase 中的 if clause。（subsys=src; arch=-; churn=16；https://github.com/gem5/gem5/pull/1059）
+- #1075 【修复/纠错】mem-cache：修复TreePLRU num leaves error。（subsys=mem/cache/rp; arch=-; churn=5；https://github.com/gem5/gem5/pull/1075）
+- #681 【新增/支持】arch-riscv：增加对RISC-V semihosting的支持。（subsys=arch, configs, sim; arch=arm, generic, riscv; churn=3323；https://github.com/gem5/gem5/pull/681）
+- #1077 【其他】cpu：Indirect predictor track conditional indirect。（subsys=cpu/pred; arch=-; churn=3；https://github.com/gem5/gem5/pull/1077）
+- #1078 【新增/支持】arch-riscv：新增Integer Conditional operations extension (Zicond) instructions。（subsys=arch; arch=riscv; churn=6；https://github.com/gem5/gem5/pull/1078）
+- #1090 【其他】arch-generic：More reliable special file name handling in semihosting。（subsys=arch; arch=generic; churn=3；https://github.com/gem5/gem5/pull/1090）
+- #1091 【修复/纠错】arch-riscv：修复interrupt 与 status CSR behavoir。（subsys=arch; arch=riscv; churn=14；https://github.com/gem5/gem5/pull/1091）
+- #1076 【修复/纠错】arch-riscv：修复VCSR read behavoir。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/1076）
+- #1092 【更新/依赖】misc：更新mypy from 1.9.0 to 1.10.0。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1092）
+- #1089 【修复/纠错】arch-generic：修复reading from special :semihosting-features file。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1089）
+- #1101 【新增/支持】mem-ruby：实现CHI 中的 MakeReadUnique。（subsys=mem; arch=-; churn=126；https://github.com/gem5/gem5/pull/1101）
+- #1093 【其他】gpu-compute：Invalidate Scalar cache when SQC invalidates。（subsys=gpu-compute, configs; arch=-; churn=66；https://github.com/gem5/gem5/pull/1093）
+- #1103 【其他】gpu：Consolidated 修复 for v24.0。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1103）
+- #1040 【新增/支持】arch-x86：新增XCR0 register 与新增 to X86KvmCPU。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1040）
+- #1109 【更新/依赖】misc：更新可选-requirements 中的 version。（subsys=optional-requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1109）
+- #1115 【更新/依赖】util：更新gem5-resource-manager requirements。（subsys=util; arch=-; churn=4；https://github.com/gem5/gem5/pull/1115）
+- #1100 【新增/支持】mem-ruby：实现NS bit for CHI transactions。（subsys=mem; arch=-; churn=41；https://github.com/gem5/gem5/pull/1100）
+- #1118 【修复/纠错】mem-ruby：修复RubyRequest 中的 NullPointerException。（subsys=mem; arch=-; churn=2；https://github.com/gem5/gem5/pull/1118）
+- #1097 【更新/依赖】util：更新gpu-fs docker to ROCm 6.1。（subsys=util; arch=-; churn=6；https://github.com/gem5/gem5/pull/1097）
+- #1110 【新增/支持】misc：新增resource versions to examples。（subsys=configs; arch=-; churn=82；https://github.com/gem5/gem5/pull/1110）
+- #1079 【修复/纠错】arch-riscv：修复narrowing/widening type-convert instructions。（subsys=arch; arch=riscv; churn=4；https://github.com/gem5/gem5/pull/1079）
+- #1120 【修复/纠错】arch-vega：修复SDWA dst select。（subsys=arch; arch=amdgpu; churn=6；https://github.com/gem5/gem5/pull/1120）
+- #1099 【修复/纠错】arch-riscv：修复CSR instruction 行为 2nd attempts。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1099）
+- #1082 【新增/支持】arch-arm：实现CPU 中的 FEAT_MPAM。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1082）
+- #1085 【其他】stdlib：调整default exit event for SIMPOINT_BEGIN。（subsys=python; arch=-; churn=3；https://github.com/gem5/gem5/pull/1085）
+- #1114 【修复/纠错】configs：nvm sweep 修复。（subsys=configs; arch=-; churn=6；https://github.com/gem5/gem5/pull/1114）
+- #1116 【新增/支持】util：新增GNU non executable line to x86 m5。（subsys=util; arch=-; churn=12；https://github.com/gem5/gem5/pull/1116）
+- #1123 【新增/支持】arch-riscv：新增RVV FP16 支持 (Zvfh & Zvfhmin)。（subsys=arch, ext; arch=riscv; churn=145；https://github.com/gem5/gem5/pull/1123）
+- #1039 【其他】cpu：Don't change to suspend if the thread status is halted。（subsys=cpu/o3, cpu; arch=-; churn=7；https://github.com/gem5/gem5/pull/1039）
+- #990 【其他】util：修复 gem5img.py script。（subsys=util; arch=-; churn=3；https://github.com/gem5/gem5/pull/990）
+- #1134 【修复/纠错】arch-riscv：修复vrgather instruction。（subsys=arch; arch=riscv; churn=11；https://github.com/gem5/gem5/pull/1134）
+- #1143 【修复/纠错】arch-generic：Avoid out-of-memory errors for bad semihosting calls。（subsys=arch; arch=generic; churn=42；https://github.com/gem5/gem5/pull/1143）
+- #1142 【修复/纠错】arch-arm：修复32-bit semihosting ABI。（subsys=arch; arch=arm; churn=8；https://github.com/gem5/gem5/pull/1142）
+- #1141 【其他】dev-amdgpu,gpu-compute,configs：MI300X。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1141）
+- #1138 【其他】arch-x86：改进KVM set XCR。（subsys=arch; arch=x86; churn=33；https://github.com/gem5/gem5/pull/1138）
+- #1137 【修复/纠错】arch-riscv：修复viota instruction。（subsys=arch; arch=riscv; churn=53；https://github.com/gem5/gem5/pull/1137）
+- #1147 【新增/支持】arch-arm：新增missing outer-shareable TLBIs to the list。（subsys=arch; arch=arm; churn=5；https://github.com/gem5/gem5/pull/1147）
+- #1127 【新增/支持】Revert "cpu-kvm：支持 perf counters on hybrid host architectures"。（subsys=cpu; arch=-; churn=341；https://github.com/gem5/gem5/pull/1127）
+- #1152 【修复/纠错】arch-riscv：修复GDB connection failed after #1099。（subsys=arch; arch=riscv; churn=8；https://github.com/gem5/gem5/pull/1152）
+- #1153 【新增/支持】arch-riscv：新增exception code to DPRINTFS msg。（subsys=arch; arch=riscv; churn=4；https://github.com/gem5/gem5/pull/1153）
+- #1149 【新增/支持】dev：新增reset wrap mode to mouse.cc。（subsys=dev; arch=-; churn=4；https://github.com/gem5/gem5/pull/1149）
+- #1145 【新增/支持】misc：移除gcc 8 支持, gem5 支持 GCC >= v10。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1145）
+- #1146 【其他】misc：Revert Dramsys Ubuntu to 22.04 to compile in gcc <13。（subsys=.github; arch=-; churn=2；https://github.com/gem5/gem5/pull/1146）
+- #1155 【CI】misc：Sync stable .github dir with develop。（subsys=.github; arch=-; churn=6；https://github.com/gem5/gem5/pull/1155）
+- #1154 【更新/依赖】util：更新gem5-resource-manager requirements。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/1154）
+- #1128 【其他】arch-vega：Template MFMA instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1128）
+- #1105 【修复/纠错】util, ext：修复building TLM。（subsys=ext, util; arch=-; churn=24；https://github.com/gem5/gem5/pull/1105）
+- #1163 【修复/纠错】arch-riscv：修复c.jalr 与 c.jr instruction。（subsys=arch; arch=riscv; churn=57；https://github.com/gem5/gem5/pull/1163）
+- #1166 【重构/整理】arch-arm：重构performTlbi to use map instead of switch。（subsys=arch; arch=arm; churn=1607；https://github.com/gem5/gem5/pull/1166）
+- #1162 【修复/纠错】arch-vega：修复GCC 13 构建错误s。（subsys=arch; arch=amdgpu; churn=37；https://github.com/gem5/gem5/pull/1162）
+- #1176 【其他】arch-arm：TLBIs targeting EL2 regime are executable from S state。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1176）
+- #1156 【移除/弃用】mem-ruby：移除VIPER StoreThrough temp cache storage。（subsys=mem; arch=-; churn=42；https://github.com/gem5/gem5/pull/1156）
+- #1178 【测试】misc,tests：Download all gem5 bins via one artifact。（subsys=.github; arch=-; churn=73；https://github.com/gem5/gem5/pull/1178）
+- #1175 【新增/支持】arch-arm：实现HCR_EL2 force broadcast for EL1&0 TLBIs。（subsys=arch; arch=arm; churn=249；https://github.com/gem5/gem5/pull/1175）
+- #1157 【修复/纠错】dev-amdgpu：修复pending PCI RLC doorbell。（subsys=dev; arch=-; churn=13；https://github.com/gem5/gem5/pull/1157）
+- #1172 【其他】arch-x86：break 32/64-bit mov's input dependency on prior dest value。（subsys=arch; arch=x86; churn=44；https://github.com/gem5/gem5/pull/1172）
+- #1170 【其他】util-docker,gpu,gpu-compute：改进GCN-GPU Dockerfile。（subsys=util; arch=-; churn=214；https://github.com/gem5/gem5/pull/1170）
+- #1165 【其他】util：allow to override ARCH in cxx config's Makefile。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/1165）
+- #1171 【其他】arch-x86：set AF=0 when logical instructions execute。（subsys=arch; arch=x86; churn=90；https://github.com/gem5/gem5/pull/1171）
+- #1180 【修复/纠错】arch-arm：修复memory attributes of table walks。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1180）
+- #1179 【修复/纠错】mem-cache：修复maybe-uninitialized warning。（subsys=mem/cache/rp; arch=-; churn=2；https://github.com/gem5/gem5/pull/1179）
+- #1181 【CI】misc：Sync .github develop -> stable。（subsys=.github; arch=-; churn=73；https://github.com/gem5/gem5/pull/1181）
+- #1184 【测试】misc：修复daily tests merge-artifacts。（subsys=.github; arch=-; churn=6；https://github.com/gem5/gem5/pull/1184）
+- #1188 【修复/纠错】misc：Another attempt to 修复 the merge-upload in for daily。（subsys=.github; arch=-; churn=8；https://github.com/gem5/gem5/pull/1188）
+- #1117 【其他】mem-ruby：Reduce handshaking between CorePair 与 dir。（subsys=mem; arch=-; churn=61；https://github.com/gem5/gem5/pull/1117）
+- #1183 【修复/纠错】arch-vega：修复constant exp 导致的 clang comp error。（subsys=arch; arch=amdgpu; churn=29；https://github.com/gem5/gem5/pull/1183）
+- #1185 【CI】misc：Sync .github dir to stable。（subsys=.github; arch=-; churn=6；https://github.com/gem5/gem5/pull/1185）
+- #1189 【CI】misc：Merge .github dir develop -> stable。（subsys=.github; arch=-; churn=8；https://github.com/gem5/gem5/pull/1189）
+- #1190 【其他】arch-vega：More scratch, accvgpr instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1190）
+- #1173 【新增/支持】arch-riscv：新增rvZext to BranchTarget。（subsys=arch; arch=riscv; churn=7；https://github.com/gem5/gem5/pull/1173）
+- #1080 【修复/纠错】arch-x86：修复TLB Assertion Error on CFLUSH。（subsys=cpu; arch=-; churn=2；https://github.com/gem5/gem5/pull/1080）
+- #1193 【更新/依赖】misc：更新pre-commit from 3.7.0 to 3.7.1。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1193）
+- #1192 【更新/依赖】misc：更新tqdm from 4.66.3 to 4.66.4。（subsys=optional-requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1192）
+- #1191 【移除/弃用】dev：移除virtio 中的 an extra file。（subsys=dev; arch=-; churn=49；https://github.com/gem5/gem5/pull/1191）
+- #1196 【修复/纠错】Revert "arch-x86：修复TLB Assertion Error on CFLUSH"。（subsys=cpu; arch=-; churn=2；https://github.com/gem5/gem5/pull/1196）
+- #1197 【修复/纠错】dev-arm：修复-Wdeprecated-copy warning。（subsys=dev; arch=-; churn=1；https://github.com/gem5/gem5/pull/1197）
+- #1202 【其他】arch-generic：flush streams after semihosting write calls。（subsys=arch; arch=generic; churn=2；https://github.com/gem5/gem5/pull/1202）
+- #1198 【修复/纠错】arch-arm：avoid using an uninitialized variable use in MMU walks。（subsys=arch; arch=arm; churn=83；https://github.com/gem5/gem5/pull/1198）
+- #1187 【其他】arch-riscv：correctly set dynamic VLEN for all arith instructions。（subsys=arch; arch=riscv; churn=16；https://github.com/gem5/gem5/pull/1187）
+- #1200 【其他】arch-arm,mem：Don't hardcode secure mode accesses for semihosting。（subsys=mem, arch; arch=arm, generic; churn=133；https://github.com/gem5/gem5/pull/1200）
+- #1221 【测试】base：修复symtab.test.cc 中的 uninitialized variable warning。（subsys=base; arch=-; churn=4；https://github.com/gem5/gem5/pull/1221）
+- #1213 【其他】gpu-compute：新增 functions to choose replacement policies for GPU。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1213）
+- #996 【其他】stdlib：改进gem5 PyStats。（subsys=python; arch=-; churn=34；https://github.com/gem5/gem5/pull/996）
+- #1225 【其他】cpu：Revert "Don't change to suspend if the thread status is halted"。（subsys=cpu/o3, cpu; arch=-; churn=7；https://github.com/gem5/gem5/pull/1225）
+- #1216 【修复/纠错】mem-ruby：修复GPU_VIPER 中的 issuing atomic requests 时的死锁。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1216）
+- #1230 【新增/支持】configs：新增replacement policy options for GPUFS。（subsys=configs; arch=-; churn=22；https://github.com/gem5/gem5/pull/1230）
+- #1071 【新增/支持】cpu,arch：新增IsInvalid flag to Unknown insts。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1071）
+- #1217 【新增/支持】gpu-compute, util-m5：新增GPU kernel exit events。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1217）
+- #1182 【其他】cpu-o3：Do not set Executed on load instruction to be replayed。（subsys=cpu/o3; arch=-; churn=6；https://github.com/gem5/gem5/pull/1182）
+- #1248 【新增/支持】gpu-compute：新增MFMA stats。（subsys=gpu-compute, arch; arch=amdgpu; churn=67；https://github.com/gem5/gem5/pull/1248）
+- #1249 【测试】arch-vega：Various MI300 修复 for PyTorch tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1249）
+- #1226 【新增/支持】gpu-compute,mem-ruby：新增RubyHitMiss flag for TCP 与 TCC cache。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1226）
+- #1251 【其他】cpu-o3：Revert "Do not set Executed on load instruction to be replayed"。（subsys=cpu/o3; arch=-; churn=6；https://github.com/gem5/gem5/pull/1251）
+- #1247 【其他】arch：Mark FailUnimplemented instructions as Invalid instructions。（subsys=arch; arch=arm, mips, power, sparc, x86; churn=9；https://github.com/gem5/gem5/pull/1247）
+- #1236 【其他】mem-ruby：This commit 修复 MI_example protocol。（subsys=mem; arch=-; churn=7；https://github.com/gem5/gem5/pull/1236）
+- #1234 【新增/支持】arch,cpu,sim：新增mechanism to partially print vector regs。（subsys=arch, cpu, sim; arch=arm, generic, riscv; churn=121；https://github.com/gem5/gem5/pull/1234）
+- #1136 【其他】cpu,stdlib：Adding Spatter。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1136）
+- #1254 【新增/支持】gpu-compute,mem-ruby：Revert "新增 RubyHitMiss flag for TCP 与 TCC cache"。（subsys=mem; arch=-; churn=70；https://github.com/gem5/gem5/pull/1254）
+- #1167 【测试】stdlib,configs,tests：新增gem5 MultiSim (MultiProcessing for gem5)。（subsys=tests, python, configs; arch=-; churn=1001；https://github.com/gem5/gem5/pull/1167）
+- #1256 【更新/依赖】util-docker：更新devcontainer to use Ubuntu 24.04。（subsys=util; arch=-; churn=35；https://github.com/gem5/gem5/pull/1256）
+- #1257 【更新/依赖】util：更新gem5-resource-manager 中的 urllib3。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/1257）
+- #1267 【测试】tests：修复x86_boot_exit_run.py 'set_max_ticks' typo。（subsys=tests; arch=-; churn=2；https://github.com/gem5/gem5/pull/1267）
+- #1262 【新增/支持】stdlib：新增function to append kernel args。（subsys=python; arch=-; churn=8；https://github.com/gem5/gem5/pull/1262）
+- #1263 【其他】gpu-compute,mem,systemc：This commit corrects typos of 'cache'。（subsys=gpu-compute, mem/cache, mem, src; arch=-; churn=8；https://github.com/gem5/gem5/pull/1263）
+- #1261 【其他】configs：Check before use replacement policy options。（subsys=configs; arch=-; churn=9；https://github.com/gem5/gem5/pull/1261）
+- #1258 【修复/纠错】cpu,stdlib：修复SpatterGen 中的 Access Trace for Accessing Indices。（subsys=cpu, python; arch=-; churn=58；https://github.com/gem5/gem5/pull/1258）
+- #1266 【修复/纠错】cpu：修复reg_class.hh 中的 `std::min` type mismatch。（subsys=cpu; arch=-; churn=2；https://github.com/gem5/gem5/pull/1266）
+- #1264 【修复/纠错】arch-riscv：修复TLB lookup with vaddrs。（subsys=arch; arch=riscv; churn=145；https://github.com/gem5/gem5/pull/1264）
+- #1273 【其他】stdlib：Getter method to get monolith range.。（subsys=python; arch=-; churn=24；https://github.com/gem5/gem5/pull/1273）
+- #1272 【其他】Adding an example for Spatter。（subsys=configs, python; arch=-; churn=726；https://github.com/gem5/gem5/pull/1272）
+- #1284 【更新/依赖】resources：更新client_query to trim gem5 version。（subsys=python; arch=-; churn=10；https://github.com/gem5/gem5/pull/1284）
+- #1290 【测试】stdlib,tests：更新Pyunit test 中的 resources to v24.0。（subsys=tests; arch=-; churn=83；https://github.com/gem5/gem5/pull/1290）
+- #1289 【更新/依赖】resources：更新elfie.py to work with obtain_resources。（subsys=python; arch=-; churn=31；https://github.com/gem5/gem5/pull/1289）
+- #1274 【其他】misc：Merge v24.0 release staging branch to stable。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1274）
+
+## v24.0.0.1 (2024-08-08)
+
+- #1306 【测试】misc, tests：修复GPU tests 中的 missing 's'。（subsys=.github; arch=-; churn=4；https://github.com/gem5/gem5/pull/1306）
+- #1308 【新增/支持】misc：新增scheduler.yaml。（subsys=.github; arch=-; churn=91；https://github.com/gem5/gem5/pull/1308）
+- #1361 【测试】tests,misc：Sync .github dir develop -> stable。（subsys=.github; arch=-; churn=109；https://github.com/gem5/gem5/pull/1361）
+- #1425 【其他】misc：v24.0.0.1 Hotfix release。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1425）
+
+## v24.1.0.0 (2024-12-07)
+
+- #1287 【修复/纠错】resources：修复check for additional_params for 工作负载。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1287）
+- #1279 【其他】arch-arm：This commit 修复 a typo in the ARM ldaddalx instruction。（subsys=arch; arch=arm; churn=16；https://github.com/gem5/gem5/pull/1279）
+- #1295 【其他】misc：Merge stable into develop (v24.0 release)。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1295）
+- #1260 【新增/支持】gpu-compute,mem-ruby：新增RubyHitMiss flag for TCP 与 TCC cache。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1260）
+- #1305 【测试】misc, tests：修复GPU tests 中的 missing 's'。（subsys=.github; arch=-; churn=4；https://github.com/gem5/gem5/pull/1305）
+- #1307 【CI】misc：新增'scheduler.yaml' workflow。（subsys=.github; arch=-; churn=167；https://github.com/gem5/gem5/pull/1307）
+- #1310 【测试】misc,github,tests：Attempt 修复 for flakey Daily Tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1310）
+- #1303 【新增/支持】arch-arm：实现FEAT_XS。（subsys=arch; arch=arm; churn=2567；https://github.com/gem5/gem5/pull/1303）
+- #1304 【新增/支持】arch-arm：支持 64-bit PMCCNTR from AArch32。（subsys=arch; arch=arm; churn=1；https://github.com/gem5/gem5/pull/1304）
+- #1313 【新增/支持】arch-arm：Properly implement IPASpace in the MMU。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1313）
+- #1309 【更新/依赖】misc：更新mypy from 1.10.0 to 1.10.1。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1309）
+- #1322 【其他】arch-arm：MISCREG_AT_S1E2R/W are executable from S state。（subsys=arch; arch=arm; churn=4；https://github.com/gem5/gem5/pull/1322）
+- #1323 【新增/支持】arch-arm：实现FEAT_TTST。（subsys=arch; arch=arm; churn=79；https://github.com/gem5/gem5/pull/1323）
+- #1328 【其他】systemc：Use headerDelay in timing annotation。（subsys=src, util; arch=-; churn=8；https://github.com/gem5/gem5/pull/1328）
+- #1135 【新增/支持】arch-riscv：新增agnostic option to vector tail/mask policy for mem 与 arith instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1135）
+- #1291 【修复/纠错】arch-riscv：修复setRegs from GDB failed after #1099。（subsys=arch; arch=riscv; churn=14；https://github.com/gem5/gem5/pull/1291）
+- #1285 【新增/支持】cpu：新增cpuIdlePins to indicate the threadContext of CPU is idle。（subsys=cpu; arch=-; churn=29；https://github.com/gem5/gem5/pull/1285）
+- #1312 【新增/支持】arch-riscv：新增rv32 option to FS Linux config file。（subsys=configs; arch=-; churn=10；https://github.com/gem5/gem5/pull/1312）
+- #1340 【修复/纠错】arch-riscv：修复initialization for some vector reduction insts。（subsys=arch; arch=riscv; churn=6；https://github.com/gem5/gem5/pull/1340）
+- #1343 【更新/依赖】util：更新gem5-resources-manager。（subsys=util; arch=-; churn=4；https://github.com/gem5/gem5/pull/1343）
+- #1347 【更新/依赖】arch-riscv：更新local interrupts citation。（subsys=arch; arch=riscv; churn=23；https://github.com/gem5/gem5/pull/1347）
+- #1346 【其他】arch-riscv：Overwrite getEMI() for timing expr。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/1346）
+- #1275 【其他】mem：调整src/mem/physical.cc to int64_t 中的 long。（subsys=mem; arch=-; churn=22；https://github.com/gem5/gem5/pull/1275）
+- #1327 【修复/纠错】arch,arch-arm：修复.isa 中的 remaining implicit float conversion warnings。（subsys=arch; arch=arm, isa_parser; churn=26；https://github.com/gem5/gem5/pull/1327）
+- #1360 【重命名/迁移】python：迁移cache coherence protocol check above imports。（subsys=python; arch=-; churn=30；https://github.com/gem5/gem5/pull/1360）
+- #1331 【其他】arch-riscv：改进widening/narrowing vectors overlap check。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1331）
+- #1369 【测试】misc,tests：Attempt 修复 daily downloads。（subsys=.github; arch=-; churn=14；https://github.com/gem5/gem5/pull/1369）
+- #1373 【测试】misc,tests：Second attempt at fixing Daily test。（subsys=.github; arch=-; churn=2；https://github.com/gem5/gem5/pull/1373）
+- #1366 【其他】arch-vega：多 SOPC 修复。（subsys=arch; arch=amdgpu; churn=10；https://github.com/gem5/gem5/pull/1366）
+- #1375 【测试】misc,tests：Third attempt at fixing Daily test。（subsys=.github; arch=-; churn=2；https://github.com/gem5/gem5/pull/1375）
+- #1379 【修复/纠错】arch-vega：修复VOP3 中的 unconditional clamps。（subsys=arch; arch=amdgpu; churn=12；https://github.com/gem5/gem5/pull/1379）
+- #1382 【测试】Revert daily test changes。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1382）
+- #1378 【其他】arch-vega：改进SDWA, SDWAB, 与 DPP。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1378）
+- #1383 【测试】misc,tests：Rm gem5 binary pre-build from dailys。（subsys=.github; arch=-; churn=78；https://github.com/gem5/gem5/pull/1383）
+- #1386 【测试】tests：移除dependant job。（subsys=.github; arch=-; churn=2；https://github.com/gem5/gem5/pull/1386）
+- #1390 【其他】arch-arm：return 64-bit cycle counter for MISCREG_PMCCNTR。（subsys=arch; arch=arm; churn=4；https://github.com/gem5/gem5/pull/1390）
+- #1388 【新增/支持】arch-arm：增加对AArch32 PMEVCNTR*/PMEVTYPER*/PMCCFILTR的支持。（subsys=arch; arch=arm; churn=138；https://github.com/gem5/gem5/pull/1388）
+- #1391 【其他】configs：GPUFS: Disable KVM perf counters by default。（subsys=configs; arch=-; churn=18；https://github.com/gem5/gem5/pull/1391）
+- #1389 【其他】arch：Dump semihosting write buffer in debug output。（subsys=arch; arch=generic; churn=3；https://github.com/gem5/gem5/pull/1389）
+- #1342 【新增/支持】arch,cpu：实现generic reset method for MMU。（subsys=arch, cpu; arch=generic; churn=13；https://github.com/gem5/gem5/pull/1342）
+- #1395 【移除/弃用】misc：移除GCN3 from maintainers。（subsys=MAINTAINERS.yaml; arch=-; churn=6；https://github.com/gem5/gem5/pull/1395）
+- #1329 【新增/支持】sim：新增error message for kernel exceeding 内存大小。（subsys=sim; arch=-; churn=18；https://github.com/gem5/gem5/pull/1329）
+- #1319 【修复/纠错】arch-riscv：修复.isa files 中的 implicit int-to-float conversion。（subsys=arch; arch=riscv; churn=12；https://github.com/gem5/gem5/pull/1319）
+- #1408 【更新/依赖】misc：更新pre-commit from 3.7.1 to 3.8.0。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1408）
+- #1410 【修复/纠错】mem：修复name() helper for DRAM rank。（subsys=mem; arch=-; churn=6；https://github.com/gem5/gem5/pull/1410）
+- #1411 【更新/依赖】misc：更新GPU maintainters。（subsys=MAINTAINERS.yaml; arch=-; churn=3；https://github.com/gem5/gem5/pull/1411）
+- #1407 【更新/依赖】misc：更新mypy from 1.10.1 to 1.11.1。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1407）
+- #1413 【更新/依赖】gpu-compute：更新GPUKernelInfo print to print WG number。（subsys=gpu-compute; arch=-; churn=3；https://github.com/gem5/gem5/pull/1413）
+- #1412 【修复/纠错】gpu-compute：修复GPUMem debug print 中的 typo。（subsys=gpu-compute; arch=-; churn=2；https://github.com/gem5/gem5/pull/1412）
+- #1406 【重命名/迁移】arch-riscv：迁移pmpReset 实现 to MMU::reset()。（subsys=arch; arch=riscv; churn=17；https://github.com/gem5/gem5/pull/1406）
+- #1374 【修复/纠错】mem：修复"Need is_secure arg" 预取器崩溃。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1374）
+- #1417 【修复/纠错】misc：修复multisim code snippet 中的 typo。（subsys=RELEASE-NOTES.md; arch=-; churn=2；https://github.com/gem5/gem5/pull/1417）
+- #1282 【文档/示例】misc：调整devcontainer for isca tutorial 与 bootcamp。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1282）
+- #1424 【其他】misc：Stable merge to dev。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1424）
+- #1415 【测试】util-docker,tests：Up clang 支持: >=v10。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1415）
+- #1385 【其他】Updating hex addr printing。（subsys=cpu; arch=-; churn=14；https://github.com/gem5/gem5/pull/1385）
+- #1431 【修复/纠错】gpu-compute：修复GPU TLB outstandingReqs vs. associativity。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1431）
+- #1316 【其他】arch-riscv：use sign-extend for all address generation。（subsys=arch; arch=riscv; churn=122；https://github.com/gem5/gem5/pull/1316）
+- #1428 【CI】misc：更新GitHub badge links。（subsys=README.md; arch=-; churn=6；https://github.com/gem5/gem5/pull/1428）
+- #1430 【修复/纠错】dev-amdgpu：修复issues found by address sanitizer。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1430）
+- #1416 【其他】Updating Traffic Generators。（subsys=python, cpu; arch=-; churn=95；https://github.com/gem5/gem5/pull/1416）
+- #1426 【修复/纠错】util：修复MongoDB script requirements.txt。（subsys=util; arch=-; churn=3；https://github.com/gem5/gem5/pull/1426）
+- #1404 【其他】mem-ruby,sim-se：Clear LL/SC locks after functional writes。（subsys=mem; arch=-; churn=3；https://github.com/gem5/gem5/pull/1404）
+- #1364 【其他】arch-riscv：Extend wfi 行为。（subsys=arch; arch=riscv; churn=48；https://github.com/gem5/gem5/pull/1364）
+- #1445 【其他】arch-vega：Swizzle multi-dword scratch requests。（subsys=arch, gpu-compute; arch=amdgpu; churn=165；https://github.com/gem5/gem5/pull/1445）
+- #1451 【更新/依赖】arch-vega：更新microscaling format scaling 与 denorm handling。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1451）
+- #1420 【修复/纠错】arch-arm：修复incorrect behaviour of VFNMS 与 VFNMA。（subsys=arch; arch=arm; churn=2；https://github.com/gem5/gem5/pull/1420）
+- #1459 【测试】misc,tests：修复compiler tests (新增 missing `,`)。（subsys=.github; arch=-; churn=2；https://github.com/gem5/gem5/pull/1459）
+- #1449 【修复/纠错】mem：Stride 预取器修复。（subsys=mem/cache/prefetch; arch=-; churn=35；https://github.com/gem5/gem5/pull/1449）
+- #1325 【修复/纠错】arch-arm：修复incorrect operation of VRINT* instructions。（subsys=arch; arch=arm; churn=57；https://github.com/gem5/gem5/pull/1325）
+- #1472 【其他】arch-arm：Redirect VHE for ZCR_EL1。（subsys=arch; arch=arm; churn=2；https://github.com/gem5/gem5/pull/1472）
+- #1471 【其他】arch-riscv：Sign-extend the address in newPCState。（subsys=arch; arch=riscv; churn=3；https://github.com/gem5/gem5/pull/1471）
+- #1470 【修复/纠错】arch-riscv：修复GDB breakpoint issue for RV32。（subsys=arch, base; arch=riscv; churn=24；https://github.com/gem5/gem5/pull/1470）
+- #1270 【测试】gpu-compute,tests：迁移GPU tests to testlib。（subsys=.github, tests, configs, ext; arch=-; churn=352；https://github.com/gem5/gem5/pull/1270）
+- #1460 【文档/示例】docs,misc：RELEASE-NOTES.md updates for v24.1。（subsys=RELEASE-NOTES.md; arch=-; churn=9；https://github.com/gem5/gem5/pull/1460）
+- #1447 【其他】dev,arch-x86：新增 softstrobe mode to intel8254 timer。（subsys=dev; arch=-; churn=5；https://github.com/gem5/gem5/pull/1447）
+- #1292 【重构/整理】util-docker：Cleanup, refactor, better document Dockerfiles。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1292）
+- #1477 【更新/依赖】misc：更新on-create.sh。（subsys=.devcontainer; arch=-; churn=3；https://github.com/gem5/gem5/pull/1477）
+- #1485 【测试】tests,gpu-compute：修复Daily/Weekly GPU tests failures。（subsys=.github; arch=-; churn=4；https://github.com/gem5/gem5/pull/1485）
+- #1403 【其他】mem：修复实现 of Best Offset 预取器。（subsys=mem/cache/prefetch; arch=-; churn=170；https://github.com/gem5/gem5/pull/1403）
+- #1467 【其他】stdlib：Give user's disk_device priority when setting root val。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1467）
+- #1496 【测试】tests,gpu-compute：修复gpu tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1496）
+- #1475 【更新/依赖】resources：更新filtering of resources by gem5 versions。（subsys=python; arch=-; churn=23；https://github.com/gem5/gem5/pull/1475）
+- #1446 【其他】base, mem-cache：Make the AssociativeCache more generic。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1446）
+- #1495 【新增/支持】arch-arm：新增place holder of 寄存器.。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1495）
+- #1512 【其他】arch-arm：Use .f32/.f64 suffixes for vfp mnemonics。（subsys=arch; arch=arm; churn=23；https://github.com/gem5/gem5/pull/1512）
+- #1510 【其他】arch-arm：when programming an invalid PMU ID detach the counter。（subsys=arch; arch=arm; churn=1；https://github.com/gem5/gem5/pull/1510）
+- #1438 【其他】arch-arm：downgrade a warning to a DPRINTF。（subsys=arch; arch=arm; churn=5；https://github.com/gem5/gem5/pull/1438）
+- #1326 【修复/纠错】arch-arm：修复VCMP 中的 implicit int-to-float conversion。（subsys=arch; arch=arm; churn=32；https://github.com/gem5/gem5/pull/1326）
+- #1515 【测试】tests：修复gpu-tests。（subsys=tests; arch=-; churn=2；https://github.com/gem5/gem5/pull/1515）
+- #1350 【其他】arch-vega：Pass s_memtime through smem pipe。（subsys=mem, arch, gpu-compute, configs; arch=amdgpu; churn=453；https://github.com/gem5/gem5/pull/1350）
+- #1514 【其他】base：Allow DPRINTF debugging of AssociativeCache。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1514）
+- #1521 【其他】arch-vega：Revert incorrect SOPC compare。（subsys=arch; arch=amdgpu; churn=2；https://github.com/gem5/gem5/pull/1521）
+- #1502 【修复/纠错】arch-arm：修复Stage2 Direct Permission. 中的 Execution Permission。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1502）
+- #1481 【新增/支持】dev-amdgpu：实现UNMAP_QUEUES queue_sel==2。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1481）
+- #1528 【新增/支持】util-docker：新增labels to Dockerfiles。（subsys=util; arch=-; churn=47；https://github.com/gem5/gem5/pull/1528）
+- #1482 【修复/纠错】sim-se, arch：修复syscall parametre sizes for 32-bit OSs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1482）
+- #1531 【更新/依赖】misc：更新mypy from 1.11.1 to 1.11.2。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1531）
+- #1532 【更新/依赖】misc：更新tqdm from 4.66.4 to 4.66.5。（subsys=optional-requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1532）
+- #1530 【其他】gpu-compute：Reuse RP list in GPU_VIPER。（subsys=configs; arch=-; churn=38；https://github.com/gem5/gem5/pull/1530）
+- #1501 【测试】ext,tests,misc：Suppress incorrect GCC 12 error in Pybind。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1501）
+- #1535 【其他】python：Ignore *args 与 **kwargs when generating cxxMethod pybinding script。（subsys=python; arch=-; churn=6；https://github.com/gem5/gem5/pull/1535）
+- #1516 【其他】cpu-o3：Panic if no FU exists for an instruction needing to issue。（subsys=cpu/o3; arch=-; churn=62；https://github.com/gem5/gem5/pull/1516）
+- #1556 【其他】cpu-o3：Replace integral constants by named constants in FU pool。（subsys=cpu/o3; arch=-; churn=4；https://github.com/gem5/gem5/pull/1556）
+- #1552 【其他】arch-riscv：调整the packed data of GdbRegCache to protected。（subsys=arch; arch=riscv; churn=4；https://github.com/gem5/gem5/pull/1552）
+- #1548 【重命名/迁移】util-docker：迁移`LABEL` to after image import。（subsys=util; arch=-; churn=44；https://github.com/gem5/gem5/pull/1548）
+- #1486 【测试】misc,github,tests：移除gerrit change ID requirement。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1486）
+- #1563 【修复/纠错】misc：修复lone header bug。（subsys=util; arch=-; churn=16；https://github.com/gem5/gem5/pull/1563）
+- #1551 【修复/纠错】python：Redirect into correct subdirectory when using -re with multisim。（subsys=python; arch=-; churn=89；https://github.com/gem5/gem5/pull/1551）
+- #1499 【其他】stdlib：Issue warn if func is a gen for exit_event。（subsys=python; arch=-; churn=14；https://github.com/gem5/gem5/pull/1499）
+- #1564 【修复/纠错】mem-ruby：修复GPU_VIPER 中的 replacement policy。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1564）
+- #1479 【新增/支持】stdlib, python：新增warning message 与 clarify binary vs metric units。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1479）
+- #1569 【修复/纠错】arch-arm：修复DC IVAC for Secure EL2。（subsys=arch; arch=arm; churn=4；https://github.com/gem5/gem5/pull/1569）
+- #1567 【移除/弃用】misc：移除Random 中的 Serialize-related code。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1567）
+- #1557 【其他】mem-cache：Do not require p.size 与 p.entry_size in IP template。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1557）
+- #1586 【其他】util-docker：Minor docker 改进/修复。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1586）
+- #1575 【其他】ext,util-docker：updated SST to v.14.0.0。（subsys=ext, util; arch=-; churn=55；https://github.com/gem5/gem5/pull/1575）
+- #1588 【修复/纠错】misc：修复docker-build.yaml。（subsys=.github; arch=-; churn=51；https://github.com/gem5/gem5/pull/1588）
+- #1592 【其他】util-docker：Minor housekeeping to Dockerfiles。（subsys=util; arch=-; churn=50；https://github.com/gem5/gem5/pull/1592）
+- #1587 【修复/纠错】scons：修复scons 'readCommand' non-zero exits。（subsys=scons; arch=-; churn=16；https://github.com/gem5/gem5/pull/1587）
+- #1560 【重命名/迁移】arch-arm：迁移generateTrap from MiscRegOp to ArmStaticInst。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1560）
+- #1594 【修复/纠错】gpu-compute：修复gpu-compute 中的 '64kB' to '64KiB'。（subsys=gpu-compute; arch=-; churn=4；https://github.com/gem5/gem5/pull/1594）
+- #1590 【重命名/迁移】arch-riscv：迁移static GDB methods to RemoteGDB virtual methods。（subsys=arch; arch=riscv; churn=62；https://github.com/gem5/gem5/pull/1590）
+- #1538 【新增/支持】arch-riscv：新增VLEN/ELEN as class attributes for all vec insts。（subsys=arch; arch=riscv; churn=949；https://github.com/gem5/gem5/pull/1538）
+- #1580 【其他】misc：Make random gen portable across compilers.。（subsys=base; arch=-; churn=204；https://github.com/gem5/gem5/pull/1580）
+- #1603 【其他】misc：Correctly display build information。（subsys=python; arch=-; churn=4；https://github.com/gem5/gem5/pull/1603）
+- #1604 【更新/依赖】util：更新gem5-resources-manager。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/1604）
+- #1576 【修复/纠错】ext：修复problematic overloaded-virtual warn 导致的 GCC v13+ comp of systemc。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1576）
+- #1584 【测试】tests：新增Pannotia GPU Tests。（subsys=tests; arch=-; churn=350；https://github.com/gem5/gem5/pull/1584）
+- #1610 【新增/支持】arch-arm：新增a method to determine External Abort。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1610）
+- #1609 【其他】mem-cache：Helper functions to allow dynamic configuration of partitioning policies。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1609）
+- #1574 【其他】arch-x86,stdlib：新增 MADT entries on the X86Board。（subsys=python; arch=-; churn=34；https://github.com/gem5/gem5/pull/1574）
+- #1605 【测试】tests, configs, util, mem, python, systemc: Change base 10 units to base 2。（subsys=configs, tests, util, mem, python, src; arch=-; churn=264；https://github.com/gem5/gem5/pull/1605）
+- #1571 【新增/支持】stdlib：新增warning message for set_workload being called twice。（subsys=python; arch=-; churn=16；https://github.com/gem5/gem5/pull/1571）
+- #1559 【修复/纠错】arch-riscv：修复viota。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/1559）
+- #1616 【新增/支持】arch-arm：新增Neon instruction. 中的 recursive reduce。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1616）
+- #1619 【移除/弃用】configs：Deprecate Vega10。（subsys=configs; arch=-; churn=651；https://github.com/gem5/gem5/pull/1619）
+- #1621 【其他】dev-amdgpu：Use GPU specific cache line size。（subsys=dev, configs; arch=-; churn=11；https://github.com/gem5/gem5/pull/1621）
+- #1617 【新增/支持】arch-riscv：实现CLINT reset feature。（subsys=dev; arch=-; churn=52；https://github.com/gem5/gem5/pull/1617）
+- #1627 【修复/纠错】util-docker：修复gpu dpcker images。（subsys=util; arch=-; churn=10；https://github.com/gem5/gem5/pull/1627）
+- #1628 【测试】misc,tests：Increase Weekly 与 Daily GPU test timeout。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1628）
+- #1633 【移除/弃用】dev-amdgpu：Deprecate rom 与 mmio trace params。（subsys=configs, dev; arch=-; churn=30；https://github.com/gem5/gem5/pull/1633）
+- #1625 【其他】python：clarify SimObject error message。（subsys=python; arch=-; churn=4；https://github.com/gem5/gem5/pull/1625）
+- #1620 【新增/支持】arch-riscv：启用riscv64 中的 clone3 syscall。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1620）
+- #1635 【文档/示例】learning-gem5,tests：更新learning-gem5 Ruby Test ref。（subsys=tests; arch=-; churn=2；https://github.com/gem5/gem5/pull/1635）
+- #1639 【新增/支持】cpu-o3：新增Crypto OpDesc to the O3 Default FU。（subsys=cpu/o3; arch=-; churn=10；https://github.com/gem5/gem5/pull/1639）
+- #1640 【新增/支持】cpu-o3：新增Matrix OpDesc to the O3 Default FU。（subsys=cpu/o3; arch=-; churn=12；https://github.com/gem5/gem5/pull/1640）
+- #1453 【移除/弃用】mem-ruby：移除static methods from RubySystem。（subsys=mem, python, configs, cpu; arch=-; churn=1465；https://github.com/gem5/gem5/pull/1453）
+- #1638 【修复/纠错】arch-riscv：修复CLINT mtime reset handling。（subsys=dev; arch=-; churn=17；https://github.com/gem5/gem5/pull/1638）
+- #1641 【其他】cpu,arch,arch-riscv：Check wake up signal when post interrupt。（subsys=arch, cpu; arch=generic, riscv; churn=17；https://github.com/gem5/gem5/pull/1641）
+- #1595 【测试】misc,tests：新增cache of ALL/gem5.opt to ci-test.yaml。（subsys=.github; arch=-; churn=63；https://github.com/gem5/gem5/pull/1595）
+- #1637 【其他】systemc：禁用'overloaded-virtual' warn for systemc bind funcs。（subsys=src; arch=-; churn=48；https://github.com/gem5/gem5/pull/1637）
+- #1509 【其他】Use board get_mem_ports consistently。（subsys=python; arch=-; churn=20；https://github.com/gem5/gem5/pull/1509）
+- #1642 【其他】misc：pre-commit autoupdate。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1642）
+- #1647 【新增/支持】misc：新增"src/python" to vscode Python Analysis Paths。（subsys=.vscode; arch=-; churn=5；https://github.com/gem5/gem5/pull/1647）
+- #1615 【修复/纠错】cpu：修复simInsts 与 simOps not resetting。（subsys=cpu, cpu/o3; arch=-; churn=34；https://github.com/gem5/gem5/pull/1615）
+- #1533 【新增/支持】arch-arm：新增支持 of AArch32 VCVTA/P/N/M instructions.。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1533）
+- #1537 【新增/支持】实现BTB using the cache library。（subsys=cpu/pred, configs; arch=-; churn=527；https://github.com/gem5/gem5/pull/1537）
+- #1649 【更新/依赖】stdlib,ruby：启用resetting version numbers。（subsys=python; arch=-; churn=61；https://github.com/gem5/gem5/pull/1649）
+- #1654 【测试】tests,misc：移除`edited` from PR Action trigger list。（subsys=.github; arch=-; churn=2；https://github.com/gem5/gem5/pull/1654）
+- #1646 【测试】util-docker,tests：新增compiler tests & Dockerfiles for GCC 14。（subsys=util, .github; arch=-; churn=21；https://github.com/gem5/gem5/pull/1646）
+- #1653 【测试】tests：重构downloading of pannotia tests。（subsys=tests; arch=-; churn=16；https://github.com/gem5/gem5/pull/1653）
+- #1652 【测试】misc：新增'ext' & 'tests' to vscode pythin extraPaths。（subsys=.vscode; arch=-; churn=4；https://github.com/gem5/gem5/pull/1652）
+- #1657 【其他】dev：Make unknown PCI device writes a warning。（subsys=dev; arch=-; churn=11；https://github.com/gem5/gem5/pull/1657）
+- #1525 【新增/支持】arch-riscv：增加对riscv hardware probing syscall的支持。（subsys=arch; arch=riscv; churn=482；https://github.com/gem5/gem5/pull/1525）
+- #1497 【其他】stdlib：Extend `AbstractBoard` pre_instantiation functionality。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1497）
+- #1664 【修复/纠错】arch-vega：修复PackedReg 中的 multi-dword setElem。（subsys=arch; arch=amdgpu; churn=9；https://github.com/gem5/gem5/pull/1664）
+- #1643 【移除/弃用】arch-x86,arch-arm：移除decoders 中的 static variables。（subsys=arch; arch=arm, x86; churn=33；https://github.com/gem5/gem5/pull/1643）
+- #1542 【测试】SE script 与 tests for risc-v's vector extension。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1542）
+- #1618 【更新/依赖】stdlib,arch-x86：更新X86Demoboard。（subsys=python; arch=-; churn=85；https://github.com/gem5/gem5/pull/1618）
+- #1678 【测试】tests：修复compiler tests。（subsys=arch, base, dev, mem/cache; arch=arm; churn=12；https://github.com/gem5/gem5/pull/1678）
+- #1432 【新增/支持】arch-riscv：实现Zcmp instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1432）
+- #1478 【新增/支持】arch-arm：新增arm demo board。（subsys=python, configs; arch=-; churn=205；https://github.com/gem5/gem5/pull/1478）
+- #1662 【其他】systemc：禁用'overloaded-virtual' warn for clang。（subsys=src; arch=-; churn=8；https://github.com/gem5/gem5/pull/1662）
+- #1679 【其他】sim：Make SignalSinkPort::set virtual。（subsys=sim; arch=-; churn=5；https://github.com/gem5/gem5/pull/1679）
+- #1454 【其他】mem-cache：实现 of SMS 预取器。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1454）
+- #1631 【测试】tests：更新input sizes for pannotia tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1631）
+- #1666 【其他】scons,misc：Portable debug flag generation。（subsys=build_tools; arch=-; churn=24；https://github.com/gem5/gem5/pull/1666）
+- #1685 【移除/弃用】mem-ruby,misc：移除redundant assignment。（subsys=mem; arch=-; churn=1；https://github.com/gem5/gem5/pull/1685）
+- #1686 【文档/示例】learning-gem5：新增`ruby_system` param set to `RubyPortProxy`。（subsys=configs; arch=-; churn=2；https://github.com/gem5/gem5/pull/1686）
+- #1695 【测试】tests：修复replacement_policies tests' refs。（subsys=tests; arch=-; churn=996；https://github.com/gem5/gem5/pull/1695）
+- #1690 【修复/纠错】mem-ruby：修复protocols 中的 multi-RubySystem 导致的 issues。（subsys=mem, configs; arch=-; churn=12；https://github.com/gem5/gem5/pull/1690）
+- #1684 【重命名/迁移】dev：迁移dprint of reg name before register read/write。（subsys=dev; arch=-; churn=31；https://github.com/gem5/gem5/pull/1684）
+- #1697 【新增/支持】arch-arm：实现AT as standalone instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1697）
+- #1683 【其他】arch-x86：break 32/64-bit LEA's input dependency on prior dest value。（subsys=arch; arch=x86; churn=9；https://github.com/gem5/gem5/pull/1683）
+- #1655 【新增/支持】arch-arm：新增支持 of AArch32 VRINTN/X/A/Z/M/P instructions.。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1655）
+- #1490 【新增/支持】stdlib, configs：新增RiscvDemoBoard。（subsys=python, configs; arch=-; churn=327；https://github.com/gem5/gem5/pull/1490）
+- #1526 【修复/纠错】arch-riscv：修复the bug of vsetivli frequently flushing the pipeline。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1526）
+- #1651 【测试】mem-ruby,tests：新增CHI with ISA tests。（subsys=tests; arch=-; churn=237；https://github.com/gem5/gem5/pull/1651）
+- #1698 【测试】tests：迁移weekly gpu tests to have separate jobs。（subsys=.github, tests; arch=-; churn=314；https://github.com/gem5/gem5/pull/1698）
+- #1713 【其他】arch-arm：Replace translateAtomic with translateFunctional in AT。（subsys=arch; arch=arm; churn=2；https://github.com/gem5/gem5/pull/1713）
+- #1716 【新增/支持】util-docker：新增RISCV to Ubuntu all-deps Docker platforms。（subsys=util; arch=-; churn=1；https://github.com/gem5/gem5/pull/1716）
+- #1399 【修复/纠错】mem-ruby：Prevent LL/SC livelock in MESI protocols。（subsys=mem; arch=-; churn=347；https://github.com/gem5/gem5/pull/1399）
+- #1693 【更新/依赖】configs,scons：更新scripts 与 build_opts to make GPU-FS simulations more 可配置。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1693）
+- #1694 【新增/支持】mem-ruby：Re-enable assign with implicit_ctor structures。（subsys=mem; arch=-; churn=8；https://github.com/gem5/gem5/pull/1694）
+- #1650 【移除/弃用】mem-ruby：移除unused variables/mark [maybe unused]。（subsys=mem; arch=-; churn=7；https://github.com/gem5/gem5/pull/1650）
+- #1731 【新增/支持】util-docker：新增qemu-riscv-env Dockerfile。（subsys=util; arch=-; churn=50；https://github.com/gem5/gem5/pull/1731）
+- #1702 【新增/支持】新增SE mode to X86Board 与 RiscvBoard。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1702）
+- #1736 【测试】tests：更新timout on pannotia fw gpu test。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1736）
+- #1727 【新增/支持】arch-riscv：修复Zcmp implement typos。（subsys=arch; arch=riscv; churn=10；https://github.com/gem5/gem5/pull/1727）
+- #1737 【新增/支持】sim：新增simulate.hh 中的 include guards。（subsys=sim; arch=-; churn=5；https://github.com/gem5/gem5/pull/1737）
+- #1724 【移除/弃用】base：移除DPRINTF_UNCONDITIONAL。（subsys=base; arch=-; churn=39；https://github.com/gem5/gem5/pull/1724）
+- #1732 【更新/依赖】arch-x86：更新MTRR defType register。（subsys=arch; arch=x86; churn=8；https://github.com/gem5/gem5/pull/1732）
+- #1739 【其他】arch-arm：Do not compute purifyTaggedAddr in checkPermissions。（subsys=arch; arch=arm; churn=5；https://github.com/gem5/gem5/pull/1739）
+- #1723 【其他】util：更新gem5-resources-manager 中的 werkzeug。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/1723）
+- #1661 【重构/整理】arch-arm：重构the ArmTLB storage to use an AssociativeCache。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1661）
+- #1744 【新增/支持】新增Python interface to get port actual name。（subsys=sim; arch=-; churn=1；https://github.com/gem5/gem5/pull/1744）
+- #1746 【修复/纠错】mem-ruby：修复two NetDest locals using default constructor。（subsys=mem; arch=-; churn=4；https://github.com/gem5/gem5/pull/1746）
+- #1751 【其他】arch-arm：Use the cached release object instead of HaveExt。（subsys=arch; arch=arm; churn=4；https://github.com/gem5/gem5/pull/1751）
+- #1747 【更新/依赖】misc：更新tqdm from 4.66.5 to 4.66.6。（subsys=optional-requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1747）
+- #1710 【新增/支持】arch-riscv：增加对Zicbop extension的支持。（subsys=arch; arch=riscv; churn=81；https://github.com/gem5/gem5/pull/1710）
+- #1752 【其他】arch-arm：Cache a pointer to previously matched TLB entry。（subsys=arch; arch=arm; churn=38；https://github.com/gem5/gem5/pull/1752）
+- #1734 【其他】base：Make BaseGdbRegCache::data() non constant。（subsys=arch, base; arch=arm, mips, power, riscv, sparc, x86; churn=24；https://github.com/gem5/gem5/pull/1734）
+- #1692 【新增/支持】dev-amdgpu, gpu-compute, mem-ruby：增加对GPU 中的 writeback L2的支持。（subsys=mem, gpu-compute, dev; arch=-; churn=309；https://github.com/gem5/gem5/pull/1692）
+- #1735 【新增/支持】misc：新增v24.1 release notes for RubySystem changes。（subsys=RELEASE-NOTES.md; arch=-; churn=20；https://github.com/gem5/gem5/pull/1735）
+- #1753 【更新/依赖】configs：更新legacy RISC-V FS Linux script。（subsys=configs; arch=-; churn=43；https://github.com/gem5/gem5/pull/1753）
+- #1759 【更新/依赖】arch-riscv：修复vrgather pin count。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/1759）
+- #1756 【其他】arch-riscv：sign-extend the PC when enter/leave trap handler。（subsys=arch; arch=riscv; churn=18；https://github.com/gem5/gem5/pull/1756）
+- #1749 【更新/依赖】misc：更新pre-commit from 3.8.0 to 4.0.1。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1749）
+- #1750 【更新/依赖】misc：更新RELEASE-NOTES.md for simInsts 与 simOps。（subsys=RELEASE-NOTES.md; arch=-; churn=6；https://github.com/gem5/gem5/pull/1750）
+- #1748 【更新/依赖】misc：更新mypy from 1.11.2 to 1.13.0。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1748）
+- #1583 【其他】arch-arm,util-m5：调整arm64's default m5 call type to addr。（subsys=util; arch=-; churn=4；https://github.com/gem5/gem5/pull/1583）
+- #1758 【新增/支持】arch, cpu：新增generic getValidAddr to correct exetrace symbol table。（subsys=arch, cpu; arch=arm, generic, riscv; churn=46；https://github.com/gem5/gem5/pull/1758）
+- #1763 【文档/示例】misc：修复README.md 中的 typo。（subsys=README.md; arch=-; churn=2；https://github.com/gem5/gem5/pull/1763）
+- #1743 【新增/支持】stdlib：新增fs mode 中的 interface to set binary。（subsys=python; arch=-; churn=122；https://github.com/gem5/gem5/pull/1743）
+- #1534 【其他】misc：Do not share the random number generator across components。（subsys=cpu, cpu/pred, dev, mem, mem/cache/rp, arch; arch=arm, riscv; churn=1272；https://github.com/gem5/gem5/pull/1534）
+- #1789 【修复/纠错】arch-arm,misc：修复构建错误s。（subsys=arch; arch=arm; churn=8；https://github.com/gem5/gem5/pull/1789）
+- #1790 【其他】python：modify comment for ExitEvent.WORKEND。（subsys=python; arch=-; churn=4；https://github.com/gem5/gem5/pull/1790）
+- #1782 【修复/纠错】arch-riscv：修复reg dep autoref on vslide with vcpy micro。（subsys=arch; arch=riscv; churn=20；https://github.com/gem5/gem5/pull/1782）
+- #1810 【重命名/迁移】arch-x86, sim-se：迁移case of large stacks 中的 mmap end downward。（subsys=arch; arch=x86; churn=4；https://github.com/gem5/gem5/pull/1810）
+- #1795 【文档/示例】tests：modify gem5/learning-gem5 ref file to 修复 failure。（subsys=tests; arch=-; churn=4；https://github.com/gem5/gem5/pull/1795）
+- #1822 【新增/支持】misc：新增ArmISA section to the RELEASE-NOTES.md file。（subsys=RELEASE-NOTES.md; arch=-; churn=52；https://github.com/gem5/gem5/pull/1822）
+- #1833 【新增/支持】misc：新增CHI section to the RELEASE-NOTES.md。（subsys=RELEASE-NOTES.md; arch=-; churn=19；https://github.com/gem5/gem5/pull/1833）
+- #1817 【修复/纠错】ruby-chi：修复wrong ruby-CHI base class name。（subsys=configs; arch=-; churn=4；https://github.com/gem5/gem5/pull/1817）
+- #1835 【移除/弃用】arch-riscv：移除CPU_SET use for non-linux host。（subsys=arch; arch=riscv; churn=18；https://github.com/gem5/gem5/pull/1835）
+- #1838 【修复/纠错】mem-ruby：修复MI_example 中的 functional access。（subsys=mem; arch=-; churn=8；https://github.com/gem5/gem5/pull/1838）
+- #1834 【新增/支持】base,arch-arm：新增ARM's vfp.hh 中的 GEM5_NO_OPTIMIZE; use。（subsys=arch, base; arch=arm; churn=28；https://github.com/gem5/gem5/pull/1834）
+- #1832 【修复/纠错】arch-riscv：修复timming mode 中的 tlb stats。（subsys=arch; arch=riscv; churn=28；https://github.com/gem5/gem5/pull/1832）
+- #1840 【更新/依赖】misc：v24.1 release notes update。（subsys=RELEASE-NOTES.md; arch=-; churn=1081；https://github.com/gem5/gem5/pull/1840）
+- #1842 【修复/纠错】mem-ruby,misc：修复RNG range。（subsys=cpu; arch=-; churn=14；https://github.com/gem5/gem5/pull/1842）
+- #1844 【新增/支持】misc：新增GPU info to release notes。（subsys=RELEASE-NOTES.md; arch=-; churn=34；https://github.com/gem5/gem5/pull/1844）
+- #1843 【测试】tests：更新pyunit tests references to include 24.1。（subsys=tests; arch=-; churn=166；https://github.com/gem5/gem5/pull/1843）
+
+## v24.1.0.1 (2024-12-19)
+
+- #1865 【新增/支持】mem-ruby：新增ProtocolInfo 中的 missing option。（subsys=mem; arch=-; churn=52；https://github.com/gem5/gem5/pull/1865）
+- #1864 【修复/纠错】mem-ruby：修复PerfectCacheMemory's entries 中的 missing RubySystem。（subsys=mem; arch=-; churn=46；https://github.com/gem5/gem5/pull/1864）
+- #335 【新增/支持】misc：新增sphinx stdlib 文档。（subsys=docs, .gitignore; arch=-; churn=230；https://github.com/gem5/gem5/pull/335）
+- #1851 【其他】configs：Generalize class types in CHI RNF/MN generators。（subsys=configs; arch=-; churn=8；https://github.com/gem5/gem5/pull/1851）
+- #1875 【其他】v24.1.0.1 Hotfix Release。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1875）
+
+## v24.1.0.2 (2025-02-12)
+
+- #1930 【其他】mem-ruby：set RubySystem pointer during TBE alloc。（subsys=mem; arch=-; churn=64；https://github.com/gem5/gem5/pull/1930）
+- #1964 【其他】misc：Hotfix v24.1.0.2。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1964）
+
+## v24.1.0.3 (2025-04-11)
+
+- #1793 【测试】base：修复failing compiler tests。（subsys=base; arch=-; churn=2；https://github.com/gem5/gem5/pull/1793）
+- #2177 【其他】misc：Hotfix v24.1.0.3。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2177）
+
+## v25.0.0.0 (2025-06-18)
+
+- #1762 【新增/支持】base：Introduce registerExtraLog() in Logger。（subsys=base; arch=-; churn=67；https://github.com/gem5/gem5/pull/1762）
+- #1765 【修复/纠错】arch-riscv：修复incomplete copy-constructor。（subsys=arch; arch=riscv; churn=1；https://github.com/gem5/gem5/pull/1765）
+- #1711 【修复/纠错】arch-riscv：修复speculative execution 导致的 vector instruction assertion。（subsys=arch; arch=riscv; churn=27；https://github.com/gem5/gem5/pull/1711）
+- #1775 【其他】mem,ruby：Adding SimObject name to SLICC errors.。（subsys=mem; arch=-; churn=2；https://github.com/gem5/gem5/pull/1775）
+- #1780 【测试】tests：更新gpu weekly test to test mis hip instead of fw hip。（subsys=.github, tests; arch=-; churn=62；https://github.com/gem5/gem5/pull/1780）
+- #1489 【新增/支持】mem-ruby, sim-se：增加对functional reads 中的 Maybe_Stale blocks的支持。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1489）
+- #1433 【新增/支持】cpu：新增GlobalInstTracker 与 LocalInstTracker。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1433）
+- #1659 【其他】cpu-o3：Use the generic cache library to build store sets。（subsys=cpu/o3, configs, mem/cache; arch=-; churn=240；https://github.com/gem5/gem5/pull/1659）
+- #117 【新增/支持】ruby：启用a single gem5 build 中的 all protocols。（subsys=mem; arch=-; churn=586；https://github.com/gem5/gem5/pull/117）
+- #1792 【其他】arch-arm：Make FEAT_SME visible in userspace for SE mode。（subsys=arch; arch=arm; churn=12；https://github.com/gem5/gem5/pull/1792）
+- #1700 【其他】Mfma matrix core timing。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1700）
+- #1084 【新增/支持】mem-ruby, configs：新增a CHI-TLM controller + testing。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1084）
+- #1768 【其他】arch-riscv：Use getValidAddr to get zero-extend address in RV32 mode。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1768）
+- #1636 【新增/支持】stdlib：新增viper board, viper cache, 与 gpu components。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1636）
+- #1804 【修复/纠错】arch-arm：修复VQRSHL. 中的 bug。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1804）
+- #1813 【修复/纠错】mem-ruby：修复conflict between 117 与 1084。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1813）
+- #1419 【其他】cpu：LoopPoint analysis object。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1419）
+- #1812 【其他】arch-arm：Print the ESR_ELx register when generating a fault。（subsys=arch; arch=arm; churn=15；https://github.com/gem5/gem5/pull/1812）
+- #1823 【修复/纠错】arch-arm：修复inconsistency of rint().。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1823）
+- #1827 【更新/依赖】misc：更新tqdm from 4.66.6 to 4.67.1。（subsys=optional-requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1827）
+- #1491 【更新/依赖】misc：更新fs examples to use ubuntu 24.04 boot 工作负载。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1491）
+- #1770 【测试】tests：新增x86-ubuntu-run-with-kvm-no-perf to tests。（subsys=tests; arch=-; churn=21；https://github.com/gem5/gem5/pull/1770）
+- #1819 【其他】arch-arm：Make ESR_ELx a 64 bit register。（subsys=arch; arch=arm; churn=3；https://github.com/gem5/gem5/pull/1819）
+- #1808 【新增/支持】sim-se, arch-x86：implement/ignore sched_get* syscalls。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1808）
+- #1829 【新增/支持】mem-ruby, scons：新增build targets 中的 ProtocolInfo.hh files。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1829）
+- #1841 【修复/纠错】arch-arm：修复trapping for ZCR_EL12 register。（subsys=arch; arch=arm; churn=74；https://github.com/gem5/gem5/pull/1841）
+- #1831 【新增/支持】arch-riscv：新增senvcfg CSR。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1831）
+- #1769 【其他】gpu-compute：Reverting L1 TLB entries 与 L1, L2, L3 TLB assoc back to 32 from 64。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1769）
+- #1828 【更新/依赖】cpu：Incorrect BP update for atomic core。（subsys=cpu/simple; arch=-; churn=11；https://github.com/gem5/gem5/pull/1828）
+- #1845 【修复/纠错】mem-ruby：修复VIPER protocol 中的 Atomic transitions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1845）
+- #1704 【新增/支持】arch-riscv：实现resumable non-maskable interrupt(Smrnmi)。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1704）
+- #1818 【其他】arch-arm：Simplify FEAT_PAN 实现。（subsys=arch; arch=arm; churn=74；https://github.com/gem5/gem5/pull/1818）
+- #1859 【CI】misc：edit pre-commit.ci yaml to target develop for autoupdate。（subsys=.pre-commit-config.yaml; arch=-; churn=3；https://github.com/gem5/gem5/pull/1859）
+- #1850 【CI】misc：[pre-commit.ci] pre-commit autoupdate。（subsys=.pre-commit-config.yaml; arch=-; churn=2；https://github.com/gem5/gem5/pull/1850）
+- #1866 【更新/依赖】resources：更新wrong category is passed 时的 error message。（subsys=python; arch=-; churn=5；https://github.com/gem5/gem5/pull/1866）
+- #1869 【修复/纠错】mem：修复内存大小 > 4GiB 时的 warning message for。（subsys=mem; arch=-; churn=2；https://github.com/gem5/gem5/pull/1869）
+- #1861 【新增/支持】cpu：新增EpisodeCount debug flag。（subsys=cpu; arch=-; churn=4；https://github.com/gem5/gem5/pull/1861）
+- #1882 【更新/依赖】util：更新Jinja2 from 3.1.4 to 3.1.5。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/1882）
+- #1883 【更新/依赖】misc：更新precommit asottile/pyupgrade to v3.19.1。（subsys=.pre-commit-config.yaml; arch=-; churn=2；https://github.com/gem5/gem5/pull/1883）
+- #1876 【更新/依赖】util：更新checkpoint upgrader for MISCREG_SENVCFG。（subsys=util; arch=-; churn=82；https://github.com/gem5/gem5/pull/1876）
+- #1878 【其他】arch-riscv：调整RISC-V Interrupts::nmi_cause to protected。（subsys=arch; arch=riscv; churn=4；https://github.com/gem5/gem5/pull/1878）
+- #1890 【更新/依赖】misc：更新mypy from 1.13.0 to 1.14.1。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1890）
+- #1893 【其他】base：Print debug message when interrupt change。（subsys=dev; arch=-; churn=13；https://github.com/gem5/gem5/pull/1893）
+- #1894 【修复/纠错】scons：修复-Werror=undef err with homebrew's protobuf on macOS。（subsys=src; arch=-; churn=1；https://github.com/gem5/gem5/pull/1894）
+- #1870 【更新/依赖】resources：更新error handling for JSONClient。（subsys=python, tests; arch=-; churn=59；https://github.com/gem5/gem5/pull/1870）
+- #1785 【修复/纠错】misc：修复scons tags。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1785）
+- #1902 【修复/纠错】mem-cache：修复MSHR handling 中的 use-after-free。（subsys=mem/cache; arch=-; churn=2；https://github.com/gem5/gem5/pull/1902）
+- #1901 【新增/支持】fastmodel：新增tag for fastmodel。（subsys=arch; arch=arm; churn=2；https://github.com/gem5/gem5/pull/1901）
+- #1905 【其他】arch-arm：setMiscRegs: Show CSPR.d in debug log on writes to CPSR。（subsys=arch; arch=arm; churn=5；https://github.com/gem5/gem5/pull/1905）
+- #1858 【新增/支持】arch-arm：实现FEAT_S1PIE。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1858）
+- #1906 【重命名/迁移】dev：Use move constructor as default in RegisterBank。（subsys=dev; arch=-; churn=58；https://github.com/gem5/gem5/pull/1906）
+- #1913 【新增/支持】arch-arm：新增syscall 435 to arm64。（subsys=arch; arch=arm; churn=17；https://github.com/gem5/gem5/pull/1913）
+- #1907 【更新/依赖】arch-arm：gic_v3_redistributor: 修复 GICR_IGRPMODR0 update bug。（subsys=dev; arch=-; churn=2；https://github.com/gem5/gem5/pull/1907）
+- #1916 【修复/纠错】arch-vega：修复LDS/buffer load/store x2,x3,x4。（subsys=arch; arch=amdgpu; churn=22；https://github.com/gem5/gem5/pull/1916）
+- #1915 【新增/支持】arch-vega：新增SDWA to v_cmp_ne_u32。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1915）
+- #1918 【修复/纠错】scons：修复missing 与/or filter name。（subsys=scons; arch=-; churn=6；https://github.com/gem5/gem5/pull/1918）
+- #1853 【其他】arch-arm：Do FEAT_VHE redirection for TCR2_EL1 register。（subsys=arch; arch=arm; churn=2；https://github.com/gem5/gem5/pull/1853）
+- #1911 【其他】misc：Fixup 可选 libs being required。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1911）
+- #1787 【移除/弃用】sim：移除cyclic dependency of SimObjects 与 probes。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1787）
+- #1794 【其他】util：Adding TargetNamedBreakpoint class for gdb.。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1794）
+- #1910 【修复/纠错】arch-x86：修复typo for readlinkat syscall。（subsys=arch; arch=x86; churn=4；https://github.com/gem5/gem5/pull/1910）
+- #1928 【修复/纠错】sim-se：修复ioctl call 中的 "<bad format>"。（subsys=sim; arch=-; churn=2；https://github.com/gem5/gem5/pull/1928）
+- #1929 【修复/纠错】修复missing python tags。（subsys=arch, mem, sim; arch=arm; churn=8；https://github.com/gem5/gem5/pull/1929）
+- #1904 【修复/纠错】dev：修复内存泄漏s。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1904）
+- #1931 【其他】mem-ruby：Init block_size_bits in Message 与 TBEs objects。（subsys=mem; arch=-; churn=2；https://github.com/gem5/gem5/pull/1931）
+- #1872 【其他】cpu-o3, stats：Stats 新增 to O3 CPU。（subsys=cpu/o3; arch=-; churn=30；https://github.com/gem5/gem5/pull/1872）
+- #1933 【其他】systemc, python：Export into converters of sc_time to Python。（subsys=src; arch=-; churn=7；https://github.com/gem5/gem5/pull/1933）
+- #1891 【其他】util-docker：Devcontainer 修复。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1891）
+- #1932 【修复/纠错】scons：修复build failures with ASAN enabled.。（subsys=SConstruct; arch=-; churn=38；https://github.com/gem5/gem5/pull/1932）
+- #1681 【其他】cpu-o3：Clear thread state in time buffers on thread exit。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1681）
+- #1940 【其他】mem-cache：修复 incorrect x-o lookup address in BOP。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1940）
+- #1939 【其他】arch-arm：Do not panic if invalid TG is programmed in MMU。（subsys=arch; arch=arm; churn=9；https://github.com/gem5/gem5/pull/1939）
+- #1938 【其他】Clear mstatus.mprv when xret leaving M-mode。（subsys=arch; arch=riscv; churn=4；https://github.com/gem5/gem5/pull/1938）
+- #1944 【移除/弃用】mem-ruby：移除MOESI_CMP_directory 中的 incorrect actions。（subsys=mem; arch=-; churn=3；https://github.com/gem5/gem5/pull/1944）
+- #1943 【新增/支持】arch-riscv：实现SVNAPOT Extension。（subsys=arch; arch=riscv; churn=24；https://github.com/gem5/gem5/pull/1943）
+- #1947 【修复/纠错】arch-vega,gpu-compute：修复architected flat scratch。（subsys=arch, gpu-compute; arch=amdgpu; churn=74；https://github.com/gem5/gem5/pull/1947）
+- #1948 【文档/示例】util-docker：更新devcontainer Dockerfile 中的 README.md 与修复 bugs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1948）
+- #1923 【其他】arch-arm, arch-x86：Only build X86/ARM KVM obj when they are a target ISA。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1923）
+- #1936 【修复/纠错】修复-append-kernel-arg-risv。（subsys=python; arch=-; churn=19；https://github.com/gem5/gem5/pull/1936）
+- #1952 【修复/纠错】arch-x86：修复pack micro-op 实现。（subsys=arch; arch=x86; churn=13；https://github.com/gem5/gem5/pull/1952）
+- #1958 【修复/纠错】arch-arm：修复ARM KVM build problems。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1958）
+- #1761 【新增/支持】arch-riscv：实现Zcmt。（subsys=arch, configs, util; arch=riscv; churn=454；https://github.com/gem5/gem5/pull/1761）
+- #1954 【修复/纠错】arch-vega：修复assertion error at VIPERSequencer.cc。（subsys=mem; arch=-; churn=4；https://github.com/gem5/gem5/pull/1954）
+- #1955 【修复/纠错】arch-riscv：修复LMUL>1 时的 vector reduction instructions。（subsys=arch; arch=riscv; churn=83；https://github.com/gem5/gem5/pull/1955）
+- #1963 【更新/依赖】misc：更新pre-commit from 4.0.1 to 4.1.0。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/1963）
+- #947 【其他】python,stdlib：改进exit events。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/947）
+- #1957 【移除/弃用】arch-x86：移除decodePages decode cache。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1957）
+- #1971 【更新/依赖】misc：更新precommit black 与 isort versions。（subsys=configs, python, util, tests, .pre-commit-config.yaml, sim; arch=-; churn=92；https://github.com/gem5/gem5/pull/1971）
+- #1480 【其他】gem5 Bridge Driver。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1480）
+- #1968 【其他】scons：改进codegen for build/../params/*.hh。（subsys=build_tools, python; arch=-; churn=75；https://github.com/gem5/gem5/pull/1968）
+- #1953 【其他】configs：`exec` -> `importlib` for Ruby.py dynamic imports。（subsys=configs; arch=-; churn=21；https://github.com/gem5/gem5/pull/1953）
+- #1927 【测试】sim,tests：新增a tag for SimObjects。（subsys=base, sim; arch=-; churn=10；https://github.com/gem5/gem5/pull/1927）
+- #1979 【其他】arch：Return reference type for BaseISA::getIsaName()。（subsys=arch; arch=generic; churn=2；https://github.com/gem5/gem5/pull/1979）
+- #1975 【其他】scons：Use relative paths in codegen to improve build caching。（subsys=build_tools, mem; arch=-; churn=7；https://github.com/gem5/gem5/pull/1975）
+- #1983 【修复/纠错】dev,arch-riscv：修复CLINT pio_size sanity check。（subsys=dev; arch=-; churn=16；https://github.com/gem5/gem5/pull/1983）
+- #1993 【修复/纠错】arch-arm：修复initializing PMU counters 时的 off-by-one。（subsys=arch; arch=arm; churn=2；https://github.com/gem5/gem5/pull/1993）
+- #1439 【新增/支持】sim,mem,cpu,arch-arm：增加对cache PMU events的支持。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1439）
+- #1976 【其他】gpu-compute：GPU progress prints 与 debug tracing。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1976）
+- #1981 【修复/纠错】util-docker：修复gcn-gnu 中的 missing gfortran。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1981）
+- #1767 【新增/支持】arch-riscv：增加对Zfa extension的支持。（subsys=arch; arch=riscv; churn=367；https://github.com/gem5/gem5/pull/1767）
+- #2000 【修复/纠错】arch-riscv：修复mip 与 sip。（subsys=arch; arch=riscv; churn=59；https://github.com/gem5/gem5/pull/2000）
+- #2007 【其他】arch-riscv：Follow up mip 与 sip 修复。（subsys=arch; arch=riscv; churn=3；https://github.com/gem5/gem5/pull/2007）
+- #2002 【其他】arch-arm：Split the decodeFp function in subfunctions。（subsys=arch; arch=arm; churn=1175；https://github.com/gem5/gem5/pull/2002）
+- #2006 【修复/纠错】Fix Stats：:Vecotr::zero()。（subsys=base; arch=-; churn=2；https://github.com/gem5/gem5/pull/2006）
+- #1849 【更新/依赖】sim：更新multisim to use Process instead of Pool。（subsys=python; arch=-; churn=72；https://github.com/gem5/gem5/pull/1849）
+- #2013 【修复/纠错】python：修复gem5stats 中的 python 3.8 TypeError error。（subsys=python; arch=-; churn=2；https://github.com/gem5/gem5/pull/2013）
+- #2017 【更新/依赖】mem-ruby：更新Send_CompI_Stale 中的 txnId。（subsys=mem; arch=-; churn=1；https://github.com/gem5/gem5/pull/2017）
+- #2015 【修复/纠错】arch-riscv：修复mnepc lower bits。（subsys=arch; arch=riscv; churn=1；https://github.com/gem5/gem5/pull/2015）
+- #2012 【修复/纠错】cpu：修复postInterrupt wakeup。（subsys=cpu; arch=-; churn=2；https://github.com/gem5/gem5/pull/2012）
+- #2019 【更新/依赖】resources：更新search to filter resources with minor gem5_version。（subsys=python; arch=-; churn=23；https://github.com/gem5/gem5/pull/2019）
+- #2024 【其他】scons：use --git-common-dir to detect hooks。（subsys=scons; arch=-; churn=2；https://github.com/gem5/gem5/pull/2024）
+- #1982 【其他】sim,stdlib：修复for external signal。（subsys=sim, python, util; arch=-; churn=359；https://github.com/gem5/gem5/pull/1982）
+- #2033 【新增/支持】base：新增accessing an AssociativeCache entry 时的 print。（subsys=base; arch=-; churn=9；https://github.com/gem5/gem5/pull/2033）
+- #2029 【修复/纠错】stdlib：修复simloop exit hypercall。（subsys=python; arch=-; churn=7；https://github.com/gem5/gem5/pull/2029）
+- #2040 【移除/弃用】misc：移除my-config directory。（subsys=my-configs; arch=-; churn=83；https://github.com/gem5/gem5/pull/2040）
+- #1995 【其他】stdlib：改进 to exit events。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1995）
+- #1961 【新增/支持】stdlib：新增SE mode 支持 to multi-program 工作负载。（subsys=python; arch=-; churn=212；https://github.com/gem5/gem5/pull/1961）
+- #1999 【新增/支持】gpu-compute：新增RLC queues to checkpoint。（subsys=dev; arch=-; churn=119；https://github.com/gem5/gem5/pull/1999）
+- #2044 【更新/依赖】base, arch-arm：新增 version of decoding for AdvSIMD。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2044）
+- #2039 【其他】gpu-compute：新增 MFMA insts, check if inst exists。（subsys=gpu-compute; arch=-; churn=16；https://github.com/gem5/gem5/pull/2039）
+- #1988 【新增/支持】新增a bi-directional communication orchestrator to gem5's stdlib。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1988）
+- #2048 【修复/纠错】dev, arch-riscv：修复Clint msip register read/write。（subsys=dev; arch=-; churn=48；https://github.com/gem5/gem5/pull/2048）
+- #1945 【重构/整理】base：重构base/random to avoid 内存泄漏。（subsys=base, mem, sim; arch=-; churn=95；https://github.com/gem5/gem5/pull/1945）
+- #2047 【更新/依赖】misc：更新mypy from 1.14.1 to 1.15.0。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/2047）
+- #2051 【其他】arch-riscv：Use generic ISA resetThread for RISC-V 工作负载。（subsys=arch; arch=riscv; churn=6；https://github.com/gem5/gem5/pull/2051）
+- #1912 【新增/支持】resources：新增the resource JSON has schema issues 时的 exceptions。（subsys=python, tests; arch=-; churn=631；https://github.com/gem5/gem5/pull/1912）
+- #1949 【新增/支持】dev：重构PCI to 新增 type1 header。（subsys=dev, configs, python, tests, util; arch=-; churn=1023；https://github.com/gem5/gem5/pull/1949）
+- #2060 【更新/依赖】misc：更新isort version to 6.0.1。（subsys=.pre-commit-config.yaml; arch=-; churn=2；https://github.com/gem5/gem5/pull/2060）
+- #1991 【新增/支持】sim：新增`simulator.py` 中的 `switch_processor` function。（subsys=python; arch=-; churn=18；https://github.com/gem5/gem5/pull/1991）
+- #2055 【移除/弃用】misc：modify comment to 移除 non-ASCII characters。（subsys=cpu; arch=-; churn=4；https://github.com/gem5/gem5/pull/2055）
+- #2059 【新增/支持】mem-ruby：实现CHI ReadNoSnp Request。（subsys=mem; arch=-; churn=54；https://github.com/gem5/gem5/pull/2059）
+- #2056 【移除/弃用】python：移除duplicate exit handler for hypercall 5。（subsys=python; arch=-; churn=10；https://github.com/gem5/gem5/pull/2056）
+- #1926 【新增/支持】cpu-o3：新增retry resp to LSQ with throttling params。（subsys=cpu/o3; arch=-; churn=209；https://github.com/gem5/gem5/pull/1926）
+- #2063 【修复/纠错】cpu：修复incorrect return address after flush。（subsys=cpu/pred; arch=-; churn=41；https://github.com/gem5/gem5/pull/2063）
+- #1994 【新增/支持】sim：新增option to print exit event information。（subsys=python; arch=-; churn=58；https://github.com/gem5/gem5/pull/1994）
+- #2067 【更新/依赖】misc：更新Jinja2 version to 3.1.6。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/2067）
+- #499 【新增/支持】cpu：BPU 支持 for 解耦 front-end。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/499）
+- #2035 【重命名/迁移】mem-ruby：迁移GPU L1 cache MSHR to the coalescer。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2035）
+- #2080 【其他】scons：Explicitly define call arg in `CheckLibWithHeader`。（subsys=base, SConstruct, cpu, mem, src, sim; arch=-; churn=20；https://github.com/gem5/gem5/pull/2080）
+- #2071 【新增/支持】arch-arm：实现FEAT_FP16。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2071）
+- #2090 【其他】python：assert if max processes not set for multisim。（subsys=python; arch=-; churn=5；https://github.com/gem5/gem5/pull/2090）
+- #1825 【新增/支持】sim-se：实现free-list-based physical page allocator for SE mode。（subsys=sim, base; arch=-; churn=512；https://github.com/gem5/gem5/pull/1825）
+- #2093 【更新/依赖】ext,stdlib：更新integration of DRAMSys。（subsys=ext, mem, configs, .github, python; arch=-; churn=86；https://github.com/gem5/gem5/pull/2093）
+- #2095 【其他】systemc：Set response state in transport_dbg as well。（subsys=src; arch=-; churn=1；https://github.com/gem5/gem5/pull/2095）
+- #2107 【新增/支持】scons：新增option --debug-fission。（subsys=SConstruct; arch=-; churn=9；https://github.com/gem5/gem5/pull/2107）
+- #2103 【新增/支持】stdlib：新增warning message for multisim processor switching。（subsys=python; arch=-; churn=6；https://github.com/gem5/gem5/pull/2103）
+- #2091 【修复/纠错】gpu-compute：GPU protocol tester bug。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2091）
+- #1942 【新增/支持】scons：新增a target to generate a compilation database。（subsys=SConstruct; arch=-; churn=27；https://github.com/gem5/gem5/pull/1942）
+- #2119 【其他】cpu-o3：Replace C++03 boilerplate with range-based for loops。（subsys=cpu/o3, cpu; arch=-; churn=383；https://github.com/gem5/gem5/pull/2119）
+- #2084 【新增/支持】gpu-compute：实现kernarg preload。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2084）
+- #2126 【新增/支持】sim-se：新增ArmLinux32 支持 for clone3 syscall。（subsys=arch; arch=arm; churn=19；https://github.com/gem5/gem5/pull/2126）
+- #2127 【修复/纠错】cpu：修复bug exposed by clang 18's -Woverloaded-virtual。（subsys=cpu/pred; arch=-; churn=8；https://github.com/gem5/gem5/pull/2127）
+- #1935 【新增/支持】util：新增Python 实现 of terminal client (gem5term)。（subsys=util; arch=-; churn=412；https://github.com/gem5/gem5/pull/1935）
+- #2130 【更新/依赖】arch-arm：更新bootloader to set SCR_EL3.HXEN bit to 1。（subsys=system; arch=-; churn=1；https://github.com/gem5/gem5/pull/2130）
+- #2128 【修复/纠错】scons,arch-arm：修复clang 18 build issues。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2128）
+- #2120 【修复/纠错】arch-riscv：修复SVNAPOT PPN encoding。（subsys=arch; arch=riscv; churn=3；https://github.com/gem5/gem5/pull/2120）
+- #2131 【其他】mem：Make PortTerminator create resp_ports as well as req_ports。（subsys=mem; arch=-; churn=27；https://github.com/gem5/gem5/pull/2131）
+- #2140 【其他】base, cpu-o3：Use string_view in Named constructor。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2140）
+- #1997 【修复/纠错】sim：修复MemoryError at 系统调用。（subsys=sim; arch=-; churn=8；https://github.com/gem5/gem5/pull/1997）
+- #1709 【修复/纠错】arch-riscv：修复vset{i}vl{i} 导致的 misprediction of control flow instruction。（subsys=arch, configs, util; arch=riscv; churn=177；https://github.com/gem5/gem5/pull/1709）
+- #2141 【修复/纠错】scons：修复compilation error with SCons < 4.0.0。（subsys=SConstruct; arch=-; churn=12；https://github.com/gem5/gem5/pull/2141）
+- #2132 【更新/依赖】misc：更新pre-commit from 4.1.0 to 4.2.0。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/2132）
+- #2124 【其他】use mkdtemp for tmpfile in SerializationFixture。（subsys=base, sim; arch=-; churn=32；https://github.com/gem5/gem5/pull/2124）
+- #2144 【移除/弃用】mem：移除deprecated method。（subsys=mem; arch=-; churn=8；https://github.com/gem5/gem5/pull/2144）
+- #2143 【修复/纠错】arch-riscv：修复atomic ops on big endian hosts。（subsys=arch; arch=riscv; churn=96；https://github.com/gem5/gem5/pull/2143）
+- #2139 【修复/纠错】mem-ruby：Make SLICC enum FooType_to_string handle the _NUM case。（subsys=mem; arch=-; churn=12；https://github.com/gem5/gem5/pull/2139）
+- #2158 【新增/支持】mem-ruby：新增link name to each throttle stat。（subsys=mem; arch=-; churn=49；https://github.com/gem5/gem5/pull/2158）
+- #2152 【新增/支持】sim-se：execve: make 新增 process inherit max stack size。（subsys=sim; arch=-; churn=1；https://github.com/gem5/gem5/pull/2152）
+- #2155 【测试】ext,tests：修复weekly DRAMSys tests failing。（subsys=ext; arch=-; churn=8；https://github.com/gem5/gem5/pull/2155）
+- #2157 【修复/纠错】mem-ruby：修复Ruby MemCtrl functionalRead。（subsys=mem; arch=-; churn=5；https://github.com/gem5/gem5/pull/2157）
+- #2174 【其他】mem-ruby：return early response for software prefetches。（subsys=mem; arch=-; churn=35；https://github.com/gem5/gem5/pull/2174）
+- #2184 【修复/纠错】arch-riscv：修复read permission for mstatus.mxr。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/2184）
+- #2187 【其他】mem-ruby：Revert "mem-ruby: return early response for software prefetches"。（subsys=mem; arch=-; churn=35；https://github.com/gem5/gem5/pull/2187）
+- #2194 【测试】arch-x86,tests：Reduce the number of X86 boot-tests。（subsys=tests; arch=-; churn=37；https://github.com/gem5/gem5/pull/2194）
+- #2179 【修复/纠错】arch-riscv：修复interupt delegation。（subsys=arch; arch=riscv; churn=123；https://github.com/gem5/gem5/pull/2179）
+- #2190 【其他】arch-riscv：Raise PF when execute user page in S-mode。（subsys=arch; arch=riscv; churn=3；https://github.com/gem5/gem5/pull/2190）
+- #2199 【修复/纠错】mem-ruby：修复RubyRequest sequencer ostream<< 中的 misprint。（subsys=mem; arch=-; churn=11；https://github.com/gem5/gem5/pull/2199）
+- #2165 【修复/纠错】gpu-compute：修复kernarg preload address。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2165）
+- #2202 【修复/纠错】python：修复assert conditions 与修复 spelling error。（subsys=python; arch=-; churn=6；https://github.com/gem5/gem5/pull/2202）
+- #2163 【其他】arch-vega：改进 dispatch scheduler。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2163）
+- #2160 【更新/依赖】configs,mem-ruby：更新ruby configs for ALL target。（subsys=configs; arch=-; churn=64；https://github.com/gem5/gem5/pull/2160）
+- #2171 【其他】sim：Use heap allocs instead of VLAs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2171）
+- #2170 【其他】mem：Use heap allocs instead of VLAs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2170）
+- #2167 【其他】cpu：Replace uses of variable length arrays with heap allocs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2167）
+- #2168 【其他】arm：Replace variable length arrays with strings/heap allocs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2168）
+- #2169 【其他】base,systemc,python：Replace use of VLAs with heap allocs/strings。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2169）
+- #2206 【其他】arch：addr_range: Use heap allocs instead of VLAs。（subsys=base; arch=-; churn=8；https://github.com/gem5/gem5/pull/2206）
+- #2208 【其他】Use heap allocations instead of VLAs in virtio device code。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2208）
+- #2189 【新增/支持】sim：新增warning for non-default create function。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2189）
+- #2209 【修复/纠错】arch-x86：apply 修复 for pack micro-op on duplicated code。（subsys=arch; arch=x86; churn=13；https://github.com/gem5/gem5/pull/2209）
+- #2210 【修复/纠错】configs,mem-ruby：修复Directory_Controller fallback logic。（subsys=configs; arch=-; churn=21；https://github.com/gem5/gem5/pull/2210）
+- #2214 【其他】cpu-o3：break Request::NO_ACCESS reference cycle。（subsys=cpu/o3; arch=-; churn=4；https://github.com/gem5/gem5/pull/2214）
+- #2216 【其他】mem-ruby,scons：禁用verbose SLICC output unless flag set。（subsys=mem; arch=-; churn=4；https://github.com/gem5/gem5/pull/2216）
+- #2220 【修复/纠错】cpu：修复内存泄漏 on indirect branch prediction。（subsys=cpu/pred; arch=-; churn=6；https://github.com/gem5/gem5/pull/2220）
+- #2223 【修复/纠错】arch-riscv：修复CMO decoding。（subsys=arch; arch=riscv; churn=152；https://github.com/gem5/gem5/pull/2223）
+- #2026 【更新/依赖】arch-riscv：修复narrowing instructions with pin µop。（subsys=arch; arch=riscv; churn=103；https://github.com/gem5/gem5/pull/2026）
+- #2226 【其他】systemc：Export simple arithmetic operations in sc_time pybind。（subsys=src; arch=-; churn=4；https://github.com/gem5/gem5/pull/2226）
+- #2193 【测试】修复, improve, refactor gpu-tests to improve runner testing stability。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2193）
+- #2230 【其他】dev：使sid, ssid 变为可选。（subsys=dev; arch=-; churn=34；https://github.com/gem5/gem5/pull/2230）
+- #2161 【更新/依赖】util：新增external hypercall util 中的 feature to update debug flags。（subsys=python, util; arch=-; churn=61；https://github.com/gem5/gem5/pull/2161）
+- #2231 【移除/弃用】configs：移除riscv/fs_linux.py duplicate --bootloader option。（subsys=configs; arch=-; churn=6；https://github.com/gem5/gem5/pull/2231）
+- #2236 【修复/纠错】arch-power：Avoid incidental use of VLA in sizeof expression.。（subsys=arch; arch=power; churn=4；https://github.com/gem5/gem5/pull/2236）
+- #2237 【修复/纠错】arch-mips：Avoid incidental use of VLA in sizeof expression。（subsys=arch; arch=mips; churn=4；https://github.com/gem5/gem5/pull/2237）
+- #2239 【修复/纠错】cpu：Prevent re-executing load instruction。（subsys=cpu/o3; arch=-; churn=5；https://github.com/gem5/gem5/pull/2239）
+- #2235 【其他】arch-x86：Don't use non ISO C++ variable length arrays。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2235）
+- #2225 【其他】sim, util：调整to the external signal handler。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2225）
+- #2207 【新增/支持】misc：Increase Clang 支持 to v19; Drop GCC v10 支持。（subsys=.github, SConstruct, util; arch=-; churn=75；https://github.com/gem5/gem5/pull/2207）
+- #2246 【测试】tests：Reduce the gpu_ruby_rand Daily tests to 1h。（subsys=tests; arch=-; churn=8；https://github.com/gem5/gem5/pull/2246）
+- #2215 【其他】sim：convert entering event queue message to debug flag。（subsys=sim; arch=-; churn=6；https://github.com/gem5/gem5/pull/2215）
+- #2243 【其他】arch-vega：Ignore EXEC SGPR dest for VOP3 V_CMPX_*。（subsys=arch; arch=amdgpu; churn=8；https://github.com/gem5/gem5/pull/2243）
+- #2242 【移除/弃用】gpu：移除SDMA header heap allocations。（subsys=dev; arch=-; churn=140；https://github.com/gem5/gem5/pull/2242）
+- #2241 【修复/纠错】mem-ruby：修复DMA sequencer request size above 64。（subsys=mem; arch=-; churn=56；https://github.com/gem5/gem5/pull/2241）
+- #2247 【其他】dev：Make sid, ssid option in dmaRead, dmaWrite。（subsys=dev; arch=-; churn=6；https://github.com/gem5/gem5/pull/2247）
+- #2252 【新增/支持】python：新增OptionalParam to 支持 std::可选.。（subsys=python; arch=-; churn=63；https://github.com/gem5/gem5/pull/2252）
+- #2255 【修复/纠错】mem-ruby：修复running ruby_random_test with -n > 18 时的 deadlocks。（subsys=cpu; arch=-; churn=88；https://github.com/gem5/gem5/pull/2255）
+- #2256 【新增/支持】configs：启用bootloader argument for RISCV simulations。（subsys=configs; arch=-; churn=10；https://github.com/gem5/gem5/pull/2256）
+- #2257 【修复/纠错】arch-sparc：修复sparc/isa/base.isa 中的 SyntaxWarnings。（subsys=arch; arch=sparc; churn=4；https://github.com/gem5/gem5/pull/2257）
+- #2249 【修复/纠错】resources：return a copy of resource JSON to avoid mutations。（subsys=python; arch=-; churn=3；https://github.com/gem5/gem5/pull/2249）
+- #2234 【其他】gpu：Don't use VLA in device (de)serialization。（subsys=dev, sim; arch=-; churn=436；https://github.com/gem5/gem5/pull/2234）
+- #2217 【移除/弃用】scons：移除-Wno-vla-cxx-extension. gem5 is now VLA-clean。（subsys=SConstruct; arch=-; churn=2；https://github.com/gem5/gem5/pull/2217）
+- #2245 【测试】tests,misc：改进dir finding for GH Actions; merge separate jobs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2245）
+- #2259 【其他】arch-x86：Return early from MWAIT if address monitor is not armed。（subsys=arch; arch=x86; churn=3；https://github.com/gem5/gem5/pull/2259）
+- #2263 【更新/依赖】arch-vega,gpu-compute：Opcode overrides based on gfx version。（subsys=gpu-compute, arch; arch=amdgpu; churn=118；https://github.com/gem5/gem5/pull/2263）
+- #2260 【其他】dev：Adopt OptionalParam for DmaDevice.。（subsys=dev; arch=-; churn=6；https://github.com/gem5/gem5/pull/2260）
+- #2264 【新增/支持】misc：Introduce dictionary parameters (DictParam) in gem5。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2264）
+- #1854 【更新/依赖】Speculative update for TAGE-SC-L。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1854）
+- #2275 【新增/支持】scons：新增cxx_config 支持 for OptionalParams。（subsys=build_tools; arch=-; churn=21；https://github.com/gem5/gem5/pull/2275）
+- #2276 【其他】scons：Use two return booleans for DictParams in cxx_config。（subsys=build_tools; arch=-; churn=9；https://github.com/gem5/gem5/pull/2276）
+- #2162 【新增/支持】arch-vega：新增pagetable walker buffer。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2162）
+- #2280 【新增/支持】dev：新增value check for debug flag。（subsys=dev; arch=-; churn=8；https://github.com/gem5/gem5/pull/2280）
+- #2278 【测试】stdlib, tests：修复ruby cache init signature。（subsys=python, tests; arch=-; churn=32；https://github.com/gem5/gem5/pull/2278）
+- #2173 【其他】cpu-o3：put unsent mem req to retry queue。（subsys=cpu/o3; arch=-; churn=30；https://github.com/gem5/gem5/pull/2173）
+- #2285 【其他】arch-arm：Initialize the BaseMMU::Mode in TLBTypes::KeyType。（subsys=arch; arch=arm; churn=3；https://github.com/gem5/gem5/pull/2285）
+- #2284 【更新/依赖】dev：更新MI300X model to use real firmware。（subsys=dev, configs, python; arch=-; churn=398；https://github.com/gem5/gem5/pull/2284）
+- #2272 【新增/支持】gpu-compute,arch-vega：Included two 新增 DS instructions。（subsys=arch; arch=amdgpu; churn=132；https://github.com/gem5/gem5/pull/2272）
+- #2289 【其他】dev：Print warn_access message in IsaFake。（subsys=dev; arch=-; churn=12；https://github.com/gem5/gem5/pull/2289）
+- #2291 【修复/纠错】mem：修复 bug with 预取器 probes。（subsys=mem/cache/prefetch; arch=-; churn=6；https://github.com/gem5/gem5/pull/2291）
+- #2294 【新增/支持】mem：新增port_wrapper panic message 中的 port name。（subsys=mem; arch=-; churn=20；https://github.com/gem5/gem5/pull/2294）
+- #2288 【修复/纠错】arch：修复isa_parser Format initial。（subsys=arch; arch=isa_parser; churn=14；https://github.com/gem5/gem5/pull/2288）
+- #2274 【修复/纠错】stdlib：correct memory range check in dramsim3。（subsys=python; arch=-; churn=2；https://github.com/gem5/gem5/pull/2274）
+- #2286 【重命名/迁移】arch-riscv：修复move scalar to vector tail agnostic behaviour。（subsys=arch; arch=riscv; churn=23；https://github.com/gem5/gem5/pull/2286）
+- #1855 【新增/支持】cpu：新增taken-only history。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1855）
+- #2271 【新增/支持】arch-arm：新增stats to track PMU events。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2271）
+- #2287 【新增/支持】arch-arm：实现FEAT_FHM 与 FEAT_FRINTTS.。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2287）
+- #2295 【其他】mem：Set default panic callback in port_wrapper。（subsys=mem; arch=-; churn=45；https://github.com/gem5/gem5/pull/2295）
+- #2240 【更新/依赖】resources：更新backend resources API。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2240）
+- #2023 【新增/支持】arch-riscv：增加对fault-only-first unit-stride segment load instructions的支持。（subsys=arch, cpu, cpu/o3; arch=riscv; churn=383；https://github.com/gem5/gem5/pull/2023）
+- #1387 【新增/支持】arch-riscv：新增Hypervisor (H) extension。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/1387）
+- #2323 【更新/依赖】util：更新upstream_msg_filter.sed to 支持 macOS。（subsys=util; arch=-; churn=4；https://github.com/gem5/gem5/pull/2323）
+- #2330 【更新/依赖】util：更新GPUFS application builder dockerfile。（subsys=util; arch=-; churn=38；https://github.com/gem5/gem5/pull/2330）
+- #2326 【其他】mem-garnet,mem-ruby：修复 Garnet_standalone simulation。（subsys=configs, mem; arch=-; churn=20；https://github.com/gem5/gem5/pull/2326）
+- #2324 【更新/依赖】scons：修复gcc version compare。（subsys=SConstruct; arch=-; churn=4；https://github.com/gem5/gem5/pull/2324）
+- #2333 【更新/依赖】misc：更新mypy from 1.15.0 to 1.16.0。（subsys=requirements.txt; arch=-; churn=4；https://github.com/gem5/gem5/pull/2333）
+- #2331 【其他】arch-riscv：Allow load-reserved accesses to use the TLB。（subsys=arch; arch=riscv; churn=110；https://github.com/gem5/gem5/pull/2331）
+- #2022 【新增/支持】arch-riscv：增加对vector stride segment load/store instructions的支持。（subsys=arch, cpu, cpu/o3; arch=riscv; churn=2260；https://github.com/gem5/gem5/pull/2022）
+- #2319 【更新/依赖】misc：更新pyupgrade from v3.19.1 to v3.20.0。（subsys=.pre-commit-config.yaml; arch=-; churn=4；https://github.com/gem5/gem5/pull/2319）
+- #2348 【新增/支持】sim：移除init_signals.cc 中的 cerr 与 improve macOS 支持。（subsys=sim; arch=-; churn=16；https://github.com/gem5/gem5/pull/2348）
+- #2349 【其他】util, stdlib：调整to hypercall external signal。（subsys=util, python; arch=-; churn=34；https://github.com/gem5/gem5/pull/2349）
+- #2355 【修复/纠错】arch-riscv：修复timing walk exit path on early fault。（subsys=arch; arch=riscv; churn=106；https://github.com/gem5/gem5/pull/2355）
+- #2361 【更新/依赖】build(deps)：更新/util/gem5-resources-manager 中的 requests from 2.32.0 to 2.32.4。（subsys=util; arch=-; churn=4；https://github.com/gem5/gem5/pull/2361）
+- #2021 【修复/纠错】arch-riscv：修复incorrect vector unit-stride segment load instructions。（subsys=arch, cpu/o3; arch=riscv; churn=146；https://github.com/gem5/gem5/pull/2021）
+- #2307 【修复/纠错】arch-riscv：修复vcpyvs µops for vector indexed loads。（subsys=arch; arch=riscv; churn=28；https://github.com/gem5/gem5/pull/2307）
+- #2343 【测试】tests：更新pyunit tests to work with v25.0。（subsys=tests; arch=-; churn=196；https://github.com/gem5/gem5/pull/2343）
+- #2363 【测试】tests：修复x86 boot test by removing overriding of kernel args。（subsys=tests; arch=-; churn=6；https://github.com/gem5/gem5/pull/2363）
+- #2366 【测试】tests：CHI_ prefix needed after ALL protocol PR。（subsys=tests; arch=-; churn=4；https://github.com/gem5/gem5/pull/2366）
+- #2367 【其他】stdlib：Return HTTP error for Azure Func API。（subsys=python; arch=-; churn=56；https://github.com/gem5/gem5/pull/2367）
+- #2360 【其他】stdlib：调整multisim stderr.txt to simerr.txt。（subsys=python; arch=-; churn=8；https://github.com/gem5/gem5/pull/2360）
+- #2365 【测试】tests：Reduce Nightly/Weekly X86/ARM Boot tests。（subsys=tests; arch=-; churn=71；https://github.com/gem5/gem5/pull/2365）
+- #2336 【其他】misc：v25.0.0.0 release notes。（subsys=RELEASE-NOTES.md; arch=-; churn=228；https://github.com/gem5/gem5/pull/2336）
+- #2371 【新增/支持】arch-arm：Automatically enable stat probe listeners。（subsys=arch; arch=arm; churn=32；https://github.com/gem5/gem5/pull/2371）
+- #2082 【测试】tests：新增tests for restoring from checkpoints using multisim。（subsys=tests; arch=-; churn=466；https://github.com/gem5/gem5/pull/2082）
+- #2362 【移除/弃用】arch-riscv：移除unneeded flushAll。（subsys=arch; arch=riscv; churn=96；https://github.com/gem5/gem5/pull/2362）
+- #2341 【移除/弃用】arch-riscv：移除N extension。（subsys=arch; arch=riscv; churn=1104；https://github.com/gem5/gem5/pull/2341）
+- #2322 【其他】misc：Release v25.0.0.0。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2322）
+
+## v25.0.0.1 (2025-08-11)
+
+- #2415 【移除/弃用】stdlib：移除duplicate ClassicGeneratorExitHandler。（subsys=python; arch=-; churn=126；https://github.com/gem5/gem5/pull/2415）
+- #2397 【更新/依赖】util：更新util/gem5-resources-manager 中的 urllib3 to 2.5.0。（subsys=util; arch=-; churn=4；https://github.com/gem5/gem5/pull/2397）
+- #2399 【修复/纠错】cpu：修复looppoint analysis v25。（subsys=cpu/simple; arch=-; churn=18；https://github.com/gem5/gem5/pull/2399）
+- #2492 【修复/纠错】arch-arm：修复writeback type for AArch32 FP16 instructions。（subsys=arch; arch=arm; churn=4；https://github.com/gem5/gem5/pull/2492）
+- #2464 【其他】arch-riscv：populate logBytes/paddr after functional pt walk。（subsys=arch; arch=riscv; churn=12；https://github.com/gem5/gem5/pull/2464）
+- #2441 【新增/支持】arch-arm：新增FEAT_FP16 FP instructions。（subsys=arch; arch=arm; churn=694；https://github.com/gem5/gem5/pull/2441）
+- #2502 【新增/支持】cpu：Adapt simpoint listener to 新增 probe structure。（subsys=cpu/simple; arch=-; churn=16；https://github.com/gem5/gem5/pull/2502）
+- #2512 【其他】cpu-o3：properly index time buffer when clearing states。（subsys=cpu/o3; arch=-; churn=14；https://github.com/gem5/gem5/pull/2512）
+- #2496 【其他】misc：Hotfix 25.0.0.1。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2496）
+
+## v25.1.0.0 (2025-12-31)
+
+- #2316 【新增/支持】arch-arm：新增PMU 中的 L2D_TLB_REFILL 与 L2I_TLB_REFILL。（subsys=arch, configs; arch=arm; churn=34；https://github.com/gem5/gem5/pull/2316）
+- #2328 【修复/纠错】Bug 修复 for configs/ruby/Ruby.py。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2328）
+- #1712 【修复/纠错】arch-riscv：修复incorrect vector slide instructions 与 statically filter redundant uops。（subsys=arch; arch=riscv; churn=1078；https://github.com/gem5/gem5/pull/1712）
+- #2317 【新增/支持】arch-arm：新增read/write function to FPCR/FPSR.。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2317）
+- #2335 【测试】misc tests：Set specific versions in GH Action workflows。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2335）
+- #2337 【新增/支持】arch-riscv：新增RVV 支持 for riscv32 ISA。（subsys=arch; arch=riscv; churn=8；https://github.com/gem5/gem5/pull/2337）
+- #2346 【新增/支持】新增missing operands to disassembly for common arm instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2346）
+- #2356 【测试】tests：更新fs tests to use the 24.04 disk images。（subsys=tests; arch=-; churn=85；https://github.com/gem5/gem5/pull/2356）
+- #2350 【新增/支持】arch-vega：Included modifiers 支持 in vop3_cmp instructions。（subsys=arch; arch=amdgpu; churn=308；https://github.com/gem5/gem5/pull/2350）
+- #2357 【测试】mem：Skip redundant test in AddrRange::isSubset in 1-byte ranges.。（subsys=base; arch=-; churn=13；https://github.com/gem5/gem5/pull/2357）
+- #2368 【更新/依赖】stdlib：Append resource version to cached resource filename。（subsys=tests, configs, python; arch=-; churn=42；https://github.com/gem5/gem5/pull/2368）
+- #2380 【新增/支持】arch-arm,configs：新增baremetal.py 中的 option to populate PMU statCounters。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2380）
+- #2378 【新增/支持】arch-arm：启用SE mode 中的新增 FP extensions。（subsys=arch; arch=arm; churn=8；https://github.com/gem5/gem5/pull/2378）
+- #2376 【修复/纠错】arch-riscv：修复PMP checking。（subsys=arch; arch=riscv; churn=74；https://github.com/gem5/gem5/pull/2376）
+- #2379 【其他】arch-arm：Generate disable PMU ExitEvent when local disable。（subsys=arch; arch=arm; churn=48；https://github.com/gem5/gem5/pull/2379）
+- #2386 【修复/纠错】arch-riscv：修复mstatus.mprv check。（subsys=arch; arch=riscv; churn=6；https://github.com/gem5/gem5/pull/2386）
+- #2312 【其他】cpu-o3：stall fetch from commit when trap event is pending。（subsys=cpu/o3; arch=-; churn=15；https://github.com/gem5/gem5/pull/2312）
+- #2396 【修复/纠错】configs：修复legacy RISC-V script 中的 bootloader argument parsing。（subsys=configs; arch=-; churn=3；https://github.com/gem5/gem5/pull/2396）
+- #2400 【修复/纠错】arch-riscv：修复bootloader & kernel load address。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2400）
+- #2412 【修复/纠错】mem-cache：修复FIFO RP invalidation。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2412）
+- #2394 【新增/支持】arch-vega：实现CDNA4 (MI350) instructions, part 1。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2394）
+- #2419 【更新/依赖】misc：更新mypy from 1.16.0 to 1.16.1。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/2419）
+- #2417 【其他】arch-riscv：Make PLIC output latency 可配置。（subsys=dev; arch=-; churn=12；https://github.com/gem5/gem5/pull/2417）
+- #2401 【移除/弃用】configs：deprecate configs/example/riscv/fs_linux.py。（subsys=configs; arch=-; churn=0；https://github.com/gem5/gem5/pull/2401）
+- #2418 【其他】arch-vega：MI350 microscaling updates。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2418）
+- #2308 【新增/支持】cpu：新增user-mode stats。（subsys=cpu, cpu/o3, cpu/minor, cpu/simple; arch=-; churn=85；https://github.com/gem5/gem5/pull/2308）
+- #362 【新增/支持】misc：新增git-clang-format to pre-commit with wrapper script。（subsys=.clang-format, .pre-commit-config.yaml, util; arch=-; churn=468；https://github.com/gem5/gem5/pull/362）
+- #2420 【更新/依赖】dev-amdgpu：更新GPU SDMA model to 支持 non-zero VMID packets, MMIOs, 与修复 SDMA poll livelock。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2420）
+- #2422 【修复/纠错】arch-vega：修复tlb 导致的 incorrect address translation。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2422）
+- #2432 【其他】cpu-o3：Specify unit of measurement for LSQ loadToUse stat。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2432）
+- #2421 【修复/纠错】misc：修复include paths。（subsys=.gitignore, arch, mem/cache; arch=riscv; churn=6；https://github.com/gem5/gem5/pull/2421）
+- #2425 【其他】configs：Allow GPU-FS to use HBMCtrl memory controller。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2425）
+- #2427 【新增/支持】arch-vega：实现all MI355X conversion instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2427）
+- #2314 【新增/支持】Introduce git-clang-format to gem5 with wrapper script (Option 2 of 2)。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2314）
+- #2409 【更新/依赖】scons：更新build_tools to enable importing。（subsys=build_tools; arch=-; churn=1757；https://github.com/gem5/gem5/pull/2409）
+- #2436 【新增/支持】arch-vega：GPU TLB Multi Page Size 支持。（subsys=arch; arch=amdgpu; churn=55；https://github.com/gem5/gem5/pull/2436）
+- #2408 【新增/支持】misc：新增gitignore for ext/sst。（subsys=ext; arch=-; churn=6；https://github.com/gem5/gem5/pull/2408）
+- #2435 【新增/支持】arch-vega：新增Large Pagesize 支持 to GPU TLB Coalescer。（subsys=arch; arch=amdgpu; churn=159；https://github.com/gem5/gem5/pull/2435）
+- #2444 【其他】cpu-o3：Print OpClass name instead of number for debug purposes。（subsys=cpu/o3; arch=-; churn=12；https://github.com/gem5/gem5/pull/2444）
+- #2445 【修复/纠错】stdlib：修复orchestrator exit handler 工作负载 id。（subsys=python; arch=-; churn=6；https://github.com/gem5/gem5/pull/2445）
+- #2431 【其他】mem-cache：Report Blocked_NoWBBuffers as cache blocking cause。（subsys=mem/cache; arch=-; churn=5；https://github.com/gem5/gem5/pull/2431）
+- #2416 【其他】dev：Export reg bank's offsetMap。（subsys=dev; arch=-; churn=2；https://github.com/gem5/gem5/pull/2416）
+- #2451 【修复/纠错】arch-vega：修复编译错误s on clang 17。（subsys=arch; arch=amdgpu; churn=85；https://github.com/gem5/gem5/pull/2451）
+- #2447 【修复/纠错】systemc：修复tlm::tlm_dmi usage。（subsys=src; arch=-; churn=5；https://github.com/gem5/gem5/pull/2447）
+- #2393 【新增/支持】arch-arm：新增AdvSimd instructions 中的 FEAT_AFP 与 enable。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2393）
+- #2452 【移除/弃用】configs：deprecate configs/example/gem5_library/riscv-fs.py。（subsys=configs; arch=-; churn=0；https://github.com/gem5/gem5/pull/2452）
+- #2468 【其他】misc：Modify clang-format to no break in method declarations。（subsys=.clang-format; arch=-; churn=3；https://github.com/gem5/gem5/pull/2468）
+- #2459 【新增/支持】stdlib：新增Simulator API to schedule hypercall 6 exits。（subsys=python; arch=-; churn=53；https://github.com/gem5/gem5/pull/2459）
+- #2467 【新增/支持】misc：define default hypercall ids in 新增 header。（subsys=include; arch=-; churn=42；https://github.com/gem5/gem5/pull/2467）
+- #2469 【新增/支持】sim：新增map to sim_exit.hh includes。（subsys=sim; arch=-; churn=1；https://github.com/gem5/gem5/pull/2469）
+- #2472 【其他】stdlib：return ticks to seconds conversion in exit handler。（subsys=python; arch=-; churn=3；https://github.com/gem5/gem5/pull/2472）
+- #2407 【移除/弃用】python：移除m5 internal。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2407）
+- #2478 【其他】arch-vega：改进MFMA precision to match MI300X hardware。（subsys=arch; arch=amdgpu; churn=5；https://github.com/gem5/gem5/pull/2478）
+- #2228 【CI】misc：新增useful workspace settings for GitHub 与 PR extensions。（subsys=.vscode; arch=-; churn=37；https://github.com/gem5/gem5/pull/2228）
+- #2485 【修复/纠错】arch-arm：修复inverted RAO check of HCPTR.TCP10。（subsys=arch; arch=arm; churn=8；https://github.com/gem5/gem5/pull/2485）
+- #2483 【移除/弃用】arch-arm：移除unnecessary operand type CntrlRegNC。（subsys=arch; arch=arm; churn=31；https://github.com/gem5/gem5/pull/2483）
+- #2465 【其他】arch-arm：Split decodeBranchExcSys into 多 sub-functions。（subsys=arch; arch=arm; churn=774；https://github.com/gem5/gem5/pull/2465）
+- #2489 【其他】misc：Use Right PointerAlignment in clang-format。（subsys=.clang-format; arch=-; churn=2；https://github.com/gem5/gem5/pull/2489）
+- #2487 【其他】systemc：改进SystemC stability。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2487）
+- #2474 【修复/纠错】arch-riscv：修复bug where next PTW never starts。（subsys=arch; arch=riscv; churn=12；https://github.com/gem5/gem5/pull/2474）
+- #2477 【重命名/迁移】cpu：迁移conditional pred out of bpred_unit。（subsys=cpu/pred, configs, cpu/minor, cpu/o3, python; arch=-; churn=488；https://github.com/gem5/gem5/pull/2477）
+- #1786 【测试】tests：新增a 单元测试 for bloom filters。（subsys=base; arch=-; churn=396；https://github.com/gem5/gem5/pull/1786）
+- #2497 【修复/纠错】arch-riscv：修复CSR writing mask。（subsys=arch; arch=riscv; churn=106；https://github.com/gem5/gem5/pull/2497）
+- #2498 【修复/纠错】systemc：修复get_direct_mem_ptr 时的 a bug 中的 length is 0。（subsys=src; arch=-; churn=9；https://github.com/gem5/gem5/pull/2498）
+- #2499 【其他】cpu：Workaround missing IsUnconditional flag。（subsys=cpu/pred; arch=-; churn=4；https://github.com/gem5/gem5/pull/2499）
+- #2442 【测试】tests：修复kernel panic on kvm switch tests。（subsys=tests; arch=-; churn=4；https://github.com/gem5/gem5/pull/2442）
+- #2450 【测试】tests：新增tests for running scripts via readfile。（subsys=tests; arch=-; churn=201；https://github.com/gem5/gem5/pull/2450）
+- #2510 【其他】cpu-o3：Bundle some RenameStats into a vector。（subsys=cpu/o3; arch=-; churn=86；https://github.com/gem5/gem5/pull/2510）
+- #2503 【更新/依赖】misc：更新mypy from 1.16.1 to 1.17.1。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/2503）
+- #2507 【重构/整理】mem：重构Bridge to allow derived class。（subsys=mem; arch=-; churn=177；https://github.com/gem5/gem5/pull/2507）
+- #2506 【修复/纠错】arch-riscv：修复interrupt delegation 2nd attempt。（subsys=arch; arch=riscv; churn=90；https://github.com/gem5/gem5/pull/2506）
+- #2517 【其他】cpu-o3：Bundle some DecodeStats into a vector。（subsys=cpu/o3; arch=-; churn=75；https://github.com/gem5/gem5/pull/2517）
+- #2443 【测试】misc：更新ci-tests with clang format。（subsys=.github; arch=-; churn=33；https://github.com/gem5/gem5/pull/2443）
+- #2494 【新增/支持】misc：split single line if statements 与新增 braces in .clang-format。（subsys=.clang-format; arch=-; churn=7；https://github.com/gem5/gem5/pull/2494）
+- #2481 【修复/纠错】python：Prevent SimObject from sharing reference of class member.。（subsys=python; arch=-; churn=3；https://github.com/gem5/gem5/pull/2481）
+- #2519 【其他】misc：improvement to clang-format。（subsys=.clang-format; arch=-; churn=11；https://github.com/gem5/gem5/pull/2519）
+- #2515 【更新/依赖】cpu：BTB update at squash/commit option。（subsys=cpu/pred; arch=-; churn=99；https://github.com/gem5/gem5/pull/2515）
+- #2516 【其他】cpu：Tage GHR out-of-bounds at rollover。（subsys=cpu/pred; arch=-; churn=24；https://github.com/gem5/gem5/pull/2516）
+- #2311 【其他】mem-ruby：return early response for software prefetches。（subsys=mem; arch=-; churn=40；https://github.com/gem5/gem5/pull/2311）
+- #2520 【其他】cpu-o3：Mark some DynInst methods as const。（subsys=cpu/o3; arch=-; churn=8；https://github.com/gem5/gem5/pull/2520）
+- #2521 【CI】misc：[pre-commit.ci] pre-commit autoupdate。（subsys=.pre-commit-config.yaml; arch=-; churn=2；https://github.com/gem5/gem5/pull/2521）
+- #2522 【移除/弃用】sim：移除unneeded headers from debug.cc。（subsys=sim; arch=-; churn=3；https://github.com/gem5/gem5/pull/2522）
+- #2523 【新增/支持】base, cpu：新增missing virtuals。（subsys=base, cpu; arch=-; churn=2；https://github.com/gem5/gem5/pull/2523）
+- #2404 【其他】arch,mem-ruby：Make parsers less verbose by default。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2404）
+- #2490 【新增/支持】arch-arm, cpu, config：实现Bfloat16 for Arm CPUs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2490）
+- #2500 【移除/弃用】cpu-o3：移除inactive tail bytes from memory request。（subsys=cpu/o3, cpu; arch=-; churn=33；https://github.com/gem5/gem5/pull/2500）
+- #2484 【更新/依赖】misc：更新stats dump to have a 可选 message。（subsys=base, python; arch=-; churn=39；https://github.com/gem5/gem5/pull/2484）
+- #2470 【新增/支持】util：Modify hypercall-external-signal util to 支持 gem5 dashboard。（subsys=util; arch=-; churn=48；https://github.com/gem5/gem5/pull/2470）
+- #2351 【其他】arch-x86：automatically exit X86 simulations on kernel panic。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2351）
+- #2460 【其他】mem-garnet：: 修复 uniform_random traffic。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2460）
+- #2535 【其他】base：使dump stats message 变为可选。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2535）
+- #2532 【更新/依赖】misc：clang-format update。（subsys=.clang-format; arch=-; churn=6；https://github.com/gem5/gem5/pull/2532）
+- #2525 【修复/纠错】Ignore rseq syscall on riscv to 修复 SE 工作负载 built with newer glibc。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2525）
+- #2531 【其他】misc：Some 修复 from SPEC CPU development。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2531）
+- #2542 【其他】misc：split single line loop。（subsys=.clang-format; arch=-; churn=2；https://github.com/gem5/gem5/pull/2542）
+- #2403 【更新/依赖】misc：更新protobuf files to 移除 required。（subsys=src; arch=-; churn=40；https://github.com/gem5/gem5/pull/2403）
+- #2547 【其他】configs,stdlib：Ensure Resource ID arg passed to RISCV Demo Script。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2547）
+- #2540 【修复/纠错】python：修复RISC-V FDT stdout-path。（subsys=python, configs; arch=-; churn=6；https://github.com/gem5/gem5/pull/2540）
+- #2298 【新增/支持】dev：reworks PCI to 新增 a PCI host bridge。（subsys=dev, python, configs; arch=-; churn=1845；https://github.com/gem5/gem5/pull/2298）
+- #2552 【其他】arch-arm：Make fplub.cc unused attribtue 'maybe_unused'。（subsys=arch; arch=arm; churn=6；https://github.com/gem5/gem5/pull/2552）
+- #2551 【更新/依赖】ext：更新Pybind11 to v3.0.0。（subsys=ext; arch=-; churn=34760；https://github.com/gem5/gem5/pull/2551）
+- #2549 【新增/支持】新增virtual destructors。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2549）
+- #2440 【更新/依赖】configs：更新configs/example/gem5_library for v25.0 中的 configs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2440）
+- #2556 【新增/支持】sim：新增minor updates to ThermalEntity。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2556）
+- #2555 【修复/纠错】arch-arm：bug 修复 for generic timing 寄存器 in SE mode。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2555）
+- #2563 【更新/依赖】misc：更新pre-commit from 4.2.0 to 4.3.0。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/2563）
+- #2569 【修复/纠错】arch-arm,base：修复ramdisk loading。（subsys=base, arch; arch=arm; churn=8；https://github.com/gem5/gem5/pull/2569）
+- #2568 【其他】arch-arm, dev-arm：Replace params inclusion with forward declaration。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2568）
+- #2567 【其他】cpu：Link tagBits to tag_bits in the SimpleBTB。（subsys=cpu/pred; arch=-; churn=2；https://github.com/gem5/gem5/pull/2567）
+- #2570 【修复/纠错】dev：修复PCI host bridge with no range from up。（subsys=dev, python, mem; arch=-; churn=371；https://github.com/gem5/gem5/pull/2570）
+- #2580 【新增/支持】misc：Re-enable Address Sanitizer for GCC。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2580）
+- #2572 【更新/依赖】stdlib：更新AbstractMemorySystem 中的 types。（subsys=python; arch=-; churn=21；https://github.com/gem5/gem5/pull/2572）
+- #2581 【重构/整理】重构some headers, etc.。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2581）
+- #2587 【修复/纠错】arch-arm：修复struct to class for arm build。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2587）
+- #2592 【修复/纠错】dev：修复PCI build。（subsys=dev; arch=-; churn=12；https://github.com/gem5/gem5/pull/2592）
+- #2546 【其他】Toward removing main.py as a dependence。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2546）
+- #2574 【其他】Cleaning up m5.params。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2574）
+- #2594 【修复/纠错】dev：修复RISC-V sst PCI connection。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2594）
+- #2590 【重构/整理】重构python 与 stdlib 中的 imports。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2590）
+- #359 【其他】解耦前端。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/359）
+- #2596 【重构/整理】cpu,dev,mem：重构some python imports。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2596）
+- #2593 【其他】stdlib,python：改进consistency of python imports。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2593）
+- #2597 【新增/支持】cpu：移除unused parameter from FTQ to enable MacOS build。（subsys=cpu/o3; arch=-; churn=6；https://github.com/gem5/gem5/pull/2597）
+- #2600 【其他】mem-cache：Prefetch for all cache blocks in a Fetch Target。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2600）
+- #2601 【新增/支持】python：新增param_types cxx_ini-parse func 中的 missing escape。（subsys=python; arch=-; churn=2；https://github.com/gem5/gem5/pull/2601）
+- #2598 【新增/支持】mem-cache：新增cache_snoop parameter to Fetch Directed 预取器。（subsys=mem/cache/prefetch; arch=-; churn=9；https://github.com/gem5/gem5/pull/2598）
+- #2606 【其他】stdlib：Wrong wiring of PTW ports with sequencers in CHI platform。（subsys=python; arch=-; churn=2；https://github.com/gem5/gem5/pull/2606）
+- #2607 【新增/支持】mem-cache：新增assert for extractTag function。（subsys=mem/cache; arch=-; churn=2；https://github.com/gem5/gem5/pull/2607）
+- #2560 【其他】dev,arch-riscv：改进`rdtime` instruction。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2560）
+- #2610 【新增/支持】python：Re-enable config.ini output。（subsys=python; arch=-; churn=2；https://github.com/gem5/gem5/pull/2610）
+- #1108 【其他】cpu-minor：Integrate Minor's executeStats with int/fp/vec ALU Accesses。（subsys=cpu/minor; arch=-; churn=19；https://github.com/gem5/gem5/pull/1108）
+- #2605 【CI】[pre-commit.ci] pre-commit autoupdate。（subsys=.pre-commit-config.yaml; arch=-; churn=2；https://github.com/gem5/gem5/pull/2605）
+- #2608 【重构/整理】mem-cache：重构mem/cache 中的 headers 与 python imports。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2608）
+- #2524 【测试】tests：IPC Regression Tests。（subsys=tests; arch=-; churn=371；https://github.com/gem5/gem5/pull/2524）
+- #1977 【测试】mem-cache：单元测试 FIFO RP。（subsys=mem/cache/rp; arch=-; churn=340；https://github.com/gem5/gem5/pull/1977）
+- #2617 【修复/纠错】fastmodel：修复building fastmodels 时的 compiler error。（subsys=arch; arch=arm; churn=18；https://github.com/gem5/gem5/pull/2617）
+- #2609 【其他】stdlib：Define a CHI PrivateL1PrivateL2CacheHierarchy。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2609）
+- #2303 【新增/支持】cpu：新增gshare 分支预测器 model。（subsys=cpu/pred; arch=-; churn=267；https://github.com/gem5/gem5/pull/2303）
+- #2624 【更新/依赖】misc：更新mypy from 1.17.1 to 1.18.2。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/2624）
+- #2619 【新增/支持】arch-riscv：新增 vector instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2619）
+- #2627 【其他】stdlib：Decouple the AbstractCore from the chi L1CacheController。（subsys=python; arch=-; churn=25；https://github.com/gem5/gem5/pull/2627）
+- #2613 【测试】tests：新增tests for configuration related output files。（subsys=tests; arch=-; churn=308；https://github.com/gem5/gem5/pull/2613）
+- #2599 【新增/支持】arch-vega：实现remaining non-MFMA CDNA4 instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2599）
+- #2618 【新增/支持】base：新增CTAD deduction guide for Memoizer。（subsys=base; arch=-; churn=4；https://github.com/gem5/gem5/pull/2618）
+- #2634 【移除/弃用】mem：移除mem 中的 deprecated port names。（subsys=mem; arch=-; churn=62；https://github.com/gem5/gem5/pull/2634）
+- #2614 【其他】stdlib：改进 for VIPER board。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2614）
+- #2643 【修复/纠错】stdlib：修复binding of table walker port。（subsys=python; arch=-; churn=3；https://github.com/gem5/gem5/pull/2643）
+- #2641 【修复/纠错】configs：修复ruby_fs.py platform after PCI change。（subsys=configs; arch=-; churn=21；https://github.com/gem5/gem5/pull/2641）
+- #2631 【修复/纠错】arch-riscv：hot 修复 in `vclmulh`。（subsys=arch; arch=riscv; churn=4；https://github.com/gem5/gem5/pull/2631）
+- #2638 【其他】stdlib, python：重构some python imports。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2638）
+- #2637 【CI】misc：[pre-commit.ci] pre-commit autoupdate。（subsys=.pre-commit-config.yaml; arch=-; churn=4；https://github.com/gem5/gem5/pull/2637）
+- #2269 【其他】python：改进SimObject __setattr__ 中的 error message。（subsys=python; arch=-; churn=7；https://github.com/gem5/gem5/pull/2269）
+- #2646 【测试】tests：修复failing FIFO RP daily tests。（subsys=mem/cache/rp; arch=-; churn=4；https://github.com/gem5/gem5/pull/2646）
+- #2639 【新增/支持】misc：新增missing import to flag_tables。（subsys=src; arch=-; churn=2；https://github.com/gem5/gem5/pull/2639）
+- #2645 【新增/支持】arch-arm：新增decoder 中的 missing break。（subsys=arch; arch=arm; churn=1；https://github.com/gem5/gem5/pull/2645）
+- #2625 【修复/纠错】arch-riscv：修复`vslideup`。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2625）
+- #2640 【重构/整理】arch-arm, dev-arm：Small cleanup in arch-arm 与 dev-arm。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2640）
+- #2648 【新增/支持】stdlib：支持 generation of 多 directories in CHI。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2648）
+- #2633 【其他】dev-amdgpu,stdlib：Allow for 多 GPUs in stdlib。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2633）
+- #2653 【测试】misc, tests：迁移fast 单元测试 to CI tests。（subsys=.github; arch=-; churn=15；https://github.com/gem5/gem5/pull/2653）
+- #2660 【修复/纠错】misc：修复testlib 中的 licesnse typo。（subsys=ext; arch=-; churn=2；https://github.com/gem5/gem5/pull/2660）
+- #2644 【移除/弃用】mem-cache：移除prefetch 中的 unused header。（subsys=mem/cache/prefetch; arch=-; churn=2；https://github.com/gem5/gem5/pull/2644）
+- #2655 【修复/纠错】base：修复free-nonheap-object warning with Ubsan。（subsys=base; arch=-; churn=14；https://github.com/gem5/gem5/pull/2655）
+- #2663 【修复/纠错】misc：修复testlib 中的 license typo。（subsys=ext, base; arch=-; churn=4；https://github.com/gem5/gem5/pull/2663）
+- #2626 【修复/纠错】arch-riscv：修复`vm*` for `VLEN/EEW < 8` 与 `LMUL > 1`。（subsys=arch; arch=riscv; churn=2；https://github.com/gem5/gem5/pull/2626）
+- #2662 【CI】misc：[pre-commit.ci] pre-commit autoupdate。（subsys=.pre-commit-config.yaml; arch=-; churn=4；https://github.com/gem5/gem5/pull/2662）
+- #2595 【其他】Fdp-library。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2595）
+- #2656 【新增/支持】arch-arm, configs, cpu：实现FEAT_SVE2。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2656）
+- #2616 【修复/纠错】arch-arm,cpu-o3：修复out of bound with Ubsan。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2616）
+- #2671 【重命名/迁移】dev：重命名PCI devices base classes。（subsys=dev; arch=-; churn=85；https://github.com/gem5/gem5/pull/2671）
+- #2665 【其他】cpu-minor：explicitly check if instruction in ROM during decoding。（subsys=cpu/minor; arch=-; churn=18；https://github.com/gem5/gem5/pull/2665）
+- #2687 【测试】misc：新增ASAN 与 UBSAN compilation tests。（subsys=.github; arch=-; churn=16；https://github.com/gem5/gem5/pull/2687）
+- #2686 【修复/纠错】base：修复use-after-free warning。（subsys=base; arch=-; churn=4；https://github.com/gem5/gem5/pull/2686）
+- #2651 【其他】cpu-o3：Make space for a pipeline tracer。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2651）
+- #2690 【移除/弃用】stdlib：移除exists 时的 GPU ip_discovery.bin。（subsys=configs, python; arch=-; churn=3；https://github.com/gem5/gem5/pull/2690）
+- #2691 【修复/纠错】arch-arm：修复编译错误s。（subsys=arch; arch=arm; churn=7；https://github.com/gem5/gem5/pull/2691）
+- #2696 【修复/纠错】python：修复imports broken by PR 2595。（subsys=python; arch=-; churn=35；https://github.com/gem5/gem5/pull/2696）
+- #2650 【新增/支持】arch-arm, stdlib：重构the PTW to 支持 a 可配置 number of outstanding TW。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2650）
+- #2697 【重构/整理】mem-ruby：重构imports 与 includes。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2697）
+- #2683 【测试】tests：移除duplicate option on arm boot tests。（subsys=tests; arch=-; churn=1；https://github.com/gem5/gem5/pull/2683）
+- #2704 【修复/纠错】dev：Temporary 修复 for X86 board 卡住 forever & moved to board。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2704）
+- #2684 【新增/支持】cpu：启用NULL builds 中的 PcCountTracker。（subsys=cpu; arch=-; churn=28；https://github.com/gem5/gem5/pull/2684）
+- #2647 【新增/支持】stdlib：Define a 新增 get_mem_ranges method。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2647）
+- #2674 【测试】tests：更新resource links to point to azure。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2674）
+- #2703 【修复/纠错】arch-riscv：修复RISC-V `Decoder::reset()` not calling base class reset。（subsys=arch; arch=riscv; churn=1；https://github.com/gem5/gem5/pull/2703）
+- #2706 【其他】mem-ruby：Break dependence in CHI protocol。（subsys=mem; arch=-; churn=21；https://github.com/gem5/gem5/pull/2706）
+- #2713 【更新/依赖】python：更新RISC-V lupv_board.py。（subsys=python; arch=-; churn=36；https://github.com/gem5/gem5/pull/2713）
+- #2670 【其他】cpu-o3：Instant ROB squash。（subsys=cpu/o3; arch=-; churn=16；https://github.com/gem5/gem5/pull/2670）
+- #2664 【测试】base,arch-arm,cpu：Cleaning up more headers 与 tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2664）
+- #2722 【其他】sim-se,arch：Initialize max stack size from parameter (all ISAs)。（subsys=arch; arch=arm, mips, power, riscv, sparc, x86; churn=19；https://github.com/gem5/gem5/pull/2722）
+- #2548 【测试】mem, tests：新增SimObject 单元测试 for the TreePLRU replacement policy。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2548）
+- #2718 【其他】arch-arm：Ensure Stage2Walk port pointer is used。（subsys=arch; arch=arm; churn=3；https://github.com/gem5/gem5/pull/2718）
+- #2708 【其他】resources：make 工作负载 work with set_se_multi_binary_workload。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2708）
+- #2723 【其他】mem-ruby：Annotate CHI-TLM scheduling time in Transaction obj。（subsys=mem; arch=-; churn=74；https://github.com/gem5/gem5/pull/2723）
+- #2721 【测试】tests,scons,arch-arm：修复Address sanitizer compilation test failures。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2721）
+- #2725 【新增/支持】cpu-o3：新增LQ 与 SQ average occupancy stat。（subsys=cpu/o3; arch=-; churn=38；https://github.com/gem5/gem5/pull/2725）
+- #2729 【其他】base：make RefCountingPtr's operator bool() explicit。（subsys=base, cpu/o3; arch=-; churn=16；https://github.com/gem5/gem5/pull/2729）
+- #2685 【其他】mem-cache：register TagExtractor for SectorTag。（subsys=mem/cache; arch=-; churn=6；https://github.com/gem5/gem5/pull/2685）
+- #2666 【修复/纠错】base：修复coroutine 中的 memleak。（subsys=base; arch=-; churn=25；https://github.com/gem5/gem5/pull/2666）
+- #2727 【其他】Revert "mem-ruby：Break dependence in CHI protocol"。（subsys=mem; arch=-; churn=21；https://github.com/gem5/gem5/pull/2727）
+- #2732 【其他】mem-ruby：Expose ARM::CHI::Payload to python。（subsys=mem; arch=-; churn=2；https://github.com/gem5/gem5/pull/2732）
+- #2726 【修复/纠错】sim-se：修复syscall return 中的 DPRINTF format。（subsys=sim; arch=-; churn=2；https://github.com/gem5/gem5/pull/2726）
+- #2731 【其他】arch-x86：raise #DE on division overflow。（subsys=arch; arch=x86; churn=44；https://github.com/gem5/gem5/pull/2731）
+- #2694 【修复/纠错】base：修复GEM5_PUBLIC typo。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2694）
+- #2714 【新增/支持】arch-riscv：新增initrd option to FsWorkload。（subsys=arch; arch=riscv; churn=34；https://github.com/gem5/gem5/pull/2714）
+- #2736 【测试】tests：更新resource links to directly point to azure。（subsys=tests; arch=-; churn=10；https://github.com/gem5/gem5/pull/2736）
+- #2738 【其他】cpu-o3：Increase MaxWidth to 16。（subsys=cpu/o3; arch=-; churn=14；https://github.com/gem5/gem5/pull/2738）
+- #2659 【修复/纠错】arch-riscv：修复pinned 寄存器 in `vred*` instructions 中的 bugs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2659）
+- #2739 【其他】mem-ruby：修复to CHIGeneric imports 与 headers。（subsys=mem; arch=-; churn=9；https://github.com/gem5/gem5/pull/2739）
+- #2743 【CI】misc：[pre-commit.ci] pre-commit autoupdate。（subsys=.pre-commit-config.yaml; arch=-; churn=4；https://github.com/gem5/gem5/pull/2743）
+- #2675 【新增/支持】mem-ruby：增加对MESI Three Level protocol 中的 CLFLUSH type instructions的支持。（subsys=mem, configs; arch=-; churn=536；https://github.com/gem5/gem5/pull/2675）
+- #2630 【测试】mem-cache：新增单元测试 for MRU RP。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2630）
+- #2707 【其他】stdlib：重构CHI 中的 stdlib imports。（subsys=python; arch=-; churn=58；https://github.com/gem5/gem5/pull/2707）
+- #2740 【更新/依赖】mem-ruby：更新Ruby Network to use 新增-style stats。（subsys=mem; arch=-; churn=225；https://github.com/gem5/gem5/pull/2740）
+- #2698 【更新/依赖】mem-ruby：更新SLICC to generate only shared files。（subsys=mem; arch=-; churn=40；https://github.com/gem5/gem5/pull/2698）
+- #2737 【新增/支持】cpu-kvm：新增支持 for hosts with larger page size。（subsys=cpu; arch=-; churn=69；https://github.com/gem5/gem5/pull/2737）
+- #2705 【新增/支持】mem-ruby：新增missing import to SLICC controllers。（subsys=mem; arch=-; churn=8；https://github.com/gem5/gem5/pull/2705）
+- #2701 【新增/支持】arch-riscv：新增mask policy for `vslide1*`。（subsys=arch; arch=riscv; churn=22；https://github.com/gem5/gem5/pull/2701）
+- #2755 【修复/纠错】base：修复struct hash 中的编译错误。（subsys=base; arch=-; churn=8；https://github.com/gem5/gem5/pull/2755）
+- #2741 【新增/支持】arch-arm,sim-se：实现sigreturn for Arm64。（subsys=arch, sim; arch=arm; churn=805；https://github.com/gem5/gem5/pull/2741）
+- #2623 【其他】arch-arm：Decouple insts from generated decoder。（subsys=arch; arch=arm; churn=492；https://github.com/gem5/gem5/pull/2623）
+- #2759 【新增/支持】arch-riscv：Only show RVV message when we enable it。（subsys=arch; arch=riscv; churn=10；https://github.com/gem5/gem5/pull/2759）
+- #2761 【新增/支持】base-stats：新增m5_stats.Group to stats dump。（subsys=python; arch=-; churn=35；https://github.com/gem5/gem5/pull/2761）
+- #2764 【其他】misc：多 stats outputs with --stats-file。（subsys=python; arch=-; churn=13；https://github.com/gem5/gem5/pull/2764）
+- #2689 【其他】sim,mem-ruby：Define a CHI-TLM port。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2689）
+- #2766 【新增/支持】arch-vega：支持 MUBUF to LDS instructions。（subsys=arch; arch=amdgpu; churn=132；https://github.com/gem5/gem5/pull/2766）
+- #2768 【其他】mem-ruby：Do not wrap txn_ids。（subsys=mem; arch=-; churn=16；https://github.com/gem5/gem5/pull/2768）
+- #2765 【新增/支持】arch-arm：实现crypto instructions for FEAT_SVE/2。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2765）
+- #2752 【新增/支持】sim-se：实现sendfile syscall。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2752）
+- #2763 【其他】systemc：Only acquire 与 release if tlm_payload has mm。（subsys=src; arch=-; churn=28；https://github.com/gem5/gem5/pull/2763）
+- #2770 【CI】misc：[pre-commit.ci] pre-commit autoupdate。（subsys=.pre-commit-config.yaml; arch=-; churn=2；https://github.com/gem5/gem5/pull/2770）
+- #2769 【更新/依赖】dev-amdgpu：更新mmhub size。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2769）
+- #2652 【新增/支持】configs, cpu-o3：实现a 分布式 InstructionQueue。（subsys=cpu/o3, configs, arch; arch=x86; churn=757；https://github.com/gem5/gem5/pull/2652）
+- #2632 【新增/支持】arch-arm：增加对LRCPC instructions的支持。（subsys=arch, mem; arch=arm; churn=89；https://github.com/gem5/gem5/pull/2632）
+- #2788 【新增/支持】scons：启用gcc only 时的 option。（subsys=src; arch=-; churn=11；https://github.com/gem5/gem5/pull/2788）
+- #2716 【其他】python：Match walker caches to available MMU ports。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2716）
+- #2767 【修复/纠错】arch-riscv：修复generateDisassembly 中的 an issue。（subsys=arch; arch=riscv; churn=5；https://github.com/gem5/gem5/pull/2767）
+- #2301 【测试】tests：新增processor switching tests。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2301）
+- #2783 【修复/纠错】arch-riscv：修复old vd index for vslideup.vi。（subsys=arch; arch=riscv; churn=22；https://github.com/gem5/gem5/pull/2783）
+- #2779 【新增/支持】arch-x86：实现big movfp micro-op variant。（subsys=arch; arch=x86; churn=49；https://github.com/gem5/gem5/pull/2779）
+- #2777 【测试】arch-arm：修复switcheroo long tests for Arm。（subsys=arch; arch=arm; churn=7；https://github.com/gem5/gem5/pull/2777）
+- #2700 【其他】misc：Allow 非序列化 behaviour for MiscRegs。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2700）
+- #2780 【测试】mem-ruby, tests：Make the TlmGenerator a ClockedObject。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2780）
+- #2518 【其他】cpu-o3：Bundle some Fetch/IEW/Commit stats into a vector。（subsys=cpu/o3; arch=-; churn=367；https://github.com/gem5/gem5/pull/2518）
+- #2793 【修复/纠错】arch-arm：修复macOS build after FEAT_SVE2 PR。（subsys=arch; arch=arm; churn=4；https://github.com/gem5/gem5/pull/2793）
+- #2782 【其他】arch-arm：Do some OpClass retagging for some SIMD instructions。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2782）
+- #2724 【新增/支持】cpu：新增Arm Neoverse V2 config。（subsys=configs, tests; arch=-; churn=678；https://github.com/gem5/gem5/pull/2724）
+- #2792 【更新/依赖】misc：build(deps): bump werkzeug from 3.0.6 to 3.1.4 in /util/gem5-resources-manager。（subsys=util; arch=-; churn=2；https://github.com/gem5/gem5/pull/2792）
+- #2791 【更新/依赖】misc：更新mypy from 1.18.2 to 1.19.0。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/2791）
+- #2079 【测试】util：新增validator 与 tests for 完整 system 工作负载 (disk 与 kernels)。（subsys=util; arch=-; churn=1248；https://github.com/gem5/gem5/pull/2079）
+- #2796 【测试】tests：新增Mac OS .opt & .fast Compilations to CI Workflow。（subsys=.github; arch=-; churn=83；https://github.com/gem5/gem5/pull/2796）
+- #2790 【更新/依赖】misc：更新pre-commit from 4.3.0 to 4.5.0。（subsys=requirements.txt; arch=-; churn=2；https://github.com/gem5/gem5/pull/2790）
+- #2795 【修复/纠错】cpu：修复Branch Pred Simple BTB sets check。（subsys=cpu/pred; arch=-; churn=4；https://github.com/gem5/gem5/pull/2795）
+- #2797 【其他】arch-riscv：Stop leaking snoop state into A/D writes。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2797）
+- #2789 【新增/支持】base：新增destructors to stats objects。（subsys=base; arch=-; churn=11；https://github.com/gem5/gem5/pull/2789）
+- #2456 【修复/纠错】cpu,sim,switch：修复switchable CPUs 中的 doClone 导致的断言失败。（subsys=cpu, sim; arch=-; churn=68；https://github.com/gem5/gem5/pull/2456）
+- #2812 【更新/依赖】util：更新GPU build docker to ROCm 7.0。（subsys=util; arch=-; churn=6；https://github.com/gem5/gem5/pull/2812）
+- #2813 【其他】misc：重构devcontainer extensions 与 features。（subsys=.devcontainer; arch=-; churn=9；https://github.com/gem5/gem5/pull/2813）
+- #2802 【新增/支持】gpu-compute：新增missing MFMA timings。（subsys=gpu-compute; arch=-; churn=315；https://github.com/gem5/gem5/pull/2802）
+- #2772 【修复/纠错】arch-x86：修复DataTranslation::finish 导致的 assertion 中的 clflush。（subsys=arch; arch=x86; churn=3；https://github.com/gem5/gem5/pull/2772）
+- #2827 【新增/支持】misc：新增v25.1.0.0 details to RELEASE-NOTES.md。（subsys=RELEASE-NOTES.md; arch=-; churn=120；https://github.com/gem5/gem5/pull/2827）
+- #2833 【其他】misc：Split IQ from FDP in the RELEASE-STAGING.md。（subsys=RELEASE-NOTES.md; arch=-; churn=17；https://github.com/gem5/gem5/pull/2833）
+- #2834 【重构/整理】misc：重构Arm 改进。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2834）
+- #2840 【移除/弃用】misc：移除CPU/MMU repetition。（subsys=RELEASE-NOTES.md; arch=-; churn=12；https://github.com/gem5/gem5/pull/2840）
+- #2853 【新增/支持】misc：新增非序列化 MiscReg contribution to RELEASE-NOTES.md。（subsys=RELEASE-NOTES.md; arch=-; churn=5；https://github.com/gem5/gem5/pull/2853）
+- #2839 【其他】arch-arm：Define Armv90 与 Armv94 release objects。（subsys=arch; arch=arm; churn=22；https://github.com/gem5/gem5/pull/2839）
+- #2829 【测试】mem：修复backdoor test 中的 asan error。（subsys=mem; arch=-; churn=16；https://github.com/gem5/gem5/pull/2829）
+- #2852 【新增/支持】misc：新增a PyPort to write to physmem from python。（subsys=python, sim, tests; arch=-; churn=259；https://github.com/gem5/gem5/pull/2852）
+- #2826 【新增/支持】stdlib, resources：修复`list_resources` by calling a 新增 endpoint。（subsys=python; arch=-; churn=70；https://github.com/gem5/gem5/pull/2826）
+- #2846 【修复/纠错】mem-cache：修复fetch directed 预取器中的内存泄漏。（subsys=mem/cache/prefetch; arch=-; churn=4；https://github.com/gem5/gem5/pull/2846）
+- #2824 【修复/纠错】mem-cache：修复MSHR debug flag 导致的段错误。（subsys=mem/cache; arch=-; churn=7；https://github.com/gem5/gem5/pull/2824）
+- #2800 【修复/纠错】configs：修复Simulation.py with fast-forward 中的 tuple unpacking error。（subsys=configs; arch=-; churn=2；https://github.com/gem5/gem5/pull/2800）
+- #2836 【修复/纠错】stdlib：修复multiprocessing stat file name。（subsys=python; arch=-; churn=5；https://github.com/gem5/gem5/pull/2836）
+- #2803 【其他】misc：Release v25.1.0.0。（subsys=-; arch=-; churn=0；https://github.com/gem5/gem5/pull/2803）
+
