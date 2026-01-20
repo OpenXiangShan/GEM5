@@ -94,7 +94,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     s0History.resize(historyBits, 0);
     s0PHistory.resize(historyBits, 0);
     s0BwHistory.resize(historyBits, 0);
-    s0IHistory.resize(historyBits, 0);
     s0LHistory.resize(mgsc->getNumEntriesFirstLocalHistories());
     for (unsigned int i = 0; i < mgsc->getNumEntriesFirstLocalHistories(); ++i) {
         s0LHistory[i].resize(historyBits, 0);
@@ -1051,7 +1050,6 @@ DecoupledBPUWithBTB::createFetchStreamEntry()
     entry.history = s0History;
     entry.phistory = s0PHistory;
     entry.bwhistory = s0BwHistory;
-    entry.ihistory = s0IHistory;
     entry.lhistory = s0LHistory;
     entry.predTick = finalPred.predTick;
     entry.predSource = finalPred.predSource;
@@ -1217,7 +1215,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
         if(components[i]->needMoreHistories){
             components[i]->specUpdatePHist(s0PHistory, finalPred);
             components[i]->specUpdateBwHist(s0BwHistory, finalPred);
-            components[i]->specUpdateIHist(s0IHistory, finalPred);
+            components[i]->specUpdateIHist(finalPred);
             components[i]->specUpdateLHist(s0LHistory, finalPred);
         }
     }
@@ -1247,9 +1245,6 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchStream &entry)
 
     // Update path history
     pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
-
-    // Update imli history
-    histShiftIn(bw_shamt, bw_taken, s0IHistory);  //s0IHistory is not used
 
     // Update local history
     histShiftIn(shamt, taken,
@@ -1296,7 +1291,6 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     s0History = stream.history;
     s0PHistory = stream.phistory;
     s0BwHistory = stream.bwhistory;
-    s0IHistory = stream.ihistory;
     s0LHistory = stream.lhistory;
 
     // Get actual history shift information
@@ -1317,7 +1311,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
         if(components[i]->needMoreHistories){
             components[i]->recoverPHist(s0PHistory, stream, real_shamt, real_taken);
             components[i]->recoverBwHist(s0BwHistory, stream, real_bw_shamt, real_bw_taken);
-            components[i]->recoverIHist(s0IHistory, stream, real_bw_shamt, real_bw_taken); //s0IHistory is not used
+            components[i]->recoverIHist(stream, real_bw_shamt, real_bw_taken);
             components[i]->recoverLHist(s0LHistory, stream, real_shamt, real_taken);
         }
     }
@@ -1330,9 +1324,6 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
 
     // Update global backward history with actual outcome
     histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);
-
-    // Update imli history with actual outcome
-    histShiftIn(real_bw_shamt, real_bw_taken, s0IHistory);  //s0IHistory is not used
 
     // Update local history with actual outcome
     histShiftIn(real_shamt, real_taken,

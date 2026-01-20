@@ -28,6 +28,13 @@ GTest('tage.test',
     '../timed_base_pred.cc',
 )
 
+GTest('mgsc.test',
+    '../btb_mgsc.cc',
+    'btb_mgsc.test.cc',
+    '../folded_hist.cc',
+    '../timed_base_pred.cc',
+)
+
 GTest('folded_hist.test',
     'folded_hist.test.cc',
     '../folded_hist.cc',
@@ -69,6 +76,7 @@ GTest('decoupled_bpred.test',
 env.Append(UNITTESTS=['uras.test',
         'btb.test',
         'tage.test',
+        'mgsc.test',
         'folded_hist.test',
         'jump_ahead.test',
         'fetch_target_queue.test',
