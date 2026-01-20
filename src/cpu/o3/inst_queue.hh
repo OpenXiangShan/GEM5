@@ -207,6 +207,19 @@ class InstructionQueue
     /** Notify instruction queue that a previous block has been resolved */
     void resolveSTLFFailInst(const InstSeqNum &store_seq_num);
 
+    /**
+     * Replay-based MDP: record/resolve loads that need to wait for store
+     * address readiness. A load can only be replayed after reaching
+     * loadWhenToReplay (pipeDone).
+     */
+    void mdpAddrReplayRegister(const DynInstPtr &load_inst,
+                              const std::vector<InstSeqNum> &store_seq_nums);
+    void mdpAddrReplayRegisterStrict(const DynInstPtr &load_inst,
+                                    size_t required_store_completed_idx);
+    void mdpAddrReplayPipeDone(const DynInstPtr &load_inst);
+    void mdpAddrReplayUpdateStoreCompletedIdx(ThreadID tid,
+                                              size_t store_completed_idx);
+
     /** Gets a memory instruction that was blocked on the cache. NULL if none
      *  available.
      */
@@ -281,6 +294,8 @@ class InstructionQueue
     /** Does the actual squashing. */
     void doSquash(ThreadID tid);
 
+    void resolveMdpAddrReplayStoreAddr(const DynInstPtr &store_inst);
+
     /////////////////////////
     // Various pointers
     /////////////////////////
@@ -341,6 +356,27 @@ class InstructionQueue
     /** List of load instructions that can not forward from data unready store. */
     std::list<STLFFailLdInst> stlfFailLdInsts;
 
+    struct MdpAddrReplayLdInst
+    {
+      DynInstPtr inst; // load inst
+      bool pipeDone = false; // reached loadWhenToReplay
+
+      // Non-strict: wait for a specific set of stores to become addrReady.
+      std::unordered_set<InstSeqNum> storeSeqNums;
+
+      // Strict: wait for storeCompletedIdx to reach a threshold.
+      bool strict = false;
+      size_t requiredStoreCompletedIdx = 0;
+
+      MdpAddrReplayLdInst(const DynInstPtr &inst,
+                          const std::vector<InstSeqNum> &store_seq_nums);
+      MdpAddrReplayLdInst(const DynInstPtr &inst,
+                          size_t required_store_completed_idx);
+    };
+    std::list<MdpAddrReplayLdInst> mdpAddrReplayLdInsts;
+
+    size_t mdpStoreCompletedIdx[MaxThreads] = {};
+
     /** List of instructions that have been cache blocked. */
     std::list<DynInstPtr> blockedMemInsts;
 
@@ -386,6 +422,8 @@ class InstructionQueue
      *  @todo: Make there be a distinction between the delays within IEW.
      */
     Cycles commitToIEWDelay;
+
+    bool enableReplayBasedMDP;
 
     /** The sequence number of the squashed instruction. */
     InstSeqNum squashedSeqNum[MaxThreads];

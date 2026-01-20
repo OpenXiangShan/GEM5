@@ -2095,6 +2095,33 @@ IEW::stlfFailLdReplay(const DynInstPtr &inst, const InstSeqNum &store_seq_num)
     instQueue.stlfFailLdReplay(inst, store_seq_num);
 }
 
+void
+IEW::mdpAddrReplayRegister(const DynInstPtr &inst,
+                           const std::vector<InstSeqNum> &store_seq_nums)
+{
+    instQueue.mdpAddrReplayRegister(inst, store_seq_nums);
+}
+
+void
+IEW::mdpAddrReplayRegisterStrict(const DynInstPtr &inst,
+                                 size_t required_store_completed_idx)
+{
+    instQueue.mdpAddrReplayRegisterStrict(inst, required_store_completed_idx);
+}
+
+void
+IEW::mdpAddrReplayPipeDone(const DynInstPtr &inst)
+{
+    instQueue.mdpAddrReplayPipeDone(inst);
+}
+
+void
+IEW::mdpAddrReplayUpdateStoreCompletedIdx(ThreadID tid,
+                                          size_t store_completed_idx)
+{
+    instQueue.mdpAddrReplayUpdateStoreCompletedIdx(tid, store_completed_idx);
+}
+
 uint32_t
 IEW::getIQInsts()
 {

@@ -102,6 +102,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       dcacheSetBankBits(params.DcacheSetBits + 3),
       _enableLdMissReplay(params.EnableLdMissReplay),
       _enablePipeNukeCheck(params.EnablePipeNukeCheck),
+      _enableReplayBasedMDP(params.EnableReplayBasedMDP),
       _storeWbStage(params.StoreWbStage),
       waitingForStaleTranslation(false),
       staleTranslationWaitTxnId(0),
