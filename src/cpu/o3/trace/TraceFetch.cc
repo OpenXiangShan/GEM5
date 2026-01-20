@@ -370,21 +370,12 @@ TraceFetch::initTraceMode()
         DPRINTF(Fetch, "Trace mode: Priming decoupled BPU with start PC 0x%llx\n",
                 firstInstr.getPC());
 
-        if (fetch.isFTBPred() && fetch.dbpftb) {
-            fetch.dbpftb->resetPC(firstInstr.getPC());
-        } else if (fetch.isBTBPred() && fetch.dbpbtb) {
-            fetch.dbpbtb->resetPC(firstInstr.getPC());
-        } else if (fetch.isStreamPred() && fetch.dbsp) {
-            fetch.dbsp->resetPC(firstInstr.getPC());
-        }
+        assert(fetch.dbpbtb);
+        fetch.dbpbtb->resetPC(firstInstr.getPC());
 
         bool primed = false;
         bool inLoop = false;
-        if (fetch.isFTBPred() && fetch.dbpftb) {
-            primed = fetch.dbpftb->trySupplyFetchWithTarget(firstInstr.getPC(), inLoop);
-        } else if (fetch.isBTBPred() && fetch.dbpbtb) {
-            primed = fetch.dbpbtb->trySupplyFetchWithTarget(firstInstr.getPC(), inLoop);
-        }
+        primed = fetch.dbpbtb->trySupplyFetchWithTarget(firstInstr.getPC(), inLoop);
 
         if (primed) {
             fetch.usedUpFetchTargets = false;
@@ -557,12 +548,8 @@ TraceFetch::chooseWrongPathNopSize(ThreadID tid, Addr pc)
         Addr block_end = 0;
         Addr taken_pc = 0;
         bool taken = false;
-        if (fetch.isFTBPred()) {
-            const auto &ftq = fetch.dbpftb->getSupplyingFetchTarget();
-            block_end = ftq.endPC;
-            taken_pc = ftq.takenPC;
-            taken = ftq.taken;
-        } else if (fetch.isBTBPred()) {
+        if (fetch.isBTBPred()) {
+            assert(fetch.dbpbtb);
             const auto &ftq = fetch.dbpbtb->getSupplyingFetchTarget();
             block_end = ftq.endPC;
             taken_pc = ftq.takenPC;

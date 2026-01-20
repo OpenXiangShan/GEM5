@@ -57,8 +57,6 @@
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
-#include "cpu/pred/ftb/decoupled_bpred.hh"
-#include "cpu/pred/stream/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
 #include "enums/SMTFetchPolicy.hh"
@@ -626,10 +624,6 @@ class Fetch
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
 
-    branch_prediction::stream_pred::DecoupledStreamBPU *dbsp;
-
-    branch_prediction::ftb_pred::DecoupledBPUWithFTB *dbpftb;
-
     branch_prediction::btb_pred::DecoupledBPUWithBTB *dbpbtb;
 
     /** Maximum number of resolve entries buffered in fetch before training. */
@@ -976,10 +970,6 @@ class Fetch
     /** Decoupled frontend related */
     bool isDecoupledFrontend();
 
-    bool isStreamPred() const { return branchPred->isStream(); }
-
-    bool isFTBPred() const { return branchPred->isFTB(); }
-
     bool isBTBPred() const { return branchPred->isBTB(); }
 
     bool usedUpFetchTargets;
@@ -988,10 +978,6 @@ class Fetch
     std::vector<StallReason> stallReason;
 
     bool currentFetchTargetInLoop{false};
-
-    std::pair<Addr, std::vector<branch_prediction::ftb_pred::LoopBuffer::InstDesc>> currentFtqEntryInsts;
-
-    bool notTakenBranchEncountered{false};
 
     /** Check if we need a new FTQ entry for fetch */
     bool needNewFTQEntry(ThreadID tid);
