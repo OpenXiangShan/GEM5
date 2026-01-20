@@ -294,6 +294,14 @@ class IEW
 
     void stlfFailLdReplay(const DynInstPtr &inst, const InstSeqNum &store_seq_num);
 
+    void mdpAddrReplayRegister(const DynInstPtr &inst,
+                               const std::vector<InstSeqNum> &store_seq_nums);
+    void mdpAddrReplayRegisterStrict(const DynInstPtr &inst,
+                                     size_t required_store_completed_idx);
+    void mdpAddrReplayPipeDone(const DynInstPtr &inst);
+    void mdpAddrReplayUpdateStoreCompletedIdx(ThreadID tid,
+                                              size_t store_completed_idx);
+
     uint32_t getIQInsts();
 
     bool dispStall() {
