@@ -259,6 +259,9 @@ class MemDepUnit
     /** If true, loads do not stall in IQ on store-set prediction. */
     bool enableReplayBasedMDP = false;
 
+    /** If true, MDP uses StoreSet strict-wait flag (checkInstStrict). */
+    bool enableMDPStrictWait = false;
+
     /** The thread id of this memory dependence unit. */
     int id;
     struct MemDepUnitStats : public statistics::Group

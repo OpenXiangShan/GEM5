@@ -62,6 +62,7 @@ def setKmhV3IdealParams(args, system):
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
         cpu.DcacheSetDivNum = 2
+        cpu.EnableMDPStrictWait = False
 
         # lsq
         cpu.LQEntries = 128

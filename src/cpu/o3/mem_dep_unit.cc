@@ -101,6 +101,7 @@ MemDepUnit::init(const BaseO3CPUParams &params, ThreadID tid, CPU *cpu)
             params.LFSTSize, params.LFSTEntrySize);
 
     enableReplayBasedMDP = params.EnableReplayBasedMDP;
+    enableMDPStrictWait = params.EnableMDPStrictWait;
 
     std::string stats_group_name = csprintf("MemDepUnit__%i", tid);
     cpu->addStatGroup(stats_group_name.c_str(), &stats);
@@ -231,7 +232,9 @@ MemDepUnit::insert(const DynInstPtr &inst)
         if (inst->isLoad()) {
             store_set_pred = true;
             producing_stores = depPred.checkInst(inst->pcState().instAddr());
-            strict_wait = depPred.checkInstStrict(inst->pcState().instAddr());
+            if (enableMDPStrictWait) {
+                strict_wait = depPred.checkInstStrict(inst->pcState().instAddr());
+            }
         }
     }
 
