@@ -182,22 +182,6 @@ Fetch::isTraceEOF() const
     return traceFetch && traceFetch->isEOF();
 }
 
-bool
-Fetch::isDecoupledFrontend()
-{
-    if (!branchPred || !branchPred->isDecoupled() || !branchPred->isBTB()) {
-        return false;
-    }
-
-    // In trace mode, decoupled frontend behavior is opt-in to preserve the
-    // historical coupled-fetch behavior unless explicitly enabled.
-    if (isTraceMode() && traceFetch && !traceFetch->allowDecoupledFrontend()) {
-        return false;
-    }
-
-    return true;
-}
-
 std::string Fetch::name() const { return cpu->name() + ".fetch"; }
 
 void
@@ -476,15 +460,14 @@ Fetch::resetStage()
     wroteToTimeBuffer = false;
     _status = Inactive;
 
-    // Initialize usedUpFetchTargets for decoupled frontend (including trace mode)
-    usedUpFetchTargets = isDecoupledFrontend();
+    // Start in "need target" state after reset.
+    usedUpFetchTargets = true;
     if (traceFetch) {
         traceFetch->resetStage();
     }
 
-    DPRINTF(Fetch, "resetStage: set usedUpFetchTargets=%d for %s frontend (trace mode: %d)\n",
-            usedUpFetchTargets, isDecoupledFrontend() ? "decoupled" : "coupled",
-            (int)isTraceMode());
+    DPRINTF(Fetch, "resetStage: set usedUpFetchTargets=%d for decoupled frontend (trace mode: %d)\n",
+            usedUpFetchTargets, (int)isTraceMode());
 
     assert(dbpbtb);
     dbpbtb->resetPC(pc[0]->instAddr());
@@ -661,23 +644,20 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         usedUpFetchTargets = false;
     }
 
-    // Verify fetchBufferPC alignment with FTQ for decoupled frontend
-    if (isDecoupledFrontend() && fetchBuffer[tid].valid) {
-        if (dbpbtb->fetchTargetAvailable()) {
-            auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
-            if (fetchBuffer[tid].startPC != ftq_entry.startPC) {
-                panic("fetchBufferPC %#x should be aligned with FTQ startPC %#x",
-                      fetchBuffer[tid].startPC, ftq_entry.startPC);
-            }
-            DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
-                    tid, fetchBuffer[tid].startPC, ftq_entry.startPC);
+    // Verify fetchBufferPC alignment with FTQ
+    if (fetchBuffer[tid].valid && dbpbtb->fetchTargetAvailable()) {
+        auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
+        if (fetchBuffer[tid].startPC != ftq_entry.startPC) {
+            panic("fetchBufferPC %#x should be aligned with FTQ startPC %#x",
+                  fetchBuffer[tid].startPC, ftq_entry.startPC);
+        }
+        DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
+                tid, fetchBuffer[tid].startPC, ftq_entry.startPC);
 
-            // Stage 7: Validation & Instrumentation - fetchBuffer.startPC alignment
-            if (isTraceMode()) {
-                DPRINTF(TraceReader,
-                        "[TRACE-FTB] fetchBuffer.startPC aligned: 0x%x == FTQ.startPC 0x%x\n",
-                        fetchBuffer[tid].startPC, ftq_entry.startPC);
-            }
+        if (isTraceMode()) {
+            DPRINTF(TraceReader,
+                    "[TRACE-FTB] fetchBuffer.startPC aligned: 0x%x == FTQ.startPC 0x%x\n",
+                    fetchBuffer[tid].startPC, ftq_entry.startPC);
         }
     }
 
@@ -825,17 +805,15 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
 
     //  BP  =>  FSQ  =>  FTB  => Fetch
     ThreadID tid = inst->threadNumber;
-    if (isDecoupledFrontend()) {
-        assert(dbpbtb);
-        std::tie(predict_taken, usedUpFetchTargets) =
-            dbpbtb->decoupledPredict(
-                inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);
-        if (usedUpFetchTargets) {
-            DPRINTF(DecoupleBP, "Used up fetch targets.\n");
-            fetchBuffer[tid].valid = false;  // Invalidate fetch buffer when FTQ entry exhausted
-        }
-        inst->setLoopIteration(currentLoopIter);
+    assert(dbpbtb);
+    std::tie(predict_taken, usedUpFetchTargets) =
+        dbpbtb->decoupledPredict(
+            inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);
+    if (usedUpFetchTargets) {
+        DPRINTF(DecoupleBP, "Used up fetch targets.\n");
+        fetchBuffer[tid].valid = false;  // Invalidate fetch buffer when FTQ entry exhausted
     }
+    inst->setLoopIteration(currentLoopIter);
 
     // For decoupled frontend, the instruction type is predicted with BTB
     if (!predict_taken) {
@@ -1150,12 +1128,12 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // some opportunities to handle interrupts may be missed.
     delayedCommit[tid] = true;
 
-    // Set usedUpFetchTargets only for decoupled frontend after squash
-    usedUpFetchTargets = isDecoupledFrontend();
+    // Force a new FTQ entry after squash.
+    usedUpFetchTargets = true;
     fetchBuffer[tid].valid = false;  // clear fetch buffer valid
 
-    DPRINTF(Fetch, "[tid:%i] Squash: set usedUpFetchTargets=%d for %s frontend\n",
-            tid, usedUpFetchTargets, isDecoupledFrontend() ? "decoupled" : "coupled");
+    DPRINTF(Fetch, "[tid:%i] Squash: set usedUpFetchTargets=%d for decoupled frontend\n",
+            tid, usedUpFetchTargets);
 
     if (traceFetch) {
         traceFetch->handleTraceSquash(tid, new_pc, squashInst, seqNum);
@@ -1741,14 +1719,12 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 
     DPRINTF(Fetch, "Is nop: %i, is move: %i\n", instruction->isNop(),
             instruction->isMov());
-    if (isDecoupledFrontend()) {
-        assert(dbpbtb);
-        DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
-                instruction->seqNum, dbpbtb->getSupplyingStreamId(),
-                dbpbtb->getSupplyingTargetId());
-        instruction->setFsqId(dbpbtb->getSupplyingStreamId());
-        instruction->setFtqId(dbpbtb->getSupplyingTargetId());
-    }
+    assert(dbpbtb);
+    DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
+            instruction->seqNum, dbpbtb->getSupplyingStreamId(),
+            dbpbtb->getSupplyingTargetId());
+    instruction->setFsqId(dbpbtb->getSupplyingStreamId());
+    instruction->setFtqId(dbpbtb->getSupplyingTargetId());
 
 #if TRACING_ON
     if (trace) {
@@ -2033,7 +2009,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     // For decoupled frontend (including trace mode), check FTQ availability
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
+           !predictedBranch && !usedUpFetchTargets && !waitForVsetvl) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
@@ -2292,7 +2268,7 @@ Fetch::needNewFTQEntry(ThreadID tid)
     bool need_new = usedUpFetchTargets || !fetchBuffer[tid].valid;
 
     // Assert consistency: if usedUpFetchTargets=true, fetchBuffer should be invalid
-    if (isDecoupledFrontend() && usedUpFetchTargets) {
+    if (usedUpFetchTargets) {
         assert(!fetchBuffer[tid].valid &&
                "fetchBuffer should be invalid when FTQ entry is exhausted");
     }
@@ -2302,7 +2278,7 @@ Fetch::needNewFTQEntry(ThreadID tid)
             tid, usedUpFetchTargets, fetchBuffer[tid].valid, need_new);
 
     // Stage 7: Validation & Instrumentation - FTQ entry issuing tracking
-    if (need_new && isTraceMode() && isDecoupledFrontend()) {
+    if (need_new && isTraceMode()) {
         DPRINTF(TraceReader, "[TRACE-FTB] FTQ entry will be issued: tid=%d, "
                 "usedUpFetchTargets=%d, fetchBuffer.valid=%d\n",
                 tid, usedUpFetchTargets, fetchBuffer[tid].valid);

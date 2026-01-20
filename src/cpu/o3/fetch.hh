@@ -530,9 +530,6 @@ class Fetch
     /** Profile the reasons of fetch stall. */
     void profileStall(ThreadID tid);
 
-
-    bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
-
     /** Set the reasons of all fetch stalls. */
     void setAllFetchStalls(StallReason stall);
 
@@ -967,8 +964,7 @@ class Fetch
     /** Event used to delay fault generation of translation faults */
     FinishTranslationEvent finishTranslationEvent;
 
-    /** Decoupled frontend related */
-    bool isDecoupledFrontend();
+    // NOTE: This Fetch implementation is decoupled+BTB-only; no coupled mode.
 
     bool isBTBPred() const { return branchPred->isBTB(); }
 
