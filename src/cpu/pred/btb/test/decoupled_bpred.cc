@@ -230,7 +230,14 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
 bool
 DecoupledBPUWithBTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_target_in_loop)
 {
-    return fetchTargetQueue.trySupplyFetchWithTarget(fetch_demand_pc, fetch_target_in_loop);
+    // The BTB FTQ is head-driven FIFO in phase4; this wrapper is kept for unit
+    // tests that still expect a "supply" step.
+    fetch_target_in_loop = false;
+    if (!fetchTargetQueue.fetchTargetAvailable()) {
+        return false;
+    }
+    assert(fetch_demand_pc < fetchTargetQueue.getTarget().endPC);
+    return true;
 }
 
 /**

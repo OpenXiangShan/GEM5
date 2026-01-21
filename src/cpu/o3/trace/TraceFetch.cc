@@ -372,21 +372,7 @@ TraceFetch::initTraceMode()
 
         assert(fetch.dbpbtb);
         fetch.dbpbtb->resetPC(firstInstr.getPC());
-
-                bool primed = false;
-                bool inLoop = false;
-                primed = fetch.dbpbtb->trySupplyFetchWithTarget(firstInstr.getPC(), inLoop);
-
-                if (primed) {
-                    fetch.needFtqSupply = false;
-                    fetch.exhaustedFtqEntry = false;
-                    fetch.currentFetchTargetInLoop = inLoop;
-                    DPRINTF(Override,
-                            "[TRACE-FTB] FTQ primed: needFtqSupply=false exhaustedFtqEntry=false\n");
-                    DPRINTF(Fetch, "Trace-FTB prime: FSQ primed with PC 0x%llx\n",
-                            firstInstr.getPC());
-                }
-            }
+    }
 
     return true;
 }

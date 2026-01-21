@@ -392,8 +392,6 @@ class DecoupledBPUWithBTB : public BPredUnit
      */
     void tick();
 
-    bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetchTargetInLoop);
-
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {
         panic("Squashing decoupled BP with tightly coupled API\n");

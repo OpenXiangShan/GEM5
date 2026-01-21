@@ -968,24 +968,12 @@ class Fetch
 
     bool isBTBPred() const { return branchPred->isBTB(); }
 
-    // FTQ gating state (split from the old usedUpFetchTargets).
-    //
-    // - needFtqSupply: no FTQ head is currently supplied/available for fetch.
-    // - exhaustedFtqEntry: fetch consumed the current FTQ entry; we must
-    //   advance to the next entry (and usually re-fill fetchBuffer).
-    bool needFtqSupply;
-    bool exhaustedFtqEntry;
-
-    bool ftqEmpty() const { return needFtqSupply || exhaustedFtqEntry; }
-
-    // Unified FTQ supply/re-supply helper. Must not call dbpbtb->tick(); the
-    // caller decides whether a predictor tick should occur this cycle.
-    bool trySupplyFtq(ThreadID tid, Addr demand_pc);
+    // Decoupled+BTB-only: fetch consumes the FTQ head directly.
+    // If the FTQ is empty, fetch stalls (no extra "supply" state machine).
+    bool ftqEmpty() const { return !dbpbtb || !dbpbtb->fetchTargetAvailable(); }
 
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;
-
-    bool currentFetchTargetInLoop{false};
 
     /** Check if we need a new FTQ entry for fetch */
     bool needNewFTQEntry(ThreadID tid);

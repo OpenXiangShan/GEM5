@@ -1,6 +1,9 @@
 #ifndef __CPU_PRED_BTB_FETCH_TARGET_QUEUE_HH__
 #define __CPU_PRED_BTB_FETCH_TARGET_QUEUE_HH__
 
+#include <deque>
+#include <utility>
+
 #include "cpu/pred/btb/stream_struct.hh"
 
 namespace gem5
@@ -27,20 +30,6 @@ struct FetchTargetEnqState
 };
 
 /**
- * @brief State for reading fetch targets
- *
- * This structure maintains state information when reading entries
- * from the Fetch Target Queue (FTQ).
- */
-struct FetchTargetReadState
-{
-    bool valid;          // Whether this state contains valid data
-    FetchTargetId targetId; // ID of the target being read, if valid, equals to fetchDemandTargetId
-    FtqEntry *entry;     // Pointer to the entry being read
-    FetchTargetReadState() : valid(false), targetId(0), entry(nullptr) {}
-};
-
-/**
  * @brief Fetch Target Queue
  *
  * The FTQ holds fetch targets which represent decoded instruction streams.
@@ -59,20 +48,12 @@ class FetchTargetQueue
     // 1. enqueue from fetch stream buffer
     // 2. supply fetch with fetch target head
     // 3. redirect fetch target head after squash
-    using FTQ = std::map<FetchTargetId, FtqEntry>; // inorder map: id -> entry
-    using FTQIt = FTQ::iterator;
+    using FTQEntry = std::pair<FetchTargetId, FtqEntry>;
+    using FTQ = std::deque<FTQEntry>; // FIFO: (ftqId, entry)
 
     // use fetchTargetEnqState.nextEnqTargetId to enqueue new entries
-    // use fetchDemandTargetId = supplyFetchTargetState.targetId to supply
     FTQ ftq;              // The queue storage structure
     unsigned ftqSize;     // Maximum number of entries in the queue
-    FetchTargetId ftqId{0};  // Queue ID pointer for internal tracking
-
-    // State for supplying fetch targets to the fetch unit
-    FetchTargetReadState supplyFetchTargetState;
-
-    // The target ID that fetch is currently demanding
-    FetchTargetId fetchDemandTargetId{0};
 
     // State for enqueueing new fetch targets
     FetchTargetEnqState fetchTargetEnqState;
@@ -127,11 +108,9 @@ class FetchTargetQueue
      */
     FetchTargetId getSupplyingTargetId()
     {
-        if (supplyFetchTargetState.valid) {
-            return supplyFetchTargetState.targetId;
-        } else {
-            return fetchDemandTargetId;
-        }
+        if (!ftq.empty())
+            return ftq.front().first;
+        return fetchTargetEnqState.nextEnqTargetId;
     }
 
     /**
@@ -141,13 +120,9 @@ class FetchTargetQueue
      */
     FetchStreamId getSupplyingStreamId()
     {
-        if (supplyFetchTargetState.valid) {
-            return supplyFetchTargetState.entry->fsqID;
-        } else if (!ftq.empty()) {
-            return ftq.begin()->second.fsqID;
-        } else {
-            return fetchTargetEnqState.streamId;
-        }
+        if (!ftq.empty())
+            return ftq.front().second.fsqID;
+        return fetchTargetEnqState.streamId;
     }
 
     /**
@@ -157,28 +132,12 @@ class FetchTargetQueue
      */
     void finishCurrentFetchTarget();
 
-    /**
-     * @brief Try to supply fetch with a target matching the demand PC
-     *
-     * @param fetch_demand_pc The PC that fetch is demanding
-     * @param in_loop Output parameter indicating if we're in a loop
-     * @return true if a target was found and supplied
-     */
-    bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop);
-
 
     bool empty() const { return ftq.empty(); }
 
     unsigned size() const { return ftq.size(); }
 
     bool full() const { return ftq.size() >= ftqSize; }
-
-    /**
-     * @brief Get the iterator for the currently demanded target
-     *
-     * @return Pair containing a boolean (true if found) and the iterator
-     */
-    std::pair<bool, FTQIt> getDemandTargetIt();
 
     /**
      * @brief Add a new entry to the queue
@@ -199,18 +158,11 @@ class FetchTargetQueue
     void setName(const std::string &parent) { _name = parent + ".ftq"; }
 
     /**
-     * @brief Check if the supply fetch target state is valid
-     *
-     * @return true if the state is valid
-     */
-    bool validSupplyFetchTargetState() const;
-
-    /**
      * @brief Get the last entry inserted into the queue
      *
      * @return Reference to the most recently inserted entry
      */
-    FtqEntry &getLastInsertedEntry() { return ftq.rbegin()->second; }
+    FtqEntry &getLastInsertedEntry() { return ftq.back().second; }
 
     void resetPC(Addr new_pc);
 };

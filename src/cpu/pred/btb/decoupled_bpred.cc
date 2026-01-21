@@ -341,12 +341,6 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     return first_hit_stage;
 }
 
-bool
-DecoupledBPUWithBTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_target_in_loop)
-{
-    return fetchTargetQueue.trySupplyFetchWithTarget(fetch_demand_pc, fetch_target_in_loop);
-}
-
 /**
  * @brief Interface between fetch stage and branch predictor for instruction prediction
  *
