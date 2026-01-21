@@ -137,25 +137,7 @@ FetchTargetQueue::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop)
         auto it = ftq.find(fetchDemandTargetId);
         if (it != ftq.end()) {
             // Special case: fetch PC is already past the end of this target
-            if (M5_UNLIKELY(fetch_demand_pc >= it->second.endPC)) {
-                // In this case, we should just finish the current target
-                // and supply the fetch with the next one
-                DPRINTF(DecoupleBP,
-                        "Skip ftq entry %lu: [%#lx, %#lx),", it->first,
-                        it->second.startPC, it->second.endPC);
-
-                ++fetchDemandTargetId;  // Move to next target
-                it = ftq.erase(it);  // Remove current target
-                if (it == ftq.end()) {
-                    // No next target available
-                    in_loop = false;
-                    return false;
-                }
-                DPRINTFR(DecoupleBP,
-                        " use %lu: [%#lx, %#lx) instead. because demand pc "
-                        "past the first entry.\n",
-                        it->first, it->second.startPC, it->second.endPC);
-            }
+            assert("fetch_demand_pc < it->second.endPC" && fetch_demand_pc < it->second.endPC);
 
             // Update supply state with found target
             DPRINTF(DecoupleBP,
