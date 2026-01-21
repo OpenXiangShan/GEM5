@@ -57,6 +57,7 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_berti = False
             prefetcher.enable_sstride = True
             prefetcher.enable_activepage = False
+            prefetcher.enable_pht = True
             prefetcher.enable_xsstream = True
 
     if cache_level == 'l2':
@@ -65,7 +66,7 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_bop = True
             if options.kmh_align:
                 assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
-                prefetcher.enable_cmc = False
+                prefetcher.enable_cmc = True
                 prefetcher.enable_bop = True
                 prefetcher.enable_cdp = False
                 prefetcher.enable_despacito_stream = False
@@ -83,7 +84,7 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_bop = True
             if options.kmh_align:
                 assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
-                prefetcher.enable_cmc = False
+                prefetcher.enable_cmc = True
                 prefetcher.enable_bop = True
                 prefetcher.enable_cdp = False
                 prefetcher.enable_despacito_stream = False
