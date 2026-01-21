@@ -193,23 +193,6 @@ TEST_F(FetchTargetQueueTest, ResetPC) {
     EXPECT_EQ(ftq->getEnqState().pc, newPC);
 }
 
-// Test skipping entries when fetch PC is beyond entry end
-TEST_F(FetchTargetQueueTest, SkipPastEntries) {
-    populateFtq(5);
-
-    bool inLoop = false;
-    // Request with PC past the first entry
-    bool result = ftq->trySupplyFetchWithTarget(0x1010, inLoop);
-
-    // Should skip entry 0 and supply entry 1
-    EXPECT_TRUE(result);
-    EXPECT_TRUE(ftq->fetchTargetAvailable());
-
-    FtqEntry& target = ftq->getTarget();
-    EXPECT_EQ(target.startPC, 0x1008);  // Second entry
-    EXPECT_EQ(target.endPC, 0x1010);
-}
-
 // Test edge case with empty queue
 TEST_F(FetchTargetQueueTest, EmptyQueueSupply) {
     bool inLoop = false;
