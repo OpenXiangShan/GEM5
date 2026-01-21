@@ -968,6 +968,10 @@ class Fetch
 
     bool isBTBPred() const { return branchPred->isBTB(); }
 
+    // For the decoupled+BTB frontend, fetch can only run when a valid FTQ head
+    // is supplied. This flag is set when no FTQ head is available (or the
+    // current FTQ entry is exhausted) and cleared only by the per-tick
+    // supply path (Fetch::updateBranchPredictors()).
     bool usedUpFetchTargets;
 
     /** fetch stall reasons */

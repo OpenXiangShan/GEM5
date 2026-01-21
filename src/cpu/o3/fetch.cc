@@ -636,14 +636,6 @@ Fetch::processCacheCompletion(PacketPtr pkt)
                 "[TRACE] Icache completion: keep timing only; no trace bytes injection\n");
     }
 
-    // Reset usedUpFetchTargets flag when we get new fetch data
-    // This allows fetch to continue with the current FTQ entry
-    if (usedUpFetchTargets) {
-        DPRINTF(Fetch, "[tid:%i] Resetting usedUpFetchTargets after cache completion, "
-                "fetchBufferPC=%#x\n", tid, fetchBuffer[tid].startPC);
-        usedUpFetchTargets = false;
-    }
-
     // Verify fetchBufferPC alignment with FTQ
     if (fetchBuffer[tid].valid && dbpbtb->fetchTargetAvailable()) {
         auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
@@ -1241,11 +1233,14 @@ Fetch::tick()
     // Initialize state for this tick cycle
     bool status_change = initializeTickState();
 
+    // Simple decoupled+BTB ordering:
+    // - first consume incoming squashes/redirects (in initializeTickState())
+    // - then advance predictor pipeline + try to supply an FTQ head
+    // - then run fetch using the supplied FTQ entry (if any)
+    updateBranchPredictors();
+
     // Perform fetch operations and instruction delivery
     fetchAndProcessInstructions(status_change);
-
-    // Handle branch prediction updates
-    updateBranchPredictors();
 }
 
 bool
@@ -1441,11 +1436,10 @@ Fetch::updateBranchPredictors()
 {
     assert(dbpbtb);
 
-    // Use fetchBuffer.startPC when available; otherwise fall back to architected PC.
-    Addr bp_pc = fetchBuffer[0].valid ? fetchBuffer[0].startPC : pc[0]->instAddr();
-    DPRINTF(Fetch, "Updating branch predictors with PC 0x%lx\n", bp_pc);
-    DPRINTF(Fetch, "pc[0]->instAddr %#lx, fetchBuffer[0].startPC %#lx\n",
-            pc[0]->instAddr(), fetchBuffer[0].startPC);
+    // Demand PC should reflect the current architectural fetch point.
+    // Using fetchBuffer.startPC here can hide "demand PC already past endPC"
+    // cases inside FTQ supply and create hard-to-debug interactions.
+    Addr bp_pc = pc[0]->instAddr();
 
     dbpbtb->tick();
     bool supplied = dbpbtb->trySupplyFetchWithTarget(bp_pc, currentFetchTargetInLoop);
@@ -2267,12 +2261,6 @@ Fetch::needNewFTQEntry(ThreadID tid)
     // 2. Invalid fetch buffer (cache miss or initial state)
     bool need_new = usedUpFetchTargets || !fetchBuffer[tid].valid;
 
-    // Assert consistency: if usedUpFetchTargets=true, fetchBuffer should be invalid
-    if (usedUpFetchTargets) {
-        assert(!fetchBuffer[tid].valid &&
-               "fetchBuffer should be invalid when FTQ entry is exhausted");
-    }
-
     DPRINTF(Fetch, "[tid:%i] needNewFTQEntry: usedUpFetchTargets=%d, "
             "fetchBufferValid=%d, result=%d\n",
             tid, usedUpFetchTargets, fetchBuffer[tid].valid, need_new);
@@ -2292,30 +2280,20 @@ Fetch::getNextFTQStartPC(ThreadID tid)
 {
     assert(dbpbtb);
 
-    // When we need a new FTQ entry, try to supply fetch with the next target immediately
+    // Fast-path: when we exhaust an FTQ entry during this cycle, allow a
+    // lightweight re-supply (without an extra predictor tick) so we can issue
+    // the next I-cache request in the same cycle. This avoids injecting a
+    // bubble per FTQ entry boundary.
     if (usedUpFetchTargets) {
-        DPRINTF(Fetch, "[tid:%i] usedUpFetchTargets=true, trying to get next FTQ entry\n", tid);
-
         bool in_loop = false;
-        bool got_target =
-            dbpbtb->trySupplyFetchWithTarget(pc[tid]->instAddr(), in_loop);
-
-        if (got_target) {
-            DPRINTF(Fetch, "[tid:%i] Successfully got next FTQ entry, resetting usedUpFetchTargets\n", tid);
-            usedUpFetchTargets = false;  // Reset flag since we got a new FTQ entry
-            // Note: fetchBufferValid[tid] will be set to true later when cache line is fetched
-
-            // Stage 7: Validation & Instrumentation - FSQ state after supply
-            if (isTraceMode()) {
-                DPRINTF(TraceReader,
-                        "[TRACE-FTB] FSQ supplied successfully: usedUpFetchTargets=%d, "
-                        "fetchBuffer.valid=%d\n", usedUpFetchTargets, fetchBuffer[tid].valid);
-            }
-        } else {
-            DPRINTF(Fetch, "[tid:%i] Failed to get next FTQ entry, should stall fetch until FTQ available\n", tid);
-            // Don't fallback to old address, return 0 to indicate stall needed
-            return 0;  // Signal that fetch should stall
+        if (!dbpbtb->trySupplyFetchWithTarget(pc[tid]->instAddr(), in_loop)) {
+            return 0;
         }
+        usedUpFetchTargets = false;
+    }
+
+    if (!dbpbtb->fetchTargetAvailable()) {
+        return 0;
     }
 
     // Now get the current supplying FTQ entry
