@@ -147,7 +147,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
     // Start in "need target" state; once BTB supplies an FTQ entry and icache
     // fills fetchBuffer, this will be cleared.
-    usedUpFetchTargets = true;
+    needFtqSupply = true;
+    exhaustedFtqEntry = false;
 
     assert(params.decoder.size());
     for (ThreadID tid = 0; tid < numThreads; tid++) {
@@ -461,13 +462,15 @@ Fetch::resetStage()
     _status = Inactive;
 
     // Start in "need target" state after reset.
-    usedUpFetchTargets = true;
+    needFtqSupply = true;
+    exhaustedFtqEntry = false;
     if (traceFetch) {
         traceFetch->resetStage();
     }
 
-    DPRINTF(Fetch, "resetStage: set usedUpFetchTargets=%d for decoupled frontend (trace mode: %d)\n",
-            usedUpFetchTargets, (int)isTraceMode());
+    DPRINTF(Fetch,
+            "resetStage: set needFtqSupply=%d exhaustedFtqEntry=%d (trace mode: %d)\n",
+            needFtqSupply, exhaustedFtqEntry, (int)isTraceMode());
 
     assert(dbpbtb);
     dbpbtb->resetPC(pc[0]->instAddr());
@@ -798,10 +801,13 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     //  BP  =>  FSQ  =>  FTB  => Fetch
     ThreadID tid = inst->threadNumber;
     assert(dbpbtb);
-    std::tie(predict_taken, usedUpFetchTargets) =
+    bool run_out = false;
+    std::tie(predict_taken, run_out) =
         dbpbtb->decoupledPredict(
             inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);
-    if (usedUpFetchTargets) {
+    exhaustedFtqEntry = run_out;
+    if (run_out) {
+        needFtqSupply = true;
         DPRINTF(DecoupleBP, "Used up fetch targets.\n");
         fetchBuffer[tid].valid = false;  // Invalidate fetch buffer when FTQ entry exhausted
     }
@@ -1121,11 +1127,13 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     delayedCommit[tid] = true;
 
     // Force a new FTQ entry after squash.
-    usedUpFetchTargets = true;
+    needFtqSupply = true;
+    exhaustedFtqEntry = false;
     fetchBuffer[tid].valid = false;  // clear fetch buffer valid
 
-    DPRINTF(Fetch, "[tid:%i] Squash: set usedUpFetchTargets=%d for decoupled frontend\n",
-            tid, usedUpFetchTargets);
+    DPRINTF(Fetch,
+            "[tid:%i] Squash: set needFtqSupply=%d exhaustedFtqEntry=%d\n",
+            tid, needFtqSupply, exhaustedFtqEntry);
 
     if (traceFetch) {
         traceFetch->handleTraceSquash(tid, new_pc, squashInst, seqNum);
@@ -1431,6 +1439,22 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
     }
 }
 
+bool
+Fetch::trySupplyFtq(ThreadID tid, Addr demand_pc)
+{
+    static_cast<void>(tid);
+    assert(dbpbtb);
+
+    // trySupplyFetchWithTarget() only updates its out-param in some paths; pass
+    // our persistent variable directly to avoid clobbering it with a default.
+    bool supplied = dbpbtb->trySupplyFetchWithTarget(demand_pc, currentFetchTargetInLoop);
+    needFtqSupply = !supplied;
+    if (supplied) {
+        exhaustedFtqEntry = false;
+    }
+    return supplied;
+}
+
 void
 Fetch::updateBranchPredictors()
 {
@@ -1442,11 +1466,12 @@ Fetch::updateBranchPredictors()
     Addr bp_pc = pc[0]->instAddr();
 
     dbpbtb->tick();
-    bool supplied = dbpbtb->trySupplyFetchWithTarget(bp_pc, currentFetchTargetInLoop);
-    usedUpFetchTargets = !supplied;
+    bool supplied = trySupplyFtq(0, bp_pc);
     if (isTraceMode()) {
-        DPRINTF(Fetch, "Trace mode: %s FTQ for PC 0x%lx, usedUpFetchTargets=%d\n",
-                supplied ? "supplied" : "failed to supply", bp_pc, usedUpFetchTargets);
+        DPRINTF(Fetch,
+                "Trace mode: %s FTQ for PC 0x%lx, needFtqSupply=%d exhaustedFtqEntry=%d\n",
+                supplied ? "supplied" : "failed to supply", bp_pc,
+                needFtqSupply, exhaustedFtqEntry);
     }
 }
 
@@ -2003,7 +2028,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     // For decoupled frontend (including trace mode), check FTQ availability
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !usedUpFetchTargets && !waitForVsetvl) {
+           !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
@@ -2257,19 +2282,21 @@ Fetch::needNewFTQEntry(ThreadID tid)
     // to maintain proper fetch buffer management and allow BP training
 
     // Check if we need a new FTQ entry based on:
-    // 1. Used up current FTQ targets (decoupled frontend)
-    // 2. Invalid fetch buffer (cache miss or initial state)
-    bool need_new = usedUpFetchTargets || !fetchBuffer[tid].valid;
+    // 1. FTQ gating blocks progress (no supplied target / entry exhausted), or
+    // 2. Invalid fetch buffer (cache miss or initial state).
+    bool need_new = ftqEmpty() || !fetchBuffer[tid].valid;
 
-    DPRINTF(Fetch, "[tid:%i] needNewFTQEntry: usedUpFetchTargets=%d, "
-            "fetchBufferValid=%d, result=%d\n",
-            tid, usedUpFetchTargets, fetchBuffer[tid].valid, need_new);
+    DPRINTF(Fetch,
+            "[tid:%i] needNewFTQEntry: needFtqSupply=%d exhaustedFtqEntry=%d "
+            "fetchBufferValid=%d result=%d\n",
+            tid, needFtqSupply, exhaustedFtqEntry, fetchBuffer[tid].valid,
+            need_new);
 
     // Stage 7: Validation & Instrumentation - FTQ entry issuing tracking
     if (need_new && isTraceMode()) {
         DPRINTF(TraceReader, "[TRACE-FTB] FTQ entry will be issued: tid=%d, "
-                "usedUpFetchTargets=%d, fetchBuffer.valid=%d\n",
-                tid, usedUpFetchTargets, fetchBuffer[tid].valid);
+                "needFtqSupply=%d exhaustedFtqEntry=%d fetchBuffer.valid=%d\n",
+                tid, needFtqSupply, exhaustedFtqEntry, fetchBuffer[tid].valid);
     }
 
     return need_new;
@@ -2284,12 +2311,10 @@ Fetch::getNextFTQStartPC(ThreadID tid)
     // lightweight re-supply (without an extra predictor tick) so we can issue
     // the next I-cache request in the same cycle. This avoids injecting a
     // bubble per FTQ entry boundary.
-    if (usedUpFetchTargets) {
-        bool in_loop = false;
-        if (!dbpbtb->trySupplyFetchWithTarget(pc[tid]->instAddr(), in_loop)) {
+    if (needFtqSupply || exhaustedFtqEntry) {
+        if (!trySupplyFtq(tid, pc[tid]->instAddr())) {
             return 0;
         }
-        usedUpFetchTargets = false;
     }
 
     if (!dbpbtb->fetchTargetAvailable()) {

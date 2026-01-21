@@ -968,11 +968,19 @@ class Fetch
 
     bool isBTBPred() const { return branchPred->isBTB(); }
 
-    // For the decoupled+BTB frontend, fetch can only run when a valid FTQ head
-    // is supplied. This flag is set when no FTQ head is available (or the
-    // current FTQ entry is exhausted) and cleared only by the per-tick
-    // supply path (Fetch::updateBranchPredictors()).
-    bool usedUpFetchTargets;
+    // FTQ gating state (split from the old usedUpFetchTargets).
+    //
+    // - needFtqSupply: no FTQ head is currently supplied/available for fetch.
+    // - exhaustedFtqEntry: fetch consumed the current FTQ entry; we must
+    //   advance to the next entry (and usually re-fill fetchBuffer).
+    bool needFtqSupply;
+    bool exhaustedFtqEntry;
+
+    bool ftqEmpty() const { return needFtqSupply || exhaustedFtqEntry; }
+
+    // Unified FTQ supply/re-supply helper. Must not call dbpbtb->tick(); the
+    // caller decides whether a predictor tick should occur this cycle.
+    bool trySupplyFtq(ThreadID tid, Addr demand_pc);
 
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;
