@@ -10,7 +10,6 @@
 #include "debug/BTB.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPVerbose.hh"
-#include "debug/JumpAheadPredictor.hh"
 #include "debug/Override.hh"
 #include "debug/Profiling.hh"
 #include "sim/core.hh"
@@ -24,9 +23,6 @@ namespace btb_pred
 
 DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     : BPredUnit(p),
-      enableLoopBuffer(p.enableLoopBuffer),
-      enableLoopPredictor(p.enableLoopPredictor),
-      enableJumpAheadPredictor(p.enableJumpAheadPredictor),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
       predictWidth(p.predictWidth),
@@ -86,8 +82,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     predsOfEachStage.resize(numStages);
     for (unsigned i = 0; i < numStages; i++) {
         predsOfEachStage[i].predSource = i;
-        clearPreds();
     }
+
+    clearPreds();
 
     s0PC = 0x80000000;
 
@@ -104,14 +101,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     squashing = true;
     bpuState = BpuState::IDLE;
 
-    lp = LoopPredictor(16, 4, enableLoopDB);
-    lb.setLp(&lp);
-
-    jap = JumpAheadPredictor(16, 4);
-
-    if (!enableLoopPredictor && enableLoopBuffer) {
-        fatal("loop buffer cannot be enabled without loop predictor\n");
-    }
     commitFsqEntryHasInstsVector.resize(maxInstsNum+1, 0);
     lastPhaseFsqEntryNumCommittedInstDist.resize(maxInstsNum+1, 0);
     commitFsqEntryFetchedInstsVector.resize(maxInstsNum+1, 0);
@@ -175,7 +164,7 @@ DecoupledBPUWithBTB::tick()
     // 3. PREDICTION_OUTSTANDING
     if (validateFSQEnqueue()) {
         // Create new FSQ entry with the current prediction
-        processNewPrediction(true);
+        processNewPrediction();
 
         DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
         bpuState = BpuState::IDLE;
@@ -1095,7 +1084,7 @@ DecoupledBPUWithBTB::fillAheadPipeline(FetchStream &entry)
 
 // this function enqueues fsq and update s0PC and s0History
 void
-DecoupledBPUWithBTB::processNewPrediction(bool create_new_stream)
+DecoupledBPUWithBTB::processNewPrediction()
 {
     DPRINTF(DecoupleBP, "Creating new prediction for PC %#lx\n", s0PC);
 
