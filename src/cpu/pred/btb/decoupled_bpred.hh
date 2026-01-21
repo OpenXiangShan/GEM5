@@ -68,23 +68,12 @@ using CPU = o3::CPU;
  */
 class DecoupledBPUWithBTB : public BPredUnit
 {
-    using defer = std::shared_ptr<void>;
   public:
     typedef DecoupledBPUWithBTBParams Params;
 
     DecoupledBPUWithBTB(const Params &params);
-    // TODO: remove loop predictor and loop buffer, jap, now fetch.cc need them
-    LoopPredictor lp;
-    LoopBuffer lb;
-    bool enableLoopBuffer{false};
-    bool enableLoopPredictor{false};
-
-    JumpAheadPredictor jap;
-    bool enableJumpAheadPredictor{false};
 
   private:
-    std::string _name;
-
     FetchTargetQueue fetchTargetQueue;
 
     std::map<FetchStreamId, FetchStream> fetchStreamQueue;
@@ -182,7 +171,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     // Helper function to validate FTQ and FSQ state before enqueueing
     bool validateFTQEnqueue();
 
-    void processNewPrediction(bool create_new_stream);
+    void processNewPrediction();
 
     FtqEntry createFtqEntryFromStream(const FetchStream &stream, const FetchTargetEnqState &ftq_enq_state);
 
@@ -194,8 +183,6 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // Tick helper functions
     void requestNewPrediction();
-
-    Addr computePathHash(Addr br, Addr target);
 
     // TODO: compare phr and ghr
     void histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history);
@@ -546,15 +533,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void checkHistory(const boost::dynamic_bitset<> &history);
 
-    bool useStreamRAS(FetchStreamId sid);
-
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
-    std::string buf1, buf2;
-
     std::stack<Addr> streamRAS;
-
-    bool debugFlagOn{false};
 
     std::unordered_map<Addr, int> takenBranches;      // branch address -> taken count
     std::unordered_map<Addr, int> currentPhaseTakenBranches;
