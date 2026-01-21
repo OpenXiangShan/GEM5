@@ -350,8 +350,6 @@ class Fetch
     /**
      * update branch predictors
      */
-    void updateBranchPredictors();
-
     /**
      * Looks up the branch predictor, gets a prediction, and updates the PC.
      * @param inst The dynamic instruction object.
@@ -970,7 +968,11 @@ class Fetch
 
     // Decoupled+BTB-only: fetch consumes the FTQ head directly.
     // If the FTQ is empty, fetch stalls (no extra "supply" state machine).
-    bool ftqEmpty() const { return !dbpbtb || !dbpbtb->fetchTargetAvailable(); }
+    bool ftqEmpty() const { return !dbpbtb || !dbpbtb->ftqHasHead(); }
+
+    // Number of dynamic instructions fetched within the current FTQ entry.
+    // Used to explicitly notify the BPU when an entry is consumed (Phase5 prep).
+    unsigned ftqEntryFetchedInsts[MaxThreads]{};
 
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;

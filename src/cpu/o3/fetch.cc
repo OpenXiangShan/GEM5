@@ -447,6 +447,7 @@ Fetch::resetStage()
         stalls[tid].drain = false;
 
         fetchBuffer[tid].reset();
+        ftqEntryFetchedInsts[tid] = 0;
 
         fetchQueue[tid].clear();
 
@@ -628,8 +629,8 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     }
 
     // Verify fetchBufferPC alignment with FTQ
-    if (fetchBuffer[tid].valid && dbpbtb->fetchTargetAvailable()) {
-        auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
+    if (fetchBuffer[tid].valid && dbpbtb->ftqHasHead()) {
+        auto& ftq_entry = dbpbtb->ftqHead();
         if (fetchBuffer[tid].startPC != ftq_entry.startPC) {
             panic("fetchBufferPC %#x should be aligned with FTQ startPC %#x",
                   fetchBuffer[tid].startPC, ftq_entry.startPC);
@@ -789,13 +790,20 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     //  BP  =>  FSQ  =>  FTB  => Fetch
     ThreadID tid = inst->threadNumber;
     assert(dbpbtb);
+    const auto ftq_id = dbpbtb->ftqHeadId();
+    const auto fsq_id = dbpbtb->ftqHeadStreamId();
     bool run_out = false;
     std::tie(predict_taken, run_out) =
         dbpbtb->decoupledPredict(
             inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);
     if (run_out) {
         DPRINTF(DecoupleBP, "Used up fetch targets.\n");
+        ftqEntryFetchedInsts[tid]++;
+        dbpbtb->consumeFetchTarget(ftq_id, fsq_id, ftqEntryFetchedInsts[tid]);
+        ftqEntryFetchedInsts[tid] = 0;
         fetchBuffer[tid].valid = false;  // Invalidate fetch buffer when FTQ entry exhausted
+    } else {
+        ftqEntryFetchedInsts[tid]++;
     }
     inst->setLoopIteration(currentLoopIter);
 
@@ -1114,6 +1122,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // Force a new I-cache request for the next FTQ head after squash.
     fetchBuffer[tid].valid = false;
+    ftqEntryFetchedInsts[tid] = 0;
 
     if (traceFetch) {
         traceFetch->handleTraceSquash(tid, new_pc, squashInst, seqNum);
@@ -1225,7 +1234,8 @@ Fetch::tick()
     // - first consume incoming squashes/redirects (in initializeTickState())
     // - then advance predictor pipeline + try to supply an FTQ head
     // - then run fetch using the supplied FTQ entry (if any)
-    updateBranchPredictors();
+    assert(dbpbtb);
+    dbpbtb->tick();
 
     // Perform fetch operations and instruction delivery
     fetchAndProcessInstructions(status_change);
@@ -1416,19 +1426,6 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
 
     if (stalls[tid].decode) {
         fetchStats.decodeStalls++;
-    }
-}
-
-void
-Fetch::updateBranchPredictors()
-{
-    assert(dbpbtb);
-
-    dbpbtb->tick();
-    if (isTraceMode()) {
-        DPRINTF(Fetch,
-                "Trace mode: BTB tick complete, ftqHasHead=%d\n",
-                dbpbtb->fetchTargetAvailable());
     }
 }
 
@@ -1697,10 +1694,10 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
             instruction->isMov());
     assert(dbpbtb);
     DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
-            instruction->seqNum, dbpbtb->getSupplyingStreamId(),
-            dbpbtb->getSupplyingTargetId());
-    instruction->setFsqId(dbpbtb->getSupplyingStreamId());
-    instruction->setFtqId(dbpbtb->getSupplyingTargetId());
+            instruction->seqNum, dbpbtb->ftqHeadStreamId(),
+            dbpbtb->ftqHeadId());
+    instruction->setFsqId(dbpbtb->ftqHeadStreamId());
+    instruction->setFtqId(dbpbtb->ftqHeadId());
 
 #if TRACING_ON
     if (trace) {
@@ -1756,7 +1753,7 @@ bool
 Fetch::checkDecoupledFrontend(ThreadID tid)
 {
     assert(dbpbtb);
-    if (!isTraceMode() && !dbpbtb->fetchTargetAvailable()) {
+    if (!isTraceMode() && !dbpbtb->ftqHasHead()) {
         dbpbtb->addFtqNotValid();
         DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
         setAllFetchStalls(StallReason::FTQBubble);
@@ -2262,12 +2259,12 @@ Fetch::getNextFTQStartPC(ThreadID tid)
 {
     assert(dbpbtb);
 
-    if (!dbpbtb->fetchTargetAvailable()) {
+    if (!dbpbtb->ftqHasHead()) {
         return 0;
     }
 
     // Now get the current supplying FTQ entry
-    auto& ftq_entry = dbpbtb->getSupplyingFetchTarget();
+    auto& ftq_entry = dbpbtb->ftqHead();
     Addr start_pc = ftq_entry.startPC;
 
     // Update fetchBufferPC to align with FTQ entry

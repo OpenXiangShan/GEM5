@@ -404,7 +404,12 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void setCpu(CPU *_cpu) { cpu = _cpu; }
 
-    struct BpTrace : public Record {
+    // Phase5 prep: Fetch consumes the FTQ head explicitly; BPU handles pop +
+    // FSQ bookkeeping in one place (instead of doing it inside decoupledPredict()).
+    void consumeFetchTarget(unsigned ftq_id, unsigned fsq_id, unsigned fetched_inst_num);
+
+    struct BpTrace : public Record
+    {
         void set(uint64_t fsqId, uint64_t startPC, uint64_t controlPC, uint64_t controlType,
             uint64_t taken, uint64_t mispred, uint64_t fallThruPC,
             uint64_t source, uint64_t target) {
@@ -512,6 +517,12 @@ class DecoupledBPUWithBTB : public BPredUnit
     {
         return fetchTargetQueue.getSupplyingStreamId();
     }
+
+    // Phase4 naming: FTQ head-driven interface (preferred).
+    bool ftqHasHead() { return fetchTargetAvailable(); }
+    FtqEntry& ftqHead() { return getSupplyingFetchTarget(); }
+    unsigned ftqHeadId() { return getSupplyingTargetId(); }
+    unsigned ftqHeadStreamId() { return getSupplyingStreamId(); }
 
     void dumpFsq(const char *when);
 
@@ -837,9 +848,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     void notifyResolveFailure();
     void blockPredictionOnce();
 
-    // Helper function to process FTQ entry completion
-    void processFetchTargetCompletion(const FtqEntry &target_to_fetch);
-
     /**
      * @brief Types of control flow instructions for misprediction tracking
      */
@@ -991,11 +999,6 @@ class DecoupledBPUWithBTB : public BPredUnit
      * Maps indirect branch addresses to misprediction counts.
      */
     std::map<Addr, unsigned> topMispredIndirect;
-
-    /**
-     * @brief Current FTQ entry instruction count
-     */
-    int currentFtqEntryInstNum{0};
 
     /**
      * @brief Dump statistics on program exit
