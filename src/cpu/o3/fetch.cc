@@ -787,29 +787,55 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // this function updates it.
     bool predict_taken = false;
 
-    //  BP  =>  FSQ  =>  FTB  => Fetch
+    // Decoupled+BTB-only: compute next PC directly from FTQ head entry.
     ThreadID tid = inst->threadNumber;
     assert(dbpbtb);
+    assert(dbpbtb->ftqHasHead());
+    const auto &ftq_entry = dbpbtb->ftqHead();
     const auto ftq_id = dbpbtb->ftqHeadId();
     const auto fsq_id = dbpbtb->ftqHeadStreamId();
+
+    const Addr curr_pc = next_pc.instAddr();
+    assert(ftq_entry.startPC <= curr_pc && curr_pc < ftq_entry.endPC);
+
     bool run_out = false;
-    std::tie(predict_taken, run_out) =
-        dbpbtb->decoupledPredict(
-            inst->staticInst, inst->seqNum, next_pc, tid, currentLoopIter);
+
+    // Taken when the current PC matches the predicted takenPC.
+    predict_taken = ftq_entry.taken && (curr_pc == ftq_entry.takenPC);
+    if (predict_taken) {
+        auto &rpc = next_pc.as<GenericISA::PCStateWithNext>();
+        rpc.pc(ftq_entry.target);
+        rpc.npc(ftq_entry.target + 4);
+        rpc.uReset();
+        run_out = true;
+    } else if (inst->staticInst->isMicroop()) {
+        // Microops must advance uPC explicitly; they do not rely on decoder NPC.
+        inst->staticInst->advancePC(next_pc);
+        run_out = next_pc.instAddr() >= ftq_entry.endPC;
+    } else {
+        // Sequential fetch: decoder already computed npc with correct inst size.
+        auto &rpc = next_pc.as<RiscvISA::PCState>();
+        const Addr fall_thru = rpc.npc();
+        rpc.pc(fall_thru);
+        // Placeholder; decoder will overwrite npc on the next decode.
+        rpc.npc(fall_thru + 4);
+        rpc.uReset();
+        run_out = fall_thru >= ftq_entry.endPC;
+    }
+
+    // Track how many dynamic instructions were fetched for this FTQ entry.
+    ftqEntryFetchedInsts[tid]++;
     if (run_out) {
-        DPRINTF(DecoupleBP, "Used up fetch targets.\n");
-        ftqEntryFetchedInsts[tid]++;
         dbpbtb->consumeFetchTarget(ftq_id, fsq_id, ftqEntryFetchedInsts[tid]);
         ftqEntryFetchedInsts[tid] = 0;
-        fetchBuffer[tid].valid = false;  // Invalidate fetch buffer when FTQ entry exhausted
-    } else {
-        ftqEntryFetchedInsts[tid]++;
+        fetchBuffer[tid].valid = false;
+        DPRINTF(DecoupleBP, "Used up fetch targets.\n");
     }
+
     inst->setLoopIteration(currentLoopIter);
 
     // For decoupled frontend, the instruction type is predicted with BTB
     if (!predict_taken) {
-        inst->staticInst->advancePC(next_pc);
         inst->setPredTarg(next_pc);
         inst->setPredTaken(false);
         return false;
