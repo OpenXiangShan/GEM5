@@ -366,32 +366,12 @@ TraceFetch::initTraceMode()
                 fetch.pc[0]->instAddr(), fetch.cpu->pcState(0).instAddr());
     }
 
-    if (fetch.isDecoupledFrontend() && fetch.branchPred) {
+    if (fetch.branchPred) {
         DPRINTF(Fetch, "Trace mode: Priming decoupled BPU with start PC 0x%llx\n",
                 firstInstr.getPC());
 
-        if (fetch.isFTBPred() && fetch.dbpftb) {
-            fetch.dbpftb->resetPC(firstInstr.getPC());
-        } else if (fetch.isBTBPred() && fetch.dbpbtb) {
-            fetch.dbpbtb->resetPC(firstInstr.getPC());
-        } else if (fetch.isStreamPred() && fetch.dbsp) {
-            fetch.dbsp->resetPC(firstInstr.getPC());
-        }
-
-        bool primed = false;
-        bool inLoop = false;
-        if (fetch.isFTBPred() && fetch.dbpftb) {
-            primed = fetch.dbpftb->trySupplyFetchWithTarget(firstInstr.getPC(), inLoop);
-        } else if (fetch.isBTBPred() && fetch.dbpbtb) {
-            primed = fetch.dbpbtb->trySupplyFetchWithTarget(firstInstr.getPC(), inLoop);
-        }
-
-        if (primed) {
-            fetch.usedUpFetchTargets = false;
-            DPRINTF(Override, "[TRACE-FTB] usedUpFetchTargets toggled: false (after priming)\n");
-            DPRINTF(Fetch, "Trace-FTB prime: FSQ primed with PC 0x%llx\n",
-                    firstInstr.getPC());
-        }
+        assert(fetch.dbpbtb);
+        fetch.dbpbtb->resetPC(firstInstr.getPC());
     }
 
     return true;
@@ -437,7 +417,7 @@ TraceFetch::ensureTraceStreamFilled(ThreadID tid, size_t min_count)
     if (!traceMode || !traceReader) {
         return;
     }
-    if (fetch.isDecoupledFrontend() && traceEnableWrongPath && traceWrongPathActive) {
+    if (traceEnableWrongPath && traceWrongPathActive) {
         return;
     }
     while (traceExpectedStream[tid].size() < min_count) {
@@ -462,9 +442,7 @@ TraceFetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc)
 StallReason
 TraceFetch::fetchTraceInstruction(ThreadID tid, const PCStateBase &this_pc)
 {
-    const bool wrong_path = (fetch.isDecoupledFrontend() &&
-                             traceEnableWrongPath &&
-                             traceWrongPathActive);
+    const bool wrong_path = (traceEnableWrongPath && traceWrongPathActive);
     if (wrong_path) {
         const unsigned nop_size =
             chooseWrongPathNopSize(tid, this_pc.instAddr());
@@ -489,7 +467,7 @@ TraceFetch::fetchTraceInstruction(ThreadID tid, const PCStateBase &this_pc)
     auto head = traceExpectedStream[tid].front();
     // 对非分支/异常类 ctrl-flow-change，在 decoupled + wrong-path 校验场景下，
     // 若缺乏可靠 nextPC，保守将长度标为 2B，避免后续进入 wrong-path 时跨过块内预测点。
-    if (fetch.isDecoupledFrontend() && traceEnableWrongPath && traceBPValidation &&
+    if (traceEnableWrongPath && traceBPValidation &&
         head.isCtrlFlowChange() && !head.isAnyBranch()) {
         head.setInstSizeBytes(2);
     }
@@ -553,27 +531,21 @@ TraceFetch::chooseWrongPathNopSize(ThreadID tid, Addr pc)
         return 2;
     }
     unsigned sz = 2;
-    if (fetch.isDecoupledFrontend()) {
-        Addr block_end = 0;
-        Addr taken_pc = 0;
-        bool taken = false;
-        if (fetch.isFTBPred()) {
-            const auto &ftq = fetch.dbpftb->getSupplyingFetchTarget();
-            block_end = ftq.endPC;
-            taken_pc = ftq.takenPC;
-            taken = ftq.taken;
-        } else if (fetch.isBTBPred()) {
-            const auto &ftq = fetch.dbpbtb->getSupplyingFetchTarget();
-            block_end = ftq.endPC;
-            taken_pc = ftq.takenPC;
-            taken = ftq.taken;
-        }
-        // 如果当前 PC 正好是预测的 takenPC，且该指令应为 4B（默认假定 RISC-V 分支 4B），用 4B nop。
-        if (taken && taken_pc && pc == taken_pc) {
-            sz = 4;
-        } else if (block_end && pc + 2 == block_end) {
-            sz = 2;
-        }
+    Addr block_end = 0;
+    Addr taken_pc = 0;
+    bool taken = false;
+    if (fetch.isBTBPred()) {
+        assert(fetch.dbpbtb);
+        const auto &ftq = fetch.dbpbtb->ftqHead();
+        block_end = ftq.endPC;
+        taken_pc = ftq.takenPC;
+        taken = ftq.taken;
+    }
+    // If the current PC matches predicted takenPC (assume 4B branches), use a 4B NOP.
+    if (taken && taken_pc && pc == taken_pc) {
+        sz = 4;
+    } else if (block_end && pc + 2 == block_end) {
+        sz = 2;
     }
     return sz;
 }
@@ -593,8 +565,7 @@ TraceFetch::bindPendingTraceMetadata(ThreadID tid, const DynInstPtr &instruction
     }
 
     // Fetch-side严格顺序校验（流式）：正确路径构建指令后，与期望流head对比并消耗
-    if (instruction && traceMode && fetch.isDecoupledFrontend() &&
-        traceEnableWrongPath && !traceWrongPathActive) {
+    if (instruction && traceMode && traceEnableWrongPath && !traceWrongPathActive) {
         validateAndConsumeTraceStream(tid, pc);
     }
 }
@@ -610,7 +581,7 @@ TraceFetch::postBranchPredict(ThreadID tid, const DynInstPtr &instruction,
     // 对 traceReader 而言都是 wrong-path，后续由 commit 触发 trap squash 统一纠正。
     if (traceMode && instruction && traceForThisInst.isValid() &&
         traceForThisInst.isCtrlFlowChange() &&
-        fetch.isDecoupledFrontend() && traceEnableWrongPath) {
+        traceEnableWrongPath) {
         maybeEnterTraceCtrlFlowWrongPath(tid, instruction, traceForThisInst, pc, next_pc);
     }
 
@@ -1205,7 +1176,7 @@ TraceFetch::handleTraceBPValidation(ThreadID tid, const DynInstPtr &instruction,
         const bool ok = validateBPPrediction(traceInstr, predictedPC, predictedTaken);
 
         if (!ok) {
-            if (fetch.isDecoupledFrontend() && traceEnableWrongPath) {
+            if (traceEnableWrongPath) {
                 if (!traceWrongPathActive) {
                     Addr corr_target = traceInstr.getBranchTaken() && traceInstr.getHasBranchTarget()
                                         ? traceInstr.getBranchTarget()
@@ -1239,8 +1210,7 @@ TraceFetch::handleTraceBPValidation(ThreadID tid, const DynInstPtr &instruction,
                         (unsigned long long)corr_target);
             }
         }
-    } else if (fetch.isDecoupledFrontend() && traceEnableWrongPath &&
-               predictedBranch && predictedTaken) {
+    } else if (traceEnableWrongPath && predictedBranch && predictedTaken) {
         // BP 可能将非 branch 指令错误预测为 taken，
         // 此时也应进入 wrong-path，由后端 decode squash 纠正。
         if (!traceWrongPathActive) {

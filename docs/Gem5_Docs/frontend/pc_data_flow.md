@@ -28,6 +28,53 @@ Fetch buffer bytes ──► Decoder::decode() ──► next_pc.npc = pc + {2|4
                                Commit / Fault
 ```
 
+## PCState 语义模型（RISC-V）
+
+### 字段含义（RISC-V PCState = Generic UPCState<4> + compressed/rv32）
+- `pc`：当前（宏）指令地址；`instAddr()` 返回它（`src/arch/generic/pcstate.hh:106`）。
+- `npc`：当前（宏）指令“解析/执行后”的下一条（宏）指令地址。它在解码阶段通常先被写成 fall-through，在控制流指令执行时可能被覆盖成跳转目标。
+- `upc/nupc`：macroop 被拆成 microop 时，用于标识“当前在第几条 microop / 下一条 microop”（`src/arch/generic/pcstate.hh:430`）。
+
+RISC-V 侧的 `PCState` 额外携带：
+- `compressed`：用于计算 fall-through（2B/4B）与 `branching()`（`src/arch/riscv/pcstate.hh:85`）。
+- 注意：PCState 的 `equals()` 比较不包含 `compressed/rv32`（因为未 override equals），只比较 `pc/upc/npc/nupc`。
+
+### 两种形态：pre-advance vs post-advance（理解 pc/npc“到处变”的关键）
+PCState 在流水线中经常以两种“表示形态”出现：
+
+1. pre-advance（“描述当前指令”）
+pc=当前指令地址，npc=该指令计算出来的 next（先是顺序 fall-through，执行时可能改成目标）
+
+这一阶段 npc 的来源有两类：
+* 解码阶段先把 fall-through 写进去（RVC 用 2B、非 RVC 用 4B）：decoder.cc (line 92)
+* 控制流指令执行语义在条件满足时覆盖 npc 为目标，例如 beq：decoder.isa (line 1983)
+
+2. post-advance(“下一条要取的指令表示”）：把 A 通过 advancePC() 推进成“下一条的位置”
+
+这一步由 StaticInst::advancePC() 统一做：
+* 普通（非 microop）指令：RiscvStaticInst::advancePC 直接调用 PCState::advance()（static_inst.hh (line 62)），而 advance() 的核心是 pc = npc; npc += 4（pcstate.hh (line 380)）。
+* microop：用 uAdvance/uEnd 在 microop 内推进或结束 macroop（static_inst.cc (line 42)）。
+
+关键点：真正决定“下一条从哪取”的是 pc = npc 这一下；后面那个 npc += 4 在你现在这套前端里更多是“占位/惯例”，下一次 decode 会重写 npc（例如你们 fetch 里顺序路径明确写了 placeholder：fetch.cc (line 815)）。
+
+### 为什么你看到 NPC 在执行前后变化（以 beq/bne 为例）
+* 执行前：decoder 先把顺序 fall-through 写到 npc（RVC/非 RVC 分别是 pc+2/pc+4），见 decoder.cc (line 92)
+* 执行时：分支语义判断 taken 就覆盖 NPC = PC + imm，not-taken 就保持原值（你看到的 NPC = NPC 本质是 no-op），见 decoder.isa (line 1983)
+* 执行后：此时 inst->pcState().npc() 就是“该指令的真实 next PC”（taken=target，not-taken=fall-through）
+这其实是 gem5 ISA 语义里常见的写法：先给 NPC 一个默认 fall-through，然后控制流指令在需要时改写 NPC。
+
+### 你觉得“mispredicted() 很恶心”的原因：它在比较两种“表示”
+mispredicted() 不是直接拿 inst->pcState().npc() 和预测比，而是：
+
+* clone 当前指令的 PCState（A：pre-advance）
+* 调 advancePC() 把它推进成（B：post-advance）
+* 用这个 B 去和 predPC 比（dyn_inst.hh (line 701)）
+
+而 predPC 是 fetch 阶段保存的“预测后的下一条要取的位置”（post-advance 形态），在你们代码里由 Fetch::lookupAndUpdateNextPC() 写入（fetch.cc (line 783)，inst->setPredTarg(next_pc) 在 fetch.cc (line 838) / fetch.cc (line 857)）。
+
+所以这里“看起来绕”，但它本质上是在把“实际 next（藏在 npc 里）”先做一次 advance，转换成和 predPC 同一种表示再比较。
+
+
 ## 模块与接口
 | 模块 | 核心函数 | 触碰 PC 的原因 | 备注 |
 | --- | --- | --- | --- |

@@ -42,7 +42,7 @@ protected:
     }
 
     // helper method to create a ftq entry
-    FtqEntry createFtqEntry(Addr startPC, Addr endPC, bool inLoop = false) {
+    FtqEntry createFtqEntry(Addr startPC, Addr endPC) {
         FtqEntry entry;
         entry.startPC = startPC;
         entry.endPC = endPC;
@@ -62,13 +62,9 @@ protected:
 
     // Helper method to populate FTQ with entries including some loops
     void populateFtqWithLoops(int numEntries, Addr startPC = 0x1000) {
-        for (int i = 0; i < numEntries; i++) {
-            Addr pc = startPC + i * 8;
-            // Mark every 3rd entry as in a loop
-            bool inLoop = (i % 3 == 0);
-            FtqEntry entry = createFtqEntry(pc, pc + 8, inLoop);
-            ftq->enqueue(entry);
-        }
+        // Loop metadata is not modeled in the BTB FTQ any more; keep this helper
+        // for test readability and future extension.
+        populateFtq(numEntries, startPC);
     }
 };
 
@@ -106,17 +102,11 @@ TEST_F(FetchTargetQueueTest, QueueFull) {
     EXPECT_EQ(ftq->size(), defaultFtqSize + 1);
 }
 
-// Test supply fetch target
-TEST_F(FetchTargetQueueTest, SupplyFetchTarget) {
+// FTQ is head-driven FIFO: if non-empty, head is always available.
+TEST_F(FetchTargetQueueTest, HeadFetchTarget) {
     populateFtq(5);
 
-    bool inLoop = false;
-    // Should find and supply target 0
-    bool result = ftq->trySupplyFetchWithTarget(0x1000, inLoop);
-
-    EXPECT_TRUE(result);
     EXPECT_TRUE(ftq->fetchTargetAvailable());
-    EXPECT_FALSE(inLoop);
 
     FtqEntry& target = ftq->getTarget();
     EXPECT_EQ(target.startPC, 0x1000);
@@ -127,18 +117,10 @@ TEST_F(FetchTargetQueueTest, SupplyFetchTarget) {
 TEST_F(FetchTargetQueueTest, AdvanceFetchTarget) {
     populateFtq(5);
 
-    bool inLoop = false;
-    ftq->trySupplyFetchWithTarget(0x1000, inLoop);
     EXPECT_TRUE(ftq->fetchTargetAvailable());
 
     // Finish current target and advance
     ftq->finishCurrentFetchTarget();
-    EXPECT_FALSE(ftq->fetchTargetAvailable());
-    // EXPECT_EQ(ftq->getDemandTargetIt(), 1);
-
-    // Request next target
-    bool result = ftq->trySupplyFetchWithTarget(0x1008, inLoop);
-    EXPECT_TRUE(result);
     EXPECT_TRUE(ftq->fetchTargetAvailable());
 
     FtqEntry& target = ftq->getTarget();
@@ -178,44 +160,18 @@ TEST_F(FetchTargetQueueTest, Squash) {
 TEST_F(FetchTargetQueueTest, ResetPC) {
     populateFtq(5);
 
-    bool inLoop = false;
-    ftq->trySupplyFetchWithTarget(0x1000, inLoop);
     EXPECT_TRUE(ftq->fetchTargetAvailable());
 
     // Reset PC
     Addr newPC = 0x3000;
     ftq->resetPC(newPC);
 
-    // Verify supply state is invalidated
-    EXPECT_FALSE(ftq->fetchTargetAvailable());
-
     // Verify PC is updated
     EXPECT_EQ(ftq->getEnqState().pc, newPC);
 }
 
-// Test skipping entries when fetch PC is beyond entry end
-TEST_F(FetchTargetQueueTest, SkipPastEntries) {
-    populateFtq(5);
-
-    bool inLoop = false;
-    // Request with PC past the first entry
-    bool result = ftq->trySupplyFetchWithTarget(0x1010, inLoop);
-
-    // Should skip entry 0 and supply entry 1
-    EXPECT_TRUE(result);
-    EXPECT_TRUE(ftq->fetchTargetAvailable());
-
-    FtqEntry& target = ftq->getTarget();
-    EXPECT_EQ(target.startPC, 0x1008);  // Second entry
-    EXPECT_EQ(target.endPC, 0x1010);
-}
-
 // Test edge case with empty queue
-TEST_F(FetchTargetQueueTest, EmptyQueueSupply) {
-    bool inLoop = false;
-    bool result = ftq->trySupplyFetchWithTarget(0x1000, inLoop);
-
-    EXPECT_FALSE(result);
+TEST_F(FetchTargetQueueTest, EmptyQueue) {
     EXPECT_FALSE(ftq->fetchTargetAvailable());
 }
 
@@ -226,10 +182,6 @@ TEST_F(FetchTargetQueueTest, MultipleFetches) {
     // Fetch and process 5 entries in sequence
     for (int i = 0; i < 5; i++) {
         Addr pc = 0x1000 + i * 8;
-        bool inLoop = false;
-
-        bool result = ftq->trySupplyFetchWithTarget(pc, inLoop);
-        EXPECT_TRUE(result);
         EXPECT_TRUE(ftq->fetchTargetAvailable());
 
         FtqEntry& target = ftq->getTarget();

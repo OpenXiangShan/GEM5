@@ -68,23 +68,12 @@ using CPU = o3::CPU;
  */
 class DecoupledBPUWithBTB : public BPredUnit
 {
-    using defer = std::shared_ptr<void>;
   public:
     typedef DecoupledBPUWithBTBParams Params;
 
     DecoupledBPUWithBTB(const Params &params);
-    // TODO: remove loop predictor and loop buffer, jap, now fetch.cc need them
-    LoopPredictor lp;
-    LoopBuffer lb;
-    bool enableLoopBuffer{false};
-    bool enableLoopPredictor{false};
-
-    JumpAheadPredictor jap;
-    bool enableJumpAheadPredictor{false};
 
   private:
-    std::string _name;
-
     FetchTargetQueue fetchTargetQueue;
 
     std::map<FetchStreamId, FetchStream> fetchStreamQueue;
@@ -181,7 +170,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     // Helper function to validate FTQ and FSQ state before enqueueing
     bool validateFTQEnqueue();
 
-    void processNewPrediction(bool create_new_stream);
+    void processNewPrediction();
 
     FtqEntry createFtqEntryFromStream(const FetchStream &stream, const FetchTargetEnqState &ftq_enq_state);
 
@@ -193,8 +182,6 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // Tick helper functions
     void requestNewPrediction();
-
-    Addr computePathHash(Addr br, Addr target);
 
     // TODO: compare phr and ghr
     void histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history);
@@ -391,8 +378,6 @@ class DecoupledBPUWithBTB : public BPredUnit
      */
     void tick();
 
-    bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetchTargetInLoop);
-
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {
         panic("Squashing decoupled BP with tightly coupled API\n");
@@ -405,7 +390,12 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void setCpu(CPU *_cpu) { cpu = _cpu; }
 
-    struct BpTrace : public Record {
+    // Phase5 prep: Fetch consumes the FTQ head explicitly; BPU handles pop +
+    // FSQ bookkeeping in one place (instead of doing it inside decoupledPredict()).
+    void consumeFetchTarget(unsigned ftq_id, unsigned fsq_id, unsigned fetched_inst_num);
+
+    struct BpTrace : public Record
+    {
         void set(uint64_t fsqId, uint64_t startPC, uint64_t controlPC, uint64_t controlType,
             uint64_t taken, uint64_t mispred, uint64_t fallThruPC,
             uint64_t source, uint64_t target) {
@@ -514,6 +504,12 @@ class DecoupledBPUWithBTB : public BPredUnit
         return fetchTargetQueue.getSupplyingStreamId();
     }
 
+    // Phase4 naming: FTQ head-driven interface (preferred).
+    bool ftqHasHead() { return fetchTargetAvailable(); }
+    FtqEntry& ftqHead() { return getSupplyingFetchTarget(); }
+    unsigned ftqHeadId() { return getSupplyingTargetId(); }
+    unsigned ftqHeadStreamId() { return getSupplyingStreamId(); }
+
     void dumpFsq(const char *when);
 
     // Dummy overriding
@@ -536,15 +532,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void checkHistory(const boost::dynamic_bitset<> &history);
 
-    bool useStreamRAS(FetchStreamId sid);
-
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
-    std::string buf1, buf2;
-
     std::stack<Addr> streamRAS;
-
-    bool debugFlagOn{false};
 
     std::unordered_map<Addr, int> takenBranches;      // branch address -> taken count
     std::unordered_map<Addr, int> currentPhaseTakenBranches;
@@ -838,9 +828,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     void notifyResolveFailure();
     void blockPredictionOnce();
 
-    // Helper function to process FTQ entry completion
-    void processFetchTargetCompletion(const FtqEntry &target_to_fetch);
-
     /**
      * @brief Types of control flow instructions for misprediction tracking
      */
@@ -992,11 +979,6 @@ class DecoupledBPUWithBTB : public BPredUnit
      * Maps indirect branch addresses to misprediction counts.
      */
     std::map<Addr, unsigned> topMispredIndirect;
-
-    /**
-     * @brief Current FTQ entry instruction count
-     */
-    int currentFtqEntryInstNum{0};
 
     /**
      * @brief Dump statistics on program exit

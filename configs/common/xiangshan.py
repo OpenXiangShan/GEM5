@@ -329,50 +329,27 @@ def build_xiangshan_system(args):
             print(f"Trace mode: CPU {cpu.cpu_id} configured with {mode_str} translation")
 
     # configure BP
-    args.enable_loop_predictor = True
-    if args.enable_riscv_vector:
-        args.enable_loop_buffer = True
-
     for i in range(np):
         if args.kmh_align:
             test_sys.cpu[i].enable_storeSet_train = False
 
-        if args.bp_type is None or args.bp_type == 'DecoupledBPUWithFTB' or args.bp_type == 'DecoupledBPUWithBTB':
-            enable_bp_db = len(args.enable_bp_db) > 1
-            if enable_bp_db:
-                bp_db_switches = args.enable_bp_db[1] + ['basic']
-                print("BP db switches:", bp_db_switches)
-            else:
-                bp_db_switches = []
-            # for DecoupledBPUWithBTB, loop predictor and jump ahead predictor are not supported
-            #if args.bp_type == 'DecoupledBPUWithBTB':
-            if args.enable_loop_predictor or args.enable_loop_buffer:
-                print("loop predictor and loop buffer not supported for DecoupledBPUWithBTB")
-                args.enable_loop_predictor = False
-                args.enable_loop_buffer = False
-            if args.enable_jump_ahead_predictor:
-                print("jump ahead predictor not supported for DecoupledBPUWithBTB")
-                args.enable_jump_ahead_predictor = False
+        if args.bp_type != 'DecoupledBPUWithBTB':
+            fatal(
+                "Only --bp-type=DecoupledBPUWithBTB is supported for Xiangshan in this repo "
+                f"(got --bp-type={args.bp_type})."
+            )
 
-            BPClass = DecoupledBPUWithBTB() if args.bp_type == 'DecoupledBPUWithBTB' else DecoupledBPUWithFTB()
-            test_sys.cpu[i].branchPred = BPClass(
-                                            bpDBSwitches=bp_db_switches,
-                                            enableLoopBuffer=args.enable_loop_buffer,
-                                            enableLoopPredictor=args.enable_loop_predictor,
-                                            enableJumpAheadPredictor=args.enable_jump_ahead_predictor
-                                            )
-            test_sys.cpu[i].branchPred.tage.enableSC = not args.disable_sc
-            test_sys.cpu[i].branchPred.isDumpMisspredPC = True
-
+        enable_bp_db = len(args.enable_bp_db) > 1
+        if enable_bp_db:
+            bp_db_switches = args.enable_bp_db[1] + ['basic']
+            print("BP db switches:", bp_db_switches)
         else:
-            BPClass = ObjectList.bp_list.get(args.bp_type)
-            test_sys.cpu[i].branchPred = BPClass()
+            bp_db_switches = []
 
-        if args.indirect_bp_type:
-            IndirectBPClass = ObjectList.indirect_bp_list.get(
-                args.indirect_bp_type)
-            test_sys.cpu[i].branchPred.indirectBranchPred = \
-                    IndirectBPClass()
+        test_sys.cpu[i].branchPred = DecoupledBPUWithBTB(
+            bpDBSwitches=bp_db_switches,
+        )
+        test_sys.cpu[i].branchPred.isDumpMisspredPC = True
 
     # configure memory related
     if args.mem_type == 'DRAMsim3':

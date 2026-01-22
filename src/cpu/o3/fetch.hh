@@ -57,8 +57,6 @@
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/decoupled_bpred.hh"
-#include "cpu/pred/ftb/decoupled_bpred.hh"
-#include "cpu/pred/stream/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
 #include "enums/SMTFetchPolicy.hh"
@@ -352,8 +350,6 @@ class Fetch
     /**
      * update branch predictors
      */
-    void updateBranchPredictors();
-
     /**
      * Looks up the branch predictor, gets a prediction, and updates the PC.
      * @param inst The dynamic instruction object.
@@ -532,9 +528,6 @@ class Fetch
     /** Profile the reasons of fetch stall. */
     void profileStall(ThreadID tid);
 
-
-    bool ftqEmpty() { return isDecoupledFrontend() && usedUpFetchTargets; }
-
     /** Set the reasons of all fetch stalls. */
     void setAllFetchStalls(StallReason stall);
 
@@ -625,10 +618,6 @@ class Fetch
 
     /** BPredUnit. */
     branch_prediction::BPredUnit *branchPred;
-
-    branch_prediction::stream_pred::DecoupledStreamBPU *dbsp;
-
-    branch_prediction::ftb_pred::DecoupledBPUWithFTB *dbpftb;
 
     branch_prediction::btb_pred::DecoupledBPUWithBTB *dbpbtb;
 
@@ -973,25 +962,20 @@ class Fetch
     /** Event used to delay fault generation of translation faults */
     FinishTranslationEvent finishTranslationEvent;
 
-    /** Decoupled frontend related */
-    bool isDecoupledFrontend();
-
-    bool isStreamPred() const { return branchPred->isStream(); }
-
-    bool isFTBPred() const { return branchPred->isFTB(); }
+    // NOTE: This Fetch implementation is decoupled+BTB-only; no coupled mode.
 
     bool isBTBPred() const { return branchPred->isBTB(); }
 
-    bool usedUpFetchTargets;
+    // Decoupled+BTB-only: fetch consumes the FTQ head directly.
+    // If the FTQ is empty, fetch stalls (no extra "supply" state machine).
+    bool ftqEmpty() const { return !dbpbtb || !dbpbtb->ftqHasHead(); }
+
+    // Number of dynamic instructions fetched within the current FTQ entry.
+    // Used to explicitly notify the BPU when an entry is consumed (Phase5 prep).
+    unsigned ftqEntryFetchedInsts[MaxThreads]{};
 
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;
-
-    bool currentFetchTargetInLoop{false};
-
-    std::pair<Addr, std::vector<branch_prediction::ftb_pred::LoopBuffer::InstDesc>> currentFtqEntryInsts;
-
-    bool notTakenBranchEncountered{false};
 
     /** Check if we need a new FTQ entry for fetch */
     bool needNewFTQEntry(ThreadID tid);

@@ -10,7 +10,6 @@
 #include "debug/BTB.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPVerbose.hh"
-#include "debug/JumpAheadPredictor.hh"
 #include "debug/Override.hh"
 #include "debug/Profiling.hh"
 #include "sim/core.hh"
@@ -22,11 +21,23 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+void
+DecoupledBPUWithBTB::consumeFetchTarget(unsigned ftq_id, unsigned fsq_id,
+                                       unsigned fetched_inst_num)
+{
+    assert(fetchTargetQueue.fetchTargetAvailable());
+    assert(fetchTargetQueue.getSupplyingTargetId() == ftq_id);
+    assert(fetchTargetQueue.getSupplyingStreamId() == fsq_id);
+
+    fetchTargetQueue.finishCurrentFetchTarget();
+
+    auto it = fetchStreamQueue.find(fsq_id);
+    assert(it != fetchStreamQueue.end());
+    it->second.fetchInstNum = fetched_inst_num;
+}
+
 DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     : BPredUnit(p),
-      enableLoopBuffer(p.enableLoopBuffer),
-      enableLoopPredictor(p.enableLoopPredictor),
-      enableJumpAheadPredictor(p.enableJumpAheadPredictor),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
       predictWidth(p.predictWidth),
@@ -86,8 +97,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     predsOfEachStage.resize(numStages);
     for (unsigned i = 0; i < numStages; i++) {
         predsOfEachStage[i].predSource = i;
-        clearPreds();
     }
+
+    clearPreds();
 
     s0PC = 0x80000000;
 
@@ -104,14 +116,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     squashing = true;
     bpuState = BpuState::IDLE;
 
-    lp = LoopPredictor(16, 4, enableLoopDB);
-    lb.setLp(&lp);
-
-    jap = JumpAheadPredictor(16, 4);
-
-    if (!enableLoopPredictor && enableLoopBuffer) {
-        fatal("loop buffer cannot be enabled without loop predictor\n");
-    }
     commitFsqEntryHasInstsVector.resize(maxInstsNum+1, 0);
     lastPhaseFsqEntryNumCommittedInstDist.resize(maxInstsNum+1, 0);
     commitFsqEntryFetchedInstsVector.resize(maxInstsNum+1, 0);
@@ -175,7 +179,7 @@ DecoupledBPUWithBTB::tick()
     // 3. PREDICTION_OUTSTANDING
     if (validateFSQEnqueue()) {
         // Create new FSQ entry with the current prediction
-        processNewPrediction(true);
+        processNewPrediction();
 
         DPRINTF(Override, "FSQ entry enqueued, prediction state reset\n");
         bpuState = BpuState::IDLE;
@@ -340,12 +344,6 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles()
     return first_hit_stage;
 }
 
-bool
-DecoupledBPUWithBTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_target_in_loop)
-{
-    return fetchTargetQueue.trySupplyFetchWithTarget(fetch_demand_pc, fetch_target_in_loop);
-}
-
 /**
  * @brief Interface between fetch stage and branch predictor for instruction prediction
  *
@@ -432,46 +430,10 @@ DecoupledBPUWithBTB::decoupledPredict(const StaticInstPtr &inst,
         }
     }
 
-    // Increment instruction counter for current FTQ entry
-    currentFtqEntryInstNum++;
-    if (run_out_of_this_entry) {
-        processFetchTargetCompletion(target_to_fetch);
-    }
-
     DPRINTF(DecoupleBP, "Predict it %staken to %#lx\n", taken ? "" : "not ",
             target->instAddr());
 
     return std::make_pair(taken, run_out_of_this_entry);
-}
-
-/**
- * @brief Process the completion of a fetch target queue entry
- *
- * This function handles the logic when a fetch target queue entry is exhausted:
- * - Dequeues the entry from FTQ
- * - Updates instruction count statistics in the corresponding FSQ entry
- * - Resets instruction counter for the next FTQ entry
- *
- * @param target_to_fetch The FTQ entry being completed
- */
-void
-DecoupledBPUWithBTB::processFetchTargetCompletion(const FtqEntry &target_to_fetch)
-{
-    DPRINTF(DecoupleBP, "running out of ftq entry %lu with %d insts\n",
-            fetchTargetQueue.getSupplyingTargetId(), currentFtqEntryInstNum);
-
-    // Get stream ID for the current fetch target before removing from FTQ
-    const auto fsqId = target_to_fetch.fsqID;
-
-    // Remove the current entry from FTQ
-    fetchTargetQueue.finishCurrentFetchTarget();
-    // Update instruction count in the fetch stream entry
-    auto it = fetchStreamQueue.find(fsqId);
-    assert(it != fetchStreamQueue.end());
-    it->second.fetchInstNum = currentFtqEntryInstNum;
-
-    // Reset instruction counter for next FTQ entry
-    currentFtqEntryInstNum = 0;
 }
 
 /**
@@ -1095,7 +1057,7 @@ DecoupledBPUWithBTB::fillAheadPipeline(FetchStream &entry)
 
 // this function enqueues fsq and update s0PC and s0History
 void
-DecoupledBPUWithBTB::processNewPrediction(bool create_new_stream)
+DecoupledBPUWithBTB::processNewPrediction()
 {
     DPRINTF(DecoupleBP, "Creating new prediction for PC %#lx\n", s0PC);
 
