@@ -13,5 +13,5 @@ jobs:
   perf_test:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      script_path: ../kmh_v3_btb_nosc.sh
+      script_path: ../kmh_v3_btb_18_nosc.sh
       benchmark_type: "spec06-0.8c"
