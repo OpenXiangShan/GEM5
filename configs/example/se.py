@@ -149,9 +149,7 @@ def setDefaultArgs(args):
         'l3_hwp_type': 'WorkerPrefetcher',
         'l1_to_l2_pf_hint': True,
         'l2_to_l3_pf_hint': True,
-        'bp_type': 'DecoupledBPUWithFTB',
-        'enable_loop_predictor': True,
-        'enable_jump_ahead_predictor': True,
+        'bp_type': 'DecoupledBPUWithBTB',
         'warmup_insts_no_switch': 100000
     }   # default warmup 100k instructions!
 
@@ -335,31 +333,6 @@ def setKmhV3IdealParams(args, system):
 
         # enable constant folding
         cpu.enableConstantFolding = False
-
-        # ideal decoupled frontend
-        if args.bp_type == 'DecoupledBPUWithFTB' or args.bp_type == 'DecoupledBPUWithBTB':
-            if args.bp_type == 'DecoupledBPUWithFTB':
-                cpu.branchPred.enableTwoTaken = False
-                cpu.branchPred.numBr = 8    # numBr must be a power of 2, see getShuffledBrIndex()
-                cpu.branchPred.predictWidth = 64
-                cpu.branchPred.uftb.numEntries = 1024
-                cpu.branchPred.ftb.numEntries = 16384
-                cpu.branchPred.tage.baseTableSize = 16384
-                cpu.branchPred.tage.tableSizes = [2048] * 8
-            else:
-                cpu.branchPred.predictWidth = 64              # max width of a fetch block
-                cpu.branchPred.btb.numEntries = 16384
-                # TODO: BTB TAGE do not bave base table, do not support SC
-                cpu.branchPred.tage.tableSizes = [2048] * 8  # 2 way, 2048 sets
-                cpu.branchPred.tage.numWays = 2
-
-            cpu.branchPred.tage.enableSC = False # TODO(bug): When numBr changes, enabling SC will trigger an assert
-            cpu.branchPred.ftq_size = 256
-            cpu.branchPred.fsq_size = 256
-            cpu.branchPred.tage.numPredictors = 8
-            cpu.branchPred.tage.TTagBitSizes = [13] * 8
-            cpu.branchPred.tage.TTagPcShifts = [1] * 8
-            cpu.branchPred.tage.histLengths = [4, 8, 15, 28, 50, 90, 160, 300]
 
         # ideal l1 caches
         if args.caches:

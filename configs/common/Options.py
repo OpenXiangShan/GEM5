@@ -279,16 +279,6 @@ def addCommonOptions(parser, configure_xiangshan=False):
                         help="enable bp database for specified subdatabase, "
                         "basic branch trace is enabled by default even without specifying, "
                         "available subdatabase: basic, tage, ras, loop")
-    parser.add_argument("--disable-sc", default=False, action="store_true",
-                        help="disable SC (enabled by default, only for FTBTAGE)")
-    parser.add_argument("--disable-mgsc", default=False, action="store_true",
-                        help="disable MGSC (only for BTBTAGE)")
-    parser.add_argument("--enable-loop-buffer", default=False, action="store_true",
-                        help="enable loop buffer (only for ftb branch predictor)")
-    parser.add_argument("--enable-loop-predictor", default=False, action="store_true",
-                        help="enable loop predictor (only for ftb branch predictor)")
-    parser.add_argument("--enable-jump-ahead-predictor", default=False, action="store_true",
-                        help="enable jump ahead predictor (only for ftb branch predictor)")
 
     parser.add_argument("--list-rp-types",
                         action=ListRP, nargs=0,

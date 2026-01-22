@@ -1177,7 +1177,4 @@ class DecoupledBPUWithBTB(BranchPredictor):
     ras = Param.BTBRAS(BTBRAS(), "RAS")
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
-    enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")
-    enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
-    enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")

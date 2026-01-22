@@ -1251,37 +1251,7 @@ Commit::commitInsts()
 
                 lastCommitCycle = cpu->curCycle();
                 const auto &head_rv_pc = head_inst->pcState().as<RiscvISA::PCState>();
-                if (bp->isStream()) {
-                    auto dbsp = dynamic_cast<branch_prediction::stream_pred::DecoupledStreamBPU*>(bp);
-                    Addr branchAddr = head_inst->pcState().instAddr();
-                    Addr targetAddr = head_rv_pc.npc();
-                    Addr fallThruPC = head_rv_pc.getFallThruPC();
-                    if (targetAddr < branchAddr || dbsp->loopDetector->findLoop(branchAddr)) {
-                        dbsp->loopDetector->update(branchAddr, targetAddr, fallThruPC);
-                    }
-                    if (targetAddr > branchAddr && head_inst->isControl()) {
-                        dbsp->loopDetector->setRecentForwardTakenPC(branchAddr, targetAddr);
-                    }
-                }
-
-                if (bp->isFTB()) {
-                    auto dbftb = dynamic_cast<branch_prediction::ftb_pred::DecoupledBPUWithFTB*>(bp);
-                    bool miss = head_inst->mispredicted();
-                    if (head_inst->isReturn()) {
-                        DPRINTF(RAS, "commit inst PC %x miss %d real target %x pred target %x\n",
-                                head_inst->pcState().instAddr(), miss,
-                                head_rv_pc.npc(), *(head_inst->predPC));
-                    }
-
-                    // FIXME: ignore mret/sret/uret in correspond with RTL
-                    if (!head_inst->isNonSpeculative() && head_inst->isControl()) {
-                        dbftb->commitBranch(head_inst, miss);
-                        if (!head_inst->isReturn() && head_inst->isIndirectCtrl() && miss) {
-                            misPredIndirect[head_inst->pcState().instAddr()]++;
-                        }
-                    }
-                    dbftb->notifyInstCommit(head_inst);
-                } else if (bp->isBTB()) {
+                if (bp->isBTB()) {
                     auto dbbtb = dynamic_cast<branch_prediction::btb_pred::DecoupledBPUWithBTB*>(bp);
                     bool miss = head_inst->mispredicted();
                     if (head_inst->isReturn()) {
