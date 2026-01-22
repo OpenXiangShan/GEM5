@@ -977,12 +977,6 @@ class Fetch
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;
 
-    /** Check if we need a new FTQ entry for fetch */
-    bool needNewFTQEntry(ThreadID tid);
-
-    /** Get the start PC of the next FTQ entry and update fetchBufferPC */
-    Addr getNextFTQStartPC(ThreadID tid);
-
     /**
      * Check if the thread can fetch instructions
      * @param tid Thread ID
