@@ -584,8 +584,10 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
       lsqID(-1),
       storeQueue(sqEntries),
       loadQueue(lqEntries),
-      loadCompletedIdx(loadQueue.head()),
-      storeCompletedIdx(storeQueue.head()),
+      // Use head-1 as a sentinel: no completed entry yet; advance must verify head.
+      loadCompletedIdx(loadQueue.head() - 1),
+      // Use head-1 as a sentinel: no completed entry yet; advance must verify head.
+      storeCompletedIdx(storeQueue.head() - 1),
       loadPipe(ldPipeStages - 1, 0),
       storePipe(stPipeStages - 1, 0),
       storesToWB(0),
@@ -705,9 +707,10 @@ LSQUnit::resetState()
 
     storeWBIt = storeQueue.begin();
 
-    // Reset completed iterators
-    loadCompletedIdx = loadQueue.head();
-    storeCompletedIdx = storeQueue.head();
+    // Reset completed indices to head-1 sentinel: no completed entry yet.
+    // This forces updateCompletedIdx to verify head before advancing.
+    loadCompletedIdx = loadQueue.head() - 1;
+    storeCompletedIdx = storeQueue.head() - 1;
 
     retryPkt = NULL;
     memDepViolator = NULL;
@@ -2355,16 +2358,37 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         ++stats.squashedLoads;
     }
 
-    auto loadCompletedIt = loadQueue.getIterator(loadCompletedIdx);
-    if (loadCompletedIt->valid() && loadCompletedIt->instruction() &&
-        loadCompletedIt->instruction()->seqNum > squashed_num) {
-        for (auto it = loadQueue.end(); it != loadQueue.begin(); it--) {
-            if (it->instruction()->seqNum < squashed_num) {
-                loadCompletedIdx = it.idx();
-                break;
+    // Squash only removes entries with seqNum > squashed_num. completedIdx
+    // is rewound only when it points past squashed_num or is invalid.
+    auto rewindCompletedIdx = [&](auto &queue, size_t &completed_idx) {
+        if (queue.empty()) {
+            completed_idx = queue.head() - 1;
+            return;
+        }
+
+        if (!queue.isValidIdx(completed_idx)) {
+            completed_idx = queue.head() - 1;
+            return;
+        }
+
+        auto cur_it = queue.getIterator(completed_idx);
+        if (cur_it->valid() && cur_it->instruction() &&
+            cur_it->instruction()->seqNum <= squashed_num) {
+            return;
+        }
+
+        for (auto it = queue.end(); it != queue.begin();) {
+            --it;
+            if (it->valid() && it->instruction() &&
+                it->instruction()->seqNum <= squashed_num) {
+                completed_idx = it.idx();
+                return;
             }
         }
-    }
+        completed_idx = queue.head() - 1;
+    };
+
+    rewindCompletedIdx(loadQueue, loadCompletedIdx);
 
     for (auto it = inflightLoads.begin(); it != inflightLoads.end();) {
         if ((*it)->instruction()->isSquashed()) {
@@ -2446,16 +2470,8 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         ++stats.squashedStores;
     }
 
-    auto storeCompletedIt = storeQueue.getIterator(storeCompletedIdx);
-    if (storeCompletedIt->valid() && storeCompletedIt->instruction() &&
-        storeCompletedIt->instruction()->seqNum > squashed_num) {
-        for (auto it = storeQueue.end(); it != storeQueue.begin(); it--) {
-            if (it->instruction()->seqNum < squashed_num) {
-                storeCompletedIdx = it.idx();
-                break;
-            }
-        }
-    }
+    // Store side follows the same rewind rule.
+    rewindCompletedIdx(storeQueue, storeCompletedIdx);
 
     auto RARIt = RARQueue.begin();
     while (RARIt != RARQueue.end()) {
@@ -2870,33 +2886,48 @@ LSQUnit::checkStaleTranslations() const
 void
 LSQUnit::updateCompletedIdx()
 {
-    // Ensure completed indices are within valid range
-    if (loadCompletedIdx < loadQueue.head() - 1 || loadCompletedIdx > loadQueue.tail())
-        loadCompletedIdx = loadQueue.head();
-    if (storeCompletedIdx < storeQueue.head() - 1 || storeCompletedIdx > storeQueue.tail())
-        storeCompletedIdx = storeQueue.head();
+    // Keep completed indices within [head-1, tail]; head-1 means no completed entry.
+    if (loadQueue.empty()) {
+        loadCompletedIdx = loadQueue.head() - 1;
+    } else if (loadCompletedIdx < loadQueue.head() - 1 ||
+               loadCompletedIdx > loadQueue.tail()) {
+        loadCompletedIdx = loadQueue.head() - 1;
+    }
+    if (storeQueue.empty()) {
+        storeCompletedIdx = storeQueue.head() - 1;
+    } else if (storeCompletedIdx < storeQueue.head() - 1 ||
+               storeCompletedIdx > storeQueue.tail()) {
+        storeCompletedIdx = storeQueue.head() - 1;
+    }
 
     // Advance load completed index (controls RAR queue dequeue rate)
-    for (unsigned i = 0; i < loadCompletionWidth; i++) {
-        const int currentIdx = loadCompletedIdx;
-        auto loadIt = loadQueue.getIterator(loadCompletedIdx + 1);
-        if (loadIt->valid() && loadIt->instruction() && loadIt->instruction()->isExecuted()) {
-            loadCompletedIdx++;
-            DPRINTF(LSQUnit, "loadCompletedIdx [%d]->[%d]\n", currentIdx, loadCompletedIdx);
-        } else {
-            break;
+    if (!loadQueue.empty()) {
+        for (unsigned i = 0; i < loadCompletionWidth; i++) {
+            const int currentIdx = loadCompletedIdx;
+            auto loadIt = loadQueue.getIterator(loadCompletedIdx + 1);
+            if (loadIt->valid() && loadIt->instruction() &&
+                loadIt->instruction()->isExecuted()) {
+                loadCompletedIdx++;
+                DPRINTF(LSQUnit, "loadCompletedIdx [%d]->[%d]\n", currentIdx,
+                        loadCompletedIdx);
+            } else {
+                break;
+            }
         }
     }
 
     // Advance store completed index (controls RAW queue dequeue rate)
-    for (unsigned i = 0; i < storeCompletionWidth; i++) {
-        const int currentIdx = storeCompletedIdx;
-        auto storeIt = storeQueue.getIterator(storeCompletedIdx + 1);
-        if (storeIt->addrReady() || storeIt->canWB()) {
-            storeCompletedIdx++;
-            DPRINTF(LSQUnit, "storeCompletedIdx [%d]->[%d]\n", currentIdx, storeCompletedIdx);
-        } else {
-            break;
+    if (!storeQueue.empty()) {
+        for (unsigned i = 0; i < storeCompletionWidth; i++) {
+            const int currentIdx = storeCompletedIdx;
+            auto storeIt = storeQueue.getIterator(storeCompletedIdx + 1);
+            if (storeIt->addrReady() || storeIt->canWB()) {
+                storeCompletedIdx++;
+                DPRINTF(LSQUnit, "storeCompletedIdx [%d]->[%d]\n", currentIdx,
+                        storeCompletedIdx);
+            } else {
+                break;
+            }
         }
     }
 
