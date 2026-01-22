@@ -536,10 +536,12 @@ TraceFetch::chooseWrongPathNopSize(ThreadID tid, Addr pc)
     bool taken = false;
     if (fetch.isBTBPred()) {
         assert(fetch.dbpbtb);
-        const auto &ftq = fetch.dbpbtb->ftqHead();
-        block_end = ftq.endPC;
-        taken_pc = ftq.takenPC;
-        taken = ftq.taken;
+        if (fetch.dbpbtb->fsqHasHead()) {
+            const auto &stream = fetch.dbpbtb->fsqHead();
+            block_end = stream.predEndPC;
+            taken_pc = stream.predBranchInfo.pc;
+            taken = stream.predTaken;
+        }
     }
     // If the current PC matches predicted takenPC (assume 4B branches), use a 4B NOP.
     if (taken && taken_pc && pc == taken_pc) {
