@@ -11,31 +11,24 @@ jobs:
   align_test_spec06:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      script_path: ../kmh_v3_btb.sh
+      config_path: configs/example/kmhv3.py
       benchmark_type: "spec06-1.0c"
 
   align_test_spec17:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      script_path: ../kmh_v3_btb.sh
+      config_path: configs/example/kmhv3.py
       benchmark_type: "spec17-1.0c"
 
   perf_test_spec06:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      script_path: ../kmh_v3_ideal.sh
+      config_path: configs/example/idealkmhv3.py
       benchmark_type: "spec06-1.0c"
-  
+
   perf_test_spec17:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      script_path: ../kmh_v3_ideal.sh
+      config_path: configs/example/idealkmhv3.py
       benchmark_type: "spec17-1.0c" 
-  
-  # perf_test_spec06_vector:
-  #   uses: ./.github/workflows/gem5-perf-template.yml
-  #   with:
-  #     script_path: ../kmh_v3_ideal.sh
-  #     benchmark_type: "spec06-rvv-1.0c"
-  #     vector_type: "simple"
-  #     check_result: false
+

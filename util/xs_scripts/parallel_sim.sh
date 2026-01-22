@@ -1,8 +1,28 @@
+#!/usr/bin/env bash
 # DO NOT track your local updates in this script!
 
 function print_help() {
     printf "Usage:
-    bash $0 arch_script.sh workload_list.lst checkpoint_top_dir task_tag\n"
+    bash $0 <config_file_or_script> workload_list.lst checkpoint_top_dir task_tag [extra_gem5_args]
+
+Arguments:
+    config_file_or_script:  Config file (*.py) or wrapper script (*.sh).
+                            If relative, it is resolved relative to the repo root (gem5_home).
+    workload_list.lst:      List of workloads to run
+    checkpoint_top_dir:     Root directory for checkpoints
+    task_tag:               Tag for this experiment
+    extra_gem5_args:        Optional extra arguments for gem5 (only for .py mode)
+
+Examples:
+    # Legacy mode (using .sh script)
+    bash $0 kmh_v3_btb.sh workload.lst /cpt/dir my_exp
+
+    # New mode (using .py config)
+    bash $0 configs/example/idealkmhv3.py workload.lst /cpt/dir my_exp
+
+    # New mode with extra args
+    bash $0 configs/example/idealkmhv3.py workload.lst /cpt/dir my_exp_nosc \"--disable-mgsc\"
+\n"
     exit 1
 }
 
@@ -13,7 +33,31 @@ fi
 
 set -x
 
-export arch_script=`realpath $1`
+script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
+source "$script_dir/common.sh"
+
+# Detect if first parameter is a script (.sh) or config file (.py)
+first_param="$1"
+if [[ "$first_param" != /* ]] && [[ -f "$gem5_home/$first_param" ]]; then
+    first_param="$gem5_home/$first_param"
+fi
+export first_param=$(realpath "$first_param")
+
+if [[ "$first_param" == *.sh ]]; then
+    # Legacy mode: using wrapper script
+    export use_legacy_mode=true
+    export arch_script="$first_param"
+    echo "Legacy mode: using script $arch_script"
+else
+    # New mode: using config file directly
+    export use_legacy_mode=false
+    export config_file="$first_param"
+    export extra_gem5_args="${5:-}"  # Optional 5th parameter
+    echo "Config mode: using $config_file"
+    if [ -n "$extra_gem5_args" ]; then
+        echo "Extra gem5 args: $extra_gem5_args"
+    fi
+fi
 
 # Note 1: workload list contains the workload name, checkpoint path, and parameters, looks like:
 #       astar_biglakes_122060000000 astar_biglakes_122060000000_0.244818/0/ 0 0 20 20
@@ -70,9 +114,16 @@ function run() {
 
     touch running
 
-    script_dir=$(dirname -- "$( readlink -f -- "$0"; )")
-    bash $arch_script $1 # checkpoint
-    check $?
+    if [ "$use_legacy_mode" = true ]; then
+        # Legacy mode: call wrapper script
+        bash $arch_script $1 # checkpoint
+        check $?
+    else
+        # New mode: directly call gem5 with config file
+        # config_file is already an absolute path from realpath
+        $gem5 "$config_file" --generic-rv-cpt="$1" $extra_gem5_args
+        check $?
+    fi
 
     rm running
     touch completed
