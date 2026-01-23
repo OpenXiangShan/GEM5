@@ -59,23 +59,6 @@ DecoupledBPUWithBTB::initDB()
         someDBenabled = true;
     }
 
-    enablePredFTQTrace = checkGivenSwitch(bpDBSwitches, std::string("predftq"));
-    if (enablePredFTQTrace) {
-        std::vector<std::pair<std::string, DataType>> ftq_fields_vec = {
-            std::make_pair("ftqId", UINT64),
-            std::make_pair("fsqId", UINT64),
-            std::make_pair("startPC", UINT64),
-            std::make_pair("endPC", UINT64),
-            std::make_pair("takenPC", UINT64),
-            std::make_pair("taken", UINT64),
-            std::make_pair("target", UINT64)
-        };
-        ftqTraceManager = bpdb.addAndGetTrace("FTQTRACE", ftq_fields_vec);
-        ftqTraceManager->init_table();
-        removeGivenSwitch(bpDBSwitches, std::string("predftq"));
-        someDBenabled = true;
-    }
-
     // check whether "loop" is in bpDBSwitches
     enableLoopDB = checkGivenSwitch(bpDBSwitches, std::string("loop"));
     if (enableLoopDB) {
@@ -667,10 +650,10 @@ void
 DecoupledBPUWithBTB::dumpFsq(const char *when)
 {
     DPRINTF(DecoupleBPProbe, "dumping fsq entries %s...\n", when);
-    for (auto it = fetchStreamQueue.begin(); it != fetchStreamQueue.end();
-         it++) {
-        DPRINTFR(DecoupleBPProbe, "StreamID %lu, ", it->first);
-        printStream(it->second);
+    for (size_t i = 0; i < fetchStreamQueue.size(); ++i) {
+        DPRINTFR(DecoupleBPProbe, "StreamID %lu, ",
+                 static_cast<uint64_t>(fetchStreamBaseId + i));
+        printStream(fetchStreamQueue[i]);
     }
 }
 
@@ -840,13 +823,11 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     addBranchClassStat(branchClass, mispred);
 
     // ---------- Find corresponding fetch stream entry ----------
-    auto streamIt = fetchStreamQueue.find(inst->fsqId);
-    assert(streamIt != fetchStreamQueue.end());
-    auto entry = streamIt->second;
+    auto entry = getStream(inst->fsqId);
 
     // Record branch trace if enabled
     if (enableBranchTrace) {
-        bptrace->write_record(BpTrace(streamIt->first, entry, inst, mispred));
+        bptrace->write_record(BpTrace(inst->fsqId, entry, inst, mispred));
     }
 
     // ---------- Extract branch information ----------
@@ -956,16 +937,14 @@ void
 DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 {
     // Update committed instruction count for stream
-    auto it = fetchStreamQueue.find(inst->fsqId);
-    assert(it != fetchStreamQueue.end());
-    it->second.commitInstNum++;
+    getStream(inst->fsqId).commitInstNum++;
 
     // Update global committed instruction count
     numInstCommitted++;
 
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
             inst->staticInst->disassemble(inst->pcState().instAddr()),
-            it->second.commitInstNum);
+            getStream(inst->fsqId).commitInstNum);
 
     // ----------------------- Main Phase Processing -------------------------
     if (numInstCommitted % phaseSizeByInst == 0) {

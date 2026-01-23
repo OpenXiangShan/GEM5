@@ -45,25 +45,6 @@ GTest('jump_ahead.test',
     'jump_ahead.test.cc',
 )
 
-# must use --unit-test to enable unit test mode!
-# scons build/RISCV/cpu/pred/btb/test/fetch_target_queue.test.debug -j100 --unit-test
-GTest('fetch_target_queue.test',
-    'fetch_target_queue.test.cc',
-    '../fetch_target_queue.cc',
-)
-
-# add --unit-test to enable unit test mode
-GTest('decoupled_bpred.test',
-    'decoupled_bpred.test.cc',
-    'decoupled_bpred.cc',
-    '../mbtb.cc',
-    '../btb_tage.cc',
-    '../folded_hist.cc',
-    '../timed_base_pred.cc',
-    '../fetch_target_queue.cc',
-    # '../../../../sim/serialize.cc',     # for PCStateBase
-)
-
 # add --unit-test to enable unit test mode for RAS
 # TODO: Fix RAS test
 # GTest('ras.test',

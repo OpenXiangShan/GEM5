@@ -628,20 +628,12 @@ Fetch::processCacheCompletion(PacketPtr pkt)
                 "[TRACE] Icache completion: keep timing only; no trace bytes injection\n");
     }
 
-    // Verify fetchBufferPC alignment with FTQ
-    if (fetchBuffer[tid].valid && dbpbtb->ftqHasHead()) {
-        auto& ftq_entry = dbpbtb->ftqHead();
-        if (fetchBuffer[tid].startPC != ftq_entry.startPC) {
-            panic("fetchBufferPC %#x should be aligned with FTQ startPC %#x",
-                  fetchBuffer[tid].startPC, ftq_entry.startPC);
-        }
-        DPRINTF(Fetch, "[tid:%i] Verified fetchBufferPC %#x matches FTQ startPC %#x\n",
-                tid, fetchBuffer[tid].startPC, ftq_entry.startPC);
-
-        if (isTraceMode()) {
-            DPRINTF(TraceReader,
-                    "[TRACE-FTB] fetchBuffer.startPC aligned: 0x%x == FTQ.startPC 0x%x\n",
-                    fetchBuffer[tid].startPC, ftq_entry.startPC);
+    // Verify fetchBufferPC alignment with the supplying FSQ entry.
+    if (fetchBuffer[tid].valid && dbpbtb->fsqHasHead()) {
+        const auto &stream = dbpbtb->fsqHead();
+        if (fetchBuffer[tid].startPC != stream.startPC) {
+            panic("fetchBufferPC %#x should be aligned with FSQ startPC %#x",
+                  fetchBuffer[tid].startPC, stream.startPC);
         }
     }
 
@@ -787,31 +779,31 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // this function updates it.
     bool predict_taken = false;
 
-    // Decoupled+BTB-only: compute next PC directly from FTQ head entry.
+    // Decoupled+BTB-only: compute next PC directly from the supplying FSQ entry.
     ThreadID tid = inst->threadNumber;
     assert(dbpbtb);
-    assert(dbpbtb->ftqHasHead());
-    const auto &ftq_entry = dbpbtb->ftqHead();
-    const auto ftq_id = dbpbtb->ftqHeadId();
-    const auto fsq_id = dbpbtb->ftqHeadStreamId();
+    assert(dbpbtb->fsqHasHead());
+    const auto &stream = dbpbtb->fsqHead();
+    const auto fsq_id = dbpbtb->fsqHeadId();
+    const auto ftq_id = dbpbtb->fsqHeadFtqId();
 
     const Addr curr_pc = next_pc.instAddr();
-    assert(ftq_entry.startPC <= curr_pc && curr_pc < ftq_entry.endPC);
+    assert(stream.startPC <= curr_pc && curr_pc < stream.predEndPC);
 
     bool run_out = false;
 
-    // Taken when the current PC matches the predicted takenPC.
-    predict_taken = ftq_entry.taken && (curr_pc == ftq_entry.takenPC);
+    // Taken when the current PC matches the predicted control PC.
+    predict_taken = stream.predTaken && (curr_pc == stream.predBranchInfo.pc);
     if (predict_taken) {
         auto &rpc = next_pc.as<GenericISA::PCStateWithNext>();
-        rpc.pc(ftq_entry.target);
-        rpc.npc(ftq_entry.target + 4);
+        rpc.pc(stream.predBranchInfo.target);
+        rpc.npc(stream.predBranchInfo.target + 4);
         rpc.uReset();
         run_out = true;
     } else if (inst->staticInst->isMicroop()) {
         // Microops must advance uPC explicitly; they do not rely on decoder NPC.
         inst->staticInst->advancePC(next_pc);
-        run_out = next_pc.instAddr() >= ftq_entry.endPC;
+        run_out = next_pc.instAddr() >= stream.predEndPC;
     } else {
         // Sequential fetch: decoder already computed npc with correct inst size.
         auto &rpc = next_pc.as<RiscvISA::PCState>();
@@ -820,10 +812,10 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
         // Placeholder; decoder will overwrite npc on the next decode.
         rpc.npc(fall_thru + 4);
         rpc.uReset();
-        run_out = fall_thru >= ftq_entry.endPC;
+        run_out = fall_thru >= stream.predEndPC;
     }
 
-    // Track how many dynamic instructions were fetched for this FTQ entry.
+    // Track how many dynamic instructions were fetched for this (legacy) FTQ/FSQ entry.
     ftqEntryFetchedInsts[tid]++;
     if (run_out) {
         dbpbtb->consumeFetchTarget(ftq_id, fsq_id, ftqEntryFetchedInsts[tid]);
@@ -841,16 +833,8 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
         return false;
     }
 
-    if (predict_taken) {
-        DPRINTF(Fetch, "[tid:%i] [sn:%llu] Branch at PC %#x "
-                "predicted to be taken to %s\n",
-                tid, inst->seqNum, inst->pcState().instAddr(), next_pc);
-    } else {
-        DPRINTF(Fetch, "[tid:%i] [sn:%llu] Branch at PC %#x "
-                "predicted to be not taken\n",
-                tid, inst->seqNum, inst->pcState().instAddr());
-    }
-
+    DPRINTF(Fetch, "[tid:%i] [sn:%llu] Branch at PC %#x predicted to be taken to %s\n",
+            tid, inst->seqNum, inst->pcState().instAddr(), next_pc);
     DPRINTF(Fetch, "[tid:%i] [sn:%llu] Branch at PC %#x "
             "predicted to go to %s\n",
             tid, inst->seqNum, inst->pcState().instAddr(), next_pc);
@@ -1720,10 +1704,10 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
             instruction->isMov());
     assert(dbpbtb);
     DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
-            instruction->seqNum, dbpbtb->ftqHeadStreamId(),
-            dbpbtb->ftqHeadId());
-    instruction->setFsqId(dbpbtb->ftqHeadStreamId());
-    instruction->setFtqId(dbpbtb->ftqHeadId());
+            instruction->seqNum, dbpbtb->fsqHeadId(),
+            dbpbtb->fsqHeadFtqId());
+    instruction->setFsqId(dbpbtb->fsqHeadId());
+    instruction->setFtqId(dbpbtb->fsqHeadFtqId());
 
 #if TRACING_ON
     if (trace) {
@@ -1779,9 +1763,9 @@ bool
 Fetch::checkDecoupledFrontend(ThreadID tid)
 {
     assert(dbpbtb);
-    if (!isTraceMode() && !dbpbtb->ftqHasHead()) {
+    if (!isTraceMode() && !dbpbtb->fsqHasHead()) {
         dbpbtb->addFtqNotValid();
-        DPRINTF(Fetch, "Skip fetch when FTQ head is not available\n");
+        DPRINTF(Fetch, "Skip fetch when FSQ head is not available\n");
         setAllFetchStalls(StallReason::FTQBubble);
         return false;
     }
@@ -1804,11 +1788,10 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
         status_change = true;
         return true;
     } else if (canFetchInstructions(tid)) {
-        // Check if we need to fetch from icache based on FTQ entry status
-        // For RISC-V, we don't need ROM microcode, only check FTQ status and macroop
-        if (needNewFTQEntry(tid) && !macroop[tid]) {
-            DPRINTF(Fetch, "[tid:%i] Fetch is stalled due to need new FTQ entry\n", tid);
-            return true;    // to send icache request in performInstructionFetch!
+        // If the decoder needs bytes, performInstructionFetch() will issue an
+        // I-cache request via sendNextCacheRequest().
+        if (!macroop[tid] && !fetchBuffer[tid].valid) {
+            return true;
         } else if (checkInterrupt(this_pc.instAddr()) && !delayedCommit[tid]) {
             // Stall CPU if an interrupt is posted
             ++fetchStats.miscStallCycles;
@@ -2008,7 +1991,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     // For decoupled frontend (including trace mode), check FTQ availability
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
+           !predictedBranch && !fsqEmpty() && !waitForVsetvl) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
@@ -2064,20 +2047,24 @@ Fetch::performInstructionFetch(ThreadID tid)
 
 void
 Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
-    if (!needNewFTQEntry(tid)) {
+    if (fetchBuffer[tid].valid) {
         return;
     }
 
-    Addr ftq_start_pc = getNextFTQStartPC(tid);
-    if (ftq_start_pc == 0) {
-        DPRINTF(Fetch, "[tid:%i] No FTQ entry available for next fetch\n", tid);
+    if (fsqEmpty()) {
+        DPRINTF(Fetch, "[tid:%i] No FSQ entry available for next fetch\n", tid);
         return;
     }
 
-    DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FTQ entry, "
-                  "starting at PC %#x (original PC %s)\n",
-            tid, ftq_start_pc, pc_state);
-    fetchCacheLine(ftq_start_pc, tid, pc_state.instAddr());
+    assert(dbpbtb);
+    const auto &stream = dbpbtb->fsqHead();
+    const Addr start_pc = stream.startPC;
+    fetchBuffer[tid].startPC = start_pc;
+
+    DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FSQ entry, "
+                  "starting at PC %#x (endPC %#x; original PC %s)\n",
+            tid, start_pc, stream.predEndPC, pc_state);
+    fetchCacheLine(start_pc, tid, pc_state.instAddr());
 }
 
 void
@@ -2252,55 +2239,6 @@ Fetch::branchCount()
 {
     panic("Branch Count Fetch policy unimplemented\n");
     return InvalidThreadID;
-}
-
-bool
-Fetch::needNewFTQEntry(ThreadID tid)
-{
-    // Stage 1: Allow FTQ/FSQ flow in trace mode - removed early return
-    // In trace mode with decoupled frontend, we still need FTQ entries
-    // to maintain proper fetch buffer management and allow BP training
-
-    // Check if we need a new FTQ entry based on:
-    // 1. FTQ gating blocks progress (no supplied target / entry exhausted), or
-    // 2. Invalid fetch buffer (cache miss or initial state).
-    bool need_new = ftqEmpty() || !fetchBuffer[tid].valid;
-
-    DPRINTF(Fetch,
-            "[tid:%i] needNewFTQEntry: ftqEmpty=%d fetchBufferValid=%d result=%d\n",
-            tid, ftqEmpty(), fetchBuffer[tid].valid, need_new);
-
-    // Stage 7: Validation & Instrumentation - FTQ entry issuing tracking
-    if (need_new && isTraceMode()) {
-        DPRINTF(TraceReader, "[TRACE-FTB] FTQ entry will be issued: tid=%d, "
-                "ftqEmpty=%d fetchBuffer.valid=%d\n",
-                tid, ftqEmpty(), fetchBuffer[tid].valid);
-    }
-
-    return need_new;
-}
-
-Addr
-Fetch::getNextFTQStartPC(ThreadID tid)
-{
-    assert(dbpbtb);
-
-    if (!dbpbtb->ftqHasHead()) {
-        return 0;
-    }
-
-    // Now get the current supplying FTQ entry
-    auto& ftq_entry = dbpbtb->ftqHead();
-    Addr start_pc = ftq_entry.startPC;
-
-    // Update fetchBufferPC to align with FTQ entry
-    fetchBuffer[tid].startPC = start_pc;
-
-    DPRINTF(Fetch, "[tid:%i] getNextFTQStartPC: FTQ entry startPC=%#x, "
-            "endPC=%#x, fetchBufferPC updated to %#x\n",
-            tid, start_pc, ftq_entry.endPC, fetchBuffer[tid].startPC);
-
-    return start_pc;
 }
 
 void
