@@ -827,6 +827,9 @@ class Base : public ClockedObject
 
     const Addr pageBytes;
 
+    /** Allow upstream PF req train low level Prefetcher */
+    const bool prefetchTrain;
+
     /** Prefetch on every access, not just misses */
     const bool prefetchOnAccess;
 

@@ -66,6 +66,7 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_activepage = False
             prefetcher.enable_pht = True
             prefetcher.enable_xsstream = True
+            prefetcher.prefetch_train = False # disable L1PF train L2
 
     if cache_level == 'l2':
         if options.classic_l2:
@@ -79,6 +80,7 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_despacito_stream = False
                 prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
                 prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
+                prefetcher.prefetch_train = False # disable L1PF train L2
             if options.l1_to_l2_pf_hint:
                 prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
@@ -97,6 +99,7 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_despacito_stream = False
                 prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
                 prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
+                prefetcher.prefetch_train = False # disable L1PF train L2
             if options.l1_to_l2_pf_hint:
                 prefetcher.queue_size = 32
                 prefetcher.max_prefetch_requests_with_pending_translation = 128

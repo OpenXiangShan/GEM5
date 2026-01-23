@@ -207,6 +207,7 @@ Base::Base(const BasePrefetcherParams &p)
       onWrite(p.on_write), onData(p.on_data), onInst(p.on_inst),
       requestorId(p.sys->getRequestorId(this)),
       pageBytes(p.page_bytes),
+      prefetchTrain(p.prefetch_train),
       prefetchOnAccess(p.prefetch_on_access),
       prefetchOnPfHit(p.prefetch_on_pf_hit),
       useVirtualAddresses(p.use_virtual_addresses),
@@ -323,7 +324,7 @@ Base::observeAccess(const PacketPtr &pkt, bool miss) const
     bool inv = pkt->isInvalidate();
 
     // Filter L1 prefetcher requests from training L2 prefetcher
-    if (pkt->req->isPrefetch()) {
+    if (pkt->req->isPrefetch() && !prefetchTrain) {
         return false;
     }
     if (!miss) {
