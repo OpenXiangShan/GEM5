@@ -849,7 +849,7 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
         auto &foldedHistqueue = type == 0 ? aheadindexFoldedHist : aheadtagFoldedHist;
         auto &foldedHist = type == 0 ? indexFoldedHist : tagFoldedHist;
         if (foldedHistqueue.empty()) {
-            break;
+            continue; // 仅跳过该类型，不阻断另一类
         }
         foldedHist = foldedHistqueue.front();
     }
@@ -907,16 +907,25 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
-    if (aheadindexFoldedHist.empty() || aheadtagFoldedHist.empty()) {
-        DPRINTF(TAGE, "recoverPHist: ahead folded history queues are empty, cannot recover\n");
-        return;
+    // 如果队列为空，先用预测时的快照补上一份，保证恢复有源数据
+    if (aheadindexFoldedHist.empty()) {
+        aheadindexFoldedHist.push(predMeta->indexFoldedHist);
     }
+    if (aheadtagFoldedHist.empty()) {
+        aheadtagFoldedHist.push(predMeta->tagFoldedHist);
+    }
+
     for (int type = 0; type < 2; type++) {
         auto &foldedHistQueuefront = type == 0 ? aheadindexFoldedHist.front() : aheadtagFoldedHist.front();
-        auto predFoldedHist =type == 0 ? predMeta->indexFoldedHist : predMeta->tagFoldedHist;
+        auto predFoldedHist = type == 0 ? predMeta->indexFoldedHist : predMeta->tagFoldedHist;
+
         for (int i = 0; i < numPredictors; i++) {
             foldedHistQueuefront[i].recover(predFoldedHist[i]);
         }
+
+        // 把恢复后的值同步回全局，以便随后的 doUpdateHist 使用正确的上一拍快照
+        auto &liveFolded = type == 0 ? indexFoldedHist : tagFoldedHist;
+        liveFolded = foldedHistQueuefront;
     }
 
     doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
