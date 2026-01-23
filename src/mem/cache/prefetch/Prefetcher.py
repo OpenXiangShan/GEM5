@@ -77,6 +77,7 @@ class BasePrefetcher(ClockedObject):
     on_write = Param.Bool(True, "Notify prefetcher on writes")
     on_data  = Param.Bool(True, "Notify prefetcher on data accesses")
     on_inst  = Param.Bool(True, "Notify prefetcher on instruction accesses")
+    prefetch_train = Param.Bool(True, "Allow upstream PF req train low level Prefetcher")
     prefetch_on_access = Param.Bool(False,
         "Notify the hardware prefetcher on every access (not just misses)")
     prefetch_on_pf_hit = Param.Bool(False,
