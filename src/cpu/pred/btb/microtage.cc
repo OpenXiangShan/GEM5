@@ -863,7 +863,7 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
         }
         foldedHistqueue.push(foldedHist);
         assert(foldedHistqueue.size() <= 2);
-        if (foldedHistqueue.size() > 1) {
+        if (foldedHistqueue.size() > 2) {
             foldedHistqueue.pop();
         }
     }
@@ -906,7 +906,10 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
-
+    if (aheadindexFoldedHist.empty() || aheadtagFoldedHist.empty()) {
+        DPRINTF(TAGE, "recoverPHist: ahead folded history queues are empty, cannot recover\n");
+        return;
+    }
     for (int type = 0; type < 2; type++) {
         auto &foldedHistQueuefront = type == 0 ? aheadindexFoldedHist.front() : aheadtagFoldedHist.front();
         auto predFoldedHist =type == 0 ? predMeta->indexFoldedHist : predMeta->tagFoldedHist;
