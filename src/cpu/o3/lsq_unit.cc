@@ -1276,6 +1276,7 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
             auto& store_inst = storePipeSx[1]->insts[i];
             if (pipeLineNukeCheck(inst, store_inst)) {
                 DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
+                inst->setProducerStorePC(store_inst->pcState().instAddr());
                 inst->setNukeReplay();
                 return NoFault;
             }

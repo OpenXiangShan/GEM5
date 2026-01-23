@@ -1630,6 +1630,7 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             if (enableStoreSetTrain) {
                 instQueue.violation(inst, violator);
             }
+            violator->setProducerStorePC(inst->pcState().instAddr());
 
             // Squash.
             squashDueToMemOrder(violator, tid);

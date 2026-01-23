@@ -199,6 +199,10 @@ private:
     void processTrapEvent(ThreadID tid);
     LoadTripleCounter loadTripleCounter;
 
+    // --- Maps for "last time" tracking, keyed by static load PC ---
+    std::unordered_map<Addr, Addr> lastLoadEA;
+    std::unordered_map<Addr, Addr> lastLoadProducerStorePC;
+
   public:
     /** Construct a Commit with the given parameters. */
     Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params);
@@ -609,6 +613,9 @@ private:
         statistics::Scalar commitEligibleSamples;
         /** Number of load get the same pc && addr && value*/
         statistics::Scalar loadTriple;
+        statistics::Scalar loadEAReused;
+        statistics::Scalar loadsWithProducer;
+        statistics::Scalar producerStable;
 
         statistics::Distribution segUnitStrideNF;
         statistics::Distribution segStrideNF;
