@@ -41,27 +41,13 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     outputs:
-      script_path: ${{ steps.resolve.outputs.script_path }}
+      config_path: ${{ steps.resolve.outputs.config_path }}
       pr_sha: ${{ steps.resolve.outputs.pr_sha }}
     steps:
       - name: Resolve parameters
         id: resolve
         run: |
-          case "${{ github.event.inputs.configuration }}" in
-            "kmhv2.py")
-              echo "script_path=../kmh_6wide.sh" >> $GITHUB_OUTPUT
-              ;;
-            "kmhv3.py")
-              echo "script_path=../kmh_v3_btb.sh" >> $GITHUB_OUTPUT
-              ;;
-            "idealkmhv3.py")
-              echo "script_path=../kmh_v3_ideal.sh" >> $GITHUB_OUTPUT
-              ;;
-            *)
-              echo "Error: unsupported configuration '${{ github.event.inputs.configuration }}'" >&2
-              exit 1
-              ;;
-          esac
+          echo "config_path=configs/example/${{ github.event.inputs.configuration }}" >> $GITHUB_OUTPUT
           
           if [ -n "${{ github.event.inputs.branch }}" ]; then
             echo "pr_sha=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
@@ -73,7 +59,7 @@ jobs:
     needs: setup
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
-      script_path: ${{ needs.setup.outputs.script_path }}
+      config_path: ${{ needs.setup.outputs.config_path }}
       benchmark_type: ${{ github.event.inputs.benchmark_type }}
       vector_type: ${{ github.event.inputs.vector_type }}
       pr_sha: ${{ needs.setup.outputs.pr_sha }}

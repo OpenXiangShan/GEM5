@@ -3,9 +3,15 @@ name: gem5 Performance Test Template (Unified)
 on:
   workflow_call:
     inputs:
-      script_path:
+      config_path:
         required: true
         type: string
+        description: "gem5 config file path (relative to repo root), e.g. configs/example/idealkmhv3.py"
+      extra_args:
+        required: false
+        type: string
+        default: ""
+        description: "Extra arguments for gem5 (e.g., --disable-mgsc). Only works with .py config files."
       benchmark_type:
         required: true
         type: string
@@ -116,17 +122,32 @@ jobs:
 
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
+        env:
+          GCBV_REF_SO: "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          GCB_RESTORER: ""
+          GEM5_HOME: ${{ github.workspace }}
+          GEM5_BUILD_TYPE: fast
         run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
-          export GCB_RESTORER=""
-          export GEM5_HOME=$(pwd)
-          export GEM5_BUILD_TYPE=fast
           mkdir -p $GEM5_HOME/util/xs_scripts/test
           cd $GEM5_HOME/util/xs_scripts/test
-          bash ../parallel_sim.sh `realpath ${{ inputs.script_path }}` \
+
+          CONFIG_PATH="${{ inputs.config_path }}"
+          if [[ "$CONFIG_PATH" == /* ]]; then
+            echo "Error: config_path must be repo-root-relative, got absolute path: '$CONFIG_PATH'"
+            exit 1
+          fi
+          if [[ "$CONFIG_PATH" != *.py ]]; then
+            echo "Error: config_path must be a .py gem5 config file path, got: '$CONFIG_PATH'"
+            exit 1
+          fi
+
+          CONFIG_PATH="$GEM5_HOME/$CONFIG_PATH"
+
+          bash ../parallel_sim.sh "$(realpath "$CONFIG_PATH")" \
             ${{ steps.config.outputs.checkpoint_list }} \
             ${{ steps.config.outputs.checkpoint_root_node}} \
-            spec_all
+            spec_all \
+            "${{ inputs.extra_args }}"
       - name: Setup gem5_data_proc environment
         run: |
           # 使用本地数据处理仓库，避免GitHub网络问题
