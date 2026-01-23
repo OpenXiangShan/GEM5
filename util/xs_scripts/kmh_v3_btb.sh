@@ -7,4 +7,6 @@ for var in GCBV_REF_SO GCB_RESTORER gem5_home; do
     checkForVariable $var
 done
 
-$gem5 $gem5_home/configs/example/kmhv3.py --generic-rv-cpt=$1
+$gem5 $gem5_home/configs/example/kmhv3.py --generic-rv-cpt=$1 \
+ --enable-arch-db \
+ --arch-db-file  "/nfs/home/zhengzhongqiang/Work/GEM5_NL/OnlyNLPerfDB/mcf_12253.db"
