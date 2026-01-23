@@ -1018,7 +1018,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     on_data  = True
     on_inst  = False
 
-    region_size = Param.Int(1024, "region size")
+    region_size = Param.Int(4096, "region size")
     # filter table (full-assoc)
     filter_entries = Param.MemorySize("16", "num of filter table entries")
     filter_indexing_policy = Param.BaseIndexingPolicy(
