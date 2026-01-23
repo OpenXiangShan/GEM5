@@ -847,7 +847,7 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
     // }
     for (int type = 0; type < 2; type++) {
         auto &foldedHistqueue = type == 0 ? aheadindexFoldedHist : aheadtagFoldedHist;
-        auto &foldedHist =type == 0 ? indexFoldedHist : tagFoldedHist;
+        auto &foldedHist = type == 0 ? indexFoldedHist : tagFoldedHist;
         if (foldedHistqueue.empty()) {
             break;
         }
@@ -864,7 +864,7 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
         }
         foldedHistqueue.push(foldedHist);
         assert(foldedHistqueue.size() <= 2);
-        if (foldedHistqueue.size() > 2) {
+        if (foldedHistqueue.size() >= 2) {
             foldedHistqueue.pop();
         }
     }
