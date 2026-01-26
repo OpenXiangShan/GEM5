@@ -2042,13 +2042,6 @@ decode QUADRANT {
         }}, IsDirectControl, IsUncondControl);
 
         0x1c: decode FUNCT3 {
-            format LoadH {
-                0x04:  decode HFUNCT2{
-                    0x643: hlvx_hu({{
-                        Rd = Mem_uh;
-                    }},inst_flags = IsHInst);
-                }
-            }
             format SystemOp {
                 0x0: decode FUNCT7 {
                     0x0: decode RS2 {
@@ -2173,17 +2166,15 @@ decode QUADRANT {
 
                      0x11: hfence_vvma({{
                         auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
-                        MISA misa = xc->readMiscReg(MISCREG_ISA);
+                        RegVal misa = xc->readMiscReg(MISCREG_ISA);
 
-                        if (!misa.rvh) {
+                        if ((misa & ISA_EXT_H_MASK) == 0) {
                             return std::make_shared<IllegalInstFault>(
                                             "hfence needs RVH",
                                             machInst);
                         }
-                        if (isV(xc)) {
-                            return std::make_shared<VirtualInstFault>(
-                                            "hfence with V=1",
-                                            machInst);
+                        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                            return std::make_shared<HVFault>();
                         }
                         if (pm < PRV_S) {
                             return std::make_shared<IllegalInstFault>(
@@ -2224,17 +2215,15 @@ decode QUADRANT {
                             auto pm = (PrivilegeMode)xc->readMiscReg(
                                                         MISCREG_PRV);
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
-                            MISA misa = xc->readMiscReg(MISCREG_ISA);
+                            RegVal misa = xc->readMiscReg(MISCREG_ISA);
 
-                            if (!misa.rvh) {
+                            if ((misa & ISA_EXT_H_MASK) == 0) {
                                 return std::make_shared<IllegalInstFault>(
                                                 "hfence needs RVH",
                                                 machInst);
                             }
-                            if (isV(xc)) {
-                                return std::make_shared<VirtualInstFault>(
-                                                "hfence with V=1",
-                                                machInst);
+                            if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                                return std::make_shared<HVFault>();
                             }
 
                             if (pm < PRV_S ||

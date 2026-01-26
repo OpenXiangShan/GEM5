@@ -75,7 +75,9 @@ def LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, mem_flags,
          'memacc_code': memacc_code, 'postacc_code': postacc_code },
         inst_flags)
     if mem_flags:
-        mem_flags = [ 'Request::%s' % flag for flag in mem_flags ]
+        # Wrap each flag so expressions like `ARCH_BITS & XlateFlags::FOO`
+        # don't trigger -Wparentheses when combined with '|'.
+        mem_flags = [ '(Request::%s)' % flag for flag in mem_flags ]
         s = '\n\tmemAccessFlags = ' + '|'.join(mem_flags) + ';'
         iop.constructor += s
 
@@ -230,16 +232,15 @@ def template HyperLoadExecute {{
 
         auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
         HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
-        MISA misa = xc->readMiscReg(MISCREG_ISA);
+        RegVal misa = xc->readMiscReg(MISCREG_ISA);
 
-        if (!misa.rvh) {
+        if ((misa & ISA_EXT_H_MASK) == 0) {
             return std::make_shared<IllegalInstFault>(
                 "HyperLoad without RVH", machInst);
         }
 
-        if (isV(xc)) {
-            return std::make_shared<VirtualInstFault>(
-                "HyperLoad with V-bit on", machInst);
+        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+            return std::make_shared<HVFault>();
         }
 
         if (pm == PRV_U && hstatus.hu == 0) {
@@ -275,16 +276,15 @@ def template HyperLoadInitiateAcc {{
 
         auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
         HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
-        MISA misa = xc->readMiscReg(MISCREG_ISA);
+        RegVal misa = xc->readMiscReg(MISCREG_ISA);
 
-        if (!misa.rvh) {
+        if ((misa & ISA_EXT_H_MASK) == 0) {
             return std::make_shared<IllegalInstFault>(
                 "HyperLoad without RVH", machInst);
         }
 
-        if (isV(xc)) {
-            return std::make_shared<VirtualInstFault>(
-                "HyperLoad with V-bit on", machInst);
+        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+            return std::make_shared<HVFault>();
         }
 
         if (pm == PRV_U && hstatus.hu == 0) {
@@ -328,16 +328,15 @@ def template HyperStoreExecute {{
 
         auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
         HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
-        MISA misa = xc->readMiscReg(MISCREG_ISA);
+        RegVal misa = xc->readMiscReg(MISCREG_ISA);
 
-        if (!misa.rvh) {
+        if ((misa & ISA_EXT_H_MASK) == 0) {
             return std::make_shared<IllegalInstFault>(
                 "HyperStore without RVH", machInst);
         }
 
-        if (isV(xc)) {
-            return std::make_shared<VirtualInstFault>(
-                "HyperStore with V-bit on", machInst);
+        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+            return std::make_shared<HVFault>();
         }
 
         if (pm == PRV_U && hstatus.hu == 0) {
@@ -375,16 +374,15 @@ def template HyperStoreInitiateAcc {{
 
         auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
         HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
-        MISA misa = xc->readMiscReg(MISCREG_ISA);
+        RegVal misa = xc->readMiscReg(MISCREG_ISA);
 
-        if (!misa.rvh) {
+        if ((misa & ISA_EXT_H_MASK) == 0) {
             return std::make_shared<IllegalInstFault>(
                 "HyperStore without RVH", machInst);
         }
 
-        if (isV(xc)) {
-            return std::make_shared<VirtualInstFault>(
-                "HyperStore with V-bit on", machInst);
+        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+            return std::make_shared<HVFault>();
         }
 
         if (pm == PRV_U && hstatus.hu == 0) {

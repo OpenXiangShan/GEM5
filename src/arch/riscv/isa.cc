@@ -484,17 +484,6 @@ ISA::readMiscReg(int misc_reg)
             // MISA misa = readMiscRegNoEffect(MISCREG_ISA);
             // return misa.rvh ? mideleg_val | HS_INTERRUPTS : mideleg_val;
         }
-      case MISCREG_UIE:
-        {
-            RegVal mask = readMiscRegNoEffect(MISCREG_SIDELEG);
-            mask &= readMiscRegNoEffect(MISCREG_MIDELEG);
-            return readMiscReg(MISCREG_IE) & mask;
-        }
-      case MISCREG_SIE:
-        {
-            RegVal mask = readMiscRegNoEffect(MISCREG_MIDELEG);
-            return readMiscReg(MISCREG_IE) & mask;
-        }
       case MISCREG_SEPC:
       case MISCREG_MEPC:
         {
