@@ -96,17 +96,16 @@ class MicroTAGE : public TimedBaseBTBPredictor
         public:
             Addr btb_pc;           // btb entry pc, same as tage entry pc
             TageTableInfo mainInfo; // Main prediction info
-            TageTableInfo altInfo;  // Alternative prediction info
-            bool useAlt;           // Whether to use alternative prediction, true if main is weak or no main prediction
-            bool taken;            // Final prediction (taken/not taken) = use_alt ? alt_provided ? alt_taken : base_taken : main_taken
-            bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
+            //TageTableInfo altInfo;  // Alternative prediction info
+            bool mainprovided;    // Whether to use alternative prediction, true if main is weak or no main prediction
+            bool taken;           // Final prediction outcome
+            bool basePred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
 
-            TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false) {}
-
-            TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
-                            bool useAlt, bool taken, bool altPred) :
-                            btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
-                            useAlt(useAlt), taken(taken), altPred(altPred) {}
+            TagePrediction() : btb_pc(0), mainprovided(false), taken(false), basePred(false) {}
+            TagePrediction(Addr btb_pc, TageTableInfo mainInfo,
+                            bool mainprovided, bool taken, bool basePred) :
+                            btb_pc(btb_pc), mainInfo(mainInfo),
+                            mainprovided(mainprovided), taken(taken), basePred(basePred) {}
     };
 
 
@@ -168,8 +167,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
-    void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
+    void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries, CondTakens& results);
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table);
@@ -189,9 +187,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
     Addr getOffset(Addr pc) {
         return (pc & (blockSize - 1)) >> 1;
     }
-
-    // Get base table index for a given PC
-    Addr getBaseTableIndex(Addr pc);
 
     // Get branch index within a prediction block
     unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC);
@@ -248,18 +243,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // The actual TAGE prediction tables (table x index x way)
     std::vector<std::vector<std::vector<TageEntry>>> tageTable;
 
-    // Base table for fallback predictions (index x position)
-    // Index based on 32-byte aligned address, covers 64-byte block
-    // Each entry supports up to maxBranchPositions branch positions within the block
-    std::vector<std::vector<short>> baseTable;
-    const unsigned baseTableSize;  // Base table size
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
-
-    // Table for tracking when to use alternative prediction on provider weak
-    // use_alt_on_na: indexed by PC, 7-bit signed saturating counter [-64, 63]
-    const unsigned useAltOnNaSize;
-    const unsigned useAltOnNaWidth;
-    std::vector<short> useAlt;
 
     // useful bit reset counter, when cnt >= 256, reset useful bit of all entries
     int usefulResetCnt{0};
@@ -288,17 +272,11 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Decrement counter with saturation
     bool satDecrement(int min, short &counter);
 
-    // Get index for useAlt table
-    Addr getUseAltIdx(Addr pc);
-
     // Cache for TAGE indices
     std::vector<Addr> tageIndex;
 
     // Cache for TAGE tags
     std::vector<Addr> tageTag;
-
-    // Whether statistical corrector is enabled
-    bool enableSC;
 
     // Whether to update on read
     bool updateOnRead;
@@ -316,7 +294,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Track last prediction bank for conflict detection
     unsigned lastPredBankId;         // Bank ID of last prediction
     bool predBankValid;              // Whether lastPredBankId is valid
-    bool usingBasetable;          // Whether using basetable for either MBTB or TAGE
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
@@ -350,6 +327,9 @@ class MicroTAGE : public TimedBaseBTBPredictor
         Scalar updateAllocSuccess;
         Scalar updateMispred;
         Scalar updateResetU;
+
+        Scalar updateUtageHit;
+        Scalar updateUtageWrong;
 
         // Bank conflict statistics
         Scalar updateBankConflict;           // Number of bank conflicts detected
@@ -403,8 +383,8 @@ public:
     {
         std::unordered_map<Addr, TagePrediction> preds;
         std::vector<PathFoldedHist> tagFoldedHist;
-        std::vector<PathFoldedHist> altTagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
+        std::vector<PathFoldedHist> altTagFoldedHist;
         bitset history;     // for viewing
         TageMeta() {}
     } TageMeta;
