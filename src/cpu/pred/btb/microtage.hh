@@ -1,11 +1,11 @@
 #ifndef __CPU_PRED_BTB_MICROTAGE_HH__
 #define __CPU_PRED_BTB_MICROTAGE_HH__
 
+#include <cstdint>
 #include <deque>
 #include <map>
-#include <vector>
 #include <utility>
-#include <cstdint>
+#include <vector>
 
 #include "base/sat_counter.hh"
 #include "base/types.hh"
