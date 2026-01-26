@@ -264,12 +264,16 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry, con
         } else if (oldEntryIter != ubtb.end() && takenEntry.valid) {
             ubtbStats.s1Hits3Taken++;
             // both S0 and S3 predict taken
-            if (oldEntryIter->pc != takenEntry.pc || oldEntryIter->target != takenEntry.target) {
+            if (oldEntryIter->pc != takenEntry.pc ) {
                 // S0 and S3 predict different branch instruction
                 updateUCtr(oldEntryIter->uctr, false);
                 if (oldEntryIter->uctr == 0) {
                     // replace the old entry with the new one
                     replaceOldEntry(oldEntryIter, takenEntry, startAddr);
+                }
+                if (oldEntryIter->target != takenEntry.target) {
+                    // update target if different
+                    oldEntryIter->target = takenEntry.target;
                 }
             } else {
                 // S0 and S3 predict the same (brpc and target)
