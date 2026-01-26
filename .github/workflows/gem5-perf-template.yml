@@ -156,7 +156,7 @@ jobs:
       - name: Check performance test result
         run: |
           # 添加yanyue的 Python 包路径, 包含pandas等
-          export PYTHONPATH=/nfs/home/yanyue/.local/lib/python3.10/site-packages:$PYTHONPATH
+          export PYTHONPATH=/nfs/home/yanyue/.local/lib/python3.12/site-packages:$PYTHONPATH
           # 每次run 会进入新的shell, 需要重新设置GEM5_HOME
           export GEM5_HOME=$GITHUB_WORKSPACE
           cd $GITHUB_WORKSPACE/gem5_data_proc
