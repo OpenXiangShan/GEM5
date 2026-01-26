@@ -148,6 +148,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     ThreadID scheduleThread() { return 0; }
 
     void processNewPrediction(ThreadID tid);
+    bool enableTwoTaken{true};
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
 

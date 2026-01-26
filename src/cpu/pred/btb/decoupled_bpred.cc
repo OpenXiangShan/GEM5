@@ -143,29 +143,32 @@ DecoupledBPUWithBTB::tick()
         return;
     }
 
-    // 1. Request new prediction if FSQ not full and we are idle
-    if (!threads[curTid].validprediction && !ftq.full(curTid)) {
-        if (threads[curTid].blockPredictionPending) {
-            DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
-            dbpBtbStats.predictionBlockedForUpdate++;
-            threads[curTid].blockPredictionPending = false;
-        } else {
-            requestNewPrediction(curTid);
+    int predsRemainsToBeMade = enableTwoTaken ? 2 : 1;
+    while (predsRemainsToBeMade > 0) {
+        // 1. Request new prediction if FSQ not full and we are idle
+        if (!threads[curTid].validprediction && !ftq.full(curTid)) {
+            if (threads[curTid].blockPredictionPending) {
+                DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
+                dbpBtbStats.predictionBlockedForUpdate++;
+                threads[curTid].blockPredictionPending = false;
+            } else {
+                requestNewPrediction(curTid);
+            }
         }
+
+        processNewPrediction(curTid);
+        predsRemainsToBeMade--;
     }
 
     for (int tid = 0; tid < numThreads; tid++) {
-        processNewPrediction(tid);
-
-        // Decrement override bubbles counter
         auto& numOverrideBubbles = threads[tid].numOverrideBubbles;
         if (numOverrideBubbles > 0) {
             numOverrideBubbles--;
             dbpBtbStats.overrideBubbleNum++;
-            DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
+            DPRINTF(Override, "Consuming override bubble, %d remaining\n",
+                    numOverrideBubbles);
         }
     }
-
     DPRINTF(Override, "Prediction cycle complete\n");
 }
 
