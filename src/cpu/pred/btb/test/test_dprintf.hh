@@ -37,10 +37,6 @@ namespace debug {
 #undef DPRINTFNR
 #endif
 
-#ifdef DPRINTF_UNCONDITIONAL
-#undef DPRINTF_UNCONDITIONAL
-#endif
-
 #define DPRINTF_AS_NOP
 
 #if defined(DPRINTF_AS_NOP)
@@ -76,10 +72,6 @@ namespace debug {
 
 #ifndef DPRINTFNR
 #define DPRINTFNR(...) std::printf(__VA_ARGS__)
-#endif
-
-#ifndef DPRINTF_UNCONDITIONAL
-#define DPRINTF_UNCONDITIONAL(x, ...) std::printf(__VA_ARGS__)
 #endif
 
 #endif
