@@ -1034,6 +1034,7 @@ class DespacitoStreamPrefetcher(QueuedPrefetcher):
         LRURP(),
         "Replacement policy of pattern history table"
     )
+    enable_despacito_db = Param.Bool(False, "Enable despacito prefetch database")
 
 
 class XSCompositePrefetcher(QueuedPrefetcher):
