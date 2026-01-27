@@ -1126,7 +1126,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     thresholdTablelogSize = Param.Unsigned(6,
         "Log size of update threshold counters tables")
 
-    updateThresholdWidth = Param.Unsigned(12,
+    updateThresholdWidth = Param.Unsigned(14,
         "Number of bits for the update threshold counter")
 
     pUpdateThresholdWidth = Param.Unsigned(8,
