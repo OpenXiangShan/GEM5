@@ -413,6 +413,9 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     int p_update_thres = enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.pc) : 0;
 
     int total_thres = (updateThreshold / 8) + p_update_thres;
+    // Threshold is used as a confidence gate; avoid negative values which
+    // effectively disable the gate (abs(sum) > negative is almost always true).
+    total_thres = std::max(total_thres, 0);
 
     bool use_sc_pred = forceUseSC;  // Force use SC if configured
     if (!use_sc_pred) {
@@ -656,6 +659,11 @@ void
 BTBMGSC::updateGlobalThreshold(Addr pc, bool update_direction)
 {
     updateCounter(update_direction, updateThresholdWidth, updateThreshold);
+    // Keep global threshold non-negative; negative thresholds make SC gating
+    // degenerate and can cause overuse of SC.
+    if (updateThreshold < 0) {
+        updateThreshold = 0;
+    }
 }
 
 void
