@@ -60,7 +60,7 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     const bool enableCMC;
     const bool enableDespacitoStream;
 
-    bool offloadLowAccuracy = true;
+    bool offloadLowAccuracy = false;
 };
 
 }  // namespace prefetch
