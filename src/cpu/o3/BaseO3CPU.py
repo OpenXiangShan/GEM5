@@ -212,10 +212,10 @@ class BaseO3CPU(BaseCPU):
 
     EnableSpecStoreFwd = Param.Bool(True,
         "Enable speculative store-to-load forwarding for replay-based MDP")
-    EnableSpecStoreFwdNoMdp = Param.Bool(False,
+    EnableSpecStoreFwdNoMdp = Param.Bool(True,
         "Allow Spec-STLF prediction/training even when MDP provides no producing-store set")
     SpecStoreFwdTableSize = Param.Unsigned(1024, "Spec-STLF meta table entries")
-    SpecStoreFwdCtrBits = Param.Unsigned(2, "Spec-STLF saturating counter bits")
+    SpecStoreFwdCtrBits = Param.Unsigned(8, "Spec-STLF saturating counter bits")
 
     numPhysIntRegs = Param.Unsigned(224,
             "Number of physical integer registers")
