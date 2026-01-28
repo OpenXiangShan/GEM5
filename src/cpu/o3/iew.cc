@@ -183,6 +183,10 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of times the LSQ has become full, causing a stall"),
     ADD_STAT(memOrderViolationEvents, statistics::units::Count::get(),
              "Number of memory order violations"),
+    ADD_STAT(specStoreFwdViolationEvents, statistics::units::Count::get(),
+             "Number of Spec-STLF misprediction violation events"),
+    ADD_STAT(wrongDependenceViolationEvents, statistics::units::Count::get(),
+             "Number of Spec-STLF wrong-dependence violation events"),
     ADD_STAT(predictedTakenIncorrect, statistics::units::Count::get(),
              "Number of branches that were predicted taken incorrectly"),
     ADD_STAT(predictedNotTakenIncorrect, statistics::units::Count::get(),
@@ -1639,8 +1643,8 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             // If there was an ordering violation, then get the
             // DynInst that caused the violation.  Note that this
             // clears the violation signal.
-            DynInstPtr violator;
-            violator = ldstQueue.getMemDepViolator(tid);
+            const auto viol_info = ldstQueue.getViolationInfo(tid);
+            DynInstPtr violator = viol_info.violator;
 
             DPRINTF(IEW, "LDSTQ detected a violation. Violator PC: %s "
                     "[sn:%lli], inst PC: %s [sn:%lli]. Addr is: %#x.\n",
@@ -1650,15 +1654,29 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             fetchRedirect[tid] = true;
 
             // Tell the instruction queue that a violation has occured.
-            if (enableStoreSetTrain) {
+            if (enableStoreSetTrain &&
+                (viol_info.cause == ViolationCause::MemOrder ||
+                 viol_info.cause == ViolationCause::WrongDependence)) {
                 instQueue.violation(inst, violator);
             }
             violator->setProducerStorePC(inst->pcState().instAddr());
 
-            // Squash.
-            squashDueToMemOrder(violator, tid);
-
-            ++iewStats.memOrderViolationEvents;
+            // Squash and account by cause.
+            switch (viol_info.cause) {
+              case ViolationCause::SpecStoreFwd:
+                squashDueToMemOrder(violator, tid);
+                ++iewStats.specStoreFwdViolationEvents;
+                break;
+              case ViolationCause::WrongDependence:
+                squashDueToMemOrder(violator, tid);
+                ++iewStats.wrongDependenceViolationEvents;
+                break;
+              case ViolationCause::MemOrder:
+              default:
+                squashDueToMemOrder(violator, tid);
+                ++iewStats.memOrderViolationEvents;
+                break;
+            }
         }
     } else {
         // Reset any state associated with redirects that will not
@@ -1666,7 +1684,8 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
         if (ldstQueue.violation(tid)) {
             assert(inst->isMemRef());
 
-            DynInstPtr violator = ldstQueue.getMemDepViolator(tid);
+            const auto viol_info = ldstQueue.getViolationInfo(tid);
+            DynInstPtr violator = viol_info.violator;
 
             DPRINTF(IEW, "LDSTQ detected a violation.  Violator PC: "
                     "%s, inst PC: %s.  Addr is: %#x.\n",
@@ -1675,7 +1694,18 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             DPRINTF(IEW, "Violation will not be handled because "
                     "already squashing\n");
 
-            ++iewStats.memOrderViolationEvents;
+            switch (viol_info.cause) {
+              case ViolationCause::SpecStoreFwd:
+                ++iewStats.specStoreFwdViolationEvents;
+                break;
+              case ViolationCause::WrongDependence:
+                ++iewStats.wrongDependenceViolationEvents;
+                break;
+              case ViolationCause::MemOrder:
+              default:
+                ++iewStats.memOrderViolationEvents;
+                break;
+            }
         }
     }
 }

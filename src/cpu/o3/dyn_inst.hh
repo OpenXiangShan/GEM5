@@ -478,6 +478,40 @@ class DynInst : public ExecContext, public RefCounted
     /** Whether this load is predicted to strictly wait for prior store addrs. */
     bool mdpPredStrictWait = false;
 
+    /**
+     * Sticky flag: this load has ever encountered a non-strict replay-based MDP
+     * wait (i.e. it had at least one predicted producing store with addr not
+     * ready in LSQUnit::read()).
+     *
+     * Used for commit-time coverage stats to avoid counting wrong-path loads.
+     */
+    bool mdpNonStrictWait = false;
+
+    /**
+     * Speculative store-to-load forwarding (Spec-STLF) was used by this load.
+     * When set, the load has taken its value from a predicted store before the
+     * store address was ready. A later mismatch must squash from the load.
+     *
+     * Commit-time accounting counts this as a successful prediction if the
+     * load commits.
+     */
+    bool specStoreFwd = false;
+
+    /**
+     * Store-to-load forwarding metadata for full-range forwarding from the SQ.
+     *
+     * - stlfFromStoreQueue: data came from the store queue (not sbuffer/bus)
+     * - stlfStoreSeqNum:    source store seqNum
+     * - stlfDistance:       store-queue distance (load.sqIt.idx() - store.sqIdx)
+     * - stlfShiftAmt:       byte offset into the store data
+     *
+     * These fields are used for Spec-STLF training at load commit.
+     */
+    bool stlfFromStoreQueue = false;
+    InstSeqNum stlfStoreSeqNum = 0;
+    uint16_t stlfDistance = 0;
+    uint16_t stlfShiftAmt = 0;
+
     /** If load data is from cache then it must be golden */
     uint8_t goldenData[8] = {0};
 

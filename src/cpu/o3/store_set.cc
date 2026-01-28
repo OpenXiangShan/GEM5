@@ -468,7 +468,7 @@ StoreSet::XORFold(Addr pc, uint64_t resetWidth)
     uint64_t value_low;
 
     do {
-        value_low = pc & ((1<<resetWidth)-1);
+        value_low = pc & ((1ULL << resetWidth) - 1);
         xored ^= value_low;
         pc >>= resetWidth;
         fold_range--;

@@ -87,6 +87,20 @@ class CPU;
 class IEW;
 class LSQUnit;
 
+enum class ViolationCause
+{
+    None,
+    MemOrder,
+    SpecStoreFwd,
+    WrongDependence
+};
+
+struct ViolationInfo
+{
+    DynInstPtr violator;
+    ViolationCause cause = ViolationCause::None;
+};
+
 
 class LSQ
 {
@@ -962,6 +976,7 @@ class LSQ
 
     /** Gets the instruction that caused the memory ordering violation. */
     DynInstPtr getMemDepViolator(ThreadID tid);
+    ViolationInfo getViolationInfo(ThreadID tid);
 
     /** Returns the head index of the load queue for a specific thread. */
     int getLoadHead(ThreadID tid);

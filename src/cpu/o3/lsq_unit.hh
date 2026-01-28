@@ -67,6 +67,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/lsq.hh"
 #include "cpu/o3/replay_events.hh"
+#include "cpu/o3/spec_store_fwd_unit.hh"
 #include "cpu/timebuf.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/LSQUnit.hh"
@@ -106,6 +107,7 @@ class IEW;
  */
 class LSQUnit
 {
+    friend class SpecStoreFwdUnit;
   public:
     static constexpr auto MaxDataBytes = MaxVecRegLenInBytes;
 
@@ -193,6 +195,14 @@ class LSQUnit
 
         bool _stdFinish = false;
 
+        /**
+         * Pending Spec-STLF mispredictions attributed to this store.
+         *
+         * We accumulate failures here and only commit-account them when the
+         * store commits (to avoid counting wrong-path events).
+         */
+        uint32_t _specStoreFwdMispreds = 0;
+
       public:
         static constexpr size_t DataSize = sizeof(_data);
         /** Constructs an empty store queue entry. */
@@ -210,6 +220,7 @@ class LSQUnit
             _canWB = _completed = _committed = _isAllZeros = false;
             _addrReady = _dataReady = _staFinish = _stdFinish = false;
             _addrOrDataReadyCounted = false;
+            _specStoreFwdMispreds = 0;
         }
 
         void setStatus(SplitStoreStatus status);
@@ -242,6 +253,8 @@ class LSQUnit
         const bool& isAllZeros() const { return _isAllZeros; }
         char* data() { return _data; }
         const char* data() const { return _data; }
+        uint32_t& specStoreFwdMispreds() { return _specStoreFwdMispreds; }
+        const uint32_t& specStoreFwdMispreds() const { return _specStoreFwdMispreds; }
         /** @} */
     };
     using LQEntry = LSQEntry;
@@ -418,6 +431,12 @@ class LSQUnit
      * call to getMemDepViolator().
      */
     bool violation() { return memDepViolator; }
+
+    /**
+     * Returns the current violation (violator + cause). The stored violation
+     * state is cleared on return.
+     */
+    ViolationInfo getViolationInfo();
 
     /** Returns the memory ordering violator. */
     DynInstPtr getMemDepViolator();
@@ -809,6 +828,7 @@ class LSQUnit
 
     /** The oldest load that caused a memory ordering violation. */
     DynInstPtr memDepViolator;
+    ViolationCause memDepViolationCause = ViolationCause::None;
 
     /** Flag for memory model. */
     bool needsTSO;
@@ -852,6 +872,8 @@ class LSQUnit
 
     /** Add instruction to RAWReplayQueue */
     void addToRAWReplayQueue(const DynInstPtr &inst);
+
+    SpecStoreFwdUnit specStoreFwdUnit;
 
   protected:
     // Will also need how many read/write ports the Dcache has.  Or keep track
@@ -973,6 +995,18 @@ class LSQUnit
         statistics::Scalar storePhysicalSQReplayBlocked;
         statistics::Vector loadPipeReplayAccepted;
         statistics::Vector loadPipeFastReplayAccepted;
+
+        /** Spec-STLF (commit-time) stats. */
+        statistics::Scalar specStoreFwdPredicted;
+        statistics::Scalar specStoreFwdSuccess;
+        statistics::Scalar specStoreFwdFail;
+        statistics::Scalar specStoreFwdTrainEvents;
+        statistics::Scalar specStoreFwdTotalLoads;
+        statistics::Scalar specStoreFwdMdpWaitLoads;
+        statistics::Formula specStoreFwdAccuracy;
+        statistics::Formula specStoreFwdAllLoadCoverage;
+        statistics::Formula specStoreFwdMdpWaitCoverage;
+
         statistics::Vector loadReplayEvents;
         /**
          * Replay causes counted only on the first IssueQueue -> load-pipe
@@ -987,6 +1021,17 @@ class LSQUnit
     void tagReadFailReplay();
 
     bool squashMark{false};
+
+    /**
+     * Collect the store-queue entries that are predicted producing stores for
+     * a non-strict MDP-wait load and still don't have their addresses ready.
+     *
+     * We return both the store sequence numbers (for MDP replay bookkeeping)
+     * and the corresponding SQ indices (for Spec-STLF to match by distance).
+     */
+    void collectMdpWaitStores(const DynInstPtr &load_inst,
+                              std::vector<InstSeqNum> &wait_stores,
+                              std::vector<size_t> &wait_store_idxs) const;
 
     /**
      * Helper function to check address range overlap and determine coverage type

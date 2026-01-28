@@ -538,6 +538,10 @@ class IEW
         statistics::Scalar lsqFullEvents;
         /** Stat for total number of memory ordering violation events. */
         statistics::Scalar memOrderViolationEvents;
+        /** Stat for total number of Spec-STLF misprediction violation events. */
+        statistics::Scalar specStoreFwdViolationEvents;
+        /** Stat for total number of Spec-STLF wrong-dependence violation events. */
+        statistics::Scalar wrongDependenceViolationEvents;
         /** Stat for total number of incorrect predicted taken branches. */
         statistics::Scalar predictedTakenIncorrect;
         /** Stat for total number of incorrect predicted not taken branches. */

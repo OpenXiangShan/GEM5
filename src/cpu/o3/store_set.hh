@@ -115,10 +115,17 @@ class StoreSet
     /** Debug function to dump the contents of the store list. */
     void dump();
     bool checkInstStrict(Addr pc);
+
+    /**
+     * XOR-fold a value down to resetWidth bits.
+     *
+     * This helper is reused by other PC-indexed predictors to keep hashing
+     * consistent across the backend.
+     */
+    static Addr XORFold(Addr pc, uint64_t resetWidth);
   private:
 
     uint64_t lastClearPeriodCycle=0;
-    Addr XORFold(Addr pc, uint64_t resetWidth);
     int findVictimInLFSTEntry(int store_SSID);
 
     /** Calculates the index into the SSIT based on the PC. */

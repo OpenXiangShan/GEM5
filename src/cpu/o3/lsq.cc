@@ -1793,6 +1793,12 @@ LSQ::getMemDepViolator(ThreadID tid)
     return thread.at(tid).getMemDepViolator();
 }
 
+ViolationInfo
+LSQ::getViolationInfo(ThreadID tid)
+{
+    return thread.at(tid).getViolationInfo();
+}
+
 int
 LSQ::getLoadHead(ThreadID tid)
 {

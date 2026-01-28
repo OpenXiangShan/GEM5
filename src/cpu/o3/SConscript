@@ -49,6 +49,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('inst_queue.cc')
     Source('lsq.cc')
     Source('lsq_unit.cc')
+    Source('spec_store_fwd_unit.cc')
     Source('mem_dep_unit.cc')
     Source('regfile.cc')
     Source('rename.cc')
@@ -93,6 +94,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('LoadPipeline')
     DebugFlag('StorePipeline')
     DebugFlag('TraceReader')
+    DebugFlag('SPECFwd')
 
     CompoundFlag('O3CPUAll', [ 'Fetch', 'Decode', 'Rename', 'IEW', 'Commit',
         'IQ', 'ROB', 'FreeList', 'LSQ', 'LSQUnit', 'StoreSet', 'MemDepUnit',

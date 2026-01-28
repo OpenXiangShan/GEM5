@@ -228,6 +228,13 @@ class BaseO3CPU(BaseCPU):
     EnableMDPStrictWait = Param.Bool(False,
         "Enable StoreSet strict-wait in mem dep prediction (checkInstStrict)")
 
+    EnableSpecStoreFwd = Param.Bool(True,
+        "Enable speculative store-to-load forwarding for replay-based MDP")
+    EnableSpecStoreFwdNoMdp = Param.Bool(False,
+        "Allow Spec-STLF prediction/training even when MDP provides no producing-store set")
+    SpecStoreFwdTableSize = Param.Unsigned(1024, "Spec-STLF meta table entries")
+    SpecStoreFwdCtrBits = Param.Unsigned(2, "Spec-STLF saturating counter bits")
+
     numPhysIntRegs = Param.Unsigned(224,
             "Number of physical integer registers")
     numPhysFloatRegs = Param.Unsigned(192, "Number of physical floating point "
