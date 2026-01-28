@@ -176,6 +176,10 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of times the LSQ has become full, causing a stall"),
     ADD_STAT(memOrderViolationEvents, statistics::units::Count::get(),
              "Number of memory order violations"),
+    ADD_STAT(specStoreFwdViolationEvents, statistics::units::Count::get(),
+             "Number of Spec-STLF misprediction violation events"),
+    ADD_STAT(wrongDependenceViolationEvents, statistics::units::Count::get(),
+             "Number of Spec-STLF wrong-dependence violation events"),
     ADD_STAT(predictedTakenIncorrect, statistics::units::Count::get(),
              "Number of branches that were predicted taken incorrectly"),
     ADD_STAT(predictedNotTakenIncorrect, statistics::units::Count::get(),
@@ -626,6 +630,74 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
                 toCommit->squashedLoopIter[tid]);
 
 
+    }
+}
+
+void
+IEW::squashDueToSpecStoreFwd(const DynInstPtr& inst, ThreadID tid)
+{
+    DPRINTF(IEW, "[tid:%i] Spec-STLF misprediction, squashing violator and "
+            "younger insts, PC: %s [sn:%llu].\n",
+            tid, inst->pcState(), inst->seqNum);
+
+    // Same squash semantics as a memory ordering violation: the violator
+    // itself must be included in the squash.
+    if (!toCommit->squash[tid] ||
+            inst->seqNum <= toCommit->squashedSeqNum[tid]) {
+        toCommit->squash[tid] = true;
+
+        toCommit->squashedSeqNum[tid] = inst->seqNum;
+        toCommit->squashedStreamId[tid] = inst->getFsqId();
+        toCommit->squashedTargetId[tid] = inst->getFtqId();
+        toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
+        set(toCommit->pc[tid], inst->pcState());
+        toCommit->mispredictInst[tid] = NULL;
+
+        toCommit->includeSquashInst[tid] = true;
+
+        wroteToTimeBuffer = true;
+
+        DPRINTF(DecoupleBP,
+                "Spec-STLF misprediction (pc=%#lx) set stream id to %lu, "
+                "target id to %lu, loop iter to %u\n",
+                toCommit->pc[tid]->instAddr(),
+                toCommit->squashedStreamId[tid],
+                toCommit->squashedTargetId[tid],
+                toCommit->squashedLoopIter[tid]);
+    }
+}
+
+void
+IEW::squashDueToWrongDependence(const DynInstPtr& inst, ThreadID tid)
+{
+    DPRINTF(IEW, "[tid:%i] Spec-STLF wrong dependence, squashing violator and "
+            "younger insts, PC: %s [sn:%llu].\n",
+            tid, inst->pcState(), inst->seqNum);
+
+    // Same squash semantics as a memory ordering violation: the violator
+    // itself must be included in the squash.
+    if (!toCommit->squash[tid] ||
+            inst->seqNum <= toCommit->squashedSeqNum[tid]) {
+        toCommit->squash[tid] = true;
+
+        toCommit->squashedSeqNum[tid] = inst->seqNum;
+        toCommit->squashedStreamId[tid] = inst->getFsqId();
+        toCommit->squashedTargetId[tid] = inst->getFtqId();
+        toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
+        set(toCommit->pc[tid], inst->pcState());
+        toCommit->mispredictInst[tid] = NULL;
+
+        toCommit->includeSquashInst[tid] = true;
+
+        wroteToTimeBuffer = true;
+
+        DPRINTF(DecoupleBP,
+                "Spec-STLF wrong dependence (pc=%#lx) set stream id to %lu, "
+                "target id to %lu, loop iter to %u\n",
+                toCommit->pc[tid]->instAddr(),
+                toCommit->squashedStreamId[tid],
+                toCommit->squashedTargetId[tid],
+                toCommit->squashedLoopIter[tid]);
     }
 }
 
@@ -1609,8 +1681,8 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             // If there was an ordering violation, then get the
             // DynInst that caused the violation.  Note that this
             // clears the violation signal.
-            DynInstPtr violator;
-            violator = ldstQueue.getMemDepViolator(tid);
+            const auto viol_info = ldstQueue.getViolationInfo(tid);
+            DynInstPtr violator = viol_info.violator;
 
             DPRINTF(IEW, "LDSTQ detected a violation. Violator PC: %s "
                     "[sn:%lli], inst PC: %s [sn:%lli]. Addr is: %#x.\n",
@@ -1620,14 +1692,28 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             fetchRedirect[tid] = true;
 
             // Tell the instruction queue that a violation has occured.
-            if (enableStoreSetTrain) {
+            if (enableStoreSetTrain &&
+                (viol_info.cause == ViolationCause::MemOrder ||
+                 viol_info.cause == ViolationCause::WrongDependence)) {
                 instQueue.violation(inst, violator);
             }
 
-            // Squash.
-            squashDueToMemOrder(violator, tid);
-
-            ++iewStats.memOrderViolationEvents;
+            // Squash and account by cause.
+            switch (viol_info.cause) {
+              case ViolationCause::SpecStoreFwd:
+                squashDueToSpecStoreFwd(violator, tid);
+                ++iewStats.specStoreFwdViolationEvents;
+                break;
+              case ViolationCause::WrongDependence:
+                squashDueToWrongDependence(violator, tid);
+                ++iewStats.wrongDependenceViolationEvents;
+                break;
+              case ViolationCause::MemOrder:
+              default:
+                squashDueToMemOrder(violator, tid);
+                ++iewStats.memOrderViolationEvents;
+                break;
+            }
         }
     } else {
         // Reset any state associated with redirects that will not
@@ -1635,7 +1721,8 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
         if (ldstQueue.violation(tid)) {
             assert(inst->isMemRef());
 
-            DynInstPtr violator = ldstQueue.getMemDepViolator(tid);
+            const auto viol_info = ldstQueue.getViolationInfo(tid);
+            DynInstPtr violator = viol_info.violator;
 
             DPRINTF(IEW, "LDSTQ detected a violation.  Violator PC: "
                     "%s, inst PC: %s.  Addr is: %#x.\n",
@@ -1644,7 +1731,18 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             DPRINTF(IEW, "Violation will not be handled because "
                     "already squashing\n");
 
-            ++iewStats.memOrderViolationEvents;
+            switch (viol_info.cause) {
+              case ViolationCause::SpecStoreFwd:
+                ++iewStats.specStoreFwdViolationEvents;
+                break;
+              case ViolationCause::WrongDependence:
+                ++iewStats.wrongDependenceViolationEvents;
+                break;
+              case ViolationCause::MemOrder:
+              default:
+                ++iewStats.memOrderViolationEvents;
+                break;
+            }
         }
     }
 }
