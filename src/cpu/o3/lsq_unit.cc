@@ -1636,13 +1636,16 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
     if (request && request->isTranslationComplete() &&
         request->isMemAccessRequired() && load_fault == NoFault &&
         request->isNormalLd() && !inst->strictlyOrdered() &&
-        !request->mainReq()->isLLSC() && !request->mainReq()->isLocalAccess() &&
-        lsq->enableReplayBasedMDP() && !inst->mdpPredStrictWait) {
+        !request->mainReq()->isLLSC() &&
+        !request->mainReq()->isLocalAccess()) {
 
-        // Keep LSQEntry's request pointer consistent for early Spec-STLF.
-        // loadQueue[inst->lqIdx].setRequest(request);
-
-        if (!inst->mdpProducingStores.empty()) {
+        if (specStoreFwdUnit.allowNoMdp()) {
+            // All-load mode deliberately ignores StoreSet scope. The table's
+            // distance directly selects the candidate SQ entry.
+            specStoreFwdUnit.trySpecStoreFwd(inst, request);
+        } else if (lsq->enableReplayBasedMDP() &&
+                   !inst->mdpPredStrictWait &&
+                   !inst->mdpProducingStores.empty()) {
             std::vector<InstSeqNum> wait_stores;
             std::vector<size_t> wait_store_idxs;
             collectMdpWaitStores(inst, wait_stores, wait_store_idxs);
@@ -1654,8 +1657,6 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
                 specStoreFwdUnit.trySpecStoreFwd(
                     inst, request, wait_store_idxs);
             }
-        } else if (specStoreFwdUnit.allowNoMdp()) {
-            specStoreFwdUnit.trySpecStoreFwd(inst, request);
         }
     }
 

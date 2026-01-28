@@ -76,9 +76,9 @@ class SpecStoreFwdUnit
     /**
      * Try speculative forwarding without an MDP producing-store candidate set.
      *
-     * When allowNoMdp() is enabled, this checks the single store at the
-     * predictor's predicted distance and attempts to forward from it if it has
-     * data-ready but addr-not-ready.
+     * In all-load mode this ignores StoreSet metadata, checks the single store
+     * at the predictor's predicted distance, and attempts to forward from it
+     * if it has data-ready but addr-not-ready.
      */
     bool trySpecStoreFwd(const DynInstPtr &load_inst, LSQ::LSQRequest *request);
 

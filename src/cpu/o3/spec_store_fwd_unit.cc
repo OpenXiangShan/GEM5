@@ -63,7 +63,7 @@ SpecStoreFwdUnit::trySpecStoreFwd(const DynInstPtr &load_inst,
     if (!lsqUnit || !pred.ready()) {
         return false;
     }
-    if (!request || !request->isNormalLd() || load_inst->mdpPredStrictWait) {
+    if (!request || !request->isNormalLd()) {
         return false;
     }
     if (wait_store_idxs.empty()) {
@@ -96,6 +96,13 @@ SpecStoreFwdUnit::trySpecStoreFwd(const DynInstPtr &load_inst,
 
         const auto &st_inst = st_it->instruction();
         if (st_inst->seqNum >= load_inst->seqNum) {
+            continue;
+        }
+        // The address-unknown SQ state does not carry enough information to
+        // validate a dynamic vector mask or a store-conditional outcome.
+        // Such stores cannot safely provide speculative bytes.
+        if (st_inst->isVector() || st_inst->isAtomic() ||
+            st_inst->isStoreConditional()) {
             continue;
         }
         DPRINTF(SPECFwd,
@@ -181,7 +188,7 @@ SpecStoreFwdUnit::trySpecStoreFwd(const DynInstPtr &load_inst,
     if (!lsqUnit || !pred.ready()) {
         return false;
     }
-    if (!request || !request->isNormalLd() || load_inst->mdpPredStrictWait) {
+    if (!request || !request->isNormalLd()) {
         return false;
     }
 
@@ -319,10 +326,10 @@ SpecStoreFwdUnit::commitLoad(const DynInstPtr &inst)
     // Default: only train when the actual forwarding store is one of the
     // predicted producing stores (i.e. within the replay-based MDP scope).
     //
-    // When allowNoMdp_ is enabled: train on any committed full STLF from the
-    // store queue, even if MDP didn't provide a producing-store set.
-    if (!inst->mdpPredStrictWait && inst->stlfFromStoreQueue &&
-        inst->fullForward()) {
+    // When allowNoMdp_ is enabled: ignore MDP scope and train on any committed
+    // full STLF from the store queue.
+    if ((allowNoMdp_ || !inst->mdpPredStrictWait) &&
+        inst->stlfFromStoreQueue && inst->fullForward()) {
         const bool in_mdp_scope =
             !inst->mdpProducingStores.empty() &&
             (std::find(inst->mdpProducingStores.begin(),
