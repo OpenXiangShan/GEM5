@@ -837,27 +837,12 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
         return;
     }
 
-    if (!aheadindexFoldedHist.empty()) {
-        indexFoldedHist = aheadindexFoldedHist.front();
-    }
-
-    // Update tag folded history immediately so tag calculation always sees current history.
     for (int t = 0; t < numPredictors; t++) {
+        indexFoldedHist[t].update(history, 2, taken, pc, target);
         tagFoldedHist[t].update(history, 2, taken, pc, target);
-        DPRINTF(TAGEHistory, "t: %d, tag foldedHist _folded 0x%lx\n",
-                t, tagFoldedHist[t].get());
-    }
-
-    // Prepare next-cycle index folded history and delay its visibility by one cycle.
-    auto nextIndexFoldedHist = indexFoldedHist;
-    for (int t = 0; t < numPredictors; t++) {
-        nextIndexFoldedHist[t].update(history, 2, taken, pc, target);
-        DPRINTF(TAGEHistory, "t: %d, index foldedHist(next) _folded 0x%lx\n",
-                t, nextIndexFoldedHist[t].get());
-    }
-    aheadindexFoldedHist.push(nextIndexFoldedHist);
-    if (aheadindexFoldedHist.size() > 1) {
-        aheadindexFoldedHist.pop();
+        altTagFoldedHist[t].update(history, 2, taken, pc, target);
+        DPRINTF(TAGEHistory, "t: %d, folded index 0x%lx, tag 0x%lx\n",
+                t, indexFoldedHist[t].get(), tagFoldedHist[t].get());
     }
 }
 
@@ -902,19 +887,10 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         DPRINTF(TAGE, "recoverPHist: no prediction metadata, cannot recover\n");
         return;
     }
-    if (aheadindexFoldedHist.empty()) {
-        DPRINTF(TAGE, "recoverPHist: ahead index history queue empty, recovering current index history directly\n");
-        for (int i = 0; i < numPredictors; i++) {
-            indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
-        }
-    } else {
-        auto &foldedHistQueuefront = aheadindexFoldedHist.front();
-        for (int i = 0; i < numPredictors; i++) {
-            foldedHistQueuefront[i].recover(predMeta->indexFoldedHist[i]);
-        }
-    }
     for (int i = 0; i < numPredictors; i++) {
+        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
         tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
+        altTagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
     }
     doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
 }
