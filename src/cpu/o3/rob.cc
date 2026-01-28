@@ -616,6 +616,59 @@ ROB::isHeadGroupReady(ThreadID tid)
     return false;
 }
 
+void
+ROB::countCommitHeadLoadStall(ThreadID tid)
+{
+    if (threadGroups[tid].empty() || threadGroups[tid].front() == 0) {
+        return;
+    }
+
+    auto it = instList[tid].begin();
+    for (int i = 0; i < threadGroups[tid].front() && it != instList[tid].end();
+         i++, it++) {
+        const DynInstPtr &inst = *it;
+
+        // Commit is blocked by the first not-ready instruction in the head
+        // group. Only account stalls caused by a not-done load.
+        if (inst->readyToCommit()) {
+            continue;
+        }
+
+        if (!inst->isLoad() || inst->isExecuted()) {
+            return;
+        }
+
+        // Match IEW::checkLoadStoreInst()'s classification using cache depth.
+        bool in_flight = inst->isIssued() && inst->hasPendingCacheReq();
+        bool lsu_stall = inst->isIssued() && !inst->hasPendingCacheReq();
+
+        int depth = -1;
+        if (in_flight && inst->pendingCacheReq) {
+            depth = inst->pendingCacheReq->mainReq()->depth;
+        }
+
+        if (in_flight) {
+            if (depth == 0) {
+                stats.commitHeadLoadStallL1Cycles++;
+            } else if (depth == 1) {
+                stats.commitHeadLoadStallL2Cycles++;
+            } else if (depth == 2) {
+                stats.commitHeadLoadStallL3Cycles++;
+            } else if (depth >= 3) {
+                stats.commitHeadLoadStallMemCycles++;
+            } else {
+                stats.commitHeadLoadStallOtherCycles++;
+            }
+        } else if (lsu_stall) {
+            stats.commitHeadLoadStallL1Cycles++;
+        } else {
+            stats.commitHeadLoadStallOtherCycles++;
+        }
+
+        return;
+    }
+}
+
 InstSeqNum
 ROB::getHeadGroupLastDoneSeq(ThreadID tid)
 {
@@ -974,6 +1027,16 @@ ROB::ROBStats::ROBStats(statistics::Group *parent)
         "The number of ROB reads"),
     ADD_STAT(writes, statistics::units::Count::get(),
         "The number of ROB writes"),
+    ADD_STAT(commitHeadLoadStallL1Cycles, statistics::units::Cycle::get(),
+        "Cycles commit head group is blocked by a load waiting at L1"),
+    ADD_STAT(commitHeadLoadStallL2Cycles, statistics::units::Cycle::get(),
+        "Cycles commit head group is blocked by a load waiting at L2"),
+    ADD_STAT(commitHeadLoadStallL3Cycles, statistics::units::Cycle::get(),
+        "Cycles commit head group is blocked by a load waiting at L3"),
+    ADD_STAT(commitHeadLoadStallMemCycles, statistics::units::Cycle::get(),
+        "Cycles commit head group is blocked by a load waiting at memory"),
+    ADD_STAT(commitHeadLoadStallOtherCycles, statistics::units::Cycle::get(),
+        "Cycles commit head group is blocked by a load (unclassified)"),
     ADD_STAT(instPergroup, statistics::units::Count::get()),
     ADD_STAT(robRatSnapshotHits, statistics::units::Count::get(),
         "Squashes that landed exactly on a RAT checkpoint (NaiveCpt)"),

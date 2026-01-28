@@ -193,6 +193,15 @@ class ROB
     /** Is the oldest group of instructions across a particular thread ready. */
     bool isHeadGroupReady(ThreadID tid);
 
+    /**
+     * If the head group is not ready, account a commit-stall cycle for the
+     * first not-ready load in that group (if any), broken down by cache depth.
+     *
+     * This is intended to be called by the commit stage when it breaks due to
+     * !isHeadGroupReady().
+     */
+    void countCommitHeadLoadStall(ThreadID tid);
+
     InstSeqNum getHeadGroupLastDoneSeq(ThreadID tid);
 
     /** Re-adjust ROB partitioning. */
@@ -405,6 +414,14 @@ class ROB
         statistics::Scalar reads;
         // The number of rob_writes
         statistics::Scalar writes;
+
+        // Cycles the commit head group is blocked by a not-done load, broken
+        // down by the request depth (0=L1 hit pending, 1=L2, 2=L3, >=3=Mem).
+        statistics::Scalar commitHeadLoadStallL1Cycles;
+        statistics::Scalar commitHeadLoadStallL2Cycles;
+        statistics::Scalar commitHeadLoadStallL3Cycles;
+        statistics::Scalar commitHeadLoadStallMemCycles;
+        statistics::Scalar commitHeadLoadStallOtherCycles;
 
         statistics::Distribution instPergroup;
 

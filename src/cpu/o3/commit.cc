@@ -1357,6 +1357,7 @@ Commit::commitInsts()
             head_inst = rob->readHeadInst(commit_thread);
 
             if (!rob->isHeadGroupReady(commit_thread)) {
+                rob->countCommitHeadLoadStall(commit_thread);
                 if (debug::Commit && head_inst->readyToCommit()) {
                     InstSeqNum seqnum =
                         rob->getHeadGroupLastDoneSeq(commit_thread);
