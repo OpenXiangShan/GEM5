@@ -11,7 +11,6 @@
 
 #include "arch/generic/pcstate.hh"
 #include "base/types.hh"
-#include "config/the_isa.hh"
 #include "cpu/o3/cpu_def.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
@@ -21,9 +20,6 @@
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
 #include "cpu/pred/btb/btb_mgsc.hh"
-#include "cpu/pred/btb/jump_ahead_predictor.hh"
-#include "cpu/pred/btb/loop_buffer.hh"
-#include "cpu/pred/btb/loop_predictor.hh"
 #include "cpu/pred/btb/ras.hh"
 #include "cpu/pred/general_arch_db.hh"
 
@@ -33,15 +29,7 @@
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "debug/DBPBTBStats.hh"
 #include "debug/DecoupleBP.hh"
-#include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPProbe.hh"
-#include "debug/DecoupleBPRAS.hh"
-#include "debug/DecoupleBPVerbose.hh"
-#include "debug/DecoupleBPuRAS.hh"
-#include "debug/JumpAheadPredictor.hh"
-#include "debug/LoopBuffer.hh"
-#include "debug/LoopPredictor.hh"
-#include "debug/LoopPredictorVerbose.hh"
 #include "params/DecoupledBPUWithBTB.hh"
 
 namespace gem5
@@ -107,7 +95,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool someDBenabled{false};
     bool enableBranchTrace{false};
     bool enablePredFSQTrace{false};
-    bool enableLoopDB{false};
+
     bool checkGivenSwitch(std::vector<std::string> switches, std::string switchName) {
         for (auto &sw : switches) {
             if (sw == switchName) {
@@ -123,7 +111,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     DataBase bpdb;
     TraceManager *bptrace;
     TraceManager *predTraceManager;  // Trace manager for prediction-time events
-    TraceManager *lptrace;
 
     void initDB();
 
@@ -158,10 +145,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     const unsigned resolveBlockThreshold;
 
     unsigned numOverrideBubbles{0};
-
-
-    using JAInfo = JumpAheadPredictor::JAInfo;
-    JAInfo jaInfo;
 
     bool validateFSQEnqueue();
 
@@ -207,19 +190,6 @@ class DecoupledBPUWithBTB : public BPredUnit
         //     "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx\n",
         //     e.exeEnded, e.startPC, e.exeBranchPC, e.exeEndPC,
         //     e.exeTarget);
-    }
-
-    void printFetchTarget(const FtqEntry &e, const char *when)
-    {
-        DPRINTFR(DecoupleBP,
-                 "%s:: %#lx - [%#lx, %#lx) --> %#lx, taken: %d, fsqID: %lu\n",
-                 when, e.startPC, e.takenPC, e.endPC, e.target, e.taken, e.fsqID);
-    }
-
-    void printFetchTargetFull(const FtqEntry &e)
-    {
-        DPRINTFR(DecoupleBP, "Fetch Target:: %#lx-[%#lx, %#lx) --> %#lx\n",
-                 e.startPC, e.takenPC, e.endPC, e.target);
     }
 
     bool streamQueueFull() const
