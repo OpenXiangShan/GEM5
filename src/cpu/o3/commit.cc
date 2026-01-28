@@ -1164,8 +1164,12 @@ Commit::commitInsts()
 
         // ThreadID commit_thread = getCommittingThread();
 
-        if (commit_thread == -1 || !rob->isHeadGroupReady(commit_thread))
+        if (commit_thread == -1)
             break;
+        if (!rob->isHeadGroupReady(commit_thread)) {
+            rob->countCommitHeadLoadStall(commit_thread);
+            break;
+        }
 
         head_inst = rob->readHeadInst(commit_thread);
 
