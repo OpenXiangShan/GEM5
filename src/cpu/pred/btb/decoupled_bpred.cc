@@ -482,7 +482,7 @@ DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
 
     // Process all streams that have been committed (stream_id >= head stream id).
     while (!fetchTargetQueue.isEmpty() && stream_id >= fetchTargetQueue.frontTargetId()) {
-        auto &stream = fetchTargetQueue.fetchTargetQueue.front();
+        auto &stream = fetchTargetQueue.queue.front();
 
         DPRINTF(DecoupleBP,
                 "Commit stream start %#lx, which is predicted, "
@@ -497,15 +497,15 @@ DecoupledBPUWithBTB::update(unsigned stream_id, ThreadID tid)
         // Update predictor components
         updatePredictorComponents(stream);
 
-        fetchTargetQueue.fetchTargetQueue.pop_front();
+        fetchTargetQueue.queue.pop_front();
         fetchTargetQueue.fetchTargetBaseId++;
         dbpBtbStats.fsqEntryCommitted++;
     }
 
-    DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n", fetchTargetQueue.fetchTargetQueue.size());
+    DPRINTF(DecoupleBP, "after commit stream, fetchStreamQueue size: %lu\n", fetchTargetQueue.queue.size());
 
     if (!fetchTargetQueue.isEmpty())
-        printStream(fetchTargetQueue.fetchTargetQueue.front());
+        printStream(fetchTargetQueue.queue.front());
 
     historyManager.commit(stream_id);
 }
@@ -634,12 +634,12 @@ DecoupledBPUWithBTB::squashStreamAfter(unsigned squash_stream_id)
     // Erase all streams after the squashed one (id > squash_stream_id).
     while (!fetchTargetQueue.isEmpty() && fetchTargetQueue.backTargetId() > squash_stream_id) {
         auto id = fetchTargetQueue.backTargetId();
-        auto &stream = fetchTargetQueue.fetchTargetQueue.back();
+        auto &stream = fetchTargetQueue.queue.back();
         DPRINTF(DecoupleBP || stream.startPC == ObservingPC,
                 "Erasing stream %lu when squashing %d\n", id,
                 squash_stream_id);
         printStream(stream);
-        fetchTargetQueue.fetchTargetQueue.pop_back();
+        fetchTargetQueue.queue.pop_back();
     }
 }
 
@@ -647,10 +647,10 @@ bool
 DecoupledBPUWithBTB::validateFSQEnqueue()
 {
     // Monitor FSQ size for statistics
-    dbpBtbStats.fsqEntryDist.sample(fetchTargetQueue.fetchTargetQueue.size(), 1);
+    dbpBtbStats.fsqEntryDist.sample(fetchTargetQueue.queue.size(), 1);
     if (fetchTargetQueue.targetQueueFull()) {
         dbpBtbStats.fsqFullCannotEnq++;
-        DPRINTF(Override, "FSQ is full (%lu entries)\n", fetchTargetQueue.fetchTargetQueue.size());
+        DPRINTF(Override, "FSQ is full (%lu entries)\n", fetchTargetQueue.queue.size());
         return false;
     }
 
@@ -803,8 +803,8 @@ DecoupledBPUWithBTB::processNewPrediction()
     fillAheadPipeline(entry);
 
     // 5. Add entry to fetch stream queue
-    assert(fetchTargetQueue.ftqId == fetchTargetQueue.fetchTargetBaseId + fetchTargetQueue.fetchTargetQueue.size());
-    fetchTargetQueue.fetchTargetQueue.push_back(entry);
+    assert(fetchTargetQueue.ftqId == fetchTargetQueue.fetchTargetBaseId + fetchTargetQueue.queue.size());
+    fetchTargetQueue.queue.push_back(entry);
     //printf("curr tick: %lu\n", entry.predTick);
     //printf("curr fsqId: %lu\n", fsqId);
 

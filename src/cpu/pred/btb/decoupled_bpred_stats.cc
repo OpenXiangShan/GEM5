@@ -626,10 +626,10 @@ void
 DecoupledBPUWithBTB::dumpFsq(const char *when)
 {
     DPRINTF(DecoupleBPProbe, "dumping fsq entries %s...\n", when);
-    for (size_t i = 0; i < fetchTargetQueue.fetchTargetQueue.size(); ++i) {
+    for (size_t i = 0; i < fetchTargetQueue.queue.size(); ++i) {
         DPRINTFR(DecoupleBPProbe, "StreamID %lu, ",
                  static_cast<uint64_t>(fetchTargetQueue.fetchTargetBaseId + i));
-        printStream(fetchTargetQueue.fetchTargetQueue[i]);
+        printStream(fetchTargetQueue.queue[i]);
     }
 }
 
