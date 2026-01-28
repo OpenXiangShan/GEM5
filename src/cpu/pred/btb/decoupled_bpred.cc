@@ -2,10 +2,10 @@
 
 #include "base/debug_helper.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/pred/btb/fetch_target_queue.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 #include "debug/DecoupleBPVerbose.hh"
 #include "debug/Override.hh"
-#include "fetch_target_queue.hh"
 #include "sim/core.hh"
 
 namespace gem5

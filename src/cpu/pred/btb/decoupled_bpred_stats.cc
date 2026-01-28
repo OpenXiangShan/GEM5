@@ -7,7 +7,6 @@
 #include "cpu/pred/btb/decoupled_bpred.hh"
 #include "debug/BTB.hh"
 #include "debug/Profiling.hh"
-#include "sim/core.hh"
 
 namespace gem5
 {
@@ -913,7 +912,7 @@ void
 DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 {
     // Update committed instruction count for stream
-    auto targetEntry = fetchTargetQueue.getTargetEntry(inst->fsqId);
+    auto &targetEntry = (FetchTargetEntry &)fetchTargetQueue.getTargetEntry(inst->fsqId);
     targetEntry.commitInstNum++;
 
     // Update global committed instruction count
