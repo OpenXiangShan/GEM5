@@ -249,34 +249,6 @@ struct LFSR64
 using FetchStreamId = uint64_t;
 using FetchTargetId = uint64_t;
 
-struct LoopEntry
-{
-    bool valid;
-    int tripCnt;
-    int specCnt;
-    int conf;
-    bool repair;
-    LoopEntry() : valid(false), tripCnt(0), specCnt(0), conf(0), repair(false) {}
-};
-
-struct LoopRedirectInfo
-{
-    LoopEntry e;
-    Addr branch_pc;
-    bool end_loop;
-};
-
-struct JAEntry
-{
-    // jump target: indexPC + jumpAheadBlockNum * blockSize
-    int jumpAheadBlockNum; // number of non-predicted blocks ahead
-    int conf; // confidence
-    JAEntry() : jumpAheadBlockNum(0), conf(0) {}
-    Addr getJumpTarget(Addr indexPC, int blockSize) {
-        return indexPC + jumpAheadBlockNum * blockSize;
-    }
-};
-
 // {branch pc -> istaken} maps
 using CondTakens = std::vector<std::pair<Addr, bool>>;
 // {branch pc -> target pc} maps
@@ -687,43 +659,8 @@ struct FullBTBPrediction
 
 };
 
-/**
- * @brief Fetch Target Queue entry representing a fetch block
- *
- * Contains information needed for instruction fetch:
- * - Address range (start PC, end PC)
- * - Branch information (taken PC, target)
- * - Loop information for loop buffer
- * - Stream tracking (FSQ ID)
- */
-struct FtqEntry
+struct TageMissTrace : public Record
 {
-    Addr startPC;
-    Addr endPC;    // TODO: use PCState and it can be included in takenPC
-
-    // When it is a taken branch, takenPC is the control (starting) PC
-    // When it is yet missing, takenPC is the ``known'' PC,
-    // decoupledPredict cannot goes beyond takenPC and should be blocked
-    // when current PC == takenPC
-    Addr takenPC;
-
-    bool taken;
-    Addr target;  // TODO: use PCState
-    FetchStreamId fsqID;
-
-    FtqEntry()
-        : startPC(0)
-        , endPC(0)
-        , takenPC(0)
-        , taken(false)
-        , target(0)
-        , fsqID(0) {}
-
-    bool miss() const { return !taken; }
-};
-
-
-struct TageMissTrace : public Record {
     void set(uint64_t startPC, uint64_t branchPC, uint64_t wayIdx,
         uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful, uint64_t mainTable, uint64_t mainIndex,
         uint64_t altFound, uint64_t altCounter, uint64_t altUseful, uint64_t altTable, uint64_t altIndex,
@@ -754,52 +691,6 @@ struct TageMissTrace : public Record {
         _uint64_data["allocWay"] = allocWay;
         _text_data["history"] = history;
         _uint64_data["indexFoldedHist"] = indexFoldedHist;
-    }
-};
-
-struct LoopTrace : public Record {
-    void set(uint64_t pc, uint64_t target, uint64_t mispred, uint64_t training,
-        uint64_t trainSpecCnt, uint64_t trainTripCnt, uint64_t trainConf,
-        uint64_t inMain, uint64_t mainTripCnt, uint64_t mainConf, uint64_t predSpecCnt,
-        uint64_t predTripCnt, uint64_t predConf)
-    {
-        _tick = curTick();
-        _uint64_data["pc"] = pc;
-        _uint64_data["target"] = target;
-        _uint64_data["mispred"] = mispred;
-        _uint64_data["predSpecCnt"] = predSpecCnt;
-        _uint64_data["predTripCnt"] = predTripCnt;
-        _uint64_data["predConf"] = predConf;
-        // from lp
-        _uint64_data["training"] = training;
-        _uint64_data["trainSpecCnt"] = trainSpecCnt;
-        _uint64_data["trainTripCnt"] = trainTripCnt;
-        _uint64_data["trainConf"] = trainConf;
-        _uint64_data["inMain"] = inMain;
-        _uint64_data["mainTripCnt"] = mainTripCnt;
-        _uint64_data["mainConf"] = mainConf;
-    }
-    void set_in_lp(uint64_t training, uint64_t trainSpecCnt, uint64_t trainTripCnt, uint64_t trainConf,
-        uint64_t inMain, uint64_t mainTripCnt, uint64_t mainConf)
-    {
-        _uint64_data["training"] = training;
-        _uint64_data["trainSpecCnt"] = trainSpecCnt;
-        _uint64_data["trainTripCnt"] = trainTripCnt;
-        _uint64_data["trainConf"] = trainConf;
-        _uint64_data["inMain"] = inMain;
-        _uint64_data["mainTripCnt"] = mainTripCnt;
-        _uint64_data["mainConf"] = mainConf;
-    }
-    void set_outside_lp(uint64_t pc, uint64_t target, uint64_t mispred,
-        uint64_t predSpecCnt, uint64_t predTripCnt, uint64_t predConf)
-    {
-        _tick = curTick();
-        _uint64_data["pc"] = pc;
-        _uint64_data["target"] = target;
-        _uint64_data["mispred"] = mispred;
-        _uint64_data["predSpecCnt"] = predSpecCnt;
-        _uint64_data["predTripCnt"] = predTripCnt;
-        _uint64_data["predConf"] = predConf;
     }
 };
 

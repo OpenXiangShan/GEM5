@@ -58,30 +58,6 @@ DecoupledBPUWithBTB::initDB()
         removeGivenSwitch(bpDBSwitches, std::string("predfsq"));
         someDBenabled = true;
     }
-
-    // check whether "loop" is in bpDBSwitches
-    enableLoopDB = checkGivenSwitch(bpDBSwitches, std::string("loop"));
-    if (enableLoopDB) {
-        std::vector<std::pair<std::string, DataType>> loop_fields_vec = {
-            std::make_pair("pc", UINT64),
-            std::make_pair("target", UINT64),
-            std::make_pair("mispred", UINT64),
-            std::make_pair("training", UINT64),
-            std::make_pair("trainSpecCnt", UINT64),
-            std::make_pair("trainTripCnt", UINT64),
-            std::make_pair("trainConf", UINT64),
-            std::make_pair("inMain", UINT64),
-            std::make_pair("mainTripCnt", UINT64),
-            std::make_pair("mainConf", UINT64),
-            std::make_pair("predSpecCnt", UINT64),
-            std::make_pair("predTripCnt", UINT64),
-            std::make_pair("predConf", UINT64)
-        };
-        lptrace = bpdb.addAndGetTrace("LOOPTRACE", loop_fields_vec);
-        lptrace->init_table();
-        removeGivenSwitch(bpDBSwitches, std::string("loop"));
-        someDBenabled = true;
-    }
 }
 
 void
