@@ -30,7 +30,7 @@
 #include "cpu/pred/btb/abtb.hh"
 
 #include "base/intmath.hh"
-#include "stream_struct.hh"
+#include "common.hh"
 
 // Additional conditional includes based on build mode
 #ifdef UNIT_TEST
@@ -327,7 +327,7 @@ void
 AheadBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
 
 void
-AheadBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
+AheadBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
 {
     // clear ahead pipeline first
     while (!aheadReadBtbEntries.empty()) {
@@ -436,7 +436,7 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
  * Check if the branch was predicted correctly
  */
 void
-AheadBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
+AheadBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
@@ -460,7 +460,7 @@ AheadBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
  */
 std::vector<BTBEntry>
 AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
-                                     const FetchStream &stream)
+                                     const FetchTarget &stream)
 {
     auto all_entries = old_entries;
 
@@ -647,7 +647,7 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
  * 5. Update MRU information
  */
 void
-AheadBTB::update(const FetchStream &stream)
+AheadBTB::update(const FetchTarget &stream)
 {
     if (usingS3Pred) {
         DPRINTF(ABTB, "AheadBTB: using S3 prediction for update, skipping AheadBTB update\n");
@@ -689,7 +689,7 @@ AheadBTB::update(const FetchStream &stream)
  * @return Previous PC, 0 if the stream is not filled
  */
 Addr
-AheadBTB::getPreviousPC(const FetchStream &stream)
+AheadBTB::getPreviousPC(const FetchTarget &stream)
 {
     // get pc from the nth previous block, the value of n is aheadPipelinedStages
     auto previous_pcs = stream.previousPCs;
@@ -712,7 +712,7 @@ AheadBTB::getPreviousPC(const FetchStream &stream)
 #ifndef UNIT_TEST
 
 void
-AheadBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &hit_entries = meta->hit_entries;

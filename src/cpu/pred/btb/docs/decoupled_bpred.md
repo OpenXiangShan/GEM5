@@ -63,10 +63,10 @@ struct FullBTBPrediction {
 
 ### 4. Fetch Management Structures
 
-#### FetchStream
+#### FetchTarget
 Manages prediction and execution information for a continuous instruction sequence:
 ```cpp
-struct FetchStream {
+struct FetchTarget {
     // Basic information
     Addr startPC;          // Start address
     Addr predEndPC;        // Predicted end address
@@ -95,7 +95,7 @@ struct FtqEntry {
     Addr takenPC;         // Branch instruction address
     bool taken;           // Branch taken flag
     Addr target;          // Jump target
-    FetchStreamId fsqID;  // Corresponding fetch stream ID
+    FetchTargetId fsqID;  // Corresponding fetch stream ID
     
     // Loop related
     bool inLoop;          // In loop flag
@@ -107,7 +107,7 @@ struct FtqEntry {
 ### 5. Queue Management
 
 - `FetchTargetQueue`: Manages fetch targets (FTQ)
-- `std::map<FetchStreamId, FetchStream> fetchStreamQueue`: Manages fetch streams (FSQ)
+- `std::map<FetchTargetId, FetchTarget> FetchTargetQueue`: Manages fetch streams (FSQ)
 
 ## Key Functions
 
@@ -127,7 +127,7 @@ Main prediction cycle function that:
 - Calculates necessary bubbles
 - Updates prediction state
 
-#### `tryEnqFetchStream()`
+#### `tryEnqFetchTarget()`
 - Checks for new prediction results
 - Creates new fetch streams
 - Updates prediction state
@@ -135,7 +135,7 @@ Main prediction cycle function that:
 #### `processNewPrediction()`
 - Uses various predictor components for prediction
 - Integrates prediction results
-- Creates new FetchStream entries
+- Creates new FetchTarget entries
 
 #### `tryEnqFetchTarget()`
 - Adds prediction results to FTQ
@@ -211,9 +211,9 @@ In each clock cycle:
    - Stores results in `finalPred`
    - Sets `receivedPred = true`
 
-3. **FSQ enqueue stage** (`tryEnqFetchStream`)
-   - Creates new `FetchStream` entries
-   - Adds entries to `fetchStreamQueue`, assigns `fsqId`
+3. **FSQ enqueue stage** (`tryEnqFetchTarget`)
+   - Creates new `FetchTarget` entries
+   - Adds entries to `FetchTargetQueue`, assigns `fsqId`
    - Updates global history based on predictions
    - Resets `receivedPred = false`
    - Increments `fsqId` for the next stream

@@ -136,7 +136,7 @@ The update process involves:
 4. Allocating new entries on mispredictions
 
 ```cpp
-void update(const FetchStream &stream) {
+void update(const FetchTarget &stream) {
     Addr startAddr = stream.getRealStartPC();
     
     // Prepare entries to update
@@ -195,7 +195,7 @@ void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &p
     doUpdateHist(history, shamt, cond_taken);
 }
 
-void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) {
+void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(
         entry.predMetas[getComponentIdx()]);
     
@@ -317,7 +317,7 @@ When the branch is resolved and found to be correctly predicted:
 
 ```cpp
 // Setup update stream with actual outcome
-FetchStream stream;
+FetchTarget stream;
 stream.startPC = pc;
 stream.exeBranchInfo = branch_info;
 stream.exeTaken = actual_taken;
@@ -332,7 +332,7 @@ When a misprediction is detected, history must be recovered:
 
 ```cpp
 // Setup recovery stream
-FetchStream recoverStream;
+FetchTarget recoverStream;
 recoverStream.startPC = pc;
 recoverStream.exeBranchInfo = branch_info;
 recoverStream.exeTaken = actual_taken;

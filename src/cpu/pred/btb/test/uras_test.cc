@@ -4,7 +4,7 @@
 #include <boost/dynamic_bitset.hpp>
 #include <vector>
 #include "base/types.hh"
-#include "cpu/pred/btb/stream_struct.hh"
+#include "cpu/pred/btb/common.hh"
 
 namespace gem5 {
 namespace branch_prediction {
@@ -100,7 +100,7 @@ public:
     // two steps:
     // 1. recover sp and tos from entry.predMetas[0]
     // 2. do push & pops on control squash based on the actual branch type (call/return)
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
+    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
     {
         auto &stack = specStack;
         auto &sp = specSp;
@@ -381,8 +381,8 @@ TEST_F(URASTest, SpecUpdateHistCallReturn) {
 // Test basic recovery functionality
 TEST_F(URASTest, RecoverHistBasic) {
     boost::dynamic_bitset<> history(8, 0);
-    FetchStream entry;
-    
+    FetchTarget entry;
+
     // initial state
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
@@ -405,8 +405,8 @@ TEST_F(URASTest, RecoverHistBasic) {
 // Test recovery with return instruction
 TEST_F(URASTest, RecoverHistReturn) {
     boost::dynamic_bitset<> history(8, 0);
-    FetchStream entry;
-    
+    FetchTarget entry;
+
     // 设置初始状态
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
@@ -434,8 +434,8 @@ TEST_F(URASTest, RecoverHistReturn) {
 // Test recovery with call instruction
 TEST_F(URASTest, RecoverHistCall) {
     boost::dynamic_bitset<> history(8, 0);
-    FetchStream entry;
-    
+    FetchTarget entry;
+
     // 设置初始状态
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
@@ -463,8 +463,8 @@ TEST_F(URASTest, RecoverHistCall) {
 // Test recovery with call-return sequence
 TEST_F(URASTest, RecoverHistCallReturn) {
     boost::dynamic_bitset<> history(8, 0);
-    FetchStream entry1, entry2;
-    
+    FetchTarget entry1, entry2;
+
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
     

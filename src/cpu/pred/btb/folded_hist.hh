@@ -8,7 +8,7 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
-#include "cpu/pred/btb/stream_struct.hh"
+#include "cpu/pred/btb/common.hh"
 
 namespace gem5
 {

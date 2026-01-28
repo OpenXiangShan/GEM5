@@ -322,7 +322,7 @@ void
 MBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
 
 void
-MBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
+MBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
 {
     // MBTB doesn't support ahead-pipelined stages, nothing to recover
 }
@@ -416,7 +416,7 @@ MBTB::lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta)
  * Note: This is only called in L1 BTB during update
  */
 void
-MBTB::getAndSetNewBTBEntry(FetchStream &stream)
+MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
 {
     DPRINTF(BTB, "getAndSetNewBTBEntry called for pc %#lx\n", stream.startPC);
     // Get prediction metadata from previous stages
@@ -469,7 +469,7 @@ MBTB::getAndSetNewBTBEntry(FetchStream &stream)
  * Also check BTB prediction status
  */
 void
-MBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
+MBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
@@ -497,7 +497,7 @@ MBTB::checkPredictionHit(const FetchStream &stream, const BTBMeta* meta)
  * 5. Update MRU information
  */
 void
-MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
+MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
 {
     btbStats.updateTotal++;
     // Select SRAM based on entry PC's 32B-aligned address
@@ -556,7 +556,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchStream &stream)
 BTBEntry
 MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
                         const BTBEntry* existing_entry,
-                        const FetchStream &stream)
+                        const FetchTarget &stream)
 {
     // For conditional branches, prefer the existing entry to preserve up-to-date ctr
     auto entry_to_write = (req_entry.isCond && existing_entry)
@@ -681,7 +681,7 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
  * 5. Update MRU information
  */
 void
-MBTB::update(const FetchStream &stream)
+MBTB::update(const FetchTarget &stream)
 {
     DPRINTF(BTB, "BTB: update called for pc %#lx\n", stream.startPC);
     // 1. Check prediction hit status, for stats recording
@@ -695,7 +695,7 @@ MBTB::update(const FetchStream &stream)
 }
 
 std::vector<BTBEntry>
-MBTB::prepareUpdateEntries(const FetchStream &stream) {
+MBTB::prepareUpdateEntries(const FetchTarget &stream) {
     auto all_entries = stream.updateBTBEntries;
 
     // Add potential new BTB entry if it's a btb miss during prediction
@@ -802,7 +802,7 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
 #ifndef UNIT_TEST
 
 void
-MBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+MBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &hit_entries = meta->hit_entries;

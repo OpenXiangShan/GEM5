@@ -150,7 +150,7 @@ BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction
 }
 
 void
-BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
+BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
 {
     auto takenEntry = entry.exeBranchInfo;
     /*
@@ -192,7 +192,7 @@ BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &e
 }
 
 void
-BTBRAS::update(const FetchStream &entry)
+BTBRAS::update(const FetchTarget &entry)
 {
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
     auto takenEntry = entry.exeBranchInfo;
@@ -426,14 +426,14 @@ BTBRAS::getTop_meta() {
 }
 
 Addr
-BTBRAS::getTopAddrFromMetas(const FetchStream &stream)
+BTBRAS::getTopAddrFromMetas(const FetchTarget &stream)
 {
     auto meta_ptr = std::static_pointer_cast<RASMeta>(stream.predMetas[getComponentIdx()]);
     return meta_ptr->target;
 }
 
 void
-BTBRAS::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+BTBRAS::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
     if (!inst->isReturn() || inst->isNop()) {
         // ras only cares about return instructions

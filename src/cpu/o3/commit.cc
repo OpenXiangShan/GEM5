@@ -701,7 +701,6 @@ Commit::squashAll(ThreadID tid)
 
     set(toIEW->commitInfo[tid].pc, pc[tid]);
 
-    toIEW->commitInfo[tid].squashedStreamId = committedStreamId;
     toIEW->commitInfo[tid].squashedTargetId = committedTargetId;
     toIEW->commitInfo[tid].squashedLoopIter = committedLoopIter;
 
@@ -1074,12 +1073,9 @@ Commit::commit()
                 DPRINTF(Commit,
                         "Unable to find squashed instruction in ROB\n");
             }
-            toIEW->commitInfo[tid].squashedStreamId = fromIEW->squashedStreamId[tid];
             toIEW->commitInfo[tid].squashedTargetId = fromIEW->squashedTargetId[tid];
             toIEW->commitInfo[tid].squashedLoopIter = fromIEW->squashedLoopIter[tid];
 
-            // toIEW->commitInfo[tid].doneFsqId =
-            //                         toIEW->commitInfo[tid].squashInst->getFsqId();
             if (toIEW->commitInfo[tid].mispredictInst) {
                 if (toIEW->commitInfo[tid].mispredictInst->isUncondCtrl()) {
                      toIEW->commitInfo[tid].branchTaken = true;
@@ -1322,11 +1318,9 @@ Commit::commitInsts()
                 // Set the doneSeqNum to the youngest committed instruction.
                 toIEW->commitInfo[tid].doneSeqNum = head_inst->seqNum;
 
-                if (head_inst->getFsqId() > 1) {
-                    toIEW->commitInfo[tid].doneFsqId =
-                        head_inst->getFsqId() - 1;
+                if (head_inst->getFtqId() > 1) {
+                    toIEW->commitInfo[tid].doneFtqId = head_inst->getFtqId() - 1;
                 }
-                committedStreamId = head_inst->getFsqId();
                 committedTargetId = head_inst->getFtqId();
                 committedLoopIter = head_inst->getLoopIteration();
 

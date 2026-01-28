@@ -2,9 +2,9 @@
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
 #include <queue>
+#include <string>
 
 #include <boost/dynamic_bitset.hpp>
-#include <string>
 
 // #include "arch/generic/pcstate.hh"
 #include "base/types.hh"
@@ -18,7 +18,8 @@ namespace branch_prediction {
 
 namespace btb_pred {
 
-enum EndType {
+enum EndType
+{
     END_CALL=0,
     END_RET,
     END_OTHER_TAKEN,
@@ -27,7 +28,8 @@ enum EndType {
     END_NONE
 };
 
-enum SquashType {
+enum SquashType
+{
     SQUASH_NONE=0,
     SQUASH_TRAP,
     SQUASH_CTRL,
@@ -245,8 +247,6 @@ struct LFSR64
     }
 };
 
-
-using FetchStreamId = uint64_t;
 using FetchTargetId = uint64_t;
 
 // {branch pc -> istaken} maps
@@ -273,10 +273,11 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
  * - Loop and jump-ahead prediction state
  * - Statistics for profiling
  */
-struct FetchStream
+struct FetchTarget
 {
+    ThreadID tid;
     Addr startPC;       // start pc of the stream
-    bool predTaken;     // whether the FetchStream has taken branch
+    bool predTaken;     // whether the FetchTarget has taken branch
     Addr predEndPC;     // predicted stream end pc (fall through pc)
     BranchInfo predBranchInfo; // predicted branch info
 
@@ -321,7 +322,7 @@ struct FetchStream
     int s1Source; // which stage the prediction comes from
     int s3Source; // which stage the prediction comes from
 
-   FetchStream()
+   FetchTarget()
        : startPC(0),
          predTaken(false),
          predEndPC(0),

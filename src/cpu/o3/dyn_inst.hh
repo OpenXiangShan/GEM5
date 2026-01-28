@@ -395,10 +395,8 @@ class DynInst : public ExecContext, public RefCounted
 
     Addr fallThruPC;
 
-    /** fsqId and ftqId are used for squashing and committing */
+    /** ftqId is used for squashing and committing */
     /** The fetch stream queue ID of the instruction. */
-    unsigned fsqId;
-    /** The fetch target queue ID of the instruction. */
     unsigned ftqId;
     /** The number of loop iteration within an fsq entry of the instruction. */
     unsigned loopIteration;
@@ -1557,18 +1555,6 @@ class DynInst : public ExecContext, public RefCounted
         return str;
     }
 
-
-    void
-    setFsqId(unsigned id)
-    {
-        fsqId = id;
-    }
-
-    unsigned
-    getFsqId()
-    {
-        return fsqId;
-    }
 
     void
     setFtqId(unsigned id)

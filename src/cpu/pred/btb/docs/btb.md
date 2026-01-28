@@ -168,7 +168,7 @@ The update process:
    - For indirect branches, update target
 
 ```cpp
-void update(const FetchStream &stream) {
+void update(const FetchTarget &stream) {
     // 1. Process old entries
     auto old_entries = processOldEntries(stream);
     
@@ -221,7 +221,7 @@ auto meta = btb->getPredictionMeta();
 ### 5.2 Update Phase
 ```cpp
 // Setup update stream
-FetchStream stream;
+FetchTarget stream;
 stream.startPC = pc;
 stream.predMetas[0] = meta;
 

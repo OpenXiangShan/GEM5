@@ -554,8 +554,7 @@ private:
 
     // committed Stream and Target
 
-    uint64_t committedStreamId{1};
-    uint64_t committedTargetId{0};
+    uint64_t committedTargetId{1};
     uint64_t committedLoopIter{};
 
     struct CommitStats : public statistics::Group

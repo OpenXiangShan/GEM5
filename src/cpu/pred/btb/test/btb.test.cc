@@ -1,7 +1,8 @@
-#include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/mbtb.hh"
-#include "cpu/pred/btb/stream_struct.hh"
 
 namespace gem5
 {
@@ -44,18 +45,18 @@ BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
 }
 
 /**
- * @brief Setup a FetchStream with common parameters for BTB update
+ * @brief Setup a FetchTarget with common parameters for BTB update
  *
  * @param startPC Start address of the fetch block
  * @param branch Branch information
  * @param taken Whether the branch was taken
  * @param meta Prediction metadata from previous prediction
  * @param endInstPC Last executed instruction PC, used for filtering entries
- * @return FetchStream Initialized fetch stream
+ * @return FetchTarget Initialized fetch stream
  */
-FetchStream setupStream(Addr startPC, const BranchInfo& branch, bool taken,
+FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
                        std::shared_ptr<void> meta, Addr endInstPC) {
-    FetchStream stream;
+    FetchTarget stream;
     stream.startPC = startPC;
     stream.resolved = true;
     stream.exeBranchInfo = branch;
@@ -125,7 +126,7 @@ predictUpdateCycle(MBTB* btb,
     auto meta = btb->getPredictionMeta();
 
     // Update phase
-    FetchStream stream = setupStream(startPC, branch, taken, meta, endInstPC);
+    FetchTarget stream = setupStream(startPC, branch, taken, meta, endInstPC);
     // Populate predicted BTB entries in stream from stage predictions
     // Use entries from the first valid stage (delay)
     if (btb->getDelay() < stagePreds.size()) {
@@ -365,7 +366,7 @@ TEST_F(BTBTest, MultipleBranchPrediction) {
     mbtb->putPCHistory(0x1000, history, tempPreds);
     auto meta = mbtb->getPredictionMeta();
 
-    FetchStream stream = setupStream(0x1000, branch2, true, meta, 0x1008);
+    FetchTarget stream = setupStream(0x1000, branch2, true, meta, 0x1008);
     mbtb->getAndSetNewBTBEntry(stream);
     mbtb->update(stream);
     

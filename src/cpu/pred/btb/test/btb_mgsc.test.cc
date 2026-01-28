@@ -295,7 +295,7 @@ struct MgscHarness
             bwhr = bwhr_before;
             lhr = lhr_before;
 
-            FetchStream recover_stream;
+            FetchTarget recover_stream;
             recover_stream.startPC = start_pc;
             recover_stream.predMetas[mgsc.getComponentIdx()] = meta;
             recover_stream.resolved = true;
@@ -318,7 +318,7 @@ struct MgscHarness
         }
 
         // Training update using prediction meta
-        FetchStream update_stream;
+        FetchTarget update_stream;
         update_stream.startPC = start_pc;
         update_stream.updateBTBEntries = {entry};
         update_stream.updateIsOldEntry = true;
@@ -506,7 +506,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
 
     // Update with correct outcome (taken): should NOT train because abs(sum) >= total_thres and prediction correct.
     {
-        FetchStream stream;
+        FetchTarget stream;
         stream.startPC = start_pc;
         stream.updateBTBEntries = {entry};
         stream.updateIsOldEntry = true;
@@ -520,7 +520,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
 
     // Update with wrong outcome (not taken): should train (decrement signed counter).
     {
-        FetchStream stream;
+        FetchTarget stream;
         stream.startPC = start_pc;
         stream.updateBTBEntries = {entry};
         stream.updateIsOldEntry = true;

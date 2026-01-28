@@ -147,7 +147,6 @@ struct IEWStruct
     DynInstPtr mispredictInst[MaxThreads];
     Addr mispredPC[MaxThreads];
     InstSeqNum squashedSeqNum[MaxThreads];
-    uint64_t squashedStreamId[MaxThreads];
     uint64_t squashedTargetId[MaxThreads];
     uint64_t squashedLoopIter[MaxThreads];
     std::unique_ptr<PCStateBase> pc[MaxThreads];
@@ -196,7 +195,7 @@ struct SquashVersion
 
 struct ResolveQueueEntry
 {
-    uint64_t resolvedFSQId;
+    uint64_t resolvedFTQId;
     std::vector<uint64_t> resolvedInstPC;
 };
 
@@ -250,7 +249,7 @@ struct TimeStruct
 
         struct ResolvedCFIEntry
         {
-            uint64_t fsqId;
+            uint64_t ftqId;
             uint64_t pc;
         };
         /** Resolved control-flow PCs produced this cycle (fetch buffers/merges). */
@@ -301,8 +300,7 @@ struct TimeStruct
 
         InstSeqNum doneMemSeqNum;
 
-        uint64_t doneFsqId; // F
-        uint64_t squashedStreamId; // F
+        uint64_t doneFtqId; // F
         uint64_t squashedTargetId; // F
         unsigned squashedLoopIter; // F
 

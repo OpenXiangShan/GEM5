@@ -3,7 +3,7 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
-#include "cpu/pred/btb/stream_struct.hh"
+#include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "debug/URAS.hh"
 #include "params/BTBuRAS.hh"
@@ -49,9 +49,9 @@ class BTBuRAS : public TimedBaseBTBPredictor
 
         unsigned getDelay() override {return 0;}
 
-        void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) override;
+        void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) override;
 
-        void update(const FetchStream &entry) override;
+        void update(const FetchTarget &entry) override;
 
         int getSp() {return specSp;}
 
