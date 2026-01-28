@@ -198,11 +198,14 @@ class TLB : public BaseTLB
     void demapPage(Addr vaddr, uint64_t asn) override;
     void demapPageL2(Addr vaddr,uint64_t asn);
 
-    Fault checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode, PTE pte,
-                           Addr gpaddr, bool G, bool hlvx = false);
+    Fault checkPermissions(ThreadContext *tc, STATUS status, PrivilegeMode pmode,
+                           Addr vaddr, BaseMMU::Mode mode, PTE pte, Addr gpaddr,
+                           bool G, bool hlvx = false);
     Fault checkGuestPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
                       BaseMMU::Mode mode, PTESv39 pte);
-    std::pair<bool, Fault> checkGPermissions(STATUS status, Addr vaddr, Addr gpaddr, BaseMMU::Mode mode, PTE pte,
+    std::pair<bool, Fault> checkGPermissions(ThreadContext *tc, STATUS status,
+                                             Addr vaddr, Addr gpaddr,
+                                             BaseMMU::Mode mode, PTE pte,
                                              bool hlvx = false);
     Fault createPagefault(Addr vaddr, Addr gPaddr,BaseMMU::Mode mode,bool G);
 
@@ -228,7 +231,8 @@ class TLB : public BaseTLB
 
     Fault L2TLBPagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req, bool is_pre, bool is_back_pre);
 
-    Fault L2TLBCheck(PTE pte, int level, STATUS status, PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
+    Fault L2TLBCheck(ThreadContext *tc, PTE pte, int level, STATUS status,
+                     PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
                      const RequestPtr &req, bool is_pre, bool is_back_pre);
     bool checkPrePrecision(uint64_t &removeNoUsePre, uint64_t &usedPre);
     void sendPreHitOnHitRequest(TlbEntry *e_pre_1, TlbEntry *e_pre_2, const RequestPtr &req, Addr pre_block,

@@ -164,6 +164,10 @@ BitUnion64(PTESv48)
 EndBitUnion(PTESv48)
 
 BitUnion64(PTE)
+    // Svpbmt/Svnapot (if unsupported/disabled these bits must be zero, else PF)
+    Bitfield<63> n;
+    Bitfield<62, 61> pbmt;
+    Bitfield<60, 54> reserved;
     Bitfield<53, 10> ppn;
     Bitfield<53, 46> ppn4;
     Bitfield<45, 37> ppn3;
