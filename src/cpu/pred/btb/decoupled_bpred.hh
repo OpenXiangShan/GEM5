@@ -18,9 +18,12 @@
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/btb_tage.hh"
-#include "cpu/pred/btb/microtage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
+#include "cpu/pred/btb/jump_ahead_predictor.hh"
+#include "cpu/pred/btb/loop_buffer.hh"
+#include "cpu/pred/btb/loop_predictor.hh"
 #include "cpu/pred/btb/mbtb.hh"
+#include "cpu/pred/btb/microtage.hh"
 #include "cpu/pred/btb/ras.hh"
 #include "cpu/pred/general_arch_db.hh"
 

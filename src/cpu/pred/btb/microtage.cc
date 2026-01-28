@@ -21,6 +21,7 @@ namespace debug {
 #include "base/types.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "debug/TAGE.hh"
+
 #endif
 namespace gem5 {
 
@@ -256,7 +257,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
 /**
  * @brief Look up predictions in TAGE tables for a stream of instructions
- * 
+ *
  * @param startPC The starting PC address for the instruction stream
  * @param btbEntries Vector of BTB entries to make predictions for
  * @return Map of branch PC addresses to their predicted outcomes
@@ -290,12 +291,12 @@ MicroTAGE::dryRunCycle(Addr startPC) {
 
 /**
  * @brief Makes predictions for a stream of instructions using TAGE predictor
- * 
+ *
  * This function is called during the prediction stage and:
  * 1. Uses lookupHelper to get predictions for all BTB entries
  * 2. Stores predictions in the stage prediction structure
  * 3. Handles multiple prediction stages with different delays
- * 
+ *
  * @param startPC Starting PC of the instruction stream
  * @param history Current branch history
  * @param stagePreds Vector of predictions for different pipeline stages
@@ -340,7 +341,7 @@ MicroTAGE::getPredictionMeta() {
 
 /**
  * @brief Prepare BTB entries for update by filtering and processing
- * 
+ *
  * @param stream The fetch stream containing update information
  * @return Vector of BTB entries that need to be updated
  */
@@ -374,7 +375,7 @@ MicroTAGE::prepareUpdateEntries(const FetchStream &stream) {
 
 /**
  * @brief Update predictor state for a single entry
- * 
+ *
  * @param entry The BTB entry being updated
  * @param actual_taken The actual outcome of the branch
  * @param pred The prediction made for this entry
@@ -475,7 +476,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
 /**
  * @brief Handle allocation of new entries
- * 
+ *
  * @param startPC The starting PC address
  * @param entry The BTB entry being updated
  * @param actual_taken The actual outcome of the branch
@@ -601,7 +602,7 @@ MicroTAGE::doResolveUpdate(const FetchStream &stream) {
 
 /**
  * @brief Updates the TAGE predictor state based on actual branch execution results
- * 
+ *
  * @param stream The fetch stream containing branch execution information
  */
 void
@@ -614,7 +615,7 @@ MicroTAGE::update(const FetchStream &stream) {
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
     auto entries_to_update = prepareUpdateEntries(stream);
-    
+
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -813,12 +814,12 @@ MicroTAGE::getBankId(Addr pc) const
 
 /**
  * @brief Updates branch history for speculative execution
- * 
+ *
  * This function updates three types of folded histories:
  * - Tag folded history: Used for tag computation
  * - Alternative tag folded history: Used for alternative tag computation
  * - Index folded history: Used for table index computation
- * 
+ *
  * @param history The current branch history
  * @param shamt The number of bits to shift
  * @param taken Whether the branch was taken
@@ -836,48 +837,39 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
         return;
     }
 
-    // for (int t = 0; t < numPredictors; t++) {
-    //     for (int type = 0; type < 3; type++) {
-    //         auto foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
-    //         // since we have folded path history, we can put arbitrary shamt here, and it wouldn't make a difference
-    //         foldedHist.update(history, 2, taken, pc, target);
-    //         DPRINTF(TAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist.get());
-    //     }
-    // }
-    for (int type = 0; type < 2; type++) {
-        auto &foldedHistqueue = type == 0 ? aheadindexFoldedHist : aheadtagFoldedHist;
-        auto &foldedHist = type == 0 ? indexFoldedHist : tagFoldedHist;
-        if (foldedHistqueue.empty()) {
-            break;
-        }
-        foldedHist = foldedHistqueue.front();
+    if (!aheadindexFoldedHist.empty()) {
+        indexFoldedHist = aheadindexFoldedHist.front();
     }
 
+    // Update tag folded history immediately so tag calculation always sees current history.
+    for (int t = 0; t < numPredictors; t++) {
+        tagFoldedHist[t].update(history, 2, taken, pc, target);
+        DPRINTF(TAGEHistory, "t: %d, tag foldedHist _folded 0x%lx\n",
+                t, tagFoldedHist[t].get());
+    }
 
-    for (int type = 0; type < 2; type++) {
-        auto foldedHist = type == 0 ? indexFoldedHist : tagFoldedHist;
-        auto &foldedHistqueue = type == 0 ? aheadindexFoldedHist : aheadtagFoldedHist;
-        for (int t = 0; t < numPredictors; t++) {
-            foldedHist[t].update(history, 2, taken, pc, target);
-            DPRINTF(TAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist[t].get());
-        }
-        foldedHistqueue.push(foldedHist);
-        assert(foldedHistqueue.size() <= 2);
-        if (foldedHistqueue.size() >= 2) {
-            foldedHistqueue.pop();
-        }
+    // Prepare next-cycle index folded history and delay its visibility by one cycle.
+    auto nextIndexFoldedHist = indexFoldedHist;
+    for (int t = 0; t < numPredictors; t++) {
+        nextIndexFoldedHist[t].update(history, 2, taken, pc, target);
+        DPRINTF(TAGEHistory, "t: %d, index foldedHist(next) _folded 0x%lx\n",
+                t, nextIndexFoldedHist[t].get());
+    }
+    aheadindexFoldedHist.push(nextIndexFoldedHist);
+    if (aheadindexFoldedHist.size() > 1) {
+        aheadindexFoldedHist.pop();
     }
 }
 
 /**
  * @brief Updates branch history for speculative execution
- * 
+ *
  * This function updates the branch history for speculative execution
  * based on the provided history and prediction information.
- * 
+ *
  * It first retrieves the history information from the prediction metadata
  * and then calls the doUpdateHist function to update the folded histories.
- * 
+ *
  * @param history The current branch history
  * @param pred The prediction metadata containing history information
  */
@@ -890,12 +882,12 @@ MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredic
 
 /**
  * @brief Recovers branch history state after a misprediction
- * 
+ *
  * This function:
  * 1. Restores the folded histories from the saved metadata
  * 2. Updates the histories with the correct branch outcome
  * 3. Ensures predictor state is consistent after recovery
- * 
+ *
  * @param history The branch history to recover to
  * @param entry The fetch stream entry containing recovery information
  * @param shamt Number of bits to shift in history update
@@ -906,18 +898,24 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     const FetchStream &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
-    if (aheadindexFoldedHist.empty() || aheadtagFoldedHist.empty()) {
-        DPRINTF(TAGE, "recoverPHist: ahead folded history queues are empty, cannot recover\n");
+    if (!predMeta) {
+        DPRINTF(TAGE, "recoverPHist: no prediction metadata, cannot recover\n");
         return;
     }
-    for (int type = 0; type < 2; type++) {
-        auto &foldedHistQueuefront = type == 0 ? aheadindexFoldedHist.front() : aheadtagFoldedHist.front();
-        auto predFoldedHist =type == 0 ? predMeta->indexFoldedHist : predMeta->tagFoldedHist;
+    if (aheadindexFoldedHist.empty()) {
+        DPRINTF(TAGE, "recoverPHist: ahead index history queue empty, recovering current index history directly\n");
         for (int i = 0; i < numPredictors; i++) {
-            foldedHistQueuefront[i].recover(predFoldedHist[i]);
+            indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+        }
+    } else {
+        auto &foldedHistQueuefront = aheadindexFoldedHist.front();
+        for (int i = 0; i < numPredictors; i++) {
+            foldedHistQueuefront[i].recover(predMeta->indexFoldedHist[i]);
         }
     }
-
+    for (int i = 0; i < numPredictors; i++) {
+        tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
+    }
     doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
 }
 
