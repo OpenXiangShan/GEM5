@@ -1,10 +1,7 @@
 #ifndef __CPU_PRED_BTB_DECOUPLED_BPRED_HH__
 #define __CPU_PRED_BTB_DECOUPLED_BPRED_HH__
 
-#include <array>
 #include <cstdint>
-#include <deque>
-#include <queue>
 #include <stack>
 #include <utility>
 #include <vector>
@@ -14,19 +11,18 @@
 #include "cpu/o3/cpu_def.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/btb/fetch_target_queue.hh"
 #include "cpu/pred/btb/abtb.hh"
-#include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/btb_ittage.hh"
+#include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
-#include "cpu/pred/btb/btb_mgsc.hh"
-#include "cpu/pred/btb/ras.hh"
-#include "cpu/pred/general_arch_db.hh"
-
-// #include "cpu/pred/btb/uras.hh"
 #include "cpu/pred/btb/history_manager.hh"
+#include "cpu/pred/btb/mbtb.hh"
+#include "cpu/pred/btb/ras.hh"
 #include "cpu/pred/btb/stream_struct.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
+#include "cpu/pred/general_arch_db.hh"
 #include "debug/DBPBTBStats.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPProbe.hh"
@@ -61,15 +57,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     DecoupledBPUWithBTB(const Params &params);
 
-  private:
-    // FSQ storage: a simple FIFO queue with implicit IDs (baseId + index),
-    // which is closer to RTL than std::map and makes "head" explicit.
-    std::deque<FetchStream> fetchStreamQueue;
-    FetchStreamId fetchStreamBaseId{1}; // ID of fetchStreamQueue.front()
-    unsigned fetchStreamQueueSize;
-    FetchStreamId fsqId{1}; // next FSQ id to allocate (monotonic)
-    FetchStreamId fetchHeadFsqId{1}; // next FSQ id to be consumed by fetch
+    FetchTargetQueue fetchTargetQueue;
 
+  private:
     CPU *cpu;
 
     unsigned predictWidth;  // max predict width, default 64
@@ -94,8 +84,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<std::string> bpDBSwitches;
     bool someDBenabled{false};
     bool enableBranchTrace{false};
-    bool enablePredFSQTrace{false};
-
+    // bool enablePredFSQTrace{false};
     bool checkGivenSwitch(std::vector<std::string> switches, std::string switchName) {
         for (auto &sw : switches) {
             if (sw == switchName) {
@@ -150,7 +139,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void processNewPrediction();
 
-    FetchStream createFetchStreamEntry();
+    FetchTargetEntry createFetchTargetEntry();
 
     void updateHistoryForPrediction(FetchStream &entry);
 
@@ -190,47 +179,6 @@ class DecoupledBPUWithBTB : public BPredUnit
         //     "Resolved: %i, resolved stream:: %#lx-[%#lx, %#lx) --> %#lx\n",
         //     e.exeEnded, e.startPC, e.exeBranchPC, e.exeEndPC,
         //     e.exeTarget);
-    }
-
-    bool streamQueueFull() const
-    {
-        return fetchStreamQueue.size() >= fetchStreamQueueSize;
-    }
-
-    bool
-    hasStream(FetchStreamId id) const
-    {
-        return !fetchStreamQueue.empty() &&
-            id >= fetchStreamBaseId &&
-            id < fetchStreamBaseId + fetchStreamQueue.size();
-    }
-
-    FetchStream&
-    getStream(FetchStreamId id)
-    {
-        assert(hasStream(id));
-        return fetchStreamQueue[id - fetchStreamBaseId];
-    }
-
-    const FetchStream&
-    getStream(FetchStreamId id) const
-    {
-        assert(hasStream(id));
-        return fetchStreamQueue[id - fetchStreamBaseId];
-    }
-
-    FetchStreamId
-    frontStreamId() const
-    {
-        assert(!fetchStreamQueue.empty());
-        return fetchStreamBaseId;
-    }
-
-    FetchStreamId
-    backStreamId() const
-    {
-        assert(!fetchStreamQueue.empty());
-        return fetchStreamBaseId + fetchStreamQueue.size() - 1;
     }
 
     /**
@@ -389,8 +337,6 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void setCpu(CPU *_cpu) { cpu = _cpu; }
 
-    void consumeFetchTarget(unsigned ftq_id, unsigned fsq_id, unsigned fetched_inst_num);
-
     struct BpTrace : public Record
     {
         void set(uint64_t fsqId, uint64_t startPC, uint64_t controlPC, uint64_t controlType,
@@ -455,12 +401,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     void update(unsigned fsqID, ThreadID tid);
 
     void squashStreamAfter(unsigned squash_stream_id);
-
-    // Fetch-facing interface: consume FSQ head directly (RTL-like single queue).
-    bool fsqHasHead() const { return hasStream(fetchHeadFsqId); }
-    FetchStreamId fsqHeadId() const { assert(fsqHasHead()); return fetchHeadFsqId; }
-    const FetchStream &fsqHead() const { assert(fsqHasHead()); return getStream(fetchHeadFsqId); }
-    FetchTargetId fsqHeadFtqId() const { assert(fsqHasHead()); return fetchHeadFsqId - 1; }
 
     void dumpFsq(const char *when);
 

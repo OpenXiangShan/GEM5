@@ -40,24 +40,24 @@ DecoupledBPUWithBTB::initDB()
         someDBenabled = true;
     }
 
-    enablePredFSQTrace = checkGivenSwitch(bpDBSwitches, std::string("predfsq"));
-    if (enablePredFSQTrace) {
-        // Initialize prediction trace manager for recording predictions
-        std::vector<std::pair<std::string, DataType>> pred_fields_vec = {
-            std::make_pair("fsqId", UINT64),
-            std::make_pair("startPC", UINT64),
-            std::make_pair("predTaken", UINT64),
-            std::make_pair("predEndPC", UINT64),
-            std::make_pair("controlPC", UINT64),
-            std::make_pair("target", UINT64),
-            std::make_pair("predSource", UINT64),
-            std::make_pair("btbHit", UINT64)
-        };
-        predTraceManager = bpdb.addAndGetTrace("PREDTRACE", pred_fields_vec);
-        predTraceManager->init_table();
-        removeGivenSwitch(bpDBSwitches, std::string("predfsq"));
-        someDBenabled = true;
-    }
+    // enablePredFSQTrace = checkGivenSwitch(bpDBSwitches, std::string("predfsq"));
+    // if (enablePredFSQTrace) {
+    //     // Initialize prediction trace manager for recording predictions
+    //     std::vector<std::pair<std::string, DataType>> pred_fields_vec = {
+    //         std::make_pair("fsqId", UINT64),
+    //         std::make_pair("startPC", UINT64),
+    //         std::make_pair("predTaken", UINT64),
+    //         std::make_pair("predEndPC", UINT64),
+    //         std::make_pair("controlPC", UINT64),
+    //         std::make_pair("target", UINT64),
+    //         std::make_pair("predSource", UINT64),
+    //         std::make_pair("btbHit", UINT64)
+    //     };
+    //     predTraceManager = bpdb.addAndGetTrace("PREDTRACE", pred_fields_vec);
+    //     predTraceManager->init_table();
+    //     removeGivenSwitch(bpDBSwitches, std::string("predfsq"));
+    //     someDBenabled = true;
+    // }
 }
 
 void
@@ -626,10 +626,10 @@ void
 DecoupledBPUWithBTB::dumpFsq(const char *when)
 {
     DPRINTF(DecoupleBPProbe, "dumping fsq entries %s...\n", when);
-    for (size_t i = 0; i < fetchStreamQueue.size(); ++i) {
+    for (size_t i = 0; i < fetchTargetQueue.fetchTargetQueue.size(); ++i) {
         DPRINTFR(DecoupleBPProbe, "StreamID %lu, ",
-                 static_cast<uint64_t>(fetchStreamBaseId + i));
-        printStream(fetchStreamQueue[i]);
+                 static_cast<uint64_t>(fetchTargetQueue.fetchTargetBaseId + i));
+        printStream(fetchTargetQueue.fetchTargetQueue[i]);
     }
 }
 
@@ -799,7 +799,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     addBranchClassStat(branchClass, mispred);
 
     // ---------- Find corresponding fetch stream entry ----------
-    auto entry = getStream(inst->fsqId);
+    auto entry = fetchTargetQueue.getTargetEntry(inst->fsqId);
 
     // Record branch trace if enabled
     if (enableBranchTrace) {
@@ -913,14 +913,15 @@ void
 DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 {
     // Update committed instruction count for stream
-    getStream(inst->fsqId).commitInstNum++;
+    auto targetEntry = fetchTargetQueue.getTargetEntry(inst->fsqId);
+    targetEntry.commitInstNum++;
 
     // Update global committed instruction count
     numInstCommitted++;
 
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
             inst->staticInst->disassemble(inst->pcState().instAddr()),
-            getStream(inst->fsqId).commitInstNum);
+            fetchTargetQueue.getTargetEntry(inst->fsqId).commitInstNum);
 
     // ----------------------- Main Phase Processing -------------------------
     if (numInstCommitted % phaseSizeByInst == 0) {

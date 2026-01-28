@@ -536,8 +536,8 @@ TraceFetch::chooseWrongPathNopSize(ThreadID tid, Addr pc)
     bool taken = false;
     if (fetch.isBTBPred()) {
         assert(fetch.dbpbtb);
-        if (fetch.dbpbtb->fsqHasHead()) {
-            const auto &stream = fetch.dbpbtb->fsqHead();
+        if (fetch.dbpbtb->fetchTargetQueue.ftqHasHead()) {
+            const auto &stream = fetch.dbpbtb->fetchTargetQueue.ftqHead();
             block_end = stream.predEndPC;
             taken_pc = stream.predBranchInfo.pc;
             taken = stream.predTaken;
