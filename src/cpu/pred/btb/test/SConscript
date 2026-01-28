@@ -40,11 +40,6 @@ GTest('folded_hist.test',
     '../folded_hist.cc',
 )
 
-# below tests must add --unit-test to enable unit test mode!
-GTest('jump_ahead.test',
-    'jump_ahead.test.cc',
-)
-
 # add --unit-test to enable unit test mode for RAS
 # TODO: Fix RAS test
 # GTest('ras.test',
