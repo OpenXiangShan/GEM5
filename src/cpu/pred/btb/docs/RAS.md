@@ -111,7 +111,7 @@ void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &p
 ### 3. Recovery Phase (`recoverHist`)
 
 ```cpp
-void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, 
+void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, 
                  int shamt, bool cond_taken)
 ```
 
@@ -122,7 +122,7 @@ void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entr
 ### 4. Commit Phase (`update`)
 
 ```cpp
-void update(const FetchStream &entry)
+void update(const FetchTarget &entry)
 ```
 
 - **For Call Instructions**: Executes `push_stack(retAddr)`

@@ -3,7 +3,7 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
-#include "cpu/pred/btb/stream_struct.hh"
+#include "cpu/pred/btb/common.hh"
 
 // Conditional includes based on build mode
 #ifdef UNIT_TEST
@@ -98,18 +98,18 @@ namespace btb_pred {
 
         void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
 
-        void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken) override;
+        void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) override;
 
-        void update(const FetchStream &entry) override;
+        void update(const FetchTarget &entry) override;
 
         // commitBranch method - override only in production mode
 #ifdef UNIT_TEST
-        void commitBranch(const FetchStream &stream, const DynInstPtr &inst);
+        void commitBranch(const FetchTarget &stream, const DynInstPtr &inst);
 #else
-        void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+        void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
 #endif
 
-        Addr getTopAddrFromMetas(const FetchStream &stream);
+        Addr getTopAddrFromMetas(const FetchTarget &stream);
 
     private:
 

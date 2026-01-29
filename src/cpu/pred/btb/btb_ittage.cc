@@ -208,7 +208,7 @@ BTBITTAGE::getPredictionMeta() {
 }
 
 void
-BTBITTAGE::update(const FetchStream &stream)
+BTBITTAGE::update(const FetchTarget &stream)
 {
     if (debugPC == stream.startPC || debugPC2 == stream.startPC) {
         debugFlag = true;
@@ -548,7 +548,7 @@ BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredic
  * @param cond_taken The actual branch outcome
  */
 void
-BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
+BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
@@ -579,7 +579,7 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
 }
 
 void
-BTBITTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+BTBITTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
     if (!(inst->isIndirectCtrl() && !inst->isReturn())) {
         // ittage only cares about indirect non-return branches

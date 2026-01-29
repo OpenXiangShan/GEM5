@@ -43,7 +43,7 @@
 #include <queue>
 
 #include "base/types.hh"
-#include "cpu/pred/btb/stream_struct.hh"
+#include "cpu/pred/btb/common.hh"
 
 // Conditional includes based on build mode
 #ifdef UNIT_TEST
@@ -125,7 +125,7 @@ class AheadBTB : public TimedBaseBTBPredictor
     void tickStart() override;
 
     void tick() override;
-    void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
     void setTrace() override;
     TraceManager *btbTrace;
 #endif
@@ -153,7 +153,7 @@ class AheadBTB : public TimedBaseBTBPredictor
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
 
     void recoverHist(const boost::dynamic_bitset<> &history,
-        const FetchStream &entry, int shamt, bool cond_taken) override;
+        const FetchTarget &entry, int shamt, bool cond_taken) override;
 
 #ifndef UNIT_TEST
     /** Creates a BTB with the given number of entries, number of bits per
@@ -173,7 +173,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    void update(const FetchStream &stream) override;
+    void update(const FetchTarget &stream) override;
 
 
 
@@ -301,13 +301,13 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param stream Fetch stream containing prediction info
      *  @return Previous PC
      */
-    Addr getPreviousPC(const FetchStream &stream);
+    Addr getPreviousPC(const FetchTarget &stream);
 
     /** Check branch prediction hit status
      *  @param stream Fetch stream containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const FetchStream &stream,
+    void checkPredictionHit(const FetchTarget &stream,
                            const BTBMeta* meta);
 
     /** Collect entries that need to be updated
@@ -317,7 +317,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     std::vector<BTBEntry> collectEntriesToUpdate(
         const std::vector<BTBEntry>& old_entries,
-        const FetchStream &stream);
+        const FetchTarget &stream);
 
     /** Update or replace BTB entry
      *  @param btb_idx Index of the BTB entry

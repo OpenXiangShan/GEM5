@@ -567,7 +567,6 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
             inst->seqNum < toCommit->squashedSeqNum[tid]) {
         toCommit->squash[tid] = true;
         toCommit->squashedSeqNum[tid] = inst->seqNum;
-        toCommit->squashedStreamId[tid] = inst->getFsqId();
         toCommit->squashedTargetId[tid] = inst->getFtqId();
         toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
         toCommit->branchTaken[tid] = inst->pcState().branching();
@@ -581,10 +580,9 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
         wroteToTimeBuffer = true;
 
         DPRINTF(DecoupleBP,
-                "Branch misprediction (pc=%#lx) set stream id to %lu, target "
+                "Branch misprediction (pc=%#lx) set target "
                 "id to %lu, loop iter to %u\n",
                 toCommit->pc[tid]->instAddr(),
-                toCommit->squashedStreamId[tid],
                 toCommit->squashedTargetId[tid],
                 toCommit->squashedLoopIter[tid]);
     }
@@ -607,7 +605,6 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
         toCommit->squash[tid] = true;
 
         toCommit->squashedSeqNum[tid] = inst->seqNum;
-        toCommit->squashedStreamId[tid] = inst->getFsqId();
         toCommit->squashedTargetId[tid] = inst->getFtqId();
         toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
         set(toCommit->pc[tid], inst->pcState());
@@ -619,10 +616,9 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
         wroteToTimeBuffer = true;
 
         DPRINTF(DecoupleBP,
-                "Memory violation (pc=%#lx) set stream id to %lu, target id "
+                "Memory violation (pc=%#lx) set target id "
                 "to %lu, loop iter to %u\n",
                 toCommit->pc[tid]->instAddr(),
-                toCommit->squashedStreamId[tid],
                 toCommit->squashedTargetId[tid],
                 toCommit->squashedLoopIter[tid]);
 
@@ -1570,7 +1566,7 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
     if (inst->isControl()) {
         auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
         TimeStruct::IewComm::ResolvedCFIEntry entry;
-        entry.fsqId = inst->getFsqId();
+        entry.ftqId = inst->getFtqId();
         entry.pc = inst->getPC();
         resolved_cfis.push_back(entry);
     }

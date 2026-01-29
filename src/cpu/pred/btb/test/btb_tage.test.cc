@@ -5,8 +5,8 @@
 
 #include "base/types.hh"
 #include "cpu/pred/btb/btb_tage.hh"
+#include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/folded_hist.hh"
-#include "cpu/pred/btb/stream_struct.hh"
 
 namespace gem5
 {
@@ -54,11 +54,11 @@ BTBEntry createBTBEntry(Addr pc, bool isCond = true, bool valid = true,
  * @param taken Actual outcome (taken/not taken)
  * @param meta Prediction metadata from prediction phase
  * @param squashType Type of squash (control or non-control)
- * @return FetchStream Initialized stream for update or recovery
+ * @return FetchTarget Initialized stream for update or recovery
  */
-FetchStream createStream(Addr startPC, const BTBEntry& entry, bool taken,
+FetchTarget createStream(Addr startPC, const BTBEntry& entry, bool taken,
                          std::shared_ptr<void> meta) {
-    FetchStream stream;
+    FetchTarget stream;
     stream.startPC = startPC;
     stream.exeBranchInfo = entry;
     stream.exeTaken = taken;
@@ -71,7 +71,7 @@ FetchStream createStream(Addr startPC, const BTBEntry& entry, bool taken,
     return stream;
 }
 
-FetchStream setMispredStream(FetchStream stream) {
+FetchTarget setMispredStream(FetchTarget stream) {
     stream.squashType = SquashType::SQUASH_CTRL;
     stream.squashPC = stream.exeBranchInfo.pc;
     return stream;
@@ -176,7 +176,7 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
     tage->checkFoldedHist(history, "speculative update");
 
     // 5. Create update stream
-    FetchStream stream = createStream(startPC, entry, actual_taken, meta);
+    FetchTarget stream = createStream(startPC, entry, actual_taken, meta);
 
     // 6. Handle possible misprediction
     if (predicted_taken != actual_taken) {
@@ -385,7 +385,7 @@ TEST_F(BTBTAGETest, UsefulBitMechanism) {
     auto meta = tage->getPredictionMeta();
 
     // Update with actual outcome matching main prediction (taken)
-    FetchStream stream = createStream(0x1000, entry, true, meta);
+    FetchTarget stream = createStream(0x1000, entry, true, meta);
     tage->update(stream);
 
     // Verify useful bit is set (main prediction was correct and differed from alt)
@@ -432,7 +432,7 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     // Create a stream for entry2 with opposite outcome to force allocation
     // Although it has the same PC, we'll treat it as a different branch context
     // by setting a specific tag that doesn't match existing entries
-    FetchStream stream = createStream(0x1000, entry2, !predicted, meta);
+    FetchTarget stream = createStream(0x1000, entry2, !predicted, meta);
     stream.squashType = SquashType::SQUASH_CTRL; // Mark as control misprediction
     stream.squashPC = 0x1000;
 
@@ -475,7 +475,7 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
     }
 
     // Create a recovery stream with opposite outcome
-    FetchStream stream = createStream(0x1000, entry, !predicted_taken, meta);
+    FetchTarget stream = createStream(0x1000, entry, !predicted_taken, meta);
     stream = setMispredStream(stream);
 
     // Recover to pre-speculative state and update with correct outcome
@@ -520,11 +520,11 @@ TEST_F(BTBTAGETest, MultipleBranchSequence) {
     }
 
     // Update first branch (correct prediction), no allocation
-    FetchStream stream1 = createStream(0x1000, btbEntries[0], first_pred, meta);
+    FetchTarget stream1 = createStream(0x1000, btbEntries[0], first_pred, meta);
     tage->update(stream1);
 
     // Update second branch (incorrect prediction), allocate 1 entry
-    FetchStream stream2 = createStream(0x1000, btbEntries[1], !second_pred, meta);
+    FetchTarget stream2 = createStream(0x1000, btbEntries[1], !second_pred, meta);
     stream2.squashType = SquashType::SQUASH_CTRL;
     stream2.squashPC = 0x1004;
     tage->update(stream2);
@@ -551,7 +551,7 @@ TEST_F(BTBTAGETest, CounterUpdateMechanism) {
         predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
         auto meta = tage->getPredictionMeta();
 
-        FetchStream stream = createStream(0x1000, entry, true, meta);
+        FetchTarget stream = createStream(0x1000, entry, true, meta);
         tage->update(stream);
     }
 
@@ -564,7 +564,7 @@ TEST_F(BTBTAGETest, CounterUpdateMechanism) {
         predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
         auto meta = tage->getPredictionMeta();
 
-        FetchStream stream = createStream(0x1000, entry, false, meta);
+        FetchTarget stream = createStream(0x1000, entry, false, meta);
         tage->update(stream);
     }
 
@@ -897,7 +897,7 @@ TEST_F(BTBTAGETest, BankConflict) {
         EXPECT_TRUE(bankTage->predBankValid);
 
         auto meta = bankTage->getPredictionMeta();
-        FetchStream stream = createStream(0xa0, createBTBEntry(0xa0), true, meta);
+        FetchTarget stream = createStream(0xa0, createBTBEntry(0xa0), true, meta);
         setupTageEntry(bankTage, 0xa0, 0, 1, false);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
@@ -916,7 +916,7 @@ TEST_F(BTBTAGETest, BankConflict) {
         bankTage->putPCHistory(0x100, testHistory, testStagePreds);
 
         auto meta = bankTage->getPredictionMeta();
-        FetchStream stream = createStream(0x104, createBTBEntry(0x104), true, meta);
+        FetchTarget stream = createStream(0x104, createBTBEntry(0x104), true, meta);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
         bool can_update = bankTage->canResolveUpdate(stream);
@@ -935,7 +935,7 @@ TEST_F(BTBTAGETest, BankConflict) {
         bankTage->putPCHistory(0x20, testHistory, testStagePreds);
 
         auto meta = bankTage->getPredictionMeta();
-        FetchStream stream = createStream(0xa0, createBTBEntry(0xa0), true, meta);
+        FetchTarget stream = createStream(0xa0, createBTBEntry(0xa0), true, meta);
         setupTageEntry(bankTage, 0xa0, 0, 1, false);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;

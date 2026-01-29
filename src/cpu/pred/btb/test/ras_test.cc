@@ -7,8 +7,8 @@
 #include <boost/dynamic_bitset.hpp>
 
 #include "base/types.hh"
+#include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/ras.hh"
-#include "cpu/pred/btb/stream_struct.hh"
 
 namespace gem5 {
 namespace branch_prediction {
@@ -77,9 +77,9 @@ protected:
     }
 
     // Helper function to create a commit stream for call instructions
-    FetchStream createCallCommitStream(Addr startPC, Addr branchPC, unsigned size,
+    FetchTarget createCallCommitStream(Addr startPC, Addr branchPC, unsigned size,
                                        std::shared_ptr<void> meta, bool taken = true) {
-        FetchStream stream;
+        FetchTarget stream;
         stream.startPC = startPC;
         stream.exeTaken = taken;
         stream.exeBranchInfo.pc = branchPC;
@@ -91,9 +91,9 @@ protected:
     }
 
     // Helper function to create a commit stream for return instructions
-    FetchStream createReturnCommitStream(Addr startPC, Addr branchPC, unsigned size,
+    FetchTarget createReturnCommitStream(Addr startPC, Addr branchPC, unsigned size,
                                          std::shared_ptr<void> meta, bool taken = true) {
-        FetchStream stream;
+        FetchTarget stream;
         stream.startPC = startPC;
         stream.exeTaken = taken;
         stream.exeBranchInfo.pc = branchPC;
@@ -105,9 +105,9 @@ protected:
     }
 
     // Helper function to create a recovery stream
-    FetchStream createRecoveryStream(Addr startPC, Addr branchPC, bool isCall, unsigned size,
+    FetchTarget createRecoveryStream(Addr startPC, Addr branchPC, bool isCall, unsigned size,
                                      std::shared_ptr<void> meta, bool taken = false) {
-        FetchStream stream;
+        FetchTarget stream;
         stream.startPC = startPC;
         stream.exeTaken = taken;
         stream.exeBranchInfo.pc = branchPC;
@@ -222,7 +222,7 @@ TEST_F(RASTest, BasicRecovery) {
     ras->specUpdateHist(history, callPred);
 
     // Create recovery stream
-    FetchStream recoverStream;
+    FetchTarget recoverStream;
     recoverStream.startPC = 0x1000;
     recoverStream.exeTaken = false;  // Not taken, so no actual call
     recoverStream.predMetas[0] = initialMeta;
@@ -405,7 +405,7 @@ TEST_F(RASTest, ComplexRecovery) {
     checkReturnTarget(0x4000, 0x3004);
 
     // Recover to the state after first call (simulate misprediction)
-    FetchStream recoverStream;
+    FetchTarget recoverStream;
     recoverStream.startPC = 0x2000;
     recoverStream.exeTaken = true;  // The first call was actually taken
     recoverStream.exeBranchInfo.pc = 0x1000;

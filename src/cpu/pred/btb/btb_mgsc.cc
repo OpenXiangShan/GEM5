@@ -538,7 +538,7 @@ BTBMGSC::getPredictionMeta()
  * @return Vector of BTB entries that need to be updated
  */
 std::vector<BTBEntry>
-BTBMGSC::prepareUpdateEntries(const FetchStream &stream)
+BTBMGSC::prepareUpdateEntries(const FetchTarget &stream)
 {
     auto all_entries = stream.updateBTBEntries;
 
@@ -758,7 +758,7 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
  */
 void
 BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                               const FetchStream &stream)
+                               const FetchTarget &stream)
 {
     // Extract prediction information
     auto total_sum = pred.total_sum;
@@ -837,7 +837,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 }
 
 void
-BTBMGSC::update(const FetchStream &stream)
+BTBMGSC::update(const FetchTarget &stream)
 {
     if (!isEnabled()) {
         return;  // No update if disabled
@@ -1164,7 +1164,7 @@ BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, Fu
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
@@ -1190,7 +1190,7 @@ BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
@@ -1216,7 +1216,7 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchStream 
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
@@ -1242,7 +1242,7 @@ BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchStream
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverIHist(const FetchStream &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
@@ -1270,7 +1270,7 @@ BTBMGSC::recoverIHist(const FetchStream &entry, int shamt, bool cond_taken)
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchStream &entry, int shamt,
+BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt,
                       bool cond_taken)
 {
     if (!isEnabled()) {
@@ -1349,7 +1349,7 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
 
 #ifndef UNIT_TEST
 void
-BTBMGSC::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
     if (!inst->isCondCtrl()) {
         // tage olnly deals with conditional branches

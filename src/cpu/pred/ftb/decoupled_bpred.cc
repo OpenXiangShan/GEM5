@@ -1848,10 +1848,10 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
 
     // break down into each predictor and each stage
     // find corresponding fsq entry first
-    auto it = fetchStreamQueue.find(inst->fsqId);
+    auto it = fetchStreamQueue.find(inst->ftqId);
     // TRACE MODE FIX: Bypass assertion for missing FSQ entries in trace mode
     if (it == fetchStreamQueue.end() && cpu->isTraceMode()) {
-        DPRINTF(FTB, "Missing FSQ entry for trace mode branch commit [fsqId:%lu], skipping\n", inst->fsqId);
+        DPRINTF(FTB, "Missing FSQ entry for trace mode branch commit [fsqId:%lu], skipping\n", inst->ftqId);
         return;
     }
     assert(it != fetchStreamQueue.end());
@@ -1951,7 +1951,7 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
         }
     }
     entry.commitMispredictions[branchAddr] = miss;
-    DPRINTF(DBPFTBStats, "commit branchAddr %#lx, miss %d, fsqID %d\n", branchAddr, miss, inst->fsqId);
+    DPRINTF(DBPFTBStats, "commit branchAddr %#lx, miss %d, fsqID %d\n", branchAddr, miss, inst->ftqId);
 
     LoopTrace rec;
     LoopEntry predLoopEntry = LoopEntry();
@@ -2000,7 +2000,7 @@ DecoupledBPUWithFTB::commitBranch(const DynInstPtr &inst, bool miss)
 void
 DecoupledBPUWithFTB::notifyInstCommit(const DynInstPtr &inst)
 {
-    auto it = fetchStreamQueue.find(inst->fsqId);
+    auto it = fetchStreamQueue.find(inst->ftqId);
     // In trace mode, instructions bypass fetch stream creation, so fsqId may not be valid
     if (cpu->isTraceMode()) {
         if (it == fetchStreamQueue.end()) {
@@ -2680,7 +2680,7 @@ Addr
 DecoupledBPUWithFTB::getPreservedReturnAddr(const DynInstPtr &dynInst)
 {
     DPRINTF(DecoupleBP, "acquiring reutrn address for inst pc %#lx from decode\n", dynInst->pcState().instAddr());
-    auto fsqid = dynInst->getFsqId();
+    auto fsqid = dynInst->getFtqId();
     auto it = fetchStreamQueue.find(fsqid);
     auto retAddr = ras->getTopAddrFromMetas(it->second);
     DPRINTF(DecoupleBP, "get ret addr %#lx\n", retAddr);

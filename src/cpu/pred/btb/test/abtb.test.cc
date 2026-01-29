@@ -17,8 +17,8 @@ namespace test
 {
 
 
-FetchStream createStream(Addr startPC, FullBTBPrediction &pred, AheadBTB *abtb) {
-    FetchStream stream;
+FetchTarget createStream(Addr startPC, FullBTBPrediction &pred, AheadBTB *abtb) {
+    FetchTarget stream;
     stream.startPC = startPC;
     Addr fallThroughAddr = pred.getFallThrough(abtb->predictWidth);
     stream.isHit = pred.btbEntries.size() > 0; // TODO: fix isHit and falseHit
@@ -30,7 +30,7 @@ FetchStream createStream(Addr startPC, FullBTBPrediction &pred, AheadBTB *abtb) 
     return stream;
 }
 
-void resolveStream(FetchStream &stream, bool taken, Addr brPc, Addr target, bool isCond, int size=4) {
+void resolveStream(FetchTarget &stream, bool taken, Addr brPc, Addr target, bool isCond, int size=4) {
     stream.resolved = true;
     stream.exeBranchInfo.pc = brPc;
     stream.exeBranchInfo.target = target;
@@ -46,7 +46,7 @@ FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb) {
     return stagePreds[1];
 }
 
-void updateBTB(FetchStream &stream, AheadBTB *abtb, MBTB *mbtb) {
+void updateBTB(FetchTarget &stream, AheadBTB *abtb, MBTB *mbtb) {
     mbtb->getAndSetNewBTBEntry(stream); // usually called by mbtb, here for testing purpose
     abtb->update(stream);
 }

@@ -51,7 +51,7 @@
 #include "base/logging.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
-#include "cpu/pred/btb/stream_struct.hh"
+#include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "debug/UBTB.hh"
 #include "params/UBTB.hh"
@@ -130,13 +130,13 @@ class UBTB : public TimedBaseBTBPredictor
     /** for statistics only
      * @param stream The fetch stream containing execution results and prediction metadata
      */
-    void update(const FetchStream &stream) override;
+    void update(const FetchTarget &stream) override;
 
     /** for statistics only
      * @param stream The fetch stream containing execution results
      * @param inst The dynamic instruction being committed
      */
-    void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
 
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
@@ -149,7 +149,7 @@ class UBTB : public TimedBaseBTBPredictor
     // the following methods are not used
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override {}
     void recoverHist(const boost::dynamic_bitset<> &history,
-        const FetchStream &entry, int shamt, bool cond_taken) override{};
+        const FetchTarget &entry, int shamt, bool cond_taken) override{};
     void reset();
     void setTrace() override;
     TraceManager *ubtbTrace;

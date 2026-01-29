@@ -629,8 +629,8 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     }
 
     // Verify fetchBufferPC alignment with the supplying FSQ entry.
-    if (fetchBuffer[tid].valid && dbpbtb->fsqHasHead()) {
-        const auto &stream = dbpbtb->fsqHead();
+    if (fetchBuffer[tid].valid && dbpbtb->ftqHasHead()) {
+        const auto &stream = dbpbtb->ftqHead();
         if (fetchBuffer[tid].startPC != stream.startPC) {
             panic("fetchBufferPC %#x should be aligned with FSQ startPC %#x",
                   fetchBuffer[tid].startPC, stream.startPC);
@@ -782,10 +782,8 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // Decoupled+BTB-only: compute next PC directly from the supplying FSQ entry.
     ThreadID tid = inst->threadNumber;
     assert(dbpbtb);
-    assert(dbpbtb->fsqHasHead());
-    const auto &stream = dbpbtb->fsqHead();
-    const auto fsq_id = dbpbtb->fsqHeadId();
-    const auto ftq_id = dbpbtb->fsqHeadFtqId();
+    assert(dbpbtb->ftqHasHead());
+    const auto &stream = dbpbtb->ftqHead();
 
     const Addr curr_pc = next_pc.instAddr();
     assert(stream.startPC <= curr_pc && curr_pc < stream.predEndPC);
@@ -818,7 +816,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // Track how many dynamic instructions were fetched for this (legacy) FTQ/FSQ entry.
     ftqEntryFetchedInsts[tid]++;
     if (run_out) {
-        dbpbtb->consumeFetchTarget(ftq_id, fsq_id, ftqEntryFetchedInsts[tid]);
+        dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid]);
         ftqEntryFetchedInsts[tid] = 0;
         fetchBuffer[tid].valid = false;
         DPRINTF(DecoupleBP, "Used up fetch targets.\n");
@@ -1519,7 +1517,7 @@ Fetch::handleIEWSignals()
         for (const auto &resolved : incoming) {
             bool merged = false;
             for (auto &queued : resolveQueue) {
-                if (queued.resolvedFSQId == resolved.fsqId) {
+                if (queued.resolvedFTQId == resolved.ftqId) {
                     queued.resolvedInstPC.push_back(resolved.pc);
                     merged = true;
                     break;
@@ -1531,7 +1529,7 @@ Fetch::handleIEWSignals()
             }
 
             ResolveQueueEntry new_entry;
-            new_entry.resolvedFSQId = resolved.fsqId;
+            new_entry.resolvedFTQId = resolved.ftqId;
             new_entry.resolvedInstPC.push_back(resolved.pc);
             resolveQueue.push_back(std::move(new_entry));
             enqueueCount++;
@@ -1543,7 +1541,7 @@ Fetch::handleIEWSignals()
 
     if (!resolveQueue.empty()) {
         auto &entry = resolveQueue.front();
-        unsigned int stream_id = entry.resolvedFSQId;
+        unsigned int stream_id = entry.resolvedFTQId;
         dbpbtb->prepareResolveUpdateEntries(stream_id);
         for (const auto resolvedInstPC : entry.resolvedInstPC) {
             dbpbtb->markCFIResolved(stream_id, resolvedInstPC);
@@ -1564,10 +1562,10 @@ Fetch::handleCommitSignals(ThreadID tid)
 {
     // Check squash signals from commit.
     if (!fromCommit->commitInfo[tid].squash) {
-        if (fromCommit->commitInfo[tid].doneSeqNum) {
-            DPRINTF(DecoupleBP, "Commit stream Id: %lu\n", fromCommit->commitInfo[tid].doneFsqId);
+        if (fromCommit->commitInfo[tid].doneFtqId) {
+            DPRINTF(DecoupleBP, "Commit stream Id: %lu\n", fromCommit->commitInfo[tid].doneFtqId);
             assert(dbpbtb);
-            dbpbtb->update(fromCommit->commitInfo[tid].doneFsqId, tid);
+            dbpbtb->update(fromCommit->commitInfo[tid].doneFtqId, tid);
         }
         return false;
     }
@@ -1602,7 +1600,7 @@ Fetch::handleCommitSignals(ThreadID tid)
         DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
         const auto corr_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
-        dbpbtb->controlSquash(mispred_inst->getFtqId(), mispred_inst->getFsqId(), mispred_inst->pcState(),
+        dbpbtb->controlSquash(mispred_inst->getFtqId(), mispred_inst->pcState(),
                               corr_pc, mispred_inst->staticInst,
                               mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
                               mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
@@ -1610,16 +1608,14 @@ Fetch::handleCommitSignals(ThreadID tid)
         DPRINTF(Fetch, "Treating as trap squash\n", tid);
         const auto trap_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
-        dbpbtb->trapSquash(fromCommit->commitInfo[tid].squashedTargetId,
-                           fromCommit->commitInfo[tid].squashedStreamId, fromCommit->commitInfo[tid].committedPC,
+        dbpbtb->trapSquash(fromCommit->commitInfo[tid].squashedTargetId, fromCommit->commitInfo[tid].committedPC,
                            trap_pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
     } else {
-        if (fromCommit->commitInfo[tid].pc && fromCommit->commitInfo[tid].squashedStreamId != 0) {
+        if (fromCommit->commitInfo[tid].pc && fromCommit->commitInfo[tid].squashedTargetId != 0) {
             DPRINTF(Fetch, "Squash with stream id and target id from IEW\n");
             const auto nc_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
             assert(dbpbtb);
-            dbpbtb->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId,
-                                     fromCommit->commitInfo[tid].squashedStreamId, nc_pc,
+            dbpbtb->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId, nc_pc,
                                      0, tid, fromCommit->commitInfo[tid].squashedLoopIter);
         } else {
             DPRINTF(Fetch, "Dont squash dbq because no meaningful stream\n");
@@ -1643,7 +1639,7 @@ Fetch::handleDecodeSquash(ThreadID tid)
             const auto next_pc =
                 fromDecode->decodeInfo[tid].nextPC->as<RiscvISA::PCState>();
             dbpbtb->controlSquash(
-                mispred_inst->getFtqId(), mispred_inst->getFsqId(),
+                mispred_inst->getFtqId(),
                 mispred_inst->pcState(),
                 next_pc,
                 mispred_inst->staticInst, mispred_inst->getInstBytes(),
@@ -1703,11 +1699,9 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     DPRINTF(Fetch, "Is nop: %i, is move: %i\n", instruction->isNop(),
             instruction->isMov());
     assert(dbpbtb);
-    DPRINTF(DecoupleBP, "Set instruction %lu with stream id %lu, fetch id %lu\n",
-            instruction->seqNum, dbpbtb->fsqHeadId(),
-            dbpbtb->fsqHeadFtqId());
-    instruction->setFsqId(dbpbtb->fsqHeadId());
-    instruction->setFtqId(dbpbtb->fsqHeadFtqId());
+    DPRINTF(DecoupleBP, "Set instruction %lu with fetch id %lu\n",
+            instruction->seqNum, dbpbtb->ftqHeadId());
+    instruction->setFtqId(dbpbtb->ftqHeadId());
 
 #if TRACING_ON
     if (trace) {
@@ -1763,7 +1757,7 @@ bool
 Fetch::checkDecoupledFrontend(ThreadID tid)
 {
     assert(dbpbtb);
-    if (!isTraceMode() && !dbpbtb->fsqHasHead()) {
+    if (!isTraceMode() && !dbpbtb->ftqHasHead()) {
         dbpbtb->addFtqNotValid();
         DPRINTF(Fetch, "Skip fetch when FSQ head is not available\n");
         setAllFetchStalls(StallReason::FTQBubble);
@@ -1991,7 +1985,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     // For decoupled frontend (including trace mode), check FTQ availability
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !fsqEmpty() && !waitForVsetvl) {
+           !predictedBranch && !ftqEmpty() && !waitForVsetvl) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
@@ -2051,13 +2045,13 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
         return;
     }
 
-    if (fsqEmpty()) {
+    if (ftqEmpty()) {
         DPRINTF(Fetch, "[tid:%i] No FSQ entry available for next fetch\n", tid);
         return;
     }
 
     assert(dbpbtb);
-    const auto &stream = dbpbtb->fsqHead();
+    const auto &stream = dbpbtb->ftqHead();
     const Addr start_pc = stream.startPC;
     fetchBuffer[tid].startPC = start_pc;
 

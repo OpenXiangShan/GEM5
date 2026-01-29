@@ -31,9 +31,9 @@
 
 #include "base/intmath.hh"
 #include "base/trace.hh"
+#include "common.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "debug/Fetch.hh"
-#include "stream_struct.hh"
 
 namespace gem5
 {
@@ -283,7 +283,7 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry, con
 
 
 void
-UBTB::update(const FetchStream &stream)
+UBTB::update(const FetchTarget &stream)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
     // hit entries whose corresponding insts are acutally executed
@@ -320,7 +320,7 @@ UBTB::update(const FetchStream &stream)
 }
 
 void
-UBTB::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &hit_entry = meta->hit_entry;

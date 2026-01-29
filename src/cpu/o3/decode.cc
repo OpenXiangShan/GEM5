@@ -1012,7 +1012,6 @@ Decode::checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur)
     instruction->setVersion(inst_pair[1]->getVersion());
     instruction->setTid(inst_pair[1]->threadNumber);
     instruction->thread = inst_pair[1]->thread;
-    instruction->setFsqId(inst_pair[1]->fsqId);
     instruction->setFtqId(inst_pair[1]->ftqId);
 
     instruction->instListIt = cpu->instList.insert(inst_pair[0]->instListIt, instruction);

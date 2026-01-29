@@ -43,7 +43,7 @@
 #include <queue>
 
 #include "base/types.hh"
-#include "cpu/pred/btb/stream_struct.hh"
+#include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 
 // Conditional includes based on build mode
@@ -125,7 +125,7 @@ class MBTB : public TimedBaseBTBPredictor
 
     void tick() override;
 
-    void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
     void setTrace() override;
     TraceManager *btbTrace;
 #endif
@@ -153,7 +153,7 @@ class MBTB : public TimedBaseBTBPredictor
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
 
     void recoverHist(const boost::dynamic_bitset<> &history,
-        const FetchStream &entry, int shamt, bool cond_taken) override;
+        const FetchTarget &entry, int shamt, bool cond_taken) override;
 
     /**
      * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
@@ -161,7 +161,7 @@ class MBTB : public TimedBaseBTBPredictor
      * 
      * @param stream 
      */
-    void getAndSetNewBTBEntry(FetchStream &stream);
+    void getAndSetNewBTBEntry(FetchTarget &stream);
 
     /** Updates the BTB with the branch info of a block and execution result.
      *  This function:
@@ -169,9 +169,9 @@ class MBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
-    void update(const FetchStream &stream) override;
+    void update(const FetchTarget &stream) override;
 
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchStream &stream);
+    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
@@ -274,19 +274,19 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param stream Fetch stream containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const FetchStream &stream,
+    void checkPredictionHit(const FetchTarget &stream,
                            const BTBMeta* meta);
 
     /** Update or replace BTB entry
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
      *  @param stream Fetch stream with update info
      */
-    void updateBTBEntry(const BTBEntry& entry, const FetchStream &stream);
+    void updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream);
 
     // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
     BTBEntry buildUpdatedEntry(const BTBEntry& req_entry,
                                const BTBEntry* existing_entry,
-                               const FetchStream &stream);
+                               const FetchTarget &stream);
 
     // Helper: update an existing entry in SRAM set
     void updateExistingInSRAMSet(Addr btb_idx,

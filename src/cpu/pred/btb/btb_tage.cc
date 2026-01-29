@@ -390,7 +390,7 @@ BTBTAGE::getPredictionMeta() {
  * @return Vector of BTB entries that need to be updated
  */
 std::vector<BTBEntry>
-BTBTAGE::prepareUpdateEntries(const FetchStream &stream) {
+BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
     auto all_entries = stream.updateBTBEntries;
 
     // Add potential new BTB entry if it's a btb miss during prediction
@@ -430,7 +430,7 @@ bool
 BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchStream &stream) {
+                             const FetchTarget &stream) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -636,7 +636,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
  * Returns false if the update cannot proceed due to a bank conflict.
  */
 bool
-BTBTAGE::canResolveUpdate(const FetchStream &stream) {
+BTBTAGE::canResolveUpdate(const FetchTarget &stream) {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
@@ -665,7 +665,7 @@ BTBTAGE::canResolveUpdate(const FetchStream &stream) {
  * @brief Perform resolved update after probe success.
  */
 void
-BTBTAGE::doResolveUpdate(const FetchStream &stream) {
+BTBTAGE::doResolveUpdate(const FetchTarget &stream) {
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
@@ -679,7 +679,7 @@ BTBTAGE::doResolveUpdate(const FetchStream &stream) {
  * @param stream The fetch stream containing branch execution information
  */
 void
-BTBTAGE::update(const FetchStream &stream) {
+BTBTAGE::update(const FetchTarget &stream) {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
@@ -774,7 +774,7 @@ BTBTAGE::update(const FetchStream &stream) {
 }
 
 void
-BTBTAGE::checkUtageUpdateMisspred(const FetchStream &stream) {
+BTBTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     // use for microtage updatemispred counting
     // sort microtage predictions by pc to find the first taken branch
@@ -976,7 +976,7 @@ BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredicti
  */
 void
 BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchStream &entry, int shamt, bool cond_taken)
+    const FetchTarget &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
@@ -1126,7 +1126,7 @@ BTBTAGE::getLRUVictim(int table, Addr index)
 #ifndef UNIT_TEST
 
 void
-BTBTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+BTBTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
     if (!inst->isCondCtrl()) {
         // tage olnly deals with conditional branches

@@ -3,7 +3,7 @@
 
 #include <list>
 
-#include "cpu/pred/btb/stream_struct.hh"
+#include "cpu/pred/btb/common.hh"
 
 #ifdef UNIT_TEST
 #include "cpu/pred/btb/test/test_dprintf.hh"

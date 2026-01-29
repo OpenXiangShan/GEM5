@@ -336,15 +336,15 @@ DecoupledBPUWithBTB::dumpStats()
     }
 }
 
-DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchStream &stream, const DynInstPtr &inst, bool mispred)
+DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchTarget &target, const DynInstPtr &inst, bool mispred)
 {
     _tick = curTick();
     Addr pc = inst->pcState().instAddr();
     const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
-    Addr target = rv_pc.npc();
+    Addr targetpc = rv_pc.npc();
     Addr fallThru = rv_pc.getFallThruPC();
-    BranchInfo info(pc, target, inst->staticInst, fallThru-pc);
-    set(fsqId, stream.startPC, pc, info.getType(), inst->branching(), mispred, fallThru, stream.predSource, target);
+    BranchInfo info(pc, targetpc, inst->staticInst, fallThru-pc);
+    set(fsqId, target.startPC, pc, info.getType(), inst->branching(), mispred, fallThru, target.predSource, targetpc);
     // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
     //     printf("%s: %ld\n", it->first.c_str(), it->second);
     // }
@@ -421,7 +421,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(overrideBubbleNum,  statistics::units::Count::get(), "the number of override bubbles"),
     ADD_STAT(overrideCount, statistics::units::Count::get(), "the number of overrides"),
     ADD_STAT(commitPredsFromEachStage, statistics::units::Count::get(),
-    "the number of preds of each stage that account for a committed stream"),
+    "the number of preds of each stage that account for a committed target"),
     ADD_STAT(commitOverrideBubbleNum, statistics::units::Count::get(),
     "the number of override bubbles, on the commit path"),
     ADD_STAT(commitOverrideCount, statistics::units::Count::get(), "the number of overrides, on the commit path"),
@@ -626,10 +626,10 @@ void
 DecoupledBPUWithBTB::dumpFsq(const char *when)
 {
     DPRINTF(DecoupleBPProbe, "dumping fsq entries %s...\n", when);
-    for (size_t i = 0; i < fetchStreamQueue.size(); ++i) {
-        DPRINTFR(DecoupleBPProbe, "StreamID %lu, ",
-                 static_cast<uint64_t>(fetchStreamBaseId + i));
-        printStream(fetchStreamQueue[i]);
+    for (size_t i = 0; i < fetchTargetQueue.size(); ++i) {
+        DPRINTFR(DecoupleBPProbe, "TargetID %lu, ",
+                 static_cast<uint64_t>(fetchTargetBaseId + i));
+        printTarget(fetchTargetQueue[i]);
     }
 }
 
@@ -692,82 +692,82 @@ DecoupledBPUWithBTB::addControlSquashCommitStat(BranchClass cls)
 }
 
 void
-DecoupledBPUWithBTB::updateStatistics(const FetchStream &stream)
+DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
 {
-    // Check if this stream was mispredicted
-    bool miss_predicted = stream.squashType == SQUASH_CTRL;
+    // Check if this target was mispredicted
+    bool miss_predicted = target.squashType == SQUASH_CTRL;
     // Track indirect mispredictions
-    if (miss_predicted && stream.exeBranchInfo.isIndirect) {
-        topMispredIndirect[stream.startPC]++;
+    if (miss_predicted && target.exeBranchInfo.isIndirect) {
+        topMispredIndirect[target.startPC]++;
     }
 
     // --- BTB Statistics ---
-    if (stream.isHit) {
+    if (target.isHit) {
         // Count BTB hits
         dbpBtbStats.btbHit++;
     } else {
         // Count BTB misses for taken branches
-        if (stream.exeTaken) {
+        if (target.exeTaken) {
             dbpBtbStats.btbMiss++;
-            DPRINTF(BTB, "BTB miss detected when update, stream start %#lx, predTick %lu, printing branch info:\n",
-                    stream.startPC, stream.predTick);
-            auto &slot = stream.exeBranchInfo;
+            DPRINTF(BTB, "BTB miss detected when update, target start %#lx, predTick %lu, printing branch info:\n",
+                    target.startPC, target.predTick);
+            auto &slot = target.exeBranchInfo;
             DPRINTF(BTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
                 slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
         }
 
         // Count false hits
-        if (stream.falseHit) {
+        if (target.falseHit) {
             dbpBtbStats.commitFalseHit++;
         }
     }
 
-    if (stream.isHit || stream.exeTaken) {
+    if (target.isHit || target.exeTaken) {
         // Update BTB entry statistics
-        auto it = totalBTBEntries.find(stream.startPC);
+        auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
-            auto &btb_entry = stream.updateNewBTBEntry;
-            totalBTBEntries[stream.startPC] = std::make_pair(btb_entry, 1);
+            auto &btb_entry = target.updateNewBTBEntry;
+            totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);
             dbpBtbStats.btbEntriesWithDifferentStart++;
         } else {
             it->second.second++;
-            it->second.first = stream.updateNewBTBEntry;
+            it->second.first = target.updateNewBTBEntry;
         }
     }
 
     // Track which predictor stage was used
-    dbpBtbStats.commitPredsFromEachStage[stream.predSource]++;
-    overrideStats(stream.overrideReason);
+    dbpBtbStats.commitPredsFromEachStage[target.predSource]++;
+    overrideStats(target.overrideReason);
 
     // --- Instruction Statistics ---
     // Track committed instruction counts
-    dbpBtbStats.commitFsqEntryHasInsts.sample(stream.commitInstNum, 1);
-    if (stream.commitInstNum >= 0 && stream.commitInstNum <= maxInstsNum) {
-        commitFsqEntryHasInstsVector[stream.commitInstNum]++;
-        if (stream.commitInstNum == 1 && stream.exeBranchInfo.isUncond()) {
+    dbpBtbStats.commitFsqEntryHasInsts.sample(target.commitInstNum, 1);
+    if (target.commitInstNum >= 0 && target.commitInstNum <= maxInstsNum) {
+        commitFsqEntryHasInstsVector[target.commitInstNum]++;
+        if (target.commitInstNum == 1 && target.exeBranchInfo.isUncond()) {
             dbpBtbStats.commitFsqEntryOnlyHasOneJump++;
         }
     }
 
     // Track fetched instruction counts
-    dbpBtbStats.commitFsqEntryFetchedInsts.sample(stream.fetchInstNum, 1);
-    if (stream.fetchInstNum >= 0 && stream.fetchInstNum <= maxInstsNum) {
-        commitFsqEntryFetchedInstsVector[stream.fetchInstNum]++;
+    dbpBtbStats.commitFsqEntryFetchedInsts.sample(target.fetchInstNum, 1);
+    if (target.fetchInstNum >= 0 && target.fetchInstNum <= maxInstsNum) {
+        commitFsqEntryFetchedInstsVector[target.fetchInstNum]++;
     }
 
     // --- Misprediction Statistics ---
     // Track control squashes (mispredictions)
-    if (stream.squashType == SQUASH_CTRL) {
+    if (target.squashType == SQUASH_CTRL) {
         // Record mispredict pair (start PC, branch PC)
-        auto find_it = topMispredicts.find(std::make_pair(stream.startPC, stream.exeBranchInfo.pc));
+        auto find_it = topMispredicts.find(std::make_pair(target.startPC, target.exeBranchInfo.pc));
         if (find_it == topMispredicts.end()) {
-            topMispredicts[std::make_pair(stream.startPC, stream.exeBranchInfo.pc)] = 1;
+            topMispredicts[std::make_pair(target.startPC, target.exeBranchInfo.pc)] = 1;
         } else {
             find_it->second++;
         }
 
         // Track history pattern for mispredictions
-        auto hist(stream.history);
+        auto hist(target.history);
         hist.resize(18);
         uint64_t pattern = hist.to_ulong();
         auto find_it_hist = topMispredHist.find(pattern);
@@ -798,12 +798,12 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     auto branchClass = classifyBranch(inst);
     addBranchClassStat(branchClass, mispred);
 
-    // ---------- Find corresponding fetch stream entry ----------
-    auto entry = getStream(inst->fsqId);
+    // ---------- Find corresponding fetch target entry ----------
+    auto entry = getTarget(inst->ftqId);
 
     // Record branch trace if enabled
     if (enableBranchTrace) {
-        bptrace->write_record(BpTrace(inst->fsqId, entry, inst, mispred));
+        bptrace->write_record(BpTrace(inst->ftqId, entry, inst, mispred));
     }
 
     // ---------- Extract branch information ----------
@@ -835,7 +835,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
 }
 
 void
-DecoupledBPUWithBTB::commitPredWrongSource(const FetchStream &entry)
+DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
 {
     int ubtbid = ubtb->getComponentIdx();
     int abtbid = abtb->getComponentIdx();
@@ -912,15 +912,15 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchStream &entry)
 void
 DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 {
-    // Update committed instruction count for stream
-    getStream(inst->fsqId).commitInstNum++;
+    // Update committed instruction count for target
+    getTarget(inst->ftqId).commitInstNum++;
 
     // Update global committed instruction count
     numInstCommitted++;
 
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
             inst->staticInst->disassemble(inst->pcState().instAddr()),
-            getStream(inst->fsqId).commitInstNum);
+            getTarget(inst->ftqId).commitInstNum);
 
     // ----------------------- Main Phase Processing -------------------------
     if (numInstCommitted % phaseSizeByInst == 0) {
@@ -963,7 +963,7 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 /**
  * @brief Process branch misprediction, determine type and update statistics
  *
- * @param entry The fetch stream entry
+ * @param entry The fetch target entry
  * @param branchAddr Branch instruction address
  * @param info Branch information
  * @param taken Whether the branch was taken
@@ -971,7 +971,7 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
  */
 void
 DecoupledBPUWithBTB::processMisprediction(
-    const FetchStream &entry,
+    const FetchTarget &entry,
     Addr branchAddr,
     const BranchInfo &info,
     bool taken,

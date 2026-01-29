@@ -124,7 +124,7 @@ BTBuRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPredictio
 }
 
 void
-BTBuRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt, bool cond_taken)
+BTBuRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
 {
     auto &stack = specStack;
     auto &sp = specSp;
@@ -163,7 +163,7 @@ BTBuRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &
 }
 
 void
-BTBuRAS::update(const FetchStream &entry)
+BTBuRAS::update(const FetchTarget &entry)
 {
     auto &stack = nonSpecStack;
     auto &sp = nonSpecSp;

@@ -3,18 +3,18 @@
 
 #include <deque>
 #include <map>
-#include <vector>
 #include <utility>
+#include <vector>
 
+#include "base/sat_counter.hh"
 #include "base/statistics.hh"
 #include "base/types.hh"
-#include "base/sat_counter.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/folded_hist.hh"
-#include "cpu/pred/btb/stream_struct.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
-#include "params/BTBITTAGE.hh"
 #include "debug/DecoupleBP.hh"
+#include "params/BTBITTAGE.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
@@ -108,11 +108,11 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     // Recover 3 folded history after a misprediction, then update 3 folded history according to history and pred.taken
     // the other recoverHist methods are left blank
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                        const FetchStream &entry,int shamt, bool cond_taken) override;
+                        const FetchTarget &entry,int shamt, bool cond_taken) override;
 
-    void update(const FetchStream &entry) override;
+    void update(const FetchTarget &entry) override;
 
-    void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
 
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);
