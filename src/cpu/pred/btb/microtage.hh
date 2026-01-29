@@ -173,7 +173,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
     Addr getTageIndex(Addr pc, int table);
 
     // Calculate TAGE index with folded history (uint64_t version for performance)
-    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist);
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
 
     // Calculate TAGE tag for a given PC and table
     // position: branch position within the block (xored into tag like RTL)
