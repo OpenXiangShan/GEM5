@@ -206,8 +206,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
         Addr index = predMeta ? getTageIndex(startPC, i,
-                            predMeta->indexFoldedHist[i].get(),
-                            predMeta->altTagFoldedHist[i].get())
+                            predMeta->indexFoldedHist[i].get())
                           : getTageIndex(startPC, i);
         Addr tag = predMeta ? getTageTag(startPC, i,
                             predMeta->tagFoldedHist[i].get(),predMeta->altTagFoldedHist[i].get(), position)
@@ -512,7 +511,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(startPC, ti,
-            meta->indexFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get());
+            meta->indexFoldedHist[ti].get());
         Addr newTag = getTageTag(startPC, ti,
             meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
 
@@ -759,7 +758,7 @@ MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHis
 }
 
 Addr
-MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist)
+MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
 {
     // Create mask for tableIndexBits[t] to limit result size
     Addr mask = (1ULL << tableIndexBits[t]) - 1;
@@ -767,16 +766,14 @@ MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedH
     const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
     Addr pcBits = (pc >> pcShift) & mask;
     Addr foldedBits = foldedHist & mask;
-    Addr altBits = (altFoldedHist << 1) & mask;
 
-    return pcBits ^ foldedBits ^ altBits;
+    return pcBits ^ foldedBits;
 }
 
 Addr
 MicroTAGE::getTageIndex(Addr pc, int t)
 {
-    return getTageIndex(pc, t, indexFoldedHist[t].get(),
-                        altTagFoldedHist[t].get());
+    return getTageIndex(pc, t, indexFoldedHist[t].get());
 }
 
 bool
