@@ -200,6 +200,14 @@ SectorTags::insertBlock(const PacketPtr pkt, CacheBlk *blk)
     BaseTags::insertBlock(pkt, blk);
 }
 
+
+void
+SectorTags::updateRp(CacheBlk *blk,int priority)
+{
+  replacementPolicy->reset4memtrace(blk->replacementData,priority);
+}
+
+
 void
 SectorTags::moveBlock(CacheBlk *src_blk, CacheBlk *dest_blk)
 {

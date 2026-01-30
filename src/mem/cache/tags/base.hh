@@ -207,6 +207,17 @@ class BaseTags : public ClockedObject
      */
     virtual ReplaceableEntry* findBlockBySetAndWay(int set, int way) const;
 
+
+    // memtrace
+    void warmupState(const std::string &pmem_file,const std::string &trace_file);
+    std::vector<char> decompress_gz_to_memory(const std::string &gz_path);
+    size_t query_in_memory(const std::vector<char>& data,
+                       uint64_t target_address,
+                       char* result,
+                       size_t max_result_length) ;
+    virtual void updateRp(CacheBlk* blk,int rank) = 0;
+
+
     /**
      * Align an address to the block size.
      * @param addr the address to align.

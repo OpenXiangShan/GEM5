@@ -210,6 +210,7 @@ SkewedAssociative::regenerateAddr(const Addr tag,
 std::vector<ReplaceableEntry*>
 SkewedAssociative::getPossibleEntries(const Addr addr) const
 {
+      //std::cout << "lixu :getPossibleEntries skewed_assoc"<<std::endl;
     std::vector<ReplaceableEntry*> entries;
 
     // Parse all ways

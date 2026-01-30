@@ -153,6 +153,9 @@ class SectorTags : public BaseTags
      */
     void insertBlock(const PacketPtr pkt, CacheBlk *blk) override;
 
+    // memtrace
+    void updateRp(CacheBlk *blk,int priority) override;
+
     void moveBlock(CacheBlk *src_blk, CacheBlk *dest_blk) override;
 
     /**

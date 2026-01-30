@@ -125,6 +125,18 @@ class BaseIndexingPolicy : public SimObject
      */
     void setEntry(ReplaceableEntry* entry, const uint64_t index);
 
+    // memtrace
+    virtual uint32_t myextractSet(const Addr addr) const;
+    int getAssoc(){ return assoc; }
+    uint32_t getnumSets()
+    {
+      return numSets;
+    }
+    std::vector<std::vector<ReplaceableEntry*>> getsets()
+    {
+      return sets;
+    }
+
     /**
      * Get an entry based on its set and way. All entries must have been set
      * already before calling this function.

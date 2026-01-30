@@ -430,6 +430,8 @@ class System : public SimObject, public PCEventScope
 
     memory::PhysicalMemory physmem;
 
+    bool restore_from_memtrace;
+
     AddrRangeList ShadowRomRanges;
 
     enums::MemoryMode memoryMode;
@@ -457,6 +459,8 @@ class System : public SimObject, public PCEventScope
 
   public:
 
+
+    bool restore_from_memtrace_enabled() const { return restore_from_memtrace; }
     /**
      * Request an id used to create a request object in the system. All objects
      * that intend to issues requests into the memory system must request an id

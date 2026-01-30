@@ -59,6 +59,8 @@
 #include "sim/globals.hh"
 #include "sim/sim_object.hh"
 
+
+#include "sim/system.hh"
 namespace gem5
 {
 
@@ -81,6 +83,16 @@ class Root : public SimObject
     EventFunctionWrapper syncEvent;
 
   public:
+    void initState() override
+    {
+      SimObject * temp_simobject =find("system");
+      System * temp_system = dynamic_cast<System *> (temp_simobject);
+      if(temp_system->restore_from_memtrace_enabled() == true)
+      {
+      memtrace_init();
+      }
+    }
+    void memtrace_init();
     /**
      * Use this function to get a pointer to the single Root object in the
      * simulation. This function asserts that such an object has actual been

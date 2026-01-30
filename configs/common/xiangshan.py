@@ -227,9 +227,13 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
             sys.workload.raw_bootloader = True
         else:
             sys.gcpt_restorer_file = gcpt_restorer
+    if args.memtrace_path is not None:
+        sys.restore_from_memtrace = True
+        sys.memtrace_file = args.memtrace_path
     # enable h checkpoint
     if args.enable_h_gcpt:
         sys.enable_h_gcpt = True
+    
     # configure DRAMSim input
     if args.mem_type == 'DRAMsim3' and args.dramsim3_ini is None:
         # use relative path to find the dramsim3 ini file, from configs/common/ to root
@@ -274,6 +278,7 @@ def build_xiangshan_system(args):
         ruby = True
 
     # Create system using FS mode with trace-specific memory configuration
+        # memtrace
     test_sys = makeBareMetalXiangshanSystem('timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
 
     # CRITICAL FIX: Configure trace-specific memory ranges and functional TLB for trace mode

@@ -217,6 +217,17 @@ class SimObject : public EventManager, public Serializable, public Drainable,
      */
     virtual void initState();
 
+
+    virtual void warmupState(const std::string &pmem_file,const std::string &trace_file){}
+    virtual int getcachesize()
+    {
+      return 0;
+    }
+    virtual int getcacheassoc()
+    {
+      return 0;
+    }
+
     /**
      * Register probe points for this object.
      *
