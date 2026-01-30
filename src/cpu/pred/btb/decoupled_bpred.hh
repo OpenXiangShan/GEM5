@@ -19,6 +19,7 @@
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
+#include "cpu/pred/btb/ftq.hh"
 #include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/ras.hh"
 #include "cpu/pred/general_arch_db.hh"
@@ -27,6 +28,7 @@
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
+#include "cpu/timebuf.hh"
 #include "debug/DBPBTBStats.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPProbe.hh"
@@ -55,6 +57,8 @@ using CPU = o3::CPU;
  */
 class DecoupledBPUWithBTB : public BPredUnit
 {
+    static constexpr int MaxThreads = o3::MaxThreads;
+
   public:
     typedef DecoupledBPUWithBTBParams Params;
 
@@ -63,14 +67,15 @@ class DecoupledBPUWithBTB : public BPredUnit
   private:
     // FSQ storage: a simple FIFO queue with implicit IDs (baseId + index),
     // which is closer to RTL than std::map and makes "head" explicit.
-    unsigned fetchTargetQueueSize;
-    std::deque<FetchTarget> fetchTargetQueue;
-    FetchTargetId fetchTargetBaseId{1}; // ID of fetchTargetQueue.front()
-    FetchTargetId ftqId{1}; // next FSQ id to allocate (monotonic)
-    FetchTargetId fetchHeadFtqId{1}; // next FSQ id to be consumed by fetch
+    // unsigned fetchTargetQueueSize;
+    // std::deque<FetchTarget> fetchTargetQueue;
+    // FetchTargetId fetchTargetBaseId{1}; // ID of fetchTargetQueue.front()
+    // FetchTargetId ftqId{1}; // next FSQ id to allocate (monotonic)
+    // FetchTargetId fetchHeadFtqId{1}; // next FSQ id to be consumed by fetch
 
     CPU *cpu;
 
+    const int numThreads = 2;
     unsigned predictWidth;  // max predict width, default 64
     unsigned maxInstsNum;
 
@@ -85,7 +90,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};
     BTBMGSC *mgsc{};
-
     btb_pred::BTBRAS *ras{};
     // btb_pred::BTBuRAS *uras{};
 
@@ -114,49 +118,44 @@ class DecoupledBPUWithBTB : public BPredUnit
     void initDB();
 
     std::vector<TimedBaseBTBPredictor*> components{};
-    std::vector<FullBTBPrediction> predsOfEachStage{};
+    // std::vector<FullBTBPrediction> predsOfEachStage{};
     unsigned numComponents{};
     unsigned numStages{};
 
-    enum class BpuState
+    FetchTargetQueue ftq;
+
+    struct
     {
-        IDLE,               // Waiting to start a prediction.
-        PREDICTOR_DONE,         // Prediction in progress (conceptually replaces `predictorFinished`).
-        PREDICTION_OUTSTANDING,         // Prediction is ready to be enqueued (replaces `receivedPred`).
-    };
-    BpuState bpuState;
-
-    Addr s0PC;                  ///< Current PC
-    // Addr s0targetStartPC;
-    boost::dynamic_bitset<> s0History;  ///< global History bits
-    boost::dynamic_bitset<> s0PHistory;  ///< path History bits
-    boost::dynamic_bitset<> s0BwHistory;  ///< global backward History bits
-    std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
-    FullBTBPrediction finalPred;      ///< Final prediction
-
-    boost::dynamic_bitset<> commitHistory;
-
-    bool squashing{false};
+        Addr s0PC;
+        std::vector<FullBTBPrediction> predsOfEachStage{};
+        boost::dynamic_bitset<> s0History;  ///< global History bits
+        boost::dynamic_bitset<> s0PHistory;  ///< path History bits
+        boost::dynamic_bitset<> s0BwHistory;  ///< global backward History bits
+        std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
+        boost::dynamic_bitset<> commitHistory;
+        FullBTBPrediction finalPred;      ///< Final prediction
+        unsigned numOverrideBubbles{0};
+        bool validprediction{false};
+        bool squashing{false};
+        bool blockPredictionPending{false};
+    } threads[MaxThreads];
 
     HistoryManager historyManager;
-    bool blockPredictionPending{false};
     unsigned resolveDequeueFailCounter{0};
     const unsigned resolveBlockThreshold;
 
-    unsigned numOverrideBubbles{0};
+    ThreadID scheduleThread() { return 0; }
 
-    bool validateFSQEnqueue();
+    void processNewPrediction(ThreadID tid);
 
-    void processNewPrediction();
-
-    FetchTarget createFetchTargetEntry();
+    FetchTarget createFetchTargetEntry(ThreadID tid);
 
     void updateHistoryForPrediction(FetchTarget &entry);
 
     void fillAheadPipeline(FetchTarget &entry);
 
     // Tick helper functions
-    void requestNewPrediction();
+    void requestNewPrediction(ThreadID tid);
 
     // TODO: compare phr and ghr
     void histShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history);
@@ -177,54 +176,6 @@ class DecoupledBPUWithBTB : public BPredUnit
                  e.getTakenTarget(), e.getTaken());
     }
 
-    void printTargetFull(const FetchTarget &e)
-    {
-        // TODO: fix this
-        // DPRINTFR(
-        //     DecoupleBP,
-        //     "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx\n",
-        //     e.startPC, e.predBranchPC, e.predEndPC, e.predTarget);
-        // DPRINTFR(
-        //     DecoupleBP,
-        //     "Resolved: %i, resolved target:: %#lx-[%#lx, %#lx) --> %#lx\n",
-        //     e.exeEnded, e.startPC, e.exeBranchPC, e.exeEndPC,
-        //     e.exeTarget);
-    }
-
-    bool targetQueueFull() const
-    {
-        return fetchTargetQueue.size() >= fetchTargetQueueSize;
-    }
-
-    bool
-    hasTarget(FetchTargetId id) const
-    {
-        return !fetchTargetQueue.empty() &&
-            id >= fetchTargetBaseId &&
-            id < fetchTargetBaseId + fetchTargetQueue.size();
-    }
-
-    FetchTarget&
-    getTarget(FetchTargetId id)
-    {
-        assert(hasTarget(id));
-        return fetchTargetQueue[id - fetchTargetBaseId];
-    }
-
-    FetchTargetId
-    frontTargetId() const
-    {
-        assert(!fetchTargetQueue.empty());
-        return fetchTargetBaseId;
-    }
-
-    FetchTargetId
-    backTargetId() const
-    {
-        assert(!fetchTargetQueue.empty());
-        return fetchTargetBaseId + fetchTargetQueue.size() - 1;
-    }
-
     /**
      * @brief Generate final prediction from all stages
      *
@@ -233,10 +184,10 @@ class DecoupledBPUWithBTB : public BPredUnit
      * - Generates necessary bubbles
      * - Updates prediction state
      */
-    unsigned generateFinalPredAndCreateBubbles();
+    void generateFinalPredAndCreateBubbles(ThreadID tid);
 
-    void clearPreds() {
-        for (auto &stagePred : predsOfEachStage) {
+    void clearPreds(ThreadID tid) {
+        for (auto &stagePred : threads[tid].predsOfEachStage) {
             stagePred.condTakens.clear();
             stagePred.indirectTargets.clear();
             stagePred.btbEntries.clear();
@@ -444,14 +395,12 @@ class DecoupledBPUWithBTB : public BPredUnit
     void trapSquash(unsigned fsq_id, Addr last_committed_pc,
                     const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
 
-    void update(unsigned fsqID, ThreadID tid);
-
-    void squashTargetAfter(unsigned squash_target_id);
+    void commit(unsigned fsqID, ThreadID tid);
 
     // Fetch-facing interface: consume FSQ head directly (RTL-like single queue).
-    bool ftqHasHead() const { return hasTarget(fetchHeadFtqId); }
-    FetchTargetId ftqHeadId() const { assert(ftqHasHead()); return fetchHeadFtqId; }
-    const FetchTarget &ftqHead() { assert(ftqHasHead()); return getTarget(fetchHeadFtqId); }
+    bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
+    FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
+    const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
 
     void dumpFsq(const char *when);
 
@@ -742,7 +691,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         Addr redirect_pc);
 
     // Common logic for squash handling
-    void handleSquash(unsigned target_id,
+    void handleSquash(ThreadID tid, unsigned target_id,
                       SquashType squash_type,
                       const PCStateBase &squash_pc,
                       Addr redirect_pc,
@@ -754,9 +703,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void resetPC(Addr new_pc);
 
     // Helper functions for update
-    bool resolveUpdate(unsigned &target_id);
-    void prepareResolveUpdateEntries(unsigned &target_id);
-    void markCFIResolved(unsigned &target, uint64_t resolvedInstPC);
+    bool resolveUpdate(unsigned &target_id, ThreadID tid);
+    void prepareResolveUpdateEntries(unsigned &target_id, ThreadID tid);
+    void markCFIResolved(unsigned &target, uint64_t resolvedInstPC, ThreadID tid);
     void updatePredictorComponents(FetchTarget &target);
     void updateStatistics(const FetchTarget &target);
     void notifyResolveSuccess();

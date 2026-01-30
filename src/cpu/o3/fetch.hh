@@ -951,7 +951,7 @@ class Fetch
 
     // Decoupled+BTB-only: fetch consumes the supplying FSQ entry directly.
     // If no head is available, fetch stalls (no extra "supply" state machine).
-    bool ftqEmpty() const { return !dbpbtb || !dbpbtb->ftqHasHead(); }
+    bool ftqEmpty() const { return !dbpbtb || !dbpbtb->ftqHasFetching(0); }
 
     // Number of dynamic instructions fetched within the current FTQ entry.
     // Used to explicitly notify the BPU when an entry is consumed (Phase5 prep).
