@@ -32,7 +32,7 @@ void commitMeta(InstSeqNum sn);
 ```
 
 ### 开启perfCCT
-首先需要开启gem5的archdb，再在configs/example/xiangshan.py里做如下修改
+首先需要开启gem5的archdb，再在 `configs/common/xiangshan.py` 里做如下修改
 
 将dump_lifetime改为True即可
 
@@ -54,7 +54,7 @@ test_sys.arch_db.dump_lifetime = False -> True
 此外还需要同时打开--enable-arch-db, 指定db-file
 
 ```python
-./build/RISCV/gem5.debug ./configs/example/xiangshan.py --raw-cpt --generic-rv-cpt=/nfs/home/yanyue/tools/nexus-am-xs/tests/cputest/build/ifuwidth-riscv64-xs.bin --enable-arch-db --arch-db-file=m5out/test.db
+./build/RISCV/gem5.debug ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=/nfs/home/yanyue/tools/nexus-am-xs/tests/cputest/build/ifuwidth-riscv64-xs.bin --enable-arch-db --arch-db-file=m5out/test.db
 
 python3 util/perfcct.py m5out/test.db --zoom 1.5 -p 333 --visual | less
 ```
@@ -605,4 +605,3 @@ data：表示需要写入的meta的值
 
 
 ！！另外注意，为了削减数据库的大小，对于“访存地址”这类不是所有指令都有的meta,建议单独开一个数据库！！
-

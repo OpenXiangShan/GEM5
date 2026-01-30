@@ -31,12 +31,12 @@ export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-
 # 设置 GCB_RESTORE 为空
 export GCB_RESTORER=""
 # 跑一个 bin (非 ckpt)
-./build/RISCV/gem5.opt configs/example/xiangshan.py --generic-rv-cpt /nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin --raw-cpt
+./build/RISCV/gem5.opt configs/example/kmhv3.py --generic-rv-cpt /nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin --raw-cpt
 # 跑一个 ckpt
-./build/RISCV/gem5.opt configs/example/xiangshan.py --generic-rv-cpt /nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/lbm/12578/_12578_0.231430_.zstd
-# log 和性能计数器在 m5out/ 下，可以指定./build/RISCV/gem5.opt --outdir=xxx configs/example/xiangshan.py 来更换
-# 加上 --ideal-kmhv3 参数来使用理想化设置的模型运行
-./build/RISCV/gem5.opt configs/example/xiangshan.py --ideal-kmhv3 --generic-rv-cpt /nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin --raw-cpt
+./build/RISCV/gem5.opt configs/example/kmhv3.py --generic-rv-cpt /nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/lbm/12578/_12578_0.231430_.zstd
+# log 和性能计数器在 m5out/ 下，可以指定./build/RISCV/gem5.opt --outdir=xxx configs/example/kmhv3.py 来更换
+# 理想化设置的模型：使用 idealkmhv3.py（而不是传 --ideal-kmhv3）
+./build/RISCV/gem5.opt configs/example/idealkmhv3.py --generic-rv-cpt /nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin --raw-cpt
 ```
 
 ```shell
@@ -50,7 +50,7 @@ export GEM5_HOME=$(pwd)
 mkdir -p $GEM5_HOME/util/xs_scripts/test
 cd $GEM5_HOME/util/xs_scripts/test
 # 批量跑 ckpt
-bash ../parallel_sim.sh `realpath ../kmh_6wide.sh` \
+bash ../parallel_sim.sh `realpath ../kmh_v3_btb.sh` \
       /nfs/home/share/gem5_ci/spec06_cpts/spec_0.8c_int.lst \ # 跑 ckpt 的 list，类似于 json
       $CHECKPOINT_ROOT \
       spec_all # 输出的 log 所在文件夹名
@@ -106,8 +106,8 @@ bash example-scripts/gem5-score-ci.sh \
           // "--debug-start=569430",
           "--debug-flags=LSQ,LSQUnit",
           //   "--debug-file=debug.log",
-          "${workspaceFolder}/configs/example/xiangshan.py",
-          //   "--ideal-kmhv3",
+          "${workspaceFolder}/configs/example/kmhv3.py",
+          // 若需要理想化模型：将上一行脚本替换为 "${workspaceFolder}/configs/example/idealkmhv3.py"
           "--raw-cpt",
           //   "--generic-rv-cpt=/nfs/home/yanyue/tools/nexus-am-xs/tests/cputest/build/dummy-riscv64-xs.bin",
           "--generic-rv-cpt=/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin",
@@ -433,4 +433,3 @@ DcachePort::recvTimingResp()->LSQRequest::recvTimingResp()
       ->IEW::instToCommit()
 IEW::tick()->IEW::writebackInsts()
 ```
-

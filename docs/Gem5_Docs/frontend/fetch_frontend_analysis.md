@@ -215,7 +215,8 @@ stateDiagram-v2
   - Fetch、FetchVerbose、DecoupleBP、DecoupleBPProbe、FTB、LoopPredictor
   - 示例：`--debug-flags=Fetch,DecoupleBP --debug-file=fetch.trace`
 - 快速运行（香山配置）：
-  - `./build/RISCV/gem5.opt ./configs/example/xiangshan.py --raw-cpt --generic-rv-cpt=<path> [--ideal-kmhv3 --bp-type=DecoupledBPUWithBTB]`
+  - `./build/RISCV/gem5.opt ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=<path> [--bp-type=DecoupledBPUWithBTB]`
+  - 理想化模型：将配置脚本替换为 `./configs/example/idealkmhv3.py`（也可用 `util/xs_scripts/kmh_v3_ideal.sh`）
 - 系统测试：
   - `cd tests && ./main.py run --length quick --variant opt --isa RISCV`
 - 重构/性能对比：
@@ -238,4 +239,3 @@ stateDiagram-v2
 ——
 
 如需我进一步将文档保持与代码演进同步、或顺手提交一个小 PR 修正“未匹配回包未释放内存”和“usedUpFetchTargets per-thread 化”的问题，可继续告知。
-

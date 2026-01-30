@@ -173,7 +173,7 @@ memcpy(dec_ptr->moreBytesPtr(), fetchBuffer[tid] + blk_offset * instSize, instSi
 
 每次回答前，先阅读以下内容：
 
-1. 阅读configs/example/xiangshan.py 文件，了解XiangShan 开源处理器的基本配置
+1. 阅读configs/example/kmhv3.py 文件，了解当前推荐的昆明湖V3（KmhV3）配置入口（以及其如何复用 common/xiangshan.py 的系统搭建逻辑）
 2. 阅读README.cn.md 文件，了解项目的基本信息
 3. 阅读src/cpu/pred/README.md 文件，了解分支预测器的基本信息
 
@@ -184,4 +184,3 @@ memcpy(dec_ptr->moreBytesPtr(), fetchBuffer[tid] + blk_offset * instSize, instSi
 请在回答中，使用中文，但是凡是涉及到代码的地方，请使用英文，生成代码给出合适的英文注释
 生成commit message 时，使用英文！
 ```
-

@@ -61,6 +61,34 @@ class XiangshanECore2Read(XiangshanCore):
 
 addToPath('../')
 
+_warned_deprecated_entrypoint = False
+
+
+def _warn_if_deprecated_xiangshan_entrypoint():
+    """
+    Defensive UX: historically some docs/scripts used `configs/example/xiangshan.py`.
+
+    We no longer keep that entrypoint in this repo. If users still run a legacy
+    config script named `xiangshan.py`, emit a warning and point them to the
+    maintained entrypoints.
+    """
+    global _warned_deprecated_entrypoint
+    if _warned_deprecated_entrypoint:
+        return
+
+    # In gem5, sys.argv[0] is typically the config script path.
+    argv0 = os.path.basename(sys.argv[0]) if sys.argv else ""
+    argv_joined = " ".join(sys.argv) if sys.argv else ""
+
+    if argv0 == "xiangshan.py" or "configs/example/xiangshan.py" in argv_joined:
+        warn(
+            "Deprecated config entrypoint detected (xiangshan.py). "
+            "Please use configs/example/kmhv3.py (RTL-aligned) or "
+            "configs/example/idealkmhv3.py (ideal/perf)."
+        )
+        _warned_deprecated_entrypoint = True
+
+
 def _trace_timing_ptw_settings(args: argparse.Namespace):
     enabled = bool(getattr(args, 'trace_timing_ptw', False))
     if not enabled:
@@ -671,6 +699,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
 
 
 def xiangshan_system_init():
+    _warn_if_deprecated_xiangshan_entrypoint()
     # Add args
     parser = argparse.ArgumentParser()
     Options.addCommonOptions(parser, configure_xiangshan=True)

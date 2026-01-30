@@ -79,12 +79,12 @@ int loop(int zero) {
 使用 llvm-mca 这个工具静态分析出的理想 IPC 为 4.67（[使用方法](https://bosc.yuque.com/yny0gi/sggyey/zbn1o15bb2it46vq)）
 
 ## 理想模型IPC
-（xiangshan.py --ideal-kmhv3）（commit: 0a79459c73a8）
+（idealkmhv3.py）（commit: 0a79459c73a8）
 
 ![](images/1735107660429-5e9aef78-d8f6-4056-9bba-dc29af063099.png)
 
 ## 模型IPC
-（xiangshan.py）（commit: 0a79459c73a8）
+（kmhv3.py）（commit: 0a79459c73a8）
 
 ![](images/1735107558857-ccc01066-4f00-4799-bbfd-87fb9d6c095d.png)
 
@@ -247,7 +247,6 @@ python3 perfcct.py  build/2024-12-30@13:54:27.db  --zoom 2.3 -p 1 | grep "0x8000
 ![](images/1735552061041-422b595d-d74a-4086-814b-5e2fe1edc25d.png)
 
 可以很明显地看到 load 的执行延迟有时候非常高，~50% 4 拍执行完成（load hit），剩下的执行延迟都高于 200 拍（cache miss/lsu 内部的阻塞）。
-
 
 
 

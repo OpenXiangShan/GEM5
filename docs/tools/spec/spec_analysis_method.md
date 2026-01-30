@@ -225,7 +225,7 @@ Instructions:
 
 
 
-1. ._/build/RISCV/gem5.opt configs/example/xiangshan.py  --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/64624/_64624_0.243160_.zstd _
+1. ._/build/RISCV/gem5.opt configs/example/kmhv3.py  --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/64624/_64624_0.243160_.zstd _
 2. 首先完整运行一次646切片，查看m5out/stats.txt
 
 ```cpp
@@ -246,7 +246,7 @@ finalTick                                  2524599540                       # Nu
 3. 发现预热花了11亿拍，执行用了13亿拍，总共用了25亿拍
 
 ```bash
-./build/RISCV/gem5.opt --debug-start=1300000000 --debug-file=libquantum.commitTrace8_646.less.gz --debug-flags=CommitTrace configs/example/xiangshan.py --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/64624/_64624_0.243160_.zstd
+./build/RISCV/gem5.opt --debug-start=1300000000 --debug-file=libquantum.commitTrace8_646.less.gz --debug-flags=CommitTrace configs/example/kmhv3.py --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/64624/_64624_0.243160_.zstd
 ```
 
 4. 让大概在13亿拍再开始打印debug 信息，打印CommitTrace， 输出到.gz 文件（很大，大概200M, 用vim 打开阅读）
@@ -341,4 +341,3 @@ Instructions:
 [GitHub - shinezyy/gem5_data_proc: data preprocessing scripts for gem5 output](https://github.com/shinezyy/gem5_data_proc)
 
 还能统计更多spec 程序在运行切片时候的top down 信息以及分数信息，已经有相关文档，这里就暂时不写了。
-

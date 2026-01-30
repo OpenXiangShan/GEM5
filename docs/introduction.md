@@ -121,7 +121,7 @@ checkpoints-->run
 .
 ├── configs/                # 配置文件目录
 │   ├── example/           # 示例配置
-│   │   └── xiangshan.py   # 香山处理器配置
+│   │   └── kmhv3.py       # 昆明湖V3（KmhV3）配置（推荐入口）
 │   └── common/            # 通用配置
 ├── src/                   # 源代码目录
 │   ├── arch/             # 架构相关代码
@@ -140,8 +140,9 @@ checkpoints-->run
 ## 关键代码路径
 
 ### 1. 处理器配置
-- `configs/example/xiangshan.py`: 香山处理器的基本配置
-- `configs/common/XSConfig.py`: 香山特有的配置选项
+- `configs/example/kmhv3.py`: 昆明湖V3（KmhV3）配置入口（推荐）
+- `xiangshan.py`（历史入口）：部分旧文档/脚本可能仍引用（本仓库以 `kmhv3.py`/`idealkmhv3.py` 为准）
+- `configs/common/xiangshan.py`: 香山/昆明湖全系统相关的通用配置与参数解析（例如 Difftest、Arch DB 等）
 
 ### 2. CPU核心实现
 - `src/cpu/o3/`: 乱序执行核心实现
@@ -186,4 +187,3 @@ checkpoints-->run
 5. 运行模拟器
 
 详细步骤请参考README.md中的说明。
-

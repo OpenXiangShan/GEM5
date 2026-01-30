@@ -226,19 +226,12 @@ $NOOP_HOME/build/emu \
 ## Gem5 平台配置
 ## 打patch修正latency，开启lifetime数据库
 ```diff
-diff --git a/configs/example/xiangshan.py b/configs/example/xiangshan.py
-index a3d1a88486..816b514257 100644
---- a/configs/example/xiangshan.py
-+++ b/configs/example/xiangshan.py
-@@ -238,7 +238,7 @@ def build_test_system(np, args):
-         test_sys.arch_db.dump_l1_miss_trace = False
-         test_sys.arch_db.dump_bop_train_trace = False
-         test_sys.arch_db.dump_sms_train_trace = False
+diff --git a/configs/common/xiangshan.py b/configs/common/xiangshan.py
+--- a/configs/common/xiangshan.py
++++ b/configs/common/xiangshan.py
+@@
 -        test_sys.arch_db.dump_lifetime = False
 +        test_sys.arch_db.dump_lifetime = True
-         test_sys.arch_db.table_cmds = [
-             "CREATE TABLE L1MissTrace(" \
-             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
 ```
 
 ## 运行
@@ -264,4 +257,3 @@ configs/example/kmh.py \
 --enable-arch-db \
 --arch-db-file=m5out/test.db 
 ```
-
