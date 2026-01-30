@@ -97,7 +97,7 @@ t2的变化：0,1,2,3,4,5,6,7...
 首先看CommitTrace 查看小测试执行情况是否如预期， 这表示程序最终commit 顺序
 
 ```cpp
-./build/RISCV/gem5.debug  --outdir=debug/tage1 --debug-flags=CommitTrace --debug-file=tage1.commit ./configs/example/xiangshan.py --generic-rv-cpt=/nfs/home/yanyue/tools/nexus-am-xs/tests/cputest/build/tage1-riscv64-xs.bin --raw-cpt
+./build/RISCV/gem5.debug  --outdir=debug/tage1 --debug-flags=CommitTrace --debug-file=tage1.commit ./configs/example/kmhv3.py --generic-rv-cpt=/nfs/home/yanyue/tools/nexus-am-xs/tests/cputest/build/tage1-riscv64-xs.bin --raw-cpt
 ```
 
 ```cpp
@@ -152,7 +152,7 @@ system.cpu.branchPred.ftb.updateHit              6485                       # hi
 最后可以看看 各类debug-flags=DecoupleBP,FTB
 
 ```bash
-./build/RISCV/gem5.debug  --outdir=debug/tage1 --debug-flags=DecoupleBP,FTB --debug-file=tage1.bp2 --debug-end=1000000 ./configs/example/xiangshan.py --generic-rv-cpt=/nfs/home/yanyue/tools/nexus-am-xs/tests/cputest/build/tage1-riscv64-xs.bin --raw-cpt
+./build/RISCV/gem5.debug  --outdir=debug/tage1 --debug-flags=DecoupleBP,FTB --debug-file=tage1.bp2 --debug-end=1000000 ./configs/example/kmhv3.py --generic-rv-cpt=/nfs/home/yanyue/tools/nexus-am-xs/tests/cputest/build/tage1-riscv64-xs.bin --raw-cpt
 ```
 
 输出文件位置在/nfs/home/yanyue/workspace/GEM5/debug/tage1/tage1.bp2 
@@ -230,4 +230,3 @@ ftb=  0x8000013a  FTB entry: valid 1, tag 0, fallThruAddr:0x8000015a, slots:
         pc:0x8000013e, size:4, target:0x80000144, cond:1, indirect:0, call:0, return:0
 
 会生成并使用一个新的ftb entry, 同时产生新的ftq, fsq 项！
-

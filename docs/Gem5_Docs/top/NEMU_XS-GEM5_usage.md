@@ -684,7 +684,7 @@ scons build/RISCV/gem5.opt --gold-linker -j$(nproc)
 
 ```bash
 cd $gem5_home
-./build/RISCV/gem5.opt ./configs/example/xiangshan.py --generic-rv-cpt=/path/to/a/single/checkpoint.gz
+./build/RISCV/gem5.opt ./configs/example/kmhv3.py --generic-rv-cpt=/path/to/a/single/checkpoint.gz
 ```
 
 ​	即可成功运行该切片`checkpoint.gz`，同时需要注意的是，存在`checkpoint.zstd`的切片，XS-GEM5均兼容，具体产生的类型取决于3节中的`--checkpoint-format`选项，如果想要了解具体有什么类型的参数，可以查阅https://github.com/OpenXiangShan/GEM5/blob/xs-dev/configs/common/Options.py，特别需要注意的是`--maxinsts`选项，当XS-GEM5运行到其所指定的指令数后就会停止，可以指定其为 0 从而避免停止。

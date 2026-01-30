@@ -103,7 +103,7 @@ system.cpu.branchPred.tage.bank_0.updateUseAltWrong            7                
 关注debug-flags=FTBTAGE
 
 ```plain
-./build/RISCV/gem5.debug  --outdir=debug/tage2 --debug-flags=FTBTAGE --debug-file=tage2.tage --debug-end=1000000 ./configs/example/xiangshan.py --generic-rv-cpt=/nfs/home/yanyue/tools/nexus-am-xs/tests/cputest/build/tage2-riscv64-xs.bin --raw-cpt
+./build/RISCV/gem5.debug  --outdir=debug/tage2 --debug-flags=FTBTAGE --debug-file=tage2.tage --debug-end=1000000 ./configs/example/kmhv3.py --generic-rv-cpt=/nfs/home/yanyue/tools/nexus-am-xs/tests/cputest/build/tage2-riscv64-xs.bin --raw-cpt
 ```
 
 先看预测阶段
@@ -220,4 +220,3 @@ system.cpu.branchPred.tage.bank_0.updateUseAltWrong            7                
 能看出对于T0, 他在预测时后，indexFoldedHist 变化过255->247->255
 
 本质原因是全局历史从8个1，变成011, 又变回8个1了，不同的全局历史产生不同的index 索引，进而影响到不同表项。对于低级表，其历史只会关注全局历史低部分位，关注历史长度有限。
-

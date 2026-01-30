@@ -147,8 +147,8 @@ bear -- scons build/RISCV/gem5.opt --gold-linker -j100
       "args": [
         "--debug-break=569430",
         "--debug-flags=DecoupleBP",
-        "${workspaceFolder}/configs/example/xiangshan.py",
-        //   "--ideal-kmhv3",
+        "${workspaceFolder}/configs/example/kmhv3.py",
+        // 若需要理想化模型：将上一行脚本替换为 "${workspaceFolder}/configs/example/idealkmhv3.py"
         "--raw-cpt",
         "--generic-rv-cpt=/nfs/home/yanyue/tools/nexus-am-xs/tests/cputest/build/brnum2-riscv64-xs.bin",
       ],
@@ -196,4 +196,3 @@ bear -- scons build/RISCV/gem5.opt --gold-linker -j100
 ![](images/1738739950000-cc27dd6f-ffbe-4c16-8c42-06e43ad6a6af.png)
 
 就可以愉快的调试了
-

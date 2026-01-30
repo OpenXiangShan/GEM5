@@ -213,7 +213,7 @@ for(i=0; i<reg->size; i++)
 其中64624  这个切片权重最大，打印出其中的commitTrace
 
 ```json
-./build/RISCV/gem5.opt configs/example/xiangshan.py --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/64624/_64624_0.243160_.zstd
+./build/RISCV/gem5.opt configs/example/kmhv3.py --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/64624/_64624_0.243160_.zstd
 ```
 
 
@@ -279,7 +279,7 @@ bgt a0,a5,-22
 >
 
 ```cpp
-./build/RISCV/gem5.opt --debug-start=2600000000 --debug-file=libquantum.commitTrace8_101.less.gz --debug-flags=CommitTrace configs/example/xiangshan.py --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/101164/_101164_0.004158_.zstd
+./build/RISCV/gem5.opt --debug-start=2600000000 --debug-file=libquantum.commitTrace8_101.less.gz --debug-flags=CommitTrace configs/example/kmhv3.py --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/101164/_101164_0.004158_.zstd
 ```
 
 目前发现101切片的大部分指令都不是我发现的那个热点块啊
@@ -298,7 +298,7 @@ addiw a3, a4, 0, res: 0x41444
 发现646 切片也不包含我关注的热点块啊！
 
 ```cpp
-./build/RISCV/gem5.opt --debug-start=1500000000 --debug-file=libquantum.commitTrace8_646.less.gz --debug-flags=CommitTrace configs/example/xiangshan.py --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/64624/_64624_0.243160_.zstd
+./build/RISCV/gem5.opt --debug-start=1500000000 --debug-file=libquantum.commitTrace8_646.less.gz --debug-flags=CommitTrace configs/example/kmhv3.py --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/64624/_64624_0.243160_.zstd
 ```
 
 还是用python脚本直接分析出来，真是特别方便哈哈哈，claude太强了，几乎直接就帮我写好代码了， 这个基本块执行50万次，占总的900万条指令的一半了
@@ -448,4 +448,3 @@ dispatchStallReason::FragStall     1218 9184  1200万
 ```
 
 也是fetch stall 特别大
-

@@ -82,12 +82,12 @@ wget https://github.com/OpenXiangShan/GEM5/releases/download/2024-10-16/riscv64-
 # 设置环境变量，指向nemu参考设计
 export GCBV_REF_SO=`realpath riscv64-nemu-interpreter-c1469286ca32-so`
 # 运行workload，注意输入的是bin文件
-./build/RISCV/gem5.opt ./configs/example/xiangshan.py --raw-cpt --generic-rv-cpt=./ready-to-run/coremark-2-iteration.bin
+./build/RISCV/gem5.opt ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=./ready-to-run/coremark-2-iteration.bin
 # 获取IPC
 grep 'cpu.ipc' m5out/stats.txt
 ```
 
-- `xiangshan.py` 是XS-GEM5的默认配置脚本
+- `kmhv3.py` 是当前推荐使用的配置脚本（部分旧文档/脚本可能仍引用 `xiangshan.py`，以本仓库文档为准）
 - `raw-cpt` 表示输入为单一二进制文件，如果运行切片不需要添加这个选项
 - `generic-rv-cpt` 指定二进制文件路径，默认均为bin文件，无论是切片还是裸机程序
 - 仿真输出在 `m5out` 目录， 可以通过-d 指定输出目录
@@ -160,7 +160,7 @@ make ARCH=riscv64-xs
 # 返回GEM5根目录
 cd $GEM5_HOME
 # 运行裸机程序
-./build/RISCV/gem5.opt ./configs/example/xiangshan.py --raw-cpt --generic-rv-cpt=$AM_HOME/apps/coremark/build/coremark-riscv64-xs.bin
+./build/RISCV/gem5.opt ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=$AM_HOME/apps/coremark/build/coremark-riscv64-xs.bin
 ```
 
 ## 运行Checkpoint
@@ -177,12 +177,12 @@ cd $GEM5_HOME
 ```bash
 mkdir util/xs_scripts/example
 cd util/xs_scripts/example
-bash ../kmh_6wide.sh /path/to/a/single/checkpoint.gz
+bash ../kmh_v3_btb.sh /path/to/a/single/checkpoint.gz
 ```
 
 上方命令等效于
 ```bash
-./build/RISCV/gem5.opt ./configs/example/xiangshan.py --generic-rv-cpt=/path/to/a/single/checkpoint.gz
+./build/RISCV/gem5.opt ./configs/example/kmhv3.py --generic-rv-cpt=/path/to/a/single/checkpoint.gz
 ```
 
 ## 批量仿真
@@ -192,15 +192,15 @@ bash ../kmh_6wide.sh /path/to/a/single/checkpoint.gz
 ```bash
 mkdir util/xs_scripts/example
 cd util/xs_scripts/example
-bash ../parallel_sim.sh `realpath ../kmh_6wide.sh` $workloads_lst /top/dir/of/checkpoints a_fancy_simulation_tag
+bash ../parallel_sim.sh `realpath ../kmh_v3_btb.sh` $workloads_lst /top/dir/of/checkpoints a_fancy_simulation_tag
 ```
 
-- `parallel_sim.sh` 会调用 `kmh_6wide.sh`，并用GNU parallel批量运行多个workload
+- `parallel_sim.sh` 会调用 `kmh_v3_btb.sh`（内部使用 `kmhv3.py`），并用GNU parallel批量运行多个workload
 - 仿真结果会输出到各自的目录
 
 ### 关于workload_lst
 
-`workload_lst`的每一行是由空格分隔的workload参数列表。例如："hmmer_nph3_15858 hmmer_nph3/15858 0 0 20 20"分别表示workload名称、checkpoint路径、跳过指令数（通常为0）、功能预热指令数（通常为0）、详细预热指令数（通常为20）和采样指令数（通常为20）。`parallel_sim.sh`会在`/top/dir/of/checkpoints`中查找`hmmer_nph3/15858/*.gz`文件，然后将该gz文件传递给`kmh_6wide.sh`进行仿真。
+`workload_lst`的每一行是由空格分隔的workload参数列表。例如："hmmer_nph3_15858 hmmer_nph3/15858 0 0 20 20"分别表示workload名称、checkpoint路径、跳过指令数（通常为0）、功能预热指令数（通常为0）、详细预热指令数（通常为20）和采样指令数（通常为20）。`parallel_sim.sh`会在`/top/dir/of/checkpoints`中查找`hmmer_nph3/15858/*.gz`文件，然后将该gz文件传递给`kmh_v3_btb.sh`进行仿真。
 
 ## 在Docker中运行
 

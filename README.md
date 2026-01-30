@@ -1,6 +1,15 @@
 # About
 
-This is the gem5 simulator for Xiangshan (XS-GEM5), which currently scores similar with Kunminghu on SPEC CPU 2006.
+XS-GEM5 is a gem5-based, full-system RISC-V simulator for XiangShan.
+
+XS-GEM5 is the ONLY open-source RISC-V simulator strictly calibrated against high-performance RTL (XiangShan Nanhu/Kunminghu), achieving >95% correlation on SPECCPU 2006.
+
+In our current SPECCPU06 checkpoint evaluation:
+- `idealkmhv3.py` exceeds 20 points/GHz, making XS-GEM5 one of the highest-performance open-source simulators.
+- `kmhv3.py`, the RTL-aligned configuration, exceeds 15 points/GHz.
+- We are co-developing with the XiangShan RTL team to push Kunminghu-v3 RTL towards 20 points/GHz as soon as possible.
+
+XS-GEM5 diverged from [upstream gem5](https://github.com/gem5/gem5) in June 2022. Since XS-GEM5 focuses on cycle-accurate alignment with the XiangShan RTL, it is often difficult to upstream changes directly. We will keep actively merging new features from upstream gem5, and we also aim to contribute XS-GEM5 features back to upstream when possible. Contributions and collaboration from developers are welcome.
 
 Our Chinese website is [here](https://xs-gem5.readthedocs.io/zh-cn/latest/), welcome to visit!
 
@@ -236,7 +245,7 @@ Press enter to continue, or ctrl-c to abort:
 
 Users must properly prepare workloads before running GEM5, plz read [Workflows](#workflows-how-to-run-workloads) first.
 
-[The example running script](util/xs_scripts/kmh_6wide.sh) contains the default command for simulate XS-GEM5.
+[The example running script](util/xs_scripts/kmh_v3_btb.sh) contains the default command for simulate XS-GEM5 (Kunminghu V3).
 [The example batch running script](util/xs_scripts/parallel_sim.sh) shows an example to simulate multiple workloads in parallel.
 
 ### Environment variables
@@ -273,7 +282,7 @@ If above branches are not working, you can try the following commits:
 
 **NOTE**:
 - Current scripts enforce Difftest (cosimulating against NEMU or spike).
-If a user does not want Difftest, please manually edit `configs/example/xiangshan.py` and `configs/common/XSConfig.py` to disable it.
+If a user does not want Difftest, please manually edit `configs/common/xiangshan.py` (see `xiangshan_system_init()`) to disable it.
 Simulation error without Difftest **will NOT be responded.**
 - When running a GCB checkpoint, it is OK to use GCBV reference design but not vice versa.
 - When running a GCB checkpoint, user must use GCB restorer but not GCBV restorer.
@@ -291,11 +300,12 @@ wget https://github.com/OpenXiangShan/GEM5/releases/download/2024-10-16/riscv64-
 # set environment variables
 export GCBV_REF_SO=`realpath riscv64-nemu-interpreter-c1469286ca32-so`
 # run the workload
-./build/RISCV/gem5.opt ./configs/example/xiangshan.py --raw-cpt --generic-rv-cpt=./ready-to-run/coremark-2-iteration.bin
+./build/RISCV/gem5.opt ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=./ready-to-run/coremark-2-iteration.bin
 # get the ipc
 grep 'cpu.ipc' m5out/stats.txt
 ```
-xiangshan.py is the default configuration for XS-GEM5.
+kmhv3.py is the recommended configuration for XS-GEM5.
+If you still run a legacy entrypoint named `xiangshan.py`, `configs/common/xiangshan.py` will emit a deprecation warning.
 
 raw-cpt means the input is a single binary file.
 
@@ -307,16 +317,16 @@ Otherwise, if you want to run a checkpoint, you should ensure GEM5 is properly b
 ``` shel
 mkdir util/xs_scripts/example
 cd util/xs_scripts/example
-bash ../kmh_6wide.sh /path/to/a/single/checkpoint.gz
+bash ../kmh_v3_btb.sh /path/to/a/single/checkpoint.gz
 ```
 
 Then, for running multiple workloads in parallel, one can use the batch running script:
 ``` shel
 mkdir util/xs_scripts/example
 cd util/xs_scripts/example
-bash ../parallel_sim.sh `realpath ../kmh_6wide.sh` $workloads_lst /top/dir/of/checkpoints a_fancy_simulation_tag
+bash ../parallel_sim.sh `realpath ../kmh_v3_btb.sh` $workloads_lst /top/dir/of/checkpoints a_fancy_simulation_tag
 ```
-In this example, parallel_sim.sh will invoke kmh_6wide.sh with GNU parallel to run multiple workloads.
+In this example, parallel_sim.sh will invoke kmh_v3_btb.sh with GNU parallel to run multiple workloads.
 Through this, parallel simulation infrastructure is decouple from the simulation script.
 
 #### run xs-gem5 in docker
@@ -329,7 +339,7 @@ A line of `workload_lst` is a space-separated list of workload parameters.
 For example, "hmmer_nph3_15858 hmmer_nph3/15858 0 0 20 20" represents the workload name, checkpoint path, skip insts (usually 0), functional warmup insts (usually 0),
 detailed warmup insts (usually 20), and sample insts (usually 20), respectively.
 `parallel_sim.sh` will `find hmmer_nph3/15858/*.gz` in the /top/dir/of/checkpoints to obtain the checkpoint gz file.
-Then the gz file will be passed to `kmh_6wide.sh` to run the simulation.
+Then the gz file will be passed to `kmh_v3_btb.sh` to run the simulation.
 
 
 More details can be found in comments and code of the example running scripts.

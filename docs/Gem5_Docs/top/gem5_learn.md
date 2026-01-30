@@ -54,7 +54,7 @@ python3 simpoint_cpt/compute_weighted.py \
 
 [Python 与 C++ 交互 --- Python Interaction with C++ (narkive.com)](https://gem5-users.gem5.narkive.com/TyNxYz3Z/python-interaction-with-c)
 
-python 主要配置系统，把每个SimObject 的参数设置好，用xiangshan.py来配置
+python 主要配置系统，把每个SimObject 的参数设置好，通常用 kmhv3.py（或历史入口 xiangshan.py）来配置
 
 然后对每个SimObject 依次调用m5.instantiate() 来调用C++对象的构造函数
 
@@ -162,4 +162,3 @@ void Rename::renameInsts(ThreadID tid)
 OpDesc 描述操作类延迟
 FUDesc 
 ```
-

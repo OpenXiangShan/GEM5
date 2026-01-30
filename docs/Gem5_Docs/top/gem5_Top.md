@@ -124,10 +124,10 @@ class KunminghuScheduler(Scheduler):
 
 ### 参数传递
 ```python
-./build/RISCV/gem5.opt configs/example/xiangshan.py --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/98457/_98457_0.048839_.zstd
+./build/RISCV/gem5.opt configs/example/kmhv3.py --generic-rv-cpt /nfs/share/zyy/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc/zstd-checkpoint-0-0-0/libquantum/98457/_98457_0.048839_.zstd
 ```
 
-xiangshan.py 接受--generic-rv-cpt
+kmhv3.py 接受 --generic-rv-cpt
 
 ```python
 # Add args
@@ -150,6 +150,5 @@ test_sys = build_test_system(args.num_cpus)
 
 
 scons build/RISCV/gem5.opt --gold-linker -j100
-
 
 
