@@ -320,8 +320,6 @@ void ISA::clear()
 
     miscRegFile[MISCREG_PRV] = PRV_M;
     miscRegFile[MISCREG_ISA] = 0x80000000003411af;
-    miscRegFile[MISCREG_VENDORID] = 0;
-    miscRegFile[MISCREG_ARCHID] = 0;
     miscRegFile[MISCREG_IMPID] = 0;
     miscRegFile[MISCREG_MIDELEG] = ((1 << 12) | (1 << 10) | (1 << 6) | (1 << 2));
     if (FullSystem) {
@@ -344,7 +342,7 @@ void ISA::clear()
     miscRegFile[MISCREG_HSTATUS] = (uint64_t)2<<32;
     miscRegFile[MISCREG_VSSTATUS] = miscRegFile[MISCREG_STATUS] & NEMU_SSTATUS_RMASK;
     miscRegFile[MISCREG_ARCHID] = 0x19;
-
+    miscRegFile[MISCREG_VENDORID] = (16ULL << 7) | 0x6FULL;
 }
 
 bool
