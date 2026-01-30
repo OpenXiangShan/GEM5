@@ -226,6 +226,7 @@ class Queued : public Base
         statistics::Scalar pfRemovedFull;
         statistics::Scalar pfSpanPage;
         statistics::Scalar pfUsefulSpanPage;
+        statistics::Vector pfRemovedFull_srcs;
     } statsQueued;
 
   public:
