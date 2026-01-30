@@ -402,8 +402,13 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
     ADD_STAT(pfSpanPage, statistics::units::Count::get(),
              "number of prefetches that crossed the page"),
     ADD_STAT(pfUsefulSpanPage, statistics::units::Count::get(),
-             "number of prefetches that is useful and crossed the page")
-{
+             "number of prefetches that is useful and crossed the page"),
+    ADD_STAT(pfRemovedFull_srcs, statistics::units::Count::get(),
+        "src distribute of Removedfull prefetch")
+{   using namespace statistics;
+    pfRemovedFull_srcs
+        .init(NUM_PF_SOURCES)
+        .flags(total);
 }
 
 
@@ -720,6 +725,8 @@ Queued::addToQueue(std::list<DeferredPacket> &queue,
         }
         DPRINTF(HWPrefetch, "%s full (sz=%lu), removing lowest priority oldest packet, addr: %#x\n", queue_name,
                 queue.size(), it->pfInfo.getAddr());
+        statsQueued.pfRemovedFull_srcs[it->pfInfo.getXsMetadata().prefetchSource]++;
+
         if (&queue == &pfq || !it->ongoingTranslation){
             delete it->pkt;
             queue.erase(it);
