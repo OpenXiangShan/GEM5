@@ -161,14 +161,14 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     if (!L2PFsent && smallBOP->hasPFRequestsInBuffer()){
         L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
     }
+    if (!L2PFsent && despacitoStream->hasPFRequestsInBuffer()){
+        L2PFsent = despacitoStream->GetPFRequestsFromBuffer(addresses);
+    }
     if (!L2PFsent && cdp->hasPFRequestsInBuffer()){
         L2PFsent = cdp->GetPFRequestsFromBuffer(addresses);
     }
     if (!L2PFsent && cmc->hasPFRequestsInBuffer()){
         L2PFsent = cmc->GetPFRequestsFromBuffer(addresses);
-    }
-    if (!L2PFsent && despacitoStream->hasPFRequestsInBuffer()){
-        L2PFsent = despacitoStream->GetPFRequestsFromBuffer(addresses);
     }
     // bool L3PFsent = false;
     // L3PFsent = stridestream_pfFilter_l2l3.GetPFAddrL3(addresses);
