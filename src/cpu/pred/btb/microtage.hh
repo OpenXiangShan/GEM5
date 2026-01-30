@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <queue>
 #include <utility>
 #include <vector>
 
@@ -294,6 +295,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Track last prediction bank for conflict detection
     unsigned lastPredBankId;         // Bank ID of last prediction
     bool predBankValid;              // Whether lastPredBankId is valid
+
+    std::queue<std::vector<PathFoldedHist>> aheadindexFoldedHist;
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
