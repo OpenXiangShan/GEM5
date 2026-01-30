@@ -1569,6 +1569,7 @@ LSQUnit::executeLoadPipeSx()
                 else if (inst->needMshrAliasFailReplay()) inst->issueQue->retryMem(inst);
                 else if (inst->needHitInWriteBufferReplay()) inst->issueQue->retryMem(inst);
                 else if (inst->needCacheMissReplay()) iewStage->cacheMissLdReplay(inst);
+                else if (inst->needMdpAddrReplay()) iewStage->mdpAddrReplayPipeDone(inst);
                 else if (inst->needNukeReplay()) {
                     if (inst->cacheHit()) {
                         loadSetReplay(inst, inst->savedRequest, true);
@@ -2470,8 +2471,13 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         ++stats.squashedStores;
     }
 
+    auto prevStoreCompletedIdx = storeCompletedIdx;
     // Store side follows the same rewind rule.
     rewindCompletedIdx(storeQueue, storeCompletedIdx);
+
+    if (lsq->enableReplayBasedMDP() && storeCompletedIdx != prevStoreCompletedIdx) {
+        iewStage->mdpAddrReplayUpdateStoreCompletedIdx(lsqID, storeCompletedIdx);
+    }
 
     auto RARIt = RARQueue.begin();
     while (RARIt != RARQueue.end()) {
@@ -2886,6 +2892,7 @@ LSQUnit::checkStaleTranslations() const
 void
 LSQUnit::updateCompletedIdx()
 {
+    auto prevStoreCompletedIdx = storeCompletedIdx;
     // Keep completed indices within [head-1, tail]; head-1 means no completed entry.
     if (loadQueue.empty()) {
         loadCompletedIdx = loadQueue.head() - 1;
@@ -2929,6 +2936,10 @@ LSQUnit::updateCompletedIdx()
                 break;
             }
         }
+    }
+
+    if (lsq->enableReplayBasedMDP() && storeCompletedIdx != prevStoreCompletedIdx) {
+        iewStage->mdpAddrReplayUpdateStoreCompletedIdx(lsqID, storeCompletedIdx);
     }
 
     // Remove completed instructions from RAR and RAW queues
@@ -3136,6 +3147,55 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
             load_idx - 1, load_inst->sqIt._idx, storeQueue.head() - 1,
             request->mainReq()->getPaddr(), request->isSplit() ? " split" :
             "");
+
+    if (lsq->enableReplayBasedMDP() && request->isNormalLd() &&
+        (load_inst->mdpPredStrictWait || !load_inst->mdpProducingStores.empty()) &&
+        !request->mainReq()->isLLSC()) {
+        if (load_inst->mdpPredStrictWait) {
+            // Strict wait: all prior store addresses must be ready.
+            if (load_inst->sqIt.idx() > storeCompletedIdx + 1) {
+                const size_t required =
+                    load_inst->sqIt.idx() ? (load_inst->sqIt.idx() - 1) : 0;
+                DPRINTF(LoadPipeline,
+                        "Load[sn:%llu] MDP strict wait, storeCompletedIdx=%lu, required>=%lu\n",
+                        load_inst->seqNum, storeCompletedIdx, required);
+                load_inst->setMdpAddrReplay();
+                loadSetReplay(load_inst, request, true);
+                iewStage->mdpAddrReplayRegisterStrict(load_inst, required);
+                return NoFault;
+            }
+        } else {
+            std::vector<InstSeqNum> wait_stores;
+            wait_stores.reserve(load_inst->mdpProducingStores.size());
+            for (auto st_it = storeQueue.begin(); st_it != storeQueue.end(); ++st_it) {
+                if (!st_it->valid() || !st_it->instruction()) {
+                    continue;
+                }
+                const auto &st_inst = st_it->instruction();
+                if (st_inst->seqNum >= load_inst->seqNum) {
+                    break;
+                }
+                if (st_it->addrReady()) {
+                    continue;
+                }
+                if (std::find(load_inst->mdpProducingStores.begin(),
+                              load_inst->mdpProducingStores.end(),
+                              st_inst->seqNum) != load_inst->mdpProducingStores.end()) {
+                    wait_stores.push_back(st_inst->seqNum);
+                }
+            }
+
+            if (!wait_stores.empty()) {
+                DPRINTF(LoadPipeline,
+                        "Load[sn:%llu] MDP wait %lu store addrs (replay)\n",
+                        load_inst->seqNum, wait_stores.size());
+                load_inst->setMdpAddrReplay();
+                loadSetReplay(load_inst, request, true);
+                iewStage->mdpAddrReplayRegister(load_inst, wait_stores);
+                return NoFault;
+            }
+        }
+    }
 
     if (squashMark) {
         request->mainReq()->setFirstReqAfterSquash();
