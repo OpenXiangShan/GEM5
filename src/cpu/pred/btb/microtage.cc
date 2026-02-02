@@ -461,7 +461,6 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
             tageStats.updateUseAltCorrect++;
         } else {
             tageStats.updateUseAltWrong++;
-            tageStats.updateUtageWrong++;
         }
         if (main_info.found && main_info.taken() != base_taken) {
             tageStats.updateAltDiffers++;
