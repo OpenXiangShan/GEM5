@@ -853,6 +853,19 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
         DPRINTF(TAGEHistory, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
     }
     if (!taken) {
+        if (debug::TAGEHistory && !aheadindexFoldedHist.empty()) {
+            bool mismatch = false;
+            for (int t = 0; t < numPredictors; t++) {
+                if (indexFoldedHist[t].get() != aheadindexFoldedHist.front()[t].get()) {
+                    mismatch = true;
+                    break;
+                }
+            }
+            if (mismatch) {
+                DPRINTF(TAGEHistory,
+                        "doUpdateHist: not taken, indexFoldedHist stale vs ahead queue\n");
+            }
+        }
         DPRINTF(TAGEHistory, "not updating folded history, since FB not taken\n");
         return;
     }
@@ -932,6 +945,20 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         auto &foldedHistQueuefront = aheadindexFoldedHist.front();
         for (int i = 0; i < numPredictors; i++) {
             foldedHistQueuefront[i].recover(predMeta->indexFoldedHist[i]);
+        }
+    }
+    if (debug::TAGEHistory && !aheadindexFoldedHist.empty()) {
+        bool mismatch = false;
+        for (int i = 0; i < numPredictors; i++) {
+            if (indexFoldedHist[i].get() != aheadindexFoldedHist.front()[i].get()) {
+                mismatch = true;
+                break;
+            }
+        }
+        if (mismatch) {
+            DPRINTF(TAGEHistory,
+                    "recoverPHist: indexFoldedHist stale vs ahead queue, cond_taken %d\n",
+                    cond_taken);
         }
     }
     for (int i = 0; i < numPredictors; i++) {
