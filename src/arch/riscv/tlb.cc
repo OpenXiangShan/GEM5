@@ -1840,7 +1840,17 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 {
     delayed = false;
     SATP satp = tc->readMiscReg(MISCREG_SATP);
-    Addr vaddr = VADDR_SEXT(satp.mode, req->getVaddr());
+    // RISC-V Sv39/Sv48 require a canonical (sign-extended) virtual address.
+    // If the incoming vaddr is non-canonical, it must raise a page fault and
+    // STVAL should contain the *original* (non-canonical) vaddr.
+    const Addr raw_vaddr = req->getVaddr();
+    Addr vaddr = VADDR_SEXT(satp.mode, raw_vaddr);
+    if ((satp.mode == AddrXlateMode::SV39 || satp.mode == AddrXlateMode::SV48) &&
+        vaddr != raw_vaddr) {
+        DPRINTF(TLB, "Non-canonical vaddr %#lx (canon %#lx), mode %d\n",
+                raw_vaddr, vaddr, satp.mode);
+        return createPagefault(raw_vaddr, 0, mode, false);
+    }
     Addr vaddr_trace = (vaddr >> (PageShift + L2TLB_BLK_OFFSET)) << (PageShift + L2TLB_BLK_OFFSET);
     if (((vaddr_trace != lastVaddr) || (req->getPC() != lastPc)) &&
         is_dtlb) {
