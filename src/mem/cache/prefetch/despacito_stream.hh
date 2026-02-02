@@ -114,10 +114,7 @@ class DespacitoStreamPrefetcher : public Queued
     statistics::Scalar nlPatternPcHitValidEntrySatEq0Times;
 
     // Prefetch stats
-    statistics::Scalar nlTimeSampleCountResetTimes; // total samples processed
-    statistics::Scalar nlTimeSampleCountOverTimes;
     statistics::Scalar nlTransmitPrefetchReqTimes;
-    statistics::Scalar nlFilterHits;
   } stats;
 
   public:

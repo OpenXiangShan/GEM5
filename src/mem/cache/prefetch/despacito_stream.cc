@@ -47,7 +47,6 @@ DespacitoStreamPrefetcher::updateSampler(const PrefetchInfo &pfi)
     }
 
     if (timestamp % sampleRate == 0) {
-        stats.nlSampleInsertTimes++;// Analyze insert times
         SamplerEntry *evict_sampler_entry = sampler.findVictim(block_index);
         updatePatternTable(evict_sampler_entry);
         stats.nlSampleVictimTouchedTrueTimes += evict_sampler_entry->touched ? 1 : 0; // Analyze victim touched times
@@ -67,7 +66,7 @@ DespacitoStreamPrefetcher::updateSampler(const PrefetchInfo &pfi)
         evict_sampler_entry->pc = pfi.getPC();
         evict_sampler_entry->touched = false;
         sampler.insertEntry(block_index, false, evict_sampler_entry);
-
+    }
     timestamp++;
 }
 
@@ -179,7 +178,7 @@ DespacitoStreamPrefetcher::DespacitoStats::DespacitoStats(statistics::Group *par
             ADD_STAT(nlSampleVictimTouchedFalseTimes, statistics::units::Count::get(),
              "Number of times sample victim touched false times"),
 
-            /* pattern table */
+            /* pattern */
             ADD_STAT(nlPatternTrainTimes, statistics::units::Count::get(),
              "Number of times pattern table was trained"),
             ADD_STAT(nlPatternReplaceTimes, statistics::units::Count::get(), "Number of patterns replaced in table"),
@@ -205,12 +204,7 @@ DespacitoStreamPrefetcher::DespacitoStats::DespacitoStats(statistics::Group *par
              "Number of times a pattern's pc hit a valid entry with Sat==0"),
 
             /* prefetch */
-            ADD_STAT(nlTimeSampleCountResetTimes, statistics::units::Count::get(),
-            "Total number of samples processed"),
-            ADD_STAT(nlTimeSampleCountOverTimes, statistics::units::Count::get(),
-            "Number of times sample count exceeded threshold"),
-            ADD_STAT(nlTransmitPrefetchReqTimes, statistics::units::Count::get(), "Number of prefetches sent"),
-            ADD_STAT(nlFilterHits, statistics::units::Count::get(), "Number of prefetches skipped due to filter")
+            ADD_STAT(nlTransmitPrefetchReqTimes, statistics::units::Count::get(), "Number of prefetches sent")
 {}
 
 }
