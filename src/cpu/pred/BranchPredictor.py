@@ -1070,8 +1070,8 @@ class MicroTAGE(TimedBaseBTBPredictor):
     updateOnRead = Param.Bool(False,"Enable update on read, no need to save tage meta in FTQ")
     # Keep vector parameters consistent with numPredictors to avoid constructor asserts.
     numPredictors = Param.Unsigned(1, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned([2048]*2,"the TAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([16]*2 ,"the T0~Tn entry's tag bit size")
+    tableSizes = VectorParam.Unsigned([512]*2,"the TAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([10]*2 ,"the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1]*2 ,"when the T0~Tn entry's tag generating, PC right shift")
     blockSize = Param.Unsigned(32,"tage index function uses 32B aligned block address")
 
