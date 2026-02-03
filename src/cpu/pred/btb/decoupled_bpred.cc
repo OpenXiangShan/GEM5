@@ -22,11 +22,9 @@ namespace btb_pred
 {
 
 void
-DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num)
+DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 {
-    ThreadID tid = 0; // TODO: multi-threading
     ftq.fetching(tid).fetchInstNum = fetched_inst_num;
-    // TODO:
     ftq.finishTarget(tid);
 }
 

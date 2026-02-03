@@ -332,10 +332,10 @@ TraceFetch::initTraceMode()
         return false;
     }
 
-    std::unique_ptr<PCStateBase> tracePC(fetch.pc[0]->clone());
+    std::unique_ptr<PCStateBase> tracePC(fetch.threads[0].fetchpc->clone());
     auto& riscv_pc = tracePC->as<RiscvISA::PCState>();
     riscv_pc.set(firstInstr.getPC());
-    set(fetch.pc[0], *tracePC);
+    set(fetch.threads[0].fetchpc, *tracePC);
     fetch.cpu->pcState(*tracePC, 0);
 
     auto* tc0 = fetch.cpu->getContext(0);
@@ -358,12 +358,12 @@ TraceFetch::initTraceMode()
     if (tc0) {
         DPRINTF(Fetch,
                 "Trace mode: fetch PC = 0x%llx, cpu PC = 0x%llx, TC PC = 0x%llx\n",
-                fetch.pc[0]->instAddr(), fetch.cpu->pcState(0).instAddr(),
+                fetch.threads[0].fetchpc->instAddr(), fetch.cpu->pcState(0).instAddr(),
                 tc0->pcState().instAddr());
     } else {
         DPRINTF(Fetch,
                 "Trace mode: fetch PC = 0x%llx, cpu PC = 0x%llx (no TC)\n",
-                fetch.pc[0]->instAddr(), fetch.cpu->pcState(0).instAddr());
+                fetch.threads[0].fetchpc->instAddr(), fetch.cpu->pcState(0).instAddr());
     }
 
     if (fetch.branchPred) {
@@ -487,8 +487,8 @@ TraceFetch::supplyTraceToDecoder(ThreadID tid, const PCStateBase &this_pc,
     auto *dec_ptr = fetch.decoder[tid];
     memcpy(dec_ptr->moreBytesPtr(), &machInst, sizeof(machInst));
     fetch.decoder[tid]->moreBytes(this_pc, instrPC);
-    fetch.fetchBuffer[tid].startPC = instrPC;
-    fetch.fetchBuffer[tid].valid = true;
+    fetch.threads[tid].startPC = instrPC;
+    fetch.threads[tid].valid = true;
     DPRINTF(Fetch, "[tid:%i] Trace on-demand: %s at PC=0x%llx\n",
             tid, tag, (unsigned long long)instrPC);
 }

@@ -332,7 +332,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void setCpu(CPU *_cpu) { cpu = _cpu; }
 
-    void consumeFetchTarget(unsigned fetched_inst_num);
+    void consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid);
+
+    int getTargetTid() { return ftq.getTargetTid(); }
 
     struct BpTrace : public Record
     {

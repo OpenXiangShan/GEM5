@@ -75,7 +75,7 @@ public:
     }
     inline uint32_t size(ThreadID tid) const { return queue[tid].cap.size(); }
 
-    FetchTarget& getTarget();
+    int getTargetTid();
     void insert(FetchTarget& target);
     void finishTarget(ThreadID tid);
     void commitTarget(ThreadID tid);

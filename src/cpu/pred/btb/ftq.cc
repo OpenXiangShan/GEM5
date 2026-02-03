@@ -9,18 +9,18 @@ namespace branch_prediction
 namespace btb_pred
 {
 
-FetchTarget&
-FetchTargetQueue::getTarget()
+int
+FetchTargetQueue::getTargetTid()
 {
     for (int i = roundRobinPtr; i < numThreads + roundRobinPtr; ++i) {
         ThreadID tid = i % numThreads;
-        if (!queue[tid].cap.empty()) {
+        if (!queue[tid].cap.empty() && hasTarget(fetchId(tid), tid)) {
             roundRobinPtr = (tid + 1) % numThreads;
             FetchTarget& target = get(queue[tid].fetchptr, tid);
-            return target;
+            return target.tid;
         }
     }
-    panic("FetchTargetQueue::getTarget(): No targets available!");
+    return -1;
 }
 
 void
