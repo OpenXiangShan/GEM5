@@ -100,6 +100,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ittage.resolvedUpdate = True
 
             cpu.branchPred.tage.enableBankConflict = False
+            # cpu.branchPred.tage.numWays = 8
 
             cpu.branchPred.ubtb.enabled = True
             cpu.branchPred.abtb.enabled = True
