@@ -357,7 +357,8 @@ class Fetch
      * Looks up the branch predictor, gets a prediction, and updates the PC.
      * @param inst The dynamic instruction object.
      * @param next_pc The PC state to update with the prediction.
-     * @return true if a branch was predicted taken.
+     * @return true if fetch should stop this cycle due to a predicted-taken
+     * branch (2Fetch may override and return false).
      */
     bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc);
 
@@ -543,7 +544,7 @@ class Fetch
      * @param tid The thread ID of the instruction.
      * @param pc The current program counter state (will be updated).
      * @param curMacroop The current macro-op being processed (if any).
-     * @return true if a branch was predicted.
+     * @return true if fetch should stop this cycle.
      */
     bool
     processSingleInstruction(ThreadID tid, PCStateBase &pc,

@@ -146,6 +146,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     const unsigned resolveBlockThreshold;
 
     ThreadID scheduleThread() { return 0; }
+    const bool enable2Fetch;
+    const unsigned maxFetchBytesPerCycle;
 
     void processNewPrediction(ThreadID tid);
     bool enableTwoTaken{true};
@@ -176,6 +178,20 @@ class DecoupledBPUWithBTB : public BPredUnit
                  "%#lx-[%#lx, %#lx) --> %#lx, taken: %lu\n",
                  e.startPC, e.getBranchInfo().pc, e.getEndPC(),
                  e.getTakenTarget(), e.getTaken());
+    }
+
+    void printTargetFull(const FetchTarget &e)
+    {
+        // TODO: fix this
+        // DPRINTFR(
+        //     DecoupleBP,
+        //     "FSQ prediction:: %#lx-[%#lx, %#lx) --> %#lx\n",
+        //     e.startPC, e.predBranchPC, e.predEndPC, e.predTarget);
+        // DPRINTFR(
+        //     DecoupleBP,
+        //     "Resolved: %i, resolved target:: %#lx-[%#lx, %#lx) --> %#lx\n",
+        //     e.exeEnded, e.startPC, e.exeBranchPC, e.exeEndPC,
+        //     e.exeTarget);
     }
 
     /**
@@ -405,6 +421,19 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
     const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+
+    bool ftqHasNext(ThreadID tid) const
+    {
+        return ftq.hasTarget(ftq.fetchId(tid) + 1, tid);
+    }
+    const FetchTarget &ftqNext(ThreadID tid)
+    {
+        assert(ftqHasNext(tid));
+        return ftq.get(ftq.fetchId(tid) + 1, tid);
+    }
+
+    bool is2FetchEnabled() const { return enable2Fetch; }
+    unsigned getMaxFetchBytesPerCycle() const { return maxFetchBytesPerCycle; }
 
     void dumpFsq(const char *when);
 
