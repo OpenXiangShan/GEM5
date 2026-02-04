@@ -459,7 +459,7 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                     it->translationRequest->getPaddr());
             Addr target_paddr = it->translationRequest->getPaddr();
             // check if this prefetch is already redundant
-            if (cacheSnoop && (inCache(target_paddr, it->pfInfo.isSecure()) ||
+            if (cacheSnoop && queueFilter && (inCache(target_paddr, it->pfInfo.isSecure()) ||
                         inMissQueue(target_paddr, it->pfInfo.isSecure()))) {
                 statsQueued.pfInCache++;
                 DPRINTF(HWPrefetch, "Dropping redundant in "
