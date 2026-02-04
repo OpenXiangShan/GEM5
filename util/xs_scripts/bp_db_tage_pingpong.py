@@ -136,6 +136,13 @@ def main() -> int:
     startpc = parse_u64(args.startpc) if args.startpc is not None else None
 
     con = sqlite3.connect(args.db)
+    # In some sandboxed environments TMPDIR may point to a non-writable path.
+    # ORDER BY on a large-ish trace can force SQLite to spill to a temp file and fail with
+    # "unable to open database file". Keep temp in memory to make the script robust.
+    try:
+        con.execute("pragma temp_store=memory;")
+    except sqlite3.Error:
+        pass
     require_table(con, "TAGEMISSTRACE")
     cols = get_cols(con, "TAGEMISSTRACE")
 

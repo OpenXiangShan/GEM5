@@ -152,9 +152,9 @@ predictUpdateCycleBlock(BTBTAGE *tage, Addr startPC,
 
     // Mirror pHistShiftIn behavior to keep history consistent in the test.
     auto [pred_pc, pred_target, pred_taken] = stagePreds[1].getPHistInfo();
-    if (pred_taken) {
-        applyPathHistoryTaken(history, pred_pc, pred_target);
-    }
+    Addr phr_pc = pred_taken ? pred_pc : startPC;
+    Addr phr_target = pred_taken ? pred_target : (startPC + tage->blockSize);
+    applyPathHistoryTaken(history, phr_pc, phr_target);
 
     FetchTarget stream = createStream(startPC, entries, actual_taken_entry,
                                       std::static_pointer_cast<void>(meta));
@@ -206,10 +206,9 @@ TEST_F(BTBTAGETest, HistoryUpdate)
     applyPathHistoryTaken(history, pc, target);
     tage->checkFoldedHist(history, "taken update");
 
-    boost::dynamic_bitset<> before_not_taken = history;
     tage->doUpdateHist(history, false, pc, target);
+    applyPathHistoryTaken(history, pc, target);
     tage->checkFoldedHist(history, "not-taken update");
-    EXPECT_EQ(history, before_not_taken);
 }
 
 TEST_F(BTBTAGETest, MainAltPredictionBehavior)

@@ -782,8 +782,13 @@ BTBTAGE::update(const FetchTarget &stream) {
         const bool providerOtherHit = (providerOtherEnc == realEnc);
         const bool providerAnyHit = providerSelCorrect || providerOtherHit;
 
-        // Conf reflects whether this entry can represent the true label under this history.
-        updateConf(providerAnyHit, way.conf);
+        // Conf reflects *predictive* reliability under this history.
+        //
+        // For dual-candidate Exit-Slot entries, "otherHit" only means the correct label
+        // is present, but selector still failed. Treat selector-miss as incorrect to:
+        // - avoid conf sticking to strong and suppressing longer-history allocation
+        // - quickly expose cases where short history cannot separate patterns (e.g. 0/7 alternation)
+        updateConf(providerSelCorrect, way.conf);
 
         const uint8_t altOrBaseEnc = pred_at_pred.baseEnc; // Alt unused in Exit-Slot v2
         const bool provider_used = (pred_at_pred.source == PredSource::Provider);
@@ -808,6 +813,18 @@ BTBTAGE::update(const FetchTarget &stream) {
             } else {
                 // selected enc0 but real matches enc1
                 satIncSel(way.selCtr);
+            }
+
+            // If selector keeps missing under the same (short) history, it likely needs longer
+            // history separation rather than more selector training (classic "1-step lag" on
+            // alternating labels). Try allocating to longer tables when either:
+            // - the entry was already strong (we were confident but still wrong), or
+            // - conf has been trained down to weak (repeated selector misses).
+            if (isStrongConf(old_conf) || isWeakConf(way.conf)) {
+                unsigned start_table = main_info.table + 1;
+                alloc_success = handleNewEntryAllocation(startAddr, realEnc, start_table,
+                                                         predMeta, allocated_table,
+                                                         allocated_index, allocated_way);
             }
         } else {
             // Weak-and-wrong is the typical ping-pong trigger in Exit-Slot mode:
@@ -1049,10 +1066,8 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr p
         boost::to_string(history, buf);
         DPRINTF(TAGEHistory, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
     }
-    if (!taken) {
-        DPRINTF(TAGEHistory, "not updating folded history, since FB not taken\n");
-        return;
-    }
+    // Strategy B: keep folded path history evolving even on fall-through by using a pseudo edge.
+    // (Callers are expected to pass a meaningful (pc,target) when taken==false.)
 
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 3; type++) {
@@ -1080,6 +1095,11 @@ void
 BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     auto [pc, target, taken] = pred.getPHistInfo();
+    if (!taken) {
+        // Pseudo edge for fall-through: startPC -> startPC + blockSize.
+        pc = pred.bbStart;
+        target = pred.bbStart + blockSize;
+    }
     doUpdateHist(history, taken, pc, target);
 }
 
@@ -1106,7 +1126,13 @@ BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
+    Addr pc = entry.getControlPC();
+    Addr target = entry.getTakenTarget();
+    if (!cond_taken) {
+        pc = entry.startPC;
+        target = entry.startPC + blockSize;
+    }
+    doUpdateHist(history, cond_taken, pc, target);
 }
 
 // Check folded history after speculative update and recovery

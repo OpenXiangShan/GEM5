@@ -177,55 +177,57 @@ ImliFoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken
 void
 PathFoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Addr pc, Addr target)
 {
-    if (taken) {
-        // Calculate path hash
-        uint64_t hash = pathHash(pc, target);
+    // Strategy B: also evolve path folded history on fall-through by injecting a pseudo edge.
+    // The caller is expected to provide a meaningful (pc,target) even when taken==false.
+    // (If pc/target are 0, the update degenerates to a pure shift.)
+    //
+    // Calculate path hash
+    uint64_t hash = pathHash(pc, target);
 
-        const uint64_t foldedMask = ((1ULL << foldedLen) - 1);
-        uint64_t temp = _folded;
+    const uint64_t foldedMask = ((1ULL << foldedLen) - 1);
+    uint64_t temp = _folded;
 
-        assert(shamt <= foldedLen);
-        assert(shamt <= histLen);
+    assert(shamt <= foldedLen);
+    assert(shamt <= histLen);
 
-        // Case 1: When folded length >= history length
-        if (foldedLen >= histLen) {
-            // Simple shift and set case
-            temp <<= shamt;
-            temp ^= hash;
-            // Clear any bits beyond histLen
-            temp &= ((1ULL << histLen) - 1);
-        }
-        // Case 2: When folded length < history length
-        else {
-            assert(shamt <= maxShamt);
-            // Step 1: Handle the bits that would be lost in shift
-            for (int i = 0; i < shamt; i++) {
-                // XOR the highest bits from GHR with corresponding positions in folded history
-                temp ^= (ghr[posHighestBitsInGhr[i]] << posHighestBitsInOldFoldedHist[i]);
-            }
-
-            // Step 2: Perform the shift
-            temp <<= shamt;
-
-            // Step 3: Copy the XORed bits back to lower positions
-            for (int i = 0; i < shamt; i++) {
-                uint64_t highBit = (temp >> (foldedLen + i)) & 1;
-                temp |= (highBit << i);
-            }
-
-            // Step 4: Add new branch outcome
-            uint64_t effectiveHash = hash;
-            if (histLen < pathHashLength) {
-                const uint64_t mask = (1ULL << histLen) - 1;
-                effectiveHash &= mask;
-            }
-            temp ^= foldHash(effectiveHash, foldedLen);
-
-            // Mask to folded length
-            temp &= foldedMask;
-        }
-        _folded = temp;
+    // Case 1: When folded length >= history length
+    if (foldedLen >= histLen) {
+        // Simple shift and set case
+        temp <<= shamt;
+        temp ^= hash;
+        // Clear any bits beyond histLen
+        temp &= ((1ULL << histLen) - 1);
     }
+    // Case 2: When folded length < history length
+    else {
+        assert(shamt <= maxShamt);
+        // Step 1: Handle the bits that would be lost in shift
+        for (int i = 0; i < shamt; i++) {
+            // XOR the highest bits from GHR with corresponding positions in folded history
+            temp ^= (ghr[posHighestBitsInGhr[i]] << posHighestBitsInOldFoldedHist[i]);
+        }
+
+        // Step 2: Perform the shift
+        temp <<= shamt;
+
+        // Step 3: Copy the XORed bits back to lower positions
+        for (int i = 0; i < shamt; i++) {
+            uint64_t highBit = (temp >> (foldedLen + i)) & 1;
+            temp |= (highBit << i);
+        }
+
+        // Step 4: Add new branch outcome
+        uint64_t effectiveHash = hash;
+        if (histLen < pathHashLength) {
+            const uint64_t mask = (1ULL << histLen) - 1;
+            effectiveHash &= mask;
+        }
+        temp ^= foldHash(effectiveHash, foldedLen);
+
+        // Mask to folded length
+        temp &= foldedMask;
+    }
+    _folded = temp;
 }
 
 }  // namespace btb_pred
