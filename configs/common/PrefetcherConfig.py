@@ -100,6 +100,9 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_bop = True
                 prefetcher.enable_cdp = False
                 prefetcher.enable_despacito_stream = False
+                if prefetcher.enable_despacito_stream:
+                    # if you want to check despacito pattern trace, set this to True
+                    prefetcher.despacito_stream.enable_despacito_db = False
                 prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
                 prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
                 prefetcher.prefetch_train = False # disable L1PF train L2

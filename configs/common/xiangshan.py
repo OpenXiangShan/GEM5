@@ -584,7 +584,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_bop_train_trace = False
         test_sys.arch_db.dump_stride_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
-        test_sys.enable_despacito_db = False
+        test_sys.arch_db.dump_despacito_train_trace = False
         test_sys.arch_db.dump_vaddr_trace = False
         test_sys.arch_db.dump_lifetime = False
         test_sys.arch_db.table_cmds = [
@@ -665,6 +665,17 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "HashPC INT NOT NULL," \
             "QueryHit BOOL NOT NULL," \
             "IsFirstShot BOOL NOT NULL," \
+            "Miss BOOL NOT NULL," \
+            "IsTrain BOOL NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE DespacitoTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "vAddr INT NOT NULL," \
+            "pAddr INT NOT NULL," \
+            "PC INT NOT NULL," \
+            "hasPC BOOL NOT NULL," \
             "Miss BOOL NOT NULL," \
             "IsTrain BOOL NOT NULL," \
             "SITE TEXT);"
