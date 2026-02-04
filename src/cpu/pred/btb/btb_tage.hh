@@ -58,18 +58,18 @@ class BTBTAGE : public TimedBaseBTBPredictor
         public:
             bool valid;      // Whether this entry is valid
             Addr tag;       // Tag for matching
-            short counter;  // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
+            // Confidence counter for payload correctness (recommended: reuse 3-bit signed [-4..3]).
+            // Weak states follow existing heuristic: conf==0 or conf==-1.
+            short conf;
             bool useful;    // 1-bit usefulness counter; true means useful
-            Addr pc;        // branch pc, like branch position, for btb entry pc check
+            uint8_t exitSlotEnc; // 0=No-Cond-Exit, 1..32 => slot=enc-1
             unsigned lruCounter; // Counter for LRU replacement policy
 
-            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0), lruCounter(0) {}
+            TageEntry() : valid(false), tag(0), conf(0), useful(false), exitSlotEnc(0), lruCounter(0) {}
 
-            TageEntry(Addr tag, short counter, Addr pc) :
-                      valid(true), tag(tag), counter(counter), useful(false), pc(pc), lruCounter(0) {}
-            bool taken() const {
-                return counter >= 0;
-            }
+            TageEntry(Addr tag, short conf, uint8_t exitSlotEnc) :
+                      valid(true), tag(tag), conf(conf), useful(false),
+                      exitSlotEnc(exitSlotEnc), lruCounter(0) {}
     };
 
     // Contains information about a TAGE table lookup
@@ -85,29 +85,41 @@ class BTBTAGE : public TimedBaseBTBPredictor
             TageTableInfo() : found(false), table(0), index(0), tag(0), way(0) {}
             TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag, unsigned way) :
                         found(found), entry(entry), table(table), index(index), tag(tag), way(way) {}
-            bool taken() const {
-                return entry.taken();
-            }
+    };
+
+    enum class PredSource : uint8_t
+    {
+        Provider = 0,
+        Alt = 1,
+        Base = 2,
     };
 
     // Contains the complete prediction result
     struct TagePrediction
     {
         public:
-            Addr btb_pc;           // btb entry pc, same as tage entry pc
-            TageTableInfo mainInfo; // Main prediction info
-            TageTableInfo altInfo;  // Alternative prediction info
-            bool useAlt;           // Whether to use alternative prediction, true if main is weak or no main prediction
-            bool taken;            // Final prediction (taken/not taken) = use_alt ? alt_provided ? alt_taken : base_taken : main_taken
-            bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
+            Addr startPC;            // Fetch block start PC (aligned as used by MBTB/TAGE)
+            TageTableInfo mainInfo;  // Provider info
+            TageTableInfo altInfo;   // Alternative provider info
+            bool useAlt;             // Whether weak-provider useAltOnNa gate selects alt/base
+            PredSource source;       // Final decision source
+            uint8_t predEnc;         // Final ExitSlotEnc used by this component (0..32)
+            uint8_t baseEnc;         // Base ExitSlotEnc (computed from MBTB ctr, 0..32)
+            bool payloadMapped;      // predEnc!=0 and found matching cond entry in btbEntries
+            Addr predCondPC;         // PC of predicted cond exit (0 if No-Cond-Exit or map fail)
 
+            TagePrediction()
+                : startPC(0), useAlt(false), source(PredSource::Base),
+                  predEnc(0), baseEnc(0), payloadMapped(false), predCondPC(0) {}
 
-            TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false) {}
-
-            TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
-                            bool useAlt, bool taken, bool altPred) :
-                            btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
-                            useAlt(useAlt), taken(taken), altPred(altPred){}
+            TagePrediction(Addr startPC, TageTableInfo mainInfo, TageTableInfo altInfo,
+                           bool useAlt, PredSource source,
+                           uint8_t predEnc, uint8_t baseEnc,
+                           bool payloadMapped, Addr predCondPC)
+                : startPC(startPC), mainInfo(mainInfo), altInfo(altInfo),
+                  useAlt(useAlt), source(source),
+                  predEnc(predEnc), baseEnc(baseEnc),
+                  payloadMapped(payloadMapped), predCondPC(predCondPC) {}
     };
 
 
@@ -179,12 +191,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
 
     // Calculate TAGE tag for a given PC and table
-    // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, Addr position = 0);
+    Addr getTageTag(Addr pc, int table);
 
     // Calculate TAGE tag with folded history (uint64_t version for performance)
-    // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0);
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) {
@@ -192,7 +202,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     }
 
     // Get branch index within a prediction block
-    unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC);
+    unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC) const;
 
     // Get bank ID from PC (after removing instruction alignment bits)
     // Extract bits [bankBaseShift + bankIdWidth - 1 : bankBaseShift]
@@ -343,6 +353,16 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateMispred;
         Scalar updateResetU;
 
+        // ===== Exit-Slot specific counters (block-level) =====
+        Scalar predNoCondExit;
+        Scalar predBaseFallback;
+        Scalar predPayloadMapFail;
+
+        Scalar updateAllocOnMiss;
+        Scalar updateAllocStrongWrong;
+        Scalar updateRewriteWeakWrong;
+        Scalar updateNoAllocWeakCorrect;
+
         // Recomputed prediction difference statistics (per fetchBlock)
         Scalar recomputedVsActualDiff;   // recomputed.taken != actual_taken
         Scalar recomputedVsOriginalDiff; // recomputed.taken != original pred.taken
@@ -399,7 +419,8 @@ public:
     // Metadata for TAGE prediction
     typedef struct TageMeta
     {
-        std::unordered_map<Addr, TagePrediction> preds;
+        TagePrediction pred;
+        bool hasPred{false};
         std::vector<PathFoldedHist> tagFoldedHist;
         std::vector<PathFoldedHist> altTagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
@@ -409,27 +430,25 @@ public:
 
 private:
 
-    // Helper method to generate prediction for a single BTB entry
-    // If predMeta is provided, use snapshot folded history for index/tag calculation (update path)
-    // If predMeta is nullptr, use current folded history (prediction path)
-    TagePrediction generateSinglePrediction(const BTBEntry &btb_entry,
-                                           const Addr &startPC,
-                                           const std::shared_ptr<TageMeta> predMeta = nullptr);
+    // Lookup provider/alt in TAGE tables for this fetch block (startPC + PHR snapshot).
+    // If predMeta is provided, use snapshot folded history for index/tag calculation (update path).
+    std::pair<TageTableInfo, TageTableInfo>
+    lookupProviders(const Addr &startPC,
+                    const std::shared_ptr<TageMeta> predMeta = nullptr);
 
-    // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+    // Compute Base exit-slot encoding from MBTB entries (ctr/alwaysTaken), 0..32.
+    uint8_t getBaseExitSlotEnc(const Addr &startPC,
+                               const std::vector<BTBEntry> &btbEntries) const;
 
-    // Helper method to update predictor state for a single entry
-    bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
-                                 bool actual_taken,
-                                 const TagePrediction &pred,
-                                 const FetchTarget &stream);
+    // Map predicted exit slot to a cond BTB entry in this block. Returns 0 on failure.
+    Addr mapExitSlotToCondPC(const Addr &startPC,
+                             const std::vector<BTBEntry> &btbEntries,
+                             uint8_t predEnc) const;
 
-    // Helper method to handle new entry allocation
+    // Allocation helper for block-level entry (payload = RealEnc).
     bool handleNewEntryAllocation(const Addr &startPC,
-                                 const BTBEntry &entry,
-                                 bool actual_taken,
-                                 unsigned main_table,
+                                 uint8_t realEnc,
+                                 unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
