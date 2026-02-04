@@ -793,6 +793,17 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "Miss BOOL NOT NULL," \
             "IsTrain BOOL NOT NULL," \
             "SITE TEXT);"
+            ,
+            "CREATE TABLE DespacitoTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "vAddr INT NOT NULL," \
+            "pAddr INT NOT NULL," \
+            "PC INT NOT NULL," \
+            "hasPC BOOL NOT NULL," \
+            "Miss BOOL NOT NULL," \
+            "IsTrain BOOL NOT NULL," \
+            "SITE TEXT);"
             ,# perfCounter CommitTrace
             perfCCT_cmd
         ]
