@@ -103,7 +103,7 @@ predictExitPC(BTBTAGE *tage, Addr startPC,
 
 static void
 setupTageEntry(BTBTAGE *tage, Addr startPC, int table_idx,
-               short conf, uint8_t exitSlotEnc,
+               uint8_t conf, uint8_t exit0, uint8_t exit1 = 0, uint8_t sel = 0,
                bool useful = false, int way = 0)
 {
     Addr index = tage->getTageIndex(startPC, table_idx);
@@ -113,7 +113,9 @@ setupTageEntry(BTBTAGE *tage, Addr startPC, int table_idx,
     entry.tag = tag;
     entry.conf = conf;
     entry.useful = useful;
-    entry.exitSlotEnc = exitSlotEnc;
+    entry.exitSlotEnc0 = exit0;
+    entry.exitSlotEnc1 = exit1;
+    entry.selCtr = sel;
 }
 
 static int
@@ -183,7 +185,7 @@ TEST_F(BTBTAGETest, BasicPrediction)
     BTBEntry b1 = createBTBEntry(0x1002, true, true, false, -1);
     std::vector<BTBEntry> entries = {b0, b1};
 
-    setupTageEntry(tage, startPC, /*table*/ 3, /*conf*/ 2, /*exitEnc*/ 2);
+    setupTageEntry(tage, startPC, /*table*/ 3, /*conf*/ 2, /*exit0*/ 2);
 
     Addr pred_pc = predictExitPC(tage, startPC, entries, history, stagePreds);
     EXPECT_EQ(pred_pc, 0x1002);
@@ -213,13 +215,13 @@ TEST_F(BTBTAGETest, HistoryUpdate)
 TEST_F(BTBTAGETest, MainAltPredictionBehavior)
 {
     Addr startPC = 0x1000;
-    BTBEntry b0 = createBTBEntry(0x1000, true, true, false, -1);
-    BTBEntry b1 = createBTBEntry(0x1002, true, true, false, -1);
+    // Make base prefer slot0.
+    BTBEntry b0 = createBTBEntry(0x1000, true, true, false, /*ctr*/ 1);
+    BTBEntry b1 = createBTBEntry(0x1002, true, true, false, /*ctr*/ -1);
     std::vector<BTBEntry> entries = {b0, b1};
 
-    // Provider predicts slot1; Alt predicts slot0.
-    setupTageEntry(tage, startPC, 3, /*conf*/ 2, /*exitEnc*/ 2);
-    setupTageEntry(tage, startPC, 1, /*conf*/ 2, /*exitEnc*/ 1);
+    // Provider predicts slot1.
+    setupTageEntry(tage, startPC, 3, /*conf*/ 2, /*exit0*/ 2);
 
     Addr pred_pc = predictExitPC(tage, startPC, entries, history, stagePreds);
     EXPECT_EQ(pred_pc, 0x1002);
@@ -228,13 +230,13 @@ TEST_F(BTBTAGETest, MainAltPredictionBehavior)
     EXPECT_EQ(meta->pred.source, BTBTAGE::PredSource::Provider);
     EXPECT_FALSE(meta->pred.useAlt);
 
-    // Make provider weak => default useAltOnNa is >= 0, so choose Alt.
-    setupTageEntry(tage, startPC, 3, /*conf*/ 0, /*exitEnc*/ 2);
+    // Make provider weak => default useAltOnNa is >= 0, so choose Base (conservative).
+    setupTageEntry(tage, startPC, 3, /*conf*/ 0, /*exit0*/ 2);
     pred_pc = predictExitPC(tage, startPC, entries, history, stagePreds);
     EXPECT_EQ(pred_pc, 0x1000);
     meta = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
     EXPECT_TRUE(meta->pred.useAlt);
-    EXPECT_EQ(meta->pred.source, BTBTAGE::PredSource::Alt);
+    EXPECT_EQ(meta->pred.source, BTBTAGE::PredSource::Base);
 
     // Disable useAltOnNa => weak provider should be used.
     Addr uidx = tage->getUseAltIdx(startPC);
@@ -248,12 +250,12 @@ TEST_F(BTBTAGETest, MainAltPredictionBehavior)
 TEST_F(BTBTAGETest, UsefulBitMechanism)
 {
     Addr startPC = 0x1000;
-    BTBEntry b0 = createBTBEntry(0x1000, true, true, false, -1);
-    BTBEntry b1 = createBTBEntry(0x1002, true, true, false, -1);
+    // Base prefers slot0, but actual is slot1.
+    BTBEntry b0 = createBTBEntry(0x1000, true, true, false, /*ctr*/ 1);
+    BTBEntry b1 = createBTBEntry(0x1002, true, true, false, /*ctr*/ -1);
     std::vector<BTBEntry> entries = {b0, b1};
 
-    setupTageEntry(tage, startPC, 3, /*conf*/ 2, /*exitEnc*/ 2, /*useful*/ false);
-    setupTageEntry(tage, startPC, 1, /*conf*/ 2, /*exitEnc*/ 1, /*useful*/ false);
+    setupTageEntry(tage, startPC, 3, /*conf*/ 2, /*exit0*/ 2, /*exit1*/ 0, /*sel*/ 0, /*useful*/ false);
 
     Addr mainIndex = tage->getTageIndex(startPC, 3);
     EXPECT_FALSE(tage->tageTable[3][mainIndex][0].useful);
@@ -278,7 +280,7 @@ TEST_F(BTBTAGETest, EntryAllocationOnMissWhenBaseWrong)
     EXPECT_EQ(tage->tageStats.updateAllocSuccess, 1);
 }
 
-TEST_F(BTBTAGETest, WeakWrongRewritePayload)
+TEST_F(BTBTAGETest, SelectorTrainingOnOtherCandidateHit)
 {
     Addr startPC = 0x1000;
     BTBEntry b0 = createBTBEntry(0x1000, true, true, false, /*ctr*/ -1);
@@ -288,15 +290,16 @@ TEST_F(BTBTAGETest, WeakWrongRewritePayload)
     Addr uidx = tage->getUseAltIdx(startPC);
     tage->useAlt[uidx] = -1;
 
-    setupTageEntry(tage, startPC, /*table*/ 3, /*conf*/ 0, /*exitEnc*/ 1, /*useful*/ true);
+    // Dual-candidate entry: enc0 predicts slot0, enc1 predicts slot1, selector initially picks enc0.
+    setupTageEntry(tage, startPC, /*table*/ 3, /*conf*/ 0, /*exit0*/ 1, /*exit1*/ 2, /*sel*/ 0, /*useful*/ true);
     Addr mainIndex = tage->getTageIndex(startPC, 3);
 
     predictUpdateCycleBlock(tage, startPC, entries, &b1, history, stagePreds);
 
-    EXPECT_EQ(tage->tageStats.updateRewriteWeakWrong, 1);
-    EXPECT_EQ(tage->tageTable[3][mainIndex][0].exitSlotEnc, 2);
-    EXPECT_EQ(tage->tageTable[3][mainIndex][0].conf, 0);
-    EXPECT_FALSE(tage->tageTable[3][mainIndex][0].useful);
+    // Should not rewrite payload; should only steer selector toward the correct candidate.
+    EXPECT_EQ(tage->tageTable[3][mainIndex][0].exitSlotEnc0, 1);
+    EXPECT_EQ(tage->tageTable[3][mainIndex][0].exitSlotEnc1, 2);
+    EXPECT_EQ(tage->tageTable[3][mainIndex][0].selCtr, 1);
 }
 
 TEST_F(BTBTAGETest, PayloadMapFailFallbackToBase)
@@ -308,7 +311,7 @@ TEST_F(BTBTAGETest, PayloadMapFailFallbackToBase)
     std::vector<BTBEntry> entries = {b0, b1};
 
     // Provider predicts slot2 (enc=3) which cannot map => should fallback to base (slot1).
-    setupTageEntry(tage, startPC, /*table*/ 3, /*conf*/ 2, /*exitEnc*/ 3);
+    setupTageEntry(tage, startPC, /*table*/ 3, /*conf*/ 2, /*exit0*/ 3);
 
     Addr pred_pc = predictExitPC(tage, startPC, entries, history, stagePreds);
     EXPECT_EQ(pred_pc, 0x1002);

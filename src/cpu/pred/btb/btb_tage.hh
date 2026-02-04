@@ -58,18 +58,34 @@ class BTBTAGE : public TimedBaseBTBPredictor
         public:
             bool valid;      // Whether this entry is valid
             Addr tag;       // Tag for matching
-            // Confidence counter for payload correctness (recommended: reuse 3-bit signed [-4..3]).
-            // Weak states follow existing heuristic: conf==0 or conf==-1.
-            short conf;
+            // Exit-Slot v2: confidence is independent of label (multi-class).
+            // Use an unsigned saturating counter: 0..7 (weak..strong).
+            uint8_t conf;
             bool useful;    // 1-bit usefulness counter; true means useful
-            uint8_t exitSlotEnc; // 0=No-Cond-Exit, 1..32 => slot=enc-1
+            // Dual-candidate payloads to reduce multi-pattern ping-pong in Exit-Slot mode.
+            // 0=No-Cond-Exit, 1..32 => slot=enc-1.
+            uint8_t exitSlotEnc0;
+            uint8_t exitSlotEnc1;
+            // 2-bit selector counter:
+            // - value < 2 selects enc0
+            // - value >= 2 selects enc1
+            uint8_t selCtr;
             unsigned lruCounter; // Counter for LRU replacement policy
 
-            TageEntry() : valid(false), tag(0), conf(0), useful(false), exitSlotEnc(0), lruCounter(0) {}
+            TageEntry()
+                : valid(false), tag(0), conf(0), useful(false),
+                  exitSlotEnc0(0), exitSlotEnc1(0), selCtr(0),
+                  lruCounter(0)
+            {}
 
-            TageEntry(Addr tag, short conf, uint8_t exitSlotEnc) :
+            TageEntry(Addr tag, uint8_t conf, uint8_t exit0, uint8_t exit1, uint8_t selCtr) :
                       valid(true), tag(tag), conf(conf), useful(false),
-                      exitSlotEnc(exitSlotEnc), lruCounter(0) {}
+                      exitSlotEnc0(exit0), exitSlotEnc1(exit1), selCtr(selCtr),
+                      lruCounter(0)
+            {}
+
+            uint8_t selectedEnc() const { return (selCtr >= 2) ? exitSlotEnc1 : exitSlotEnc0; }
+            uint8_t otherEnc() const { return (selCtr >= 2) ? exitSlotEnc0 : exitSlotEnc1; }
     };
 
     // Contains information about a TAGE table lookup
@@ -101,8 +117,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
             Addr startPC;            // Fetch block start PC (aligned as used by MBTB/TAGE)
             TageTableInfo mainInfo;  // Provider info
             TageTableInfo altInfo;   // Alternative provider info
-            bool useAlt;             // Whether weak-provider useAltOnNa gate selects alt/base
-            PredSource source;       // Final decision source
+            bool useAlt;             // Whether weak-provider useAltOnNa gate selects base (conservative)
+            PredSource source;       // Final decision source (Provider/Base; Alt is unused in Exit-Slot v2)
             uint8_t predEnc;         // Final ExitSlotEnc used by this component (0..32)
             uint8_t baseEnc;         // Base ExitSlotEnc (computed from MBTB ctr, 0..32)
             bool payloadMapped;      // predEnc!=0 and found matching cond entry in btbEntries

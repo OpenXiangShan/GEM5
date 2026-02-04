@@ -667,7 +667,14 @@ struct TageMissTrace : public Record
         uint64_t altFound, uint64_t altCounter, uint64_t altUseful, uint64_t altTable, uint64_t altIndex,
         uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess,
         uint64_t allocTable, uint64_t allocIndex, uint64_t allocWay,
-        std::string history, uint64_t indexFoldedHist)
+        std::string history, uint64_t indexFoldedHist,
+        // Exit-slot specific debug fields (block-level)
+        uint64_t mainTag, uint64_t altTag,
+        uint64_t mainPayload, uint64_t altPayload,
+        uint64_t mainPayload1, uint64_t altPayload1,
+        uint64_t mainSel, uint64_t altSel,
+        uint64_t baseEnc, uint64_t predEnc, uint64_t realEnc,
+        uint64_t predSource)
     {
         _tick = curTick();
         _uint64_data["startPC"] = startPC;
@@ -692,6 +699,19 @@ struct TageMissTrace : public Record
         _uint64_data["allocWay"] = allocWay;
         _text_data["history"] = history;
         _uint64_data["indexFoldedHist"] = indexFoldedHist;
+
+        _uint64_data["mainTag"] = mainTag;
+        _uint64_data["altTag"] = altTag;
+        _uint64_data["mainPayload"] = mainPayload;
+        _uint64_data["altPayload"] = altPayload;
+        _uint64_data["mainPayload1"] = mainPayload1;
+        _uint64_data["altPayload1"] = altPayload1;
+        _uint64_data["mainSel"] = mainSel;
+        _uint64_data["altSel"] = altSel;
+        _uint64_data["baseEnc"] = baseEnc;
+        _uint64_data["predEnc"] = predEnc;
+        _uint64_data["realEnc"] = realEnc;
+        _uint64_data["predSource"] = predSource;
     }
 };
 

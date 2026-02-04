@@ -149,34 +149,47 @@ void
 BTBTAGE::setTrace()
 {
 #ifndef UNIT_TEST
-    if (enableDB) {
-        std::vector<std::pair<std::string, DataType>> fields_vec = {
-            std::make_pair("startPC", UINT64),
-            std::make_pair("branchPC", UINT64),
-            std::make_pair("wayIdx", UINT64),
-            std::make_pair("mainFound", UINT64),
-            std::make_pair("mainCounter", UINT64),
-            std::make_pair("mainUseful", UINT64),
-            std::make_pair("mainTable", UINT64),
-            std::make_pair("mainIndex", UINT64),
-            std::make_pair("altFound", UINT64),
-            std::make_pair("altCounter", UINT64),
-            std::make_pair("altUseful", UINT64),
-            std::make_pair("altTable", UINT64),
-            std::make_pair("altIndex", UINT64),
-            std::make_pair("useAlt", UINT64),
-            std::make_pair("predTaken", UINT64),
-            std::make_pair("actualTaken", UINT64),
-            std::make_pair("allocSuccess", UINT64),
-            std::make_pair("allocTable", UINT64),
-            std::make_pair("allocIndex", UINT64),
-            std::make_pair("allocWay", UINT64),
-            std::make_pair("history", TEXT),
-            std::make_pair("indexFoldedHist", UINT64),
-        };
-        tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
-        tageMissTrace->init_table();
-    }
+	    if (enableDB) {
+	        std::vector<std::pair<std::string, DataType>> fields_vec = {
+	            std::make_pair("startPC", UINT64),
+	            std::make_pair("branchPC", UINT64),
+	            std::make_pair("wayIdx", UINT64),
+	            std::make_pair("mainFound", UINT64),
+	            std::make_pair("mainCounter", UINT64),
+	            std::make_pair("mainUseful", UINT64),
+	            std::make_pair("mainTable", UINT64),
+	            std::make_pair("mainIndex", UINT64),
+	            std::make_pair("altFound", UINT64),
+	            std::make_pair("altCounter", UINT64),
+	            std::make_pair("altUseful", UINT64),
+	            std::make_pair("altTable", UINT64),
+	            std::make_pair("altIndex", UINT64),
+	            std::make_pair("useAlt", UINT64),
+	            std::make_pair("predTaken", UINT64),
+	            std::make_pair("actualTaken", UINT64),
+	            std::make_pair("allocSuccess", UINT64),
+	            std::make_pair("allocTable", UINT64),
+	            std::make_pair("allocIndex", UINT64),
+	            std::make_pair("allocWay", UINT64),
+	            std::make_pair("history", TEXT),
+	            std::make_pair("indexFoldedHist", UINT64),
+	            // Exit-slot debug fields (block-level)
+	            std::make_pair("mainTag", UINT64),
+	            std::make_pair("altTag", UINT64),
+	            std::make_pair("mainPayload", UINT64),
+	            std::make_pair("altPayload", UINT64),
+	            std::make_pair("mainPayload1", UINT64),
+	            std::make_pair("altPayload1", UINT64),
+	            std::make_pair("mainSel", UINT64),
+	            std::make_pair("altSel", UINT64),
+	            std::make_pair("baseEnc", UINT64),
+	            std::make_pair("predEnc", UINT64),
+	            std::make_pair("realEnc", UINT64),
+	            std::make_pair("predSource", UINT64),
+	        };
+	        tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
+	        tageMissTrace->init_table();
+	    }
 #endif
 }
 
@@ -189,15 +202,59 @@ BTBTAGE::tickStart() {}
 namespace
 {
 inline bool
-isWeakConf(short conf)
+isWeakConf(uint8_t conf)
 {
-    return conf == 0 || conf == -1;
+    // 3-bit saturating confidence counter (0..7).
+    // Weak = 0/1, strong = 6/7.
+    return conf <= 1;
 }
 
 inline bool
-isStrongConf(short conf)
+isStrongConf(uint8_t conf)
 {
-    return conf >= 2;
+    return conf >= 6;
+}
+
+inline void
+satIncConf(uint8_t &conf)
+{
+    if (conf < 7) {
+        conf++;
+    }
+}
+
+inline void
+satDecConf(uint8_t &conf)
+{
+    if (conf > 0) {
+        conf--;
+    }
+}
+
+inline void
+updateConf(bool correct, uint8_t &conf)
+{
+    if (correct) {
+        satIncConf(conf);
+    } else {
+        satDecConf(conf);
+    }
+}
+
+inline void
+satIncSel(uint8_t &sel)
+{
+    if (sel < 3) {
+        sel++;
+    }
+}
+
+inline void
+satDecSel(uint8_t &sel)
+{
+    if (sel > 0) {
+        sel--;
+    }
 }
 } // namespace
 
@@ -229,9 +286,10 @@ BTBTAGE::lookupProviders(const Addr &startPC, std::shared_ptr<TageMeta> predMeta
                 matching_entry = entry;
                 matching_way = way;
                 match = true;
-                DPRINTF(TAGE,
-                        "hit table %d[%lu][%u]: tag %lu, conf %d, u %d, exitEnc %u\n",
-                        i, index, way, entry.tag, entry.conf, entry.useful, entry.exitSlotEnc);
+	                DPRINTF(TAGE,
+	                        "hit table %d[%lu][%u]: tag %lu, conf %d, u %d, enc0 %u, enc1 %u, sel %u\n",
+	                        i, index, way, entry.tag, entry.conf, entry.useful,
+	                        entry.exitSlotEnc0, entry.exitSlotEnc1, entry.selCtr);
                 break;
             }
         }
@@ -309,26 +367,23 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
         const bool weak = isWeakConf(main_info.entry.conf);
         if (weak) {
             Addr uidx = getUseAltIdx(startPC);
-            use_alt = (useAlt[uidx] >= 0);
+            // Exit-Slot v2: useAltOnNa acts as a conservative gate to fall back to Base
+            // when Provider is weak (instead of using Alt).
+            use_alt = (useAlt[uidx] >= 0); // true => use Base, false => use Provider even if weak
         }
 
         if (!weak) {
             source = PredSource::Provider;
-            predEnc = main_info.entry.exitSlotEnc;
+            predEnc = main_info.entry.selectedEnc();
         } else if (use_alt) {
-            if (alt_info.found) {
-                source = PredSource::Alt;
-                predEnc = alt_info.entry.exitSlotEnc;
-            } else {
-                source = PredSource::Base;
-                predEnc = baseEnc;
-            }
+            source = PredSource::Base;
+            predEnc = baseEnc;
         } else {
             source = PredSource::Provider;
-            predEnc = main_info.entry.exitSlotEnc;
+            predEnc = main_info.entry.selectedEnc();
         }
     } else {
-        use_alt = true; // consistent with old "no provider => consult alt/base"
+        use_alt = true; // consistent with old "no provider => consult base"
         source = PredSource::Base;
         predEnc = baseEnc;
     }
@@ -376,9 +431,9 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
     }
 
     // MGSC expects an entry for every cond BTB entry.
-    const uint8_t altOrBaseEnc = alt_info.found ? alt_info.entry.exitSlotEnc : baseEnc;
-    const bool provider_alt_diff = main_info.found && (main_info.entry.exitSlotEnc != altOrBaseEnc);
-    const int provider_conf_metric = main_info.found ? std::abs(main_info.entry.conf * 2 + 1) : 0;
+    const uint8_t altOrBaseEnc = baseEnc; // Alt unused in Exit-Slot v2
+    const bool provider_alt_diff = main_info.found && (main_info.entry.selectedEnc() != altOrBaseEnc);
+    const int provider_conf_metric = main_info.found ? main_info.entry.conf : 0;
 
     for (auto &e : btbEntries) {
         if (!(e.valid && e.isCond)) {
@@ -397,8 +452,8 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
         info.tage_main_taken = (source == PredSource::Provider) && pred_taken_no_always;
 
         if ((source == PredSource::Provider) && pred_taken_no_always && main_info.found) {
-            info.tage_pred_conf_high = provider_conf_metric == 7;
-            info.tage_pred_conf_mid = (provider_conf_metric < 7) && (provider_conf_metric > 1);
+            info.tage_pred_conf_high = provider_conf_metric >= 6;
+            info.tage_pred_conf_mid = (provider_conf_metric < 6) && (provider_conf_metric > 1);
             info.tage_pred_conf_low = provider_conf_metric <= 1;
         } else {
             info.tage_pred_conf_high = false;
@@ -503,13 +558,14 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         // Allocate into invalid way or not-useful and weak way
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
-            const bool weakish = std::abs(cand.conf * 2 + 1) <= 3; // -2,-1,0,1
+            const bool weakish = isWeakConf(cand.conf);
             if (!cand.valid || (!cand.useful && weakish)) {
-                short newConf = 0; // weak init
+                uint8_t newConf = 0; // weak init
                 DPRINTF(TAGE,
                         "allocating entry in table %d[%lu][%u], tag %lu, conf %d, exitEnc %u\n",
                         ti, newIndex, way, newTag, newConf, realEnc);
-                cand = TageEntry(newTag, newConf, realEnc); // u = 0 default
+                // Allocate with a single known candidate; the second candidate is empty (0).
+                cand = TageEntry(newTag, newConf, realEnc, 0, 0); // u = 0 default
                 tageStats.updateAllocSuccess++;
                 allocated_table = ti;
                 allocated_index = newIndex;
@@ -522,10 +578,10 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         // 3) Apply age penalty to one strong, not-useful way to make it replacable later
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
-            const bool weakish = std::abs(cand.conf * 2 + 1) <= 3;
+            const bool weakish = isWeakConf(cand.conf);
             if (!cand.useful && !weakish) {
-                if (cand.conf > 0) cand.conf--; else cand.conf++;
-                DPRINTF(TAGE, "age penalty applied on table %d[%lu][%u], new ctr %d\n",
+                satDecConf(cand.conf);
+                DPRINTF(TAGE, "age penalty applied on table %d[%lu][%u], new conf %u\n",
                         ti, newIndex, way, cand.conf);
                 break; // one penalty per table per update
             }
@@ -645,22 +701,17 @@ BTBTAGE::update(const FetchTarget &stream) {
             const bool weak = isWeakConf(main_info.entry.conf);
             if (weak) {
                 Addr uidx = getUseAltIdx(startAddr);
-                use_alt = (useAlt[uidx] >= 0);
+                use_alt = (useAlt[uidx] >= 0); // true => use Base (conservative)
             }
             if (!weak) {
                 src = PredSource::Provider;
-                recEnc = main_info.entry.exitSlotEnc;
+                recEnc = main_info.entry.selectedEnc();
             } else if (use_alt) {
-                if (alt_info.found) {
-                    src = PredSource::Alt;
-                    recEnc = alt_info.entry.exitSlotEnc;
-                } else {
-                    src = PredSource::Base;
-                    recEnc = baseEnc;
-                }
+                src = PredSource::Base;
+                recEnc = baseEnc;
             } else {
                 src = PredSource::Provider;
-                recEnc = main_info.entry.exitSlotEnc;
+                recEnc = main_info.entry.selectedEnc();
             }
         } else {
             src = PredSource::Base;
@@ -697,16 +748,22 @@ BTBTAGE::update(const FetchTarget &stream) {
     // Update useAltOnNa (block-level): only when provider was weak at prediction time.
     if (pred_at_pred.mainInfo.found && isWeakConf(pred_at_pred.mainInfo.entry.conf)) {
         tageStats.updateProviderNa++;
-        const uint8_t altOrBaseEnc = pred_at_pred.altInfo.found ?
-            pred_at_pred.altInfo.entry.exitSlotEnc : pred_at_pred.baseEnc;
-        const bool alt_correct = (altOrBaseEnc == realEnc);
-        Addr uidx = getUseAltIdx(startAddr);
-        updateCounter(alt_correct, useAltOnNaWidth, useAlt[uidx]);
-        tageStats.updateUseAltOnNaUpdated++;
-        if (alt_correct) {
-            tageStats.updateUseAltOnNaCorrect++;
-        } else {
-            tageStats.updateUseAltOnNaWrong++;
+        const uint8_t providerEnc = pred_at_pred.mainInfo.entry.selectedEnc();
+        const bool base_correct = (pred_at_pred.baseEnc == realEnc);
+        const bool provider_correct = (providerEnc == realEnc);
+        // Gate meaning in Exit-Slot v2:
+        // useAltOnNa[startPC] >= 0 => choose Base when Provider is weak.
+        // So we train it toward Base when Base is correct, otherwise toward Provider.
+        if (base_correct != provider_correct) {
+            const bool prefer_base = base_correct && !provider_correct;
+            Addr uidx = getUseAltIdx(startAddr);
+            updateCounter(prefer_base, useAltOnNaWidth, useAlt[uidx]);
+            tageStats.updateUseAltOnNaUpdated++;
+            if (prefer_base) {
+                tageStats.updateUseAltOnNaCorrect++;
+            } else {
+                tageStats.updateUseAltOnNaWrong++;
+            }
         }
     }
 
@@ -718,24 +775,39 @@ BTBTAGE::update(const FetchTarget &stream) {
     // Provider update (always update provider entry when found, like old behavior).
     if (main_info.found) {
         auto &way = tageTable[main_info.table][main_info.index][main_info.way];
-        const short old_conf = way.conf;
-        updateCounter(correct, 3, way.conf);
+        const uint8_t old_conf = way.conf;
+        const uint8_t providerPredEnc = way.selectedEnc();
+        const uint8_t providerOtherEnc = way.otherEnc();
+        const bool providerSelCorrect = (providerPredEnc == realEnc);
+        const bool providerOtherHit = (providerOtherEnc == realEnc);
+        const bool providerAnyHit = providerSelCorrect || providerOtherHit;
 
-        const uint8_t altOrBaseEnc = pred_at_pred.altInfo.found ?
-            pred_at_pred.altInfo.entry.exitSlotEnc : pred_at_pred.baseEnc;
+        // Conf reflects whether this entry can represent the true label under this history.
+        updateConf(providerAnyHit, way.conf);
+
+        const uint8_t altOrBaseEnc = pred_at_pred.baseEnc; // Alt unused in Exit-Slot v2
         const bool provider_used = (pred_at_pred.source == PredSource::Provider);
 
         // Useful: provider provides gain only when provider is used and correct, and alt/base is wrong.
         if (provider_used && correct && (altOrBaseEnc != realEnc)) {
             way.useful = 1;
         }
-        if (!correct && isWeakConf(way.conf)) {
+        if (!providerAnyHit && isWeakConf(way.conf)) {
             way.useful = 0;
         }
 
-        if (correct) {
+        if (providerSelCorrect) {
             if (isWeakConf(way.conf)) {
                 tageStats.updateNoAllocWeakCorrect++;
+            }
+        } else if (providerOtherHit) {
+            // Selector miss: the other candidate is correct, so train selector toward it.
+            if (way.selCtr >= 2) {
+                // selected enc1 but real matches enc0
+                satDecSel(way.selCtr);
+            } else {
+                // selected enc0 but real matches enc1
+                satIncSel(way.selCtr);
             }
         } else {
             // Weak-and-wrong is the typical ping-pong trigger in Exit-Slot mode:
@@ -749,7 +821,16 @@ BTBTAGE::update(const FetchTarget &stream) {
                                                          predMeta, allocated_table,
                                                          allocated_index, allocated_way);
                 if (!alloc_success) {
-                    way.exitSlotEnc = realEnc;
+                    // Replace the non-selected candidate with the new label, and steer selector to it.
+                    if (way.selCtr >= 2) {
+                        // currently selects enc1 => replace enc0, then select enc0 strongly
+                        way.exitSlotEnc0 = realEnc;
+                        way.selCtr = 0;
+                    } else {
+                        // currently selects enc0 => replace enc1, then select enc1 strongly
+                        way.exitSlotEnc1 = realEnc;
+                        way.selCtr = 3;
+                    }
                     way.conf = 0; // weak init
                     way.useful = 0;
                     tageStats.updateRewriteWeakWrong++;
@@ -776,7 +857,7 @@ BTBTAGE::update(const FetchTarget &stream) {
     // If alt was actually used, train alt entry as well.
     if (pred_at_pred.source == PredSource::Alt && alt_info.found) {
         auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
-        updateCounter(correct, 3, way.conf);
+        updateConf(correct, way.conf);
     }
 
 #ifndef UNIT_TEST
@@ -787,20 +868,35 @@ BTBTAGE::update(const FetchTarget &stream) {
         if (history_low50.size() > 50) {
             history_low50.resize(50);
         }
-        boost::to_string(history_low50, history_str);
+	        boost::to_string(history_low50, history_str);
 
-        const uint64_t branchPC = stream.exeBranchInfo.isCond ? stream.exeBranchInfo.pc : 0;
-        t.set(startAddr, branchPC, main_info.way,
-              main_info.found, main_info.entry.conf, main_info.entry.useful,
-              main_info.table, main_info.index,
-              alt_info.found, alt_info.entry.conf, alt_info.entry.useful,
-              alt_info.table, alt_info.index,
-              pred_at_pred.useAlt, pred_at_pred.predEnc != 0, stream.exeTaken, alloc_success,
-              allocated_table, allocated_index, allocated_way,
-              history_str,
-              main_info.found ? predMeta->indexFoldedHist[main_info.table].get() : 0);
-        tageMissTrace->write_record(t);
-    }
+	        const uint64_t branchPC = stream.exeBranchInfo.isCond ? stream.exeBranchInfo.pc : 0;
+	        const uint64_t main_tag = main_info.found ? main_info.tag : 0;
+	        const uint64_t alt_tag = alt_info.found ? alt_info.tag : 0;
+	        const uint64_t main_payload = main_info.found ? main_info.entry.exitSlotEnc0 : 0;
+	        const uint64_t alt_payload = alt_info.found ? alt_info.entry.exitSlotEnc0 : 0;
+	        const uint64_t main_payload1 = main_info.found ? main_info.entry.exitSlotEnc1 : 0;
+	        const uint64_t alt_payload1 = alt_info.found ? alt_info.entry.exitSlotEnc1 : 0;
+	        const uint64_t main_sel = main_info.found ? main_info.entry.selCtr : 0;
+	        const uint64_t alt_sel = alt_info.found ? alt_info.entry.selCtr : 0;
+	        const uint64_t pred_source = static_cast<uint64_t>(pred_at_pred.source);
+	        t.set(startAddr, branchPC, main_info.way,
+	              main_info.found, main_info.entry.conf, main_info.entry.useful,
+	              main_info.table, main_info.index,
+	              alt_info.found, alt_info.entry.conf, alt_info.entry.useful,
+	              alt_info.table, alt_info.index,
+	              pred_at_pred.useAlt, pred_at_pred.predEnc != 0, stream.exeTaken, alloc_success,
+	              allocated_table, allocated_index, allocated_way,
+	              history_str,
+	              main_info.found ? predMeta->indexFoldedHist[main_info.table].get() : 0,
+	              main_tag, alt_tag,
+	              main_payload, alt_payload,
+	              main_payload1, alt_payload1,
+	              main_sel, alt_sel,
+	              pred_at_pred.baseEnc, pred_at_pred.predEnc, realEnc,
+	              pred_source);
+	        tageMissTrace->write_record(t);
+	    }
 #endif
 
     if (getDelay() < 2) {
