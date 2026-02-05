@@ -772,8 +772,8 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     crossPage = False
 
     offsets = [x for i in [
-        1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30
-    ] for x in (i, -i)] + [-32]
+        2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30
+    ] for x in (i, -i)] + [-1, -32]
 
 class XSVirtualLargeBOP(BOPPrefetcher):
     score_max = 31
@@ -795,7 +795,7 @@ class XSVirtualLargeBOP(BOPPrefetcher):
           -40, -36, -32, -30, -27, -25, -24, -20,
           -18, -16, -15, -12, -10, -9, -8, -6,
           -5, -4, -3, -2, -1,
-          1, 2, 3, 4, 5, 6, 8,
+          2, 3, 4, 5, 6, 8,
           9, 10, 12, 15, 16, 18, 20, 24,
           25, 27, 30, 32, 36, 40, 45, 48,
           50, 54, 60, 64, 72, 75, 80, 81,
