@@ -3320,6 +3320,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
                 // Don't need to do anything special for split loads.
                 ++stats.forwLoads;
+                load_inst->setProducerStorePC(store_it->instruction()->pcState().instAddr());
 
                 return NoFault;
             } else if (
