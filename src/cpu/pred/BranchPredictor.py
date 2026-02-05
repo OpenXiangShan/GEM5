@@ -1000,7 +1000,7 @@ class AheadBTB(TimedBaseBTBPredictor):
     entryHalfAligned = Param.Bool(False, "Whether the entries are half-aligned")
     blockSize = 64
     numDelay = 0
-    usingS3Pred = Param.Bool(False, "Whether using S3 predictor to update AheadBTB")
+    usingS3Pred = Param.Bool(True, "Whether using S3 predictor to update AheadBTB")
 
 class UBTB(TimedBaseBTBPredictor):
     type = 'UBTB'
@@ -1057,7 +1057,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
-    enableBankConflict = Param.Bool(True, "Enable bank conflict simulation")
+    enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
     numDelay = 2
 
 class MicroTAGE(TimedBaseBTBPredictor):
