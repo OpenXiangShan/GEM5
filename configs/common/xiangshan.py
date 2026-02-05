@@ -530,6 +530,9 @@ def build_xiangshan_system(args):
         CacheConfig.config_cache(args, test_sys)
 
         MemConfig.config_mem(args, test_sys)
+        if args.CHI:
+            test_sys.CHIsys.dramsim3 = test_sys.mem_ctrls[0]
+            test_sys.CHIsys.dramsim3.networkPort = CHIPort(recv_buffer_size=4)
 
         # Align trace address mapping window to physical memory size (classic cache path)
         if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
