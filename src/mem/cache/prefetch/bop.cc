@@ -127,9 +127,30 @@ BOP::delayQueueEventWrapper()
 unsigned int
 BOP::hash(Addr addr, unsigned int way) const
 {
-    Addr hash1 = addr;
-    Addr hash2 = hash1 >> floorLog2(rrEntries);
-    return (hash1 ^ hash2) & (Addr)(rrEntries - 1);
+    // NOTE: This unit-test BOP is used to replay XiangShan-generated traces.
+    // Align RR indexing with XiangShan Chisel (BestOffsetPrefetch.scala):
+    //   lineAddr = addr >> offsetBits
+    //   hash1 = lineAddr[rrIdxBits-1:0]
+    //   hash2 = lineAddr[2*rrIdxBits-1:rrIdxBits]
+    //   idx   = hash1 ^ hash2
+    //
+    // The original gem5 BOP implementation used two banks (Left/Right) with
+    // different hashing. XiangShan uses a single direct-mapped RR, so 'way'
+    // is ignored here.
+    //
+    // Original gem5 BOP (indexed using the *tag* value, not full addr):
+    //   Addr hash1 = tag >> way;
+    //   Addr hash2 = hash1 >> floorLog2(rrEntries);
+    //   idx = (hash1 ^ hash2) & (rrEntries - 1);
+    (void)way;
+
+    const unsigned rrIdxBits = floorLog2(rrEntries);
+    const unsigned offsetBits = floorLog2(blkSize);
+    const Addr line_addr = addr >> offsetBits;
+    const Addr mask = static_cast<Addr>(rrEntries - 1);
+    const Addr hash1 = line_addr & mask;
+    const Addr hash2 = (line_addr >> rrIdxBits) & mask;
+    return static_cast<unsigned int>((hash1 ^ hash2) & mask);
 }
 
 void
@@ -143,10 +164,10 @@ BOP::insertIntoRR(RREntryDebug rr_entry, unsigned int way)
 {
     switch (way) {
         case RRWay::Left:
-            rrLeft[hash(rr_entry.hashAddr, RRWay::Left)] = rr_entry;
+            rrLeft[hash(rr_entry.fullAddr, RRWay::Left)] = rr_entry;
             break;
         case RRWay::Right:
-            rrRight[hash(rr_entry.hashAddr, RRWay::Right)] = rr_entry;
+            rrRight[hash(rr_entry.fullAddr, RRWay::Right)] = rr_entry;
             break;
     }
 }
@@ -180,17 +201,30 @@ BOP::resetScores()
 inline Addr
 BOP::tag(Addr addr) const
 {
-    return (addr >> lBlkSize) & tagMask;
+    // Align tag extraction with XiangShan Chisel (BestOffsetPrefetch.scala):
+    //   tag = lineAddr[rrIdxBits+rrTagBits-1:rrIdxBits]
+    // where lineAddr = addr >> offsetBits.
+    //
+    // Original gem5 BOP (commented) used:
+    //   (addr >> offsetBits) & tagMask
+    // which kept the lowest tagBits of the line address.
+    const unsigned rrIdxBits = floorLog2(rrEntries);
+    const unsigned offsetBits = floorLog2(blkSize);
+    const Addr line_addr = addr >> offsetBits;
+    return (line_addr >> rrIdxBits) & tagMask;
 }
 
 std::pair<bool, BOP::RREntryDebug>
-BOP::testRR(Addr tag) const
+BOP::testRR(Addr addr) const
 {
-    if (rrLeft[hash(tag, RRWay::Left)].hashAddr == tag) {
-        return std::make_pair(true, rrLeft[hash(tag, RRWay::Left)]);
+    const Addr t = tag(addr);
+    const unsigned idx_l = hash(addr, RRWay::Left);
+    if (rrLeft[idx_l].hashAddr == t) {
+        return std::make_pair(true, rrLeft[idx_l]);
     }
-    if (rrRight[hash(tag, RRWay::Right)].hashAddr == tag) {
-        return std::make_pair(true, rrRight[hash(tag, RRWay::Right)]);
+    const unsigned idx_r = hash(addr, RRWay::Right);
+    if (rrRight[idx_r].hashAddr == t) {
+        return std::make_pair(true, rrRight[idx_r]);
     }
 
     return std::make_pair(false, RREntryDebug());
