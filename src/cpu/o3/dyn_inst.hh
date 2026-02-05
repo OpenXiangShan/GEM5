@@ -252,6 +252,9 @@ class DynInst : public ExecContext, public RefCounted
     /* replay type of this instruction */
     std::optional<LdStReplayType> replayType;
 
+    bool _hasProducerStorePC = false;
+    Addr _producerStorePC = 0;
+
   protected:
     /** The result of the instruction; assumes an instruction can have many
      *  destination registers.
@@ -381,6 +384,22 @@ class DynInst : public ExecContext, public RefCounted
     {
         uint8_t &byte = _readySrcIdx[idx / 8];
         replaceBits(byte, idx % 8, ready ? 1 : 0);
+    }
+
+    void
+    setProducerStorePC(Addr pc)
+    {
+        _hasProducerStorePC = true;
+        _producerStorePC = pc;
+    }
+
+    bool hasProducerStorePC() const { return _hasProducerStorePC; }
+    Addr producerStorePC() const { return _producerStorePC; }
+
+    void clearProducerStorePC()
+    {
+        _hasProducerStorePC = false;
+        _producerStorePC = 0;
     }
 
     /** The thread this instruction is from. */

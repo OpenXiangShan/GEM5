@@ -267,6 +267,12 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "number cycles where commit BW limit reached"),
       ADD_STAT(loadTriple, statistics::units::Cycle::get(),
                "load trip number"),
+      ADD_STAT(loadEAReused, statistics::units::Cycle::get(),
+               "Committed loads whose EA equals last committed instance of same static load (PC)"),
+      ADD_STAT(loadsWithProducer, statistics::units::Cycle::get(),
+               "store-load related"),
+      ADD_STAT(producerStable, statistics::units::Cycle::get(),
+               "Loads whose producer store PC equals last time for same static load (PC)"),
       ADD_STAT(segUnitStrideNF, statistics::units::Count::get(),
                "Distribution of segment unit stride NF"),
       ADD_STAT(segStrideNF, statistics::units::Count::get(),
@@ -1381,6 +1387,25 @@ Commit::commitInsts()
                     if (hit) {
                         // same PC && same addr && same value
                         stats.loadTriple++;
+                    }
+                    // EA reuse: compare to last committed EA of same static load
+                    auto itEA = lastLoadEA.find(load_pc);
+                    if (itEA != lastLoadEA.end() && itEA->second == load_addr) {
+                        stats.loadEAReused++;
+                    }
+                    lastLoadEA[load_pc] = load_addr;
+                    // Producer stability: only if this load had a forwarding producer
+                    if (head_inst->hasProducerStorePC()) {
+                        stats.loadsWithProducer++;
+                        const Addr prodPC = head_inst->producerStorePC();
+                        auto itP = lastLoadProducerStorePC.find(load_pc);
+                        if (itP != lastLoadProducerStorePC.end() && itP->second == prodPC) {
+                            stats.producerStable++;
+                        }
+                        lastLoadProducerStorePC[load_pc] = prodPC;
+
+                    // optional: clear after use to avoid confusing later stages
+                    head_inst->clearProducerStorePC();
                     }
                 }
 
