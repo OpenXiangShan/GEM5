@@ -99,7 +99,7 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_cmc = True
                 prefetcher.enable_bop = True
                 prefetcher.enable_cdp = False
-                prefetcher.enable_despacito_stream = False
+                prefetcher.enable_despacito_stream = True
                 if prefetcher.enable_despacito_stream:
                     # if you want to check despacito pattern trace, set this to True
                     prefetcher.despacito_stream.enable_despacito_db = False
