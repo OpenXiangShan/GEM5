@@ -1,6 +1,8 @@
 #ifndef __MEM_CACHE_PREFETCH_DESPACITO_STREAM_HH__
 #define __MEM_CACHE_PREFETCH_DESPACITO_STREAM_HH__
 
+#include <cstdint>
+#include <string>
 #include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
@@ -75,6 +77,45 @@ class DespacitoStreamPrefetcher : public Queued
     void updateSampler(const PrefetchInfo &pfi);
 
     void updatePatternTable(SamplerEntry *sampler_entry);
+
+
+  struct DespacitoStats : public statistics::Group
+  {
+    DespacitoStats(statistics::Group *parent);
+
+    // Sampler stats
+    statistics::Scalar nlSampleTrainTimes;
+
+    statistics::Scalar nlSampleInsertTimes;
+    statistics::Scalar nlSampleReplaceTimes;
+
+    statistics::Scalar nlSampleUpdateTimes;
+    statistics::Scalar nlSampleUpdateReqNotHitTimes;
+    statistics::Scalar nlSampleUpdateReqHitOverBoardTimes;
+
+    statistics::Scalar nlSampleVictimTouchedTrueTimes;
+    statistics::Scalar nlSampleVictimTouchedFalseTimes;
+
+
+    // Pattern table stats
+    statistics::Scalar nlPatternTrainTimes;
+    statistics::Scalar nlPatternReplaceTimes;
+    statistics::Scalar nlPatternInsertTimes;
+
+    statistics::Scalar nlPatternUpdateTimes;
+    statistics::Scalar nlPatternUpdateTouchedTrueTimes;
+    statistics::Scalar nlPatternUpdateTouchedFalseTimes;
+
+    statistics::Scalar nlPatternPcHitTimes;
+    statistics::Scalar nlPatternPcHitValidEntryTimes;
+    statistics::Scalar nlPatternPcHitValidEntrySatEq3Times;
+    statistics::Scalar nlPatternPcHitValidEntrySatEq2Times;
+    statistics::Scalar nlPatternPcHitValidEntrySatEq1Times;
+    statistics::Scalar nlPatternPcHitValidEntrySatEq0Times;
+
+    // Prefetch stats
+    statistics::Scalar nlTransmitPrefetchReqTimes;
+  } stats;
 
   public:
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
