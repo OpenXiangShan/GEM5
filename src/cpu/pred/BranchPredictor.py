@@ -1012,7 +1012,7 @@ class UBTB(TimedBaseBTBPredictor):
 
     aheadPipelinedStages = Param.Unsigned(0, "Number of stages ahead pipelined")
     numDelay = 0
-    usingS3Pred = Param.Bool(True, "Whether using S3 predictor to update uBTB")
+    usingS3Pred = Param.Bool(False, "Whether using S3 predictor to update uBTB")
     # blockSize = 32  not used in uBTB
 
 
