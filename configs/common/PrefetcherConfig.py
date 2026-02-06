@@ -109,6 +109,7 @@ def create_prefetcher(cpu, cache_level, options):
                 # disable unecessary filter to align with RTL when in pf_buffer mode
                 if hasattr(prefetcher, 'queue_filter'):
                     prefetcher.queue_filter = False
+            prefetcher.enable_despacito_stream = False
             if options.l1_to_l2_pf_hint:
                 prefetcher.queue_size = 32
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
