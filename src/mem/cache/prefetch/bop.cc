@@ -462,16 +462,25 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
 
     // This prefetcher is a degree 1 prefetch, so it will only generate one
     // prefetch at most per access
-    if (issuePrefetchRequests) {
-        Addr prefetch_addr = addr + (bestOffset * (1ULL << lBlkSize));
-        stats.issuedOffsetDist.sample(bestOffset);
+    bool force_issue = forceBestOffsetValid && forceIssuePrefetch;
+    int64_t issue_offset = forceBestOffsetValid ? forcedBestOffset : bestOffset;
+    bool do_issue = issuePrefetchRequests || force_issue;
+
+    if (do_issue) {
+        Addr prefetch_addr = addr + (issue_offset * (1ULL << lBlkSize));
+        stats.issuedOffsetDist.sample(issue_offset);
         sendPFWithFilter(pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
         DPRINTF(BOPPrefetcher,
                 "Generated prefetch %#lx offset: %d\n",
-                prefetch_addr, bestOffset);
+                prefetch_addr, issue_offset);
     } else {
         stats.throttledCount++;
         DPRINTF(BOPPrefetcher, "Issue prefetch is false, can't issue\n");
+    }
+
+    if (forceBestOffsetValid) {
+        forceBestOffsetValid = false;
+        forceIssuePrefetch = false;
     }
 
     if (!victimRestoreScheduled && victimOffsetsList.size() > 0) {
@@ -481,6 +490,15 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     }
 
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
+}
+
+void
+BOP::forceBestOffset(int64_t offset, bool force_issue)
+{
+    assert(offset != 0);
+    forcedBestOffset = offset;
+    forceBestOffsetValid = true;
+    forceIssuePrefetch = force_issue;
 }
 
 bool

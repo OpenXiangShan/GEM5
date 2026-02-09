@@ -153,6 +153,9 @@ class BOP : public Queued
         bool issuePrefetchRequests;
         /** Current best offset to issue prefetches */
         int64_t bestOffset;
+        bool forceBestOffsetValid = false;
+        int64_t forcedBestOffset = 1;
+        bool forceIssuePrefetch = false;
         /** Current best offset found in the learning phase */
         int64_t phaseBestOffset;
         /** Current test offset index */
@@ -242,6 +245,8 @@ class BOP : public Queued
 
         void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late);
         
+        void forceBestOffset(int64_t offset, bool force_issue = true);
+
         bool tryAddOffset(int64_t offset, bool late = false);
 };
 

@@ -135,6 +135,8 @@ class DespacitoStreamPrefetcher : public Queued
 
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late);
 
+    bool hasAnySaturatedPattern() const;
+
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           PrefetchSourceType src);
 };

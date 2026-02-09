@@ -64,12 +64,20 @@ L2CompositeWithWorkerPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std:
     if (enableCDP) {
         cdp->calculatePrefetch(pfi, addresses);
     }
-    if (enableBOP) {
-        largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-        smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
-    }
+
+    bool force_bop_nextline = false;
     if (enableDespacitoStream) {
         despacitoStream->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::DespacitoStream);
+        force_bop_nextline = despacitoStream->hasAnySaturatedPattern();
+    }
+
+    if (enableBOP) {
+        if (force_bop_nextline) {
+            largeBOP->forceBestOffset(1);
+            smallBOP->forceBestOffset(1);
+        }
+        largeBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
+        smallBOP->calculatePrefetch(pfi, addresses, late && pf_source == PrefetchSourceType::HWP_BOP);
     }
 }
 
