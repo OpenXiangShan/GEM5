@@ -20,3 +20,7 @@ Import('*')
 GTest('testNodeID.test', 'testNodeID.cc')
 GTest('testTxnManager.test', 'testTxnManager.cc')
 GTest('testSAM.test', 'testSAM.cc')
+GTest('testP2PReadWrite.test',
+      'testP2PReadWrite.cc',
+      '../base/request.cc',
+      '../base/flit.cc')
