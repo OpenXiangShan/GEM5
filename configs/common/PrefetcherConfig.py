@@ -105,7 +105,7 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_cmc = False
             prefetcher.enable_bop = True
             prefetcher.enable_cdp = False
-            prefetcher.enable_despacito_stream = True # just train and force bop to send 1
+            prefetcher.enable_despacito_stream = False # just train and force bop to send 1
             prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
             prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
 
