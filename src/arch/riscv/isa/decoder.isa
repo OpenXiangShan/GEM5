@@ -55,14 +55,20 @@ decode QUADRANT {
                 if (status.fs == FPUStatus::OFF) {
                     return std::make_shared<IllegalInstFault>("FPU is off",
                                                                machInst);
-                } else {
-                    status.fs = 3;
-                    //xc->setMiscReg(MISCREG_STATUS,status);
-                    if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
-                        STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
-                        vsstatus.fs = 3;
-                        xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                }
+                if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                    VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                    if (vsstatus.fs == FPUStatus::OFF) {
+                        return std::make_shared<IllegalInstFault>(
+                                "FPU is off in virtual mode", machInst);
                     }
+                }
+                status.fs = 3;
+                //xc->setMiscReg(MISCREG_STATUS,status);
+                if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                    VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                    vsstatus.fs = 3;
+                    xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                 }
 
                 Fp2_bits = Mem;
@@ -137,6 +143,13 @@ decode QUADRANT {
                 if (status.fs == FPUStatus::OFF)
                     return std::make_shared<IllegalInstFault>("FPU is off",
                                                                machInst);
+                if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                    VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                    if (vsstatus.fs == FPUStatus::OFF) {
+                        return std::make_shared<IllegalInstFault>(
+                                "FPU is off in virtual mode", machInst);
+                    }
+                }
 
                 Mem = Fp2_bits;
             }}, {{
@@ -346,14 +359,20 @@ decode QUADRANT {
                 if (status.fs == FPUStatus::OFF) {
                     return std::make_shared<IllegalInstFault>("FPU is off",
                                                           machInst);
-                } else {
-                    status.fs = 3;
-                    xc->setMiscReg(MISCREG_STATUS,status);
-                    if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
-                        STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
-                        vsstatus.fs = 3;
-                        xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                }
+                if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                    VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                    if (vsstatus.fs == FPUStatus::OFF) {
+                        return std::make_shared<IllegalInstFault>(
+                                "FPU is off in virtual mode", machInst);
                     }
+                }
+                status.fs = 3;
+                xc->setMiscReg(MISCREG_STATUS,status);
+                if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                    VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                    vsstatus.fs = 3;
+                    xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                 }
                 Fc1_bits = Mem;
             }}, {{
@@ -431,6 +450,17 @@ decode QUADRANT {
                 offset = CIMM6<5:3> << 3 |
                          CIMM6<2:0> << 6;
             }}, {{
+                STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                if (status.fs == FPUStatus::OFF)
+                    return std::make_shared<IllegalInstFault>("FPU is off",
+                                                               machInst);
+                if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                    VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                    if (vsstatus.fs == FPUStatus::OFF) {
+                        return std::make_shared<IllegalInstFault>(
+                                "FPU is off in virtual mode", machInst);
+                    }
+                }
                 Mem_ud = Fc2_bits;
             }}, {{
                 EA = sp + offset;
@@ -487,6 +517,13 @@ decode QUADRANT {
                     if (status.fs == FPUStatus::OFF)
                         return std::make_shared<IllegalInstFault>(
                                     "FPU is off", machInst);
+                    if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                        VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                        if (vsstatus.fs == FPUStatus::OFF) {
+                            return std::make_shared<IllegalInstFault>(
+                                    "FPU is off in virtual mode", machInst);
+                        }
+                    }
                     freg_t fd;
                     fd = freg(f16(Mem_uh));
                     Fd_bits = fd.v;
@@ -496,14 +533,20 @@ decode QUADRANT {
                     if (status.fs == FPUStatus::OFF) {
                         return std::make_shared<IllegalInstFault>(
                                     "FPU is off", machInst);
-                    } else {
-                        status.fs = 3;
-                        xc->setMiscReg(MISCREG_STATUS,status);
-                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
-                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
-                            vsstatus.fs = 3;
-                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                    }
+                    if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                        VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                        if (vsstatus.fs == FPUStatus::OFF) {
+                            return std::make_shared<IllegalInstFault>(
+                                    "FPU is off in virtual mode", machInst);
                         }
+                    }
+                    status.fs = 3;
+                    xc->setMiscReg(MISCREG_STATUS,status);
+                    if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                        VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                        vsstatus.fs = 3;
+                        xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                     }
                     freg_t fd;
                     fd = freg(f32(Mem_uw));
@@ -514,14 +557,20 @@ decode QUADRANT {
                     if (status.fs == FPUStatus::OFF) {
                         return std::make_shared<IllegalInstFault>(
                                     "FPU is off", machInst);
-                    } else {
-                        status.fs = 3;
-                       // xc->setMiscReg(MISCREG_STATUS,status);
-                        if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
-                            STATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
-                            vsstatus.fs = 3;
-                            xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
+                    }
+                    if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                        VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                        if (vsstatus.fs == FPUStatus::OFF) {
+                            return std::make_shared<IllegalInstFault>(
+                                    "FPU is off in virtual mode", machInst);
                         }
+                    }
+                    status.fs = 3;
+                   // xc->setMiscReg(MISCREG_STATUS,status);
+                    if(xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                        VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                        vsstatus.fs = 3;
+                        xc->setMiscReg(MISCREG_VSSTATUS,vsstatus);
                     }
                     freg_t fd;
                     fd = freg(f64(Mem));
@@ -747,6 +796,13 @@ decode QUADRANT {
                     if (status.fs == FPUStatus::OFF)
                         return std::make_shared<IllegalInstFault>(
                                 "FPU is off", machInst);
+                    if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                        VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                        if (vsstatus.fs == FPUStatus::OFF) {
+                            return std::make_shared<IllegalInstFault>(
+                                    "FPU is off in virtual mode", machInst);
+                        }
+                    }
 
                     Mem_uh = (uint16_t)Fs2_bits;
                 }}, inst_flags=[IsSplitStoreAddr, IsOper16, FloatMemWriteOp]);
@@ -755,6 +811,13 @@ decode QUADRANT {
                     if (status.fs == FPUStatus::OFF)
                         return std::make_shared<IllegalInstFault>(
                                 "FPU is off", machInst);
+                    if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                        VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                        if (vsstatus.fs == FPUStatus::OFF) {
+                            return std::make_shared<IllegalInstFault>(
+                                    "FPU is off in virtual mode", machInst);
+                        }
+                    }
 
                     Mem_uw = (uint32_t)Fs2_bits;
                 }}, inst_flags=[IsSplitStoreAddr, IsOper32, FloatMemWriteOp]);
@@ -763,6 +826,13 @@ decode QUADRANT {
                     if (status.fs == FPUStatus::OFF)
                         return std::make_shared<IllegalInstFault>(
                                 "FPU is off", machInst);
+                    if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                        VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                        if (vsstatus.fs == FPUStatus::OFF) {
+                            return std::make_shared<IllegalInstFault>(
+                                    "FPU is off in virtual mode", machInst);
+                        }
+                    }
 
                     Mem_ud = Fs2_bits;
                 }}, inst_flags=[IsSplitStoreAddr, IsOper64, FloatMemWriteOp]);
