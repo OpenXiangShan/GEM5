@@ -355,6 +355,44 @@ def template CSRExecute {{
 
         auto* isa = dynamic_cast<RiscvISA::ISA*>(xc->tcBase()->getIsaPtr());
         switch (csr) {
+          case CSR_FFLAGS:
+          case CSR_FRM:
+          case CSR_FCSR: {
+            STATUS status = xc->readMiscReg(MISCREG_STATUS);
+            if (status.fs == FPUStatus::OFF) {
+                return std::make_shared<IllegalInstFault>(
+                        "FPU CSR access with FS off\n", machInst);
+            }
+            if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                if (vsstatus.fs == FPUStatus::OFF) {
+                    return std::make_shared<IllegalInstFault>(
+                            "FPU CSR access with VS FS off\n", machInst);
+                }
+            }
+            break;
+          }
+          case CSR_VSTART:
+          case CSR_VXSAT:
+          case CSR_VXRM:
+          case CSR_VCSR:
+          case CSR_VL:
+          case CSR_VTYPE:
+          case CSR_VLENB: {
+            STATUS status = xc->readMiscReg(MISCREG_STATUS);
+            if (status.vs == 0) {
+                return std::make_shared<IllegalInstFault>(
+                        "Vector CSR access with VS off\n", machInst);
+            }
+            if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+                VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+                if (vsstatus.vs == 0) {
+                    return std::make_shared<IllegalInstFault>(
+                            "Vector CSR access with VS VS off\n", machInst);
+                }
+            }
+            break;
+          }
           case CSR_SATP: {
             STATUS status = xc->readMiscReg(MISCREG_STATUS);
             if (pm == PRV_S && status.tvm == 1) {
