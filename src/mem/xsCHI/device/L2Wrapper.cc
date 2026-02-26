@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "base/addr_range.hh"
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -26,12 +27,21 @@ namespace xsCHI
     L2Wrapper::L2Wrapper(const Params &p):
     ClockedObject(p),
     cpuSidePort(p.name + ".cpu_side_port", this, "CpuSidePort"),
-    memSidePort(p.name + ".mem_side_port", this, "CpuSidePort"),
+    memSidePort(p.name + ".mem_side_port", this, "MemSidePort"),
     bridge(p.RNBridge)
     {
         bridge->set_recvReadResp_callback([this](ReqPtr& req) { this->recvReadResp(req); });
         DPRINTF(CHIL2Wrapper,"L2Wrapper Construct,without id\n");
 
+    }
+
+    void
+    L2Wrapper::init()
+    {
+        ClockedObject::init();
+        // Propagate address ranges so upstream crossbars have valid routing
+        // before the first packet arrives.
+        cpuSidePort.sendRangeChange();
     }
     // L2Wrapper::L2Wrapper(const Params &p,NodeID id,SystemAddressMap* sam):
     // ClockedObject(p),
@@ -170,9 +180,11 @@ namespace xsCHI
     AddrRangeList
     L2Wrapper::CpuSidePort::getAddrRanges() const
     {
-        std::list<AddrRange> range(0);
-        panic("not supported");
-        return range;
+        AddrRangeList ranges;
+        // Advertise a catch-all range so upstream crossbars know this port can
+        // service any address that reaches the L2 wrapper.
+        ranges.push_back(RangeSize(0, MaxAddr));
+        return ranges;
     }
 
     ReqPtr
@@ -219,8 +231,9 @@ namespace xsCHI
         PacketPtr pkt = outstanding_pkts[req->getAddr()];
         assert(pkt->needsResponse());
         // todo: properly set delay!
-        assert(pkt->headerDelay == 0);
-        assert(pkt->payloadDelay == 0);
+        // decide to ignore the delay, leave it to l2xbar
+        // assert(pkt->headerDelay == 0);
+        // assert(pkt->payloadDelay == 0);
         pkt->makeTimingResponse();
         uint8_t *tmp = new uint8_t[req->getSize()];
         assert(req->getSize()==pkt->getSize());

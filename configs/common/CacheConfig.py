@@ -274,11 +274,11 @@ def config_cache(options, system):
                                             **_get_cache_opts(NULL, 'l3', options))
                 system.tol3bus = L2ToL3Bus(clk_domain=system.cpu_clk_domain)
                 if not options.classic_l2:
-                # In Aligned L2, an extra 4 cycles are simulated in L2Cache Pipeline, instead of L2ToL3Bus
-                # So we need to subtract 4 cycles from the L2ToL3Bus response latency
-                assert int(system.tol3bus.response_latency) >= 4
-                system.tol3bus.response_latency -= 4
-            system.tol3bus.snoop_filter.max_capacity = "32MB"
+                    # In Aligned L2, an extra 4 cycles are simulated in L2Cache Pipeline, instead of L2ToL3Bus
+                    # So we need to subtract 4 cycles from the L2ToL3Bus response latency
+                    assert int(system.tol3bus.response_latency) >= 4
+                    system.tol3bus.response_latency -= 4
+                system.tol3bus.snoop_filter.max_capacity = "32MB"
                 system.l3.cpu_side = system.tol3bus.mem_side_ports
                 system.l3.mem_side = system.membus.cpu_side_ports
 

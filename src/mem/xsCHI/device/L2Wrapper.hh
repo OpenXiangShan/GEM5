@@ -49,7 +49,6 @@ namespace xsCHI {
         bool isBlocked() const { return blocked; }
 
       protected:
-
         CacheResponsePort(const std::string &_name, L2Wrapper *wrapper,
                        const std::string &_label);
 
@@ -185,6 +184,7 @@ namespace xsCHI {
     CHIPort* getCHIPort();
     void setNodeID(uint32_t id){getBridge()->setNodeID(id);}
     void setSAM(std::shared_ptr<SystemAddressMapRN> sam){getBridge()->setSAM(sam);}
+    void init() override;
   };
 }
 }

@@ -527,6 +527,15 @@ def build_xiangshan_system(args):
         if args.xiangshan_ecore and args.no_l3cache:
             args.l2_size = '4MB'
 
+        # CHI topologies expect a DDRWrapper-backed memory so that the
+        # L2ToDramSys.dramsim3 parameter can be bound correctly. Override
+        # any other mem_type to avoid type mismatches at assignment time.
+        if args.CHI and getattr(args, 'mem_type', None) != 'DDRWrapper':
+            warn(
+                f"Overriding mem_type {getattr(args, 'mem_type', None)} to DDRWrapper for CHI"
+            )
+            args.mem_type = 'DDRWrapper'
+
         CacheConfig.config_cache(args, test_sys)
 
         MemConfig.config_mem(args, test_sys)
