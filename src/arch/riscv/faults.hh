@@ -90,13 +90,10 @@ enum ExceptionCode : uint64_t
     STORE_G_PAGE = 23,
     AMO_G_PAGE = 23,
 
-    INT_SOFTWARE_USER = 0,
     INT_SOFTWARE_SUPER = 1,
     INT_SOFTWARE_MACHINE = 3,
-    INT_TIMER_USER = 4,
     INT_TIMER_SUPER = 5,
     INT_TIMER_MACHINE = 7,
-    INT_EXT_USER = 8,
     INT_EXT_SUPER = 9,
     INT_EXT_MACHINE = 11,
     NumInterruptTypes

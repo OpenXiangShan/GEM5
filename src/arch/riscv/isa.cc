@@ -210,8 +210,8 @@ namespace RiscvISA
     [MISCREG_PMPADDR14]     = "PMPADDR14",
     [MISCREG_PMPADDR15]     = "PMPADDR15",
 
-    [MISCREG_SEDELEG]       = "SEDELEG",
-    [MISCREG_SIDELEG]       = "SIDELEG",
+    [MISCREG_RESERVED01]    = "",
+    [MISCREG_RESERVED02]    = "",
     [MISCREG_STVEC]         = "STVEC",
     [MISCREG_SCOUNTEREN]    = "SCOUNTEREN",
     [MISCREG_SSCRATCH]      = "SSCRATCH",
@@ -220,11 +220,11 @@ namespace RiscvISA
     [MISCREG_STVAL]         = "STVAL",
     [MISCREG_SATP]          = "SATP",
 
-    [MISCREG_UTVEC]         = "UTVEC",
-    [MISCREG_USCRATCH]      = "USCRATCH",
-    [MISCREG_UEPC]          = "UEPC",
-    [MISCREG_UCAUSE]        = "UCAUSE",
-    [MISCREG_UTVAL]         = "UTVAL",
+    [MISCREG_RESERVED03]    = "",
+    [MISCREG_RESERVED04]    = "",
+    [MISCREG_RESERVED05]    = "",
+    [MISCREG_RESERVED06]    = "",
+    [MISCREG_RESERVED07]    = "",
     [MISCREG_FFLAGS]        = "FFLAGS",
     [MISCREG_FRM]           = "FRM",
 

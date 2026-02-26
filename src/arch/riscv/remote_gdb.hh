@@ -82,17 +82,7 @@ class RemoteGDB : public BaseRemoteGDB
             uint32_t placeholder;
             uint64_t cycle;
             uint64_t time;
-            uint64_t ustatus;
-            uint64_t uie;
-            uint64_t utvec;
-            uint64_t uscratch;
-            uint64_t uepc;
-            uint64_t ucause;
-            uint64_t utval;
-            uint64_t uip;
             uint64_t sstatus;
-            uint64_t sedeleg;
-            uint64_t sideleg;
             uint64_t sie;
             uint64_t stvec;
             uint64_t scounteren;

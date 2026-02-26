@@ -2129,13 +2129,6 @@ decode QUADRANT {
                             return std::make_shared<BreakpointFault>(
                                 xc->pcState());
                         }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                        0x2: uret({{
-                            STATUS status = xc->readMiscReg(MISCREG_STATUS);
-                            status.uie = status.upie;
-                            status.upie = 1;
-                            xc->setMiscReg(MISCREG_STATUS, status);
-                            NPC = xc->readMiscReg(MISCREG_UEPC);
-                        }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
                     }
                     0x8: decode RS2 {
                         0x2: sret({{

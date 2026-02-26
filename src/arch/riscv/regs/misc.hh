@@ -204,8 +204,8 @@ enum MiscRegIndex
     MISCREG_PMPADDR14,
     MISCREG_PMPADDR15,
 
-    MISCREG_SEDELEG,
-    MISCREG_SIDELEG,
+    MISCREG_RESERVED01, // MISCREG_SEDELEG,
+    MISCREG_RESERVED02, // MISCREG_SIDELEG,
     MISCREG_STVEC,
     MISCREG_SCOUNTEREN,
     MISCREG_SSCRATCH,
@@ -214,11 +214,11 @@ enum MiscRegIndex
     MISCREG_STVAL,
     MISCREG_SATP,
 
-    MISCREG_UTVEC,
-    MISCREG_USCRATCH,
-    MISCREG_UEPC,
-    MISCREG_UCAUSE,
-    MISCREG_UTVAL,
+    MISCREG_RESERVED03, // MISCREG_UTVEC,
+    MISCREG_RESERVED04, // MISCREG_USCRATCH,
+    MISCREG_RESERVED05, // MISCREG_UEPC,
+    MISCREG_RESERVED06, // MISCREG_UCAUSE,
+    MISCREG_RESERVED07, // MISCREG_UTVAL,
     MISCREG_FFLAGS,
     MISCREG_FRM,
 
@@ -270,14 +270,6 @@ enum MiscRegIndex
 
 enum CSRIndex
 {
-    CSR_USTATUS = 0x000,
-    CSR_UIE = 0x004,
-    CSR_UTVEC = 0x005,
-    CSR_USCRATCH = 0x040,
-    CSR_UEPC = 0x041,
-    CSR_UCAUSE = 0x042,
-    CSR_UTVAL = 0x043,
-    CSR_UIP = 0x044,
     CSR_FFLAGS = 0x001,
     CSR_FRM = 0x002,
     CSR_FCSR = 0x003,
@@ -316,8 +308,6 @@ enum CSRIndex
     // HPMCOUNTERH rv32 only
 
     CSR_SSTATUS = 0x100,
-    CSR_SEDELEG = 0x102,
-    CSR_SIDELEG = 0x103,
     CSR_SIE = 0x104,
     CSR_STVEC = 0x105,
     CSR_SCOUNTEREN = 0x106,
@@ -507,14 +497,6 @@ struct CSRMetadata
 };
 
 const std::map<int, CSRMetadata> CSRData = {
-    {CSR_USTATUS, {"ustatus", MISCREG_STATUS}},
-    {CSR_UIE, {"uie", MISCREG_IE}},
-    {CSR_UTVEC, {"utvec", MISCREG_UTVEC}},
-    {CSR_USCRATCH, {"uscratch", MISCREG_USCRATCH}},
-    {CSR_UEPC, {"uepc", MISCREG_UEPC}},
-    {CSR_UCAUSE, {"ucause", MISCREG_UCAUSE}},
-    {CSR_UTVAL, {"utval", MISCREG_UTVAL}},
-    {CSR_UIP, {"uip", MISCREG_IP}},
     {CSR_FFLAGS, {"fflags", MISCREG_FFLAGS}},
     {CSR_FRM, {"frm", MISCREG_FRM}},
     {CSR_FCSR, {"fcsr", MISCREG_FFLAGS}}, // Actually FRM << 5 | FFLAGS
@@ -581,8 +563,6 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_HPMCOUNTER31, {"hpmcounter31", MISCREG_HPMCOUNTER31}},
 
     {CSR_SSTATUS, {"sstatus", MISCREG_STATUS}},
-    {CSR_SEDELEG, {"sedeleg", MISCREG_SEDELEG}},
-    {CSR_SIDELEG, {"sideleg", MISCREG_SIDELEG}},
     {CSR_SIE, {"sie", MISCREG_IE}},
     {CSR_STVEC, {"stvec", MISCREG_STVEC}},
     {CSR_SCOUNTEREN, {"scounteren", MISCREG_SCOUNTEREN}},
@@ -765,10 +745,8 @@ BitUnion64(STATUS)
     Bitfield<8> spp;
     Bitfield<7> mpie;
     Bitfield<5> spie;
-    Bitfield<4> upie;
     Bitfield<3> mie;
     Bitfield<1> sie;
-    Bitfield<0> uie;
 EndBitUnion(STATUS)
 
 BitUnion64(HSTATUS)
@@ -845,13 +823,10 @@ EndBitUnion(HGATP)
 BitUnion64(INTERRUPT)
     Bitfield<11> mei;
     Bitfield<9> sei;
-    Bitfield<8> uei;
     Bitfield<7> mti;
     Bitfield<5> sti;
-    Bitfield<4> uti;
     Bitfield<3> msi;
     Bitfield<1> ssi;
-    Bitfield<0> usi;
 EndBitUnion(INTERRUPT)
 
 const off_t MXL_OFFSET = (sizeof(uint64_t) * 8 - 2);
@@ -917,10 +892,8 @@ const RegVal STATUS_VS_MASK = 3ULL << VS_OFFSET;
 const RegVal STATUS_SPP_MASK = 1ULL << 8;
 const RegVal STATUS_MPIE_MASK = 1ULL << 7;
 const RegVal STATUS_SPIE_MASK = 1ULL << 5;
-const RegVal STATUS_UPIE_MASK = 1ULL << 4;
 const RegVal STATUS_MIE_MASK = 1ULL << 3;
 const RegVal STATUS_SIE_MASK = 1ULL << 1;
-const RegVal STATUS_UIE_MASK = 1ULL << 0;
 const RegVal MSTATUS_WMASK_FS = 0x3UL << 13;
 const RegVal MSTATUS_WMASK_RVH = 3UL << 38;
 const RegVal MSTATUS_WMASK_RVV = 3UL << 9;
@@ -932,25 +905,16 @@ const RegVal SSTATUS_MASK = STATUS_SD_MASK | STATUS_UXL_MASK |
                             STATUS_XS_MASK | STATUS_FS_MASK |
                             STATUS_VS_MASK |
                             STATUS_SPP_MASK | STATUS_SPIE_MASK |
-                            STATUS_UPIE_MASK | STATUS_SIE_MASK |
-                            STATUS_UIE_MASK;
-const RegVal USTATUS_MASK = STATUS_SD_MASK | STATUS_MXR_MASK |
-                            STATUS_SUM_MASK | STATUS_XS_MASK |
-                            STATUS_FS_MASK | STATUS_VS_MASK |
-                            STATUS_UPIE_MASK | STATUS_UIE_MASK;
+                            STATUS_SIE_MASK;
 
 const RegVal MEI_MASK = 1ULL << 11;
 const RegVal SEI_MASK = 1ULL << 9;
-const RegVal UEI_MASK = 1ULL << 8;
 const RegVal MTI_MASK = 1ULL << 7;
 const RegVal STI_MASK = 1ULL << 5;
-const RegVal UTI_MASK = 1ULL << 4;
 const RegVal MSI_MASK = 1ULL << 3;
 const RegVal SSI_MASK = 1ULL << 1;
-const RegVal USI_MASK = 1ULL << 0;
 const RegVal NEMU_MIP_MASK =  ((1 << 9) | (1 << 5) | (1 << 2) |(1 << 1));
 const RegVal SI_MASK = SEI_MASK | STI_MASK | SSI_MASK;
-const RegVal UI_MASK = UEI_MASK | UTI_MASK | USI_MASK;
 const RegVal FFLAGS_MASK = (1 << FRM_OFFSET) - 1;
 const RegVal FRM_MASK = 0x7;
 const RegVal NEMU_MIE_MASK_BASE = 0xaaa;
@@ -959,9 +923,6 @@ const RegVal NEMU_LCOFI = 0;
 const RegVal NEMU_MIE_MASK = NEMU_MIE_MASK_BASE | NEMU_MIE_MASK_H | NEMU_LCOFI;
 
 const std::map<int, RegVal> CSRMasks = {
-    {CSR_USTATUS, USTATUS_MASK},
-    {CSR_UIE, UI_MASK},
-    {CSR_UIP, UI_MASK},
     {CSR_FFLAGS, FFLAGS_MASK},
     {CSR_FRM, FRM_MASK},
     {CSR_FCSR, FFLAGS_MASK | (FRM_MASK << FRM_OFFSET)},
