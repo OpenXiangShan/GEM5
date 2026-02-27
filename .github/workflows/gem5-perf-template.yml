@@ -204,9 +204,9 @@ jobs:
           # Create target directory
           mkdir -p "$TARGET_DIR"
           
-          # Archive entire spec_all directory with compression
+          # Archive entire spec_all directory without compression
           echo "Archiving performance data to $TARGET_DIR"
-          tar -czf "$TARGET_DIR/spec_all.tar.gz" -C "$GITHUB_WORKSPACE/util/xs_scripts/test" spec_all
+          cp -a "$GITHUB_WORKSPACE/util/xs_scripts/test/spec_all" "$TARGET_DIR/"
           
           # Also save score.txt for quick reference
           if [ -f "$GITHUB_WORKSPACE/score.txt" ]; then
@@ -236,11 +236,12 @@ jobs:
           fi
           
           echo "Performance data archived successfully"
-          echo "Archive size: $(du -sh "$TARGET_DIR/spec_all.tar.gz" | cut -f1)"
+          ARCHIVE_SIZE=$(du -sh "$TARGET_DIR/spec_all" | cut -f1)
+          echo "Archive size: ${ARCHIVE_SIZE}"
           {
             echo "### Archive output"
             echo "- Path: \`$TARGET_DIR\`"
-            echo "- Size: $(du -sh "$TARGET_DIR/spec_all.tar.gz" | cut -f1)"
+            echo "- Size: ${ARCHIVE_SIZE}"
           } >> $GITHUB_STEP_SUMMARY
       - name: Upload score artifact
         if: always()
@@ -251,11 +252,3 @@ jobs:
           path: score.txt
           retention-days: 30
       
-      - name: Fallback - Save score to shared storage
-        if: always()
-        run: |
-          # Fallback: 如果 artifact upload 失败，保存到共享存储
-          ARTIFACT_DIR="/nfs/home/share/gem5_ci/artifacts/${{ github.run_id }}"
-          mkdir -p "$ARTIFACT_DIR"
-          cp score.txt "$ARTIFACT_DIR/${{ steps.config.outputs.artifact_name }}.txt" 2>/dev/null || true
-          echo "✅ Score also saved to: $ARTIFACT_DIR"
