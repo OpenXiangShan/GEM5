@@ -6,11 +6,6 @@ on:
   # Removed pull_request trigger - moved to pr-quick-check.yml (Tier 1)
   # can be triggered manually
   workflow_dispatch:
-    inputs:
-      branch_name:
-        description: 'Branch to test (leave empty for current branch)'
-        required: false
-        type: string
 
 jobs:
   paralel_cpt_test:
@@ -20,8 +15,6 @@ jobs:
     name: XS-GEM5 - Running test checkpoints
     steps:
       - uses: actions/checkout@v2
-        with:
-          ref: ${{ github.event.inputs.branch_name || github.ref }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: |
@@ -36,8 +29,6 @@ jobs:
     name: XS-GEM5 - Running h test checkpoints
     steps:
       - uses: actions/checkout@v2
-        with:
-          ref: ${{ github.event.inputs.branch_name || github.ref }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: |
@@ -51,8 +42,6 @@ jobs:
     name: XS-GEM5 - Check memory corruption
     steps:
       - uses: actions/checkout@v2
-        with:
-          ref: ${{ github.event.inputs.branch_name || github.ref }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 debug
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.debug --linker=gold -j64
@@ -68,8 +57,6 @@ jobs:
     name: XS-GEM5 - Test new simulation script on RV64GCB
     steps:
       - uses: actions/checkout@v2
-        with:
-          ref: ${{ github.event.inputs.branch_name || github.ref }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
@@ -88,8 +75,6 @@ jobs:
     name: XS-GEM5 - Test new simulation script on RV64GCBV
     steps:
       - uses: actions/checkout@v2
-        with:
-          ref: ${{ github.event.inputs.branch_name || github.ref }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64 --rvv-impl=simple
@@ -108,8 +93,6 @@ jobs:
     name: XS-GEM5 - Test Multi-core + RV64GCB
     steps:
       - uses: actions/checkout@v2
-        with:
-          ref: ${{ github.event.inputs.branch_name || github.ref }}
       - name: Build GEM5 opt
         run: |
           CC=clang CXX=clang++ scons build/RISCV_CHI/gem5.opt -j 48 --gold-linker
@@ -129,8 +112,6 @@ jobs:
     name: XS-GEM5 - Test fix L2TLB bugs
     steps:
       - uses: actions/checkout@v2
-        with:
-          ref: ${{ github.event.inputs.branch_name || github.ref }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
@@ -149,8 +130,6 @@ jobs:
     name: XS-GEM5 - Test new simulation script on RV64GCBH
     steps:
       - uses: actions/checkout@v2
-        with:
-          ref: ${{ github.event.inputs.branch_name || github.ref }}
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
@@ -162,5 +141,4 @@ jobs:
           mkdir -p $GEM5_HOME/util/xs_scripts/test_h
           cd $GEM5_HOME/util/xs_scripts/test_h
           bash ../kmh_6wide_h.sh /nfs/home/share/gem5_ci/checkpoints/gcbh_test.zstd
-
 
