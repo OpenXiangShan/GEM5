@@ -948,6 +948,31 @@ TEST_F(BTBTAGETest, BankConflict) {
     }
 }
 
+TEST_F(BTBTAGETest, BankConflictOnlyWhenRereadNeeded) {
+    BTBTAGE *bankTage = new BTBTAGE(4, 2, 1024, 4);
+    boost::dynamic_bitset<> testHistory(128);
+    std::vector<FullBTBPrediction> testStagePreds(5);
+
+    bankTage->enableBankConflict = true;
+    bankTage->updateOnRead = true;
+
+    // Force a strong provider so update can use meta without reread.
+    BTBEntry entry = createBTBEntry(0x20);
+    setupTageEntry(bankTage, 0x20, 3, 2, false);
+
+    testStagePreds[1].btbEntries = {entry};
+    bankTage->putPCHistory(0x20, testHistory, testStagePreds);
+    auto meta = bankTage->getPredictionMeta();
+
+    FetchTarget stream = createStream(0x20, entry, true, meta);
+    uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
+    bool can_update = bankTage->canResolveUpdate(stream);
+
+    EXPECT_TRUE(can_update) << "Provider+correct path should not trigger bank conflict";
+    EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
+
+}
+
 
 }  // namespace test
 

@@ -93,9 +93,9 @@ tageStats(this, p.numPredictors, p.numBanks)
 {
     this->needMoreHistories = p.needMoreHistories;
 
-    // Warn if updateOnRead is disabled (bank simulation works better with it enabled)
+    // Warn if updateOnRead is disabled (RTL-like dynamic reread policy needs it enabled)
     if (!p.updateOnRead) {
-        warn("BTBTAGE: Bank simulation works better with updateOnRead=true");
+        warn("BTBTAGE: RTL-like update reread policy is best modeled with updateOnRead=true");
     }
 #endif
     tageTable.resize(numPredictors);
@@ -417,6 +417,68 @@ BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
     return all_entries;
 }
 
+bool
+BTBTAGE::isControlMispredForEntry(const FetchTarget &stream,
+                                  const BTBEntry &entry) const
+{
+    return stream.squashType == SquashType::SQUASH_CTRL &&
+           stream.squashPC == entry.pc;
+}
+
+bool
+BTBTAGE::needRereadForUpdateEntry(const BTBEntry &entry,
+                                  const FetchTarget &stream,
+                                  const std::shared_ptr<TageMeta> &predMeta,
+                                  TagePrediction *metaPred,
+                                  bool *hasMetaPred) const
+{
+    if (!predMeta) {
+        if (hasMetaPred) {
+            *hasMetaPred = false;
+        }
+        return true;
+    }
+
+    auto it = predMeta->preds.find(entry.pc);
+    bool has_pred = it != predMeta->preds.end();
+    if (hasMetaPred) {
+        *hasMetaPred = has_pred;
+    }
+
+    if (!has_pred) {
+        DPRINTF(TAGE, "update: missing pred meta for pc %#lx, forcing reread\n", entry.pc);
+        return true;
+    }
+
+    if (metaPred) {
+        *metaPred = it->second;
+    }
+
+    // Legacy mode: keep metadata-only update behavior if updateOnRead is disabled.
+    if (!updateOnRead) {
+        return false;
+    }
+
+    // RTL alignment: only provider-used and non-mispred entries can skip update-time re-read.
+    const auto &pred = it->second;
+    bool use_provider = pred.mainInfo.found && !pred.useAlt;
+    bool mispred = isControlMispredForEntry(stream, entry);
+    return !(use_provider && !mispred);
+}
+
+bool
+BTBTAGE::needRereadForUpdate(const FetchTarget &stream,
+                             const std::shared_ptr<TageMeta> &predMeta,
+                             const std::vector<BTBEntry> &entries) const
+{
+    for (const auto &entry : entries) {
+        if (needRereadForUpdateEntry(entry, stream, predMeta)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * @brief Update predictor state for a single entry
  * 
@@ -639,6 +701,24 @@ bool
 BTBTAGE::canResolveUpdate(const FetchTarget &stream) {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
+    auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+
+    if (!predMeta) {
+        DPRINTF(TAGE, "canResolveUpdate: no prediction meta, skip bank conflict check\n");
+        return true;
+    }
+
+    auto entries_to_update = prepareUpdateEntries(stream);
+    if (entries_to_update.empty()) {
+        DPRINTF(TAGE, "canResolveUpdate: no update entries, skip bank conflict check\n");
+        return true;
+    }
+    bool need_reread = needRereadForUpdate(stream, predMeta, entries_to_update);
+
+    if (!need_reread) {
+        DPRINTF(TAGE, "canResolveUpdate: no reread needed, skip bank conflict check\n");
+        return true;
+    }
 
 #ifndef UNIT_TEST
     // Record attempted update access per bank (even if it conflicts)
@@ -702,16 +782,20 @@ BTBTAGE::update(const FetchTarget &stream) {
     for (auto &btb_entry : entries_to_update) {
         bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
         TagePrediction recomputed;
-        if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
-            // Re-read providers using snapshot (do not rely on prediction-time main/alt)
+        TagePrediction meta_pred;
+        bool has_meta_pred = false;
+        bool need_reread = needRereadForUpdateEntry(
+            btb_entry, stream, predMeta, &meta_pred, &has_meta_pred);
+
+        if (need_reread) {
+            // Re-read providers using snapshot (do not rely on prediction-time provider/alt).
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta);
-            // Track differences for statistics
-            auto it = predMeta->preds.find(btb_entry.pc);
-            if (it != predMeta->preds.end() && recomputed.taken != it->second.taken) {
+            if (has_meta_pred && recomputed.taken != meta_pred.taken) {
                 hasRecomputedVsOriginalDiff = true;
             }
-        } else { // otherwise, use the prediction from the prediction-time main/alt
-            recomputed = predMeta->preds[btb_entry.pc];
+        } else {
+            // Provider was already recorded in metadata and can be used directly.
+            recomputed = meta_pred;
         }
         if (recomputed.taken != actual_taken) {
             hasRecomputedVsActualDiff = true;

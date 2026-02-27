@@ -298,7 +298,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // ========== Bank Configuration ==========
     // Bank mechanism to simulate hardware bank conflicts
-    // When prediction and update access the same bank in one cycle, update is dropped
+    // Conflict is modeled only when update needs a table re-read.
     const unsigned numBanks;         // Number of banks (e.g., 4)
     const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
     const unsigned blockWidth;       // floorLog2(blockSize), e.g., 5 for 32B blocks
@@ -424,6 +424,22 @@ private:
                                  bool actual_taken,
                                  const TagePrediction &pred,
                                  const FetchTarget &stream);
+
+    // Decide whether this entry requires update-time table re-read.
+    bool needRereadForUpdateEntry(const BTBEntry &entry,
+                                  const FetchTarget &stream,
+                                  const std::shared_ptr<TageMeta> &predMeta,
+                                  TagePrediction *metaPred = nullptr,
+                                  bool *hasMetaPred = nullptr) const;
+
+    // Decide whether this stream contains any entry that requires re-read.
+    bool needRereadForUpdate(const FetchTarget &stream,
+                             const std::shared_ptr<TageMeta> &predMeta,
+                             const std::vector<BTBEntry> &entries) const;
+
+    // Whether this entry is the control-mispred branch of current fetch block.
+    bool isControlMispredForEntry(const FetchTarget &stream,
+                                  const BTBEntry &entry) const;
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,
