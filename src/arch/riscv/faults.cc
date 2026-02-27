@@ -90,18 +90,10 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
                 bits(tc->readMiscReg(MISCREG_MIDELEG), _code) != 0) {
                 prv = PRV_S;
             }
-            if (pp == PRV_U &&
-                bits(tc->readMiscReg(MISCREG_SIDELEG), _code) != 0) {
-                prv = PRV_U;
-            }
         } else {
             if (pp != PRV_M &&
                 bits(tc->readMiscReg(MISCREG_MEDELEG), _code) != 0) {
                 prv = PRV_S;
-            }
-            if (pp == PRV_U &&
-                bits(tc->readMiscReg(MISCREG_SEDELEG), _code) != 0) {
-                prv = PRV_U;
             }
         }
 
@@ -122,13 +114,7 @@ RiscvFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
         int v = status.mprv ? status.mpv : tc->readMiscReg(MISCREG_VIRMODE);
         switch (prv) {
           case PRV_U:
-            cause = MISCREG_UCAUSE;
-            epc = MISCREG_UEPC;
-            tvec = MISCREG_UTVEC;
-            tval = MISCREG_UTVAL;
-
-            status.upie = status.uie;
-            status.uie = 0;
+            panic("Delegating interrupt to user mode is removed.");
             break;
           case PRV_S:
               if (prvh == PRV_HS) {

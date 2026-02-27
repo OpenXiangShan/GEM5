@@ -210,8 +210,8 @@ namespace RiscvISA
     [MISCREG_PMPADDR14]     = "PMPADDR14",
     [MISCREG_PMPADDR15]     = "PMPADDR15",
 
-    [MISCREG_SEDELEG]       = "SEDELEG",
-    [MISCREG_SIDELEG]       = "SIDELEG",
+    [MISCREG_RESERVED01]    = "",
+    [MISCREG_RESERVED02]    = "",
     [MISCREG_STVEC]         = "STVEC",
     [MISCREG_SCOUNTEREN]    = "SCOUNTEREN",
     [MISCREG_SSCRATCH]      = "SSCRATCH",
@@ -220,11 +220,11 @@ namespace RiscvISA
     [MISCREG_STVAL]         = "STVAL",
     [MISCREG_SATP]          = "SATP",
 
-    [MISCREG_UTVEC]         = "UTVEC",
-    [MISCREG_USCRATCH]      = "USCRATCH",
-    [MISCREG_UEPC]          = "UEPC",
-    [MISCREG_UCAUSE]        = "UCAUSE",
-    [MISCREG_UTVAL]         = "UTVAL",
+    [MISCREG_RESERVED03]    = "",
+    [MISCREG_RESERVED04]    = "",
+    [MISCREG_RESERVED05]    = "",
+    [MISCREG_RESERVED06]    = "",
+    [MISCREG_RESERVED07]    = "",
     [MISCREG_FFLAGS]        = "FFLAGS",
     [MISCREG_FRM]           = "FRM",
 
@@ -729,14 +729,10 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             break;
           case MISCREG_STATUS:
             {
-                // SXL and UXL are hard-wired to 64 bit
+                // Match NEMU CSR semantics: only writable MSTATUS fields update.
                 auto cur = readMiscRegNoEffect(misc_reg);
-                DPRINTF(RiscvMisc, "Value before and: %#lx\n", val);
-                val &= ~(STATUS_SXL_MASK | STATUS_UXL_MASK);
-                DPRINTF(RiscvMisc, "Value before or: %#lx\n", val);
-                val |= cur & (STATUS_SXL_MASK | STATUS_UXL_MASK);
-                DPRINTF(RiscvMisc, "Value after or: %#lx\n", val);
-                STATUS mstatus = val;
+                STATUS mstatus =
+                    ((cur & ~(NEMU_MSTATUS_WMASK)) | (val & NEMU_MSTATUS_WMASK));
                 mstatus.sd = mstatus.fs == 0x3 || mstatus.vs == 0x3;
                 setMiscRegNoEffect(misc_reg, mstatus);
             }

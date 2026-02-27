@@ -1697,10 +1697,11 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 cause = cpu->readMiscReg(
                     RiscvISA::MiscRegIndex::MISCREG_SCAUSE, tid);
             } else {
-                DPRINTF(Commit, "Force to raise exception at user mode\n");
+                DPRINTF(Commit,
+                        "Trap ended in unexpected PRV_U, fallback to MCAUSE\n");
                 assert(priv == RiscvISA::PRV_U);
                 cause = cpu->readMiscReg(
-                    RiscvISA::MiscRegIndex::MISCREG_UCAUSE, tid);
+                    RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
             }
             auto exception_no =inst_fault->exception();
             if (faultNum.find(exception_no) != faultNum.end()) {

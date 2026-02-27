@@ -6,11 +6,6 @@ on:
   # Removed pull_request trigger - moved to pr-quick-check.yml (Tier 1)
   # can be triggered manually
   workflow_dispatch:
-    inputs:
-      branch_name:
-        description: 'Branch to test (leave empty for current branch)'
-        required: false
-        type: string
 
 jobs:
   paralel_cpt_test:
@@ -146,5 +141,4 @@ jobs:
           mkdir -p $GEM5_HOME/util/xs_scripts/test_h
           cd $GEM5_HOME/util/xs_scripts/test_h
           bash ../kmh_6wide_h.sh /nfs/home/share/gem5_ci/checkpoints/gcbh_test.zstd
-
 

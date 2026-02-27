@@ -39,6 +39,13 @@ def template FloatExecute {{
         STATUS status = xc->readMiscReg(MISCREG_STATUS);
         if (status.fs == FPUStatus::OFF)
             return std::make_shared<IllegalInstFault>("FPU is off", machInst);
+        if (xc->readMiscReg(MISCREG_VIRMODE) == 1) {
+            VSSTATUS vsstatus = xc->readMiscReg(MISCREG_VSSTATUS);
+            if (vsstatus.fs == FPUStatus::OFF) {
+                return std::make_shared<IllegalInstFault>(
+                        "FPU is off in virtual mode", machInst);
+            }
+        }
 
         %(op_decl)s;
         %(op_rd)s;

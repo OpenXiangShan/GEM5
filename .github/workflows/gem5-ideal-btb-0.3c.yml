@@ -6,11 +6,6 @@ on:
   # Removed pull_request trigger, only can be triggered use *-align branches
 
   workflow_dispatch:
-    inputs:
-      branch_name:
-        description: 'Branch to test (leave empty for current branch)'
-        required: false
-        type: string
 
 jobs:
   perf_test:
