@@ -36,6 +36,7 @@
 #include <vector>
 
 #include "arch/riscv/faults.hh"
+#include "arch/riscv/memflags.hh"
 #include "arch/riscv/mmu.hh"
 #include "arch/riscv/page_size.hh"
 #include "arch/riscv/pagetable.hh"
@@ -73,6 +74,37 @@ using namespace RiscvISA;
 //
 //  RISC-V TLB
 //
+
+namespace
+{
+
+// Svpbmt uses PTE.PBMT, enabled by *envcfg.PBMTE.
+constexpr int PbmteBit = 62;
+
+inline bool
+pbmtEnabled(ThreadContext *tc)
+{
+    if (!tc)
+        return false;
+
+    const RegVal menvcfg = tc->readMiscRegNoEffect(MISCREG_MENVCFG);
+    const RegVal henvcfg = tc->readMiscRegNoEffect(MISCREG_HENVCFG);
+    return bits(menvcfg, PbmteBit, PbmteBit) || bits(henvcfg, PbmteBit, PbmteBit);
+}
+
+inline bool
+reservedPteBitsFault(ThreadContext *tc, const PTE &pte)
+{
+    // Reserved/unsupported encodings: Svnapot (N) not supported; PBMT=3
+    // reserved; PBMT non-zero requires PBMTE.
+    if (pte.reserved || pte.n || (pte.pbmt == 0x3))
+        return true;
+    if (pte.pbmt && !pbmtEnabled(tc))
+        return true;
+    return false;
+}
+
+} // anonymous namespace
 
 static Addr
 buildKey(Addr vpn, uint16_t asid, uint8_t translateMode)
@@ -1111,16 +1143,23 @@ TLB::l2TLBRemove(size_t idx, int choose)
 }
 
 Fault
-TLB::checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
-                      BaseMMU::Mode mode, PTE pte,Addr gpaddr,bool G)
+TLB::checkPermissions(ThreadContext *tc, STATUS status, PrivilegeMode pmode,
+                      Addr vaddr, BaseMMU::Mode mode, PTE pte, Addr gpaddr,
+                      bool G, bool hlvx)
 {
     Fault fault = NoFault;
 
-    if (mode == BaseMMU::Read && !pte.r) {
+    const bool exec_like = (mode == BaseMMU::Execute) ||
+        (mode == BaseMMU::Read && hlvx);
+
+    if (reservedPteBitsFault(tc, pte))
+        return createPagefault(vaddr, gpaddr, mode, G);
+
+    if (exec_like && !pte.x) {
+        fault = createPagefault(vaddr, gpaddr, mode, G);
+    } else if (!exec_like && mode == BaseMMU::Read && !pte.r) {
         fault = createPagefault(vaddr, gpaddr, mode, G);
     } else if (mode == BaseMMU::Write && !pte.w) {
-        fault = createPagefault(vaddr, gpaddr, mode, G);
-    } else if (mode == BaseMMU::Execute && !pte.x) {
         fault = createPagefault(vaddr, gpaddr, mode, G);
     }
 
@@ -1136,17 +1175,35 @@ TLB::checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
 }
 
 std::pair<bool, Fault>
-TLB::checkGPermissions(STATUS status,Addr vaddr,Addr gpaddr,BaseMMU::Mode mode, PTE pte,bool h_inst){
+TLB::checkGPermissions(ThreadContext *tc, STATUS status, Addr vaddr,
+                       Addr gpaddr, BaseMMU::Mode mode, PTE pte, bool hlvx)
+{
     bool continuePtw = false;
+    const bool exec_like = (mode == BaseMMU::Execute) ||
+        (mode == BaseMMU::Read && hlvx);
+
+    // For non-leaf entries, PBMT/N/reserved must be zero.
     if (pte.v && !pte.r && !pte.w && !pte.x) {
-        return std::make_pair(true,NoFault);
-    } else if (!pte.v || (!pte.r && pte.w)) {
+        if (pte.reserved || pte.n || pte.pbmt) {
+            return std::make_pair(continuePtw,
+                                  createPagefault(vaddr, gpaddr, mode, true));
+        }
+        return std::make_pair(true, NoFault);
+    }
+
+    if (reservedPteBitsFault(tc, pte)) {
+        return std::make_pair(continuePtw,
+                              createPagefault(vaddr, gpaddr, mode, true));
+    }
+
+    if (!pte.v || (!pte.r && pte.w)) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
     } else if (!pte.u) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
-    } else if (((mode == BaseMMU::Execute) || (h_inst)) && (!pte.x)) {
+    } else if (exec_like && (!pte.x)) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
-    } else if ((mode == BaseMMU::Read) && (!pte.r && !(status.mxr && pte.x))) {
+    } else if ((mode == BaseMMU::Read) && !hlvx &&
+               (!pte.r && !(status.mxr && pte.x))) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
     } else if ((mode == BaseMMU::Write) && !(pte.r && pte.w)) {
         return std::make_pair(continuePtw,createPagefault(vaddr, gpaddr, mode, true));
@@ -1215,7 +1272,8 @@ TLB::L2TLBPagefault(Addr vaddr, BaseMMU::Mode mode, const RequestPtr &req, bool 
 }
 
 Fault
-TLB::L2TLBCheck(PTE pte, int level, STATUS status, PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
+TLB::L2TLBCheck(ThreadContext *tc, PTE pte, int level, STATUS status,
+                PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode,
                 const RequestPtr &req, bool isPre, bool is_back_pre)
 {
     Fault fault = NoFault;
@@ -1234,7 +1292,10 @@ TLB::L2TLBCheck(PTE pte, int level, STATUS status, PrivilegeMode pmode, Addr vad
     } else {
         if (pte.r || pte.x) {
             hitInSp = true;
-            fault = checkPermissions(status, pmode, vaddr, mode, pte, 0, false);
+            fault = checkPermissions(tc, status, pmode, vaddr, mode, pte, 0, false,
+                (req->getFlags() &
+                    (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                    req->get_h_inst());
             if (fault == NoFault) {
                 if (level >= L2L1CheckLevel && pte.ppn0 != 0) {
                     fault = L2TLBPagefault(vaddr, mode, req, isPre, is_back_pre);
@@ -1255,6 +1316,12 @@ TLB::L2TLBCheck(PTE pte, int level, STATUS status, PrivilegeMode pmode, Addr vad
             }
 
         } else {
+            // Reserved/unsupported encodings in non-leaf PTE.
+            if (pte.reserved || pte.n || pte.pbmt) {
+                hitInSp = true;
+                fault = L2TLBPagefault(vaddr, mode, req, isPre, is_back_pre);
+                return fault;
+            }
             level--;
             if (level < 0) {
                 hitInSp = true;
@@ -1323,7 +1390,8 @@ TLB::sendPreHitOnHitRequest(TlbEntry *e_pre_1, TlbEntry *e_pre_2, const RequestP
         e_pre = e_pre_1;
     else
         e_pre = e_pre_2;
-    Fault pre_fault = L2TLBCheck(e_pre->pte, check_level, status, pmode, pre_block, mode, req, forward, !forward);
+    Fault pre_fault = L2TLBCheck(tc, e_pre->pte, check_level, status, pmode,
+                                 pre_block, mode, req, forward, !forward);
     if ((pre_fault == NoFault) && (!hitInSp) && pre_precision) {
         DPRINTF(TLBGPre, "pre_vaddr %#x\n", pre_block);
         walker->start(e_pre->pte.ppn, tc, translation, req, mode, forward, !forward, check_level - 1, true,
@@ -1392,14 +1460,22 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             }
-            fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pteVS, 0, false);
+            fault = checkPermissions(tc, status, pmode, vaddr, mode, e[0]->pteVS, 0,
+                false,
+                (req->getFlags() &
+                    (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                    req->get_h_inst());
             if (fault != NoFault) {
                 return std::make_pair(hit_type, fault);
             }
         }
         Addr fault_gpaddr = ((e[0]->gpaddr >> 12) << 12) | (vaddr & 0xfff);
 
-        std::pair(continuePtw,fault) = checkGPermissions(status,vaddr,fault_gpaddr,mode,e[0]->pte,req->get_h_inst());
+        std::pair(continuePtw,fault) = checkGPermissions(tc, status, vaddr,
+            fault_gpaddr, mode, e[0]->pte,
+            (req->getFlags() &
+                (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                req->get_h_inst());
         if (fault != NoFault) {
             return std::make_pair(hit_type, fault);
         }
@@ -1435,7 +1511,11 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 //return fault;
                 return std::make_pair(hit_type,fault);
             } else {
-                fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
+                fault = checkPermissions(tc, status, pmode, vaddr, mode, e[0]->pte, 0,
+                    false,
+                    (req->getFlags() &
+                        (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                        req->get_h_inst());
                 if (fault != NoFault) {
                     return std::make_pair(hit_type, fault);
                 }
@@ -1451,7 +1531,10 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
                 hit_type = h_l1GstageHit;
                 DPRINTF(TLB, "l1tlb hit in Gstage: level %d, ppn %#x\n", e[0]->level, e[0]->pte.ppn);
                 std::pair(continuePtw, fault) =
-                    checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                    checkGPermissions(tc, status, vaddr, gPaddr, mode, e[0]->pte,
+                        (req->getFlags() &
+                            (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                            req->get_h_inst());
                 if (e[0]->level >0){
                     pg_mask = (1ULL << (12 + 9 * e[0]->level)) - 1;
                     pgBase = ((e[0]->pte.ppn << 12) & ~pg_mask) | (gPaddr & pg_mask & ~PGMASK);
@@ -1541,7 +1624,10 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
             e_l2tlbGstage = e[0];
             gPaddr = req->getgPaddr();
             std::pair<bool, Fault> result =
-                checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                checkGPermissions(tc, status, vaddr, gPaddr, mode, e[0]->pte,
+                    (req->getFlags() &
+                        (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                        req->get_h_inst());
             continuePtw = result.first;
             fault = result.second;
             DPRINTF(TLB, "l2tlb hit in Gstage: "
@@ -1604,7 +1690,8 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
             e_l2tlbVsstage = e[0];
             hit_type = h_l2VSstageHitContinue;
             level = e[0]->level;
-            fault = L2TLBCheck(e[0]->pte, e[0]->level, vstatus, pmode, vaddr, mode, req, false, false);
+            fault = L2TLBCheck(tc, e[0]->pte, e[0]->level, vstatus, pmode,
+                               vaddr, mode, req, false, false);
             finishgva = hitInSp;
             req->setPte(e[0]->pte);
             uint64_t hit_vaddr = e[0]->vaddr;
@@ -1655,7 +1742,11 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
                     e_l2tlbGstage = e[0];
                     twoStageLevel = e[0]->level;
                     req->setgPaddr(gPaddr);
-                    auto check_res = checkGPermissions(status, vaddr, gPaddr, mode, e[0]->pte, req->get_h_inst());
+                    auto check_res = checkGPermissions(tc, status, vaddr, gPaddr,
+                        mode, e[0]->pte,
+                        (req->getFlags() &
+                            (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                            req->get_h_inst());
                     continuePtw = check_res.first;
                     fault = check_res.second;
                     DPRINTF(TLB, "found pte for gPaddr: %#x in Gstage -> "
@@ -1759,7 +1850,9 @@ TLB::doTwoStageTranslate(const RequestPtr &req, ThreadContext *tc,
             virt = status.mpv && (two_stage_pmode != PrivilegeMode::PRV_M);
         }
 
-        if (req->get_h_inst()) {
+        bool force_virt =
+            req->getFlags() & (Request::ARCH_BITS & XlateFlags::FORCE_VIRT);
+        if (force_virt || req->get_h_inst()) {
             virt = 1;
             two_stage_pmode = (PrivilegeMode)(RegVal)hstatus.spvp;
         }
@@ -1938,7 +2031,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     if (!e[0]) {  // look up l2tlb
         if (e[L_L2L0] && e[L_L2L0]->pte.v) {  // if hit in l2l0 (leaf 4KB page)
             DPRINTF(TLBVerbosel2, "hit in l2TLB l0\n");
-            fault = L2TLBCheck(e[L_L2L0]->pte, L2L0CheckLevel, status, pmode, vaddr, mode, req, false, false);
+            fault = L2TLBCheck(tc, e[L_L2L0]->pte, L2L0CheckLevel, status,
+                               pmode, vaddr, mode, req, false, false);
             if (hitInSp) {
                 e[0] = e[L_L2L0];
                 if (fault == NoFault) {
@@ -1987,7 +2081,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 
         } else if (e[L_L2sp1] && e[L_L2sp1]->pte.v) {  // hit in sp1
             DPRINTF(TLBVerbosel2, "hit in l2 tlb sp1\n");
-            fault = L2TLBCheck(e[L_L2sp1]->pte, L2L1CheckLevel, status, pmode, vaddr, mode, req, false, false);
+            fault = L2TLBCheck(tc, e[L_L2sp1]->pte, L2L1CheckLevel, status,
+                               pmode, vaddr, mode, req, false, false);
             if (hitInSp)
                 e[0] = e[L_L2sp1];
             auto [return_flag, fault_return] =
@@ -1996,7 +2091,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 return fault_return;
         } else if (e[L_L2sp2] && e[L_L2sp2]->pte.v) {  // hit in sp2
             DPRINTF(TLBVerbosel2, "hit in l2 tlb sp2\n");
-            fault = L2TLBCheck(e[L_L2sp2]->pte, L2L2CheckLevel, status, pmode, vaddr, mode, req, false, false);
+            fault = L2TLBCheck(tc, e[L_L2sp2]->pte, L2L2CheckLevel, status,
+                               pmode, vaddr, mode, req, false, false);
             if (hitInSp)
                 e[0] = e[L_L2sp2];
             auto [return_flag, fault_return] =
@@ -2005,7 +2101,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 return fault_return;
         } else if (satp.mode == AddrXlateMode::SV48 && e[L_L2sp3] && e[L_L2sp3]->pte.v) {  // hit in sp3
             DPRINTF(TLBVerbosel2, "hit in l2 tlb sp3\n");
-            fault = L2TLBCheck(e[L_L2sp3]->pte, L2L3CheckLevel, status, pmode, vaddr, mode, req, false, false);
+            fault = L2TLBCheck(tc, e[L_L2sp3]->pte, L2L3CheckLevel, status,
+                               pmode, vaddr, mode, req, false, false);
             if (hitInSp)
                 e[0] = e[L_L2sp3];
             auto [return_flag, fault_return] =
@@ -2015,7 +2112,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         } else if (e[L_L2L1] && e[L_L2L1]->pte.v) {
             DPRINTF(TLBVerbosel2, "hit in l2 tlb l1\n");
             DPRINTF(TLBVerbosel2, "hit ppn: %#x\n", e[L_L2L1]->pte.ppn);
-            fault = L2TLBCheck(e[L_L2L1]->pte, L2L1CheckLevel, status, pmode, vaddr, mode, req, false, false);
+            fault = L2TLBCheck(tc, e[L_L2L1]->pte, L2L1CheckLevel, status,
+                               pmode, vaddr, mode, req, false, false);
             if (hitInSp)
                 e[0] = e[L_L2L1];
             auto [return_flag, fault_return] =
@@ -2025,7 +2123,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         } else if (e[L_L2L2] && e[L_L2L2]->pte.v) {
             DPRINTF(TLBVerbosel2, "hit in l2 tlb l2\n");
             DPRINTF(TLBVerbosel2, "hit pte: %#x\n", e[L_L2L2]->pte);
-            fault = L2TLBCheck(e[L_L2L2]->pte, L2L2CheckLevel, status, pmode, vaddr, mode, req, false, false);
+            fault = L2TLBCheck(tc, e[L_L2L2]->pte, L2L2CheckLevel, status,
+                               pmode, vaddr, mode, req, false, false);
             if (hitInSp)
                 e[0] = e[L_L2L2];
             auto [return_flag, fault_return] =
@@ -2034,7 +2133,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 return fault_return;
         } else if (satp.mode == AddrXlateMode::SV48 && e[L_L2L3] && e[L_L2L3]->pte.v) {
             DPRINTF(TLBVerbosel2, "hit in l2 tlb l3\n");
-            fault = L2TLBCheck(e[L_L2L3]->pte, L2L3CheckLevel, status, pmode, vaddr, mode, req, false, false);
+            fault = L2TLBCheck(tc, e[L_L2L3]->pte, L2L3CheckLevel, status,
+                               pmode, vaddr, mode, req, false, false);
             if (hitInSp)
                 e[0] = e[L_L2L3];
             auto [return_flag, fault_return] =
@@ -2073,7 +2173,11 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
         DPRINTF(TLB, "final checkpermission\n");
         DPRINTF(TLB, "translate(vpn=%#x, asid=%#x): %#x pc %#x mode %i pte.d %d\n", vaddr, satp.asid, paddr,
                 req->getPC(), mode, e[0]->pte.d);
-        fault = checkPermissions(status, pmode, vaddr, mode, e[0]->pte, 0, false);
+        fault = checkPermissions(tc, status, pmode, vaddr, mode, e[0]->pte, 0,
+                                 false,
+            (req->getFlags() &
+                (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                req->get_h_inst());
     }
 
 
@@ -2149,7 +2253,10 @@ TLB::hasTwoStageTranslation(ThreadContext *tc, const RequestPtr &req, BaseMMU::M
 {
     STATUS status = (STATUS)tc->readMiscReg(MISCREG_STATUS);
     int v_mode = tc->readMiscReg(MISCREG_VIRMODE);
-    return (req->get_h_inst()) || (status.mprv && status.mpv) || v_mode;
+    bool force_virt =
+        req->getFlags() & (Request::ARCH_BITS & XlateFlags::FORCE_VIRT);
+    return force_virt || req->get_h_inst() || (status.mprv && status.mpv) ||
+        v_mode;
 }
 
 MMUMode
@@ -2314,7 +2421,9 @@ TLB::configVmodeInTLB(const RequestPtr &req, ThreadContext *tc,
             v_mode = status.mpv && (two_stage_pmode != PrivilegeMode::PRV_M);
         }
 
-        if (req->get_h_inst()) {
+        bool force_virt =
+            req->getFlags() & (Request::ARCH_BITS & XlateFlags::FORCE_VIRT);
+        if (force_virt || req->get_h_inst()) {
             v_mode = 1;
             two_stage_pmode = (PrivilegeMode)(RegVal)hstatus.spvp;
         }

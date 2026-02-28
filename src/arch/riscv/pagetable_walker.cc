@@ -55,6 +55,7 @@
 #include <numeric>
 
 #include "arch/riscv/faults.hh"
+#include "arch/riscv/memflags.hh"
 #include "arch/riscv/page_size.hh"
 #include "arch/riscv/pagetable.hh"
 #include "arch/riscv/tlb.hh"
@@ -76,6 +77,31 @@ namespace gem5
 {
 
 namespace RiscvISA {
+
+namespace
+{
+
+// Svpbmt uses PTE.PBMT, enabled by *envcfg.PBMTE. When PBMTE=0, any non-zero
+// PBMT is reserved and must raise a page fault (this is exercised by pbmt
+// tests).
+constexpr int PbmteBit = 62;
+
+inline bool
+pbmtEnabled(ThreadContext *tc, bool twoStage)
+{
+    if (!tc)
+        return false;
+
+    // This fork doesn't fully model all envcfg interactions; be conservative
+    // and accept PBMTE from either menvcfg/henvcfg depending on context.
+    const RegVal menvcfg = tc->readMiscRegNoEffect(MISCREG_MENVCFG);
+    const RegVal henvcfg = tc->readMiscRegNoEffect(MISCREG_HENVCFG);
+
+    return bits(twoStage ? henvcfg : menvcfg, PbmteBit, PbmteBit) ||
+           bits(twoStage ? menvcfg : henvcfg, PbmteBit, PbmteBit);
+}
+
+} // anonymous namespace
 
 std::pair<bool, Fault>
 Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
@@ -295,7 +321,9 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         fromBackPre = false;
         translateMode = twoStageMode;
         hgatp = _tc->readMiscReg(MISCREG_HGATP);
-        isHInst = _req->get_h_inst();
+        isHInst = (_req->getFlags() &
+                      (Request::ARCH_BITS & XlateFlags::HLVX)) ||
+                  _req->get_h_inst();
         isVsatp0Mode = _req->get_vsatp_0_mode();
         virt = _req->get_virt();
         GstageFault = false;
@@ -638,6 +666,9 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
 
     if (fault == NoFault) {
         if (pte.v && !pte.r && !pte.w && !pte.x) {
+            // Reserved/unsupported encodings in G-stage non-leaf PTE.
+            if (pte.reserved || pte.n || pte.pbmt)
+                return endGstageWalk();
             twoStageLevel--;
             if (twoStageLevel < 0) {
                 endWalk();
@@ -694,10 +725,12 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
         } else if (!pte.u) {
             endWalk();
             return endGstageWalk();
-        } else if (((mode == BaseMMU::Execute) || isHInst) && (!pte.x)) {
+        } else if (((mode == BaseMMU::Execute) ||
+                    (mode == BaseMMU::Read && isHInst)) && (!pte.x)) {
             endWalk();
             return endGstageWalk();
-        } else if ((mode == BaseMMU::Read) && (!pte.r && !(status.mxr && pte.x))) {
+        } else if ((mode == BaseMMU::Read) && !isHInst &&
+                   (!pte.r && !(status.mxr && pte.x))) {
             endWalk();
             return endGstageWalk();
         } else if ((mode == BaseMMU::Write) && !(pte.r && pte.w)) {
@@ -709,6 +742,12 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
             inGstage = false;
             doEndWalk = true;
             doLLwalk = true;
+
+            // Reserved/unsupported encodings in G-stage leaf PTE.
+            if (pte.reserved || pte.n || (pte.pbmt == 0x3) ||
+                (pte.pbmt && !pbmtEnabled(requestors.front().tc, /*twoStage*/true)))
+                return endGstageWalk();
+
             entry.gpaddr = gPaddr;
             entry.pte = pte;
             entry.logBytes = PageShift + (twoStageLevel * LEVEL_BITS);
@@ -906,10 +945,24 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
         } else {
             if (pte.r || pte.x) {
                 doEndWalk = true;
+
+                // Reserved/unsupported encodings in VS-stage leaf PTE.
+                if (pte.reserved || pte.n || (pte.pbmt == 0x3) ||
+                    (pte.pbmt && !pbmtEnabled(requestors.front().tc, /*twoStage*/true))) {
+                    GstageFault = false;
+                    fault = pageFault(true, false);
+                    endWalk();
+                    return fault;
+                }
+
                 if (virt) {
-                    fault = walker->tlb->checkPermissions(vsstatus, pmode, entry.vaddr, mode, pte, 0, false);
+                    fault = walker->tlb->checkPermissions(requestors.front().tc, vsstatus, pmode, entry.vaddr,
+                                                          mode, pte, 0, false,
+                                                          isHInst);
                 } else {
-                    fault = walker->tlb->checkPermissions(status, pmode, entry.vaddr, mode, pte, 0, false);
+                    fault = walker->tlb->checkPermissions(requestors.front().tc, status, pmode, entry.vaddr,
+                                                          mode, pte, 0, false,
+                                                          isHInst);
                 }
 
                 if (fault == NoFault) {
@@ -1013,6 +1066,13 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
                 }
 
             } else {
+                // Reserved/unsupported encodings in VS-stage non-leaf PTE.
+                if (pte.reserved || pte.n || pte.pbmt) {
+                    GstageFault = false;
+                    fault = pageFault(true, false);
+                    endWalk();
+                    return fault;
+                }
                 level--;
                 if (level < 0) {
                     doEndWalk = true;
@@ -1171,7 +1231,15 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
             if (pte.r || pte.x) {
                 // step 5: leaf PTE
                 doEndWalk = true;
-                fault = walker->tlb->checkPermissions(status, pmode, entry.vaddr, mode, pte, 0, false);
+                // Reserved/unsupported encodings in leaf PTE.
+                if (pte.reserved || pte.n || (pte.pbmt == 0x3) ||
+                    (pte.pbmt && !pbmtEnabled(requestors.front().tc, /*twoStage*/false))) {
+                    fault = pageFault(true, false);
+                } else {
+                    fault = walker->tlb->checkPermissions(requestors.front().tc, status, pmode, entry.vaddr,
+                                                          mode, pte, 0, false,
+                                                          isHInst);
+                }
                 // step 6
                 if (fault == NoFault) {
                     if (level >= 1 && pte.ppn0 != 0) {
@@ -1236,6 +1304,13 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                     }
                 }
             } else {
+                // Reserved/unsupported encodings in non-leaf PTE.
+                if (pte.reserved || pte.n || pte.pbmt) {
+                    doEndWalk = true;
+                    fault = pageFault(true, false);
+                    endWalk();
+                    return fault;
+                }
                 level--;
                 if (level < 0) {
                     DPRINTF(PageTableWalker3,
@@ -1609,8 +1684,13 @@ Walker::WalkerState::setupWalk(Addr ppn, Addr vaddr, int f_level, bool from_l2tl
     Addr topAddr;
     int top_level;
     if (translateMode == twoStageMode) {
-        panic_if(vsatp.mode == AddrXlateMode::BARE, "should be processed in isVsatpOMode.");
-        top_level = PTW_TOP_LEVEL(vsatp.mode);
+        // When VS-stage translation is disabled (vsatp.mode == BARE),
+        // we should skip the VS-stage page-table walk and treat the guest
+        // virtual address as the guest physical address (handled via
+        // isVsatp0Mode below).
+        panic_if(vsatp.mode == AddrXlateMode::BARE && !isVsatp0Mode,
+                 "vsatp.mode == AddrXlateMode::BARE should be processed in isVsatp0Mode.");
+        top_level = isVsatp0Mode ? 0 : PTW_TOP_LEVEL(vsatp.mode);
     } else {
         top_level = satp.mode == AddrXlateMode::SV48 ? 3: 2;
     }

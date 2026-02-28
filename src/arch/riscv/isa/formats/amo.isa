@@ -505,8 +505,9 @@ def format LoadReserved(memacc_code, postacc_code={{ }}, ea_code={{EA = Rs1;}},
     iop = InstObjParams(name, Name, 'LoadReservedMicro',
         {'ea_code': ea_code, 'memacc_code': memacc_code,
         'postacc_code': postacc_code}, inst_flags)
+    mem_flags = ['(Request::%s)' % flag for flag in mem_flags]
     iop.constructor += '\n\tmemAccessFlags = memAccessFlags | ' + \
-        '|'.join(['Request::%s' % flag for flag in mem_flags]) + ';'
+        '|'.join(mem_flags) + ';'
 
     header_output += LRSCMicroDeclare.subst(iop)
     decoder_output += LRSCMicroConstructor.subst(iop)
@@ -533,8 +534,9 @@ def format StoreCond(memacc_code, postacc_code={{ }}, ea_code={{EA = Rs1;}},
     iop = InstObjParams(name, Name, 'StoreCondMicro',
         {'ea_code': ea_code, 'memacc_code': memacc_code,
         'postacc_code': postacc_code}, inst_flags)
+    mem_flags = ['(Request::%s)' % flag for flag in mem_flags]
     iop.constructor += '\n\tmemAccessFlags = memAccessFlags | ' + \
-        '|'.join(['Request::%s' % flag for flag in mem_flags]) + ';'
+        '|'.join(mem_flags) + ';'
 
     header_output += LRSCMicroDeclare.subst(iop)
     decoder_output += LRSCMicroConstructor.subst(iop)
@@ -564,9 +566,9 @@ def format AtomicMemOp(memacc_code, amoop_code, postacc_code={{ }},
                              'postacc_code': postacc_code,
                              'amoop_code': amoop_code},
                             rmw_inst_flags)
-
+    rmw_mem_flags = ['(Request::%s)' % flag for flag in rmw_mem_flags]
     rmw_iop.constructor += '\n\tmemAccessFlags = memAccessFlags | ' + \
-          '|'.join(['Request::%s' % flag for flag in rmw_mem_flags]) + ';'
+          '|'.join(rmw_mem_flags) + ';'
 
     header_output += AtomicMemOpRMWDeclare.subst(rmw_iop)
     decoder_output += AtomicMemOpRMWConstructor.subst(rmw_iop)

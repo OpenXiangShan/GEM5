@@ -75,8 +75,10 @@ output decoder {{
 
 #include "arch/riscv/decoder.hh"
 #include "arch/riscv/faults.hh"
+#include "arch/riscv/memflags.hh"
 #include "arch/riscv/mmu.hh"
 #include "arch/riscv/regs/float.hh"
+#include "arch/riscv/regs/misc.hh"
 #include "base/cprintf.hh"
 #include "base/loader/symtab.hh"
 #include "cpu/thread_context.hh"
