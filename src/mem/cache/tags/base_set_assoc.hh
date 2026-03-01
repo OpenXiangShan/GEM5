@@ -187,15 +187,17 @@ class BaseSetAssoc : public BaseTags
         return victim;
     }
 
-
-
-// for replacement data
+    /**
+     * Update the replacement policy for a block.
+     * 
+     * @param blk The block to update.
+     * @param priority The priority to set for the block in the replacement policy.
+     */
     void updateRp(CacheBlk* blk,int priority) override
     {
         replacementPolicy->reset4memtrace(blk->replacementData,priority);
     }
 
-    
     /**
      * Insert the new block into the cache and update replacement data.
      *

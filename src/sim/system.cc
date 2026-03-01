@@ -202,7 +202,6 @@ System::System(const Params &p)
       redirectPaths(p.redirect_paths),
       xiangshanSystem(p.xiangshan_system)
 {
-    std::cout << "lixu System "<< p.restore_from_memtrace <<std::endl;
     panic_if(!workload, "No workload set for system %s "
             "(could use StubWorkload?).", name());
     workload->setSystem(this);

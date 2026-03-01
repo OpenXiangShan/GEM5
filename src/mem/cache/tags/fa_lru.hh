@@ -230,20 +230,25 @@ class FALRU : public BaseTags
      */
     void insertBlock(const PacketPtr pkt, CacheBlk *blk) override;
 
-    // for replacement data
+    /**
+     * Update the replacement policy for a block.
+     * 
+     * @param blk The block to update.
+     * @param priority The priority to set for the block in the replacement policy.
+     */
     void updateRp(CacheBlk* blk,int priority) override
     {
       FALRUBlk* falruBlk = static_cast<FALRUBlk*>(blk);
 
       // Make sure block is not present in the cache
       assert(falruBlk->inCachesMask == 0);
-  
+
       // New block is the MRU
       moveToHead(falruBlk);
-  
+
       // Insert new block in the hash table
       tagHash[std::make_pair(blk->getTag(), blk->isSecure())] = falruBlk;
-      
+
     }
   
 

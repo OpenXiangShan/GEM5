@@ -192,6 +192,7 @@ simulate(Tick num_cycles)
                                         curTick() + num_cycles : MaxTick;
 
     inform("Entering event queue @ %d.  Starting simulation...\n", curTick());
+
     if (!simulatorThreads)
         simulatorThreads.reset(new SimulatorThreads(numMainEventQueues));
 
@@ -201,18 +202,22 @@ simulate(Tick num_cycles)
             "simulate() limit reached", 0);
     }
     simulate_limit_event->reschedule(exit_tick);
+
     if (numMainEventQueues > 1) {
         fatal_if(simQuantum == 0,
                  "Quantum for multi-eventq simulation not specified");
+
         quantum_event.reset(
             new GlobalSyncEvent(curTick() + simQuantum, simQuantum,
                                 EventBase::Progress_Event_Pri, 0));
 
         inParallelMode = true;
     }
+
     simulatorThreads->runUntilLocalExit();
     Event *local_event = doSimLoop(mainEventQueue[0]);
     assert(local_event);
+
     inParallelMode = false;
 
     // locate the global exit event and return it to Python

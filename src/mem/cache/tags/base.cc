@@ -55,7 +55,6 @@
 #include "sim/sim_exit.hh"
 #include "sim/system.hh"
 
-// memtrace includes
 #include <iostream>
 #include <zlib.h>
 #include <cstdio>
@@ -324,13 +323,13 @@ BaseTags::BaseTagStats::preDumpStats()
 
 
 // restore L3 cache microarchitecture states based on memtrace
-void 
+void
 BaseTags::warmupState(const std::string &pmem_file,const std::string &memtrace_file)
 {
      std::ifstream file(memtrace_file);         // the file contains the microarchitecture states from memtrace
      if(!file.is_open())
      {
-        std::cout << "无法打开文件：" << memtrace_file << std::endl;
+        std::cout << "File open failed:" << memtrace_file << std::endl;
      };
      std::string line;
     std::string taskid;
@@ -407,7 +406,7 @@ BaseTags::warmupState(const std::string &pmem_file,const std::string &memtrace_f
     char result_buffer[size + 1];
     size_t bytes_read = query_in_memory(decompressed_data, h_addr, result_buffer, size);
     std::memcpy(victim->data + offset, result_buffer, size);
-    victim->setWhenReady(curTick()); 
+    victim->setWhenReady(curTick());
         }
         else if(myvalid != '1')
         {
@@ -426,7 +425,7 @@ BaseTags::decompress_gz_to_memory(const std::string& gz_path) {
     std::vector<char> out_buffer(CHUNK_SIZE * 2);
     std::ifstream gz_file(gz_path, std::ios_base::binary);
     if (!gz_file.is_open()) {
-        throw std::runtime_error("无法打开文件: " + gz_path);
+        throw std::runtime_error("File open failed: " + gz_path);
     }
     z_stream strm;
     strm.zalloc = Z_NULL;
@@ -434,7 +433,7 @@ BaseTags::decompress_gz_to_memory(const std::string& gz_path) {
     strm.opaque = Z_NULL;
     int ret = inflateInit2(&strm, MAX_WBITS | 16);
     if (ret != Z_OK) {
-        throw std::runtime_error("inflateInit2 失败: " + std::to_string(ret));
+        throw std::runtime_error("inflateInit2 falied: " + std::to_string(ret));
     }
 
     while (true) {
@@ -457,7 +456,7 @@ BaseTags::decompress_gz_to_memory(const std::string& gz_path) {
             if (ret == Z_STREAM_ERROR) {
                 inflateEnd(&strm);
                 gz_file.close();
-                throw std::runtime_error("inflate 失败: " + std::to_string(ret));
+                throw std::runtime_error("inflate failed: " + std::to_string(ret));
             }
 
             size_t bytes_decompressed = out_buffer.size() - strm.avail_out;
@@ -477,15 +476,14 @@ BaseTags::decompress_gz_to_memory(const std::string& gz_path) {
     if (ret != Z_STREAM_END) {
          inflateEnd(&strm);
          gz_file.close();
-         throw std::runtime_error("解压未正常结束，可能是文件损坏。zlib 返回码: " + std::to_string(ret));
+         throw std::runtime_error("Decompression did not complete normally, the file may be corrupted. zlib return code: " + std::to_string(ret));
     }
 
     inflateEnd(&strm);
     gz_file.close();
-    std::cout << "解压完成！" << std::endl;
     return decompressed_data;
 }
-size_t 
+size_t
 BaseTags::query_in_memory(const std::vector<char>& data,
                        uint64_t target_address,
                        char* result,
@@ -495,7 +493,7 @@ BaseTags::query_in_memory(const std::vector<char>& data,
     }
 
     if (target_address >= data.size()) {
-        throw std::out_of_range("目标地址 0x" + std::to_string(target_address) + " 超出解压后数据范围。");
+        throw std::out_of_range("The destination address 0x "+ std::to_string(target_address) + " is out of the unzipped data range.");
     }
 
     size_t bytes_to_copy = std::min(max_result_length, data.size() - static_cast<size_t>(target_address));

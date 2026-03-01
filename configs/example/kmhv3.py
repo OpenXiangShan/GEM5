@@ -162,7 +162,6 @@ def setKmhV3Params(args, system):
         system.l3.prefetch_can_offload = False
         system.l3.num_slices = 4
 
-
 if __name__ == '__m5_main__':
     FutureClass = None
 

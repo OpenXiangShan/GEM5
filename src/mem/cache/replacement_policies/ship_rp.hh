@@ -152,9 +152,10 @@ class SHiP : public BRRIP
         const PacketPtr pkt) override;
     void reset(const std::shared_ptr<ReplacementData>& replacement_data) const
         override;
+
     void reset4memtrace(const std::shared_ptr<ReplacementData>& replacement_data,int priority) const override
-    { 
-    }   
+    {
+    }
     /**
      * Instantiate a replacement data entry.
      *

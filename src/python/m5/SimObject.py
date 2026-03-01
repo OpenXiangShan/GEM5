@@ -607,7 +607,6 @@ class SimObject(object, metaclass=MetaSimObject):
         """Load SimObject state from a checkpoint"""
         pass
 
-    # memtrace
     @cxxMethod
     def warmupState(self, cache_restore_dir,cpt_dir):
         """restore L3 microarchitecture state from a memtrace"""
