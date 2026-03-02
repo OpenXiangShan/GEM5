@@ -143,7 +143,7 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--caches", action="store_true")
     parser.add_argument("--l2cache", action="store_true")
     parser.add_argument("--l3cache", action="store_true")
-    parser.add_argument("--xs-l3", action="store_true",
+    parser.add_argument("--xs-l3", action="store_true", default=False
                         help="use aligned sliced xs-L3 wrapper/slice implementation")
     parser.add_argument("--no-l3cache", action="store_true")
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
@@ -173,7 +173,7 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l3-data-sram-banks", type=int, default=1)
     parser.add_argument("--l3-dir-sram-banks", type=int, default=1)
     parser.add_argument("--l3-dir-write-stage", type=int, default=3)
-    parser.add_argument("--l3-dir-read-bypass", action="store_true")
+    parser.add_argument("--l3-dir-read-bypass", action="store_true", default=True)
 
     parser.add_argument("--cacheline_size", type=int, default=64)
     parser.add_argument("--ideal-cache", action="store_true")
