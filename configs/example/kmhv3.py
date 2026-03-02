@@ -157,10 +157,17 @@ def setKmhV3Params(args, system):
 
     # l3 cache
     if args.l3cache:
-        system.l3.mshrs = 64
-        system.l3.do_fast_writeline = False
-        system.l3.prefetch_can_offload = False
-        system.l3.num_slices = 4
+        if hasattr(system, 'l3_wrapper'):
+            for l3_slice in system.l3_wrapper.slices:
+                l3_slice.inner_cache.mshrs = max(1, 64 // int(args.l3_slices))
+                l3_slice.inner_cache.do_fast_writeline = False
+                l3_slice.inner_cache.prefetch_can_offload = False
+                l3_slice.inner_cache.num_slices = 0
+        else:
+            system.l3.mshrs = 64
+            system.l3.do_fast_writeline = False
+            system.l3.prefetch_can_offload = False
+            system.l3.num_slices = 4
 
 if __name__ == '__m5_main__':
     FutureClass = None

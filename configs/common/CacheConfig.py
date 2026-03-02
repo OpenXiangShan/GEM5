@@ -192,6 +192,87 @@ def config_aligned_l2(options, system, l2_cache_class):
         # Connect the wrapper to the L1-L2 bus
         l2_wrapper.cpu_side = system.tol2bus_list[i].mem_side_ports
 
+def config_aligned_l3(options, system, l3_cache_class):
+    num_l3_slices = options.l3_slices
+    system.l3_wrapper = L3CacheWrapper(
+        clk_domain=system.cpu_clk_domain,
+        num_slices=num_l3_slices,
+        cache_size=options.l3_size,
+        cache_assoc=options.l3_assoc,
+        block_bits=int(math.log2(system.cache_line_size)),
+        pipe_dir_write_stage=options.l3_dir_write_stage,
+        dir_read_bypass=options.l3_dir_read_bypass,
+        data_sram_banks=options.l3_data_sram_banks,
+        dir_sram_banks=options.l3_dir_sram_banks)
+
+    system.l3_wrapper.xbar = CoherentXBar(
+        clk_domain=system.cpu_clk_domain,
+        width=512,
+        frontend_latency=0,
+        forward_latency=0,
+        response_latency=0,
+        header_latency=0,
+        snoop_response_latency=0,
+        snoop_filter=SnoopFilter(lookup_latency=0),
+        point_of_unification=True,
+        point_of_coherency=True)
+
+    system.l3_wrapper.slices = [L3CacheSlice(
+        clk_domain=system.cpu_clk_domain,
+        buffer_size=options.l3_buffer_size,
+        pipeline_depth=options.l3_pipe_depth)
+        for _ in range(num_l3_slices)]
+
+    if not options.no_pf:
+        system.l3_wrapper.prefetcher = create_prefetcher(NULL, 'l3_wrapper', options)
+
+    for j in range(num_l3_slices):
+        cache_slice = system.l3_wrapper.slices[j]
+        inner_cache = l3_cache_class(
+            clk_domain=system.cpu_clk_domain,
+            **_get_cache_opts(NULL, 'l3', options))
+        cache_slice.inner_cache = inner_cache
+
+        # Real cache size/mshrs are split into slices.
+        inner_cache.size = inner_cache.size / num_l3_slices
+        assert(int(inner_cache.mshrs) % num_l3_slices == 0)
+        inner_cache.mshrs = int(inner_cache.mshrs) // num_l3_slices
+
+        # Keep legacy L3 behavior for line write optimization.
+        inner_cache.do_fast_writeline = not options.kmh_align
+
+        if hasattr(inner_cache, 'tags') and \
+           hasattr(inner_cache.tags, 'indexing_policy') and \
+           hasattr(inner_cache.tags.indexing_policy, 'num_slices') and \
+           hasattr(inner_cache.tags.indexing_policy, 'slice_idx'):
+            inner_cache.tags.indexing_policy.num_slices = num_l3_slices
+            inner_cache.tags.indexing_policy.slice_idx = j
+
+        if isinstance(inner_cache.replacement_policy, DRRIPRP):
+            inner_cache.replacement_policy.num_slices = num_l3_slices
+            inner_cache.replacement_policy.num_sets_per_slice = \
+                inner_cache.size // (64 * inner_cache.assoc)
+
+        system.l3_wrapper.addCacheAccessor(inner_cache)
+        system.l3_wrapper.addSliceAccessor(cache_slice)
+        cache_slice.setCacheAccessor(inner_cache)
+
+        if (not options.no_pf) and options.l3_hwp_type == 'PrefetcherForwarder' and \
+                system.l3_wrapper.prefetcher != NULL:
+            inner_cache.prefetcher.setRealPrefetcher(system.l3_wrapper.prefetcher)
+
+        # Connect the slice inner ports to the actual cache.
+        cache_slice.inner_cpu_port = inner_cache.cpu_side
+        inner_cache.mem_side = cache_slice.inner_mem_port
+
+        # Connect slice to wrapper and internal xbar.
+        cache_slice.cpu_side = system.l3_wrapper.slice_cpuside_ports
+        system.l3_wrapper.xbar.cpu_side_ports = cache_slice.mem_side
+
+    # External connectivity.
+    system.l3_wrapper.cpu_side = system.tol3bus.mem_side_ports
+    system.l3_wrapper.xbar.mem_side_ports = system.membus.cpu_side_ports
+
 def config_cache(options, system):
     if options.external_memory_system and (options.caches or options.l2cache):
         print("External caches and internal caches are exclusive options.\n")
@@ -262,8 +343,6 @@ def config_cache(options, system):
                 system.tol2bus_list[i].width = 256 # byte per cycle
 
         if options.l3cache:
-            system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
-                                        **_get_cache_opts(NULL, 'l3', options))
             system.tol3bus = L2ToL3Bus(clk_domain=system.cpu_clk_domain)
             if not options.classic_l2:
                 # In Aligned L2, an extra 4 cycles are simulated in L2Cache Pipeline, instead of L2ToL3Bus
@@ -271,10 +350,14 @@ def config_cache(options, system):
                 assert int(system.tol3bus.response_latency) >= 4
                 system.tol3bus.response_latency -= 4
             system.tol3bus.snoop_filter.max_capacity = "32MB"
-            system.l3.cpu_side = system.tol3bus.mem_side_ports
-            system.l3.mem_side = system.membus.cpu_side_ports
-
-            system.l3.do_fast_writeline = not options.kmh_align
+            if options.xs_l3:
+                config_aligned_l3(options, system, L3Cache)
+            else:
+                system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
+                                    **_get_cache_opts(NULL, 'l3', options))
+                system.l3.cpu_side = system.tol3bus.mem_side_ports
+                system.l3.mem_side = system.membus.cpu_side_ports
+                system.l3.do_fast_writeline = not options.kmh_align
 
         for i in range(options.num_cpus):
             if options.l3cache:
@@ -313,9 +396,9 @@ def config_cache(options, system):
                 dcache.prefetcher.add_pf_downstream(l2_prefetcher)
 
             if (not options.no_pf) and options.l3cache and options.l2_to_l3_pf_hint:
-                assert l2_prefetcher != NULL and \
-                    system.l3.prefetcher != NULL
-                l2_prefetcher.add_pf_downstream(system.l3.prefetcher)
+                l3_pf = system.l3_wrapper.prefetcher if options.xs_l3 else system.l3.prefetcher
+                assert l2_prefetcher != NULL and l3_pf != NULL
+                l2_prefetcher.add_pf_downstream(l3_pf)
 
             # If we have a walker cache specified, instantiate two
             # instances here

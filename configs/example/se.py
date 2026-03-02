@@ -350,7 +350,11 @@ def setKmhV3IdealParams(args, system):
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
 
     if args.l3cache:
-        system.l3.mshrs = 128
+        if hasattr(system, 'l3_wrapper'):
+            for l3_slice in system.l3_wrapper.slices:
+                l3_slice.inner_cache.mshrs = max(1, 128 // int(args.l3_slices))
+        else:
+            system.l3.mshrs = 128
 
 if args.ruby:
     Ruby.create_system(args, False, system)

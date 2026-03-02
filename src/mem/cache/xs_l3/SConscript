@@ -1,0 +1,16 @@
+Import('*')
+
+SimObject('L3CacheWrapper.py', sim_objects=[
+    'L3CacheSlice', 'L3CacheWrapper'
+])
+
+Source('L3CacheSlice.cc')
+Source('L3CacheWrapper.cc')
+Source('L3MainPipe.cc')
+Source('L3RequestBuffer.cc')
+Source('L3RequestArbiter.cc')
+Source('L3SlicedCacheAccessor.cc')
+
+DebugFlag('L3CacheSlice')
+DebugFlag('L3CacheWrapper')
+DebugFlag('L3MainPipe')
