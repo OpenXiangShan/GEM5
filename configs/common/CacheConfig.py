@@ -214,8 +214,7 @@ def config_aligned_l3(options, system, l3_cache_class):
         header_latency=0,
         snoop_response_latency=0,
         snoop_filter=SnoopFilter(lookup_latency=0),
-        point_of_unification=True,
-        point_of_coherency=True)
+        point_of_unification=True)
 
     system.l3_wrapper.slices = [L3CacheSlice(
         clk_domain=system.cpu_clk_domain,
