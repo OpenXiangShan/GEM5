@@ -945,6 +945,7 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         auto &foldedHistQueuefront = aheadindexFoldedHist.front();
         for (int i = 0; i < numPredictors; i++) {
             foldedHistQueuefront[i].recover(predMeta->indexFoldedHist[i]);
+            indexFoldedHist[i].recover(foldedHistQueuefront[i]);
         }
     }
     if (debug::TAGEHistory && !aheadindexFoldedHist.empty()) {
