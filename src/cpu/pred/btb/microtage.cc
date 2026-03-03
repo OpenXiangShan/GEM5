@@ -852,6 +852,11 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
         boost::to_string(history, buf);
         DPRINTF(TAGEHistory, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
     }
+
+    if (!aheadindexFoldedHist.empty()) {
+        indexFoldedHist = aheadindexFoldedHist.front();
+    }
+
     if (!taken) {
         if (debug::TAGEHistory && !aheadindexFoldedHist.empty()) {
             bool mismatch = false;
