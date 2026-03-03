@@ -792,7 +792,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 #endif
 
     // Only update tables if prediction was wrong or confidence was low
-    if (sc_pred_taken != actual_taken || abs(total_sum) < total_thres) {
+    if (sc_pred_taken != actual_taken || abs(total_sum) < (total_thres / 2)) {
         // get weight table index from startPC
         Addr weightTableIdx = getPcIndex(stream.startPC, weightTableIdxWidth);
         bool threshold_inc = (sc_pred_taken != actual_taken);
