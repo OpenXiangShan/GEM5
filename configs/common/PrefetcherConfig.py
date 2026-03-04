@@ -95,7 +95,9 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
 
     if cache_level == 'l3':
-        if options.l2_to_l3_pf_hint:
+        if options.xs_l3:
+            assert prefetcher_name == 'PrefetcherForwarder'
+        elif options.l2_to_l3_pf_hint:
             prefetcher.queue_size = 64
             prefetcher.max_prefetch_requests_with_pending_translation = 128
 
