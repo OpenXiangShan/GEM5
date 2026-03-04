@@ -157,6 +157,7 @@ BTBMGSC::BTBMGSC()
       enablePTable(true),
       enableBiasTable(true),
       enablePCThreshold(false),
+      focusBranchPC(0),
       mgscStats()
 {
     // Test-only small config: keep tables tiny and deterministic for fast unit tests.
@@ -204,6 +205,7 @@ BTBMGSC::BTBMGSC(const Params &p)
       enablePTable(p.enablePTable),
       enableBiasTable(p.enableBiasTable),
       enablePCThreshold(p.enablePCThreshold),
+      focusBranchPC(p.focusBranchPC),
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
@@ -779,7 +781,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 
 #ifndef UNIT_TEST
     // Write trace record
-    if (enableDB) {
+    if (enableDB && (focusBranchPC == 0 || entry.pc == focusBranchPC)) {
         MgscTrace t;
         t.set(entry.pc,
             tage_pred_taken, pred.tage_conf_high, pred.tage_conf_mid, pred.tage_conf_low,

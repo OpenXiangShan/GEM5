@@ -351,6 +351,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     bool enablePTable;
     bool enableBiasTable;
     bool enablePCThreshold;
+    Addr focusBranchPC;
 
     // Folded history for index calculation
     std::vector<GlobalBwFoldedHist> indexBwFoldedHist;
@@ -522,6 +523,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static bool &enablePTable(BTBMGSC &mgsc) { return mgsc.enablePTable; }
         static bool &enableBiasTable(BTBMGSC &mgsc) { return mgsc.enableBiasTable; }
         static bool &enablePCThreshold(BTBMGSC &mgsc) { return mgsc.enablePCThreshold; }
+        static Addr &focusBranchPC(BTBMGSC &mgsc) { return mgsc.focusBranchPC; }
 
         static auto &bwTable(BTBMGSC &mgsc) { return mgsc.bwTable; }
         static auto &lTable(BTBMGSC &mgsc) { return mgsc.lTable; }

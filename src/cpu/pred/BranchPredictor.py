@@ -1152,6 +1152,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     enablePTable = Param.Bool(True, "Enable P (path) table")
     enableBiasTable = Param.Bool(True, "Enable Bias table")
     enablePCThreshold = Param.Bool(False, "Enable PC-indexed threshold table")
+    focusBranchPC = Param.Addr(0, "Only write MGSCTRACE for this branch PC when non-zero")
 
     numDelay = 2
 
