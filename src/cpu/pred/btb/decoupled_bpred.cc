@@ -703,7 +703,7 @@ DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<>
     if (shamt == 0) {
         return;
     }
-    if(taken){
+    if (taken){
         // Calculate path hash
         uint64_t hash = pathHash(pc, target);
 
@@ -909,11 +909,14 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     for (int i = 0; i < numComponents; i++) {
         // use old s0History to update folded history, then use finalPred to update folded history
         components[i]->specUpdateHist(s0History, finalPred);
-        if(components[i]->needMoreHistories){
+        if (components[i]->needMoreHistories){
             components[i]->specUpdatePHist(s0PHistory, finalPred);
             components[i]->specUpdateBwHist(s0BwHistory, finalPred);
             components[i]->specUpdateIHist(finalPred);
             components[i]->specUpdateLHist(s0LHistory, finalPred);
+        }
+        if (components[i]->needGBHR){
+            components[i]->specUpdateGBHR(finalPred);
         }
     }
 
@@ -1010,6 +1013,9 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
             components[i]->recoverBwHist(s0BwHistory, target, real_bw_shamt, real_bw_taken);
             components[i]->recoverIHist(target, real_bw_shamt, real_bw_taken);
             components[i]->recoverLHist(s0LHistory, target, real_shamt, real_taken);
+        }
+        if (components[i]->needGBHR){
+            components[i]->recoverGBHR(target, real_shamt, real_taken);
         }
     }
 

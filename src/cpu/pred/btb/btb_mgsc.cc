@@ -49,7 +49,7 @@ BTBMGSC::initStorage()
     auto allocPredTable = [&](std::vector<std::vector<std::vector<int16_t>>> &table, unsigned numTables,
                               unsigned idxWidth) -> uint64_t {
         table.resize(numTables);
-        auto tableSize = pow2(idxWidth);
+        auto tableSize = pow2(idxWidth); //table total bit count
         assert(tableSize > numCtrsPerLine);
         for (unsigned int i = 0; i < numTables; ++i) {
             table[i].resize(tableSize / numCtrsPerLine, std::vector<int16_t>(numCtrsPerLine, 0));
@@ -109,6 +109,17 @@ BTBMGSC::initStorage()
     pWeightTable.resize(weightTableSize);
     biasWeightTable.resize(weightTableSize);
 
+    //perception weightTable init
+    auto allocWeightTable = [&](std::vector<std::vector<int16_t>> &table,unsigned numEntries) -> uint64_t {
+        assert(isPowerOf2(numEntries));
+        table.resize(numEntries);
+        for (unsigned int i = 0; i<numEntries;++i){
+            table[i].resize(gbhrLen+1,PercepInitWeight);
+        }
+    }
+    auto percepWeightTableSize = allocWeightTable(percepWeightTable,percepTableEntryNum);
+    gbhr.resize(gbhrLen);
+
     pUpdateThreshold.resize(pow2(thresholdTablelogSize));
 }
 
@@ -163,7 +174,7 @@ BTBMGSC::BTBMGSC()
     // MGSC uses multiple histories (GHR/PHR/BWHR/LHR). Keep it enabled in unit tests so we can
     // build training-loop style tests that exercise each table.
     needMoreHistories = true;
-
+    needGBHR = true;
     initStorage();
     updateThreshold = 35 * 8;
 }
@@ -208,6 +219,7 @@ BTBMGSC::BTBMGSC(const Params &p)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
     this->needMoreHistories = p.needMoreHistories;
+    this->needGBHR = p.needGBHR;
     initStorage();
     updateThreshold = 35 * 8;
 
@@ -270,7 +282,7 @@ BTBMGSC::tickStart()
  */
 int
 BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &table,
-                          const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc)
+                          const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc)//根据指定pc和index，计算计数器和
 {
     int percsum = 0;
     for (unsigned int i = 0; i < numTables; ++i) {
@@ -281,6 +293,21 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &
     return percsum;
 }
 
+int
+BTBMGSC::calculatePercepSum(Addr pc)
+{
+    int index = pc % numEntries;
+    auto weight = percepWeightTable[index];
+
+    int bias = 1;
+    int percep_sum = bias * weight[0];
+    for (int i=0;i<gbhrLen;i++){
+        percep_sum += ((gbhr[i]?1:-1)*weight[i+1]);
+    }
+    return percep_sum;
+}
+
+
 /**
  * Find weight in a weight table for a given PC
  * @param weightTable The weight table to search
@@ -289,7 +316,7 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &
  * @return Found weight or 0 if not found
  */
 int
-BTBMGSC::findWeight(const std::vector<int16_t> &weightTable, Addr pc)
+BTBMGSC::findWeight(const std::vector<int16_t> &weightTable, Addr pc)//根据pc寻找对应表项权重值
 {
     auto mask = (1 << weightTableIdxWidth) - 1;
     auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
@@ -313,7 +340,7 @@ BTBMGSC::calculateScaledPercsum(int weight, int percsum)
  * @return Found threshold or default value if not found
  */
 int
-BTBMGSC::findThreshold(const std::vector<int16_t> &thresholdTable, Addr pc)
+BTBMGSC::findThreshold(const std::vector<int16_t> &thresholdTable, Addr pc)//寻找阈值
 {
     auto mask = (1 << thresholdTablelogSize) - 1;
     auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
@@ -408,13 +435,18 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     int total_sum = bw_scaled_percsum + l_scaled_percsum + i_scaled_percsum + g_scaled_percsum + p_scaled_percsum +
                     bias_scaled_percsum;
 
+    //genertate perception prediction
+    int percep_sum = enablePerceptionPred ? calculatePercepSum(btb_entry.pc) : 0;
+    int percep_index = pc % numEntries;
     // Find thresholds
     // pc-indexed threshold table (only if enabled)
     int p_update_thres = enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.pc) : 0;
 
     int total_thres = (updateThreshold / 8) + p_update_thres;
+    int percep_thres = gbhrLen / 2;
 
     bool use_sc_pred = forceUseSC;  // Force use SC if configured
+    bool use_percep_pred = false;
     if (!use_sc_pred) {
         if (tage_info.tage_pred_conf_high) {
             if (abs(total_sum) > total_thres / 2) {
@@ -430,8 +462,10 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
             }
         }
     }
+    if (abs(percep_sum) > percep_thres)
+        use_percep_pred = true;
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
-    bool taken = use_sc_pred ? (total_sum >= 0) : tage_info.tage_pred_taken;
+    bool taken = use_sc_pred ? (use_percep_pred? percep_sum>=0 : total_sum >= 0) : tage_info.tage_pred_taken;
 
     // DPRINTF(MGSC, "global tag_index: %d, global_percsum: %d, total_sum: %d\n", gIndex[0], g_percsum, total_sum);
     // DPRINTF(MGSC, "local tag_index: %d, local_percsum: %d, total_sum: %d\n", lIndex[0], l_percsum, total_sum);
@@ -447,11 +481,13 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     DPRINTF(MGSC, "sc predict %#lx taken %d\n", btb_entry.pc, taken);
 
-    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, tage_info.tage_pred_taken,
+    return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, tage_info.tage_pred_taken,use_percep_pred,
                           tage_info.tage_pred_conf_high, tage_info.tage_pred_conf_mid, tage_info.tage_pred_conf_low,
-                          total_thres, bwIndex, lIndex, iIndex, gIndex, pIndex, biasIndex, bw_weight_scale_diff,
+                          total_thres, bwIndex, lIndex, iIndex, gIndex, pIndex, biasIndex, percep_index,
+                          bw_weight_scale_diff,
                           l_weight_scale_diff, i_weight_scale_diff, g_weight_scale_diff, p_weight_scale_diff,
-                          bias_weight_scale_diff, bw_percsum, l_percsum, i_percsum, g_percsum, p_percsum, bias_percsum);
+                          bias_weight_scale_diff, bw_percsum, l_percsum, i_percsum, g_percsum, p_percsum,
+                          bias_percsum,percep_sum);
 }
 
 /**
@@ -516,6 +552,7 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
     meta->indexIFoldedHist = indexIFoldedHist;
     meta->indexGFoldedHist = indexGFoldedHist;
     meta->indexPFoldedHist = indexPFoldedHist;
+    meta->gbhr = gbhr;
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
@@ -611,6 +648,28 @@ BTBMGSC::updateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, A
     if (weight_scale_diff) {
         // Increase weight if percsum was correct, decrease if incorrect
         updateCounter(percsum_matches_actual, extraWeightsWidth, entry);
+    }
+}
+
+/**
+ * Update perception weight table */
+void
+BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int percep_sum,bool percep_taken,
+                           Addr pc,bool actual_taken)
+{
+    bool percep_update = false;
+    int percep_thres = gbhrLen / 2;
+    if (abs(percep_sum) < percep_thres || percep_taken != actual_taken)
+        percep_update = true;
+    int index = pc % numEntries;
+    int bias = 1;
+    if (percep_update){
+        weightTable[index][0] += ( (actual_taken?1:-1)*bias);
+        for (int i=0;i<gbhrLen){
+            auto &entry = weightTable[index][i+1];
+            updateCounter(actual_taken == gbhr[i],percepTableWidth,entry);
+            // weightTable[index][i+1] += (actual_taken == gbhr[i]?1:-1);
+        }
     }
 }
 
@@ -766,6 +825,9 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
     auto total_thres = pred.total_thres;
     auto sc_pred_taken = total_sum >= 0;
     auto tage_pred_taken = pred.taken_before_sc;  // tage predictions
+    auto use_percep = pred.use_percep;
+    auto percep_sum = pred.percep_sum;
+    auto percep_taken = percep_sum >= 0;
 
     recordPredictionStats(pred, actual_taken, sc_pred_taken, tage_pred_taken);
 
@@ -825,6 +887,11 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
         updatePredTable(biasTable, pred.biasIndex, biasTableNum, entry.pc, actual_taken);
         updateWeightTable(biasWeightTable, weightTableIdx, entry.pc, pred.bias_weight_scale_diff,
                           (pred.bias_percsum >= 0) == actual_taken);
+
+        //Update perception table
+        updatePercepTable(percepWeightTable,percep_sum,percep_taken,entry.pc,actual_taken);
+
+
 
         // Update PC-indexed threshold table (only if enabled)
         if (enablePCThreshold) {
@@ -1150,6 +1217,19 @@ BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, Fu
                  indexLFoldedHist[getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories))]);
 }
 
+void
+BTBMGSC::specUpdateGBHR(FullBTBPrediction &pred)
+{
+    int shamt;
+    bool cond_taken;
+    std::tie(shamt, cond_taken) = pred.getHistInfo();
+    if (!gbhr.empty()) {
+        gbhr.pop_back();
+        gbhr.insert(gbhr.begin(), cond_taken);
+    }
+
+}
+
 /**
  * @brief Recovers branch global history state after a misprediction
  *
@@ -1285,6 +1365,20 @@ BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const
             doUpdateHist(history[getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories))], shamt, cond_taken,
                          indexLFoldedHist[getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories))]);
         }
+
+void
+BTBMGSC::recoverGBHR(const FetchTarget &entry, int shamt, bool cond_taken){
+    if (!isEnabled()) {
+        return;  // No recover when disabled
+    }
+    std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    for (int i=0;i<gbhrLen;i++)
+        gbhr[i] = predMeta->gbhr[i];
+    if (!gbhr.empty()) {
+        gbhr.pop_back();
+        gbhr.insert(gbhr.begin(), cond_taken);
+    }
+}
 
 #ifndef UNIT_TEST
 // Constructor for TAGE statistics

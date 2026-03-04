@@ -87,6 +87,7 @@ class TimedBaseBTBPredictor: public SimObject
     int componentIdx{0};
     unsigned aheadPipelinedStages{0};
     bool needMoreHistories{false};
+    bool needGBHR{false};
     int getComponentIdx() { return componentIdx; }
     void setComponentIdx(int idx) { componentIdx = idx; }
 

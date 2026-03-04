@@ -9,8 +9,8 @@
 #include "base/trace.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "debug/DecoupleBP.hh"
-#include "debug/DecoupleBPVerbose.hh"
 #include "debug/DecoupleBPUseful.hh"
+#include "debug/DecoupleBPVerbose.hh"
 #include "debug/ITTAGE.hh"
 #include "debug/ITTAGEHistory.hh"
 
@@ -32,6 +32,7 @@ numTablesToAlloc(p.numTablesToAlloc),
 ittageStats(this, p.numPredictors)
 {
     this->needMoreHistories = p.needMoreHistories;
+    this->needGBHR = p.needGBHR;
     DPRINTF(ITTAGE, "BTBITTAGE constructor numBr=%d\n", numBr);
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
@@ -242,7 +243,7 @@ BTBITTAGE::update(const FetchTarget &stream)
     auto updateTagFoldedHist = meta->tagFoldedHist;
     auto updateAltTagFoldedHist = meta->altTagFoldedHist;
     auto updateIndexFoldedHist = meta->indexFoldedHist;
-    
+
     // update each branch
     for (auto &btb_entry : all_entries_to_update) {
         bool this_indirect_actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;

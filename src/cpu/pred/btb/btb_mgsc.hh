@@ -54,6 +54,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         bool use_mgsc;                    // Whether to use MGSC prediction
         bool taken;                       // Final prediction = (use sc pred) ? (total_sum >= 0) : tage prediction
         bool taken_before_sc;             // Tage prediction (before SC)
+        bool use_percep;
         bool tage_conf_high;
         bool tage_conf_mid;
         bool tage_conf_low;
@@ -64,6 +65,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         std::vector<unsigned> gIndex;     // G table indices
         std::vector<unsigned> pIndex;     // P table indices
         std::vector<unsigned> biasIndex;  // Bias table indices
+        int percep_index;
                                           // Weight scale difference flags and percsum values
         bool bw_weight_scale_diff;
         bool l_weight_scale_diff;
@@ -77,6 +79,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         int g_percsum;
         int p_percsum;
         int bias_percsum;
+        int percep_sum;
 
         MgscPrediction()
             : btb_pc(0),
@@ -84,6 +87,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
               use_mgsc(false),
               taken(false),
               taken_before_sc(false),
+              use_percep(false),
               tage_conf_high(false),
               tage_conf_mid(false),
               tage_conf_low(false),
@@ -94,6 +98,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
               gIndex(0),
               pIndex(0),
               biasIndex(0),
+              percep_index(0),
               bw_weight_scale_diff(false),
               l_weight_scale_diff(false),
               i_weight_scale_diff(false),
@@ -105,22 +110,25 @@ class BTBMGSC : public TimedBaseBTBPredictor
               i_percsum(0),
               g_percsum(0),
               p_percsum(0),
-              bias_percsum(0)
+              bias_percsum(0),
+              percep_sum(0)
         {
         }
 
-        MgscPrediction(Addr btb_pc, int total_sum, bool use_mgsc, bool taken, bool taken_before_sc,
+        MgscPrediction(Addr btb_pc, int total_sum, bool use_mgsc, bool taken, bool taken_before_sc,bool use_percep,
                        bool tage_conf_high, bool tage_conf_mid, bool tage_conf_low, int16_t total_thres,
                        std::vector<unsigned> bwIndex, std::vector<unsigned> lIndex, std::vector<unsigned> iIndex,
                        std::vector<unsigned> gIndex, std::vector<unsigned> pIndex, std::vector<unsigned> biasIndex,
+                       int percep_index,
                        bool bw_weight_scale_diff, bool l_weight_scale_diff, bool i_weight_scale_diff,
                        bool g_weight_scale_diff, bool p_weight_scale_diff, bool bias_weight_scale_diff, int bw_percsum,
-                       int l_percsum, int i_percsum, int g_percsum, int p_percsum, int bias_percsum)
+                       int l_percsum, int i_percsum, int g_percsum, int p_percsum, int bias_percsum,int percep_sum)
             : btb_pc(btb_pc),
               total_sum(total_sum),
               use_mgsc(use_mgsc),
               taken(taken),
               taken_before_sc(taken_before_sc),
+              use_percep(use_percep),
               tage_conf_high(tage_conf_high),
               tage_conf_mid(tage_conf_mid),
               tage_conf_low(tage_conf_low),
@@ -131,6 +139,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
               gIndex(gIndex),
               pIndex(pIndex),
               biasIndex(biasIndex),
+              percep_index(percep_index),
               bw_weight_scale_diff(bw_weight_scale_diff),
               l_weight_scale_diff(l_weight_scale_diff),
               i_weight_scale_diff(i_weight_scale_diff),
@@ -142,7 +151,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
               i_percsum(i_percsum),
               g_percsum(g_percsum),
               p_percsum(p_percsum),
-              bias_percsum(bias_percsum)
+              bias_percsum(bias_percsum),
+              percep_sum(percep_sum)
         {
         }
     };
@@ -165,6 +175,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
     void specUpdateIHist(FullBTBPrediction &pred) override;
     void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred) override;
+    void specUpdateGBHR(FullBTBPrediction &pred);
 
     // Recover all folded history after a misprediction, then update all folded history according to history and
     // pred.taken
@@ -178,6 +189,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
                       bool cond_taken) override;
     void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt,
                       bool cond_taken) override;
+    void recoverGBHR(const FetchTarget &entry, int shamt, bool cond_taken);
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchTarget &entry) override;
@@ -324,6 +336,12 @@ class BTBMGSC : public TimedBaseBTBPredictor
     unsigned biasTableNum;
     unsigned biasTableIdxWidth;
 
+    /** perception pred param*/
+    unsigned percepTableEntryNum;
+    unsigned gbhrLen;
+    // unsigned PercepThres;
+    unsigned percepTableWidth;
+
     /*Statistical corrector counters width*/
     unsigned scCountersWidth;
 
@@ -351,6 +369,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     bool enablePTable;
     bool enableBiasTable;
     bool enablePCThreshold;
+    bool enablePerceptionPred;
 
     // Folded history for index calculation
     std::vector<GlobalBwFoldedHist> indexBwFoldedHist;
@@ -388,6 +407,10 @@ class BTBMGSC : public TimedBaseBTBPredictor
     std::vector<std::vector<std::vector<int16_t>>> biasTable;
     // The actual MGSC prediction tables (index x line)
     std::vector<int16_t> biasWeightTable;
+
+    // The perception prediction tables
+    std::vector<std::vector<int16_t>>  percepWeightTable;
+    std::vector<bool> gbhr;
 
     // thres table
     std::vector<int16_t> pUpdateThreshold;  // pc-indexed threshold table
@@ -468,6 +491,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         Scalar biasPercsumCorrect{};
         Scalar biasPercsumWrong{};
 
+
         // Threshold updates
         Scalar pcThresholdInc{};
         Scalar pcThresholdDec{};
@@ -514,6 +538,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static unsigned pTableIdxWidth(const BTBMGSC &mgsc) { return mgsc.pTableIdxWidth; }
         static unsigned biasTableIdxWidth(const BTBMGSC &mgsc) { return mgsc.biasTableIdxWidth; }
 
+
         static bool &forceUseSC(BTBMGSC &mgsc) { return mgsc.forceUseSC; }
         static bool &enableBwTable(BTBMGSC &mgsc) { return mgsc.enableBwTable; }
         static bool &enableLTable(BTBMGSC &mgsc) { return mgsc.enableLTable; }
@@ -522,6 +547,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static bool &enablePTable(BTBMGSC &mgsc) { return mgsc.enablePTable; }
         static bool &enableBiasTable(BTBMGSC &mgsc) { return mgsc.enableBiasTable; }
         static bool &enablePCThreshold(BTBMGSC &mgsc) { return mgsc.enablePCThreshold; }
+        static bool &enablePerceptionPred(BTBMGSC &mgsc) {return mgsc.enablePerceptionPred;}
 
         static auto &bwTable(BTBMGSC &mgsc) { return mgsc.bwTable; }
         static auto &lTable(BTBMGSC &mgsc) { return mgsc.lTable; }
@@ -529,6 +555,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static auto &gTable(BTBMGSC &mgsc) { return mgsc.gTable; }
         static auto &pTable(BTBMGSC &mgsc) { return mgsc.pTable; }
         static auto &biasTable(BTBMGSC &mgsc) { return mgsc.biasTable; }
+        static auto &percepWeightTable(BTBMGSC &mgsc) {return mgsc.percepWeightTable;}
+        static auto &gbhr(BTBMGSC &mgsc) {return mgsc.gbhr;}
 
         static auto &updateThreshold(BTBMGSC &mgsc) { return mgsc.updateThreshold; }
         static auto &pUpdateThreshold(BTBMGSC &mgsc) { return mgsc.pUpdateThreshold; }
@@ -568,16 +596,19 @@ class BTBMGSC : public TimedBaseBTBPredictor
         std::vector<ImliFoldedHist> indexIFoldedHist;
         std::vector<GlobalFoldedHist> indexGFoldedHist;
         std::vector<PathFoldedHist> indexPFoldedHist;
+        std::vector<bool> gbhr;
+
         MgscMeta(std::unordered_map<Addr, MgscPrediction> preds, std::vector<GlobalBwFoldedHist> indexBwFoldedHist,
                  std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist,
                  std::vector<ImliFoldedHist> indexIFoldedHist, std::vector<GlobalFoldedHist> indexGFoldedHist,
-                 std::vector<PathFoldedHist> indexPFoldedHist)
+                 std::vector<PathFoldedHist> indexPFoldedHist, std::vector<bool> gbhr)
             : preds(preds),
               indexBwFoldedHist(indexBwFoldedHist),
               indexLFoldedHist(indexLFoldedHist),
               indexIFoldedHist(indexIFoldedHist),
               indexGFoldedHist(indexGFoldedHist),
-              indexPFoldedHist(indexPFoldedHist)
+              indexPFoldedHist(indexPFoldedHist),
+              gbhr(gbhr)
         {
         }
         MgscMeta() {}
@@ -589,6 +620,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
             indexIFoldedHist = other.indexIFoldedHist;
             indexGFoldedHist = other.indexGFoldedHist;
             indexPFoldedHist = other.indexPFoldedHist;
+            gbhr = other.gbhr;
         }
     } MgscMeta;
 

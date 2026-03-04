@@ -21,6 +21,7 @@ namespace debug {
 #include "base/types.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "debug/TAGE.hh"
+
 #endif
 namespace gem5 {
 
@@ -92,6 +93,7 @@ predBankValid(false),
 tageStats(this, p.numPredictors, p.numBanks)
 {
     this->needMoreHistories = p.needMoreHistories;
+    this->needGBHR = p.needGBHR;
 
     // Warn if updateOnRead is disabled (bank simulation works better with it enabled)
     if (!p.updateOnRead) {
@@ -288,7 +290,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
 /**
  * @brief Look up predictions in TAGE tables for a stream of instructions
- * 
+ *
  * @param startPC The starting PC address for the instruction stream
  * @param btbEntries Vector of BTB entries to make predictions for
  * @return Map of branch PC addresses to their predicted outcomes
@@ -334,12 +336,12 @@ BTBTAGE::dryRunCycle(Addr startPC) {
 
 /**
  * @brief Makes predictions for a stream of instructions using TAGE predictor
- * 
+ *
  * This function is called during the prediction stage and:
  * 1. Uses lookupHelper to get predictions for all BTB entries
  * 2. Stores predictions in the stage prediction structure
  * 3. Handles multiple prediction stages with different delays
- * 
+ *
  * @param startPC Starting PC of the instruction stream
  * @param history Current branch history
  * @param stagePreds Vector of predictions for different pipeline stages
@@ -385,7 +387,7 @@ BTBTAGE::getPredictionMeta() {
 
 /**
  * @brief Prepare BTB entries for update by filtering and processing
- * 
+ *
  * @param stream The fetch stream containing update information
  * @return Vector of BTB entries that need to be updated
  */
@@ -419,7 +421,7 @@ BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
 
 /**
  * @brief Update predictor state for a single entry
- * 
+ *
  * @param entry The BTB entry being updated
  * @param actual_taken The actual outcome of the branch
  * @param pred The prediction made for this entry
@@ -547,7 +549,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
 /**
  * @brief Handle allocation of new entries
- * 
+ *
  * @param startPC The starting PC address
  * @param entry The BTB entry being updated
  * @param actual_taken The actual outcome of the branch
@@ -675,7 +677,7 @@ BTBTAGE::doResolveUpdate(const FetchTarget &stream) {
 
 /**
  * @brief Updates the TAGE predictor state based on actual branch execution results
- * 
+ *
  * @param stream The fetch stream containing branch execution information
  */
 void
@@ -688,7 +690,7 @@ BTBTAGE::update(const FetchTarget &stream) {
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
     auto entries_to_update = prepareUpdateEntries(stream);
-    
+
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -909,12 +911,12 @@ BTBTAGE::getBankId(Addr pc) const
 
 /**
  * @brief Updates branch history for speculative execution
- * 
+ *
  * This function updates three types of folded histories:
  * - Tag folded history: Used for tag computation
  * - Alternative tag folded history: Used for alternative tag computation
  * - Index folded history: Used for table index computation
- * 
+ *
  * @param history The current branch history
  * @param shamt The number of bits to shift
  * @param taken Whether the branch was taken
@@ -944,13 +946,13 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr p
 
 /**
  * @brief Updates branch history for speculative execution
- * 
+ *
  * This function updates the branch history for speculative execution
  * based on the provided history and prediction information.
- * 
+ *
  * It first retrieves the history information from the prediction metadata
  * and then calls the doUpdateHist function to update the folded histories.
- * 
+ *
  * @param history The current branch history
  * @param pred The prediction metadata containing history information
  */
@@ -963,12 +965,12 @@ BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredicti
 
 /**
  * @brief Recovers branch history state after a misprediction
- * 
+ *
  * This function:
  * 1. Restores the folded histories from the saved metadata
  * 2. Updates the histories with the correct branch outcome
  * 3. Ensures predictor state is consistent after recovery
- * 
+ *
  * @param history The branch history to recover to
  * @param entry The fetch stream entry containing recovery information
  * @param shamt Number of bits to shift in history update

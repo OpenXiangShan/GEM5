@@ -1041,6 +1041,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     cxx_header = "cpu/pred/btb/btb_tage.hh"
 
     needMoreHistories = Param.Bool(True, "BTBTAGE needs more histories")
+    needGBHR = Param.Bool(False,"BTBTAGE don't need GBHR")
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
     updateOnRead = Param.Bool(True, "Enable update on read, no need to save tage meta in FTQ")
     numPredictors = Param.Unsigned(8, "Number of TAGE predictors")
@@ -1077,6 +1078,7 @@ class BTBITTAGE(TimedBaseBTBPredictor):
     cxx_header = "cpu/pred/btb/btb_ittage.hh"
 
     needMoreHistories = Param.Bool(True, "BTBITTAGE needs more histories")
+    needGBHR = Param.Bool(False,"BTBITTAGE don't need GBHR")
     numPredictors = Param.Unsigned(5, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([256]*2 + [512]*3, "the ITTAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([9]*5, "the T0~Tn entry's tag bit size")
@@ -1094,6 +1096,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     cxx_header = "cpu/pred/btb/btb_mgsc.hh"
 
     needMoreHistories = Param.Bool(True, "MGSC needs more histories")
+    needGBHR = Param.Bool(True,"MGSC needs GBHR")
 
     bwTableNum = Param.Unsigned(2, "Num global backward branch GEHL tables")
     bwHistLen = VectorParam.Int([4, 8], "Global backward branch GEHL history lengths")
@@ -1122,6 +1125,10 @@ class BTBMGSC(TimedBaseBTBPredictor):
 
     biasTableNum = Param.Unsigned(1, "Num bias tables")
     biasTableIdxWidth = Param.Unsigned(11, "Log number of bias entries")
+
+    percepTableEntryNum = Param.Unsigned(4096, "Num of entries in perception preditor weight table")
+    gbhrLen = Param.Unsigned(23, "Length of gbhr in perception predictor")
+    percepTableWidth = Param.Unsigned(8, "Width of weight in perception predictor table")
 
     thresholdTablelogSize = Param.Unsigned(6,
         "Log size of update threshold counters tables")
@@ -1152,6 +1159,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     enablePTable = Param.Bool(True, "Enable P (path) table")
     enableBiasTable = Param.Bool(True, "Enable Bias table")
     enablePCThreshold = Param.Bool(False, "Enable PC-indexed threshold table")
+    enablePerceptionPred = Param.Bool(True, "Enable perception predictor")
 
     numDelay = 2
 
