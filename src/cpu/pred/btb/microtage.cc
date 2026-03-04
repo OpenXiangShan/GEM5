@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <ctime>
 
 #ifdef UNIT_TEST
 // Define debug flags for unit testing
@@ -20,7 +19,7 @@ namespace debug {
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "cpu/o3/dyn_inst.hh"
-#include "debug/TAGE.hh"
+#include "debug/UTAGE.hh"
 
 #endif
 namespace gem5 {
@@ -43,7 +42,6 @@ MicroTAGE::MicroTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSiz
       updateOnRead(false),
       numBanks(numBanks),
       bankIdWidth(ceilLog2(numBanks)),
-      blockWidth(floorLog2(blockSize)),
       bankBaseShift(instShiftAmt),
       indexShift(bankBaseShift + ceilLog2(numBanks)),
       enableBankConflict(false),
@@ -61,7 +59,6 @@ MicroTAGE::MicroTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSiz
         histLengths[i] = (i + 1) * 4;
     }
     maxHistLen = histLengths[numPredictors-1];
-    numTablesToAlloc = 1;
 #else
 // Constructor: Initialize TAGE predictor with given parameters
 MicroTAGE::MicroTAGE(const Params& p):
@@ -74,11 +71,9 @@ histLengths(p.histLengths),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
 maxBranchPositions(p.maxBranchPositions),
-numTablesToAlloc(p.numTablesToAlloc),
 updateOnRead(p.updateOnRead),
 numBanks(p.numBanks),
 bankIdWidth(ceilLog2(p.numBanks)),
-blockWidth(p.blockSize ? floorLog2(p.blockSize) : 0),
 bankBaseShift(instShiftAmt), // strip instruction alignment bits before indexing
 indexShift(bankBaseShift + ceilLog2(p.numBanks)),
 enableBankConflict(p.enableBankConflict),
@@ -95,9 +90,7 @@ tageStats(this, p.numPredictors, p.numBanks)
 #endif
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
-    tableIndexMasks.resize(numPredictors);
     tableTagBits.resize(numPredictors);
-    tableTagMasks.resize(numPredictors);
     // Ensure PC shift vector has entries for all predictors (fallback default = 1)
     if (tablePcShifts.size() < numPredictors) {
         tablePcShifts.resize(numPredictors, 1);
@@ -113,12 +106,10 @@ tageStats(this, p.numPredictors, p.numBanks)
         }
 
         tableIndexBits[i] = ceilLog2(tableSizes[i]);
-        tableIndexMasks[i].resize(tableIndexBits[i], true);
 
         assert(histLengths.size() >= numPredictors);
 
         assert(tableTagBits.size() >= numPredictors);
-        tableTagMasks[i].resize(tableTagBits[i], true);
 
         assert(tablePcShifts.size() >= numPredictors);
 
@@ -193,7 +184,7 @@ MicroTAGE::TagePrediction
 MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  const Addr &startPC,
                                  std::shared_ptr<TageMeta> predMeta) {
-    DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
+    DPRINTF(UTAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
 
     bool provided = false;
     TageTableInfo main_info;
@@ -227,9 +218,9 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
-                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
+                DPRINTF(UTAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
                     i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
-                break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
+                break;  // only one way can be matched, avoid multi-hit, TODO: RTL behavior?
             }
         }
 
@@ -240,7 +231,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 provided = true;
             }
         } else {
-            DPRINTF(TAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
+            DPRINTF(UTAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
                 i, index, tag, position, btb_entry.pc);
         }
     }
@@ -251,8 +242,9 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
     bool taken = provided ? main_taken : base_pred;
 
-    DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
-    DPRINTF(TAGE, "tage main prvided %d ?  main_taken %d : base_taken %d\n", provided, main_taken, base_pred);
+    DPRINTF(UTAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
+    DPRINTF(UTAGE, "tage main provided %d ? main_taken %d : base_taken %d\n",
+            provided, main_taken, base_pred);
 
     return TagePrediction(btb_entry.pc, main_info, provided, taken, base_pred);
 }
@@ -267,7 +259,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 void
 MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries, CondTakens& results)
 {
-    DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
+    DPRINTF(UTAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
     // Process each BTB entry to make predictions
     for (auto &btb_entry : btbEntries) {
@@ -314,7 +306,7 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     tageStats.predAccessPerBank[lastPredBankId]++;
 #endif
 
-    DPRINTF(TAGE, "putPCHistory startAddr: %#lx, bank: %u\n",
+    DPRINTF(UTAGE, "putPCHistory startAddr: %#lx, bank: %u\n",
             startPC, lastPredBankId);
 
     // IMPORTANT: when this function is called,
@@ -401,7 +393,6 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     auto &main_info = pred.mainInfo;
     bool used_base = !pred.mainprovided;
     // Use base table instead of entry.ctr for fallback prediction
-    Addr startPC = stream.getRealStartPC();
     bool base_taken = entry.ctr >= 0;
 
     // Update use_alt_on_na when provider is weak (0 or -1)
@@ -422,7 +413,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
     // Update main prediction provider
     if (main_info.found) {
-        DPRINTF(TAGE, "prediction provided by table %d, idx %lu, way %u, updating corresponding entry\n",
+        DPRINTF(UTAGE, "prediction provided by table %d, idx %lu, way %u, updating corresponding entry\n",
             main_info.table, main_info.index, main_info.way);
 
         auto &way = tageTable[main_info.table][main_info.index][main_info.way];
@@ -452,7 +443,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
             way.useful = 0;
             DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
         }
-        DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
+        DPRINTF(UTAGE, "useful bit is now %d\n", way.useful);
 
         // No LRU maintenance
 
@@ -529,7 +520,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
             if (!cand.valid || (!cand.useful && weakish)) {
                 short newCounter = actual_taken ? 0 : -1;
-                DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
+                DPRINTF(UTAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
                         ti, newIndex, way, newTag, position, newCounter, entry.pc);
                 cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
                 tageStats.updateAllocSuccess++;
@@ -541,13 +532,13 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
             }
         }
 
-        // 3) Apply age penalty to one strong, not-useful way to make it replacable later
+        // 3) Apply age penalty to one strong, not-useful way to make it replaceable later
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
             if (!cand.useful && !weakish) {
                 if (cand.counter > 0) cand.counter--; else cand.counter++;
-                DPRINTF(TAGE, "age penalty applied on table %d[%lu][%u], new ctr %d\n",
+                DPRINTF(UTAGE, "age penalty applied on table %d[%lu][%u], new ctr %d\n",
                         ti, newIndex, way, cand.counter);
                 break; // one penalty per table per update
             }
@@ -560,7 +551,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
     if (usefulResetCnt >= 256) {
         usefulResetCnt = 0;
         tageStats.updateResetU++;
-        DPRINTF(TAGE, "reset useful bit of all entries\n");
+        DPRINTF(UTAGE, "reset useful bit of all entries\n");
         for (auto &table : tageTable) {
             for (auto &set : table) {
                 for (auto &way : set) {
@@ -570,7 +561,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
         }
     }
 
-    DPRINTF(TAGE, "no eligible way found for allocation starting from table %d\n", start_table);
+    DPRINTF(UTAGE, "no eligible way found for allocation starting from table %d\n", start_table);
     tageStats.updateAllocFailureNoValidTable++;
     return false;
 }
@@ -595,7 +586,7 @@ MicroTAGE::canResolveUpdate(const FetchStream &stream) {
 #ifndef UNIT_TEST
         tageStats.updateBankConflictPerBank[updateBank]++;
 #endif
-        DPRINTF(TAGE, "Bank conflict detected: update bank %u conflicts with prediction bank %u, "
+        DPRINTF(UTAGE, "Bank conflict detected: update bank %u conflicts with prediction bank %u, "
                       "deferring this update (will retry after blocking prediction)\n",
                       updateBank, lastPredBankId);
         predBankValid = false;
@@ -627,7 +618,7 @@ MicroTAGE::update(const FetchStream &stream) {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
-    DPRINTF(TAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
+    DPRINTF(UTAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
 
     // ========== Normal Update Logic ==========
     // Prepare BTB entries to update
@@ -636,7 +627,7 @@ MicroTAGE::update(const FetchStream &stream) {
     // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
-        DPRINTF(TAGE, "update: no prediction meta, skip\n");
+        DPRINTF(UTAGE, "update: no prediction meta, skip\n");
         return;
     }
 
@@ -649,7 +640,14 @@ MicroTAGE::update(const FetchStream &stream) {
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta);
         } else { // otherwise, use the prediction from the prediction-time main/alt
-            recomputed = predMeta->preds[btb_entry.pc];
+            auto pred_it = predMeta->preds.find(btb_entry.pc);
+            if (pred_it != predMeta->preds.end()) {
+                recomputed = pred_it->second;
+            } else {
+                DPRINTF(UTAGE, "update: missing predMeta entry for pc %#lx, recompute with snapshot\n",
+                        btb_entry.pc);
+                recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta);
+            }
         }
         if (recomputed.mainprovided) {
             utage_hit = true;
@@ -698,13 +696,18 @@ MicroTAGE::update(const FetchStream &stream) {
         tageStats.updateUtageHit++;//for RTL align pred Accuracy
     }
     checkUtageUpdateMisspred(stream);
-    DPRINTF(TAGE, "end update\n");
+    DPRINTF(UTAGE, "end update\n");
 }
 
 void
 MicroTAGE::checkUtageUpdateMisspred(const FetchStream &stream) {
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    // use for microtage updatemispred counting
+    if (!predMeta) {
+        DPRINTF(UTAGE, "checkUtageUpdateMisspred: no prediction meta, skip\n");
+        return;
+    }
+
+    // used for MicroTAGE update misprediction counting
     // sort microtage predictions by pc to find the first taken branch
     std::vector<std::pair<Addr, TagePrediction>> lastPreds;
     lastPreds.reserve(predMeta->preds.size());
@@ -716,16 +719,19 @@ MicroTAGE::checkUtageUpdateMisspred(const FetchStream &stream) {
                 const std::pair<Addr, TagePrediction> &b) {
                 return a.first < b.first;
             });
+    bool has_taken_pred = false;
     Addr first_taken_pc = 0;
     for (auto &entry_info : lastPreds) {
         if (entry_info.second.taken) {
+            has_taken_pred = true;
             first_taken_pc = entry_info.first;
             break;
         }
     }
-    bool fallthrough_mispred = (first_taken_pc == 0 && stream.exeTaken) ||
-                                (first_taken_pc != 0 && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && first_taken_pc != stream.exeBranchInfo.pc;
+    bool fallthrough_mispred = (!has_taken_pred && stream.exeTaken) ||
+                                (has_taken_pred && !stream.exeTaken);
+    bool branch_mispred = stream.exeTaken && has_taken_pred &&
+                          first_taken_pc != stream.exeBranchInfo.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }
@@ -780,12 +786,6 @@ Addr
 MicroTAGE::getTageIndex(Addr pc, int t)
 {
     return getTageIndex(pc, t, indexFoldedHist[t].get());
-}
-
-bool
-MicroTAGE::matchTag(Addr expected, Addr found)
-{
-    return expected == found;
 }
 
 bool
@@ -940,7 +940,7 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
 {
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     if (!predMeta) {
-        DPRINTF(TAGE, "recoverPHist: no prediction metadata, cannot recover\n");
+        DPRINTF(UTAGE, "recoverPHist: no prediction metadata, cannot recover\n");
         return;
     }
     // Restore current folded index history exactly to prediction-time state.
@@ -978,7 +978,7 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
 void
 MicroTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
 {
-    DPRINTF(TAGE, "checking folded history when %s\n", when);
+    DPRINTF(UTAGE, "checking folded history when %s\n", when);
     if (debug::TAGEHistory) {
         std::string hist_str;
         boost::to_string(hist, hist_str);
@@ -986,7 +986,6 @@ MicroTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
     }
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 3; type++) {
-            std::string buf2, buf3;
             auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
             foldedHist.check(hist);
         }
@@ -1006,8 +1005,6 @@ MicroTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, in
     ADD_STAT(updateAltDiffers, statistics::units::Count::get(), "alt differs on update"),
     ADD_STAT(updateUseAltOnNaUpdated, statistics::units::Count::get(), "use alt on na ctr updated when update"),
     ADD_STAT(updateProviderNa, statistics::units::Count::get(), "provider weak when update"),
-    ADD_STAT(updateUseNaCorrect, statistics::units::Count::get(), "use na on update and correct"),
-    ADD_STAT(updateUseNaWrong, statistics::units::Count::get(), "use na on update and wrong"),
     ADD_STAT(updateUseAltOnNaCorrect, statistics::units::Count::get(), "use alt on na correct when update"),
     ADD_STAT(updateUseAltOnNaWrong, statistics::units::Count::get(), "use alt on na wrong when update"),
     ADD_STAT(updateAllocFailure, statistics::units::Count::get(), "alloc failure when update"),
@@ -1078,40 +1075,6 @@ MicroTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, 
     }
 }
 
-// Update LRU counters for a set
-void
-MicroTAGE::updateLRU(int table, Addr index, unsigned way)
-{
-    // Increment LRU counters for all entries in the set
-    for (unsigned i = 0; i < numWays; i++) {
-        if (i != way && tageTable[table][index][i].valid) {
-            tageTable[table][index][i].lruCounter++;
-        }
-    }
-    // Reset LRU counter for the accessed entry
-    tageTable[table][index][way].lruCounter = 0;
-}
-
-// Find the LRU victim in a set
-unsigned
-MicroTAGE::getLRUVictim(int table, Addr index)
-{
-    unsigned victim = 0;
-    unsigned maxLRU = 0;
-
-    // Find the entry with the highest LRU counter
-    for (unsigned i = 0; i < numWays; i++) {
-        if (!tageTable[table][index][i].valid) {
-            return i; // Use invalid entry if available
-        }
-        if (tageTable[table][index][i].lruCounter > maxLRU) {
-            maxLRU = tageTable[table][index][i].lruCounter;
-            victim = i;
-        }
-    }
-    return victim;
-}
-
 #ifndef UNIT_TEST
 void
 MicroTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
@@ -1121,6 +1084,10 @@ MicroTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
         return;
     }
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
+    if (!meta) {
+        DPRINTF(UTAGE, "commitBranch: no prediction meta, skip\n");
+        return;
+    }
     auto pc = inst->pcState().instAddr();
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
