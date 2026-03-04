@@ -77,6 +77,46 @@ namespace gem5
 
 namespace RiscvISA {
 
+unsigned Walker::globalNonLeafInflightStates = 0;
+unsigned Walker::globalLeafInflightStates = 0;
+std::list<Walker::WalkerState *> Walker::globalNonLeafWaitingStates;
+std::list<Walker::WalkerState *> Walker::globalLeafWaitingStates;
+
+Walker::WalkerStats::WalkerStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(ptwSlotAcquireNonLeaf, statistics::units::Count::get(),
+               "PTW non-leaf slot acquire count"),
+      ADD_STAT(ptwSlotAcquireLeaf, statistics::units::Count::get(),
+               "PTW leaf slot acquire count"),
+      ADD_STAT(ptwSlotReleaseNonLeaf, statistics::units::Count::get(),
+               "PTW non-leaf slot release count"),
+      ADD_STAT(ptwSlotReleaseLeaf, statistics::units::Count::get(),
+               "PTW leaf slot release count"),
+      ADD_STAT(ptwSlotBlockedNonLeaf, statistics::units::Count::get(),
+               "PTW non-leaf blocked by slot limit"),
+      ADD_STAT(ptwSlotBlockedLeaf, statistics::units::Count::get(),
+               "PTW leaf blocked by slot limit"),
+      ADD_STAT(ptwReadSentNonLeaf, statistics::units::Count::get(),
+               "PTW non-leaf read packets sent"),
+      ADD_STAT(ptwReadSentLeaf, statistics::units::Count::get(),
+               "PTW leaf read packets sent"),
+      ADD_STAT(ptwWakeupNonLeaf, statistics::units::Count::get(),
+               "PTW non-leaf waiters woken up"),
+      ADD_STAT(ptwWakeupLeaf, statistics::units::Count::get(),
+               "PTW leaf waiters woken up"),
+      ADD_STAT(ptwRetryAfterAcquire, statistics::units::Count::get(),
+               "PTW retries after slot acquire"),
+      ADD_STAT(ptwWaitQueuePeakNonLeaf, statistics::units::Count::get(),
+               "PTW non-leaf wait queue peak"),
+      ADD_STAT(ptwWaitQueuePeakLeaf, statistics::units::Count::get(),
+               "PTW leaf wait queue peak"),
+      ADD_STAT(ptwGlobalInflightPeakNonLeaf, statistics::units::Count::get(),
+               "PTW global non-leaf inflight peak"),
+      ADD_STAT(ptwGlobalInflightPeakLeaf, statistics::units::Count::get(),
+               "PTW global leaf inflight peak")
+{
+}
+
 std::pair<bool, Fault>
 Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
                     const RequestPtr &req, BaseMMU::Mode mode, bool from_l2tlb,
@@ -187,6 +227,137 @@ Walker::startFunctional(RequestPtr req, ThreadContext * _tc, Addr &addr, unsigne
 }
 
 bool
+Walker::tryAcquirePtwSlot(WalkerState *walkerState, bool leafClass)
+{
+    assert(!walkerState->ptwHasInflightSlot);
+    unsigned &inflightStates =
+        leafClass ? globalLeafInflightStates : globalNonLeafInflightStates;
+    const unsigned inflightLimit =
+        leafClass ? leafPtwInflightLimit : nonLeafPtwInflightLimit;
+    if (inflightStates >= inflightLimit) {
+        return false;
+    }
+
+    inflightStates++;
+    if (leafClass) {
+        stats.ptwSlotAcquireLeaf++;
+        if (globalLeafInflightStates > leafInflightPeak) {
+            stats.ptwGlobalInflightPeakLeaf +=
+                (globalLeafInflightStates - leafInflightPeak);
+            leafInflightPeak = globalLeafInflightStates;
+        }
+    } else {
+        stats.ptwSlotAcquireNonLeaf++;
+        if (globalNonLeafInflightStates > nonLeafInflightPeak) {
+            stats.ptwGlobalInflightPeakNonLeaf +=
+                (globalNonLeafInflightStates - nonLeafInflightPeak);
+            nonLeafInflightPeak = globalNonLeafInflightStates;
+        }
+    }
+    walkerState->ptwHasInflightSlot = true;
+    walkerState->ptwInflightSlotIsLeaf = leafClass;
+    walkerState->ptwWaitingForSlot = false;
+    return true;
+}
+
+void
+Walker::releasePtwSlot(WalkerState *walkerState)
+{
+    if (!walkerState->ptwHasInflightSlot) {
+        return;
+    }
+
+    unsigned &inflightStates =
+        walkerState->ptwInflightSlotIsLeaf ? globalLeafInflightStates
+                                           : globalNonLeafInflightStates;
+    if (walkerState->ptwInflightSlotIsLeaf) {
+        walkerState->walker->stats.ptwSlotReleaseLeaf++;
+    } else {
+        walkerState->walker->stats.ptwSlotReleaseNonLeaf++;
+    }
+    assert(inflightStates > 0);
+    inflightStates--;
+    walkerState->ptwHasInflightSlot = false;
+    wakeupPtwWaiters();
+}
+
+void
+Walker::enqueuePtwWaiter(WalkerState *walkerState, bool leafClass)
+{
+    if (walkerState->ptwWaitingForSlot) {
+        return;
+    }
+
+    walkerState->ptwWaitingForSlot = true;
+    walkerState->ptwWaitingLeafClass = leafClass;
+    auto &waitingStates = leafClass ? globalLeafWaitingStates
+                                    : globalNonLeafWaitingStates;
+    waitingStates.push_back(walkerState);
+
+    if (leafClass) {
+        walkerState->walker->stats.ptwSlotBlockedLeaf++;
+        const uint64_t queueSize = waitingStates.size();
+        if (queueSize > walkerState->walker->leafQueuePeak) {
+            walkerState->walker->stats.ptwWaitQueuePeakLeaf +=
+                (queueSize - walkerState->walker->leafQueuePeak);
+            walkerState->walker->leafQueuePeak = queueSize;
+        }
+    } else {
+        walkerState->walker->stats.ptwSlotBlockedNonLeaf++;
+        const uint64_t queueSize = waitingStates.size();
+        if (queueSize > walkerState->walker->nonLeafQueuePeak) {
+            walkerState->walker->stats.ptwWaitQueuePeakNonLeaf +=
+                (queueSize - walkerState->walker->nonLeafQueuePeak);
+            walkerState->walker->nonLeafQueuePeak = queueSize;
+        }
+    }
+}
+
+void
+Walker::dequeuePtwWaiter(WalkerState *walkerState)
+{
+    if (!walkerState->ptwWaitingForSlot) {
+        return;
+    }
+
+    auto &waitingStates = walkerState->ptwWaitingLeafClass
+                              ? globalLeafWaitingStates
+                              : globalNonLeafWaitingStates;
+    waitingStates.remove(walkerState);
+    walkerState->ptwWaitingForSlot = false;
+}
+
+void
+Walker::wakeupPtwWaiters()
+{
+    auto wakeupByClass = [](bool leafClass) {
+        unsigned &inflightStates =
+            leafClass ? Walker::globalLeafInflightStates
+                      : Walker::globalNonLeafInflightStates;
+        const unsigned inflightLimit =
+            leafClass ? Walker::leafPtwInflightLimit
+                      : Walker::nonLeafPtwInflightLimit;
+        auto &waitingStates = leafClass ? Walker::globalLeafWaitingStates
+                                        : Walker::globalNonLeafWaitingStates;
+
+        while ((inflightStates < inflightLimit) && !waitingStates.empty()) {
+            WalkerState *walkerState = waitingStates.front();
+            waitingStates.pop_front();
+            walkerState->ptwWaitingForSlot = false;
+            if (leafClass) {
+                walkerState->walker->stats.ptwWakeupLeaf++;
+            } else {
+                walkerState->walker->stats.ptwWakeupNonLeaf++;
+            }
+            walkerState->sendPackets();
+        }
+    };
+
+    wakeupByClass(false);
+    wakeupByClass(true);
+}
+
+bool
 Walker::WalkerPort::recvTimingResp(PacketPtr pkt)
 {
     return walker->recvTimingResp(pkt);
@@ -238,6 +409,7 @@ Walker::recvReqRetry()
             walkerState->retry();
         }
     }
+    wakeupPtwWaiters();
 }
 
 bool Walker::sendTiming(WalkerState* sendingState, PacketPtr pkt)
@@ -337,6 +509,14 @@ Walker::WalkerState::initState(ThreadContext *_tc, const RequestPtr &_req, BaseM
         tlbHit = false;
         assert(functional || !_req->get_h_inst());
     }
+}
+
+Walker::WalkerState::~WalkerState()
+{
+    if (ptwWaitingForSlot) {
+        walker->dequeuePtwWaiter(this);
+    }
+    assert(!ptwHasInflightSlot);
 }
 
 
@@ -1784,6 +1964,9 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
     assert(inflight);
     assert(state == Waiting);
     inflight--;
+    if (pkt->isRead()) {
+        walker->releasePtwSlot(this);
+    }
 
     Addr l2vpn_0 = 0;
     int squashed_num = 0;
@@ -2017,6 +2200,15 @@ Walker::WalkerState::sendPackets()
 
     //Reads always have priority
     if (read) {
+        bool leafClass = isLeafLevelRead();
+        if (!walker->tryAcquirePtwSlot(this, leafClass)) {
+            walker->enqueuePtwWaiter(this, leafClass);
+            DPRINTF(PageTableWalker,
+                    "PTW slot busy, queue read %#lx as %s-level request\n",
+                    read->getAddr(), leafClass ? "leaf" : "non-leaf");
+            return;
+        }
+
         PacketPtr pkt = read;
         read = NULL;
         inflight++;
@@ -2025,8 +2217,15 @@ Walker::WalkerState::sendPackets()
             read = pkt;
             DPRINTF(PageTableWalker, "Port busy, defer read %#lx\n", read->getAddr());
             inflight--;
+            walker->stats.ptwRetryAfterAcquire++;
+            walker->releasePtwSlot(this);
             return;
         } else {
+            if (leafClass) {
+                walker->stats.ptwReadSentLeaf++;
+            } else {
+                walker->stats.ptwReadSentNonLeaf++;
+            }
             DPRINTF(PageTableWalker, "Send read %#lx\n", pkt->getAddr());
         }
     }
@@ -2139,6 +2338,18 @@ Addr
 Walker::WalkerState::VpniShift(int level)
 {
     return PGSHFT + LEVEL_BITS * level;
+}
+
+bool
+Walker::WalkerState::isLeafLevelRead() const
+{
+    if (translateMode == twoStageMode) {
+        if (inGstage) {
+            return twoStageLevel == 0;
+        }
+        return level == 0;
+    }
+    return level == 0;
 }
 
 Fault

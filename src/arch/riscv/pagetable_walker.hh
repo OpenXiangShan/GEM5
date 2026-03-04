@@ -39,6 +39,7 @@
 #ifndef __ARCH_RISCV_TABLE_WALKER_HH__
 #define __ARCH_RISCV_TABLE_WALKER_HH__
 
+#include <list>
 #include <vector>
 
 #include "arch/generic/mmu.hh"
@@ -46,6 +47,7 @@
 #include "arch/riscv/pma_checker.hh"
 #include "arch/riscv/pmp.hh"
 #include "arch/riscv/tlb.hh"
+#include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
@@ -187,6 +189,10 @@ namespace RiscvISA
             bool tlbHit;
             PTESv39 tlbHitPte;
             Request::Flags tlbflags;
+            bool ptwHasInflightSlot;
+            bool ptwInflightSlotIsLeaf;
+            bool ptwWaitingForSlot;
+            bool ptwWaitingLeafClass;
 
 
           public:
@@ -203,10 +209,13 @@ namespace RiscvISA
                 finishDefaultTranslate(false), preHitInPtw(false), fromPre(false),
                 fromBackPre(false),virt(0),translateMode(0),inGstage(false),finishGVA(false),
                 gpaddrMode(0),finishGPA(false),GstageFault(false),
-                tlbHit(false),tlbHitPte(0),tlbflags(Request::PHYSICAL)
+                tlbHit(false),tlbHitPte(0),tlbflags(Request::PHYSICAL),
+                ptwHasInflightSlot(false), ptwInflightSlotIsLeaf(false),
+                ptwWaitingForSlot(false), ptwWaitingLeafClass(false)
             {
                 requestors.emplace_back(nullptr, _req, _translation);
             }
+            ~WalkerState();
             void initState(ThreadContext *_tc, const RequestPtr &_req,BaseMMU::Mode _mode,
                            bool _isTiming = false, bool _from_forward_pre_req = false,
                            bool _from_back_pre_req = false);
@@ -255,6 +264,7 @@ namespace RiscvISA
             Addr getGVPNi(Addr vaddr, int level);
             Addr getGVPNi(uint8_t addrXlateMode, Addr vaddr, int level);
             Addr VpniShift(int level);
+            bool isLeafLevelRead() const;
         };
 
         struct L2TlbState
@@ -284,6 +294,27 @@ namespace RiscvISA
             WalkerSenderState(WalkerState * _senderWalk) :
                 senderWalk(_senderWalk) {}
         };
+
+        struct WalkerStats : public statistics::Group
+        {
+            WalkerStats(statistics::Group *parent);
+
+            statistics::Scalar ptwSlotAcquireNonLeaf;
+            statistics::Scalar ptwSlotAcquireLeaf;
+            statistics::Scalar ptwSlotReleaseNonLeaf;
+            statistics::Scalar ptwSlotReleaseLeaf;
+            statistics::Scalar ptwSlotBlockedNonLeaf;
+            statistics::Scalar ptwSlotBlockedLeaf;
+            statistics::Scalar ptwReadSentNonLeaf;
+            statistics::Scalar ptwReadSentLeaf;
+            statistics::Scalar ptwWakeupNonLeaf;
+            statistics::Scalar ptwWakeupLeaf;
+            statistics::Scalar ptwRetryAfterAcquire;
+            statistics::Scalar ptwWaitQueuePeakNonLeaf;
+            statistics::Scalar ptwWaitQueuePeakLeaf;
+            statistics::Scalar ptwGlobalInflightPeakNonLeaf;
+            statistics::Scalar ptwGlobalInflightPeakLeaf;
+        } stats;
 
       public:
         // Kick off the state machine.
@@ -329,6 +360,16 @@ namespace RiscvISA
         bool ptwSquash;
         bool openNextLine;
         bool autoOpenNextLine;
+        static constexpr unsigned nonLeafPtwInflightLimit = 1;
+        static constexpr unsigned leafPtwInflightLimit = 6;
+        static unsigned globalNonLeafInflightStates;
+        static unsigned globalLeafInflightStates;
+        static std::list<WalkerState *> globalNonLeafWaitingStates;
+        static std::list<WalkerState *> globalLeafWaitingStates;
+        uint64_t nonLeafQueuePeak;
+        uint64_t leafQueuePeak;
+        uint64_t nonLeafInflightPeak;
+        uint64_t leafInflightPeak;
       public:
         bool openSv48;
         bool is_from_pre_req;
@@ -354,6 +395,11 @@ namespace RiscvISA
         bool recvTimingResp(PacketPtr pkt);
         void recvReqRetry();
         bool sendTiming(WalkerState * sendingState, PacketPtr pkt);
+        bool tryAcquirePtwSlot(WalkerState *walkerState, bool leafClass);
+        void releasePtwSlot(WalkerState *walkerState);
+        void enqueuePtwWaiter(WalkerState *walkerState, bool leafClass);
+        void dequeuePtwWaiter(WalkerState *walkerState);
+        void wakeupPtwWaiters();
         //bool pre_ptw;
 
       public:
@@ -371,7 +417,7 @@ namespace RiscvISA
 
         Walker(const Params &params) :
             ClockedObject(params), port(name() + ".port", this),
-            funcState(this, NULL, NULL, true), tlb(NULL), sys(params.system),
+            funcState(this, NULL, NULL, true), stats(this), tlb(NULL), sys(params.system),
             pma(params.pma_checker),
             pmp(params.pmp),
             requestorId(sys->getRequestorId(this)),
@@ -380,6 +426,10 @@ namespace RiscvISA
             ptwSquash(params.ptw_squash),
             openNextLine(params.open_nextline),
             autoOpenNextLine(true),
+            nonLeafQueuePeak(0),
+            leafQueuePeak(0),
+            nonLeafInflightPeak(0),
+            leafInflightPeak(0),
             openSv48(false),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
