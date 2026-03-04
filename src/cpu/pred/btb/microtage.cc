@@ -326,6 +326,12 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     meta->tagFoldedHist = tagFoldedHist;
     meta->altTagFoldedHist = altTagFoldedHist;
     meta->indexFoldedHist = indexFoldedHist;
+    meta->aheadIndexFoldedHistValid = !aheadindexFoldedHist.empty();
+    if (meta->aheadIndexFoldedHistValid) {
+        meta->aheadIndexFoldedHist = aheadindexFoldedHist.front();
+    } else {
+        meta->aheadIndexFoldedHist.clear();
+    }
     meta->history = history;
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
@@ -875,10 +881,6 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
         return;
     }
 
-    if (!aheadindexFoldedHist.empty()) {
-        indexFoldedHist = aheadindexFoldedHist.front();
-    }
-
     for (int t = 0; t < numPredictors; t++) {
         // Update tag folded history immediately so tag calculation always sees current history.
         tagFoldedHist[t].update(history, 2, taken, pc, target);
@@ -941,32 +943,30 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         DPRINTF(TAGE, "recoverPHist: no prediction metadata, cannot recover\n");
         return;
     }
-    if (aheadindexFoldedHist.empty()) {
-        DPRINTF(TAGE, "recoverPHist: ahead index history queue empty, recovering current index history directly\n");
-        for (int i = 0; i < numPredictors; i++) {
-            indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
-        }
-    } else {
-        auto &foldedHistQueuefront = aheadindexFoldedHist.front();
-        for (int i = 0; i < numPredictors; i++) {
-            foldedHistQueuefront[i].recover(predMeta->indexFoldedHist[i]);
-            indexFoldedHist[i].recover(foldedHistQueuefront[i]);
-        }
+    // Restore current folded index history exactly to prediction-time state.
+    for (int i = 0; i < numPredictors; i++) {
+        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    if (debug::TAGEHistory && !aheadindexFoldedHist.empty()) {
-        bool mismatch = false;
-        for (int i = 0; i < numPredictors; i++) {
-            if (indexFoldedHist[i].get() != aheadindexFoldedHist.front()[i].get()) {
-                mismatch = true;
-                break;
-            }
-        }
-        if (mismatch) {
+
+    // Restore delayed index folded history slot exactly to prediction-time state.
+    while (!aheadindexFoldedHist.empty()) {
+        aheadindexFoldedHist.pop();
+    }
+    if (predMeta->aheadIndexFoldedHistValid) {
+        assert(predMeta->aheadIndexFoldedHist.size() == numPredictors);
+        aheadindexFoldedHist.push(predMeta->aheadIndexFoldedHist);
+    }
+
+    if (debug::TAGEHistory) {
+        bool queue_valid_mismatch =
+            (predMeta->aheadIndexFoldedHistValid != !aheadindexFoldedHist.empty());
+        if (queue_valid_mismatch) {
             DPRINTF(TAGEHistory,
-                    "recoverPHist: indexFoldedHist stale vs ahead queue, cond_taken %d\n",
+                    "recoverPHist: ahead queue valid mismatch after restore, cond_taken %d\n",
                     cond_taken);
         }
     }
+
     for (int i = 0; i < numPredictors; i++) {
         altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);

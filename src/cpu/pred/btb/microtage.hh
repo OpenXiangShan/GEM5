@@ -388,8 +388,10 @@ public:
         std::vector<PathFoldedHist> tagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
         std::vector<PathFoldedHist> altTagFoldedHist;
+        bool aheadIndexFoldedHistValid;
+        std::vector<PathFoldedHist> aheadIndexFoldedHist;
         bitset history;     // for viewing
-        TageMeta() {}
+        TageMeta() : aheadIndexFoldedHistValid(false) {}
     } TageMeta;
 
 private:
