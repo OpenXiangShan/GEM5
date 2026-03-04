@@ -42,7 +42,6 @@ namespace test {
 
 class MicroTAGE : public TimedBaseBTBPredictor
 {
-    using defer = std::shared_ptr<void>;
     using bitset = boost::dynamic_bitset<>;
   public:
 #ifdef UNIT_TEST
@@ -62,12 +61,11 @@ class MicroTAGE : public TimedBaseBTBPredictor
             short counter;  // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
             bool useful;    // 1-bit usefulness counter; true means useful
             Addr pc;        // branch pc, like branch position, for btb entry pc check
-            unsigned lruCounter; // Counter for LRU replacement policy
 
-            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0), lruCounter(0) {}
+            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0) {}
 
             TageEntry(Addr tag, short counter, Addr pc) :
-                      valid(true), tag(tag), counter(counter), useful(false), pc(pc), lruCounter(0) {}
+                      valid(true), tag(tag), counter(counter), useful(false), pc(pc) {}
             bool taken() const {
                 return counter >= 0;
             }
@@ -176,18 +174,9 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Calculate TAGE index with folded history (uint64_t version for performance)
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
 
-    // Calculate TAGE tag for a given PC and table
-    // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, Addr position = 0);
-
     // Calculate TAGE tag with folded history (uint64_t version for performance)
     // position: branch position within the block (xored into tag like RTL)
     Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0);
-
-    // Get offset within a block for a given PC
-    Addr getOffset(Addr pc) {
-        return (pc & (blockSize - 1)) >> 1;
-    }
 
     // Get branch index within a prediction block
     unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC);
@@ -208,14 +197,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Number of bits used for indexing each table
     std::vector<unsigned> tableIndexBits;
 
-    // Masks for table indexing
-    std::vector<bitset> tableIndexMasks;
-
     // Number of bits used for tags in each table
     std::vector<unsigned> tableTagBits;
-
-    // Masks for tag matching
-    std::vector<bitset> tableTagMasks;
 
     // PC shift amounts for each table
     std::vector<unsigned> tablePcShifts;
@@ -232,9 +215,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Folded history for index calculation
     std::vector<PathFoldedHist> indexFoldedHist;
 
-    // Linear feedback shift register for allocation
-    LFSR64 allocLFSR;
-
     // Maximum history length, not used
     unsigned maxHistLen;
 
@@ -249,19 +229,10 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // useful bit reset counter, when cnt >= 256, reset useful bit of all entries
     int usefulResetCnt{0};
 
-    // Check if a tag matches
-    bool matchTag(Addr expected, Addr found);
-
-    // Set tag bits for a given table
-    void setTag(Addr &dest, Addr src, int table);
-
-    // Number of tables to allocate on misprediction
-    unsigned numTablesToAlloc;
-
     // Instruction shift amount
     unsigned instShiftAmt {1};
 
-    // use for microtage updatemispred counting
+    // used for MicroTAGE update misprediction counting
     void checkUtageUpdateMisspred(const FetchStream &stream);
 
     // Update prediction counter with saturation
@@ -273,12 +244,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Decrement counter with saturation
     bool satDecrement(int min, short &counter);
 
-    // Cache for TAGE indices
-    std::vector<Addr> tageIndex;
-
-    // Cache for TAGE tags
-    std::vector<Addr> tageTag;
-
     // Whether to update on read
     bool updateOnRead;
 
@@ -287,7 +252,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // When prediction and update access the same bank in one cycle, update is dropped
     const unsigned numBanks;         // Number of banks (e.g., 4)
     const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
-    const unsigned blockWidth;       // floorLog2(blockSize), e.g., 5 for 32B blocks
     const unsigned bankBaseShift;    // Bits removed before bank selection (default: instShiftAmt)
     const unsigned indexShift;       // bankBaseShift + bankIdWidth when banking enabled
     bool enableBankConflict;         // Enable/disable bank conflict simulation
@@ -321,8 +285,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
         Scalar updateAltDiffers;
         Scalar updateUseAltOnNaUpdated;
         Scalar updateProviderNa;
-        Scalar updateUseNaCorrect;
-        Scalar updateUseNaWrong;
         Scalar updateUseAltOnNaCorrect;
         Scalar updateUseAltOnNaWrong;
         Scalar updateAllocFailure;
@@ -357,10 +319,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
         Scalar predHit;
         Scalar predMiss;
 
-        int bankIdx;
-        int numPredictors;
-        int numBanks;
-
 #ifndef UNIT_TEST
         TageStats(statistics::Group* parent, int numPredictors, int numBanks);
 #endif
@@ -374,13 +332,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
 #endif
 
 public:
-
-    // Recover folded history after misprediction
-    void recoverFoldedHist(const bitset& history);
-
-public:
-
-
     // Metadata for TAGE prediction
     typedef struct TageMeta
     {
@@ -421,11 +372,6 @@ private:
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way);
-
-
-    // Helper methods for LRU management
-    void updateLRU(int table, Addr index, unsigned way);
-    unsigned getLRUVictim(int table, Addr index);
 
     std::shared_ptr<TageMeta> meta;
 };
