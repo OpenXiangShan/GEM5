@@ -256,8 +256,7 @@ def config_aligned_l3(options, system, l3_cache_class):
         system.l3_wrapper.addSliceAccessor(cache_slice)
         cache_slice.setCacheAccessor(inner_cache)
 
-        if (not options.no_pf) and options.l3_hwp_type == 'PrefetcherForwarder' and \
-                system.l3_wrapper.prefetcher != NULL:
+        if (not options.no_pf) and options.l3_hwp_type == 'PrefetcherForwarder':
             inner_cache.prefetcher.setRealPrefetcher(system.l3_wrapper.prefetcher)
 
         # Connect the slice inner ports to the actual cache.
