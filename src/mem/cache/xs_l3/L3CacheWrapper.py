@@ -60,7 +60,7 @@ class L3CacheWrapper(ClockedObject):
     data_sram_banks = Param.Unsigned(1, "Number of DataSram banks for dividing Data Sets")
     dir_sram_banks = Param.Unsigned(1, "Number of DirSram banks for dividing Dir Sets")
 
-    prefetcher = Param.BasePrefetcher(L3CompositeWithWorkerPrefetcher(), "Prefetcher attached to L3CacheWrapper")
+    prefetcher = Param.BasePrefetcher(WorkerPrefetcher(), "Prefetcher attached to L3CacheWrapper")
     system = Param.System(Parent.any, "System we belong to")
 
     def __init__(self, **kwargs):
