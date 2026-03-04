@@ -78,8 +78,8 @@ def setKmhV3IdealParams(args, system):
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
-            cpu.branchPred.ftq_size = 256
-            cpu.branchPred.fsq_size = 256
+            cpu.branchPred.ftq_size = 64
+            cpu.branchPred.fsq_size = 64
 
         # l1 cache per core
         if args.caches:

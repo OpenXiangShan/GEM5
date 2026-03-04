@@ -92,8 +92,8 @@ def setKmhV3Params(args, system):
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
-            cpu.branchPred.ftq_size = 256
-            cpu.branchPred.fsq_size = 256
+            cpu.branchPred.ftq_size = 64
+            cpu.branchPred.fsq_size = 64
 
             cpu.branchPred.mbtb.resolvedUpdate = True
             cpu.branchPred.tage.resolvedUpdate = True
