@@ -465,6 +465,24 @@ ROB::getHeadGroupLastDoneSeq(ThreadID tid)
     return 0;
 }
 
+InstSeqNum
+ROB::getHeadGroupLastNotReadySeq(ThreadID tid)
+{
+    if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
+        auto it = instList[tid].begin();
+        InstSeqNum seqnum = 0;
+        for (int i = 0; i < threadGroups[tid].front(); i++, it++) {
+            auto& inst = *it;
+            if (!inst->readyToCommit() || !inst->isExecuted() || inst->faulted()) {
+                seqnum = inst->seqNum;
+                break;
+            }
+        }
+        return seqnum;
+    }
+    return 0;
+}
+
 unsigned
 ROB::numFreeEntries(ThreadID tid)
 {
@@ -685,10 +703,10 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
     if (!instList[tid].empty()) {
         InstIt tail_thread = instList[tid].end();
         tail_thread--;
-
         squashIt[tid] = tail_thread;
 
-        doSquash(tid);
+        // dont squash on current cycle
+        // doSquash(tid);
     }
 }
 
@@ -762,10 +780,10 @@ ROB::ROBStats::ROBStats(statistics::Group *parent)
 }
 
 DynInstPtr
-ROB::findInst(ThreadID tid, InstSeqNum squash_inst)
+ROB::findInst(ThreadID tid, InstSeqNum seqnum)
 {
     for (InstIt it = instList[tid].begin(); it != instList[tid].end(); it++) {
-        if ((*it)->seqNum == squash_inst) {
+        if ((*it)->seqNum == seqnum) {
             return *it;
         }
     }

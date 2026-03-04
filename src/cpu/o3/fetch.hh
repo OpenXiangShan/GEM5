@@ -247,6 +247,8 @@ class Fetch
     /** Sets the main backwards communication time buffer pointer. */
     void setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer);
 
+    void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
+
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
 
@@ -435,9 +437,6 @@ class Fetch
                           const DynInstPtr squashInst,
                           const InstSeqNum seq_num, ThreadID tid);
 
-    /** Checks if a thread is stalled. */
-    bool checkStall(ThreadID tid) const;
-
     /** Updates overall fetch stage status; to be called at the end of each
      * cycle. */
     FetchStatus updateFetchStatus();
@@ -505,22 +504,6 @@ class Fetch
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
             const PCStateBase &next_pc, bool trace);
-
-    /** Returns the appropriate thread to fetch, given the fetch policy. */
-    ThreadID getFetchingThread();
-
-    /** Returns the appropriate thread to fetch using a round robin policy. */
-    ThreadID roundRobin();
-
-    /** Returns the appropriate thread to fetch using the IQ count policy. */
-    ThreadID iqCount();
-
-    /** Returns the appropriate thread to fetch using the LSQ count policy. */
-    ThreadID lsqCount();
-
-    /** Returns the appropriate thread to fetch using the branch count
-     * policy. */
-    ThreadID branchCount();
 
     /** Pipeline the next I-cache access to the current one. */
     void pipelineIcacheAccesses(ThreadID tid);
@@ -655,7 +638,7 @@ class Fetch
     };
 
     /** Tracks which stages are telling fetch to stall. */
-    Stalls stalls[MaxThreads];
+    StallSignals* stallSig;
 
     /** Decode to fetch delay. */
     Cycles decodeToFetchDelay;

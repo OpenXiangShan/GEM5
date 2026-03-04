@@ -129,7 +129,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
                 "--debug-start=%llu --debug-end=%llu\n",
                 lastCommitCycle, cpu->curCycle(),
                 cpu->cyclesToTicks(Cycles(lastCommitCycle - 200)),
-                cpu->cyclesToTicks(Cycles(lastCommitCycle + 50)));
+                cpu->cyclesToTicks(Cycles(lastCommitCycle + 200)));
         }
         cpu->schedule(this->stuckCheckEvent, cpu->clockEdge(Cycles(40010)));
       }, "CommitStuckCheckEvent"),
@@ -165,7 +165,9 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         }
     }
 
-    for (ThreadID tid = 0; tid < MaxThreads; tid++) {
+    assert(renameToROBDelay == 1);
+
+    for (ThreadID tid = 0; tid < numThreads; tid++) {
         commitStatus[tid] = Idle;
         changedROBNumEntries[tid] = false;
         trapSquash[tid] = false;
@@ -181,6 +183,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         htmStarts[tid] = 0;
         htmStops[tid] = 0;
         traceCommitIndex[tid] = 0;
+        fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(renameWidth);
     }
     interrupt = NoFault;
 
@@ -461,7 +464,6 @@ Commit::startupStage()
     // Broadcast the number of free entries.
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         toIEW->commitInfo[tid].usedROB = true;
-        toIEW->commitInfo[tid].freeROBEntries = rob->numFreeEntries(tid);
         toIEW->commitInfo[tid].emptyROB = true;
     }
 
@@ -1104,10 +1106,10 @@ Commit::commit()
         _nextStatus = Active;
     }
 
-    if (num_squashing_threads != numThreads) {
-        // If we're not currently squashing, then get instructions.
-        getInsts();
+    // If we're not currently squashing, then get instructions.
+    moveInstsToBuffer();
 
+    if (num_squashing_threads != numThreads) {
         // Try to commit any instructions.
         commitInsts();
     }
@@ -1120,7 +1122,6 @@ Commit::commit()
 
         if (changedROBNumEntries[tid]) {
             toIEW->commitInfo[tid].usedROB = true;
-            toIEW->commitInfo[tid].freeROBEntries = rob->numFreeEntries(tid);
 
             wroteToTimeBuffer = true;
             changedROBNumEntries[tid] = false;
@@ -1142,7 +1143,6 @@ Commit::commit()
             checkEmptyROB[tid] = false;
             toIEW->commitInfo[tid].usedROB = true;
             toIEW->commitInfo[tid].emptyROB = true;
-            toIEW->commitInfo[tid].freeROBEntries = rob->numFreeEntries(tid);
             wroteToTimeBuffer = true;
         }
 
@@ -1242,7 +1242,9 @@ Commit::commitInsts()
             if (commit_success) {
                 cpu->perfCCT->updateInstPos(head_inst->seqNum, PerfRecord::AtCommit);
                 cpu->perfCCT->commitMeta(head_inst->seqNum);
-                head_inst->printDisassemblyAndResult(cpu->name());
+
+                DPRINTF(CommitTrace, "CT: %s\n", head_inst->genDisassembly());
+
                 if (ismispred) {
                     ismispred = false;
                     stats.recovery_bubble += (cpu->curCycle() - lastCommitCycle) * renameWidth;
@@ -1382,7 +1384,11 @@ Commit::commitInsts()
                 if (head_inst->isLoad()) {
                     Addr load_pc = head_inst->pcState().instAddr();
                     Addr load_addr = head_inst->physEffAddr;
-                    Addr load_value = head_inst->memData ? *((uint64_t *)head_inst->memData) : 0;
+                    char buffer[8] = {0};
+                    if (head_inst->memData) {
+                        std::memcpy(buffer, head_inst->memData, head_inst->effSize);
+                    }
+                    Addr load_value = *((uint64_t *)buffer);
                     bool hit = loadTripleCounter.update(load_pc, load_addr, load_value);
                     if (hit) {
                         // same PC && same addr && same value
@@ -1492,6 +1498,7 @@ Commit::commitInsts()
     for (int tid = 0; tid < MaxThreads; tid++) {
         toIEW->commitInfo[tid].doneMemSeqNum =
             std::max(toIEW->commitInfo[tid].doneSeqNum, rob->getHeadGroupLastDoneSeq(tid));
+        toIEW->commitInfo[tid].robheadNotReadySeqNum = rob->getHeadGroupLastNotReadySeq(tid);
     }
 
     DPRINTF(CommitRate, "%i\n", num_committed);
@@ -1806,16 +1813,53 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 }
 
 void
-Commit::getInsts()
+Commit::moveInstsToBuffer()
 {
     DPRINTF(Commit, "Getting instructions from Rename stage.\n");
+    int insts_from_rename = fromRename->size;
+    if (insts_from_rename != 0) {
+        // move to buffer
+        ThreadID tid = fromRename->insts[0]->threadNumber;
+        assert(fixedbuffer[tid].empty());
+        for (int i = 0; i < insts_from_rename; ++i) {
+            const DynInstPtr &inst = fromRename->insts[i];
+            assert(inst->threadNumber == tid);
+            if (localSquashVer.largerThan(inst->getVersion())) {
+                inst->setSquashed();
+            }
+            fixedbuffer[tid].push_back(inst);
+        }
+    }
+
+    // check threads stall & status
+    ThreadID tid = InvalidThreadID;
+    for (int i = 0; i < numThreads; i++) {
+        bool robblock = commitStatus[i] == ROBSquashing || commitStatus[i] == TrapPending;
+        bool block = (rob->getMaxEntries(i) - rob->getThreadEntries(i) < fixedbuffer[i].size()) || robblock;
+        bool active = !block && !fixedbuffer[i].empty();
+        DPRINTF(Commit, "Thread %i: block %i robblock %i active %i\n", i, block, robblock, active);
+
+        stallSig->blockIEW[i] = block;
+        if (active) {
+            if (tid == InvalidThreadID) tid = i;
+            else {
+                // if there are multiple active threads, must exhaust all threads first
+                // to avoid starvation of other threads and also avoid resource conflict
+                stallSig->blockIEW[tid] = true;
+                stallSig->blockIEW[i] = true;
+                DPRINTF(IEW, "Multiple active threads detected, blocking all threads\n");
+            }
+        }
+    }
+    if (tid == InvalidThreadID) {
+        DPRINTF(Commit, "No instructions from Rename stage.\n");
+        return;
+    }
 
     // Read any renamed instructions and place them into the ROB.
-    int insts_to_process = std::min((int)renameWidth, fromRename->size);
-
+    int insts_to_process = fixedbuffer[tid].size();
     for (int inst_num = 0; inst_num < insts_to_process; ++inst_num) {
-        const DynInstPtr &inst = fromRename->insts[inst_num];
-        ThreadID tid = inst->threadNumber;
+        const DynInstPtr &inst = fixedbuffer[tid].front();
 
         if (localSquashVer.largerThan(inst->getVersion())) {
             inst->setSquashed();
@@ -1839,6 +1883,13 @@ Commit::getInsts()
                     "Instruction PC %s was squashed, skipping.\n",
                     tid, inst->seqNum, inst->pcState());
         }
+
+        fixedbuffer[tid].pop_front();
+    }
+
+    if (!fixedbuffer[tid].empty()) {
+        stallSig->blockIEW[tid] = true;
+        DPRINTF(Commit, "Not all instructions from Rename stage could be processed, blocking thread %i\n", tid);
     }
 }
 
@@ -1873,14 +1924,18 @@ Commit::markCompletedInsts()
     for (int inst_num = 0; inst_num < fromIEW->size; ++inst_num) {
         assert(fromIEW->insts[inst_num]);
         if (!fromIEW->insts[inst_num]->isSquashed()) {
-            DPRINTF(Commit, "[tid:%i] Marking PC %s, [sn:%llu] ready "
+            DPRINTF(Commit,
+                    "[tid:%i] Marking PC %s, [sn:%llu] ready "
                     "within ROB.\n",
-                    fromIEW->insts[inst_num]->threadNumber,
-                    fromIEW->insts[inst_num]->pcState(),
+                    fromIEW->insts[inst_num]->threadNumber, fromIEW->insts[inst_num]->pcState(),
                     fromIEW->insts[inst_num]->seqNum);
 
             // Mark the instruction as ready to commit.
             fromIEW->insts[inst_num]->setCanCommit();
+            auto &inst = fromIEW->insts[inst_num];
+
+            panic_if(!rob->findInst(0, inst->seqNum), "[sn:%llu] Committed instruction not found in ROB",
+                     inst->seqNum);
         }
     }
 }
@@ -1901,10 +1956,7 @@ Commit::updateComInstStats(const DynInstPtr &inst)
         cpu->instDone(tid, inst);
     }
 
-    //
     //  Control Instructions
-    //
-    //
     if (inst->isControl()) {
         bool mispred = inst->mispredicted();
         std::unique_ptr<PCStateBase> tmp_next_pc(inst->pcState().clone());

@@ -328,7 +328,7 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
             assert(dst_inst);
-            if (!dst_inst->isLoad()) panic("dst[sn:%llu] is not load", dst_inst->seqNum);
+            if (!dst_inst->isLoad()) panic("dst[sn:%llu] is not load, src[sn:%llu]", dst_inst->seqNum, inst->seqNum);
             warn_once(
                 "Tt's should not happen on classic cache, it may be wrong delay of load wake or missed loadcancel in "
                 "lsq\n");
@@ -1193,7 +1193,7 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
         iqs[dispSeqVec.at(disp_seq)]->insert(inst);
     }
 
-    DPRINTF(Schedule, "[sn:%llu] dispatch: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
+    DPRINTF(Schedule, "[sn:%llu] scheduler insert: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
 }
 
 void
