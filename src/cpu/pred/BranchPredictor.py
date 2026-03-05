@@ -1076,7 +1076,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
     TTagPcShifts = VectorParam.Unsigned([1] * 4 ,"when the T0~Tn entry's tag generating, PC right shift")
     blockSize = Param.Unsigned(32,"tage index function uses 32B aligned block address")
 
-    histLengths = VectorParam.Unsigned([5,9,17,27] ,"the BTB TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned([5,17,59,109] ,"the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970,"The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numWays = Param.Unsigned(2, "Number of ways per set")
