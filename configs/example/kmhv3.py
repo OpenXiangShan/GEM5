@@ -105,7 +105,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
-            cpu.branchPred.mgsc.enabled = True
+            cpu.branchPred.mgsc.enabled = False
             cpu.branchPred.ras.enabled = True
 
             # RTL alignment: only enable bias + path + IMLI tables, disable PC threshold
