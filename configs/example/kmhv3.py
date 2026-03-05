@@ -106,6 +106,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.tage.useBranchPcForIndex = True
             cpu.branchPred.tage.numWays = 8
+            cpu.branchPred.tage.tableSizes = [8192] * cpu.branchPred.tage.numPredictors
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = False
             cpu.branchPred.ras.enabled = True
