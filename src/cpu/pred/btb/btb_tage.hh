@@ -296,6 +296,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Whether to update on read
     bool updateOnRead;
 
+    // Whether to use branch PC (instead of stream startPC) for index computation
+    bool useBranchPcForIndex;
+
     // ========== Bank Configuration ==========
     // Bank mechanism to simulate hardware bank conflicts
     // When prediction and update access the same bank in one cycle, update is dropped

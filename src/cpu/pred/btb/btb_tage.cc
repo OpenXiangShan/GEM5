@@ -42,6 +42,7 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize, u
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
       updateOnRead(false),
+      useBranchPcForIndex(false),
       numBanks(numBanks),
       bankIdWidth(ceilLog2(numBanks)),
       blockWidth(floorLog2(blockSize)),
@@ -81,6 +82,7 @@ useAltOnNaWidth(p.useAltOnNaWidth),
 numTablesToAlloc(p.numTablesToAlloc),
 enableSC(p.enableSC),
 updateOnRead(p.updateOnRead),
+useBranchPcForIndex(p.useBranchPcForIndex),
 numBanks(p.numBanks),
 bankIdWidth(ceilLog2(p.numBanks)),
 blockWidth(floorLog2(blockSize)),
@@ -208,12 +210,13 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
     unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
+    Addr indexPc = useBranchPcForIndex ? btb_entry.pc : startPC;
 
     for (int i = numPredictors - 1; i >= 0; --i) {
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
-        Addr index = predMeta ? getTageIndex(startPC, i, predMeta->indexFoldedHist[i].get())
-                          : getTageIndex(startPC, i);
+        Addr index = predMeta ? getTageIndex(indexPc, i, predMeta->indexFoldedHist[i].get())
+                          : getTageIndex(indexPc, i);
         Addr tag = predMeta ? getTageTag(startPC, i,
                             predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(), position)
                         : getTageTag(startPC, i, position);
@@ -571,9 +574,10 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
     // Calculate branch position within the block (like RTL's cfiPosition)
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
+    Addr indexPc = useBranchPcForIndex ? entry.pc : startPC;
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
-        Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get());
+        Addr newIndex = getTageIndex(indexPc, ti, meta->indexFoldedHist[ti].get());
         Addr newTag = getTageTag(startPC, ti,
             meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
 
