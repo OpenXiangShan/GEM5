@@ -144,7 +144,7 @@ private:
     uint64_t totalCount = 0;
 };
 
- class Commit
+class Commit
 {
   public:
     /** Overall commit status. Used to determine if the CPU can deschedule
@@ -175,6 +175,10 @@ private:
     std::set<uint64_t> faultNum;
     /** Per-thread status. */
     ThreadStatus commitStatus[MaxThreads];
+
+    boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
+
+    StallSignals* stallSig;
 
     bool robSquashHolding{false};
     /** Commit policy used in SMT mode. */
@@ -233,6 +237,8 @@ private:
     void setIEWStage(IEW *iew_stage);
 
     void setDecodeStage(Decode *decode_stage);
+
+    void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
 
     /** The pointer to the IEW stage. Used solely to ensure that
      * various events (traps, interrupts, syscalls) do not occur until
@@ -373,7 +379,7 @@ private:
     bool commitHead(const DynInstPtr &head_inst, unsigned inst_num);
 
     /** Gets instructions from rename and inserts them into the ROB. */
-    void getInsts();
+    void moveInstsToBuffer();
 
     /** Squash instructions in the rename to ROB TimeBuffer. */
     void squashInflightAndUpdateVersion(ThreadID tid);

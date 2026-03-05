@@ -862,9 +862,6 @@ class DynInst : public ExecContext, public RefCounted
     /** Clears the serializeAfter part of this instruction.*/
     void clearSerializeAfter() { status.reset(SerializeAfter); }
 
-    /** Checks if this serializeAfter is only temporarily set. */
-    bool isTempSerializeAfter() { return status[SerializeAfter]; }
-
     /** Sets the serialization part of this instruction as handled. */
     void setSerializeHandled() { status.set(SerializeHandled); }
 

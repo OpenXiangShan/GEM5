@@ -1661,10 +1661,15 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
     // All responses received in 1 cycle are cache hit.
     bool cacheHit = LSQRequest::_inst->getCpuPtr()->ticksToCycles(curTick() - pkt->sendTick) <= 1;
     // Dump inst num, request addr, and packet addr
-    DPRINTF(LSQ, "Single Req::recvTimingResp: inst: %llu, pkt: %#lx, isLoad: %d, "
-                "isLLSC: %d, isUncache: %d, isCachehit: %d, data: %d\n",
-                pkt->req->getReqInstSeqNum(), pkt->getAddr(), isLoad(), mainReq()->isLLSC(),
-                mainReq()->isUncacheable(), cacheHit, *(pkt->getPtr<uint64_t*>()));
+    if (debug::LSQ) {
+        char buffer[8];
+        std::memcpy(buffer, pkt->getPtr<char>(), pkt->getSize());
+        DPRINTF(LSQ, "Single Req::recvTimingResp: inst: %llu, pkt: %#lx, isLoad: %d, "
+                    "isLLSC: %d, isUncache: %d, isCachehit: %d, data: %d\n",
+                    pkt->req->getReqInstSeqNum(), pkt->getAddr(), isLoad(), mainReq()->isLLSC(),
+                    mainReq()->isUncacheable(), cacheHit, *((uint64_t*)buffer));
+    }
+
 
     if (isLoad()) {
         auto it = std::find(lsqUnit()->inflightLoads.begin(), lsqUnit()->inflightLoads.end(), this);

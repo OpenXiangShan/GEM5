@@ -413,7 +413,7 @@ class CPU : public BaseCPU
     void removeInstsUntil(const InstSeqNum &seq_num, ThreadID tid);
 
     /** Removes the instruction pointed to by the iterator. */
-    void squashInstIt(const ListIt &instIt, ThreadID tid);
+    ListIt squashInstIt(ListIt &instIt, ThreadID tid);
 
     // flush fetch buffer while flushing tlb
     void flushTLBs() override;
@@ -451,7 +451,7 @@ class CPU : public BaseCPU
     /** List of all the instructions that will be removed at the end of this
      *  cycle.
      */
-    std::queue<ListIt> removeList;
+    std::deque<ListIt> removeList;
 
 #ifdef DEBUG
     /** Debug structure to keep track of the sequence numbers still in
@@ -526,20 +526,24 @@ class CPU : public BaseCPU
         NumStages
     };
 
+    StallSignals stallSignals;
+
     /** The main time buffer to do backwards communication. */
     TimeBuffer<TimeStruct> timeBuffer;
 
     /** The fetch stage's instruction queue. */
-    TimeBuffer<FetchStruct> fetchQueue;
+    TimeBuffer<FetchStruct> fetchTimebuffer;
 
     /** The decode stage's instruction queue. */
-    TimeBuffer<DecodeStruct> decodeQueue;
+    TimeBuffer<DecodeStruct> decodeTimebuffer;
 
     /** The rename stage's instruction queue. */
-    TimeBuffer<RenameStruct> renameQueue;
+    TimeBuffer<RenameStruct> renameTimebuffer;
 
     /** The IEW stage's instruction queue. */
-    TimeBuffer<IEWStruct> iewQueue;
+    TimeBuffer<IEWStruct> iewTimebuffer;
+
+    StallSignals stallSig;
 
   private:
     /** The activity recorder; used to tell if the CPU has any
