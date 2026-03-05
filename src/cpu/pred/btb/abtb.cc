@@ -215,7 +215,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         mixed_entries = entries;
         for (auto &entry : mixed_entries) {
             if (entry.pc == ubtb_pred_entry.pc) {
-                entry.valid = false; // invalidate duplicated entry from aBTB (only use for align counter)
+                ubtb_pred_entry.valid = false; // invalidate duplicated entry from aBTB (only use for align counter)
                 break;
             }
         }
