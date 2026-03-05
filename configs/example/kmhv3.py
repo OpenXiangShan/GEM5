@@ -104,9 +104,11 @@ def setKmhV3Params(args, system):
             cpu.branchPred.microtage.enabled = False
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
-            cpu.branchPred.tage.useBranchPcForIndex = True
-            cpu.branchPred.tage.numWays = 8
-            cpu.branchPred.tage.tableSizes = [8192] * 8
+            cpu.branchPred.tage.useBranchPcForIndex = False
+            cpu.branchPred.tage.usePositionForIndexMix = True
+            cpu.branchPred.tage.indexMixTables = 4
+            cpu.branchPred.tage.numWays = 2
+            cpu.branchPred.tage.tableSizes = [2048] * 8
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = False
             cpu.branchPred.ras.enabled = True

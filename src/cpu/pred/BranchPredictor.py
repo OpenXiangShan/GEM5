@@ -1044,6 +1044,8 @@ class BTBTAGE(TimedBaseBTBPredictor):
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
     updateOnRead = Param.Bool(True, "Enable update on read, no need to save tage meta in FTQ")
     useBranchPcForIndex = Param.Bool(False, "Use branch PC (instead of stream startPC) to compute TAGE index")
+    usePositionForIndexMix = Param.Bool(False, "Mix branch position into index for low tables")
+    indexMixTables = Param.Unsigned(4, "Number of low tables using position-mixed index")
     numPredictors = Param.Unsigned(8, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([2048]*8, "the TAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([13]*8, "the T0~Tn entry's tag bit size")

@@ -194,6 +194,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Get branch index within a prediction block
     unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC);
 
+    // Build per-table index PC with optional position mixing for low tables.
+    Addr buildIndexPC(Addr basePc, unsigned position, unsigned table) const;
+
     // Get bank ID from PC (after removing instruction alignment bits)
     // Extract bits [bankBaseShift + bankIdWidth - 1 : bankBaseShift]
     unsigned getBankId(Addr pc) const;
@@ -298,6 +301,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Whether to use branch PC (instead of stream startPC) for index computation
     bool useBranchPcForIndex;
+
+    // Whether to mix branch position into index for low tables.
+    bool usePositionForIndexMix;
+    unsigned indexMixTables;
 
     // ========== Bank Configuration ==========
     // Bank mechanism to simulate hardware bank conflicts
