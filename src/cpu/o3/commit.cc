@@ -65,6 +65,7 @@
 #include "cpu/o3/thread_state.hh"
 #include "cpu/thread_context.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/valuepred/es_metadata.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
@@ -1807,6 +1808,11 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         updateMetaData->seq_no = head_inst->seqNum;
         updateMetaData->actualValue = head_inst->actualValue;
         updateMetaData->isMisprediction = head_inst->vpMisprediction;
+        if (auto *esUpdateMetaData =
+                dynamic_cast<valuepred::ESUpdateMetaData *>(updateMetaData)) {
+            esUpdateMetaData->hasCandidatePrediction = head_inst->vpResult.hasCandidate;
+            esUpdateMetaData->candidateValue = head_inst->vpResult.value;
+        }
         valuePred->updateValuePredictor(updateMetaData);
         valuePred->stats.VPsupported++;
         if (head_inst->vpResult.speculative) {

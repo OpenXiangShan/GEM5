@@ -41,6 +41,8 @@ class VPResult
     bool speculative = false;
     // prediction value
     RegVal value = 0;
+    // predictor has generated a candidate value (shadow or real)
+    bool hasCandidate = false;
 };
 
 // This factory class constructs predictor-related data structures

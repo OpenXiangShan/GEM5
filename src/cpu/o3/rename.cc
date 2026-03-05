@@ -1360,6 +1360,7 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
                 inst->vpSupported = false;
                 inst->vpResult.speculative = false;
                 inst->vpResult.value = 0xdeadbeefULL;
+                inst->vpResult.hasCandidate = false;
                 continue;
             }
 

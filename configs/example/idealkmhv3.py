@@ -67,8 +67,9 @@ def setKmhV3IdealParams(args, system):
 
         # value predictor
         cpu.valuePred = EStride()
-        cpu.valuePred.logMaxConfidence = 13
-        cpu.valuePred.thresholdPercent = 0.35
+        cpu.valuePred.logMaxConfidence = 14
+        cpu.valuePred.thresholdPercent = 0.37
+        cpu.valuePred.shadowThresholdPercent = 0.99
 
         # lsq
         cpu.LQEntries = 128

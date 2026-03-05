@@ -26,6 +26,8 @@ class EStride(ValuePredictor):
     logESTBEntrys = Param.Int(7, "log 2 of ES table entry counts")
     logMaxConfidence = Param.Int(5, "log 2 of max confidence number")
     thresholdPercent = Param.Float(0.25, "threshold percent of confidence")
+    shadowThresholdPercent = Param.Float(
+        0.99, "minimum shadow prediction accuracy required for real value prediction")
 
     # inflight window configuration
     idealWindow = Param.Bool(True, "The key in the ideal window is a 64-bit pc, not hashed")
