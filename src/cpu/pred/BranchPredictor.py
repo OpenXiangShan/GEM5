@@ -1057,7 +1057,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
-    enableBankConflict = Param.Bool(True, "Enable bank conflict simulation")
+    enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
     numDelay = 2
 
 class MicroTAGE(BTBTAGE):
@@ -1152,6 +1152,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     enablePTable = Param.Bool(True, "Enable P (path) table")
     enableBiasTable = Param.Bool(True, "Enable Bias table")
     enablePCThreshold = Param.Bool(False, "Enable PC-indexed threshold table")
+    focusBranchPC = Param.Addr(0, "Only write MGSCTRACE for this branch PC when non-zero")
 
     numDelay = 2
 

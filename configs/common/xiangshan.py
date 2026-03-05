@@ -369,7 +369,7 @@ def build_xiangshan_system(args):
 
         enable_bp_db = len(args.enable_bp_db) > 1
         if enable_bp_db:
-            bp_db_switches = args.enable_bp_db[1] + ['basic']
+            bp_db_switches = list(args.enable_bp_db[1])
             print("BP db switches:", bp_db_switches)
         else:
             bp_db_switches = []
