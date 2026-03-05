@@ -1241,6 +1241,10 @@ Commit::commitInsts()
 
             if (commit_success) {
                 cpu->perfCCT->updateInstPos(head_inst->seqNum, PerfRecord::AtCommit);
+                auto res = head_inst->getResult();
+                if (res.is<RegVal>()) {
+                    cpu->perfCCT->updateInstMeta(head_inst->seqNum, InstDetail::Result, res.as<RegVal>());
+                }
                 cpu->perfCCT->commitMeta(head_inst->seqNum);
 
                 DPRINTF(CommitTrace, "CT: %s\n", head_inst->genDisassembly());
@@ -1710,9 +1714,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 cause = cpu->readMiscReg(
                     RiscvISA::MiscRegIndex::MISCREG_MCAUSE, tid);
             }
-            auto exception_no =inst_fault->exception();
+            auto exception_no = inst_fault->exception();
             if (faultNum.find(exception_no) != faultNum.end()) {
-                DPRINTF(Commit, "Force to raise No.%lu exception at page fault\n", inst_fault);
+                DPRINTF(Commit, "Force to raise No.%lu exception at page fault\n", exception_no);
                 cpu->setExceptionGuideExecInfo(
                     exception_no, cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_MTVAL, tid),
                     cpu->readMiscReg(RiscvISA::MiscRegIndex::MISCREG_STVAL, tid), false, 0, tid);
