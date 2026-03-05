@@ -22,6 +22,7 @@ namespace debug {
 #include <cmath>
 #include <cstdint>
 #include <ctime>
+#include <limits>
 #include <type_traits>
 #include <vector>
 
@@ -157,6 +158,8 @@ BTBMGSC::BTBMGSC()
       enablePTable(true),
       enableBiasTable(true),
       enablePCThreshold(false),
+      idealImliMode(false),
+      oracleLoopMode(false),
       focusBranchPC(0),
       mgscStats()
 {
@@ -205,6 +208,8 @@ BTBMGSC::BTBMGSC(const Params &p)
       enablePTable(p.enablePTable),
       enableBiasTable(p.enableBiasTable),
       enablePCThreshold(p.enablePCThreshold),
+      idealImliMode(p.idealImliMode),
+      oracleLoopMode(p.oracleLoopMode),
       focusBranchPC(p.focusBranchPC),
       mgscStats(this)
 {
@@ -366,7 +371,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     // DPRINTF(MGSC, "startPC: %#lx, local index: %d, local_folded_hist: %s\n", startPC, lIndex[0], buf.c_str());
 
     for (unsigned int i = 0; i < iTableNum; ++i) {
-        iIndex[i] = getHistIndex(startPC, iTableIdxWidth - numCtrsPerLineBits, indexIFoldedHist[i].get());
+        auto i_hist_value = idealImliMode ? getIdealImliFolded(i, btb_entry.pc) : indexIFoldedHist[i].get();
+        iIndex[i] = getHistIndex(startPC, iTableIdxWidth - numCtrsPerLineBits, i_hist_value);
     }
 
     for (unsigned int i = 0; i < gTableNum; ++i) {
@@ -390,7 +396,14 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     int l_weight = findWeight(lWeightTable, btb_entry.pc);
     int l_scaled_percsum = calculateScaledPercsum(l_weight, l_percsum);
 
-    int i_percsum = enableITable ? calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc) : 0;
+    int i_percsum = 0;
+    if (enableITable) {
+        if (oracleLoopMode) {
+            i_percsum = getOracleLoopPercsum(btb_entry.pc);
+        } else {
+            i_percsum = calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc);
+        }
+    }
     int i_weight = findWeight(iWeightTable, btb_entry.pc);
     int i_scaled_percsum = calculateScaledPercsum(i_weight, i_percsum);
 
@@ -521,6 +534,8 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
     meta->indexIFoldedHist = indexIFoldedHist;
     meta->indexGFoldedHist = indexGFoldedHist;
     meta->indexPFoldedHist = indexPFoldedHist;
+    meta->idealImliCounter = idealImliCounter;
+    meta->oracleLoopTable = oracleLoopTable;
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
@@ -1130,6 +1145,14 @@ BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPredict
 void
 BTBMGSC::specUpdateIHist(FullBTBPrediction &pred)
 {
+    if (oracleLoopMode) {
+        applyOracleLoopUpdates(pred.getOracleLoopUpdates());
+        return;
+    }
+    if (idealImliMode) {
+        applyIdealImliUpdates(pred.getIdealImliUpdates());
+        return;
+    }
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getBwHistInfo();
@@ -1258,12 +1281,159 @@ BTBMGSC::recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken)
         return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
+    if (oracleLoopMode) {
+        oracleLoopTable = predMeta->oracleLoopTable;
+        applyOracleLoopUpdates(entry.getOracleLoopUpdatesDuringSquash(
+            entry.squashPC, entry.getBranchInfo().isCond, entry.exeTaken, entry.getTakenTarget()));
+        return;
+    }
+    if (idealImliMode) {
+        idealImliCounter = predMeta->idealImliCounter;
+        applyIdealImliUpdates(entry.getIdealImliUpdatesDuringSquash(
+            entry.squashPC, entry.getBranchInfo().isCond, entry.exeTaken, entry.getTakenTarget()));
+        return;
+    }
     for (int i = 0; i < iTableNum; i++) {
         indexIFoldedHist[i].recover(predMeta->indexIFoldedHist[i]);
     }
     // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
     boost::dynamic_bitset<> dummy;
     doUpdateHist(dummy, shamt, cond_taken, indexIFoldedHist);
+}
+
+uint64_t
+BTBMGSC::getIdealImliFolded(unsigned tableIdx, Addr branchPC) const
+{
+    auto it = idealImliCounter.find(branchPC);
+    if (it == idealImliCounter.end()) {
+        return 0;
+    }
+
+    const unsigned hist_len = static_cast<unsigned>(iHistLen[tableIdx]);
+    const uint64_t max_folded = hist_len >= 63 ? std::numeric_limits<uint64_t>::max() : ((1ULL << hist_len) - 1);
+    return std::min<uint64_t>(it->second, max_folded);
+}
+
+void
+BTBMGSC::applyIdealImliUpdates(const std::vector<std::pair<Addr, bool>> &updates)
+{
+    if (!enableITable || iHistLen.empty()) {
+        return;
+    }
+
+    const unsigned max_hist_len = static_cast<unsigned>(*std::max_element(iHistLen.begin(), iHistLen.end()));
+    const uint16_t max_counter = max_hist_len >= 16 ? std::numeric_limits<uint16_t>::max()
+                                                    : static_cast<uint16_t>((1U << max_hist_len) - 1);
+
+    for (const auto &[pc, taken] : updates) {
+        auto &counter = idealImliCounter[pc];
+        if (taken) {
+            if (counter < max_counter) {
+                counter++;
+            }
+        } else {
+            counter = 0;
+        }
+    }
+}
+
+int
+BTBMGSC::getOracleLoopPercsum(Addr branchPC) const
+{
+    constexpr int strongSignal = 63;
+    constexpr int weakSignal = -15;
+    constexpr uint8_t fixedConfThreshold = 2;
+    constexpr uint8_t shrinkConfThreshold = 2;
+
+    auto it = oracleLoopTable.find(branchPC);
+    if (it == oracleLoopTable.end()) {
+        return 0;
+    }
+
+    const auto &entry = it->second;
+    if (!entry.hasLastTrip) {
+        return 0;
+    }
+
+    int expectedTrip = entry.lastTrip;
+    bool useShrinkModel = false;
+    if (entry.hasPrevTrip && entry.shrinkConf >= shrinkConfThreshold && entry.prevTrip > entry.lastTrip) {
+        const int shrinkDelta = static_cast<int>(entry.prevTrip) - static_cast<int>(entry.lastTrip);
+        expectedTrip = std::max(0, static_cast<int>(entry.lastTrip) - shrinkDelta);
+        useShrinkModel = true;
+    }
+
+    if (!useShrinkModel && entry.conf < fixedConfThreshold) {
+        return 0;
+    }
+    if (entry.curIter < expectedTrip) {
+        return strongSignal;
+    }
+    if (entry.curIter == expectedTrip) {
+        return -strongSignal;
+    }
+    return weakSignal;
+}
+
+void
+BTBMGSC::applyOracleLoopUpdates(const std::vector<std::tuple<Addr, bool, bool>> &updates)
+{
+    if (!enableITable) {
+        return;
+    }
+
+    constexpr uint16_t maxCounter = std::numeric_limits<uint16_t>::max();
+    constexpr uint8_t maxConf = 7;
+
+    for (const auto &[pc, isBackward, taken] : updates) {
+        if (!isBackward) {
+            continue;
+        }
+
+        auto &entry = oracleLoopTable[pc];
+        if (taken) {
+            if (entry.curIter < maxCounter) {
+                entry.curIter++;
+            }
+            continue;
+        }
+
+        const uint16_t completedTrip = entry.curIter;
+        if (entry.hasLastTrip) {
+            auto tripDelta = std::abs(static_cast<int>(entry.lastTrip) - static_cast<int>(completedTrip));
+            if (tripDelta <= 1) {
+                if (entry.conf < maxConf) {
+                    entry.conf++;
+                }
+            } else if (entry.conf > 0) {
+                entry.conf--;
+            }
+        } else {
+            entry.conf = 1;
+        }
+
+        if (entry.hasPrevTrip && entry.hasLastTrip) {
+            const int prevDelta = static_cast<int>(entry.prevTrip) - static_cast<int>(entry.lastTrip);
+            const int newDelta = static_cast<int>(entry.lastTrip) - static_cast<int>(completedTrip);
+            if (prevDelta > 0 && newDelta > 0 && std::abs(prevDelta - newDelta) <= 1) {
+                if (entry.shrinkConf < maxConf) {
+                    entry.shrinkConf++;
+                }
+            } else if (entry.shrinkConf > 0) {
+                entry.shrinkConf--;
+            }
+        } else if (entry.hasLastTrip && entry.lastTrip > completedTrip) {
+            entry.shrinkConf = std::min<uint8_t>(entry.shrinkConf + 1, maxConf);
+        } else if (entry.shrinkConf > 0) {
+            entry.shrinkConf--;
+        }
+
+        entry.prevTrip = entry.lastTrip;
+        entry.hasPrevTrip = entry.hasLastTrip;
+        entry.lastTrip = completedTrip;
+        entry.hasLastTrip = true;
+        entry.curIter = 0;
+    }
 }
 
 /**

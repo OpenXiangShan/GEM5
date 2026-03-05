@@ -403,6 +403,46 @@ struct FetchTarget
         return std::make_pair(shamt, cond_taken);
     }
 
+    std::vector<std::pair<Addr, bool>>
+    getIdealImliUpdatesDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
+    {
+        std::vector<std::pair<Addr, bool>> updates;
+        for (auto &entry : predBTBEntries) {
+            if (!(entry.valid && entry.pc >= startPC && entry.pc < squash_pc)) {
+                continue;
+            }
+            if (!entry.isCond) {
+                break;
+            }
+            if (entry.target < entry.pc) {
+                updates.emplace_back(entry.pc, false);
+            }
+        }
+        if (is_cond && target < squash_pc) {
+            updates.emplace_back(squash_pc, actually_taken);
+        }
+        return updates;
+    }
+
+    std::vector<std::tuple<Addr, bool, bool>>
+    getOracleLoopUpdatesDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
+    {
+        std::vector<std::tuple<Addr, bool, bool>> updates;
+        for (auto &entry : predBTBEntries) {
+            if (!(entry.valid && entry.pc >= startPC && entry.pc < squash_pc)) {
+                continue;
+            }
+            if (!entry.isCond) {
+                break;
+            }
+            updates.emplace_back(entry.pc, entry.target < entry.pc, false);
+        }
+        if (is_cond) {
+            updates.emplace_back(squash_pc, target < squash_pc, actually_taken);
+        }
+        return updates;
+    }
+
     // should be called before components update
     void setUpdateInstEndPC(unsigned predictWidth)
     {
@@ -626,6 +666,54 @@ struct FullBTBPrediction
             }
         }
         return std::make_pair(shamt, taken);
+    }
+
+    std::vector<std::pair<Addr, bool>> getIdealImliUpdates() const
+    {
+        std::vector<std::pair<Addr, bool>> updates;
+        for (auto &entry : btbEntries) {
+            if (!entry.valid) {
+                continue;
+            }
+            if (!entry.isCond) {
+                break;
+            }
+            auto branch_pc = entry.pc;
+            auto it = CondTakens_find(condTakens, branch_pc);
+            if (it == condTakens.end()) {
+                continue;
+            }
+            if (entry.target < entry.pc) {
+                updates.emplace_back(branch_pc, it->second);
+            }
+            if (it->second) {
+                break;
+            }
+        }
+        return updates;
+    }
+
+    std::vector<std::tuple<Addr, bool, bool>> getOracleLoopUpdates() const
+    {
+        std::vector<std::tuple<Addr, bool, bool>> updates;
+        for (auto &entry : btbEntries) {
+            if (!entry.valid) {
+                continue;
+            }
+            if (!entry.isCond) {
+                break;
+            }
+            auto branch_pc = entry.pc;
+            auto it = CondTakens_find(condTakens, branch_pc);
+            if (it == condTakens.end()) {
+                continue;
+            }
+            updates.emplace_back(branch_pc, entry.target < branch_pc, it->second);
+            if (it->second) {
+                break;
+            }
+        }
+        return updates;
     }
 
     std::tuple<Addr, Addr, bool> getPHistInfo() //path

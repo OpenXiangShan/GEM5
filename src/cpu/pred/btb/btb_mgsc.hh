@@ -351,7 +351,21 @@ class BTBMGSC : public TimedBaseBTBPredictor
     bool enablePTable;
     bool enableBiasTable;
     bool enablePCThreshold;
+    bool idealImliMode;
+    bool oracleLoopMode;
     Addr focusBranchPC;
+    std::unordered_map<Addr, uint16_t> idealImliCounter;
+    struct OracleLoopEntry
+    {
+        uint16_t curIter = 0;
+        uint16_t prevTrip = 0;
+        uint16_t lastTrip = 0;
+        uint8_t conf = 0;
+        uint8_t shrinkConf = 0;
+        bool hasPrevTrip = false;
+        bool hasLastTrip = false;
+    };
+    std::unordered_map<Addr, OracleLoopEntry> oracleLoopTable;
 
     // Folded history for index calculation
     std::vector<GlobalBwFoldedHist> indexBwFoldedHist;
@@ -523,6 +537,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static bool &enablePTable(BTBMGSC &mgsc) { return mgsc.enablePTable; }
         static bool &enableBiasTable(BTBMGSC &mgsc) { return mgsc.enableBiasTable; }
         static bool &enablePCThreshold(BTBMGSC &mgsc) { return mgsc.enablePCThreshold; }
+        static bool &idealImliMode(BTBMGSC &mgsc) { return mgsc.idealImliMode; }
+        static bool &oracleLoopMode(BTBMGSC &mgsc) { return mgsc.oracleLoopMode; }
         static Addr &focusBranchPC(BTBMGSC &mgsc) { return mgsc.focusBranchPC; }
 
         static auto &bwTable(BTBMGSC &mgsc) { return mgsc.bwTable; }
@@ -570,6 +586,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
         std::vector<ImliFoldedHist> indexIFoldedHist;
         std::vector<GlobalFoldedHist> indexGFoldedHist;
         std::vector<PathFoldedHist> indexPFoldedHist;
+        std::unordered_map<Addr, uint16_t> idealImliCounter;
+        std::unordered_map<Addr, OracleLoopEntry> oracleLoopTable;
         MgscMeta(std::unordered_map<Addr, MgscPrediction> preds, std::vector<GlobalBwFoldedHist> indexBwFoldedHist,
                  std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist,
                  std::vector<ImliFoldedHist> indexIFoldedHist, std::vector<GlobalFoldedHist> indexGFoldedHist,
@@ -591,8 +609,15 @@ class BTBMGSC : public TimedBaseBTBPredictor
             indexIFoldedHist = other.indexIFoldedHist;
             indexGFoldedHist = other.indexGFoldedHist;
             indexPFoldedHist = other.indexPFoldedHist;
+            idealImliCounter = other.idealImliCounter;
+            oracleLoopTable = other.oracleLoopTable;
         }
     } MgscMeta;
+
+    uint64_t getIdealImliFolded(unsigned tableIdx, Addr branchPC) const;
+    void applyIdealImliUpdates(const std::vector<std::pair<Addr, bool>> &updates);
+    int getOracleLoopPercsum(Addr branchPC) const;
+    void applyOracleLoopUpdates(const std::vector<std::tuple<Addr, bool, bool>> &updates);
 
     std::shared_ptr<MgscMeta> meta;
 };

@@ -1152,6 +1152,8 @@ class BTBMGSC(TimedBaseBTBPredictor):
     enablePTable = Param.Bool(True, "Enable P (path) table")
     enableBiasTable = Param.Bool(True, "Enable Bias table")
     enablePCThreshold = Param.Bool(False, "Enable PC-indexed threshold table")
+    idealImliMode = Param.Bool(False, "Use branch-local ideal IMLI counter instead of global backward streak")
+    oracleLoopMode = Param.Bool(True, "Use a branch-local loop oracle signal as an upper-bound experiment")
     focusBranchPC = Param.Addr(0, "Only write MGSCTRACE for this branch PC when non-zero")
 
     numDelay = 2
