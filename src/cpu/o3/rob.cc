@@ -436,8 +436,8 @@ ROB::isHeadGroupReady(ThreadID tid)
             }
 
             // if one group has barrier or non-speculative or fault
-            // this group must be committed
-            if (inst->readyToCommit() && (!inst->isExecuted() || inst->faulted())) {
+            // this group can commit directly.
+            if (inst->isNonSpeculative() || inst->isStoreConditional() || !inst->isExecuted() || inst->faulted()) {
                 return true;
             }
         }
@@ -459,24 +459,6 @@ ROB::getHeadGroupLastDoneSeq(ThreadID tid)
                 break;
             }
             seqnum = inst->seqNum;
-        }
-        return seqnum;
-    }
-    return 0;
-}
-
-InstSeqNum
-ROB::getHeadGroupLastNotReadySeq(ThreadID tid)
-{
-    if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
-        auto it = instList[tid].begin();
-        InstSeqNum seqnum = 0;
-        for (int i = 0; i < threadGroups[tid].front(); i++, it++) {
-            auto& inst = *it;
-            if (!inst->readyToCommit() || !inst->isExecuted() || inst->faulted()) {
-                seqnum = inst->seqNum;
-                break;
-            }
         }
         return seqnum;
     }

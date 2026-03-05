@@ -288,7 +288,7 @@ struct TimeStruct
 
         InstSeqNum doneMemSeqNum;
 
-        InstSeqNum robheadNotReadySeqNum;
+        InstSeqNum robheadSeqNum;
 
         uint64_t doneFtqId; // F
         uint64_t squashedTargetId; // F

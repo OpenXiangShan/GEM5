@@ -1204,10 +1204,21 @@ Commit::commitInsts()
 
         // ThreadID commit_thread = getCommittingThread();
 
-        if (commit_thread == -1 || !rob->isHeadGroupReady(commit_thread))
+        if (commit_thread == -1)
             break;
 
         head_inst = rob->readHeadInst(commit_thread);
+
+        if (!rob->isHeadGroupReady(commit_thread)) {
+            if (debug::Commit && head_inst->readyToCommit()) {
+                InstSeqNum seqnum = rob->getHeadGroupLastDoneSeq(commit_thread);
+                DPRINTF(
+                    Commit,
+                    "[sn:%llu] Head is ready to commit, but the group is not all ready, last done inst [sn:%llu]\n",
+                    head_inst->seqNum, seqnum);
+            }
+            break;
+        }
 
         ThreadID tid = head_inst->threadNumber;
 
@@ -1502,7 +1513,12 @@ Commit::commitInsts()
     for (int tid = 0; tid < MaxThreads; tid++) {
         toIEW->commitInfo[tid].doneMemSeqNum =
             std::max(toIEW->commitInfo[tid].doneSeqNum, rob->getHeadGroupLastDoneSeq(tid));
-        toIEW->commitInfo[tid].robheadNotReadySeqNum = rob->getHeadGroupLastNotReadySeq(tid);
+
+        InstSeqNum robheadSeqNum = 0;
+        if (auto& it = rob->readHeadInst(tid)) {
+            robheadSeqNum = it->seqNum;
+        }
+        toIEW->commitInfo[tid].robheadSeqNum = robheadSeqNum;
     }
 
     DPRINTF(CommitRate, "%i\n", num_committed);
@@ -1828,9 +1844,7 @@ Commit::moveInstsToBuffer()
         for (int i = 0; i < insts_from_rename; ++i) {
             const DynInstPtr &inst = fromRename->insts[i];
             assert(inst->threadNumber == tid);
-            if (localSquashVer.largerThan(inst->getVersion())) {
-                inst->setSquashed();
-            }
+            if (!inst->isSquashed())
             fixedbuffer[tid].push_back(inst);
         }
     }
@@ -1864,11 +1878,6 @@ Commit::moveInstsToBuffer()
     int insts_to_process = fixedbuffer[tid].size();
     for (int inst_num = 0; inst_num < insts_to_process; ++inst_num) {
         const DynInstPtr &inst = fixedbuffer[tid].front();
-
-        if (localSquashVer.largerThan(inst->getVersion())) {
-            inst->setSquashed();
-        }
-
         if (!inst->isSquashed() &&
             commitStatus[tid] != ROBSquashing &&
             commitStatus[tid] != TrapPending) {
@@ -1902,17 +1911,15 @@ void
 Commit::squashInflightAndUpdateVersion(ThreadID tid)
 {
     DPRINTF(Commit, "Squashing in-flight renamed instructions\n");
-    int cycle = 0;  // Mark instructions renamed this cycle as squashed
-    auto tb_ptr = renameQueue->getWire(cycle);
-    DPRINTF(Commit, "%u insts in flight at cycle %d\n", tb_ptr->size,
-            cycle);
-    for (unsigned i_idx = 0; i_idx < tb_ptr->size; i_idx++) {
-        const DynInstPtr &inst = tb_ptr->insts[i_idx];
+    for (unsigned i_idx = 0; i_idx < fromRename->size; i_idx++) {
+        const DynInstPtr &inst = fromRename->insts[i_idx];
         DPRINTF(Commit, "[tid:%i] [sn:%llu] Squashing in-flight "
                 "instruction PC %s\n",
                 inst->threadNumber, inst->seqNum, inst->pcState());
         inst->setSquashed();
     }
+
+    fixedbuffer[tid].clear();
 
     localSquashVer.update(localSquashVer.nextVersion());
     toIEW->commitInfo[tid].squashVersion = localSquashVer;

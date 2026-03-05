@@ -1291,6 +1291,10 @@ Fetch::handleInterrupts()
 void
 Fetch::sendInstructionsToDecode()
 {
+
+    // Reset the number of instructions we've fetched
+    numInst = 0;
+
     bool any_thread_active = false;
     for (int i = 0; i < numThreads; i++) {
         if (!stallSig->blockFetch[i]) {
@@ -1300,8 +1304,13 @@ Fetch::sendInstructionsToDecode()
     }
     if (!any_thread_active) {
         // All threads are blocked, no instructions to send
+        for (int i = 0; i < numThreads; i++) {
+            updateStallReasons(0, i);
+            measureFrontendBubbles(0, i);
+        }
         return;
     }
+
     ThreadID tid = 0; // TODO: smt support
 
     // fetch totally stalled
@@ -1336,9 +1345,6 @@ Fetch::sendInstructionsToDecode()
         DPRINTF(Activity, "Activity this cycle.\n");
         cpu->activityThisCycle();
     }
-
-    // Reset the number of instructions we've fetched
-    numInst = 0;
 }
 
 void

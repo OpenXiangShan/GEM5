@@ -704,7 +704,7 @@ bool
 IEW::checkSerialize(const DynInstPtr& inst)
 {
     ThreadID tid = inst->threadNumber;
-    bool skipserialize = fromCommit->commitInfo[tid].robheadNotReadySeqNum == inst->seqNum;
+    bool skipserialize = fromCommit->commitInfo[tid].robheadSeqNum >= inst->seqNum;
 
     if (serializeOnNextInst[tid]) {
         inst->setSerializeBefore();

@@ -1194,6 +1194,8 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
             inst->setExecuted();
         }
     }
+    DPRINTF(LSQ, "[sn:%llu] isTranslationComplete %d, isMemAccessRequired %d, falut %d\n",
+        inst->seqNum, request->isTranslationComplete(), request->isMemAccessRequired(), inst->faulted());
 
     if (inst->traceData)
         inst->traceData->setMem(addr, size, flags);

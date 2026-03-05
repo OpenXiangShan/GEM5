@@ -172,8 +172,6 @@ class ROB
 
     InstSeqNum getHeadGroupLastDoneSeq(ThreadID tid);
 
-    InstSeqNum getHeadGroupLastNotReadySeq(ThreadID tid);
-
     /** Re-adjust ROB partitioning. */
     void resetEntries();
 
