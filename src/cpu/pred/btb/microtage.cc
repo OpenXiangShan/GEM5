@@ -985,10 +985,17 @@ MicroTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
         DPRINTF(TAGEHistory, "history:\t%s\n", hist_str.c_str());
     }
     for (int t = 0; t < numPredictors; t++) {
-        for (int type = 0; type < 3; type++) {
-            auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
-            foldedHist.check(hist);
+        // indexFoldedHist is intentionally delayed by one cycle via
+        // aheadindexFoldedHist in doUpdateHist(). During consistency checks
+        // right after speculative/recovery updates, compare against the staged
+        // next-cycle value when available.
+        if (!aheadindexFoldedHist.empty()) {
+            aheadindexFoldedHist.front()[t].check(hist);
+        } else {
+            indexFoldedHist[t].check(hist);
         }
+        tagFoldedHist[t].check(hist);
+        altTagFoldedHist[t].check(hist);
     }
 }
 
