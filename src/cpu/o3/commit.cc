@@ -1863,7 +1863,7 @@ Commit::moveInstsToBuffer()
         } else if (block) {
             block_reason = robInfoFromIEW->iewInfo[i].robHeadStallReason;
             if (block_reason == StallReason::NoStall) {
-                block_reason = StallReason::OtherStall;
+                block_reason = StallReason::ROBFull;
             }
         }
         DPRINTF(Commit, "Thread %i: block %i robblock %i active %i\n", i, block, robblock, active);

@@ -303,6 +303,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         {StallReason::Atomic,"Atomic"},
         {StallReason::ResumeUnblock, "ResumeUnblock"},
         {StallReason::CommitSquash, "CommitSquash"},
+        {StallReason::ROBFull, "ROBFull"},
+        {StallReason::RegFull, "RegFull"},
         {StallReason::OtherStall, "OtherStall"},
         {StallReason::OtherFetchStall, "OtherFetchStall"},
         {StallReason::FTQBubble, "FTQBubble"},

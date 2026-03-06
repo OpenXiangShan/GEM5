@@ -179,7 +179,31 @@ reverse tick 下，`StallSignals` 已经承担同拍背压的传播职责。
 
 ---
 
-## 8. 最后总结
+## 8. 新增的结构性背压原因
+
+在这次 reverse tick 统计修复之后，原本容易被吞到 `OtherStall` 里的两类结构性背压，被显式拆成了独立原因：
+
+### `RegFull`
+
+- 含义：rename 本级因为物理寄存器资源不足，无法继续向前推进
+- 位置：根因首先发生在 rename
+- 传播：如果这个原因继续向前反压，则 `rename/decode/fetch StallReason` 都可以看到 `RegFull`
+
+它不属于“未知 stall”，而是明确的 rename 资源瓶颈。
+
+### `ROBFull`
+
+- 含义：commit 侧因为 ROB 剩余空间不足，无法继续吸收来自 rename 的输入
+- 位置：根因首先体现为 commit 对上游的容量背压
+- 传播：如果这个原因沿着背压链向前扩散，则 `rename/decode/fetch StallReason` 都可以看到 `ROBFull`
+
+这里的 `ROBFull` 更接近“ROB 容量背压”，而不是“ROB head 对应指令的执行根因”。
+
+因此，这两个 reason 的引入，主要是为了把原本模糊的 `OtherStall` 拆解成更有解释力的结构性原因，而不是改变一级 topdown 行为。
+
+---
+
+## 9. 最后总结
 
 推荐的理解方式是：
 

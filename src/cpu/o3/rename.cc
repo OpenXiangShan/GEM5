@@ -354,7 +354,9 @@ Rename::tick()
         } else if (!can_rename) {
             block_reason = checkRenameStallFromIEW(i);
             if (block_reason == StallReason::NoStall) {
-                block_reason = StallReason::OtherStall;
+                block_reason = StallReason::RegFull;
+                ++stats.fullRegistersEvents;
+                stats.stallEvents[RegFull]++;
             }
         }
         DPRINTF(Rename, "[tid:%i] blockRename: %i, canRename: %i, block: %i, active: %i\n",
@@ -562,7 +564,9 @@ Rename::renameInsts(ThreadID tid)
         if (breakRename == StallReason::NoStall) {
             breakRename = checkRenameStallFromIEW(tid);
             if (breakRename == StallReason::NoStall) {
-                breakRename = StallReason::OtherStall;
+                breakRename = StallReason::RegFull;
+                ++stats.fullRegistersEvents;
+                stats.stallEvents[RegFull]++;
             }
         }
         blockReason = breakRename;
@@ -993,19 +997,21 @@ StallReason
 Rename::checkRenameStallFromIEW(ThreadID tid)
 {
     StallReason robHeadStallReason = fromIEW->iewInfo[tid].robHeadStallReason;
-    return robHeadStallReason;
+    if (robHeadStallReason != StallReason::NoStall) {
+        return robHeadStallReason;
+    }
 
-    // if (robHeadStallReason == StallReason::NoStall) {
-    //     if (calcFreeLQEntries(tid) <= 0) {
-    //         return fromIEW->iewInfo[tid].lqHeadStallReason;
-    //     } else if (calcFreeSQEntries(tid) <= 0) {
-    //         return fromIEW->iewInfo[tid].sqHeadStallReason;
-    //     } else {
-    //         return robHeadStallReason;
-    //     }
-    // } else {
-    //     return robHeadStallReason;
-    // }
+    StallReason lqHeadStallReason = fromIEW->iewInfo[tid].lqHeadStallReason;
+    if (lqHeadStallReason != StallReason::NoStall) {
+        return lqHeadStallReason;
+    }
+
+    StallReason sqHeadStallReason = fromIEW->iewInfo[tid].sqHeadStallReason;
+    if (sqHeadStallReason != StallReason::NoStall) {
+        return sqHeadStallReason;
+    }
+
+    return StallReason::NoStall;
 }
 
 } // namespace o3

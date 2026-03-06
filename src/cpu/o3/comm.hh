@@ -101,6 +101,8 @@ enum StallReason {
     ScalarReadyButNotIssued,  // B
     ResumeUnblock,  // B
     CommitSquash,  // BS
+    ROBFull,  // B
+    RegFull,  // B
     OtherStall,  // B
     NumStallReasons
 };

@@ -1221,6 +1221,7 @@ Fetch::initializeTickState()
     bool status_change = false;
 
     wroteToTimeBuffer = false;
+    setAllFetchStalls(StallReason::NoStall);
 
     // get the distribution of fetch status
     fetchStats.fetchStatusDist[fetchStatus[0]]++;
@@ -1304,8 +1305,21 @@ Fetch::sendInstructionsToDecode()
     }
     if (!any_thread_active) {
         // All threads are blocked, no instructions to send
+        ThreadID blocked_tid = InvalidThreadID;
         for (int i = 0; i < numThreads; i++) {
-            updateStallReasons(0, i);
+            if (stallSig->blockFetch[i]) {
+                blocked_tid = i;
+                break;
+            }
+        }
+
+        if (blocked_tid != InvalidThreadID) {
+            setAllFetchStalls(stallSig->fetchBlockReason[blocked_tid]);
+        }
+
+        toDecode->fetchStallReason = stallReason;
+
+        for (int i = 0; i < numThreads; i++) {
             measureFrontendBubbles(0, i);
         }
         return;
@@ -1350,7 +1364,9 @@ Fetch::sendInstructionsToDecode()
 void
 Fetch::updateStallReasons(unsigned insts_to_decode, ThreadID tid)
 {
-    if (insts_to_decode == 0) {
+    if (stallSig->blockFetch[tid]) {
+        setAllFetchStalls(stallSig->fetchBlockReason[tid]);
+    } else if (insts_to_decode == 0) {
         // fetch stalled
         if (stallReason[0] != StallReason::NoStall) {
             // previously set stall reason
