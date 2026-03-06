@@ -1129,6 +1129,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     percepTableEntryNum = Param.Unsigned(4096, "Num of entries in perception preditor weight table")
     gbhrLen = Param.Unsigned(23, "Length of gbhr in perception predictor")
     percepTableWidth = Param.Unsigned(8, "Width of weight in perception predictor table")
+    percepThres = Param.Unsigned(1472, "Threshold of perception predictor") # gbhrLen * (1<<(percepTableWidth - 2))
 
     thresholdTablelogSize = Param.Unsigned(6,
         "Log size of update threshold counters tables")

@@ -175,7 +175,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
     void specUpdateIHist(FullBTBPrediction &pred) override;
     void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred) override;
-    void specUpdateGBHR(FullBTBPrediction &pred);
+    void specUpdateGBHR(FullBTBPrediction &pred) override;
 
     // Recover all folded history after a misprediction, then update all folded history according to history and
     // pred.taken
@@ -189,7 +189,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
                       bool cond_taken) override;
     void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt,
                       bool cond_taken) override;
-    void recoverGBHR(const FetchTarget &entry, int shamt, bool cond_taken);
+    void recoverGBHR(const FetchTarget &entry, int shamt, bool cond_taken) override;
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchTarget &entry) override;
@@ -215,6 +215,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     int calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &table,
                          const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc);
 
+    int calculatePercepSum(Addr pc);
     /**
      * Find weight in a weight table for a given PC
      */
@@ -240,6 +241,12 @@ class BTBMGSC : public TimedBaseBTBPredictor
      */
     void updatePredTable(std::vector<std::vector<std::vector<int16_t>>> &table,
                          const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc, bool actual_taken);
+
+    /**
+     * Update a prediction table and allocate new entry if needed
+     */
+    void updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int percep_sum,bool percep_taken,
+                           Addr pc,bool actual_taken);
 
     /**
      * Update a weight table and allocate new entry if needed
@@ -339,8 +346,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /** perception pred param*/
     unsigned percepTableEntryNum;
     unsigned gbhrLen;
-    // unsigned PercepThres;
     unsigned percepTableWidth;
+    unsigned percepThres;
 
     /*Statistical corrector counters width*/
     unsigned scCountersWidth;
@@ -464,6 +471,10 @@ class BTBMGSC : public TimedBaseBTBPredictor
         Scalar predMiss{};
         Scalar scPredCorrect{};
         Scalar scPredWrong{};
+        Scalar percepPredCorrect{};
+        Scalar percepPredWrong{};
+        Scalar usePercepPred{};
+        Scalar percepHighConf{};
         Scalar scPredMissTaken{};
         Scalar scPredMissNotTaken{};
         Scalar scPredCorrectTageWrong{};

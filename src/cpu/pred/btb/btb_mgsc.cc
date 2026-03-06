@@ -112,13 +112,17 @@ BTBMGSC::initStorage()
     //perception weightTable init
     auto allocWeightTable = [&](std::vector<std::vector<int16_t>> &table,unsigned numEntries) -> uint64_t {
         assert(isPowerOf2(numEntries));
+        // if (!isPowerOf2(numEntries)) {
+        //     panic("numEntries (%d) is not a power of 2!", numEntries);
+        // }
         table.resize(numEntries);
         for (unsigned int i = 0; i<numEntries;++i){
-            table[i].resize(gbhrLen+1,PercepInitWeight);
+            table[i].resize(gbhrLen+1,0);
         }
-    }
+        return gbhrLen+1;
+    };
     auto percepWeightTableSize = allocWeightTable(percepWeightTable,percepTableEntryNum);
-    gbhr.resize(gbhrLen);
+    gbhr.resize(gbhrLen,1);
 
     pUpdateThreshold.resize(pow2(thresholdTablelogSize));
 }
@@ -168,6 +172,7 @@ BTBMGSC::BTBMGSC()
       enablePTable(true),
       enableBiasTable(true),
       enablePCThreshold(false),
+      enablePerceptionPred(false),
       mgscStats()
 {
     // Test-only small config: keep tables tiny and deterministic for fast unit tests.
@@ -200,6 +205,10 @@ BTBMGSC::BTBMGSC(const Params &p)
       pHistLen(p.pHistLen),
       biasTableNum(p.biasTableNum),
       biasTableIdxWidth(p.biasTableIdxWidth),
+      percepTableEntryNum(p.percepTableEntryNum),
+      gbhrLen(p.gbhrLen),
+      percepTableWidth(p.percepTableWidth),
+      percepThres(p.percepThres),
       scCountersWidth(p.scCountersWidth),
       thresholdTablelogSize(p.thresholdTablelogSize),
       updateThresholdWidth(p.updateThresholdWidth),
@@ -215,6 +224,7 @@ BTBMGSC::BTBMGSC(const Params &p)
       enablePTable(p.enablePTable),
       enableBiasTable(p.enableBiasTable),
       enablePCThreshold(p.enablePCThreshold),
+      enablePerceptionPred(p.enablePerceptionPred),
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
@@ -296,7 +306,7 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &
 int
 BTBMGSC::calculatePercepSum(Addr pc)
 {
-    int index = pc % numEntries;
+    int index = pc % percepTableEntryNum;
     auto weight = percepWeightTable[index];
 
     int bias = 1;
@@ -437,16 +447,17 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     //genertate perception prediction
     int percep_sum = enablePerceptionPred ? calculatePercepSum(btb_entry.pc) : 0;
-    int percep_index = pc % numEntries;
+    int percep_index = pc % percepTableEntryNum;
     // Find thresholds
     // pc-indexed threshold table (only if enabled)
     int p_update_thres = enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.pc) : 0;
 
     int total_thres = (updateThreshold / 8) + p_update_thres;
-    int percep_thres = gbhrLen / 2;
+    int percep_thres = percepThres;
 
     bool use_sc_pred = forceUseSC;  // Force use SC if configured
     bool use_percep_pred = false;
+    bool percep_taken = percep_sum>=0;
     if (!use_sc_pred) {
         if (tage_info.tage_pred_conf_high) {
             if (abs(total_sum) > total_thres / 2) {
@@ -455,15 +466,19 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
         } else if (tage_info.tage_pred_conf_mid) {
             if (abs(total_sum) > total_thres / 4) {
                 use_sc_pred = true;
+            }else if (abs(percep_sum) > percep_thres){
+                use_sc_pred = true;
+                use_percep_pred = true;
             }
         } else if (tage_info.tage_pred_conf_low) {
             if (abs(total_sum) > total_thres / 8) {
                 use_sc_pred = true;
+            }else if (abs(percep_sum) > percep_thres){
+                use_sc_pred = true;
+                use_percep_pred = true;
             }
         }
     }
-    if (abs(percep_sum) > percep_thres)
-        use_percep_pred = true;
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
     bool taken = use_sc_pred ? (use_percep_pred? percep_sum>=0 : total_sum >= 0) : tage_info.tage_pred_taken;
 
@@ -658,14 +673,14 @@ BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int p
                            Addr pc,bool actual_taken)
 {
     bool percep_update = false;
-    int percep_thres = gbhrLen / 2;
-    if (abs(percep_sum) < percep_thres || percep_taken != actual_taken)
+    int percep_thres = percepThres;
+    if (abs(percep_sum) < (percep_thres/2) || percep_taken != actual_taken)
         percep_update = true;
-    int index = pc % numEntries;
+    int index = pc % percepTableEntryNum;
     int bias = 1;
     if (percep_update){
         weightTable[index][0] += ( (actual_taken?1:-1)*bias);
-        for (int i=0;i<gbhrLen){
+        for (int i=0;i<gbhrLen;i++){
             auto &entry = weightTable[index][i+1];
             updateCounter(actual_taken == gbhr[i],percepTableWidth,entry);
             // weightTable[index][i+1] += (actual_taken == gbhr[i]?1:-1);
@@ -724,10 +739,16 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
     auto tage_conf_high = pred.tage_conf_high;
     auto tage_conf_mid = pred.tage_conf_mid;
     auto tage_conf_low = pred.tage_conf_low;
-
+    auto percep_sum = pred.percep_sum;
+    if (abs(percep_sum) > percepThres){
+        mgscStats.percepHighConf++;
+    }
     // SC vs TAGE outcomes
     if (pred.use_mgsc) {
         mgscStats.scUsed++;
+        if (pred.use_percep){
+            mgscStats.usePercepPred++;
+        }
         if (sc_pred_taken == actual_taken && tage_pred_taken != actual_taken) {
             mgscStats.scCorrectTageWrong++;
         } else if (sc_pred_taken != actual_taken && tage_pred_taken == actual_taken) {
@@ -1398,6 +1419,10 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
       ADD_STAT(predMiss, statistics::units::Count::get(), "number of sc prediction miss"),
       ADD_STAT(scPredCorrect, statistics::units::Count::get(), "number of sc prediction correct"),
       ADD_STAT(scPredWrong, statistics::units::Count::get(), "number of sc prediction wrong"),
+      ADD_STAT(percepPredCorrect, statistics::units::Count::get(), "number of perception prediction correct") ,
+      ADD_STAT(percepPredWrong, statistics::units::Count::get(), "number of perception prediction wrong") ,
+      ADD_STAT(usePercepPred, statistics::units::Count::get(), "number of mgsc use perception prediction") ,
+      ADD_STAT(percepHighConf,statistics::units::Count::get(), "number of perception sum above threshold"),
       ADD_STAT(scPredMissTaken, statistics::units::Count::get(), "number of sc prediction miss taken"),
       ADD_STAT(scPredMissNotTaken, statistics::units::Count::get(), "number of sc prediction miss not taken"),
       ADD_STAT(scPredCorrectTageWrong, statistics::units::Count::get(),"number of sc prediction correct and tage wrong"),
@@ -1455,9 +1480,13 @@ BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
     bool pred_hit = false;
     bool sc_taken = false;
     bool tage_taken = false;
+    int percep_sum = 0;
+    bool percep_taken = false;
     if (pred_it != meta->preds.end()) {
         sc_taken =pred_it->second.taken;
         tage_taken = pred_it->second.taken_before_sc;
+        percep_sum = pred_it->second.percep_sum;
+        percep_taken = (percep_sum >= 0) ? true : false;
         pred_hit = true;
     }
     auto actual_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
@@ -1474,17 +1503,24 @@ BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
                 mgscStats.scPredWrongTageCorrect++;
             }
         }
+        if (percep_taken == actual_taken){
+            mgscStats.percepPredCorrect++;
+        }else{
+            mgscStats.percepPredWrong++;
+        }
     }else {
         mgscStats.predMiss++;
         if (actual_taken) {
             mgscStats.scPredMissTaken++;
             mgscStats.scPredWrong++;
+            mgscStats.percepPredWrong++;
             if (actual_taken == tage_taken) {
                 mgscStats.scWrongTageCorrect++;
             }
         } else {
             mgscStats.scPredMissNotTaken++;
             mgscStats.scPredCorrect++;
+            mgscStats.percepPredCorrect++;
             if (sc_taken != tage_taken) {
                 mgscStats.scPredCorrectTageWrong++;
             }

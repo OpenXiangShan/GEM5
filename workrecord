@@ -37,8 +37,8 @@ export http_proxy=http://172.38.11.182:10808
     /** perception pred param*/
     unsigned percepTableEntryNum; // 权重组的总数
     unsigned gbhrLen;
-    // unsigned PercepThres;
     unsigned percepTableWidth;
+    unsigned PercepThres;
 
     bool enablePerceptionPred;
 
@@ -60,6 +60,40 @@ export http_proxy=http://172.38.11.182:10808
 
 3.4：
 1.进入tmux之后，要先进行source ~/.bashrc
-2.使用/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin跑修改前的结构可以保证ipc在2.+,应该是正常情况。此时condmiss/condnum 约为4.194%
+2.使用/nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin跑修改前的结构可以保证ipc在2.218566,应该是正常情况。此时condmiss/condnum 约为4.194%
+3.加入之后预测准确率狂掉，不太对啊朋友
+4.目前加入的计数器：
+    Scalar percepPredCorrect{};
+    Scalar percepPredWrong{};
+    Scalar usePercepPred{};
+    Scalar percepHighConf{};
+5.目前何时使用感知机预测器结果部分的逻辑似乎有问题，目前完全覆盖掉了其他表项的逻辑。此外，有关如何计数部分的逻辑，仍然有待修改。
 
+3.5:
+1.提高update的门槛，即当预测错误或者正确但把握很低(低于阈值的一半)时更新，可以提高正确率，但会降低percep被使用的次数。
+2.可能需要自己找时间阅读原版论文，ai阅读得出的结果存在一定问题，且不全面。另外，需要找一些相关优化的论文。
+3.目前优化方向：增加gbhr长度，但这样必定会增加硬件负荷；尝试用pc hash取代单纯地pc低d位进行索引；尝试动态阈值
+4.针对mcf，启用percep《4096 8 23 200》
+system.cpu.ipc                               0.421617                       # IPC: Instructions Per Cycle ((Count/Cycle))
+system.cpu.branchPred.mgsc.percepPredCorrect      3333593                       # number of perception prediction correct (Count)
+system.cpu.branchPred.mgsc.percepPredWrong      3444180                       # number of perception prediction wrong (Count)
+system.cpu.branchPred.mgsc.usePercepPred        79845
+启用percep前
+system.cpu.ipc                               0.418220
+system.cpu.branchPred.mgsc.scPredCorrect      6291103                       # number of sc prediction correct (Count)
+system.cpu.branchPred.mgsc.scPredWrong         486670                       # number of sc prediction wrong (Count)
+5.在xs-gem5对应github 跑pr的脚本，可以找到对应路径，找到对应ci脚本。
+    应该是github线上跑的内容，用到了服务器上的某个脚本，根据对应脚本位置可以直接跑
+6.异或问题？文献过于古早，可能要找更新的文献探索相关的逻辑
+7.ai 工具 cli，copilet
+8.从源头理解感知机预测器，本质是一个学习率为1(?)的单层感知机，对于异或这种无法线性分割的问题难以处理。而无法断言(或者基本可以否定)
+    分支预测是一个无法线性分割的问题，单一的进行线性分割无法完全适应整体的预测结果。单从论文来看，并没有说明异或问题，或者学习率相关内容
+    优化猜想：
+        修改学习率？把weight变成浮点数据？感觉很荒谬，考虑硬件更荒谬
+        可变阈值？可能会导致perception更容易参与最终决策，但如果能把perception的正确率提高，感觉也有戏。
+        pc hash？类似采用foldhist逻辑，为了避免不同pc索引到相同权重表项，交叉感染。感觉有戏
+        多层感知机？找的论文中有一篇描述多层感知机预测器，
+        或许想办法搞到内部调试数据，分析对应的分支模式
+        能不能单一统计不同pc的分支预测准确率？看看在哪些分支预测上存在优势？
 
+3.6
