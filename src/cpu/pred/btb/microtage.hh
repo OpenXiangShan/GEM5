@@ -58,13 +58,13 @@ class MicroTAGE : public TimedBaseBTBPredictor
             bool valid;      // Whether this entry is valid
             Addr tag;       // Tag for matching
             short counter;  // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
-            bool useful;    // 1-bit usefulness counter; true means useful
+            uint8_t useful; // 2-bit usefulness counter [0, 3]
             Addr pc;        // branch pc, like branch position, for btb entry pc check
 
-            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0) {}
+            TageEntry() : valid(false), tag(0), counter(0), useful(0), pc(0) {}
 
-            TageEntry(Addr tag, short counter, Addr pc) :
-                      valid(true), tag(tag), counter(counter), useful(false), pc(pc) {}
+            TageEntry(Addr tag, short counter, Addr pc, uint8_t useful = 0) :
+                      valid(true), tag(tag), counter(counter), useful(useful), pc(pc) {}
             bool taken() const {
                 return counter >= 0;
             }
@@ -225,8 +225,16 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
 
-    // useful bit reset counter, when cnt >= 256, reset useful bit of all entries
-    int usefulResetCnt{0};
+    static constexpr unsigned UsefulMax = 3;
+    static constexpr unsigned LowTableCount = 2;
+    static constexpr uint8_t LowTableInitUseful = 1;  // 01: weak-invalid
+    static constexpr uint8_t HighTableInitUseful = 2; // 10: weak-valid
+    static constexpr unsigned LowTableDecayThreshold = 128;
+    static constexpr unsigned HighTableDecayThreshold = 256;
+
+    // Allocation-failure counters used for global useful decay policies.
+    unsigned lowTableUsefulDecayFailCnt{0};
+    unsigned highTableUsefulDecayFailCnt{0};
 
     // Instruction shift amount
     unsigned instShiftAmt {1};

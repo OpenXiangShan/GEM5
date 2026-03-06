@@ -117,7 +117,8 @@ tageStats(this, p.numPredictors, p.numBanks)
         altTagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16));
         indexFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16));
     }
-    usefulResetCnt = 0;
+    lowTableUsefulDecayFailCnt = 0;
+    highTableUsefulDecayFailCnt = 0;
 
 #ifndef UNIT_TEST
     hasDB = true;
@@ -218,8 +219,9 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
-                DPRINTF(UTAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
+                DPRINTF(UTAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %u, btb_pc %#lx, pos %u\n",
+                    i, index, way, entry.valid, entry.tag, entry.counter, static_cast<unsigned>(entry.useful),
+                    btb_entry.pc, position);
                 break;  // only one way can be matched, avoid multi-hit, TODO: RTL behavior?
             }
         }
@@ -421,7 +423,7 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         // Update prediction counter
         updateCounter(actual_taken, 3, way.counter);
 
-        // Update useful bit based on several conditions
+        // Update useful counter based on several conditions
         bool main_is_correct = main_info.taken() == actual_taken;
         bool base_is_correct_and_strong =
                                      (base_taken == actual_taken) &&
@@ -430,20 +432,20 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         // a. Special reset (humility mechanism)
         if (base_is_correct_and_strong && main_is_correct) {
             way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to humility rule\n");
+            DPRINTF(TAGEUseful, "useful counter reset to 0 due to humility rule\n");
         } else if (main_info.taken() != base_taken) {
-            // b. Original logic to set useful bit high
+            // b. Increase useful counter if this provider helps and is correct.
             if (main_is_correct) {
-                way.useful = 1;
+                way.useful = std::min<uint8_t>(way.useful + 1, UsefulMax);
             }
         }
 
-        // c. Reset u on counter sign flip (becomes weak)
+        // c. Reset useful on counter sign flip (becomes weak)
         if (way.counter == 0 || way.counter == -1) {
             way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
+            DPRINTF(TAGEUseful, "useful counter reset to 0 due to weak counter\n");
         }
-        DPRINTF(UTAGE, "useful bit is now %d\n", way.useful);
+        DPRINTF(UTAGE, "useful counter is now %u\n", static_cast<unsigned>(way.useful));
 
         // No LRU maintenance
 
@@ -502,6 +504,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
     // - For each table from start_table upward, check the set at computed index.
     // - Prefer invalid ways; else choose any way with useful==0 and weak counter.
     // - If none, apply a one-step age penalty to a strong, not-useful way (no allocation).
+    const unsigned low_table_count = std::min<unsigned>(LowTableCount, numPredictors);
 
     // Calculate branch position within the block (like RTL's cfiPosition)
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
@@ -518,16 +521,16 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
-            if (!cand.valid || (!cand.useful && weakish)) {
+            if (!cand.valid || (cand.useful == 0 && weakish)) {
                 short newCounter = actual_taken ? 0 : -1;
+                uint8_t initUseful = ti < low_table_count ? LowTableInitUseful : HighTableInitUseful;
                 DPRINTF(UTAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
                         ti, newIndex, way, newTag, position, newCounter, entry.pc);
-                cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+                cand = TageEntry(newTag, newCounter, entry.pc, initUseful);
                 tageStats.updateAllocSuccess++;
                 allocated_table = ti;
                 allocated_index = newIndex;
                 allocated_way = way;
-                usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
                 return true;
             }
         }
@@ -536,26 +539,45 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-            if (!cand.useful && !weakish) {
+            if (cand.useful == 0 && !weakish) {
                 if (cand.counter > 0) cand.counter--; else cand.counter++;
                 DPRINTF(UTAGE, "age penalty applied on table %d[%lu][%u], new ctr %d\n",
                         ti, newIndex, way, cand.counter);
                 break; // one penalty per table per update
             }
         }
-
-        tageStats.updateAllocFailure++;
-        usefulResetCnt++;
     }
 
-    if (usefulResetCnt >= 256) {
-        usefulResetCnt = 0;
+    tageStats.updateAllocFailure++;
+
+    // Global useful decay policy based on allocation failures:
+    // - Lower tables [0,1]: every 128 failures, useful = max(useful - 1, 0)
+    // - Higher tables [2, ...]: every 256 failures, useful = useful >> 1
+    lowTableUsefulDecayFailCnt++;
+    if (lowTableUsefulDecayFailCnt >= LowTableDecayThreshold) {
+        lowTableUsefulDecayFailCnt = 0;
         tageStats.updateResetU++;
-        DPRINTF(UTAGE, "reset useful bit of all entries\n");
-        for (auto &table : tageTable) {
-            for (auto &set : table) {
+        DPRINTF(UTAGE, "decay useful for low tables (threshold %u)\n", LowTableDecayThreshold);
+        for (unsigned t = 0; t < low_table_count; ++t) {
+            for (auto &set : tageTable[t]) {
                 for (auto &way : set) {
-                    way.useful = false;
+                    if (way.useful > 0) {
+                        way.useful--;
+                    }
+                }
+            }
+        }
+    }
+
+    highTableUsefulDecayFailCnt++;
+    if (highTableUsefulDecayFailCnt >= HighTableDecayThreshold) {
+        highTableUsefulDecayFailCnt = 0;
+        tageStats.updateResetU++;
+        DPRINTF(UTAGE, "decay useful for high tables (threshold %u)\n", HighTableDecayThreshold);
+        for (unsigned t = low_table_count; t < numPredictors; ++t) {
+            for (auto &set : tageTable[t]) {
+                for (auto &way : set) {
+                    way.useful >>= 1;
                 }
             }
         }
