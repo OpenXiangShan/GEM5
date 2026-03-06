@@ -3,6 +3,7 @@ from m5.objects.ClockedObject import ClockedObject
 from m5.objects.DDRWrapper import *
 from m5.objects.L2Wrapper import *
 from m5.objects.FakeL3 import *
+from m5.objects.MeshNode import *
 class L2ToDramSys(ClockedObject):
     type = 'L2ToDramSys'
     cxx_header = "mem/xsCHI/TopoSys/L2todram.hh"
@@ -51,6 +52,11 @@ class L2ToDramSys(ClockedObject):
     L2Wrapper = Param.L2Wrapper("L2 Wrapper")
 
     L3 = Param.FakeL3("L3 mux")
+
+    # Minimal mesh chain for RN/HN path:
+    # L2 endpoint -- MeshNode0 <-> MeshNode1 -- FakeL3 endpoint
+    MeshNode0 = Param.MeshNode("RN-side mesh node")
+    MeshNode1 = Param.MeshNode("HN-side mesh node")
 
     L2BridgeBufferSize = Param.Unsigned(4, "Number of L2Bridgebuffers")
 

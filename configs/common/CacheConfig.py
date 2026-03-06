@@ -166,6 +166,16 @@ def config_cache(options, system):
                 system.CHIsys = L2ToDramSys(configFile=os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'))
                 system.CHIsys.L2Wrapper = L2Wrapper(RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)))
                 system.CHIsys.L3 = FakeL3(L2side=CHIPort(recv_buffer_size=4),Dramside=CHIPort(recv_buffer_size=4))
+                # Minimal 2-node mesh used by xsCHI TopoSys:
+                # L2 endpoint -- MeshNode0 <-> MeshNode1 -- FakeL3 endpoint.
+                system.CHIsys.MeshNode0 = MeshNode(
+                    node_x=0, node_y=0, voq_depth=8,
+                    port_local0=CHIPort(recv_buffer_size=4),
+                    port_east=CHIPort(recv_buffer_size=4))
+                system.CHIsys.MeshNode1 = MeshNode(
+                    node_x=1, node_y=0, voq_depth=8,
+                    port_local0=CHIPort(recv_buffer_size=4),
+                    port_west=CHIPort(recv_buffer_size=4))
                 system.CHIsys.mem_side_port = system.membus.cpu_side_ports
             else:
                 system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,
