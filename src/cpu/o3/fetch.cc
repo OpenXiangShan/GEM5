@@ -1464,6 +1464,7 @@ Fetch::handleIEWSignals()
     }
 
     auto &incoming = fromIEW->iewInfo->resolvedCFIs;
+    const bool had_pending_resolve = !resolveQueue.empty();
     uint8_t enqueueSize = fromIEW->iewInfo->resolvedCFIs.size();
     uint8_t enqueueCount = 0;
 
@@ -1497,7 +1498,10 @@ Fetch::handleIEWSignals()
 
     fetchStats.resolveQueueOccupancy.sample(resolveQueue.size());
 
-    if (!resolveQueue.empty()) {
+    // Process only entries that were already pending before this cycle.
+    // This preserves a cycle of separation between IEW producing resolved CFIs
+    // and fetch consuming them as predictor resolved updates.
+    if (had_pending_resolve && !resolveQueue.empty()) {
         auto &entry = resolveQueue.front();
         unsigned int stream_id = entry.resolvedFTQId;
         dbpbtb->prepareResolveUpdateEntries(stream_id);
