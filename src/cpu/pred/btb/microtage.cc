@@ -347,7 +347,7 @@ MicroTAGE::getPredictionMeta() {
  * @return Vector of BTB entries that need to be updated
  */
 std::vector<BTBEntry>
-MicroTAGE::prepareUpdateEntries(const FetchStream &stream) {
+MicroTAGE::prepareUpdateEntries(const FetchTarget &stream) {
     auto all_entries = stream.updateBTBEntries;
 
     // Add potential new BTB entry if it's a btb miss during prediction
@@ -387,7 +387,7 @@ bool
 MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchStream &stream) {
+                             const FetchTarget &stream) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -571,7 +571,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
  * Returns false if the update cannot proceed due to a bank conflict.
  */
 bool
-MicroTAGE::canResolveUpdate(const FetchStream &stream) {
+MicroTAGE::canResolveUpdate(const FetchTarget &stream) {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
@@ -600,7 +600,7 @@ MicroTAGE::canResolveUpdate(const FetchStream &stream) {
  * @brief Perform resolved update after probe success.
  */
 void
-MicroTAGE::doResolveUpdate(const FetchStream &stream) {
+MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
     if (enableBankConflict && predBankValid) {
         // Prediction consumed; clear bank tag for next cycle
         predBankValid = false;
@@ -614,7 +614,7 @@ MicroTAGE::doResolveUpdate(const FetchStream &stream) {
  * @param stream The fetch stream containing branch execution information
  */
 void
-MicroTAGE::update(const FetchStream &stream) {
+MicroTAGE::update(const FetchTarget &stream) {
     Addr startAddr = stream.getRealStartPC();
     unsigned updateBank = getBankId(startAddr);
 
@@ -700,7 +700,7 @@ MicroTAGE::update(const FetchStream &stream) {
 }
 
 void
-MicroTAGE::checkUtageUpdateMisspred(const FetchStream &stream) {
+MicroTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
     if (!predMeta) {
         DPRINTF(UTAGE, "checkUtageUpdateMisspred: no prediction meta, skip\n");
@@ -936,7 +936,7 @@ MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredic
  */
 void
 MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchStream &entry, int shamt, bool cond_taken)
+    const FetchTarget &entry, int shamt, bool cond_taken)
 {
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     if (!predMeta) {
@@ -1084,7 +1084,7 @@ MicroTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, 
 
 #ifndef UNIT_TEST
 void
-MicroTAGE::commitBranch(const FetchStream &stream, const DynInstPtr &inst)
+MicroTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
     if (!inst->isCondCtrl()) {
         // tage only deals with conditional branches

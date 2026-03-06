@@ -130,7 +130,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Recover 3 folded history after a misprediction, then update 3 folded history according to history and pred.taken
     // the other recoverHist methods are left blank
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                        const FetchStream &entry,int shamt, bool cond_taken) override;
+                        const FetchTarget &entry,int shamt, bool cond_taken) override;
 
 #ifdef UNIT_TEST
     // API compatibility wrappers for testing
@@ -139,7 +139,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
         specUpdatePHist(history, pred);
     }
 
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchStream &entry, int shamt,
+    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
                      bool cond_taken) override
     {
         recoverPHist(history, entry, shamt, cond_taken);
@@ -147,12 +147,12 @@ class MicroTAGE : public TimedBaseBTBPredictor
 #endif
 
     // Update predictor state based on actual branch outcomes
-    void update(const FetchStream &entry) override;
-    bool canResolveUpdate(const FetchStream &entry) override;
-    void doResolveUpdate(const FetchStream &entry) override;
+    void update(const FetchTarget &entry) override;
+    bool canResolveUpdate(const FetchTarget &entry) override;
+    void doResolveUpdate(const FetchTarget &entry) override;
 
 #ifndef UNIT_TEST
-    void commitBranch(const FetchStream &stream, const DynInstPtr &inst) override;
+    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
 #endif
 
     void setTrace() override;
@@ -232,7 +232,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
     unsigned instShiftAmt {1};
 
     // used for MicroTAGE update misprediction counting
-    void checkUtageUpdateMisspred(const FetchStream &stream);
+    void checkUtageUpdateMisspred(const FetchTarget &stream);
 
     // Update prediction counter with saturation
     void updateCounter(bool taken, unsigned width, short &counter);
@@ -354,13 +354,13 @@ private:
                                            const std::shared_ptr<TageMeta> predMeta = nullptr);
 
     // Helper method to prepare BTB entries for update
-    std::vector<BTBEntry> prepareUpdateEntries(const FetchStream &stream);
+    std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
-                                 const FetchStream &stream);
+                                 const FetchTarget &stream);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,
