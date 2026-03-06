@@ -12,7 +12,6 @@
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/btb/folded_hist.hh"
-#include "cpu/pred/btb/stream_struct.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 
 // Conditional includes based on build mode
