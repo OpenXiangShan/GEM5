@@ -25,11 +25,16 @@ namespace xsCHI {
         panic_if(Mesh0 == nullptr || Mesh1 == nullptr,
                  "L2ToDramSys requires MeshNode0 and MeshNode1");
 
-        // Keep L2ID as 1 to match current FakeL3 hardcoded writeback return ID.
-        // Place HN endpoint on mesh coordinate (1,0), local0.
-        const uint32_t L2ID = 1;
-        const uint32_t L3ID = NodeID(1, 0, 0).getNodeID();
-        const uint32_t dramID = 3;
+        // Derive endpoint IDs from MeshNode topology so NodeID encoding
+        // always matches (x, y, local_port) placement.
+        const uint32_t mesh0_x = Mesh0->getNodeX();
+        const uint32_t mesh0_y = Mesh0->getNodeY();
+        const uint32_t mesh1_x = Mesh1->getNodeX();
+        const uint32_t mesh1_y = Mesh1->getNodeY();
+
+        const uint32_t L2ID = NodeID(mesh0_x, mesh0_y, 0).getNodeID();
+        const uint32_t L3ID = NodeID(mesh1_x, mesh1_y, 0).getNodeID();
+        const uint32_t dramID = NodeID(mesh1_x, mesh1_y, 1).getNodeID();
 
         auto L2SAM = std::make_shared<SystemAddressMapRN>();
         L2SAM->addNodeID(L3ID);
@@ -61,8 +66,10 @@ namespace xsCHI {
         Dram->getCHIPort()->connect(L3bridge->getCHIPort_MEMSIDE());
 
         DPRINTF(Cache,
-            "Init CHI topo with MeshNodes: L2ID=%u -> HNID=%u across Mesh(0,0)->(1,0), DramID=%u\n",
-            L2ID, L3ID, dramID);
+            "Init CHI topo with MeshNodes: L2ID=%u(%u,%u,p0) -> HNID=%u(%u,%u,p0), DramID=%u(%u,%u,p1)\n",
+            L2ID, mesh0_x, mesh0_y,
+            L3ID, mesh1_x, mesh1_y,
+            dramID, mesh1_x, mesh1_y);
     }
 
     gem5::Port &

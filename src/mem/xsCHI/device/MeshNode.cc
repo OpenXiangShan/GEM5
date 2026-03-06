@@ -82,6 +82,18 @@ MeshNode::getSouthPort() const
     return ports[portToIndex(PortIndex::South)];
 }
 
+uint32_t
+MeshNode::getNodeX() const
+{
+    return nodeX;
+}
+
+uint32_t
+MeshNode::getNodeY() const
+{
+    return nodeY;
+}
+
 bool
 MeshNode::handleIngress(PortIndex ingress, FlitPtr &flit)
 {

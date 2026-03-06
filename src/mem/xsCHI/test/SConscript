@@ -20,4 +20,38 @@ Import('*')
 GTest('testNodeID.test', 'testNodeID.cc')
 GTest('testTxnManager.test', 'testTxnManager.cc')
 GTest('testSAM.test', 'testSAM.cc')
-GTest('testMeshNode.test', 'testMeshNode.cc')
+GTest('testMeshNode.test', 'testMeshNode.cc', '../../../base/debug.cc')
+
+# Mesh-level integration test:
+# real CHIPort + two MeshNodes + endpoint callbacks, covering REQ/RSP
+# round-trip across cross-node links.
+GTest('testMeshNodeIntegration.test',
+      'testMeshNodeIntegration.cc',
+      '../base/flit.cc',
+      '../base/CHIPort.cc',
+      '../device/MeshNode.cc',
+      '../../../base/debug.cc',
+      '../../../base/trace.cc',
+      '../../../base/hostinfo.cc',
+      '../../../base/output.cc',
+      '../../../base/str.cc',
+      '../../../base/match.cc',
+      '../../../base/types.cc',
+      '../../../base/atomicio.cc',
+      '../../../base/inifile.cc',
+      '../../../base/statistics.cc',
+      '../../../base/stats/group.cc',
+      '../../../base/stats/info.cc',
+      '../../../base/stats/storage.cc',
+      '../../../sim/core.cc',
+      '../../../sim/cur_tick.cc',
+      '../../../sim/eventq.cc',
+      '../../../sim/drain.cc',
+      '../../../sim/global_event.cc',
+      '../../../sim/sim_events.cc',
+      '../../../sim/serialize.cc',
+      '../../../sim/sim_object.cc',
+      '../../../sim/clock_domain.cc',
+      '../../../sim/voltage_domain.cc',
+      '../../../sim/clocked_object.cc',
+      '../../../sim/backtrace_none.cc')

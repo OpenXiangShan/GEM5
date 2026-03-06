@@ -53,6 +53,8 @@ class MeshNode : public ClockedObject
     CHIPort* getWestPort() const;
     CHIPort* getNorthPort() const;
     CHIPort* getSouthPort() const;
+    uint32_t getNodeX() const;
+    uint32_t getNodeY() const;
 
   private:
     // Keep port index stable to simplify queue/arbitration array indexing.
