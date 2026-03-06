@@ -5,8 +5,10 @@
 #include <cstdint>
 #include <memory>
 
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/Cache.hh"
+#include "mem/xsCHI/base/Network/NodeID.hh"
 #include "params/ClockedObject.hh"
 #include "sim/sim_object.hh"
 
@@ -16,40 +18,51 @@ namespace xsCHI {
         : ClockedObject(p),
         L2wrap(p.L2Wrapper),
         L3bridge(p.L3),
-        Dram(p.dramsim3)
+        Dram(p.dramsim3),
+        Mesh0(p.MeshNode0),
+        Mesh1(p.MeshNode1)
     {
-        // NodeID* L2ID = new NodeID(0,0,0);
-        // auto L2ID= std::make_shared<NodeID>(0,0,0);
-        // auto L3ID = std::make_shared<NodeID>(1,1,0);
-        // auto dramID = std::make_shared<NodeID>(2,2,0);
-        // auto HNs = std::make_shared<std::list<uint32_t>>();
-        uint32_t L2ID = 1;
-        uint32_t L3ID = 2;
-        uint32_t dramID = 3;
-        // HNs->push_back(L3ID->getNodeID());
+        panic_if(Mesh0 == nullptr || Mesh1 == nullptr,
+                 "L2ToDramSys requires MeshNode0 and MeshNode1");
+
+        // Keep L2ID as 1 to match current FakeL3 hardcoded writeback return ID.
+        // Place HN endpoint on mesh coordinate (1,0), local0.
+        const uint32_t L2ID = 1;
+        const uint32_t L3ID = NodeID(1, 0, 0).getNodeID();
+        const uint32_t dramID = 3;
+
         auto L2SAM = std::make_shared<SystemAddressMapRN>();
         L2SAM->addNodeID(L3ID);
-        // L2wrap = new L2Wrapper(p,L2ID,&L2SAM);
         L2wrap->setNodeID(L2ID);
         L2wrap->setSAM(L2SAM);
-        // Dram = new DDRWrapper(params,dramID,&L2SAM);
-        // auto list = std::make_shared<std::list<uint32_t>>();
-        // list->push_back(dramID->getNodeID());
-        // auto dramSAM = std::make_shared<SystemAddressMapRN>(*list);
+
         Dram->setNodeID(dramID);
-        // Dram->setSAM(dramSAM.get());
-        // auto SNs =std::make_shared<std::list<uint32_t>>();
-        // SNs->push_back(dramID->getNodeID());
+
         auto HNF_SAM = std::make_shared<SystemAddressMapHN>();
-        // L3bridge = new FakeL3(p,L3ID,&HNF_SAM);
         HNF_SAM->addNodeID(dramID);
         L3bridge->setNodeID(L3ID);
         L3bridge->setSAM(HNF_SAM);
-        //todo:connect port! set buffersize by param!
-        assert(L2wrap->getCHIPort()!=nullptr && L3bridge->getCHIPort_CPUSIDE() != nullptr);
-        L2wrap->getCHIPort()->connect(L3bridge->getCHIPort_CPUSIDE());
+
+        // Link chain:
+        // L2Wrapper(CHIBridge) <-> Mesh0(local0)
+        // Mesh0(east) <-> Mesh1(west)
+        // Mesh1(local0) <-> FakeL3(CPUSIDE)
+        assert(L2wrap->getCHIPort() != nullptr && Mesh0->getLocal0Port() != nullptr);
+        L2wrap->getCHIPort()->connect(Mesh0->getLocal0Port());
+
+        assert(Mesh0->getEastPort() != nullptr && Mesh1->getWestPort() != nullptr);
+        Mesh0->getEastPort()->connect(Mesh1->getWestPort());
+
+        assert(Mesh1->getLocal0Port() != nullptr && L3bridge->getCHIPort_CPUSIDE() != nullptr);
+        Mesh1->getLocal0Port()->connect(L3bridge->getCHIPort_CPUSIDE());
+
+        // Keep HN -> DRAM side direct for the minimal 2-node mesh bring-up.
         assert(Dram->getCHIPort()!=nullptr && L3bridge->getCHIPort_MEMSIDE() != nullptr);
         Dram->getCHIPort()->connect(L3bridge->getCHIPort_MEMSIDE());
+
+        DPRINTF(Cache,
+            "Init CHI topo with MeshNodes: L2ID=%u -> HNID=%u across Mesh(0,0)->(1,0), DramID=%u\n",
+            L2ID, L3ID, dramID);
     }
 
     gem5::Port &
