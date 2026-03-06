@@ -37,8 +37,6 @@ namespace xsCHI
         bool handleFlit_CopybackWrite(FlitPtr &flit);
         bool handleFlit_EVICT(FlitPtr &flit);
         bool handleFlit_CLEANUNIQUE_MAKEUNIQUE(FlitPtr &flit);
-        const uint32_t L2Id = 1;
-        const uint32_t dramId = 3;
     public:
         typedef FakeL3Params Params;
         FakeL3(const Params &p);

@@ -91,7 +91,7 @@ namespace xsCHI
                             ReqPtr req = std::make_shared<Request>(
                                 flit->getOpcode(),flit->getAddr(),flit->getSize());
                             req->setSourceId(flit->getSrcId());
-                            req->setTargetId(flit->getTgtId());
+                            req->setTargetId(write->getTgtId());
                             req->setTransactionId(flit->getTxnId());
                             // 尝试发送到网络端口
                             if (Dramside->send(write)){
@@ -234,7 +234,7 @@ namespace xsCHI
                                 }
                                 // 设置Flit的相关字段
                                 data->setOpcode(CHI_OP_TYPE::CHI_DAT_NCBWRDATACOMPACK);
-                                data->setTgtId(dramId);
+                                data->setTgtId(req->getTargetId());
                                 data->setSrcId(_NodeID);
                                 data->setTxnId(req->getDbid());
                                 data->setDataId(flit->getDataId());
@@ -355,7 +355,7 @@ namespace xsCHI
                                 }
                                 // 设置Flit的相关字段
                                 rsp->setOpcode(CHI_OP_TYPE::CHI_RSP_COMPDBIDRESP);
-                                rsp->setTgtId(L2Id);
+                                rsp->setTgtId(req->getSourceId());
                                 rsp->setSrcId(_NodeID);
                                 rsp->setTxnId(req->getTransactionId());
                                 rsp->setDbid(flit->getTxnId());//here we make send and recv use the same transaction!
