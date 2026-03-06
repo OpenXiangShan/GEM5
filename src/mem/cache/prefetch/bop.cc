@@ -127,9 +127,15 @@ BOP::delayQueueEventWrapper()
 unsigned int
 BOP::hash(Addr addr, unsigned int way) const
 {
-    Addr hash1 = addr;
-    Addr hash2 = hash1 >> floorLog2(rrEntries);
-    return (hash1 ^ hash2) & (Addr)(rrEntries - 1);
+    (void)way;
+
+    const unsigned rrIdxBits = floorLog2(rrEntries);
+    const unsigned offsetBits = floorLog2(blkSize);
+    const Addr line_addr = addr >> offsetBits;
+    const Addr mask = static_cast<Addr>(rrEntries - 1);
+    const Addr hash1 = line_addr & mask;
+    const Addr hash2 = (line_addr >> rrIdxBits) & mask;
+    return static_cast<unsigned int>((hash1 ^ hash2) & mask);
 }
 
 void
@@ -180,22 +186,27 @@ BOP::resetScores()
 inline Addr
 BOP::tag(Addr addr) const
 {
-    return (addr >> lBlkSize) & tagMask;
+    const unsigned rrIdxBits = floorLog2(rrEntries);
+    const unsigned offsetBits = floorLog2(blkSize);
+    const Addr line_addr = addr >> offsetBits;
+    return (line_addr >> rrIdxBits) & tagMask;
 }
 
 std::pair<bool, BOP::RREntryDebug>
-BOP::testRR(Addr tag) const
+BOP::testRR(Addr addr) const
 {
-    if (rrLeft[hash(tag, RRWay::Left)].hashAddr == tag) {
-        return std::make_pair(true, rrLeft[hash(tag, RRWay::Left)]);
+    const Addr t = tag(addr);
+    const unsigned idx_l = hash(addr, RRWay::Left);
+    if (rrLeft[idx_l].hashAddr == t) {
+        return std::make_pair(true, rrLeft[idx_l]);
     }
-    if (rrRight[hash(tag, RRWay::Right)].hashAddr == tag) {
-        return std::make_pair(true, rrRight[hash(tag, RRWay::Right)]);
+    const unsigned idx_r = hash(addr, RRWay::Right);
+    if (rrRight[idx_r].hashAddr == t) {
+        return std::make_pair(true, rrRight[idx_r]);
     }
 
     return std::make_pair(false, RREntryDebug());
 }
-
 bool
 BOP::tryAddOffset(int64_t offset, bool late)
 {
