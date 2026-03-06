@@ -12,7 +12,16 @@ class ValuePredictor(SimObject):
     cxx_header = "cpu/valuepred/valuepred_unit.hh"
     abstract = True
 
-class EStride(ValuePredictor):
+class GatedVPUnit(ValuePredictor):
+    type = "GatedVPUnit"
+    cxx_class = "gem5::valuepred::GatedVPUnit"
+    cxx_header = "cpu/valuepred/gated_vp_unit.hh"
+    abstract = True
+
+    shadowThresholdPercent = Param.Float(
+        0.99, "minimum shadow prediction accuracy required for real value prediction")
+
+class EStride(GatedVPUnit):
     type = "EStride"
     cxx_class = "gem5::valuepred::EStride"
     cxx_header = "cpu/valuepred/enhanced_stride.hh"
@@ -26,9 +35,6 @@ class EStride(ValuePredictor):
     logESTBEntrys = Param.Int(7, "log 2 of ES table entry counts")
     logMaxConfidence = Param.Int(5, "log 2 of max confidence number")
     thresholdPercent = Param.Float(0.25, "threshold percent of confidence")
-    shadowThresholdPercent = Param.Float(
-        0.99, "minimum shadow prediction accuracy required for real value prediction")
-
     # inflight window configuration
     idealWindow = Param.Bool(True, "The key in the ideal window is a 64-bit pc, not hashed")
     inflightWindowTagLength = Param.Int(64, "inflight window tag length")
@@ -38,7 +44,7 @@ class EStride(ValuePredictor):
     enableTimeMsgInUpdate = Param.Bool(True, "enable use instruction"
                                        "inflight time in update")
 
-class IdealConstantLVP(ValuePredictor):
+class IdealConstantLVP(GatedVPUnit):
     type = "IdealConstantLVP"
     cxx_class = "gem5::valuepred::IdealConstantLVP"
     cxx_header = "cpu/valuepred/ideal_constant_lvp.hh"

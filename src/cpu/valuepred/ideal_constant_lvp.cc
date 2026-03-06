@@ -11,14 +11,14 @@ namespace valuepred
 {
 
 IdealConstantLVP::IdealConstantLVP(const Params &params)
-    : VPUnit(params),
+    : GatedVPUnit(params),
       satCounterBits(params.satCounterBits),
       resetConfidence(params.resetConfidence)
 {
 }
 
 VPResult
-IdealConstantLVP::valuePredict(VPPredMetaData *predMetaData)
+IdealConstantLVP::valuePredictInternal(VPPredMetaData *predMetaData)
 {
     auto it = idealConstTable.find(predMetaData->pc);
     if (it != idealConstTable.end()) {
@@ -30,7 +30,7 @@ IdealConstantLVP::valuePredict(VPPredMetaData *predMetaData)
 }
 
 void
-IdealConstantLVP::updateValuePredictor(VPUpdateMetaData *updateMetaData)
+IdealConstantLVP::updateValuePredictorInternal(VPUpdateMetaData *updateMetaData)
 {
     auto it = idealConstTable.find(updateMetaData->pc);
     if (it == idealConstTable.end()) {

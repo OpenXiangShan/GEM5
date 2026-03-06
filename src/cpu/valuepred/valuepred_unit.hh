@@ -18,6 +18,21 @@ namespace valuepred
 
 
 
+// Base interface for value predictors.
+//
+// Inheritance without shadow gate:
+//   YourPredictor -> VPUnit
+//
+// Effect:
+//   - No built-in shadow-accuracy gate.
+//   - The algorithm controls prediction enabling behavior by itself.
+//
+// If an algorithm inherits directly from VPUnit, it must implement:
+//   1) valuePredict()
+//   2) updateValuePredictor()
+//   3) specUpdateValuePredictor()
+//   4) squash()
+//   5) getValuePredictorType()
 class VPUnit : public SimObject
 {
   private:

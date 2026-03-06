@@ -22,8 +22,6 @@ class ESUpdateMetaData : public VPUpdateMetaData
   public:
     bool isLoadInst = false;
     uint64_t inflightTime = 0;
-    bool hasCandidatePrediction = false;
-    RegVal candidateValue = 0;
     // for debug
     std::string_view disas;
 

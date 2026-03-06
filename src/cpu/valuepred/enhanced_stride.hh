@@ -23,7 +23,7 @@
 
 #include "base/types.hh"
 #include "cpu/valuepred/es_metadata.hh"
-#include "cpu/valuepred/valuepred_unit.hh"
+#include "cpu/valuepred/gated_vp_unit.hh"
 #include "params/EStride.hh"
 
 namespace gem5
@@ -32,7 +32,7 @@ namespace gem5
 namespace valuepred
 {
 
-class EStride : public VPUnit
+class EStride : public GatedVPUnit
 {
 
   private:
@@ -110,9 +110,6 @@ class EStride : public VPUnit
     const int logMaxConfidence;
     const int MAXCONFIDENCE;
     const int confidenceThreshold;
-    const double shadowThresholdPercent;
-    uint64_t shadowPredictedCount = 0;
-    uint64_t shadowCorrectCount = 0;
     InflightWindow inflightWindow;
     const bool enableTimeMsgInUpdate;
 
@@ -140,17 +137,11 @@ class EStride : public VPUnit
 
     // in update time, when we can't allocate new entry, try dec useful count
     uint32_t tryDecUseful(const ESEntry &entry);
-    bool shadowGateOpen() const;
-    void updateShadowStats(const ESUpdateMetaData *esUpdateMetaData);
 
   public:
     EStride(const Params &params);
 
     std::string name() const override { return "EStride"; }
-
-    virtual VPResult valuePredict(VPPredMetaData *predMetaData) override;
-
-    virtual void updateValuePredictor(VPUpdateMetaData *updateMetaData) override;
 
     // In reality, the value prediction at the beginning of the fetch phase
     // needs to be updated speculatively to ensure that the number of inflight
@@ -164,6 +155,11 @@ class EStride : public VPUnit
 
     virtual ValuePredType getValuePredictorType() override { return ValuePredType::EStride; }
 
+  private:
+    VPResult valuePredictInternal(VPPredMetaData *predMetaData) override;
+
+    void updateValuePredictorInternal(VPUpdateMetaData *updateMetaData) override;
+
     // for dump some data
   private:
     std::unordered_map<Addr, std::pair<int32_t, std::string>> fluentInstructions;
@@ -174,11 +170,6 @@ class EStride : public VPUnit
         statistics::Vector2d allocate;
         statistics::Vector2d strideNotEquals;
         statistics::Vector2d strideEquals;
-        statistics::Scalar shadowPredicted;
-        statistics::Scalar shadowCorrected;
-        statistics::Formula shadowAccuracy;
-        statistics::Scalar shadowGateAllowed;
-        statistics::Scalar shadowGateBlocked;
 
         // Records the number of inflight instructions with the
         // same hash value in the inflight window when the
@@ -190,16 +181,6 @@ class EStride : public VPUnit
               ADD_STAT(allocate, "Record the assignment of valuepred_unit entries"),
               ADD_STAT(strideNotEquals, "Record the situations of stride not equals"),
               ADD_STAT(strideEquals, "Record the situations of stride equals"),
-              ADD_STAT(shadowPredicted, statistics::units::Count::get(),
-                       "number of shadow predictions"),
-              ADD_STAT(shadowCorrected, statistics::units::Count::get(),
-                       "number of correct shadow predictions"),
-              ADD_STAT(shadowAccuracy, statistics::units::Ratio::get(),
-                       "shadow prediction accuracy", shadowCorrected / shadowPredicted),
-              ADD_STAT(shadowGateAllowed, statistics::units::Count::get(),
-                       "number of predictions allowed by shadow gate"),
-              ADD_STAT(shadowGateBlocked, statistics::units::Count::get(),
-                       "number of predictions blocked by shadow gate"),
               ADD_STAT(inflightSH, "Records the number of inflight instructions")
         {
         }

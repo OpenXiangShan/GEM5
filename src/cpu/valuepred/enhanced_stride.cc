@@ -99,7 +99,7 @@ EStride::InflightWindow::squash(uint64_t seq_no)
 
 
 EStride::EStride(const Params &params)
-    : VPUnit(params),
+    : GatedVPUnit(params),
       ways(params.ways),
       strideWidth(params.strideWidth),
       tagWidth(params.tagWidth),
@@ -108,7 +108,6 @@ EStride::EStride(const Params &params)
       logMaxConfidence(params.logMaxConfidence),
       MAXCONFIDENCE(1 << logMaxConfidence),
       confidenceThreshold(static_cast<int>(params.thresholdPercent * MAXCONFIDENCE)),
-      shadowThresholdPercent(params.shadowThresholdPercent),
       inflightWindow(params.inflightWindowTagLength, params.idealWindow),
       enableTimeMsgInUpdate(params.enableTimeMsgInUpdate),
       esstats(this)
@@ -120,8 +119,6 @@ EStride::EStride(const Params &params)
     gem5_assert(tagWidth, "EStride tagWidth must > 0 \n");
     gem5_assert(logESTBEntrys, "EStride logESTBEntrys must > 0 \n");
     gem5_assert(logMaxConfidence, "EStride logMaxConfidence must > 0 \n");
-    gem5_assert((params.shadowThresholdPercent >= 0.0) && (params.shadowThresholdPercent <= 1.0),
-                "EStride shadowThresholdPercent must be in [0.0, 1.0] \n");
     gem5_assert(params.inflightWindowTagLength, "EStride inflightWindowTagLength must > 0 \n");
 
     // init stats
@@ -140,7 +137,6 @@ EStride::EStride(const Params &params)
     DPRINTF(EStride, "ways: %7d | strideWidth: %7d bits | tagWidth %7d bits\n", ways, strideWidth, tagWidth);
     DPRINTF(EStride, "EStride table entrys: %7d\n", entryCounts);
     DPRINTF(EStride, "MAXCONFIDENCE: %7d | confidenceThreshold %7d\n", MAXCONFIDENCE, confidenceThreshold);
-    DPRINTF(EStride, "shadowThresholdPercent: %.6f\n", shadowThresholdPercent);
     DPRINTF(EStride, "inflightWindowTagLength: %7d \n", params.inflightWindowTagLength);
     DPRINTF(EStride, "enableTimeMsgInUpdate(need pmu support): %s\n", enableTimeMsgInUpdate ? "yes" : "no");
     DPRINTF(EStride, "==================================  end of Params ==================================\n");
@@ -256,34 +252,6 @@ EStride::tryDecUseful(const ESEntry &entry)
 
     return random_mt.random<uint32_t>() & mask;
 }
-
-bool
-EStride::shadowGateOpen() const
-{
-    if (shadowPredictedCount == 0) {
-        return false;
-    }
-
-    const double shadowAccuracy =
-        static_cast<double>(shadowCorrectCount) / static_cast<double>(shadowPredictedCount);
-    return shadowAccuracy >= shadowThresholdPercent;
-}
-
-void
-EStride::updateShadowStats(const ESUpdateMetaData *esUpdateMetaData)
-{
-    if (!esUpdateMetaData->hasCandidatePrediction) {
-        return;
-    }
-
-    const bool shadowCorrect = esUpdateMetaData->candidateValue == esUpdateMetaData->actualValue;
-    shadowPredictedCount++;
-    esstats.shadowPredicted++;
-    if (shadowCorrect) {
-        shadowCorrectCount++;
-        esstats.shadowCorrected++;
-    }
-}
 //****************************************************************
 
 VPResult
@@ -357,7 +325,7 @@ EStride::doPredict(ESPredMetaData *esPredMetaData, int inflights)
 }
 
 VPResult
-EStride::valuePredict(VPPredMetaData *predMetaData)
+EStride::valuePredictInternal(VPPredMetaData *predMetaData)
 {
     gem5_assert(predMetaData, "can't pass nullptr to vpunit\n");
     ESPredMetaData *esPredMetaData = dynamic_cast<ESPredMetaData *>(predMetaData);
@@ -367,40 +335,14 @@ EStride::valuePredict(VPPredMetaData *predMetaData)
     int inflights = inflightWindow.addToInflightWindow(esPredMetaData->pc);
     esstats.inflightSH.sample(inflights, 1);
 
-    VPResult predResult = doPredict(esPredMetaData, inflights);
-    predResult.hasCandidate = predResult.speculative;
-
-    if (!predResult.hasCandidate) {
-        return predResult;
-    }
-
-    if (!shadowGateOpen()) {
-        predResult.speculative = false;
-        esstats.shadowGateBlocked++;
-        DPRINTF(EStride,
-                "[ESPredict]=> seq_no:%lu pc:%lX shadow gate blocks prediction "
-                "[shadow_correct:%lu shadow_pred:%lu threshold:%.6f]\n",
-                esPredMetaData->seq_no, esPredMetaData->pc, shadowCorrectCount,
-                shadowPredictedCount, shadowThresholdPercent);
-        return predResult;
-    }
-
-    esstats.shadowGateAllowed++;
-    DPRINTF(EStride,
-            "[ESPredict]=> seq_no:%lu pc:%lX shadow gate allows prediction "
-            "[shadow_correct:%lu shadow_pred:%lu threshold:%.6f]\n",
-            esPredMetaData->seq_no, esPredMetaData->pc, shadowCorrectCount,
-            shadowPredictedCount, shadowThresholdPercent);
-    return predResult;
+    return doPredict(esPredMetaData, inflights);
 }
 
 void
-EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
+EStride::updateValuePredictorInternal(VPUpdateMetaData *updateMetaData)
 {
     gem5_assert(updateMetaData, "can't pass nullptr to vpunit\n");
     ESUpdateMetaData *esUpdateMetaData = dynamic_cast<ESUpdateMetaData *>(updateMetaData);
-
-    updateShadowStats(esUpdateMetaData);
 
     // the first step update inflights window
     inflightWindow.removeFromWindow(esUpdateMetaData->pc, esUpdateMetaData->seq_no);

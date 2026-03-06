@@ -25,6 +25,8 @@ class VPUpdateMetaData
     uint64_t seq_no;
     RegVal actualValue;
     bool isMisprediction;
+    bool hasCandidatePrediction = false;
+    RegVal candidateValue = 0;
     virtual ~VPUpdateMetaData() {};
 };
 

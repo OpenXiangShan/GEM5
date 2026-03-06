@@ -5,7 +5,7 @@
 
 #include "base/sat_counter.hh"
 #include "base/types.hh"
-#include "cpu/valuepred/valuepred_unit.hh"
+#include "cpu/valuepred/gated_vp_unit.hh"
 #include "params/IdealConstantLVP.hh"
 
 namespace gem5
@@ -14,7 +14,7 @@ namespace gem5
 namespace valuepred
 {
 
-class IdealConstantLVP : public VPUnit
+class IdealConstantLVP : public GatedVPUnit
 {
   private:
     using Params = IdealConstantLVPParams;
@@ -40,15 +40,16 @@ class IdealConstantLVP : public VPUnit
 
     std::string name() const override { return "IdealConstantLVP"; }
 
-    VPResult valuePredict(VPPredMetaData *predMetaData) override;
-
-    void updateValuePredictor(VPUpdateMetaData *updateMetaData) override;
-
     void specUpdateValuePredictor(VPSpecUpdateMetaData *specUpdateMetaData) override;
 
     void squash(const uint64_t seq_no) override;
 
     virtual ValuePredType getValuePredictorType() override { return ValuePredType::IdealConstantLVP; }
+
+  private:
+    VPResult valuePredictInternal(VPPredMetaData *predMetaData) override;
+
+    void updateValuePredictorInternal(VPUpdateMetaData *updateMetaData) override;
 };
 
 } // namespace valuepred
