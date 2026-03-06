@@ -436,8 +436,8 @@ ROB::isHeadGroupReady(ThreadID tid)
             }
 
             // if one group has barrier or non-speculative or fault
-            // this group must be committed
-            if (inst->readyToCommit() && (!inst->isExecuted() || inst->faulted())) {
+            // this group can commit directly.
+            if (inst->isNonSpeculative() || inst->isStoreConditional() || !inst->isExecuted() || inst->faulted()) {
                 return true;
             }
         }
@@ -685,10 +685,10 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
     if (!instList[tid].empty()) {
         InstIt tail_thread = instList[tid].end();
         tail_thread--;
-
         squashIt[tid] = tail_thread;
 
-        doSquash(tid);
+        // dont squash on current cycle
+        // doSquash(tid);
     }
 }
 
@@ -762,10 +762,10 @@ ROB::ROBStats::ROBStats(statistics::Group *parent)
 }
 
 DynInstPtr
-ROB::findInst(ThreadID tid, InstSeqNum squash_inst)
+ROB::findInst(ThreadID tid, InstSeqNum seqnum)
 {
     for (InstIt it = instList[tid].begin(); it != instList[tid].end(); it++) {
-        if ((*it)->seqNum == squash_inst) {
+        if ((*it)->seqNum == seqnum) {
             return *it;
         }
     }

@@ -15,6 +15,7 @@ namespace o3
 
 enum class InstDetail
 {
+    Result,
     VAddress,
     PAddress,
     LastReplay,
@@ -53,6 +54,7 @@ class InstMeta
     std::vector<Tick> posTick;
     std::string disasm;
     Addr pc;
+    uint64_t value;
 
     bool isload;
     Addr vaddr;
@@ -67,7 +69,7 @@ class InstMeta
 // performanceCounter commitTrace
 class PerfCCT
 {
-    const int MaxMetas = 1500;  // same as MaxNum of DynInst
+    const int MaxMetas = 3000;  // same as MaxNum of DynInst
     bool enableCCT;
     ArchDBer* archdb;
     std::string sql_insert_cmd;

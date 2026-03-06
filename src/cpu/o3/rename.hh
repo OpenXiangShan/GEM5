@@ -123,9 +123,6 @@ class Rename
     /** Rename status. */
     RenameStatus _status;
 
-    /** Per-thread status. */
-    ThreadStatus renameStatus[MaxThreads];
-
     /** Probe points. */
     typedef std::pair<InstSeqNum, PhysRegIdPtr> SeqNumRegPair;
     /** To probe when register renaming for an instruction is complete */
@@ -211,16 +208,11 @@ class Rename
     /** Debugging function used to dump history buffer of renamings. */
     void dumpHistory();
 
+    void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
+
   private:
     /** Reset this pipeline stage */
     void resetStage();
-
-    /** Determines what to do based on rename's current status.
-     * @param status_change rename() sets this variable if there was a status
-     * change (ie switching from blocking to unblocking).
-     * @param tid Thread id to rename instructions from.
-     */
-    void rename(bool &status_change, ThreadID tid);
 
     /** Renames instructions for the given thread. Also handles serializing
      * instructions.
@@ -228,35 +220,19 @@ class Rename
     void renameInsts(ThreadID tid);
 
     /** Checks if the rename map can rename all the given number of instructions this cycle. */
-    bool canRename(ThreadID tid, int num_insts);
+    bool canRename(ThreadID tid);
 
-    /** Inserts unused instructions from a given thread into the skid buffer,
-     * to be renamed once rename unblocks.
-     */
-    void skidInsert(ThreadID tid);
+    void releasePhysRegs();
 
     /** Separates instructions from decode into individual lists of instructions
      * sorted by thread.
      */
-    void sortInsts();
+    void moveInstsToBuffer();
 
-    /** Returns if all of the skid buffers are empty. */
-    bool skidsEmpty();
+    void checkSquash();
 
     /** Updates overall rename status based on all of the threads' statuses. */
-    void updateStatus();
-
-    /** Switches rename to blocking, and signals back that rename has become
-     * blocked.
-     * @return Returns true if there is a status change.
-     */
-    bool block(ThreadID tid);
-
-    /** Switches rename to unblocking if the skid buffer is empty, and signals
-     * back that rename has unblocked.
-     * @return Returns true if there is a status change.
-     */
-    bool unblock(ThreadID tid);
+    void updateActivate();
 
     /** Executes actual squash, removing squashed instructions. */
     void doSquash(const InstSeqNum &squash_seq_num, ThreadID tid);
@@ -269,42 +245,6 @@ class Rename
 
     /** Renames the destination registers of an instruction. */
     void renameDestRegs(const DynInstPtr &inst, ThreadID tid);
-
-    /** Calculates the number of free ROB entries for a specific thread. */
-    int calcFreeROBEntries(ThreadID tid);
-
-    /** Calculates the number of free IQ entries for a specific thread. */
-    int calcFreeIQEntries(ThreadID tid);
-
-    /** Calculates the number of free LQ entries for a specific thread. */
-    int calcFreeLQEntries(ThreadID tid);
-
-    /** Calculates the number of free SQ entries for a specific thread. */
-    int calcFreeSQEntries(ThreadID tid);
-
-    /** Returns the number of valid instructions coming from decode. */
-    unsigned validInsts();
-
-    /** Reads signals telling rename to block/unblock. */
-    void readStallSignals(ThreadID tid);
-
-    /** Checks if any stages are telling rename to block. */
-    bool checkStall(ThreadID tid);
-
-    /** Gets the number of free entries for a specific thread. */
-    void readFreeEntries(ThreadID tid);
-
-    /** Checks the signals and updates the status. */
-    bool checkSignalsAndUpdate(ThreadID tid);
-
-    /** Either serializes on the next instruction available in the InstQueue,
-     * or records that it must serialize on the next instruction to enter
-     * rename.
-     * @param inst_list The list of younger, unprocessed instructions for the
-     * thread that has the serializeAfter instruction.
-     * @param tid The thread id.
-     */
-    void serializeAfter(InstQueue &inst_list, ThreadID tid);
 
     /** Holds the information for each destination register rename. It holds
      * the instruction's sequence number, the arch register, the old physical
@@ -370,10 +310,7 @@ class Rename
     TimeBuffer<DecodeStruct>::wire fromDecode;
 
     /** Queue of all instructions coming from decode this cycle. */
-    InstQueue insts[MaxThreads];
-
-    /** Skid buffer between rename and decode. */
-    InstQueue skidBuffer[MaxThreads];
+    boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
 
     /** Rename map interface. */
     UnifiedRenameMap *renameMap[MaxThreads];
@@ -387,46 +324,10 @@ class Rename
     /** Pointer to the scoreboard. */
     Scoreboard *scoreboard;
 
-    /** Count of instructions in progress that have been sent off to the IQ
-     * and ROB, but are not yet included in their occupancy counts.
-     */
-    int instsInProgress[MaxThreads];
-
-    /** Count of Load instructions in progress that have been sent off to the
-     * IQ and ROB, but are not yet included in their occupancy counts.
-     */
-    int loadsInProgress[MaxThreads];
-
-    /** Count of Store instructions in progress that have been sent off to the
-     * IQ and ROB, but are not yet included in their occupancy counts.
-     */
-    int storesInProgress[MaxThreads];
-
     /** Variable that tracks if decode has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
      */
     bool wroteToTimeBuffer;
-
-    /** Structures whose free entries impact the amount of instructions that
-     * can be renamed.
-     */
-    struct FreeEntries
-    {
-        unsigned robEntries;
-        unsigned lqEntries;
-        unsigned sqEntries;
-    };
-
-    /** Per-thread tracking of the number of free entries of back-end
-     * structures.
-     */
-    FreeEntries freeEntries[MaxThreads];
-
-    /** Records if the ROB is empty. In SMT mode the ROB may be dynamically
-     * partitioned between threads, so the ROB must tell rename when it is
-     * empty.
-     */
-    bool emptyROB[MaxThreads];
 
     /** Source of possible stalls. */
     struct Stalls
@@ -438,13 +339,7 @@ class Rename
     /** Tracks which stages are telling decode to stall. */
     Stalls stalls[MaxThreads];
 
-    /** The serialize instruction that rename has stalled on. */
-    DynInstPtr serializeInst[MaxThreads];
-
-    /** Records if rename needs to serialize on the next instruction for any
-     * thread.
-     */
-    bool serializeOnNextInst[MaxThreads];
+    StallSignals* stallSig;
 
     /** Delay between iew and rename, in ticks. */
     int iewToRenameDelay;
@@ -460,27 +355,12 @@ class Rename
 
     unsigned releaseWidth;
 
-    /** The index of the instruction in the time buffer to IEW that rename is
-     * currently using.
-     */
-    unsigned toIEWIndex;
-
-    /** Whether or not rename needs to block this cycle. */
-    bool blockThisCycle;
-
-    /** Whether or not rename needs to resume a serialize instruction
-     * after squashing. */
-    bool resumeSerialize;
-
     /** Whether or not rename needs to resume clearing out the skidbuffer
      * after squashing. */
     bool resumeUnblocking;
 
     /** The number of threads active in rename. */
     ThreadID numThreads;
-
-    /** The maximum skid buffer size. */
-    unsigned skidBufferMax;
 
     /** Enum to record the source of a structure full stall.  Can come from
      * either ROB, IQ, LSQ, and it is priortized in that order.
@@ -564,7 +444,7 @@ class Rename
 
     std::vector<StallReason> renameStalls;
 
-    StallReason blockReason;
+    StallReason blockReason{NoStall};
 
     void setAllStalls(StallReason renameStall);
 

@@ -48,6 +48,8 @@
 #include <set>
 #include <vector>
 
+#include <boost/circular_buffer.hpp>
+
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
@@ -139,12 +141,12 @@ class IEW
 
     /** Overall stage status. */
     Status _status;
-    /** Dispatch status. */
-    StageStatus dispatchStatus[MaxThreads];
     /** Execute status. */
     StageStatus exeStatus;
     /** Writeback status. */
     StageStatus wbStatus;
+
+    bool serializeOnNextInst[MaxThreads];
 
     /** Probe points. */
     ProbePointArg<DynInstPtr> *ppMispredict;
@@ -154,7 +156,7 @@ class IEW
     /** To probe when instruction execution is complete. */
     ProbePointArg<DynInstPtr> *ppToCommit;
 
-    bool disp_stall = false;
+    StallSignals* stallSig;
 
   public:
     /** Constructs a IEW with the given parameters. */
@@ -222,17 +224,8 @@ class IEW
     /** Inst is ready to finish (The last cycle in FU) */
     void readyToFinish(const DynInstPtr &inst);
 
-    /** Inserts unused instructions of a thread into the skid buffer. */
-    void skidInsert(ThreadID tid);
-
-    /** Returns the max of the number of entries in all of the skid buffers. */
-    int skidCount();
-
-    /** Returns if all of the skid buffers are empty. */
-    bool skidsEmpty();
-
     /** Updates overall IEW status based on all of the stages' statuses. */
-    void updateStatus();
+    void updateActivate();
 
     /** Resets entries of the IQ and the LSQ. */
     void resetEntries();
@@ -304,9 +297,7 @@ class IEW
 
     uint32_t getIQInsts();
 
-    bool dispStall() {
-      return disp_stall;
-    }
+    void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
 
   private:
     /** Sends commit proper information for a squash due to a branch
@@ -319,19 +310,10 @@ class IEW
      */
     void squashDueToMemOrder(const DynInstPtr &inst, ThreadID tid);
 
-    /** Sets Dispatch to blocked, and signals back to other stages to block. */
-    void block(ThreadID tid);
-
-    /** Unblocks Dispatch if the skid buffer is empty, and signals back to
-     * other stages to unblock.
-     */
-    void unblock(ThreadID tid);
-
-    /** Determines proper actions to take given Dispatch's status. */
-    void dispatch(ThreadID tid);
+    bool canInsertLDSTQue(ThreadID tid);
 
     /** Dispatches instructions to IQ and LSQ. */
-    void dispatchInsts(ThreadID tid);
+    void dispatchInsts();
 
     void dispatchInstFromRename(ThreadID tid);
 
@@ -339,7 +321,7 @@ class IEW
      *  first, dispatch the inst from DispatchQueue to IQ
      *  second, receive new inst from rename, store it to DQ
      */
-    void dispatchInstFromDispQue(ThreadID tid);
+    void dispatchInstFromDispQue();
     void classifyInstToDispQue(ThreadID tid);
 
     /** Executes instructions. In the case of memory operations, it informs the
@@ -355,17 +337,13 @@ class IEW
      */
     void writebackInsts();
 
-    /** Checks if any of the stall conditions are currently true. */
-    bool checkStall(ThreadID tid);
+    bool checkSerialize(const DynInstPtr& inst);
 
     /** Processes inputs and changes state accordingly. */
-    void checkSignalsAndUpdate(ThreadID tid);
-
-    /** Removes instructions from rename from a thread's instruction list. */
-    void emptyRenameInsts(ThreadID tid);
+    void checkSquash();
 
     /** Sorts instructions coming from rename into lists separated by thread. */
-    void sortInsts();
+    void moveInstsToBuffer();
 
   public:
     /** Ticks IEW stage, causing Dispatch, the IQ, the LSQ, Execute, and
@@ -411,10 +389,7 @@ class IEW
     TimeBuffer<IEWStruct>::wire toCommit;
 
     /** Queue of all instructions coming from rename this cycle. */
-    std::deque<DynInstPtr> insts[MaxThreads];
-
-    /** Skid buffer between rename and IEW. */
-    std::deque<DynInstPtr> skidBuffer[MaxThreads];
+    std::deque<DynInstPtr> fixedbuffer[MaxThreads];
 
     std::deque<DynInstPtr> dispQue[3];
 
@@ -442,8 +417,6 @@ class IEW
     Scheduler* getScheduler() { return scheduler; }
     /** Instruction queue. */
     InstructionQueue instQueue;
-    unsigned lastClockLQPopEntries[MaxThreads];
-    unsigned lastClockSQPopEntries[MaxThreads];
 
     /** Load / store queue. */
     LSQ ldstQueue;

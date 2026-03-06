@@ -108,16 +108,16 @@ SimpleRenameMap::rename(const RegId &arch_reg, const VirtRegId& bypass_reg)
         renamed_reg.PhyReg()->decrNumPinnedWrites();
     } else {
         renamed_reg.setPhyReg(freeList->getReg());
-        DPRINTF(Rename, "Get free reg p%i\n", renamed_reg.PhyReg()->flatIndex());
+        DPRINTF(Scoreboard, "Get free reg p%i\n", renamed_reg.PhyReg()->flatIndex());
         map[arch_reg.index()] = renamed_reg;
         renamed_reg.PhyReg()->setNumPinnedWrites(arch_reg.getNumPinnedWrites());
         renamed_reg.PhyReg()->setNumPinnedWritesToComplete(
             arch_reg.getNumPinnedWrites() + 1);
-        DPRINTF(Rename, "set refcnt of p%i to %i\n",
+        DPRINTF(Scoreboard, "set refcnt of p%i to %i\n",
                 renamed_reg.PhyReg()->flatIndex(), renamed_reg.PhyReg()->getRef());
     }
 
-    DPRINTF(Rename, "Renamed reg %d to physical reg %d (%d) old mapping was"
+    DPRINTF(Scoreboard, "Renamed reg %d to physical reg %d (%d) old mapping was"
             " %d (%d)\n",
             arch_reg, renamed_reg.PhyReg()->flatIndex(), renamed_reg.PhyReg()->flatIndex(),
             prev_reg.PhyReg()->flatIndex(), prev_reg.PhyReg()->flatIndex());

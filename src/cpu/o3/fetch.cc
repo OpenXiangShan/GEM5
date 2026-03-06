@@ -127,7 +127,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         pc[i].reset(params.isa[0]->newPCState());
         macroop[i] = nullptr;
         delayedCommit[i] = false;
-        stalls[i] = {false, false};
         lastIcacheStall[i] = 0;
     }
 
@@ -416,8 +415,6 @@ Fetch::clearStates(ThreadID tid)
     macroop[tid] = NULL;
     delayedCommit[tid] = false;
     cacheReq[tid].reset();
-    stalls[tid].decode = false;
-    stalls[tid].drain = false;
     fetchBuffer[tid].reset();
     fetchQueue[tid].clear();
 
@@ -442,9 +439,6 @@ Fetch::resetStage()
 
         delayedCommit[tid] = false;
         cacheReq[tid].reset();
-
-        stalls[tid].decode = false;
-        stalls[tid].drain = false;
 
         fetchBuffer[tid].reset();
         ftqEntryFetchedInsts[tid] = 0;
@@ -646,22 +640,13 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
     switchToActive();
 
-    // Complete cache request and transition to appropriate state
-    if (checkStall(tid)) {
-        setThreadStatus(tid, Blocked);
-    } else {
-        // Transition from WaitingCache back to Running when cache access completes
-        setThreadStatus(tid, Running);
-    }
+    // Transition from WaitingCache back to Running when cache access completes
+    setThreadStatus(tid, Running);
 }
 
 void
 Fetch::drainResume()
 {
-    for (ThreadID i = 0; i < numThreads; ++i) {
-        stalls[i].decode = false;
-        stalls[i].drain = false;
-    }
 }
 
 void
@@ -675,7 +660,7 @@ Fetch::drainSanityCheck() const
 
     for (ThreadID i = 0; i < numThreads; ++i) {
         assert(cacheReq[i].packets.empty());
-        assert(fetchStatus[i] == Idle || stalls[i].drain);
+        assert(fetchStatus[i] == Idle);
     }
 
     branchPred->drainSanityCheck();
@@ -697,10 +682,7 @@ Fetch::isDrained() const
 
         // Return false if not idle or drain stalled
         if (fetchStatus[i] != Idle) {
-            if (fetchStatus[i] == Blocked && stalls[i].drain)
-                continue;
-            else
-                return false;
+            return false;
         }
     }
 
@@ -722,10 +704,6 @@ Fetch::takeOverFrom()
 void
 Fetch::drainStall(ThreadID tid)
 {
-    assert(cpu->isDraining());
-    assert(!stalls[tid].drain);
-    DPRINTF(Drain, "%i: Thread drained.\n", tid);
-    stalls[tid].drain = true;
 }
 
 void
@@ -1167,20 +1145,6 @@ Fetch::squashFromDecode(PCStateBase &new_pc, const DynInstPtr squashInst,
     cpu->removeInstsUntil(seq_num, tid);
 }
 
-bool
-Fetch::checkStall(ThreadID tid) const
-{
-    bool ret_val = false;
-
-    if (stalls[tid].drain) {
-        assert(cpu->isDraining());
-        DPRINTF(Fetch,"[tid:%i] Drain stall detected.\n",tid);
-        ret_val = true;
-    }
-
-    return ret_val;
-}
-
 Fetch::FetchStatus
 Fetch::updateFetchStatus()
 {
@@ -1191,7 +1155,7 @@ Fetch::updateFetchStatus()
     while (threads != end) {
         ThreadID tid = *threads++;
 
-        if ((canFetchInstructions(tid) && !checkStall(tid)) || fetchStatus[tid] == Squashing ||
+        if (canFetchInstructions(tid) || fetchStatus[tid] == Squashing ||
             cacheReq[tid].getOverallStatus() == AccessComplete) {
 
             if (_status == Inactive) {
@@ -1257,6 +1221,7 @@ Fetch::initializeTickState()
     bool status_change = false;
 
     wroteToTimeBuffer = false;
+    setAllFetchStalls(StallReason::NoStall);
 
     // get the distribution of fetch status
     fetchStats.fetchStatusDist[fetchStatus[0]]++;
@@ -1327,68 +1292,80 @@ Fetch::handleInterrupts()
 void
 Fetch::sendInstructionsToDecode()
 {
-    // Send instructions enqueued into the fetch queue to decode.
-    // Limit rate by fetchWidth.  Stall if decode is stalled.
-    unsigned insts_to_decode = 0;
-    unsigned available_insts = 0;
 
-    // Count available instructions across all active threads
-    for (auto tid : *activeThreads) {
-        if (!stalls[tid].decode) {
-            available_insts += fetchQueue[tid].size();
+    // Reset the number of instructions we've fetched
+    numInst = 0;
+
+    bool any_thread_active = false;
+    for (int i = 0; i < numThreads; i++) {
+        if (!stallSig->blockFetch[i]) {
+            any_thread_active = true;
+            break;
         }
     }
-
-    // Pick a random thread to start trying to grab instructions from
-    auto tid_itr = activeThreads->begin();
-    std::advance(tid_itr,
-            random_mt.random<uint8_t>(0, activeThreads->size() - 1));
-
-    // Collect instructions from fetch queues until decode width is reached
-    while (available_insts != 0 && insts_to_decode < decodeWidth) {
-        ThreadID tid = *tid_itr;
-        if (!stalls[tid].decode && !fetchQueue[tid].empty()) {
-            const auto& inst = fetchQueue[tid].front();
-            toDecode->insts[toDecode->size++] = inst;
-            DPRINTF(Fetch, "[tid:%i] [sn:%llu] Sending instruction to decode "
-                    "from fetch queue. Fetch queue size: %i.\n",
-                    tid, inst->seqNum, fetchQueue[tid].size());
-
-            wroteToTimeBuffer = true;
-            fetchQueue[tid].pop_front();
-            insts_to_decode++;
-            available_insts--;
+    if (!any_thread_active) {
+        // All threads are blocked, no instructions to send
+        ThreadID blocked_tid = InvalidThreadID;
+        for (int i = 0; i < numThreads; i++) {
+            if (stallSig->blockFetch[i]) {
+                blocked_tid = i;
+                break;
+            }
         }
 
-        tid_itr++;
-        // Wrap around if at end of active threads list
-        if (tid_itr == activeThreads->end())
-            tid_itr = activeThreads->begin();
+        if (blocked_tid != InvalidThreadID) {
+            setAllFetchStalls(stallSig->fetchBlockReason[blocked_tid]);
+        }
+
+        toDecode->fetchStallReason = stallReason;
+
+        for (int i = 0; i < numThreads; i++) {
+            measureFrontendBubbles(0, i);
+        }
+        return;
+    }
+
+    ThreadID tid = 0; // TODO: smt support
+
+    // fetch totally stalled
+    if (stallSig->blockFetch[tid]) {
+        // If decode stalled, use decode's stall reason
+        DPRINTF(Fetch, "[tid:%i] Fetch stalled\n", tid);
+        setAllFetchStalls(stallSig->fetchBlockReason[tid]);
+    }
+
+    int insts_to_decode = 0;
+    auto& insts = fetchQueue[tid];
+    while (!insts.empty() && insts_to_decode < decodeWidth) {
+        const auto& inst = insts.front();
+        toDecode->insts[toDecode->size++] = inst;
+        DPRINTF(Fetch, "[tid:%i] [sn:%llu] Sending instruction to decode "
+                "from fetch queue. Fetch queue size: %i.\n",
+                tid, inst->seqNum, insts.size());
+
+        wroteToTimeBuffer = true;
+        insts.pop_front();
+        insts_to_decode++;
     }
 
     // Update stall reasons based on fetch/decode status
-    updateStallReasons(insts_to_decode, *tid_itr);
+    updateStallReasons(insts_to_decode, tid);
 
     // Intel TopDown method for measuring frontend bubbles
-    measureFrontendBubbles(insts_to_decode, *tid_itr);
+    measureFrontendBubbles(insts_to_decode, tid);
 
     // If there was activity this cycle, inform the CPU of it
     if (wroteToTimeBuffer) {
         DPRINTF(Activity, "Activity this cycle.\n");
         cpu->activityThisCycle();
     }
-
-    // Reset the number of instructions we've fetched
-    numInst = 0;
 }
 
 void
 Fetch::updateStallReasons(unsigned insts_to_decode, ThreadID tid)
 {
-    // fetch totally stalled
-    if (stalls[tid].decode) {
-        // If decode stalled, use decode's stall reason
-        setAllFetchStalls(fromDecode->decodeInfo[tid].blockReason);
+    if (stallSig->blockFetch[tid]) {
+        setAllFetchStalls(stallSig->fetchBlockReason[tid]);
     } else if (insts_to_decode == 0) {
         // fetch stalled
         if (stallReason[0] != StallReason::NoStall) {
@@ -1419,7 +1396,7 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
     // For N-wide machine, if frontend supplies 0 instructions:
     // - fetchBubbles += N (count total empty slots)
     // - fetchBubbles_max += 1 (count occurrence of all slots being empty)
-    if (!stalls[tid].decode && !fromCommit->commitInfo[tid].robSquashing) {
+    if (!stallSig->blockFetch[tid] && !fromCommit->commitInfo[tid].robSquashing) {
         // backend not stalled
         int unused_slots = decodeWidth - insts_to_decode;
         if (unused_slots > 0) {
@@ -1432,7 +1409,7 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
         }
     }
 
-    if (stalls[tid].decode) {
+    if (stallSig->blockFetch[tid]) {
         fetchStats.decodeStalls++;
     }
 }
@@ -1440,17 +1417,6 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
 bool
 Fetch::checkSignalsAndUpdate(ThreadID tid)
 {
-    // Update the per thread stall statuses.
-    if (fromDecode->decodeBlock[tid]) {
-        stalls[tid].decode = true;
-    }
-
-    if (fromDecode->decodeUnblock[tid]) {
-        assert(stalls[tid].decode);
-        assert(!fromDecode->decodeBlock[tid]);
-        stalls[tid].decode = false;
-    }
-
     // Check squash signals from commit.
     bool commitSquashed = handleCommitSignals(tid);
 
@@ -1461,14 +1427,6 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     }
 
     if (handleDecodeSquash(tid)) {
-        return true;
-    }
-
-    if (checkStall(tid) && !hasPendingCacheRequests(tid)) {
-        DPRINTF(Fetch, "[tid:%i] Setting to blocked\n",tid);
-
-        setThreadStatus(tid, Blocked);
-
         return true;
     }
 
@@ -1506,6 +1464,7 @@ Fetch::handleIEWSignals()
     }
 
     auto &incoming = fromIEW->iewInfo->resolvedCFIs;
+    const bool had_pending_resolve = !resolveQueue.empty();
     uint8_t enqueueSize = fromIEW->iewInfo->resolvedCFIs.size();
     uint8_t enqueueCount = 0;
 
@@ -1539,7 +1498,10 @@ Fetch::handleIEWSignals()
 
     fetchStats.resolveQueueOccupancy.sample(resolveQueue.size());
 
-    if (!resolveQueue.empty()) {
+    // Process only entries that were already pending before this cycle.
+    // This preserves a cycle of separation between IEW producing resolved CFIs
+    // and fetch consuming them as predictor resolved updates.
+    if (had_pending_resolve && !resolveQueue.empty()) {
         auto &entry = resolveQueue.front();
         unsigned int stream_id = entry.resolvedFTQId;
         dbpbtb->prepareResolveUpdateEntries(stream_id);
@@ -1736,7 +1698,7 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
 ThreadID
 Fetch::selectFetchThread()
 {
-    ThreadID tid = getFetchingThread();
+    ThreadID tid = 0; // TODO: smt support
 
     assert(!cpu->switchedOut());
 
@@ -2096,145 +2058,6 @@ Fetch::recvReqRetry()
     }
 }
 
-///////////////////////////////////////
-//                                   //
-//  SMT FETCH POLICY MAINTAINED HERE //
-//                                   //
-///////////////////////////////////////
-ThreadID
-Fetch::getFetchingThread()
-{
-    if (numThreads > 1) {
-        switch (fetchPolicy) {
-          case SMTFetchPolicy::RoundRobin:
-            return roundRobin();
-          case SMTFetchPolicy::IQCount:
-            return iqCount();
-          case SMTFetchPolicy::LSQCount:
-            return lsqCount();
-          case SMTFetchPolicy::Branch:
-            return branchCount();
-          default:
-            return InvalidThreadID;
-        }
-    } else {
-        std::list<ThreadID>::iterator thread = activeThreads->begin();
-        if (thread == activeThreads->end()) {
-            return InvalidThreadID;
-        }
-
-        ThreadID tid = *thread;
-
-        if (canFetchInstructions(tid) || fetchStatus[tid] == Idle) {
-            return tid;
-        } else {
-            return InvalidThreadID;
-        }
-    }
-}
-
-
-ThreadID
-Fetch::roundRobin()
-{
-    std::list<ThreadID>::iterator pri_iter = priorityList.begin();
-    std::list<ThreadID>::iterator end      = priorityList.end();
-
-    ThreadID high_pri;
-
-    while (pri_iter != end) {
-        high_pri = *pri_iter;
-
-        assert(high_pri <= numThreads);
-
-        if (canFetchInstructions(high_pri) || fetchStatus[high_pri] == Idle) {
-
-            priorityList.erase(pri_iter);
-            priorityList.push_back(high_pri);
-
-            return high_pri;
-        }
-
-        pri_iter++;
-    }
-
-    return InvalidThreadID;
-}
-
-ThreadID
-Fetch::iqCount()
-{
-    //sorted from lowest->highest
-    std::priority_queue<unsigned, std::vector<unsigned>,
-                        std::greater<unsigned> > PQ;
-    std::map<unsigned, ThreadID> threadMap;
-
-    std::list<ThreadID>::iterator threads = activeThreads->begin();
-    std::list<ThreadID>::iterator end = activeThreads->end();
-
-    while (threads != end) {
-        ThreadID tid = *threads++;
-        unsigned iqCount = cpu->getIQInsts();
-
-        //we can potentially get tid collisions if two threads
-        //have the same iqCount, but this should be rare.
-        PQ.push(iqCount);
-        threadMap[iqCount] = tid;
-    }
-
-    while (!PQ.empty()) {
-        ThreadID high_pri = threadMap[PQ.top()];
-
-        if (canFetchInstructions(high_pri) || fetchStatus[high_pri] == Idle)
-            return high_pri;
-        else
-            PQ.pop();
-
-    }
-
-    return InvalidThreadID;
-}
-
-ThreadID
-Fetch::lsqCount()
-{
-    //sorted from lowest->highest
-    std::priority_queue<unsigned, std::vector<unsigned>,
-                        std::greater<unsigned> > PQ;
-    std::map<unsigned, ThreadID> threadMap;
-
-    std::list<ThreadID>::iterator threads = activeThreads->begin();
-    std::list<ThreadID>::iterator end = activeThreads->end();
-
-    while (threads != end) {
-        ThreadID tid = *threads++;
-        unsigned ldstqCount = fromIEW->iewInfo[tid].ldstqCount;
-
-        //we can potentially get tid collisions if two threads
-        //have the same iqCount, but this should be rare.
-        PQ.push(ldstqCount);
-        threadMap[ldstqCount] = tid;
-    }
-
-    while (!PQ.empty()) {
-        ThreadID high_pri = threadMap[PQ.top()];
-
-        if (canFetchInstructions(high_pri) || fetchStatus[high_pri] == Idle)
-            return high_pri;
-        else
-            PQ.pop();
-    }
-
-    return InvalidThreadID;
-}
-
-ThreadID
-Fetch::branchCount()
-{
-    panic("Branch Count Fetch policy unimplemented\n");
-    return InvalidThreadID;
-}
-
 void
 Fetch::profileStall(ThreadID tid)
 {
@@ -2242,10 +2065,7 @@ Fetch::profileStall(ThreadID tid)
 
     // @todo Per-thread stats
 
-    if (stalls[tid].drain) {
-        ++fetchStats.pendingDrainCycles;
-        DPRINTF(Fetch, "Fetch is waiting for a drain!\n");
-    } else if (activeThreads->empty()) {
+    if (activeThreads->empty()) {
         ++fetchStats.noActiveThreadStallCycles;
         DPRINTF(Fetch, "Fetch has no active thread!\n");
     } else if (fetchStatus[tid] == Blocked) {

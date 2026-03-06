@@ -48,11 +48,9 @@
 #include "arch/generic/isa.hh"
 #include "arch/vecregs.hh"
 #include "base/trace.hh"
-#include "config/the_isa.hh"
-#include "cpu/o3/comm.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/regfile.hh"
-#include "debug/IEW.hh"
+#include "debug/Scoreboard.hh"
 
 namespace gem5
 {
@@ -272,22 +270,22 @@ class PhysRegFile
         switch (type) {
           case IntRegClass:
             val = intRegFile.reg(idx);
-            DPRINTF(IEW, "RegFile: Access to int register %i, has data %#x\n",
+            DPRINTF(Scoreboard, "RegFile: Access to int register %i, has data %#x\n",
                     idx, val);
             return val;
           case FloatRegClass:
             val = floatRegFile.reg(idx);
-            DPRINTF(IEW, "RegFile: Access to float register %i has data %#x\n",
+            DPRINTF(Scoreboard, "RegFile: Access to float register %i has data %#x\n",
                     idx, val);
             return val;
           case VecElemClass:
             val = vectorElemRegFile.reg(idx);
-            DPRINTF(IEW, "RegFile: Access to vector element register %i "
+            DPRINTF(Scoreboard, "RegFile: Access to vector element register %i "
                     "has data %#x\n", idx, val);
             return val;
           case CCRegClass:
             val = ccRegFile.reg(idx);
-            DPRINTF(IEW, "RegFile: Access to cc register %i has data %#x\n",
+            DPRINTF(Scoreboard, "RegFile: Access to cc register %i has data %#x\n",
                     idx, val);
             return val;
           case RMiscRegClass:
@@ -307,7 +305,7 @@ class PhysRegFile
         const RegClassType type = virt_reg.PhyReg()->classValue();
         const RegIndex idx = virt_reg.PhyReg()->index();
 
-        DPRINTF(IEW, "RegFile: trying to access %s register %i \n", type, idx);
+        DPRINTF(Scoreboard, "RegFile: trying to access %s register %i \n", type, idx);
         return virt_reg.correct(getReg(virt_reg.PhyReg()));
     }
 
@@ -326,7 +324,7 @@ class PhysRegFile
             break;
           case VecRegClass:
             vectorRegFile.get(idx, val);
-            DPRINTF(IEW, "RegFile: Access to vector register %i, has "
+            DPRINTF(Scoreboard, "RegFile: Access to vector register %i, has "
                     "data %s\n", idx, vectorRegFile.regClass.valString(val));
             break;
           case VecElemClass:
@@ -334,7 +332,7 @@ class PhysRegFile
             break;
           case VecPredRegClass:
             vecPredRegFile.get(idx, val);
-            DPRINTF(IEW, "RegFile: Access to predicate register %i, has "
+            DPRINTF(Scoreboard, "RegFile: Access to predicate register %i, has "
                     "data %s\n", idx, vecPredRegFile.regClass.valString(val));
             break;
           case CCRegClass:
@@ -375,22 +373,22 @@ class PhysRegFile
             break;
           case IntRegClass:
             intRegFile.reg(idx) = val;
-            DPRINTF(IEW, "RegFile: Setting int register %i to %#x\n",
+            DPRINTF(Scoreboard, "RegFile: Setting int register %i to %#x\n",
                     idx, val);
             break;
           case FloatRegClass:
             floatRegFile.reg(idx) = val;
-            DPRINTF(IEW, "RegFile: Setting float register %i to %#x\n",
+            DPRINTF(Scoreboard, "RegFile: Setting float register %i to %#x\n",
                     idx, val);
             break;
           case VecElemClass:
             vectorElemRegFile.reg(idx) = val;
-            DPRINTF(IEW, "RegFile: Setting vector element register %i to "
+            DPRINTF(Scoreboard, "RegFile: Setting vector element register %i to "
                     "%#x\n", idx, val);
             break;
           case CCRegClass:
             ccRegFile.reg(idx) = val;
-            DPRINTF(IEW, "RegFile: Setting cc register %i to %#x\n",
+            DPRINTF(Scoreboard, "RegFile: Setting cc register %i to %#x\n",
                     idx, val);
             break;
           case RMiscRegClass:
@@ -415,7 +413,7 @@ class PhysRegFile
             setReg(phys_reg, *(RegVal *)val);
             break;
           case VecRegClass:
-            DPRINTF(IEW, "RegFile: Setting vector register %i to %s\n",
+            DPRINTF(Scoreboard, "RegFile: Setting vector register %i to %s\n",
                     idx, vectorRegFile.regClass.valString(val));
             vectorRegFile.set(idx, val);
             break;
@@ -423,7 +421,7 @@ class PhysRegFile
             setReg(phys_reg, *(RegVal *)val);
             break;
           case VecPredRegClass:
-            DPRINTF(IEW, "RegFile: Setting predicate register %i to %s\n",
+            DPRINTF(Scoreboard, "RegFile: Setting predicate register %i to %s\n",
                     idx, vectorRegFile.regClass.valString(val));
             vecPredRegFile.set(idx, val);
             break;

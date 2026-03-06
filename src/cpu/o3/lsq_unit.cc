@@ -1910,7 +1910,6 @@ LSQUnit::commitLoad()
                 inst->lastWakeDependents - inst->firstIssue);
             stats.loadToUse.sample(load_to_use);
             if (((uint64_t) load_to_use) > 2000) {
-                inst->printDisassemblyAndResult(cpu->name());
                 DPRINTF(CommitTrace,
                         "Inst[sn:%lu] load2use = %lu, translation lat = %lu\n",
                         inst->seqNum, load_to_use, translation_lat);
@@ -2572,8 +2571,14 @@ LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
         return;
     }
 
-    DPRINTF(LoadPipeline, "WritebackReg: %s [sn:%lli] data: %#lx\n", enums::OpClassStrings[inst->opClass()], inst->seqNum,
-        inst->memData ? *((uint64_t *)inst->memData) : 0);
+    if (debug::LoadPipeline) {
+        char buffer[8] = {0};
+        if (inst->memData)
+            std::memcpy(buffer, inst->memData, inst->effSize);
+        DPRINTF(LoadPipeline, "WritebackReg: %s [sn:%lli] data: %#lx\n", enums::OpClassStrings[inst->opClass()],
+                inst->seqNum, ((uint64_t *)buffer));
+    }
+
 
     if (!inst->isExecuted()) {
         inst->setExecuted();
@@ -3238,7 +3243,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
     // Check the SQ for any previous stores that might lead to forwarding
     auto store_it = load_inst->sqIt;
-    assert (store_it >= storeWBIt);
+    panic_if(store_it < storeWBIt, "[sn:%llu] Load instruction's store index is younger than store writeback index",
+             load_inst->seqNum);
     // End once we've reached the top of the LSQ
     while (store_it != storeWBIt && !load_inst->isDataPrefetch()) {
         // Move the index to one younger
@@ -3372,9 +3378,15 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                     }
                 }
 
-                DPRINTF(LoadPipeline, "Forwarding from store [sn:%llu] to load [sn:%llu] "
-                        "addr %#x, data: %#lx\n", store_it->instruction()->seqNum, load_inst->seqNum,
-                        request->mainReq()->getPaddr(), *((uint64_t*)load_inst->memData));
+                if (debug::LoadPipeline) {
+                    char buffer[8] = {0};
+                    if (load_inst->memData) std::memcpy(buffer, load_inst->memData, load_inst->effSize);
+                    DPRINTF(LoadPipeline, "Forwarding from store [sn:%llu] to load [sn:%llu] "
+                            "addr %#x, data: %#lx\n", store_it->instruction()->seqNum, load_inst->seqNum,
+                            request->mainReq()->getPaddr(), *((uint64_t*)buffer));
+                }
+
+
 
                 load_inst->setFullForward();
 
@@ -3439,8 +3451,12 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 }
 
                 load_inst->setFullForward();
-                DPRINTF(LoadPipeline, "Load [sn:%llu] forward from sbuffer, data: %lx\n",
-                        load_inst->seqNum, *((uint64_t*)load_inst->memData));
+                if (debug::LoadPipeline) {
+                    char buffer[8] = {0};
+                    if (load_inst->memData) std::memcpy(buffer, load_inst->memData, load_inst->effSize);
+                    DPRINTF(LoadPipeline, "Load [sn:%llu] forward from sbuffer, data: %lx\n",
+                            load_inst->seqNum, *((uint64_t*)buffer));
+                }
 
                 return NoFault;
             }
