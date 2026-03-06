@@ -1317,7 +1317,7 @@ Fetch::sendInstructionsToDecode()
     if (stallSig->blockFetch[tid]) {
         // If decode stalled, use decode's stall reason
         DPRINTF(Fetch, "[tid:%i] Fetch stalled\n", tid);
-        setAllFetchStalls(fromDecode->decodeInfo[tid].blockReason);
+        setAllFetchStalls(stallSig->fetchBlockReason[tid]);
     }
 
     int insts_to_decode = 0;

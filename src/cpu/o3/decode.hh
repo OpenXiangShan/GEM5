@@ -289,7 +289,7 @@ class Decode
 
     std::unordered_map<const char*, uint64_t> fusionType;
 
-    StallReason blockReason;
+    StallReason blockReason{NoStall};
 
     void setAllStalls(StallReason decodeStall);
 

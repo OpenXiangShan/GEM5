@@ -332,8 +332,8 @@ Rename::tick()
     toIEW->decodeStallReason = fromDecode->decodeStallReason;
 
     wroteToTimeBuffer = false;
-
-    bool status_change = false;
+    blockReason = StallReason::NoStall;
+    setAllStalls(StallReason::NoStall);
 
     moveInstsToBuffer();
 
@@ -343,14 +343,28 @@ Rename::tick()
 
     // check threads stall & status
     ThreadID tid = InvalidThreadID;
+    ThreadID blocked_tid = InvalidThreadID;
     for (int i = 0; i < numThreads; i++) {
-        bool block = stallSig->blockRename[i] || !canRename(i);
+        bool can_rename = canRename(i);
+        bool block = stallSig->blockRename[i] || !can_rename;
         bool active = !block && !fixedbuffer[i].empty();
+        StallReason block_reason = StallReason::NoStall;
+        if (stallSig->blockRename[i]) {
+            block_reason = stallSig->renameBlockReason[i];
+        } else if (!can_rename) {
+            block_reason = checkRenameStallFromIEW(i);
+            if (block_reason == StallReason::NoStall) {
+                block_reason = StallReason::OtherStall;
+            }
+        }
         DPRINTF(Rename, "[tid:%i] blockRename: %i, canRename: %i, block: %i, active: %i\n",
-                i, stallSig->blockRename[i], canRename(i), block, active);
+                i, stallSig->blockRename[i], can_rename, block, active);
 
         // if rename has no insts, no need to block decode, even if rename is blocked for other reasons
         stallSig->blockDecode[i] = block && !fixedbuffer[i].empty();
+        stallSig->decodeBlockReason[i] =
+            stallSig->blockDecode[i] ? block_reason : StallReason::NoStall;
+        toDecode->renameInfo[i].blockReason = stallSig->decodeBlockReason[i];
         if (active) {
             if (tid == InvalidThreadID) tid = i;
             else {
@@ -360,18 +374,39 @@ Rename::tick()
                 stallSig->blockDecode[i] = true;
                 DPRINTF(Rename, "Multiple active threads detected, blocking all threads\n");
             }
+        } else if (stallSig->blockDecode[i] && blocked_tid == InvalidThreadID) {
+            blocked_tid = i;
         }
     }
 
     if (tid == InvalidThreadID) {
         // all threads are stalled, no need to process
+        if (blocked_tid != InvalidThreadID) {
+            setAllStalls(stallSig->decodeBlockReason[blocked_tid]);
+            blockReason = stallSig->decodeBlockReason[blocked_tid];
+        }
+        toIEW->renameStallReason = renameStalls;
+        updateActivate();
         return;
     }
     DPRINTF(Rename, "Processing [tid:%i]\n", tid);
 
     renameInsts(tid);
+    if (stallSig->blockRename[tid]) {
+        setAllStalls(stallSig->renameBlockReason[tid]);
+    } else if (toIEW->size > 0 && renameStalls[0] == StallReason::NoStall) {
+        for (int i = 0; i < renameStalls.size(); i++) {
+            if (i < toIEW->size) {
+                renameStalls.at(i) = StallReason::NoStall;
+            } else {
+                renameStalls.at(i) = fromDecode->decodeStallReason.at(i);
+            }
+        }
+    }
 
-    toDecode->renameInfo[tid].blockReason = blockReason;
+    stallSig->decodeBlockReason[tid] =
+        stallSig->blockDecode[tid] ? blockReason : StallReason::NoStall;
+    toDecode->renameInfo[tid].blockReason = stallSig->decodeBlockReason[tid];
 
     toIEW->renameStallReason = renameStalls;
 
@@ -524,6 +559,12 @@ Rename::renameInsts(ThreadID tid)
     // If so then block.
     if (!fixedbuffer[tid].empty()) {
         stallSig->blockDecode[tid] = true;
+        if (breakRename == StallReason::NoStall) {
+            breakRename = checkRenameStallFromIEW(tid);
+            if (breakRename == StallReason::NoStall) {
+                breakRename = StallReason::OtherStall;
+            }
+        }
         blockReason = breakRename;
         DPRINTF(Rename, "[tid:%i] Stalling because there are still instructions to "
                 "rename.\n", tid);

@@ -1401,7 +1401,9 @@ Commit::commitInsts()
                     Addr load_addr = head_inst->physEffAddr;
                     char buffer[8] = {0};
                     if (head_inst->memData) {
-                        std::memcpy(buffer, head_inst->memData, head_inst->effSize);
+                        std::memcpy(buffer, head_inst->memData,
+                                    std::min<size_t>(head_inst->effSize,
+                                                     sizeof(buffer)));
                     }
                     Addr load_value = *((uint64_t *)buffer);
                     bool hit = loadTripleCounter.update(load_pc, load_addr, load_value);
@@ -1855,9 +1857,19 @@ Commit::moveInstsToBuffer()
         bool robblock = commitStatus[i] == ROBSquashing || commitStatus[i] == TrapPending;
         bool block = (rob->getMaxEntries(i) - rob->getThreadEntries(i) < fixedbuffer[i].size()) || robblock;
         bool active = !block && !fixedbuffer[i].empty();
+        StallReason block_reason = StallReason::NoStall;
+        if (robblock) {
+            block_reason = StallReason::CommitSquash;
+        } else if (block) {
+            block_reason = robInfoFromIEW->iewInfo[i].robHeadStallReason;
+            if (block_reason == StallReason::NoStall) {
+                block_reason = StallReason::OtherStall;
+            }
+        }
         DPRINTF(Commit, "Thread %i: block %i robblock %i active %i\n", i, block, robblock, active);
 
         stallSig->blockIEW[i] = block;
+        stallSig->iewBlockReason[i] = block ? block_reason : StallReason::NoStall;
         if (active) {
             if (tid == InvalidThreadID) tid = i;
             else {

@@ -431,8 +431,9 @@ Decode::tick()
 {
     toRename->fetchStallReason = fromFetch->fetchStallReason;
     wroteToTimeBuffer = false;
-    bool status_change = false;
     toRenameIndex = 0;
+    blockReason = StallReason::NoStall;
+    setAllStalls(StallReason::NoStall);
 
     moveInstsToBuffer();
 
@@ -440,11 +441,15 @@ Decode::tick()
 
     // check threads stall & status
     ThreadID tid = InvalidThreadID;
+    ThreadID blocked_tid = InvalidThreadID;
     for (int i = 0; i < numThreads; i++) {
         bool block = stallSig->blockDecode[i];
         bool active = !block && !fixedbuffer[i].empty();
 
         stallSig->blockFetch[i] = block;
+        stallSig->fetchBlockReason[i] =
+            block ? stallSig->decodeBlockReason[i] : StallReason::NoStall;
+        toFetch->decodeInfo[i].blockReason = stallSig->fetchBlockReason[i];
         if (active) {
             if (tid == InvalidThreadID)
                 tid = i;
@@ -455,22 +460,39 @@ Decode::tick()
                 stallSig->blockFetch[i] = true;
                 DPRINTF(Decode, "Multiple active threads detected, blocking all threads\n");
             }
+        } else if (block && blocked_tid == InvalidThreadID) {
+            blocked_tid = i;
         }
     }
     if (tid == InvalidThreadID) {
         // all threads are stalled, no need to process
+        if (blocked_tid != InvalidThreadID) {
+            setAllStalls(stallSig->fetchBlockReason[blocked_tid]);
+            blockReason = stallSig->fetchBlockReason[blocked_tid];
+        }
+        toRename->decodeStallReason = decodeStalls;
+        updateActivate();
         return;
     }
     DPRINTF(Decode,"Processing [tid:%i]\n",tid);
 
     decodeInsts(tid);
     ++stats.runCycles;
-
-    toFetch->decodeInfo[tid].blockReason = blockReason;
-
-    if (status_change) {
-        updateActivate();
+    if (stallSig->blockDecode[tid]) {
+        setAllStalls(stallSig->decodeBlockReason[tid]);
+    } else if (toRenameIndex > 0 && decodeStalls[0] == StallReason::NoStall) {
+        for (int i = 0; i < decodeStalls.size(); i++) {
+            if (i < toRenameIndex) {
+                decodeStalls.at(i) = StallReason::NoStall;
+            } else {
+                decodeStalls.at(i) = fromFetch->fetchStallReason.at(i);
+            }
+        }
     }
+    stallSig->fetchBlockReason[tid] =
+        stallSig->blockFetch[tid] ? blockReason : StallReason::NoStall;
+    toFetch->decodeInfo[tid].blockReason = stallSig->fetchBlockReason[tid];
+    updateActivate();
 
     // if (stalls[tid].rename) {
     //     // stall from rename, pass rename stall
@@ -713,6 +735,9 @@ Decode::decodeInsts(ThreadID tid)
     if (insts_available) {
         // current cycle insts was not all processed, need to block fetch in next cycle
         stallSig->blockFetch[tid] = true;
+        if (breakDecode == StallReason::NoStall) {
+            breakDecode = StallReason::OtherFragStall;
+        }
     }
 
     // this stage is totally stalled, set all decode stalls

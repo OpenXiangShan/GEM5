@@ -444,7 +444,7 @@ class Rename
 
     std::vector<StallReason> renameStalls;
 
-    StallReason blockReason;
+    StallReason blockReason{NoStall};
 
     void setAllStalls(StallReason renameStall);
 

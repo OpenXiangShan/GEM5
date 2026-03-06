@@ -826,10 +826,21 @@ IEW::dispatchInsts()
     // check threads stall & status
     ThreadID tid = InvalidThreadID;
     for (int i = 0; i < numThreads; i++) {
-        bool block = stallSig->blockIEW[i] || !canInsertLDSTQue(i);
+        bool ldst_block = !canInsertLDSTQue(i);
+        bool block = stallSig->blockIEW[i] || ldst_block;
         bool active = !block && !fixedbuffer[i].empty();
+        StallReason block_reason = StallReason::NoStall;
+        if (stallSig->blockIEW[i]) {
+            block_reason = stallSig->iewBlockReason[i];
+        } else if (ldst_block) {
+            block_reason = checkDispatchStall(i, NumDQ, nullptr, -1);
+            if (block_reason == StallReason::NoStall) {
+                block_reason = StallReason::OtherStall;
+            }
+        }
 
         stallSig->blockRename[i] = block;
+        stallSig->renameBlockReason[i] = block ? block_reason : StallReason::NoStall;
         if (active) {
             if (tid == InvalidThreadID) tid = i;
             else {
@@ -1645,6 +1656,7 @@ IEW::writebackInsts()
 void
 IEW::tick()
 {
+    blockReason = StallReason::NoStall;
     for (int i = 0;i < fromRename->fetchStallReason.size();i++) {
         iewStats.fetchStallReason[fromRename->fetchStallReason[i]]++;
     }

@@ -329,11 +329,28 @@ struct TimeStruct
 
 struct StallSignals
 {
+    StallSignals()
+    {
+        for (int i = 0; i < MaxThreads; ++i) {
+            blockFetch[i] = false;
+            blockDecode[i] = false;
+            blockRename[i] = false;
+            blockIEW[i] = false;
+            fetchBlockReason[i] = StallReason::NoStall;
+            decodeBlockReason[i] = StallReason::NoStall;
+            renameBlockReason[i] = StallReason::NoStall;
+            iewBlockReason[i] = StallReason::NoStall;
+        }
+    }
 
     bool blockFetch[MaxThreads];// decode to fetch
     bool blockDecode[MaxThreads];// rename to decode
     bool blockRename[MaxThreads];// iew to rename (if iew is stalling, rename all threads would be stalled)
     bool blockIEW[MaxThreads];// commit to iew
+    StallReason fetchBlockReason[MaxThreads];// decode to fetch root cause
+    StallReason decodeBlockReason[MaxThreads];// rename to decode root cause
+    StallReason renameBlockReason[MaxThreads];// iew to rename root cause
+    StallReason iewBlockReason[MaxThreads];// commit to iew root cause
 };
 
 
