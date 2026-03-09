@@ -59,6 +59,7 @@
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/valuepred/valuepred_unit.hh"
 #include "debug/IEW.hh"
 #include "sim/probe/probe.hh"
 
@@ -189,6 +190,9 @@ class IEW
     /** Sets pointer to the scoreboard. */
     void setScoreboard(Scoreboard *sb_ptr);
 
+    /** Wakeup depandents of value predicted load inst. */
+    void lvpWakeDependents(const DynInstPtr &inst);
+
     /** Perform sanity checks after a drain. */
     void drainSanityCheck() const;
 
@@ -310,6 +314,11 @@ class IEW
      */
     void squashDueToMemOrder(const DynInstPtr &inst, ThreadID tid);
 
+    /** Sends commit proper information for a squash due to a value
+     * mispredict.
+     */
+    void squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid);
+
     bool canInsertLDSTQue(ThreadID tid);
 
     /** Dispatches instructions to IQ and LSQ. */
@@ -397,6 +406,9 @@ class IEW
     Scoreboard* scoreboard;
 
     SquashVersion localSquashVer{0};
+
+    /** Value predictor */
+    valuepred::VPUnit *valuePred;
 
   private:
     /** CPU pointer. */
