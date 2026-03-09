@@ -521,13 +521,19 @@ class BTBMGSC : public TimedBaseBTBPredictor
         Scalar scLowUseWrong{};
         Scalar scHighBypass{};
         Scalar scHighBypassPercepCorrect{};
+        Scalar scHighBypassPercepWrong{};
         Scalar scHighBypassPercepHighCorrect{};
+        Scalar scHighBypassPercepHighWrong{};
         Scalar scMidBypass{};
         Scalar scMidBypassPercepCorrect{};
+        Scalar scMidBypassPercepWrong{};
         Scalar scMidBypassPercepHighCorrect{};
+        Scalar scMidBypassPercepHighWrong{};
         Scalar scLowBypass{};
         Scalar scLowBypassPercepCorrect{};
+        Scalar scLowBypassPercepWrong{};
         Scalar scLowBypassPercepHighCorrect{};
+        Scalar scLowBypassPercepHighWrong{};
 
 #ifndef UNIT_TEST
         MgscStats(statistics::Group *parent);
