@@ -1072,7 +1072,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
     # Keep vector parameters consistent with numPredictors to avoid constructor asserts.
     numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([512] * 4,"the TAGE T0~Tn length")
-    TTagBitSizes = VectorParam.Unsigned([16] * 4 ,"the T0~Tn entry's tag bit size")
+    TTagBitSizes = VectorParam.Unsigned([15,15,16,16],"the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 4 ,"when the T0~Tn entry's tag generating, PC right shift")
     blockSize = Param.Unsigned(32,"tage index function uses 32B aligned block address")
 
