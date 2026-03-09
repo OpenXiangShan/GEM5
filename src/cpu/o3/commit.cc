@@ -1582,8 +1582,12 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 "at the head of the ROB, PC %s.\n",
                 tid, head_inst->seqNum, head_inst->pcState());
 
-        // amo, mmio, mret
-        if ((head_inst->isMemRef() || head_inst->isReturn()) && (inst_num > 0 || !iewStage->flushAllStores(tid))) {
+        // Memory-ordering instructions such as sfence.vma must not execute
+        // until older stores are visible; otherwise page-table updates may
+        // race with the TLB invalidation.
+        if ((head_inst->isMemRef() || head_inst->isReturn() ||
+             head_inst->isReadBarrier() || head_inst->isWriteBarrier()) &&
+            (inst_num > 0 || !iewStage->flushAllStores(tid))) {
             DPRINTF(Commit,
                     "[tid:%i] [sn:%llu] "
                     "Waiting for all stores to writeback.\n",

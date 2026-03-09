@@ -30,6 +30,7 @@
 #include "arch/riscv/bare_metal/fs_workload.hh"
 
 #include "arch/riscv/faults.hh"
+#include "base/loader/dtb_file.hh"
 #include "base/loader/object_file.hh"
 #include "debug/MemoryAccess.hh"
 #include "sim/system.hh"
@@ -88,8 +89,21 @@ BareMetal::initState()
         }
     }
 
+    if (params().dtb_filename != "") {
+        inform("Loading DTB file: %s at address %#x\n",
+               params().dtb_filename, params().dtb_addr);
+
+        auto *dtb_file = new loader::DtbFile(params().dtb_filename);
+        dtb_file->buildImage().offset(params().dtb_addr)
+            .write(system->physProxy);
+        delete dtb_file;
+    }
+
     for (auto *tc: system->threads) {
         RiscvISA::Reset().invoke(tc);
+        if (params().dtb_filename != "") {
+            tc->setReg(int_reg::A1, params().dtb_addr);
+        }
         tc->activate();
     }
 }

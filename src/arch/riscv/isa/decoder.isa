@@ -2216,7 +2216,8 @@ decode QUADRANT {
                                         machInst);
                         }
                         xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
-                    }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                    }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
+                        IsReadBarrier, IsWriteBarrier, No_OpClass);
                     0x18: mret({{
                         if (xc->readMiscReg(MISCREG_PRV) != PRV_M) {
                             return std::make_shared<IllegalInstFault>(

@@ -658,6 +658,13 @@ def makeBareMetalRiscvSystem(mem_mode, mdesc=None, cmdline=None):
     return self
 
 def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None, np=1, ruby=False):
+    self = makeXiangshanPlatformSystem(mem_mode, mdesc, np=np, ruby=ruby)
+    self.workload = RiscvBareMetal()
+    self.workload.reset_vect = 0x80000000
+    return self
+
+
+def makeXiangshanPlatformSystem(mem_mode, mdesc=None, np=1, ruby=False):
     self = System()
     if not mdesc:
         # generic system
@@ -665,7 +672,6 @@ def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None, np=1, ruby=
     self.mem_mode = mem_mode
     self.mem_ranges = [AddrRange(start=0x80000000, size=mdesc.mem())]
     print(self.mem_ranges)
-    self.workload = RiscvBareMetal()
 
     self.iobus = IOXBar()
     if not ruby:
@@ -698,7 +704,6 @@ def makeBareMetalXiangshanSystem(mem_mode, mdesc=None, cmdline=None, np=1, ruby=
             AddrRange(self.plic.pio_addr, self.plic.pio_addr + self.plic.pio_size),
             ]
 
-    self.workload.reset_vect = 0x80000000
     if not ruby:
         self.system_port = self.membus.cpu_side_ports
     return self

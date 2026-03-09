@@ -43,6 +43,9 @@ class RiscvBareMetal(Workload):
     xiangshan_cpt = Param.Bool(False, "Using Xiangshan checkpoint")
     raw_bootloader = Param.Bool(
         False, "kernel or bbl provided is binary not elf")
+    dtb_filename = Param.String("",
+        "File that contains the Device Tree Blob. Don't use DTB if empty.")
+    dtb_addr = Param.Addr(0x87e00000, "DTB address")
 
 class RiscvLinux(KernelWorkload):
     type = 'RiscvLinux'
