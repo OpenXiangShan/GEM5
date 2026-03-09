@@ -108,12 +108,19 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
 
-            # 64KB prediction
-            cpu.branchPred.mgsc.enablePerceptionPred = True
-            cpu.branchPred.mgsc.percepTableEntryNum = 128
+            #  prediction
+            cpu.branchPred.mgsc.enablePerceptionPred = False
+            cpu.branchPred.mgsc.percepTableEntryNum = 1024
             cpu.branchPred.mgsc.percepTableWidth = 8
-            cpu.branchPred.mgsc.gbhrLen = 512
-            cpu.branchPred.mgsc.percepThres = 500
+            cpu.branchPred.mgsc.gbhrLen = 4096
+            cpu.branchPred.mgsc.percepThres = 2048
+
+            cpu.branchPred.mgsc.enableBwTable = True
+            cpu.branchPred.mgsc.enableLTable = True
+            cpu.branchPred.mgsc.enableITable = True
+            cpu.branchPred.mgsc.enablePTable = True
+            cpu.branchPred.mgsc.enableBiasTable = True
+
         # l1 cache per core
         if args.caches:
             cpu.icache.size = '64kB'

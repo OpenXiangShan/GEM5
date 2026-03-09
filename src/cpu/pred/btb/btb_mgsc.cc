@@ -674,7 +674,7 @@ BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int p
 {
     bool percep_update = false;
     int percep_thres = percepThres;
-    if (abs(percep_sum) < (percep_thres/2) || percep_taken != actual_taken)
+    if (abs(percep_sum) < (percep_thres/3) || percep_taken != actual_taken)
         percep_update = true;
     int index = pc % percepTableEntryNum;
     int bias = 1;
@@ -740,8 +740,14 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
     auto tage_conf_mid = pred.tage_conf_mid;
     auto tage_conf_low = pred.tage_conf_low;
     auto percep_sum = pred.percep_sum;
+    bool percep_conf_high_correct = false;
+    bool percep_pred_taken = (percep_sum >= 0);
     if (abs(percep_sum) > percepThres){
         mgscStats.percepHighConf++;
+        if (percep_pred_taken == actual_taken){
+            mgscStats.percepHighConfCorrect++;
+            percep_conf_high_correct = true;
+        }
     }
     // SC vs TAGE outcomes
     if (pred.use_mgsc) {
@@ -807,18 +813,30 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
                 correct ? mgscStats.scHighUseCorrect++ : mgscStats.scHighUseWrong++;
             } else {
                 mgscStats.scHighBypass++;
+                if (percep_conf_high_correct)
+                    mgscStats.scHighBypassPercepHighCorrect++;
+                if (percep_pred_taken == actual_taken)
+                    mgscStats.scHighBypassPercepCorrect++;
             }
         } else if (conf_mid) {
             if (use) {
                 correct ? mgscStats.scMidUseCorrect++ : mgscStats.scMidUseWrong++;
             } else {
                 mgscStats.scMidBypass++;
+                if (percep_conf_high_correct)
+                    mgscStats.scMidBypassPercepHighCorrect++;
+                if (percep_pred_taken == actual_taken)
+                    mgscStats.scMidBypassPercepCorrect++;
             }
         } else if (conf_low) {
             if (use) {
                 correct ? mgscStats.scLowUseCorrect++ : mgscStats.scLowUseWrong++;
             } else {
                 mgscStats.scLowBypass++;
+                if (percep_conf_high_correct)
+                    mgscStats.scLowBypassPercepHighCorrect++;
+                if (percep_pred_taken == actual_taken)
+                    mgscStats.scLowBypassPercepCorrect++;
             }
         }
     };
@@ -1423,6 +1441,8 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
       ADD_STAT(percepPredWrong, statistics::units::Count::get(), "number of perception prediction wrong") ,
       ADD_STAT(usePercepPred, statistics::units::Count::get(), "number of mgsc use perception prediction") ,
       ADD_STAT(percepHighConf,statistics::units::Count::get(), "number of perception sum above threshold"),
+      ADD_STAT(percepHighConfCorrect,statistics::units::Count::get(),
+                "number of correct perception prediction above threshold"),
       ADD_STAT(scPredMissTaken, statistics::units::Count::get(), "number of sc prediction miss taken"),
       ADD_STAT(scPredMissNotTaken, statistics::units::Count::get(), "number of sc prediction miss not taken"),
       ADD_STAT(scPredCorrectTageWrong, statistics::units::Count::get(),"number of sc prediction correct and tage wrong"),
@@ -1460,8 +1480,20 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
       ADD_STAT(scLowUseCorrect, statistics::units::Count::get(), "tage low conf, sc used, correct"),
       ADD_STAT(scLowUseWrong, statistics::units::Count::get(), "tage low conf, sc used, wrong"),
       ADD_STAT(scHighBypass, statistics::units::Count::get(), "tage high conf, sc not used"),
+      ADD_STAT(scHighBypassPercepCorrect, statistics::units::Count::get(),
+                "percpetion pred right when tage high conf, sc not used"),
+      ADD_STAT(scHighBypassPercepHighCorrect, statistics::units::Count::get(),
+                "percpetion high conf pred right when tage high conf, sc not used"),
       ADD_STAT(scMidBypass, statistics::units::Count::get(), "tage mid conf, sc not used"),
-      ADD_STAT(scLowBypass, statistics::units::Count::get(), "tage low conf, sc not used")
+      ADD_STAT(scMidBypassPercepCorrect, statistics::units::Count::get(),
+                "percpetion pred right when tage mid conf, sc not used"),
+      ADD_STAT(scMidBypassPercepHighCorrect, statistics::units::Count::get(),
+                "percpetion high conf pred right when tage mid conf, sc not used"),
+      ADD_STAT(scLowBypass, statistics::units::Count::get(), "tage low conf, sc not used"),
+      ADD_STAT(scLowBypassPercepCorrect, statistics::units::Count::get(),
+                "percpetion pred right when tage low conf, sc not used"),
+      ADD_STAT(scLowBypassPercepHighCorrect, statistics::units::Count::get(),
+                "percpetion high conf pred right when tage low conf, sc not used")
 {
 }
 #endif
