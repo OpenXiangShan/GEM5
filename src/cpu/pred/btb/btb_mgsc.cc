@@ -478,7 +478,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
                 use_percep_pred = true;
             }
         }
-    }
+    }//如果更改判断逻辑，记得更改计数器逻辑
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
     bool taken = use_sc_pred ? (use_percep_pred? percep_sum>=0 : total_sum >= 0) : tage_info.tage_pred_taken;
 
@@ -807,7 +807,8 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
     recordPercsum(pred.bias_percsum, mgscStats.biasPercsumCorrect, mgscStats.biasPercsumWrong);
 
     // SC usage under TAGE confidence buckets
-    auto recordConfOutcome = [&](bool conf_high, bool conf_mid, bool conf_low, bool use, bool correct) {
+    auto recordConfOutcome = [&](bool conf_high, bool conf_mid, bool conf_low, bool use, bool correct,
+                                bool percep_use) {
         if (conf_high) {
             if (use) {
                 correct ? mgscStats.scHighUseCorrect++ : mgscStats.scHighUseWrong++;
@@ -821,26 +822,31 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
         } else if (conf_mid) {
             if (use) {
                 correct ? mgscStats.scMidUseCorrect++ : mgscStats.scMidUseWrong++;
+                if (percep_use){
+                    if (percep_conf_high_correct)
+                        mgscStats.scMidBypassPercepHighCorrect++;
+                    if (percep_pred_taken == actual_taken)
+                        mgscStats.scMidBypassPercepCorrect++;
+                }
             } else {
                 mgscStats.scMidBypass++;
-                if (percep_conf_high_correct)
-                    mgscStats.scMidBypassPercepHighCorrect++;
-                if (percep_pred_taken == actual_taken)
-                    mgscStats.scMidBypassPercepCorrect++;
             }
         } else if (conf_low) {
             if (use) {
                 correct ? mgscStats.scLowUseCorrect++ : mgscStats.scLowUseWrong++;
+                if (percep_use){
+                    if (percep_conf_high_correct)
+                        mgscStats.scLowBypassPercepHighCorrect++;
+                    if (percep_pred_taken == actual_taken)
+                        mgscStats.scLowBypassPercepCorrect++;
+                    }
             } else {
                 mgscStats.scLowBypass++;
-                if (percep_conf_high_correct)
-                    mgscStats.scLowBypassPercepHighCorrect++;
-                if (percep_pred_taken == actual_taken)
-                    mgscStats.scLowBypassPercepCorrect++;
             }
         }
     };
-    recordConfOutcome(tage_conf_high, tage_conf_mid, tage_conf_low, pred.use_mgsc, sc_pred_taken == actual_taken);
+    recordConfOutcome(tage_conf_high, tage_conf_mid, tage_conf_low, pred.use_mgsc,
+                    sc_pred_taken == actual_taken,pred.use_percep);
 }
 
 /**
