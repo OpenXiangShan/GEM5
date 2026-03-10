@@ -306,7 +306,7 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &
 int
 BTBMGSC::calculatePercepSum(Addr pc)
 {
-    int index = pc % percepTableEntryNum;
+    int index = getPercepIndex(pc);
     auto weight = percepWeightTable[index];
 
     int bias = 1;
@@ -447,7 +447,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     //genertate perception prediction
     int percep_sum = enablePerceptionPred ? calculatePercepSum(btb_entry.pc) : 0;
-    int percep_index = pc % percepTableEntryNum;
+    int percep_index = getPercepIndex(pc);
     // Find thresholds
     // pc-indexed threshold table (only if enabled)
     int p_update_thres = enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.pc) : 0;
@@ -677,7 +677,7 @@ BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int p
     // if (abs(percep_sum) < (percep_thres/3) || percep_taken != actual_taken)
     if (percep_taken != actual_taken)
         percep_update = true;
-    int index = pc % percepTableEntryNum;
+    int index = getPercepIndex(pc);
     int bias = 1;
     if (percep_update){
         weightTable[index][0] += ( (actual_taken?1:-1)*bias);
@@ -1063,6 +1063,13 @@ BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbi
     // Extract lower bits of PC directly and combine with low bits
     Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
     unsigned index = (pcBits << 2) + (lowbit1 << 1) + lowbit0;
+    return index;
+}
+
+Addr
+BTBMGSC::getPercepIndex(Addr pc){
+    Addr mask = percepTableEntryNum - 1;
+    unsigned index = (pc ^ (pc >> log2i(percepTableEntryNum))) & mask;
     return index;
 }
 

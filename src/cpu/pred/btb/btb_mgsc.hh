@@ -274,6 +274,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Calculate MGSC bias index
     Addr getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbit1);
 
+    Addr getPercepIndex(Addr pc);
+
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) { return (pc & (blockSize - 1)) >> 1; }
 
