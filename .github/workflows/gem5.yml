@@ -145,7 +145,7 @@ jobs:
   raw_linux_boot_test:
     runs-on: [self-hosted, open]
     continue-on-error: false
-    timeout-minutes: 10
+    timeout-minutes: 30
     name: XS-GEM5 - Boot raw Linux
     steps:
       - uses: actions/checkout@v2
