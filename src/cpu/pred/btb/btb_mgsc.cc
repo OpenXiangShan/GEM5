@@ -674,7 +674,8 @@ BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int p
 {
     bool percep_update = false;
     int percep_thres = percepThres;
-    if (abs(percep_sum) < (percep_thres/3) || percep_taken != actual_taken)
+    // if (abs(percep_sum) < (percep_thres/3) || percep_taken != actual_taken)
+    if (percep_taken != actual_taken)
         percep_update = true;
     int index = pc % percepTableEntryNum;
     int bias = 1;
