@@ -2179,6 +2179,9 @@ decode QUADRANT {
                                     xc->setMiscReg(MISCREG_PRV, status.spp);
                                     status.sie = status.spie;
                                     status.spie = 1;
+                                    if (status.spp != PRV_M) {
+                                        status.mprv = 0;
+                                    }
                                     status.spp = PRV_U;
                                     xc->setMiscReg(MISCREG_STATUS, status);
                                     NPC = xc->readMiscReg(MISCREG_SEPC);
@@ -2209,14 +2212,22 @@ decode QUADRANT {
                     }
                     0x9: sfence_vma({{
                         STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                        HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
+                        int v = xc->readMiscReg(MISCREG_VIRMODE);
                         auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
-                        if (pm == PRV_U || (pm == PRV_S && status.tvm == 1)) {
+                        if (v &&
+                            (pm == PRV_U || (pm == PRV_S && hstatus.vtvm == 1))) {
+                            return std::make_shared<HVFault>();
+                        }
+                        if (!v &&
+                            (pm == PRV_U || (pm == PRV_S && status.tvm == 1))) {
                             return std::make_shared<IllegalInstFault>(
                                         "sfence in user mode or TVM enabled",
                                         machInst);
                         }
                         xc->tcBase()->getMMUPtr()->demapPage(Rs1, Rs2);
-                    }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                    }}, IsNonSpeculative, IsSerializeBefore, IsSerializeAfter,
+                        IsReadBarrier, IsWriteBarrier, No_OpClass);
                     0x18: mret({{
                         if (xc->readMiscReg(MISCREG_PRV) != PRV_M) {
                             return std::make_shared<IllegalInstFault>(
@@ -2228,6 +2239,9 @@ decode QUADRANT {
                             xc->setMiscReg(MISCREG_NMIE, 1);
                             status.mie = status.mpie;
                             status.mpie = 1;
+                            if (status.mpp != PRV_M) {
+                                status.mprv = 0;
+                            }
                             status.mpp = PRV_U;
                             auto status_mpv = status.mpv;
 

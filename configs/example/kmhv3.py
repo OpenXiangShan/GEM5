@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 
 import m5
@@ -187,6 +188,8 @@ if __name__ == '__m5_main__':
     TestMemClass = Simulation.setMemClass(args)
 
     test_sys = build_xiangshan_system(args)
+    if args.raw_cpt and args.generic_rv_cpt and os.path.basename(args.generic_rv_cpt) == "linux.bin":
+        configure_xiangshan_linux_workload(test_sys, args)
     # Set ideal parameters here with the highest priority, over command-line arguments
     setKmhV3Params(args, test_sys)
 

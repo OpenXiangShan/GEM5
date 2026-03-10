@@ -395,7 +395,12 @@ def template CSRExecute {{
           }
           case CSR_SATP: {
             STATUS status = xc->readMiscReg(MISCREG_STATUS);
-            if (pm == PRV_S && status.tvm == 1) {
+            HSTATUS hstatus = xc->readMiscReg(MISCREG_HSTATUS);
+            int v = xc->readMiscReg(MISCREG_VIRMODE);
+            if (v && pm == PRV_S && hstatus.vtvm == 1) {
+                return std::make_shared<HVFault>();
+            }
+            if (!v && pm == PRV_S && status.tvm == 1) {
                 return std::make_shared<IllegalInstFault>(
                         "SATP access with TVM enabled\n",
                         machInst);

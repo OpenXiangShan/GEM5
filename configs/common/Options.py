@@ -632,10 +632,34 @@ def addFSOptions(parser):
     parser.add_argument("--wait-gdb", default=False, action='store_true',
                         help="Wait for remote GDB to connect.")
 
-def addXiangshanFSOptions(parser):
+def addXiangshanCommonOptions(parser):
     # Xiangshan related options
-    parser.add_argument("--xiangshan-system", action= "store_true",
+    parser.add_argument("--xiangshan-system", action="store_true",
                         help="Use memory layout of Xiangshan system")
+    parser.add_argument("--mmc-img", action="store", type=str,
+                        default=None, help="The path of mmc img")
+    parser.add_argument("--mmc-cptbin", action="store",
+                        type=str, default=None, help="The path of mmc cptbin")
+
+    # Difftest option
+    parser.set_defaults(enable_difftest=None)
+    parser.add_argument("--enable-difftest",
+                        action="store_true",
+                        dest="enable_difftest",
+                        help="use NEMU as ref to do difftest")
+    parser.add_argument("--disable-difftest",
+                        action="store_false",
+                        dest="enable_difftest",
+                        help="disable NEMU difftest")
+
+    parser.add_argument("--difftest-ref-so",
+                        action="store",
+                        default=None,
+                        help="The shared lib file used to do difftest")
+
+
+def addXiangshanFSOptions(parser):
+    addXiangshanCommonOptions(parser)
 
     parser.add_argument("--enable-h-gcpt", action= "store_true",
                         help="enable h checkpoint")
@@ -648,21 +672,6 @@ def addXiangshanFSOptions(parser):
 
     parser.add_argument("--raw-cpt", action= "store_true",
                         help = "The checkpoint file is not gz but binary")
-
-    parser.add_argument("--mmc-img", action="store", type=str,
-                        default=None, help="The path of mmc img")
-    parser.add_argument("--mmc-cptbin", action="store",
-                        type=str, default=None, help="The path of mmc cptbin")
-
-    # Difftest option
-    parser.add_argument("--enable-difftest",
-                        action="store_true",
-                        help="use NEMU as ref to do difftest")
-
-    parser.add_argument("--difftest-ref-so",
-                        action="store",
-                        default=None,
-                        help="The shared lib file used to do difftest")
 
 def addXiangshanTraceOptions(parser):
     # Add trace-specific arguments for trace-driven simulation
