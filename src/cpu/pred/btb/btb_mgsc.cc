@@ -1071,10 +1071,10 @@ BTBMGSC::getPercepIndex(Addr pc){
     uint64_t folded = 0;
     int len = log2i(percepTableEntryNum);
     const uint64_t foldedMask = ((1ULL << len) - 1);
-
-    for (size_t startBit = 0; startBit < gbhrLen; startBit += len) {
+    int histLen = gbhrLen;
+    for (size_t startBit = 0; startBit < histLen; startBit += len) {
         uint64_t chunk = 0;
-        size_t chunkSize = std::min(len, gbhrLen - startBit);
+        size_t chunkSize = (len<=(histLen - startBit) ? len : histLen - startBit);
 
         // Extract chunk from bitset
         for (size_t i = 0; i < chunkSize; i++) {
