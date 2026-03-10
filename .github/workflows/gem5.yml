@@ -8,139 +8,139 @@ on:
   workflow_dispatch:
 
 jobs:
-  # paralel_cpt_test:
-  #   # 由于gem5.cfg使用的切片ck_path都在小机房上，默认使用小机房运行这个测试
-  #   runs-on: [self-hosted, open]  # 所有open*的机器上运行
-  #   continue-on-error: false
-  #   name: XS-GEM5 - Running test checkpoints
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #     - uses: ./.github/actions/build-dramsim
-  #     - name: Build GEM5 opt
-  #       run: |
-  #         CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
-  #     - name: Run paralel autotest script
-  #       run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5.cfg
+  paralel_cpt_test:
+    # 由于gem5.cfg使用的切片ck_path都在小机房上，默认使用小机房运行这个测试
+    runs-on: [self-hosted, open]  # 所有open*的机器上运行
+    continue-on-error: false
+    name: XS-GEM5 - Running test checkpoints
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/build-dramsim
+      - name: Build GEM5 opt
+        run: |
+          CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: Run paralel autotest script
+        run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5.cfg
   
-  # paralel_cpt_h_test:
-  #   # 由于gem5.cfg使用的切片ck_path都在小机房上，默认使用小机房运行这个测试
-  #   runs-on: [self-hosted, open]  # 所有open*的机器上运行
-  #   continue-on-error: false
-  #   name: XS-GEM5 - Running h test checkpoints
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #     - uses: ./.github/actions/build-dramsim
-  #     - name: Build GEM5 opt
-  #       run: |
-  #         CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
-  #     - name: Run paralel h autotest script
-  #       run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5-h.cfg
+  paralel_cpt_h_test:
+    # 由于gem5.cfg使用的切片ck_path都在小机房上，默认使用小机房运行这个测试
+    runs-on: [self-hosted, open]  # 所有open*的机器上运行
+    continue-on-error: false
+    name: XS-GEM5 - Running h test checkpoints
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/build-dramsim
+      - name: Build GEM5 opt
+        run: |
+          CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: Run paralel h autotest script
+        run: python3 .github/workflows/autotest/script/autotest.py -f .github/workflows/autotest/gem5-h.cfg
 
-  # valgrind_memory_check:
-  #   runs-on: [self-hosted, open]
-  #   continue-on-error: false
-  #   name: XS-GEM5 - Check memory corruption
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #     - uses: ./.github/actions/build-dramsim
-  #     - name: Build GEM5 debug
-  #       run: CC=gcc CXX=g++ scons build/RISCV/gem5.debug --linker=gold -j64
-  #     - name: Memory check
-  #       run: |
-  #         export GEM5_HOME=$(pwd)
-  #         bash util/memory_check/run-xs-with-valgrind.sh
-  #         cd $GEM5_HOME
+  valgrind_memory_check:
+    runs-on: [self-hosted, open]
+    continue-on-error: false
+    name: XS-GEM5 - Check memory corruption
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/build-dramsim
+      - name: Build GEM5 debug
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.debug --linker=gold -j64
+      - name: Memory check
+        run: |
+          export GEM5_HOME=$(pwd)
+          bash util/memory_check/run-xs-with-valgrind.sh
+          cd $GEM5_HOME
 
-  # new_sim_script_test_gcb:
-  #   runs-on: [self-hosted, open]
-  #   continue-on-error: false
-  #   name: XS-GEM5 - Test new simulation script on RV64GCB
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #     - uses: ./.github/actions/build-dramsim
-  #     - name: Build GEM5 opt
-  #       run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
-  #     - name: XS-GEM5 - Test xiangshan.py simulation scripts
-  #       run: |
-  #         export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
-  #         export GCB_RESTORER="/nfs/home/share/gem5_ci/tools/normal-gcb-restorer.bin"
-  #         export GEM5_HOME=$(pwd)
-  #         mkdir -p $GEM5_HOME/util/xs_scripts/test
-  #         cd $GEM5_HOME/util/xs_scripts/test
-  #         bash ../kmh_6wide.sh /nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd
+  new_sim_script_test_gcb:
+    runs-on: [self-hosted, open]
+    continue-on-error: false
+    name: XS-GEM5 - Test new simulation script on RV64GCB
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/build-dramsim
+      - name: Build GEM5 opt
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: XS-GEM5 - Test xiangshan.py simulation scripts
+        run: |
+          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
+          export GCB_RESTORER="/nfs/home/share/gem5_ci/tools/normal-gcb-restorer.bin"
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test
+          cd $GEM5_HOME/util/xs_scripts/test
+          bash ../kmh_6wide.sh /nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd
 
-  # new_sim_script_test_gcbv:
-  #   runs-on: [self-hosted, open]
-  #   continue-on-error: false
-  #   name: XS-GEM5 - Test new simulation script on RV64GCBV
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #     - uses: ./.github/actions/build-dramsim
-  #     - name: Build GEM5 opt
-  #       run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64 --rvv-impl=simple
-  #     - name: XS-GEM5 - Test xiangshan.py simulation scripts
-  #       run: |
-  #         export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-so"
-  #         export GCBV_RESTORER="/nfs/home/share/gem5_ci/tools/gcbv-restorer.bin"
-  #         export GEM5_HOME=$(pwd)
-  #         mkdir -p $GEM5_HOME/util/xs_scripts/test_v
-  #         cd $GEM5_HOME/util/xs_scripts/test_v
-  #         bash ../kmh_6wide_vector.sh /nfs/home/share/gem5_ci/checkpoints/gcbv_test.zstd
+  new_sim_script_test_gcbv:
+    runs-on: [self-hosted, open]
+    continue-on-error: false
+    name: XS-GEM5 - Test new simulation script on RV64GCBV
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/build-dramsim
+      - name: Build GEM5 opt
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64 --rvv-impl=simple
+      - name: XS-GEM5 - Test xiangshan.py simulation scripts
+        run: |
+          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-so"
+          export GCBV_RESTORER="/nfs/home/share/gem5_ci/tools/gcbv-restorer.bin"
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test_v
+          cd $GEM5_HOME/util/xs_scripts/test_v
+          bash ../kmh_6wide_vector.sh /nfs/home/share/gem5_ci/checkpoints/gcbv_test.zstd
 
-  # new_sim_script_test_gcb_multi_core:
-  #   runs-on: [self-hosted, open]
-  #   continue-on-error: false
-  #   name: XS-GEM5 - Test Multi-core + RV64GCB
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #     - name: Build GEM5 opt
-  #       run: |
-  #         CC=clang CXX=clang++ scons build/RISCV_CHI/gem5.opt -j 48 --gold-linker
-  #     - name: XS-GEM5 - Test xiangshan.py simulation scripts
-  #       run: |
-  #         export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
-  #         export GCB_MULTI_CORE_RESTORER="/nfs/home/share/gem5_ci/tools/gcb-2core-restorer.bin"
-  #         export GEM5_HOME=$(pwd)
-  #         mkdir -p $GEM5_HOME/util/xs_scripts/test_multi_core
-  #         cd $GEM5_HOME/util/xs_scripts/test_multi_core
-  #         bash ../kmh-ruby-dual.sh /nfs/home/share/gem5_ci/checkpoints/multi_core_test.gz
+  new_sim_script_test_gcb_multi_core:
+    runs-on: [self-hosted, open]
+    continue-on-error: false
+    name: XS-GEM5 - Test Multi-core + RV64GCB
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build GEM5 opt
+        run: |
+          CC=clang CXX=clang++ scons build/RISCV_CHI/gem5.opt -j 48 --gold-linker
+      - name: XS-GEM5 - Test xiangshan.py simulation scripts
+        run: |
+          export GCBV_MULTI_CORE_REF_SO="/nfs/home/share/gem5_ci/ref/multi/riscv64-nemu-interpreter-so"
+          export GCB_MULTI_CORE_RESTORER="/nfs/home/share/gem5_ci/tools/gcb-2core-restorer.bin"
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test_multi_core
+          cd $GEM5_HOME/util/xs_scripts/test_multi_core
+          bash ../kmh-ruby-dual.sh /nfs/home/share/gem5_ci/checkpoints/multi_core_test.gz
 
 
-  # test_fix_l2tlb_bugs:
-  #   runs-on: [self-hosted, open]
-  #   continue-on-error: false
-  #   name: XS-GEM5 - Test fix L2TLB bugs
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #     - uses: ./.github/actions/build-dramsim
-  #     - name: Build GEM5 opt
-  #       run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
-  #     - name: XS-GEM5 - Test xiangshan.py simulation scripts
-  #       run: |
-  #         export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
-  #         export GCB_RESTORER=""
-  #         export GEM5_HOME=$(pwd)
-  #         mkdir -p $GEM5_HOME/util/xs_scripts/test_l2tlb
-  #         cd $GEM5_HOME/util/xs_scripts/test_l2tlb
-  #         bash ../kmh_6wide.sh /nfs/home/share/gem5_ci/checkpoints/l2tlb_test.zstd
+  test_fix_l2tlb_bugs:
+    runs-on: [self-hosted, open]
+    continue-on-error: false
+    name: XS-GEM5 - Test fix L2TLB bugs
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/build-dramsim
+      - name: Build GEM5 opt
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: XS-GEM5 - Test xiangshan.py simulation scripts
+        run: |
+          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
+          export GCB_RESTORER=""
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test_l2tlb
+          cd $GEM5_HOME/util/xs_scripts/test_l2tlb
+          bash ../kmh_6wide.sh /nfs/home/share/gem5_ci/checkpoints/l2tlb_test.zstd
 
-  # new_sim_script_test_gcbh:
-  #   runs-on: [self-hosted, open]
-  #   continue-on-error: false
-  #   name: XS-GEM5 - Test new simulation script on RV64GCBH
-  #   steps:
-  #     - uses: actions/checkout@v2
-  #     - uses: ./.github/actions/build-dramsim
-  #     - name: Build GEM5 opt
-  #       run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
-  #     - name: XS-GEM5 - Test xiangshan.py simulation scripts
-  #       run: |
-  #         export GCBH_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
-  #         export GCBH_RESTORER="/nfs/home/share/gem5_ci/tools/gcpt.bin"
-  #         export GEM5_HOME=$(pwd)
-  #         mkdir -p $GEM5_HOME/util/xs_scripts/test_h
-  #         cd $GEM5_HOME/util/xs_scripts/test_h
-  #         bash ../kmh_6wide_h.sh /nfs/home/share/gem5_ci/checkpoints/gcbh_test.zstd
+  new_sim_script_test_gcbh:
+    runs-on: [self-hosted, open]
+    continue-on-error: false
+    name: XS-GEM5 - Test new simulation script on RV64GCBH
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/build-dramsim
+      - name: Build GEM5 opt
+        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: XS-GEM5 - Test xiangshan.py simulation scripts
+        run: |
+          export GCBH_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
+          export GCBH_RESTORER="/nfs/home/share/gem5_ci/tools/gcpt.bin"
+          export GEM5_HOME=$(pwd)
+          mkdir -p $GEM5_HOME/util/xs_scripts/test_h
+          cd $GEM5_HOME/util/xs_scripts/test_h
+          bash ../kmh_6wide_h.sh /nfs/home/share/gem5_ci/checkpoints/gcbh_test.zstd
 
   raw_linux_boot_test:
     runs-on: [self-hosted, open]
