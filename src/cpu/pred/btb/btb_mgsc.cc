@@ -1068,8 +1068,28 @@ BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbi
 
 Addr
 BTBMGSC::getPercepIndex(Addr pc){
+    uint64_t folded = 0;
+    int len = log2i(percepTableEntryNum);
+    const uint64_t foldedMask = ((1ULL << len) - 1);
+
+    for (size_t startBit = 0; startBit < gbhrLen; startBit += len) {
+        uint64_t chunk = 0;
+        size_t chunkSize = std::min(len, gbhrLen - startBit);
+
+        // Extract chunk from bitset
+        for (size_t i = 0; i < chunkSize; i++) {
+            chunk |= (gbhr[startBit + i] << i);
+        }
+
+        // XOR this chunk into the ideal folded history
+        folded ^= chunk;
+    }
+    folded &= foldedMask;
+
     Addr mask = percepTableEntryNum - 1;
-    unsigned index = (pc ^ (pc >> log2i(percepTableEntryNum))) & mask;
+    unsigned index = pc ^ (pc>>len);
+    index ^= folded;
+    index &= mask;
     return index;
 }
 
