@@ -5,7 +5,8 @@ SimObject('ValuePredictor.py',
             'ValuePredictor',
             'GatedVPUnit',
             'EStride',
-            'IdealConstantLVP'
+            'IdealConstantLVP',
+            'MultiValuePredictor'
           ],
           enums=['ValuePredType'])
 
@@ -14,6 +15,7 @@ Source('gated_vp_unit.cc')
 Source('enhanced_stride.cc')
 Source('valuepred_metadata.cc')
 Source('ideal_constant_lvp.cc')
+Source('multi_value_predictor.cc')
 
 DebugFlag('VPCOMMON')
 DebugFlag('EStride')

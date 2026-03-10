@@ -267,8 +267,19 @@ def _bindStatHierarchy(root):
             if len(obj) == 1:
                 _bind_obj(name, obj[0])
             else:
-                for idx, obj in enumerate(obj):
-                    _bind_obj("{}{}".format(name, idx), obj)
+                if name == "predictors" and getattr(root, "type", None) == "MultiValuePredictor":
+                    type_counts = {}
+                    for sub_obj in obj:
+                        base = getattr(sub_obj, "type", "").lower()
+                        if not base:
+                            base = name
+                        idx = type_counts.get(base, 0)
+                        type_counts[base] = idx + 1
+                        mapped_name = base if idx == 0 else f"{base}{idx}"
+                        _bind_obj(mapped_name, sub_obj)
+                else:
+                    for idx, sub_obj in enumerate(obj):
+                        _bind_obj("{}{}".format(name, idx), sub_obj)
         else:
             # We need this check because not all obj.getCCObject() is an
             # instance of Stat::Group. For example, sc_core::sc_module, the C++

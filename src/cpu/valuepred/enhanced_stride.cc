@@ -108,6 +108,7 @@ EStride::EStride(const Params &params)
       logMaxConfidence(params.logMaxConfidence),
       MAXCONFIDENCE(1 << logMaxConfidence),
       confidenceThreshold(static_cast<int>(params.thresholdPercent * MAXCONFIDENCE)),
+      disableZeroStridePredict(params.disableZeroStridePredict),
       inflightWindow(params.inflightWindowTagLength, params.idealWindow),
       enableTimeMsgInUpdate(params.enableTimeMsgInUpdate),
       esstats(this)
@@ -137,6 +138,7 @@ EStride::EStride(const Params &params)
     DPRINTF(EStride, "ways: %7d | strideWidth: %7d bits | tagWidth %7d bits\n", ways, strideWidth, tagWidth);
     DPRINTF(EStride, "EStride table entrys: %7d\n", entryCounts);
     DPRINTF(EStride, "MAXCONFIDENCE: %7d | confidenceThreshold %7d\n", MAXCONFIDENCE, confidenceThreshold);
+    DPRINTF(EStride, "disableZeroStridePredict: %s\n", disableZeroStridePredict ? "yes" : "no");
     DPRINTF(EStride, "inflightWindowTagLength: %7d \n", params.inflightWindowTagLength);
     DPRINTF(EStride, "enableTimeMsgInUpdate(need pmu support): %s\n", enableTimeMsgInUpdate ? "yes" : "no");
     DPRINTF(EStride, "==================================  end of Params ==================================\n");
@@ -310,7 +312,15 @@ EStride::doPredict(ESPredMetaData *esPredMetaData, int inflights)
     DPRINTF(EStride, "[ESPredict][way: %d index: %u][confidence: %d  useful: %d lastValue: %lu]\n", way, index,
             entryCopy.confidence, entryCopy.useful, entryCopy.lastValue);
 
-    uint64_t predValue = (uint64_t)((int64_t)entryCopy.lastValue + (inflights + 1) * extendStride(entryCopy.stride));
+    const int64_t stride = extendStride(entryCopy.stride);
+    uint64_t predValue = (uint64_t)((int64_t)entryCopy.lastValue + (inflights + 1) * stride);
+
+    if (disableZeroStridePredict && stride == 0) {
+        DPRINTF(EStride,
+                "[ESPredict]=> seq_no:%lu pc:%lX skip zero stride prediction [way: %d index: %u inflights: %d]\n",
+                esPredMetaData->seq_no, esPredMetaData->pc, way, index, inflights);
+        return {false, predValue};
+    }
 
     if (entryCopy.confidence < confidenceThreshold) {
         DPRINTF(EStride,

@@ -1361,6 +1361,7 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
                 inst->vpResult.speculative = false;
                 inst->vpResult.value = 0xdeadbeefULL;
                 inst->vpResult.hasCandidate = false;
+                inst->vpResult.predictionSource = ValuePredType::NullPredictor;
                 continue;
             }
 

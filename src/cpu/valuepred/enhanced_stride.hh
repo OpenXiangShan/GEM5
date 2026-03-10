@@ -110,6 +110,7 @@ class EStride : public GatedVPUnit
     const int logMaxConfidence;
     const int MAXCONFIDENCE;
     const int confidenceThreshold;
+    const bool disableZeroStridePredict;
     InflightWindow inflightWindow;
     const bool enableTimeMsgInUpdate;
 

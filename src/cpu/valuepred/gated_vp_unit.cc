@@ -37,6 +37,10 @@ GatedVPUnit::updateShadowStats(const VPUpdateMetaData *updateMetadata)
         return;
     }
 
+    if (updateMetadata->predictionSource != getValuePredictorType()) {
+        return;
+    }
+
     const bool shadowCorrect = updateMetadata->candidateValue == updateMetadata->actualValue;
     shadowPredictedCount++;
     gatestats.shadowPredicted++;
@@ -52,6 +56,10 @@ GatedVPUnit::valuePredict(VPPredMetaData *predMetaData)
     gem5_assert(predMetaData, "can't pass nullptr to vpunit\n");
     VPResult predResult = valuePredictInternal(predMetaData);
     predResult.hasCandidate = predResult.hasCandidate || predResult.speculative;
+    if (predResult.hasCandidate &&
+        predResult.predictionSource == ValuePredType::NullPredictor) {
+        predResult.predictionSource = getValuePredictorType();
+    }
 
     if (!predResult.hasCandidate) {
         return predResult;

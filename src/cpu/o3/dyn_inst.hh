@@ -1656,7 +1656,7 @@ class DynInst : public ExecContext, public RefCounted
     uint8_t *getGolden() { return goldenData; }
 
     /** value prediction */
-    valuepred::VPResult vpResult = {false, 0xdeadbeefULL, false};
+    valuepred::VPResult vpResult = {false, 0xdeadbeefULL, false, ValuePredType::NullPredictor};
 
     RegVal actualValue = 0xdeadbeefULL;
     bool vpMisprediction = false;
