@@ -55,10 +55,10 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.stream_pf_ahead = False
         if options.kmh_align:
             prefetcher.enable_berti = False
-            prefetcher.enable_sstride = True
+            prefetcher.enable_sstride = False
             prefetcher.enable_activepage = False
             prefetcher.enable_pht = True
-            prefetcher.enable_xsstream = True
+            prefetcher.enable_xsstream = False
 
     if cache_level == 'l2':
         if options.classic_l2:
