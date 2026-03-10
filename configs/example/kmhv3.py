@@ -95,6 +95,10 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
 
+            if args.btb_tage_upper_bound:
+                # Use the UB-S(outcome) probe by default for current CI study.
+                cpu.branchPred.tage = BTBTAGEUpperBound()
+
             cpu.branchPred.mbtb.resolvedUpdate = True
             cpu.branchPred.tage.resolvedUpdate = True
             cpu.branchPred.ittage.resolvedUpdate = True

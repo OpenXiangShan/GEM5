@@ -1063,6 +1063,14 @@ class BTBTAGE(TimedBaseBTBPredictor):
     enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
     numDelay = 2
 
+class BTBTAGEUpperBound(BTBTAGE):
+    type = 'BTBTAGEUpperBound'
+    cxx_class = 'gem5::branch_prediction::btb_pred::BTBTAGEUpperBound'
+    cxx_header = "cpu/pred/btb/btb_tage_ub.hh"
+
+    needMoreHistories = False
+    updateOnRead = False
+
 class MicroTAGE(BTBTAGE):
     """A smaller TAGE predictor configuration to assist uBTB"""
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
