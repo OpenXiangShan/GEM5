@@ -15,10 +15,17 @@ namespace xsCHI {
             L2Wrapper* L2wrap;
             FakeL3* L3bridge;
             DDRWrapper* Dram;
-            // Minimal 2-node mesh chain:
-            // L2 endpoint -- MeshNode0 <-> MeshNode1 -- HN endpoint
+            // 2x2 mesh:
+            // Mesh0(0,0) <-> Mesh1(1,0)
+            //   ^               ^
+            //   |               |
+            // Mesh3(0,1) <-> Mesh2(1,1)
+            // Endpoints:
+            // RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
             MeshNode* Mesh0;
             MeshNode* Mesh1;
+            MeshNode* Mesh2;
+            MeshNode* Mesh3;
         public:
             typedef L2ToDramSysParams Params;
 

@@ -53,10 +53,18 @@ class L2ToDramSys(ClockedObject):
 
     L3 = Param.FakeL3("L3 mux")
 
-    # Minimal mesh chain for RN/HN path:
-    # L2 endpoint -- MeshNode0 <-> MeshNode1 -- FakeL3 endpoint
+    # 2x2 mesh topology (clockwise):
+    # Mesh0(0,0) --east--> Mesh1(1,0)
+    #   ^                         |
+    #   |                         north
+    #  south                      v
+    # Mesh3(0,1) <--west-- Mesh2(1,1)
+    # Endpoint placement:
+    # RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
     MeshNode0 = Param.MeshNode("RN-side mesh node")
     MeshNode1 = Param.MeshNode("HN-side mesh node")
+    MeshNode2 = Param.MeshNode("DRAM-side mesh node")
+    MeshNode3 = Param.MeshNode("Transit-only mesh node")
 
     L2BridgeBufferSize = Param.Unsigned(4, "Number of L2Bridgebuffers")
 
