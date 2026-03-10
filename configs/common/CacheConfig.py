@@ -267,17 +267,39 @@ def config_cache(options, system):
                 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
                 system.CHIsys = L2ToDramSys(configFile=os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'))
                 system.CHIsys.L2Wrapper = L2Wrapper(RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)))
-                system.CHIsys.L3 = FakeL3(L2side=CHIPort(recv_buffer_size=4),Dramside=CHIPort(recv_buffer_size=4))
-                # Minimal 2-node mesh used by xsCHI TopoSys:
-                # L2 endpoint -- MeshNode0 <-> MeshNode1 -- FakeL3 endpoint.
+                system.CHIsys.L3 = FakeL3(networkPort=CHIPort(recv_buffer_size=4))
+                # 2x2 mesh used by xsCHI TopoSys.
+                # Coordinates:
+                #   Mesh0=(0,0), Mesh1=(1,0), Mesh2=(1,1), Mesh3=(0,1)
+                # Endpoint placement:
+                #   RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
                 system.CHIsys.MeshNode0 = MeshNode(
                     node_x=0, node_y=0, voq_depth=8,
                     port_local0=CHIPort(recv_buffer_size=4),
-                    port_east=CHIPort(recv_buffer_size=4))
+                    port_east=CHIPort(recv_buffer_size=4),
+                    port_north=CHIPort(recv_buffer_size=4))
                 system.CHIsys.MeshNode1 = MeshNode(
                     node_x=1, node_y=0, voq_depth=8,
                     port_local0=CHIPort(recv_buffer_size=4),
-                    port_west=CHIPort(recv_buffer_size=4))
+                    port_west=CHIPort(recv_buffer_size=4),
+                    port_north=CHIPort(recv_buffer_size=4))
+                system.CHIsys.MeshNode2 = MeshNode(
+                    node_x=1, node_y=1, voq_depth=8,
+                    port_local0=CHIPort(recv_buffer_size=4),
+                    port_west=CHIPort(recv_buffer_size=4),
+                    port_south=CHIPort(recv_buffer_size=4))
+                # Mesh3 currently has no local endpoint; keep local0 present
+                # to satisfy MeshNode's mandatory local0-port invariant.
+                system.CHIsys.MeshNode3 = MeshNode(
+                    node_x=0, node_y=1, voq_depth=8,
+                    port_local0=CHIPort(recv_buffer_size=4),
+                    port_east=CHIPort(recv_buffer_size=4),
+                    port_south=CHIPort(recv_buffer_size=4))
+                print(
+                    "[xsCHI][Build] mesh=2x2 "
+                    "M0=(0,0) M1=(1,0) M2=(1,1) M3=(0,1) "
+                    "endpoints: RN@M0.local0 HN@M1.local0 DRAM@M2.local0"
+                )
                 system.CHIsys.mem_side_port = system.membus.cpu_side_ports
             else:
                 system.l3 = L3Cache(clk_domain=system.cpu_clk_domain,

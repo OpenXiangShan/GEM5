@@ -5,5 +5,4 @@ class FakeL3(ClockedObject):
     type = 'FakeL3'
     cxx_header = "mem/xsCHI/device/HNF.hh"
     cxx_class = 'gem5::xsCHI::FakeL3'
-    L2side = Param.CHIPort("L2 port pointer")
-    Dramside = Param.CHIPort("Dramside port pointer")
+    networkPort = Param.CHIPort("networkPort pointer")
