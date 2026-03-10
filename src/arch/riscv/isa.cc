@@ -579,6 +579,9 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             satp_mode == NEMU_SATP_SV39 ||
             (enableSv48 && satp_mode == NEMU_SATP_SV48)) {
             setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
+        } else if (satp_mode == NEMU_SATP_SV48) {
+            warn("Ignoring VSATP Sv48 write %#lx because Sv48 is disabled; "
+                 "enable it with --open-sv48.\n", val);
         }
     } else if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
         setMiscRegNoEffect(MISCREG_VSEPC, val);
@@ -716,6 +719,9 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                     (enableSv48 && satp_mode == NEMU_SATP_SV48)) {
                     RegVal writeVal = val & NEMU_SATP_MASK;
                     setMiscRegNoEffect(misc_reg, writeVal);
+                } else if (satp_mode == NEMU_SATP_SV48) {
+                    warn("Ignoring SATP Sv48 write %#lx because Sv48 is disabled; "
+                         "enable it with --open-sv48.\n", val);
                 }
 
             }

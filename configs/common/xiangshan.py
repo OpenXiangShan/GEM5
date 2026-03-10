@@ -448,6 +448,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
+        cpu.enable_sv48 = args.open_sv48
         cpu.mmu.enable_sv48 = args.open_sv48
 
         if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
