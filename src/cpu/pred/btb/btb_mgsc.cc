@@ -466,16 +466,16 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
         } else if (tage_info.tage_pred_conf_mid) {
             if (abs(total_sum) > total_thres / 4) {
                 use_sc_pred = true;
-            }else if (abs(percep_sum) > percep_thres){
-                use_sc_pred = true;
-                use_percep_pred = true;
+            // }else if (abs(percep_sum) > percep_thres){
+            //     use_sc_pred = true;
+            //     use_percep_pred = true;
             }
         } else if (tage_info.tage_pred_conf_low) {
             if (abs(total_sum) > total_thres / 8) {
                 use_sc_pred = true;
-            }else if (abs(percep_sum) > percep_thres){
-                use_sc_pred = true;
-                use_percep_pred = true;
+            // }else if (abs(percep_sum) > percep_thres){
+            //     use_sc_pred = true;
+            //     use_percep_pred = true;
             }
         }
     }//如果更改判断逻辑，记得更改计数器逻辑
@@ -828,6 +828,8 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
         } else if (conf_mid) {
             if (use) {
                 correct ? mgscStats.scMidUseCorrect++ : mgscStats.scMidUseWrong++;
+            } else {
+                mgscStats.scMidBypass++;
                 if (percep_use){
                     if (percep_pred_taken == actual_taken){
                         mgscStats.scMidBypassPercepCorrect++;
@@ -839,12 +841,12 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
                             mgscStats.scMidBypassPercepHighWrong++;
                     }
                 }
-            } else {
-                mgscStats.scMidBypass++;
             }
         } else if (conf_low) {
             if (use) {
                 correct ? mgscStats.scLowUseCorrect++ : mgscStats.scLowUseWrong++;
+            } else {
+                mgscStats.scLowBypass++;
                 if (percep_use){
                     if (percep_pred_taken == actual_taken){
                         mgscStats.scLowBypassPercepCorrect++;
@@ -855,9 +857,7 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
                         if (percep_conf_high)
                             mgscStats.scLowBypassPercepHighWrong++;
                     }
-                    }
-            } else {
-                mgscStats.scLowBypass++;
+                }
             }
         }
     };
