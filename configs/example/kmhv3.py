@@ -96,7 +96,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.fsq_size = 64
 
             if args.btb_tage_upper_bound:
-                # Default to UB-S(outcome); optionally switch to UB-P(path-hash).
+                # Default to UB-P(path-hash); optionally fall back to UB-S(outcome).
                 cpu.branchPred.tage = BTBTAGEUpperBound(
                     usePathHashHistory=args.btb_tage_upper_bound_path_hash)
 

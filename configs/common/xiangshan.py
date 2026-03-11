@@ -705,7 +705,10 @@ def xiangshan_system_init():
     Options.addCommonOptions(parser, configure_xiangshan=True)
     Options.addXiangshanFSOptions(parser)
     Options.addXiangshanTraceOptions(parser)
-    parser.set_defaults(btb_tage_upper_bound=True)
+    parser.set_defaults(
+        btb_tage_upper_bound=True,
+        btb_tage_upper_bound_path_hash=True,
+    )
     parser.add_argument(
         "--btb-tage-upper-bound",
         dest="btb_tage_upper_bound",
@@ -720,8 +723,15 @@ def xiangshan_system_init():
     )
     parser.add_argument(
         "--btb-tage-upper-bound-path-hash",
+        dest="btb_tage_upper_bound_path_hash",
         action="store_true",
-        help="Use path-hash history for BTBTAGEUpperBound instead of outcome history",
+        help="Use path-hash history for BTBTAGEUpperBound (enabled by default)",
+    )
+    parser.add_argument(
+        "--disable-btb-tage-upper-bound-path-hash",
+        dest="btb_tage_upper_bound_path_hash",
+        action="store_false",
+        help="Use outcome history for BTBTAGEUpperBound instead of path-hash history",
     )
 
     # Add the ruby specific and protocol specific args
