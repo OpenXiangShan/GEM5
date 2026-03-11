@@ -38,7 +38,6 @@ def setKmhV3Params(args, system):
         cpu.renameWidth = 8
         cpu.numPhysIntRegs = 224
         cpu.numPhysFloatRegs = 256
-        cpu.enable_storeSet_train = False
 
         # dispatch
         cpu.enableDispatchStage = False
@@ -75,19 +74,20 @@ def setKmhV3Params(args, system):
         cpu.EnableLdMissReplay = True
         cpu.EnablePipeNukeCheck = True
         cpu.BankConflictCheck = True
-        cpu.sbufferBankWriteAccurately = False
+        cpu.sbufferBankWriteAccurately = True
+        cpu.DcacheSetDivNum = 2
 
         # lsq
-        cpu.LQEntries = 72
-        cpu.SQEntries = 56
-        cpu.RARQEntries = 72
-        cpu.RAWQEntries = 32
+        cpu.LQEntries = 128
+        cpu.SQEntries = 64
+        cpu.RARQEntries = 96
+        cpu.RAWQEntries = 56
         cpu.LoadCompletionWidth = 8
         cpu.StoreCompletionWidth = 4
         cpu.RARDequeuePerCycle = 4
         cpu.RAWDequeuePerCycle = 4
-        cpu.SbufferEntries = 16
-        cpu.SbufferEvictThreshold = 7
+        cpu.SbufferEntries = 24
+        cpu.SbufferEvictThreshold = 16
         cpu.store_prefetch_train = False
 
         # branch predictor
@@ -95,26 +95,13 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ftq_size = 256
             cpu.branchPred.fsq_size = 256
 
-            cpu.branchPred.mbtb.resolvedUpdate = True
-            cpu.branchPred.tage.resolvedUpdate = True
-            cpu.branchPred.ittage.resolvedUpdate = True
-
-            cpu.branchPred.ubtb.enabled = True
-            cpu.branchPred.abtb.enabled = True
-            cpu.branchPred.microtage.enabled = False
-            cpu.branchPred.mbtb.enabled = True
-            cpu.branchPred.tage.enabled = True
-            cpu.branchPred.ittage.enabled = True
-            cpu.branchPred.mgsc.enabled = False
-            cpu.branchPred.ras.enabled = True
-
         # l1 cache per core
         if args.caches:
             cpu.icache.size = '64kB'
             cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 3
             cpu.dcache.mshrs = 16
-            cpu.dcache.do_fast_writeline = False
+            cpu.dcache.do_fast_writeline = True
             cpu.dcache.simulate_dcache_refill = True
             cpu.dcache.prefetch_can_offload = False
             set_lsq_bank_conflict_cache_params(cpu, system)
@@ -132,20 +119,19 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
             else:
                 l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.data_sram_banks = 1
-                l2_wrapper.dir_sram_banks = 1
-                l2_wrapper.pipe_dir_write_stage = 3
-                l2_wrapper.dir_read_bypass = False
+                l2_wrapper.data_sram_banks = 2
+                l2_wrapper.dir_sram_banks = 2
+                l2_wrapper.pipe_dir_write_stage = 4
+                l2_wrapper.dir_read_bypass = True
                 for j in range(args.l2_slices):
-                    l2_wrapper.slices[j].inner_cache.wpu = NULL
-                    l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
+                    l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
-            system.tol2bus_list[i].forward_latency = 3  # 3->0
-            system.tol2bus_list[i].response_latency = 3  # 3->0
-            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 1->0
+            system.tol2bus_list[i].forward_latency = 0  # 3->0
+            system.tol2bus_list[i].response_latency = 0  # 3->0
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 1->0
 
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
@@ -157,8 +143,8 @@ def setKmhV3Params(args, system):
 
     # l3 cache
     if args.l3cache:
-        system.l3.mshrs = 64
-        system.l3.do_fast_writeline = False
+        system.l3.mshrs = 128
+        system.l3.do_fast_writeline = True
         system.l3.prefetch_can_offload = False
         system.l3.num_slices = 4
 
@@ -172,7 +158,7 @@ if __name__ == '__m5_main__':
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
-    args.l2_size = '1MB'
+    args.l2_size = '2MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
 
     # Match the memories with the CPUs, based on the options for the test system
