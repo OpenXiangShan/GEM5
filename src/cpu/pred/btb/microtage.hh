@@ -95,14 +95,16 @@ class MicroTAGE : public TimedBaseBTBPredictor
             Addr btb_pc;           // btb entry pc, same as tage entry pc
             TageTableInfo mainInfo; // Main prediction info
             //TageTableInfo altInfo;  // Alternative prediction info
+            int providerTable;     // Prediction-time provider table, -1 means fallback to base
             bool mainprovided;    // Whether to use alternative prediction, true if main is weak or no main prediction
             bool taken;           // Final prediction outcome
             bool basePred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
 
-            TagePrediction() : btb_pc(0), mainprovided(false), taken(false), basePred(false) {}
+            TagePrediction() : btb_pc(0), providerTable(-1), mainprovided(false), taken(false),
+                               basePred(false) {}
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo,
-                            bool mainprovided, bool taken, bool basePred) :
-                            btb_pc(btb_pc), mainInfo(mainInfo),
+                            int providerTable, bool mainprovided, bool taken, bool basePred) :
+                            btb_pc(btb_pc), mainInfo(mainInfo), providerTable(providerTable),
                             mainprovided(mainprovided), taken(taken), basePred(basePred) {}
     };
 
@@ -309,6 +311,10 @@ class MicroTAGE : public TimedBaseBTBPredictor
         statistics::Distribution updateTableHits;
 
         statistics::Vector updateTableMispreds;
+        statistics::Vector updateTableAllocSuccess;
+        statistics::Vector updateTableAllocFailure;
+        statistics::Vector commitTableCorrect;
+        statistics::Vector commitTableWrong;
 #endif
 
         Scalar condPredwrong;

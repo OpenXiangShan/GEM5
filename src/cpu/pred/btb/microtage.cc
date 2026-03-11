@@ -246,7 +246,9 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     DPRINTF(UTAGE, "tage main provided %d ? main_taken %d : base_taken %d\n",
             provided, main_taken, base_pred);
 
-    return TagePrediction(btb_entry.pc, main_info, provided, taken, base_pred);
+    const int provider_table = provided ? static_cast<int>(main_info.table) : -1;
+    return TagePrediction(btb_entry.pc, main_info, provider_table, provided, taken,
+                          base_pred);
 }
 
 /**
@@ -449,6 +451,9 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
         if (!main_is_correct) {
             tageStats.updateUtageHitWrong++;
+#ifndef UNIT_TEST
+            tageStats.updateTableMispreds[main_info.table]++;
+#endif
         }
     }
 
@@ -524,6 +529,9 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
                         ti, newIndex, way, newTag, position, newCounter, entry.pc);
                 cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
                 tageStats.updateAllocSuccess++;
+#ifndef UNIT_TEST
+                tageStats.updateTableAllocSuccess[ti]++;
+#endif
                 allocated_table = ti;
                 allocated_index = newIndex;
                 allocated_way = way;
@@ -545,6 +553,9 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
         }
 
         tageStats.updateAllocFailure++;
+#ifndef UNIT_TEST
+        tageStats.updateTableAllocFailure[ti]++;
+#endif
         usefulResetCnt++;
     }
 
@@ -1031,6 +1042,10 @@ MicroTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, in
     ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
     ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
     ADD_STAT(updateTableMispreds, statistics::units::Count::get(), "mispreds of each table when update"),
+    ADD_STAT(updateTableAllocSuccess, statistics::units::Count::get(), "allocation successes of each table when update"),
+    ADD_STAT(updateTableAllocFailure, statistics::units::Count::get(), "allocation failures of each table when update"),
+    ADD_STAT(commitTableCorrect, statistics::units::Count::get(), "correct committed predictions of each provider table"),
+    ADD_STAT(commitTableWrong, statistics::units::Count::get(), "wrong committed predictions of each provider table"),
 
     ADD_STAT(condPredwrong, statistics::units::Count::get(), "number of conditional branch mispredictions committed"),
     ADD_STAT(condMissTakens, statistics::units::Count::get(), "number of conditional branch mispredictions committed with no prediction"),
@@ -1042,6 +1057,10 @@ MicroTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, in
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);
     updateTableMispreds.init(numPredictors);
+    updateTableAllocSuccess.init(numPredictors);
+    updateTableAllocFailure.init(numPredictors);
+    commitTableCorrect.init(numPredictors);
+    commitTableWrong.init(numPredictors);
 
     // Initialize per-bank statistics vectors
     updateBankConflictPerBank.init(numBanks);
@@ -1114,6 +1133,16 @@ MicroTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         tageStats.condCorrect++;
         if (!pred_hit) {
             tageStats.condMissNoTakens++;
+        }
+    }
+
+    if (pred_hit && it->second.providerTable >= 0) {
+        const unsigned provider_table =
+            static_cast<unsigned>(it->second.providerTable);
+        if (predcorrect) {
+            tageStats.commitTableCorrect[provider_table]++;
+        } else {
+            tageStats.commitTableWrong[provider_table]++;
         }
     }
 
