@@ -72,10 +72,10 @@ def setKmhV3IdealParams(args, system):
                     shadowThresholdPercent = 0.99
                 ),
                 EStride(
-                    logMaxConfidence = 10,
+                    logMaxConfidence = 5,
                     thresholdPercent = 0.25,
                     disableZeroStridePredict = True,
-                    shadowThresholdPercent = 0.99
+                    shadowThresholdPercent = 0
                 )
             ]
         )
