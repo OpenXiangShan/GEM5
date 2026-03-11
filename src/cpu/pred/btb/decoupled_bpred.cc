@@ -55,10 +55,10 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     }
     bpType = DecoupledBTBType;
     // Only add enabled components to the list
-    if (ubtb->isEnabled()) components.push_back(ubtb);
-    if (abtb->isEnabled()) components.push_back(abtb);
-    if (microtage->isEnabled()) components.push_back(microtage);
+    // if (ubtb->isEnabled()) components.push_back(ubtb);
+    // if (abtb->isEnabled()) components.push_back(abtb);
     if (mbtb->isEnabled()) components.push_back(mbtb);
+    if (microtage->isEnabled()) components.push_back(microtage);
     if (tage->isEnabled()) components.push_back(tage);
     if (ras->isEnabled()) components.push_back(ras);
     if (ittage->isEnabled()) components.push_back(ittage);
