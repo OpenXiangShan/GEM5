@@ -122,7 +122,7 @@ BTBMGSC::initStorage()
         return gbhrLen+1;
     };
     auto percepWeightTableSize = allocWeightTable(percepWeightTable,percepTableEntryNum);
-    gbhr.resize(gbhrLen,1);
+    gbhr.resize(gbhrLen,0);
 
     pUpdateThreshold.resize(pow2(thresholdTablelogSize));
 }
@@ -830,16 +830,14 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
                 correct ? mgscStats.scMidUseCorrect++ : mgscStats.scMidUseWrong++;
             } else {
                 mgscStats.scMidBypass++;
-                if (percep_use){
-                    if (percep_pred_taken == actual_taken){
-                        mgscStats.scMidBypassPercepCorrect++;
-                        if (percep_conf_high)
-                            mgscStats.scMidBypassPercepHighCorrect++;
-                    }else{
-                        mgscStats.scMidBypassPercepWrong++;
-                        if (percep_conf_high)
-                            mgscStats.scMidBypassPercepHighWrong++;
-                    }
+                if (percep_pred_taken == actual_taken){
+                    mgscStats.scMidBypassPercepCorrect++;
+                    if (percep_conf_high)
+                        mgscStats.scMidBypassPercepHighCorrect++;
+                }else{
+                    mgscStats.scMidBypassPercepWrong++;
+                    if (percep_conf_high)
+                        mgscStats.scMidBypassPercepHighWrong++;
                 }
             }
         } else if (conf_low) {
@@ -847,16 +845,14 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
                 correct ? mgscStats.scLowUseCorrect++ : mgscStats.scLowUseWrong++;
             } else {
                 mgscStats.scLowBypass++;
-                if (percep_use){
-                    if (percep_pred_taken == actual_taken){
-                        mgscStats.scLowBypassPercepCorrect++;
-                        if (percep_conf_high)
-                            mgscStats.scLowBypassPercepHighCorrect++;
-                    }else{
-                        mgscStats.scLowBypassPercepWrong++;
-                        if (percep_conf_high)
-                            mgscStats.scLowBypassPercepHighWrong++;
-                    }
+                if (percep_pred_taken == actual_taken){
+                    mgscStats.scLowBypassPercepCorrect++;
+                    if (percep_conf_high)
+                        mgscStats.scLowBypassPercepHighCorrect++;
+                }else{
+                    mgscStats.scLowBypassPercepWrong++;
+                    if (percep_conf_high)
+                        mgscStats.scLowBypassPercepHighWrong++;
                 }
             }
         }
@@ -878,7 +874,7 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
  */
 void
 BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const MgscPrediction &pred,
-                               const FetchTarget &stream)
+                               const FetchTarget &stream,std::vector<bool> meta_gbhr)
 {
     // Extract prediction information
     auto total_sum = pred.total_sum;
@@ -951,7 +947,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 
         //Update perception table
         auto pred_gbhr = pred.pred_gbhr;
-        updatePercepTable(percepWeightTable,percep_sum,percep_taken,entry.pc,actual_taken,pred_gbhr);
+        updatePercepTable(percepWeightTable,percep_sum,percep_taken,entry.pc,actual_taken,meta_gbhr);
 
 
 
@@ -980,6 +976,7 @@ BTBMGSC::update(const FetchTarget &stream)
     // Get prediction metadata
     auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
     auto &preds = meta->preds;
+    auto meta_gbhr = meta->gbhr;
 
     // Process each BTB entry
     for (auto &btb_entry : entries_to_update) {
@@ -991,7 +988,7 @@ BTBMGSC::update(const FetchTarget &stream)
         }
 
         // Update predictor state and check if need to allocate new entry
-        updateSinglePredictor(btb_entry, actual_taken, pred_it->second, stream);
+        updateSinglePredictor(btb_entry, actual_taken, pred_it->second, stream,meta_gbhr);
     }
 
     DPRINTF(MGSC, "end update\n");
