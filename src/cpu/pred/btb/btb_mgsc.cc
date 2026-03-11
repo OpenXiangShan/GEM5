@@ -306,7 +306,7 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &
 int
 BTBMGSC::calculatePercepSum(Addr pc)
 {
-    int index = getPercepIndex(pc);
+    int index = getPercepIndex(pc,gbhr);
     auto weight = percepWeightTable[index];
 
     int bias = 1;
@@ -447,7 +447,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     //genertate perception prediction
     int percep_sum = enablePerceptionPred ? calculatePercepSum(btb_entry.pc) : 0;
-    int percep_index = getPercepIndex(pc);
+    int percep_index = getPercepIndex(btb_entry.pc,gbhr);
     // Find thresholds
     // pc-indexed threshold table (only if enabled)
     int p_update_thres = enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.pc) : 0;
@@ -498,8 +498,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, tage_info.tage_pred_taken,use_percep_pred,
                           tage_info.tage_pred_conf_high, tage_info.tage_pred_conf_mid, tage_info.tage_pred_conf_low,
-                          total_thres, bwIndex, lIndex, iIndex, gIndex, pIndex, biasIndex, percep_index,
-                          bw_weight_scale_diff,
+                          total_thres, bwIndex, lIndex, iIndex, gIndex, pIndex, biasIndex,
+                          percep_index, gbhr, bw_weight_scale_diff,
                           l_weight_scale_diff, i_weight_scale_diff, g_weight_scale_diff, p_weight_scale_diff,
                           bias_weight_scale_diff, bw_percsum, l_percsum, i_percsum, g_percsum, p_percsum,
                           bias_percsum,percep_sum);
@@ -670,20 +670,20 @@ BTBMGSC::updateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, A
  * Update perception weight table */
 void
 BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int percep_sum,bool percep_taken,
-                           Addr pc,bool actual_taken)
+                           Addr pc,bool actual_taken,std::vector<bool> pred_gbhr)
 {
     bool percep_update = false;
     int percep_thres = percepThres;
-    // if (abs(percep_sum) < (percep_thres/3) || percep_taken != actual_taken)
-    if (percep_taken != actual_taken)
+    if (abs(percep_sum) < (percep_thres) || percep_taken != actual_taken)
+    // if (percep_taken != actual_taken)
         percep_update = true;
-    int index = getPercepIndex(pc);
+    int index = getPercepIndex(pc,pred_gbhr);
     int bias = 1;
     if (percep_update){
         weightTable[index][0] += ( (actual_taken?1:-1)*bias);
         for (int i=0;i<gbhrLen;i++){
             auto &entry = weightTable[index][i+1];
-            updateCounter(actual_taken == gbhr[i],percepTableWidth,entry);
+            updateCounter(actual_taken == pred_gbhr[i],percepTableWidth,entry);
             // weightTable[index][i+1] += (actual_taken == gbhr[i]?1:-1);
         }
     }
@@ -950,7 +950,8 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
                           (pred.bias_percsum >= 0) == actual_taken);
 
         //Update perception table
-        updatePercepTable(percepWeightTable,percep_sum,percep_taken,entry.pc,actual_taken);
+        auto pred_gbhr = pred.pred_gbhr;
+        updatePercepTable(percepWeightTable,percep_sum,percep_taken,entry.pc,actual_taken,pred_gbhr);
 
 
 
@@ -1067,7 +1068,7 @@ BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbi
 }
 
 Addr
-BTBMGSC::getPercepIndex(Addr pc){
+BTBMGSC::getPercepIndex(Addr pc,std::vector<bool> tem_gbhr){
     uint64_t folded = 0;
     int len = log2i(percepTableEntryNum);
     const uint64_t foldedMask = ((1ULL << len) - 1);
@@ -1078,7 +1079,7 @@ BTBMGSC::getPercepIndex(Addr pc){
 
         // Extract chunk from bitset
         for (size_t i = 0; i < chunkSize; i++) {
-            chunk |= (gbhr[startBit + i] << i);
+            chunk |= (tem_gbhr[startBit + i] << i);
         }
 
         // XOR this chunk into the ideal folded history
@@ -1301,6 +1302,7 @@ BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, Fu
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getHistInfo();
+    Addr index_ = getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories));
     doUpdateHist(history[getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories))], shamt, cond_taken,
                  indexLFoldedHist[getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories))]);
 }

@@ -66,6 +66,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         std::vector<unsigned> pIndex;     // P table indices
         std::vector<unsigned> biasIndex;  // Bias table indices
         int percep_index;
+        std::vector<bool> pred_gbhr;
                                           // Weight scale difference flags and percsum values
         bool bw_weight_scale_diff;
         bool l_weight_scale_diff;
@@ -119,7 +120,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
                        bool tage_conf_high, bool tage_conf_mid, bool tage_conf_low, int16_t total_thres,
                        std::vector<unsigned> bwIndex, std::vector<unsigned> lIndex, std::vector<unsigned> iIndex,
                        std::vector<unsigned> gIndex, std::vector<unsigned> pIndex, std::vector<unsigned> biasIndex,
-                       int percep_index,
+                       int percep_index,std::vector<bool> pred_gbhr,
                        bool bw_weight_scale_diff, bool l_weight_scale_diff, bool i_weight_scale_diff,
                        bool g_weight_scale_diff, bool p_weight_scale_diff, bool bias_weight_scale_diff, int bw_percsum,
                        int l_percsum, int i_percsum, int g_percsum, int p_percsum, int bias_percsum,int percep_sum)
@@ -140,6 +141,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
               pIndex(pIndex),
               biasIndex(biasIndex),
               percep_index(percep_index),
+              pred_gbhr(pred_gbhr),
               bw_weight_scale_diff(bw_weight_scale_diff),
               l_weight_scale_diff(l_weight_scale_diff),
               i_weight_scale_diff(i_weight_scale_diff),
@@ -246,7 +248,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
      * Update a prediction table and allocate new entry if needed
      */
     void updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int percep_sum,bool percep_taken,
-                           Addr pc,bool actual_taken);
+                           Addr pc,bool actual_taken,std::vector<bool> pred_gbhr);
 
     /**
      * Update a weight table and allocate new entry if needed
@@ -274,7 +276,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Calculate MGSC bias index
     Addr getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbit1);
 
-    Addr getPercepIndex(Addr pc);
+    Addr getPercepIndex(Addr pc,std::vector<bool> tem_gbhr);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) { return (pc & (blockSize - 1)) >> 1; }
