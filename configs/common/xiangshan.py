@@ -718,6 +718,11 @@ def xiangshan_system_init():
         action="store_false",
         help="Use regular BTBTAGE instead of BTBTAGEUpperBound in kmhv3",
     )
+    parser.add_argument(
+        "--btb-tage-upper-bound-path-hash",
+        action="store_true",
+        help="Use path-hash history for BTBTAGEUpperBound instead of outcome history",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:

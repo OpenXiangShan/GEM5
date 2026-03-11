@@ -964,6 +964,24 @@ class BTBTAGEUpperBoundTest : public ::testing::Test
     std::vector<FullBTBPrediction> stagePreds;
 };
 
+class BTBTAGEUpperBoundPathHashTest : public ::testing::Test
+{
+  protected:
+    void SetUp() override {
+        tage = new BTBTAGEUpperBound(4, 1024, 4,
+            BTBTAGEUpperBound::HistorySource::PathHash);
+        memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+        outcomeHistory.resize(128, false);
+        pathHistory.resize(128, false);
+        stagePreds.resize(2);
+    }
+
+    BTBTAGEUpperBound *tage;
+    boost::dynamic_bitset<> outcomeHistory;
+    boost::dynamic_bitset<> pathHistory;
+    std::vector<FullBTBPrediction> stagePreds;
+};
+
 TEST_F(BTBTAGEUpperBoundTest, ExactContextLookup) {
     BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
     boost::dynamic_bitset<> historyA(128, 0);
@@ -1038,6 +1056,24 @@ TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrain
     tage->update(stream);
 
     EXPECT_TRUE(tage->hasExactEntry(0, newEntry.pc, historyA));
+}
+
+TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
+    boost::dynamic_bitset<> pathHistoryA(128, 0);
+    boost::dynamic_bitset<> pathHistoryB(128, 0);
+    applyPathHistoryTaken(pathHistoryB, entry.pc, entry.target);
+
+    ASSERT_TRUE(tage->insertExactEntry(2, entry.pc, pathHistoryB, 2));
+
+    FullBTBPrediction pred;
+    pred.btbEntries.push_back(entry);
+    pred.condTakens.push_back({entry.pc, true});
+    tage->specUpdatePHist(pathHistoryA, pred);
+
+    bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
+
+    EXPECT_TRUE(predicted);
 }
 
 

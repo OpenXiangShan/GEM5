@@ -33,6 +33,13 @@ class BTBTAGEUpperBound : public BTBTAGE
   public:
     static constexpr unsigned MaxSupportedHistBits = 512;
     static constexpr unsigned MaxHistoryWords = MaxSupportedHistBits / 64;
+    static constexpr unsigned PathHistoryShift = 2;
+
+    enum class HistorySource
+    {
+        Outcome,
+        PathHash,
+    };
 
     struct ExactHistoryKey
     {
@@ -77,7 +84,8 @@ class BTBTAGEUpperBound : public BTBTAGE
 #ifdef UNIT_TEST
     BTBTAGEUpperBound(unsigned numPredictors = 4,
                       unsigned tableSize = 1024,
-                      unsigned numBanks = 4);
+                      unsigned numBanks = 4,
+                      HistorySource source = HistorySource::Outcome);
 #else
     typedef BTBTAGEUpperBoundParams Params;
     BTBTAGEUpperBound(const Params &p);
@@ -91,10 +99,16 @@ class BTBTAGEUpperBound : public BTBTAGE
 
     void specUpdateHist(const boost::dynamic_bitset<> &history,
                         FullBTBPrediction &pred) override;
+    void specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred) override;
     void recoverHist(const boost::dynamic_bitset<> &history,
                      const FetchTarget &entry,
                      int shamt,
                      bool cond_taken) override;
+    void recoverPHist(const boost::dynamic_bitset<> &history,
+                      const FetchTarget &entry,
+                      int shamt,
+                      bool cond_taken) override;
     void update(const FetchTarget &entry) override;
     void checkFoldedHist(const bitset &history, const char *when) override;
 
@@ -136,6 +150,9 @@ class BTBTAGEUpperBound : public BTBTAGE
 #endif
 
     void initUpperBoundState();
+    void updatePathHistory(bitset &history, bool taken, Addr pc,
+                           Addr target) const;
+    const bitset &selectHistory(const bitset &outcomeHistory) const;
     void captureHistoryWords(const bitset &history,
                              std::array<uint64_t, MaxHistoryWords> &words) const;
     ExactHistoryKey buildKey(Addr branchPC,
@@ -168,6 +185,8 @@ class BTBTAGEUpperBound : public BTBTAGE
     mutable std::vector<uint64_t> historyBlocksScratch;
     std::shared_ptr<UpperBoundMeta> ubMeta;
     UpperBoundStats ubStats;
+    HistorySource historySource;
+    bitset exactPathHistory;
 };
 
 #ifdef UNIT_TEST

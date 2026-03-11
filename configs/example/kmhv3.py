@@ -96,8 +96,9 @@ def setKmhV3Params(args, system):
             cpu.branchPred.fsq_size = 64
 
             if args.btb_tage_upper_bound:
-                # Use the UB-S(outcome) probe by default for current CI study.
-                cpu.branchPred.tage = BTBTAGEUpperBound()
+                # Default to UB-S(outcome); optionally switch to UB-P(path-hash).
+                cpu.branchPred.tage = BTBTAGEUpperBound(
+                    usePathHashHistory=args.btb_tage_upper_bound_path_hash)
 
             cpu.branchPred.mbtb.resolvedUpdate = True
             cpu.branchPred.tage.resolvedUpdate = True

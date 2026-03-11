@@ -1070,6 +1070,8 @@ class BTBTAGEUpperBound(BTBTAGE):
 
     needMoreHistories = False
     updateOnRead = False
+    usePathHashHistory = Param.Bool(
+        False, "Use exact path-hash history instead of exact outcome history")
 
 class MicroTAGE(BTBTAGE):
     """A smaller TAGE predictor configuration to assist uBTB"""

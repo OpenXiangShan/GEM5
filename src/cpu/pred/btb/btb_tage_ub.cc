@@ -50,20 +50,24 @@ BTBTAGEUpperBound::ExactHistoryKeyHash::operator()(
 #ifdef UNIT_TEST
 BTBTAGEUpperBound::BTBTAGEUpperBound(unsigned numPredictors,
                                      unsigned tableSize,
-                                     unsigned numBanks)
+                                     unsigned numBanks,
+                                     HistorySource source)
     : BTBTAGE(numPredictors, 1, tableSize, numBanks),
-      ubStats(numPredictors)
+      ubStats(numPredictors),
+      historySource(source)
 {
-    needMoreHistories = false;
+    needMoreHistories = (historySource == HistorySource::PathHash);
     updateOnRead = false;
     initUpperBoundState();
 }
 #else
 BTBTAGEUpperBound::BTBTAGEUpperBound(const Params &p)
     : BTBTAGE(p),
-      ubStats(this, p.numPredictors)
+      ubStats(this, p.numPredictors),
+      historySource(p.usePathHashHistory ? HistorySource::PathHash
+                                         : HistorySource::Outcome)
 {
-    needMoreHistories = false;
+    needMoreHistories = (historySource == HistorySource::PathHash);
     updateOnRead = false;
     initUpperBoundState();
 }
@@ -92,6 +96,7 @@ BTBTAGEUpperBound::initUpperBoundState()
     exactTables.clear();
     exactTables.resize(numPredictors);
     historyBlocksScratch.reserve(MaxHistoryWords);
+    exactPathHistory.resize(maxHistLen, false);
 
     for (unsigned i = 0; i < numPredictors; ++i) {
 #ifdef UNIT_TEST
@@ -107,6 +112,31 @@ BTBTAGEUpperBound::initUpperBoundState()
             tableSizes[i] * std::max<unsigned>(1, numWays));
         exactTables[i].reserve(reserveEntries);
     }
+}
+
+void
+BTBTAGEUpperBound::updatePathHistory(bitset &history, bool taken, Addr pc,
+                                     Addr target) const
+{
+    if (!taken || history.empty()) {
+        return;
+    }
+
+    uint64_t hash = pathHash(pc, target);
+    history <<= PathHistoryShift;
+    for (unsigned i = 0; i < pathHashLength && i < history.size(); ++i) {
+        history[i] = (hash & 1) ^ history[i];
+        hash >>= 1;
+    }
+}
+
+const BTBTAGEUpperBound::bitset &
+BTBTAGEUpperBound::selectHistory(const bitset &outcomeHistory) const
+{
+    if (historySource == HistorySource::PathHash) {
+        return exactPathHistory;
+    }
+    return outcomeHistory;
 }
 
 void
@@ -252,8 +282,9 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
 #endif
 
     ubMeta = std::make_shared<UpperBoundMeta>();
-    ubMeta->history = history;
-    captureHistoryWords(history, ubMeta->historyWords);
+    const bitset &selectedHistory = selectHistory(history);
+    ubMeta->history = selectedHistory;
+    captureHistoryWords(selectedHistory, ubMeta->historyWords);
 
     for (int s = getDelay(); s < stagePreds.size(); ++s) {
         auto &stagePred = stagePreds[s];
@@ -292,6 +323,19 @@ BTBTAGEUpperBound::specUpdateHist(const boost::dynamic_bitset<> &history,
 }
 
 void
+BTBTAGEUpperBound::specUpdatePHist(const boost::dynamic_bitset<> &history,
+                                   FullBTBPrediction &pred)
+{
+    if (historySource != HistorySource::PathHash) {
+        return;
+    }
+
+    exactPathHistory = history;
+    auto [pc, target, taken] = pred.getPHistInfo();
+    updatePathHistory(exactPathHistory, taken, pc, target);
+}
+
+void
 BTBTAGEUpperBound::recoverHist(const boost::dynamic_bitset<> &history,
                                const FetchTarget &entry, int shamt,
                                bool cond_taken)
@@ -300,6 +344,22 @@ BTBTAGEUpperBound::recoverHist(const boost::dynamic_bitset<> &history,
     (void)entry;
     (void)shamt;
     (void)cond_taken;
+}
+
+void
+BTBTAGEUpperBound::recoverPHist(const boost::dynamic_bitset<> &history,
+                                const FetchTarget &entry, int shamt,
+                                bool cond_taken)
+{
+    (void)shamt;
+
+    if (historySource != HistorySource::PathHash) {
+        return;
+    }
+
+    exactPathHistory = history;
+    updatePathHistory(exactPathHistory, cond_taken,
+                      entry.getControlPC(), entry.getTakenTarget());
 }
 
 bool
@@ -521,8 +581,10 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
 void
 BTBTAGEUpperBound::checkFoldedHist(const bitset &history, const char *when)
 {
-    (void)history;
     (void)when;
+    if (historySource == HistorySource::PathHash) {
+        assert(exactPathHistory == history);
+    }
 }
 
 #ifdef UNIT_TEST
