@@ -122,7 +122,7 @@ BTBMGSC::initStorage()
         return gbhrLen+1;
     };
     auto percepWeightTableSize = allocWeightTable(percepWeightTable,percepTableEntryNum);
-    gbhr.resize(gbhrLen,0);
+    gbhr.resize(gbhrLen,1);
 
     pUpdateThreshold.resize(pow2(thresholdTablelogSize));
 }
@@ -1310,9 +1310,11 @@ BTBMGSC::specUpdateGBHR(FullBTBPrediction &pred)
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getHistInfo();
-    if (!gbhr.empty()) {
-        gbhr.pop_back();
-        gbhr.insert(gbhr.begin(), cond_taken);
+    if (shamt > 0){
+        if (!gbhr.empty()) {
+            gbhr.pop_back();
+            gbhr.insert(gbhr.begin(), cond_taken);
+        }
     }
 
 }
