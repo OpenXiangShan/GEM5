@@ -86,6 +86,8 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
             # cpu.branchPred.microtage.enabled = False
+            cpu.branchPred.ubtb.enabled = False
+            cpu.branchPred.abtb.enabled = False
 
         # l1 cache per core
         if args.caches:
