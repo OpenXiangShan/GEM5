@@ -1463,9 +1463,11 @@ BTBMGSC::recoverGBHR(const FetchTarget &entry, int shamt, bool cond_taken){
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i=0;i<gbhrLen;i++)
         gbhr[i] = predMeta->gbhr[i];
-    if (!gbhr.empty()) {
-        gbhr.pop_back();
-        gbhr.insert(gbhr.begin(), cond_taken);
+    if (shamt > 0){
+        if (!gbhr.empty()) {
+            gbhr.pop_back();
+            gbhr.insert(gbhr.begin(), cond_taken);
+        }
     }
 }
 
