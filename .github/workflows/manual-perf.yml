@@ -16,11 +16,14 @@ on:
         description: 'Benchmark coverage type'
         required: true
         type: choice
-        default: 'spec06-0.8c'
+        default: 'gcc12-spec06-0.8c'
         options:
-          - spec06-0.3c
-          - spec06-0.8c
-          - spec06-1.0c
+          - gcc12-spec06-0.3c
+          - gcc12-spec06-0.8c
+          - gcc12-spec06-1.0c
+          - gcc15-spec06-0.3c
+          - gcc15-spec06-0.8c
+          - gcc15-spec06-1.0c
           - spec17-1.0c
           - spec06-rvv-1.0c
           - spec06int-rvv-0.8c
