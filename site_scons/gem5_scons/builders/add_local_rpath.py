@@ -55,8 +55,9 @@ def AddLocalRPATH(env):
             if not isinstance(target, SCons.Node.FS.Dir):
                 target = target.dir
             relpath = os.path.relpath(target.abspath, env['BUILDDIR'])
+            origin = '@loader_path' if sys.platform == 'darwin' else '\\$$ORIGIN'
             components = [
-                '\\$$ORIGIN',
+                origin,
                 '${BIN_RPATH_PREFIX}',
                 relpath
             ]

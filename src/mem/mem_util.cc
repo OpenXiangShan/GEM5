@@ -1,7 +1,9 @@
 #include "mem/mem_util.hh"
 
 #include <fcntl.h>
+#if defined(__linux__)
 #include <linux/mman.h>
+#endif
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -9,6 +11,16 @@
 #include <cerrno>
 #include <cstring>
 #include <string>
+
+// Homebrew Boost's uuid time generator uses BOOST_WORKAROUND on
+// BOOST_LIBSTDCXX_VERSION even when building against libc++, which trips
+// gem5's -Wundef policy on macOS unless these fallback definitions exist.
+#ifndef BOOST_LIBSTDCXX_VERSION
+#define BOOST_LIBSTDCXX_VERSION 0
+#endif
+#ifndef BOOST_LIBSTDCXX_VERSION_WORKAROUND_GUARD
+#define BOOST_LIBSTDCXX_VERSION_WORKAROUND_GUARD 1
+#endif
 
 #include <boost/uuid/random_generator.hpp>
 #include <boost/uuid/uuid.hpp>            // uuid class
@@ -53,18 +65,32 @@ DedupMemory::createSharedReadOnlyRoot(size_t size)
 
     boost::uuids::uuid uuid = boost::uuids::random_generator()();
     backedFilePath = boost::uuids::to_string(uuid);
+    fromExistingFile = false;
+#if defined(__linux__)
     shmFd = memfd_create(backedFilePath.c_str(), 0);
-    // backedFilePath = "/gem5-" + boost::uuids::to_string(uuid);
-    // shmFd = shm_open(backedFilePath.c_str(), O_RDWR | O_CREAT, 0644);
+    namedShmObject = false;
+#else
+    backedFilePath = "/gem5-" + backedFilePath;
+    shmFd = shm_open(backedFilePath.c_str(), O_RDWR | O_CREAT, 0644);
+    namedShmObject = true;
+#endif
     memSize = size;
 
     if (shmFd == -1) {
         panic("Failed to create shared memory object: %s\n", backedFilePath.c_str());
     }
+#if defined(__linux__)
     if (ftruncate64(shmFd, size) == -1) {
+#else
+    if (ftruncate(shmFd, size) == -1) {
+#endif
         panic("Failed to resize shared memory object: %s to %lu\n", backedFilePath.c_str(), size);
     }
+#if defined(__linux__)
     rootPMem = (uint8_t *)mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_HUGE_2MB, shmFd, 0);
+#else
+    rootPMem = (uint8_t *)mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, shmFd, 0);
+#endif
     // close(shmFd);
     warn("Created shared memory object: %s\n", backedFilePath.c_str());
     assert(rootPMem != MAP_FAILED);
@@ -86,6 +112,7 @@ DedupMemory::initRootFromExistingFile(int fd, const char* file_path)
     assert(rootPMem != MAP_FAILED);
     backedFilePath = file_path;
     fromExistingFile = true;
+    namedShmObject = false;
 }
 
 uint8_t*
@@ -99,7 +126,18 @@ DedupMemory::createCopyOnWriteBranch(size_t size)
     // create a private mapping of the shared memory object, which is expected to copy-on-write
     if (!backedFilePath.empty() && shmFd == -1) {
         warn("Reopen shared memory object: %s\n", backedFilePath.c_str());
-        shmFd = open(backedFilePath.c_str(), O_RDWR);
+        if (fromExistingFile) {
+            shmFd = open(backedFilePath.c_str(), O_RDWR);
+        } else if (namedShmObject) {
+            shmFd = shm_open(backedFilePath.c_str(), O_RDWR, 0);
+        } else {
+            panic("Cannot reopen anonymous shared memory object: %s\n",
+                  backedFilePath.c_str());
+        }
+        if (shmFd == -1) {
+            panic("Failed to reopen shared memory object: %s, errno=%i\n",
+                  backedFilePath.c_str(), errno);
+        }
     }
     uint8_t *pmem =
         (uint8_t *)mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, shmFd, 0);
@@ -127,6 +165,15 @@ DedupMemory::releaseResources()
         close(shmFd);
         shmFd = -1;
     }
+    if (namedShmObject && !backedFilePath.empty()) {
+        if (shm_unlink(backedFilePath.c_str()) == -1 && errno != ENOENT) {
+            warn("Failed to unlink shared memory object %s, errno=%i\n",
+                 backedFilePath.c_str(), errno);
+        }
+    }
+    namedShmObject = false;
+    fromExistingFile = false;
+    backedFilePath.clear();
 }
 
 void

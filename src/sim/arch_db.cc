@@ -94,8 +94,12 @@ ArchDBer::memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr
   sprintf(
       memTraceSQLBuf,
       "INSERT INTO MemTrace(Tick,IsLoad,PC,VADDR,PADDR,Issued,Translated,Completed,Committed,Writenback,PFSrc,SITE) "
-      "VALUES(%ld,%d,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%d,'%s');",
-      tick, is_load, pc, vaddr, paddr, issued, translated, completed, committed, writenback, pf_src, "CommitMemTrace");
+      "VALUES(%llu,%d,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%d,'%s');",
+      static_cast<unsigned long long>(tick), is_load, static_cast<unsigned long long>(pc),
+      static_cast<unsigned long long>(vaddr), static_cast<unsigned long long>(paddr),
+      static_cast<unsigned long long>(issued), static_cast<unsigned long long>(translated),
+      static_cast<unsigned long long>(completed), static_cast<unsigned long long>(committed),
+      static_cast<unsigned long long>(writenback), pf_src, "CommitMemTrace");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
@@ -110,8 +114,10 @@ ArchDBer::l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf
 
   sprintf(memTraceSQLBuf,
           "INSERT INTO L1PFTrace(Tick,TriggerPC,TriggerVAddr,PFVAddr,PFSrc,SITE) "
-          "VALUES(%ld,%ld,%ld,%ld,%d,'%s');",
-          tick, trigger_pc, trigger_vaddr, pf_vaddr, pf_src, "L1PFTrace");
+          "VALUES(%llu,%llu,%llu,%llu,%d,'%s');",
+          static_cast<unsigned long long>(tick), static_cast<unsigned long long>(trigger_pc),
+          static_cast<unsigned long long>(trigger_vaddr),
+          static_cast<unsigned long long>(pf_vaddr), pf_src, "L1PFTrace");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
@@ -126,8 +132,9 @@ ArchDBer::bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offse
 
   sprintf(memTraceSQLBuf,
           "INSERT INTO BOPTrainTrace(Tick,OldAddr,CurAddr,Offset,Score,Miss,SITE) "
-          "VALUES(%ld,%ld,%ld,%ld,%d,%d,'%s');",
-          tick, old_addr, cur_addr, offset, score, miss, "BOPTrain");
+          "VALUES(%llu,%llu,%llu,%llu,%d,%d,'%s');",
+          static_cast<unsigned long long>(tick), static_cast<unsigned long long>(old_addr),
+          static_cast<unsigned long long>(cur_addr), static_cast<unsigned long long>(offset), score, miss, "BOPTrain");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
@@ -142,8 +149,10 @@ ArchDBer::smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigg
 
   sprintf(memTraceSQLBuf,
           "INSERT INTO SMSTrainTrace(Tick,OldAddr,CurAddr,TriggerOffset,Conf,Miss,SITE) "
-          "VALUES(%ld,%ld,%ld,%ld,%d,%d,'%s');",
-          tick, old_addr, cur_addr, trigger_offset, conf, miss, "SMSTrain");
+          "VALUES(%llu,%llu,%llu,%llu,%d,%d,'%s');",
+          static_cast<unsigned long long>(tick), static_cast<unsigned long long>(old_addr),
+          static_cast<unsigned long long>(cur_addr),
+          static_cast<unsigned long long>(trigger_offset), conf, miss, "SMSTrain");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
@@ -163,8 +172,10 @@ void ArchDBer::L1MissTrace_write(
   char sql[512];
   sprintf(sql,
     "INSERT INTO L1MissTrace(PC,SOURCE,PADDR,VADDR, STAMP, SITE) " \
-    "VALUES(%ld, %ld, %ld, %ld, %ld, '%s');",
-    pc,source,paddr,vaddr, stamp, site
+    "VALUES(%llu, %llu, %llu, %llu, %llu, '%s');",
+    static_cast<unsigned long long>(pc), static_cast<unsigned long long>(source),
+    static_cast<unsigned long long>(paddr), static_cast<unsigned long long>(vaddr),
+    static_cast<unsigned long long>(stamp), site
   );
   rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
@@ -181,8 +192,10 @@ ArchDBer::dcacheWayPreTrace(Tick tick, uint64_t pc, uint64_t vaddr, int way, int
     char sql[512];
     sprintf(sql,
             "INSERT INTO dcacheWayPreTrace(PC,VADDR, WAY, Tick, IsWrite,SITE)"
-            "VALUES(%ld,%ld,%ld,%ld,%ld,'%s');",
-            pc, vaddr, (uint64_t)way, tick, (uint64_t)is_write, "dacheWayPre");
+            "VALUES(%llu,%llu,%llu,%llu,%llu,'%s');",
+            static_cast<unsigned long long>(pc), static_cast<unsigned long long>(vaddr),
+            static_cast<unsigned long long>(way), static_cast<unsigned long long>(tick),
+            static_cast<unsigned long long>(is_write), "dacheWayPre");
     rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
     if (rc != SQLITE_OK) {
         fatal("SQL error: %s\n", zErrMsg);
@@ -197,8 +210,9 @@ ArchDBer::vaddrTrace(Tick tick, uint64_t pc, uint64_t vaddr, int hit)
     char sql[512];
     sprintf(sql,
             "INSERT INTO vaddrTrace(PC, VADDR, Hit, Tick, SITE)"
-            "VALUES(%ld,%ld,%ld,%ld,'%s');",
-            pc, vaddr, (uint64_t)hit, tick, "vaddrTrace");
+            "VALUES(%llu,%llu,%llu,%llu,'%s');",
+            static_cast<unsigned long long>(pc), static_cast<unsigned long long>(vaddr),
+            static_cast<unsigned long long>(hit), static_cast<unsigned long long>(tick), "vaddrTrace");
     rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
     if (rc != SQLITE_OK) {
         fatal("SQL error: %s\n", zErrMsg);
@@ -214,8 +228,9 @@ ArchDBer::evictTraceWrite(int cache_level, Tick tick, uint64_t paddr, uint64_t s
   char sql[512];
   sprintf(sql,
     "INSERT INTO CacheEvictTrace(Tick, PADDR, STAMP, Level, SITE) " \
-    "VALUES(%ld, %ld, %ld, %ld, '%s');",
-    tick, paddr, stamp, (int64_t) cache_level, site
+    "VALUES(%llu, %llu, %llu, %llu, '%s');",
+    static_cast<unsigned long long>(tick), static_cast<unsigned long long>(paddr),
+    static_cast<unsigned long long>(stamp), static_cast<unsigned long long>(cache_level), site
   );
   rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
@@ -265,7 +280,8 @@ DBTraceManager::write_record(const Record &record)
   for (auto it = _fields.begin(); it != _fields.end(); it++) {
     pos += sprintf(sql+pos, ",%s", it->first.c_str());
   }
-  pos += sprintf(sql+pos, ") VALUES(%ld", record._tick);
+  pos += sprintf(sql+pos, ") VALUES(%llu",
+      static_cast<unsigned long long>(record._tick));
   for (auto it = _fields.begin(); it != _fields.end(); it++) {
     switch (it->second) {
       case UINT64:
@@ -276,7 +292,8 @@ DBTraceManager::write_record(const Record &record)
           fatal("Can't find data for %s\n", it->first.c_str());
         }
         assert(data != m.end());
-        pos += sprintf(sql+pos, ",%ld", data->second);
+        pos += sprintf(sql+pos, ",%llu",
+            static_cast<unsigned long long>(data->second));
         break;
       }
       case TEXT:

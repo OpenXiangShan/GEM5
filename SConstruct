@@ -532,6 +532,24 @@ for variant_path in variant_paths:
         if sys.platform == "darwin":
             env.Append(CXXFLAGS=['-stdlib=libc++'])
             env.Append(LIBS=['c++'])
+            env['RPATHPREFIX'] = '-Wl,-rpath,'
+            env['RPATHSUFFIX'] = ''
+            env['_RPATH'] = \
+                '${_concat(RPATHPREFIX, RPATH, RPATHSUFFIX, __env__)}'
+
+            # Homebrew installs headers and libraries under a non-system
+            # prefix on macOS (e.g., /opt/homebrew on Apple Silicon). Add the
+            # common prefixes here so Configure checks can find dependencies
+            # such as zstd without requiring per-shell environment setup.
+            for brew_prefix in ('/opt/homebrew', '/usr/local'):
+                if os.path.isdir(brew_prefix):
+                    env.Prepend(CPPPATH=[os.path.join(brew_prefix, 'include')])
+                    env.Prepend(LIBPATH=[os.path.join(brew_prefix, 'lib')])
+                    env['ENV']['PKG_CONFIG_PATH'] = \
+                        os.path.join(brew_prefix, 'lib', 'pkgconfig') + \
+                        (':' + env['ENV']['PKG_CONFIG_PATH']
+                         if 'PKG_CONFIG_PATH' in env['ENV'] and
+                         env['ENV']['PKG_CONFIG_PATH'] else '')
 
     # Add sanitizers flags
     sanitizers=[]

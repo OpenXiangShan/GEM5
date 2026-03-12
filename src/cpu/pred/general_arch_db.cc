@@ -49,7 +49,8 @@ TraceManager::write_record(const Record &record)
     for (auto it = _fields.begin(); it != _fields.end(); it++) {
         pos += sprintf(sql+pos, ",%s", it->first.c_str());
     }
-    pos += sprintf(sql+pos, ") VALUES(%ld", record._tick);
+    pos += sprintf(sql+pos, ") VALUES(%llu",
+        static_cast<unsigned long long>(record._tick));
     for (auto it = _fields.begin(); it != _fields.end(); it++) {
         switch (it->second) {
             case UINT64:
@@ -60,7 +61,8 @@ TraceManager::write_record(const Record &record)
                     fatal("Can't find data for %s\n", it->first.c_str());
                 }
                 assert(data != m.end());
-                pos += sprintf(sql+pos, ",%ld", data->second);
+                pos += sprintf(sql+pos, ",%llu",
+                    static_cast<unsigned long long>(data->second));
                 break;
             }
             case TEXT:

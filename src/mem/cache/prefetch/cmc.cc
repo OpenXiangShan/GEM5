@@ -107,7 +107,9 @@ CMCPrefetcher::doPrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &ad
         missCnt++;
         if (missCnt > 300000) {
             for (const auto& pair : counts) {
-                printf("pc: %lx, count: %ld\n", pair.first, pair.second);
+                printf("pc: %llx, count: %llu\n",
+                    static_cast<unsigned long long>(pair.first),
+                    static_cast<unsigned long long>(pair.second));
             }
             assert(false);
         }

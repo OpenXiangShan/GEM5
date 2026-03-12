@@ -322,9 +322,8 @@ def main():
         print("gem5 executing on %s, pid %d" %
               (socket.gethostname(), os.getpid()))
 
-        # in Python 3 pipes.quote() is moved to shlex.quote()
-        import pipes
-        print("command line:", " ".join(map(pipes.quote, sys.argv)))
+        import shlex
+        print("command line:", " ".join(map(shlex.quote, sys.argv)))
         print()
 
     # check to make sure we can find the listed script

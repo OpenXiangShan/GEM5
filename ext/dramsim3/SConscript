@@ -37,6 +37,7 @@
 #
 
 import os
+import sys
 
 Import('env')
 
@@ -63,7 +64,8 @@ if thermal:
 else:
     env.Prepend(CPPPATH=Dir('.'))
     # a littel hacky but can get a shared library working
-    env.Append(LIBS=['dramsim3', 'gomp'],
+    extra_libs = ['gomp'] if sys.platform != 'darwin' else []
+    env.Append(LIBS=['dramsim3'] + extra_libs,
                 LIBPATH=[dramsim_path],  # compile-time lookup
                 RPATH=[dramsim_path],  # runtime lookup
                 CPPPATH=[dramsim_path+'/src/'])
