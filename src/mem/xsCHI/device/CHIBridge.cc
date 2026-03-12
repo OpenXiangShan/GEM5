@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 
 #include "CHIBridge.hh"
 #include "base/trace.hh"
@@ -166,6 +167,70 @@ namespace xsCHI
             schedule(req_handle_event, curTick() + clockPeriod());
         }
     }
+namespace
+{
+constexpr size_t kWaitCompAckHistBuckets = 256;
+}
+
+CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
+    : statistics::Group(parent, "protocol"),
+      ADD_STAT(protocol_tx_by_opcode, statistics::units::Count::get(),
+               "Protocol TX flits grouped by CHI opcode"),
+      ADD_STAT(protocol_rx_by_opcode, statistics::units::Count::get(),
+               "Protocol RX flits grouped by CHI opcode"),
+      ADD_STAT(protocol_readshared_total, statistics::units::Count::get(),
+               "Total ReadShared opcode observations"),
+      ADD_STAT(protocol_writeevict_total, statistics::units::Count::get(),
+               "Total WriteEvict opcode observations"),
+      ADD_STAT(protocol_compack_total, statistics::units::Count::get(),
+               "Total CompAck opcode observations"),
+      ADD_STAT(protocol_snp_total, statistics::units::Count::get(),
+               "Total snoop opcode observations"),
+      ADD_STAT(wait_compack_cycles, statistics::units::Cycle::get(),
+               "Accumulated waiting cycles for COMPACK before successful send"),
+      ADD_STAT(wait_compack_cycles_hist, statistics::units::Cycle::get(),
+               "Distribution of COMPACK waiting cycles"),
+      ADD_STAT(wait_compack_sent_total, statistics::units::Count::get(),
+               "Number of COMPACK flits successfully sent"),
+      ADD_STAT(wait_compack_avg_cycles, statistics::units::Rate<
+                    statistics::units::Cycle,
+                    statistics::units::Count>::get(),
+               "Average waiting cycles per COMPACK send"),
+      ADD_STAT(wait_compack_pending_max, statistics::units::Count::get(),
+               "Maximum pending COMPACK queue depth")
+{
+    using namespace statistics;
+
+    protocol_tx_by_opcode
+        .init(CHIBridge::NumChiOps)
+        .flags(nozero);
+    protocol_rx_by_opcode
+        .init(CHIBridge::NumChiOps)
+        .flags(nozero);
+    for (size_t i = 0; i < CHIBridge::NumChiOps; ++i) {
+        const auto op = static_cast<CHI_OP_TYPE>(i);
+        const std::string label = CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op);
+        protocol_tx_by_opcode.subname(i, label);
+        protocol_rx_by_opcode.subname(i, label);
+    }
+
+    protocol_readshared_total.flags(nozero);
+    protocol_writeevict_total.flags(nozero);
+    protocol_compack_total.flags(nozero);
+    protocol_snp_total.flags(nozero);
+    wait_compack_cycles.flags(nozero);
+    wait_compack_sent_total.flags(nozero);
+    wait_compack_pending_max.flags(nozero);
+
+    wait_compack_cycles_hist
+        .init(kWaitCompAckHistBuckets)
+        .flags(nozero | nonan);
+
+    wait_compack_avg_cycles
+        .flags(nozero | nonan)
+        .precision(6);
+    wait_compack_avg_cycles = wait_compack_cycles / wait_compack_sent_total;
+}
 
     CHIBridge::CHIBridge(const Params &p)
         : ClockedObject(p),
@@ -173,8 +238,12 @@ namespace xsCHI
           _NodeID(0),
           SAM(nullptr),
           TXN_Manager(1024),// default max outstanding transactions
-          req_handle_event([this] { 
-            DPRINTF(CHIBridge,"retry called ,Req_tobesent's number : %d reqOP:%s,addr:%lx\n",Req_tobesent.size(),CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(Req_tobesent.front()->getOpcode()),Req_tobesent.front()->getAddr());
+          outstanding_requests(),
+          stats(this),
+          Req_tobesent(),
+          req_handle_event([this] {
+            DPRINTF(CHIBridge,"retry called ,Req_tobesent's number : %d reqOP:%s,addr:%lx\n",Req_tobesent.size(),
+            CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(Req_tobesent.front()->getOpcode()),Req_tobesent.front()->getAddr());
             if (ReceiveReq(Req_tobesent.front(),true)){
                 Req_tobesent.pop();
                 if (!Req_tobesent.empty() ) {
@@ -187,7 +256,10 @@ namespace xsCHI
                 }
             }
         }, name()),
-            ack_handle_event([this] { TrySendCompACK();}, name())
+          Ack_tobesent(),
+          ack_enqueue_ticks(),
+          maxCompAckPending(0),
+          ack_handle_event([this] { TrySendCompACK();}, name())
 
     {
         // 初始化存储端口和网络端口
@@ -267,6 +339,7 @@ namespace xsCHI
                 assert(false); // 创建失败
             }
             flit->setTxnId(txn_id);
+            const CHI_OP_TYPE txOp = flit->getOpcode();
             // 尝试发送到网络端口
             DPRINTF(CHIBridge,"Try send Flit op:%s, addr: %lx, size:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(flit->getOpcode()),flit->getAddr(),flit->getSize());
             if (networkPort->send(flit)){
@@ -278,6 +351,7 @@ namespace xsCHI
                 } else if (isWriteReqOp(op)) {
                     trackWriteStart(addr);
                 }
+                recordProtocolTx(txOp);
                 success = true;
                 DPRINTF(CHIBridge,"Send success, outstanding Req num: %d\n",outstanding_requests.size());
             }else{
@@ -312,6 +386,7 @@ namespace xsCHI
     bool CHIBridge::handleNetworkPortReceive(FlitPtr &flit)
     {
         DPRINTF(CHIBridge,"Recv CHIFlit, op:%s, srcId:%d,tgtId:%d, txn_id:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(flit->getOpcode()),flit->getSrcId(),flit->getTgtId(),flit->getTxnId());
+        recordProtocolRx(flit->getOpcode());
         switch (flit->get_Flit_Channel_Type()) {
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ: {
                 // RN不应该收到 Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ 类型的Flit
@@ -528,16 +603,33 @@ namespace xsCHI
                 break; // 不支持的操作码
         }
         Ack_tobesent.push(std::move(compack_flit)); // 将COMPACK Flit放入待发送队列
+        ack_enqueue_ticks.push(curTick());
+        const size_t pending = Ack_tobesent.size();
+        if (pending > maxCompAckPending) {
+            maxCompAckPending = pending;
+            stats.wait_compack_pending_max = pending;
+        }
         TrySendCompACK();
     }
     void CHIBridge::TrySendCompACK()
     {
         DPRINTF(CHIBridge,"TrySendCompACK called, Ack_tobesent's number : %d, txn_id: %d\n",Ack_tobesent.size(), Ack_tobesent.front() ? Ack_tobesent.front()->getTxnId() : -1);
         assert(!Ack_tobesent.empty() && "Ack_tobesent should not be empty when TrySendCompACK is called");
+        assert(Ack_tobesent.size() == ack_enqueue_ticks.size());
         if (networkPort->send(Ack_tobesent.front())){
+            const Tick enqueueTick = ack_enqueue_ticks.front();
+            Counter waitCycles = 0;
+            if (curTick() > enqueueTick) {
+                waitCycles = (curTick() - enqueueTick) / clockPeriod();
+            }
+            stats.wait_compack_cycles += waitCycles;
+            stats.wait_compack_cycles_hist.sample(waitCycles);
+            stats.wait_compack_sent_total++;
+            recordProtocolTx(CHI_OP_TYPE::CHI_RSP_COMPACK);
             assert(Ack_tobesent.front()==nullptr);
             DPRINTF(CHIBridge,"Send CompACK Flit success.\n");
             Ack_tobesent.pop(); // 发送成功，移除已发送的COMPACK Flit
+            ack_enqueue_ticks.pop();
         }else{
             assert(Ack_tobesent.front()!=nullptr);
             DPRINTF(CHIBridge,"Send CompACK Flit failed, will retry later.\n");
@@ -568,9 +660,11 @@ namespace xsCHI
                 data_flit->setTgtId(flit->getSrcId());
                 data_flit->setSrcId(_NodeID);
                 data_flit->setTxnId(flit->getDbid());
+                const CHI_OP_TYPE txOp = data_flit->getOpcode();
 
                 if (networkPort->send(data_flit)){
                     //send success, we can save the request and txn_id
+                    recordProtocolTx(txOp);
                     req->finishTransferdata(data_id);
                 }else{
                     //send failed, we cannot delete flit from buffer
@@ -636,6 +730,63 @@ namespace xsCHI
     void
     CHIBridge::init(){
         return;
+    }
+
+    bool
+    CHIBridge::isSnpOpcode(CHI_OP_TYPE op)
+    {
+        return op > CHI_OP_TYPE::CHI_SNP_OP_START &&
+               op < CHI_OP_TYPE::CHI_SNP_OP_END;
+    }
+
+    bool
+    CHIBridge::isWriteEvictOpcode(CHI_OP_TYPE op)
+    {
+        return op == CHI_OP_TYPE::CHI_REQ_WRITEEVICTFULL ||
+               op == CHI_OP_TYPE::CHI_REQ_WRITEEVICTOREVICT;
+    }
+
+    size_t
+    CHIBridge::opcodeToIndex(CHI_OP_TYPE op)
+    {
+        return static_cast<size_t>(op);
+    }
+
+    void
+    CHIBridge::updateProtocolAliases(CHI_OP_TYPE op)
+    {
+        if (op == CHI_OP_TYPE::CHI_REQ_READSHARED) {
+            stats.protocol_readshared_total++;
+        }
+        if (isWriteEvictOpcode(op)) {
+            stats.protocol_writeevict_total++;
+        }
+        if (op == CHI_OP_TYPE::CHI_RSP_COMPACK) {
+            stats.protocol_compack_total++;
+        }
+        if (isSnpOpcode(op)) {
+            stats.protocol_snp_total++;
+        }
+    }
+
+    void
+    CHIBridge::recordProtocolTx(CHI_OP_TYPE op)
+    {
+        const size_t idx = opcodeToIndex(op);
+        if (idx < NumChiOps) {
+            stats.protocol_tx_by_opcode[idx]++;
+        }
+        updateProtocolAliases(op);
+    }
+
+    void
+    CHIBridge::recordProtocolRx(CHI_OP_TYPE op)
+    {
+        const size_t idx = opcodeToIndex(op);
+        if (idx < NumChiOps) {
+            stats.protocol_rx_by_opcode[idx]++;
+        }
+        updateProtocolAliases(op);
     }
 
 }

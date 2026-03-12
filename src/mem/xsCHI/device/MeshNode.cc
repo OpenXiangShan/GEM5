@@ -1,6 +1,8 @@
 #include "mem/xsCHI/device/MeshNode.hh"
 
 #include <cassert>
+#include <limits>
+#include <string>
 
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -23,6 +25,158 @@ constexpr std::array<Flit::CHI_CHN_TYPE, 4> kChannelPriority = {
     Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA,
     Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ,
 };
+
+constexpr size_t kHopHistogramBuckets = 32;
+constexpr size_t kE2eLatencyHistogramBuckets = 1024;
+}
+
+MeshNode::MeshNodeStats::MeshNodeStats(MeshNode *parent)
+    : statistics::Group(parent, "network"),
+      ADD_STAT(msg_count_control, statistics::units::Count::get(),
+               "Total number of control flits sent by this mesh node"),
+      ADD_STAT(msg_count_data, statistics::units::Count::get(),
+               "Total number of data flits sent by this mesh node"),
+      ADD_STAT(msg_byte_data, statistics::units::Byte::get(),
+               "Total number of payload bytes sent on data channel"),
+      ADD_STAT(ingress_flits_by_channel, statistics::units::Count::get(),
+               "Accepted ingress flits by CHI channel"),
+      ADD_STAT(egress_flits_by_channel, statistics::units::Count::get(),
+               "Successful egress flits by CHI channel"),
+      ADD_STAT(dir_egress_flits, statistics::units::Count::get(),
+               "Successful egress flits by mesh direction"),
+      ADD_STAT(dir_active_cycles, statistics::units::Cycle::get(),
+               "Cycles in which each mesh direction sent at least one flit"),
+      ADD_STAT(send_event_cycles, statistics::units::Cycle::get(),
+               "Number of scheduler cycles processed by this mesh node"),
+      ADD_STAT(dir_link_util, statistics::units::Ratio::get(),
+               "Directional link utilization in percent"),
+      ADD_STAT(voq_full_events, statistics::units::Count::get(),
+               "Number of times ingress was backpressured by a full VOQ"),
+      ADD_STAT(voq_full_events_by_egress, statistics::units::Count::get(),
+               "VOQ full events grouped by routed egress port"),
+      ADD_STAT(voq_depth_accum_by_egress, statistics::units::Count::get(),
+               "Accumulated VOQ depth sampled once per scheduler cycle"),
+      ADD_STAT(voq_avg_depth_by_egress, statistics::units::Rate<
+                    statistics::units::Count,
+                    statistics::units::Cycle>::get(),
+               "Average VOQ depth per egress port"),
+      ADD_STAT(egress_stall_cycles_by_dir, statistics::units::Cycle::get(),
+               "Directional cycles with pending flits but no successful send"),
+      ADD_STAT(egress_bw_sat_cycles_by_dir, statistics::units::Cycle::get(),
+               "Directional cycles that sent flits and still had backlog"),
+      ADD_STAT(hop_count_hist_snp, statistics::units::Count::get(),
+               "Hop-count distribution at local delivery for SNP channel"),
+      ADD_STAT(hop_count_hist_req, statistics::units::Count::get(),
+               "Hop-count distribution at local delivery for REQ channel"),
+      ADD_STAT(hop_count_hist_rsp, statistics::units::Count::get(),
+               "Hop-count distribution at local delivery for RSP channel"),
+      ADD_STAT(hop_count_hist_dat, statistics::units::Count::get(),
+               "Hop-count distribution at local delivery for DAT channel"),
+      ADD_STAT(e2e_latency_hist_snp, statistics::units::Tick::get(),
+               "End-to-end latency distribution at local delivery for SNP"),
+      ADD_STAT(e2e_latency_hist_req, statistics::units::Tick::get(),
+               "End-to-end latency distribution at local delivery for REQ"),
+      ADD_STAT(e2e_latency_hist_rsp, statistics::units::Tick::get(),
+               "End-to-end latency distribution at local delivery for RSP"),
+      ADD_STAT(e2e_latency_hist_dat, statistics::units::Tick::get(),
+               "End-to-end latency distribution at local delivery for DAT")
+{
+    using namespace statistics;
+
+    msg_count_control.flags(nozero);
+    msg_count_data.flags(nozero);
+    msg_byte_data.flags(nozero);
+    voq_full_events.flags(nozero);
+
+    ingress_flits_by_channel
+        .init(MeshNode::NumChannels)
+        .flags(nozero);
+    egress_flits_by_channel
+        .init(MeshNode::NumChannels)
+        .flags(nozero);
+    for (size_t c = 0; c < MeshNode::NumChannels; ++c) {
+        const auto ch = static_cast<Flit::CHI_CHN_TYPE>(c);
+        const std::string label = MeshNode::channelName(ch);
+        ingress_flits_by_channel.subname(c, label);
+        egress_flits_by_channel.subname(c, label);
+    }
+
+    dir_egress_flits
+        .init(MeshNode::NumDirs)
+        .flags(nozero);
+    dir_active_cycles
+        .init(MeshNode::NumDirs)
+        .flags(nozero);
+    send_event_cycles.flags(nozero);
+    for (size_t d = 0; d < MeshNode::NumDirs; ++d) {
+        const std::string label = MeshNode::directionName(d);
+        dir_egress_flits.subname(d, label);
+        dir_active_cycles.subname(d, label);
+    }
+
+    voq_full_events_by_egress
+        .init(MeshNode::NumPorts)
+        .flags(nozero);
+    for (size_t p = 0; p < MeshNode::NumPorts; ++p) {
+        const std::string label = MeshNode::portName(static_cast<PortIndex>(p));
+        voq_full_events_by_egress.subname(p, label);
+    }
+
+    voq_depth_accum_by_egress
+        .init(MeshNode::NumPorts)
+        .flags(nozero);
+    for (size_t p = 0; p < MeshNode::NumPorts; ++p) {
+        voq_depth_accum_by_egress.subname(
+            p, MeshNode::portName(static_cast<PortIndex>(p)));
+    }
+
+    egress_stall_cycles_by_dir
+        .init(MeshNode::NumDirs)
+        .flags(nozero);
+    egress_bw_sat_cycles_by_dir
+        .init(MeshNode::NumDirs)
+        .flags(nozero);
+    for (size_t d = 0; d < MeshNode::NumDirs; ++d) {
+        const std::string label = MeshNode::directionName(d);
+        egress_stall_cycles_by_dir.subname(d, label);
+        egress_bw_sat_cycles_by_dir.subname(d, label);
+    }
+
+    hop_count_hist_snp
+        .init(kHopHistogramBuckets)
+        .flags(nozero | nonan);
+    hop_count_hist_req
+        .init(kHopHistogramBuckets)
+        .flags(nozero | nonan);
+    hop_count_hist_rsp
+        .init(kHopHistogramBuckets)
+        .flags(nozero | nonan);
+    hop_count_hist_dat
+        .init(kHopHistogramBuckets)
+        .flags(nozero | nonan);
+
+    e2e_latency_hist_snp
+        .init(kE2eLatencyHistogramBuckets)
+        .flags(nozero | nonan);
+    e2e_latency_hist_req
+        .init(kE2eLatencyHistogramBuckets)
+        .flags(nozero | nonan);
+    e2e_latency_hist_rsp
+        .init(kE2eLatencyHistogramBuckets)
+        .flags(nozero | nonan);
+    e2e_latency_hist_dat
+        .init(kE2eLatencyHistogramBuckets)
+        .flags(nozero | nonan);
+
+    dir_link_util
+        .flags(nozero | nonan)
+        .precision(6);
+    dir_link_util = 100 * dir_active_cycles / send_event_cycles;
+
+    voq_avg_depth_by_egress
+        .flags(nozero | nonan)
+        .precision(6);
+    voq_avg_depth_by_egress = voq_depth_accum_by_egress / send_event_cycles;
 }
 
 MeshNode::MeshNode(const Params &p)
@@ -34,6 +188,7 @@ MeshNode::MeshNode(const Params &p)
       voqDepth(p.voq_depth == 0 ? 1 : p.voq_depth),
       outVoq(),
       rrCursor(),
+      stats(this),
       sendEvent([this] { onSendEvent(); }, name())
 {
     registerCallbacks();
@@ -102,6 +257,12 @@ MeshNode::handleIngress(PortIndex ingress, FlitPtr &flit)
     const PortIndex egress = routeFor(flit);
     const Flit::CHI_CHN_TYPE channel = flit->get_Flit_Channel_Type();
 
+    if (isLocalPort(ingress) && !flit->getMeshStatsValid()) {
+        flit->setMeshStatsValid(true);
+        flit->setMeshInjectTick(curTick());
+        flit->setMeshHopCount(0);
+    }
+
     panic_if(!isEgressUsable(egress),
              "MeshNode %s routes flit(op=%s, tgt=%u) to unusable egress %s",
              name(),
@@ -114,6 +275,8 @@ MeshNode::handleIngress(PortIndex ingress, FlitPtr &flit)
 
     // Backpressure point: when VOQ is full, keep flit at upstream CHIPort.
     if (shouldBackpressureImpl(getQueueDepth(egress, channel), voqDepth)) {
+        stats.voq_full_events++;
+        stats.voq_full_events_by_egress[egressIdx]++;
         DPRINTF(CHIMeshNode,
                 "%s ingress=%s egress=%s channel=%d VOQ full depth=%u op=%s "
                 "tgt=%u txn=%llu\n",
@@ -125,6 +288,7 @@ MeshNode::handleIngress(PortIndex ingress, FlitPtr &flit)
         return false;
     }
 
+    stats.ingress_flits_by_channel[channelIdx]++;
     outVoq[egressIdx][channelIdx][ingressIdx].push(std::move(flit));
     DPRINTF(CHIMeshNode,
             "%s enqueue ingress=%s egress=%s channel=%d op=%s tgt=%u\n",
@@ -142,18 +306,39 @@ MeshNode::handleIngress(PortIndex ingress, FlitPtr &flit)
 void
 MeshNode::onSendEvent()
 {
+    stats.send_event_cycles++;
     bool sentAny = false;
     // Try every output each cycle; each output has independent arbitration.
     for (size_t i = 0; i < NumPorts; ++i) {
-        sentAny |= trySendForOutput(static_cast<PortIndex>(i));
+        const PortIndex egress = static_cast<PortIndex>(i);
+        const size_t pendingBefore = getQueueDepthAllChannels(egress);
+        stats.voq_depth_accum_by_egress[i] += pendingBefore;
+
+        const bool sentOnEgress = trySendForOutput(egress);
+        sentAny |= sentOnEgress;
+        const size_t pendingAfter = getQueueDepthAllChannels(egress);
+
+        const int dirIdx = directionToIndex(egress);
+        if (sentOnEgress && dirIdx >= 0) {
+            stats.dir_active_cycles[static_cast<size_t>(dirIdx)]++;
+        }
+
+        if (dirIdx >= 0 && pendingBefore > 0 && !sentOnEgress) {
+            stats.egress_stall_cycles_by_dir[static_cast<size_t>(dirIdx)]++;
+        }
+
+        if (dirIdx >= 0 && sentOnEgress && pendingAfter > 0) {
+            stats.egress_bw_sat_cycles_by_dir[static_cast<size_t>(dirIdx)]++;
+        }
     }
 
-    if (hasPendingFlits()) {
+    const bool pending = hasPendingFlits();
+    if (pending) {
         schedule(sendEvent, curTick() + clockPeriod());
     }
 
     DPRINTF(CHIMeshNode, "%s scheduler tick sentAny=%d pending=%d\n", name(),
-            sentAny ? 1 : 0, hasPendingFlits() ? 1 : 0);
+            sentAny ? 1 : 0, pending ? 1 : 0);
 }
 
 bool
@@ -199,8 +384,38 @@ MeshNode::trySendForOutputAndChannel(PortIndex egress,
         const CHI_OP_TYPE op = head->getOpcode();
         const uint32_t tgt = head->getTgtId();
         const uint64_t txn = head->getTxnId();
+        const uint32_t dataBytes = head->getSize();
+        const bool meshStatsValid = head->getMeshStatsValid();
+        const Counter hopCountAtEgress = head->getMeshHopCount();
+        const Tick injectTick = head->getMeshInjectTick();
+        const int dirIdx = directionToIndex(egress);
+        const bool forwardToDirection = dirIdx >= 0 && meshStatsValid;
+        const uint16_t oldHopCount = head->getMeshHopCount();
+
+        if (forwardToDirection) {
+            if (oldHopCount < std::numeric_limits<uint16_t>::max()) {
+                head->setMeshHopCount(oldHopCount + 1);
+            }
+        }
 
         if (egressPort->send(head)) {
+            stats.egress_flits_by_channel[channelIdx]++;
+            if (channel == Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA) {
+                stats.msg_count_data++;
+                stats.msg_byte_data += dataBytes;
+            } else {
+                stats.msg_count_control++;
+            }
+
+            if (dirIdx >= 0) {
+                stats.dir_egress_flits[static_cast<size_t>(dirIdx)]++;
+            } else if (meshStatsValid) {
+                sampleHopCountByChannel(channel, hopCountAtEgress);
+                const Tick e2eLatency = curTick() >= injectTick ?
+                    (curTick() - injectTick) : 0;
+                sampleE2eLatencyByChannel(channel, e2eLatency);
+            }
+
             DPRINTF(CHIMeshNode,
                     "%s send egress=%s from ingress=%s channel=%d op=%s "
                     "tgt=%u txn=%llu\n",
@@ -219,6 +434,9 @@ MeshNode::trySendForOutputAndChannel(PortIndex egress,
                 name(), portName(egress), static_cast<int>(channel),
                 portName(static_cast<PortIndex>(srcIdx)),
                 CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op).c_str(), tgt);
+        if (forwardToDirection) {
+            head->setMeshHopCount(oldHopCount);
+        }
         return false;
     }
     return false;
@@ -273,6 +491,17 @@ MeshNode::getQueueDepth(PortIndex egress, Flit::CHI_CHN_TYPE channel) const
     return depth;
 }
 
+size_t
+MeshNode::getQueueDepthAllChannels(PortIndex egress) const
+{
+    size_t depth = 0;
+    for (size_t c = 0; c < NumChannels; ++c) {
+        depth += getQueueDepth(
+            egress, static_cast<Flit::CHI_CHN_TYPE>(c));
+    }
+    return depth;
+}
+
 bool
 MeshNode::isEgressUsable(PortIndex egress) const
 {
@@ -316,6 +545,74 @@ MeshNode::channelToIndex(Flit::CHI_CHN_TYPE channel)
     return static_cast<size_t>(channel);
 }
 
+void
+MeshNode::sampleHopCountByChannel(Flit::CHI_CHN_TYPE channel, Counter hops)
+{
+    switch (channel) {
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_SNP:
+        stats.hop_count_hist_snp.sample(hops);
+        return;
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ:
+        stats.hop_count_hist_req.sample(hops);
+        return;
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP:
+        stats.hop_count_hist_rsp.sample(hops);
+        return;
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA:
+        stats.hop_count_hist_dat.sample(hops);
+        return;
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_NUM:
+        return;
+    }
+}
+
+void
+MeshNode::sampleE2eLatencyByChannel(Flit::CHI_CHN_TYPE channel, Counter latency)
+{
+    switch (channel) {
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_SNP:
+        stats.e2e_latency_hist_snp.sample(latency);
+        return;
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ:
+        stats.e2e_latency_hist_req.sample(latency);
+        return;
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP:
+        stats.e2e_latency_hist_rsp.sample(latency);
+        return;
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA:
+        stats.e2e_latency_hist_dat.sample(latency);
+        return;
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_NUM:
+        return;
+    }
+}
+
+int
+MeshNode::directionToIndex(PortIndex idx)
+{
+    switch (idx) {
+      case PortIndex::East:
+        return 0;
+      case PortIndex::West:
+        return 1;
+      case PortIndex::North:
+        return 2;
+      case PortIndex::South:
+        return 3;
+      case PortIndex::Local0:
+      case PortIndex::Local1:
+      case PortIndex::NumPorts:
+        return -1;
+    }
+    return -1;
+}
+
+bool
+MeshNode::isLocalPort(PortIndex idx)
+{
+    return idx == PortIndex::Local0 || idx == PortIndex::Local1;
+}
+
 const char*
 MeshNode::portName(PortIndex idx)
 {
@@ -333,6 +630,41 @@ MeshNode::portName(PortIndex idx)
       case PortIndex::South:
         return "south";
       case PortIndex::NumPorts:
+        return "invalid";
+    }
+    return "invalid";
+}
+
+const char*
+MeshNode::directionName(size_t idx)
+{
+    switch (idx) {
+      case 0:
+        return "east";
+      case 1:
+        return "west";
+      case 2:
+        return "north";
+      case 3:
+        return "south";
+      default:
+        return "invalid";
+    }
+}
+
+const char*
+MeshNode::channelName(Flit::CHI_CHN_TYPE channel)
+{
+    switch (channel) {
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_SNP:
+        return "SNP";
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ:
+        return "REQ";
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP:
+        return "RSP";
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA:
+        return "DAT";
+      case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_NUM:
         return "invalid";
     }
     return "invalid";

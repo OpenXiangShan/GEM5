@@ -33,6 +33,9 @@ namespace xsCHI {
         data_id = 0;
         cache_responding = false;
         responder_had_writable = false;
+        mesh_hop_count = 0;
+        mesh_inject_tick = 0;
+        mesh_stats_valid = false;
     }
 
     Flit::Flit(Flit& other){
@@ -65,6 +68,9 @@ namespace xsCHI {
         data_id = other.data_id;
         cache_responding = other.cache_responding;
         responder_had_writable = other.responder_had_writable;
+        mesh_hop_count = other.mesh_hop_count;
+        mesh_inject_tick = other.mesh_inject_tick;
+        mesh_stats_valid = other.mesh_stats_valid;
 
     }
     Flit::Flit(CHI_OP_TYPE op,uint64_t addr,uint32_t size){

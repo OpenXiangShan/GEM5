@@ -787,6 +787,552 @@ TEST_F(MeshNodeIntegrationTest, CopybackDbidRespDataFlowAcrossTwoNodes)
     printPhaseSummary("COMPDBIDRESP->RN", compAtRn, compSteps);
 }
 
+class MeshNodeHnDramIntegrationTest : public ::testing::Test
+{
+  protected:
+    static constexpr size_t kMaxEventSteps = 256;
+
+    EventQueue *eventQueue = nullptr;
+
+    std::unique_ptr<VoltageDomain> voltageDomain;
+    std::unique_ptr<SrcClockDomain> clockDomain;
+
+    std::unique_ptr<EndpointOwner> hnOwner;
+    std::unique_ptr<EndpointOwner> dramOwner;
+
+    std::unique_ptr<CHIPort> hnPort;
+    std::unique_ptr<CHIPort> dramPort;
+    std::unique_ptr<CHIPort> meshHLocal0;
+    std::unique_ptr<CHIPort> meshHEast;
+    std::unique_ptr<CHIPort> meshMLocal0;
+    std::unique_ptr<CHIPort> meshMWest;
+    std::unique_ptr<CHIPort> meshMEast;
+    std::unique_ptr<CHIPort> meshDWest;
+    std::unique_ptr<CHIPort> meshDLocal0;
+
+    std::unique_ptr<MeshNode> meshH;
+    std::unique_ptr<MeshNode> meshM;
+    std::unique_ptr<MeshNode> meshD;
+
+    std::vector<FlitMeta> hnRx;
+    std::vector<FlitMeta> dramRx;
+
+    size_t expectedHnRx = 0;
+    size_t expectedDramRx = 0;
+
+    uint32_t hnNodeId = 0;
+    uint32_t dramNodeId = 0;
+
+    void SetUp() override
+    {
+        eventQueue = getEventQueue(0);
+        curEventQueue(eventQueue);
+        eventQueue->setCurTick(1);
+
+        hnNodeId = NodeID(0, 0, 0).getNodeID();
+        dramNodeId = NodeID(2, 0, 0).getNodeID();
+
+        buildRuntimeObjects();
+        buildTopologyAndCallbacks();
+
+        std::cout << "\n[MeshIntegration][SetUp] HN=" << nodeIdToString(hnNodeId)
+                  << ", DRAM=" << nodeIdToString(dramNodeId) << std::endl;
+        std::cout << "[MeshIntegration][SetUp] Topology: HN_EP <-> MeshH(local0)"
+                  << " <-> MeshH(east)-MeshM(west) <-> MeshM(east)-MeshD(west)"
+                  << " <-> MeshD(local0) <-> DRAM_EP" << std::endl;
+    }
+
+    void TearDown() override
+    {
+        size_t drainSteps = 0;
+        while (!eventQueue->empty() && drainSteps < kMaxEventSteps) {
+            eventQueue->serviceOne();
+            ++drainSteps;
+        }
+        EXPECT_TRUE(eventQueue->empty())
+            << "Event queue is not empty after test teardown, drained steps="
+            << drainSteps;
+
+        EXPECT_EQ(hnRx.size(), expectedHnRx)
+            << "Unexpected flits received at HN endpoint";
+        EXPECT_EQ(dramRx.size(), expectedDramRx)
+            << "Unexpected flits received at DRAM endpoint";
+
+        std::cout << "[MeshIntegration][TearDown] hn_rx=" << hnRx.size()
+                  << ", dram_rx=" << dramRx.size()
+                  << ", drain_steps=" << drainSteps << std::endl;
+    }
+
+    void buildRuntimeObjects()
+    {
+        VoltageDomainParams voltageParams;
+        voltageParams.name = "mesh_it_hndram_voltage";
+        voltageParams.eventq_index = 0;
+        voltageParams.voltage = {1.0};
+        voltageDomain = std::make_unique<VoltageDomain>(voltageParams);
+
+        SrcClockDomainParams clockParams;
+        clockParams.name = "mesh_it_hndram_clock";
+        clockParams.eventq_index = 0;
+        clockParams.clock = {1000};
+        clockParams.domain_id = 0;
+        clockParams.init_perf_level = 0;
+        clockParams.voltage_domain = voltageDomain.get();
+        clockDomain = std::make_unique<SrcClockDomain>(clockParams);
+
+        SimObjectParams hnOwnerParams;
+        hnOwnerParams.name = "mesh_it_hndram_hn_owner";
+        hnOwnerParams.eventq_index = 0;
+        hnOwner = std::make_unique<EndpointOwner>(hnOwnerParams);
+
+        SimObjectParams dramOwnerParams;
+        dramOwnerParams.name = "mesh_it_hndram_dram_owner";
+        dramOwnerParams.eventq_index = 0;
+        dramOwner = std::make_unique<EndpointOwner>(dramOwnerParams);
+
+        hnPort = createPort("mesh_it_hndram_hn_port");
+        dramPort = createPort("mesh_it_hndram_dram_port");
+        meshHLocal0 = createPort("mesh_it_hndram_mesh_h_local0");
+        meshHEast = createPort("mesh_it_hndram_mesh_h_east");
+        meshMLocal0 = createPort("mesh_it_hndram_mesh_m_local0");
+        meshMWest = createPort("mesh_it_hndram_mesh_m_west");
+        meshMEast = createPort("mesh_it_hndram_mesh_m_east");
+        meshDWest = createPort("mesh_it_hndram_mesh_d_west");
+        meshDLocal0 = createPort("mesh_it_hndram_mesh_d_local0");
+
+        meshH = createMeshNode("mesh_it_hndram_mesh_h", 0, 0,
+                               meshHLocal0.get(), meshHEast.get(),
+                               nullptr, nullptr, nullptr, nullptr, 8);
+        meshM = createMeshNode("mesh_it_hndram_mesh_m", 1, 0,
+                               meshMLocal0.get(), meshMEast.get(),
+                               meshMWest.get(), nullptr, nullptr, nullptr, 8);
+        meshD = createMeshNode("mesh_it_hndram_mesh_d", 2, 0,
+                               meshDLocal0.get(), nullptr,
+                               meshDWest.get(), nullptr, nullptr, nullptr, 8);
+    }
+
+    void buildTopologyAndCallbacks()
+    {
+        hnPort->setOwner(hnOwner.get());
+        dramPort->setOwner(dramOwner.get());
+
+        hnPort->setReceiveCallback([this](FlitPtr &flit) {
+            const auto meta = captureFlitMeta(*flit);
+            std::cout << "[EndpointRx][HN ] tick=" << eventQueue->getCurTick()
+                      << " " << flitMetaToString(meta) << std::endl;
+            hnRx.push_back(meta);
+            return true;
+        });
+        dramPort->setReceiveCallback([this](FlitPtr &flit) {
+            const auto meta = captureFlitMeta(*flit);
+            std::cout << "[EndpointRx][DRAM] tick=" << eventQueue->getCurTick()
+                      << " " << flitMetaToString(meta) << std::endl;
+            dramRx.push_back(meta);
+            return true;
+        });
+
+        hnPort->connect(meshHLocal0.get());
+        meshHEast->connect(meshMWest.get());
+        meshMEast->connect(meshDWest.get());
+        meshDLocal0->connect(dramPort.get());
+
+        meshH->init();
+        meshM->init();
+        meshD->init();
+    }
+
+    std::unique_ptr<CHIPort> createPort(const std::string &name)
+    {
+        CHIPortParams params;
+        params.name = name;
+        params.eventq_index = 0;
+        params.clk_domain = clockDomain.get();
+        params.power_state = nullptr;
+        params.power_model = {};
+        params.recv_buffer_size = 4;
+        return std::make_unique<CHIPort>(params);
+    }
+
+    std::unique_ptr<MeshNode> createMeshNode(
+        const std::string &name, uint32_t x, uint32_t y,
+        CHIPort *local0, CHIPort *east, CHIPort *west,
+        CHIPort *north, CHIPort *south, CHIPort *local1,
+        uint32_t voqDepth)
+    {
+        MeshNodeParams params;
+        params.name = name;
+        params.eventq_index = 0;
+        params.clk_domain = clockDomain.get();
+        params.power_state = nullptr;
+        params.power_model = {};
+        params.node_x = x;
+        params.node_y = y;
+        params.port_local0 = local0;
+        params.port_local1 = local1;
+        params.port_east = east;
+        params.port_west = west;
+        params.port_north = north;
+        params.port_south = south;
+        params.voq_depth = voqDepth;
+        return std::make_unique<MeshNode>(params);
+    }
+
+    bool sendReadNoSnpFromHn(uint64_t addr, uint64_t txnId, uint32_t size)
+    {
+        FlitPtr req = std::make_unique<Flit>(
+            CHI_OP_TYPE::CHI_REQ_READNOSNP, addr, size);
+        req->setOpcode(CHI_OP_TYPE::CHI_REQ_READNOSNP);
+        req->setSrcId(hnNodeId);
+        req->setTgtId(dramNodeId);
+        req->setTxnId(txnId);
+        const auto meta = captureFlitMeta(*req);
+        std::cout << "[EndpointTx][HN ] tick=" << eventQueue->getCurTick()
+                  << " " << flitMetaToString(meta) << std::endl;
+        const bool ok = hnPort->send(req);
+        std::cout << "[EndpointTx][HN ] send_result="
+                  << (ok ? "SUCCESS" : "BLOCKED") << std::endl;
+        return ok;
+    }
+
+    bool sendCompDataFromDram(uint64_t addr, uint64_t txnId, uint32_t size,
+                              uint64_t dbid, uint16_t dataId, uint8_t fillByte)
+    {
+        FlitPtr dat = std::make_unique<Flit>(
+            CHI_OP_TYPE::CHI_DAT_COMPDATA, addr, size);
+        dat->setOpcode(CHI_OP_TYPE::CHI_DAT_COMPDATA);
+        dat->setSrcId(dramNodeId);
+        dat->setTgtId(hnNodeId);
+        dat->setTxnId(txnId);
+        dat->setDbid(dbid);
+        dat->setDataId(dataId);
+
+        std::vector<uint8_t> payload(size, fillByte);
+        dat->setData(payload.data());
+
+        const auto meta = captureFlitMeta(*dat);
+        std::cout << "[EndpointTx][DRAM] tick=" << eventQueue->getCurTick()
+                  << " " << flitMetaToString(meta) << std::endl;
+        const bool ok = dramPort->send(dat);
+        std::cout << "[EndpointTx][DRAM] send_result="
+                  << (ok ? "SUCCESS" : "BLOCKED") << std::endl;
+        return ok;
+    }
+
+    bool sendWriteNoSnpFullFromHn(uint64_t addr, uint64_t txnId, uint32_t size)
+    {
+        FlitPtr req = std::make_unique<Flit>(
+            CHI_OP_TYPE::CHI_REQ_WRITENOSNPFULL, addr, size);
+        req->setOpcode(CHI_OP_TYPE::CHI_REQ_WRITENOSNPFULL);
+        req->setSrcId(hnNodeId);
+        req->setTgtId(dramNodeId);
+        req->setTxnId(txnId);
+        const auto meta = captureFlitMeta(*req);
+        std::cout << "[EndpointTx][HN ] tick=" << eventQueue->getCurTick()
+                  << " " << flitMetaToString(meta) << std::endl;
+        const bool ok = hnPort->send(req);
+        std::cout << "[EndpointTx][HN ] send_result="
+                  << (ok ? "SUCCESS" : "BLOCKED") << std::endl;
+        return ok;
+    }
+
+    bool sendDbidRespFromDram(uint64_t txnId, uint64_t dbid)
+    {
+        FlitPtr rsp = std::make_unique<Flit>();
+        rsp->setOpcode(CHI_OP_TYPE::CHI_RSP_DBIDRESP);
+        rsp->setSrcId(dramNodeId);
+        rsp->setTgtId(hnNodeId);
+        rsp->setTxnId(txnId);
+        rsp->setDbid(dbid);
+
+        const auto meta = captureFlitMeta(*rsp);
+        std::cout << "[EndpointTx][DRAM] tick=" << eventQueue->getCurTick()
+                  << " " << flitMetaToString(meta) << std::endl;
+        const bool ok = dramPort->send(rsp);
+        std::cout << "[EndpointTx][DRAM] send_result="
+                  << (ok ? "SUCCESS" : "BLOCKED") << std::endl;
+        return ok;
+    }
+
+    bool sendNcbWrDataCompAckFromHn(uint64_t addr, uint64_t txnId,
+                                    uint32_t size, uint16_t dataId,
+                                    uint8_t fillByte)
+    {
+        FlitPtr dat = std::make_unique<Flit>(
+            CHI_OP_TYPE::CHI_DAT_NCBWRDATACOMPACK, addr, size);
+        dat->setOpcode(CHI_OP_TYPE::CHI_DAT_NCBWRDATACOMPACK);
+        dat->setSrcId(hnNodeId);
+        dat->setTgtId(dramNodeId);
+        dat->setTxnId(txnId);
+        dat->setDbid(txnId);
+        dat->setDataId(dataId);
+
+        std::vector<uint8_t> payload(size, fillByte);
+        dat->setData(payload.data());
+
+        const auto meta = captureFlitMeta(*dat);
+        std::cout << "[EndpointTx][HN ] tick=" << eventQueue->getCurTick()
+                  << " " << flitMetaToString(meta) << std::endl;
+        const bool ok = hnPort->send(dat);
+        std::cout << "[EndpointTx][HN ] send_result="
+                  << (ok ? "SUCCESS" : "BLOCKED") << std::endl;
+        return ok;
+    }
+
+    void traceExpectedPath(uint32_t srcNodeId, uint32_t tgtNodeId,
+                           const std::string &tag) const
+    {
+        const auto src = decodeNodeId(srcNodeId);
+        const auto tgt = decodeNodeId(tgtNodeId);
+        uint32_t curX = src.x;
+        uint32_t curY = src.y;
+        size_t hop = 0;
+
+        std::cout << "[FlitTrace][" << tag << "] src="
+                  << nodeIdToString(srcNodeId)
+                  << ", tgt=" << nodeIdToString(tgtNodeId) << std::endl;
+
+        while (hop < 32) {
+            const auto route = MeshNode::TestApi::routeDecisionXY(
+                curX, curY, tgtNodeId);
+            std::cout << "  [hop " << hop << "] node=(" << curX << ", " << curY
+                      << "), route=" << routeDecisionToString(route);
+            switch (route) {
+              case MeshNode::RouteDecision::East:
+                ++curX;
+                std::cout << " -> egress=east -> next=(" << curX << ", "
+                          << curY << ")";
+                break;
+              case MeshNode::RouteDecision::West:
+                --curX;
+                std::cout << " -> egress=west -> next=(" << curX << ", "
+                          << curY << ")";
+                break;
+              case MeshNode::RouteDecision::North:
+                ++curY;
+                std::cout << " -> egress=north -> next=(" << curX << ", "
+                          << curY << ")";
+                break;
+              case MeshNode::RouteDecision::South:
+                --curY;
+                std::cout << " -> egress=south -> next=(" << curX << ", "
+                          << curY << ")";
+                break;
+              case MeshNode::RouteDecision::Local0:
+                std::cout << " -> deliver@local0";
+                break;
+              case MeshNode::RouteDecision::Local1:
+                std::cout << " -> deliver@local1";
+                break;
+            }
+            std::cout << std::endl;
+
+            if (route == MeshNode::RouteDecision::Local0 ||
+                route == MeshNode::RouteDecision::Local1) {
+                break;
+            }
+            ++hop;
+        }
+
+        EXPECT_EQ(curX, tgt.x);
+        EXPECT_EQ(curY, tgt.y);
+    }
+
+    size_t runEventsUntil(const std::function<bool()> &done, size_t maxSteps,
+                          const std::string &phase)
+    {
+        std::cout << "[EventLoop][" << phase << "] start_tick="
+                  << eventQueue->getCurTick() << ", max_steps=" << maxSteps
+                  << std::endl;
+        size_t steps = 0;
+        while (steps < maxSteps && !done()) {
+            if (eventQueue->empty()) {
+                std::cout << "[EventLoop][" << phase
+                          << "] queue empty before condition met" << std::endl;
+                break;
+            }
+            const Tick tickBefore = eventQueue->getCurTick();
+            eventQueue->serviceOne();
+            const Tick tickAfter = eventQueue->getCurTick();
+            ++steps;
+
+            std::cout << "  [step " << steps << "] tick " << tickBefore
+                      << " -> " << tickAfter
+                      << ", hn_rx=" << hnRx.size()
+                      << ", dram_rx=" << dramRx.size()
+                      << ", pending=" << (eventQueue->empty() ? "0" : "1+")
+                      << std::endl;
+        }
+
+        std::cout << "[EventLoop][" << phase << "] done="
+                  << (done() ? "yes" : "no")
+                  << ", steps=" << steps
+                  << ", end_tick=" << eventQueue->getCurTick() << std::endl;
+        return steps;
+    }
+
+    void printPhaseSummary(const std::string &phase, const FlitMeta &meta,
+                           size_t steps, const std::string &note = "") const
+    {
+        std::cout << "[PhaseSummary][" << phase << "] PASS"
+                  << " | steps=" << steps
+                  << ", chn=" << channelToString(meta.channel)
+                  << ", op=" << CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(meta.opcode)
+                  << ", src=" << nodeIdToString(meta.src)
+                  << ", tgt=" << nodeIdToString(meta.tgt)
+                  << ", txn=" << meta.txn
+                  << ", dbid=" << meta.dbid
+                  << ", size=" << meta.size
+                  << ", data_id=" << meta.dataId
+                  << ", payload=";
+        if (meta.hasData) {
+            std::cout << "yes(first=0x" << std::hex
+                      << static_cast<unsigned>(meta.firstDataByte)
+                      << std::dec << ")";
+        } else {
+            std::cout << "no";
+        }
+
+        std::cout << ", hn_rx=" << hnRx.size()
+                  << ", dram_rx=" << dramRx.size();
+        if (!note.empty()) {
+            std::cout << ", note=" << note;
+        }
+        std::cout << std::endl;
+    }
+};
+
+TEST_F(MeshNodeHnDramIntegrationTest, HnDramReadRoundTripAcrossThreeNodes)
+{
+    constexpr uint64_t txnId = 55;
+    constexpr uint64_t dbid = 21;
+    constexpr uint64_t addr = 0x84000000ULL;
+    constexpr uint32_t size = 64;
+    constexpr uint16_t dataId = 0;
+    constexpr uint8_t firstByte = 0xC3;
+
+    expectedHnRx = 1;
+    expectedDramRx = 1;
+
+    std::cout << "\n[TestCase] HnDramReadRoundTripAcrossThreeNodes"
+              << std::endl;
+
+    traceExpectedPath(hnNodeId, dramNodeId, "REQ_READNOSNP");
+    ASSERT_TRUE(sendReadNoSnpFromHn(addr, txnId, size));
+    const size_t reqSteps = runEventsUntil(
+        [this] { return dramRx.size() == 1; }, kMaxEventSteps, "REQ->DRAM");
+    ASSERT_EQ(dramRx.size(), 1u) << "REQ should arrive at DRAM endpoint";
+    EXPECT_LE(reqSteps, kMaxEventSteps);
+
+    const auto &reqAtDram = dramRx[0];
+    EXPECT_EQ(reqAtDram.channel, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ);
+    EXPECT_EQ(reqAtDram.opcode, CHI_OP_TYPE::CHI_REQ_READNOSNP);
+    EXPECT_EQ(reqAtDram.src, hnNodeId);
+    EXPECT_EQ(reqAtDram.tgt, dramNodeId);
+    EXPECT_EQ(reqAtDram.txn, txnId);
+    EXPECT_EQ(reqAtDram.addr, addr);
+    EXPECT_EQ(reqAtDram.size, size);
+    printPhaseSummary("REQ->DRAM", reqAtDram, reqSteps);
+
+    traceExpectedPath(dramNodeId, hnNodeId, "DAT_COMPDATA");
+    ASSERT_TRUE(sendCompDataFromDram(addr, txnId, size, dbid, dataId,
+                                     firstByte));
+    const size_t datSteps = runEventsUntil(
+        [this] { return hnRx.size() == 1; }, kMaxEventSteps, "DAT->HN");
+    ASSERT_EQ(hnRx.size(), 1u) << "DAT_COMPDATA should return to HN endpoint";
+    EXPECT_LE(datSteps, kMaxEventSteps);
+
+    const auto &datAtHn = hnRx[0];
+    EXPECT_EQ(datAtHn.channel, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
+    EXPECT_EQ(datAtHn.opcode, CHI_OP_TYPE::CHI_DAT_COMPDATA);
+    EXPECT_EQ(datAtHn.src, dramNodeId);
+    EXPECT_EQ(datAtHn.tgt, hnNodeId);
+    EXPECT_EQ(datAtHn.txn, txnId);
+    EXPECT_EQ(datAtHn.dbid, dbid);
+    EXPECT_EQ(datAtHn.addr, addr);
+    EXPECT_EQ(datAtHn.size, size);
+    EXPECT_EQ(datAtHn.dataId, dataId);
+    EXPECT_TRUE(datAtHn.hasData);
+    EXPECT_EQ(datAtHn.firstDataByte, firstByte);
+    printPhaseSummary("DAT->HN", datAtHn, datSteps);
+}
+
+TEST_F(MeshNodeHnDramIntegrationTest, HnDramWritebackFlowAcrossThreeNodes)
+{
+    constexpr uint64_t reqTxn = 66;
+    constexpr uint64_t dbid = 31;
+    constexpr uint64_t addr = 0x85000000ULL;
+    constexpr uint32_t size = 64;
+    constexpr uint16_t dataId = 0;
+    constexpr uint8_t firstByte = 0x7E;
+
+    // DRAM receives request + write data, HN receives one DBIDRESP.
+    expectedDramRx = 2;
+    expectedHnRx = 1;
+
+    std::cout << "\n[TestCase] HnDramWritebackFlowAcrossThreeNodes"
+              << std::endl;
+
+    traceExpectedPath(hnNodeId, dramNodeId, "WRITENOSNPFULL");
+    ASSERT_TRUE(sendWriteNoSnpFullFromHn(addr, reqTxn, size));
+    const size_t writeReqSteps = runEventsUntil(
+        [this] { return dramRx.size() == 1; }, kMaxEventSteps,
+        "WRITENOSNPFULL->DRAM");
+    ASSERT_EQ(dramRx.size(), 1u)
+        << "WRITENOSNPFULL should arrive at DRAM endpoint";
+    EXPECT_LE(writeReqSteps, kMaxEventSteps);
+
+    const auto &writeReqAtDram = dramRx[0];
+    EXPECT_EQ(writeReqAtDram.channel, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ);
+    EXPECT_EQ(writeReqAtDram.opcode, CHI_OP_TYPE::CHI_REQ_WRITENOSNPFULL);
+    EXPECT_EQ(writeReqAtDram.src, hnNodeId);
+    EXPECT_EQ(writeReqAtDram.tgt, dramNodeId);
+    EXPECT_EQ(writeReqAtDram.txn, reqTxn);
+    EXPECT_EQ(writeReqAtDram.addr, addr);
+    EXPECT_EQ(writeReqAtDram.size, size);
+    printPhaseSummary("WRITENOSNPFULL->DRAM", writeReqAtDram, writeReqSteps);
+
+    traceExpectedPath(dramNodeId, hnNodeId, "DBIDRESP");
+    ASSERT_TRUE(sendDbidRespFromDram(reqTxn, dbid));
+    const size_t dbidRspSteps = runEventsUntil(
+        [this] { return hnRx.size() == 1; }, kMaxEventSteps, "DBIDRESP->HN");
+    ASSERT_EQ(hnRx.size(), 1u) << "DBIDRESP should arrive at HN endpoint";
+    EXPECT_LE(dbidRspSteps, kMaxEventSteps);
+
+    const auto &dbidRspAtHn = hnRx[0];
+    EXPECT_EQ(dbidRspAtHn.channel, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP);
+    EXPECT_EQ(dbidRspAtHn.opcode, CHI_OP_TYPE::CHI_RSP_DBIDRESP);
+    EXPECT_EQ(dbidRspAtHn.src, dramNodeId);
+    EXPECT_EQ(dbidRspAtHn.tgt, hnNodeId);
+    EXPECT_EQ(dbidRspAtHn.txn, reqTxn);
+    EXPECT_EQ(dbidRspAtHn.dbid, dbid);
+    printPhaseSummary("DBIDRESP->HN", dbidRspAtHn, dbidRspSteps);
+
+    traceExpectedPath(hnNodeId, dramNodeId, "NCBWRDATACOMPACK");
+    ASSERT_TRUE(sendNcbWrDataCompAckFromHn(addr, dbid, size, dataId,
+                                           firstByte));
+    const size_t ncbDataSteps = runEventsUntil(
+        [this] { return dramRx.size() == 2; }, kMaxEventSteps,
+        "NCBWRDATACOMPACK->DRAM");
+    ASSERT_EQ(dramRx.size(), 2u)
+        << "NCBWRDATACOMPACK should arrive at DRAM endpoint";
+    EXPECT_LE(ncbDataSteps, kMaxEventSteps);
+
+    const auto &ncbDataAtDram = dramRx[1];
+    EXPECT_EQ(ncbDataAtDram.channel, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
+    EXPECT_EQ(ncbDataAtDram.opcode, CHI_OP_TYPE::CHI_DAT_NCBWRDATACOMPACK);
+    EXPECT_EQ(ncbDataAtDram.src, hnNodeId);
+    EXPECT_EQ(ncbDataAtDram.tgt, dramNodeId);
+    EXPECT_EQ(ncbDataAtDram.txn, dbidRspAtHn.dbid);
+    EXPECT_EQ(ncbDataAtDram.dbid, dbidRspAtHn.dbid);
+    EXPECT_EQ(ncbDataAtDram.addr, addr);
+    EXPECT_EQ(ncbDataAtDram.size, size);
+    EXPECT_EQ(ncbDataAtDram.dataId, dataId);
+    EXPECT_TRUE(ncbDataAtDram.hasData);
+    EXPECT_EQ(ncbDataAtDram.firstDataByte, firstByte);
+    printPhaseSummary("NCBWRDATACOMPACK->DRAM", ncbDataAtDram, ncbDataSteps,
+                      "txn follows DBIDRESP.dbid");
+}
+
 } // namespace
 
 int
