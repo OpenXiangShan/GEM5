@@ -1153,9 +1153,9 @@ class BTBMGSC(TimedBaseBTBPredictor):
 
     # Test switches for SC tables
     forceUseSC = Param.Bool(False, "Force use SC prediction, ignore TAGE confidence")
-    enableBwTable = Param.Bool(True, "Enable BW (backward) table")
-    enableLTable = Param.Bool(True, "Enable L (local) table")
-    enableITable = Param.Bool(True, "Enable I (IMLI) table")
+    enableBwTable = Param.Bool(False, "Enable BW (backward) table")
+    enableLTable = Param.Bool(False, "Enable L (local) table")
+    enableITable = Param.Bool(False, "Enable I (IMLI) table")
     enableGTable = Param.Bool(False, "Enable G (global) table")
     enablePTable = Param.Bool(False, "Enable P (path) table")
     enableBiasTable = Param.Bool(True, "Enable Bias table")

@@ -680,10 +680,11 @@ BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int p
     int index = getPercepIndex(pc,pred_gbhr);
     int bias = 1;
     if (percep_update){
-        weightTable[index][0] += ( (actual_taken?1:-1)*bias);
+        auto &entry = weightTable[index][0];
+        updatePercepCounter(actual_taken == bias,percepTableWidth,entry);
         for (int i=0;i<gbhrLen;i++){
             auto &entry = weightTable[index][i+1];
-            updateCounter(actual_taken == pred_gbhr[i],percepTableWidth,entry);
+            updatePercepCounter(actual_taken == pred_gbhr[i],percepTableWidth,entry);
             // weightTable[index][i+1] += (actual_taken == gbhr[i]?1:-1);
         }
     }
@@ -824,6 +825,9 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
                     if (percep_conf_high)
                         mgscStats.scHighBypassPercepHighWrong++;
                 }
+                if (tage_pred_taken == actual_taken){
+                    mgscStats.scHighBypassTageCorrect++;
+                }
             }
         } else if (conf_mid) {
             if (use) {
@@ -839,6 +843,9 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
                     if (percep_conf_high)
                         mgscStats.scMidBypassPercepHighWrong++;
                 }
+                if (tage_pred_taken == actual_taken){
+                    mgscStats.scMidBypassTageCorrect++;
+                }
             }
         } else if (conf_low) {
             if (use) {
@@ -853,6 +860,9 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
                     mgscStats.scLowBypassPercepWrong++;
                     if (percep_conf_high)
                         mgscStats.scLowBypassPercepHighWrong++;
+                }
+                if (tage_pred_taken == actual_taken){
+                    mgscStats.scLowBypassTageCorrect++;
                 }
             }
         }
@@ -1038,6 +1048,30 @@ BTBMGSC::updateCounter<uint32_t>(bool taken, unsigned width, uint32_t &counter);
 template void
 BTBMGSC::updateCounter<uint64_t>(bool taken, unsigned width, uint64_t &counter);
 
+void
+BTBMGSC::updatePercepCounter(bool taken,unsigned width,int16_t &counter){
+    int16_t max,min;
+    max = ((1LL << (width - 1)) - 1);
+    min = (-(1LL << (width - 1)));
+    int percep_thres = percepThres;
+    int log = 0,count;
+    count = counter>0 ? percep_thres - counter:percep_thres+counter;
+    if (abs(counter) >= percep_thres || (taken ^ (counter > 0)))
+        count = 1;
+    while (count){
+        count /= 2;
+        log ++;
+    }
+    if (taken){
+        counter += log;
+        if (counter > max)
+            counter = max;
+    }else{
+        counter -= log;
+        if (counter < min)
+            counter = min;
+    }
+}
 
 Addr
 BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist)
@@ -1066,29 +1100,33 @@ BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbi
 
 Addr
 BTBMGSC::getPercepIndex(Addr pc,std::vector<bool> tem_gbhr){
-    uint64_t folded = 0;
+    // uint64_t folded = 0;
+    // int len = log2i(percepTableEntryNum);
+    // const uint64_t foldedMask = ((1ULL << len) - 1);
+    // int histLen = gbhrLen;
+    // for (size_t startBit = 0; startBit < histLen; startBit += len) {
+    //     uint64_t chunk = 0;
+    //     size_t chunkSize = (len<=(histLen - startBit) ? len : histLen - startBit);
+
+    //     // Extract chunk from bitset
+    //     for (size_t i = 0; i < chunkSize; i++) {
+    //         chunk |= (tem_gbhr[startBit + i] << i);
+    //     }
+
+    //     // XOR this chunk into the ideal folded history
+    //     folded ^= chunk;
+    // }
+    // folded &= foldedMask;
+
+    // Addr mask = percepTableEntryNum - 1;
+    // unsigned index = pc ^ (pc>>len);
+    // index ^= folded;
+    // index &= mask;
+    // return index;
     int len = log2i(percepTableEntryNum);
-    const uint64_t foldedMask = ((1ULL << len) - 1);
-    int histLen = gbhrLen;
-    for (size_t startBit = 0; startBit < histLen; startBit += len) {
-        uint64_t chunk = 0;
-        size_t chunkSize = (len<=(histLen - startBit) ? len : histLen - startBit);
-
-        // Extract chunk from bitset
-        for (size_t i = 0; i < chunkSize; i++) {
-            chunk |= (tem_gbhr[startBit + i] << i);
-        }
-
-        // XOR this chunk into the ideal folded history
-        folded ^= chunk;
-    }
-    folded &= foldedMask;
-
+    Addr index = pc ^ (pc >> len);
     Addr mask = percepTableEntryNum - 1;
-    unsigned index = pc ^ (pc>>len);
-    index ^= folded;
-    index &= mask;
-    return index;
+    return index & mask;
 }
 
 Addr
@@ -1315,9 +1353,8 @@ BTBMGSC::specUpdateGBHR(const boost::dynamic_bitset<> &history, FullBTBPredictio
         if (history[i] != gbhr[i])
             index = i;
     }
-    int len = history.size();
-    if (index >= 0)//0xfffdf7fefffffffe
-        gbhr[0] = history[0];
+    // int len = history.size();
+    assert(index == -1);
 
     while (shamt > 0){
         shamt --;
@@ -1479,9 +1516,8 @@ BTBMGSC::recoverGBHR(const boost::dynamic_bitset<> &history,
         if (history[i] != gbhr[i])
             index = i;
     }
-    int len = history.size();
-    if (index >= 0)
-        gbhr[0] = history[0];
+    // int len = history.size();
+    assert(index == -1);
     while (shamt > 0){
         shamt --;
         if (!gbhr.empty()) {
@@ -1562,6 +1598,8 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
                 "percpetion high conf pred right when tage high conf, sc not used"),
       ADD_STAT(scHighBypassPercepHighWrong, statistics::units::Count::get(),
                 "percpetion high conf pred wrong when tage high conf, sc not used"),
+      ADD_STAT(scHighBypassTageCorrect, statistics::units::Count::get(),
+                "tage pred correct when tage high conf, sc not used"),
       ADD_STAT(scMidBypass, statistics::units::Count::get(), "tage mid conf, sc not used"),
       ADD_STAT(scMidBypassPercepCorrect, statistics::units::Count::get(),
                 "percpetion pred right when tage mid conf, sc not used"),
@@ -1571,6 +1609,8 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
                 "percpetion high conf pred right when tage mid conf, sc not used"),
       ADD_STAT(scMidBypassPercepHighWrong, statistics::units::Count::get(),
                 "percpetion high conf pred wrong when tage mid conf, sc not used"),
+      ADD_STAT(scMidBypassTageCorrect, statistics::units::Count::get(),
+                "tage pred correct when tage mid conf, sc not used"),
       ADD_STAT(scLowBypass, statistics::units::Count::get(), "tage low conf, sc not used"),
       ADD_STAT(scLowBypassPercepCorrect, statistics::units::Count::get(),
                 "percpetion pred right when tage low conf, sc not used"),
@@ -1579,7 +1619,9 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
       ADD_STAT(scLowBypassPercepHighCorrect, statistics::units::Count::get(),
                 "percpetion high conf pred right when tage low conf, sc not used"),
       ADD_STAT(scLowBypassPercepHighWrong, statistics::units::Count::get(),
-                "percpetion high conf pred wrong when tage low conf, sc not used")
+                "percpetion high conf pred wrong when tage low conf, sc not used"),
+      ADD_STAT(scLowBypassTageCorrect, statistics::units::Count::get(),
+                "tage pred correct when tage low conf, sc not used")
 {
 }
 #endif

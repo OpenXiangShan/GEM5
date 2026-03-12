@@ -435,6 +435,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     template<typename T>
     void updateCounter(bool taken, unsigned width, T &counter);
 
+    void updatePercepCounter(bool taken,unsigned width,int16_t &counter);
     // Increment counter with saturation (template for all integer types)
     template<typename T>
     bool satIncrement(T max, T &counter);
@@ -529,16 +530,19 @@ class BTBMGSC : public TimedBaseBTBPredictor
         Scalar scHighBypassPercepWrong{};
         Scalar scHighBypassPercepHighCorrect{};
         Scalar scHighBypassPercepHighWrong{};
+        Scalar scHighBypassTageCorrect{};
         Scalar scMidBypass{};
         Scalar scMidBypassPercepCorrect{};
         Scalar scMidBypassPercepWrong{};
         Scalar scMidBypassPercepHighCorrect{};
         Scalar scMidBypassPercepHighWrong{};
+        Scalar scMidBypassTageCorrect{};
         Scalar scLowBypass{};
         Scalar scLowBypassPercepCorrect{};
         Scalar scLowBypassPercepWrong{};
         Scalar scLowBypassPercepHighCorrect{};
         Scalar scLowBypassPercepHighWrong{};
+        Scalar scLowBypassTageCorrect{};
 
 #ifndef UNIT_TEST
         MgscStats(statistics::Group *parent);
