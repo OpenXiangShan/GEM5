@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstdint>
 #include <memory>
+#include <string>
 
 #include "fakeL3.hh"
 #include "base/logging.hh"
@@ -13,10 +14,45 @@ namespace gem5
 {
 namespace xsCHI
 {
+FakeL3::FakeL3Stats::FakeL3Stats(FakeL3 *parent)
+    : statistics::Group(parent, "protocol"),
+      ADD_STAT(protocol_tx_by_opcode, statistics::units::Count::get(),
+               "Protocol TX flits grouped by CHI opcode"),
+      ADD_STAT(protocol_rx_by_opcode, statistics::units::Count::get(),
+               "Protocol RX flits grouped by CHI opcode"),
+      ADD_STAT(protocol_readshared_total, statistics::units::Count::get(),
+               "Total ReadShared opcode observations"),
+      ADD_STAT(protocol_writeevict_total, statistics::units::Count::get(),
+               "Total WriteEvict opcode observations"),
+      ADD_STAT(protocol_compack_total, statistics::units::Count::get(),
+               "Total CompAck opcode observations"),
+      ADD_STAT(protocol_snp_total, statistics::units::Count::get(),
+               "Total snoop opcode observations")
+{
+    using namespace statistics;
+
+    protocol_tx_by_opcode
+        .init(FakeL3::NumChiOps)
+        .flags(nozero);
+    protocol_rx_by_opcode
+        .init(FakeL3::NumChiOps)
+        .flags(nozero);
+    for (size_t i = 0; i < FakeL3::NumChiOps; ++i) {
+        const auto op = static_cast<CHI_OP_TYPE>(i);
+        const std::string label = CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op);
+        protocol_tx_by_opcode.subname(i, label);
+        protocol_rx_by_opcode.subname(i, label);
+    }
+
+    protocol_readshared_total.flags(nozero);
+    protocol_writeevict_total.flags(nozero);
+    protocol_compack_total.flags(nozero);
+    protocol_snp_total.flags(nozero);
+}
 
 FakeL3::FakeL3(const Params &p)
     : ClockedObject(p), networkPort(p.networkPort), _NodeID(0), SAM(nullptr),
-      TXN_Manager(1024)
+      TXN_Manager(1024), outstanding_requests(), stats(this)
 {
     panic_if(networkPort == nullptr, "FakeL3 %s requires a valid networkPort",
              name());
@@ -33,6 +69,7 @@ FakeL3::handlePortReceive(FlitPtr &flit)
              "op=%s",
              name(), flit->getTgtId(), _NodeID,
              CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(flit->getOpcode()).c_str());
+    recordProtocolRx(flit->getOpcode());
 
     switch (flit->get_Flit_Channel_Type()) {
       case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ: {
@@ -67,7 +104,9 @@ FakeL3::handlePortReceive(FlitPtr &flit)
             req->setTargetId(read->getTgtId());
             req->setTransactionId(flit->getTxnId());
 
+            const CHI_OP_TYPE txOp = read->getOpcode();
             if (networkPort->send(read)) {
+                recordProtocolTx(txOp);
                 saveOutstandingRequest(req, txn_id);
                 return true;
             }
@@ -102,7 +141,9 @@ FakeL3::handlePortReceive(FlitPtr &flit)
             req->setTargetId(write->getTgtId());
             req->setTransactionId(flit->getTxnId());
 
+            const CHI_OP_TYPE txOp = write->getOpcode();
             if (networkPort->send(write)) {
+                recordProtocolTx(txOp);
                 saveOutstandingRequest(req, txn_id);
                 return true;
             }
@@ -116,7 +157,12 @@ FakeL3::handlePortReceive(FlitPtr &flit)
             rsp->setSrcId(_NodeID);
             rsp->setTgtId(flit->getSrcId());
             rsp->setTxnId(flit->getTxnId());
-            return networkPort->send(rsp);
+            const CHI_OP_TYPE txOp = rsp->getOpcode();
+            if (networkPort->send(rsp)) {
+                recordProtocolTx(txOp);
+                return true;
+            }
+            return false;
           }
           case CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE: {
             int txn_id = TXN_Manager.getID();
@@ -143,7 +189,9 @@ FakeL3::handlePortReceive(FlitPtr &flit)
             req->setTargetId(SAM->getTargetID(flit->getAddr()));
             req->setTransactionId(flit->getTxnId());
 
+            const CHI_OP_TYPE txOp = comp->getOpcode();
             if (networkPort->send(comp)) {
+                recordProtocolTx(txOp);
                 saveOutstandingRequest(req, txn_id);
                 return true;
             }
@@ -191,7 +239,9 @@ FakeL3::handlePortReceive(FlitPtr &flit)
                 rsp->setTxnId(req->getTransactionId());
                 // RN 回程沿用 HN 内部事务号，后续 COPYBACK 用该值作为 txn。
                 rsp->setDbid(flit->getTxnId());
+                const CHI_OP_TYPE txOp = rsp->getOpcode();
                 if (networkPort->send(rsp)) {
+                    recordProtocolTx(txOp);
                     req->setDbid(flit->getDbid());
                     return true;
                 }
@@ -233,7 +283,9 @@ FakeL3::handlePortReceive(FlitPtr &flit)
                 data->setData(tmp);
                 delete[] tmp;
 
+                const CHI_OP_TYPE txOp = data->getOpcode();
                 if (networkPort->send(data)) {
+                    recordProtocolTx(txOp);
                     const uint32_t dataid = flit->getDataId();
                     req->finishTransferdata(dataid);
                     if (req->dataTransferFinished()) {
@@ -262,7 +314,12 @@ FakeL3::handlePortReceive(FlitPtr &flit)
                 FlitPtr fwd = std::make_unique<Flit>(*flit);
                 fwd->setTgtId(req->getSourceId());
                 fwd->setTxnId(req->getTransactionId());
-                return networkPort->send(fwd);
+                const CHI_OP_TYPE txOp = fwd->getOpcode();
+                if (networkPort->send(fwd)) {
+                    recordProtocolTx(txOp);
+                    return true;
+                }
+                return false;
               }
               default:
                 assert(false);
@@ -304,6 +361,63 @@ void
 FakeL3::init()
 {
     return;
+}
+
+bool
+FakeL3::isSnpOpcode(CHI_OP_TYPE op)
+{
+    return op > CHI_OP_TYPE::CHI_SNP_OP_START &&
+           op < CHI_OP_TYPE::CHI_SNP_OP_END;
+}
+
+bool
+FakeL3::isWriteEvictOpcode(CHI_OP_TYPE op)
+{
+    return op == CHI_OP_TYPE::CHI_REQ_WRITEEVICTFULL ||
+           op == CHI_OP_TYPE::CHI_REQ_WRITEEVICTOREVICT;
+}
+
+size_t
+FakeL3::opcodeToIndex(CHI_OP_TYPE op)
+{
+    return static_cast<size_t>(op);
+}
+
+void
+FakeL3::updateProtocolAliases(CHI_OP_TYPE op)
+{
+    if (op == CHI_OP_TYPE::CHI_REQ_READSHARED) {
+        stats.protocol_readshared_total++;
+    }
+    if (isWriteEvictOpcode(op)) {
+        stats.protocol_writeevict_total++;
+    }
+    if (op == CHI_OP_TYPE::CHI_RSP_COMPACK) {
+        stats.protocol_compack_total++;
+    }
+    if (isSnpOpcode(op)) {
+        stats.protocol_snp_total++;
+    }
+}
+
+void
+FakeL3::recordProtocolTx(CHI_OP_TYPE op)
+{
+    const size_t idx = opcodeToIndex(op);
+    if (idx < NumChiOps) {
+        stats.protocol_tx_by_opcode[idx]++;
+    }
+    updateProtocolAliases(op);
+}
+
+void
+FakeL3::recordProtocolRx(CHI_OP_TYPE op)
+{
+    const size_t idx = opcodeToIndex(op);
+    if (idx < NumChiOps) {
+        stats.protocol_rx_by_opcode[idx]++;
+    }
+    updateProtocolAliases(op);
 }
 
 } // namespace xsCHI

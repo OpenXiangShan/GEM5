@@ -244,6 +244,14 @@ namespace xsCHI
 
         bool getResponderHadWritable() { return responder_had_writable; }
         void setResponderHadWritable(bool v) { responder_had_writable = v; }
+        uint16_t getMeshHopCount() { return mesh_hop_count; }
+        void setMeshHopCount(uint16_t v) { mesh_hop_count = v; }
+
+        uint64_t getMeshInjectTick() { return mesh_inject_tick; }
+        void setMeshInjectTick(uint64_t v) { mesh_inject_tick = v; }
+
+        bool getMeshStatsValid() { return mesh_stats_valid; }
+        void setMeshStatsValid(bool v) { mesh_stats_valid = v; }
 
         // uint32_t getBe()  { return be; }
         // void setBe(uint32_t v) { be = v; }
@@ -324,6 +332,9 @@ namespace xsCHI
         uint16_t data_id;           // Data Identifier, DataID
         bool cache_responding;
         bool responder_had_writable;
+        uint16_t mesh_hop_count;    // Number of directional mesh hops traversed.
+        uint64_t mesh_inject_tick;  // Tick when entering mesh from a local ingress.
+        bool mesh_stats_valid;      // Whether mesh hop/latency metadata is valid.
 
         // uint32_t be;                // Byte Enable, BE
         // uint32_t data_check;        // Data check, DataCheck
