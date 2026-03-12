@@ -14,12 +14,15 @@
 
 // Homebrew Boost's uuid time generator uses BOOST_WORKAROUND on
 // BOOST_LIBSTDCXX_VERSION even when building against libc++, which trips
-// gem5's -Wundef policy on macOS unless these fallback definitions exist.
+// gem5's -Wundef policy on macOS. Keep the fallback scoped to the
+// macOS/libc++ case so GCC + libstdc++ can still report its real version.
+#if defined(__APPLE__) && defined(_LIBCPP_VERSION)
 #ifndef BOOST_LIBSTDCXX_VERSION
 #define BOOST_LIBSTDCXX_VERSION 0
 #endif
 #ifndef BOOST_LIBSTDCXX_VERSION_WORKAROUND_GUARD
 #define BOOST_LIBSTDCXX_VERSION_WORKAROUND_GUARD 1
+#endif
 #endif
 
 #include <boost/uuid/random_generator.hpp>
