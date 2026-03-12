@@ -42,10 +42,12 @@
 #include "cpu/o3/lsq.hh"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <list>
 #include <string>
 
@@ -81,6 +83,24 @@ namespace gem5
 
 namespace o3
 {
+
+namespace
+{
+
+class AddrPredProbeState : public Packet::SenderState
+{
+  public:
+    DynInstPtr inst;
+    RequestPtr req;
+    std::array<uint8_t, sizeof(RegVal)> data{};
+
+    AddrPredProbeState(const DynInstPtr &_inst, const RequestPtr &_req)
+        : inst(_inst), req(_req)
+    {
+    }
+};
+
+} // namespace
 
 LSQ::DcachePort::DcachePort(LSQ *_lsq, CPU *_cpu) :
     RequestPort(_cpu->name() + ".dcache_port", _cpu), lsq(_lsq), cpu(_cpu)
@@ -612,6 +632,33 @@ LSQ::setLastRetiredHtmUid(ThreadID tid, uint64_t htmUid)
 void
 LSQ::recvReqRetry()
 {
+    while (!addrPredProbeRetryQ.empty()) {
+        PacketPtr pkt = addrPredProbeRetryQ.front();
+        addrPredProbeRetryQ.pop_front();
+        auto *probe = dynamic_cast<AddrPredProbeState *>(pkt->senderState);
+        assert(probe);
+
+        if (!probe->inst || probe->inst->isSquashed() ||
+            probe->inst->isCommitted()) {
+            if (probe->inst) {
+                probe->inst->apProbeInFlight = false;
+            }
+            delete probe;
+            delete pkt;
+            continue;
+        }
+
+        if (dcachePort.sendTimingReq(pkt)) {
+            probe->inst->apProbeInFlight = true;
+            DPRINTF(LSQ, "AddrPred probe retry sent [sn:%llu] addr=%#lx\n",
+                    probe->inst->seqNum, pkt->getAddr());
+            continue;
+        }
+
+        addrPredProbeRetryQ.push_front(pkt);
+        break;
+    }
+
     iewStage->cacheUnblocked();
     cacheBlocked(false);
 
@@ -627,6 +674,31 @@ LSQ::recvTimingResp(PacketPtr pkt)
     if (pkt->isError())
         DPRINTF(LSQ, "Got error packet back for address: %#X\n",
                 pkt->getAddr());
+
+    if (auto *probe = dynamic_cast<AddrPredProbeState *>(pkt->senderState)) {
+        if (probe->inst) {
+            probe->inst->apProbeInFlight = false;
+            if (!probe->inst->isSquashed() && !probe->inst->isCommitted()) {
+                probe->inst->apProbeDone = true;
+                if (pkt->isAddrPredReadHitResp()) {
+                    probe->inst->apProbeHit = true;
+                    const unsigned data_size = std::min<unsigned>(
+                            pkt->getSize(), probe->inst->apProbeData.size());
+                    probe->inst->apProbeDataSize = data_size;
+                    std::memcpy(probe->inst->apProbeData.data(),
+                                probe->data.data(), data_size);
+                } else {
+                    probe->inst->apProbeHit = false;
+                    probe->inst->apProbeDataSize = 0;
+                }
+                cpu->activityThisCycle();
+            }
+        }
+
+        delete probe;
+        delete pkt;
+        return true;
+    }
 
     LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
     panic_if(!request, "Got packet back with unknown sender state\n");
@@ -1201,6 +1273,49 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
         inst->traceData->setMem(addr, size, flags);
 
     return inst->getFault();
+}
+
+bool
+LSQ::sendAddrPredProbe(const DynInstPtr &inst, Addr paddr)
+{
+    if (!inst || inst->isSquashed() || inst->isCommitted()) {
+        return false;
+    }
+
+    if (inst->apProbeIssued || inst->apProbeInFlight || inst->apProbeDone) {
+        return true;
+    }
+
+    unsigned req_size = sizeof(RegVal);
+    const int32_t op_wid = inst->staticInst->operWid();
+    if (op_wid > 0) {
+        req_size = std::min<unsigned>(op_wid / 8, sizeof(RegVal));
+    }
+
+    auto req = std::make_shared<Request>(paddr, req_size, Request::Flags(),
+            inst->requestorId(), inst->pcState().instAddr(), inst->contextId());
+    req->setPaddr(paddr);
+    req->setReqInstSeqNum(inst->seqNum);
+    req->setInstCount(cpu->totalInsts());
+
+    PacketPtr pkt = new Packet(req, MemCmd::AddrPredReadReq);
+    auto *probe_state = new AddrPredProbeState(inst, req);
+    pkt->senderState = probe_state;
+    pkt->dataStatic(probe_state->data.data());
+
+    inst->apProbeIssued = true;
+
+    if (dcachePort.sendTimingReq(pkt)) {
+        inst->apProbeInFlight = true;
+        DPRINTF(LSQ, "AddrPred probe sent [sn:%llu] addr=%#lx\n",
+                inst->seqNum, paddr);
+    } else {
+        addrPredProbeRetryQ.push_back(pkt);
+        DPRINTF(LSQ, "AddrPred probe queued for retry [sn:%llu] addr=%#lx\n",
+                inst->seqNum, paddr);
+    }
+
+    return true;
 }
 
 LSQ::SingleDataRequest::SingleDataRequest(

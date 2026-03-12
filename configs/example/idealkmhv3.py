@@ -19,6 +19,7 @@ from common import Simulation
 from common.Caches import *
 from common.xiangshan import *
 
+from m5.objects.AddressPredictor import *
 from m5.objects.ValuePredictor import *
 
 def setKmhV3IdealParams(args, system):
@@ -67,6 +68,9 @@ def setKmhV3IdealParams(args, system):
 
         # value predictor
         cpu.valuePred = IdealConstantLVP()
+        cpu.addressPred = EStrideAP()
+        cpu.addressPred.logMaxConfidence = 11
+        cpu.addressPred.thresholdPercent = 0.25
 
         # lsq
         cpu.LQEntries = 128

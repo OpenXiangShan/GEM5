@@ -319,6 +319,11 @@ class IEW
      */
     void squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid);
 
+    /** Sends commit proper information for a squash due to an address
+     * prediction mispredict.
+     */
+    void squashDueToAddressPrediction(const DynInstPtr &inst, ThreadID tid);
+
     bool canInsertLDSTQue(ThreadID tid);
 
     /** Dispatches instructions to IQ and LSQ. */

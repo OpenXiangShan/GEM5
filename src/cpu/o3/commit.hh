@@ -50,6 +50,7 @@
 #include <vector>
 
 #include "base/statistics.hh"
+#include "cpu/addresspred/addresspred_unit.hh"
 #include "cpu/exetrace.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/comm.hh"
@@ -445,6 +446,9 @@ class Commit
     /** Value predictor */
     valuepred::VPUnit *valuePred;
 
+    /** Address predictor */
+    addresspred::APUnit *addressPred;
+
     /** Vector of all of the threads. */
     std::vector<ThreadState *> thread;
 
@@ -638,6 +642,7 @@ class Commit
         statistics::Scalar squashDueToBranch;
         statistics::Scalar squashDueToOrderViolation;
         statistics::Scalar squashDueToValuePrediction;
+        statistics::Scalar squashDueToAddressPrediction;
         statistics::Scalar squashDueToTrap;
         statistics::Scalar squashDueToTC;
         statistics::Scalar squashDueToSquashAfter;

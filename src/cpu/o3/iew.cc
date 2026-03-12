@@ -558,6 +558,8 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
 
     if (!toCommit->squash[tid] || inst->seqNum < toCommit->squashedSeqNum[tid]) {
         toCommit->squash[tid] = true;
+        toCommit->valuePredictionError[tid] = false;
+        toCommit->addressPredictionError[tid] = false;
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedTargetId[tid] = inst->getFtqId();
         toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
@@ -595,6 +597,8 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
     // the squash.
     if (!toCommit->squash[tid] || inst->seqNum <= toCommit->squashedSeqNum[tid]) {
         toCommit->squash[tid] = true;
+        toCommit->valuePredictionError[tid] = false;
+        toCommit->addressPredictionError[tid] = false;
 
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedTargetId[tid] = inst->getFtqId();
@@ -628,6 +632,7 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
         toCommit->squash[tid] = true;
 
         toCommit->valuePredictionError[tid] = true;
+        toCommit->addressPredictionError[tid] = false;
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         toCommit->squashedTargetId[tid] = inst->getFtqId();
         toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
@@ -650,6 +655,34 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
                 toCommit->pc[tid]->instAddr(),
                 toCommit->squashedTargetId[tid],
                 toCommit->squashedLoopIter[tid]);
+    }
+
+    stallSig->blockRename[tid] = true;
+}
+
+void
+IEW::squashDueToAddressPrediction(const DynInstPtr &inst, ThreadID tid)
+{
+    DPRINTF(IEW, "[tid:%i] address prediction error, squashing violator and "
+            "younger insts, PC: %s [sn:%llu].\n",
+            tid, inst->pcState(), inst->seqNum);
+    if (!toCommit->squash[tid] || inst->seqNum < toCommit->squashedSeqNum[tid]) {
+        toCommit->squash[tid] = true;
+
+        toCommit->valuePredictionError[tid] = false;
+        toCommit->addressPredictionError[tid] = true;
+        toCommit->squashedSeqNum[tid] = inst->seqNum;
+        toCommit->squashedTargetId[tid] = inst->getFtqId();
+        toCommit->squashedLoopIter[tid] = inst->getLoopIteration();
+        set(toCommit->pc[tid], inst->pcState());
+
+        // advance pc to next instruction
+        inst->staticInst->advancePC(*toCommit->pc[tid]);
+
+        toCommit->mispredictInst[tid] = NULL;
+        toCommit->includeSquashInst[tid] = false;
+
+        wroteToTimeBuffer = true;
     }
 
     stallSig->blockRename[tid] = true;
@@ -727,6 +760,13 @@ IEW::readyToFinish(const DynInstPtr& inst)
             // deal with value prediction error
             fetchRedirect[tid] = true;
             squashDueToValuePrediction(inst, tid);
+        }
+    }
+    if (inst->apMisprediction) {
+        if (!fetchRedirect[tid] || !toCommit->squash[tid] ||
+            toCommit->squashedSeqNum[tid] > inst->seqNum) {
+            fetchRedirect[tid] = true;
+            squashDueToAddressPrediction(inst, tid);
         }
     }
 
@@ -1043,7 +1083,9 @@ IEW::dispatchInstFromRename(ThreadID tid)
 
             ldstQueue.insertLoad(inst);
             add_to_iq = true;
-            if (valuePred && inst->vpSupported && inst->vpResult.speculative) {
+            if ((valuePred && inst->vpSupported && inst->vpResult.speculative) ||
+                (cpu->isAddressPredictorEnabled() && inst->apSupported &&
+                 inst->apProbeApplied)) {
                 lvpWakeDependents(inst);
             }
         } else if (inst->isStore()) {
@@ -1203,7 +1245,9 @@ IEW::classifyInstToDispQue(ThreadID tid)
             inst->enterDQTick = curTick();
             cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtDispQue);
 
-            if (valuePred && inst->vpSupported && inst->vpResult.speculative) {
+            if ((valuePred && inst->vpSupported && inst->vpResult.speculative) ||
+                (cpu->isAddressPredictorEnabled() && inst->apSupported &&
+                 inst->apProbeApplied)) {
                 lvpWakeDependents(inst);
             }
 
@@ -1744,6 +1788,10 @@ IEW::tick()
 
     wroteToTimeBuffer = false;
     updatedQueues = false;
+    for (ThreadID tid = 0; tid < numThreads; tid++) {
+        toCommit->valuePredictionError[tid] = false;
+        toCommit->addressPredictionError[tid] = false;
+    }
 
     scheduler->tick();
     ldstQueue.tick();

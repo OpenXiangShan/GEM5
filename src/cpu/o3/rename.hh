@@ -46,6 +46,7 @@
 #include <utility>
 
 #include "base/statistics.hh"
+#include "cpu/addresspred/addresspred_unit.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/commit.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
@@ -439,6 +440,18 @@ class Rename
 
         statistics::Scalar moveEliminated;
         statistics::Scalar constantFolded;
+        /**
+         * Number of instructions with a speculative address prediction
+         * reaching rename (after VP exclusion and AP support checks).
+         */
+        statistics::Scalar apSpeculativeCandidates;
+        /**
+         * Number of speculative AP candidates whose probe response is not
+         * ready when rename tries to consume it.
+         */
+        statistics::Scalar apProbeNotReadyAtRename;
+        /** Ratio of late AP probe responses at rename. */
+        statistics::Formula apProbeNotReadyRatio;
 
         statistics::Vector stallEvents;
     } stats;
@@ -455,6 +468,9 @@ class Rename
 
     /** Value predictor */
     valuepred::VPUnit *valuePred;
+
+    /** Address predictor */
+    addresspred::APUnit *addressPred;
 };
 
 } // namespace o3

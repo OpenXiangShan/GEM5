@@ -44,6 +44,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <deque>
 #include <list>
 #include <map>
 #include <queue>
@@ -951,6 +952,14 @@ class LSQ
                       uint64_t *res, AtomicOpFunctorPtr amo_op,
                       const std::vector<bool>& byte_enable);
 
+    /**
+     * Send a one-shot dcache probe used by address prediction.
+     *
+     * The request never allocates LSQ entries and only captures hit/miss/data
+     * feedback for the given dynamic load.
+     */
+    bool sendAddrPredProbe(const DynInstPtr &inst, Addr paddr);
+
     /** The CPU pointer. */
     CPU *cpu;
 
@@ -1116,6 +1125,9 @@ class LSQ
 
     /** Data port. */
     DcachePort dcachePort;
+
+    /** Retry queue of address-prediction probe packets. */
+    std::deque<PacketPtr> addrPredProbeRetryQ;
 
     /** The LSQ units for individual threads. */
     std::vector<LSQUnit> thread;

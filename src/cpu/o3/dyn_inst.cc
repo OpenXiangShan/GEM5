@@ -53,6 +53,8 @@
 #include "debug/LSQ.hh"
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
+#include "mem/packet.hh"
+#include "mem/request.hh"
 
 namespace gem5
 {
@@ -444,6 +446,29 @@ DynInst::completeAcc(PacketPtr pkt)
     thread->noSquashFromTC = no_squash_from_TC;
 
     return fault;
+}
+
+bool
+DynInst::applyAddrPredValue()
+{
+    if (!canAP() || !apProbeDone || !apProbeHit || apProbeDataSize == 0 ||
+        numDestRegs() != 1 ||
+        extRenamedDestIdx(0).PhyReg()->isFixedMapping()) {
+        return false;
+    }
+
+    auto req = std::make_shared<Request>(apResult.addr, apProbeDataSize,
+            Request::Flags(), requestorId(), pcState().instAddr(), contextId());
+    req->setPaddr(apResult.addr);
+    req->setReqInstSeqNum(seqNum);
+    Packet pkt(req, MemCmd::ReadResp);
+    pkt.dataStatic(apProbeData.data());
+
+    const Fault old_fault = fault;
+    const Fault completion_fault = completeAcc(&pkt);
+    fault = old_fault;
+
+    return completion_fault == NoFault;
 }
 
 void DynInst::buildStoreAddrUop()

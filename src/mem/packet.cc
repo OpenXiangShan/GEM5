@@ -70,6 +70,15 @@ MemCmd::commandInfo[] =
     { {}, InvalidCmd, "InvalidCmd" },
     /* CustomBusClear - Clear the bus data at LSU */
     { {}, CustomBusClear, "CustomBusClear" },
+    /* AddrPredReadReq - Special address-prediction probe read from CPU. */
+    { {IsRead, IsRequest, NeedsResponse},
+            AddrPredReadHitResp, "AddrPredReadReq" },
+    /* AddrPredReadHitResp */
+    { {IsRead, IsResponse, HasData},
+            InvalidCmd, "AddrPredReadHitResp" },
+    /* AddrPredReadMissResp */
+    { {IsRead, IsResponse},
+            InvalidCmd, "AddrPredReadMissResp" },
     /* ReadReq - Read issued by a non-caching agent such as a CPU or
      * device, with no restrictions on alignment. */
     { {IsRead, IsRequest, NeedsResponse}, ReadResp, "ReadReq" },

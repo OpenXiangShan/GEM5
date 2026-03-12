@@ -54,6 +54,7 @@
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
+#include "cpu/addresspred/addresspred_metadata.hh"
 #include "cpu/checker/cpu.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/exetrace.hh"
@@ -133,6 +134,13 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Completes the access.  Only valid for memory operations. */
     Fault completeAcc(PacketPtr pkt);
+
+    /**
+     * Apply address-prediction probe data using the ISA load completion path.
+     * Returns true when speculative data is successfully materialized into the
+     * destination register.
+     */
+    bool applyAddrPredValue();
 
     // create store data uop
     void buildStoreAddrUop();
@@ -1030,13 +1038,14 @@ class DynInst : public ExecContext, public RefCounted
     /** load/store pipe state begin */
 
     void beginPipelining() {
-                status &= ~(
-                    (1 << CacheHit) |
-                    (1 << WakeUpEarly) |
-                    (1 << FullForward) |
-                    (1 << LocalAccess) |
-                    (1 << NeedReplay) |
-                    (1 << SkipFollowingPipe));
+        apDataFromDcache = false;
+        status &= ~(
+                (1 << CacheHit) |
+                (1 << WakeUpEarly) |
+                (1 << FullForward) |
+                (1 << LocalAccess) |
+                (1 << NeedReplay) |
+                (1 << SkipFollowingPipe));
         status.set(InPipe);
         clearReplayType();
     }
@@ -1660,6 +1669,26 @@ class DynInst : public ExecContext, public RefCounted
     bool vpSupported = false;
 
     bool canLVP(){
+        return isLoad() && !isVector() && !isLoadReserved();
+    }
+
+    /** address prediction */
+    addresspred::APResult apResult = {false, 0};
+    bool apMisprediction = false;
+    bool apSupported = false;
+    bool apDataFromDcache = false;
+    /** dcache probe */
+    bool apProbeIssued = false;
+    bool apProbeInFlight = false;
+    bool apProbeDone = false;
+    bool apProbeHit = false;
+    bool apProbeApplied = false;
+    std::array<uint8_t, sizeof(RegVal)> apProbeData = {};
+    unsigned apProbeDataSize = 0;
+    RegVal apPredValue = 0;
+
+    bool canAP()
+    {
         return isLoad() && !isVector() && !isLoadReserved();
     }
 };

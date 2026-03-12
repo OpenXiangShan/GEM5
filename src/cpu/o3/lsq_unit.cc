@@ -1450,6 +1450,11 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
+    // Record whether this load's final value is directly provided by the
+    // dcache hit path. This is later used to filter address predictor
+    // training samples.
+    inst->apDataFromDcache = !inst->fullForward() && inst->cacheHit();
+
     // No nuke happens, prepare the inst data
     // assert(request->isNormalLd() ? !request->isAnyOutstandingRequest() : true);
     request = inst->savedRequest;

@@ -65,6 +65,7 @@
 #include "cpu/o3/thread_state.hh"
 #include "cpu/thread_context.hh"
 #include "cpu/timebuf.hh"
+#include "debug/APCOMMON.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
@@ -136,6 +137,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       cpu(_cpu),
       bp(_bp),
       valuePred(params.valuePred),
+      addressPred(params.addressPred),
       iewToCommitDelay(params.iewToCommitDelay),
       commitToIEWDelay(params.commitToIEWDelay),
       renameToROBDelay(params.renameToROBDelay),
@@ -297,6 +299,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Number of squash due to order violation"),
       ADD_STAT(squashDueToValuePrediction, statistics::units::Count::get(),
                "Number of squash due to value prediction"),
+      ADD_STAT(squashDueToAddressPrediction, statistics::units::Count::get(),
+               "Number of squash due to address prediction"),
       ADD_STAT(squashDueToTrap, statistics::units::Count::get(),
                "Number of squash due to trap"),
       ADD_STAT(squashDueToTC, statistics::units::Count::get(),
@@ -382,7 +386,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
 
     committedInstType.ysubnames(enums::OpClassStrings);
 
-    totalSquash = squashDueToBranch + squashDueToOrderViolation + \
+    totalSquash = squashDueToBranch + squashDueToOrderViolation +
+        squashDueToValuePrediction + squashDueToAddressPrediction +
         squashDueToTrap + squashDueToTC + squashDueToSquashAfter;
 }
 
@@ -696,6 +701,8 @@ Commit::squashAll(ThreadID tid)
 
     if (valuePred)
         valuePred->squash(squashed_inst);
+    if (addressPred)
+        addressPred->squash(squashed_inst);
 
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
@@ -1045,6 +1052,11 @@ Commit::commit()
                     "[tid:%i] Squashing due to value prediction error [sn:%llu]\n",
                     tid, fromIEW->squashedSeqNum[tid]);
                 stats.squashDueToValuePrediction++;
+            } else if (fromIEW->addressPredictionError[tid]) {
+                DPRINTF(Commit,
+                    "[tid:%i] Squashing due to address prediction error [sn:%llu]\n",
+                    tid, fromIEW->squashedSeqNum[tid]);
+                stats.squashDueToAddressPrediction++;
             } else {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
@@ -1074,6 +1086,8 @@ Commit::commit()
 
             if (valuePred)
                 valuePred->squash(squashed_inst);
+            if (addressPred)
+                addressPred->squash(squashed_inst);
 
             toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
             toIEW->commitInfo[tid].doneMemSeqNum = squashed_inst;
@@ -1850,6 +1864,46 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         }
 
         delete updateMetaData;
+    }
+
+    if (addressPred && head_inst->canAP() && (inst_fault == NoFault)) {
+        const bool from_dcache = head_inst->apDataFromDcache;
+
+        addresspred::APUpdateMetaData *updateMetaData = addresspred::
+                APDataStructFactory::buildUpdateMetaData(
+                        addressPred->getAddressPredictorType());
+        updateMetaData->pc = head_inst->getPC();
+        updateMetaData->seq_no = head_inst->seqNum;
+        updateMetaData->actualAddr = head_inst->physEffAddr;
+        updateMetaData->fromDcache = from_dcache;
+        updateMetaData->isMisprediction = head_inst->apMisprediction;
+
+        DPRINTF(APCOMMON,
+                "LAP train req [sn:%llu] pc=0x%lx addr=0x%lx fromDcache=%d "
+                "apProbeIssued=%d apProbeDone=%d apProbeHit=%d "
+                "apProbeApplied=%d apMisprediction=%d apSuccess=%d\n",
+                head_inst->seqNum, updateMetaData->pc,
+                updateMetaData->actualAddr, updateMetaData->fromDcache,
+                head_inst->apProbeIssued, head_inst->apProbeDone,
+                head_inst->apProbeHit, head_inst->apProbeApplied,
+                head_inst->apMisprediction,
+                head_inst->apProbeApplied && !head_inst->apMisprediction);
+
+        addressPred->stats.APupdateRequests++;
+        if (from_dcache) {
+            addressPred->stats.APupdateFromDcache++;
+        }
+
+        addressPred->updateAddressPredictor(updateMetaData);
+        delete updateMetaData;
+
+        addressPred->stats.APsupported++;
+        if (head_inst->apProbeApplied) {
+            addressPred->stats.APpredicted++;
+            if (!head_inst->apMisprediction) {
+                addressPred->stats.APcorrected++;
+            }
+        }
     }
 
     // Finally clear the head ROB entry.

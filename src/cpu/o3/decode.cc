@@ -598,6 +598,11 @@ Decode::decodeInsts(ThreadID tid)
             inst->setCanIssue();
         }
 
+        if (inst->numDestRegs() == 1 && inst->canAP() &&
+            inst->apResult.speculative && !inst->apProbeIssued) {
+            cpu->sendAddrPredProbe(inst, inst->apResult.addr);
+        }
+
         // This current instruction is valid, so add it into the decode
         // queue.  The next instruction may not be valid, so check to
         // see if branches were predicted correctly.

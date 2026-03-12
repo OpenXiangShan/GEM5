@@ -635,6 +635,15 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     virtual void recvTimingReq(PacketPtr pkt);
 
+    /**
+     * Handle a special one-shot address-prediction probe request.
+     *
+     * This request reuses the L1 data array/tag lookup path but never allocates
+     * an MSHR on miss. It always returns quickly with either a hit response
+     * carrying data or a miss response without data.
+     */
+    void recvTimingAddrPredReadReq(PacketPtr pkt);
+
     bool tryAccessTag(PacketPtr pkt);
 
     void calReqInterval(PacketPtr pkt);

@@ -44,6 +44,7 @@ from m5.objects.BaseCPU import BaseCPU
 from m5.objects.FuncScheduler import *
 #from m5.objects.O3Checker import O3Checker
 from m5.objects.BranchPredictor import *
+from m5.objects.AddressPredictor import *
 from m5.objects.ValuePredictor import *
 from m5.SimObject import *
 
@@ -257,6 +258,9 @@ class BaseO3CPU(BaseCPU):
 
     # value predictor
     valuePred = Param.ValuePredictor(NULL, "valuepred unit")
+
+    # address predictor
+    addressPred = Param.AddressPredictor(NULL, "addresspred unit")
 
     enable_loadFusion = Param.Bool(False, "Enable load fusion")
 

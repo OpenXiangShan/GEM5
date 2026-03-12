@@ -132,7 +132,8 @@ CPU::CPU(const BaseO3CPUParams &params)
       enableConstantFolding(params.enableConstantFolding),
       enableMovImmElimination(params.enableMovImmElimination),
       cpuStats(this),
-      valuePred(params.valuePred)
+      valuePred(params.valuePred),
+      addressPred(params.addressPred)
 {
     fatal_if(FullSystem && params.numThreads > 1,
             "SMT is not supported in O3 in full system mode currently.");

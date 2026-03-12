@@ -46,6 +46,7 @@
 #include "mem/cache/base.hh"
 
 #include <algorithm>
+#include <cassert>
 #include <cstdio>
 
 #include "base/compiler.hh"
@@ -622,6 +623,34 @@ BaseCache::calReqInterval(PacketPtr pkt)
 }
 
 void
+BaseCache::recvTimingAddrPredReadReq(PacketPtr pkt)
+{
+    assert(pkt->isAddrPredReadReq());
+
+    Cycles lat = lookupLatency;
+    CacheBlk *blk = nullptr;
+    PacketList writebacks;
+    const bool satisfied = access(pkt, blk, lat, writebacks);
+
+    Tick request_time = clockEdge(lat);
+    pkt->headerDelay = pkt->payloadDelay = 0;
+
+    if (satisfied) {
+        handleTimingReqHit(pkt, blk, request_time, false);
+        return;
+    }
+
+    // Misses never allocate MSHRs for address-pred probes. Respond
+    // immediately with a miss response and no payload.
+    assert(pkt->needsResponse());
+    assert(cacheLevel == 1);
+
+    pkt->makeTimingResponse();
+    pkt->cmd = MemCmd::AddrPredReadMissResp;
+    this->schedule(new SendTimingRespEvent(this, pkt), request_time);
+}
+
+void
 BaseCache::recvTimingReq(PacketPtr pkt)
 {
     calReqInterval(pkt);
@@ -644,6 +673,11 @@ BaseCache::recvTimingReq(PacketPtr pkt)
                 schedMemSideSendEvent(next_pf_time);
             }
         }
+        return;
+    }
+
+    if (pkt->isAddrPredReadReq()) {
+        recvTimingAddrPredReadReq(pkt);
         return;
     }
 

@@ -88,6 +88,9 @@ class MemCmd
     {
         InvalidCmd,
         CustomBusClear,
+        AddrPredReadReq,
+        AddrPredReadHitResp,
+        AddrPredReadMissResp,
         ReadReq,
         ReadResp,
         ReadRespWithInvalidate,
@@ -617,6 +620,15 @@ class Packet : public Printable
     inline int cmdToIndex() const { return cmd.toInt(); }
 
     bool isStorePFTrain() const     { return cmd == MemCmd::StorePFTrain;  }
+    bool isAddrPredReadReq() const  { return cmd == MemCmd::AddrPredReadReq; }
+    bool isAddrPredReadHitResp() const
+    {
+        return cmd == MemCmd::AddrPredReadHitResp;
+    }
+    bool isAddrPredReadMissResp() const
+    {
+        return cmd == MemCmd::AddrPredReadMissResp;
+    }
 
     bool isRead() const              { return cmd.isRead(); }
     bool isWrite() const             { return cmd.isWrite(); }

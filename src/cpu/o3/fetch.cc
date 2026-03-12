@@ -111,7 +111,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numFetchingThreads(params.smtNumFetchingThreads),
       icachePort(this, _cpu),
       finishTranslationEvent(this), fetchStats(_cpu, this),
-      valuePred(params.valuePred)
+      valuePred(params.valuePred),
+      addressPred(params.addressPred)
 {
     if (numThreads > MaxThreads)
         fatal("numThreads (%d) is larger than compiled limit (%d),\n"
@@ -1931,6 +1932,21 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         vpPredMetaData->seq_no = instruction->seqNum;
         instruction->vpResult = valuePred->valuePredict(vpPredMetaData);
         delete vpPredMetaData;
+    }
+
+    // Address prediction is disabled for loads already selected by value
+    // prediction.
+    if (addressPred && instruction->canAP() &&
+        !instruction->vpResult.speculative) {
+        addresspred::APPredMetaData *apPredMetaData = addresspred::
+                APDataStructFactory::buildPredMetaData(
+                        addressPred->getAddressPredictorType());
+        apPredMetaData->pc = instruction->getPC();
+        apPredMetaData->seq_no = instruction->seqNum;
+        instruction->apResult = addressPred->addressPredict(apPredMetaData);
+        delete apPredMetaData;
+    } else {
+        instruction->apResult = {false, 0};
     }
 
     return predictedBranch;

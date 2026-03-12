@@ -67,7 +67,8 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       releaseWidth(params.phyregReleaseWidth),
       numThreads(params.numThreads),
       stats(_cpu),
-      valuePred(params.valuePred)
+      valuePred(params.valuePred),
+      addressPred(params.addressPred)
 {
     if (renameWidth > MaxWidth)
         fatal("renameWidth (%d) is larger than compiled limit (%d),\n"
@@ -145,6 +146,14 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
                "count of insts eliminated by move elimination"),
       ADD_STAT(constantFolded, statistics::units::Count::get(),
                "count of insts eliminated by constant folding"),
+      ADD_STAT(apSpeculativeCandidates, statistics::units::Count::get(),
+               "count of speculative address-prediction candidates in rename"),
+      ADD_STAT(apProbeNotReadyAtRename, statistics::units::Count::get(),
+               "count of AP candidates whose dcache probe is not ready at "
+               "rename"),
+      ADD_STAT(apProbeNotReadyRatio, statistics::units::Ratio::get(),
+               "ratio of AP candidates with not-ready dcache probe at rename",
+               apProbeNotReadyAtRename / apSpeculativeCandidates),
       ADD_STAT(stallEvents, statistics::units::Count::get(),
                "count of stall events")
 {
@@ -178,6 +187,8 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
     skidInsts.flags(statistics::total);
     moveEliminated.flags(statistics::total);
     constantFolded.flags(statistics::total);
+    apSpeculativeCandidates.prereq(apSpeculativeCandidates);
+    apProbeNotReadyAtRename.prereq(apProbeNotReadyAtRename);
 
     stallEvents.init(StallEventCount).flags(statistics::total);
     std::map < StallEvent, const char* > stall_event_str = {
@@ -933,29 +944,70 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
 
         ++stats.renamedOperands;
 
+        bool vp_used = false;
         if (valuePred) {
             if (num_dest_regs != 1 || !inst->canLVP()) {
                 inst->vpSupported = false;
                 inst->vpResult.speculative = false;
                 inst->vpResult.value = 0xdeadbeefULL;
-                continue;
+            } else {
+                inst->vpSupported = true;
+                if (inst->vpResult.speculative) {
+                    // set the scoreboard, let the back-to-back rename inst
+                    // mark reg ready
+                    scoreboard->setReg(rename_result.first.PhyReg());
+                    inst->setRegOperand(inst->staticInst.get(), 0,
+                                        inst->vpResult.value);
+                    // must pop result here
+                    inst->popResult();
+                    vp_used = true;
+                    DPRINTF(Rename,
+                            "Rename-Stage instruction[%s] generate "
+                            "prediction value."
+                            "seq num: %lu pc: %lX "
+                            "prediction value: %lu \n",
+                            inst->staticInst->disassemble(inst->getPC()),
+                            inst->seqNum, inst->getPC(), inst->vpResult.value);
+                }
             }
+        }
 
-            inst->vpSupported = true;
-            if (inst->vpResult.speculative) {
-                // set the scoreboard, let the back-to-back rename inst mark reg ready
-                scoreboard->setReg(rename_result.first.PhyReg());
-                inst->setRegOperand(inst->staticInst.get(), 0, inst->vpResult.value);
-                // must pop result here
-                inst->popResult();
-                DPRINTF(Rename,
-                        "Rename-Stage instruction[%s] generate "
-                        "prediction value."
-                        "seq num: %lu pc: %lX "
-                        "prediction value: %lu \n",
-                        inst->staticInst->disassemble(inst->getPC()),
-                        inst->seqNum, inst->getPC(), inst->vpResult.value);
+        if (addressPred) {
+            if (num_dest_regs != 1 || !inst->canAP() || vp_used) {
+                inst->apSupported = false;
+                inst->apProbeApplied = false;
+                inst->apMisprediction = false;
+                if (vp_used) {
+                    inst->apResult.speculative = false;
+                }
+            } else {
+                inst->apSupported = true;
+                if (inst->apResult.speculative) {
+                    stats.apSpeculativeCandidates++;
+                    if (!inst->apProbeDone) {
+                        stats.apProbeNotReadyAtRename++;
+                    }
+                }
+                if (inst->apResult.speculative && inst->apProbeDone &&
+                    inst->apProbeHit && inst->applyAddrPredValue()) {
+                    scoreboard->setReg(rename_result.first.PhyReg());
+                    inst->apProbeApplied = true;
+                    inst->apPredValue = cpu->getReg(inst->extRenamedDestIdx(0));
+                    inst->popResult();
+                    DPRINTF(Rename,
+                            "Rename-Stage instruction[%s] consume address "
+                            "prediction data. seq num: %lu pc: %lX addr: %lX\n",
+                            inst->staticInst->disassemble(inst->getPC()),
+                            inst->seqNum, inst->getPC(), inst->apResult.addr);
+                } else {
+                    inst->apResult.speculative = false;
+                    inst->apProbeApplied = false;
+                }
             }
+        } else {
+            inst->apSupported = false;
+            inst->apProbeApplied = false;
+            inst->apResult.speculative = false;
         }
     }
 }

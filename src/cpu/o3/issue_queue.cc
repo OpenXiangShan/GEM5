@@ -1465,6 +1465,16 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
             }
         }
     }
+
+    if (inst->canAP() && inst->apSupported && inst->apProbeApplied &&
+        inst->fault == NoFault) {
+        RegVal actualValue = cpu->getReg(inst->extRenamedDestIdx(0));
+        const bool addrMatch = inst->physEffAddr == inst->apResult.addr;
+        const bool dataMatch = actualValue == inst->apPredValue;
+        if (!addrMatch || !dataMatch) {
+            inst->apMisprediction = true;
+        }
+    }
 }
 
 uint32_t

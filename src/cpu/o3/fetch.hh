@@ -51,6 +51,7 @@
 #include "arch/riscv/types.hh"
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
+#include "cpu/addresspred/addresspred_unit.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
@@ -1120,6 +1121,9 @@ public:
 
     /** Value predictor */
     valuepred::VPUnit *valuePred;
+
+    /** Address predictor */
+    addresspred::APUnit *addressPred;
 };
 
 } // namespace o3

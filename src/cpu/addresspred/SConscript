@@ -1,0 +1,18 @@
+Import('*')
+
+SimObject('AddressPredictor.py',
+          sim_objects=[
+            'AddressPredictor',
+            'IdealConstantAP',
+            'EStrideAP'
+          ],
+          enums=['AddressPredType'])
+
+Source('addresspred_unit.cc')
+Source('addresspred_metadata.cc')
+Source('ideal_constant_ap.cc')
+Source('enhanced_stride_ap.cc')
+
+DebugFlag('APCOMMON')
+
+CompoundFlag('AP', ['APCOMMON'])

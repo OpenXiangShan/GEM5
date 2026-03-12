@@ -159,6 +159,7 @@ struct IEWStruct
     bool includeSquashInst[MaxThreads];
 
     bool valuePredictionError[MaxThreads];
+    bool addressPredictionError[MaxThreads];
 };
 
 struct IssueStruct

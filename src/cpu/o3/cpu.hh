@@ -53,6 +53,7 @@
 #include "base/statistics.hh"
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
+#include "cpu/addresspred/addresspred_unit.hh"
 #include "cpu/base.hh"
 #include "cpu/difftest.hh"
 #include "cpu/o3/comm.hh"
@@ -629,6 +630,12 @@ class CPU : public BaseCPU
                 flags, res, std::move(amo_op), byte_enable);
     }
 
+    bool
+    sendAddrPredProbe(const DynInstPtr &inst, Addr paddr)
+    {
+        return iew.ldstQueue.sendAddrPredProbe(inst, paddr);
+    }
+
     /** Used by the fetch unit to get a hold of the instruction port. */
     Port &
     getInstPort() override
@@ -745,10 +752,17 @@ class CPU : public BaseCPU
     /** Value predictor */
     valuepred::VPUnit *valuePred;
 
+    /** Address predictor */
+    addresspred::APUnit *addressPred;
+
   public:
     bool isValuePredictorEnabled() const { return valuePred != nullptr; }
 
     valuepred::VPUnit *getValuePredictor() const { return valuePred; }
+
+    bool isAddressPredictorEnabled() const { return addressPred != nullptr; }
+
+    addresspred::APUnit *getAddressPredictor() const { return addressPred; }
 };
 
 } // namespace o3
