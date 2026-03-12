@@ -1167,7 +1167,7 @@ CoherentXBar::sinkPacket(const PacketPtr pkt) const
     return (pointOfCoherency && pkt->cacheResponding()) ||
         (pointOfCoherency && !(pkt->isRead() || pkt->isWrite()) &&
          !pkt->needsResponse()) ||
-        (pkt->isCleanEviction() && pkt->isBlockCached()) ||
+        (pkt->cmd == MemCmd::CleanEvict && pkt->isBlockCached()) ||
         (pkt->cacheResponding() &&
          (!pkt->needsWritable() || pkt->responderHadWritable()));
 }
