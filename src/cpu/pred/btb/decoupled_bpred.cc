@@ -916,13 +916,14 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
             components[i]->specUpdateLHist(s0LHistory, finalPred);
         }
         if (components[i]->needGBHR){
-            components[i]->specUpdateGBHR(finalPred);
+            components[i]->specUpdateGBHR(s0History, finalPred);
         }
     }
 
     // Get prediction information for history updates
     int shamt;
     bool taken;
+    int s0Len = s0History.size();
     std::tie(shamt, taken) = finalPred.getHistInfo();
 
     // Update global history
@@ -1015,10 +1016,11 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
             components[i]->recoverLHist(s0LHistory, target, real_shamt, real_taken);
         }
         if (components[i]->needGBHR){
-            components[i]->recoverGBHR(target, real_shamt, real_taken);
+            components[i]->recoverGBHR(s0History, target, real_shamt, real_taken);
         }
     }
 
+    int s0Len = s0History.size();
     // Update global history with actual outcome
     histShiftIn(real_shamt, real_taken, s0History);
 

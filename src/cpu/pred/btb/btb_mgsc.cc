@@ -122,7 +122,7 @@ BTBMGSC::initStorage()
         return gbhrLen+1;
     };
     auto percepWeightTableSize = allocWeightTable(percepWeightTable,percepTableEntryNum);
-    gbhr.resize(gbhrLen,1);
+    gbhr.resize(gbhrLen,0);
 
     pUpdateThreshold.resize(pow2(thresholdTablelogSize));
 }
@@ -1305,15 +1305,25 @@ BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, Fu
 }
 
 void
-BTBMGSC::specUpdateGBHR(FullBTBPrediction &pred)
+BTBMGSC::specUpdateGBHR(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getHistInfo();
-    if (shamt > 0){
+    int index = -1;
+    for (int i=0;i<gbhrLen;i++){
+        if (history[i] != gbhr[i])
+            index = i;
+    }
+    int len = history.size();
+    if (index >= 0)//0xfffdf7fefffffffe
+        gbhr[0] = history[0];
+
+    while (shamt > 0){
+        shamt --;
         if (!gbhr.empty()) {
             gbhr.pop_back();
-            gbhr.insert(gbhr.begin(), cond_taken);
+            gbhr.insert(gbhr.begin(), shamt>0?0:cond_taken);
         }
     }
 
@@ -1456,17 +1466,27 @@ BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const
         }
 
 void
-BTBMGSC::recoverGBHR(const FetchTarget &entry, int shamt, bool cond_taken){
+BTBMGSC::recoverGBHR(const boost::dynamic_bitset<> &history,
+            const FetchTarget &entry, int shamt, bool cond_taken){
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i=0;i<gbhrLen;i++)
         gbhr[i] = predMeta->gbhr[i];
-    if (shamt > 0){
+    int index = -1;
+    for (int i=0;i<gbhrLen;i++){
+        if (history[i] != gbhr[i])
+            index = i;
+    }
+    int len = history.size();
+    if (index >= 0)
+        gbhr[0] = history[0];
+    while (shamt > 0){
+        shamt --;
         if (!gbhr.empty()) {
             gbhr.pop_back();
-            gbhr.insert(gbhr.begin(), cond_taken);
+            gbhr.insert(gbhr.begin(), shamt>0?0:cond_taken);
         }
     }
 }
