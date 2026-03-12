@@ -451,6 +451,7 @@ struct FetchTarget
  */
 struct FullBTBPrediction
 {
+    ThreadID tid;
     Addr bbStart;
     std::vector<BTBEntry> btbEntries; // for BTB, only assigned when hit, sorted by inst order
     // for conditional branch predictors, mapped with lowest bits of branches

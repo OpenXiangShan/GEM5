@@ -625,12 +625,12 @@ DecoupledBPUWithBTB::processPhase(bool isSubPhase, int phaseID, int &phaseToDump
 void
 DecoupledBPUWithBTB::dumpFsq(const char *when)
 {
-    DPRINTF(DecoupleBPProbe, "dumping fsq entries %s...\n", when);
-    for (size_t i = 0; i < fetchTargetQueue.size(); ++i) {
-        DPRINTFR(DecoupleBPProbe, "TargetID %lu, ",
-                 static_cast<uint64_t>(fetchTargetBaseId + i));
-        printTarget(fetchTargetQueue[i]);
-    }
+    // DPRINTF(DecoupleBPProbe, "dumping fsq entries %s...\n", when);
+    // for (size_t i = 0; i < fetchTargetQueue.size(); ++i) {
+    //     DPRINTFR(DecoupleBPProbe, "TargetID %lu, ",
+    //              static_cast<uint64_t>(fetchTargetBaseId + i));
+    //     printTarget(fetchTargetQueue[i]);
+    // }
 }
 
 DecoupledBPUWithBTB::BranchClass
@@ -799,7 +799,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     addBranchClassStat(branchClass, mispred);
 
     // ---------- Find corresponding fetch target entry ----------
-    auto entry = getTarget(inst->ftqId);
+    auto entry = ftq.get(inst->ftqId, inst->threadNumber);
 
     // Record branch trace if enabled
     if (enableBranchTrace) {
@@ -913,14 +913,14 @@ void
 DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 {
     // Update committed instruction count for target
-    getTarget(inst->ftqId).commitInstNum++;
+    ftq.get(inst->ftqId, inst->threadNumber).commitInstNum++;
 
     // Update global committed instruction count
     numInstCommitted++;
 
     DPRINTF(Profiling, "notifyInstCommit, inst=%s, commitInstNum=%d\n",
             inst->staticInst->disassemble(inst->pcState().instAddr()),
-            getTarget(inst->ftqId).commitInstNum);
+            ftq.get(inst->ftqId, inst->threadNumber).commitInstNum);
 
     // ----------------------- Main Phase Processing -------------------------
     if (numInstCommitted % phaseSizeByInst == 0) {
