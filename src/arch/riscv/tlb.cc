@@ -1903,17 +1903,7 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     TlbEntry *pre_back = l2tlb->lookupBackPre(back_pre_block, satp.asid, true);
     backPrePrecision = checkPrePrecision(l2tlb->removeNoUseBackPre, l2tlb->usedBackPre);
     forwardPrePrecision = checkPrePrecision(l2tlb->removeNoUseForwardPre, l2tlb->forwardUsedPre);
-    if (walker->openSv48) {
-        fault = walker->start(0, tc, translation, req, mode, false, false, 3, false, 0);
 
-        if (translation != nullptr || fault != NoFault) {
-            // This gets ignored in atomic mode.
-            delayed = true;
-            return fault;
-        } else {
-            panic("sv48 goes wrong\n");
-        }
-    }
 
     for (int i_e = 1; i_e < L_L2SUM; i_e++) {
         if ((satp.mode == AddrXlateMode::SV39) && (i_e == L_L2L3 || i_e == L_L2sp3))

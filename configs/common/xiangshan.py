@@ -187,7 +187,7 @@ def generate_xiangshan_dtb(system, *, cmdline: str, outdir: str = None) -> str:
     cpus_node.append(cpus_state.sizeCellsProperty())
     cpus_node.append(FdtPropertyWords("timebase-frequency", [10000000]))
 
-    mmu_type = "riscv,sv48" if bool(getattr(system, "enable_sv48", False)) else "riscv,sv39"
+    mmu_type = "riscv,sv48"
     isa_string = "rv64imafdc"
 
     for i, cpu in enumerate(system.cpu):
