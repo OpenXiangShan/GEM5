@@ -239,6 +239,15 @@ namespace xsCHI
         uint16_t getDataId()  { return data_id; }
         void setDataId(uint16_t v) { data_id = v; }
 
+        uint16_t getMeshHopCount() { return mesh_hop_count; }
+        void setMeshHopCount(uint16_t v) { mesh_hop_count = v; }
+
+        uint64_t getMeshInjectTick() { return mesh_inject_tick; }
+        void setMeshInjectTick(uint64_t v) { mesh_inject_tick = v; }
+
+        bool getMeshStatsValid() { return mesh_stats_valid; }
+        void setMeshStatsValid(bool v) { mesh_stats_valid = v; }
+
         // uint32_t getBe()  { return be; }
         // void setBe(uint32_t v) { be = v; }
 
@@ -316,6 +325,9 @@ namespace xsCHI
                             // this flit carries the first DATA_TRANSFER_WIDTH_BYTE bytes of data.
         uint16_t ccid;              // Critical Chunk Identifier, CCID
         uint16_t data_id;           // Data Identifier, DataID
+        uint16_t mesh_hop_count;    // Number of directional mesh hops traversed.
+        uint64_t mesh_inject_tick;  // Tick when entering mesh from a local ingress.
+        bool mesh_stats_valid;      // Whether mesh hop/latency metadata is valid.
 
         // uint32_t be;                // Byte Enable, BE
         // uint32_t data_check;        // Data check, DataCheck

@@ -31,6 +31,9 @@ namespace xsCHI {
         data = nullptr;
         ccid = 0;
         data_id = 0;
+        mesh_hop_count = 0;
+        mesh_inject_tick = 0;
+        mesh_stats_valid = false;
     }
 
     Flit::Flit(Flit& other){
@@ -61,6 +64,9 @@ namespace xsCHI {
         dbid = other.dbid;
         ccid = other.ccid;
         data_id = other.data_id;
+        mesh_hop_count = other.mesh_hop_count;
+        mesh_inject_tick = other.mesh_inject_tick;
+        mesh_stats_valid = other.mesh_stats_valid;
 
     }
     Flit::Flit(CHI_OP_TYPE op,uint64_t addr,uint32_t size){

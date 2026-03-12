@@ -16,6 +16,7 @@
 #include "params/L2ToDramSys.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
+#include "sim/stats.hh"
 
 namespace gem5
 {
@@ -30,6 +31,8 @@ namespace xsCHI
 
 class CHIBridge : public ClockedObject
 {
+    static constexpr size_t NumChiOps =
+        static_cast<size_t>(CHI_OP_TYPE::CHI_RSP_OP_END) + 1;
 
     private:
         // CHIPort<ReqPtr> *storagePort; // 存储端口
@@ -72,6 +75,24 @@ class CHIBridge : public ClockedObject
 
         std::unordered_map<int, ReqPtr> outstanding_requests; // 存储由本节点产生的、未完成的请求
 
+        struct BridgeStats : public statistics::Group
+        {
+            explicit BridgeStats(CHIBridge *parent);
+
+            statistics::Vector protocol_tx_by_opcode;
+            statistics::Vector protocol_rx_by_opcode;
+            statistics::Scalar protocol_readshared_total;
+            statistics::Scalar protocol_writeevict_total;
+            statistics::Scalar protocol_compack_total;
+            statistics::Scalar protocol_snp_total;
+
+            statistics::Scalar wait_compack_cycles;
+            statistics::Histogram wait_compack_cycles_hist;
+            statistics::Scalar wait_compack_sent_total;
+            statistics::Formula wait_compack_avg_cycles;
+            statistics::Scalar wait_compack_pending_max;
+        } stats;
+
         void saveOutstandingRequest(ReqPtr &req, uint32_t txn_id);
 
         FlitPtr createRequestFlit(ReqPtr req);
@@ -107,7 +128,16 @@ class CHIBridge : public ClockedObject
         std::queue<ReqPtr> Req_tobesent; // 用于存储待发送的请求Flit,无限长
         EventFunctionWrapper req_handle_event; // 用于处理请求发送的事件
         std::queue<FlitPtr> Ack_tobesent; // 用于存储待发送的ACK Flit,无限长
+        std::queue<Tick> ack_enqueue_ticks; // ACK 入队时刻，与 Ack_tobesent 一一对应
+        size_t maxCompAckPending;
         EventFunctionWrapper ack_handle_event; // 用于处理ACK发送的事件
+
+        void recordProtocolTx(CHI_OP_TYPE op);
+        void recordProtocolRx(CHI_OP_TYPE op);
+        void updateProtocolAliases(CHI_OP_TYPE op);
+        static bool isSnpOpcode(CHI_OP_TYPE op);
+        static bool isWriteEvictOpcode(CHI_OP_TYPE op);
+        static size_t opcodeToIndex(CHI_OP_TYPE op);
 
         std::function<void(ReqPtr&)> recvReadResp_callback;//callback from L2Wrapper to handle read response
     public:

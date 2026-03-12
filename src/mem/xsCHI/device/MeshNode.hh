@@ -10,6 +10,7 @@
 #include "params/MeshNode.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
+#include "sim/stats.hh"
 
 namespace gem5
 {
@@ -72,6 +73,7 @@ class MeshNode : public ClockedObject
     static constexpr size_t NumPorts = static_cast<size_t>(PortIndex::NumPorts);
     static constexpr size_t NumChannels =
         static_cast<size_t>(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_NUM);
+    static constexpr size_t NumDirs = 4;
     // Must match NodeID encoding assumptions used in xsCHI.
     static constexpr uint32_t MeshCoordBits = 5;
 
@@ -91,6 +93,42 @@ class MeshNode : public ClockedObject
     // Round-robin cursor per [egress][channel].
     std::array<std::array<size_t, NumChannels>, NumPorts> rrCursor;
 
+    struct MeshNodeStats : public statistics::Group
+    {
+        explicit MeshNodeStats(MeshNode *parent);
+
+        statistics::Scalar msg_count_control;
+        statistics::Scalar msg_count_data;
+        statistics::Scalar msg_byte_data;
+
+        statistics::Vector ingress_flits_by_channel;
+        statistics::Vector egress_flits_by_channel;
+
+        statistics::Vector dir_egress_flits;
+        statistics::Vector dir_active_cycles;
+        statistics::Scalar send_event_cycles;
+        statistics::Formula dir_link_util;
+
+        statistics::Scalar voq_full_events;
+        statistics::Vector voq_full_events_by_egress;
+
+        statistics::Vector voq_depth_accum_by_egress;
+        statistics::Formula voq_avg_depth_by_egress;
+
+        statistics::Vector egress_stall_cycles_by_dir;
+        statistics::Vector egress_bw_sat_cycles_by_dir;
+
+        statistics::Histogram hop_count_hist_snp;
+        statistics::Histogram hop_count_hist_req;
+        statistics::Histogram hop_count_hist_rsp;
+        statistics::Histogram hop_count_hist_dat;
+
+        statistics::Histogram e2e_latency_hist_snp;
+        statistics::Histogram e2e_latency_hist_req;
+        statistics::Histogram e2e_latency_hist_rsp;
+        statistics::Histogram e2e_latency_hist_dat;
+    } stats;
+
     // Global retry/scheduling event for all output ports.
     EventFunctionWrapper sendEvent;
 
@@ -109,9 +147,12 @@ class MeshNode : public ClockedObject
 
     bool hasPendingFlits() const;
     size_t getQueueDepth(PortIndex egress, Flit::CHI_CHN_TYPE channel) const;
+    size_t getQueueDepthAllChannels(PortIndex egress) const;
     bool isEgressUsable(PortIndex egress) const;
     void scheduleSendEvent();
     void registerCallbacks();
+    void sampleHopCountByChannel(Flit::CHI_CHN_TYPE channel, Counter hops);
+    void sampleE2eLatencyByChannel(Flit::CHI_CHN_TYPE channel, Counter latency);
 
     // Runtime helpers. Do not call these directly from tests.
     static RouteDecision routeDecisionXYImpl(uint32_t nodeX, uint32_t nodeY,
@@ -123,7 +164,11 @@ class MeshNode : public ClockedObject
 
     static size_t portToIndex(PortIndex idx);
     static size_t channelToIndex(Flit::CHI_CHN_TYPE channel);
+    static int directionToIndex(PortIndex idx);
+    static bool isLocalPort(PortIndex idx);
     static const char* portName(PortIndex idx);
+    static const char* directionName(size_t idx);
+    static const char* channelName(Flit::CHI_CHN_TYPE channel);
 };
 
 inline MeshNode::RouteDecision

@@ -98,18 +98,17 @@ pendingToString(const std::array<size_t, 6>& pending)
 }
 
 void
-traceFlitPath(uint32_t srcNodeId, uint32_t tgtId,
+traceFlitPath(uint32_t srcX, uint32_t srcY, uint32_t tgtId,
               const std::vector<MeshNode::RouteDecision>& expectedPath)
 {
     ASSERT_FALSE(expectedPath.empty());
 
-    const auto source = decodeNodeId(srcNodeId);
     const auto target = decodeNodeId(tgtId);
-    uint32_t curX = source.x;
-    uint32_t curY = source.y;
+    uint32_t curX = srcX;
+    uint32_t curY = srcY;
 
-    std::cout << "[FlitTrace] src=" << nodeIdToString(srcNodeId)
-              << ", tgt=" << nodeIdToString(tgtId) << std::endl;
+    std::cout << "[FlitTrace] src=(" << srcX << ", " << srcY
+              << "), tgt=" << nodeIdToString(tgtId) << std::endl;
 
     for (size_t cycle = 0; cycle < expectedPath.size(); ++cycle) {
         const auto route = MeshNode::TestApi::routeDecisionXY(curX, curY, tgtId);
@@ -234,17 +233,15 @@ TEST(MeshNodeTest, RoundRobinSelect)
 
 TEST(MeshNodeTest, FlitTransferTraceXY)
 {
-    std::cout << "[FlitTrace] Case-1: NodeID(0,0,0) -> NodeID(2,1,1)"
-              << std::endl;
-    traceFlitPath(NodeID(0, 0, 0).getNodeID(), NodeID(2, 1, 1).getNodeID(),
+    std::cout << "[FlitTrace] Case-1: (0,0) -> (2,1,local1)" << std::endl;
+    traceFlitPath(0, 0, NodeID(2, 1, 1).getNodeID(),
                   {MeshNode::RouteDecision::East,
                    MeshNode::RouteDecision::East,
                    MeshNode::RouteDecision::North,
                    MeshNode::RouteDecision::Local1});
 
-    std::cout << "[FlitTrace] Case-2: NodeID(3,2,0) -> NodeID(1,0,0)"
-              << std::endl;
-    traceFlitPath(NodeID(3, 2, 0).getNodeID(), NodeID(1, 0, 0).getNodeID(),
+    std::cout << "[FlitTrace] Case-2: (3,2) -> (1,0,local0)" << std::endl;
+    traceFlitPath(3, 2, NodeID(1, 0, 0).getNodeID(),
                   {MeshNode::RouteDecision::West,
                    MeshNode::RouteDecision::West,
                    MeshNode::RouteDecision::South,
