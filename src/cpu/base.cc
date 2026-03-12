@@ -162,7 +162,6 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
       enterPwrGatingEvent([this] { enterPwrGating(); }, name()),
       warmupInstCount(p.warmupInstCount),
       enableDifftest(p.enable_difftest),
-      enableSv48(p.enable_sv48),
       dumpCommitFlag(p.dump_commit),
       dumpStartNum(p.dump_start),
       enableRVV(p.enable_riscv_vector),
@@ -530,7 +529,6 @@ BaseCPU::registerThreadContexts()
             tc->getProcessPtr()->assignThreadContext(tc->contextId());
 
         interrupts[tid]->setThreadContext(tc);
-        tc->getIsaPtr()->setEnableSv48(enableSv48);
 
         tc->getIsaPtr()->setThreadContext(tc);
     }

@@ -87,11 +87,7 @@ class BaseTLB : public SimObject
     {
         panic("Not implemented.\n");
     }
-    virtual void
-    setPTWmode(bool _enable_sv48)
-    {
-      panic("Not implemented.\n");
-    }
+
 
     /**
      * Do post-translation physical address finalization.
