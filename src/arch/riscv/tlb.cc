@@ -161,10 +161,7 @@ TLB::getWalker()
 {
     return walker;
 }
-void
-TLB::setPTWmode(bool _enable_sv48){
-    walker->openSv48 = _enable_sv48;
-}
+
 void
 TLB::configL2Tlb(EntryList *List_choose, TlbEntryTrie *Trie_l2_choose, std::vector<TlbEntry> &l2Tlb_choose,
                  size_t size, bool sp)

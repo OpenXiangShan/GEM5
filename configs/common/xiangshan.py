@@ -423,7 +423,6 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     np = args.num_cpus
     # Set the cache line size for the entire system
     test_sys.cache_line_size = args.cacheline_size
-    test_sys.enable_sv48 = args.open_sv48
 
     # Create a top-level voltage domain
     test_sys.voltage_domain = VoltageDomain(voltage = args.sys_voltage)
@@ -448,8 +447,6 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
-        cpu.enable_sv48 = args.open_sv48
-        cpu.mmu.enable_sv48 = args.open_sv48
 
         if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
             timing_ptw = bool(getattr(args, 'trace_timing_ptw', False))
