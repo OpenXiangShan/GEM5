@@ -70,9 +70,17 @@
 - `mcf`：`27.844`
 - `omnetpp`：`17.611`
 
-- 场景：上述配置基础上开启第 `18` 项（`args.l2_size='2MB'`）
-- `mcf`：`28.48`
-- `omnetpp`：`18.221`
+- 场景：上述配置基础上开启第 `19` 项
+- `mcf`：`31.468`
+- `omnetpp`：`20.973`
+
+- 场景：上述配置基础上回退第 `16` 项（`data_sram_banks=1`、`dir_sram_banks=1`、`pipe_dir_write_stage=3`、`dir_read_bypass=False`）
+- `mcf`：`28.454`
+- `omnetpp`：`20.631`
+
+- 场景：上述配置基础上回退第 `19` 项，关闭一部分预取
+- `mcf`：`27.849`
+- `omnetpp`：`17.945`
 
 - 场景：`Turbo_align + no_pf` 版本的 `kmhv3` 配置
 - `mcf`：`18.363`
