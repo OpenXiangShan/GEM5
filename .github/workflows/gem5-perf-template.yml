@@ -16,6 +16,11 @@ on:
         required: true
         type: string
         description: "Benchmark type: gcc12-spec06-0.3c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-0.8c, gcc15-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c"
+      specific_benchmarks:
+        required: false
+        type: string
+        default: ""
+        description: "Comma-separated benchmark filters. Empty means run all workloads in checkpoint list."
       vector_type:
         required: false
         type: string
@@ -171,6 +176,7 @@ jobs:
             ${{ steps.config.outputs.checkpoint_list }} \
             ${{ steps.config.outputs.checkpoint_root_node}} \
             spec_all \
+            "${{ inputs.specific_benchmarks }}" \
             "${{ inputs.extra_args }}"
       - name: Setup gem5_data_proc environment
         run: |
@@ -244,6 +250,7 @@ jobs:
           echo "branch: ${GITHUB_REF#refs/heads/}" >> "$TARGET_DIR/metadata.txt"
           echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
           echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
+          echo "specific_benchmarks: ${{ inputs.specific_benchmarks }}" >> "$TARGET_DIR/metadata.txt"
           echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
           
           # Auto cleanup: keep only last 200 runs for this benchmark type
