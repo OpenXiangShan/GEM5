@@ -430,8 +430,10 @@ ROB::isHeadGroupReady(ThreadID tid)
 
         for (int i = 0; i < threadGroups[tid].front(); i++, it++) {
             auto& inst = *it;
-            // first inst must be readyToCommit
-            if (!inst->readyToCommit()) {
+            // The group head must be ready. Later serialize-before /
+            // non-speculative instructions may still be undispatched while
+            // older instructions in the same group are allowed to retire.
+            if (i == 0 && !inst->readyToCommit()) {
                 return false;
             }
 
@@ -439,6 +441,10 @@ ROB::isHeadGroupReady(ThreadID tid)
             // this group can commit directly.
             if (inst->isNonSpeculative() || inst->isStoreConditional() || !inst->isExecuted() || inst->faulted()) {
                 return true;
+            }
+
+            if (!inst->readyToCommit()) {
+                return false;
             }
         }
         return true;
