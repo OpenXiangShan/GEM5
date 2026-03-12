@@ -427,11 +427,13 @@ ROB::isHeadGroupReady(ThreadID tid)
 
     if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
         auto it = instList[tid].begin();
-
         for (int i = 0; i < threadGroups[tid].front(); i++, it++) {
             auto& inst = *it;
             // first inst must be readyToCommit
             if (!inst->readyToCommit()) {
+                if (i > 0 && inst->isSerializeBefore()) {
+                    return true;
+                }
                 return false;
             }
 

@@ -259,7 +259,7 @@ class IEW
      * back to the cache. returns true if there is no data in either
      * the store queue or the store buffer to write back to.
      */
-    bool flushAllStores(ThreadID tid) { return ldstQueue.flushAllStores(tid); }
+    bool flushStores(ThreadID tid) { return ldstQueue.flushStores(tid); }
 
     /** Check if we need to squash after a load/store/branch is executed. */
     void SquashCheckAfterExe(DynInstPtr inst);
