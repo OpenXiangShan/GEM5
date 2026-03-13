@@ -168,6 +168,12 @@ struct IssueStruct
     DynInstPtr insts[MaxWidth];
 };
 
+struct SquashInfo
+{
+    InstSeqNum squashSn;
+    ThreadID   squashTid;
+};
+
 struct SquashVersion
 {
     uint8_t version;
@@ -246,6 +252,10 @@ struct TimeStruct
         };
         /** Resolved control-flow PCs produced this cycle (fetch buffers/merges). */
         std::vector<ResolvedCFIEntry> resolvedCFIs;  // *F
+
+        unsigned iqCount;
+        unsigned ldstqCount;
+        unsigned robCount;
     };
 
     IewComm iewInfo[MaxThreads]; // iew to rename, fetch

@@ -148,6 +148,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         threads[tid].data = new uint8_t[fetchBufferSize];
     }
 
+    initDecodeScheduler();
+
     // Get the size of an instruction.
     // stallReason size should be the same as decodeWidth,renameWidth,dispWidth
     stallReason.resize(decodeWidth, StallReason::NoStall);
@@ -370,6 +372,41 @@ Fetch::setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer)
     fromRename = timeBuffer->getWire(-renameToFetchDelay);
     fromIEW = timeBuffer->getWire(-iewToFetchDelay);
     fromCommit = timeBuffer->getWire(-commitToFetchDelay);
+}
+
+void
+Fetch::initDecodeScheduler()
+{
+     // Initialize counters (same as before)
+    lsqCounter = new InstsCounter();
+    iqCounter  = new InstsCounter();
+    robCounter = new InstsCounter();
+    DPRINTF(Fetch, "Initialized SMT Decode Scheduler: 0\n");
+
+    for (ThreadID tid = 0; tid < numThreads; tid++) 
+    {
+        lsqCounter->setCounter(tid, 0);
+        iqCounter->setCounter(tid, 0);
+        robCounter->setCounter(tid, 0);
+    }
+    DPRINTF(Fetch, "Initialized SMT Decode Scheduler: 1\n");
+    
+    if (smtDecodePolicy == "icount") {
+        // Use ROB as default counter for icount
+        decodeScheduler = new ICountScheduler(numThreads, robCounter);
+    }
+    else if (smtDecodePolicy == "delayed") {
+        decodeScheduler = new DelayedICountScheduler(numThreads, robCounter, delayedSchedulerDelay);
+    }
+    else if (smtDecodePolicy == "multi_priority") {
+        decodeScheduler = new MultiPrioritySched(numThreads, {lsqCounter, iqCounter, robCounter});
+    }
+    else {
+        // Default: round-robin like (use delayed with thread cycling)
+        decodeScheduler = new DelayedICountScheduler(numThreads, robCounter, numThreads);
+    }
+
+    DPRINTF(Fetch, "Initialized SMT Decode Scheduler: %s\n", smtDecodePolicy.c_str());
 }
 
 void
@@ -1285,6 +1322,32 @@ Fetch::handleInterrupts()
     }
 }
 
+ThreadID
+Fetch::selectUnstalledThread()
+{
+
+    // if (numThreads == 1) {
+    //     return 0;
+    // }
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (!stallSig->blockFetch[tid]) {
+            lsqCounter->setCounter(tid, fromIEW->iewInfo[tid].ldstqCount);
+            iqCounter->setCounter(tid, fromIEW->iewInfo[tid].iqCount);
+            robCounter->setCounter(tid, fromIEW->iewInfo[tid].robCount);
+           
+        } else {
+            lsqCounter->setCounter(tid, UINT64_MAX);
+            iqCounter->setCounter(tid, UINT64_MAX);
+            robCounter->setCounter(tid, UINT64_MAX);
+            
+        }
+        DPRINTF(Fetch, "lsqCounter->setCounter: %d iqCounter->setCounter: %d robCounter->setCounter: %d\n",fromIEW->iewInfo[tid].ldstqCount,fromIEW->iewInfo[tid].iqCount,fromIEW->iewInfo[tid].robCount);
+    }
+
+    ThreadID selected = decodeScheduler->getThread();
+    return selected;
+}
+
 void
 Fetch::sendInstructionsToDecode()
 {
@@ -1321,7 +1384,7 @@ Fetch::sendInstructionsToDecode()
         return;
     }
 
-    ThreadID tid = 0; // TODO: smt support
+    ThreadID tid =selectUnstalledThread();
 
     // fetch totally stalled
     if (stallSig->blockFetch[tid]) {

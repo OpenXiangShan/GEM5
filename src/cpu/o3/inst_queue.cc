@@ -151,7 +151,8 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
     scheduler->setCPU(cpu_ptr, &iew_ptr->ldstQueue);
     scheduler->resetDepGraph(numPhysRegs);
     scheduler->setMemDepUnit(memDepUnit);
-
+    scheduler->initIQICountSmtScheduler(numThreads);
+    
     resetState();
 }
 
@@ -1121,7 +1122,9 @@ InstructionQueue::doSquash(ThreadID tid)
 
     DPRINTF(IQ, "[tid:%i] Squashing until sequence number %i!\n",
             tid, squashedSeqNum[tid]);
-    scheduler->doSquash(squashedSeqNum[tid]);
+    squashInfo.squashTid = tid;
+    squashInfo.squashSn  = squashedSeqNum[tid];
+    scheduler->doSquash(squashInfo);
 
     for (auto it = mdpAddrReplayLdInsts.begin(); it != mdpAddrReplayLdInsts.end();) {
         if (!it->inst ||
@@ -1134,7 +1137,7 @@ InstructionQueue::doSquash(ThreadID tid)
     }
 
     for (auto it = nonSpecInsts.begin(); it != nonSpecInsts.end();) {
-        if (it->first > squashedSeqNum[tid]) {
+        if (it->first > squashedSeqNum[tid]  && (it->second->threadNumber == tid)) {
             auto& squashed_inst = it->second;
             if (!squashed_inst->isIssued() ||
                 (squashed_inst->isMemRef() &&
