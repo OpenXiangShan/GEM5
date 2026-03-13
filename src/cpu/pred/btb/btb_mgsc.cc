@@ -479,9 +479,9 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
             }
         }
     }
-    // if (abs(percep_sum) > percep_thres){
-    //     use_percep_pred = true;
-    // }
+    if (abs(percep_sum) > percep_thres){
+        use_percep_pred = true;
+    }
 
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
     bool taken = use_sc_pred ? (use_percep_pred? percep_sum>=0 : total_sum >= 0) : tage_info.tage_pred_taken;
