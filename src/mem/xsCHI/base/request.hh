@@ -100,6 +100,8 @@ protected:
 
 
     bool IsRecvSepData; // if this transaction is receiving separated data , true if we received a CHI_RSP_RESPSEPDATA.
+    bool cache_responding; // preserve gem5 Packet cacheResponding semantic
+    bool responder_had_writable; // preserve gem5 Packet responderHadWritable semantic
 
     // end of state tracking for dataTransfer
 public:
@@ -348,6 +350,12 @@ public:
 
     uint32_t getRsvdc()  { return rsvdc; }
     void setRsvdc(uint32_t v) { rsvdc = v; }
+
+    bool getCacheResponding() { return cache_responding; }
+    void setCacheResponding(bool v) { cache_responding = v; }
+
+    bool getResponderHadWritable() { return responder_had_writable; }
+    void setResponderHadWritable(bool v) { responder_had_writable = v; }
 
     // 构造函数
     Request() = default;

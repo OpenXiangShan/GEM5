@@ -1,4 +1,4 @@
-#include "mem/xsCHI/device/L2Wrapper.hh"
+#include "mem/xsCHI/device/CHI_L2.hh"
 
 #include <sys/types.h>
 
@@ -24,36 +24,36 @@ namespace gem5
 {
 namespace xsCHI
 {
-    L2Wrapper::L2Wrapper(const Params &p):
+    CHI_L2::CHI_L2(const Params &p):
     ClockedObject(p),
     cpuSidePort(p.name + ".cpu_side_port", this, "CpuSidePort"),
     memSidePort(p.name + ".mem_side_port", this, "MemSidePort"),
     bridge(p.RNBridge)
     {
         bridge->set_recvReadResp_callback([this](ReqPtr& req) { this->recvReadResp(req); });
-        DPRINTF(CHIL2Wrapper,"L2Wrapper Construct,without id\n");
+        DPRINTF(CHIL2Wrapper,"CHI_L2 Construct,without id\n");
 
     }
 
     void
-    L2Wrapper::init()
+    CHI_L2::init()
     {
         ClockedObject::init();
         // Propagate address ranges so upstream crossbars have valid routing
         // before the first packet arrives.
         cpuSidePort.sendRangeChange();
     }
-    // L2Wrapper::L2Wrapper(const Params &p,NodeID id,SystemAddressMap* sam):
+    // CHI_L2::CHI_L2(const Params &p,NodeID id,SystemAddressMap* sam):
     // ClockedObject(p),
     // cpuSidePort(p.name + ".cpu_side_port", this, "CpuSidePort"),
     // bridge(p,id,sam)
     // {
     //     bridge->set_recvReadResp_callback([this](ReqPtr& req) { this->recvReadResp(req); });
-    //     DPRINTF(CHIL2Wrapper,"L2Wrapper Construct,id:%d",id.getNodeID());
+    //     DPRINTF(CHIL2Wrapper,"CHI_L2 Construct,id:%d",id.getNodeID());
 
     // }
     bool
-    L2Wrapper::CpuSidePort::recvTimingSnoopResp(PacketPtr pkt)
+    CHI_L2::CpuSidePort::recvTimingSnoopResp(PacketPtr pkt)
     {
         //todo:handle snoop situation！
         return true;
@@ -61,14 +61,14 @@ namespace xsCHI
 
 
     bool
-    L2Wrapper::CpuSidePort::tryTiming(PacketPtr pkt)
+    CHI_L2::CpuSidePort::tryTiming(PacketPtr pkt)
     {
         //no need to do it
         return true;
     }
 
     bool
-    L2Wrapper::CpuSidePort::recvTimingReq(PacketPtr pkt)
+    CHI_L2::CpuSidePort::recvTimingReq(PacketPtr pkt)
     {
         // if pkt is a Uncached request, we should redirect it to MemSidePort
         if (pkt->req->isUncacheable()) {
@@ -84,7 +84,7 @@ namespace xsCHI
 
         wrapper->bridge->ReceiveReq(req, false);
         assert(wrapper->outstanding_pkts.count(pkt->getAddr())==0);
-        if (pkt->needsResponse()) {
+        if (pkt->needsResponse() && !pkt->cacheResponding()) {
             assert(!pkt->isWrite());
             wrapper->outstanding_pkts[pkt->getAddr()] = pkt;
         }
@@ -95,21 +95,21 @@ namespace xsCHI
 
 
     // AddrRangeList
-    // L2Wrapper::CpuSidePort::getAddrRanges() const
+    // CHI_L2::CpuSidePort::getAddrRanges() const
     // {
     //     return cache->getAddrRanges();
     // }
 
 
-    L2Wrapper::
-    CpuSidePort::CpuSidePort(const std::string &_name, L2Wrapper *wrapper,
+    CHI_L2::
+    CpuSidePort::CpuSidePort(const std::string &_name, CHI_L2 *wrapper,
                             const std::string &_label)
         : CacheResponsePort(_name, wrapper, _label),wrapper(wrapper)
     {
     }
 
-    L2Wrapper::MemSidePort::MemSidePort(const std::string &_name,
-                                        L2Wrapper *wrapper,
+    CHI_L2::MemSidePort::MemSidePort(const std::string &_name,
+                                        CHI_L2 *wrapper,
                                         const std::string &_label)
         : CacheRequestPort(_name, wrapper, _reqQueue, _snoopRespQueue),
         _reqQueue(*wrapper, *this, _label),
@@ -117,8 +117,8 @@ namespace xsCHI
     {
     }
 
-    L2Wrapper::CacheResponsePort::CacheResponsePort(const std::string &_name,
-                                            L2Wrapper *wrapper,
+    CHI_L2::CacheResponsePort::CacheResponsePort(const std::string &_name,
+                                            CHI_L2 *wrapper,
                                             const std::string &_label)
         : QueuedResponsePort(_name, wrapper, queue),
         queue(*wrapper, *this, true, _label),
@@ -128,7 +128,7 @@ namespace xsCHI
     }
 
     void
-    L2Wrapper::CacheResponsePort::setBlocked()
+    CHI_L2::CacheResponsePort::setBlocked()
     {
         assert(!blocked);
         // DPRINTF(CHIL2Wrapper, "Port is blocking new requests\n");
@@ -143,7 +143,7 @@ namespace xsCHI
     }
 
     void
-    L2Wrapper::CacheResponsePort::clearBlocked()
+    CHI_L2::CacheResponsePort::clearBlocked()
     {
         assert(blocked);
         // DPRINTF(CHIL2Wrapper, "Port is accepting new requests\n");
@@ -155,7 +155,7 @@ namespace xsCHI
     }
 
     void
-    L2Wrapper::CacheResponsePort::processSendRetry()
+    CHI_L2::CacheResponsePort::processSendRetry()
     {
         DPRINTF(CHIL2Wrapper, "Port is sending retry\n");
 
@@ -165,20 +165,20 @@ namespace xsCHI
     }
 
     Tick
-    L2Wrapper::CpuSidePort::recvAtomic(PacketPtr pkt)
+    CHI_L2::CpuSidePort::recvAtomic(PacketPtr pkt)
     {
         panic("not supported");
         return curTick();
     }
 
     void
-    L2Wrapper::CpuSidePort::recvFunctional(PacketPtr pkt)
+    CHI_L2::CpuSidePort::recvFunctional(PacketPtr pkt)
     {
         panic("not supported");
     }
 
     AddrRangeList
-    L2Wrapper::CpuSidePort::getAddrRanges() const
+    CHI_L2::CpuSidePort::getAddrRanges() const
     {
         AddrRangeList ranges;
         // Advertise a catch-all range so upstream crossbars know this port can
@@ -188,7 +188,7 @@ namespace xsCHI
     }
 
     ReqPtr
-    L2Wrapper::CreateRequest(PacketPtr pkt)
+    CHI_L2::CreateRequest(PacketPtr pkt)
     {
         //phrase pkt
         Addr addr = pkt->getAddr();
@@ -218,6 +218,8 @@ namespace xsCHI
         }
         DPRINTF(CHIL2Wrapper,"Create Req, op:%s, addr: %lx, size:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op),addr,size);
         ReqPtr req = std::make_shared<Request>(op,addr,size);
+        req->setCacheResponding(pkt->cacheResponding());
+        req->setResponderHadWritable(pkt->responderHadWritable());
         if (pktHasData) {
             req->setData(pkt);
         }
@@ -225,8 +227,8 @@ namespace xsCHI
     }
 
     void
-    L2Wrapper::recvReadResp(ReqPtr &req){
-        DPRINTF(CHIL2Wrapper,"Recv Read Resp, op:%s, addr: %lx, size:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),req->getAddr(),req->getSize());
+    CHI_L2::recvReadResp(ReqPtr &req){
+        DPRINTF(CHIL2Wrapper,"Recv Read/upgrade Resp, op:%s, addr: %lx, size:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),req->getAddr(),req->getSize());
         assert(outstanding_pkts.count(req->getAddr())>0);
         PacketPtr pkt = outstanding_pkts[req->getAddr()];
         assert(pkt->needsResponse());
@@ -235,18 +237,21 @@ namespace xsCHI
         // assert(pkt->headerDelay == 0);
         // assert(pkt->payloadDelay == 0);
         pkt->makeTimingResponse();
-        uint8_t *tmp = new uint8_t[req->getSize()];
-        assert(req->getSize()==pkt->getSize());
-        req->getData(tmp);
-        pkt->setData(tmp);
-        delete[] tmp; // 释放临时内存
+        if (req->getOpcode() != CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE)
+        {
+            uint8_t *tmp = new uint8_t[req->getSize()];
+            assert(req->getSize()==pkt->getSize());
+            req->getData(tmp);
+            pkt->setData(tmp);
+            delete[] tmp; // 释放临时内存
+        }
         cpuSidePort.schedTimingResp(pkt, curTick());
 
         outstanding_pkts.erase(req->getAddr());
 
     }
     gem5::Port &
-    L2Wrapper::getPort(const std::string &if_name, PortID idx)
+    CHI_L2::getPort(const std::string &if_name, PortID idx)
     {
 
         if (if_name == "mem_side_port")
@@ -258,10 +263,10 @@ namespace xsCHI
             return ClockedObject::getPort(if_name, idx);
     }
     CHIPort*
-    L2Wrapper::getCHIPort(){
+    CHI_L2::getCHIPort(){
         return bridge->getNetworkPort();
     }
-    CHIBridge* L2Wrapper::getBridge(){
+    CHIBridge* CHI_L2::getBridge(){
         return bridge;
     }
 
@@ -271,7 +276,7 @@ namespace xsCHI
 //
 ///////////////
 bool
-L2Wrapper::MemSidePort::recvTimingResp(PacketPtr pkt)
+CHI_L2::MemSidePort::recvTimingResp(PacketPtr pkt)
 {
     wrapper->cpuSidePort.schedTimingResp(pkt, curTick());
     // cache->recvTimingResp(pkt);
@@ -279,29 +284,29 @@ L2Wrapper::MemSidePort::recvTimingResp(PacketPtr pkt)
 }
 
 void
-L2Wrapper::MemSidePort::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
+CHI_L2::MemSidePort::recvFunctionalCustomSignal(PacketPtr pkt, int sig)
 {
-    assert(false && "recvFunctionalCustomSignal not implemented in L2Wrapper::MemSidePort");
+    assert(false && "recvFunctionalCustomSignal not implemented in CHI_L2::MemSidePort");
 }
 
 // Express snooping requests to memside port
 void
-L2Wrapper::MemSidePort::recvTimingSnoopReq(PacketPtr pkt)
+CHI_L2::MemSidePort::recvTimingSnoopReq(PacketPtr pkt)
 {
     // Snoops shouldn't happen when bypassing caches
-    assert(false && "Snoops should not happen inL2Wrapper ");
+    assert(false && "Snoops should not happen in CHI_L2");
 
 }
 
 Tick
-L2Wrapper::MemSidePort::recvAtomicSnoop(PacketPtr pkt)
+CHI_L2::MemSidePort::recvAtomicSnoop(PacketPtr pkt)
 {
     panic("not supported");
     return curTick();
 }
 
 void
-L2Wrapper::MemSidePort::recvFunctionalSnoop(PacketPtr pkt)
+CHI_L2::MemSidePort::recvFunctionalSnoop(PacketPtr pkt)
 {
     panic("not supported");
 }

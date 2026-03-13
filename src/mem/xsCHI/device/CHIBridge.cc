@@ -12,6 +12,159 @@ namespace gem5
 {
 namespace xsCHI
 {
+    uint64_t
+    CHIBridge::blockAddr(uint64_t addr) const
+    {
+        return addr & ~static_cast<uint64_t>(0x3f);
+    }
+
+    bool
+    CHIBridge::isReadReqOp(CHI_OP_TYPE op) const
+    {
+        return op == CHI_OP_TYPE::CHI_REQ_READUNIQUE ||
+               op == CHI_OP_TYPE::CHI_REQ_READSHARED ||
+               op == CHI_OP_TYPE::CHI_REQ_READCLEAN ||
+               op == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE;
+    }
+
+    bool
+    CHIBridge::isWriteReqOp(CHI_OP_TYPE op) const
+    {
+        return op == CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL ||
+               op == CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL;
+    }
+
+    bool
+    CHIBridge::hasInProgressRead(uint64_t addr) const
+    {
+        const uint64_t blk = blockAddr(addr);
+        auto it = inProgressReadByAddr.find(blk);
+        return it != inProgressReadByAddr.end() && it->second > 0;
+    }
+
+    bool
+    CHIBridge::hasInProgressWrite(uint64_t addr) const
+    {
+        const uint64_t blk = blockAddr(addr);
+        auto it = inProgressWriteByAddr.find(blk);
+        return it != inProgressWriteByAddr.end() && it->second > 0;
+    }
+
+    bool
+    CHIBridge::hasQueuedReadWriteReq(uint64_t addr) const
+    {
+        const uint64_t blk = blockAddr(addr);
+        std::queue<ReqPtr> pending = Req_tobesent;
+        while (!pending.empty()) {
+            const ReqPtr &queued_req = pending.front();
+            if (queued_req && blockAddr(queued_req->getAddr()) == blk) {
+                const CHI_OP_TYPE queued_op = queued_req->getOpcode();
+                if (isReadReqOp(queued_op) || isWriteReqOp(queued_op)) {
+                    return true;
+                }
+            }
+            pending.pop();
+        }
+        return false;
+    }
+
+    void
+    CHIBridge::trackReadStart(uint64_t addr)
+    {
+        const uint64_t blk = blockAddr(addr);
+        inProgressReadByAddr[blk]++;
+        DPRINTF(CHIBridge,
+                "track read start blk=%#lx count=%u\n",
+                blk, inProgressReadByAddr[blk]);
+    }
+
+    void
+    CHIBridge::trackReadFinish(uint64_t addr)
+    {
+        const uint64_t blk = blockAddr(addr);
+        auto it = inProgressReadByAddr.find(blk);
+        if (it == inProgressReadByAddr.end()) {
+            return;
+        }
+        if (it->second > 0) {
+            it->second--;
+        }
+        DPRINTF(CHIBridge,
+                "track read finish blk=%#lx count=%u\n",
+                blk, it->second);
+        if (it->second == 0) {
+            inProgressReadByAddr.erase(it);
+        }
+    }
+
+    void
+    CHIBridge::trackWriteStart(uint64_t addr)
+    {
+        const uint64_t blk = blockAddr(addr);
+        inProgressWriteByAddr[blk]++;
+        DPRINTF(CHIBridge,
+                "track write start blk=%#lx count=%u\n",
+                blk, inProgressWriteByAddr[blk]);
+    }
+
+    void
+    CHIBridge::trackWriteFinish(uint64_t addr)
+    {
+        const uint64_t blk = blockAddr(addr);
+        auto it = inProgressWriteByAddr.find(blk);
+        if (it == inProgressWriteByAddr.end()) {
+            return;
+        }
+        if (it->second > 0) {
+            it->second--;
+        }
+        DPRINTF(CHIBridge,
+                "track write finish blk=%#lx count=%u\n",
+                blk, it->second);
+        if (it->second == 0) {
+            inProgressWriteByAddr.erase(it);
+            wakeBlockedReads(blk);
+        }
+    }
+
+    void
+    CHIBridge::enqueueBlockedReadReq(ReqPtr req)
+    {
+        const uint64_t blk = blockAddr(req->getAddr());
+        blockedReadReqByAddr[blk].push_back(req);
+        DPRINTF(CHIBridge,
+                "enqueue blocked read op=%s addr=%#lx blk=%#lx blocked=%u\n",
+                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),
+                req->getAddr(),
+                blk,
+                static_cast<unsigned>(blockedReadReqByAddr[blk].size()));
+    }
+
+    void
+    CHIBridge::wakeBlockedReads(uint64_t addr)
+    {
+        const uint64_t blk = blockAddr(addr);
+        auto it = blockedReadReqByAddr.find(blk);
+        if (it == blockedReadReqByAddr.end()) {
+            return;
+        }
+
+        auto &q = it->second;
+        assert(q.size() <= 1 && "detect more than 1 same-block blocked read req, which is not expected");
+        while (!q.empty()) {
+            Req_tobesent.push(q.front());
+            q.pop_front();
+        }
+        blockedReadReqByAddr.erase(it);
+        DPRINTF(CHIBridge,
+                "wake blocked reads blk=%#lx req_queue=%u\n",
+                blk,
+                static_cast<unsigned>(Req_tobesent.size()));
+        if (!Req_tobesent.empty() && !req_handle_event.scheduled()) {
+            schedule(req_handle_event, curTick() + clockPeriod());
+        }
+    }
+
     CHIBridge::CHIBridge(const Params &p)
         : ClockedObject(p),
           networkPort(p.networkPort),
@@ -72,6 +225,33 @@ namespace xsCHI
         // }
         // we assume only get requests or snoop responses from cache wrapper
         assert(req->isRequest());
+        const CHI_OP_TYPE op = req->getOpcode();
+        const uint64_t addr = req->getAddr();
+
+        if (isWriteReqOp(op)) {
+            assert(!hasInProgressRead(addr) &&
+                   "L2Bridge write must not overlap same-address in-progress read");
+            assert(!hasInProgressWrite(addr) &&
+                   "L2Bridge write must not overlap same-address in-progress write");
+            if (!isRetry){
+                assert(!hasQueuedReadWriteReq(addr));
+            }
+            
+        }
+
+        if (isReadReqOp(op)) {
+            assert(!hasInProgressRead(addr) &&
+                   "L2Bridge read must not overlap same-address in-progress read");
+            if (hasInProgressWrite(addr)) {
+                enqueueBlockedReadReq(req);
+                return true;
+            }
+            if (!isRetry && hasQueuedReadWriteReq(addr)) {
+                enqueueBlockedReadReq(req);
+                return true;
+            }
+        }
+
         bool success = false;
         int txn_id = TXN_Manager.getID();
         DPRINTF(CHIBridge,"RecvCHIReq, op:%s, addr: %#x, size:%d , try allocate Txn_id:%d\n",static_cast<int>(req->getOpcode()),req->getAddr(),req->getSize(),txn_id);
@@ -92,6 +272,11 @@ namespace xsCHI
                 //send success, we need to save the request and txn_id
                 req->setTransactionId(txn_id);
                 saveOutstandingRequest(req, txn_id);
+                if (isReadReqOp(op)) {
+                    trackReadStart(addr);
+                } else if (isWriteReqOp(op)) {
+                    trackWriteStart(addr);
+                }
                 success = true;
                 DPRINTF(CHIBridge,"Send success, outstanding Req num: %d\n",outstanding_requests.size());
             }else{
@@ -207,6 +392,8 @@ namespace xsCHI
         uint32_t tgtID = SAM->getTargetID(addr);
         flit->setTgtId(tgtID);
         flit->setSrcId(_NodeID);
+        flit->setCacheResponding(req->getCacheResponding());
+        flit->setResponderHadWritable(req->getResponderHadWritable());
         DPRINTF(CHIBridge,"Create Flit, op:%s, addr: %#x, size:%d , tgtId:%d ,SrcId:%d\n",\
             static_cast<int>(req->getOpcode()),req->getAddr(),req->getSize(),SAM->getTargetID(req->getAddr()),_NodeID);
         // flit->setTxnId(GenTxnID(flit));
@@ -285,8 +472,10 @@ namespace xsCHI
                 return true;
             }
             default:
-                assert(false && "Unsupported read opcode");
-                return false; // 不支持的读取操作码
+                panic("Unsupported read opcode %s in AllocatingRead txn=%u",
+                      CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(flit->getOpcode()),
+                      flit->getTxnId());
+                return false;
 
         }
     }
@@ -299,10 +488,16 @@ namespace xsCHI
         // todo : construct a response REQ to storage
         ReqPtr response_req = req->createReadResponse();
         assert(response_req && "Failed to create response request");
-        recvReadResp_callback(response_req); // 发送响应请求到存储端口
+        if (req->getCacheResponding()) {
+            assert(req->getOpcode() == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE);
+            // this is a upgradereq that dont need cache resp, because its set CacheResponding;
+        }else{
+            recvReadResp_callback(response_req); // 发送响应请求到存储端口
+        }
 
         // 发送完成请求的逻辑
         TXN_Manager.releaseID(flit->getTxnId());
+        trackReadFinish(req->getAddr());
         outstanding_requests.erase(flit->getTxnId());
         DPRINTF(CHIBridge,"Finish read request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
     }
@@ -380,6 +575,7 @@ namespace xsCHI
                 if (req->dataTransferFinished()){
                     // 发送完成请求的逻辑
                     TXN_Manager.releaseID(flit->getTxnId());
+                    trackWriteFinish(req->getAddr());
                     outstanding_requests.erase(flit->getTxnId());
                     DPRINTF(CHIBridge, "Finish write request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
                     return true;
@@ -421,8 +617,9 @@ namespace xsCHI
                 sendCompACK(flit);
 
                 // 发送完成请求的逻辑
-                TXN_Manager.releaseID(flit->getTxnId());
-                outstanding_requests.erase(flit->getTxnId());
+                // treat this type of request as a read request,
+                // so we can reuse the FinishReq_Read function
+                FinishReq_Read(flit);
 
                 return true;
             }

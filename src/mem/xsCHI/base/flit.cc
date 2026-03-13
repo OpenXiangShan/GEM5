@@ -31,6 +31,8 @@ namespace xsCHI {
         data = nullptr;
         ccid = 0;
         data_id = 0;
+        cache_responding = false;
+        responder_had_writable = false;
     }
 
     Flit::Flit(Flit& other){
@@ -61,6 +63,8 @@ namespace xsCHI {
         dbid = other.dbid;
         ccid = other.ccid;
         data_id = other.data_id;
+        cache_responding = other.cache_responding;
+        responder_had_writable = other.responder_had_writable;
 
     }
     Flit::Flit(CHI_OP_TYPE op,uint64_t addr,uint32_t size){

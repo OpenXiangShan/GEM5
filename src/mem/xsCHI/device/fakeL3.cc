@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <memory>
 
-#include "HNF.hh"
+#include "fakeL3.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/CHIFakeL3.hh"

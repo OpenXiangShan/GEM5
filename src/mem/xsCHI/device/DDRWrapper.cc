@@ -21,6 +21,7 @@ namespace xsCHI
     DDRWrapper::DDRWrapper(const Params &p) :
     AbstractMemory(p),
     _NodeID(0),
+    useDMT(true),
     port(p.networkPort),
     read_cb(std::bind(&DDRWrapper::readComplete,
                       this, 0, std::placeholders::_1)),
@@ -134,9 +135,14 @@ DDRWrapper::sendResponse()
     data_flit->setSize(req->getSize());
     data_flit->setAddr(req->getAddr());
     data_flit->setData(req);
-    data_flit->setTgtId(req->getReturnNid());
+    if (useDMT) {
+        data_flit->setTgtId(req->getReturnNid());
+        data_flit->setTxnId(req->getReturnTxnid());
+    } else {
+        data_flit->setTgtId(req->getSourceId());
+        data_flit->setTxnId(req->getTransactionId());
+    }
     data_flit->setSrcId(_NodeID);
-    data_flit->setTxnId(req->getReturnTxnid());
     data_flit->setHomeNid(req->getSourceId());
     data_flit->setDbid(req->getTransactionId());
 
@@ -437,8 +443,13 @@ DDRWrapper::handlePortReceive(FlitPtr &flit)
                 req->setSourceId(flit->getSrcId());
                 req->setTargetId(flit->getTgtId());
                 req->setTransactionId(flit->getTxnId());
-                req->setReturnNid(flit->getReturnNid());
-                req->setReturnTxnid(flit->getReturnTxnid());
+                if (useDMT) {
+                    req->setReturnNid(flit->getReturnNid());
+                    req->setReturnTxnid(flit->getReturnTxnid());
+                } else {
+                    req->setReturnNid(flit->getSrcId());
+                    req->setReturnTxnid(flit->getTxnId());
+                }
                 req->setSize(flit->getSize());
                 //here we do not have data,but need to fill it when start transfer
                 assert(outstandingReadTransferMap.find(pkt->getAddr()) == outstandingReadTransferMap.end() &&

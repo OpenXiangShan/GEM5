@@ -15,3 +15,4 @@ class DDRWrapper(AbstractMemory):
     filePath = Param.String("ext/dramsim3/DRAMsim3/",
                             "Directory to prepend to file names")
     networkPort = Param.CHIPort("networkPort pointer")
+    use_dmt = Param.Bool(True, "Whether to use DMT return (ReturnNid/ReturnTxnid) if use FakeL3,it has to be True")

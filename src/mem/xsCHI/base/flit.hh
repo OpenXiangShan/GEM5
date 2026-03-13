@@ -239,6 +239,12 @@ namespace xsCHI
         uint16_t getDataId()  { return data_id; }
         void setDataId(uint16_t v) { data_id = v; }
 
+        bool getCacheResponding() { return cache_responding; }
+        void setCacheResponding(bool v) { cache_responding = v; }
+
+        bool getResponderHadWritable() { return responder_had_writable; }
+        void setResponderHadWritable(bool v) { responder_had_writable = v; }
+
         // uint32_t getBe()  { return be; }
         // void setBe(uint32_t v) { be = v; }
 
@@ -316,6 +322,8 @@ namespace xsCHI
                             // this flit carries the first DATA_TRANSFER_WIDTH_BYTE bytes of data.
         uint16_t ccid;              // Critical Chunk Identifier, CCID
         uint16_t data_id;           // Data Identifier, DataID
+        bool cache_responding;
+        bool responder_had_writable;
 
         // uint32_t be;                // Byte Enable, BE
         // uint32_t data_check;        // Data check, DataCheck
