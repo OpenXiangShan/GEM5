@@ -478,10 +478,11 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
             //     use_percep_pred = true;
             }
         }
-    }//如果更改判断逻辑，记得更改计数器逻辑
-    if (abs(percep_sum) > percep_thres){
-        use_percep_pred = true;
     }
+    // if (abs(percep_sum) > percep_thres){
+    //     use_percep_pred = true;
+    // }
+
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
     bool taken = use_sc_pred ? (use_percep_pred? percep_sum>=0 : total_sum >= 0) : tage_info.tage_pred_taken;
 
@@ -1103,33 +1104,34 @@ BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbi
 
 Addr
 BTBMGSC::getPercepIndex(Addr pc,std::vector<bool> tem_gbhr){
-    // uint64_t folded = 0;
-    // int len = log2i(percepTableEntryNum);
-    // const uint64_t foldedMask = ((1ULL << len) - 1);
-    // int histLen = gbhrLen;
-    // for (size_t startBit = 0; startBit < histLen; startBit += len) {
-    //     uint64_t chunk = 0;
-    //     size_t chunkSize = (len<=(histLen - startBit) ? len : histLen - startBit);
-
-    //     // Extract chunk from bitset
-    //     for (size_t i = 0; i < chunkSize; i++) {
-    //         chunk |= (tem_gbhr[startBit + i] << i);
-    //     }
-
-    //     // XOR this chunk into the ideal folded history
-    //     folded ^= chunk;
-    // }
-    // folded &= foldedMask;
-
-    // Addr mask = percepTableEntryNum - 1;
-    // unsigned index = pc ^ (pc>>len);
-    // index ^= folded;
-    // index &= mask;
-    // return index;
+    {
+    uint64_t folded = 0;
     int len = log2i(percepTableEntryNum);
-    Addr index = pc ^ (pc >> len);
+    const uint64_t foldedMask = ((1ULL << len) - 1);
+    int histLen = gbhrLen;
+    for (size_t startBit = 0; startBit < histLen; startBit += len) {
+        uint64_t chunk = 0;
+        size_t chunkSize = (len<=(histLen - startBit) ? len : histLen - startBit);
+
+        // Extract chunk from bitset
+        for (size_t i = 0; i < chunkSize; i++) {
+            chunk |= (tem_gbhr[startBit + i] << i);
+        }
+
+        // XOR this chunk into the ideal folded history
+        folded ^= chunk;
+    }
+    folded &= foldedMask;
+
     Addr mask = percepTableEntryNum - 1;
+    unsigned index = pc ^ (pc>>len);
+    index ^= folded;
     return index & mask;
+    }
+    // int len = log2i(percepTableEntryNum);
+    // Addr index = pc ^ (pc >> len);
+    // Addr mask = percepTableEntryNum - 1;
+    // return index & mask;
 }
 
 Addr
