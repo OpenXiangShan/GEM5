@@ -1758,7 +1758,7 @@ IEW::tick()
     }
 
     // update the LSQ and scheduler before we check for ready instructions to execute
-    ldstQueue.writebackStoreBuffer();
+    ldstQueue.processWriteback();
     if (exeStatus != Squashing) {
         instQueue.scheduleReadyInsts();
 

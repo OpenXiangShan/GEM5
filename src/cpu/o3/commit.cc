@@ -1601,7 +1601,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         // race with the TLB invalidation.
         if ((head_inst->isMemRef() || head_inst->isReturn() ||
              head_inst->isReadBarrier() || head_inst->isWriteBarrier()) &&
-            (inst_num > 0 || !iewStage->flushAllStores(tid))) {
+            (inst_num > 0 || !iewStage->flushStores(tid))) {
             DPRINTF(Commit,
                     "[tid:%i] [sn:%llu] "
                     "Waiting for all stores to writeback.\n",
@@ -1655,7 +1655,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
     if (inst_fault != NoFault) {
         traceLogInstFault(head_inst, inst_fault);
-        if (!iewStage->flushAllStores(tid) || inst_num > 0) {
+        if (!iewStage->flushStores(tid) || inst_num > 0) {
             DPRINTF(Commit,
                     "[tid:%i] [sn:%llu] "
                     "Stores outstanding, fault must wait.\n",
