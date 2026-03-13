@@ -27,6 +27,11 @@ on:
           - spec17-1.0c
           - spec06-rvv-1.0c
           - spec06int-rvv-0.8c
+      specific_benchmarks:
+        description: 'Specific benchmarks to run (comma-separated, eg. "mcf,gcc"), leave empty to run all'
+        required: false
+        type: string
+        default: ''
       vector_type:
         description: 'Vector decode strategy (only for rvv benchmarks)'
         required: false
@@ -64,6 +69,7 @@ jobs:
     with:
       config_path: ${{ needs.setup.outputs.config_path }}
       benchmark_type: ${{ github.event.inputs.benchmark_type }}
+      specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
       vector_type: ${{ github.event.inputs.vector_type }}
       pr_sha: ${{ needs.setup.outputs.pr_sha }}
       check_result: true
