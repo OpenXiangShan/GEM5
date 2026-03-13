@@ -485,10 +485,8 @@ BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
         boost::to_string(history, buf);
         DPRINTF(ITTAGEHistory, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
     }
-    if (!taken) {
-        DPRINTF(ITTAGEHistory, "not updating folded history, since FB not taken\n");
-        return;
-    }
+    // Strategy B: keep folded path history evolving even on fall-through by using a pseudo edge.
+    // (Callers are expected to pass a meaningful (pc,target) when taken==false.)
 
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 3; type++) {
@@ -531,6 +529,10 @@ void
 BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     auto [pc, target, taken] = pred.getPHistInfo();
+    if (!taken) {
+        pc = pred.bbStart;
+        target = pred.bbStart + blockSize;
+    }
     doUpdateHist(history, taken, pc, target);
 }
 
@@ -556,7 +558,13 @@ BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarge
         altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
+    Addr pc = entry.getControlPC();
+    Addr target = entry.getTakenTarget();
+    if (!cond_taken) {
+        pc = entry.startPC;
+        target = entry.startPC + blockSize;
+    }
+    doUpdateHist(history, cond_taken, pc, target);
 }
 
 void

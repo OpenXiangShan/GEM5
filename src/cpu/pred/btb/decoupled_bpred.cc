@@ -715,15 +715,16 @@ DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<>
     if (shamt == 0) {
         return;
     }
-    if(taken){
-        // Calculate path hash
-        uint64_t hash = pathHash(pc, target);
-
-        history <<= shamt;
-        for (auto i = 0; i < pathHashLength && i < history.size(); i++) {
-            history[i] = (hash & 1) ^ history[i];
-            hash >>= 1;
-        }
+    // Exit-Slot predictors benefit from path history evolving even when the block falls through:
+    // - If PHR stops updating on predicted fall-through, patterns that differ mainly by "no-exit"
+    //   become hard to separate (self-bootstrapping issue).
+    // Strategy B: always shift, and always inject a hashed (pc,target) event.
+    // The caller should pass a pseudo edge for fall-through (e.g., startPC -> startPC+blockSize).
+    uint64_t hash = pathHash(pc, target);
+    history <<= shamt;
+    for (auto i = 0; i < pathHashLength && i < history.size(); i++) {
+        history[i] = (hash & 1) ^ history[i];
+        hash >>= 1;
     }
 }
 
@@ -930,7 +931,11 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     histShiftIn(bw_shamt, bw_taken, s0BwHistory);
 
     // Update path history
-    pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
+    // For fall-through, use a pseudo edge to keep PHR moving (Strategy B).
+    const Addr phrStride = tage ? tage->blockSize : 32;
+    const Addr phr_pc = p_taken ? p_pc : entry.startPC;
+    const Addr phr_target = p_taken ? p_target : (entry.startPC + phrStride);
+    pHistShiftIn(2, p_taken, s0PHistory, phr_pc, phr_target);
 
     // Update local history
     histShiftIn(shamt, taken,
@@ -1012,7 +1017,12 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     histShiftIn(real_shamt, real_taken, s0History);
 
     // Update path history with actual outcome
-    pHistShiftIn(2, real_taken, s0PHistory, squash_pc.instAddr(), redirect_pc);
+    // Strategy B: when the resolved outcome is fall-through, keep PHR consistent with
+    // predictors' folded PHR update by using the same pseudo edge (startPC -> startPC+blockSize).
+    const Addr phrStride = tage ? tage->blockSize : 32;
+    const Addr phr_pc = real_taken ? squash_pc.instAddr() : target.startPC;
+    const Addr phr_target = real_taken ? redirect_pc : (target.startPC + phrStride);
+    pHistShiftIn(2, real_taken, s0PHistory, phr_pc, phr_target);
 
     // Update global backward history with actual outcome
     histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);

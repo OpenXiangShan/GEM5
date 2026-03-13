@@ -49,7 +49,8 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize, u
       indexShift(bankBaseShift + ceilLog2(numBanks)),
       enableBankConflict(false),
       lastPredBankId(0),
-      predBankValid(false)
+      predBankValid(false),
+      tageStats()
 {
     setNumDelay(1);
 
@@ -148,34 +149,47 @@ void
 BTBTAGE::setTrace()
 {
 #ifndef UNIT_TEST
-    if (enableDB) {
-        std::vector<std::pair<std::string, DataType>> fields_vec = {
-            std::make_pair("startPC", UINT64),
-            std::make_pair("branchPC", UINT64),
-            std::make_pair("wayIdx", UINT64),
-            std::make_pair("mainFound", UINT64),
-            std::make_pair("mainCounter", UINT64),
-            std::make_pair("mainUseful", UINT64),
-            std::make_pair("mainTable", UINT64),
-            std::make_pair("mainIndex", UINT64),
-            std::make_pair("altFound", UINT64),
-            std::make_pair("altCounter", UINT64),
-            std::make_pair("altUseful", UINT64),
-            std::make_pair("altTable", UINT64),
-            std::make_pair("altIndex", UINT64),
-            std::make_pair("useAlt", UINT64),
-            std::make_pair("predTaken", UINT64),
-            std::make_pair("actualTaken", UINT64),
-            std::make_pair("allocSuccess", UINT64),
-            std::make_pair("allocTable", UINT64),
-            std::make_pair("allocIndex", UINT64),
-            std::make_pair("allocWay", UINT64),
-            std::make_pair("history", TEXT),
-            std::make_pair("indexFoldedHist", UINT64),
-        };
-        tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
-        tageMissTrace->init_table();
-    }
+	    if (enableDB) {
+	        std::vector<std::pair<std::string, DataType>> fields_vec = {
+	            std::make_pair("startPC", UINT64),
+	            std::make_pair("branchPC", UINT64),
+	            std::make_pair("wayIdx", UINT64),
+	            std::make_pair("mainFound", UINT64),
+	            std::make_pair("mainCounter", UINT64),
+	            std::make_pair("mainUseful", UINT64),
+	            std::make_pair("mainTable", UINT64),
+	            std::make_pair("mainIndex", UINT64),
+	            std::make_pair("altFound", UINT64),
+	            std::make_pair("altCounter", UINT64),
+	            std::make_pair("altUseful", UINT64),
+	            std::make_pair("altTable", UINT64),
+	            std::make_pair("altIndex", UINT64),
+	            std::make_pair("useAlt", UINT64),
+	            std::make_pair("predTaken", UINT64),
+	            std::make_pair("actualTaken", UINT64),
+	            std::make_pair("allocSuccess", UINT64),
+	            std::make_pair("allocTable", UINT64),
+	            std::make_pair("allocIndex", UINT64),
+	            std::make_pair("allocWay", UINT64),
+	            std::make_pair("history", TEXT),
+	            std::make_pair("indexFoldedHist", UINT64),
+	            // Exit-slot debug fields (block-level)
+	            std::make_pair("mainTag", UINT64),
+	            std::make_pair("altTag", UINT64),
+	            std::make_pair("mainPayload", UINT64),
+	            std::make_pair("altPayload", UINT64),
+	            std::make_pair("mainPayload1", UINT64),
+	            std::make_pair("altPayload1", UINT64),
+	            std::make_pair("mainSel", UINT64),
+	            std::make_pair("altSel", UINT64),
+	            std::make_pair("baseEnc", UINT64),
+	            std::make_pair("predEnc", UINT64),
+	            std::make_pair("realEnc", UINT64),
+	            std::make_pair("predSource", UINT64),
+	        };
+	        tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
+	        tageMissTrace->init_table();
+	    }
 #endif
 }
 
@@ -185,140 +199,269 @@ BTBTAGE::tick() {}
 void
 BTBTAGE::tickStart() {}
 
-/**
- * @brief Generate prediction for a single BTB entry by searching TAGE tables
- *
- * @param btb_entry The BTB entry to generate prediction for
- * @param startPC The starting PC address for calculating indices and tags
- * @param predMeta Optional prediction metadata; if provided, use snapshot for index/tag
- *             calculation (update path); if nullptr, use current folded history (prediction path)
- * @return TagePrediction containing main and alternative predictions
- */
-BTBTAGE::TagePrediction
-BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
-                                 const Addr &startPC,
-                                 std::shared_ptr<TageMeta> predMeta) {
-    DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
+namespace
+{
+inline bool
+isWeakConf(uint8_t conf)
+{
+    // 3-bit saturating confidence counter (0..7).
+    // Weak = 0/1, strong = 6/7.
+    return conf <= 1;
+}
 
-    // Find main and alternative predictions
+inline bool
+isStrongConf(uint8_t conf)
+{
+    return conf >= 6;
+}
+
+inline void
+satIncConf(uint8_t &conf)
+{
+    if (conf < 7) {
+        conf++;
+    }
+}
+
+inline void
+satDecConf(uint8_t &conf)
+{
+    if (conf > 0) {
+        conf--;
+    }
+}
+
+inline void
+updateConf(bool correct, uint8_t &conf)
+{
+    if (correct) {
+        satIncConf(conf);
+    } else {
+        satDecConf(conf);
+    }
+}
+
+inline void
+satIncSel(uint8_t &sel)
+{
+    if (sel < 3) {
+        sel++;
+    }
+}
+
+inline void
+satDecSel(uint8_t &sel)
+{
+    if (sel > 0) {
+        sel--;
+    }
+}
+} // namespace
+
+/**
+ * @brief Lookup provider/alt entries for this fetch block.
+ */
+std::pair<BTBTAGE::TageTableInfo, BTBTAGE::TageTableInfo>
+BTBTAGE::lookupProviders(const Addr &startPC, std::shared_ptr<TageMeta> predMeta)
+{
     bool provided = false;
     bool alt_provided = false;
     TageTableInfo main_info, alt_info;
 
-    // Search from highest to lowest table for matches
-    // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
-
     for (int i = numPredictors - 1; i >= 0; --i) {
-        // Calculate index and tag: use snapshot if provided, otherwise use current folded history
-        // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
         Addr index = predMeta ? getTageIndex(startPC, i, predMeta->indexFoldedHist[i].get())
-                          : getTageIndex(startPC, i);
+                              : getTageIndex(startPC, i);
         Addr tag = predMeta ? getTageTag(startPC, i,
-                            predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(), position)
-                        : getTageTag(startPC, i, position);
+                                         predMeta->tagFoldedHist[i].get(),
+                                         predMeta->altTagFoldedHist[i].get())
+                            : getTageTag(startPC, i);
 
-        bool match = false; // for each table, only one way can be matched
+        bool match = false;
         TageEntry matching_entry;
         unsigned matching_way = 0;
 
-        // Search all ways for a matching entry
         for (unsigned way = 0; way < numWays; way++) {
             auto &entry = tageTable[i][index][way];
-            // entry valid, tag match (position already encoded in tag, no need to check pc)
             if (entry.valid && tag == entry.tag) {
                 matching_entry = entry;
                 matching_way = way;
                 match = true;
-
-                // Do not use LRU; keep logic simple and align with CBP-style replacement
-
-                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
-                break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
+	                DPRINTF(TAGE,
+	                        "hit table %d[%lu][%u]: tag %lu, conf %d, u %d, enc0 %u, enc1 %u, sel %u\n",
+	                        i, index, way, entry.tag, entry.conf, entry.useful,
+	                        entry.exitSlotEnc0, entry.exitSlotEnc1, entry.selCtr);
+                break;
             }
         }
 
         if (match) {
             if (!provided) {
-                // First match becomes main prediction
                 main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
                 provided = true;
             } else if (!alt_provided) {
-                // Second match becomes alternative prediction
                 alt_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
                 alt_provided = true;
                 break;
             }
-        } else {
-            DPRINTF(TAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
-                i, index, tag, position, btb_entry.pc);
         }
     }
 
-    // Generate final prediction
-    bool main_taken = main_info.taken();
-    bool alt_taken = alt_info.taken();
-    // Use base table instead of btb_entry.ctr
-    bool base_taken = btb_entry.ctr >= 0;
-    //bool base_taken = btb_entry.ctr >= 0;
-    bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
-
-    // use_alt_on_na gating: when provider weak, consult per-PC counter
-    bool use_alt = false;
-    if (!provided) {
-        use_alt = true;
-    } else {
-        bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
-        if (main_weak) {
-            Addr uidx = getUseAltIdx(btb_entry.pc);
-            use_alt = (useAlt[uidx] >= 0);
-        } else {
-            use_alt = false;
-        }
-    }
-    bool taken = use_alt ? alt_pred : main_taken;
-
-    DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
-    DPRINTF(TAGE, "tage use_alt %d ? (alt_provided %d ? alt_taken %d : base_taken %d) : main_taken %d\n",
-        use_alt, alt_provided, alt_taken, base_taken, main_taken);
-
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred);
+    return {main_info, alt_info};
 }
 
-/**
- * @brief Look up predictions in TAGE tables for a stream of instructions
- * 
- * @param startPC The starting PC address for the instruction stream
- * @param btbEntries Vector of BTB entries to make predictions for
- * @return Map of branch PC addresses to their predicted outcomes
- */
+uint8_t
+BTBTAGE::getBaseExitSlotEnc(const Addr &startPC,
+                            const std::vector<BTBEntry> &btbEntries) const
+{
+    // Base: scan cond branches in PC order; choose the first predicted-taken cond.
+    for (auto &e : btbEntries) {
+        if (!(e.valid && e.isCond)) {
+            continue;
+        }
+        const bool pred_taken = e.alwaysTaken || (e.ctr >= 0);
+        if (pred_taken) {
+            unsigned slot = getBranchIndexInBlock(e.pc, startPC);
+            return static_cast<uint8_t>(slot + 1);
+        }
+    }
+    return 0;
+}
+
+Addr
+BTBTAGE::mapExitSlotToCondPC(const Addr &startPC,
+                             const std::vector<BTBEntry> &btbEntries,
+                             uint8_t predEnc) const
+{
+    if (predEnc == 0 || predEnc > 32) {
+        return 0;
+    }
+    const unsigned pred_slot = predEnc - 1;
+    for (auto &e : btbEntries) {
+        if (!(e.valid && e.isCond)) {
+            continue;
+        }
+        if (getBranchIndexInBlock(e.pc, startPC) == pred_slot) {
+            return e.pc;
+        }
+    }
+    return 0;
+}
+
 void
 BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results)
+                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
+                      CondTakens &results)
 {
-    DPRINTF(TAGE, "lookupHelper startAddr: %#lx\n", startPC);
+    DPRINTF(TAGE, "lookupHelper(startPC=%#lx)\n", startPC);
 
-    // Process each BTB entry to make predictions
-    for (auto &btb_entry : btbEntries) {
-        // Only predict for valid conditional branches
-        if (btb_entry.isCond && btb_entry.valid) {
-            auto pred = generateSinglePrediction(btb_entry, startPC);
-            meta->preds[btb_entry.pc] = pred;
-            tageStats.updateStatsWithTagePrediction(pred, true);
-            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
-            tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
-            tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) == 7; // counter saturated, -4 or 3
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_mid = pred.mainInfo.found &&
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) < 7 &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
-            tageInfoForMgscs[btb_entry.pc].tage_pred_conf_low = !pred.mainInfo.found ||
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
-            // main predict is different from alt predict/base predict
-            tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
+    tageInfoForMgscs.clear();
+
+    const uint8_t baseEnc = getBaseExitSlotEnc(startPC, btbEntries);
+    auto [main_info, alt_info] = lookupProviders(startPC);
+
+    bool use_alt = false;
+    PredSource source = PredSource::Base;
+    uint8_t predEnc = baseEnc;
+
+    if (main_info.found) {
+        const bool weak = isWeakConf(main_info.entry.conf);
+        if (weak) {
+            Addr uidx = getUseAltIdx(startPC);
+            // Exit-Slot v2: useAltOnNa acts as a conservative gate to fall back to Base
+            // when Provider is weak (instead of using Alt).
+            use_alt = (useAlt[uidx] >= 0); // true => use Base, false => use Provider even if weak
         }
+
+        if (!weak) {
+            source = PredSource::Provider;
+            predEnc = main_info.entry.selectedEnc();
+        } else if (use_alt) {
+            source = PredSource::Base;
+            predEnc = baseEnc;
+        } else {
+            source = PredSource::Provider;
+            predEnc = main_info.entry.selectedEnc();
+        }
+    } else {
+        use_alt = true; // consistent with old "no provider => consult base"
+        source = PredSource::Base;
+        predEnc = baseEnc;
+    }
+
+    Addr predCondPC = mapExitSlotToCondPC(startPC, btbEntries, predEnc);
+    bool payloadMapped = (predEnc != 0) && (predCondPC != 0);
+
+    // If payload cannot be mapped to current MBTB entries, fall back to base as PRD suggests.
+    if (source != PredSource::Base && predEnc != 0 && !payloadMapped) {
+        tageStats.predPayloadMapFail++;
+        source = PredSource::Base;
+        predEnc = baseEnc;
+        predCondPC = mapExitSlotToCondPC(startPC, btbEntries, predEnc);
+        payloadMapped = (predEnc != 0) && (predCondPC != 0);
+    }
+
+    if (source == PredSource::Base) {
+        tageStats.predBaseFallback++;
+    }
+    if (predEnc == 0) {
+        tageStats.predNoCondExit++;
+    }
+
+    TagePrediction pred(startPC, main_info, alt_info,
+                        use_alt, source, predEnc, baseEnc,
+                        payloadMapped, predCondPC);
+    meta->pred = pred;
+    meta->hasPred = true;
+
+    tageStats.updateStatsWithTagePrediction(pred, true);
+
+    // Fill per-branch TAGE info for MGSC, and condTakens for control-flow selection.
+    // - If source==Base: provide a direction prediction for each cond branch (like old behavior).
+    // - Else: only mark the predicted exit cond as taken; others are implicitly NT.
+    if (source == PredSource::Base) {
+        for (auto &e : btbEntries) {
+            if (!(e.valid && e.isCond)) {
+                continue;
+            }
+            const bool base_taken = (e.ctr >= 0);
+            results.push_back({e.pc, e.alwaysTaken || base_taken});
+        }
+    } else if (predCondPC != 0) {
+        results.push_back({predCondPC, true});
+    }
+
+    // MGSC expects an entry for every cond BTB entry.
+    const uint8_t altOrBaseEnc = baseEnc; // Alt unused in Exit-Slot v2
+    const bool provider_alt_diff = main_info.found && (main_info.entry.selectedEnc() != altOrBaseEnc);
+    const int provider_conf_metric = main_info.found ? main_info.entry.conf : 0;
+
+    for (auto &e : btbEntries) {
+        if (!(e.valid && e.isCond)) {
+            continue;
+        }
+        auto &info = tageInfoForMgscs[e.pc];
+
+        bool pred_taken_no_always = false;
+        if (source == PredSource::Base) {
+            pred_taken_no_always = (e.ctr >= 0);
+        } else {
+            pred_taken_no_always = (predCondPC != 0) && (e.pc == predCondPC);
+        }
+
+        info.tage_pred_taken = pred_taken_no_always;
+        info.tage_main_taken = (source == PredSource::Provider) && pred_taken_no_always;
+
+        if ((source == PredSource::Provider) && pred_taken_no_always && main_info.found) {
+            info.tage_pred_conf_high = provider_conf_metric >= 6;
+            info.tage_pred_conf_mid = (provider_conf_metric < 6) && (provider_conf_metric > 1);
+            info.tage_pred_conf_low = provider_conf_metric <= 1;
+        } else {
+            info.tage_pred_conf_high = false;
+            info.tage_pred_conf_mid = false;
+            info.tage_pred_conf_low = true;
+        }
+
+        info.tage_pred_alt_diff = provider_alt_diff;
     }
 }
 
@@ -384,181 +527,17 @@ BTBTAGE::getPredictionMeta() {
 }
 
 /**
- * @brief Prepare BTB entries for update by filtering and processing
- * 
- * @param stream The fetch stream containing update information
- * @return Vector of BTB entries that need to be updated
- */
-std::vector<BTBEntry>
-BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
-
-    // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
-        if (!new_entry_taken) {
-            potential_new_entry.alwaysTaken = false;
-        }
-        all_entries.push_back(potential_new_entry);
-    }
-
-    // Filter: only keep conditional branches that are not always taken
-    if (getResolvedUpdate()) {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken && e.resolved); });
-        all_entries.erase(remove_it, all_entries.end());
-    } else {
-        auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond && !e.alwaysTaken); });
-        all_entries.erase(remove_it, all_entries.end());
-    }
-
-    return all_entries;
-}
-
-/**
- * @brief Update predictor state for a single entry
- * 
- * @param entry The BTB entry being updated
- * @param actual_taken The actual outcome of the branch
- * @param pred The prediction made for this entry
- * @param stream The fetch stream containing update information
- * @return true if need to allocate new entry
- */
-bool
-BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
-                             bool actual_taken,
-                             const TagePrediction &pred,
-                             const FetchTarget &stream) {
-    tageStats.updateStatsWithTagePrediction(pred, false);
-
-    auto &main_info = pred.mainInfo;
-    auto &alt_info = pred.altInfo;
-    bool used_alt = pred.useAlt;
-    // Use base table instead of entry.ctr for fallback prediction
-    Addr startPC = stream.getRealStartPC();
-    bool base_taken = entry.ctr >= 0;
-    bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
-
-    // Update use_alt_on_na when provider is weak (0 or -1)
-    if (main_info.found) {
-        bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
-        if (main_weak) {
-            tageStats.updateProviderNa++;
-            Addr uidx = getUseAltIdx(entry.pc);
-            bool alt_correct = (alt_taken == actual_taken);
-            updateCounter(alt_correct, useAltOnNaWidth, useAlt[uidx]);
-            tageStats.updateUseAltOnNaUpdated++;
-            if (alt_correct) {
-                tageStats.updateUseAltOnNaCorrect++;
-            } else {
-                tageStats.updateUseAltOnNaWrong++;
-            }
-        }
-    }
-
-    // Update main prediction provider
-    if (main_info.found) {
-        DPRINTF(TAGE, "prediction provided by table %d, idx %lu, way %u, updating corresponding entry\n",
-            main_info.table, main_info.index, main_info.way);
-
-        auto &way = tageTable[main_info.table][main_info.index][main_info.way];
-
-        // Update prediction counter
-        updateCounter(actual_taken, 3, way.counter);
-
-        // Update useful bit based on several conditions
-        bool main_is_correct = main_info.taken() == actual_taken;
-        bool alt_is_correct_and_strong = alt_info.found &&
-                                     (alt_info.taken() == actual_taken) &&
-                                     (abs(2 * alt_info.entry.counter + 1) == 7);
-
-        // a. Special reset (humility mechanism)
-        if (alt_is_correct_and_strong && main_is_correct) {
-            way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to humility rule\n");
-        } else if (main_info.taken() != alt_taken) {
-            // b. Original logic to set useful bit high
-            if (main_is_correct) {
-                way.useful = 1;
-            }
-        }
-
-        // c. Reset u on counter sign flip (becomes weak)
-        if (way.counter == 0 || way.counter == -1) {
-            way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
-        }
-        DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
-
-        // No LRU maintenance
-    }
-
-    // Update alternative prediction provider
-    if (used_alt && alt_info.found) {
-        auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
-        updateCounter(actual_taken, 3, way.counter);
-        // No LRU maintenance
-    }
-
-    // Update statistics
-    if (used_alt) {
-        bool alt_correct = alt_taken == actual_taken;
-        if (alt_correct) {
-            tageStats.updateUseAltCorrect++;
-        } else {
-            tageStats.updateUseAltWrong++;
-        }
-        if (main_info.found && main_info.taken() != alt_taken) {
-            tageStats.updateAltDiffers++;
-        }
-    }
-
-    // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.pc;
-    if (getDelay() == 2){
-        if (this_fb_mispred) {
-            tageStats.updateMispred++;
-            if (!used_alt && main_info.found) {
-#ifndef UNIT_TEST
-                tageStats.updateTableMispreds[main_info.table]++;
-#endif
-            }
-        }
-    }
-
-    // No allocation if no misprediction
-    if (!this_fb_mispred) {
-        return false;
-    }
-
-    // Special case: provider is weak but direction is correct
-    // In this case, provider just needs more training, not a longer history table
-    // This avoids wasteful allocation and prevents ping-pong effects
-    if (used_alt && main_info.found && main_info.taken() == actual_taken) {
-        return false;
-    }
-
-    // All other cases: allocate longer history table
-    return true;
-}
-
-/**
- * @brief Handle allocation of new entries
- * 
+ * @brief Handle allocation of new entries (block-level).
+ *
  * @param startPC The starting PC address
- * @param entry The BTB entry being updated
- * @param actual_taken The actual outcome of the branch
+ * @param realEnc The actual ExitSlotEnc (0..32)
  * @param start_table The starting table for allocation
  * @param meta The metadata of the predictor
  * @return true if allocation is successful
  */
 bool
 BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
-                                 const BTBEntry &entry,
-                                 bool actual_taken,
+                                 uint8_t realEnc,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
                                  uint64_t &allocated_table,
@@ -569,25 +548,24 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     // - Prefer invalid ways; else choose any way with useful==0 and weak counter.
     // - If none, apply a one-step age penalty to a strong, not-useful way (no allocation).
 
-    // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(entry.pc, startPC);
-
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get());
         Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
+            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get());
 
         auto &set = tageTable[ti][newIndex];
 
         // Allocate into invalid way or not-useful and weak way
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
-            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
+            const bool weakish = isWeakConf(cand.conf);
             if (!cand.valid || (!cand.useful && weakish)) {
-                short newCounter = actual_taken ? 0 : -1;
-                DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                        ti, newIndex, way, newTag, position, newCounter, entry.pc);
-                cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+                uint8_t newConf = 0; // weak init
+                DPRINTF(TAGE,
+                        "allocating entry in table %d[%lu][%u], tag %lu, conf %d, exitEnc %u\n",
+                        ti, newIndex, way, newTag, newConf, realEnc);
+                // Allocate with a single known candidate; the second candidate is empty (0).
+                cand = TageEntry(newTag, newConf, realEnc, 0, 0); // u = 0 default
                 tageStats.updateAllocSuccess++;
                 allocated_table = ti;
                 allocated_index = newIndex;
@@ -600,11 +578,11 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         // 3) Apply age penalty to one strong, not-useful way to make it replacable later
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
-            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
+            const bool weakish = isWeakConf(cand.conf);
             if (!cand.useful && !weakish) {
-                if (cand.counter > 0) cand.counter--; else cand.counter++;
-                DPRINTF(TAGE, "age penalty applied on table %d[%lu][%u], new ctr %d\n",
-                        ti, newIndex, way, cand.counter);
+                satDecConf(cand.conf);
+                DPRINTF(TAGE, "age penalty applied on table %d[%lu][%u], new conf %u\n",
+                        ti, newIndex, way, cand.conf);
                 break; // one penalty per table per update
             }
         }
@@ -685,119 +663,280 @@ BTBTAGE::update(const FetchTarget &stream) {
 
     DPRINTF(TAGE, "update startAddr: %#lx, bank: %u\n", startAddr, updateBank);
 
-    // ========== Normal Update Logic ==========
-    // Prepare BTB entries to update
-    auto entries_to_update = prepareUpdateEntries(stream);
-    
-    // Get prediction metadata snapshot and bind to member for helpers
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    if (!predMeta) {
+    if (!predMeta || !predMeta->hasPred) {
         DPRINTF(TAGE, "update: no prediction meta, skip\n");
         return;
     }
 
-    // Process each BTB entry
+    const TagePrediction &pred_at_pred = predMeta->pred;
+
+    // RealEnc is defined on cond dimension only.
+    uint8_t realEnc = 0;
+    if (stream.exeTaken && stream.exeBranchInfo.isCond) {
+        unsigned real_slot = getBranchIndexInBlock(stream.exeBranchInfo.pc, startAddr);
+        realEnc = static_cast<uint8_t>(real_slot + 1);
+    }
+
+    const bool correct = (pred_at_pred.predEnc == realEnc);
+
+    // Recompute provider/alt for update-on-read, or use stored info.
+    TageTableInfo main_info, alt_info;
+    if (updateOnRead) {
+        std::tie(main_info, alt_info) = lookupProviders(startAddr, predMeta);
+    } else {
+        main_info = pred_at_pred.mainInfo;
+        alt_info = pred_at_pred.altInfo;
+    }
+
+    // Track recomputed-vs-original differences (block-level).
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
-    for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
-        TagePrediction recomputed;
-        if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
-            // Re-read providers using snapshot (do not rely on prediction-time main/alt)
-            recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta);
-            // Track differences for statistics
-            auto it = predMeta->preds.find(btb_entry.pc);
-            if (it != predMeta->preds.end() && recomputed.taken != it->second.taken) {
-                hasRecomputedVsOriginalDiff = true;
+    if (updateOnRead) {
+        const uint8_t baseEnc = pred_at_pred.baseEnc;
+        bool use_alt = false;
+        PredSource src = PredSource::Base;
+        uint8_t recEnc = baseEnc;
+        if (main_info.found) {
+            const bool weak = isWeakConf(main_info.entry.conf);
+            if (weak) {
+                Addr uidx = getUseAltIdx(startAddr);
+                use_alt = (useAlt[uidx] >= 0); // true => use Base (conservative)
             }
-        } else { // otherwise, use the prediction from the prediction-time main/alt
-            recomputed = predMeta->preds[btb_entry.pc];
-        }
-        if (recomputed.taken != actual_taken) {
-            hasRecomputedVsActualDiff = true;
-        }
-
-        // Update predictor state and check if need to allocate new entry
-        bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
-
-        // Handle new entry allocation if needed
-        bool alloc_success = false;
-        uint64_t allocated_table = 0;
-        uint64_t allocated_index = 0;
-        uint64_t allocated_way = 0;
-        if (need_allocate) {
-
-            // Handle allocation of new entries
-            uint start_table = 0;
-            auto &main_info = recomputed.mainInfo;
-            if (main_info.found) {
-                start_table = main_info.table + 1; // start from the table after the main prediction table
+            if (!weak) {
+                src = PredSource::Provider;
+                recEnc = main_info.entry.selectedEnc();
+            } else if (use_alt) {
+                src = PredSource::Base;
+                recEnc = baseEnc;
+            } else {
+                src = PredSource::Provider;
+                recEnc = main_info.entry.selectedEnc();
             }
-            alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
-                                   start_table, predMeta, allocated_table, allocated_index, allocated_way);
+        } else {
+            src = PredSource::Base;
+            recEnc = baseEnc;
         }
-
-#ifndef UNIT_TEST
-        if (enableDB) {
-            TageMissTrace t;
-            std::string history_str;
-            boost::dynamic_bitset<> history_low50 = predMeta->history;
-            if (history_low50.size() > 50) {
-                history_low50.resize(50);  // get the lower 50 bits of history
-            }
-            boost::to_string(history_low50, history_str);
-            auto main_info = recomputed.mainInfo;
-            auto alt_info = recomputed.altInfo;
-            t.set(startAddr, btb_entry.pc, main_info.way,
-                main_info.found, main_info.entry.counter, main_info.entry.useful,
-                main_info.table, main_info.index,
-                alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
-                alt_info.table, alt_info.index,
-                recomputed.useAlt, recomputed.taken, actual_taken, alloc_success,
-                allocated_table, allocated_index, allocated_way,
-                history_str, predMeta->indexFoldedHist[main_info.table].get());
-            tageMissTrace->write_record(t);
+        // Use prediction-time BTB entries for payload mapping check.
+        if (src != PredSource::Base && recEnc != 0 &&
+            mapExitSlotToCondPC(startAddr, stream.predBTBEntries, recEnc) == 0) {
+            src = PredSource::Base;
+            recEnc = baseEnc;
         }
-#endif
+        hasRecomputedVsOriginalDiff = (recEnc != pred_at_pred.predEnc);
+        hasRecomputedVsActualDiff = (recEnc != realEnc);
+    } else {
+        hasRecomputedVsActualDiff = (pred_at_pred.predEnc != realEnc);
     }
-    // Update recomputed difference statistics (per fetchBlock)
+
     if (hasRecomputedVsActualDiff) {
         tageStats.recomputedVsActualDiff++;
     }
     if (hasRecomputedVsOriginalDiff) {
         tageStats.recomputedVsOriginalDiff++;
     }
-    if (getDelay() <2){
+
+    // Update basic hit/useAlt statistics on update.
+    {
+        TagePrediction updPred(startAddr, main_info, alt_info,
+                              pred_at_pred.useAlt, pred_at_pred.source,
+                              pred_at_pred.predEnc, pred_at_pred.baseEnc,
+                              pred_at_pred.payloadMapped, pred_at_pred.predCondPC);
+        tageStats.updateStatsWithTagePrediction(updPred, false);
+    }
+
+    // Update useAltOnNa (block-level): only when provider was weak at prediction time.
+    if (pred_at_pred.mainInfo.found && isWeakConf(pred_at_pred.mainInfo.entry.conf)) {
+        tageStats.updateProviderNa++;
+        const uint8_t providerEnc = pred_at_pred.mainInfo.entry.selectedEnc();
+        const bool base_correct = (pred_at_pred.baseEnc == realEnc);
+        const bool provider_correct = (providerEnc == realEnc);
+        // Gate meaning in Exit-Slot v2:
+        // useAltOnNa[startPC] >= 0 => choose Base when Provider is weak.
+        // So we train it toward Base when Base is correct, otherwise toward Provider.
+        if (base_correct != provider_correct) {
+            const bool prefer_base = base_correct && !provider_correct;
+            Addr uidx = getUseAltIdx(startAddr);
+            updateCounter(prefer_base, useAltOnNaWidth, useAlt[uidx]);
+            tageStats.updateUseAltOnNaUpdated++;
+            if (prefer_base) {
+                tageStats.updateUseAltOnNaCorrect++;
+            } else {
+                tageStats.updateUseAltOnNaWrong++;
+            }
+        }
+    }
+
+    bool alloc_success = false;
+    uint64_t allocated_table = 0;
+    uint64_t allocated_index = 0;
+    uint64_t allocated_way = 0;
+
+    // Provider update (always update provider entry when found, like old behavior).
+    if (main_info.found) {
+        auto &way = tageTable[main_info.table][main_info.index][main_info.way];
+        const uint8_t old_conf = way.conf;
+        const uint8_t providerPredEnc = way.selectedEnc();
+        const uint8_t providerOtherEnc = way.otherEnc();
+        const bool providerSelCorrect = (providerPredEnc == realEnc);
+        const bool providerOtherHit = (providerOtherEnc == realEnc);
+        const bool providerAnyHit = providerSelCorrect || providerOtherHit;
+
+        // Conf reflects *predictive* reliability under this history.
+        //
+        // For dual-candidate Exit-Slot entries, "otherHit" only means the correct label
+        // is present, but selector still failed. Treat selector-miss as incorrect to:
+        // - avoid conf sticking to strong and suppressing longer-history allocation
+        // - quickly expose cases where short history cannot separate patterns (e.g. 0/7 alternation)
+        updateConf(providerSelCorrect, way.conf);
+
+        const uint8_t altOrBaseEnc = pred_at_pred.baseEnc; // Alt unused in Exit-Slot v2
+        const bool provider_used = (pred_at_pred.source == PredSource::Provider);
+
+        // Useful: provider provides gain only when provider is used and correct, and alt/base is wrong.
+        if (provider_used && correct && (altOrBaseEnc != realEnc)) {
+            way.useful = 1;
+        }
+        if (!providerAnyHit && isWeakConf(way.conf)) {
+            way.useful = 0;
+        }
+
+        if (providerSelCorrect) {
+            if (isWeakConf(way.conf)) {
+                tageStats.updateNoAllocWeakCorrect++;
+            }
+        } else if (providerOtherHit) {
+            // Selector miss: the other candidate is correct, so train selector toward it.
+            if (way.selCtr >= 2) {
+                // selected enc1 but real matches enc0
+                satDecSel(way.selCtr);
+            } else {
+                // selected enc0 but real matches enc1
+                satIncSel(way.selCtr);
+            }
+
+            // If selector keeps missing under the same (short) history, it likely needs longer
+            // history separation rather than more selector training (classic "1-step lag" on
+            // alternating labels). Try allocating to longer tables when either:
+            // - the entry was already strong (we were confident but still wrong), or
+            // - conf has been trained down to weak (repeated selector misses).
+            if (isStrongConf(old_conf) || isWeakConf(way.conf)) {
+                unsigned start_table = main_info.table + 1;
+                alloc_success = handleNewEntryAllocation(startAddr, realEnc, start_table,
+                                                         predMeta, allocated_table,
+                                                         allocated_index, allocated_way);
+            }
+        } else {
+            // Weak-and-wrong is the typical ping-pong trigger in Exit-Slot mode:
+            // multiple exit patterns of the same startPC keep rewriting the same entry.
+            // Prefer allocating into longer history tables to separate patterns; fall back
+            // to rewrite only when allocation fails.
+            const bool provider_was_weak = isWeakConf(old_conf);
+            if (provider_was_weak) {
+                unsigned start_table = main_info.table + 1;
+                alloc_success = handleNewEntryAllocation(startAddr, realEnc, start_table,
+                                                         predMeta, allocated_table,
+                                                         allocated_index, allocated_way);
+                if (!alloc_success) {
+                    // Replace the non-selected candidate with the new label, and steer selector to it.
+                    if (way.selCtr >= 2) {
+                        // currently selects enc1 => replace enc0, then select enc0 strongly
+                        way.exitSlotEnc0 = realEnc;
+                        way.selCtr = 0;
+                    } else {
+                        // currently selects enc0 => replace enc1, then select enc1 strongly
+                        way.exitSlotEnc1 = realEnc;
+                        way.selCtr = 3;
+                    }
+                    way.conf = 0; // weak init
+                    way.useful = 0;
+                    tageStats.updateRewriteWeakWrong++;
+                }
+            } else if (isStrongConf(old_conf)) {
+                // strong-but-wrong => allocate longer history.
+                tageStats.updateAllocStrongWrong++;
+                unsigned start_table = main_info.table + 1;
+                alloc_success = handleNewEntryAllocation(startAddr, realEnc, start_table,
+                                                         predMeta, allocated_table,
+                                                         allocated_index, allocated_way);
+            }
+        }
+    } else {
+        // Provider miss: allocate only when incorrect (i.e., base can't cover this pattern).
+        if (!correct) {
+            tageStats.updateAllocOnMiss++;
+            alloc_success = handleNewEntryAllocation(startAddr, realEnc, 0,
+                                                     predMeta, allocated_table,
+                                                     allocated_index, allocated_way);
+        }
+    }
+
+    // If alt was actually used, train alt entry as well.
+    if (pred_at_pred.source == PredSource::Alt && alt_info.found) {
+        auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
+        updateConf(correct, way.conf);
+    }
+
+#ifndef UNIT_TEST
+    if (enableDB) {
+        TageMissTrace t;
+        std::string history_str;
+        boost::dynamic_bitset<> history_low50 = predMeta->history;
+        if (history_low50.size() > 50) {
+            history_low50.resize(50);
+        }
+	        boost::to_string(history_low50, history_str);
+
+	        const uint64_t branchPC = stream.exeBranchInfo.isCond ? stream.exeBranchInfo.pc : 0;
+	        const uint64_t main_tag = main_info.found ? main_info.tag : 0;
+	        const uint64_t alt_tag = alt_info.found ? alt_info.tag : 0;
+	        const uint64_t main_payload = main_info.found ? main_info.entry.exitSlotEnc0 : 0;
+	        const uint64_t alt_payload = alt_info.found ? alt_info.entry.exitSlotEnc0 : 0;
+	        const uint64_t main_payload1 = main_info.found ? main_info.entry.exitSlotEnc1 : 0;
+	        const uint64_t alt_payload1 = alt_info.found ? alt_info.entry.exitSlotEnc1 : 0;
+	        const uint64_t main_sel = main_info.found ? main_info.entry.selCtr : 0;
+	        const uint64_t alt_sel = alt_info.found ? alt_info.entry.selCtr : 0;
+	        const uint64_t pred_source = static_cast<uint64_t>(pred_at_pred.source);
+	        t.set(startAddr, branchPC, main_info.way,
+	              main_info.found, main_info.entry.conf, main_info.entry.useful,
+	              main_info.table, main_info.index,
+	              alt_info.found, alt_info.entry.conf, alt_info.entry.useful,
+	              alt_info.table, alt_info.index,
+	              pred_at_pred.useAlt, pred_at_pred.predEnc != 0, stream.exeTaken, alloc_success,
+	              allocated_table, allocated_index, allocated_way,
+	              history_str,
+	              main_info.found ? predMeta->indexFoldedHist[main_info.table].get() : 0,
+	              main_tag, alt_tag,
+	              main_payload, alt_payload,
+	              main_payload1, alt_payload1,
+	              main_sel, alt_sel,
+	              pred_at_pred.baseEnc, pred_at_pred.predEnc, realEnc,
+	              pred_source);
+	        tageMissTrace->write_record(t);
+	    }
+#endif
+
+    if (getDelay() < 2) {
         checkUtageUpdateMisspred(stream);
     }
-    DPRINTF(TAGE, "end update\n");
+
+    DPRINTF(TAGE, "end update (PredEnc %u, RealEnc %u, correct %d)\n",
+            pred_at_pred.predEnc, realEnc, correct);
 }
 
 void
 BTBTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
     auto predMeta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    // use for microtage updatemispred counting
-    // sort microtage predictions by pc to find the first taken branch
-    std::vector<std::pair<Addr, TagePrediction>> lastPreds;
-    lastPreds.reserve(predMeta->preds.size());
-    for (auto &kv : predMeta->preds) {
-        lastPreds.emplace_back(kv.first, kv.second);
+    if (!predMeta || !predMeta->hasPred) {
+        return;
     }
-    std::sort(lastPreds.begin(), lastPreds.end(),
-            [](const std::pair<Addr, TagePrediction> &a,
-                const std::pair<Addr, TagePrediction> &b) {
-                return a.first < b.first;
-            });
-    Addr first_taken_pc = 0;
-    for (auto &entry_info : lastPreds) {
-        if (entry_info.second.taken) {
-            first_taken_pc = entry_info.first;
-            break;
-        }
-    }
-    bool fallthrough_mispred = (first_taken_pc == 0 && stream.exeTaken) ||
-                                (first_taken_pc != 0 && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && first_taken_pc != stream.exeBranchInfo.pc;
+    // MicroTAGE mispred counting: focus on cond-exit only.
+    const Addr first_taken_pc = predMeta->pred.predCondPC;
+    const bool actual_cond_taken = stream.exeTaken && stream.exeBranchInfo.isCond;
+
+    bool fallthrough_mispred = (first_taken_pc == 0 && actual_cond_taken) ||
+                                (first_taken_pc != 0 && !actual_cond_taken);
+    bool branch_mispred = actual_cond_taken && first_taken_pc != stream.exeBranchInfo.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }
@@ -817,7 +956,7 @@ BTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 
 // Calculate TAGE tag with folded history - optimized version using bitwise operations
 Addr
-BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist, Addr position)
+BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist)
 {
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
@@ -832,14 +971,14 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
     // Extract alt tag bits and shift left by 1
     Addr altTagBits = (altFoldedHist << 1) & mask;
 
-    // XOR all components together, including position (like RTL)
-    return pcBits ^ foldedBits ^ altTagBits ^ position;
+    // XOR all components together (Exit-Slot mode does not include position).
+    return pcBits ^ foldedBits ^ altTagBits;
 }
 
 Addr
-BTBTAGE::getTageTag(Addr pc, int t, Addr position)
+BTBTAGE::getTageTag(Addr pc, int t)
 {
-    return getTageTag(pc, t, tagFoldedHist[t].get(), altTagFoldedHist[t].get(), position);
+    return getTageTag(pc, t, tagFoldedHist[t].get(), altTagFoldedHist[t].get());
 }
 
 Addr
@@ -892,7 +1031,7 @@ BTBTAGE::getUseAltIdx(Addr pc) {
 }
 
 unsigned
-BTBTAGE::getBranchIndexInBlock(Addr branchPC, Addr startPC) {
+BTBTAGE::getBranchIndexInBlock(Addr branchPC, Addr startPC) const {
     // Calculate branch position within the fetch block (0 .. maxBranchPositions-1)
     Addr alignedPC = startPC & ~(blockSize - 1);
     Addr offset = (branchPC - alignedPC) >> instShiftAmt;
@@ -927,10 +1066,8 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr p
         boost::to_string(history, buf);
         DPRINTF(TAGEHistory, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
     }
-    if (!taken) {
-        DPRINTF(TAGEHistory, "not updating folded history, since FB not taken\n");
-        return;
-    }
+    // Strategy B: keep folded path history evolving even on fall-through by using a pseudo edge.
+    // (Callers are expected to pass a meaningful (pc,target) when taken==false.)
 
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 3; type++) {
@@ -958,6 +1095,11 @@ void
 BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     auto [pc, target, taken] = pred.getPHistInfo();
+    if (!taken) {
+        // Pseudo edge for fall-through: startPC -> startPC + blockSize.
+        pc = pred.bbStart;
+        target = pred.bbStart + blockSize;
+    }
     doUpdateHist(history, taken, pc, target);
 }
 
@@ -984,7 +1126,13 @@ BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
+    Addr pc = entry.getControlPC();
+    Addr target = entry.getTakenTarget();
+    if (!cond_taken) {
+        pc = entry.startPC;
+        target = entry.startPC + blockSize;
+    }
+    doUpdateHist(history, cond_taken, pc, target);
 }
 
 // Check folded history after speculative update and recovery
@@ -1028,6 +1176,13 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
+    ADD_STAT(predNoCondExit, statistics::units::Count::get(), "predicted No-Cond-Exit (ExitSlotEnc==0) blocks"),
+    ADD_STAT(predBaseFallback, statistics::units::Count::get(), "blocks that fall back to base (provider miss/weak/ mapfail)"),
+    ADD_STAT(predPayloadMapFail, statistics::units::Count::get(), "non-base payload that cannot be mapped to a cond entry in btbEntries"),
+    ADD_STAT(updateAllocOnMiss, statistics::units::Count::get(), "allocate on provider miss when base is wrong"),
+    ADD_STAT(updateAllocStrongWrong, statistics::units::Count::get(), "allocate on strong-but-wrong provider"),
+    ADD_STAT(updateRewriteWeakWrong, statistics::units::Count::get(), "rewrite payload on weak-and-wrong provider"),
+    ADD_STAT(updateNoAllocWeakCorrect, statistics::units::Count::get(), "no-alloc on weak-but-correct provider"),
     ADD_STAT(recomputedVsActualDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != actual_taken"),
     ADD_STAT(recomputedVsOriginalDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != original pred.taken"),
     ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
@@ -1133,15 +1288,29 @@ BTBTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         return;
     }
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    auto pc = inst->pcState().instAddr();
-    auto it = meta->preds.find(pc);
-    bool pred_taken = false;
-    bool pred_hit = false;
-    if (it != meta->preds.end()) {
-        pred_taken = it->second.taken;
-        pred_hit = true;
+    const Addr pc = inst->pcState().instAddr();
+
+    // pred_hit: the branch must be present in the BTB entries of this stream.
+    const BTBEntry *btb_entry = nullptr;
+    for (auto &e : stream.predBTBEntries) {
+        if (e.valid && e.isCond && e.pc == pc) {
+            btb_entry = &e;
+            break;
+        }
     }
-    bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    const bool pred_hit = (btb_entry != nullptr) && meta && meta->hasPred;
+
+    bool pred_taken = false;
+    if (pred_hit) {
+        if (meta->pred.source == PredSource::Base) {
+            pred_taken = (btb_entry->ctr >= 0);
+        } else {
+            pred_taken = (meta->pred.predCondPC == pc);
+        }
+    }
+
+    const bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.isCond &&
+                                 stream.exeBranchInfo.pc == pc;
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

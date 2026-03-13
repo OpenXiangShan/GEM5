@@ -1090,6 +1090,11 @@ void
 BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     auto [pc, target, taken] = pred.getPHistInfo();
+    if (!taken) {
+        // Strategy B: pseudo edge for fall-through to keep PHR/folded PHR evolving.
+        pc = pred.bbStart;
+        target = pred.bbStart + blockSize;
+    }
     doUpdateHist(history, 2, taken, indexPFoldedHist, pc, target);  // only path history needs pc!
 }
 
@@ -1209,7 +1214,13 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget 
     for (int i = 0; i < pTableNum; i++) {
         indexPFoldedHist[i].recover(predMeta->indexPFoldedHist[i]);
     }
-    doUpdateHist(history, 2, cond_taken, indexPFoldedHist, entry.getControlPC(), entry.getTakenTarget());
+    Addr pc = entry.getControlPC();
+    Addr target = entry.getTakenTarget();
+    if (!cond_taken) {
+        pc = entry.startPC;
+        target = entry.startPC + blockSize;
+    }
+    doUpdateHist(history, 2, cond_taken, indexPFoldedHist, pc, target);
 }
 
 /**

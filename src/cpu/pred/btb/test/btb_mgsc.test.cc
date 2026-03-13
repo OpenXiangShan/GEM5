@@ -112,13 +112,13 @@ pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc, A
     if (shamt == 0) {
         return;
     }
-    if (taken) {
-        uint64_t hash = pathHash(pc, target);
-        history <<= shamt;
-        for (std::size_t i = 0; i < pathHashLength && i < history.size(); i++) {
-            history[i] = (hash & 1) ^ history[i];
-            hash >>= 1;
-        }
+    // Keep path history evolving even on fall-through (Strategy B).
+    // The caller should provide a pseudo edge for fall-through (e.g., startPC -> startPC+blockSize).
+    uint64_t hash = pathHash(pc, target);
+    history <<= shamt;
+    for (std::size_t i = 0; i < pathHashLength && i < history.size(); i++) {
+        history[i] = (hash & 1) ^ history[i];
+        hash >>= 1;
     }
 }
 
@@ -277,6 +277,11 @@ struct MgscHarness
         histShiftIn(bw_shamt, bw_taken, bwhr);
 
         auto [p_pc, p_target, p_taken] = stage_preds[1].getPHistInfo();
+        if (!p_taken) {
+            // Match DecoupledBPUWithBTB Strategy B pseudo edge.
+            p_pc = start_pc;
+            p_target = start_pc + 32;
+        }
         pHistShiftIn(2, p_taken, phr, p_pc, p_target);
 
         unsigned lhr_idx =
@@ -313,7 +318,14 @@ struct MgscHarness
             // Apply correct external history update.
             histShiftIn(shamt, actual_taken, ghr);
             histShiftIn(bw_shamt, actual_bw_taken, bwhr);
-            pHistShiftIn(2, actual_taken, phr, entry.pc, entry.target);
+            Addr phr_pc = entry.pc;
+            Addr phr_target = entry.target;
+            if (!actual_taken) {
+                // Match DecoupledBPUWithBTB Strategy B pseudo edge.
+                phr_pc = start_pc;
+                phr_target = start_pc + 32;
+            }
+            pHistShiftIn(2, actual_taken, phr, phr_pc, phr_target);
             histShiftIn(shamt, actual_taken, lhr[lhr_idx]);
         }
 
