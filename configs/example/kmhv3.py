@@ -112,8 +112,8 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mgsc.enablePerceptionPred = True
             cpu.branchPred.mgsc.percepTableEntryNum = 128
             cpu.branchPred.mgsc.percepTableWidth = 9
-            cpu.branchPred.mgsc.gbhrLen = 128
-            cpu.branchPred.mgsc.percepThres = 261
+            cpu.branchPred.mgsc.gbhrLen = 4096
+            cpu.branchPred.mgsc.percepThres = 7960
 
             cpu.branchPred.mgsc.enableBwTable = True
             cpu.branchPred.mgsc.enableLTable = True

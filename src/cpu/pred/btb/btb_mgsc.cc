@@ -479,6 +479,9 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
             }
         }
     }//如果更改判断逻辑，记得更改计数器逻辑
+    if (abs(percep_sum) > percep_thres){
+        use_percep_pred = true;
+    }
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
     bool taken = use_sc_pred ? (use_percep_pred? percep_sum>=0 : total_sum >= 0) : tage_info.tage_pred_taken;
 
@@ -681,10 +684,10 @@ BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int p
     int bias = 1;
     if (percep_update){
         auto &entry = weightTable[index][0];
-        updatePercepCounter(actual_taken == bias,percepTableWidth,entry);
+        updateCounter(actual_taken == bias,percepTableWidth,entry);
         for (int i=0;i<gbhrLen;i++){
             auto &entry = weightTable[index][i+1];
-            updatePercepCounter(actual_taken == pred_gbhr[i],percepTableWidth,entry);
+            updateCounter(actual_taken == pred_gbhr[i],percepTableWidth,entry);
             // weightTable[index][i+1] += (actual_taken == gbhr[i]?1:-1);
         }
     }
@@ -1349,11 +1352,12 @@ BTBMGSC::specUpdateGBHR(const boost::dynamic_bitset<> &history, FullBTBPredictio
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getHistInfo();
     int index = -1;
-    for (int i=0;i<gbhrLen;i++){
+    int len = history.size();
+    len = len>gbhrLen?gbhrLen : len;
+    for (int i=0;i<len;i++){
         if (history[i] != gbhr[i])
             index = i;
     }
-    // int len = history.size();
     assert(index == -1);
 
     while (shamt > 0){
@@ -1512,11 +1516,12 @@ BTBMGSC::recoverGBHR(const boost::dynamic_bitset<> &history,
     for (int i=0;i<gbhrLen;i++)
         gbhr[i] = predMeta->gbhr[i];
     int index = -1;
-    for (int i=0;i<gbhrLen;i++){
+    int len = history.size();
+    len = len>gbhrLen?gbhrLen:len;
+    for (int i=0;i<len;i++){
         if (history[i] != gbhr[i])
             index = i;
     }
-    // int len = history.size();
     assert(index == -1);
     while (shamt > 0){
         shamt --;
