@@ -14,14 +14,14 @@
 #include "mem/xsCHI/device/CHIBridge.hh"
 #include "params/ClockedObject.hh"
 #include "params/L2ToDramSys.hh"
-#include "params/L2Wrapper.hh"
+#include "params/CHI_L2.hh"
 #include "params/SimObject.hh"
 
 namespace gem5 {
 namespace xsCHI {
-    class L2Wrapper : public ClockedObject
+    class CHI_L2 : public ClockedObject
     {
-      // L2Wrapper's job : when recv a pkt from Gem5Cache,
+      // CHI_L2's job : when recv a pkt from Gem5Cache,
       // it will convert the pkt to a xsCHI request, and send it to CHIBridge port.
       // when recv a xsCHI request from CHIBridge port, the request can only be a snoop request,
       // it will convert the xsCHI request to a pkt,
@@ -49,7 +49,7 @@ namespace xsCHI {
         bool isBlocked() const { return blocked; }
 
       protected:
-        CacheResponsePort(const std::string &_name, L2Wrapper *wrapper,
+        CacheResponsePort(const std::string &_name, CHI_L2 *wrapper,
                        const std::string &_label);
 
         /** A normal packet queue used to store responses. */
@@ -74,7 +74,7 @@ namespace xsCHI {
 
         // // a pointer to our specific cache implementation
         // Module *cache;
-        L2Wrapper *wrapper;
+        CHI_L2 *wrapper;
 
       protected:
         virtual bool recvTimingSnoopResp(PacketPtr pkt) override;
@@ -91,7 +91,7 @@ namespace xsCHI {
 
       public:
 
-        CpuSidePort(const std::string &_name, L2Wrapper *wrapper,
+        CpuSidePort(const std::string &_name, CHI_L2 *wrapper,
                     const std::string &_label);
 
     };
@@ -112,7 +112,7 @@ namespace xsCHI {
 
       protected:
 
-        CacheRequestPort(const std::string &_name, L2Wrapper *wrapper,
+        CacheRequestPort(const std::string &_name, CHI_L2 *wrapper,
                         ReqPacketQueue &_reqQueue,
                         SnoopRespPacketQueue &_snoopRespQueue) :
             QueuedRequestPort(_name, wrapper, _reqQueue, _snoopRespQueue)
@@ -136,7 +136,7 @@ namespace xsCHI {
         SnoopRespPacketQueue _snoopRespQueue;
 
         // a pointer to our specific cache implementation
-        L2Wrapper *wrapper;
+        CHI_L2 *wrapper;
 
       protected:
 
@@ -152,7 +152,7 @@ namespace xsCHI {
 
       public:
 
-        MemSidePort(const std::string &_name, L2Wrapper *wrapper,
+        MemSidePort(const std::string &_name, CHI_L2 *wrapper,
                     const std::string &_label);
 
         bool hasSchedSendEvent() const { return true; }
@@ -173,13 +173,13 @@ namespace xsCHI {
     gem5::Port &getPort(const std::string &if_name,
                   PortID idx=InvalidPortID) override;
 
-    // std::string name() const override{ return "L2Wrapper"; }
+    // std::string name() const override{ return "CHI_L2"; }
 
-    typedef L2WrapperParams Params;
-    L2Wrapper(const Params &p);
-    // L2Wrapper(const Params &p,NodeID id,SystemAddressMap* sam);
-    L2Wrapper();
-    // ~L2Wrapper() = default;
+    typedef CHI_L2Params Params;
+    CHI_L2(const Params &p);
+    // CHI_L2(const Params &p,NodeID id,SystemAddressMap* sam);
+    CHI_L2();
+    // ~CHI_L2() = default;
     CHIBridge* getBridge();
     CHIPort* getCHIPort();
     void setNodeID(uint32_t id){getBridge()->setNodeID(id);}

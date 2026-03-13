@@ -1,7 +1,7 @@
 from m5.params import *
 from m5.objects.ClockedObject import ClockedObject
 from m5.objects.DDRWrapper import *
-from m5.objects.L2Wrapper import *
+from m5.objects.CHI_L2 import *
 from m5.objects.FakeL3 import *
 from m5.objects.MeshNode import *
 class L2ToDramSys(ClockedObject):
@@ -49,7 +49,7 @@ class L2ToDramSys(ClockedObject):
 
     dramsim3 = Param.DDRWrapper("DDR Wrapper")
 
-    L2Wrapper = Param.L2Wrapper("L2 Wrapper")
+    L2Wrapper = Param.CHI_L2("L2 Wrapper")
 
     L3 = Param.FakeL3("L3 mux")
 

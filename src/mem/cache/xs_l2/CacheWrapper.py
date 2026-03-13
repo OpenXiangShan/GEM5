@@ -97,3 +97,58 @@ class L2CacheWrapper(ClockedObject):
     def addSliceAccessor(self, slice):
         self._slice_accessors.append(slice)
 
+
+class L3CacheWrapper(ClockedObject):
+    type = 'L3CacheWrapper'
+    cxx_header = "mem/cache/xs_l2/L3CacheWrapper.hh"
+    cxx_class = 'gem5::L3CacheWrapper'
+    cxx_exports = [
+        PyBindMethod("addCacheAccessor"),
+        PyBindMethod("addSliceAccessor"),
+    ]
+
+    cpu_side = ResponsePort("CPU side port, receives requests from L1/CPU")
+
+    # Ports to connect to the slices' CPU side
+    slice_cpuside_ports = VectorRequestPort(
+        "Ports to connect to the slices' CPU-side")
+
+    num_slices = Param.Unsigned("Number of slices")
+    cache_size = Param.MemorySize("Cache size")
+    cache_assoc = Param.Unsigned("Cache associativity")
+    block_bits = Param.Unsigned(6, "Log2 of cache block size in bytes")
+
+    pipe_dir_write_stage = Param.Unsigned(3, "the stage of directory write in L2MainPipe")
+    dir_read_bypass = Param.Bool(False, "whether to bypass the directory read when set address is the same")
+
+    # Number of DataSram banks (divides the Data Sets into banks)
+    # Must be power of 2 (1, 2, 4, 8, etc.), default is 1 (single bank)
+    data_sram_banks = Param.Unsigned(1, "Number of DataSram banks for dividing Data Sets")
+
+    # Number of DirSram banks (divides the Dir Sets into banks)
+    # Must be power of 2 (1, 2, 4, 8, etc.), default is 1 (single bank)
+    dir_sram_banks = Param.Unsigned(1, "Number of DirSram banks for dividing Dir Sets")
+
+    prefetcher = Param.BasePrefetcher(WorkerPrefetcher(), "Prefetcher attached to L3CacheWrapper")
+    system = Param.System(Parent.any, "System we belong to")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._cache_accessors = []
+        self._slice_accessors = []
+
+    # Override the normal SimObject::regProbeListeners method and
+    # add the slice accessors to the L3CacheWrapper.
+    def regProbeListeners(self):
+        print("Registering inner cache accessors for L3CacheWrapper {}".format(self))
+        for accessor in self._cache_accessors:
+            self.getCCObject().addCacheAccessor(accessor.getCCObject())
+        for _slice in self._slice_accessors:
+            self.getCCObject().addSliceAccessor(_slice.getCCObject())
+        self.getCCObject().regProbeListeners()
+
+    def addCacheAccessor(self, accessor):
+        self._cache_accessors.append(accessor)
+
+    def addSliceAccessor(self, slice):
+        self._slice_accessors.append(slice)

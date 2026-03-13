@@ -3,7 +3,9 @@
 Import('*')
 
 SimObject('L2ToDramSys.py', sim_objects=['L2ToDramSys'])
+SimObject('L2L3DramSys.py', sim_objects=['L2L3DramSys'])
 
 Source('L2todram.cc')
+Source('L2L3DramSys.cc')
 
 DebugFlag('CHI')

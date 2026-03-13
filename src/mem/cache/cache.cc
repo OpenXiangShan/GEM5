@@ -210,14 +210,12 @@ Cache::doWritebacks(PacketList& writebacks, Tick forward_time)
                 // this is a non-snoop request packet which does not require a
                 // response.
                 delete wbPkt;
-            } else if (wbPkt->cmd == MemCmd::WritebackClean) {
-                // clean writeback, do not send since the block is
-                // still cached above
-                assert(writebackClean);
-                delete wbPkt;
             } else {
                 assert(wbPkt->cmd == MemCmd::WritebackDirty ||
-                       wbPkt->cmd == MemCmd::WriteClean);
+                       wbPkt->cmd == MemCmd::WriteClean ||
+                       wbPkt->cmd == MemCmd::WritebackClean);
+                panic_if(wbPkt->cmd == MemCmd::WritebackClean && !wbPkt->hasData(),
+                    "WritebackClean for %s is missing data", wbPkt->print());
                 // Set BLOCK_CACHED flag in Writeback and send below, so that
                 // the Writeback does not reset the bit corresponding to this
                 // address in the snoop filter below.
@@ -245,13 +243,17 @@ Cache::doWritebacksAtomic(PacketList& writebacks)
         // and discard CleanEvicts.
         if (isCachedAbove(wbPkt, false)) {
             if (wbPkt->cmd == MemCmd::WritebackDirty ||
-                wbPkt->cmd == MemCmd::WriteClean) {
+                wbPkt->cmd == MemCmd::WriteClean ||
+                wbPkt->cmd == MemCmd::WritebackClean) {
                 // Set BLOCK_CACHED flag in Writeback and send below,
                 // so that the Writeback does not reset the bit
                 // corresponding to this address in the snoop filter
                 // below. We can discard CleanEvicts because cached
                 // copies exist above. Atomic mode isCachedAbove
                 // modifies packet to set BLOCK_CACHED flag
+                panic_if(wbPkt->cmd == MemCmd::WritebackClean && !wbPkt->hasData(),
+                    "WritebackClean for %s is missing data", wbPkt->print());
+                wbPkt->setBlockCached();
                 memSidePort.sendAtomic(wbPkt);
             }
         } else {

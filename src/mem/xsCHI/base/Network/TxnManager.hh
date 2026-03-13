@@ -15,6 +15,8 @@ namespace xsCHI
     class TxnIDManager
     {
     public:
+        static constexpr uint32_t InvalidTxnId = static_cast<uint32_t>(-1);
+
         TxnIDManager(int max_outstanding) : max_outstanding(max_outstanding), next_id(0) {
             DPRINTF(Cache,"TxnManagerInit,size:%d\n",used_ids.size());
             used_ids.reset();

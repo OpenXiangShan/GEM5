@@ -1146,8 +1146,8 @@ CoherentXBar::sinkPacket(const PacketPtr pkt) const
     // 2) the crossbar is the point of coherency, and the packet is a
     //    coherency packet (not a read or a write) that does not
     //    require a response
-    // 3) this is a clean evict or clean writeback, but the packet is
-    //    found in a cache above this crossbar
+    // 3) this is a clean evict, and the packet is found in a cache
+    //    above this crossbar
     // 4) a cache is responding after being snooped, and the packet
     //    either does not need the block to be writable, or the cache
     //    that has promised to respond (setting the cache responding
@@ -1164,10 +1164,13 @@ CoherentXBar::sinkPacket(const PacketPtr pkt) const
             pkt->isBlockCached(), pkt->needsWritable(),
             pkt->responderHadWritable());
 
+    const bool sink_clean_evict_cached_above =
+        pkt->cmd == MemCmd::CleanEvict && pkt->isBlockCached();
+
     return (pointOfCoherency && pkt->cacheResponding()) ||
         (pointOfCoherency && !(pkt->isRead() || pkt->isWrite()) &&
          !pkt->needsResponse()) ||
-        (pkt->isCleanEviction() && pkt->isBlockCached()) ||
+        sink_clean_evict_cached_above ||
         (pkt->cacheResponding() &&
          (!pkt->needsWritable() || pkt->responderHadWritable()));
 }

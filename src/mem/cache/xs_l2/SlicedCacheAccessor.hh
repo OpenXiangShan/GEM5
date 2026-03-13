@@ -10,6 +10,7 @@ namespace gem5
 {
 
 class L2CacheWrapper;
+class L3CacheWrapper;
 
 class SlicedCacheAccessor : public CacheAccessor
 {
@@ -34,6 +35,28 @@ public:
     const uint8_t* findBlock(Addr addr, bool is_secure) const override;
 };
 
+class SlicedCacheAccessorL3 : public CacheAccessor
+{
+private:
+    L3CacheWrapper* l3_wrapper;
+
+    CacheAccessor* getSlice(Addr addr) const;
+
+public:
+    SlicedCacheAccessorL3(L3CacheWrapper* l3_wrapper)
+        : l3_wrapper(l3_wrapper)
+    {}
+
+    bool inCache(Addr addr, bool is_secure) const override;
+    unsigned level() const override;
+    bool hasBeenPrefetched(Addr addr, bool is_secure) const override;
+    bool hasBeenPrefetched(Addr addr, bool is_secure, RequestorID requestor) const override;
+    bool hasEverBeenPrefetched(Addr addr, bool is_secure) const override;
+    Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt) override;
+    bool inMissQueue(Addr addr, bool is_secure) const override;
+    bool coalesce() const override;
+    const uint8_t* findBlock(Addr addr, bool is_secure) const override;
+};
 } // namespace gem5
 
 #endif // __MEM_CACHE_XS_L2_SLICED_CACHE_ACCESSOR_HH__

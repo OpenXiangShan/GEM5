@@ -39,6 +39,7 @@ class DDRWrapper :  public memory::AbstractMemory
 {
   private:
     uint32_t _NodeID;
+    bool useDMT;
     // SystemAddressMapRN *sam;
 
     CHIPort* port;

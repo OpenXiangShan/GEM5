@@ -15,6 +15,16 @@ CacheWrapper::CacheWrapper(const CacheWrapperParams &p)
 {
 }
 
+void
+CacheWrapper::init()
+{
+    ClockedObject::init();
+
+    if (inner_mem_port.isConnected()) {
+        inner_mem_port.sendRangeChange();
+    }
+}
+
 Port &
 CacheWrapper::getPort(const std::string &if_name, PortID idx)
 {

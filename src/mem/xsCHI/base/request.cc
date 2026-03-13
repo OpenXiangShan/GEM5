@@ -62,14 +62,19 @@ namespace xsCHI
         this->data = nullptr;
         dataFlitsTransferred.reset();
         this->IsRecvSepData = false;
+        this->cache_responding = false;
+        this->responder_had_writable = false;
     }
     ReqPtr
     Request::createReadResponse(){
         ReqPtr resp = std::make_shared<Request>(this->opcode,this->addr,this->size);
-        uint8_t *tmp = new uint8_t[getSize()];
-        this->getData(tmp);
-        resp->setData(tmp);
-        delete[] tmp; // 释放临时内存
+        //currently cleanunique reuse this function,need to check if this is a read request.
+        if (this->opcode != CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE){
+            uint8_t *tmp = new uint8_t[getSize()];
+            this->getData(tmp);
+            resp->setData(tmp);
+            delete[] tmp; // 释放临时内存
+        }
         return resp;
     }
     Request::Request(const Request& other):
@@ -137,6 +142,8 @@ namespace xsCHI
         this->be = other.be;
         this->data_check = other.data_check;
         this->poison = other.poison;
+        this->cache_responding = other.cache_responding;
+        this->responder_had_writable = other.responder_had_writable;
 
     }
 }}

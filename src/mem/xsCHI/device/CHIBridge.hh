@@ -1,7 +1,10 @@
 #pragma once
 #include <cassert>
+#include <cstdint>
+#include <deque>
 #include <map>
 #include <memory>
+#include <queue>
 #include <unordered_map>
 
 #include "mem/xsCHI/base/CHIPort.hh"
@@ -98,6 +101,19 @@ class CHIBridge : public ClockedObject
         bool handleFlit_CLEANUNIQUE_MAKEUNIQUE(FlitPtr &flit);//cleanunique,makeunique
         bool handleFlit_EVICT(FlitPtr &flit);//evict
 
+        uint64_t blockAddr(uint64_t addr) const;
+        bool isReadReqOp(CHI_OP_TYPE op) const;
+        bool isWriteReqOp(CHI_OP_TYPE op) const;
+        bool hasInProgressRead(uint64_t addr) const;
+        bool hasInProgressWrite(uint64_t addr) const;
+        bool hasQueuedReadWriteReq(uint64_t addr) const;
+        void trackReadStart(uint64_t addr);
+        void trackReadFinish(uint64_t addr);
+        void trackWriteStart(uint64_t addr);
+        void trackWriteFinish(uint64_t addr);
+        void enqueueBlockedReadReq(ReqPtr req);
+        void wakeBlockedReads(uint64_t addr);
+
         void FinishReq_Read(FlitPtr &flit);
         void sendCompACK(FlitPtr &flit);
         void TrySendCompACK();
@@ -108,6 +124,10 @@ class CHIBridge : public ClockedObject
         EventFunctionWrapper req_handle_event; // 用于处理请求发送的事件
         std::queue<FlitPtr> Ack_tobesent; // 用于存储待发送的ACK Flit,无限长
         EventFunctionWrapper ack_handle_event; // 用于处理ACK发送的事件
+
+        std::unordered_map<uint64_t, unsigned> inProgressReadByAddr;
+        std::unordered_map<uint64_t, unsigned> inProgressWriteByAddr;
+        std::unordered_map<uint64_t, std::deque<ReqPtr>> blockedReadReqByAddr;
 
         std::function<void(ReqPtr&)> recvReadResp_callback;//callback from L2Wrapper to handle read response
     public:

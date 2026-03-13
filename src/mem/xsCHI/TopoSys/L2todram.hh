@@ -1,7 +1,7 @@
 #pragma once
 #include "mem/xsCHI/device/DDRWrapper.hh"
-#include "mem/xsCHI/device/HNF.hh"
-#include "mem/xsCHI/device/L2Wrapper.hh"
+#include "mem/xsCHI/device/fakeL3.hh"
+#include "mem/xsCHI/device/CHI_L2.hh"
 #include "mem/xsCHI/device/MeshNode.hh"
 #include "params/ClockedObject.hh"
 #include "params/L2ToDramSys.hh"
@@ -12,7 +12,7 @@ namespace xsCHI {
     class L2ToDramSys : public ClockedObject
     {
         private:
-            L2Wrapper* L2wrap;
+            CHI_L2* L2wrap;
             FakeL3* L3bridge;
             DDRWrapper* Dram;
             // 2x2 mesh:

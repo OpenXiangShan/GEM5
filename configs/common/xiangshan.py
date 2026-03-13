@@ -538,10 +538,16 @@ def build_xiangshan_system(args):
 
         CacheConfig.config_cache(args, test_sys)
 
-        MemConfig.config_mem(args, test_sys)
+        if args.CHI and getattr(args, 'chi_topology', 'L2ToDramSys') == 'L2L3DramSys':
+            # L2L3DramSys owns and wires its DDRWrapper internally.
+            # Skip MemConfig to avoid creating an extra unconnected DDRWrapper.
+            pass
+        else:
+            MemConfig.config_mem(args, test_sys)
         if args.CHI:
-            test_sys.CHIsys.dramsim3 = test_sys.mem_ctrls[0]
-            test_sys.CHIsys.dramsim3.networkPort = CHIPort(recv_buffer_size=4)
+            if getattr(args, 'chi_topology', 'L2ToDramSys') != 'L2L3DramSys':
+                test_sys.CHIsys.dramsim3 = test_sys.mem_ctrls[0]
+                test_sys.CHIsys.dramsim3.networkPort = CHIPort(recv_buffer_size=4)
 
         # Align trace address mapping window to physical memory size (classic cache path)
         if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
@@ -717,6 +723,13 @@ def xiangshan_system_init():
     Options.addCommonOptions(parser, configure_xiangshan=True)
     Options.addXiangshanFSOptions(parser)
     Options.addXiangshanTraceOptions(parser)
+    parser.add_argument(
+        "--chi-topology",
+        type=str,
+        choices=["L2ToDramSys", "L2L3DramSys"],
+        default="L2ToDramSys",
+        help="Select CHI topology object when --CHI is enabled",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:

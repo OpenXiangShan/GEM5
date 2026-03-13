@@ -1,6 +1,6 @@
 # MeshNode（CMN-700 XP 风格）技术方案（草案）
 
-目标：在 `xsCHI` 中新增 `MeshNode`，作为二维网格拓扑的基础路由单元，承担类似 CMN-700 Crosspoint（XP）的核心职责；在不破坏当前 `L2Wrapper → CHIBridge → FakeL3 → DDRWrapper` 事务语义的前提下，把“协议处理端点”和“网络路由节点”解耦。
+目标：在 `xsCHI` 中新增 `MeshNode`，作为二维网格拓扑的基础路由单元，承担类似 CMN-700 Crosspoint（XP）的核心职责；在不破坏当前 `CHI_L2 → CHIBridge → FakeL3 → DDRWrapper` 事务语义的前提下，把“协议处理端点”和“网络路由节点”解耦。
 
 ---
 
@@ -190,7 +190,7 @@
 | 单元测试 | `routeFor()`：四方向 + 本地下行 | 输出方向与坐标关系一致 |
 | 单元测试 | VOQ 满队列行为 | 入端口回调返回 `false`，上游不丢 flit |
 | 单元测试 | RR 仲裁 | 多输入长期竞争时无饥饿 |
-| 集成测试 | `L2Wrapper -> MeshNode -> FakeL3` | 读写事务与现有基线一致 |
+| 集成测试 | `CHI_L2 -> MeshNode -> FakeL3` | 读写事务与现有基线一致 |
 | 集成测试 | 多跳 `L2 -> Mesh -> Mesh -> DDR` | 往返延迟增加但语义正确 |
 | 回归测试 | 现有 `testNodeID/testSAM/testTxnManager` + 新增 MeshNode case | 不破坏现有模块 |
 
