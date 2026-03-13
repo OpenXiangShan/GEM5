@@ -142,3 +142,35 @@ jobs:
           cd $GEM5_HOME/util/xs_scripts/test_h
           bash ../kmh_6wide_h.sh /nfs/home/share/gem5_ci/checkpoints/gcbh_test.zstd
 
+  raw_linux_boot_test:
+    runs-on: [self-hosted, open]
+    continue-on-error: false
+    timeout-minutes: 30
+    name: XS-GEM5 - Boot raw Linux
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/build-dramsim
+      - name: Build GEM5 opt
+        run: |
+          CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
+      - name: Boot Xiangshan raw Linux
+        run: |
+          export RAW_LINUX_BIN="${XS_LINUX_BIN:-/nfs/home/share/gem5_ci/ready-to-run/linux.bin}"
+          if [ ! -r "$RAW_LINUX_BIN" ]; then
+            echo "Missing raw linux image: $RAW_LINUX_BIN"
+            echo "Please provision the image at the default path or set XS_LINUX_BIN on the runner."
+            exit 1
+          fi
+
+          mkdir -p debug/raw_linux_ci
+          ./build/RISCV/gem5.opt -r -d debug/raw_linux_ci \
+            ./configs/example/kmhv3.py \
+            --raw-cpt \
+            --generic-rv-cpt "$RAW_LINUX_BIN" \
+            --disable-difftest
+      - name: Check boot result
+        run: |
+          test -f debug/raw_linux_ci/simout
+          tail -n 200 debug/raw_linux_ci/simout
+          grep -q "Hello, XiangShan!" debug/raw_linux_ci/simout
+          grep -q "m5_exit instruction encountered" debug/raw_linux_ci/simout

@@ -19,6 +19,8 @@ from common import Simulation
 from common.Caches import *
 from common.xiangshan import *
 
+from m5.objects.ValuePredictor import *
+
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
 
@@ -63,6 +65,9 @@ def setKmhV3IdealParams(args, system):
         cpu.sbufferBankWriteAccurately = True
         cpu.DcacheSetDivNum = 2
 
+        # value predictor
+        cpu.valuePred = IdealConstantLVP()
+
         # lsq
         cpu.LQEntries = 128
         cpu.SQEntries = 64
@@ -80,6 +85,7 @@ def setKmhV3IdealParams(args, system):
         if args.bp_type == 'DecoupledBPUWithBTB':
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
+            # cpu.branchPred.microtage.enabled = False
 
         # l1 cache per core
         if args.caches:

@@ -59,6 +59,7 @@
 #include "cpu/pred/btb/decoupled_bpred.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
+#include "cpu/valuepred/valuepred_unit.hh"
 #include "enums/SMTFetchPolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
@@ -246,6 +247,8 @@ class Fetch
 
     /** Sets the main backwards communication time buffer pointer. */
     void setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer);
+
+    void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
 
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
@@ -435,9 +438,6 @@ class Fetch
                           const DynInstPtr squashInst,
                           const InstSeqNum seq_num, ThreadID tid);
 
-    /** Checks if a thread is stalled. */
-    bool checkStall(ThreadID tid) const;
-
     /** Updates overall fetch stage status; to be called at the end of each
      * cycle. */
     FetchStatus updateFetchStatus();
@@ -506,22 +506,6 @@ class Fetch
             StaticInstPtr curMacroop, const PCStateBase &this_pc,
             const PCStateBase &next_pc, bool trace);
 
-    /** Returns the appropriate thread to fetch, given the fetch policy. */
-    ThreadID getFetchingThread();
-
-    /** Returns the appropriate thread to fetch using a round robin policy. */
-    ThreadID roundRobin();
-
-    /** Returns the appropriate thread to fetch using the IQ count policy. */
-    ThreadID iqCount();
-
-    /** Returns the appropriate thread to fetch using the LSQ count policy. */
-    ThreadID lsqCount();
-
-    /** Returns the appropriate thread to fetch using the branch count
-     * policy. */
-    ThreadID branchCount();
-
     /** Pipeline the next I-cache access to the current one. */
     void pipelineIcacheAccesses(ThreadID tid);
 
@@ -530,11 +514,6 @@ class Fetch
 
     /** Set the reasons of all fetch stalls. */
     void setAllFetchStalls(StallReason stall);
-
-    /** Select the thread to fetch from.
-     * @return Thread ID to fetch from, or InvalidThreadID if none available
-     */
-    ThreadID selectFetchThread();
 
     /** Check decoupled frontend (FTQ) availability.
      * @param tid Thread ID
@@ -631,7 +610,7 @@ class Fetch
     std::unique_ptr<TraceFetch> traceFetch;
 
     /** PC of each thread. */
-    std::unique_ptr<PCStateBase> pc[MaxThreads];
+    // std::unique_ptr<PCStateBase> pc[MaxThreads];
 
     /** Macroop of each thread. */
     StaticInstPtr macroop[MaxThreads];
@@ -655,7 +634,7 @@ class Fetch
     };
 
     /** Tracks which stages are telling fetch to stall. */
-    Stalls stalls[MaxThreads];
+    StallSignals* stallSig;
 
     /** Decode to fetch delay. */
     Cycles decodeToFetchDelay;
@@ -686,72 +665,6 @@ class Fetch
 
     /** Cache block size. */
     unsigned int cacheBlkSize;
-
-    /**
-     * Fetch buffer structure to encapsulate instruction fetch data.
-     * Encapsulates buffer data, PC tracking, validity state, and size.
-     * Designed to prepare for 2fetch implementation with potential multi-stream support.
-     */
-    struct FetchBuffer
-    {
-        /** Pointer to the fetch data buffer */
-        uint8_t *data;
-
-        /** PC of the first instruction loaded into the fetch buffer */
-        Addr startPC;
-
-        /** Whether the fetch buffer data is valid */
-        bool valid;
-
-        /** Size of the fetch buffer in bytes. Set by Fetch class during init. */
-        unsigned size;
-
-        /** Constructor initializes buffer with default size */
-        FetchBuffer() : data(nullptr), startPC(0), valid(false), size(0) {
-        }
-
-        /** Destructor is not needed as Fetch class manages memory */
-        ~FetchBuffer() {
-        }
-
-        /** Reset buffer state */
-        void reset() {
-            valid = false;
-            startPC = 0;
-            // No need to clear data as it will be overwritten
-        }
-
-        /** Check if a PC is within the current buffer range */
-        bool contains(Addr pc) const {
-            return valid && (pc >= startPC) && (pc < startPC + size);
-        }
-
-        /** Get offset of PC within the buffer */
-        unsigned getOffset(Addr pc) const {
-            assert(contains(pc));
-            return pc - startPC;
-        }
-
-        /** Set buffer data and update metadata */
-        void setData(Addr pc, const uint8_t* src_data, unsigned bytes_copied) {
-            startPC = pc;
-            valid = true;
-            memcpy(data, src_data, bytes_copied);
-        }
-
-        /** Get end PC of the buffer */
-        Addr getEndPC() const {
-            return startPC + size;
-        }
-    };
-
-    /** Fetch buffer for each thread */
-    FetchBuffer fetchBuffer[MaxThreads];
-
-    /** The size of the fetch buffer in bytes. Default is 66 bytes,
-    *  make sure we could decode tail 4bytes if it is in [62, 66)
-     */
-    unsigned fetchBufferSize;
 
     // Constants for misaligned fetch handling
     static constexpr unsigned CACHE_LINE_SIZE_BYTES = 64;
@@ -925,8 +838,77 @@ class Fetch
         }
     };
 
-    /** Cache request for each thread, replacing multiple redundant state variables */
-    CacheRequest cacheReq[MaxThreads];
+    /** The size of the fetch buffer in bytes. Default is 66 bytes,
+    *  make sure we could decode tail 4bytes if it is in [62, 66)
+     */
+    unsigned fetchBufferSize;
+
+    /**
+     * Fetch buffer structure to encapsulate instruction fetch data.
+     * Encapsulates buffer data, PC tracking, validity state, and size.
+     * Designed to prepare for 2fetch implementation with potential multi-stream support.
+     */
+    struct FetchBuffer
+    {
+        std::unique_ptr<PCStateBase> fetchpc;
+        CacheRequest cacheReq;
+
+        /** Pointer to the fetch data buffer */
+        uint8_t *data;
+
+        /** PC of the first instruction loaded into the fetch buffer */
+        Addr startPC;
+
+        /** Whether the fetch buffer data is valid */
+        bool valid;
+
+        /** Size of the fetch buffer in bytes. Set by Fetch class during init. */
+        unsigned size;
+
+        /** Constructor initializes buffer with default size */
+        FetchBuffer() : data(nullptr), startPC(0), valid(false), size(0) {
+        }
+
+        /** Destructor is not needed as Fetch class manages memory */
+        ~FetchBuffer() {
+        }
+
+        /** Reset buffer state */
+        void reset() {
+            valid = false;
+            startPC = 0;
+            // No need to clear data as it will be overwritten
+        }
+
+        /** Check if a PC is within the current buffer range */
+        bool contains(Addr pc) const {
+            return valid && (pc >= startPC) && (pc < startPC + size);
+        }
+
+        /** Get offset of PC within the buffer */
+        unsigned getOffset(Addr pc) const {
+            assert(contains(pc));
+            return pc - startPC;
+        }
+
+        /** Set buffer data and update metadata */
+        void setData(Addr pc, const uint8_t* src_data, unsigned bytes_copied) {
+            startPC = pc;
+            valid = true;
+            memcpy(data, src_data, bytes_copied);
+        }
+
+        /** Get end PC of the buffer */
+        Addr getEndPC() const {
+            return startPC + size;
+        }
+    };
+
+    /** Fetch buffer for each thread */
+    FetchBuffer threads[MaxThreads];
+
+    // /** Cache request for each thread, replacing multiple redundant state variables */
+    // CacheRequest cacheReq[MaxThreads];
 
     /** The size of the fetch queue in micro-ops */
     unsigned fetchQueueSize;
@@ -968,7 +950,7 @@ class Fetch
 
     // Decoupled+BTB-only: fetch consumes the supplying FSQ entry directly.
     // If no head is available, fetch stalls (no extra "supply" state machine).
-    bool ftqEmpty() const { return !dbpbtb || !dbpbtb->ftqHasHead(); }
+    bool ftqEmpty(ThreadID tid) const { return !dbpbtb || !dbpbtb->ftqHasFetching(tid); }
 
     // Number of dynamic instructions fetched within the current FTQ entry.
     // Used to explicitly notify the BPU when an entry is consumed (Phase5 prep).
@@ -1133,6 +1115,9 @@ public:
   private:
 
     bool waitForVsetvl = false;
+
+    /** Value predictor */
+    valuepred::VPUnit *valuePred;
 };
 
 } // namespace o3

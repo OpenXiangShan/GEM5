@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 
 import m5
@@ -96,9 +97,8 @@ def setKmhV3Params(args, system):
             cpu.branchPred.fsq_size = 64
 
             if args.btb_tage_upper_bound:
-                # Default to UB-P(path-hash); optionally fall back to UB-S(outcome).
                 cpu.branchPred.tage = BTBTAGEUpperBound(
-                    usePathHashHistory=args.btb_tage_upper_bound_path_hash)
+                    usePathHashHistory=True)
 
             cpu.branchPred.mbtb.resolvedUpdate = True
             cpu.branchPred.tage.resolvedUpdate = True
@@ -106,16 +106,11 @@ def setKmhV3Params(args, system):
 
             cpu.branchPred.ubtb.enabled = True
             cpu.branchPred.abtb.enabled = True
-            cpu.branchPred.microtage.enabled = False
+            cpu.branchPred.microtage.enabled = True
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
-            cpu.branchPred.tage.useBranchPcForIndex = False
-            cpu.branchPred.tage.usePositionForIndexMix = True
-            cpu.branchPred.tage.indexMixTables = 4
-            cpu.branchPred.tage.numWays = 2
-            cpu.branchPred.tage.tableSizes = [2048] * 8
             cpu.branchPred.ittage.enabled = True
-            cpu.branchPred.mgsc.enabled = False
+            cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
 
             # RTL alignment: only enable bias + path + IMLI tables, disable PC threshold
@@ -197,6 +192,8 @@ if __name__ == '__m5_main__':
     TestMemClass = Simulation.setMemClass(args)
 
     test_sys = build_xiangshan_system(args)
+    if args.raw_cpt and args.generic_rv_cpt and os.path.basename(args.generic_rv_cpt) == "linux.bin":
+        configure_xiangshan_linux_workload(test_sys, args)
     # Set ideal parameters here with the highest priority, over command-line arguments
     setKmhV3Params(args, test_sys)
 

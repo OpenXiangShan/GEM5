@@ -44,6 +44,7 @@ from m5.objects.BaseCPU import BaseCPU
 from m5.objects.FuncScheduler import *
 #from m5.objects.O3Checker import O3Checker
 from m5.objects.BranchPredictor import *
+from m5.objects.ValuePredictor import *
 from m5.SimObject import *
 
 class SMTFetchPolicy(ScopedEnum):
@@ -66,7 +67,7 @@ class PerfRecord(ScopedEnum):
         # position tick
         'AtFetch', 'AtDecode', 'AtRename', 'AtDispQue', 'AtIssueQue', 'AtIssueArb', 'AtIssueReadReg',
         'AtFU', 'AtBypassVal', 'AtWriteVal', 'AtCommit',
-        'DisAsm', 'PC'
+        'Result', 'DisAsm', 'PC'
     ]
 
 class BaseO3CPU(BaseCPU):
@@ -253,6 +254,9 @@ class BaseO3CPU(BaseCPU):
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")
 
     store_prefetch_train = Param.Bool(True, "Training store prefetcher with store addresses")
+
+    # value predictor
+    valuePred = Param.ValuePredictor(NULL, "valuepred unit")
 
     enable_loadFusion = Param.Bool(False, "Enable load fusion")
 

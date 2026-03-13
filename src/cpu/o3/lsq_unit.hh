@@ -92,62 +92,6 @@ enum class SplitStoreStatus
 
 class IEW;
 
-class StoreBufferEntry
-{
-  public:
-    const int index;
-    Addr blockVaddr;
-    Addr blockPaddr;
-    std::vector<uint8_t> blockDatas;
-    std::vector<bool> validMask;
-    bool sending;
-    // the another same addr entry when sending
-    // another cannot sending until self sending finished
-    StoreBufferEntry* vice = nullptr;
-    // merged request
-    LSQ::SbufferRequest* request = nullptr;
-
-    StoreBufferEntry(int size, int index) : index(index) {
-        blockDatas.resize(size, 0);
-        validMask.resize(size, false);
-    }
-
-    void reset(uint64_t blockVaddr, uint64_t blockPaddr, uint64_t offset, uint8_t *datas, uint64_t size,
-               const std::vector<bool> &mask);
-
-    void merge(uint64_t offset, uint8_t *datas, uint64_t size, const std::vector<bool> &mask);
-
-    bool recordForward(RequestPtr req, LSQ::LSQRequest *lsqreq);
-};
-
-class StoreBuffer
-{
-    using mapIter = typename std::unordered_map<uint64_t, StoreBufferEntry*>::iterator;
-
-    // key = (paddr & cacheblockmask)
-    uint64_t _size;
-    std::unordered_map<uint64_t, StoreBufferEntry*> data_map;
-    std::vector<mapIter> crossRef;
-    boost::circular_buffer<int> lru_index;
-    boost::circular_buffer<int> free_list;
-    std::vector<StoreBufferEntry*> data_vec;
-    std::vector<bool> data_vld;
-
-public:
-
-    void setData(std::vector<StoreBufferEntry*>& data_vec);
-    bool full();
-    uint64_t size();
-    uint64_t unsentSize();
-    StoreBufferEntry* getEmpty();
-    void insert(int index, uint64_t addr);
-    StoreBufferEntry* get(uint64_t addr);
-    void update(int index);
-    StoreBufferEntry* getEvict();
-    StoreBufferEntry* createVice(StoreBufferEntry* entry);
-    void release(StoreBufferEntry* entry);
-};
-
 /**
  * Class that implements the actual LQ and SQ for each specific
  * thread.  Both are circular queues; load entries are freed upon
@@ -288,8 +232,7 @@ class LSQUnit
     using LQEntry = LSQEntry;
 
   public:
-    // storeQue -> storeBuffer -> cache
-    const int maxSQoffload = 2;
+    // storeQue -> shared storeBuffer -> cache
     const int sqFullBufferSize = 4;
 
     // loadpipe
@@ -300,22 +243,10 @@ class LSQUnit
     const int storeWhenToReplay = 2;
 
     int sqFullUpperLimit = 0;
-    int sqFullLowerLimit = 0;
-    bool storeBufferFlushing = false;
-    bool sqWillFull = false;
-    const uint32_t sbufferEvictThreshold = 0;
-    const uint32_t sbufferEntries = 0;
 
     uint64_t numSBufferRequest = 0;
     uint64_t numSingleRequest = 0;
     uint64_t numSplitRequest = 0;
-
-    StoreBuffer storeBuffer;
-    // Store Buffer Writeback Timeout
-    uint64_t storeBufferWritebackInactive;
-    uint64_t storeBufferInactiveThreshold;
-
-    StoreBufferEntry* blockedsbufferEntry = nullptr;
 
     /** Coverage of one address range with another */
     enum class AddrRangeCoverage
@@ -333,8 +264,7 @@ class LSQUnit
 
   public:
     /** Constructs an LSQ unit. init() must be called prior to use. */
-    LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries,
-      uint32_t sbufferEvictThreshold, uint64_t storeBufferInactiveThreshold,
+    LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
       uint32_t ldPipeStages, uint32_t stPipeStages, uint32_t maxRARQEntries, uint32_t maxRAWQEntries,
       unsigned rarDequeuePerCycle, unsigned rawDequeuePerCycle,
       unsigned loadCompletionWidth, unsigned storeCompletionWidth);
@@ -418,18 +348,19 @@ class LSQUnit
 
     bool directStoreToCache();
 
+    uint32_t countStoreBufferOffloadableEntries(uint32_t max_entries) const;
+
     /** Writes back stores. */
-    void offloadToStoreBuffer();
+    void offloadToStoreBuffer(uint32_t max_entries);
 
     bool insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size, const std::vector<bool>& mask);
 
-    void storeBufferEvictToCache();
-
-    void flushStoreBuffer();
-
-    bool storeBufferEmpty() { return storeBuffer.size() == 0; }
-
-    void completeSbufferEvict(PacketPtr pkt);
+    bool storeBufferEmpty() { return lsq->storeBufferEmpty(); }
+    bool storeBufferSQWillFull() const
+    {
+        return storeQueue.size() > sqFullUpperLimit;
+    }
+    void recordStoreBufferBlockedByCache() { ++stats.blockedByCache; }
 
     /** Completes the data access that has been returned from the
      * memory system. */
@@ -524,7 +455,7 @@ class LSQUnit
                         storeWBIt->canWB() &&
                         !storeWBIt->completed() &&
                         !isStoreBlocked;
-        return t || storeBufferFlushing;
+        return t;
     }
 
     /** Handles doing the retry. */
@@ -540,9 +471,6 @@ class LSQUnit
     /** Writes back the instruction, sending it to IEW. */
     void writebackReg(const DynInstPtr &inst, PacketPtr pkt);
 
-    /** Try to finish a previously blocked write back attempt */
-    void writebackBlockedStore();
-
     /** Completes the store at the specified index. */
     void completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffer = false);
 
@@ -550,6 +478,9 @@ class LSQUnit
     void storePostSend();
 
   public:
+    /** Try to finish a previously blocked write back attempt */
+    bool writebackBlockedStore();
+
     /** Attempts to send a packet to the cache.
      * Check if there are ports available. Return true if
      * there are, false if there are not.
@@ -560,8 +491,6 @@ class LSQUnit
 
     bool trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, bool &tag_read_fail,
                        bool &mshr_used, bool &mshr_alias_fail, bool &hit_in_write_buffer);
-
-    bool sbufferSendPacket(PacketPtr data_pkt);
 
     bool forwardFromStoreBuffer(const DynInstPtr &inst);
 
@@ -778,8 +707,6 @@ class LSQUnit
     /** Whehter or not a store is blocked due to the memory system. */
     bool isStoreBlocked;
 
-    bool storeBlockedfromQue;
-
     bool sbufferStall;
 
     /** Whether or not a store is in flight. */
@@ -877,10 +804,6 @@ class LSQUnit
 
         statistics::Scalar sbufferCreateVice;
 
-        statistics::Scalar sbufferEvictDuetoFlush;
-        statistics::Scalar sbufferEvictDuetoFull;
-        statistics::Scalar sbufferEvictDuetoSQFull;
-        statistics::Scalar sbufferEvictDuetoTimeout;
         statistics::Scalar sbufferFullForward;
         statistics::Scalar sbufferPartiForward;
 

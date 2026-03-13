@@ -42,9 +42,6 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize, u
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
       updateOnRead(false),
-      useBranchPcForIndex(false),
-      usePositionForIndexMix(false),
-      indexMixTables(4),
       numBanks(numBanks),
       bankIdWidth(ceilLog2(numBanks)),
       blockWidth(floorLog2(blockSize)),
@@ -84,9 +81,6 @@ useAltOnNaWidth(p.useAltOnNaWidth),
 numTablesToAlloc(p.numTablesToAlloc),
 enableSC(p.enableSC),
 updateOnRead(p.updateOnRead),
-useBranchPcForIndex(p.useBranchPcForIndex),
-usePositionForIndexMix(p.usePositionForIndexMix),
-indexMixTables(p.indexMixTables),
 numBanks(p.numBanks),
 bankIdWidth(ceilLog2(p.numBanks)),
 blockWidth(floorLog2(blockSize)),
@@ -214,14 +208,12 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
     unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
-    Addr baseIndexPc = useBranchPcForIndex ? btb_entry.pc : startPC;
 
     for (int i = numPredictors - 1; i >= 0; --i) {
-        Addr indexPc = buildIndexPC(baseIndexPc, position, i);
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
-        Addr index = predMeta ? getTageIndex(indexPc, i, predMeta->indexFoldedHist[i].get())
-                          : getTageIndex(indexPc, i);
+        Addr index = predMeta ? getTageIndex(startPC, i, predMeta->indexFoldedHist[i].get())
+                          : getTageIndex(startPC, i);
         Addr tag = predMeta ? getTageTag(startPC, i,
                             predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(), position)
                         : getTageTag(startPC, i, position);
@@ -579,11 +571,9 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
     // Calculate branch position within the block (like RTL's cfiPosition)
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
-    Addr baseIndexPc = useBranchPcForIndex ? entry.pc : startPC;
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
-        Addr indexPc = buildIndexPC(baseIndexPc, position, ti);
-        Addr newIndex = getTageIndex(indexPc, ti, meta->indexFoldedHist[ti].get());
+        Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get());
         Addr newTag = getTageTag(startPC, ti,
             meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
 
@@ -908,20 +898,6 @@ BTBTAGE::getBranchIndexInBlock(Addr branchPC, Addr startPC) {
     Addr offset = (branchPC - alignedPC) >> instShiftAmt;
     assert(offset < maxBranchPositions);
     return offset;
-}
-
-Addr
-BTBTAGE::buildIndexPC(Addr basePc, unsigned position, unsigned table) const
-{
-    if (!usePositionForIndexMix || table >= indexMixTables) {
-        return basePc;
-    }
-
-    // Mix branch slot position into PC to reduce low-table set aliasing within one block.
-    const Addr pos = static_cast<Addr>(position + 1);
-    const Addr salt = (pos * 0x9E3779B97F4A7C15ULL) ^
-        (static_cast<Addr>(table + 1) * 0xBF58476D1CE4E5B9ULL);
-    return basePc ^ salt;
 }
 
 unsigned
