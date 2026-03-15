@@ -105,8 +105,10 @@ class BTBRAS : public TimedBaseBTBPredictor
         (void)phistory;
         (void)bwhistory;
         (void)lhistory;
-        (void)lowerPred;
         if (!participatesInBlock1()) {
+            for (int s = getDelay(); s < stagePreds.size(); s++) {
+                stagePreds[s].returnTarget = lowerPred.returnTarget;
+            }
             return;
         }
         putPCHistory(startAddr, boost::dynamic_bitset<>(), stagePreds);

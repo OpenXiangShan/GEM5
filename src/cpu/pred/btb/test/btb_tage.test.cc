@@ -345,6 +345,27 @@ TEST_F(BTBTAGETest, Block1PredictionUsesRegularPathWhenEnabled)
     EXPECT_EQ(block1StagePreds.back().condTakens.size(), regularStagePreds.back().condTakens.size());
 }
 
+TEST_F(BTBTAGETest, Block1PredictionCopiesLowerPredWhenDisabled)
+{
+    Addr startPC = 0x1000;
+    boost::dynamic_bitset<> history(64, 0);
+    boost::dynamic_bitset<> phistory(64, 0);
+    boost::dynamic_bitset<> bwhistory(64, 0);
+    std::vector<boost::dynamic_bitset<>> lhistory;
+    std::vector<FullBTBPrediction> block1StagePreds(4);
+    FullBTBPrediction lowerPred;
+
+    lowerPred.condTakens.push_back({startPC + 4, true});
+    lowerPred.tageInfoForMgscs[startPC + 4].tage_pred_taken = true;
+
+    tage->putPCHistoryForBlock1(startPC, history, phistory, bwhistory, lhistory, block1StagePreds, lowerPred);
+
+    ASSERT_EQ(block1StagePreds.back().condTakens.size(), 1);
+    EXPECT_EQ(block1StagePreds.back().condTakens[0].first, startPC + 4);
+    EXPECT_TRUE(block1StagePreds.back().condTakens[0].second);
+    EXPECT_TRUE(block1StagePreds.back().tageInfoForMgscs[startPC + 4].tage_pred_taken);
+}
+
 // Test basic history update functionality (PHR semantics)
 TEST_F(BTBTAGETest, HistoryUpdate)
 {

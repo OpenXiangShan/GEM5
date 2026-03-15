@@ -107,8 +107,10 @@ class BTBITTAGE : public TimedBaseBTBPredictor
         (void)phistory;
         (void)bwhistory;
         (void)lhistory;
-        (void)lowerPred;
         if (!participatesInBlock1()) {
+            for (int s = getDelay(); s < stagePreds.size(); s++) {
+                stagePreds[s].indirectTargets = lowerPred.indirectTargets;
+            }
             return;
         }
         putPCHistory(startAddr, history, stagePreds);
