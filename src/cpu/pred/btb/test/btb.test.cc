@@ -258,6 +258,45 @@ TEST_F(BTBTest, Block1DropReasonAcceptsSupportedDirectPrediction)
     EXPECT_EQ(reason, Block1DropReason::None);
 }
 
+TEST_F(BTBTest, Block1DropReasonAcceptsConditionalWithCopiedDirectionSupport)
+{
+    FullBTBPrediction pred;
+    auto entry = BTBEntry(createBranchInfo(0x1000, 0x2000, true));
+    entry.valid = true;
+    pred.btbEntries.push_back(entry);
+    pred.condTakens.push_back({0x1000, true});
+
+    auto reason = getBlock1DropReason(pred, true, true, false, true, false, true);
+
+    EXPECT_EQ(reason, Block1DropReason::None);
+}
+
+TEST_F(BTBTest, Block1DropReasonAcceptsIndirectWithCopiedTargetSupport)
+{
+    FullBTBPrediction pred;
+    auto entry = BTBEntry(createBranchInfo(0x1000, 0x3000, false, true));
+    entry.valid = true;
+    pred.btbEntries.push_back(entry);
+    pred.indirectTargets.push_back({0x1000, 0x3000});
+
+    auto reason = getBlock1DropReason(pred, false, true, true, true, false, true);
+
+    EXPECT_EQ(reason, Block1DropReason::None);
+}
+
+TEST_F(BTBTest, Block1DropReasonAcceptsReturnWithCopiedTargetSupport)
+{
+    FullBTBPrediction pred;
+    auto entry = BTBEntry(createBranchInfo(0x1000, 0x4000, false, true, false, true));
+    entry.valid = true;
+    pred.btbEntries.push_back(entry);
+    pred.returnTarget = 0x4000;
+
+    auto reason = getBlock1DropReason(pred, false, true, false, true, true, true);
+
+    EXPECT_EQ(reason, Block1DropReason::None);
+}
+
 TEST_F(BTBTest, DefaultBlock1PredictionFallsBackToRegularPrediction)
 {
     Addr startAddr = 0x1000;

@@ -541,9 +541,12 @@ DecoupledBPUWithBTB::buildPredictionBundle(ThreadID tid)
     bundle.pred1.predSource = first_hit_stage;
     bundle.pred1.overrideReason = overrideReason;
 
-    bundle.pred1DropReason = getBlock1DropReason(
-        bundle.pred1, dropBlock1OnCondWithoutTage, tage->participatesInBlock1(), dropBlock1OnIndirectWithoutIttage,
-        ittage->participatesInBlock1(), dropBlock1OnReturnWithoutRas, ras->participatesInBlock1());
+    bool hasCondDirectionSupport = tage->participatesInBlock1() || !bundle.pred1.condTakens.empty();
+    bool hasIndirectTargetSupport = ittage->participatesInBlock1() || !bundle.pred1.indirectTargets.empty();
+    bool hasReturnTargetSupport = ras->participatesInBlock1() || bundle.pred1.returnTarget != 0;
+    bundle.pred1DropReason = getBlock1DropReason(bundle.pred1, dropBlock1OnCondWithoutTage, hasCondDirectionSupport,
+                                                 dropBlock1OnIndirectWithoutIttage, hasIndirectTargetSupport,
+                                                 dropBlock1OnReturnWithoutRas, hasReturnTargetSupport);
     if (bundle.pred1DropReason != Block1DropReason::None || bundle.pred1.btbEntries.empty()) {
         if (bundle.pred1DropReason == Block1DropReason::None) {
             bundle.pred1DropReason = Block1DropReason::PredictorRejected;
