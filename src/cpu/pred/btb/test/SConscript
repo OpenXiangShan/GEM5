@@ -41,6 +41,11 @@ GTest('folded_hist.test',
     '../folded_hist.cc',
 )
 
+GTest('fetch_target_queue.test',
+    'fetch_target_queue.test.cc',
+    '../ftq.cc',
+)
+
 # add --unit-test to enable unit test mode for RAS
 # TODO: Fix RAS test
 # GTest('ras.test',
