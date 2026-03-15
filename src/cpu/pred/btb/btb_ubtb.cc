@@ -32,11 +32,21 @@
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "common.hh"
+#ifndef UNIT_TEST
 #include "cpu/o3/dyn_inst.hh"
 #include "debug/Fetch.hh"
+#endif
 
 namespace gem5
 {
+
+#ifdef UNIT_TEST
+namespace Gem5Internal
+{
+Tick testCurTick = 1;
+__thread Tick *_curTickPtr = &testCurTick;
+}
+#endif
 
 namespace branch_prediction
 {
@@ -44,6 +54,40 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+#ifdef UNIT_TEST
+namespace test
+{
+#endif
+
+#ifdef UNIT_TEST
+UBTB::UBTB(unsigned numEntries_, unsigned tagBits_)
+    : TimedBaseBTBPredictor(),
+      lastPred(),
+      meta(),
+      ubtb(),
+      mruList(),
+      numEntries(numEntries_),
+      tagBits(tagBits_),
+      tagMask((1UL << tagBits_) - 1),
+      usingS3Pred(true),
+      ubtbStats()
+{
+    setNumDelay(0);
+    predictWidth = 64;
+
+    if (!isPowerOf2(numEntries)) {
+        panic("uBTB entries is not a power of 2!");
+    }
+
+    ubtb.resize(numEntries);
+    mruList.clear();
+    for (auto it = ubtb.begin(); it != ubtb.end(); it++) {
+        it->valid = false;
+        mruList.push_back(it);
+    }
+    std::make_heap(mruList.begin(), mruList.end(), older());
+}
+#else
 UBTB::UBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
       lastPred(),
@@ -72,11 +116,13 @@ UBTB::UBTB(const Params &p)
     hasDB = true;
     dbName = "ubtb";
 }
+#endif
 
 
 void
 UBTB::setTrace()
 {
+#ifndef UNIT_TEST
     if (enableDB) {
         std::vector<std::pair<std::string, DataType>> fields_vec = {
             std::make_pair("pc", UINT64),  std::make_pair("brType", UINT64), std::make_pair("target", UINT64),
@@ -84,6 +130,7 @@ UBTB::setTrace()
         ubtbTrace = _db->addAndGetTrace("uBTBTrace", fields_vec);
         ubtbTrace->init_table();
     }
+#endif
 }
 
 void
@@ -105,7 +152,8 @@ UBTB::PredStatistics(const TickedUBTBEntry entry, Addr startAddr)
 void
 UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPrediction> &stagePreds)
 {
-    FillStageLoop(s) {
+    FillStageLoop(s)
+    {
         DPRINTF(UBTB, "UBTB: assigning prediction for stage %d\n", s);
 
         // Copy uBTB entries to stage prediction
@@ -136,9 +184,10 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
 void
 UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::vector<FullBTBPrediction> &stagePreds)
 {
+    (void)history;
     meta = std::make_shared<UBTBMeta>();
     auto it = lookup(startAddr);
-    auto& entry = meta->hit_entry;
+    auto &entry = meta->hit_entry;
     entry = (it != ubtb.end()) ? *it : TickedUBTBEntry();
 
     PredStatistics(entry, startAddr);
@@ -148,6 +197,19 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::
 
     // Update metadata for later stages
     lastPred.hit_entry = it;
+}
+
+void
+UBTB::putPCHistoryForBlock1(Addr startAddr, const boost::dynamic_bitset<> &history,
+                            const boost::dynamic_bitset<> &phistory, const boost::dynamic_bitset<> &bwhistory,
+                            const std::vector<boost::dynamic_bitset<>> &lhistory,
+                            std::vector<FullBTBPrediction> &stagePreds, const FullBTBPrediction &lowerPred)
+{
+    (void)phistory;
+    (void)bwhistory;
+    (void)lhistory;
+    (void)lowerPred;
+    putPCHistory(startAddr, history, stagePreds);
 }
 
 UBTB::UBTBIter
@@ -190,7 +252,7 @@ UBTB::replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry, Addr
     TickedUBTBEntry newEntry = TickedUBTBEntry(newTakenEntry, curTick());
     // important! this is so that target set by RAS or ITTAGE is used
     newEntry.target = newTakenEntry.target;
-    newEntry.ctr = 0; // have a bug here:ubtb will accept ctr from mbtb, reset it to 0 at here
+    newEntry.ctr = 0;  // have a bug here:ubtb will accept ctr from mbtb, reset it to 0 at here
     // important: update tag (mbtb and ubtb have different tags, even diffferent tag length)
     newEntry.tag = getTag(startAddr);
     *oldEntryIter = newEntry;
@@ -207,78 +269,78 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     auto takenEntry = s3Pred.getTakenEntry();
     if (takenEntry.valid) {
         ubtbStats.s3UpdateHits++;
-    }else {
+    } else {
         ubtbStats.s3UpdateMisses++;
     }
     auto startAddr = s3Pred.bbStart;
     UBTBIter oldEntryIter = lastPred.hit_entry;
     takenEntry.source = getComponentIdx();
     updateNewEntry(oldEntryIter, takenEntry, startAddr);
-
 }
 
 
 
-void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry, const Addr startAddr)
+void
+UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry, const Addr startAddr)
 {
-    //using the FB final taken branch to update uBTB
+    // using the FB final taken branch to update uBTB
     if (oldEntryIter != ubtb.end()) {
-        assert(oldEntryIter->valid); //lookup() should only return valid entry
+        assert(oldEntryIter->valid);  // lookup() should only return valid entry
     }
     if (oldEntryIter != ubtb.end() && !takenEntry.valid) {
-            // S0 has a hit entry, but S3 predicts fall through
-            ubtbStats.s1Hits3FallThrough++;
+        // S0 has a hit entry, but S3 predicts fall through
+        ubtbStats.s1Hits3FallThrough++;
+        updateUCtr(oldEntryIter->uctr, false);
+        if (oldEntryIter->uctr == 0) {
+            ubtbStats.s1InvalidatedEntries++;
+            oldEntryIter->valid = false;
+        }
+    } else if (oldEntryIter == ubtb.end() && takenEntry.valid) {
+        ubtbStats.s1Misses3Taken++;
+        /* S0 misses, but S3 predicts taken,
+         * generate new entry and replace another using LRU
+         */
+        UBTBIter toBeReplacedIter;
+        // First try to find an invalid entry in the set
+        bool foundInvalidEntry = false;
+
+        for (auto it = ubtb.begin(); it != ubtb.end(); ++it) {
+            if (!it->valid) {
+                toBeReplacedIter = it;
+                foundInvalidEntry = true;
+                break;
+            }
+        }
+
+        // If no invalid entry found, use LRU policy
+        // TODO: consider using LRU only among the entries with the least confidence(smallest uctr)
+        if (!foundInvalidEntry) {
+            // Find the least recently used entry
+            std::make_heap(mruList.begin(), mruList.end(), older());
+            toBeReplacedIter = mruList.front();
+        }
+
+        // Replace the entry with the new prediction
+        replaceOldEntry(toBeReplacedIter, takenEntry, startAddr);
+
+    } else if (oldEntryIter != ubtb.end() && takenEntry.valid) {
+        ubtbStats.s1Hits3Taken++;
+        // both S0 and S3 predict taken
+        if (oldEntryIter->pc != takenEntry.pc || oldEntryIter->target != takenEntry.target) {
+            // S0 and S3 predict different branch instruction
             updateUCtr(oldEntryIter->uctr, false);
             if (oldEntryIter->uctr == 0) {
-                ubtbStats.s1InvalidatedEntries++;
-                oldEntryIter->valid = false;
-            }
-        } else if (oldEntryIter == ubtb.end() && takenEntry.valid) {
-            ubtbStats.s1Misses3Taken++;
-            /* S0 misses, but S3 predicts taken,
-            * generate new entry and replace another using LRU
-            */
-            UBTBIter toBeReplacedIter;
-            // First try to find an invalid entry in the set
-            bool foundInvalidEntry = false;
-
-            for (auto it = ubtb.begin(); it != ubtb.end(); ++it) {
-                if (!it->valid) {
-                    toBeReplacedIter = it;
-                    foundInvalidEntry = true;
-                    break;
-                }
-            }
-
-            // If no invalid entry found, use LRU policy
-            // TODO: consider using LRU only among the entries with the least confidence(smallest uctr)
-            if (!foundInvalidEntry) {
-                // Find the least recently used entry
-                std::make_heap(mruList.begin(), mruList.end(), older());
-                toBeReplacedIter = mruList.front();
-            }
-
-            // Replace the entry with the new prediction
-            replaceOldEntry(toBeReplacedIter, takenEntry, startAddr);
-
-        } else if (oldEntryIter != ubtb.end() && takenEntry.valid) {
-            ubtbStats.s1Hits3Taken++;
-            // both S0 and S3 predict taken
-            if (oldEntryIter->pc != takenEntry.pc || oldEntryIter->target != takenEntry.target) {
-                // S0 and S3 predict different branch instruction
-                updateUCtr(oldEntryIter->uctr, false);
-                if (oldEntryIter->uctr == 0) {
-                    // replace the old entry with the new one
-                    replaceOldEntry(oldEntryIter, takenEntry, startAddr);
-                }
-            } else {
-                // S0 and S3 predict the same (brpc and target)
-                updateUCtr(oldEntryIter->uctr, true);
+                // replace the old entry with the new one
+                replaceOldEntry(oldEntryIter, takenEntry, startAddr);
             }
         } else {
-            ubtbStats.s1Misses3FallThrough++;
-            // both S0 and S3 predict fall through, do nothing
+            // S0 and S3 predict the same (brpc and target)
+            updateUCtr(oldEntryIter->uctr, true);
         }
+    } else {
+        ubtbStats.s1Misses3FallThrough++;
+        // both S0 and S3 predict fall through, do nothing
+    }
 }
 
 
@@ -291,23 +353,23 @@ UBTB::update(const FetchTarget &stream)
 
     auto pred_hit_entry = meta->hit_entry;
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
-     // Use BTBEntry instead of BranchInfo; make it invalid when not taken
+    // Use BTBEntry instead of BranchInfo; make it invalid when not taken
     BTBEntry takenEntry = stream.exeTaken ? BTBEntry(stream.exeBranchInfo) : BTBEntry();
     auto startAddr = stream.getRealStartPC();
     Addr oldtag = getTag(startAddr);
 
     UBTBIter oldEntryIter = ubtb.end();
 
-    oldEntryIter = meta->hit_entry.valid ?
-                    std::find_if(ubtb.begin(), ubtb.end(), [oldtag](const TickedUBTBEntry &e) {
-                        return e.valid && e.tag == oldtag;
-                    }) : ubtb.end();
+    oldEntryIter = meta->hit_entry.valid
+                       ? std::find_if(ubtb.begin(), ubtb.end(),
+                                      [oldtag](const TickedUBTBEntry &e) { return e.valid && e.tag == oldtag; })
+                       : ubtb.end();
 
     if (stream.exeTaken) {
         if (!pred_hit_entry.valid || pred_hit_entry != stream.exeBranchInfo) {
             DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
             ubtbStats.updateMiss++;
-        }else {
+        } else {
             ubtbStats.updateHit++;
         }
     }
@@ -319,6 +381,7 @@ UBTB::update(const FetchTarget &stream)
     }
 }
 
+#ifndef UNIT_TEST
 void
 UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
@@ -409,8 +472,10 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         }
     }
 }
+#endif
 
 // Initialize uBTB statistics
+#ifndef UNIT_TEST
 UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(predMiss, statistics::units::Count::get(), "misses encountered on prediction"),
@@ -466,6 +531,11 @@ UBTB::UBTBStats::UBTBStats(statistics::Group *parent)
       ADD_STAT(s1InvalidatedEntries, statistics::units::Count::get(), "s1 invalidated entries")
 {
 }
+#endif
+
+#ifdef UNIT_TEST
+}  // namespace test
+#endif
 
 }  // namespace btb_pred
 }  // namespace branch_prediction

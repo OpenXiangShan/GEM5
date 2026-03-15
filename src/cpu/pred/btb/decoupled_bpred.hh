@@ -79,8 +79,14 @@ class DecoupledBPUWithBTB : public BPredUnit
     const int numThreads = 2;
     unsigned predictWidth;  // max predict width, default 64
     unsigned maxInstsNum;
+    const bool enableTwoTaken;
+    const bool dropBlock1OnBlock0Override;
+    const bool dropBlock1WhenFTQHasOnlyOneSlot;
+    const bool dropBlock1OnCondWithoutTage;
+    const bool dropBlock1OnIndirectWithoutIttage;
+    const bool dropBlock1OnReturnWithoutRas;
 
-    const unsigned historyBits{488}; // will be overridden later by the constructor
+    const unsigned historyBits{488};  // will be overridden later by the constructor
 
     const Addr MaxAddr{~(0ULL)};
 
@@ -100,7 +106,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool enableBranchTrace{false};
     bool enablePredFSQTrace{false};
 
-    bool checkGivenSwitch(std::vector<std::string> switches, std::string switchName) {
+    bool checkGivenSwitch(std::vector<std::string> switches, std::string switchName)
+    {
         for (auto &sw : switches) {
             if (sw == switchName) {
                 return true;
@@ -108,7 +115,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         }
         return false;
     }
-    void removeGivenSwitch(std::vector<std::string> &switches, std::string switchName) {
+    void removeGivenSwitch(std::vector<std::string> &switches, std::string switchName)
+    {
         auto it = std::remove(switches.begin(), switches.end(), switchName);
         switches.erase(it, switches.end());
     }
@@ -118,23 +126,45 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void initDB();
 
-    std::vector<TimedBaseBTBPredictor*> components{};
+    std::vector<TimedBaseBTBPredictor *> components{};
     // std::vector<FullBTBPrediction> predsOfEachStage{};
     unsigned numComponents{};
     unsigned numStages{};
 
     FetchTargetQueue ftq;
 
+    struct SpecState
+    {
+        Addr pc{0};
+        boost::dynamic_bitset<> history;
+        boost::dynamic_bitset<> phistory;
+        boost::dynamic_bitset<> bwhistory;
+        std::vector<boost::dynamic_bitset<>> lhistory;
+    };
+
+    struct PredictionBundle
+    {
+        FullBTBPrediction pred0;
+        std::array<std::shared_ptr<void>, 8> pred0Metas{};
+        bool hasPred1{false};
+        FullBTBPrediction pred1;
+        std::array<std::shared_ptr<void>, 8> pred1Metas{};
+        SpecState stateAfter0;
+        SpecState stateAfterFinal;
+        Block1DropReason pred1DropReason{Block1DropReason::None};
+    };
+
     struct
     {
         Addr s0PC;
         std::vector<FullBTBPrediction> predsOfEachStage{};
-        boost::dynamic_bitset<> s0History;  ///< global History bits
-        boost::dynamic_bitset<> s0PHistory;  ///< path History bits
-        boost::dynamic_bitset<> s0BwHistory;  ///< global backward History bits
+        boost::dynamic_bitset<> s0History;                ///< global History bits
+        boost::dynamic_bitset<> s0PHistory;               ///< path History bits
+        boost::dynamic_bitset<> s0BwHistory;              ///< global backward History bits
         std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
         boost::dynamic_bitset<> commitHistory;
-        FullBTBPrediction finalPred;      ///< Final prediction
+        FullBTBPrediction finalPred;  ///< Final prediction
+        PredictionBundle bundle;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
@@ -149,9 +179,19 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void processNewPrediction(ThreadID tid);
 
-    FetchTarget createFetchTargetEntry(ThreadID tid);
+    SpecState makeSpecState(ThreadID tid) const;
 
-    void updateHistoryForPrediction(FetchTarget &entry);
+    void commitSpecState(ThreadID tid, const SpecState &state);
+
+    std::array<std::shared_ptr<void>, 8> capturePredictionMetas() const;
+
+    SpecState computeNextSpecState(ThreadID tid, const SpecState &state, const FullBTBPrediction &pred,
+                                   FetchTargetId targetId);
+
+    FetchTarget createFetchTargetEntry(ThreadID tid, const SpecState &state, const FullBTBPrediction &pred,
+                                       const std::array<std::shared_ptr<void>, 8> &predMetas);
+
+    void buildPredictionBundle(ThreadID tid);
 
     void fillAheadPipeline(FetchTarget &entry);
 
@@ -171,10 +211,8 @@ class DecoupledBPUWithBTB : public BPredUnit
             DPRINTFR(DecoupleBPProbe, "FSQ Resolved target: ");
         }
         // TODO:fix this
-        DPRINTFR(DecoupleBPProbe,
-                 "%#lx-[%#lx, %#lx) --> %#lx, taken: %lu\n",
-                 e.startPC, e.getBranchInfo().pc, e.getEndPC(),
-                 e.getTakenTarget(), e.getTaken());
+        DPRINTFR(DecoupleBPProbe, "%#lx-[%#lx, %#lx) --> %#lx, taken: %lu\n", e.startPC, e.getBranchInfo().pc,
+                 e.getEndPC(), e.getTakenTarget(), e.getTaken());
     }
 
     /**
@@ -187,7 +225,8 @@ class DecoupledBPUWithBTB : public BPredUnit
      */
     void generateFinalPredAndCreateBubbles(ThreadID tid);
 
-    void clearPreds(ThreadID tid) {
+    void clearPreds(ThreadID tid)
+    {
         for (auto &stagePred : threads[tid].predsOfEachStage) {
             stagePred.condTakens.clear();
             stagePred.indirectTargets.clear();
@@ -197,15 +236,19 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // const bool dumpLoopPred;
 
-    void printBTBEntry(const BTBEntry &e) {
-        DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken);
+    void printBTBEntry(const BTBEntry &e)
+    {
+        DPRINTF(BTB,
+                "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, "
+                "return:%d, always_taken:%d\n",
+                e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken);
     }
 
-    void printFullBTBPrediction(const FullBTBPrediction &pred) {
+    void printFullBTBPrediction(const FullBTBPrediction &pred)
+    {
         DPRINTF(DecoupleBP, "dumping FullBTBPrediction\n");
         DPRINTF(DecoupleBP, "bbStart: %#lx, btbEntry:\n", pred.bbStart);
-        for (auto &e: pred.btbEntries) {
+        for (auto &e : pred.btbEntries) {
             printBTBEntry(e);
         }
         DPRINTF(DecoupleBP, "condTakens: ");
@@ -214,8 +257,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         }
         DPRINTFR(DecoupleBP, "\n");
         for (auto pair : pred.indirectTargets) {
-            DPRINTF(DecoupleBP, "indirectTarget of %#lx: %#lx\n",
-            pair.first, pair.second);
+            DPRINTF(DecoupleBP, "indirectTarget of %#lx: %#lx\n", pair.first, pair.second);
         }
         DPRINTF(DecoupleBP, "returnTarget %#lx\n", pred.returnTarget);
     }
@@ -229,24 +271,25 @@ class DecoupledBPUWithBTB : public BPredUnit
      * - Queue utilization
      * - Loop and jump-ahead prediction performance
      */
-    struct DBPBTBStats : public statistics::Group {
+    struct DBPBTBStats : public statistics::Group
+    {
         // Branch type statistics
-        statistics::Scalar condNum;      ///< Number of conditional branches
-        statistics::Scalar uncondNum;    ///< Number of unconditional branches
-        statistics::Scalar returnNum;    ///< Number of return instructions
-        statistics::Scalar otherNum;     ///< Number of other control instructions
+        statistics::Scalar condNum;    ///< Number of conditional branches
+        statistics::Scalar uncondNum;  ///< Number of unconditional branches
+        statistics::Scalar returnNum;  ///< Number of return instructions
+        statistics::Scalar otherNum;   ///< Number of other control instructions
 
         // Misprediction statistics
-        statistics::Scalar condMiss;     ///< Conditional branch mispredictions
-        statistics::Scalar uncondMiss;   ///< Unconditional branch mispredictions
-        statistics::Scalar returnMiss;   ///< Return mispredictions
-        statistics::Scalar otherMiss;    ///< Other control mispredictions
+        statistics::Scalar condMiss;    ///< Conditional branch mispredictions
+        statistics::Scalar uncondMiss;  ///< Unconditional branch mispredictions
+        statistics::Scalar returnMiss;  ///< Return mispredictions
+        statistics::Scalar otherMiss;   ///< Other control mispredictions
 
         // Fine-grained branch classification statistics
-        statistics::Vector branchClassCounts; ///< Classified branch occurrences
-        statistics::Vector branchClassMisses; ///< Mispredictions per class
-        statistics::Scalar branchClassCountsTotal; ///< Total classified branches
-        statistics::Vector controlSquashByClass; ///< Commit/Resolve-path squashes per class
+        statistics::Vector branchClassCounts;       ///< Classified branch occurrences
+        statistics::Vector branchClassMisses;       ///< Mispredictions per class
+        statistics::Scalar branchClassCountsTotal;  ///< Total classified branches
+        statistics::Vector controlSquashByClass;    ///< Commit/Resolve-path squashes per class
 
         // Branch coverage statistics
         statistics::Scalar staticBranchNum;           ///< Total static branches seen
@@ -281,6 +324,14 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar ftqFullCannotEnq;
         statistics::Scalar fsqFullFetchHungry;
         statistics::Scalar fsqEmpty;
+        statistics::Scalar block1Attempted;
+        statistics::Scalar block1Accepted;
+        statistics::Scalar block1DroppedByBlock0Override;
+        statistics::Scalar block1DroppedByCond;
+        statistics::Scalar block1DroppedByIndirect;
+        statistics::Scalar block1DroppedByReturn;
+        statistics::Scalar block1DroppedByFTQFull;
+        statistics::Scalar block1DroppedOther;
         //
         statistics::Distribution commitFsqEntryHasInsts;
         // write back once an fsq entry finishes fetch
@@ -306,7 +357,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s3PredWrongIttage;
         statistics::Scalar s3PredWrongRas;
 
-        DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
+        DBPBTBStats(statistics::Group *parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;
 
   public:
@@ -325,8 +376,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     {
         panic("Squashing decoupled BP with tightly coupled API\n");
     }
-    void squash(const InstSeqNum &squashed_sn, const PCStateBase &corr_target,
-                bool actually_taken, ThreadID tid)
+    void squash(const InstSeqNum &squashed_sn, const PCStateBase &corr_target, bool actually_taken, ThreadID tid)
     {
         panic("Squashing decoupled BP with tightly coupled API\n");
     }
@@ -339,9 +389,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     struct BpTrace : public Record
     {
-        void set(uint64_t fsqId, uint64_t startPC, uint64_t controlPC, uint64_t controlType,
-            uint64_t taken, uint64_t mispred, uint64_t fallThruPC,
-            uint64_t source, uint64_t target) {
+        void set(uint64_t fsqId, uint64_t startPC, uint64_t controlPC, uint64_t controlType, uint64_t taken,
+                 uint64_t mispred, uint64_t fallThruPC, uint64_t source, uint64_t target)
+        {
             _uint64_data["fsqId"] = fsqId;
             _uint64_data["startPC"] = startPC;
             _uint64_data["controlPC"] = controlPC;
@@ -358,9 +408,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     // Prediction trace record for tracking prediction-time information
     struct PredictionTrace : public Record
     {
-        void set(uint64_t fsqId, uint64_t startPC, uint64_t predTaken, uint64_t predEndPC,
-                 uint64_t controlPC, uint64_t target,
-                 uint64_t predSource, uint64_t btbHit) {
+        void set(uint64_t fsqId, uint64_t startPC, uint64_t predTaken, uint64_t predEndPC, uint64_t controlPC,
+                 uint64_t target, uint64_t predSource, uint64_t btbHit)
+        {
             _uint64_data["fsqId"] = fsqId;
             _uint64_data["startPC"] = startPC;
             _uint64_data["predTaken"] = predTaken;
@@ -371,39 +421,43 @@ class DecoupledBPUWithBTB : public BPredUnit
             _uint64_data["btbHit"] = btbHit;
         }
 
-        PredictionTrace(uint64_t id, const FetchTarget &entry) {
+        PredictionTrace(uint64_t id, const FetchTarget &entry)
+        {
             _tick = curTick();
-            set(id, entry.startPC, entry.predTaken, entry.predEndPC,
-                entry.getControlPC(), entry.getTakenTarget(),
+            set(id, entry.startPC, entry.predTaken, entry.predEndPC, entry.getControlPC(), entry.getTakenTarget(),
                 entry.predSource, entry.isHit ? 1 : 0);
         }
     };
 
     // redirect the target
-    void controlSquash(unsigned fsq_id,
-                       const PCStateBase &control_pc,
-                       const PCStateBase &target_pc,
-                       const StaticInstPtr &static_inst, unsigned inst_bytes,
-                       bool actually_taken, const InstSeqNum &squashed_sn,
-                       ThreadID tid, const unsigned &currentLoopIter,
+    void controlSquash(unsigned fsq_id, const PCStateBase &control_pc, const PCStateBase &target_pc,
+                       const StaticInstPtr &static_inst, unsigned inst_bytes, bool actually_taken,
+                       const InstSeqNum &squashed_sn, ThreadID tid, const unsigned &currentLoopIter,
                        const bool fromCommit);
 
     // keep the target: original prediction might be right
     // For memory violation, target continues after squashing
-    void nonControlSquash(unsigned fsq_id,
-                          const PCStateBase &inst_pc, const InstSeqNum seq,
-                          ThreadID tid, const unsigned &currentLoopIter);
+    void nonControlSquash(unsigned fsq_id, const PCStateBase &inst_pc, const InstSeqNum seq, ThreadID tid,
+                          const unsigned &currentLoopIter);
 
     // Not a control. But target is actually disturbed
-    void trapSquash(unsigned fsq_id, Addr last_committed_pc,
-                    const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
+    void trapSquash(unsigned fsq_id, Addr last_committed_pc, const PCStateBase &inst_pc, ThreadID tid,
+                    const unsigned &currentLoopIter);
 
     void commit(unsigned fsqID, ThreadID tid);
 
     // Fetch-facing interface: consume FSQ head directly (RTL-like single queue).
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
-    FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
-    const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    FetchTargetId ftqHeadId(ThreadID tid) const
+    {
+        assert(ftqHasFetching(tid));
+        return ftq.fetchId(tid);
+    }
+    const FetchTarget &ftqFetchingTarget(ThreadID tid)
+    {
+        assert(ftqHasFetching(tid));
+        return ftq.fetching(tid);
+    }
 
     void dumpFsq(const char *when);
 
@@ -414,8 +468,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void btbUpdate(ThreadID tid, Addr instPC, void *&bp_history) override {}
 
-    void update(ThreadID tid, Addr instPC, bool taken, void *bp_history,
-                bool squashed, const StaticInstPtr &inst,
+    void update(ThreadID tid, Addr instPC, bool taken, void *bp_history, bool squashed, const StaticInstPtr &inst,
                 Addr corrTarget) override
     {
     }
@@ -429,18 +482,19 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
-    std::unordered_map<Addr, int> takenBranches;      // branch address -> taken count
+    std::unordered_map<Addr, int> takenBranches;  // branch address -> taken count
     std::unordered_map<Addr, int> currentPhaseTakenBranches;
     std::unordered_map<Addr, int> currentSubPhaseTakenBranches;
 
     /**
      * @brief Types of control flow instruction mispredictions
      */
-    enum MispredType {
-        DIR_WRONG,      ///< Direction prediction error (predicted taken when not taken or vice versa)
-        TARGET_WRONG,   ///< Target address prediction was wrong (branch taken but to the wrong address)
-        NO_PRED,        ///< No prediction was made (branch wasn't predicted at all)
-        FAKE_LAST       ///< Sentinel value
+    enum MispredType
+    {
+        DIR_WRONG,     ///< Direction prediction error (predicted taken when not taken or vice versa)
+        TARGET_WRONG,  ///< Target address prediction was wrong (branch taken but to the wrong address)
+        NO_PRED,       ///< No prediction was made (branch wasn't predicted at all)
+        FAKE_LAST      ///< Sentinel value
     };
 
     /**
@@ -452,27 +506,41 @@ class DecoupledBPUWithBTB : public BPredUnit
      */
     struct BranchStats
     {
-        Addr pc;                ///< Branch PC address
-        int branchType;         ///< Branch type (0=cond, 1=uncond, 2=call, 3=ind, etc.)
-        int totalCount;         ///< Total number of times branch was executed
-        int mispredCount;       ///< Total number of mispredictions for this branch
-        int dirWrongCount;      ///< Number of times direction was mispredicted
-        int targetWrongCount;   ///< Number of times target address was mispredicted
-        int noPredCount;        ///< Number of times no prediction was made
+        Addr pc;               ///< Branch PC address
+        int branchType;        ///< Branch type (0=cond, 1=uncond, 2=call, 3=ind, etc.)
+        int totalCount;        ///< Total number of times branch was executed
+        int mispredCount;      ///< Total number of mispredictions for this branch
+        int dirWrongCount;     ///< Number of times direction was mispredicted
+        int targetWrongCount;  ///< Number of times target address was mispredicted
+        int noPredCount;       ///< Number of times no prediction was made
 
         /**
          * @brief Default constructor
          */
         BranchStats()
-            : pc(0), branchType(0), totalCount(0), mispredCount(0),
-              dirWrongCount(0), targetWrongCount(0), noPredCount(0) {}
+            : pc(0),
+              branchType(0),
+              totalCount(0),
+              mispredCount(0),
+              dirWrongCount(0),
+              targetWrongCount(0),
+              noPredCount(0)
+        {
+        }
 
         /**
          * @brief Create branch stats with initial values
          */
         BranchStats(Addr _pc, int _type)
-            : pc(_pc), branchType(_type), totalCount(0), mispredCount(0),
-              dirWrongCount(0), targetWrongCount(0), noPredCount(0) {}
+            : pc(_pc),
+              branchType(_type),
+              totalCount(0),
+              mispredCount(0),
+              dirWrongCount(0),
+              targetWrongCount(0),
+              noPredCount(0)
+        {
+        }
 
         /**
          * @brief Increment total execution count
@@ -482,13 +550,21 @@ class DecoupledBPUWithBTB : public BPredUnit
         /**
          * @brief Increment misprediction count for a specific type
          */
-        void incrementMispred(MispredType type) {
+        void incrementMispred(MispredType type)
+        {
             mispredCount++;
-            switch(type) {
-                case DIR_WRONG: dirWrongCount++; break;
-                case TARGET_WRONG: targetWrongCount++; break;
-                case NO_PRED: noPredCount++; break;
-                default: break;
+            switch (type) {
+                case DIR_WRONG:
+                    dirWrongCount++;
+                    break;
+                case TARGET_WRONG:
+                    targetWrongCount++;
+                    break;
+                case NO_PRED:
+                    noPredCount++;
+                    break;
+                default:
+                    break;
             }
         }
 
@@ -497,9 +573,7 @@ class DecoupledBPUWithBTB : public BPredUnit
          *
          * @return Misprediction rate scaled to per-mille (0-1000)
          */
-        double getMispredRate() const {
-            return totalCount > 0 ? (double)(mispredCount * 1000) / totalCount : 0;
-        }
+        double getMispredRate() const { return totalCount > 0 ? (double)(mispredCount * 1000) / totalCount : 0; }
     };
 
     /**
@@ -625,7 +699,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @brief Calculate sub-phase size in instructions
      * @return Number of instructions per sub-phase
      */
-    int subPhaseSizeByInst() { return phaseSizeByInst/subPhaseRatio; }
+    int subPhaseSizeByInst() { return phaseSizeByInst / subPhaseRatio; }
 
     /**
      * @brief Distribution of committed instructions from previous phase
@@ -684,24 +758,13 @@ class DecoupledBPUWithBTB : public BPredUnit
     // std::vector<BranchStatsMap> topMispredictsByBranchBySubPhase;
     // std::vector<std::map<Addr, int>> takenBranchesBySubPhase;
 
-    void recoverHistoryForSquash(
-        FetchTarget &target,
-        unsigned target_id,
-        const PCStateBase &squash_pc,
-        bool is_conditional,
-        bool actually_taken,
-        SquashType squash_type,
-        Addr redirect_pc);
+    void recoverHistoryForSquash(FetchTarget &target, unsigned target_id, const PCStateBase &squash_pc,
+                                 bool is_conditional, bool actually_taken, SquashType squash_type, Addr redirect_pc);
 
     // Common logic for squash handling
-    void handleSquash(ThreadID tid, unsigned target_id,
-                      SquashType squash_type,
-                      const PCStateBase &squash_pc,
-                      Addr redirect_pc,
-                      bool is_conditional = false,
-                      bool actually_taken = false,
-                      const StaticInstPtr &static_inst = nullptr,
-                      unsigned control_inst_size = 0);
+    void handleSquash(ThreadID tid, unsigned target_id, SquashType squash_type, const PCStateBase &squash_pc,
+                      Addr redirect_pc, bool is_conditional = false, bool actually_taken = false,
+                      const StaticInstPtr &static_inst = nullptr, unsigned control_inst_size = 0);
 
     void resetPC(Addr new_pc);
 
@@ -720,10 +783,10 @@ class DecoupledBPUWithBTB : public BPredUnit
      */
     enum CfiType
     {
-        COND,     ///< Conditional branch
-        UNCOND,   ///< Unconditional branch
-        RETURN,   ///< Return instruction
-        OTHER     ///< Other control flow instruction
+        COND,    ///< Conditional branch
+        UNCOND,  ///< Unconditional branch
+        RETURN,  ///< Return instruction
+        OTHER    ///< Other control flow instruction
     };
 
     /**
@@ -731,20 +794,20 @@ class DecoupledBPUWithBTB : public BPredUnit
      */
     enum class BranchClass : uint8_t
     {
-        CondBranch = 0,   ///< Conditional direct branches (TAGE focus)
-        DirectCall,       ///< Direct call instructions (RAS + BTB)
-        IndirectCall,     ///< Indirect call instructions (ITTAGE + RAS)
-        Return,           ///< Return instructions (RAS)
-        DirectJump,       ///< Direct, non-call control transfers (BTB)
-        IndirectJump,     ///< Indirect jumps that are not calls/returns (ITTAGE)
-        Unknown,          ///< Fallback for unexpected classifications
-        NumClasses        ///< Sentinel used for sizing stat containers
+        CondBranch = 0,  ///< Conditional direct branches (TAGE focus)
+        DirectCall,      ///< Direct call instructions (RAS + BTB)
+        IndirectCall,    ///< Indirect call instructions (ITTAGE + RAS)
+        Return,          ///< Return instructions (RAS)
+        DirectJump,      ///< Direct, non-call control transfers (BTB)
+        IndirectJump,    ///< Indirect jumps that are not calls/returns (ITTAGE)
+        Unknown,         ///< Fallback for unexpected classifications
+        NumClasses       ///< Sentinel used for sizing stat containers
     };
 
-    static constexpr size_t NumBranchClasses =
-        static_cast<size_t>(BranchClass::NumClasses);
+    static constexpr size_t NumBranchClasses = static_cast<size_t>(BranchClass::NumClasses);
 
-    void addCfi(CfiType type, bool mispred) {
+    void addCfi(CfiType type, bool mispred)
+    {
         switch (type) {
             case COND:
                 dbpBtbStats.condNum++;
@@ -776,9 +839,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void addBranchClassStat(BranchClass cls, bool mispred);
     void addControlSquashCommitStat(BranchClass cls);
 
-    void addFtqNotValid() {
-        dbpBtbStats.ftqNotValid++;
-    }
+    void addFtqNotValid() { dbpBtbStats.ftqNotValid++; }
 
     /**
      * @brief Process a branch instruction during commit
@@ -802,12 +863,8 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @param taken Whether the branch was taken
      * @param mispred Whether the branch was mispredicted
      */
-    void processMisprediction(
-        const FetchTarget &entry,
-        Addr branchAddr,
-        const BranchInfo &info,
-        bool taken,
-        bool mispred);
+    void processMisprediction(const FetchTarget &entry, Addr branchAddr, const BranchInfo &info, bool taken,
+                              bool mispred);
 
     /**
      * @brief Track statistics for taken branches
@@ -828,11 +885,9 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @param phaseBranchesList List of all phases taken branches
      * @return true If the phase was processed
      */
-    bool processPhase(bool isSubPhase, int phaseID, int &phaseToDump,
-                     BranchStatsMap &lastPhaseStats,
-                     std::vector<BranchStatsMap> &phaseStatsList,
-                     std::unordered_map<Addr, int> &currentPhaseBranches,
-                     std::vector<std::unordered_map<Addr, int>> &phaseBranchesList);
+    bool processPhase(bool isSubPhase, int phaseID, int &phaseToDump, BranchStatsMap &lastPhaseStats,
+                      std::vector<BranchStatsMap> &phaseStatsList, std::unordered_map<Addr, int> &currentPhaseBranches,
+                      std::vector<std::unordered_map<Addr, int>> &phaseBranchesList);
 
     /**
      * @brief Process fetch instruction distributions for a phase
@@ -841,7 +896,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @param currentPhaseFetchedDist Output vector for fetched instruction distribution
      */
     void processFetchDistributions(std::vector<int> &currentPhaseCommittedDist,
-                                  std::vector<int> &currentPhaseFetchedDist);
+                                   std::vector<int> &currentPhaseFetchedDist);
 
     /**
      * @brief Process BTB entries for a phase
@@ -875,7 +930,6 @@ class DecoupledBPUWithBTB : public BPredUnit
      * phase information, and other metrics.
      */
     void dumpStats();
-
 };
 
 }  // namespace btb_pred

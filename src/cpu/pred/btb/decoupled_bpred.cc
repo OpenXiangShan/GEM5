@@ -21,6 +21,23 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+namespace
+{
+
+const FullBTBPrediction &
+latestStagePrediction(const std::vector<FullBTBPrediction> &stagePreds)
+{
+    for (int i = (int)stagePreds.size() - 1; i >= 0; --i) {
+        if (!stagePreds[i].btbEntries.empty() || !stagePreds[i].condTakens.empty() ||
+            !stagePreds[i].indirectTargets.empty() || stagePreds[i].returnTarget != 0) {
+            return stagePreds[i];
+        }
+    }
+    return stagePreds[0];
+}
+
+}  // namespace
+
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 {
@@ -33,6 +50,12 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
 
       predictWidth(p.predictWidth),
       maxInstsNum(p.predictWidth / 2),
+      enableTwoTaken(p.enableTwoTaken),
+      dropBlock1OnBlock0Override(p.dropBlock1OnBlock0Override),
+      dropBlock1WhenFTQHasOnlyOneSlot(p.dropBlock1WhenFTQHasOnlyOneSlot),
+      dropBlock1OnCondWithoutTage(p.dropBlock1OnCondWithoutTage),
+      dropBlock1OnIndirectWithoutIttage(p.dropBlock1OnIndirectWithoutIttage),
+      dropBlock1OnReturnWithoutRas(p.dropBlock1OnReturnWithoutRas),
       historyBits(p.maxHistLen),
       ubtb(p.ubtb),
       abtb(p.abtb),
@@ -46,7 +69,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
       ftq(2, p.ftq_size),
-      historyManager(16), // TODO: fix this
+      historyManager(16),  // TODO: fix this
       resolveBlockThreshold(p.resolveBlockThreshold),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
 {
@@ -55,14 +78,22 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     }
     bpType = DecoupledBTBType;
     // Only add enabled components to the list
-    if (ubtb->isEnabled()) components.push_back(ubtb);
-    if (abtb->isEnabled()) components.push_back(abtb);
-    if (microtage->isEnabled()) components.push_back(microtage);
-    if (mbtb->isEnabled()) components.push_back(mbtb);
-    if (tage->isEnabled()) components.push_back(tage);
-    if (ras->isEnabled()) components.push_back(ras);
-    if (ittage->isEnabled()) components.push_back(ittage);
-    if (mgsc->isEnabled()) components.push_back(mgsc);
+    if (ubtb->isEnabled())
+        components.push_back(ubtb);
+    if (abtb->isEnabled())
+        components.push_back(abtb);
+    if (microtage->isEnabled())
+        components.push_back(microtage);
+    if (mbtb->isEnabled())
+        components.push_back(mbtb);
+    if (tage->isEnabled())
+        components.push_back(tage);
+    if (ras->isEnabled())
+        components.push_back(ras);
+    if (ittage->isEnabled())
+        components.push_back(ittage);
+    if (mgsc->isEnabled())
+        components.push_back(mgsc);
     numComponents = components.size();
     for (int i = 0; i < numComponents; i++) {
         components[i]->setComponentIdx(i);
@@ -86,8 +117,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
         printf("\n");
     }
 
-    for (int tid=0;tid<numThreads; tid++) {
-        auto& thread = threads[tid];
+    for (int tid = 0; tid < numThreads; tid++) {
+        auto &thread = threads[tid];
 
         thread.s0PC = 0x80000000;
         thread.predsOfEachStage.resize(numStages);
@@ -105,14 +136,12 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
         thread.squashing = true;
     }
 
-    commitFsqEntryHasInstsVector.resize(maxInstsNum+1, 0);
-    lastPhaseFsqEntryNumCommittedInstDist.resize(maxInstsNum+1, 0);
-    commitFsqEntryFetchedInstsVector.resize(maxInstsNum+1, 0);
-    lastPhaseFsqEntryNumFetchedInstDist.resize(maxInstsNum+1, 0);
+    commitFsqEntryHasInstsVector.resize(maxInstsNum + 1, 0);
+    lastPhaseFsqEntryNumCommittedInstDist.resize(maxInstsNum + 1, 0);
+    commitFsqEntryFetchedInstsVector.resize(maxInstsNum + 1, 0);
+    lastPhaseFsqEntryNumFetchedInstDist.resize(maxInstsNum + 1, 0);
 
-    registerExitCallback([this]() {
-        this->dumpStats();
-    });
+    registerExitCallback([this]() { this->dumpStats(); });
 }
 
 
@@ -158,7 +187,7 @@ DecoupledBPUWithBTB::tick()
         processNewPrediction(tid);
 
         // Decrement override bubbles counter
-        auto& numOverrideBubbles = threads[tid].numOverrideBubbles;
+        auto &numOverrideBubbles = threads[tid].numOverrideBubbles;
         if (numOverrideBubbles > 0) {
             numOverrideBubbles--;
             dbpBtbStats.overrideBubbleNum++;
@@ -178,8 +207,8 @@ DecoupledBPUWithBTB::tick()
 void
 DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
 {
-    auto& thread = threads[tid];
-    auto& predsOfEachStage = threads[tid].predsOfEachStage;
+    auto &thread = threads[tid];
+    auto &predsOfEachStage = threads[tid].predsOfEachStage;
 
     DPRINTF(Override, "Requesting new prediction for PC %#lx\n", thread.s0PC);
 
@@ -192,10 +221,12 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
 
     // Query each predictor component with current PC and history
     for (int i = 0; i < numComponents; i++) {
-        components[i]->putPCHistory(thread.s0PC, thread.s0History, predsOfEachStage);  //s0History not used
+        components[i]->putPCHistory(thread.s0PC, thread.s0History, predsOfEachStage);  // s0History not used
     }
 
     generateFinalPredAndCreateBubbles(tid);
+
+    buildPredictionBundle(tid);
 
     DPRINTF(Override, "Generating final prediction for PC %#lx\n", thread.s0PC);
 
@@ -209,8 +240,8 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 {
     DPRINTF(Override, "In generateFinalPredAndCreateBubbles().\n");
 
-    auto& predsOfEachStage = threads[tid].predsOfEachStage;
-    auto& finalPred = threads[tid].finalPred;
+    auto &predsOfEachStage = threads[tid].predsOfEachStage;
+    auto &finalPred = threads[tid].finalPred;
 
     // 1. Debug output: dump predictions from all stages
     for (int i = 0; i < numStages; i++) {
@@ -233,12 +264,12 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     // Store the chosen prediction as our final prediction
     finalPred = *chosenPrediction;
 
-    finalPred.s1Source = -1;//meaning fallthrough
+    finalPred.s1Source = -1;  // meaning fallthrough
     finalPred.s3Source = -1;
 
     if (predsOfEachStage[0].btbEntries.size() != 0) {
-        for (auto entry : predsOfEachStage[0].btbEntries){
-            if (entry.isIndirect || entry.isDirect || entry.ctr >= 0 ||entry.alwaysTaken){
+        for (auto entry : predsOfEachStage[0].btbEntries) {
+            if (entry.isIndirect || entry.isDirect || entry.ctr >= 0 || entry.alwaysTaken) {
                 finalPred.s1Source = entry.source;
                 break;
             }
@@ -251,8 +282,8 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     for (BTBEntry entry : predsOfEachStage[2].btbEntries) {
         if (entry.isDirect || entry.isIndirect || entry.ctr >= 0 || entry.alwaysTaken) {
             found_s3_taken = true;
-        }else if (entry.isCond){
-            //only use when there's no taken prediction in s3
+        } else if (entry.isCond) {
+            // only use when there's no taken prediction in s3
             na_s3_taken_but_have_cond = true;
         }
     }
@@ -264,15 +295,15 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
                 finalPred.s3Source = ras->getComponentIdx();
             } else if (pred_taken_entry.isIndirect && ittage->tageHit()) {
                 finalPred.s3Source = ittage->getComponentIdx();
-            }else if (pred_taken_entry.isCond) {
+            } else if (pred_taken_entry.isCond) {
                 finalPred.s3Source = tage->getComponentIdx();
             } else {
                 finalPred.s3Source = mbtb->getComponentIdx();
             }
-        }else {
+        } else {
             if (na_s3_taken_but_have_cond) {
                 finalPred.s3Source = tage->getComponentIdx();
-            }else {
+            } else {
                 finalPred.s3Source = -1;
             }
         }
@@ -354,24 +385,19 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
         return;
     }
 
-    auto& s0PC = threads[tid].s0PC;
+    auto &bundle = threads[tid].bundle;
+    auto initialState = makeSpecState(tid);
 
     // Validate PC value
-    if (s0PC == MaxAddr) {
-        DPRINTF(DecoupleBP, "Invalid PC value %#lx, cannot make prediction\n", s0PC);
+    if (initialState.pc == MaxAddr) {
+        DPRINTF(DecoupleBP, "Invalid PC value %#lx, cannot make prediction\n", initialState.pc);
         return;
     }
 
-    DPRINTF(DecoupleBP, "Creating new prediction for PC %#lx\n", s0PC);
+    DPRINTF(DecoupleBP, "Creating new prediction for PC %#lx\n", initialState.pc);
 
     // 1. Create a new fetch target entry with prediction information
-    FetchTarget entry = createFetchTargetEntry(tid);
-
-    // 2. Update global PC state to target or fall-through
-    s0PC = threads[tid].finalPred.getTarget(predictWidth);;
-
-    // 3. Update history information
-    updateHistoryForPrediction(entry);
+    FetchTarget entry = createFetchTargetEntry(tid, initialState, bundle.pred0, bundle.pred0Metas);
 
     // 4. Fill ahead pipeline
     fillAheadPipeline(entry);
@@ -382,16 +408,169 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     // 5. Add entry to fetch target queue
     ftq.insert(entry);
+    dbpBtbStats.fsqEntryEnqueued++;
+
+    if (bundle.hasPred1) {
+        FetchTarget entry1 = createFetchTargetEntry(tid, bundle.stateAfter0, bundle.pred1, bundle.pred1Metas);
+        fillAheadPipeline(entry1);
+        if (enablePredFSQTrace) {
+            predTraceManager->write_record(PredictionTrace(ftq.backId(tid), entry1));
+        }
+        ftq.insert(entry1);
+        printTarget(entry1);
+        dbpBtbStats.fsqEntryEnqueued++;
+    }
+
+    commitSpecState(tid, bundle.stateAfterFinal);
     threads[tid].validprediction = false;
 
     // 6. Debug output and update statistics
     dumpFsq("after insert new target");
-    DPRINTF(DecoupleBP, "Inserted fetch target %lu starting at PC %#lx\n",
-            ftq.backId(tid), entry.startPC);
+    DPRINTF(DecoupleBP, "Inserted fetch target %lu starting at PC %#lx\n", ftq.backId(tid), entry.startPC);
 
     // 7. Increment statistics
     printTarget(entry);
-    dbpBtbStats.fsqEntryEnqueued++;
+}
+
+DecoupledBPUWithBTB::SpecState
+DecoupledBPUWithBTB::makeSpecState(ThreadID tid) const
+{
+    SpecState state;
+    state.pc = threads[tid].s0PC;
+    state.history = threads[tid].s0History;
+    state.phistory = threads[tid].s0PHistory;
+    state.bwhistory = threads[tid].s0BwHistory;
+    state.lhistory = threads[tid].s0LHistory;
+    return state;
+}
+
+void
+DecoupledBPUWithBTB::commitSpecState(ThreadID tid, const SpecState &state)
+{
+    threads[tid].s0PC = state.pc;
+    threads[tid].s0History = state.history;
+    threads[tid].s0PHistory = state.phistory;
+    threads[tid].s0BwHistory = state.bwhistory;
+    threads[tid].s0LHistory = state.lhistory;
+}
+
+std::array<std::shared_ptr<void>, 8>
+DecoupledBPUWithBTB::capturePredictionMetas() const
+{
+    std::array<std::shared_ptr<void>, 8> predMetas{};
+    predMetas.fill(nullptr);
+    for (int i = 0; i < numComponents; i++) {
+        predMetas[i] = components[i]->getPredictionMeta();
+    }
+    return predMetas;
+}
+
+void
+DecoupledBPUWithBTB::buildPredictionBundle(ThreadID tid)
+{
+    auto &thread = threads[tid];
+    auto &bundle = thread.bundle;
+    auto initialState = makeSpecState(tid);
+
+    bundle.pred0 = thread.finalPred;
+    bundle.pred0Metas = capturePredictionMetas();
+    bundle.hasPred1 = false;
+    bundle.pred1 = FullBTBPrediction();
+    bundle.pred1Metas.fill(nullptr);
+    bundle.pred1DropReason = getInitialBlock1DropReason(
+        enableTwoTaken, dropBlock1OnBlock0Override, thread.finalPred.overrideReason != OverrideReason::NO_OVERRIDE,
+        dropBlock1WhenFTQHasOnlyOneSlot, ftq.freeSlots(tid), thread.finalPred.getTarget(predictWidth),
+        !thread.predsOfEachStage.empty() && !thread.predsOfEachStage[0].btbEntries.empty(), MaxAddr);
+    bundle.stateAfter0 = computeNextSpecState(tid, initialState, bundle.pred0, ftq.backId(tid) + 1);
+    bundle.stateAfterFinal = bundle.stateAfter0;
+
+    if (enableTwoTaken) {
+        dbpBtbStats.block1Attempted++;
+    }
+
+    if (bundle.pred1DropReason != Block1DropReason::None) {
+        switch (bundle.pred1DropReason) {
+            case Block1DropReason::Block0Override:
+                dbpBtbStats.block1DroppedByBlock0Override++;
+                break;
+            case Block1DropReason::FTQNoSpace:
+                dbpBtbStats.block1DroppedByFTQFull++;
+                break;
+            default:
+                dbpBtbStats.block1DroppedOther++;
+                break;
+        }
+        return;
+    }
+
+    std::vector<FullBTBPrediction> block1StagePreds(numStages);
+    for (int i = 0; i < numStages; i++) {
+        block1StagePreds[i].tid = tid;
+        block1StagePreds[i].bbStart = bundle.stateAfter0.pc;
+    }
+
+    FullBTBPrediction lowerPred;
+    lowerPred.tid = tid;
+    lowerPred.bbStart = bundle.stateAfter0.pc;
+    for (int i = 0; i < numComponents; i++) {
+        components[i]->putPCHistoryForBlock1(bundle.stateAfter0.pc, bundle.stateAfter0.history,
+                                             bundle.stateAfter0.phistory, bundle.stateAfter0.bwhistory,
+                                             bundle.stateAfter0.lhistory, block1StagePreds, lowerPred);
+        lowerPred = latestStagePrediction(block1StagePreds);
+    }
+
+    FullBTBPrediction *chosenPrediction = &block1StagePreds[0];
+    for (int i = (int)numStages - 1; i >= 0; i--) {
+        if (!block1StagePreds[i].btbEntries.empty()) {
+            chosenPrediction = &block1StagePreds[i];
+            break;
+        }
+    }
+
+    bundle.pred1 = *chosenPrediction;
+    unsigned first_hit_stage = 0;
+    OverrideReason overrideReason = OverrideReason::NO_OVERRIDE;
+    while (first_hit_stage < numStages - 1) {
+        auto [matches, reason] = block1StagePreds[first_hit_stage].match(*chosenPrediction, predictWidth);
+        if (matches) {
+            break;
+        }
+        first_hit_stage++;
+        overrideReason = reason;
+    }
+    bundle.pred1.predSource = first_hit_stage;
+    bundle.pred1.overrideReason = overrideReason;
+
+    bundle.pred1DropReason = getBlock1DropReason(
+        bundle.pred1, dropBlock1OnCondWithoutTage, tage->participatesInBlock1(), dropBlock1OnIndirectWithoutIttage,
+        ittage->participatesInBlock1(), dropBlock1OnReturnWithoutRas, ras->participatesInBlock1());
+    if (bundle.pred1DropReason != Block1DropReason::None || bundle.pred1.btbEntries.empty()) {
+        if (bundle.pred1DropReason == Block1DropReason::None) {
+            bundle.pred1DropReason = Block1DropReason::PredictorRejected;
+        }
+        switch (bundle.pred1DropReason) {
+            case Block1DropReason::CondNoSupport:
+                dbpBtbStats.block1DroppedByCond++;
+                break;
+            case Block1DropReason::IndirectNoSupport:
+                dbpBtbStats.block1DroppedByIndirect++;
+                break;
+            case Block1DropReason::ReturnNoSupport:
+                dbpBtbStats.block1DroppedByReturn++;
+                break;
+            default:
+                dbpBtbStats.block1DroppedOther++;
+                break;
+        }
+        bundle.pred1 = FullBTBPrediction();
+        bundle.stateAfterFinal = bundle.stateAfter0;
+        return;
+    }
+
+    bundle.pred1Metas = capturePredictionMetas();
+    bundle.hasPred1 = true;
+    dbpBtbStats.block1Accepted++;
+    bundle.stateAfterFinal = computeNextSpecState(tid, bundle.stateAfter0, bundle.pred1, ftq.backId(tid) + 2);
 }
 
 /**
@@ -414,14 +593,9 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
  * @param control_inst_size Size of the control instruction (for control squash)
  */
 void
-DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
-                                 SquashType squash_type,
-                                 const PCStateBase &squash_pc,
-                                 Addr redirect_pc,
-                                 bool is_conditional,
-                                 bool actually_taken,
-                                 const StaticInstPtr &static_inst,
-                                 unsigned control_inst_size)
+DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id, SquashType squash_type,
+                                  const PCStateBase &squash_pc, Addr redirect_pc, bool is_conditional,
+                                  bool actually_taken, const StaticInstPtr &static_inst, unsigned control_inst_size)
 {
     // Set squashing state
     threads[tid].squashing = true;
@@ -461,19 +635,15 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     // Update PC and target ID
     threads[tid].s0PC = redirect_pc;
 
-    DPRINTF(DecoupleBP,
-            "After squash, fsqId(next alloc)=%lu, fetchHeadFsqId=%lu, s0pc=%#lx\n",
-            ftq.backId(tid) + 1, ftq.frontId(tid), redirect_pc);
+    DPRINTF(DecoupleBP, "After squash, fsqId(next alloc)=%lu, fetchHeadFsqId=%lu, s0pc=%#lx\n", ftq.backId(tid) + 1,
+            ftq.frontId(tid), redirect_pc);
 }
 
 void
-DecoupledBPUWithBTB::controlSquash(unsigned target_id,
-                            const PCStateBase &control_pc,
-                            const PCStateBase &corr_target,
-                            const StaticInstPtr &static_inst,
-                            unsigned control_inst_size, bool actually_taken,
-                            const InstSeqNum &seq, ThreadID tid,
-                            const unsigned &currentLoopIter, const bool fromCommit)
+DecoupledBPUWithBTB::controlSquash(unsigned target_id, const PCStateBase &control_pc, const PCStateBase &corr_target,
+                                   const StaticInstPtr &static_inst, unsigned control_inst_size, bool actually_taken,
+                                   const InstSeqNum &seq, ThreadID tid, const unsigned &currentLoopIter,
+                                   const bool fromCommit)
 {
     if (fromCommit) {
         dbpBtbStats.controlSquashFromCommit++;
@@ -505,19 +675,16 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
             "Control squash: ftq_id=%d,"
             " control_pc=%#lx, real_target=%#lx, is_conditional=%u, "
             "is_indirect=%u, actually_taken=%u, branch seq: %lu\n",
-            target_id, control_pc.instAddr(),
-            real_target, is_conditional, is_indirect,
-            actually_taken, seq);
+            target_id, control_pc.instAddr(), real_target, is_conditional, is_indirect, actually_taken, seq);
 
     // Call shared squash handling logic
-    handleSquash(tid, target_id, SQUASH_CTRL, control_pc,
-                real_target, is_conditional, actually_taken, static_inst, control_inst_size);
+    handleSquash(tid, target_id, SQUASH_CTRL, control_pc, real_target, is_conditional, actually_taken, static_inst,
+                 control_inst_size);
 }
 
 void
-DecoupledBPUWithBTB::nonControlSquash(unsigned target_id,
-                               const PCStateBase &inst_pc,
-                               const InstSeqNum seq, ThreadID tid, const unsigned &currentLoopIter)
+DecoupledBPUWithBTB::nonControlSquash(unsigned target_id, const PCStateBase &inst_pc, const InstSeqNum seq,
+                                      ThreadID tid, const unsigned &currentLoopIter)
 {
     dbpBtbStats.nonControlSquash++;
     DPRINTF(DecoupleBP,
@@ -530,14 +697,11 @@ DecoupledBPUWithBTB::nonControlSquash(unsigned target_id,
 }
 
 void
-DecoupledBPUWithBTB::trapSquash(unsigned target_id,
-                         Addr last_committed_pc, const PCStateBase &inst_pc,
-                         ThreadID tid, const unsigned &currentLoopIter)
+DecoupledBPUWithBTB::trapSquash(unsigned target_id, Addr last_committed_pc, const PCStateBase &inst_pc, ThreadID tid,
+                                const unsigned &currentLoopIter)
 {
     dbpBtbStats.trapSquash++;
-    DPRINTF(DecoupleBP,
-            "Trap squash: target id: %d, inst_pc: %#lx\n",
-            target_id, inst_pc.instAddr());
+    DPRINTF(DecoupleBP, "Trap squash: target id: %d, inst_pc: %#lx\n", target_id, inst_pc.instAddr());
 
     // Call shared squash handling logic
     handleSquash(tid, target_id, SQUASH_TRAP, inst_pc, inst_pc.instAddr());
@@ -715,7 +879,7 @@ DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<>
     if (shamt == 0) {
         return;
     }
-    if(taken){
+    if (taken) {
         // Calculate path hash
         uint64_t hash = pathHash(pc, target);
 
@@ -732,55 +896,84 @@ DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<>
  *
  * @return FetchTarget The created fetch target
  */
-FetchTarget
-DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
+DecoupledBPUWithBTB::SpecState
+DecoupledBPUWithBTB::computeNextSpecState(ThreadID tid, const SpecState &state, const FullBTBPrediction &pred,
+                                          FetchTargetId targetId)
 {
-    auto& s0PC = threads[tid].s0PC;
-    auto& s0History = threads[tid].s0History;
-    auto& s0PHistory = threads[tid].s0PHistory;
-    auto& s0BwHistory = threads[tid].s0BwHistory;
-    auto& s0LHistory = threads[tid].s0LHistory;
-    auto& finalPred = threads[tid].finalPred;
+    SpecState next = state;
+    auto predCopy = pred;
 
+    for (int i = 0; i < numComponents; i++) {
+        components[i]->specUpdateHist(next.history, predCopy);
+        if (components[i]->needMoreHistories) {
+            components[i]->specUpdatePHist(next.phistory, predCopy);
+            components[i]->specUpdateBwHist(next.bwhistory, predCopy);
+            components[i]->specUpdateIHist(predCopy);
+            components[i]->specUpdateLHist(next.lhistory, predCopy);
+        }
+    }
+
+    auto [shamt, taken] = predCopy.getHistInfo();
+    histShiftIn(shamt, taken, next.history);
+    BranchInfo histBranchInfo;
+    if (predCopy.isTaken()) {
+        histBranchInfo = predCopy.getTakenEntry().getBranchInfo();
+    }
+    historyManager.addSpeculativeHist(state.pc, shamt, taken, histBranchInfo, targetId);
+
+    auto [bw_shamt, bw_taken] = predCopy.getBwHistInfo();
+    auto [p_pc, p_target, p_taken] = predCopy.getPHistInfo();
+    histShiftIn(bw_shamt, bw_taken, next.bwhistory);
+    pHistShiftIn(2, p_taken, next.phistory, p_pc, p_target);
+    histShiftIn(shamt, taken,
+                next.lhistory[mgsc->getPcIndex(predCopy.bbStart, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
+
+    next.pc = predCopy.getTarget(predictWidth);
+    return next;
+}
+
+FetchTarget
+DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid, const SpecState &state, const FullBTBPrediction &pred,
+                                            const std::array<std::shared_ptr<void>, 8> &predMetas)
+{
+    auto predCopy = pred;
     // Create a new fetch target entry
     FetchTarget entry;
     entry.tid = tid;
-    entry.startPC = s0PC;
+    entry.startPC = state.pc;
 
     // Extract branch prediction information
-    bool taken = finalPred.isTaken();
-    Addr fallThroughAddr = finalPred.getFallThrough(predictWidth);
-    Addr nextPC = finalPred.getTarget(predictWidth);
+    bool taken = predCopy.isTaken();
+    Addr fallThroughAddr = predCopy.getFallThrough(predictWidth);
+    Addr nextPC = predCopy.getTarget(predictWidth);
 
     // Configure target entry with prediction details
-    entry.isHit = !finalPred.btbEntries.empty();
+    entry.isHit = !predCopy.btbEntries.empty();
     entry.falseHit = false;
-    entry.predBTBEntries = finalPred.btbEntries;
+    entry.predBTBEntries = predCopy.btbEntries;
     entry.predTaken = taken;
     entry.predEndPC = fallThroughAddr;
 
     // Set branch info for taken predictions
     if (taken) {
-        entry.predBranchInfo = finalPred.getTakenEntry().getBranchInfo();
-        entry.predBranchInfo.target = nextPC; // Use final target (may not be from BTB)
+        entry.predBranchInfo = predCopy.getTakenEntry().getBranchInfo();
+        entry.predBranchInfo.target = nextPC;  // Use final target (may not be from BTB)
     }
 
     // Record current history and prediction metadata
-    entry.history = s0History;
-    entry.phistory = s0PHistory;
-    entry.bwhistory = s0BwHistory;
-    entry.lhistory = s0LHistory;
-    entry.predTick = finalPred.predTick;
-    entry.predSource = finalPred.predSource;
-    entry.overrideReason = finalPred.overrideReason;
+    entry.history = state.history;
+    entry.phistory = state.phistory;
+    entry.bwhistory = state.bwhistory;
+    entry.lhistory = state.lhistory;
+    entry.predTick = predCopy.predTick;
+    entry.predSource = predCopy.predSource;
+    entry.overrideReason = predCopy.overrideReason;
 
-    entry.s1Source = finalPred.s1Source;
-    entry.s3Source = finalPred.s3Source;
+    entry.s1Source = predCopy.s1Source;
+    entry.s3Source = predCopy.s3Source;
 
     // Save predictors' metadata
-    for (int i = 0; i < numComponents; i++) {
-        entry.predMetas[i] = components[i]->getPredictionMeta();
-    }
+    entry.predMetas = predMetas;
 
     // Initialize default resolution state
     entry.setDefaultResolve();
@@ -825,13 +1018,13 @@ DecoupledBPUWithBTB::checkHistory(const boost::dynamic_bitset<> &history)
     boost::dynamic_bitset<> ideal_hash_hist(historyBits, 0);
 
     // Iterate through all speculative history entries stored in HistoryManager
-    for (const auto entry: historyManager.getSpeculativeHist()) {
+    for (const auto entry : historyManager.getSpeculativeHist()) {
         // Only process entries that have non-zero shift amount (actual branches)
         if (entry.shamt != 0) {
             // Accumulate total history bits
             ideal_size += entry.shamt;
-            DPRINTF(DecoupleBPVerbose, "pc: %#lx, shamt: %lu, cond_taken: %d\n", entry.pc,
-                    entry.shamt, entry.cond_taken);
+            DPRINTF(DecoupleBPVerbose, "pc: %#lx, shamt: %lu, cond_taken: %d\n", entry.pc, entry.shamt,
+                    entry.cond_taken);
 
             // Rebuild history by shifting and setting bits based on recorded outcomes
             // This emulates how history would be built if all branches were predicted perfectly
@@ -852,9 +1045,8 @@ DecoupledBPUWithBTB::checkHistory(const boost::dynamic_bitset<> &history)
 
     // boost::to_string(ideal_hash_hist, buf1);
     // boost::to_string(sized_real_hist, buf2);
-    DPRINTF(DecoupleBP,
-            "Ideal size:\t%u, real history size:\t%u, comparable size:\t%u\n",
-            ideal_size, historyBits, comparable_size);
+    DPRINTF(DecoupleBP, "Ideal size:\t%u, real history size:\t%u, comparable size:\t%u\n", ideal_size, historyBits,
+            comparable_size);
     // DPRINTF(DecoupleBP, "Ideal history:\t%s\nreal history:\t%s\n",
     //         buf1.c_str(), buf2.c_str());
 
@@ -883,75 +1075,6 @@ DecoupledBPUWithBTB::getPreservedReturnAddr(const DynInstPtr &dynInst)
  *
  * @param entry The fetch target entry to update history for
  */
-void
-DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
-{
-    ThreadID tid = entry.tid;
-    auto& s0History = threads[tid].s0History;
-    auto& s0PHistory = threads[tid].s0PHistory;
-    auto& s0BwHistory = threads[tid].s0BwHistory;
-    auto& s0LHistory = threads[tid].s0LHistory;
-    auto& finalPred = threads[tid].finalPred;
-
-
-    // Update component-specific history, for TAGE/ITTAGE/MGSC
-    for (int i = 0; i < numComponents; i++) {
-        // use old s0History to update folded history, then use finalPred to update folded history
-        components[i]->specUpdateHist(s0History, finalPred);
-        if(components[i]->needMoreHistories){
-            components[i]->specUpdatePHist(s0PHistory, finalPred);
-            components[i]->specUpdateBwHist(s0BwHistory, finalPred);
-            components[i]->specUpdateIHist(finalPred);
-            components[i]->specUpdateLHist(s0LHistory, finalPred);
-        }
-    }
-
-    // Get prediction information for history updates
-    int shamt;
-    bool taken;
-    std::tie(shamt, taken) = finalPred.getHistInfo();
-
-    // Update global history
-    histShiftIn(shamt, taken, s0History);
-
-    // Update history manager and verify TAGE folded history
-    historyManager.addSpeculativeHist(
-        entry.startPC, shamt, taken, entry.predBranchInfo, ftq.backId(tid) + 1);
-
-    // Get prediction information for global backward history updates
-    int bw_shamt;
-    bool bw_taken;
-    std::tie(bw_shamt, bw_taken) = finalPred.getBwHistInfo();
-
-    // Get prediction information for path history updates
-    auto [p_pc, p_target, p_taken]= finalPred.getPHistInfo(); // p_taken = taken
-
-    // Update global backward history
-    histShiftIn(bw_shamt, bw_taken, s0BwHistory);
-
-    // Update path history
-    pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
-
-    // Update local history
-    histShiftIn(shamt, taken,
-        s0LHistory[mgsc->getPcIndex(finalPred.bbStart, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
-
-#ifndef NDEBUG
-    if (tage->isEnabled()) {
-        tage->checkFoldedHist(s0PHistory, "speculative update");
-    }
-    if (ittage->isEnabled()) {
-        ittage->checkFoldedHist(s0PHistory, "speculative update");
-    }
-    if (microtage->isEnabled()) {
-        microtage->checkFoldedHist(s0PHistory, "speculative update");
-    }
-    if (mgsc->isEnabled()) {
-        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, "speculative update");
-    }
-#endif
-}
-
 /**
  * @brief Recovers branch history during a squash event
  *
@@ -963,23 +1086,18 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
  * @param squash_type Type of squash (CTRL/OTHER/TRAP)
  */
 void
-DecoupledBPUWithBTB::recoverHistoryForSquash(
-    FetchTarget &target,
-    unsigned target_id,
-    const PCStateBase &squash_pc,
-    bool is_conditional,
-    bool actually_taken,
-    SquashType squash_type,
-    Addr redirect_pc)
+DecoupledBPUWithBTB::recoverHistoryForSquash(FetchTarget &target, unsigned target_id, const PCStateBase &squash_pc,
+                                             bool is_conditional, bool actually_taken, SquashType squash_type,
+                                             Addr redirect_pc)
 {
     ThreadID tid = target.tid;
-    auto& s0History = threads[tid].s0History;
-    auto& s0PHistory = threads[tid].s0PHistory;
-    auto& s0BwHistory = threads[tid].s0BwHistory;
-    auto& s0LHistory = threads[tid].s0LHistory;
+    auto &s0History = threads[tid].s0History;
+    auto &s0PHistory = threads[tid].s0PHistory;
+    auto &s0BwHistory = threads[tid].s0BwHistory;
+    auto &s0LHistory = threads[tid].s0LHistory;
 
-    //printf("recover target_id: %u\n", target_id);
-    // Restore history from the target
+    // printf("recover target_id: %u\n", target_id);
+    //  Restore history from the target
     s0History = target.history;
     s0PHistory = target.phistory;
     s0BwHistory = target.bwhistory;
@@ -988,19 +1106,19 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Get actual history shift information
     int real_shamt;
     bool real_taken;
-    std::tie(real_shamt, real_taken) = target.getHistInfoDuringSquash(
-        squash_pc.instAddr(), is_conditional, actually_taken);
+    std::tie(real_shamt, real_taken) =
+        target.getHistInfoDuringSquash(squash_pc.instAddr(), is_conditional, actually_taken);
 
     // Get actual history shift information
     int real_bw_shamt;
     bool real_bw_taken;
-    std::tie(real_bw_shamt, real_bw_taken) = target.getBwHistInfoDuringSquash(
-    squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
+    std::tie(real_bw_shamt, real_bw_taken) =
+        target.getBwHistInfoDuringSquash(squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
 
     // Recover component-specific history
     for (int i = 0; i < numComponents; ++i) {
         components[i]->recoverHist(s0History, target, real_shamt, real_taken);
-        if (components[i]->needMoreHistories){
+        if (components[i]->needMoreHistories) {
             components[i]->recoverPHist(s0PHistory, target, real_shamt, real_taken);
             components[i]->recoverBwHist(s0BwHistory, target, real_bw_shamt, real_bw_taken);
             components[i]->recoverIHist(target, real_bw_shamt, real_bw_taken);
@@ -1032,24 +1150,25 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
 #ifndef NDEBUG
     checkHistory(s0History);
     if (tage->isEnabled()) {
-        tage->checkFoldedHist(s0PHistory,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+        tage->checkFoldedHist(s0PHistory, squash_type == SQUASH_CTRL    ? "control squash"
+                                          : squash_type == SQUASH_OTHER ? "non control squash"
+                                                                        : "trap squash");
     }
     if (ittage->isEnabled()) {
-        ittage->checkFoldedHist(s0PHistory,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+        ittage->checkFoldedHist(s0PHistory, squash_type == SQUASH_CTRL    ? "control squash"
+                                            : squash_type == SQUASH_OTHER ? "non control squash"
+                                                                          : "trap squash");
     }
     if (microtage->isEnabled()) {
-        microtage->checkFoldedHist(s0PHistory,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+        microtage->checkFoldedHist(s0PHistory, squash_type == SQUASH_CTRL    ? "control squash"
+                                               : squash_type == SQUASH_OTHER ? "non control squash"
+                                                                             : "trap squash");
     }
     if (mgsc->isEnabled()) {
         mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory,
-            squash_type == SQUASH_CTRL ? "control squash" :
-            squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
+                              squash_type == SQUASH_CTRL    ? "control squash"
+                              : squash_type == SQUASH_OTHER ? "non control squash"
+                                                            : "trap squash");
     }
 #endif
 }

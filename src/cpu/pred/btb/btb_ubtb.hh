@@ -47,14 +47,24 @@
 
 #include <queue>
 
-#include "arch/generic/pcstate.hh"
-#include "base/logging.hh"
 #include "base/types.hh"
-#include "config/the_isa.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
+
+#ifdef UNIT_TEST
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include "cpu/pred/btb/test/test_dprintf.hh"
+
+#else
+#include "arch/generic/pcstate.hh"
+#include "base/logging.hh"
+#include "config/the_isa.hh"
 #include "debug/UBTB.hh"
 #include "params/UBTB.hh"
+
+#endif
 
 namespace gem5
 {
@@ -65,12 +75,18 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+#ifdef UNIT_TEST
+namespace test
+{
+#endif
+
 class UBTB : public TimedBaseBTBPredictor
 {
   private:
-
   public:
-
+#ifdef UNIT_TEST
+    UBTB(unsigned numEntries, unsigned tagBits);
+#else
     typedef UBTBParams Params;
 
     /** Creates a uBTB with the given number of entries, number of bits per
@@ -78,7 +94,8 @@ class UBTB : public TimedBaseBTBPredictor
      *  @param numEntries Number of entries for the uBTB.
      *  @param tagBits Number of bits for each tag in the uBTB.
      */
-    UBTB(const Params& p);
+    UBTB(const Params &p);
+#endif
 
     /*
      * Micro-BTB Entry with timestamp for MRU replacement
@@ -91,17 +108,17 @@ class UBTB : public TimedBaseBTBPredictor
      */
     typedef struct TickedUBTBEntry : public BTBEntry
     {
-        unsigned uctr; //2-bit saturation counter used in replacement policy
+        unsigned uctr;  // 2-bit saturation counter used in replacement policy
         uint64_t tick;  // timestamp for MRU replacement
         TickedUBTBEntry() : BTBEntry(), uctr(0), tick(0) {}
         TickedUBTBEntry(const BTBEntry &be, uint64_t tick) : BTBEntry(be), uctr(0), tick(tick) {}
-    }TickedUBTBEntry;
+    } TickedUBTBEntry;
 
     using UBTBIter = typename std::vector<TickedUBTBEntry>::iterator;
-    using UBTBHeap = std::vector<UBTBIter>; // for MRU tracking
+    using UBTBHeap = std::vector<UBTBIter>;  // for MRU tracking
 
-    void tickStart() override{};
-    void tick() override{};
+    void tickStart() override {};
+    void tick() override {};
 
     /*
      * Entry point for uBTB Prediction, called at S1
@@ -116,6 +133,11 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
+    void putPCHistoryForBlock1(Addr startAddr, const boost::dynamic_bitset<> &history,
+                               const boost::dynamic_bitset<> &phistory, const boost::dynamic_bitset<> &bwhistory,
+                               const std::vector<boost::dynamic_bitset<>> &lhistory,
+                               std::vector<FullBTBPrediction> &stagePreds,
+                               const FullBTBPrediction &lowerPred) override;
 
     /** Updates the uBTB predictions based on S3 prediction results.
      * This function is called from decoupled_bpred during S3 prediction
@@ -136,34 +158,36 @@ class UBTB : public TimedBaseBTBPredictor
      * @param stream The fetch stream containing execution results
      * @param inst The dynamic instruction being committed
      */
+#ifndef UNIT_TEST
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+#endif
 
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
      */
-    std::shared_ptr<void> getPredictionMeta() override
-    {
-        return meta;
-    }
+    std::shared_ptr<void> getPredictionMeta() override { return meta; }
 
     // the following methods are not used
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override {}
-    void recoverHist(const boost::dynamic_bitset<> &history,
-        const FetchTarget &entry, int shamt, bool cond_taken) override{};
+    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
+                     bool cond_taken) override {};
     void reset();
     void setTrace() override;
     TraceManager *ubtbTrace;
 
     // for debuggin purpose
-    void printTickedUBTBEntry(const TickedUBTBEntry &e) {
-        DPRINTF(UBTB, "uBTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
+    void printTickedUBTBEntry(const TickedUBTBEntry &e)
+    {
+        DPRINTF(UBTB,
+                "uBTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, tick:%lu\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.tick);
+                e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.tick);
     }
 
-    void dumpMruList() {
+    void dumpMruList()
+    {
         DPRINTF(UBTB, "MRU list:\n");
-        for (const auto &it: mruList) {
+        for (const auto &it : mruList) {
             printTickedUBTBEntry(*it);
         }
     }
@@ -171,15 +195,15 @@ class UBTB : public TimedBaseBTBPredictor
 
 
   private:
-
     /** this struct holds the lastest prediction made by uBTB,
      * it's set in putPCHistory, and used in updateUsingS3Pred
      */
     struct LastPred
     {
-        UBTBIter hit_entry; // this might point to ubtb.end()
+        UBTBIter hit_entry;  // this might point to ubtb.end()
 
-        LastPred() {
+        LastPred()
+        {
             // Default constructor - will be assigned proper value later
         }
     };
@@ -193,9 +217,7 @@ class UBTB : public TimedBaseBTBPredictor
     struct UBTBMeta
     {
         TickedUBTBEntry hit_entry;
-        UBTBMeta() {
-            hit_entry = TickedUBTBEntry();
-        }
+        UBTBMeta() { hit_entry = TickedUBTBEntry(); }
     };
     std::shared_ptr<UBTBMeta> meta;
 
@@ -207,10 +229,7 @@ class UBTB : public TimedBaseBTBPredictor
      */
     struct older
     {
-        bool operator()(const UBTBIter &a, const UBTBIter &b) const
-        {
-            return a->tick > b->tick;
-        }
+        bool operator()(const UBTBIter &a, const UBTBIter &b) const { return a->tick > b->tick; }
     };
 
     /** Returns the tag bits of a given address.
@@ -218,13 +237,16 @@ class UBTB : public TimedBaseBTBPredictor
      *  @param startPC The start address of the fetch block
      *  @return Returns the tag bits.
      */
-    inline Addr getTag(Addr startPC) {
-        return (startPC >> 1) & tagMask;
-    }
+    inline Addr getTag(Addr startPC) { return (startPC >> 1) & tagMask; }
 
-    void updateUCtr(unsigned &ctr, bool inc) {
-        if (inc && ctr < 3) {ctr++;}
-        if (!inc && ctr > 0) {ctr--;}
+    void updateUCtr(unsigned &ctr, bool inc)
+    {
+        if (inc && ctr < 3) {
+            ctr++;
+        }
+        if (!inc && ctr > 0) {
+            ctr--;
+        }
     }
 
     /** helper method called by putPCHistory: Searches for a entry in the uBTB.
@@ -243,8 +265,7 @@ class UBTB : public TimedBaseBTBPredictor
      *  @param entry The BTB entry containing branch info
      *  @param stagePreds Predictions for each pipeline stage
      */
-    void fillStagePredictions(const TickedUBTBEntry& entry,
-                              std::vector<FullBTBPrediction>& stagePreds);
+    void fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPrediction> &stagePreds);
 
     /** helper method called in updateUsingS3Pred: This function replaces an existing uBTB entry with new prediction
      *
@@ -253,7 +274,7 @@ class UBTB : public TimedBaseBTBPredictor
      */
     void replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry, Addr startAddr);
 
-    //using the FB final taken branch to update uBTB
+    // using the FB final taken branch to update uBTB
     void updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry, const Addr startAddr);
 
 
@@ -272,17 +293,22 @@ class UBTB : public TimedBaseBTBPredictor
     UBTBHeap mruList;
 
     /** uBTB configuration parameters */
-    unsigned numEntries;    // Total number of entries
+    unsigned numEntries;  // Total number of entries
 
     /** Address calculation masks and shifts */
-    unsigned tagBits;      // Number of tag bits
-    Addr tagMask;          // Mask for extracting tag bits
-    bool usingS3Pred;    // using S3 prediction to update uBTB
+    unsigned tagBits;  // Number of tag bits
+    Addr tagMask;      // Mask for extracting tag bits
+    bool usingS3Pred;  // using S3 prediction to update uBTB
 
 
+#ifdef UNIT_TEST
+    struct UBTBStats
+#else
     struct UBTBStats : public statistics::Group
+#endif
     {
 
+#ifndef UNIT_TEST
         statistics::Scalar predMiss;
         statistics::Scalar predHit;
         statistics::Scalar updateMiss;
@@ -327,14 +353,54 @@ class UBTB : public TimedBaseBTBPredictor
         statistics::Scalar s1Misses3FallThrough;
         statistics::Scalar s1InvalidatedEntries;
 
-        UBTBStats(statistics::Group* parent);
+        UBTBStats(statistics::Group *parent);
+#else
+        uint64_t predMiss = 0;
+        uint64_t predHit = 0;
+        uint64_t updateMiss = 0;
+        uint64_t updateHit = 0;
+        uint64_t s3UpdateHits = 0;
+        uint64_t s3UpdateMisses = 0;
+        uint64_t allBranchHits = 0;
+        uint64_t allBranchHitTakens = 0;
+        uint64_t allBranchHitNotTakens = 0;
+        uint64_t allBranchMisses = 0;
+        uint64_t allBranchMissTakens = 0;
+        uint64_t allBranchMissNotTakens = 0;
+        uint64_t condHits = 0;
+        uint64_t condHitTakens = 0;
+        uint64_t condHitNotTakens = 0;
+        uint64_t condMisses = 0;
+        uint64_t condMissTakens = 0;
+        uint64_t condMissNotTakens = 0;
+        uint64_t condPredCorrect = 0;
+        uint64_t condPredWrong = 0;
+        uint64_t uncondHits = 0;
+        uint64_t uncondMisses = 0;
+        uint64_t indirectHits = 0;
+        uint64_t indirectMisses = 0;
+        uint64_t indirectPredCorrect = 0;
+        uint64_t indirectPredWrong = 0;
+        uint64_t callHits = 0;
+        uint64_t callMisses = 0;
+        uint64_t returnHits = 0;
+        uint64_t returnMisses = 0;
+        uint64_t s1Hits3FallThrough = 0;
+        uint64_t s1Misses3Taken = 0;
+        uint64_t s1Hits3Taken = 0;
+        uint64_t s1Misses3FallThrough = 0;
+        uint64_t s1InvalidatedEntries = 0;
+
+        UBTBStats() = default;
+#endif
     } ubtbStats;
-
-
 };
 
-} // namespace btb_pred
-} // namespace branch_prediction
-} // namespace gem5
+}  // namespace btb_pred
+#ifdef UNIT_TEST
+}  // namespace test
+#endif
+}  // namespace branch_prediction
+}  // namespace gem5
 
-#endif // __CPU_PRED_BTB_UBTB_HH__
+#endif  // __CPU_PRED_BTB_UBTB_HH__

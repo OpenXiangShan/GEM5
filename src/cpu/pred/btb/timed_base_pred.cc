@@ -13,12 +13,9 @@ namespace btb_pred
 namespace test
 {
 TimedBaseBTBPredictor::TimedBaseBTBPredictor()
-    : blockSize(32),
-      predictWidth(64),
-      numDelay(0),
-      resolvedUpdate(false),
-      enabled(true)
-{}
+    : blockSize(32), predictWidth(64), numDelay(0), resolvedUpdate(false), enabled(true), block1Participate(false)
+{
+}
 }  // namespace test
 #else
 TimedBaseBTBPredictor::TimedBaseBTBPredictor(const Params &p)
@@ -27,7 +24,8 @@ TimedBaseBTBPredictor::TimedBaseBTBPredictor(const Params &p)
       predictWidth(p.predictWidth),
       numDelay(p.numDelay),
       resolvedUpdate(p.resolvedUpdate),
-      enabled(p.enabled)
+      enabled(p.enabled),
+      block1Participate(p.block1Participate)
 {
 }
 #endif

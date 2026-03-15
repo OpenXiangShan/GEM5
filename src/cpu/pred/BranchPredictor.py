@@ -970,6 +970,8 @@ class TimedBaseBTBPredictor(SimObject):
     numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
     resolvedUpdate = Param.Bool(False, "Enable resolved update, no need to wait until commit")
     enabled = Param.Bool(True, "Enable this predictor component")
+    block1Participate = Param.Bool(False,
+        "Whether this predictor actively participates in block1 prediction")
 
 class MBTB(TimedBaseBTBPredictor):
     type = 'MBTB'
@@ -1193,6 +1195,19 @@ class DecoupledBPUWithBTB(BranchPredictor):
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")
     mgsc = Param.BTBMGSC(BTBMGSC(), "MGSC predictor")
     ras = Param.BTBRAS(BTBRAS(), "RAS")
+
+    enableTwoTaken = Param.Bool(False,
+        "Enable generating an optional second fetch block from one prediction")
+    dropBlock1OnBlock0Override = Param.Bool(True,
+        "Drop block1 when block0 is overridden by later stages")
+    dropBlock1WhenFTQHasOnlyOneSlot = Param.Bool(True,
+        "Drop block1 when the FTQ has only one free slot left")
+    dropBlock1OnCondWithoutTage = Param.Bool(True,
+        "Drop block1 when it contains a conditional branch without direction support")
+    dropBlock1OnIndirectWithoutIttage = Param.Bool(True,
+        "Drop block1 when it contains an indirect branch without ITTAGE support")
+    dropBlock1OnReturnWithoutRas = Param.Bool(True,
+        "Drop block1 when it contains a return without RAS support")
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
