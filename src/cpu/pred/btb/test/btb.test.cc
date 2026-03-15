@@ -318,6 +318,29 @@ TEST_F(BTBTest, DefaultBlock1PredictionFallsBackToRegularPrediction)
     }
 }
 
+TEST_F(BTBTest, MBTBBlock1PredictionCopiesLowerPredWhenDisabled)
+{
+    Addr startAddr = 0x1800;
+    boost::dynamic_bitset<> history(8, 0);
+    boost::dynamic_bitset<> phistory(8, 0);
+    boost::dynamic_bitset<> bwhistory(8, 0);
+    std::vector<boost::dynamic_bitset<>> lhistory;
+    std::vector<FullBTBPrediction> block1StagePreds(4);
+    FullBTBPrediction lowerPred;
+
+    mbtb->setBlock1Participate(false);
+    auto entry = BTBEntry(createBranchInfo(startAddr + 4, 0x2800));
+    entry.valid = true;
+    lowerPred.btbEntries.push_back(entry);
+
+    mbtb->putPCHistoryForBlock1(startAddr, history, phistory, bwhistory, lhistory, block1StagePreds, lowerPred);
+
+    ASSERT_EQ(block1StagePreds.back().btbEntries.size(), 1);
+    EXPECT_EQ(block1StagePreds.back().btbEntries[0].pc, startAddr + 4);
+    EXPECT_EQ(block1StagePreds.back().btbEntries[0].target, 0x2800U);
+    mbtb->setBlock1Participate(true);
+}
+
 TEST_F(BTBTest, InitialBlock1DropReasonRejectsDisabledTwoTaken)
 {
     auto reason = getInitialBlock1DropReason(false, true, false, true, 2, 0x2000, true);
