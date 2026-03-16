@@ -139,7 +139,7 @@ if __name__ == '__m5_main__':
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     # Enable prefetch buffers for all hardware prefetchers in this config.
-    args.enable_pf_buffer = True
+    args.enable_pf_buffer = False
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 
