@@ -605,7 +605,7 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
 
         // For Difftest copy memory
         pmemStart = backingStore[store_id].pmem;
-        pmemSize = std::max(file_len, size);
+        pmemSize = std::max<uint64_t>(file_len, size);
 
         inform("First 4 bytes are 0x%x 0x%x 0x%x 0x%x\n",
             pmemStart[0],pmemStart[1],pmemStart[2],pmemStart[3]);

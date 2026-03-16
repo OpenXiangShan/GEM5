@@ -126,7 +126,7 @@ let {{
     def fflags_wrapper(code):
         return '''
         RegVal FFLAGS = xc->readMiscReg(MISCREG_FFLAGS);
-        std::feclearexcept(FE_ALL_EXCEPT);
+        feclearexcept(FE_ALL_EXCEPT);
         ''' + code + '''
         FFLAGS |= softfloat_exceptionFlags;
         if (softfloat_exceptionFlags) {

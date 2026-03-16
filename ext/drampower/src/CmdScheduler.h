@@ -38,10 +38,10 @@
 #ifndef CMDSCHEDULER_H
 #define CMDSCHEDULER_H
 
+#include <fstream>
+#include <functional>
 #include <string>
 #include <vector>
-#include <functional>  // for binary_function<>
-#include <fstream>
 
 #include "MemorySpecification.h"
 #include "Utils.h"
@@ -84,8 +84,8 @@ class cmdScheduler {
     std::string  name;
     physicalAddr PhysicalAddr;
     // sorting the commands according to their scheduling time.
-    struct commandItemSorter : public std::binary_function<commandItem&,
-                                                           commandItem&, bool>{
+    struct commandItemSorter
+    {
       bool operator()(const commandItem& lhs,
                       const commandItem& rhs) const
       {

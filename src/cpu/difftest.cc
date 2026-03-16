@@ -37,6 +37,27 @@ const char *reg_name[] = {
 
 std::vector<uint64_t> skipCSRs;
 
+namespace {
+
+void *
+openDiffTestHandle(const char *ref_so)
+{
+#if defined(__APPLE__)
+    int flags = RTLD_LAZY | RTLD_LOCAL;
+#if defined(RTLD_FIRST)
+    flags |= RTLD_FIRST;
+#endif
+    warn("macOS does not support dlmopen/RTLD_DEEPBIND; difftest falls back "
+         "to dlopen without Linux-equivalent symbol isolation and may behave "
+         "differently from Linux.\n");
+    return dlopen(ref_so, flags);
+#else
+    return dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
+#endif
+}
+
+} // anonymous namespace
+
 // CSR op Encoding:
 //     #12
 // | csrName | 0000 | 0000 | 0000 | 0111 | 0011 |
@@ -68,7 +89,7 @@ skipPerfCntCsr()
 
 NemuProxy::NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bool enable_mem_dedup, bool multi_core)
 {
-    handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
+    handle = openDiffTestHandle(ref_so);
     printf("Using %s for difftest\n", ref_so);
     if (!handle) {
         printf("%s\n", dlerror());
@@ -162,7 +183,7 @@ NemuProxy::initState(int coreid, uint8_t *golden_mem)
 
 SpikeProxy::SpikeProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
 {
-    handle = dlmopen(LM_ID_NEWLM, ref_so, RTLD_LAZY | RTLD_DEEPBIND);
+    handle = openDiffTestHandle(ref_so);
     printf("Using %s for difftest\n", ref_so);
     if (!handle) {
         printf("%s\n", dlerror());
@@ -215,4 +236,3 @@ SpikeProxy::SpikeProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
 
     nemu_init();
 }
-
