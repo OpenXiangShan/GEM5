@@ -33,9 +33,8 @@ namespace test
  * @param target Branch target address (defaults to sequential PC)
  * @return BTBEntry Initialized branch entry
  */
-BTBEntry
-createBTBEntry(Addr pc, bool isCond = true, bool valid = true, bool alwaysTaken = false, int ctr = 0, Addr target = 0)
-{
+BTBEntry createBTBEntry(Addr pc, bool isCond = true, bool valid = true,
+                        bool alwaysTaken = false, int ctr = 0, Addr target = 0) {
     BTBEntry entry;
     entry.pc = pc;
     entry.target = target ? target : (pc + 4);
@@ -57,33 +56,29 @@ createBTBEntry(Addr pc, bool isCond = true, bool valid = true, bool alwaysTaken 
  * @param squashType Type of squash (control or non-control)
  * @return FetchTarget Initialized stream for update or recovery
  */
-FetchTarget
-createStream(Addr startPC, const BTBEntry& entry, bool taken, std::shared_ptr<void> meta)
-{
+FetchTarget createStream(Addr startPC, const BTBEntry& entry, bool taken,
+                         std::shared_ptr<void> meta) {
     FetchTarget stream;
     stream.startPC = startPC;
     stream.exeBranchInfo = entry;
     stream.exeTaken = taken;
     // Mark as resolved so recover paths use exe* info
     stream.resolved = true;
-    stream.predBranchInfo = entry;  // keep fields consistent
+    stream.predBranchInfo = entry; // keep fields consistent
     stream.updateBTBEntries = {entry};
     stream.updateIsOldEntry = true;
     stream.predMetas[0] = meta;
     return stream;
 }
 
-FetchTarget
-setMispredStream(FetchTarget stream)
-{
+FetchTarget setMispredStream(FetchTarget stream) {
     stream.squashType = SquashType::SQUASH_CTRL;
     stream.squashPC = stream.exeBranchInfo.pc;
     return stream;
 }
 
-void
-applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr target, int shamt = 2)
-{
+void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr target,
+                           int shamt = 2) {
     boost::dynamic_bitset<> before = history;
     history <<= shamt;
     uint64_t hash = pathHash(pc, target);
@@ -101,9 +96,7 @@ applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr target, in
  * @param pc Branch PC to search for
  * @return Pair of (found, prediction) where found indicates if PC was found
  */
-std::pair<bool, bool>
-findCondTaken(const gem5::branch_prediction::btb_pred::CondTakens& condTakens, Addr pc)
-{
+std::pair<bool, bool> findCondTaken(const gem5::branch_prediction::btb_pred::CondTakens& condTakens, Addr pc) {
     auto it = CondTakens_find(condTakens, pc);
     if (it != condTakens.end()) {
         return {true, it->second};
@@ -121,10 +114,10 @@ findCondTaken(const gem5::branch_prediction::btb_pred::CondTakens& condTakens, A
  * @param stagePreds Prediction results container
  * @return bool Prediction result (taken/not taken) for the first entry
  */
-bool
-predictTAGE(BTBTAGE* tage, Addr startPC, const std::vector<BTBEntry>& entries, boost::dynamic_bitset<>& history,
-            std::vector<FullBTBPrediction>& stagePreds)
-{
+bool predictTAGE(BTBTAGE* tage, Addr startPC,
+                const std::vector<BTBEntry>& entries,
+                boost::dynamic_bitset<>& history,
+                std::vector<FullBTBPrediction>& stagePreds) {
     // Setup stage predictions with BTB entries
     stagePreds[1].btbEntries = entries;
 
@@ -153,10 +146,11 @@ predictTAGE(BTBTAGE* tage, Addr startPC, const std::vector<BTBEntry>& entries, b
  * @param history Branch history register
  * @param stagePreds Prediction results container
  */
-bool
-predictUpdateCycle(BTBTAGE* tage, Addr startPC, const BTBEntry& entry, bool actual_taken,
-                   boost::dynamic_bitset<>& history, std::vector<FullBTBPrediction>& stagePreds)
-{
+bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
+                      const BTBEntry& entry,
+                      bool actual_taken,
+                      boost::dynamic_bitset<>& history,
+                      std::vector<FullBTBPrediction>& stagePreds) {
     // 1. Make prediction
     stagePreds[1].btbEntries = {entry};
     tage->putPCHistory(startPC, history, stagePreds);
@@ -195,7 +189,8 @@ predictUpdateCycle(BTBTAGE* tage, Addr startPC, const BTBEntry& entry, bool actu
         tage->recoverHist(history, stream, 1, actual_taken);
 
         if (actual_taken) {
-            applyPathHistoryTaken(history, stream.exeBranchInfo.pc, stream.exeBranchInfo.target);
+            applyPathHistoryTaken(history, stream.exeBranchInfo.pc,
+                                  stream.exeBranchInfo.target);
         }
         tage->checkFoldedHist(history, "recover");
     }
@@ -214,9 +209,8 @@ predictUpdateCycle(BTBTAGE* tage, Addr startPC, const BTBEntry& entry, bool actu
  * @param counter Counter value
  * @param useful Useful bit value
  */
-void
-setupTageEntry(BTBTAGE* tage, Addr pc, int table_idx, short counter, bool useful = false, int way = 0)
-{
+void setupTageEntry(BTBTAGE* tage, Addr pc, int table_idx,
+                    short counter, bool useful = false, int way = 0) {
     Addr index = tage->getTageIndex(pc, table_idx);
     Addr tag = tage->getTageTag(pc, table_idx);
 
@@ -235,17 +229,15 @@ setupTageEntry(BTBTAGE* tage, Addr pc, int table_idx, short counter, bool useful
  * @param pc Branch instruction address to check
  * @param expected_tables Vector of expected table indices to have valid entries
  */
-void
-verifyTageEntries(BTBTAGE* tage, Addr pc, const std::vector<int>& expected_tables)
-{
+void verifyTageEntries(BTBTAGE* tage, Addr pc, const std::vector<int>& expected_tables) {
     for (int t = 0; t < tage->numPredictors; t++) {
         for (int way = 0; way < tage->numWays; way++) {
             Addr index = tage->getTageIndex(pc, t);
-            auto& entry = tage->tageTable[t][index][way];
+            auto &entry = tage->tageTable[t][index][way];
 
             // Check if this table should have a valid entry
-            bool should_be_valid =
-                std::find(expected_tables.begin(), expected_tables.end(), t) != expected_tables.end();
+            bool should_be_valid = std::find(expected_tables.begin(),
+                                            expected_tables.end(), t) != expected_tables.end();
 
             if (should_be_valid) {
                 EXPECT_TRUE(entry.valid && entry.pc == pc)
@@ -263,15 +255,13 @@ verifyTageEntries(BTBTAGE* tage, Addr pc, const std::vector<int>& expected_table
  * @param branchPC Branch instruction address being searched
  * @return int Index of the table with valid entry (-1 if not found)
  */
-int
-findTableWithEntry(BTBTAGE* tage, Addr startPC, Addr branchPC)
-{
+int findTableWithEntry(BTBTAGE* tage, Addr startPC, Addr branchPC) {
     auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
     // use meta to find the table, predicted info
     for (int t = 0; t < tage->numPredictors; t++) {
         Addr index = tage->getTageIndex(startPC, t, meta->indexFoldedHist[t].get());
         for (int way = 0; way < tage->numWays; way++) {
-            auto& entry = tage->tageTable[t][index][way];
+            auto &entry = tage->tageTable[t][index][way];
             if (entry.valid && entry.pc == branchPC) {
                 return t;
             }
@@ -282,14 +272,13 @@ findTableWithEntry(BTBTAGE* tage, Addr startPC, Addr branchPC)
 
 class BTBTAGETest : public ::testing::Test
 {
-  protected:
-    void SetUp() override
-    {
+protected:
+    void SetUp() override {
         tage = new BTBTAGE();
         // memset tageStats to 0
         memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
         history.resize(64, false);  // 64-bit history initialized to 0
-        stagePreds.resize(2);       // 2 stages
+        stagePreds.resize(2);  // 2 stages
     }
 
     BTBTAGE* tage;
@@ -298,8 +287,7 @@ class BTBTAGETest : public ::testing::Test
 };
 
 // Test basic prediction functionality
-TEST_F(BTBTAGETest, BasicPrediction)
-{
+TEST_F(BTBTAGETest, BasicPrediction) {
     // Create a conditional branch entry biased towards taken
     BTBEntry entry = createBTBEntry(0x1000, true, true, false, 1);
 
@@ -367,8 +355,7 @@ TEST_F(BTBTAGETest, Block1PredictionCopiesLowerPredWhenDisabled)
 }
 
 // Test basic history update functionality (PHR semantics)
-TEST_F(BTBTAGETest, HistoryUpdate)
-{
+TEST_F(BTBTAGETest, HistoryUpdate) {
     // Use a fixed control PC to derive PHR bits
     Addr pc = 0x1000;
     Addr target = pc + 0x40;
@@ -391,16 +378,15 @@ TEST_F(BTBTAGETest, HistoryUpdate)
 }
 
 // Test main and alternative prediction mechanism by direct setup
-TEST_F(BTBTAGETest, MainAltPredictionBehavior)
-{
+TEST_F(BTBTAGETest, MainAltPredictionBehavior) {
     // Create a branch entry for testing
     BTBEntry entry = createBTBEntry(0x1000);
 
     // Setup a strong main prediction (taken) in table 3
-    setupTageEntry(tage, 0x1000, 3, 2);  // Strong taken
+    setupTageEntry(tage, 0x1000, 3, 2); // Strong taken
 
     // Setup a weak alternative prediction (not taken) in table 1
-    setupTageEntry(tage, 0x1000, 1, -1);  // Weak not taken
+    setupTageEntry(tage, 0x1000, 1, -1); // Weak not taken
 
     // Predict with these entries
     predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
@@ -416,7 +402,7 @@ TEST_F(BTBTAGETest, MainAltPredictionBehavior)
     EXPECT_EQ(pred.altInfo.table, 1) << "Alt prediction should come from table 1";
 
     // Now set main prediction to weak
-    setupTageEntry(tage, 0x1000, 3, 0);  // Weak taken
+    setupTageEntry(tage, 0x1000, 3, 0); // Weak taken
 
     // Predict again
     predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
@@ -431,14 +417,13 @@ TEST_F(BTBTAGETest, MainAltPredictionBehavior)
 }
 
 // Test useful bit update mechanism
-TEST_F(BTBTAGETest, UsefulBitMechanism)
-{
+TEST_F(BTBTAGETest, UsefulBitMechanism) {
     // Setup a test branch
     BTBEntry entry = createBTBEntry(0x1000);
 
     // Setup entries in main and alternative tables
-    setupTageEntry(tage, 0x1000, 3, 2, false);   // Main: strong taken, useful=false
-    setupTageEntry(tage, 0x1000, 1, -2, false);  // Alt: strong not taken, useful=false
+    setupTageEntry(tage, 0x1000, 3, 2, false); // Main: strong taken, useful=false
+    setupTageEntry(tage, 0x1000, 1, -2, false); // Alt: strong not taken, useful=false
 
     // Verify initial useful bit state
     Addr mainIndex = tage->getTageIndex(0x1000, 3);
@@ -470,16 +455,15 @@ TEST_F(BTBTAGETest, UsefulBitMechanism)
 }
 
 // Test entry allocation mechanism
-TEST_F(BTBTAGETest, EntryAllocationAndReplacement)
-{
+TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     // Instead of creating two different PCs, we'll create two entries with the same PC
     // This ensures they map to the same indices in the tables
     BTBEntry entry1 = createBTBEntry(0x1000);
-    BTBEntry entry2 = createBTBEntry(0x1000);  // Same PC to ensure same indices
+    BTBEntry entry2 = createBTBEntry(0x1000); // Same PC to ensure same indices
 
     // Set all tables to have entries with useful=true
     for (int t = 0; t < tage->numPredictors; t++) {
-        setupTageEntry(tage, 0x1000, t, 0, true);  // Counter=0, useful=true
+        setupTageEntry(tage, 0x1000, t, 0, true); // Counter=0, useful=true
     }
 
     // Force a misprediction to trigger allocation attempt
@@ -498,19 +482,19 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement)
     // Although it has the same PC, we'll treat it as a different branch context
     // by setting a specific tag that doesn't match existing entries
     FetchTarget stream = createStream(0x1000, entry2, !predicted, meta);
-    stream.squashType = SquashType::SQUASH_CTRL;  // Mark as control misprediction
+    stream.squashType = SquashType::SQUASH_CTRL; // Mark as control misprediction
     stream.squashPC = 0x1000;
 
     // Update the predictor (this should try to allocate but fail)
     tage->update(stream);
 
     int alloc_failed_no_valid = tage->tageStats.updateAllocFailureNoValidTable;
+
     EXPECT_GE(alloc_failed_no_valid, 1) << "Allocate failed due to no valid table to allocate (all useful)";
 }
 
 // Test history recovery mechanism
-TEST_F(BTBTAGETest, HistoryRecoveryCorrectness)
-{
+TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
     BTBEntry entry = createBTBEntry(0x1000);
 
     // Record initial history state
@@ -549,7 +533,7 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness)
 
     // Expected history should be original updated with PHR if actually taken
     boost::dynamic_bitset<> expectedHistory = originalHistory;
-    if (!predicted_taken) {  // actual_taken
+    if (!predicted_taken) { // actual_taken
         applyPathHistoryTaken(expectedHistory, entry.pc, entry.target);
     }
 
@@ -562,10 +546,12 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness)
 }
 
 // Simplified test for multiple branch sequence
-TEST_F(BTBTAGETest, MultipleBranchSequence)
-{
+TEST_F(BTBTAGETest, MultipleBranchSequence) {
     // Create two branches
-    std::vector<BTBEntry> btbEntries = {createBTBEntry(0x1000), createBTBEntry(0x1004)};
+    std::vector<BTBEntry> btbEntries = {
+        createBTBEntry(0x1000),
+        createBTBEntry(0x1004)
+    };
 
     // Predict for both branches
     predictTAGE(tage, 0x1000, btbEntries, history, stagePreds);
@@ -598,8 +584,7 @@ TEST_F(BTBTAGETest, MultipleBranchSequence)
 }
 
 // Test counter update mechanism
-TEST_F(BTBTAGETest, CounterUpdateMechanism)
-{
+TEST_F(BTBTAGETest, CounterUpdateMechanism) {
     BTBEntry entry = createBTBEntry(0x1000);
 
     // Setup a TAGE entry with a neutral counter
@@ -620,7 +605,8 @@ TEST_F(BTBTAGETest, CounterUpdateMechanism)
     }
 
     // Verify counter saturates at maximum
-    EXPECT_EQ(tage->tageTable[testTable][index][0].counter, 3) << "Counter should saturate at maximum value";
+    EXPECT_EQ(tage->tageTable[testTable][index][0].counter, 3)
+        << "Counter should saturate at maximum value";
 
     // Train with not-taken outcomes multiple times
     for (int i = 0; i < 7; i++) {
@@ -632,7 +618,8 @@ TEST_F(BTBTAGETest, CounterUpdateMechanism)
     }
 
     // Verify counter saturates at minimum
-    EXPECT_EQ(tage->tageTable[testTable][index][0].counter, -4) << "Counter should saturate at minimum value";
+    EXPECT_EQ(tage->tageTable[testTable][index][0].counter, -4)
+        << "Counter should saturate at minimum value";
 }
 
 /**
@@ -643,12 +630,11 @@ TEST_F(BTBTAGETest, CounterUpdateMechanism)
  * 2. The prediction accuracy improves over time
  * 3. Predictor state is consistent after multiple predictions
  */
-TEST_F(BTBTAGETest, UpdateConsistencyAfterMultiplePredictions)
-{
+TEST_F(BTBTAGETest, UpdateConsistencyAfterMultiplePredictions) {
     // Create a branch entry
     BTBEntry entry = createBTBEntry(0x1000);
     // outer loop always taken
-    BTBEntry entry2 = createBTBEntry(0x1010);  // always taken
+    BTBEntry entry2 = createBTBEntry(0x1010); // always taken
 
     // Step 1: Train predictor on a fixed pattern (alternating T/N)
     const int TOTAL_ITERATIONS = 100;
@@ -668,10 +654,12 @@ TEST_F(BTBTAGETest, UpdateConsistencyAfterMultiplePredictions)
     }
 
     // Calculate accuracy in final phase
-    double accuracy = static_cast<double>(correctly_predicted) / (TOTAL_ITERATIONS - WARMUP_ITERATIONS);
+    double accuracy = static_cast<double>(correctly_predicted) /
+                     (TOTAL_ITERATIONS - WARMUP_ITERATIONS);
 
     // Verify predictor has learned the pattern with high accuracy
-    EXPECT_GT(accuracy, 0.9) << "Predictor should learn alternating pattern with >90% accuracy";
+    EXPECT_GT(accuracy, 0.9)
+        << "Predictor should learn alternating pattern with >90% accuracy";
     // print updateMispred: mispredictions times
     std::cout << "updateMispred: " << tage->tageStats.updateMispred << std::endl;
 }
@@ -682,12 +670,11 @@ TEST_F(BTBTAGETest, UpdateConsistencyAfterMultiplePredictions)
  * This test evaluates how different tables in the TAGE predictor
  * contribute to prediction accuracy for various branch patterns.
  */
-TEST_F(BTBTAGETest, CombinedPredictionAccuracyTesting)
-{
+TEST_F(BTBTAGETest, CombinedPredictionAccuracyTesting) {
     // Setup branch entry
     BTBEntry entry = createBTBEntry(0x1000);
     // outer loop always taken
-    BTBEntry entry2 = createBTBEntry(0x1010);  // always taken
+    BTBEntry entry2 = createBTBEntry(0x1010); // always taken
 
     // Define different branch patterns
     struct PatternTest
@@ -696,13 +683,15 @@ TEST_F(BTBTAGETest, CombinedPredictionAccuracyTesting)
         std::function<bool(int)> pattern;
     };
 
-    std::vector<PatternTest> patterns = {{"Alternating", [](int i) { return i % 2 == 0; }},       // T,N,T,N...
-                                         {"ThreeCycle", [](int i) { return i % 3 == 0; }},        // T,N,N,T,N,N...
-                                         {"LongCycle", [](int i) { return (i / 10) % 2 == 0; }},  // 10 Ts, 10 Ns...
-                                         {"BiasedRandom", [](int i) {
-                                              // Use deterministic but complex pattern that appears somewhat random
-                                              return ((i * 7 + 3) % 11) > 5;
-                                          }}};
+    std::vector<PatternTest> patterns = {
+        {"Alternating", [](int i) { return i % 2 == 0; }},                   // T,N,T,N...
+        {"ThreeCycle", [](int i) { return i % 3 == 0; }},                    // T,N,N,T,N,N...
+        {"LongCycle", [](int i) { return (i / 10) % 2 == 0; }},              // 10 Ts, 10 Ns...
+        {"BiasedRandom", [](int i) {
+            // Use deterministic but complex pattern that appears somewhat random
+            return ((i * 7 + 3) % 11) > 5;
+        }}
+    };
 
     const int TRAIN_ITERATIONS = 200;  // it need more iterations to train!
     const int WARMUP_ITERATIONS = 180;
@@ -723,18 +712,20 @@ TEST_F(BTBTAGETest, CombinedPredictionAccuracyTesting)
             bool predicted_taken = predictUpdateCycle(tage, 0x1000, entry, actual_taken, history, stagePreds);
             predictUpdateCycle(tage, 0x1010, entry2, true, history, stagePreds);
 
-            // Count correct predictions after warmup
+                    // Count correct predictions after warmup
             if (i >= WARMUP_ITERATIONS) {
                 correctly_predicted += (predicted_taken == actual_taken) ? 1 : 0;
             }
         }
 
         // Calculate accuracy in final phase
-        double accuracy = static_cast<double>(correctly_predicted) / (TRAIN_ITERATIONS - WARMUP_ITERATIONS);
+        double accuracy = static_cast<double>(correctly_predicted) /
+                         (TRAIN_ITERATIONS - WARMUP_ITERATIONS);
 
 
         // Verify predictor has learned the pattern with high accuracy
-        EXPECT_GE(accuracy, 0.8) << "Predictor should learn alternating pattern with >80% accuracy";
+        EXPECT_GE(accuracy, 0.8)
+            << "Predictor should learn alternating pattern with >80% accuracy";
 
         // print updateMispred: mispredictions times
         std::cout << "updateMispred: " << tage->tageStats.updateMispred << std::endl;
@@ -747,11 +738,10 @@ TEST_F(BTBTAGETest, CombinedPredictionAccuracyTesting)
  * This is particularly useful for set-associative testing when we need
  * to control exact placement of entries
  */
-void
-createManualTageEntry(BTBTAGE* tage, int table, Addr index, int way, Addr tag, short counter, bool useful, Addr pc,
-                      unsigned lruCounter = 0)
-{
-    auto& entry = tage->tageTable[table][index][way];
+void createManualTageEntry(BTBTAGE* tage, int table, Addr index, int way,
+                          Addr tag, short counter, bool useful, Addr pc,
+                          unsigned lruCounter = 0) {
+    auto &entry = tage->tageTable[table][index][way];
     entry.valid = true;
     entry.tag = tag;
     entry.counter = counter;
@@ -768,8 +758,7 @@ createManualTageEntry(BTBTAGE* tage, int table, Addr index, int way, Addr tag, s
  * 1. Multiple branches mapping to the same index can be predicted correctly
  * 2. The LRU counters are updated properly when entries are accessed
  */
-TEST_F(BTBTAGETest, SetAssociativeConflictHandling)
-{
+TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
     // Create two branch entries with different PCs
     Addr startPC = 0x1000;
     BTBEntry entry1 = createBTBEntry(startPC);
@@ -786,8 +775,8 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling)
     Addr testTag2 = tage->getTageTag(startPC, testTable, 2);
 
     // Manually create entries with the same index but different tags (due to position)
-    createManualTageEntry(tage, testTable, testIndex, 0, testTag1, 2, false, 0x1000, 0);   // Way 0: Strong taken
-    createManualTageEntry(tage, testTable, testIndex, 1, testTag2, -2, false, 0x1004, 1);  // Way 1: Strong not taken
+    createManualTageEntry(tage, testTable, testIndex, 0, testTag1, 2, false, 0x1000, 0); // Way 0: Strong taken
+    createManualTageEntry(tage, testTable, testIndex, 1, testTag2, -2, false, 0x1004, 1); // Way 1: Strong not taken
 
     // Make predictions and verify directly
     // For entry1 (should predict taken)
@@ -836,10 +825,9 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling)
  * 2. Subsequent allocations fail when the selected way's usefulMask marks the table useful.
  * 3. No replacement occurs even after additional allocation attempts.
  */
-TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays)
-{
+TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     // Start with a fresh predictor
-    tage = new BTBTAGE(1, 2, 10);  // only 1 predictor table, 2 ways
+    tage = new BTBTAGE(1, 2, 10); // only 1 predictor table, 2 ways
     memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
     history.resize(64, false);
     stagePreds.resize(2);
@@ -870,12 +858,11 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays)
     // Strengthen the first allocated entry to prevent it from being replaced
     // This simulates that the first branch has been trained and should be protected
     tage->tageTable[testTable][testIndex][allocatedWay].useful = true;
-    tage->tageTable[testTable][testIndex][allocatedWay].counter = 2;  // Make it strong
+    tage->tageTable[testTable][testIndex][allocatedWay].counter = 2; // Make it strong
 
     // Step 2: Attempt to fill remaining ways with different branches
     for (unsigned way = 0; way < tage->numWays; way++) {
-        if (way == allocatedWay)
-            continue;
+        if (way == allocatedWay) continue;
 
         // Create a branch with different PC
         BTBEntry newEntry = createBTBEntry(0x1004);
@@ -898,7 +885,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays)
     for (unsigned way = 0; way < tage->numWays; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid) {
             tage->tageTable[testTable][testIndex][way].useful = true;
-            tage->tageTable[testTable][testIndex][way].counter = 2;  // Make it strong
+            tage->tageTable[testTable][testIndex][way].counter = 2; // Make it strong
         }
     }
 
@@ -940,10 +927,9 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays)
  * 2. Different bank access has no conflict
  * 3. Disabled flag prevents conflict detection
  */
-TEST_F(BTBTAGETest, BankConflict)
-{
+TEST_F(BTBTAGETest, BankConflict) {
     // Create TAGE with 4 banks
-    BTBTAGE* bankTage = new BTBTAGE(4, 2, 1024, 4);
+    BTBTAGE *bankTage = new BTBTAGE(4, 2, 1024, 4);
     boost::dynamic_bitset<> testHistory(128);
     std::vector<FullBTBPrediction> testStagePreds(5);
 

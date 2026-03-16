@@ -15,8 +15,7 @@
 #include "cpu/pred/btb/timed_base_pred.hh"
 
 #ifdef UNIT_TEST
-#include "cpu/pred/btb/test/test_dprintf.hh"
-
+    #include "cpu/pred/btb/test/test_dprintf.hh"
 #else
 #include "debug/DecoupleBP.hh"
 #include "debug/TAGEHistory.hh"
@@ -37,15 +36,13 @@ namespace btb_pred
 
 // Conditional namespace wrapper for testing
 #ifdef UNIT_TEST
-namespace test
-{
+namespace test {
 #endif
 
 class BTBTAGE : public TimedBaseBTBPredictor
 {
     using defer = std::shared_ptr<void>;
     using bitset = boost::dynamic_bitset<>;
-
   public:
 #ifdef UNIT_TEST
     // Test constructor
@@ -58,39 +55,39 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Represents a single entry in the TAGE prediction table
     struct TageEntry
     {
-      public:
-        bool valid;           // Whether this entry is valid
-        Addr tag;             // Tag for matching
-        short counter;        // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
-        bool useful;          // 1-bit usefulness counter; true means useful
-        Addr pc;              // branch pc, like branch position, for btb entry pc check
-        unsigned lruCounter;  // Counter for LRU replacement policy
+        public:
+            bool valid;      // Whether this entry is valid
+            Addr tag;       // Tag for matching
+            short counter;  // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
+            bool useful;    // 1-bit usefulness counter; true means useful
+            Addr pc;        // branch pc, like branch position, for btb entry pc check
+            unsigned lruCounter; // Counter for LRU replacement policy
 
-        TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0), lruCounter(0) {}
+            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0), lruCounter(0) {}
 
-        TageEntry(Addr tag, short counter, Addr pc)
-            : valid(true), tag(tag), counter(counter), useful(false), pc(pc), lruCounter(0)
-        {
-        }
-        bool taken() const { return counter >= 0; }
+            TageEntry(Addr tag, short counter, Addr pc) :
+                      valid(true), tag(tag), counter(counter), useful(false), pc(pc), lruCounter(0) {}
+            bool taken() const {
+                return counter >= 0;
+            }
     };
 
     // Contains information about a TAGE table lookup
     struct TageTableInfo
     {
-      public:
-        bool found;       // Whether a matching entry was found
-        TageEntry entry;  // The matching entry
-        unsigned table;   // Which table this entry was found in
-        Addr index;       // Index in the table
-        Addr tag;         // Tag that was matched
-        unsigned way;     // Which way this entry was found in
-        TageTableInfo() : found(false), table(0), index(0), tag(0), way(0) {}
-        TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag, unsigned way)
-            : found(found), entry(entry), table(table), index(index), tag(tag), way(way)
-        {
-        }
-        bool taken() const { return entry.taken(); }
+        public:
+            bool found;     // Whether a matching entry was found
+            TageEntry entry; // The matching entry
+            unsigned table; // Which table this entry was found in
+            Addr index;     // Index in the table
+            Addr tag;       // Tag that was matched
+            unsigned way;    // Which way this entry was found in
+            TageTableInfo() : found(false), table(0), index(0), tag(0), way(0) {}
+            TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag, unsigned way) :
+                        found(found), entry(entry), table(table), index(index), tag(tag), way(way) {}
+            bool taken() const {
+                return entry.taken();
+            }
     };
 
     // Contains the complete prediction result
@@ -117,7 +114,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
 
 #ifndef UNIT_TEST
-    BTBTAGE(const Params &p);
+    BTBTAGE(const Params& p);
 #endif
     ~BTBTAGE();
 
@@ -126,7 +123,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void tick() override;
     void dryRunCycle(Addr startAddr) override;
     // Make predictions for a stream of instructions and record in stage preds
-    void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
+    void putPCHistory(Addr startAddr,
+                      const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
     void putPCHistoryForBlock1(Addr startAddr, const boost::dynamic_bitset<> &history,
                                const boost::dynamic_bitset<> &phistory, const boost::dynamic_bitset<> &bwhistory,
@@ -154,8 +152,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Recover 3 folded history after a misprediction, then update 3 folded history according to history and pred.taken
     // the other recoverHist methods are left blank
-    void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                      bool cond_taken) override;
+    void recoverPHist(const boost::dynamic_bitset<> &history,
+                        const FetchTarget &entry,int shamt, bool cond_taken) override;
 
 #ifdef UNIT_TEST
     // API compatibility wrappers for testing
@@ -191,7 +189,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Look up predictions in TAGE tables for a stream of instructions
     void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                      std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens &results);
+                    std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens& results);
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table);
@@ -208,7 +206,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0);
 
     // Get offset within a block for a given PC
-    Addr getOffset(Addr pc) { return (pc & (blockSize - 1)) >> 1; }
+    Addr getOffset(Addr pc) {
+        return (pc & (blockSize - 1)) >> 1;
+    }
 
     // Get branch index within a prediction block
     unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC);
@@ -286,7 +286,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     unsigned numTablesToAlloc;
 
     // Instruction shift amount
-    unsigned instShiftAmt{1};
+    unsigned instShiftAmt {1};
 
     // use for microtage updatemispred counting
     void checkUtageUpdateMisspred(const FetchTarget &stream);
@@ -318,16 +318,16 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // ========== Bank Configuration ==========
     // Bank mechanism to simulate hardware bank conflicts
     // When prediction and update access the same bank in one cycle, update is dropped
-    const unsigned numBanks;       // Number of banks (e.g., 4)
-    const unsigned bankIdWidth;    // log2(numBanks), computed in constructor
-    const unsigned blockWidth;     // floorLog2(blockSize), e.g., 5 for 32B blocks
-    const unsigned bankBaseShift;  // Bits removed before bank selection (default: instShiftAmt)
-    const unsigned indexShift;     // bankBaseShift + bankIdWidth when banking enabled
-    bool enableBankConflict;       // Enable/disable bank conflict simulation
+    const unsigned numBanks;         // Number of banks (e.g., 4)
+    const unsigned bankIdWidth;      // log2(numBanks), computed in constructor
+    const unsigned blockWidth;       // floorLog2(blockSize), e.g., 5 for 32B blocks
+    const unsigned bankBaseShift;    // Bits removed before bank selection (default: instShiftAmt)
+    const unsigned indexShift;       // bankBaseShift + bankIdWidth when banking enabled
+    bool enableBankConflict;         // Enable/disable bank conflict simulation
 
     // Track last prediction bank for conflict detection
-    unsigned lastPredBankId;  // Bank ID of last prediction
-    bool predBankValid;       // Whether lastPredBankId is valid
+    unsigned lastPredBankId;         // Bank ID of last prediction
+    bool predBankValid;              // Whether lastPredBankId is valid
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
@@ -363,8 +363,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateResetU;
 
         // Recomputed prediction difference statistics (per fetchBlock)
-        Scalar recomputedVsActualDiff;    // recomputed.taken != actual_taken
-        Scalar recomputedVsOriginalDiff;  // recomputed.taken != original pred.taken
+        Scalar recomputedVsActualDiff;   // recomputed.taken != actual_taken
+        Scalar recomputedVsOriginalDiff; // recomputed.taken != original pred.taken
 
         // Bank conflict statistics
         Scalar updateBankConflict;           // Number of bank conflicts detected
@@ -396,10 +396,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
         int numBanks;
 
 #ifndef UNIT_TEST
-        TageStats(statistics::Group *parent, int numPredictors, int numBanks);
+        TageStats(statistics::Group* parent, int numPredictors, int numBanks);
 #endif
         void updateStatsWithTagePrediction(const TagePrediction &pred, bool when_pred);
-    };
+    } ;
 
     TageStats tageStats;
 
@@ -407,7 +407,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     TraceManager *tageMissTrace;
 #endif
 
-  public:
+public:
+
     // Recover folded history after misprediction
     void recoverFoldedHist(const bitset &history);
 
@@ -419,28 +420,37 @@ class BTBTAGE : public TimedBaseBTBPredictor
         std::vector<PathFoldedHist> tagFoldedHist;
         std::vector<PathFoldedHist> altTagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
-        bitset history;  // for viewing
+        bitset history;     // for viewing
         TageMeta() {}
     } TageMeta;
 
-  private:
+private:
+
     // Helper method to generate prediction for a single BTB entry
     // If predMeta is provided, use snapshot folded history for index/tag calculation (update path)
     // If predMeta is nullptr, use current folded history (prediction path)
-    TagePrediction generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
-                                            const std::shared_ptr<TageMeta> predMeta = nullptr);
+    TagePrediction generateSinglePrediction(const BTBEntry &btb_entry,
+                                           const Addr &startPC,
+                                           const std::shared_ptr<TageMeta> predMeta = nullptr);
 
     // Helper method to prepare BTB entries for update
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
 
     // Helper method to update predictor state for a single entry
-    bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry, bool actual_taken, const TagePrediction &pred,
-                                                const FetchTarget &stream);
+    bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
+                                 bool actual_taken,
+                                 const TagePrediction &pred,
+                                 const FetchTarget &stream);
 
     // Helper method to handle new entry allocation
-    bool handleNewEntryAllocation(const Addr &startPC, const BTBEntry &entry, bool actual_taken, unsigned main_table,
-                                  std::shared_ptr<TageMeta> meta, uint64_t &allocated_table, uint64_t &allocated_index,
-                                  uint64_t &allocated_way);
+    bool handleNewEntryAllocation(const Addr &startPC,
+                                 const BTBEntry &entry,
+                                 bool actual_taken,
+                                 unsigned main_table,
+                                 std::shared_ptr<TageMeta> meta,
+                                 uint64_t &allocated_table,
+                                 uint64_t &allocated_index,
+                                 uint64_t &allocated_way);
 
 
     // Helper methods for LRU management
@@ -452,13 +462,13 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
 // Close conditional namespace wrapper for testing
 #ifdef UNIT_TEST
-}  // namespace test
+} // namespace test
 #endif
 
-}  // namespace btb_pred
+} // namespace btb_pred
 
-}  // namespace branch_prediction
+} // namespace branch_prediction
 
-}  // namespace gem5
+} // namespace gem5
 
 #endif  // __CPU_PRED_BTB_TAGE_HH__

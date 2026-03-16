@@ -1,12 +1,12 @@
 #ifndef __CPU_PRED_BTB_TIMED_BASE_PRED_HH__
 #define __CPU_PRED_BTB_TIMED_BASE_PRED_HH__
 
+
 #include <boost/dynamic_bitset.hpp>
 
 #ifdef UNIT_TEST
-#include "base/types.hh"
-#include "cpu/pred/btb/common.hh"
-
+    #include "base/types.hh"
+    #include "cpu/pred/btb/common.hh"
 #else
 #include "base/statistics.hh"
 #include "base/types.hh"
@@ -29,8 +29,7 @@ namespace btb_pred
 
 // Conditional namespace wrapper for testing
 #ifdef UNIT_TEST
-namespace test
-{
+namespace test {
 #endif
 
 #ifndef UNIT_TEST
@@ -40,10 +39,11 @@ using DynInstPtr = o3::DynInstPtr;
 #ifdef UNIT_TEST
 class TimedBaseBTBPredictor
 #else
-class TimedBaseBTBPredictor : public SimObject
+class TimedBaseBTBPredictor: public SimObject
 #endif
 {
-  public:
+    public:
+
 #ifdef UNIT_TEST
     TimedBaseBTBPredictor();
     void setNumDelay(unsigned delay) { numDelay = delay; }
@@ -82,26 +82,14 @@ class TimedBaseBTBPredictor : public SimObject
     virtual void specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
     virtual void specUpdateIHist(FullBTBPrediction &pred) {}
     virtual void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred) {}
-    virtual void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                             bool cond_taken)
-    {
-    }
-    virtual void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                              bool cond_taken)
-    {
-    }
-    virtual void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                               bool cond_taken)
-    {
-    }
+    virtual void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
+    virtual void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
+    virtual void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
     virtual void recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken) {}
-    virtual void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt,
-                              bool cond_taken)
-    {
-    }
+    virtual void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
     virtual void update(const FetchTarget &entry) {}
-    virtual unsigned getDelay() { return numDelay; }
-    virtual bool getResolvedUpdate() { return resolvedUpdate; }
+    virtual unsigned getDelay() {return numDelay;}
+    virtual bool getResolvedUpdate() {return resolvedUpdate;}
     // Two-phase resolved update: probe first, then apply
     virtual bool canResolveUpdate(const FetchTarget &entry) { return true; }
     virtual void doResolveUpdate(const FetchTarget &entry) { update(entry); }
@@ -120,10 +108,12 @@ class TimedBaseBTBPredictor : public SimObject
     unsigned predictWidth;
 
 #ifndef UNIT_TEST
-    bool hasDB{false};
+    bool hasDB {false};
     std::string dbName;
-    bool enableDB{false};
-    void setDB(DataBase *db) { _db = db; }
+    bool enableDB {false};
+    void setDB(DataBase *db) {
+        _db = db;
+    }
     DataBase *_db;
 #endif
     virtual void setTrace() {}
@@ -132,7 +122,7 @@ class TimedBaseBTBPredictor : public SimObject
     bool isEnabled() const { return enabled; }
     bool participatesInBlock1() const { return block1Participate; }
 
-  private:
+private:
     unsigned numDelay;
     bool resolvedUpdate;
     bool enabled;
@@ -141,13 +131,13 @@ class TimedBaseBTBPredictor : public SimObject
 
 // Close conditional namespace wrapper for testing
 #ifdef UNIT_TEST
-}  // namespace test
+} // namespace test
 #endif
 
-}  // namespace btb_pred
+} // namespace btb_pred
 
-}  // namespace branch_prediction
+} // namespace branch_prediction
 
-}  // namespace gem5
+} // namespace gem5
 
-#endif  // __CPU_PRED_BTB_TIMED_BASE_PRED_HH__
+#endif // __CPU_PRED_BTB_TIMED_BASE_PRED_HH__

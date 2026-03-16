@@ -125,4 +125,3 @@ DataBase::addAndGetTrace(const char *name, std::vector<std::pair<std::string, Da
 
 
 } // namespace gem5
-

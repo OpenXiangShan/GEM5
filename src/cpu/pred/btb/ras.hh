@@ -4,235 +4,230 @@
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/btb/common.hh"
-#include "cpu/pred/btb/timed_base_pred.hh"
 
+// Conditional includes based on build mode
 #ifdef UNIT_TEST
-#include "cpu/pred/btb/test/test_dprintf.hh"
+    // Test mode includes
+    #include "cpu/pred/btb/test/test_dprintf.hh"
+    #include "cpu/pred/btb/timed_base_pred.hh"
 
-namespace gem5
-{
-namespace o3
-{
-class DynInst;
-}
-}
-using DynInstPtr = std::shared_ptr<gem5::o3::DynInst>;
+    // Test mode type definitions
+    namespace gem5 {
+        namespace o3 {
+            class DynInst;
+        }
+    }
+    using DynInstPtr = std::shared_ptr<gem5::o3::DynInst>;
 #else
-#include "debug/RAS.hh"
-#include "params/BTBRAS.hh"
-
+    // Production mode includes
+    #include "cpu/pred/btb/timed_base_pred.hh"
+    #include "debug/RAS.hh"
+    #include "params/BTBRAS.hh"
 #endif
 
-namespace gem5
-{
+namespace gem5 {
 
-namespace branch_prediction
-{
+namespace branch_prediction {
 
-namespace btb_pred
-{
+namespace btb_pred {
 
 // Class definition with conditional inheritance and constructors
 #ifdef UNIT_TEST
-namespace test
-{
-class BTBRAS : public TimedBaseBTBPredictor
-{
-  public:
-    // Test constructor for unit testing mode
-    BTBRAS(unsigned numEntries, unsigned ctrWidth, unsigned numInflightEntries);
+    namespace test {
+        class BTBRAS : public TimedBaseBTBPredictor
+        {
+        public:
+            // Test constructor for unit testing mode
+            BTBRAS(unsigned numEntries, unsigned ctrWidth, unsigned numInflightEntries);
 #else
-class BTBRAS : public TimedBaseBTBPredictor
-{
-  public:
-    // Production constructor
-    typedef BTBRASParams Params;
-    BTBRAS(const Params &p);
+    class BTBRAS : public TimedBaseBTBPredictor
+    {
+    public:
+        // Production constructor
+        typedef BTBRASParams Params;
+        BTBRAS(const Params &p);
 #endif
 
-    typedef struct RASEssential
-    {
-        Addr retAddr;
-        unsigned ctr;
-    } RASEssential;
-
-    typedef struct RASEntry
-    {
-        RASEssential data;
-        RASEntry(Addr retAddr, unsigned ctr)
+        typedef struct RASEssential
         {
-            data.retAddr = retAddr;
-            data.ctr = ctr;
-        }
-        RASEntry(Addr retAddr)
+            Addr retAddr;
+            unsigned ctr;
+        }RASEssential;
+
+        typedef struct RASEntry
         {
-            data.retAddr = retAddr;
-            data.ctr = 0;
-        }
-        RASEntry()
-        {
-            data.retAddr = 0;
-            data.ctr = 0;
-        }
-    } RASEntry;
-
-    typedef struct RASInflightEntry
-    {
-        RASEssential data;
-        int nos;  // parent node pointer
-    } RASInflightEntry;
-
-    typedef struct RASMeta
-    {
-        int ssp;
-        int sctr;
-        // RASEntry tos; // top of stack
-        int TOSR;
-        int TOSW;
-        bool willPush;
-        Addr target;
-        // RASInflightEntry inflight; // inflight top of stack
-    } RASMeta;
-
-    void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
-                      std::vector<FullBTBPrediction> &stagePreds) override;
-    void putPCHistoryForBlock1(Addr startAddr, const boost::dynamic_bitset<> &history,
-                               const boost::dynamic_bitset<> &phistory, const boost::dynamic_bitset<> &bwhistory,
-                               const std::vector<boost::dynamic_bitset<>> &lhistory,
-                               std::vector<FullBTBPrediction> &stagePreds, const FullBTBPrediction &lowerPred) override
-    {
-        (void)history;
-        (void)phistory;
-        (void)bwhistory;
-        (void)lhistory;
-        if (!participatesInBlock1()) {
-            for (int s = getDelay(); s < stagePreds.size(); s++) {
-                stagePreds[s].returnTarget = lowerPred.returnTarget;
+            RASEssential data;
+            RASEntry(Addr retAddr, unsigned ctr)
+            {
+                data.retAddr = retAddr;
+                data.ctr = ctr;
             }
-            return;
+            RASEntry(Addr retAddr)
+            {
+                data.retAddr = retAddr;
+                data.ctr = 0;
+            }
+            RASEntry()
+            {
+                data.retAddr = 0;
+                data.ctr = 0;
+            }
+        }RASEntry;
+
+        typedef struct RASInflightEntry
+        {
+            RASEssential data;
+            int nos; // parent node pointer
+        }RASInflightEntry;
+
+        typedef struct RASMeta {
+            int ssp;
+            int sctr;
+            // RASEntry tos; // top of stack
+            int TOSR;
+            int TOSW;
+            bool willPush;
+            Addr target;
+            // RASInflightEntry inflight; // inflight top of stack
+        }RASMeta;
+
+        void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
+                          std::vector<FullBTBPrediction> &stagePreds) override;
+        void putPCHistoryForBlock1(Addr startAddr, const boost::dynamic_bitset<> &history,
+                                   const boost::dynamic_bitset<> &phistory, const boost::dynamic_bitset<> &bwhistory,
+                                   const std::vector<boost::dynamic_bitset<>> &lhistory,
+                                   std::vector<FullBTBPrediction> &stagePreds, const FullBTBPrediction &lowerPred) override
+        {
+            (void)history;
+            (void)phistory;
+            (void)bwhistory;
+            (void)lhistory;
+            if (!participatesInBlock1()) {
+                for (int s = getDelay(); s < stagePreds.size(); s++) {
+                    stagePreds[s].returnTarget = lowerPred.returnTarget;
+                }
+                return;
+            }
+            putPCHistory(startAddr, boost::dynamic_bitset<>(), stagePreds);
         }
-        putPCHistory(startAddr, boost::dynamic_bitset<>(), stagePreds);
-    }
+        
+        std::shared_ptr<void> getPredictionMeta() override;
 
-    std::shared_ptr<void> getPredictionMeta() override;
+        void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
 
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+        void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) override;
 
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                     bool cond_taken) override;
+        void update(const FetchTarget &entry) override;
 
-    void update(const FetchTarget &entry) override;
-
-    // commitBranch method - override only in production mode
+        // commitBranch method - override only in production mode
 #ifdef UNIT_TEST
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst);
+        void commitBranch(const FetchTarget &stream, const DynInstPtr &inst);
 #else
-    void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
+        void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
 #endif
 
-    Addr getTopAddrFromMetas(const FetchTarget &stream);
+        Addr getTopAddrFromMetas(const FetchTarget &stream);
 
-  private:
-    void push(Addr retAddr);
+    private:
 
-    void pop();
+        void push(Addr retAddr);
 
-    void push_stack(Addr retAddr);
+        void pop();
 
-    void pop_stack();
+        void push_stack(Addr retAddr);
+        
+        void pop_stack();
 
-    void ptrInc(int &ptr);
+        void ptrInc(int &ptr);
 
-    void ptrDec(int &ptr);
+        void ptrDec(int &ptr);
 
-    void inflightPtrInc(int &ptr);
+        void inflightPtrInc(int &ptr);
+        
+        void inflightPtrDec(int &ptr);
 
-    void inflightPtrDec(int &ptr);
+        bool inflightInRange(int &ptr);
 
-    bool inflightInRange(int &ptr);
+        int inflightPtrPlus1(int ptr);
 
-    int inflightPtrPlus1(int ptr);
+        void checkCorrectness();
 
-    void checkCorrectness();
+        RASEssential getTop();
 
-    RASEssential getTop();
+        RASEssential getTop_meta();
 
-    RASEssential getTop_meta();
-
-    void printStack(const char *when)
-    {
-        DPRINTF(RAS, "printStack when %s: \n", when);
-        for (int i = 0; i < numEntries; i++) {
-            DPRINTFR(RAS, "entry [%d], retAddr %#lx, ctr %d", i, stack[i].data.retAddr, stack[i].data.ctr);
-            if (ssp == i) {
-                DPRINTFR(RAS, " <-- SSP");
+        void printStack(const char *when) {
+            DPRINTF(RAS, "printStack when %s: \n", when);
+            for (int i = 0; i < numEntries; i++) {
+                DPRINTFR(RAS, "entry [%d], retAddr %#lx, ctr %d", i, stack[i].data.retAddr, stack[i].data.ctr);
+                if (ssp == i) {
+                    DPRINTFR(RAS, " <-- SSP");
+                }
+                if (nsp == i) {
+                    DPRINTFR(RAS, " <-- NSP");
+                }
+                DPRINTFR(RAS, "\n");
             }
-            if (nsp == i) {
-                DPRINTFR(RAS, " <-- NSP");
+            DPRINTFR(RAS, "non-volatile stack:\n");
+            for (int i = 0; i < numInflightEntries; i++) {
+                DPRINTFR(RAS, "entry [%d] retAddr %#lx, ctr %u nos %d", i, inflightStack[i].data.retAddr, inflightStack[i].data.ctr, inflightStack[i].nos);
+                if (TOSW == i) {
+                    DPRINTFR(RAS, " <-- TOSW");
+                }
+                if (TOSR == i) {
+                    DPRINTFR(RAS, " <-- TOSR");
+                }
+                if (BOS == i) {
+                    DPRINTFR(RAS, " <-- BOS");
+                }
+                DPRINTFR(RAS, "\n");
             }
-            DPRINTFR(RAS, "\n");
+            /*
+            DPRINTFR(RAS, "non-volatile stack current data:\n");
+            int a = TOSR;
+            int inflightCurrentSz = 0;
+            while (inflightInRange(a)) {
+                DPRINTFR(RAS, "retAddr %#lx, ctr %d\n", inflightStack[a].data.retAddr, inflightStack[a].data.ctr);
+                ++inflightCurrentSz;
+                a = inflightStack[a].nos;
+                if (inflightCurrentSz > 30) {
+                    DPRINTFR(RAS, "...\n");
+                    break;
+                }
+            }
+            */
+            //if (ssp > nsp && (ssp - nsp != inflightCurrentSz)) {
+            //    DPRINTFR(RAS, "inflight size mismatch!\n");
+            //}
         }
-        DPRINTFR(RAS, "non-volatile stack:\n");
-        for (int i = 0; i < numInflightEntries; i++) {
-            DPRINTFR(RAS, "entry [%d] retAddr %#lx, ctr %u nos %d", i, inflightStack[i].data.retAddr,
-                     inflightStack[i].data.ctr, inflightStack[i].nos);
-            if (TOSW == i) {
-                DPRINTFR(RAS, " <-- TOSW");
-            }
-            if (TOSR == i) {
-                DPRINTFR(RAS, " <-- TOSR");
-            }
-            if (BOS == i) {
-                DPRINTFR(RAS, " <-- BOS");
-            }
-            DPRINTFR(RAS, "\n");
-        }
-        /*
-        DPRINTFR(RAS, "non-volatile stack current data:\n");
-        int a = TOSR;
-        int inflightCurrentSz = 0;
-        while (inflightInRange(a)) {
-            DPRINTFR(RAS, "retAddr %#lx, ctr %d\n", inflightStack[a].data.retAddr, inflightStack[a].data.ctr);
-            ++inflightCurrentSz;
-            a = inflightStack[a].nos;
-            if (inflightCurrentSz > 30) {
-                DPRINTFR(RAS, "...\n");
-                break;
-            }
-        }
-        */
-        // if (ssp > nsp && (ssp - nsp != inflightCurrentSz)) {
-        //     DPRINTFR(RAS, "inflight size mismatch!\n");
-        // }
-    }
 
-    unsigned numEntries;
+        unsigned numEntries;
 
-    unsigned ctrWidth;
+        unsigned ctrWidth;
 
-    unsigned numInflightEntries;
+        unsigned numInflightEntries;
 
-    int TOSW;  // inflight pointer to the write top of stack
+        int TOSW; // inflight pointer to the write top of stack
 
-    int TOSR;  // inflight pointer to the read top of stack
+        int TOSR; // inflight pointer to the read top of stack
 
-    int BOS;  // inflight pointer to the bottom of stack
+        int BOS; // inflight pointer to the bottom of stack
 
-    int maxCtr;
+        int maxCtr;
 
-    int ssp;  // spec sp
+        int ssp; // spec sp
+        
+        int nsp; // non-spec sp
 
-    int nsp;  // non-spec sp
+        int sctr;
 
-    int sctr;
+        //int ndepth;
 
-    // int ndepth;
+        std::vector<RASEntry> stack;
+        
+        std::vector<RASInflightEntry> inflightStack;
 
-    std::vector<RASEntry> stack;
-
-    std::vector<RASInflightEntry> inflightStack;
-
-    std::shared_ptr<RASMeta> meta;
+        std::shared_ptr<RASMeta> meta;
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
@@ -241,8 +236,8 @@ class BTBRAS : public TimedBaseBTBPredictor
 #endif
 
 #ifdef UNIT_TEST
-    struct RASStats
-    {
+        struct RASStats
+        {
 #else
     struct RASStats : public statistics::Group
     {
@@ -256,22 +251,22 @@ class BTBRAS : public TimedBaseBTBPredictor
         Scalar Pops;
 
 #ifndef UNIT_TEST
-        RASStats(statistics::Group *parent);
+        RASStats(statistics::Group* parent);
 #endif
-    } rasStats;
+        } rasStats;
 
 
-};  // class BTBRAS
+}; // class BTBRAS
 
 // Close conditional namespaces
 #ifdef UNIT_TEST
-}  // namespace test
+    } // namespace test
 #endif
 
-}  // namespace btb_pred
+} // namespace btb_pred
 
-}  // namespace branch_prediction
+} // namespace branch_prediction
 
-}  // namespace gem5
+} // namespace gem5
 
-#endif  // __CPU_PRED_BTB_RAS_HH__
+#endif // __CPU_PRED_BTB_RAS_HH__

@@ -215,4 +215,3 @@ SpikeProxy::SpikeProxy(int coreid, const char *ref_so, bool enable_sdcard_diff)
 
     nemu_init();
 }
-

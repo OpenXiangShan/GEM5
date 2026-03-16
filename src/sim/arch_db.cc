@@ -304,4 +304,3 @@ DBTraceManager::write_record(const Record &record)
 }
 
 } // namespace gem5
-

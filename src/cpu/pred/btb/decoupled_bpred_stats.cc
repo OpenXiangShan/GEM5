@@ -24,11 +24,16 @@ DecoupledBPUWithBTB::initDB()
     enableBranchTrace = checkGivenSwitch(bpDBSwitches, std::string("basic"));
     if (enableBranchTrace) {
         std::vector<std::pair<std::string, DataType>> fields_vec = {
-            std::make_pair("fsqId", UINT64),      std::make_pair("startPC", UINT64),
-            std::make_pair("controlPC", UINT64),  std::make_pair("controlType", UINT64),
-            std::make_pair("taken", UINT64),      std::make_pair("mispred", UINT64),
-            std::make_pair("fallThruPC", UINT64), std::make_pair("source", UINT64),
-            std::make_pair("target", UINT64)};
+            std::make_pair("fsqId", UINT64),
+            std::make_pair("startPC", UINT64),
+            std::make_pair("controlPC", UINT64),
+            std::make_pair("controlType", UINT64),
+            std::make_pair("taken", UINT64),
+            std::make_pair("mispred", UINT64),
+            std::make_pair("fallThruPC", UINT64),
+            std::make_pair("source", UINT64),
+            std::make_pair("target", UINT64)
+        };
         bptrace = bpdb.addAndGetTrace("BPTRACE", fields_vec);
         bptrace->init_table();
         removeGivenSwitch(bpDBSwitches, std::string("basic"));
@@ -39,10 +44,15 @@ DecoupledBPUWithBTB::initDB()
     if (enablePredFSQTrace) {
         // Initialize prediction trace manager for recording predictions
         std::vector<std::pair<std::string, DataType>> pred_fields_vec = {
-            std::make_pair("fsqId", UINT64),      std::make_pair("startPC", UINT64),
-            std::make_pair("predTaken", UINT64),  std::make_pair("predEndPC", UINT64),
-            std::make_pair("controlPC", UINT64),  std::make_pair("target", UINT64),
-            std::make_pair("predSource", UINT64), std::make_pair("btbHit", UINT64)};
+            std::make_pair("fsqId", UINT64),
+            std::make_pair("startPC", UINT64),
+            std::make_pair("predTaken", UINT64),
+            std::make_pair("predEndPC", UINT64),
+            std::make_pair("controlPC", UINT64),
+            std::make_pair("target", UINT64),
+            std::make_pair("predSource", UINT64),
+            std::make_pair("btbHit", UINT64)
+        };
         predTraceManager = bpdb.addAndGetTrace("PREDTRACE", pred_fields_vec);
         predTraceManager->init_table();
         removeGivenSwitch(bpDBSwitches, std::string("predfsq"));
@@ -54,15 +64,18 @@ void
 DecoupledBPUWithBTB::dumpStats()
 {
     // Helper function: create output file and write header
-    auto createOutputFile = [](const std::string &filename, const std::string &header) {
+    auto createOutputFile = [](const std::string& filename, const std::string& header) {
         auto handle = simout.create(filename, false, true);
         *handle->stream() << header << std::endl;
         return handle;
     };
 
     // Generic sort function by key
-    auto sortByKey = [](auto &data, auto keyFn) {
-        std::sort(data.begin(), data.end(), [&keyFn](const auto &a, const auto &b) { return keyFn(a) > keyFn(b); });
+    auto sortByKey = [](auto& data, auto keyFn) {
+        std::sort(data.begin(), data.end(),
+            [&keyFn](const auto& a, const auto& b) {
+                return keyFn(a) > keyFn(b);
+            });
     };
 
     // 1. Output top mispredictions
@@ -71,63 +84,78 @@ DecoupledBPUWithBTB::dumpStats()
     // startPC: Starting address of fetch block
     // controlPC: Address of branch instruction
     // count: Number of mispredictions
-    std::vector<std::pair<std::pair<Addr, Addr>, int>> topMisPredPC(topMispredicts.begin(), topMispredicts.end());
+    std::vector<std::pair<std::pair<Addr, Addr>, int>> topMisPredPC(
+        topMispredicts.begin(), topMispredicts.end());
 
-    sortByKey(topMisPredPC, [](const auto &entry) { return entry.second; });
-    for (const auto &entry : topMisPredPC) {
-        *outFile->stream() << std::hex << entry.first.first << "," << entry.first.second << "," << std::dec
-                           << entry.second << std::endl;
+    sortByKey(topMisPredPC, [](const auto& entry) { return entry.second; });
+    for (const auto& entry : topMisPredPC) {
+        *outFile->stream() << std::hex << entry.first.first << ","
+            << entry.first.second << ","
+            << std::dec << entry.second << std::endl;
     }
     simout.close(outFile);
 
     // 2. Output mispredictions by branch
     outFile = createOutputFile("topMispredictsByBranch.csv",
-                               "pc,type,mispredicts,total,misPermil,dirMiss,tgtMiss,noPredMiss");
+                "pc,type,mispredicts,total,misPermil,dirMiss,tgtMiss,noPredMiss");
 
     // topMisPredPCByBranch: Detailed misprediction records per branch
     std::vector<std::tuple<Addr, int, int, int, double, int, int, int>> topMisPredPCByBranch;
     for (const auto &it : topMispredictsByBranch) {
         const auto &stats = it.second;
-        topMisPredPCByBranch.push_back(std::make_tuple(stats.pc, stats.branchType, stats.mispredCount,
-                                                       stats.totalCount, stats.getMispredRate(), stats.dirWrongCount,
-                                                       stats.targetWrongCount, stats.noPredCount));
+        topMisPredPCByBranch.push_back(std::make_tuple(
+            stats.pc, stats.branchType,
+            stats.mispredCount, stats.totalCount,
+            stats.getMispredRate(),
+            stats.dirWrongCount, stats.targetWrongCount, stats.noPredCount));
     }
 
-    sortByKey(topMisPredPCByBranch, [](const auto &entry) {
-        return std::get<2>(entry);  // Sort by mispredCount
-    });
+    sortByKey(topMisPredPCByBranch,
+        [](const auto& entry) {
+            return std::get<2>(entry);  // Sort by mispredCount
+        });
 
-    for (const auto &entry : topMisPredPCByBranch) {
-        *outFile->stream() << std::hex << std::get<0>(entry) << "," << std::dec << std::get<1>(entry) << ","
-                           << std::get<2>(entry) << "," << std::get<3>(entry) << "," << std::get<4>(entry) << ","
-                           << std::get<5>(entry) << "," << std::get<6>(entry) << "," << std::get<7>(entry)
-                           << std::endl;
+    for (const auto& entry : topMisPredPCByBranch) {
+        *outFile->stream()
+            << std::hex << std::get<0>(entry) << ","
+            << std::dec << std::get<1>(entry) << ","
+            << std::get<2>(entry) << ","
+            << std::get<3>(entry) << ","
+            << std::get<4>(entry) << ","
+            << std::get<5>(entry) << ","
+            << std::get<6>(entry) << ","
+            << std::get<7>(entry) << std::endl;
     }
     simout.close(outFile);
 
     // 3. Sort branches by misrate (per-mille)
-    outFile =
-        createOutputFile("topMisrateByBranch.csv", "pc,type,mispredicts,total,misPermil,dirMiss,tgtMiss,noPredMiss");
+    outFile = createOutputFile("topMisrateByBranch.csv",
+                "pc,type,mispredicts,total,misPermil,dirMiss,tgtMiss,noPredMiss");
 
     // Reuse previous data, but sort by misrate
     int mispCntThres = 100;
-    sortByKey(topMisPredPCByBranch, [](const auto &entry) { return std::get<4>(entry); });
-    for (const auto &entry : topMisPredPCByBranch) {
-        if (std::get<3>(entry) < mispCntThres)
-            continue;
+    sortByKey(topMisPredPCByBranch, [](const auto& entry) { return std::get<4>(entry); });
+    for (const auto& entry : topMisPredPCByBranch) {
+        if (std::get<3>(entry) < mispCntThres) continue;
 
-        *outFile->stream() << std::hex << std::get<0>(entry) << std::dec << "," << std::get<1>(entry) << ","
-                           << std::get<2>(entry) << "," << std::get<3>(entry) << "," << (int)std::get<4>(entry) << ","
-                           << (int)std::get<5>(entry) << "," << (int)std::get<6>(entry) << ","
-                           << (int)std::get<7>(entry) << std::endl;
+        *outFile->stream() << std::hex << std::get<0>(entry) << std::dec
+            << "," << std::get<1>(entry)
+            << "," << std::get<2>(entry)
+            << "," << std::get<3>(entry)
+            << "," << (int)std::get<4>(entry)
+            << "," << (int)std::get<5>(entry)
+            << "," << (int)std::get<6>(entry)
+            << "," << (int)std::get<7>(entry) << std::endl;
     }
     simout.close(outFile);
 
     // Create CSV header for topN tables
-    auto createTopNHeader = [](std::ostream &out, int outputTopN, const std::string &prefix) {
+    auto createTopNHeader = [](std::ostream& out, int outputTopN, const std::string& prefix) {
         out << prefix;
         for (int i = 0; i < outputTopN; i++) {
-            out << ",topMispPC_" << i << ",type_" << i << ",misCnt_" << i;
+            out << ",topMispPC_" << i
+                << ",type_" << i
+                << ",misCnt_" << i;
         }
         out << std::endl;
     };
@@ -136,46 +164,51 @@ DecoupledBPUWithBTB::dumpStats()
     int outputTopN = 5;
 
     // 4. Phase-based mispredictions
-    auto processPhaseData = [&](const std::string &filename, const auto &dataByPhase, const auto &takenBranches) {
+    auto processPhaseData = [&](const std::string& filename,
+                           const auto& dataByPhase,
+                           const auto& takenBranches) {
         outFile = simout.create(filename, false, true);
-        auto &out = *outFile->stream();
+        auto& out = *outFile->stream();
 
         // Write header
         createTopNHeader(out, outputTopN,
-                         filename.find("Sub") != std::string::npos
-                             ? "subPhaseID,numBranches,numEverTakenBranches,totalMispredicts"
-                             : "phaseID,numBranches,numEverTakenBranches,totalMispredicts");
+                        filename.find("Sub") != std::string::npos ?
+                        "subPhaseID,numBranches,numEverTakenBranches,totalMispredicts" :
+                        "phaseID,numBranches,numEverTakenBranches,totalMispredicts");
 
         int phaseID = 0;
-        for (const auto &phaseData : dataByPhase) {
+        for (const auto& phaseData : dataByPhase) {
             int numStaticBranches = phaseData.size();
             int numEverTakenStaticBranches = takenBranches[phaseID].size();
 
             // Copy data and calculate total mispredictions
             std::vector<std::pair<BranchKey, BranchStats>> phaseRecords;
-            for (const auto &record : phaseData) {
+            for (const auto& record : phaseData) {
                 phaseRecords.push_back(record);
             }
 
             // Calculate total mispredicts
             int totalMispredicts = 0;
-            for (const auto &rec : phaseRecords) {
+            for (const auto& rec : phaseRecords) {
                 totalMispredicts += rec.second.mispredCount;
             }
 
             // Output phase basic info
-            out << phaseID << "," << numStaticBranches << "," << numEverTakenStaticBranches << "," << totalMispredicts;
+            out << phaseID << "," << numStaticBranches << ","
+                << numEverTakenStaticBranches << "," << totalMispredicts;
 
             // Sort by misprediction count
             std::sort(phaseRecords.begin(), phaseRecords.end(),
-                      [](const auto &a, const auto &b) { return a.second.mispredCount > b.second.mispredCount; });
+                [](const auto& a, const auto& b) {
+                    return a.second.mispredCount > b.second.mispredCount;
+                });
 
             // Output top-N
             for (int i = 0; i < outputTopN && i < phaseRecords.size(); i++) {
-                const auto &stats = phaseRecords[i].second;
-                out << "," << std::hex << stats.pc          // pc
-                    << "," << std::dec << stats.branchType  // type
-                    << "," << stats.mispredCount;           // count
+                const auto& stats = phaseRecords[i].second;
+                out << "," << std::hex << stats.pc // pc
+                    << "," << std::dec << stats.branchType // type
+                    << "," << stats.mispredCount; // count
             }
             out << std::dec << std::endl;
             phaseID++;
@@ -183,36 +216,45 @@ DecoupledBPUWithBTB::dumpStats()
         simout.close(outFile);
     };
 
-    processPhaseData("topMispredictByPhase.csv", topMispredictsByBranchByPhase, takenBranchesByPhase);
+    processPhaseData("topMispredictByPhase.csv",
+                     topMispredictsByBranchByPhase,
+                     takenBranchesByPhase);
 
-    processPhaseData("topMispredictBySubPhase.csv", topMispredictsByBranchBySubPhase, takenBranchesBySubPhase);
+    processPhaseData("topMispredictBySubPhase.csv",
+                     topMispredictsByBranchBySubPhase,
+                     takenBranchesBySubPhase);
 
     // 5. Output history misprediction data
     outFile = createOutputFile("topMisPredictHist.csv", "Hist,count");
     // Vector of (history pattern, count) pairs
-    std::vector<std::pair<uint64_t, uint64_t>> topMisPredHistVec(topMispredHist.begin(), topMispredHist.end());
+    std::vector<std::pair<uint64_t, uint64_t>>
+        topMisPredHistVec(topMispredHist.begin(), topMispredHist.end());
 
-    sortByKey(topMisPredHistVec, [](const auto &entry) { return entry.second; });
-    for (const auto &entry : topMisPredHistVec) {
-        *outFile->stream() << std::hex << entry.first << "," << std::dec << entry.second << std::endl;
+    sortByKey(topMisPredHistVec, [](const auto& entry) { return entry.second; });
+    for (const auto& entry : topMisPredHistVec) {
+        *outFile->stream() << std::hex << entry.first << ","
+            << std::dec << entry.second << std::endl;
     }
     simout.close(outFile);
 
     // 6. Output indirect mispredictions
     outFile = createOutputFile("misPredIndirectStream.csv", "count,address");
     // Vector of (address, count) pairs for indirect branches
-    std::vector<std::pair<Addr, unsigned>> indirectVec(topMispredIndirect.begin(), topMispredIndirect.end());
+    std::vector<std::pair<Addr, unsigned>>
+        indirectVec(topMispredIndirect.begin(), topMispredIndirect.end());
 
-    sortByKey(indirectVec, [](const auto &entry) { return entry.second; });
-    for (const auto &entry : indirectVec) {
-        *outFile->stream() << std::oct << entry.second << "," << std::hex << entry.first << std::endl;
+    sortByKey(indirectVec, [](const auto& entry) { return entry.second; });
+    for (const auto& entry : indirectVec) {
+        *outFile->stream() << std::oct << entry.second << ","
+            << std::hex << entry.first << std::endl;
     }
     simout.close(outFile);
 
     // Process FSQ distribution data
-    auto processFsqDistribution = [&](const std::string &filename, const auto &distByPhase) {
+    auto processFsqDistribution = [&](const std::string& filename,
+                                  const auto& distByPhase) {
         outFile = simout.create(filename, false, true);
-        auto &out = *outFile->stream();
+        auto& out = *outFile->stream();
 
         // Write header
         out << "phaseID";
@@ -223,7 +265,7 @@ DecoupledBPUWithBTB::dumpStats()
 
         // Write data for each phase
         int phaseID = 0;
-        for (const auto &dist : distByPhase) {
+        for (const auto& dist : distByPhase) {
             out << phaseID;
 
             int numFsqEntries = 0;
@@ -243,9 +285,11 @@ DecoupledBPUWithBTB::dumpStats()
     };
 
     // 7-8. Output FSQ distribution data
-    processFsqDistribution("fsqEntryCommittedInstNumDistsByPhase.csv", fsqEntryNumCommittedInstDistByPhase);
+    processFsqDistribution("fsqEntryCommittedInstNumDistsByPhase.csv",
+                          fsqEntryNumCommittedInstDistByPhase);
 
-    processFsqDistribution("fsqEntryFetchedInstNumDistsByPhase.csv", fsqEntryNumFetchedInstDistByPhase);
+    processFsqDistribution("fsqEntryFetchedInstNumDistsByPhase.csv",
+                          fsqEntryNumFetchedInstDistByPhase);
 
     // 9. Output BTB entries
     int outputTopNEntries = 1;
@@ -257,18 +301,21 @@ DecoupledBPUWithBTB::dumpStats()
     outFile = createOutputFile("btbEntriesByPhase.csv", headerSS.str());
 
     int phaseID = 0;
-    for (auto &phase : BTBEntriesByPhase) {
-        auto &out = *outFile->stream();
+    for (auto& phase : BTBEntriesByPhase) {
+        auto& out = *outFile->stream();
         out << std::dec << phaseID << "," << phase.size();
 
         // Vector of (PC, BTBEntry, count) tuples
         std::vector<std::tuple<Addr, BTBEntry, int>> btbEntries;
-        for (auto &entry : phase) {
-            btbEntries.push_back(std::make_tuple(entry.first, entry.second.first, entry.second.second));
+        for (auto& entry : phase) {
+            btbEntries.push_back(std::make_tuple(
+                entry.first, entry.second.first, entry.second.second));
         }
 
         std::sort(btbEntries.begin(), btbEntries.end(),
-                  [](const auto &a, const auto &b) { return std::get<2>(a) > std::get<2>(b); });
+            [](const auto &a, const auto &b) {
+                 return std::get<2>(a) > std::get<2>(b);
+            });
 
         for (int i = 0; i <= outputTopNEntries && i < btbEntries.size(); i++) {
             const auto &entry = btbEntries[i];
@@ -296,7 +343,7 @@ DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchTarget &target, const
     const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
     Addr targetpc = rv_pc.npc();
     Addr fallThru = rv_pc.getFallThruPC();
-    BranchInfo info(pc, targetpc, inst->staticInst, fallThru - pc);
+    BranchInfo info(pc, targetpc, inst->staticInst, fallThru-pc);
     set(fsqId, target.startPC, pc, info.getType(), inst->branching(), mispred, fallThru, target.predSource, targetpc);
     // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
     //     printf("%s: %ld\n", it->first.c_str(), it->second);
@@ -304,13 +351,20 @@ DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchTarget &target, const
 }
 
 
-namespace
-{
+namespace {
 
-constexpr std::array<const char *, DecoupledBPUWithBTB::NumBranchClasses> BranchClassLabels = {
-    "cond_branch", "direct_call", "indirect_call", "return", "direct_jump", "indirect_jump", "unknown"};
+constexpr std::array<const char*, DecoupledBPUWithBTB::NumBranchClasses>
+    BranchClassLabels = {
+        "cond_branch",
+        "direct_call",
+        "indirect_call",
+        "return",
+        "direct_jump",
+        "indirect_jump",
+        "unknown"
+    };
 
-template<typename InstPtr>
+template <typename InstPtr>
 DecoupledBPUWithBTB::BranchClass
 classifyBranchImpl(const InstPtr &inst)
 {
@@ -325,7 +379,8 @@ classifyBranchImpl(const InstPtr &inst)
     }
 
     if (inst->isCall()) {
-        return inst->isIndirectCtrl() ? BranchClass::IndirectCall : BranchClass::DirectCall;
+        return inst->isIndirectCtrl() ? BranchClass::IndirectCall
+                                      : BranchClass::DirectCall;
     }
 
     if (inst->isCondCtrl()) {
@@ -436,8 +491,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group *parent, unsigne
 
 {
     predsOfEachStage.init(numStages);
-    commitPredsFromEachStage.init(numStages + 1);
-    commitOverrideBubbleNum = commitPredsFromEachStage[1] + 2 * commitPredsFromEachStage[2];
+    commitPredsFromEachStage.init(numStages+1);
+    commitOverrideBubbleNum = commitPredsFromEachStage[1] + 2 * commitPredsFromEachStage[2] ;
     commitOverrideCount = commitPredsFromEachStage[1] + commitPredsFromEachStage[2];
     fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
@@ -452,46 +507,47 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(statistics::Group *parent, unsigne
     }
 }
 
-void
-DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
+void DecoupledBPUWithBTB::overrideStats(OverrideReason overrideReason)
 {
 
-    // Track specific override reasons for statistics
-    switch (overrideReason) {
-        case OverrideReason::FALL_THRU:
-            dbpBtbStats.overrideFallThruMismatch++;
-            break;
-        case OverrideReason::CONTROL_ADDR:
-            dbpBtbStats.overrideControlAddrMismatch++;
-            break;
-        case OverrideReason::TARGET:
-            dbpBtbStats.overrideTargetMismatch++;
-            break;
-        case OverrideReason::END:
-            dbpBtbStats.overrideEndMismatch++;
-            break;
-        case OverrideReason::HIST_INFO:
-            dbpBtbStats.overrideHistInfoMismatch++;
-            break;
-        default:
-            break;
-    }
+        // Track specific override reasons for statistics
+        switch (overrideReason) {
+            case OverrideReason::FALL_THRU:
+                dbpBtbStats.overrideFallThruMismatch++;
+                break;
+            case OverrideReason::CONTROL_ADDR:
+                dbpBtbStats.overrideControlAddrMismatch++;
+                break;
+            case OverrideReason::TARGET:
+                dbpBtbStats.overrideTargetMismatch++;
+                break;
+            case OverrideReason::END:
+                dbpBtbStats.overrideEndMismatch++;
+                break;
+            case OverrideReason::HIST_INFO:
+                dbpBtbStats.overrideHistInfoMismatch++;
+                break;
+            default:
+                break;
+        }
 }
 
 void
 DecoupledBPUWithBTB::processFetchDistributions(std::vector<int> &currentPhaseCommittedDist,
-                                               std::vector<int> &currentPhaseFetchedDist)
+                                              std::vector<int> &currentPhaseFetchedDist)
 {
     // Initialize distributions with zeros
-    currentPhaseCommittedDist.resize(maxInstsNum + 1, 0);
-    currentPhaseFetchedDist.resize(maxInstsNum + 1, 0);
+    currentPhaseCommittedDist.resize(maxInstsNum+1, 0);
+    currentPhaseFetchedDist.resize(maxInstsNum+1, 0);
 
     // Calculate the difference between current and last phase values
     for (int i = 0; i <= maxInstsNum; i++) {
-        currentPhaseCommittedDist[i] = commitFsqEntryHasInstsVector[i] - lastPhaseFsqEntryNumCommittedInstDist[i];
+        currentPhaseCommittedDist[i] = commitFsqEntryHasInstsVector[i] -
+                                     lastPhaseFsqEntryNumCommittedInstDist[i];
         lastPhaseFsqEntryNumCommittedInstDist[i] = commitFsqEntryHasInstsVector[i];
 
-        currentPhaseFetchedDist[i] = commitFsqEntryFetchedInstsVector[i] - lastPhaseFsqEntryNumFetchedInstDist[i];
+        currentPhaseFetchedDist[i] = commitFsqEntryFetchedInstsVector[i] -
+                                   lastPhaseFsqEntryNumFetchedInstDist[i];
         lastPhaseFsqEntryNumFetchedInstDist[i] = commitFsqEntryFetchedInstsVector[i];
     }
 }
@@ -525,10 +581,11 @@ DecoupledBPUWithBTB::processBTBEntries()
 }
 
 bool
-DecoupledBPUWithBTB::processPhase(bool isSubPhase, int phaseID, int &phaseToDump, BranchStatsMap &lastPhaseStats,
-                                  std::vector<BranchStatsMap> &phaseStatsList,
-                                  std::unordered_map<Addr, int> &currentPhaseBranches,
-                                  std::vector<std::unordered_map<Addr, int>> &phaseBranchesList)
+DecoupledBPUWithBTB::processPhase(bool isSubPhase, int phaseID, int &phaseToDump,
+                                BranchStatsMap &lastPhaseStats,
+                                std::vector<BranchStatsMap> &phaseStatsList,
+                                std::unordered_map<Addr, int> &currentPhaseBranches,
+                                std::vector<std::unordered_map<Addr, int>> &phaseBranchesList)
 {
     // Check if this phase should be processed
     if (phaseToDump > phaseID) {
@@ -536,7 +593,8 @@ DecoupledBPUWithBTB::processPhase(bool isSubPhase, int phaseID, int &phaseToDump
     }
 
     // Debug output
-    DPRINTF(Profiling, "dump %s phase %d\n", isSubPhase ? "sub" : "main", phaseToDump);
+    DPRINTF(Profiling, "dump %s phase %d\n",
+            isSubPhase ? "sub" : "main", phaseToDump);
 
     // Create map for current phase statistics
     BranchStatsMap currentPhaseStats;
@@ -625,7 +683,8 @@ DecoupledBPUWithBTB::addBranchClassStat(BranchClass cls, bool mispred)
 {
     auto idx = static_cast<size_t>(cls);
     if (idx >= NumBranchClasses) {
-        DPRINTF(DBPBTBStats, "Skip invalid branch class stats update %d\n", static_cast<int>(cls));
+        DPRINTF(DBPBTBStats, "Skip invalid branch class stats update %d\n",
+                static_cast<int>(cls));
         return;
     }
 
@@ -635,7 +694,8 @@ DecoupledBPUWithBTB::addBranchClassStat(BranchClass cls, bool mispred)
         dbpBtbStats.branchClassCountsTotal++;
     }
 
-    DPRINTF(DBPBTBStats, "Branch classified as %s, mispred=%d\n", branchClassName(cls), mispred);
+    DPRINTF(DBPBTBStats, "Branch classified as %s, mispred=%d\n",
+            branchClassName(cls), mispred);
 }
 
 void
@@ -643,12 +703,15 @@ DecoupledBPUWithBTB::addControlSquashCommitStat(BranchClass cls)
 {
     auto idx = static_cast<size_t>(cls);
     if (idx >= NumBranchClasses) {
-        DPRINTF(DBPBTBStats, "Skip invalid commit squash class stats update %d\n", static_cast<int>(cls));
+        DPRINTF(DBPBTBStats,
+                "Skip invalid commit squash class stats update %d\n",
+                static_cast<int>(cls));
         return;
     }
 
     dbpBtbStats.controlSquashByClass[idx]++;
-    DPRINTF(DBPBTBStats, "Commit squash classified as %s\n", branchClassName(cls));
+    DPRINTF(DBPBTBStats, "Commit squash classified as %s\n",
+            branchClassName(cls));
 }
 
 void
@@ -672,8 +735,8 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
             DPRINTF(BTB, "BTB miss detected when update, target start %#lx, predTick %lu, printing branch info:\n",
                     target.startPC, target.predTick);
             auto &slot = target.exeBranchInfo;
-            DPRINTF(BTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n", slot.pc,
-                    slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
+            DPRINTF(BTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
+                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
         }
 
         // Count false hits
@@ -771,7 +834,7 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
     Addr targetAddr = rv_pc.npc();
     Addr fallThruPC = rv_pc.getFallThruPC();
-    BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC - branchAddr);
+    BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
     bool taken = rv_pc.branching() || inst->isUncondCtrl();
 
     // ---------- Process misprediction and update statistics ----------
@@ -786,10 +849,11 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     for (auto component : components) {
         component->commitBranch(entry, inst);
     }
-    // here add final counter
+    //here add final counter
 
     if (mispred) {
         commitPredWrongSource(entry);
+
     }
 }
 
@@ -815,7 +879,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
         dbpBtbStats.s1PredWrongUbtb++;
     } else if (s1PredSource == abtbid) {
         dbpBtbStats.s1PredWrongAbtb++;
-    } else {
+    }else {
         dbpBtbStats.s1PredWrongFallthrough++;
     }
 
@@ -845,7 +909,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
-    } else if (s3PredSource == mbtbid) {
+    }else if (s3PredSource == mbtbid) {
         if (exeBranchInfo.isCond) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
@@ -857,7 +921,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
-    } else if (s3PredSource == -1) {
+    }else if (s3PredSource == -1) {
         dbpBtbStats.s3PredWrongMbtb++;
     }
 }
@@ -886,8 +950,11 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
         int currentPhaseID = numInstCommitted / phaseSizeByInst;
 
         // Process main phase statistics if needed
-        if (processPhase(false, currentPhaseID, phaseIdToDump, lastPhaseTopMispredictsByBranch,
-                         topMispredictsByBranchByPhase, currentPhaseTakenBranches, takenBranchesByPhase)) {
+        if (processPhase(false, currentPhaseID, phaseIdToDump,
+                        lastPhaseTopMispredictsByBranch,
+                        topMispredictsByBranchByPhase,
+                        currentPhaseTakenBranches,
+                        takenBranchesByPhase)) {
 
             // Process fetch instruction distributions
             std::vector<int> committedInstDist, fetchedInstDist;
@@ -907,8 +974,11 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
         int currentSubPhaseID = numInstCommitted / subPhaseSizeByInst();
 
         // Process sub-phase statistics if needed
-        processPhase(true, currentSubPhaseID, subPhaseIdToDump, lastSubPhaseTopMispredictsByBranch,
-                     topMispredictsByBranchBySubPhase, currentSubPhaseTakenBranches, takenBranchesBySubPhase);
+        processPhase(true, currentSubPhaseID, subPhaseIdToDump,
+                    lastSubPhaseTopMispredictsByBranch,
+                    topMispredictsByBranchBySubPhase,
+                    currentSubPhaseTakenBranches,
+                    takenBranchesBySubPhase);
     }
 }
 
@@ -923,8 +993,12 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
  * @param mispred Whether the branch was mispredicted
  */
 void
-DecoupledBPUWithBTB::processMisprediction(const FetchTarget &entry, Addr branchAddr, const BranchInfo &info,
-                                          bool taken, bool mispred)
+DecoupledBPUWithBTB::processMisprediction(
+    const FetchTarget &entry,
+    Addr branchAddr,
+    const BranchInfo &info,
+    bool taken,
+    bool mispred)
 {
     MispredType mispredType = FAKE_LAST;
 
@@ -933,11 +1007,11 @@ DecoupledBPUWithBTB::processMisprediction(const FetchTarget &entry, Addr branchA
         if (!taken) {
             // Only conditional branches can be not-taken
             assert(info.isCond);
-            mispredType = DIR_WRONG;  // Direction was wrong
+            mispredType = DIR_WRONG; // Direction was wrong
         } else {
             // Check if this branch was in the predicted BTB entries
             bool predBranchInBTB = false;
-            for (auto &e : entry.predBTBEntries) {
+            for (auto &e: entry.predBTBEntries) {
                 if (e.pc == branchAddr) {
                     predBranchInBTB = true;
                     break;
@@ -945,17 +1019,17 @@ DecoupledBPUWithBTB::processMisprediction(const FetchTarget &entry, Addr branchA
             }
 
             if (!predBranchInBTB) {
-                mispredType = NO_PRED;  // Branch wasn't predicted at all
+                mispredType = NO_PRED; // Branch wasn't predicted at all
             } else if (entry.predTaken && entry.predBranchInfo.pc == branchAddr) {
-                mispredType = TARGET_WRONG;  // Branch predicted taken but wrong target
+                mispredType = TARGET_WRONG; // Branch predicted taken but wrong target
             } else {
                 // Branch predicted not taken or different branch predicted taken
                 mispredType = DIR_WRONG;
             }
         }
 
-        DPRINTF(Profiling, "branchAddr %#lx is mispredicted, taken %d, type %d, missType %d\n", branchAddr, taken,
-                info.getType(), mispredType);
+        DPRINTF(Profiling, "branchAddr %#lx is mispredicted, taken %d, type %d, missType %d\n",
+                branchAddr, taken, info.getType(), mispredType);
         assert(mispredType != FAKE_LAST);
     }
 
@@ -963,7 +1037,8 @@ DecoupledBPUWithBTB::processMisprediction(const FetchTarget &entry, Addr branchA
     auto branchKey = std::make_pair(branchAddr, info.getType());
 
     // Update branch statistics
-    DPRINTF(Profiling, "lookup topMispredictsByBranch for branchAddr %#lx, type %d\n", branchAddr, info.getType());
+    DPRINTF(Profiling, "lookup topMispredictsByBranch for branchAddr %#lx, type %d\n",
+            branchAddr, info.getType());
 
     auto statsIt = topMispredictsByBranch.find(branchKey);
 
@@ -985,7 +1060,8 @@ DecoupledBPUWithBTB::processMisprediction(const FetchTarget &entry, Addr branchA
         dbpBtbStats.staticBranchNum++;
     } else {
         // Update existing statistics entry
-        DPRINTF(Profiling, "found, total %d, miss %d\n", statsIt->second.totalCount, statsIt->second.mispredCount);
+        DPRINTF(Profiling, "found, total %d, miss %d\n",
+                statsIt->second.totalCount, statsIt->second.mispredCount);
 
         // Always increment total count
         statsIt->second.incrementTotal();
@@ -1023,6 +1099,6 @@ DecoupledBPUWithBTB::trackTakenBranch(Addr branchAddr)
     updateBranchMap(currentSubPhaseTakenBranches);
 }
 
-}  // namespace btb_pred
-}  // namespace branch_prediction
-}  // namespace gem5
+} // namespace btb_pred
+} // namespace branch_prediction
+} // namespace gem5

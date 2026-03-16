@@ -28,11 +28,11 @@
 
 /*
  * Main BTB (MBTB) Implementation
- *
+ * 
  * The MBTB is a half-aligned BTB that covers 64-byte blocks:
  * - Queries two consecutive 32-byte aligned blocks
  * - Fixed half-aligned behavior (no entryHalfAligned parameter)
- * - 8-way set associative organization
+ * - 8-way set associative organization  
  * - MRU (Most Recently Used) replacement policy
  * - Support for multiple branch types
  */
@@ -47,19 +47,16 @@
 #include "cpu/pred/btb/timed_base_pred.hh"
 
 #ifdef UNIT_TEST
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
-
-#include "cpu/pred/btb/test/test_dprintf.hh"
-
+    #include <gmock/gmock.h>
+    #include <gtest/gtest.h>
+    #include "cpu/pred/btb/test/test_dprintf.hh"
 #else
-#include "arch/generic/pcstate.hh"
-#include "base/logging.hh"
-#include "config/the_isa.hh"
-#include "debug/BTB.hh"
-#include "debug/BTBStats.hh"
-#include "params/MBTB.hh"
-
+    #include "arch/generic/pcstate.hh"
+    #include "base/logging.hh"
+    #include "config/the_isa.hh"
+    #include "debug/BTB.hh"
+    #include "debug/BTBStats.hh"
+    #include "params/MBTB.hh"
 #endif
 
 namespace gem5
@@ -73,22 +70,23 @@ namespace btb_pred
 
 // Conditional namespace wrapper for testing
 #ifdef UNIT_TEST
-namespace test
-{
+namespace test {
 #endif
 
 class MBTB : public TimedBaseBTBPredictor
 {
   private:
+
   public:
+
 #ifdef UNIT_TEST
-    // Test constructor
+    // Test constructor  
     MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay);
 #else
     // Production constructor
     typedef MBTBParams Params;
 
-    MBTB(const Params &p);
+    MBTB(const Params& p);
 #endif
 
     /*
@@ -105,9 +103,10 @@ class MBTB : public TimedBaseBTBPredictor
     typedef struct TickedBTBEntry : public BTBEntry
     {
         uint64_t tick;  // timestamp for MRU replacement
-        TickedBTBEntry(const BTBEntry &entry, uint64_t tick) : BTBEntry(entry), tick(tick) {}
+        TickedBTBEntry(const BTBEntry &entry, uint64_t tick)
+            : BTBEntry(entry), tick(tick) {}
         TickedBTBEntry() : tick(0) {}
-    } TickedBTBEntry;
+    }TickedBTBEntry;
 
     // A BTB set is a vector of entries (ways)
     using BTBSet = std::vector<TickedBTBEntry>;
@@ -135,7 +134,7 @@ class MBTB : public TimedBaseBTBPredictor
      * @param startAddr: start address of the fetch block
      * @param history: branch history register
      * @param stagePreds: predictions for each pipeline stage
-     *
+     * 
      * This function:
      * 1. Looks up BTB entries for the fetch block
      * 2. Updates prediction statistics
@@ -168,14 +167,14 @@ class MBTB : public TimedBaseBTBPredictor
     // not used
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
 
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                     bool cond_taken) override;
+    void recoverHist(const boost::dynamic_bitset<> &history,
+        const FetchTarget &entry, int shamt, bool cond_taken) override;
 
     /**
      * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
      *        only in L1BTB will this function be called before update
-     *
-     * @param stream
+     * 
+     * @param stream 
      */
     void getAndSetNewBTBEntry(FetchTarget &stream);
 
@@ -189,37 +188,33 @@ class MBTB : public TimedBaseBTBPredictor
 
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
 
-    void printBTBEntry(const BTBEntry &e, uint64_t tick = 0)
-    {
-        DPRINTF(BTB,
-                "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
+    void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
+        DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
-                e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken,
-                tick);
+            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken, tick);
     }
 
-    void printTickedBTBEntry(const TickedBTBEntry &e) { printBTBEntry(e, e.tick); }
+    void printTickedBTBEntry(const TickedBTBEntry &e) {
+        printBTBEntry(e, e.tick);
+    }
 
-    void dumpBTBEntries(const std::vector<BTBEntry> &es)
-    {
+    void dumpBTBEntries(const std::vector<BTBEntry> &es) {
         DPRINTF(BTB, "BTB entries:\n");
         for (const auto &entry : es) {
             printBTBEntry(entry);
         }
     }
 
-    void dumpTickedBTBEntries(const std::vector<TickedBTBEntry> &es)
-    {
+    void dumpTickedBTBEntries(const std::vector<TickedBTBEntry> &es) {
         DPRINTF(BTB, "BTB entries:\n");
         for (const auto &entry : es) {
             printTickedBTBEntry(entry);
         }
     }
 
-    void dumpMruList(const BTBHeap &list)
-    {
+    void dumpMruList(const BTBHeap &list) {
         DPRINTF(BTB, "MRU list:\n");
-        for (const auto &it : list) {
+        for (const auto &it: list) {
             printTickedBTBEntry(*it);
         }
     }
@@ -235,7 +230,9 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch to look up.
      *  @return Returns the index into the BTB.
      */
-    inline Addr getIndex(Addr instPC) { return (instPC >> idxShiftAmt) & idxMask; }
+    inline Addr getIndex(Addr instPC) {
+        return (instPC >> idxShiftAmt) & idxMask;
+    }
 
     /** Returns the tag bits of a given address.
      *  The tag is calculated as: (pc >> tagShiftAmt) & tagMask
@@ -243,73 +240,80 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch's address.
      *  @return Returns the tag bits.
      */
-    inline Addr getTag(Addr instPC) { return (instPC >> tagShiftAmt) & tagMask; }
+    inline Addr getTag(Addr instPC) {
+        return (instPC >> tagShiftAmt) & tagMask;
+    }
 
     /** Update the 2-bit saturating counter for conditional branches
      *  Counter range: [-2, 1]
      *  - Increment on taken (max 1)
      *  - Decrement on not taken (min -2)
      */
-    void updateCtr(int &ctr, bool taken)
-    {
-        if (taken && ctr < 1) {
-            ctr++;
-        }
-        if (!taken && ctr > -2) {
-            ctr--;
-        }
+    void updateCtr(int &ctr, bool taken) {
+        if (taken && ctr < 1) {ctr++;}
+        if (!taken && ctr > -2) {ctr--;}
     }
 
-    typedef struct BTBMeta
-    {
+    typedef struct BTBMeta {
         std::vector<BTBEntry> hit_entries;
-        BTBMeta()
-        {
+        BTBMeta() {
             std::vector<BTBEntry> es;
             hit_entries = es;
         }
-    } BTBMeta;
+    }BTBMeta;
 
-    std::shared_ptr<BTBMeta> meta;  // metadata for BTB, set in putPCHistory, used in update
+    std::shared_ptr<BTBMeta> meta; // metadata for BTB, set in putPCHistory, used in update
 
     /** Process BTB entries for prediction
      *  @param entries Vector of BTB entries to process
      *  @param startAddr Start address of the fetch block
      *  @return Vector of processed entries in program order
      */
-    std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry> &entries, Addr startAddr);
+    std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries, 
+                                              Addr startAddr);
 
     /** Fill predictions for pipeline stages
      *  @param entries Processed BTB entries
      *  @param stagePreds Vector of predictions for each stage
      */
-    void fillStagePredictions(const std::vector<TickedBTBEntry> &entries, std::vector<FullBTBPrediction> &stagePreds);
+    void fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
+                             std::vector<FullBTBPrediction>& stagePreds);
 
     /** Update prediction metadata
      *  @param entries Processed BTB entries
      */
-    void updatePredictionMeta(const std::vector<TickedBTBEntry> &entries, std::vector<FullBTBPrediction> &stagePreds);
+    void updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
+                               std::vector<FullBTBPrediction>& stagePreds);
 
     /** Check branch prediction hit status
      *  @param stream Fetch stream containing execution results
      *  @param meta BTB metadata from prediction
      */
-    void checkPredictionHit(const FetchTarget &stream, const BTBMeta *meta);
+    void checkPredictionHit(const FetchTarget &stream,
+                           const BTBMeta* meta);
 
     /** Update or replace BTB entry
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
      *  @param stream Fetch stream with update info
      */
-    void updateBTBEntry(const BTBEntry &entry, const FetchTarget &stream);
+    void updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream);
 
     // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
-    BTBEntry buildUpdatedEntry(const BTBEntry &req_entry, const BTBEntry *existing_entry, const FetchTarget &stream);
+    BTBEntry buildUpdatedEntry(const BTBEntry& req_entry,
+                               const BTBEntry* existing_entry,
+                               const FetchTarget &stream);
 
     // Helper: update an existing entry in SRAM set
-    void updateExistingInSRAMSet(Addr btb_idx, BTBHeap &heap, BTBSetIter it_found, const TickedBTBEntry &ticked_entry);
+    void updateExistingInSRAMSet(Addr btb_idx,
+                                 BTBHeap &heap,
+                                 BTBSetIter it_found,
+                                 const TickedBTBEntry &ticked_entry);
 
     // Helper: replace the oldest entry in SRAM set
-    void replaceOldestInSRAMSet(int sram_id, Addr btb_idx, BTBHeap &heap, const TickedBTBEntry &ticked_entry);
+    void replaceOldestInSRAMSet(int sram_id,
+                                Addr btb_idx,
+                                BTBHeap &heap,
+                                const TickedBTBEntry &ticked_entry);
 
     // Helper: commit/update an entry in victim cache at given index
     void commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry);
@@ -321,16 +325,18 @@ class MBTB : public TimedBaseBTBPredictor
      */
     struct older
     {
-        bool operator()(const BTBSetIter &a, const BTBSetIter &b) const { return a->tick > b->tick; }
+        bool operator()(const BTBSetIter &a, const BTBSetIter &b) const
+        {
+            return a->tick > b->tick;
+        }
     };
 
     /**
      * @brief check if the entries in the vector are in ascending order, means the pc is in ascending order
-     *
-     * @param es
+     * 
+     * @param es 
      */
-    void checkAscending(std::vector<BTBEntry> &es)
-    {
+    void checkAscending(std::vector<BTBEntry> &es) {
         Addr last = 0;
         bool misorder = false;
         for (auto &entry : es) {
@@ -359,7 +365,7 @@ class MBTB : public TimedBaseBTBPredictor
 
     /** Victim cache operations */
     std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc);
-    void insertVictimCache(const TickedBTBEntry &evicted_entry);
+    void insertVictimCache(const TickedBTBEntry& evicted_entry);
     bool eraseFromVictimCacheByPC(Addr pc);
 
     /** Dual SRAM BTB structure:
@@ -386,13 +392,12 @@ class MBTB : public TimedBaseBTBPredictor
     unsigned victimCacheSize;
 
     /** BTB configuration parameters */
-    unsigned numEntries;  // Total number of entries
-    unsigned numWays;     // Number of ways per SRAM (4 for dual-SRAM)
-    unsigned numSets;     // Number of sets per SRAM (numEntries/numWays/2)
-
+    unsigned numEntries;    // Total number of entries
+    unsigned numWays;       // Number of ways per SRAM (4 for dual-SRAM)
+    unsigned numSets;       // Number of sets per SRAM (numEntries/numWays/2)
+    
     /** SRAM selection helper function */
-    inline int getSRAMId(Addr pc)
-    {
+    inline int getSRAMId(Addr pc) {
         // Use the bit after block offset to select SRAM
         // For 32B blocks: bit 5 selects SRAM (blockSize=32, log2(32)=5)
         return ((pc >> floorLog2(blockSize)) & 1);
@@ -412,7 +417,9 @@ class MBTB : public TimedBaseBTBPredictor
     /** Branch counter */
     unsigned numBr;  // Number of branches seen
 
-    enum Mode { READ, WRITE, EVICT };
+    enum Mode {
+        READ, WRITE, EVICT
+    };
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
@@ -421,12 +428,10 @@ class MBTB : public TimedBaseBTBPredictor
 #endif
 
 #ifdef UNIT_TEST
-  public:
-    struct BTBStats
-    {
+public:
+    struct BTBStats {
 #else
-    struct BTBStats : public statistics::Group
-    {
+    struct BTBStats : public statistics::Group {
 #endif
         Scalar newEntry;
         Scalar newEntryWithCond;
@@ -480,18 +485,19 @@ class MBTB : public TimedBaseBTBPredictor
 
 #ifndef UNIT_TEST
         statistics::Distribution predHitCount;
-        BTBStats(statistics::Group *parent, int numWays);
+        BTBStats(statistics::Group* parent, int numWays);
 #endif
+
     } btbStats;
 };
 
 // Close conditional namespace wrapper for testing
 #ifdef UNIT_TEST
-}  // namespace test
+} // namespace test
 #endif
 
-}  // namespace btb_pred
-}  // namespace branch_prediction
-}  // namespace gem5
+} // namespace btb_pred
+} // namespace branch_prediction
+} // namespace gem5
 
-#endif  // __CPU_PRED_BTB_MBTB_HH__
+#endif // __CPU_PRED_BTB_MBTB_HH__

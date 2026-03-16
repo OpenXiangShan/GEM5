@@ -30,75 +30,75 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 {
     using defer = std::shared_ptr<void>;
     using bitset = boost::dynamic_bitset<>;
-
   public:
     typedef BTBITTAGEParams Params;
 
     struct TageEntry
     {
-      public:
-        bool valid;
-        Addr tag;
-        Addr target;
-        short counter;
-        bool useful;
-        Addr pc;  // TODO: should use lowest bits only
+        public:
+            bool valid;
+            Addr tag;
+            Addr target;
+            short counter;
+            bool useful;
+            Addr pc; // TODO: should use lowest bits only
 
-        TageEntry() : valid(false), tag(0), target(0), counter(0), useful(false), pc(0) {}
+            TageEntry() : valid(false), tag(0), target(0), counter(0), useful(false), pc(0) {}
 
-        TageEntry(Addr tag, Addr target, short counter, Addr pc)
-            : valid(true), tag(tag), target(target), counter(counter), useful(false), pc(pc)
-        {
-        }
-        bool taken() { return counter >= 2; }
+            TageEntry(Addr tag, Addr target, short counter, Addr pc) :
+                        valid(true), tag(tag), target(target), counter(counter), useful(false), pc(pc) {}
+            bool taken() {
+                return counter >= 2;
+            }
     };
 
     struct TageTableInfo
     {
-      public:
-        bool found;
-        TageEntry entry;
-        unsigned table;
-        Addr index;
-        Addr tag;
-        TageTableInfo() : found(false), table(0), index(0), tag(0) {}
-        TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag)
-            : found(found), entry(entry), table(table), index(index), tag(tag)
-        {
-        }
-        bool taken() { return entry.taken(); }
+        public:
+            bool found;
+            TageEntry entry;
+            unsigned table;
+            Addr index;
+            Addr tag;
+            TageTableInfo() : found(false), table(0), index(0), tag(0) {}
+            TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag) :
+                        found(found), entry(entry), table(table), index(index), tag(tag) {}
+            bool taken() { return entry.taken(); }
     };
 
     struct TagePrediction
     {
-      public:
-        Addr btb_pc;
-        TageTableInfo mainInfo;
-        TageTableInfo altInfo;
+        public:
+            Addr btb_pc;
+            TageTableInfo mainInfo;
+            TageTableInfo altInfo;
 
-        bool useAlt;
-        // bitset usefulMask;
-        // bool taken;
-        Addr target;
+            bool useAlt;
+            // bitset usefulMask;
+            // bool taken;
+            Addr target;
 
-        TagePrediction() : btb_pc(0), useAlt(false), target(0) {}
+            TagePrediction() : btb_pc(0), useAlt(false), target(0) {}
 
-        TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo, bool useAlt, Addr target)
-            : btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo), useAlt(useAlt), target(target)
-        {
-        }
+            TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
+                            bool useAlt, Addr target) :
+                            btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
+                            useAlt(useAlt), target(target) {}
+
     };
 
   public:
-    BTBITTAGE(const Params &p);
+    BTBITTAGE(const Params& p);
 
     void tickStart() override;
 
     void tick() override;
     void dryRunCycle(Addr startAddr) override;
     // make predictions, record in stage preds
-    void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
+    void putPCHistory(Addr startAddr,
+                      const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
+
     void putPCHistoryForBlock1(Addr startAddr, const boost::dynamic_bitset<> &history,
                                const boost::dynamic_bitset<> &phistory, const boost::dynamic_bitset<> &bwhistory,
                                const std::vector<boost::dynamic_bitset<>> &lhistory,
@@ -124,8 +124,8 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     // Recover 3 folded history after a misprediction, then update 3 folded history according to history and pred.taken
     // the other recoverHist methods are left blank
-    void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                      bool cond_taken) override;
+    void recoverPHist(const boost::dynamic_bitset<> &history,
+                        const FetchTarget &entry,int shamt, bool cond_taken) override;
 
     void update(const FetchTarget &entry) override;
 
@@ -135,8 +135,9 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     void checkFoldedHist(const bitset &history, const char *when);
 
   private:
+
     // return provided
-    void lookupHelper(Addr stream_start, const std::vector<BTBEntry> &btbEntries, IndirectTargets &results);
+    void lookupHelper(Addr stream_start, const std::vector<BTBEntry> &btbEntries, IndirectTargets& results);
 
     // use blockPC
     Addr getTageIndex(Addr pc, int table);
@@ -150,7 +151,9 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     // use blockPC (uint64_t version for performance)
     Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist);
 
-    Addr getOffset(Addr pc) { return (pc & (blockSize - 1)) >> 1; }
+    Addr getOffset(Addr pc) {
+        return (pc & (blockSize - 1)) >> 1;
+    }
 
     // Update branch history
     void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
@@ -188,7 +191,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     unsigned numBr;
 
-    unsigned instShiftAmt{1};
+    unsigned instShiftAmt {1};
 
     void updateCounter(bool taken, unsigned width, short &counter);
 
@@ -229,7 +232,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
         statistics::Distribution updateTableHits;
 
         int numPredictors;
-        IttageStats(statistics::Group *parent, int numPredictors);
+        IttageStats(statistics::Group* parent, int numPredictors);
 #endif
         Scalar commitHits;
         Scalar callHits;
@@ -277,12 +280,13 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     std::shared_ptr<TageMeta> meta;
 
-  public:
+public:
+
     Addr debugPC = 0;
     Addr debugPC2 = 0;
     bool debugFlag = false;
 
-    void recoverFoldedHist(const bitset &history);
+    void recoverFoldedHist(const bitset& history);
     bool tageHit();
 
     // void checkFoldedHist(const bitset& history);

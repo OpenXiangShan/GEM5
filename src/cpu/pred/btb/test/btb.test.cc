@@ -31,10 +31,9 @@ namespace test
  * @param size Instruction size
  * @return BranchInfo Initialized branch information
  */
-BranchInfo
-createBranchInfo(Addr pc, Addr target, bool isCond = false, bool isIndirect = false, bool isCall = false,
-                 bool isReturn = false, uint8_t size = 4)
-{
+BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
+                           bool isIndirect = false, bool isCall = false,
+                           bool isReturn = false, uint8_t size = 4) {
     BranchInfo info;
     info.pc = pc;
     info.target = target;
@@ -56,9 +55,8 @@ createBranchInfo(Addr pc, Addr target, bool isCond = false, bool isIndirect = fa
  * @param endInstPC Last executed instruction PC, used for filtering entries
  * @return FetchTarget Initialized fetch stream
  */
-FetchTarget
-setupStream(Addr startPC, const BranchInfo& branch, bool taken, std::shared_ptr<void> meta, Addr endInstPC)
-{
+FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
+                       std::shared_ptr<void> meta, Addr endInstPC) {
     FetchTarget stream;
     stream.startPC = startPC;
     stream.resolved = true;
@@ -66,7 +64,7 @@ setupStream(Addr startPC, const BranchInfo& branch, bool taken, std::shared_ptr<
     stream.exeTaken = taken;
     stream.predMetas[0] = meta;
     stream.updateEndInstPC = endInstPC;
-    stream.squashType = SQUASH_CTRL;  // mispredict default
+    stream.squashType = SQUASH_CTRL; // mispredict default
     return stream;
 }
 
@@ -77,9 +75,7 @@ setupStream(Addr startPC, const BranchInfo& branch, bool taken, std::shared_ptr<
  * @param pc Branch PC to search for
  * @return Pair of (found, prediction) where found indicates if PC was found
  */
-std::pair<bool, bool>
-findCondTaken(const CondTakens& condTakens, Addr pc)
-{
+std::pair<bool, bool> findCondTaken(const CondTakens& condTakens, Addr pc) {
     auto it = CondTakens_find(condTakens, pc);
     if (it != condTakens.end()) {
         return {true, it->second};
@@ -94,9 +90,7 @@ findCondTaken(const CondTakens& condTakens, Addr pc)
  * @param pc Branch PC to search for
  * @return Pair of (found, target) where found indicates if PC was found
  */
-std::pair<bool, Addr>
-findIndirectTarget(const IndirectTargets& indirectTargets, Addr pc)
-{
+std::pair<bool, Addr> findIndirectTarget(const IndirectTargets& indirectTargets, Addr pc) {
     auto it = IndirectTakens_find(indirectTargets, pc);
     if (it != indirectTargets.end()) {
         return {true, it->second};
@@ -116,9 +110,12 @@ findIndirectTarget(const IndirectTargets& indirectTargets, Addr pc)
  * @return std::vector<FullBTBPrediction> Final stage predictions
  */
 std::vector<FullBTBPrediction>
-predictUpdateCycle(MBTB* btb, Addr startPC, const BranchInfo& branch, bool taken,
-                   const boost::dynamic_bitset<>& history = boost::dynamic_bitset<>(8, 0), Addr endInstPC = 0)
-{
+predictUpdateCycle(MBTB* btb,
+     Addr startPC,
+     const BranchInfo& branch,
+     bool taken,
+     const boost::dynamic_bitset<>& history = boost::dynamic_bitset<>(8, 0),
+     Addr endInstPC = 0) {
     // If endInstPC not specified, use branch.pc + branch.size
     if (endInstPC == 0) {
         endInstPC = branch.pc + branch.size;
@@ -139,7 +136,7 @@ predictUpdateCycle(MBTB* btb, Addr startPC, const BranchInfo& branch, bool taken
     stream.setUpdateBTBEntries();
     btb->getAndSetNewBTBEntry(stream);
 
-    for (auto& entry : stream.updateBTBEntries) {
+    for (auto &entry : stream.updateBTBEntries) {
         entry.resolved = true;
     }
     stream.updateNewBTBEntry.resolved = true;
@@ -161,10 +158,9 @@ predictUpdateCycle(MBTB* btb, Addr startPC, const BranchInfo& branch, bool taken
  * @param delay BTB delay (0 for L0, >0 for L1)
  * @param expectedEntries Expected branch entries
  */
-void
-verifyPrediction(const std::vector<FullBTBPrediction>& stagePreds, unsigned delay,
-                 const std::vector<BranchInfo>& expectedEntries)
-{
+void verifyPrediction(const std::vector<FullBTBPrediction>& stagePreds,
+                     unsigned delay,
+                     const std::vector<BranchInfo>& expectedEntries) {
     // Check predictions for stages after delay
     for (int i = delay; i < stagePreds.size(); i++) {
         ASSERT_EQ(stagePreds[i].btbEntries.size(), expectedEntries.size());
@@ -176,26 +172,23 @@ verifyPrediction(const std::vector<FullBTBPrediction>& stagePreds, unsigned dela
 }
 
 // Test fixture for BTB tests
-class BTBTest : public ::testing::Test
-{
-  protected:
-    void SetUp() override
-    {
+class BTBTest : public ::testing::Test {
+protected:
+    void SetUp() override {
         // Create a BTB with 16 entries, 8-bit tags, and 4-way set associative
         mbtb_small = new MBTB(16, 8, 4, 1);  // mbtb (L1 BTB)
         mbtb = new MBTB(2048, 20, 4, 1);     // 2 sram, 4 way each, total 8 ways
         ubtb = new UBTB(16, 12);
     }
-
-
+    
+    
     MBTB* mbtb_small;
     MBTB* mbtb;
     UBTB* ubtb;
 };
 
 // Test basic initialization
-TEST_F(BTBTest, Initialization)
-{
+TEST_F(BTBTest, Initialization) {
     // Create a new BTB with different parameters
     MBTB testBtb(32, 12, 8, 0);
     // Basic initialization test passes if no crashes/assertions
@@ -203,14 +196,13 @@ TEST_F(BTBTest, Initialization)
 }
 
 // Test basic prediction with empty BTB
-TEST_F(BTBTest, EmptyPrediction)
-{
+TEST_F(BTBTest, EmptyPrediction) {
     Addr startAddr = 0x1000;
-    boost::dynamic_bitset<> history(8, 0);         // 8-bit history, all zeros
+    boost::dynamic_bitset<> history(8, 0);  // 8-bit history, all zeros
     std::vector<FullBTBPrediction> stagePreds(4);  // 4 stages
-
+    
     mbtb->putPCHistory(startAddr, history, stagePreds);
-
+    
     // Check predictions for all stages
     for (int i = 0; i < stagePreds.size(); i++) {
         EXPECT_TRUE(stagePreds[i].btbEntries.empty());
@@ -433,86 +425,86 @@ TEST_F(BTBTest, UBTBBlock1PredictionProducesMeta)
 // 4. update, update btb entries
 
 // Test basic prediction after update
-TEST_F(BTBTest, PredictionAfterUpdate)
-{
+TEST_F(BTBTest, PredictionAfterUpdate) {
     // Create branch info
     BranchInfo branch = createBranchInfo(0x1000, 0x2000, true);
 
     // Execute prediction-update cycle
-    std::vector<FullBTBPrediction> stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, true);
+    std::vector<FullBTBPrediction> stagePreds =
+        predictUpdateCycle(mbtb, 0x1000, branch, true);
 
     // Verify predictions
     verifyPrediction(stagePreds, mbtb->getDelay(), {branch});
 }
 
 // Test large virtual addr
-TEST_F(BTBTest, PredictionAfterUpdateLargeAddr)
-{
+TEST_F(BTBTest, PredictionAfterUpdateLargeAddr) {
     // Create branch info
     BranchInfo branch = createBranchInfo(0xffffffff8027ac64, 0xffffffff80261dee, true);
 
     // Execute prediction-update cycle
-    std::vector<FullBTBPrediction> stagePreds = predictUpdateCycle(mbtb, 0xffffffff8027ac60, branch, true);
+    std::vector<FullBTBPrediction> stagePreds =
+        predictUpdateCycle(mbtb, 0xffffffff8027ac60, branch, true);
 
     // Verify predictions
     verifyPrediction(stagePreds, mbtb->getDelay(), {branch});
 }
 
 // Test conditional branch prediction counter, for mBTB
-TEST_F(BTBTest, ConditionalCounter)
-{
+TEST_F(BTBTest, ConditionalCounter) {
     // Create conditional branch info
     BranchInfo branch = createBranchInfo(0x1000, 0x2000, true);
 
     // First update with taken
-    std::vector<FullBTBPrediction> stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, true);
+    std::vector<FullBTBPrediction> stagePreds =
+        predictUpdateCycle(mbtb, 0x1000, branch, true);
 
     // Counter should be initialized to 0 and stay at 0 after taken (since alwaysTaken=true)
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        auto& entries = stagePreds[i].btbEntries;
+        auto &entries = stagePreds[i].btbEntries;
         EXPECT_EQ(entries[0].ctr, 0);
         EXPECT_TRUE(entries[0].alwaysTaken);
     }
-
+    
     // Then update with not taken
     stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
 
     // Counter should be reduced after not taken (0 -> -1)
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        auto& entries = stagePreds[i].btbEntries;
+        auto &entries = stagePreds[i].btbEntries;
         EXPECT_EQ(entries[0].ctr, -1);
         EXPECT_FALSE(entries[0].alwaysTaken);
     }
 }
 
 // Test counter saturation behavior, for mBTB
-TEST_F(BTBTest, CounterSaturation)
-{
+TEST_F(BTBTest, CounterSaturation) {
     // Create conditional branch info
     BranchInfo branch = createBranchInfo(0x1000, 0x2000, true);
 
     // First entry is initialized with ctr=0
-    std::vector<FullBTBPrediction> stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, true);
+    std::vector<FullBTBPrediction> stagePreds =
+        predictUpdateCycle(mbtb, 0x1000, branch, true);
 
     // Check counter is at 0 (alwaysTaken=true, so updateCtr not called)
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        auto& entries = stagePreds[i].btbEntries;
+        auto &entries = stagePreds[i].btbEntries;
         EXPECT_EQ(entries[0].ctr, 0);  // Counter should be at 0
         EXPECT_TRUE(entries[0].alwaysTaken);
     }
-
+    
     // Update multiple times with not taken to test negative saturation
     for (int i = 0; i < 3; i++) {  // 3 times should reach saturation
         stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, false);
     }
-
+    
     // Check counter is saturated at -2
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        auto& entries = stagePreds[i].btbEntries;
+        auto &entries = stagePreds[i].btbEntries;
         EXPECT_EQ(entries[0].ctr, -2);  // Counter should saturate at -2
         EXPECT_FALSE(entries[0].alwaysTaken);
     }
@@ -541,13 +533,13 @@ TEST_F(BTBTest, CounterSaturation)
 // }
 
 // Test indirect branch prediction
-TEST_F(BTBTest, IndirectBranchPrediction)
-{
+TEST_F(BTBTest, IndirectBranchPrediction) {
     // Create indirect branch info
     BranchInfo branch = createBranchInfo(0x1000, 0x2000, false, true);
 
     // Initial prediction and update
-    std::vector<FullBTBPrediction> stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, true);
+    std::vector<FullBTBPrediction> stagePreds =
+        predictUpdateCycle(mbtb, 0x1000, branch, true);
 
     // Verify indirect target
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
@@ -556,7 +548,7 @@ TEST_F(BTBTest, IndirectBranchPrediction)
         ASSERT_TRUE(found1);
         EXPECT_EQ(target1, 0x2000);
     }
-
+    
     // Update with new target
     BranchInfo updatedBranch = createBranchInfo(0x1000, 0x3000, false, true);
     stagePreds = predictUpdateCycle(mbtb, 0x1000, updatedBranch, true);
@@ -570,8 +562,7 @@ TEST_F(BTBTest, IndirectBranchPrediction)
 }
 
 // Test multiple branch predictions in same fetch block
-TEST_F(BTBTest, MultipleBranchPrediction)
-{
+TEST_F(BTBTest, MultipleBranchPrediction) {
     // Create two branches in the same fetch block
     BranchInfo branch1 = createBranchInfo(0x1000, 0x2000, true);
     BranchInfo branch2 = createBranchInfo(0x1004, 0x3000, true);
@@ -589,25 +580,25 @@ TEST_F(BTBTest, MultipleBranchPrediction)
     FetchTarget stream = setupStream(0x1000, branch2, true, meta, 0x1008);
     mbtb->getAndSetNewBTBEntry(stream);
     mbtb->update(stream);
-
+    
     // Check final predictions
     stagePreds.clear();
     stagePreds.resize(4);
     mbtb->putPCHistory(0x1000, history, stagePreds);
-
+    
     // Verify both branches are predicted
     std::vector<BranchInfo> expectedBranches = {branch1, branch2};
     verifyPrediction(stagePreds, mbtb->getDelay(), expectedBranches);
 }
 
 // Test recovery from misprediction
-TEST_F(BTBTest, MispredictionRecovery)
-{
+TEST_F(BTBTest, MispredictionRecovery) {
     // Create conditional branch initially taken
     BranchInfo branch = createBranchInfo(0x1000, 0x2000, true);
 
     // Initial prediction and update as taken
-    std::vector<FullBTBPrediction> stagePreds = predictUpdateCycle(mbtb, 0x1000, branch, true);
+    std::vector<FullBTBPrediction> stagePreds =
+        predictUpdateCycle(mbtb, 0x1000, branch, true);
 
     // Update the same branch as not taken
     branch.target = 0x1004;  // Fall through target
@@ -616,14 +607,13 @@ TEST_F(BTBTest, MispredictionRecovery)
     // Verify prediction is updated
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        auto& entries = stagePreds[i].btbEntries;
+        auto &entries = stagePreds[i].btbEntries;
         EXPECT_FALSE(entries[0].alwaysTaken);
     }
 }
 
 // Test half-aligned mode basic functionality
-TEST_F(BTBTest, HalfAlignedBasicTest)
-{
+TEST_F(BTBTest, HalfAlignedBasicTest) {
 
     // Create branches in two consecutive 32B blocks
     BranchInfo branch1 = createBranchInfo(0x100, 0x200, true);
@@ -631,10 +621,12 @@ TEST_F(BTBTest, HalfAlignedBasicTest)
 
     // Add first branch
     std::vector<FullBTBPrediction> stagePreds =
-        predictUpdateCycle(mbtb, 0x100, branch1, true, boost::dynamic_bitset<>(64, 0), 0x140);
+        predictUpdateCycle(mbtb, 0x100, branch1, true, 
+            boost::dynamic_bitset<>(64, 0), 0x140);
 
     // Add second branch
-    stagePreds = predictUpdateCycle(mbtb, 0x100, branch2, true, boost::dynamic_bitset<>(64, 0), 0x140);
+    stagePreds = predictUpdateCycle(mbtb, 0x100, branch2, true, 
+        boost::dynamic_bitset<>(64, 0), 0x140);
 
     // Verify both branches are predicted
     std::vector<BranchInfo> expectedBranches = {branch1, branch2};
@@ -642,8 +634,7 @@ TEST_F(BTBTest, HalfAlignedBasicTest)
 }
 
 // Test half-aligned mode with unaligned addresses
-TEST_F(BTBTest, HalfAlignedUnalignedTest)
-{
+TEST_F(BTBTest, HalfAlignedUnalignedTest) {
 
     // Create unaligned branches in two consecutive 32B blocks
     BranchInfo branch1 = createBranchInfo(0x104, 0x200, true);
@@ -662,8 +653,7 @@ TEST_F(BTBTest, HalfAlignedUnalignedTest)
 }
 
 // Test half-aligned mode update with branch in second block
-TEST_F(BTBTest, HalfAlignedUpdateSecondBlock)
-{
+TEST_F(BTBTest, HalfAlignedUpdateSecondBlock) {
 
     // Create branch in second 32B block
     BranchInfo branch = createBranchInfo(0x124, 0x200, true);
@@ -686,8 +676,7 @@ TEST_F(BTBTest, HalfAlignedUpdateSecondBlock)
 }
 
 // Test half-aligned mode with branches in both blocks
-TEST_F(BTBTest, HalfAlignedBothBlocks)
-{
+TEST_F(BTBTest, HalfAlignedBothBlocks) {
 
     // Create branches in both 32B blocks
     BranchInfo branch1 = createBranchInfo(0x108, 0x200, true);
@@ -706,8 +695,7 @@ TEST_F(BTBTest, HalfAlignedBothBlocks)
 }
 
 // Test half-aligned mode with unaligned start address
-TEST_F(BTBTest, HalfAlignedUnalignedStart)
-{
+TEST_F(BTBTest, HalfAlignedUnalignedStart) {
 
     // Create branch in second block
     BranchInfo branch = createBranchInfo(0x12C, 0x200, true);
@@ -721,8 +709,7 @@ TEST_F(BTBTest, HalfAlignedUnalignedStart)
 }
 
 // Test half-aligned mode with multiple updates to same branch
-TEST_F(BTBTest, HalfAlignedMultipleUpdates)
-{
+TEST_F(BTBTest, HalfAlignedMultipleUpdates) {
 
     // Create indirect branch in second block with initial target
     BranchInfo branch = createBranchInfo(0x124, 0x200, false, true);
@@ -740,8 +727,7 @@ TEST_F(BTBTest, HalfAlignedMultipleUpdates)
 }
 
 // Test victim cache effectiveness with SRAM overflow
-TEST_F(BTBTest, VictimCacheEffectivenessTest)
-{
+TEST_F(BTBTest, VictimCacheEffectivenessTest) {
     // Create 5 branches in same 32B block that all map to SRAM0
     // Use addresses with bit[5]=0 to ensure they go to SRAM0
     std::vector<BranchInfo> branches;
@@ -755,19 +741,20 @@ TEST_F(BTBTest, VictimCacheEffectivenessTest)
     // Add all 5 branches one by one
     std::vector<FullBTBPrediction> stagePreds;
     for (int i = 0; i < 5; i++) {
-        stagePreds = predictUpdateCycle(mbtb, 0x100, branches[i], true, boost::dynamic_bitset<>(64, 0), 0x140);
+        stagePreds = predictUpdateCycle(mbtb, 0x100, branches[i], true,
+            boost::dynamic_bitset<>(64, 0), 0x140);
     }
 
     // Check if victim cache had hits
-    EXPECT_EQ(mbtb->btbStats.victimCacheHit, 1) << "Expected victim cache hits when accessing evicted branch";
+    EXPECT_EQ(mbtb->btbStats.victimCacheHit, 1)
+        << "Expected victim cache hits when accessing evicted branch";
 
     // With victim cache, all branch should still be predictable
     verifyPrediction(stagePreds, mbtb->getDelay(), {branches});
 }
 
 // Test victim cache promotion mechanism
-TEST_F(BTBTest, VictimCachePromotionTest)
-{
+TEST_F(BTBTest, VictimCachePromotionTest) {
     // Create 5 branches to overflow SRAM0 (4 ways)
     std::vector<BranchInfo> branches;
     for (int i = 0; i < 5; i++) {
@@ -791,8 +778,7 @@ TEST_F(BTBTest, VictimCachePromotionTest)
 }
 
 // Test victim cache FIFO replacement
-TEST_F(BTBTest, VictimCacheFIFOTest)
-{
+TEST_F(BTBTest, VictimCacheFIFOTest) {
     // Create 10 branches to overflow both main BTB and victim cache
     std::vector<BranchInfo> branches;
     for (int i = 0; i < 10; i++) {
@@ -817,8 +803,7 @@ TEST_F(BTBTest, VictimCacheFIFOTest)
 }
 
 // Test: update path when entry exists only in victim cache
-TEST_F(BTBTest, UpdateFromVictimCachePath)
-{
+TEST_F(BTBTest, UpdateFromVictimCachePath) {
     // Prepare 5 branches mapping to same SRAM0 set
     std::vector<BranchInfo> branches;
     for (int i = 0; i < 5; i++) {
@@ -828,17 +813,20 @@ TEST_F(BTBTest, UpdateFromVictimCachePath)
 
     // Insert first 4 branches into MBTB
     for (int i = 0; i < 4; i++) {
-        predictUpdateCycle(mbtb, 0x200, branches[i], true, boost::dynamic_bitset<>(64, 0), 0x240);
+        predictUpdateCycle(mbtb, 0x200, branches[i], true,
+            boost::dynamic_bitset<>(64, 0), 0x240);
     }
 
     // Insert 5th branch to evict one into VC
-    predictUpdateCycle(mbtb, 0x200, branches[4], true, boost::dynamic_bitset<>(64, 0), 0x240);
+    predictUpdateCycle(mbtb, 0x200, branches[4], true,
+        boost::dynamic_bitset<>(64, 0), 0x240);
 
     // At this point, one of the earlier branches should be in VC. Force update on that branch.
     // We choose branches[0] which is likely evicted first.
     auto before_replace = mbtb->btbStats.updateReplace;
 
-    auto stagePreds = predictUpdateCycle(mbtb, 0x200, branches[0], false, boost::dynamic_bitset<>(64, 0), 0x240);
+    auto stagePreds = predictUpdateCycle(mbtb, 0x200, branches[0], false,
+        boost::dynamic_bitset<>(64, 0), 0x240);
 
     // Ensure replacement path executed (entry was inserted back from VC to MBTB during update)
     // EXPECT_GE(mbtb->btbStats.updateReplace, before_replace + 1);
@@ -848,7 +836,7 @@ TEST_F(BTBTest, UpdateFromVictimCachePath)
 }
 
 
-}  // namespace test
-}  // namespace btb_pred
-}  // namespace branch_prediction
-}  // namespace gem5
+} // namespace test
+} // namespace btb_pred
+} // namespace branch_prediction
+} // namespace gem5

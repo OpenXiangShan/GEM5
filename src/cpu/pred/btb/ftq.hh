@@ -31,9 +31,9 @@ class FetchTargetQueue
     } queue[MaxThreads];
 
     uint32_t roundRobinPtr = 0;
-
-  public:
-    FetchTargetQueue(uint32_t numThreads_, const uint32_t ftqSize_) : numThreads(numThreads_)
+public:
+    FetchTargetQueue(uint32_t numThreads_, const uint32_t ftqSize_)
+        : numThreads(numThreads_)
     {
         assert(numThreads <= MaxThreads);
         for (uint32_t i = 0; i < numThreads; ++i) {
@@ -48,27 +48,25 @@ class FetchTargetQueue
     inline FetchTarget& front(ThreadID tid) { return queue[tid].cap.front(); }
     inline FetchTarget& back(ThreadID tid) { return queue[tid].cap.back(); }
     inline FetchTarget& fetching(ThreadID tid) { return get(queue[tid].fetchptr, tid); }
-    inline FetchTarget& get(FetchTargetId targetId, ThreadID tid)
-    {
-        assert(targetId >= queue[tid].baseTargetId && targetId < queue[tid].baseTargetId + queue[tid].cap.size());
+    inline FetchTarget& get(FetchTargetId targetId, ThreadID tid) {
+        assert(targetId >= queue[tid].baseTargetId &&
+               targetId < queue[tid].baseTargetId + queue[tid].cap.size());
         return queue[tid].cap[targetId - queue[tid].baseTargetId];
     }
-    inline bool hasTarget(FetchTargetId targetId, ThreadID tid) const
-    {
-        return targetId >= queue[tid].baseTargetId && targetId < queue[tid].baseTargetId + queue[tid].cap.size();
+    inline bool hasTarget(FetchTargetId targetId, ThreadID tid) const {
+        return targetId >= queue[tid].baseTargetId &&
+               targetId < queue[tid].baseTargetId + queue[tid].cap.size();
     }
     inline bool empty(ThreadID tid) const { return queue[tid].cap.empty(); }
     inline bool full(ThreadID tid) const { return queue[tid].cap.size() >= ftqSize[tid]; }
-    inline bool anyEmpty() const
-    {
+    inline bool anyEmpty() const {
         for (uint32_t i = 0; i < numThreads; ++i) {
             if (!queue[i].cap.empty())
                 return false;
         }
         return true;
     }
-    inline bool allFull() const
-    {
+    inline bool allFull() const {
         for (uint32_t i = 0; i < numThreads; ++i) {
             if (queue[i].cap.size() < ftqSize[i])
                 return false;
