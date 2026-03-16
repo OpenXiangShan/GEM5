@@ -65,6 +65,7 @@
 #include "mem/port.hh"
 #include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
+#include "cpu/o3/smt_sched.hh"
 
 namespace gem5
 {
@@ -233,6 +234,18 @@ class Fetch
     /** To probe when a fetch request is successfully sent. */
     ProbePointArg<RequestPtr> *ppFetchRequestSent;
 
+    // SMT Decode Scheduler
+    SMTScheduler* decodeScheduler;
+
+    // Counters from backend structures (to be passed in)
+    InstsCounter* lsqCounter;
+    InstsCounter* iqCounter;
+    InstsCounter* robCounter;
+
+    // Configuration parameters
+    std::string smtDecodePolicy ="multi_priority";
+    int delayedSchedulerDelay;
+
   public:
     /** Fetch constructor. */
     Fetch(CPU *_cpu, const BaseO3CPUParams &params);
@@ -299,6 +312,12 @@ class Fetch
 
     /** For priority-based fetch policies, need to keep update priorityList */
     void deactivateThread(ThreadID tid);
+
+    // Function to initialize scheduler
+    void initDecodeScheduler();
+
+    // Select a thread that is not fetch-blocked, using scheduler
+    ThreadID selectUnstalledThread();
   private:
     /** Reset this pipeline stage */
     void resetStage();
