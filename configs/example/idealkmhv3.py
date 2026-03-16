@@ -143,7 +143,7 @@ if __name__ == '__m5_main__':
     args.l2_size = '2MB'
     args.l3_size = '32MB'
     # Enable prefetch buffers for all hardware prefetchers in this config.
-    args.enable_pf_buffer = True
+    args.enable_pf_buffer = False
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 
