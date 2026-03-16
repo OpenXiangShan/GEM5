@@ -147,6 +147,23 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
     parser.add_argument("--l2-to-l3-pf-hint", action="store_true")
     parser.add_argument("--CHI", action="store_true")
+    # 影子 L2 参数组：
+    # - 目标：在不引入一致性协议复杂度的前提下，复制主 L2 请求形成“额外 RN 流量源”。
+    # - 要点：每个影子都必须给出 attach + src/window/dst 三元组，才能保证地址空间隔离。
+    # - 注意：这里只负责暴露 CLI 参数；参数一致性和严格失败在 CacheConfig / C++ 层实现。
+    parser.add_argument("--shadow-l2-enable", action="store_true",
+                        help="Enable shadow L2 traffic replay injectors")
+    parser.add_argument("--shadow-l2-count", type=int, default=1,
+                        help="Number of shadow L2 injectors when --shadow-l2-enable is set")
+    parser.add_argument("--shadow-attach-points", type=str, default="mesh3.local0",
+                        help="Comma-separated mesh attach points for each shadow bridge "
+                             "(e.g. mesh3.local0,mesh0.local1)")
+    parser.add_argument("--shadow-src-bases", type=str, default="",
+                        help="Comma-separated source window bases per shadow")
+    parser.add_argument("--shadow-window-sizes", type=str, default="",
+                        help="Comma-separated source window sizes per shadow")
+    parser.add_argument("--shadow-dst-bases", type=str, default="",
+                        help="Comma-separated remap destination bases per shadow")
 
     parser.add_argument("--num-dirs", type=int, default=1)
     parser.add_argument("--num-l2caches", type=int, default=1)

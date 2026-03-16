@@ -41,6 +41,7 @@
 #
 
 import math
+import os
 import m5
 from m5.objects import *
 from common.Caches import *
@@ -71,6 +72,40 @@ def _get_cache_opts(cpu, level, options):
         opts['prefetcher'] = create_prefetcher(cpu, level, options)
 
     return opts
+
+
+def _parse_csv_list(raw):
+    """
+    将命令行传入的逗号分隔文本统一解析为列表。
+    设计目标：
+    1) 兼容 None / list / tuple / str；
+    2) 自动去除空白和空 token；
+    3) 返回纯净列表，便于后续做“长度必须一致”的严格校验。
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        return list(raw)
+    text = str(raw).strip()
+    if text == "":
+        return []
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
+def _parse_csv_addr_list(raw, field_name):
+    """
+    解析地址列表，支持 0x 前缀十六进制与十进制（int(token, 0)）。
+    任一 token 非法都立即抛错，避免“部分成功”导致实验配置含混。
+    """
+    values = []
+    for token in _parse_csv_list(raw):
+        try:
+            values.append(int(token, 0))
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid {field_name} token '{token}', expected integer literal"
+            ) from exc
+    return values
 
 def config_classic_l2(options, system, l2_cache_class):
     # When using classic L2 cache, The prefetcher is inside the l2cache, instead of l2Wrapper
@@ -266,8 +301,81 @@ def config_cache(options, system):
                 # opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
                 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
                 system.CHIsys = L2ToDramSys(configFile=os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'))
-                system.CHIsys.L2Wrapper = L2Wrapper(RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)))
+                # 影子 L2 总开关与数量：
+                # - 开启时 count 必须 > 0；
+                # - 关闭时允许 count 保持默认值（不会生效）。
+                shadow_enable = bool(getattr(options, "shadow_l2_enable", False))
+                shadow_count = int(getattr(options, "shadow_l2_count", 1))
+                if shadow_enable and shadow_count <= 0:
+                    raise ValueError("--shadow-l2-count must be > 0 when --shadow-l2-enable is set")
+
+                # 每个影子需要独立的一组配置：
+                # 1) bridge（注入源）
+                # 2) attach 点（meshX.localY）
+                # 3) src/window/dst（地址重映射窗口）
+                shadow_bridges = []
+                shadow_attach_points = []
+                shadow_src_bases = []
+                shadow_window_sizes = []
+                shadow_dst_bases = []
+                if shadow_enable:
+                    # 为每个影子创建独立 CHI bridge，确保 SrcId / NodeID 可区分。
+                    shadow_bridges = [
+                        CHIBridge(networkPort=CHIPort(recv_buffer_size=4))
+                        for _ in range(shadow_count)
+                    ]
+
+                    # attach 点默认 mesh3.local0，后续可通过 CSV 扩展到 local1 或其他 mesh 节点。
+                    shadow_attach_points = _parse_csv_list(
+                        getattr(options, "shadow_attach_points", "mesh3.local0")
+                    )
+                    # 映射公式：A' = dst_base + (A - src_base)，A 必须落在 [src_base, src_base + window)。
+                    shadow_src_bases = _parse_csv_addr_list(
+                        getattr(options, "shadow_src_bases", ""),
+                        "shadow-src-bases")
+                    shadow_window_sizes = _parse_csv_addr_list(
+                        getattr(options, "shadow_window_sizes", ""),
+                        "shadow-window-sizes")
+                    shadow_dst_bases = _parse_csv_addr_list(
+                        getattr(options, "shadow_dst_bases", ""),
+                        "shadow-dst-bases")
+
+                    # 严格失败策略：
+                    # 任何列表长度与 shadow_count 不一致都直接报错，不做隐式补齐或截断，
+                    # 防止实验流量“看似在跑，实则配置错位”。
+                    if len(shadow_attach_points) != shadow_count:
+                        raise ValueError(
+                            f"shadow attach points count mismatch: expected {shadow_count}, "
+                            f"got {len(shadow_attach_points)}"
+                        )
+                    if len(shadow_src_bases) != shadow_count:
+                        raise ValueError(
+                            f"shadow src bases count mismatch: expected {shadow_count}, "
+                            f"got {len(shadow_src_bases)}"
+                        )
+                    if len(shadow_window_sizes) != shadow_count:
+                        raise ValueError(
+                            f"shadow window sizes count mismatch: expected {shadow_count}, "
+                            f"got {len(shadow_window_sizes)}"
+                        )
+                    if len(shadow_dst_bases) != shadow_count:
+                        raise ValueError(
+                            f"shadow dst bases count mismatch: expected {shadow_count}, "
+                            f"got {len(shadow_dst_bases)}"
+                        )
+
+                system.CHIsys.L2Wrapper = L2Wrapper(
+                    RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)),
+                    ShadowRNBridges=shadow_bridges,
+                    shadow_enable=shadow_enable,
+                    shadow_src_bases=shadow_src_bases,
+                    shadow_window_sizes=shadow_window_sizes,
+                    shadow_dst_bases=shadow_dst_bases,
+                )
                 system.CHIsys.L3 = FakeL3(networkPort=CHIPort(recv_buffer_size=4))
+                # 将影子 bridge 与 attach 列表传给 TopoSys，负责真正接线与 NodeID/SAM 配置。
+                system.CHIsys.ShadowRNBridges = shadow_bridges
+                system.CHIsys.shadow_attach_points = shadow_attach_points
                 # 2x2 mesh used by xsCHI TopoSys.
                 # Coordinates:
                 #   Mesh0=(0,0), Mesh1=(1,0), Mesh2=(1,1), Mesh3=(0,1)
@@ -276,16 +384,22 @@ def config_cache(options, system):
                 system.CHIsys.MeshNode0 = MeshNode(
                     node_x=0, node_y=0, voq_depth=8,
                     port_local0=CHIPort(recv_buffer_size=4),
+                    # local1 预留给后续影子扩展（例如 mesh0.local1）。
+                    port_local1=CHIPort(recv_buffer_size=4),
                     port_east=CHIPort(recv_buffer_size=4),
                     port_north=CHIPort(recv_buffer_size=4))
                 system.CHIsys.MeshNode1 = MeshNode(
                     node_x=1, node_y=0, voq_depth=8,
                     port_local0=CHIPort(recv_buffer_size=4),
+                    # 保持与 local0 对称，便于多影子自由挂载。
+                    port_local1=CHIPort(recv_buffer_size=4),
                     port_west=CHIPort(recv_buffer_size=4),
                     port_north=CHIPort(recv_buffer_size=4))
                 system.CHIsys.MeshNode2 = MeshNode(
                     node_x=1, node_y=1, voq_depth=8,
                     port_local0=CHIPort(recv_buffer_size=4),
+                    # DRAM 仍占用 local0，local1 供未来额外流量源扩展。
+                    port_local1=CHIPort(recv_buffer_size=4),
                     port_west=CHIPort(recv_buffer_size=4),
                     port_south=CHIPort(recv_buffer_size=4))
                 # Mesh3 currently has no local endpoint; keep local0 present
@@ -293,12 +407,16 @@ def config_cache(options, system):
                 system.CHIsys.MeshNode3 = MeshNode(
                     node_x=0, node_y=1, voq_depth=8,
                     port_local0=CHIPort(recv_buffer_size=4),
+                    # 默认影子挂点常用 mesh3.local0，保留 local1 以支持 count 增长。
+                    port_local1=CHIPort(recv_buffer_size=4),
                     port_east=CHIPort(recv_buffer_size=4),
                     port_south=CHIPort(recv_buffer_size=4))
                 print(
                     "[xsCHI][Build] mesh=2x2 "
                     "M0=(0,0) M1=(1,0) M2=(1,1) M3=(0,1) "
-                    "endpoints: RN@M0.local0 HN@M1.local0 DRAM@M2.local0"
+                    "endpoints: RN@M0.local0 HN@M1.local0 DRAM@M2.local0 "
+                    f"shadow_enable={shadow_enable} shadow_count={len(shadow_bridges)} "
+                    f"shadow_attach={shadow_attach_points}"
                 )
                 system.CHIsys.mem_side_port = system.membus.cpu_side_ports
             else:

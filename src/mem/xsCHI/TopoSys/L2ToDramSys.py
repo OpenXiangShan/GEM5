@@ -50,6 +50,10 @@ class L2ToDramSys(ClockedObject):
     dramsim3 = Param.DDRWrapper("DDR Wrapper")
 
     L2Wrapper = Param.L2Wrapper("L2 Wrapper")
+    # 来自配置层的影子桥列表；TopoSys 在构造时负责将其接到指定 Mesh local 口。
+    ShadowRNBridges = VectorParam.CHIBridge([], "Shadow RN bridges")
+    # 每个影子对应一个挂点，格式固定为 meshX.localY（例如 mesh3.local0）。
+    shadow_attach_points = VectorParam.String([], "Per-shadow mesh attach point, e.g. mesh3.local0")
 
     L3 = Param.FakeL3("L3 mux")
 
