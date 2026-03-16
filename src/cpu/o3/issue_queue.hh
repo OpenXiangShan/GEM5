@@ -16,12 +16,14 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/smt_sched.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/timebuf.hh"
 #include "params/BaseSelector.hh"
 #include "params/IssuePort.hh"
 #include "params/IssueQue.hh"
 #include "params/PAgeSelector.hh"
+#include "params/SMTBasedSelector.hh"
 #include "params/Scheduler.hh"
 #include "params/SpecWakeupChannel.hh"
 #include "sim/sim_object.hh"
@@ -99,11 +101,25 @@ class PAgeSelector : public BaseSelector
     ReadyQue::iterator select(ReadyQue::iterator begin, int portid) override;
 };
 
+class SMTBasedSelector : public BaseSelector
+{
+  private:
+      IndependentIQICountScheduler* smtScheduler = nullptr;
+  public:
+    SMTBasedSelector(const SMTBasedSelectorParams& params) : BaseSelector(params) {}
+    void setparent(Scheduler* scheduler, IssueQue* iq) override;
+    void allocate(const DynInstPtr& inst) override { BaseSelector::allocate(inst);}
+    void deallocate(const DynInstPtr& inst) override { BaseSelector::deallocate(inst);}
+    ReadyQue::iterator select(ReadyQue::iterator begin, int portid) override;
+};
+
 class IssueQue : public SimObject
 {
     friend class Scheduler;
     friend class BaseSelector;
     friend class PAgeSelector;
+    friend class InstsCounter;
+    friend class IndependentIQICountScheduler;
 
     std::string _name;
     const int inports;
@@ -171,6 +187,10 @@ class IssueQue : public SimObject
     Scheduler* scheduler = nullptr;
     BaseSelector* selector = nullptr;
 
+    //iq smt scheduler
+    InstsCounter* instsCounter = nullptr;
+    IndependentIQICountScheduler* independentIQICountScheduler = nullptr;
+
     struct IssueQueStats : public statistics::Group
     {
         IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name);
@@ -206,6 +226,21 @@ class IssueQue : public SimObject
     void setMainRdpOpt(bool enable) { enableMainRdpOpt = enable; }
     void resetDepGraph(int numPhysRegs);
 
+    void setInstsCounter(InstsCounter* counter) { instsCounter = counter;}
+
+    InstsCounter* getInstsCounter() const {return instsCounter; }
+
+    void incInIQInstsCounter(ThreadID tid);
+    void decInIQInstsCounter(ThreadID tid);
+    bool hasInstsCounter() const { return instsCounter != nullptr; }
+
+    void initIndependentIQICountScheduler(int numThreads);
+
+    void setIndependentIQICountScheduler( IndependentIQICountScheduler* _independentIQICountScheduler ) {
+      independentIQICountScheduler = _independentIQICountScheduler;
+    }
+    IndependentIQICountScheduler* getIndependentIQICountScheduler() { return independentIQICountScheduler; }
+
     void tick();
     bool ready();
     int emptyEntries() const { return iqsize - instNum; }
@@ -218,7 +253,7 @@ class IssueQue : public SimObject
     bool idle();
 
     void doCommit(const InstSeqNum inst);
-    void doSquash(const InstSeqNum seqNum);
+    void doSquash(SquashInfo squashInfo);
 
     int getIssueStages() { return scheduleToExecDelay; }
     int getId() { return IQID; }
@@ -329,6 +364,7 @@ class Scheduler : public SimObject
     void setAllScoreBoard(PhysRegIdPtr reg);
     void setMemDepUnit(MemDepUnit* memDepUnit) { this->memDepUnit = memDepUnit; }
     void setMainRdpOpt(bool enable);
+    void initIQICountSmtScheduler(int numThreads);
 
     void tick();
     void issueAndSelect();
@@ -357,8 +393,9 @@ class Scheduler : public SimObject
     bool hasReadyInsts();
     bool isDrained();
     void doCommit(const InstSeqNum seqNum);
-    void doSquash(const InstSeqNum seqNum);
+    void doSquash(SquashInfo squashInfo);
     uint32_t getIQInsts();
+    uint32_t getIQInsts(ThreadID tid);
 
     SchedulerStats& getStats() { return stats; }
 };

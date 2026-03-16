@@ -427,6 +427,7 @@ class InstructionQueue
 
     /** The sequence number of the squashed instruction. */
     InstSeqNum squashedSeqNum[MaxThreads];
+    SquashInfo    squashInfo;
 
     struct IQStats : public statistics::Group
     {
