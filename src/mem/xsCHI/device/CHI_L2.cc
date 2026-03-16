@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <limits>
 #include <memory>
+#include <string>
 
 #include "base/addr_range.hh"
 #include "base/compiler.hh"
@@ -24,13 +26,110 @@ namespace gem5
 {
 namespace xsCHI
 {
+    CHI_L2::WrapperStats::WrapperStats(CHI_L2 *parent)
+        : statistics::Group(parent, "addr_observe"),
+          ADD_STAT(observed_req_count, statistics::units::Count::get(),
+                   "Observed cacheable requests entering xsCHI CHI_L2"),
+          ADD_STAT(observed_req_addr_min, statistics::units::Byte::get(),
+                   "Minimum observed request address (raw byte address)"),
+          ADD_STAT(observed_req_addr_max, statistics::units::Byte::get(),
+                   "Maximum observed request address (raw byte address)"),
+          ADD_STAT(observed_req_addr_span, statistics::units::Byte::get(),
+                   "Address span computed as max-min for observed requests"),
+          ADD_STAT(shadow_mirror_req_total, statistics::units::Count::get(),
+                   "Total mirrored requests sent to shadow bridges"),
+          ADD_STAT(shadow_mirror_req_by_bridge, statistics::units::Count::get(),
+                   "Mirrored requests per shadow bridge index"),
+          ADD_STAT(shadow_remap_fail_total, statistics::units::Count::get(),
+                   "Total shadow address remap validation failures"),
+          ADD_STAT(shadow_remap_fail_by_bridge, statistics::units::Count::get(),
+                   "Shadow address remap failures per bridge index"),
+          ADD_STAT(shadow_drop_read_resp_total, statistics::units::Count::get(),
+                   "Total read responses dropped from shadow bridges"),
+          ADD_STAT(shadow_drop_read_resp_by_bridge, statistics::units::Count::get(),
+                   "Dropped read responses per shadow bridge index")
+    {
+        using namespace statistics;
+        // 统计向量维度直接绑定影子桥数量，确保 stats 中每个下标都可映射到具体 shadow[i]。
+        const size_t shadowCount = parent->shadowBridges.size();
+        observed_req_count.flags(nozero);
+        observed_req_addr_span.flags(nozero);
+        shadow_mirror_req_total.flags(nozero);
+        shadow_remap_fail_total.flags(nozero);
+        shadow_drop_read_resp_total.flags(nozero);
+
+        shadow_mirror_req_by_bridge.init(shadowCount).flags(nozero);
+        shadow_remap_fail_by_bridge.init(shadowCount).flags(nozero);
+        shadow_drop_read_resp_by_bridge.init(shadowCount).flags(nozero);
+
+        for (size_t i = 0; i < shadowCount; ++i) {
+            // 统一命名为 shadow0/shadow1/...，便于在 stats.txt 中快速关联。
+            const std::string label = "shadow" + std::to_string(i);
+            shadow_mirror_req_by_bridge.subname(i, label);
+            shadow_remap_fail_by_bridge.subname(i, label);
+            shadow_drop_read_resp_by_bridge.subname(i, label);
+        }
+    }
+
     CHI_L2::CHI_L2(const Params &p):
     ClockedObject(p),
     cpuSidePort(p.name + ".cpu_side_port", this, "CpuSidePort"),
     memSidePort(p.name + ".mem_side_port", this, "MemSidePort"),
-    bridge(p.RNBridge)
+    bridge(p.RNBridge),
+    shadowBridges(p.ShadowRNBridges.begin(), p.ShadowRNBridges.end()),
+    shadowEnabled(p.shadow_enable),
+    shadowSrcBases(p.shadow_src_bases.begin(), p.shadow_src_bases.end()),
+    shadowWindowSizes(p.shadow_window_sizes.begin(), p.shadow_window_sizes.end()),
+    shadowDstBases(p.shadow_dst_bases.begin(), p.shadow_dst_bases.end()),
+    stats(this),
+    observedMinAddr(0),
+    observedMaxAddr(0),
+    hasObservedAddr(false),
+    observedReqCount(0)
     {
         bridge->set_recvReadResp_callback([this](ReqPtr& req) { this->recvReadResp(req); });
+        // 严格失败策略（配置层 + C++ 双重把关）：
+        // - 开启影子时，桥与三组映射参数都必须按索引对齐；
+        // - 关闭影子时，不接受任何残留 shadow 参数，避免误配静默生效。
+        if (shadowEnabled) {
+            panic_if(shadowBridges.empty(),
+                     "%s shadow_l2_enable is true but ShadowRNBridges is empty",
+                     name());
+            panic_if(shadowBridges.size() != shadowSrcBases.size() ||
+                         shadowBridges.size() != shadowWindowSizes.size() ||
+                         shadowBridges.size() != shadowDstBases.size(),
+                     "%s shadow config length mismatch: bridges=%zu src=%zu window=%zu dst=%zu",
+                     name(), shadowBridges.size(), shadowSrcBases.size(),
+                     shadowWindowSizes.size(), shadowDstBases.size());
+        } else {
+            panic_if(!shadowBridges.empty() || !shadowSrcBases.empty() ||
+                         !shadowWindowSizes.empty() || !shadowDstBases.empty(),
+                     "%s shadow params provided while shadow_l2_enable is false",
+                     name());
+        }
+
+        for (size_t i = 0; i < shadowBridges.size(); ++i) {
+            CHIBridge *shadowBridge = shadowBridges[i];
+            panic_if(shadowBridge == nullptr,
+                     "%s ShadowRNBridges[%zu] is null", name(), i);
+            // 影子读回包不参与功能正确性，只用于流量闭环，统一走丢弃回调。
+            shadowBridge->set_recvReadResp_callback(
+                [this, i](ReqPtr &req) { this->recvShadowReadResp(i, req); });
+        }
+
+        registerExitCallback([this]() {
+            if (!hasObservedAddr) {
+                inform("xsCHI %s observed no cacheable CHI requests", name());
+                return;
+            }
+
+            inform("xsCHI %s observed_addr_range: count=%llu min=%#llx max=%#llx span=%#llx",
+                   name(),
+                   static_cast<unsigned long long>(observedReqCount),
+                   static_cast<unsigned long long>(observedMinAddr),
+                   static_cast<unsigned long long>(observedMaxAddr),
+                   static_cast<unsigned long long>(observedMaxAddr - observedMinAddr));
+        });
         DPRINTF(CHIL2Wrapper,"CHI_L2 Construct,without id\n");
 
     }
@@ -39,6 +138,25 @@ namespace xsCHI
     CHI_L2::init()
     {
         ClockedObject::init();
+        // 启动阶段做窗口合法性校验，尽早失败，避免带着错误映射进入长仿真。
+        for (size_t i = 0; i < shadowBridges.size(); ++i) {
+            const Addr srcBase = shadowSrcBases[i];
+            const Addr winSize = shadowWindowSizes[i];
+            const Addr dstBase = shadowDstBases[i];
+            panic_if(winSize == 0,
+                     "%s shadow[%zu] window size must be > 0", name(), i);
+            panic_if(srcBase > std::numeric_limits<Addr>::max() - winSize,
+                     "%s shadow[%zu] source window overflow: src=%#llx size=%#llx",
+                     name(), i,
+                     static_cast<unsigned long long>(srcBase),
+                     static_cast<unsigned long long>(winSize));
+            panic_if(dstBase > std::numeric_limits<Addr>::max() - winSize,
+                     "%s shadow[%zu] destination window overflow: dst=%#llx size=%#llx",
+                     name(), i,
+                     static_cast<unsigned long long>(dstBase),
+                     static_cast<unsigned long long>(winSize));
+        }
+
         // Propagate address ranges so upstream crossbars have valid routing
         // before the first packet arrives.
         cpuSidePort.sendRangeChange();
@@ -80,8 +198,12 @@ namespace xsCHI
         
         assert(pkt->isRequest());
         DPRINTF(CHIL2Wrapper,"RecvReq, cmd:%s, addr: %lx\n",pkt->cmdString(),pkt->getAddr());
+        wrapper->recordObservedAddress(pkt->getAddr());
         ReqPtr req = wrapper->CreateRequest(pkt);
 
+        // 先镜像再发送主请求：
+        // 这样在主路径出现后续 backpressure/时序变化时，影子与主请求仍保持同源同拍注入。
+        wrapper->mirrorReqToShadows(req);
         wrapper->bridge->ReceiveReq(req, false);
         assert(wrapper->outstanding_pkts.count(pkt->getAddr())==0);
         if (pkt->needsResponse() && !pkt->cacheResponding()) {
@@ -90,6 +212,71 @@ namespace xsCHI
         }
         //always true
         return true;
+    }
+
+    void
+    CHI_L2::recordObservedAddress(Addr addr)
+    {
+        if (!hasObservedAddr) {
+            observedMinAddr = addr;
+            observedMaxAddr = addr;
+            hasObservedAddr = true;
+        } else {
+            observedMinAddr = std::min(observedMinAddr, addr);
+            observedMaxAddr = std::max(observedMaxAddr, addr);
+        }
+
+        observedReqCount++;
+        stats.observed_req_count++;
+        stats.observed_req_addr_min = observedMinAddr;
+        stats.observed_req_addr_max = observedMaxAddr;
+        stats.observed_req_addr_span = observedMaxAddr - observedMinAddr;
+    }
+
+    Addr
+    CHI_L2::remapShadowAddr(size_t shadowIdx, Addr addr)
+    {
+        const Addr srcBase = shadowSrcBases[shadowIdx];
+        const Addr winSize = shadowWindowSizes[shadowIdx];
+        const Addr dstBase = shadowDstBases[shadowIdx];
+        Addr remappedAddr = 0;
+        const bool ok = TestApi::remapAddressInWindow(
+            addr, srcBase, winSize, dstBase, remappedAddr);
+        if (!ok) {
+            // 记统计后立即 panic：映射失败意味着地址隔离假设被破坏，实验结果不可用。
+            stats.shadow_remap_fail_total++;
+            stats.shadow_remap_fail_by_bridge[shadowIdx]++;
+            panic("%s shadow[%zu] address %#llx outside source window [%#llx, %#llx)",
+                  name(), shadowIdx,
+                  static_cast<unsigned long long>(addr),
+                  static_cast<unsigned long long>(srcBase),
+                  static_cast<unsigned long long>(srcBase + winSize));
+        }
+        return remappedAddr;
+    }
+
+    void
+    CHI_L2::mirrorReqToShadows(const ReqPtr &req)
+    {
+        if (!shadowEnabled) {
+            return;
+        }
+
+        for (size_t i = 0; i < shadowBridges.size(); ++i) {
+            // 深拷贝 Request，保证每个影子拥有独立地址字段与后续生命周期。
+            ReqPtr shadowReq = std::make_shared<Request>(*req);
+            const Addr shadowAddr = remapShadowAddr(i, req->getAddr());
+            shadowReq->setAddr(shadowAddr);
+            shadowBridges[i]->ReceiveReq(shadowReq, false);
+            stats.shadow_mirror_req_total++;
+            stats.shadow_mirror_req_by_bridge[i]++;
+            DPRINTF(CHIL2Wrapper,
+                    "MirrorReq shadow[%zu] op:%s addr:%#llx -> %#llx\n",
+                    i,
+                    CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(shadowReq->getOpcode()),
+                    static_cast<unsigned long long>(req->getAddr()),
+                    static_cast<unsigned long long>(shadowAddr));
+        }
     }
 
 
@@ -250,6 +437,24 @@ namespace xsCHI
 
         outstanding_pkts.erase(req->getAddr());
 
+    }
+
+    void
+    CHI_L2::recvShadowReadResp(size_t shadowIdx, ReqPtr &req)
+    {
+        panic_if(shadowIdx >= shadowBridges.size(),
+                 "%s shadow read callback index out of range: %zu",
+                 name(), shadowIdx);
+        stats.shadow_drop_read_resp_total++;
+        stats.shadow_drop_read_resp_by_bridge[shadowIdx]++;
+        // 不向 CPU 回传影子响应：
+        // 影子仅用于制造网络负载，功能语义以主桥回包为准。
+        DPRINTF(CHIL2Wrapper,
+                "DropShadowReadResp shadow[%zu], op:%s, addr:%#llx, size:%u\n",
+                shadowIdx,
+                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),
+                static_cast<unsigned long long>(req->getAddr()),
+                req->getSize());
     }
     gem5::Port &
     CHI_L2::getPort(const std::string &if_name, PortID idx)
