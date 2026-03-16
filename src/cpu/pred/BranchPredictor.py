@@ -1060,6 +1060,16 @@ class BTBTAGE(TimedBaseBTBPredictor):
     enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
     numDelay = 2
 
+class BTBTAGEUpperBound(BTBTAGE):
+    type = 'BTBTAGEUpperBound'
+    cxx_class = 'gem5::branch_prediction::btb_pred::BTBTAGEUpperBound'
+    cxx_header = "cpu/pred/btb/btb_tage_ub.hh"
+
+    needMoreHistories = False
+    updateOnRead = False
+    usePathHashHistory = Param.Bool(
+        False, "Use exact path-hash history instead of exact outcome history")
+
 class MicroTAGE(TimedBaseBTBPredictor):
     """Micro-sized BTB TAGE predictor used alongside uBTB"""
     type = 'MicroTAGE'

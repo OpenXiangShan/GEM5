@@ -847,6 +847,12 @@ def xiangshan_system_init():
     Options.addCommonOptions(parser, configure_xiangshan=True)
     Options.addXiangshanFSOptions(parser)
     Options.addXiangshanTraceOptions(parser)
+    parser.add_argument(
+        "--btb-tage-upper-bound",
+        action="store_true",
+        default=False,
+        help="Use BTBTAGEUpperBound in kmhv3 instead of the default BTBTAGE",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:

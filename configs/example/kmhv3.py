@@ -96,6 +96,10 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
 
+            if args.btb_tage_upper_bound:
+                cpu.branchPred.tage = BTBTAGEUpperBound(
+                    usePathHashHistory=True)
+
             cpu.branchPred.mbtb.resolvedUpdate = True
             cpu.branchPred.tage.resolvedUpdate = True
             cpu.branchPred.ittage.resolvedUpdate = True

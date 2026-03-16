@@ -886,7 +886,7 @@ BTBTAGE::satDecrement(int min, short &counter)
 }
 
 Addr
-BTBTAGE::getUseAltIdx(Addr pc) {
+BTBTAGE::getUseAltIdx(Addr pc) const {
     Addr shiftedPc = pc >> instShiftAmt;
     return shiftedPc & (useAltOnNaSize - 1);
 }
