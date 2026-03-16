@@ -550,6 +550,7 @@ for variant_path in variant_paths:
                         (':' + env['ENV']['PKG_CONFIG_PATH']
                          if 'PKG_CONFIG_PATH' in env['ENV'] and
                          env['ENV']['PKG_CONFIG_PATH'] else '')
+                    break
 
     # Add sanitizers flags
     sanitizers=[]
