@@ -528,7 +528,7 @@ IEW::squash(ThreadID tid)
 
     for (auto& dp : dispQue) {
         for (auto& it : dp) {
-            if (it->seqNum > fromCommit->commitInfo[tid].doneSeqNum) {
+            if (it->seqNum > fromCommit->commitInfo[tid].doneSeqNum && (it->threadNumber == tid)) {
                 it->setSquashed();
             }
         }
@@ -1556,6 +1556,9 @@ IEW::executeInsts()
     ThreadID tid = *activeThreads->begin();
     toFetch->iewInfo[tid].resolvedCFIs.clear();
 
+    toFetch->iewInfo[tid].ldstqCount=ldstQueue.getCount(tid);
+    toFetch->iewInfo[tid].robCount= rob->getThreadEntries(tid);
+    toFetch->iewInfo[tid].iqCount= scheduler->getIQInsts(tid);
     // Execute/writeback any instructions that are available.
     int insts_to_execute = fromIssue->size;
     fromIssue->size = 0;

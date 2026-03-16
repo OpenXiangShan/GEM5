@@ -28,6 +28,8 @@ class InstsCounter
 
     uint64_t getCounter(ThreadID tid) { return counter[tid]; }
     void setCounter(ThreadID tid, uint64_t value) { counter[tid] = value; }
+    void incCounter(ThreadID tid, uint64_t value = 1) { counter[tid] += value; }
+    void decCounter(ThreadID tid, uint64_t value = 1) { counter[tid] -= value; }
 };
 
 class SMTScheduler
@@ -36,7 +38,8 @@ class SMTScheduler
     int numThreads;
   public:
     SMTScheduler(int numThreads) : numThreads(numThreads) {}
-    virtual ThreadID getThread();
+    virtual ~SMTScheduler() = default;
+    virtual ThreadID getThread() = 0;
 };
 
 
@@ -124,7 +127,28 @@ class MultiPrioritySched : public SMTScheduler
     }
 };
 
+class IndependentIQICountScheduler : public SMTScheduler {
+private:
+     InstsCounter* counter;  // Counter for this IQ only
 
+public:
+    IndependentIQICountScheduler(int numThreads, InstsCounter* counter)
+        : SMTScheduler(numThreads), counter(counter){}
+
+    ThreadID getThread() override {
+        ThreadID selectedTid = 0;
+        uint64_t maxCount = counter->getCounter(0);
+        
+        for (ThreadID tid = 1; tid < numThreads; ++tid) {
+            uint64_t count = counter->getCounter(tid);
+            if (count > maxCount) {
+                maxCount = count;
+                selectedTid = tid;
+            }
+        }
+        return selectedTid;
+    }
+};
 
 }}
 #endif
