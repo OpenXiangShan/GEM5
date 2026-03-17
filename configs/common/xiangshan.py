@@ -871,6 +871,31 @@ def xiangshan_system_init():
     Options.addCommonOptions(parser, configure_xiangshan=True)
     Options.addXiangshanFSOptions(parser)
     Options.addXiangshanTraceOptions(parser)
+    parser.set_defaults(enable_bop_large=True, enable_bop_small=True)
+    parser.add_argument(
+        "--enable-bop-large",
+        dest="enable_bop_large",
+        action="store_true",
+        help="Enable large BOP inside the L2 composite prefetcher",
+    )
+    parser.add_argument(
+        "--disable-bop-large",
+        dest="enable_bop_large",
+        action="store_false",
+        help="Disable large BOP inside the L2 composite prefetcher",
+    )
+    parser.add_argument(
+        "--enable-bop-small",
+        dest="enable_bop_small",
+        action="store_true",
+        help="Enable small BOP inside the L2 composite prefetcher",
+    )
+    parser.add_argument(
+        "--disable-bop-small",
+        dest="enable_bop_small",
+        action="store_false",
+        help="Disable small BOP inside the L2 composite prefetcher",
+    )
     parser.add_argument(
         "--btb-tage-upper-bound",
         action="store_true",

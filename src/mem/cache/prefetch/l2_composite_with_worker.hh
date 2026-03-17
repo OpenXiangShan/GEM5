@@ -56,6 +56,8 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     DespacitoStreamPrefetcher* despacitoStream;
 
     const bool enableBOP;
+    const bool enableBOPLarge;
+    const bool enableBOPSmall;
     const bool enableCDP;
     const bool enableCMC;
     const bool enableDespacitoStream;

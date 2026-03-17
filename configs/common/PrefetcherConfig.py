@@ -11,6 +11,24 @@ def _get_hwp(hwp_option):
     hwpClass = ObjectList.hwp_list.get(hwp_option)
     return hwpClass()
 
+
+def _configure_l2_bop(prefetcher, options):
+    enable_bop_large = getattr(options, 'enable_bop_large', True)
+    enable_bop_small = getattr(options, 'enable_bop_small', True)
+
+    prefetcher.enable_bop_large = enable_bop_large
+    prefetcher.enable_bop_small = enable_bop_small
+    prefetcher.enable_bop = enable_bop_large or enable_bop_small
+
+    prefetcher.bop_large = XSVirtualLargeBOP(
+        is_sub_prefetcher=True,
+        enable_adaptoffset=False,
+    )
+    prefetcher.bop_small = XSPhysicalSmallBOP(
+        is_sub_prefetcher=True,
+        enable_adaptoffset=False,
+    )
+
 def create_prefetcher(cpu, cache_level, options):
     prefetcher_attr = '{}_hwp_type'.format(cache_level)
     prefetcher_name = ''
@@ -59,10 +77,10 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.stream_pf_ahead = False
         if options.kmh_align:
             prefetcher.enable_berti = False
-            prefetcher.enable_sstride = True
+            prefetcher.enable_sstride = False
             prefetcher.enable_activepage = False
-            prefetcher.enable_pht = True
-            prefetcher.enable_xsstream = True
+            prefetcher.enable_pht = False
+            prefetcher.enable_xsstream = False
             prefetcher.prefetch_train = False # disable L1PF train L2
             # disable unecessary filter to align with RTL when in pf_buffer mode
             if hasattr(prefetcher, 'queue_filter'):
@@ -71,15 +89,16 @@ def create_prefetcher(cpu, cache_level, options):
     if cache_level == 'l2':
         if options.classic_l2:
             if hasattr(prefetcher, 'enable_bop'):
-                prefetcher.enable_bop = True
+                prefetcher.enable_bop = (
+                    getattr(options, 'enable_bop_large', True) or
+                    getattr(options, 'enable_bop_small', True)
+                )
             if options.kmh_align:
                 assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
                 prefetcher.enable_cmc = False
-                prefetcher.enable_bop = True
                 prefetcher.enable_cdp = False
                 prefetcher.enable_despacito_stream = False
-                prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
-                prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
+                _configure_l2_bop(prefetcher, options)
                 prefetcher.prefetch_train = False # disable L1PF train L2
                 # disable unecessary filter to align with RTL when in pf_buffer mode
                 if hasattr(prefetcher, 'queue_filter'):
@@ -93,18 +112,19 @@ def create_prefetcher(cpu, cache_level, options):
     if cache_level == 'l2_wrapper':
         if not options.classic_l2:
             if hasattr(prefetcher, 'enable_bop'):
-                prefetcher.enable_bop = True
+                prefetcher.enable_bop = (
+                    getattr(options, 'enable_bop_large', True) or
+                    getattr(options, 'enable_bop_small', True)
+                )
             if options.kmh_align:
                 assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
                 prefetcher.enable_cmc = False
-                prefetcher.enable_bop = True
                 prefetcher.enable_cdp = False
                 prefetcher.enable_despacito_stream = False
                 if prefetcher.enable_despacito_stream:
                     # if you want to check despacito pattern trace, set this to True
                     prefetcher.despacito_stream.enable_despacito_db = False
-                prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
-                prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
+                _configure_l2_bop(prefetcher, options)
                 prefetcher.prefetch_train = False # disable L1PF train L2
                 # disable unecessary filter to align with RTL when in pf_buffer mode
                 if hasattr(prefetcher, 'queue_filter'):
