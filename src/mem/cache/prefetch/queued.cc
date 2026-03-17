@@ -337,10 +337,6 @@ Queued::PFSendEventWrapper()
             statsQueued.pfIdentified++;
             DPRINTF(HWPrefetch, "Found a pf candidate addr: %#x, "
                     "inserting into prefetch queue.\n", new_pfi.getAddr());
-            // if (archDBer && cache->level() == 2) {
-            //     archDBer->l2PFTraceGenWrite(curTick(), 0, 0, addr_prio.addr, addr_prio.pfSource);
-            // }
-            // Create and insert the request
             insert(pkt, new_pfi, addr_prio);
             num_pfs += 1;
             if (num_pfs == max_pfs) {

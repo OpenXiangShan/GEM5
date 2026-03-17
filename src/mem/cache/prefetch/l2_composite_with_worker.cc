@@ -170,6 +170,7 @@ L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriorit
     if (!L2PFsent && cmc->hasPFRequestsInBuffer()){
         L2PFsent = cmc->GetPFRequestsFromBuffer(addresses);
     }
+    // For now we dont have L3PF
     // bool L3PFsent = false;
     // L3PFsent = stridestream_pfFilter_l2l3.GetPFAddrL3(addresses);
     // if (!L3PFsent){
