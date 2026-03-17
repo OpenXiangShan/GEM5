@@ -187,14 +187,23 @@ struct SquashVersion
         return (version + 1) % versionLimit;
     }
     bool largerThan(uint8_t other) const {
-        bool larger = version > other && version - other <= maxInflightSquash;
-        bool wrapped_larger =
-            version + versionLimit > other &&
-            version + versionLimit - other <= maxInflightSquash;
-        if (!(larger || wrapped_larger || (version == other))) {
+        const uint8_t distance = (version + versionLimit - other) % versionLimit;
+        if (distance == 0) {
+            return false;
+        }
+
+        if (distance <= maxInflightSquash) {
+            return true;
+        }
+
+        if (versionLimit - distance <= maxInflightSquash) {
+            return false;
+        }
+
+        if (version != other) {
             panic("SquashVersion: %d, other: %d\n", version, other);
         }
-        return larger || wrapped_larger;
+        return false;
     }
     void update(uint8_t v) {
         version = v;
@@ -205,6 +214,7 @@ struct SquashVersion
 
 struct ResolveQueueEntry
 {
+    ThreadID resolvedTid;
     uint64_t resolvedFTQId;
     std::vector<uint64_t> resolvedInstPC;
 };

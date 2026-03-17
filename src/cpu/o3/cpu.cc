@@ -134,13 +134,6 @@ CPU::CPU(const BaseO3CPUParams &params)
       cpuStats(this),
       valuePred(params.valuePred)
 {
-    fatal_if(FullSystem && params.numThreads > 1,
-            "SMT is not supported in O3 in full system mode currently.");
-
-    fatal_if(!FullSystem && params.numThreads < params.workload.size(),
-            "More workload items (%d) than threads (%d) on CPU %s.",
-            params.workload.size(), params.numThreads, name());
-
     if (!params.switched_out) {
         _status = Running;
     } else {
@@ -205,7 +198,10 @@ CPU::CPU(const BaseO3CPUParams &params)
 
     ThreadID active_threads;
     if (FullSystem) {
-        active_threads = 1;
+        // FS-SMT still uses one shared workload/system image, but the O3 core
+        // must provision per-thread architectural state for every hardware
+        // thread context exposed by the CPU.
+        active_threads = numThreads;
     } else {
         active_threads = params.workload.size();
 
@@ -282,9 +278,7 @@ CPU::CPU(const BaseO3CPUParams &params)
 
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         if (FullSystem) {
-            // SMT is not supported in FS mode yet.
-            assert(numThreads == 1);
-            thread[tid] = new ThreadState(this, 0, NULL);
+            thread[tid] = new ThreadState(this, tid, NULL);
         } else {
             if (tid < params.workload.size()) {
                 DPRINTF(O3CPU, "Workload[%i] process is %#x", tid,

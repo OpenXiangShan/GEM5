@@ -938,8 +938,12 @@ class LSQ
     bool isEmpty() const;
     /** Returns if all of the LQs are empty. */
     bool lqEmpty() const;
+    /** Returns if the LQ of a given thread is empty. */
+    bool lqEmpty(ThreadID tid) const;
     /** Returns if all of the SQs are empty. */
     bool sqEmpty() const;
+    /** Returns if the SQ of a given thread is empty. */
+    bool sqEmpty(ThreadID tid) const;
 
     /** Returns if any of the LQs are full. */
     bool lqFull();

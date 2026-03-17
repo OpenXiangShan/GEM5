@@ -799,8 +799,10 @@ IEW::checkSquash()
     for (int i = 0; i < numThreads; i++) {
         if (fromCommit->commitInfo[i].squash) {
             squash(i);
-            localSquashVer.update(fromCommit->commitInfo[i].squashVersion.getVersion());
-            DPRINTF(IEW, "Updating squash version to %u\n", localSquashVer.getVersion());
+            localSquashVer[i].update(
+                fromCommit->commitInfo[i].squashVersion.getVersion());
+            DPRINTF(IEW, "Updating squash version to %u\n",
+                    localSquashVer[i].getVersion());
 
             fetchRedirect[i] = false;
             iewStats.stallEvents[ROBWalk]++;
@@ -831,7 +833,7 @@ IEW::moveInstsToBuffer()
     for (int i = 0; i < insts_from_rename; ++i) {
         const DynInstPtr &inst = fromRename->insts[i];
         assert(inst->threadNumber == tid);
-        if (localSquashVer.largerThan(inst->getVersion())) {
+        if (localSquashVer[tid].largerThan(inst->getVersion())) {
             inst->setSquashed();
         } else {
             fixedbuffer[tid].push_back(inst);
@@ -935,9 +937,9 @@ IEW::dispatchInsts()
 
         toRename->iewInfo[tid].robHeadStallReason = checkDispatchStall(tid, NumDQ, nullptr, -1);
         toRename->iewInfo[tid].lqHeadStallReason =
-            ldstQueue.lqEmpty() ? StallReason::NoStall : checkLSQStall(tid, true);
+            ldstQueue.lqEmpty(tid) ? StallReason::NoStall : checkLSQStall(tid, true);
         toRename->iewInfo[tid].sqHeadStallReason =
-            ldstQueue.sqEmpty() ? StallReason::NoStall : checkLSQStall(tid, false);
+            ldstQueue.sqEmpty(tid) ? StallReason::NoStall : checkLSQStall(tid, false);
         toRename->iewInfo[tid].blockReason = blockReason;
     }
 }
