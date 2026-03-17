@@ -601,7 +601,7 @@ Rename::moveInstsToBuffer()
     for (int i = 0; i < insts_from_decode; ++i) {
         const DynInstPtr &inst = fromDecode->insts[i];
         assert(inst->threadNumber == tid);
-        if (localSquashVer.largerThan(inst->getVersion())) {
+        if (localSquashVer[tid].largerThan(inst->getVersion())) {
             inst->setSquashed();
         } else {
             assert(!fixedbuffer[tid].full());
@@ -626,9 +626,10 @@ Rename::checkSquash()
 
             squash(fromCommit->commitInfo[i].doneSeqNum, i);
 
-            localSquashVer.update(fromCommit->commitInfo[i].squashVersion.getVersion());
+            localSquashVer[i].update(
+                fromCommit->commitInfo[i].squashVersion.getVersion());
             DPRINTF(Rename, "Updating squash version to %u\n",
-                    localSquashVer.getVersion());
+                    localSquashVer[i].getVersion());
         }
     }
 }

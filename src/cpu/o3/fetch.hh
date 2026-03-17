@@ -1126,7 +1126,7 @@ class Fetch
         statistics::Scalar traceMetaCleanupCommitCalls;
     } fetchStats;
 
-    SquashVersion localSquashVer;
+    SquashVersion localSquashVer[MaxThreads];
 
 public:
     const FetchStatGroup &getFetchStats() { return fetchStats; }

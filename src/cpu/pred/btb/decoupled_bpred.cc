@@ -7,6 +7,7 @@
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/btb/folded_hist.hh"
+#include "cpu/thread_context.hh"
 #include "debug/BTB.hh"
 #include "debug/DecoupleBPHist.hh"
 #include "debug/DecoupleBPVerbose.hh"
@@ -45,7 +46,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       // uras(p.uras),
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
-      ftq(2, p.ftq_size),
+      ftq(p.numThreads, p.ftq_size),
       historyManager(16), // TODO: fix this
       resolveBlockThreshold(p.resolveBlockThreshold),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
@@ -115,6 +116,26 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     });
 }
 
+ThreadID
+DecoupledBPUWithBTB::scheduleThread()
+{
+    for (ThreadID offset = 0; offset < numThreads; ++offset) {
+        const ThreadID tid = (nextPredictTid + offset) % numThreads;
+
+        if (cpu) {
+            auto *tc = cpu->getContext(tid);
+            if (!tc || tc->status() != gem5::ThreadContext::Active) {
+                continue;
+            }
+        }
+
+        nextPredictTid = (tid + 1) % numThreads;
+        return tid;
+    }
+
+    return InvalidThreadID;
+}
+
 
 void
 DecoupledBPUWithBTB::tick()
@@ -122,6 +143,9 @@ DecoupledBPUWithBTB::tick()
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
 
     ThreadID curTid = scheduleThread();
+    if (curTid == InvalidThreadID) {
+        return;
+    }
 
     // On squash, reset state if there was a valid prediction.
     bool squashOccurred = false;
@@ -428,8 +452,13 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
 
     // Find the target being squashed
     if (!ftq.hasTarget(target_id, tid)) {
-        assert(!ftq.empty(tid));
-        DPRINTF(DecoupleBP, "The squashing target is insane, ignore squash on it");
+        DPRINTF(DecoupleBP,
+                "Ignore squash for tid %u on missing FTQ target %u; "
+                "recovering predictor state from redirect PC %#lx\n",
+                tid, target_id, redirect_pc);
+        clearPreds(tid);
+        threads[tid].validprediction = false;
+        threads[tid].s0PC = redirect_pc;
         return;
     }
 

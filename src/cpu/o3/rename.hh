@@ -451,7 +451,7 @@ class Rename
 
     StallReason checkRenameStallFromIEW(ThreadID tid);
 
-    SquashVersion localSquashVer;
+    SquashVersion localSquashVer[MaxThreads];
 
     /** Value predictor */
     valuepred::VPUnit *valuePred;

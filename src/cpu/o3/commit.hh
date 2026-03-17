@@ -431,7 +431,7 @@ class Commit
     /** Wire to read information from rename queue. */
     TimeBuffer<RenameStruct>::wire fromRename;
 
-    SquashVersion localSquashVer;
+    SquashVersion localSquashVer[MaxThreads];
 
   public:
     /** ROB interface. */

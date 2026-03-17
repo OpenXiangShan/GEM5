@@ -1394,6 +1394,12 @@ LSQ::lqEmpty() const
 }
 
 bool
+LSQ::lqEmpty(ThreadID tid) const
+{
+    return thread[tid].lqEmpty();
+}
+
+bool
 LSQ::sqEmpty() const
 {
     std::list<ThreadID>::const_iterator threads = activeThreads->begin();
@@ -1407,6 +1413,12 @@ LSQ::sqEmpty() const
     }
 
     return true;
+}
+
+bool
+LSQ::sqEmpty(ThreadID tid) const
+{
+    return thread[tid].sqEmpty();
 }
 
 bool

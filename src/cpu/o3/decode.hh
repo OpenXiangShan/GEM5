@@ -293,7 +293,7 @@ class Decode
 
     void setAllStalls(StallReason decodeStall);
 
-    SquashVersion localSquashVer;
+    SquashVersion localSquashVer[MaxThreads];
 };
 
 } // namespace o3

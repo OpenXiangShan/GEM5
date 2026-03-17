@@ -1997,10 +1997,10 @@ Commit::squashInflightAndUpdateVersion(ThreadID tid)
 
     fixedbuffer[tid].clear();
 
-    localSquashVer.update(localSquashVer.nextVersion());
-    toIEW->commitInfo[tid].squashVersion = localSquashVer;
+    localSquashVer[tid].update(localSquashVer[tid].nextVersion());
+    toIEW->commitInfo[tid].squashVersion = localSquashVer[tid];
     DPRINTF(Commit, "Updating squash version to %u\n",
-            localSquashVer.getVersion());
+            localSquashVer[tid].getVersion());
 }
 
 void
@@ -2021,7 +2021,9 @@ Commit::markCompletedInsts()
             fromIEW->insts[inst_num]->setCanCommit();
             auto &inst = fromIEW->insts[inst_num];
 
-            panic_if(!rob->findInst(0, inst->seqNum), "[sn:%llu] Committed instruction not found in ROB",
+            panic_if(!rob->findInst(inst->threadNumber, inst->seqNum),
+                     "[tid:%i] [sn:%llu] Committed instruction not found in ROB",
+                     inst->threadNumber,
                      inst->seqNum);
         }
     }

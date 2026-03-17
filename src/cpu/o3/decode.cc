@@ -401,7 +401,7 @@ Decode::moveInstsToBuffer()
     for (int i = 0; i < insts_from_fetch; ++i) {
         const DynInstPtr &inst = stallBuffer.front();
         assert(tid == inst->threadNumber);
-        if (localSquashVer.largerThan(inst->getVersion())) {
+        if (localSquashVer[tid].largerThan(inst->getVersion())) {
             inst->setSquashed();
         }
         assert(!fixedbuffer[inst->threadNumber].full());
@@ -419,9 +419,10 @@ Decode::checkSquash()
             DPRINTF(Decode, "[tid:%i] Squashing instructions due to squash "
                     "from commit.\n", i);
             squash(i);
-            localSquashVer.update(fromCommit->commitInfo[i].squashVersion.getVersion());
+            localSquashVer[i].update(
+                fromCommit->commitInfo[i].squashVersion.getVersion());
             DPRINTF(Decode, "Updating squash version to %u\n",
-                    localSquashVer.getVersion());
+                    localSquashVer[i].getVersion());
         }
     }
 }
