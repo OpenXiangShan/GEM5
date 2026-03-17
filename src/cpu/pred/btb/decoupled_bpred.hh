@@ -146,12 +146,11 @@ class DecoupledBPUWithBTB : public BPredUnit
     const unsigned resolveBlockThreshold;
 
     ThreadID scheduleThread() { return 0; }
+    const bool enable2Taken;
     const bool enable2Fetch;
     const unsigned maxFetchBytesPerCycle;
 
     void processNewPrediction(ThreadID tid);
-    bool enableTwoTaken{true};
-
     FetchTarget createFetchTargetEntry(ThreadID tid);
 
     void updateHistoryForPrediction(FetchTarget &entry);

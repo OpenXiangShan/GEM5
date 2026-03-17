@@ -48,6 +48,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ftq(2, p.ftq_size),
       historyManager(16), // TODO: fix this
       resolveBlockThreshold(p.resolveBlockThreshold),
+      enable2Taken(p.enable2Taken),
       enable2Fetch(p.enable2Fetch),
       maxFetchBytesPerCycle(p.maxFetchBytesPerCycle),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
@@ -145,7 +146,7 @@ DecoupledBPUWithBTB::tick()
         return;
     }
 
-    int predsRemainsToBeMade = enableTwoTaken ? 2 : 1;
+    int predsRemainsToBeMade = enable2Taken ? 2 : 1;
     while (predsRemainsToBeMade > 0) {
         // 1. Request new prediction if FSQ not full and we are idle
         if (!threads[curTid].validprediction && !ftq.full(curTid)) {

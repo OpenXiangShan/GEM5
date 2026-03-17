@@ -1207,5 +1207,6 @@ class DecoupledBPUWithBTB(BranchPredictor):
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
 
+    enable2Taken = Param.Bool(True, "Enable 2taken feature")
     enable2Fetch = Param.Bool(False, "Enable 2fetch feature")
     maxFetchBytesPerCycle = Param.Unsigned(64, "Maximum fetch bytes per cycle for 2fetch")
