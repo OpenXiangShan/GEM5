@@ -132,6 +132,17 @@ def setKmhV3Params(args, system):
             cpu.dcache.do_fast_writeline = True
             cpu.dcache.simulate_dcache_refill = True
             cpu.dcache.prefetch_can_offload = False
+            if cpu.dcache.prefetcher != NULL:
+                cpu.dcache.prefetcher.enable_activepage = False
+                cpu.dcache.prefetcher.enable_pht = False
+                cpu.dcache.prefetcher.enable_cplx = False
+                cpu.dcache.prefetcher.enable_spp = False
+                cpu.dcache.prefetcher.enable_temporal = False
+                cpu.dcache.prefetcher.enable_berti = False
+                cpu.dcache.prefetcher.enable_bop = False
+                cpu.dcache.prefetcher.enable_sstride = False
+                cpu.dcache.prefetcher.enable_opt = False
+                cpu.dcache.prefetcher.enable_xsstream = False
             set_lsq_bank_conflict_cache_params(cpu, system)
 
     # l2 caches
@@ -151,6 +162,12 @@ def setKmhV3Params(args, system):
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
+                if l2_wrapper.prefetcher != NULL:
+                    l2_wrapper.prefetcher.enable_bop = True
+                    l2_wrapper.prefetcher.enable_cdp = False
+                    l2_wrapper.prefetcher.enable_cmc = False
+                    l2_wrapper.prefetcher.enable_despacito_stream = False
+                    l2_wrapper.prefetcher._downstream_pf = []
                 for j in range(args.l2_slices):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
@@ -192,7 +209,7 @@ if __name__ == '__m5_main__':
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
-    args.no_pf = True
+    args.no_pf = False
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
