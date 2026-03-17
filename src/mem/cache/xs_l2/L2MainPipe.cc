@@ -160,16 +160,22 @@ L2MainPipe::isTaskAvailable(PacketPtr pkt, TaskSource source) const
 {
     PipelineResources resources = getPipelineResources(pkt, source);
     bool setBlock = setBlockByDir(pkt, source);
+    bool is_prefetch = pkt->req && pkt->req->isPrefetch();
+    bool bypassed_dir_read = false;
     if (owner->dirReadBypass) {
         bool sameSet = owner->getSetIdx(pkt->getAddr()) == owner->getSetIdx(scoreboardTasks[getDirWriteStage()].addr);
-        if ((source == TaskSource::L1MSHR) && sameSet) {
+        if ((source == TaskSource::L1MSHR) && sameSet &&
+            (resources & PipelineResources::DirRead) != PipelineResources::Free) {
             // here cancel the DirRead resource, to skip the directory read&write check
             resources &= ~PipelineResources::DirRead;
+            bypassed_dir_read = true;
         }
         setBlock = false;
     }
+    bool has_mcp2_stall = hasMCP2Stall(resources, pkt);
+    bool has_dir_sram_stall = hasDirSramStall(resources, pkt);
     bool available = (scoreboardTasks[0].source == TaskSource::NoWhere) && !setBlock &&
-                     isResourceAvailable(resources, pkt);
+                     !has_mcp2_stall && !has_dir_sram_stall;
 
     // record stats
     if (source == TaskSource::L1MSHR) {
@@ -179,11 +185,23 @@ L2MainPipe::isTaskAvailable(PacketPtr pkt, TaskSource source) const
         if (setBlock) {
             owner->stats.l1ReqPipeSetConflict++;
         }
-        if (hasMCP2Stall(resources, pkt)) {
+        if (has_mcp2_stall) {
             owner->stats.l1ReqPipeMCP2Stall++;
+            if (is_prefetch) {
+                owner->stats.l1ReqPipePfMCP2Stall++;
+            }
         }
-        if (hasDirSramStall(resources, pkt)) {
+        if (has_dir_sram_stall) {
             owner->stats.l1ReqPipeDirSramStall++;
+            if (is_prefetch) {
+                owner->stats.l1ReqPipePfDirSramStall++;
+            }
+        }
+        if (bypassed_dir_read) {
+            owner->stats.l1ReqPipeDirReadBypass++;
+            if (is_prefetch) {
+                owner->stats.l1ReqPipePfDirReadBypass++;
+            }
         }
     }
     return available;

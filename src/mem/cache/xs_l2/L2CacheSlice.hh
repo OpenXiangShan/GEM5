@@ -92,6 +92,10 @@ class L2CacheSlice : public CacheWrapper
         statistics::Scalar l1ReqPipeSetConflict;
         statistics::Scalar l1ReqPipeMCP2Stall;
         statistics::Scalar l1ReqPipeDirSramStall;
+        statistics::Scalar l1ReqPipeDirReadBypass;
+        statistics::Scalar l1ReqPipePfMCP2Stall;
+        statistics::Scalar l1ReqPipePfDirSramStall;
+        statistics::Scalar l1ReqPipePfDirReadBypass;
     };
     L2CacheSliceStats stats;
 

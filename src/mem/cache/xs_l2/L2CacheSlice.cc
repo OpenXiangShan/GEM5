@@ -37,7 +37,15 @@ L2CacheSlice::L2CacheSliceStats::L2CacheSliceStats(statistics::Group *parent)
       ADD_STAT(l1ReqPipeMCP2Stall, statistics::units::Count::get(),
                "Number of MCP2 stalls in L2MainPipe for L1 MSHR requests"),
       ADD_STAT(l1ReqPipeDirSramStall, statistics::units::Count::get(),
-               "Number of DirSram stalls in L2MainPipe for L1 MSHR requests")
+               "Number of DirSram stalls in L2MainPipe for L1 MSHR requests"),
+      ADD_STAT(l1ReqPipeDirReadBypass, statistics::units::Count::get(),
+               "Number of successful dir read bypasses in L2MainPipe for L1 MSHR requests"),
+      ADD_STAT(l1ReqPipePfMCP2Stall, statistics::units::Count::get(),
+               "Number of MCP2 stalls in L2MainPipe for prefetch L1 MSHR requests"),
+      ADD_STAT(l1ReqPipePfDirSramStall, statistics::units::Count::get(),
+               "Number of DirSram stalls in L2MainPipe for prefetch L1 MSHR requests"),
+      ADD_STAT(l1ReqPipePfDirReadBypass, statistics::units::Count::get(),
+               "Number of successful dir read bypasses in L2MainPipe for prefetch L1 MSHR requests")
 {
 }
 

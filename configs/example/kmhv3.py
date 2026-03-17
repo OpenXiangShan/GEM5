@@ -147,10 +147,10 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
             else:
                 l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.data_sram_banks = 1
-                l2_wrapper.dir_sram_banks = 1
-                l2_wrapper.pipe_dir_write_stage = 3
-                l2_wrapper.dir_read_bypass = False
+                l2_wrapper.data_sram_banks = 2
+                l2_wrapper.dir_sram_banks = 2
+                l2_wrapper.pipe_dir_write_stage = 4
+                l2_wrapper.dir_read_bypass = True
                 for j in range(args.l2_slices):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = True
@@ -165,10 +165,10 @@ def setKmhV3Params(args, system):
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
             # RespLayer[1]: L2 → DCache, allow 2 responses per cycle
-            # system.tol2bus_list[i].layer_bandwidth_configs = [
-            #     LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
-            #     LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
-            # ]
+            system.tol2bus_list[i].layer_bandwidth_configs = [
+                LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
+                LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
+            ]
 
     # l3 cache
     if args.l3cache:
