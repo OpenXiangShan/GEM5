@@ -42,7 +42,7 @@
 #include "base/random.hh"
 #include "base/trace.hh"
 #include "debug/Fetch.hh"
-#include "debug/Tage.hh"
+#include "debug/TAGE.hh"
 
 namespace gem5
 {
@@ -73,7 +73,7 @@ TAGE::update(ThreadID tid, Addr branch_pc, bool taken, void* bp_history,
 
     int nrand = random_mt.random<int>() & 3;
     if (bi->tageBranchInfo->condBranch) {
-        DPRINTF(Tage, "Updating tables for branch:%lx; taken?:%d\n",
+        DPRINTF(TAGE, "Updating tables for branch:%lx; taken?:%d\n",
                 branch_pc, taken);
         tage->updateStats(taken, bi->tageBranchInfo);
         tage->condBranchUpdate(tid, branch_pc, taken, tage_bi, nrand,
@@ -90,7 +90,7 @@ void
 TAGE::squash(ThreadID tid, void *bp_history)
 {
     TageBranchInfo *bi = static_cast<TageBranchInfo*>(bp_history);
-    DPRINTF(Tage, "Deleting branch info: %lx\n", bi->tageBranchInfo->branchPC);
+    DPRINTF(TAGE, "Deleting branch info: %lx\n", bi->tageBranchInfo->branchPC);
     delete bi;
 }
 
@@ -109,7 +109,7 @@ TAGE::lookup(ThreadID tid, Addr branch_pc, void* &bp_history)
 
     TageBranchInfo *bi = static_cast<TageBranchInfo*>(bp_history);
 
-    DPRINTF(Tage, "Lookup branch: %lx; predict:%d\n", branch_pc, retval);
+    DPRINTF(TAGE, "Lookup branch: %lx; predict:%d\n", branch_pc, retval);
 
     tage->updateHistories(tid, branch_pc, retval, bi->tageBranchInfo, true);
 
@@ -126,7 +126,7 @@ TAGE::btbUpdate(ThreadID tid, Addr branch_pc, void* &bp_history)
 void
 TAGE::uncondBranch(ThreadID tid, Addr br_pc, void* &bp_history)
 {
-    DPRINTF(Tage, "UnConditionalBranch: %lx\n", br_pc);
+    DPRINTF(TAGE, "UnConditionalBranch: %lx\n", br_pc);
     predict(tid, br_pc, false, bp_history);
     TageBranchInfo *bi = static_cast<TageBranchInfo*>(bp_history);
     tage->updateHistories(tid, br_pc, true, bi->tageBranchInfo, true);

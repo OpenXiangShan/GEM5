@@ -70,18 +70,11 @@ class Interrupts : public BaseInterrupts
         INTERRUPT mask = 0;
         STATUS status = tc->readMiscReg(MISCREG_STATUS);
         INTERRUPT mideleg = tc->readMiscReg(MISCREG_MIDELEG);
-        INTERRUPT sideleg = tc->readMiscReg(MISCREG_SIDELEG);
         PrivilegeMode prv = (PrivilegeMode)tc->readMiscReg(MISCREG_PRV);
         switch (prv) {
             case PRV_U:
-                mask.mei = (!sideleg.mei) | (sideleg.mei & status.uie);
-                mask.mti = (!sideleg.mti) | (sideleg.mti & status.uie);
-                mask.msi = (!sideleg.msi) | (sideleg.msi & status.uie);
-                mask.sei = (!sideleg.sei) | (sideleg.sei & status.uie);
-                mask.sti = (!sideleg.sti) | (sideleg.sti & status.uie);
-                mask.ssi = (!sideleg.ssi) | (sideleg.ssi & status.uie);
-                if (status.uie)
-                    mask.uei = mask.uti = mask.usi = 1;
+                mask.mei = mask.mti = mask.msi = 1;
+                mask.sei = mask.sti = mask.ssi = 1;
                 break;
             case PRV_S:
                 mask.mei = (!mideleg.mei) | (mideleg.mei & status.sie);
@@ -89,13 +82,11 @@ class Interrupts : public BaseInterrupts
                 mask.msi = (!mideleg.msi) | (mideleg.msi & status.sie);
                 if (status.sie)
                     mask.sei = mask.sti = mask.ssi = 1;
-                mask.uei = mask.uti = mask.usi = 0;
                 break;
             case PRV_M:
                 if (status.mie)
                      mask.mei = mask.mti = mask.msi = 1;
                 mask.sei = mask.sti = mask.ssi = 0;
-                mask.uei = mask.uti = mask.usi = 0;
                 break;
             default:
                 panic("Unknown privilege mode %d.", prv);
@@ -126,8 +117,7 @@ class Interrupts : public BaseInterrupts
         std::bitset<NumInterruptTypes> mask = globalMask();
         const std::vector<int> interrupt_order {
             INT_EXT_MACHINE, INT_TIMER_MACHINE, INT_SOFTWARE_MACHINE,
-            INT_EXT_SUPER, INT_TIMER_SUPER, INT_SOFTWARE_SUPER,
-            INT_EXT_USER, INT_TIMER_USER, INT_SOFTWARE_USER
+            INT_EXT_SUPER, INT_TIMER_SUPER, INT_SOFTWARE_SUPER
         };
         for (const int &id : interrupt_order)
             if (checkInterrupt(id) && mask[id])

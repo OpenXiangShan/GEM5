@@ -179,7 +179,8 @@ class SignaturePath : public Queued
      * @param is_secure whether this page is inside the secure memory area
      * @param addresses addresses to prefetch will be added to this vector
      */
-    void addPrefetch(Addr ppn, stride_t last_block, stride_t delta, double path_confidence, signature_t signature,
+    void addPrefetch(const PrefetchInfo &pfi, Addr ppn, stride_t last_block, stride_t delta,
+                     double path_confidence, signature_t signature,
                      bool is_secure, std::vector<AddrPriority> &addresses,
                      boost::compute::detail::lru_cache<Addr, Addr> &filter);
 
@@ -265,7 +266,7 @@ class SignaturePath : public Queued
      * @param updated_filter_entries set of addresses containing these that
      *        their filter has been updated, if this call updates a new entry
      */
-    virtual void auxiliaryPrefetcher(Addr ppn, stride_t current_block, bool is_secure,
+    virtual void auxiliaryPrefetcher(const PrefetchInfo &pfi, Addr ppn, stride_t current_block, bool is_secure,
                                      std::vector<AddrPriority> &addresses,
                                      boost::compute::detail::lru_cache<Addr, Addr> &filter);
 
@@ -299,7 +300,7 @@ class SignaturePath : public Queued
                            boost::compute::detail::lru_cache<Addr, Addr> &filter, int32_t &best_block_offset);
 
   private:
-    bool sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
+    bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           boost::compute::detail::lru_cache<Addr, Addr> &filter);
     unsigned sPageBytes;
 

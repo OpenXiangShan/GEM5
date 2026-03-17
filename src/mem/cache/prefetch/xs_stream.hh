@@ -10,10 +10,10 @@
 #include "base/types.hh"
 #include "debug/XsStreamPrefetcher.hh"
 #include "mem/cache/prefetch/associative_set.hh"
-#include "mem/cache/prefetch/queued.hh"
+// #include "mem/cache/prefetch/queued.hh"
 #include "mem/packet.hh"
 #include "params/XsStreamPrefetcher.hh"
-
+#include "mem/cache/prefetch/prefetch_filter.hh"
 namespace gem5
 {
 struct XsStreamPrefetcherParams;
@@ -22,6 +22,14 @@ namespace prefetch
 {
 class XsStreamPrefetcher : public Queued
 {
+    protected:
+    const unsigned int regionSize;
+    const unsigned int regionBlks;
+
+
+    Addr regionAddress(Addr a) { return a / regionSize; };
+
+    Addr regionOffset(Addr a) { return (a / blkSize) % regionBlks; }
   protected:
     int depth;
     int badPreNum;
@@ -80,7 +88,7 @@ class XsStreamPrefetcher : public Queued
     AssociativeSet<STREAMEntry> stream_array;
     STREAMEntry *streamLookup(const PrefetchInfo &pfi, bool &in_active_page, bool &decr);
     void sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                          PrefetchSourceType src, int pf_degree, int ahead_level = -1);
+                          PrefetchSourceType src, int pf_degree, int ahead_level = -1, STREAMEntry *entry = nullptr);
 
   public:
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
@@ -93,6 +101,8 @@ class XsStreamPrefetcher : public Queued
         panic("not implemented");
     };
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, int late_num);
+    PrefetchFilter* stridestream_pfFilter_l1;
+    PrefetchFilter* stridestream_pfFilter_l2l3;
 };
 }
 }

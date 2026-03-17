@@ -212,6 +212,9 @@ class RegId
     constexpr const char*
     className() const
     {
+        if (regClass == InvalidRegClass) {
+            return "InvalidRegClass";
+        }
         return regClassStrings[regClass];
     }
 

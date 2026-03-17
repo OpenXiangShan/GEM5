@@ -1,7 +1,7 @@
 name: On-Demand SPEC Test (Tier 1.5)
 
 on:
-  # Label触发: 添加 'perf' 标签自动跑 spec06-0.8c
+  # Label触发: 添加 'perf' 标签自动跑 gcc12-spec06-0.8c
   pull_request_target:
     types: [labeled]
   
@@ -16,10 +16,10 @@ on:
         description: 'Benchmark type'
         required: false
         type: choice
-        default: 'spec06-0.8c'
+        default: 'gcc12-spec06-0.8c'
         options:
-          - spec06-0.8c
-          - spec06-1.0c
+          - gcc12-spec06-0.8c
+          - gcc12-spec06-1.0c
           - spec17-1.0c
           - spec06-rvv-1.0c
           - spec06int-rvv-0.8c
@@ -61,14 +61,14 @@ jobs:
             } else {
               // Label触发 (pull_request_target)
               prNumber = context.payload.pull_request.number;
-              benchmark = 'spec06-0.8c';
+              benchmark = 'gcc12-spec06-0.8c';
               prSha = context.payload.pull_request.head.sha;
               
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: prNumber,
-                body: '🚀 Performance test triggered: **spec06-0.8c**'
+                body: '🚀 Performance test triggered: **gcc12-spec06-0.8c**'
               });
             }
             

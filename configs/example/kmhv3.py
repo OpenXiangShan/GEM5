@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 
 import m5
@@ -92,8 +93,33 @@ def setKmhV3Params(args, system):
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
-            cpu.branchPred.ftq_size = 256
-            cpu.branchPred.fsq_size = 256
+            cpu.branchPred.ftq_size = 64
+            cpu.branchPred.fsq_size = 64
+
+            if args.btb_tage_upper_bound:
+                cpu.branchPred.tage = BTBTAGEUpperBound(
+                    usePathHashHistory=True)
+
+            cpu.branchPred.mbtb.resolvedUpdate = True
+            cpu.branchPred.tage.resolvedUpdate = True
+            cpu.branchPred.ittage.resolvedUpdate = True
+
+            cpu.branchPred.ubtb.enabled = True
+            cpu.branchPred.abtb.enabled = True
+            cpu.branchPred.microtage.enabled = True
+            cpu.branchPred.mbtb.enabled = True
+            cpu.branchPred.tage.enabled = True
+            cpu.branchPred.ittage.enabled = True
+            cpu.branchPred.mgsc.enabled = True
+            cpu.branchPred.ras.enabled = True
+
+            # RTL alignment: only enable bias + path + IMLI tables, disable PC threshold
+            cpu.branchPred.mgsc.enableBwTable = False
+            cpu.branchPred.mgsc.enableLTable = False
+            cpu.branchPred.mgsc.enableITable = True
+            cpu.branchPred.mgsc.enableGTable = False
+            cpu.branchPred.mgsc.enablePTable = True
+            cpu.branchPred.mgsc.enableBiasTable = True
 
         # l1 cache per core
         if args.caches:
@@ -156,6 +182,9 @@ if __name__ == '__m5_main__':
 
     assert not args.external_memory_system
 
+    # Enable prefetch buffers for all hardware prefetchers in this config.
+    args.enable_pf_buffer = True
+
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
@@ -166,6 +195,8 @@ if __name__ == '__m5_main__':
     TestMemClass = Simulation.setMemClass(args)
 
     test_sys = build_xiangshan_system(args)
+    if args.raw_cpt and args.generic_rv_cpt and os.path.basename(args.generic_rv_cpt) == "linux.bin":
+        configure_xiangshan_linux_workload(test_sys, args)
     # Set ideal parameters here with the highest priority, over command-line arguments
     setKmhV3Params(args, test_sys)
 

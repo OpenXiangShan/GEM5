@@ -19,6 +19,8 @@ from common import Simulation
 from common.Caches import *
 from common.xiangshan import *
 
+from m5.objects.ValuePredictor import *
+
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
 
@@ -63,6 +65,9 @@ def setKmhV3IdealParams(args, system):
         cpu.sbufferBankWriteAccurately = True
         cpu.DcacheSetDivNum = 2
 
+        # value predictor
+        cpu.valuePred = IdealConstantLVP()
+
         # lsq
         cpu.LQEntries = 128
         cpu.SQEntries = 64
@@ -78,8 +83,9 @@ def setKmhV3IdealParams(args, system):
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
-            cpu.branchPred.ftq_size = 256
-            cpu.branchPred.fsq_size = 256
+            cpu.branchPred.ftq_size = 64
+            cpu.branchPred.fsq_size = 64
+            # cpu.branchPred.microtage.enabled = False
 
         # l1 cache per core
         if args.caches:
@@ -132,7 +138,8 @@ if __name__ == '__m5_main__':
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
-
+    # Enable prefetch buffers for all hardware prefetchers in this config.
+    args.enable_pf_buffer = False
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 

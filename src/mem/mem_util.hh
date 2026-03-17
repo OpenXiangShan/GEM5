@@ -25,6 +25,7 @@ namespace mem_util
         int shmFd{-1};
         std::string backedFilePath;
         bool fromExistingFile{false};
+        bool namedShmObject{false};
         size_t memSize;
         uint8_t *rootPMem = nullptr;
         std::vector<uint8_t *> branchPMems;

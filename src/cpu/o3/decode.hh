@@ -41,7 +41,7 @@
 #ifndef __CPU_O3_DECODE_HH__
 #define __CPU_O3_DECODE_HH__
 
-#include <queue>
+#include <boost/circular_buffer.hpp>
 
 #include "base/statistics.hh"
 #include "cpu/o3/comm.hh"
@@ -79,23 +79,9 @@ class Decode
         Inactive
     };
 
-    /** Individual thread status. */
-    enum ThreadStatus
-    {
-        Running,
-        Idle,
-        StartSquash,
-        Squashing,
-        Blocked,
-        Unblocking
-    };
-
   private:
     /** Decode status. */
     DecodeStatus _status;
-
-    /** Per-thread status. */
-    ThreadStatus decodeStatus[MaxThreads];
 
     Addr ignoreFusionPC = 0;
 
@@ -118,6 +104,8 @@ class Decode
 
     /** Sets the main backwards communication time buffer pointer. */
     void setTimeBuffer(TimeBuffer<TimeStruct> *tb_ptr);
+
+    void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
 
     /** Sets pointer to time buffer used to communicate to the next stage. */
     void setDecodeQueue(TimeBuffer<DecodeStruct> *dq_ptr);
@@ -142,13 +130,6 @@ class Decode
      */
     void tick();
 
-    /** Determines what to do based on decode's current status.
-     * @param status_change decode() sets this variable if there was a status
-     * change (ie switching from from blocking to unblocking).
-     * @param tid Thread id to decode instructions from.
-     */
-    void decode(bool &status_change, ThreadID tid);
-
     /** Processes instructions from fetch and passes them on to rename.
      * Decoding of instructions actually happens when they are created in
      * fetch, so this function mostly checks if PC-relative branches are
@@ -162,27 +143,15 @@ class Decode
 
     void checkAndFuseInsts(std::vector<DynInstPtr> &vec, DynInstPtr& cur);
 
-    /** Inserts a thread's instructions into the skid buffer, to be decoded
-     * once decode unblocks.
-     */
-    void skidInsert(ThreadID tid);
-
-    /** Returns if all of the skid buffers are empty. */
-    bool skidsEmpty();
-
     /** Updates overall decode status based on all of the threads' statuses. */
-    void updateStatus();
+    void updateActivate();
 
     /** Separates instructions from fetch into individual lists of instructions
      * sorted by thread.
      */
-    void sortInsts();
+    void moveInstsToBuffer();
 
-    /** Reads all stall signals from the backwards communication timebuffer. */
-    void readStallSignals(ThreadID tid);
-
-    /** Checks all input signals and updates decode's status appropriately. */
-    bool checkSignalsAndUpdate(ThreadID tid);
+    void checkSquash();
 
     /** Checks all stall signals, and returns if any are true. */
     bool checkStall(ThreadID tid) const;
@@ -190,22 +159,10 @@ class Decode
     /** Returns if there any instructions from fetch on this cycle. */
     bool fetchInstsValid();
 
-    /** Switches decode to blocking, and signals back that decode has
-     * become blocked.
-     * @return Returns true if there is a status change.
-     */
-    bool block(ThreadID tid);
-
-    /** Switches decode to unblocking if the skid buffer is empty, and
-     * signals back that decode has unblocked.
-     * @return Returns true if there is a status change.
-     */
-    bool unblock(ThreadID tid);
-
     /** Squashes if there is a PC-relative branch that was predicted
      * incorrectly. Sends squash information back to fetch.
      */
-    void squash(const DynInstPtr &inst, ThreadID tid);
+    void selfSquash(const DynInstPtr &inst, ThreadID tid);
 
   public:
     /** Squashes due to commit signalling a squash. Changes status to
@@ -225,6 +182,8 @@ class Decode
 
     /** Fetch interface. */
     Fetch *fetch_ptr;
+
+    StallSignals* stallSig;
 
     /** Time buffer interface. */
     TimeBuffer<TimeStruct> *timeBuffer;
@@ -255,24 +214,15 @@ class Decode
     TimeBuffer<FetchStruct>::wire fromFetch;
 
     /** Queue of all instructions coming from fetch this cycle. */
-    std::queue<DynInstPtr> insts[MaxThreads];
+    boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
 
-    /** Skid buffer between fetch and decode. */
-    std::queue<DynInstPtr> skidBuffer[MaxThreads];
+    boost::circular_buffer<DynInstPtr> stallBuffer;
+    boost::circular_buffer<int> eachstallSize;
 
     /** Variable that tracks if decode has written to the time buffer this
      * cycle. Used to tell CPU if there is activity this cycle.
      */
     bool wroteToTimeBuffer;
-
-    /** Source of possible stalls. */
-    struct Stalls
-    {
-        bool rename;
-    };
-
-    /** Tracks which stages are telling decode to stall. */
-    Stalls stalls[MaxThreads];
 
     /** Rename to decode delay. */
     Cycles renameToDecodeDelay;
@@ -297,21 +247,6 @@ class Decode
 
     /** List of active thread ids */
     std::list<ThreadID> *activeThreads;
-
-    /** Maximum size of the skid buffer. */
-    unsigned skidBufferMax;
-
-    /** SeqNum of Squashing Branch Delay Instruction (used for MIPS)*/
-    Addr bdelayDoneSeqNum[MaxThreads];
-
-    /** Instruction used for squashing branch (used for MIPS)*/
-    DynInstPtr squashInst[MaxThreads];
-
-    /** Tells when their is a pending delay slot inst. to send
-     *  to rename. If there is, then wait squash after the next
-     *  instruction (used for MIPS).
-     */
-    bool squashAfterDelaySlot[MaxThreads];
 
     bool enableLoadFusion;
 
@@ -354,7 +289,7 @@ class Decode
 
     std::unordered_map<const char*, uint64_t> fusionType;
 
-    StallReason blockReason;
+    StallReason blockReason{NoStall};
 
     void setAllStalls(StallReason decodeStall);
 

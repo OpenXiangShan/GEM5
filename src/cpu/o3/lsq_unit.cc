@@ -39,8 +39,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "cpu/o3/lsq_unit.hh"
-
 #include <cassert>
 
 #include "arch/generic/debugfaults.hh"
@@ -165,183 +163,6 @@ LSQUnit::checkStoreLoadForwardingRange(typename StoreQueue::iterator store_it,
 
     // No overlap between store and load addresses
     return AddrRangeCoverage::NoAddrRangeCoverage;
-}
-
-void
-StoreBufferEntry::reset(uint64_t block_vaddr, uint64_t block_paddr, uint64_t offset, uint8_t *datas, uint64_t size,
-                        const std::vector<bool> &mask)
-{
-    std::fill(validMask.begin(), validMask.begin() + offset, false);
-
-    for (int i = 0; i < size; i++) {
-        validMask[offset + i] = mask[i];
-    }
-
-    std::fill(validMask.begin() + offset + size, validMask.end(), false);
-    memcpy(blockDatas.data() + offset, datas, size);
-
-    this->blockVaddr = block_vaddr;
-    this->blockPaddr = block_paddr;
-    this->sending = false;
-    this->request = nullptr;
-    this->vice = nullptr;
-}
-
-void
-StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size, const std::vector<bool> &mask)
-{
-    assert(offset + size <= validMask.size());
-    for (uint64_t i = 0; i < size; ++i) {
-        if (mask[i]) {
-            blockDatas[offset + i] = datas[i];
-            validMask[offset + i] = true;
-        }
-    }
-}
-
-bool
-StoreBufferEntry::recordForward(RequestPtr req, LSQ::LSQRequest *lsqreq)
-{
-    int offset = req->getPaddr() & (validMask.size() - 1);
-    // the offset in the split request
-    int goffset = req->getVaddr() - lsqreq->mainReq()->getVaddr();
-    if (goffset > 0) {
-        assert(offset == 0);
-    }
-    bool full_forward = true;
-    for (int i = 0; i < req->getSize(); i++) {
-        assert(goffset + i < lsqreq->_size);
-        if (vice && vice->validMask[offset + i]) {
-            // vice is newer
-            assert(vice->blockVaddr == blockVaddr);
-            lsqreq->SBforwardPackets.push_back(
-                LSQ::LSQRequest::FWDPacket{.idx = goffset + i, .byte = vice->blockDatas[offset + i]});
-        } else if (validMask[offset + i]) {
-            lsqreq->SBforwardPackets.push_back(
-                LSQ::LSQRequest::FWDPacket{.idx = goffset + i, .byte = blockDatas[offset + i]});
-        } else {
-            full_forward = false;
-        }
-    }
-
-    return full_forward;
-}
-
-void
-StoreBuffer::setData(std::vector<StoreBufferEntry *> &data_vec)
-{
-    this->data_vec = data_vec;
-    int way = data_vec.size();
-    _size = 0;
-    lru_index.set_capacity(way);
-    free_list.set_capacity(way);
-    crossRef.resize(way);
-    data_vec.resize(way);
-    data_vld.resize(way, false);
-    for (uint64_t i = 0; i < way; i++) {
-        free_list.push_back(i);
-    }
-}
-
-bool
-StoreBuffer::full()
-{
-    return free_list.size() == 0;
-}
-
-uint64_t
-StoreBuffer::size()
-{
-    return this->_size;
-}
-
-uint64_t
-StoreBuffer::unsentSize()
-{
-    return lru_index.size();
-}
-
-StoreBufferEntry *
-StoreBuffer::getEmpty()
-{
-    assert(!full());
-    uint64_t index = free_list.back();
-    free_list.pop_back();
-    return data_vec[index];
-}
-
-void
-StoreBuffer::insert(int index, uint64_t addr)
-{
-    assert(_size < data_vec.size());
-    assert(!data_vld[index]);
-    assert(!lru_index.full());
-    _size++;
-    auto [it, _] = data_map.insert({addr, data_vec[index]});
-    crossRef[index] = it;
-    data_vld[index] = true;
-    lru_index.push_front(index);
-}
-
-StoreBufferEntry *
-StoreBuffer::get(uint64_t addr)
-{
-    auto iter = data_map.find(addr);
-    if (iter == data_map.end()) {
-        return nullptr;
-    }
-    assert(data_vld[iter->second->index]);
-    return iter->second;
-}
-
-void
-StoreBuffer::update(int index)
-{
-    assert(std::find(lru_index.begin(), lru_index.end(), index) != lru_index.end());
-    lru_index.erase(std::find(lru_index.begin(), lru_index.end(), index));
-    lru_index.push_front(index);
-}
-
-StoreBufferEntry *
-StoreBuffer::getEvict()
-{
-    assert(lru_index.size() > 0);
-    uint64_t index = lru_index.back();
-    lru_index.pop_back();
-    assert(data_vld[index]);
-    return data_vec[index];
-}
-
-StoreBufferEntry *
-StoreBuffer::createVice(StoreBufferEntry *entry)
-{
-    _size++;
-    auto vice = getEmpty();
-    assert(!entry->vice);
-    entry->vice = vice;
-    data_vld[vice->index] = true;
-    // do not insert map and lru_index
-    return vice;
-}
-
-void
-StoreBuffer::release(StoreBufferEntry *entry)
-{
-    assert(_size > 0);
-    _size--;
-    int index = entry->index;
-    data_vld[index] = false;
-    data_map.erase(crossRef[index]);
-    assert(std::find(free_list.begin(), free_list.end(), index) == free_list.end());
-    free_list.push_back(index);
-    if (entry->vice) {
-        // make vice regular
-        auto vice = entry->vice;
-        assert(data_vld[vice->index]);
-        auto [it, _] = data_map.insert({vice->blockPaddr, vice});
-        crossRef[vice->index] = it;
-        lru_index.push_front(vice->index);
-    }
 }
 
 void
@@ -570,17 +391,13 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
     }
 }
 
-LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries, uint32_t sbufferEvictThreshold,
-    uint64_t storeBufferInactiveThreshold, uint32_t ldPipeStages, uint32_t stPipeStages,
+LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
+    uint32_t ldPipeStages, uint32_t stPipeStages,
     uint32_t maxRARQEntries, uint32_t maxRAWQEntries, unsigned rarDequeuePerCycle,
     unsigned rawDequeuePerCycle, unsigned loadCompletionWidth, unsigned storeCompletionWidth)
-    : sbufferEvictThreshold(sbufferEvictThreshold),
-      sbufferEntries(sbufferEntries),
-      numSBufferRequest(0),
+    : numSBufferRequest(0),
       numSingleRequest(0),
       numSplitRequest(0),
-      storeBufferWritebackInactive(0),
-      storeBufferInactiveThreshold(storeBufferInactiveThreshold),
       lsqID(-1),
       storeQueue(sqEntries),
       loadQueue(lqEntries),
@@ -597,7 +414,6 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
       cacheBlockMask(0),
       stalled(false),
       isStoreBlocked(false),
-      storeBlockedfromQue(false),
       storeInFlight(false),
       lastClockSQPopEntries(0),
       lastClockLQPopEntries(0),
@@ -611,7 +427,6 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
 {
     // reserve space, we want if sq will be full, sbuffer will start evicting
     sqFullUpperLimit = sqEntries - 4;
-    sqFullLowerLimit = sqFullUpperLimit - 4;
 
     loadPipeSx.resize(ldPipeStages);
     storePipeSx.resize(stPipeStages);
@@ -623,7 +438,6 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries, uint32_t sbufferEntries
         storePipeSx[i] = storePipe.getWire(-i);
     }
     assert(ldPipeStages >= 4 && stPipeStages >= 5);
-    assert(sqFullLowerLimit > 0);
 }
 
 void
@@ -661,11 +475,6 @@ LSQUnit::init(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params,
     RAWReplayQueue.clear();
 
     enableStorePrefetchTrain = params.store_prefetch_train;
-    std::vector<StoreBufferEntry*> sbufer;
-    for (int i = 0; i < sbufferEntries; i++) {
-        sbufer.push_back(new StoreBufferEntry(cpu->cacheLineSize(), i));
-    }
-    storeBuffer.setData(sbufer);
 
     resetState();
 }
@@ -766,10 +575,6 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "being blocked"),
       ADD_STAT(sbufferFull, statistics::units::Count::get(), "blocked cycle"),
       ADD_STAT(sbufferCreateVice, statistics::units::Count::get(), "create vice"),
-      ADD_STAT(sbufferEvictDuetoFlush, statistics::units::Count::get(), ""),
-      ADD_STAT(sbufferEvictDuetoFull, statistics::units::Count::get(), ""),
-      ADD_STAT(sbufferEvictDuetoSQFull, statistics::units::Count::get(), ""),
-      ADD_STAT(sbufferEvictDuetoTimeout, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferFullForward, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferPartiForward, statistics::units::Count::get(), ""),
       ADD_STAT(loadToUse, "Distribution of cycle latency between the "
@@ -1910,7 +1715,6 @@ LSQUnit::commitLoad()
                 inst->lastWakeDependents - inst->firstIssue);
             stats.loadToUse.sample(load_to_use);
             if (((uint64_t) load_to_use) > 2000) {
-                inst->printDisassemblyAndResult(cpu->name());
                 DPRINTF(CommitTrace,
                         "Inst[sn:%lu] load2use = %lu, translation lat = %lu\n",
                         inst->seqNum, load_to_use, translation_lat);
@@ -1961,25 +1765,18 @@ LSQUnit::commitStores(InstSeqNum &youngest_inst)
     }
 }
 
-void
+bool
 LSQUnit::writebackBlockedStore()
 {
-    assert(isStoreBlocked);
-
-    if (storeBlockedfromQue) {
-        storeWBIt->request()->sendPacketToCache();
-        if (storeWBIt->request()->isSent()) {
-            storePostSend();
-        }
-    } else {
-        assert(blockedsbufferEntry);
-        bool success = blockedsbufferEntry->request->sendPacketToCache();
-        if (!success) {
-            return;
-        }
-        blockedsbufferEntry->sending = true;
-        blockedsbufferEntry = nullptr;
+    if (!isStoreBlocked) {
+        return false;
     }
+
+    storeWBIt->request()->sendPacketToCache();
+    if (storeWBIt->request()->isSent()) {
+        storePostSend();
+    }
+    return isStoreBlocked;
 }
 
 bool
@@ -2061,24 +1858,47 @@ LSQUnit::directStoreToCache()
     return true;
 }
 
-void
-LSQUnit::offloadToStoreBuffer()
+uint32_t
+LSQUnit::countStoreBufferOffloadableEntries(uint32_t max_entries) const
 {
-    if (isStoreBlocked) {
-        writebackBlockedStore();
-        if (isStoreBlocked) return;
-    }
-    if (storeBufferFlushing) {
-        return;
+    if (max_entries == 0 || isStoreBlocked) {
+        return 0;
     }
 
-    // write the committed store to storebuffer
-    int offloaded = 0;
+    uint32_t count = 0;
+    int stores_to_wb = storesToWB;
+    auto store_wb_it = storeWBIt;
+
+    while (count < max_entries &&
+           stores_to_wb > 0 &&
+           store_wb_it.dereferenceable() &&
+           store_wb_it->valid() &&
+           store_wb_it->canWB()) {
+
+        if (store_wb_it->size() == 0 ||
+            store_wb_it->instruction()->isDataPrefetch()) {
+            ++store_wb_it;
+            continue;
+        }
+
+        ++count;
+        ++store_wb_it;
+    }
+
+    return count;
+}
+
+void
+LSQUnit::offloadToStoreBuffer(uint32_t max_entries)
+{
+    assert(!lsq->storeBufferBlocked());
+    if (isStoreBlocked) return;
+
+    uint32_t accepted_entries = 0;
     while (storesToWB > 0 &&
            storeWBIt.dereferenceable() &&
            storeWBIt->valid() &&
-           storeWBIt->canWB() &&
-           offloaded < maxSQoffload) {
+           storeWBIt->canWB()) {
 
         if (storeWBIt->size() == 0) {
             completeStore(storeWBIt);
@@ -2088,6 +1908,10 @@ LSQUnit::offloadToStoreBuffer()
         if (storeWBIt->instruction()->isDataPrefetch()) {
             storeWBIt++;
             continue;
+        }
+
+        if (accepted_entries >= max_entries) {
+            break;
         }
 
         assert(!storeWBIt->committed());
@@ -2106,14 +1930,13 @@ LSQUnit::offloadToStoreBuffer()
             }
             if (!storeBufferEmpty()) {
                 DPRINTF(StoreBuffer, "sbuffer need flush\n");
-                flushStoreBuffer();
+                lsq->flushStores(lsqID);
                 break;
             } else {
                 DPRINTF(StoreBuffer, "sbuffer finishing flushed\n");
             }
             bool contin = directStoreToCache();
             if (isStoreBlocked) {
-                assert(storeBlockedfromQue);
                 break;
             }
             if (contin) {
@@ -2126,7 +1949,6 @@ LSQUnit::offloadToStoreBuffer()
 
         if (request->isSplit()) {
             Addr vbase = request->_addr;
-            bool all_send = true;
             for (int i = request->_numOutstandingPackets; i < request->_reqs.size(); i++) {
                 auto req = request->_reqs[i];
                 Addr vaddr = req->getVaddr();
@@ -2143,13 +1965,13 @@ LSQUnit::offloadToStoreBuffer()
                 }
             }
             if (request->_numOutstandingPackets == request->_reqs.size()) {
+                ++accepted_entries;
                 request->_numOutstandingPackets = 0;
                 completeStore(storeWBIt, true);
                 storeWBIt++;
             } else {
                 break;
             }
-            offloaded++;
         } else {
             assert(inst->isSplitStoreAddr() ? storeWBIt->splitStoreFinish() : true);
             Addr vaddr = request->getVaddr();
@@ -2160,23 +1982,24 @@ LSQUnit::offloadToStoreBuffer()
             if (!success) {
                 break;
             }
+            ++accepted_entries;
             // finish once store
             completeStore(storeWBIt, true);
             storeWBIt++;
-            offloaded++;
         }
     }
 }
 
 bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size, const std::vector<bool>& mask)
 {
+    auto &storeBuffer = lsq->getStoreBuffer();
     // access range must in a cache block
     assert((vaddr & cacheBlockMask) == ((vaddr + size - 1) & cacheBlockMask));
     Addr blockVaddr = vaddr & cacheBlockMask;
     Addr blockPaddr = paddr & cacheBlockMask;
     Addr offset = paddr & ~cacheBlockMask;
     // check request is not already in the storebuffer
-    auto entry = storeBuffer.get(blockPaddr);
+    auto entry = storeBuffer.get(lsqID, blockPaddr);
     if (entry) {
         if (entry->sending) {
             if (entry->vice) {
@@ -2194,7 +2017,7 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
                 }
                 stats.sbufferCreateVice++;
                 auto vice = storeBuffer.createVice(entry);
-                vice->reset(blockVaddr, blockPaddr, offset, datas, size, mask);
+                vice->reset(lsqID, blockVaddr, blockPaddr, offset, datas, size, mask);
                 DPRINTF(StoreBuffer, "Create new vice entry[%#x] for addr %#x\n",
                         blockPaddr, paddr);
             }
@@ -2214,8 +2037,8 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
         }
         // insert
         auto entry = storeBuffer.getEmpty();
-        entry->reset(blockVaddr, blockPaddr, offset, datas, size, mask);
-        storeBuffer.insert(entry->index, blockPaddr);
+        entry->reset(lsqID, blockVaddr, blockPaddr, offset, datas, size, mask);
+        storeBuffer.insert(entry);
         DPRINTF(StoreBuffer, "Create new entry[%#x] for addr %#x\n",
                 blockPaddr, paddr);
     }
@@ -2224,93 +2047,6 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
         "insert %#x to entry[%#x] successed, sbuffer size: %d unsentsize: %d\n",
         paddr, blockPaddr, storeBuffer.size(), storeBuffer.unsentSize());
     return true;
-}
-
-void
-LSQUnit::storeBufferEvictToCache()
-{
-    if (storeBufferFlushing && storeBuffer.size() == 0) [[unlikely]] {
-        assert(storeBuffer.unsentSize() == 0);
-        storeBufferFlushing = false;
-        cpu->activityThisCycle();
-    }
-
-    // write request will stall one cycle
-    // so 2 cycle send one write request
-    if (lsq->getDcacheWriteStall()) {
-        lsq->setDcacheWriteStall(false);
-        return;
-    }
-
-    if (isStoreBlocked || storeBuffer.unsentSize() == 0) {
-        return;
-    }
-
-    if (storeQueue.size() > sqFullUpperLimit) {
-        sqWillFull = true;
-    } else if (storeQueue.size() < sqFullLowerLimit) {
-        sqWillFull = false;
-    }
-
-    if ((storeBuffer.unsentSize() > sbufferEvictThreshold) ||
-        (storeBufferWritebackInactive > storeBufferInactiveThreshold) ||
-        (sqWillFull) ||
-        storeBufferFlushing) {
-
-        if (storeBufferFlushing) {
-            stats.sbufferEvictDuetoFlush++;
-            DPRINTF(StoreBuffer, "sbuffer flushing\n");
-        } else if (storeBuffer.unsentSize() > sbufferEvictThreshold) {
-            stats.sbufferEvictDuetoFull++;
-            DPRINTF(StoreBuffer, "sbuffer has reached threshold\n");
-        } else if (sqWillFull) {
-            stats.sbufferEvictDuetoSQFull++;
-            DPRINTF(StoreBuffer, "sbuffer has reached SQ threshold\n");
-        } else {
-            stats.sbufferEvictDuetoTimeout++;
-            DPRINTF(StoreBuffer, "sbuffer has reached timeout\n");
-        }
-
-        // evict entry to cache
-        auto entry = storeBuffer.getEvict();
-        DPRINTF(StoreBuffer, "Evicting sbuffer entry[%#x]\n",
-                entry->blockPaddr);
-
-        if (debug::StoreBuffer) {
-            DPRINTFR(StoreBuffer, "Dumping sbuffer entry data\n");
-            for (int i = 0; i < cacheLineSize(); i++) {
-                DPRINTFR(StoreBuffer, "%s%d ", entry->validMask[i] ? "" : "!", (uint32_t)entry->blockDatas[i]);
-            }
-            DPRINTFR(StoreBuffer, "\n");
-        }
-
-        // send packet to cache
-        assert(entry->request == nullptr);
-
-        entry->request = new LSQ::SbufferRequest(cpu, this, entry->blockPaddr, entry->blockDatas.data());
-        entry->request->addReq(entry->blockVaddr, entry->blockPaddr, entry->validMask);
-        entry->request->buildPackets();
-        entry->request->sbuffer_entry = entry;
-        bool success = entry->request->sendPacketToCache();
-        if (!success) {
-            blockedsbufferEntry = entry;
-            DPRINTF(StoreBuffer, "send packet fail\n");
-            return;
-        }
-        DPRINTF(StoreBuffer, "send packet successed\n");
-        entry->sending = true;
-        lsq->sbufferWriteBank(entry->blockVaddr, entry->validMask);
-        storeBufferWritebackInactive = 0;
-    } else {
-        // Timeout
-        storeBufferWritebackInactive++;
-    }
-}
-
-void
-LSQUnit::flushStoreBuffer()
-{
-    storeBufferFlushing = true;
 }
 
 void
@@ -2572,8 +2308,14 @@ LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
         return;
     }
 
-    DPRINTF(LoadPipeline, "WritebackReg: %s [sn:%lli] data: %#lx\n", enums::OpClassStrings[inst->opClass()], inst->seqNum,
-        inst->memData ? *((uint64_t *)inst->memData) : 0);
+    if (debug::LoadPipeline) {
+        char buffer[8] = {0};
+        if (inst->memData)
+            std::memcpy(buffer, inst->memData, inst->effSize);
+        DPRINTF(LoadPipeline, "WritebackReg: %s [sn:%lli] data: %#lx\n", enums::OpClassStrings[inst->opClass()],
+                inst->seqNum, ((uint64_t *)buffer));
+    }
+
 
     if (!inst->isExecuted()) {
         inst->setExecuted();
@@ -2623,21 +2365,6 @@ LSQUnit::writebackReg(const DynInstPtr &inst, PacketPtr pkt)
     }
     // see if this load changed the PC
     iewStage->checkMisprediction(inst);
-}
-
-void
-LSQUnit::completeSbufferEvict(PacketPtr pkt)
-{
-    auto request = dynamic_cast<LSQ::SbufferRequest *>(pkt->senderState);
-    if (cpu->goldenMemManager() && cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
-        Addr paddr = request->mainReq()->getPaddr();
-        DPRINTF(LSQUnit, "StoreBuffer writing to golden memory at addr %#x\n", paddr);
-        cpu->goldenMemManager()->updateGoldenMem(paddr, request->_data, request->mainReq()->getByteEnable(),
-                                                 request->_size);
-    }
-    storeBuffer.release(request->sbuffer_entry);
-    DPRINTF(StoreBuffer, "finish entry[%#x] evict to cache, sbuffer size: %d, unsentsize: %d\n", pkt->getAddr(),
-            storeBuffer.size(), storeBuffer.unsentSize());
 }
 
 void
@@ -2767,7 +2494,6 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
             if (!isLoad) {
                 assert(request == storeWBIt->request());
                 isStoreBlocked = true;
-                storeBlockedfromQue = true;
             }
             bank_conflict = true;
             ret = false;
@@ -2796,7 +2522,8 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
         request->packetSent();
 
         if (isLoad) {
-            auto entry = storeBuffer.get(pkt->getAddr() & cacheBlockMask);
+            auto &storeBuffer = lsq->getStoreBuffer();
+            auto entry = storeBuffer.get(lsqID, pkt->getAddr() & cacheBlockMask);
             if (entry) {
                 DPRINTF(StoreBuffer, "sbuffer entry[%#x] coverage %s\n", entry->blockPaddr, pkt->print());
                 if (entry->recordForward(pkt->req, request)) {
@@ -2815,7 +2542,6 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
         if (!isLoad) {
             assert(request == storeWBIt->request());
             isStoreBlocked = true;
-            storeBlockedfromQue = true;
         }
         request->packetNotSent();
     }
@@ -2825,35 +2551,6 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
             " mshr_used: %d, mshr_alias_fail: %d, hit_in_write_buffer: %d)\n",
             data_pkt->print(), request->instruction()->seqNum, ret ? "" : "not ", lsq->cacheBlocked(),
             cache_got_blocked, bank_conflict, tag_read_fail, mshr_used, mshr_alias_fail, hit_in_write_buffer);
-    return ret;
-}
-
-bool
-LSQUnit::sbufferSendPacket(PacketPtr data_pkt)
-{
-    bool ret = true;
-    bool cache_got_blocked = false;
-
-    if (!lsq->cacheBlocked() && lsq->cachePortAvailable(false)) {
-        if (!dcachePort->sendTimingReq(data_pkt)) {
-            ret = false;
-            cache_got_blocked = true;
-        }
-    } else {
-        ret = false;
-    }
-
-    if (ret) {
-        isStoreBlocked = false;
-        lsq->cachePortBusy(false);
-    } else {
-        if (cache_got_blocked) {
-            lsq->cacheBlocked(true);
-            ++stats.blockedByCache;
-        }
-        isStoreBlocked = true;
-        storeBlockedfromQue = false;
-    }
     return ret;
 }
 
@@ -3238,7 +2935,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 
     // Check the SQ for any previous stores that might lead to forwarding
     auto store_it = load_inst->sqIt;
-    assert (store_it >= storeWBIt);
+    panic_if(store_it < storeWBIt, "[sn:%llu] Load instruction's store index is younger than store writeback index",
+             load_inst->seqNum);
     // End once we've reached the top of the LSQ
     while (store_it != storeWBIt && !load_inst->isDataPrefetch()) {
         // Move the index to one younger
@@ -3372,9 +3070,15 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                     }
                 }
 
-                DPRINTF(LoadPipeline, "Forwarding from store [sn:%llu] to load [sn:%llu] "
-                        "addr %#x, data: %#lx\n", store_it->instruction()->seqNum, load_inst->seqNum,
-                        request->mainReq()->getPaddr(), *((uint64_t*)load_inst->memData));
+                if (debug::LoadPipeline) {
+                    char buffer[8] = {0};
+                    if (load_inst->memData) std::memcpy(buffer, load_inst->memData, load_inst->effSize);
+                    DPRINTF(LoadPipeline, "Forwarding from store [sn:%llu] to load [sn:%llu] "
+                            "addr %#x, data: %#lx\n", store_it->instruction()->seqNum, load_inst->seqNum,
+                            request->mainReq()->getPaddr(), *((uint64_t*)buffer));
+                }
+
+
 
                 load_inst->setFullForward();
 
@@ -3428,7 +3132,8 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     if (!load_inst->isDataPrefetch() && !request->isSplit()) {
         Addr blk_addr = request->mainReq()->getPaddr() & cacheBlockMask;
         int offset = request->mainReq()->getPaddr() & ~cacheBlockMask;
-        auto entry = storeBuffer.get(blk_addr);
+        auto &storeBuffer = lsq->getStoreBuffer();
+        auto entry = storeBuffer.get(lsqID, blk_addr);
         if (entry) {
             if (entry->recordForward(request->mainReq(), request)) {
                 // full forward
@@ -3439,8 +3144,12 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 }
 
                 load_inst->setFullForward();
-                DPRINTF(LoadPipeline, "Load [sn:%llu] forward from sbuffer, data: %lx\n",
-                        load_inst->seqNum, *((uint64_t*)load_inst->memData));
+                if (debug::LoadPipeline) {
+                    char buffer[8] = {0};
+                    if (load_inst->memData) std::memcpy(buffer, load_inst->memData, load_inst->effSize);
+                    DPRINTF(LoadPipeline, "Load [sn:%llu] forward from sbuffer, data: %lx\n",
+                            load_inst->seqNum, *((uint64_t*)buffer));
+                }
 
                 return NoFault;
             }

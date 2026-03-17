@@ -162,10 +162,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void setTrace() override;
 
     // check folded hists after speculative update and recover
-    void checkFoldedHist(const bitset &history, const char *when);
+    virtual void checkFoldedHist(const bitset &history, const char *when);
 
 #ifndef UNIT_TEST
-  private:
+  protected:
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
@@ -282,7 +282,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     bool satDecrement(int min, short &counter);
 
     // Get index for useAlt table
-    Addr getUseAltIdx(Addr pc);
+    Addr getUseAltIdx(Addr pc) const;
 
     // Cache for TAGE indices
     std::vector<Addr> tageIndex;

@@ -114,10 +114,10 @@ CPU::CPU(const BaseO3CPUParams &params)
       isa(numThreads, NULL),
 
       timeBuffer(params.backComSize, params.forwardComSize),
-      fetchQueue(params.backComSize, params.forwardComSize),
-      decodeQueue(params.backComSize, params.forwardComSize),
-      renameQueue(params.backComSize, params.forwardComSize),
-      iewQueue(params.backComSize, params.forwardComSize),
+      fetchTimebuffer(params.backComSize, params.forwardComSize),
+      decodeTimebuffer(params.backComSize, params.forwardComSize),
+      renameTimebuffer(params.backComSize, params.forwardComSize),
+      iewTimebuffer(params.backComSize, params.forwardComSize),
       activityRec(name(), NumStages,
                   params.backComSize + params.forwardComSize,
                   params.activity),
@@ -131,7 +131,8 @@ CPU::CPU(const BaseO3CPUParams &params)
       issueWidth(params.decodeWidth),
       enableConstantFolding(params.enableConstantFolding),
       enableMovImmElimination(params.enableMovImmElimination),
-      cpuStats(this)
+      cpuStats(this),
+      valuePred(params.valuePred)
 {
     fatal_if(FullSystem && params.numThreads > 1,
             "SMT is not supported in O3 in full system mode currently.");
@@ -179,22 +180,28 @@ CPU::CPU(const BaseO3CPUParams &params)
     commit.setTimeBuffer(&timeBuffer);
 
     // Also setup each of the stages' queues.
-    fetch.setFetchQueue(&fetchQueue);
-    decode.setFetchQueue(&fetchQueue);
-    commit.setFetchQueue(&fetchQueue);
-    decode.setDecodeQueue(&decodeQueue);
-    rename.setDecodeQueue(&decodeQueue);
-    rename.setRenameQueue(&renameQueue);
-    iew.setRenameQueue(&renameQueue);
-    iew.setIEWQueue(&iewQueue);
-    commit.setIEWQueue(&iewQueue);
-    commit.setRenameQueue(&renameQueue);
+    fetch.setFetchQueue(&fetchTimebuffer);
+    decode.setFetchQueue(&fetchTimebuffer);
+    commit.setFetchQueue(&fetchTimebuffer);
+    decode.setDecodeQueue(&decodeTimebuffer);
+    rename.setDecodeQueue(&decodeTimebuffer);
+    rename.setRenameQueue(&renameTimebuffer);
+    iew.setRenameQueue(&renameTimebuffer);
+    iew.setIEWQueue(&iewTimebuffer);
+    commit.setIEWQueue(&iewTimebuffer);
+    commit.setRenameQueue(&renameTimebuffer);
 
     decode.setFetchStage(&fetch);
     commit.setIEWStage(&iew);
     commit.setDecodeStage(&decode);
     rename.setIEWStage(&iew);
     rename.setCommitStage(&commit);
+
+    fetch.setStallSignals(&stallSignals);
+    decode.setStallSignals(&stallSignals);
+    rename.setStallSignals(&stallSignals);
+    iew.setStallSignals(&stallSignals);
+    commit.setStallSignals(&stallSignals);
 
     ThreadID active_threads;
     if (FullSystem) {
@@ -572,23 +579,18 @@ CPU::tick()
 //    activity = false;
 
     //Tick each of the stages
-    fetch.tick();
-
-    decode.tick();
-
-    rename.tick();
-
-    iew.tick();
 
     commit.tick();
+    iew.tick();
+    rename.tick();
+    decode.tick();
+    fetch.tick();
 
-    // Now advance the time buffers
+    fetchTimebuffer.advance();
+    decodeTimebuffer.advance();
+    renameTimebuffer.advance();
+    iewTimebuffer.advance();
     timeBuffer.advance();
-
-    fetchQueue.advance();
-    decodeQueue.advance();
-    renameQueue.advance();
-    iewQueue.advance();
 
     activityRec.advance();
 
@@ -855,10 +857,10 @@ CPU::removeThread(ThreadID tid)
     // Flush out any old data from the time buffers.
     for (int i = 0; i < timeBuffer.getSize(); ++i) {
         timeBuffer.advance();
-        fetchQueue.advance();
-        decodeQueue.advance();
-        renameQueue.advance();
-        iewQueue.advance();
+        fetchTimebuffer.advance();
+        decodeTimebuffer.advance();
+        renameTimebuffer.advance();
+        iewTimebuffer.advance();
     }
 
     assert(iew.ldstQueue.getCount(tid) == 0);
@@ -978,10 +980,10 @@ CPU::drain()
         // test in isCpuDrained().
         for (int i = 0; i < timeBuffer.getSize(); ++i) {
             timeBuffer.advance();
-            fetchQueue.advance();
-            decodeQueue.advance();
-            renameQueue.advance();
-            iewQueue.advance();
+            fetchTimebuffer.advance();
+            decodeTimebuffer.advance();
+            renameTimebuffer.advance();
+            iewTimebuffer.advance();
         }
 
         drainSanityCheck();
@@ -1422,8 +1424,7 @@ CPU::removeFrontInst(const DynInstPtr &inst)
 
     removeInstsThisCycle = true;
 
-    // Remove the front instruction.
-    removeList.push(inst->getInstListIt());
+    instList.erase(inst->getInstListIt());
 }
 
 void
@@ -1458,9 +1459,7 @@ CPU::removeInstsNotInROB(ThreadID tid)
     while (inst_it != end_it) {
         assert(!instList.empty());
 
-        squashInstIt(inst_it, tid);
-
-        inst_it--;
+        inst_it = squashInstIt(inst_it, tid);
     }
 
     // If the ROB was empty, then we actually need to remove the first
@@ -1489,17 +1488,15 @@ CPU::removeInstsUntil(const InstSeqNum &seq_num, ThreadID tid)
 
         bool break_loop = (inst_iter == instList.begin());
 
-        squashInstIt(inst_iter, tid);
-
-        inst_iter--;
+        inst_iter = squashInstIt(inst_iter, tid);
 
         if (break_loop)
             break;
     }
 }
 
-void
-CPU::squashInstIt(const ListIt &instIt, ThreadID tid)
+CPU::ListIt
+CPU::squashInstIt(ListIt &instIt, ThreadID tid)
 {
     if ((*instIt)->threadNumber == tid) {
         DPRINTF(O3CPU, "Squashing instruction, "
@@ -1514,8 +1511,9 @@ CPU::squashInstIt(const ListIt &instIt, ThreadID tid)
         // @todo: Formulate a consistent method for deleting
         // instructions from the instruction list
         // Remove the instruction from the list.
-        removeList.push(instIt);
+        instIt = instList.erase(instIt);
     }
+    return --instIt;
 }
 
 void
@@ -1537,7 +1535,7 @@ CPU::cleanUpRemovedInsts()
 
         instList.erase(removeList.front());
 
-        removeList.pop();
+        removeList.pop_front();
     }
 
     removeInstsThisCycle = false;
@@ -1759,7 +1757,7 @@ CPU::readArchIntReg(int reg_idx, ThreadID tid)
     PhysRegIdPtr phys_reg =
         commitRenameMap[tid].lookup(RegId(IntRegClass, reg_idx)).PhyReg();
 
-    DPRINTF(Commit, "Get map: x%i -> p%i\n", reg_idx, phys_reg->flatIndex());
+    DPRINTF(Scoreboard, "Get map: x%i -> p%i\n", reg_idx, phys_reg->flatIndex());
 
     return regFile.getReg(phys_reg);
 }
@@ -1770,7 +1768,7 @@ CPU::readArchFloatReg(int reg_idx, ThreadID tid)
     cpuStats.fpRegfileReads++;
     PhysRegIdPtr phys_reg =
         commitRenameMap[tid].lookup(RegId(FloatRegClass, reg_idx)).PhyReg();
-    DPRINTF(Commit, "Get map: f%i -> p%i\n", reg_idx, phys_reg->flatIndex());
+    DPRINTF(Scoreboard, "Get map: f%i -> p%i\n", reg_idx, phys_reg->flatIndex());
 
     return regFile.getReg(phys_reg);
 }
@@ -1781,7 +1779,7 @@ CPU::readArchVecReg(int reg_idx, uint64_t *val,ThreadID tid)
     cpuStats.vecRegfileReads++;
     PhysRegIdPtr phys_reg =
         commitRenameMap[tid].lookup(RegId(VecRegClass, reg_idx)).PhyReg();
-    DPRINTF(Commit, "Get map: v%i -> p%i\n", reg_idx, phys_reg->flatIndex());
+    DPRINTF(Scoreboard, "Get map: v%i -> p%i\n", reg_idx, phys_reg->flatIndex());
 
     regFile.getReg(phys_reg, val);
 }

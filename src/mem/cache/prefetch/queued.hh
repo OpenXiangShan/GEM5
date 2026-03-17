@@ -57,6 +57,8 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
+using PFTriggerInfo = Base::PFtriggerInfo;
+
 class Queued : public Base
 {
   public:
@@ -70,12 +72,17 @@ class Queued : public Base
         bool pfahead = false;
         int depth=0;
         PrefetchSourceType pfSource;
+        PFTriggerInfo pf_trigger_info{};
         PrefetchCmd(Addr a, int32_t p) : addr(a), priority(p), isVA(true), isBOP(false)
         {
             panic("PrefetchCmd: no source specified");
         }
         PrefetchCmd(Addr a, int32_t p, PrefetchSourceType src)
             : addr(a), priority(p), isVA(true), isBOP(false), pfSource(src)
+        {
+        }
+        PrefetchCmd(Addr a, int32_t p, PrefetchSourceType src, PFTriggerInfo pf_info)
+            : addr(a), priority(p), isVA(true), isBOP(false), pfSource(src), pf_trigger_info(pf_info)
         {
         }
         PrefetchCmd(Addr a, int32_t p, PrefetchSourceType src, bool va, bool bop)
@@ -219,6 +226,7 @@ class Queued : public Base
         statistics::Scalar pfRemovedFull;
         statistics::Scalar pfSpanPage;
         statistics::Scalar pfUsefulSpanPage;
+        statistics::Vector pfRemovedFull_srcs;
     } statsQueued;
 
   public:
@@ -306,6 +314,36 @@ class Queued : public Base
     void pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt) override {
     }
     void offloadToDownStream() override;
+  protected:
+    const bool usePFBuffer{false};
+    std::list<AddrPriority> PFRequestBuffer;
+    const int max_pf_buffer_size{8};
+    //here we implement a buffer that drop the pf requests when the buffer is full
+    virtual void InsertPFRequestToBuffer(const AddrPriority &addr_prio) {
+        if (PFRequestBuffer.size() < max_pf_buffer_size) {
+            PFRequestBuffer.push_back(addr_prio);
+        }else{
+            PFRequestBuffer.pop_front();
+            PFRequestBuffer.push_back(addr_prio);
+        }
+    };
+    /** Event to handle the delay queue processing */
+    void PFSendEventWrapper();
+    EventFunctionWrapper PFReqSendEvent;
+
+  public:
+    virtual bool hasPFRequestsInBuffer()  {
+        return !PFRequestBuffer.empty();
+    }
+    virtual bool GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) {
+        if (PFRequestBuffer.empty()) {
+            return false;
+        }
+        AddrPriority addr_prio = PFRequestBuffer.front();
+        PFRequestBuffer.pop_front();
+        addresses.push_back(addr_prio);
+        return true;
+    };
 };
 
 } // namespace prefetch

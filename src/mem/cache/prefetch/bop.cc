@@ -430,11 +430,11 @@ BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
             resetScores();
             //issuePrefetchRequests = true;
             return true;
-        } else if ((round >= roundMax/2) && (bestOffset != phaseBestOffset) && (bestScore <= badScore)) {
-            DPRINTF(BOPPrefetcher, "last round offset has not enough confidence, early stop\n");
-            DPRINTF(BOPPrefetcher, "score %u <  badScore %u\n", bestScore, badScore);
-            issuePrefetchRequests = false;
-        }
+         } //else if ((round >= roundMax/2) && (bestOffset != phaseBestOffset) && (bestScore <= badScore)) {
+        //     DPRINTF(BOPPrefetcher, "last round offset has not enough confidence, early stop\n");
+        //     DPRINTF(BOPPrefetcher, "score %u <  badScore %u\n", bestScore, badScore);
+        //     issuePrefetchRequests = false;
+        // }
     }
     DPRINTF(BOPPrefetcher, "Reach %s end, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
     return false;
@@ -505,14 +505,22 @@ bool
 BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                       PrefetchSourceType src)
 {
+    // Count generated prefetch
+    prefetchStats.pfGenerated++;
+
     if (!samePage(pfi.getAddr(), addr) && !crossPage) {
+        // Count filtered prefetch (cross-page)
+        prefetchStats.pfFiltered++;
         return false;
     }
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
     }
+    InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
     if (filter->contains(addr)) {
         DPRINTF(BOPPrefetcher, "Skip recently prefetched: %lx\n", addr);
+        // Count filtered prefetch
+        prefetchStats.pfFiltered++;
         return false;
     } else {
         DPRINTF(BOPPrefetcher, "Send pf: %lx\n", addr);

@@ -115,6 +115,11 @@ DespacitoStreamPrefetcher::hasAnySaturatedPattern() const
 void
 DespacitoStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late)
 {
+    if (archDBer){
+            archDBer->despacitoTraceWrite(curTick(), pfi.getAddr(), pfi.getPaddr(), pfi.hasPC() ? pfi.getPC() : 0,
+     pfi.hasPC(), pfi.isCacheMiss(), true);
+    }
+
     if (!pfi.hasPC()) {
         return;
     }
@@ -157,6 +162,11 @@ DespacitoStreamPrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, 
     if (archDBer && cache->level() == 1) {
         archDBer->l1PFTraceWrite(curTick(), pfi.getPC(), pfi.getAddr(), addr, src);
     }
+    if (archDBer){
+        archDBer->despacitoTraceWrite(curTick(), addr, 0, pfi.hasPC() ? pfi.getPC() : 0,
+        pfi.hasPC(), pfi.isCacheMiss(), false);
+    }
+    InsertPFRequestToBuffer(AddrPriority(addr, prio, src, pfi.trigger_info));
     if (filter->contains(addr)) {
         DPRINTF(DespacitoStreamPrefetcher, "Skip recently prefetched: %lx\n", addr);
         return false;

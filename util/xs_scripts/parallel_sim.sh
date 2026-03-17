@@ -3,7 +3,7 @@
 
 function print_help() {
     printf "Usage:
-    bash $0 <config_file_or_script> workload_list.lst checkpoint_top_dir task_tag [extra_gem5_args]
+    bash $0 <config_file_or_script> workload_list.lst checkpoint_top_dir task_tag [benchmark_filters] [extra_gem5_args]
 
 Arguments:
     config_file_or_script:  Config file (*.py) or wrapper script (*.sh).
@@ -11,6 +11,8 @@ Arguments:
     workload_list.lst:      List of workloads to run
     checkpoint_top_dir:     Root directory for checkpoints
     task_tag:               Tag for this experiment
+    benchmark_filters:      Optional comma-separated benchmark filters, case-insensitive.
+                            Empty means no filter (run all workloads in workload_list).
     extra_gem5_args:        Optional extra arguments for gem5 (only for .py mode)
 
 Examples:
@@ -20,8 +22,14 @@ Examples:
     # New mode (using .py config)
     bash $0 configs/example/idealkmhv3.py workload.lst /cpt/dir my_exp
 
+    # New mode with benchmark filters
+    bash $0 configs/example/idealkmhv3.py workload.lst /cpt/dir my_exp_subset \"mcf,gcc\"
+
     # New mode with extra args
-    bash $0 configs/example/idealkmhv3.py workload.lst /cpt/dir my_exp_nosc \"--disable-mgsc\"
+    bash $0 configs/example/idealkmhv3.py workload.lst /cpt/dir my_exp_nosc \"\" \"--disable-mgsc\"
+
+    # New mode with filters + extra args
+    bash $0 configs/example/idealkmhv3.py workload.lst /cpt/dir my_exp_nosc \"mcf,gcc\" \"--disable-mgsc\"
 \n"
     exit 1
 }
@@ -47,16 +55,27 @@ if [[ "$first_param" == *.sh ]]; then
     # Legacy mode: using wrapper script
     export use_legacy_mode=true
     export arch_script="$first_param"
+    export benchmark_filters="${5:-}"  # Optional 5th parameter in legacy mode
     echo "Legacy mode: using script $arch_script"
 else
     # New mode: using config file directly
     export use_legacy_mode=false
     export config_file="$first_param"
-    export extra_gem5_args="${5:-}"  # Optional 5th parameter
+    export benchmark_filters="${5:-}"  # Optional 5th parameter (new order)
+    export extra_gem5_args="${6:-}"    # Optional 6th parameter (new order)
+    # Backward compatibility: if only one optional arg and it looks like gem5 args,
+    # keep treating it as extra_gem5_args.
+    if [ "$#" -eq 5 ] && [[ "${5}" == -* ]]; then
+        export extra_gem5_args="${5}"
+        export benchmark_filters=""
+    fi
     echo "Config mode: using $config_file"
     if [ -n "$extra_gem5_args" ]; then
         echo "Extra gem5 args: $extra_gem5_args"
     fi
+fi
+if [ -n "${benchmark_filters//[[:space:],]/}" ]; then
+    echo "Benchmark filters: $benchmark_filters"
 fi
 
 # Note 1: workload list contains the workload name, checkpoint path, and parameters, looks like:
@@ -79,6 +98,49 @@ export ds=$(pwd)  # data storage. It is specific for BOSC machines, you can igno
 export full_work_dir=$ds/$tag # work dir wheter stats data stored
 mkdir -p $full_work_dir
 ln -sf $full_work_dir .  # optional, you can customize it yourself
+
+declare -a filtered_workloads=()
+
+function apply_benchmark_filter() {
+    if [ -z "${benchmark_filters//[[:space:],]/}" ]; then
+        echo "No benchmark filter provided, run all workloads."
+        return
+    fi
+
+    mapfile -t filtered_workloads < <(awk -v filters="$benchmark_filters" '
+        BEGIN {
+            n = split(filters, raw_filters, ",")
+            valid = 0
+            for (i = 1; i <= n; i++) {
+                token = raw_filters[i]
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", token)
+                token = tolower(token)
+                if (token != "") {
+                    patterns[++valid] = token
+                }
+            }
+        }
+        /^[[:space:]]*$/ { next }
+        {
+            lower_line = tolower($0)
+            for (i = 1; i <= valid; i++) {
+                if (index(lower_line, patterns[i]) > 0) {
+                    print $0
+                    next
+                }
+            }
+        }
+    ' "$workload_list")
+
+    local selected_count
+    selected_count="${#filtered_workloads[@]}"
+    if [ "$selected_count" -eq 0 ]; then
+        echo "Error: benchmark_filters '$benchmark_filters' matched no workloads in '$workload_list'"
+        exit 1
+    fi
+
+    echo "Applied benchmark filters: '$benchmark_filters' -> $selected_count workloads selected."
+}
 
 check() {
     if [ $1 -ne 0 ]; then
@@ -176,7 +238,12 @@ num_threads=${xsgem5_para_jobs:-63}
 function parallel_run() {
     # We use gnu parallel to control the parallelism.
     # If your server has 32 core and 64 SMT threads, we suggest to run with no more than 32 threads.
-    cat $workload_list | parallel -a - -j $num_threads arg_wrapper {}
+    if [ "${#filtered_workloads[@]}" -gt 0 ]; then
+        printf '%s\n' "${filtered_workloads[@]}" | parallel -a - -j $num_threads arg_wrapper {}
+    else
+        cat "$workload_list" | parallel -a - -j $num_threads arg_wrapper {}
+    fi
 }
 
+apply_benchmark_filter
 parallel_run

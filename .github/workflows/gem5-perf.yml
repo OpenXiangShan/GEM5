@@ -5,15 +5,10 @@ on:
     branches: [ xs-dev ]
   # Removed pull_request trigger - use /run-spec for on-demand testing
   workflow_dispatch:
-    inputs:
-      branch_name:
-        description: 'Branch to test (leave empty for current branch)'
-        required: false
-        type: string
 
 jobs:
   perf_test:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv2.py
-      benchmark_type: "spec06-0.8c"
+      benchmark_type: "gcc12-spec06-0.8c"

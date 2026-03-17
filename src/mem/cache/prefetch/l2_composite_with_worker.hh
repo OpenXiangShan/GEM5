@@ -61,6 +61,13 @@ class L2CompositeWithWorkerPrefetcher : public CompositeWithWorkerPrefetcher
     const bool enableDespacitoStream;
 
     bool offloadLowAccuracy = true;
+    protected:
+    void InsertPFRequestToBuffer(const AddrPriority &addr_prio) override{
+      panic("SMS:InsertPFRequestToBuffer not implemented");
+    };
+  public:
+    bool GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) override;
+    bool hasPFRequestsInBuffer() override;
 };
 
 }  // namespace prefetch

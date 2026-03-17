@@ -15,7 +15,12 @@ on:
       benchmark_type:
         required: true
         type: string
-        description: "Benchmark type: spec06-0.3c, spec06-0.8c, spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c"
+        description: "Benchmark type: gcc12-spec06-0.3c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-0.8c, gcc15-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c"
+      specific_benchmarks:
+        required: false
+        type: string
+        default: ""
+        description: "Comma-separated benchmark filters. Empty means run all workloads in checkpoint list."
       vector_type:
         required: false
         type: string
@@ -43,29 +48,53 @@ jobs:
         id: config
         run: |
           case "${{ inputs.benchmark_type }}" in
-              "spec06-0.3c")
+              "gcc12-spec06-0.3c")
               echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec06_0.3c_int.lst" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-spec06-0.3c" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-gcc12-spec06-0.3c" >> $GITHUB_OUTPUT
               echo "comment=run 30% coverage spec06 checkpoints, 148 checkpoints" >> $GITHUB_OUTPUT
               ;;
-            "spec06-0.8c")
+            "gcc12-spec06-0.8c")
               echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/spec_0.8c_int.lst" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-spec06-0.8c" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-gcc12-spec06-0.8c" >> $GITHUB_OUTPUT
               echo "comment=run 80% coverage spec06 checkpoints, 500+ checkpoints" >> $GITHUB_OUTPUT
               ;;
-            "spec06-1.0c")
+            "gcc12-spec06-1.0c")
               echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/checkpoint-0-0-0.lst" >> $GITHUB_OUTPUT
               echo "checkpoint_root_node=/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc" >> $GITHUB_OUTPUT
               echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
               echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/cluster-0-0.json" >> $GITHUB_OUTPUT
-              echo "artifact_name=performance-score-spec06-1.0c" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-gcc12-spec06-1.0c" >> $GITHUB_OUTPUT
               echo "comment=run 100% coverage spec06 checkpoints" >> $GITHUB_OUTPUT
+              ;;
+            "gcc15-spec06-0.3c")
+              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/spec06_0.3c.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260122/checkpoint-0-0-0" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/gcc15-spec06-0.3.json" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-gcc15-spec06-0.3c" >> $GITHUB_OUTPUT
+              echo "comment=run 30% coverage spec06 checkpoints, 148 checkpoints" >> $GITHUB_OUTPUT
+              ;;
+            "gcc15-spec06-0.8c")
+              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/spec06_0.8c.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260122/checkpoint-0-0-0" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/gcc15-spec06-0.8.json" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-gcc15-spec06-0.8c" >> $GITHUB_OUTPUT
+              echo "comment=run 80% coverage spec06 checkpoints, 148 checkpoints" >> $GITHUB_OUTPUT
+              ;;
+            "gcc15-spec06-1.0c")
+              echo "checkpoint_list=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/checkpoint.lst" >> $GITHUB_OUTPUT
+              echo "checkpoint_root_node=/nfs/home/share/checkpoints_profiles/spec06_gcc15_rv64gcb_base_260122/checkpoint-0-0-0" >> $GITHUB_OUTPUT
+              echo "score_script=gem5-score-ci.sh" >> $GITHUB_OUTPUT
+              echo "cluster_config=/nfs/home/share/gem5_ci/spec06_cpts/gcc15/cluster-0-0.json" >> $GITHUB_OUTPUT
+              echo "artifact_name=performance-score-gcc15-spec06-1.0c" >> $GITHUB_OUTPUT
+              echo "comment=run 100% coverage spec06 checkpoints, 148 checkpoints" >> $GITHUB_OUTPUT
               ;;
             "spec17-1.0c")
               echo "checkpoint_list=/nfs/home/yanyue/spec17_cpts/checkpoint-0-0-0/checkpoint.lst" >> $GITHUB_OUTPUT
@@ -92,7 +121,7 @@ jobs:
               echo "comment=run 80% coverage spec06 int rvv checkpoints" >> $GITHUB_OUTPUT
               ;;
             *)
-              echo "Error: Invalid benchmark_type '${{ inputs.benchmark_type }}'. Must be one of: spec06-0.8c, spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c"
+              echo "Error: Invalid benchmark_type '${{ inputs.benchmark_type }}'. Must be one of: gcc12-spec06-0.3c, gcc12-spec06-0.8c, gcc12-spec06-1.0c, gcc15-spec06-0.3c, gcc15-spec06-0.8c, gcc15-spec06-1.0c, spec17-1.0c, spec06-rvv-1.0c or spec06int-rvv-0.8c"
               exit 1
               ;;
           esac
@@ -147,6 +176,7 @@ jobs:
             ${{ steps.config.outputs.checkpoint_list }} \
             ${{ steps.config.outputs.checkpoint_root_node}} \
             spec_all \
+            "${{ inputs.specific_benchmarks }}" \
             "${{ inputs.extra_args }}"
       - name: Setup gem5_data_proc environment
         run: |
@@ -204,9 +234,9 @@ jobs:
           # Create target directory
           mkdir -p "$TARGET_DIR"
           
-          # Archive entire spec_all directory with compression
+          # Archive entire spec_all directory without compression
           echo "Archiving performance data to $TARGET_DIR"
-          tar -czf "$TARGET_DIR/spec_all.tar.gz" -C "$GITHUB_WORKSPACE/util/xs_scripts/test" spec_all
+          cp -a "$GITHUB_WORKSPACE/util/xs_scripts/test/spec_all" "$TARGET_DIR/"
           
           # Also save score.txt for quick reference
           if [ -f "$GITHUB_WORKSPACE/score.txt" ]; then
@@ -220,6 +250,7 @@ jobs:
           echo "branch: ${GITHUB_REF#refs/heads/}" >> "$TARGET_DIR/metadata.txt"
           echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
           echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
+          echo "specific_benchmarks: ${{ inputs.specific_benchmarks }}" >> "$TARGET_DIR/metadata.txt"
           echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
           
           # Auto cleanup: keep only last 200 runs for this benchmark type
@@ -236,11 +267,12 @@ jobs:
           fi
           
           echo "Performance data archived successfully"
-          echo "Archive size: $(du -sh "$TARGET_DIR/spec_all.tar.gz" | cut -f1)"
+          ARCHIVE_SIZE=$(du -sh "$TARGET_DIR/spec_all" | cut -f1)
+          echo "Archive size: ${ARCHIVE_SIZE}"
           {
             echo "### Archive output"
             echo "- Path: \`$TARGET_DIR\`"
-            echo "- Size: $(du -sh "$TARGET_DIR/spec_all.tar.gz" | cut -f1)"
+            echo "- Size: ${ARCHIVE_SIZE}"
           } >> $GITHUB_STEP_SUMMARY
       - name: Upload score artifact
         if: always()
@@ -251,11 +283,3 @@ jobs:
           path: score.txt
           retention-days: 30
       
-      - name: Fallback - Save score to shared storage
-        if: always()
-        run: |
-          # Fallback: 如果 artifact upload 失败，保存到共享存储
-          ARTIFACT_DIR="/nfs/home/share/gem5_ci/artifacts/${{ github.run_id }}"
-          mkdir -p "$ARTIFACT_DIR"
-          cp score.txt "$ARTIFACT_DIR/${{ steps.config.outputs.artifact_name }}.txt" 2>/dev/null || true
-          echo "✅ Score also saved to: $ARTIFACT_DIR"

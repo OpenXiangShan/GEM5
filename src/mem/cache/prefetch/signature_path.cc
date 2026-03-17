@@ -97,9 +97,10 @@ SignaturePath::PatternEntry::getStrideEntry(stride_t stride)
 }
 
 void
-SignaturePath::addPrefetch(Addr ppn, stride_t last_block, stride_t delta, double path_confidence,
-                           signature_t signature, bool is_secure, std::vector<AddrPriority> &addresses,
-                           boost::compute::detail::lru_cache<Addr, Addr> &filter)
+SignaturePath::addPrefetch(const PrefetchInfo &pfi, Addr ppn,
+     stride_t last_block, stride_t delta, double path_confidence,
+     signature_t signature, bool is_secure, std::vector<AddrPriority> &addresses,
+     boost::compute::detail::lru_cache<Addr, Addr> &filter)
 {
     stride_t block = last_block + delta;
 
@@ -134,7 +135,7 @@ SignaturePath::addPrefetch(Addr ppn, stride_t last_block, stride_t delta, double
     new_addr += pf_block * (Addr)blkSize;
 
     DPRINTF(SPP, "Queuing prefetch to %#x, with stride of %#x(%u) blocks.\n", new_addr, delta, delta);
-    sendPFWithFilter(new_addr, addresses, 0, filter);
+    sendPFWithFilter(pfi, new_addr, addresses, 0, filter);
 }
 
 void
@@ -301,7 +302,7 @@ SignaturePath::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
                     assert(entry.stride != 0);
                     //prefetch candidate
                     strides.push_back(entry.stride);
-                    addPrefetch(ppn, current_stride, entry.stride,
+                    addPrefetch(pfi, ppn, current_stride, entry.stride,
                                 current_confidence, current_signature,
                                 is_secure, addresses, filter);
                 }
@@ -351,27 +352,28 @@ SignaturePath::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriori
         }
     }
 
-    auxiliaryPrefetcher(ppn, current_block, is_secure, addresses, filter);
+    auxiliaryPrefetcher(pfi, ppn, current_block, is_secure, addresses, filter);
     sent = addresses.size() > init_addr_size;
     return sent;
 }
 
 void
-SignaturePath::auxiliaryPrefetcher(Addr ppn, stride_t current_block, bool is_secure,
+SignaturePath::auxiliaryPrefetcher(const PrefetchInfo &pfi, Addr ppn, stride_t current_block, bool is_secure,
                                    std::vector<AddrPriority> &addresses,
                                    boost::compute::detail::lru_cache<Addr, Addr> &filter)
 {
     if (addresses.empty()) {
         // Enable the next line prefetcher if no prefetch candidates are found
-        addPrefetch(ppn, current_block, 1, 0.0 /* unused*/, 0 /* unused */,
+        addPrefetch(pfi, ppn, current_block, 1, 0.0 /* unused*/, 0 /* unused */,
                     is_secure, addresses, filter);
     }
 }
 
 bool
-SignaturePath::sendPFWithFilter(Addr addr, std::vector<AddrPriority> &addresses, int prio,
+SignaturePath::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                                 boost::compute::detail::lru_cache<Addr, Addr> &filter)
 {
+    InsertPFRequestToBuffer(AddrPriority(addr, prio, PrefetchSourceType::SPP, pfi.trigger_info));
     if (filter.contains(addr)) {
         DPRINTF(SPP, "Skip recently prefetched: %lx\n", addr);
         return false;

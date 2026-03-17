@@ -59,12 +59,14 @@ namespace o3
 
 class XsDynInstMeta : public RefCounted
 {
-public:
-        bool squashed;
-        Addr instAddr;
+  public:
+    bool squashed;
+    Addr instAddr;
+    InstSeqNum seqNum;
 
-public:
-    XsDynInstMeta(): squashed(false),instAddr(0) {}
+  public:
+    XsDynInstMeta(): squashed(false), instAddr(0), seqNum(0) {}
+    XsDynInstMeta(InstSeqNum seq): squashed(false), instAddr(0), seqNum(seq) {}
 };
 
 using XsDynInstMetaPtr = RefCountingPtr<XsDynInstMeta>;

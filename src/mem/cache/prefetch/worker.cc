@@ -79,6 +79,7 @@ WorkerPrefetcher::transfer()
         }
         dpp_it = localBuffer.erase(dpp_it);
         count++;
+        latestTransferTick = curTick();
     }
     schedule(transferEvent, nextCycle());
 }

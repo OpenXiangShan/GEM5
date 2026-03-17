@@ -57,6 +57,7 @@ IPCP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPrior
                        PrefetchSourceType pfSource)
 {
     assert(rrf);
+    InsertPFRequestToBuffer(AddrPriority(addr, prio, pfSource, pfi.trigger_info));
     if (rrf->contains(addr)) {
         DPRINTF(IPCP, "IPCP PF filtered\n");
         ipcpStats.pf_filtered++;

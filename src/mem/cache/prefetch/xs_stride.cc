@@ -3,6 +3,7 @@
 
 #include "mem/cache/prefetch/xs_stride.hh"
 
+#include "base/stats/group.hh"
 #include "debug/XSStridePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 
@@ -12,16 +13,20 @@ namespace prefetch
 {
 
 XSStridePrefetcher::XSStridePrefetcher(const XSStridePrefetcherParams &p)
-    : Queued(p),useXsDepth(p.use_xs_depth),fuzzyStrideMatching(p.fuzzy_stride_matching),
+    : Queued(p),useXsDepth(p.use_xs_depth),useRedundantTable(p.use_redundant_table),
+      fuzzyStrideMatching(p.fuzzy_stride_matching),
       shortStrideThres(p.short_stride_thres),
       strideDynDepth(p.stride_dyn_depth),
       enableNonStrideFilter(p.enable_non_stride_filter),
-      strideUnique(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
-             p.stride_replacement_policy, StrideEntry()),
-      strideRedundant(p.stride_entries, p.stride_entries, p.stride_indexing_policy,
-             p.stride_replacement_policy, StrideEntry()),
+      regionSize(p.region_size),
+      regionBlks(p.region_size / p.block_size),     
+      strideUnique(p.stride_entries, p.stride_entries, p.stride_unique_indexing_policy,
+             p.stride_unique_replacement_policy, StrideEntry()),
+      strideRedundant(p.stride_entries, p.stride_entries, p.stride_redundant_indexing_policy,
+             p.stride_redundant_replacement_policy, StrideEntry()),
       nonStridePCs(p.non_stride_assoc, p.non_stride_entries, p.non_stride_indexing_policy,
-             p.non_stride_replacement_policy, NonStrideEntry())
+             p.non_stride_replacement_policy, NonStrideEntry()),
+      stats(this)
 {
 }
 
@@ -31,22 +36,27 @@ XSStridePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrP
                                        PrefetchSourceType pf_source, bool miss_repeat, bool enter_new_region,
                                        bool is_first_shot, Addr &pf_addr, int64_t &learned_bop_offset)
 {
-    if (is_first_shot) {
+    if (is_first_shot ||!useRedundantTable) {
         DPRINTF(XSStridePrefetcher, "Do stride lookup for first shot acc ...\n");
         strideLookup(strideUnique, pfi, addresses, late, pf_addr, pf_source, enter_new_region, miss_repeat,
-                     learned_bop_offset);
+                     learned_bop_offset, is_first_shot);
     } else {
         DPRINTF(XSStridePrefetcher, "Do stride lookup for repeat acc ...\n");
         strideLookup(strideRedundant, pfi, addresses, late, pf_addr, pf_source, enter_new_region, miss_repeat,
-                     learned_bop_offset);
+                     learned_bop_offset, is_first_shot);
     }
 }
 bool
 XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const PrefetchInfo &pfi,
                                   std::vector<AddrPriority> &addresses, bool late, Addr &stride_pf,
                                   PrefetchSourceType last_pf_source, bool enter_new_region, bool miss_repeat,
-                                  int64_t &learned_bop_offset)
+                                  int64_t &learned_bop_offset, bool is_first_shot)
 {
+    if (is_first_shot) {
+        stats.strideUniquequeryCount++;
+    } else {
+        stats.strideRedundantqueryCount++;
+    }
     Addr lookupAddr = pfi.getAddr();
     Addr stride_hash_pc = strideHashPc(pfi.getPC());
     StrideEntry *entry = stride.findEntry(stride_hash_pc, pfi.isSecure());
@@ -56,6 +66,22 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             miss_repeat);
     bool should_cover = false;
     if (entry) {
+        if (archDBer){
+            archDBer->strideTraceWrite(curTick(), lookupAddr, pfi.getPC(), stride_hash_pc,
+                                       true, is_first_shot, pfi.isCacheMiss(), true);
+        }
+    }else{
+        if (archDBer){
+            archDBer->strideTraceWrite(curTick(), lookupAddr, pfi.getPC(), stride_hash_pc,
+                                       false, is_first_shot, pfi.isCacheMiss(), true);
+        }
+    }
+    if (entry) {
+        if (is_first_shot) {
+            stats.strideUniquehitCount++;
+        } else {
+            stats.strideRedundanthitCount++;
+        }
         stride.accessEntry(entry);
         int64_t new_stride = lookupAddr - entry->lastAddr;
         if (new_stride == 0 || (labs(new_stride) < 64 && (miss_repeat || entry->longStride.calcSaturation() >= 0.5))) {
@@ -155,11 +181,27 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                                  PrefetchSourceType::SStride, 1);
                 sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 5)), addresses, 0,
                                  PrefetchSourceType::SStride, 2);
+                if (is_first_shot) {
+                    stats.strideUniquepfCount += 2;
+                } else {
+                    stats.strideRedundantpfCount += 2;
+                }
+                if (archDBer){
+                    archDBer->strideTraceWrite(curTick(),  blockAddress(lookupAddr + (entry->stride << 2)), pfi.getPC(), stride_hash_pc,
+                                            true, is_first_shot, pfi.isCacheMiss(), false);
+                    archDBer->strideTraceWrite(curTick(),  blockAddress(lookupAddr + (entry->stride << 5)), pfi.getPC(), stride_hash_pc,
+                                            true, is_first_shot, pfi.isCacheMiss(), false);
+                }
             } else {
                 for (unsigned i = start_depth; i <= entry->depth; i++) {
                     pf_addr = lookupAddr + entry->stride * i;
                     DPRINTF(XSStridePrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, i);
                     sendPFWithFilter(pfi, blockAddress(pf_addr), addresses, 0, PrefetchSourceType::SStride, 1);
+                    if (is_first_shot) {
+                        stats.strideUniquepfCount++;
+                    } else {
+                        stats.strideRedundantpfCount++;
+                    }
                 }
                 stride_pf = pf_addr;  // the longest lookahead
             }
@@ -167,6 +209,11 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             should_cover = true;
         }
     } else {
+        if (is_first_shot) {
+            stats.strideUniquemissCount++;
+        } else {
+            stats.strideRedundantmissCount++;
+        }
         DPRINTF(XSStridePrefetcher, "Stride miss, insert it\n");
         entry = stride.findVictim(0);
         DPRINTF(XSStridePrefetcher, "Stride found victim pc = %x, stride = %i\n", entry->pc, entry->stride);
@@ -174,6 +221,13 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             DPRINTF(XSStridePrefetcher, "Stride hist %u >= %u, mark pc %x as non-stride\n", entry->histStrides.size(),
                     maxHistStrides - 1, entry->pc);
             markNonStridePC(entry->pc);
+        }
+        if (entry->conf >= 2){
+            if (is_first_shot) {
+                stats.strideUniquereplaceusefulCount++;
+            } else {
+                stats.strideRedundantreplaceusefulCount++;
+            }
         }
         if (entry->conf >= 2 && entry->stride > 1024) {  // > 1k
             DPRINTF(XSStridePrefetcher, "Stride Evicting a useful stride, send it to BOP with offset %i\n",
@@ -239,9 +293,15 @@ void
 XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
                                       int prio, PrefetchSourceType src, int ahead_level)
 {
+    // Count generated prefetch
+    prefetchStats.pfGenerated++;
+    pfi.setTriggerInfo_PFsrc(src);
     if (ahead_level > 1){
+        stridestream_pfFilter_l2l3->Insert(regionAddress(addr), uint64_t(1) << regionOffset(addr),0,true,false,pfi.isSecure(),ahead_level, &pfi.trigger_info);
         if (filterL2->contains(addr)) {
             DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
+            // Count filtered prefetch
+            prefetchStats.pfFiltered++;
         } else {
             DPRINTF(XSStridePrefetcher, "Send pf: %lx\n", addr);
             filterL2->insert(addr, 0);
@@ -251,8 +311,11 @@ XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
             addresses.back().pfahead = true;
         }
     } else {
+        stridestream_pfFilter_l1->Insert(regionAddress(addr), uint64_t(1) << regionOffset(addr),0,true,false,pfi.isSecure(),ahead_level, &pfi.trigger_info);
         if (filter->contains(addr)) {
             DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
+            // Count filtered prefetch
+            prefetchStats.pfFiltered++;
         } else {
             DPRINTF(XSStridePrefetcher, "Send pf: %lx\n", addr);
             filter->insert(addr, 0);
@@ -271,6 +334,21 @@ XSStridePrefetcher::strideHashPc(Addr pc)
     Addr pc_high = pc_high_1 ^ pc_high_2 ^ pc_high_3;
     Addr pc_low = pc & (0x1ff);
     return (pc_high << 10) | pc_low;
+}
+
+XSStridePrefetcher::XSstrideStats::XSstrideStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(strideUniquequeryCount, statistics::units::Count::get(), "stride table query num"),
+      ADD_STAT(strideUniquehitCount, statistics::units::Count::get(), "stride table hit num"),
+      ADD_STAT(strideUniquemissCount, statistics::units::Count::get(), "stride table miss num"),
+      ADD_STAT(strideUniquepfCount, statistics::units::Count::get(), "stride prefetch num"),
+      ADD_STAT(strideUniquereplaceusefulCount, statistics::units::Count::get(), "stride table replace num"),
+      ADD_STAT(strideRedundantqueryCount, statistics::units::Count::get(), "stride table query num"),
+      ADD_STAT(strideRedundanthitCount, statistics::units::Count::get(), "stride table hit num"),
+      ADD_STAT(strideRedundantmissCount, statistics::units::Count::get(), "stride table miss num"),
+      ADD_STAT(strideRedundantpfCount, statistics::units::Count::get(), "stride prefetch num"),
+      ADD_STAT(strideRedundantreplaceusefulCount, statistics::units::Count::get(), "stride table replace num")
+{
 }
 
 }
