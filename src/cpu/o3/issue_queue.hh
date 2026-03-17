@@ -252,7 +252,7 @@ class IssueQue : public SimObject
     void retryMem(const DynInstPtr& inst);
     bool idle();
 
-    void doCommit(const InstSeqNum inst);
+    void doCommit(const InstSeqNum inst, ThreadID tid);
     void doSquash(SquashInfo squashInfo);
 
     int getIssueStages() { return scheduleToExecDelay; }
@@ -393,7 +393,7 @@ class Scheduler : public SimObject
     uint32_t getCorrectedOpLat(const DynInstPtr& inst);
     bool hasReadyInsts();
     bool isDrained();
-    void doCommit(const InstSeqNum seqNum);
+    void doCommit(const InstSeqNum seqNum, ThreadID tid);
     void doSquash(SquashInfo squashInfo);
     uint32_t getIQInsts();
     uint32_t getIQInsts(ThreadID tid);

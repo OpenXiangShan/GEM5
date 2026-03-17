@@ -405,7 +405,7 @@ class IEW
     /** Scoreboard pointer. */
     Scoreboard* scoreboard;
 
-    SquashVersion localSquashVer{0};
+    SquashVersion localSquashVer[MaxThreads];
 
     /** Value predictor */
     valuepred::VPUnit *valuePred;

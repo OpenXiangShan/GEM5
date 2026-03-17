@@ -810,11 +810,16 @@ IssueQue::insertNonSpec(const DynInstPtr& inst)
 }
 
 void
-IssueQue::doCommit(const InstSeqNum seqNum)
+IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
 {
-    while (!instList.empty() && instList.front()->seqNum <= seqNum) {
-        assert(instList.front()->isIssued());
-        instList.pop_front();
+    for (auto it = instList.begin(); it != instList.end();) {
+        const auto &inst = *it;
+        if (inst->threadNumber == tid && inst->seqNum <= seqNum) {
+            assert(inst->isIssued());
+            it = instList.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 
@@ -1654,10 +1659,10 @@ Scheduler::isDrained()
 }
 
 void
-Scheduler::doCommit(const InstSeqNum seqNum)
+Scheduler::doCommit(const InstSeqNum seqNum, ThreadID tid)
 {
     for (auto it : issueQues) {
-        it->doCommit(seqNum);
+        it->doCommit(seqNum, tid);
     }
 }
 

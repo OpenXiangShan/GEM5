@@ -656,8 +656,8 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     }
 
     // Verify fetchBufferPC alignment with the supplying FSQ entry.
-    if (threads[tid].valid && dbpbtb->ftqHasFetching(0)) {
-        const auto &stream = dbpbtb->ftqFetchingTarget(0);
+    if (threads[tid].valid && dbpbtb->ftqHasFetching(tid)) {
+        const auto &stream = dbpbtb->ftqFetchingTarget(tid);
         if (threads[tid].startPC != stream.startPC) {
             panic("fetchBufferPC %#x should be aligned with FSQ startPC %#x",
                   threads[tid].startPC, stream.startPC);
@@ -793,7 +793,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // Decoupled+BTB-only: compute next PC directly from the supplying FSQ entry.
     ThreadID tid = inst->threadNumber;
     assert(dbpbtb);
-    assert(dbpbtb->ftqHasFetching(0));
+    assert(dbpbtb->ftqHasFetching(tid));
     const auto &stream = dbpbtb->ftqFetchingTarget(tid);
 
     const Addr curr_pc = next_pc.instAddr();
@@ -1002,7 +1002,7 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     // We will use a nop in order to carry the fault.
     DynInstPtr instruction = buildInst(tid, nopStaticInstPtr, nullptr,
             fetch_pc, fetch_pc, false);
-    instruction->setVersion(localSquashVer);
+    instruction->setVersion(localSquashVer[tid]);
     instruction->setNotAnInst();
 
     instruction->setPredTarg(fetch_pc);
@@ -1522,35 +1522,42 @@ Fetch::handleIEWSignals()
         return;
     }
 
-    auto &incoming = fromIEW->iewInfo->resolvedCFIs;
     const bool had_pending_resolve = !resolveQueue.empty();
-    uint8_t enqueueSize = fromIEW->iewInfo->resolvedCFIs.size();
     uint8_t enqueueCount = 0;
+    uint8_t enqueueSize = 0;
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        enqueueSize += fromIEW->iewInfo[tid].resolvedCFIs.size();
+    }
 
     if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
         fetchStats.resolveQueueFullEvents++;
         fetchStats.resolveEnqueueFailEvent += enqueueSize;
     } else {
-
-        for (const auto &resolved : incoming) {
-            bool merged = false;
-            for (auto &queued : resolveQueue) {
-                if (queued.resolvedFTQId == resolved.ftqId) {
-                    queued.resolvedInstPC.push_back(resolved.pc);
-                    merged = true;
-                    break;
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
+            for (const auto &resolved : incoming) {
+                bool merged = false;
+                for (auto &queued : resolveQueue) {
+                    if (queued.resolvedTid == tid &&
+                        queued.resolvedFTQId == resolved.ftqId) {
+                        queued.resolvedInstPC.push_back(resolved.pc);
+                        merged = true;
+                        break;
+                    }
                 }
-            }
 
-            if (merged) {
-                continue;
-            }
+                if (merged) {
+                    continue;
+                }
 
-            ResolveQueueEntry new_entry;
-            new_entry.resolvedFTQId = resolved.ftqId;
-            new_entry.resolvedInstPC.push_back(resolved.pc);
-            resolveQueue.push_back(std::move(new_entry));
-            enqueueCount++;
+                ResolveQueueEntry new_entry;
+                new_entry.resolvedTid = tid;
+                new_entry.resolvedFTQId = resolved.ftqId;
+                new_entry.resolvedInstPC.push_back(resolved.pc);
+                resolveQueue.push_back(std::move(new_entry));
+                enqueueCount++;
+            }
         }
         fetchStats.resolveEnqueueCount.sample(enqueueCount);
     }
@@ -1562,12 +1569,13 @@ Fetch::handleIEWSignals()
     // and fetch consuming them as predictor resolved updates.
     if (had_pending_resolve && !resolveQueue.empty()) {
         auto &entry = resolveQueue.front();
+        ThreadID tid = entry.resolvedTid;
         unsigned int stream_id = entry.resolvedFTQId;
-        dbpbtb->prepareResolveUpdateEntries(stream_id, 0);
+        dbpbtb->prepareResolveUpdateEntries(stream_id, tid);
         for (const auto resolvedInstPC : entry.resolvedInstPC) {
-            dbpbtb->markCFIResolved(stream_id, resolvedInstPC, 0);
+            dbpbtb->markCFIResolved(stream_id, resolvedInstPC, tid);
         }
-        bool success = dbpbtb->resolveUpdate(stream_id, 0);
+        bool success = dbpbtb->resolveUpdate(stream_id, tid);
         if (success) {
             dbpbtb->notifyResolveSuccess();
             resolveQueue.pop_front();
@@ -1612,8 +1620,10 @@ Fetch::handleCommitSignals(ThreadID tid)
     squash(*fromCommit->commitInfo[tid].pc, squash_seq,
            squash_inst, tid);
 
-    localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
-    DPRINTF(Fetch, "Updating squash version to %u\n", localSquashVer.getVersion());
+    localSquashVer[tid].update(
+        fromCommit->commitInfo[tid].squashVersion.getVersion());
+    DPRINTF(Fetch, "Updating squash version to %u\n",
+            localSquashVer[tid].getVersion());
 
     auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
 
@@ -1924,7 +1934,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
                 tid, waitForVsetvl);
     }
 
-    instruction->setVersion(localSquashVer);
+    instruction->setVersion(localSquashVer[tid]);
     ppFetch->notify(instruction);
     numInst++;
 

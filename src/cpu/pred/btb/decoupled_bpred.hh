@@ -75,8 +75,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     // FetchTargetId fetchHeadFtqId{1}; // next FSQ id to be consumed by fetch
 
     CPU *cpu;
-
-    const int numThreads = 2;
+    ThreadID nextPredictTid = 0;
     unsigned predictWidth;  // max predict width, default 64
     unsigned maxInstsNum;
 
@@ -145,7 +144,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned resolveDequeueFailCounter{0};
     const unsigned resolveBlockThreshold;
 
-    ThreadID scheduleThread() { return 0; }
+    ThreadID scheduleThread();
 
     void processNewPrediction(ThreadID tid);
 

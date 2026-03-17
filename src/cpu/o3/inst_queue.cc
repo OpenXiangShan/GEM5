@@ -758,7 +758,7 @@ InstructionQueue::commit(const InstSeqNum &inst, ThreadID tid)
 {
     DPRINTF(IQ, "[tid:%i] Committing instructions older than [sn:%llu]\n",
             tid,inst);
-    scheduler->doCommit(inst);
+    scheduler->doCommit(inst, tid);
 }
 
 int

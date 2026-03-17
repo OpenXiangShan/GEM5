@@ -443,7 +443,12 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     test_sys.cpu = [TestCPUClass(clk_domain=test_sys.cpu_clk_domain, cpu_id=i)
                     for i in range(np)]
     # Configure MMU for trace-aware FS mode
+    if args.smt:
+        test_sys.multi_thread = True
+
     for cpu in test_sys.cpu:
+        if args.smt:
+            cpu.numThreads = 2
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
