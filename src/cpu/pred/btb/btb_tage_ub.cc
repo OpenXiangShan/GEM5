@@ -109,7 +109,7 @@ BTBTAGEUpperBound::initUpperBoundState()
 #endif
 
         unsigned reserveEntries = std::max<unsigned>(16,
-            tableSizes[i] * std::max<unsigned>(1, numWays));
+            tableSizes[i] * std::max<unsigned>(1, numWays[i]));
         exactTables[i].reserve(reserveEntries);
     }
 }
@@ -242,8 +242,17 @@ BTBTAGEUpperBound::lookupExactPrediction(
     }
 
     const bool taken = useAltPred ? altPred : mainTaken;
+    int finalProviderTable = -1;
+    bool finalProviderIsAlt = false;
+    if (!useAltPred && provided) {
+        finalProviderTable = mainInfo.table;
+    } else if (useAltPred && altProvided) {
+        finalProviderTable = altInfo.table;
+        finalProviderIsAlt = true;
+    }
+
     return TagePrediction(btbEntry.pc, mainInfo, altInfo, useAltPred, taken,
-                          altPred);
+                          altPred, finalProviderTable, finalProviderIsAlt);
 }
 
 void
