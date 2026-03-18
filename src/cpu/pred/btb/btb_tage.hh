@@ -351,6 +351,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateAllocFailure;
         Scalar updateAllocFailureNoValidTable;
         Scalar updateAllocSuccess;
+        Scalar allocBucketHasInvalid;
+        Scalar allocBucketHasWeakNotUseful;
+        Scalar allocBucketHasStrongNotUsefulButNoWeakNotUseful;
+        Scalar allocBucketAllUsefulOrNoCandidate;
         Scalar updateMispred;
         Scalar updateResetU;
 

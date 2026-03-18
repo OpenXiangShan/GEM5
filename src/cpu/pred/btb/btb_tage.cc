@@ -565,31 +565,45 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         auto &set = tageTable[ti][newIndex];
 
-        int selected_way = -1;
+        int invalid_way = -1;
         for (unsigned way = 0; way < numWays; ++way) {
             if (!set[way].valid) {
-                selected_way = way;
+                invalid_way = way;
                 break;
             }
         }
-        if (selected_way == -1) {
-            for (unsigned way = 0; way < numWays; ++way) {
-                auto &cand = set[way];
-                const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-                if (usefulCtrIsSaturateNegative(cand) && weakish) {
-                    selected_way = way;
-                    break;
+        int weak_not_useful_way = -1;
+        int strong_not_useful_way = -1;
+        for (unsigned way = 0; way < numWays; ++way) {
+            auto &cand = set[way];
+            if (!usefulCtrIsSaturateNegative(cand)) {
+                continue;
+            }
+
+            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
+            if (weakish) {
+                if (weak_not_useful_way == -1) {
+                    weak_not_useful_way = way;
                 }
+            } else if (strong_not_useful_way == -1) {
+                strong_not_useful_way = way;
             }
         }
-        if (selected_way == -1) {
-            for (unsigned way = 0; way < numWays; ++way) {
-                if (usefulCtrIsSaturateNegative(set[way])) {
-                    selected_way = way;
-                    break;
-                }
-            }
+
+        int selected_way = -1;
+        if (invalid_way != -1) {
+            tageStats.allocBucketHasInvalid++;
+            selected_way = invalid_way;
+        } else if (weak_not_useful_way != -1) {
+            tageStats.allocBucketHasWeakNotUseful++;
+            selected_way = weak_not_useful_way;
+        } else if (strong_not_useful_way != -1) {
+            tageStats.allocBucketHasStrongNotUsefulButNoWeakNotUseful++;
+            selected_way = strong_not_useful_way;
+        } else {
+            tageStats.allocBucketAllUsefulOrNoCandidate++;
         }
+
         if (selected_way != -1) {
             short newCounter = actual_taken ? 0 : -1;
             DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
@@ -1045,6 +1059,19 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateAllocFailure, statistics::units::Count::get(), "alloc failure when update"),
     ADD_STAT(updateAllocFailureNoValidTable, statistics::units::Count::get(), "alloc failure no valid table when update"),
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
+    ADD_STAT(
+        allocBucketHasInvalid, statistics::units::Count::get(),
+        "allocation table probes with an invalid victim"),
+    ADD_STAT(
+        allocBucketHasWeakNotUseful, statistics::units::Count::get(),
+        "allocation table probes with weak and saturate-negative useful victim"),
+    ADD_STAT(
+        allocBucketHasStrongNotUsefulButNoWeakNotUseful,
+        statistics::units::Count::get(),
+        "allocation table probes with only strong saturate-negative useful victims"),
+    ADD_STAT(
+        allocBucketAllUsefulOrNoCandidate, statistics::units::Count::get(),
+        "allocation table probes with no eligible victim"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
     ADD_STAT(recomputedVsActualDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != actual_taken"),
