@@ -52,8 +52,10 @@ class CHI_L3 : public ClockedObject
     void setNodeID(uint32_t id) { _NodeID = id; }
     void setSAM(std::shared_ptr<SystemAddressMapHN> sam) { SAM = sam; }
 
-    CHIPort *getCpuSidePort() { return cpuSidePort; }
-    CHIPort *getMemSidePort() { return memSidePort; }
+    CHIPort *getNetworkPort() { return networkPort; }
+    // Compatibility aliases for existing topology wiring.
+    CHIPort *getCpuSidePort() { return networkPort; }
+    CHIPort *getMemSidePort() { return networkPort; }
 
   private:
     // --- Pseudo ports used to intercept xbar/cache traffic ---
@@ -96,12 +98,15 @@ class CHI_L3 : public ClockedObject
         CHI_L3 *owner;
     };
 
+    bool handleNetworkFlit(FlitPtr &flit);
     // --- Helpers ---
     bool handleCpuSideFlit(FlitPtr &flit);
     bool handleMemSideFlit(FlitPtr &flit);
 
     bool handleXBarCpuTimingReq(PacketPtr pkt);
     bool handleCacheMemTimingResp(PacketPtr pkt);
+    void drainPendingCacheMemReqQueue();
+    void enqueuePendingCacheMemReq(PacketPtr pkt);
     bool sendPktToXbar(PacketPtr pkt);
     bool sendReadToDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp);
     bool sendWriteToDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp);
@@ -240,9 +245,13 @@ class CHI_L3 : public ClockedObject
     std::deque<PendingDdrReq> pendingDdrQ;
     EventFunctionWrapper pendingDdrSendEvent;
 
+    // Cache/mem-side timing requests accepted by InnerCacheRespPort but
+    // deferred due to transient backpressure inside handleCacheMemTimingResp.
+    std::deque<PacketPtr> pendingCacheMemReqQ;
+    EventFunctionWrapper pendingCacheMemReqSendEvent;
+
     // Members
-    CHIPort *cpuSidePort{nullptr};
-    CHIPort *memSidePort{nullptr};
+    CHIPort *networkPort{nullptr};
     L3CacheWrapper *cacheWrapper{nullptr};
     CoherentXBar *coherentXBar{nullptr};
 

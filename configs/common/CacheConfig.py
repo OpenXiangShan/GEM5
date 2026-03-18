@@ -290,10 +290,41 @@ def config_cache(options, system):
                         RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4))
                     )
                     system.CHIsys.L3 = CHI_L3(
-                        cpuSidePort=CHIPort(recv_buffer_size=4),
-                        memSidePort=CHIPort(recv_buffer_size=4),
+                        networkPort=CHIPort(recv_buffer_size=4),
                         coherent_xbar=L2XBar(clk_domain=system.cpu_clk_domain),
                         cache_wrapper=l3_inner_cache_wrapper
+                    )
+                    # 2x2 mesh used by xsCHI TopoSys.
+                    # Coordinates:
+                    #   Mesh0=(0,0), Mesh1=(1,0), Mesh2=(1,1), Mesh3=(0,1)
+                    # Endpoint placement:
+                    #   RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
+                    system.CHIsys.MeshNode0 = MeshNode(
+                        node_x=0, node_y=0, voq_depth=8,
+                        port_local0=CHIPort(recv_buffer_size=4),
+                        port_east=CHIPort(recv_buffer_size=4),
+                        port_north=CHIPort(recv_buffer_size=4))
+                    system.CHIsys.MeshNode1 = MeshNode(
+                        node_x=1, node_y=0, voq_depth=8,
+                        port_local0=CHIPort(recv_buffer_size=4),
+                        port_west=CHIPort(recv_buffer_size=4),
+                        port_north=CHIPort(recv_buffer_size=4))
+                    system.CHIsys.MeshNode2 = MeshNode(
+                        node_x=1, node_y=1, voq_depth=8,
+                        port_local0=CHIPort(recv_buffer_size=4),
+                        port_west=CHIPort(recv_buffer_size=4),
+                        port_south=CHIPort(recv_buffer_size=4))
+                    # Mesh3 currently has no local endpoint; keep local0 present
+                    # to satisfy MeshNode's mandatory local0-port invariant.
+                    system.CHIsys.MeshNode3 = MeshNode(
+                        node_x=0, node_y=1, voq_depth=8,
+                        port_local0=CHIPort(recv_buffer_size=4),
+                        port_east=CHIPort(recv_buffer_size=4),
+                        port_south=CHIPort(recv_buffer_size=4))
+                    print(
+                        "[xsCHI][Build] mesh=2x2 "
+                        "M0=(0,0) M1=(1,0) M2=(1,1) M3=(0,1) "
+                        "endpoints: RN@M0.local0 HN@M1.local0 DRAM@M2.local0"
                     )
 
                     l3_cache_slice = L2CacheSlice(clk_domain=system.cpu_clk_domain)

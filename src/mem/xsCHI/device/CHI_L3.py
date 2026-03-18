@@ -9,8 +9,7 @@ class CHI_L3(ClockedObject):
     cxx_header = "mem/xsCHI/device/CHI_L3.hh"
     cxx_class = 'gem5::xsCHI::CHI_L3'
 
-    cpuSidePort = Param.CHIPort("L2/RN side CHI port")
-    memSidePort = Param.CHIPort("DDR side CHI port")
+    networkPort = Param.CHIPort("CHI network port")
     coherent_xbar = Param.CoherentXBar("coherent xbar instance")
     cache_wrapper = Param.L3CacheWrapper("CacheWrapper instance to wrap")
 

@@ -24,7 +24,8 @@ namespace xsCHI
         return op == CHI_OP_TYPE::CHI_REQ_READUNIQUE ||
                op == CHI_OP_TYPE::CHI_REQ_READSHARED ||
                op == CHI_OP_TYPE::CHI_REQ_READCLEAN ||
-               op == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE;
+               op == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE ||
+               op == CHI_OP_TYPE::CHI_REQ_EVICT;
     }
 
     bool
@@ -94,6 +95,7 @@ namespace xsCHI
                 blk, it->second);
         if (it->second == 0) {
             inProgressReadByAddr.erase(it);
+            wakeBlockedReads(blk);
         }
     }
 
@@ -234,19 +236,18 @@ namespace xsCHI
             assert(!hasInProgressWrite(addr) &&
                    "L2Bridge write must not overlap same-address in-progress write");
             if (!isRetry){
+                //make sure of Req_tobesent do not have same-address read/write req
                 assert(!hasQueuedReadWriteReq(addr));
             }
             
         }
 
         if (isReadReqOp(op)) {
-            assert(!hasInProgressRead(addr) &&
-                   "L2Bridge read must not overlap same-address in-progress read");
-            if (hasInProgressWrite(addr)) {
-                enqueueBlockedReadReq(req);
-                return true;
-            }
-            if (!isRetry && hasQueuedReadWriteReq(addr)) {
+            // assert(!hasInProgressRead(addr) &&
+            //        "L2Bridge read must not overlap same-address in-progress read");
+            if (hasInProgressWrite(addr) ||
+                hasInProgressRead(addr)||
+                (!isRetry && hasQueuedReadWriteReq(addr))) {
                 enqueueBlockedReadReq(req);
                 return true;
             }
@@ -491,7 +492,7 @@ namespace xsCHI
         if (req->getCacheResponding()) {
             assert(req->getOpcode() == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE);
             // this is a upgradereq that dont need cache resp, because its set CacheResponding;
-        }else{
+        }else if (req->getOpcode() != CHI_OP_TYPE::CHI_REQ_EVICT){
             recvReadResp_callback(response_req); // 发送响应请求到存储端口
         }
 
@@ -531,12 +532,15 @@ namespace xsCHI
     }
     void CHIBridge::TrySendCompACK()
     {
+        DPRINTF(CHIBridge,"TrySendCompACK called, Ack_tobesent's number : %d, txn_id: %d\n",Ack_tobesent.size(), Ack_tobesent.front() ? Ack_tobesent.front()->getTxnId() : -1);
         assert(!Ack_tobesent.empty() && "Ack_tobesent should not be empty when TrySendCompACK is called");
         if (networkPort->send(Ack_tobesent.front())){
             assert(Ack_tobesent.front()==nullptr);
+            DPRINTF(CHIBridge,"Send CompACK Flit success.\n");
             Ack_tobesent.pop(); // 发送成功，移除已发送的COMPACK Flit
         }else{
             assert(Ack_tobesent.front()!=nullptr);
+            DPRINTF(CHIBridge,"Send CompACK Flit failed, will retry later.\n");
         }
         // 尝试发送COMPACK Flit
         if (!Ack_tobesent.empty() && !ack_handle_event.scheduled()) {
@@ -596,8 +600,9 @@ namespace xsCHI
             case CHI_OP_TYPE::CHI_RSP_COMP:{
                 //do finish req stuff
                 // 发送完成请求的逻辑
-                TXN_Manager.releaseID(flit->getTxnId());
-                outstanding_requests.erase(flit->getTxnId());
+                // treat this type of request as a read request,
+                // so we can reuse the FinishReq_Read function
+                FinishReq_Read(flit);
                 DPRINTF(CHIBridge, "Finish evict request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
                 return true;
             }

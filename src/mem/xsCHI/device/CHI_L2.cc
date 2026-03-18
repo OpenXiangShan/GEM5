@@ -237,7 +237,8 @@ namespace xsCHI
         // assert(pkt->headerDelay == 0);
         // assert(pkt->payloadDelay == 0);
         pkt->makeTimingResponse();
-        if (req->getOpcode() != CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE)
+        if (req->getOpcode() != CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE &&
+            req->getOpcode() != CHI_OP_TYPE::CHI_REQ_EVICT)
         {
             uint8_t *tmp = new uint8_t[req->getSize()];
             assert(req->getSize()==pkt->getSize());
