@@ -1735,12 +1735,13 @@ CPU::htmSendAbortSignal(ThreadID tid, uint64_t htm_uid,
 }
 
 void
-CPU::readGem5Regs()
+CPU::readGem5Regs(ThreadID tid)
 {
+    auto diffAllStates = this->diffAllStates[tid];
     for (int i = 0; i < 32; i++) {
-        diffAllStates->gem5RegFile[i] = readArchIntReg(i, 0);
-        diffAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, 0);
-        readArchVecReg(i, (uint64_t*)&diffAllStates->gem5RegFile.vr[i], 0);
+        diffAllStates->gem5RegFile[i] = readArchIntReg(i, tid);
+        diffAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, tid);
+        readArchVecReg(i, (uint64_t*)&diffAllStates->gem5RegFile.vr[i], tid);
     }
 }
 

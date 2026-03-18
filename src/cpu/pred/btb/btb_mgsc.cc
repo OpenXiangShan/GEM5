@@ -60,41 +60,64 @@ BTBMGSC::initStorage()
     assert(isPowerOf2(numCtrsPerLine));
     numCtrsPerLineBits = log2i(numCtrsPerLine);
 
+    threadHistory.resize(MaxThreads);
+    threadMeta.resize(MaxThreads);
+
     auto bwTableSize = allocPredTable(bwTable, bwTableNum, bwTableIdxWidth);
-    for (unsigned int i = 0; i < bwTableNum; ++i) {
-        indexBwFoldedHist.push_back(GlobalBwFoldedHist(bwHistLen[i], bwTableIdxWidth - numCtrsPerLineBits, 16));
+    for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+        auto &state = threadHistory[tid];
+        for (unsigned int i = 0; i < bwTableNum; ++i) {
+            state.indexBwFoldedHist.emplace_back(
+                bwHistLen[i], bwTableIdxWidth - numCtrsPerLineBits, 16);
+        }
     }
     bwIndex.resize(bwTableNum);
 
     auto lTableSize = allocPredTable(lTable, lTableNum, lTableIdxWidth);
-    indexLFoldedHist.resize(numEntriesFirstLocalHistories);
-    for (unsigned int i = 0; i < lTableNum; ++i) {
-        for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
-            indexLFoldedHist[k].push_back(LocalFoldedHist(lHistLen[i], lTableIdxWidth - numCtrsPerLineBits, 16));
+    for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+        auto &state = threadHistory[tid];
+        state.indexLFoldedHist.resize(numEntriesFirstLocalHistories);
+        for (unsigned int i = 0; i < lTableNum; ++i) {
+            for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
+                state.indexLFoldedHist[k].push_back(LocalFoldedHist(
+                    lHistLen[i], lTableIdxWidth - numCtrsPerLineBits, 16));
+            }
         }
     }
     lIndex.resize(lTableNum);
 
     auto iTableSize = allocPredTable(iTable, iTableNum, iTableIdxWidth);
-    for (unsigned int i = 0; i < iTableNum; ++i) {
-        assert(iHistLen[i] >= 0);
-        assert(static_cast<unsigned>(iHistLen[i]) < 63);
-        assert(pow2(static_cast<unsigned>(iHistLen[i])) <= iTableSize);
-        indexIFoldedHist.push_back(ImliFoldedHist(iHistLen[i], iTableIdxWidth - numCtrsPerLineBits, 16));
+    for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+        auto &state = threadHistory[tid];
+        for (unsigned int i = 0; i < iTableNum; ++i) {
+            assert(iHistLen[i] >= 0);
+            assert(static_cast<unsigned>(iHistLen[i]) < 63);
+            assert(pow2(static_cast<unsigned>(iHistLen[i])) <= iTableSize);
+            state.indexIFoldedHist.emplace_back(
+                iHistLen[i], iTableIdxWidth - numCtrsPerLineBits, 16);
+        }
     }
     iIndex.resize(iTableNum);
 
     auto gTableSize = allocPredTable(gTable, gTableNum, gTableIdxWidth);
-    for (unsigned int i = 0; i < gTableNum; ++i) {
-        assert(gTable.size() >= gTableNum);
-        indexGFoldedHist.push_back(GlobalFoldedHist(gHistLen[i], gTableIdxWidth - numCtrsPerLineBits, 16));
+    for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+        auto &state = threadHistory[tid];
+        for (unsigned int i = 0; i < gTableNum; ++i) {
+            assert(gTable.size() >= gTableNum);
+            state.indexGFoldedHist.emplace_back(
+                gHistLen[i], gTableIdxWidth - numCtrsPerLineBits, 16);
+        }
     }
     gIndex.resize(gTableNum);
 
     auto pTableSize = allocPredTable(pTable, pTableNum, pTableIdxWidth);
-    for (unsigned int i = 0; i < pTableNum; ++i) {
-        assert(pTable.size() >= pTableNum);
-        indexPFoldedHist.push_back(PathFoldedHist(pHistLen[i], pTableIdxWidth - numCtrsPerLineBits, 2));
+    for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+        auto &state = threadHistory[tid];
+        for (unsigned int i = 0; i < pTableNum; ++i) {
+            assert(pTable.size() >= pTableNum);
+            state.indexPFoldedHist.emplace_back(
+                pHistLen[i], pTableIdxWidth - numCtrsPerLineBits, 2);
+        }
     }
     pIndex.resize(pTableNum);
 
@@ -218,6 +241,27 @@ BTBMGSC::BTBMGSC(const Params &p)
 }
 #endif
 BTBMGSC::~BTBMGSC() {}
+
+ThreadID
+BTBMGSC::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
+{
+    assert(!stagePreds.empty());
+    return stagePreds.front().tid;
+}
+
+BTBMGSC::ThreadHistoryState &
+BTBMGSC::historyState(ThreadID tid)
+{
+    assert(tid < threadHistory.size());
+    return threadHistory[tid];
+}
+
+const BTBMGSC::ThreadHistoryState &
+BTBMGSC::historyState(ThreadID tid) const
+{
+    assert(tid < threadHistory.size());
+    return threadHistory[tid];
+}
 
 // Set up tracing for debugging
 void
@@ -357,34 +401,41 @@ BTBMGSC::calculateWeightScaleDiff(int total_sum, int scale_percsum, int percsum)
  * @return TagePrediction containing main and alternative predictions
  */
 BTBMGSC::MgscPrediction
-BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC, const TageInfoForMGSC &tage_info)
+BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
+                                  const TageInfoForMGSC &tage_info,
+                                  ThreadID tid)
 {
     DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx, always taken %d\n", btb_entry.pc,
             btb_entry.alwaysTaken);
+    const auto &state = historyState(tid);
 
     // Calculate indices for all tables
     for (unsigned int i = 0; i < bwTableNum; ++i) {
-        bwIndex[i] = getHistIndex(startPC, bwTableIdxWidth - numCtrsPerLineBits, indexBwFoldedHist[i].get());
+        bwIndex[i] = getHistIndex(startPC, bwTableIdxWidth - numCtrsPerLineBits,
+                                  state.indexBwFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < lTableNum; ++i) {
         lIndex[i] = getHistIndex(startPC, lTableIdxWidth - numCtrsPerLineBits,
-                                 indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
+                                 state.indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
     }
     // std::string buf;
     // boost::to_string(indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][0].getAsBitset(), buf);
     // DPRINTF(MGSC, "startPC: %#lx, local index: %d, local_folded_hist: %s\n", startPC, lIndex[0], buf.c_str());
 
     for (unsigned int i = 0; i < iTableNum; ++i) {
-        iIndex[i] = getHistIndex(startPC, iTableIdxWidth - numCtrsPerLineBits, indexIFoldedHist[i].get());
+        iIndex[i] = getHistIndex(startPC, iTableIdxWidth - numCtrsPerLineBits,
+                                 state.indexIFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < gTableNum; ++i) {
-        gIndex[i] = getHistIndex(startPC, gTableIdxWidth - numCtrsPerLineBits, indexGFoldedHist[i].get());
+        gIndex[i] = getHistIndex(startPC, gTableIdxWidth - numCtrsPerLineBits,
+                                 state.indexGFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < pTableNum; ++i) {
-        pIndex[i] = getHistIndex(startPC, pTableIdxWidth - numCtrsPerLineBits, indexPFoldedHist[i].get());
+        pIndex[i] = getHistIndex(startPC, pTableIdxWidth - numCtrsPerLineBits,
+                                 state.indexPFoldedHist[i].get());
     }
 
     for (unsigned int i = 0; i < biasTableNum; ++i) {
@@ -478,7 +529,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
  */
 void
 BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                      const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens &results)
+                      const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
+                      CondTakens &results, ThreadID tid)
 {
     DPRINTF(MGSC, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -488,8 +540,9 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
         if (btb_entry.isCond && btb_entry.valid) {
             auto tage_info = tageInfoForMgscs.find(btb_entry.pc);
             if (tage_info != tageInfoForMgscs.end()) {
-                auto pred = generateSinglePrediction(btb_entry, startPC, tage_info->second);
-                meta->preds[btb_entry.pc] = pred;
+                auto pred = generateSinglePrediction(btb_entry, startPC,
+                                                     tage_info->second, tid);
+                threadMeta[tid]->preds[btb_entry.pc] = pred;
                 results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
             } else {
                 assert(false);
@@ -514,6 +567,8 @@ void
 BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds)
 {
+    const ThreadID tid = predictorTid(stagePreds);
+    const auto &state = historyState(tid);
     DPRINTF(MGSC, "putPCHistory startAddr: %#lx\n", stream_start);
 
     // IMPORTANT: when this function is called,
@@ -525,25 +580,29 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
     }
 
     // Clear old prediction metadata and save current history state
-    meta = std::make_shared<MgscMeta>();
-    meta->indexBwFoldedHist = indexBwFoldedHist;
-    meta->indexLFoldedHist = indexLFoldedHist;
-    meta->indexIFoldedHist = indexIFoldedHist;
-    meta->indexGFoldedHist = indexGFoldedHist;
-    meta->indexPFoldedHist = indexPFoldedHist;
+    threadMeta[tid] = std::make_shared<MgscMeta>();
+    threadMeta[tid]->indexBwFoldedHist = state.indexBwFoldedHist;
+    threadMeta[tid]->indexLFoldedHist = state.indexLFoldedHist;
+    threadMeta[tid]->indexIFoldedHist = state.indexIFoldedHist;
+    threadMeta[tid]->indexGFoldedHist = state.indexGFoldedHist;
+    threadMeta[tid]->indexPFoldedHist = state.indexPFoldedHist;
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
         stage_pred.condTakens.clear();
-        lookupHelper(stream_start, stage_pred.btbEntries, stage_pred.tageInfoForMgscs, stage_pred.condTakens);
+        lookupHelper(stream_start, stage_pred.btbEntries,
+                     stage_pred.tageInfoForMgscs, stage_pred.condTakens, tid);
     }
 }
 
 std::shared_ptr<void>
-BTBMGSC::getPredictionMeta()
+BTBMGSC::getPredictionMeta(ThreadID tid)
 {
-    return meta;
+    if (tid >= threadMeta.size()) {
+        return nullptr;
+    }
+    return threadMeta[tid];
 }
 
 /**
@@ -1092,10 +1151,11 @@ BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool ta
 void
 BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
+    auto &state = historyState(pred.tid);
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getHistInfo();
-    doUpdateHist(history, shamt, cond_taken, indexGFoldedHist);  // use global history to update G folded history
+    doUpdateHist(history, shamt, cond_taken, state.indexGFoldedHist);  // use global history to update G folded history
 }
 
 /**
@@ -1113,8 +1173,9 @@ BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPredictio
 void
 BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
+    auto &state = historyState(pred.tid);
     auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, 2, taken, indexPFoldedHist, pc, target);  // only path history needs pc!
+    doUpdateHist(history, 2, taken, state.indexPFoldedHist, pc, target);  // only path history needs pc!
 }
 
 
@@ -1133,10 +1194,11 @@ BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredicti
 void
 BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
+    auto &state = historyState(pred.tid);
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getBwHistInfo();
-    doUpdateHist(history, shamt, cond_taken, indexBwFoldedHist);
+    doUpdateHist(history, shamt, cond_taken, state.indexBwFoldedHist);
 }
 
 /**
@@ -1154,12 +1216,13 @@ BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPredict
 void
 BTBMGSC::specUpdateIHist(FullBTBPrediction &pred)
 {
+    auto &state = historyState(pred.tid);
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getBwHistInfo();
     // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
     boost::dynamic_bitset<> dummy;
-    doUpdateHist(dummy, shamt, cond_taken, indexIFoldedHist);
+    doUpdateHist(dummy, shamt, cond_taken, state.indexIFoldedHist);
 }
 
 /**
@@ -1177,11 +1240,12 @@ BTBMGSC::specUpdateIHist(FullBTBPrediction &pred)
 void
 BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred)
 {
+    auto &state = historyState(pred.tid);
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getHistInfo();
     doUpdateHist(history[getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories))], shamt, cond_taken,
-                 indexLFoldedHist[getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories))]);
+                 state.indexLFoldedHist[getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories))]);
 }
 
 /**
@@ -1203,11 +1267,12 @@ BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
+    auto &state = historyState(entry.tid);
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < gTableNum; i++) {
-        indexGFoldedHist[i].recover(predMeta->indexGFoldedHist[i]);
+        state.indexGFoldedHist[i].recover(predMeta->indexGFoldedHist[i]);
     }
-    doUpdateHist(history, shamt, cond_taken, indexGFoldedHist);
+    doUpdateHist(history, shamt, cond_taken, state.indexGFoldedHist);
 }
 
 /**
@@ -1229,11 +1294,13 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget 
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
+    auto &state = historyState(entry.tid);
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < pTableNum; i++) {
-        indexPFoldedHist[i].recover(predMeta->indexPFoldedHist[i]);
+        state.indexPFoldedHist[i].recover(predMeta->indexPFoldedHist[i]);
     }
-    doUpdateHist(history, 2, cond_taken, indexPFoldedHist, entry.getControlPC(), entry.getTakenTarget());
+    doUpdateHist(history, 2, cond_taken, state.indexPFoldedHist,
+                 entry.getControlPC(), entry.getTakenTarget());
 }
 
 /**
@@ -1255,11 +1322,12 @@ BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
+    auto &state = historyState(entry.tid);
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < bwTableNum; i++) {
-        indexBwFoldedHist[i].recover(predMeta->indexBwFoldedHist[i]);
+        state.indexBwFoldedHist[i].recover(predMeta->indexBwFoldedHist[i]);
     }
-    doUpdateHist(history, shamt, cond_taken, indexBwFoldedHist);
+    doUpdateHist(history, shamt, cond_taken, state.indexBwFoldedHist);
 }
 
 /**
@@ -1281,13 +1349,14 @@ BTBMGSC::recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken)
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
+    auto &state = historyState(entry.tid);
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < iTableNum; i++) {
-        indexIFoldedHist[i].recover(predMeta->indexIFoldedHist[i]);
+        state.indexIFoldedHist[i].recover(predMeta->indexIFoldedHist[i]);
     }
     // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
     boost::dynamic_bitset<> dummy;
-    doUpdateHist(dummy, shamt, cond_taken, indexIFoldedHist);
+    doUpdateHist(dummy, shamt, cond_taken, state.indexIFoldedHist);
 }
 
 /**
@@ -1310,14 +1379,15 @@ BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const
     if (!isEnabled()) {
         return;  // No recover when disabled
     }
+    auto &state = historyState(entry.tid);
     std::shared_ptr<MgscMeta> predMeta = std::static_pointer_cast<MgscMeta>(entry.predMetas[getComponentIdx()]);
     for (unsigned int k = 0; k < numEntriesFirstLocalHistories; ++k) {
         for (int i = 0; i < lTableNum; i++) {
-            indexLFoldedHist[k][i].recover(predMeta->indexLFoldedHist[k][i]);
+            state.indexLFoldedHist[k][i].recover(predMeta->indexLFoldedHist[k][i]);
         }
     }
             doUpdateHist(history[getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories))], shamt, cond_taken,
-                         indexLFoldedHist[getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories))]);
+                         state.indexLFoldedHist[getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories))]);
         }
 
 #ifndef UNIT_TEST
@@ -1438,6 +1508,15 @@ void
 BTBMGSC::checkFoldedHist(const boost::dynamic_bitset<> &Ghistory, const boost::dynamic_bitset<> &PHistory,
                          const std::vector<boost::dynamic_bitset<>> &LHistory, const char *when)
 {
+    checkFoldedHist(Ghistory, PHistory, LHistory, 0, when);
+}
+
+void
+BTBMGSC::checkFoldedHist(const boost::dynamic_bitset<> &Ghistory, const boost::dynamic_bitset<> &PHistory,
+                         const std::vector<boost::dynamic_bitset<>> &LHistory,
+                         ThreadID tid, const char *when)
+{
+    auto &state = historyState(tid);
     DPRINTF(MGSC, "checking folded history when %s\n", when);
     if (debug::MGSC) {
         std::string hist_str;
@@ -1445,17 +1524,17 @@ BTBMGSC::checkFoldedHist(const boost::dynamic_bitset<> &Ghistory, const boost::d
         DPRINTF(MGSC, "history:\t%s\n", hist_str.c_str());
     }
     for (int t = 0; t < gTableNum; t++) {
-        auto &foldedHist = indexGFoldedHist[t];
+        auto &foldedHist = state.indexGFoldedHist[t];
         foldedHist.check(Ghistory);
     }
     for (int t = 0; t < pTableNum; t++) {
-        auto &foldedHist = indexPFoldedHist[t];
+        auto &foldedHist = state.indexPFoldedHist[t];
         foldedHist.check(PHistory);
     }
     for (int t = 0; t < lTableNum; t++) {
-        assert(LHistory.size() == indexLFoldedHist.size());
+        assert(LHistory.size() == state.indexLFoldedHist.size());
         for (int i = 0; i < LHistory.size(); i++) {
-            auto &foldedHist = indexLFoldedHist[i][t];
+            auto &foldedHist = state.indexLFoldedHist[i][t];
             foldedHist.check(LHistory[i]);
         }
     }

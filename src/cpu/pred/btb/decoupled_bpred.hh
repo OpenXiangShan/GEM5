@@ -140,8 +140,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         bool blockPredictionPending{false};
     } threads[MaxThreads];
 
-    HistoryManager historyManager;
-    unsigned resolveDequeueFailCounter{0};
+    std::vector<HistoryManager> historyManagers;
+    std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
 
     ThreadID scheduleThread();
@@ -424,7 +424,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void overrideStats(OverrideReason overrideReason);
 
-    void checkHistory(const boost::dynamic_bitset<> &history);
+    void checkHistory(const boost::dynamic_bitset<> &history, ThreadID tid);
 
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
@@ -703,6 +703,7 @@ class DecoupledBPUWithBTB : public BPredUnit
                       unsigned control_inst_size = 0);
 
     void resetPC(Addr new_pc);
+    void resetPC(ThreadID tid, Addr new_pc);
 
     // Helper functions for update
     bool resolveUpdate(unsigned &target_id, ThreadID tid);
@@ -710,9 +711,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void markCFIResolved(unsigned &target, uint64_t resolvedInstPC, ThreadID tid);
     void updatePredictorComponents(FetchTarget &target);
     void updateStatistics(const FetchTarget &target);
-    void notifyResolveSuccess();
-    void notifyResolveFailure();
-    void blockPredictionOnce();
+    void notifyResolveSuccess(ThreadID tid);
+    void notifyResolveFailure(ThreadID tid);
+    void blockPredictionOnce(ThreadID tid);
 
     /**
      * @brief Types of control flow instructions for misprediction tracking

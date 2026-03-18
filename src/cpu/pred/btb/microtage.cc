@@ -95,6 +95,9 @@ tageStats(this, p.numPredictors, p.numBanks)
     }
 
     // Initialize base table for fallback predictions
+    threadHistory.resize(MaxThreads);
+    threadMeta.resize(MaxThreads);
+
     for (unsigned int i = 0; i < numPredictors; ++i) {
         //initialize ittage predictor
         assert(tableSizes.size() >= numPredictors);
@@ -111,9 +114,15 @@ tageStats(this, p.numPredictors, p.numBanks)
 
         assert(tablePcShifts.size() >= numPredictors);
 
-        tagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i], 16));
-        altTagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16));
-        indexFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16));
+        for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+            auto &state = threadHistory[tid];
+            state.tagFoldedHist.emplace_back(
+                (int)histLengths[i], (int)tableTagBits[i], 16);
+            state.altTagFoldedHist.emplace_back(
+                (int)histLengths[i], (int)tableTagBits[i] - 1, 16);
+            state.indexFoldedHist.emplace_back(
+                (int)histLengths[i], (int)tableIndexBits[i], 16);
+        }
     }
     usefulResetCnt = 0;
 
@@ -125,6 +134,27 @@ tageStats(this, p.numPredictors, p.numBanks)
 
 MicroTAGE::~MicroTAGE()
 {
+}
+
+ThreadID
+MicroTAGE::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
+{
+    assert(!stagePreds.empty());
+    return stagePreds.front().tid;
+}
+
+MicroTAGE::ThreadHistoryState &
+MicroTAGE::historyState(ThreadID tid)
+{
+    assert(tid < threadHistory.size());
+    return threadHistory[tid];
+}
+
+const MicroTAGE::ThreadHistoryState &
+MicroTAGE::historyState(ThreadID tid) const
+{
+    assert(tid < threadHistory.size());
+    return threadHistory[tid];
 }
 
 // Set up tracing for debugging
@@ -181,8 +211,10 @@ MicroTAGE::tickStart() {}
 MicroTAGE::TagePrediction
 MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  const Addr &startPC,
-                                 std::shared_ptr<TageMeta> predMeta) {
+                                 std::shared_ptr<TageMeta> predMeta,
+                                 ThreadID tid) {
     DPRINTF(UTAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
+    const auto &state = historyState(tid);
 
     bool provided = false;
     TageTableInfo main_info;
@@ -196,10 +228,11 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
         Addr index = predMeta ? getTageIndex(startPC, i,
                             predMeta->indexFoldedHist[i].get())
-                          : getTageIndex(startPC, i);
+                          : getTageIndex(startPC, i, state.indexFoldedHist[i].get());
         Addr tag = predMeta ? getTageTag(startPC, i,
                             predMeta->tagFoldedHist[i].get(),predMeta->altTagFoldedHist[i].get(), position)
-                        : getTageTag(startPC, i, tagFoldedHist[i].get(),altTagFoldedHist[i].get(), position);
+                        : getTageTag(startPC, i, state.tagFoldedHist[i].get(),
+                                     state.altTagFoldedHist[i].get(), position);
 
         bool match = false; // for each table, only one way can be matched
         TageEntry matching_entry;
@@ -255,7 +288,8 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
  * @return Map of branch PC addresses to their predicted outcomes
  */
 void
-MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries, CondTakens& results)
+MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+                        CondTakens& results, ThreadID tid)
 {
     DPRINTF(UTAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -263,8 +297,9 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
-            auto pred = generateSinglePrediction(btb_entry, startPC);
-            meta->preds[btb_entry.pc] = pred;
+            auto pred = generateSinglePrediction(btb_entry, startPC, nullptr,
+                                                 tid);
+            threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
         }
@@ -295,6 +330,8 @@ MicroTAGE::dryRunCycle(Addr startPC) {
  */
 void
 MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
+    const ThreadID tid = predictorTid(stagePreds);
+    const auto &state = historyState(tid);
     // Record prediction bank for next tick's conflict detection
     lastPredBankId = getBankId(startPC);
     predBankValid = true;
@@ -312,30 +349,36 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
     // get prediction and save it
 
     // Clear old prediction metadata and save current history state
-    meta = std::make_shared<TageMeta>();
-    meta->tagFoldedHist = tagFoldedHist;
-    meta->altTagFoldedHist = altTagFoldedHist;
-    meta->indexFoldedHist = indexFoldedHist;
-    meta->aheadIndexFoldedHistValid = !aheadindexFoldedHist.empty();
-    if (meta->aheadIndexFoldedHistValid) {
-        meta->aheadIndexFoldedHist = aheadindexFoldedHist.front();
+    threadMeta[tid] = std::make_shared<TageMeta>();
+    threadMeta[tid]->tagFoldedHist = state.tagFoldedHist;
+    threadMeta[tid]->altTagFoldedHist = state.altTagFoldedHist;
+    threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
+    threadMeta[tid]->aheadIndexFoldedHistValid =
+        !state.aheadIndexFoldedHist.empty();
+    if (threadMeta[tid]->aheadIndexFoldedHistValid) {
+        threadMeta[tid]->aheadIndexFoldedHist =
+            state.aheadIndexFoldedHist.front();
     } else {
-        meta->aheadIndexFoldedHist.clear();
+        threadMeta[tid]->aheadIndexFoldedHist.clear();
     }
-    meta->history = history;
+    threadMeta[tid]->history = history;
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
         auto &stage_pred = stagePreds[s];
         stage_pred.condTakens.clear();
-        lookupHelper(startPC, stage_pred.btbEntries, stage_pred.condTakens);
+        lookupHelper(startPC, stage_pred.btbEntries, stage_pred.condTakens,
+                     tid);
     }
 
 }
 
 std::shared_ptr<void>
-MicroTAGE::getPredictionMeta() {
-    return meta;
+MicroTAGE::getPredictionMeta(ThreadID tid) {
+    if (tid >= threadMeta.size()) {
+        return nullptr;
+    }
+    return threadMeta[tid];
 }
 
 /**
@@ -783,7 +826,7 @@ MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
 Addr
 MicroTAGE::getTageIndex(Addr pc, int t)
 {
-    return getTageIndex(pc, t, indexFoldedHist[t].get());
+    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get());
 }
 
 bool
@@ -849,23 +892,26 @@ MicroTAGE::getBankId(Addr pc) const
  * @param taken Whether the branch was taken
  */
 void
-MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc, Addr target)
+MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken,
+                        Addr pc, Addr target, ThreadID tid)
 {
+    auto &state = historyState(tid);
     if (debug::TAGEHistory) {   // if debug flag is off, do not use to_string since it's too slow
         std::string buf;
         boost::to_string(history, buf);
         DPRINTF(TAGEHistory, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
     }
 
-    if (!aheadindexFoldedHist.empty()) {
-        indexFoldedHist = aheadindexFoldedHist.front();
+    if (!state.aheadIndexFoldedHist.empty()) {
+        state.indexFoldedHist = state.aheadIndexFoldedHist.front();
     }
 
     if (!taken) {
-        if (debug::TAGEHistory && !aheadindexFoldedHist.empty()) {
+        if (debug::TAGEHistory && !state.aheadIndexFoldedHist.empty()) {
             bool mismatch = false;
             for (int t = 0; t < numPredictors; t++) {
-                if (indexFoldedHist[t].get() != aheadindexFoldedHist.front()[t].get()) {
+                if (state.indexFoldedHist[t].get() !=
+                    state.aheadIndexFoldedHist.front()[t].get()) {
                     mismatch = true;
                     break;
                 }
@@ -881,22 +927,23 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
 
     for (int t = 0; t < numPredictors; t++) {
         // Update tag folded history immediately so tag calculation always sees current history.
-        tagFoldedHist[t].update(history, 2, taken, pc, target);
-        altTagFoldedHist[t].update(history, 2, taken, pc, target);
+        state.tagFoldedHist[t].update(history, 2, taken, pc, target);
+        state.altTagFoldedHist[t].update(history, 2, taken, pc, target);
         DPRINTF(TAGEHistory, "t: %d, tag 0x%lx, altTag 0x%lx\n",
-                t, tagFoldedHist[t].get(), altTagFoldedHist[t].get());
+                t, state.tagFoldedHist[t].get(),
+                state.altTagFoldedHist[t].get());
     }
 
     // Prepare next-cycle index folded history and delay its visibility by one cycle.
-    auto nextIndexFoldedHist = indexFoldedHist;
+    auto nextIndexFoldedHist = state.indexFoldedHist;
     for (int t = 0; t < numPredictors; t++) {
         nextIndexFoldedHist[t].update(history, 2, taken, pc, target);
         DPRINTF(TAGEHistory, "t: %d, index foldedHist(next) _folded 0x%lx\n",
                 t, nextIndexFoldedHist[t].get());
     }
-    aheadindexFoldedHist.push(nextIndexFoldedHist);
-    if (aheadindexFoldedHist.size() > 1) {
-        aheadindexFoldedHist.pop();
+    state.aheadIndexFoldedHist.push(nextIndexFoldedHist);
+    if (state.aheadIndexFoldedHist.size() > 1) {
+        state.aheadIndexFoldedHist.pop();
     }
 }
 
@@ -916,7 +963,7 @@ void
 MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, taken, pc, target);
+    doUpdateHist(history, taken, pc, target, pred.tid);
 }
 
 /**
@@ -936,6 +983,7 @@ void
 MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     const FetchTarget &entry, int shamt, bool cond_taken)
 {
+    auto &state = historyState(entry.tid);
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     if (!predMeta) {
         DPRINTF(UTAGE, "recoverPHist: no prediction metadata, cannot recover\n");
@@ -943,21 +991,22 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     }
     // Restore current folded index history exactly to prediction-time state.
     for (int i = 0; i < numPredictors; i++) {
-        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+        state.indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
 
     // Restore delayed index folded history slot exactly to prediction-time state.
-    while (!aheadindexFoldedHist.empty()) {
-        aheadindexFoldedHist.pop();
+    while (!state.aheadIndexFoldedHist.empty()) {
+        state.aheadIndexFoldedHist.pop();
     }
     if (predMeta->aheadIndexFoldedHistValid) {
         assert(predMeta->aheadIndexFoldedHist.size() == numPredictors);
-        aheadindexFoldedHist.push(predMeta->aheadIndexFoldedHist);
+        state.aheadIndexFoldedHist.push(predMeta->aheadIndexFoldedHist);
     }
 
     if (debug::TAGEHistory) {
         bool queue_valid_mismatch =
-            (predMeta->aheadIndexFoldedHistValid != !aheadindexFoldedHist.empty());
+            (predMeta->aheadIndexFoldedHistValid !=
+             !state.aheadIndexFoldedHist.empty());
         if (queue_valid_mismatch) {
             DPRINTF(TAGEHistory,
                     "recoverPHist: ahead queue valid mismatch after restore, cond_taken %d\n",
@@ -966,16 +1015,25 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     }
 
     for (int i = 0; i < numPredictors; i++) {
-        altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
-        tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
+        state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
+        state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
     }
-    doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
+    doUpdateHist(history, cond_taken, entry.getControlPC(),
+                 entry.getTakenTarget(), entry.tid);
 }
 
 // Check folded history after speculative update and recovery
 void
 MicroTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
 {
+    checkFoldedHist(hist, 0, when);
+}
+
+void
+MicroTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, ThreadID tid,
+                           const char * when)
+{
+    auto &state = historyState(tid);
     DPRINTF(UTAGE, "checking folded history when %s\n", when);
     if (debug::TAGEHistory) {
         std::string hist_str;
@@ -987,13 +1045,13 @@ MicroTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
         // aheadindexFoldedHist in doUpdateHist(). During consistency checks
         // right after speculative/recovery updates, compare against the staged
         // next-cycle value when available.
-        if (!aheadindexFoldedHist.empty()) {
-            aheadindexFoldedHist.front()[t].check(hist);
+        if (!state.aheadIndexFoldedHist.empty()) {
+            state.aheadIndexFoldedHist.front()[t].check(hist);
         } else {
-            indexFoldedHist[t].check(hist);
+            state.indexFoldedHist[t].check(hist);
         }
-        tagFoldedHist[t].check(hist);
-        altTagFoldedHist[t].check(hist);
+        state.tagFoldedHist[t].check(hist);
+        state.altTagFoldedHist[t].check(hist);
     }
 }
 

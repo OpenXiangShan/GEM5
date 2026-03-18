@@ -693,7 +693,7 @@ class BaseCPU : public ClockedObject
     bool enableRVV{false};
     bool enableRVHDIFF{false};
     bool enableSkipCSR{false};
-    std::shared_ptr<DiffAllStates> diffAllStates{};
+    std::vector<std::shared_ptr<DiffAllStates>> diffAllStates{};
 
     enum  diffRegConfig
     {
@@ -701,7 +701,7 @@ class BaseCPU : public ClockedObject
       diffCsrNum = 36,
     };
 
-    virtual void readGem5Regs()
+    virtual void readGem5Regs(ThreadID tid)
     {
         panic("difftest:readGem5Regs() is not implemented\n");
     }
@@ -709,6 +709,7 @@ class BaseCPU : public ClockedObject
     void csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint64_t &error_reg, InstSeqNum seq,
                         std::string error_csr_name,int &diff_at);
     std::pair<int, bool> diffWithNEMU(ThreadID tid, InstSeqNum seq);
+    int difftestHartId(ThreadID tid) const;
 
     std::stringstream diffMsg;
     void reportDiffMismatch(ThreadID tid, InstSeqNum seq);
@@ -779,11 +780,11 @@ class BaseCPU : public ClockedObject
 
     inline bool difftestEnabled() const { return enableDifftest; }
 
-    void displayGem5Regs();
+    void displayGem5Regs(ThreadID tid);
 
-    void difftestRaiseIntr(uint64_t no);
+    void difftestRaiseIntr(uint64_t no, ThreadID tid = 0);
 
-    void setSCSuccess(bool success, paddr_t addr);
+    void setSCSuccess(bool success, paddr_t addr, ThreadID tid);
 
     void setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval, uint64_t stval,
                                    // force set jump target
@@ -793,14 +794,14 @@ class BaseCPU : public ClockedObject
 
     void enableDiffPrint();
 
-    std::pair<bool, std::shared_ptr<DiffAllStates>> getDiffAllStates()
+    std::pair<bool, std::vector<std::shared_ptr<DiffAllStates>>> getDiffAllStates()
     {
         return std::make_pair(enableDifftest, diffAllStates);
     }
 
-    void takeOverDiffAllStates(std::shared_ptr<DiffAllStates> diffAllStates)
+    void takeOverDiffAllStates(std::vector<std::shared_ptr<DiffAllStates>> diffAllStates)
     {
-        this->diffAllStates = diffAllStates;
+        this->diffAllStates = std::move(diffAllStates);
     }
 
     int committedInstNum = 0;

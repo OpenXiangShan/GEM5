@@ -1843,7 +1843,8 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     if (head_inst->isStoreConditional()) {
         DPRINTF(Commit, "[tid:%i] [sn:%llu] Store Conditional success: %i\n", tid, head_inst->seqNum,
                 head_inst->lockedWriteSuccess());
-        cpu->setSCSuccess(head_inst->lockedWriteSuccess(), head_inst->physEffAddr);
+        cpu->setSCSuccess(head_inst->lockedWriteSuccess(),
+                          head_inst->physEffAddr, tid);
     }
 
     // Update the commit rename map

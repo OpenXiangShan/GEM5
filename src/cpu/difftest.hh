@@ -195,6 +195,7 @@ class RefProxy
     void (*sdcard_init)(const char *img_path,
                         const char *sd_cpt_bin_path) = nullptr;
     virtual void initState(int coreid, uint8_t *golden_mem) = 0;
+    virtual void setHartId(int coreid) = 0;
 
   protected:
     bool multiCore;
@@ -208,6 +209,11 @@ class NemuProxy : public RefProxy
     NemuProxy(int coreid, const char *ref_so, bool enable_sdcard_diff, bool enable_mem_dedup, bool multi_core);
 
     void initState(int coreid, uint8_t *golden_mem) override;
+    void setHartId(int coreid) override;
+
+  private:
+    void (*nemuSetHartId)(int) = nullptr;
+    void (*nemuPutGmaddr)(uint8_t *) = nullptr;
 };
 
 
@@ -217,6 +223,7 @@ class SpikeProxy : public RefProxy
     SpikeProxy(int coreid, const char *ref_so, bool enable_sdcard_diff);
 
     void initState(int coreid, uint8_t *golden_mem) override { panic("Not implemented\n"); }
+    void setHartId(int coreid) override { panic("Not implemented\n"); }
 };
 
 #define DIFFTEST_WIDTH 8

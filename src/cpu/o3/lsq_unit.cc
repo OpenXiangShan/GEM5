@@ -349,7 +349,8 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
         if (inst->isLoad() || inst->isAtomic()) {
             Addr addr = pkt->getAddr();
             auto [enable_diff, diff_all_states] = cpu->getDiffAllStates();
-            if (system->multiCore() && enable_diff && !request->_sbufferBypass &&
+            if (system->multiContextDifftest() && enable_diff &&
+                !request->_sbufferBypass &&
                 cpu->goldenMemManager()->inPmem(addr)) {
                 // check data with golden mem
                 uint8_t *golden_data = (uint8_t *)cpu->goldenMemManager()->guestToHost(addr);

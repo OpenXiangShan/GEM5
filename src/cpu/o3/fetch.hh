@@ -322,6 +322,9 @@ class Fetch
     /** Reset this pipeline stage */
     void resetStage();
 
+    /** Retry queued I-cache packets once, stopping at the first new block. */
+    void retryPendingIcacheRequests();
+
     /** Changes the status of this stage to active, and indicates this
      * to the CPU.
      */
@@ -676,11 +679,8 @@ class Fetch
     /** Is the cache blocked?  If so no threads can access it. */
     bool cacheBlocked;
 
-    /** The packet that is waiting to be retried. */
+    /** Packets waiting for the next cache-issued retry callback. */
     std::vector<PacketPtr> retryPkt;
-
-    /** The thread that is waiting on the cache to tell fetch to retry. */
-    ThreadID retryTid;
 
     /** Cache block size. */
     unsigned int cacheBlkSize;

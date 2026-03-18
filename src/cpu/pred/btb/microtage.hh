@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <memory>
 #include <queue>
 #include <utility>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "base/sat_counter.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 
@@ -42,6 +44,7 @@ namespace test {
 class MicroTAGE : public TimedBaseBTBPredictor
 {
     using bitset = boost::dynamic_bitset<>;
+    static constexpr unsigned MaxThreads = o3::MaxThreads;
   public:
 #ifdef UNIT_TEST
     // Test constructor
@@ -121,7 +124,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
                       const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
-    std::shared_ptr<void> getPredictionMeta() override;
+    std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
     // speculative update 3 folded history, according history and pred.taken
     // the other specUpdateHist methods are left blank
@@ -157,13 +160,15 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);
+    void checkFoldedHist(const bitset &history, ThreadID tid, const char *when);
 
 #ifndef UNIT_TEST
   private:
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
-    void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries, CondTakens& results);
+    void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
+                      CondTakens& results, ThreadID tid);
 
     // Calculate TAGE index for a given PC and table
     Addr getTageIndex(Addr pc, int table);
@@ -183,7 +188,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
     unsigned getBankId(Addr pc) const;
 
     // Update branch history
-    void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
+    void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target,
+                      ThreadID tid);
 
     // Number of TAGE predictor tables
     const unsigned numPredictors;
@@ -203,14 +209,15 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // History lengths for each table
     std::vector<unsigned> histLengths;
 
-    // Folded history for tag calculation
-    std::vector<PathFoldedHist> tagFoldedHist;
+    struct ThreadHistoryState
+    {
+        std::vector<PathFoldedHist> tagFoldedHist;
+        std::vector<PathFoldedHist> altTagFoldedHist;
+        std::vector<PathFoldedHist> indexFoldedHist;
+        std::queue<std::vector<PathFoldedHist>> aheadIndexFoldedHist;
+    };
 
-    // Folded history for alternative tag calculation
-    std::vector<PathFoldedHist> altTagFoldedHist;
-
-    // Folded history for index calculation
-    std::vector<PathFoldedHist> indexFoldedHist;
+    std::vector<ThreadHistoryState> threadHistory;
 
     // Maximum history length, not used
     unsigned maxHistLen;
@@ -256,8 +263,6 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Track last prediction bank for conflict detection
     unsigned lastPredBankId;         // Bank ID of last prediction
     bool predBankValid;              // Whether lastPredBankId is valid
-
-    std::queue<std::vector<PathFoldedHist>> aheadindexFoldedHist;
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
@@ -349,7 +354,8 @@ private:
     // If predMeta is nullptr, use current folded history (prediction path)
     TagePrediction generateSinglePrediction(const BTBEntry &btb_entry,
                                            const Addr &startPC,
-                                           const std::shared_ptr<TageMeta> predMeta = nullptr);
+                                           const std::shared_ptr<TageMeta> predMeta = nullptr,
+                                           ThreadID tid = 0);
 
     // Helper method to prepare BTB entries for update
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
@@ -370,7 +376,10 @@ private:
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way);
 
-    std::shared_ptr<TageMeta> meta;
+    std::vector<std::shared_ptr<TageMeta>> threadMeta;
+    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
+    ThreadHistoryState &historyState(ThreadID tid);
+    const ThreadHistoryState &historyState(ThreadID tid) const;
 };
 
 // Close conditional namespace wrapper for testing

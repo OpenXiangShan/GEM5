@@ -72,6 +72,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
       iewToDecodeDelay(params.iewToDecodeDelay),
       commitToDecodeDelay(params.commitToDecodeDelay),
       fetchToDecodeDelay(params.fetchToDecodeDelay),
+      decodeToFetchDelay(params.decodeToFetchDelay),
       decodeWidth(params.decodeWidth),
       numThreads(params.numThreads),
       enableLoadFusion(params.enable_loadFusion),
@@ -86,8 +87,15 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     for (int i=0;i<numThreads;i++) {
         fixedbuffer[i] = boost::circular_buffer<DynInstPtr>(decodeWidth);
     }
-    stallBuffer = boost::circular_buffer<DynInstPtr>(decodeWidth * (fetchToDecodeDelay + 1));
-    eachstallSize = boost::circular_buffer<int>(fetchToDecodeDelay + 1);
+    // This buffer preserves the fetch->decode pipeline contents when decode
+    // stalls while TimeBuffer keeps advancing. Its depth matches the original
+    // forward pipeline window; fetch is backpressured before full to absorb
+    // both the decode->fetch feedback delay and the request already issued in
+    // the current cycle before decode computes backpressure.
+    const auto stallGroupDepth = fetchToDecodeDelay + 1;
+    stallBuffer = boost::circular_buffer<DynInstPtr>(
+        decodeWidth * stallGroupDepth);
+    eachstallSize = boost::circular_buffer<int>(stallGroupDepth);
 
 
     decodeStalls.resize(decodeWidth, StallReason::NoStall);
@@ -373,6 +381,38 @@ Decode::updateActivate()
 void
 Decode::moveInstsToBuffer()
 {
+    auto tryMoveHeadGroupToFixedBuffer = [&]() -> bool {
+        if (stallBuffer.empty()) {
+            return false;
+        }
+
+        // stallbuffer moves to fixedbuffer in strict FIFO order.
+        ThreadID tid = stallBuffer.front()->threadNumber;
+        if (!fixedbuffer[tid].empty()) {
+            return false;
+        }
+
+        int insts_from_stall = eachstallSize.front();
+        eachstallSize.pop_front();
+        for (int i = 0; i < insts_from_stall; ++i) {
+            const DynInstPtr &inst = stallBuffer.front();
+            assert(tid == inst->threadNumber);
+            if (localSquashVer[tid].largerThan(inst->getVersion())) {
+                inst->setSquashed();
+            }
+            assert(!fixedbuffer[inst->threadNumber].full());
+            fixedbuffer[inst->threadNumber].push_back(inst);
+            stallBuffer.pop_front();
+        }
+
+        return true;
+    };
+
+    // Model one stage advance before latching the next cycle's input so a
+    // full stall buffer can still accept a new fetch bundle when its head
+    // group moves forward in the same cycle.
+    const bool moved_group = tryMoveHeadGroupToFixedBuffer();
+
     // do not support mixed thread instructions in one fetch group
     int insts_from_fetch = fromFetch->size;
     if (insts_from_fetch != 0) {
@@ -392,23 +432,12 @@ Decode::moveInstsToBuffer()
     if (stallBuffer.empty()) {
         return;
     }
-    // stallbuffer move to fixedbuffer
-    ThreadID tid = stallBuffer.front()->threadNumber;
-    if (!fixedbuffer[tid].empty())
-        return;
-    insts_from_fetch = eachstallSize.front();
-    eachstallSize.pop_front();
-    for (int i = 0; i < insts_from_fetch; ++i) {
-        const DynInstPtr &inst = stallBuffer.front();
-        assert(tid == inst->threadNumber);
-        if (localSquashVer[tid].largerThan(inst->getVersion())) {
-            inst->setSquashed();
-        }
-        assert(!fixedbuffer[inst->threadNumber].full());
-        fixedbuffer[inst->threadNumber].push_back(inst);
-        stallBuffer.pop_front();
-    }
 
+    // If nothing advanced before latching new input, allow the current head
+    // (possibly the just-arrived group) to fill an empty stage this cycle.
+    if (!moved_group) {
+        tryMoveHeadGroupToFixedBuffer();
+    }
 }
 
 void
@@ -443,13 +472,27 @@ Decode::tick()
     // check threads stall & status
     ThreadID tid = InvalidThreadID;
     ThreadID blocked_tid = InvalidThreadID;
+    const bool fifoBackpressured =
+        !stallBuffer.empty() &&
+        eachstallSize.size() + decodeToFetchDelay + 1 >=
+            eachstallSize.capacity();
+    const ThreadID fifoHeadTid =
+        !stallBuffer.empty() ? stallBuffer.front()->threadNumber : InvalidThreadID;
+    const StallReason fifoBlockReason =
+        (fifoBackpressured && fifoHeadTid != InvalidThreadID &&
+         stallSig->blockDecode[fifoHeadTid]) ?
+            stallSig->decodeBlockReason[fifoHeadTid] :
+            (fifoBackpressured ? StallReason::OtherFragStall :
+                                 StallReason::NoStall);
     for (int i = 0; i < numThreads; i++) {
         bool block = stallSig->blockDecode[i];
         bool active = !block && !fixedbuffer[i].empty();
 
-        stallSig->blockFetch[i] = block;
+        stallSig->blockFetch[i] = block || fifoBackpressured;
         stallSig->fetchBlockReason[i] =
-            block ? stallSig->decodeBlockReason[i] : StallReason::NoStall;
+            stallSig->blockFetch[i] ?
+                (block ? stallSig->decodeBlockReason[i] : fifoBlockReason) :
+                StallReason::NoStall;
         toFetch->decodeInfo[i].blockReason = stallSig->fetchBlockReason[i];
         if (active) {
             if (tid == InvalidThreadID)

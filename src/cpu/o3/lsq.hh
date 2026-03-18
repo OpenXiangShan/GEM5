@@ -1143,7 +1143,6 @@ class LSQ
     std::vector<uint32_t> dcacheRefillDataRead;
     std::vector<uint32_t> dcacheRefillDataWrite;
     std::vector<uint32_t> dcacheRefillTagWrite;
-
     bool isDcacheRefillTagWrite() const
     {
         for (auto stage : dcacheRefillTagWrite) {
