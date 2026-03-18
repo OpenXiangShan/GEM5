@@ -51,11 +51,22 @@ export $GEM5_DATA_PROC_HOME=xxx
 
 ### 3. 用 `gem5_data_proc` 处理整个归档
 
+当前这套 CI 默认使用 `gcc12` 切片，所以处理 `gcc12-spec06-0.3c` 归档时，建议显式带上：
+
+```bash
+--slice gcc12
+```
+
+这样可以避免误落到旧切片配置。
+
+如果之后 workflow 默认切换到 `gcc15` 对应切片，并且 `run.py` 的默认行为已经和 CI 一致，就不需要再额外加 `--slice`。
+
 ```bash
 cd $GEM5_DATA_PROC_HOME
 python3 run.py /nfs/home/share/gem5_ci/performance_data/spec06-0.3c/<archive_dir> \
   --out-dir /tmp/gem5_proc_runA \
-  --tag runA
+  --tag runA \
+  --slice gcc12
 ```
 
 关键输出：
@@ -73,8 +84,8 @@ python3 .codex/skills/ci-perf-analysis/scripts/ci_perf_info.py <runA>
 python3 .codex/skills/ci-perf-analysis/scripts/ci_perf_info.py <runB>
 
 cd $GEM5_DATA_PROC_HOME
-python3 run.py <archiveA> --out-dir /tmp/gem5_proc_A --tag A
-python3 run.py <archiveB> --out-dir /tmp/gem5_proc_B --tag B
+python3 run.py <archiveA> --out-dir /tmp/gem5_proc_A --tag A --slice gcc12
+python3 run.py <archiveB> --out-dir /tmp/gem5_proc_B --tag B --slice gcc12
 ```
 
 然后用短 Python 片段读取两个 `*-score.csv` / `*-weighted.csv` 做对比。优先关注：
@@ -117,8 +128,10 @@ python3 .codex/skills/ci-perf-analysis/scripts/ci_perf_info.py <run_url_or_id>
 
 ```bash
 cd $GEM5_DATA_PROC_HOME
-python3 run.py <archive_dir> --out-dir /tmp/gem5_proc --tag run
+python3 run.py <archive_dir> --out-dir /tmp/gem5_proc --tag run --slice gcc12
 ```
+
+如果后续 CI 的默认切片已经迁到 `gcc15` 并和本地 `run.py` 默认一致，可省略 `--slice`。
 
 ## 输出组织建议
 

@@ -233,9 +233,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
-                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %u, btb_pc %#lx, pos %u\n",
+                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
                     i, index, way, entry.valid, entry.tag, entry.counter,
-                    static_cast<unsigned>(entry.useful), btb_entry.pc, position);
+                    entry.useful, btb_entry.pc, position);
                 break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
             }
         }
@@ -476,7 +476,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         if (main_info.taken() != alt_taken && main_is_correct) {
             usefulCtrIncrease(way);
         }
-        DPRINTF(TAGE, "useful counter is now %u\n", static_cast<unsigned>(way.useful));
+        DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
 
         // No LRU maintenance
     }
@@ -906,27 +906,19 @@ BTBTAGE::satDecrement(int min, short &counter)
 bool
 BTBTAGE::usefulCtrIsSaturateNegative(const TageEntry &entry) const
 {
-    return entry.useful == usefulCtrInit;
-}
-
-bool
-BTBTAGE::usefulCtrIsSaturatePositive(const TageEntry &entry) const
-{
-    return entry.useful == usefulCtrMax;
+    return !entry.useful;
 }
 
 void
 BTBTAGE::usefulCtrIncrease(TageEntry &entry)
 {
-    if (!usefulCtrIsSaturatePositive(entry)) {
-        ++entry.useful;
-    }
+    entry.useful = true;
 }
 
 void
 BTBTAGE::usefulCtrReset(TageEntry &entry)
 {
-    entry.useful = usefulCtrInit;
+    entry.useful = false;
 }
 
 Addr
@@ -1079,11 +1071,11 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
         "allocation table probes with an invalid victim"),
     ADD_STAT(
         allocBucketHasWeakNotUseful, statistics::units::Count::get(),
-        "allocation table probes with weak and saturate-negative useful victim"),
+        "allocation table probes with weak and not-useful victim"),
     ADD_STAT(
         allocBucketHasStrongNotUsefulButNoWeakNotUseful,
         statistics::units::Count::get(),
-        "allocation table probes with only strong saturate-negative useful victims"),
+        "allocation table probes with only strong not-useful victims"),
     ADD_STAT(
         allocBucketAllUsefulOrNoCandidate, statistics::units::Count::get(),
         "allocation table probes with no eligible victim"),

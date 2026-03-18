@@ -208,10 +208,10 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
  * @param pc Branch PC
  * @param table_idx Index of the table to set
  * @param counter Counter value
- * @param useful Useful counter value
+ * @param useful Useful bit value
  */
 void setupTageEntry(BTBTAGE* tage, Addr pc, int table_idx,
-                    short counter, uint8_t useful = 0, int way = 0) {
+                    short counter, bool useful = false, int way = 0) {
     Addr index = tage->getTageIndex(pc, table_idx);
     Addr tag = tage->getTageTag(pc, table_idx);
 
@@ -374,13 +374,13 @@ TEST_F(BTBTAGETest, UsefulBitMechanism) {
     BTBEntry entry = createBTBEntry(0x1000);
 
     // Setup entries in main and alternative tables
-    setupTageEntry(tage, 0x1000, 3, 2, 0); // Main: strong taken, useful=0
-    setupTageEntry(tage, 0x1000, 1, -2, 0); // Alt: strong not taken, useful=0
+    setupTageEntry(tage, 0x1000, 3, 2, false); // Main: strong taken, useful=0
+    setupTageEntry(tage, 0x1000, 1, -2, false); // Alt: strong not taken, useful=0
 
     // Verify initial useful bit state
     Addr mainIndex = tage->getTageIndex(0x1000, 3);
-    EXPECT_EQ(tage->tageTable[3][mainIndex][0].useful, 0u)
-        << "Useful counter should start at saturate-negative";
+    EXPECT_FALSE(tage->tageTable[3][mainIndex][0].useful)
+        << "Useful bit should start as false";
 
     // Predict
     predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
@@ -391,8 +391,8 @@ TEST_F(BTBTAGETest, UsefulBitMechanism) {
     tage->update(stream);
 
     // Verify useful bit is set (main prediction was correct and differed from alt)
-    EXPECT_EQ(tage->tageTable[3][mainIndex][0].useful, 1u)
-        << "Useful counter should increase when main predicts correctly and differs from alt";
+    EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
+        << "Useful bit should be set when main predicts correctly and differs from alt";
 
     // Predict again
     predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
@@ -403,8 +403,8 @@ TEST_F(BTBTAGETest, UsefulBitMechanism) {
     tage->update(stream);
 
     // Verify useful bit is NOT cleared (policy is ++ only, no --)
-    EXPECT_EQ(tage->tageTable[3][mainIndex][0].useful, 1u)
-        << "Useful counter should remain unchanged when there is no increment condition";
+    EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
+        << "Useful bit should remain unchanged when there is no increment condition";
 }
 
 // Test entry allocation mechanism
@@ -416,7 +416,7 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
 
     // Set all tables to have entries with useful=true
     for (int t = 0; t < tage->numPredictors; t++) {
-        setupTageEntry(tage, 0x1000, t, 0, 3); // Counter=0, useful=saturate-positive
+        setupTageEntry(tage, 0x1000, t, 0, true); // Counter=0, useful=true
     }
 
     // Force a misprediction to trigger allocation attempt
@@ -696,7 +696,7 @@ TEST_F(BTBTAGETest, CombinedPredictionAccuracyTesting) {
  * to control exact placement of entries
  */
 void createManualTageEntry(BTBTAGE* tage, int table, Addr index, int way,
-                          Addr tag, short counter, uint8_t useful, Addr pc,
+                          Addr tag, short counter, bool useful, Addr pc,
                           unsigned lruCounter = 0) {
     auto &entry = tage->tageTable[table][index][way];
     entry.valid = true;
@@ -815,7 +815,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
 
     // Strengthen the first allocated entry to prevent it from being replaced
     // This simulates that the first branch has been trained and should be protected
-    tage->tageTable[testTable][testIndex][allocatedWay].useful = 3;
+    tage->tageTable[testTable][testIndex][allocatedWay].useful = true;
     tage->tageTable[testTable][testIndex][allocatedWay].counter = 2; // Make it strong
 
     // Step 2: Attempt to fill remaining ways with different branches
@@ -842,7 +842,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     // Strengthen all allocated entries to prevent replacement in Step 3
     for (unsigned way = 0; way < tage->numWays; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid) {
-            tage->tageTable[testTable][testIndex][way].useful = 3;
+            tage->tageTable[testTable][testIndex][way].useful = true;
             tage->tageTable[testTable][testIndex][way].counter = 2; // Make it strong
         }
     }

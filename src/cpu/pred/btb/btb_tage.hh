@@ -59,14 +59,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool valid;      // Whether this entry is valid
             Addr tag;       // Tag for matching
             short counter;  // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
-            uint8_t useful; // 2-bit usefulness counter; 0 means saturate-negative
+            bool useful;    // 1-bit usefulness counter; true means useful
             Addr pc;        // branch pc, like branch position, for btb entry pc check
             unsigned lruCounter; // Counter for LRU replacement policy
 
-            TageEntry() : valid(false), tag(0), counter(0), useful(0), pc(0), lruCounter(0) {}
+            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0), lruCounter(0) {}
 
             TageEntry(Addr tag, short counter, Addr pc) :
-                      valid(true), tag(tag), counter(counter), useful(0), pc(pc), lruCounter(0) {}
+                      valid(true), tag(tag), counter(counter), useful(false), pc(pc), lruCounter(0) {}
             bool taken() const {
                 return counter >= 0;
             }
@@ -257,9 +257,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // useful bit reset counter, when cnt >= 256, reset useful bit of all entries
     int usefulResetCnt{0};
 
-    static constexpr uint8_t usefulCtrInit = 0;
-    static constexpr uint8_t usefulCtrMax = 3;
-
     // Check if a tag matches
     bool matchTag(Addr expected, Addr found);
 
@@ -285,8 +282,6 @@ class BTBTAGE : public TimedBaseBTBPredictor
     bool satDecrement(int min, short &counter);
 
     bool usefulCtrIsSaturateNegative(const TageEntry &entry) const;
-
-    bool usefulCtrIsSaturatePositive(const TageEntry &entry) const;
 
     void usefulCtrIncrease(TageEntry &entry);
 
