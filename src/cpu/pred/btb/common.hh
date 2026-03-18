@@ -323,7 +323,8 @@ struct FetchTarget
     int s3Source; // which stage the prediction comes from
 
    FetchTarget()
-       : startPC(0),
+       : tid(0),
+         startPC(0),
          predTaken(false),
          predEndPC(0),
          predBranchInfo(BranchInfo()),
@@ -472,6 +473,7 @@ struct FullBTBPrediction
     int s3Source;
 
     FullBTBPrediction() :
+        tid(0),
         bbStart(0),
         btbEntries(),
         condTakens(),
