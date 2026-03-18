@@ -233,8 +233,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
-                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
+                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %u, btb_pc %#lx, pos %u\n",
+                    i, index, way, entry.valid, entry.tag, entry.counter,
+                    static_cast<unsigned>(entry.useful), btb_entry.pc, position);
                 break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
             }
         }
@@ -470,27 +471,12 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
         // Update useful bit based on several conditions
         bool main_is_correct = main_info.taken() == actual_taken;
-        bool alt_is_correct_and_strong = alt_info.found &&
-                                     (alt_info.taken() == actual_taken) &&
-                                     (abs(2 * alt_info.entry.counter + 1) == 7);
-
-        // a. Special reset (humility mechanism)
-        if (alt_is_correct_and_strong && main_is_correct) {
-            way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to humility rule\n");
-        } else if (main_info.taken() != alt_taken) {
-            // b. Original logic to set useful bit high
-            if (main_is_correct) {
-                way.useful = 1;
-            }
+        // Match current RTL behavior: useful is only set when the provider
+        // proves itself against an alternative prediction.
+        if (main_info.taken() != alt_taken && main_is_correct) {
+            usefulCtrIncrease(way);
         }
-
-        // c. Reset u on counter sign flip (becomes weak)
-        if (way.counter == 0 || way.counter == -1) {
-            way.useful = 0;
-            DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
-        }
-        DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
+        DPRINTF(TAGE, "useful counter is now %u\n", static_cast<unsigned>(way.useful));
 
         // No LRU maintenance
     }
@@ -564,10 +550,10 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way) {
-    // Simple set-associative allocation (no LFSR, no per-way table gating):
-    // - For each table from start_table upward, check the set at computed index.
-    // - Prefer invalid ways; else choose any way with useful==0 and weak counter.
-    // - If none, apply a one-step age penalty to a strong, not-useful way (no allocation).
+    // Match RTL allocation priority:
+    // 1) invalid way
+    // 2) weak and not-useful way
+    // 3) any not-useful way
 
     // Calculate branch position within the block (like RTL's cfiPosition)
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
@@ -579,40 +565,61 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         auto &set = tageTable[ti][newIndex];
 
-        // Allocate into invalid way or not-useful and weak way
+        int invalid_way = -1;
+        for (unsigned way = 0; way < numWays; ++way) {
+            if (!set[way].valid) {
+                invalid_way = way;
+                break;
+            }
+        }
+        int weak_not_useful_way = -1;
+        int strong_not_useful_way = -1;
         for (unsigned way = 0; way < numWays; ++way) {
             auto &cand = set[way];
-            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
-            if (!cand.valid || (!cand.useful && weakish)) {
-                short newCounter = actual_taken ? 0 : -1;
-                DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                        ti, newIndex, way, newTag, position, newCounter, entry.pc);
-                cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
-                tageStats.updateAllocSuccess++;
-                allocated_table = ti;
-                allocated_index = newIndex;
-                allocated_way = way;
-                usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
-                return true;
+            if (!usefulCtrIsSaturateNegative(cand)) {
+                continue;
+            }
+
+            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
+            if (weakish) {
+                if (weak_not_useful_way == -1) {
+                    weak_not_useful_way = way;
+                }
+            } else if (strong_not_useful_way == -1) {
+                strong_not_useful_way = way;
             }
         }
 
-        // 3) Apply age penalty to one strong, not-useful way to make it replacable later
-        for (unsigned way = 0; way < numWays; ++way) {
-            auto &cand = set[way];
-            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-            if (!cand.useful && !weakish) {
-                if (cand.counter > 0) cand.counter--; else cand.counter++;
-                DPRINTF(TAGE, "age penalty applied on table %d[%lu][%u], new ctr %d\n",
-                        ti, newIndex, way, cand.counter);
-                break; // one penalty per table per update
-            }
+        int selected_way = -1;
+        if (invalid_way != -1) {
+            tageStats.allocBucketHasInvalid++;
+            selected_way = invalid_way;
+        } else if (weak_not_useful_way != -1) {
+            tageStats.allocBucketHasWeakNotUseful++;
+            selected_way = weak_not_useful_way;
+        } else if (strong_not_useful_way != -1) {
+            tageStats.allocBucketHasStrongNotUsefulButNoWeakNotUseful++;
+            selected_way = strong_not_useful_way;
+        } else {
+            tageStats.allocBucketAllUsefulOrNoCandidate++;
+        }
+
+        if (selected_way != -1) {
+            short newCounter = actual_taken ? 0 : -1;
+            DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
+                    ti, newIndex, selected_way, newTag, position, newCounter, entry.pc);
+            set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+            tageStats.updateAllocSuccess++;
+            allocated_table = ti;
+            allocated_index = newIndex;
+            allocated_way = selected_way;
+            return true;
         }
 
         tageStats.updateAllocFailure++;
-        usefulResetCnt++;
     }
 
+    usefulResetCnt++;
     if (usefulResetCnt >= 256) {
         usefulResetCnt = 0;
         tageStats.updateResetU++;
@@ -620,7 +627,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         for (auto &table : tageTable) {
             for (auto &set : table) {
                 for (auto &way : set) {
-                    way.useful = false;
+                    usefulCtrReset(way);
                 }
             }
         }
@@ -885,6 +892,32 @@ BTBTAGE::satDecrement(int min, short &counter)
     return counter == min;
 }
 
+bool
+BTBTAGE::usefulCtrIsSaturateNegative(const TageEntry &entry) const
+{
+    return entry.useful == usefulCtrInit;
+}
+
+bool
+BTBTAGE::usefulCtrIsSaturatePositive(const TageEntry &entry) const
+{
+    return entry.useful == usefulCtrMax;
+}
+
+void
+BTBTAGE::usefulCtrIncrease(TageEntry &entry)
+{
+    if (!usefulCtrIsSaturatePositive(entry)) {
+        ++entry.useful;
+    }
+}
+
+void
+BTBTAGE::usefulCtrReset(TageEntry &entry)
+{
+    entry.useful = usefulCtrInit;
+}
+
 Addr
 BTBTAGE::getUseAltIdx(Addr pc) const {
     Addr shiftedPc = pc >> instShiftAmt;
@@ -1026,6 +1059,19 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateAllocFailure, statistics::units::Count::get(), "alloc failure when update"),
     ADD_STAT(updateAllocFailureNoValidTable, statistics::units::Count::get(), "alloc failure no valid table when update"),
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
+    ADD_STAT(
+        allocBucketHasInvalid, statistics::units::Count::get(),
+        "allocation table probes with an invalid victim"),
+    ADD_STAT(
+        allocBucketHasWeakNotUseful, statistics::units::Count::get(),
+        "allocation table probes with weak and saturate-negative useful victim"),
+    ADD_STAT(
+        allocBucketHasStrongNotUsefulButNoWeakNotUseful,
+        statistics::units::Count::get(),
+        "allocation table probes with only strong saturate-negative useful victims"),
+    ADD_STAT(
+        allocBucketAllUsefulOrNoCandidate, statistics::units::Count::get(),
+        "allocation table probes with no eligible victim"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
     ADD_STAT(recomputedVsActualDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != actual_taken"),
