@@ -313,8 +313,9 @@ AheadBTB::putPCHistory(Addr startAddr,
 }
 
 std::shared_ptr<void>
-AheadBTB::getPredictionMeta()
+AheadBTB::getPredictionMeta(ThreadID tid)
 {
+    (void)tid;
     // Lazy-initialize meta so callers never observe a null pointer
     // This avoids early-cycle crashes when prediction hasn't populated meta yet
     if (!meta) {

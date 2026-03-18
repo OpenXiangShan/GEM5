@@ -309,8 +309,9 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
 }
 
 std::shared_ptr<void>
-BTBTAGEUpperBound::getPredictionMeta()
+BTBTAGEUpperBound::getPredictionMeta(ThreadID tid)
 {
+    (void)tid;
     return ubMeta;
 }
 

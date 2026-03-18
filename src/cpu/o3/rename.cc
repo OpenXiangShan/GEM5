@@ -78,6 +78,8 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
         fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(renameWidth);
         renameMap[tid] = nullptr;
         stalls[tid] = {false, false};
+        finalCommitSeq[tid] = 0;
+        releaseSeq[tid] = 0;
     }
 
     assert(decodeToRenameDelay == 1);
@@ -260,6 +262,8 @@ Rename::resetStage()
     for (ThreadID tid = 0; tid < numThreads; tid++) {
 
         stalls[tid].iew = false;
+        finalCommitSeq[tid] = 0;
+        releaseSeq[tid] = 0;
     }
 }
 
@@ -415,7 +419,15 @@ Rename::tick()
 
     updateActivate();
 
-    if (wroteToTimeBuffer || releaseSeq < finalCommitSeq) {
+    bool release_pending = false;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (releaseSeq[tid] < finalCommitSeq[tid]) {
+            release_pending = true;
+            break;
+        }
+    }
+
+    if (wroteToTimeBuffer || release_pending) {
         DPRINTF(Activity, "Activity this cycle.\n");
         cpu->activityThisCycle();
     }
@@ -426,21 +438,23 @@ Rename::releasePhysRegs()
 {
     // Release physical registers up to releaseWidth
     auto threads = activeThreads->begin();
-    if (releaseSeq + releaseWidth < finalCommitSeq) {
-        releaseSeq += releaseWidth;
-    } else {
-        releaseSeq = finalCommitSeq;
-    }
     while (threads != activeThreads->end()) {
         ThreadID tid = *threads++;
 
-        removeFromHistory(releaseSeq, tid);
+        if (releaseSeq[tid] + releaseWidth < finalCommitSeq[tid]) {
+            releaseSeq[tid] += releaseWidth;
+        } else {
+            releaseSeq[tid] = finalCommitSeq[tid];
+        }
+
+        removeFromHistory(releaseSeq[tid], tid);
         // If we committed this cycle then doneSeqNum will be > 0
         if (fromCommit->commitInfo[tid].doneSeqNum != 0 &&
             !fromCommit->commitInfo[tid].squash) {
 
-            finalCommitSeq = fromCommit->commitInfo[tid].doneSeqNum;
-            releaseSeq = historyBuffer->empty() ? 0 : historyBuffer[tid].back().instSeqNum;
+            finalCommitSeq[tid] = fromCommit->commitInfo[tid].doneSeqNum;
+            releaseSeq[tid] =
+                historyBuffer[tid].empty() ? 0 : historyBuffer[tid].back().instSeqNum;
         }
     }
 }

@@ -141,7 +141,7 @@ class UBTB : public TimedBaseBTBPredictor
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
      */
-    std::shared_ptr<void> getPredictionMeta() override
+    std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override
     {
         return meta;
     }

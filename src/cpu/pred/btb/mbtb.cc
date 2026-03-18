@@ -313,8 +313,9 @@ MBTB::putPCHistory(Addr startAddr,
 }
 
 std::shared_ptr<void>
-MBTB::getPredictionMeta()
+MBTB::getPredictionMeta(ThreadID tid)
 {
+    (void)tid;
     return meta;
 }
 

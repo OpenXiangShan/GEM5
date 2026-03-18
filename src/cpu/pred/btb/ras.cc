@@ -116,8 +116,9 @@ BTBRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
 }
 
 std::shared_ptr<void>
-BTBRAS::getPredictionMeta()
+BTBRAS::getPredictionMeta(ThreadID tid)
 {
+    (void)tid;
     return meta;
 }
 

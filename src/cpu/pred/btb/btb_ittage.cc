@@ -38,6 +38,8 @@ ittageStats(this, p.numPredictors)
     tableIndexMasks.resize(numPredictors);
     tableTagBits.resize(numPredictors);
     tableTagMasks.resize(numPredictors);
+    threadHistory.resize(MaxThreads);
+    threadMeta.resize(MaxThreads);
     for (unsigned int i = 0; i < p.numPredictors; ++i) {
         //initialize ittage predictor
         assert(tableSizes.size() >= numPredictors);
@@ -53,15 +55,42 @@ ittageStats(this, p.numPredictors)
 
         assert(tablePcShifts.size() >= numPredictors);
 
-        tagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i], (int)16));
-        altTagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, (int)16));
-        indexFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableIndexBits[i], (int)16));
+        for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+            auto &state = threadHistory[tid];
+            state.tagFoldedHist.emplace_back(
+                (int)histLengths[i], (int)tableTagBits[i], (int)16);
+            state.altTagFoldedHist.emplace_back(
+                (int)histLengths[i], (int)tableTagBits[i] - 1, (int)16);
+            state.indexFoldedHist.emplace_back(
+                (int)histLengths[i], (int)tableIndexBits[i], (int)16);
+        }
     }
     // useAlt.resize(128);
     // for (unsigned i = 0; i < useAlt.size(); ++i) {
     //     useAlt[i].resize(1, 0);
     // }
     usefulResetCnt = 0;
+}
+
+ThreadID
+BTBITTAGE::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
+{
+    assert(!stagePreds.empty());
+    return stagePreds.front().tid;
+}
+
+BTBITTAGE::ThreadHistoryState &
+BTBITTAGE::historyState(ThreadID tid)
+{
+    assert(tid < threadHistory.size());
+    return threadHistory[tid];
+}
+
+const BTBITTAGE::ThreadHistoryState &
+BTBITTAGE::historyState(ThreadID tid) const
+{
+    assert(tid < threadHistory.size());
+    return threadHistory[tid];
 }
 
 void
@@ -73,7 +102,8 @@ void
 BTBITTAGE::tick() {}
 
 void
-BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries, IndirectTargets& results)
+BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
+                        IndirectTargets& results, ThreadID tid)
 {
     DPRINTF(ITTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
     std::vector<TagePrediction> preds;
@@ -150,7 +180,7 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
             }
             // Note: predTargetHit will be updated in the update phase when we know the actual target
             TagePrediction pred(btb_entry.pc, main_info, alt_info, use_alt, main_target);
-            meta->preds[btb_entry.pc] = pred;
+            threadMeta[tid]->preds[btb_entry.pc] = pred;
         }
     }
 }
@@ -162,17 +192,19 @@ BTBITTAGE::dryRunCycle(Addr startPC) {
 
 void
 BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
+    const ThreadID tid = predictorTid(stagePreds);
+    const auto &state = historyState(tid);
     if (debugPC == stream_start) {
         debugFlag = true;
     }
     DPRINTF(ITTAGE, "putPCHistory startAddr: %#lx\n", stream_start);
 
     // clear old metas
-    meta = std::make_shared<TageMeta>();
+    threadMeta[tid] = std::make_shared<TageMeta>();
     // assign history for meta
-    meta->tagFoldedHist = tagFoldedHist;
-    meta->altTagFoldedHist = altTagFoldedHist;
-    meta->indexFoldedHist = indexFoldedHist;
+    threadMeta[tid]->tagFoldedHist = state.tagFoldedHist;
+    threadMeta[tid]->altTagFoldedHist = state.altTagFoldedHist;
+    threadMeta[tid]->indexFoldedHist = state.indexFoldedHist;
 
     lookupEntries.clear();
     lookupIndices.clear();
@@ -181,8 +213,9 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
     // all btb entries should use the same lookup result
     // but each btb entry can use prediction from different tables
     for (int i = 0; i < numPredictors; ++i) {
-        Addr index = getTageIndex(stream_start, i);
-        Addr tag = getTageTag(stream_start, i);
+        Addr index = getTageIndex(stream_start, i, state.indexFoldedHist[i].get());
+        Addr tag = getTageTag(stream_start, i, state.tagFoldedHist[i].get(),
+                              state.altTagFoldedHist[i].get());
         auto &entry = tageTable[i][index];
         lookupEntries.push_back(entry);
         lookupIndices.push_back(index);
@@ -191,20 +224,24 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
         DPRINTF(ITTAGE, "lookup table %d[%d]: valid %d, tag %d, ctr %d, useful %d\n",
             i, index, entry.valid, entry.tag, entry.counter, entry.useful);
     }
-    meta->usefulMask = std::move(useful_mask);
+    threadMeta[tid]->usefulMask = std::move(useful_mask);
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         auto &stage_pred = stagePreds[s];
         stage_pred.indirectTargets.clear();
-        lookupHelper(stream_start, stage_pred.btbEntries, stage_pred.indirectTargets);
+        lookupHelper(stream_start, stage_pred.btbEntries,
+                     stage_pred.indirectTargets, tid);
     }
     DPRINTF(ITTAGE, "putPCHistory end\n");
     debugFlag = false;
 }
 
 std::shared_ptr<void>
-BTBITTAGE::getPredictionMeta() {
-    return meta;
+BTBITTAGE::getPredictionMeta(ThreadID tid) {
+    if (tid >= threadMeta.size()) {
+        return nullptr;
+    }
+    return threadMeta[tid];
 }
 
 void
@@ -420,7 +457,9 @@ BTBITTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHis
 Addr
 BTBITTAGE::getTageTag(Addr pc, int t)
 {
-    return getTageTag(pc, t, tagFoldedHist[t].get(), altTagFoldedHist[t].get());
+    const auto &state = historyState(0);
+    return getTageTag(pc, t, state.tagFoldedHist[t].get(),
+                      state.altTagFoldedHist[t].get());
 }
 
 Addr
@@ -437,7 +476,7 @@ BTBITTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
 Addr
 BTBITTAGE::getTageIndex(Addr pc, int t)
 {
-    return getTageIndex(pc, t, indexFoldedHist[t].get());
+    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get());
 }
 
 bool
@@ -478,8 +517,10 @@ BTBITTAGE::satDecrement(int min, short &counter)
  * @param target The target address of the branch
  */
 void
-BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc, Addr target)
+BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken,
+                        Addr pc, Addr target, ThreadID tid)
 {
+    auto &state = historyState(tid);
     if (debug::ITTAGEHistory) {  // if debug flag is off, do not use to_string since it's too slow
         std::string buf;
         boost::to_string(history, buf);
@@ -492,7 +533,9 @@ BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
 
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 3; type++) {
-            auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
+            auto &foldedHist = type == 0 ? state.indexFoldedHist[t]
+                                         : type == 1 ? state.tagFoldedHist[t]
+                                                     : state.altTagFoldedHist[t];
             // since we have folded path history, we can put arbitrary shamt here, and it wouldn't make a difference
             foldedHist.update(history, 2, taken, pc, target);
             DPRINTF(ITTAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist.get());
@@ -503,7 +546,7 @@ BTBITTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr
 bool
 BTBITTAGE::tageHit()
 {
-    auto meta = getPredictionMeta();
+    auto meta = getPredictionMeta(0);
     auto preds = std::static_pointer_cast<TageMeta>(meta)->preds;
     bool hit = false;
     for (auto & [pc, pred] : preds) {
@@ -531,7 +574,7 @@ void
 BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, taken, pc, target);
+    doUpdateHist(history, taken, pc, target, pred.tid);
 }
 
 /**
@@ -550,18 +593,28 @@ BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredic
 void
 BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
 {
+    auto &state = historyState(entry.tid);
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     for (int i = 0; i < numPredictors; i++) {
-        tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
-        altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
-        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+        state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
+        state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
+        state.indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
+    doUpdateHist(history, cond_taken, entry.getControlPC(),
+                 entry.getTakenTarget(), entry.tid);
 }
 
 void
 BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
 {
+    checkFoldedHist(hist, 0, when);
+}
+
+void
+BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, ThreadID tid,
+                           const char * when)
+{
+    auto &state = historyState(tid);
     if (debugFlag) {
         DPRINTF(ITTAGE, "checking folded history when %s\n", when);
         std::string hist_str;
@@ -572,7 +625,9 @@ BTBITTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * whe
         for (int type = 0; type < 2; type++) {
             DPRINTF(ITTAGE, "t: %d, type: %d\n", t, type);
             std::string buf2, buf3;
-            auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
+            auto &foldedHist = type == 0 ? state.indexFoldedHist[t]
+                                         : type == 1 ? state.tagFoldedHist[t]
+                                                     : state.altTagFoldedHist[t];
             foldedHist.check(hist);
         }
     }

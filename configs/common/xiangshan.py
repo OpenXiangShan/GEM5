@@ -290,7 +290,7 @@ def resolve_xiangshan_ref_so(args: argparse.Namespace):
     if args.difftest_ref_so is not None:
         ref_so = args.difftest_ref_so
         print("Obtained ref_so from args.difftest_ref_so: ", ref_so)
-    elif args.num_cpus > 1 and "GCBV_MULTI_CORE_REF_SO" in os.environ:
+    elif (args.num_cpus > 1 or args.smt) and "GCBV_MULTI_CORE_REF_SO" in os.environ:
         ref_so = os.environ["GCBV_MULTI_CORE_REF_SO"]
         print("Obtained ref_so from GCBV_MULTI_CORE_REF_SO: ", ref_so)
     elif "GCBV_REF_SO" in os.environ:
@@ -330,12 +330,12 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
         if args.raw_cpt:
             # If using raw binary, no restorer is needed.
             gcpt_restorer = None
-        elif args.num_cpus > 1:
+        elif args.num_cpus > 1 or args.smt:
             if "GCB_MULTI_CORE_RESTORER" in os.environ:
                 gcpt_restorer = os.environ["GCB_MULTI_CORE_RESTORER"]
                 print("Obtained gcpt_restorer from GCB_MULTI_CORE_RESTORER: ", gcpt_restorer)
             else:
-                fatal("Plz set $GCB_MULTI_CORE_RESTORER when model Xiangshan with multi-core")
+                fatal("Plz set $GCB_MULTI_CORE_RESTORER when model Xiangshan with multi-context difftest")
         elif args.restore_rvv_cpt:
             if "GCBV_RESTORER" in os.environ:
                 gcpt_restorer = os.environ["GCBV_RESTORER"]
@@ -359,8 +359,8 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
         print("Obtained gcpt_restorer from args.gcpt_restorer: ", args.gcpt_restorer)
         gcpt_restorer = args.gcpt_restorer
 
-    if args.num_cpus > 1:
-        print("Simulating a multi-core system, demanding a larger GCPT restorer size (2M).")
+    if args.num_cpus > 1 or args.smt:
+        print("Simulating a multi-context system, demanding a larger GCPT restorer size (2M).")
         sys.gcpt_restorer_size_limit = 2**20
     elif args.restore_rvv_cpt:
         print("Simulating single core with RVV, demanding GCPT restorer size of 0x1000.")
@@ -407,7 +407,7 @@ def config_difftest(cpu_list, args, sys):
     if not args.enable_difftest:
         return
     else:
-        if len(cpu_list) > 1:
+        if len(cpu_list) > 1 or args.smt:
             sys.enable_mem_dedup = True
             for cpu in cpu_list:
                 cpu.enable_mem_dedup = True
