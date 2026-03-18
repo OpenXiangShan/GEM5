@@ -872,6 +872,31 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
         << "Allocation failures should increase after additional failed attempt";
 }
 
+TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
+    stagePreds[1].btbEntries.clear();
+    tage->putPCHistory(0x1000, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+    stream.exeBranchInfo = newEntry;
+    stream.exeTaken = true;
+    stream.resolved = true;
+    stream.predBranchInfo = newEntry;
+    stream.updateBTBEntries.clear();
+    stream.updateIsOldEntry = false;
+    stream.updateNewBTBEntry = newEntry;
+    stream.predMetas[0] = meta;
+    stream = setMispredStream(stream);
+
+    tage->update(stream);
+
+    int table = findTableWithEntry(tage, 0x1000, newEntry.pc);
+    EXPECT_GE(table, 0)
+        << "New conditional entry should still allocate without prediction-time meta";
+}
+
 /**
  * @brief Test bank conflict detection
  *

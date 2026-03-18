@@ -722,33 +722,41 @@ BTBTAGE::update(const FetchTarget &stream) {
     bool hasRecomputedVsOriginalDiff = false;
     for (auto &btb_entry : entries_to_update) {
         bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+        const bool is_new_entry = !stream.updateIsOldEntry &&btb_entry.pc == stream.updateNewBTBEntry.pc;
         auto orig_it = predMeta->preds.find(btb_entry.pc);
-        if (orig_it == predMeta->preds.end()) {
-            DPRINTF(TAGE, "update: missing original prediction for pc %#lx, skip\n", btb_entry.pc);
+        const bool has_original_pred = orig_it != predMeta->preds.end();
+        TagePrediction original_pred;
+        if (has_original_pred) {
+            original_pred = orig_it->second;
+        } else if (!is_new_entry) {
+            DPRINTF(TAGE, "update: missing original prediction for old entry pc %#lx, skip\n",
+                    btb_entry.pc);
             continue;
+        } else {
+            DPRINTF(TAGE, "update: reconstruct prediction for new entry pc %#lx from snapshot\n",
+                    btb_entry.pc);
         }
-        const TagePrediction &original_pred = orig_it->second;
 
 #ifndef UNIT_TEST
-        if (original_pred.finalProviderTable >= 0) {
+        if (has_original_pred && original_pred.finalProviderTable >= 0) {
             if (original_pred.taken == actual_taken) {
                 tageStats.updateFinalSourceTableCorrect[original_pred.finalProviderTable]++;
             } else {
                 tageStats.updateFinalSourceTableWrong[original_pred.finalProviderTable]++;
             }
-        } else if (original_pred.taken == actual_taken) {
+        } else if (has_original_pred && original_pred.taken == actual_taken) {
             tageStats.updateFinalSourceBaseCorrect++;
-        } else {
+        } else if (has_original_pred) {
             tageStats.updateFinalSourceBaseWrong++;
         }
 #endif
 
         TagePrediction recomputed;
-        if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
-            // Re-read providers using snapshot (do not rely on prediction-time main/alt)
+        if (updateOnRead || !has_original_pred) {
+            // Reconstruct providers when update-on-read is enabled or when a new
+            // BTB entry lacks prediction-time metadata.
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta);
-            // Track differences for statistics
-            if (recomputed.taken != original_pred.taken) {
+            if (has_original_pred && recomputed.taken != original_pred.taken) {
                 hasRecomputedVsOriginalDiff = true;
             }
         } else { // otherwise, use the prediction from the prediction-time main/alt
