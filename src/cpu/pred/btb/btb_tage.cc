@@ -239,7 +239,10 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 matching_way = way;
                 match = true;
 
-                // Do not use LRU; keep logic simple and align with CBP-style replacement
+                // Keep T0's recency fresh on prediction hits; other tables stay unchanged.
+                if (i == 0) {
+                    updateLRU(i, index, way);
+                }
 
                 DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
                     i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
@@ -596,6 +599,20 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         Addr newTag = getTageTag(startPC, ti,
             meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
 
+        if (ti == 0) {
+            if (handleT0Allocation(entry, actual_taken, newIndex, newTag, position, allocated_way)) {
+                tageStats.updateAllocSuccess++;
+                allocated_table = ti;
+                allocated_index = newIndex;
+                usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+                return true;
+            }
+
+            tageStats.updateAllocFailure++;
+            usefulResetCnt++;
+            continue;
+        }
+
         auto &set = tageTable[ti][newIndex];
 
         const unsigned ways = getNumWays(ti);
@@ -650,6 +667,78 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     DPRINTF(TAGE, "no eligible way found for allocation starting from table %d\n", start_table);
     tageStats.updateAllocFailureNoValidTable++;
     return false;
+}
+
+bool
+BTBTAGE::handleT0Allocation(const BTBEntry &entry,
+                            bool actual_taken,
+                            Addr newIndex,
+                            Addr newTag,
+                            unsigned position,
+                            uint64_t &allocated_way)
+{
+    auto &set = tageTable[0][newIndex];
+    const unsigned ways = getNumWays(0);
+
+    for (unsigned way = 0; way < ways; ++way) {
+        auto &cand = set[way];
+        if (!cand.valid) {
+            short newCounter = actual_taken ? 0 : -1;
+            DPRINTF(TAGE, "allocating T0 entry in table 0[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
+                    newIndex, way, newTag, position, newCounter, entry.pc);
+            cand = TageEntry(newTag, newCounter, entry.pc);
+            updateLRU(0, newIndex, way);
+            allocated_way = way;
+            return true;
+        }
+    }
+
+    unsigned victim = getT0VictimWithUsefulLRU(newIndex);
+
+    short newCounter = actual_taken ? 0 : -1;
+    DPRINTF(
+        TAGE,
+        "allocating T0 entry in table 0[%lu][%u], tag %lu (with pos %u), "
+        "counter %d, pc %#lx, victim useful %d lru %u\n",
+        newIndex, victim, newTag, position, newCounter, entry.pc,
+        set[victim].useful, set[victim].lruCounter);
+    set[victim] = TageEntry(newTag, newCounter, entry.pc);
+    updateLRU(0, newIndex, victim);
+    allocated_way = victim;
+    return true;
+}
+
+unsigned
+BTBTAGE::getT0VictimWithUsefulLRU(Addr index)
+{
+    auto &set = tageTable[0][index];
+    const unsigned ways = getNumWays(0);
+
+    for (unsigned way = 0; way < ways; ++way) {
+        if (!set[way].valid) {
+            return way;
+        }
+    }
+
+    unsigned victim = 0;
+    bool found_useful_zero = false;
+    unsigned max_lru = 0;
+
+    for (unsigned way = 0; way < ways; ++way) {
+        auto &cand = set[way];
+        if (!cand.useful &&
+            (!found_useful_zero || cand.lruCounter > max_lru)) {
+            victim = way;
+            max_lru = cand.lruCounter;
+            found_useful_zero = true;
+        }
+    }
+
+    if (found_useful_zero) {
+        return victim;
+    }
+
+    return getLRUVictim(0, index);
 }
 
 /**

@@ -448,6 +448,14 @@ private:
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way);
 
+    bool handleT0Allocation(const BTBEntry &entry,
+                            bool actual_taken,
+                            Addr newIndex,
+                            Addr newTag,
+                            unsigned position,
+                            uint64_t &allocated_way);
+    unsigned getT0VictimWithUsefulLRU(Addr index);
+
 
     // Helper methods for LRU management
     void updateLRU(int table, Addr index, unsigned way);
