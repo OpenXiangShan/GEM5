@@ -158,10 +158,10 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
             else:
                 l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.data_sram_banks = 2
-                l2_wrapper.dir_sram_banks = 2
-                l2_wrapper.pipe_dir_write_stage = 4
-                l2_wrapper.dir_read_bypass = True
+                l2_wrapper.data_sram_banks = 1
+                l2_wrapper.dir_sram_banks = 1
+                l2_wrapper.pipe_dir_write_stage = 3
+                l2_wrapper.dir_read_bypass = False
                 if l2_wrapper.prefetcher != NULL:
                     l2_wrapper.prefetcher.enable_bop = True
                     l2_wrapper.prefetcher.enable_cdp = True
