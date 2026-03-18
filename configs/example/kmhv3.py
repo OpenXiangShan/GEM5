@@ -163,8 +163,8 @@ def setKmhV3Params(args, system):
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
                 if l2_wrapper.prefetcher != NULL:
-                    l2_wrapper.prefetcher.enable_bop = False
-                    l2_wrapper.prefetcher.enable_cdp = False
+                    l2_wrapper.prefetcher.enable_bop = True
+                    l2_wrapper.prefetcher.enable_cdp = True
                     l2_wrapper.prefetcher.enable_cmc = False
                     l2_wrapper.prefetcher.enable_despacito_stream = False
                     l2_wrapper.prefetcher._downstream_pf = []
