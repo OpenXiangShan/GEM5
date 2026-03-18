@@ -3,6 +3,7 @@
 
 #include <deque>
 #include <map>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -10,6 +11,7 @@
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
@@ -30,6 +32,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 {
     using defer = std::shared_ptr<void>;
     using bitset = boost::dynamic_bitset<>;
+    static constexpr unsigned MaxThreads = o3::MaxThreads;
   public:
     typedef BTBITTAGEParams Params;
 
@@ -99,7 +102,7 @@ class BTBITTAGE : public TimedBaseBTBPredictor
                       const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
-    std::shared_ptr<void> getPredictionMeta() override;
+    std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
     // speculative update 3 folded history, according history and pred.taken
     // the other specUpdateHist methods are left blank
@@ -116,11 +119,13 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     // check folded hists after speculative update and recover
     void checkFoldedHist(const bitset &history, const char *when);
+    void checkFoldedHist(const bitset &history, ThreadID tid, const char *when);
 
   private:
 
     // return provided
-    void lookupHelper(Addr stream_start, const std::vector<BTBEntry> &btbEntries, IndirectTargets& results);
+    void lookupHelper(Addr stream_start, const std::vector<BTBEntry> &btbEntries,
+                      IndirectTargets& results, ThreadID tid);
 
     // use blockPC
     Addr getTageIndex(Addr pc, int table);
@@ -139,7 +144,8 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     }
 
     // Update branch history
-    void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
+    void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target,
+                      ThreadID tid);
 
     const unsigned numPredictors;
 
@@ -151,9 +157,14 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     std::vector<bitset> tableTagMasks;
     std::vector<unsigned> tablePcShifts;
     std::vector<unsigned> histLengths;
-    std::vector<PathFoldedHist> tagFoldedHist;
-    std::vector<PathFoldedHist> altTagFoldedHist;
-    std::vector<PathFoldedHist> indexFoldedHist;
+    struct ThreadHistoryState
+    {
+        std::vector<PathFoldedHist> tagFoldedHist;
+        std::vector<PathFoldedHist> altTagFoldedHist;
+        std::vector<PathFoldedHist> indexFoldedHist;
+    };
+
+    std::vector<ThreadHistoryState> threadHistory;
 
     LFSR64 allocLFSR;
 
@@ -261,7 +272,10 @@ class BTBITTAGE : public TimedBaseBTBPredictor
         }
     } TageMeta;
 
-    std::shared_ptr<TageMeta> meta;
+    std::vector<std::shared_ptr<TageMeta>> threadMeta;
+    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
+    ThreadHistoryState &historyState(ThreadID tid);
+    const ThreadHistoryState &historyState(ThreadID tid) const;
 
 public:
 

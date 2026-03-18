@@ -277,9 +277,9 @@ class Rename
      */
     std::list<RenameHistory> historyBuffer[MaxThreads];
 
-    InstSeqNum finalCommitSeq = 0;
+    InstSeqNum finalCommitSeq[MaxThreads] = {};
 
-    InstSeqNum releaseSeq = 0;
+    InstSeqNum releaseSeq[MaxThreads] = {};
 
     void tryFreePReg(PhysRegIdPtr phys_reg);
 

@@ -98,7 +98,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       fetchWidth(params.fetchWidth),
       decodeWidth(params.decodeWidth),
       retryPkt(),
-      retryTid(InvalidThreadID),
       cacheBlkSize(cpu->cacheLineSize()),
       fetchBufferSize(params.fetchBufferSize),
       fetchQueueSize(params.fetchQueueSize),
@@ -460,6 +459,10 @@ Fetch::resetStage()
 {
     numInst = 0;
     interruptPending = false;
+    for (auto *pkt : retryPkt) {
+        delete pkt;
+    }
+    retryPkt.clear();
     cacheBlocked = false;
 
     priorityList.clear();
@@ -489,7 +492,9 @@ Fetch::resetStage()
     }
 
     assert(dbpbtb);
-    dbpbtb->resetPC(threads[0].fetchpc->instAddr());
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        dbpbtb->resetPC(tid, threads[tid].fetchpc->instAddr());
+    }
 }
 
 bool
@@ -587,8 +592,11 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
         DPRINTF(Fetch, "[tid:%i] Waiting for remaining packets. Completed: %d, Total: %d\n",
                 tid, threads[tid].cacheReq.completedPackets, threads[tid].cacheReq.packets.size());
 
-        // Note: retry is handled completely by the standard gem5 recvReqRetry mechanism
-        // No need to handle retry here to avoid duplicate packet sending
+        if (cacheBlocked && !retryPkt.empty()) {
+            DPRINTF(Fetch, "[tid:%i] Cache response arrived with queued retries pending; "
+                    "trying one response-driven retry pass\n", tid);
+            retryPendingIcacheRequests();
+        }
 
         return false;  // Return false to indicate we're still waiting
     }
@@ -687,7 +695,6 @@ Fetch::drainSanityCheck() const
 {
     assert(isDrained());
     assert(retryPkt.size() == 0);
-    assert(retryTid == InvalidThreadID);
     assert(!cacheBlocked);
     assert(!interruptPending);
 
@@ -939,6 +946,16 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
 
     fetchStats.cacheLines++;
 
+    if (cacheBlocked) {
+        DPRINTF(Fetch, "[tid:%i] I-cache port already waiting for retry, queueing %#lx\n",
+                tid, mem_req->getVaddr());
+
+        updateCacheRequestStatusByRequest(tid, mem_req, CacheWaitRetry);
+        setAllFetchStalls(StallReason::IcacheStall);
+        retryPkt.push_back(data_pkt);
+        return;
+    }
+
     // Access the cache.
     if (!icachePort.sendTimingReq(data_pkt)) {
         DPRINTF(Fetch, "[tid:%i] Out of MSHRs!\n", tid);
@@ -950,7 +967,6 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
                 mem_req->getVaddr());
         setAllFetchStalls(StallReason::IcacheStall);
         retryPkt.push_back(data_pkt);
-        retryTid = tid;
         cacheBlocked = true;
     } else {
         DPRINTF(Fetch, "[tid:%i] Doing Icache access.\n", tid);
@@ -1110,15 +1126,17 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // Reset the cache request after cancelling
     threads[tid].cacheReq.reset();
 
-    // Get rid of the retrying packet if it was from this thread.
-    if (retryTid == tid) {
-        assert(cacheBlocked);
-        for (auto it : retryPkt) {
-            delete it;
+    // Drop any retry packets that belong to this squashed thread.
+    for (auto it = retryPkt.begin(); it != retryPkt.end();) {
+        if (cpu->contextToThread((*it)->req->contextId()) == tid) {
+            delete *it;
+            it = retryPkt.erase(it);
+        } else {
+            ++it;
         }
-        retryPkt.clear();
-        retryTid = InvalidThreadID;
-        cacheBlocked = false;   // clear cache blocked
+    }
+    if (retryPkt.empty()) {
+        cacheBlocked = false;
     }
 
     if (squashInst && !squashInst->isControl()) {
@@ -1577,11 +1595,11 @@ Fetch::handleIEWSignals()
         }
         bool success = dbpbtb->resolveUpdate(stream_id, tid);
         if (success) {
-            dbpbtb->notifyResolveSuccess();
+            dbpbtb->notifyResolveSuccess(tid);
             resolveQueue.pop_front();
             fetchStats.resolveDequeueCount++;
         } else {
-            dbpbtb->notifyResolveFailure();
+            dbpbtb->notifyResolveFailure(tid);
         }
     }
 }
@@ -1731,8 +1749,8 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
             instruction->isMov());
     assert(dbpbtb);
     DPRINTF(DecoupleBP, "Set instruction %lu with fetch id %lu\n",
-            instruction->seqNum, dbpbtb->ftqHeadId(0));
-    instruction->setFtqId(dbpbtb->ftqHeadId(0));
+            instruction->seqNum, dbpbtb->ftqHeadId(tid));
+    instruction->setFtqId(dbpbtb->ftqHeadId(tid));
 
 #if TRACING_ON
     if (trace) {
@@ -2087,36 +2105,32 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
 void
 Fetch::recvReqRetry()
 {
-    if (retryPkt.size() == 0) {
-        assert(retryTid == InvalidThreadID);
+    if (retryPkt.empty()) {
         // Access has been squashed since it was sent out.  Just clear
         // the cache being blocked.
         cacheBlocked = false;
         return;
     }
     assert(cacheBlocked);
-    assert(retryTid != InvalidThreadID);
-    // Note: In multi-cacheline fetch, overall status may not be CacheWaitRetry
-    // if some requests have progressed while others still need retry.
-    // The presence of retryPkt itself indicates retry is needed.
+    retryPendingIcacheRequests();
+}
 
-    for (auto it = retryPkt.begin(); it != retryPkt.end();) {
-        if (icachePort.sendTimingReq(*it)) {
-            // Use new cache state management with specific RequestPtr
-            updateCacheRequestStatusByRequest(retryTid, (*it)->req, CacheWaitResponse);
-            // Notify Fetch Request probe when a retryPkt is successfully sent.
-            // Note that notify must be called before retryPkt is set to NULL.
-            ppFetchRequestSent->notify((*it)->req);
-            it = retryPkt.erase(it);
-        } else {
-            it++;
+void
+Fetch::retryPendingIcacheRequests()
+{
+    while (!retryPkt.empty()) {
+        PacketPtr pkt = retryPkt.front();
+        if (!icachePort.sendTimingReq(pkt)) {
+            return;
         }
+
+        const ThreadID tid = cpu->contextToThread(pkt->req->contextId());
+        updateCacheRequestStatusByRequest(tid, pkt->req, CacheWaitResponse);
+        ppFetchRequestSent->notify(pkt->req);
+        retryPkt.erase(retryPkt.begin());
     }
 
-    if (retryPkt.size() == 0) {
-        retryTid = InvalidThreadID;
-        cacheBlocked = false;
-    }
+    cacheBlocked = false;
 }
 
 void

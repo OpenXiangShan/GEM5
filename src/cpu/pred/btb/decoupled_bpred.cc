@@ -47,7 +47,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
       ftq(p.numThreads, p.ftq_size),
-      historyManager(16), // TODO: fix this
       resolveBlockThreshold(p.resolveBlockThreshold),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
 {
@@ -85,6 +84,12 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
             printf("%s ", it->c_str());
         }
         printf("\n");
+    }
+
+    historyManagers.reserve(numThreads);
+    resolveDequeueFailCounters.assign(numThreads, 0);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        historyManagers.emplace_back(16);
     }
 
     for (int tid=0;tid<numThreads; tid++) {
@@ -606,7 +611,7 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
     if (!ftq.empty(tid))
         printTarget(ftq.front(tid));
 
-    historyManager.commit(target_id);
+    historyManagers[tid].commit(target_id);
 }
 
 bool
@@ -644,26 +649,26 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &target_id, ThreadID tid)
 }
 
 void
-DecoupledBPUWithBTB::notifyResolveSuccess()
+DecoupledBPUWithBTB::notifyResolveSuccess(ThreadID tid)
 {
-    resolveDequeueFailCounter = 0;
+    resolveDequeueFailCounters[tid] = 0;
 }
 
 void
-DecoupledBPUWithBTB::notifyResolveFailure()
+DecoupledBPUWithBTB::notifyResolveFailure(ThreadID tid)
 {
-    resolveDequeueFailCounter++;
-    if (resolveDequeueFailCounter >= resolveBlockThreshold) {
-        blockPredictionOnce();
-        resolveDequeueFailCounter = 0;
+    auto &failCounter = resolveDequeueFailCounters[tid];
+    failCounter++;
+    if (failCounter >= resolveBlockThreshold) {
+        blockPredictionOnce(tid);
+        failCounter = 0;
     }
 }
 
 void
-DecoupledBPUWithBTB::blockPredictionOnce()
+DecoupledBPUWithBTB::blockPredictionOnce(ThreadID tid)
 {
-    // smtTODO
-    threads[0].blockPredictionPending = true;
+    threads[tid].blockPredictionPending = true;
 }
 
 void
@@ -808,7 +813,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
 
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {
-        entry.predMetas[i] = components[i]->getPredictionMeta();
+        entry.predMetas[i] = components[i]->getPredictionMeta(tid);
     }
 
     // Initialize default resolution state
@@ -843,7 +848,8 @@ DecoupledBPUWithBTB::fillAheadPipeline(FetchTarget &entry)
 }
 
 void
-DecoupledBPUWithBTB::checkHistory(const boost::dynamic_bitset<> &history)
+DecoupledBPUWithBTB::checkHistory(const boost::dynamic_bitset<> &history,
+                                  ThreadID tid)
 {
     // This function performs a crucial validation of branch history consistency
     // It rebuilds the "ideal" history from HistoryManager's records and compares
@@ -854,7 +860,7 @@ DecoupledBPUWithBTB::checkHistory(const boost::dynamic_bitset<> &history)
     boost::dynamic_bitset<> ideal_hash_hist(historyBits, 0);
 
     // Iterate through all speculative history entries stored in HistoryManager
-    for (const auto entry: historyManager.getSpeculativeHist()) {
+    for (const auto entry: historyManagers[tid].getSpeculativeHist()) {
         // Only process entries that have non-zero shift amount (actual branches)
         if (entry.shamt != 0) {
             // Accumulate total history bits
@@ -895,6 +901,12 @@ DecoupledBPUWithBTB::resetPC(Addr new_pc)
 {
     for (int i = 0; i < numThreads; i++)
         threads[i].s0PC = new_pc;
+}
+
+void
+DecoupledBPUWithBTB::resetPC(ThreadID tid, Addr new_pc)
+{
+    threads[tid].s0PC = new_pc;
 }
 
 Addr
@@ -944,7 +956,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     histShiftIn(shamt, taken, s0History);
 
     // Update history manager and verify TAGE folded history
-    historyManager.addSpeculativeHist(
+    historyManagers[tid].addSpeculativeHist(
         entry.startPC, shamt, taken, entry.predBranchInfo, ftq.backId(tid) + 1);
 
     // Get prediction information for global backward history updates
@@ -967,16 +979,17 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
 
 #ifndef NDEBUG
     if (tage->isEnabled()) {
-        tage->checkFoldedHist(s0PHistory, "speculative update");
+        tage->checkFoldedHist(s0PHistory, tid, "speculative update");
     }
     if (ittage->isEnabled()) {
-        ittage->checkFoldedHist(s0PHistory, "speculative update");
+        ittage->checkFoldedHist(s0PHistory, tid, "speculative update");
     }
     if (microtage->isEnabled()) {
-        microtage->checkFoldedHist(s0PHistory, "speculative update");
+        microtage->checkFoldedHist(s0PHistory, tid, "speculative update");
     }
     if (mgsc->isEnabled()) {
-        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, "speculative update");
+        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, tid,
+                              "speculative update");
     }
 #endif
 }
@@ -1052,31 +1065,33 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
 
     // Update history manager with appropriate branch info
     if (squash_type == SQUASH_CTRL) {
-        historyManager.squash(target_id, real_shamt, real_taken, target.exeBranchInfo);
+        historyManagers[tid].squash(target_id, real_shamt, real_taken,
+                                    target.exeBranchInfo);
     } else {
-        historyManager.squash(target_id, real_shamt, real_taken, BranchInfo());
+        historyManagers[tid].squash(target_id, real_shamt, real_taken,
+                                    BranchInfo());
     }
 
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG
-    checkHistory(s0History);
+    checkHistory(s0History, tid);
     if (tage->isEnabled()) {
-        tage->checkFoldedHist(s0PHistory,
+        tage->checkFoldedHist(s0PHistory, tid,
             squash_type == SQUASH_CTRL ? "control squash" :
             squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
     }
     if (ittage->isEnabled()) {
-        ittage->checkFoldedHist(s0PHistory,
+        ittage->checkFoldedHist(s0PHistory, tid,
             squash_type == SQUASH_CTRL ? "control squash" :
             squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
     }
     if (microtage->isEnabled()) {
-        microtage->checkFoldedHist(s0PHistory,
+        microtage->checkFoldedHist(s0PHistory, tid,
             squash_type == SQUASH_CTRL ? "control squash" :
             squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
     }
     if (mgsc->isEnabled()) {
-        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory,
+        mgsc->checkFoldedHist(s0History, s0PHistory, s0LHistory, tid,
             squash_type == SQUASH_CTRL ? "control squash" :
             squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
     }

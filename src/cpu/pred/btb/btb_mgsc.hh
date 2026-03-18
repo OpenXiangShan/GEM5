@@ -14,6 +14,7 @@
 
 #include "base/sat_counter.hh"
 #include "base/types.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
@@ -39,6 +40,7 @@ namespace test {
 
 class BTBMGSC : public TimedBaseBTBPredictor
 {
+    static constexpr unsigned MaxThreads = o3::MaxThreads;
   public:
 #ifdef UNIT_TEST
     BTBMGSC();
@@ -157,7 +159,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
-    std::shared_ptr<void> getPredictionMeta() override;
+    std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
     // speculative update all folded history, according history and pred.taken
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
@@ -191,6 +193,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // check folded hists after speculative update and recover
     void checkFoldedHist(const boost::dynamic_bitset<> &Ghistory, const boost::dynamic_bitset<> &PHistory,
                          const std::vector<boost::dynamic_bitset<>> &LHistory, const char *when);  // Check GHR folded
+    void checkFoldedHist(const boost::dynamic_bitset<> &Ghistory, const boost::dynamic_bitset<> &PHistory,
+                         const std::vector<boost::dynamic_bitset<>> &LHistory,
+                         ThreadID tid, const char *when);  // Check GHR folded
 
     // Calculate MGSC weight index
     Addr getPcIndex(Addr pc, unsigned tableIndexBits);
@@ -247,7 +252,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // Look up predictions in MGSC tables for a stream of instructions
     void lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
-                      const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens &results);
+                      const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
+                      CondTakens &results, ThreadID tid);
 
     // Calculate MGSC history index with folded history
     Addr getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist);
@@ -277,7 +283,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // Helper method to generate prediction for a single BTB entry
     MgscPrediction generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
-                                            const TageInfoForMGSC &tage_info);
+                                            const TageInfoForMGSC &tage_info,
+                                            ThreadID tid);
 
     // Helper method to prepare BTB entries for update
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
@@ -353,12 +360,16 @@ class BTBMGSC : public TimedBaseBTBPredictor
     bool enablePCThreshold;
     Addr focusBranchPC;
 
-    // Folded history for index calculation
-    std::vector<GlobalBwFoldedHist> indexBwFoldedHist;
-    std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist;
-    std::vector<ImliFoldedHist> indexIFoldedHist;
-    std::vector<GlobalFoldedHist> indexGFoldedHist;
-    std::vector<PathFoldedHist> indexPFoldedHist;
+    struct ThreadHistoryState
+    {
+        std::vector<GlobalBwFoldedHist> indexBwFoldedHist;
+        std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist;
+        std::vector<ImliFoldedHist> indexIFoldedHist;
+        std::vector<GlobalFoldedHist> indexGFoldedHist;
+        std::vector<PathFoldedHist> indexPFoldedHist;
+    };
+
+    std::vector<ThreadHistoryState> threadHistory;
 
     // The actual MGSC prediction tables (table x index x line)
     std::vector<std::vector<std::vector<int16_t>>> bwTable;
@@ -552,8 +563,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
         static const std::unordered_map<Addr, MgscPrediction> &preds(const BTBMGSC &mgsc)
         {
-            assert(mgsc.meta);
-            return mgsc.meta->preds;
+            assert(!mgsc.threadMeta.empty());
+            assert(mgsc.threadMeta[0]);
+            return mgsc.threadMeta[0]->preds;
         }
     };
 #endif
@@ -594,7 +606,10 @@ class BTBMGSC : public TimedBaseBTBPredictor
         }
     } MgscMeta;
 
-    std::shared_ptr<MgscMeta> meta;
+    std::vector<std::shared_ptr<MgscMeta>> threadMeta;
+    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
+    ThreadHistoryState &historyState(ThreadID tid);
+    const ThreadHistoryState &historyState(ThreadID tid) const;
 };
 
 // Close conditional namespace wrapper for testing

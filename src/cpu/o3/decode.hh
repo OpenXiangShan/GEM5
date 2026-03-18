@@ -236,6 +236,9 @@ class Decode
     /** Fetch to decode delay. */
     Cycles fetchToDecodeDelay;
 
+    /** Decode to fetch feedback delay for stage backpressure. */
+    Cycles decodeToFetchDelay;
+
     /** The width of decode, in instructions. */
     unsigned decodeWidth;
 

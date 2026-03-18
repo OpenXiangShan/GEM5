@@ -53,6 +53,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/fu_pool.hh"
+#include "cpu/o3/iew.hh"
 #include "cpu/o3/issue_queue.hh"
 #include "cpu/o3/limits.hh"
 #include "debug/IQ.hh"

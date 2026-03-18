@@ -43,6 +43,7 @@
 
 #include "cpu/base.hh"
 
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -208,40 +209,50 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
               "of threads (%i).\n", params().isa.size(), numThreads);
     }
 
-    diffAllStates = std::make_shared<DiffAllStates>();
+    diffAllStates.resize(numThreads);
     if (enableDifftest) {
         assert(params().difftest_ref_so.length() > 2);
-        diffAllStates->diff.nemu_reg = &(diffAllStates->referenceRegFile);
-        diffAllStates->diff.nemu_this_pc = 0x80000000u;
-        diffAllStates->diff.cpu_id = params().cpu_id;
-        warn("cpu_id set to %d\n", params().cpu_id);
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            diffAllStates[tid] = std::make_shared<DiffAllStates>();
+            auto diff_state = diffAllStates[tid];
+            diff_state->diff.nemu_reg = &(diff_state->referenceRegFile);
+            diff_state->diff.nemu_this_pc = 0x80000000u;
+            diff_state->diff.cpu_id = difftestHartId(tid);
+            warn("difftest hart id set to %d for tid %d\n",
+                 diff_state->diff.cpu_id, tid);
 
-        if (params().difftest_ref_so.find("spike") != std::string::npos) {
-            assert(!system->multiCore());
-            diffAllStates->proxy = new SpikeProxy(
-                params().cpu_id, params().difftest_ref_so.c_str(),
-                params().nemuSDimg.size() && params().nemuSDCptBin.size());
-        } else {
-            diffAllStates->proxy =
-                new NemuProxy(params().cpu_id, params().difftest_ref_so.c_str(),
-                              params().nemuSDimg.size() && params().nemuSDCptBin.size(), system->enabledMemDedup(),
-                              system->multiCore());
+            if (params().difftest_ref_so.find("spike") != std::string::npos) {
+                assert(!system->multiContextDifftest());
+                diff_state->proxy = new SpikeProxy(
+                    params().cpu_id, params().difftest_ref_so.c_str(),
+                    params().nemuSDimg.size() && params().nemuSDCptBin.size());
+            } else {
+                diff_state->proxy =
+                    new NemuProxy(params().cpu_id, params().difftest_ref_so.c_str(),
+                                  params().nemuSDimg.size() && params().nemuSDCptBin.size(),
+                                  system->enabledMemDedup(),
+                                  system->multiContextDifftest());
+            }
+
+            warn("Difftest is enabled with ref so: %s.\n",
+                 params().difftest_ref_so.c_str());
+
+            diff_state->proxy->regcpy(&(diff_state->gem5RegFile), REF_TO_DUT);
+            diff_state->diff.dynamic_config.ignore_illegal_mem_access = false;
+            diff_state->diff.dynamic_config.debug_difftest = false;
+            diff_state->proxy->update_config(&diff_state->diff.dynamic_config);
+            if (params().nemuSDimg.size() && params().nemuSDCptBin.size()) {
+                diff_state->proxy->sdcard_init(params().nemuSDimg.c_str(),
+                                   params().nemuSDCptBin.c_str());
+            }
+            diff_state->diff.will_handle_intr = false;
         }
-
-        warn("Difftest is enabled with ref so: %s.\n", params().difftest_ref_so.c_str());
-
-        diffAllStates->proxy->regcpy(&(diffAllStates->gem5RegFile), REF_TO_DUT);
-        diffAllStates->diff.dynamic_config.ignore_illegal_mem_access = false;
-        diffAllStates->diff.dynamic_config.debug_difftest = false;
-        diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
-        if (params().nemuSDimg.size() && params().nemuSDCptBin.size()) {
-            diffAllStates->proxy->sdcard_init(params().nemuSDimg.c_str(),
-                               params().nemuSDCptBin.c_str());
-        }
-        diffAllStates->diff.will_handle_intr = false;
     } else {
         warn("Difftest is disabled\n");
-        diffAllStates->hasCommit = true;
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            diffAllStates[tid] = std::make_shared<DiffAllStates>();
+            diffAllStates[tid]->hasCommit = true;
+        }
     }
 
     if (dumpCommitFlag) {
@@ -404,11 +415,14 @@ BaseCPU::startup()
     if (powerState->get() == enums::PwrState::UNDEFINED)
         powerState->set(enums::PwrState::ON);
 
-    if (system->multiCore()) {
+    if (system->multiContextDifftest()) {
         goldenMemPtr = system->getGoldenMemPtr();
         _goldenMemManager = system->getGoldenMemManager();
 
-        diffAllStates->proxy->initState(params().cpu_id, goldenMemPtr);
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            diffAllStates[tid]->proxy->initState(difftestHartId(tid),
+                                                 goldenMemPtr);
+        }
     } else {
         goldenMemPtr = nullptr;
         _goldenMemManager = nullptr;
@@ -702,7 +716,7 @@ BaseCPU::takeOverFrom(BaseCPU *oldCPU)
     if (enable_diff) {
         warn("Take over difftest state to new CPU\n");
         enableDifftest = enable_diff;
-        takeOverDiffAllStates(diff_all);
+        takeOverDiffAllStates(std::move(diff_all));
     }
 }
 
@@ -865,6 +879,12 @@ BaseCPU::GlobalStats::GlobalStats(statistics::Group *parent)
     hostOpRate = simOps / hostSeconds;
 }
 
+int
+BaseCPU::difftestHartId(ThreadID tid) const
+{
+    return params().cpu_id * numThreads + tid;
+}
+
 void
 BaseCPU::csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint64_t &error_reg, InstSeqNum seq,
                         std::string error_csr_name, int &diff_at)
@@ -883,6 +903,8 @@ BaseCPU::csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint
 std::pair<int, bool>
 BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 {
+    auto diffAllStates = this->diffAllStates[tid];
+
     int diff_at = DiffAt::NoneDiff;
     bool npc_match = false;
     bool is_mmio = diffInfo.curInstStrictOrdered;
@@ -966,7 +988,7 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
 
     if (enableRVV) {
         if (diffInfo.inst->isVector()) {
-            readGem5Regs();
+            readGem5Regs(tid);
             uint64_t* nemu_val = (uint64_t*)&(diffAllStates->referenceRegFile.vr[0]);
             uint64_t* gem5_val = (uint64_t*)&(diffAllStates->gem5RegFile.vr[0]);
             bool maybe_error = false;
@@ -1431,7 +1453,8 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                                         diffInfo.physEffAddr, diffInfo.effSize);
                 }
 
-                if (system->multiCore() && (diffInfo.inst->isLoad() || diffInfo.inst->isAtomic()) &&
+                if (system->multiContextDifftest() &&
+                    (diffInfo.inst->isLoad() || diffInfo.inst->isAtomic()) &&
                     _goldenMemManager->inPmem(diffInfo.physEffAddr)) {
                     warn("Difference on %s instr found in multicore mode, check in golden memory\n",
                          diffInfo.inst->isLoad() ? "load" : "amo");
@@ -1517,9 +1540,10 @@ BaseCPU::clearDiffMismatch(ThreadID tid, InstSeqNum seq) {
 void
 BaseCPU::reportDiffMismatch(ThreadID tid, InstSeqNum seq)
 {
+    auto diffAllStates = this->diffAllStates[tid];
     warn("%s", diffMsg.str());
     diffAllStates->proxy->isa_reg_display();
-    displayGem5Regs();
+    displayGem5Regs(tid);
     warn("start dump last %lu committed msg\n", diffInfo.lastCommittedMsg.size());
     while (diffInfo.lastCommittedMsg.size()) {
         auto &inst = diffInfo.lastCommittedMsg.front();
@@ -1531,6 +1555,8 @@ BaseCPU::reportDiffMismatch(ThreadID tid, InstSeqNum seq)
 void
 BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
 {
+    auto diffAllStates = this->diffAllStates[tid];
+
     bool should_diff = false;
     DPRINTF(DumpCommit, "[sn:%llu] %#lx, %s\n",
             seq, diffInfo.pc->instAddr(), diffInfo.inst->disassemble(diffInfo.pc->instAddr()));
@@ -1550,10 +1576,10 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
         should_diff = true;
         if (!diffAllStates->hasCommit && diffInfo.pc->instAddr() == 0x80000000u) {
             diffAllStates->hasCommit = true;
-            readGem5Regs();
+            readGem5Regs(tid);
             diffAllStates->gem5RegFile.pc = diffInfo.pc->instAddr();
             if (noHypeMode) {
-                auto start = pmemStart + pmemSize * diffAllStates->diff.cpu_id;
+                auto start = pmemStart + pmemSize * difftestHartId(tid);
                 warn("Start memcpy to NEMU from %#lx, size=%lu\n", (uint64_t)start, pmemSize);
                 diffAllStates->proxy->memcpy(0x80000000u, start, pmemSize, DUT_TO_REF);
             } else if (enableMemDedup) {
@@ -1603,9 +1629,10 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
 }
 
 void
-BaseCPU::displayGem5Regs()
+BaseCPU::displayGem5Regs(ThreadID tid)
 {
-    readGem5Regs();
+    auto diffAllStates = this->diffAllStates[tid];
+    readGem5Regs(tid);
     std::string str;
     //reg
     for (size_t i = 0; i < 32; i++)
@@ -1712,8 +1739,9 @@ BaseCPU::displayGem5Regs()
 }
 
 void
-BaseCPU::difftestRaiseIntr(uint64_t no)
+BaseCPU::difftestRaiseIntr(uint64_t no, ThreadID tid)
 {
+    auto diffAllStates = this->diffAllStates[tid];
     diffAllStates->diff.will_handle_intr = true;
     diffAllStates->proxy->raise_intr(no);
 }
@@ -1721,19 +1749,24 @@ BaseCPU::difftestRaiseIntr(uint64_t no)
 void
 BaseCPU::clearGuideExecInfo()
 {
-    diffAllStates->diff.guide.force_raise_exception = false;
-    diffAllStates->diff.guide.force_set_jump_target = false;
+    for (auto &diffAllStates : this->diffAllStates) {
+        diffAllStates->diff.guide.force_raise_exception = false;
+        diffAllStates->diff.guide.force_set_jump_target = false;
+    }
 }
 
 void
 BaseCPU::enableDiffPrint()
 {
-    diffAllStates->diff.dynamic_config.debug_difftest = true;
-    diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
+    for (auto &diffAllStates : this->diffAllStates) {
+        diffAllStates->diff.dynamic_config.debug_difftest = true;
+        diffAllStates->proxy->update_config(&diffAllStates->diff.dynamic_config);
+    }
 }
 
-void BaseCPU::setSCSuccess(bool success, paddr_t addr)
+void BaseCPU::setSCSuccess(bool success, paddr_t addr, ThreadID tid)
 {
+    auto diffAllStates = this->diffAllStates[tid];
     diffAllStates->diff.sync.lrscValid = success;
     diffAllStates->diff.sync.lrscAddr = addr; // used for spike diff
 }
@@ -1742,6 +1775,8 @@ void
 BaseCPU::setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval, uint64_t stval, bool force_set_jump_target,
                                    uint64_t jump_target, ThreadID tid)
 {
+    auto diffAllStates = this->diffAllStates[tid];
+
     auto &gd = diffAllStates->diff.guide;
     gd.force_raise_exception = true;
     gd.exception_num = exception_num;
@@ -1769,7 +1804,7 @@ BaseCPU::setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval, uint6
 void
 BaseCPU::checkL1DRefill(Addr paddr, const uint8_t* refill_data, size_t size) {
     assert(size == 64);
-    if (system->multiCore()) {
+    if (system->multiContextDifftest()) {
         uint8_t *golden_ptr = (uint8_t *)_goldenMemManager->guestToHost(paddr);
         if (memcmp(golden_ptr, refill_data, size)) {
             panic("Refill data diff with Golden addr %#lx with size %d\n", paddr, size);
