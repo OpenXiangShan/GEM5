@@ -438,11 +438,15 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     stream.squashType = SquashType::SQUASH_CTRL; // Mark as control misprediction
     stream.squashPC = 0x1000;
 
-    // Update the predictor (this should try to allocate but fail)
+    // Update the predictor. With RTL-aligned highest-table gating, this should
+    // not even start allocation when the provider already comes from the
+    // highest table.
     tage->update(stream);
 
-    int alloc_failed_no_valid = tage->tageStats.updateAllocFailureNoValidTable;
-    EXPECT_GE(alloc_failed_no_valid, 1) << "Allocate failed due to no valid table to allocate (all useful)";
+    EXPECT_EQ(tage->tageStats.updateAllocFailure, 0)
+        << "Highest-table provider should suppress final allocation failure";
+    EXPECT_EQ(tage->tageStats.updateAllocSuccess, 0)
+        << "Highest-table provider should suppress allocation attempts";
 
 }
 
@@ -845,7 +849,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
 
     // Stats: first allocation succeeded, subsequent attempts failed
     int alloc_success_after_step2 = tage->tageStats.updateAllocSuccess;
-    int alloc_failure_after_step2 = tage->tageStats.updateAllocFailure;
+    int alloc_failure_after_step2 = tage->tageStats.allocProbeNoEligibleVictim;
     EXPECT_EQ(alloc_success_after_step2, 2) << "Two allocations should have succeeded (one per way)";
     EXPECT_GE(alloc_failure_after_step2, 0) << "Allocation failures may occur depending on mask selection";
 
@@ -868,7 +872,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     EXPECT_FALSE(found) << "New entry should not be allocated (no replacement without eligible slot)";
 
     // Stats: failure count should increase further after another attempt
-    int alloc_failure_after_step3 = tage->tageStats.updateAllocFailure;
+    int alloc_failure_after_step3 = tage->tageStats.allocProbeNoEligibleVictim;
     EXPECT_GE(alloc_failure_after_step3, alloc_failure_after_step2 + 1)
         << "Allocation failures should increase after additional failed attempt";
 }
@@ -891,7 +895,7 @@ TEST_F(BTBTAGETest, AllocationReplacesStrongNotUsefulEntry) {
 
     BTBEntry newEntry = createBTBEntry(0x1008);
     int alloc_success_before = tage->tageStats.updateAllocSuccess;
-    int alloc_failure_before = tage->tageStats.updateAllocFailureNoValidTable;
+    int alloc_failure_before = tage->tageStats.updateAllocFailure;
 
     // Base prediction defaults to taken, so actual not-taken forces allocation.
     predictUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
@@ -908,7 +912,7 @@ TEST_F(BTBTAGETest, AllocationReplacesStrongNotUsefulEntry) {
     EXPECT_TRUE(found)
         << "A strong but not-useful entry should be replaceable after RTL-aligned allocation";
     EXPECT_EQ(tage->tageStats.updateAllocSuccess, alloc_success_before + 1);
-    EXPECT_EQ(tage->tageStats.updateAllocFailureNoValidTable, alloc_failure_before);
+    EXPECT_EQ(tage->tageStats.updateAllocFailure, alloc_failure_before);
 }
 
 /**

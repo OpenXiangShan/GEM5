@@ -520,6 +520,11 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         return false;
     }
 
+    // Match RTL: do not allocate beyond the highest history table.
+    if (main_info.found && main_info.table == numPredictors - 1) {
+        return false;
+    }
+
     // Special case: provider is weak but direction is correct
     // In this case, provider just needs more training, not a longer history table
     // This avoids wasteful allocation and prevents ping-pong effects
@@ -616,7 +621,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             return true;
         }
 
-        tageStats.updateAllocFailure++;
+        tageStats.allocProbeNoEligibleVictim++;
     }
 
     usefulResetCnt++;
@@ -634,7 +639,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     }
 
     DPRINTF(TAGE, "no eligible way found for allocation starting from table %d\n", start_table);
-    tageStats.updateAllocFailureNoValidTable++;
+    tageStats.updateAllocFailure++;
     return false;
 }
 
@@ -703,6 +708,9 @@ BTBTAGE::update(const FetchTarget &stream) {
         return;
     }
 
+    // Match RTL more closely: allocate at most one new entry per fetch block update.
+    bool allocationIssued = false;
+
     // Process each BTB entry
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
@@ -732,7 +740,7 @@ BTBTAGE::update(const FetchTarget &stream) {
         uint64_t allocated_table = 0;
         uint64_t allocated_index = 0;
         uint64_t allocated_way = 0;
-        if (need_allocate) {
+        if (need_allocate && !allocationIssued) {
 
             // Handle allocation of new entries
             uint start_table = 0;
@@ -742,6 +750,9 @@ BTBTAGE::update(const FetchTarget &stream) {
             }
             alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
                                    start_table, predMeta, allocated_table, allocated_index, allocated_way);
+            allocationIssued = true;
+        } else if (need_allocate) {
+            DPRINTF(TAGE, "skip extra allocation for branch %#lx in the same fetch block\n", btb_entry.pc);
         }
 
 #ifndef UNIT_TEST
@@ -1056,8 +1067,12 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateUseNaWrong, statistics::units::Count::get(), "use na on update and wrong"),
     ADD_STAT(updateUseAltOnNaCorrect, statistics::units::Count::get(), "use alt on na correct when update"),
     ADD_STAT(updateUseAltOnNaWrong, statistics::units::Count::get(), "use alt on na wrong when update"),
-    ADD_STAT(updateAllocFailure, statistics::units::Count::get(), "alloc failure when update"),
-    ADD_STAT(updateAllocFailureNoValidTable, statistics::units::Count::get(), "alloc failure no valid table when update"),
+    ADD_STAT(
+        allocProbeNoEligibleVictim, statistics::units::Count::get(),
+        "allocation table probes with no eligible victim"),
+    ADD_STAT(
+        updateAllocFailure, statistics::units::Count::get(),
+        "alloc failure when update"),
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
     ADD_STAT(
         allocBucketHasInvalid, statistics::units::Count::get(),
