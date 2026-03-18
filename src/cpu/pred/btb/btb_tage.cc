@@ -233,8 +233,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
 
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
-                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
+                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %u, btb_pc %#lx, pos %u\n",
+                    i, index, way, entry.valid, entry.tag, entry.counter,
+                    static_cast<unsigned>(entry.useful), btb_entry.pc, position);
                 break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
             }
         }
@@ -472,12 +473,10 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         bool main_is_correct = main_info.taken() == actual_taken;
         // Match current RTL behavior: useful is only set when the provider
         // proves itself against an alternative prediction.
-        if (main_info.taken() != alt_taken) {
-            if (main_is_correct) {
-                way.useful = 1;
-            }
+        if (main_info.taken() != alt_taken && main_is_correct) {
+            usefulCtrIncrease(way);
         }
-        DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
+        DPRINTF(TAGE, "useful counter is now %u\n", static_cast<unsigned>(way.useful));
 
         // No LRU maintenance
     }
@@ -577,7 +576,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             for (unsigned way = 0; way < numWays; ++way) {
                 auto &cand = set[way];
                 const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-                if (!cand.useful && weakish) {
+                if (usefulCtrIsSaturateNegative(cand) && weakish) {
                     selected_way = way;
                     break;
                 }
@@ -585,7 +584,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         }
         if (selected_way == -1) {
             for (unsigned way = 0; way < numWays; ++way) {
-                if (!set[way].useful) {
+                if (usefulCtrIsSaturateNegative(set[way])) {
                     selected_way = way;
                     break;
                 }
@@ -600,14 +599,13 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             allocated_table = ti;
             allocated_index = newIndex;
             allocated_way = selected_way;
-            usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
             return true;
         }
 
         tageStats.updateAllocFailure++;
-        usefulResetCnt++;
     }
 
+    usefulResetCnt++;
     if (usefulResetCnt >= 256) {
         usefulResetCnt = 0;
         tageStats.updateResetU++;
@@ -615,7 +613,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         for (auto &table : tageTable) {
             for (auto &set : table) {
                 for (auto &way : set) {
-                    way.useful = false;
+                    usefulCtrReset(way);
                 }
             }
         }
@@ -878,6 +876,32 @@ BTBTAGE::satDecrement(int min, short &counter)
         --counter;
     }
     return counter == min;
+}
+
+bool
+BTBTAGE::usefulCtrIsSaturateNegative(const TageEntry &entry) const
+{
+    return entry.useful == usefulCtrInit;
+}
+
+bool
+BTBTAGE::usefulCtrIsSaturatePositive(const TageEntry &entry) const
+{
+    return entry.useful == usefulCtrMax;
+}
+
+void
+BTBTAGE::usefulCtrIncrease(TageEntry &entry)
+{
+    if (!usefulCtrIsSaturatePositive(entry)) {
+        ++entry.useful;
+    }
+}
+
+void
+BTBTAGE::usefulCtrReset(TageEntry &entry)
+{
+    entry.useful = usefulCtrInit;
 }
 
 Addr

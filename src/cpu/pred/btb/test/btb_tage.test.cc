@@ -208,10 +208,10 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
  * @param pc Branch PC
  * @param table_idx Index of the table to set
  * @param counter Counter value
- * @param useful Useful bit value
+ * @param useful Useful counter value
  */
 void setupTageEntry(BTBTAGE* tage, Addr pc, int table_idx,
-                    short counter, bool useful = false, int way = 0) {
+                    short counter, uint8_t useful = 0, int way = 0) {
     Addr index = tage->getTageIndex(pc, table_idx);
     Addr tag = tage->getTageTag(pc, table_idx);
 
@@ -374,12 +374,13 @@ TEST_F(BTBTAGETest, UsefulBitMechanism) {
     BTBEntry entry = createBTBEntry(0x1000);
 
     // Setup entries in main and alternative tables
-    setupTageEntry(tage, 0x1000, 3, 2, false); // Main: strong taken, useful=false
-    setupTageEntry(tage, 0x1000, 1, -2, false); // Alt: strong not taken, useful=false
+    setupTageEntry(tage, 0x1000, 3, 2, 0); // Main: strong taken, useful=0
+    setupTageEntry(tage, 0x1000, 1, -2, 0); // Alt: strong not taken, useful=0
 
     // Verify initial useful bit state
     Addr mainIndex = tage->getTageIndex(0x1000, 3);
-    EXPECT_FALSE(tage->tageTable[3][mainIndex][0].useful) << "Useful bit should start as false";
+    EXPECT_EQ(tage->tageTable[3][mainIndex][0].useful, 0u)
+        << "Useful counter should start at saturate-negative";
 
     // Predict
     predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
@@ -390,8 +391,8 @@ TEST_F(BTBTAGETest, UsefulBitMechanism) {
     tage->update(stream);
 
     // Verify useful bit is set (main prediction was correct and differed from alt)
-    EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
-        << "Useful bit should be set when main predicts correctly and differs from alt";
+    EXPECT_EQ(tage->tageTable[3][mainIndex][0].useful, 1u)
+        << "Useful counter should increase when main predicts correctly and differs from alt";
 
     // Predict again
     predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
@@ -402,8 +403,8 @@ TEST_F(BTBTAGETest, UsefulBitMechanism) {
     tage->update(stream);
 
     // Verify useful bit is NOT cleared (policy is ++ only, no --)
-    EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
-        << "Useful bit should remain set when main predicts incorrectly (no decrement)";
+    EXPECT_EQ(tage->tageTable[3][mainIndex][0].useful, 1u)
+        << "Useful counter should remain unchanged when there is no increment condition";
 }
 
 // Test entry allocation mechanism
@@ -415,7 +416,7 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
 
     // Set all tables to have entries with useful=true
     for (int t = 0; t < tage->numPredictors; t++) {
-        setupTageEntry(tage, 0x1000, t, 0, true); // Counter=0, useful=true
+        setupTageEntry(tage, 0x1000, t, 0, 3); // Counter=0, useful=saturate-positive
     }
 
     // Force a misprediction to trigger allocation attempt
@@ -691,7 +692,7 @@ TEST_F(BTBTAGETest, CombinedPredictionAccuracyTesting) {
  * to control exact placement of entries
  */
 void createManualTageEntry(BTBTAGE* tage, int table, Addr index, int way,
-                          Addr tag, short counter, bool useful, Addr pc,
+                          Addr tag, short counter, uint8_t useful, Addr pc,
                           unsigned lruCounter = 0) {
     auto &entry = tage->tageTable[table][index][way];
     entry.valid = true;
@@ -727,8 +728,8 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
     Addr testTag2 = tage->getTageTag(startPC, testTable, 2);
 
     // Manually create entries with the same index but different tags (due to position)
-    createManualTageEntry(tage, testTable, testIndex, 0, testTag1, 2, false, 0x1000, 0); // Way 0: Strong taken
-    createManualTageEntry(tage, testTable, testIndex, 1, testTag2, -2, false, 0x1004, 1); // Way 1: Strong not taken
+    createManualTageEntry(tage, testTable, testIndex, 0, testTag1, 2, 0, 0x1000, 0); // Way 0: Strong taken
+    createManualTageEntry(tage, testTable, testIndex, 1, testTag2, -2, 0, 0x1004, 1); // Way 1: Strong not taken
 
     // Make predictions and verify directly
     // For entry1 (should predict taken)
@@ -810,7 +811,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
 
     // Strengthen the first allocated entry to prevent it from being replaced
     // This simulates that the first branch has been trained and should be protected
-    tage->tageTable[testTable][testIndex][allocatedWay].useful = true;
+    tage->tageTable[testTable][testIndex][allocatedWay].useful = 3;
     tage->tageTable[testTable][testIndex][allocatedWay].counter = 2; // Make it strong
 
     // Step 2: Attempt to fill remaining ways with different branches
@@ -837,7 +838,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     // Strengthen all allocated entries to prevent replacement in Step 3
     for (unsigned way = 0; way < tage->numWays; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid) {
-            tage->tageTable[testTable][testIndex][way].useful = true;
+            tage->tageTable[testTable][testIndex][way].useful = 3;
             tage->tageTable[testTable][testIndex][way].counter = 2; // Make it strong
         }
     }
@@ -884,9 +885,9 @@ TEST_F(BTBTAGETest, AllocationReplacesStrongNotUsefulEntry) {
 
     // Fill both ways with valid, strong, but not-useful entries.
     createManualTageEntry(
-        tage, testTable, testIndex, 0, tage->getTageTag(startPC, testTable, 0), 2, false, 0x1000);
+        tage, testTable, testIndex, 0, tage->getTageTag(startPC, testTable, 0), 2, 0, 0x1000);
     createManualTageEntry(
-        tage, testTable, testIndex, 1, tage->getTageTag(startPC, testTable, 2), -2, false, 0x1004);
+        tage, testTable, testIndex, 1, tage->getTageTag(startPC, testTable, 2), -2, 0, 0x1004);
 
     BTBEntry newEntry = createBTBEntry(0x1008);
     int alloc_success_before = tage->tageStats.updateAllocSuccess;
@@ -938,7 +939,7 @@ TEST_F(BTBTAGETest, BankConflict) {
 
         auto meta = bankTage->getPredictionMeta();
         FetchTarget stream = createStream(0xa0, createBTBEntry(0xa0), true, meta);
-        setupTageEntry(bankTage, 0xa0, 0, 1, false);
+        setupTageEntry(bankTage, 0xa0, 0, 1, 0);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
         bool can_update = bankTage->canResolveUpdate(stream);
@@ -976,7 +977,7 @@ TEST_F(BTBTAGETest, BankConflict) {
 
         auto meta = bankTage->getPredictionMeta();
         FetchTarget stream = createStream(0xa0, createBTBEntry(0xa0), true, meta);
-        setupTageEntry(bankTage, 0xa0, 0, 1, false);
+        setupTageEntry(bankTage, 0xa0, 0, 1, 0);
 
         uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
         bool can_update = bankTage->canResolveUpdate(stream);
