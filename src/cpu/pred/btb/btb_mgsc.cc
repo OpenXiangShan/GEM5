@@ -109,7 +109,7 @@ BTBMGSC::initStorage()
     pWeightTable.resize(weightTableSize);
     biasWeightTable.resize(weightTableSize);
 
-    //perception weightTable init
+    //perceptron weightTable init
     auto allocWeightTable = [&](std::vector<std::vector<int16_t>> &table,unsigned numEntries) -> uint64_t {
         assert(isPowerOf2(numEntries));
         // if (!isPowerOf2(numEntries)) {
@@ -172,7 +172,7 @@ BTBMGSC::BTBMGSC()
       enablePTable(true),
       enableBiasTable(true),
       enablePCThreshold(false),
-      enablePerceptionPred(false),
+      enablePerceptronPred(false),
       mgscStats()
 {
     // Test-only small config: keep tables tiny and deterministic for fast unit tests.
@@ -224,7 +224,7 @@ BTBMGSC::BTBMGSC(const Params &p)
       enablePTable(p.enablePTable),
       enableBiasTable(p.enableBiasTable),
       enablePCThreshold(p.enablePCThreshold),
-      enablePerceptionPred(p.enablePerceptionPred),
+      enablePerceptronPred(p.enablePerceptronPred),
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
@@ -445,8 +445,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     int total_sum = bw_scaled_percsum + l_scaled_percsum + i_scaled_percsum + g_scaled_percsum + p_scaled_percsum +
                     bias_scaled_percsum;
 
-    //genertate perception prediction
-    int percep_sum = enablePerceptionPred ? calculatePercepSum(btb_entry.pc) : 0;
+    //genertate perceptron prediction
+    int percep_sum =calculatePercepSum(btb_entry.pc);
     int percep_index = getPercepIndex(btb_entry.pc,gbhr);
     // Find thresholds
     // pc-indexed threshold table (only if enabled)
@@ -454,9 +454,11 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     int total_thres = (updateThreshold / 8) + p_update_thres;
     int percep_thres = percepThres;
+    total_thres = enablePerceptronPred ? percep_thres : total_thres;
+    total_sum = enablePerceptronPred ? percep_sum : total_sum;
 
     bool use_sc_pred = forceUseSC;  // Force use SC if configured
-    bool use_percep_pred = false;
+    bool use_percep_pred = enablePerceptronPred;
     bool percep_taken = percep_sum>=0;
     if (!use_sc_pred) {
         if (tage_info.tage_pred_conf_high) {
@@ -479,13 +481,13 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
             }
         }
     }
-    if (abs(percep_sum) > percep_thres){
-        use_percep_pred = true;
-    }
+    // if (abs(percep_sum) > percep_thres){
+    //     use_percep_pred = true;
+    // }
 
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
-    bool taken = use_sc_pred ? (use_percep_pred? percep_sum>=0 : total_sum >= 0) : tage_info.tage_pred_taken;
-
+    // bool taken = use_sc_pred ? (use_percep_pred? percep_sum>=0 : total_sum >= 0) : tage_info.tage_pred_taken;
+    bool taken = use_sc_pred ? total_sum >= 0 : tage_info.tage_pred_taken;
     // DPRINTF(MGSC, "global tag_index: %d, global_percsum: %d, total_sum: %d\n", gIndex[0], g_percsum, total_sum);
     // DPRINTF(MGSC, "local tag_index: %d, local_percsum: %d, total_sum: %d\n", lIndex[0], l_percsum, total_sum);
     // DPRINTF(MGSC, "path tag_index: %d, path_percsum: %d, total_sum: %d\n", pIndex[0], p_percsum, total_sum);
@@ -671,7 +673,7 @@ BTBMGSC::updateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, A
 }
 
 /**
- * Update perception weight table */
+ * Update perceptron weight table */
 void
 BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int percep_sum,bool percep_taken,
                            Addr pc,bool actual_taken,std::vector<bool> pred_gbhr)
@@ -959,7 +961,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
         updateWeightTable(biasWeightTable, weightTableIdx, entry.pc, pred.bias_weight_scale_diff,
                           (pred.bias_percsum >= 0) == actual_taken);
 
-        //Update perception table
+        //Update perceptron table
         auto pred_gbhr = pred.pred_gbhr;
         updatePercepTable(percepWeightTable,percep_sum,percep_taken,entry.pc,actual_taken,meta_gbhr);
 
@@ -1552,12 +1554,12 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
       ADD_STAT(predMiss, statistics::units::Count::get(), "number of sc prediction miss"),
       ADD_STAT(scPredCorrect, statistics::units::Count::get(), "number of sc prediction correct"),
       ADD_STAT(scPredWrong, statistics::units::Count::get(), "number of sc prediction wrong"),
-      ADD_STAT(percepPredCorrect, statistics::units::Count::get(), "number of perception prediction correct") ,
-      ADD_STAT(percepPredWrong, statistics::units::Count::get(), "number of perception prediction wrong") ,
-      ADD_STAT(usePercepPred, statistics::units::Count::get(), "number of mgsc use perception prediction") ,
-      ADD_STAT(percepHighConf,statistics::units::Count::get(), "number of perception sum above threshold"),
+      ADD_STAT(percepPredCorrect, statistics::units::Count::get(), "number of perceptron prediction correct") ,
+      ADD_STAT(percepPredWrong, statistics::units::Count::get(), "number of perceptron prediction wrong") ,
+      ADD_STAT(usePercepPred, statistics::units::Count::get(), "number of mgsc use perceptron prediction") ,
+      ADD_STAT(percepHighConf,statistics::units::Count::get(), "number of perceptron sum above threshold"),
       ADD_STAT(percepHighConfCorrect,statistics::units::Count::get(),
-                "number of correct perception prediction above threshold"),
+                "number of correct perceptron prediction above threshold"),
       ADD_STAT(scPredMissTaken, statistics::units::Count::get(), "number of sc prediction miss taken"),
       ADD_STAT(scPredMissNotTaken, statistics::units::Count::get(), "number of sc prediction miss not taken"),
       ADD_STAT(scPredCorrectTageWrong, statistics::units::Count::get(),
