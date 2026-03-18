@@ -232,7 +232,7 @@ void setupTageEntry(BTBTAGE* tage, Addr pc, int table_idx,
  */
 void verifyTageEntries(BTBTAGE* tage, Addr pc, const std::vector<int>& expected_tables) {
     for (int t = 0; t < tage->numPredictors; t++) {
-        for (int way = 0; way < tage->numWays; way++) {
+        for (unsigned way = 0; way < tage->numWays[t]; way++) {
             Addr index = tage->getTageIndex(pc, t);
             auto &entry = tage->tageTable[t][index][way];
 
@@ -261,7 +261,7 @@ int findTableWithEntry(BTBTAGE* tage, Addr startPC, Addr branchPC) {
     // use meta to find the table, predicted info
     for (int t = 0; t < tage->numPredictors; t++) {
         Addr index = tage->getTageIndex(startPC, t, meta->indexFoldedHist[t].get());
-        for (int way = 0; way < tage->numWays; way++) {
+        for (unsigned way = 0; way < tage->numWays[t]; way++) {
             auto &entry = tage->tageTable[t][index][way];
             if (entry.valid && entry.pc == branchPC) {
                 return t;
@@ -797,7 +797,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
 
     // Check if allocation happened
     int allocatedWay = -1;
-    for (unsigned way = 0; way < tage->numWays; way++) {
+    for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid &&
             tage->tageTable[testTable][testIndex][way].pc == 0x1000) {
             allocatedWay = way;
@@ -813,7 +813,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     tage->tageTable[testTable][testIndex][allocatedWay].counter = 2; // Make it strong
 
     // Step 2: Attempt to fill remaining ways with different branches
-    for (unsigned way = 0; way < tage->numWays; way++) {
+    for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (way == allocatedWay) continue;
 
         // Create a branch with different PC
@@ -825,16 +825,17 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
 
     // Verify now both ways can be filled under miss policy (consider any way's useful=0)
     int filledWays = 0;
-    for (unsigned way = 0; way < tage->numWays; way++) {
+    for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid) {
             filledWays++;
         }
     }
 
-    EXPECT_EQ(filledWays, tage->numWays) << "All ways should be filled after multiple allocations under miss policy";
+    EXPECT_EQ(filledWays, tage->numWays[testTable])
+        << "All ways should be filled after multiple allocations under miss policy";
 
     // Strengthen all allocated entries to prevent replacement in Step 3
-    for (unsigned way = 0; way < tage->numWays; way++) {
+    for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid) {
             tage->tageTable[testTable][testIndex][way].useful = true;
             tage->tageTable[testTable][testIndex][way].counter = 2; // Make it strong
@@ -854,7 +855,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     // Check if the new entry was allocated
     bool found = false;
     unsigned foundWay = 0;
-    for (unsigned way = 0; way < tage->numWays; way++) {
+    for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid &&
             tage->tageTable[testTable][testIndex][way].pc == 0x1008) {
             found = true;
@@ -869,6 +870,31 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     int alloc_failure_after_step3 = tage->tageStats.updateAllocFailure;
     EXPECT_GE(alloc_failure_after_step3, alloc_failure_after_step2 + 1)
         << "Allocation failures should increase after additional failed attempt";
+}
+
+TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
+    stagePreds[1].btbEntries.clear();
+    tage->putPCHistory(0x1000, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+    stream.exeBranchInfo = newEntry;
+    stream.exeTaken = true;
+    stream.resolved = true;
+    stream.predBranchInfo = newEntry;
+    stream.updateBTBEntries.clear();
+    stream.updateIsOldEntry = false;
+    stream.updateNewBTBEntry = newEntry;
+    stream.predMetas[0] = meta;
+    stream = setMispredStream(stream);
+
+    tage->update(stream);
+
+    int table = findTableWithEntry(tage, 0x1000, newEntry.pc);
+    EXPECT_GE(table, 0)
+        << "New conditional entry should still allocate without prediction-time meta";
 }
 
 /**
