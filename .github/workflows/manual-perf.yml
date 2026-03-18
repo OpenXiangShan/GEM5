@@ -1,8 +1,14 @@
 name: Manual Performance Test
+run-name: ${{ format('{0} - {1} - {2}{3} - {4} - {5}', github.event.inputs.note || 'Manual Performance Test', github.event.inputs.configuration, github.event.inputs.benchmark_type, github.event.inputs.specific_benchmarks && format(' ({0})', github.event.inputs.specific_benchmarks) || '', github.event.inputs.branch || github.ref_name, github.event.inputs.vector_type) }}
 
 on:
   workflow_dispatch:
     inputs:
+      note:
+        description: 'Title prefix for this manual perf run'
+        required: false
+        type: string
+        default: 'Manual Performance Test'
       configuration:
         description: 'Choose Kunminghu configuration'
         required: true
