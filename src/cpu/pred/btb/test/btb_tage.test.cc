@@ -768,9 +768,10 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
  * @brief Test allocation behavior with multiple ways (new policy)
  *
  * New allocation policy highlights:
- * - Allocation consults the selected way's usefulMask for each table.
- * - Only invalid entries, or (useful==0 and weak counter) can be allocated.
- * - No LRU-based replacement is performed when all considered entries are useful.
+ * - Allocation prefers invalid entries first.
+ * - Then it prefers weak and not-useful entries.
+ * - If neither exists, any not-useful entry can still be replaced.
+ * - No replacement occurs only when all candidate entries remain useful.
  *
  * This test verifies:
  * 1. First mispredict allocates into an invalid way.
@@ -869,6 +870,44 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     int alloc_failure_after_step3 = tage->tageStats.updateAllocFailure;
     EXPECT_GE(alloc_failure_after_step3, alloc_failure_after_step2 + 1)
         << "Allocation failures should increase after additional failed attempt";
+}
+
+TEST_F(BTBTAGETest, AllocationReplacesStrongNotUsefulEntry) {
+    tage = new BTBTAGE(1, 2, 10); // only 1 predictor table, 2 ways
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+    history.resize(64, false);
+    stagePreds.resize(2);
+
+    Addr startPC = 0x1000;
+    int testTable = 0;
+    Addr testIndex = tage->getTageIndex(startPC, testTable);
+
+    // Fill both ways with valid, strong, but not-useful entries.
+    createManualTageEntry(
+        tage, testTable, testIndex, 0, tage->getTageTag(startPC, testTable, 0), 2, false, 0x1000);
+    createManualTageEntry(
+        tage, testTable, testIndex, 1, tage->getTageTag(startPC, testTable, 2), -2, false, 0x1004);
+
+    BTBEntry newEntry = createBTBEntry(0x1008);
+    int alloc_success_before = tage->tageStats.updateAllocSuccess;
+    int alloc_failure_before = tage->tageStats.updateAllocFailureNoValidTable;
+
+    // Base prediction defaults to taken, so actual not-taken forces allocation.
+    predictUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
+
+    bool found = false;
+    for (unsigned way = 0; way < tage->numWays; ++way) {
+        if (tage->tageTable[testTable][testIndex][way].valid &&
+            tage->tageTable[testTable][testIndex][way].pc == newEntry.pc) {
+            found = true;
+            break;
+        }
+    }
+
+    EXPECT_TRUE(found)
+        << "A strong but not-useful entry should be replaceable after RTL-aligned allocation";
+    EXPECT_EQ(tage->tageStats.updateAllocSuccess, alloc_success_before + 1);
+    EXPECT_EQ(tage->tageStats.updateAllocFailureNoValidTable, alloc_failure_before);
 }
 
 /**
