@@ -69,7 +69,8 @@ namespace xsCHI
     Request::createReadResponse(){
         ReqPtr resp = std::make_shared<Request>(this->opcode,this->addr,this->size);
         //currently cleanunique reuse this function,need to check if this is a read request.
-        if (this->opcode != CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE){
+        if (this->opcode != CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE &&
+            this->opcode != CHI_OP_TYPE::CHI_REQ_EVICT) {
             uint8_t *tmp = new uint8_t[getSize()];
             this->getData(tmp);
             resp->setData(tmp);

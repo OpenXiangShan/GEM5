@@ -34,22 +34,20 @@ CHI_L3::CHI_L3(const Params &p)
                                  csprintf("%s.pending_xbar_send", name())),
             pendingDdrSendEvent([this] { this->drainPendingDdrQueue(); },
                                 csprintf("%s.pending_ddr_send", name())),
-            cpuSidePort(p.cpuSidePort),
-            memSidePort(p.memSidePort),
+            pendingCacheMemReqSendEvent(
+                [this] { this->drainPendingCacheMemReqQueue(); },
+                csprintf("%s.pending_cache_mem_req_send", name())),
+            networkPort(p.networkPort),
             cacheWrapper(p.cache_wrapper),
             coherentXBar(p.coherent_xbar),
             innerCacheReqPort(csprintf("%s.inner_cache_req", name()), this),
             innerCacheRespPort(csprintf("%s.inner_cache_resp", name()), this)
 {
-    fatal_if(!cpuSidePort || !memSidePort,
-             "CHI_L3 requires both cpuSidePort and memSidePort CHIPort");
-    cpuSidePort->setReceiveCallback(
-        [this](FlitPtr &flit) { return this->handleCpuSideFlit(flit); });
-    cpuSidePort->setOwner(this);
-
-    memSidePort->setReceiveCallback(
-        [this](FlitPtr &flit) { return this->handleMemSideFlit(flit); });
-    memSidePort->setOwner(this);
+    fatal_if(!networkPort,
+             "CHI_L3 requires networkPort CHIPort");
+    networkPort->setReceiveCallback(
+        [this](FlitPtr &flit) { return this->handleNetworkFlit(flit); });
+    networkPort->setOwner(this);
 }
 
 void
@@ -199,8 +197,11 @@ CHI_L3::dispatchReadToXbar(PacketPtr pkt, uint32_t txnId)
         completePendingRead(pkt->getAddr());
         if (cleanupTxn) {
             // Handle CLEANUNIQUE completion: send CHI_RSP_COMP and wait COMPACK
-            assert(metaIt->second.req->getOpcode() == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE);
-            assert(pkt->cacheResponding());
+            assert(metaIt->second.req->getOpcode() == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE ||
+                   metaIt->second.req->getOpcode() == CHI_OP_TYPE::CHI_REQ_EVICT );
+            if (metaIt->second.req->getOpcode() == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE){
+                assert(pkt->cacheResponding());
+            }
             DPRINTF(CHIL3,
                     "Due to UpgradeReq is set iscacheResponding send CompREP after \
                     dispatched CLEANUNIQUE to xbar, enqueue comp rsp txn=%u addr=%#lx\n",
@@ -218,11 +219,24 @@ CHI_L3::dispatchReadToXbar(PacketPtr pkt, uint32_t txnId)
 bool
 CHI_L3::dispatchWriteToXbar(PacketPtr pkt, uint32_t txnId)
 {
-    if (hasPendingRead(pkt->getAddr())) {
-        enqueueBlockedWrite(pkt, txnId);
+    //check if pendingXbarQ has requests to same block addr,
+    // if yes, we need to enqueue this write req to pendingXbarQ to ensure ordering,
+    // otherwise we can directly send to xbar
+    bool hasSameBlockPendingXbarReq = false;
+    const Addr blk = blockAddr(pkt->getAddr());
+    for (const auto &pendingReq : pendingXbarQ) {
+        if (blockAddr(pendingReq.pkt->getAddr()) == blk) {
+            hasSameBlockPendingXbarReq = true;
+            break;
+        }
+    }
+    if (hasSameBlockPendingXbarReq) {
+        DPRINTF(CHIL3,
+                "has same block pending xbar req, enqueue write txn=%u addr=%#lx\n",
+                txnId, pkt->getAddr());
+        enqueuePendingXbar(pkt, /*cleanupTxn*/ true, txnId);
         return true;
     }
-
     enqueuePendingXbar(pkt, /*cleanupTxn*/ true, txnId);
     return true;
 }
@@ -294,6 +308,17 @@ CHI_L3::wakeBlockedReads(Addr addr)
     }
 
 bool
+CHI_L3::handleNetworkFlit(FlitPtr &flit)
+{
+    const CHI_OP_TYPE op = flit->getOpcode();
+    if (op == CHI_OP_TYPE::CHI_RSP_DBIDRESP ||
+        op == CHI_OP_TYPE::CHI_DAT_COMPDATA) {
+        return handleMemSideFlit(flit);
+    }
+    return handleCpuSideFlit(flit);
+}
+
+bool
 CHI_L3::handleCpuSideFlit(FlitPtr &flit)
 {
     DPRINTF(CHIL3, "cpuSide recv flit opcode=%s addr=%#lx txn=%u\n",
@@ -309,6 +334,11 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
             case CHI_OP_TYPE::CHI_REQ_READCLEAN:{
                 // Allocate txn tracking for requests that expect responses.
                 uint32_t txnId = allocateTxnId();
+                if (txnId == TxnIDManager::InvalidTxnId) {
+                    DPRINTF(CHIL3, "No free TxnID available for new read request, opcode=%s addr=%#lx\n",
+                            CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op), flit->getAddr());
+                    return false;
+                }
                 PacketPtr pkt = nullptr;
                 MemCmd cmd = mapChiReqToMemCmd(op);
                 auto req = std::make_shared<gem5::Request>(
@@ -359,7 +389,11 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
             case CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL:{
                 // Writeback path: first return DBIDRESP, then wait COPYBACKWRDATA.
                 const uint32_t dbid = allocateTxnId();
-
+                if (dbid == TxnIDManager::InvalidTxnId) {
+                    DPRINTF(CHIL3, "No free TxnID available for new writeback request, opcode=%s addr=%#lx\n",
+                            CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op), flit->getAddr());
+                    return false;
+                }
                 auto req = std::make_shared<gem5::Request>(
                     flit->getAddr(), flit->getSize(), Flags<uint64_t>(0),
                     RequestorID(flit->getSrcId()));
@@ -400,7 +434,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                         _NodeID, flit->getSrcId(), flit->getTxnId(), dbid,
                         flit->getAddr(), flit->getSize());
 
-                if (!cpuSidePort->send(resp)) {
+                if (!networkPort->send(resp)) {
                     DPRINTF(CHIL3,
                             "cpuSide send DBIDRESP blocked txn=%u dbid=%u\n",
                             flit->getTxnId(), dbid);
@@ -421,6 +455,11 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
             case CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE:{
                 // Allocate txn tracking for requests that expect responses.
                 uint32_t txnId = allocateTxnId();
+                if (txnId == TxnIDManager::InvalidTxnId) {
+                    DPRINTF(CHIL3, "No free TxnID available for new clean unique request, opcode=%s addr=%#lx\n",
+                            CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op), flit->getAddr());
+                    return false;
+                }
                 PacketPtr pkt = nullptr;
                 MemCmd cmd = mapChiReqToMemCmd(op);
                 auto req = std::make_shared<gem5::Request>(
@@ -471,7 +510,28 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                 return true;
             }
             case CHI_OP_TYPE::CHI_REQ_EVICT:{
-                // These are simple reqs that don't have data phase, we can directly send them to xbar and respond COMP.
+                uint32_t txnId = allocateTxnId();
+                if (txnId == TxnIDManager::InvalidTxnId) {
+                    DPRINTF(CHIL3, "No free TxnID available for new evict request, opcode=%s addr=%#lx\n",
+                            CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op), flit->getAddr());
+                    return false;
+                }
+                // //first check if we can send back resp
+                // FlitPtr comp = std::make_unique<Flit>();
+                // comp->setOpcode(CHI_OP_TYPE::CHI_RSP_COMP);
+                // comp->setSrcId(_NodeID);
+                // comp->setTgtId(flit->getSrcId());
+                // comp->setTxnId(flit->getTxnId());
+                // DPRINTF(CHIL3,
+                //         "cpuSide send COMP src=%u tgt=%u txn=%u addr=%#lx\n",
+                //         _NodeID, flit->getSrcId(), flit->getTxnId(), flit->getAddr());
+                // if (!networkPort->send(comp)) {
+                //     DPRINTF(CHIL3,
+                //             "cpuSide send COMP blocked txn=%u\n",
+                //             flit->getTxnId());
+                //     releaseTxn(txnId);
+                //     return false;
+                // }
                 PacketPtr pkt = nullptr;
                 MemCmd cmd = mapChiReqToMemCmd(op);
                 auto req = std::make_shared<gem5::Request>(
@@ -480,38 +540,45 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                 req->setPaddr(flit->getAddr());
                 pkt = new Packet(req, cmd, flit->getSize());
                 pkt->allocate();
-                //first check if we can send back resp
-                FlitPtr comp = std::make_unique<Flit>();
-                comp->setOpcode(CHI_OP_TYPE::CHI_RSP_COMP);
-                comp->setSrcId(_NodeID);
-                comp->setTgtId(flit->getSrcId());
-                comp->setTxnId(flit->getTxnId());
-                DPRINTF(CHIL3,
-                        "cpuSide send COMP src=%u tgt=%u txn=%u addr=%#lx\n",
-                        _NodeID, flit->getSrcId(), flit->getTxnId(), flit->getAddr());
-                if (!cpuSidePort->send(comp)) {
-                    DPRINTF(CHIL3,
-                            "cpuSide send COMP blocked txn=%u\n",
-                            flit->getTxnId());
-                    return false;
+                if (flit->getCacheResponding()) {
+                    pkt->setCacheResponding();
+                    pkt->setExpressSnoop();
+                }
+                if (flit->getResponderHadWritable()) {
+                    pkt->setResponderHadWritable();
                 }
                 //here we successful send the COMP, we can send the evict req to xbar,
                 // if xbar is not available, we can retry later.
-
-                //protencial bug: maybe evict need to be track same addr request!
-                if (xbarRetryPending || !pendingXbarQ.empty()) {
-                    DPRINTF(CHIL3,
-                            "xbar unavailable (retryPending=%d queue=%u), enqueue addr=%#lx\n",
-                            xbarRetryPending,
-                            static_cast<unsigned>(pendingXbarQ.size()),
-                            pkt->getAddr());
-                    enqueuePendingXbar(pkt, /*cleanupTxn*/ false, /*txnId*/ TxnIDManager::InvalidTxnId);
-                } else if (!sendPktToXbar(pkt)) {
-                    xbarRetryPending = true;
-                    DPRINTF(CHIL3, "send to xbar blocked addr=%#lx, queue retry\n", pkt->getAddr());
-                    enqueuePendingXbar(pkt, /*cleanupTxn*/ false, /*txnId*/ TxnIDManager::InvalidTxnId);
+                TxnMeta meta;
+                meta.opcode = op;
+                meta.addr = flit->getAddr();
+                meta.size = flit->getSize();
+                meta.srcId = flit->getSrcId();
+                // meta.returnNid = flit->getReturnNid();
+                // meta.returnTxnId = flit->getReturnTxnid();
+                meta.txnId = flit->getTxnId();
+                meta.dbid = txnId;
+                meta.pkt = pkt;
+                meta.dataBits.assign((flit->getSize() + 31) / 32, false);
+                meta.req = std::make_shared<Request>(op, flit->getAddr(), flit->getSize());
+                meta.cacheResponding = flit->getCacheResponding();
+                meta.responderHadWritable = flit->getResponderHadWritable();
+                meta.retireAfterXbarSend = true;
+                txnTable[txnId] = meta;
+                DPRINTF(CHIL3Txn,
+                    "txnTable insert key=%u reason=cpu_req_track opcode=%s addr=%#lx size=%u src=%u retTxn=%u size_now=%u\n",
+                    txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op),
+                    flit->getAddr(), flit->getSize(), flit->getSrcId(),
+                    flit->getReturnTxnid(), static_cast<unsigned>(txnTable.size()));
+                cacheReqMap[pkt] = txnId;
+                //although CHI_REQ_EVICT is not a read-type request, it has same ordering constraint as read,
+                // so we treat it as write for tracking purpose.
+                trackPendingRead(pkt->getAddr());
+                if (hasPendingWrite(pkt->getAddr())) {
+                    enqueueBlockedRead(pkt, txnId);
+                } else {
+                    dispatchReadToXbar(pkt, txnId);
                 }
-
                 return true;
             }
             default:
@@ -617,7 +684,7 @@ CHI_L3::handleMemSideFlit(FlitPtr &flit)
                   "memSide->cpuSide send COMPDBIDRESP src=%u tgt=%u txn=%u dbid=%u(orig_txn=%u)\n",
                   _NodeID, it->second.srcId, it->second.returnTxnId,
                   flit->getDbid(), flit->getTxnId());
-          if (!cpuSidePort->send(rsp)) {
+          if (!networkPort->send(rsp)) {
               warn("COMPDBIDRESP send failed txn=%u", flit->getTxnId());
               return false;
           }
@@ -885,81 +952,86 @@ CHI_L3::handleCacheMemTimingResp(PacketPtr pkt)
         return true;
     }
     if (isDdrReadCmd(pkt) || isDdrWriteCmd(pkt)) {
-            // Downstream miss path: allocate txn and send CHI REQ toward DDR
-            CHI_OP_TYPE chiOp = pkt->isRead() ? CHI_OP_TYPE::CHI_REQ_READNOSNP
-                                            : CHI_OP_TYPE::CHI_REQ_WRITENOSNPFULL;
+        // Downstream miss path: allocate txn and send CHI REQ toward DDR
+        CHI_OP_TYPE chiOp = pkt->isRead() ? CHI_OP_TYPE::CHI_REQ_READNOSNP
+                                        : CHI_OP_TYPE::CHI_REQ_WRITENOSNPFULL;
 
-            const Addr blk = blockAddr(pkt->getAddr());
-            if (pkt->isWrite()) {
-                assert(!hasDdrReadInFlight(blk) &&
-                       "L3->DDR write must not overlap same-address in-flight read");
-                assert(!hasDdrWriteInFlight(blk) &&
-                       "L3->DDR write must not overlap same-address in-flight write");
-            } else {
-                assert(!hasDdrReadInFlight(blk) &&
-                       "L3->DDR read must not overlap same-address in-flight read");
+        const Addr blk = blockAddr(pkt->getAddr());
+        if (pkt->isWrite()) {
+            assert(!hasDdrReadInFlight(blk) &&
+                    "L3->DDR write must not overlap same-address in-flight read");
+            assert(!hasDdrWriteInFlight(blk) &&
+                    "L3->DDR write must not overlap same-address in-flight write");
+        } else {
+            assert(!hasDdrReadInFlight(blk) &&
+                    "L3->DDR read must not overlap same-address in-flight read");
+        }
+        //here we assume L3 to ddr has no limited txns
+        uint32_t txnId = txnIdMgr.getUntrackID();
+        if (txnId == TxnIDManager::InvalidTxnId) {
+            DPRINTF(CHIL3, "No free TxnID available for new downstream request, opcode=%s addr=%#lx\n",
+                    CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(chiOp), pkt->getAddr());
+            panic("No free TxnID available for new downstream request");
+        }
+        TxnMeta meta;
+        meta.opcode = chiOp;
+        meta.addr = pkt->getAddr();
+        meta.size = pkt->getSize();
+        meta.srcId = _NodeID;
+        meta.returnNid = 0;
+        meta.returnTxnId = 0;
+        meta.dbid = txnId;
+        meta.pkt = pkt;
+        meta.dataBits.assign((pkt->getSize() + 31) / 32, false);
+        meta.req = std::make_shared<Request>(chiOp, pkt->getAddr(), pkt->getSize());
+        meta.req->setTransactionId(txnId);
+        if (pkt->isWrite() && pkt->hasData()) {
+            meta.req->setData(pkt);
+        }
+
+        // If this pkt is from a tracked CPU request, preserve original CHI txn/src.
+        auto up = cacheReqMap.find(pkt);
+        if (up != cacheReqMap.end()) {
+            auto upTxnIt = txnTable.find(up->second);
+            if (upTxnIt != txnTable.end()) {
+                meta.srcId = upTxnIt->second.srcId;
+                meta.returnTxnId = up->second; // original cpu txn id
+                meta.returnNid = upTxnIt->second.returnNid;
             }
+        }
 
-            uint32_t txnId = allocateTxnId();
-            TxnMeta meta;
-            meta.opcode = chiOp;
-            meta.addr = pkt->getAddr();
-            meta.size = pkt->getSize();
-            meta.srcId = _NodeID;
-            meta.returnNid = 0;
-            meta.returnTxnId = 0;
-            meta.dbid = txnId;
-            meta.pkt = pkt;
-            meta.dataBits.assign((pkt->getSize() + 31) / 32, false);
-            meta.req = std::make_shared<Request>(chiOp, pkt->getAddr(), pkt->getSize());
-            meta.req->setTransactionId(txnId);
-            if (pkt->isWrite() && pkt->hasData()) {
-                meta.req->setData(pkt);
-            }
+        txnTable[txnId] = meta;
+        DPRINTF(CHIL3Txn,
+            "txnTable insert key=%u reason=cache_miss_downstream opcode=%s addr=%#lx size=%u src=%u retTxn=%u size_now=%u\n",
+            txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(chiOp), pkt->getAddr(),
+            pkt->getSize(), meta.srcId, meta.returnTxnId,
+            static_cast<unsigned>(txnTable.size()));
+        downstreamMap[pkt] = txnId;
 
-            // If this pkt is from a tracked CPU request, preserve original CHI txn/src.
-            auto up = cacheReqMap.find(pkt);
-            if (up != cacheReqMap.end()) {
-                auto upTxnIt = txnTable.find(up->second);
-                if (upTxnIt != txnTable.end()) {
-                    meta.srcId = upTxnIt->second.srcId;
-                    meta.returnTxnId = up->second; // original cpu txn id
-                    meta.returnNid = upTxnIt->second.returnNid;
-                }
-            }
-
-            txnTable[txnId] = meta;
-            DPRINTF(CHIL3Txn,
-                "txnTable insert key=%u reason=cache_miss_downstream opcode=%s addr=%#lx size=%u src=%u retTxn=%u size_now=%u\n",
-                txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(chiOp), pkt->getAddr(),
-                pkt->getSize(), meta.srcId, meta.returnTxnId,
-                static_cast<unsigned>(txnTable.size()));
-            downstreamMap[pkt] = txnId;
-
-            if (pkt->isRead()) {
-                trackDdrReadStart(pkt->getAddr());
-                if (hasDdrWriteInFlight(pkt->getAddr())) {
-                    enqueueBlockedDdrRead(pkt, txnId, chiOp);
-                    return true;
-                }
-                if (!sendReadToDdr(pkt, txnId, chiOp)) {
-                    DPRINTF(CHIL3,
-                            "REQ->DDR blocked, enqueue retry txn=%u addr=%#lx\n",
-                            txnId, pkt->getAddr());
-                    enqueuePendingDdr(pkt, txnId, chiOp);
-                }
+        if (pkt->isRead()) {
+            trackDdrReadStart(pkt->getAddr());
+            if (hasDdrWriteInFlight(pkt->getAddr())) {
+                enqueueBlockedDdrRead(pkt, txnId, chiOp);
                 return true;
             }
-            if (pkt->isWrite()) {
-                trackDdrWriteStart(pkt->getAddr());
-                if (!sendWriteToDdr(pkt, txnId, chiOp)) {
-                    DPRINTF(CHIL3,
-                            "REQ->DDR blocked, enqueue retry txn=%u addr=%#lx\n",
-                            txnId, pkt->getAddr());
-                    enqueuePendingDdr(pkt, txnId, chiOp);
-                }
-                return true;
+            if (!sendReadToDdr(pkt, txnId, chiOp)) {
+                DPRINTF(CHIL3,
+                        "REQ->DDR blocked, enqueue retry txn=%u addr=%#lx\n",
+                        txnId, pkt->getAddr());
+                enqueuePendingDdr(pkt, txnId, chiOp);
             }
+            return true;
+        }
+        if (pkt->isWrite()) {
+            trackDdrWriteStart(pkt->getAddr());
+            if (!sendWriteToDdr(pkt, txnId, chiOp)) {
+                DPRINTF(CHIL3,
+                        "REQ->DDR blocked, enqueue retry txn=%u addr=%#lx\n",
+                        txnId, pkt->getAddr());
+                enqueuePendingDdr(pkt, txnId, chiOp);
+            }
+            return true;
+        }
 
     }
     if (pkt->cmd==MemCmd(MemCmd::CleanEvict)){
@@ -996,25 +1068,27 @@ CHI_L3::mapChiReqToMemCmd(CHI_OP_TYPE op) const
 CHI_OP_TYPE
 CHI_L3::mapMemCmdToChiReq(const PacketPtr pkt) const
 {
-        switch (pkt->cmd.responseCommand()) {
-            case MemCmd::ReadResp:
-            case MemCmd::ReadRespWithInvalidate:
-                return CHI_OP_TYPE::CHI_REQ_READSHARED;
-            case MemCmd::ReadExResp:
-                return CHI_OP_TYPE::CHI_REQ_READUNIQUE;
-            default:
-                panic("Unsupported mem cmd resp %s", pkt->cmd.toString());
-        }
+    switch (pkt->cmd.responseCommand()) {
+        case MemCmd::ReadResp:
+        case MemCmd::ReadRespWithInvalidate:
+            return CHI_OP_TYPE::CHI_REQ_READSHARED;
+        case MemCmd::ReadExResp:
+            return CHI_OP_TYPE::CHI_REQ_READUNIQUE;
+        default:
+            panic("Unsupported mem cmd resp %s", pkt->cmd.toString());
+    }
 }
 
 uint32_t
 CHI_L3::allocateTxnId()
 {
-        const int id = txnIdMgr.getID();
-        if (id < 0) {
-                panic("No free TxnID available");
-        }
-        return static_cast<uint32_t>(id);
+    const int id = txnIdMgr.getID();
+    if (id < 0) {
+        DPRINTF(CHIL3, "No free TxnID available\n");
+        return TxnIDManager::InvalidTxnId;
+    }
+    DPRINTF(CHIL3Txn, "outstanding txn num %u\n", static_cast<unsigned>(txnTable.size()));
+    return static_cast<uint32_t>(id);
 }
 
 void
@@ -1056,7 +1130,7 @@ CHI_L3::sendReadToDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp)
             CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(chiOp), _NodeID,
             SAM ? SAM->getTargetID(pkt->getAddr()) : 0, txnId, txnId,
             pkt->getAddr(), pkt->getSize());
-        const bool ok = memSidePort->send(f);
+        const bool ok = networkPort->send(f);
         DPRINTF(CHIL3, "send REQ->DDR %s txn=%u addr=%#lx\n",
             ok ? "success" : "blocked", txnId, pkt->getAddr());
         return ok;
@@ -1079,7 +1153,7 @@ CHI_L3::sendWriteToDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp)
             CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(chiOp), _NodeID,
             SAM ? SAM->getTargetID(pkt->getAddr()) : 0, txnId, txnId,
             pkt->getAddr(), pkt->getSize());
-        const bool ok = memSidePort->send(f);
+        const bool ok = networkPort->send(f);
         DPRINTF(CHIL3, "send REQ->DDR %s txn=%u addr=%#lx\n",
             ok ? "success" : "blocked", txnId, pkt->getAddr());
         return ok;
@@ -1121,7 +1195,7 @@ CHI_L3::drainDataQueue()
             CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(CHI_OP_TYPE::CHI_DAT_COMPDATA),
             pd.txnId, dataId, pd.req->getAddr(), pd.req->getSize(), pd.tgtId);
 
-    if (!cpuSidePort->send(dat)) {
+    if (!networkPort->send(dat)) {
         DPRINTF(CHIL3,
                 "send DAT->cpu blocked txn=%u dataId=%u\n",
                 pd.txnId, dataId);
@@ -1205,7 +1279,7 @@ CHI_L3::drainCompRspQueue()
             "send RSP->cpu COMP src=%u tgt=%u txn=%u dbid=%u addr=%#lx\n",
             _NodeID, meta.srcId, meta.txnId, txnKey, meta.addr);
 
-    if (!cpuSidePort->send(comp)) {
+    if (!networkPort->send(comp)) {
         DPRINTF(CHIL3,
                 "send RSP->cpu COMP blocked txn=%u dbid=%u\n",
                 meta.txnId, txnKey);
@@ -1213,6 +1287,18 @@ CHI_L3::drainCompRspQueue()
             schedule(compRspSendEvent, clockEdge(Cycles(1)));
         }
         return;
+    }
+    if (meta.opcode == CHI_OP_TYPE::CHI_REQ_EVICT){
+        DPRINTF(CHIL3, "Txn %u completed via COMPACK\n", txnKey);
+        cacheReqMap.erase(it->second.pkt);
+            DPRINTF(CHIL3Txn,
+                "txnTable erase key=%u reason=cpu_rsp_compack size_before=%u\n",
+                txnKey, static_cast<unsigned>(txnTable.size()));
+        txnTable.erase(it);
+            DPRINTF(CHIL3Txn,
+                "txnTable size_after=%u\n",
+                static_cast<unsigned>(txnTable.size()));
+        releaseTxn(txnKey);
     }
 
     pendingCompRspQ.pop_front();
@@ -1254,7 +1340,7 @@ CHI_L3::drainWriteDataQueue()
             CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(CHI_OP_TYPE::CHI_DAT_NCBWRDATACOMPACK),
             pd.ddrDbid, dataId, pd.req->getAddr(), pd.req->getSize(), pd.tgtId);
 
-    if (!memSidePort->send(dat)) {
+    if (!networkPort->send(dat)) {
         DPRINTF(CHIL3,
                 "send DAT->DDR blocked ddrDbid=%u dataId=%u\n",
                 pd.ddrDbid, dataId);
@@ -1308,28 +1394,56 @@ CHI_L3::drainPendingXbarQueue()
 
     if (p.cleanupTxn) {
         auto it = txnTable.find(p.txnId);
-        if (it != txnTable.end()) {
-            const Addr write_addr = it->second.addr;
-            cacheReqMap.erase(it->second.pkt);
-                DPRINTF(CHIL3Txn,
-                        "txnTable erase key=%u reason=pending_xbar_cleanup size_before=%u\n",
-                        p.txnId, static_cast<unsigned>(txnTable.size()));
-            txnTable.erase(it);
-                DPRINTF(CHIL3Txn,
-                        "txnTable size_after=%u\n",
-                        static_cast<unsigned>(txnTable.size()));
-            completePendingWrite(write_addr);
+        assert(it->second.opcode == CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL ||
+                it->second.opcode == CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL ||
+                it->second.opcode == CHI_OP_TYPE::CHI_REQ_EVICT ||
+                it->second.opcode == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE);
+        if (it->second.opcode == CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL ||
+                it->second.opcode == CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL ){
+            //consider write is done
+            if (it != txnTable.end()) {
+                const Addr write_addr = it->second.addr;
+                cacheReqMap.erase(it->second.pkt);
+                    DPRINTF(CHIL3Txn,
+                            "txnTable erase key=%u reason=pending_xbar_cleanup size_before=%u\n",
+                            p.txnId, static_cast<unsigned>(txnTable.size()));
+                txnTable.erase(it);
+                    DPRINTF(CHIL3Txn,
+                            "txnTable size_after=%u\n",
+                            static_cast<unsigned>(txnTable.size()));
+                completePendingWrite(write_addr);
+            }
+            releaseTxn(p.txnId);
+        }else if (it->second.opcode == CHI_OP_TYPE::CHI_REQ_EVICT ||
+                    it->second.opcode == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE){
+            DPRINTF(CHIL3,
+                    "Due to UpgradeReq is set iscacheResponding send CompREP after \
+                    dispatched CLEANUNIQUE to xbar, enqueue comp rsp txn=%u addr=%#lx\n",
+                    it->first, (it->second.pkt)->getAddr());
+            pendingCompRspQ.push_back(it->first);
+            if (!compRspSendEvent.scheduled()) {
+                schedule(compRspSendEvent, clockEdge(Cycles(1)));
+            }
+
+        }else {
+            panic("Unsupported opcode for pending xbar cleanup: %s",
+                    CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(it->second.opcode));
         }
-        releaseTxn(p.txnId);
-    } else if (p.txnId != TxnIDManager::InvalidTxnId) {
+
+    } else {
+        auto it = txnTable.find(p.txnId);
+        assert(p.txnId != TxnIDManager::InvalidTxnId);
+        assert(it->second.opcode == CHI_OP_TYPE::CHI_REQ_READCLEAN ||
+                it->second.opcode == CHI_OP_TYPE::CHI_REQ_READSHARED ||
+                it->second.opcode == CHI_OP_TYPE::CHI_REQ_READUNIQUE);
         assert(txnIdMgr.isUsed(p.txnId));
         completePendingRead(p.pkt->getAddr());
     }
     pendingXbarQ.pop_front();
 
-        if (!pendingXbarQ.empty() && !xbarRetryPending && !pendingXbarSendEvent.scheduled()) {
-            schedule(pendingXbarSendEvent, clockEdge(Cycles(1)));
-        }
+    if (!pendingXbarQ.empty() && !xbarRetryPending && !pendingXbarSendEvent.scheduled()) {
+        schedule(pendingXbarSendEvent, clockEdge(Cycles(1)));
+    }
 }
 
 void
@@ -1396,6 +1510,49 @@ CHI_L3::enqueuePendingXbar(PacketPtr pkt, bool cleanupTxn, uint32_t txnId)
     }
 }
 
+void
+CHI_L3::enqueuePendingCacheMemReq(PacketPtr pkt)
+{
+    pendingCacheMemReqQ.push_back(pkt);
+    DPRINTF(CHIL3,
+            "enqueue pending cache-mem req addr=%#lx cmd=%s queue=%u\n",
+            pkt->getAddr(), pkt->cmd.toString(),
+            static_cast<unsigned>(pendingCacheMemReqQ.size()));
+    if (!pendingCacheMemReqSendEvent.scheduled()) {
+        schedule(pendingCacheMemReqSendEvent, clockEdge(Cycles(1)));
+    }
+}
+
+void
+CHI_L3::drainPendingCacheMemReqQueue()
+{
+    if (pendingCacheMemReqQ.empty()) {
+        return;
+    }
+
+    PacketPtr pkt = pendingCacheMemReqQ.front();
+    if (!handleCacheMemTimingResp(pkt)) {
+        DPRINTF(CHIL3,
+                "pending cache-mem req still blocked addr=%#lx cmd=%s queue=%u\n",
+                pkt->getAddr(), pkt->cmd.toString(),
+                static_cast<unsigned>(pendingCacheMemReqQ.size()));
+        if (!pendingCacheMemReqSendEvent.scheduled()) {
+            schedule(pendingCacheMemReqSendEvent, clockEdge(Cycles(1)));
+        }
+        return;
+    }
+
+    pendingCacheMemReqQ.pop_front();
+    DPRINTF(CHIL3,
+            "pending cache-mem req sent addr=%#lx remaining=%u\n",
+            pkt->getAddr(),
+            static_cast<unsigned>(pendingCacheMemReqQ.size()));
+
+    if (!pendingCacheMemReqQ.empty() && !pendingCacheMemReqSendEvent.scheduled()) {
+        schedule(pendingCacheMemReqSendEvent, clockEdge(Cycles(1)));
+    }
+}
+
 bool
 CHI_L3::InnerCacheReqPort::recvTimingResp(PacketPtr pkt)
 {
@@ -1439,7 +1596,17 @@ CHI_L3::InnerCacheReqPort::recvAtomicSnoop(PacketPtr pkt)
 bool
 CHI_L3::InnerCacheRespPort::recvTimingReq(PacketPtr pkt)
 {
-    return owner->handleCacheMemTimingResp(pkt);
+    // Keep xbar-side handshake non-blocking: accept request and defer retry
+    // internally if CHI_L3 cannot make forward progress this cycle.
+    if (!owner->pendingCacheMemReqQ.empty()) {
+        owner->enqueuePendingCacheMemReq(pkt);
+        return true;
+    }
+
+    if (!owner->handleCacheMemTimingResp(pkt)) {
+        owner->enqueuePendingCacheMemReq(pkt);
+    }
+    return true;
 }
 
 Tick
@@ -1458,6 +1625,11 @@ void
 CHI_L3::InnerCacheRespPort::recvRespRetry()
 {
     DPRINTF(CHIL3, "cache mem-side resp retry\n");
+    if (!owner->pendingCacheMemReqQ.empty() &&
+        !owner->pendingCacheMemReqSendEvent.scheduled()) {
+        owner->schedule(owner->pendingCacheMemReqSendEvent,
+                        owner->clockEdge(Cycles(1)));
+    }
 }
 
 AddrRangeList
