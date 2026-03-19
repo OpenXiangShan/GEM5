@@ -354,6 +354,22 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateResetU;
         Scalar allocateNeeded;
         Scalar allocateSkipHighestProvider;
+        Scalar resolveBranchHasProvider;
+        Scalar resolveBranchUseProvider;
+        Scalar resolveBranchHasAlt;
+        Scalar resolveBranchUseAltTable;
+        Scalar resolveBranchUseBaseTable;
+        Scalar mispredictBranchHasProvider;
+        Scalar mispredictBranchUseProvider;
+        Scalar mispredictBranchHasAlt;
+        Scalar mispredictBranchUseAltTable;
+        Scalar mispredictBranchUseBaseTable;
+        Scalar updateSuppressedByNotNeedEquivalent;
+        Scalar updateProviderApplied;
+        Scalar updateAltApplied;
+        Scalar fetchBlocksMultiAllocCandidates;
+        Scalar extraAllocCandidatesSkipped;
+        Scalar extraAllocCandidateNoProvider;
 
         // Recomputed prediction difference statistics (per fetchBlock)
         Scalar recomputedVsActualDiff;   // recomputed.taken != actual_taken
@@ -375,6 +391,15 @@ class BTBTAGE : public TimedBaseBTBPredictor
         statistics::Vector updateTableMispreds;
         statistics::Vector tableAllocate;
         statistics::Vector allocateBranchProviderTable;
+        statistics::Vector resolveProviderTable;
+        statistics::Vector resolveAltTable;
+        statistics::Vector mispredictProviderTable;
+        statistics::Vector mispredictAltTable;
+        statistics::Vector providerAltDistance;
+        statistics::Vector allocCandidatesPerFetchBlock;
+        statistics::Vector extraAllocCandidateProviderTable;
+        statistics::Vector issuedAllocBranchPosition;
+        statistics::Vector skippedAllocCandidatePosition;
 #endif
 
         Scalar condPredwrong;
@@ -391,7 +416,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         int numBanks;
 
 #ifndef UNIT_TEST
-        TageStats(statistics::Group* parent, int numPredictors, int numBanks);
+        TageStats(statistics::Group* parent, int numPredictors, int numBanks,
+                  int maxBranchPositions);
 #endif
         void updateStatsWithTagePrediction(const TagePrediction &pred, bool when_pred);
     } ;

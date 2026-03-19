@@ -89,7 +89,7 @@ indexShift(bankBaseShift + ceilLog2(p.numBanks)),
 enableBankConflict(p.enableBankConflict),
 lastPredBankId(0),
 predBankValid(false),
-tageStats(this, p.numPredictors, p.numBanks)
+tageStats(this, p.numPredictors, p.numBanks, p.maxBranchPositions)
 {
     this->needMoreHistories = p.needMoreHistories;
 
@@ -441,6 +441,53 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     Addr startPC = stream.getRealStartPC();
     bool base_taken = entry.ctr >= 0;
     bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
+    bool use_provider = main_info.found && !used_alt;
+    bool use_alt_table = used_alt && alt_info.found;
+    bool use_base_table = !use_provider && !use_alt_table;
+    bool inc_provider_useful =
+        main_info.found && main_info.taken() == actual_taken &&
+        main_info.taken() != alt_taken;
+    bool provider_should_hold = false;
+    bool alt_should_hold = false;
+    bool not_need_update_equivalent = false;
+
+    if (main_info.found) {
+        constexpr unsigned ctr_width = 3;
+        const int ctr_max = (1 << (ctr_width - 1)) - 1;
+        const int ctr_min = -(1 << (ctr_width - 1));
+        provider_should_hold =
+            (actual_taken && main_info.entry.counter == ctr_max) ||
+            (!actual_taken && main_info.entry.counter == ctr_min);
+    }
+    if (alt_info.found) {
+        constexpr unsigned ctr_width = 3;
+        const int ctr_max = (1 << (ctr_width - 1)) - 1;
+        const int ctr_min = -(1 << (ctr_width - 1));
+        alt_should_hold =
+            (actual_taken && alt_info.entry.counter == ctr_max) ||
+            (!actual_taken && alt_info.entry.counter == ctr_min);
+    }
+    not_need_update_equivalent =
+        main_info.found && provider_should_hold && main_info.entry.useful &&
+        inc_provider_useful && (use_provider || !alt_info.found || alt_should_hold);
+
+    tageStats.resolveBranchHasProvider += main_info.found;
+    tageStats.resolveBranchUseProvider += use_provider;
+    tageStats.resolveBranchHasAlt += alt_info.found;
+    tageStats.resolveBranchUseAltTable += use_alt_table;
+    tageStats.resolveBranchUseBaseTable += use_base_table;
+    tageStats.updateSuppressedByNotNeedEquivalent += not_need_update_equivalent;
+#ifndef UNIT_TEST
+    if (main_info.found) {
+        tageStats.resolveProviderTable[main_info.table]++;
+    }
+    if (alt_info.found) {
+        tageStats.resolveAltTable[alt_info.table]++;
+    }
+    if (main_info.found && alt_info.found && main_info.table >= alt_info.table) {
+        tageStats.providerAltDistance[main_info.table - alt_info.table]++;
+    }
+#endif
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
@@ -461,6 +508,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
     // Update main prediction provider
     if (main_info.found) {
+        tageStats.updateProviderApplied++;
         DPRINTF(TAGE, "prediction provided by table %d, idx %lu, way %u, updating corresponding entry\n",
             main_info.table, main_info.index, main_info.way);
 
@@ -483,6 +531,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
     // Update alternative prediction provider
     if (used_alt && alt_info.found) {
+        tageStats.updateAltApplied++;
         auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
         updateCounter(actual_taken, 3, way.counter);
         // No LRU maintenance
@@ -504,6 +553,21 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     // Check if misprediction occurred
     bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
                                stream.squashPC == entry.pc;
+    if (this_fb_mispred) {
+        tageStats.mispredictBranchHasProvider += main_info.found;
+        tageStats.mispredictBranchUseProvider += use_provider;
+        tageStats.mispredictBranchHasAlt += alt_info.found;
+        tageStats.mispredictBranchUseAltTable += use_alt_table;
+        tageStats.mispredictBranchUseBaseTable += use_base_table;
+#ifndef UNIT_TEST
+        if (main_info.found) {
+            tageStats.mispredictProviderTable[main_info.table]++;
+        }
+        if (alt_info.found) {
+            tageStats.mispredictAltTable[alt_info.table]++;
+        }
+#endif
+    }
     if (getDelay() == 2){
         if (this_fb_mispred) {
             tageStats.updateMispred++;
@@ -715,11 +779,13 @@ BTBTAGE::update(const FetchTarget &stream) {
 
     // Match RTL more closely: allocate at most one new entry per fetch block update.
     bool allocationIssued = false;
+    unsigned allocCandidateCount = 0;
 
     // Process each BTB entry
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
     for (auto &btb_entry : entries_to_update) {
+        unsigned branchPos = getBranchIndexInBlock(btb_entry.pc, startAddr);
         bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
@@ -739,6 +805,9 @@ BTBTAGE::update(const FetchTarget &stream) {
 
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
+        if (need_allocate) {
+            allocCandidateCount++;
+        }
 
         // Handle new entry allocation if needed
         bool alloc_success = false;
@@ -752,6 +821,9 @@ BTBTAGE::update(const FetchTarget &stream) {
                 tageStats.allocateBranchProviderTable[recomputed.mainInfo.table]++;
 #endif
             }
+#ifndef UNIT_TEST
+            tageStats.issuedAllocBranchPosition[branchPos]++;
+#endif
 
             // Handle allocation of new entries
             uint start_table = 0;
@@ -763,6 +835,15 @@ BTBTAGE::update(const FetchTarget &stream) {
                                    start_table, predMeta, allocated_table, allocated_index, allocated_way);
             allocationIssued = true;
         } else if (need_allocate) {
+#ifndef UNIT_TEST
+            tageStats.extraAllocCandidatesSkipped++;
+            if (recomputed.mainInfo.found) {
+                tageStats.extraAllocCandidateProviderTable[recomputed.mainInfo.table]++;
+            } else {
+                tageStats.extraAllocCandidateNoProvider++;
+            }
+            tageStats.skippedAllocCandidatePosition[branchPos]++;
+#endif
             DPRINTF(TAGE, "skip extra allocation for branch %#lx in the same fetch block\n", btb_entry.pc);
         }
 
@@ -796,6 +877,13 @@ BTBTAGE::update(const FetchTarget &stream) {
     if (hasRecomputedVsOriginalDiff) {
         tageStats.recomputedVsOriginalDiff++;
     }
+#ifndef UNIT_TEST
+    if (allocCandidateCount > 1) {
+        tageStats.fetchBlocksMultiAllocCandidates++;
+    }
+    unsigned candidateBucket = std::min<unsigned>(allocCandidateCount, maxBranchPositions);
+    tageStats.allocCandidatesPerFetchBlock[candidateBucket]++;
+#endif
     if (getDelay() <2){
         checkUtageUpdateMisspred(stream);
     }
@@ -1055,7 +1143,8 @@ BTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
 
 #ifndef UNIT_TEST
 // Constructor for TAGE statistics
-BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int numBanks):
+BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors,
+                              int numBanks, int maxBranchPositions):
     statistics::Group(parent),
     ADD_STAT(predNoHitUseBim, statistics::units::Count::get(), "use bimodal when no hit on prediction"),
     ADD_STAT(predUseAlt, statistics::units::Count::get(), "use alt on prediction"),
@@ -1098,6 +1187,41 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(
         allocateSkipHighestProvider, statistics::units::Count::get(),
         "allocations skipped because the provider already uses the highest history table"),
+    ADD_STAT(resolveBranchHasProvider, statistics::units::Count::get(),
+        "resolved conditional branches whose recomputed TAGE state has a provider"),
+    ADD_STAT(resolveBranchUseProvider, statistics::units::Count::get(),
+        "resolved conditional branches that use the provider table"),
+    ADD_STAT(resolveBranchHasAlt, statistics::units::Count::get(),
+        "resolved conditional branches whose recomputed TAGE state has an alt table"),
+    ADD_STAT(resolveBranchUseAltTable, statistics::units::Count::get(),
+        "resolved conditional branches that use the alt table as final prediction"),
+    ADD_STAT(resolveBranchUseBaseTable, statistics::units::Count::get(),
+        "resolved conditional branches that fall back to base prediction"),
+    ADD_STAT(mispredictBranchHasProvider, statistics::units::Count::get(),
+        "mispredicted branches whose recomputed TAGE state has a provider"),
+    ADD_STAT(mispredictBranchUseProvider, statistics::units::Count::get(),
+        "mispredicted branches that use the provider table"),
+    ADD_STAT(mispredictBranchHasAlt, statistics::units::Count::get(),
+        "mispredicted branches whose recomputed TAGE state has an alt table"),
+    ADD_STAT(mispredictBranchUseAltTable, statistics::units::Count::get(),
+        "mispredicted branches that use the alt table as final prediction"),
+    ADD_STAT(mispredictBranchUseBaseTable, statistics::units::Count::get(),
+        "mispredicted branches that fall back to base prediction"),
+    ADD_STAT(updateSuppressedByNotNeedEquivalent, statistics::units::Count::get(),
+        "branches that match RTL notNeedUpdate-equivalent gating"),
+    ADD_STAT(updateProviderApplied, statistics::units::Count::get(),
+        "branches that actually update the provider entry"),
+    ADD_STAT(updateAltApplied, statistics::units::Count::get(),
+        "branches that actually update the alt entry"),
+    ADD_STAT(
+        fetchBlocksMultiAllocCandidates, statistics::units::Count::get(),
+        "fetch blocks with more than one branch requesting allocation"),
+    ADD_STAT(
+        extraAllocCandidatesSkipped, statistics::units::Count::get(),
+        "allocation candidates skipped because another branch already issued allocation in the same fetch block"),
+    ADD_STAT(
+        extraAllocCandidateNoProvider, statistics::units::Count::get(),
+        "skipped extra allocation candidates that had no provider"),
     ADD_STAT(
         recomputedVsActualDiff, statistics::units::Count::get(),
         "fetchBlocks where recomputed.taken != actual_taken"),
@@ -1116,6 +1240,28 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(
         allocateBranchProviderTable, statistics::units::Count::get(),
         "provider table of branches that issued allocation"),
+    ADD_STAT(resolveProviderTable, statistics::units::Count::get(),
+        "provider table distribution for resolved branches"),
+    ADD_STAT(resolveAltTable, statistics::units::Count::get(),
+        "alt table distribution for resolved branches"),
+    ADD_STAT(mispredictProviderTable, statistics::units::Count::get(),
+        "provider table distribution for mispredicted branches"),
+    ADD_STAT(mispredictAltTable, statistics::units::Count::get(),
+        "alt table distribution for mispredicted branches"),
+    ADD_STAT(providerAltDistance, statistics::units::Count::get(),
+        "distance between provider and alt tables for resolved branches"),
+    ADD_STAT(
+        allocCandidatesPerFetchBlock, statistics::units::Count::get(),
+        "histogram of allocation candidates per fetch block"),
+    ADD_STAT(
+        extraAllocCandidateProviderTable, statistics::units::Count::get(),
+        "provider table of skipped extra allocation candidates"),
+    ADD_STAT(
+        issuedAllocBranchPosition, statistics::units::Count::get(),
+        "branch position of the allocation candidate that won the fetch block"),
+    ADD_STAT(
+        skippedAllocCandidatePosition, statistics::units::Count::get(),
+        "branch position of skipped extra allocation candidates"),
 
     ADD_STAT(condPredwrong, statistics::units::Count::get(), "number of conditional branch mispredictions committed"),
     ADD_STAT(condMissTakens, statistics::units::Count::get(), "number of conditional branch mispredictions committed with no prediction"),
@@ -1129,6 +1275,15 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     updateTableMispreds.init(numPredictors);
     tableAllocate.init(numPredictors);
     allocateBranchProviderTable.init(numPredictors);
+    resolveProviderTable.init(numPredictors);
+    resolveAltTable.init(numPredictors);
+    mispredictProviderTable.init(numPredictors);
+    mispredictAltTable.init(numPredictors);
+    providerAltDistance.init(numPredictors);
+    allocCandidatesPerFetchBlock.init(maxBranchPositions + 1);
+    extraAllocCandidateProviderTable.init(numPredictors);
+    issuedAllocBranchPosition.init(maxBranchPositions);
+    skippedAllocCandidatePosition.init(maxBranchPositions);
 
     // Initialize per-bank statistics vectors
     updateBankConflictPerBank.init(numBanks);
