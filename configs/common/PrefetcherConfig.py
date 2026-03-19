@@ -63,10 +63,10 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_activepage = False
             prefetcher.enable_pht = True
             prefetcher.enable_xsstream = True
-            prefetcher.prefetch_train = False # disable L1PF train L2
+            # prefetcher.prefetch_train = False # disable L1PF train L2
             # disable unecessary filter to align with RTL when in pf_buffer mode
             if hasattr(prefetcher, 'queue_filter'):
-                prefetcher.queue_filter = False
+                prefetcher.queue_filter = True
 
     if cache_level == 'l2':
         if options.classic_l2:
@@ -80,10 +80,10 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_despacito_stream = False
                 prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
                 prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
-                prefetcher.prefetch_train = False # disable L1PF train L2
+                # prefetcher.prefetch_train = False # disable L1PF train L2
                 # disable unecessary filter to align with RTL when in pf_buffer mode
                 if hasattr(prefetcher, 'queue_filter'):
-                    prefetcher.queue_filter = False
+                    prefetcher.queue_filter = True
             if options.l1_to_l2_pf_hint:
                 prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
@@ -105,12 +105,12 @@ def create_prefetcher(cpu, cache_level, options):
                     prefetcher.despacito_stream.enable_despacito_db = False
                 prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
                 prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
-                prefetcher.prefetch_train = False # disable L1PF train L2
+                # prefetcher.prefetch_train = False # disable L1PF train L2
                 # disable unecessary filter to align with RTL when in pf_buffer mode
                 if hasattr(prefetcher, 'queue_filter'):
-                    prefetcher.queue_filter = False
+                    prefetcher.queue_filter = True
             if options.l1_to_l2_pf_hint:
-                prefetcher.queue_size = 32
+                prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
 
     if cache_level == 'l3':
