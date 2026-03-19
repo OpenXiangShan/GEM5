@@ -957,6 +957,9 @@ class Fetch
     // Used to explicitly notify the BPU when an entry is consumed (Phase5 prep).
     unsigned ftqEntryFetchedInsts[MaxThreads]{};
 
+    // Per-cycle aggregate state for additional fetch instrumentation.
+    bool cycleUsed2Fetch = false;
+
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;
 
@@ -1063,6 +1066,50 @@ class Fetch
         statistics::Scalar tlbSquashes;
         /** Distribution of number of instructions fetched each cycle. */
         statistics::Distribution nisnDist;
+        /** Total number of performInstructionFetch calls. */
+        statistics::Scalar performIFCalls;
+        /** Number of performInstructionFetch calls that enter main while loop. */
+        statistics::Scalar performIFWhileEntered;
+        /** Total number of iterations spent in main fetch while loop. */
+        statistics::Scalar performIFWhileIterations;
+        /** Main while loop not entered because fetch width is exhausted. */
+        statistics::Scalar performIFWhileNotEnteredFetchWidth;
+        /** Main while loop not entered because fetch queue is full. */
+        statistics::Scalar performIFWhileNotEnteredFetchQueueFull;
+        /** Main while loop not entered because fetch already decided to stop. */
+        statistics::Scalar performIFWhileNotEnteredStopFetch;
+        /** Main while loop not entered because FTQ is empty. */
+        statistics::Scalar performIFWhileNotEnteredFtqEmpty;
+        /** Main while loop not entered because vector config blocks fetch. */
+        statistics::Scalar performIFWhileNotEnteredWaitForVsetvl;
+        /** Number of end-of-stream opportunities that can evaluate 2Fetch. */
+        statistics::Scalar twoFetchOpportunity;
+        /** Number of times 2Fetch succeeds. */
+        statistics::Scalar twoFetchTaken;
+        /** 2Fetch not used because stream ended without predicted taken branch. */
+        statistics::Scalar twoFetchNotTakenNotPredTaken;
+        /** 2Fetch not used because feature is disabled. */
+        statistics::Scalar twoFetchNotTakenDisabled;
+        /** 2Fetch not used because next FTQ stream is unavailable. */
+        statistics::Scalar twoFetchNotTakenNoNext;
+        /** 2Fetch not used because next stream target does not match branch target. */
+        statistics::Scalar twoFetchNotTakenTargetMismatch;
+        /** 2Fetch not used because merged span exceeds max fetch bytes per cycle. */
+        statistics::Scalar twoFetchNotTakenSpanTooLarge;
+        /** 2Fetch not used because target is not fully covered by fetch buffer. */
+        statistics::Scalar twoFetchNotTakenTargetNotInBuffer;
+        /** Number of cycles with fetched instructions but without 2Fetch. */
+        statistics::Scalar singleFetchCycleCount;
+        /** Total number of fetched instructions in cycles without 2Fetch. */
+        statistics::Scalar singleFetchCycleInsts;
+        /** Mean fetched instructions in cycles without 2Fetch. */
+        statistics::Formula singleFetchCycleInstMean;
+        /** Number of cycles with fetched instructions and with 2Fetch. */
+        statistics::Scalar doubleFetchCycleCount;
+        /** Total number of fetched instructions in cycles with 2Fetch. */
+        statistics::Scalar doubleFetchCycleInsts;
+        /** Mean fetched instructions in cycles with 2Fetch. */
+        statistics::Formula doubleFetchCycleInstMean;
         /** Rate of how often fetch was idle. */
         statistics::Formula idleRate;
         /** Number of branch fetches per cycle. */

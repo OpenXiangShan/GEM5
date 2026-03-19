@@ -226,6 +226,54 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of outstanding ITLB misses that were squashed"),
     ADD_STAT(nisnDist, statistics::units::Count::get(),
              "Number of instructions fetched each cycle (Total)"),
+    ADD_STAT(performIFCalls, statistics::units::Count::get(),
+             "Number of performInstructionFetch calls"),
+    ADD_STAT(performIFWhileEntered, statistics::units::Count::get(),
+             "Number of performInstructionFetch calls that enter the main while loop"),
+    ADD_STAT(performIFWhileIterations, statistics::units::Count::get(),
+             "Total number of iterations in the main fetch while loop"),
+    ADD_STAT(performIFWhileNotEnteredFetchWidth, statistics::units::Count::get(),
+             "Main fetch while loop not entered because fetch width was already exhausted"),
+    ADD_STAT(performIFWhileNotEnteredFetchQueueFull, statistics::units::Count::get(),
+             "Main fetch while loop not entered because fetch queue was full"),
+    ADD_STAT(performIFWhileNotEnteredStopFetch, statistics::units::Count::get(),
+             "Main fetch while loop not entered because fetch had already decided to stop"),
+    ADD_STAT(performIFWhileNotEnteredFtqEmpty, statistics::units::Count::get(),
+             "Main fetch while loop not entered because FTQ had no fetch target"),
+    ADD_STAT(performIFWhileNotEnteredWaitForVsetvl, statistics::units::Count::get(),
+             "Main fetch while loop not entered because vector config blocked fetch"),
+    ADD_STAT(twoFetchOpportunity, statistics::units::Count::get(),
+             "Number of end-of-stream opportunities that evaluate 2Fetch"),
+    ADD_STAT(twoFetchTaken, statistics::units::Count::get(),
+             "Number of successful 2Fetch extensions"),
+    ADD_STAT(twoFetchNotTakenNotPredTaken, statistics::units::Count::get(),
+             "2Fetch not taken because the stream ended without a predicted taken branch"),
+    ADD_STAT(twoFetchNotTakenDisabled, statistics::units::Count::get(),
+             "2Fetch not taken because 2Fetch is disabled"),
+    ADD_STAT(twoFetchNotTakenNoNext, statistics::units::Count::get(),
+             "2Fetch not taken because the next FTQ entry is unavailable"),
+    ADD_STAT(twoFetchNotTakenTargetMismatch, statistics::units::Count::get(),
+             "2Fetch not taken because next stream start does not match branch target"),
+    ADD_STAT(twoFetchNotTakenSpanTooLarge, statistics::units::Count::get(),
+             "2Fetch not taken because merged span exceeds max fetch bytes per cycle"),
+    ADD_STAT(twoFetchNotTakenTargetNotInBuffer, statistics::units::Count::get(),
+             "2Fetch not taken because target is not fully covered by current fetch buffer"),
+    ADD_STAT(singleFetchCycleCount, statistics::units::Count::get(),
+             "Cycles with fetched instructions but without 2Fetch"),
+    ADD_STAT(singleFetchCycleInsts, statistics::units::Count::get(),
+             "Fetched instructions in cycles without 2Fetch"),
+    ADD_STAT(singleFetchCycleInstMean, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+             "Average fetched instructions in cycles without 2Fetch",
+             singleFetchCycleInsts / singleFetchCycleCount),
+    ADD_STAT(doubleFetchCycleCount, statistics::units::Count::get(),
+             "Cycles with fetched instructions and with 2Fetch"),
+    ADD_STAT(doubleFetchCycleInsts, statistics::units::Count::get(),
+             "Fetched instructions in cycles with 2Fetch"),
+    ADD_STAT(doubleFetchCycleInstMean, statistics::units::Rate<
+                    statistics::units::Count, statistics::units::Cycle>::get(),
+             "Average fetched instructions in cycles with 2Fetch",
+             doubleFetchCycleInsts / doubleFetchCycleCount),
     ADD_STAT(idleRate, statistics::units::Ratio::get(),
              "Ratio of cycles fetch was idle",
              idleCycles / cpu->baseStats.numCycles),
@@ -320,6 +368,50 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
               /* last value */ fetch->fetchWidth,
               /* bucket size */ 1)
             .flags(statistics::pdf);
+        performIFCalls
+            .prereq(performIFCalls);
+        performIFWhileEntered
+            .prereq(performIFWhileEntered);
+        performIFWhileIterations
+            .prereq(performIFWhileIterations);
+        performIFWhileNotEnteredFetchWidth
+            .prereq(performIFWhileNotEnteredFetchWidth);
+        performIFWhileNotEnteredFetchQueueFull
+            .prereq(performIFWhileNotEnteredFetchQueueFull);
+        performIFWhileNotEnteredStopFetch
+            .prereq(performIFWhileNotEnteredStopFetch);
+        performIFWhileNotEnteredFtqEmpty
+            .prereq(performIFWhileNotEnteredFtqEmpty);
+        performIFWhileNotEnteredWaitForVsetvl
+            .prereq(performIFWhileNotEnteredWaitForVsetvl);
+        twoFetchOpportunity
+            .prereq(twoFetchOpportunity);
+        twoFetchTaken
+            .prereq(twoFetchTaken);
+        twoFetchNotTakenNotPredTaken
+            .prereq(twoFetchNotTakenNotPredTaken);
+        twoFetchNotTakenDisabled
+            .prereq(twoFetchNotTakenDisabled);
+        twoFetchNotTakenNoNext
+            .prereq(twoFetchNotTakenNoNext);
+        twoFetchNotTakenTargetMismatch
+            .prereq(twoFetchNotTakenTargetMismatch);
+        twoFetchNotTakenSpanTooLarge
+            .prereq(twoFetchNotTakenSpanTooLarge);
+        twoFetchNotTakenTargetNotInBuffer
+            .prereq(twoFetchNotTakenTargetNotInBuffer);
+        singleFetchCycleCount
+            .prereq(singleFetchCycleCount);
+        singleFetchCycleInsts
+            .prereq(singleFetchCycleInsts);
+        singleFetchCycleInstMean
+            .flags(statistics::total);
+        doubleFetchCycleCount
+            .prereq(doubleFetchCycleCount);
+        doubleFetchCycleInsts
+            .prereq(doubleFetchCycleInsts);
+        doubleFetchCycleInstMean
+            .flags(statistics::total);
         idleRate
             .prereq(idleRate);
         branchRate
@@ -792,7 +884,14 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // Track how many dynamic instructions were fetched for this (legacy) FTQ/FSQ entry.
     ftqEntryFetchedInsts[tid]++;
     if (run_out) {
-        if (predict_taken && dbpbtb->is2FetchEnabled() && dbpbtb->ftqHasNext(tid)) {
+        ++fetchStats.twoFetchOpportunity;
+        if (!predict_taken) {
+            ++fetchStats.twoFetchNotTakenNotPredTaken;
+        } else if (!dbpbtb->is2FetchEnabled()) {
+            ++fetchStats.twoFetchNotTakenDisabled;
+        } else if (!dbpbtb->ftqHasNext(tid)) {
+            ++fetchStats.twoFetchNotTakenNoNext;
+        } else {
             const Addr target_pc = stream.predBranchInfo.target;
             const auto &next_stream = dbpbtb->ftqNext(tid);
             const Addr span = next_stream.predEndPC - stream.startPC;
@@ -801,8 +900,16 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
                 target_pc >= threads[tid].startPC &&
                 target_pc + 4 <= threads[tid].startPC + fetchBufferSize;
 
-            if (target_pc == next_stream.startPC && span <= max_bytes && target_in_buffer) {
+            if (target_pc != next_stream.startPC) {
+                ++fetchStats.twoFetchNotTakenTargetMismatch;
+            } else if (span > max_bytes) {
+                ++fetchStats.twoFetchNotTakenSpanTooLarge;
+            } else if (!target_in_buffer) {
+                ++fetchStats.twoFetchNotTakenTargetNotInBuffer;
+            } else {
                 do_2fetch = true;
+                cycleUsed2Fetch = true;
+                ++fetchStats.twoFetchTaken;
                 DPRINTF(DecoupleBP,
                         "2Fetch: extend in-cycle to next FSQ entry (cur [%#lx, %#lx), next [%#lx, %#lx), span=%lu, "
                         "max=%u)\n",
@@ -1239,6 +1346,7 @@ Fetch::initializeTickState()
     bool status_change = false;
 
     wroteToTimeBuffer = false;
+    cycleUsed2Fetch = false;
     setAllFetchStalls(StallReason::NoStall);
 
     // get the distribution of fetch status
@@ -1278,6 +1386,15 @@ Fetch::fetchAndProcessInstructions(bool status_change)
 
     // Record number of instructions fetched this cycle for distribution.
     fetchStats.nisnDist.sample(numInst);
+    if (numInst > 0) {
+        if (cycleUsed2Fetch) {
+            ++fetchStats.doubleFetchCycleCount;
+            fetchStats.doubleFetchCycleInsts += numInst;
+        } else {
+            ++fetchStats.singleFetchCycleCount;
+            fetchStats.singleFetchCycleInsts += numInst;
+        }
+    }
 
     if (status_change) {
         // Change the fetch stage status if there was a status change.
@@ -1954,13 +2071,18 @@ Fetch::performInstructionFetch(ThreadID tid)
     // Control flags for main fetch loop
     bool stopFetchThisCycle = false;
 
+    ++fetchStats.performIFCalls;
+
     DPRINTF(Fetch, "[tid:%i] Adding instructions to queue to decode.\n", tid);
 
     // Main instruction fetch loop - process until fetch width or other limits
     // For decoupled frontend (including trace mode), check FTQ availability
     StallReason stall = StallReason::NoStall;
+    bool enteredMainLoop = false;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !stopFetchThisCycle && !ftqEmpty(tid) && !waitForVsetvl) {
+        enteredMainLoop = true;
+        ++fetchStats.performIFWhileIterations;
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
@@ -1978,6 +2100,20 @@ Fetch::performInstructionFetch(ThreadID tid)
         } while (curMacroop &&
                  numInst < fetchWidth &&
                  fetchQueue[tid].size() < fetchQueueSize);
+    }
+
+    if (enteredMainLoop) {
+        ++fetchStats.performIFWhileEntered;
+    } else if (numInst >= fetchWidth) {
+        ++fetchStats.performIFWhileNotEnteredFetchWidth;
+    } else if (fetchQueue[tid].size() >= fetchQueueSize) {
+        ++fetchStats.performIFWhileNotEnteredFetchQueueFull;
+    } else if (stopFetchThisCycle) {
+        ++fetchStats.performIFWhileNotEnteredStopFetch;
+    } else if (ftqEmpty(tid)) {
+        ++fetchStats.performIFWhileNotEnteredFtqEmpty;
+    } else if (waitForVsetvl) {
+        ++fetchStats.performIFWhileNotEnteredWaitForVsetvl;
     }
 
     // Debug output for fetch queue contents
