@@ -110,7 +110,7 @@ def create_prefetcher(cpu, cache_level, options):
                 if hasattr(prefetcher, 'queue_filter'):
                     prefetcher.queue_filter = True
             if options.l1_to_l2_pf_hint:
-                prefetcher.queue_size = 32
+                prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
 
     if cache_level == 'l3':
