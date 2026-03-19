@@ -422,7 +422,23 @@ def config_cache(options, system):
                     # l3_cache_slice.mem_side can be directly connected to L3's inner_resp_port
                     system.CHIsys.mem_side_port = system.membus.cpu_side_ports
                 else:
-                    system.CHIsys = L2ToDramSys(configFile=os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'))
+                    if chi_topology not in ('L2ToDramSys', 'L2ToDramSys_M1Local1Dram'):
+                        raise ValueError(
+                            f"Unsupported --chi-topology for xsCHI L2ToDramSys branch: {chi_topology}"
+                        )
+                    use_mesh1_local1_dram = (chi_topology == 'L2ToDramSys_M1Local1Dram')
+                    topology_variant = (
+                        "rn_m0_local0_hn_m1_local0_dram_m1_local1"
+                        if use_mesh1_local1_dram
+                        else "rn_m0_local0_hn_m1_local0_dram_m2_local0"
+                    )
+                    system.CHIsys = L2ToDramSys(
+                        configFile=os.path.join(
+                            root_dir,
+                            'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'
+                        ),
+                        topology_variant=topology_variant,
+                    )
                     # 影子 L2 总开关与数量：
                     # - 开启时 count 必须 > 0；
                     # - 关闭时允许 count 保持默认值（不会生效）。
@@ -545,7 +561,9 @@ def config_cache(options, system):
                     print(
                         "[xsCHI][Build] mesh=2x2 "
                         "M0=(0,0) M1=(1,0) M2=(1,1) M3=(0,1) "
-                        "endpoints: RN@M0.local0 HN@M1.local0 DRAM@M2.local0 "
+                        "endpoints: RN@M0.local0 HN@M1.local0 "
+                        f"DRAM@{'M1.local1' if use_mesh1_local1_dram else 'M2.local0'} "
+                        f"topology={chi_topology} variant={topology_variant} "
                         f"shadow_enable={shadow_enable} shadow_count={len(shadow_bridges)} "
                         f"shadow_attach={shadow_attach_points}"
                     )
