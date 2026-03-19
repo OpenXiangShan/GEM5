@@ -7,7 +7,7 @@
 #include "cpu/addresspred/addresspred_metadata.hh"
 #include "enums/AddressPredType.hh"
 #include "params/AddressPredictor.hh"
-#include "sim/sim_object.hh"
+#include "sim/clocked_object.hh"
 #include "sim/stats.hh"
 
 namespace gem5
@@ -16,7 +16,7 @@ namespace gem5
 namespace addresspred
 {
 
-class APUnit : public SimObject
+class APUnit : public ClockedObject
 {
   private:
     using Params = AddressPredictorParams;
@@ -40,6 +40,7 @@ class APUnit : public SimObject
     // If predict error, squash the inflight instructions in address
     // predictor.
     virtual void squash(const uint64_t seq_no) = 0;
+    virtual void squash(const uint64_t seq_no, uint8_t squash_version) = 0;
 
     // Get the address predictor type.
     virtual AddressPredType getAddressPredictorType() = 0;
@@ -57,6 +58,12 @@ class APUnit : public SimObject
         statistics::Scalar APupdateRequests;
         statistics::Scalar APupdateFromDcache;
         statistics::Formula APupdateFromDcacheRatio;
+        statistics::Scalar APmispredTotal;
+        statistics::Scalar APmispredAddrOnly;
+        statistics::Scalar APmispredDataOnly;
+        statistics::Scalar APmispredAddrAndData;
+        statistics::Formula APmispredAddrErrorRatio;
+        statistics::Formula APmispredDataErrorRatio;
     } stats;
 };
 

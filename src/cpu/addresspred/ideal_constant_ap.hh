@@ -48,6 +48,7 @@ class IdealConstantAP : public APUnit
             APSpecUpdateMetaData *specUpdateMetaData) override;
 
     void squash(const uint64_t seq_no) override;
+    void squash(const uint64_t seq_no, uint8_t squash_version) override;
 
     AddressPredType getAddressPredictorType() override
     {

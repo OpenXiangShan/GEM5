@@ -755,6 +755,16 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "PFSrc INT NOT NULL," \
             "SITE TEXT);"
             ,
+            "CREATE TABLE APTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "PC INT NOT NULL," \
+            "SeqNo INT NOT NULL," \
+            "Addr INT NOT NULL," \
+            "Misprediction BOOL NOT NULL," \
+            "FromDcache BOOL NOT NULL," \
+            "SITE TEXT);"
+            ,
             "CREATE TABLE L1PFTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
             "Tick INT NOT NULL," \

@@ -1934,18 +1934,24 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         delete vpPredMetaData;
     }
 
-    // Address prediction is disabled for loads already selected by value
-    // prediction.
-    if (addressPred && instruction->canAP() &&
-        !instruction->vpResult.speculative) {
+    if (addressPred && instruction->canAP()) {
+        instruction->apPredictCalled = true;
         addresspred::APPredMetaData *apPredMetaData = addresspred::
                 APDataStructFactory::buildPredMetaData(
                         addressPred->getAddressPredictorType());
         apPredMetaData->pc = instruction->getPC();
         apPredMetaData->seq_no = instruction->seqNum;
+        apPredMetaData->inst_version = instruction->getVersion();
+        apPredMetaData->squash_version = localSquashVer.getVersion();
         instruction->apResult = addressPred->addressPredict(apPredMetaData);
         delete apPredMetaData;
+        // Address prediction is disabled for loads already selected by value
+        // prediction.
+        if (instruction->vpResult.speculative) {
+            instruction->apResult = {false, 0};
+        }
     } else {
+        instruction->apPredictCalled = false;
         instruction->apResult = {false, 0};
     }
 

@@ -702,7 +702,7 @@ Commit::squashAll(ThreadID tid)
     if (valuePred)
         valuePred->squash(squashed_inst);
     if (addressPred)
-        addressPred->squash(squashed_inst);
+        addressPred->squash(squashed_inst, localSquashVer.nextVersion());
 
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
@@ -1087,7 +1087,8 @@ Commit::commit()
             if (valuePred)
                 valuePred->squash(squashed_inst);
             if (addressPred)
-                addressPred->squash(squashed_inst);
+                addressPred->squash(
+                        squashed_inst, localSquashVer.nextVersion());
 
             toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
             toIEW->commitInfo[tid].doneMemSeqNum = squashed_inst;
@@ -1866,6 +1867,25 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         delete updateMetaData;
     }
 
+    if (addressPred && head_inst->canAP() && head_inst->apPredictCalled) {
+        const Addr pred_addr = head_inst->apResult.addr;
+        const Addr actual_addr = head_inst->physEffAddr;
+        const int64_t addr_delta =
+                static_cast<int64_t>(actual_addr) -
+                static_cast<int64_t>(pred_addr);
+        DPRINTF(APCOMMON,
+                "AP commit observe [sn:%llu] pc=0x%lx fault=%d predCalled=%d "
+                "predTaken=%d predAddr=0x%lx actualAddr=0x%lx delta=%lld "
+                "fromDcache=%d probeIssued=%d probeDone=%d probeHit=%d "
+                "probeApplied=%d apMispred=%d\n",
+                head_inst->seqNum, head_inst->getPC(), inst_fault != NoFault,
+                head_inst->apPredictCalled, head_inst->apResult.speculative,
+                pred_addr, actual_addr, addr_delta, head_inst->apDataFromDcache,
+                head_inst->apProbeIssued, head_inst->apProbeDone,
+                head_inst->apProbeHit, head_inst->apProbeApplied,
+                head_inst->apMisprediction);
+    }
+
     if (addressPred && head_inst->canAP() && (inst_fault == NoFault)) {
         const bool from_dcache = head_inst->apDataFromDcache;
 
@@ -1877,17 +1897,26 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         updateMetaData->actualAddr = head_inst->physEffAddr;
         updateMetaData->fromDcache = from_dcache;
         updateMetaData->isMisprediction = head_inst->apMisprediction;
+        updateMetaData->apPredictCalled = head_inst->apPredictCalled;
 
-        DPRINTF(APCOMMON,
-                "LAP train req [sn:%llu] pc=0x%lx addr=0x%lx fromDcache=%d "
-                "apProbeIssued=%d apProbeDone=%d apProbeHit=%d "
-                "apProbeApplied=%d apMisprediction=%d apSuccess=%d\n",
-                head_inst->seqNum, updateMetaData->pc,
-                updateMetaData->actualAddr, updateMetaData->fromDcache,
-                head_inst->apProbeIssued, head_inst->apProbeDone,
-                head_inst->apProbeHit, head_inst->apProbeApplied,
-                head_inst->apMisprediction,
-                head_inst->apProbeApplied && !head_inst->apMisprediction);
+        // DPRINTF(APCOMMON,
+        //         "LAP train req [sn:%llu] pc=0x%lx addr=0x%lx fromDcache=%d "
+        //         "apProbeIssued=%d apProbeDone=%d apProbeHit=%d "
+        //         "apProbeApplied=%d apMisprediction=%d apSuccess=%d\n",
+        //         head_inst->seqNum, updateMetaData->pc,
+        //         updateMetaData->actualAddr, updateMetaData->fromDcache,
+        //         head_inst->apProbeIssued, head_inst->apProbeDone,
+        //         head_inst->apProbeHit, head_inst->apProbeApplied,
+        //         head_inst->apMisprediction,
+        //         head_inst->apProbeApplied && !head_inst->apMisprediction);
+
+        if (archDBer) {
+            archDBer->apTrainTraceWrite(curTick(), updateMetaData->pc,
+                                        updateMetaData->seq_no,
+                                        updateMetaData->actualAddr,
+                                        updateMetaData->isMisprediction,
+                                        updateMetaData->fromDcache);
+        }
 
         addressPred->stats.APupdateRequests++;
         if (from_dcache) {
@@ -1904,6 +1933,11 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                 addressPred->stats.APcorrected++;
             }
         }
+    } else if (addressPred && head_inst->canAP() &&
+               head_inst->apPredictCalled && (inst_fault != NoFault)) {
+        DPRINTF(APCOMMON,
+                "AP commit skip update [sn:%llu] pc=0x%lx reason=fault\n",
+                head_inst->seqNum, head_inst->getPC());
     }
 
     // Finally clear the head ROB entry.

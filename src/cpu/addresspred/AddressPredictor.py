@@ -1,13 +1,14 @@
 from m5.params import *
 from m5.proxy import *
 from m5.SimObject import *
+from m5.objects.ClockedObject import ClockedObject
 
 
 class AddressPredType(ScopedEnum):
     vals = ["IdealConstantAP", "EStrideAP"]
 
 
-class AddressPredictor(SimObject):
+class AddressPredictor(ClockedObject):
     type = "AddressPredictor"
     cxx_class = "gem5::addresspred::APUnit"
     cxx_header = "cpu/addresspred/addresspred_unit.hh"
@@ -48,4 +49,12 @@ class EStrideAP(AddressPredictor):
     idealWindow = Param.Bool(
         True, "key in ideal window is full pc, not hashed"
     )
+    idealInflightWindow = Param.Bool(
+        False,
+        "use an unlimited precise inflight window keyed by pc and seqNum",
+    )
     inflightWindowTagLength = Param.Int(64, "inflight window tag length")
+    decodeToFetchDelay = Param.Cycles(
+        Parent.decodeToFetchDelay,
+        "Delay cycles for decode-triggered AP squash to take effect",
+    )

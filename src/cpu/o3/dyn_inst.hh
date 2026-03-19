@@ -1674,6 +1674,7 @@ class DynInst : public ExecContext, public RefCounted
 
     /** address prediction */
     addresspred::APResult apResult = {false, 0};
+    bool apPredictCalled = false;
     bool apMisprediction = false;
     bool apSupported = false;
     bool apDataFromDcache = false;

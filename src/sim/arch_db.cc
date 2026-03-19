@@ -103,6 +103,28 @@ ArchDBer::memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr
 }
 
 void
+ArchDBer::apTrainTraceWrite(Tick tick, Addr pc, uint64_t seq_no, Addr addr,
+                            bool misprediction, bool from_dcache)
+{
+  if (!dumpGlobal) {
+    return;
+  }
+
+  sprintf(
+      memTraceSQLBuf,
+      "INSERT INTO APTrainTrace(Tick,PC,SeqNo,Addr,Misprediction,FromDcache,SITE) "
+      "VALUES(%ld,%ld,%ld,%ld,%d,%d,'%s');",
+      tick, pc, seq_no, addr,
+      static_cast<int>(misprediction),
+      static_cast<int>(from_dcache),
+      "APTrainTrace");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
+void
 ArchDBer::l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf_vaddr, int pf_src)
 {
   bool dump_me = dumpGlobal && dumpL1PfTrace;
@@ -304,4 +326,3 @@ DBTraceManager::write_record(const Record &record)
 }
 
 } // namespace gem5
-

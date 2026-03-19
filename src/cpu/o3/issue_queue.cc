@@ -1473,6 +1473,17 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
         const bool dataMatch = actualValue == inst->apPredValue;
         if (!addrMatch || !dataMatch) {
             inst->apMisprediction = true;
+            if (cpu && cpu->isAddressPredictorEnabled()) {
+                auto* apStats = &cpu->getAddressPredictor()->stats;
+                apStats->APmispredTotal++;
+                if (!addrMatch && !dataMatch) {
+                    apStats->APmispredAddrAndData++;
+                } else if (!addrMatch) {
+                    apStats->APmispredAddrOnly++;
+                } else {
+                    apStats->APmispredDataOnly++;
+                }
+            }
         }
     }
 }

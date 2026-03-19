@@ -96,6 +96,8 @@ class ArchDBer : public SimObject
 
     void memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr, uint64_t issued, uint64_t translated,
                        uint64_t completed, uint64_t committed, uint64_t writenback, int pf_src);
+    void apTrainTraceWrite(Tick tick, Addr pc, uint64_t seq_no, Addr addr,
+                           bool misprediction, bool from_dcache);
 
     void l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf_vaddr, int pf_src);
 

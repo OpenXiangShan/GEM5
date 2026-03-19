@@ -15,6 +15,10 @@ class APPredMetaData
   public:
     Addr pc;
     uint64_t seq_no;
+    // Squash-version carried by the dynamic instruction itself.
+    uint8_t inst_version = 0;
+    // Frontend local squash-version when prediction is issued.
+    uint8_t squash_version = 0;
     virtual ~APPredMetaData() {};
 };
 
@@ -25,6 +29,7 @@ class APUpdateMetaData
     uint64_t seq_no;
     Addr actualAddr;
     bool isMisprediction;
+    bool apPredictCalled;
     bool fromDcache;
     virtual ~APUpdateMetaData() {};
 };

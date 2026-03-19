@@ -68,9 +68,12 @@ def setKmhV3IdealParams(args, system):
 
         # value predictor
         cpu.valuePred = IdealConstantLVP()
-        cpu.addressPred = IdealConstantAP()
-        # cpu.addressPred.logMaxConfidence = 11
-        # cpu.addressPred.thresholdPercent = 0.25
+
+        # address predictor
+        cpu.addressPred = EStrideAP()
+        cpu.addressPred.logMaxConfidence = 10
+        cpu.addressPred.thresholdPercent = 0.5
+        cpu.addressPred.idealInflightWindow = True
 
         # lsq
         cpu.LQEntries = 128

@@ -67,6 +67,15 @@ IdealConstantAP::specUpdateAddressPredictor(
 void
 IdealConstantAP::squash(const uint64_t seq_no)
 {
+    (void)seq_no;
+    // Do nothing
+}
+
+void
+IdealConstantAP::squash(const uint64_t seq_no, uint8_t squash_version)
+{
+    (void)seq_no;
+    (void)squash_version;
     // Do nothing
 }
 

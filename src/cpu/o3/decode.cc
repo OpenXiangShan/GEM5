@@ -284,6 +284,13 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
 
     InstSeqNum squash_seq_num = inst->seqNum;
 
+    if (cpu->isValuePredictorEnabled()) {
+        cpu->getValuePredictor()->squash(squash_seq_num);
+    }
+    if (cpu->isAddressPredictorEnabled()) {
+        cpu->getAddressPredictor()->squash(squash_seq_num);
+    }
+
     stallSig->blockFetch[tid] = true; // tell fetch don't send new insts
 
     fixedbuffer[tid].clear();
@@ -402,6 +409,8 @@ Decode::moveInstsToBuffer()
         const DynInstPtr &inst = stallBuffer.front();
         assert(tid == inst->threadNumber);
         if (localSquashVer.largerThan(inst->getVersion())) {
+            DPRINTF(Decode, "[sn:%i] squashed due to stale version local ver: %i, inst ver: %i"
+                    "\n", inst->seqNum, localSquashVer.getVersion(), inst->getVersion());
             inst->setSquashed();
         }
         assert(!fixedbuffer[inst->threadNumber].full());

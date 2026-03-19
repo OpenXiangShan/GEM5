@@ -2,6 +2,9 @@
 #define __ENHANCED_STRIDE_AP_HH__
 
 #include <cstdint>
+#include <deque>
+#include <set>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -43,22 +46,36 @@ class EStrideAP : public APUnit
     class InflightWindow
     {
       public:
-        InflightWindow(int windowTagLength, bool idealWindow);
+        InflightWindow(int windowTagLength, bool idealWindow,
+                       bool idealInflightWindow);
 
-        int addToInflightWindow(Addr pc);
+        int addToInflightWindow(Addr pc, uint64_t seq_no);
         void removeFromWindow(Addr pc, uint64_t seq_no);
         void squash(uint64_t seq_no);
+        std::string name() const { return "InflightWindow"; }
+        uint64_t lastSeqNo = 0ul;
 
       private:
         using HashMethod = uint64_t (*)(uint64_t, int);
 
-        int windowTagLength;
-        HashMethod hashMethod;
+        size_t idealWindowEntryCount() const;
+        std::string formatSeqNumsForDebug(const std::set<uint64_t> &seqNums) const;
+        std::string formatIdealWindowForDebug() const;
+
+        const int windowTagLength;
+        const bool idealInflightWindow;
+        HashMethod hashMethod = nullptr;
         std::unordered_map<uint64_t, int> windows;
-        uint64_t lastSeqNo = 0ul;
+        std::unordered_map<Addr, std::set<uint64_t>> idealWindows;
     };
 
   private:
+    struct DelayedSquashRequest
+    {
+        Tick applyTick;
+        uint64_t seqNo;
+    };
+
     const int ways;
     const int strideWidth;
     const int tagWidth;
@@ -69,6 +86,10 @@ class EStrideAP : public APUnit
     const int confidenceThreshold;
     const unsigned dcacheCounterBits;
     const double dcacheThresholdPercent;
+    const Cycles decodeToFetchDelay;
+    uint8_t lastSquashVersion = 0;
+    std::deque<DelayedSquashRequest> delayedSquashQueue;
+    EventFunctionWrapper delayedSquashEvent;
     InflightWindow inflightWindow;
     std::vector<std::vector<ESEntry>> ESTables;
 
@@ -81,6 +102,8 @@ class EStrideAP : public APUnit
     UpdateConfDecision decideToUpdate(int64_t stride);
     uint32_t tryDecUseful(const ESEntry &entry);
     bool isDcacheConfidenceLow(const ESEntry &entry) const;
+    void scheduleDelayedSquash(uint64_t seq_no);
+    void processDelayedSquash();
 
   public:
     EStrideAP(const Params &params);
@@ -92,6 +115,7 @@ class EStrideAP : public APUnit
     void specUpdateAddressPredictor(
             APSpecUpdateMetaData *specUpdateMetaData) override;
     void squash(const uint64_t seq_no) override;
+    void squash(const uint64_t seq_no, uint8_t squash_version) override;
 
     AddressPredType getAddressPredictorType() override
     {
