@@ -233,7 +233,7 @@ class XSStridePrefetcher(QueuedPrefetcher):
         TreePLRURP(num_leaves=Parent.stride_entries),
         "Replacement policy of stride table"
     )
-    use_redundant_table = Param.Bool(True, "Use redundant stride table")
+    use_redundant_table = Param.Bool(False, "Use redundant stride table")
     fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
 
     # stride black list
