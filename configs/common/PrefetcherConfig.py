@@ -66,7 +66,7 @@ def create_prefetcher(cpu, cache_level, options):
             # prefetcher.prefetch_train = False # disable L1PF train L2
             # disable unecessary filter to align with RTL when in pf_buffer mode
             if hasattr(prefetcher, 'queue_filter'):
-                prefetcher.queue_filter = True
+                prefetcher.queue_filter = False
 
     if cache_level == 'l2':
         if options.classic_l2:
@@ -83,7 +83,7 @@ def create_prefetcher(cpu, cache_level, options):
                 # prefetcher.prefetch_train = False # disable L1PF train L2
                 # disable unecessary filter to align with RTL when in pf_buffer mode
                 if hasattr(prefetcher, 'queue_filter'):
-                    prefetcher.queue_filter = True
+                    prefetcher.queue_filter = False
             if options.l1_to_l2_pf_hint:
                 prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
@@ -108,7 +108,7 @@ def create_prefetcher(cpu, cache_level, options):
                 # prefetcher.prefetch_train = False # disable L1PF train L2
                 # disable unecessary filter to align with RTL when in pf_buffer mode
                 if hasattr(prefetcher, 'queue_filter'):
-                    prefetcher.queue_filter = True
+                    prefetcher.queue_filter = False
             if options.l1_to_l2_pf_hint:
                 prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
