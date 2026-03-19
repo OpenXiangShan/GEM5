@@ -203,6 +203,42 @@ TEST(MeshNodeTest, BackpressureThreshold)
     expectBackpressure(8, 8, true);
 }
 
+TEST(MeshNodeTest, BackpressureDepthModeSelect)
+{
+    auto expectSelectedDepth = [](size_t ingressDepth,
+                                  size_t aggregateDepth,
+                                  bool perIngressMode,
+                                  size_t expectedDepth) {
+        const size_t got = MeshNode::TestApi::selectBackpressureDepth(
+            ingressDepth, aggregateDepth, perIngressMode);
+        std::cout << "[BackpressureMode] ingress_depth=" << ingressDepth
+                  << ", aggregate_depth=" << aggregateDepth
+                  << ", mode=" << (perIngressMode ? "per_ingress" : "aggregate")
+                  << " => selected_depth=" << got << std::endl;
+        EXPECT_EQ(got, expectedDepth);
+    };
+
+    expectSelectedDepth(1, 5, true, 1);
+    expectSelectedDepth(1, 5, false, 5);
+    expectSelectedDepth(2, 2, true, 2);
+    expectSelectedDepth(2, 2, false, 2);
+
+    const size_t depthThreshold = 2;
+    const bool blockPerIngress = MeshNode::TestApi::shouldBackpressure(
+        MeshNode::TestApi::selectBackpressureDepth(1, 5, true),
+        depthThreshold);
+    const bool blockAggregate = MeshNode::TestApi::shouldBackpressure(
+        MeshNode::TestApi::selectBackpressureDepth(1, 5, false),
+        depthThreshold);
+    std::cout << "[BackpressureModeDecision] threshold=" << depthThreshold
+              << ", per_ingress=" << (blockPerIngress ? "BLOCK" : "PASS")
+              << ", aggregate=" << (blockAggregate ? "BLOCK" : "PASS")
+              << std::endl;
+
+    EXPECT_FALSE(blockPerIngress);
+    EXPECT_TRUE(blockAggregate);
+}
+
 TEST(MeshNodeTest, RoundRobinSelect)
 {
     std::array<size_t, 6> pending = {1, 0, 0, 2, 0, 0};

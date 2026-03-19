@@ -10,8 +10,12 @@ class MeshNode(ClockedObject):
 
     node_x = Param.Unsigned(0, "Mesh X coordinate")
     node_y = Param.Unsigned(0, "Mesh Y coordinate")
-    # VOQ capacity per (egress, channel), shared by all ingress sources.
-    voq_depth = Param.Unsigned(8, "Per-egress per-channel VOQ depth")
+    # VOQ depth threshold used by MeshNode backpressure.
+    voq_depth = Param.Unsigned(2, "MeshNode VOQ depth threshold")
+    # True: per-(egress,channel,ingress) depth limit.
+    # False: aggregate per-(egress,channel) depth limit.
+    voq_depth_per_ingress = Param.Bool(
+        True, "Use per-ingress VOQ depth threshold instead of aggregate")
 
     # local0 is mandatory in current v1 topology.
     port_local0 = Param.CHIPort("Local device port 0")
