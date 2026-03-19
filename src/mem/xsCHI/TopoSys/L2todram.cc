@@ -33,6 +33,27 @@ struct ShadowAttachTarget
     std::string normalized;
 };
 
+struct EndpointPlacement
+{
+    MeshNode *rnMesh = nullptr;
+    CHIPort *rnPort = nullptr;
+    uint32_t rnLocalPort = 0;
+    const char *rnLabel = "";
+
+    MeshNode *hnMesh = nullptr;
+    CHIPort *hnPort = nullptr;
+    uint32_t hnLocalPort = 0;
+    const char *hnLabel = "";
+
+    MeshNode *dramMesh = nullptr;
+    CHIPort *dramPort = nullptr;
+    uint32_t dramLocalPort = 0;
+    const char *dramLabel = "";
+
+    // 规范化后的拓扑变体字符串（小写）。
+    std::string normalizedVariant;
+};
+
 std::string
 trimCopy(const std::string &input)
 {
@@ -50,6 +71,80 @@ toLowerCopy(std::string input)
     std::transform(input.begin(), input.end(), input.begin(),
                    [](unsigned char c) { return std::tolower(c); });
     return input;
+}
+
+CHIPort *
+getLocalPort(MeshNode *mesh, uint32_t localPort)
+{
+    return (localPort == 0) ? mesh->getLocal0Port()
+                            : mesh->getLocal1Port();
+}
+
+EndpointPlacement
+resolveEndpointPlacement(const std::string &rawVariant,
+                         MeshNode *mesh0, MeshNode *mesh1,
+                         MeshNode *mesh2)
+{
+    const std::string trimmed = trimCopy(rawVariant);
+    const std::string normalized = toLowerCopy(trimmed);
+
+    EndpointPlacement placement;
+    placement.normalizedVariant = normalized.empty()
+        ? "rn_m0_local0_hn_m1_local0_dram_m2_local0"
+        : normalized;
+
+    if (placement.normalizedVariant ==
+        "rn_m0_local0_hn_m1_local0_dram_m2_local0") {
+        // 默认 2x2 端点映射：RN->M0.local0, HN->M1.local0, DRAM->M2.local0。
+        placement.rnMesh = mesh0;
+        placement.rnPort = getLocalPort(mesh0, 0);
+        placement.rnLocalPort = 0;
+        placement.rnLabel = "Mesh0.local0";
+
+        placement.hnMesh = mesh1;
+        placement.hnPort = getLocalPort(mesh1, 0);
+        placement.hnLocalPort = 0;
+        placement.hnLabel = "Mesh1.local0";
+
+        placement.dramMesh = mesh2;
+        placement.dramPort = getLocalPort(mesh2, 0);
+        placement.dramLocalPort = 0;
+        placement.dramLabel = "Mesh2.local0";
+    } else if (placement.normalizedVariant ==
+               "rn_m0_local0_hn_m1_local0_dram_m1_local1") {
+        // 新变体：RN->M0.local0, HN->M1.local0, DRAM->M1.local1。
+        placement.rnMesh = mesh0;
+        placement.rnPort = getLocalPort(mesh0, 0);
+        placement.rnLocalPort = 0;
+        placement.rnLabel = "Mesh0.local0";
+
+        placement.hnMesh = mesh1;
+        placement.hnPort = getLocalPort(mesh1, 0);
+        placement.hnLocalPort = 0;
+        placement.hnLabel = "Mesh1.local0";
+
+        placement.dramMesh = mesh1;
+        placement.dramPort = getLocalPort(mesh1, 1);
+        placement.dramLocalPort = 1;
+        placement.dramLabel = "Mesh1.local1";
+    } else {
+        panic("Unsupported xsCHI topology variant '%s'. "
+              "Expected one of: "
+              "rn_m0_local0_hn_m1_local0_dram_m2_local0, "
+              "rn_m0_local0_hn_m1_local0_dram_m1_local1",
+              rawVariant.c_str());
+    }
+
+    panic_if(placement.rnPort == nullptr,
+             "Topology variant '%s' requires %s, but this port is null",
+             placement.normalizedVariant.c_str(), placement.rnLabel);
+    panic_if(placement.hnPort == nullptr,
+             "Topology variant '%s' requires %s, but this port is null",
+             placement.normalizedVariant.c_str(), placement.hnLabel);
+    panic_if(placement.dramPort == nullptr,
+             "Topology variant '%s' requires %s, but this port is null",
+             placement.normalizedVariant.c_str(), placement.dramLabel);
+    return placement;
 }
 
 ShadowAttachTarget
@@ -122,7 +217,8 @@ parseShadowAttachPoint(const std::string &rawAttachPoint,
         Mesh2(p.MeshNode2),
         Mesh3(p.MeshNode3),
         shadowBridges(p.ShadowRNBridges.begin(), p.ShadowRNBridges.end()),
-        shadowAttachPoints(p.shadow_attach_points.begin(), p.shadow_attach_points.end())
+        shadowAttachPoints(p.shadow_attach_points.begin(), p.shadow_attach_points.end()),
+        topologyVariant(p.topology_variant)
     {
         panic_if(Mesh0 == nullptr || Mesh1 == nullptr ||
                  Mesh2 == nullptr || Mesh3 == nullptr,
@@ -148,9 +244,22 @@ parseShadowAttachPoint(const std::string &rawAttachPoint,
         const uint32_t mesh3_x = Mesh3->getNodeX();
         const uint32_t mesh3_y = Mesh3->getNodeY();
 
-        const uint32_t L2ID = NodeID(mesh0_x, mesh0_y, 0).getNodeID();
-        const uint32_t L3ID = NodeID(mesh1_x, mesh1_y, 0).getNodeID();
-        const uint32_t dramID = NodeID(mesh2_x, mesh2_y, 0).getNodeID();
+        const EndpointPlacement endpointPlacement =
+            resolveEndpointPlacement(topologyVariant, Mesh0, Mesh1, Mesh2);
+
+        const uint32_t rn_x = endpointPlacement.rnMesh->getNodeX();
+        const uint32_t rn_y = endpointPlacement.rnMesh->getNodeY();
+        const uint32_t hn_x = endpointPlacement.hnMesh->getNodeX();
+        const uint32_t hn_y = endpointPlacement.hnMesh->getNodeY();
+        const uint32_t dram_x = endpointPlacement.dramMesh->getNodeX();
+        const uint32_t dram_y = endpointPlacement.dramMesh->getNodeY();
+
+        const uint32_t L2ID = NodeID(
+            rn_x, rn_y, endpointPlacement.rnLocalPort).getNodeID();
+        const uint32_t L3ID = NodeID(
+            hn_x, hn_y, endpointPlacement.hnLocalPort).getNodeID();
+        const uint32_t dramID = NodeID(
+            dram_x, dram_y, endpointPlacement.dramLocalPort).getNodeID();
 
         auto L2SAM = std::make_shared<SystemAddressMapRN>();
         L2SAM->addNodeID(L3ID);
@@ -170,12 +279,13 @@ parseShadowAttachPoint(const std::string &rawAttachPoint,
         //    |              |
         // Mesh3(0,1) <-> Mesh2(1,1)
         //
-        // Endpoint placement:
-        // L2Wrapper(CHIBridge) <-> Mesh0(local0)
-        // Mesh1(local0) <-> FakeL3(networkPort)
-        // Mesh2(local0) <-> DDRWrapper(networkPort)
-        assert(L2wrap->getCHIPort() != nullptr && Mesh0->getLocal0Port() != nullptr);
-        L2wrap->getCHIPort()->connect(Mesh0->getLocal0Port());
+        // Endpoint placement is selected by `topology_variant`.
+        assert(L2wrap->getCHIPort() != nullptr &&
+               endpointPlacement.rnPort != nullptr);
+        panic_if(endpointPlacement.rnPort->isConnected(),
+                 "L2ToDramSys RN attach point %s is already connected",
+                 endpointPlacement.rnLabel);
+        L2wrap->getCHIPort()->connect(endpointPlacement.rnPort);
 
         assert(Mesh0->getEastPort() != nullptr && Mesh1->getWestPort() != nullptr);
         Mesh0->getEastPort()->connect(Mesh1->getWestPort());
@@ -189,11 +299,19 @@ parseShadowAttachPoint(const std::string &rawAttachPoint,
         assert(Mesh3->getSouthPort() != nullptr && Mesh0->getNorthPort() != nullptr);
         Mesh3->getSouthPort()->connect(Mesh0->getNorthPort());
 
-        assert(Mesh1->getLocal0Port() != nullptr && L3bridge->getNetworkPort() != nullptr);
-        Mesh1->getLocal0Port()->connect(L3bridge->getNetworkPort());
+        assert(endpointPlacement.hnPort != nullptr &&
+               L3bridge->getNetworkPort() != nullptr);
+        panic_if(endpointPlacement.hnPort->isConnected(),
+                 "L2ToDramSys HN attach point %s is already connected",
+                 endpointPlacement.hnLabel);
+        endpointPlacement.hnPort->connect(L3bridge->getNetworkPort());
 
-        assert(Mesh2->getLocal0Port() != nullptr && Dram->getCHIPort() != nullptr);
-        Mesh2->getLocal0Port()->connect(Dram->getCHIPort());
+        assert(endpointPlacement.dramPort != nullptr &&
+               Dram->getCHIPort() != nullptr);
+        panic_if(endpointPlacement.dramPort->isConnected(),
+                 "L2ToDramSys DRAM attach point %s is already connected",
+                 endpointPlacement.dramLabel);
+        endpointPlacement.dramPort->connect(Dram->getCHIPort());
 
         std::set<uint32_t> shadowNodeIds;
         for (size_t i = 0; i < shadowBridges.size(); ++i) {
@@ -247,40 +365,49 @@ parseShadowAttachPoint(const std::string &rawAttachPoint,
         inform("xsCHI mesh summary: 2x2 nodes M0=(%u,%u) M1=(%u,%u) M2=(%u,%u) M3=(%u,%u)",
                mesh0_x, mesh0_y, mesh1_x, mesh1_y, mesh2_x, mesh2_y,
                mesh3_x, mesh3_y);
-        inform("xsCHI endpoint placement: RN@M0.local0 node_id=%u, HN@M1.local0 node_id=%u, DRAM@M2.local0 node_id=%u",
-               L2ID, L3ID, dramID);
+        inform("xsCHI endpoint placement: variant=%s RN@%s node_id=%u, HN@%s node_id=%u, DRAM@%s node_id=%u",
+               endpointPlacement.normalizedVariant.c_str(),
+               endpointPlacement.rnLabel, L2ID,
+               endpointPlacement.hnLabel, L3ID,
+               endpointPlacement.dramLabel, dramID);
         inform("xsCHI shadow summary: count=%zu", shadowBridges.size());
         inform("xsCHI mesh links: M0.east<->M1.west, M1.north<->M2.south, M2.west<->M3.east, M3.south<->M0.north");
-        inform("xsCHI node[%s] local0=%d east=%d west=%d north=%d south=%d",
+        inform("xsCHI node[%s] local0=%d local1=%d east=%d west=%d north=%d south=%d",
                Mesh0->name(), isConnected(Mesh0->getLocal0Port()),
+               isConnected(Mesh0->getLocal1Port()),
                isConnected(Mesh0->getEastPort()),
                isConnected(Mesh0->getWestPort()),
                isConnected(Mesh0->getNorthPort()),
                isConnected(Mesh0->getSouthPort()));
-        inform("xsCHI node[%s] local0=%d east=%d west=%d north=%d south=%d",
+        inform("xsCHI node[%s] local0=%d local1=%d east=%d west=%d north=%d south=%d",
                Mesh1->name(), isConnected(Mesh1->getLocal0Port()),
+               isConnected(Mesh1->getLocal1Port()),
                isConnected(Mesh1->getEastPort()),
                isConnected(Mesh1->getWestPort()),
                isConnected(Mesh1->getNorthPort()),
                isConnected(Mesh1->getSouthPort()));
-        inform("xsCHI node[%s] local0=%d east=%d west=%d north=%d south=%d",
+        inform("xsCHI node[%s] local0=%d local1=%d east=%d west=%d north=%d south=%d",
                Mesh2->name(), isConnected(Mesh2->getLocal0Port()),
+               isConnected(Mesh2->getLocal1Port()),
                isConnected(Mesh2->getEastPort()),
                isConnected(Mesh2->getWestPort()),
                isConnected(Mesh2->getNorthPort()),
                isConnected(Mesh2->getSouthPort()));
-        inform("xsCHI node[%s] local0=%d east=%d west=%d north=%d south=%d",
+        inform("xsCHI node[%s] local0=%d local1=%d east=%d west=%d north=%d south=%d",
                Mesh3->name(), isConnected(Mesh3->getLocal0Port()),
+               isConnected(Mesh3->getLocal1Port()),
                isConnected(Mesh3->getEastPort()),
                isConnected(Mesh3->getWestPort()),
                isConnected(Mesh3->getNorthPort()),
                isConnected(Mesh3->getSouthPort()));
 
         DPRINTF(Cache,
-            "Init CHI topo with MeshNodes: L2ID=%u(%u,%u,p0) -> HNID=%u(%u,%u,p0), DramID=%u(%u,%u,p0)\n",
-            L2ID, mesh0_x, mesh0_y,
-            L3ID, mesh1_x, mesh1_y,
-            dramID, mesh2_x, mesh2_y);
+            "Init CHI topo with MeshNodes: RNID=%u(%u,%u,p%u) -> HNID=%u(%u,%u,p%u),
+            DramID=%u(%u,%u,p%u), variant=%s\n",
+            L2ID, rn_x, rn_y, endpointPlacement.rnLocalPort,
+            L3ID, hn_x, hn_y, endpointPlacement.hnLocalPort,
+            dramID, dram_x, dram_y, endpointPlacement.dramLocalPort,
+            endpointPlacement.normalizedVariant.c_str());
     }
 
     gem5::Port &

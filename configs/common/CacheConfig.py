@@ -301,6 +301,14 @@ def config_cache(options, system):
                 # opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
                 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
                 chi_topology = getattr(options, 'chi_topology', 'L2ToDramSys')
+                chi_voq_depth = getattr(options, 'chi_voq_depth', 2)
+                chi_voq_depth_mode = getattr(options, 'chi_voq_depth_mode',
+                                             'per_ingress')
+                if chi_voq_depth_mode not in ('per_ingress', 'aggregate'):
+                    raise ValueError(
+                        f"Unsupported --chi-voq-depth-mode: {chi_voq_depth_mode}"
+                    )
+                chi_voq_depth_per_ingress = (chi_voq_depth_mode == 'per_ingress')
                 if chi_topology == 'L2L3DramSys':
                     l3_inner_cache_wrapper = L3CacheWrapper(
                         clk_domain=system.cpu_clk_domain,
@@ -334,24 +342,32 @@ def config_cache(options, system):
                     # Endpoint placement:
                     #   RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
                     system.CHIsys.MeshNode0 = MeshNode(
-                        node_x=0, node_y=0, voq_depth=8,
+                        node_x=0, node_y=0,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
                         port_east=CHIPort(recv_buffer_size=4),
                         port_north=CHIPort(recv_buffer_size=4))
                     system.CHIsys.MeshNode1 = MeshNode(
-                        node_x=1, node_y=0, voq_depth=8,
+                        node_x=1, node_y=0,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
                         port_west=CHIPort(recv_buffer_size=4),
                         port_north=CHIPort(recv_buffer_size=4))
                     system.CHIsys.MeshNode2 = MeshNode(
-                        node_x=1, node_y=1, voq_depth=8,
+                        node_x=1, node_y=1,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
                         port_west=CHIPort(recv_buffer_size=4),
                         port_south=CHIPort(recv_buffer_size=4))
                     # Mesh3 currently has no local endpoint; keep local0 present
                     # to satisfy MeshNode's mandatory local0-port invariant.
                     system.CHIsys.MeshNode3 = MeshNode(
-                        node_x=0, node_y=1, voq_depth=8,
+                        node_x=0, node_y=1,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
                         port_east=CHIPort(recv_buffer_size=4),
                         port_south=CHIPort(recv_buffer_size=4))
@@ -406,7 +422,23 @@ def config_cache(options, system):
                     # l3_cache_slice.mem_side can be directly connected to L3's inner_resp_port
                     system.CHIsys.mem_side_port = system.membus.cpu_side_ports
                 else:
-                    system.CHIsys = L2ToDramSys(configFile=os.path.join(root_dir, 'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'))
+                    if chi_topology not in ('L2ToDramSys', 'L2ToDramSys_M1Local1Dram'):
+                        raise ValueError(
+                            f"Unsupported --chi-topology for xsCHI L2ToDramSys branch: {chi_topology}"
+                        )
+                    use_mesh1_local1_dram = (chi_topology == 'L2ToDramSys_M1Local1Dram')
+                    topology_variant = (
+                        "rn_m0_local0_hn_m1_local0_dram_m1_local1"
+                        if use_mesh1_local1_dram
+                        else "rn_m0_local0_hn_m1_local0_dram_m2_local0"
+                    )
+                    system.CHIsys = L2ToDramSys(
+                        configFile=os.path.join(
+                            root_dir,
+                            'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'
+                        ),
+                        topology_variant=topology_variant,
+                    )
                     # 影子 L2 总开关与数量：
                     # - 开启时 count 必须 > 0；
                     # - 关闭时允许 count 保持默认值（不会生效）。
@@ -486,32 +518,41 @@ def config_cache(options, system):
                     # Coordinates:
                     #   Mesh0=(0,0), Mesh1=(1,0), Mesh2=(1,1), Mesh3=(0,1)
                     # Endpoint placement:
-                    #   RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
+                    #   default: RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
+                    #   M1Local1Dram variant: RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh1.local1
                     system.CHIsys.MeshNode0 = MeshNode(
-                        node_x=0, node_y=0, voq_depth=8,
+                        node_x=0, node_y=0,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
                         # local1 预留给后续影子扩展（例如 mesh0.local1）。
                         port_local1=CHIPort(recv_buffer_size=4),
                         port_east=CHIPort(recv_buffer_size=4),
                         port_north=CHIPort(recv_buffer_size=4))
                     system.CHIsys.MeshNode1 = MeshNode(
-                        node_x=1, node_y=0, voq_depth=8,
+                        node_x=1, node_y=0,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
                         # 保持与 local0 对称，便于多影子自由挂载。
                         port_local1=CHIPort(recv_buffer_size=4),
                         port_west=CHIPort(recv_buffer_size=4),
                         port_north=CHIPort(recv_buffer_size=4))
                     system.CHIsys.MeshNode2 = MeshNode(
-                        node_x=1, node_y=1, voq_depth=8,
+                        node_x=1, node_y=1,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
-                        # DRAM 仍占用 local0，local1 供未来额外流量源扩展。
+                        # 默认拓扑 DRAM 占用 local0；新变体可切到 Mesh1.local1。
                         port_local1=CHIPort(recv_buffer_size=4),
                         port_west=CHIPort(recv_buffer_size=4),
                         port_south=CHIPort(recv_buffer_size=4))
                     # Mesh3 currently has no local endpoint; keep local0 present
                     # to satisfy MeshNode's mandatory local0-port invariant.
                     system.CHIsys.MeshNode3 = MeshNode(
-                        node_x=0, node_y=1, voq_depth=8,
+                        node_x=0, node_y=1,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
                         # 默认影子挂点常用 mesh3.local0，保留 local1 以支持 count 增长。
                         port_local1=CHIPort(recv_buffer_size=4),
@@ -520,7 +561,9 @@ def config_cache(options, system):
                     print(
                         "[xsCHI][Build] mesh=2x2 "
                         "M0=(0,0) M1=(1,0) M2=(1,1) M3=(0,1) "
-                        "endpoints: RN@M0.local0 HN@M1.local0 DRAM@M2.local0 "
+                        "endpoints: RN@M0.local0 HN@M1.local0 "
+                        f"DRAM@{'M1.local1' if use_mesh1_local1_dram else 'M2.local0'} "
+                        f"topology={chi_topology} variant={topology_variant} "
                         f"shadow_enable={shadow_enable} shadow_count={len(shadow_bridges)} "
                         f"shadow_attach={shadow_attach_points}"
                     )

@@ -63,12 +63,20 @@ class L2ToDramSys(ClockedObject):
     #   |                         north
     #  south                      v
     # Mesh3(0,1) <--west-- Mesh2(1,1)
-    # Endpoint placement:
+    # Default endpoint placement:
     # RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
+    # Optional variant (selected by topology_variant):
+    # RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh1.local1
     MeshNode0 = Param.MeshNode("RN-side mesh node")
     MeshNode1 = Param.MeshNode("HN-side mesh node")
     MeshNode2 = Param.MeshNode("DRAM-side mesh node")
     MeshNode3 = Param.MeshNode("Transit-only mesh node")
+    topology_variant = Param.String(
+        "rn_m0_local0_hn_m1_local0_dram_m2_local0",
+        "Endpoint placement variant: "
+        "rn_m0_local0_hn_m1_local0_dram_m2_local0 (default) or "
+        "rn_m0_local0_hn_m1_local0_dram_m1_local1",
+    )
 
     L2BridgeBufferSize = Param.Unsigned(4, "Number of L2Bridgebuffers")
 

@@ -726,7 +726,7 @@ def xiangshan_system_init():
     parser.add_argument(
         "--chi-topology",
         type=str,
-        choices=["L2ToDramSys", "L2L3DramSys"],
+        choices=["L2ToDramSys", "L2ToDramSys_M1Local1Dram", "L2L3DramSys"],
         default="L2ToDramSys",
         help="Select CHI topology object when --CHI is enabled",
     )

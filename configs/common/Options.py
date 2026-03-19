@@ -147,6 +147,14 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
     parser.add_argument("--l2-to-l3-pf-hint", action="store_true")
     parser.add_argument("--CHI", action="store_true")
+    parser.add_argument("--chi-voq-depth", type=int, default=2,
+                        help="MeshNode VOQ depth threshold")
+    parser.add_argument("--chi-voq-depth-mode", type=str,
+                        choices=["per_ingress", "aggregate"],
+                        default="per_ingress",
+                        help="MeshNode VOQ backpressure mode: "
+                             "per_ingress uses per-(egress,channel,ingress) "
+                             "depth, aggregate uses per-(egress,channel) sum")
     # 影子 L2 参数组：
     # - 目标：在不引入一致性协议复杂度的前提下，复制主 L2 请求形成“额外 RN 流量源”。
     # - 要点：每个影子都必须给出 attach + src/window/dst 三元组，才能保证地址空间隔离。

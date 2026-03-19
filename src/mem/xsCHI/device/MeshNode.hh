@@ -39,6 +39,9 @@ class MeshNode : public ClockedObject
                                              uint32_t tgtId);
         static bool shouldBackpressure(size_t currentDepth,
                                        size_t configuredDepth);
+        static size_t selectBackpressureDepth(size_t ingressDepth,
+                                              size_t aggregateDepth,
+                                              bool perIngressMode);
         static int selectIngressRR(const std::array<size_t, 6>& pendingPerIngress,
                                    size_t cursor);
     };
@@ -86,6 +89,7 @@ class MeshNode : public ClockedObject
     const uint32_t nodeX;
     const uint32_t nodeY;
     const size_t voqDepth;
+    const bool voqDepthPerIngress;
 
     // VOQ indexed by [egress][channel][ingress]. This avoids head-of-line
     // blocking between different output directions.
@@ -159,6 +163,9 @@ class MeshNode : public ClockedObject
                                              uint32_t tgtId);
     static bool shouldBackpressureImpl(size_t currentDepth,
                                        size_t configuredDepth);
+    static size_t selectBackpressureDepthImpl(size_t ingressDepth,
+                                              size_t aggregateDepth,
+                                              bool perIngressMode);
     static int selectIngressRRImpl(const std::array<size_t, 6>& pendingPerIngress,
                                    size_t cursor);
 
@@ -183,6 +190,15 @@ MeshNode::TestApi::shouldBackpressure(size_t currentDepth,
                                       size_t configuredDepth)
 {
     return MeshNode::shouldBackpressureImpl(currentDepth, configuredDepth);
+}
+
+inline size_t
+MeshNode::TestApi::selectBackpressureDepth(size_t ingressDepth,
+                                           size_t aggregateDepth,
+                                           bool perIngressMode)
+{
+    return MeshNode::selectBackpressureDepthImpl(
+        ingressDepth, aggregateDepth, perIngressMode);
 }
 
 inline int
@@ -220,6 +236,14 @@ MeshNode::shouldBackpressureImpl(size_t currentDepth, size_t configuredDepth)
 {
     const size_t effectiveDepth = configuredDepth == 0 ? 1 : configuredDepth;
     return currentDepth >= effectiveDepth;
+}
+
+inline size_t
+MeshNode::selectBackpressureDepthImpl(size_t ingressDepth,
+                                      size_t aggregateDepth,
+                                      bool perIngressMode)
+{
+    return perIngressMode ? ingressDepth : aggregateDepth;
 }
 
 inline int
