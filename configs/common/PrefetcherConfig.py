@@ -63,7 +63,7 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_activepage = False
             prefetcher.enable_pht = True
             prefetcher.enable_xsstream = True
-            # prefetcher.prefetch_train = False # disable L1PF train L2
+            prefetcher.prefetch_train = False # disable L1PF train L2
             # disable unecessary filter to align with RTL when in pf_buffer mode
             if hasattr(prefetcher, 'queue_filter'):
                 prefetcher.queue_filter = True
@@ -80,7 +80,7 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_despacito_stream = False
                 prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
                 prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
-                # prefetcher.prefetch_train = False # disable L1PF train L2
+                prefetcher.prefetch_train = False # disable L1PF train L2
                 # disable unecessary filter to align with RTL when in pf_buffer mode
                 if hasattr(prefetcher, 'queue_filter'):
                     prefetcher.queue_filter = True
@@ -105,7 +105,7 @@ def create_prefetcher(cpu, cache_level, options):
                     prefetcher.despacito_stream.enable_despacito_db = False
                 prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
                 prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
-                # prefetcher.prefetch_train = False # disable L1PF train L2
+                prefetcher.prefetch_train = False # disable L1PF train L2
                 # disable unecessary filter to align with RTL when in pf_buffer mode
                 if hasattr(prefetcher, 'queue_filter'):
                     prefetcher.queue_filter = True
