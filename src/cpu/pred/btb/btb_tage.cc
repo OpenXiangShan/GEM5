@@ -618,13 +618,14 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             allocated_table = ti;
             allocated_index = newIndex;
             allocated_way = selected_way;
+            usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
             return true;
         }
 
         tageStats.allocProbeNoEligibleVictim++;
+        usefulResetCnt++;
     }
 
-    usefulResetCnt++;
     if (usefulResetCnt >= 256) {
         usefulResetCnt = 0;
         tageStats.updateResetU++;

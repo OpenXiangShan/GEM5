@@ -450,6 +450,52 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
 
 }
 
+TEST_F(BTBTAGETest, AllocationSuccessDecrementsUsefulResetCounter) {
+    BTBTAGE local_tage(1, 1, 16);
+    memset(&local_tage.tageStats, 0, sizeof(BTBTAGE::TageStats));
+    boost::dynamic_bitset<> local_history(64, false);
+    std::vector<FullBTBPrediction> local_stage_preds(2);
+
+    BTBEntry entry = createBTBEntry(0x1000);
+    local_tage.usefulResetCnt = 3;
+
+    predictUpdateCycle(&local_tage, 0x1000, entry, false, local_history,
+                       local_stage_preds);
+
+    EXPECT_EQ(local_tage.tageStats.updateAllocSuccess, 1);
+    EXPECT_EQ(local_tage.usefulResetCnt, 2)
+        << "A successful allocation should age usefulResetCnt down by one";
+}
+
+TEST_F(BTBTAGETest, AllocationFailureIncrementsUsefulResetCounterPerProbe) {
+    BTBTAGE local_tage(2, 1, 16);
+    memset(&local_tage.tageStats, 0, sizeof(BTBTAGE::TageStats));
+    boost::dynamic_bitset<> local_history(64, false);
+    std::vector<FullBTBPrediction> local_stage_preds(2);
+
+    Addr startPC = 0x1000;
+    BTBEntry entry = createBTBEntry(startPC);
+    local_tage.usefulResetCnt = 0;
+
+    for (unsigned table = 0; table < local_tage.numPredictors; ++table) {
+        Addr index = local_tage.getTageIndex(startPC, table);
+        auto &blocked = local_tage.tageTable[table][index][0];
+        blocked.valid = true;
+        blocked.tag = local_tage.getTageTag(startPC, table) ^ 0x1;
+        blocked.counter = 2;
+        blocked.useful = true;
+        blocked.pc = startPC + 0x40 + table * 4;
+    }
+
+    predictUpdateCycle(&local_tage, startPC, entry, false, local_history,
+                       local_stage_preds);
+
+    EXPECT_EQ(local_tage.tageStats.allocProbeNoEligibleVictim, 2);
+    EXPECT_EQ(local_tage.tageStats.updateAllocFailure, 1);
+    EXPECT_EQ(local_tage.usefulResetCnt, 2)
+        << "Each probed table without an eligible victim should age usefulResetCnt up";
+}
+
 // Test history recovery mechanism
 TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
     BTBEntry entry = createBTBEntry(0x1000);
