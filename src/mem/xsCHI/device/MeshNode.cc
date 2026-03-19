@@ -186,6 +186,7 @@ MeshNode::MeshNode(const Params &p)
       nodeX(p.node_x),
       nodeY(p.node_y),
       voqDepth(p.voq_depth == 0 ? 1 : p.voq_depth),
+      voqDepthPerIngress(p.voq_depth_per_ingress),
       outVoq(),
       rrCursor(),
       stats(this),
@@ -272,16 +273,26 @@ MeshNode::handleIngress(PortIndex ingress, FlitPtr &flit)
     const size_t egressIdx = portToIndex(egress);
     const size_t ingressIdx = portToIndex(ingress);
     const size_t channelIdx = channelToIndex(channel);
+    const size_t ingressDepth = outVoq[egressIdx][channelIdx][ingressIdx].size();
+    const size_t aggregateDepth = getQueueDepth(egress, channel);
+    const size_t selectedDepth = selectBackpressureDepthImpl(
+        ingressDepth, aggregateDepth, voqDepthPerIngress);
 
     // Backpressure point: when VOQ is full, keep flit at upstream CHIPort.
-    if (shouldBackpressureImpl(getQueueDepth(egress, channel), voqDepth)) {
+    if (shouldBackpressureImpl(selectedDepth, voqDepth)) {
         stats.voq_full_events++;
         stats.voq_full_events_by_egress[egressIdx]++;
         DPRINTF(CHIMeshNode,
-                "%s ingress=%s egress=%s channel=%d VOQ full depth=%u op=%s "
-                "tgt=%u txn=%llu\n",
+                "%s ingress=%s egress=%s channel=%d VOQ full mode=%s "
+                "selected_depth=%u ingress_depth=%u aggregate_depth=%u "
+                "limit=%u op=%s tgt=%u txn=%llu\n",
                 name(), portName(ingress), portName(egress),
-                static_cast<int>(channel), static_cast<unsigned>(voqDepth),
+                static_cast<int>(channel),
+                voqDepthPerIngress ? "per_ingress" : "aggregate",
+                static_cast<unsigned>(selectedDepth),
+                static_cast<unsigned>(ingressDepth),
+                static_cast<unsigned>(aggregateDepth),
+                static_cast<unsigned>(voqDepth),
                 CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(flit->getOpcode()).c_str(),
                 flit->getTgtId(),
                 static_cast<unsigned long long>(flit->getTxnId()));
