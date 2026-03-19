@@ -422,6 +422,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // The perception prediction tables
     std::vector<std::vector<int16_t>>  percepWeightTable;
+    std::vector<Addr> percepIndexPC;
     std::vector<bool> gbhr;
 
     // thres table
@@ -544,6 +545,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
         Scalar scLowBypassPercepHighWrong{};
         Scalar scLowBypassTageCorrect{};
 
+        Scalar pcHashCrash{};
+        Scalar pcHashCrashPercepWrong{};
+
 #ifndef UNIT_TEST
         MgscStats(statistics::Group *parent);
 #endif
@@ -591,6 +595,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static auto &pTable(BTBMGSC &mgsc) { return mgsc.pTable; }
         static auto &biasTable(BTBMGSC &mgsc) { return mgsc.biasTable; }
         static auto &percepWeightTable(BTBMGSC &mgsc) {return mgsc.percepWeightTable;}
+        static auto &percepIndexPC(BTBMGSC &mgsc) {return mgsc.percepIndexPC;}
         static auto &gbhr(BTBMGSC &mgsc) {return mgsc.gbhr;}
 
         static auto &updateThreshold(BTBMGSC &mgsc) { return mgsc.updateThreshold; }

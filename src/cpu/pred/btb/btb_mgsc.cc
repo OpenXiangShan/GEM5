@@ -123,7 +123,7 @@ BTBMGSC::initStorage()
     };
     auto percepWeightTableSize = allocWeightTable(percepWeightTable,percepTableEntryNum);
     gbhr.resize(gbhrLen,0);
-
+    percepIndexPC.resize(percepTableEntryNum);
     pUpdateThreshold.resize(pow2(thresholdTablelogSize));
 }
 
@@ -487,7 +487,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
     // bool taken = use_sc_pred ? (use_percep_pred? percep_sum>=0 : total_sum >= 0) : tage_info.tage_pred_taken;
-    bool taken = use_sc_pred ? total_sum >= 0 : tage_info.tage_pred_taken;
+    bool taken = use_sc_pred ? percep_sum >= 0 : tage_info.tage_pred_taken;
     // DPRINTF(MGSC, "global tag_index: %d, global_percsum: %d, total_sum: %d\n", gIndex[0], g_percsum, total_sum);
     // DPRINTF(MGSC, "local tag_index: %d, local_percsum: %d, total_sum: %d\n", lIndex[0], l_percsum, total_sum);
     // DPRINTF(MGSC, "path tag_index: %d, path_percsum: %d, total_sum: %d\n", pIndex[0], p_percsum, total_sum);
@@ -750,6 +750,14 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
     auto percep_sum = pred.percep_sum;
     bool percep_conf_high = false;
     bool percep_pred_taken = (percep_sum >= 0);
+    auto index = pred.percep_index;
+    if (pred.btb_pc != percepIndexPC[index]){
+        mgscStats.pcHashCrash++;
+        percepIndexPC[index] = pred.btb_pc;
+        if (percep_pred_taken != actual_taken){
+            mgscStats.pcHashCrashPercepWrong++;
+        }
+    }
     if (abs(percep_sum) > percepThres){
         mgscStats.percepHighConf++;
         percep_conf_high = true;
@@ -1107,33 +1115,33 @@ BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbi
 Addr
 BTBMGSC::getPercepIndex(Addr pc,std::vector<bool> tem_gbhr){
     {
-    uint64_t folded = 0;
-    int len = log2i(percepTableEntryNum);
-    const uint64_t foldedMask = ((1ULL << len) - 1);
-    int histLen = gbhrLen;
-    for (size_t startBit = 0; startBit < histLen; startBit += len) {
-        uint64_t chunk = 0;
-        size_t chunkSize = (len<=(histLen - startBit) ? len : histLen - startBit);
-
-        // Extract chunk from bitset
-        for (size_t i = 0; i < chunkSize; i++) {
-            chunk |= (tem_gbhr[startBit + i] << i);
-        }
-
-        // XOR this chunk into the ideal folded history
-        folded ^= chunk;
-    }
-    folded &= foldedMask;
-
-    Addr mask = percepTableEntryNum - 1;
-    unsigned index = pc ^ (pc>>len);
-    index ^= folded;
-    return index & mask;
-    }
+    // uint64_t folded = 0;
     // int len = log2i(percepTableEntryNum);
-    // Addr index = pc ^ (pc >> len);
+    // const uint64_t foldedMask = ((1ULL << len) - 1);
+    // int histLen = gbhrLen;
+    // for (size_t startBit = 0; startBit < histLen; startBit += len) {
+    //     uint64_t chunk = 0;
+    //     size_t chunkSize = (len<=(histLen - startBit) ? len : histLen - startBit);
+
+    //     // Extract chunk from bitset
+    //     for (size_t i = 0; i < chunkSize; i++) {
+    //         chunk |= (tem_gbhr[startBit + i] << i);
+    //     }
+
+    //     // XOR this chunk into the ideal folded history
+    //     folded ^= chunk;
+    // }
+    // folded &= foldedMask;
+
     // Addr mask = percepTableEntryNum - 1;
+    // unsigned index = pc ^ (pc>>len);
+    // index ^= folded;
     // return index & mask;
+    }
+    int len = log2i(percepTableEntryNum);
+    Addr index = pc ^ (pc >> len);
+    Addr mask = percepTableEntryNum - 1;
+    return index & mask;
 }
 
 Addr
@@ -1630,7 +1638,11 @@ BTBMGSC::MgscStats::MgscStats(statistics::Group *parent)
       ADD_STAT(scLowBypassPercepHighWrong, statistics::units::Count::get(),
                 "percpetion high conf pred wrong when tage low conf, sc not used"),
       ADD_STAT(scLowBypassTageCorrect, statistics::units::Count::get(),
-                "tage pred correct when tage low conf, sc not used")
+                "tage pred correct when tage low conf, sc not used"),
+      ADD_STAT(pcHashCrash, statistics::units::Count::get(),
+                "number of pc hash crash of percep wegiht table"),
+      ADD_STAT(pcHashCrashPercepWrong, statistics::units::Count::get(),
+                "number of percep prediction wrong when pc hash crash of percep wegiht table ")
 {
 }
 #endif
