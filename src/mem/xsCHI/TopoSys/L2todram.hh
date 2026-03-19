@@ -24,8 +24,9 @@ namespace xsCHI {
             //   ^               ^
             //   |               |
             // Mesh3(0,1) <-> Mesh2(1,1)
-            // Endpoints:
+            // Default endpoints:
             // RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
+            // (Topology variant can override endpoint placement.)
             MeshNode* Mesh0;
             MeshNode* Mesh1;
             MeshNode* Mesh2;
@@ -34,6 +35,8 @@ namespace xsCHI {
             std::vector<CHIBridge*> shadowBridges;
             // 每个影子的接入点，格式 meshX.localY；长度必须与 shadowBridges 一致。
             std::vector<std::string> shadowAttachPoints;
+            // Endpoint placement variant string passed from Python config.
+            std::string topologyVariant;
         public:
             typedef L2ToDramSysParams Params;
 
