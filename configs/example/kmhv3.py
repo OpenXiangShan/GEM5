@@ -86,14 +86,9 @@ def setKmhV3Params(args, system):
         if args.caches:
             cpu.icache.size = '64kB'
             cpu.dcache.size = '64kB'
-            cpu.dcache.tag_load_read_ports = 3
+            cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
-            cpu.dcache.do_fast_writeline = False
             cpu.dcache.simulate_dcache_refill = True
-            cpu.dcache.prefetch_can_offload = False
-            if getattr(cpu.dcache, "prefetcher", None) is not None and \
-                    hasattr(cpu.dcache.prefetcher, "enable_berti"):
-                cpu.dcache.prefetcher.enable_berti = True
             set_lsq_bank_conflict_cache_params(cpu, system)
 
     # l2 caches
@@ -113,13 +108,7 @@ def setKmhV3Params(args, system):
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
-                if getattr(l2_wrapper, "prefetcher", None) is not None and \
-                        hasattr(l2_wrapper.prefetcher, "enable_bop"):
-                    l2_wrapper.prefetcher.enable_bop = False
                 for j in range(args.l2_slices):
-                    l2_wrapper.slices[j].inner_cache.wpu = NULL
-                    l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
-                    l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
@@ -137,10 +126,7 @@ def setKmhV3Params(args, system):
 
     # l3 cache
     if args.l3cache:
-        system.l3.mshrs = 64
-        system.l3.do_fast_writeline = False
-        system.l3.prefetch_can_offload = False
-        system.l3.num_slices = 4
+        system.l3.mshrs = 128
 
 if __name__ == '__m5_main__':
     FutureClass = None
@@ -151,7 +137,7 @@ if __name__ == '__m5_main__':
 
     # Set default bp_type based on ideal_kmhv3 flag
     # If user didn't specify bp_type, set default based on ideal_kmhv3
-    args.enable_pf_buffer = True
+    args.enable_pf_buffer = False
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
     # args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
