@@ -49,7 +49,6 @@ class BaseMMU(SimObject):
     dtb = Param.BaseTLB("Data TLB")
 
     functional = Param.Bool(False, "Functional MMU")
-    enable_sv48 = Param.Bool(False, "enable_sv48")
 
     @classmethod
     def walkerPorts(cls):

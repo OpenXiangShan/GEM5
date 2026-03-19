@@ -23,6 +23,7 @@ GTest('abtb.test',
 # Add TAGE test with necessary dependencies
 GTest('tage.test', 
     '../btb_tage.cc',
+    '../btb_tage_ub.cc',
     'btb_tage.test.cc',
     '../folded_hist.cc',
     '../timed_base_pred.cc',

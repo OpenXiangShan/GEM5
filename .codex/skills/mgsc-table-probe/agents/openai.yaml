@@ -1,0 +1,4 @@
+interface:
+  display_name: "MGSC Table Probe"
+  short_description: "Batch analyze SC sub-table effects and branch-level fixes"
+  default_prompt: "Use this skill to run mgsc_test A/B profiles (off/l_only/g_only/i_only/full), parse topMispredictsByBranch.csv and MGSCTRACE, and identify which SC table fixes TAGE on which branch."

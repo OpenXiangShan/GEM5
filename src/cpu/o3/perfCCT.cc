@@ -14,6 +14,7 @@ InstMeta::reset(const DynInstPtr inst)
     posTick.resize((int)PerfRecord::AtCommit + 1, 0);
     disasm = inst->staticInst->disassemble(inst->pcState().instAddr());
     pc = inst->pcState().instAddr();
+    value = 0;
 
     isload = inst->isLoad();
     vaddr = 0;
@@ -76,6 +77,10 @@ PerfCCT::updateInstMeta(InstSeqNum sn, const InstDetail detail, const uint64_t v
     }
     auto meta = getMeta(sn);
     switch (detail) {
+    case InstDetail::Result: {
+        meta->value = val;
+        break;
+    }
     case InstDetail::VAddress: {
         meta->vaddr = val;
         break;
@@ -109,8 +114,9 @@ PerfCCT::commitMeta(InstSeqNum sn)
     for (auto it = meta->posTick.begin() + 1; it != meta->posTick.end(); it++) {
         ss << "," << *it;
     }
+    ss << "," << (meta->value & 0x0fffffffffffffffllu);
     ss << ",\'" << meta->disasm << "\'";
-    ss << "," << meta->pc;
+    ss << "," << (meta->pc & 0x0fffffffffffffffllu);
     ss << ");";
     archdb->execmd(ss.str());
     ss.str(std::string());

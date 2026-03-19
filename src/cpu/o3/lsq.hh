@@ -46,17 +46,20 @@
 #include <cstdint>
 #include <list>
 #include <map>
+#include <memory>
 #include <queue>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include <boost/circular_buffer.hpp>
 #include <boost/compute/detail/lru_cache.hpp>
 
 #include "arch/generic/mmu.hh"
 #include "arch/generic/tlb.hh"
 #include "base/flags.hh"
+#include "base/statistics.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
@@ -78,13 +81,22 @@ namespace o3
 class CPU;
 class IEW;
 class LSQUnit;
-class StoreBufferEntry;
 
 
 class LSQ
 {
   public:
     class LSQRequest;
+    class SbufferRequest;
+    class StoreBufferEntry;
+    class StoreBuffer;
+    enum class StoreBufferEvictCause
+    {
+        Flush,
+        Full,
+        SQFull,
+        Timeout
+    };
 
     /**
      * DcachePort class for the load/store queue.
@@ -127,6 +139,72 @@ class LSQ
          * @return true since we have to snoop
          */
         virtual bool isSnooping() const { return true; }
+    };
+
+    class StoreBufferEntry
+    {
+      public:
+        const int index;
+        ThreadID tid;
+        Addr blockVaddr;
+        Addr blockPaddr;
+        std::vector<uint8_t> blockDatas;
+        std::vector<bool> validMask;
+        bool sending;
+        // the another same addr entry when sending
+        // another cannot sending until self sending finished
+        StoreBufferEntry *vice = nullptr;
+        // merged request
+        SbufferRequest *request = nullptr;
+
+        StoreBufferEntry(int size, int index) : index(index)
+        {
+            blockDatas.resize(size, 0);
+            validMask.resize(size, false);
+        }
+
+        void reset(ThreadID tid, uint64_t block_vaddr, uint64_t block_paddr,
+                   uint64_t offset, uint8_t *datas, uint64_t size,
+                   const std::vector<bool> &mask);
+
+        void merge(uint64_t offset, uint8_t *datas, uint64_t size,
+                   const std::vector<bool> &mask);
+
+        bool recordForward(RequestPtr req, LSQRequest *lsqreq);
+    };
+
+    class StoreBuffer
+    {
+        using mapIter =
+            typename std::unordered_map<uint64_t, StoreBufferEntry *>::iterator;
+
+        // key = (paddr & cacheblockmask)
+        uint64_t _size = 0;
+        std::unordered_map<uint64_t, StoreBufferEntry *> data_map;
+        std::vector<mapIter> crossRef;
+        boost::circular_buffer<int> lru_index;
+        boost::circular_buffer<int> free_list;
+        std::vector<StoreBufferEntry *> data_vec;
+        std::vector<bool> data_vld;
+
+        uint64_t hashKey(ThreadID tid, Addr block_paddr) const
+        {
+            // block_paddr[5:0] is 0, so we can use it to store tid
+            return (block_paddr | tid);
+        }
+
+      public:
+        void setData(std::vector<StoreBufferEntry *> &data_vec);
+        bool full() const;
+        uint64_t size() const;
+        uint64_t unsentSize() const;
+        StoreBufferEntry *getEmpty();
+        void insert(StoreBufferEntry *entry);
+        StoreBufferEntry *get(ThreadID tid, uint64_t addr) const;
+        void update(int index);
+        StoreBufferEntry *getEvict();
+        StoreBufferEntry *createVice(StoreBufferEntry *entry);
+        void release(StoreBufferEntry *entry);
     };
 
     /** Memory operation metadata.
@@ -695,6 +773,7 @@ class LSQ
     class SbufferRequest : public LSQRequest
     {
         CPU* cpu;
+        LSQ* lsq;
       public:
         StoreBufferEntry* sbuffer_entry=nullptr;
         SbufferRequest(CPU* cpu, LSQUnit* port, Addr blockpaddr, uint8_t* data);
@@ -771,7 +850,9 @@ class LSQ
      * Attempts to write back stores until all cache ports are used or the
      * interface becomes blocked.
      */
-    void writebackStoreBuffer();
+    void processWriteback();
+
+    void storeBufferWriteback();
 
     /**
      * Squash instructions from a thread until the specified sequence number.
@@ -893,7 +974,7 @@ class LSQ
     bool hasStoresToWB(ThreadID tid);
 
     // true if all stores are flushed
-    bool flushAllStores(ThreadID tid);
+    bool flushStores(ThreadID tid);
 
     /** Returns the number of stores a specific thread has to write back. */
     int numStoresToSbuffer(ThreadID tid);
@@ -994,6 +1075,34 @@ class LSQ
 
     void setDcacheWriteStall(bool t) { dcacheWriteStall = t; }
     bool getDcacheWriteStall() { return dcacheWriteStall; }
+    StoreBuffer &getStoreBuffer() { return storeBuffer; }
+    bool storeBufferEmpty() const { return storeBuffer.size() == 0; }
+    bool storeBufferFlushing() const { return _storeBufferFlushing; }
+    void clearStoreBufferFlushing() { _storeBufferFlushing = false; }
+    uint32_t getSbufferEvictThreshold() const { return sbufferEvictThreshold; }
+    uint32_t getSbufferEntries() const { return sbufferEntries; }
+    uint64_t getStoreBufferInactiveCycles() const
+    {
+        return storeBufferWritebackInactive;
+    }
+    uint64_t getStoreBufferInactiveThreshold() const
+    {
+        return storeBufferInactiveThreshold;
+    }
+    void resetStoreBufferInactiveCycles() { storeBufferWritebackInactive = 0; }
+    void incStoreBufferInactiveCycles() { ++storeBufferWritebackInactive; }
+    bool storeBufferBlocked() const
+    {
+        return blockedSbufferEntry != nullptr;
+    }
+    void setBlockedStoreBufferEntry(StoreBufferEntry *entry)
+    {
+        blockedSbufferEntry = entry;
+    }
+    void clearBlockedStoreBufferEntry() { blockedSbufferEntry = nullptr; }
+    bool retryBlockedStoreBuffer();
+    bool sbufferSendPacket(PacketPtr data_pkt);
+    void completeSbufferEvict(PacketPtr pkt);
 
     unsigned getLQEntries() const { return LQEntries; }
 
@@ -1054,6 +1163,15 @@ class LSQ
 
     const int numBank = 8;
     bool dcacheWriteStall = false;
+    const uint32_t sbufferEvictThreshold;
+    const uint32_t sbufferEntries;
+    const uint64_t storeBufferInactiveThreshold;
+    const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle = 2;
+    StoreBuffer storeBuffer;
+    bool _storeBufferFlushing = false;
+    uint64_t storeBufferWritebackInactive = 0;
+    StoreBufferEntry *blockedSbufferEntry = nullptr;
+    ThreadID nextStoreBufferOffloadTid = InvalidThreadID;
 
     bool enableBankConflictCheck;
     bool sbufferBankWriteAccurately;
@@ -1099,6 +1217,18 @@ class LSQ
         }
         return 0;
     }
+
+    struct LSQStats : public statistics::Group
+    {
+        LSQStats(statistics::Group *parent);
+
+        statistics::Scalar sbufferEvictDuetoFlush;
+        statistics::Scalar sbufferEvictDuetoFull;
+        statistics::Scalar sbufferEvictDuetoSQFull;
+        statistics::Scalar sbufferEvictDuetoTimeout;
+    } stats;
+
+    void recordStoreBufferEviction(StoreBufferEvictCause cause);
 
     /** List of Active Threads in System. */
     std::list<ThreadID> *activeThreads;

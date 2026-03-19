@@ -180,7 +180,6 @@ class TLB : public BaseTLB
     Walker *getWalker();
 
     void takeOverFrom(BaseTLB *old) override {}
-    void setPTWmode(bool _enable_sv48) override;
 
     TlbEntry *insert(Addr vpn, const TlbEntry &entry, bool suqashed_update, uint8_t translateMode);
     TlbEntry *insertForwardPre(Addr vpn, const TlbEntry &entry);

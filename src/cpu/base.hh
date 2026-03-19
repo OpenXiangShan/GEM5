@@ -688,7 +688,6 @@ class BaseCPU : public ClockedObject
     // difftest
   protected:
     bool enableDifftest;
-    bool enableSv48;
     bool dumpCommitFlag;
     int dumpStartNum;
     bool enableRVV{false};

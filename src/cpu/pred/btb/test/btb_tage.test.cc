@@ -5,6 +5,7 @@
 
 #include "base/types.hh"
 #include "cpu/pred/btb/btb_tage.hh"
+#include "cpu/pred/btb/btb_tage_ub.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 
@@ -231,7 +232,7 @@ void setupTageEntry(BTBTAGE* tage, Addr pc, int table_idx,
  */
 void verifyTageEntries(BTBTAGE* tage, Addr pc, const std::vector<int>& expected_tables) {
     for (int t = 0; t < tage->numPredictors; t++) {
-        for (int way = 0; way < tage->numWays; way++) {
+        for (unsigned way = 0; way < tage->numWays[t]; way++) {
             Addr index = tage->getTageIndex(pc, t);
             auto &entry = tage->tageTable[t][index][way];
 
@@ -260,7 +261,7 @@ int findTableWithEntry(BTBTAGE* tage, Addr startPC, Addr branchPC) {
     // use meta to find the table, predicted info
     for (int t = 0; t < tage->numPredictors; t++) {
         Addr index = tage->getTageIndex(startPC, t, meta->indexFoldedHist[t].get());
-        for (int way = 0; way < tage->numWays; way++) {
+        for (unsigned way = 0; way < tage->numWays[t]; way++) {
             auto &entry = tage->tageTable[t][index][way];
             if (entry.valid && entry.pc == branchPC) {
                 return t;
@@ -796,7 +797,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
 
     // Check if allocation happened
     int allocatedWay = -1;
-    for (unsigned way = 0; way < tage->numWays; way++) {
+    for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid &&
             tage->tageTable[testTable][testIndex][way].pc == 0x1000) {
             allocatedWay = way;
@@ -812,7 +813,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     tage->tageTable[testTable][testIndex][allocatedWay].counter = 2; // Make it strong
 
     // Step 2: Attempt to fill remaining ways with different branches
-    for (unsigned way = 0; way < tage->numWays; way++) {
+    for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (way == allocatedWay) continue;
 
         // Create a branch with different PC
@@ -824,16 +825,17 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
 
     // Verify now both ways can be filled under miss policy (consider any way's useful=0)
     int filledWays = 0;
-    for (unsigned way = 0; way < tage->numWays; way++) {
+    for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid) {
             filledWays++;
         }
     }
 
-    EXPECT_EQ(filledWays, tage->numWays) << "All ways should be filled after multiple allocations under miss policy";
+    EXPECT_EQ(filledWays, tage->numWays[testTable])
+        << "All ways should be filled after multiple allocations under miss policy";
 
     // Strengthen all allocated entries to prevent replacement in Step 3
-    for (unsigned way = 0; way < tage->numWays; way++) {
+    for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid) {
             tage->tageTable[testTable][testIndex][way].useful = true;
             tage->tageTable[testTable][testIndex][way].counter = 2; // Make it strong
@@ -853,7 +855,7 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     // Check if the new entry was allocated
     bool found = false;
     unsigned foundWay = 0;
-    for (unsigned way = 0; way < tage->numWays; way++) {
+    for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
         if (tage->tageTable[testTable][testIndex][way].valid &&
             tage->tageTable[testTable][testIndex][way].pc == 0x1008) {
             found = true;
@@ -868,6 +870,31 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     int alloc_failure_after_step3 = tage->tageStats.updateAllocFailure;
     EXPECT_GE(alloc_failure_after_step3, alloc_failure_after_step2 + 1)
         << "Allocation failures should increase after additional failed attempt";
+}
+
+TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
+    stagePreds[1].btbEntries.clear();
+    tage->putPCHistory(0x1000, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+    stream.exeBranchInfo = newEntry;
+    stream.exeTaken = true;
+    stream.resolved = true;
+    stream.predBranchInfo = newEntry;
+    stream.updateBTBEntries.clear();
+    stream.updateIsOldEntry = false;
+    stream.updateNewBTBEntry = newEntry;
+    stream.predMetas[0] = meta;
+    stream = setMispredStream(stream);
+
+    tage->update(stream);
+
+    int table = findTableWithEntry(tage, 0x1000, newEntry.pc);
+    EXPECT_GE(table, 0)
+        << "New conditional entry should still allocate without prediction-time meta";
 }
 
 /**
@@ -946,6 +973,133 @@ TEST_F(BTBTAGETest, BankConflict) {
         // No conflict even with same bank
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
     }
+}
+
+class BTBTAGEUpperBoundTest : public ::testing::Test
+{
+  protected:
+    void SetUp() override {
+        tage = new BTBTAGEUpperBound();
+        memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+        history.resize(128, false);
+        stagePreds.resize(2);
+    }
+
+    BTBTAGEUpperBound *tage;
+    boost::dynamic_bitset<> history;
+    std::vector<FullBTBPrediction> stagePreds;
+};
+
+class BTBTAGEUpperBoundPathHashTest : public ::testing::Test
+{
+  protected:
+    void SetUp() override {
+        tage = new BTBTAGEUpperBound(4, 1024, 4,
+            BTBTAGEUpperBound::HistorySource::PathHash);
+        memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+        outcomeHistory.resize(128, false);
+        pathHistory.resize(128, false);
+        stagePreds.resize(2);
+    }
+
+    BTBTAGEUpperBound *tage;
+    boost::dynamic_bitset<> outcomeHistory;
+    boost::dynamic_bitset<> pathHistory;
+    std::vector<FullBTBPrediction> stagePreds;
+};
+
+TEST_F(BTBTAGEUpperBoundTest, ExactContextLookup) {
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
+    boost::dynamic_bitset<> historyA(128, 0);
+    boost::dynamic_bitset<> historyB(128, 0);
+    historyB[0] = true;
+
+    ASSERT_TRUE(tage->insertExactEntry(3, entry.pc, historyA, 2));
+    EXPECT_TRUE(tage->hasExactEntry(3, entry.pc, historyA));
+    EXPECT_FALSE(tage->hasExactEntry(3, entry.pc, historyB));
+
+    bool predA = predictTAGE(tage, 0x1000, {entry}, historyA, stagePreds);
+    bool predB = predictTAGE(tage, 0x1000, {entry}, historyB, stagePreds);
+
+    EXPECT_TRUE(predA);
+    EXPECT_FALSE(predB);
+}
+
+TEST_F(BTBTAGEUpperBoundTest, ProviderAltSelection) {
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
+
+    ASSERT_TRUE(tage->insertExactEntry(3, entry.pc, history, 0));
+    ASSERT_TRUE(tage->insertExactEntry(1, entry.pc, history, -2));
+
+    predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
+    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
+    auto pred = meta->preds[entry.pc];
+
+    EXPECT_EQ(pred.mainInfo.table, 3u);
+    EXPECT_EQ(pred.altInfo.table, 1u);
+    EXPECT_TRUE(pred.useAlt);
+    EXPECT_FALSE(pred.taken);
+}
+
+TEST_F(BTBTAGEUpperBoundTest, AllocationUsesPredictionTimeHistory) {
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
+    boost::dynamic_bitset<> historyA(128, 0);
+    boost::dynamic_bitset<> historyB(128, 0);
+    historyB[0] = true;
+
+    predictTAGE(tage, 0x1000, {entry}, historyA, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    FetchTarget stream = createStream(0x1000, entry, true, meta);
+    stream = setMispredStream(stream);
+
+    tage->recoverHist(historyB, stream, 1, true);
+    tage->update(stream);
+
+    EXPECT_TRUE(tage->hasExactEntry(0, entry.pc, historyA));
+    EXPECT_FALSE(tage->hasExactEntry(0, entry.pc, historyB));
+}
+
+TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
+    boost::dynamic_bitset<> historyA(128, 0);
+    stagePreds[1].btbEntries.clear();
+    tage->putPCHistory(0x1000, historyA, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
+    FetchTarget stream;
+    stream.startPC = 0x1000;
+    stream.exeBranchInfo = newEntry;
+    stream.exeTaken = true;
+    stream.resolved = true;
+    stream.predBranchInfo = newEntry;
+    stream.updateBTBEntries.clear();
+    stream.updateIsOldEntry = false;
+    stream.updateNewBTBEntry = newEntry;
+    stream.predMetas[0] = meta;
+    stream = setMispredStream(stream);
+
+    tage->update(stream);
+
+    EXPECT_TRUE(tage->hasExactEntry(0, newEntry.pc, historyA));
+}
+
+TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
+    boost::dynamic_bitset<> pathHistoryA(128, 0);
+    boost::dynamic_bitset<> pathHistoryB(128, 0);
+    applyPathHistoryTaken(pathHistoryB, entry.pc, entry.target);
+
+    ASSERT_TRUE(tage->insertExactEntry(2, entry.pc, pathHistoryB, 2));
+
+    FullBTBPrediction pred;
+    pred.btbEntries.push_back(entry);
+    pred.condTakens.push_back({entry.pc, true});
+    tage->specUpdatePHist(pathHistoryA, pred);
+
+    bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
+
+    EXPECT_TRUE(predicted);
 }
 
 

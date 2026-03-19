@@ -46,7 +46,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
   public:
 #ifdef UNIT_TEST
     // Test constructor
-    BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2, unsigned tableSize = 1024, unsigned numBanks = 4);
+    BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2,
+            unsigned tableSize = 1024, unsigned numBanks = 4);
 #else
     // Production constructor
     typedef BTBTAGEParams Params;
@@ -100,14 +101,20 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool useAlt;           // Whether to use alternative prediction, true if main is weak or no main prediction
             bool taken;            // Final prediction (taken/not taken) = use_alt ? alt_provided ? alt_taken : base_taken : main_taken
             bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
+            int finalProviderTable; // Table that supplied the final prediction, -1 means base BTB
+            bool finalProviderIsAlt; // Whether final prediction came from alternate provider
 
 
-            TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false) {}
+            TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false),
+                               finalProviderTable(-1), finalProviderIsAlt(false) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
-                            bool useAlt, bool taken, bool altPred) :
+                            bool useAlt, bool taken, bool altPred,
+                            int finalProviderTable, bool finalProviderIsAlt) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
-                            useAlt(useAlt), taken(taken), altPred(altPred){}
+                            useAlt(useAlt), taken(taken), altPred(altPred),
+                            finalProviderTable(finalProviderTable),
+                            finalProviderIsAlt(finalProviderIsAlt) {}
     };
 
 
@@ -162,10 +169,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void setTrace() override;
 
     // check folded hists after speculative update and recover
-    void checkFoldedHist(const bitset &history, const char *when);
+    virtual void checkFoldedHist(const bitset &history, const char *when);
 
 #ifndef UNIT_TEST
-  private:
+  protected:
 #endif
 
     // Look up predictions in TAGE tables for a stream of instructions
@@ -240,8 +247,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Maximum history length, not used
     unsigned maxHistLen;
 
-    // Number of ways for set associative design
-    const unsigned numWays;
+    // Number of ways for each table in the set associative design
+    std::vector<unsigned> numWays;
 
     // The actual TAGE prediction tables (table x index x way)
     std::vector<std::vector<std::vector<TageEntry>>> tageTable;
@@ -282,7 +289,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     bool satDecrement(int min, short &counter);
 
     // Get index for useAlt table
-    Addr getUseAltIdx(Addr pc);
+    Addr getUseAltIdx(Addr pc) const;
 
     // Cache for TAGE indices
     std::vector<Addr> tageIndex;
@@ -342,6 +349,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateAllocSuccess;
         Scalar updateMispred;
         Scalar updateResetU;
+        Scalar predFinalSourceBase;
+        Scalar updateFinalSourceBaseCorrect;
+        Scalar updateFinalSourceBaseWrong;
 
         // Recomputed prediction difference statistics (per fetchBlock)
         Scalar recomputedVsActualDiff;   // recomputed.taken != actual_taken
@@ -361,6 +371,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
         statistics::Distribution updateTableHits;
 
         statistics::Vector updateTableMispreds;
+        statistics::Vector predFinalSourceTable;
+        statistics::Vector updateFinalSourceTableCorrect;
+        statistics::Vector updateFinalSourceTableWrong;
 #endif
 
         Scalar condPredwrong;
@@ -439,6 +452,7 @@ private:
     // Helper methods for LRU management
     void updateLRU(int table, Addr index, unsigned way);
     unsigned getLRUVictim(int table, Addr index);
+    unsigned getNumWays(unsigned table) const;
 
     std::shared_ptr<TageMeta> meta;
 };

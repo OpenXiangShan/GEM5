@@ -101,6 +101,8 @@ enum StallReason {
     ScalarReadyButNotIssued,  // B
     ResumeUnblock,  // B
     CommitSquash,  // BS
+    ROBFull,  // B
+    RegFull,  // B
     OtherStall,  // B
     NumStallReasons
 };
@@ -155,6 +157,8 @@ struct IEWStruct
     bool branchMispredict[MaxThreads];
     bool branchTaken[MaxThreads];
     bool includeSquashInst[MaxThreads];
+
+    bool valuePredictionError[MaxThreads];
 };
 
 struct IssueStruct
@@ -219,29 +223,17 @@ struct TimeStruct
         StallReason blockReason;
     };
 
-    DecodeComm decodeInfo[MaxThreads];
+    DecodeComm decodeInfo[MaxThreads]; // decode to fetch
 
     struct RenameComm
     {
         StallReason blockReason;
     };
 
-    RenameComm renameInfo[MaxThreads];
+    RenameComm renameInfo[MaxThreads]; // rename to decode
 
     struct IewComm
     {
-        // Also eventually include skid buffer space.
-        unsigned freeLQEntries;
-        unsigned freeSQEntries;
-        unsigned dispatchedToLQ;
-        unsigned dispatchedToSQ;
-
-        unsigned ldstqCount;
-
-        unsigned dispatched;
-        bool usedIQ;
-        bool usedLSQ;
-
         StallReason robHeadStallReason;
         StallReason blockReason;
         StallReason lqHeadStallReason;
@@ -256,7 +248,7 @@ struct TimeStruct
         std::vector<ResolvedCFIEntry> resolvedCFIs;  // *F
     };
 
-    IewComm iewInfo[MaxThreads];
+    IewComm iewInfo[MaxThreads]; // iew to rename, fetch
 
     struct CommitComm
     {
@@ -300,12 +292,11 @@ struct TimeStruct
 
         InstSeqNum doneMemSeqNum;
 
+        InstSeqNum robheadSeqNum;
+
         uint64_t doneFtqId; // F
         uint64_t squashedTargetId; // F
         unsigned squashedLoopIter; // F
-
-        /// Tell Rename how many free entries it has in the ROB
-        unsigned freeROBEntries; // *R
 
         bool isTrapSquash;
         bool squash; // *F, D, R, I
@@ -336,15 +327,36 @@ struct TimeStruct
 
     };
 
-    CommitComm commitInfo[MaxThreads];
-
-    bool decodeBlock[MaxThreads];
-    bool decodeUnblock[MaxThreads];
-    bool renameBlock[MaxThreads];
-    bool renameUnblock[MaxThreads];
-    bool iewBlock[MaxThreads];
-    bool iewUnblock[MaxThreads];
+    CommitComm commitInfo[MaxThreads];// commit to iew, rename, fetch
 };
+
+
+struct StallSignals
+{
+    StallSignals()
+    {
+        for (int i = 0; i < MaxThreads; ++i) {
+            blockFetch[i] = false;
+            blockDecode[i] = false;
+            blockRename[i] = false;
+            blockIEW[i] = false;
+            fetchBlockReason[i] = StallReason::NoStall;
+            decodeBlockReason[i] = StallReason::NoStall;
+            renameBlockReason[i] = StallReason::NoStall;
+            iewBlockReason[i] = StallReason::NoStall;
+        }
+    }
+
+    bool blockFetch[MaxThreads];// decode to fetch
+    bool blockDecode[MaxThreads];// rename to decode
+    bool blockRename[MaxThreads];// iew to rename (if iew is stalling, rename all threads would be stalled)
+    bool blockIEW[MaxThreads];// commit to iew
+    StallReason fetchBlockReason[MaxThreads];// decode to fetch root cause
+    StallReason decodeBlockReason[MaxThreads];// rename to decode root cause
+    StallReason renameBlockReason[MaxThreads];// iew to rename root cause
+    StallReason iewBlockReason[MaxThreads];// commit to iew root cause
+};
+
 
 } // namespace o3
 } // namespace gem5

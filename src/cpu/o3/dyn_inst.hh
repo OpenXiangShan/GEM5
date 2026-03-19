@@ -68,6 +68,7 @@
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/translation.hh"
+#include "cpu/valuepred/valuepred_metadata.hh"
 #include "debug/CommitTrace.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/HtmCpu.hh"
@@ -744,6 +745,7 @@ class DynInst : public ExecContext, public RefCounted
     bool isHInst()        const { return staticInst->isHInst(); }
     bool isStore()        const { return staticInst->isStore(); }
     bool isAtomic()       const { return staticInst->isAtomic(); }
+    bool isLoadReserved() const { return staticInst->isLoadReserved(); }
     bool isStoreConditional() const
     { return staticInst->isStoreConditional(); }
     bool isInstPrefetch() const { return staticInst->isInstPrefetch(); }
@@ -861,9 +863,6 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Clears the serializeAfter part of this instruction.*/
     void clearSerializeAfter() { status.reset(SerializeAfter); }
-
-    /** Checks if this serializeAfter is only temporarily set. */
-    bool isTempSerializeAfter() { return status[SerializeAfter]; }
 
     /** Sets the serialization part of this instruction as handled. */
     void setSerializeHandled() { status.set(SerializeHandled); }
@@ -1652,6 +1651,17 @@ class DynInst : public ExecContext, public RefCounted
 
     /** get golden */
     uint8_t *getGolden() { return goldenData; }
+
+    /** value prediction */
+    valuepred::VPResult vpResult = {false, 0xdeadbeefULL};
+
+    RegVal actualValue = 0xdeadbeefULL;
+    bool vpMisprediction = false;
+    bool vpSupported = false;
+
+    bool canLVP(){
+        return isLoad() && !isVector() && !isLoadReserved();
+    }
 };
 
 } // namespace o3

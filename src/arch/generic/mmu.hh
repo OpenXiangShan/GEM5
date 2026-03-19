@@ -88,7 +88,7 @@ class BaseMMU : public SimObject
     typedef BaseMMUParams Params;
 
     BaseMMU(const Params &p)
-      : SimObject(p), dtb(p.dtb), itb(p.itb), functional(p.functional),enableSv48(p.enable_sv48)
+      : SimObject(p), dtb(p.dtb), itb(p.itb), functional(p.functional)
     {}
 
     BaseTLB*
@@ -166,7 +166,6 @@ class BaseMMU : public SimObject
     BaseTLB* dtb;
     BaseTLB* itb;
     bool functional;
-    bool enableSv48;
 
   protected:
     /**

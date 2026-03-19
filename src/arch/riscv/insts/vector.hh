@@ -917,8 +917,10 @@ class Vcompress_vm : public VectorNonSplitInst
         uint32_t vd_ptr = 0;
         for (uint32_t i = 0; i < rVl; i++) {
             if (elem_mask(vm.as<uint8_t>(), i)) {
-                vd_array[vd_ptr / elem_num_per_vreg].as<Type>()[vd_ptr % elem_num_per_vreg] =
-                    vs_array[i / elem_num_per_vreg].as<Type>()[i % elem_num_per_vreg];
+                vd_array[vd_ptr / elem_num_per_vreg].template as<Type>()
+                    [vd_ptr % elem_num_per_vreg] =
+                    vs_array[i / elem_num_per_vreg].template as<Type>()
+                    [i % elem_num_per_vreg];
                 vd_ptr++;
             }
         }
@@ -1009,8 +1011,10 @@ class Vslideup_vi : public VectorNonSplitInst
                 break;
             }
             if (vm_bit || elem_mask(vm.as<uint8_t>(), imm + i)){
-              vd_array[(imm + i) / elem_num_per_vreg].as<Type>()[(imm + i) % elem_num_per_vreg] =
-                  vs_array[i / elem_num_per_vreg].as<Type>()[i % elem_num_per_vreg];
+              vd_array[(imm + i) / elem_num_per_vreg].template as<Type>()
+                  [(imm + i) % elem_num_per_vreg] =
+                  vs_array[i / elem_num_per_vreg].template as<Type>()
+                  [i % elem_num_per_vreg];
             }
         }
         for (uint32_t i = 0; i < regLength; i++) {

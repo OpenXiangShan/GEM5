@@ -39,13 +39,13 @@
 
 **目标**: 在合入前，按需检查有性能风险的 PR
 
-**触发**: 在 PR 上添加 `perf` 标签（默认跑 spec06-0.8c），或手动触发 workflow 选择 benchmark
+**触发**: 在 PR 上添加 `perf` 标签（默认跑 gcc12-spec06-0.8c），或手动触发 workflow 选择 benchmark
 
 ### 支持的命令
 
 ```bash
-/run-spec                    # 默认：SPEC06 INT 80%覆盖率 (~500 checkpoints)
-/run-spec spec06-1.0c        # SPEC06 100%覆盖率
+/run-spec                              # 默认：gcc12 SPEC06 INT 80%覆盖率 (~500 checkpoints)
+/run-spec gcc12-spec06-1.0c            # gcc12 SPEC06 100%覆盖率
 /run-spec spec17-1.0c        # SPEC17 100%覆盖率
 /run-spec spec06-rvv-1.0c    # SPEC06 RVV扩展 100%
 /run-spec spec06int-rvv-0.8c # SPEC06 INT RVV 80%
@@ -57,7 +57,7 @@
 
 ### 当前实现
 
-- 添加 `perf` 标签会自动触发 spec06-0.8c，workflow 会记录标签创建时 PR 的 head SHA 确保结果对应正确的 commit
+- 添加 `perf` 标签会自动触发 gcc12-spec06-0.8c，workflow 会记录标签创建时 PR 的 head SHA 确保结果对应正确的 commit
 - 需要其他 benchmark 时，可通过 Actions -> On-Demand SPEC workflow 手动输入 PR 号和类型
 
 ### 性能结果
@@ -139,8 +139,8 @@ git push origin xs-dev
 # 只需要通过 Tier 1 快速检查即可
 
 # 场景2: 性能相关改动
-/run-spec                    # 标准性能测试
-/run-spec spec06-1.0c        # 完整覆盖率测试
+/run-spec                    # 标准性能测试（默认 gcc12-spec06-0.8c）
+/run-spec gcc12-spec06-1.0c  # 完整覆盖率测试
 
 # 或者把当前分支改名为*-perf, 这样每次push 会自动运行v3 的性能。
 ```

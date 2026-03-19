@@ -157,6 +157,7 @@ BTBMGSC::BTBMGSC()
       enablePTable(true),
       enableBiasTable(true),
       enablePCThreshold(false),
+      focusBranchPC(0),
       mgscStats()
 {
     // Test-only small config: keep tables tiny and deterministic for fast unit tests.
@@ -204,6 +205,7 @@ BTBMGSC::BTBMGSC(const Params &p)
       enablePTable(p.enablePTable),
       enableBiasTable(p.enableBiasTable),
       enablePCThreshold(p.enablePCThreshold),
+      focusBranchPC(p.focusBranchPC),
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
@@ -413,6 +415,9 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     int p_update_thres = enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.pc) : 0;
 
     int total_thres = (updateThreshold / 8) + p_update_thres;
+    // Threshold is used as a confidence gate; avoid negative values which
+    // effectively disable the gate (abs(sum) > negative is almost always true).
+    total_thres = std::max(total_thres, 0);
 
     bool use_sc_pred = forceUseSC;  // Force use SC if configured
     if (!use_sc_pred) {
@@ -656,6 +661,11 @@ void
 BTBMGSC::updateGlobalThreshold(Addr pc, bool update_direction)
 {
     updateCounter(update_direction, updateThresholdWidth, updateThreshold);
+    // Keep global threshold non-negative; negative thresholds make SC gating
+    // degenerate and can cause overuse of SC.
+    if (updateThreshold < 0) {
+        updateThreshold = 0;
+    }
 }
 
 void
@@ -771,7 +781,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 
 #ifndef UNIT_TEST
     // Write trace record
-    if (enableDB) {
+    if (enableDB && (focusBranchPC == 0 || entry.pc == focusBranchPC)) {
         MgscTrace t;
         t.set(entry.pc,
             tage_pred_taken, pred.tage_conf_high, pred.tage_conf_mid, pred.tage_conf_low,
@@ -784,7 +794,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 #endif
 
     // Only update tables if prediction was wrong or confidence was low
-    if (sc_pred_taken != actual_taken || abs(total_sum) < total_thres) {
+    if (sc_pred_taken != actual_taken || abs(total_sum) < (total_thres / 2)) {
         // get weight table index from startPC
         Addr weightTableIdx = getPcIndex(stream.startPC, weightTableIdxWidth);
         bool threshold_inc = (sc_pred_taken != actual_taken);

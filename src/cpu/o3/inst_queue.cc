@@ -640,7 +640,6 @@ InstructionQueue::scheduleReadyInsts()
 
         if (issued_inst->isSquashed()) {
             ++iqStats.squashedInstsIssued;
-            continue;
         }
 
         if (issued_inst->isFloating()) {

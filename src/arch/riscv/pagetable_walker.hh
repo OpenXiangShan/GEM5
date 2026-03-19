@@ -330,7 +330,6 @@ namespace RiscvISA
         bool openNextLine;
         bool autoOpenNextLine;
       public:
-        bool openSv48;
         bool is_from_pre_req;
 
         Tick squashHandleTick;
@@ -380,7 +379,6 @@ namespace RiscvISA
             ptwSquash(params.ptw_squash),
             openNextLine(params.open_nextline),
             autoOpenNextLine(true),
-            openSv48(false),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
         }

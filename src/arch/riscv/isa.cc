@@ -210,8 +210,8 @@ namespace RiscvISA
     [MISCREG_PMPADDR14]     = "PMPADDR14",
     [MISCREG_PMPADDR15]     = "PMPADDR15",
 
-    [MISCREG_SEDELEG]       = "SEDELEG",
-    [MISCREG_SIDELEG]       = "SIDELEG",
+    [MISCREG_RESERVED01]    = "",
+    [MISCREG_RESERVED02]    = "",
     [MISCREG_STVEC]         = "STVEC",
     [MISCREG_SCOUNTEREN]    = "SCOUNTEREN",
     [MISCREG_SSCRATCH]      = "SSCRATCH",
@@ -220,11 +220,11 @@ namespace RiscvISA
     [MISCREG_STVAL]         = "STVAL",
     [MISCREG_SATP]          = "SATP",
 
-    [MISCREG_UTVEC]         = "UTVEC",
-    [MISCREG_USCRATCH]      = "USCRATCH",
-    [MISCREG_UEPC]          = "UEPC",
-    [MISCREG_UCAUSE]        = "UCAUSE",
-    [MISCREG_UTVAL]         = "UTVAL",
+    [MISCREG_RESERVED03]    = "",
+    [MISCREG_RESERVED04]    = "",
+    [MISCREG_RESERVED05]    = "",
+    [MISCREG_RESERVED06]    = "",
+    [MISCREG_RESERVED07]    = "",
     [MISCREG_FFLAGS]        = "FFLAGS",
     [MISCREG_FRM]           = "FRM",
 
@@ -574,10 +574,16 @@ ISA::setMiscReg(int misc_reg, RegVal val)
         write_val = write_val | write_val2;
         setMiscRegNoEffect(MISCREG_VSSTATUS, write_val);
     } else if ((v == 1) && ((misc_reg == MISCREG_SATP))) {
-        if ((val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_BARE ||
-            (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_SV39 ||
-            (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_SV48) {
+        auto satp_mode = (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET;
+        if (satp_mode == NEMU_SATP_BARE) {
             setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
+            warn("enable SATP BARE\n");
+        } else if (satp_mode == NEMU_SATP_SV39) {
+            setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
+            warn("enable SV39\n");
+        } else if (satp_mode == NEMU_SATP_SV48) {
+            setMiscRegNoEffect(MISCREG_VSATP, val & NEMU_SATP_MASK);
+            warn("enable SV48\n");
         }
     } else if ((v == 1) && (misc_reg == MISCREG_SEPC)) {
         setMiscRegNoEffect(MISCREG_VSEPC, val);
@@ -701,19 +707,20 @@ ISA::setMiscReg(int misc_reg, RegVal val)
                 // shall have no effect (see 4.1.12 in priv ISA manual)
                 SATP cur_val = readMiscRegNoEffect(misc_reg);
                 SATP new_val = val;
-                //change the mode update , only support sv39
-                //if (new_val.mode != AddrXlateMode::BARE &&
-                //    new_val.mode != AddrXlateMode::SV39)
-                //    new_val.mode = cur_val.mode;
-                //setMiscRegNoEffect(misc_reg, new_val);
                 if (cur_val != new_val) {
                     tc->getCpuPtr()->flushTLBs();
                 }
-                if ((val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_BARE ||
-                    (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_SV39 ||
-                    (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET == NEMU_SATP_SV48) {
-                    RegVal writeVal = val & NEMU_SATP_MASK;
+                auto satp_mode = (val & SATP_MODE_MASK) >> NEMU_SATP_RIGHT_OFFSET;
+                RegVal writeVal = val & NEMU_SATP_MASK;
+                if (satp_mode == NEMU_SATP_BARE) {
                     setMiscRegNoEffect(misc_reg, writeVal);
+                    warn("enable SATP BARE\n");
+                } else if (satp_mode == NEMU_SATP_SV39) {
+                    setMiscRegNoEffect(misc_reg, writeVal);
+                    warn("enable SV39\n");
+                } else if (satp_mode == NEMU_SATP_SV48) {
+                    setMiscRegNoEffect(misc_reg, writeVal);
+                    warn("enable SV48\n");
                 }
 
             }
@@ -729,14 +736,10 @@ ISA::setMiscReg(int misc_reg, RegVal val)
             break;
           case MISCREG_STATUS:
             {
-                // SXL and UXL are hard-wired to 64 bit
+                // Match NEMU CSR semantics: only writable MSTATUS fields update.
                 auto cur = readMiscRegNoEffect(misc_reg);
-                DPRINTF(RiscvMisc, "Value before and: %#lx\n", val);
-                val &= ~(STATUS_SXL_MASK | STATUS_UXL_MASK);
-                DPRINTF(RiscvMisc, "Value before or: %#lx\n", val);
-                val |= cur & (STATUS_SXL_MASK | STATUS_UXL_MASK);
-                DPRINTF(RiscvMisc, "Value after or: %#lx\n", val);
-                STATUS mstatus = val;
+                STATUS mstatus =
+                    ((cur & ~(NEMU_MSTATUS_WMASK)) | (val & NEMU_MSTATUS_WMASK));
                 mstatus.sd = mstatus.fs == 0x3 || mstatus.vs == 0x3;
                 setMiscRegNoEffect(misc_reg, mstatus);
             }

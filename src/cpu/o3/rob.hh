@@ -142,7 +142,7 @@ class ROB
     /** Returns a pointer to the instruction with the given sequence if it is
      *  in the ROB.
      */
-    DynInstPtr findInst(ThreadID tid, InstSeqNum squash_inst);
+    DynInstPtr findInst(ThreadID tid, InstSeqNum seqnum);
 
     /** Returns pointer to the tail instruction within the ROB.  There is
      *  no guarantee as to the return value if the ROB is empty.

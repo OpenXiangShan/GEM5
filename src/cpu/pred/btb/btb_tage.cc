@@ -34,10 +34,11 @@ namespace test {
 
 #ifdef UNIT_TEST
 // Test constructor for unit testing mode
-BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize, unsigned numBanks)
+BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
+                 unsigned tableSize, unsigned numBanks)
     : TimedBaseBTBPredictor(),
       numPredictors(numPredictors),
-      numWays(numWays),
+      numWays(numPredictors, numWaysPerTable),
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
@@ -98,6 +99,11 @@ tageStats(this, p.numPredictors, p.numBanks)
         warn("BTBTAGE: Bank simulation works better with updateOnRead=true");
     }
 #endif
+    if (numWays.size() == 1 && numPredictors > 1) {
+        numWays.resize(numPredictors, numWays.front());
+    }
+
+    assert(numWays.size() >= numPredictors);
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
     tableIndexMasks.resize(numPredictors);
@@ -108,8 +114,9 @@ tageStats(this, p.numPredictors, p.numBanks)
         //initialize ittage predictor
         assert(tableSizes.size() >= numPredictors);
         tageTable[i].resize(tableSizes[i]);
+        const unsigned ways = getNumWays(i);
         for (unsigned int j = 0; j < tableSizes[i]; ++j) {
-            tageTable[i][j].resize(numWays);
+            tageTable[i][j].resize(ways);
         }
 
         tableIndexBits[i] = ceilLog2(tableSizes[i]);
@@ -223,7 +230,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         unsigned matching_way = 0;
 
         // Search all ways for a matching entry
-        for (unsigned way = 0; way < numWays; way++) {
+        const unsigned ways = getNumWays(i);
+        for (unsigned way = 0; way < ways; way++) {
             auto &entry = tageTable[i][index][way];
             // entry valid, tag match (position already encoded in tag, no need to check pc)
             if (entry.valid && tag == entry.tag) {
@@ -278,12 +286,23 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         }
     }
     bool taken = use_alt ? alt_pred : main_taken;
+    int final_provider_table = -1;
+    bool final_provider_is_alt = false;
+    if (!use_alt && provided) {
+        final_provider_table = main_info.table;
+    } else if (use_alt && alt_provided) {
+        final_provider_table = alt_info.table;
+        final_provider_is_alt = true;
+    }
 
     DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
     DPRINTF(TAGE, "tage use_alt %d ? (alt_provided %d ? alt_taken %d : base_taken %d) : main_taken %d\n",
         use_alt, alt_provided, alt_taken, base_taken, main_taken);
+    DPRINTF(TAGE, "tage final source %#lx table %d alt %d\n",
+        btb_entry.pc, final_provider_table, final_provider_is_alt);
 
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred);
+    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred,
+        final_provider_table, final_provider_is_alt);
 }
 
 /**
@@ -579,8 +598,10 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         auto &set = tageTable[ti][newIndex];
 
+        const unsigned ways = getNumWays(ti);
+
         // Allocate into invalid way or not-useful and weak way
-        for (unsigned way = 0; way < numWays; ++way) {
+        for (unsigned way = 0; way < ways; ++way) {
             auto &cand = set[way];
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
             if (!cand.valid || (!cand.useful && weakish)) {
@@ -598,7 +619,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         }
 
         // 3) Apply age penalty to one strong, not-useful way to make it replacable later
-        for (unsigned way = 0; way < numWays; ++way) {
+        for (unsigned way = 0; way < ways; ++way) {
             auto &cand = set[way];
             const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
             if (!cand.useful && !weakish) {
@@ -701,17 +722,45 @@ BTBTAGE::update(const FetchTarget &stream) {
     bool hasRecomputedVsOriginalDiff = false;
     for (auto &btb_entry : entries_to_update) {
         bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+        const bool is_new_entry = !stream.updateIsOldEntry &&btb_entry.pc == stream.updateNewBTBEntry.pc;
+        auto orig_it = predMeta->preds.find(btb_entry.pc);
+        const bool has_original_pred = orig_it != predMeta->preds.end();
+        TagePrediction original_pred;
+        if (has_original_pred) {
+            original_pred = orig_it->second;
+        } else if (!is_new_entry) {
+            DPRINTF(TAGE, "update: missing original prediction for old entry pc %#lx, skip\n",
+                    btb_entry.pc);
+            continue;
+        } else {
+            DPRINTF(TAGE, "update: reconstruct prediction for new entry pc %#lx from snapshot\n",
+                    btb_entry.pc);
+        }
+
+#ifndef UNIT_TEST
+        if (has_original_pred && original_pred.finalProviderTable >= 0) {
+            if (original_pred.taken == actual_taken) {
+                tageStats.updateFinalSourceTableCorrect[original_pred.finalProviderTable]++;
+            } else {
+                tageStats.updateFinalSourceTableWrong[original_pred.finalProviderTable]++;
+            }
+        } else if (has_original_pred && original_pred.taken == actual_taken) {
+            tageStats.updateFinalSourceBaseCorrect++;
+        } else if (has_original_pred) {
+            tageStats.updateFinalSourceBaseWrong++;
+        }
+#endif
+
         TagePrediction recomputed;
-        if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
-            // Re-read providers using snapshot (do not rely on prediction-time main/alt)
+        if (updateOnRead || !has_original_pred) {
+            // Reconstruct providers when update-on-read is enabled or when a new
+            // BTB entry lacks prediction-time metadata.
             recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta);
-            // Track differences for statistics
-            auto it = predMeta->preds.find(btb_entry.pc);
-            if (it != predMeta->preds.end() && recomputed.taken != it->second.taken) {
+            if (has_original_pred && recomputed.taken != original_pred.taken) {
                 hasRecomputedVsOriginalDiff = true;
             }
         } else { // otherwise, use the prediction from the prediction-time main/alt
-            recomputed = predMeta->preds[btb_entry.pc];
+            recomputed = original_pred;
         }
         if (recomputed.taken != actual_taken) {
             hasRecomputedVsActualDiff = true;
@@ -852,7 +901,8 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
     Addr pcBits = (pc >> pcShift) & mask;
     Addr foldedBits = foldedHist & mask;
 
-    return pcBits ^ foldedBits;
+    // Support non-power-of-two table sizes when tuning capacities.
+    return (pcBits ^ foldedBits) % tableSizes[t];
 }
 
 Addr
@@ -886,7 +936,7 @@ BTBTAGE::satDecrement(int min, short &counter)
 }
 
 Addr
-BTBTAGE::getUseAltIdx(Addr pc) {
+BTBTAGE::getUseAltIdx(Addr pc) const {
     Addr shiftedPc = pc >> instShiftAmt;
     return shiftedPc & (useAltOnNaSize - 1);
 }
@@ -1028,6 +1078,9 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
+    ADD_STAT(predFinalSourceBase, statistics::units::Count::get(), "predictions whose final source is base BTB"),
+    ADD_STAT(updateFinalSourceBaseCorrect, statistics::units::Count::get(), "base BTB final-source predictions that are correct"),
+    ADD_STAT(updateFinalSourceBaseWrong, statistics::units::Count::get(), "base BTB final-source predictions that are wrong"),
     ADD_STAT(recomputedVsActualDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != actual_taken"),
     ADD_STAT(recomputedVsOriginalDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != original pred.taken"),
     ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
@@ -1038,6 +1091,9 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
     ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
     ADD_STAT(updateTableMispreds, statistics::units::Count::get(), "mispreds of each table when update"),
+    ADD_STAT(predFinalSourceTable, statistics::units::Count::get(), "predictions whose final source is a TAGE table"),
+    ADD_STAT(updateFinalSourceTableCorrect, statistics::units::Count::get(), "correct predictions grouped by final-source table"),
+    ADD_STAT(updateFinalSourceTableWrong, statistics::units::Count::get(), "wrong predictions grouped by final-source table"),
 
     ADD_STAT(condPredwrong, statistics::units::Count::get(), "number of conditional branch mispredictions committed"),
     ADD_STAT(condMissTakens, statistics::units::Count::get(), "number of conditional branch mispredictions committed with no prediction"),
@@ -1049,6 +1105,9 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);
     updateTableMispreds.init(numPredictors);
+    predFinalSourceTable.init(numPredictors);
+    updateFinalSourceTableCorrect.init(numPredictors);
+    updateFinalSourceTableWrong.init(numPredictors);
 
     // Initialize per-bank statistics vectors
     updateBankConflictPerBank.init(numBanks);
@@ -1075,6 +1134,13 @@ BTBTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, bo
         if (!hit || useAlt) {
             predUseAlt++;
         }
+#ifndef UNIT_TEST
+        if (pred.finalProviderTable >= 0) {
+            predFinalSourceTable[pred.finalProviderTable]++;
+        } else {
+            predFinalSourceBase++;
+        }
+#endif
     } else {
         if (hit) {
 #ifndef UNIT_TEST
@@ -1094,7 +1160,8 @@ void
 BTBTAGE::updateLRU(int table, Addr index, unsigned way)
 {
     // Increment LRU counters for all entries in the set
-    for (unsigned i = 0; i < numWays; i++) {
+    const unsigned ways = getNumWays(table);
+    for (unsigned i = 0; i < ways; i++) {
         if (i != way && tageTable[table][index][i].valid) {
             tageTable[table][index][i].lruCounter++;
         }
@@ -1109,9 +1176,10 @@ BTBTAGE::getLRUVictim(int table, Addr index)
 {
     unsigned victim = 0;
     unsigned maxLRU = 0;
+    const unsigned ways = getNumWays(table);
 
     // Find the entry with the highest LRU counter
-    for (unsigned i = 0; i < numWays; i++) {
+    for (unsigned i = 0; i < ways; i++) {
         if (!tageTable[table][index][i].valid) {
             return i; // Use invalid entry if available
         }
@@ -1121,6 +1189,13 @@ BTBTAGE::getLRUVictim(int table, Addr index)
         }
     }
     return victim;
+}
+
+unsigned
+BTBTAGE::getNumWays(unsigned table) const
+{
+    assert(table < numWays.size());
+    return numWays[table];
 }
 
 #ifndef UNIT_TEST

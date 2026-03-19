@@ -18,6 +18,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/inst_queue.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Counters.hh"
 #include "debug/Dispatch.hh"
@@ -328,7 +329,7 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
             auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
             assert(dst_inst);
-            if (!dst_inst->isLoad()) panic("dst[sn:%llu] is not load", dst_inst->seqNum);
+            if (!dst_inst->isLoad()) panic("dst[sn:%llu] is not load, src[sn:%llu]", dst_inst->seqNum, inst->seqNum);
             warn_once(
                 "Tt's should not happen on classic cache, it may be wrong delay of load wake or missed loadcancel in "
                 "lsq\n");
@@ -1009,6 +1010,13 @@ Scheduler::resetDepGraph(uint64_t numPhysRegs)
 }
 
 void
+Scheduler::setAllScoreBoard(PhysRegIdPtr reg) {
+    scoreboard[reg->flatIndex()] = true;
+    bypassScoreboard[reg->flatIndex()] = true;
+    earlyScoreboard[reg->flatIndex()] = true;
+}
+
+void
 Scheduler::addToFU(const DynInstPtr& inst)
 {
 #if TRACING_ON
@@ -1193,7 +1201,7 @@ Scheduler::insert(const DynInstPtr& inst, int disp_seq)
         iqs[dispSeqVec.at(disp_seq)]->insert(inst);
     }
 
-    DPRINTF(Schedule, "[sn:%llu] dispatch: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
+    DPRINTF(Schedule, "[sn:%llu] scheduler insert: %s\n", inst->seqNum, inst->staticInst->disassemble(0));
 }
 
 void
@@ -1360,6 +1368,12 @@ Scheduler::loadCancel(const DynInstPtr& inst)
         inst->issueQue->iqstats->loadmiss++;
     }
 
+    // speculative value prediction load should not be cancel
+    // because the dependency issue has been resolved
+    if (inst->vpResult.speculative) {
+        return;
+    }
+
     dfs.push(inst);
     while (!dfs.empty()) {
         auto top = dfs.top();
@@ -1438,6 +1452,18 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
         }
         bypassScoreboard[dst->flatIndex()] = true;
         DPRINTF(Schedule, "p%lu in bypassNetwork ready\n", dst->flatIndex());
+    }
+    if (inst->canLVP()) {
+        RegVal actualValue = cpu->getReg(inst->extRenamedDestIdx(0));
+        // RegVal actualValue_2 = inst->getResult().as<RegVal>();
+        // assert(actualValue == actualValue_2);
+        inst->actualValue = actualValue;
+        if (inst->vpResult.speculative && inst->fault == NoFault) {
+            if (actualValue != inst->vpResult.value) {
+                // check error
+                inst->vpMisprediction = true;
+            }
+        }
     }
 }
 
