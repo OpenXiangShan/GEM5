@@ -93,7 +93,7 @@ def setKmhV3Params(args, system):
             cpu.dcache.prefetch_can_offload = False
             if getattr(cpu.dcache, "prefetcher", None) is not None and \
                     hasattr(cpu.dcache.prefetcher, "enable_berti"):
-                cpu.dcache.prefetcher.enable_berti = False
+                cpu.dcache.prefetcher.enable_berti = True
             set_lsq_bank_conflict_cache_params(cpu, system)
 
     # l2 caches
@@ -109,10 +109,10 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
             else:
                 l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.data_sram_banks = 2
-                l2_wrapper.dir_sram_banks = 2
-                l2_wrapper.pipe_dir_write_stage = 4
-                l2_wrapper.dir_read_bypass = True
+                l2_wrapper.data_sram_banks = 1
+                l2_wrapper.dir_sram_banks = 1
+                l2_wrapper.pipe_dir_write_stage = 3
+                l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
