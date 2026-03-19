@@ -314,7 +314,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
         "Indexing policy of active generation table"
     )
     xs_stream_replacement_policy = Param.BaseReplacementPolicy(
-         LRURP(),
+         TreePLRURP(num_leaves = Parent.xs_stream_entries),
         "Replacement policy of active generation table"
     )
 
