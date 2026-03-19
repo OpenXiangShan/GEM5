@@ -522,6 +522,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
     // Match RTL: do not allocate beyond the highest history table.
     if (main_info.found && main_info.table == numPredictors - 1) {
+        tageStats.allocateSkipHighestProvider++;
         return false;
     }
 
@@ -615,6 +616,9 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                     ti, newIndex, selected_way, newTag, position, newCounter, entry.pc);
             set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
             tageStats.updateAllocSuccess++;
+#ifndef UNIT_TEST
+            tageStats.tableAllocate[ti]++;
+#endif
             allocated_table = ti;
             allocated_index = newIndex;
             allocated_way = selected_way;
@@ -742,6 +746,12 @@ BTBTAGE::update(const FetchTarget &stream) {
         uint64_t allocated_index = 0;
         uint64_t allocated_way = 0;
         if (need_allocate && !allocationIssued) {
+            tageStats.allocateNeeded++;
+            if (recomputed.mainInfo.found) {
+#ifndef UNIT_TEST
+                tageStats.allocateBranchProviderTable[recomputed.mainInfo.table]++;
+#endif
+            }
 
             // Handle allocation of new entries
             uint start_table = 0;
@@ -1082,8 +1092,18 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
         "allocation table probes with no eligible victim"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
-    ADD_STAT(recomputedVsActualDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != actual_taken"),
-    ADD_STAT(recomputedVsOriginalDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != original pred.taken"),
+    ADD_STAT(
+        allocateNeeded, statistics::units::Count::get(),
+        "allocation requests issued on update"),
+    ADD_STAT(
+        allocateSkipHighestProvider, statistics::units::Count::get(),
+        "allocations skipped because the provider already uses the highest history table"),
+    ADD_STAT(
+        recomputedVsActualDiff, statistics::units::Count::get(),
+        "fetchBlocks where recomputed.taken != actual_taken"),
+    ADD_STAT(
+        recomputedVsOriginalDiff, statistics::units::Count::get(),
+        "fetchBlocks where recomputed.taken != original pred.taken"),
     ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
     ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(), "number of updates deferred due to bank conflict (retried later)"),
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
@@ -1092,6 +1112,10 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
     ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
     ADD_STAT(updateTableMispreds, statistics::units::Count::get(), "mispreds of each table when update"),
+    ADD_STAT(tableAllocate, statistics::units::Count::get(), "allocation success count by allocated table"),
+    ADD_STAT(
+        allocateBranchProviderTable, statistics::units::Count::get(),
+        "provider table of branches that issued allocation"),
 
     ADD_STAT(condPredwrong, statistics::units::Count::get(), "number of conditional branch mispredictions committed"),
     ADD_STAT(condMissTakens, statistics::units::Count::get(), "number of conditional branch mispredictions committed with no prediction"),
@@ -1103,6 +1127,8 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     predTableHits.init(0, numPredictors-1, 1);
     updateTableHits.init(0, numPredictors-1, 1);
     updateTableMispreds.init(numPredictors);
+    tableAllocate.init(numPredictors);
+    allocateBranchProviderTable.init(numPredictors);
 
     // Initialize per-bank statistics vectors
     updateBankConflictPerBank.init(numBanks);

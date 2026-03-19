@@ -352,6 +352,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar allocBucketAllUsefulOrNoCandidate;
         Scalar updateMispred;
         Scalar updateResetU;
+        Scalar allocateNeeded;
+        Scalar allocateSkipHighestProvider;
 
         // Recomputed prediction difference statistics (per fetchBlock)
         Scalar recomputedVsActualDiff;   // recomputed.taken != actual_taken
@@ -371,6 +373,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         statistics::Distribution updateTableHits;
 
         statistics::Vector updateTableMispreds;
+        statistics::Vector tableAllocate;
+        statistics::Vector allocateBranchProviderTable;
 #endif
 
         Scalar condPredwrong;
