@@ -609,151 +609,369 @@ TraceFetch::clearPending()
 }
 
 void
+TraceFetch::applyTraceRecoveryAction(ThreadID tid,
+                                     const TraceRecoveryAction &action)
+{
+    if (action.exitWrongPathReason) {
+        exitTraceWrongPath(tid, action.exitWrongPathReason);
+    }
+
+    if (action.mode == TraceRecoveryMode::Hold) {
+        DPRINTF(Fetch,
+                "[tid:%i] Trace recovery action=hold (%s), preserve reader/expected state\n",
+                tid, action.debugReason ? action.debugReason : "no-op");
+        return;
+    }
+
+    if (action.useTraceIndex) {
+        DPRINTF(Fetch,
+                "[tid:%i] Trace recovery action=rollback (%s): traceIndex=%llu\n",
+                tid, action.debugReason ? action.debugReason : "rollback",
+                (unsigned long long)action.rollbackTraceIndex);
+        cleanupTraceMetadata(action.rollbackSeqNum);
+        if (!rollbackTraceReaderToIndex(action.rollbackTraceIndex)) {
+            DPRINTF(Fetch,
+                    "[tid:%i] Warning: Failed to rollback trace reader to traceIndex %llu\n",
+                    tid, (unsigned long long)action.rollbackTraceIndex);
+        }
+    } else {
+        DPRINTF(Fetch,
+                "[tid:%i] Trace recovery action=rollback (%s): seqNum=%llu, squash_itself=%d\n",
+                tid, action.debugReason ? action.debugReason : "rollback",
+                (unsigned long long)action.rollbackSeqNum, action.squashItself);
+        cleanupTraceMetadata(action.rollbackSeqNum);
+        if (!rollbackTraceReader(action.rollbackSeqNum, action.squashItself)) {
+            DPRINTF(Fetch,
+                    "[tid:%i] Warning: Failed to rollback trace reader to seqNum %llu\n",
+                    tid, (unsigned long long)action.rollbackSeqNum);
+        }
+    }
+    traceExpectedStream[tid].clear();
+    DPRINTF(Fetch, "[tid:%i] Cleared expected trace stream after rollback\n", tid);
+}
+
+bool
+TraceFetch::resolveTraceRecoveryIndex(ThreadID tid,
+                                      const DynInstPtr &squashInst,
+                                      const PCStateBase &new_pc,
+                                      uint64_t &targetIndex)
+{
+    if (!squashInst) {
+        return false;
+    }
+
+    uint64_t currentIndex = 0;
+    if (!lookupTraceIndexForSeqNum(squashInst->seqNum, currentIndex) ||
+        currentIndex == 0) {
+        DPRINTF(Fetch,
+                "[sn:%llu] resolveTraceRecoveryIndex: no trace index mapping\n",
+                (unsigned long long)squashInst->seqNum);
+        return false;
+    }
+
+    constexpr int kBackSearch = 1;
+    constexpr int kForwardSearch = 4;
+    const Addr targetPc = new_pc.instAddr();
+
+    uint64_t bestIndex = 0;
+    uint64_t bestDistance = std::numeric_limits<uint64_t>::max();
+    const char *bestSource = nullptr;
+    auto considerMetadataCandidate =
+        [&](uint64_t index, const char *source,
+            uint64_t sourceSeqNum) {
+            if (index == 0) {
+                return;
+            }
+
+            const uint64_t distance =
+                (index > currentIndex) ? (index - currentIndex)
+                                       : (currentIndex - index);
+            if (distance < bestDistance ||
+                (distance == bestDistance && index > bestIndex)) {
+                bestDistance = distance;
+                bestIndex = index;
+                bestSource = source;
+                DPRINTF(Fetch,
+                        "[sn:%llu] resolveTraceRecoveryIndex: %s candidate "
+                        "seq=%llu traceIndex=%llu pc=0x%#lx distance=%llu\n",
+                        (unsigned long long)squashInst->seqNum,
+                        source,
+                        (unsigned long long)sourceSeqNum,
+                        (unsigned long long)index,
+                        (unsigned long)targetPc,
+                        (unsigned long long)distance);
+            }
+        };
+
+    for (const auto &ti : traceExpectedStream[tid]) {
+        if (!ti.isValid() || ti.getPC() != targetPc) {
+            continue;
+        }
+        considerMetadataCandidate(ti.getSeqNum() + 1,
+                                  "expected-stream",
+                                  ti.getSeqNum());
+    }
+
+    for (const auto &entry : seqNumToTraceIndex) {
+        const InstSeqNum seqNum = entry.first;
+        const uint64_t index = entry.second;
+        if (index + kBackSearch < currentIndex ||
+            index > currentIndex + kForwardSearch) {
+            continue;
+        }
+        const auto *meta = getTraceInstMetadata(seqNum);
+        if (!meta || !meta->isValid() || meta->getPC() != targetPc) {
+            continue;
+        }
+        considerMetadataCandidate(index, "metadata", seqNum);
+    }
+
+    if (bestIndex != 0) {
+        targetIndex = bestIndex;
+        DPRINTF(Fetch,
+                "[sn:%llu] resolveTraceRecoveryIndex: matched by %s "
+                "new_pc=0x%#lx at traceIndex=%llu around base=%llu\n",
+                (unsigned long long)squashInst->seqNum,
+                bestSource ? bestSource : "candidate",
+                (unsigned long)targetPc,
+                (unsigned long long)targetIndex,
+                (unsigned long long)currentIndex);
+        return true;
+    }
+
+    if (!traceReader->supportsFastRandomSeek()) {
+        DPRINTF(Fetch,
+                "[sn:%llu] resolveTraceRecoveryIndex: skip hard seek fallback "
+                "for compressed trace, keep seqNum-based recovery for pc=0x%#lx\n",
+                (unsigned long long)squashInst->seqNum,
+                (unsigned long)targetPc);
+        return false;
+    }
+
+    for (int delta = -kBackSearch; delta <= kForwardSearch; ++delta) {
+        if (delta < 0 && currentIndex <= static_cast<uint64_t>(-delta)) {
+            continue;
+        }
+
+        const uint64_t candidate = currentIndex + delta;
+        if (candidate == 0) {
+            continue;
+        }
+
+        const Addr candidatePc = getTracePCByIndex(candidate);
+        if (candidatePc == targetPc) {
+            targetIndex = candidate;
+            DPRINTF(Fetch,
+                    "[sn:%llu] resolveTraceRecoveryIndex: matched new_pc=0x%#lx "
+                    "at traceIndex=%llu (base=%llu, delta=%d)\n",
+                    (unsigned long long)squashInst->seqNum,
+                    (unsigned long)targetPc,
+                    (unsigned long long)targetIndex,
+                    (unsigned long long)currentIndex,
+                    delta);
+            return true;
+        }
+    }
+
+    DPRINTF(Fetch,
+            "[sn:%llu] resolveTraceRecoveryIndex: failed to match new_pc=0x%#lx "
+            "around traceIndex=%llu\n",
+            (unsigned long long)squashInst->seqNum,
+            (unsigned long)targetPc,
+            (unsigned long long)currentIndex);
+    return false;
+}
+
+TraceFetch::TraceRecoveryAction
+TraceFetch::classifyWrongPathInstSquash(ThreadID tid, const PCStateBase &new_pc,
+                                        const DynInstPtr &squashInst,
+                                        InstSeqNum seqNum)
+{
+    TraceRecoveryAction action;
+
+    DPRINTF(Fetch, "[tid:%i] In wrong-path, detected squash from inst (sn:%llu->tracesn:%llu)\n",
+            tid,
+            (unsigned long long)squashInst->seqNum,
+            findTraceIndexForSeqNum(squashInst->seqNum));
+
+    if (squashInst->seqNum == traceWrongPathBranchSeqNum) {
+        DPRINTF(Fetch,
+                "[tid:%i] In wrong-path, detected squash from "
+                "mispredicted inst (sn:%llu->tracesn:%llu), classify trace recovery\n",
+                tid,
+                (unsigned long long)traceWrongPathBranchSeqNum,
+                findTraceIndexForSeqNum(traceWrongPathBranchSeqNum));
+        const bool is_correct_target =
+            new_pc.instAddr() == traceWrongPathCorrectPC;
+        if (is_correct_target) {
+            DPRINTF(Fetch,
+                    "[tid:%i] Squash target PC (0x%#lx) matches correct PC (0x%#lx)\n",
+                    tid, new_pc.instAddr(), traceWrongPathCorrectPC);
+            action.mode = TraceRecoveryMode::Hold;
+            action.exitWrongPathReason =
+                "mispred boundary squash reaches correct PC";
+            action.debugReason = "rejoin correct path after boundary squash";
+        } else {
+            DPRINTF(Fetch,
+                    "[tid:%i] Warning: Squash target PC (0x%#lx) does not match "
+                    "correct PC (0x%#lx)\n",
+                    tid, new_pc.instAddr(), traceWrongPathCorrectPC);
+            action.mode = TraceRecoveryMode::Hold;
+            action.debugReason =
+                "wait for later boundary squash to reach correct PC";
+        }
+    } else if (squashInst->seqNum < traceWrongPathBranchSeqNum) {
+        DPRINTF(Fetch,
+                "[tid:%i] In wrong-path, detected squash from inst "
+                "(sn:%llu->tracesn:%llu) prior to mispredicted inst (sn:%llu)\n",
+                tid,
+                (unsigned long long)squashInst->seqNum,
+                findTraceIndexForSeqNum(squashInst->seqNum),
+                (unsigned long long)traceWrongPathBranchSeqNum);
+        action.mode = TraceRecoveryMode::Rollback;
+        action.rollbackSeqNum = squashInst->seqNum;
+        action.exitWrongPathReason = "squash before mispredicted branch";
+        action.debugReason = "rewind to squash point before wrong-path branch";
+        action.useTraceIndex =
+            resolveTraceRecoveryIndex(tid, squashInst, new_pc,
+                                      action.rollbackTraceIndex);
+    } else {
+        DPRINTF(Fetch,
+                "[tid:%i] In wrong-path, skip trace rollback for "
+                "non-boundary squash (sn:%llu)\n",
+                tid, (unsigned long long)seqNum);
+        action.mode = TraceRecoveryMode::Hold;
+        action.debugReason = "ignore younger in-flight squash in wrong-path";
+    }
+
+    if (action.mode == TraceRecoveryMode::Rollback &&
+        squashInst->getPC() == new_pc.instAddr()) {
+        action.squashItself = true;
+        DPRINTF(Fetch,
+                "Squashing inst squashing itself, probably load replay (pc: 0x%#lx)\n",
+                squashInst->getPC());
+    }
+
+    return action;
+}
+
+TraceFetch::TraceRecoveryAction
+TraceFetch::classifyWrongPathNonInstSquash(ThreadID tid,
+                                           const PCStateBase &new_pc,
+                                           InstSeqNum seqNum)
+{
+    TraceRecoveryAction action;
+
+    DPRINTF(Fetch,
+            "[tid:%i] In wrong-path, detected squash from non-inst event (sn:%llu->tracesn:%llu)\n",
+            tid,
+            (unsigned long long)seqNum,
+            findTraceIndexForSeqNum(seqNum));
+
+    if (new_pc.instAddr() == traceWrongPathCorrectPC) {
+        DPRINTF(Fetch,
+                "[tid:%i] In wrong-path, non-inst squash reached "
+                "correct PC (0x%#llx); classify as direct rejoin "
+                "(sn:%llu)\n",
+                tid,
+                (unsigned long long)new_pc.instAddr(),
+                (unsigned long long)seqNum);
+        action.mode = TraceRecoveryMode::Hold;
+        action.exitWrongPathReason = "non-inst squash reached correct PC";
+        action.debugReason = "rejoin correct path after non-inst squash";
+    } else if (seqNum <= traceWrongPathBranchSeqNum) {
+        DPRINTF(Fetch,
+                "[tid:%i] In wrong-path, detected squash from "
+                "non-inst event (sn:%llu->tracesn:%llu) prior to mispredicted inst (sn:%llu), "
+                "classify rollback\n",
+                tid,
+                (unsigned long long)seqNum,
+                findTraceIndexForSeqNum(seqNum),
+                (unsigned long long)traceWrongPathBranchSeqNum);
+        action.mode = TraceRecoveryMode::Rollback;
+        action.rollbackSeqNum = seqNum + 1;
+        action.exitWrongPathReason = "non-inst squash before mispredicted branch";
+        action.debugReason =
+            "rewind to first replayed inst for earlier non-inst squash";
+    } else {
+        DPRINTF(Fetch,
+                "[tid:%i] In wrong-path, skip trace rollback for "
+                "non-boundary squash (sn:%llu) without squashInst\n",
+                tid, (unsigned long long)seqNum);
+        action.mode = TraceRecoveryMode::Hold;
+        action.debugReason = "ignore younger non-inst squash in wrong-path";
+    }
+
+    return action;
+}
+
+TraceFetch::TraceRecoveryAction
+TraceFetch::classifyNormalSquash(ThreadID tid, const PCStateBase &new_pc,
+                                 const DynInstPtr &squashInst,
+                                 InstSeqNum seqNum)
+{
+    TraceRecoveryAction action;
+    action.mode = TraceRecoveryMode::Rollback;
+
+    if (squashInst) {
+        action.rollbackSeqNum = squashInst->seqNum;
+        action.debugReason = "normal inst squash";
+        DPRINTF(Fetch,
+                "[tid:%i] Normal squash to seqNum %llu from inst (sn:%llu->tracesn:%llu)\n",
+                tid,
+                (unsigned long long)action.rollbackSeqNum,
+                (unsigned long long)squashInst->seqNum,
+                findTraceIndexForSeqNum(squashInst->seqNum));
+        action.useTraceIndex =
+            resolveTraceRecoveryIndex(tid, squashInst, new_pc,
+                                      action.rollbackTraceIndex);
+        if (squashInst->getPC() == new_pc.instAddr()) {
+            action.squashItself = true;
+            DPRINTF(Fetch,
+                    "Squashing inst squashing itself, probably load replay (pc: 0x%#lx)\n",
+                    squashInst->getPC());
+        }
+    } else {
+        // For non-inst squashes, Fetch receives the youngest preserved seqNum.
+        // The next instruction to replay is therefore seqNum + 1, so we must
+        // seek to that instruction directly instead of subtracting one more.
+        action.rollbackSeqNum = seqNum + 1;
+        action.debugReason = "normal non-inst squash replay first squashed inst";
+        DPRINTF(Fetch,
+                "[tid:%i] Normal squash to seqNum %llu from non-inst event (sn:%llu->tracesn:%llu)\n",
+                tid,
+                (unsigned long long)action.rollbackSeqNum,
+                (unsigned long long)seqNum,
+                findTraceIndexForSeqNum(seqNum));
+    }
+
+    return action;
+}
+
+void
 TraceFetch::handleTraceSquash(ThreadID tid, const PCStateBase &new_pc,
                               const DynInstPtr squashInst, InstSeqNum seqNum)
 {
-    // Clean up trace instruction metadata for squashed instructions
     if (!traceMode) {
         return;
     }
 
-    bool allow_rb = true;
-    bool squash_itself = false;
-    auto trace_rb_seqnum = seqNum;
+    TraceRecoveryAction action;
     if (traceWrongPathActive) {
-        // 处于 wrong-path：优先处理边界分支产生的 squash。
-        // 注意：也可能出现非边界的 squash（例如 TLB/page fault、trap、重放），
-        // 此时 squashInst 可能为空。对这类情况不应 panic，而是温和退出 wrong-path。
-        DPRINTF(Fetch, "[tid:%i] In wrong-path, processing squash for trace rollback, wrong path seqnum is %llu\n",
-            tid, (unsigned long long)traceWrongPathBranchSeqNum);
+        DPRINTF(Fetch,
+                "[tid:%i] In wrong-path, processing squash for trace recovery, wrong path seqnum is %llu\n",
+                tid, (unsigned long long)traceWrongPathBranchSeqNum);
         if (squashInst) {
-            DPRINTF(Fetch, "[tid:%i] In wrong-path, detected squash from inst (sn:%llu->tracesn:%llu)\n",
-                    tid,
-                    (unsigned long long)squashInst->seqNum,
-                    findTraceIndexForSeqNum(squashInst->seqNum));
-            if (squashInst->seqNum == traceWrongPathBranchSeqNum) {
-                DPRINTF(Fetch,
-                        "[tid:%i] In wrong-path, detected squash from "
-                        "mispredicted inst (sn:%llu->tracesn:%llu), trigger trace rollback\n",
-                        tid,
-                        (unsigned long long)traceWrongPathBranchSeqNum,
-                        findTraceIndexForSeqNum(traceWrongPathBranchSeqNum));
-                // check whether new pc is correct
-                bool is_correct_target = new_pc.instAddr() == traceWrongPathCorrectPC;
-                if (is_correct_target) {
-                    DPRINTF(Fetch,
-                            "[tid:%i] Squash target PC (0x%#lx) matches correct PC (0x%#lx)\n",
-                            tid, new_pc.instAddr(), traceWrongPathCorrectPC);
-                    exitTraceWrongPath(tid, "mispred boundary squash reaches correct PC");
-                } else {
-                    DPRINTF(Fetch,
-                            "[tid:%i] Warning: Squash target PC (0x%#lx) does not match "
-                            "correct PC (0x%#lx)\n",
-                            tid, new_pc.instAddr(), traceWrongPathCorrectPC);
-                    // stay in wrong-path, let later squash handle
-                }
-            } else if (squashInst->seqNum < traceWrongPathBranchSeqNum) {
-                DPRINTF(Fetch,
-                        "[tid:%i] In wrong-path, detected squash from inst "
-                        "(sn:%llu->tracesn:%llu) prior to mispredicted inst (sn:%llu)\n",
-                        tid,
-                        (unsigned long long)squashInst->seqNum,
-                        findTraceIndexForSeqNum(squashInst->seqNum),
-                        (unsigned long long)traceWrongPathBranchSeqNum);
-                exitTraceWrongPath(tid, "squash before mispredicted branch");
-            } else {
-                allow_rb = false;
-                DPRINTF(Fetch,
-                        "[tid:%i] In wrong-path, skip trace rollback for "
-                        "non-boundary squash (sn:%llu)\n",
-                        tid, (unsigned long long)seqNum);
-            }
-            if (squashInst->getPC() == new_pc.instAddr()) {
-                squash_itself = true;
-                DPRINTF(Fetch, "Squashing inst squashing itself, probably load replay (pc: 0x%#lx)\n",
-                    squashInst->getPC());
-            }
+            action = classifyWrongPathInstSquash(tid, new_pc, squashInst, seqNum);
         } else {
-            DPRINTF(Fetch, "[tid:%i] In wrong-path, detected squash from non-inst event (sn:%llu->tracesn:%llu)\n",
-                    tid,
-                    (unsigned long long)seqNum,
-                    findTraceIndexForSeqNum(seqNum));
-            if (new_pc.instAddr() == traceWrongPathCorrectPC) {
-                // non-inst squash (例如 trap squash) 把 PC 直接带回了正确路径
-                // traceReader 在 wrong-path 期间未前进，因此此处无需回滚，只需退出
-                // wrong-path 模式即可。
-                squash_itself = false;
-                trace_rb_seqnum = traceWrongPathBranchSeqNum;
-                exitTraceWrongPath(tid, "non-inst squash reached correct PC");
-                // allow_rb = false; // 不需要触碰 traceReader
-                DPRINTF(Fetch,
-                        "[tid:%i] In wrong-path, non-inst squash reached "
-                        "correct PC (0x%#llx); exit wrong-path without rollback "
-                        "(sn:%llu)\n",
-                        tid,
-                        (unsigned long long)new_pc.instAddr(),
-                        (unsigned long long)seqNum);
-            } else if (seqNum <= traceWrongPathBranchSeqNum) {
-                DPRINTF(Fetch,
-                        "[tid:%i] In wrong-path, detected squash from "
-                        "non-inst event (sn:%llu->tracesn:%llu) prior to mispredicted inst (sn:%llu), "
-                        "trigger trace rollback\n",
-                        tid,
-                        (unsigned long long)seqNum,
-                        findTraceIndexForSeqNum(seqNum),
-                        (unsigned long long)traceWrongPathBranchSeqNum);
-                trace_rb_seqnum = seqNum + 1; // for non-inst squash before branch, rollback to seqNum + 1
-                squash_itself = true;
-                exitTraceWrongPath(tid, "non-inst squash before mispredicted branch");
-                // this would happen for memory violation
-            } else {
-                allow_rb = false;
-                DPRINTF(Fetch,
-                        "[tid:%i] In wrong-path, skip trace rollback for "
-                        "non-boundary squash (sn:%llu) without squashInst\n",
-                        tid, (unsigned long long)seqNum);
-            }
+            action = classifyWrongPathNonInstSquash(tid, new_pc, seqNum);
         }
     } else {
-        // not in wrong-path: normal squash, rollback to squashInst seqNum
-        if (squashInst) {
-            trace_rb_seqnum = squashInst->seqNum;
-            DPRINTF(Fetch, "[tid:%i] Normal squash to seqNum %llu from inst (sn:%llu->tracesn:%llu)\n",
-                    tid,
-                    (unsigned long long)trace_rb_seqnum,
-                    (unsigned long long)squashInst->seqNum,
-                    findTraceIndexForSeqNum(squashInst->seqNum));
-            if (squashInst->getPC() == new_pc.instAddr()) {
-                squash_itself = true;
-                DPRINTF(Fetch, "Squashing inst squashing itself, probably load replay (pc: 0x%#lx)\n",
-                    squashInst->getPC());
-            }
-        } else {
-            // non-inst squash (e.g., TLB/page fault, trap, replay)
-            trace_rb_seqnum = seqNum + 1;
-            DPRINTF(Fetch, "[tid:%i] Normal squash to seqNum %llu from non-inst event (sn:%llu->tracesn:%llu)\n",
-                    tid,
-                    (unsigned long long)trace_rb_seqnum,
-                    (unsigned long long)seqNum,
-                    findTraceIndexForSeqNum(seqNum));
-            squash_itself = true;
-        }
         traceWrongPathForceMinStep = false;
+        action = classifyNormalSquash(tid, new_pc, squashInst, seqNum);
     }
 
-    if (allow_rb) {
-        DPRINTF(Fetch, "[tid:%i] Rolling back trace reader to seqNum %llu, squash_itself=%d\n",
-                tid, (unsigned long long)trace_rb_seqnum, squash_itself);
-        cleanupTraceMetadata(trace_rb_seqnum);
-        // Rollback trace reader to handle misprediction
-        if (!rollbackTraceReader(trace_rb_seqnum, squash_itself)) {
-            DPRINTF(Fetch, "[tid:%i] Warning: Failed to rollback trace reader to seqNum %llu\n",
-                    tid, (unsigned long long)trace_rb_seqnum);
-        }
-        // 回滚后清空期望流，避免与reader位置不一致
-        traceExpectedStream[tid].clear();
-        DPRINTF(Fetch, "[tid:%i] Cleared expected trace stream after rollback\n", tid);
-    }
+    applyTraceRecoveryAction(tid, action);
 }
 
 void
@@ -980,6 +1198,26 @@ TraceFetch::rollbackTraceReader(InstSeqNum seqNum, bool squash_itself)
     const bool success = traceReader->softSeekToInstruction(seek_cursor);
     DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: softSeekToInstruction(index=%lu,cursor=%lu) => %d\n",
             seqNum, index, seek_cursor, (int)success);
+    return success;
+}
+
+bool
+TraceFetch::rollbackTraceReaderToIndex(uint64_t index)
+{
+    if (!traceMode || !traceReader || index == 0) {
+        DPRINTF(Fetch,
+                "rollbackTraceReaderToIndex[idx:%llu]: invalid trace mode/index\n",
+                (unsigned long long)index);
+        return false;
+    }
+
+    const uint64_t seek_cursor = index - 1;
+    const bool success = traceReader->softSeekToInstruction(seek_cursor);
+    DPRINTF(Fetch,
+            "rollbackTraceReaderToIndex[idx:%llu]: softSeekToInstruction(cursor=%llu) => %d\n",
+            (unsigned long long)index,
+            (unsigned long long)seek_cursor,
+            (int)success);
     return success;
 }
 

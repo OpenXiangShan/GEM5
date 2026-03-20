@@ -148,6 +148,8 @@ class ChampSimTraceReader : public TraceReader
      * @return Current instruction index
      */
     uint64_t getCurrentInstructionIndex() const override;
+    bool supportsFastRandomSeek() const override
+    { return streamMode == TraceStream::Mode::Raw; }
 
     /**
      * Configure address mapping parameters after construction
