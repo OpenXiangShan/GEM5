@@ -183,6 +183,9 @@ if __name__ == '__m5_main__':
         args.dramsim3_ini = os.path.join(
             root_dir,
             'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini')
+
+    #args.chi_topology = 'L2ToDramSys'
+
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 

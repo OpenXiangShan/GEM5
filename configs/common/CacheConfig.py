@@ -309,165 +309,27 @@ def config_cache(options, system):
                         f"Unsupported --chi-voq-depth-mode: {chi_voq_depth_mode}"
                     )
                 chi_voq_depth_per_ingress = (chi_voq_depth_mode == 'per_ingress')
-                if chi_topology == 'L2L3DramSys':
-                    l3_inner_cache_wrapper = L3CacheWrapper(
-                        clk_domain=system.cpu_clk_domain,
-                        num_slices=1,
-                        cache_size=options.l3_size,
-                        cache_assoc=options.l3_assoc,
-                        block_bits=int(math.log2(system.cache_line_size)),
-                    )
-                    system.CHIsys = L2L3DramSys(
-                        dramsim3=DDRWrapper(
-                            networkPort=CHIPort(recv_buffer_size=4),
-                            range=system.mem_ranges[0],
-                            configFile=os.path.join(
-                                root_dir,
-                                'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini',
-                            ),
-                            filePath=os.path.join(root_dir, 'ext/dramsim3/DRAMsim3/'),
-                        )
-                    )
-                    system.CHIsys.L2Wrapper = CHI_L2(
-                        RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4))
-                    )
-                    system.CHIsys.L3 = CHI_L3(
-                        networkPort=CHIPort(recv_buffer_size=4),
-                        coherent_xbar=L2XBar(clk_domain=system.cpu_clk_domain),
-                        cache_wrapper=l3_inner_cache_wrapper
-                    )
-                    # 2x2 mesh used by xsCHI TopoSys.
-                    # Coordinates:
-                    #   Mesh0=(0,0), Mesh1=(1,0), Mesh2=(1,1), Mesh3=(0,1)
-                    # Endpoint placement:
-                    #   RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
-                    system.CHIsys.MeshNode0 = MeshNode(
-                        node_x=0, node_y=0,
-                        voq_depth=chi_voq_depth,
-                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_east=CHIPort(recv_buffer_size=4),
-                        port_north=CHIPort(recv_buffer_size=4))
-                    system.CHIsys.MeshNode1 = MeshNode(
-                        node_x=1, node_y=0,
-                        voq_depth=chi_voq_depth,
-                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_west=CHIPort(recv_buffer_size=4),
-                        port_north=CHIPort(recv_buffer_size=4))
-                    system.CHIsys.MeshNode2 = MeshNode(
-                        node_x=1, node_y=1,
-                        voq_depth=chi_voq_depth,
-                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_west=CHIPort(recv_buffer_size=4),
-                        port_south=CHIPort(recv_buffer_size=4))
-                    # Mesh3 currently has no local endpoint; keep local0 present
-                    # to satisfy MeshNode's mandatory local0-port invariant.
-                    system.CHIsys.MeshNode3 = MeshNode(
-                        node_x=0, node_y=1,
-                        voq_depth=chi_voq_depth,
-                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_east=CHIPort(recv_buffer_size=4),
-                        port_south=CHIPort(recv_buffer_size=4))
-                    print(
-                        "[xsCHI][Build] mesh=2x2 "
-                        "M0=(0,0) M1=(1,0) M2=(1,1) M3=(0,1) "
-                        "endpoints: RN@M0.local0 HN@M1.local0 DRAM@M2.local0"
-                    )
-
-                    l3_cache_slice = L2CacheSlice(clk_domain=system.cpu_clk_domain)
-                    l3_inner_cache = L3Cache(
-                        clk_domain=system.cpu_clk_domain,
-                        **_get_cache_opts(system.cpu[0], 'l3', options)
-                    )
-                    l3_inner_cache_wrapper.slices = [l3_cache_slice]
-                    l3_cache_slice.inner_cache = l3_inner_cache
-
-                    l3_inner_cache.tags.indexing_policy.num_slices = 1
-                    l3_inner_cache.tags.indexing_policy.slice_idx = 0
-                    if isinstance(l3_inner_cache.replacement_policy, DRRIPRP):
-                        l3_inner_cache.replacement_policy.num_slices = 1
-                        l3_inner_cache.replacement_policy.num_sets_per_slice = l3_inner_cache.size // (64 * l3_inner_cache.assoc)
-
-                    l3_inner_cache_wrapper.addCacheAccessor(l3_inner_cache)
-                    l3_inner_cache_wrapper.addSliceAccessor(l3_cache_slice)
-                    l3_cache_slice.setCacheAccessor(l3_inner_cache)
-
-                    # if not options.no_pf and options.l2_hwp_type == 'PrefetcherForwarder':
-                    #     l3_inner_cache.prefetcher.setRealPrefetcher(l3_inner_cache_wrapper.prefetcher)
-
-                    l3_inner_cache.do_fast_writeline = not options.kmh_align
-                    if options.ideal_cache:
-                        l3_inner_cache.response_latency = 0
-                        l3_inner_cache.tag_latency = 1
-                        l3_inner_cache.data_latency = 1
-                        l3_inner_cache.sequential_access = False
-                        l3_inner_cache.writeback_clean = False
-                        l3_inner_cache.mshrs = 64
-                    if options.xiangshan_ecore:
-                        l3_inner_cache.response_latency = 66
-                        l3_inner_cache.writeback_clean = False
-
-                    l3_inner_cache_wrapper.slice_cpuside_ports = l3_cache_slice.cpu_side
-                    # Connect the slice's inner ports to the actual cache
-                    l3_cache_slice.inner_cpu_port = l3_inner_cache.cpu_side
-                    l3_inner_cache.mem_side = l3_cache_slice.inner_mem_port
-
-                    system.CHIsys.L3.inner_req_port = system.CHIsys.L3.coherent_xbar.cpu_side_ports
-                    system.CHIsys.L3.coherent_xbar.mem_side_ports = system.CHIsys.L3.cache_wrapper.cpu_side
-                    system.CHIsys.L3.inner_resp_port = l3_cache_slice.mem_side
-                    # assume always have 1 slice in L3,in that case we dont need a xbar,
-                    # l3_cache_slice.mem_side can be directly connected to L3's inner_resp_port
-                    system.CHIsys.mem_side_port = system.membus.cpu_side_ports
-                else:
-                    if chi_topology not in ('L2ToDramSys', 'L2ToDramSys_M1Local1Dram'):
-                        raise ValueError(
-                            f"Unsupported --chi-topology for xsCHI L2ToDramSys branch: {chi_topology}"
-                        )
-                    use_mesh1_local1_dram = (chi_topology == 'L2ToDramSys_M1Local1Dram')
-                    topology_variant = (
-                        "rn_m0_local0_hn_m1_local0_dram_m1_local1"
-                        if use_mesh1_local1_dram
-                        else "rn_m0_local0_hn_m1_local0_dram_m2_local0"
-                    )
-                    system.CHIsys = L2ToDramSys(
-                        configFile=os.path.join(
-                            root_dir,
-                            'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'
-                        ),
-                        topology_variant=topology_variant,
-                    )
-                    # 影子 L2 总开关与数量：
-                    # - 开启时 count 必须 > 0；
-                    # - 关闭时允许 count 保持默认值（不会生效）。
+                def _build_shadow_l2_config():
                     shadow_enable = bool(getattr(options, "shadow_l2_enable", False))
                     shadow_count = int(getattr(options, "shadow_l2_count", 1))
                     if shadow_enable and shadow_count <= 0:
-                        raise ValueError("--shadow-l2-count must be > 0 when --shadow-l2-enable is set")
+                        raise ValueError(
+                            "--shadow-l2-count must be > 0 when --shadow-l2-enable is set"
+                        )
 
-                    # 每个影子需要独立的一组配置：
-                    # 1) bridge（注入源）
-                    # 2) attach 点（meshX.localY）
-                    # 3) src/window/dst（地址重映射窗口）
                     shadow_bridges = []
                     shadow_attach_points = []
                     shadow_src_bases = []
                     shadow_window_sizes = []
                     shadow_dst_bases = []
                     if shadow_enable:
-                        # 为每个影子创建独立 CHI bridge，确保 SrcId / NodeID 可区分。
                         shadow_bridges = [
                             CHIBridge(networkPort=CHIPort(recv_buffer_size=4))
                             for _ in range(shadow_count)
                         ]
-
-                        # attach 点默认 mesh3.local0，后续可通过 CSV 扩展到 local1 或其他 mesh 节点。
                         shadow_attach_points = _parse_csv_list(
                             getattr(options, "shadow_attach_points", "mesh3.local0")
                         )
-                        # 映射公式：A' = dst_base + (A - src_base)，A 必须落在 [src_base, src_base + window)。
                         shadow_src_bases = _parse_csv_addr_list(
                             getattr(options, "shadow_src_bases", ""),
                             "shadow-src-bases")
@@ -478,9 +340,6 @@ def config_cache(options, system):
                             getattr(options, "shadow_dst_bases", ""),
                             "shadow-dst-bases")
 
-                        # 严格失败策略：
-                        # 任何列表长度与 shadow_count 不一致都直接报错，不做隐式补齐或截断，
-                        # 防止实验流量“看似在跑，实则配置错位”。
                         if len(shadow_attach_points) != shadow_count:
                             raise ValueError(
                                 f"shadow attach points count mismatch: expected {shadow_count}, "
@@ -502,30 +361,73 @@ def config_cache(options, system):
                                 f"got {len(shadow_dst_bases)}"
                             )
 
+                    return {
+                        "shadow_enable": shadow_enable,
+                        "shadow_bridges": shadow_bridges,
+                        "shadow_attach_points": shadow_attach_points,
+                        "shadow_src_bases": shadow_src_bases,
+                        "shadow_window_sizes": shadow_window_sizes,
+                        "shadow_dst_bases": shadow_dst_bases,
+                    }
+
+                if chi_topology in ('L2L3DramSys', 'L2L3DramSys_M1Local1Dram'):
+                    use_mesh1_local1_dram = (chi_topology == 'L2L3DramSys_M1Local1Dram')
+                    topology_variant = (
+                        "rn_m0_local0_hn_m1_local0_dram_m1_local1"
+                        if use_mesh1_local1_dram
+                        else "rn_m0_local0_hn_m1_local0_dram_m2_local0"
+                    )
+                    shadow_cfg = _build_shadow_l2_config()
+
+                    l3_inner_cache_wrapper = L3CacheWrapper(
+                        clk_domain=system.cpu_clk_domain,
+                        num_slices=1,
+                        cache_size=options.l3_size,
+                        cache_assoc=options.l3_assoc,
+                        block_bits=int(math.log2(system.cache_line_size)),
+                    )
+                    l2l3_topo_cls = (
+                        L2L3DramSysM1Local1Dram
+                        if use_mesh1_local1_dram
+                        else L2L3DramSys
+                    )
+                    system.CHIsys = l2l3_topo_cls(
+                        dramsim3=DDRWrapper(
+                            networkPort=CHIPort(recv_buffer_size=4),
+                            range=system.mem_ranges[0],
+                            configFile=os.path.join(
+                                root_dir,
+                                'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini',
+                            ),
+                            filePath=os.path.join(root_dir, 'ext/dramsim3/DRAMsim3/'),
+                        ),
+                        ShadowRNBridges=shadow_cfg["shadow_bridges"],
+                        shadow_attach_points=shadow_cfg["shadow_attach_points"],
+                    )
                     system.CHIsys.L2Wrapper = CHI_L2(
                         RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)),
-                        ShadowRNBridges=shadow_bridges,
-                        shadow_enable=shadow_enable,
-                        shadow_src_bases=shadow_src_bases,
-                        shadow_window_sizes=shadow_window_sizes,
-                        shadow_dst_bases=shadow_dst_bases,
+                        ShadowRNBridges=shadow_cfg["shadow_bridges"],
+                        shadow_enable=shadow_cfg["shadow_enable"],
+                        shadow_src_bases=shadow_cfg["shadow_src_bases"],
+                        shadow_window_sizes=shadow_cfg["shadow_window_sizes"],
+                        shadow_dst_bases=shadow_cfg["shadow_dst_bases"],
                     )
-                    system.CHIsys.L3 = FakeL3(networkPort=CHIPort(recv_buffer_size=4))
-                    # 将影子 bridge 与 attach 列表传给 TopoSys，负责真正接线与 NodeID/SAM 配置。
-                    system.CHIsys.ShadowRNBridges = shadow_bridges
-                    system.CHIsys.shadow_attach_points = shadow_attach_points
+                    system.CHIsys.L3 = CHI_L3(
+                        networkPort=CHIPort(recv_buffer_size=4),
+                        coherent_xbar=L2XBar(clk_domain=system.cpu_clk_domain),
+                        cache_wrapper=l3_inner_cache_wrapper
+                    )
+                    system.CHIsys.ShadowRNBridges = shadow_cfg["shadow_bridges"]
+                    system.CHIsys.shadow_attach_points = shadow_cfg["shadow_attach_points"]
+
                     # 2x2 mesh used by xsCHI TopoSys.
                     # Coordinates:
                     #   Mesh0=(0,0), Mesh1=(1,0), Mesh2=(1,1), Mesh3=(0,1)
-                    # Endpoint placement:
-                    #   default: RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
-                    #   M1Local1Dram variant: RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh1.local1
                     system.CHIsys.MeshNode0 = MeshNode(
                         node_x=0, node_y=0,
                         voq_depth=chi_voq_depth,
                         voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
-                        # local1 预留给后续影子扩展（例如 mesh0.local1）。
                         port_local1=CHIPort(recv_buffer_size=4),
                         port_east=CHIPort(recv_buffer_size=4),
                         port_north=CHIPort(recv_buffer_size=4))
@@ -534,7 +436,6 @@ def config_cache(options, system):
                         voq_depth=chi_voq_depth,
                         voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
-                        # 保持与 local0 对称，便于多影子自由挂载。
                         port_local1=CHIPort(recv_buffer_size=4),
                         port_west=CHIPort(recv_buffer_size=4),
                         port_north=CHIPort(recv_buffer_size=4))
@@ -543,18 +444,14 @@ def config_cache(options, system):
                         voq_depth=chi_voq_depth,
                         voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
-                        # 默认拓扑 DRAM 占用 local0；新变体可切到 Mesh1.local1。
                         port_local1=CHIPort(recv_buffer_size=4),
                         port_west=CHIPort(recv_buffer_size=4),
                         port_south=CHIPort(recv_buffer_size=4))
-                    # Mesh3 currently has no local endpoint; keep local0 present
-                    # to satisfy MeshNode's mandatory local0-port invariant.
                     system.CHIsys.MeshNode3 = MeshNode(
                         node_x=0, node_y=1,
                         voq_depth=chi_voq_depth,
                         voq_depth_per_ingress=chi_voq_depth_per_ingress,
                         port_local0=CHIPort(recv_buffer_size=4),
-                        # 默认影子挂点常用 mesh3.local0，保留 local1 以支持 count 增长。
                         port_local1=CHIPort(recv_buffer_size=4),
                         port_east=CHIPort(recv_buffer_size=4),
                         port_south=CHIPort(recv_buffer_size=4))
@@ -564,8 +461,124 @@ def config_cache(options, system):
                         "endpoints: RN@M0.local0 HN@M1.local0 "
                         f"DRAM@{'M1.local1' if use_mesh1_local1_dram else 'M2.local0'} "
                         f"topology={chi_topology} variant={topology_variant} "
-                        f"shadow_enable={shadow_enable} shadow_count={len(shadow_bridges)} "
-                        f"shadow_attach={shadow_attach_points}"
+                        f"shadow_enable={shadow_cfg['shadow_enable']} "
+                        f"shadow_count={len(shadow_cfg['shadow_bridges'])} "
+                        f"shadow_attach={shadow_cfg['shadow_attach_points']}"
+                    )
+
+                    l3_cache_slice = L2CacheSlice(clk_domain=system.cpu_clk_domain)
+                    l3_inner_cache = L3Cache(
+                        clk_domain=system.cpu_clk_domain,
+                        **_get_cache_opts(system.cpu[0], 'l3', options)
+                    )
+                    l3_inner_cache_wrapper.slices = [l3_cache_slice]
+                    l3_cache_slice.inner_cache = l3_inner_cache
+
+                    l3_inner_cache.tags.indexing_policy.num_slices = 1
+                    l3_inner_cache.tags.indexing_policy.slice_idx = 0
+                    if isinstance(l3_inner_cache.replacement_policy, DRRIPRP):
+                        l3_inner_cache.replacement_policy.num_slices = 1
+                        l3_inner_cache.replacement_policy.num_sets_per_slice = (
+                            l3_inner_cache.size // (64 * l3_inner_cache.assoc)
+                        )
+
+                    l3_inner_cache_wrapper.addCacheAccessor(l3_inner_cache)
+                    l3_inner_cache_wrapper.addSliceAccessor(l3_cache_slice)
+                    l3_cache_slice.setCacheAccessor(l3_inner_cache)
+
+                    l3_inner_cache.do_fast_writeline = not options.kmh_align
+                    if options.ideal_cache:
+                        l3_inner_cache.response_latency = 0
+                        l3_inner_cache.tag_latency = 1
+                        l3_inner_cache.data_latency = 1
+                        l3_inner_cache.sequential_access = False
+                        l3_inner_cache.writeback_clean = False
+                        l3_inner_cache.mshrs = 64
+                    if options.xiangshan_ecore:
+                        l3_inner_cache.response_latency = 66
+                        l3_inner_cache.writeback_clean = False
+
+                    l3_inner_cache_wrapper.slice_cpuside_ports = l3_cache_slice.cpu_side
+                    l3_cache_slice.inner_cpu_port = l3_inner_cache.cpu_side
+                    l3_inner_cache.mem_side = l3_cache_slice.inner_mem_port
+
+                    system.CHIsys.L3.inner_req_port = system.CHIsys.L3.coherent_xbar.cpu_side_ports
+                    system.CHIsys.L3.coherent_xbar.mem_side_ports = system.CHIsys.L3.cache_wrapper.cpu_side
+                    system.CHIsys.L3.inner_resp_port = l3_cache_slice.mem_side
+                    system.CHIsys.mem_side_port = system.membus.cpu_side_ports
+                else:
+                    if chi_topology not in ('L2ToDramSys', 'L2ToDramSys_M1Local1Dram'):
+                        raise ValueError(
+                            f"Unsupported --chi-topology for xsCHI L2ToDramSys branch: {chi_topology}"
+                        )
+                    use_mesh1_local1_dram = (chi_topology == 'L2ToDramSys_M1Local1Dram')
+                    topology_variant = (
+                        "rn_m0_local0_hn_m1_local0_dram_m1_local1"
+                        if use_mesh1_local1_dram
+                        else "rn_m0_local0_hn_m1_local0_dram_m2_local0"
+                    )
+                    shadow_cfg = _build_shadow_l2_config()
+
+                    system.CHIsys = L2ToDramSys(
+                        configFile=os.path.join(
+                            root_dir,
+                            'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'
+                        ),
+                        topology_variant=topology_variant,
+                    )
+                    system.CHIsys.L2Wrapper = CHI_L2(
+                        RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)),
+                        ShadowRNBridges=shadow_cfg["shadow_bridges"],
+                        shadow_enable=shadow_cfg["shadow_enable"],
+                        shadow_src_bases=shadow_cfg["shadow_src_bases"],
+                        shadow_window_sizes=shadow_cfg["shadow_window_sizes"],
+                        shadow_dst_bases=shadow_cfg["shadow_dst_bases"],
+                    )
+                    system.CHIsys.L3 = FakeL3(networkPort=CHIPort(recv_buffer_size=4))
+                    system.CHIsys.ShadowRNBridges = shadow_cfg["shadow_bridges"]
+                    system.CHIsys.shadow_attach_points = shadow_cfg["shadow_attach_points"]
+
+                    system.CHIsys.MeshNode0 = MeshNode(
+                        node_x=0, node_y=0,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                        port_local0=CHIPort(recv_buffer_size=4),
+                        port_local1=CHIPort(recv_buffer_size=4),
+                        port_east=CHIPort(recv_buffer_size=4),
+                        port_north=CHIPort(recv_buffer_size=4))
+                    system.CHIsys.MeshNode1 = MeshNode(
+                        node_x=1, node_y=0,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                        port_local0=CHIPort(recv_buffer_size=4),
+                        port_local1=CHIPort(recv_buffer_size=4),
+                        port_west=CHIPort(recv_buffer_size=4),
+                        port_north=CHIPort(recv_buffer_size=4))
+                    system.CHIsys.MeshNode2 = MeshNode(
+                        node_x=1, node_y=1,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                        port_local0=CHIPort(recv_buffer_size=4),
+                        port_local1=CHIPort(recv_buffer_size=4),
+                        port_west=CHIPort(recv_buffer_size=4),
+                        port_south=CHIPort(recv_buffer_size=4))
+                    system.CHIsys.MeshNode3 = MeshNode(
+                        node_x=0, node_y=1,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                        port_local0=CHIPort(recv_buffer_size=4),
+                        port_local1=CHIPort(recv_buffer_size=4),
+                        port_east=CHIPort(recv_buffer_size=4),
+                        port_south=CHIPort(recv_buffer_size=4))
+                    print(
+                        "[xsCHI][Build] mesh=2x2 "
+                        "M0=(0,0) M1=(1,0) M2=(1,1) M3=(0,1) "
+                        "endpoints: RN@M0.local0 HN@M1.local0 "
+                        f"DRAM@{'M1.local1' if use_mesh1_local1_dram else 'M2.local0'} "
+                        f"topology={chi_topology} variant={topology_variant} "
+                        f"shadow_enable={shadow_cfg['shadow_enable']} "
+                        f"shadow_count={len(shadow_cfg['shadow_bridges'])} "
+                        f"shadow_attach={shadow_cfg['shadow_attach_points']}"
                     )
                     system.CHIsys.mem_side_port = system.membus.cpu_side_ports
             else:

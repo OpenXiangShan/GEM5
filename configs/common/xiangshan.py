@@ -538,14 +538,15 @@ def build_xiangshan_system(args):
 
         CacheConfig.config_cache(args, test_sys)
 
-        if args.CHI and getattr(args, 'chi_topology', 'L2ToDramSys') == 'L2L3DramSys':
+        l2l3_topologies = ('L2L3DramSys', 'L2L3DramSys_M1Local1Dram')
+        if args.CHI and getattr(args, 'chi_topology', 'L2ToDramSys') in l2l3_topologies:
             # L2L3DramSys owns and wires its DDRWrapper internally.
             # Skip MemConfig to avoid creating an extra unconnected DDRWrapper.
             pass
         else:
             MemConfig.config_mem(args, test_sys)
         if args.CHI:
-            if getattr(args, 'chi_topology', 'L2ToDramSys') != 'L2L3DramSys':
+            if getattr(args, 'chi_topology', 'L2ToDramSys') not in l2l3_topologies:
                 test_sys.CHIsys.dramsim3 = test_sys.mem_ctrls[0]
                 test_sys.CHIsys.dramsim3.networkPort = CHIPort(recv_buffer_size=4)
 
@@ -726,7 +727,12 @@ def xiangshan_system_init():
     parser.add_argument(
         "--chi-topology",
         type=str,
-        choices=["L2ToDramSys", "L2ToDramSys_M1Local1Dram", "L2L3DramSys"],
+        choices=[
+            "L2ToDramSys",
+            "L2ToDramSys_M1Local1Dram",
+            "L2L3DramSys",
+            "L2L3DramSys_M1Local1Dram",
+        ],
         default="L2ToDramSys",
         help="Select CHI topology object when --CHI is enabled",
     )
