@@ -1,0 +1,7 @@
+paramiko>=2.9.3
+tqdm>=4.67.1
+scikit-learn>=1.6.1
+scikit-optimize>=0.10.2
+numpy>=2.2.3
+pandas>=2.2.3
+scipy>=1.15.3
