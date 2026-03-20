@@ -70,6 +70,8 @@ class CBP2025TraceReader : public TraceReader
     bool restoreCheckpoint(const TraceCheckpoint& checkpoint) override;
     bool seekToInstruction(uint64_t instrIndex) override;
     uint64_t getCurrentInstructionIndex() const override { return instructionIndex; }
+    bool supportsFastRandomSeek() const override
+    { return streamMode == TraceStream::Mode::Raw; }
 
   protected:
     size_t fillBuffer(size_t max_instructions) override;
