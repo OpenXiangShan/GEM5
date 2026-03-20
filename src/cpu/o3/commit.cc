@@ -209,6 +209,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         traceCommitIndex[tid] = 0;
         committedTargetId[tid] = 1;
         committedLoopIter[tid] = 0;
+        traceLastHeartbeatIndex[tid] = 0;
         const unsigned capacity = renameWidth *
             (numPreDispatchThreads > 1 ? 2 : 1);
         fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(capacity);
