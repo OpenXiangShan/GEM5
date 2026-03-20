@@ -138,6 +138,24 @@ Commit::traceOnCommit(ThreadID tid, const DynInstPtr &head_inst)
     if (cpu->isTraceInstruction(head_inst->seqNum)) {
         cpu->cleanupTraceMetadataOnCommit(head_inst->seqNum);
     }
+
+    static constexpr uint64_t TraceHeartbeatInterval = 5000000;
+    const uint64_t current_idx = traceCommitIndex[tid];
+    const bool first_heartbeat =
+        (current_idx != 0 && traceLastHeartbeatIndex[tid] == 0);
+    const bool periodic_heartbeat =
+        (current_idx != 0 &&
+         (current_idx / TraceHeartbeatInterval) >
+             (traceLastHeartbeatIndex[tid] / TraceHeartbeatInterval));
+    if (first_heartbeat || periodic_heartbeat) {
+        traceLastHeartbeatIndex[tid] = current_idx;
+        warn("[TraceHeartbeat][tid:%d] idx=%llu sn=%llu pc=0x%lx tick=%llu\n",
+             tid,
+             (unsigned long long)current_idx,
+             (unsigned long long)head_inst->seqNum,
+             (unsigned long)head_inst->pcState().instAddr(),
+             (unsigned long long)curTick());
+    }
 }
 
 void

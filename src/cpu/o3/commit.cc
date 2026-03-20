@@ -185,6 +185,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         htmStops[tid] = 0;
         traceCommitIndex[tid] = 0;
         fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(renameWidth);
+        traceLastHeartbeatIndex[tid] = 0;
     }
     interrupt = NoFault;
 

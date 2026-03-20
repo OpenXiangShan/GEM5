@@ -654,6 +654,7 @@ class Commit
 
     // Trace-mode commit stream index per thread: expected next trace instruction index
     uint64_t traceCommitIndex[MaxThreads] = {0};
+    uint64_t traceLastHeartbeatIndex[MaxThreads] = {0};
 
     // Trace-mode helpers (implementation in src/cpu/o3/trace/CommitTrace.cc)
     bool traceMaybeExitOnPipelineDrainFromStuckCheck();
