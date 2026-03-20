@@ -577,8 +577,8 @@ EStrideAP::updateAddressPredictor(APUpdateMetaData *updateMetaData)
                     entry.useful = 3;
                 }
             } else {
-                int confDec = (1 << ((logMaxConfidence + 1) / 2));
-                // int confDec = (1 << logMaxConfidence) / 2;
+                // int confDec = (1 << ((logMaxConfidence + 1) / 2));
+                int confDec = (1 << logMaxConfidence) / 2;
                 if (entry.confidence - confDec > 0) {
                     entry.confidence -= confDec;
                 } else {

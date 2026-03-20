@@ -452,6 +452,16 @@ class Rename
         statistics::Scalar apProbeNotReadyAtRename;
         /** Ratio of late AP probe responses at rename. */
         statistics::Formula apProbeNotReadyRatio;
+        /**
+         * Number of speculative AP candidates whose probe response is ready
+         * but apProbeHit is false at rename.
+         */
+        statistics::Scalar apProbeHitFalseAtRename;
+        /**
+         * Ratio of probe-hit-false cases among AP candidates with ready probe
+         * responses at rename.
+         */
+        statistics::Formula apProbeHitFalseRatio;
 
         statistics::Vector stallEvents;
     } stats;

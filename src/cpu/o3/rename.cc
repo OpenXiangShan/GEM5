@@ -154,6 +154,14 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
       ADD_STAT(apProbeNotReadyRatio, statistics::units::Ratio::get(),
                "ratio of AP candidates with not-ready dcache probe at rename",
                apProbeNotReadyAtRename / apSpeculativeCandidates),
+      ADD_STAT(apProbeHitFalseAtRename, statistics::units::Count::get(),
+               "count of AP candidates whose dcache probe is ready but hit "
+               "is false at rename"),
+      ADD_STAT(apProbeHitFalseRatio, statistics::units::Ratio::get(),
+               "ratio of AP candidates with probe-hit-false among probe-ready "
+               "AP candidates at rename",
+               apProbeHitFalseAtRename /
+                (apSpeculativeCandidates - apProbeNotReadyAtRename)),
       ADD_STAT(stallEvents, statistics::units::Count::get(),
                "count of stall events")
 {
@@ -189,6 +197,7 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
     constantFolded.flags(statistics::total);
     apSpeculativeCandidates.prereq(apSpeculativeCandidates);
     apProbeNotReadyAtRename.prereq(apProbeNotReadyAtRename);
+    apProbeHitFalseAtRename.prereq(apProbeHitFalseAtRename);
 
     stallEvents.init(StallEventCount).flags(statistics::total);
     std::map < StallEvent, const char* > stall_event_str = {
@@ -986,6 +995,8 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
                     stats.apSpeculativeCandidates++;
                     if (!inst->apProbeDone) {
                         stats.apProbeNotReadyAtRename++;
+                    } else if (!inst->apProbeHit) {
+                        stats.apProbeHitFalseAtRename++;
                     }
                 }
                 if (inst->apResult.speculative && inst->apProbeDone &&
