@@ -42,6 +42,7 @@
 
 import math
 import os
+import sys
 import m5
 from m5.objects import *
 from common.Caches import *
@@ -309,7 +310,7 @@ def config_cache(options, system):
                         f"Unsupported --chi-voq-depth-mode: {chi_voq_depth_mode}"
                     )
                 chi_voq_depth_per_ingress = (chi_voq_depth_mode == 'per_ingress')
-                def _build_shadow_l2_config():
+                def _build_shadow_l2_config(default_attach_point="mesh3.local0"):
                     shadow_enable = bool(getattr(options, "shadow_l2_enable", False))
                     shadow_count = int(getattr(options, "shadow_l2_count", 1))
                     if shadow_enable and shadow_count <= 0:
@@ -323,12 +324,27 @@ def config_cache(options, system):
                     shadow_window_sizes = []
                     shadow_dst_bases = []
                     if shadow_enable:
+                        raw_shadow_attach_points = getattr(
+                            options, "shadow_attach_points", None
+                        )
+                        shadow_attach_opt_provided = any(
+                            arg == "--shadow-attach-points"
+                            or arg.startswith("--shadow-attach-points=")
+                            for arg in sys.argv
+                        )
+                        if shadow_attach_opt_provided or (
+                            raw_shadow_attach_points not in (None, "", "mesh3.local0")
+                        ):
+                            shadow_attach_raw = raw_shadow_attach_points
+                        else:
+                            shadow_attach_raw = default_attach_point
+
                         shadow_bridges = [
                             CHIBridge(networkPort=CHIPort(recv_buffer_size=4))
                             for _ in range(shadow_count)
                         ]
                         shadow_attach_points = _parse_csv_list(
-                            getattr(options, "shadow_attach_points", "mesh3.local0")
+                            shadow_attach_raw
                         )
                         shadow_src_bases = _parse_csv_addr_list(
                             getattr(options, "shadow_src_bases", ""),
@@ -370,14 +386,28 @@ def config_cache(options, system):
                         "shadow_dst_bases": shadow_dst_bases,
                     }
 
-                if chi_topology in ('L2L3DramSys', 'L2L3DramSys_M1Local1Dram'):
-                    use_mesh1_local1_dram = (chi_topology == 'L2L3DramSys_M1Local1Dram')
-                    topology_variant = (
-                        "rn_m0_local0_hn_m1_local0_dram_m1_local1"
-                        if use_mesh1_local1_dram
-                        else "rn_m0_local0_hn_m1_local0_dram_m2_local0"
+                if chi_topology in (
+                    'L2L3DramSys',
+                    'L2L3DramSys_M1Local1Dram',
+                    'L2L3DramSys_3x3',
+                ):
+                    use_mesh1_local1_dram = (
+                        chi_topology == 'L2L3DramSys_M1Local1Dram'
                     )
-                    shadow_cfg = _build_shadow_l2_config()
+                    use_mesh_3x3 = (chi_topology == 'L2L3DramSys_3x3')
+                    topology_variant = (
+                        "rn_m0_local0_hn_m4_local0_dram_m4_local1"
+                        if use_mesh_3x3
+                        else (
+                            "rn_m0_local0_hn_m1_local0_dram_m1_local1"
+                            if use_mesh1_local1_dram
+                            else "rn_m0_local0_hn_m1_local0_dram_m2_local0"
+                        )
+                    )
+                    shadow_default_attach = (
+                        "mesh8.local0" if use_mesh_3x3 else "mesh3.local0"
+                    )
+                    shadow_cfg = _build_shadow_l2_config(shadow_default_attach)
 
                     l3_inner_cache_wrapper = L3CacheWrapper(
                         clk_domain=system.cpu_clk_domain,
@@ -386,11 +416,12 @@ def config_cache(options, system):
                         cache_assoc=options.l3_assoc,
                         block_bits=int(math.log2(system.cache_line_size)),
                     )
-                    l2l3_topo_cls = (
-                        L2L3DramSysM1Local1Dram
-                        if use_mesh1_local1_dram
-                        else L2L3DramSys
-                    )
+                    if use_mesh_3x3:
+                        l2l3_topo_cls = L2L3DramSys3x3
+                    elif use_mesh1_local1_dram:
+                        l2l3_topo_cls = L2L3DramSysM1Local1Dram
+                    else:
+                        l2l3_topo_cls = L2L3DramSys
                     system.CHIsys = l2l3_topo_cls(
                         dramsim3=DDRWrapper(
                             networkPort=CHIPort(recv_buffer_size=4),
@@ -420,51 +451,147 @@ def config_cache(options, system):
                     system.CHIsys.ShadowRNBridges = shadow_cfg["shadow_bridges"]
                     system.CHIsys.shadow_attach_points = shadow_cfg["shadow_attach_points"]
 
-                    # 2x2 mesh used by xsCHI TopoSys.
-                    # Coordinates:
-                    #   Mesh0=(0,0), Mesh1=(1,0), Mesh2=(1,1), Mesh3=(0,1)
-                    system.CHIsys.MeshNode0 = MeshNode(
-                        node_x=0, node_y=0,
-                        voq_depth=chi_voq_depth,
-                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_local1=CHIPort(recv_buffer_size=4),
-                        port_east=CHIPort(recv_buffer_size=4),
-                        port_north=CHIPort(recv_buffer_size=4))
-                    system.CHIsys.MeshNode1 = MeshNode(
-                        node_x=1, node_y=0,
-                        voq_depth=chi_voq_depth,
-                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_local1=CHIPort(recv_buffer_size=4),
-                        port_west=CHIPort(recv_buffer_size=4),
-                        port_north=CHIPort(recv_buffer_size=4))
-                    system.CHIsys.MeshNode2 = MeshNode(
-                        node_x=1, node_y=1,
-                        voq_depth=chi_voq_depth,
-                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_local1=CHIPort(recv_buffer_size=4),
-                        port_west=CHIPort(recv_buffer_size=4),
-                        port_south=CHIPort(recv_buffer_size=4))
-                    system.CHIsys.MeshNode3 = MeshNode(
-                        node_x=0, node_y=1,
-                        voq_depth=chi_voq_depth,
-                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_local1=CHIPort(recv_buffer_size=4),
-                        port_east=CHIPort(recv_buffer_size=4),
-                        port_south=CHIPort(recv_buffer_size=4))
-                    print(
-                        "[xsCHI][Build] mesh=2x2 "
-                        "M0=(0,0) M1=(1,0) M2=(1,1) M3=(0,1) "
-                        "endpoints: RN@M0.local0 HN@M1.local0 "
-                        f"DRAM@{'M1.local1' if use_mesh1_local1_dram else 'M2.local0'} "
-                        f"topology={chi_topology} variant={topology_variant} "
-                        f"shadow_enable={shadow_cfg['shadow_enable']} "
-                        f"shadow_count={len(shadow_cfg['shadow_bridges'])} "
-                        f"shadow_attach={shadow_cfg['shadow_attach_points']}"
-                    )
+                    if use_mesh_3x3:
+                        # 3x3 mesh used by xsCHI TopoSys.
+                        # Coordinates (row-major):
+                        # M0=(0,0) M1=(1,0) M2=(2,0)
+                        # M3=(0,1) M4=(1,1) M5=(2,1)
+                        # M6=(0,2) M7=(1,2) M8=(2,2)
+                        system.CHIsys.MeshNode0 = MeshNode(
+                            node_x=0, node_y=0,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_east=CHIPort(recv_buffer_size=4),
+                            port_north=CHIPort(recv_buffer_size=4))
+                        system.CHIsys.MeshNode1 = MeshNode(
+                            node_x=1, node_y=0,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_east=CHIPort(recv_buffer_size=4),
+                            port_west=CHIPort(recv_buffer_size=4),
+                            port_north=CHIPort(recv_buffer_size=4))
+                        system.CHIsys.MeshNode2 = MeshNode(
+                            node_x=2, node_y=0,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_west=CHIPort(recv_buffer_size=4),
+                            port_north=CHIPort(recv_buffer_size=4))
+                        system.CHIsys.MeshNode3 = MeshNode(
+                            node_x=0, node_y=1,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_east=CHIPort(recv_buffer_size=4),
+                            port_north=CHIPort(recv_buffer_size=4),
+                            port_south=CHIPort(recv_buffer_size=4))
+                        system.CHIsys.MeshNode4 = MeshNode(
+                            node_x=1, node_y=1,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_east=CHIPort(recv_buffer_size=4),
+                            port_west=CHIPort(recv_buffer_size=4),
+                            port_north=CHIPort(recv_buffer_size=4),
+                            port_south=CHIPort(recv_buffer_size=4))
+                        system.CHIsys.MeshNode5 = MeshNode(
+                            node_x=2, node_y=1,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_west=CHIPort(recv_buffer_size=4),
+                            port_north=CHIPort(recv_buffer_size=4),
+                            port_south=CHIPort(recv_buffer_size=4))
+                        system.CHIsys.MeshNode6 = MeshNode(
+                            node_x=0, node_y=2,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_east=CHIPort(recv_buffer_size=4),
+                            port_south=CHIPort(recv_buffer_size=4))
+                        system.CHIsys.MeshNode7 = MeshNode(
+                            node_x=1, node_y=2,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_east=CHIPort(recv_buffer_size=4),
+                            port_west=CHIPort(recv_buffer_size=4),
+                            port_south=CHIPort(recv_buffer_size=4))
+                        system.CHIsys.MeshNode8 = MeshNode(
+                            node_x=2, node_y=2,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_west=CHIPort(recv_buffer_size=4),
+                            port_south=CHIPort(recv_buffer_size=4))
+                        print(
+                            "[xsCHI][Build] mesh=3x3 "
+                            "M0=(0,0) M1=(1,0) M2=(2,0) "
+                            "M3=(0,1) M4=(1,1) M5=(2,1) "
+                            "M6=(0,2) M7=(1,2) M8=(2,2) "
+                            "endpoints: RN@M0.local0 HN@M4.local0 DRAM@M4.local1 "
+                            f"topology={chi_topology} variant={topology_variant} "
+                            f"shadow_enable={shadow_cfg['shadow_enable']} "
+                            f"shadow_count={len(shadow_cfg['shadow_bridges'])} "
+                            f"shadow_attach={shadow_cfg['shadow_attach_points']}"
+                        )
+                    else:
+                        # 2x2 mesh used by xsCHI TopoSys.
+                        # Coordinates:
+                        #   Mesh0=(0,0), Mesh1=(1,0), Mesh2=(1,1), Mesh3=(0,1)
+                        system.CHIsys.MeshNode0 = MeshNode(
+                            node_x=0, node_y=0,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_east=CHIPort(recv_buffer_size=4),
+                            port_north=CHIPort(recv_buffer_size=4))
+                        system.CHIsys.MeshNode1 = MeshNode(
+                            node_x=1, node_y=0,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_west=CHIPort(recv_buffer_size=4),
+                            port_north=CHIPort(recv_buffer_size=4))
+                        system.CHIsys.MeshNode2 = MeshNode(
+                            node_x=1, node_y=1,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_west=CHIPort(recv_buffer_size=4),
+                            port_south=CHIPort(recv_buffer_size=4))
+                        system.CHIsys.MeshNode3 = MeshNode(
+                            node_x=0, node_y=1,
+                            voq_depth=chi_voq_depth,
+                            voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                            port_local0=CHIPort(recv_buffer_size=4),
+                            port_local1=CHIPort(recv_buffer_size=4),
+                            port_east=CHIPort(recv_buffer_size=4),
+                            port_south=CHIPort(recv_buffer_size=4))
+                        print(
+                            "[xsCHI][Build] mesh=2x2 "
+                            "M0=(0,0) M1=(1,0) M2=(1,1) M3=(0,1) "
+                            "endpoints: RN@M0.local0 HN@M1.local0 "
+                            f"DRAM@{'M1.local1' if use_mesh1_local1_dram else 'M2.local0'} "
+                            f"topology={chi_topology} variant={topology_variant} "
+                            f"shadow_enable={shadow_cfg['shadow_enable']} "
+                            f"shadow_count={len(shadow_cfg['shadow_bridges'])} "
+                            f"shadow_attach={shadow_cfg['shadow_attach_points']}"
+                        )
 
                     l3_cache_slice = L2CacheSlice(clk_domain=system.cpu_clk_domain)
                     l3_inner_cache = L3Cache(
@@ -517,7 +644,7 @@ def config_cache(options, system):
                         if use_mesh1_local1_dram
                         else "rn_m0_local0_hn_m1_local0_dram_m2_local0"
                     )
-                    shadow_cfg = _build_shadow_l2_config()
+                    shadow_cfg = _build_shadow_l2_config("mesh3.local0")
 
                     system.CHIsys = L2ToDramSys(
                         configFile=os.path.join(
