@@ -402,8 +402,8 @@ parseShadowAttachPoint(const std::string &rawAttachPoint,
                isConnected(Mesh3->getSouthPort()));
 
         DPRINTF(Cache,
-            "Init CHI topo with MeshNodes: RNID=%u(%u,%u,p%u) -> HNID=%u(%u,%u,p%u),
-            DramID=%u(%u,%u,p%u), variant=%s\n",
+            "Init CHI topo with MeshNodes: RNID=%u(%u,%u,p%u) -> "
+            "HNID=%u(%u,%u,p%u),DramID=%u(%u,%u,p%u), variant=%s\n",
             L2ID, rn_x, rn_y, endpointPlacement.rnLocalPort,
             L3ID, hn_x, hn_y, endpointPlacement.hnLocalPort,
             dramID, dram_x, dram_y, endpointPlacement.dramLocalPort,

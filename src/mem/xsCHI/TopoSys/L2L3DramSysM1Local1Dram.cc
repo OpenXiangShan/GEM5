@@ -1,4 +1,4 @@
-#include "mem/xsCHI/TopoSys/L2L3DramSys.hh"
+#include "mem/xsCHI/TopoSys/L2L3DramSysM1Local1Dram.hh"
 
 #include <algorithm>
 #include <cassert>
@@ -107,7 +107,7 @@ parseShadowAttachPoint(const std::string &rawAttachPoint,
 
 } // namespace
 
-L2L3DramSys::L2L3DramSys(const Params &p)
+L2L3DramSysM1Local1Dram::L2L3DramSysM1Local1Dram(const Params &p)
     : ClockedObject(p),
       l2wrap(p.L2Wrapper),
       l3(p.L3),
@@ -122,15 +122,15 @@ L2L3DramSys::L2L3DramSys(const Params &p)
 {
     panic_if(Mesh0 == nullptr || Mesh1 == nullptr ||
                  Mesh2 == nullptr || Mesh3 == nullptr,
-             "L2L3DramSys requires MeshNode0/1/2/3");
+             "L2L3DramSysM1Local1Dram requires MeshNode0/1/2/3");
     panic_if(shadowBridges.size() != shadowAttachPoints.size(),
-             "L2L3DramSys shadow config length mismatch: bridges=%u "
+             "L2L3DramSysM1Local1Dram shadow config length mismatch: bridges=%u "
              "attach_points=%u",
              static_cast<unsigned>(shadowBridges.size()),
              static_cast<unsigned>(shadowAttachPoints.size()));
     panic_if(shadowBridges.size() != l2wrap->getShadowBridges().size(),
-             "L2L3DramSys shadow bridge mismatch with L2Wrapper: topo=%u "
-             "wrapper=%u",
+             "L2L3DramSysM1Local1Dram shadow bridge mismatch with L2Wrapper: "
+             "topo=%u wrapper=%u",
              static_cast<unsigned>(shadowBridges.size()),
              static_cast<unsigned>(l2wrap->getShadowBridges().size()));
 
@@ -145,7 +145,7 @@ L2L3DramSys::L2L3DramSys(const Params &p)
 
     const uint32_t l2Id = NodeID(mesh0_x, mesh0_y, 0).getNodeID();
     const uint32_t l3Id = NodeID(mesh1_x, mesh1_y, 0).getNodeID();
-    const uint32_t dramId = NodeID(mesh2_x, mesh2_y, 0).getNodeID();
+    const uint32_t dramId = NodeID(mesh1_x, mesh1_y, 1).getNodeID();
 
     auto l2Sam = std::make_shared<SystemAddressMapRN>();
     l2Sam->addNodeID(l3Id);
@@ -161,7 +161,8 @@ L2L3DramSys::L2L3DramSys(const Params &p)
 
     assert(l2wrap->getCHIPort() != nullptr && Mesh0->getLocal0Port() != nullptr);
     panic_if(Mesh0->getLocal0Port()->isConnected(),
-             "L2L3DramSys RN attach point Mesh0.local0 is already connected");
+             "L2L3DramSysM1Local1Dram RN attach point Mesh0.local0 is already "
+             "connected");
     l2wrap->getCHIPort()->connect(Mesh0->getLocal0Port());
 
     assert(Mesh0->getEastPort() != nullptr && Mesh1->getWestPort() != nullptr);
@@ -178,37 +179,43 @@ L2L3DramSys::L2L3DramSys(const Params &p)
 
     assert(Mesh1->getLocal0Port() != nullptr && l3->getNetworkPort() != nullptr);
     panic_if(Mesh1->getLocal0Port()->isConnected(),
-             "L2L3DramSys HN attach point Mesh1.local0 is already connected");
+             "L2L3DramSysM1Local1Dram HN attach point Mesh1.local0 is already "
+             "connected");
     Mesh1->getLocal0Port()->connect(l3->getNetworkPort());
 
-    assert(Mesh2->getLocal0Port() != nullptr && dram->getCHIPort() != nullptr);
-    panic_if(Mesh2->getLocal0Port()->isConnected(),
-             "L2L3DramSys DRAM attach point Mesh2.local0 is already connected");
-    Mesh2->getLocal0Port()->connect(dram->getCHIPort());
+    assert(Mesh1->getLocal1Port() != nullptr && dram->getCHIPort() != nullptr);
+    panic_if(Mesh1->getLocal1Port()->isConnected(),
+             "L2L3DramSysM1Local1Dram DRAM attach point Mesh1.local1 is already "
+             "connected");
+    Mesh1->getLocal1Port()->connect(dram->getCHIPort());
 
     std::set<uint32_t> shadowNodeIds;
     for (size_t i = 0; i < shadowBridges.size(); ++i) {
         CHIBridge *shadowBridge = shadowBridges[i];
         panic_if(shadowBridge == nullptr,
-                 "L2L3DramSys shadow bridge[%u] is null",
+                 "L2L3DramSysM1Local1Dram shadow bridge[%u] is null",
                  static_cast<unsigned>(i));
         panic_if(shadowBridge != l2wrap->getShadowBridges()[i],
-                 "L2L3DramSys shadow bridge[%u] pointer mismatch with L2Wrapper",
+                 "L2L3DramSysM1Local1Dram shadow bridge[%u] pointer mismatch "
+                 "with L2Wrapper",
                  static_cast<unsigned>(i));
 
         const ShadowAttachTarget attachTarget =
             parseShadowAttachPoint(shadowAttachPoints[i],
                                    Mesh0, Mesh1, Mesh2, Mesh3);
         panic_if(attachTarget.port->isConnected(),
-                 "L2L3DramSys shadow[%u] attach point %s is already connected",
+                 "L2L3DramSysM1Local1Dram shadow[%u] attach point %s is already "
+                 "connected",
                  static_cast<unsigned>(i), attachTarget.normalized.c_str());
 
         CHIPort *shadowPort = shadowBridge->getNetworkPort();
         panic_if(shadowPort == nullptr,
-                 "L2L3DramSys shadow bridge[%u] has null network port",
+                 "L2L3DramSysM1Local1Dram shadow bridge[%u] has null network "
+                 "port",
                  static_cast<unsigned>(i));
         panic_if(shadowPort->isConnected(),
-                 "L2L3DramSys shadow bridge[%u] network port already connected",
+                 "L2L3DramSysM1Local1Dram shadow bridge[%u] network port already "
+                 "connected",
                  static_cast<unsigned>(i));
         shadowPort->connect(attachTarget.port);
 
@@ -216,7 +223,8 @@ L2L3DramSys::L2L3DramSys(const Params &p)
             attachTarget.meshX, attachTarget.meshY,
             attachTarget.localPort).getNodeID();
         panic_if(shadowNodeIds.count(shadowNodeId) > 0,
-                 "L2L3DramSys duplicate shadow node_id=%u for shadow[%u]",
+                 "L2L3DramSysM1Local1Dram duplicate shadow node_id=%u for "
+                 "shadow[%u]",
                  shadowNodeId, static_cast<unsigned>(i));
         shadowNodeIds.insert(shadowNodeId);
 
@@ -239,7 +247,7 @@ L2L3DramSys::L2L3DramSys(const Params &p)
            mesh0_x, mesh0_y, mesh1_x, mesh1_y, mesh2_x, mesh2_y,
            mesh3_x, mesh3_y);
     inform("xsCHI endpoint placement: RN@Mesh0.local0 node_id=%u, "
-           "HN@Mesh1.local0 node_id=%u, DRAM@Mesh2.local0 node_id=%u",
+           "HN@Mesh1.local0 node_id=%u, DRAM@Mesh1.local1 node_id=%u",
            l2Id, l3Id, dramId);
     inform("xsCHI shadow summary: count=%u",
            static_cast<unsigned>(shadowBridges.size()));
@@ -276,15 +284,15 @@ L2L3DramSys::L2L3DramSys(const Params &p)
 }
 
 gem5::Port &
-L2L3DramSys::getPort(const std::string &if_name, PortID idx)
+L2L3DramSysM1Local1Dram::getPort(const std::string &if_name, PortID idx)
 {
     return l2wrap->getPort(if_name, idx);
 }
 
 void
-L2L3DramSys::init()
+L2L3DramSysM1Local1Dram::init()
 {
-    DPRINTF(Cache, "Init L2-CHI_L3-DRAM system\n");
+    DPRINTF(Cache, "Init L2-CHI_L3-DRAM(M1.local1) system\n");
 }
 
 } // namespace xsCHI

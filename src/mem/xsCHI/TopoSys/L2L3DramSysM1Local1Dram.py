@@ -6,10 +6,10 @@ from m5.objects.CHI_L3 import CHI_L3
 from m5.objects.MeshNode import MeshNode
 
 
-class L2L3DramSys(ClockedObject):
-    type = 'L2L3DramSys'
-    cxx_header = 'mem/xsCHI/TopoSys/L2L3DramSys.hh'
-    cxx_class = 'gem5::xsCHI::L2L3DramSys'
+class L2L3DramSysM1Local1Dram(ClockedObject):
+    type = 'L2L3DramSysM1Local1Dram'
+    cxx_header = 'mem/xsCHI/TopoSys/L2L3DramSysM1Local1Dram.hh'
+    cxx_class = 'gem5::xsCHI::L2L3DramSysM1Local1Dram'
 
     cpu_side_port = ResponsePort("port for receiving requests from the CPU or other requestor")
     mem_side_port = RequestPort("This port is only used for redirecting uncached accesses")
@@ -27,8 +27,8 @@ class L2L3DramSys(ClockedObject):
     #  south                      v
     # Mesh3(0,1) <--west-- Mesh2(1,1)
     # Endpoint placement:
-    # RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh2.local0
+    # RN@Mesh0.local0, HN@Mesh1.local0, DRAM@Mesh1.local1
     MeshNode0 = Param.MeshNode('RN-side mesh node')
-    MeshNode1 = Param.MeshNode('HN-side mesh node')
-    MeshNode2 = Param.MeshNode('DRAM-side mesh node')
+    MeshNode1 = Param.MeshNode('HN/DRAM-side mesh node')
+    MeshNode2 = Param.MeshNode('Transit-only mesh node')
     MeshNode3 = Param.MeshNode('Transit-only mesh node')
