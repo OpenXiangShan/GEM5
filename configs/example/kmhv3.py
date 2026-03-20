@@ -88,6 +88,7 @@ def setKmhV3Params(args, system):
             cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 100
             cpu.dcache.mshrs = 16
+            cpu.dcache.do_fast_writeline = False
             cpu.dcache.simulate_dcache_refill = True
             cpu.dcache.prefetch_can_offload = False
             set_lsq_bank_conflict_cache_params(cpu, system)
@@ -110,6 +111,7 @@ def setKmhV3Params(args, system):
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
                 for j in range(args.l2_slices):
+                    l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
                     l2_wrapper.slices[j].inner_cache.prefetch_can_offload = False
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
@@ -129,6 +131,7 @@ def setKmhV3Params(args, system):
     # l3 cache
     if args.l3cache:
         system.l3.mshrs = 128
+        system.l3.do_fast_writeline = False
         system.l3.prefetch_can_offload = False
 
 if __name__ == '__m5_main__':
