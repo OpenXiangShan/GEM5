@@ -1098,6 +1098,44 @@ class Fetch
         statistics::Scalar twoFetchNotTakenSpanTooLarge;
         /** 2Fetch not used because target is not fully covered by fetch buffer. */
         statistics::Scalar twoFetchNotTakenTargetNotInBuffer;
+        /** 2Fetch failure caused only by missing next stream. */
+        statistics::Scalar twoFetchFailOnlyNoNext;
+        /** 2Fetch failure caused only by non-taken stream end. */
+        statistics::Scalar twoFetchFailOnlyNotPredTaken;
+        /** 2Fetch failure caused only by span exceeding max bytes per cycle. */
+        statistics::Scalar twoFetchFailOnlySpanTooLarge;
+        /** 2Fetch failure caused only by target falling outside current fetch buffer. */
+        statistics::Scalar twoFetchFailOnlyTargetNotInBuffer;
+        /** 2Fetch failure caused by both span and target-in-buffer checks. */
+        statistics::Scalar twoFetchFailBothSpanAndTargetNotInBuffer;
+        /** 2Fetch target falls before current fetch buffer start. */
+        statistics::Scalar twoFetchTargetBeforeBuffer;
+        /** 2Fetch target falls after current fetch buffer end. */
+        statistics::Scalar twoFetchTargetAfterBuffer;
+        /** 2Fetch next stream starts at or after current stream start. */
+        statistics::Scalar twoFetchNextStreamForward;
+        /** 2Fetch next stream starts before current stream start. */
+        statistics::Scalar twoFetchNextStreamBackward;
+        /** 2Fetch next stream predicted end is at or after current stream start. */
+        statistics::Scalar twoFetchSpanForwardOrZero;
+        /** 2Fetch next stream predicted end is before current stream start. */
+        statistics::Scalar twoFetchSpanBackward;
+        /** Target offset from fetch buffer start for 2Fetch opportunities. */
+        statistics::Distribution twoFetchTargetOffsetFromBufferStart;
+        /** Distance from target to current fetch buffer start when target is before it. */
+        statistics::Distribution twoFetchTargetDistanceBeforeBufferStart;
+        /** Amount by which target exceeds current fetch buffer end when it does. */
+        statistics::Distribution twoFetchTargetDistancePastBufferEnd;
+        /** Span in bytes from current stream start to next stream predicted end. */
+        statistics::Distribution twoFetchSpanBytes;
+        /** Backward span distance when next stream predicted end precedes current stream start. */
+        statistics::Distribution twoFetchBackwardSpanDistance;
+        /** Delta from current stream start to next stream start. */
+        statistics::Distribution twoFetchNextStartDelta;
+        /** Backward start delta when next stream starts before current stream start. */
+        statistics::Distribution twoFetchBackwardNextStartDistance;
+        /** Offset of predicted control PC within current stream at run-out. */
+        statistics::Distribution twoFetchRunOutBranchOffset;
         /** Number of cycles with fetched instructions but without 2Fetch. */
         statistics::Scalar singleFetchCycleCount;
         /** Total number of fetched instructions in cycles without 2Fetch. */

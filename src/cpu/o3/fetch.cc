@@ -258,6 +258,44 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "2Fetch not taken because merged span exceeds max fetch bytes per cycle"),
     ADD_STAT(twoFetchNotTakenTargetNotInBuffer, statistics::units::Count::get(),
              "2Fetch not taken because target is not fully covered by current fetch buffer"),
+    ADD_STAT(twoFetchFailOnlyNoNext, statistics::units::Count::get(),
+             "2Fetch failure caused only by missing next stream"),
+    ADD_STAT(twoFetchFailOnlyNotPredTaken, statistics::units::Count::get(),
+             "2Fetch failure caused only by stream end without predicted taken branch"),
+    ADD_STAT(twoFetchFailOnlySpanTooLarge, statistics::units::Count::get(),
+             "2Fetch failure caused only by span exceeding max fetch bytes per cycle"),
+    ADD_STAT(twoFetchFailOnlyTargetNotInBuffer, statistics::units::Count::get(),
+             "2Fetch failure caused only by target not being fully covered by current fetch buffer"),
+    ADD_STAT(twoFetchFailBothSpanAndTargetNotInBuffer, statistics::units::Count::get(),
+             "2Fetch failure caused by both span-too-large and target-not-in-buffer"),
+    ADD_STAT(twoFetchTargetBeforeBuffer, statistics::units::Count::get(),
+             "2Fetch target falls before current fetch buffer start"),
+    ADD_STAT(twoFetchTargetAfterBuffer, statistics::units::Count::get(),
+             "2Fetch target falls after current fetch buffer end"),
+    ADD_STAT(twoFetchNextStreamForward, statistics::units::Count::get(),
+             "2Fetch next stream starts at or after current stream start"),
+    ADD_STAT(twoFetchNextStreamBackward, statistics::units::Count::get(),
+             "2Fetch next stream starts before current stream start"),
+    ADD_STAT(twoFetchSpanForwardOrZero, statistics::units::Count::get(),
+             "2Fetch next stream predicted end is at or after current stream start"),
+    ADD_STAT(twoFetchSpanBackward, statistics::units::Count::get(),
+             "2Fetch next stream predicted end is before current stream start"),
+    ADD_STAT(twoFetchTargetOffsetFromBufferStart, statistics::units::Byte::get(),
+             "Target offset from current fetch buffer start for 2Fetch opportunities"),
+    ADD_STAT(twoFetchTargetDistanceBeforeBufferStart, statistics::units::Byte::get(),
+             "Distance from target to current fetch buffer start when target is before it"),
+    ADD_STAT(twoFetchTargetDistancePastBufferEnd, statistics::units::Byte::get(),
+             "Distance in bytes by which target exceeds current fetch buffer end"),
+    ADD_STAT(twoFetchSpanBytes, statistics::units::Byte::get(),
+             "Span in bytes from current stream start to next stream predicted end"),
+    ADD_STAT(twoFetchBackwardSpanDistance, statistics::units::Byte::get(),
+             "Backward span distance when next stream predicted end precedes current stream start"),
+    ADD_STAT(twoFetchNextStartDelta, statistics::units::Byte::get(),
+             "Byte delta from current stream start to next stream start"),
+    ADD_STAT(twoFetchBackwardNextStartDistance, statistics::units::Byte::get(),
+             "Backward start delta when next stream starts before current stream start"),
+    ADD_STAT(twoFetchRunOutBranchOffset, statistics::units::Byte::get(),
+             "Offset of predicted control PC within current stream at run-out"),
     ADD_STAT(singleFetchCycleCount, statistics::units::Count::get(),
              "Cycles with fetched instructions but without 2Fetch"),
     ADD_STAT(singleFetchCycleInsts, statistics::units::Count::get(),
@@ -400,6 +438,52 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(twoFetchNotTakenSpanTooLarge);
         twoFetchNotTakenTargetNotInBuffer
             .prereq(twoFetchNotTakenTargetNotInBuffer);
+        twoFetchFailOnlyNoNext
+            .prereq(twoFetchFailOnlyNoNext);
+        twoFetchFailOnlyNotPredTaken
+            .prereq(twoFetchFailOnlyNotPredTaken);
+        twoFetchFailOnlySpanTooLarge
+            .prereq(twoFetchFailOnlySpanTooLarge);
+        twoFetchFailOnlyTargetNotInBuffer
+            .prereq(twoFetchFailOnlyTargetNotInBuffer);
+        twoFetchFailBothSpanAndTargetNotInBuffer
+            .prereq(twoFetchFailBothSpanAndTargetNotInBuffer);
+        twoFetchTargetBeforeBuffer
+            .prereq(twoFetchTargetBeforeBuffer);
+        twoFetchTargetAfterBuffer
+            .prereq(twoFetchTargetAfterBuffer);
+        twoFetchNextStreamForward
+            .prereq(twoFetchNextStreamForward);
+        twoFetchNextStreamBackward
+            .prereq(twoFetchNextStreamBackward);
+        twoFetchSpanForwardOrZero
+            .prereq(twoFetchSpanForwardOrZero);
+        twoFetchSpanBackward
+            .prereq(twoFetchSpanBackward);
+        twoFetchTargetOffsetFromBufferStart
+            .init(0, 128, 4)
+            .flags(statistics::pdf);
+        twoFetchTargetDistanceBeforeBufferStart
+            .init(0, 128, 4)
+            .flags(statistics::pdf);
+        twoFetchTargetDistancePastBufferEnd
+            .init(0, 128, 4)
+            .flags(statistics::pdf);
+        twoFetchSpanBytes
+            .init(0, 128, 4)
+            .flags(statistics::pdf);
+        twoFetchBackwardSpanDistance
+            .init(0, 128, 4)
+            .flags(statistics::pdf);
+        twoFetchNextStartDelta
+            .init(0, 128, 4)
+            .flags(statistics::pdf);
+        twoFetchBackwardNextStartDistance
+            .init(0, 128, 4)
+            .flags(statistics::pdf);
+        twoFetchRunOutBranchOffset
+            .init(0, 128, 4)
+            .flags(statistics::pdf);
         singleFetchCycleCount
             .prereq(singleFetchCycleCount);
         singleFetchCycleInsts
@@ -894,18 +978,65 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
         } else {
             const Addr target_pc = stream.predBranchInfo.target;
             const auto &next_stream = dbpbtb->ftqNext(tid);
+            const Addr buffer_start = threads[tid].startPC;
+            const Addr buffer_end = threads[tid].startPC + fetchBufferSize;
             const Addr span = next_stream.predEndPC - stream.startPC;
             const unsigned max_bytes = dbpbtb->getMaxFetchBytesPerCycle();
+            const bool target_before_buffer = target_pc < buffer_start;
+            const bool target_after_buffer = target_pc + 4 > buffer_end;
+            const bool next_stream_backward = next_stream.startPC < stream.startPC;
+            const bool span_backward = next_stream.predEndPC < stream.startPC;
+            const Addr target_offset = target_pc - buffer_start;
+            const Addr next_start_delta = next_stream.startPC - stream.startPC;
+            const Addr branch_offset = stream.predBranchInfo.pc - stream.startPC;
             const bool target_in_buffer =
-                target_pc >= threads[tid].startPC &&
-                target_pc + 4 <= threads[tid].startPC + fetchBufferSize;
+                !target_before_buffer && !target_after_buffer;
+            const bool span_too_large = span > max_bytes;
+
+            if (target_before_buffer) {
+                ++fetchStats.twoFetchTargetBeforeBuffer;
+                fetchStats.twoFetchTargetDistanceBeforeBufferStart.sample(
+                    buffer_start - target_pc);
+            } else if (target_after_buffer) {
+                ++fetchStats.twoFetchTargetAfterBuffer;
+                fetchStats.twoFetchTargetDistancePastBufferEnd.sample(
+                    target_pc + 4 - buffer_end);
+            } else {
+                fetchStats.twoFetchTargetOffsetFromBufferStart.sample(target_offset);
+            }
+
+            if (next_stream_backward) {
+                ++fetchStats.twoFetchNextStreamBackward;
+                fetchStats.twoFetchBackwardNextStartDistance.sample(
+                    stream.startPC - next_stream.startPC);
+            } else {
+                ++fetchStats.twoFetchNextStreamForward;
+                fetchStats.twoFetchNextStartDelta.sample(next_start_delta);
+            }
+
+            if (span_backward) {
+                ++fetchStats.twoFetchSpanBackward;
+                fetchStats.twoFetchBackwardSpanDistance.sample(
+                    stream.startPC - next_stream.predEndPC);
+            } else {
+                ++fetchStats.twoFetchSpanForwardOrZero;
+                fetchStats.twoFetchSpanBytes.sample(span);
+            }
+
+            fetchStats.twoFetchRunOutBranchOffset.sample(branch_offset);
 
             if (target_pc != next_stream.startPC) {
                 ++fetchStats.twoFetchNotTakenTargetMismatch;
-            } else if (span > max_bytes) {
+            } else if (span_too_large && !target_in_buffer) {
                 ++fetchStats.twoFetchNotTakenSpanTooLarge;
+                ++fetchStats.twoFetchNotTakenTargetNotInBuffer;
+                ++fetchStats.twoFetchFailBothSpanAndTargetNotInBuffer;
+            } else if (span_too_large) {
+                ++fetchStats.twoFetchNotTakenSpanTooLarge;
+                ++fetchStats.twoFetchFailOnlySpanTooLarge;
             } else if (!target_in_buffer) {
                 ++fetchStats.twoFetchNotTakenTargetNotInBuffer;
+                ++fetchStats.twoFetchFailOnlyTargetNotInBuffer;
             } else {
                 do_2fetch = true;
                 cycleUsed2Fetch = true;
@@ -915,6 +1046,12 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
                         "max=%u)\n",
                         stream.startPC, stream.predEndPC, next_stream.startPC, next_stream.predEndPC, span, max_bytes);
             }
+        }
+
+        if (!predict_taken) {
+            ++fetchStats.twoFetchFailOnlyNotPredTaken;
+        } else if (dbpbtb->is2FetchEnabled() && !dbpbtb->ftqHasNext(tid)) {
+            ++fetchStats.twoFetchFailOnlyNoNext;
         }
 
         dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
