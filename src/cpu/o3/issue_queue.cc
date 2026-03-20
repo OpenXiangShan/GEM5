@@ -1055,8 +1055,6 @@ Scheduler::issueAndSelect()
     }
     if (instsToFu.size() < intel_fewops) {
         stats.exec_stall_cycle++;
-        if (lsq->anyStoreNotExecute())
-            stats.memstall_any_store++;
     }
     if (instsToFu.size() == 0) {
         int misslevel = lsq->anyInflightLoadsNotComplete();
@@ -1068,6 +1066,9 @@ Scheduler::issueAndSelect()
             stats.memstall_l2miss++;
         if ((misslevel & ((1 << 3) - 1)) == ((1 << 3) - 1))
             stats.memstall_l3miss++;
+    } else if (instsToFu.size() < intel_fewops) {
+        if (lsq->anyStoreNotExecute())
+            stats.memstall_any_store++;
     }
 }
 
