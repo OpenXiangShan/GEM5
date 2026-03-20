@@ -1,0 +1,4 @@
+interface:
+  display_name: "GEM5 Manual Perf Trigger"
+  short_description: "触发 OpenXiangShan/GEM5 的 manual-perf workflow"
+  default_prompt: "触发 GEM5 仓库的 manual-perf.yml，并根据分支、配置和 benchmark 组装 gh workflow run 命令。"
