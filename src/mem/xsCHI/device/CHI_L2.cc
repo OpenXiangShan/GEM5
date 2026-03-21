@@ -52,15 +52,25 @@ namespace xsCHI
         using namespace statistics;
         // 统计向量维度直接绑定影子桥数量，确保 stats 中每个下标都可映射到具体 shadow[i]。
         const size_t shadowCount = parent->shadowBridges.size();
+        // statistics::Vector does not accept zero-sized storage.
+        // Keep a single disabled bucket when shadow is not configured.
+        const size_t shadowStatDim = std::max<size_t>(shadowCount, 1);
         observed_req_count.flags(nozero);
         observed_req_addr_span.flags(nozero);
         shadow_mirror_req_total.flags(nozero);
         shadow_remap_fail_total.flags(nozero);
         shadow_drop_read_resp_total.flags(nozero);
 
-        shadow_mirror_req_by_bridge.init(shadowCount).flags(nozero);
-        shadow_remap_fail_by_bridge.init(shadowCount).flags(nozero);
-        shadow_drop_read_resp_by_bridge.init(shadowCount).flags(nozero);
+        shadow_mirror_req_by_bridge.init(shadowStatDim).flags(nozero);
+        shadow_remap_fail_by_bridge.init(shadowStatDim).flags(nozero);
+        shadow_drop_read_resp_by_bridge.init(shadowStatDim).flags(nozero);
+
+        if (shadowCount == 0) {
+            shadow_mirror_req_by_bridge.subname(0, "disabled");
+            shadow_remap_fail_by_bridge.subname(0, "disabled");
+            shadow_drop_read_resp_by_bridge.subname(0, "disabled");
+            return;
+        }
 
         for (size_t i = 0; i < shadowCount; ++i) {
             // 统一命名为 shadow0/shadow1/...，便于在 stats.txt 中快速关联。
@@ -115,6 +125,19 @@ namespace xsCHI
             // 影子读回包不参与功能正确性，只用于流量闭环，统一走丢弃回调。
             shadowBridge->set_recvReadResp_callback(
                 [this, i](ReqPtr &req) { this->recvShadowReadResp(i, req); });
+            // 队列解阻塞依赖“事务完成”回调（读/写都触发）。
+            shadowBridge->set_txnComplete_callback(
+                [this, i](ReqPtr &req) { this->onShadowTxnComplete(i, req); });
+        }
+
+        shadowReqQueues.resize(shadowBridges.size());
+        shadowOutstandingByAddr.resize(shadowBridges.size());
+        shadowQueueBlocked.assign(shadowBridges.size(), false);
+        shadowReqSendEvents.resize(shadowBridges.size());
+        for (size_t i = 0; i < shadowBridges.size(); ++i) {
+            shadowReqSendEvents[i] = std::make_unique<EventFunctionWrapper>(
+                [this, i]() { this->drainShadowReqQueue(i); },
+                csprintf("%s.shadow_req_send[%zu]", name(), i));
         }
 
         registerExitCallback([this]() {
@@ -267,7 +290,8 @@ namespace xsCHI
             ReqPtr shadowReq = std::make_shared<Request>(*req);
             const Addr shadowAddr = remapShadowAddr(i, req->getAddr());
             shadowReq->setAddr(shadowAddr);
-            shadowBridges[i]->ReceiveReq(shadowReq, false);
+                shadowReqQueues[i].push_back(shadowReq);
+                scheduleShadowReqSend(i);
             stats.shadow_mirror_req_total++;
             stats.shadow_mirror_req_by_bridge[i]++;
             DPRINTF(CHIL2Wrapper,
@@ -277,6 +301,122 @@ namespace xsCHI
                     static_cast<unsigned long long>(req->getAddr()),
                     static_cast<unsigned long long>(shadowAddr));
         }
+    }
+
+    void
+    CHI_L2::scheduleShadowReqSend(size_t shadowIdx)
+    {
+        panic_if(shadowIdx >= shadowReqSendEvents.size(),
+                 "%s scheduleShadowReqSend index out of range: %zu",
+                 name(), shadowIdx);
+        auto &event = shadowReqSendEvents[shadowIdx];
+        if (event && !event->scheduled()) {
+            schedule(*event, clockEdge(Cycles(1)));
+        }
+    }
+
+    void
+    CHI_L2::drainShadowReqQueue(size_t shadowIdx)
+    {
+        panic_if(shadowIdx >= shadowReqQueues.size() ||
+                     shadowIdx >= shadowOutstandingByAddr.size() ||
+                     shadowIdx >= shadowBridges.size(),
+                 "%s drainShadowReqQueue index out of range: %zu",
+                 name(), shadowIdx);
+
+        auto &queue = shadowReqQueues[shadowIdx];
+        if (queue.empty()) {
+            shadowQueueBlocked[shadowIdx] = false;
+            return;
+        }
+
+        ReqPtr req = queue.front();
+        panic_if(!req, "%s shadow[%zu] queue front request is null", name(), shadowIdx);
+        const Addr addr = req->getAddr();
+        auto &outstanding = shadowOutstandingByAddr[shadowIdx];
+        const bool trackOutstanding = shadowNeedOutstandingTrack(req);
+
+        if (outstanding.count(addr) > 0) {
+            shadowQueueBlocked[shadowIdx] = true;
+            DPRINTF(CHIL2Wrapper,
+                    "ShadowReqQueue blocked shadow[%zu] op:%s addr:%#llx queue=%zu outstanding_same_addr=%u\n",
+                    shadowIdx,
+                    CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),
+                    static_cast<unsigned long long>(addr),
+                    queue.size(),
+                    outstanding[addr]);
+            return;
+        }
+
+        // CHIBridge::ReceiveReq(req,false) 在发送失败场景会自己入桥内重试队列，
+        // 这里无论返回值都视为已由 bridge 接管，避免重复注入同一请求。
+        shadowBridges[shadowIdx]->ReceiveReq(req, false);
+        queue.pop_front();
+        if (trackOutstanding) {
+            outstanding[addr]++;
+        }
+        shadowQueueBlocked[shadowIdx] = false;
+        DPRINTF(CHIL2Wrapper,
+                "ShadowReqQueue handoff shadow[%zu] op:%s addr:%#llx queue=%zu outstanding_same_addr=%u\n",
+                shadowIdx,
+                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),
+                static_cast<unsigned long long>(addr),
+                queue.size(),
+            trackOutstanding ? outstanding[addr] : 0);
+
+        if (!queue.empty()) {
+            scheduleShadowReqSend(shadowIdx);
+        }
+    }
+
+    void
+    CHI_L2::onShadowTxnComplete(size_t shadowIdx, ReqPtr &req)
+    {
+        panic_if(shadowIdx >= shadowOutstandingByAddr.size() ||
+                     shadowIdx >= shadowQueueBlocked.size(),
+                 "%s onShadowTxnComplete index out of range: %zu",
+                 name(), shadowIdx);
+        panic_if(!req, "%s shadow[%zu] completion request is null", name(), shadowIdx);
+
+        // 仅读类请求会进入 outstanding 跟踪，写类完成无需参与队列解阻。
+        if (!shadowNeedOutstandingTrack(req)) {
+            return;
+        }
+
+        const Addr addr = req->getAddr();
+        auto &outstanding = shadowOutstandingByAddr[shadowIdx];
+        auto it = outstanding.find(addr);
+        if (it == outstanding.end()) {
+            warn("%s shadow[%zu] completion for untracked addr=%#llx",
+                 name(), shadowIdx,
+                 static_cast<unsigned long long>(addr));
+        } else {
+            assert(it->second > 0);
+            it->second--;
+            if (it->second == 0) {
+                outstanding.erase(it);
+            }
+        }
+
+        // 阻塞队列仅在收到响应时检查一次可否解阻。
+        if (!shadowReqQueues[shadowIdx].empty() && shadowQueueBlocked[shadowIdx]) {
+            const Addr headAddr = shadowReqQueues[shadowIdx].front()->getAddr();
+            if (outstanding.count(headAddr) == 0) {
+                shadowQueueBlocked[shadowIdx] = false;
+                scheduleShadowReqSend(shadowIdx);
+            }
+        }
+    }
+
+    bool
+    CHI_L2::shadowNeedOutstandingTrack(const ReqPtr &req) const
+    {
+        panic_if(!req, "%s shadowNeedOutstandingTrack got null req", name());
+        const CHI_OP_TYPE op = req->getOpcode();
+        return op == CHI_OP_TYPE::CHI_REQ_READUNIQUE ||
+               op == CHI_OP_TYPE::CHI_REQ_READSHARED ||
+               op == CHI_OP_TYPE::CHI_REQ_READCLEAN ||
+               (op == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE && !req->getCacheResponding());
     }
 
 

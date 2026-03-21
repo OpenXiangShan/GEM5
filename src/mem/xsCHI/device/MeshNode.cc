@@ -344,8 +344,10 @@ MeshNode::onSendEvent()
     }
 
     const bool pending = hasPendingFlits();
-    if (pending) {
-        schedule(sendEvent, curTick() + clockPeriod());
+    // Avoid blind per-cycle polling under full downstream backpressure.
+    // Retry will be re-armed by ingress enqueue or credit-unblock callback.
+    if (pending && sentAny) {
+        scheduleSendEventAtNextCycle();
     }
 
     DPRINTF(CHIMeshNode, "%s scheduler tick sentAny=%d pending=%d\n", name(),
@@ -525,8 +527,41 @@ void
 MeshNode::scheduleSendEvent()
 {
     if (!sendEvent.scheduled()) {
-        schedule(sendEvent, curTick() + clockPeriod());
+        scheduleSendEventAtNextCycle();
     }
+}
+
+void
+MeshNode::scheduleSendEventAtNextCycle()
+{
+    panic_if(sendEvent.scheduled(),
+             "MeshNode %s sendEvent already scheduled", name());
+    schedule(sendEvent, curTick() + clockPeriod());
+}
+
+bool
+MeshNode::hasPendingOnEgressChannel(PortIndex egress,
+                                    Flit::CHI_CHN_TYPE channel) const
+{
+    return getQueueDepth(egress, channel) > 0;
+}
+
+void
+MeshNode::handleCreditUnblock(PortIndex egress, Flit::CHI_CHN_TYPE channel)
+{
+    if (!isEgressUsable(egress) || sendEvent.scheduled()) {
+        return;
+    }
+
+    // Only wake the scheduler if this egress/channel still has backlog.
+    if (!hasPendingOnEgressChannel(egress, channel)) {
+        return;
+    }
+
+    DPRINTF(CHIMeshNode,
+            "%s credit-unblock egress=%s channel=%d schedule retry\n",
+            name(), portName(egress), static_cast<int>(channel));
+    scheduleSendEventAtNextCycle();
 }
 
 void
@@ -540,6 +575,11 @@ MeshNode::registerCallbacks()
         const PortIndex ingress = static_cast<PortIndex>(i);
         port->setReceiveCallback(
             [this, ingress](FlitPtr &flit) { return handleIngress(ingress, flit); });
+        const PortIndex egress = static_cast<PortIndex>(i);
+        port->setCreditUnblockCallback(
+            [this, egress](Flit::CHI_CHN_TYPE channel) {
+                handleCreditUnblock(egress, channel);
+            });
         port->setOwner(this);
     }
 }

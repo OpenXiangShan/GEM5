@@ -16,6 +16,11 @@
 
 Import('*')
 
+SimObject('CHIStressEndpoint.py', sim_objects=['CHIStressEndpoint'])
+SimObject('TwoMeshStressSys.py', sim_objects=['TwoMeshStressSys'])
+Source('CHIStressEndpoint.cc')
+Source('TwoMeshStressSys.cc')
+
 # Add the test source files
 GTest('testNodeID.test', 'testNodeID.cc')
 GTest('testTxnManager.test', 'testTxnManager.cc')

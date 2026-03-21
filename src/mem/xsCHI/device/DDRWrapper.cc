@@ -45,6 +45,8 @@ namespace xsCHI
             // No-op callback, always return false
             return handlePortReceive(flit);
         });
+    port->setCreditUnblockCallback(
+        [this](Flit::CHI_CHN_TYPE channel) { handleCreditUnblock(channel); });
     port->setOwner(this);
     registerExitCallback([this]() { wrapper.printStats(); });
     }
@@ -163,8 +165,8 @@ DDRWrapper::sendResponse()
                     nbrOutstandingReads, nbrOutstandingWrites,
                     responseQueue.size());
 
-    if (!responseQueue.empty() && !sendResponseEvent.scheduled()) {
-        schedule(sendResponseEvent, curTick()+clockPeriod());
+    if (!responseQueue.empty()) {
+        scheduleSendResponseRetry();
     }
 
     if (nbrOutstanding() == 0)
@@ -348,13 +350,33 @@ DDRWrapper::accessAndRespond(std::shared_ptr<Packet> pkt)
 
         // if we are not already waiting for a retry, or are scheduled
         // to send a response, schedule an event
-        if (!sendResponseEvent.scheduled())
-            schedule(sendResponseEvent, curTick()+clockPeriod());
-    } 
+        scheduleSendResponseRetry();
+    }
     // else {
     //     // queue the packet for deletion
     //     pendingDelete.reset(pkt);
     // }
+}
+
+void
+DDRWrapper::scheduleSendResponseRetry()
+{
+    if (responseQueue.empty() || sendResponseEvent.scheduled()) {
+        return;
+    }
+    if (port->isChannelBlockedByCredit(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA)) {
+        return;
+    }
+    schedule(sendResponseEvent, curTick() + clockPeriod());
+}
+
+void
+DDRWrapper::handleCreditUnblock(Flit::CHI_CHN_TYPE channel)
+{
+    if (channel == Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA &&
+        !responseQueue.empty()) {
+        scheduleSendResponseRetry();
+    }
 }
 
 void DDRWrapper::readComplete(unsigned id, uint64_t addr)

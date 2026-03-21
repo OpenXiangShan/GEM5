@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 
 import m5
@@ -177,6 +178,11 @@ if __name__ == '__m5_main__':
     args.l2_size = '1MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
     args.CHI = True
+    if args.mem_type == 'DRAMsim3' and args.dramsim3_ini is None:
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        args.dramsim3_ini = os.path.join(
+            root_dir,
+            'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini')
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 

@@ -110,6 +110,9 @@ class CHI_L3 : public ClockedObject
     bool sendPktToXbar(PacketPtr pkt);
     bool sendReadToDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp);
     bool sendWriteToDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp);
+    void scheduleNetworkRetry(EventFunctionWrapper &event,
+                  Flit::CHI_CHN_TYPE channel);
+    void handleCreditUnblock(Flit::CHI_CHN_TYPE channel);
     void drainPendingDdrQueue();
     void enqueuePendingDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp);
     void drainDataQueue();

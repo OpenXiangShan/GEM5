@@ -10,7 +10,7 @@ class DDRWrapper(AbstractMemory):
     port = ResponsePort("port for receiving requests from"
                         "the CPU or other requestor")
 
-    configFile = Param.String("ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini",
+    configFile = Param.String("ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_1ch.ini",
                               "The configuration file to use with DRAMSim3")
     filePath = Param.String("ext/dramsim3/DRAMsim3/",
                             "Directory to prepend to file names")
