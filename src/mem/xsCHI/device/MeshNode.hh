@@ -154,7 +154,11 @@ class MeshNode : public ClockedObject
     size_t getQueueDepthAllChannels(PortIndex egress) const;
     bool isEgressUsable(PortIndex egress) const;
     void scheduleSendEvent();
+    void scheduleSendEventAtNextCycle();
     void registerCallbacks();
+    void handleCreditUnblock(PortIndex egress, Flit::CHI_CHN_TYPE channel);
+    bool hasPendingOnEgressChannel(PortIndex egress,
+                                   Flit::CHI_CHN_TYPE channel) const;
     void sampleHopCountByChannel(Flit::CHI_CHN_TYPE channel, Counter hops);
     void sampleE2eLatencyByChannel(Flit::CHI_CHN_TYPE channel, Counter latency);
 

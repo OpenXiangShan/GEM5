@@ -55,6 +55,8 @@ class CHIPort: public ClockedObject
     // uint32_t max_buffer_size;         // 最大缓冲条目数
     // uint32_t bandwidth;               // 传输带宽(GB/s)
     std::function<bool(FlitPtr&)> receive_callback;
+    // Called when a sender channel regains credit and can retry next cycle.
+    std::function<void(Flit::CHI_CHN_TYPE)> credit_unblock_callback;
 
     // Recv side
     std::queue<FlitPtr> req_buffer;
@@ -85,6 +87,10 @@ class CHIPort: public ClockedObject
     uint32_t rsp_credit;
     Cycles rsp_last_send_time;
 
+    // Per-channel blocked state due to credit exhaustion.
+    std::array<bool, static_cast<size_t>(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_NUM)>
+        channel_blocked_by_credit{};
+
 
     int BUFFER_SIZE = 8; // 可根据需要调整
 
@@ -102,6 +108,11 @@ public:
     void setReceiveCallback(std::function<bool(FlitPtr&)> callback) {
         receive_callback = callback;
     }
+    void setCreditUnblockCallback(
+        std::function<void(Flit::CHI_CHN_TYPE)> callback)
+    {
+        credit_unblock_callback = callback;
+    }
     /** Return a reference to this port's peer. */
     CHIPort &getPeer() { return *connected_port; }
 
@@ -117,6 +128,7 @@ public:
 
     void setBlocked();
     void setUnblocked();
+    bool isChannelBlockedByCredit(Flit::CHI_CHN_TYPE channel) const;
 
     // operator<< will be defined as a friend outside the class
     friend std::ostream& operator<<(std::ostream& os, const CHIPort& port) {

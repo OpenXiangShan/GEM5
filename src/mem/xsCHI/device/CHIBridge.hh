@@ -138,6 +138,9 @@ class CHIBridge : public ClockedObject
         void FinishReq_Read(FlitPtr &flit);
         void sendCompACK(FlitPtr &flit);
         void TrySendCompACK();
+        void handleCreditUnblock(Flit::CHI_CHN_TYPE channel);
+        void scheduleReqRetry();
+        void scheduleCompAckRetry();
 
         void TrySendReq();
 
@@ -159,8 +162,10 @@ class CHIBridge : public ClockedObject
         static size_t opcodeToIndex(CHI_OP_TYPE op);
 
         std::function<void(ReqPtr&)> recvReadResp_callback;//callback from L2Wrapper to handle read response
+        std::function<void(ReqPtr&)> txnComplete_callback;
     public:
         void set_recvReadResp_callback(std::function<void(ReqPtr&)> callback) {recvReadResp_callback = callback;};
+        void set_txnComplete_callback(std::function<void(ReqPtr&)> callback) {txnComplete_callback = callback;};
 };
 
 // class L2Warper : public Module

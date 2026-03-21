@@ -115,6 +115,8 @@ class DDRWrapper :  public memory::AbstractMemory
     void accessAndRespond(std::shared_ptr<Packet> pkt);
 
     void sendResponse();
+    void scheduleSendResponseRetry();
+    void handleCreditUnblock(Flit::CHI_CHN_TYPE channel);
 
     /**
      * Event to schedule sending of responses

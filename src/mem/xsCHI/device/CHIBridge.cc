@@ -153,18 +153,36 @@ namespace xsCHI
         }
 
         auto &q = it->second;
-        assert(q.size() <= 1 && "detect more than 1 same-block blocked read req, which is not expected");
-        while (!q.empty()) {
+        if (q.size()>1) {
+            DPRINTF(CHIBridge,
+                    "Warning: detect more than 1 same-block blocked read req, which is not expected, \
+                    blk=%#lx count=%u\n",
+                    blk, static_cast<unsigned>(q.size()));
+            //count real read req num in q
+            unsigned real_read_req_num = 0;
+            for (const auto &req : q) {
+                if (req && (req->getOpcode() == CHI_OP_TYPE::CHI_REQ_READUNIQUE ||
+                    req->getOpcode() == CHI_OP_TYPE::CHI_REQ_READSHARED ||
+                    req->getOpcode() == CHI_OP_TYPE::CHI_REQ_READCLEAN)) {
+                    real_read_req_num++;
+                }
+            }
+            assert(real_read_req_num<=1 && "detect more than 1 same-block blocked read req, which is not expected");
+        }
+        //only wake one read req a time
+        if (!q.empty()) {
             Req_tobesent.push(q.front());
             q.pop_front();
         }
-        blockedReadReqByAddr.erase(it);
+        if (q.empty()) {
+            blockedReadReqByAddr.erase(it);
+        }
         DPRINTF(CHIBridge,
                 "wake blocked reads blk=%#lx req_queue=%u\n",
                 blk,
                 static_cast<unsigned>(Req_tobesent.size()));
         if (!Req_tobesent.empty() && !req_handle_event.scheduled()) {
-            schedule(req_handle_event, curTick() + clockPeriod());
+            scheduleReqRetry();
         }
     }
 namespace
@@ -268,6 +286,8 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
         DPRINTF(Cache,"CHIBridge Init\n");
         networkPort->setReceiveCallback(
             [this](FlitPtr &flit) { return this->handleNetworkPortReceive(flit); });
+        networkPort->setCreditUnblockCallback(
+            [this](Flit::CHI_CHN_TYPE channel) { handleCreditUnblock(channel); });
         networkPort->setOwner(this);
     }
 
@@ -369,7 +389,7 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
         // 如果有待发送的请求，调度处理事件
         if (!Req_tobesent.empty() && !req_handle_event.scheduled()) {
             DPRINTF(CHIBridge,"Req_tobesent's number : %d ,Schedule handle event to next Cycle, tick:%d\n",Req_tobesent.size(),curTick()+clockPeriod());
-            schedule(req_handle_event, curTick()+clockPeriod());
+            scheduleReqRetry();
         }
         return success; // 返回是否成功发送请求
 
@@ -574,6 +594,9 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
         // 发送完成请求的逻辑
         TXN_Manager.releaseID(flit->getTxnId());
         trackReadFinish(req->getAddr());
+        if (txnComplete_callback) {
+            txnComplete_callback(req);
+        }
         outstanding_requests.erase(flit->getTxnId());
         DPRINTF(CHIBridge,"Finish read request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
     }
@@ -636,7 +659,50 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
         }
         // 尝试发送COMPACK Flit
         if (!Ack_tobesent.empty() && !ack_handle_event.scheduled()) {
-            schedule(ack_handle_event, curTick()+clockPeriod());
+            scheduleCompAckRetry();
+        }
+    }
+
+    void
+    CHIBridge::scheduleReqRetry()
+    {
+        if (Req_tobesent.empty() || req_handle_event.scheduled()) {
+            return;
+        }
+        if (networkPort->isChannelBlockedByCredit(
+                Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ)) {
+            return;
+        }
+        schedule(req_handle_event, curTick() + clockPeriod());
+    }
+
+    void
+    CHIBridge::scheduleCompAckRetry()
+    {
+        if (Ack_tobesent.empty() || ack_handle_event.scheduled()) {
+            return;
+        }
+        if (networkPort->isChannelBlockedByCredit(
+                Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP)) {
+            return;
+        }
+        schedule(ack_handle_event, curTick() + clockPeriod());
+    }
+
+    void
+    CHIBridge::handleCreditUnblock(Flit::CHI_CHN_TYPE channel)
+    {
+        if (channel == Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ) {
+            if (!Req_tobesent.empty()) {
+                scheduleReqRetry();
+            }
+            return;
+        }
+
+        if (channel == Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP) {
+            if (!Ack_tobesent.empty()) {
+                scheduleCompAckRetry();
+            }
         }
     }
 
@@ -674,6 +740,9 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
                     // 发送完成请求的逻辑
                     TXN_Manager.releaseID(flit->getTxnId());
                     trackWriteFinish(req->getAddr());
+                    if (txnComplete_callback) {
+                        txnComplete_callback(req);
+                    }
                     outstanding_requests.erase(flit->getTxnId());
                     DPRINTF(CHIBridge, "Finish write request: txn_id=%d, outstanding_requests.size()=%d\n", flit->getTxnId(), outstanding_requests.size());
                     return true;

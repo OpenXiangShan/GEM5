@@ -17,10 +17,20 @@ namespace gem5
 {
 namespace xsCHI
 {
+    namespace
+    {
+    inline size_t
+    channelIndex(Flit::CHI_CHN_TYPE channel)
+    {
+        return static_cast<size_t>(channel);
+    }
+    }
+
     CHIPort::CHIPort(const Params &p)
     : ClockedObject(p),
         //   id(_id),
           _connected(false),
+                    blocked(false),
           connected_port(nullptr),
           owner_module(nullptr),
           receive_callback(nullptr),
@@ -77,48 +87,65 @@ namespace xsCHI
     bool CHIPort::send(FlitPtr& data)
     {
         Flit::CHI_CHN_TYPE channel_type = data->get_Flit_Channel_Type();
+        const size_t ch_idx = channelIndex(channel_type);
         //do credit check and check if the port has sent other flit already
         switch (channel_type) {
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ:
                 if (req_credit == 0 || curCycle() <= req_last_send_time) {
+                    if (req_credit == 0) {
+                        channel_blocked_by_credit[ch_idx] = true;
+                    }
                     DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit :%d\
                         or already sent a request flit in the current cycle\n",
                           owner_module->name(), owner_module->name(), req_credit);
                     return false; // 没有信用，发送失败
                 }
+                channel_blocked_by_credit[ch_idx] = false;
                 req_credit--;
                 DPRINTF(CHIPort,"%s:REQ channel send, remain Credit:%d, req_last_send_time:%d, curcycle:%d\n",this->name(),req_credit,req_last_send_time,curCycle());
                 req_last_send_time = curCycle();
                 break;
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_SNP:
                 if (snp_credit == 0 || curCycle() <= snp_last_send_time) {
+                    if (snp_credit == 0) {
+                        channel_blocked_by_credit[ch_idx] = true;
+                    }
                     DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit :%d\
                         or already sent a request flit in the current cycle\n",
                           owner_module->name(), owner_module->name(), snp_credit);
                     return false; // 没有信用，发送失败
                 }
+                channel_blocked_by_credit[ch_idx] = false;
                 snp_credit--;
                 DPRINTF(CHIPort,"%s:SNP channel send, remain Credit:%d, snp_last_send_time:%d, curcycle:%d\n",this->name(),snp_credit,snp_last_send_time,curCycle());
                 snp_last_send_time = curCycle();
                 break;
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA:
                 if (dat_credit == 0 || curCycle() <= dat_last_send_time) {
+                    if (dat_credit == 0) {
+                        channel_blocked_by_credit[ch_idx] = true;
+                    }
                     DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit :%d\
                         or already sent a request flit in the current cycle\n",
                           owner_module->name(), owner_module->name(), dat_credit);
                     return false; // 没有信用，发送失败
                 }
+                channel_blocked_by_credit[ch_idx] = false;
                 dat_credit--;
                 DPRINTF(CHIPort,"%s:DAT channel send, remain Credit:%d, dat_last_send_time:%d, curcycle:%d\n",this->name(),dat_credit,dat_last_send_time,curCycle());
                 dat_last_send_time = curCycle();
                 break;
             case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP:
                 if (rsp_credit == 0 || curCycle() <= rsp_last_send_time) {
+                    if (rsp_credit == 0) {
+                        channel_blocked_by_credit[ch_idx] = true;
+                    }
                     DPRINTF(CHIPort,"CHIPort %s in module %s has no credit to send request flit :%d\
                         or already sent a request flit in the current cycle\n",
                           owner_module->name(), owner_module->name(), rsp_credit);
                     return false; // 没有信用，发送失败
                 }
+                channel_blocked_by_credit[ch_idx] = false;
                 rsp_credit--;
                 DPRINTF(CHIPort,"%s:RSP channel send, remain Credit:%d, rsp_last_send_time:%d, curcycle:%d\n",this->name(),rsp_credit,rsp_last_send_time,curCycle());
                 rsp_last_send_time = curCycle();
@@ -320,6 +347,8 @@ namespace xsCHI
         // }
     }
     void CHIPort::GrantCredit_REQ() {
+        const bool was_blocked = channel_blocked_by_credit[
+            channelIndex(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ)];
         req_credit++;
         // If after granting credit, the channel's credit is 1,
         // it means the port cannot use the credit immediately,
@@ -327,24 +356,76 @@ namespace xsCHI
         if (req_credit==1) {
             req_last_send_time = curCycle();
         }
+        if (was_blocked && req_credit > 0) {
+            channel_blocked_by_credit[
+                channelIndex(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ)] = false;
+            if (credit_unblock_callback) {
+                credit_unblock_callback(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ);
+            }
+        }
     }
     void CHIPort::GrantCredit_SNP() {
+        const bool was_blocked = channel_blocked_by_credit[
+            channelIndex(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_SNP)];
         snp_credit++;
         if (snp_credit==1) {
             snp_last_send_time = curCycle();
         }
+        if (was_blocked && snp_credit > 0) {
+            channel_blocked_by_credit[
+                channelIndex(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_SNP)] = false;
+            if (credit_unblock_callback) {
+                credit_unblock_callback(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_SNP);
+            }
+        }
     }
     void CHIPort::GrantCredit_DAT() {
+        const bool was_blocked = channel_blocked_by_credit[
+            channelIndex(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA)];
         dat_credit++;
         if (dat_credit==1) {
             dat_last_send_time = curCycle();
         }
+        if (was_blocked && dat_credit > 0) {
+            channel_blocked_by_credit[
+                channelIndex(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA)] = false;
+            if (credit_unblock_callback) {
+                credit_unblock_callback(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
+            }
+        }
     }
     void CHIPort::GrantCredit_RSP() {
+        const bool was_blocked = channel_blocked_by_credit[
+            channelIndex(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP)];
         rsp_credit++;
         if (rsp_credit==1) {
             rsp_last_send_time = curCycle();
         }
+        if (was_blocked && rsp_credit > 0) {
+            channel_blocked_by_credit[
+                channelIndex(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP)] = false;
+            if (credit_unblock_callback) {
+                credit_unblock_callback(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP);
+            }
+        }
+    }
+
+    void CHIPort::setBlocked()
+    {
+        blocked = true;
+    }
+
+    void CHIPort::setUnblocked()
+    {
+        blocked = false;
+    }
+
+    bool CHIPort::isChannelBlockedByCredit(Flit::CHI_CHN_TYPE channel) const
+    {
+        const size_t idx = static_cast<size_t>(channel);
+        panic_if(idx >= channel_blocked_by_credit.size(),
+                 "Invalid CHI channel index %zu", idx);
+        return channel_blocked_by_credit[idx];
     }
     void CHIPort::initState()
     {

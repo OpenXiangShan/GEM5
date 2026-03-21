@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <memory>
 #include <unordered_map>
@@ -20,6 +21,7 @@
 #include "params/L2ToDramSys.hh"
 #include "params/CHI_L2.hh"
 #include "params/SimObject.hh"
+#include "sim/eventq.hh"
 #include "sim/stats.hh"
 
 namespace gem5 {
@@ -226,6 +228,15 @@ namespace xsCHI {
     Addr remapShadowAddr(size_t shadowIdx, Addr addr);
     // 将主请求复制并注入所有影子桥，形成 1+N 的流量源效果。
     void mirrorReqToShadows(const ReqPtr &req);
+    void drainShadowReqQueue(size_t shadowIdx);
+    void scheduleShadowReqSend(size_t shadowIdx);
+    void onShadowTxnComplete(size_t shadowIdx, ReqPtr &req);
+    bool shadowNeedOutstandingTrack(const ReqPtr &req) const;
+
+    std::vector<std::deque<ReqPtr>> shadowReqQueues;
+    std::vector<std::unordered_map<Addr, unsigned>> shadowOutstandingByAddr;
+    std::vector<bool> shadowQueueBlocked;
+    std::vector<std::unique_ptr<EventFunctionWrapper>> shadowReqSendEvents;
 
     public:
     gem5::Port &getPort(const std::string &if_name,
