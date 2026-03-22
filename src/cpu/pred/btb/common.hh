@@ -1,6 +1,8 @@
 #ifndef __CPU_PRED_BTB_STREAM_STRUCT_HH__
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
+#include <algorithm>
+#include <cassert>
 #include <queue>
 #include <string>
 
@@ -17,6 +19,13 @@ namespace gem5 {
 namespace branch_prediction {
 
 namespace btb_pred {
+
+inline unsigned
+fetchCoverageSpan(Addr startPC, Addr predEndPC, unsigned capacity)
+{
+    assert(predEndPC >= startPC);
+    return std::min<unsigned>(capacity, predEndPC - startPC);
+}
 
 enum EndType
 {

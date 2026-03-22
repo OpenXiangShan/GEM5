@@ -34,10 +34,9 @@
 #include "arch/generic/decoder.hh"
 #include "arch/riscv/insts/vector.hh"
 #include "arch/riscv/types.hh"
-#include "base/logging.hh"
+#include "base/bitfield.hh"
 #include "base/types.hh"
 #include "cpu/static_inst.hh"
-#include "debug/Decode.hh"
 #include "params/RiscvDecoder.hh"
 
 namespace gem5
@@ -47,12 +46,109 @@ namespace RiscvISA
 {
 
 class ISA;
+
+enum class PartialInstResult
+{
+    NeedMoreBytes,
+    ReadyCompressed,
+    ReadyFullWidth
+};
+
+struct PartialInstBuffer
+{
+    static constexpr uint8_t LowHalfMask = 0x3;
+    static constexpr uint8_t FullMask = 0xf;
+
+    uint32_t instBits = 0;
+    Addr instPC = MaxAddr;
+    unsigned assembledBytes = 0;
+    uint8_t validMask = 0;
+
+    static unsigned
+    countValidBytes(uint8_t mask)
+    {
+        unsigned count = 0;
+        while (mask != 0) {
+            count += mask & 0x1;
+            mask >>= 1;
+        }
+        return count;
+    }
+
+    void
+    reset()
+    {
+        instBits = 0;
+        instPC = MaxAddr;
+        assembledBytes = 0;
+        validMask = 0;
+    }
+
+    bool
+    hasBytes() const
+    {
+        return validMask != 0;
+    }
+
+    PartialInstResult
+    pushChunk(Addr currentInstPC, Addr fetchPC, uint32_t chunk,
+              size_t validBytes)
+    {
+        assert(validBytes > 0);
+        assert(validBytes <= sizeof(instBits));
+        assert(fetchPC >= currentInstPC);
+
+        const size_t offset = fetchPC - currentInstPC;
+        assert(offset + validBytes <= sizeof(instBits));
+
+        if (instPC != currentInstPC) {
+            reset();
+            instPC = currentInstPC;
+        }
+
+        for (size_t index = 0; index < validBytes; ++index) {
+            const size_t destByte = offset + index;
+            const uint32_t byte = (chunk >> (index * 8)) & 0xffu;
+            const uint32_t shift = destByte * 8;
+            instBits &= ~(0xffu << shift);
+            instBits |= byte << shift;
+            validMask |= static_cast<uint8_t>(1u << destByte);
+        }
+
+        assembledBytes = countValidBytes(validMask);
+
+        if ((validMask & LowHalfMask) == LowHalfMask &&
+            (bits(instBits, 15, 0) & 0x3) < 0x3) {
+            return PartialInstResult::ReadyCompressed;
+        }
+
+        if ((validMask & FullMask) == FullMask) {
+            return PartialInstResult::ReadyFullWidth;
+        }
+
+        return PartialInstResult::NeedMoreBytes;
+    }
+
+    uint16_t
+    compressedBits() const
+    {
+        return bits(instBits, 15, 0);
+    }
+
+    uint32_t
+    fullBits() const
+    {
+        return instBits;
+    }
+};
+
 class Decoder : public InstDecoder
 {
   protected:
     //The extended machine instruction being generated
     ExtMachInst emi;
     uint32_t machInst;
+    PartialInstBuffer partialInst;
 
     bool vtypeReady = true;
     VTYPE machVtype;
@@ -84,8 +180,14 @@ class Decoder : public InstDecoder
     //Use this to give data to the decoder. This should be used
     //when there is control flow.
     void moreBytes(const PCStateBase &pc, Addr fetchPC) override;
+    void moreBytes(const PCStateBase &pc, Addr fetchPC,
+                   size_t validBytes) override;
 
     StaticInstPtr decode(PCStateBase &nextPC) override;
+    bool hasPartialInst() const override
+    {
+        return partialInst.hasBytes() && !instDone;
+    }
 
 
     void setPCStateWithInstDesc(const bool &inst,
