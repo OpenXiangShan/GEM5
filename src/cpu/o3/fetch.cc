@@ -764,14 +764,40 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
 
     bool run_out = false;
 
-    // Taken when the current PC matches the predicted control PC.
-    predict_taken = stream.predTaken && (curr_pc == stream.predBranchInfo.pc);
+    // Decoupled+BTB-only:
+    // `predBranchInfo.pc` is the canonical start PC of the control-flow
+    // instruction. Fetch still matches on that canonical start PC, while
+    // `predEndPC` encodes how far the current stream has real byte coverage.
+    // For a split 4B branch, producer extends `predEndPC` to the instruction
+    // tail so redirect only fires after the full instruction bytes are covered.
+    const Addr trigger_pc = stream.predBranchInfo.triggerPC();
+    const bool trigger_covered =
+        !inst->staticInst->isMicroop() &&
+        stream.predBranchInfo.triggerPCCoveredByFetchWindow(
+            curr_pc, stream.predEndPC);
+
+    predict_taken = stream.predTaken && trigger_covered;
     if (predict_taken) {
         auto &rpc = next_pc.as<GenericISA::PCStateWithNext>();
+        DPRINTF(DecoupleBP,
+                "[tid:%i] decoupled+BTB taken-match: startPC=%#lx "
+                "triggerPC=%#lx streamEndPC=%#lx endPCExclusive=%#lx size=%u inst=%#lx\n",
+                tid, stream.predBranchInfo.startPC(), trigger_pc,
+                stream.predEndPC, stream.predBranchInfo.endPCExclusive(),
+                stream.predBranchInfo.size, curr_pc);
         rpc.pc(stream.predBranchInfo.target);
         rpc.npc(stream.predBranchInfo.target + 4);
         rpc.uReset();
         run_out = true;
+    } else if (stream.predTaken &&
+               !inst->staticInst->isMicroop() &&
+               curr_pc == stream.predBranchInfo.startPC()) {
+        DPRINTF(DecoupleBP,
+                "[tid:%i] decoupled+BTB redirect-blocked: startPC=%#lx "
+                "triggerPC=%#lx streamEndPC=%#lx endPCExclusive=%#lx size=%u inst=%#lx\n",
+                tid, stream.predBranchInfo.startPC(), trigger_pc,
+                stream.predEndPC, stream.predBranchInfo.endPCExclusive(),
+                stream.predBranchInfo.size, curr_pc);
     } else if (inst->staticInst->isMicroop()) {
         // Microops must advance uPC explicitly; they do not rely on decoder NPC.
         inst->staticInst->advancePC(next_pc);

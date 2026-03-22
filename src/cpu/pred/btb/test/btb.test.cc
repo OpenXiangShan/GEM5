@@ -239,6 +239,41 @@ TEST_F(BTBTest, PredictionAfterUpdateLargeAddr) {
     verifyPrediction(stagePreds, mbtb->getDelay(), {branch});
 }
 
+// Derived view semantics: 2B RVC control instruction
+TEST_F(BTBTest, Rvc2B_DerivedPcViews) {
+    BranchInfo branch = createBranchInfo(0x1000, 0x2000, true, false, false, false, 2);
+    EXPECT_EQ(branch.startPC(), 0x1000);
+    EXPECT_EQ(branch.triggerPC(), 0x1000);
+    EXPECT_EQ(branch.endPCExclusive(), 0x1002);
+    EXPECT_EQ(branch.getEnd(), 0x1002);
+}
+
+// Derived view semantics: 4B RVI control instruction
+TEST_F(BTBTest, Rvi4B_DerivedPcViews) {
+    BranchInfo branch = createBranchInfo(0x1000, 0x2000, true, false, false, false, 4);
+    EXPECT_EQ(branch.startPC(), 0x1000);
+    EXPECT_EQ(branch.triggerPC(), 0x1002);
+    EXPECT_EQ(branch.endPCExclusive(), 0x1004);
+    EXPECT_EQ(branch.getEnd(), 0x1004);
+}
+
+TEST_F(BTBTest, Rvi4B_TriggerCoverage_InSingleBlock) {
+    BranchInfo branch = createBranchInfo(0x1008, 0x2000, true, false, false, false, 4);
+
+    EXPECT_EQ(branch.coverageEndPC(0x100c), 0x100c);
+    EXPECT_TRUE(branch.triggerPCCoveredByFetchWindow(0x1008, 0x100c));
+    EXPECT_FALSE(branch.triggerPCCoveredByFetchWindow(0x100a, 0x100c));
+}
+
+TEST_F(BTBTest, Rvi4B_TriggerCoverage_CrossBoundary) {
+    BranchInfo branch = createBranchInfo(0x101e, 0x2000, true, false, false, false, 4);
+
+    EXPECT_EQ(branch.triggerPC(), 0x1020);
+    EXPECT_EQ(branch.coverageEndPC(0x1020), 0x1022);
+    EXPECT_FALSE(branch.triggerPCCoveredByFetchWindow(0x101e, 0x1020));
+    EXPECT_TRUE(branch.triggerPCCoveredByFetchWindow(0x101e, 0x1022));
+}
+
 // Test conditional branch prediction counter, for mBTB
 TEST_F(BTBTest, ConditionalCounter) {
     // Create conditional branch info

@@ -93,7 +93,67 @@ struct BranchInfo
     bool isReturn;
     uint8_t size;
     bool isUncond() const { return !this->isCond; }
-    Addr getEnd() { return this->pc + this->size; }
+    /**
+     * Canonical identity view.
+     *
+     * `pc` SHALL remain the canonical start PC of this control-flow instruction.
+     * Do NOT reinterpret it as a derived trigger PC.
+     */
+    Addr startPC() const { return this->pc; }
+
+    /**
+     * Derived range view.
+     *
+     * - endPCExclusive = startPC + size
+     * - triggerPC = startPC + size - 2
+     *   (for 2B RVC: triggerPC == startPC; for 4B RVI: triggerPC == startPC + 2)
+     */
+    Addr endPCExclusive() const { return this->pc + this->size; }
+    Addr triggerPC() const
+    {
+        if (this->size <= 2) {
+            return this->pc;
+        }
+        return this->pc + this->size - 2;
+    }
+
+    /**
+     * Stream coverage end for this control instruction.
+     *
+     * The natural stream end is usually the aligned fall-through boundary.
+     * When a 4B control instruction straddles that boundary, the fetch stream
+     * must stay alive until the instruction tail is covered.
+     */
+    Addr coverageEndPC(Addr naturalStreamEndPCExclusive) const
+    {
+        const Addr control_end = endPCExclusive();
+        return control_end > naturalStreamEndPCExclusive ?
+            control_end : naturalStreamEndPCExclusive;
+    }
+
+    /**
+     * Whether the current fetch/decode event has already covered triggerPC.
+     *
+     * Fetch observes instruction-start PCs, not a synthetic "back half" PC.
+     * Therefore, a 4B control instruction should still match on startPC, while
+     * coverage is represented by the end-exclusive range already brought into
+     * the current stream.
+     *
+     * For a cross-boundary 4B RVI branch:
+     * - current stream ending exactly at triggerPC means only the leading 2B
+     *   are available, so redirect must stay blocked
+     * - redirect becomes eligible only after a later stream extends strictly
+     *   beyond triggerPC
+     */
+    bool triggerPCCoveredByFetchWindow(Addr instStartPC,
+                                       Addr fetchEndPCExclusive) const
+    {
+        return instStartPC == startPC() && fetchEndPCExclusive > triggerPC();
+    }
+
+    // Backward-compatible end-PC helper.
+    Addr getEnd() { return endPCExclusive(); }
+    Addr getEnd() const { return endPCExclusive(); }
     BranchInfo()
         : pc(0), target(0), resolved(false), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0)
     {
@@ -278,7 +338,7 @@ struct FetchTarget
     ThreadID tid;
     Addr startPC;       // start pc of the stream
     bool predTaken;     // whether the FetchTarget has taken branch
-    Addr predEndPC;     // predicted stream end pc (fall through pc)
+    Addr predEndPC;     // predicted stream coverage end pc
     BranchInfo predBranchInfo; // predicted branch info
 
     bool isHit;          // whether the predicted btb entry is hit
