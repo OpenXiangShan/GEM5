@@ -28,6 +28,7 @@
  */
 
 #include "arch/riscv/decoder.hh"
+
 #include "arch/riscv/types.hh"
 #include "base/bitfield.hh"
 #include "debug/Decode.hh"
@@ -44,6 +45,7 @@ void Decoder::reset()
 {
     machInst = 0;
     emi = 0;
+    partialInst.reset();
     instDone = false;
     outOfBytes = true;
 }
@@ -51,28 +53,66 @@ void Decoder::reset()
 void
 Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC)
 {
-    // Get the instruction from machInst buffer
+    // Legacy full-width delivery path, retained for existing callers that
+    // still provide a complete MachInst-sized payload in one shot.
     auto inst = letoh(machInst);
 
-    DPRINTF(Decode, "Requesting bytes 0x%08x from address %#x\n", inst,
-        fetchPC);
+    DPRINTF(Decode, "Requesting legacy full-width bytes 0x%08x from address %#x\n",
+            inst, fetchPC);
 
-    // We assume fetchPC is always the actual instruction address,
-    // so we can directly work with the instruction
     emi.instBits = inst;
-
-    // For compressed instruction, we only need the lower 16 bits
     if (compressed(inst)) {
-        constexpr size_t mid_bit = sizeof(machInst) * 4 - 1; // 15 for 32-bit machInst
+        constexpr size_t mid_bit = sizeof(machInst) * 4 - 1;
         emi.instBits = bits(inst, mid_bit, 0);
     }
 
-    // For any instruction (compressed or not), we've received enough data
-    instDone = true;    // decoder->instReady() is always true
+    partialInst.reset();
+    instDone = true;
+    outOfBytes = false;
+}
 
-    // For 32-bit instructions, we still need all 4 bytes
-    // For 16-bit instructions, we already have enough bytes
-    outOfBytes = !compressed(emi); // not used !!!
+void
+Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC, size_t validBytes)
+{
+    const auto chunk = letoh(machInst);
+    const size_t offset = fetchPC - pc.instAddr();
+    const auto result =
+        partialInst.pushChunk(pc.instAddr(), fetchPC, chunk, validBytes);
+
+    DPRINTF(Decode,
+            "Requesting %u valid bytes 0x%08x from address %#x for pc %#x "
+            "(offset=%u assembledBytes=%u assembledInst=0x%08x)\n",
+            static_cast<unsigned>(validBytes), chunk, fetchPC, pc.instAddr(),
+            static_cast<unsigned>(offset),
+            static_cast<unsigned>(partialInst.assembledBytes),
+            partialInst.instBits);
+
+    if (result == PartialInstResult::ReadyCompressed) {
+        emi.instBits = partialInst.compressedBits();
+        instDone = true;
+        outOfBytes = false;
+        DPRINTF(Decode,
+                "Compressed instruction became ready after %u bytes at pc %#x\n",
+                static_cast<unsigned>(partialInst.assembledBytes),
+                pc.instAddr());
+        return;
+    }
+
+    if (result == PartialInstResult::ReadyFullWidth) {
+        emi.instBits = partialInst.fullBits();
+        instDone = true;
+        outOfBytes = false;
+        DPRINTF(Decode, "32-bit instruction became ready after %u bytes at pc %#x\n",
+                partialInst.assembledBytes, pc.instAddr());
+        return;
+    }
+
+    instDone = false;
+    outOfBytes = true;
+    DPRINTF(Decode,
+            "Instruction at pc %#x waiting for trailing bytes "
+            "(assembledBytes=%u)\n",
+            pc.instAddr(), static_cast<unsigned>(partialInst.assembledBytes));
 }
 
 StaticInstPtr
@@ -117,6 +157,8 @@ Decoder::decode(PCStateBase &_next_pc)
             this->clearVtype();
         }
     }
+
+    partialInst.reset();
 
     return inst;
 }
