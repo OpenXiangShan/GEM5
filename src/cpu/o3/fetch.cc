@@ -627,6 +627,7 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
     for (auto *packet : threads[tid].cacheReq.packets) {
         delete packet;
     }
+    threads[tid].cacheReq.releaseStoredPackets();
 
     DPRINTF(Fetch, "[tid:%i] Dual cacheline fetch completion processed successfully.\n", tid);
     return true;

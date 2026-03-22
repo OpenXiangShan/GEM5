@@ -754,6 +754,12 @@ class Fetch
             completedPackets = 0;
         }
 
+        void releaseStoredPackets() {
+            packets.clear();
+            requests.clear();
+            completedPackets = 0;
+        }
+
         /** Add a new request */
         void addRequest(RequestPtr req) {
             requests.push_back(req);
