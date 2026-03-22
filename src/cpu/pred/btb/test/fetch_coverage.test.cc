@@ -31,6 +31,11 @@ TEST(FetchCoverageSpanHelper, FetchCoverageWindow_SmallerThan64B)
     EXPECT_EQ(fetchCoverageSpan(0x90032, 0x90060, 66), 46u);
 }
 
+TEST(FetchCoverageSpanHelper, CoverageSpan_ClampsBeforeUnsignedNarrowing)
+{
+    EXPECT_EQ(fetchCoverageSpan(0x0, static_cast<Addr>(1) << 40, 66), 66u);
+}
+
 } // namespace btb_pred
 
 } // namespace branch_prediction

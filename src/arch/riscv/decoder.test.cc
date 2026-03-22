@@ -61,5 +61,15 @@ TEST(RiscvDecoderHelper, ResetClearsPartialState)
     EXPECT_EQ(partial.assembledBytes, 2u);
 }
 
+TEST(RiscvDecoderHelper, LegacyPathKeepsNeedMoreBytesForRvi32)
+{
+    EXPECT_TRUE(Decoder::legacyNeedMoreBytes(0x00000013u));
+}
+
+TEST(RiscvDecoderHelper, LegacyPathClearsNeedMoreBytesForRvc16)
+{
+    EXPECT_FALSE(Decoder::legacyNeedMoreBytes(0x00000001u));
+}
+
 } // namespace RiscvISA
 } // namespace gem5

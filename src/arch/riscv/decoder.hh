@@ -67,12 +67,7 @@ struct PartialInstBuffer
     static unsigned
     countValidBytes(uint8_t mask)
     {
-        unsigned count = 0;
-        while (mask != 0) {
-            count += mask & 0x1;
-            mask >>= 1;
-        }
-        return count;
+        return __builtin_popcount(mask);
     }
 
     void
@@ -173,6 +168,10 @@ class Decoder : public InstDecoder
     void reset() override;
 
     inline bool compressed(ExtMachInst inst) { return (inst & 0x3) < 0x3; }
+    static bool legacyNeedMoreBytes(ExtMachInst inst)
+    {
+        return (inst & 0x3) == 0x3;
+    }
     inline bool vconf(ExtMachInst inst) {
       return inst.opcode7 == 0b1010111u && inst.width == 0b111u;
     }

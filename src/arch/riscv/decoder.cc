@@ -68,7 +68,7 @@ Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC)
 
     partialInst.reset();
     instDone = true;
-    outOfBytes = false;
+    outOfBytes = legacyNeedMoreBytes(emi);
 }
 
 void

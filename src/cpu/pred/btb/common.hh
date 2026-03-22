@@ -24,7 +24,9 @@ inline unsigned
 fetchCoverageSpan(Addr startPC, Addr predEndPC, unsigned capacity)
 {
     assert(predEndPC >= startPC);
-    return std::min<unsigned>(capacity, predEndPC - startPC);
+    const Addr span = predEndPC - startPC;
+    const Addr clampedSpan = std::min<Addr>(span, capacity);
+    return static_cast<unsigned>(clampedSpan);
 }
 
 enum EndType
@@ -164,7 +166,8 @@ struct BranchInfo
     Addr getEnd() { return endPCExclusive(); }
     Addr getEnd() const { return endPCExclusive(); }
     BranchInfo()
-        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0)
+        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false),
+          isDirect(false), isCall(false), isReturn(false), size(0)
     {
     }
     // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
