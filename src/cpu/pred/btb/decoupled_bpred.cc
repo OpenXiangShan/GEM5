@@ -212,11 +212,12 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
 
     DPRINTF(Override, "Requesting new prediction for PC %#lx\n", thread.s0PC);
 
-
-    // Initialize prediction state for each stage
+    // Reset all stage-local prediction fields before components fill them.
+    clearPreds(tid);
     for (int i = 0; i < numStages; i++) {
         predsOfEachStage[i].tid = tid;
         predsOfEachStage[i].bbStart = thread.s0PC;
+        predsOfEachStage[i].predSource = i;
     }
 
     // Query each predictor component with current PC and history

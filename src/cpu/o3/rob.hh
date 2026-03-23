@@ -256,6 +256,7 @@ class ROB
         return sum;
     }
 
+    uint32_t countInstsOfGroups(ThreadID tid, int groups);
     uint32_t countInstsOfGroups(int groups);
 
     bool (ROB::*allocateNewGroup)(const DynInstPtr inst, ThreadID tid);

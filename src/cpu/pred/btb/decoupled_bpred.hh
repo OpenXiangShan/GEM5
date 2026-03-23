@@ -187,10 +187,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     void generateFinalPredAndCreateBubbles(ThreadID tid);
 
     void clearPreds(ThreadID tid) {
-        for (auto &stagePred : threads[tid].predsOfEachStage) {
-            stagePred.condTakens.clear();
-            stagePred.indirectTargets.clear();
-            stagePred.btbEntries.clear();
+        for (int i = 0; i < threads[tid].predsOfEachStage.size(); ++i) {
+            threads[tid].predsOfEachStage[i] = FullBTBPrediction();
+            threads[tid].predsOfEachStage[i].predSource = i;
         }
     }
 

@@ -1021,6 +1021,7 @@ class BTBRAS(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBRAS'
     cxx_header = 'cpu/pred/btb/ras.hh'
 
+    numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     numEntries = Param.Unsigned(32, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(8, "Width of the counter")
     numInflightEntries = Param.Unsigned(384, "Number of inflight entries")

@@ -64,6 +64,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/utils.hh"
 #include "enums/SMTQueuePolicy.hh"
 #include "mem/packet.hh"
@@ -1081,8 +1082,21 @@ class LSQ
     bool getDcacheWriteStall() { return dcacheWriteStall; }
     StoreBuffer &getStoreBuffer() { return storeBuffer; }
     bool storeBufferEmpty() const { return storeBuffer.size() == 0; }
-    bool storeBufferFlushing() const { return _storeBufferFlushing; }
-    void clearStoreBufferFlushing() { _storeBufferFlushing = false; }
+    bool storeBufferFlushing(ThreadID tid) const { return _storeBufferFlushing[tid]; }
+    bool storeBufferFlushing() const
+    {
+        for (auto tid : *activeThreads) {
+            if (_storeBufferFlushing[tid])
+                return true;
+        }
+        return false;
+    }
+    void clearStoreBufferFlushing(ThreadID tid) { _storeBufferFlushing[tid] = false; }
+    void clearStoreBufferFlushing() {
+        for (auto tid : *activeThreads) {
+            _storeBufferFlushing[tid] = false;
+        }
+    }
     uint32_t getSbufferEvictThreshold() const { return sbufferEvictThreshold; }
     uint32_t getSbufferEntries() const { return sbufferEntries; }
     uint64_t getStoreBufferInactiveCycles() const
@@ -1171,7 +1185,7 @@ class LSQ
     const uint64_t storeBufferInactiveThreshold;
     const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle = 2;
     StoreBuffer storeBuffer;
-    bool _storeBufferFlushing = false;
+    bool _storeBufferFlushing[MaxThreads] = {false};
     uint64_t storeBufferWritebackInactive = 0;
     StoreBufferEntry *blockedSbufferEntry = nullptr;
     ThreadID nextStoreBufferOffloadTid = InvalidThreadID;

@@ -592,10 +592,34 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
         DPRINTF(Fetch, "[tid:%i] Waiting for remaining packets. Completed: %d, Total: %d\n",
                 tid, threads[tid].cacheReq.completedPackets, threads[tid].cacheReq.packets.size());
 
-        if (cacheBlocked && !retryPkt.empty()) {
-            DPRINTF(Fetch, "[tid:%i] Cache response arrived with queued retries pending; "
-                    "trying one response-driven retry pass\n", tid);
-            retryPendingIcacheRequests();
+        bool waitingOnRetry = false;
+        for (const auto status : threads[tid].cacheReq.requestStatus) {
+            if (status == CacheWaitRetry) {
+                waitingOnRetry = true;
+                break;
+            }
+        }
+
+        if (waitingOnRetry && cacheBlocked && !retryPkt.empty()) {
+            PacketPtr queuedPkt = retryPkt.front();
+            const ThreadID queuedTid =
+                cpu->contextToThread(queuedPkt->req->contextId());
+            const bool sameThreadRetry = queuedTid == tid &&
+                threads[tid].cacheReq.findRequestIndex(queuedPkt->req) != SIZE_MAX;
+
+            if (sameThreadRetry && icachePort.sendTimingReq(queuedPkt)) {
+                DPRINTF(Fetch,
+                        "[tid:%i] Retrying matching queued I-cache packet %#lx "
+                        "after sibling response\n",
+                        tid, queuedPkt->req->getVaddr());
+                updateCacheRequestStatusByRequest(tid, queuedPkt->req,
+                                                  CacheWaitResponse);
+                ppFetchRequestSent->notify(queuedPkt->req);
+                retryPkt.erase(retryPkt.begin());
+                if (retryPkt.empty()) {
+                    cacheBlocked = false;
+                }
+            }
         }
 
         return false;  // Return false to indicate we're still waiting
@@ -2094,7 +2118,21 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     assert(dbpbtb);
     const auto &stream = dbpbtb->ftqFetchingTarget(tid);
     const Addr start_pc = stream.startPC;
+    const Addr current_pc = pc_state.instAddr();
     threads[tid].startPC = start_pc;
+
+    if (current_pc < stream.startPC ||
+        current_pc >= stream.predEndPC) {
+        auto &reset_pc = threads[tid].fetchpc->as<RiscvISA::PCState>();
+        reset_pc.pc(stream.startPC);
+        reset_pc.npc(stream.startPC + 4);
+        reset_pc.uReset();
+        DPRINTF(Fetch,
+                "[tid:%i] Resetting fetch PC to new FTQ stream start %s "
+                "(previous PC %#lx outside [%#lx, %#lx))\n",
+                tid, *threads[tid].fetchpc, current_pc,
+                stream.startPC, stream.predEndPC);
+    }
 
     DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FSQ entry, "
                   "starting at PC %#x (endPC %#x; original PC %s)\n",
