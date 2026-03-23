@@ -655,7 +655,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
 
         CacheConfig.config_cache(args, test_sys)
 
-        l2l3_topologies = ('L2L3DramSys', 'L2L3DramSys_M1Local1Dram')
+        l2l3_topologies = ('L2L3DramSys', 'L2L3DramSys_M1Local1Dram', 'L2L3DramSys_3x3')
         if args.CHI and getattr(args, 'chi_topology', 'L2ToDramSys') in l2l3_topologies:
             # L2L3DramSys owns and wires its DDRWrapper internally.
             # Skip MemConfig to avoid creating an extra unconnected DDRWrapper.
@@ -1064,6 +1064,7 @@ def xiangshan_system_init():
             "L2ToDramSys_M1Local1Dram",
             "L2L3DramSys",
             "L2L3DramSys_M1Local1Dram",
+            "L2L3DramSys_3x3",
         ],
         default="L2ToDramSys",
         help="Select CHI topology object when --CHI is enabled",
