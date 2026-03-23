@@ -1732,6 +1732,16 @@ BaseCache::checkSLiceBusy(PacketPtr pkt, uint32_t sliceidx)
     return true;
 }
 
+Cycles
+BaseCache::getSliceBusyDelayCycles(uint32_t sliceidx) const
+{
+    Tick arrival_time = curTick();
+    if (sliceReadyTick[sliceidx] < arrival_time) {
+        return Cycles(0);
+    }
+    return ticksToCycles(sliceReadyTick[sliceidx] - arrival_time) + Cycles(1);
+}
+
 bool
 BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                   PacketList &writebacks)
@@ -2901,6 +2911,10 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of hits in write buffer when missing in cache"),
     ADD_STAT(prefetchTagReadFails, statistics::units::Count::get(),
              "number of prefetch req Tag read fail because of load"),
+    ADD_STAT(sliceBusyRejects, statistics::units::Count::get(),
+             "number of requests rejected because the target slice is busy"),
+    ADD_STAT(sliceBusyBlockedCycles, statistics::units::Cycle::get(),
+             "total blocked cycles caused by slice busy"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),
              "number of data expansions"),
     ADD_STAT(dataContractions, statistics::units::Count::get(),
@@ -3202,6 +3216,9 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
     int sliceidx = cache->getSliceIdx(pkt->getAddr());
     if (sliceidx >= 0 && cache->cacheLevel != 1) {
         if (cache->checkSLiceBusy(pkt, sliceidx)) {
+            cache->stats.sliceBusyRejects++;
+            cache->stats.sliceBusyBlockedCycles +=
+                cache->getSliceBusyDelayCycles(sliceidx);
             //no more buffer
             if (sendRetryEvent.scheduled()) {
                 owner.reschedule(sendRetryEvent, cache->nextCycle());

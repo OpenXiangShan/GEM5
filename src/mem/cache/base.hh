@@ -565,6 +565,8 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     bool checkSLiceBusy(PacketPtr pkt, uint32_t sliceidx);
 
+    Cycles getSliceBusyDelayCycles(uint32_t sliceidx) const;
+
     /**
      * Does all the processing necessary to perform the provided request.
      * @param pkt The memory request to perform.
@@ -1334,6 +1336,12 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
         /** Number of prefetch req Tag read fail because of load. */
         mutable statistics::Scalar prefetchTagReadFails;
+
+        /** Number of requests rejected because the target slice is busy. */
+        statistics::Scalar sliceBusyRejects;
+
+        /** Total blocked cycles caused by slice busy. */
+        statistics::Scalar sliceBusyBlockedCycles;
 
         /** Number of data expansions. */
         statistics::Scalar dataExpansions;
