@@ -344,7 +344,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                 MemCmd cmd = mapChiReqToMemCmd(op);
                 auto req = std::make_shared<gem5::Request>(
                     flit->getAddr(), flit->getSize(), Flags<uint64_t>(0),
-                    RequestorID(flit->getSrcId()));
+                    0);
                 req->setPaddr(flit->getAddr());
                 pkt = new Packet(req, cmd, flit->getSize());
                 // Data will be provided later via COPYBACKWRDATA flits.
@@ -397,7 +397,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                 }
                 auto req = std::make_shared<gem5::Request>(
                     flit->getAddr(), flit->getSize(), Flags<uint64_t>(0),
-                    RequestorID(flit->getSrcId()));
+                    0);
                 req->setPaddr(flit->getAddr());
                 PacketPtr pkt = new Packet(req, mapChiReqToMemCmd(op),
                                             flit->getSize());
@@ -465,7 +465,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                 MemCmd cmd = mapChiReqToMemCmd(op);
                 auto req = std::make_shared<gem5::Request>(
                     flit->getAddr(), flit->getSize(), Flags<uint64_t>(0),
-                    RequestorID(flit->getSrcId()));
+                    0);
                 req->setPaddr(flit->getAddr());
                 pkt = new Packet(req, cmd, flit->getSize());
                 // Data will be provided later via COPYBACKWRDATA flits.
@@ -537,7 +537,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                 MemCmd cmd = mapChiReqToMemCmd(op);
                 auto req = std::make_shared<gem5::Request>(
                     flit->getAddr(), flit->getSize(), Flags<uint64_t>(0),
-                    RequestorID(flit->getSrcId()));
+                    0);
                 req->setPaddr(flit->getAddr());
                 pkt = new Packet(req, cmd, flit->getSize());
                 pkt->allocate();
