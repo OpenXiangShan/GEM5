@@ -368,6 +368,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
             params.StoreCompletionWidth);
         thread[tid].init(cpu, iew_ptr, params, this, tid);
         thread[tid].setDcachePort(&dcachePort);
+        _storeBufferFlushing[tid] = false;
     }
 
     std::vector<StoreBufferEntry *> store_buffer_entries;
@@ -705,18 +706,26 @@ LSQ::processWriteback()
 
 
     if (storeBufferBlocked()) {
-        // dont offload store to sbuffer when sbuffer is flushing
         DPRINTF(StoreBuffer, "Store buffer is blocking, skip SQ offload\n");
         return;
     }
+
     std::vector<uint32_t> offload_quota(numThreads, 0);
     std::vector<uint32_t> offload_demand(numThreads, 0);
     std::vector<ThreadID> requester_tids;
     requester_tids.reserve(activeThreads->size());
+    uint32_t sbuffer_flush_bitset = 0;
+    for (ThreadID tid : *activeThreads) {
+        bool sbuffer_flushing = storeBufferFlushing(tid);
+        sbuffer_flush_bitset |= (sbuffer_flushing << tid);
+    }
+
     for (ThreadID tid : *activeThreads) {
         offload_demand[tid] = thread[tid].countStoreBufferOffloadableEntries(
             maxStoreBufferEntriesAcceptedFromSQPerCycle);
-        if (offload_demand[tid] != 0) {
+        // when other thread is flushing sbuffer, stop current thread sq offloading
+        bool conti = (sbuffer_flush_bitset & ~(1 << tid)) == 0;
+        if (conti && offload_demand[tid] != 0) {
             requester_tids.push_back(tid);
         }
     }
@@ -760,17 +769,20 @@ LSQ::processWriteback()
         ThreadID tid = *threads++;
         thread[tid].offloadToStoreBuffer(offload_quota[tid]);
     }
+
+    // If the store buffer is flushing and no entries remain to be sent,
+    // clear the flushing state to avoid deadlock.
+    if (storeBufferFlushing() && storeBuffer.size() == 0) [[unlikely]] {
+        assert(storeBuffer.unsentSize() == 0);
+        clearStoreBufferFlushing();
+        cpu->activityThisCycle();
+    }
 }
 
 void
 LSQ::storeBufferWriteback()
 {
     bool can_evict = true;
-    if (storeBufferFlushing() && storeBuffer.size() == 0) [[unlikely]] {
-        assert(storeBuffer.unsentSize() == 0);
-        clearStoreBufferFlushing();
-        cpu->activityThisCycle();
-    }
 
     // write request will stall one cycle
     // so 2 cycle send one write request
@@ -1480,7 +1492,7 @@ LSQ::hasStoresToWB(ThreadID tid)
 
 bool LSQ::flushStores(ThreadID tid)
 {
-    _storeBufferFlushing = true;
+    _storeBufferFlushing[tid] = true;
     // TODO：high performance shared SMT storebuffer flushing
     bool t = !hasStoresToWB(tid) && storeBufferEmpty();
     return t;

@@ -298,14 +298,22 @@ ROB::countInsts(ThreadID tid)
 }
 
 uint32_t
+ROB::countInstsOfGroups(ThreadID tid, int groups)
+{
+    int sum = 0;
+    auto it = threadGroups[tid].begin();
+    for (int i = 0; i < groups && it != threadGroups[tid].end(); i++, it++) {
+        sum += *it;
+    }
+    return sum;
+}
+
+uint32_t
 ROB::countInstsOfGroups(int groups)
 {
     int sum = 0;
     for (ThreadID tid = 0; tid < numThreads; tid++) {
-        auto it = threadGroups[tid].begin();
-        for (int i = 0; i < groups && it != threadGroups[tid].end(); i++, it++) {
-            sum += *it;
-        }
+        sum += countInstsOfGroups(tid, groups);
     }
     return sum;
 }

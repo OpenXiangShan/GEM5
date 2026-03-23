@@ -42,6 +42,7 @@
 #ifndef __CPU_BASE_HH__
 #define __CPU_BASE_HH__
 
+#include <deque>
 #include <queue>
 #include <vector>
 
@@ -138,6 +139,16 @@ struct DiffAllStates
 class BaseCPU : public ClockedObject
 {
   protected:
+    struct RecentCommittedStore
+    {
+        bool valid = false;
+        Addr addr = 0;
+        size_t size = 0;
+        InstSeqNum seq = 0;
+        uint8_t data[16] = {};
+    };
+
+    std::vector<std::deque<RecentCommittedStore>> recentCommittedStores;
 
     const unsigned IntRegIndexBase = 0;
     const unsigned FPRegIndexBase = 32;
@@ -777,6 +788,8 @@ class BaseCPU : public ClockedObject
     void difftestStep(ThreadID tid) { difftestStep(tid, 0);}
 
     void difftestStep(ThreadID tid, InstSeqNum seq);
+
+    void recordCommittedStore(ThreadID tid, const o3::DynInstPtr &inst);
 
     inline bool difftestEnabled() const { return enableDifftest; }
 
