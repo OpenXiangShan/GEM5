@@ -1052,7 +1052,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     histLengths = VectorParam.Unsigned([4, 9, 17, 29, 56, 109, 211,397],"the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
-    numWays = VectorParam.Unsigned([4, 2, 4, 8, 4, 2, 4, 2], "the T0~Tn number of ways per set")
+    numWays = VectorParam.Unsigned([2, 2, 4, 4, 4, 2, 2, 2], "the T0~Tn number of ways per set")
     maxBranchPositions = Param.Unsigned(32, "Maximum branch positions per 64-byte block")
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
