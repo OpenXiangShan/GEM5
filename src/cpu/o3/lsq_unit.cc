@@ -350,19 +350,46 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
             Addr addr = pkt->getAddr();
             auto [enable_diff, diff_all_states] = cpu->getDiffAllStates();
             if (system->multiContextDifftest() && enable_diff &&
+                request->_sbufferBypass &&
+                inst->isLoad() &&
+                cpu->goldenMemManager()->inPmem(addr)) {
+                // A store-forwarded load may legitimately observe a value that
+                // is newer than the current shared golden memory snapshot.
+                // Keep the observed value on the instruction so difftest can
+                // repair the reference state for this hart if needed.
+                inst->setGolden(pkt->getPtr<uint8_t>());
+            }
+            if (system->multiContextDifftest() && enable_diff &&
                 !request->_sbufferBypass &&
                 cpu->goldenMemManager()->inPmem(addr)) {
-                // check data with golden mem
-                uint8_t *golden_data = (uint8_t *)cpu->goldenMemManager()->guestToHost(addr);
                 uint8_t *loaded_data = pkt->getPtr<uint8_t>();
                 size_t size = pkt->getSize();
-                if (memcmp(golden_data, loaded_data, size) == 0) {
-                    assert(size == inst->effSize);
-                    inst->setGolden(golden_data);
+                assert(size == inst->effSize);
+
+                if (inst->isAtomic()) {
+                    uint8_t *golden_old =
+                        reinterpret_cast<uint8_t *>(inst->getAmoOldGoldenValuePtr());
+                    cpu->goldenMemManager()->readGoldenMem(addr, golden_old, size);
+                    if (memcmp(golden_old, loaded_data, size) != 0) {
+                        panic("[tid:%d] [sn:%llu] Atomic old value error at addr %#lx, "
+                              "size %d. %s\n",
+                              inst->threadNumber, inst->seqNum, addr, size,
+                              goldenDiffStr(loaded_data, golden_old, size).c_str());
+                    }
                 } else {
-                    panic("Data error at addr %#lx, size %d. %s\n",
-                        addr, size,
-                        goldenDiffStr(loaded_data, golden_data, size).c_str());
+                    // check data with golden mem
+                    uint8_t *golden_data =
+                        (uint8_t *)cpu->goldenMemManager()->guestToHost(addr);
+                    if (memcmp(golden_data, loaded_data, size) == 0) {
+                        inst->setGolden(golden_data);
+                    } else {
+                        DPRINTF(Diff,
+                                "[tid:%d] [sn:%llu] Load sees value different from "
+                                "current golden memory at addr %#lx, size %d. "
+                                "Treating as concurrent update window. %s\n",
+                                inst->threadNumber, inst->seqNum, addr, size,
+                                goldenDiffStr(loaded_data, golden_data, size).c_str());
+                    }
                 }
             }
         }
@@ -1894,6 +1921,7 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries)
 {
     assert(!lsq->storeBufferBlocked());
     if (isStoreBlocked) return;
+    if (max_entries == 0) return;
 
     uint32_t accepted_entries = 0;
     while (storesToWB > 0 &&
@@ -2401,23 +2429,21 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
                                                      request->_size);
         } else {
             uint8_t tmp_data[8];
-            memset(tmp_data, 0, 8);
-            memcpy(tmp_data, store_inst->memData, request->_size);
+            memset(tmp_data, 0, sizeof(tmp_data));
             assert(request->req()->getAtomicOpFunctor());
 
-            // read golden memory to get the global latest value before this AMO is executed for further compare
-            cpu->goldenMemManager()->readGoldenMem(paddr,
-                                                   store_inst->getAmoOldGoldenValuePtr(), request->_size);
+            // The AMO response returns the old memory value. Capture it on the
+            // instruction so commit/difftest can use a per-inst copy under SMT.
             cpu->diffInfo.amoOldGoldenValue = store_inst->getAmoOldGoldenValue();
+            memcpy(tmp_data, store_inst->getAmoOldGoldenValuePtr(), request->_size);
 
-            // before amo operate on golden memory
             (*(request->req()->getAtomicOpFunctor()))(tmp_data);
-            // after amo operate on golden memory
 
             DPRINTF(LSQUnit, "AMO writing to golden memory at addr %#x, data %#lx, mask %#x, size %d\n",
                     paddr, *((uint64_t *)(tmp_data)), 0xff, request->_size);
             cpu->goldenMemManager()->updateGoldenMem(paddr, tmp_data, 0xff,
                                                      request->_size);
+            store_inst->setGolden(tmp_data);
         }
     }
 

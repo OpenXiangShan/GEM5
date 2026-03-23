@@ -807,8 +807,11 @@ def build_xiangshan_system(args):
 
     TestCPUClass = get_xiangshan_cpu_class(args)
     ruby = bool(hasattr(args, 'ruby') and args.ruby)
+    num_threads = np * (2 if getattr(args, 'smt', False) else 1)
 
-    test_sys = makeBareMetalXiangshanSystem('timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
+    test_sys = makeBareMetalXiangshanSystem(
+        'timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby,
+        num_threads=num_threads)
 
     if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
         if bool(getattr(args, 'trace_timing_ptw', False)):

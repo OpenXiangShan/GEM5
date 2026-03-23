@@ -196,7 +196,7 @@ class Commit
     };
     std::list<BranchInfo> branchLog;
 
-    uint64_t lastCommitCycle = 0;
+    uint64_t lastCommitCycle[MaxThreads] = {0};
 
     EventFunctionWrapper stuckCheckEvent;
 
@@ -214,8 +214,6 @@ class Commit
 
     /** Returns the name of the Commit. */
     std::string name() const;
-
-    uint64_t getLastCommitCycle() const { return lastCommitCycle; }
 
     /** Registers probes. */
     void regProbePoints();
