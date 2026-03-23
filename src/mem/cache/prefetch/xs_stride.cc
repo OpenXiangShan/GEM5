@@ -3,14 +3,59 @@
 
 #include "mem/cache/prefetch/xs_stride.hh"
 
+#include <sqlite3.h>
+
+#include "base/output.hh"
 #include "base/stats/group.hh"
 #include "debug/XSStridePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
+#include "sim/sim_exit.hh"
 
 namespace gem5
 {
 namespace prefetch
 {
+
+namespace
+{
+
+bool
+tableExists(sqlite3 *db, const std::string &table)
+{
+    sqlite3_stmt *stmt = nullptr;
+    const char *sql =
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=? LIMIT 1;";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, table.c_str(), -1, SQLITE_TRANSIENT);
+    const bool found = sqlite3_step(stmt) == SQLITE_ROW;
+    sqlite3_finalize(stmt);
+    return found;
+}
+
+long long
+sqliteSignedInt(uint64_t value)
+{
+    return static_cast<long long>(static_cast<int64_t>(value));
+}
+
+std::string
+sqlEscape(const std::string &value)
+{
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (char c : value) {
+        escaped += c;
+        if (c == '\'') {
+            escaped += '\'';
+        }
+    }
+    return escaped;
+}
+
+} // anonymous namespace
 
 XSStridePrefetcher::XSStridePrefetcher(const XSStridePrefetcherParams &p)
     : Queued(p),useXsDepth(p.use_xs_depth),useRedundantTable(p.use_redundant_table),
@@ -18,24 +63,250 @@ XSStridePrefetcher::XSStridePrefetcher(const XSStridePrefetcherParams &p)
       shortStrideThres(p.short_stride_thres),
       strideDynDepth(p.stride_dyn_depth),
       enableNonStrideFilter(p.enable_non_stride_filter),
+      enableTraceDb(p.enable_trace_db),
+      traceHartId(p.trace_hart_id),
       regionSize(p.region_size),
-      regionBlks(p.region_size / p.block_size),     
+      regionBlks(p.region_size / p.block_size),
+      traceDbFile(p.trace_db_file),
       strideUnique(p.stride_entries, p.stride_entries, p.stride_unique_indexing_policy,
              p.stride_unique_replacement_policy, StrideEntry()),
       strideRedundant(p.stride_entries, p.stride_entries, p.stride_redundant_indexing_policy,
              p.stride_redundant_replacement_policy, StrideEntry()),
       nonStridePCs(p.non_stride_assoc, p.non_stride_entries, p.non_stride_indexing_policy,
              p.non_stride_replacement_policy, NonStrideEntry()),
+      filter(nullptr),
+      filterL2(nullptr),
+      stridestream_pfFilter_l1(nullptr),
+      stridestream_pfFilter_l2l3(nullptr),
       stats(this)
 {
+    if (enableTraceDb) {
+        initReplayTraceDb(p);
+    }
 }
 
+XSStridePrefetcher::~XSStridePrefetcher()
+{
+    if (ownTraceDb && traceDb) {
+        sqlite3_close(traceDb);
+        traceDb = nullptr;
+    }
+}
+
+void
+XSStridePrefetcher::initReplayTraceDb(const XSStridePrefetcherParams &p)
+{
+    const bool useArchDb = (archDBer != nullptr) && (archDBer->mem_db != nullptr);
+    if (useArchDb) {
+        traceDb = archDBer->mem_db;
+    } else {
+        int rc = sqlite3_open(":memory:", &traceDb);
+        if (rc != SQLITE_OK || !traceDb) {
+            fatal("Can't open XSStride trace sqlite database\n");
+        }
+        ownTraceDb = true;
+
+        if (traceDbFile.empty()) {
+            traceDbFile = "sstride_trace_h" + std::to_string(traceHartId) + ".db";
+        }
+
+        registerExitCallback([this]() { saveReplayTraceDb(); });
+    }
+
+    const std::string suffix = "_h" + std::to_string(traceHartId);
+    replayConfigTableName = "SStrideConfigTrace" + suffix;
+    replayInputTableName = "SStrideInputTrace" + suffix;
+    replayCandidateTableName = "SStrideCandidateTrace" + suffix;
+
+    if (!tableExists(traceDb, replayConfigTableName)) {
+        execReplayTraceSql(
+            "CREATE TABLE " + replayConfigTableName +
+            "(TRACEKIND TEXT NOT NULL,"
+            "SITE TEXT NOT NULL,"
+            "BLOCKSIZE INT NOT NULL,"
+            "USEXSDEPTH INT NOT NULL,"
+            "USEREDUNDANTTABLE INT NOT NULL,"
+            "FUZZYSTRIDEMATCHING INT NOT NULL,"
+            "SHORTSTRIDETHRES INT NOT NULL,"
+            "STRIDEDYNDEPTH INT NOT NULL,"
+            "ENABLENONSTRIDEFILTER INT NOT NULL,"
+            "STRIDEENTRIES INT NOT NULL,"
+            "NONSTRIDEENTRIES INT NOT NULL,"
+            "NONSTRIDEASSOC INT NOT NULL,"
+            "USEVADDR INT NOT NULL,"
+            "SEMANTICS TEXT NOT NULL,"
+            "PRIMARY KEY (TRACEKIND, SITE));");
+    }
+
+    if (!tableExists(traceDb, replayInputTableName)) {
+        execReplayTraceSql(
+            "CREATE TABLE " + replayInputTableName +
+            "(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "ADDR INT NOT NULL,"
+            "PC INT NOT NULL,"
+            "SECURE INT NOT NULL,"
+            "CACHEMISS INT NOT NULL,"
+            "LATE INT NOT NULL,"
+            "PFSOURCE INT NOT NULL,"
+            "MISSREPEAT INT NOT NULL,"
+            "ENTERNEWREGION INT NOT NULL,"
+            "FIRSTSHOT INT NOT NULL,"
+            "STAMP INT NOT NULL,"
+            "SITE TEXT);");
+    }
+
+    if (!tableExists(traceDb, replayCandidateTableName)) {
+        execReplayTraceSql(
+            "CREATE TABLE " + replayCandidateTableName +
+            "(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "INPUTID INT NOT NULL,"
+            "TRIGGERADDR INT NOT NULL,"
+            "TRIGGERPC INT NOT NULL,"
+            "PREFETCHADDR INT NOT NULL,"
+            "PRIORITY INT NOT NULL,"
+            "PFAHEAD INT NOT NULL,"
+            "PFAHEADHOST INT NOT NULL,"
+            "AHEADLEVEL INT NOT NULL,"
+            "STAMP INT NOT NULL,"
+            "SITE TEXT);");
+    }
+
+    recordReplayConfigTrace(p);
+}
+
+void
+XSStridePrefetcher::saveReplayTraceDb() const
+{
+    if (!ownTraceDb || !traceDb) {
+        return;
+    }
+
+    const auto path = simout.resolve(traceDbFile);
+    warn("saving XSStride trace db to %s ...\n", path.c_str());
+    sqlite3 *diskDb = nullptr;
+    sqlite3_backup *backup = nullptr;
+    int rc = sqlite3_open(path.c_str(), &diskDb);
+    if (rc == SQLITE_OK) {
+        backup = sqlite3_backup_init(diskDb, "main", traceDb, "main");
+        if (backup) {
+            (void)sqlite3_backup_step(backup, -1);
+            (void)sqlite3_backup_finish(backup);
+        }
+        rc = sqlite3_errcode(diskDb);
+    }
+    fatal_if(rc != SQLITE_OK, "Can't save XSStride trace db: %s\n",
+             diskDb ? sqlite3_errmsg(diskDb) : "sqlite open failed");
+    sqlite3_close(diskDb);
+}
+
+void
+XSStridePrefetcher::execReplayTraceSql(const std::string &sql) const
+{
+    if (!traceDb) {
+        return;
+    }
+
+    char *errMsg = nullptr;
+    const int rc = sqlite3_exec(traceDb, sql.c_str(), nullptr, nullptr, &errMsg);
+    if (rc != SQLITE_OK) {
+        fatal("XSStride trace SQL error: %s\n", errMsg ? errMsg : "unknown");
+    }
+}
+
+void
+XSStridePrefetcher::recordReplayConfigTrace(const XSStridePrefetcherParams &p)
+{
+    if (!enableTraceDb || !traceDb) {
+        return;
+    }
+
+    const std::string sql =
+        "INSERT OR REPLACE INTO " + replayConfigTableName +
+        "(TRACEKIND,SITE,BLOCKSIZE,USEXSDEPTH,USEREDUNDANTTABLE,"
+        "FUZZYSTRIDEMATCHING,SHORTSTRIDETHRES,STRIDEDYNDEPTH,"
+        "ENABLENONSTRIDEFILTER,STRIDEENTRIES,NONSTRIDEENTRIES,"
+        "NONSTRIDEASSOC,USEVADDR,SEMANTICS) VALUES('SStride','" +
+        sqlEscape(name()) + "'," +
+        std::to_string(blkSize) + "," +
+        std::to_string(useXsDepth ? 1 : 0) + "," +
+        std::to_string(useRedundantTable ? 1 : 0) + "," +
+        std::to_string(fuzzyStrideMatching ? 1 : 0) + "," +
+        std::to_string(shortStrideThres) + "," +
+        std::to_string(strideDynDepth ? 1 : 0) + "," +
+        std::to_string(enableNonStrideFilter ? 1 : 0) + "," +
+        std::to_string(static_cast<unsigned>(p.stride_entries)) + "," +
+        std::to_string(static_cast<unsigned>(p.non_stride_entries)) + "," +
+        std::to_string(static_cast<unsigned>(p.non_stride_assoc)) + "," +
+        std::to_string(useVirtualAddresses ? 1 : 0) + "," +
+        "'production');";
+    execReplayTraceSql(sql);
+}
+
+void
+XSStridePrefetcher::recordReplayInputTrace(const PrefetchInfo &pfi, bool late,
+                                           PrefetchSourceType pf_source,
+                                           bool miss_repeat,
+                                           bool enter_new_region,
+                                           bool is_first_shot)
+{
+    if (!enableTraceDb || !traceDb) {
+        lastReplayInputId = 0;
+        return;
+    }
+
+    const uint64_t stamp = curCycle();
+    const std::string sql =
+        "INSERT INTO " + replayInputTableName +
+        "(ADDR,PC,SECURE,CACHEMISS,LATE,PFSOURCE,MISSREPEAT,"
+        "ENTERNEWREGION,FIRSTSHOT,STAMP,SITE) VALUES(" +
+        std::to_string(sqliteSignedInt(pfi.getAddr())) + "," +
+        std::to_string(sqliteSignedInt(pfi.getPC())) + "," +
+        std::to_string(pfi.isSecure() ? 1 : 0) + "," +
+        std::to_string(pfi.isCacheMiss() ? 1 : 0) + "," +
+        std::to_string(late ? 1 : 0) + "," +
+        std::to_string(static_cast<unsigned>(pf_source)) + "," +
+        std::to_string(miss_repeat ? 1 : 0) + "," +
+        std::to_string(enter_new_region ? 1 : 0) + "," +
+        std::to_string(is_first_shot ? 1 : 0) + "," +
+        std::to_string(sqliteSignedInt(stamp)) + ",'" + sqlEscape(name()) + "');";
+    execReplayTraceSql(sql);
+    lastReplayInputId = static_cast<uint64_t>(sqlite3_last_insert_rowid(traceDb));
+}
+
+void
+XSStridePrefetcher::recordReplayCandidateTrace(Addr trigger_addr, Addr trigger_pc,
+                                               Addr pf_addr, int priority,
+                                               bool pfahead, int pfahead_host,
+                                               int ahead_level)
+{
+    if (!enableTraceDb || !traceDb) {
+        return;
+    }
+
+    const uint64_t stamp = curCycle() + Cycles(1);
+    const std::string sql =
+        "INSERT INTO " + replayCandidateTableName +
+        "(INPUTID,TRIGGERADDR,TRIGGERPC,PREFETCHADDR,PRIORITY,PFAHEAD,"
+        "PFAHEADHOST,AHEADLEVEL,STAMP,SITE) VALUES(" +
+        std::to_string(sqliteSignedInt(lastReplayInputId)) + "," +
+        std::to_string(sqliteSignedInt(trigger_addr)) + "," +
+        std::to_string(sqliteSignedInt(trigger_pc)) + "," +
+        std::to_string(sqliteSignedInt(pf_addr)) + "," +
+        std::to_string(priority) + "," +
+        std::to_string(pfahead ? 1 : 0) + "," +
+        std::to_string(pfahead_host) + "," +
+        std::to_string(ahead_level) + "," +
+        std::to_string(sqliteSignedInt(stamp)) + ",'" + sqlEscape(name()) + "');";
+    execReplayTraceSql(sql);
+}
 
 void
 XSStridePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                                        PrefetchSourceType pf_source, bool miss_repeat, bool enter_new_region,
                                        bool is_first_shot, Addr &pf_addr, int64_t &learned_bop_offset)
 {
+    recordReplayInputTrace(pfi, late, pf_source, miss_repeat, enter_new_region,
+                           is_first_shot);
     if (is_first_shot ||!useRedundantTable) {
         DPRINTF(XSStridePrefetcher, "Do stride lookup for first shot acc ...\n");
         strideLookup(strideUnique, pfi, addresses, late, pf_addr, pf_source, enter_new_region, miss_repeat,
@@ -293,6 +564,11 @@ void
 XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
                                       int prio, PrefetchSourceType src, int ahead_level)
 {
+    const bool pfahead = ahead_level > 1;
+    const int pfahead_host = pfahead ? ahead_level : 0;
+    recordReplayCandidateTrace(pfi.getAddr(), pfi.getPC(), addr, prio, pfahead,
+                               pfahead_host, ahead_level);
+
     // Count generated prefetch
     prefetchStats.pfGenerated++;
     pfi.setTriggerInfo_PFsrc(src);

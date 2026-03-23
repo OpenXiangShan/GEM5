@@ -4,6 +4,7 @@
 #ifndef __MEM_CACHE_PREFETCH_SMSSTRIDE_HH__
 #define __MEM_CACHE_PREFETCH_SMSSTRIDE_HH__
 
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -18,6 +19,9 @@
 #include "mem/packet.hh"
 #include "params/XSStridePrefetcher.hh"
 #include "mem/cache/prefetch/prefetch_filter.hh"
+
+struct sqlite3;
+
 namespace gem5
 {
 
@@ -37,14 +41,23 @@ class XSStridePrefetcher : public Queued
   const unsigned shortStrideThres;
   const bool strideDynDepth{false};
   const bool enableNonStrideFilter;
+  const bool enableTraceDb;
+  const unsigned traceHartId;
   protected:
     const unsigned int regionSize;
     const unsigned int regionBlks;
+    std::string traceDbFile;
+    sqlite3 *traceDb = nullptr;
+    bool ownTraceDb = false;
+    std::string replayConfigTableName;
+    std::string replayInputTableName;
+    std::string replayCandidateTableName;
+    uint64_t lastReplayInputId = 0;
 
 
-    Addr regionAddress(Addr a) { return a / regionSize; };
+    Addr regionAddress(Addr a) const { return a / regionSize; };
 
-    Addr regionOffset(Addr a) { return (a / blkSize) % regionBlks; }
+    Addr regionOffset(Addr a) const { return (a / blkSize) % regionBlks; }
 
   class StrideEntry : public TaggedEntry
     {
@@ -108,11 +121,22 @@ class XSStridePrefetcher : public Queued
     void sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                               PrefetchSourceType src, int ahead_level = -1);
     Addr strideHashPc(Addr pc);
+    void initReplayTraceDb(const XSStridePrefetcherParams &p);
+    void saveReplayTraceDb() const;
+    void execReplayTraceSql(const std::string &sql) const;
+    void recordReplayConfigTrace(const XSStridePrefetcherParams &p);
+    void recordReplayInputTrace(const PrefetchInfo &pfi, bool late,
+                                PrefetchSourceType pf_source, bool miss_repeat,
+                                bool enter_new_region, bool is_first_shot);
+    void recordReplayCandidateTrace(Addr trigger_addr, Addr trigger_pc,
+                                    Addr pf_addr, int priority, bool pfahead,
+                                    int pfahead_host, int ahead_level);
 
   public:
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
     boost::compute::detail::lru_cache<Addr, Addr> *filterL2;
     XSStridePrefetcher(const XSStridePrefetcherParams &p);
+    ~XSStridePrefetcher();
 
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addressed) override
     {

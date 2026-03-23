@@ -205,12 +205,25 @@ class XSStridePrefetcher(QueuedPrefetcher):
     on_data = True
     on_inst = False
     region_size = Param.Int(1024, "region size")
+    enable_trace_db = Param.Bool(
+        True,
+        "Enable sqlite trace DB (SStride* tables) for offline replay; "
+        "when ArchDB is enabled the tables are saved into --arch-db-file",
+    )
+    trace_db_file = Param.String(
+        "sstride_trace.db",
+        "SQLite DB file used when enable_trace_db is set and ArchDB is disabled",
+    )
+    trace_hart_id = Param.Unsigned(
+        0,
+        "Hart ID suffix for SStride table names (e.g., SStrideInputTrace_h0)",
+    )
 
     use_xs_depth = Param.Bool(True,"use xs rtl stride depth")
     fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
     stride_dyn_depth = Param.Bool(False, "Dynamic depth of stride table")
-    stride_entries = Param.MemorySize("10", "Stride Entries")
+    stride_entries = Param.MemorySize("16", "Stride Entries")
     stride_unique_indexing_policy = Param.BaseIndexingPolicy(
         SetAssociative(
             entry_size=1,
