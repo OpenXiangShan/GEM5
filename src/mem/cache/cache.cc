@@ -377,33 +377,51 @@ Cache::handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk, Tick forward_time,
         assert(pkt->req->hasPaddr());
         assert(!pkt->req->isUncacheable());
 
-        // There's no reason to add a prefetch as an additional target
-        // to an existing MSHR. If an outstanding request is already
-        // in progress, there is nothing for the prefetch to do.
-        // If this is the case, we don't even create a request at all.
-        PacketPtr pf = nullptr;
+        const bool fdip_pkt = isL1I() && isFdipPkt(pkt);
+        if (!(fdip_pkt && !mshr)) {
+            if (mshr && fdip_pkt && mshr->hasFromDemand() &&
+                mshr->markFdipLateSeen()) {
+                stats.fdipLate++;
+            }
 
-        if (!mshr) {
-            // copy the request and create a new SoftPFReq packet
-            RequestPtr req = std::make_shared<Request>(pkt->req->getPaddr(),
-                                                    pkt->req->getSize(),
-                                                    pkt->req->getFlags(),
-                                                    pkt->req->requestorId());
-            pf = new Packet(req, pkt->cmd);
-            pf->allocate();
-            assert(pf->matchAddr(pkt));
-            assert(pf->getSize() == pkt->getSize());
+            // There's no reason to add a prefetch as an additional target
+            // to an existing MSHR. If an outstanding request is already
+            // in progress, there is nothing for the prefetch to do.
+            // If this is the case, we don't even create a request at all.
+            PacketPtr pf = nullptr;
+
+            if (!mshr) {
+                // copy the request and create a new SoftPFReq packet
+                RequestPtr req = std::make_shared<Request>(*pkt->req);
+                req->setPFSource(pkt->req->getPFSource());
+                req->setPFDepth(pkt->req->getPFDepth());
+                if (pkt->req->hasXsMetadata()) {
+                    req->setXsMetadata(pkt->req->getXsMetadata());
+                }
+                pf = new Packet(req, pkt->cmd);
+                pf->allocate();
+                assert(pf->matchAddr(pkt));
+                assert(pf->getSize() == pkt->getSize());
+            }
+
+            pkt->makeTimingResponse();
+
+            // request_time is used here, taking into account lat and the delay
+            // charged if the packet comes from the xbar.
+            cpuSidePort.schedTimingResp(pkt, request_time);
+
+            // If an outstanding request is in progress (we found an
+            // MSHR) this is set to null
+            pkt = pf;
+            if (!pkt) {
+                return;
+            }
+        } else {
+            DPRINTF(Cache,
+                    "%s: keep FDIP prefetch miss on original request "
+                    "for real completion addr=%#llx\n",
+                    __func__, pkt->getAddr());
         }
-
-        pkt->makeTimingResponse();
-
-        // request_time is used here, taking into account lat and the delay
-        // charged if the packet comes from the xbar.
-        cpuSidePort.schedTimingResp(pkt, request_time);
-
-        // If an outstanding request is in progress (we found an
-        // MSHR) this is set to null
-        pkt = pf;
     }
 
     WriteQueueEntry *wb_entry = writeBuffer.findMatch(pkt->getAddr(),
@@ -984,7 +1002,9 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
         }
     }
 
-    if (blk && !from_core && from_pref) {
+    const bool fdip_prefetched = blk && isL1I() &&
+        isFdipSource(pkt->req->getPFSource()) && !mshr->hasFromDemand();
+    if (blk && ((!from_core && from_pref) || fdip_prefetched)) {
         blk->setPrefetched();
         blk->setXsMetadata(pkt->req->getXsMetadata());
         DPRINTF(Cache, "Marking block as prefetched from prefetcher %i\n", blk->getXsMetadata().prefetchSource);

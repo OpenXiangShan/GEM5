@@ -380,6 +380,9 @@ class CPU : public BaseCPU
         return fetch.isTraceEOF();
     }
 
+    bool shouldDropFdipRefill(ContextID contextId,
+                              const Request::XsMetadata &xsMeta) const;
+
     /**
      * Wrapper for internal drain check used by trace-mode helpers.
      * Keeps isCpuDrained() private while still allowing components

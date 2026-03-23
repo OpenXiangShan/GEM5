@@ -57,7 +57,9 @@
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/lsq.hh"
+#include "cpu/thread_context.hh"
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -508,7 +510,15 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
 
                 assert(pkt->req->requestorId() < system->maxRequestors());
                 stats.cmdStats(pkt).mshrHits[pkt->req->requestorId()]++;
-                if (!mshr->hasFromCPU() && mshr->hasFromPref() &&  // and from cpu
+                if (isL1I() && pkt->isDemand() && mshr->hasFromFDIP() &&
+                    !mshr->hasFromDemand()) {
+                    pkt->missOnLatePf = true;
+                    pkt->pfSource = mshr->getPFSource();
+                    pkt->pfDepth = mshr->getPFDepth();
+                    if (mshr->markFdipLateSeen()) {
+                        stats.fdipLate++;
+                    }
+                } else if (!mshr->hasFromCPU() && mshr->hasFromPref() &&  // and from cpu
                     (pkt->cmd != MemCmd::HardPFReq)) {
                     pkt->missOnLatePf = true;
                     pkt->pfSource = mshr->getPFSource();
@@ -748,13 +758,16 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         ppHit->notify(pkt);
 
         bool first_acc_after_pf = false;
-        if (prefetcher && blk && blk->wasPrefetched()) {
+        if (blk && blk->wasPrefetched()) {
             DPRINTF(Cache, "Hit on prefetch for addr %#x (%s), source: %i\n", pkt->getAddr(),
                     pkt->isSecure() ? "s" : "ns", blk->getXsMetadata().prefetchSource);
             // pass the pf source from block to req, it may be used by either load inst or L(n-1) cache
             pkt->req->setPFSource(blk->getXsMetadata().prefetchSource);
             DPRINTF(Cache, "Mark req %p pf source: %i\n", pkt->req, pkt->req->getPFSource());
             pkt->req->setPFDepth(0);
+            if (isL1I() && pkt->isDemand() && isFdipBlk(blk)) {
+                stats.fdipUsefulHits++;
+            }
             blk->clearPrefetched();
             first_acc_after_pf = true;
         }
@@ -919,8 +932,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
                 pkt->getAddr());
 
+        const bool drop_fdip_refill = shouldDropFdipRefill(mshr, pkt);
         const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
-            writeAllocator->allocate() : mshr->allocOnFill();
+            writeAllocator->allocate() :
+            (drop_fdip_refill ? false : mshr->allocOnFill());
         // Optionally indicate that the Dcache received a refill request
         // to drive LSQ-side modelling.
         if (simulateDcacheRefill && cacheLevel == 1 && pkt->getLSQPtr()) {
@@ -930,9 +945,22 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             pkt->getLSQPtr()->notifyDcacheRefill(refill_addr);
             stats.DcacheRefillTimes++;
         }
-        blk = handleFill(pkt, blk, writebacks, allocate);
-        assert(blk != nullptr);
-        ppFill->notify(pkt);
+        if (drop_fdip_refill) {
+            stats.fdipEpochMismatch++;
+            stats.fdipDroppedRefill++;
+            blk = nullptr;
+            DPRINTF(Cache,
+                    "%s: drop old-path FDIP refill install addr=%#llx "
+                    "epoch=%llu ftqId=%llu startPC=%#llx\n",
+                    __func__, pkt->getAddr(),
+                    pkt->req->getXsMetadata().fdipEpoch,
+                    pkt->req->getXsMetadata().fdipFtqId,
+                    pkt->req->getXsMetadata().fdipStartPC);
+        } else {
+            blk = handleFill(pkt, blk, writebacks, allocate);
+            assert(blk != nullptr);
+            ppFill->notify(pkt);
+        }
     }
 
     // Don't want to promote the Locked RMW Read until
@@ -2038,6 +2066,32 @@ BaseCache::exclusiveCacheInvalidate(bool from_cache, CacheBlk *blk)
      !blk->isSet(CacheBlk::DirtyBit) && clusivity == enums::mostly_excl;
 }
 
+bool
+BaseCache::shouldDropFdipRefill(MSHR *mshr, const PacketPtr pkt) const
+{
+    if (!isL1I() || !mshr || !pkt || !pkt->req || mshr->hasFromDemand() ||
+        !isFdipPkt(pkt) || !pkt->req->hasXsMetadata()) {
+        return false;
+    }
+
+    const ContextID context_id = pkt->req->contextId();
+    if (context_id < 0 || context_id >= system->threads.size()) {
+        return false;
+    }
+
+    ThreadContext *thread_context = system->threads[context_id];
+    if (!thread_context) {
+        return false;
+    }
+
+    auto *cpu = dynamic_cast<o3::CPU *>(thread_context->getCpuPtr());
+    if (!cpu) {
+        return false;
+    }
+
+    return cpu->shouldDropFdipRefill(context_id, pkt->req->getXsMetadata());
+}
+
 void
 BaseCache::maintainClusivity(bool from_cache, CacheBlk *blk)
 {
@@ -2160,6 +2214,9 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
     Request::XsMetadata blk_meta = blk->getXsMetadata();
     blk_meta.prefetchSource = pkt->req->getPFSource();
     blk->setXsMetadata(blk_meta);
+    if (isL1I() && isFdipSource(pkt->req->getPFSource())) {
+        stats.fdipInstalled++;
+    }
     DPRINTF(Cache, "%s: Mark blk as prefetched by source %i, form req %p\n", __func__,
             pkt->req->getPFSource(), pkt->req);
 
@@ -2235,7 +2292,13 @@ BaseCache::invalidateBlock(CacheBlk *blk)
     }
     // If block is still marked as prefetched, then it hasn't been used
     if (blk->wasPrefetched()) {
-        prefetcher->prefetchUnused(regenerateBlkAddr(blk), blk->getXsMetadata().prefetchSource);
+        if (isL1I() && isFdipBlk(blk)) {
+            stats.fdipUnused++;
+        }
+        if (prefetcher) {
+            prefetcher->prefetchUnused(regenerateBlkAddr(blk),
+                                       blk->getXsMetadata().prefetchSource);
+        }
     }
 
     // Notify that the data contents for this address are no longer present
@@ -2905,6 +2968,18 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of data expansions"),
     ADD_STAT(dataContractions, statistics::units::Count::get(),
              "number of data contractions"),
+    ADD_STAT(fdipInstalled, statistics::units::Count::get(),
+             "number of L1I fills installed by FDIP-triggered misses"),
+    ADD_STAT(fdipUsefulHits, statistics::units::Count::get(),
+             "number of L1I demand hits on FDIP-prefetched lines"),
+    ADD_STAT(fdipLate, statistics::units::Count::get(),
+             "number of late FDIP observations in L1I"),
+    ADD_STAT(fdipUnused, statistics::units::Count::get(),
+             "number of unused FDIP-prefetched L1I evictions"),
+    ADD_STAT(fdipEpochMismatch, statistics::units::Count::get(),
+             "number of old-path FDIP refill epoch mismatches seen at this cache"),
+    ADD_STAT(fdipDroppedRefill, statistics::units::Count::get(),
+             "number of old-path FDIP refills dropped from installation"),
     cmd(MemCmd::NUM_MEM_CMDS)
 {
     for (int idx = 0; idx < MemCmd::NUM_MEM_CMDS; ++idx)

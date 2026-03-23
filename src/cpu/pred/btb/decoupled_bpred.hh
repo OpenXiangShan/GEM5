@@ -6,6 +6,7 @@
 #include <deque>
 #include <queue>
 #include <stack>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -99,6 +100,13 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool someDBenabled{false};
     bool enableBranchTrace{false};
     bool enablePredFSQTrace{false};
+    const bool enableFDIP;
+    const unsigned fdipLookaheadEntriesCfg;
+    const unsigned fdipIssueBandwidthCfg;
+    const unsigned fdipMaxOutstandingCfg;
+    const bool fdipFlushPartialOnEpochChangeCfg;
+    const bool fdipDropRefillOnEpochMismatchCfg;
+    const std::string prefetchLinesPerFtqCfg;
 
     bool checkGivenSwitch(std::vector<std::string> switches, std::string switchName) {
         for (auto &sw : switches) {
@@ -400,19 +408,52 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void commit(unsigned fsqID, ThreadID tid);
 
+    bool fdipEnabled() const
+    {
+        return enableFDIP && fdipLookaheadEntriesCfg > 0;
+    }
+    unsigned fdipLookaheadEntries() const { return fdipLookaheadEntriesCfg; }
+    unsigned fdipIssueBandwidth() const { return fdipIssueBandwidthCfg; }
+    unsigned fdipMaxOutstanding() const { return fdipMaxOutstandingCfg; }
+    bool fdipFlushPartialOnEpochChange() const
+    {
+        return fdipFlushPartialOnEpochChangeCfg;
+    }
+    bool fdipDropRefillOnEpochMismatch() const
+    {
+        return fdipDropRefillOnEpochMismatchCfg;
+    }
+    bool fdipCoverActualFetchRange() const
+    {
+        return prefetchLinesPerFtqCfg == "cover_actual_fetch_range";
+    }
+
     // Fetch-facing interface: consume FSQ head directly (RTL-like single queue).
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
-    const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    const FetchTarget &ftqFetchingTarget(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
     bool ftqHasFollowing(ThreadID tid) const
     {
         return ftq.hasTarget(ftq.fetchId(tid) + 1, tid);
     }
-    const FetchTarget &ftqFollowingTarget(ThreadID tid)
+    const FetchTarget &ftqFollowingTarget(ThreadID tid) const
     {
         assert(ftqHasFollowing(tid));
         return ftq.get(ftq.fetchId(tid) + 1, tid);
     }
+    bool ftqPeek(ThreadID tid, int offset, const FetchTarget *&out) const;
+    bool ftqHasPrefetch(ThreadID tid) const { return ftq.hasPrefetch(tid); }
+    FetchTargetId ftqPrefetchHeadId(ThreadID tid) const
+    {
+        assert(ftqHasPrefetch(tid));
+        return ftq.prefetchId(tid);
+    }
+    const FetchTarget &ftqPrefetchTarget(ThreadID tid) const
+    {
+        assert(ftqHasPrefetch(tid));
+        return ftq.prefetching(tid);
+    }
+    void consumePrefetchTarget(ThreadID tid) { ftq.finishPrefetchTarget(tid); }
 
     void dumpFsq(const char *when);
 

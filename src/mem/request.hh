@@ -85,6 +85,7 @@ enum PrefetchSourceType
     CDP,
     SOpt,
     DespacitoStream,
+    PF_FDIP,
     NUM_PF_SOURCES
 };
 
@@ -383,35 +384,56 @@ class Request
         o3::XsDynInstMetaPtr instXsMetadata;
         PrefetchSourceType prefetchSource;
         int prefetchDepth;
+        uint64_t fdipEpoch;
+        uint64_t fdipFtqId;
+        Addr fdipStartPC;
 
         XsMetadata() :
             validXsMetadata(false),
             instXsMetadata(nullptr),
             prefetchSource(PF_NONE),
-            prefetchDepth(0) {}
+            prefetchDepth(0),
+            fdipEpoch(0),
+            fdipFtqId(0),
+            fdipStartPC(0) {}
 
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
             validXsMetadata(true),
             instXsMetadata(instMeta),
-            prefetchSource(PF_NONE) ,
-            prefetchDepth(0) {}
+            prefetchSource(PF_NONE),
+            prefetchDepth(0),
+            fdipEpoch(0),
+            fdipFtqId(0),
+            fdipStartPC(0) {}
 
         XsMetadata(PrefetchSourceType pfSource) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
-            prefetchSource(pfSource) ,
-            prefetchDepth(0) {}
+            prefetchSource(pfSource),
+            prefetchDepth(0),
+            fdipEpoch(0),
+            fdipFtqId(0),
+            fdipStartPC(0) {}
 
         XsMetadata(PrefetchSourceType pfSource,int pfDepth) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
-            prefetchSource(pfSource) ,
-            prefetchDepth(pfDepth) {}
+            prefetchSource(pfSource),
+            prefetchDepth(pfDepth),
+            fdipEpoch(0),
+            fdipFtqId(0),
+            fdipStartPC(0) {}
+
+        bool isFdip() const { return prefetchSource == PF_FDIP; }
 
         void invalidate() {
             validXsMetadata = false;
             instXsMetadata = nullptr;
             prefetchSource = PF_NONE;
+            prefetchDepth = 0;
+            fdipEpoch = 0;
+            fdipFtqId = 0;
+            fdipStartPC = 0;
         }
     } XsMetadata;
 

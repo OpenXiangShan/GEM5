@@ -41,10 +41,12 @@
 #ifndef __CPU_O3_FETCH_HH__
 #define __CPU_O3_FETCH_HH__
 
+#include <array>
 #include <cstring>
 #include <deque>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
@@ -132,6 +134,26 @@ class Fetch
         }
     };
 
+    class FdipTranslation : public BaseMMU::Translation
+    {
+      protected:
+        Fetch *fetch;
+
+      public:
+        FdipTranslation(Fetch *_fetch) : fetch(_fetch) {}
+
+        void markDelayed() {}
+
+        void
+        finish(const Fault &fault, const RequestPtr &req,
+            gem5::ThreadContext *tc, BaseMMU::Mode mode)
+        {
+            assert(mode == BaseMMU::Execute);
+            fetch->finishFdipTranslation(fault, req);
+            delete this;
+        }
+    };
+
   private:
     /* Event to delay delivery of a fetch translation result in case of
      * a fault and the nop to carry the fault cannot be generated
@@ -213,6 +235,72 @@ class Fetch
         NumCacheRequestStatus
     };
 
+    enum FdipLineStatus
+    {
+        FdipIdle,
+        FdipTlbWait,
+        FdipReady,
+        FdipInflight,
+        FdipDone,
+        FdipFilteredFault,
+        FdipFilteredUncacheable
+    };
+
+    struct FdipLineState
+    {
+        Addr lineAddr = 0;
+        RequestPtr req;
+        FdipLineStatus status = FdipIdle;
+
+        void reset()
+        {
+            lineAddr = 0;
+            req.reset();
+            status = FdipIdle;
+        }
+
+        bool isTerminal() const
+        {
+            return status == FdipDone ||
+                   status == FdipFilteredFault ||
+                   status == FdipFilteredUncacheable;
+        }
+    };
+
+    struct FdipThreadState
+    {
+        bool valid = false;
+        branch_prediction::btb_pred::FetchTargetId ftqId = 0;
+        Addr startPC = 0;
+        uint64_t epoch = 0;
+        unsigned lineCount = 0;
+        std::array<FdipLineState, 2> lines;
+
+        void reset()
+        {
+            valid = false;
+            ftqId = 0;
+            startPC = 0;
+            epoch = 0;
+            lineCount = 0;
+            for (auto &line : lines) {
+                line.reset();
+            }
+        }
+    };
+
+    struct FdipPendingRequest
+    {
+        ThreadID tid = 0;
+        branch_prediction::btb_pred::FetchTargetId ftqId = 0;
+        Addr startPC = 0;
+        Addr lineAddr = 0;
+        uint64_t epoch = 0;
+        unsigned lineIndex = 0;
+        bool outstanding = false;
+        RequestPtr req;
+    };
+
   private:
     friend class TraceFetch;
 
@@ -270,6 +358,7 @@ class Fetch
 
     /** Processes cache completion event. */
     void processCacheCompletion(PacketPtr pkt);
+    void processFdipCompletion(PacketPtr pkt);
 
     /** Resume after a drain. */
     void drainResume();
@@ -382,6 +471,7 @@ class Fetch
     void sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state);
 
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
+    void finishFdipTranslation(const Fault &fault, const RequestPtr &mem_req);
 
     /** Validate if a translation request is expected and should be processed.
      * @param tid Thread ID
@@ -421,6 +511,17 @@ class Fetch
      * @return true if all packets have arrived and data is merged, false if still waiting
      */
     bool processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt);
+    void runFdip();
+    void runFdip(ThreadID tid);
+    void resetFdipState(ThreadID tid);
+    bool initFdipTargetState(ThreadID tid);
+    unsigned computeFdipLineAddrs(
+        const branch_prediction::btb_pred::FetchTarget &target,
+        std::array<Addr, 2> &lineAddrs) const;
+    void startFdipTranslation(ThreadID tid, unsigned lineIndex);
+    bool issueFdipReadyLine(ThreadID tid, unsigned lineIndex,
+                            unsigned &remainingBudget);
+    bool finishFdipTargetIfReady(ThreadID tid);
 
 
     /** Check if an interrupt is pending and that we need to handle
@@ -501,6 +602,8 @@ class Fetch
     uint64_t findTraceIndexForSeqNum(InstSeqNum seqNum) const;
     bool lookupTraceIndexForSeqNum(InstSeqNum seqNum, uint64_t &index) const;
     Addr getTracePCByIndex(uint64_t index);
+    bool shouldDropFdipRefill(ContextID contextId,
+                              const Request::XsMetadata &xsMeta) const;
 
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
@@ -976,6 +1079,12 @@ class Fetch
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;
 
+    /** Fetch-directed ICache prefetch bookkeeping. */
+    FdipThreadState fdipState[MaxThreads];
+    uint64_t fdipEpoch[MaxThreads]{};
+    std::vector<FdipPendingRequest> fdipPendingReqs;
+    unsigned fdipOutstandingLines = 0;
+
     /**
      * Check if the thread can fetch instructions
      * @param tid Thread ID
@@ -1122,6 +1231,18 @@ class Fetch
         statistics::Scalar traceMetaCleanupSquashEntries;
         /** Number of times cleanup was called on successful commit. */
         statistics::Scalar traceMetaCleanupCommitCalls;
+        /** Number of FDIP cacheline prefetches successfully sent. */
+        statistics::Scalar fdipIssuedLines;
+        /** Number of FDIP issue attempts dropped due to best-effort limits. */
+        statistics::Scalar fdipDropped;
+        /** Number of FDIP lines filtered due to translation faults. */
+        statistics::Scalar fdipFilteredFault;
+        /** Number of FDIP lines filtered due to uncacheable/strict regions. */
+        statistics::Scalar fdipFilteredUncacheable;
+        /** Peak number of outstanding FDIP cacheline requests. */
+        statistics::Scalar fdipOutstandingMax;
+        /** Number of stale FDIP translation/response events ignored by epoch. */
+        statistics::Scalar fdipEpochMismatch;
     } fetchStats;
 
     SquashVersion localSquashVer;

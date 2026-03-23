@@ -1344,6 +1344,24 @@ class BaseCache : public ClockedObject, public CacheAccessor
          */
         statistics::Scalar dataContractions;
 
+        /** Number of L1I fills installed by FDIP-triggered misses. */
+        statistics::Scalar fdipInstalled;
+
+        /** Number of L1I demand hits on FDIP-prefetched lines. */
+        statistics::Scalar fdipUsefulHits;
+
+        /** Number of L1I late FDIP observations. */
+        statistics::Scalar fdipLate;
+
+        /** Number of unused L1I FDIP-prefetched evictions. */
+        statistics::Scalar fdipUnused;
+
+        /** Number of FDIP old-path epoch mismatches observed at refill. */
+        statistics::Scalar fdipEpochMismatch;
+
+        /** Number of FDIP old-path refills dropped from installation. */
+        statistics::Scalar fdipDroppedRefill;
+
         /** Per-command statistics */
         std::vector<std::unique_ptr<CacheCmdStats>> cmd;
     } stats;
@@ -1532,6 +1550,33 @@ class BaseCache : public ClockedObject, public CacheAccessor
             }
         }
     }
+
+    bool isL1I() const
+    {
+        return cacheLevel == 1 && isReadOnly;
+    }
+
+    bool isFdipSource(PrefetchSourceType pf_source) const
+    {
+        return pf_source == PF_FDIP;
+    }
+
+    bool isFdipReq(const RequestPtr &req) const
+    {
+        return req && req->hasXsMetadata() && req->getXsMetadata().isFdip();
+    }
+
+    bool isFdipPkt(const PacketPtr pkt) const
+    {
+        return pkt && isFdipReq(pkt->req);
+    }
+
+    bool isFdipBlk(const CacheBlk *blk) const
+    {
+        return blk && blk->getXsMetadata().isFdip();
+    }
+
+    bool shouldDropFdipRefill(MSHR *mshr, const PacketPtr pkt) const;
 
     Tick nextPrefetchReadyTime() const
     {

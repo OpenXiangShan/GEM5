@@ -715,3 +715,56 @@ def addXiangshanTraceOptions(parser):
                 action.required = False
                 action.default = "trace_mode_dummy"
                 break
+
+
+def addXiangshanFDIPOptions(parser):
+    parser.add_argument(
+        "--enable-fdip",
+        action="store_true",
+        default=False,
+        help="Enable FTQ-directed ICache prefetch in DecoupledBPUWithBTB",
+    )
+    parser.add_argument(
+        "--fdip-lookahead-entries",
+        type=int,
+        default=1,
+        help="Maximum prefetchPtr-fetchPtr distance in FTQ entries (default: 1)",
+    )
+    parser.add_argument(
+        "--fdip-issue-bandwidth",
+        type=int,
+        default=1,
+        help="Maximum FDIP issue bandwidth in cachelines per cycle (default: 1)",
+    )
+    parser.add_argument(
+        "--fdip-max-outstanding",
+        type=int,
+        default=8,
+        help="Maximum FDIP outstanding cacheline requests (default: 8)",
+    )
+    parser.add_argument(
+        "--prefetch-lines-per-ftq",
+        type=str,
+        default="cover_actual_fetch_range",
+        choices=["start_line_only", "cover_actual_fetch_range"],
+        help="FDIP cacheline coverage policy for each FTQ entry",
+    )
+    parser.add_argument(
+        "--fdip-flush-partial-on-epoch-change",
+        dest="fdip_flush_partial_on_epoch_change",
+        action="store_true",
+        default=True,
+        help="Flush FDIP partial per-entry state on redirect/epoch change (default: on)",
+    )
+    parser.add_argument(
+        "--no-fdip-flush-partial-on-epoch-change",
+        dest="fdip_flush_partial_on_epoch_change",
+        action="store_false",
+        help="Keep FDIP partial per-entry state across redirect/epoch change",
+    )
+    parser.add_argument(
+        "--fdip-drop-refill-on-epoch-mismatch",
+        action="store_true",
+        default=False,
+        help="Drop old-path FDIP refill installation on epoch mismatch",
+    )

@@ -35,6 +35,15 @@ void
 FetchTargetQueue::finishTarget(ThreadID tid)
 {
     queue[tid].fetchptr++;
+    if (queue[tid].prefetchptr < queue[tid].fetchptr) {
+        queue[tid].prefetchptr = queue[tid].fetchptr;
+    }
+}
+
+void
+FetchTargetQueue::finishPrefetchTarget(ThreadID tid)
+{
+    queue[tid].prefetchptr++;
 }
 
 void
@@ -51,6 +60,7 @@ FetchTargetQueue::squashAfter(FetchTargetId squashId, ThreadID tid)
         queue[tid].cap.pop_back();
     }
     queue[tid].fetchptr = squashId + 1;
+    queue[tid].prefetchptr = queue[tid].fetchptr;
 }
 
 

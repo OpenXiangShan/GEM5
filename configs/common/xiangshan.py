@@ -476,6 +476,19 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
             bpDBSwitches=bp_db_switches,
         )
         test_sys.cpu[i].branchPred.isDumpMisspredPC = True
+        test_sys.cpu[i].branchPred.enable_fdip = bool(args.enable_fdip)
+        test_sys.cpu[i].branchPred.fdip_lookahead_entries = int(
+            args.fdip_lookahead_entries)
+        test_sys.cpu[i].branchPred.fdip_issue_bandwidth = int(
+            args.fdip_issue_bandwidth)
+        test_sys.cpu[i].branchPred.fdip_max_outstanding = int(
+            args.fdip_max_outstanding)
+        test_sys.cpu[i].branchPred.prefetch_lines_per_ftq = (
+            args.prefetch_lines_per_ftq)
+        test_sys.cpu[i].branchPred.fdip_flush_partial_on_epoch_change = bool(
+            args.fdip_flush_partial_on_epoch_change)
+        test_sys.cpu[i].branchPred.fdip_drop_refill_on_epoch_mismatch = bool(
+            args.fdip_drop_refill_on_epoch_mismatch)
 
     # configure memory related
     if args.mem_type == 'DRAMsim3':
@@ -847,6 +860,7 @@ def xiangshan_system_init():
     Options.addCommonOptions(parser, configure_xiangshan=True)
     Options.addXiangshanFSOptions(parser)
     Options.addXiangshanTraceOptions(parser)
+    Options.addXiangshanFDIPOptions(parser)
     parser.add_argument(
         "--btb-tage-upper-bound",
         action="store_true",

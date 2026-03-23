@@ -184,6 +184,10 @@ class MSHR : public QueueEntry, public Printable
 
         bool hasFromCPU;
 
+        bool hasFromDemand;
+
+        bool hasFromFDIP;
+
         PrefetchSourceType pfSource;
 
         int pfDepth = 0;
@@ -225,6 +229,8 @@ class MSHR : public QueueEntry, public Printable
             hasFromCache = false;
             hasFromPref = false;
             hasFromCPU = false;
+            hasFromDemand = false;
+            hasFromFDIP = false;
 
             pfSource = PF_NONE;
             pfDepth = 0;
@@ -371,6 +377,14 @@ class MSHR : public QueueEntry, public Printable
         return targets.hasFromCPU;
     }
 
+    bool hasFromDemand() const {
+        return targets.hasFromDemand;
+    }
+
+    bool hasFromFDIP() const {
+        return targets.hasFromFDIP;
+    }
+
     PrefetchSourceType getPFSource() const {
         return targets.pfSource;
     }
@@ -378,6 +392,15 @@ class MSHR : public QueueEntry, public Printable
 
     int getPFDepth() const {
         return targets.pfDepth;
+    }
+
+    bool markFdipLateSeen()
+    {
+        if (fdipLateSeen) {
+            return false;
+        }
+        fdipLateSeen = true;
+        return true;
     }
 
     /**
@@ -424,6 +447,8 @@ class MSHR : public QueueEntry, public Printable
     TargetList targets;
 
     TargetList deferredTargets;
+
+    bool fdipLateSeen = false;
 
   public:
     /**

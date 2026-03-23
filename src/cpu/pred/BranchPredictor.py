@@ -1206,3 +1206,17 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
+    enable_fdip = Param.Bool(False, "Enable FTQ-directed ICache prefetch")
+    fdip_lookahead_entries = Param.Unsigned(
+        0, "Maximum allowed prefetchPtr-fetchPtr distance in FTQ entries")
+    fdip_issue_bandwidth = Param.Unsigned(
+        1, "Maximum FDIP issue bandwidth in cachelines per cycle")
+    fdip_max_outstanding = Param.Unsigned(
+        8, "Maximum FDIP outstanding cacheline requests")
+    prefetch_lines_per_ftq = Param.String(
+        "cover_actual_fetch_range",
+        "FDIP cacheline coverage policy: start_line_only or cover_actual_fetch_range")
+    fdip_flush_partial_on_epoch_change = Param.Bool(
+        True, "Flush FDIP partial per-entry state on redirect/epoch change")
+    fdip_drop_refill_on_epoch_mismatch = Param.Bool(
+        False, "Drop old-path FDIP refill installation on epoch mismatch")

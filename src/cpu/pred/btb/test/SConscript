@@ -45,6 +45,11 @@ GTest('fetch_coverage.test',
     'fetch_coverage.test.cc',
 )
 
+GTest('fetch_target_queue.test',
+    'fetch_target_queue.test.cc',
+    '../ftq.cc',
+)
+
 # add --unit-test to enable unit test mode for RAS
 # TODO: Fix RAS test
 # GTest('ras.test',

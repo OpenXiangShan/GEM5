@@ -75,6 +75,7 @@ MSHR::TargetList::TargetList(const std::string &name)
         needsWritable(false), hasUpgrade(false),
         allocOnFill(false), hasFromCache(false),
         hasFromPref(false), hasFromCPU(false),
+        hasFromDemand(false), hasFromFDIP(false),
         pfSource(PF_NONE), pfDepth(0),
         blkAddr(0), blkSize(0),
         canMergeWrites(true), writesBitmap(0)
@@ -85,6 +86,9 @@ void
 MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
                               bool alloc_on_fill)
 {
+    const bool is_fdip = pkt->req->hasXsMetadata() &&
+                         pkt->req->getXsMetadata().isFdip();
+
     if (source != Target::FromSnoop) {
         if (pkt->needsWritable()) {
             needsWritable = true;
@@ -111,12 +115,19 @@ MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
             DPRINTF(Cache, "MSHR: set source as prefetcher %i\n", pfSource);
         }
 
+        if (is_fdip && !hasFromFDIP) {
+            pfSource = pkt->req->getXsMetadata().prefetchSource;
+            pfDepth = pkt->req->getXsMetadata().prefetchDepth;
+        }
+
         if (source == Target::FromPrefetcher) {
             hasFromPref = true;
         }
 
         if (source == Target::FromCPU) {
             hasFromCPU = true;
+            hasFromDemand = hasFromDemand || !pkt->cmd.isSWPrefetch();
+            hasFromFDIP = hasFromFDIP || is_fdip;
         }
     }
 }
@@ -338,6 +349,7 @@ MSHR::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
     _isUncacheable = target->req->isUncacheable();
     inService = false;
     downstreamPending = false;
+    fdipLateSeen = false;
 
     targets.init(blkAddr, blkSize);
     deferredTargets.init(blkAddr, blkSize);
@@ -392,6 +404,7 @@ MSHR::deallocate()
     targets.resetFlags();
     assert(deferredTargets.isReset());
     inService = false;
+    fdipLateSeen = false;
 }
 
 /*

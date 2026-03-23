@@ -277,7 +277,19 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(traceMetaCleanupSquashEntries, statistics::units::Count::get(),
              "Total entries erased by squash/rollback cleanups"),
     ADD_STAT(traceMetaCleanupCommitCalls, statistics::units::Count::get(),
-             "Number of times cleanup was called on successful commit")
+             "Number of times cleanup was called on successful commit"),
+    ADD_STAT(fdipIssuedLines, statistics::units::Count::get(),
+             "Number of FDIP cacheline prefetches successfully sent"),
+    ADD_STAT(fdipDropped, statistics::units::Count::get(),
+             "Number of FDIP best-effort issue attempts that were dropped"),
+    ADD_STAT(fdipFilteredFault, statistics::units::Count::get(),
+             "Number of FDIP cachelines filtered by translation faults"),
+    ADD_STAT(fdipFilteredUncacheable, statistics::units::Count::get(),
+             "Number of FDIP cachelines filtered by uncacheable regions"),
+    ADD_STAT(fdipOutstandingMax, statistics::units::Count::get(),
+             "Peak number of outstanding FDIP cacheline requests"),
+    ADD_STAT(fdipEpochMismatch, statistics::units::Count::get(),
+             "Number of stale FDIP translation/response events ignored")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -359,6 +371,18 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(traceMetaCleanupSquashEntries);
         traceMetaCleanupCommitCalls
             .prereq(traceMetaCleanupCommitCalls);
+        fdipIssuedLines
+            .prereq(fdipIssuedLines);
+        fdipDropped
+            .prereq(fdipDropped);
+        fdipFilteredFault
+            .prereq(fdipFilteredFault);
+        fdipFilteredUncacheable
+            .prereq(fdipFilteredUncacheable);
+        fdipOutstandingMax
+            .prereq(fdipOutstandingMax);
+        fdipEpochMismatch
+            .prereq(fdipEpochMismatch);
 }
 void
 Fetch::setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer)
@@ -412,6 +436,8 @@ Fetch::clearStates(ThreadID tid)
     delayedCommit[tid] = false;
     threads[tid].cacheReq.reset();
     threads[tid].reset();
+    resetFdipState(tid);
+    fdipEpoch[tid] = 0;
     fetchQueue[tid].clear();
 
     // TODO not sure what to do with priorityList for now
@@ -424,6 +450,8 @@ Fetch::resetStage()
     numInst = 0;
     interruptPending = false;
     cacheBlocked = false;
+    fdipPendingReqs.clear();
+    fdipOutstandingLines = 0;
 
     priorityList.clear();
 
@@ -437,6 +465,8 @@ Fetch::resetStage()
         threads[tid].cacheReq.reset();
 
         threads[tid].reset();
+        resetFdipState(tid);
+        fdipEpoch[tid] = 0;
         ftqEntryFetchedInsts[tid] = 0;
 
         fetchQueue[tid].clear();
@@ -467,6 +497,422 @@ Fetch::currentFetchRequestSpan(
 {
     return branch_prediction::btb_pred::fetchCoverageSpan(
         stream.startPC, stream.predEndPC, fetchBufferSize);
+}
+
+void
+Fetch::resetFdipState(ThreadID tid)
+{
+    fdipState[tid].reset();
+
+    for (auto it = fdipPendingReqs.begin(); it != fdipPendingReqs.end();) {
+        if (it->tid == tid) {
+            if (it->outstanding) {
+                assert(fdipOutstandingLines > 0);
+                --fdipOutstandingLines;
+            }
+            it = fdipPendingReqs.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+unsigned
+Fetch::computeFdipLineAddrs(
+    const branch_prediction::btb_pred::FetchTarget &target,
+    std::array<Addr, 2> &lineAddrs) const
+{
+    const Addr first_line = target.startPC - (target.startPC % cacheBlkSize);
+    lineAddrs[0] = first_line;
+    lineAddrs[1] = 0;
+
+    if (!dbpbtb->fdipCoverActualFetchRange()) {
+        return 1;
+    }
+
+    const unsigned span = std::max(1u, currentFetchRequestSpan(target));
+    const Addr end_exclusive = target.startPC + span;
+    const Addr last_line =
+        (end_exclusive - 1) - ((end_exclusive - 1) % cacheBlkSize);
+
+    if (last_line == first_line) {
+        return 1;
+    }
+
+    lineAddrs[1] = last_line;
+    return 2;
+}
+
+bool
+Fetch::initFdipTargetState(ThreadID tid)
+{
+    if (!dbpbtb->ftqHasPrefetch(tid)) {
+        return false;
+    }
+
+    const auto &target = dbpbtb->ftqPrefetchTarget(tid);
+    auto &state = fdipState[tid];
+
+    state.reset();
+    state.valid = true;
+    state.ftqId = dbpbtb->ftqPrefetchHeadId(tid);
+    state.startPC = target.startPC;
+    state.epoch = fdipEpoch[tid];
+    std::array<Addr, 2> line_addrs{};
+    state.lineCount = computeFdipLineAddrs(target, line_addrs);
+    for (unsigned i = 0; i < state.lineCount; ++i) {
+        state.lines[i].lineAddr = line_addrs[i];
+    }
+
+    DPRINTF(Fetch,
+            "[tid:%i] FDIP init: ftqId=%u startPC=%#lx lineCount=%u "
+            "line0=%#lx line1=%#lx\n",
+            tid, state.ftqId, state.startPC, state.lineCount,
+            state.lineCount > 0 ? state.lines[0].lineAddr : 0,
+            state.lineCount > 1 ? state.lines[1].lineAddr : 0);
+
+    return true;
+}
+
+void
+Fetch::startFdipTranslation(ThreadID tid, unsigned lineIndex)
+{
+    auto &state = fdipState[tid];
+    assert(state.valid);
+    assert(lineIndex < state.lineCount);
+
+    auto &line = state.lines[lineIndex];
+    if (line.status != FdipIdle) {
+        return;
+    }
+
+    Request::Flags flags;
+    flags.set(Request::INST_FETCH);
+    flags.set(Request::PREFETCH);
+
+    RequestPtr req = std::make_shared<Request>(
+        line.lineAddr, cacheBlkSize, flags, cpu->instRequestorId(),
+        state.startPC, cpu->thread[tid]->contextId());
+    req->taskId(cpu->taskId());
+    req->setPFSource(PF_FDIP);
+    req->setPFDepth(0);
+    Request::XsMetadata xsMeta(PF_FDIP, 0);
+    xsMeta.fdipEpoch = state.epoch;
+    xsMeta.fdipFtqId = state.ftqId;
+    xsMeta.fdipStartPC = state.startPC;
+    req->setXsMetadata(xsMeta);
+
+    line.req = req;
+    line.status = FdipTlbWait;
+
+    FdipPendingRequest pending;
+    pending.tid = tid;
+    pending.ftqId = state.ftqId;
+    pending.startPC = state.startPC;
+    pending.lineAddr = line.lineAddr;
+    pending.epoch = state.epoch;
+    pending.lineIndex = lineIndex;
+    pending.req = req;
+    fdipPendingReqs.push_back(pending);
+
+    DPRINTF(Fetch,
+            "[tid:%i] FDIP translate: ftqId=%u line[%u]=%#lx startPC=%#lx\n",
+            tid, state.ftqId, lineIndex, line.lineAddr, state.startPC);
+
+    auto *trans = new FdipTranslation(this);
+    cpu->mmu->translateTiming(req, cpu->thread[tid]->getTC(), trans,
+                              BaseMMU::Execute);
+}
+
+bool
+Fetch::issueFdipReadyLine(ThreadID tid, unsigned lineIndex,
+                          unsigned &remainingBudget)
+{
+    auto &state = fdipState[tid];
+    assert(state.valid);
+    assert(lineIndex < state.lineCount);
+
+    auto &line = state.lines[lineIndex];
+    if (line.status != FdipReady || !line.req) {
+        return false;
+    }
+
+    if (dbpbtb->fdipMaxOutstanding() == 0 ||
+        fdipOutstandingLines >= dbpbtb->fdipMaxOutstanding()) {
+        ++fetchStats.fdipDropped;
+        return false;
+    }
+
+    PacketPtr pkt = new Packet(line.req, Packet::makeReadCmd(line.req));
+    pkt->allocate();
+    pkt->setSendRightAway();
+
+    if (!icachePort.sendTimingReq(pkt)) {
+        DPRINTF(Fetch,
+                "[tid:%i] FDIP issue dropped due to cache backpressure: "
+                "ftqId=%u line[%u]=%#lx\n",
+                tid, state.ftqId, lineIndex, line.lineAddr);
+        ++fetchStats.fdipDropped;
+        delete pkt;
+        return false;
+    }
+
+    bool found_pending = false;
+    for (auto &pending : fdipPendingReqs) {
+        if (pending.req == line.req) {
+            pending.outstanding = true;
+            found_pending = true;
+            break;
+        }
+    }
+    assert(found_pending);
+
+    line.status = FdipInflight;
+    ++fetchStats.fdipIssuedLines;
+    ++fdipOutstandingLines;
+    if (fdipOutstandingLines > fetchStats.fdipOutstandingMax.value()) {
+        fetchStats.fdipOutstandingMax = fdipOutstandingLines;
+    }
+    if (remainingBudget > 0) {
+        --remainingBudget;
+    }
+
+    DPRINTF(Fetch,
+            "[tid:%i] FDIP issued: ftqId=%u line[%u]=%#lx outstanding=%u\n",
+            tid, state.ftqId, lineIndex, line.lineAddr, fdipOutstandingLines);
+
+    return true;
+}
+
+bool
+Fetch::finishFdipTargetIfReady(ThreadID tid)
+{
+    auto &state = fdipState[tid];
+    if (!state.valid) {
+        return false;
+    }
+
+    for (unsigned i = 0; i < state.lineCount; ++i) {
+        if (!state.lines[i].isTerminal()) {
+            return false;
+        }
+    }
+
+    if (state.epoch == fdipEpoch[tid] && dbpbtb->ftqHasPrefetch(tid) &&
+        dbpbtb->ftqPrefetchHeadId(tid) == state.ftqId) {
+        const auto fetch_head = dbpbtb->ftqHeadId(tid);
+        if (state.ftqId > fetch_head) {
+            const auto distance = state.ftqId - fetch_head;
+            if (distance < dbpbtb->fdipLookaheadEntries()) {
+                DPRINTF(Fetch, "[tid:%i] FDIP consume ftqId=%u\n", tid,
+                        state.ftqId);
+                dbpbtb->consumePrefetchTarget(tid);
+                state.reset();
+                return true;
+            }
+
+            return false;
+        }
+    }
+
+    state.reset();
+    return true;
+}
+
+void
+Fetch::finishFdipTranslation(const Fault &fault, const RequestPtr &mem_req)
+{
+    auto it = fdipPendingReqs.end();
+    for (auto req_it = fdipPendingReqs.begin(); req_it != fdipPendingReqs.end();
+         ++req_it) {
+        if (req_it->req == mem_req) {
+            it = req_it;
+            break;
+        }
+    }
+
+    if (it == fdipPendingReqs.end()) {
+        return;
+    }
+
+    const FdipPendingRequest pending = *it;
+    auto &state = fdipState[pending.tid];
+    const bool state_matches =
+        state.valid &&
+        state.ftqId == pending.ftqId &&
+        state.epoch == pending.epoch &&
+        pending.lineIndex < state.lineCount &&
+        state.lines[pending.lineIndex].req == mem_req;
+
+    if (fault != NoFault) {
+        ++fetchStats.fdipFilteredFault;
+        if (state_matches) {
+            state.lines[pending.lineIndex].status = FdipFilteredFault;
+            state.lines[pending.lineIndex].req.reset();
+            finishFdipTargetIfReady(pending.tid);
+        }
+        fdipPendingReqs.erase(it);
+        return;
+    }
+
+    if (pending.epoch != fdipEpoch[pending.tid]) {
+        ++fetchStats.fdipEpochMismatch;
+        if (state_matches) {
+            state.lines[pending.lineIndex].status = FdipDone;
+            state.lines[pending.lineIndex].req.reset();
+            finishFdipTargetIfReady(pending.tid);
+        }
+        fdipPendingReqs.erase(it);
+        return;
+    }
+
+    if (!cpu->system->isMemAddr(mem_req->getPaddr()) ||
+        mem_req->isUncacheable() || mem_req->isStrictlyOrdered() ||
+        mem_req->isLocalAccess()) {
+        ++fetchStats.fdipFilteredUncacheable;
+        if (state_matches) {
+            state.lines[pending.lineIndex].status = FdipFilteredUncacheable;
+            state.lines[pending.lineIndex].req.reset();
+            finishFdipTargetIfReady(pending.tid);
+        }
+        fdipPendingReqs.erase(it);
+        return;
+    }
+
+    if (!state_matches) {
+        fdipPendingReqs.erase(it);
+        return;
+    }
+
+    state.lines[pending.lineIndex].status = FdipReady;
+}
+
+void
+Fetch::processFdipCompletion(PacketPtr pkt)
+{
+    auto it = fdipPendingReqs.end();
+    for (auto req_it = fdipPendingReqs.begin(); req_it != fdipPendingReqs.end();
+         ++req_it) {
+        if (req_it->req == pkt->req) {
+            it = req_it;
+            break;
+        }
+    }
+
+    if (it == fdipPendingReqs.end()) {
+        delete pkt;
+        return;
+    }
+
+    const FdipPendingRequest pending = *it;
+    auto &state = fdipState[pending.tid];
+    const bool state_matches =
+        state.valid &&
+        state.ftqId == pending.ftqId &&
+        state.epoch == pending.epoch &&
+        pending.lineIndex < state.lineCount &&
+        state.lines[pending.lineIndex].req == pkt->req;
+
+    if (it->outstanding) {
+        assert(fdipOutstandingLines > 0);
+        --fdipOutstandingLines;
+    }
+
+    if (pending.epoch != fdipEpoch[pending.tid]) {
+        ++fetchStats.fdipEpochMismatch;
+    } else if (state_matches) {
+        state.lines[pending.lineIndex].status = FdipDone;
+        state.lines[pending.lineIndex].req.reset();
+        finishFdipTargetIfReady(pending.tid);
+    }
+
+    DPRINTF(Fetch,
+            "[tid:%i] FDIP complete: ftqId=%u line[%u]=%#lx outstanding=%u\n",
+            pending.tid, pending.ftqId, pending.lineIndex, pending.lineAddr,
+            fdipOutstandingLines);
+
+    delete pkt;
+    fdipPendingReqs.erase(it);
+}
+
+void
+Fetch::runFdip(ThreadID tid)
+{
+    if (!dbpbtb->fdipEnabled() || !dbpbtb->ftqHasFetching(tid)) {
+        return;
+    }
+
+    while (dbpbtb->ftqHasPrefetch(tid) &&
+           dbpbtb->ftqPrefetchHeadId(tid) == dbpbtb->ftqHeadId(tid)) {
+        if (fdipState[tid].valid &&
+            fdipState[tid].ftqId == dbpbtb->ftqPrefetchHeadId(tid)) {
+            resetFdipState(tid);
+        }
+        DPRINTF(Fetch,
+                "[tid:%i] FDIP skip current demand head ftqId=%u\n",
+                tid, dbpbtb->ftqPrefetchHeadId(tid));
+        dbpbtb->consumePrefetchTarget(tid);
+    }
+
+    if (!dbpbtb->ftqHasPrefetch(tid)) {
+        return;
+    }
+
+    const branch_prediction::btb_pred::FetchTargetId fetch_head =
+        dbpbtb->ftqHeadId(tid);
+    const branch_prediction::btb_pred::FetchTargetId prefetch_head =
+        dbpbtb->ftqPrefetchHeadId(tid);
+    if (prefetch_head <= fetch_head) {
+        return;
+    }
+
+    const branch_prediction::btb_pred::FetchTargetId distance =
+        prefetch_head - fetch_head;
+    if (distance > dbpbtb->fdipLookaheadEntries()) {
+        return;
+    }
+
+    if (fdipState[tid].valid &&
+        (fdipState[tid].epoch != fdipEpoch[tid] ||
+         fdipState[tid].ftqId != prefetch_head)) {
+        resetFdipState(tid);
+    }
+
+    if (!fdipState[tid].valid && !initFdipTargetState(tid)) {
+        return;
+    }
+
+    auto &state = fdipState[tid];
+    for (unsigned i = 0; i < state.lineCount; ++i) {
+        if (state.lines[i].status == FdipIdle) {
+            startFdipTranslation(tid, i);
+        }
+    }
+
+    unsigned remaining_budget = dbpbtb->fdipIssueBandwidth();
+    if (remaining_budget == 0) {
+        return;
+    }
+
+    for (unsigned i = 0; i < state.lineCount && remaining_budget > 0; ++i) {
+        if (state.lines[i].status == FdipReady) {
+            issueFdipReadyLine(tid, i, remaining_budget);
+        }
+    }
+
+    finishFdipTargetIfReady(tid);
+}
+
+void
+Fetch::runFdip()
+{
+    if (!dbpbtb->fdipEnabled()) {
+        return;
+    }
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        runFdip(tid);
+    }
 }
 
 bool
@@ -636,6 +1082,11 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
 void
 Fetch::processCacheCompletion(PacketPtr pkt)
 {
+    if (pkt->req->isPrefetch()) {
+        processFdipCompletion(pkt);
+        return;
+    }
+
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
     assert(pkt->req->isMisalignedFetch() && "Only multi-cacheline fetch is supported");
 
@@ -1155,6 +1606,8 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
 
     // Reset the cache request after cancelling
     threads[tid].cacheReq.reset();
+    ++fdipEpoch[tid];
+    resetFdipState(tid);
 
     // Get rid of the retrying packet if it was from this thread.
     if (retryTid == tid) {
@@ -1290,6 +1743,7 @@ Fetch::tick()
 
     // Perform fetch operations and instruction delivery
     fetchAndProcessInstructions(status_change);
+    runFdip();
 }
 
 bool
@@ -2359,6 +2813,18 @@ Addr
 Fetch::getTracePCByIndex(uint64_t index)
 {
     return traceFetch ? traceFetch->getTracePCByIndex(index) : 0;
+}
+
+bool
+Fetch::shouldDropFdipRefill(ContextID contextId,
+                            const Request::XsMetadata &xsMeta) const
+{
+    if (!xsMeta.isFdip() || !dbpbtb->fdipDropRefillOnEpochMismatch()) {
+        return false;
+    }
+
+    const ThreadID tid = cpu->contextToThread(contextId);
+    return xsMeta.fdipEpoch != fdipEpoch[tid];
 }
 
 } // namespace o3

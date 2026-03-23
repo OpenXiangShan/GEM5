@@ -3,6 +3,7 @@
 #include <array>
 
 #include "base/debug_helper.hh"
+#include "base/logging.hh"
 #include "base/output.hh"
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
@@ -30,7 +31,6 @@ DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 
 DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     : BPredUnit(p),
-
       predictWidth(p.predictWidth),
       maxInstsNum(p.predictWidth / 2),
       historyBits(p.maxHistLen),
@@ -44,12 +44,23 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ras(p.ras),
       // uras(p.uras),
       bpDBSwitches(p.bpDBSwitches),
+      enableFDIP(p.enable_fdip),
+      fdipLookaheadEntriesCfg(p.fdip_lookahead_entries),
+      fdipIssueBandwidthCfg(p.fdip_issue_bandwidth),
+      fdipMaxOutstandingCfg(p.fdip_max_outstanding),
+      fdipFlushPartialOnEpochChangeCfg(p.fdip_flush_partial_on_epoch_change),
+      fdipDropRefillOnEpochMismatchCfg(p.fdip_drop_refill_on_epoch_mismatch),
+      prefetchLinesPerFtqCfg(p.prefetch_lines_per_ftq),
       numStages(p.numStages),
       ftq(2, p.ftq_size),
       historyManager(16), // TODO: fix this
       resolveBlockThreshold(p.resolveBlockThreshold),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
 {
+    fatal_if(enableFDIP && !fdipFlushPartialOnEpochChangeCfg,
+             "FDIP with --no-fdip-flush-partial-on-epoch-change is not "
+             "implemented yet in this MVP");
+
     if (bpDBSwitches.size() > 0) {
         initDB();
     }
@@ -113,6 +124,24 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     registerExitCallback([this]() {
         this->dumpStats();
     });
+}
+
+bool
+DecoupledBPUWithBTB::ftqPeek(ThreadID tid, int offset,
+                             const FetchTarget *&out) const
+{
+    out = nullptr;
+    if (offset < 0 || !ftqHasFetching(tid)) {
+        return false;
+    }
+
+    const FetchTargetId target_id = ftq.fetchId(tid) + offset;
+    if (!ftq.hasTarget(target_id, tid)) {
+        return false;
+    }
+
+    out = &ftq.get(target_id, tid);
+    return true;
 }
 
 
