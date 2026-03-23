@@ -1343,6 +1343,24 @@ class BaseCache : public ClockedObject, public CacheAccessor
         /** Total blocked cycles caused by slice busy. */
         statistics::Scalar sliceBusyBlockedCycles;
 
+        /** Number of demand read requests rejected because slice is busy. */
+        statistics::Scalar sliceBusyReadRejects;
+
+        /** Total blocked cycles for demand reads caused by slice busy. */
+        statistics::Scalar sliceBusyReadBlockedCycles;
+
+        /** Number of demand write requests rejected because slice is busy. */
+        statistics::Scalar sliceBusyWriteRejects;
+
+        /** Total blocked cycles for demand writes caused by slice busy. */
+        statistics::Scalar sliceBusyWriteBlockedCycles;
+
+        /** Number of prefetch requests rejected because slice is busy. */
+        statistics::Scalar sliceBusyPrefetchRejects;
+
+        /** Total blocked cycles for prefetches caused by slice busy. */
+        statistics::Scalar sliceBusyPrefetchBlockedCycles;
+
         /** Number of data expansions. */
         statistics::Scalar dataExpansions;
 

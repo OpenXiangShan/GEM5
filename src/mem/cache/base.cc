@@ -2915,6 +2915,21 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of requests rejected because the target slice is busy"),
     ADD_STAT(sliceBusyBlockedCycles, statistics::units::Cycle::get(),
              "total blocked cycles caused by slice busy"),
+    ADD_STAT(sliceBusyReadRejects, statistics::units::Count::get(),
+             "number of demand read requests rejected because the target "
+             "slice is busy"),
+    ADD_STAT(sliceBusyReadBlockedCycles, statistics::units::Cycle::get(),
+             "total blocked cycles for demand reads caused by slice busy"),
+    ADD_STAT(sliceBusyWriteRejects, statistics::units::Count::get(),
+             "number of demand write requests rejected because the target "
+             "slice is busy"),
+    ADD_STAT(sliceBusyWriteBlockedCycles, statistics::units::Cycle::get(),
+             "total blocked cycles for demand writes caused by slice busy"),
+    ADD_STAT(sliceBusyPrefetchRejects, statistics::units::Count::get(),
+             "number of prefetch requests rejected because the target slice "
+             "is busy"),
+    ADD_STAT(sliceBusyPrefetchBlockedCycles, statistics::units::Cycle::get(),
+             "total blocked cycles for prefetches caused by slice busy"),
     ADD_STAT(dataExpansions, statistics::units::Count::get(),
              "number of data expansions"),
     ADD_STAT(dataContractions, statistics::units::Count::get(),
@@ -3216,9 +3231,24 @@ BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
     int sliceidx = cache->getSliceIdx(pkt->getAddr());
     if (sliceidx >= 0 && cache->cacheLevel != 1) {
         if (cache->checkSLiceBusy(pkt, sliceidx)) {
-            cache->stats.sliceBusyRejects++;
-            cache->stats.sliceBusyBlockedCycles +=
+            const Cycles blocked_cycles =
                 cache->getSliceBusyDelayCycles(sliceidx);
+            const bool is_prefetch = pkt->req && pkt->req->isPrefetch();
+
+            cache->stats.sliceBusyRejects++;
+            cache->stats.sliceBusyBlockedCycles += blocked_cycles;
+
+            if (is_prefetch) {
+                cache->stats.sliceBusyPrefetchRejects++;
+                cache->stats.sliceBusyPrefetchBlockedCycles += blocked_cycles;
+            } else if (pkt->isRead()) {
+                cache->stats.sliceBusyReadRejects++;
+                cache->stats.sliceBusyReadBlockedCycles += blocked_cycles;
+            } else if (pkt->isWrite()) {
+                cache->stats.sliceBusyWriteRejects++;
+                cache->stats.sliceBusyWriteBlockedCycles += blocked_cycles;
+            }
+
             //no more buffer
             if (sendRetryEvent.scheduled()) {
                 owner.reschedule(sendRetryEvent, cache->nextCycle());
