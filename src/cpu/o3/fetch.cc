@@ -71,6 +71,8 @@
 #include "debug/O3PipeView.hh"
 #include "debug/TraceReader.hh"
 #include "mem/packet.hh"
+#include "mem/se_translating_port_proxy.hh"
+#include "mem/translating_port_proxy.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
 #include "sim/system.hh"
@@ -101,6 +103,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       retryTid(InvalidThreadID),
       cacheBlkSize(cpu->cacheLineSize()),
       fetchBufferSize(params.fetchBufferSize),
+      idealFetchWindowFill(params.idealFetchWindowFill),
       fetchQueueSize(params.fetchQueueSize),
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
@@ -644,12 +647,11 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     threads[tid].cacheReq.totalSize = fetchBufferSize;
 
     Addr fetchPC = vaddr;
-    unsigned fetchSize = cacheBlkSize - fetchPC % cacheBlkSize;  // Size for first cache line
+    unsigned fetchSize = cacheBlkSize - fetchPC % cacheBlkSize;
 
     DPRINTF(Fetch, "[tid:%i] Creating first cache line request: addr=%#x, size=%d\n",
             tid, fetchPC, fetchSize);
 
-    // Create and send first request (tail of first cache line)
     RequestPtr first_mem_req = std::make_shared<Request>(
         fetchPC, fetchSize,
         Request::INST_FETCH, cpu->instRequestorId(), pc,
@@ -659,24 +661,21 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     first_mem_req->setMisalignedFetch();
     first_mem_req->setReqNum(1);
 
-    threads[tid].cacheReq.addRequest(first_mem_req); // packet will be created later
+    threads[tid].cacheReq.addRequest(first_mem_req);
 
-    // Initiate translation for first request
     updateCacheRequestStatusByRequest(tid, first_mem_req, TlbWait);
     setAllFetchStalls(StallReason::ITlbStall);
     FetchTranslation *trans = new FetchTranslation(this);
     cpu->mmu->translateTiming(first_mem_req, cpu->thread[tid]->getTC(),
                               trans, BaseMMU::Execute);
 
-    // Prepare second request (head of second cache line)
-    fetchPC += fetchSize;  // Move to start of next cache line
+    fetchPC += fetchSize;
     assert(fetchPC % cacheBlkSize == 0);
-    fetchSize = fetchBufferSize - fetchSize;  // Remaining size
+    fetchSize = fetchBufferSize - fetchSize;
 
     DPRINTF(Fetch, "[tid:%i] Creating second cache line request: addr=%#x, size=%d\n",
             tid, fetchPC, fetchSize);
 
-    // Create and send second request
     RequestPtr second_mem_req = std::make_shared<Request>(
         fetchPC, fetchSize,
         Request::INST_FETCH, cpu->instRequestorId(), pc,
@@ -686,16 +685,53 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     second_mem_req->setMisalignedFetch();
     second_mem_req->setReqNum(2);
 
-    threads[tid].cacheReq.addRequest(second_mem_req);  // Add second request to cache request
+    threads[tid].cacheReq.addRequest(second_mem_req);
 
     DPRINTF(Fetch, "[tid:%i] Initiating translation for second cache line\n", tid);
 
-    // Always initiate translation for second request, regardless of first request status
     updateCacheRequestStatusByRequest(tid, second_mem_req, TlbWait);
     setAllFetchStalls(StallReason::ITlbStall);
     FetchTranslation *trans2 = new FetchTranslation(this);
     cpu->mmu->translateTiming(second_mem_req, cpu->thread[tid]->getTC(),
                               trans2, BaseMMU::Execute);
+    return true;
+}
+
+bool
+Fetch::idealFillFetchBuffer(Addr vaddr, ThreadID tid, Addr pc)
+{
+    DPRINTF(Fetch,
+            "[tid:%i] Ideal full-window fill for addr %#x, pc=%#lx, size=%u\n",
+            tid, vaddr, pc, fetchBufferSize);
+
+    auto *tc = cpu->thread[tid]->getTC();
+    threads[tid].cacheReq.reset();
+    threads[tid].cacheReq.baseAddr = vaddr;
+    threads[tid].cacheReq.totalSize = fetchBufferSize;
+    threads[tid].startPC = vaddr;
+
+    bool ok = false;
+    if (FullSystem) {
+        TranslatingPortProxy proxy(tc, Request::INST_FETCH);
+        ok = proxy.tryReadBlob(vaddr, threads[tid].data, fetchBufferSize);
+    } else {
+        SETranslatingPortProxy proxy(tc, SETranslatingPortProxy::Always,
+                                     Request::INST_FETCH);
+        ok = proxy.tryReadBlob(vaddr, threads[tid].data, fetchBufferSize);
+    }
+
+    if (!ok) {
+        DPRINTF(Fetch,
+                "[tid:%i] Ideal full-window fill failed at addr %#x size=%u\n",
+                tid, vaddr, fetchBufferSize);
+        return false;
+    }
+
+    threads[tid].valid = true;
+    setThreadStatus(tid, Running);
+    setAllFetchStalls(StallReason::NoStall);
+    cpu->wakeCPU();
+    switchToActive();
     return true;
 }
 
@@ -735,7 +771,6 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
     // All packets have arrived - merge them directly into fetchBuffer
     DPRINTF(Fetch, "[tid:%i] All packets arrived, merging data into fetchBuffer.\n", tid);
 
-    // Find the packets by request number
     PacketPtr firstPkt = nullptr;
     PacketPtr secondPkt = nullptr;
 
@@ -749,12 +784,10 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
 
     assert(firstPkt && secondPkt);
 
-    // Copy merged data directly into fetchBuffer
     memcpy(threads[tid].data, firstPkt->getConstPtr<uint8_t>(), firstPkt->getSize());
     memcpy(threads[tid].data + firstPkt->getSize(), secondPkt->getConstPtr<uint8_t>(), secondPkt->getSize());
     threads[tid].valid = true;
 
-    // Clean up the packets
     delete firstPkt;
     delete secondPkt;
 
@@ -1111,6 +1144,10 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
     DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x, pc=%#lx\n",
             tid, vaddr, vaddr, pc);
 
+    if (idealFetchWindowFill) {
+        return idealFillFetchBuffer(vaddr, tid, pc);
+    }
+
     // With 66-byte fetchBufferSize, we always need to access 2 cache lines
     return handleMultiCacheLineFetch(vaddr, tid, pc);
 }
@@ -1331,15 +1368,12 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // Clear the icache miss if it's outstanding.
     DPRINTF(Fetch, "[tid:%i] Squash: clear cacheReq, current fetchStatus[tid]=%d\n", tid, fetchStatus[tid]);
 
-    // Cancel all active cache requests in new status system
     threads[tid].cacheReq.cancelAllRequests();
     DPRINTF(Fetch, "[tid:%i] Squash: cancelled all cache requests, status: %s\n",
             tid, threads[tid].cacheReq.getStatusSummary().c_str());
 
-    // Reset the cache request after cancelling
     threads[tid].cacheReq.reset();
 
-    // Get rid of the retrying packet if it was from this thread.
     if (retryTid == tid) {
         assert(cacheBlocked);
         for (auto it : retryPkt) {
@@ -1347,7 +1381,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
         }
         retryPkt.clear();
         retryTid = InvalidThreadID;
-        cacheBlocked = false;   // clear cache blocked
+        cacheBlocked = false;
     }
 
     if (squashInst && !squashInst->isControl()) {
@@ -2072,7 +2106,6 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
         fetch_pc + 4 > threads[tid].startPC + fetchBufferSize) {
         DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
                 tid, fetch_pc, threads[tid].startPC, threads[tid].startPC + fetchBufferSize);
-        // Force issuing a new I-cache request.
         threads[tid].valid = false;
         return StallReason::IcacheStall;
     }

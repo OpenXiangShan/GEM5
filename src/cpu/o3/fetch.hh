@@ -413,6 +413,7 @@ class Fetch
      * @return true if requests were successfully initiated
      */
     bool handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc);
+    bool idealFillFetchBuffer(Addr vaddr, ThreadID tid, Addr pc);
 
     /** Process multi-cacheline fetch completion when both packets have arrived.
      * Merges data from both cache lines into the fetch buffer.
@@ -843,6 +844,7 @@ class Fetch
     *  make sure we could decode tail 4bytes if it is in [62, 66)
      */
     unsigned fetchBufferSize;
+    const bool idealFetchWindowFill;
 
     /**
      * Fetch buffer structure to encapsulate instruction fetch data.
