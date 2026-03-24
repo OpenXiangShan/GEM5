@@ -13,6 +13,11 @@ XS-GEM5 diverged from [upstream gem5](https://github.com/gem5/gem5) in June 2022
 
 Our Chinese website is [here](https://xs-gem5.readthedocs.io/zh-cn/latest/), welcome to visit!
 
+## Architecture Notes
+
+For a high-level map of the repository, see [ARCHITECTURE.md](ARCHITECTURE.md).
+It focuses on the XiangShan-aligned O3 CPU, the decoupled frontend, and the configuration/code boundaries that matter most for current development.
+
 ## Thanks
 
 In the development of the Kunming Lake v3 performance model, developers Zhang Qianlong, Zhang Lutong, Hu Kai, Yan Yuwei, Liu Shuquan, and Chen Dewei from Tencent Penglai Laboratory jointly made the following contributions:
