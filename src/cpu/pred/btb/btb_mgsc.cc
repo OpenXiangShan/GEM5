@@ -117,9 +117,9 @@ BTBMGSC::initStorage()
         // }
         table.resize(numEntries);
         for (unsigned int i = 0; i<numEntries;++i){
-            table[i].resize(gbhrLen+1,0);
+            table[i].resize(gbhrLen+2,0);//for bias and tage
         }
-        return gbhrLen+1;
+        return gbhrLen+2;
     };
     auto percepWeightTableSize = allocWeightTable(percepWeightTable,percepTableEntryNum);
     gbhr.resize(gbhrLen,0);
@@ -209,6 +209,7 @@ BTBMGSC::BTBMGSC(const Params &p)
       gbhrLen(p.gbhrLen),
       percepTableWidth(p.percepTableWidth),
       percepThres(p.percepThres),
+      tageWeightShamt(p.tageWeightShamt),
       scCountersWidth(p.scCountersWidth),
       thresholdTablelogSize(p.thresholdTablelogSize),
       updateThresholdWidth(p.updateThresholdWidth),
@@ -304,15 +305,23 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &
 }
 
 int
-BTBMGSC::calculatePercepSum(Addr pc)
+BTBMGSC::calculatePercepSum(Addr pc,const TageInfoForMGSC &tage_info)
 {
     int index = getPercepIndex(pc,gbhr);
     auto weight = percepWeightTable[index];
-
+    int tage_pred = 0;
+    if (tage_info.tage_pred_conf_high)
+        tage_pred = 2;
+    else if (tage_info.tage_pred_conf_mid)
+        tage_pred = 1;
+    else if (tage_info.tage_pred_conf_low)
+        tage_pred = 0;
+    tage_pred <<= tageWeightShamt;
     int bias = 1;
     int percep_sum = bias * weight[0];
+    percep_sum += (tage_info.tage_pred_taken?1:-1) * tage_pred * weight[1];
     for (int i=0;i<gbhrLen;i++){
-        percep_sum += ((gbhr[i]?1:-1)*weight[i+1]);
+        percep_sum += ((gbhr[i]?1:-1)*weight[i+2]);
     }
     return percep_sum;
 }
@@ -446,7 +455,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
                     bias_scaled_percsum;
 
     //genertate perceptron prediction
-    int percep_sum =calculatePercepSum(btb_entry.pc);
+    int percep_sum =calculatePercepSum(btb_entry.pc,tage_info);
     int percep_index = getPercepIndex(btb_entry.pc,gbhr);
     // Find thresholds
     // pc-indexed threshold table (only if enabled)
@@ -487,7 +496,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
     // bool taken = use_sc_pred ? (use_percep_pred? percep_sum>=0 : total_sum >= 0) : tage_info.tage_pred_taken;
-    bool taken = use_sc_pred ? percep_sum >= 0 : tage_info.tage_pred_taken;
+    // bool taken = use_sc_pred ? percep_sum >= 0 : tage_info.tage_pred_taken;
+    bool taken = use_percep_pred ? percep_sum >= 0 : (use_sc_pred ? total_sum >= 0 : tage_info.tage_pred_taken);
     // DPRINTF(MGSC, "global tag_index: %d, global_percsum: %d, total_sum: %d\n", gIndex[0], g_percsum, total_sum);
     // DPRINTF(MGSC, "local tag_index: %d, local_percsum: %d, total_sum: %d\n", lIndex[0], l_percsum, total_sum);
     // DPRINTF(MGSC, "path tag_index: %d, path_percsum: %d, total_sum: %d\n", pIndex[0], p_percsum, total_sum);
@@ -676,7 +686,7 @@ BTBMGSC::updateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, A
  * Update perceptron weight table */
 void
 BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int percep_sum,bool percep_taken,
-                           Addr pc,bool actual_taken,std::vector<bool> pred_gbhr)
+                           Addr pc,bool actual_taken,std::vector<bool> pred_gbhr,bool tage_taken)
 {
     bool percep_update = false;
     int percep_thres = percepThres;
@@ -685,11 +695,14 @@ BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int p
         percep_update = true;
     int index = getPercepIndex(pc,pred_gbhr);
     int bias = 1;
+
     if (percep_update){
         auto &entry = weightTable[index][0];
         updateCounter(actual_taken == bias,percepTableWidth,entry);
+        auto &entry2 = weightTable[index][1];
+        updateCounter(actual_taken == tage_taken,percepTableWidth,entry2);
         for (int i=0;i<gbhrLen;i++){
-            auto &entry = weightTable[index][i+1];
+            auto &entry = weightTable[index][i+2];
             updateCounter(actual_taken == pred_gbhr[i],percepTableWidth,entry);
             // weightTable[index][i+1] += (actual_taken == gbhr[i]?1:-1);
         }
@@ -971,7 +984,8 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 
         //Update perceptron table
         auto pred_gbhr = pred.pred_gbhr;
-        updatePercepTable(percepWeightTable,percep_sum,percep_taken,entry.pc,actual_taken,meta_gbhr);
+        auto tage_taken = pred.taken_before_sc;
+        updatePercepTable(percepWeightTable,percep_sum,percep_taken,entry.pc,actual_taken,meta_gbhr,tage_taken);
 
 
 

@@ -218,7 +218,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     int calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &table,
                          const std::vector<unsigned> &tableIndices, unsigned numTables, Addr pc);
 
-    int calculatePercepSum(Addr pc);
+    int calculatePercepSum(Addr pc,const TageInfoForMGSC &tage_info);
     /**
      * Find weight in a weight table for a given PC
      */
@@ -249,7 +249,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
      * Update a prediction table and allocate new entry if needed
      */
     void updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int percep_sum,bool percep_taken,
-                           Addr pc,bool actual_taken,std::vector<bool> pred_gbhr);
+                           Addr pc,bool actual_taken,std::vector<bool> pred_gbhr,bool tage_taken);
 
     /**
      * Update a weight table and allocate new entry if needed
@@ -353,6 +353,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     unsigned gbhrLen;
     unsigned percepTableWidth;
     unsigned percepThres;
+    unsigned tageWeightShamt;
 
     /*Statistical corrector counters width*/
     unsigned scCountersWidth;
