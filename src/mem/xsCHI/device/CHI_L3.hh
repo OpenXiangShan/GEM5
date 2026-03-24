@@ -111,10 +111,12 @@ class CHI_L3 : public ClockedObject
     bool sendReadToDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp);
     bool sendWriteToDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp);
     void scheduleNetworkRetry(EventFunctionWrapper &event,
-                  Flit::CHI_CHN_TYPE channel);
+                  Flit::CHI_CHN_TYPE channel,
+                  bool includeExtraDelay = true);
     void handleCreditUnblock(Flit::CHI_CHN_TYPE channel);
     void drainPendingDdrQueue();
-    void enqueuePendingDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp);
+    void enqueuePendingDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp,
+                           bool includeExtraDelay = true);
     void drainDataQueue();
     void drainCompRspQueue();
     void drainWriteDataQueue();
@@ -241,6 +243,7 @@ class CHI_L3 : public ClockedObject
       PacketPtr pkt;
       uint32_t txnId;
       CHI_OP_TYPE chiOp;
+      Tick readyTick{0};
     };
     std::unordered_map<Addr, unsigned> ddrReadInFlightCount;
     std::unordered_map<Addr, unsigned> ddrWriteInFlightCount;
@@ -257,6 +260,8 @@ class CHI_L3 : public ClockedObject
     CHIPort *networkPort{nullptr};
     L3CacheWrapper *cacheWrapper{nullptr};
     CoherentXBar *coherentXBar{nullptr};
+    const Cycles extraReqCycles;
+    const Cycles extraRspCycles;
 
     // Pseudo ports
     InnerCacheReqPort innerCacheReqPort;

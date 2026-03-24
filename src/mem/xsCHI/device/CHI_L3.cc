@@ -40,6 +40,8 @@ CHI_L3::CHI_L3(const Params &p)
             networkPort(p.networkPort),
             cacheWrapper(p.cache_wrapper),
             coherentXBar(p.coherent_xbar),
+            extraReqCycles(p.extra_req_cycles),
+            extraRspCycles(p.extra_rsp_cycles),
             innerCacheReqPort(csprintf("%s.inner_cache_req", name()), this),
             innerCacheRespPort(csprintf("%s.inner_cache_resp", name()), this)
 {
@@ -915,12 +917,18 @@ CHI_L3::wakeBlockedDdrReads(Addr addr)
     while (!queue.empty()) {
         PendingDdrReq pending = queue.front();
         queue.pop_front();
+        if (extraReqCycles > Cycles(0)) {
+            enqueuePendingDdr(pending.pkt, pending.txnId, pending.chiOp,
+                              /*includeExtraDelay=*/true);
+            continue;
+        }
         if (!sendReadToDdr(pending.pkt, pending.txnId, pending.chiOp)) {
             DPRINTF(CHIL3,
                     "wake ddr read blocked txn=%u addr=%#lx, enqueue retry\n",
                     pending.txnId,
                     pending.pkt->getAddr());
-            enqueuePendingDdr(pending.pkt, pending.txnId, pending.chiOp);
+            enqueuePendingDdr(pending.pkt, pending.txnId, pending.chiOp,
+                              /*includeExtraDelay=*/false);
         }
     }
 
@@ -1013,21 +1021,29 @@ CHI_L3::handleCacheMemTimingResp(PacketPtr pkt)
                 enqueueBlockedDdrRead(pkt, txnId, chiOp);
                 return true;
             }
+            if (extraReqCycles > Cycles(0)) {
+                enqueuePendingDdr(pkt, txnId, chiOp, /*includeExtraDelay=*/true);
+                return true;
+            }
             if (!sendReadToDdr(pkt, txnId, chiOp)) {
                 DPRINTF(CHIL3,
                         "REQ->DDR blocked, enqueue retry txn=%u addr=%#lx\n",
                         txnId, pkt->getAddr());
-                enqueuePendingDdr(pkt, txnId, chiOp);
+                enqueuePendingDdr(pkt, txnId, chiOp, /*includeExtraDelay=*/false);
             }
             return true;
         }
         if (pkt->isWrite()) {
             trackDdrWriteStart(pkt->getAddr());
+            if (extraReqCycles > Cycles(0)) {
+                enqueuePendingDdr(pkt, txnId, chiOp, /*includeExtraDelay=*/true);
+                return true;
+            }
             if (!sendWriteToDdr(pkt, txnId, chiOp)) {
                 DPRINTF(CHIL3,
                         "REQ->DDR blocked, enqueue retry txn=%u addr=%#lx\n",
                         txnId, pkt->getAddr());
-                enqueuePendingDdr(pkt, txnId, chiOp);
+                enqueuePendingDdr(pkt, txnId, chiOp, /*includeExtraDelay=*/false);
             }
             return true;
         }
@@ -1160,7 +1176,8 @@ CHI_L3::sendWriteToDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp)
 
 void
 CHI_L3::scheduleNetworkRetry(EventFunctionWrapper &event,
-                             Flit::CHI_CHN_TYPE channel)
+                             Flit::CHI_CHN_TYPE channel,
+                             bool includeExtraDelay)
 {
     if (event.scheduled()) {
         return;
@@ -1168,7 +1185,16 @@ CHI_L3::scheduleNetworkRetry(EventFunctionWrapper &event,
     if (networkPort->isChannelBlockedByCredit(channel)) {
         return;
     }
-    schedule(event, clockEdge(Cycles(1)));
+    Cycles extra = Cycles(0);
+    if (includeExtraDelay) {
+        if (channel == Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ) {
+            extra = extraReqCycles;
+        } else if (channel == Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP ||
+                   channel == Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA) {
+            extra = extraRspCycles;
+        }
+    }
+    schedule(event, clockEdge(Cycles(1) + extra));
 }
 
 void
@@ -1178,23 +1204,27 @@ CHI_L3::handleCreditUnblock(Flit::CHI_CHN_TYPE channel)
       case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ:
         if (!pendingDdrQ.empty()) {
             scheduleNetworkRetry(
-                pendingDdrSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ);
+                pendingDdrSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ,
+                /*includeExtraDelay=*/false);
         }
         return;
       case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP:
         if (!pendingCompRspQ.empty()) {
             scheduleNetworkRetry(
-                compRspSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP);
+                compRspSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP,
+                /*includeExtraDelay=*/false);
         }
         return;
       case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA:
         if (!dataQ.empty()) {
             scheduleNetworkRetry(
-                dataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
+                dataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA,
+                /*includeExtraDelay=*/false);
         }
         if (!writeDataQ.empty()) {
             scheduleNetworkRetry(
-                writeDataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
+                writeDataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA,
+                /*includeExtraDelay=*/false);
         }
         return;
       case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_SNP:
@@ -1215,7 +1245,8 @@ CHI_L3::drainDataQueue()
         dataQ.pop_front();
         if (!dataQ.empty()) {
             scheduleNetworkRetry(
-                dataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
+                dataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA,
+                /*includeExtraDelay=*/false);
         }
         return;
     }
@@ -1245,7 +1276,8 @@ CHI_L3::drainDataQueue()
                 "send DAT->cpu blocked txn=%u dataId=%u\n",
                 pd.txnId, dataId);
         scheduleNetworkRetry(
-            dataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
+            dataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA,
+            /*includeExtraDelay=*/false);
         return;
     }
 
@@ -1290,7 +1322,8 @@ CHI_L3::drainDataQueue()
 
     if (!dataQ.empty()) {
         scheduleNetworkRetry(
-            dataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
+            dataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA,
+            /*includeExtraDelay=*/false);
     }
 }
 
@@ -1308,7 +1341,8 @@ CHI_L3::drainCompRspQueue()
         pendingCompRspQ.pop_front();
         if (!pendingCompRspQ.empty()) {
             scheduleNetworkRetry(
-                compRspSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP);
+                compRspSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP,
+                /*includeExtraDelay=*/false);
         }
         return;
     }
@@ -1330,7 +1364,8 @@ CHI_L3::drainCompRspQueue()
                 "send RSP->cpu COMP blocked txn=%u dbid=%u\n",
                 meta.txnId, txnKey);
         scheduleNetworkRetry(
-            compRspSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP);
+            compRspSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP,
+            /*includeExtraDelay=*/false);
         return;
     }
     if (meta.opcode == CHI_OP_TYPE::CHI_REQ_EVICT){
@@ -1349,7 +1384,8 @@ CHI_L3::drainCompRspQueue()
     pendingCompRspQ.pop_front();
     if (!pendingCompRspQ.empty()) {
         scheduleNetworkRetry(
-            compRspSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP);
+            compRspSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP,
+            /*includeExtraDelay=*/false);
     }
 }
 
@@ -1365,7 +1401,8 @@ CHI_L3::drainWriteDataQueue()
         writeDataQ.pop_front();
         if (!writeDataQ.empty()) {
             scheduleNetworkRetry(
-                writeDataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
+                writeDataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA,
+                /*includeExtraDelay=*/false);
         }
         return;
     }
@@ -1392,7 +1429,8 @@ CHI_L3::drainWriteDataQueue()
                 "send DAT->DDR blocked ddrDbid=%u dataId=%u\n",
                 pd.ddrDbid, dataId);
         scheduleNetworkRetry(
-            writeDataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
+            writeDataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA,
+            /*includeExtraDelay=*/false);
         return;
     }
 
@@ -1417,7 +1455,8 @@ CHI_L3::drainWriteDataQueue()
 
     if (!writeDataQ.empty()) {
         scheduleNetworkRetry(
-            writeDataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
+            writeDataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA,
+            /*includeExtraDelay=*/false);
     }
 }
 
@@ -1500,6 +1539,12 @@ CHI_L3::drainPendingDdrQueue()
     }
 
     PendingDdrReq &p = pendingDdrQ.front();
+    if (curTick() < p.readyTick) {
+        if (!pendingDdrSendEvent.scheduled()) {
+            schedule(pendingDdrSendEvent, p.readyTick);
+        }
+        return;
+    }
     bool ok = false;
     if (p.pkt->isRead()) {
         ok = sendReadToDdr(p.pkt, p.txnId, p.chiOp);
@@ -1514,7 +1559,8 @@ CHI_L3::drainPendingDdrQueue()
                 "pending REQ->DDR still blocked txn=%u addr=%#lx queue=%u\n",
                 p.txnId, p.pkt->getAddr(), static_cast<unsigned>(pendingDdrQ.size()));
         scheduleNetworkRetry(
-            pendingDdrSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ);
+            pendingDdrSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ,
+            /*includeExtraDelay=*/false);
         return;
     }
 
@@ -1525,20 +1571,27 @@ CHI_L3::drainPendingDdrQueue()
 
     if (!pendingDdrQ.empty()) {
         scheduleNetworkRetry(
-            pendingDdrSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ);
+            pendingDdrSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ,
+            /*includeExtraDelay=*/false);
     }
 }
 
 void
-CHI_L3::enqueuePendingDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp)
+CHI_L3::enqueuePendingDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp,
+                          bool includeExtraDelay)
 {
     DPRINTF(CHIL3,
             "enqueue pending ddr pkt addr=%#lx txn=%u opcode=%s queue=%u\n",
             pkt->getAddr(), txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(chiOp),
             static_cast<unsigned>(pendingDdrQ.size() + 1));
-    pendingDdrQ.push_back({pkt, txnId, chiOp});
+    Tick readyTick = curTick();
+    if (includeExtraDelay && extraReqCycles > Cycles(0)) {
+        readyTick = curTick() + clockPeriod() * extraReqCycles;
+    }
+    pendingDdrQ.push_back({pkt, txnId, chiOp, readyTick});
     scheduleNetworkRetry(
-        pendingDdrSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ);
+        pendingDdrSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ,
+        /*includeExtraDelay=*/false);
 }
 
 void

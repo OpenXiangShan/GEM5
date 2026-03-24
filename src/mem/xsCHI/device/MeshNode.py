@@ -16,6 +16,8 @@ class MeshNode(ClockedObject):
     # False: aggregate per-(egress,channel) depth limit.
     voq_depth_per_ingress = Param.Bool(
         True, "Use per-ingress VOQ depth threshold instead of aggregate")
+    router_latency_cycles = Param.Unsigned(
+        1, "Router pipeline latency from enqueue to send scheduling")
 
     # local0 is mandatory in current v1 topology.
     port_local0 = Param.CHIPort("Local device port 0")

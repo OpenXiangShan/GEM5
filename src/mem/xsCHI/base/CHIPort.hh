@@ -93,6 +93,7 @@ class CHIPort: public ClockedObject
 
 
     int BUFFER_SIZE = 8; // 可根据需要调整
+    uint32_t transferLatencyCycles = 1;
 
 public:
     typedef CHIPortParams Params;

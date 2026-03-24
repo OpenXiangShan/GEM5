@@ -19,6 +19,10 @@ class L2L3DramSys3x3(ClockedObject):
     shadow_attach_points = VectorParam.String(
         [], "Per-shadow mesh attach point, e.g. mesh8.local0")
     L3 = Param.CHI_L3('CHI L3 Wrapper')
+    hn_attach_point = Param.String(
+        "mesh4.local0", "HN mesh attach point, format meshX.localY")
+    dram_attach_point = Param.String(
+        "mesh4.local1", "DDR mesh attach point, format meshX.localY")
 
     # 3x3 mesh topology (row-major):
     # M6(0,2) -- M7(1,2) -- M8(2,2)
@@ -26,8 +30,10 @@ class L2L3DramSys3x3(ClockedObject):
     # M3(0,1) -- M4(1,1) -- M5(2,1)
     #   |          |          |
     # M0(0,0) -- M1(1,0) -- M2(2,0)
-    # Endpoint placement:
+    # Endpoint placement defaults:
     # RN@M0.local0, HN@M4.local0, DRAM@M4.local1
+    # HN/DRAM attach points are configurable via
+    # hn_attach_point/dram_attach_point.
     # Shadow default attach point is configured at CacheConfig level.
     MeshNode0 = Param.MeshNode('M0 (0,0) RN-side mesh node')
     MeshNode1 = Param.MeshNode('M1 (1,0) transit mesh node')

@@ -40,6 +40,8 @@ class L2L3DramSys3x3 : public ClockedObject
 
     std::vector<CHIBridge*> shadowBridges;
     std::vector<std::string> shadowAttachPoints;
+    std::string hnAttachPoint;
+    std::string dramAttachPoint;
 
   public:
     using Params = L2L3DramSys3x3Params;

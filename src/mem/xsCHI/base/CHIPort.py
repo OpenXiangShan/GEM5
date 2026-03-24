@@ -7,3 +7,5 @@ class CHIPort(ClockedObject):
     cxx_class = 'gem5::xsCHI::CHIPort'
 
     recv_buffer_size = Param.Unsigned(4, "DDRWrapperBufferSize")
+    transfer_latency_cycles = Param.Unsigned(
+        1, "Port receive-to-handle latency in cycles")

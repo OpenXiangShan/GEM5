@@ -187,6 +187,8 @@ MeshNode::MeshNode(const Params &p)
       nodeY(p.node_y),
       voqDepth(p.voq_depth == 0 ? 1 : p.voq_depth),
       voqDepthPerIngress(p.voq_depth_per_ingress),
+      routerLatencyCycles(p.router_latency_cycles == 0 ? 1
+                                                       : p.router_latency_cycles),
       outVoq(),
       rrCursor(),
       stats(this),
@@ -536,7 +538,7 @@ MeshNode::scheduleSendEventAtNextCycle()
 {
     panic_if(sendEvent.scheduled(),
              "MeshNode %s sendEvent already scheduled", name());
-    schedule(sendEvent, curTick() + clockPeriod());
+    schedule(sendEvent, curTick() + clockPeriod() * routerLatencyCycles);
 }
 
 bool

@@ -155,6 +155,18 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         help="MeshNode VOQ backpressure mode: "
                              "per_ingress uses per-(egress,channel,ingress) "
                              "depth, aggregate uses per-(egress,channel) sum")
+    parser.add_argument("--chi-port-transfer-latency", type=int, default=1,
+                        help="CHIPort receive-to-handle latency in cycles")
+    parser.add_argument("--chi-router-latency", type=int, default=1,
+                        help="MeshNode router pipeline latency in cycles")
+    parser.add_argument("--chi-l3-extra-req-cycles", type=int, default=0,
+                        help="Extra cycles before CHI_L3 emits DDR REQ flits")
+    parser.add_argument("--chi-l3-extra-rsp-cycles", type=int, default=0,
+                        help="Extra cycles before CHI_L3 emits RN RSP/DAT flits")
+    parser.add_argument("--chi-hn-attach-point", type=str, default="mesh4.local0",
+                        help="HN attach point for L2L3DramSys_3x3, format meshX.localY")
+    parser.add_argument("--chi-dram-attach-point", type=str, default="mesh4.local1",
+                        help="DRAM attach point for L2L3DramSys_3x3, format meshX.localY")
     # 影子 L2 参数组：
     # - 目标：在不引入一致性协议复杂度的前提下，复制主 L2 请求形成“额外 RN 流量源”。
     # - 要点：每个影子都必须给出 attach + src/window/dst 三元组，才能保证地址空间隔离。

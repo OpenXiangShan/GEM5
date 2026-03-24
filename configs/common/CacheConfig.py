@@ -302,7 +302,7 @@ def config_cache(options, system):
                 # opt_dramsim3_ini = getattr(options, 'dramsim3_ini', None)
                 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
                 chi_topology = getattr(options, 'chi_topology', 'L2ToDramSys')
-                chi_voq_depth = getattr(options, 'chi_voq_depth', 2)
+                chi_voq_depth = getattr(options, 'chi_voq_depth', 4)
                 chi_voq_depth_mode = getattr(options, 'chi_voq_depth_mode',
                                              'per_ingress')
                 if chi_voq_depth_mode not in ('per_ingress', 'aggregate'):
@@ -310,6 +310,29 @@ def config_cache(options, system):
                         f"Unsupported --chi-voq-depth-mode: {chi_voq_depth_mode}"
                     )
                 chi_voq_depth_per_ingress = (chi_voq_depth_mode == 'per_ingress')
+                chi_port_transfer_latency = int(
+                    getattr(options, 'chi_port_transfer_latency', 1))
+                chi_router_latency = int(
+                    getattr(options, 'chi_router_latency', 1))
+                chi_l3_extra_req_cycles = int(
+                    getattr(options, 'chi_l3_extra_req_cycles', 0))
+                chi_l3_extra_rsp_cycles = int(
+                    getattr(options, 'chi_l3_extra_rsp_cycles', 0))
+                chi_hn_attach_point = getattr(
+                    options, 'chi_hn_attach_point', 'mesh4.local0')
+                chi_dram_attach_point = getattr(
+                    options, 'chi_dram_attach_point', 'mesh4.local1')
+
+                if chi_voq_depth <= 0:
+                    raise ValueError("--chi-voq-depth must be > 0")
+                if chi_port_transfer_latency <= 0:
+                    raise ValueError("--chi-port-transfer-latency must be > 0")
+                if chi_router_latency <= 0:
+                    raise ValueError("--chi-router-latency must be > 0")
+                if chi_l3_extra_req_cycles < 0:
+                    raise ValueError("--chi-l3-extra-req-cycles must be >= 0")
+                if chi_l3_extra_rsp_cycles < 0:
+                    raise ValueError("--chi-l3-extra-rsp-cycles must be >= 0")
                 def _build_shadow_l2_config(default_attach_point="mesh3.local0"):
                     shadow_enable = bool(getattr(options, "shadow_l2_enable", False))
                     shadow_count = int(getattr(options, "shadow_l2_count", 1))
@@ -340,7 +363,13 @@ def config_cache(options, system):
                             shadow_attach_raw = default_attach_point
 
                         shadow_bridges = [
-                            CHIBridge(networkPort=CHIPort(recv_buffer_size=4))
+                            CHIBridge(
+                                networkPort=CHIPort(
+                                    recv_buffer_size=4,
+                                    transfer_latency_cycles=
+                                    chi_port_transfer_latency,
+                                )
+                            )
                             for _ in range(shadow_count)
                         ]
                         shadow_attach_points = _parse_csv_list(
@@ -410,9 +439,8 @@ def config_cache(options, system):
                     )
                     use_mesh_3x3 = (chi_topology == 'L2L3DramSys_3x3')
                     topology_variant = (
-                        "rn_m0_local0_hn_m4_local0_dram_m4_local1"
-                        if use_mesh_3x3
-                        else (
+                        f"rn_m0_local0_hn_{chi_hn_attach_point}_dram_{chi_dram_attach_point}"
+                        if use_mesh_3x3 else (
                             "rn_m0_local0_hn_m1_local0_dram_m1_local1"
                             if use_mesh1_local1_dram
                             else "rn_m0_local0_hn_m1_local0_dram_m2_local0"
@@ -430,21 +458,31 @@ def config_cache(options, system):
                         cache_assoc=options.l3_assoc,
                         block_bits=int(math.log2(system.cache_line_size)),
                     )
-                    system.CHIsys = l2l3_topo_cls(
+                    topo_kwargs = dict(
                         dramsim3=DDRWrapper(
-                            networkPort=CHIPort(recv_buffer_size=4),
+                            networkPort=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
                             range=system.mem_ranges[0],
                             configFile=os.path.join(
                                 root_dir,
-                                'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini',
+                                'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini',
                             ),
                             filePath=os.path.join(root_dir, 'ext/dramsim3/DRAMsim3/'),
                         ),
                         ShadowRNBridges=shadow_cfg["shadow_bridges"],
                         shadow_attach_points=shadow_cfg["shadow_attach_points"],
                     )
+                    if use_mesh_3x3:
+                        topo_kwargs["hn_attach_point"] = chi_hn_attach_point
+                        topo_kwargs["dram_attach_point"] = chi_dram_attach_point
+                    system.CHIsys = l2l3_topo_cls(**topo_kwargs)
                     system.CHIsys.L2Wrapper = CHI_L2(
-                        RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)),
+                        RNBridge=CHIBridge(
+                            networkPort=CHIPort(
+                                recv_buffer_size=4,
+                                transfer_latency_cycles=
+                                chi_port_transfer_latency,
+                            )
+                        ),
                         ShadowRNBridges=shadow_cfg["shadow_bridges"],
                         shadow_enable=shadow_cfg["shadow_enable"],
                         shadow_src_bases=shadow_cfg["shadow_src_bases"],
@@ -452,9 +490,11 @@ def config_cache(options, system):
                         shadow_dst_bases=shadow_cfg["shadow_dst_bases"],
                     )
                     system.CHIsys.L3 = CHI_L3(
-                        networkPort=CHIPort(recv_buffer_size=4),
+                        networkPort=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
                         coherent_xbar=L2XBar(clk_domain=system.cpu_clk_domain),
-                        cache_wrapper=l3_inner_cache_wrapper
+                        cache_wrapper=l3_inner_cache_wrapper,
+                        extra_req_cycles=chi_l3_extra_req_cycles,
+                        extra_rsp_cycles=chi_l3_extra_rsp_cycles,
                     )
                     system.CHIsys.ShadowRNBridges = shadow_cfg["shadow_bridges"]
                     system.CHIsys.shadow_attach_points = shadow_cfg["shadow_attach_points"]
@@ -469,87 +509,101 @@ def config_cache(options, system):
                             node_x=0, node_y=0,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_east=CHIPort(recv_buffer_size=4),
-                            port_north=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_east=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_north=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         system.CHIsys.MeshNode1 = MeshNode(
                             node_x=1, node_y=0,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_east=CHIPort(recv_buffer_size=4),
-                            port_west=CHIPort(recv_buffer_size=4),
-                            port_north=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_east=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_west=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_north=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         system.CHIsys.MeshNode2 = MeshNode(
                             node_x=2, node_y=0,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_west=CHIPort(recv_buffer_size=4),
-                            port_north=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_west=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_north=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         system.CHIsys.MeshNode3 = MeshNode(
                             node_x=0, node_y=1,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_east=CHIPort(recv_buffer_size=4),
-                            port_north=CHIPort(recv_buffer_size=4),
-                            port_south=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_east=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_north=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_south=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         system.CHIsys.MeshNode4 = MeshNode(
                             node_x=1, node_y=1,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_east=CHIPort(recv_buffer_size=4),
-                            port_west=CHIPort(recv_buffer_size=4),
-                            port_north=CHIPort(recv_buffer_size=4),
-                            port_south=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_east=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_west=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_north=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_south=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         system.CHIsys.MeshNode5 = MeshNode(
                             node_x=2, node_y=1,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_west=CHIPort(recv_buffer_size=4),
-                            port_north=CHIPort(recv_buffer_size=4),
-                            port_south=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_west=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_north=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_south=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         system.CHIsys.MeshNode6 = MeshNode(
                             node_x=0, node_y=2,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_east=CHIPort(recv_buffer_size=4),
-                            port_south=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_east=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_south=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         system.CHIsys.MeshNode7 = MeshNode(
                             node_x=1, node_y=2,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_east=CHIPort(recv_buffer_size=4),
-                            port_west=CHIPort(recv_buffer_size=4),
-                            port_south=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_east=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_west=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_south=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         system.CHIsys.MeshNode8 = MeshNode(
                             node_x=2, node_y=2,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_west=CHIPort(recv_buffer_size=4),
-                            port_south=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_west=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_south=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         print(
                             "[xsCHI][Build] mesh=3x3 "
                             "M0=(0,0) M1=(1,0) M2=(2,0) "
                             "M3=(0,1) M4=(1,1) M5=(2,1) "
                             "M6=(0,2) M7=(1,2) M8=(2,2) "
-                            "endpoints: RN@M0.local0 HN@M4.local0 DRAM@M4.local1 "
+                            f"endpoints: RN@M0.local0 HN@{chi_hn_attach_point} "
+                            f"DRAM@{chi_dram_attach_point} "
                             f"topology={chi_topology} variant={topology_variant} "
+                            f"port_lat={chi_port_transfer_latency} "
+                            f"router_lat={chi_router_latency} "
+                            f"l3_extra_req={chi_l3_extra_req_cycles} "
+                            f"l3_extra_rsp={chi_l3_extra_rsp_cycles} "
                             f"shadow_enable={shadow_cfg['shadow_enable']} "
                             f"shadow_count={len(shadow_cfg['shadow_bridges'])} "
                             f"shadow_attach={shadow_cfg['shadow_attach_points']}"
@@ -562,40 +616,48 @@ def config_cache(options, system):
                             node_x=0, node_y=0,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_east=CHIPort(recv_buffer_size=4),
-                            port_north=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_east=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_north=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         system.CHIsys.MeshNode1 = MeshNode(
                             node_x=1, node_y=0,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_west=CHIPort(recv_buffer_size=4),
-                            port_north=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_west=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_north=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         system.CHIsys.MeshNode2 = MeshNode(
                             node_x=1, node_y=1,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_west=CHIPort(recv_buffer_size=4),
-                            port_south=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_west=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_south=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         system.CHIsys.MeshNode3 = MeshNode(
                             node_x=0, node_y=1,
                             voq_depth=chi_voq_depth,
                             voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                            port_local0=CHIPort(recv_buffer_size=4),
-                            port_local1=CHIPort(recv_buffer_size=4),
-                            port_east=CHIPort(recv_buffer_size=4),
-                            port_south=CHIPort(recv_buffer_size=4))
+                            router_latency_cycles=chi_router_latency,
+                            port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_east=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                            port_south=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                         print(
                             "[xsCHI][Build] mesh=2x2 "
                             "M0=(0,0) M1=(1,0) M2=(1,1) M3=(0,1) "
                             "endpoints: RN@M0.local0 HN@M1.local0 "
                             f"DRAM@{'M1.local1' if use_mesh1_local1_dram else 'M2.local0'} "
                             f"topology={chi_topology} variant={topology_variant} "
+                            f"port_lat={chi_port_transfer_latency} "
+                            f"router_lat={chi_router_latency} "
+                            f"l3_extra_req={chi_l3_extra_req_cycles} "
+                            f"l3_extra_rsp={chi_l3_extra_rsp_cycles} "
                             f"shadow_enable={shadow_cfg['shadow_enable']} "
                             f"shadow_count={len(shadow_cfg['shadow_bridges'])} "
                             f"shadow_attach={shadow_cfg['shadow_attach_points']}"
@@ -657,19 +719,30 @@ def config_cache(options, system):
                     system.CHIsys = L2ToDramSys(
                         configFile=os.path.join(
                             root_dir,
-                            'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'
+                            'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini'
                         ),
                         topology_variant=topology_variant,
                     )
                     system.CHIsys.L2Wrapper = CHI_L2(
-                        RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)),
+                        RNBridge=CHIBridge(
+                            networkPort=CHIPort(
+                                recv_buffer_size=4,
+                                transfer_latency_cycles=
+                                chi_port_transfer_latency,
+                            )
+                        ),
                         ShadowRNBridges=shadow_cfg["shadow_bridges"],
                         shadow_enable=shadow_cfg["shadow_enable"],
                         shadow_src_bases=shadow_cfg["shadow_src_bases"],
                         shadow_window_sizes=shadow_cfg["shadow_window_sizes"],
                         shadow_dst_bases=shadow_cfg["shadow_dst_bases"],
                     )
-                    system.CHIsys.L3 = FakeL3(networkPort=CHIPort(recv_buffer_size=4))
+                    system.CHIsys.L3 = FakeL3(
+                        networkPort=CHIPort(
+                            recv_buffer_size=4,
+                            transfer_latency_cycles=chi_port_transfer_latency,
+                        )
+                    )
                     system.CHIsys.ShadowRNBridges = shadow_cfg["shadow_bridges"]
                     system.CHIsys.shadow_attach_points = shadow_cfg["shadow_attach_points"]
 
@@ -677,40 +750,46 @@ def config_cache(options, system):
                         node_x=0, node_y=0,
                         voq_depth=chi_voq_depth,
                         voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_local1=CHIPort(recv_buffer_size=4),
-                        port_east=CHIPort(recv_buffer_size=4),
-                        port_north=CHIPort(recv_buffer_size=4))
+                        router_latency_cycles=chi_router_latency,
+                        port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_east=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_north=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                     system.CHIsys.MeshNode1 = MeshNode(
                         node_x=1, node_y=0,
                         voq_depth=chi_voq_depth,
                         voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_local1=CHIPort(recv_buffer_size=4),
-                        port_west=CHIPort(recv_buffer_size=4),
-                        port_north=CHIPort(recv_buffer_size=4))
+                        router_latency_cycles=chi_router_latency,
+                        port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_west=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_north=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                     system.CHIsys.MeshNode2 = MeshNode(
                         node_x=1, node_y=1,
                         voq_depth=chi_voq_depth,
                         voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_local1=CHIPort(recv_buffer_size=4),
-                        port_west=CHIPort(recv_buffer_size=4),
-                        port_south=CHIPort(recv_buffer_size=4))
+                        router_latency_cycles=chi_router_latency,
+                        port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_west=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_south=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                     system.CHIsys.MeshNode3 = MeshNode(
                         node_x=0, node_y=1,
                         voq_depth=chi_voq_depth,
                         voq_depth_per_ingress=chi_voq_depth_per_ingress,
-                        port_local0=CHIPort(recv_buffer_size=4),
-                        port_local1=CHIPort(recv_buffer_size=4),
-                        port_east=CHIPort(recv_buffer_size=4),
-                        port_south=CHIPort(recv_buffer_size=4))
+                        router_latency_cycles=chi_router_latency,
+                        port_local0=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_local1=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_east=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency),
+                        port_south=CHIPort(recv_buffer_size=4, transfer_latency_cycles=chi_port_transfer_latency))
                     print(
                         "[xsCHI][Build] mesh=2x2 "
                         "M0=(0,0) M1=(1,0) M2=(1,1) M3=(0,1) "
                         "endpoints: RN@M0.local0 HN@M1.local0 "
                         f"DRAM@{'M1.local1' if use_mesh1_local1_dram else 'M2.local0'} "
                         f"topology={chi_topology} variant={topology_variant} "
+                        f"port_lat={chi_port_transfer_latency} "
+                        f"router_lat={chi_router_latency} "
                         f"shadow_enable={shadow_cfg['shadow_enable']} "
                         f"shadow_count={len(shadow_cfg['shadow_bridges'])} "
                         f"shadow_attach={shadow_cfg['shadow_attach_points']}"

@@ -51,7 +51,9 @@ namespace xsCHI
           dat_last_send_time(0),
           rsp_credit(0),
           rsp_last_send_time(0),
-          BUFFER_SIZE(p.recv_buffer_size)
+          BUFFER_SIZE(p.recv_buffer_size),
+          transferLatencyCycles(p.transfer_latency_cycles == 0 ? 1
+                                                               : p.transfer_latency_cycles)
     {
         //make sure sender_credit==recver_buffer_size
     }
@@ -173,7 +175,8 @@ namespace xsCHI
                 assert(req_buffer.size() < BUFFER_SIZE && "Request buffer overflow");
                 req_buffer.push(std::move(data));
                 if (!global_handle_event.scheduled()) {
-                    schedule(global_handle_event, curTick()+clockPeriod()*PortTransferLatency);
+                    schedule(global_handle_event,
+                             curTick() + clockPeriod() * transferLatencyCycles);
                 }
                 break;
             }
@@ -181,7 +184,8 @@ namespace xsCHI
                 assert(snp_buffer.size() < BUFFER_SIZE && "Snoop buffer overflow");
                 snp_buffer.push(std::move(data));
                 if (!global_handle_event.scheduled()) {
-                    schedule(global_handle_event, curTick()+clockPeriod()*PortTransferLatency);
+                    schedule(global_handle_event,
+                             curTick() + clockPeriod() * transferLatencyCycles);
                 }
                 break;
             }
@@ -190,7 +194,8 @@ namespace xsCHI
                 assert(dat_buffer.size() < BUFFER_SIZE && "Data buffer overflow");
                 dat_buffer.push(std::move(data));
                 if (!global_handle_event.scheduled()) {
-                    schedule(global_handle_event, curTick()+clockPeriod()*PortTransferLatency);
+                    schedule(global_handle_event,
+                             curTick() + clockPeriod() * transferLatencyCycles);
                 }
                 break;
             }
@@ -199,7 +204,8 @@ namespace xsCHI
                 assert(rsp_buffer.size() < BUFFER_SIZE && "Response buffer overflow");
                 rsp_buffer.push(std::move(data));
                 if (!global_handle_event.scheduled()) {
-                    schedule(global_handle_event, curTick()+clockPeriod()*PortTransferLatency);
+                    schedule(global_handle_event,
+                             curTick() + clockPeriod() * transferLatencyCycles);
                 }
                 break;
             }

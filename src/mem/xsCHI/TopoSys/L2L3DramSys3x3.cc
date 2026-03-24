@@ -51,48 +51,51 @@ toLowerCopy(std::string input)
 }
 
 uint32_t
-parseMeshIndexToken(const std::string &meshToken, const std::string &rawAttachPoint)
+parseMeshIndexToken(const std::string &meshToken,
+                    const std::string &rawAttachPoint,
+                    const char *role)
 {
     panic_if(meshToken.size() <= 4 || meshToken.substr(0, 4) != "mesh",
-             "Invalid shadow attach mesh token '%s' in '%s'",
-             meshToken.c_str(), rawAttachPoint.c_str());
+             "Invalid %s mesh token '%s' in '%s'",
+             role, meshToken.c_str(), rawAttachPoint.c_str());
 
     uint32_t meshIndex = 0;
     for (size_t i = 4; i < meshToken.size(); ++i) {
         const unsigned char c = static_cast<unsigned char>(meshToken[i]);
         panic_if(!std::isdigit(c),
-                 "Invalid shadow attach mesh token '%s' in '%s'",
-                 meshToken.c_str(), rawAttachPoint.c_str());
+                 "Invalid %s mesh token '%s' in '%s'",
+                 role, meshToken.c_str(), rawAttachPoint.c_str());
         meshIndex = meshIndex * 10 + static_cast<uint32_t>(c - '0');
     }
     return meshIndex;
 }
 
 ShadowAttachTarget
-parseShadowAttachPoint(const std::string &rawAttachPoint,
-                       const std::array<MeshNode*, 9> &meshes)
+parseAttachPoint(const std::string &rawAttachPoint,
+                 const std::array<MeshNode*, 9> &meshes,
+                 const char *role)
 {
     const std::string trimmed = trimCopy(rawAttachPoint);
-    panic_if(trimmed.empty(), "Shadow attach point is empty");
+    panic_if(trimmed.empty(), "%s attach point is empty", role);
 
     const auto dotPos = trimmed.find('.');
     panic_if(dotPos == std::string::npos,
-             "Invalid shadow attach point '%s', expected format meshX.localY",
-             trimmed.c_str());
+             "Invalid %s attach point '%s', expected format meshX.localY",
+             role, trimmed.c_str());
 
     const std::string meshToken = toLowerCopy(trimmed.substr(0, dotPos));
     const std::string localToken = toLowerCopy(trimmed.substr(dotPos + 1));
 
-    const uint32_t meshIndex = parseMeshIndexToken(meshToken, trimmed);
+    const uint32_t meshIndex = parseMeshIndexToken(meshToken, trimmed, role);
     panic_if(meshIndex >= meshes.size(),
-             "Invalid shadow attach mesh token '%s' in '%s': index out of range [0,%u]",
-             meshToken.c_str(), trimmed.c_str(),
+             "Invalid %s mesh token '%s' in '%s': index out of range [0,%u]",
+             role, meshToken.c_str(), trimmed.c_str(),
              static_cast<unsigned>(meshes.size() - 1));
 
     MeshNode *mesh = meshes[meshIndex];
     panic_if(mesh == nullptr,
-             "Shadow attach point '%s' refers to null mesh%u",
-             trimmed.c_str(), meshIndex);
+             "%s attach point '%s' refers to null mesh%u",
+             role, trimmed.c_str(), meshIndex);
 
     uint32_t localPort = 0;
     if (localToken == "local0") {
@@ -100,15 +103,15 @@ parseShadowAttachPoint(const std::string &rawAttachPoint,
     } else if (localToken == "local1") {
         localPort = 1;
     } else {
-        panic("Invalid shadow attach local token '%s' in '%s'",
-              localToken.c_str(), trimmed.c_str());
+        panic("Invalid %s local token '%s' in '%s'",
+              role, localToken.c_str(), trimmed.c_str());
     }
 
     CHIPort *port = (localPort == 0) ? mesh->getLocal0Port()
                                      : mesh->getLocal1Port();
     panic_if(port == nullptr,
-             "Shadow attach point '%s' resolves to null port (mesh local%u)",
-             trimmed.c_str(), localPort);
+             "%s attach point '%s' resolves to null port (mesh local%u)",
+             role, trimmed.c_str(), localPort);
 
     ShadowAttachTarget target;
     target.mesh = mesh;
@@ -139,7 +142,9 @@ L2L3DramSys3x3::L2L3DramSys3x3(const Params &p)
       Mesh8(p.MeshNode8),
       shadowBridges(p.ShadowRNBridges.begin(), p.ShadowRNBridges.end()),
       shadowAttachPoints(p.shadow_attach_points.begin(),
-                         p.shadow_attach_points.end())
+                         p.shadow_attach_points.end()),
+      hnAttachPoint(p.hn_attach_point),
+      dramAttachPoint(p.dram_attach_point)
 {
     panic_if(Mesh0 == nullptr || Mesh1 == nullptr || Mesh2 == nullptr ||
                  Mesh3 == nullptr || Mesh4 == nullptr || Mesh5 == nullptr ||
@@ -158,10 +163,16 @@ L2L3DramSys3x3::L2L3DramSys3x3(const Params &p)
 
     const std::array<MeshNode*, 9> meshes = {
         Mesh0, Mesh1, Mesh2, Mesh3, Mesh4, Mesh5, Mesh6, Mesh7, Mesh8};
+    const ShadowAttachTarget hnfAttachTarget =
+        parseAttachPoint(hnAttachPoint, meshes, "HN");
+    const ShadowAttachTarget dramAttachTarget =
+        parseAttachPoint(dramAttachPoint, meshes, "DRAM");
 
     const uint32_t l2Id = NodeID(Mesh0->getNodeX(), Mesh0->getNodeY(), 0).getNodeID();
-    const uint32_t l3Id = NodeID(Mesh4->getNodeX(), Mesh4->getNodeY(), 0).getNodeID();
-    const uint32_t dramId = NodeID(Mesh4->getNodeX(), Mesh4->getNodeY(), 1).getNodeID();
+    const uint32_t l3Id = NodeID(hnfAttachTarget.meshX, hnfAttachTarget.meshY,
+                                 hnfAttachTarget.localPort).getNodeID();
+    const uint32_t dramId = NodeID(dramAttachTarget.meshX, dramAttachTarget.meshY,
+                                   dramAttachTarget.localPort).getNodeID();
 
     auto l2Sam = std::make_shared<SystemAddressMapRN>();
     l2Sam->addNodeID(l3Id);
@@ -210,15 +221,17 @@ L2L3DramSys3x3::L2L3DramSys3x3(const Params &p)
     assert(Mesh5->getNorthPort() != nullptr && Mesh8->getSouthPort() != nullptr);
     Mesh5->getNorthPort()->connect(Mesh8->getSouthPort());
 
-    assert(Mesh4->getLocal0Port() != nullptr && l3->getNetworkPort() != nullptr);
-    panic_if(Mesh4->getLocal0Port()->isConnected(),
-             "L2L3DramSys3x3 HN attach point Mesh4.local0 is already connected");
-    Mesh4->getLocal0Port()->connect(l3->getNetworkPort());
+    assert(hnfAttachTarget.port != nullptr && l3->getNetworkPort() != nullptr);
+    panic_if(hnfAttachTarget.port->isConnected(),
+             "L2L3DramSys3x3 HN attach point %s is already connected",
+             hnfAttachTarget.normalized.c_str());
+    hnfAttachTarget.port->connect(l3->getNetworkPort());
 
-    assert(Mesh4->getLocal1Port() != nullptr && dram->getCHIPort() != nullptr);
-    panic_if(Mesh4->getLocal1Port()->isConnected(),
-             "L2L3DramSys3x3 DRAM attach point Mesh4.local1 is already connected");
-    Mesh4->getLocal1Port()->connect(dram->getCHIPort());
+    assert(dramAttachTarget.port != nullptr && dram->getCHIPort() != nullptr);
+    panic_if(dramAttachTarget.port->isConnected(),
+             "L2L3DramSys3x3 DRAM attach point %s is already connected",
+             dramAttachTarget.normalized.c_str());
+    dramAttachTarget.port->connect(dram->getCHIPort());
 
     std::set<uint32_t> shadowNodeIds;
     for (size_t i = 0; i < shadowBridges.size(); ++i) {
@@ -230,8 +243,10 @@ L2L3DramSys3x3::L2L3DramSys3x3(const Params &p)
                  "L2L3DramSys3x3 shadow bridge[%u] pointer mismatch with L2Wrapper",
                  static_cast<unsigned>(i));
 
+        const std::string role =
+            "shadow[" + std::to_string(static_cast<unsigned>(i)) + "]";
         const ShadowAttachTarget attachTarget =
-            parseShadowAttachPoint(shadowAttachPoints[i], meshes);
+            parseAttachPoint(shadowAttachPoints[i], meshes, role.c_str());
         panic_if(attachTarget.port->isConnected(),
                  "L2L3DramSys3x3 shadow[%u] attach point %s is already connected",
                  static_cast<unsigned>(i), attachTarget.normalized.c_str());
@@ -280,9 +295,10 @@ L2L3DramSys3x3::L2L3DramSys3x3(const Params &p)
            Mesh6->getNodeX(), Mesh6->getNodeY(),
            Mesh7->getNodeX(), Mesh7->getNodeY(),
            Mesh8->getNodeX(), Mesh8->getNodeY());
-    inform("xsCHI endpoint placement: RN@Mesh0.local0 node_id=%u, "
-           "HN@Mesh4.local0 node_id=%u, DRAM@Mesh4.local1 node_id=%u",
-           l2Id, l3Id, dramId);
+    inform("xsCHI endpoint placement: RN@mesh0.local0 node_id=%u, "
+           "HN@%s node_id=%u, DRAM@%s node_id=%u",
+           l2Id, hnfAttachTarget.normalized.c_str(), l3Id,
+           dramAttachTarget.normalized.c_str(), dramId);
     inform("xsCHI shadow summary: count=%u",
            static_cast<unsigned>(shadowBridges.size()));
     inform("xsCHI mesh links: "

@@ -90,6 +90,7 @@ class MeshNode : public ClockedObject
     const uint32_t nodeY;
     const size_t voqDepth;
     const bool voqDepthPerIngress;
+    const uint32_t routerLatencyCycles;
 
     // VOQ indexed by [egress][channel][ingress]. This avoids head-of-line
     // blocking between different output directions.
