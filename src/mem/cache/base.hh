@@ -1070,6 +1070,12 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     const bool isReadOnly;
 
+    /** Protected demand-fetch miss capacity for L1I FDIP gating. */
+    const unsigned demandFetchMSHRs;
+
+    /** Maximum pure-FDIP miss entries allowed in L1I. */
+    const unsigned fdipPrefetchMSHRs;
+
     /**
      * when a data expansion of a compressed block happens it will not be
      * able to co-allocate where it is at anymore. If true, the replacement
@@ -1362,6 +1368,18 @@ class BaseCache : public ClockedObject, public CacheAccessor
         /** Number of FDIP old-path refills dropped from installation. */
         statistics::Scalar fdipDroppedRefill;
 
+        /** Number of FDIP probe hits that avoid miss allocation. */
+        statistics::Scalar fdipProbeHit;
+
+        /** Number of FDIP probe merges onto existing in-flight misses. */
+        statistics::Scalar fdipProbeMerged;
+
+        /** Number of FDIP misses rejected by pure-FDIP quota. */
+        statistics::Scalar fdipRejectedNoPrefetchMSHR;
+
+        /** Number of FDIP misses rejected to preserve demand capacity. */
+        statistics::Scalar fdipRejectedByDemandReserve;
+
         /** Per-command statistics */
         std::vector<std::unique_ptr<CacheCmdStats>> cmd;
     } stats;
@@ -1574,6 +1592,30 @@ class BaseCache : public ClockedObject, public CacheAccessor
     bool isFdipBlk(const CacheBlk *blk) const
     {
         return blk && blk->getXsMetadata().isFdip();
+    }
+
+    enum class FdipMissAllocDecision
+    {
+        Allow,
+        RejectNoPrefetchMSHR,
+        RejectByDemandReserve
+    };
+
+    FdipMissAllocDecision classifyFdipMissAllocation() const
+    {
+        if (!isL1I()) {
+            return FdipMissAllocDecision::Allow;
+        }
+
+        if (!mshrQueue.canAllocateFDIP(fdipPrefetchMSHRs)) {
+            return FdipMissAllocDecision::RejectNoPrefetchMSHR;
+        }
+
+        if (!mshrQueue.preservesDemandEntries(demandFetchMSHRs)) {
+            return FdipMissAllocDecision::RejectByDemandReserve;
+        }
+
+        return FdipMissAllocDecision::Allow;
     }
 
     bool shouldDropFdipRefill(MSHR *mshr, const PacketPtr pkt) const;

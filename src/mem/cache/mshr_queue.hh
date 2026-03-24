@@ -161,6 +161,28 @@ class MSHRQueue : public Queue<MSHR>
         // keep regressions unchanged
         return (allocated < numEntries - (numReserve + 1 + demandReserve));
     }
+
+    int countPureFDIPEntries() const
+    {
+        int pure_fdip_entries = 0;
+        for (const auto &entry : allocatedList) {
+            if (entry->hasFromFDIP() && !entry->hasFromDemand()) {
+                ++pure_fdip_entries;
+            }
+        }
+        return pure_fdip_entries;
+    }
+
+    bool canAllocateFDIP(int fdip_quota) const
+    {
+        return fdip_quota <= 0 || countPureFDIPEntries() < fdip_quota;
+    }
+
+    bool preservesDemandEntries(int demand_entries) const
+    {
+        return demand_entries <= 0 ||
+               allocated < numEntries - (numReserve + demand_entries);
+    }
 };
 
 } // namespace gem5

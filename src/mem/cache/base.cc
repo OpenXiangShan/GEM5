@@ -175,6 +175,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       forwardSnoops(true),
       clusivity(p.clusivity),
       isReadOnly(p.is_read_only),
+      demandFetchMSHRs(p.demand_fetch_mshrs),
+      fdipPrefetchMSHRs(p.fdip_prefetch_mshrs),
       replaceExpansions(p.replace_expansions),
       moveContractions(p.move_contractions),
       blocked(0),
@@ -209,6 +211,16 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
 
     if (prefetcher)
         prefetcher->setParentInfo(system, getProbeManager(), this, getBlockSize());
+
+    fatal_if(demandFetchMSHRs > p.mshrs,
+        "%s demand_fetch_mshrs (%u) exceeds mshrs (%u)",
+        name(), demandFetchMSHRs, p.mshrs);
+    fatal_if(fdipPrefetchMSHRs > p.mshrs,
+        "%s fdip_prefetch_mshrs (%u) exceeds mshrs (%u)",
+        name(), fdipPrefetchMSHRs, p.mshrs);
+    fatal_if(demandFetchMSHRs + fdipPrefetchMSHRs > p.mshrs,
+        "%s demand_fetch_mshrs + fdip_prefetch_mshrs (%u + %u) exceeds mshrs (%u)",
+        name(), demandFetchMSHRs, fdipPrefetchMSHRs, p.mshrs);
 
     fatal_if(compressor && !dynamic_cast<CompressedTags*>(tags),
         "The tags of compressed cache %s must derive from CompressedTags",
@@ -749,6 +761,10 @@ BaseCache::recvTimingReq(PacketPtr pkt)
     }
 
     if (satisfied) {
+        if (isL1I() && pkt->cmd.isSWPrefetch() && isFdipPkt(pkt)) {
+            stats.fdipProbeHit++;
+        }
+
         // notify before anything else as later handleTimingReqHit might turn
         // the packet in a response
         if (blk && !pkt->isWrite()) {
@@ -2980,6 +2996,14 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
              "number of old-path FDIP refill epoch mismatches seen at this cache"),
     ADD_STAT(fdipDroppedRefill, statistics::units::Count::get(),
              "number of old-path FDIP refills dropped from installation"),
+    ADD_STAT(fdipProbeHit, statistics::units::Count::get(),
+             "number of FDIP tag probes that hit in L1I and avoid miss allocation"),
+    ADD_STAT(fdipProbeMerged, statistics::units::Count::get(),
+             "number of FDIP tag probes merged onto existing in-flight misses"),
+    ADD_STAT(fdipRejectedNoPrefetchMSHR, statistics::units::Count::get(),
+             "number of FDIP miss probes rejected by the pure-FDIP MSHR quota"),
+    ADD_STAT(fdipRejectedByDemandReserve, statistics::units::Count::get(),
+             "number of FDIP miss probes rejected to preserve demand-fetch MSHR capacity"),
     cmd(MemCmd::NUM_MEM_CMDS)
 {
     for (int idx = 0; idx < MemCmd::NUM_MEM_CMDS; ++idx)

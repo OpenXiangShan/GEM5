@@ -379,9 +379,11 @@ Cache::handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk, Tick forward_time,
 
         const bool fdip_pkt = isL1I() && isFdipPkt(pkt);
         if (!(fdip_pkt && !mshr)) {
-            if (mshr && fdip_pkt && mshr->hasFromDemand() &&
-                mshr->markFdipLateSeen()) {
-                stats.fdipLate++;
+            if (mshr && fdip_pkt) {
+                stats.fdipProbeMerged++;
+                if (mshr->hasFromDemand() && mshr->markFdipLateSeen()) {
+                    stats.fdipLate++;
+                }
             }
 
             // There's no reason to add a prefetch as an additional target
@@ -417,6 +419,26 @@ Cache::handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk, Tick forward_time,
                 return;
             }
         } else {
+            switch (classifyFdipMissAllocation()) {
+              case FdipMissAllocDecision::RejectNoPrefetchMSHR:
+                stats.fdipRejectedNoPrefetchMSHR++;
+                DPRINTF(Cache,
+                        "%s: reject FDIP prefetch by pure-FDIP quota addr=%#llx\n",
+                        __func__, pkt->getAddr());
+                pkt->makeTimingResponse();
+                cpuSidePort.schedTimingResp(pkt, request_time);
+                return;
+              case FdipMissAllocDecision::RejectByDemandReserve:
+                stats.fdipRejectedByDemandReserve++;
+                DPRINTF(Cache,
+                        "%s: reject FDIP prefetch by demand reserve addr=%#llx\n",
+                        __func__, pkt->getAddr());
+                pkt->makeTimingResponse();
+                cpuSidePort.schedTimingResp(pkt, request_time);
+                return;
+              case FdipMissAllocDecision::Allow:
+                break;
+            }
             DPRINTF(Cache,
                     "%s: keep FDIP prefetch miss on original request "
                     "for real completion addr=%#llx\n",
