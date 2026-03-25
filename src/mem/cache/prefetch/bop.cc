@@ -347,7 +347,7 @@ BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
 {
     DPRINTF(BOPPrefetcher, "Reach %s entry, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
     Addr offset = offsetsListIterator->calcOffset();
-    Addr lookup_addr = x - offset;
+    Addr lookup_addr = x - (offset << lBlkSize);
     DPRINTF(BOPPrefetcher, "%s: offset: %d lookup addr: %#lx\n", __FUNCTION__, offset, lookup_addr);
     // There was a hit in the RR table, increment the score for this offset
     auto [exist, rr_entry] = testRR(lookup_addr);
@@ -458,7 +458,7 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
 
     // Go through the nth offset and update the score, the best score and the
     // current best offset if a better one is found
-    bestOffsetLearning(tag_x, late, pfi);
+    bestOffsetLearning(addr, late, pfi);
 
     // This prefetcher is a degree 1 prefetch, so it will only generate one
     // prefetch at most per access
