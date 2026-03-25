@@ -764,6 +764,9 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
         entry.predBranchInfo = finalPred.getTakenEntry().getBranchInfo();
         entry.predBranchInfo.target = nextPC; // Use final target (may not be from BTB)
         entry.predEndPC = entry.predBranchInfo.coverageEndPC(fallThroughAddr);
+        if (entry.predBranchInfo.startPC() < entry.startPC) {
+            entry.setDecodeStartPC(entry.predBranchInfo.startPC());
+        }
     }
 
     // Record current history and prediction metadata

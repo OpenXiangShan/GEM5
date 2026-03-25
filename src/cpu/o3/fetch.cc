@@ -815,42 +815,33 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     const auto &stream = dbpbtb->ftqFetchingTarget(tid);
 
     const Addr curr_pc = next_pc.instAddr();
-    assert(stream.startPC <= curr_pc && curr_pc < stream.predEndPC);
+    assert(stream.decodeStartPC() <= curr_pc && curr_pc < stream.predEndPC);
 
     bool run_out = false;
 
     // Decoupled+BTB-only:
-    // `predBranchInfo.pc` is the predictor-visible controlPC, while
-    // `predBranchInfo.startPC()` remains the architectural instruction-start
-    // address used by fetch/decode byte assembly. Redirect still fires when
-    // the instruction starting at `startPC()` has full byte coverage, but the
-    // predictor-visible identity inside BPU structures stays at controlPC.
+    // `predBranchInfo.pc` is the predictor-visible controlPC, while redirect
+    // ownership is carried by the current FTQ target. Once fetch migrates
+    // split-control ownership before buildInst, taken matching only needs to
+    // compare the current inst-start PC against the owner target's
+    // predicted branch start PC.
     const auto &pred_info = stream.predBranchInfo;
     const bool is_microop = inst->staticInst->isMicroop();
-    const Addr trigger_pc = pred_info.controlPC();
-    const bool trigger_covered =
-        !is_microop &&
-        pred_info.triggerPCCoveredByFetchWindow(curr_pc, stream.predEndPC);
-
-    predict_taken = stream.predTaken && trigger_covered;
+    predict_taken = stream.predTaken && !is_microop &&
+                    curr_pc == pred_info.startPC();
     if (predict_taken) {
         auto &rpc = next_pc.as<GenericISA::PCStateWithNext>();
         DPRINTF(DecoupleBP,
                 "[tid:%i] decoupled+BTB taken-match: startPC=%#lx "
-                "triggerPC=%#lx streamEndPC=%#lx endPCExclusive=%#lx size=%u inst=%#lx\n",
-                tid, pred_info.startPC(), trigger_pc, stream.predEndPC,
+                "controlPC=%#lx ownerDecodeStart=%#lx streamEndPC=%#lx "
+                "endPCExclusive=%#lx size=%u inst=%#lx\n",
+                tid, pred_info.startPC(), pred_info.controlPC(),
+                stream.decodeStartPC(), stream.predEndPC,
                 pred_info.endPCExclusive(), pred_info.size, curr_pc);
         rpc.pc(pred_info.target);
         rpc.npc(pred_info.target + 4);
         rpc.uReset();
         run_out = true;
-    } else if (stream.predTaken && !is_microop &&
-               curr_pc == pred_info.startPC()) {
-        DPRINTF(DecoupleBP,
-                "[tid:%i] decoupled+BTB redirect-blocked: startPC=%#lx "
-                "triggerPC=%#lx streamEndPC=%#lx endPCExclusive=%#lx size=%u inst=%#lx\n",
-                tid, pred_info.startPC(), trigger_pc, stream.predEndPC,
-                pred_info.endPCExclusive(), pred_info.size, curr_pc);
     } else if (is_microop) {
         // Microops must advance uPC explicitly; they do not rely on decoder NPC.
         inst->staticInst->advancePC(next_pc);
@@ -1932,6 +1923,27 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Create a copy of the current PC state to calculate the next PC.
     std::unique_ptr<PCStateBase> next_pc(pc.clone());
+
+    assert(dbpbtb);
+    while (dbpbtb->ftqHasFetching(tid) && dbpbtb->ftqHasFollowing(tid)) {
+        const auto &stream = dbpbtb->ftqFetchingTarget(tid);
+        const auto &following = dbpbtb->ftqFollowingTarget(tid);
+        const Addr inst_pc = pc.instAddr();
+        if (inst_pc < following.decodeStartPC()) {
+            break;
+        }
+
+        DPRINTF(DecoupleBP,
+                "[tid:%i] migrate split-control ownership before buildInst: "
+                "inst=%#lx currentStart=%#lx currentDecodeStart=%#lx "
+                "followingStart=%#lx followingDecodeStart=%#lx\n",
+                tid, inst_pc, stream.startPC, stream.decodeStartPC(),
+                following.startPC, following.decodeStartPC());
+
+        dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
+        ftqEntryFetchedInsts[tid] = 0;
+        threads[tid].valid = keepFetchedBufferAfterTargetConsume(tid);
+    }
 
     // Decode the instruction, handling macro-op transitions.
     StaticInstPtr staticInst = nullptr;

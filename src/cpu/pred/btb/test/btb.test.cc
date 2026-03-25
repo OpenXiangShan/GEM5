@@ -261,6 +261,70 @@ TEST_F(BTBTest, Rvi4B_DerivedPcViews) {
     EXPECT_EQ(branch.getEnd(), 0x1004);
 }
 
+TEST_F(BTBTest, FetchTargetDecodeStartPC_DefaultsToStreamStart) {
+    FetchTarget stream;
+    stream.startPC = 0x1020;
+
+    EXPECT_EQ(stream.decodeStartPC(), 0x1020);
+}
+
+TEST_F(BTBTest, Rvi4B_ControlPC_CrossBoundaryPredictInNextBlock) {
+    BranchInfo branch = createBranchInfo(0x101e, 0x2000, true, false, false,
+                                         false, 4);
+    FetchTarget following;
+    following.startPC = 0x1020;
+    following.predTaken = true;
+    following.predBranchInfo = branch;
+    following.predEndPC = branch.coverageEndPC(0x1020);
+    following.setDecodeStartPC(branch.startPC());
+
+    EXPECT_EQ(branch.controlPC(), 0x1020);
+    EXPECT_EQ(following.startPC, branch.controlPC());
+    EXPECT_EQ(following.decodeStartPC(), branch.startPC());
+    EXPECT_LT(following.decodeStartPC(), following.startPC);
+    EXPECT_EQ(following.predEndPC, 0x1022);
+}
+
+TEST_F(BTBTest, SplitControlOwnershipMigratesBeforeBuildInst) {
+    BranchInfo branch = createBranchInfo(0x101e, 0x2000, true, false, false,
+                                         false, 4);
+    FetchTarget current;
+    current.startPC = 0x1000;
+    current.predEndPC = 0x1020;
+
+    FetchTarget following;
+    following.startPC = 0x1020;
+    following.predTaken = true;
+    following.predBranchInfo = branch;
+    following.setDecodeStartPC(branch.startPC());
+
+    const Addr inst_pc = branch.startPC();
+    const bool should_migrate = inst_pc >= following.decodeStartPC();
+
+    EXPECT_TRUE(should_migrate);
+    EXPECT_LT(inst_pc, current.predEndPC);
+    EXPECT_LT(inst_pc, following.startPC);
+}
+
+TEST_F(BTBTest, TakenMatchUsesOwnerTargetStartPC) {
+    BranchInfo branch = createBranchInfo(0x101e, 0x2000, true, false, false,
+                                         false, 4);
+    FetchTarget following;
+    following.startPC = 0x1020;
+    following.predTaken = true;
+    following.predBranchInfo = branch;
+    following.setDecodeStartPC(branch.startPC());
+
+    const bool match_on_branch_start =
+        following.predTaken && branch.startPC() == following.predBranchInfo.startPC();
+    const bool match_on_control_pc =
+        following.predTaken && following.startPC == following.predBranchInfo.startPC();
+
+    EXPECT_TRUE(match_on_branch_start);
+    EXPECT_FALSE(match_on_control_pc);
+    EXPECT_EQ(following.decodeStartPC(), branch.startPC());
+}
+
 TEST_F(BTBTest, Rvi4B_TriggerCoverage_InSingleBlock) {
     BranchInfo branch = createBranchInfo(0x1008, 0x2000, true, false, false, false, 4);
 

@@ -379,6 +379,8 @@ struct FetchTarget
 {
     ThreadID tid;
     Addr startPC;       // start pc of the stream
+    Addr decodeInstStartAddr; // earliest inst-start PC owned for decode/build
+    bool hasExplicitDecodeStartAddr;
     bool predTaken;     // whether the FetchTarget has taken branch
     Addr predEndPC;     // predicted stream coverage end pc
     BranchInfo predBranchInfo; // predicted branch info
@@ -426,6 +428,8 @@ struct FetchTarget
 
    FetchTarget()
        : startPC(0),
+         decodeInstStartAddr(0),
+         hasExplicitDecodeStartAddr(false),
          predTaken(false),
          predEndPC(0),
          predBranchInfo(BranchInfo()),
@@ -454,6 +458,17 @@ struct FetchTarget
        predBTBEntries.clear();
        updateBTBEntries.clear();
    }
+
+    Addr decodeStartPC() const
+    {
+        return hasExplicitDecodeStartAddr ? decodeInstStartAddr : startPC;
+    }
+
+    void setDecodeStartPC(Addr pc)
+    {
+        decodeInstStartAddr = pc;
+        hasExplicitDecodeStartAddr = true;
+    }
 
     // the default exe result should be consistent with prediction
     void setDefaultResolve() {

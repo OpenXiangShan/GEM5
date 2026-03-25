@@ -172,8 +172,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         }
         // TODO:fix this
         DPRINTFR(DecoupleBPProbe,
-                 "%#lx-[%#lx, %#lx) --> %#lx, taken: %lu\n",
-                 e.startPC, e.getBranchInfo().pc, e.getEndPC(),
+                 "%#lx(decode=%#lx)-[%#lx, %#lx) --> %#lx, taken: %lu\n",
+                 e.startPC, e.decodeStartPC(), e.getBranchInfo().pc,
+                 e.getEndPC(),
                  e.getTakenTarget(), e.getTaken());
     }
 
