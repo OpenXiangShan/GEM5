@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <deque>
 #include <limits>
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -232,11 +233,26 @@ namespace xsCHI {
     void scheduleShadowReqSend(size_t shadowIdx);
     void onShadowTxnComplete(size_t shadowIdx, ReqPtr &req);
     bool shadowNeedOutstandingTrack(const ReqPtr &req) const;
+    bool shadowNeedReadLatencySample(const ReqPtr &req) const;
+    bool shadowNeedAutoWriteComplete(const ReqPtr &req) const;
+    void scheduleShadowWriteAutoComplete(size_t shadowIdx, Addr addr);
+    void processShadowWriteAutoComplete(size_t shadowIdx);
+    void scheduleNextShadowWriteCompleteEvent(size_t shadowIdx);
+    void recordShadowReadIssue(size_t shadowIdx, Addr addr);
+    void recordShadowReadCompletion(size_t shadowIdx, Addr addr);
 
     std::vector<std::deque<ReqPtr>> shadowReqQueues;
     std::vector<std::unordered_map<Addr, unsigned>> shadowOutstandingByAddr;
     std::vector<bool> shadowQueueBlocked;
     std::vector<std::unique_ptr<EventFunctionWrapper>> shadowReqSendEvents;
+    std::vector<std::multimap<Tick, Addr>> shadowWriteCompletionSchedule;
+    std::vector<std::unique_ptr<EventFunctionWrapper>> shadowWriteCompleteEvents;
+    std::vector<std::unordered_map<Addr, Tick>> shadowReadIssueTickByAddr;
+    std::vector<std::deque<uint32_t>> shadowRecentReadLatencyCycles;
+    std::vector<uint64_t> shadowRecentReadLatencyCycleSums;
+    std::vector<uint32_t> shadowWriteAutoCompleteCycles;
+    static constexpr uint32_t ShadowReadLatencyWindow = 100;
+    static constexpr uint32_t ShadowWriteAutoCompleteCyclesDefault = 100;
 
     public:
     gem5::Port &getPort(const std::string &if_name,

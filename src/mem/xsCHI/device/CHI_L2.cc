@@ -134,10 +134,20 @@ namespace xsCHI
         shadowOutstandingByAddr.resize(shadowBridges.size());
         shadowQueueBlocked.assign(shadowBridges.size(), false);
         shadowReqSendEvents.resize(shadowBridges.size());
+        shadowWriteCompletionSchedule.resize(shadowBridges.size());
+        shadowWriteCompleteEvents.resize(shadowBridges.size());
+        shadowReadIssueTickByAddr.resize(shadowBridges.size());
+        shadowRecentReadLatencyCycles.resize(shadowBridges.size());
+        shadowRecentReadLatencyCycleSums.assign(shadowBridges.size(), 0);
+        shadowWriteAutoCompleteCycles.assign(
+            shadowBridges.size(), ShadowWriteAutoCompleteCyclesDefault);
         for (size_t i = 0; i < shadowBridges.size(); ++i) {
             shadowReqSendEvents[i] = std::make_unique<EventFunctionWrapper>(
                 [this, i]() { this->drainShadowReqQueue(i); },
                 csprintf("%s.shadow_req_send[%zu]", name(), i));
+            shadowWriteCompleteEvents[i] = std::make_unique<EventFunctionWrapper>(
+                [this, i]() { this->processShadowWriteAutoComplete(i); },
+                csprintf("%s.shadow_write_complete[%zu]", name(), i));
         }
 
         registerExitCallback([this]() {
@@ -354,6 +364,12 @@ namespace xsCHI
         queue.pop_front();
         if (trackOutstanding) {
             outstanding[addr]++;
+            if (shadowNeedReadLatencySample(req)) {
+                recordShadowReadIssue(shadowIdx, addr);
+            }
+            if (shadowNeedAutoWriteComplete(req)) {
+                scheduleShadowWriteAutoComplete(shadowIdx, addr);
+            }
         }
         shadowQueueBlocked[shadowIdx] = false;
         DPRINTF(CHIL2Wrapper,
@@ -378,12 +394,20 @@ namespace xsCHI
                  name(), shadowIdx);
         panic_if(!req, "%s shadow[%zu] completion request is null", name(), shadowIdx);
 
-        // 仅读类请求会进入 outstanding 跟踪，写类完成无需参与队列解阻。
+        // 写回类请求使用固定周期超时自动完成，避免双重记账。
+        if (shadowNeedAutoWriteComplete(req)) {
+            return;
+        }
+
+        // 读类请求通过真实完成回调驱动 outstanding 释放。
         if (!shadowNeedOutstandingTrack(req)) {
             return;
         }
 
         const Addr addr = req->getAddr();
+        if (shadowNeedReadLatencySample(req)) {
+            recordShadowReadCompletion(shadowIdx, addr);
+        }
         auto &outstanding = shadowOutstandingByAddr[shadowIdx];
         auto it = outstanding.find(addr);
         if (it == outstanding.end()) {
@@ -416,7 +440,159 @@ namespace xsCHI
         return op == CHI_OP_TYPE::CHI_REQ_READUNIQUE ||
                op == CHI_OP_TYPE::CHI_REQ_READSHARED ||
                op == CHI_OP_TYPE::CHI_REQ_READCLEAN ||
+               op == CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL ||
+               op == CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL ||
                (op == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE && !req->getCacheResponding());
+    }
+
+    bool
+    CHI_L2::shadowNeedAutoWriteComplete(const ReqPtr &req) const
+    {
+        panic_if(!req, "%s shadowNeedAutoWriteComplete got null req", name());
+        const CHI_OP_TYPE op = req->getOpcode();
+        return op == CHI_OP_TYPE::CHI_REQ_WRITEBACKFULL ||
+               op == CHI_OP_TYPE::CHI_REQ_WRITECLEANFULL;
+    }
+
+    bool
+    CHI_L2::shadowNeedReadLatencySample(const ReqPtr &req) const
+    {
+        panic_if(!req, "%s shadowNeedReadLatencySample got null req", name());
+        if (shadowNeedAutoWriteComplete(req)) {
+            return false;
+        }
+        return shadowNeedOutstandingTrack(req);
+    }
+
+    void
+    CHI_L2::recordShadowReadIssue(size_t shadowIdx, Addr addr)
+    {
+        panic_if(shadowIdx >= shadowReadIssueTickByAddr.size(),
+                 "%s recordShadowReadIssue index out of range: %zu",
+                 name(), shadowIdx);
+        shadowReadIssueTickByAddr[shadowIdx][addr] = curTick();
+    }
+
+    void
+    CHI_L2::recordShadowReadCompletion(size_t shadowIdx, Addr addr)
+    {
+        panic_if(shadowIdx >= shadowReadIssueTickByAddr.size() ||
+                     shadowIdx >= shadowRecentReadLatencyCycles.size() ||
+                     shadowIdx >= shadowRecentReadLatencyCycleSums.size() ||
+                     shadowIdx >= shadowWriteAutoCompleteCycles.size(),
+                 "%s recordShadowReadCompletion index out of range: %zu",
+                 name(), shadowIdx);
+
+        auto &issueMap = shadowReadIssueTickByAddr[shadowIdx];
+        auto issueIt = issueMap.find(addr);
+        if (issueIt == issueMap.end()) {
+            return;
+        }
+
+        const Tick issueTick = issueIt->second;
+        issueMap.erase(issueIt);
+        if (curTick() <= issueTick || clockPeriod() == 0) {
+            return;
+        }
+
+        const Tick latencyTicks = curTick() - issueTick;
+        const uint32_t latencyCycles = std::max<uint32_t>(
+            1, static_cast<uint32_t>((latencyTicks + clockPeriod() - 1) /
+                                     clockPeriod()));
+
+        auto &window = shadowRecentReadLatencyCycles[shadowIdx];
+        auto &sum = shadowRecentReadLatencyCycleSums[shadowIdx];
+        window.push_back(latencyCycles);
+        sum += latencyCycles;
+        if (window.size() > ShadowReadLatencyWindow) {
+            sum -= window.front();
+            window.pop_front();
+        }
+
+        const uint32_t avgCycles = static_cast<uint32_t>(
+            std::max<uint64_t>(1, sum / window.size()));
+        shadowWriteAutoCompleteCycles[shadowIdx] = avgCycles;
+    }
+
+    void
+    CHI_L2::scheduleShadowWriteAutoComplete(size_t shadowIdx, Addr addr)
+    {
+        panic_if(shadowIdx >= shadowWriteCompletionSchedule.size() ||
+                     shadowIdx >= shadowWriteCompleteEvents.size(),
+                 "%s scheduleShadowWriteAutoComplete index out of range: %zu",
+                 name(), shadowIdx);
+
+        panic_if(shadowIdx >= shadowWriteAutoCompleteCycles.size(),
+                 "%s scheduleShadowWriteAutoComplete missing cycle config: %zu",
+                 name(), shadowIdx);
+        const Tick due = curTick() +
+            clockPeriod() * std::max<uint32_t>(1, shadowWriteAutoCompleteCycles[shadowIdx]);
+        shadowWriteCompletionSchedule[shadowIdx].emplace(due, addr);
+        scheduleNextShadowWriteCompleteEvent(shadowIdx);
+    }
+
+    void
+    CHI_L2::scheduleNextShadowWriteCompleteEvent(size_t shadowIdx)
+    {
+        panic_if(shadowIdx >= shadowWriteCompletionSchedule.size() ||
+                     shadowIdx >= shadowWriteCompleteEvents.size(),
+                 "%s scheduleNextShadowWriteCompleteEvent index out of range: %zu",
+                 name(), shadowIdx);
+
+        auto &scheduleMap = shadowWriteCompletionSchedule[shadowIdx];
+        auto &event = shadowWriteCompleteEvents[shadowIdx];
+        if (scheduleMap.empty() || !event) {
+            return;
+        }
+
+        const Tick nextDue = scheduleMap.begin()->first;
+        if (event->scheduled()) {
+            if (event->when() <= nextDue) {
+                return;
+            }
+            deschedule(*event);
+        }
+        schedule(*event, nextDue);
+    }
+
+    void
+    CHI_L2::processShadowWriteAutoComplete(size_t shadowIdx)
+    {
+        panic_if(shadowIdx >= shadowWriteCompletionSchedule.size() ||
+                     shadowIdx >= shadowOutstandingByAddr.size() ||
+                     shadowIdx >= shadowQueueBlocked.size() ||
+                     shadowIdx >= shadowReqQueues.size(),
+                 "%s processShadowWriteAutoComplete index out of range: %zu",
+                 name(), shadowIdx);
+
+        auto &scheduleMap = shadowWriteCompletionSchedule[shadowIdx];
+        auto &outstanding = shadowOutstandingByAddr[shadowIdx];
+
+        while (!scheduleMap.empty() && scheduleMap.begin()->first <= curTick()) {
+            const Addr addr = scheduleMap.begin()->second;
+            scheduleMap.erase(scheduleMap.begin());
+
+            auto it = outstanding.find(addr);
+            if (it == outstanding.end()) {
+                continue;
+            }
+
+            assert(it->second > 0);
+            it->second--;
+            if (it->second == 0) {
+                outstanding.erase(it);
+            }
+        }
+
+        if (!shadowReqQueues[shadowIdx].empty() && shadowQueueBlocked[shadowIdx]) {
+            const Addr headAddr = shadowReqQueues[shadowIdx].front()->getAddr();
+            if (outstanding.count(headAddr) == 0) {
+                shadowQueueBlocked[shadowIdx] = false;
+                scheduleShadowReqSend(shadowIdx);
+            }
+        }
+
+        scheduleNextShadowWriteCompleteEvent(shadowIdx);
     }
 
 
