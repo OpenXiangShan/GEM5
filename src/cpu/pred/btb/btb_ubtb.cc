@@ -324,7 +324,7 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &hit_entry = meta->hit_entry;
-    auto pc = inst->getPC();
+    const Addr pc = controlPCFromStartPC(inst->getPC(), inst->getInstBytes());
     auto npc = inst->getNPC();
     bool this_branch_hit = hit_entry.pc == pc;
 

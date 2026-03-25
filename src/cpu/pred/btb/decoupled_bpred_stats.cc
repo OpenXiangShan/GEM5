@@ -79,10 +79,11 @@ DecoupledBPUWithBTB::dumpStats()
     };
 
     // 1. Output top mispredictions
-    auto outFile = createOutputFile("topMisPredicts.csv", "startPC,control_pc,count");
-    // topMisPredPC: Vector of mispredict records (startPC, controlPC) -> count
+    auto outFile = createOutputFile("topMisPredicts.csv",
+                                    "startPC,branchStartPC,count");
+    // topMisPredPC: Vector of mispredict records (streamStartPC, branchStartPC) -> count
     // startPC: Starting address of fetch block
-    // controlPC: Address of branch instruction
+    // branchStartPC: Architectural start address of the mispredicted branch
     // count: Number of mispredictions
     std::vector<std::pair<std::pair<Addr, Addr>, int>> topMisPredPC(
         topMispredicts.begin(), topMispredicts.end());
@@ -339,12 +340,13 @@ DecoupledBPUWithBTB::dumpStats()
 DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchTarget &target, const DynInstPtr &inst, bool mispred)
 {
     _tick = curTick();
-    Addr pc = inst->pcState().instAddr();
+    const Addr start_pc = inst->pcState().instAddr();
     const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
     Addr targetpc = rv_pc.npc();
     Addr fallThru = rv_pc.getFallThruPC();
-    BranchInfo info(pc, targetpc, inst->staticInst, fallThru-pc);
-    set(fsqId, target.startPC, pc, info.getType(), inst->branching(), mispred, fallThru, target.predSource, targetpc);
+    BranchInfo info(start_pc, targetpc, inst->staticInst, fallThru-start_pc);
+    set(fsqId, target.startPC, info.startPC(), info.getType(),
+        inst->branching(), mispred, fallThru, target.predSource, targetpc);
     // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
     //     printf("%s: %ld\n", it->first.c_str(), it->second);
     // }
@@ -698,7 +700,7 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
     bool miss_predicted = target.squashType == SQUASH_CTRL;
     // Track indirect mispredictions
     if (miss_predicted && target.exeBranchInfo.isIndirect) {
-        topMispredIndirect[target.startPC]++;
+        topMispredIndirect[target.exeBranchInfo.startPC()]++;
     }
 
     // --- BTB Statistics ---
@@ -759,9 +761,11 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
     // Track control squashes (mispredictions)
     if (target.squashType == SQUASH_CTRL) {
         // Record mispredict pair (start PC, branch PC)
-        auto find_it = topMispredicts.find(std::make_pair(target.startPC, target.exeBranchInfo.pc));
+        auto find_it = topMispredicts.find(
+            std::make_pair(target.startPC, target.exeBranchInfo.startPC()));
         if (find_it == topMispredicts.end()) {
-            topMispredicts[std::make_pair(target.startPC, target.exeBranchInfo.pc)] = 1;
+            topMispredicts[std::make_pair(
+                target.startPC, target.exeBranchInfo.startPC())] = 1;
         } else {
             find_it->second++;
         }
@@ -807,19 +811,22 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     }
 
     // ---------- Extract branch information ----------
-    Addr branchAddr = inst->pcState().instAddr();
+    const Addr branchStartPC = inst->pcState().instAddr();
     const auto &rv_pc = inst->pcState().as<RiscvISA::PCState>();
     Addr targetAddr = rv_pc.npc();
     Addr fallThruPC = rv_pc.getFallThruPC();
-    BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
+    BranchInfo info(branchStartPC, targetAddr, inst->staticInst,
+                    fallThruPC-branchStartPC);
+    const Addr branchControlPC = info.controlPC();
     bool taken = rv_pc.branching() || inst->isUncondCtrl();
 
     // ---------- Process misprediction and update statistics ----------
-    processMisprediction(entry, branchAddr, info, taken, mispred);
+    processMisprediction(entry, branchStartPC, branchControlPC, info, taken,
+                         mispred);
 
     // ---------- Track taken branches for statistics ----------
     if (taken) {
-        trackTakenBranch(branchAddr);
+        trackTakenBranch(branchStartPC);
     }
 
     // ---------- Update predictor components ----------
@@ -972,7 +979,8 @@ DecoupledBPUWithBTB::notifyInstCommit(const DynInstPtr &inst)
 void
 DecoupledBPUWithBTB::processMisprediction(
     const FetchTarget &entry,
-    Addr branchAddr,
+    Addr statsBranchAddr,
+    Addr controlPC,
     const BranchInfo &info,
     bool taken,
     bool mispred)
@@ -989,7 +997,7 @@ DecoupledBPUWithBTB::processMisprediction(
             // Check if this branch was in the predicted BTB entries
             bool predBranchInBTB = false;
             for (auto &e: entry.predBTBEntries) {
-                if (e.pc == branchAddr) {
+                if (e.pc == controlPC) {
                     predBranchInBTB = true;
                     break;
                 }
@@ -997,7 +1005,8 @@ DecoupledBPUWithBTB::processMisprediction(
 
             if (!predBranchInBTB) {
                 mispredType = NO_PRED; // Branch wasn't predicted at all
-            } else if (entry.predTaken && entry.predBranchInfo.pc == branchAddr) {
+            } else if (entry.predTaken &&
+                       entry.predBranchInfo.pc == controlPC) {
                 mispredType = TARGET_WRONG; // Branch predicted taken but wrong target
             } else {
                 // Branch predicted not taken or different branch predicted taken
@@ -1005,17 +1014,22 @@ DecoupledBPUWithBTB::processMisprediction(
             }
         }
 
-        DPRINTF(Profiling, "branchAddr %#lx is mispredicted, taken %d, type %d, missType %d\n",
-                branchAddr, taken, info.getType(), mispredType);
+        DPRINTF(Profiling,
+                "branchStartPC %#lx (controlPC %#lx) is mispredicted, "
+                "taken %d, type %d, missType %d\n",
+                statsBranchAddr, controlPC, taken, info.getType(),
+                mispredType);
         assert(mispredType != FAKE_LAST);
     }
 
     // Create branch key for the statistics map
-    auto branchKey = std::make_pair(branchAddr, info.getType());
+    auto branchKey = std::make_pair(statsBranchAddr, info.getType());
 
     // Update branch statistics
-    DPRINTF(Profiling, "lookup topMispredictsByBranch for branchAddr %#lx, type %d\n",
-            branchAddr, info.getType());
+    DPRINTF(Profiling,
+            "lookup topMispredictsByBranch for branchStartPC %#lx "
+            "(controlPC %#lx), type %d\n",
+            statsBranchAddr, controlPC, info.getType());
 
     auto statsIt = topMispredictsByBranch.find(branchKey);
 
@@ -1024,7 +1038,7 @@ DecoupledBPUWithBTB::processMisprediction(
         DPRINTF(Profiling, "not found, insert with mispred=%d\n", mispred);
 
         // Initialize new branch stats
-        BranchStats stats(branchAddr, info.getType());
+        BranchStats stats(statsBranchAddr, info.getType());
         stats.incrementTotal();  // Always increment total count
 
         // Only increment misprediction count if actually mispredicted
@@ -1053,17 +1067,18 @@ DecoupledBPUWithBTB::processMisprediction(
 /**
  * @brief Track statistics for taken branches
  *
- * @param branchAddr Branch instruction address
+ * @param branchStartPC Architectural branch-start PC
  */
 void
-DecoupledBPUWithBTB::trackTakenBranch(Addr branchAddr)
+DecoupledBPUWithBTB::trackTakenBranch(Addr branchStartPC)
 {
     // Helper function to update a branch map
-    auto updateBranchMap = [branchAddr](std::unordered_map<Addr, int> &branchMap) {
-        auto it = branchMap.find(branchAddr);
+    auto updateBranchMap =
+        [branchStartPC](std::unordered_map<Addr, int> &branchMap) {
+        auto it = branchMap.find(branchStartPC);
         if (it == branchMap.end()) {
             // Branch not found - add with count 1
-            branchMap[branchAddr] = 1;
+            branchMap[branchStartPC] = 1;
         } else {
             // Branch found - increment count
             it->second++;

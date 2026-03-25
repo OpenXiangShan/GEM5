@@ -668,7 +668,7 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &target_id, uint64_t resolvedInstP
     }
     auto &target = ftq.get(target_id, tid);
 
-    if (target.updateNewBTBEntry.pc == resolvedInstPC) {
+    if (target.updateNewBTBEntry.startPC() == resolvedInstPC) {
         target.updateNewBTBEntry.resolved = true;
     }
 

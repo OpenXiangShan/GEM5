@@ -34,7 +34,8 @@ BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
                            bool isIndirect = false, bool isCall = false,
                            bool isReturn = false, uint8_t size = 4) {
     BranchInfo info;
-    info.pc = pc;
+    info.pc = controlPCFromStartPC(pc, size);
+    info.setStartPC(pc);
     info.target = target;
     info.isCond = isCond;
     info.isIndirect = isIndirect;
@@ -71,7 +72,7 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
  * @brief Helper function to find conditional taken prediction for a given PC
  *
  * @param condTakens Vector of conditional predictions
- * @param pc Branch PC to search for
+ * @param pc Predictor-visible control PC to search for
  * @return Pair of (found, prediction) where found indicates if PC was found
  */
 std::pair<bool, bool> findCondTaken(const CondTakens& condTakens, Addr pc) {
@@ -113,11 +114,12 @@ predictUpdateCycle(MBTB* btb,
      Addr startPC,
      const BranchInfo& branch,
      bool taken,
-     const boost::dynamic_bitset<>& history = boost::dynamic_bitset<>(8, 0),
+    const boost::dynamic_bitset<>& history = boost::dynamic_bitset<>(8, 0),
      Addr endInstPC = 0) {
-    // If endInstPC not specified, use branch.pc + branch.size
+    // If endInstPC not specified, use the end-exclusive byte range of the
+    // architectural instruction rather than predictor-visible controlPC.
     if (endInstPC == 0) {
-        endInstPC = branch.pc + branch.size;
+        endInstPC = branch.getEnd();
     }
 
     // Prediction phase
@@ -243,6 +245,7 @@ TEST_F(BTBTest, PredictionAfterUpdateLargeAddr) {
 TEST_F(BTBTest, Rvc2B_DerivedPcViews) {
     BranchInfo branch = createBranchInfo(0x1000, 0x2000, true, false, false, false, 2);
     EXPECT_EQ(branch.startPC(), 0x1000);
+    EXPECT_EQ(branch.controlPC(), 0x1000);
     EXPECT_EQ(branch.triggerPC(), 0x1000);
     EXPECT_EQ(branch.endPCExclusive(), 0x1002);
     EXPECT_EQ(branch.getEnd(), 0x1002);
@@ -252,6 +255,7 @@ TEST_F(BTBTest, Rvc2B_DerivedPcViews) {
 TEST_F(BTBTest, Rvi4B_DerivedPcViews) {
     BranchInfo branch = createBranchInfo(0x1000, 0x2000, true, false, false, false, 4);
     EXPECT_EQ(branch.startPC(), 0x1000);
+    EXPECT_EQ(branch.controlPC(), 0x1002);
     EXPECT_EQ(branch.triggerPC(), 0x1002);
     EXPECT_EQ(branch.endPCExclusive(), 0x1004);
     EXPECT_EQ(branch.getEnd(), 0x1004);
@@ -368,7 +372,8 @@ TEST_F(BTBTest, IndirectBranchPrediction) {
     // Verify indirect target
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        auto [found1, target1] = findIndirectTarget(stagePreds[i].indirectTargets, 0x1000);
+        auto [found1, target1] = findIndirectTarget(
+            stagePreds[i].indirectTargets, branch.controlPC());
         ASSERT_TRUE(found1);
         EXPECT_EQ(target1, 0x2000);
     }
@@ -379,7 +384,8 @@ TEST_F(BTBTest, IndirectBranchPrediction) {
 
     // Verify new indirect target
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
-        auto [found2, target2] = findIndirectTarget(stagePreds[i].indirectTargets, 0x1000);
+        auto [found2, target2] = findIndirectTarget(
+            stagePreds[i].indirectTargets, updatedBranch.controlPC());
         ASSERT_TRUE(found2);
         EXPECT_EQ(target2, 0x3000);
     }

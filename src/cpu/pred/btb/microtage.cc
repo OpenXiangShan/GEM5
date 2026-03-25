@@ -1095,7 +1095,8 @@ MicroTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         DPRINTF(UTAGE, "commitBranch: no prediction meta, skip\n");
         return;
     }
-    auto pc = inst->pcState().instAddr();
+    const Addr pc =
+        controlPCFromStartPC(inst->pcState().instAddr(), inst->getInstBytes());
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
     bool pred_hit = false;

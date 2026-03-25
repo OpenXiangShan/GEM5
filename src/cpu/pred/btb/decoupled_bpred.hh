@@ -339,12 +339,15 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     struct BpTrace : public Record
     {
-        void set(uint64_t fsqId, uint64_t startPC, uint64_t controlPC, uint64_t controlType,
+        void set(uint64_t fsqId, uint64_t startPC, uint64_t branchPC,
+            uint64_t controlType,
             uint64_t taken, uint64_t mispred, uint64_t fallThruPC,
             uint64_t source, uint64_t target) {
             _uint64_data["fsqId"] = fsqId;
             _uint64_data["startPC"] = startPC;
-            _uint64_data["controlPC"] = controlPC;
+            // Keep the historical column name for compatibility; user-visible
+            // traces continue to store the architectural branch-start PC here.
+            _uint64_data["controlPC"] = branchPC;
             _uint64_data["controlType"] = controlType;
             _uint64_data["taken"] = taken;
             _uint64_data["mispred"] = mispred;
@@ -359,13 +362,15 @@ class DecoupledBPUWithBTB : public BPredUnit
     struct PredictionTrace : public Record
     {
         void set(uint64_t fsqId, uint64_t startPC, uint64_t predTaken, uint64_t predEndPC,
-                 uint64_t controlPC, uint64_t target,
+                 uint64_t branchPC, uint64_t target,
                  uint64_t predSource, uint64_t btbHit) {
             _uint64_data["fsqId"] = fsqId;
             _uint64_data["startPC"] = startPC;
             _uint64_data["predTaken"] = predTaken;
             _uint64_data["predEndPC"] = predEndPC;
-            _uint64_data["controlPC"] = controlPC;
+            // Keep the historical column name for compatibility; user-visible
+            // traces continue to store the architectural branch-start PC here.
+            _uint64_data["controlPC"] = branchPC;
             _uint64_data["target"] = target;
             _uint64_data["predSource"] = predSource;
             _uint64_data["btbHit"] = btbHit;
@@ -374,7 +379,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         PredictionTrace(uint64_t id, const FetchTarget &entry) {
             _tick = curTick();
             set(id, entry.startPC, entry.predTaken, entry.predEndPC,
-                entry.getControlPC(), entry.getTakenTarget(),
+                entry.getBranchInfo().startPC(), entry.getTakenTarget(),
                 entry.predSource, entry.isHit ? 1 : 0);
         }
     };
@@ -461,7 +466,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      */
     struct BranchStats
     {
-        Addr pc;                ///< Branch PC address
+        Addr pc;                ///< Architectural branch-start PC used in stats
         int branchType;         ///< Branch type (0=cond, 1=uncond, 2=call, 3=ind, etc.)
         int totalCount;         ///< Total number of times branch was executed
         int mispredCount;       ///< Total number of mispredictions for this branch
@@ -523,15 +528,15 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     // Branch statistics maps
     /**
-     * @brief Maps (startPC, controlPC) pairs to misprediction counts
+     * @brief Maps (streamStartPC, branchStartPC) pairs to misprediction counts
      *
-     * This tracks mispredictions based on the starting address of a basic block
-     * and the address of the control instruction that was mispredicted.
+     * This tracks mispredictions based on the starting address of a fetch block
+     * and the architectural start address of the mispredicted control instruction.
      */
     std::map<std::pair<Addr, Addr>, int> topMispredicts;
 
     /**
-     * @brief Maps branch keys (PC, type) to detailed branch statistics
+     * @brief Maps branch keys (branchStartPC, type) to detailed branch statistics
      *
      * Main container for branch prediction statistics, storing information about
      * each branch's execution count, mispredictions, and error types.
@@ -806,14 +811,16 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @brief Process branch misprediction, determine type and update statistics
      *
      * @param entry The fetch target entry
-     * @param branchAddr Branch instruction address
+     * @param statsBranchAddr Architectural branch-start PC used in stats
+     * @param controlPC Predictor-visible control PC used for predictor matching
      * @param info Branch information
      * @param taken Whether the branch was taken
      * @param mispred Whether the branch was mispredicted
      */
     void processMisprediction(
         const FetchTarget &entry,
-        Addr branchAddr,
+        Addr statsBranchAddr,
+        Addr controlPC,
         const BranchInfo &info,
         bool taken,
         bool mispred);
@@ -821,9 +828,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     /**
      * @brief Track statistics for taken branches
      *
-     * @param branchAddr Branch instruction address
+     * @param branchStartPC Architectural branch-start PC
      */
-    void trackTakenBranch(Addr branchAddr);
+    void trackTakenBranch(Addr branchStartPC);
 
     /**
      * @brief Process phase-based statistics at phase boundaries

@@ -29,6 +29,24 @@ fetchCoverageSpan(Addr startPC, Addr predEndPC, unsigned capacity)
     return static_cast<unsigned>(clampedSpan);
 }
 
+inline Addr
+controlPCFromStartPC(Addr startPC, unsigned size)
+{
+    if (size <= 2) {
+        return startPC;
+    }
+    return startPC + size - 2;
+}
+
+inline Addr
+startPCFromControlPC(Addr controlPC, unsigned size)
+{
+    if (size <= 2) {
+        return controlPC;
+    }
+    return controlPC - (size - 2);
+}
+
 enum EndType
 {
     END_CALL=0,
@@ -91,7 +109,9 @@ enum class HistoryType
 struct BranchInfo
 {
     Addr pc;
+    Addr instStartAddr;
     Addr target;
+    bool hasExplicitStartAddr;
     // An independent resolved bit to indicate whether CFI is resolved
     // or not for training, which is trained in resolve stage so
     // it's necessary to know whether the branch is resolved and skip
@@ -105,28 +125,34 @@ struct BranchInfo
     uint8_t size;
     bool isUncond() const { return !this->isCond; }
     /**
-     * Canonical identity view.
+     * Instruction-start view.
      *
-     * `pc` SHALL remain the canonical start PC of this control-flow instruction.
-     * Do NOT reinterpret it as a derived trigger PC.
+     * `pc` is the predictor-visible controlPC. The original instruction start
+     * address is kept explicitly when available and otherwise reconstructed from
+     * `(pc, size)`.
      */
-    Addr startPC() const { return this->pc; }
+    Addr startPC() const
+    {
+        return hasExplicitStartAddr ?
+            instStartAddr : startPCFromControlPC(this->pc, this->size);
+    }
+
+    Addr controlPC() const { return this->pc; }
+
+    void setStartPC(Addr start_pc)
+    {
+        instStartAddr = start_pc;
+        hasExplicitStartAddr = true;
+    }
 
     /**
      * Derived range view.
      *
      * - endPCExclusive = startPC + size
-     * - triggerPC = startPC + size - 2
-     *   (for 2B RVC: triggerPC == startPC; for 4B RVI: triggerPC == startPC + 2)
+     * - triggerPC = controlPC
      */
-    Addr endPCExclusive() const { return this->pc + this->size; }
-    Addr triggerPC() const
-    {
-        if (this->size <= 2) {
-            return this->pc;
-        }
-        return this->pc + this->size - 2;
-    }
+    Addr endPCExclusive() const { return startPC() + this->size; }
+    Addr triggerPC() const { return controlPC(); }
 
     /**
      * Stream coverage end for this control instruction.
@@ -159,22 +185,26 @@ struct BranchInfo
     bool triggerPCCoveredByFetchWindow(Addr instStartPC,
                                        Addr fetchEndPCExclusive) const
     {
-        return instStartPC == startPC() && fetchEndPCExclusive > triggerPC();
+        return instStartPC == startPC() && fetchEndPCExclusive > controlPC();
     }
 
     // Backward-compatible end-PC helper.
     Addr getEnd() { return endPCExclusive(); }
     Addr getEnd() const { return endPCExclusive(); }
     BranchInfo()
-        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false),
-          isDirect(false), isCall(false), isReturn(false), size(0)
+        : pc(0), instStartAddr(0), target(0), hasExplicitStartAddr(false),
+          resolved(false), isCond(false), isIndirect(false), isDirect(false),
+          isCall(false), isReturn(false), size(0)
     {
     }
     // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
     // pc(pc), target(target_pc), isCond(is_cond), isIndirect(false), isCall(false), isReturn(false), size(0) {}
-    BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
-        : pc(control_pc),
+    BranchInfo(const Addr &inst_start_pc, const Addr &target_pc,
+               const StaticInstPtr &static_inst, unsigned size)
+        : pc(controlPCFromStartPC(inst_start_pc, size)),
+          instStartAddr(inst_start_pc),
           target(target_pc),
+          hasExplicitStartAddr(true),
           resolved(false),
           isCond(static_inst->isCondCtrl()),
           isIndirect(static_inst->isIndirectCtrl()),
@@ -434,8 +464,13 @@ struct FetchTarget
 
     // bool getEnded() const { return resolved ? exeEnded : predEnded; }
     BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
-    Addr getControlPC() const { return getBranchInfo().pc; }
-    Addr getEndPC() const { return getBranchInfo().getEnd(); } // FIXME: should be end of squash inst when non-control squash of trap squash
+    Addr getControlPC() const { return getBranchInfo().controlPC(); }
+    Addr getEndPC() const
+    {
+        // FIXME: should be end of squash inst when non-control squash of trap
+        // squash.
+        return getBranchInfo().getEnd();
+    }
     Addr getTaken() const { return resolved ? exeTaken : predTaken; }
     Addr getTakenTarget() const { return getBranchInfo().target; }
 
@@ -448,7 +483,8 @@ struct FetchTarget
         int shamt = 0;
         bool cond_taken = false;
         for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+            if (entry.valid && entry.pc >= startPC &&
+                entry.startPC() < squash_pc) {
                 shamt++;
             }
         }
@@ -464,7 +500,8 @@ struct FetchTarget
         int shamt = 0;
         bool cond_taken = false;
         for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+            if (entry.valid && entry.pc >= startPC &&
+                entry.startPC() < squash_pc) {
                 shamt++;
             }
         }
@@ -506,7 +543,7 @@ struct FetchTarget
     void markBTBEntryResolved(Addr resolvedInstPC)
     {
         for (auto &entry : updateBTBEntries) {
-            if (entry.valid && entry.pc == resolvedInstPC) {
+            if (entry.valid && entry.startPC() == resolvedInstPC) {
                 entry.resolved = true;
             }
         }
