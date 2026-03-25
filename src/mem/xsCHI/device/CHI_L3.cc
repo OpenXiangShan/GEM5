@@ -196,7 +196,7 @@ CHI_L3::dispatchReadToXbar(PacketPtr pkt, uint32_t txnId)
                 pkt->getAddr());
         enqueuePendingXbar(pkt, cleanupTxn, txnId);
     } else {
-        completePendingRead(pkt->getAddr());
+        // completePendingRead(pkt->getAddr());
         if (cleanupTxn) {
             // Handle CLEANUNIQUE completion: send CHI_RSP_COMP and wait COMPACK
             assert(metaIt->second.req->getOpcode() == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE ||
@@ -308,6 +308,57 @@ CHI_L3::wakeBlockedReads(Addr addr)
         blockedWriteByAddr.erase(it);
     }
 
+void
+CHI_L3::trackCacheReqTxn(PacketPtr pkt, Addr addr, uint32_t txnId)
+{
+    CacheReqKey key{pkt, addr};
+    cacheReqMap[key] = txnId;
+    DPRINTF(CHIL3Txn,
+            "cacheReqMap track pkt=%p addr=%#lx txn=%u\n",
+            pkt, addr, txnId);
+}
+
+uint32_t
+CHI_L3::peekCacheReqTxn(PacketPtr pkt, Addr addr) const
+{
+    CacheReqKey key{pkt, addr};
+    auto it = cacheReqMap.find(key);
+    if (it == cacheReqMap.end()) {
+        return TxnIDManager::InvalidTxnId;
+    }
+    return it->second;
+}
+
+bool
+CHI_L3::popCacheReqTxn(PacketPtr pkt, Addr addr, uint32_t &txnId)
+{
+    CacheReqKey key{pkt, addr};
+    auto it = cacheReqMap.find(key);
+    if (it == cacheReqMap.end()) {
+        return false;
+    }
+    txnId = it->second;
+    cacheReqMap.erase(it);
+    return true;
+}
+
+bool
+CHI_L3::eraseCacheReqTxn(PacketPtr pkt, Addr addr, uint32_t txnId)
+{
+    CacheReqKey key{pkt, addr};
+    auto it = cacheReqMap.find(key);
+    if (it == cacheReqMap.end()) {
+        return false;
+    }
+    if (it->second != txnId) {
+        return false;
+    }
+    cacheReqMap.erase(it);
+    DPRINTF(CHIL3Txn,
+            "cacheReqMap erase pkt=%p addr=%#lx txn=%u\n",
+            pkt, addr, txnId);
+    return true;
+}
 bool
 CHI_L3::handleNetworkFlit(FlitPtr &flit)
 {
@@ -376,7 +427,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                     txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op),
                     flit->getAddr(), flit->getSize(), flit->getSrcId(),
                     flit->getReturnTxnid(), static_cast<unsigned>(txnTable.size()));
-                cacheReqMap[pkt] = txnId;
+                trackCacheReqTxn(pkt, flit->getAddr(), txnId);
                 trackPendingRead(pkt->getAddr());
                 if (hasPendingWrite(pkt->getAddr())) {
                     enqueueBlockedRead(pkt, txnId);
@@ -499,7 +550,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                     txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op),
                     flit->getAddr(), flit->getSize(), flit->getSrcId(),
                     flit->getReturnTxnid(), static_cast<unsigned>(txnTable.size()));
-                cacheReqMap[pkt] = txnId;
+                trackCacheReqTxn(pkt, flit->getAddr(), txnId);
                 //although CLEANUNIQUE is not a read-type request, it has same ordering constraint as read,
                 // so we treat it as write for tracking purpose.
                 trackPendingRead(pkt->getAddr());
@@ -571,7 +622,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                     txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op),
                     flit->getAddr(), flit->getSize(), flit->getSrcId(),
                     flit->getReturnTxnid(), static_cast<unsigned>(txnTable.size()));
-                cacheReqMap[pkt] = txnId;
+                trackCacheReqTxn(pkt, flit->getAddr(), txnId);
                 //although CHI_REQ_EVICT is not a read-type request, it has same ordering constraint as read,
                 // so we treat it as write for tracking purpose.
                 trackPendingRead(pkt->getAddr());
@@ -595,7 +646,9 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
               panic("RSP for unknown txn %u", flit->getTxnId());
           if (flit->getOpcode() == CHI_OP_TYPE::CHI_RSP_COMPACK) {
                 DPRINTF(CHIL3, "Txn %u completed via COMPACK\n", flit->getTxnId());
-                cacheReqMap.erase(it->second.pkt);
+                completePendingRead(it->second.addr);
+                eraseCacheReqTxn(it->second.pkt, it->second.addr,
+                                 flit->getTxnId());
                     DPRINTF(CHIL3Txn,
                         "txnTable erase key=%u reason=cpu_rsp_compack size_before=%u\n",
                         flit->getTxnId(), static_cast<unsigned>(txnTable.size()));
@@ -734,7 +787,7 @@ CHI_L3::handleMemSideFlit(FlitPtr &flit)
               return false;
           }
 
-          cacheReqMap.erase(meta.pkt);
+        //   cacheReqMap.erase(meta.pkt);
           downstreamMap.erase(meta.pkt);
           if (meta.opcode == CHI_OP_TYPE::CHI_REQ_READNOSNP) {
               completeDdrRead(meta.addr);
@@ -760,11 +813,10 @@ CHI_L3::handleXBarCpuTimingReq(PacketPtr pkt)
 {
     DPRINTF(CHIL3, "xbar->CHI_L3 timing req addr=%#lx size=%u cmd=%s\n",
             pkt->getAddr(), pkt->getSize(), pkt->cmd.toString());
-    auto it = cacheReqMap.find(pkt);
-    if (it == cacheReqMap.end()) {
+    uint32_t txnId = TxnIDManager::InvalidTxnId;
+    if (!popCacheReqTxn(pkt, pkt->getAddr(), txnId)) {
         panic("xbar resp pkt not tracked for addr=%#lx", pkt->getAddr());
     }
-    uint32_t txnId = it->second;
     auto metaIt = txnTable.find(txnId);
     if (metaIt == txnTable.end()) {
         panic("txn %u missing meta for xbar resp", txnId);
@@ -989,12 +1041,12 @@ CHI_L3::handleCacheMemTimingResp(PacketPtr pkt)
         }
 
         // If this pkt is from a tracked CPU request, preserve original CHI txn/src.
-        auto up = cacheReqMap.find(pkt);
-        if (up != cacheReqMap.end()) {
-            auto upTxnIt = txnTable.find(up->second);
+        const uint32_t upTxnId = peekCacheReqTxn(pkt, pkt->getAddr());
+        if (upTxnId != TxnIDManager::InvalidTxnId) {
+            auto upTxnIt = txnTable.find(upTxnId);
             if (upTxnIt != txnTable.end()) {
                 meta.srcId = upTxnIt->second.srcId;
-                meta.returnTxnId = up->second; // original cpu txn id
+                meta.returnTxnId = upTxnId; // original cpu txn id
                 meta.returnNid = upTxnIt->second.returnNid;
             }
         }
@@ -1335,7 +1387,8 @@ CHI_L3::drainCompRspQueue()
     }
     if (meta.opcode == CHI_OP_TYPE::CHI_REQ_EVICT){
         DPRINTF(CHIL3, "Txn %u completed via COMPACK\n", txnKey);
-        cacheReqMap.erase(it->second.pkt);
+        completePendingRead(it->second.addr);
+        eraseCacheReqTxn(it->second.pkt, it->second.addr, txnKey);
             DPRINTF(CHIL3Txn,
                 "txnTable erase key=%u reason=cpu_rsp_compack size_before=%u\n",
                 txnKey, static_cast<unsigned>(txnTable.size()));
@@ -1450,7 +1503,7 @@ CHI_L3::drainPendingXbarQueue()
             //consider write is done
             if (it != txnTable.end()) {
                 const Addr write_addr = it->second.addr;
-                cacheReqMap.erase(it->second.pkt);
+                eraseCacheReqTxn(it->second.pkt, write_addr, p.txnId);
                     DPRINTF(CHIL3Txn,
                             "txnTable erase key=%u reason=pending_xbar_cleanup size_before=%u\n",
                             p.txnId, static_cast<unsigned>(txnTable.size()));
@@ -1483,7 +1536,7 @@ CHI_L3::drainPendingXbarQueue()
                 it->second.opcode == CHI_OP_TYPE::CHI_REQ_READSHARED ||
                 it->second.opcode == CHI_OP_TYPE::CHI_REQ_READUNIQUE);
         assert(txnIdMgr.isUsed(p.txnId));
-        completePendingRead(p.pkt->getAddr());
+        // completePendingRead(p.pkt->getAddr());
     }
     pendingXbarQ.pop_front();
 

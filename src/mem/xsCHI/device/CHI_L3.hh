@@ -144,6 +144,10 @@ class CHI_L3 : public ClockedObject
     bool hasDdrWriteInFlight(Addr addr) const;
     void enqueueBlockedDdrRead(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp);
     void wakeBlockedDdrReads(Addr addr);
+    void trackCacheReqTxn(PacketPtr pkt, Addr addr, uint32_t txnId);
+    uint32_t peekCacheReqTxn(PacketPtr pkt, Addr addr) const;
+    bool popCacheReqTxn(PacketPtr pkt, Addr addr, uint32_t &txnId);
+    bool eraseCacheReqTxn(PacketPtr pkt, Addr addr, uint32_t txnId);
 
     // opcode→MemCmd mapping helpers
     MemCmd mapChiReqToMemCmd(CHI_OP_TYPE op) const;
@@ -172,12 +176,35 @@ class CHI_L3 : public ClockedObject
       bool retireAfterXbarSend{false};
     };
 
+    struct CacheReqKey
+    {
+      PacketPtr pkt{nullptr};
+      Addr addr{0};
+
+      bool operator==(const CacheReqKey &other) const
+      {
+          return pkt == other.pkt && addr == other.addr;
+      }
+    };
+
+    struct CacheReqKeyHash
+    {
+      size_t operator()(const CacheReqKey &key) const
+      {
+          const size_t h1 = std::hash<const void *>{}(
+              static_cast<const void *>(key.pkt));
+          const size_t h2 = std::hash<Addr>{}(key.addr);
+          return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+      }
+    };
+
     using TxnTable = std::unordered_map<uint32_t, TxnMeta>;
-    using PacketMap = std::unordered_map<PacketPtr, uint32_t>;
+    using CacheReqMap =
+        std::unordered_map<CacheReqKey, uint32_t, CacheReqKeyHash>;
     using DownstreamMap = std::unordered_map<PacketPtr, uint32_t>;
 
     TxnTable txnTable;
-    PacketMap cacheReqMap;   // xbar/cw pkt -> txnId (hits)
+    CacheReqMap cacheReqMap; // xbar/cw (pkt, addr) -> txnId (hits)
     DownstreamMap downstreamMap; // cw->ddr pkt -> txnId (misses)
 
     TxnIDManager txnIdMgr{1024};
