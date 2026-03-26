@@ -1015,8 +1015,12 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Update global history with actual outcome
     histShiftIn(real_shamt, real_taken, s0History);
 
-    // Update path history with actual outcome
-    pHistShiftIn(2, real_taken, s0PHistory, squash_pc.instAddr(), redirect_pc);
+    // Predictor path history is keyed by the predictor-visible controlPC.
+    // Keep recovery aligned with speculative updates so folded histories
+    // remain self-consistent for split 4B control instructions.
+    const Addr path_hist_pc =
+        squash_type == SQUASH_CTRL ? target.getControlPC() : squash_pc.instAddr();
+    pHistShiftIn(2, real_taken, s0PHistory, path_hist_pc, redirect_pc);
 
     // Update global backward history with actual outcome
     histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);

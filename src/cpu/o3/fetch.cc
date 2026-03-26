@@ -815,7 +815,19 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     const auto &stream = dbpbtb->ftqFetchingTarget(tid);
 
     const Addr curr_pc = next_pc.instAddr();
-    assert(stream.decodeStartPC() <= curr_pc && curr_pc < stream.predEndPC);
+    const bool in_owner_stream =
+        stream.decodeStartPC() <= curr_pc && curr_pc < stream.predEndPC;
+    if (!in_owner_stream) {
+        if (isTraceMode()) {
+            DPRINTF(DecoupleBP,
+                    "[tid:%i] trace-mode fetch PC %#lx is outside owner stream "
+                    "[%#lx, %#lx); fall back to sequential advance\n",
+                    tid, curr_pc, stream.decodeStartPC(), stream.predEndPC);
+            inst->staticInst->advancePC(next_pc);
+            return false;
+        }
+        assert(in_owner_stream);
+    }
 
     bool run_out = false;
 
@@ -1924,25 +1936,26 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     // Create a copy of the current PC state to calculate the next PC.
     std::unique_ptr<PCStateBase> next_pc(pc.clone());
 
-    assert(dbpbtb);
-    while (dbpbtb->ftqHasFetching(tid) && dbpbtb->ftqHasFollowing(tid)) {
-        const auto &stream = dbpbtb->ftqFetchingTarget(tid);
-        const auto &following = dbpbtb->ftqFollowingTarget(tid);
-        const Addr inst_pc = pc.instAddr();
-        if (inst_pc < following.decodeStartPC()) {
-            break;
+    if (!isTraceMode()) {
+        while (dbpbtb->ftqHasFetching(tid) && dbpbtb->ftqHasFollowing(tid)) {
+            const auto &stream = dbpbtb->ftqFetchingTarget(tid);
+            const auto &following = dbpbtb->ftqFollowingTarget(tid);
+            const Addr inst_pc = pc.instAddr();
+            if (inst_pc < following.decodeStartPC()) {
+                break;
+            }
+
+            DPRINTF(DecoupleBP,
+                    "[tid:%i] migrate split-control ownership before buildInst: "
+                    "inst=%#lx currentStart=%#lx currentDecodeStart=%#lx "
+                    "followingStart=%#lx followingDecodeStart=%#lx\n",
+                    tid, inst_pc, stream.startPC, stream.decodeStartPC(),
+                    following.startPC, following.decodeStartPC());
+
+            dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
+            ftqEntryFetchedInsts[tid] = 0;
+            threads[tid].valid = keepFetchedBufferAfterTargetConsume(tid);
         }
-
-        DPRINTF(DecoupleBP,
-                "[tid:%i] migrate split-control ownership before buildInst: "
-                "inst=%#lx currentStart=%#lx currentDecodeStart=%#lx "
-                "followingStart=%#lx followingDecodeStart=%#lx\n",
-                tid, inst_pc, stream.startPC, stream.decodeStartPC(),
-                following.startPC, following.decodeStartPC());
-
-        dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
-        ftqEntryFetchedInsts[tid] = 0;
-        threads[tid].valid = keepFetchedBufferAfterTargetConsume(tid);
     }
 
     // Decode the instruction, handling macro-op transitions.
