@@ -311,11 +311,11 @@ BTBMGSC::calculatePercepSum(Addr pc,const TageInfoForMGSC &tage_info)
     auto weight = percepWeightTable[index];
     int tage_pred = 0;
     if (tage_info.tage_pred_conf_high)
-        tage_pred = 2;
+        tage_pred = 3;
     else if (tage_info.tage_pred_conf_mid)
-        tage_pred = 1;
+        tage_pred = 2;
     else if (tage_info.tage_pred_conf_low)
-        tage_pred = 0;
+        tage_pred = 1;
     tage_pred <<= tageWeightShamt;
     int bias = 1;
     int percep_sum = bias * weight[0];
