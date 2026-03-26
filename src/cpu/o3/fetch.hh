@@ -563,6 +563,7 @@ class Fetch
     Addr currentValidEndPC(ThreadID tid) const;
     unsigned currentFetchRequestSpan(
         const branch_prediction::btb_pred::FetchTarget &stream) const;
+    void maybeMigrateSplitControlOwner(ThreadID tid, Addr inst_pc);
     bool shouldFetchFollowingTarget(ThreadID tid,
                                     const PCStateBase &pc_state) const;
     bool keepFetchedBufferAfterTargetConsume(ThreadID tid) const;

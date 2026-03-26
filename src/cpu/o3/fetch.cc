@@ -469,6 +469,39 @@ Fetch::currentFetchRequestSpan(
         stream.startPC, stream.predEndPC, fetchBufferSize);
 }
 
+void
+Fetch::maybeMigrateSplitControlOwner(ThreadID tid, Addr inst_pc)
+{
+    if (!dbpbtb) {
+        return;
+    }
+
+    while (dbpbtb->ftqHasFetching(tid) && dbpbtb->ftqHasFollowing(tid)) {
+        const auto &stream = dbpbtb->ftqFetchingTarget(tid);
+        const auto &following = dbpbtb->ftqFollowingTarget(tid);
+        const bool is_split_owner_handoff =
+            following.decodeStartPC() < following.startPC &&
+            stream.predEndPC == following.startPC &&
+            stream.startPC < following.startPC &&
+            following.decodeStartPC() <= inst_pc &&
+            inst_pc < following.startPC;
+        if (!is_split_owner_handoff) {
+            break;
+        }
+
+        DPRINTF(DecoupleBP,
+                "[tid:%i] migrate split-control ownership: inst=%#lx "
+                "currentStart=%#lx currentDecodeStart=%#lx "
+                "followingStart=%#lx followingDecodeStart=%#lx\n",
+                tid, inst_pc, stream.startPC, stream.decodeStartPC(),
+                following.startPC, following.decodeStartPC());
+
+        dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
+        ftqEntryFetchedInsts[tid] = 0;
+        threads[tid].valid = keepFetchedBufferAfterTargetConsume(tid);
+    }
+}
+
 bool
 Fetch::shouldFetchFollowingTarget(ThreadID tid, const PCStateBase &pc_state) const
 {
@@ -1936,27 +1969,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     // Create a copy of the current PC state to calculate the next PC.
     std::unique_ptr<PCStateBase> next_pc(pc.clone());
 
-    if (!isTraceMode()) {
-        while (dbpbtb->ftqHasFetching(tid) && dbpbtb->ftqHasFollowing(tid)) {
-            const auto &stream = dbpbtb->ftqFetchingTarget(tid);
-            const auto &following = dbpbtb->ftqFollowingTarget(tid);
-            const Addr inst_pc = pc.instAddr();
-            if (inst_pc < following.decodeStartPC()) {
-                break;
-            }
-
-            DPRINTF(DecoupleBP,
-                    "[tid:%i] migrate split-control ownership before buildInst: "
-                    "inst=%#lx currentStart=%#lx currentDecodeStart=%#lx "
-                    "followingStart=%#lx followingDecodeStart=%#lx\n",
-                    tid, inst_pc, stream.startPC, stream.decodeStartPC(),
-                    following.startPC, following.decodeStartPC());
-
-            dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
-            ftqEntryFetchedInsts[tid] = 0;
-            threads[tid].valid = keepFetchedBufferAfterTargetConsume(tid);
-        }
-    }
+    maybeMigrateSplitControlOwner(tid, pc.instAddr());
 
     // Decode the instruction, handling macro-op transitions.
     StaticInstPtr staticInst = nullptr;
@@ -2071,6 +2084,8 @@ Fetch::performInstructionFetch(ThreadID tid)
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !predictedBranch && !ftqEmpty(tid) && !waitForVsetvl) {
 
+        maybeMigrateSplitControlOwner(tid, pc_state.instAddr());
+
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
         if (stall != StallReason::NoStall) {
@@ -2142,6 +2157,8 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
                 tid, pc_state.instAddr());
         return;
     }
+
+    maybeMigrateSplitControlOwner(tid, pc_state.instAddr());
 
     const auto &stream =
         shouldFetchFollowingTarget(tid, pc_state) ?

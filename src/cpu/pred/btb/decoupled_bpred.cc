@@ -439,7 +439,10 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     // Update target state
     target.resolved = true;
     target.exeTaken = actually_taken;
-    target.squashPC = squash_pc.instAddr();
+    target.squashPC =
+        squash_type == SQUASH_CTRL && static_inst ?
+        controlPCFromStartPC(squash_pc.instAddr(), control_inst_size) :
+        squash_pc.instAddr();
     target.squashType = squash_type;
 
     // Special handling for control squash - create branch info

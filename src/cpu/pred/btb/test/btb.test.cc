@@ -306,6 +306,26 @@ TEST_F(BTBTest, SplitControlOwnershipMigratesBeforeBuildInst) {
     EXPECT_LT(inst_pc, following.startPC);
 }
 
+TEST_F(BTBTest, SplitControlOwnershipDoesNotMigrateToTakenTarget) {
+    FetchTarget current;
+    current.startPC = 0x20;
+    current.predEndPC = 0x60;
+
+    FetchTarget following;
+    following.startPC = 0x10;
+    following.setDecodeStartPC(0x10);
+
+    const Addr inst_pc = 0x20;
+    const bool should_migrate =
+        following.decodeStartPC() < following.startPC &&
+        current.predEndPC == following.startPC &&
+        current.startPC < following.startPC &&
+        following.decodeStartPC() <= inst_pc &&
+        inst_pc < following.startPC;
+
+    EXPECT_FALSE(should_migrate);
+}
+
 TEST_F(BTBTest, TakenMatchUsesOwnerTargetStartPC) {
     BranchInfo branch = createBranchInfo(0x101e, 0x2000, true, false, false,
                                          false, 4);
