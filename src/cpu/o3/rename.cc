@@ -943,8 +943,9 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
 
             inst->vpSupported = true;
             if (inst->vpResult.speculative) {
-                // set the scoreboard, let the back-to-back rename inst mark reg ready
-                scoreboard->setReg(rename_result.first.PhyReg());
+                // VP: Do NOT set scoreboard here. Let consumers enter subDepGraph
+                // so loadCancel DFS can find them on VP misprediction.
+                // scoreboard->setReg(rename_result.first.PhyReg());
                 inst->setRegOperand(inst->staticInst.get(), 0, inst->vpResult.value);
                 // must pop result here
                 inst->popResult();

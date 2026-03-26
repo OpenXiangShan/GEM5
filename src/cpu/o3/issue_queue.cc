@@ -508,6 +508,10 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
 void
 IssueQue::addIfReady(const DynInstPtr& inst)
 {
+    if (inst->isIssued()) {
+        return;
+    }
+
     if (inst->readyToIssue()) {
         if (inst->readyTick == -1) {
             inst->readyTick = curTick();
@@ -1259,6 +1263,32 @@ Scheduler::specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_que
 }
 
 void
+Scheduler::specWakeUpFromVP(const DynInstPtr& inst)
+{
+    DPRINTF(Schedule, "[sn:%llu] VP speculative wakeup dependents\n", inst->seqNum);
+    // Wake consumers already in IQ via speculative wakeup (preserves subDepGraph)
+    for (auto to : issueQues) {
+        to->wakeUpDependents(inst, true);  // speculative=true -> depgraph preserved
+    }
+    // Set earlyScoreboard + bypassScoreboard (but NOT scoreboard) so that
+    // future consumers entering IQ via insert() will:
+    //   - see scoreboard[src]=false -> enter the else branch
+    //   - see earlyScoreboard[src]=true -> markSrcRegReady AND added to subDepGraph
+    // This ensures loadCancel DFS can find them.
+    for (int i = 0; i < inst->numDestRegs(); i++) {
+        PhysRegIdPtr dst = inst->renamedDestIdx(i);
+        if (dst->isFixedMapping()) [[unlikely]] {
+            continue;
+        }
+        earlyScoreboard[dst->flatIndex()] = true;
+        bypassScoreboard[dst->flatIndex()] = true;
+        // NOTE: intentionally NOT setting scoreboard[dst] = true
+        // so consumers go through the earlyScoreboard path in insert()
+        // which adds them to subDepGraph
+    }
+}
+
+void
 Scheduler::specWakeUpFromLoadPipe(const DynInstPtr& inst)
 {
     assert(inst->isLoad());
@@ -1360,7 +1390,7 @@ Scheduler::useRfWrPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int ty
     t_lat = lat;
 }
 
-void
+bool
 Scheduler::loadCancel(const DynInstPtr& inst)
 {
     DPRINTF(Schedule, "[sn:%llu] %s cache miss, cancel consumers\n", inst->seqNum,
@@ -1369,10 +1399,12 @@ Scheduler::loadCancel(const DynInstPtr& inst)
         inst->issueQue->iqstats->loadmiss++;
     }
 
-    // speculative value prediction load should not be cancel
-    // because the dependency issue has been resolved
-    if (inst->vpResult.speculative) {
-        return;
+    bool needSquashFallback = false;
+
+    // For VP load: if prediction is correct (no misprediction), skip cancel.
+    // If VP misprediction detected, allow DFS to cancel dependent consumers.
+    if (inst->vpResult.speculative && !inst->vpMisprediction) {
+        return false;
     }
 
     dfs.push(inst);
@@ -1398,6 +1430,18 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                     if (depInst->readySrcIdx(srcIdx)) {
                         DPRINTF(Schedule, "cancel [sn:%llu], clear src p%d ready\n", depInst->seqNum,
                                 depInst->renamedSrcIdx(srcIdx)->flatIndex());
+                        if (depInst->isIssued()) {
+                            if (inst->vpMisprediction) {
+                                // VP misprediction: consumer may already be in-flight.
+                                // Mark canceled and propagate to its dependents.
+                                depInst->setCancel();
+                                depInst->clearSrcRegReady(srcIdx);
+                                dfs.push(depInst);
+                                needSquashFallback = true;
+                            }
+                            continue;
+                        }
+
                         depInst->issueQue->cancel(depInst);
                         depInst->clearSrcRegReady(srcIdx);
                         dfs.push(depInst);
@@ -1418,6 +1462,8 @@ Scheduler::loadCancel(const DynInstPtr& inst)
             }
         }
     }
+
+    return needSquashFallback;
 }
 
 void
@@ -1456,14 +1502,14 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
     }
     if (inst->canLVP()) {
         RegVal actualValue = cpu->getReg(inst->extRenamedDestIdx(0));
-        // RegVal actualValue_2 = inst->getResult().as<RegVal>();
-        // assert(actualValue == actualValue_2);
         inst->actualValue = actualValue;
-        if (inst->vpResult.speculative && inst->fault == NoFault) {
-            if (actualValue != inst->vpResult.value) {
-                // check error
-                inst->vpMisprediction = true;
-            }
+        inst->vpMisprediction = false;
+        if (inst->vpResult.speculative && inst->fault == NoFault &&
+            actualValue != inst->vpResult.value) {
+            DPRINTF(schedule, "actual value: 0x%lx, predicted value: 0x%lx pc %lx\n", actualValue,
+                    inst->vpResult.value, inst->pcState().instAddr());
+            inst->vpMisprediction = true;
+            inst->vpResult.speculative = false;
         }
     }
 }
