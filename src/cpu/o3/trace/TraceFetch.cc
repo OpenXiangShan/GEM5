@@ -539,7 +539,7 @@ TraceFetch::chooseWrongPathNopSize(ThreadID tid, Addr pc)
         if (fetch.dbpbtb->ftqHasFetching(tid)) {
             const auto &stream = fetch.dbpbtb->ftqFetchingTarget(tid);
             block_end = stream.predEndPC;
-            taken_pc = stream.predBranchInfo.pc;
+            taken_pc = stream.predBranchInfo.startPC();
             taken = stream.predTaken;
         }
     }

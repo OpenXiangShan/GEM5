@@ -152,6 +152,7 @@ struct BranchInfo
      * - triggerPC = controlPC
      */
     Addr endPCExclusive() const { return startPC() + this->size; }
+    Addr fallThroughPC() const { return endPCExclusive(); }
     Addr triggerPC() const { return controlPC(); }
 
     /**

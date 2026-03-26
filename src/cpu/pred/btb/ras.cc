@@ -130,7 +130,7 @@ BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction
     DPRINTFR(RAS, "Do specUpdate for PC %lx pred target %lx ", pred.bbStart, pred.returnTarget);
 
     if (takenEntry.isCall) {
-        Addr retAddr = takenEntry.pc + takenEntry.size;
+        Addr retAddr = takenEntry.fallThroughPC();
         push(retAddr);
     }
     if (takenEntry.isReturn) {
@@ -166,7 +166,7 @@ BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &e
     TOSW = meta_ptr->TOSW;
     ssp = meta_ptr->ssp;
     sctr = meta_ptr->sctr;
-    Addr retAddr = takenEntry.pc + takenEntry.size;
+    Addr retAddr = takenEntry.fallThroughPC();
 
     // do push & pops on control squash
     if (entry.exeTaken) {
@@ -207,7 +207,7 @@ BTBRAS::update(const FetchTarget &entry)
         if (takenEntry.isCall) {
             DPRINTF(RAS, "real update call BTB hit %d meta TOSR %d TOSW %d\n entry PC %lx",
                 entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
-            Addr retAddr = takenEntry.pc + takenEntry.size;
+            Addr retAddr = takenEntry.fallThroughPC();
             push_stack(retAddr);
             BOS = inflightPtrPlus1(meta_ptr->TOSW);
         }
@@ -435,6 +435,11 @@ BTBRAS::getTopAddrFromMetas(const FetchTarget &stream)
 void
 BTBRAS::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
+#ifdef UNIT_TEST
+    static_cast<void>(stream);
+    static_cast<void>(inst);
+    return;
+#else
     if (!inst->isReturn() || inst->isNop()) {
         // ras only cares about return instructions
         return;
@@ -452,6 +457,7 @@ BTBRAS::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
             rasStats.CorrectWithSctr++;
         }
     }
+#endif
 }
 
 #ifndef UNIT_TEST

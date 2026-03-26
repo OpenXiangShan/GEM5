@@ -46,7 +46,7 @@ GTest('fetch_coverage.test',
 )
 
 # add --unit-test to enable unit test mode for RAS
-# TODO: Fix RAS test
+# TODO: Fix broader historical ras.test expectations, then re-enable target.
 # GTest('ras.test',
 #     'ras_test.cc',
 #     '../ras.cc',
