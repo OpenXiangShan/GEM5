@@ -346,8 +346,9 @@ class Scheduler : public SimObject
     void useRfRdPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri);
     void useRfWrPort(const DynInstPtr& inst, const PhysRegIdPtr& regid, int typePortId, int pri);
 
+    void specWakeUpFromVP(const DynInstPtr& inst);
     void specWakeUpFromLoadPipe(const DynInstPtr& inst);
-    void loadCancel(const DynInstPtr& inst);
+    bool loadCancel(const DynInstPtr& inst);
 
     void writebackWakeup(const DynInstPtr& inst);
     void bypassWriteback(const DynInstPtr& inst);

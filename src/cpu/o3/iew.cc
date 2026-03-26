@@ -452,16 +452,11 @@ IEW::setScoreboard(Scoreboard *sb_ptr)
 void
 IEW::lvpWakeDependents(const DynInstPtr &inst) {
     assert(inst->numDestRegs() == 1);
-    for (int i = 0; i < inst->numDestRegs(); i++) {
-        auto dest = inst->renamedDestIdx(i);
-        if (dest->isFixedMapping()) {
-            continue;
-        }
-
-        scheduler->setAllScoreBoard(dest);
-
-        DPRINTF(IEW,"[sn:%llu] vp set scoreboard to true\n", inst->seqNum);
-    }
+    // VP selective flush: use speculative wakeup path so consumers
+    // stay in subDepGraph. On VP misprediction, loadCancel DFS can
+    // find and cancel them.
+    scheduler->specWakeUpFromVP(inst);
+    DPRINTF(IEW,"[sn:%llu] vp specWakeUp dependents\n", inst->seqNum);
 }
 
 bool
@@ -723,10 +718,22 @@ IEW::readyToFinish(const DynInstPtr& inst)
 
     ThreadID tid = inst->threadNumber;
     if (inst->vpMisprediction) {
-        if (!fetchRedirect[tid] || !toCommit->squash[tid] || toCommit->squashedSeqNum[tid] > inst->seqNum) {
-            // deal with value prediction error
-            fetchRedirect[tid] = true;
-            squashDueToValuePrediction(inst, tid);
+        // VP selective flush: cancel data-dependent consumers when possible.
+        // If any dependent consumer is already issued, fallback to squash.
+        DPRINTF(IEW, "[sn:%llu] VP misprediction detected, "
+                "selective cancel via loadCancel\n", inst->seqNum);
+        bool needSquashFallback = scheduler->loadCancel(inst);
+        if (needSquashFallback) {
+            DPRINTF(IEW, "[sn:%llu] VP fallback to squash due to issued dependent\n",
+                    inst->seqNum);
+            if (!fetchRedirect[tid] || !toCommit->squash[tid] ||
+                toCommit->squashedSeqNum[tid] > inst->seqNum) {
+                fetchRedirect[tid] = true;
+                squashDueToValuePrediction(inst, tid);
+            }
+        } else {
+            // Writeback with real value to re-wake consumers
+            scheduler->writebackWakeup(inst);
         }
     }
 
