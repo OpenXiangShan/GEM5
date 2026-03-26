@@ -108,6 +108,48 @@ def _parse_csv_addr_list(raw, field_name):
             ) from exc
     return values
 
+
+def _cli_opt_provided(flag_name):
+    """判断某个命令行参数是否被显式传入。"""
+    return any(
+        arg == flag_name or arg.startswith(flag_name + "=")
+        for arg in sys.argv
+    )
+
+
+def _validate_shadow_dst_windows_non_overlapping(dst_bases, window_sizes):
+    """
+    检查每个 shadow 的目标窗口 [dst, dst+window) 两两不重叠。
+    若重叠则直接抛错，避免实验被污染。
+    """
+    if len(dst_bases) != len(window_sizes):
+        raise ValueError(
+            "shadow dst/window length mismatch in overlap validation: "
+            f"dst={len(dst_bases)} window={len(window_sizes)}"
+        )
+
+    intervals = []
+    for idx, (dst, window) in enumerate(zip(dst_bases, window_sizes)):
+        if dst < 0:
+            raise ValueError(f"shadow dst base must be >= 0, got shadow[{idx}]={dst}")
+        if window <= 0:
+            raise ValueError(
+                f"shadow window size must be > 0, got shadow[{idx}]={window}"
+            )
+        end = dst + window
+        intervals.append((dst, end, idx))
+
+    intervals.sort(key=lambda item: item[0])
+    for i in range(1, len(intervals)):
+        prev_start, prev_end, prev_idx = intervals[i - 1]
+        curr_start, curr_end, curr_idx = intervals[i]
+        if curr_start < prev_end:
+            raise ValueError(
+                "shadow dst windows overlap: "
+                f"shadow[{prev_idx}]=[{prev_start:#x},{prev_end:#x}) "
+                f"shadow[{curr_idx}]=[{curr_start:#x},{curr_end:#x})"
+            )
+
 def config_classic_l2(options, system, l2_cache_class):
     # When using classic L2 cache, The prefetcher is inside the l2cache, instead of l2Wrapper
     # So we need to move the prefetcher from l2Wrapper to l2cache
@@ -310,7 +352,11 @@ def config_cache(options, system):
                         f"Unsupported --chi-voq-depth-mode: {chi_voq_depth_mode}"
                     )
                 chi_voq_depth_per_ingress = (chi_voq_depth_mode == 'per_ingress')
-                def _build_shadow_l2_config(default_attach_point="mesh3.local0"):
+                def _build_shadow_l2_config(
+                    default_attach_point="mesh3.local0",
+                    default_attach_points=None,
+                    enable_auto_mapping_defaults=False,
+                ):
                     shadow_enable = bool(getattr(options, "shadow_l2_enable", False))
                     shadow_count = int(getattr(options, "shadow_l2_count", 1))
                     if shadow_enable and shadow_count <= 0:
@@ -327,34 +373,85 @@ def config_cache(options, system):
                         raw_shadow_attach_points = getattr(
                             options, "shadow_attach_points", None
                         )
-                        shadow_attach_opt_provided = any(
-                            arg == "--shadow-attach-points"
-                            or arg.startswith("--shadow-attach-points=")
-                            for arg in sys.argv
+                        shadow_attach_opt_provided = _cli_opt_provided(
+                            "--shadow-attach-points"
                         )
                         if shadow_attach_opt_provided or (
                             raw_shadow_attach_points not in (None, "", "mesh3.local0")
                         ):
-                            shadow_attach_raw = raw_shadow_attach_points
+                            shadow_attach_points = _parse_csv_list(raw_shadow_attach_points)
                         else:
-                            shadow_attach_raw = default_attach_point
+                            if default_attach_points is not None:
+                                if shadow_count > len(default_attach_points):
+                                    raise ValueError(
+                                        "shadow attach default list is insufficient: "
+                                        f"count={shadow_count}, max_default={len(default_attach_points)}; "
+                                        "please specify --shadow-attach-points explicitly"
+                                    )
+                                shadow_attach_points = list(
+                                    default_attach_points[:shadow_count]
+                                )
+                            else:
+                                shadow_attach_points = _parse_csv_list(
+                                    default_attach_point
+                                )
 
                         shadow_bridges = [
                             CHIBridge(networkPort=CHIPort(recv_buffer_size=4))
                             for _ in range(shadow_count)
                         ]
-                        shadow_attach_points = _parse_csv_list(
-                            shadow_attach_raw
+                        raw_shadow_src_bases = getattr(options, "shadow_src_bases", "")
+                        raw_shadow_window_sizes = getattr(
+                            options, "shadow_window_sizes", ""
                         )
-                        shadow_src_bases = _parse_csv_addr_list(
-                            getattr(options, "shadow_src_bases", ""),
-                            "shadow-src-bases")
-                        shadow_window_sizes = _parse_csv_addr_list(
-                            getattr(options, "shadow_window_sizes", ""),
-                            "shadow-window-sizes")
-                        shadow_dst_bases = _parse_csv_addr_list(
-                            getattr(options, "shadow_dst_bases", ""),
-                            "shadow-dst-bases")
+                        raw_shadow_dst_bases = getattr(options, "shadow_dst_bases", "")
+
+                        shadow_src_opt_provided = _cli_opt_provided("--shadow-src-bases")
+                        shadow_window_opt_provided = _cli_opt_provided(
+                            "--shadow-window-sizes"
+                        )
+                        shadow_dst_opt_provided = _cli_opt_provided("--shadow-dst-bases")
+
+                        shadow_src_user_provided = shadow_src_opt_provided or bool(
+                            _parse_csv_list(raw_shadow_src_bases)
+                        )
+                        shadow_window_user_provided = shadow_window_opt_provided or bool(
+                            _parse_csv_list(raw_shadow_window_sizes)
+                        )
+                        shadow_dst_user_provided = shadow_dst_opt_provided or bool(
+                            _parse_csv_list(raw_shadow_dst_bases)
+                        )
+                        auto_fill_shadow_mapping = (
+                            enable_auto_mapping_defaults
+                            and not shadow_src_user_provided
+                            and not shadow_window_user_provided
+                            and not shadow_dst_user_provided
+                        )
+
+                        if auto_fill_shadow_mapping:
+                            default_src_base = 0x80000000
+                            default_window_size = 0x80000000
+                            default_dst_base_start = 0x100000000
+                            shadow_src_bases = [
+                                default_src_base for _ in range(shadow_count)
+                            ]
+                            shadow_window_sizes = [
+                                default_window_size for _ in range(shadow_count)
+                            ]
+                            shadow_dst_bases = [
+                                default_dst_base_start + i * default_window_size
+                                for i in range(shadow_count)
+                            ]
+                        else:
+                            shadow_src_bases = _parse_csv_addr_list(
+                                raw_shadow_src_bases, "shadow-src-bases"
+                            )
+                            shadow_window_sizes = _parse_csv_addr_list(
+                                raw_shadow_window_sizes, "shadow-window-sizes"
+                            )
+                            shadow_dst_bases = _parse_csv_addr_list(
+                                raw_shadow_dst_bases, "shadow-dst-bases"
+                            )
 
                         if len(shadow_attach_points) != shadow_count:
                             raise ValueError(
@@ -375,6 +472,36 @@ def config_cache(options, system):
                             raise ValueError(
                                 f"shadow dst bases count mismatch: expected {shadow_count}, "
                                 f"got {len(shadow_dst_bases)}"
+                            )
+
+                        for i, src_base in enumerate(shadow_src_bases):
+                            if src_base < 0:
+                                raise ValueError(
+                                    f"shadow src base must be >= 0, got shadow[{i}]={src_base}"
+                                )
+                        for i, window_size in enumerate(shadow_window_sizes):
+                            if window_size <= 0:
+                                raise ValueError(
+                                    "shadow window size must be > 0, "
+                                    f"got shadow[{i}]={window_size}"
+                                )
+                        for i, dst_base in enumerate(shadow_dst_bases):
+                            if dst_base < 0:
+                                raise ValueError(
+                                    f"shadow dst base must be >= 0, got shadow[{i}]={dst_base}"
+                                )
+
+                        _validate_shadow_dst_windows_non_overlapping(
+                            shadow_dst_bases, shadow_window_sizes
+                        )
+
+                        for i in range(shadow_count):
+                            print(
+                                "[xsCHI][ShadowCfg] "
+                                f"idx={i} attach={shadow_attach_points[i]} "
+                                f"src={shadow_src_bases[i]:#x} "
+                                f"window={shadow_window_sizes[i]:#x} "
+                                f"dst={shadow_dst_bases[i]:#x}"
                             )
 
                     return {
@@ -418,10 +545,18 @@ def config_cache(options, system):
                             else "rn_m0_local0_hn_m1_local0_dram_m2_local0"
                         )
                     )
-                    shadow_default_attach = (
-                        "mesh8.local0" if use_mesh_3x3 else "mesh3.local0"
-                    )
-                    shadow_cfg = _build_shadow_l2_config(shadow_default_attach)
+                    if use_mesh_3x3:
+                        shadow_cfg = _build_shadow_l2_config(
+                            default_attach_point="mesh8.local0",
+                            default_attach_points=[
+                                "mesh8.local0",
+                                "mesh6.local0",
+                                "mesh2.local0",
+                            ],
+                            enable_auto_mapping_defaults=True,
+                        )
+                    else:
+                        shadow_cfg = _build_shadow_l2_config("mesh3.local0")
 
                     l3_inner_cache_wrapper = L3CacheWrapper(
                         clk_domain=system.cpu_clk_domain,
@@ -436,7 +571,7 @@ def config_cache(options, system):
                             range=system.mem_ranges[0],
                             configFile=os.path.join(
                                 root_dir,
-                                'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini',
+                                'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini',
                             ),
                             filePath=os.path.join(root_dir, 'ext/dramsim3/DRAMsim3/'),
                         ),
@@ -657,7 +792,7 @@ def config_cache(options, system):
                     system.CHIsys = L2ToDramSys(
                         configFile=os.path.join(
                             root_dir,
-                            'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_2ch.ini'
+                            'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini'
                         ),
                         topology_variant=topology_variant,
                     )

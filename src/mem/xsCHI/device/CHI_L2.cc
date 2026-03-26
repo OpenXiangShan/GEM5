@@ -172,6 +172,7 @@ namespace xsCHI
     {
         ClockedObject::init();
         // 启动阶段做窗口合法性校验，尽早失败，避免带着错误映射进入长仿真。
+        std::vector<Addr> shadowDstLimits(shadowBridges.size(), 0);
         for (size_t i = 0; i < shadowBridges.size(); ++i) {
             const Addr srcBase = shadowSrcBases[i];
             const Addr winSize = shadowWindowSizes[i];
@@ -188,6 +189,34 @@ namespace xsCHI
                      name(), i,
                      static_cast<unsigned long long>(dstBase),
                      static_cast<unsigned long long>(winSize));
+            const Addr srcLimit = srcBase + winSize;
+            const Addr dstLimit = dstBase + winSize;
+            shadowDstLimits[i] = dstLimit;
+            inform("xsCHI %s shadow[%zu] remap: src=[%#llx,%#llx) dst=[%#llx,%#llx)",
+                   name(), i,
+                   static_cast<unsigned long long>(srcBase),
+                   static_cast<unsigned long long>(srcLimit),
+                   static_cast<unsigned long long>(dstBase),
+                   static_cast<unsigned long long>(dstLimit));
+        }
+
+        // 防御式兜底：显式保证各 shadow 目标窗口互不重叠。
+        for (size_t i = 0; i < shadowBridges.size(); ++i) {
+            for (size_t j = i + 1; j < shadowBridges.size(); ++j) {
+                const bool overlap =
+                    (shadowDstBases[i] < shadowDstLimits[j]) &&
+                    (shadowDstBases[j] < shadowDstLimits[i]);
+                panic_if(overlap,
+                         "%s shadow dst windows overlap: shadow[%zu]=[%#llx,%#llx) "
+                         "shadow[%zu]=[%#llx,%#llx)",
+                         name(),
+                         i,
+                         static_cast<unsigned long long>(shadowDstBases[i]),
+                         static_cast<unsigned long long>(shadowDstLimits[i]),
+                         j,
+                         static_cast<unsigned long long>(shadowDstBases[j]),
+                         static_cast<unsigned long long>(shadowDstLimits[j]));
+            }
         }
 
         // Propagate address ranges so upstream crossbars have valid routing
