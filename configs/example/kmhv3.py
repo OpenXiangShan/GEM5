@@ -91,6 +91,8 @@ def setKmhV3Params(args, system):
             cpu.dcache.do_fast_writeline = False
             cpu.dcache.simulate_dcache_refill = True
             cpu.dcache.prefetch_can_offload = False
+            if cpu.dcache.prefetcher != NULL and hasattr(cpu.dcache.prefetcher, "enable_temporal"):
+                cpu.dcache.prefetcher.enable_temporal = False
             set_lsq_bank_conflict_cache_params(cpu, system)
 
     # l2 caches
@@ -101,6 +103,8 @@ def setKmhV3Params(args, system):
                 system.l2_caches[i].wpu = NULL
                 system.l2_caches[i].do_fast_writeline = False
                 system.l2_caches[i].prefetch_can_offload = False
+                if system.l2_caches[i].prefetcher != NULL and hasattr(system.l2_caches[i].prefetcher, "enable_cmc"):
+                    system.l2_caches[i].prefetcher.enable_cmc = False
                 # Configure XSDRRIP replacement policy (DRRIP mode)
                 # L2: 2MB, 8-way, 64B line → 4096 sets
                 system.l2_caches[i].replacement_policy = XSDRRIPRP(mode=2, num_sets=4096)
@@ -110,6 +114,8 @@ def setKmhV3Params(args, system):
                 l2_wrapper.dir_sram_banks = 2
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
+                if l2_wrapper.prefetcher != NULL and hasattr(l2_wrapper.prefetcher, "enable_cmc"):
+                    l2_wrapper.prefetcher.enable_cmc = False
                 for j in range(args.l2_slices):
                     l2_wrapper.slices[j].inner_cache.wpu = NULL
                     l2_wrapper.slices[j].inner_cache.do_fast_writeline = False
