@@ -91,6 +91,8 @@ def setKmhV3Params(args, system):
             cpu.dcache.do_fast_writeline = False
             cpu.dcache.simulate_dcache_refill = True
             cpu.dcache.prefetch_can_offload = False
+            if cpu.dcache.prefetcher != NULL and hasattr(cpu.dcache.prefetcher, "enable_berti"):
+                cpu.dcache.prefetcher.enable_berti = False
             set_lsq_bank_conflict_cache_params(cpu, system)
 
     # l2 caches
