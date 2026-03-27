@@ -211,6 +211,7 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
 
     diffAllStates.resize(numThreads);
     recentCommittedStores.resize(numThreads);
+    syncVisibleStoreReplayArmed.resize(numThreads, false);
     if (enableDifftest) {
         assert(params().difftest_ref_so.length() > 2);
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
@@ -1484,12 +1485,23 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                 if (system->multiContextDifftest() &&
                     (diffInfo.inst->isLoad() || diffInfo.inst->isAtomic()) &&
                     _goldenMemManager->inPmem(diffInfo.physEffAddr)) {
-                    warn("Difference on %s instr found in multicore mode, check in golden memory\n",
-                         diffInfo.inst->isLoad() ? "load" : "amo");
-                    uint8_t *golden_ptr = diffInfo.goldenValue;
+                    DPRINTF(Diff,
+                            "Difference on %s instr found in multicore mode, "
+                            "check in golden memory\n",
+                            diffInfo.inst->isLoad() ? "load" : "amo");
+                    uint8_t current_golden_data[16] = {};
+                    panic_if(diffInfo.effSize > sizeof(current_golden_data),
+                             "Unexpected large mem diff size: %u\n",
+                             diffInfo.effSize);
+                    _goldenMemManager->readGoldenMem(diffInfo.physEffAddr,
+                                                     current_golden_data,
+                                                     diffInfo.effSize);
+                    uint8_t *golden_ptr = current_golden_data;
+                    uint8_t *exec_golden_ptr = diffInfo.goldenValue;
                     const RecentCommittedStore *matched_recent_store = nullptr;
                     if (diffInfo.inst->isLoad()) {
-                        const auto &recent_history = recentCommittedStores.at(tid);
+                        const auto &recent_history =
+                            recentCommittedStores.at(tid);
                         for (auto it = recent_history.rbegin();
                              it != recent_history.rend(); ++it) {
                             if (!it->valid ||
@@ -1506,20 +1518,38 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                             }
                         }
                     }
+                    auto sync_reg = [&]() {
+                        diffAllStates->referenceRegFile[dest_tag] = gem5_val;
+                        diffAllStates->proxy->regcpy(
+                            &(diffAllStates->referenceRegFile), DUT_TO_REF);
+                    };
 
-                    // a lambda function to sync memory and register from golden results to ref
+                    // Sync both memory and register when the value is already
+                    // globally visible in golden memory.
                     auto sync_mem_reg = [&](const uint8_t *mem_src) {
                         diffAllStates->proxy->memcpy(diffInfo.physEffAddr,
                                                      const_cast<uint8_t *>(mem_src),
                                                      diffInfo.effSize,
                                                      DIFFTEST_TO_REF);
-                        diffAllStates->referenceRegFile[dest_tag] = gem5_val;
-                        diffAllStates->proxy->regcpy(&(diffAllStates->referenceRegFile), DUT_TO_REF);
+                        sync_reg();
                     };
 
-                    if (diffInfo.inst->isLoad() && memcmp(golden_ptr, &gem5_val, diffInfo.effSize) == 0) {
-                        DPRINTF(Diff, "Load content matched in golden memory. Sync from golden to ref\n");
+                    if (diffInfo.inst->isLoad() &&
+                               memcmp(golden_ptr, &gem5_val,
+                                      diffInfo.effSize) == 0) {
+                        DPRINTF(Diff,
+                                "Load content matched in golden memory. "
+                                "Sync from golden to ref\n");
                         sync_mem_reg(golden_ptr);
+                        continue;
+                    } else if (diffInfo.inst->isLoad() && exec_golden_ptr &&
+                               memcmp(exec_golden_ptr, &gem5_val,
+                                      diffInfo.effSize) == 0) {
+                        DPRINTF(Diff,
+                                "Load content matched the execution-time "
+                                "golden snapshot. Sync from the recorded "
+                                "snapshot to ref\n");
+                        sync_mem_reg(exec_golden_ptr);
                         continue;
                     } else if (matched_recent_store) {
                         DPRINTF(Diff,
@@ -1534,13 +1564,22 @@ BaseCPU::diffWithNEMU(ThreadID tid, InstSeqNum seq)
                         DPRINTF(Diff, "Golden mem old value: %#lx, GEM5 old value: %#lx\n", diffInfo.amoOldGoldenValue,
                                 gem5_val);
                         DPRINTF(Diff, "New golden value: %#lx\n", *(uint64_t *)golden_ptr);
-                        if (memcmp(&diffInfo.amoOldGoldenValue, &gem5_val, diffInfo.effSize) == 0) {
+                        if (memcmp(&diffInfo.amoOldGoldenValue, &gem5_val,
+                                   diffInfo.effSize) == 0) {
                             DPRINTF(Diff, "Atomic encountered, old value matched. Sync from golden to ref\n");
                             sync_mem_reg(golden_ptr);
                             continue;
-                        } else {
-                            warn("Atomic old value not matched!\n");
                         }
+                    } else if (diffInfo.inst->isLoad()) {
+                        DPRINTF(Diff,
+                                "Unresolved shared-memory load mismatch at "
+                                "addr=%#lx gem5=%#lx current_golden=%#lx "
+                                "exec_snapshot=%#lx; falling back to normal "
+                                "difftest reporting.\n",
+                                diffInfo.physEffAddr, gem5_val,
+                                *(uint64_t *)golden_ptr,
+                                exec_golden_ptr ?
+                                    *(uint64_t *)exec_golden_ptr : 0);
                     }
                 }
 
@@ -1638,25 +1677,22 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
             diffAllStates->gem5RegFile.pc = diffInfo.pc->instAddr();
             if (noHypeMode) {
                 auto start = pmemStart + pmemSize * difftestHartId(tid);
-                warn("Start memcpy to NEMU from %#lx, size=%lu\n", (uint64_t)start, pmemSize);
                 diffAllStates->proxy->memcpy(0x80000000u, start, pmemSize, DUT_TO_REF);
             } else if (enableMemDedup) {
                 if (system->multiContextDifftest()) {
-                    warn("Let ref share the multi-context golden memory\n");
                     assert(goldenMemPtr);
                     assert(diffAllStates->proxy->ref_get_backed_memory);
-                    diffAllStates->proxy->ref_get_backed_memory(goldenMemPtr, pmemSize);
+                    diffAllStates->proxy->ref_get_backed_memory(
+                        system->createCopyOnWriteBranch(), pmemSize);
+                    diffAllStates->proxy->memcpy_init(
+                        0x80000000u, goldenMemPtr, pmemSize, DUT_TO_REF);
                 } else {
-                    warn("Let ref share a COW mirror of root memory\n");
                     assert(diffAllStates->proxy->ref_get_backed_memory);
                     diffAllStates->proxy->ref_get_backed_memory(system->createCopyOnWriteBranch(), pmemSize);
                 }
             } else {
-                warn("MemDedup disabled, copying pmem to NEMU\n");
-                warn("Start memcpy to NEMU from %#lx, size=%lu\n", (uint64_t)pmemStart, pmemSize);
                 diffAllStates->proxy->memcpy_init(0x80000000u, pmemStart, pmemSize, DUT_TO_REF);
             }
-            warn("Start regcpy to NEMU\n");
             diffAllStates->proxy->regcpy(&(diffAllStates->gem5RegFile), DUT_TO_REF);
         }
     }

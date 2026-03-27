@@ -89,23 +89,96 @@ LSQ::DcachePort::DcachePort(LSQ *_lsq, CPU *_cpu) :
 
 std::list<LSQ::SingleDataRequest*> LSQ::SingleDataRequest::singleList;
 
+namespace
+{
+
+bool
+storeBufferEntryEligibleForLoad(const LSQ::StoreBufferEntry *entry,
+                                ThreadID load_tid, InstSeqNum load_seq,
+                                uint64_t visible_generation)
+{
+    if (!entry) {
+        return false;
+    }
+
+    if (entry->tid == load_tid) {
+        return entry->seqNum < load_seq;
+    }
+
+    return entry->generation != 0 && entry->generation <= visible_generation;
+}
+
+bool
+storeBufferByteEligibleForLoad(const LSQ::StoreBufferEntry *entry,
+                               size_t byte_idx, ThreadID load_tid,
+                               InstSeqNum load_seq,
+                               uint64_t visible_generation)
+{
+    if (!entry) {
+        return false;
+    }
+
+    if (entry->tid == load_tid) {
+        return entry->seqNum < load_seq;
+    }
+
+    if (!entry->sending) {
+        return false;
+    }
+
+    return byte_idx < entry->byteGenerations.size() &&
+           entry->byteGenerations[byte_idx] != 0 &&
+           entry->byteGenerations[byte_idx] <= visible_generation;
+}
+
+uint64_t
+storeBufferEligibleGeneration(const LSQ::StoreBufferEntry *entry,
+                              ThreadID load_tid, InstSeqNum load_seq,
+                              uint64_t visible_generation)
+{
+    if (!entry) {
+        return 0;
+    }
+
+    uint64_t best_generation = 0;
+    if (storeBufferEntryEligibleForLoad(entry, load_tid, load_seq,
+                                        visible_generation)) {
+        best_generation = entry->generation;
+    }
+    if (storeBufferEntryEligibleForLoad(entry->vice, load_tid, load_seq,
+                                        visible_generation)) {
+        best_generation = std::max(best_generation, entry->vice->generation);
+    }
+    return best_generation;
+}
+
+} // anonymous namespace
+
 void
-LSQ::StoreBufferEntry::reset(ThreadID tid, uint64_t block_vaddr, uint64_t block_paddr,
+LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
+                             uint64_t block_vaddr, uint64_t block_paddr,
                              uint64_t offset, uint8_t *datas, uint64_t size,
-                             const std::vector<bool> &mask)
+                             const std::vector<bool> &mask,
+                             uint64_t generation)
 {
     std::fill(validMask.begin(), validMask.begin() + offset, false);
+    std::fill(byteGenerations.begin(), byteGenerations.end(), 0);
 
     for (int i = 0; i < size; i++) {
         validMask[offset + i] = mask[i];
+        if (mask[i]) {
+            byteGenerations[offset + i] = generation;
+        }
     }
 
     std::fill(validMask.begin() + offset + size, validMask.end(), false);
     memcpy(blockDatas.data() + offset, datas, size);
 
     this->tid = tid;
+    this->seqNum = seq_num;
     this->blockVaddr = block_vaddr;
     this->blockPaddr = block_paddr;
+    this->generation = generation;
     this->sending = false;
     this->request = nullptr;
     this->vice = nullptr;
@@ -113,19 +186,23 @@ LSQ::StoreBufferEntry::reset(ThreadID tid, uint64_t block_vaddr, uint64_t block_
 
 void
 LSQ::StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size,
-                             const std::vector<bool> &mask)
+                             const std::vector<bool> &mask,
+                             uint64_t generation)
 {
     assert(offset + size <= validMask.size());
     for (uint64_t i = 0; i < size; ++i) {
         if (mask[i]) {
             blockDatas[offset + i] = datas[i];
             validMask[offset + i] = true;
+            byteGenerations[offset + i] = generation;
         }
     }
 }
 
 bool
-LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq)
+LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
+                                     ThreadID load_tid, InstSeqNum load_seq,
+                                     uint64_t visible_generation)
 {
     int offset = req->getPaddr() & (validMask.size() - 1);
     // the offset in the split request
@@ -136,13 +213,21 @@ LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq)
     bool full_forward = true;
     for (int i = 0; i < req->getSize(); i++) {
         assert(goffset + i < lsqreq->_size);
-        if (vice && vice->validMask[offset + i]) {
+        const bool vice_eligible =
+            vice && vice->validMask[offset + i] &&
+            storeBufferByteEligibleForLoad(vice, offset + i, load_tid,
+                                           load_seq, visible_generation);
+        const bool self_eligible =
+            validMask[offset + i] &&
+            storeBufferByteEligibleForLoad(this, offset + i, load_tid,
+                                           load_seq, visible_generation);
+        if (vice_eligible) {
             // vice is newer
             assert(vice->blockVaddr == blockVaddr);
             lsqreq->SBforwardPackets.push_back(
                 LSQRequest::FWDPacket{
                     .idx = goffset + i, .byte = vice->blockDatas[offset + i]});
-        } else if (validMask[offset + i]) {
+        } else if (self_eligible) {
             lsqreq->SBforwardPackets.push_back(
                 LSQRequest::FWDPacket{
                     .idx = goffset + i, .byte = blockDatas[offset + i]});
@@ -180,6 +265,40 @@ uint64_t
 LSQ::StoreBuffer::size() const
 {
     return _size;
+}
+
+uint64_t
+LSQ::StoreBuffer::size(ThreadID tid) const
+{
+    uint64_t count = 0;
+    for (size_t index = 0; index < data_vec.size(); ++index) {
+        if (!data_vld[index]) {
+            continue;
+        }
+
+        auto *entry = data_vec[index];
+        if (entry && entry->tid == tid) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+uint64_t
+LSQ::StoreBuffer::size(ThreadID tid, InstSeqNum seq_num) const
+{
+    uint64_t count = 0;
+    for (size_t index = 0; index < data_vec.size(); ++index) {
+        if (!data_vld[index]) {
+            continue;
+        }
+
+        auto *entry = data_vec[index];
+        if (entry && entry->tid == tid && entry->seqNum < seq_num) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 uint64_t
@@ -241,6 +360,47 @@ LSQ::StoreBuffer::getEvict()
     lru_index.pop_back();
     assert(data_vld[index]);
     return data_vec[index];
+}
+
+LSQ::StoreBufferEntry *
+LSQ::StoreBuffer::getEvict(const bool *eligible_tids, size_t num_threads)
+{
+    return getEvict(eligible_tids, nullptr, num_threads);
+}
+
+LSQ::StoreBufferEntry *
+LSQ::StoreBuffer::getEvict(const bool *eligible_tids,
+                           const InstSeqNum *eligible_seq,
+                           size_t num_threads)
+{
+    if (eligible_tids == nullptr && eligible_seq == nullptr) {
+        return getEvict();
+    }
+
+    for (auto it = lru_index.rbegin(); it != lru_index.rend(); ++it) {
+        auto *entry = data_vec[*it];
+        if (!entry) {
+            continue;
+        }
+
+        const ThreadID tid = entry->tid;
+        if (tid >= num_threads) {
+            continue;
+        }
+        if (eligible_tids && !eligible_tids[tid]) {
+            continue;
+        }
+        if (eligible_seq &&
+            eligible_seq[tid] != static_cast<InstSeqNum>(-1) &&
+            entry->seqNum >= eligible_seq[tid]) {
+            continue;
+        }
+
+        lru_index.erase(std::find(lru_index.begin(), lru_index.end(), *it));
+        return entry;
+    }
+
+    return nullptr;
 }
 
 LSQ::StoreBufferEntry *
@@ -714,17 +874,17 @@ LSQ::processWriteback()
     std::vector<uint32_t> offload_demand(numThreads, 0);
     std::vector<ThreadID> requester_tids;
     requester_tids.reserve(activeThreads->size());
-    uint32_t sbuffer_flush_bitset = 0;
-    for (ThreadID tid : *activeThreads) {
-        bool sbuffer_flushing = storeBufferFlushing(tid);
-        sbuffer_flush_bitset |= (sbuffer_flushing << tid);
-    }
 
     for (ThreadID tid : *activeThreads) {
         offload_demand[tid] = thread[tid].countStoreBufferOffloadableEntries(
             maxStoreBufferEntriesAcceptedFromSQPerCycle);
-        // when other thread is flushing sbuffer, stop current thread sq offloading
-        bool conti = (sbuffer_flush_bitset & ~(1 << tid)) == 0;
+        // During a global sbuffer flush, only threads that requested the
+        // flush may keep draining older committed stores from their SQ.
+        // If both SMT threads are flushing simultaneously, both must still be
+        // allowed to make forward progress, otherwise they can deadlock while
+        // waiting on each other's flush bit.
+        const bool conti =
+            !storeBufferFlushing() || storeBufferFlushing(tid);
         if (conti && offload_demand[tid] != 0) {
             requester_tids.push_back(tid);
         }
@@ -770,11 +930,14 @@ LSQ::processWriteback()
         thread[tid].offloadToStoreBuffer(offload_quota[tid]);
     }
 
-    // If the store buffer is flushing and no entries remain to be sent,
-    // clear the flushing state to avoid deadlock.
-    if (storeBufferFlushing() && storeBuffer.size() == 0) [[unlikely]] {
-        assert(storeBuffer.unsentSize() == 0);
-        clearStoreBufferFlushing();
+    // A fence/flush only waits for the requesting thread's sbuffer domain.
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (!storeBufferFlushing(tid) ||
+            !storeBufferEmpty(tid, _storeBufferFlushBeforeSeq[tid])) {
+            continue;
+        }
+
+        clearStoreBufferFlushing(tid);
         cpu->activityThisCycle();
     }
 }
@@ -822,12 +985,23 @@ LSQ::storeBufferWriteback()
         }
 
         if (cause) {
-            StoreBufferEntry *entry = storeBuffer.getEvict();
+            StoreBufferEntry *entry = nullptr;
+            if (*cause == StoreBufferEvictCause::Flush) {
+                entry = storeBuffer.getEvict(
+                    _storeBufferFlushing, _storeBufferFlushBeforeSeq,
+                    numThreads);
+            } else {
+                entry = storeBuffer.getEvict();
+            }
+            if (!entry) {
+                /* Disabled with the broad sbuffer watchdog above. */
+                return;
+            }
+            /* Disabled with the broad sbuffer watchdog above. */
             auto &owner_unit = thread[entry->tid];
             recordStoreBufferEviction(*cause);
             DPRINTF(StoreBuffer, "Evicting sbuffer entry[%#x]\n",
                     entry->blockPaddr);
-
             if (debug::StoreBuffer) {
                 DPRINTFR(StoreBuffer, "Dumping sbuffer entry data\n");
                 for (int i = 0; i < owner_unit.cacheLineSize(); i++) {
@@ -913,6 +1087,20 @@ void
 LSQ::completeSbufferEvict(PacketPtr pkt)
 {
     auto request = dynamic_cast<SbufferRequest *>(pkt->senderState);
+    const Addr block_paddr = request->sbuffer_entry->blockPaddr;
+    invalidateOtherThreadStoreBufferBytes(request->sbuffer_entry->tid,
+                                          request->mainReq()->getPaddr(),
+                                          request->mainReq()->getByteEnable(),
+                                          request->sbuffer_entry->generation);
+    markStoreBufferBlockVisible(block_paddr,
+                                request->sbuffer_entry->generation);
+    const bool replay_executed_loads =
+        cpu->consumeSyncVisibleStoreReplay(request->sbuffer_entry->tid);
+    notifyOtherThreadsStoreVisible(request->sbuffer_entry->tid,
+                                   request->mainReq()->getPaddr(),
+                                   request->mainReq()->getByteEnable(),
+                                   request->sbuffer_entry->seqNum,
+                                   replay_executed_loads);
     if (cpu->goldenMemManager() &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
         Addr paddr = request->mainReq()->getPaddr();
@@ -924,6 +1112,7 @@ LSQ::completeSbufferEvict(PacketPtr pkt)
     }
 
     storeBuffer.release(request->sbuffer_entry);
+    reclaimStoreBufferBlockMetadata(block_paddr);
     DPRINTF(StoreBuffer,
             "finish entry[%#x] evict to cache, sbuffer size: %d, "
             "unsentsize: %d\n",
@@ -1085,7 +1274,6 @@ LSQ::recvTimingResp(PacketPtr pkt)
 
     LSQRequest *request = dynamic_cast<LSQRequest*>(pkt->senderState);
     panic_if(!request, "Got packet back with unknown sender state\n");
-
 
     thread[request->_port.lsqID].recvTimingResp(pkt);
 
@@ -1490,12 +1678,245 @@ LSQ::hasStoresToWB(ThreadID tid)
     return thread.at(tid).hasStoresToWB();
 }
 
-bool LSQ::flushStores(ThreadID tid)
+bool
+LSQ::hasStoresToWBBefore(ThreadID tid, InstSeqNum seq_num)
+{
+    return thread.at(tid).hasStoresToWBBefore(seq_num);
+}
+
+bool
+LSQ::flushStores(ThreadID tid)
 {
     _storeBufferFlushing[tid] = true;
-    // TODO：high performance shared SMT storebuffer flushing
-    bool t = !hasStoresToWB(tid) && storeBufferEmpty();
-    return t;
+    _storeBufferFlushBeforeSeq[tid] = static_cast<InstSeqNum>(-1);
+    const bool has_stores = hasStoresToWB(tid);
+    const bool sbuffer_empty =
+        storeBufferEmpty(tid, _storeBufferFlushBeforeSeq[tid]);
+    if (!has_stores && sbuffer_empty) {
+        clearStoreBufferFlushing(tid);
+        return true;
+    }
+
+    return false;
+}
+
+bool
+LSQ::flushStores(ThreadID tid, InstSeqNum seq_num)
+{
+    _storeBufferFlushing[tid] = true;
+    _storeBufferFlushBeforeSeq[tid] = seq_num;
+    const bool has_older_stores = hasStoresToWBBefore(tid, seq_num);
+    const bool sbuffer_empty = storeBufferEmpty(tid, seq_num);
+    if (!has_older_stores && sbuffer_empty) {
+        clearStoreBufferFlushing(tid);
+        return true;
+    }
+
+    return false;
+}
+
+void
+LSQ::requestGlobalStoreBufferFlush()
+{
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        _storeBufferFlushing[tid] = true;
+        _storeBufferFlushBeforeSeq[tid] = static_cast<InstSeqNum>(-1);
+    }
+}
+
+bool
+LSQ::storeBufferHasConflict(ThreadID tid, Addr block_paddr) const
+{
+    for (ThreadID other_tid = 0; other_tid < numThreads; ++other_tid) {
+        if (other_tid == tid) {
+            continue;
+        }
+
+        if (storeBuffer.get(other_tid, block_paddr)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+uint64_t
+LSQ::bumpStoreBufferBlockVersion(Addr block_paddr)
+{
+    auto &version = storeBufferBlockVersion[block_paddr];
+    ++version;
+    if (version == 0) {
+        version = 1;
+    }
+    return version;
+}
+
+uint64_t
+LSQ::currentStoreBufferBlockVersion(Addr block_paddr) const
+{
+    auto it = storeBufferBlockVersion.find(block_paddr);
+    return it == storeBufferBlockVersion.end() ? 0 : it->second;
+}
+
+void
+LSQ::markStoreBufferBlockVisible(Addr block_paddr, uint64_t generation)
+{
+    auto &visible = storeBufferVisibleVersion[block_paddr];
+    visible = std::max(visible, generation);
+    reclaimStoreBufferBlockMetadata(block_paddr);
+}
+
+uint64_t
+LSQ::currentStoreBufferVisibleVersion(Addr block_paddr) const
+{
+    auto it = storeBufferVisibleVersion.find(block_paddr);
+    return it == storeBufferVisibleVersion.end() ? 0 : it->second;
+}
+
+LSQ::StoreBufferEntry *
+LSQ::findForwardingStoreBufferEntry(Addr block_paddr, ThreadID load_tid,
+                                    InstSeqNum load_seq) const
+{
+    StoreBufferEntry *best_entry = nullptr;
+    uint64_t best_generation = 0;
+    const auto visible_generation =
+        currentStoreBufferVisibleVersion(block_paddr);
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        auto entry = storeBuffer.get(tid, block_paddr);
+        if (!entry) {
+            continue;
+        }
+
+        const uint64_t entry_generation =
+            storeBufferEligibleGeneration(entry, load_tid, load_seq,
+                                          visible_generation);
+        if (entry_generation == 0) {
+            continue;
+        }
+
+        if (!best_entry || entry_generation > best_generation) {
+            best_entry = entry;
+            best_generation = entry_generation;
+        }
+    }
+
+    return best_entry;
+}
+
+bool
+LSQ::hasLiveStoreBufferBlock(Addr block_paddr) const
+{
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (storeBuffer.get(tid, block_paddr)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void
+LSQ::reclaimStoreBufferBlockMetadata(Addr block_paddr)
+{
+    if (hasLiveStoreBufferBlock(block_paddr)) {
+        return;
+    }
+
+    auto version_it = storeBufferBlockVersion.find(block_paddr);
+    if (version_it == storeBufferBlockVersion.end()) {
+        storeBufferVisibleVersion.erase(block_paddr);
+        return;
+    }
+
+    auto visible_it = storeBufferVisibleVersion.find(block_paddr);
+    const uint64_t visible_generation =
+        visible_it == storeBufferVisibleVersion.end() ? 0 : visible_it->second;
+    if (visible_generation < version_it->second) {
+        return;
+    }
+
+    storeBufferBlockVersion.erase(version_it);
+    if (visible_it != storeBufferVisibleVersion.end()) {
+        storeBufferVisibleVersion.erase(visible_it);
+    }
+}
+
+void
+LSQ::invalidateOtherThreadStoreBufferBytes(
+    ThreadID tid, Addr paddr, const std::vector<bool> &mask,
+    uint64_t generation)
+{
+    const Addr cache_block_mask =
+        ~((static_cast<Addr>(cpu->cacheLineSize())) - 1);
+    const Addr block_paddr = paddr & cache_block_mask;
+    const Addr offset = paddr & ~cache_block_mask;
+    auto invalidate_entry = [&](StoreBufferEntry *entry) {
+        if (!entry || offset + mask.size() > entry->validMask.size()) {
+            return;
+        }
+
+        if (!entry->sending) {
+            return;
+        }
+
+        for (size_t i = 0; i < mask.size(); ++i) {
+            if (mask[i] &&
+                entry->byteGenerations[offset + i] != 0 &&
+                entry->byteGenerations[offset + i] <= generation) {
+                entry->validMask[offset + i] = false;
+            }
+        }
+    };
+
+    for (ThreadID other_tid = 0; other_tid < numThreads; ++other_tid) {
+        if (other_tid == tid) {
+            continue;
+        }
+
+        auto entry = storeBuffer.get(other_tid, block_paddr);
+        if (!entry) {
+            continue;
+        }
+
+        invalidate_entry(entry);
+        invalidate_entry(entry->vice);
+    }
+}
+
+void
+LSQ::notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
+                                    const std::vector<bool> &byte_enable,
+                                    InstSeqNum store_seq,
+                                    bool replay_executed_loads)
+{
+    if (numThreads <= 1) {
+        return;
+    }
+
+    Request::Flags flags;
+    const Addr cache_block_mask =
+        ~((static_cast<Addr>(cpu->cacheLineSize())) - 1);
+    RequestPtr req = std::make_shared<Request>(
+        store_paddr & cache_block_mask, cpu->cacheLineSize(), flags,
+        cpu->dataRequestorId());
+    Packet pkt(req, MemCmd::InvalidateReq);
+
+    for (ThreadID context_id = 0; context_id < numThreads; ++context_id) {
+        gem5::ThreadContext *tc = cpu->getContext(context_id);
+        bool no_squash = cpu->thread[context_id]->noSquashFromTC;
+        cpu->thread[context_id]->noSquashFromTC = true;
+        tc->getIsaPtr()->handleLockedSnoop(&pkt, cache_block_mask);
+        cpu->thread[context_id]->noSquashFromTC = no_squash;
+    }
+
+    for (ThreadID other_tid = 0; other_tid < numThreads; ++other_tid) {
+        if (other_tid == tid) {
+            continue;
+        }
+        thread[other_tid].checkLocalStoreVisible(store_paddr, byte_enable,
+                                                 store_seq,
+                                                 replay_executed_loads);
+    }
 }
 
 int
@@ -2054,11 +2475,6 @@ LSQ::LSQRequest::forward()
 
 LSQ::LSQRequest::~LSQRequest()
 {
-    if (isAnyOutstandingRequest()) {
-        warn("numInTranslationFragments = %u, _numOutstandingPackets = %u\n",
-             numInTranslationFragments, _numOutstandingPackets);
-        std::raise(SIGINT);
-    }
     assert(!isAnyOutstandingRequest());
     if (_inst && _inst->savedRequest == this) {
         DPRINTF(LSQ, "inst [sn:%llu] Deleting LSQRequest, savedRequest\n", _inst->seqNum);
@@ -2148,7 +2564,6 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
                     pkt->req->getReqInstSeqNum(), pkt->getAddr(), isLoad(), mainReq()->isLLSC(),
                     mainReq()->isUncacheable(), cacheHit, *((uint64_t*)buffer));
     }
-
 
     if (isLoad()) {
         auto it = std::find(lsqUnit()->inflightLoads.begin(), lsqUnit()->inflightLoads.end(), this);
