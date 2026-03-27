@@ -67,7 +67,8 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       releaseWidth(params.phyregReleaseWidth),
       numThreads(params.numThreads),
       stats(_cpu),
-      valuePred(params.valuePred)
+      valuePred(params.valuePred),
+        enableSelectiveVPFlush(params.enableSelectiveVPFlush)
 {
     if (renameWidth > MaxWidth)
         fatal("renameWidth (%d) is larger than compiled limit (%d),\n"
@@ -943,9 +944,10 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
 
             inst->vpSupported = true;
             if (inst->vpResult.speculative) {
-                // VP: Do NOT set scoreboard here. Let consumers enter subDepGraph
-                // so loadCancel DFS can find them on VP misprediction.
-                // scoreboard->setReg(rename_result.first.PhyReg());
+                if (!enableSelectiveVPFlush) {
+                    // old behavior: let back-to-back rename consumers see ready
+                    scoreboard->setReg(rename_result.first.PhyReg());
+                }
                 inst->setRegOperand(inst->staticInst.get(), 0, inst->vpResult.value);
                 // must pop result here
                 inst->popResult();

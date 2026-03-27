@@ -455,6 +455,9 @@ class Rename
 
     /** Value predictor */
     valuepred::VPUnit *valuePred;
+
+    /** Enable selective VP flush path */
+    bool enableSelectiveVPFlush;
 };
 
 } // namespace o3

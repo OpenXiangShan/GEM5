@@ -410,6 +410,9 @@ class IEW
     /** Value predictor */
     valuepred::VPUnit *valuePred;
 
+    /** Enable selective VP flush path */
+    bool enableSelectiveVPFlush;
+
   private:
     /** CPU pointer. */
     CPU *cpu;

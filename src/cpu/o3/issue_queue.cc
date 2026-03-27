@@ -1505,7 +1505,7 @@ Scheduler::bypassWriteback(const DynInstPtr& inst)
         inst->vpMisprediction = false;
         if (inst->vpResult.speculative && inst->fault == NoFault &&
             actualValue != inst->vpResult.value) {
-            DPRINTF(schedule, "actual value: 0x%lx, predicted value: 0x%lx pc %lx\n", actualValue,
+            DPRINTF(Schedule, "actual value: 0x%lx, predicted value: 0x%lx pc %lx\n", actualValue,
                     inst->vpResult.value, inst->pcState().instAddr());
             inst->vpMisprediction = true;
             inst->vpResult.speculative = false;
