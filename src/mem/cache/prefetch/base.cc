@@ -61,6 +61,25 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
+namespace
+{
+
+Request::XsMetadata
+buildTrainingMetadata(const PacketPtr &pkt, PrefetchSourceType pfSource,
+                      int pfDepth)
+{
+    Request::XsMetadata xsMetadata = pkt->req->getXsMetadata();
+    xsMetadata.validXsMetadata = xsMetadata.validXsMetadata ||
+                                 xsMetadata.instXsMetadata ||
+                                 pfSource != PrefetchSourceType::PF_NONE ||
+                                 pfDepth != 0;
+    xsMetadata.prefetchSource = pfSource;
+    xsMetadata.prefetchDepth = pfDepth;
+    return xsMetadata;
+}
+
+} // anonymous namespace
+
 Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
   : address(addr), pc(pkt->req->hasPC() ? pkt->req->getPC() : 0),
     requestorId(pkt->req->requestorId()), validPC(pkt->req->hasPC()),
@@ -109,14 +128,18 @@ Base::PrefetchInfo::PrefetchInfo(PrefetchInfo const &pfi, Addr addr)
   : address(addr), pc(pfi.pc), requestorId(pfi.requestorId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr),data_ptr(nullptr)
+    data(nullptr), xsMetadata(pfi.xsMetadata), reqAfterSquash(pfi.reqAfterSquash),
+    everPrefetched(pfi.everPrefetched), pfFirstHit(pfi.pfFirstHit),
+    pfHit(pfi.pfHit), storePFTrain(pfi.storePFTrain), data_ptr(nullptr)
 {
 }
 Base::PrefetchInfo::PrefetchInfo(PrefetchInfo_old const &pfi)
   : address(pfi.address), pc(pfi.pc), requestorId(pfi.requestorId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr),data_ptr(nullptr)
+    data(nullptr), xsMetadata(pfi.xsMetadata), reqAfterSquash(pfi.reqAfterSquash),
+    everPrefetched(pfi.everPrefetched), pfFirstHit(pfi.pfFirstHit),
+    pfHit(pfi.pfHit), storePFTrain(pfi.storePFTrain), data_ptr(nullptr)
 {
 }
 Base::PrefetchInfo_old::PrefetchInfo_old(PacketPtr pkt, Addr addr, bool miss)
@@ -166,7 +189,10 @@ Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo_old const &other)
   : address(other.address), pc(other.pc), requestorId(other.requestorId),
     validPC(other.validPC), secure(other.secure), size(other.size),
     write(other.write), paddress(other.paddress), cacheMiss(other.cacheMiss),
-    data(nullptr),data_ptr(nullptr)
+    data(nullptr), xsMetadata(other.xsMetadata),
+    reqAfterSquash(other.reqAfterSquash),
+    everPrefetched(other.everPrefetched), pfFirstHit(other.pfFirstHit),
+    pfHit(other.pfHit), storePFTrain(other.storePFTrain), data_ptr(nullptr)
 {
 
 }
@@ -174,14 +200,18 @@ Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo_old const &pfi, Addr addr)
   : address(addr), pc(pfi.pc), requestorId(pfi.requestorId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr),data_ptr(nullptr)
+    data(nullptr), xsMetadata(pfi.xsMetadata), reqAfterSquash(pfi.reqAfterSquash),
+    everPrefetched(pfi.everPrefetched), pfFirstHit(pfi.pfFirstHit),
+    pfHit(pfi.pfHit), storePFTrain(pfi.storePFTrain), data_ptr(nullptr)
 {
 }
 Base::PrefetchInfo_old::PrefetchInfo_old(PrefetchInfo const &pfi)
   : address(pfi.address), pc(pfi.pc), requestorId(pfi.requestorId),
     validPC(pfi.validPC), secure(pfi.secure), size(pfi.size),
     write(pfi.write), paddress(pfi.paddress), cacheMiss(pfi.cacheMiss),
-    data(nullptr),data_ptr(nullptr)
+    data(nullptr), xsMetadata(pfi.xsMetadata), reqAfterSquash(pfi.reqAfterSquash),
+    everPrefetched(pfi.everPrefetched), pfFirstHit(pfi.pfFirstHit),
+    pfHit(pfi.pfHit), storePFTrain(pfi.storePFTrain), data_ptr(nullptr)
 {
 }
 void
@@ -471,7 +501,9 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
             // condition2: !useVirtualAddresses
 
             Addr addr = pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr();
-            Request::XsMetadata xsMetadata(pf_source, pf_depth);
+            Request::XsMetadata xsMetadata =
+                buildTrainingMetadata(pkt, pf_source, pf_depth);
+            Addr pc = pkt->req->hasPC() ? pkt->req->getPC() : 0;
 
             // Query and save all state information needed for training
             bool everPrefetched = hasEverBeenPrefetched(pkt->getAddr(), pkt->isSecure());
@@ -492,7 +524,7 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
                     currentCycleLoads.emplace_back(
                         pkt, addr, miss, xsMetadata,
                         everPrefetched, pfFirstHit, pfHit, currentSquashMark,
-                        seqNum, blockAddr, isLoad
+                        seqNum, blockAddr, isLoad, curTick(), pc
                     );
                     DPRINTF(HWPrefetch, "TrainFilter: Collected Load [seq=%lu, blk=%#x]\n",
                             seqNum, blockAddr);
@@ -500,10 +532,20 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
                     currentCycleStores.emplace_back(
                         pkt, addr, miss, xsMetadata,
                         everPrefetched, pfFirstHit, pfHit, currentSquashMark,
-                        seqNum, blockAddr, isLoad
+                        seqNum, blockAddr, isLoad, curTick(), pc
                     );
                     DPRINTF(HWPrefetch, "TrainFilter: Collected Store [seq=%lu, blk=%#x]\n",
                             seqNum, blockAddr);
+                }
+
+                if (archDBer != nullptr) {
+                    const int pendingCollected =
+                        currentCycleLoads.size() + currentCycleStores.size();
+                    archDBer->trainFilterTraceWrite(
+                        curTick(), "Collect", seqNum, pc, addr, blockAddr,
+                        isLoad, miss, xsMetadata.prefetchSource,
+                        xsMetadata.prefetchDepth, curTick(), pendingCollected,
+                        "");
                 }
 
                 if (!cycleEvent.scheduled()) {
@@ -604,17 +646,38 @@ Base::flushCurrentCycleRequests()
         if (trainingBufferBlockAddrs.count(blockAddr) > 0) {
             DPRINTF(HWPrefetch, "  TrainFilter: Drop [%s%lu, %#x] - in buffer\n",
                     req.isLoad ? "L" : "S", req.seqNum, blockAddr);
+            if (archDBer != nullptr) {
+                archDBer->trainFilterTraceWrite(
+                    curTick(), "DropDup", req.seqNum, req.pc, req.addr,
+                    blockAddr, req.isLoad, req.miss,
+                    req.xsMetadata.prefetchSource,
+                    req.xsMetadata.prefetchDepth, req.observedTick,
+                    trainingBuffer.size(), "duplicate_block");
+            }
             continue;
         }
 
         if (trainingBuffer.size() >= trainingBufferSize) {
             DPRINTF(HWPrefetch, "  TrainFilter: Drop [%s%lu, %#x] - buffer full\n",
                     req.isLoad ? "L" : "S", req.seqNum, blockAddr);
+            if (archDBer != nullptr) {
+                archDBer->trainFilterTraceWrite(
+                    curTick(), "DropFull", req.seqNum, req.pc, req.addr,
+                    blockAddr, req.isLoad, req.miss,
+                    req.xsMetadata.prefetchSource,
+                    req.xsMetadata.prefetchDepth, req.observedTick,
+                    trainingBuffer.size(), "buffer_full");
+            }
             continue;
         }
 
         bool isLoad = req.isLoad;
         InstSeqNum seqNum = req.seqNum;
+        Addr pc = req.pc;
+        Addr addr = req.addr;
+        bool miss = req.miss;
+        Request::XsMetadata xsMetadata = req.xsMetadata;
+        Tick observedTick = req.observedTick;
 
         trainingBuffer.push_back(std::move(req));
         trainingBufferBlockAddrs.insert(blockAddr);
@@ -622,6 +685,12 @@ Base::flushCurrentCycleRequests()
         DPRINTF(HWPrefetch, "  TrainFilter: Enqueue [%s%lu, %#x] (buffer: %d)\n",
                 isLoad ? "L" : "S", seqNum, blockAddr,
                 trainingBuffer.size());
+        if (archDBer != nullptr) {
+            archDBer->trainFilterTraceWrite(
+                curTick(), "Enqueue", seqNum, pc, addr, blockAddr, isLoad,
+                miss, xsMetadata.prefetchSource, xsMetadata.prefetchDepth,
+                observedTick, trainingBuffer.size(), "");
+        }
     }
 
     currentCycleLoads.clear();
@@ -640,6 +709,13 @@ Base::processTraining()
     DPRINTF(HWPrefetch, ">>> TrainFilter: Training [%s%lu, %#x] (remaining: %d)\n",
             req.isLoad ? "L" : "S", req.seqNum, req.blockAddr,
             trainingBuffer.size() - 1);
+    if (archDBer != nullptr) {
+        archDBer->trainFilterTraceWrite(
+            curTick(), "Train", req.seqNum, req.pc, req.addr, req.blockAddr,
+            req.isLoad, req.miss, req.xsMetadata.prefetchSource,
+            req.xsMetadata.prefetchDepth, req.observedTick,
+            trainingBuffer.size(), "");
+    }
 
     PacketPtr temp_pkt = new Packet(req.req, req.cmd);
 
@@ -707,8 +783,9 @@ Base::coreDirectAddrNotify(const PacketPtr& pkt)
 
     PrefetchSourceType pf_source = PrefetchSourceType::StoreStream;
     bool miss = true;
+    Request::XsMetadata xsMetadata = buildTrainingMetadata(pkt, pf_source, 0);
     PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
-                     Request::XsMetadata(pf_source));
+                     xsMetadata);
     pkt->missOnLatePf = true;
     pkt->pfSource = pf_source;
     pfi.setReqAfterSquash(false);

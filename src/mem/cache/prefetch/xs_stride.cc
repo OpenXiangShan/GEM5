@@ -330,6 +330,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
     }
     Addr lookupAddr = pfi.getAddr();
     Addr stride_hash_pc = strideHashPc(pfi.getPC());
+    const uint64_t triggerSeqNum = pfi.getSeqNum();
     StrideEntry *entry = stride.findEntry(stride_hash_pc, pfi.isSecure());
     learned_bop_offset = 0;
     // TODO: add DPRINFT for stride
@@ -339,12 +340,14 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
     if (entry) {
         if (archDBer){
             archDBer->strideTraceWrite(curTick(), lookupAddr, pfi.getPC(), stride_hash_pc,
-                                       true, is_first_shot, pfi.isCacheMiss(), true);
+                                       true, is_first_shot, pfi.isCacheMiss(), true,
+                                       triggerSeqNum);
         }
     }else{
         if (archDBer){
             archDBer->strideTraceWrite(curTick(), lookupAddr, pfi.getPC(), stride_hash_pc,
-                                       false, is_first_shot, pfi.isCacheMiss(), true);
+                                       false, is_first_shot, pfi.isCacheMiss(), true,
+                                       triggerSeqNum);
         }
     }
     if (entry) {
@@ -457,11 +460,19 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                 } else {
                     stats.strideRedundantpfCount += 2;
                 }
-                if (archDBer){
-                    archDBer->strideTraceWrite(curTick(),  blockAddress(lookupAddr + (entry->stride << 2)), pfi.getPC(), stride_hash_pc,
-                                            true, is_first_shot, pfi.isCacheMiss(), false);
-                    archDBer->strideTraceWrite(curTick(),  blockAddress(lookupAddr + (entry->stride << 5)), pfi.getPC(), stride_hash_pc,
-                                            true, is_first_shot, pfi.isCacheMiss(), false);
+                if (archDBer) {
+                    archDBer->strideTraceWrite(
+                        curTick(),
+                        blockAddress(lookupAddr + (entry->stride << 2)),
+                        pfi.getPC(), stride_hash_pc,
+                        true, is_first_shot, pfi.isCacheMiss(), false,
+                        triggerSeqNum);
+                    archDBer->strideTraceWrite(
+                        curTick(),
+                        blockAddress(lookupAddr + (entry->stride << 5)),
+                        pfi.getPC(), stride_hash_pc,
+                        true, is_first_shot, pfi.isCacheMiss(), false,
+                        triggerSeqNum);
                 }
             } else {
                 for (unsigned i = start_depth; i <= entry->depth; i++) {

@@ -223,7 +223,7 @@ class XSStridePrefetcher(QueuedPrefetcher):
     fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
     stride_dyn_depth = Param.Bool(False, "Dynamic depth of stride table")
-    stride_entries = Param.MemorySize("16", "Stride Entries")
+    stride_entries = Param.MemorySize("10", "Stride Entries")
     stride_unique_indexing_policy = Param.BaseIndexingPolicy(
         SetAssociative(
             entry_size=1,

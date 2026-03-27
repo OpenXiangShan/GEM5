@@ -28,6 +28,7 @@ ArchDBer::ArchDBer(const Params &p)
     dumpBopTrainTrace(p.dump_bop_train_trace),
     dumpSMSTrainTrace(p.dump_sms_train_trace),
     dumpStrideTrainTrace(p.dump_stride_train_trace),
+    dumpTrainFilterTrace(p.dump_train_filter_trace),
     dumpDespacitoTrainTrace(p.dump_despacito_train_trace),
     dumpL1WayPreTrace(p.dump_l1d_way_pre_trace),
     dumpVaddrTrace(p.dump_vaddr_trace),
@@ -172,15 +173,45 @@ ArchDBer::smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigg
   };
 }
 void
-ArchDBer::strideTraceWrite(Tick tick, Addr addr, Addr PC, Addr hashPC, bool hit, bool isFirstShot, bool miss, bool is_train)
+ArchDBer::strideTraceWrite(Tick tick, Addr addr, Addr PC, Addr hashPC, bool hit,
+                           bool isFirstShot, bool miss, bool is_train,
+                           uint64_t triggerSeqNum)
 {
   bool dump_me = dumpGlobal && dumpStrideTrainTrace;
   if (!dump_me) return;
 
   sprintf(memTraceSQLBuf,
-          "INSERT INTO StrideTrainTrace(Tick,Addr,PC,HashPC,QueryHit,IsFirstShot,Miss,IsTrain,SITE) "
-          "VALUES(%ld,%ld,%ld,%ld,%d,%d,%d,%d,'%s');",
-          tick, addr, PC, hashPC, hit, isFirstShot, miss, is_train, "StrideTrain");
+          "INSERT INTO StrideTrainTrace(Tick,Addr,PC,HashPC,QueryHit,IsFirstShot,Miss,IsTrain,TriggerSeqNum,SITE) "
+          "VALUES(%lld,%lld,%lld,%lld,%d,%d,%d,%d,%lld,'%s');",
+          sqliteSignedInt(tick), sqliteSignedInt(addr), sqliteSignedInt(PC),
+          sqliteSignedInt(hashPC), hit, isFirstShot, miss, is_train,
+          sqliteSignedInt(triggerSeqNum), "StrideTrain");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
+void
+ArchDBer::trainFilterTraceWrite(Tick tick, const char *stage, uint64_t seqNum,
+                                Addr pc, Addr addr, Addr blockAddr,
+                                bool isLoad, bool miss, int pfSource,
+                                int pfDepth, Tick observedTick,
+                                int queueSize, const char *reason)
+{
+  bool dump_me = dumpGlobal && dumpTrainFilterTrace;
+  if (!dump_me) return;
+
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO TrainFilterTrace("
+          "Tick,Stage,SeqNum,PC,Addr,BlockAddr,IsLoad,Miss,"
+          "PfSource,PfDepth,ObservedTick,QueueSize,Reason,SITE) "
+          "VALUES(%lld,'%s',%lld,%lld,%lld,%lld,%d,%d,%d,%d,"
+          "%lld,%d,'%s','%s');",
+          sqliteSignedInt(tick), stage, sqliteSignedInt(seqNum),
+          sqliteSignedInt(pc), sqliteSignedInt(addr),
+          sqliteSignedInt(blockAddr), isLoad, miss, pfSource, pfDepth,
+          sqliteSignedInt(observedTick), queueSize, reason, "TrainFilter");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);

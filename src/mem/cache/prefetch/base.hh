@@ -331,6 +331,17 @@ class Base : public ClockedObject
             return xsMetadata;
         }
 
+        bool hasSeqNum() const
+        {
+            return xsMetadata.validXsMetadata && xsMetadata.instXsMetadata;
+        }
+
+        InstSeqNum getSeqNum() const
+        {
+            return hasSeqNum() ? xsMetadata.instXsMetadata->seqNum
+                               : static_cast<InstSeqNum>(-1);
+        }
+
         void setXsMetadata(const Request::XsMetadata &xs_metadata)
         {
             this->xsMetadata = xs_metadata;
@@ -575,6 +586,17 @@ class Base : public ClockedObject
             return xsMetadata;
         }
 
+        bool hasSeqNum() const
+        {
+            return xsMetadata.validXsMetadata && xsMetadata.instXsMetadata;
+        }
+
+        InstSeqNum getSeqNum() const
+        {
+            return hasSeqNum() ? xsMetadata.instXsMetadata->seqNum
+                               : static_cast<InstSeqNum>(-1);
+        }
+
         void setXsMetadata(const Request::XsMetadata &xs_metadata)
         {
             this->xsMetadata = xs_metadata;
@@ -661,13 +683,16 @@ class Base : public ClockedObject
         InstSeqNum seqNum;              // ROB sequence number for ordering
         Addr blockAddr;                 // Cache block address for filtering
         bool isLoad;
+        Tick observedTick;              // Tick when probeNotify observed it
+        Addr pc;                        // Request PC for trace correlation
 
         // Constructor: Extract copies from PacketPtr
         TrainingRequest(PacketPtr pkt, Addr _addr, bool _miss,
                        const Request::XsMetadata &_xsMetadata,
                        bool _everPrefetched, bool _pfFirstHit,
                        bool _pfHit, bool _squashMark,
-                       InstSeqNum _seqNum, Addr _blockAddr, bool _isLoad)
+                       InstSeqNum _seqNum, Addr _blockAddr, bool _isLoad,
+                       Tick _observedTick, Addr _pc)
             : req(pkt->req),
               cmd(pkt->cmd),
               dataCopy(nullptr),
@@ -681,7 +706,9 @@ class Base : public ClockedObject
               squashMark(_squashMark),
               seqNum(_seqNum),
               blockAddr(_blockAddr),
-              isLoad(_isLoad)
+              isLoad(_isLoad),
+              observedTick(_observedTick),
+              pc(_pc)
         {
             // Deep copy packet data if present
             if (pkt->flags.isSet(Packet::STATIC_DATA | Packet::DYNAMIC_DATA)) {
@@ -713,7 +740,9 @@ class Base : public ClockedObject
               squashMark(other.squashMark),
               seqNum(other.seqNum),
               blockAddr(other.blockAddr),
-              isLoad(other.isLoad)
+              isLoad(other.isLoad),
+              observedTick(other.observedTick),
+              pc(other.pc)
         {
             other.dataCopy = nullptr;  // Transfer ownership
         }
@@ -739,6 +768,8 @@ class Base : public ClockedObject
                 seqNum = other.seqNum;
                 blockAddr = other.blockAddr;
                 isLoad = other.isLoad;
+                observedTick = other.observedTick;
+                pc = other.pc;
 
                 other.dataCopy = nullptr;
             }
