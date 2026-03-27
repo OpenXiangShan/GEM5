@@ -1482,6 +1482,11 @@ Commit::commitInsts()
 
                     }
 
+                    if (head_inst->isReadBarrier() ||
+                        head_inst->isWriteBarrier()) {
+                        cpu->armSyncVisibleStoreReplay(tid);
+                    }
+
                     if (cpu->difftestEnabled()) {
                         diffInst(tid, head_inst);
                     }
@@ -1678,9 +1683,12 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         // Memory-ordering instructions such as sfence.vma must not execute
         // until older stores are visible; otherwise page-table updates may
         // race with the TLB invalidation.
-        if ((head_inst->isMemRef() || head_inst->isReturn() ||
-             head_inst->isReadBarrier() || head_inst->isWriteBarrier()) &&
-            (inst_num > 0 || !iewStage->flushStores(tid))) {
+        const bool needs_store_drain =
+            head_inst->isMemRef() || head_inst->isReturn() ||
+            head_inst->isReadBarrier() || head_inst->isWriteBarrier();
+        const bool stores_drained =
+            !needs_store_drain || iewStage->flushStores(tid, head_inst->seqNum);
+        if (needs_store_drain && (inst_num > 0 || !stores_drained)) {
             DPRINTF(Commit,
                     "[tid:%i] [sn:%llu] "
                     "Waiting for all stores to writeback.\n",
@@ -1734,7 +1742,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
     if (inst_fault != NoFault) {
         traceLogInstFault(head_inst, inst_fault);
-        if (!iewStage->flushStores(tid) || inst_num > 0) {
+        if (!iewStage->flushStores(tid, head_inst->seqNum) || inst_num > 0) {
             DPRINTF(Commit,
                     "[tid:%i] [sn:%llu] "
                     "Stores outstanding, fault must wait.\n",

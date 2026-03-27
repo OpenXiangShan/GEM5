@@ -212,6 +212,8 @@ class LSQUnit
 
         bool addrReady() const { return _addrReady; }
         bool dataReady() const { return _dataReady; }
+        bool staFinish() const { return _staFinish; }
+        bool stdFinish() const { return _stdFinish; }
         bool canForwardToLoad() const { return _addrReady && _dataReady; }
         bool splitStoreFinish() const { return _staFinish && _stdFinish; }
 
@@ -326,6 +328,10 @@ class LSQUnit
      * of the intermediate invalidate.
      */
     void checkSnoop(PacketPtr pkt);
+    void checkLocalStoreVisible(Addr store_paddr,
+                                const std::vector<bool> &store_byte_enable,
+                                InstSeqNum store_seq,
+                                bool replay_executed_loads);
 
     /** Iq issues a load to load pipeline. */
     void issueToLoadPipe(const DynInstPtr &inst);
@@ -353,9 +359,12 @@ class LSQUnit
     /** Writes back stores. */
     void offloadToStoreBuffer(uint32_t max_entries);
 
-    bool insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size, const std::vector<bool>& mask);
+    bool insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
+                           uint64_t size, const std::vector<bool>& mask,
+                           InstSeqNum store_seq);
 
     bool storeBufferEmpty() { return lsq->storeBufferEmpty(); }
+    bool storeBufferEmpty(ThreadID tid) { return lsq->storeBufferEmpty(tid); }
     bool storeBufferSQWillFull() const
     {
         return storeQueue.size() > sqFullUpperLimit;
@@ -437,6 +446,9 @@ class LSQUnit
 
     /** Returns if there are any stores to writeback. */
     bool hasStoresToWB() { return storesToWB > 0; }
+
+    /** Returns if there are older stores/atomics still pending writeback. */
+    bool hasStoresToWBBefore(InstSeqNum seq_num) const;
 
     /** Returns the number of stores to writeback. */
     int numStoresToSbuffer() { return storesToWB; }

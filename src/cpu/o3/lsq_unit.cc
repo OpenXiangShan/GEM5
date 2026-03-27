@@ -367,22 +367,24 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
                 assert(size == inst->effSize);
 
                 if (inst->isAtomic()) {
-                    uint8_t *golden_old =
-                        reinterpret_cast<uint8_t *>(inst->getAmoOldGoldenValuePtr());
-                    cpu->goldenMemManager()->readGoldenMem(addr, golden_old, size);
-                    if (memcmp(golden_old, loaded_data, size) != 0) {
-                        panic("[tid:%d] [sn:%llu] Atomic old value error at addr %#lx, "
-                              "size %d. %s\n",
-                              inst->threadNumber, inst->seqNum, addr, size,
-                              goldenDiffStr(loaded_data, golden_old, size).c_str());
-                    }
+                    uint8_t current_golden[8] = {};
+                    panic_if(size > sizeof(current_golden),
+                             "Unexpected AMO size %u at addr %#lx\n",
+                             size, addr);
+                    cpu->goldenMemManager()->readGoldenMem(addr, current_golden,
+                                                           size);
+
+                    // Preserve the DUT-observed old value until completeStore()
+                    // derives the post-AMO memory image. The golden old-value
+                    // snapshot used by difftest is captured when the request
+                    // is first sent, before later concurrent updates can
+                    // advance shared memory.
+                    inst->setGolden(loaded_data);
                 } else {
                     // check data with golden mem
                     uint8_t *golden_data =
                         (uint8_t *)cpu->goldenMemManager()->guestToHost(addr);
-                    if (memcmp(golden_data, loaded_data, size) == 0) {
-                        inst->setGolden(golden_data);
-                    } else {
+                    if (memcmp(golden_data, loaded_data, size) != 0) {
                         DPRINTF(Diff,
                                 "[tid:%d] [sn:%llu] Load sees value different from "
                                 "current golden memory at addr %#lx, size %d. "
@@ -980,6 +982,103 @@ LSQUnit::checkSnoop(PacketPtr pkt)
     return;
 }
 
+namespace
+{
+
+bool
+overlapsVisibleStore(const o3::LSQ::LSQRequest *load_req, Addr store_paddr,
+                     const std::vector<bool> &store_byte_enable)
+{
+    if (!load_req) {
+        return false;
+    }
+
+    for (size_t req_idx = 0; req_idx < load_req->numReqs(); ++req_idx) {
+        const auto req = load_req->req(req_idx);
+        if (!req->hasPaddr()) {
+            continue;
+        }
+
+        const Addr load_start = req->getPaddr();
+        const Addr load_end = load_start + req->getSize();
+        for (size_t byte_idx = 0; byte_idx < store_byte_enable.size();
+             ++byte_idx) {
+            if (!store_byte_enable[byte_idx]) {
+                continue;
+            }
+
+            const Addr byte_addr = store_paddr + byte_idx;
+            if (byte_addr >= load_start && byte_addr < load_end) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+} // anonymous namespace
+
+void
+LSQUnit::checkLocalStoreVisible(Addr store_paddr,
+                                const std::vector<bool> &store_byte_enable,
+                                InstSeqNum store_seq,
+                                bool replay_executed_loads)
+{
+    [[maybe_unused]] const InstSeqNum visible_store_seq = store_seq;
+    [[maybe_unused]] const bool replay_visible_loads = replay_executed_loads;
+
+    if (loadQueue.empty()) {
+        return;
+    }
+
+    const Addr block_addr = store_paddr & cacheBlockMask;
+    DynInstPtr oldest_violator = memDepViolator;
+
+    for (auto it = loadQueue.begin(); it != loadQueue.end(); ++it) {
+        DynInstPtr ld_inst = it->instruction();
+        if (!ld_inst || ld_inst->isSquashed() || ld_inst->needReplay() ||
+            !ld_inst->effAddrValid() || ld_inst->strictlyOrdered()) {
+            continue;
+        }
+
+        LSQRequest *request = ld_inst->savedRequest;
+        if (!request || !request->isCacheBlockHit(block_addr, cacheBlockMask)) {
+            continue;
+        }
+        if (!overlapsVisibleStore(request, store_paddr, store_byte_enable)) {
+            continue;
+        }
+        if (ld_inst->memReqFlags & Request::LLSC) {
+            ld_inst->tcBase()->getIsaPtr()->handleLockedSnoopHit(ld_inst.get());
+        }
+
+        if (ld_inst->isExecuted()) {
+            DPRINTF(LSQUnit,
+                    "Local visible store ignores already executed load "
+                    "[sn:%lli] on addr %#x\n",
+                    ld_inst->seqNum, store_paddr);
+            continue;
+        }
+
+        ld_inst->hitExternalSnoop(true);
+        ld_inst->possibleLoadViolation(true);
+        DPRINTF(LSQUnit,
+                "Local visible store replays not-yet-executed load [sn:%lli] "
+                "on addr %#x\n",
+                ld_inst->seqNum, store_paddr);
+        ld_inst->setNukeReplay();
+        loadSetReplay(ld_inst, request, true);
+    }
+
+    if (oldest_violator &&
+        (!memDepViolator || oldest_violator->seqNum < memDepViolator->seqNum)) {
+        memDepViolator = oldest_violator;
+        cpu->activityThisCycle();
+        iewStage->SquashCheckAfterExe(oldest_violator);
+    }
+}
+
 Fault
 LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
         const DynInstPtr& inst)
@@ -1102,10 +1201,7 @@ LSQUnit::loadSetReplay(DynInstPtr inst, LSQRequest* request, bool dropReqNow)
     // clear request in loadQueue
     loadQueue[inst->lqIdx].setRequest(nullptr);
     if (dropReqNow) {
-        // discard this request
         request->discard();
-        // TODO: is this essential?
-        inst->savedRequest = nullptr;
     }
 
     DPRINTF(LoadPipeline, "Load [sn:%ld] set replay, dropReqNow: %d\n", inst->seqNum, dropReqNow);
@@ -1523,9 +1619,9 @@ LSQUnit::executeLoadPipeSx()
                 else if (inst->needCacheMissReplay()) iewStage->cacheMissLdReplay(inst);
                 else if (inst->needMdpAddrReplay()) iewStage->mdpAddrReplayPipeDone(inst);
                 else if (inst->needNukeReplay()) {
-                    if (inst->cacheHit()) {
+                    if (inst->savedRequest && inst->cacheHit()) {
                         loadSetReplay(inst, inst->savedRequest, true);
-                    } else if (inst->hasPendingCacheReq()) {
+                    } else if (inst->savedRequest && inst->hasPendingCacheReq()) {
                         loadSetReplay(inst, inst->savedRequest, false);
                     }
                     inst->issueQue->retryMem(inst);
@@ -1902,7 +1998,31 @@ LSQUnit::commitStores(InstSeqNum &youngest_inst)
             if (x.instruction()->seqNum > youngest_inst) {
                 break;
             }
-            assert(x.instruction()->isSplitStoreAddr() ? x.splitStoreFinish() : true);
+            // Commit can publish a new squash to IEW one cycle after IEW has
+            // already received an older doneMemSeqNum. If that stale
+            // doneMemSeqNum reaches here in the same cycle that ROB marks this
+            // store squashed, do not advance SQ writeback state past the
+            // squashed entry; IEW's next-cycle squash will remove it.
+            if (x.instruction()->isSquashed()) {
+                break;
+            }
+            if (x.instruction()->isSplitStoreAddr() && !x.splitStoreFinish()) {
+                panic("Split store reached commitStores unfinished: tid=%d "
+                      "seq=%llu pc=%#lx youngest=%llu canCommit=%d "
+                      "executed=%d squashed=%d addrReady=%d dataReady=%d "
+                      "staFinish=%d stdFinish=%d canWB=%d completed=%d\n",
+                      x.instruction()->threadNumber,
+                      static_cast<unsigned long long>(
+                          x.instruction()->seqNum),
+                      x.instruction()->pcState().instAddr(),
+                      static_cast<unsigned long long>(youngest_inst),
+                      x.instruction()->readyToCommit(),
+                      x.instruction()->isExecuted(),
+                      x.instruction()->isSquashed(),
+                      x.addrReady(), x.dataReady(),
+                      x.staFinish(), x.stdFinish(),
+                      x.canWB(), x.completed());
+            }
             DPRINTF(LSQUnit, "Marking store as able to write back, PC "
                     "%s [sn:%lli]\n",
                     x.instruction()->pcState(),
@@ -1916,14 +2036,56 @@ LSQUnit::commitStores(InstSeqNum &youngest_inst)
 }
 
 bool
+LSQUnit::hasStoresToWBBefore(InstSeqNum seq_num) const
+{
+    if (storesToWB == 0) {
+        return false;
+    }
+
+    for (auto it = storeQueue.begin(); it != storeQueue.end(); ++it) {
+        if (!it->valid() || !it->instruction()) {
+            continue;
+        }
+
+        const auto &inst = it->instruction();
+        if (inst->seqNum >= seq_num) {
+            break;
+        }
+
+        if (it->canWB() && !it->completed()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool
 LSQUnit::writebackBlockedStore()
 {
     if (!isStoreBlocked) {
         return false;
     }
 
-    storeWBIt->request()->sendPacketToCache();
-    if (storeWBIt->request()->isSent()) {
+    auto *request = storeWBIt->request();
+    const auto &inst = storeWBIt->instruction();
+
+    if (request->mainReq()->hasPaddr() &&
+        system->multiContextDifftest() && inst->isAtomic() &&
+        cpu->goldenMemManager() &&
+        cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
+        uint8_t issue_golden[8] = {};
+        panic_if(request->_size > sizeof(issue_golden),
+                 "Unexpected AMO size %u at addr %#lx\n",
+                 request->_size, request->mainReq()->getPaddr());
+        cpu->goldenMemManager()->readGoldenMem(
+            request->mainReq()->getPaddr(), issue_golden, request->_size);
+        std::memcpy(inst->getAmoOldGoldenValuePtr(), issue_golden,
+                    request->_size);
+    }
+
+    request->sendPacketToCache();
+    if (request->isSent()) {
         storePostSend();
     }
     return isStoreBlocked;
@@ -1934,6 +2096,7 @@ LSQUnit::directStoreToCache()
 {
     DynInstPtr inst = storeWBIt->instruction();
     LSQRequest* request = storeWBIt->request();
+
     if ((request->mainReq()->isLLSC() || request->mainReq()->isRelease()) && (storeWBIt.idx() != storeQueue.head())) {
         DPRINTF(LSQUnit,
                 "Store idx:%i PC:%s to Addr:%#x "
@@ -1979,6 +2142,28 @@ LSQUnit::directStoreToCache()
             else
                 storeWBIt = storeQueue.end();
             return true;
+        }
+    }
+
+    if (request->mainReq()->hasPaddr()) {
+        if (request->_storeBufferGeneration == 0) {
+            const Addr block_paddr =
+                request->mainReq()->getPaddr() & cacheBlockMask;
+            request->_storeBufferGeneration =
+                lsq->bumpStoreBufferBlockVersion(block_paddr);
+        }
+
+        if (system->multiContextDifftest() && inst->isAtomic() &&
+            cpu->goldenMemManager() &&
+            cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
+            uint8_t issue_golden[8] = {};
+            panic_if(request->_size > sizeof(issue_golden),
+                     "Unexpected AMO size %u at addr %#lx\n",
+                     request->_size, request->mainReq()->getPaddr());
+            cpu->goldenMemManager()->readGoldenMem(
+                request->mainReq()->getPaddr(), issue_golden, request->_size);
+            std::memcpy(inst->getAmoOldGoldenValuePtr(), issue_golden,
+                        request->_size);
         }
     }
 
@@ -2074,17 +2259,20 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries)
             request->mainReq()->isRelease() ||
             request->mainReq()->isStrictlyOrdered() ||
             inst->isStoreConditional()) {
-            DPRINTF(StoreBuffer, "Find atomic/SC store [sn:%llu]\n", storeWBIt->instruction()->seqNum);
             if (!(storeWBIt.idx() == storeQueue.head())) {
-                DPRINTF(StoreBuffer, "atomic/SC store waiting\n");
                 break;
             }
-            if (!storeBufferEmpty()) {
-                DPRINTF(StoreBuffer, "sbuffer need flush\n");
+            if (request->mainReq()->hasPaddr()) {
+                const Addr block_paddr =
+                    request->mainReq()->getPaddr() & cacheBlockMask;
+                if (lsq->storeBufferHasConflict(lsqID, block_paddr)) {
+                    lsq->requestGlobalStoreBufferFlush();
+                    break;
+                }
+            }
+            if (!storeBufferEmpty(lsqID)) {
                 lsq->flushStores(lsqID);
                 break;
-            } else {
-                DPRINTF(StoreBuffer, "sbuffer finishing flushed\n");
             }
             bool contin = directStoreToCache();
             if (isStoreBlocked) {
@@ -2107,8 +2295,9 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries)
                 uint64_t offset = vaddr - vbase;
                 DPRINTF(LSQUnit, "Spilt store idx %d [sn:%lli] insert into sbuffer\n", i, inst->seqNum);
                 assert(offset + req->getSize() <= storeWBIt->size());
-                bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data() + offset, req->getSize(),
-                                                 req->getByteEnable());
+                bool success = insertStoreBuffer(
+                    vaddr, paddr, (uint8_t *)storeWBIt->data() + offset,
+                    req->getSize(), req->getByteEnable(), inst->seqNum);
                 if (success) {
                     request->_numOutstandingPackets++;
                 } else {
@@ -2128,8 +2317,9 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries)
             Addr vaddr = request->getVaddr();
             Addr paddr = request->mainReq()->getPaddr();
             DPRINTF(LSQUnit, "Store [sn:%lli] insert into sbuffer\n", inst->seqNum);
-            bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data(), request->_size,
-                                             request->mainReq()->getByteEnable());
+            bool success = insertStoreBuffer(
+                vaddr, paddr, (uint8_t *)storeWBIt->data(), request->_size,
+                request->mainReq()->getByteEnable(), inst->seqNum);
             if (!success) {
                 break;
             }
@@ -2141,7 +2331,10 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries)
     }
 }
 
-bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t size, const std::vector<bool>& mask)
+bool
+LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
+                           uint64_t size, const std::vector<bool>& mask,
+                           InstSeqNum store_seq)
 {
     auto &storeBuffer = lsq->getStoreBuffer();
     // access range must in a cache block
@@ -2149,15 +2342,19 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
     Addr blockVaddr = vaddr & cacheBlockMask;
     Addr blockPaddr = paddr & cacheBlockMask;
     Addr offset = paddr & ~cacheBlockMask;
+
     // check request is not already in the storebuffer
     auto entry = storeBuffer.get(lsqID, blockPaddr);
+    const auto generation = lsq->bumpStoreBufferBlockVersion(blockPaddr);
+
     if (entry) {
         if (entry->sending) {
             if (entry->vice) {
                 // merge into vice
                 stats.sbufferMerge++;
                 entry = entry->vice;
-                entry->merge(offset, datas, size, mask);
+                entry->merge(offset, datas, size, mask, generation);
+                entry->generation = generation;
                 DPRINTF(StoreBuffer, "Merging vice entry[%#x] for addr %#x\n",
                         blockPaddr, paddr);
             } else {
@@ -2170,7 +2367,9 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
                 stats.sbufferNewline++;
                 stats.sbufferCreateVice++;
                 auto vice = storeBuffer.createVice(entry);
-                vice->reset(lsqID, blockVaddr, blockPaddr, offset, datas, size, mask);
+                vice->reset(lsqID, store_seq, blockVaddr, blockPaddr, offset,
+                            datas, size, mask, generation);
+                vice->generation = generation;
                 DPRINTF(StoreBuffer, "Create new vice entry[%#x] for addr %#x\n",
                         blockPaddr, paddr);
             }
@@ -2178,7 +2377,9 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
             // merge into unsent
             stats.sbufferMerge++;
             storeBuffer.update(entry->index);
-            entry->merge(offset, datas, size, mask);
+            entry->merge(offset, datas, size, mask, generation);
+            entry->seqNum = std::max(entry->seqNum, store_seq);
+            entry->generation = generation;
             DPRINTF(StoreBuffer, "Merging entry[%#x] for addr %#x\n",
                     blockPaddr, paddr);
         }
@@ -2192,7 +2393,9 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
         // insert
         stats.sbufferNewline++;
         auto entry = storeBuffer.getEmpty();
-        entry->reset(lsqID, blockVaddr, blockPaddr, offset, datas, size, mask);
+        entry->reset(lsqID, store_seq, blockVaddr, blockPaddr, offset, datas,
+                     size, mask, generation);
+        entry->generation = generation;
         storeBuffer.insert(entry);
         DPRINTF(StoreBuffer, "Create new entry[%#x] for addr %#x\n",
                 blockPaddr, paddr);
@@ -2411,6 +2614,7 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
             break;
         }
     }
+
 }
 
 uint64_t
@@ -2538,10 +2742,40 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
      * store queue. */
     DynInstPtr store_inst = store_idx->instruction();
     auto request = store_idx->request();
-
     DPRINTF(LSQUnit, "Completing store [sn:%lli], idx:%i, store head "
             "idx:%i\n",
             store_inst->seqNum, store_idx.idx() - 1, storeQueue.head() - 1);
+
+    if (!from_sbuffer &&
+        (!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) &&
+        request->mainReq()->hasPaddr()) {
+        const Addr block_paddr = request->mainReq()->getPaddr() & cacheBlockMask;
+        auto generation = request->_storeBufferGeneration;
+        const bool replay_executed_loads =
+            store_inst->isAtomic() || cpu->consumeSyncVisibleStoreReplay(lsqID);
+        if (generation == 0) {
+            generation = lsq->bumpStoreBufferBlockVersion(block_paddr);
+        }
+        lsq->invalidateOtherThreadStoreBufferBytes(
+            lsqID, request->mainReq()->getPaddr(),
+            request->mainReq()->getByteEnable(), generation);
+        lsq->markStoreBufferBlockVisible(block_paddr, generation);
+        lsq->notifyOtherThreadsStoreVisible(lsqID,
+            request->mainReq()->getPaddr(),
+            request->mainReq()->getByteEnable(), store_inst->seqNum,
+            replay_executed_loads);
+    }
+
+    if (from_sbuffer &&
+        (!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) &&
+        request->mainReq()->hasPaddr()) {
+        auto generation = request->_storeBufferGeneration;
+        if (generation == 0) {
+            generation = lsq->bumpStoreBufferBlockVersion(
+                request->mainReq()->getPaddr() & cacheBlockMask);
+            request->_storeBufferGeneration = generation;
+        }
+    }
 
     if (!from_sbuffer &&
         (!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) &&
@@ -2559,9 +2793,10 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
             assert(request->req()->getAtomicOpFunctor());
 
             // The AMO response returns the old memory value. Capture it on the
-            // instruction so commit/difftest can use a per-inst copy under SMT.
-            cpu->diffInfo.amoOldGoldenValue = store_inst->getAmoOldGoldenValue();
-            memcpy(tmp_data, store_inst->getAmoOldGoldenValuePtr(), request->_size);
+            // instruction so commit/difftest can use a per-inst golden copy
+            // under SMT, but derive the new memory image from the DUT-observed
+            // old value captured in goldenData.
+            memcpy(tmp_data, store_inst->getGolden(), request->_size);
 
             (*(request->req()->getAtomicOpFunctor()))(tmp_data);
 
@@ -2675,11 +2910,15 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
         request->packetSent();
 
         if (isLoad) {
-            auto &storeBuffer = lsq->getStoreBuffer();
-            auto entry = storeBuffer.get(lsqID, pkt->getAddr() & cacheBlockMask);
+            const Addr block_addr = pkt->getAddr() & cacheBlockMask;
+            auto entry = lsq->findForwardingStoreBufferEntry(
+                block_addr, lsqID, request->instruction()->seqNum);
             if (entry) {
                 DPRINTF(StoreBuffer, "sbuffer entry[%#x] coverage %s\n", entry->blockPaddr, pkt->print());
-                if (entry->recordForward(pkt->req, request)) {
+                if (entry->recordForward(
+                        pkt->req, request, lsqID,
+                        request->instruction()->seqNum,
+                        lsq->currentStoreBufferVisibleVersion(block_addr))) {
                     assert(request->isSplit()); // here must be split request
                     stats.sbufferFullForward++;
                 } else if (!request->SBforwardPackets.empty()) {
@@ -2864,8 +3103,12 @@ LSQUnit::dumpInsts() const
     for (auto it = storeQueue.begin(); it != storeQueue.end(); ++it) {
         if (it->valid()) {
             const DynInstPtr &inst(it->instruction());
-            cprintf("idx:%d %s.[sn:%llu] %s\n", it.idx(), inst->pcState(), inst->seqNum,
-                    it->addrReady() ? "AddrReady" : "Not AddrReady");
+            cprintf("idx:%d %s.[sn:%llu] %s squashed=%d canWB=%d completed=%d "
+                    "dataReady=%d staFinish=%d stdFinish=%d\n",
+                    it.idx(), inst->pcState(), inst->seqNum,
+                    it->addrReady() ? "AddrReady" : "Not AddrReady",
+                    inst->isSquashed(), it->canWB(), it->completed(),
+                    it->dataReady(), it->staFinish(), it->stdFinish());
         }
     }
 
@@ -3097,19 +3340,37 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     }
 
     if (request) {
+        request->SBforwardPackets.clear();
         request->SQforwardPackets.clear();
+        request->_sbufferBypass = false;
+        if (!load_inst->hasPendingCacheReq()) {
+            request->_goldenSnapshotCaptured = false;
+        }
     }
 
     // Check the SQ for any previous stores that might lead to forwarding
     auto store_it = load_inst->sqIt;
-    panic_if(store_it < storeWBIt, "[sn:%llu] Load instruction's store index is younger than store writeback index",
-             load_inst->seqNum);
-    // End once we've reached the top of the LSQ
-    while (store_it != storeWBIt && !load_inst->isDataPrefetch()) {
+    if (storeWBIt.dereferenceable()) {
+        panic_if(store_it < storeWBIt,
+                 "[sn:%llu] Load instruction's store index is younger than "
+                 "store writeback index",
+                 load_inst->seqNum);
+    }
+    // End once we've reached the top of the LSQ. If storeWBIt is end(), there
+    // is no outstanding SQ forwarding window to scan.
+    while (storeWBIt.dereferenceable() &&
+           store_it != storeWBIt &&
+           !load_inst->isDataPrefetch()) {
         // Move the index to one younger
         store_it--;
         assert(store_it->valid());
         assert(store_it->instruction()->seqNum < load_inst->seqNum);
+        auto store_req = store_it->request();
+
+        if (store_it->completed()) {
+            continue;
+        }
+
         int store_size = store_it->size();
 
         // Cache maintenance instructions go down via the store
@@ -3244,9 +3505,6 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                             "addr %#x, data: %#lx\n", store_it->instruction()->seqNum, load_inst->seqNum,
                             request->mainReq()->getPaddr(), *((uint64_t*)buffer));
                 }
-
-
-
                 load_inst->setFullForward();
 
                 // Don't need to do anything special for split loads.
@@ -3298,11 +3556,13 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     // sbuffer forward
     if (!load_inst->isDataPrefetch() && !request->isSplit()) {
         Addr blk_addr = request->mainReq()->getPaddr() & cacheBlockMask;
-        int offset = request->mainReq()->getPaddr() & ~cacheBlockMask;
-        auto &storeBuffer = lsq->getStoreBuffer();
-        auto entry = storeBuffer.get(lsqID, blk_addr);
+        auto entry = lsq->findForwardingStoreBufferEntry(
+            blk_addr, lsqID, load_inst->seqNum);
         if (entry) {
-            if (entry->recordForward(request->mainReq(), request)) {
+            if (entry->recordForward(request->mainReq(), request, lsqID,
+                                     load_inst->seqNum,
+                                     lsq->currentStoreBufferVisibleVersion(
+                                         blk_addr))) {
                 // full forward
                 // no need to send to cache
                 stats.sbufferFullForward++;
@@ -3317,7 +3577,6 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                     DPRINTF(LoadPipeline, "Load [sn:%llu] forward from sbuffer, data: %lx\n",
                             load_inst->seqNum, *((uint64_t*)buffer));
                 }
-
                 return NoFault;
             }
         }
@@ -3363,9 +3622,21 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     } else {
         DPRINTF(LoadPipeline, "Load [sn:%llu] sendPacketToCache\n", load_inst->seqNum);
         // if cannot forward from bus, do real cache access
+        bool should_capture_golden =
+            system->multiContextDifftest() &&
+            cpu->goldenMemManager() &&
+            cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr()) &&
+            !request->_goldenSnapshotCaptured;
         request->buildPackets();
         // if the cache is not blocked, do cache access
         request->sendPacketToCache();
+        if (request->isSent() && should_capture_golden) {
+            uint8_t *issue_golden =
+                (uint8_t *)cpu->goldenMemManager()->guestToHost(
+                    request->mainReq()->getPaddr());
+            load_inst->setGolden(issue_golden);
+            request->_goldenSnapshotCaptured = true;
+        }
         if (!request->isSent() && !load_inst->needBankConflictReplay() && !load_inst->needMshrArbFailReplay() &&
             !load_inst->needMshrAliasFailReplay() &&!load_inst->needHitInWriteBufferReplay()) {
             iewStage->blockMemInst(load_inst);
