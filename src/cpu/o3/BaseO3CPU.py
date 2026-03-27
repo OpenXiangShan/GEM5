@@ -257,6 +257,8 @@ class BaseO3CPU(BaseCPU):
 
     # value predictor
     valuePred = Param.ValuePredictor(NULL, "valuepred unit")
+    enableSelectiveVPFlush = Param.Bool(False,
+        "Enable selective rollback for value prediction misprediction")
 
     enable_loadFusion = Param.Bool(False, "Enable load fusion")
 
