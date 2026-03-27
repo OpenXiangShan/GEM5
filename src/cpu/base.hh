@@ -149,6 +149,7 @@ class BaseCPU : public ClockedObject
     };
 
     std::vector<std::deque<RecentCommittedStore>> recentCommittedStores;
+    std::vector<bool> syncVisibleStoreReplayArmed;
 
     const unsigned IntRegIndexBase = 0;
     const unsigned FPRegIndexBase = 32;
@@ -790,6 +791,16 @@ class BaseCPU : public ClockedObject
     void difftestStep(ThreadID tid, InstSeqNum seq);
 
     void recordCommittedStore(ThreadID tid, const o3::DynInstPtr &inst);
+    void armSyncVisibleStoreReplay(ThreadID tid)
+    {
+        syncVisibleStoreReplayArmed.at(tid) = true;
+    }
+    bool consumeSyncVisibleStoreReplay(ThreadID tid)
+    {
+        bool armed = syncVisibleStoreReplayArmed.at(tid);
+        syncVisibleStoreReplayArmed.at(tid) = false;
+        return armed;
+    }
 
     inline bool difftestEnabled() const { return enableDifftest; }
 

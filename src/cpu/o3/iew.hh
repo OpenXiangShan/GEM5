@@ -260,6 +260,10 @@ class IEW
      * the store queue or the store buffer to write back to.
      */
     bool flushStores(ThreadID tid) { return ldstQueue.flushStores(tid); }
+    bool flushStores(ThreadID tid, InstSeqNum seq_num)
+    {
+        return ldstQueue.flushStores(tid, seq_num);
+    }
 
     /** Check if we need to squash after a load/store/branch is executed. */
     void SquashCheckAfterExe(DynInstPtr inst);
