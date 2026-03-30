@@ -112,6 +112,9 @@ class ArchDBer : public SimObject
                                bool isLoad, bool miss, int pfSource,
                                int pfDepth, Tick observedTick,
                                int queueSize, const char *reason);
+    void loadOrderTraceWrite(Tick tick, const char *stage, uint64_t seqNum,
+                             Addr pc, Addr vaddr, Addr paddr,
+                             const char *reason);
     void despacitoTraceWrite(Tick tick, Addr vaddr, Addr paddr, Addr PC, bool hasPC, bool miss, bool is_train);
     void dcacheWayPreTrace(Tick tick, uint64_t pc, uint64_t vaddr, int way, int is_write);
     void vaddrTrace(Tick tick, uint64_t pc, uint64_t vaddr, int hit);

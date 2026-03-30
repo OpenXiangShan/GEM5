@@ -1705,6 +1705,12 @@ LSQ::SingleDataRequest::finish(const Fault &fault, const RequestPtr &request,
         LSQRequest::_inst->translationCompleted(true);
         DPRINTF(LSQ, "Translation of inst %llu notified as %s\n",
                 LSQRequest::_inst->seqNum, fault == NoFault ? "successful" : "faulty");
+        lsqUnit()->traceLoadOrder(
+            curTick(), "TranslateDone", LSQRequest::_inst->seqNum,
+            LSQRequest::_inst->pcState().instAddr(),
+            request->hasVaddr() ? request->getVaddr() : 0,
+            request->hasPaddr() ? request->getPaddr() : 0,
+            fault == NoFault ? "success" : "fault");
     }
 }
 
@@ -1779,6 +1785,13 @@ LSQ::SplitDataRequest::finish(const Fault &fault, const RequestPtr &req,
                 _inst->fault = _fault[0];
                 setState(State::Fault);
             }
+
+            lsqUnit()->traceLoadOrder(
+                curTick(), "TranslateDone", _inst->seqNum,
+                _inst->pcState().instAddr(),
+                _mainReq && _mainReq->hasVaddr() ? _mainReq->getVaddr() : 0,
+                _mainReq && _mainReq->hasPaddr() ? _mainReq->getPaddr() : 0,
+                _inst->fault == NoFault ? "success" : "fault");
         }
 
     }

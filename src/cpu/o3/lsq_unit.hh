@@ -537,6 +537,10 @@ class LSQUnit
 
     BaseMMU *getMMUPtr();
 
+    void traceLoadOrder(Tick tick, const char *stage, InstSeqNum seqNum,
+                        Addr pc, Addr vaddr, Addr paddr,
+                        const char *reason) const;
+
   private:
     System *system;
 

@@ -27,6 +27,13 @@ def create_prefetcher(cpu, cache_level, options):
     if prefetcher == NULL:
         return NULL
 
+    # Disable XSStride replay-trace DBs in production runs unless a
+    # dedicated debug configuration re-enables them explicitly.
+    if hasattr(prefetcher, 'enable_trace_db'):
+        prefetcher.enable_trace_db = False
+    if hasattr(prefetcher, 'sstride') and hasattr(prefetcher.sstride, 'enable_trace_db'):
+        prefetcher.sstride.enable_trace_db = False
+
     if cpu != NULL:
         prefetcher.registerTLB(cpu.mmu.dtb, cpu.mmu.functional)
 

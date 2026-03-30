@@ -60,6 +60,7 @@
 #include "mem/request.hh"
 #include "params/RiscvTLB.hh"
 #include "regs/misc.hh"
+#include "sim/arch_db.hh"
 #include "sim/full_system.hh"
 #include "sim/process.hh"
 #include "sim/system.hh"
@@ -80,6 +81,35 @@ buildKey(Addr vpn, uint16_t asid, uint8_t translateMode)
     return (static_cast<Addr>(asid) << 48) | (static_cast<Addr>(translateMode & 0x3) << 46) |
            ((vpn >> PGSHFT) & (((uint64_t)1 << 46) - 1));
 }
+
+namespace
+{
+
+bool
+shouldTraceLoadTranslation(const RequestPtr &req, BaseMMU::Mode mode)
+{
+    return req && mode == BaseMMU::Read && req->hasInstSeqNum();
+}
+
+void
+traceLoadTranslation(ArchDBer *arch_db, const RequestPtr &req,
+                     BaseMMU::Mode mode, const char *stage,
+                     const char *reason)
+{
+    if (!arch_db || !shouldTraceLoadTranslation(req, mode)) {
+        return;
+    }
+
+    const Addr pc = req->hasPC() ? req->getPC() : 0;
+    const Addr vaddr = req->hasVaddr() ? req->getVaddr() : 0;
+    const Addr paddr = req->hasPaddr() ? req->getPaddr() : 0;
+
+    arch_db->loadOrderTraceWrite(
+        curTick(), stage, req->getReqInstSeqNum(), pc, vaddr, paddr,
+        reason ? reason : "");
+}
+
+} // anonymous namespace
 
 TLB::TLB(const Params &p) :
     BaseTLB(p), is_dtlb(p.is_dtlb),is_L1tlb(p.is_L1tlb),isStage2(p.is_stage2),
@@ -2276,12 +2306,20 @@ TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
 {
     bool delayed;
     assert(translation);
+    traceLoadTranslation(archDBer, req, mode, "TLBTranslateEnter", "start");
     Fault fault = translate(req, tc, translation, mode, delayed);
     if (!delayed){
+        traceLoadTranslation(
+            archDBer, req, mode, "TLBTranslateFinishNow",
+            fault == NoFault ? "no_fault" : "fault");
         translation->finish(fault, req, tc, mode);
     }
-    else
+    else {
+        traceLoadTranslation(
+            archDBer, req, mode, "TLBTranslateDelayed",
+            fault == NoFault ? "deferred" : "fault_pending");
         translation->markDelayed();
+    }
 }
 
 void

@@ -1049,6 +1049,10 @@ LSQUnit::loadDoTranslate(const DynInstPtr &inst)
     DPRINTF(LoadPipeline, "loadDoTranslate: load [sn:%llu]\n", inst->seqNum);
     assert(!inst->isSquashed());
 
+    traceLoadOrder(curTick(), "TranslateEnter", inst->seqNum,
+                   inst->pcState().instAddr(),
+                   inst->effAddrValid() ? inst->effAddr : 0, 0, "");
+
     Fault load_fault = NoFault;
     // Now initiateAcc only does TLB access
     load_fault = inst->initiateAcc();
@@ -2514,6 +2518,35 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
         ret = false;
     }
 
+    if (isLoad) {
+        const char *reason = "success";
+        if (!ret) {
+            if (bank_conflict) {
+                reason = "bank_conflict";
+            } else if (tag_read_fail) {
+                reason = "tag_read_fail";
+            } else if (mshr_used) {
+                reason = "mshr_arb";
+            } else if (mshr_alias_fail) {
+                reason = "mshr_alias";
+            } else if (hit_in_write_buffer) {
+                reason = "hit_in_wb";
+            } else if (lsq->cacheBlocked() || cache_got_blocked) {
+                reason = "cache_blocked";
+            } else if (!lsq->cachePortAvailable(isLoad)) {
+                reason = "port_unavailable";
+            } else {
+                reason = "send_failed";
+            }
+        }
+
+        traceLoadOrder(curTick(), "SendResult", inst->seqNum,
+                       data_pkt->req->hasPC() ? data_pkt->req->getPC() : 0,
+                       data_pkt->req->hasVaddr() ? data_pkt->req->getVaddr() : 0,
+                       data_pkt->req->hasPaddr() ? data_pkt->req->getPaddr() : 0,
+                       reason);
+    }
+
     if (ret) {
         if (!isLoad) {
             isStoreBlocked = false;
@@ -3197,6 +3230,12 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         DPRINTF(LoadPipeline, "Load [sn:%llu] sendPacketToCache\n", load_inst->seqNum);
         // if cannot forward from bus, do real cache access
         request->buildPackets();
+        RequestPtr main_req = request->mainReq();
+        traceLoadOrder(curTick(), "SendEnter", load_inst->seqNum,
+                       load_inst->pcState().instAddr(),
+                       main_req && main_req->hasVaddr() ? main_req->getVaddr() : 0,
+                       main_req && main_req->hasPaddr() ? main_req->getPaddr() : 0,
+                       "");
         // if the cache is not blocked, do cache access
         request->sendPacketToCache();
         if (!request->isSent() && !load_inst->needBankConflictReplay() && !load_inst->needMshrArbFailReplay() &&
@@ -3208,6 +3247,17 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
     }
 
     return NoFault;
+}
+
+void
+LSQUnit::traceLoadOrder(Tick tick, const char *stage, InstSeqNum seqNum,
+                        Addr pc, Addr vaddr, Addr paddr,
+                        const char *reason) const
+{
+    if (cpu && cpu->archDBer) {
+        cpu->archDBer->loadOrderTraceWrite(
+            tick, stage, seqNum, pc, vaddr, paddr, reason);
+    }
 }
 
 Fault

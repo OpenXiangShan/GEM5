@@ -217,6 +217,28 @@ ArchDBer::trainFilterTraceWrite(Tick tick, const char *stage, uint64_t seqNum,
     fatal("SQL error: %s\n", zErrMsg);
   };
 }
+
+void
+ArchDBer::loadOrderTraceWrite(Tick tick, const char *stage, uint64_t seqNum,
+                              Addr pc, Addr vaddr, Addr paddr,
+                              const char *reason)
+{
+  bool dump_me = dumpGlobal && dumpTrainFilterTrace;
+  if (!dump_me) return;
+
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO LoadOrderTrace("
+          "Tick,Stage,SeqNum,PC,VAddr,PAddr,Reason,SITE) "
+          "VALUES(%lld,'%s',%lld,%lld,%lld,%lld,'%s','%s');",
+          sqliteSignedInt(tick), stage, sqliteSignedInt(seqNum),
+          sqliteSignedInt(pc), sqliteSignedInt(vaddr),
+          sqliteSignedInt(paddr), reason, "LoadOrder");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
 void
 ArchDBer::despacitoTraceWrite(Tick tick, Addr vaddr, Addr paddr, Addr PC, bool hasPC, bool miss, bool is_train)
 {

@@ -71,11 +71,78 @@
 #include "debug/PageTableWalkerTwoStage.hh"
 #include "mem/packet_access.hh"
 #include "mem/request.hh"
+#include "sim/arch_db.hh"
 
 namespace gem5
 {
 
 namespace RiscvISA {
+
+namespace
+{
+
+constexpr Addr InvalidTracePaddr = static_cast<Addr>(-1);
+
+bool
+shouldTraceLoadTranslation(const RequestPtr &req, BaseMMU::Mode mode)
+{
+    return req && mode == BaseMMU::Read && req->hasInstSeqNum();
+}
+
+void
+traceLoadTranslation(ArchDBer *arch_db, const RequestPtr &req,
+                     BaseMMU::Mode mode, const char *stage,
+                     const char *reason, Addr paddr = InvalidTracePaddr)
+{
+    if (!arch_db || !shouldTraceLoadTranslation(req, mode)) {
+        return;
+    }
+
+    const Addr pc = req->hasPC() ? req->getPC() : 0;
+    const Addr vaddr = req->hasVaddr() ? req->getVaddr() : 0;
+    const Addr trace_paddr = paddr != InvalidTracePaddr ?
+        paddr : (req->hasPaddr() ? req->getPaddr() : 0);
+
+    arch_db->loadOrderTraceWrite(
+        curTick(), stage, req->getReqInstSeqNum(), pc, vaddr, trace_paddr,
+        reason ? reason : "");
+}
+
+const char *
+walkerStartReason(const RequestPtr &req, bool from_l2tlb)
+{
+    if (req && req->get_two_stage_state()) {
+        return from_l2tlb ? "two_stage_from_l2" : "two_stage";
+    }
+
+    return from_l2tlb ? "from_l2tlb" : "l1_miss";
+}
+
+const char *
+walkerCoalesceReason(bool into_pre_walk)
+{
+    return into_pre_walk ? "into_pre_walk" : "same_page";
+}
+
+const char *
+walkerPacketReason(PacketPtr pkt)
+{
+    if (!pkt) {
+        return "unknown";
+    }
+
+    if (pkt->isRead()) {
+        return "read";
+    }
+
+    if (pkt->isWrite()) {
+        return "write";
+    }
+
+    return "other";
+}
+
+} // anonymous namespace
 
 std::pair<bool, Fault>
 Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
@@ -122,6 +189,11 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
             WalkerState *newState = new WalkerState(this, _translation, _req);
             newState->initState(_tc, _req, _mode, sys->isTimingMode(), from_forward_pre_req, from_back_pre_req);
             assert(newState->isTiming());
+            if (!from_forward_pre_req && !from_back_pre_req) {
+                traceLoadTranslation(
+                    tlb ? tlb->archDBer : nullptr, _req, _mode,
+                    "WalkerStart", walkerStartReason(_req, from_l2tlb));
+            }
             // TODO: add to requestors
             DPRINTF(PageTableWalker,
                     "Walks in progress: %d, push req pc: %#lx, addr: %#lx "
@@ -144,6 +216,11 @@ Walker::start(Addr ppn, ThreadContext *_tc, BaseMMU::Translation *_translation,
     } else {
         WalkerState *newState = new WalkerState(this, _translation, _req);
         newState->initState(_tc, _req, _mode, sys->isTimingMode(), from_forward_pre_req, from_back_pre_req);
+        if (!from_forward_pre_req && !from_back_pre_req) {
+            traceLoadTranslation(
+                tlb ? tlb->archDBer : nullptr, _req, _mode,
+                "WalkerStart", walkerStartReason(_req, from_l2tlb));
+        }
         currStates.push_back(newState);
         Fault fault = newState->startWalk(ppn, f_level, from_l2tlb, openNextLine, autoOpenNextLine,
                                           from_forward_pre_req, from_back_pre_req);
@@ -162,6 +239,9 @@ Walker::doL2TLBHitSchedule(const RequestPtr &req, ThreadContext *tc, BaseMMU::Tr
 {
     DPRINTF(PageTableWalker2, "schedule %d\n", curCycle());
     Tick hitdelay = curTick() + cyclesToTicks(Cycles(delaytick));
+    traceLoadTranslation(
+        tlb ? tlb->archDBer : nullptr, req, mode, "WalkerL2TLBHitSchedule",
+        "scheduled", Paddr);
     if (!doL2TLBHitEvent.scheduled()) {
         schedule(doL2TLBHitEvent, hitdelay);
     }
@@ -201,6 +281,12 @@ Walker::recvTimingResp(PacketPtr pkt)
             "Received timing response for sender state: %#lx\n", senderState);
     WalkerState * senderWalk = senderState->senderWalk;
     bool walkComplete = senderWalk->recvPacket(pkt);
+    if (!(senderWalk->fromPre || senderWalk->fromBackPre)) {
+        traceLoadTranslation(
+            tlb ? tlb->archDBer : nullptr, senderWalk->mainReq,
+            senderWalk->mode, "WalkerResp",
+            walkComplete ? "walk_complete" : "walk_continue");
+    }
     delete senderState;
     if (walkComplete) {
         std::list<WalkerState *>::iterator iter;
@@ -247,12 +333,23 @@ bool Walker::sendTiming(WalkerState* sendingState, PacketPtr pkt)
             pkt->getAddr(), walker_state);
     pkt->pushSenderState(walker_state);
     if (port.sendTimingReq(pkt)) {
+        if (!(sendingState->fromPre || sendingState->fromBackPre)) {
+            traceLoadTranslation(
+                tlb ? tlb->archDBer : nullptr, sendingState->mainReq,
+                sendingState->mode, "WalkerSend", walkerPacketReason(pkt));
+        }
         return true;
     } else {
         // undo the adding of the sender state and delete it, as we
         // will do it again the next time we attempt to send it
         pkt->popSenderState();
         delete walker_state;
+        if (!(sendingState->fromPre || sendingState->fromBackPre)) {
+            traceLoadTranslation(
+                tlb ? tlb->archDBer : nullptr, sendingState->mainReq,
+                sendingState->mode, "WalkerSendRetry",
+                walkerPacketReason(pkt));
+        }
         return false;
     }
 
@@ -403,6 +500,9 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *trans
             }
             DPRINTF(PageTableWalker, "Coalescing walk for %#lx(pc=%#lx) into %#lx(pc=%#lx)\n", req->getVaddr(),
                     req->getPC(), mainReq->getVaddr(), mainReq->getPC());
+            traceLoadTranslation(
+                walker->tlb ? walker->tlb->archDBer : nullptr, req, _mode,
+                "WalkerCoalesced", walkerCoalesceReason(fromPre || fromBackPre));
             // add to list of requestors
             requestors.emplace_back(_tc, req, translation);
             requestors.back().fromForwardPreReq = from_forward_pre_req;
@@ -456,12 +556,20 @@ Walker::dol2TLBHit()
                     tlb->insert(dol2TLBHitrequestors.entryGstage->gpaddr, *dol2TLBHitrequestors.entryGstage, false,
                             gstage);
             }
+            traceLoadTranslation(
+                tlb ? tlb->archDBer : nullptr, dol2TLBHitrequestors.req,
+                dol2TLBHitrequestors.mode, "WalkerFinish",
+                "l2tlb_hit_complete", dol2TLBHitrequestors.Paddr);
             dol2TLBHitrequestors.translation->finish(
                 l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
                 dol2TLBHitrequestors.mode);
         }
         else{
             warn("pmp fault in l2tlb\n");
+            traceLoadTranslation(
+                tlb ? tlb->archDBer : nullptr, dol2TLBHitrequestors.req,
+                dol2TLBHitrequestors.mode, "WalkerFinish",
+                "l2tlb_hit_fault", dol2TLBHitrequestors.Paddr);
             dol2TLBHitrequestors.translation->finish(
                 l2tlbFault, dol2TLBHitrequestors.req, dol2TLBHitrequestors.tc,
                 dol2TLBHitrequestors.mode);
@@ -1853,14 +1961,23 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                 mainFault = walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
                 if (mainFault != NoFault) {
                     warn("paddr overflow vaddr: %lx paddr: lx\n", vaddr, paddr);
+                    traceLoadTranslation(
+                        walker->tlb ? walker->tlb->archDBer : nullptr, r.req,
+                        mode, "WalkerFinish", "two_stage_pmp_fault");
                     r.translation->finish(mainFault, r.req, r.tc, mode);
                     panic("paddr overflow\n");
                     return false;
                 }
+                traceLoadTranslation(
+                    walker->tlb ? walker->tlb->archDBer : nullptr, r.req,
+                    mode, "WalkerFinish", "two_stage_complete");
                 r.translation->finish(mainFault, r.req, r.tc, mode);
             }
             else{
                 r.fault = pageFaultOnRequestor(r, GstageFault);
+                traceLoadTranslation(
+                    walker->tlb ? walker->tlb->archDBer : nullptr, r.req,
+                    mode, "WalkerFinish", "two_stage_fault");
                 r.translation->finish(r.fault, r.req, r.tc, mode);
                 DPRINTF(PageTableWalkerTwoStage, "translate fault vaddr %lx\n", mainReq->getVaddr());
             }
@@ -1917,6 +2034,9 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                         } else {
                             warn("paddr overflow "
                                 "vaddr: %lx paddr: %lx\n", vaddr, paddr);
+                            traceLoadTranslation(
+                                walker->tlb ? walker->tlb->archDBer : nullptr,
+                                r.req, mode, "WalkerFinish", "walk_pmp_fault");
                             r.translation->finish(mainFault, r.req, r.tc, mode);
                             return false;
                         }
@@ -1925,6 +2045,9 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                     DPRINTF(PageTableWalker,
                             "Finished walk for %#lx (pc=%#lx) Paddr %#x\n",
                             r.req->getVaddr(), r.req->getPC(), paddr);
+                    traceLoadTranslation(
+                        walker->tlb ? walker->tlb->archDBer : nullptr, r.req,
+                        mode, "WalkerFinish", "walk_complete");
                     r.translation->finish(mainFault, r.req, r.tc, mode);
                 } else {
                     // There was a fault during the walk. Let the CPU know.
@@ -1933,6 +2056,9 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                             r.req->getVaddr(), r.req->getPC());
                     // recreate the fault to ensure that the faulting address matches
                     r.fault = pageFaultOnRequestor(r, false);
+                    traceLoadTranslation(
+                        walker->tlb ? walker->tlb->archDBer : nullptr, r.req,
+                        mode, "WalkerFinish", "walk_fault");
                     r.translation->finish(r.fault, r.req, r.tc, mode);
                 }
 
@@ -1991,6 +2117,9 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                             "Finished walk for %#lx (pc=%#lx), requestors size: %lu, ws: %p\n",
                             r.req->getVaddr(), r.req->getPC(), requestors.size(), this);
 
+                    traceLoadTranslation(
+                        walker->tlb ? walker->tlb->archDBer : nullptr, r.req,
+                        mode, "WalkerFinish", "nextline_complete");
                     r.translation->finish(mainFault, r.req, r.tc, mode);
                 } else {
                     // There was a fault during the walk. Let the CPU know.
@@ -2000,6 +2129,9 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
 
                     // recreate the fault to ensure that the faulting address matches
                     r.fault = pageFaultOnRequestor(r, false);
+                    traceLoadTranslation(
+                        walker->tlb ? walker->tlb->archDBer : nullptr, r.req,
+                        mode, "WalkerFinish", "nextline_fault");
                     r.translation->finish(r.fault, r.req, r.tc, mode);
                 }
             }
