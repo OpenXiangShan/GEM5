@@ -1576,6 +1576,11 @@ IEW::executeInsts()
         // executing
         ppExecute->notify(inst);
 
+        if (inst->isSplitStoreData() &&
+            ldstQueue.splitStoreAddrSquashed(inst)) {
+            inst->setSquashed();
+        }
+
         // Check if the instruction is squashed; if so then skip it
         if (inst->isSquashed()) {
             DPRINTF(IEW, "Execute: Instruction was squashed. PC: %s, [tid:%i]"
