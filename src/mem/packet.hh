@@ -374,7 +374,15 @@ class Packet : public Printable
         MSHR_ALIAS_FAIL       = 0x00040000,
 
         // Signal that the packet hit in the write buffer.
-        HIT_IN_WRITE_BUFFER   = 0x00080000
+        HIT_IN_WRITE_BUFFER   = 0x00080000,
+
+        // Signal that the LSQ-side bank arbiter predicted a potential
+        // load bank conflict, but the cache should still perform tag lookup.
+        BANK_CONFLICT_HINT    = 0x00100000,
+
+        // Signal that the cache confirmed the request would have hit in L1
+        // and therefore should replay as a bank conflict instead of missing.
+        BANK_CONFLICT_FAILED  = 0x00200000
     };
 
     Flags flags;
@@ -810,6 +818,16 @@ class Packet : public Printable
     void setHitInWriteBuffer() { flags.set(HIT_IN_WRITE_BUFFER); }
     bool isHitInWriteBuffer() const { return flags.isSet(HIT_IN_WRITE_BUFFER); }
     void clearHitInWriteBuffer() { flags.clear(HIT_IN_WRITE_BUFFER); }
+
+    // Potential bank conflict propagated from LSQ to cache.
+    void setBankConflictHint() { flags.set(BANK_CONFLICT_HINT); }
+    bool bankConflictHint() const { return flags.isSet(BANK_CONFLICT_HINT); }
+    void clearBankConflictHint() { flags.clear(BANK_CONFLICT_HINT); }
+
+    // Cache-side confirmation that a load should replay as bank conflict.
+    void setBankConflictFailed() { flags.set(BANK_CONFLICT_FAILED); }
+    bool bankConflictFailed() const { return flags.isSet(BANK_CONFLICT_FAILED); }
+    void clearBankConflictFailed() { flags.clear(BANK_CONFLICT_FAILED); }
 
     void setLSQPtr(o3::LSQ *lsq) { lsqPtr = lsq; }
     o3::LSQ *getLSQPtr() const { return lsqPtr; }

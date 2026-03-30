@@ -2480,8 +2480,16 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     bool ret = true;
     bool cache_got_blocked = false;
     LSQRequest *request = dynamic_cast<LSQRequest *>(data_pkt->senderState);
+    bool bank_conflict_hint = false;
+    bank_conflict = false;
+    data_pkt->clearBankConflictHint();
+    data_pkt->clearBankConflictFailed();
     if (isLoad) {
-        bank_conflict = lsq->loadBankConflictedCheck(data_pkt->req->getVaddr());
+        bank_conflict_hint =
+            lsq->loadBankConflictedCheck(data_pkt->req->getVaddr());
+        if (bank_conflict_hint) {
+            data_pkt->setBankConflictHint();
+        }
     }
     // Record the tick count at the time of sending to let
     // the subsequent cache understand the request's sending time.
@@ -2493,23 +2501,20 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt, bool &bank_conflict, boo
     DPRINTF(LSQUnit, "Attempting to send packet for inst [sn:%llu], addr: %#x\n",
             inst->seqNum, data_pkt->getAddr());
     if (!lsq->cacheBlocked() && lsq->cachePortAvailable(isLoad)) {
-        if (bank_conflict) {
-            ++stats.bankConflictTimes;
-            if (!isLoad) {
-                assert(request == storeWBIt->request());
-                isStoreBlocked = true;
-            }
-            bank_conflict = true;
+        if (!dcachePort->sendTimingReq(data_pkt)) {
             ret = false;
-        }
-        if (!bank_conflict && !dcachePort->sendTimingReq(data_pkt)) {
-            ret = false;
+            bank_conflict = data_pkt->bankConflictFailed();
             mshr_used = data_pkt->mshrArbFailed();
             mshr_alias_fail = data_pkt->mshrAliasFailed();
             hit_in_write_buffer = data_pkt->isHitInWriteBuffer();
             tag_read_fail = data_pkt->tagReadFail;
 
-            if (!tag_read_fail && !mshr_used && !mshr_alias_fail && !hit_in_write_buffer) {
+            if (bank_conflict) {
+                ++stats.bankConflictTimes;
+            }
+
+            if (!bank_conflict && !tag_read_fail && !mshr_used &&
+                !mshr_alias_fail && !hit_in_write_buffer) {
                 cache_got_blocked = true;
             }
         }

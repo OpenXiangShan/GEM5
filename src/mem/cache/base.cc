@@ -687,6 +687,16 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         doWritebacks(writebacks, clockEdge(lat + forwardLatency));
     }
 
+    if (pkt->bankConflictHint() && !pkt->bankConflictFailed()) {
+        pkt->clearBankConflictHint();
+    }
+
+    if (pkt->bankConflictFailed()) {
+        pkt->clearBankConflictHint();
+        pkt->headerDelay = pkt->payloadDelay = 0;
+        return;
+    }
+
     if (!satisfied && forceHit && !pkt->req->isInstFetch() && pkt->isRead() && pkt->req->hasPC() &&
         forceHitPCs.count(pkt->req->getPC())) {
         bool mshr_hit = mshrQueue.findMatch(pkt->getAddr(), pkt->isSecure()) != nullptr;
@@ -1973,6 +1983,15 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 
         // If this a write-through packet it will be sent to cache below
         return !pkt->writeThrough();
+    } else if (cacheLevel == 1 && pkt->isRead() && pkt->needsResponse() &&
+               !pkt->req->isInstFetch() && pkt->bankConflictHint() &&
+               blk && blk->isSet(CacheBlk::ReadableBit)) {
+        // Tag lookup succeeded, but the load would contend for the data bank.
+        // Treat it as a replay only when L1 could otherwise satisfy it.
+        pkt->clearBankConflictHint();
+        pkt->setBankConflictFailed();
+        lat = calculateTagOnlyLatency(pkt->headerDelay, tag_latency);
+        return false;
     } else if (blk && (pkt->needsWritable() ?
             blk->isSet(CacheBlk::WritableBit) :
             blk->isSet(CacheBlk::ReadableBit))) {
@@ -3245,9 +3264,10 @@ BaseCache::CpuSidePort::recvTimingReq(PacketPtr pkt)
         pkt->clearMshrArbFailed();
         pkt->clearMshrAliasFailed();
         pkt->clearHitInWriteBuffer();
+        pkt->clearBankConflictFailed();
         cache->recvTimingReq(pkt);
         if (pkt->mshrArbFailed() || pkt->mshrAliasFailed() ||
-            pkt->isHitInWriteBuffer()) {
+            pkt->isHitInWriteBuffer() || pkt->bankConflictFailed()) {
             // If the MSHR arbitration failed, we need to retry later.
             // We will schedule a retry event to try again.
             if (sendRetryEvent.scheduled()) {
