@@ -707,6 +707,7 @@ BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int p
             // weightTable[index][i+1] += (actual_taken == gbhr[i]?1:-1);
         }
     }
+    weightTable[index][1] = 0;//experiment
 }
 
 /**
