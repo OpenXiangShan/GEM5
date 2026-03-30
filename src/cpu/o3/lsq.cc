@@ -850,6 +850,14 @@ LSQ::insertStore(const DynInstPtr &store_inst)
     thread[tid].insertStore(store_inst);
 }
 
+bool
+LSQ::splitStoreAddrSquashed(const DynInstPtr &inst)
+{
+    ThreadID tid = inst->threadNumber;
+
+    return thread[tid].splitStoreAddrSquashed(inst);
+}
+
 void
 LSQ::issueToLoadPipe(const DynInstPtr &inst)
 {

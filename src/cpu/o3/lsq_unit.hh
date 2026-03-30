@@ -304,6 +304,7 @@ class LSQUnit
     void insertLoad(const DynInstPtr &load_inst);
     /** Inserts a store instruction. */
     void insertStore(const DynInstPtr &store_inst);
+    bool splitStoreAddrSquashed(const DynInstPtr &inst);
 
     /** Check for ordering violations in the LSQ. For a store squash if we
      * ever find a conflicting load. For a load, only squash if we
