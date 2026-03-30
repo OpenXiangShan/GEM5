@@ -104,11 +104,11 @@ DespacitoStreamPrefetcher::updatePatternTable(SamplerEntry *sampler_entry)
 bool
 DespacitoStreamPrefetcher::hasAnySaturatedPattern() const
 {
-    for (const auto &entry : patterns) {
-        if (entry.isValid() && entry.conf.isSaturated()) {
-            return true;
-        }
-    }
+    // for (const auto &entry : patterns) {
+    //     if (entry.isValid() && entry.conf.isSaturated()) {
+    //         return true;
+    //     }
+    // }
     return false;
 }
 
@@ -141,7 +141,7 @@ DespacitoStreamPrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vecto
 
     if (pattern_entry && pattern_entry->conf.isSaturated()) {
         Addr pf_addr = block_addr + blkSize;
-        // sendPFWithFilter(pfi, pf_addr, addresses, 32, PrefetchSourceType::DespacitoStream);
+        sendPFWithFilter(pfi, pf_addr, addresses, 32, PrefetchSourceType::DespacitoStream);
     stats.nlTransmitPrefetchReqTimes++;
     }
 
