@@ -768,6 +768,30 @@ LSQUnit::insertStore(const DynInstPtr& store_inst)
 }
 
 bool
+LSQUnit::splitStoreAddrSquashed(const DynInstPtr &inst)
+{
+    if (!inst->isSplitStoreData()) {
+        return false;
+    }
+
+    if (!storeQueue.isValidIdx(inst->sqIdx)) {
+        return true;
+    }
+
+    auto sq_it = storeQueue.getIterator(inst->sqIdx);
+    if (!sq_it->valid()) {
+        return true;
+    }
+
+    const auto &sta_inst = sq_it->instruction();
+    if (!sta_inst || sta_inst->seqNum != inst->seqNum) {
+        return true;
+    }
+
+    return sta_inst->isSquashed();
+}
+
+bool
 LSQUnit::pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_inst)
 {
     Addr load_eff_addr1 = load_inst->physEffAddr >> depCheckShift;
@@ -1660,6 +1684,10 @@ LSQUnit::executeStorePipeSx()
             auto& inst = stage->insts[j];
             if (!inst) {
                 continue;
+            }
+
+            if (splitStoreAddrSquashed(inst)) {
+                inst->setSquashed();
             }
 
             if (inst->isSquashed()) {
