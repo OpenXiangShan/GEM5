@@ -428,6 +428,36 @@ ROB::retireHead(ThreadID tid)
     cpu->removeFrontInst(head_inst);
 }
 
+void
+ROB::drainSquashedHead(ThreadID tid)
+{
+    stats.writes++;
+
+    assert(numInstsInROB > 0);
+
+    InstIt head_it = instList[tid].begin();
+
+    DynInstPtr head_inst = std::move(*head_it);
+    instList[tid].erase(head_it);
+
+    assert(head_inst->readyToCommit());
+    assert(head_inst->isSquashed());
+
+    DPRINTF(ROB, "[tid:%i] Draining squashed head instruction, "
+            "instruction PC %s, [sn:%llu]\n", tid, head_inst->pcState(),
+            head_inst->seqNum);
+
+    --numInstsInROB;
+
+    commitGroup(head_inst, tid);
+
+    head_inst->clearInROB();
+
+    updateHead();
+
+    cpu->removeFrontInst(head_inst);
+}
+
 bool
 ROB::isHeadGroupReady(ThreadID tid)
 {

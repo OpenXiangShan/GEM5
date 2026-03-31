@@ -382,7 +382,9 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         }
         // check bypass data ready or not
         if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
-            auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
+            auto dst_inst = scheduler->getInstByDstReg(src->flatIndex(),
+                                                       inst->threadNumber,
+                                                       inst->seqNum);
             assert(dst_inst);
             if (!dst_inst->isLoad()) panic("dst[sn:%llu] is not load, src[sn:%llu]", dst_inst->seqNum, inst->seqNum);
             warn_once(
@@ -1246,18 +1248,28 @@ Scheduler::ready(OpClass op, int disp_seq)
 }
 
 DynInstPtr
-Scheduler::getInstByDstReg(RegIndex flatIdx)
+Scheduler::getInstByDstReg(RegIndex flatIdx, ThreadID tid,
+                           InstSeqNum consumerSeqNum)
 {
+    DynInstPtr candidate = nullptr;
+
     for (auto iq : issueQues) {
-        for (auto& inst : iq->instList) {
-            for (auto i = 0; i < inst->numDestRegs(); i++) {
-                if (inst->renamedDestIdx(i)->flatIndex() == flatIdx) {
-                    return inst;
+        for (auto &inst : iq->instList) {
+            if (inst->threadNumber != tid || inst->seqNum >= consumerSeqNum) {
+                continue;
+            }
+            for (int i = 0; i < inst->numDestRegs(); i++) {
+                if (inst->renamedDestIdx(i)->flatIndex() != flatIdx) {
+                    continue;
+                }
+                if (!candidate || inst->seqNum > candidate->seqNum) {
+                    candidate = inst;
                 }
             }
         }
     }
-    return nullptr;
+
+    return candidate;
 }
 
 void
