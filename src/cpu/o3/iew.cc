@@ -807,7 +807,6 @@ IEW::checkSquash()
             fetchRedirect[i] = false;
             iewStats.stallEvents[ROBWalk]++;
             setAllStalls(StallReason::CommitSquash);
-            return;
         }
 
         if (fromCommit->commitInfo[i].robSquashing) {
