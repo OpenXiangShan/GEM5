@@ -1162,7 +1162,8 @@ class BTBMGSC(TimedBaseBTBPredictor):
     enablePTable = Param.Bool(False, "Enable P (path) table")
     enableBiasTable = Param.Bool(True, "Enable Bias table")
     enablePCThreshold = Param.Bool(False, "Enable PC-indexed threshold table")
-    enablePerceptronPred = Param.Bool(True, "Enable perception predictor")
+    enablePerceptronPred = Param.Bool(True, "Enable perceptron predictor")
+    forceUsePercep = Param.Bool(True,"Use tage as input of perceptron predictor")
 
     numDelay = 2
 

@@ -226,6 +226,7 @@ BTBMGSC::BTBMGSC(const Params &p)
       enableBiasTable(p.enableBiasTable),
       enablePCThreshold(p.enablePCThreshold),
       enablePerceptronPred(p.enablePerceptronPred),
+      forceUsePercep(p.forceUsePercep),
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
@@ -497,7 +498,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     // Final prediction, total_sum >= 0 means taken if use_sc_pred
     // bool taken = use_sc_pred ? (use_percep_pred? percep_sum>=0 : total_sum >= 0) : tage_info.tage_pred_taken;
     // bool taken = use_sc_pred ? percep_sum >= 0 : tage_info.tage_pred_taken;
-    bool taken = use_percep_pred ? percep_sum >= 0 : (use_sc_pred ? total_sum >= 0 : tage_info.tage_pred_taken);
+    bool taken = (forceUsePercep & use_percep_pred) ? percep_sum >= 0 :
+                 (use_sc_pred ? total_sum >= 0 : tage_info.tage_pred_taken);
     // DPRINTF(MGSC, "global tag_index: %d, global_percsum: %d, total_sum: %d\n", gIndex[0], g_percsum, total_sum);
     // DPRINTF(MGSC, "local tag_index: %d, local_percsum: %d, total_sum: %d\n", lIndex[0], l_percsum, total_sum);
     // DPRINTF(MGSC, "path tag_index: %d, path_percsum: %d, total_sum: %d\n", pIndex[0], p_percsum, total_sum);
@@ -707,7 +709,7 @@ BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int p
             // weightTable[index][i+1] += (actual_taken == gbhr[i]?1:-1);
         }
     }
-    weightTable[index][1] = 0;//experiment
+    weightTable[index][1] = forceUsePercep ? weightTable[index][1] :0 ;//experiment
 }
 
 /**
