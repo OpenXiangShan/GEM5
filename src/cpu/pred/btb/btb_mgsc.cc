@@ -467,7 +467,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     total_thres = enablePerceptronPred ? percep_thres : total_thres;
     total_sum = enablePerceptronPred ? percep_sum : total_sum;
 
-    bool use_sc_pred = forceUseSC;  // Force use SC if configured
+    bool use_sc_pred = forceUseSC | (forceUsePercep & enablePerceptronPred);  // Force use SC if configured
     bool use_percep_pred = enablePerceptronPred;
     bool percep_taken = percep_sum>=0;
     if (!use_sc_pred) {
@@ -709,7 +709,8 @@ BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int p
             // weightTable[index][i+1] += (actual_taken == gbhr[i]?1:-1);
         }
     }
-    weightTable[index][1] = forceUsePercep ? weightTable[index][1] :0 ;//experiment
+    weightTable[index][1] = forceUsePercep ? weightTable[index][1] :0 ;
+    // weightTable[index][1] = 0;//experiment
 }
 
 /**
@@ -846,54 +847,54 @@ BTBMGSC::recordPredictionStats(const MgscPrediction &pred, bool actual_taken, bo
                 correct ? mgscStats.scHighUseCorrect++ : mgscStats.scHighUseWrong++;
             } else {
                 mgscStats.scHighBypass++;
-                if (percep_pred_taken == actual_taken){
-                    mgscStats.scHighBypassPercepCorrect++;
-                    if (percep_conf_high)
-                        mgscStats.scHighBypassPercepHighCorrect++;
-                }else{
-                    mgscStats.scHighBypassPercepWrong++;
-                    if (percep_conf_high)
-                        mgscStats.scHighBypassPercepHighWrong++;
-                }
-                if (tage_pred_taken == actual_taken){
-                    mgscStats.scHighBypassTageCorrect++;
-                }
+                // if (percep_pred_taken == actual_taken){
+                //     mgscStats.scHighBypassPercepCorrect++;
+                //     if (percep_conf_high)
+                //         mgscStats.scHighBypassPercepHighCorrect++;
+                // }else{
+                //     mgscStats.scHighBypassPercepWrong++;
+                //     if (percep_conf_high)
+                //         mgscStats.scHighBypassPercepHighWrong++;
+                // }
+                // if (tage_pred_taken == actual_taken){
+                //     mgscStats.scHighBypassTageCorrect++;
+                // }
             }
         } else if (conf_mid) {
             if (use) {
                 correct ? mgscStats.scMidUseCorrect++ : mgscStats.scMidUseWrong++;
             } else {
                 mgscStats.scMidBypass++;
-                if (percep_pred_taken == actual_taken){
-                    mgscStats.scMidBypassPercepCorrect++;
-                    if (percep_conf_high)
-                        mgscStats.scMidBypassPercepHighCorrect++;
-                }else{
-                    mgscStats.scMidBypassPercepWrong++;
-                    if (percep_conf_high)
-                        mgscStats.scMidBypassPercepHighWrong++;
-                }
-                if (tage_pred_taken == actual_taken){
-                    mgscStats.scMidBypassTageCorrect++;
-                }
+                // if (percep_pred_taken == actual_taken){
+                //     mgscStats.scMidBypassPercepCorrect++;
+                //     if (percep_conf_high)
+                //         mgscStats.scMidBypassPercepHighCorrect++;
+                // }else{
+                //     mgscStats.scMidBypassPercepWrong++;
+                //     if (percep_conf_high)
+                //         mgscStats.scMidBypassPercepHighWrong++;
+                // }
+                // if (tage_pred_taken == actual_taken){
+                //     mgscStats.scMidBypassTageCorrect++;
+                // }
             }
         } else if (conf_low) {
             if (use) {
                 correct ? mgscStats.scLowUseCorrect++ : mgscStats.scLowUseWrong++;
             } else {
                 mgscStats.scLowBypass++;
-                if (percep_pred_taken == actual_taken){
-                    mgscStats.scLowBypassPercepCorrect++;
-                    if (percep_conf_high)
-                        mgscStats.scLowBypassPercepHighCorrect++;
-                }else{
-                    mgscStats.scLowBypassPercepWrong++;
-                    if (percep_conf_high)
-                        mgscStats.scLowBypassPercepHighWrong++;
-                }
-                if (tage_pred_taken == actual_taken){
-                    mgscStats.scLowBypassTageCorrect++;
-                }
+                // if (percep_pred_taken == actual_taken){
+                //     mgscStats.scLowBypassPercepCorrect++;
+                //     if (percep_conf_high)
+                //         mgscStats.scLowBypassPercepHighCorrect++;
+                // }else{
+                //     mgscStats.scLowBypassPercepWrong++;
+                //     if (percep_conf_high)
+                //         mgscStats.scLowBypassPercepHighWrong++;
+                // }
+                // if (tage_pred_taken == actual_taken){
+                //     mgscStats.scLowBypassTageCorrect++;
+                // }
             }
         }
     };

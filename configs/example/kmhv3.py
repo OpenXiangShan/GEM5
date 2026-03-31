@@ -115,7 +115,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mgsc.gbhrLen = 1024
             # cpu.branchPred.mgsc.percepThres = 1990
             cpu.branchPred.mgsc.percepThres = 2048
-            cpu.branchPred.mgsc.tageWeightShamt = 6
+            cpu.branchPred.mgsc.tageWeightShamt = 7
             cpu.branchPred.mgsc.forceUsePercep = True
 
             cpu.branchPred.mgsc.enableBwTable = False
