@@ -164,6 +164,11 @@ class ROB
      */
     void retireHead(ThreadID tid);
 
+    /** Drains a squashed head instruction from a specific thread without
+     *  marking it committed.
+     */
+    void drainSquashedHead(ThreadID tid);
+
     /** Is the oldest instruction across all threads ready. */
 //    bool isHeadReady();
 

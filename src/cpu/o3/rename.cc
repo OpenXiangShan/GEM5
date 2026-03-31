@@ -448,9 +448,12 @@ Rename::releasePhysRegs()
         }
 
         removeFromHistory(releaseSeq[tid], tid);
-        // If we committed this cycle then doneSeqNum will be > 0
+        // doneSeqNum is also reused as a squash-progress marker while the
+        // ROB is walking younger entries. Only real commit progress should
+        // release physical registers.
         if (fromCommit->commitInfo[tid].doneSeqNum != 0 &&
-            !fromCommit->commitInfo[tid].squash) {
+            !fromCommit->commitInfo[tid].squash &&
+            !fromCommit->commitInfo[tid].robSquashing) {
 
             finalCommitSeq[tid] = fromCommit->commitInfo[tid].doneSeqNum;
             releaseSeq[tid] =
