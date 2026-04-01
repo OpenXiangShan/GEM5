@@ -14,6 +14,12 @@ sqliteSignedInt(uint64_t value)
     return static_cast<long long>(static_cast<int64_t>(value));
 }
 
+long long
+sqliteSignedInt(int64_t value)
+{
+    return static_cast<long long>(value);
+}
+
 } // anonymous namespace
 
 ArchDBer::ArchDBer(const Params &p)
@@ -26,6 +32,7 @@ ArchDBer::ArchDBer(const Params &p)
     dumpL3EvictTrace(p.dump_l3_evict_trace),
     dumpL1MissTrace(p.dump_l1_miss_trace),
     dumpBopTrainTrace(p.dump_bop_train_trace),
+    dumpBopReplayTrace(p.dump_bop_replay_trace),
     dumpSMSTrainTrace(p.dump_sms_train_trace),
     dumpStrideTrainTrace(p.dump_stride_train_trace),
     dumpDespacitoTrainTrace(p.dump_despacito_train_trace),
@@ -148,6 +155,47 @@ ArchDBer::bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offse
           "VALUES(%lld,%lld,%lld,%lld,%d,%d,'%s');",
           sqliteSignedInt(tick), sqliteSignedInt(old_addr),
           sqliteSignedInt(cur_addr), sqliteSignedInt(offset), score, miss, "BOPTrain");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
+void
+ArchDBer::bopReplayTrainTraceWrite(const char *table_name, Tick tick, Addr train_addr)
+{
+  bool dump_me = dumpGlobal && dumpBopReplayTrace;
+  if (!dump_me) return;
+
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO %s(Tick,TrainAddr,SITE) "
+          "VALUES(%lld,%lld,'%s');",
+          table_name, sqliteSignedInt(tick), sqliteSignedInt(train_addr),
+          "BOPReplayTrain");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+
+void
+ArchDBer::bopReplayPrefetchTraceWrite(
+    const char *table_name,
+    Tick tick,
+    Addr train_addr,
+    Addr prefetch_addr,
+    int64_t best_offset,
+    bool prefetch_disable)
+{
+  bool dump_me = dumpGlobal && dumpBopReplayTrace;
+  if (!dump_me) return;
+
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO %s(Tick,TrainAddr,PrefetchAddr,BestOffset,PrefetchDisable,SITE) "
+          "VALUES(%lld,%lld,%lld,%lld,%d,'%s');",
+          table_name, sqliteSignedInt(tick), sqliteSignedInt(train_addr),
+          sqliteSignedInt(prefetch_addr), sqliteSignedInt(best_offset),
+          prefetch_disable ? 1 : 0, "BOPReplayPrefetch");
   rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
