@@ -786,8 +786,8 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     student_pool_size = 8
     student_conf_alpha = 0.0
     student_cov_threshold = 0.05
-    student_filter_entries = 4096
-    student_hash_mode = "oracle"
+    student_filter_entries = 2048
+    student_hash_mode = "splitmix"
     student_hash_count = 1
 
     offsets = [x for i in [
@@ -811,7 +811,7 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     student_conf_alpha = 0.0
     student_cov_threshold = 0.02
     student_filter_entries = 4096
-    student_hash_mode = "oracle"
+    student_hash_mode = "bop_rr"
     student_hash_count = 1
 
     offsets = [
