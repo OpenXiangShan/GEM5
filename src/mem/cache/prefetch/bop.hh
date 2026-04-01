@@ -36,8 +36,15 @@
 #ifndef __MEM_CACHE_PREFETCH_BOP_HH__
 #define __MEM_CACHE_PREFETCH_BOP_HH__
 
+#include <cstdint>
+#include <deque>
+#include <list>
 #include <queue>
 #include <set>
+#include <string>
+#include <unordered_set>
+#include <vector>
+
 #include <boost/compute/detail/lru_cache.hpp>
 
 #include "base/sat_counter.hh"
@@ -151,6 +158,9 @@ class BOP : public Queued
 
         /** Hardware prefetcher enabled */
         bool issuePrefetchRequests;
+        const std::string replayTracePrefix;
+        const std::string replayTrainTable;
+        const std::string replayPrefetchTable;
         /** Current best offset to issue prefetches */
         int64_t bestOffset;
         bool forceBestOffsetValid = false;
@@ -167,6 +177,36 @@ class BOP : public Queued
         unsigned int bestScore;
         /** Current round */
         unsigned int round;
+
+        struct StudentOffsetEntry
+        {
+            int64_t offset;
+            double conf;
+            uint32_t lastPhaseCov;
+            uint32_t curPhaseCov;
+
+            explicit StudentOffsetEntry(int64_t offset_)
+                : offset(offset_), conf(0.0), lastPhaseCov(0), curPhaseCov(0)
+            {}
+        };
+
+        /** Teacher-student coverage learner parameters */
+        const bool enableStudentCover;
+        const unsigned studentPoolSize;
+        const double studentConfAlpha;
+        const double studentCovThreshold;
+        const unsigned studentTeacherTopN;
+        const unsigned studentFilterEntries;
+        const unsigned studentHashCount;
+        const std::string studentHashMode;
+
+        std::vector<StudentOffsetEntry> studentPool;
+        std::vector<uint64_t> studentFilterBits;
+        std::unordered_set<Addr> studentExactSeen;
+        int64_t studentSelectedOffset;
+        bool studentSelectedValid;
+        bool studentSelectedEnable;
+        uint32_t studentPhaseTrainCount;
 
         std::list<OffsetListEntry>::iterator getBestOffsetIter();
 
@@ -213,6 +253,18 @@ class BOP : public Queued
             round and update the best offset if found */
         bool bestOffsetLearning(Addr hashed_addr, bool late, const PrefetchInfo &pfi);
 
+        void studentObserveTrainAddr(Addr addr);
+        void studentOnTeacherPhaseEnd(int64_t teacher_best_offset);
+        bool studentInsertTeacherBest(int64_t offset);
+        int64_t studentSelectIssueOffset(int64_t teacher_best_offset) const;
+        bool studentShouldIssue() const;
+        bool studentUseOracleMode() const;
+        void studentClearPhaseState();
+        std::vector<unsigned int> studentHashIndexes(Addr line_addr) const;
+        size_t studentPickBestIndex() const;
+        size_t studentPickWorstIndex() const;
+        size_t studentPickEvictIndex() const;
+
         unsigned missCount{0};
 
         bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
@@ -222,7 +274,15 @@ class BOP : public Queued
         {
             BopStats(statistics::Group *parent);
             statistics::Distribution issuedOffsetDist;
+            statistics::Distribution teacherInjectedOffsetDist;
+            statistics::Distribution studentSelectedOffsetDist;
+            statistics::Distribution studentPoolOccupancyDist;
+            statistics::Distribution studentCovRatioPctDist;
             statistics::Scalar learnOffsetCount;
+            statistics::Scalar teacherInjectedCount;
+            statistics::Scalar studentPhaseCount;
+            statistics::Scalar studentIssueCount;
+            statistics::Scalar studentFallbackCount;
             statistics::Scalar throttledCount;
         } stats;
 

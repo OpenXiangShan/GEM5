@@ -58,6 +58,7 @@ class ArchDBer(SimObject):
     dump_l3_evict_trace = Param.Bool(False, "Dump l3 evict trace")
     dump_l1_miss_trace = Param.Bool(False, "Dump l1 miss trace")
     dump_bop_train_trace = Param.Bool(False, "Dump bop train trace")
+    dump_bop_replay_trace = Param.Bool(False, "Dump replay-compatible bop train/prefetch trace")
     dump_sms_train_trace = Param.Bool(False, "Dump sms train trace")
     dump_l1d_way_pre_trace = Param.Bool(False, "Dump l1d way predction trace")
     dump_vaddr_trace = Param.Bool(False, "Dump vaddr trace")

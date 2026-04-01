@@ -28,6 +28,11 @@
 
 #include "mem/cache/prefetch/bop.hh"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <tuple>
+
 #include "base/stats/group.hh"
 #include "debug/BOPOffsets.hh"
 #include "debug/BOPPrefetcher.hh"
@@ -40,6 +45,20 @@ namespace gem5
 GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
+
+namespace
+{
+
+uint64_t
+splitmix64(uint64_t x)
+{
+    x = (x + 0x9E3779B97F4A7C15ULL) & 0xFFFFFFFFFFFFFFFFULL;
+    x = ((x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL) & 0xFFFFFFFFFFFFFFFFULL;
+    x = ((x ^ (x >> 27)) * 0x94D049BB133111EBULL) & 0xFFFFFFFFFFFFFFFFULL;
+    return x ^ (x >> 31);
+}
+
+} // anonymous namespace
 
 BOP::BOP(const BOPPrefetcherParams &p)
     : Queued(p),
@@ -54,18 +73,76 @@ BOP::BOP(const BOPPrefetcherParams &p)
       victimListSize(p.victimOffsetsListSize),
       restoreCycle(p.restoreCycle),
       delayQueueEvent([this]{ delayQueueEventWrapper(); }, name()),
-      issuePrefetchRequests(false), bestOffset(1), phaseBestOffset(0),
-      bestScore(0), round(0), stats(this)
+      issuePrefetchRequests(false),
+      replayTracePrefix(p.replay_trace_prefix),
+      replayTrainTable(replayTracePrefix.empty() ? "" : replayTracePrefix + "TrainTraceTable"),
+      replayPrefetchTable(replayTracePrefix.empty() ? "" : replayTracePrefix + "PrefetchTraceTable"),
+      bestOffset(1), phaseBestOffset(0),
+      bestScore(0), round(0),
+      enableStudentCover(p.enable_student_cover),
+      studentPoolSize(p.student_pool_size),
+      studentConfAlpha(p.student_conf_alpha),
+      studentCovThreshold(p.student_cov_threshold),
+      studentTeacherTopN(p.student_teacher_top_n),
+      studentFilterEntries(p.student_filter_entries),
+      studentHashCount(p.student_hash_count),
+      studentHashMode(p.student_hash_mode),
+      studentSelectedOffset(1),
+      studentSelectedValid(false),
+      studentSelectedEnable(false),
+      studentPhaseTrainCount(0),
+      stats(this)
 {
+    const bool student_oracle_mode = studentUseOracleMode();
+
     if (!isPowerOf2(rrEntries)) {
         fatal("%s: number of RR entries is not power of 2\n", name());
     }
     if (!isPowerOf2(blkSize)) {
         fatal("%s: cache line size is not power of 2\n", name());
     }
+    fatal_if(enableStudentCover && studentPoolSize == 0,
+        "%s: student_pool_size must be non-zero when student coverage is enabled",
+        name());
+    fatal_if(enableStudentCover && studentPoolSize > 64,
+        "%s: student_pool_size=%u exceeds 64-bit filter mask capacity",
+        name(), studentPoolSize);
+    fatal_if(enableStudentCover && !student_oracle_mode &&
+            studentFilterEntries == 0,
+        "%s: student_filter_entries must be non-zero when student coverage is enabled",
+        name());
+    fatal_if(enableStudentCover && !student_oracle_mode &&
+            !isPowerOf2(studentFilterEntries),
+        "%s: student_filter_entries must be a power of 2", name());
+    fatal_if(enableStudentCover && studentHashCount == 0,
+        "%s: student_hash_count must be non-zero when student coverage is enabled",
+        name());
+    fatal_if(enableStudentCover &&
+            ((studentConfAlpha < 0.0) || (studentConfAlpha > 1.0)),
+        "%s: student_conf_alpha must be in [0, 1]", name());
+    fatal_if(enableStudentCover &&
+            ((studentCovThreshold < 0.0) || (studentCovThreshold > 1.0)),
+        "%s: student_cov_threshold must be in [0, 1]", name());
+    fatal_if(enableStudentCover &&
+            (studentHashMode != "lowbits") &&
+            (studentHashMode != "bop_rr") &&
+            (studentHashMode != "splitmix") &&
+            (studentHashMode != "oracle") &&
+            (studentHashMode != "exact"),
+        "%s: unsupported student_hash_mode '%s'", name(), studentHashMode);
+    if (enableStudentCover && studentTeacherTopN > 1) {
+        warn("%s: student_teacher_top_n=%u currently reuses only the teacher best offset",
+             name(), studentTeacherTopN);
+    }
 
     rrLeft.resize(rrEntries);
     rrRight.resize(rrEntries);
+    if (enableStudentCover) {
+        studentPool.reserve(studentPoolSize);
+        if (!student_oracle_mode) {
+            studentFilterBits.assign(studentFilterEntries, 0);
+        }
+    }
 
     int offset_count = p.offsets.size();
     maxOffsetCount = p.negative_offsets_enable ? 2*p.offsets.size() : p.offsets.size();
@@ -343,6 +420,307 @@ BOP::getBestOffsetIter()
 }
 
 bool
+BOP::studentUseOracleMode() const
+{
+    return (studentHashMode == "oracle") || (studentHashMode == "exact");
+}
+
+std::vector<unsigned int>
+BOP::studentHashIndexes(Addr line_addr) const
+{
+    std::vector<unsigned int> indexes;
+    if (!enableStudentCover || studentFilterEntries == 0) {
+        return indexes;
+    }
+
+    indexes.reserve(studentHashCount);
+    const uint64_t mask = static_cast<uint64_t>(studentFilterEntries - 1);
+    uint64_t base1 = 0;
+    uint64_t base2 = 1;
+
+    if (studentHashMode == "lowbits") {
+        base1 = line_addr;
+        base2 = ((line_addr >> 6) ^ (line_addr >> 12) ^ 0x9E37ULL) | 1ULL;
+    } else if (studentHashMode == "bop_rr") {
+        const unsigned lgm = floorLog2(studentFilterEntries);
+        const uint64_t base =
+            ((line_addr & mask) ^ ((line_addr >> lgm) & mask)) & mask;
+        base1 = base;
+        base2 = ((((line_addr >> (2 * lgm)) & mask) ^ line_addr ^
+                0xC2B2ULL) | 1ULL);
+    } else {
+        base1 = splitmix64(line_addr);
+        base2 = splitmix64(line_addr ^ 0x9E3779B97F4A7C15ULL) | 1ULL;
+    }
+
+    for (unsigned i = 0; i < studentHashCount; ++i) {
+        indexes.push_back(static_cast<unsigned int>(
+            ((base1 + i * base2) & 0xFFFFFFFFFFFFFFFFULL) & mask));
+    }
+    return indexes;
+}
+
+size_t
+BOP::studentPickBestIndex() const
+{
+    assert(!studentPool.empty());
+    size_t best_idx = 0;
+    auto best_key = std::make_tuple(
+        studentPool[0].curPhaseCov,
+        studentPool[0].conf,
+        -std::llabs(studentPool[0].offset),
+        -studentPool[0].offset);
+
+    for (size_t i = 1; i < studentPool.size(); ++i) {
+        const auto key = std::make_tuple(
+            studentPool[i].curPhaseCov,
+            studentPool[i].conf,
+            -std::llabs(studentPool[i].offset),
+            -studentPool[i].offset);
+        if (key > best_key) {
+            best_key = key;
+            best_idx = i;
+        }
+    }
+    return best_idx;
+}
+
+size_t
+BOP::studentPickWorstIndex() const
+{
+    assert(!studentPool.empty());
+    size_t worst_idx = 0;
+    auto worst_key = std::make_tuple(
+        studentPool[0].curPhaseCov,
+        studentPool[0].conf,
+        std::llabs(studentPool[0].offset),
+        studentPool[0].offset);
+
+    for (size_t i = 1; i < studentPool.size(); ++i) {
+        const auto key = std::make_tuple(
+            studentPool[i].curPhaseCov,
+            studentPool[i].conf,
+            std::llabs(studentPool[i].offset),
+            studentPool[i].offset);
+        if (key < worst_key) {
+            worst_key = key;
+            worst_idx = i;
+        }
+    }
+    return worst_idx;
+}
+
+size_t
+BOP::studentPickEvictIndex() const
+{
+    assert(!studentPool.empty());
+    size_t victim_idx = 0;
+    auto victim_key = std::make_tuple(
+        studentPool[0].conf,
+        studentPool[0].lastPhaseCov,
+        -std::llabs(studentPool[0].offset),
+        studentPool[0].offset);
+
+    for (size_t i = 1; i < studentPool.size(); ++i) {
+        const auto key = std::make_tuple(
+            studentPool[i].conf,
+            studentPool[i].lastPhaseCov,
+            -std::llabs(studentPool[i].offset),
+            studentPool[i].offset);
+        if (key < victim_key) {
+            victim_key = key;
+            victim_idx = i;
+        }
+    }
+    return victim_idx;
+}
+
+void
+BOP::studentObserveTrainAddr(Addr addr)
+{
+    if (!enableStudentCover) {
+        return;
+    }
+
+    studentPhaseTrainCount++;
+    if (studentPool.empty()) {
+        return;
+    }
+
+    if (studentUseOracleMode()) {
+        for (auto &entry : studentPool) {
+            const int64_t prev =
+                static_cast<int64_t>(addr) -
+                entry.offset * static_cast<int64_t>(blkSize);
+            if (prev < 0) {
+                continue;
+            }
+
+            const Addr prev_addr = static_cast<Addr>(prev);
+            if (studentExactSeen.find(prev_addr) != studentExactSeen.end() &&
+                (crossPage || samePage(prev_addr, addr))) {
+                entry.curPhaseCov++;
+            }
+        }
+        studentExactSeen.insert(addr);
+        return;
+    }
+
+    const Addr line_addr = addr >> lBlkSize;
+    const auto query_indexes = studentHashIndexes(line_addr);
+    uint64_t hit_mask = ~0ULL;
+    for (const auto idx : query_indexes) {
+        hit_mask &= studentFilterBits[idx];
+    }
+
+    for (size_t bit_idx = 0; bit_idx < studentPool.size(); ++bit_idx) {
+        const uint64_t mask = 1ULL << bit_idx;
+        if (hit_mask & mask) {
+            studentPool[bit_idx].curPhaseCov++;
+        }
+    }
+
+    for (size_t bit_idx = 0; bit_idx < studentPool.size(); ++bit_idx) {
+        const int64_t predicted =
+            static_cast<int64_t>(addr) +
+            studentPool[bit_idx].offset * static_cast<int64_t>(blkSize);
+        if (predicted < 0) {
+            continue;
+        }
+
+        const Addr predicted_addr = static_cast<Addr>(predicted);
+        if (!crossPage && !samePage(addr, predicted_addr)) {
+            continue;
+        }
+
+        const uint64_t mask = 1ULL << bit_idx;
+        for (const auto idx : studentHashIndexes(predicted_addr >> lBlkSize)) {
+            studentFilterBits[idx] |= mask;
+        }
+    }
+}
+
+bool
+BOP::studentInsertTeacherBest(int64_t offset)
+{
+    if (!enableStudentCover || studentPoolSize == 0 || offset == 0 ||
+        studentTeacherTopN == 0) {
+        return false;
+    }
+
+    const auto it = std::find_if(studentPool.begin(), studentPool.end(),
+        [offset](const StudentOffsetEntry &entry) {
+            return entry.offset == offset;
+        });
+    if (it != studentPool.end()) {
+        return false;
+    }
+
+    if (studentPool.size() >= studentPoolSize) {
+        const size_t victim_idx = studentPickEvictIndex();
+        DPRINTF(BOPPrefetcher,
+            "student evict offset %ld conf %.3f last_cov %u for teacher best %ld\n",
+            studentPool[victim_idx].offset, studentPool[victim_idx].conf,
+            studentPool[victim_idx].lastPhaseCov, offset);
+        studentPool.erase(studentPool.begin() + victim_idx);
+    }
+
+    studentPool.emplace_back(offset);
+    stats.teacherInjectedCount++;
+    stats.teacherInjectedOffsetDist.sample(offset);
+    DPRINTF(BOPPrefetcher, "student insert teacher best offset %ld, pool size %zu\n",
+            offset, studentPool.size());
+    return true;
+}
+
+void
+BOP::studentClearPhaseState()
+{
+    if (!enableStudentCover) {
+        return;
+    }
+
+    std::fill(studentFilterBits.begin(), studentFilterBits.end(), 0);
+    studentExactSeen.clear();
+    studentPhaseTrainCount = 0;
+    for (auto &entry : studentPool) {
+        entry.curPhaseCov = 0;
+    }
+}
+
+bool
+BOP::studentShouldIssue() const
+{
+    return enableStudentCover && studentSelectedValid && studentSelectedEnable;
+}
+
+int64_t
+BOP::studentSelectIssueOffset(int64_t teacher_best_offset) const
+{
+    return studentShouldIssue() ? studentSelectedOffset : teacher_best_offset;
+}
+
+void
+BOP::studentOnTeacherPhaseEnd(int64_t teacher_best_offset)
+{
+    if (!enableStudentCover) {
+        return;
+    }
+
+    stats.studentPhaseCount++;
+    stats.studentPoolOccupancyDist.sample(studentPool.size());
+
+    if (!studentPool.empty()) {
+        const size_t best_idx = studentPickBestIndex();
+        const size_t worst_idx = studentPickWorstIndex();
+        const uint32_t best_cov = studentPool[best_idx].curPhaseCov;
+        const double ratio = studentPhaseTrainCount > 0 ?
+            static_cast<double>(best_cov) / studentPhaseTrainCount : 0.0;
+
+        studentSelectedOffset = studentPool[best_idx].offset;
+        studentSelectedValid = true;
+        studentSelectedEnable = ratio >= studentCovThreshold;
+        stats.studentCovRatioPctDist.sample(
+            static_cast<uint64_t>(std::round(ratio * 100.0)));
+        if (studentSelectedEnable) {
+            stats.studentIssueCount++;
+            stats.studentSelectedOffsetDist.sample(studentSelectedOffset);
+        } else {
+            stats.studentFallbackCount++;
+        }
+
+        for (size_t i = 0; i < studentPool.size(); ++i) {
+            double update = 0.0;
+            if (i == best_idx) {
+                update = 1.0;
+            }
+            if (i == worst_idx) {
+                update = -1.0;
+            }
+            studentPool[i].conf =
+                studentPool[i].conf * studentConfAlpha +
+                update * (1.0 - studentConfAlpha);
+            studentPool[i].lastPhaseCov = studentPool[i].curPhaseCov;
+        }
+
+        DPRINTF(BOPPrefetcher,
+            "student phase end: best %ld cov %u phase_train %u ratio %.4f enable %d\n",
+            studentSelectedOffset, best_cov, studentPhaseTrainCount, ratio,
+            studentSelectedEnable);
+    } else {
+        studentSelectedValid = false;
+        studentSelectedEnable = false;
+        stats.studentFallbackCount++;
+        DPRINTF(BOPPrefetcher, "student phase end: empty pool, fallback to teacher\n");
+    }
+
+    if ((teacher_best_offset != 0) && (studentTeacherTopN != 0)) {
+        studentInsertTeacherBest(teacher_best_offset);
+    }
+    studentClearPhaseState();
+}
+
+bool
 BOP::bestOffsetLearning(Addr x, bool late, const PrefetchInfo &pfi)
 {
     DPRINTF(BOPPrefetcher, "Reach %s entry, iter offset: %d\n", __FUNCTION__, offsetsListIterator->calcOffset());
@@ -447,6 +825,10 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
     Addr addr = blockAddress(pfi.getAddr());
     Addr tag_x = tag(addr);
 
+    if (archDBer && !replayTrainTable.empty()) {
+        archDBer->bopReplayTrainTraceWrite(replayTrainTable.c_str(), curTick(), addr);
+    }
+
     DPRINTF(BOPPrefetcher,
             "Train prefetcher with addr %#lx tag %#lx\n", addr, tag_x);
 
@@ -458,21 +840,35 @@ BOP::calculatePrefetch(const PrefetchInfo &pfi,
 
     // Go through the nth offset and update the score, the best score and the
     // current best offset if a better one is found
-    bestOffsetLearning(addr, late, pfi);
+    const bool teacher_phase_end = bestOffsetLearning(addr, late, pfi);
+    studentObserveTrainAddr(addr);
+    if (teacher_phase_end) {
+        studentOnTeacherPhaseEnd(bestOffset);
+    }
 
     // This prefetcher is a degree 1 prefetch, so it will only generate one
     // prefetch at most per access
     bool force_issue = forceBestOffsetValid && forceIssuePrefetch;
-    int64_t issue_offset = forceBestOffsetValid ? forcedBestOffset : bestOffset;
-    bool do_issue = issuePrefetchRequests || force_issue;
+    bool student_issue = studentShouldIssue();
+    int64_t issue_offset = forceBestOffsetValid ?
+        forcedBestOffset : studentSelectIssueOffset(bestOffset);
+    bool do_issue = issuePrefetchRequests || student_issue || force_issue;
+    Addr prefetch_addr = addr + (issue_offset * (1ULL << lBlkSize));
+    bool prefetch_disable = !do_issue || (!samePage(pfi.getAddr(), prefetch_addr) && !crossPage);
+
+    if (archDBer && !replayPrefetchTable.empty()) {
+        archDBer->bopReplayPrefetchTraceWrite(
+            replayPrefetchTable.c_str(), curTick(), addr, prefetch_addr,
+            issue_offset, prefetch_disable);
+    }
 
     if (do_issue) {
-        Addr prefetch_addr = addr + (issue_offset * (1ULL << lBlkSize));
         stats.issuedOffsetDist.sample(issue_offset);
         sendPFWithFilter(pfi, prefetch_addr, addresses, 32, PrefetchSourceType::HWP_BOP);
         DPRINTF(BOPPrefetcher,
-                "Generated prefetch %#lx offset: %d\n",
-                prefetch_addr, issue_offset);
+                "Generated prefetch %#lx offset: %ld force %d student %d teacher_issue %d\n",
+                prefetch_addr, issue_offset, forceBestOffsetValid,
+                student_issue, issuePrefetchRequests);
     } else {
         stats.throttledCount++;
         DPRINTF(BOPPrefetcher, "Issue prefetch is false, can't issue\n");
@@ -531,10 +927,30 @@ BOP::notifyFill(const PacketPtr& pkt)
 BOP::BopStats::BopStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(issuedOffsetDist, statistics::units::Count::get(), "Distribution of issued offsets"),
+      ADD_STAT(teacherInjectedOffsetDist, statistics::units::Count::get(),
+          "Distribution of teacher offsets injected into the student pool"),
+      ADD_STAT(studentSelectedOffsetDist, statistics::units::Count::get(),
+          "Distribution of student-selected offsets that passed gating"),
+      ADD_STAT(studentPoolOccupancyDist, statistics::units::Count::get(),
+          "Student pool occupancy observed at phase end"),
+      ADD_STAT(studentCovRatioPctDist, statistics::units::Ratio::get(),
+          "Student best coverage ratio at phase end, in percent"),
       ADD_STAT(learnOffsetCount, statistics::units::Count::get(), "Number of learning offsets"),
+      ADD_STAT(teacherInjectedCount, statistics::units::Count::get(),
+          "Number of teacher best offsets injected into the student pool"),
+      ADD_STAT(studentPhaseCount, statistics::units::Count::get(),
+          "Number of teacher-aligned student phases"),
+      ADD_STAT(studentIssueCount, statistics::units::Count::get(),
+          "Number of student phases that passed output gating"),
+      ADD_STAT(studentFallbackCount, statistics::units::Count::get(),
+          "Number of student phases that fell back to teacher output"),
       ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of throttled prefetches")
 {
-    issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
+    issuedOffsetDist.init(-256, 257, 1).prereq(issuedOffsetDist);
+    teacherInjectedOffsetDist.init(-256, 257, 1).prereq(teacherInjectedOffsetDist);
+    studentSelectedOffsetDist.init(-256, 257, 1).prereq(studentSelectedOffsetDist);
+    studentPoolOccupancyDist.init(0, 10, 1).prereq(studentPoolOccupancyDist);
+    studentCovRatioPctDist.init(0, 101, 1).prereq(studentCovRatioPctDist);
 }
 
 } // namespace prefetch

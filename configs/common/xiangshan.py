@@ -708,10 +708,11 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_l3_evict_trace = False
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
+        test_sys.arch_db.dump_bop_replay_trace = args.arch_db_dump_bop_replay_trace
         test_sys.arch_db.dump_sms_train_trace = False
         test_sys.arch_db.dump_vaddr_trace = False
         test_sys.arch_db.dump_lifetime = False
-        test_sys.arch_db.table_cmds = [
+        arch_db_table_cmds = [
             "CREATE TABLE L1MissTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
             "PC INT NOT NULL," \
@@ -783,6 +784,38 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             ,# perfCounter CommitTrace
             perfCCT_cmd
         ]
+
+        if args.arch_db_dump_bop_replay_trace:
+            arch_db_table_cmds.extend([
+                "CREATE TABLE vbopTrainTraceTable(" \
+                "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+                "Tick INT NOT NULL," \
+                "TrainAddr INT NOT NULL," \
+                "SITE TEXT);",
+                "CREATE TABLE vbopPrefetchTraceTable(" \
+                "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+                "Tick INT NOT NULL," \
+                "TrainAddr INT NOT NULL," \
+                "PrefetchAddr INT NOT NULL," \
+                "BestOffset INT NOT NULL," \
+                "PrefetchDisable BOOL NOT NULL," \
+                "SITE TEXT);",
+                "CREATE TABLE pbopTrainTraceTable(" \
+                "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+                "Tick INT NOT NULL," \
+                "TrainAddr INT NOT NULL," \
+                "SITE TEXT);",
+                "CREATE TABLE pbopPrefetchTraceTable(" \
+                "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+                "Tick INT NOT NULL," \
+                "TrainAddr INT NOT NULL," \
+                "PrefetchAddr INT NOT NULL," \
+                "BestOffset INT NOT NULL," \
+                "PrefetchDisable BOOL NOT NULL," \
+                "SITE TEXT);",
+            ])
+
+        test_sys.arch_db.table_cmds = arch_db_table_cmds
 
     # config debug trace
     for i in range(np):

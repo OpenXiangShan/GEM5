@@ -59,6 +59,7 @@ class ArchDBer : public SimObject
     bool dumpL3EvictTrace;
     bool dumpL1MissTrace;
     bool dumpBopTrainTrace;
+    bool dumpBopReplayTrace;
     bool dumpSMSTrainTrace;
     bool dumpL1WayPreTrace;
     bool dumpVaddrTrace;
@@ -100,6 +101,14 @@ class ArchDBer : public SimObject
     void l1PFTraceWrite(Tick tick, Addr trigger_pc, Addr trigger_vaddr, Addr pf_vaddr, int pf_src);
 
     void bopTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr offset, int score, bool miss);
+    void bopReplayTrainTraceWrite(const char *table_name, Tick tick, Addr train_addr);
+    void bopReplayPrefetchTraceWrite(
+        const char *table_name,
+        Tick tick,
+        Addr train_addr,
+        Addr prefetch_addr,
+        int64_t best_offset,
+        bool prefetch_disable);
     void smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigger_offset, int conf, bool miss);
     void dcacheWayPreTrace(Tick tick, uint64_t pc, uint64_t vaddr, int way, int is_write);
     void vaddrTrace(Tick tick, uint64_t pc, uint64_t vaddr, int hit);

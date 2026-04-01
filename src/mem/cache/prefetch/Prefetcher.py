@@ -740,6 +740,16 @@ class BOPPrefetcher(QueuedPrefetcher):
     enable_adaptoffset = Param.Bool(True, "enable adapt offset")
     victimOffsetsListSize = Param.Int(10, "The size of victimOffsetsList")
     restoreCycle = Param.Int(250000, "Cycles which Restore one offset from victimOffsetsList")
+    replay_trace_prefix = Param.String("", "ArchDB replay trace prefix for this BOP instance")
+    enable_student_cover = Param.Bool(False, "Enable teacher-student coverage learner")
+    student_teacher_top_n = Param.Unsigned(1, "Number of teacher winners injected into the student pool")
+    student_pool_size = Param.Unsigned(4, "Maximum number of offsets retained by the student pool")
+    student_conf_alpha = Param.Float(0.0, "Rolling confidence smoothing factor for student offsets")
+    student_cov_threshold = Param.Float(0.0, "Coverage ratio threshold required for student takeover")
+    student_filter_entries = Param.Unsigned(1024, "Entries in the student direct-mapped coverage filter")
+    student_hash_mode = Param.String("bop_rr", "Student coverage mode: bop_rr/lowbits/splitmix for DM filter, \
+                                     oracle/exact for collision-free phase-local coverage")
+    student_hash_count = Param.Unsigned(1, "Number of hashes used by the student direct-mapped filter")
 
 class XSPhysicalSmallBOP(BOPPrefetcher):
     score_max = 31
@@ -752,6 +762,15 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     delay_queue_size = 16
     delay_queue_cycles = 300
     crossPage = False
+    replay_trace_prefix = "pbop"
+    enable_student_cover = True
+    student_teacher_top_n = 1
+    student_pool_size = 8
+    student_conf_alpha = 0.0
+    student_cov_threshold = 0.05
+    student_filter_entries = 4096
+    student_hash_mode = "oracle"
+    student_hash_count = 1
 
     offsets = [x for i in [
         1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30
@@ -767,6 +786,15 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     delay_queue_enable = True
     delay_queue_size = 16
     delay_queue_cycles = 300
+    replay_trace_prefix = "vbop"
+    enable_student_cover = True
+    student_teacher_top_n = 1
+    student_pool_size = 4
+    student_conf_alpha = 0.0
+    student_cov_threshold = 0.02
+    student_filter_entries = 4096
+    student_hash_mode = "oracle"
+    student_hash_count = 1
 
     offsets = [x for i in [
         1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30, 32, 36, 40, 45, 48,
