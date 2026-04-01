@@ -1126,11 +1126,11 @@ class BTBMGSC(TimedBaseBTBPredictor):
     biasTableNum = Param.Unsigned(1, "Num bias tables")
     biasTableIdxWidth = Param.Unsigned(11, "Log number of bias entries")
 
-    percepTableEntryNum = Param.Unsigned(32, "Num of entries in perception preditor weight table")
-    gbhrLen = Param.Unsigned(128, "Length of gbhr in perception predictor")
-    percepTableWidth = Param.Unsigned(9, "Width of weight in perception predictor table")
-    percepThres = Param.Unsigned(262, "Threshold of perception predictor")
-    tageWeightShamt = Param.Unsigned(7,
+    percepTableEntryNum = Param.Unsigned(256, "Num of entries in perception preditor weight table")
+    gbhrLen = Param.Unsigned(64, "Length of gbhr in perception predictor")
+    percepTableWidth = Param.Unsigned(8, "Width of weight in perception predictor table")
+    percepThres = Param.Unsigned(137, "Threshold of perception predictor")
+    tageWeightShamt = Param.Unsigned(4,
                     "Right shift amount for weight of TAGE predictor when generating perception predictor features")
 
     thresholdTablelogSize = Param.Unsigned(6,
