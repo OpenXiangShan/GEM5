@@ -111,6 +111,8 @@ class BTBITTAGE : public TimedBaseBTBPredictor
                         const FetchTarget &entry,int shamt, bool cond_taken) override;
 
     void update(const FetchTarget &entry) override;
+    bool canResolveTrain(const ResolvedTrainPacket &packet) override;
+    void resolveTrain(const ResolvedTrainPacket &packet) override;
 
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
 

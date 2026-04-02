@@ -29,6 +29,8 @@
 
 #include "cpu/pred/btb/mbtb.hh"
 
+#include <unordered_set>
+
 #include "base/intmath.hh"
 
 // Additional conditional includes based on build mode
@@ -487,6 +489,39 @@ MBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
 
 }
 
+void
+MBTB::checkPredictionHit(const ResolvedTrainPacket &packet, const BTBMeta *meta)
+{
+    const ResolvedBranch *taken_branch = nullptr;
+    for (const auto &resolved : packet.realBranches) {
+        if (resolved.taken) {
+            taken_branch = &resolved;
+            break;
+        }
+    }
+
+    if (!taken_branch) {
+        btbStats.updateHit++;
+        return;
+    }
+
+    bool pred_branch_hit = false;
+    for (const auto &e : meta->hit_entries) {
+        if (taken_branch->branch == e) {
+            pred_branch_hit = true;
+            break;
+        }
+    }
+
+    if (!pred_branch_hit) {
+        DPRINTF(BTB, "resolve-train miss detected, pc %#lx\n",
+                taken_branch->branch.pc);
+        btbStats.updateMiss++;
+    } else {
+        btbStats.updateHit++;
+    }
+}
+
 
 /**
  * Update or replace BTB entry
@@ -553,6 +588,58 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
     }
 }
 
+void
+MBTB::updateBTBEntry(const BTBEntry &entry, const ResolvedBranch &resolved)
+{
+    btbStats.updateTotal++;
+    Addr alignedPC = entry.pc & ~(blockSize - 1);
+    int sram_id = getSRAMId(alignedPC);
+    auto &target_sram = (sram_id == 0) ? sram0 : sram1;
+    auto &target_mru = (sram_id == 0) ? mru0 : mru1;
+
+    Addr btb_idx = getIndex(entry.pc);
+
+    bool found = false;
+    auto it = target_sram[btb_idx].begin();
+    for (; it != target_sram[btb_idx].end(); ++it) {
+        if (*it == entry) {
+            found = true;
+            break;
+        }
+    }
+
+    bool found_in_vc = false;
+    int vc_idx = -1;
+    for (int i = 0; i < (int)victimCache.size(); ++i) {
+        auto &vc_entry = victimCache[i];
+        if (vc_entry.valid && vc_entry.pc == entry.pc) {
+            found_in_vc = true;
+            vc_idx = i;
+            break;
+        }
+    }
+
+    const BTBEntry *existing_ptr = nullptr;
+    if (found) {
+        existing_ptr = static_cast<const BTBEntry *>(&(*it));
+    } else if (found_in_vc) {
+        existing_ptr = static_cast<const BTBEntry *>(&victimCache[vc_idx]);
+    }
+
+    auto entry_to_write = buildUpdatedEntry(entry, existing_ptr, resolved);
+    auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
+
+    if (found) {
+        updateExistingInSRAMSet(btb_idx, target_mru[btb_idx], it, ticked_entry);
+    } else if (found_in_vc) {
+        commitToVictimCache(vc_idx, ticked_entry);
+        return;
+    } else {
+        replaceOldestInSRAMSet(sram_id, btb_idx, target_mru[btb_idx],
+                               ticked_entry);
+    }
+}
+
 BTBEntry
 MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
                         const BTBEntry* existing_entry,
@@ -583,6 +670,38 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
     if (entry_to_write.isIndirect && stream.exeTaken && stream.getControlPC() == entry_to_write.pc) {
         entry_to_write.target = stream.exeBranchInfo.target;
     }
+    return entry_to_write;
+}
+
+BTBEntry
+MBTB::buildUpdatedEntry(const BTBEntry &req_entry,
+                        const BTBEntry *existing_entry,
+                        const ResolvedBranch &resolved)
+{
+    auto entry_to_write = (req_entry.isCond && existing_entry)
+                              ? BTBEntry(*existing_entry)
+                              : req_entry;
+    entry_to_write.tag = getTag(entry_to_write.pc);
+    entry_to_write.resolved = false;
+
+    if (entry_to_write.isCond) {
+        bool this_cond_taken = resolved.taken &&
+            resolved.branch.pc == entry_to_write.pc;
+        if (!this_cond_taken) {
+            entry_to_write.alwaysTaken = false;
+            DPRINTF(BTB, "BTB: unset alwaysTaken, pc %#lx, alwaysTaken %d\n",
+                    entry_to_write.pc, entry_to_write.alwaysTaken);
+        }
+        if (!entry_to_write.alwaysTaken) {
+            updateCtr(entry_to_write.ctr, this_cond_taken);
+        }
+    }
+
+    if (entry_to_write.isIndirect && resolved.taken &&
+        resolved.branch.pc == entry_to_write.pc) {
+        entry_to_write.target = resolved.branch.target;
+    }
+
     return entry_to_write;
 }
 
@@ -694,6 +813,29 @@ MBTB::update(const FetchTarget &stream)
     }
 }
 
+bool
+MBTB::canResolveTrain(const ResolvedTrainPacket &packet)
+{
+    return getComponentIdx() < packet.numPredMetas;
+}
+
+void
+MBTB::resolveTrain(const ResolvedTrainPacket &packet)
+{
+    auto meta = std::static_pointer_cast<BTBMeta>(
+        packet.predMetas[getComponentIdx()]);
+    if (!meta) {
+        return;
+    }
+
+    checkPredictionHit(packet, meta.get());
+
+    auto entries_need_update = prepareResolveTrainEntries(packet, meta.get());
+    for (const auto &update : entries_need_update) {
+        updateBTBEntry(update.entry, update.resolved);
+    }
+}
+
 std::vector<BTBEntry>
 MBTB::prepareUpdateEntries(const FetchTarget &stream) {
     auto all_entries = stream.updateBTBEntries;
@@ -716,6 +858,49 @@ MBTB::prepareUpdateEntries(const FetchTarget &stream) {
     }
 
     return all_entries;
+}
+
+std::vector<MBTB::ResolveTrainUpdate>
+MBTB::prepareResolveTrainEntries(const ResolvedTrainPacket &packet,
+                                 const BTBMeta *meta)
+{
+    std::vector<ResolveTrainUpdate> updates;
+    std::unordered_set<Addr> predicted_hits;
+    for (const auto &entry : meta->hit_entries) {
+        predicted_hits.insert(entry.pc);
+    }
+
+    for (const auto &resolved : packet.realBranches) {
+        auto hit_it = std::find_if(meta->hit_entries.begin(), meta->hit_entries.end(),
+            [&resolved](const BTBEntry &entry) {
+                return entry.pc == resolved.branch.pc;
+            });
+        if (hit_it != meta->hit_entries.end()) {
+            updates.push_back({*hit_it, resolved});
+            continue;
+        }
+
+        if (!resolved.taken) {
+            continue;
+        }
+
+        DPRINTF(BTB, "Creating resolve-train BTB entry for pc %#lx\n",
+                resolved.branch.pc);
+        BTBEntry new_entry(resolved.branch);
+        new_entry.valid = true;
+        if (new_entry.isCond) {
+            new_entry.alwaysTaken = true;
+            new_entry.ctr = 0;
+            btbStats.newEntryWithCond++;
+        } else {
+            btbStats.newEntryWithUncond++;
+        }
+        btbStats.newEntry++;
+        new_entry.tag = getTag(new_entry.pc);
+        updates.push_back({new_entry, resolved});
+    }
+
+    return updates;
 }
 
 /**

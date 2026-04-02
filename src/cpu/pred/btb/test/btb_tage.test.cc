@@ -223,6 +223,45 @@ void setupTageEntry(BTBTAGE* tage, Addr pc, int table_idx,
     entry.pc = pc;
 }
 
+void setupTageEntryForFetchBlock(BTBTAGE *tage, Addr startPC, Addr branchPC,
+                                 int table_idx, short counter,
+                                 bool useful = false, int way = 0)
+{
+    Addr index = tage->getTageIndex(startPC, table_idx);
+    unsigned position = tage->getBranchIndexInBlock(branchPC, startPC);
+    Addr tag = tage->getTageTag(startPC, table_idx,
+        tage->tagFoldedHist[table_idx].get(),
+        tage->altTagFoldedHist[table_idx].get(), position);
+
+    auto &entry = tage->tageTable[table_idx][index][way];
+    entry.valid = true;
+    entry.tag = tag;
+    entry.counter = counter;
+    entry.useful = useful;
+    entry.pc = branchPC;
+}
+
+ResolvedBranch createResolvedBranch(const BTBEntry &entry, bool taken,
+                                    bool mispredict, uint8_t ftqOffset)
+{
+    BranchInfo branch(entry);
+    branch.resolved = true;
+    branch.size = 4;
+    return ResolvedBranch(branch, taken, mispredict, ftqOffset);
+}
+
+ResolvedTrainPacket createResolvedTrainPacket(Addr startPC,
+                                              std::shared_ptr<void> meta,
+                                              std::vector<ResolvedBranch> realBranches)
+{
+    ResolvedTrainPacket packet;
+    packet.startPC = startPC;
+    packet.numPredMetas = 1;
+    packet.predMetas[0] = meta;
+    packet.realBranches = std::move(realBranches);
+    return packet;
+}
+
 /**
  * @brief Verify TAGE table entries
  *
@@ -973,6 +1012,54 @@ TEST_F(BTBTAGETest, BankConflict) {
         // No conflict even with same bank
         EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
     }
+}
+
+TEST_F(BTBTAGETest, ResolveTrainBankConflict) {
+    BTBTAGE bankTage(4, 2, 1024, 4);
+    memset(&bankTage.tageStats, 0, sizeof(BTBTAGE::TageStats));
+    boost::dynamic_bitset<> testHistory(128);
+    std::vector<FullBTBPrediction> testStagePreds(5);
+
+    bankTage.enableBankConflict = true;
+    testStagePreds[1].btbEntries = {createBTBEntry(0x20)};
+    bankTage.putPCHistory(0x20, testHistory, testStagePreds);
+    EXPECT_TRUE(bankTage.predBankValid);
+
+    auto meta = bankTage.getPredictionMeta();
+    auto packet = createResolvedTrainPacket(
+        0xa0, meta, {createResolvedBranch(createBTBEntry(0xa0), true, false, 0)});
+
+    uint64_t conflicts_before = bankTage.tageStats.updateBankConflict;
+    bool can_train = bankTage.canResolveTrain(packet);
+
+    EXPECT_FALSE(can_train);
+    EXPECT_EQ(bankTage.tageStats.updateBankConflict, conflicts_before + 1);
+    EXPECT_FALSE(bankTage.predBankValid);
+}
+
+TEST_F(BTBTAGETest, ResolveTrainUsesPacketTruthForConditionalSelection) {
+    const Addr startPC = 0x1000;
+    BTBEntry first = createBTBEntry(0x1000);
+    BTBEntry second = createBTBEntry(0x1004);
+
+    setupTageEntryForFetchBlock(tage, startPC, first.pc, 3, 0);
+    setupTageEntryForFetchBlock(tage, startPC, second.pc, 3, 0, false, 1);
+
+    predictTAGE(tage, startPC, {first, second}, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    Addr first_index = tage->getTageIndex(startPC, 3);
+    EXPECT_EQ(tage->tageTable[3][first_index][0].counter, 0);
+    EXPECT_EQ(tage->tageTable[3][first_index][1].counter, 0);
+
+    auto packet = createResolvedTrainPacket(
+        startPC, meta, {createResolvedBranch(first, false, true, 0)});
+
+    ASSERT_TRUE(tage->canResolveTrain(packet));
+    tage->resolveTrain(packet);
+
+    EXPECT_EQ(tage->tageTable[3][first_index][0].counter, -1);
+    EXPECT_EQ(tage->tageTable[3][first_index][1].counter, 0);
 }
 
 class BTBTAGEUpperBoundTest : public ::testing::Test

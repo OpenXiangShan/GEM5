@@ -171,6 +171,10 @@ class MBTB : public TimedBaseBTBPredictor
      */
     void update(const FetchTarget &stream) override;
 
+    bool canResolveTrain(const ResolvedTrainPacket &packet) override;
+
+    void resolveTrain(const ResolvedTrainPacket &packet) override;
+
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
 
     void printBTBEntry(const BTBEntry &e, uint64_t tick = 0) {
@@ -277,16 +281,36 @@ class MBTB : public TimedBaseBTBPredictor
     void checkPredictionHit(const FetchTarget &stream,
                            const BTBMeta* meta);
 
+    void checkPredictionHit(const ResolvedTrainPacket &packet,
+                           const BTBMeta *meta);
+
+    struct ResolveTrainUpdate
+    {
+        BTBEntry entry;
+        ResolvedBranch resolved;
+    };
+
+    std::vector<ResolveTrainUpdate>
+    prepareResolveTrainEntries(const ResolvedTrainPacket &packet,
+                               const BTBMeta *meta);
+
     /** Update or replace BTB entry
      *  @param entry Entry to update/replace (PC used to select SRAM and calculate index/tag)
      *  @param stream Fetch stream with update info
      */
     void updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream);
 
+    void updateBTBEntry(const BTBEntry &entry,
+                        const ResolvedBranch &resolved);
+
     // Helper: build updated entry (ctr/alwaysTaken/indirect target/tag)
     BTBEntry buildUpdatedEntry(const BTBEntry& req_entry,
                                const BTBEntry* existing_entry,
                                const FetchTarget &stream);
+
+    BTBEntry buildUpdatedEntry(const BTBEntry &req_entry,
+                               const BTBEntry *existing_entry,
+                               const ResolvedBranch &resolved);
 
     // Helper: update an existing entry in SRAM set
     void updateExistingInSRAMSet(Addr btb_idx,

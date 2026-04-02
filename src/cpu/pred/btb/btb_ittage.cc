@@ -288,7 +288,7 @@ BTBITTAGE::update(const FetchTarget &stream)
             }
             ittageStats.updateTableHits.sample(main_info.table, 1);
 
-            if (used_alt && mispred) {
+            if (used_alt && alt_info.found && mispred) {
                 auto &alt_way = tageTable[pred.altInfo.table][pred.altInfo.index];
                 updateCounter(false, 2, alt_way.counter);
                 if (alt_way.counter == 0) {
@@ -388,6 +388,174 @@ BTBITTAGE::update(const FetchTarget &stream)
 
     DPRINTF(ITTAGE, "end update\n");
     debugFlag = false;
+}
+
+bool
+BTBITTAGE::canResolveTrain(const ResolvedTrainPacket &packet)
+{
+    return true;
+}
+
+void
+BTBITTAGE::resolveTrain(const ResolvedTrainPacket &packet)
+{
+    auto predMeta = std::static_pointer_cast<TageMeta>(
+        packet.predMetas[getComponentIdx()]);
+    if (!predMeta) {
+        DPRINTF(ITTAGE, "resolveTrain: no prediction meta, skip\n");
+        return;
+    }
+
+    auto preds = predMeta->preds;
+    auto updateTagFoldedHist = predMeta->tagFoldedHist;
+    auto updateAltTagFoldedHist = predMeta->altTagFoldedHist;
+    auto updateIndexFoldedHist = predMeta->indexFoldedHist;
+
+    for (const auto &resolved : packet.realBranches) {
+        const auto &branch = resolved.branch;
+        if (!(branch.isIndirect && !branch.isReturn)) {
+            continue;
+        }
+
+        BTBEntry btb_entry(branch);
+        auto pred_it = preds.find(branch.pc);
+        TagePrediction pred;
+        if (pred_it != preds.end()) {
+            pred = pred_it->second;
+        }
+
+        bool mispred = resolved.mispredict;
+        Addr exe_target = branch.target;
+        auto &main_info = pred.mainInfo;
+
+        if (mispred) {
+            ittageStats.updateMispred++;
+        }
+        bool &main_found = main_info.found;
+        auto &main_counter = main_info.entry.counter;
+        bool main_taken = main_info.taken();
+        Addr main_target = main_info.entry.target;
+
+        bool &used_alt = pred.useAlt;
+        auto &alt_info = pred.altInfo;
+        if (main_found) {
+            DPRINTF(ITTAGE,
+                    "resolveTrain: provider table %d, idx %d, updating corresponding entry\n",
+                    main_info.table, main_info.index);
+            auto &way = tageTable[main_info.table][main_info.index];
+            updateCounter(exe_target == main_target, 2, way.counter);
+            if (way.counter == 0) {
+                way.target = exe_target;
+            }
+            bool alt_taken =
+                (alt_info.found && alt_info.taken()) || !pred.altInfo.found;
+            bool alt_diff = alt_taken != main_taken;
+            if (alt_diff) {
+                way.useful = exe_target == main_target;
+            }
+
+            if (main_target == exe_target) {
+                ittageStats.predTargetHit++;
+            }
+            ittageStats.updateTableHits.sample(main_info.table, 1);
+
+            if (used_alt && alt_info.found && mispred) {
+                auto &alt_way = tageTable[pred.altInfo.table][pred.altInfo.index];
+                updateCounter(false, 2, alt_way.counter);
+                if (alt_way.counter == 0) {
+                    alt_way.target = exe_target;
+                }
+            } else if (used_alt && alt_info.found &&
+                       alt_info.entry.target == exe_target) {
+                ittageStats.updateUseAltCorrect++;
+            }
+            DPRINTF(ITTAGE, "resolveTrain: useful bit set to %d\n", way.useful);
+        }
+
+        bool use_alt_on_main_found_correct =
+            used_alt && main_found && main_target == exe_target;
+        bool needToAllocate = mispred && !use_alt_on_main_found_correct;
+        DPRINTF(ITTAGE,
+                "resolveTrain: mispred %d, use_alt_on_main_found_correct %d, needToAllocate %d\n",
+                mispred, use_alt_on_main_found_correct, needToAllocate);
+
+        auto useful_mask = predMeta->usefulMask;
+        int alloc_table_num = numPredictors - (main_info.found ? main_info.table + 1 : 0);
+        if (main_found) {
+            useful_mask >>= main_info.table + 1;
+            useful_mask.resize(alloc_table_num);
+        }
+        int num_tables_can_allocate = (~useful_mask).count();
+        bool canAllocate = num_tables_can_allocate > 0;
+        if (needToAllocate) {
+            if (canAllocate) {
+                usefulResetCnt -= 1;
+                if (usefulResetCnt <= 0) {
+                    usefulResetCnt = 0;
+                }
+                DPRINTF(ITTAGE,
+                        "resolveTrain: can allocate, usefulResetCnt %d\n",
+                        usefulResetCnt);
+            } else {
+                usefulResetCnt += 1;
+                if (usefulResetCnt >= 256) {
+                    usefulResetCnt = 256;
+                }
+                DPRINTF(ITTAGE,
+                        "resolveTrain: can not allocate, usefulResetCnt %d\n",
+                        usefulResetCnt);
+            }
+            if (usefulResetCnt == 256) {
+                DPRINTF(ITTAGE, "resolveTrain: reset useful bit of all entries\n");
+                for (auto &table : tageTable) {
+                    for (auto &entry : table) {
+                        entry.useful = 0;
+                    }
+                }
+                ittageStats.updateResetU++;
+                usefulResetCnt = 0;
+            }
+        }
+
+        if (needToAllocate) {
+            unsigned maskMaxNum = std::pow(2, alloc_table_num);
+            unsigned mask = allocLFSR.get() % maskMaxNum;
+            bitset allocateLFSR(alloc_table_num, mask);
+
+            auto flipped_usefulMask = useful_mask.flip();
+            bitset masked = allocateLFSR & flipped_usefulMask;
+            bitset allocate = masked.any() ? masked : flipped_usefulMask;
+
+            bool allocateValid = flipped_usefulMask.any();
+            if (allocateValid) {
+                DPRINTF(ITTAGE, "resolveTrain: allocate new entry\n");
+                unsigned startTable = main_found ? main_info.table + 1 : 0;
+
+                for (int ti = startTable; ti < numPredictors; ti++) {
+                    Addr newIndex = getTageIndex(
+                        packet.startPC, ti, updateIndexFoldedHist[ti].get());
+                    Addr newTag = getTageTag(packet.startPC, ti,
+                                             updateTagFoldedHist[ti].get(),
+                                             updateAltTagFoldedHist[ti].get());
+                    assert(newIndex < tageTable[ti].size());
+                    auto &newEntry = tageTable[ti][newIndex];
+
+                    if (allocate[ti - startTable]) {
+                        DPRINTF(ITTAGE,
+                                "resolveTrain: found allocatable entry, table %d, index %d, tag %d, counter %d\n",
+                                ti, newIndex, newTag, 2);
+                        newEntry = TageEntry(newTag, exe_target, 2, btb_entry.pc);
+                        ittageStats.updateAllocSuccess++;
+                        break;
+                    }
+                }
+            } else {
+                ittageStats.updateAllocFailure++;
+            }
+        }
+    }
+
+    DPRINTF(ITTAGE, "end resolveTrain\n");
 }
 
 void
