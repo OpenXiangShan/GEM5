@@ -1691,8 +1691,8 @@ IEW::writebackInsts()
         DynInstPtr inst = toCommit->insts[inst_num];
         ThreadID tid = inst->threadNumber;
 
-        if (inst->savedRequest && inst->isLoad()) {
-            inst->pf_source = inst->savedRequest->mainReq()->getPFSource();
+        if (inst->isLoad()) {
+            inst->pf_source = ldstQueue.getLoadPFSource(inst);
         }
 
         DPRINTF(IEW, "Sending instructions to commit, [sn:%lli] PC %s.\n",

@@ -154,6 +154,7 @@ class LSQUnit
         }
 
         LSQRequest* request() { return _request; }
+        const LSQRequest* request() const { return _request; }
         void setRequest(LSQRequest* r) { _request = r; }
         bool hasRequest() { return _request != nullptr; }
         /** Member accessors. */
@@ -390,6 +391,12 @@ class LSQUnit
     /** Check if there exists raw nuke between load and store. */
     bool pipeLineNukeCheck(const DynInstPtr &load_inst, const DynInstPtr &store_inst);
 
+    /** Returns the current request attached to an active LQ entry. */
+    LSQRequest *currentLoadRequest(const DynInstPtr &inst);
+
+    /** Returns the current request attached to an active SQ entry. */
+    LSQRequest *currentStoreRequest(const DynInstPtr &inst);
+
     /** Returns the number of free LQ entries. */
     unsigned numFreeLoadEntries();
 
@@ -582,6 +589,9 @@ class LSQUnit
       private:
         /** Instruction whose results are being written back. */
         DynInstPtr inst;
+
+        /** Request that owns the delayed writeback lifecycle. */
+        LSQRequest *request;
 
         /** The packet that would have been sent to memory. */
         PacketPtr pkt;
