@@ -1,6 +1,7 @@
 #ifndef __CPU_PRED_BTB_STREAM_STRUCT_HH__
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
+#include <algorithm>
 #include <queue>
 #include <string>
 
@@ -427,6 +428,14 @@ struct FetchTarget
                 updateBTBEntries.push_back(entry);
             }
         }
+    }
+
+    bool hasUpdateBTBEntry(Addr pc) const
+    {
+        return std::find_if(updateBTBEntries.begin(), updateBTBEntries.end(),
+            [pc](const auto &entry) {
+                return entry.valid && entry.pc == pc;
+            }) != updateBTBEntries.end();
     }
 
     // Argument resolved pc could not match any BTB entry branch pc,

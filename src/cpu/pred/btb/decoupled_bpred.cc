@@ -689,6 +689,24 @@ DecoupledBPUWithBTB::updatePredictorComponents(FetchTarget &target)
             mbtb->getAndSetNewBTBEntry(target);
         }
 
+        // MBTB resolved-update only sees resolved PCs, not full BranchInfo. When a
+        // later taken branch in the same fetch stream was not part of predBTBEntries,
+        // the resolve path cannot synthesize a new entry for it. Let commit do a
+        // one-shot fallback update for that missed late branch.
+        const bool mbtbNeedsCommitFallback =
+            mbtb->isEnabled() &&
+            mbtb->getResolvedUpdate() &&
+            target.resolved &&
+            target.squashType == SQUASH_CTRL &&
+            target.exeTaken &&
+            !target.hasUpdateBTBEntry(target.exeBranchInfo.pc);
+
+        if (mbtbNeedsCommitFallback) {
+            target.exeBranchInfo.resolved = true;
+            target.updateNewBTBEntry.resolved = true;
+            mbtb->update(target);
+        }
+
         // Update predictor components
         for (int i = 0; i < numComponents; ++i) {
             if (!components[i]->getResolvedUpdate()) {
