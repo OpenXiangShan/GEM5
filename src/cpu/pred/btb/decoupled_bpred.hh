@@ -144,6 +144,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     HistoryManager historyManager;
     unsigned resolveDequeueFailCounter{0};
     const unsigned resolveBlockThreshold;
+    const bool enableFullResolveTrain;
 
     ThreadID scheduleThread() { return 0; }
 
@@ -404,6 +405,25 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
     const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    bool ftqHasTarget(FetchTargetId targetId, ThreadID tid) const
+    {
+        return ftq.hasTarget(targetId, tid);
+    }
+    uint64_t ftqTargetGeneration(FetchTargetId targetId, ThreadID tid) const
+    {
+        return ftq.getTargetGeneration(targetId, tid);
+    }
+    const FetchTarget &ftqTarget(FetchTargetId targetId, ThreadID tid) const
+    {
+        assert(ftq.hasTarget(targetId, tid));
+        return ftq.get(targetId, tid);
+    }
+    bool ftqMatchTargetIdentity(
+        FetchTargetId targetId, uint64_t generation, ThreadID tid) const
+    {
+        return ftq.matchTargetIdentity(targetId, generation, tid);
+    }
+    bool resolveTrain(const ResolvedTrainPacket &packet, ThreadID tid);
 
     void dumpFsq(const char *when);
 

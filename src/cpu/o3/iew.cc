@@ -1443,14 +1443,9 @@ void
 IEW::SquashCheckAfterExe(DynInstPtr inst)
 {
     ThreadID tid = inst->threadNumber;
+    const auto &params = static_cast<const BaseO3CPUParams &>(cpu->params());
 
-    if (inst->isControl()) {
-        auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
-        TimeStruct::IewComm::ResolvedCFIEntry entry;
-        entry.ftqId = inst->getFtqId();
-        entry.pc = inst->getPC();
-        resolved_cfis.push_back(entry);
-    }
+    const bool is_control = inst->isControl();
 
     if (!fetchRedirect[tid] ||
         !toCommit->squash[tid] ||
@@ -1466,7 +1461,39 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             inst->pcState(*new_pc);
         }
 
-        if (inst->mispredicted() && !loadNotExecuted) {
+        const bool control_mispredict =
+            is_control && !loadNotExecuted && inst->mispredicted();
+
+        if (is_control) {
+            if (params.enableLegacyResolveUpdate) {
+                auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
+                TimeStruct::IewComm::ResolvedCFIEntry entry;
+                entry.ftqId = inst->getFtqId();
+                entry.pc = inst->getPC();
+                resolved_cfis.push_back(entry);
+            }
+
+            if (params.enableFullResolveTrain) {
+                auto &resolve_entries = toFetch->iewInfo[tid].resolveTrainEntries;
+                TimeStruct::IewComm::ResolveTrainEntry entry;
+                entry.ftqId = inst->getFtqId();
+                entry.ftqGeneration = inst->getFtqGeneration();
+                entry.pc = inst->getPC();
+                entry.target = inst->getControlTarget();
+                entry.taken = inst->branching();
+                entry.mispredict = control_mispredict;
+                entry.ftqOffset = inst->getFtqOffset();
+                entry.isCond = inst->isCondCtrl();
+                entry.isDirect = inst->isDirectCtrl();
+                entry.isIndirect = inst->isIndirectCtrl();
+                entry.isCall = inst->isCall();
+                entry.isReturn = inst->isReturn();
+                entry.isRVC = inst->isRVC();
+                resolve_entries.push_back(entry);
+            }
+        }
+
+        if (control_mispredict) {
             fetchRedirect[tid] = true;
 
             DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "
@@ -1555,6 +1582,7 @@ IEW::executeInsts()
     // Clear resolvedFSQId and resolvedInstPC since they are already handled in frontend
     ThreadID tid = *activeThreads->begin();
     toFetch->iewInfo[tid].resolvedCFIs.clear();
+    toFetch->iewInfo[tid].resolveTrainEntries.clear();
 
     // Execute/writeback any instructions that are available.
     int insts_to_execute = fromIssue->size;

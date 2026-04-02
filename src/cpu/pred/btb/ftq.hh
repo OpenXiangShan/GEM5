@@ -28,6 +28,7 @@ class FetchTargetQueue
         std::deque<FetchTarget> cap;
         FetchTargetId baseTargetId = 1;
         FetchTargetId fetchptr = 1;
+        uint64_t nextGeneration = 1;
     } queue[MaxThreads];
 
     uint32_t roundRobinPtr = 0;
@@ -48,6 +49,11 @@ public:
     inline FetchTarget& front(ThreadID tid) { return queue[tid].cap.front(); }
     inline FetchTarget& back(ThreadID tid) { return queue[tid].cap.back(); }
     inline FetchTarget& fetching(ThreadID tid) { return get(queue[tid].fetchptr, tid); }
+    inline const FetchTarget& get(FetchTargetId targetId, ThreadID tid) const {
+        assert(targetId >= queue[tid].baseTargetId &&
+               targetId < queue[tid].baseTargetId + queue[tid].cap.size());
+        return queue[tid].cap[targetId - queue[tid].baseTargetId];
+    }
     inline FetchTarget& get(FetchTargetId targetId, ThreadID tid) {
         assert(targetId >= queue[tid].baseTargetId &&
                targetId < queue[tid].baseTargetId + queue[tid].cap.size());
@@ -56,6 +62,17 @@ public:
     inline bool hasTarget(FetchTargetId targetId, ThreadID tid) const {
         return targetId >= queue[tid].baseTargetId &&
                targetId < queue[tid].baseTargetId + queue[tid].cap.size();
+    }
+    // Plumbing-only in Task 2: end-to-end stale resolve rejection is added
+    // when resolve entries carry generation in later tasks.
+    inline uint64_t getTargetGeneration(FetchTargetId targetId, ThreadID tid) const {
+        return get(targetId, tid).generation;
+    }
+    inline bool matchTargetIdentity(
+        FetchTargetId targetId, uint64_t generation, ThreadID tid) const
+    {
+        return hasTarget(targetId, tid) &&
+               getTargetGeneration(targetId, tid) == generation;
     }
     inline bool empty(ThreadID tid) const { return queue[tid].cap.empty(); }
     inline bool full(ThreadID tid) const { return queue[tid].cap.size() >= ftqSize[tid]; }

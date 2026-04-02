@@ -418,6 +418,10 @@ class DynInst : public ExecContext, public RefCounted
     /** ftqId is used for squashing and committing */
     /** The fetch stream queue ID of the instruction. */
     unsigned ftqId;
+    /** FTQ target generation captured at fetch time. */
+    uint64_t ftqGeneration;
+    /** Halfword offset of the instruction within its FTQ target block. */
+    uint8_t ftqOffset;
     /** The number of loop iteration within an fsq entry of the instruction. */
     unsigned loopIteration;
 
@@ -1589,10 +1593,22 @@ class DynInst : public ExecContext, public RefCounted
         ftqId = id;
     }
 
+    void
+    setFtqGeneration(uint64_t generation)
+    {
+        ftqGeneration = generation;
+    }
+
     unsigned
     getFtqId()
     {
         return ftqId;
+    }
+
+    uint64_t
+    getFtqGeneration() const
+    {
+        return ftqGeneration;
     }
 
     void
@@ -1611,6 +1627,26 @@ class DynInst : public ExecContext, public RefCounted
     {
         RiscvISA::PCState rpc = pc->as<RiscvISA::PCState>();
         return rpc.compressed() ? 2 : 4;
+    }
+
+    bool isRVC() const
+    {
+        return pc->as<RiscvISA::PCState>().compressed();
+    }
+
+    Addr getControlTarget()
+    {
+        return branching() ? getNPC() : pcState().getFallThruPC();
+    }
+
+    void setFtqOffset(uint8_t offset)
+    {
+        ftqOffset = offset;
+    }
+
+    uint8_t getFtqOffset() const
+    {
+        return ftqOffset;
     }
 
   protected:

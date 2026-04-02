@@ -470,6 +470,39 @@ class Fetch
      */
     void handleIEWSignals();
 
+    struct ResolveTrainInstData
+    {
+        Addr pc;
+        Addr target;
+        bool taken;
+        bool mispredict;
+        uint8_t ftqOffset;
+        bool isCond;
+        bool isDirect;
+        bool isIndirect;
+        bool isCall;
+        bool isReturn;
+        bool isRVC;
+    };
+
+    struct ResolveTrainQueueEntry
+    {
+        ThreadID tid;
+        branch_prediction::btb_pred::FetchTargetId ftqId;
+        uint64_t generation;
+        std::vector<ResolveTrainInstData> insts;
+    };
+
+    ResolveTrainInstData makeResolveTrainInstData(
+        Addr pc, Addr target, bool taken, bool mispredict, uint8_t ftqOffset,
+        bool isCond, bool isDirect, bool isIndirect, bool isCall,
+        bool isReturn, bool isRVC) const;
+    branch_prediction::btb_pred::ResolvedTrainPacket buildResolvedTrainPacket(
+        const ResolveTrainQueueEntry &entry) const;
+    void appendResolveTrainInst(
+        ResolveTrainQueueEntry &entry, const ResolveTrainInstData &inst_data);
+    void filterResolveTrainQueue();
+
     /** Handles decode squash signals.
      *  @return: Returns true if squash occurred and immediate return needed.
      */
@@ -603,8 +636,20 @@ class Fetch
     /** Maximum number of resolve entries buffered in fetch before training. */
     const unsigned resolveQueueSize;
 
+    /** Enable packet-based resolve training rollout plumbing. */
+    const bool enableFullResolveTrain;
+
+    /** Keep legacy PC-only resolve updates enabled. */
+    const bool enableLegacyResolveUpdate;
+
     /** FIFO storing resolve entries waiting for BPU training. */
     std::deque<ResolveQueueEntry> resolveQueue;
+
+    /** FIFO storing aggregated full resolve-train entries. */
+    std::deque<ResolveTrainQueueEntry> resolveTrainQueue;
+
+    /** Ensures IEW signals are consumed only once per cycle. */
+    Tick lastIewSignalHandleTick = Tick(-1);
 
     /** Trace-mode implementation owner (optional, enabled by params). */
     std::unique_ptr<TraceFetch> traceFetch;
@@ -1095,6 +1140,18 @@ class Fetch
         statistics::Distribution resolveEnqueueCount;
         /** Stat for entry occupancy distribution of the resolve queue. */
         statistics::Distribution resolveQueueOccupancy;
+        /** Full resolve entries observed at fetch. */
+        statistics::Scalar fullResolveEntriesReceived;
+        /** Full resolve entries merged with an existing target. */
+        statistics::Scalar fullResolveEntriesMerged;
+        /** Full resolve entries dropped because the queue is full. */
+        statistics::Scalar fullResolveEntriesDroppedQueueFull;
+        /** Full resolve entries dropped because the target went stale. */
+        statistics::Scalar fullResolveEntriesDroppedStaleTarget;
+        /** Full resolve entries dropped because generation did not match. */
+        statistics::Scalar fullResolveEntriesDroppedGenerationMismatch;
+        /** Full resolve packets sent to the predictor. */
+        statistics::Scalar fullResolvePacketsSent;
 
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */

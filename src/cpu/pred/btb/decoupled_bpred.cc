@@ -21,6 +21,66 @@ namespace branch_prediction
 namespace btb_pred
 {
 
+namespace
+{
+
+bool
+validateResolvedTrainPacket(const ResolvedTrainPacket &packet,
+                            const FetchTarget &target,
+                            unsigned numComponents)
+{
+    if (packet.numPredMetas > packet.predMetas.size()) {
+        return false;
+    }
+
+    if (numComponents > packet.predMetas.size() ||
+        packet.numPredMetas != numComponents) {
+        return false;
+    }
+
+    for (unsigned i = 0; i < numComponents; ++i) {
+        if (packet.predMetas[i] != target.predMetas[i]) {
+            return false;
+        }
+    }
+
+    uint8_t lastOffset = 0;
+    Addr lastPc = 0;
+    bool firstBranch = true;
+    bool seenTaken = false;
+    for (const auto &resolved : packet.realBranches) {
+        if (resolved.branch.pc < packet.startPC) {
+            return false;
+        }
+
+        if (resolved.branch.size == 0) {
+            return false;
+        }
+
+        if (seenTaken) {
+            return false;
+        }
+
+        if (!firstBranch) {
+            if (resolved.ftqOffset < lastOffset) {
+                return false;
+            }
+            if (resolved.ftqOffset == lastOffset && resolved.branch.pc <= lastPc) {
+                return false;
+            }
+        }
+
+        lastOffset = resolved.ftqOffset;
+        lastPc = resolved.branch.pc;
+        seenTaken = resolved.taken;
+        firstBranch = false;
+    }
+
+    return true;
+}
+
+} // anonymous namespace
+
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 {
@@ -48,6 +108,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ftq(2, p.ftq_size),
       historyManager(16), // TODO: fix this
       resolveBlockThreshold(p.resolveBlockThreshold),
+      enableFullResolveTrain(p.enableFullResolveTrain),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
 {
     if (bpDBSwitches.size() > 0) {
@@ -598,6 +659,11 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &target_id, ThreadID tid)
     // Phase 1: probe all resolved-update components to ensure no blocker
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {
+            if (enableFullResolveTrain &&
+                (components[i] == mbtb || components[i] == tage ||
+                 components[i] == ittage)) {
+                continue;
+            }
             if (!components[i]->canResolveUpdate(target)) {
                 return false;
             }
@@ -607,6 +673,11 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &target_id, ThreadID tid)
     // Phase 2: all clear, perform updates once
     for (int i = 0; i < numComponents; ++i) {
         if (components[i]->getResolvedUpdate()) {
+            if (enableFullResolveTrain &&
+                (components[i] == mbtb || components[i] == tage ||
+                 components[i] == ittage)) {
+                continue;
+            }
             components[i]->doResolveUpdate(target);
         }
     }
@@ -618,6 +689,58 @@ void
 DecoupledBPUWithBTB::notifyResolveSuccess()
 {
     resolveDequeueFailCounter = 0;
+}
+
+bool
+DecoupledBPUWithBTB::resolveTrain(
+    const ResolvedTrainPacket &packet, ThreadID tid)
+{
+    if (packet.tid != tid) {
+        DPRINTF(DecoupleBP,
+                "Resolve-train packet tid mismatch: packet=%u arg=%u\n",
+                packet.tid, tid);
+        return false;
+    }
+
+    if (!ftq.matchTargetIdentity(packet.target.id, packet.target.generation,
+                                 tid)) {
+        DPRINTF(DecoupleBP,
+                "Resolve-train packet target mismatch: id=%lu generation=%lu tid=%u\n",
+                packet.target.id, packet.target.generation, tid);
+        return false;
+    }
+
+    const auto &target = ftq.get(packet.target.id, tid);
+    if (packet.startPC != target.startPC) {
+        DPRINTF(DecoupleBP,
+                "Resolve-train packet startPC mismatch: packet=%#lx ftq=%#lx id=%lu tid=%u\n",
+                packet.startPC, target.startPC, packet.target.id, tid);
+        return false;
+    }
+
+    if (!validateResolvedTrainPacket(packet, target, numComponents)) {
+        DPRINTF(DecoupleBP,
+                "Resolve-train packet validation failed: id=%lu generation=%lu tid=%u\n",
+                packet.target.id, packet.target.generation, tid);
+        return false;
+    }
+
+    DPRINTF(DecoupleBP,
+            "Resolve-train packet accepted: id=%lu generation=%lu tid=%u startPC=%#lx branches=%zu\n",
+            packet.target.id, packet.target.generation, tid, packet.startPC,
+            packet.realBranches.size());
+
+    for (int i = 0; i < numComponents; ++i) {
+        if (!components[i]->canResolveTrain(packet)) {
+            return false;
+        }
+    }
+
+    for (int i = 0; i < numComponents; ++i) {
+        components[i]->resolveTrain(packet);
+    }
+
+    return true;
 }
 
 void
@@ -652,7 +775,7 @@ DecoupledBPUWithBTB::prepareResolveUpdateEntries(unsigned &target_id, ThreadID t
         target.setUpdateBTBEntries();
 
         // only mbtb can generate new entry
-        if (mbtb->isEnabled()) {
+        if (mbtb->isEnabled() && !enableFullResolveTrain) {
             mbtb->getAndSetNewBTBEntry(target);
         }
     }
@@ -668,7 +791,8 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &target_id, uint64_t resolvedInstP
     }
     auto &target = ftq.get(target_id, tid);
 
-    if (target.updateNewBTBEntry.pc == resolvedInstPC) {
+    if (!enableFullResolveTrain &&
+        target.updateNewBTBEntry.pc == resolvedInstPC) {
         target.updateNewBTBEntry.resolved = true;
     }
 
@@ -685,7 +809,7 @@ DecoupledBPUWithBTB::updatePredictorComponents(FetchTarget &target)
         target.setUpdateBTBEntries();
 
         // only mbtb can generate new entry
-        if (mbtb->isEnabled()) {
+        if (mbtb->isEnabled() && !enableFullResolveTrain) {
             mbtb->getAndSetNewBTBEntry(target);
         }
 

@@ -1,8 +1,11 @@
 #ifndef __CPU_PRED_BTB_STREAM_STRUCT_HH__
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
+#include <array>
+#include <memory>
 #include <queue>
 #include <string>
+#include <vector>
 
 #include <boost/dynamic_bitset.hpp>
 
@@ -95,7 +98,9 @@ struct BranchInfo
     bool isUncond() const { return !this->isCond; }
     Addr getEnd() { return this->pc + this->size; }
     BranchInfo()
-        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0)
+        : pc(0), target(0), resolved(false), isCond(false),
+          isIndirect(false), isDirect(false), isCall(false),
+          isReturn(false), size(0)
     {
     }
     // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
@@ -248,6 +253,56 @@ struct LFSR64
 };
 
 using FetchTargetId = uint64_t;
+constexpr size_t MaxPredictorComponents = 8;
+
+struct FetchTargetIdentity
+{
+    FetchTargetId id;
+    uint64_t generation;
+
+    FetchTargetIdentity() : id(0), generation(0) {}
+    FetchTargetIdentity(FetchTargetId id, uint64_t generation)
+        : id(id), generation(generation)
+    {
+    }
+};
+
+struct ResolvedBranch
+{
+    BranchInfo branch;
+    bool taken;
+    bool mispredict;
+    uint8_t ftqOffset;
+
+    ResolvedBranch()
+        : branch(), taken(false), mispredict(false), ftqOffset(0)
+    {
+    }
+
+    ResolvedBranch(const BranchInfo &branch, bool taken, bool mispredict,
+                   uint8_t ftqOffset)
+        : branch(branch), taken(taken), mispredict(mispredict),
+          ftqOffset(ftqOffset)
+    {
+    }
+};
+
+struct ResolvedTrainPacket
+{
+    ThreadID tid;
+    FetchTargetIdentity target;
+    Addr startPC;
+    size_t numPredMetas;
+    std::array<std::shared_ptr<void>, MaxPredictorComponents> predMetas;
+    std::vector<ResolvedBranch> realBranches;
+
+    ResolvedTrainPacket()
+        : tid(0), target(), startPC(0), numPredMetas(0), predMetas(),
+          realBranches()
+    {
+        predMetas.fill(nullptr);
+    }
+};
 
 // {branch pc -> istaken} maps
 using CondTakens = std::vector<std::pair<Addr, bool>>;
@@ -276,6 +331,7 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 struct FetchTarget
 {
     ThreadID tid;
+    uint64_t generation;
     Addr startPC;       // start pc of the stream
     bool predTaken;     // whether the FetchTarget has taken branch
     Addr predEndPC;     // predicted stream end pc (fall through pc)
@@ -306,7 +362,7 @@ struct FetchTarget
 
     // prediction metas
     // FIXME: use vec
-    std::array<std::shared_ptr<void>, 8> predMetas; // each component has a meta, TODO
+    std::array<std::shared_ptr<void>, MaxPredictorComponents> predMetas;
 
     Tick predTick;         // tick of the prediction
     boost::dynamic_bitset<> history; // record GHR/s0History
@@ -323,7 +379,8 @@ struct FetchTarget
     int s3Source; // which stage the prediction comes from
 
    FetchTarget()
-       : startPC(0),
+       : generation(0),
+         startPC(0),
          predTaken(false),
          predEndPC(0),
          predBranchInfo(BranchInfo()),

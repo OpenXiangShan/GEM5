@@ -246,6 +246,25 @@ struct TimeStruct
         };
         /** Resolved control-flow PCs produced this cycle (fetch buffers/merges). */
         std::vector<ResolvedCFIEntry> resolvedCFIs;  // *F
+
+        struct ResolveTrainEntry
+        {
+            uint64_t ftqId;
+            uint64_t ftqGeneration;
+            uint64_t pc;
+            uint64_t target;
+            bool taken;
+            bool mispredict;
+            uint8_t ftqOffset;
+            bool isCond;
+            bool isDirect;
+            bool isIndirect;
+            bool isCall;
+            bool isReturn;
+            bool isRVC;
+        };
+        /** Full resolve-train entries produced this cycle (rollout plumbing). */
+        std::vector<ResolveTrainEntry> resolveTrainEntries;  // *F
     };
 
     IewComm iewInfo[MaxThreads]; // iew to rename, fetch

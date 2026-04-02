@@ -81,6 +81,27 @@ namespace gem5
 namespace o3
 {
 
+namespace
+{
+
+constexpr uint8_t RvcInstBytes = 2;
+constexpr uint8_t BaseInstBytes = 4;
+
+size_t
+resolveTrainMetaCount(
+    const branch_prediction::btb_pred::FetchTarget &target)
+{
+    size_t num_pred_metas = 0;
+    for (size_t i = 0; i < target.predMetas.size(); ++i) {
+        if (target.predMetas[i] != nullptr) {
+            num_pred_metas = i + 1;
+        }
+    }
+    return num_pred_metas;
+}
+
+} // anonymous namespace
+
 Fetch::IcachePort::IcachePort(Fetch *_fetch, CPU *_cpu) :
         RequestPort(_cpu->name() + ".icache_port", _cpu), fetch(_fetch)
 {}
@@ -91,6 +112,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       cpu(_cpu),
       branchPred(nullptr),
       resolveQueueSize(params.resolveQueueSize),
+      enableFullResolveTrain(params.enableFullResolveTrain),
+      enableLegacyResolveUpdate(params.enableLegacyResolveUpdate),
       decodeToFetchDelay(params.decodeToFetchDelay),
       renameToFetchDelay(params.renameToFetchDelay),
       iewToFetchDelay(params.iewToFetchDelay),
@@ -270,6 +293,21 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of times an entry is enqueued to the resolve queue"),
     ADD_STAT(resolveQueueOccupancy, statistics::units::Count::get(),
              "Number of entries in the resolve queue"),
+    ADD_STAT(fullResolveEntriesReceived, statistics::units::Count::get(),
+             "Number of full resolve entries received by fetch"),
+    ADD_STAT(fullResolveEntriesMerged, statistics::units::Count::get(),
+             "Number of full resolve entries merged by fetch"),
+    ADD_STAT(fullResolveEntriesDroppedQueueFull,
+             statistics::units::Count::get(),
+             "Number of full resolve entries dropped because the queue is full"),
+    ADD_STAT(fullResolveEntriesDroppedStaleTarget,
+             statistics::units::Count::get(),
+             "Number of full resolve entries dropped because the target is stale"),
+    ADD_STAT(fullResolveEntriesDroppedGenerationMismatch,
+             statistics::units::Count::get(),
+             "Number of full resolve entries dropped because the generation mismatched"),
+    ADD_STAT(fullResolvePacketsSent, statistics::units::Count::get(),
+             "Number of full resolve packets sent to the predictor"),
     ADD_STAT(traceMetaStores, statistics::units::Count::get(),
              "Number of stored trace metadata records (seqNum -> traceInst)"),
     ADD_STAT(traceMetaCleanupSquashCalls, statistics::units::Count::get(),
@@ -351,6 +389,18 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .init(1, 8, 1);
         resolveQueueOccupancy
             .init(0, 32, 1);
+        fullResolveEntriesReceived
+            .prereq(fullResolveEntriesReceived);
+        fullResolveEntriesMerged
+            .prereq(fullResolveEntriesMerged);
+        fullResolveEntriesDroppedQueueFull
+            .prereq(fullResolveEntriesDroppedQueueFull);
+        fullResolveEntriesDroppedStaleTarget
+            .prereq(fullResolveEntriesDroppedStaleTarget);
+        fullResolveEntriesDroppedGenerationMismatch
+            .prereq(fullResolveEntriesDroppedGenerationMismatch);
+        fullResolvePacketsSent
+            .prereq(fullResolvePacketsSent);
         traceMetaStores
             .prereq(traceMetaStores);
         traceMetaCleanupSquashCalls
@@ -539,6 +589,7 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
             DPRINTF(Fetch, "req[%d]=0x%lx ", i, threads[tid].cacheReq.requests[i]->getVaddr());
         }
         DPRINTF(Fetch, "\n");
+        delete pkt;
         return false;
     }
 
@@ -1454,64 +1505,253 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 void
 Fetch::handleIEWSignals()
 {
+    if (lastIewSignalHandleTick == curTick()) {
+        return;
+    }
+    lastIewSignalHandleTick = curTick();
+
     // Currently resolve stage training is a btb-only feature
     if (!isBTBPred()) {
         return;
     }
 
     auto &incoming = fromIEW->iewInfo->resolvedCFIs;
-    const bool had_pending_resolve = !resolveQueue.empty();
-    uint8_t enqueueSize = fromIEW->iewInfo->resolvedCFIs.size();
-    uint8_t enqueueCount = 0;
 
-    if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
-        fetchStats.resolveQueueFullEvents++;
-        fetchStats.resolveEnqueueFailEvent += enqueueSize;
-    } else {
+    if (!enableLegacyResolveUpdate) {
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            fromIEW->iewInfo[tid].resolvedCFIs.clear();
+        }
+    }
 
-        for (const auto &resolved : incoming) {
-            bool merged = false;
-            for (auto &queued : resolveQueue) {
-                if (queued.resolvedFTQId == resolved.ftqId) {
-                    queued.resolvedInstPC.push_back(resolved.pc);
-                    merged = true;
-                    break;
+    if (enableLegacyResolveUpdate) {
+        const bool had_pending_resolve = !resolveQueue.empty();
+        uint8_t enqueueSize = fromIEW->iewInfo->resolvedCFIs.size();
+        uint8_t enqueueCount = 0;
+
+        if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
+            fetchStats.resolveQueueFullEvents++;
+            fetchStats.resolveEnqueueFailEvent += enqueueSize;
+        } else {
+
+            for (const auto &resolved : incoming) {
+                bool merged = false;
+                for (auto &queued : resolveQueue) {
+                    if (queued.resolvedFTQId == resolved.ftqId) {
+                        queued.resolvedInstPC.push_back(resolved.pc);
+                        merged = true;
+                        break;
+                    }
                 }
-            }
 
-            if (merged) {
+                if (merged) {
+                    continue;
+                }
+
+                ResolveQueueEntry new_entry;
+                new_entry.resolvedFTQId = resolved.ftqId;
+                new_entry.resolvedInstPC.push_back(resolved.pc);
+                resolveQueue.push_back(std::move(new_entry));
+                enqueueCount++;
+            }
+            fetchStats.resolveEnqueueCount.sample(enqueueCount);
+        }
+
+        fetchStats.resolveQueueOccupancy.sample(resolveQueue.size());
+
+        // Process only entries that were already pending before this cycle.
+        // This preserves a cycle of separation between IEW producing resolved
+        // CFIs and fetch consuming them as predictor resolved updates.
+        if (had_pending_resolve && !resolveQueue.empty()) {
+            auto &entry = resolveQueue.front();
+            unsigned int stream_id = entry.resolvedFTQId;
+            dbpbtb->prepareResolveUpdateEntries(stream_id, 0);
+            for (const auto resolvedInstPC : entry.resolvedInstPC) {
+                dbpbtb->markCFIResolved(stream_id, resolvedInstPC, 0);
+            }
+            bool success = dbpbtb->resolveUpdate(stream_id, 0);
+            if (success) {
+                dbpbtb->notifyResolveSuccess();
+                resolveQueue.pop_front();
+                fetchStats.resolveDequeueCount++;
+            } else {
+                dbpbtb->notifyResolveFailure();
+            }
+        }
+    }
+
+    if (!enableFullResolveTrain) {
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            fromIEW->iewInfo[tid].resolveTrainEntries.clear();
+        }
+        return;
+    }
+
+    filterResolveTrainQueue();
+    const bool had_pending_resolve_train = !resolveTrainQueue.empty();
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        auto &resolve_entries = fromIEW->iewInfo[tid].resolveTrainEntries;
+        for (const auto &resolved : resolve_entries) {
+            fetchStats.fullResolveEntriesReceived++;
+
+            if (!dbpbtb->ftqHasTarget(resolved.ftqId, tid)) {
+                fetchStats.fullResolveEntriesDroppedStaleTarget++;
                 continue;
             }
 
-            ResolveQueueEntry new_entry;
-            new_entry.resolvedFTQId = resolved.ftqId;
-            new_entry.resolvedInstPC.push_back(resolved.pc);
-            resolveQueue.push_back(std::move(new_entry));
-            enqueueCount++;
+            if (!dbpbtb->ftqMatchTargetIdentity(
+                    resolved.ftqId, resolved.ftqGeneration, tid)) {
+                fetchStats.fullResolveEntriesDroppedGenerationMismatch++;
+                continue;
+            }
+
+            auto queued = std::find_if(
+                resolveTrainQueue.begin(), resolveTrainQueue.end(),
+                [tid, &resolved](const ResolveTrainQueueEntry &entry) {
+                    return entry.tid == tid && entry.ftqId == resolved.ftqId &&
+                           entry.generation == resolved.ftqGeneration;
+                });
+            if (queued != resolveTrainQueue.end()) {
+                appendResolveTrainInst(*queued, makeResolveTrainInstData(
+                    resolved.pc, resolved.target, resolved.taken,
+                    resolved.mispredict, resolved.ftqOffset, resolved.isCond,
+                    resolved.isDirect, resolved.isIndirect, resolved.isCall,
+                    resolved.isReturn, resolved.isRVC));
+                fetchStats.fullResolveEntriesMerged++;
+                continue;
+            }
+
+            if (resolveQueueSize && resolveTrainQueue.size() >= resolveQueueSize) {
+                fetchStats.fullResolveEntriesDroppedQueueFull++;
+                continue;
+            }
+
+            ResolveTrainQueueEntry entry;
+            entry.tid = tid;
+            entry.ftqId = resolved.ftqId;
+            entry.generation = resolved.ftqGeneration;
+            appendResolveTrainInst(entry, makeResolveTrainInstData(
+                resolved.pc, resolved.target, resolved.taken,
+                resolved.mispredict, resolved.ftqOffset, resolved.isCond,
+                resolved.isDirect, resolved.isIndirect, resolved.isCall,
+                resolved.isReturn, resolved.isRVC));
+            resolveTrainQueue.push_back(std::move(entry));
         }
-        fetchStats.resolveEnqueueCount.sample(enqueueCount);
+
+        resolve_entries.clear();
     }
 
-    fetchStats.resolveQueueOccupancy.sample(resolveQueue.size());
+    filterResolveTrainQueue();
 
-    // Process only entries that were already pending before this cycle.
-    // This preserves a cycle of separation between IEW producing resolved CFIs
-    // and fetch consuming them as predictor resolved updates.
-    if (had_pending_resolve && !resolveQueue.empty()) {
-        auto &entry = resolveQueue.front();
-        unsigned int stream_id = entry.resolvedFTQId;
-        dbpbtb->prepareResolveUpdateEntries(stream_id, 0);
-        for (const auto resolvedInstPC : entry.resolvedInstPC) {
-            dbpbtb->markCFIResolved(stream_id, resolvedInstPC, 0);
-        }
-        bool success = dbpbtb->resolveUpdate(stream_id, 0);
-        if (success) {
+    if (had_pending_resolve_train && !resolveTrainQueue.empty()) {
+        const auto &entry = resolveTrainQueue.front();
+        auto packet = buildResolvedTrainPacket(entry);
+        if (dbpbtb->resolveTrain(packet, entry.tid)) {
             dbpbtb->notifyResolveSuccess();
-            resolveQueue.pop_front();
-            fetchStats.resolveDequeueCount++;
+            fetchStats.fullResolvePacketsSent++;
+            resolveTrainQueue.pop_front();
         } else {
             dbpbtb->notifyResolveFailure();
         }
+    }
+}
+
+Fetch::ResolveTrainInstData
+Fetch::makeResolveTrainInstData(
+    Addr pc, Addr target, bool taken, bool mispredict, uint8_t ftqOffset,
+    bool isCond, bool isDirect, bool isIndirect, bool isCall, bool isReturn,
+    bool isRVC) const
+{
+    ResolveTrainInstData inst_data;
+    inst_data.pc = pc;
+    inst_data.target = target;
+    inst_data.taken = taken;
+    inst_data.mispredict = mispredict;
+    inst_data.ftqOffset = ftqOffset;
+    inst_data.isCond = isCond;
+    inst_data.isDirect = isDirect;
+    inst_data.isIndirect = isIndirect;
+    inst_data.isCall = isCall;
+    inst_data.isReturn = isReturn;
+    inst_data.isRVC = isRVC;
+    return inst_data;
+}
+
+branch_prediction::btb_pred::ResolvedTrainPacket
+Fetch::buildResolvedTrainPacket(const ResolveTrainQueueEntry &entry) const
+{
+    const auto &target = dbpbtb->ftqTarget(entry.ftqId, entry.tid);
+
+    branch_prediction::btb_pred::ResolvedTrainPacket packet;
+    packet.tid = entry.tid;
+    packet.target = {entry.ftqId, entry.generation};
+    packet.startPC = target.startPC;
+    packet.numPredMetas = resolveTrainMetaCount(target);
+    packet.predMetas = target.predMetas;
+    packet.realBranches.reserve(entry.insts.size());
+
+    for (const auto &inst_data : entry.insts) {
+        branch_prediction::btb_pred::BranchInfo branch;
+        branch.pc = inst_data.pc;
+        branch.target = inst_data.target;
+        branch.resolved = true;
+        branch.isCond = inst_data.isCond;
+        branch.isDirect = inst_data.isDirect;
+        branch.isIndirect = inst_data.isIndirect;
+        branch.isCall = inst_data.isCall;
+        branch.isReturn = inst_data.isReturn;
+        branch.size = inst_data.isRVC ? RvcInstBytes : BaseInstBytes;
+
+        packet.realBranches.emplace_back(
+            branch, inst_data.taken, inst_data.mispredict, inst_data.ftqOffset);
+    }
+
+    return packet;
+}
+
+void
+Fetch::appendResolveTrainInst(
+    ResolveTrainQueueEntry &entry, const ResolveTrainInstData &inst_data)
+{
+    auto existing = std::find_if(
+        entry.insts.begin(), entry.insts.end(),
+        [&inst_data](const ResolveTrainInstData &queued_inst) {
+            return queued_inst.ftqOffset == inst_data.ftqOffset &&
+                   queued_inst.pc == inst_data.pc;
+        });
+    if (existing != entry.insts.end()) {
+        *existing = inst_data;
+    } else {
+        entry.insts.push_back(inst_data);
+    }
+
+    std::sort(entry.insts.begin(), entry.insts.end(),
+        [](const ResolveTrainInstData &lhs, const ResolveTrainInstData &rhs) {
+            if (lhs.ftqOffset != rhs.ftqOffset) {
+                return lhs.ftqOffset < rhs.ftqOffset;
+            }
+            return lhs.pc < rhs.pc;
+        });
+}
+
+void
+Fetch::filterResolveTrainQueue()
+{
+    for (auto it = resolveTrainQueue.begin(); it != resolveTrainQueue.end();) {
+        if (!dbpbtb->ftqHasTarget(it->ftqId, it->tid)) {
+            fetchStats.fullResolveEntriesDroppedStaleTarget++;
+            it = resolveTrainQueue.erase(it);
+            continue;
+        }
+
+        if (!dbpbtb->ftqMatchTargetIdentity(
+                it->ftqId, it->generation, it->tid)) {
+            fetchStats.fullResolveEntriesDroppedGenerationMismatch++;
+            it = resolveTrainQueue.erase(it);
+            continue;
+        }
+
+        ++it;
     }
 }
 
@@ -1660,6 +1900,11 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     DPRINTF(DecoupleBP, "Set instruction %lu with fetch id %lu\n",
             instruction->seqNum, dbpbtb->ftqHeadId(0));
     instruction->setFtqId(dbpbtb->ftqHeadId(0));
+    const auto &fetch_target = dbpbtb->ftqFetchingTarget(tid);
+    instruction->setFtqGeneration(fetch_target.generation);
+    constexpr unsigned instShiftAmt = 1;
+    instruction->setFtqOffset(static_cast<uint8_t>(
+        (this_pc.instAddr() - fetch_target.startPC) >> instShiftAmt));
 
 #if TRACING_ON
     if (trace) {

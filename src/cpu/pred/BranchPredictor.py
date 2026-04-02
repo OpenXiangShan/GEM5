@@ -1206,3 +1206,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
+    enableFullResolveTrain = Param.Bool(Parent.enableFullResolveTrain,
+        "Enable packet-based resolve training rollout plumbing")
+    enableLegacyResolveUpdate = Param.Bool(Parent.enableLegacyResolveUpdate,
+        "Enable legacy PC-only resolve update")
