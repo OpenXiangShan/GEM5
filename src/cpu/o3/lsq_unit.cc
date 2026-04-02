@@ -1463,10 +1463,20 @@ LSQUnit::executeLoadPipeSx()
                         fault = loadDoTranslate(inst);
                         break;
                     case 1:
-                        iewStage->getScheduler()->specWakeUpFromLoadPipe(inst);
-                        // Loads will mark themselves as executed, and their writeback
-                        // event adds the instruction to the queue to commit
                         fault = loadDoSendRequest(inst);
+                        if (fault == NoFault &&
+                            !inst->replayOrSkipFollowingPipe() &&
+                            inst->readPredicate() &&
+                            inst->readMemAccPredicate() &&
+                            inst->savedRequest &&
+                            inst->savedRequest->isTranslationComplete() &&
+                            inst->savedRequest->isMemAccessRequired()) {
+                            iewStage->getScheduler()->specWakeUpFromLoadPipe(
+                                inst);
+                        }
+                        // Loads will mark themselves as executed, and their
+                        // writeback event adds the instruction to the queue
+                        // to commit.
                         iewStage->SquashCheckAfterExe(inst);
                         break;
                     case 2:

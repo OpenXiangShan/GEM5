@@ -1982,6 +1982,48 @@ LSQ::dumpInsts(ThreadID tid) const
     thread.at(tid).dumpInsts();
 }
 
+void
+LSQ::dumpStoreBufferState(ThreadID tid, InstSeqNum seq_num) const
+{
+    cprintf("Store buffer state for tid %i:\n", tid);
+    cprintf("  flushing=%d flushBeforeSeq=%llu\n",
+            _storeBufferFlushing[tid],
+            static_cast<unsigned long long>(_storeBufferFlushBeforeSeq[tid]));
+    cprintf("  storesToWB=%d hasStoresToWBBefore=%d\n",
+            thread.at(tid).numStoresToSbuffer(),
+            thread.at(tid).hasStoresToWBBefore(seq_num));
+    cprintf("  sbufferSize(tid)=%llu sbufferSizeBeforeSeq=%llu\n",
+            static_cast<unsigned long long>(storeBuffer.size(tid)),
+            static_cast<unsigned long long>(storeBuffer.size(tid, seq_num)));
+}
+
+void
+LSQ::dumpStoreBuffer(ThreadID tid) const
+{
+    cprintf("Store buffer entries for tid %i:\n", tid);
+    const auto &entries = storeBuffer.entries();
+    for (size_t index = 0; index < entries.size(); ++index) {
+        if (!storeBuffer.valid(index)) {
+            continue;
+        }
+
+        auto *entry = entries[index];
+        if (!entry || entry->tid != tid) {
+            continue;
+        }
+
+        cprintf("  idx:%d seq:%llu paddr:%#lx vaddr:%#lx sending=%d vice=%d generation=%llu request=%p\n",
+                entry->index,
+                static_cast<unsigned long long>(entry->seqNum),
+                entry->blockPaddr,
+                entry->blockVaddr,
+                entry->sending,
+                entry->vice != nullptr,
+                static_cast<unsigned long long>(entry->generation),
+                entry->request);
+    }
+}
+
 bool
 LSQ::isMisaligned(const DynInstPtr& inst, Addr vaddr, int size)
 {

@@ -208,6 +208,8 @@ class LSQ
         uint64_t size(ThreadID tid) const;
         uint64_t size(ThreadID tid, InstSeqNum seq_num) const;
         uint64_t unsentSize() const;
+        const std::vector<StoreBufferEntry *> &entries() const { return data_vec; }
+        bool valid(size_t index) const { return data_vld.at(index); }
         StoreBufferEntry *getEmpty();
         void insert(StoreBufferEntry *entry);
         StoreBufferEntry *get(ThreadID tid, uint64_t addr) const;
@@ -1033,6 +1035,10 @@ class LSQ
     void dumpInsts() const;
     /** Debugging function to print out instructions from a specific thread. */
     void dumpInsts(ThreadID tid) const;
+    /** Debugging function to print store-buffer flush state for a thread. */
+    void dumpStoreBufferState(ThreadID tid, InstSeqNum seq_num) const;
+    /** Debugging function to print store-buffer entries for a thread. */
+    void dumpStoreBuffer(ThreadID tid) const;
 
     bool isMisaligned(const DynInstPtr& inst, Addr vaddr, int size);
 
