@@ -452,7 +452,7 @@ class LSQUnit
     bool hasStoresToWBBefore(InstSeqNum seq_num) const;
 
     /** Returns the number of stores to writeback. */
-    int numStoresToSbuffer() { return storesToWB; }
+    int numStoresToSbuffer() const { return storesToWB; }
 
     /** Update loadCompletedIdx and storeCompletedIdx */
     void updateCompletedIdx();

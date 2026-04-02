@@ -330,7 +330,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
         if (ubtb->isEnabled()) {
             ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
         }
-        if (abtb->isEnabled() && ftq.backId(tid)) {
+        if (abtb->isEnabled() && !ftq.empty(tid)) {
             auto previous_block_startpc = ftq.back(tid).startPC;
             abtb->updateUsingS3Pred(predsOfEachStage[numStages - 1], previous_block_startpc);
         } else if (abtb->isEnabled()) {
@@ -462,6 +462,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
                 "Ignore squash for tid %u on missing FTQ target %u; "
                 "recovering predictor state from redirect PC %#lx\n",
                 tid, target_id, redirect_pc);
+        ftq.clear(tid);
         clearPreds(tid);
         threads[tid].validprediction = false;
         threads[tid].s0PC = redirect_pc;

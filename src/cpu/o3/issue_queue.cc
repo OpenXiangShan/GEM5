@@ -1726,6 +1726,7 @@ Scheduler::initIQICountSmtScheduler(int numThreads)
         InstsCounter* counter = iq->getInstsCounter();
         assert(counter);
         iq->initIndependentIQICountScheduler(numThreads);
+        iq->selector->setparent(this, iq);
     }
 }
 
