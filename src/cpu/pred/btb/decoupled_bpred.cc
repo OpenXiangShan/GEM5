@@ -193,6 +193,9 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
     // Query each predictor component with current PC and history
     for (int i = 0; i < numComponents; i++) {
         components[i]->putPCHistory(thread.s0PC, thread.s0History, predsOfEachStage);  //s0History not used
+        if (components[i] == tage) {
+            supplementTageMissesWithMicroTage(tid);
+        }
     }
 
     generateFinalPredAndCreateBubbles(tid);
@@ -200,6 +203,66 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
     DPRINTF(Override, "Generating final prediction for PC %#lx\n", thread.s0PC);
 
     threads[tid].validprediction = true;
+}
+
+void
+DecoupledBPUWithBTB::supplementTageMissesWithMicroTage(ThreadID tid)
+{
+    if (!microtage->isEnabled() || !tage->isEnabled()) {
+        return;
+    }
+
+    auto micro_meta =
+        std::static_pointer_cast<MicroTAGE::TageMeta>(microtage->getPredictionMeta());
+    auto tage_meta =
+        std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
+    if (!micro_meta || !tage_meta) {
+        return;
+    }
+
+    auto &predsOfEachStage = threads[tid].predsOfEachStage;
+    for (int s = tage->getDelay(); s < numStages; ++s) {
+        auto &stage_pred = predsOfEachStage[s];
+        for (auto &btb_entry : stage_pred.btbEntries) {
+            if (!(btb_entry.valid && btb_entry.isCond)) {
+                continue;
+            }
+
+            auto tage_it = tage_meta->preds.find(btb_entry.pc);
+            if (tage_it == tage_meta->preds.end() || tage_it->second.mainInfo.found) {
+                continue;
+            }
+
+            auto micro_it = micro_meta->preds.find(btb_entry.pc);
+            if (micro_it == micro_meta->preds.end() ||
+                !micro_it->second.mainInfo.found) {
+                continue;
+            }
+
+            const bool supplemented_taken = micro_it->second.taken;
+            const Addr branch_pc = btb_entry.pc;
+
+            btb_entry.ctr = supplemented_taken ? 0 : -1;
+            if (!supplemented_taken) {
+                btb_entry.alwaysTaken = false;
+            }
+
+            auto cond_it = CondTakens_find(stage_pred.condTakens, branch_pc);
+            if (cond_it != stage_pred.condTakens.end()) {
+                cond_it->second = supplemented_taken;
+            } else {
+                stage_pred.condTakens.push_back({branch_pc, supplemented_taken});
+            }
+
+            stage_pred.tageInfoForMgscs[branch_pc].tage_pred_taken =
+                supplemented_taken;
+
+            DPRINTF(DecoupleBP,
+                "Supplemented tage miss for branch %#lx at stage %d with "
+                "microtage direction %d\n",
+                branch_pc, s, supplemented_taken);
+        }
+    }
 }
 
 // this function collects predictions from all stages and generate bubbles
