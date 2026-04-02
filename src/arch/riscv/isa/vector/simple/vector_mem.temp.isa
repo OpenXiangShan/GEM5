@@ -1,5 +1,24 @@
 output header {{
 
+#define FILL_AGNOSTIC_ELEM(Vd_bytes, elem_idx, eewb_) \
+    std::fill_n((Vd_bytes) + (elem_idx) * (eewb_), (eewb_), 0xff)
+
+#define APPLY_VLOAD_AGNOSTIC(Vd_bytes, elem_num_per_vreg_, eewb_)            \
+    do {                                                                     \
+        for (size_t _i = 0; _i < vmi.re - vmi.rs; ++_i) {                    \
+            const uint32_t _vdElemIdx =                                      \
+                (vmi.rs % (elem_num_per_vreg_)) + _i;                        \
+            const size_t _ei = _i + vmi.rs;                                  \
+            const bool _is_tail = _ei >= rVl;                                \
+            const bool _is_masked = !this->vm && !_is_tail &&                \
+                !elem_mask(v0, _ei);                                         \
+            if ((_is_tail && machInst.vtype8.vta) ||                         \
+                (_is_masked && machInst.vtype8.vma)) {                       \
+                FILL_AGNOSTIC_ELEM((Vd_bytes), _vdElemIdx, (eewb_));         \
+            }                                                                \
+        }                                                                    \
+    } while (0)
+
 inline uint32_t
 calc_memsize(uint32_t rs, uint32_t re, uint32_t sew, uint32_t rVl) {
     uint32_t vend = std::min(rVl, re);
@@ -147,6 +166,7 @@ Fault
 {
     %(op_decl)s;
     %(op_rd)s;
+    auto VdBytes = tmp_d0.as<uint8_t>();
 
     Addr EA;
     // EA = Rs1 + vmi.offset;
@@ -171,6 +191,8 @@ Fault
         ei = i + vmi.rs;
         %(memacc_code)s;
     }
+
+    APPLY_VLOAD_AGNOSTIC(VdBytes, elem_num_per_vreg, eew / 8);
 
     %(op_wb)s;
     return fault;
@@ -261,6 +283,7 @@ Fault
 
     %(op_decl)s;
     %(op_rd)s;
+    auto VdBytes = tmp_d0.as<uint8_t>();
 
 #if %(is_vecWhole)s
     // VM_REQUIRED();
@@ -298,6 +321,11 @@ Fault
             %(memacc_code)s;
         }
     }
+
+#if %(is_vecWhole)s
+#else
+    APPLY_VLOAD_AGNOSTIC(VdBytes, elem_num_per_vreg, eewb);
+#endif
 
     %(vfof_get_code)s;
     %(op_wb)s;
