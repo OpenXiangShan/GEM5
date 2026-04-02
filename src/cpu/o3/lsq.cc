@@ -1695,6 +1695,29 @@ LSQ::getLSQHeadInst(ThreadID tid, bool isLoad)
     }
 }
 
+int
+LSQ::getLoadPFSource(const DynInstPtr &inst) const
+{
+    if (!inst || !inst->isLoad() || inst->lqIdx < 0) {
+        return -1;
+    }
+
+    const auto &entry = thread[inst->threadNumber].loadQueue[inst->lqIdx];
+    auto *request = entry.request();
+    if (!request) {
+        return -1;
+    }
+
+    // A load can retire through a split request or after replay/discard has
+    // detached some request state. Prefetch source is best-effort metadata, so
+    // only query a live sub-request when one still exists.
+    if (request->numReqs() == 0) {
+        return -1;
+    }
+
+    return request->req()->getPFSource();
+}
+
 bool
 LSQ::isStalled()
 {
@@ -2371,6 +2394,12 @@ LSQ::SplitDataRequest::mainReq()
     return _mainReq;
 }
 
+RequestPtr
+LSQ::SplitDataRequest::mainReq() const
+{
+    return _mainReq;
+}
+
 void
 LSQ::SplitDataRequest::initiateTranslation()
 {
@@ -2579,9 +2608,47 @@ LSQ::LSQRequest::forward()
     }
 }
 
+void
+LSQ::LSQRequest::detachLSQEntry()
+{
+    if (!_inst) {
+        return;
+    }
+
+    if (isLoad() && _inst->lqIdx >= 0 &&
+        _port.loadQueue[_inst->lqIdx].request() == this) {
+        DPRINTF(LSQ, "inst [sn:%llu] Detach LSQRequest from LQ entry\n",
+                _inst->seqNum);
+        _port.loadQueue[_inst->lqIdx].setRequest(nullptr);
+    } else if ((isAtomic() || _inst->isStore()) && _inst->sqIdx >= 0 &&
+               _port.storeQueue[_inst->sqIdx].request() == this) {
+        DPRINTF(LSQ, "inst [sn:%llu] Detach LSQRequest from SQ entry\n",
+                _inst->seqNum);
+        _port.storeQueue[_inst->sqIdx].setRequest(nullptr);
+    }
+}
+
+void
+LSQ::LSQRequest::detachInflightLoad()
+{
+    if (!isLoad()) {
+        return;
+    }
+
+    auto &inflight = _port.inflightLoads;
+    auto it = std::find(inflight.begin(), inflight.end(), this);
+    if (it != inflight.end()) {
+        DPRINTF(LSQ, "inst [sn:%llu] Detach LSQRequest from inflightLoads\n",
+                _inst ? _inst->seqNum : 0);
+        inflight.erase(it);
+    }
+}
+
 LSQ::LSQRequest::~LSQRequest()
 {
     assert(!isAnyOutstandingRequest());
+    detachLSQEntry();
+    detachInflightLoad();
     if (_inst && _inst->savedRequest == this) {
         DPRINTF(LSQ, "inst [sn:%llu] Deleting LSQRequest, savedRequest\n", _inst->seqNum);
          _inst->savedRequest = nullptr;

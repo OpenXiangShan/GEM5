@@ -389,6 +389,14 @@ class LSQ
         /** Install the request in the LQ/SQ. */
         void install();
 
+        /** If the request is still installed in the current LQ/SQ slot,
+         * detach that slot so later scans do not observe a discarded or
+         * deleted request through the queue entry. */
+        void detachLSQEntry();
+
+        /** Remove the request from the in-flight load tracker if present. */
+        void detachInflightLoad();
+
         bool squashed() const override;
 
 
@@ -511,6 +519,13 @@ class LSQ
 
         virtual RequestPtr
         mainReq()
+        {
+            assert (_reqs.size() == 1);
+            return req();
+        }
+
+        virtual RequestPtr
+        mainReq() const
         {
             assert (_reqs.size() == 1);
             return req();
@@ -655,6 +670,8 @@ class LSQ
         void
         discard()
         {
+            detachLSQEntry();
+            detachInflightLoad();
             release(Flag::Discarded);
         }
 
@@ -786,6 +803,7 @@ class LSQ
         virtual bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask);
 
         virtual RequestPtr mainReq();
+        virtual RequestPtr mainReq() const;
         virtual PacketPtr mainPacket();
         virtual std::string name() const { return "SplitDataRequest"; }
     };
@@ -978,6 +996,8 @@ class LSQ
 
     /** Returns whether the head instruction of sq has completed*/
     const DynInstPtr& getLSQHeadInst(ThreadID tid, bool isLoad);
+
+    int getLoadPFSource(const DynInstPtr &inst) const;
 
     /**
      * Returns if the LSQ is stalled due to a memory operation that must be
