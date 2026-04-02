@@ -80,6 +80,7 @@ public:
     void finishTarget(ThreadID tid);
     void commitTarget(ThreadID tid);
     void squashAfter(FetchTargetId targetId, ThreadID tid);
+    void clear(ThreadID tid);
 };
 
 }

@@ -2146,7 +2146,6 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
 
     return NoFault;
 }
-
 PrivilegeMode
 TLB::getMemPriv(ThreadContext *tc, BaseMMU::Mode mode)
 {

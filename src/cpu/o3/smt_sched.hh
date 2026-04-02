@@ -137,12 +137,12 @@ public:
 
     ThreadID getThread() override {
         ThreadID selectedTid = 0;
-        uint64_t maxCount = counter->getCounter(0);
-        
+        uint64_t minCount = counter->getCounter(0);
+
         for (ThreadID tid = 1; tid < numThreads; ++tid) {
             uint64_t count = counter->getCounter(tid);
-            if (count > maxCount) {
-                maxCount = count;
+            if (count < minCount) {
+                minCount = count;
                 selectedTid = tid;
             }
         }
