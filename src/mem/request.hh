@@ -286,6 +286,8 @@ class Request
 
         // this request is used for store pf train
         STORE_PF_TRAIN              = 0x0001000000000000,
+        // this request is used for load stride trigger captured at LSU S1
+        LOAD_PF_TRIGGER             = 0x0002000000000000,
         /**
          * These flags are *not* cleared when a Request object is
          * reused (assigned a new address).
@@ -1215,6 +1217,7 @@ class Request
     }
 
     bool isStorePFTrain() const { return _flags.isSet(STORE_PF_TRAIN); }
+    bool isLoadPFTrigger() const { return _flags.isSet(LOAD_PF_TRIGGER); }
     /** Accessor functions for flags. Note that these are for testing
         only; setting flags should be done via setFlags(). */
     bool isUncacheable() const { return _flags.isSet(UNCACHEABLE); }

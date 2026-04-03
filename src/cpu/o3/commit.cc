@@ -228,6 +228,8 @@ Commit::regProbePoints()
             cpu->getProbeManager(), "CommitStall");
     ppSquash = new ProbePointArg<DynInstPtr>(
             cpu->getProbeManager(), "Squash");
+    ppSquashBoundary = new ProbePointArg<InstSeqNum>(
+            cpu->getProbeManager(), "SquashBoundary");
 }
 
 Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
@@ -691,6 +693,7 @@ Commit::squashAll(ThreadID tid)
     // Hopefully nothing breaks.)
     youngestSeqNum[tid] = lastCommitedSeqNum[tid];
 
+    ppSquashBoundary->notify(squashed_inst);
     rob->squash(squashed_inst, tid);
     changedROBNumEntries[tid] = true;
 
@@ -1069,6 +1072,7 @@ Commit::commit()
             // number as the youngest instruction in the ROB.
             youngestSeqNum[tid] = squashed_inst;
 
+            ppSquashBoundary->notify(squashed_inst);
             rob->squash(squashed_inst, tid);
             changedROBNumEntries[tid] = true;
 

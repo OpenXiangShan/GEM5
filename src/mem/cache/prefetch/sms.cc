@@ -3,8 +3,11 @@
 #include <iterator>
 #include <climits>
 
+#include "base/logging.hh"
 #include "base/stats/group.hh"
+#include "cpu/o3/dyn_inst.hh"
 #include "debug/BOPOffsets.hh"
+#include "debug/HWPrefetch.hh"
 #include "debug/XSCompositePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 
@@ -21,6 +24,8 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       regionSize(p.region_size),
       regionBlks(p.region_size / p.block_size),
       enableTrainFilter(p.enable_train_filter),
+      commitOrderedStrideTrain(p.commit_ordered_stride_train),
+      commitProbeCPU(p.commit_probe_cpu),
       act(p.act_entries, p.act_entries, p.act_indexing_policy,
           p.act_replacement_policy, ACTEntry(SatCounter8(2, 1))),
       re_act(p.re_act_entries, p.re_act_entries, p.re_act_indexing_policy,
@@ -74,6 +79,11 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
           name()),
       BOPPFlevel(p.bop_pf_level)
 {
+    fatal_if(commitOrderedStrideTrain && !commitProbeCPU,
+             "commit_ordered_stride_train requires commit_probe_cpu\n");
+    fatal_if(commitOrderedStrideTrain && (!enableSstride || !Sstride),
+             "commit_ordered_stride_train requires XSStride to be enabled\n");
+
     assert(largeBOP);
     assert(smallBOP);
     assert(learnedBOP);
@@ -116,6 +126,130 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     for(unsigned i = 0; i < 3; i++)
         phtSentPrefetch.push_back(phtsentInfo());
     
+}
+
+void
+XSCompositePrefetcher::CommitListener::notify(const o3::DynInstPtr &inst)
+{
+    parent.handleCommittedInst(inst);
+}
+
+void
+XSCompositePrefetcher::SquashBoundaryListener::notify(
+    const InstSeqNum &seq_num)
+{
+    parent.handleSquashBoundary(seq_num);
+}
+
+void
+XSCompositePrefetcher::handleCommittedInst(const o3::DynInstPtr &inst)
+{
+    if (!commitOrderedStrideTrain || !Sstride || !inst || !inst->isLoad()) {
+        return;
+    }
+
+    Sstride->markCommitted(inst->seqNum);
+}
+
+void
+XSCompositePrefetcher::handleSquashBoundary(InstSeqNum seq_num)
+{
+    if (!commitOrderedStrideTrain || !Sstride) {
+        return;
+    }
+
+    Sstride->dropYoungerThan(seq_num);
+}
+
+void
+XSCompositePrefetcher::insertTriggeredAddresses(
+    const PacketPtr &trigger_pkt,
+    PrefetchInfo &pfi,
+    std::vector<AddrPriority> &addresses)
+{
+    const size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
+    size_t num_pfs = 0;
+    for (AddrPriority &addr_prio : addresses) {
+        addr_prio.addr = blockAddress(addr_prio.addr);
+
+        if (!samePage(addr_prio.addr, pfi.getAddr())) {
+            statsQueued.pfSpanPage += 1;
+
+            if (hasBeenPrefetched(trigger_pkt->getAddr(),
+                                  trigger_pkt->isSecure())) {
+                statsQueued.pfUsefulSpanPage += 1;
+            }
+        }
+
+        const bool can_cross_page = (tlb != nullptr);
+        if (!(can_cross_page || samePage(addr_prio.addr, pfi.getAddr()))) {
+            DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
+            continue;
+        }
+
+        PrefetchInfo new_pfi(pfi, addr_prio.addr);
+        new_pfi.setXsMetadata(
+            Request::XsMetadata(addr_prio.pfSource, addr_prio.depth));
+        statsQueued.pfIdentified++;
+        insert(trigger_pkt, new_pfi, addr_prio);
+        num_pfs += 1;
+        if (num_pfs == max_pfs) {
+            break;
+        }
+    }
+}
+
+void
+XSCompositePrefetcher::loadPFTriggerNotify(const PacketPtr &pkt)
+{
+    if (!commitOrderedStrideTrain || !enableSstride || !Sstride) {
+        return;
+    }
+
+    const Addr train_addr =
+        pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr();
+    const Request::XsMetadata xs_metadata =
+        pkt->req->hasXsMetadata() ? pkt->req->getXsMetadata()
+                                  : Request::XsMetadata();
+
+    PrefetchInfo pfi(pkt, train_addr, false, xs_metadata);
+    pfi.setReqAfterSquash(pkt->req->isFirstReqAfterSquash());
+    pfi.setEverPrefetched(false);
+    pfi.setPfFirstHit(false);
+    pfi.setPfHit(false);
+    pfi.setTriggerInfo(pkt);
+
+    std::vector<AddrPriority> addresses;
+    Sstride->captureAndTriggerFromS1(pfi, addresses);
+    if (usePFBuffer) {
+        if (!PFReqSendEvent.scheduled()) {
+            schedule(PFReqSendEvent, nextCycle());
+        }
+        return;
+    }
+
+    insertTriggeredAddresses(pkt, pfi, addresses);
+}
+
+void
+XSCompositePrefetcher::regProbeListeners()
+{
+    Queued::regProbeListeners();
+
+    if (!commitOrderedStrideTrain) {
+        return;
+    }
+
+    ProbeManager *pm = commitProbeCPU->getProbeManager();
+    fatal_if(!pm, "commit_probe_cpu has no probe manager\n");
+
+    if (!commitListener) {
+        commitListener = new CommitListener(*this, pm, "Commit");
+    }
+    if (!squashBoundaryListener) {
+        squashBoundaryListener =
+            new SquashBoundaryListener(*this, pm, "SquashBoundary");
+    }
 }
 
 void
@@ -297,7 +431,10 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         }
     }
 
-    bool use_stride = !pfi.isStore() && (pfi.isCacheMiss() || pfi.isPfFirstHit()) && enableSstride;
+    bool use_stride = !commitOrderedStrideTrain &&
+                      !pfi.isStore() &&
+                      (pfi.isCacheMiss() || pfi.isPfFirstHit()) &&
+                      enableSstride;
     if (use_stride){
         DPRINTF(XSCompositePrefetcher, "Do Sstride traing/prefetching...\n");
         int64_t learned_bop_offset = 0;

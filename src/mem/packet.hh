@@ -153,6 +153,7 @@ class MemCmd
         TlbiExtSync,
 
         StorePFTrain,
+        LoadPFTrigger,
         NUM_MEM_CMDS
     };
 
@@ -268,7 +269,7 @@ class MemCmd
         return (cmd == ReadReq || cmd == WriteReq ||
                 cmd == WriteLineReq || cmd == ReadExReq ||
                 cmd == ReadCleanReq || cmd == ReadSharedReq ||
-                cmd == StorePFTrain);
+                cmd == StorePFTrain || cmd == LoadPFTrigger);
     }
 
     Command
@@ -625,6 +626,7 @@ class Packet : public Printable
     inline int cmdToIndex() const { return cmd.toInt(); }
 
     bool isStorePFTrain() const     { return cmd == MemCmd::StorePFTrain;  }
+    bool isLoadPFTrigger() const    { return cmd == MemCmd::LoadPFTrigger; }
 
     bool isRead() const              { return cmd.isRead(); }
     bool isWrite() const             { return cmd.isWrite(); }
@@ -1130,8 +1132,11 @@ class Packet : public Printable
 
     static MemCmd
     makePFtrainCmd(const RequestPtr& req) {
-        assert(req->isStorePFTrain());
-        return MemCmd::StorePFTrain;
+        assert(req->isStorePFTrain() || req->isLoadPFTrigger());
+        if (req->isStorePFTrain()) {
+            return MemCmd::StorePFTrain;
+        }
+        return MemCmd::LoadPFTrigger;
     }
 
     /**

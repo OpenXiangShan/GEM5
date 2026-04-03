@@ -641,6 +641,12 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         return;
     }
 
+    if (pkt->isLoadPFTrigger()) {
+        ppLoadPFTrigger->notify(pkt);
+        pendingDelete.reset(pkt);
+        return;
+    }
+
     if (pkt->cmd == MemCmd::HardPFReq) {
         if (prefetcher) {
             prefetcher->recvPrefetchFromCache(pkt);
@@ -3193,6 +3199,7 @@ BaseCache::regProbePoints()
     ppMiss = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Miss");
     ppFill = new ProbePointArg<PacketPtr>(this->getProbeManager(), "Fill");
     ppStorePFTrain = new ProbePointArg<PacketPtr>(this->getProbeManager(), "StorePFtrain");
+    ppLoadPFTrigger = new ProbePointArg<PacketPtr>(this->getProbeManager(), "LoadPFtrigger");
     ppDataUpdate =
         new ProbePointArg<DataUpdate>(this->getProbeManager(), "Data Update");
 }
@@ -3220,7 +3227,7 @@ bool
 BaseCache::CpuSidePort::tryTiming(PacketPtr pkt)
 {
     if (cache->system->bypassCaches() || pkt->isExpressSnoop()
-        || pkt->isStorePFTrain()) {
+        || pkt->isStorePFTrain() || pkt->isLoadPFTrigger()) {
         // always let express snoop packets through even if blocked
         return true;
     } else if (blocked || mustSendRetry) {

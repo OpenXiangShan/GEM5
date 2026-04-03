@@ -42,6 +42,10 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_spp = True
         if options.l1d_enable_cplx:
             prefetcher.enable_cplx = True
+        if cpu != NULL:
+            prefetcher.enable_sstride = True
+            prefetcher.commit_ordered_stride_train = True
+            prefetcher.commit_probe_cpu = cpu
         prefetcher.pht_pf_level = 2 if options.kmh_align else options.pht_pf_level
         prefetcher.short_stride_thres = options.short_stride_thres
         prefetcher.enable_temporal = not options.kmh_align
@@ -68,8 +72,8 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_berti = False
             prefetcher.enable_sstride = True
             prefetcher.enable_activepage = False
-            prefetcher.enable_pht = True
-            prefetcher.enable_xsstream = True
+            prefetcher.enable_pht = False
+            prefetcher.enable_xsstream = False
             prefetcher.prefetch_train = True # disable L1PF train L2
             # disable unecessary filter to align with RTL when in pf_buffer mode
             if hasattr(prefetcher, 'queue_filter'):
@@ -104,7 +108,7 @@ def create_prefetcher(cpu, cache_level, options):
             if options.kmh_align:
                 assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
                 prefetcher.enable_cmc = False
-                prefetcher.enable_bop = True
+                prefetcher.enable_bop = False
                 prefetcher.enable_cdp = False
                 prefetcher.enable_despacito_stream = False
                 if prefetcher.enable_despacito_stream:

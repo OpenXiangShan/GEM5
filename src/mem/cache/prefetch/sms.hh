@@ -14,6 +14,8 @@
 #include "base/sat_counter.hh"
 #include "base/statistics.hh"
 #include "base/types.hh"
+#include "cpu/base.hh"
+#include "cpu/o3/dyn_inst_ptr.hh"
 #include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/berti.hh"
 #include "mem/cache/prefetch/bop.hh"
@@ -50,6 +52,8 @@ class XSCompositePrefetcher : public Queued
     const unsigned int regionBlks;
 
     const bool enableTrainFilter;  // Enable TrainFilter for ROB-order training
+    const bool commitOrderedStrideTrain;
+    BaseCPU *commitProbeCPU;
 
     bool useTrainingBuffer() const override { return enableTrainFilter; }
 
@@ -220,6 +224,44 @@ class XSCompositePrefetcher : public Queued
     const bool phtEarlyUpdate;
     const bool neighborPhtUpdate;
 
+    class CommitListener : public ProbeListenerArgBase<o3::DynInstPtr>
+    {
+      public:
+        CommitListener(XSCompositePrefetcher &parent, ProbeManager *pm,
+                       const std::string &name)
+            : ProbeListenerArgBase<o3::DynInstPtr>(pm, name), parent(parent)
+        {}
+
+        void notify(const o3::DynInstPtr &inst) override;
+
+      private:
+        XSCompositePrefetcher &parent;
+    };
+
+    class SquashBoundaryListener : public ProbeListenerArgBase<InstSeqNum>
+    {
+      public:
+        SquashBoundaryListener(XSCompositePrefetcher &parent,
+                               ProbeManager *pm,
+                               const std::string &name)
+            : ProbeListenerArgBase<InstSeqNum>(pm, name), parent(parent)
+        {}
+
+        void notify(const InstSeqNum &seq_num) override;
+
+      private:
+        XSCompositePrefetcher &parent;
+    };
+
+    CommitListener *commitListener = nullptr;
+    SquashBoundaryListener *squashBoundaryListener = nullptr;
+
+    void handleCommittedInst(const o3::DynInstPtr &inst);
+    void handleSquashBoundary(InstSeqNum seq_num);
+    void insertTriggeredAddresses(const PacketPtr &trigger_pkt,
+                                  PrefetchInfo &pfi,
+                                  std::vector<AddrPriority> &addresses);
+
   public:
     void notifyIns(int ins_num) override
     {
@@ -228,6 +270,8 @@ class XSCompositePrefetcher : public Queued
         }
     }
     void setParentInfo(System *sys, ProbeManager *pm, CacheAccessor* _cache, unsigned blk_size) override;
+    void regProbeListeners() override;
+    void loadPFTriggerNotify(const PacketPtr &pkt) override;
 
   protected:
     using TriggerInfo = Base::PFtriggerInfo;

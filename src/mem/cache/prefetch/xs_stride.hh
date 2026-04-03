@@ -4,8 +4,10 @@
 #ifndef __MEM_CACHE_PREFETCH_SMSSTRIDE_HH__
 #define __MEM_CACHE_PREFETCH_SMSSTRIDE_HH__
 
+#include <deque>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
@@ -15,10 +17,11 @@
 #include "base/types.hh"
 #include "debug/XSStridePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set.hh"
+
 // #include "mem/cache/prefetch/queued.hh"
+#include "mem/cache/prefetch/prefetch_filter.hh"
 #include "mem/packet.hh"
 #include "params/XSStridePrefetcher.hh"
-#include "mem/cache/prefetch/prefetch_filter.hh"
 
 struct sqlite3;
 
@@ -132,6 +135,45 @@ class XSStridePrefetcher : public Queued
                                     Addr pf_addr, int priority, bool pfahead,
                                     int pfahead_host, int ahead_level);
 
+    struct CommitTrainSnapshot
+    {
+        InstSeqNum seqNum;
+        Addr addr;
+        Addr pc;
+        Addr paddr;
+        Cycles readyCycle;
+        Request::XsMetadata xsMetadata;
+        bool secure;
+        bool reqAfterSquash;
+
+        explicit CommitTrainSnapshot(const PrefetchInfo &pfi)
+            : seqNum(pfi.getSeqNum()),
+              addr(pfi.getAddr()),
+              pc(pfi.getPC()),
+              paddr(pfi.getPaddr()),
+              readyCycle(0),
+              xsMetadata(pfi.getXsMetadata()),
+              secure(pfi.isSecure()),
+              reqAfterSquash(pfi.isReqAfterSquash())
+        {}
+    };
+
+    std::unordered_map<InstSeqNum, CommitTrainSnapshot> pendingSnapshots;
+    std::deque<InstSeqNum> readyToTrain;
+    std::unordered_set<InstSeqNum> scheduledReady;
+    EventFunctionWrapper commitTrainEvent;
+
+    void scheduleCommitTrain();
+    void processCommitTrain();
+    void traceCommitOrderStage(const char *stage, const CommitTrainSnapshot &snapshot,
+                               int queue_size, const char *reason) const;
+    void traceCommitOrderStage(const char *stage, InstSeqNum seq_num,
+                               Addr pc, Addr addr, bool is_load,
+                               int queue_size, const char *reason) const;
+    void triggerFromCommitTable(const PrefetchInfo &pfi,
+                                std::vector<AddrPriority> &addresses);
+    void trainFromSnapshot(const CommitTrainSnapshot &snapshot);
+
   public:
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
     boost::compute::detail::lru_cache<Addr, Addr> *filterL2;
@@ -147,6 +189,10 @@ class XSStridePrefetcher : public Queued
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool miss_repeat, bool enter_new_region, bool is_first_shot,
                            Addr &pf_addr, int64_t &learned_bop_offset);
+    void captureAndTriggerFromS1(const PrefetchInfo &pfi,
+                                 std::vector<AddrPriority> &addresses);
+    void markCommitted(InstSeqNum seq_num);
+    void dropYoungerThan(InstSeqNum boundary);
   PrefetchFilter* stridestream_pfFilter_l1;
   PrefetchFilter* stridestream_pfFilter_l2l3;
 

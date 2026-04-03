@@ -5,6 +5,9 @@
 
 #include <sqlite3.h>
 
+#include <algorithm>
+#include <cstdlib>
+
 #include "base/output.hh"
 #include "base/stats/group.hh"
 #include "debug/XSStridePrefetcher.hh"
@@ -74,6 +77,7 @@ XSStridePrefetcher::XSStridePrefetcher(const XSStridePrefetcherParams &p)
              p.stride_redundant_replacement_policy, StrideEntry()),
       nonStridePCs(p.non_stride_assoc, p.non_stride_entries, p.non_stride_indexing_policy,
              p.non_stride_replacement_policy, NonStrideEntry()),
+      commitTrainEvent([this]{ processCommitTrain(); }, name()),
       filter(nullptr),
       filterL2(nullptr),
       stridestream_pfFilter_l1(nullptr),
@@ -298,6 +302,343 @@ XSStridePrefetcher::recordReplayCandidateTrace(Addr trigger_addr, Addr trigger_p
         std::to_string(ahead_level) + "," +
         std::to_string(sqliteSignedInt(stamp)) + ",'" + sqlEscape(name()) + "');";
     execReplayTraceSql(sql);
+}
+
+void
+XSStridePrefetcher::traceCommitOrderStage(const char *stage,
+                                          const CommitTrainSnapshot &snapshot,
+                                          int queue_size,
+                                          const char *reason) const
+{
+    traceCommitOrderStage(stage, snapshot.seqNum, snapshot.pc, snapshot.addr,
+                          true, queue_size, reason);
+}
+
+void
+XSStridePrefetcher::traceCommitOrderStage(const char *stage,
+                                          InstSeqNum seq_num,
+                                          Addr pc,
+                                          Addr addr,
+                                          bool is_load,
+                                          int queue_size,
+                                          const char *reason) const
+{
+    if (!archDBer) {
+        return;
+    }
+
+    archDBer->strideOrderTraceWrite(
+        curTick(), stage, seq_num, pc, addr, blockAddress(addr), is_load,
+        false, PrefetchSourceType::SStride, 0, curTick(), queue_size, reason);
+}
+
+void
+XSStridePrefetcher::scheduleCommitTrain()
+{
+    if (readyToTrain.empty() || commitTrainEvent.scheduled()) {
+        return;
+    }
+
+    schedule(commitTrainEvent, clockEdge(Cycles(1)) + 1);
+}
+
+void
+XSStridePrefetcher::triggerFromCommitTable(const PrefetchInfo &pfi,
+                                           std::vector<AddrPriority> &addresses)
+{
+    if (!pfi.hasPC()) {
+        return;
+    }
+
+    stats.strideUniquequeryCount++;
+
+    if (enableNonStrideFilter && isNonStridePC(pfi.getPC())) {
+        return;
+    }
+
+    const Addr lookupAddr = pfi.getAddr();
+    const Addr stride_hash_pc = strideHashPc(pfi.getPC());
+    const uint64_t triggerSeqNum = pfi.getSeqNum();
+    StrideEntry *entry = strideUnique.findEntry(stride_hash_pc, pfi.isSecure());
+
+    if (archDBer) {
+        archDBer->strideTraceWrite(curTick(), lookupAddr, pfi.getPC(),
+                                   stride_hash_pc, entry != nullptr, true,
+                                   false, false, triggerSeqNum);
+    }
+
+    if (!entry) {
+        stats.strideUniquemissCount++;
+        return;
+    }
+
+    stats.strideUniquehitCount++;
+    strideUnique.accessEntry(entry);
+
+    if (entry->conf < 2 || entry->stride == 0) {
+        return;
+    }
+
+    if (useXsDepth) {
+        sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 2)),
+                         addresses, 0, PrefetchSourceType::SStride, 1);
+        sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 5)),
+                         addresses, 0, PrefetchSourceType::SStride, 2);
+        stats.strideUniquepfCount += 2;
+        if (archDBer) {
+            archDBer->strideTraceWrite(
+                curTick(), blockAddress(lookupAddr + (entry->stride << 2)),
+                pfi.getPC(), stride_hash_pc, true, true, false, false,
+                triggerSeqNum);
+            archDBer->strideTraceWrite(
+                curTick(), blockAddress(lookupAddr + (entry->stride << 5)),
+                pfi.getPC(), stride_hash_pc, true, true, false, false,
+                triggerSeqNum);
+        }
+        return;
+    }
+
+    const unsigned depth = std::max(1, entry->depth);
+    const Addr pf_addr = lookupAddr + entry->stride * depth;
+    sendPFWithFilter(pfi, blockAddress(pf_addr), addresses, 0,
+                     PrefetchSourceType::SStride, 1);
+    stats.strideUniquepfCount++;
+}
+
+void
+XSStridePrefetcher::captureAndTriggerFromS1(const PrefetchInfo &pfi,
+                                            std::vector<AddrPriority> &addresses)
+{
+    if (!pfi.hasPC() || !pfi.hasSeqNum()) {
+        return;
+    }
+
+    const InstSeqNum seq_num = pfi.getSeqNum();
+    if (pendingSnapshots.count(seq_num) || scheduledReady.count(seq_num)) {
+        traceCommitOrderStage("SkipDup", seq_num, pfi.getPC(), pfi.getAddr(),
+                              true, pendingSnapshots.size(), "duplicate_seq");
+        return;
+    }
+
+    auto [it, inserted] = pendingSnapshots.emplace(seq_num,
+                                                   CommitTrainSnapshot(pfi));
+    if (!inserted) {
+        traceCommitOrderStage("SkipDup", seq_num, pfi.getPC(), pfi.getAddr(),
+                              true, pendingSnapshots.size(), "duplicate_seq");
+        return;
+    }
+
+    traceCommitOrderStage("S1Capture", it->second, pendingSnapshots.size(), "");
+    triggerFromCommitTable(pfi, addresses);
+    traceCommitOrderStage("S1Trigger", it->second, pendingSnapshots.size(), "");
+}
+
+void
+XSStridePrefetcher::markCommitted(InstSeqNum seq_num)
+{
+    auto it = pendingSnapshots.find(seq_num);
+    if (it == pendingSnapshots.end()) {
+        return;
+    }
+
+    if (!scheduledReady.insert(seq_num).second) {
+        return;
+    }
+
+    it->second.readyCycle = curCycle();
+    readyToTrain.push_back(seq_num);
+    traceCommitOrderStage("CommitReady", it->second, readyToTrain.size(), "");
+    scheduleCommitTrain();
+}
+
+void
+XSStridePrefetcher::dropYoungerThan(InstSeqNum boundary)
+{
+    std::vector<InstSeqNum> to_drop;
+    to_drop.reserve(pendingSnapshots.size());
+    for (const auto &entry : pendingSnapshots) {
+        if (entry.first > boundary) {
+            to_drop.push_back(entry.first);
+        }
+    }
+
+    for (InstSeqNum seq_num : to_drop) {
+        auto it = pendingSnapshots.find(seq_num);
+        if (it == pendingSnapshots.end()) {
+            continue;
+        }
+        traceCommitOrderStage("DropSquash", it->second, pendingSnapshots.size(),
+                              "squash_boundary");
+        pendingSnapshots.erase(it);
+        scheduledReady.erase(seq_num);
+    }
+
+    if (readyToTrain.empty()) {
+        return;
+    }
+
+    std::deque<InstSeqNum> kept;
+    while (!readyToTrain.empty()) {
+        const InstSeqNum seq_num = readyToTrain.front();
+        readyToTrain.pop_front();
+        if (seq_num > boundary || !pendingSnapshots.count(seq_num)) {
+            scheduledReady.erase(seq_num);
+            continue;
+        }
+        kept.push_back(seq_num);
+    }
+    readyToTrain.swap(kept);
+}
+
+void
+XSStridePrefetcher::trainFromSnapshot(const CommitTrainSnapshot &snapshot)
+{
+    if (enableNonStrideFilter && isNonStridePC(snapshot.pc)) {
+        return;
+    }
+
+    const Addr lookupAddr = snapshot.addr;
+    const Addr stride_hash_pc = strideHashPc(snapshot.pc);
+    StrideEntry *entry = strideUnique.findEntry(stride_hash_pc, snapshot.secure);
+
+    if (archDBer) {
+        archDBer->strideTraceWrite(curTick(), lookupAddr, snapshot.pc,
+                                   stride_hash_pc, entry != nullptr, true,
+                                   false, true, snapshot.seqNum);
+    }
+
+    if (entry) {
+        strideUnique.accessEntry(entry);
+        const int64_t new_stride = lookupAddr - entry->lastAddr;
+        if (new_stride == 0 || (labs(new_stride) < 64 &&
+            entry->longStride.calcSaturation() >= 0.5)) {
+            return;
+        }
+
+        bool stride_match =
+            fuzzyStrideMatching &&
+            entry->stride > 64 &&
+            entry->stride != 0 &&
+            new_stride % entry->stride == 0;
+        stride_match |= new_stride == entry->stride;
+
+        if (shortStrideThres) {
+            if (labs(new_stride) > shortStrideThres) {
+                entry->longStride.saturate();
+            } else {
+                entry->longStride--;
+            }
+        }
+
+        if (shortStrideThres &&
+            entry->longStride.calcSaturation() > 0.5 &&
+            labs(new_stride) < shortStrideThres) {
+            return;
+        }
+
+        if (stride_match) {
+            entry->conf++;
+            entry->lastAddr = lookupAddr;
+            entry->histStrides.clear();
+            entry->matchedSinceAlloc = true;
+        } else if (labs(entry->stride) > 64L && labs(new_stride) < 64L) {
+            return;
+        } else {
+            entry->conf--;
+            entry->lastAddr = lookupAddr;
+            if ((int)entry->conf == 0) {
+                bool found_in_hist = false;
+                if (enableNonStrideFilter) {
+                    if (entry->stride != 0) {
+                        entry->histStrides.push_back(entry->stride);
+                    }
+                    for (auto it = entry->histStrides.begin();
+                         it != entry->histStrides.end(); ++it) {
+                        if (*it == new_stride) {
+                            found_in_hist = true;
+                            entry->histStrides.erase(it);
+                            break;
+                        }
+                    }
+                    if (found_in_hist) {
+                        entry->histStrides.clear();
+                    }
+                }
+
+                if (enableNonStrideFilter && !found_in_hist &&
+                    entry->histStrides.size() >= maxHistStrides) {
+                    markNonStridePC(entry->pc);
+                    entry->histStrides.clear();
+                    entry->invalidate();
+                    return;
+                }
+
+                entry->stride = new_stride;
+                entry->depth = 1;
+                entry->lateConf.reset();
+            }
+        }
+
+        periodStrideDepthDown();
+        return;
+    }
+
+    entry = strideUnique.findVictim(0);
+    if (enableNonStrideFilter &&
+        (entry->histStrides.size() >= maxHistStrides - 1 ||
+         !entry->matchedSinceAlloc)) {
+        markNonStridePC(entry->pc);
+    }
+    if (entry->conf >= 2) {
+        stats.strideUniquereplaceusefulCount++;
+    }
+
+    entry->conf.reset();
+    entry->lastAddr = lookupAddr;
+    entry->stride = 0;
+    entry->depth = 1;
+    entry->lateConf.reset();
+    entry->pc = snapshot.pc;
+    entry->histStrides.clear();
+    entry->matchedSinceAlloc = false;
+    strideUnique.insertEntry(stride_hash_pc, snapshot.secure, entry);
+
+    periodStrideDepthDown();
+}
+
+void
+XSStridePrefetcher::processCommitTrain()
+{
+    const Cycles current_cycle = curCycle();
+
+    while (!readyToTrain.empty()) {
+        const InstSeqNum seq_num = readyToTrain.front();
+        auto it = pendingSnapshots.find(seq_num);
+        if (it == pendingSnapshots.end()) {
+            readyToTrain.pop_front();
+            scheduledReady.erase(seq_num);
+            continue;
+        }
+
+        if (it->second.readyCycle >= current_cycle) {
+            traceCommitOrderStage("CommitDefer", it->second,
+                                  readyToTrain.size(), "ready_this_cycle");
+            break;
+        }
+
+        const CommitTrainSnapshot snapshot = it->second;
+        readyToTrain.pop_front();
+        scheduledReady.erase(seq_num);
+        pendingSnapshots.erase(it);
+        traceCommitOrderStage("CommitTrain", snapshot, readyToTrain.size(),
+                              "");
+        trainFromSnapshot(snapshot);
+        break;
+    }
+
+    if (!readyToTrain.empty()) {
+        scheduleCommitTrain();
+    }
 }
 
 void

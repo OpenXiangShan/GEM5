@@ -1065,6 +1065,15 @@ class XSCompositePrefetcher(QueuedPrefetcher):
 
     # TrainFilter configuration
     enable_train_filter = Param.Bool(True, "Enable TrainFilter for ROB-order training")
+    commit_ordered_stride_train = Param.Bool(
+        False,
+        "Use S1 trigger + commit-ordered training for XSStride",
+    )
+    commit_probe_cpu = Param.BaseCPU(
+        NULL,
+        # system.cpu,
+        "CPU whose Commit/SquashBoundary probes drive commit-ordered stride training",
+    )
     training_buffer_size = 8
 
     # filter table (full-assoc)

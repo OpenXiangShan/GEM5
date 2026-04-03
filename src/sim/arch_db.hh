@@ -61,6 +61,7 @@ class ArchDBer : public SimObject
     bool dumpBopTrainTrace;
     bool dumpSMSTrainTrace;
     bool dumpStrideTrainTrace;
+    bool dumpStrideOrderTrace;
     bool dumpTrainFilterTrace;
     bool dumpDespacitoTrainTrace;
     bool dumpL1WayPreTrace;
@@ -107,6 +108,11 @@ class ArchDBer : public SimObject
     void strideTraceWrite(Tick tick, Addr addr, Addr PC, Addr hashPC, bool hit,
                           bool isFirstShot, bool miss, bool is_train,
                           uint64_t triggerSeqNum);
+    void strideOrderTraceWrite(Tick tick, const char *stage, uint64_t seqNum,
+                               Addr pc, Addr addr, Addr blockAddr,
+                               bool isLoad, bool miss, int pfSource,
+                               int pfDepth, Tick observedTick,
+                               int queueSize, const char *reason);
     void trainFilterTraceWrite(Tick tick, const char *stage, uint64_t seqNum,
                                Addr pc, Addr addr, Addr blockAddr,
                                bool isLoad, bool miss, int pfSource,

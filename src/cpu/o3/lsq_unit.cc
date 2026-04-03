@@ -39,6 +39,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <algorithm>
 #include <cassert>
 
 #include "arch/generic/debugfaults.hh"
@@ -1102,7 +1103,16 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
 
     // normal inst cache access
     if (request && request->isTranslationComplete()) {
-        if (request->isMemAccessRequired()) {
+        if (load_fault == NoFault && request->isMemAccessRequired()) {
+            triggerLoadPFTrigger(inst);
+
+            Fault fault;
+            fault = read(request, inst->lqIdx);
+            if (fault != NoFault) {
+                inst->getFault() = fault;
+                load_fault = fault;
+            }
+        } else if (request->isMemAccessRequired()) {
             Fault fault;
             fault = read(request, inst->lqIdx);
             // inst->getFault() may have the first-fault of a
@@ -1637,6 +1647,8 @@ LSQUnit::triggerStorePFTrain(int sq_idx)
     RequestPtr req =
         std::make_shared<Request>(vaddr, 1, Request::STORE_PF_TRAIN, inst->requestorId(), pc, inst->contextId());
     req->setPaddr(inst->physEffAddr);
+    req->setReqInstSeqNum(inst->seqNum);
+    req->setXsMetadata(Request::XsMetadata(inst->xsMeta));
 
     // create packet
     PacketPtr pkt = Packet::createPFtrain(req);
@@ -1645,6 +1657,39 @@ LSQUnit::triggerStorePFTrain(int sq_idx)
     bool success = dcachePort->sendTimingReq(pkt);
     assert(success); // must be true
 
+    return true;
+}
+
+bool
+LSQUnit::triggerLoadPFTrigger(const DynInstPtr &inst)
+{
+    assert(inst);
+    assert(inst->translationCompleted());
+    assert(inst->savedRequest);
+
+    LSQRequest *request = inst->savedRequest;
+    if (!request->isTranslationComplete() || !request->isMemAccessRequired()) {
+        return false;
+    }
+
+    const Addr vaddr = inst->effAddr;
+    const Addr pc = inst->pcState().instAddr();
+    const unsigned size = std::max<unsigned>(1, inst->effSize);
+
+    RequestPtr req = std::make_shared<Request>(
+        vaddr, size, Request::LOAD_PF_TRIGGER, inst->requestorId(),
+        pc, inst->contextId());
+    req->setPaddr(inst->physEffAddr);
+    req->setReqInstSeqNum(inst->seqNum);
+    req->setXsMetadata(Request::XsMetadata(inst->xsMeta));
+
+    if (request->mainReq() && request->mainReq()->isFirstReqAfterSquash()) {
+        req->setFirstReqAfterSquash();
+    }
+
+    PacketPtr pkt = Packet::createPFtrain(req);
+    const bool success = dcachePort->sendTimingReq(pkt);
+    assert(success);
     return true;
 }
 

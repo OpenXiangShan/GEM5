@@ -709,8 +709,9 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         dump_l1_miss_trace = False
         dump_bop_train_trace = False
         dump_stride_train_trace = True
+        dump_stride_order_trace = True
         dump_sms_train_trace = False
-        dump_train_filter_trace = True
+        dump_train_filter_trace = False
         dump_despacito_train_trace = False
         dump_vaddr_trace = False
         dump_lifetime = False
@@ -723,6 +724,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_l1_miss_trace = dump_l1_miss_trace
         test_sys.arch_db.dump_bop_train_trace = dump_bop_train_trace
         test_sys.arch_db.dump_stride_train_trace = dump_stride_train_trace
+        test_sys.arch_db.dump_stride_order_trace = dump_stride_order_trace
         test_sys.arch_db.dump_sms_train_trace = dump_sms_train_trace
         test_sys.arch_db.dump_train_filter_trace = dump_train_filter_trace
         test_sys.arch_db.dump_despacito_train_trace = dump_despacito_train_trace
@@ -827,6 +829,25 @@ CREATE TABLE LoadLifeTimeCommitTrace(
                 "Miss BOOL NOT NULL,"
                 "IsTrain BOOL NOT NULL,"
                 "TriggerSeqNum INT NOT NULL,"
+                "SITE TEXT);"
+            )
+        if dump_stride_order_trace:
+            table_cmds.append(
+                "CREATE TABLE StrideOrderTrace("
+                "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "Tick INT NOT NULL,"
+                "Stage TEXT NOT NULL,"
+                "SeqNum INT NOT NULL,"
+                "PC INT NOT NULL,"
+                "Addr INT NOT NULL,"
+                "BlockAddr INT NOT NULL,"
+                "IsLoad BOOL NOT NULL,"
+                "Miss BOOL NOT NULL,"
+                "PfSource INT NOT NULL,"
+                "PfDepth INT NOT NULL,"
+                "ObservedTick INT NOT NULL,"
+                "QueueSize INT NOT NULL,"
+                "Reason TEXT NOT NULL,"
                 "SITE TEXT);"
             )
         if dump_train_filter_trace:

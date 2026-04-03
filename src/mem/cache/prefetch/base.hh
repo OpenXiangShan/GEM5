@@ -1036,6 +1036,9 @@ class Base : public ClockedObject
 
     virtual void coreDirectAddrNotify(const PacketPtr& pkt);
 
+    virtual void loadPFTriggerNotify(const PacketPtr& pkt)
+    {}
+
     /**
      * Add a SimObject and a probe name to listen events from
      * @param obj The SimObject pointer to listen from

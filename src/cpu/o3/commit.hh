@@ -190,7 +190,9 @@ class Commit
     ProbePointArg<DynInstPtr> *ppCommitStall;
     /** To probe when an instruction is squashed */
     ProbePointArg<DynInstPtr> *ppSquash;
-    struct BranchInfo {
+    ProbePointArg<InstSeqNum> *ppSquashBoundary;
+    struct BranchInfo
+    {
       Addr pc=0;
       Addr target=0;
     };
