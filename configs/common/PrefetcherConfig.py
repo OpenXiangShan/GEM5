@@ -50,6 +50,8 @@ def create_prefetcher(cpu, cache_level, options):
         prefetcher.berti.use_byte_addr = True
         prefetcher.berti.aggressive_pf = False
         prefetcher.berti.trigger_pht = True
+        prefetcher.enable_berti = False
+        prefetcher.enable_sstride = True
 
         if options.ideal_cache:
             prefetcher.stream_pf_ahead = False
