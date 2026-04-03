@@ -85,6 +85,9 @@ def setKmhV3IdealParams(args, system):
         if args.bp_type == 'DecoupledBPUWithBTB':
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
+            # TAGE table sizes and numWays tunning
+            cpu.branchPred.tage.tableSizes = [2048, 2048, 8192, 8192, 8192, 8192, 8192, 2048]
+            cpu.branchPred.tage.numWays = [2, 2, 4, 2, 2, 2, 2, 2]
             # cpu.branchPred.microtage.enabled = False
 
         # l1 cache per core
@@ -138,6 +141,8 @@ if __name__ == '__m5_main__':
     # If user didn't specify bp_type, set default based on ideal_kmhv3
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
+
+    args.l3_size = '64MB'
 
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
