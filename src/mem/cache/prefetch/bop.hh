@@ -43,6 +43,7 @@
 #include <set>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
@@ -195,13 +196,35 @@ class BOP : public Queued
         const unsigned studentPoolSize;
         const double studentConfAlpha;
         const double studentCovThreshold;
+        const bool studentLargeOffsetPriorityEnable;
+        const double studentLargeOffsetPriorityCoeff;
         const unsigned studentTeacherTopN;
         const unsigned studentFilterEntries;
         const unsigned studentHashCount;
         const std::string studentHashMode;
+        const bool studentDelayQueueEnabled;
+        const unsigned studentDelayQueueSize;
+        const Tick studentDelayTicks;
+
+        struct StudentDelayQueueEntry
+        {
+            Tick readyTick;
+            std::vector<unsigned int> filterIndexes;
+            uint64_t mask;
+
+            StudentDelayQueueEntry(
+                Tick ready_tick,
+                std::vector<unsigned int> filter_indexes,
+                uint64_t bit_mask)
+                : readyTick(ready_tick),
+                  filterIndexes(std::move(filter_indexes)),
+                  mask(bit_mask)
+            {}
+        };
 
         std::vector<StudentOffsetEntry> studentPool;
         std::vector<uint64_t> studentFilterBits;
+        std::deque<StudentDelayQueueEntry> studentDelayQueue;
         std::unordered_set<Addr> studentExactSeen;
         int64_t studentSelectedOffset;
         bool studentSelectedValid;
@@ -260,10 +283,18 @@ class BOP : public Queued
         bool studentShouldIssue() const;
         bool studentUseOracleMode() const;
         void studentClearPhaseState();
+        void studentDrainDelayQueue(Tick now);
+        void studentEnqueuePrediction(Addr train_addr, size_t bit_idx,
+            int64_t offset);
+        void studentInsertFilterMask(
+            const std::vector<unsigned int> &indexes, uint64_t mask);
         std::vector<unsigned int> studentHashIndexes(Addr line_addr) const;
+        bool studentPoolAllSameSign() const;
         size_t studentPickBestIndex() const;
         size_t studentPickWorstIndex() const;
         size_t studentPickEvictIndex() const;
+        bool studentShouldPreferLargeOffset(size_t best_idx, size_t worst_idx,
+            uint32_t best_cov, uint32_t worst_cov) const;
 
         unsigned missCount{0};
 
@@ -272,17 +303,24 @@ class BOP : public Queued
 
         struct BopStats : public statistics::Group
         {
-            BopStats(statistics::Group *parent);
+            BopStats(statistics::Group *parent, unsigned student_pool_size,
+                unsigned student_delay_queue_size);
             statistics::Distribution issuedOffsetDist;
             statistics::Distribution teacherInjectedOffsetDist;
             statistics::Distribution studentSelectedOffsetDist;
             statistics::Distribution studentPoolOccupancyDist;
             statistics::Distribution studentCovRatioPctDist;
+            statistics::Distribution studentWorstCovRatioPctDist;
+            statistics::Distribution studentDelayQueueOccupancyDist;
             statistics::Scalar learnOffsetCount;
             statistics::Scalar teacherInjectedCount;
             statistics::Scalar studentPhaseCount;
             statistics::Scalar studentIssueCount;
             statistics::Scalar studentFallbackCount;
+            statistics::Scalar studentLargeOffsetPriorityCount;
+            statistics::Scalar studentDelayQueueInsertCount;
+            statistics::Scalar studentDelayQueueDrainCount;
+            statistics::Scalar studentDelayQueueFullDropCount;
             statistics::Scalar throttledCount;
         } stats;
 
