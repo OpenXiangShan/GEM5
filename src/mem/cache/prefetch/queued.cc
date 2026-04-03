@@ -38,16 +38,19 @@
 #include "mem/cache/prefetch/queued.hh"
 
 #include <cassert>
+#include <vector>
 
 #include "arch/generic/tlb.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
+#include "base/types.hh"
 #include "debug/HWPrefetch.hh"
 #include "debug/HWPrefetchOther.hh"
 #include "debug/HWPrefetchQueue.hh"
 #include "mem/cache/base.hh"
 #include "mem/request.hh"
 #include "params/QueuedPrefetcher.hh"
+#include "params/RiscvTLB.hh"
 
 namespace gem5
 {
@@ -126,8 +129,9 @@ Queued::Queued(const QueuedPrefetcherParams &p)
       queueFilter(p.queue_filter), cacheSnoop(p.cache_snoop),
       tagPrefetch(p.tag_prefetch),
       throttleControlPct(p.throttle_control_percentage),
+      TLBTransRegionShift(12),
       tlbReqEvent(
-          [this]{ processMissingTranslations(queueSize); },
+          [this]{ processMissingTranslations(1); },
           name()),
       statsQueued(this)
 {
@@ -340,15 +344,53 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
 void
 Queued::processMissingTranslations(unsigned max)
 {
+    //find the first 'max' vaddrs to translate
     unsigned count = 0;
     iterator it = pfqMissingTranslation.begin();
+    std::vector<Addr> vaddrs_to_translate(0);
     while (it != pfqMissingTranslation.end() && count < max) {
         DeferredPacket &dp = *it;
         // Increase the iterator first because dp.startTranslation can end up
         // calling finishTranslation, which will erase "it"
         it++;
-        dp.startTranslation(tlb);
-        count += 1;
+        // dp.startTranslation(tlb);
+        // count += 1;
+        if (!dp.ongoingTranslation) {
+            Addr vaddr = dp.translationRequest->getVaddr();
+            vaddr = (vaddr >> (TLBTransRegionShift )) << TLBTransRegionShift;
+            bool found = false;
+            for (auto va : vaddrs_to_translate){
+                if (vaddr == va){
+                    found = true;
+                    break;
+                }
+            }
+            if (!found){
+                DPRINTF(HWPrefetch, "Starting match for vpn %#x ,count :%d\n", vaddr,count);
+                vaddrs_to_translate.push_back(vaddr);
+                count += 1;
+            }
+        }
+    }
+    it = pfqMissingTranslation.begin();;
+    while (it != pfqMissingTranslation.end()) {
+        DeferredPacket &dp = *it;
+        // Increase the iterator first because dp.startTranslation can end up
+        // calling finishTranslation, which will erase "it"
+        it++;
+        Addr vaddr = dp.translationRequest->getVaddr();
+        vaddr = (vaddr >> (TLBTransRegionShift )) << TLBTransRegionShift;
+        bool found = false;
+        for (auto va : vaddrs_to_translate){
+            if (vaddr == va){
+                found = true;
+                break;
+            }
+        }
+        if (found){
+            DPRINTF(HWPrefetch, "Starting translation for vaddr %#x \n", dp.translationRequest->getVaddr());
+            dp.startTranslation(tlb);
+        }
     }
 }
 
@@ -406,6 +448,9 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
         pfqMissingTranslation.erase(it);
     } else {
         pfqSquashed.erase(it);
+    }
+    if (pfqMissingTranslation.size() > 0 && !tlbReqEvent.scheduled()) {
+        schedule(tlbReqEvent, nextCycle());
     }
 }
 
