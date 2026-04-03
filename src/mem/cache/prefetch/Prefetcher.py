@@ -764,10 +764,25 @@ class BOPPrefetcher(QueuedPrefetcher):
     student_pool_size = Param.Unsigned(4, "Maximum number of offsets retained by the student pool")
     student_conf_alpha = Param.Float(0.0, "Rolling confidence smoothing factor for student offsets")
     student_cov_threshold = Param.Float(0.0, "Coverage ratio threshold required for student takeover")
+    student_large_offset_priority_enable = Param.Bool(
+        False,
+        "Enable stream-like large-offset priority mode for Student BOP")
+    student_large_offset_priority_coeff = Param.Float(
+        0.95,
+        "Coefficient used by the stream-like large-offset priority detector")
     student_filter_entries = Param.Unsigned(1024, "Entries in the student direct-mapped coverage filter")
     student_hash_mode = Param.String("bop_rr", "Student coverage mode: bop_rr/lowbits/splitmix for DM filter, \
                                      oracle/exact for collision-free phase-local coverage")
     student_hash_count = Param.Unsigned(1, "Number of hashes used by the student direct-mapped filter")
+    student_delay_queue_enable = Param.Bool(
+        False,
+        "Enable delayed coverage update for the student filter")
+    student_delay_queue_size = Param.Unsigned(
+        16,
+        "Maximum number of pending delayed student predictions")
+    student_delay_queue_cycles = Param.Cycles(
+        300,
+        "Cycles before a student predicted address becomes visible in the student filter")
 
 class XSPhysicalSmallBOP(BOPPrefetcher):
     score_max = 31
@@ -786,9 +801,13 @@ class XSPhysicalSmallBOP(BOPPrefetcher):
     student_pool_size = 8
     student_conf_alpha = 0.0
     student_cov_threshold = 0.05
+    student_large_offset_priority_enable = False
     student_filter_entries = 2048
     student_hash_mode = "splitmix"
     student_hash_count = 1
+    student_delay_queue_enable = False
+    student_delay_queue_size = 16
+    student_delay_queue_cycles = 300
 
     offsets = [x for i in [
         1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30
@@ -810,9 +829,13 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     student_pool_size = 4
     student_conf_alpha = 0.0
     student_cov_threshold = 0.02
+    student_large_offset_priority_enable = True
     student_filter_entries = 4096
     student_hash_mode = "bop_rr"
     student_hash_count = 1
+    student_delay_queue_enable = False
+    student_delay_queue_size = 64
+    student_delay_queue_cycles = 300
 
     offsets = [
           -117, -147, -91, 117, 147, 91,
