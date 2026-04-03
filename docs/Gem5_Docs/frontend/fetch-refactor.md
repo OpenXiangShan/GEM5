@@ -181,6 +181,21 @@
 - entry 边界处的“re-supply”自然退化为：`popHead()` 后继续读取下一个 `head()`（仍可实现同拍发出下一次 ICache 请求）
 - fetch 的控制流更像 RTL：队列头驱动 ICache 请求与 PC 范围校验
 
+### 当前 owner-migration 收敛对后续 refactor 的约束
+
+在继续简化 Fetch <-> BPU / FTQ 交互之前，有一个边界已经被这轮改动刻意收紧：
+
+- `ownerStartPC` 与 split-control handoff 条件已经收回到 `FetchTarget`
+- fetch 只消费 `ownsInstPC()` / `shouldTakeSplitControlOwnershipFrom()` / `isTakenControlAt()` 这些 helper
+
+因此后续如果继续下沉 handoff 或改 FTQ 数据结构，优先级应该是：
+
+1. 保持 `FetchTarget` 作为 owner contract 的唯一来源
+2. 不要把 owner predicate 重新散回 fetch / FTQ / test
+3. 若 queue 侧需要接管 handoff，也应复用同一组 helper 或等价 contract，而不是复制布尔表达式
+
+否则即使 FTQ 结构被简化，owner 语义也会重新泄漏回 fetch，等于把这轮收敛工作做回去。
+
 ### 对现有模块的简化方向（不改功能的重构目标）
 1. `FetchTargetQueue`：从 “map + supply/enq state” 简化为 “queue（deque/ring）”
    - `fetchTargetAvailable()` => `!queue.empty()`

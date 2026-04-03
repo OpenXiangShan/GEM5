@@ -322,6 +322,15 @@ folded history 的作用非常直接：
 [5, 9, 17, 27]
 ```
 
+另外，`MicroTAGE` 在 `BranchPredictor.py` 中会继承 `TimedBaseBTBPredictor` 的 `blockSize` / `numDelay`。这两个字段如果只是想覆盖默认值，应该直接写成：
+
+```python
+blockSize = 32
+numDelay = 0
+```
+
+而不要重新声明成新的 `Param.Unsigned(...)`。否则生成的 C++ params 结构会出现 shadow field，基类运行时可能看到错误的 `blockSize` / `numDelay`。在本轮回归里，这个问题的直接表现就是 `MicroTAGE` 用错 block 内 branch position，并在 trace 路径下出现伪告警。
+
 ### 9.3 BTBITTAGE
 
 默认 `histLengths`：
