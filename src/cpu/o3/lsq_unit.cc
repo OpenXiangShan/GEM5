@@ -1084,6 +1084,14 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
         for (int i = 0; i < storePipeSx[1]->size; i++) {
             auto& store_inst = storePipeSx[1]->insts[i];
             if (pipeLineNukeCheck(inst, store_inst)) {
+                Addr paddr = 0;
+                if (request && request->mainReq() && request->mainReq()->hasPaddr()) {
+                    paddr = request->mainReq()->getPaddr();
+                }
+                traceLoadOrder(curTick(), "ReplaySet", inst->seqNum,
+                               inst->pcState().instAddr(),
+                               inst->effAddrValid() ? inst->effAddr : 0,
+                               paddr, "pipe_nuke_presend");
                 DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
                 inst->setProducerStorePC(store_inst->pcState().instAddr());
                 inst->setNukeReplay();
@@ -2860,6 +2868,11 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
         // Tell IQ/mem dep unit that this instruction will need to be
         // rescheduled eventually
         load_inst->effAddrValid(false);
+        traceLoadOrder(curTick(), "ReplaySet", load_inst->seqNum,
+                       load_inst->pcState().instAddr(),
+                       request->mainReq()->hasVaddr() ? request->mainReq()->getVaddr() : 0,
+                       request->mainReq()->hasPaddr() ? request->mainReq()->getPaddr() : 0,
+                       "reschedule_strictly_ordered");
         load_inst->setCanCommit();
         load_inst->setSkipFollowingPipe();
         load_inst->setRescheduleReplay();
@@ -2884,6 +2897,14 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
             request->mainReq()->getPaddr(), request->isSplit() ? " split" :
             "");
 
+    const auto traceReplaySet = [&](const char *reason) {
+        traceLoadOrder(curTick(), "ReplaySet", load_inst->seqNum,
+                       load_inst->pcState().instAddr(),
+                       request->mainReq()->hasVaddr() ? request->mainReq()->getVaddr() : 0,
+                       request->mainReq()->hasPaddr() ? request->mainReq()->getPaddr() : 0,
+                       reason);
+    };
+
     if (lsq->enableReplayBasedMDP() && request->isNormalLd() &&
         (load_inst->mdpPredStrictWait || !load_inst->mdpProducingStores.empty()) &&
         !request->mainReq()->isLLSC()) {
@@ -2895,6 +2916,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 DPRINTF(LoadPipeline,
                         "Load[sn:%llu] MDP strict wait, storeCompletedIdx=%lu, required>=%lu\n",
                         load_inst->seqNum, storeCompletedIdx, required);
+                traceReplaySet("mdp_strict_wait");
                 load_inst->setMdpAddrReplay();
                 loadSetReplay(load_inst, request, true);
                 iewStage->mdpAddrReplayRegisterStrict(load_inst, required);
@@ -2925,6 +2947,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 DPRINTF(LoadPipeline,
                         "Load[sn:%llu] MDP wait %lu store addrs (replay)\n",
                         load_inst->seqNum, wait_stores.size());
+                traceReplaySet("mdp_producer_wait");
                 load_inst->setMdpAddrReplay();
                 loadSetReplay(load_inst, request, true);
                 iewStage->mdpAddrReplayRegister(load_inst, wait_stores);
@@ -3011,6 +3034,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                                 load_inst->needSTLFReplay()) {
                                 // Handle STLF (Store-to-Load Forwarding) failure
                                 stats.forwardSTDNotReady++;
+                                traceReplaySet("stlf_wait_store_data");
                                 iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
                                 loadSetReplay(load_inst, request, true);
                                 DPRINTF(LoadPipeline, "Load [sn:%llu] setSTLFReplay\n", load_inst->seqNum);
@@ -3030,6 +3054,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                             load_inst->needSTLFReplay()) {
                             // Handle STLF (Store-to-Load Forwarding) failure
                             stats.forwardSTDNotReady++;
+                            traceReplaySet("stlf_wait_store_data");
                             iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
                             loadSetReplay(load_inst, request, true);
                             DPRINTF(LoadPipeline, "Load [sn:%llu] setSTLFReplay\n", load_inst->seqNum);
@@ -3058,6 +3083,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                             load_inst->needSTLFReplay()) {
                             // Handle STLF (Store-to-Load Forwarding) failure
                             stats.forwardSTDNotReady++;
+                            traceReplaySet("stlf_wait_store_data");
                             iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
                             loadSetReplay(load_inst, request, true);
                             DPRINTF(LoadPipeline, "Load [sn:%llu] setSTLFReplay\n", load_inst->seqNum);
@@ -3075,6 +3101,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                         load_inst->needSTLFReplay()) {
                         // Handle STLF (Store-to-Load Forwarding) failure
                         stats.forwardSTDNotReady++;
+                        traceReplaySet("stlf_wait_store_data");
                         iewStage->stlfFailLdReplay(load_inst, store_it->instruction()->seqNum);
                         loadSetReplay(load_inst, request, true);
                         DPRINTF(LoadPipeline, "Load [sn:%llu] setSTLFReplay\n", load_inst->seqNum);
@@ -3148,6 +3175,7 @@ LSQUnit::read(LSQRequest *request, ssize_t load_idx)
                 // Tell IQ/mem dep unit that this instruction will need to be
                 // rescheduled eventually
                 load_inst->effAddrValid(false);
+                traceReplaySet("reschedule_partial_overlap");
                 load_inst->setRescheduleReplay();
                 iewStage->rescheduleMemInst(load_inst);
                 ++stats.rescheduledLoads;

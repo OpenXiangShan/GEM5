@@ -170,3 +170,46 @@ and are possibly uselss less prefetches.
   1460 Prefe 0x2006b9b158 0x2d92a 0x2006b9b080
   1461 Prefe 0x2006b9b158 0x2d92a 0x2006b9b0c0
 ```
+
+## Load Reorder Root Cause Analysis
+
+Analyze why load requests are reordered between `TranslateEnter` and
+`TrainFilterTrace.Collect`.
+
+Run on all TrainFilter-visible loads:
+``` Bash
+python3 util/arch_db/load_reorder_rootcause.py --db /path/to/trace.db
+```
+
+Limit the analysis to one PC:
+``` Bash
+python3 util/arch_db/load_reorder_rootcause.py --db /path/to/trace.db --pc 0x10a6a
+```
+
+Outputs are written under `~/temp/load_reorder_rootcause/<db_stem>/` by default:
+
+- `summary.json`: aggregate counts, inversion totals, and top causes
+- `cause_breakdown.csv`: root-cause ranking by inversion weight
+- `pc_breakdown.csv`: per-PC aggregation
+- `samples.csv`: top displaced / overtaken dynamic loads
+- `samples_events.jsonl`: full event timelines for top samples
+- `trainfilter_distortion.csv`: TrainFilter-local distortion statistics
+
+Current cause labels are focused on the first blocking reason between the first
+`TranslateEnter` and the first `TrainFilterTrace.Collect` for each dynamic
+load.
+
+- All TLB/PTW/coalescing/retry variants are merged into `tlb_miss`.
+- Explicit pre-send replay causes are traced as `ReplaySet` and classified into
+  `pipe_nuke_replay`, `mdp_addr_replay`, `stlf_replay`, and
+  `reschedule_replay`.
+- Send-side failures remain under `send_resource` with subcauses such as
+  `bank_conflict`, `tag_read_fail`, `mshr_arb`, `mshr_alias`, `hit_in_wb`,
+  `cache_blocked`, `port_unavailable`, and `send_failed`.
+- `CacheMissReplay`, `RAWReplay`, `RARReplay`, and S2-side `NukeReplay` are
+  not treated as root causes for `Collect` reordering because the request has
+  already reached cache by then.
+
+Older traces without `ReplaySet` remain supported, but will fall back to the
+coarser `lsq_internal_replay_residual` labels when no explicit pre-send replay
+event is available.

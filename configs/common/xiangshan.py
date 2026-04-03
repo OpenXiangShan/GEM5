@@ -702,15 +702,15 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_from_start = args.arch_db_fromstart
         test_sys.arch_db.enable_rolling = args.enable_rolling
         dump_l1_pf_trace = False
-        dump_mem_trace = False
+        dump_mem_trace = True
         dump_l1_evict_trace = False
         dump_l2_evict_trace = False
         dump_l3_evict_trace = False
         dump_l1_miss_trace = False
         dump_bop_train_trace = False
-        dump_stride_train_trace = False
+        dump_stride_train_trace = True
         dump_sms_train_trace = False
-        dump_train_filter_trace = False
+        dump_train_filter_trace = True
         dump_despacito_train_trace = False
         dump_vaddr_trace = False
         dump_lifetime = False
@@ -766,6 +766,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
                 "CREATE TABLE MemTrace("
                 "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
                 "Tick INT NOT NULL,"
+                "SeqNum INT NOT NULL,"
                 "IsLoad BOOL NOT NULL,"
                 "PC INT NOT NULL,"
                 "VADDR INT NOT NULL,"

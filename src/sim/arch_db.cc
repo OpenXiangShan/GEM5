@@ -100,16 +100,19 @@ ArchDBer::addAndGetTrace(const char *name, std::vector<std::pair<std::string, Da
 
 void
 ArchDBer::memTraceWrite(Tick tick, bool is_load, Addr pc, Addr vaddr, Addr paddr, uint64_t issued, uint64_t translated,
-                        uint64_t completed, uint64_t committed, uint64_t writenback, int pf_src)
+                        uint64_t completed, uint64_t committed, uint64_t writenback, int pf_src, uint64_t seqNum)
 {
   bool dump_me = dumpGlobal && dumpMemTrace;
   if (!dump_me) return;
 
   sprintf(
       memTraceSQLBuf,
-      "INSERT INTO MemTrace(Tick,IsLoad,PC,VADDR,PADDR,Issued,Translated,Completed,Committed,Writenback,PFSrc,SITE) "
-      "VALUES(%lld,%d,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%d,'%s');",
-      sqliteSignedInt(tick), is_load, sqliteSignedInt(pc),
+      "INSERT INTO MemTrace("
+      "Tick,SeqNum,IsLoad,PC,VADDR,PADDR,Issued,Translated,"
+      "Completed,Committed,Writenback,PFSrc,SITE) "
+      "VALUES(%lld,%lld,%d,%lld,%lld,%lld,%lld,%lld,%lld,"
+      "%lld,%lld,%d,'%s');",
+      sqliteSignedInt(tick), sqliteSignedInt(seqNum), is_load, sqliteSignedInt(pc),
       sqliteSignedInt(vaddr), sqliteSignedInt(paddr),
       sqliteSignedInt(issued), sqliteSignedInt(translated),
       sqliteSignedInt(completed), sqliteSignedInt(committed),
