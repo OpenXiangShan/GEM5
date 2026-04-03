@@ -472,29 +472,23 @@ Fetch::currentFetchRequestSpan(
 void
 Fetch::maybeMigrateSplitControlOwner(ThreadID tid, Addr inst_pc)
 {
-    if (!dbpbtb) {
+    if (!dbpbtb || isTraceMode()) {
         return;
     }
 
     while (dbpbtb->ftqHasFetching(tid) && dbpbtb->ftqHasFollowing(tid)) {
         const auto &stream = dbpbtb->ftqFetchingTarget(tid);
         const auto &following = dbpbtb->ftqFollowingTarget(tid);
-        const bool is_split_owner_handoff =
-            following.decodeStartPC() < following.startPC &&
-            stream.predEndPC == following.startPC &&
-            stream.startPC < following.startPC &&
-            following.decodeStartPC() <= inst_pc &&
-            inst_pc < following.startPC;
-        if (!is_split_owner_handoff) {
+        if (!following.shouldTakeSplitControlOwnershipFrom(stream, inst_pc)) {
             break;
         }
 
         DPRINTF(DecoupleBP,
                 "[tid:%i] migrate split-control ownership: inst=%#lx "
-                "currentStart=%#lx currentDecodeStart=%#lx "
-                "followingStart=%#lx followingDecodeStart=%#lx\n",
-                tid, inst_pc, stream.startPC, stream.decodeStartPC(),
-                following.startPC, following.decodeStartPC());
+                "currentStart=%#lx currentOwnerStart=%#lx "
+                "followingStart=%#lx followingOwnerStart=%#lx\n",
+                tid, inst_pc, stream.startPC, stream.ownerStartPC(),
+                following.startPC, following.ownerStartPC());
 
         dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
         ftqEntryFetchedInsts[tid] = 0;
@@ -848,14 +842,13 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     const auto &stream = dbpbtb->ftqFetchingTarget(tid);
 
     const Addr curr_pc = next_pc.instAddr();
-    const bool in_owner_stream =
-        stream.decodeStartPC() <= curr_pc && curr_pc < stream.predEndPC;
+    const bool in_owner_stream = stream.ownsInstPC(curr_pc);
     if (!in_owner_stream) {
         if (isTraceMode()) {
             DPRINTF(DecoupleBP,
                     "[tid:%i] trace-mode fetch PC %#lx is outside owner stream "
                     "[%#lx, %#lx); fall back to sequential advance\n",
-                    tid, curr_pc, stream.decodeStartPC(), stream.predEndPC);
+                    tid, curr_pc, stream.ownerStartPC(), stream.predEndPC);
             inst->staticInst->advancePC(next_pc);
             return false;
         }
@@ -870,18 +863,17 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // split-control ownership before buildInst, taken matching only needs to
     // compare the current inst-start PC against the owner target's
     // predicted branch start PC.
-    const auto &pred_info = stream.predBranchInfo;
     const bool is_microop = inst->staticInst->isMicroop();
-    predict_taken = stream.predTaken && !is_microop &&
-                    curr_pc == pred_info.startPC();
+    predict_taken = !is_microop && stream.isTakenControlAt(curr_pc);
     if (predict_taken) {
+        const auto &pred_info = stream.predBranchInfo;
         auto &rpc = next_pc.as<GenericISA::PCStateWithNext>();
         DPRINTF(DecoupleBP,
                 "[tid:%i] decoupled+BTB taken-match: startPC=%#lx "
-                "controlPC=%#lx ownerDecodeStart=%#lx streamEndPC=%#lx "
+                "controlPC=%#lx ownerStart=%#lx streamEndPC=%#lx "
                 "endPCExclusive=%#lx size=%u inst=%#lx\n",
                 tid, pred_info.startPC(), pred_info.controlPC(),
-                stream.decodeStartPC(), stream.predEndPC,
+                stream.ownerStartPC(), stream.predEndPC,
                 pred_info.endPCExclusive(), pred_info.size, curr_pc);
         rpc.pc(pred_info.target);
         rpc.npc(pred_info.target + 4);

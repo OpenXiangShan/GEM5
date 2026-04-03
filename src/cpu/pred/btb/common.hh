@@ -380,8 +380,8 @@ struct FetchTarget
 {
     ThreadID tid;
     Addr startPC;       // start pc of the stream
-    Addr decodeInstStartAddr; // earliest inst-start PC owned for decode/build
-    bool hasExplicitDecodeStartAddr;
+    Addr ownerInstStartAddr; // earliest inst-start PC owned by this target
+    bool hasExplicitOwnerStartAddr;
     bool predTaken;     // whether the FetchTarget has taken branch
     Addr predEndPC;     // predicted stream coverage end pc
     BranchInfo predBranchInfo; // predicted branch info
@@ -429,8 +429,8 @@ struct FetchTarget
 
    FetchTarget()
        : startPC(0),
-         decodeInstStartAddr(0),
-         hasExplicitDecodeStartAddr(false),
+         ownerInstStartAddr(0),
+         hasExplicitOwnerStartAddr(false),
          predTaken(false),
          predEndPC(0),
          predBranchInfo(BranchInfo()),
@@ -460,15 +460,40 @@ struct FetchTarget
        updateBTBEntries.clear();
    }
 
-    Addr decodeStartPC() const
+    Addr ownerStartPC() const
     {
-        return hasExplicitDecodeStartAddr ? decodeInstStartAddr : startPC;
+        return hasExplicitOwnerStartAddr ? ownerInstStartAddr : startPC;
     }
 
-    void setDecodeStartPC(Addr pc)
+    void setOwnerStartPC(Addr pc)
     {
-        decodeInstStartAddr = pc;
-        hasExplicitDecodeStartAddr = true;
+        ownerInstStartAddr = pc;
+        hasExplicitOwnerStartAddr = true;
+    }
+
+    bool hasSplitControlOwnership() const
+    {
+        return ownerStartPC() < startPC;
+    }
+
+    bool ownsInstPC(Addr inst_pc) const
+    {
+        return ownerStartPC() <= inst_pc && inst_pc < predEndPC;
+    }
+
+    bool shouldTakeSplitControlOwnershipFrom(const FetchTarget &previous,
+                                             Addr inst_pc) const
+    {
+        return hasSplitControlOwnership() &&
+               previous.predEndPC == startPC &&
+               previous.startPC < startPC &&
+               ownerStartPC() <= inst_pc &&
+               inst_pc < startPC;
+    }
+
+    bool isTakenControlAt(Addr inst_pc) const
+    {
+        return predTaken && inst_pc == predBranchInfo.startPC();
     }
 
     // the default exe result should be consistent with prediction

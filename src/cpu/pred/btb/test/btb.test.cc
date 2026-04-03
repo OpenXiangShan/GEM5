@@ -261,11 +261,11 @@ TEST_F(BTBTest, Rvi4B_DerivedPcViews) {
     EXPECT_EQ(branch.getEnd(), 0x1004);
 }
 
-TEST_F(BTBTest, FetchTargetDecodeStartPC_DefaultsToStreamStart) {
+TEST_F(BTBTest, FetchTargetOwnerStartPC_DefaultsToStreamStart) {
     FetchTarget stream;
     stream.startPC = 0x1020;
 
-    EXPECT_EQ(stream.decodeStartPC(), 0x1020);
+    EXPECT_EQ(stream.ownerStartPC(), 0x1020);
 }
 
 TEST_F(BTBTest, Rvi4B_ControlPC_CrossBoundaryPredictInNextBlock) {
@@ -276,12 +276,12 @@ TEST_F(BTBTest, Rvi4B_ControlPC_CrossBoundaryPredictInNextBlock) {
     following.predTaken = true;
     following.predBranchInfo = branch;
     following.predEndPC = branch.coverageEndPC(0x1020);
-    following.setDecodeStartPC(branch.startPC());
+    following.setOwnerStartPC(branch.startPC());
 
     EXPECT_EQ(branch.controlPC(), 0x1020);
     EXPECT_EQ(following.startPC, branch.controlPC());
-    EXPECT_EQ(following.decodeStartPC(), branch.startPC());
-    EXPECT_LT(following.decodeStartPC(), following.startPC);
+    EXPECT_EQ(following.ownerStartPC(), branch.startPC());
+    EXPECT_LT(following.ownerStartPC(), following.startPC);
     EXPECT_EQ(following.predEndPC, 0x1022);
 }
 
@@ -296,12 +296,10 @@ TEST_F(BTBTest, SplitControlOwnershipMigratesBeforeBuildInst) {
     following.startPC = 0x1020;
     following.predTaken = true;
     following.predBranchInfo = branch;
-    following.setDecodeStartPC(branch.startPC());
+    following.setOwnerStartPC(branch.startPC());
 
     const Addr inst_pc = branch.startPC();
-    const bool should_migrate = inst_pc >= following.decodeStartPC();
-
-    EXPECT_TRUE(should_migrate);
+    EXPECT_TRUE(following.shouldTakeSplitControlOwnershipFrom(current, inst_pc));
     EXPECT_LT(inst_pc, current.predEndPC);
     EXPECT_LT(inst_pc, following.startPC);
 }
@@ -313,17 +311,10 @@ TEST_F(BTBTest, SplitControlOwnershipDoesNotMigrateToTakenTarget) {
 
     FetchTarget following;
     following.startPC = 0x10;
-    following.setDecodeStartPC(0x10);
+    following.setOwnerStartPC(0x10);
 
     const Addr inst_pc = 0x20;
-    const bool should_migrate =
-        following.decodeStartPC() < following.startPC &&
-        current.predEndPC == following.startPC &&
-        current.startPC < following.startPC &&
-        following.decodeStartPC() <= inst_pc &&
-        inst_pc < following.startPC;
-
-    EXPECT_FALSE(should_migrate);
+    EXPECT_FALSE(following.shouldTakeSplitControlOwnershipFrom(current, inst_pc));
 }
 
 TEST_F(BTBTest, TakenMatchUsesOwnerTargetStartPC) {
@@ -333,16 +324,11 @@ TEST_F(BTBTest, TakenMatchUsesOwnerTargetStartPC) {
     following.startPC = 0x1020;
     following.predTaken = true;
     following.predBranchInfo = branch;
-    following.setDecodeStartPC(branch.startPC());
+    following.setOwnerStartPC(branch.startPC());
 
-    const bool match_on_branch_start =
-        following.predTaken && branch.startPC() == following.predBranchInfo.startPC();
-    const bool match_on_control_pc =
-        following.predTaken && following.startPC == following.predBranchInfo.startPC();
-
-    EXPECT_TRUE(match_on_branch_start);
-    EXPECT_FALSE(match_on_control_pc);
-    EXPECT_EQ(following.decodeStartPC(), branch.startPC());
+    EXPECT_TRUE(following.isTakenControlAt(branch.startPC()));
+    EXPECT_FALSE(following.isTakenControlAt(branch.controlPC()));
+    EXPECT_EQ(following.ownerStartPC(), branch.startPC());
 }
 
 TEST_F(BTBTest, Rvi4B_TriggerCoverage_InSingleBlock) {
