@@ -253,6 +253,9 @@ class DynInst : public ExecContext, public RefCounted
     /* replay type of this instruction */
     std::optional<LdStReplayType> replayType;
 
+    // Track whether this instruction has ever been replayed.
+    bool _everReplayed = false;
+
     bool _hasProducerStorePC = false;
     Addr _producerStorePC = 0;
 
@@ -1053,7 +1056,9 @@ class DynInst : public ExecContext, public RefCounted
     void setReplay(LdStReplayType type) {
         setNeedReplay();
         replayType = type;
+        _everReplayed = true;
     }
+    bool everReplayed() const { return _everReplayed; }
     std::optional<LdStReplayType> getReplayType() const {
         return replayType;
     }

@@ -834,6 +834,13 @@ class LSQUnit
         statistics::Distribution RAWQueueLatency;
 
         statistics::Vector loadReplayEvents;
+
+        /** Number of replayed loads that enter the load pipeline. */
+        statistics::Scalar replayedLoadIssueToPipe;
+        /** Number of replayed loads that finish execution. */
+        statistics::Scalar replayedLoadReadyToFinish;
+        /** Ratio of replayed load finishes to replayed load issues. */
+        statistics::Formula replayedLoadFinishRate;
     } stats;
 
     void bankConflictReplay();

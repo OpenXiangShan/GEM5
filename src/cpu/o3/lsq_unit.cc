@@ -594,7 +594,14 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
       ADD_STAT(RAWQueueFull, "Number of times RAW queue was full"),
       ADD_STAT(RAWQueueReplay, "Number of instructions replayed from RAW queue"),
       ADD_STAT(RAWQueueLatency, statistics::units::Cycle::get(), "RAW queue latency distribution"),
-      ADD_STAT(loadReplayEvents, statistics::units::Count::get(), "event distribution of load replay")
+      ADD_STAT(loadReplayEvents, statistics::units::Count::get(), "event distribution of load replay"),
+      ADD_STAT(replayedLoadIssueToPipe, statistics::units::Count::get(),
+               "Number of replayed loads that enter the load pipeline"),
+      ADD_STAT(replayedLoadReadyToFinish, statistics::units::Count::get(),
+               "Number of replayed loads that finish execution"),
+      ADD_STAT(replayedLoadFinishRate, statistics::units::Ratio::get(),
+               "Replay load finish rate",
+               replayedLoadReadyToFinish / replayedLoadIssueToPipe)
 {
     loadToUse
         .init(0, 299, 10)
@@ -616,6 +623,8 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
     for (int i = 0; i < LdStReplayTypeCount; i++) {
         loadReplayEvents.subname(i, load_store_replay_event_str[static_cast<LdStReplayType>(i)]);
     }
+
+    replayedLoadFinishRate.precision(6);
 }
 
 void
@@ -1025,6 +1034,10 @@ LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
     loadPipeSx[0]->insts[idx] = inst;
     loadPipeSx[0]->size++;
 
+    if (inst->everReplayed()) {
+        stats.replayedLoadIssueToPipe++;
+    }
+
     DPRINTF(LoadPipeline, "issueToLoadPipe: [sn:%llu]\n", inst->seqNum);
 }
 
@@ -1410,7 +1423,12 @@ LSQUnit::executeLoadPipeSx()
             }
 
             if (i == loadPipeStages - 1 && !inst->needReplay()) {
-                if (inst->isNormalLd() || !inst->readMemAccPredicate()) iewStage->readyToFinish(inst);
+                if (inst->isNormalLd() || !inst->readMemAccPredicate()) {
+                    if (inst->everReplayed()) {
+                        stats.replayedLoadReadyToFinish++;
+                    }
+                    iewStage->readyToFinish(inst);
+                }
                 iewStage->activityThisCycle();
                 inst->endPipelining();
                 DPRINTF(LoadPipeline, "Load [sn:%llu] ready to finish\n",
