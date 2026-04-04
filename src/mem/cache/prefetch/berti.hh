@@ -166,6 +166,7 @@ class BertiPrefetcher : public Queued
   public:
 
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
+    boost::compute::detail::lru_cache<Addr, Addr> *filterL2;
 
     BertiPrefetcher(const BertiPrefetcherParams &p);
 
@@ -187,7 +188,7 @@ class BertiPrefetcher : public Queued
     int getBestDelta() { return lastUsedBestDelta; }
 
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
-                          PrefetchSourceType src, bool using_best_delta_and_confident);
+                          PrefetchSourceType src, bool using_best_delta_and_confident, int ahead_level);
 
     void notifyFill(const PacketPtr &pkt) override;
 
