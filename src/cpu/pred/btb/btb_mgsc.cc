@@ -710,7 +710,7 @@ BTBMGSC::updatePercepTable(std::vector<std::vector<int16_t>> &weightTable, int p
         }
     }
     weightTable[index][1] = forceUsePercep ? weightTable[index][1] :0 ;
-    // weightTable[index][1] = 0; //experiment
+    weightTable[index][1] = 0; //experiment
 }
 
 /**
