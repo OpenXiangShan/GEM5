@@ -109,14 +109,14 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ras.enabled = True
 
             #  predictron
-            cpu.branchPred.mgsc.enablePerceptronPred = True
+            cpu.branchPred.mgsc.enablePerceptronPred = False
             cpu.branchPred.mgsc.percepTableEntryNum = 1024
             cpu.branchPred.mgsc.percepTableWidth = 7
             cpu.branchPred.mgsc.gbhrLen = 32
             cpu.branchPred.mgsc.percepThres = 75
             # cpu.branchPred.mgsc.percepThres = 2048
             cpu.branchPred.mgsc.tageWeightShamt = 3
-            cpu.branchPred.mgsc.forceUsePercep = True
+            cpu.branchPred.mgsc.forceUsePercep = False
 
             cpu.branchPred.mgsc.enableBwTable = False
             cpu.branchPred.mgsc.enableLTable = False
