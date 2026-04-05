@@ -258,9 +258,6 @@ class XSCompositePrefetcher : public Queued
 
     void handleCommittedInst(const o3::DynInstPtr &inst);
     void handleSquashBoundary(InstSeqNum seq_num);
-    void insertTriggeredAddresses(const PacketPtr &trigger_pkt,
-                                  PrefetchInfo &pfi,
-                                  std::vector<AddrPriority> &addresses);
 
   public:
     void notifyIns(int ins_num) override

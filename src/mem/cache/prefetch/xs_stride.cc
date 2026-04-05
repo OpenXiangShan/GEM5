@@ -406,8 +406,7 @@ XSStridePrefetcher::triggerFromCommitTable(const PrefetchInfo &pfi,
 }
 
 void
-XSStridePrefetcher::captureAndTriggerFromS1(const PrefetchInfo &pfi,
-                                            std::vector<AddrPriority> &addresses)
+XSStridePrefetcher::captureFromS1(const PrefetchInfo &pfi)
 {
     if (!pfi.hasPC() || !pfi.hasSeqNum()) {
         return;
@@ -429,8 +428,27 @@ XSStridePrefetcher::captureAndTriggerFromS1(const PrefetchInfo &pfi,
     }
 
     traceCommitOrderStage("S1Capture", it->second, pendingSnapshots.size(), "");
+}
+
+void
+XSStridePrefetcher::triggerFromDemandOutcome(
+    const PrefetchInfo &pfi,
+    std::vector<AddrPriority> &addresses)
+{
+    if (!pfi.hasPC() || !pfi.hasSeqNum()) {
+        return;
+    }
+
+    const InstSeqNum seq_num = pfi.getSeqNum();
+    auto it = pendingSnapshots.find(seq_num);
+    if (it == pendingSnapshots.end() || it->second.triggered) {
+        return;
+    }
+
+    it->second.triggered = true;
     triggerFromCommitTable(pfi, addresses);
-    traceCommitOrderStage("S1Trigger", it->second, pendingSnapshots.size(), "");
+    traceCommitOrderStage("DemandTrigger", it->second,
+                          pendingSnapshots.size(), "");
 }
 
 void

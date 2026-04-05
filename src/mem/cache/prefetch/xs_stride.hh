@@ -142,6 +142,7 @@ class XSStridePrefetcher : public Queued
         Addr pc;
         Addr paddr;
         Cycles readyCycle;
+        bool triggered;
         Request::XsMetadata xsMetadata;
         bool secure;
         bool reqAfterSquash;
@@ -152,6 +153,7 @@ class XSStridePrefetcher : public Queued
               pc(pfi.getPC()),
               paddr(pfi.getPaddr()),
               readyCycle(0),
+              triggered(false),
               xsMetadata(pfi.getXsMetadata()),
               secure(pfi.isSecure()),
               reqAfterSquash(pfi.isReqAfterSquash())
@@ -189,8 +191,9 @@ class XSStridePrefetcher : public Queued
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool miss_repeat, bool enter_new_region, bool is_first_shot,
                            Addr &pf_addr, int64_t &learned_bop_offset);
-    void captureAndTriggerFromS1(const PrefetchInfo &pfi,
-                                 std::vector<AddrPriority> &addresses);
+    void captureFromS1(const PrefetchInfo &pfi);
+    void triggerFromDemandOutcome(const PrefetchInfo &pfi,
+                                  std::vector<AddrPriority> &addresses);
     void markCommitted(InstSeqNum seq_num);
     void dropYoungerThan(InstSeqNum boundary);
   PrefetchFilter* stridestream_pfFilter_l1;

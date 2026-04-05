@@ -162,44 +162,6 @@ XSCompositePrefetcher::handleSquashBoundary(InstSeqNum seq_num)
 }
 
 void
-XSCompositePrefetcher::insertTriggeredAddresses(
-    const PacketPtr &trigger_pkt,
-    PrefetchInfo &pfi,
-    std::vector<AddrPriority> &addresses)
-{
-    const size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
-    size_t num_pfs = 0;
-    for (AddrPriority &addr_prio : addresses) {
-        addr_prio.addr = blockAddress(addr_prio.addr);
-
-        if (!samePage(addr_prio.addr, pfi.getAddr())) {
-            statsQueued.pfSpanPage += 1;
-
-            if (hasBeenPrefetched(trigger_pkt->getAddr(),
-                                  trigger_pkt->isSecure())) {
-                statsQueued.pfUsefulSpanPage += 1;
-            }
-        }
-
-        const bool can_cross_page = (tlb != nullptr);
-        if (!(can_cross_page || samePage(addr_prio.addr, pfi.getAddr()))) {
-            DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
-            continue;
-        }
-
-        PrefetchInfo new_pfi(pfi, addr_prio.addr);
-        new_pfi.setXsMetadata(
-            Request::XsMetadata(addr_prio.pfSource, addr_prio.depth));
-        statsQueued.pfIdentified++;
-        insert(trigger_pkt, new_pfi, addr_prio);
-        num_pfs += 1;
-        if (num_pfs == max_pfs) {
-            break;
-        }
-    }
-}
-
-void
 XSCompositePrefetcher::loadPFTriggerNotify(const PacketPtr &pkt)
 {
     if (!commitOrderedStrideTrain || !enableSstride || !Sstride) {
@@ -219,16 +181,7 @@ XSCompositePrefetcher::loadPFTriggerNotify(const PacketPtr &pkt)
     pfi.setPfHit(false);
     pfi.setTriggerInfo(pkt);
 
-    std::vector<AddrPriority> addresses;
-    Sstride->captureAndTriggerFromS1(pfi, addresses);
-    if (usePFBuffer) {
-        if (!PFReqSendEvent.scheduled()) {
-            schedule(PFReqSendEvent, nextCycle());
-        }
-        return;
-    }
-
-    insertTriggeredAddresses(pkt, pfi, addresses);
+    Sstride->captureFromS1(pfi);
 }
 
 void
@@ -431,18 +384,24 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         }
     }
 
-    bool use_stride = !commitOrderedStrideTrain &&
-                      !pfi.isStore() &&
+    bool use_stride = !pfi.isStore() &&
                       (pfi.isCacheMiss() || pfi.isPfFirstHit()) &&
                       enableSstride;
-    if (use_stride){
+    if (use_stride) {
         DPRINTF(XSCompositePrefetcher, "Do Sstride traing/prefetching...\n");
-        int64_t learned_bop_offset = 0;
         stats.strideTrainCount++;
-        Sstride->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, enter_new_region, is_first_shot,
-                                   stride_pf_addr, learned_bop_offset);
-        if (learned_bop_offset != 0)
-            learnedBOP->tryAddOffset(learned_bop_offset);
+        if (commitOrderedStrideTrain) {
+            Sstride->triggerFromDemandOutcome(pfi, addresses);
+        } else {
+            int64_t learned_bop_offset = 0;
+            Sstride->calculatePrefetch(
+                pfi, addresses, late, pf_source, miss_repeat,
+                enter_new_region, is_first_shot, stride_pf_addr,
+                learned_bop_offset);
+            if (learned_bop_offset != 0) {
+                learnedBOP->tryAddOffset(learned_bop_offset);
+            }
+        }
     }
 
 }
