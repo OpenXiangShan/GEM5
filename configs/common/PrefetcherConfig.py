@@ -52,6 +52,10 @@ def create_prefetcher(cpu, cache_level, options):
         prefetcher.berti.trigger_pht = True
         prefetcher.enable_berti = False
         prefetcher.enable_sstride = True
+        prefetcher.enable_temporal = False
+        prefetcher.enable_xsstream = True
+        prefetcher.enable_activepage = False
+        prefetcher.enable_pht = True
 
         if options.ideal_cache:
             prefetcher.stream_pf_ahead = False
