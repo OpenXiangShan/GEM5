@@ -1127,10 +1127,10 @@ class BTBMGSC(TimedBaseBTBPredictor):
     biasTableIdxWidth = Param.Unsigned(11, "Log number of bias entries")
 
     percepTableEntryNum = Param.Unsigned(1024, "Num of entries in perception preditor weight table")
-    gbhrLen = Param.Unsigned(32, "Length of gbhr in perception predictor")
-    percepTableWidth = Param.Unsigned(7, "Width of weight in perception predictor table")
-    percepThres = Param.Unsigned(75, "Threshold of perception predictor")
-    tageWeightShamt = Param.Unsigned(3,
+    gbhrLen = Param.Unsigned(256, "Length of gbhr in perception predictor")
+    percepTableWidth = Param.Unsigned(8, "Width of weight in perception predictor table")
+    percepThres = Param.Unsigned(508, "Threshold of perception predictor")
+    tageWeightShamt = Param.Unsigned(4,
                     "Right shift amount for weight of TAGE predictor when generating perception predictor features")
 
     thresholdTablelogSize = Param.Unsigned(6,
@@ -1162,7 +1162,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     enablePTable = Param.Bool(False, "Enable P (path) table")
     enableBiasTable = Param.Bool(False, "Enable Bias table")
     enablePCThreshold = Param.Bool(False, "Enable PC-indexed threshold table")
-    enablePerceptronPred = Param.Bool(True, "Enable perceptron predictor")
+    enablePerceptronPred = Param.Bool(False, "Enable perceptron predictor")
     forceUsePercep = Param.Bool(False,"Use tage as input of perceptron predictor")
 
     numDelay = 2
