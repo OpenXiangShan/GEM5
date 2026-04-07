@@ -290,6 +290,8 @@ class BOP : public Queued
             const std::vector<unsigned int> &indexes, uint64_t mask);
         std::vector<unsigned int> studentHashIndexes(Addr line_addr) const;
         bool studentPoolAllSameSign() const;
+        bool studentIntermediateOffsetsMatchSlope(size_t best_idx,
+            size_t worst_idx, uint32_t best_cov, uint32_t worst_cov) const;
         size_t studentPickBestIndex() const;
         size_t studentPickWorstIndex() const;
         size_t studentPickEvictIndex() const;

@@ -750,7 +750,7 @@ class BOPPrefetcher(QueuedPrefetcher):
         False,
         "Enable stream-like large-offset priority mode for Student BOP")
     student_large_offset_priority_coeff = Param.Float(
-        0.95,
+        0.99,
         "Coefficient used by the stream-like large-offset priority detector")
     student_filter_entries = Param.Unsigned(1024, "Entries in the student direct-mapped coverage filter")
     student_hash_mode = Param.String("bop_rr", "Student coverage mode: bop_rr/lowbits/splitmix for DM filter, \
