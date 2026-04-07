@@ -25,25 +25,8 @@ namespace
 {
 
 bool
-validateResolvedTrainPacket(const ResolvedTrainPacket &packet,
-                            const FetchTarget &target,
-                            unsigned numComponents)
+validateResolvedTrainPacket(const ResolvedTrainPacket &packet)
 {
-    if (packet.numPredMetas > packet.predMetas.size()) {
-        return false;
-    }
-
-    if (numComponents > packet.predMetas.size() ||
-        packet.numPredMetas != numComponents) {
-        return false;
-    }
-
-    for (unsigned i = 0; i < numComponents; ++i) {
-        if (packet.predMetas[i] != target.predMetas[i]) {
-            return false;
-        }
-    }
-
     uint8_t lastOffset = 0;
     Addr lastPc = 0;
     bool firstBranch = true;
@@ -718,7 +701,7 @@ DecoupledBPUWithBTB::resolveTrain(
         return false;
     }
 
-    if (!validateResolvedTrainPacket(packet, target, numComponents)) {
+    if (!validateResolvedTrainPacket(packet)) {
         DPRINTF(DecoupleBP,
                 "Resolve-train packet validation failed: id=%lu generation=%lu tid=%u\n",
                 packet.target.id, packet.target.generation, tid);
@@ -731,13 +714,13 @@ DecoupledBPUWithBTB::resolveTrain(
             packet.realBranches.size());
 
     for (int i = 0; i < numComponents; ++i) {
-        if (!components[i]->canResolveTrain(packet)) {
+        if (!components[i]->canResolveTrain(packet, target)) {
             return false;
         }
     }
 
     for (int i = 0; i < numComponents; ++i) {
-        components[i]->resolveTrain(packet);
+        components[i]->resolveTrain(packet, target);
     }
 
     return true;

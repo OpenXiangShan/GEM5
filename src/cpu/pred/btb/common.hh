@@ -292,15 +292,11 @@ struct ResolvedTrainPacket
     ThreadID tid;
     FetchTargetIdentity target;
     Addr startPC;
-    size_t numPredMetas;
-    std::array<std::shared_ptr<void>, MaxPredictorComponents> predMetas;
     std::vector<ResolvedBranch> realBranches;
 
     ResolvedTrainPacket()
-        : tid(0), target(), startPC(0), numPredMetas(0), predMetas(),
-          realBranches()
+        : tid(0), target(), startPC(0), realBranches()
     {
-        predMetas.fill(nullptr);
     }
 };
 

@@ -814,17 +814,20 @@ MBTB::update(const FetchTarget &stream)
 }
 
 bool
-MBTB::canResolveTrain(const ResolvedTrainPacket &packet)
+MBTB::canResolveTrain(const ResolvedTrainPacket &packet,
+                      const FetchTarget &target)
 {
-    return getComponentIdx() < packet.numPredMetas;
+    return true;
 }
 
 void
-MBTB::resolveTrain(const ResolvedTrainPacket &packet)
+MBTB::resolveTrain(const ResolvedTrainPacket &packet,
+                   const FetchTarget &target)
 {
     auto meta = std::static_pointer_cast<BTBMeta>(
-        packet.predMetas[getComponentIdx()]);
+        target.predMetas[getComponentIdx()]);
     if (!meta) {
+        DPRINTF(BTB, "resolveTrain: no live prediction meta, skip\n");
         return;
     }
 

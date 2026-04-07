@@ -171,9 +171,11 @@ class MBTB : public TimedBaseBTBPredictor
      */
     void update(const FetchTarget &stream) override;
 
-    bool canResolveTrain(const ResolvedTrainPacket &packet) override;
+    bool canResolveTrain(const ResolvedTrainPacket &packet,
+                         const FetchTarget &target) override;
 
-    void resolveTrain(const ResolvedTrainPacket &packet) override;
+    void resolveTrain(const ResolvedTrainPacket &packet,
+                      const FetchTarget &target) override;
 
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
 

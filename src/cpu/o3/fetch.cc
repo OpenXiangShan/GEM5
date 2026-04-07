@@ -87,19 +87,6 @@ namespace
 constexpr uint8_t RvcInstBytes = 2;
 constexpr uint8_t BaseInstBytes = 4;
 
-size_t
-resolveTrainMetaCount(
-    const branch_prediction::btb_pred::FetchTarget &target)
-{
-    size_t num_pred_metas = 0;
-    for (size_t i = 0; i < target.predMetas.size(); ++i) {
-        if (target.predMetas[i] != nullptr) {
-            num_pred_metas = i + 1;
-        }
-    }
-    return num_pred_metas;
-}
-
 } // anonymous namespace
 
 Fetch::IcachePort::IcachePort(Fetch *_fetch, CPU *_cpu) :
@@ -1686,8 +1673,6 @@ Fetch::buildResolvedTrainPacket(const ResolveTrainQueueEntry &entry) const
     packet.tid = entry.tid;
     packet.target = {entry.ftqId, entry.generation};
     packet.startPC = target.startPC;
-    packet.numPredMetas = resolveTrainMetaCount(target);
-    packet.predMetas = target.predMetas;
     packet.realBranches.reserve(entry.insts.size());
 
     for (const auto &inst_data : entry.insts) {

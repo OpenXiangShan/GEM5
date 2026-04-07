@@ -1152,7 +1152,6 @@ class Fetch
         statistics::Scalar fullResolveEntriesDroppedGenerationMismatch;
         /** Full resolve packets sent to the predictor. */
         statistics::Scalar fullResolvePacketsSent;
-
         // Trace metadata accounting (trace mode)
         /** Number of stored trace metadata records (seqNum -> traceInst). */
         statistics::Scalar traceMetaStores;

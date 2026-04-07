@@ -680,7 +680,8 @@ BTBTAGE::canResolveUpdate(const FetchTarget &stream) {
 }
 
 bool
-BTBTAGE::canResolveTrain(const ResolvedTrainPacket &packet)
+BTBTAGE::canResolveTrain(const ResolvedTrainPacket &packet,
+                        const FetchTarget &target)
 {
     Addr startAddr = packet.startPC;
     unsigned updateBank = getBankId(startAddr);
@@ -749,16 +750,17 @@ BTBTAGE::prepareResolveTrainEntries(const ResolvedTrainPacket &packet,
 }
 
 void
-BTBTAGE::resolveTrain(const ResolvedTrainPacket &packet)
+BTBTAGE::resolveTrain(const ResolvedTrainPacket &packet,
+                      const FetchTarget &target)
 {
     if (enableBankConflict && predBankValid) {
         predBankValid = false;
     }
 
     auto predMeta = std::static_pointer_cast<TageMeta>(
-        packet.predMetas[getComponentIdx()]);
+        target.predMetas[getComponentIdx()]);
     if (!predMeta) {
-        DPRINTF(TAGE, "resolveTrain: no prediction meta, skip\n");
+        DPRINTF(TAGE, "resolveTrain: no live prediction meta, skip\n");
         return;
     }
 
