@@ -731,19 +731,23 @@ BTBTAGE::prepareResolveTrainEntries(const ResolvedTrainPacket &packet,
 
         auto pred_it = predMeta->btbEntries.find(resolved.branch.pc);
         BTBEntry entry;
+        ResolveTrainUpdate::EntryClass entry_class;
         if (pred_it != predMeta->btbEntries.end()) {
             entry = pred_it->second;
+            entry_class = ResolveTrainUpdate::EntryClass::ExistingPredictedEntry;
         } else {
             entry = BTBEntry(resolved.branch);
             entry.valid = true;
             entry.alwaysTaken = false;
+            entry.ctr = -1;
+            entry_class = ResolveTrainUpdate::EntryClass::NewEntryCandidate;
         }
 
         if (entry.alwaysTaken) {
             continue;
         }
 
-        updates.push_back({entry, resolved});
+        updates.push_back({entry, resolved, entry_class});
     }
 
     return updates;
@@ -771,11 +775,23 @@ BTBTAGE::resolveTrain(const ResolvedTrainPacket &packet,
     for (const auto &update : entries_to_update) {
         const auto &btb_entry = update.entry;
         const auto &resolved = update.resolved;
+        const bool is_new_entry =
+            update.entryClass ==
+            ResolveTrainUpdate::EntryClass::NewEntryCandidate;
         auto orig_it = predMeta->preds.find(btb_entry.pc);
         const bool has_original_pred = orig_it != predMeta->preds.end();
         TagePrediction original_pred;
         if (has_original_pred) {
             original_pred = orig_it->second;
+        } else if (!is_new_entry) {
+            DPRINTF(TAGE,
+                    "resolveTrain: missing original prediction for old entry pc %#lx, skip\n",
+                    btb_entry.pc);
+            continue;
+        } else {
+            DPRINTF(TAGE,
+                    "resolveTrain: reconstruct prediction for new entry pc %#lx from snapshot\n",
+                    btb_entry.pc);
         }
         bool actual_taken = resolved.taken;
 
@@ -795,14 +811,17 @@ BTBTAGE::resolveTrain(const ResolvedTrainPacket &packet,
         }
 #endif
 
-        TagePrediction recomputed = updateOnRead ?
-            generateSinglePrediction(btb_entry, packet.startPC, predMeta) :
-            original_pred;
-
-        if (has_original_pred && updateOnRead &&
-            recomputed.taken != original_pred.taken) {
-            hasRecomputedVsOriginalDiff = true;
+        TagePrediction recomputed;
+        if (updateOnRead || is_new_entry) {
+            recomputed = generateSinglePrediction(btb_entry, packet.startPC,
+                                                  predMeta);
+            if (has_original_pred && recomputed.taken != original_pred.taken) {
+                hasRecomputedVsOriginalDiff = true;
+            }
+        } else {
+            recomputed = original_pred;
         }
+
         if (recomputed.taken != actual_taken) {
             hasRecomputedVsActualDiff = true;
         }

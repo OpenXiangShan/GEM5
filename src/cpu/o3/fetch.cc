@@ -1595,10 +1595,10 @@ Fetch::handleIEWSignals()
             auto queued = std::find_if(
                 resolveTrainQueue.begin(), resolveTrainQueue.end(),
                 [tid, &resolved](const ResolveTrainQueueEntry &entry) {
-                    return entry.tid == tid && entry.ftqId == resolved.ftqId &&
-                           entry.generation == resolved.ftqGeneration;
+                    return entry.tid == tid && entry.ftqId == resolved.ftqId;
                 });
             if (queued != resolveTrainQueue.end()) {
+                queued->generation = resolved.ftqGeneration;
                 appendResolveTrainInst(*queued, makeResolveTrainInstData(
                     resolved.pc, resolved.target, resolved.taken,
                     resolved.mispredict, resolved.ftqOffset, resolved.isCond,

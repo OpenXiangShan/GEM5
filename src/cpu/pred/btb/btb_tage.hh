@@ -445,8 +445,15 @@ private:
 
     struct ResolveTrainUpdate
     {
+        enum class EntryClass
+        {
+            ExistingPredictedEntry,
+            NewEntryCandidate,
+        };
+
         BTBEntry entry;
         ResolvedBranch resolved;
+        EntryClass entryClass;
     };
 
     std::vector<ResolveTrainUpdate>

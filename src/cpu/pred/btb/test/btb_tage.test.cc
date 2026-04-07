@@ -97,7 +97,7 @@ void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr targe
  * @param pc Branch PC to search for
  * @return Pair of (found, prediction) where found indicates if PC was found
  */
-std::pair<bool, bool> findCondTaken(const gem5::branch_prediction::btb_pred::CondTakens& condTakens, Addr pc) {
+std::pair<bool, bool> findCondTaken(const CondTakens& condTakens, Addr pc) {
     auto it = CondTakens_find(condTakens, pc);
     if (it != condTakens.end()) {
         return {true, it->second};
@@ -254,12 +254,107 @@ ResolvedTrainPacket createResolvedTrainPacket(Addr startPC,
                                               std::shared_ptr<void> meta,
                                               std::vector<ResolvedBranch> realBranches)
 {
+    (void)meta;
     ResolvedTrainPacket packet;
     packet.startPC = startPC;
-    packet.numPredMetas = 1;
-    packet.predMetas[0] = meta;
     packet.realBranches = std::move(realBranches);
     return packet;
+}
+
+FetchTarget createResolvedTrainTarget(Addr startPC, std::shared_ptr<void> meta)
+{
+    FetchTarget target;
+    target.startPC = startPC;
+    target.predMetas[0] = meta;
+    return target;
+}
+
+void advanceActualHistory(BTBTAGE *tage,
+                          boost::dynamic_bitset<> &history,
+                          const std::vector<BTBEntry> &entries,
+                          const std::vector<bool> &actual_takens)
+{
+    ASSERT_EQ(entries.size(), actual_takens.size());
+    for (size_t i = 0; i < entries.size(); ++i) {
+        tage->doUpdateHist(history, actual_takens[i], entries[i].pc, entries[i].target);
+        if (actual_takens[i]) {
+            applyPathHistoryTaken(history, entries[i].pc, entries[i].target);
+        }
+    }
+    tage->checkFoldedHist(history, "actual history advance");
+}
+
+void legacyTrainSequence(BTBTAGE *tage, Addr startPC,
+                         const std::vector<BTBEntry> &entries,
+                         const std::vector<bool> &actual_takens,
+                         boost::dynamic_bitset<> &history,
+                         std::vector<FullBTBPrediction> &stagePreds)
+{
+    ASSERT_EQ(entries.size(), actual_takens.size());
+    stagePreds[1].btbEntries = entries;
+    tage->putPCHistory(startPC, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    for (size_t i = 0; i < entries.size(); ++i) {
+        auto pred = findCondTaken(stagePreds[1].condTakens, entries[i].pc);
+        ASSERT_TRUE(pred.first) << "Missing legacy prediction for PC "
+                                << std::hex << entries[i].pc;
+
+        FetchTarget stream = createStream(startPC, entries[i], actual_takens[i], meta);
+        if (pred.second != actual_takens[i]) {
+            stream = setMispredStream(stream);
+        }
+        tage->update(stream);
+    }
+
+    advanceActualHistory(tage, history, entries, actual_takens);
+}
+
+void resolveTrainSequence(BTBTAGE *tage, Addr startPC,
+                          const std::vector<BTBEntry> &entries,
+                          const std::vector<bool> &actual_takens,
+                          boost::dynamic_bitset<> &history,
+                          std::vector<FullBTBPrediction> &stagePreds)
+{
+    ASSERT_EQ(entries.size(), actual_takens.size());
+    stagePreds[1].btbEntries = entries;
+    tage->putPCHistory(startPC, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    std::vector<ResolvedBranch> resolved_branches;
+    resolved_branches.reserve(entries.size());
+    for (size_t i = 0; i < entries.size(); ++i) {
+        auto pred = findCondTaken(stagePreds[1].condTakens, entries[i].pc);
+        ASSERT_TRUE(pred.first) << "Missing resolve-train prediction for PC "
+                                << std::hex << entries[i].pc;
+        resolved_branches.push_back(createResolvedBranch(
+            entries[i], actual_takens[i], pred.second != actual_takens[i], i));
+    }
+
+    auto packet = createResolvedTrainPacket(startPC, meta, resolved_branches);
+    auto target = createResolvedTrainTarget(startPC, meta);
+    ASSERT_TRUE(tage->canResolveTrain(packet, target))
+        << "resolveTrain should be accepted for the constructed packet";
+    tage->resolveTrain(packet, target);
+
+    advanceActualHistory(tage, history, entries, actual_takens);
+}
+
+BTBTAGE::TagePrediction predictBranch(BTBTAGE *tage, Addr startPC,
+                                      const std::vector<BTBEntry> &entries,
+                                      boost::dynamic_bitset<> &history,
+                                      std::vector<FullBTBPrediction> &stagePreds,
+                                      Addr branchPC)
+{
+    stagePreds[1].btbEntries = entries;
+    tage->putPCHistory(startPC, history, stagePreds);
+    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
+    auto it = meta->preds.find(branchPC);
+    if (it == meta->preds.end()) {
+        ADD_FAILURE() << "Missing probe prediction for PC " << std::hex << branchPC;
+        return BTBTAGE::TagePrediction();
+    }
+    return it->second;
 }
 
 /**
@@ -308,6 +403,38 @@ int findTableWithEntry(BTBTAGE* tage, Addr startPC, Addr branchPC) {
         }
     }
     return -1;
+}
+
+int findTableWithEntry(BTBTAGE* tage, Addr startPC, Addr branchPC,
+                       const std::shared_ptr<BTBTAGE::TageMeta>& meta) {
+    for (int t = 0; t < tage->numPredictors; t++) {
+        Addr index = tage->getTageIndex(startPC, t, meta->indexFoldedHist[t].get());
+        for (unsigned way = 0; way < tage->numWays[t]; way++) {
+            auto &entry = tage->tageTable[t][index][way];
+            if (entry.valid && entry.pc == branchPC) {
+                return t;
+            }
+        }
+    }
+    return -1;
+}
+
+std::vector<int> findTablesWithEntry(
+    BTBTAGE* tage, Addr startPC, Addr branchPC,
+    const std::shared_ptr<BTBTAGE::TageMeta>& meta)
+{
+    std::vector<int> tables;
+    for (int t = 0; t < tage->numPredictors; t++) {
+        Addr index = tage->getTageIndex(startPC, t, meta->indexFoldedHist[t].get());
+        for (unsigned way = 0; way < tage->numWays[t]; way++) {
+            auto &entry = tage->tageTable[t][index][way];
+            if (entry.valid && entry.pc == branchPC) {
+                tables.push_back(t);
+                break;
+            }
+        }
+    }
+    return tables;
 }
 
 class BTBTAGETest : public ::testing::Test
@@ -1028,9 +1155,10 @@ TEST_F(BTBTAGETest, ResolveTrainBankConflict) {
     auto meta = bankTage.getPredictionMeta();
     auto packet = createResolvedTrainPacket(
         0xa0, meta, {createResolvedBranch(createBTBEntry(0xa0), true, false, 0)});
+    auto target = createResolvedTrainTarget(0xa0, meta);
 
     uint64_t conflicts_before = bankTage.tageStats.updateBankConflict;
-    bool can_train = bankTage.canResolveTrain(packet);
+    bool can_train = bankTage.canResolveTrain(packet, target);
 
     EXPECT_FALSE(can_train);
     EXPECT_EQ(bankTage.tageStats.updateBankConflict, conflicts_before + 1);
@@ -1054,12 +1182,104 @@ TEST_F(BTBTAGETest, ResolveTrainUsesPacketTruthForConditionalSelection) {
 
     auto packet = createResolvedTrainPacket(
         startPC, meta, {createResolvedBranch(first, false, true, 0)});
+    auto target = createResolvedTrainTarget(startPC, meta);
 
-    ASSERT_TRUE(tage->canResolveTrain(packet));
-    tage->resolveTrain(packet);
+    ASSERT_TRUE(tage->canResolveTrain(packet, target));
+    tage->resolveTrain(packet, target);
 
     EXPECT_EQ(tage->tageTable[3][first_index][0].counter, -1);
     EXPECT_EQ(tage->tageTable[3][first_index][1].counter, 0);
+}
+
+TEST_F(BTBTAGETest, ResolveTrainRepeatedShortPatternMatchesLegacyProviderGrowth) {
+    const Addr bodyStartPC = 0x1000;
+    const Addr loopStartPC = 0x1100;
+    const BTBEntry body = createBTBEntry(0x1004, true, true, false, -1, 0x100c);
+    const BTBEntry loop = createBTBEntry(loopStartPC, true, true, false, -1, bodyStartPC);
+    const int iterations = 160;
+
+    BTBTAGE legacyTage;
+    BTBTAGE fullTage;
+    memset(&legacyTage.tageStats, 0, sizeof(BTBTAGE::TageStats));
+    memset(&fullTage.tageStats, 0, sizeof(BTBTAGE::TageStats));
+
+    boost::dynamic_bitset<> legacyHistory(64, false);
+    boost::dynamic_bitset<> fullHistory(64, false);
+    std::vector<FullBTBPrediction> legacyStagePreds(2);
+    std::vector<FullBTBPrediction> fullStagePreds(2);
+
+    auto legacyTrainNewEntry = [&](BTBTAGE *tage,
+                                   boost::dynamic_bitset<> &curHistory,
+                                   std::vector<FullBTBPrediction> &curStagePreds,
+                                   bool taken) {
+        curStagePreds[1].btbEntries.clear();
+        tage->putPCHistory(bodyStartPC, curHistory, curStagePreds);
+        auto meta = tage->getPredictionMeta();
+
+        FetchTarget stream;
+        stream.startPC = bodyStartPC;
+        stream.exeBranchInfo = body;
+        stream.exeTaken = taken;
+        stream.resolved = true;
+        stream.predBranchInfo = body;
+        stream.updateBTBEntries.clear();
+        stream.updateIsOldEntry = false;
+        stream.updateNewBTBEntry = body;
+        stream.predMetas[0] = meta;
+        if (taken) {
+            stream = setMispredStream(stream);
+        }
+
+        tage->update(stream);
+        advanceActualHistory(tage, curHistory, {body}, {taken});
+    };
+
+    auto resolveTrainNewEntry = [&](BTBTAGE *tage,
+                                    boost::dynamic_bitset<> &curHistory,
+                                    std::vector<FullBTBPrediction> &curStagePreds,
+                                    bool taken) {
+        curStagePreds[1].btbEntries.clear();
+        tage->putPCHistory(bodyStartPC, curHistory, curStagePreds);
+        auto meta = tage->getPredictionMeta();
+
+        auto packet = createResolvedTrainPacket(
+            bodyStartPC, meta, {createResolvedBranch(body, taken, taken, 0)});
+        auto target = createResolvedTrainTarget(bodyStartPC, meta);
+        ASSERT_TRUE(tage->canResolveTrain(packet, target));
+        tage->resolveTrain(packet, target);
+        advanceActualHistory(tage, curHistory, {body}, {taken});
+    };
+
+    for (int i = 0; i < iterations; ++i) {
+        const bool bodyTaken = (i % 2) == 0;
+
+        legacyTrainNewEntry(&legacyTage, legacyHistory, legacyStagePreds, bodyTaken);
+        resolveTrainNewEntry(&fullTage, fullHistory, fullStagePreds, bodyTaken);
+
+        legacyTrainSequence(&legacyTage, loopStartPC, {loop}, {true},
+                            legacyHistory, legacyStagePreds);
+        resolveTrainSequence(&fullTage, loopStartPC, {loop}, {true},
+                             fullHistory, fullStagePreds);
+    }
+
+    auto legacyPred = predictBranch(&legacyTage, bodyStartPC, {body},
+                                    legacyHistory, legacyStagePreds, body.pc);
+    auto fullPred = predictBranch(&fullTage, bodyStartPC, {body},
+                                  fullHistory, fullStagePreds, body.pc);
+
+    auto legacyMeta = std::static_pointer_cast<BTBTAGE::TageMeta>(legacyTage.getPredictionMeta());
+    auto fullMeta = std::static_pointer_cast<BTBTAGE::TageMeta>(fullTage.getPredictionMeta());
+    auto legacyTables = findTablesWithEntry(&legacyTage, bodyStartPC, body.pc, legacyMeta);
+    auto fullTables = findTablesWithEntry(&fullTage, bodyStartPC, body.pc, fullMeta);
+
+    ASSERT_GT(legacyPred.mainInfo.table, 0)
+        << "Legacy training should grow beyond table 0 for the short repeated pattern";
+    EXPECT_EQ(fullPred.mainInfo.table, legacyPred.mainInfo.table)
+        << "Full resolve-train should activate the same provider depth as legacy update";
+    EXPECT_EQ(fullPred.finalProviderTable, legacyPred.finalProviderTable)
+        << "Full resolve-train should converge to the same final provider as legacy update";
+    EXPECT_EQ(fullTables, legacyTables)
+        << "Full resolve-train should build the same set of TAGE tables as legacy update";
 }
 
 class BTBTAGEUpperBoundTest : public ::testing::Test
