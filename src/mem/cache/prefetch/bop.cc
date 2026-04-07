@@ -134,6 +134,11 @@ BOP::BOP(const BOPPrefetcherParams &p)
     fatal_if(enableStudentCover &&
             ((studentCovThreshold < 0.0) || (studentCovThreshold > 1.0)),
         "%s: student_cov_threshold must be in [0, 1]", name());
+    fatal_if(enableStudentCover && studentLargeOffsetPriorityEnable &&
+            ((studentLargeOffsetPriorityCoeff <= 0.0) ||
+             (studentLargeOffsetPriorityCoeff > 1.0)),
+        "%s: student_large_offset_priority_coeff must be in (0, 1]",
+        name());
     fatal_if(enableStudentCover &&
             (studentHashMode != "lowbits") &&
             (studentHashMode != "bop_rr") &&
@@ -490,6 +495,64 @@ BOP::studentPoolAllSameSign() const
 }
 
 bool
+BOP::studentIntermediateOffsetsMatchSlope(size_t best_idx, size_t worst_idx,
+        uint32_t best_cov, uint32_t worst_cov) const
+{
+    if (studentPool.size() <= 2) {
+        return true;
+    }
+
+    const auto best_abs = std::llabs(studentPool[best_idx].offset);
+    const auto worst_abs = std::llabs(studentPool[worst_idx].offset);
+    const double ref_dist = static_cast<double>(worst_abs - best_abs);
+    if (ref_dist <= 0.0) {
+        return false;
+    }
+
+    const double ref_cov_gap =
+        static_cast<double>(best_cov) - static_cast<double>(worst_cov);
+    const double coeff = studentLargeOffsetPriorityCoeff;
+
+    for (size_t i = 0; i < studentPool.size(); ++i) {
+        if (i == best_idx || i == worst_idx) {
+            continue;
+        }
+
+        const auto cur_abs = std::llabs(studentPool[i].offset);
+        if (cur_abs <= best_abs || cur_abs >= worst_abs) {
+            return false;
+        }
+
+        const uint32_t cur_cov = studentPool[i].curPhaseCov;
+        if (cur_cov > best_cov || cur_cov < worst_cov) {
+            return false;
+        }
+
+        const double cur_dist = static_cast<double>(cur_abs - best_abs);
+        if (cur_dist <= 0.0) {
+            return false;
+        }
+
+        const double cur_cov_gap =
+            static_cast<double>(best_cov) - static_cast<double>(cur_cov);
+        if (ref_cov_gap == 0.0) {
+            if (cur_cov_gap != 0.0) {
+                return false;
+            }
+            continue;
+        }
+
+        const double lhs = cur_cov_gap * ref_dist;
+        const double rhs = ref_cov_gap * cur_dist;
+        if (lhs < coeff * rhs || coeff * lhs > rhs) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool
 BOP::studentShouldPreferLargeOffset(size_t best_idx, size_t worst_idx,
         uint32_t best_cov, uint32_t worst_cov) const
 {
@@ -526,7 +589,12 @@ BOP::studentShouldPreferLargeOffset(size_t best_idx, size_t worst_idx,
         (static_cast<double>(worst_cov) - static_cast<double>(best_cov));
     const double rhs =
         static_cast<double>(worst_abs - best_abs) / studentPhaseTrainCount;
-    return lhs <= rhs;
+    if (lhs > rhs) {
+        return false;
+    }
+
+    return studentIntermediateOffsetsMatchSlope(
+        best_idx, worst_idx, best_cov, worst_cov);
 }
 
 void
