@@ -500,6 +500,7 @@ class Fetch
         const ResolveTrainQueueEntry &entry) const;
     void appendResolveTrainInst(
         ResolveTrainQueueEntry &entry, const ResolveTrainInstData &inst_data);
+    void trimResolveTrainInstsAfterTaken(ResolveTrainQueueEntry &entry);
     void filterResolveTrainQueue();
 
     /** Handles decode squash signals.

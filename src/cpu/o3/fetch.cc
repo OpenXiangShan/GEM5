@@ -81,28 +81,8 @@ namespace gem5
 namespace o3
 {
 
-namespace
-{
-
 constexpr uint8_t RvcInstBytes = 2;
 constexpr uint8_t BaseInstBytes = 4;
-
-void
-trimResolveTrainInstsAfterTaken(Fetch::ResolveTrainQueueEntry &entry)
-{
-    auto first_taken = std::find_if(
-        entry.insts.begin(), entry.insts.end(),
-        [](const Fetch::ResolveTrainInstData &inst_data) {
-            return inst_data.taken;
-        });
-    if (first_taken == entry.insts.end()) {
-        return;
-    }
-
-    entry.insts.erase(std::next(first_taken), entry.insts.end());
-}
-
-} // anonymous namespace
 
 Fetch::IcachePort::IcachePort(Fetch *_fetch, CPU *_cpu) :
         RequestPort(_cpu->name() + ".icache_port", _cpu), fetch(_fetch)
@@ -1655,6 +1635,21 @@ Fetch::appendResolveTrainInst(
         });
 
     trimResolveTrainInstsAfterTaken(entry);
+}
+
+void
+Fetch::trimResolveTrainInstsAfterTaken(ResolveTrainQueueEntry &entry)
+{
+    auto first_taken = std::find_if(
+        entry.insts.begin(), entry.insts.end(),
+        [](const ResolveTrainInstData &inst_data) {
+            return inst_data.taken;
+        });
+    if (first_taken == entry.insts.end()) {
+        return;
+    }
+
+    entry.insts.erase(std::next(first_taken), entry.insts.end());
 }
 
 void
