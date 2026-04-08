@@ -2,270 +2,235 @@
 
 ## 1. Why this branch exists
 
-This branch changes GEM5 frontend resolved-branch training from a squash-assisted,
-PC-only update model to an RTL-aligned full resolve-train model.
+This branch replaces the old squash-assisted resolved-update path with a single
+packet-based full resolve-train path for the migrated BTB predictors.
 
-Before this branch:
+Historically GEM5 used:
 
-- IEW only sent `{ftqId, pc}` through `resolvedCFIs`
-- Fetch reconstructed resolved updates from `FetchTarget` state
-- correct training truth depended on squash writing back `exeTaken` /
-  `exeBranchInfo` before resolve update was consumed
+- `IEW -> resolvedCFIs`
+- `Fetch.resolveQueue`
+- `prepareResolveUpdateEntries()`
+- `markCFIResolved()`
+- `resolveUpdate()`
 
-After this branch:
+That flow depended on squash-populated execution truth and mixed together:
 
-- IEW sends full per-branch resolve truth
-- Fetch aggregates real resolved branches by FTQ target identity
-- Fetch builds an explicit `ResolvedTrainPacket`
-- migrated predictors train from packet truth plus prediction-time metadata
+- resolve notification
+- new-entry discovery
+- predictor-specific update preparation
 
-The main motivation is to remove the correctness and performance risk caused by
-resolve training depending on squash timing.
+The new branch instead uses explicit resolve truth from IEW and packet-based
+training.
 
-## 2. High-level architecture
+## 2. Current architecture
 
-The new dataflow is:
+### 2.1 Resolved-stage training path
+
+Current resolved-stage dataflow is:
 
 ```text
 IEW
   -> resolveTrainEntries[{ftqId, generation, pc, target, taken, ...}]
 Fetch
-  -> resolveTrainQueue keyed by {tid, ftqId, generation}
-  -> ResolvedTrainPacket{startPC, predMetas, realBranches}
+  -> resolveTrainQueue keyed by FTQ target identity
+  -> ResolvedTrainPacket{tid, target, startPC, realBranches}
 DecoupledBPUWithBTB
   -> resolveTrain(packet)
-  -> per-component canResolveTrain/resolveTrain
+  -> MBTB / BTBTAGE / BTBITTAGE
 ```
 
-The old path still exists as fallback:
+Important current semantics:
 
-```text
-IEW
-  -> resolvedCFIs[{ftqId, pc}]
-Fetch
-  -> legacy resolveQueue
-DecoupledBPUWithBTB
-  -> prepareResolveUpdateEntries/markCFIResolved/resolveUpdate
-```
+- packets are truth-only; they do not own frozen predictor metadata
+- training uses live FTQ metadata from the current `FetchTarget`
+- fetch-side packet formation trims branches after the first taken branch,
+  matching RTL-style training-prefix semantics
 
-Current default mode is:
+### 2.2 Legacy path status
 
-- `enableFullResolveTrain = True`
-- `enableLegacyResolveUpdate = True`
+The old legacy resolved-update chain has been removed from the active training
+architecture:
 
-This means:
+- no `resolvedCFIs` predictor training path
+- no `Fetch.resolveQueue`-based predictor training path
+- no predictor-top `prepareResolveUpdateEntries()` / `markCFIResolved()` /
+  `resolveUpdate()` helper chain
 
-- migrated components use the full packet path
-- non-migrated `resolvedUpdate` components still keep legacy fallback
+Resolved-stage BTB training is now single-path: full resolve train.
 
-It is not a double-update mode for migrated components.
+### 2.3 Commit/update path
 
-## 3. Review map by file group
+Commit/update behavior remains intact.
 
-### 3.1 O3 protocol and Fetch plumbing
+This matters because not every predictor needs resolved-stage packet training.
+Current design is:
 
-Relevant files:
+- migrated BTB predictors use full resolve-train
+- other components may still rely on commit/update behavior
 
-- `src/cpu/o3/BaseO3CPU.py`
+## 3. Component map
+
+### 3.1 Components on full resolve-train
+
+- `MBTB`
+- `BTBTAGE`
+- `BTBITTAGE`
+
+### 3.2 Components not migrated to full resolve-train in this branch
+
+These are not treated as active users of the removed legacy BTB resolved-update
+chain in current configs:
+
+- `MicroTAGE` (still has local old-style logic in code, but not enabled as an
+  active resolved-stage user in current configs)
+- `SC` remains follow-up work if full RTL parity is desired
+
+### 3.3 Non-resolved-stage structures
+
+These are not intended to use full resolve-train in the RTL-aligned model:
+
+- commit/update-only or redirect/recover structures
+- components whose role is speculative / fast-train / commit-time only
+
+## 4. File map
+
+### O3 / frontend integration
+
 - `src/cpu/o3/comm.hh`
 - `src/cpu/o3/dyn_inst.hh`
 - `src/cpu/o3/dyn_inst.cc`
 - `src/cpu/o3/iew.cc`
 - `src/cpu/o3/fetch.hh`
 - `src/cpu/o3/fetch.cc`
-- `src/cpu/pred/BranchPredictor.py`
+- `src/cpu/o3/BaseO3CPU.py`
 
-Key changes:
+These files now:
 
-- adds rollout params: `enableFullResolveTrain`, `enableLegacyResolveUpdate`
-- adds `ResolveTrainEntry` to `IewComm`
-- records `ftqGeneration` and `ftqOffset` in `DynInst`
-- emits full resolve truth from IEW
-- adds `resolveTrainQueue` in Fetch
-- builds `ResolvedTrainPacket` from queued truth plus `FetchTarget` metadata
-- only pops packet queue on explicit predictor acceptance
+- carry full resolve truth from IEW
+- maintain `resolveTrainQueue`
+- build truth-only packets
+- trim branches after the first taken branch before training
 
-Main review questions:
-
-- does `DynInst` carry enough fetch-time identity for stable FTQ matching?
-- does Fetch aggregate by `{tid, ftqId, generation}` correctly?
-- are stale, squashed, committed, and reused FTQ targets rejected safely?
-- does full-resolve retry feed the same throttle path as legacy resolve update?
-
-### 3.2 FTQ identity protection and predictor top-level API
-
-Relevant files:
+### Predictor top / FTQ integration
 
 - `src/cpu/pred/btb/common.hh`
 - `src/cpu/pred/btb/ftq.hh`
 - `src/cpu/pred/btb/ftq.cc`
 - `src/cpu/pred/btb/decoupled_bpred.hh`
 - `src/cpu/pred/btb/decoupled_bpred.cc`
+- `src/cpu/pred/btb/decoupled_bpred_stats.cc`
 - `src/cpu/pred/btb/timed_base_pred.hh`
+- `src/cpu/pred/btb/timed_base_pred.cc`
 
-Key changes:
+These files now:
 
-- adds `generation` to `FetchTarget`
-- allocates a fresh generation when a logical FTQ target is created
-- adds FTQ identity helpers: generation lookup and identity matching
-- adds packet types:
-  - `FetchTargetIdentity`
-  - `ResolvedBranch`
-  - `ResolvedTrainPacket`
-- adds `DecoupledBPUWithBTB::resolveTrain()`
-- adds default component hooks:
-  - `canResolveTrain(packet)`
-  - `resolveTrain(packet)`
-- adds top-level packet validation before fan-out
+- track FTQ target generation identity
+- validate full resolve packets using structural checks
+- dispatch full resolve packets to migrated components
+- preserve commit/update path for non-resolved-stage training
 
-Main review questions:
+### Migrated predictor components
 
-- is FTQ generation sufficient to reject stale resolve traffic?
-- does packet validation reject malformed branch lists and stale metadata?
-- does `resolveTrain()` preserve the old probe/apply contract semantics?
-
-### 3.3 Migrated predictors
-
-Relevant files:
-
-- `src/cpu/pred/btb/mbtb.hh`
 - `src/cpu/pred/btb/mbtb.cc`
-- `src/cpu/pred/btb/btb_tage.hh`
 - `src/cpu/pred/btb/btb_tage.cc`
-- `src/cpu/pred/btb/btb_ittage.hh`
 - `src/cpu/pred/btb/btb_ittage.cc`
 
-Migrated components:
+## 5. Key behavior changes since early migration commits
 
-- `MBTB`
-- `BTBTAGE`
-- `BTBITTAGE`
+The branch has moved beyond the earlier intermediate state described in older
+notes.
 
-Current split:
+Current important fixes include:
 
-- in full-resolve mode, these three no longer consume legacy resolved-update
-- other non-migrated components can still use legacy resolved-update if enabled
+### 5.1 Truth-only packets
 
-Main review questions:
+`ResolvedTrainPacket` no longer stores duplicated predictor metadata. Training
+reads metadata from the live `FetchTarget` instead.
 
-- does each component now train only from packet truth on the new path?
-- are legacy side effects cleanly disabled for migrated components?
-- do bank conflict / readiness semantics still behave the same?
+### 5.2 BTBTAGE new-entry handling
 
-## 4. Component-by-component summary
+Full resolve-train now distinguishes:
 
-### 4.1 MBTB
+- existing predicted entries
+- new-entry candidates
 
-What changed:
+so short-pattern conditional branches can allocate and grow similarly to the
+legacy `update()` path without depending on squash-derived helper state.
 
-- packet-based `canResolveTrain()` / `resolveTrain()` were added
-- new path no longer depends on:
-  - `updateBTBEntries`
-  - `updateNewBTBEntry`
-  - per-entry resolved bits inside `FetchTarget`
-- packet updates reuse existing SRAM / victim-cache update machinery
+### 5.3 RTL-style prefix trimming
 
-Important review points:
+When a packet contains multiple resolved branches, fetch trims the branch list to
+the prefix up to and including the first taken branch.
 
-- MBTB legacy resolved-update is skipped in full-resolve mode
-- MBTB-specific legacy prepare/mark side effects are also gated off in
-  full-resolve mode
+This avoids the previous failure mode where packet validation rejected the whole
+packet because branches existed after a taken branch.
 
-### 4.2 BTBTAGE
+## 6. Configuration semantics
 
-What changed:
+Current configs are centered on `enableFullResolveTrain`.
 
-- packet-based bank-conflict probe added in `canResolveTrain()`
-- packet path now trains using prediction snapshots, not squash-populated state
-- metadata now retains predicted conditional `BTBEntry` per branch PC
-- missing-meta conditional branches on the packet path are now materialized and
-  still trained, matching old new-entry behavior
+The old `resolvedUpdate` concept used to mean:
 
-Important review points:
+- this component trains at resolve stage rather than only at commit
 
-- packet path only trains intended conditional branches
-- packet conflict failures now drive `notifyResolveFailure()` so retry and
-  prediction throttling still work
+That intent is now expressed through the new full resolve-train path for the
+migrated BTB predictors, not through a legacy helper chain.
 
-### 4.3 BTBITTAGE
+### Current intent
 
-What changed:
+- `kmhv3`: full resolve-train enabled for the migrated BTB set
+- `idealkmhv3`: explicit control is still available through the top-level switch
 
-- packet-based `resolveTrain()` now uses indirect branch truth from packet data
-- no longer depends on squash-derived `exeBranchInfo` on the new path
-- legacy resolved-update is skipped in full-resolve mode
+## 7. What reviewers should focus on
 
-Important review points:
+### For architecture review
 
-- training remains scoped to indirect non-return branches
-- alternate-provider update now only happens when `alt_info.found` is true,
-  fixing an existing corruption hazard in both old and new paths
+- Is the resolved-stage path now single-source and coherent?
+- Is FTQ generation sufficient for stale-target filtering?
+- Does fetch-side branch trimming match intended RTL behavior?
 
-## 5. Current default behavior
+### For predictor review
 
-Current defaults are set in `src/cpu/o3/BaseO3CPU.py`:
+- Do `MBTB`, `BTBTAGE`, and `BTBITTAGE` consume truth-only packets correctly?
+- Is new-entry handling independent from squash-era legacy helper state?
+- Does commit/update behavior remain intact where it should?
 
-- `enableFullResolveTrain = True`
-- `enableLegacyResolveUpdate = True`
+### For cleanup review
 
-This is intentional.
+- Was the old `resolvedCFIs -> resolveQueue -> resolveUpdate()` chain removed
+  cleanly?
+- Did config semantics stop pointing at deleted legacy machinery?
 
-Reason:
+## 8. Verification currently used on this branch
 
-- migrated components already use the packet path
-- some other `resolvedUpdate` users may still exist outside this migration set
-- keeping legacy enabled avoids silent loss of resolve-stage training during the
-  rollout period
+### Build
 
-So current behavior is:
+- `scons build/RISCV/gem5.opt --gold-linker -j60`
 
-- `MBTB`, `BTBTAGE`, `BTBITTAGE` -> full packet path
-- non-migrated resolved-update components -> legacy path
-- commit-time predictors -> unchanged commit path
+### Unit tests
 
-## 6. Verification done on this branch
+- `build/RISCV/cpu/pred/btb/test/tage.test.debug`
 
-Fresh verification used before final commit creation:
+Current result:
 
-- build: `scons build/RISCV/gem5.opt --gold-linker -j60`
-- unit test: `build/RISCV/cpu/pred/btb/test/tage.test.debug`
+- `22/22` passing
 
-Observed result:
+### Targeted workloads
 
-- `gem5.opt` builds successfully
-- `tage.test.debug` passes `21/21`
+Used repeatedly during this branch:
 
-New or extended test coverage includes packet-mode BTBTAGE cases for:
+- `tage1`
+- `usefulbit`
+- `tage2`
 
-- bank-conflict probe behavior
-- packet-truth conditional selection
-- new conditional entry training without prediction metadata
+The current branch state keeps these in the recovered performance range after the
+packet-trimming fix and legacy-path cleanup.
 
-## 7. Suggested review order
+## 9. Remaining follow-up work
 
-For fastest review, read in this order:
+Likely next steps after this branch stabilizes:
 
-1. `src/cpu/o3/comm.hh`
-2. `src/cpu/o3/iew.cc`
-3. `src/cpu/o3/fetch.hh`
-4. `src/cpu/o3/fetch.cc`
-5. `src/cpu/pred/btb/common.hh`
-6. `src/cpu/pred/btb/ftq.hh`
-7. `src/cpu/pred/btb/decoupled_bpred.hh`
-8. `src/cpu/pred/btb/decoupled_bpred.cc`
-9. `src/cpu/pred/btb/mbtb.cc`
-10. `src/cpu/pred/btb/btb_tage.cc`
-11. `src/cpu/pred/btb/btb_ittage.cc`
-12. `src/cpu/pred/btb/test/btb_tage.test.cc`
-
-## 8. Known follow-up work
-
-This branch does not yet remove the legacy path.
-
-Natural next steps after review:
-
-- migrate any remaining `resolvedUpdate` components if needed
-- once all needed components are packetized, turn `enableLegacyResolveUpdate`
-  default off
-- then delete legacy `resolvedCFIs` / `prepareResolveUpdateEntries()` /
-  `markCFIResolved()`-based training path
+- decide whether `SC` should be migrated to full resolve-train
+- decide whether `MicroTAGE` should be migrated to full resolve-train for closer
+  RTL parity
+- continue reducing stale-drop rate if workload-level gaps remain
