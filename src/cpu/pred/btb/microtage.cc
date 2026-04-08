@@ -214,7 +214,8 @@ MicroTAGE::TagePrediction
 MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  const Addr &startPC,
                                  std::shared_ptr<TageMeta> predMeta,
-                                 ThreadID tid) {
+                                 ThreadID tid,
+                                 uint8_t asidHash) {
     DPRINTF(UTAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
     const auto &state = historyState(tid);
 
@@ -229,12 +230,13 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         // Calculate index and tag: use snapshot if provided, otherwise use current folded history
         // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
         Addr index = predMeta ? getTageIndex(startPC, i,
-                            predMeta->indexFoldedHist[i].get())
-                          : getTageIndex(startPC, i, state.indexFoldedHist[i].get());
+                            predMeta->indexFoldedHist[i].get(), asidHash)
+                          : getTageIndex(startPC, i, state.indexFoldedHist[i].get(), asidHash);
         Addr tag = predMeta ? getTageTag(startPC, i,
-                            predMeta->tagFoldedHist[i].get(),predMeta->altTagFoldedHist[i].get(), position)
+                            predMeta->tagFoldedHist[i].get(),predMeta->altTagFoldedHist[i].get(),
+                            position, asidHash)
                         : getTageTag(startPC, i, state.tagFoldedHist[i].get(),
-                                     state.altTagFoldedHist[i].get(), position);
+                                     state.altTagFoldedHist[i].get(), position, asidHash);
 
         bool match = false; // for each table, only one way can be matched
         TageEntry matching_entry;
@@ -291,7 +293,7 @@ MicroTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
  */
 void
 MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                        CondTakens& results, ThreadID tid)
+                        CondTakens& results, ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(UTAGE, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -300,7 +302,7 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
         // Only predict for valid conditional branches
         if (btb_entry.isCond && btb_entry.valid) {
             auto pred = generateSinglePrediction(btb_entry, startPC, nullptr,
-                                                 tid);
+                                                 tid, asidHash);
             threadMeta[tid]->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
@@ -333,6 +335,7 @@ MicroTAGE::dryRunCycle(Addr startPC) {
 void
 MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
     const ThreadID tid = predictorTid(stagePreds);
+    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     const auto &state = historyState(tid);
     // Record prediction bank for next tick's conflict detection
     lastPredBankId = getBankId(startPC);
@@ -370,7 +373,7 @@ MicroTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTB
         auto &stage_pred = stagePreds[s];
         stage_pred.condTakens.clear();
         lookupHelper(startPC, stage_pred.btbEntries, stage_pred.condTakens,
-                     tid);
+                     tid, asidHash);
     }
 
 }
@@ -538,6 +541,7 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  bool actual_taken,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
+                                 uint8_t asidHash,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way) {
@@ -551,9 +555,10 @@ MicroTAGE::handleNewEntryAllocation(const Addr &startPC,
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(startPC, ti,
-            meta->indexFoldedHist[ti].get());
+            meta->indexFoldedHist[ti].get(), asidHash);
         Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
+            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(),
+            position, asidHash);
 
         auto &set = tageTable[ti][newIndex];
 
@@ -681,7 +686,8 @@ MicroTAGE::update(const FetchTarget &stream) {
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
-            recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta);
+            recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
+                                                 stream.tid, stream.asidHash);
         } else { // otherwise, use the prediction from the prediction-time main/alt
             auto pred_it = predMeta->preds.find(btb_entry.pc);
             if (pred_it != predMeta->preds.end()) {
@@ -689,7 +695,8 @@ MicroTAGE::update(const FetchTarget &stream) {
             } else {
                 DPRINTF(UTAGE, "update: missing predMeta entry for pc %#lx, recompute with snapshot\n",
                         btb_entry.pc);
-                recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta);
+                recomputed = generateSinglePrediction(btb_entry, startAddr, predMeta,
+                                                     stream.tid, stream.asidHash);
             }
         }
         if (recomputed.mainprovided) {
@@ -712,7 +719,8 @@ MicroTAGE::update(const FetchTarget &stream) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
             alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
-                                   start_table, predMeta, allocated_table, allocated_index, allocated_way);
+                                   start_table, predMeta, stream.asidHash,
+                                   allocated_table, allocated_index, allocated_way);
         }
 
 #ifndef UNIT_TEST
@@ -794,7 +802,8 @@ MicroTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 
 // Calculate TAGE tag with folded history - optimized version using bitwise operations
 Addr
-MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist, Addr position)
+MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
+                      Addr position, uint8_t asidHash)
 {
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
@@ -809,11 +818,12 @@ MicroTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHis
     Addr altTagBits = (altFoldedHist << 1) & mask;
 
     // XOR all components together, including position (like RTL)
-    return pcBits ^ foldedBits ^ position ^ altTagBits;
+    return injectAsidHashIntoTag(pcBits ^ foldedBits ^ position ^ altTagBits,
+                                 tableTagBits[t], asidHash);
 }
 
 Addr
-MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
+MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash)
 {
     // Create mask for tableIndexBits[t] to limit result size
     Addr mask = (1ULL << tableIndexBits[t]) - 1;
@@ -822,13 +832,13 @@ MicroTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
     Addr pcBits = (pc >> pcShift) & mask;
     Addr foldedBits = foldedHist & mask;
 
-    return pcBits ^ foldedBits;
+    return xorAsidHashIntoIndex(pcBits ^ foldedBits, tableIndexBits[t], asidHash);
 }
 
 Addr
-MicroTAGE::getTageIndex(Addr pc, int t)
+MicroTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash)
 {
-    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get());
+    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get(), asidHash);
 }
 
 bool

@@ -2,6 +2,7 @@
 
 #include <array>
 
+#include "arch/riscv/regs/misc.hh"
 #include "base/debug_helper.hh"
 #include "base/output.hh"
 #include "cpu/o3/cpu.hh"
@@ -21,6 +22,19 @@ namespace branch_prediction
 {
 namespace btb_pred
 {
+
+uint8_t
+DecoupledBPUWithBTB::getThreadAsidHash(ThreadID tid) const
+{
+    if (!cpu) {
+        return 0;
+    }
+
+    const RegVal satp =
+        cpu->readMiscRegNoEffect(RiscvISA::MiscRegIndex::MISCREG_SATP, tid);
+    const uint16_t asid = (satp >> 44) & mask(16);
+    return foldAsidHash16To4(asid);
+}
 
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
@@ -209,6 +223,7 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
 {
     auto& thread = threads[tid];
     auto& predsOfEachStage = threads[tid].predsOfEachStage;
+    const uint8_t asid_hash = getThreadAsidHash(tid);
 
     DPRINTF(Override, "Requesting new prediction for PC %#lx\n", thread.s0PC);
 
@@ -216,6 +231,7 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
     clearPreds(tid);
     for (int i = 0; i < numStages; i++) {
         predsOfEachStage[i].tid = tid;
+        predsOfEachStage[i].asidHash = asid_hash;
         predsOfEachStage[i].bbStart = thread.s0PC;
         predsOfEachStage[i].predSource = i;
     }
@@ -781,6 +797,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
     // Create a new fetch target entry
     FetchTarget entry;
     entry.tid = tid;
+    entry.asidHash = finalPred.asidHash;
     entry.startPC = s0PC;
 
     // Extract branch prediction information

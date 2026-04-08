@@ -125,19 +125,20 @@ class BTBITTAGE : public TimedBaseBTBPredictor
 
     // return provided
     void lookupHelper(Addr stream_start, const std::vector<BTBEntry> &btbEntries,
-                      IndirectTargets& results, ThreadID tid);
+                      IndirectTargets& results, ThreadID tid, uint8_t asidHash);
 
     // use blockPC
-    Addr getTageIndex(Addr pc, int table);
+    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0);
 
     // use blockPC (uint64_t version for performance)
-    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, uint8_t asidHash = 0);
 
     // use blockPC
-    Addr getTageTag(Addr pc, int table);
+    Addr getTageTag(Addr pc, int table, uint8_t asidHash = 0);
 
     // use blockPC (uint64_t version for performance)
-    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist);
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist,
+                    uint8_t asidHash = 0);
 
     Addr getOffset(Addr pc) {
         return (pc & (blockSize - 1)) >> 1;

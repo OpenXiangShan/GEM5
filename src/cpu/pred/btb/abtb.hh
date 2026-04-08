@@ -224,8 +224,9 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch to look up.
      *  @return Returns the index into the BTB.
      */
-    inline Addr getIndex(Addr instPC) {
-        return (instPC >> idxShiftAmt) & idxMask;
+    inline Addr getIndex(Addr instPC, uint8_t asidHash) {
+        Addr baseIndex = (instPC >> idxShiftAmt) & idxMask;
+        return xorAsidHashIntoIndex(baseIndex, floorLog2(numSets), asidHash);
     }
 
     /** Returns the tag bits of a given address.
@@ -234,8 +235,9 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch's address.
      *  @return Returns the tag bits.
      */
-    inline Addr getTag(Addr instPC) {
-        return (instPC >> tagShiftAmt) & tagMask;
+    inline Addr getTag(Addr instPC, uint8_t asidHash) {
+        Addr baseTag = (instPC >> tagShiftAmt) & tagMask;
+        return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
     }
 
 
@@ -365,13 +367,13 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The address of the block to look up.
      *  @return Returns all hit BTB entries.
      */
-    std::vector<TickedBTBEntry> lookup(Addr block_pc);
+    std::vector<TickedBTBEntry> lookup(Addr block_pc, uint8_t asidHash);
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
      * @return Vector of matching BTB entries
      */
-    std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc);
+    std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc, uint8_t asidHash);
 
     /** The BTB structure:
      *  - Organized as numSets sets
