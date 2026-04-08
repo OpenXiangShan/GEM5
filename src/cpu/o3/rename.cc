@@ -862,7 +862,7 @@ Rename::renameDestRegs(const DynInstPtr &inst, ThreadID tid)
 
         VirtRegId bypass_reg;
         bool inc_ref_of_last_dest_phy_reg = false;
-        if (inst->isMov()) {
+        if (cpu->enableMoveElimination && inst->isMov()) {
             // Move elimination
             bypass_reg =
                 map->lookup(tc->flattenRegId(inst->srcRegIdx(0)));

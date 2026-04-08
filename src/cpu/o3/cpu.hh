@@ -652,6 +652,7 @@ class CPU : public BaseCPU
     /** Issue Width, using for intel topdown stats */
     int issueWidth; // issueWidth = decodeWidth = renameWidth!!!
 
+    bool enableMoveElimination; // Control flag of register move elimination
     bool enableConstantFolding; // Control flag of Constant Folding (add-immediate elimination)
     bool enableMovImmElimination;
 

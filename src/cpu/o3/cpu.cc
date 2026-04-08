@@ -129,6 +129,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       ipc_r("ipc", "", 1000, archDBer),
       cpi_r("cpi", "", 1000, archDBer),
       issueWidth(params.decodeWidth),
+      enableMoveElimination(params.enableMoveElimination),
       enableConstantFolding(params.enableConstantFolding),
       enableMovImmElimination(params.enableMovImmElimination),
       cpuStats(this),

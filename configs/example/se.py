@@ -331,7 +331,8 @@ def setKmhV3IdealParams(args, system):
         # cpu.EnablePipeNukeCheck = False
         cpu.StoreWbStage = 4 # store writeback at s4
 
-        # enable constant folding
+        # disable rename-time operand folding/elimination for SE correctness
+        cpu.enableMoveElimination = False
         cpu.enableConstantFolding = False
 
         # ideal l1 caches

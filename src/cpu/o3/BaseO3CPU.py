@@ -262,6 +262,7 @@ class BaseO3CPU(BaseCPU):
 
     enable_loadFusion = Param.Bool(False, "Enable load fusion")
 
+    enableMoveElimination = Param.Bool(True, "Enable register move elimination")
     enableConstantFolding = Param.Bool(False, "Enable Constant Folding (add-immediate elimination)")
     enableMovImmElimination = Param.Bool(False, "Enable MOVI elimination")
 
