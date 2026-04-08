@@ -1189,7 +1189,7 @@ class L2CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     despacito_stream = Param.DespacitoStreamPrefetcher(DespacitoStreamPrefetcher(is_sub_prefetcher=True),
                                                        "DespacitoStream used in composite prefetcher")
     enable_bop = Param.Bool(False, "Enable BOP")
-    enable_cdp = Param.Bool(True, "Enable CDP")
+    enable_cdp = Param.Bool(False, "Enable CDP")
     enable_cmc = Param.Bool(False, "Enable CMC")
     enable_despacito_stream = Param.Bool(True, "Enable despacito stream")
 
