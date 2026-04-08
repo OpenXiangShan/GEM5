@@ -115,13 +115,11 @@ def setKmhV3IdealParams(args, system):
             system.tol2bus_list[i].response_latency = 0  # 3->0
             system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
 
-            # Enable dual-port for DCache → L2 communication
-            # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
-            # RespLayer[1]: L2 → DCache, allow 2 responses per cycle
-            system.tol2bus_list[i].layer_bandwidth_configs = [
-                LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
-                LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
-            ]
+            # 关闭 DCache → L2 的 dual-port 带宽配置，恢复默认行为
+            # system.tol2bus_list[i].layer_bandwidth_configs = [
+            #     LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
+            #     LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
+            # ]
 
     # l3 cache
     if args.l3cache:
