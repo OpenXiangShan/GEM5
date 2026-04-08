@@ -846,6 +846,55 @@ TEST(BTBMGSCTest, PTableLearnsOutcomeFromPreviousTakenBranchTarget)
     EXPECT_GE(acc, 0.80) << "Accuracy too low for PTable path-target learning: " << acc;
 }
 
+TEST(BTBMGSCTest, SpecUpdatePHistUsesIndirectTargetOverride)
+{
+    MgscHarness h;
+
+    BTBEntry entry = makeCondBTBEntry(0x1000);
+    entry.isIndirect = true;
+    entry.target = 0x2000;
+    const Addr indirectTarget = 0x3000;
+
+    ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, indirectTarget));
+
+    FullBTBPrediction pred;
+    pred.btbEntries = {entry};
+    pred.condTakens.push_back({entry.pc, true});
+    pred.indirectTargets.push_back({entry.pc, indirectTarget});
+
+    boost::dynamic_bitset<> expected_phr = h.phr;
+    pHistShiftIn(2, true, expected_phr, entry.pc, indirectTarget);
+
+    h.mgsc.specUpdatePHist(h.phr, pred);
+    h.mgsc.checkFoldedHist(h.ghr, expected_phr, h.lhr,
+                           "indirect target override");
+}
+
+TEST(BTBMGSCTest, SpecUpdatePHistUsesReturnTargetOverride)
+{
+    MgscHarness h;
+
+    BTBEntry entry = makeCondBTBEntry(0x1000);
+    entry.isIndirect = true;
+    entry.isReturn = true;
+    entry.target = 0x2000;
+    const Addr returnTarget = 0x3400;
+
+    ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, returnTarget));
+
+    FullBTBPrediction pred;
+    pred.btbEntries = {entry};
+    pred.condTakens.push_back({entry.pc, true});
+    pred.returnTarget = returnTarget;
+
+    boost::dynamic_bitset<> expected_phr = h.phr;
+    pHistShiftIn(2, true, expected_phr, entry.pc, returnTarget);
+
+    h.mgsc.specUpdatePHist(h.phr, pred);
+    h.mgsc.checkFoldedHist(h.ghr, expected_phr, h.lhr,
+                           "return target override");
+}
+
 }  // namespace test
 }  // namespace btb_pred
 }  // namespace branch_prediction
