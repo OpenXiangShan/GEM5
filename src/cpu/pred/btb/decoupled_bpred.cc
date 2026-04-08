@@ -21,11 +21,8 @@ namespace branch_prediction
 namespace btb_pred
 {
 
-namespace
-{
-
-bool
-validateResolvedTrainPacket(const ResolvedTrainPacket &packet)
+DecoupledBPUWithBTB::ResolveTrainValidationReason
+DecoupledBPUWithBTB::validateResolvedTrainPacket(const ResolvedTrainPacket &packet)
 {
     uint8_t lastOffset = 0;
     Addr lastPc = 0;
@@ -33,23 +30,28 @@ validateResolvedTrainPacket(const ResolvedTrainPacket &packet)
     bool seenTaken = false;
     for (const auto &resolved : packet.realBranches) {
         if (resolved.branch.pc < packet.startPC) {
-            return false;
+            dbpBtbStats.fullResolveTrainValidationPcBeforeStart++;
+            return ResolveTrainValidationReason::PcBeforeStart;
         }
 
         if (resolved.branch.size == 0) {
-            return false;
+            dbpBtbStats.fullResolveTrainValidationZeroSize++;
+            return ResolveTrainValidationReason::ZeroSize;
         }
 
         if (seenTaken) {
-            return false;
+            dbpBtbStats.fullResolveTrainValidationAfterTaken++;
+            return ResolveTrainValidationReason::AfterTaken;
         }
 
         if (!firstBranch) {
             if (resolved.ftqOffset < lastOffset) {
-                return false;
+                dbpBtbStats.fullResolveTrainValidationOffsetReversed++;
+                return ResolveTrainValidationReason::OffsetReversed;
             }
             if (resolved.ftqOffset == lastOffset && resolved.branch.pc <= lastPc) {
-                return false;
+                dbpBtbStats.fullResolveTrainValidationPcOrderSameOffset++;
+                return ResolveTrainValidationReason::PcOrderSameOffset;
             }
         }
 
@@ -59,10 +61,8 @@ validateResolvedTrainPacket(const ResolvedTrainPacket &packet)
         firstBranch = false;
     }
 
-    return true;
+    return ResolveTrainValidationReason::Accepted;
 }
-
-} // anonymous namespace
 
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
@@ -682,6 +682,7 @@ DecoupledBPUWithBTB::resolveTrain(
         DPRINTF(DecoupleBP,
                 "Resolve-train packet tid mismatch: packet=%u arg=%u\n",
                 packet.tid, tid);
+        dbpBtbStats.fullResolveTrainRejectTidMismatch++;
         return false;
     }
 
@@ -690,6 +691,7 @@ DecoupledBPUWithBTB::resolveTrain(
         DPRINTF(DecoupleBP,
                 "Resolve-train packet target mismatch: id=%lu generation=%lu tid=%u\n",
                 packet.target.id, packet.target.generation, tid);
+        dbpBtbStats.fullResolveTrainRejectTargetMismatch++;
         return false;
     }
 
@@ -698,13 +700,15 @@ DecoupledBPUWithBTB::resolveTrain(
         DPRINTF(DecoupleBP,
                 "Resolve-train packet startPC mismatch: packet=%#lx ftq=%#lx id=%lu tid=%u\n",
                 packet.startPC, target.startPC, packet.target.id, tid);
+        dbpBtbStats.fullResolveTrainRejectStartPCMismatch++;
         return false;
     }
 
-    if (!validateResolvedTrainPacket(packet)) {
+    if (validateResolvedTrainPacket(packet) != ResolveTrainValidationReason::Accepted) {
         DPRINTF(DecoupleBP,
                 "Resolve-train packet validation failed: id=%lu generation=%lu tid=%u\n",
                 packet.target.id, packet.target.generation, tid);
+        dbpBtbStats.fullResolveTrainRejectPacketValidation++;
         return false;
     }
 
@@ -715,6 +719,7 @@ DecoupledBPUWithBTB::resolveTrain(
 
     for (int i = 0; i < numComponents; ++i) {
         if (!components[i]->canResolveTrain(packet, target)) {
+            dbpBtbStats.fullResolveTrainRejectComponent++;
             return false;
         }
     }
@@ -722,6 +727,8 @@ DecoupledBPUWithBTB::resolveTrain(
     for (int i = 0; i < numComponents; ++i) {
         components[i]->resolveTrain(packet, target);
     }
+
+    dbpBtbStats.fullResolveTrainAccepted++;
 
     return true;
 }

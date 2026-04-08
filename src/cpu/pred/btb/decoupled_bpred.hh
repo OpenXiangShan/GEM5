@@ -150,6 +150,19 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void processNewPrediction(ThreadID tid);
 
+    enum class ResolveTrainValidationReason
+    {
+        Accepted = 0,
+        PcBeforeStart,
+        ZeroSize,
+        AfterTaken,
+        OffsetReversed,
+        PcOrderSameOffset,
+    };
+
+    ResolveTrainValidationReason validateResolvedTrainPacket(
+        const ResolvedTrainPacket &packet);
+
     FetchTarget createFetchTargetEntry(ThreadID tid);
 
     void updateHistoryForPrediction(FetchTarget &entry);
@@ -298,6 +311,21 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         // Window blocking statistics
         statistics::Scalar predictionBlockedForUpdate;  // Times prediction was blocked for update priority
+
+        // Full resolve train reject statistics
+        statistics::Scalar fullResolveTrainAccepted;
+        statistics::Scalar fullResolveTrainRejectTidMismatch;
+        statistics::Scalar fullResolveTrainRejectTargetMismatch;
+        statistics::Scalar fullResolveTrainRejectStartPCMismatch;
+        statistics::Scalar fullResolveTrainRejectPacketValidation;
+        statistics::Scalar fullResolveTrainRejectComponent;
+
+        // Full resolve train validation sub-reasons
+        statistics::Scalar fullResolveTrainValidationPcBeforeStart;
+        statistics::Scalar fullResolveTrainValidationZeroSize;
+        statistics::Scalar fullResolveTrainValidationAfterTaken;
+        statistics::Scalar fullResolveTrainValidationOffsetReversed;
+        statistics::Scalar fullResolveTrainValidationPcOrderSameOffset;
 
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;

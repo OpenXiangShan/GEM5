@@ -87,6 +87,21 @@ namespace
 constexpr uint8_t RvcInstBytes = 2;
 constexpr uint8_t BaseInstBytes = 4;
 
+void
+trimResolveTrainInstsAfterTaken(Fetch::ResolveTrainQueueEntry &entry)
+{
+    auto first_taken = std::find_if(
+        entry.insts.begin(), entry.insts.end(),
+        [](const Fetch::ResolveTrainInstData &inst_data) {
+            return inst_data.taken;
+        });
+    if (first_taken == entry.insts.end()) {
+        return;
+    }
+
+    entry.insts.erase(std::next(first_taken), entry.insts.end());
+}
+
 } // anonymous namespace
 
 Fetch::IcachePort::IcachePort(Fetch *_fetch, CPU *_cpu) :
@@ -1717,6 +1732,8 @@ Fetch::appendResolveTrainInst(
             }
             return lhs.pc < rhs.pc;
         });
+
+    trimResolveTrainInstsAfterTaken(entry);
 }
 
 void
