@@ -330,6 +330,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     }
 
     void setCpu(CPU *_cpu) { cpu = _cpu; }
+    uint8_t getThreadAsidHash(ThreadID tid) const;
 
     void consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid);
 

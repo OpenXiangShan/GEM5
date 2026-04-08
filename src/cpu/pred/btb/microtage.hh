@@ -168,17 +168,18 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
     // Look up predictions in TAGE tables for a stream of instructions
     void lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
-                      CondTakens& results, ThreadID tid);
+                      CondTakens& results, ThreadID tid, uint8_t asidHash);
 
     // Calculate TAGE index for a given PC and table
-    Addr getTageIndex(Addr pc, int table);
+    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0);
 
     // Calculate TAGE index with folded history (uint64_t version for performance)
-    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, uint8_t asidHash = 0);
 
     // Calculate TAGE tag with folded history (uint64_t version for performance)
     // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0);
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist,
+                    Addr position = 0, uint8_t asidHash = 0);
 
     // Get branch index within a prediction block
     unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC);
@@ -355,7 +356,8 @@ private:
     TagePrediction generateSinglePrediction(const BTBEntry &btb_entry,
                                            const Addr &startPC,
                                            const std::shared_ptr<TageMeta> predMeta = nullptr,
-                                           ThreadID tid = 0);
+                                           ThreadID tid = 0,
+                                           uint8_t asidHash = 0);
 
     // Helper method to prepare BTB entries for update
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
@@ -372,6 +374,7 @@ private:
                                  bool actual_taken,
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
+                                 uint8_t asidHash,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
                                  uint64_t &allocated_way);

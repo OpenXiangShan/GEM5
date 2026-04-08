@@ -102,8 +102,9 @@ BTBITTAGE::tick() {}
 
 void
 BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
-                        IndirectTargets& results, ThreadID tid)
+                        IndirectTargets& results, ThreadID tid, uint8_t asidHash)
 {
+    (void)asidHash;
     DPRINTF(ITTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
     std::vector<TagePrediction> preds;
     for (auto &btb_entry : btbEntries) {
@@ -192,6 +193,7 @@ BTBITTAGE::dryRunCycle(Addr startPC) {
 void
 BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) {
     const ThreadID tid = predictorTid(stagePreds);
+    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     const auto &state = historyState(tid);
     if (debugPC == stream_start) {
         debugFlag = true;
@@ -212,9 +214,9 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
     // all btb entries should use the same lookup result
     // but each btb entry can use prediction from different tables
     for (int i = 0; i < numPredictors; ++i) {
-        Addr index = getTageIndex(stream_start, i, state.indexFoldedHist[i].get());
+        Addr index = getTageIndex(stream_start, i, state.indexFoldedHist[i].get(), asidHash);
         Addr tag = getTageTag(stream_start, i, state.tagFoldedHist[i].get(),
-                              state.altTagFoldedHist[i].get());
+                              state.altTagFoldedHist[i].get(), asidHash);
         auto &entry = tageTable[i][index];
         lookupEntries.push_back(entry);
         lookupIndices.push_back(index);
@@ -229,7 +231,7 @@ BTBITTAGE::putPCHistory(Addr stream_start, const bitset &history, std::vector<Fu
         auto &stage_pred = stagePreds[s];
         stage_pred.indirectTargets.clear();
         lookupHelper(stream_start, stage_pred.btbEntries,
-                     stage_pred.indirectTargets, tid);
+                     stage_pred.indirectTargets, tid, asidHash);
     }
     DPRINTF(ITTAGE, "putPCHistory end\n");
     debugFlag = false;
@@ -403,8 +405,9 @@ BTBITTAGE::update(const FetchTarget &stream)
                 unsigned startTable = main_found ? main_info.table + 1 : 0;
 
                 for (int ti = startTable; ti < numPredictors; ti++) {
-                    Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get());
-                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(), updateAltTagFoldedHist[ti].get());
+                    Addr newIndex = getTageIndex(startAddr, ti, updateIndexFoldedHist[ti].get(), stream.asidHash);
+                    Addr newTag = getTageTag(startAddr, ti, updateTagFoldedHist[ti].get(),
+                                             updateAltTagFoldedHist[ti].get(), stream.asidHash);
                     assert(newIndex < tageTable[ti].size());
                     auto &newEntry = tageTable[ti][newIndex];
 
@@ -438,7 +441,8 @@ BTBITTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 }
 
 Addr
-BTBITTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist)
+BTBITTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
+                      uint8_t asidHash)
 {
     // Create mask for tableTagBits[t]
     uint64_t mask = ((1ULL << tableTagBits[t]) - 1);
@@ -450,32 +454,33 @@ BTBITTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHis
     uint64_t altTagBits = (altFoldedHist << 1);
 
     // XOR all components
-    return (pcBits ^ foldedHist ^ altTagBits) & mask;
+    return injectAsidHashIntoTag((pcBits ^ foldedHist ^ altTagBits) & mask,
+                                 tableTagBits[t], asidHash);
 }
 
 Addr
-BTBITTAGE::getTageTag(Addr pc, int t)
+BTBITTAGE::getTageTag(Addr pc, int t, uint8_t asidHash)
 {
     const auto &state = historyState(0);
     return getTageTag(pc, t, state.tagFoldedHist[t].get(),
-                      state.altTagFoldedHist[t].get());
+                      state.altTagFoldedHist[t].get(), asidHash);
 }
 
 Addr
-BTBITTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
+BTBITTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash)
 {
     // Create mask for tableIndexBits[t]
     uint64_t mask = ((1ULL << tableIndexBits[t]) - 1);
 
     // Extract lower bits of PC and XOR with folded history
     uint64_t pcBits = (pc >> floorLog2(blockSize));
-    return (pcBits ^ foldedHist) & mask;
+    return xorAsidHashIntoIndex((pcBits ^ foldedHist) & mask, tableIndexBits[t], asidHash);
 }
 
 Addr
-BTBITTAGE::getTageIndex(Addr pc, int t)
+BTBITTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash)
 {
-    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get());
+    return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get(), asidHash);
 }
 
 bool

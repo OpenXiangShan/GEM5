@@ -1,6 +1,7 @@
 #ifndef __CPU_PRED_BTB_STREAM_STRUCT_HH__
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
+#include <algorithm>
 #include <queue>
 #include <string>
 
@@ -17,6 +18,49 @@ namespace gem5 {
 namespace branch_prediction {
 
 namespace btb_pred {
+
+inline uint8_t
+foldAsidHash16To4(uint16_t asid)
+{
+    return (asid & 0xf) ^ ((asid >> 4) & 0xf) ^
+           ((asid >> 8) & 0xf) ^ ((asid >> 12) & 0xf);
+}
+
+inline Addr
+expandAsidHash(uint8_t asid_hash, unsigned bits)
+{
+    if (bits == 0) {
+        return 0;
+    }
+
+    Addr expanded = 0;
+    for (unsigned shift = 0; shift < bits; shift += 4) {
+        expanded |= static_cast<Addr>(asid_hash) << shift;
+    }
+    return expanded & mask(bits);
+}
+
+inline Addr
+injectAsidHashIntoTag(Addr base_tag, unsigned tag_bits, uint8_t asid_hash)
+{
+    if (tag_bits == 0) {
+        return 0;
+    }
+
+    const unsigned hash_bits = std::min<unsigned>(4, tag_bits);
+    const Addr hash_mask = mask(hash_bits);
+    return (base_tag & ~hash_mask) | (static_cast<Addr>(asid_hash) & hash_mask);
+}
+
+inline Addr
+xorAsidHashIntoIndex(Addr base_index, unsigned index_bits, uint8_t asid_hash)
+{
+    if (index_bits == 0) {
+        return 0;
+    }
+
+    return (base_index ^ expandAsidHash(asid_hash, index_bits)) & mask(index_bits);
+}
 
 enum EndType
 {
@@ -276,6 +320,7 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 struct FetchTarget
 {
     ThreadID tid;
+    uint8_t asidHash;
     Addr startPC;       // start pc of the stream
     bool predTaken;     // whether the FetchTarget has taken branch
     Addr predEndPC;     // predicted stream end pc (fall through pc)
@@ -324,6 +369,7 @@ struct FetchTarget
 
    FetchTarget()
        : tid(0),
+         asidHash(0),
          startPC(0),
          predTaken(false),
          predEndPC(0),
@@ -453,6 +499,7 @@ struct FetchTarget
 struct FullBTBPrediction
 {
     ThreadID tid;
+    uint8_t asidHash;
     Addr bbStart;
     std::vector<BTBEntry> btbEntries; // for BTB, only assigned when hit, sorted by inst order
     // for conditional branch predictors, mapped with lowest bits of branches
@@ -474,6 +521,7 @@ struct FullBTBPrediction
 
     FullBTBPrediction() :
         tid(0),
+        asidHash(0),
         bbStart(0),
         btbEntries(),
         condTakens(),
