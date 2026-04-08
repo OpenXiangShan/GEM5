@@ -479,6 +479,13 @@ Fetch::maybeMigrateSplitControlOwner(ThreadID tid, Addr inst_pc)
     while (dbpbtb->ftqHasFetching(tid) && dbpbtb->ftqHasFollowing(tid)) {
         const auto &stream = dbpbtb->ftqFetchingTarget(tid);
         const auto &following = dbpbtb->ftqFollowingTarget(tid);
+        // Do not hand ownership to the following target until the decoder has
+        // already consumed the leading halfword from the current fetch block.
+        // Otherwise fetch may discard the current block and later supply only
+        // the trailing bytes, leaving decode() to return nullptr.
+        if (inst_pc < following.startPC && !decoder[tid]->hasPartialInst()) {
+            break;
+        }
         if (!following.shouldTakeSplitControlOwnershipFrom(stream, inst_pc)) {
             break;
         }
