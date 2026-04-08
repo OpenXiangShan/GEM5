@@ -968,7 +968,8 @@ class TimedBaseBTBPredictor(SimObject):
     blockSize = Param.Unsigned(Parent.predictWidth, "Block size in bytes")
     predictWidth = Param.Unsigned(Parent.predictWidth, "Maximum range in bytes that a single prediction can cover")
     numDelay = Param.Unsigned(1000, "Number of bubbles to put on a prediction")
-    resolvedUpdate = Param.Bool(False, "Enable resolved update, no need to wait until commit")
+    resolvedUpdate = Param.Bool(False,
+        "Train from full resolve packets instead of commit fallback")
     enabled = Param.Bool(True, "Enable this predictor component")
 
 class MBTB(TimedBaseBTBPredictor):
@@ -982,6 +983,8 @@ class MBTB(TimedBaseBTBPredictor):
     numThreads = Param.Unsigned(1, "Number of threads")
     numWays = Param.Unsigned(4, "Number of ways per set") # for 2 SRAMs, 4 ways per SRAM
     numDelay = 2
+    resolvedUpdate = Param.Bool(Parent.enableFullResolveTrain,
+        "Train MBTB from full resolve packets instead of commit fallback")
     blockSize = 32  # max 64 byte block, 32 byte aligned
     # MBTB is always half-aligned - no parameter needed
     victimCacheSize = Param.Unsigned(0, "Number of entries in the victim cache")
@@ -1059,6 +1062,8 @@ class BTBTAGE(TimedBaseBTBPredictor):
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
     numDelay = 2
+    resolvedUpdate = Param.Bool(Parent.enableFullResolveTrain,
+        "Train BTBTAGE from full resolve packets instead of commit fallback")
 
 class BTBTAGEUpperBound(BTBTAGE):
     type = 'BTBTAGEUpperBound'
@@ -1114,6 +1119,8 @@ class BTBITTAGE(TimedBaseBTBPredictor):
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numDelay = 2
+    resolvedUpdate = Param.Bool(Parent.enableFullResolveTrain,
+        "Train BTBITTAGE from full resolve packets instead of commit fallback")
 
 class BTBMGSC(TimedBaseBTBPredictor):
     type = 'BTBMGSC'
@@ -1207,6 +1214,4 @@ class DecoupledBPUWithBTB(BranchPredictor):
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
     enableFullResolveTrain = Param.Bool(Parent.enableFullResolveTrain,
-        "Enable packet-based resolve training rollout plumbing")
-    enableLegacyResolveUpdate = Param.Bool(Parent.enableLegacyResolveUpdate,
-        "Enable legacy PC-only resolve update")
+        "Train eligible BTB components from full resolve packets instead of commit fallback")

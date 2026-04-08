@@ -624,50 +624,6 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
     historyManager.commit(target_id);
 }
 
-bool
-DecoupledBPUWithBTB::resolveUpdate(unsigned &target_id, ThreadID tid)
-{
-    if (!ftq.hasTarget(target_id, tid)) {
-        DPRINTF(DecoupleBP, "Target id %u not found in fetchTargetQueue, cannot update predictors\n", target_id);
-        return true;
-    }
-
-    auto &target = ftq.get(target_id, tid);
-
-    // Update predictor components only if the target is hit or taken
-    if (!(target.isHit || target.exeTaken)) {
-        return true;
-    }
-
-    // Phase 1: probe all resolved-update components to ensure no blocker
-    for (int i = 0; i < numComponents; ++i) {
-        if (components[i]->getResolvedUpdate()) {
-            if (enableFullResolveTrain &&
-                (components[i] == mbtb || components[i] == tage ||
-                 components[i] == ittage)) {
-                continue;
-            }
-            if (!components[i]->canResolveUpdate(target)) {
-                return false;
-            }
-        }
-    }
-
-    // Phase 2: all clear, perform updates once
-    for (int i = 0; i < numComponents; ++i) {
-        if (components[i]->getResolvedUpdate()) {
-            if (enableFullResolveTrain &&
-                (components[i] == mbtb || components[i] == tage ||
-                 components[i] == ittage)) {
-                continue;
-            }
-            components[i]->doResolveUpdate(target);
-        }
-    }
-
-    return true;
-}
-
 void
 DecoupledBPUWithBTB::notifyResolveSuccess()
 {
@@ -748,45 +704,6 @@ DecoupledBPUWithBTB::blockPredictionOnce()
 {
     // smtTODO
     threads[0].blockPredictionPending = true;
-}
-
-void
-DecoupledBPUWithBTB::prepareResolveUpdateEntries(unsigned &target_id, ThreadID tid)
-{
-    if (!ftq.hasTarget(target_id, tid)) {
-        DPRINTF(DecoupleBP, "Target id %u not found in fetchTargetQueue, cannot update predictors\n", target_id);
-        return;
-    }
-    auto &target = ftq.get(target_id, tid);
-
-    if (target.isHit || target.exeTaken) {
-        // Prepare target for update
-        target.setUpdateInstEndPC(predictWidth);
-        target.setUpdateBTBEntries();
-
-        // only mbtb can generate new entry
-        if (mbtb->isEnabled() && !enableFullResolveTrain) {
-            mbtb->getAndSetNewBTBEntry(target);
-        }
-    }
-}
-
-void
-DecoupledBPUWithBTB::markCFIResolved(unsigned &target_id, uint64_t resolvedInstPC, ThreadID tid)
-{
-
-    if (!ftq.hasTarget(target_id, tid)) {
-        DPRINTF(DecoupleBP, "Target id %u not found in fetchTargetQueue, cannot update predictors\n", target_id);
-        return;
-    }
-    auto &target = ftq.get(target_id, tid);
-
-    if (!enableFullResolveTrain &&
-        target.updateNewBTBEntry.pc == resolvedInstPC) {
-        target.updateNewBTBEntry.resolved = true;
-    }
-
-    target.markBTBEntryResolved(resolvedInstPC);
 }
 
 void

@@ -465,8 +465,7 @@ class Fetch
      */
     bool handleCommitSignals(ThreadID tid);
 
-    /** Handles iew signals including resolved cfi, mark their btb entries
-     *  and train predictors if they are configured to update in resolve stage.
+    /** Handles IEW signals for full resolve-train predictor updates.
      */
     void handleIEWSignals();
 
@@ -638,12 +637,6 @@ class Fetch
 
     /** Enable packet-based resolve training rollout plumbing. */
     const bool enableFullResolveTrain;
-
-    /** Keep legacy PC-only resolve updates enabled. */
-    const bool enableLegacyResolveUpdate;
-
-    /** FIFO storing resolve entries waiting for BPU training. */
-    std::deque<ResolveQueueEntry> resolveQueue;
 
     /** FIFO storing aggregated full resolve-train entries. */
     std::deque<ResolveTrainQueueEntry> resolveTrainQueue;
@@ -1129,17 +1122,6 @@ class Fetch
         statistics::Formula frontendLatencyBound;
         /** Frontend Bandwidth Bound */
         statistics::Formula frontendBandwidthBound;
-        /** Stat for total cycles the resolve queue is full. */
-        statistics::Scalar resolveQueueFullEvents;
-        /** Stat for total number of resolve enqueue fail events. */
-        statistics::Scalar resolveEnqueueFailEvent;
-
-        /** Stat for total number of resolve dequeue events. */
-        statistics::Scalar resolveDequeueCount;
-        /** Stat for total number of resolve enqueue events. */
-        statistics::Distribution resolveEnqueueCount;
-        /** Stat for entry occupancy distribution of the resolve queue. */
-        statistics::Distribution resolveQueueOccupancy;
         /** Full resolve entries observed at fetch. */
         statistics::Scalar fullResolveEntriesReceived;
         /** Full resolve entries merged with an existing target. */

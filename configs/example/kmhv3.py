@@ -93,16 +93,13 @@ def setKmhV3Params(args, system):
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
+            cpu.enableFullResolveTrain = True
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
 
             if args.btb_tage_upper_bound:
                 cpu.branchPred.tage = BTBTAGEUpperBound(
                     usePathHashHistory=True)
-
-            cpu.branchPred.mbtb.resolvedUpdate = True
-            cpu.branchPred.tage.resolvedUpdate = True
-            cpu.branchPred.ittage.resolvedUpdate = True
 
             cpu.branchPred.ubtb.enabled = True
             cpu.branchPred.abtb.enabled = True

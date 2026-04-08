@@ -115,7 +115,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       branchPred(nullptr),
       resolveQueueSize(params.resolveQueueSize),
       enableFullResolveTrain(params.enableFullResolveTrain),
-      enableLegacyResolveUpdate(params.enableLegacyResolveUpdate),
       decodeToFetchDelay(params.decodeToFetchDelay),
       renameToFetchDelay(params.renameToFetchDelay),
       iewToFetchDelay(params.iewToFetchDelay),
@@ -285,16 +284,6 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Frontend Bandwidth Bound",
              frontendBound - frontendLatencyBound),
-    ADD_STAT(resolveQueueFullEvents, statistics::units::Count::get(),
-             "Number of events the resolve queue becomes full"),
-    ADD_STAT(resolveEnqueueFailEvent, statistics::units::Count::get(),
-             "Number of times an entry could not be enqueued to the resolve queue"),
-    ADD_STAT(resolveDequeueCount, statistics::units::Count::get(),
-             "Number of times an entry is dequeued from the resolve queue"),
-    ADD_STAT(resolveEnqueueCount, statistics::units::Count::get(),
-             "Number of times an entry is enqueued to the resolve queue"),
-    ADD_STAT(resolveQueueOccupancy, statistics::units::Count::get(),
-             "Number of entries in the resolve queue"),
     ADD_STAT(fullResolveEntriesReceived, statistics::units::Count::get(),
              "Number of full resolve entries received by fetch"),
     ADD_STAT(fullResolveEntriesMerged, statistics::units::Count::get(),
@@ -387,10 +376,6 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .flags(statistics::total);
         frontendBandwidthBound
             .flags(statistics::total);
-        resolveEnqueueCount
-            .init(1, 8, 1);
-        resolveQueueOccupancy
-            .init(0, 32, 1);
         fullResolveEntriesReceived
             .prereq(fullResolveEntriesReceived);
         fullResolveEntriesMerged
@@ -1515,70 +1500,6 @@ Fetch::handleIEWSignals()
     // Currently resolve stage training is a btb-only feature
     if (!isBTBPred()) {
         return;
-    }
-
-    auto &incoming = fromIEW->iewInfo->resolvedCFIs;
-
-    if (!enableLegacyResolveUpdate) {
-        for (ThreadID tid = 0; tid < numThreads; ++tid) {
-            fromIEW->iewInfo[tid].resolvedCFIs.clear();
-        }
-    }
-
-    if (enableLegacyResolveUpdate) {
-        const bool had_pending_resolve = !resolveQueue.empty();
-        uint8_t enqueueSize = fromIEW->iewInfo->resolvedCFIs.size();
-        uint8_t enqueueCount = 0;
-
-        if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
-            fetchStats.resolveQueueFullEvents++;
-            fetchStats.resolveEnqueueFailEvent += enqueueSize;
-        } else {
-
-            for (const auto &resolved : incoming) {
-                bool merged = false;
-                for (auto &queued : resolveQueue) {
-                    if (queued.resolvedFTQId == resolved.ftqId) {
-                        queued.resolvedInstPC.push_back(resolved.pc);
-                        merged = true;
-                        break;
-                    }
-                }
-
-                if (merged) {
-                    continue;
-                }
-
-                ResolveQueueEntry new_entry;
-                new_entry.resolvedFTQId = resolved.ftqId;
-                new_entry.resolvedInstPC.push_back(resolved.pc);
-                resolveQueue.push_back(std::move(new_entry));
-                enqueueCount++;
-            }
-            fetchStats.resolveEnqueueCount.sample(enqueueCount);
-        }
-
-        fetchStats.resolveQueueOccupancy.sample(resolveQueue.size());
-
-        // Process only entries that were already pending before this cycle.
-        // This preserves a cycle of separation between IEW producing resolved
-        // CFIs and fetch consuming them as predictor resolved updates.
-        if (had_pending_resolve && !resolveQueue.empty()) {
-            auto &entry = resolveQueue.front();
-            unsigned int stream_id = entry.resolvedFTQId;
-            dbpbtb->prepareResolveUpdateEntries(stream_id, 0);
-            for (const auto resolvedInstPC : entry.resolvedInstPC) {
-                dbpbtb->markCFIResolved(stream_id, resolvedInstPC, 0);
-            }
-            bool success = dbpbtb->resolveUpdate(stream_id, 0);
-            if (success) {
-                dbpbtb->notifyResolveSuccess();
-                resolveQueue.pop_front();
-                fetchStats.resolveDequeueCount++;
-            } else {
-                dbpbtb->notifyResolveFailure();
-            }
-        }
     }
 
     if (!enableFullResolveTrain) {

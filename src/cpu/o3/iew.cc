@@ -1465,14 +1465,6 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             is_control && !loadNotExecuted && inst->mispredicted();
 
         if (is_control) {
-            if (params.enableLegacyResolveUpdate) {
-                auto &resolved_cfis = toFetch->iewInfo[tid].resolvedCFIs;
-                TimeStruct::IewComm::ResolvedCFIEntry entry;
-                entry.ftqId = inst->getFtqId();
-                entry.pc = inst->getPC();
-                resolved_cfis.push_back(entry);
-            }
-
             if (params.enableFullResolveTrain) {
                 auto &resolve_entries = toFetch->iewInfo[tid].resolveTrainEntries;
                 TimeStruct::IewComm::ResolveTrainEntry entry;
@@ -1579,10 +1571,10 @@ IEW::executeInsts()
     // @todo This doesn't actually work anymore, we should fix it.
 //    printAvailableInsts();
 
-    // Clear resolvedFSQId and resolvedInstPC since they are already handled in frontend
-    ThreadID tid = *activeThreads->begin();
-    toFetch->iewInfo[tid].resolvedCFIs.clear();
-    toFetch->iewInfo[tid].resolveTrainEntries.clear();
+    // Clear resolve-train entries before producing this cycle's updates.
+    for (ThreadID active_tid : *activeThreads) {
+        toFetch->iewInfo[active_tid].resolveTrainEntries.clear();
+    }
 
     // Execute/writeback any instructions that are available.
     int insts_to_execute = fromIssue->size;

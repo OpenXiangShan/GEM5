@@ -754,9 +754,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     void resetPC(Addr new_pc);
 
     // Helper functions for update
-    bool resolveUpdate(unsigned &target_id, ThreadID tid);
-    void prepareResolveUpdateEntries(unsigned &target_id, ThreadID tid);
-    void markCFIResolved(unsigned &target, uint64_t resolvedInstPC, ThreadID tid);
     void updatePredictorComponents(FetchTarget &target);
     void updateStatistics(const FetchTarget &target);
     void notifyResolveSuccess();

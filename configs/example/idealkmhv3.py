@@ -83,6 +83,7 @@ def setKmhV3IdealParams(args, system):
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
+            cpu.enableFullResolveTrain = False
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
             # cpu.branchPred.microtage.enabled = False

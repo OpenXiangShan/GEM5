@@ -197,12 +197,6 @@ struct SquashVersion
     SquashVersion() : version(0) {}
 };
 
-struct ResolveQueueEntry
-{
-    uint64_t resolvedFTQId;
-    std::vector<uint64_t> resolvedInstPC;
-};
-
 /** Struct that defines all backwards communication. */
 struct TimeStruct
 {
@@ -238,14 +232,6 @@ struct TimeStruct
         StallReason blockReason;
         StallReason lqHeadStallReason;
         StallReason sqHeadStallReason;
-
-        struct ResolvedCFIEntry
-        {
-            uint64_t ftqId;
-            uint64_t pc;
-        };
-        /** Resolved control-flow PCs produced this cycle (fetch buffers/merges). */
-        std::vector<ResolvedCFIEntry> resolvedCFIs;  // *F
 
         struct ResolveTrainEntry
         {

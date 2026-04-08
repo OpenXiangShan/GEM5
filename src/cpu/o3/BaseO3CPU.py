@@ -248,9 +248,7 @@ class BaseO3CPU(BaseCPU):
                                        "Branch Predictor")
     resolveQueueSize = Param.Unsigned(16, "Number of entries in the branch resolution queue")
     enableFullResolveTrain = Param.Bool(True,
-        "Enable packet-based resolve training rollout plumbing")
-    enableLegacyResolveUpdate = Param.Bool(True,
-        "Enable legacy PC-only resolve update")
+        "Train eligible BTB components from full resolve packets instead of commit fallback")
     needsTSO = Param.Bool(False, "Enable TSO Memory model")
 
     scheduler = Param.Scheduler("")
