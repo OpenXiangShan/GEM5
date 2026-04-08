@@ -1468,10 +1468,13 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
             if (params.enableFullResolveTrain) {
                 auto &resolve_entries = toFetch->iewInfo[tid].resolveTrainEntries;
                 TimeStruct::IewComm::ResolveTrainEntry entry;
+                const auto control_target = inst->branching() ?
+                    inst->getNPC() : inst->pcState().getFallThruPC();
+                const auto is_rvc = inst->pcState().as<RiscvISA::PCState>().compressed();
                 entry.ftqId = inst->getFtqId();
                 entry.ftqGeneration = inst->getFtqGeneration();
                 entry.pc = inst->getPC();
-                entry.target = inst->getControlTarget();
+                entry.target = control_target;
                 entry.taken = inst->branching();
                 entry.mispredict = control_mispredict;
                 entry.ftqOffset = inst->getFtqOffset();
@@ -1480,7 +1483,7 @@ IEW::SquashCheckAfterExe(DynInstPtr inst)
                 entry.isIndirect = inst->isIndirectCtrl();
                 entry.isCall = inst->isCall();
                 entry.isReturn = inst->isReturn();
-                entry.isRVC = inst->isRVC();
+                entry.isRVC = is_rvc;
                 resolve_entries.push_back(entry);
             }
         }

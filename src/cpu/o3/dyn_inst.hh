@@ -1629,16 +1629,6 @@ class DynInst : public ExecContext, public RefCounted
         return rpc.compressed() ? 2 : 4;
     }
 
-    bool isRVC() const
-    {
-        return pc->as<RiscvISA::PCState>().compressed();
-    }
-
-    Addr getControlTarget()
-    {
-        return branching() ? getNPC() : pcState().getFallThruPC();
-    }
-
     void setFtqOffset(uint8_t offset)
     {
         ftqOffset = offset;
