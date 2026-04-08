@@ -101,6 +101,7 @@ def setKmhV3IdealParams(args, system):
         for i in range(args.num_cpus):
             if args.classic_l2:
                 system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                system.l2_caches[i].wpu = NULL
             else:
                 l2_wrapper = system.l2_wrappers[i]
                 l2_wrapper.data_sram_banks = 2
@@ -108,6 +109,7 @@ def setKmhV3IdealParams(args, system):
                 l2_wrapper.pipe_dir_write_stage = 4
                 l2_wrapper.dir_read_bypass = True
                 for j in range(args.l2_slices):
+                    l2_wrapper.slices[j].inner_cache.wpu = NULL
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
