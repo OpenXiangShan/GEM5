@@ -65,11 +65,11 @@ def create_prefetcher(cpu, cache_level, options):
         if options.ideal_cache:
             prefetcher.stream_pf_ahead = False
         if options.kmh_align:
-            prefetcher.enable_berti = False
-            prefetcher.enable_sstride = True
+            prefetcher.enable_berti = True
+            prefetcher.enable_sstride = False
             prefetcher.enable_activepage = False
-            prefetcher.enable_pht = False
-            prefetcher.enable_xsstream = False
+            prefetcher.enable_pht = True
+            prefetcher.enable_xsstream = True
             prefetcher.prefetch_train = True # disable L1PF train L2
             # disable unecessary filter to align with RTL when in pf_buffer mode
             if hasattr(prefetcher, 'queue_filter'):
@@ -104,7 +104,7 @@ def create_prefetcher(cpu, cache_level, options):
             if options.kmh_align:
                 assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
                 prefetcher.enable_cmc = False
-                prefetcher.enable_bop = False
+                prefetcher.enable_bop = True
                 prefetcher.enable_cdp = False
                 prefetcher.enable_despacito_stream = False
                 if prefetcher.enable_despacito_stream:
