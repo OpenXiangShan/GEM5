@@ -1524,6 +1524,9 @@ IEW::executeInsts()
     while (threads != end) {
         ThreadID tid = *threads++;
         fetchRedirect[tid] = false;
+        toFetch->iewInfo[tid].ldstqCount=ldstQueue.getCount(tid);
+        toFetch->iewInfo[tid].robCount= rob->getThreadEntries(tid);
+        toFetch->iewInfo[tid].iqCount= scheduler->getIQInsts(tid);
     }
 
     // Uncomment this if you want to see all available instructions.
@@ -1534,9 +1537,7 @@ IEW::executeInsts()
     ThreadID tid = *activeThreads->begin();
     toFetch->iewInfo[tid].resolvedCFIs.clear();
 
-    toFetch->iewInfo[tid].ldstqCount=ldstQueue.getCount(tid);
-    toFetch->iewInfo[tid].robCount= rob->getThreadEntries(tid);
-    toFetch->iewInfo[tid].iqCount= scheduler->getIQInsts(tid);
+    
     // Execute/writeback any instructions that are available.
     int insts_to_execute = fromIssue->size;
     fromIssue->size = 0;
