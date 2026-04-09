@@ -959,6 +959,12 @@ class DecoupledBPUWithFTB(BranchPredictor):
     enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
     enableTwoTaken = Param.Bool(False, "Enable predicting two taken blocks per cycle")
 
+class SMTFTQMode(ScopedEnum):
+    vals = [ 'Independent', 'Shared' ]
+
+class SMTFTQPolicy(ScopedEnum):
+    vals = [ 'Dynamic', 'Partitioned', 'Threshold' ]
+
 class TimedBaseBTBPredictor(SimObject):
     type = 'TimedBaseBTBPredictor'
     cxx_class = 'gem5::branch_prediction::btb_pred::TimedBaseBTBPredictor'
@@ -1191,6 +1197,11 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     # n = 2
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
+    smtFTQMode = Param.SMTFTQMode('Independent',
+                                  "SMT FTQ mode: per-thread independent or shared quota")
+    smtFTQPolicy = Param.SMTFTQPolicy('Partitioned',
+                                      "SMT shared FTQ allocation policy")
+    smtFTQThreshold = Param.Int(100, "SMT FTQ Threshold Sharing Parameter")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
 

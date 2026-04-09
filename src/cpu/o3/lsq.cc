@@ -466,14 +466,14 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       _storeWbStage(params.StoreWbStage),
       waitingForStaleTranslation(false),
       staleTranslationWaitTxnId(0),
+      lsqMode(params.smtLSQMode),
       lsqPolicy(params.smtLSQPolicy),
+      smtLSQThreshold(params.smtLSQThreshold),
       stats(nullptr),
       LQEntries(params.LQEntries),
       SQEntries(params.SQEntries),
-      maxLQEntries(maxLSQAllocation(lsqPolicy, LQEntries, params.numThreads,
-                  params.smtLSQThreshold)),
-      maxSQEntries(maxLSQAllocation(lsqPolicy, SQEntries, params.numThreads,
-                  params.smtLSQThreshold)),
+      RARQEntries(params.RARQEntries),
+      RAWQEntries(params.RAWQEntries),
       dcachePort(this, cpu_ptr),
       numThreads(params.numThreads)
 {
@@ -499,30 +499,37 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     //************ Handle SMT Parameters ***********
     //**********************************************
 
-    /* Run SMT olicy checks. */
+    if (lsqMode == SMTLSQMode::Independent) {
+        DPRINTF(LSQ, "LSQ mode set to Independent: each thread gets up to "
+                "%u LQ, %u SQ, %u RARQ and %u RAWQ entries\n",
+                LQEntries, SQEntries, RARQEntries, RAWQEntries);
+    } else if (lsqMode == SMTLSQMode::Shared) {
+        panic_if(lsqPolicy == SMTQueuePolicy::Threshold &&
+                 smtLSQThreshold == 0,
+                 "SMT LSQ threshold must be non-zero in shared threshold mode");
+
         if (lsqPolicy == SMTQueuePolicy::Dynamic) {
-        DPRINTF(LSQ, "LSQ sharing policy set to Dynamic\n");
-    } else if (lsqPolicy == SMTQueuePolicy::Partitioned) {
-        DPRINTF(Fetch, "LSQ sharing policy set to Partitioned: "
-                "%i entries per LQ | %i entries per SQ\n",
-                maxLQEntries,maxSQEntries);
-    } else if (lsqPolicy == SMTQueuePolicy::Threshold) {
-
-        assert(params.smtLSQThreshold > params.LQEntries);
-        assert(params.smtLSQThreshold > params.SQEntries);
-
-        DPRINTF(LSQ, "LSQ sharing policy set to Threshold: "
-                "%i entries per LQ | %i entries per SQ\n",
-                maxLQEntries,maxSQEntries);
+            DPRINTF(LSQ, "LSQ mode set to Shared/Dynamic: %u LQ and %u SQ "
+                    "entries are shared across active SMT threads, along "
+                    "with %u RARQ and %u RAWQ entries\n",
+                    LQEntries, SQEntries, RARQEntries, RAWQEntries);
+        } else if (lsqPolicy == SMTQueuePolicy::Partitioned) {
+            DPRINTF(LSQ, "LSQ mode set to Shared/Partitioned\n");
+        } else if (lsqPolicy == SMTQueuePolicy::Threshold) {
+            DPRINTF(LSQ, "LSQ mode set to Shared/Threshold: threshold=%u\n",
+                    smtLSQThreshold);
+        } else {
+            panic("Invalid LSQ sharing policy. Options are: Dynamic, "
+                        "Partitioned, Threshold");
+        }
     } else {
-        panic("Invalid LSQ sharing policy. Options are: Dynamic, "
-                    "Partitioned, Threshold");
+        panic("Invalid SMT LSQ mode. Options are: Independent, Shared");
     }
 
     thread.reserve(numThreads);
     // TODO: Parameterize the load/store pipeline stages
     for (ThreadID tid = 0; tid < numThreads; tid++) {
-        thread.emplace_back(maxLQEntries, maxSQEntries,
+        thread.emplace_back(LQEntries, SQEntries,
             params.LdPipeStages, params.StPipeStages, params.RARQEntries, params.RAWQEntries,
             params.RARDequeuePerCycle, params.RAWDequeuePerCycle, params.LoadCompletionWidth,
             params.StoreCompletionWidth);
@@ -726,13 +733,13 @@ LSQ::notifyDcacheRefill(Addr addr)
 unsigned
 LSQ::getFreeLQEntries(ThreadID tid)
 {
-    return thread[tid].numFreeLoadEntries();
+    return logicalFreeLoadEntries(tid);
 }
 
 unsigned
 LSQ::getFreeSQEntries(ThreadID tid)
 {
-    return thread[tid].numFreeStoreEntries();
+    return logicalFreeStoreEntries(tid);
 }
 
 unsigned
@@ -1184,7 +1191,9 @@ LSQ::getStoreHeadSeqNum(ThreadID tid)
 
 int LSQ::getCount(ThreadID tid) { return thread.at(tid).getCount(); }
 
-int LSQ::numLoads(ThreadID tid) { return thread.at(tid).numLoads(); }
+int LSQ::numLoads(ThreadID tid) const { return thread.at(tid).numLoads(); }
+int LSQ::numRAREntries(ThreadID tid) const { return thread.at(tid).numRAREntries(); }
+int LSQ::numRAWEntries(ThreadID tid) const { return thread.at(tid).numRAWEntries(); }
 
 int LSQ::anyInflightLoadsNotComplete()
 {
@@ -1217,7 +1226,7 @@ LSQ::anyStoreNotExecute()
     return false;
 }
 
-int LSQ::numStores(ThreadID tid) { return thread.at(tid).numStores(); }
+int LSQ::numStores(ThreadID tid) const { return thread.at(tid).numStores(); }
 
 int
 LSQ::numHtmStarts(ThreadID tid) const
@@ -1415,9 +1424,8 @@ LSQ::getCount()
 
     return total;
 }
-
 int
-LSQ::numLoads()
+LSQ::numLoads() const
 {
     unsigned total = 0;
 
@@ -1434,7 +1442,24 @@ LSQ::numLoads()
 }
 
 int
-LSQ::numStores()
+LSQ::numRAREntries() const
+{
+    unsigned total = 0;
+
+    std::list<ThreadID>::iterator threads = activeThreads->begin();
+    std::list<ThreadID>::iterator end = activeThreads->end();
+
+    while (threads != end) {
+        ThreadID tid = *threads++;
+
+        total += numRAREntries(tid);
+    }
+
+    return total;
+}
+
+int
+LSQ::numStores() const
 {
     unsigned total = 0;
 
@@ -1450,9 +1475,149 @@ LSQ::numStores()
     return total;
 }
 
+int
+LSQ::numRAWEntries() const
+{
+    unsigned total = 0;
+
+    std::list<ThreadID>::iterator threads = activeThreads->begin();
+    std::list<ThreadID>::iterator end = activeThreads->end();
+
+    while (threads != end) {
+        ThreadID tid = *threads++;
+
+        total += numRAWEntries(tid);
+    }
+
+    return total;
+}
+
+bool
+LSQ::sharedLSQMode() const
+{
+    return lsqMode == SMTLSQMode::Shared;
+}
+
+unsigned
+LSQ::activeLSQThreads() const
+{
+    if (!activeThreads || activeThreads->empty()) {
+        return numThreads;
+    }
+    return activeThreads->size();
+}
+
+unsigned
+LSQ::sharedLSQAllocation(unsigned entries) const
+{
+    const unsigned active_threads = std::max(1U, activeLSQThreads());
+
+    switch (lsqPolicy) {
+      case SMTQueuePolicy::Dynamic:
+        return entries;
+      case SMTQueuePolicy::Partitioned:
+        return entries / active_threads;
+      case SMTQueuePolicy::Threshold:
+        return active_threads == 1 ? entries :
+            std::min(entries, smtLSQThreshold);
+      default:
+        panic("Invalid LSQ sharing policy. Options are: Dynamic, "
+              "Partitioned, Threshold");
+    }
+}
+
+unsigned
+LSQ::logicalMaxLoadEntries(ThreadID tid) const
+{
+    return sharedLSQMode() ? sharedLSQAllocation(LQEntries) : LQEntries;
+}
+
+unsigned
+LSQ::logicalMaxStoreEntries(ThreadID tid) const
+{
+    return sharedLSQMode() ? sharedLSQAllocation(SQEntries) : SQEntries;
+}
+
+unsigned
+LSQ::logicalMaxRAREntries(ThreadID tid) const
+{
+    return sharedLSQMode() ? sharedLSQAllocation(RARQEntries) : RARQEntries;
+}
+
+unsigned
+LSQ::logicalMaxRAWEntries(ThreadID tid) const
+{
+    return sharedLSQMode() ? sharedLSQAllocation(RAWQEntries) : RAWQEntries;
+}
+
+unsigned
+LSQ::logicalFreeLoadEntries(ThreadID tid) const
+{
+    const unsigned thread_free = std::max(0,
+        static_cast<int>(logicalMaxLoadEntries(tid)) - thread[tid].numLoads());
+    if (!sharedLSQMode()) {
+        return thread_free;
+    }
+
+    const unsigned shared_used = numLoads();
+    const unsigned shared_free = std::max(
+        0, static_cast<int>(LQEntries) - static_cast<int>(shared_used));
+    return std::min(thread_free, shared_free);
+}
+
+unsigned
+LSQ::logicalFreeStoreEntries(ThreadID tid) const
+{
+    const unsigned thread_free = std::max(0,
+        static_cast<int>(logicalMaxStoreEntries(tid)) - thread[tid].numStores());
+    if (!sharedLSQMode()) {
+        return thread_free;
+    }
+
+    const unsigned shared_used = numStores();
+    const unsigned shared_free = std::max(
+        0, static_cast<int>(SQEntries) - static_cast<int>(shared_used));
+    return std::min(thread_free, shared_free);
+}
+
+unsigned
+LSQ::logicalFreeRAREntries(ThreadID tid) const
+{
+    const unsigned thread_free = std::max(0,
+        static_cast<int>(logicalMaxRAREntries(tid)) - numRAREntries(tid));
+    if (!sharedLSQMode()) {
+        return thread_free;
+    }
+
+    const unsigned shared_used = numRAREntries();
+    const unsigned shared_free = std::max(
+        0, static_cast<int>(RARQEntries) - static_cast<int>(shared_used));
+    return std::min(thread_free, shared_free);
+}
+
+unsigned
+LSQ::logicalFreeRAWEntries(ThreadID tid) const
+{
+    const unsigned thread_free = std::max(0,
+        static_cast<int>(logicalMaxRAWEntries(tid)) - numRAWEntries(tid));
+    if (!sharedLSQMode()) {
+        return thread_free;
+    }
+
+    const unsigned shared_used = numRAWEntries();
+    const unsigned shared_free = std::max(
+        0, static_cast<int>(RAWQEntries) - static_cast<int>(shared_used));
+    return std::min(thread_free, shared_free);
+}
+
 unsigned
 LSQ::numFreeLoadEntries()
 {
+    if (sharedLSQMode()) {
+        const unsigned used = numLoads();
+        return used < LQEntries ? LQEntries - used : 0;
+    }
+
     unsigned total = 0;
 
     std::list<ThreadID>::iterator threads = activeThreads->begin();
@@ -1470,6 +1635,11 @@ LSQ::numFreeLoadEntries()
 unsigned
 LSQ::numFreeStoreEntries()
 {
+    if (sharedLSQMode()) {
+        const unsigned used = numStores();
+        return used < SQEntries ? SQEntries - used : 0;
+    }
+
     unsigned total = 0;
 
     std::list<ThreadID>::iterator threads = activeThreads->begin();
@@ -1487,18 +1657,22 @@ LSQ::numFreeStoreEntries()
 unsigned
 LSQ::numFreeLoadEntries(ThreadID tid)
 {
-        return thread[tid].numFreeLoadEntries();
+    return logicalFreeLoadEntries(tid);
 }
 
 unsigned
 LSQ::numFreeStoreEntries(ThreadID tid)
 {
-        return thread[tid].numFreeStoreEntries();
+    return logicalFreeStoreEntries(tid);
 }
 
 bool
 LSQ::isFull()
 {
+    if (sharedLSQMode()) {
+        return lqFull() || sqFull();
+    }
+
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
 
@@ -1515,12 +1689,12 @@ LSQ::isFull()
 bool
 LSQ::isFull(ThreadID tid)
 {
-    //@todo: Change to Calculate All Entries for
-    //Dynamic Policy
-    if (lsqPolicy == SMTQueuePolicy::Dynamic)
-        return isFull();
-    else
-        return thread[tid].lqFull() || thread[tid].sqFull();
+    if (sharedLSQMode()) {
+        return logicalFreeLoadEntries(tid) == 0 ||
+               logicalFreeStoreEntries(tid) == 0;
+    }
+
+    return thread[tid].lqFull() || thread[tid].sqFull();
 }
 
 bool
@@ -1576,6 +1750,10 @@ LSQ::sqEmpty(ThreadID tid) const
 bool
 LSQ::lqFull()
 {
+    if (sharedLSQMode()) {
+        return numFreeLoadEntries() == 0;
+    }
+
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
 
@@ -1592,17 +1770,20 @@ LSQ::lqFull()
 bool
 LSQ::lqFull(ThreadID tid)
 {
-    //@todo: Change to Calculate All Entries for
-    //Dynamic Policy
-    if (lsqPolicy == SMTQueuePolicy::Dynamic)
-        return lqFull();
-    else
-        return thread[tid].lqFull();
+    if (sharedLSQMode()) {
+        return logicalFreeLoadEntries(tid) == 0;
+    }
+
+    return thread[tid].lqFull();
 }
 
 bool
 LSQ::sqFull()
 {
+    if (sharedLSQMode()) {
+        return numFreeStoreEntries() == 0;
+    }
+
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
 
@@ -1619,12 +1800,11 @@ LSQ::sqFull()
 bool
 LSQ::sqFull(ThreadID tid)
 {
-     //@todo: Change to Calculate All Entries for
-    //Dynamic Policy
-    if (lsqPolicy == SMTQueuePolicy::Dynamic)
-        return sqFull();
-    else
-        return thread[tid].sqFull();
+    if (sharedLSQMode()) {
+        return logicalFreeStoreEntries(tid) == 0;
+    }
+
+    return thread[tid].sqFull();
 }
 
 const DynInstPtr&
