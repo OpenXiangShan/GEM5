@@ -1054,8 +1054,12 @@ class Fetch
          * the pipeline.
          */
         statistics::Scalar idleCycles;
+
+        statistics::Vector smtidleCycles;
         /** Total number of cycles spent blocked. */
         statistics::Scalar blockedCycles;
+
+        statistics::Vector smtblockedCycles;
         /** Total number of cycles spent in any other state. */
         statistics::Scalar miscStallCycles;
         /** Total number of cycles spent in waiting for drains. */
@@ -1091,6 +1095,10 @@ class Fetch
         statistics::Vector fetchStatusDist;
         /** Number of decode stalls */
         statistics::Scalar decodeStalls;
+
+        statistics::Vector smtdecodeStalls;
+
+        statistics::Vector smtftqempty;
         /** Number of decode stalls per cycle */
         statistics::Formula decodeStallRate;
         /** Unutilized issue-pipeline slots while there is no backend-stall */

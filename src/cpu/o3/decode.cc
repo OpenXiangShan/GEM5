@@ -138,8 +138,14 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     : statistics::Group(cpu, "decode"),
       ADD_STAT(idleCycles, statistics::units::Cycle::get(),
                "Number of cycles decode is idle"),
+      ADD_STAT(smtidleCycles, statistics::units::Cycle::get(),
+             "Number of cycles fetch was idle per tid"),           
       ADD_STAT(blockedCycles, statistics::units::Cycle::get(),
                "Number of cycles decode is blocked"),
+      ADD_STAT(smtblockedCycles, statistics::units::Cycle::get(),
+             "Number of cycles fetch has spent blocked per tid"),  
+      ADD_STAT(smtnotactiveCycles, statistics::units::Cycle::get(),
+             "Number of cycles fetch no active per tid"),                
       ADD_STAT(runCycles, statistics::units::Cycle::get(),
                "Number of cycles decode is running"),
       ADD_STAT(unblockCycles, statistics::units::Cycle::get(),
@@ -179,6 +185,16 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     mispredictedByPC.flags(statistics::total);
     mispredictedByNPC.flags(statistics::total);
     fusedInsts.init(128).flags(statistics::nozero);
+
+    smtidleCycles
+            .init(4)
+            .flags(statistics::total);
+    smtblockedCycles
+            .init(4)
+            .flags(statistics::total);    
+    smtnotactiveCycles
+            .init(4)
+            .flags(statistics::total);          
 }
 
 void
@@ -488,6 +504,15 @@ Decode::tick()
         bool block = stallSig->blockDecode[i];
         bool active = !block && !fixedbuffer[i].empty();
 
+        if(block){
+            ++stats.smtblockedCycles[i];
+        }
+
+        if(!active)
+        {
+            ++stats.smtnotactiveCycles[i];
+        }
+
         stallSig->blockFetch[i] = block || fifoBackpressured;
         stallSig->fetchBlockReason[i] =
             stallSig->blockFetch[i] ?
@@ -583,6 +608,7 @@ Decode::decodeInsts(ThreadID tid)
                 " early.\n",tid);
         // Should I change the status to idle?
         ++stats.idleCycles;
+        ++stats.smtidleCycles[tid];
 
         StallReason stall = StallReason::NoStall;
         for (auto iter : fromFetch->fetchStallReason) {
