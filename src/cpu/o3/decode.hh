@@ -259,8 +259,12 @@ class Decode
 
         /** Stat for total number of idle cycles. */
         statistics::Scalar idleCycles;
+
+        statistics::Vector smtidleCycles;
         /** Stat for total number of blocked cycles. */
         statistics::Scalar blockedCycles;
+        statistics::Vector smtblockedCycles;
+        statistics::Vector smtnotactiveCycles;
         /** Stat for total number of normal running cycles. */
         statistics::Scalar runCycles;
         /** Stat for total number of unblocking cycles. */
