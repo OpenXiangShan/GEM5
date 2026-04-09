@@ -53,6 +53,9 @@ class SMTFetchPolicy(ScopedEnum):
 class SMTQueuePolicy(ScopedEnum):
     vals = [ 'Dynamic', 'Partitioned', 'Threshold' ]
 
+class SMTLSQMode(ScopedEnum):
+    vals = [ 'Independent', 'Shared' ]
+
 class CommitPolicy(ScopedEnum):
     vals = [ 'RoundRobin', 'OldestReady' ]
 
@@ -233,8 +236,10 @@ class BaseO3CPU(BaseCPU):
 
     smtNumFetchingThreads = Param.Unsigned(1, "SMT Number of Fetching Threads")
     smtFetchPolicy = Param.SMTFetchPolicy('RoundRobin', "SMT Fetch policy")
+    smtLSQMode = Param.SMTLSQMode('Independent',
+                                  "SMT LSQ mode: per-thread independent or shared quota")
     smtLSQPolicy    = Param.SMTQueuePolicy('Partitioned',
-                                           "SMT LSQ Sharing Policy")
+                                           "SMT shared LSQ allocation policy")
     smtLSQThreshold = Param.Int(100, "SMT LSQ Threshold Sharing Parameter")
     smtIQPolicy    = Param.SMTQueuePolicy('Partitioned',
                                           "SMT IQ Sharing Policy")

@@ -1,5 +1,6 @@
 #include "cpu/pred/btb/decoupled_bpred.hh"
 
+#include <algorithm>
 #include <array>
 
 #include "arch/riscv/regs/misc.hh"
@@ -60,10 +61,20 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       // uras(p.uras),
       bpDBSwitches(p.bpDBSwitches),
       numStages(p.numStages),
+      ftqEntries(p.ftq_size),
+      ftqMode(p.smtFTQMode),
+      ftqPolicy(p.smtFTQPolicy),
+      smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
 {
+    panic_if(ftqMode == SMTFTQMode::Shared &&
+             ftqPolicy == SMTFTQPolicy::Threshold &&
+             smtFTQThreshold > ftqEntries,
+             "SMT FTQ threshold (%u) exceeds total FTQ entries (%u)",
+             smtFTQThreshold, ftqEntries);
+
     if (bpDBSwitches.size() > 0) {
         initDB();
     }
@@ -135,6 +146,85 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     });
 }
 
+bool
+DecoupledBPUWithBTB::sharedFTQMode() const
+{
+    return ftqMode == SMTFTQMode::Shared;
+}
+
+unsigned
+DecoupledBPUWithBTB::activeFTQThreads() const
+{
+    if (!sharedFTQMode()) {
+        return 1;
+    }
+
+    if (!cpu) {
+        return std::max(1u, numThreads);
+    }
+
+    return std::max(1, cpu->numActiveThreads());
+}
+
+unsigned
+DecoupledBPUWithBTB::totalFTQEntries() const
+{
+    unsigned total = 0;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        total += ftq.size(tid);
+    }
+    return total;
+}
+
+unsigned
+DecoupledBPUWithBTB::sharedFTQAllocation(unsigned entries) const
+{
+    const unsigned active_threads = activeFTQThreads();
+
+    switch (ftqPolicy) {
+      case SMTFTQPolicy::Dynamic:
+        return entries;
+      case SMTFTQPolicy::Partitioned:
+        return entries / active_threads;
+      case SMTFTQPolicy::Threshold:
+        return active_threads == 1 ? entries : std::min(entries, smtFTQThreshold);
+      default:
+        panic("Invalid SMT FTQ sharing policy");
+    }
+}
+
+unsigned
+DecoupledBPUWithBTB::logicalMaxFTQEntries(ThreadID tid) const
+{
+    if (!sharedFTQMode()) {
+        return ftqEntries;
+    }
+
+    return sharedFTQAllocation(ftqEntries);
+}
+
+unsigned
+DecoupledBPUWithBTB::logicalFreeFTQEntries(ThreadID tid) const
+{
+    const unsigned local_max = logicalMaxFTQEntries(tid);
+    const unsigned local_used = ftq.size(tid);
+    const unsigned local_free = local_used >= local_max ? 0 : local_max - local_used;
+
+    if (!sharedFTQMode()) {
+        return local_free;
+    }
+
+    const unsigned total_used = totalFTQEntries();
+    const unsigned shared_free = total_used >= ftqEntries ? 0 : ftqEntries - total_used;
+    return std::min(local_free, shared_free);
+}
+
+bool
+DecoupledBPUWithBTB::ftqFull(ThreadID tid) const
+{
+    return logicalFreeFTQEntries(tid) == 0;
+}
+
 ThreadID
 DecoupledBPUWithBTB::scheduleThread()
 {
@@ -187,7 +277,7 @@ DecoupledBPUWithBTB::tick()
     }
 
     // 1. Request new prediction if FSQ not full and we are idle
-    if (!threads[curTid].validprediction && !ftq.full(curTid)) {
+    if (!threads[curTid].validprediction && !ftqFull(curTid)) {
         if (threads[curTid].blockPredictionPending) {
             DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
             dbpBtbStats.predictionBlockedForUpdate++;
@@ -394,7 +484,7 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     // Monitor FSQ size for statistics
     dbpBtbStats.fsqEntryDist.sample(ftq.size(tid), 1);
-    if (ftq.full(tid)) {
+    if (ftqFull(tid)) {
         dbpBtbStats.fsqFullCannotEnq++;
         DPRINTF(Override, "FSQ is full (%lu entries)\n", ftq.size(tid));
         return;

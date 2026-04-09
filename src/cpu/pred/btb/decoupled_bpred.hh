@@ -19,20 +19,20 @@
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
+#include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/ftq.hh"
+#include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/microtage.hh"
 #include "cpu/pred/btb/ras.hh"
-#include "cpu/pred/general_arch_db.hh"
-
-// #include "cpu/pred/btb/uras.hh"
-#include "cpu/pred/btb/common.hh"
-#include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
+#include "cpu/pred/general_arch_db.hh"
 #include "cpu/timebuf.hh"
 #include "debug/DBPBTBStats.hh"
 #include "debug/DecoupleBP.hh"
 #include "debug/DecoupleBPProbe.hh"
+#include "enums/SMTFTQMode.hh"
+#include "enums/SMTFTQPolicy.hh"
 #include "params/DecoupledBPUWithBTB.hh"
 
 namespace gem5
@@ -121,6 +121,10 @@ class DecoupledBPUWithBTB : public BPredUnit
     // std::vector<FullBTBPrediction> predsOfEachStage{};
     unsigned numComponents{};
     unsigned numStages{};
+    unsigned ftqEntries;
+    SMTFTQMode ftqMode;
+    SMTFTQPolicy ftqPolicy;
+    unsigned smtFTQThreshold;
 
     FetchTargetQueue ftq;
 
@@ -143,6 +147,14 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<HistoryManager> historyManagers;
     std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
+
+    bool sharedFTQMode() const;
+    unsigned activeFTQThreads() const;
+    unsigned totalFTQEntries() const;
+    unsigned sharedFTQAllocation(unsigned entries) const;
+    unsigned logicalMaxFTQEntries(ThreadID tid) const;
+    unsigned logicalFreeFTQEntries(ThreadID tid) const;
+    bool ftqFull(ThreadID tid) const;
 
     ThreadID scheduleThread();
 

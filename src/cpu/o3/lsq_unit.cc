@@ -1406,7 +1406,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
 
     if (loadCompletedIdx != loadQueue.tail() && inst->isNormalLd()) {
         if (inst->lqIt.idx() > loadCompletedIdx + 1) {
-            if (RARQueue.size() >= maxRARQEntries) {
+            if (lsq->logicalFreeRAREntries(lsqID) == 0) {
                 DPRINTF(LSQUnit, "RARQueue full, reschedule [sn:%llu], LoadCompletedItIdx: %d, inst->lqItIdx: %d\n",
                         inst->seqNum, loadCompletedIdx, inst->lqIt._idx);
                 stats.RARQueueFull++;
@@ -1425,7 +1425,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
 
     if (storeCompletedIdx != storeQueue.tail() && inst->isNormalLd()) {
         if (inst->sqIt.idx() > storeCompletedIdx + 1) {
-            if (RAWQueue.size() >= maxRAWQEntries) {
+            if (lsq->logicalFreeRAWEntries(lsqID) == 0) {
                 DPRINTF(LSQUnit, "RAWQueue full, reschedule [sn:%lli], StoreCompletedItIdx: %d, inst->sqItIdx: %d\n",
                         inst->seqNum, storeCompletedIdx, inst->sqIt.idx());
                 stats.RAWQueueFull++;
@@ -3713,7 +3713,7 @@ LSQUnit::processReplayQueues()
 
     // Collect instructions from RAR replay queue when space available
     assert(RARQueue.size() <= maxRARQEntries);
-    const int freeRARSize = maxRARQEntries - RARQueue.size();
+    const int freeRARSize = lsq->logicalFreeRAREntries(lsqID);
     const int maxRARCollect = std::min(freeRARSize, (int)rarDequeuePerCycle - RARReplayCount);
     for (int i = 0; i < maxRARCollect && !RARReplayQueue.empty(); ++i) {
         DynInstPtr inst = RARReplayQueue.front();
@@ -3723,7 +3723,7 @@ LSQUnit::processReplayQueues()
 
     // Collect instructions from RAW replay queue when space available
     assert(RAWQueue.size() <= maxRAWQEntries);
-    const int freeRAWSize = maxRAWQEntries - RAWQueue.size();
+    const int freeRAWSize = lsq->logicalFreeRAWEntries(lsqID);
     const int maxRAWCollect = std::min(freeRAWSize, (int)rawDequeuePerCycle - RAWReplayCount);
     for (int i = 0; i < maxRAWCollect && !RAWReplayQueue.empty(); ++i) {
         DynInstPtr inst = RAWReplayQueue.front();
