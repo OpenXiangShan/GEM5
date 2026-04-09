@@ -1102,6 +1102,59 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
     EXPECT_TRUE(predicted);
 }
 
+TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesIndirectOverridePathHashSnapshot) {
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
+    entry.isIndirect = true;
+    const Addr indirectTarget = 0x3000;
+
+    ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, indirectTarget));
+
+    boost::dynamic_bitset<> pathHistoryA(128, 0);
+    boost::dynamic_bitset<> pathHistoryB(128, 0);
+    applyPathHistoryTaken(pathHistoryB, entry.pc, indirectTarget);
+
+    ASSERT_TRUE(tage->insertExactEntry(2, entry.pc, pathHistoryB, 2));
+
+    FullBTBPrediction pred;
+    pred.btbEntries.push_back(entry);
+    pred.condTakens.push_back({entry.pc, true});
+    pred.indirectTargets.push_back({entry.pc, indirectTarget});
+
+    tage->specUpdatePHist(pathHistoryA, pred);
+    tage->checkFoldedHist(pathHistoryB, "indirect target override");
+
+    bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
+
+    EXPECT_TRUE(predicted);
+}
+
+TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesReturnOverridePathHashSnapshot) {
+    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
+    entry.isIndirect = true;
+    entry.isReturn = true;
+    const Addr returnTarget = 0x3400;
+
+    ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, returnTarget));
+
+    boost::dynamic_bitset<> pathHistoryA(128, 0);
+    boost::dynamic_bitset<> pathHistoryB(128, 0);
+    applyPathHistoryTaken(pathHistoryB, entry.pc, returnTarget);
+
+    ASSERT_TRUE(tage->insertExactEntry(2, entry.pc, pathHistoryB, 2));
+
+    FullBTBPrediction pred;
+    pred.btbEntries.push_back(entry);
+    pred.condTakens.push_back({entry.pc, true});
+    pred.returnTarget = returnTarget;
+
+    tage->specUpdatePHist(pathHistoryA, pred);
+    tage->checkFoldedHist(pathHistoryB, "return target override");
+
+    bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
+
+    EXPECT_TRUE(predicted);
+}
+
 
 }  // namespace test
 

@@ -516,24 +516,29 @@ struct FullBTBPrediction
         return (bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     }
 
+    Addr getEntryTarget(const BTBEntry &entry) {
+        Addr target = entry.target;
+        // indirect target should come from ipred or ras,
+        // or btb itself when ipred miss
+        if (entry.isIndirect) {
+            if (!entry.isReturn) { // normal indirect, see ittage
+                auto& pc = entry.pc;
+                auto it = IndirectTakens_find(indirectTargets, pc);
+                if (it != indirectTargets.end()) { // found in ittage, use it
+                    target = it->second;
+                }
+            } else { // indirect return, use RAS target
+                target = returnTarget;
+            }
+        } // else: normal taken, use btb target
+        return target;
+    }
+
     Addr getTarget(Addr predictWidth) {
         Addr target;
         const auto &entry = getTakenEntry();
         if (entry.valid) { // found a taken entry
-            target = entry.target;
-            // indirect target should come from ipred or ras,
-            // or btb itself when ipred miss
-            if (entry.isIndirect) {
-                if (!entry.isReturn) { // normal indirect, see ittage
-                    auto& pc = entry.pc;
-                    auto it = IndirectTakens_find(indirectTargets, pc);
-                    if (it != indirectTargets.end()) { // found in ittage, use it
-                        target = it->second;
-                    }
-                } else { // indirect return, use RAS target
-                    target = returnTarget;
-                }
-            } // else: normal taken, use btb target
+            target = getEntryTarget(entry);
         } else {
             target = getFallThrough(predictWidth);
         }
@@ -631,32 +636,11 @@ struct FullBTBPrediction
 
     std::tuple<Addr, Addr, bool> getPHistInfo() //path
     {
-        bool taken = false;
-        Addr pc = 0;
-        Addr target = 0;
-        for (auto &entry : btbEntries) {
-            if (entry.valid) {
-                if (entry.isCond) {
-                    auto& _pc = entry.pc;
-                    auto it = CondTakens_find(condTakens, _pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) {
-                            taken = true;
-                            pc = entry.pc; // get the pc of the cond branch
-                            target = entry.target;
-                            break;
-                        }
-                    }
-                } else {
-                    // uncond
-                    taken = true;
-                    pc = entry.pc; // get the pc of the cond branch
-                    target = entry.target;
-                    break;
-                }
-            }
+        const auto &entry = getTakenEntry();
+        if (entry.valid) {
+            return std::make_tuple(entry.pc, getEntryTarget(entry), true);
         }
-        return std::make_tuple(pc, target, taken);
+        return std::make_tuple(0, 0, false);
     }
 
 };
