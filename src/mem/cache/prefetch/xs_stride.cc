@@ -414,14 +414,7 @@ XSStridePrefetcher::captureAndTriggerFromS1(const PrefetchInfo &pfi,
     }
 
     const InstSeqNum seq_num = pfi.getSeqNum();
-    if (pendingSnapshots.count(seq_num) || scheduledReady.count(seq_num)) {
-        traceCommitOrderStage("SkipDup", seq_num, pfi.getPC(), pfi.getAddr(),
-                              true, pendingSnapshots.size(), "duplicate_seq");
-        return;
-    }
-
-    auto [it, inserted] = pendingSnapshots.emplace(seq_num,
-                                                   CommitTrainSnapshot(pfi));
+    auto [it, inserted] = pendingSnapshots.try_emplace(seq_num, pfi);
     if (!inserted) {
         traceCommitOrderStage("SkipDup", seq_num, pfi.getPC(), pfi.getAddr(),
                               true, pendingSnapshots.size(), "duplicate_seq");
@@ -441,12 +434,13 @@ XSStridePrefetcher::markCommitted(InstSeqNum seq_num)
         return;
     }
 
-    if (!scheduledReady.insert(seq_num).second) {
+    if (it->second.readyForTrain) {
         return;
     }
 
+    it->second.readyForTrain = true;
     it->second.readyCycle = curCycle();
-    readyToTrain.push_back(seq_num);
+    readyToTrain.insert(seq_num);
     traceCommitOrderStage("CommitReady", it->second, readyToTrain.size(), "");
     scheduleCommitTrain();
 }
@@ -454,40 +448,14 @@ XSStridePrefetcher::markCommitted(InstSeqNum seq_num)
 void
 XSStridePrefetcher::dropYoungerThan(InstSeqNum boundary)
 {
-    std::vector<InstSeqNum> to_drop;
-    to_drop.reserve(pendingSnapshots.size());
-    for (const auto &entry : pendingSnapshots) {
-        if (entry.first > boundary) {
-            to_drop.push_back(entry.first);
-        }
-    }
+    readyToTrain.erase(readyToTrain.upper_bound(boundary), readyToTrain.end());
 
-    for (InstSeqNum seq_num : to_drop) {
-        auto it = pendingSnapshots.find(seq_num);
-        if (it == pendingSnapshots.end()) {
-            continue;
-        }
+    for (auto it = pendingSnapshots.upper_bound(boundary);
+         it != pendingSnapshots.end(); ) {
         traceCommitOrderStage("DropSquash", it->second, pendingSnapshots.size(),
                               "squash_boundary");
-        pendingSnapshots.erase(it);
-        scheduledReady.erase(seq_num);
+        it = pendingSnapshots.erase(it);
     }
-
-    if (readyToTrain.empty()) {
-        return;
-    }
-
-    std::deque<InstSeqNum> kept;
-    while (!readyToTrain.empty()) {
-        const InstSeqNum seq_num = readyToTrain.front();
-        readyToTrain.pop_front();
-        if (seq_num > boundary || !pendingSnapshots.count(seq_num)) {
-            scheduledReady.erase(seq_num);
-            continue;
-        }
-        kept.push_back(seq_num);
-    }
-    readyToTrain.swap(kept);
 }
 
 void
@@ -612,11 +580,11 @@ XSStridePrefetcher::processCommitTrain()
     const Cycles current_cycle = curCycle();
 
     while (!readyToTrain.empty()) {
-        const InstSeqNum seq_num = readyToTrain.front();
+        const auto ready_it = readyToTrain.begin();
+        const InstSeqNum seq_num = *ready_it;
         auto it = pendingSnapshots.find(seq_num);
         if (it == pendingSnapshots.end()) {
-            readyToTrain.pop_front();
-            scheduledReady.erase(seq_num);
+            readyToTrain.erase(ready_it);
             continue;
         }
 
@@ -627,8 +595,7 @@ XSStridePrefetcher::processCommitTrain()
         }
 
         const CommitTrainSnapshot snapshot = it->second;
-        readyToTrain.pop_front();
-        scheduledReady.erase(seq_num);
+        readyToTrain.erase(ready_it);
         pendingSnapshots.erase(it);
         traceCommitOrderStage("CommitTrain", snapshot, readyToTrain.size(),
                               "");

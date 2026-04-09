@@ -4,10 +4,9 @@
 #ifndef __MEM_CACHE_PREFETCH_SMSSTRIDE_HH__
 #define __MEM_CACHE_PREFETCH_SMSSTRIDE_HH__
 
-#include <deque>
+#include <map>
+#include <set>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include <boost/compute/detail/lru_cache.hpp>
@@ -140,27 +139,22 @@ class XSStridePrefetcher : public Queued
         InstSeqNum seqNum;
         Addr addr;
         Addr pc;
-        Addr paddr;
         Cycles readyCycle;
-        Request::XsMetadata xsMetadata;
         bool secure;
-        bool reqAfterSquash;
+        bool readyForTrain;
 
         explicit CommitTrainSnapshot(const PrefetchInfo &pfi)
             : seqNum(pfi.getSeqNum()),
               addr(pfi.getAddr()),
               pc(pfi.getPC()),
-              paddr(pfi.getPaddr()),
               readyCycle(0),
-              xsMetadata(pfi.getXsMetadata()),
               secure(pfi.isSecure()),
-              reqAfterSquash(pfi.isReqAfterSquash())
+              readyForTrain(false)
         {}
     };
 
-    std::unordered_map<InstSeqNum, CommitTrainSnapshot> pendingSnapshots;
-    std::deque<InstSeqNum> readyToTrain;
-    std::unordered_set<InstSeqNum> scheduledReady;
+    std::map<InstSeqNum, CommitTrainSnapshot> pendingSnapshots;
+    std::set<InstSeqNum> readyToTrain;
     EventFunctionWrapper commitTrainEvent;
 
     void scheduleCommitTrain();
