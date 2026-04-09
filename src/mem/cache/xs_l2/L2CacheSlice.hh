@@ -54,6 +54,10 @@ class L2CacheSlice : public CacheWrapper
         dirReadBypass = bypass;
     }
 
+    void setOwnAddrFunc(std::function<bool(Addr)> func) {
+        ownsAddr = func;
+    }
+
   protected:
     // For request buffering logic
     RequestBuffer requestBuffer;
@@ -99,6 +103,7 @@ class L2CacheSlice : public CacheWrapper
     std::function<Addr(Addr)> getSetIdx;
     std::function<Addr(Addr)> getDataBankIdx;
     std::function<Addr(Addr)> getDirBankIdx;
+    std::function<bool(Addr)> ownsAddr;
 
     uint64_t pipeDirWriteStage = 3;
     bool dirReadBypass = false;
@@ -107,6 +112,9 @@ class L2CacheSlice : public CacheWrapper
     void innerCpuPortRecvReqRetry() override;
     bool innerCpuPortSendTimingReq(PacketPtr pkt, TaskSource source);
     bool innerMemPortRecvTimingReq(PacketPtr pkt) override;
+    void memSidePortRecvTimingSnoopReq(PacketPtr pkt) override;
+    void memSidePortRecvFunctionalSnoop(PacketPtr pkt) override;
+    Tick memSidePortRecvAtomicSnoop(PacketPtr pkt) override;
     bool memSidePortRecvTimingResp(PacketPtr pkt) override;
     void innerMemPortRecvRespRetry() override;
 
