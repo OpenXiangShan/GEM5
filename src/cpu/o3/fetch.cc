@@ -204,8 +204,12 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of cycles fetch has spent waiting for tlb"),
     ADD_STAT(idleCycles, statistics::units::Cycle::get(),
              "Number of cycles fetch was idle"),
+    ADD_STAT(smtidleCycles, statistics::units::Cycle::get(),
+             "Number of cycles fetch was idle per tid"),         
     ADD_STAT(blockedCycles, statistics::units::Cycle::get(),
              "Number of cycles fetch has spent blocked"),
+    ADD_STAT(smtblockedCycles, statistics::units::Cycle::get(),
+             "Number of cycles fetch has spent blocked per tid"),         
     ADD_STAT(miscStallCycles, statistics::units::Cycle::get(),
              "Number of cycles fetch has spent waiting on interrupts, or bad "
              "addresses, or out of MSHRs"),
@@ -241,6 +245,10 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Distribution of fetch status"),
     ADD_STAT(decodeStalls, statistics::units::Count::get(),
              "Number of decode stalls"),
+    ADD_STAT(smtdecodeStalls, statistics::units::Count::get(),
+             "Number of decode stalls per tid"),  
+    ADD_STAT(smtftqempty, statistics::units::Count::get(),
+             "Number of ftq empty per tid"),                  
     ADD_STAT(decodeStallRate, statistics::units::Rate<
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Number of decode stalls per cycle",
@@ -336,6 +344,18 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
         }
         decodeStalls
             .prereq(decodeStalls);
+        smtdecodeStalls
+            .init(fetch->numThreads)
+            .flags(statistics::total);  
+        smtftqempty
+            .init(fetch->numThreads)
+            .flags(statistics::total);
+        smtidleCycles
+            .init(fetch->numThreads)
+            .flags(statistics::total);
+        smtblockedCycles
+            .init(fetch->numThreads)
+            .flags(statistics::total);     
         decodeStallRate
             .flags(statistics::total);
         fetchBubbles
@@ -1401,9 +1421,12 @@ Fetch::sendInstructionsToDecode()
     for (int i = 0; i < numThreads; i++) {
         if (!stallSig->blockFetch[i]) {
             any_thread_active = true;
-            break;
+            //break;
+        }else{
+            fetchStats.smtdecodeStalls[i]++; 
         }
     }
+
     if (!any_thread_active) {
         // All threads are blocked, no instructions to send
         ThreadID blocked_tid = InvalidThreadID;
@@ -1427,6 +1450,7 @@ Fetch::sendInstructionsToDecode()
     }
 
     ThreadID tid =selectUnstalledThread();
+    DPRINTF(Fetch, "select Unstalled [tid:%i]\n",tid);
 
     // fetch totally stalled
     if (stallSig->blockFetch[tid]) {
@@ -1512,6 +1536,7 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
 
     if (stallSig->blockFetch[tid]) {
         fetchStats.decodeStalls++;
+        //fetchStats.smtdecodeStalls[tid]++;
     }
 }
 
@@ -1849,6 +1874,7 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
     } else {
         if (fetchStatus[tid] == Idle) {
             ++fetchStats.idleCycles;
+            ++fetchStats.smtidleCycles[tid];
             DPRINTF(Fetch, "[tid:%i] Fetch is idle!\n", tid);
         }
         // Status is Idle, so fetch should do nothing.
@@ -2111,6 +2137,7 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     }
 
     if (ftqEmpty(tid)) {
+        ++fetchStats.smtftqempty[tid];
         DPRINTF(Fetch, "[tid:%i] No FSQ entry available for next fetch\n", tid);
         return;
     }
@@ -2183,6 +2210,7 @@ Fetch::profileStall(ThreadID tid)
         DPRINTF(Fetch, "Fetch has no active thread!\n");
     } else if (fetchStatus[tid] == Blocked) {
         ++fetchStats.blockedCycles;
+        ++fetchStats.smtblockedCycles[tid];
         DPRINTF(Fetch, "[tid:%i] Fetch is blocked!\n", tid);
     } else if (fetchStatus[tid] == Squashing) {
         ++fetchStats.squashCycles;
