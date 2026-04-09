@@ -92,6 +92,10 @@ def config_classic_l2(options, system, l2_cache_class):
         # system.tol2bus_list.append(L2XBar(clk_domain = system.cpu_clk_domain, width=256))
         system.l2_caches[i].cpu_side = system.tol2bus_list[i].mem_side_ports
         system.tol2bus_list[i].snoop_filter.max_capacity = "16MB"
+        if isinstance(system.l2_caches[i].replacement_policy, DRRIPRP):
+            system.l2_caches[i].replacement_policy.num_slices = 1
+            system.l2_caches[i].replacement_policy.num_sets_per_slice = \
+                system.l2_caches[i].size // (64 * system.l2_caches[i].assoc)
         system.l2_caches[i].do_fast_writeline = not options.kmh_align
         if options.ideal_cache:
             system.l2_caches[i].response_latency = 0
