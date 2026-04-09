@@ -56,6 +56,42 @@ L2CacheSlice::innerMemPortRecvTimingReq(PacketPtr pkt)
     return CacheWrapper::innerMemPortRecvTimingReq(pkt);
 }
 
+void
+L2CacheSlice::memSidePortRecvTimingSnoopReq(PacketPtr pkt)
+{
+    if (ownsAddr && !ownsAddr(pkt->getAddr())) {
+        DPRINTF(L2CacheSlice,
+                "Dropping foreign timing snoop for addr %#x on slice %s\n",
+                pkt->getAddr(), name());
+        return;
+    }
+    CacheWrapper::memSidePortRecvTimingSnoopReq(pkt);
+}
+
+void
+L2CacheSlice::memSidePortRecvFunctionalSnoop(PacketPtr pkt)
+{
+    if (ownsAddr && !ownsAddr(pkt->getAddr())) {
+        DPRINTF(L2CacheSlice,
+                "Dropping foreign functional snoop for addr %#x on slice %s\n",
+                pkt->getAddr(), name());
+        return;
+    }
+    CacheWrapper::memSidePortRecvFunctionalSnoop(pkt);
+}
+
+Tick
+L2CacheSlice::memSidePortRecvAtomicSnoop(PacketPtr pkt)
+{
+    if (ownsAddr && !ownsAddr(pkt->getAddr())) {
+        DPRINTF(L2CacheSlice,
+                "Dropping foreign atomic snoop for addr %#x on slice %s\n",
+                pkt->getAddr(), name());
+        return 0;
+    }
+    return CacheWrapper::memSidePortRecvAtomicSnoop(pkt);
+}
+
 bool
 L2CacheSlice::memSidePortRecvTimingResp(PacketPtr pkt)
 {
