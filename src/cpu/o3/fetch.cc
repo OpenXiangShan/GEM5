@@ -266,8 +266,6 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              frontendBound - frontendLatencyBound),
     ADD_STAT(fullResolveEntriesReceived, statistics::units::Count::get(),
              "Number of full resolve entries received by fetch"),
-    ADD_STAT(fullResolveEntriesMerged, statistics::units::Count::get(),
-             "Number of full resolve entries merged by fetch"),
     ADD_STAT(fullResolveEntriesDroppedQueueFull,
              statistics::units::Count::get(),
              "Number of full resolve entries dropped because the queue is full"),
@@ -358,8 +356,6 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .flags(statistics::total);
         fullResolveEntriesReceived
             .prereq(fullResolveEntriesReceived);
-        fullResolveEntriesMerged
-            .prereq(fullResolveEntriesMerged);
         fullResolveEntriesDroppedQueueFull
             .prereq(fullResolveEntriesDroppedQueueFull);
         fullResolveEntriesDroppedStaleTarget
@@ -1520,7 +1516,6 @@ Fetch::handleIEWSignals()
                     resolved.mispredict, resolved.ftqOffset, resolved.isCond,
                     resolved.isDirect, resolved.isIndirect, resolved.isCall,
                     resolved.isReturn, resolved.isRVC));
-                fetchStats.fullResolveEntriesMerged++;
                 continue;
             }
 

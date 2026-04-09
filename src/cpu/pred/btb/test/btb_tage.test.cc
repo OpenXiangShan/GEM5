@@ -5,7 +5,6 @@
 
 #include "base/types.hh"
 #include "cpu/pred/btb/btb_tage.hh"
-#include "cpu/pred/btb/btb_tage_ub.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 
@@ -1064,83 +1063,11 @@ TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
 }
 
 /**
- * @brief Test bank conflict detection
+ * @brief Test resolve-train bank conflict detection
  *
- * Verifies:
- * 1. Same bank access causes conflict and drops update (when enabled)
- * 2. Different bank access has no conflict
- * 3. Disabled flag prevents conflict detection
+ * Verifies that a same-bank resolve-train update is rejected when bank
+ * conflict checking is enabled.
  */
-TEST_F(BTBTAGETest, BankConflict) {
-    // Create TAGE with 4 banks
-    BTBTAGE *bankTage = new BTBTAGE(4, 2, 1024, 4);
-    boost::dynamic_bitset<> testHistory(128);
-    std::vector<FullBTBPrediction> testStagePreds(5);
-
-    // Bank ID derives from bits [2:1] (pc >> 1) & 0x3 when instShiftAmt == 1.
-    // Bank 0: ..., 0x100, 0x108 ...  Bank 1: ..., 0x102, 0x10A ...
-    // Bank 2: ..., 0x104, 0x10C ...  Bank 3: ..., 0x106, 0x10E ...
-
-    // Test 1: Same bank conflict (enabled)
-    bankTage->enableBankConflict = true;
-    {
-        // Predict on bank 1 (0x20), then update on bank 1 (0xa0)
-        testStagePreds[1].btbEntries = {createBTBEntry(0x20)};
-        bankTage->putPCHistory(0x20, testHistory, testStagePreds);
-        EXPECT_TRUE(bankTage->predBankValid);
-
-        auto meta = bankTage->getPredictionMeta();
-        FetchTarget stream = createStream(0xa0, createBTBEntry(0xa0), true, meta);
-        setupTageEntry(bankTage, 0xa0, 0, 1, false);
-
-        uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bool can_update = bankTage->canResolveUpdate(stream);
-
-        // Should detect conflict and defer update
-        EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before + 1);
-        EXPECT_FALSE(can_update);
-        EXPECT_FALSE(bankTage->predBankValid);
-    }
-
-    // Test 2: Different bank, no conflict
-    {
-        // Predict on bank 0 (0x100), update on bank 2 (0x104)
-        testStagePreds[1].btbEntries = {createBTBEntry(0x100)};
-        bankTage->putPCHistory(0x100, testHistory, testStagePreds);
-
-        auto meta = bankTage->getPredictionMeta();
-        FetchTarget stream = createStream(0x104, createBTBEntry(0x104), true, meta);
-
-        uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bool can_update = bankTage->canResolveUpdate(stream);
-        ASSERT_TRUE(can_update);
-        bankTage->doResolveUpdate(stream);
-
-        // Should not detect conflict
-        EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
-    }
-
-    // Test 3: Disabled flag prevents conflict
-    bankTage->enableBankConflict = false;
-    {
-        // Same bank (0x20 and 0xa0), but conflict disabled
-        testStagePreds[1].btbEntries = {createBTBEntry(0x20)};
-        bankTage->putPCHistory(0x20, testHistory, testStagePreds);
-
-        auto meta = bankTage->getPredictionMeta();
-        FetchTarget stream = createStream(0xa0, createBTBEntry(0xa0), true, meta);
-        setupTageEntry(bankTage, 0xa0, 0, 1, false);
-
-        uint64_t conflicts_before = bankTage->tageStats.updateBankConflict;
-        bool can_update = bankTage->canResolveUpdate(stream);
-        ASSERT_TRUE(can_update);
-        bankTage->doResolveUpdate(stream);
-
-        // No conflict even with same bank
-        EXPECT_EQ(bankTage->tageStats.updateBankConflict, conflicts_before);
-    }
-}
-
 TEST_F(BTBTAGETest, ResolveTrainBankConflict) {
     BTBTAGE bankTage(4, 2, 1024, 4);
     memset(&bankTage.tageStats, 0, sizeof(BTBTAGE::TageStats));
@@ -1282,132 +1209,6 @@ TEST_F(BTBTAGETest, ResolveTrainRepeatedShortPatternMatchesLegacyProviderGrowth)
         << "Full resolve-train should build the same set of TAGE tables as legacy update";
 }
 
-class BTBTAGEUpperBoundTest : public ::testing::Test
-{
-  protected:
-    void SetUp() override {
-        tage = new BTBTAGEUpperBound();
-        memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
-        history.resize(128, false);
-        stagePreds.resize(2);
-    }
-
-    BTBTAGEUpperBound *tage;
-    boost::dynamic_bitset<> history;
-    std::vector<FullBTBPrediction> stagePreds;
-};
-
-class BTBTAGEUpperBoundPathHashTest : public ::testing::Test
-{
-  protected:
-    void SetUp() override {
-        tage = new BTBTAGEUpperBound(4, 1024, 4,
-            BTBTAGEUpperBound::HistorySource::PathHash);
-        memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
-        outcomeHistory.resize(128, false);
-        pathHistory.resize(128, false);
-        stagePreds.resize(2);
-    }
-
-    BTBTAGEUpperBound *tage;
-    boost::dynamic_bitset<> outcomeHistory;
-    boost::dynamic_bitset<> pathHistory;
-    std::vector<FullBTBPrediction> stagePreds;
-};
-
-TEST_F(BTBTAGEUpperBoundTest, ExactContextLookup) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
-    boost::dynamic_bitset<> historyA(128, 0);
-    boost::dynamic_bitset<> historyB(128, 0);
-    historyB[0] = true;
-
-    ASSERT_TRUE(tage->insertExactEntry(3, entry.pc, historyA, 2));
-    EXPECT_TRUE(tage->hasExactEntry(3, entry.pc, historyA));
-    EXPECT_FALSE(tage->hasExactEntry(3, entry.pc, historyB));
-
-    bool predA = predictTAGE(tage, 0x1000, {entry}, historyA, stagePreds);
-    bool predB = predictTAGE(tage, 0x1000, {entry}, historyB, stagePreds);
-
-    EXPECT_TRUE(predA);
-    EXPECT_FALSE(predB);
-}
-
-TEST_F(BTBTAGEUpperBoundTest, ProviderAltSelection) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
-
-    ASSERT_TRUE(tage->insertExactEntry(3, entry.pc, history, 0));
-    ASSERT_TRUE(tage->insertExactEntry(1, entry.pc, history, -2));
-
-    predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
-    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
-    auto pred = meta->preds[entry.pc];
-
-    EXPECT_EQ(pred.mainInfo.table, 3u);
-    EXPECT_EQ(pred.altInfo.table, 1u);
-    EXPECT_TRUE(pred.useAlt);
-    EXPECT_FALSE(pred.taken);
-}
-
-TEST_F(BTBTAGEUpperBoundTest, AllocationUsesPredictionTimeHistory) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1);
-    boost::dynamic_bitset<> historyA(128, 0);
-    boost::dynamic_bitset<> historyB(128, 0);
-    historyB[0] = true;
-
-    predictTAGE(tage, 0x1000, {entry}, historyA, stagePreds);
-    auto meta = tage->getPredictionMeta();
-
-    FetchTarget stream = createStream(0x1000, entry, true, meta);
-    stream = setMispredStream(stream);
-
-    tage->recoverHist(historyB, stream, 1, true);
-    tage->update(stream);
-
-    EXPECT_TRUE(tage->hasExactEntry(0, entry.pc, historyA));
-    EXPECT_FALSE(tage->hasExactEntry(0, entry.pc, historyB));
-}
-
-TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
-    boost::dynamic_bitset<> historyA(128, 0);
-    stagePreds[1].btbEntries.clear();
-    tage->putPCHistory(0x1000, historyA, stagePreds);
-    auto meta = tage->getPredictionMeta();
-
-    BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
-    FetchTarget stream;
-    stream.startPC = 0x1000;
-    stream.exeBranchInfo = newEntry;
-    stream.exeTaken = true;
-    stream.resolved = true;
-    stream.predBranchInfo = newEntry;
-    stream.updateBTBEntries.clear();
-    stream.updateIsOldEntry = false;
-    stream.updateNewBTBEntry = newEntry;
-    stream.predMetas[0] = meta;
-    stream = setMispredStream(stream);
-
-    tage->update(stream);
-
-    EXPECT_TRUE(tage->hasExactEntry(0, newEntry.pc, historyA));
-}
-
-TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
-    boost::dynamic_bitset<> pathHistoryA(128, 0);
-    boost::dynamic_bitset<> pathHistoryB(128, 0);
-    applyPathHistoryTaken(pathHistoryB, entry.pc, entry.target);
-
-    ASSERT_TRUE(tage->insertExactEntry(2, entry.pc, pathHistoryB, 2));
-
-    FullBTBPrediction pred;
-    pred.btbEntries.push_back(entry);
-    pred.condTakens.push_back({entry.pc, true});
-    tage->specUpdatePHist(pathHistoryA, pred);
-
-    bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
-
-    EXPECT_TRUE(predicted);
-}
 
 
 }  // namespace test

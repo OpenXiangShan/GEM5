@@ -127,6 +127,10 @@ These files now:
 - track FTQ target generation identity
 - validate full resolve packets using structural checks
 - dispatch full resolve packets to migrated components
+- expose only the retained top-level resolve-train counters:
+  `fullResolveTrainAccepted`, `fullResolveTrainRejectTargetMismatch`,
+  `fullResolveTrainRejectPacketValidation`, and
+  `fullResolveTrainRejectComponent`
 - preserve commit/update path for non-resolved-stage training
 
 ### Migrated predictor components
@@ -209,11 +213,23 @@ migrated BTB predictors, not through a legacy helper chain.
 
 ### Unit tests
 
-- `build/RISCV/cpu/pred/btb/test/tage.test.debug`
+- build: `scons build/RISCV/cpu/pred/btb/test/tage.test.debug --unit-test -j60`
+- run: `build/RISCV/cpu/pred/btb/test/tage.test.debug --gtest_filter=BTBTAGETest.*`
 
-Current result:
+Current retained coverage:
 
-- `22/22` passing
+- the existing `BTBTAGETest.*` suite remains in place
+- within the branch-added cleanup surface, the retained regressions are:
+  `NewConditionalEntryWithoutPredictionMetaStillTrains`,
+  `ResolveTrainBankConflict`,
+  `ResolveTrainUsesPacketTruthForConditionalSelection`, and
+  `ResolveTrainRepeatedShortPatternMatchesLegacyProviderGrowth`
+
+Removed from the branch verification surface:
+
+- rollout-time debug counters
+- legacy resolve-update-only `BankConflict`
+- exploratory `BTBTAGEUpperBound*` checks added during branch development
 
 ### Targeted workloads
 

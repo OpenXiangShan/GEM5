@@ -1125,8 +1125,6 @@ class Fetch
         statistics::Formula frontendBandwidthBound;
         /** Full resolve entries observed at fetch. */
         statistics::Scalar fullResolveEntriesReceived;
-        /** Full resolve entries merged with an existing target. */
-        statistics::Scalar fullResolveEntriesMerged;
         /** Full resolve entries dropped because the queue is full. */
         statistics::Scalar fullResolveEntriesDroppedQueueFull;
         /** Full resolve entries dropped because the target went stale. */

@@ -314,18 +314,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         // Full resolve train reject statistics
         statistics::Scalar fullResolveTrainAccepted;
-        statistics::Scalar fullResolveTrainRejectTidMismatch;
         statistics::Scalar fullResolveTrainRejectTargetMismatch;
-        statistics::Scalar fullResolveTrainRejectStartPCMismatch;
         statistics::Scalar fullResolveTrainRejectPacketValidation;
         statistics::Scalar fullResolveTrainRejectComponent;
-
-        // Full resolve train validation sub-reasons
-        statistics::Scalar fullResolveTrainValidationPcBeforeStart;
-        statistics::Scalar fullResolveTrainValidationZeroSize;
-        statistics::Scalar fullResolveTrainValidationAfterTaken;
-        statistics::Scalar fullResolveTrainValidationOffsetReversed;
-        statistics::Scalar fullResolveTrainValidationPcOrderSameOffset;
 
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
