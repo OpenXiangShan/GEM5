@@ -65,7 +65,6 @@ CLAUDE.md
 node_modules/
 package-lock.json
 package.json
-AGENTS.md
 
 microbench/build/
 microbench/output/
