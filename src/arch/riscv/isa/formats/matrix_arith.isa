@@ -1,0 +1,12 @@
+def format MatrixArithOp(code, *flags) {{
+    matrix_flags = flags + (
+        'IsNonSpeculative',
+        'IsSerializeBefore',
+        'IsSerializeAfter',
+    )
+    iop = InstObjParams(name, Name, 'RiscvStaticInst', code, matrix_flags)
+    header_output = MatrixBasicDeclare.subst(iop)
+    decoder_output = MatrixBasicConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = NoWBExecute.subst(iop) + MatrixBasicDisasm.subst(iop)
+}};

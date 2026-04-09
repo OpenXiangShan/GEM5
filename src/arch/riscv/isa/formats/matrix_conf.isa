@@ -1,0 +1,44 @@
+def template MatrixBasicDeclare {{
+    class %(class_name)s : public %(base_class)s
+    {
+      private:
+        %(reg_idx_arr_decl)s;
+
+      public:
+        %(class_name)s(ExtMachInst machInst);
+        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+        std::string generateDisassembly(
+            Addr pc, const loader::SymbolTable *symtab) const override;
+    };
+}};
+
+def template MatrixBasicConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst)
+        : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+    }
+}};
+
+def template MatrixBasicDisasm {{
+    std::string
+    %(class_name)s::generateDisassembly(
+        Addr pc, const loader::SymbolTable *symtab) const
+    {
+        return mnemonic;
+    }
+}};
+
+def format MatrixConfOp(code, *flags) {{
+    matrix_flags = flags + (
+        'IsNonSpeculative',
+        'IsSerializeBefore',
+        'IsSerializeAfter',
+    )
+    iop = InstObjParams(name, Name, 'RiscvStaticInst', code, matrix_flags)
+    header_output = MatrixBasicDeclare.subst(iop)
+    decoder_output = MatrixBasicConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = NoWBExecute.subst(iop) + MatrixBasicDisasm.subst(iop)
+}};
