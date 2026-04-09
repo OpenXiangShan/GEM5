@@ -27,7 +27,6 @@ def setKmhV3IdealParams(args, system):
         # fetch
         cpu.mmu.itb.size = 96
         cpu.fetchWidth = 32
-        cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
 
@@ -83,7 +82,7 @@ def setKmhV3IdealParams(args, system):
 
         # branch predictor
         if args.bp_type == 'DecoupledBPUWithBTB':
-            cpu.enableFullResolveTrain = False
+            cpu.enableFullResolveTrain = True
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
             # cpu.branchPred.microtage.enabled = False
