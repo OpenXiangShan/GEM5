@@ -1478,11 +1478,13 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
     const bool trackRAR =
         loadCompletedIdx != loadQueue.tail() && inst->isNormalLd() &&
         inst->lqIt.idx() > loadCompletedIdx + 1;
-    const bool rarReplay = trackRAR && RARQueue.size() >= maxRARQEntries;
+    const bool rarReplay =
+        trackRAR && lsq->logicalFreeRAREntries(lsqID) == 0;
     const bool trackRAW =
         storeCompletedIdx != storeQueue.tail() && inst->isNormalLd() &&
         inst->sqIt.idx() > storeCompletedIdx + 1;
-    const bool rawReplay = trackRAW && RAWQueue.size() >= maxRAWQEntries;
+    const bool rawReplay =
+        trackRAW && lsq->logicalFreeRAWEntries(lsqID) == 0;
 
     if (cacheMissReplay) {
         inst->markReplayFlag(LdStReplayType::CacheMissReplay);
@@ -3853,7 +3855,7 @@ LSQUnit::processReplayQueues()
 
     // Collect instructions from RAR replay queue when space available
     assert(RARQueue.size() <= maxRARQEntries);
-    const int freeRARSize = maxRARQEntries - RARQueue.size();
+    const int freeRARSize = lsq->logicalFreeRAREntries(lsqID);
     const int maxRARCollect = std::min(freeRARSize, (int)rarDequeuePerCycle - RARReplayCount);
     for (int i = 0; i < maxRARCollect && !RARReplayQueue.empty(); ++i) {
         DynInstPtr inst = RARReplayQueue.front();
@@ -3863,7 +3865,7 @@ LSQUnit::processReplayQueues()
 
     // Collect instructions from RAW replay queue when space available
     assert(RAWQueue.size() <= maxRAWQEntries);
-    const int freeRAWSize = maxRAWQEntries - RAWQueue.size();
+    const int freeRAWSize = lsq->logicalFreeRAWEntries(lsqID);
     const int maxRAWCollect = std::min(freeRAWSize, (int)rawDequeuePerCycle - RAWReplayCount);
     for (int i = 0; i < maxRAWCollect && !RAWReplayQueue.empty(); ++i) {
         DynInstPtr inst = RAWReplayQueue.front();

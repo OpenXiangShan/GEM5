@@ -66,6 +66,7 @@
 #include "cpu/o3/dyn_inst_xsmeta.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/utils.hh"
+#include "enums/SMTLSQMode.hh"
 #include "enums/SMTQueuePolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
@@ -928,18 +929,28 @@ class LSQ
     int getCount(ThreadID tid);
 
     /** Returns the total number of loads in the load queue. */
-    int numLoads();
+    int numLoads() const;
     /** Returns the total number of loads for a single thread. */
-    int numLoads(ThreadID tid);
+    int numLoads(ThreadID tid) const;
 
     int anyInflightLoadsNotComplete();
 
     bool anyStoreNotExecute();
 
     /** Returns the total number of stores in the store queue. */
-    int numStores();
+    int numStores() const;
     /** Returns the total number of stores for a single thread. */
-    int numStores(ThreadID tid);
+    int numStores(ThreadID tid) const;
+
+    /** Returns the total number of entries in the RAR queue. */
+    int numRAREntries() const;
+    /** Returns the total number of RAR queue entries for a single thread. */
+    int numRAREntries(ThreadID tid) const;
+
+    /** Returns the total number of entries in the RAW queue. */
+    int numRAWEntries() const;
+    /** Returns the total number of RAW queue entries for a single thread. */
+    int numRAWEntries(ThreadID tid) const;
 
 
     // hardware transactional memory
@@ -1207,6 +1218,18 @@ class LSQ
     unsigned getFreeSQEntries(ThreadID tid);
     unsigned getAndResetLastSQPopEntries(ThreadID tid);
 
+    bool sharedLSQMode() const;
+    unsigned activeLSQThreads() const;
+    unsigned sharedLSQAllocation(unsigned entries) const;
+    unsigned logicalMaxLoadEntries(ThreadID tid) const;
+    unsigned logicalMaxStoreEntries(ThreadID tid) const;
+    unsigned logicalFreeLoadEntries(ThreadID tid) const;
+    unsigned logicalFreeStoreEntries(ThreadID tid) const;
+    unsigned logicalMaxRAREntries(ThreadID tid) const;
+    unsigned logicalMaxRAWEntries(ThreadID tid) const;
+    unsigned logicalFreeRAREntries(ThreadID tid) const;
+    unsigned logicalFreeRAWEntries(ThreadID tid) const;
+
     /** Is D-cache blocked? */
     bool cacheBlocked() const;
     /** Set D-cache blocked status */
@@ -1292,30 +1315,13 @@ class LSQ
     Addr staleTranslationWaitTxnId;
 
     /** The LSQ policy for SMT mode. */
+    SMTLSQMode lsqMode;
+
+    /** The LSQ allocation policy used in shared mode. */
     SMTQueuePolicy lsqPolicy;
 
-    /** Auxiliary function to calculate per-thread max LSQ allocation limit.
-     * Depending on a policy, number of entries and possibly number of threads
-     * and threshold, this function calculates how many resources each thread
-     * can occupy at most.
-     */
-    static uint32_t
-    maxLSQAllocation(SMTQueuePolicy pol, uint32_t entries,
-            uint32_t numThreads, uint32_t SMTThreshold)
-    {
-        if (pol == SMTQueuePolicy::Dynamic) {
-            return entries;
-        } else if (pol == SMTQueuePolicy::Partitioned) {
-            //@todo:make work if part_amt doesnt divide evenly.
-            return entries / numThreads;
-        } else if (pol == SMTQueuePolicy::Threshold) {
-            //Divide up by threshold amount
-            //@todo: Should threads check the max and the total
-            //amount of the LSQ
-            return SMTThreshold;
-        }
-        return 0;
-    }
+    /** The per-thread threshold used in shared threshold mode. */
+    unsigned smtLSQThreshold;
 
     struct LSQStats : public statistics::Group
     {
@@ -1352,11 +1358,10 @@ class LSQ
     /** Max number of memory instructions that may enter LSQ in one cycle. */
     const unsigned enqueueWidth;
 
-    /** Max LQ Size - Used to Enforce Sharing Policies. */
-    unsigned maxLQEntries;
-
-    /** Max SQ Size - Used to Enforce Sharing Policies. */
-    unsigned maxSQEntries;
+    /** Total Size of RARQ Entries. */
+    unsigned RARQEntries;
+    /** Total Size of RAWQ Entries. */
+    unsigned RAWQEntries;
 
     /** Data port. */
     DcachePort dcachePort;

@@ -410,10 +410,16 @@ class LSQUnit
     unsigned getAndResetLastClockSQPopEntries();
 
     /** Returns the number of loads in the LQ. */
-    int numLoads() { return loadQueue.size(); }
+    int numLoads() const { return loadQueue.size(); }
 
     /** Returns the number of stores in the SQ. */
-    int numStores() { return storeQueue.size(); }
+    int numStores() const { return storeQueue.size(); }
+
+    /** Returns the number of entries in the per-thread RAR queue. */
+    int numRAREntries() const { return RARQueue.size(); }
+
+    /** Returns the number of entries in the per-thread RAW queue. */
+    int numRAWEntries() const { return RAWQueue.size(); }
 
     // hardware transactional memory
     int numHtmStarts() const { return htmStarts; }
