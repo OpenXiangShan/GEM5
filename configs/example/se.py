@@ -331,10 +331,6 @@ def setKmhV3IdealParams(args, system):
         # cpu.EnablePipeNukeCheck = False
         cpu.StoreWbStage = 4 # store writeback at s4
 
-        # disable rename-time operand folding/elimination for SE correctness
-        cpu.enableMoveElimination = False
-        cpu.enableConstantFolding = False
-
         # ideal l1 caches
         if args.caches:
             cpu.icache.size = '64kB'
@@ -385,6 +381,13 @@ if args.wait_gdb:
 # Set ideal parameters here with the highest priority, over command-line arguments
 if args.ideal_kmhv3:
     setKmhV3IdealParams(args, system)
+
+# SE trap/syscall register writes bypass normal rename/writeback. Disable
+# rename-time operand folding/elimination to keep architectural register
+# updates visible to userland regardless of the selected CPU tuning preset.
+for cpu in system.cpu:
+    cpu.enableMoveElimination = False
+    cpu.enableConstantFolding = False
 
 root = Root(full_system = False, system = system)
 Simulation.run(args, root, system, FutureClass)
