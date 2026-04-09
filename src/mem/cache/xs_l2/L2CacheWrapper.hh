@@ -77,9 +77,13 @@ class L2CacheWrapper : public ClockedObject
 
     void addSliceAccessor(L2CacheSlice* slice)
     {
+        const auto slice_id = slice_accessors.size();
         slice_accessors.push_back(slice);
         slice->setPipeDirWriteStage(pipe_dir_write_stage);
         slice->setDirReadBypass(dirReadBypass);
+        slice->setOwnAddrFunc([this, slice_id](Addr addr) -> bool {
+            return getSliceId(addr) == static_cast<PortID>(slice_id);
+        });
         slice->setGetSetIdxFunc([this](Addr addr) -> Addr {
             Addr slice_bits = popCount(sliceMask);
             Addr set_idx = (addr >> (block_bits + slice_bits)) & setMask;
