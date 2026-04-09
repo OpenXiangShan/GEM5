@@ -1149,10 +1149,10 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     enable_cplx = Param.Bool(False, "Enable CPLX component")
     enable_spp = Param.Bool(False, "Enable SPP component")
     enable_temporal = Param.Bool(False, "Enable temporal component")
-    enable_berti = Param.Bool(False,"Enable berti component")
+    enable_berti = Param.Bool(True,"Enable berti component")
     enable_bop = Param.Bool(True, "Enable BOP")
 
-    enable_sstride = Param.Bool(True,"Enable sms stride component")
+    enable_sstride = Param.Bool(False,"Enable sms stride component")
     enable_opt = Param.Bool(False,"Enable opt component")
     enable_xsstream = Param.Bool(False,"Enable xs_stream component")
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
