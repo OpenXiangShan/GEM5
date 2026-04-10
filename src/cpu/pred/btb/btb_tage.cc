@@ -654,8 +654,9 @@ BTBTAGE::update(const FetchStream &stream) {
                 history_low50.resize(50);  // get the lower 50 bits of history
             }
             boost::to_string(history_low50, history_str);
-            auto main_info = recomputed.mainInfo;
-            auto alt_info = recomputed.altInfo;
+            TagePrediction db_trace_pred = predMeta->preds[btb_entry.pc];
+            auto main_info = db_trace_pred.mainInfo;
+            auto alt_info = db_trace_pred.altInfo;
             t.set(startAddr, btb_entry.pc, main_info.way,
                 main_info.found, main_info.entry.counter, main_info.entry.useful,
                 main_info.table, main_info.index,
