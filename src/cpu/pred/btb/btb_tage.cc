@@ -795,14 +795,15 @@ BTBTAGE::update(const FetchTarget &stream) {
                 history_low50.resize(50);  // get the lower 50 bits of history
             }
             boost::to_string(history_low50, history_str);
-            auto main_info = recomputed.mainInfo;
-            auto alt_info = recomputed.altInfo;
+            TagePrediction trace_pred = predMeta->preds[btb_entry.pc];
+            auto main_info = trace_pred.mainInfo;
+            auto alt_info = trace_pred.altInfo;
             t.set(startAddr, btb_entry.pc, main_info.way,
                 main_info.found, main_info.entry.counter, main_info.entry.useful,
                 main_info.table, main_info.index,
                 alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
                 alt_info.table, alt_info.index,
-                recomputed.useAlt, recomputed.taken, actual_taken, alloc_success,
+                trace_pred.useAlt, trace_pred.taken, actual_taken, alloc_success,
                 allocated_table, allocated_index, allocated_way,
                 history_str, predMeta->indexFoldedHist[main_info.table].get());
             tageMissTrace->write_record(t);
