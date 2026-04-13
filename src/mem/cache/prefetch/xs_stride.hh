@@ -14,10 +14,10 @@
 #include "base/types.hh"
 #include "debug/XSStridePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set.hh"
-#include "mem/cache/prefetch/queued.hh"
+// #include "mem/cache/prefetch/queued.hh"
 #include "mem/packet.hh"
 #include "params/XSStridePrefetcher.hh"
-
+#include "mem/cache/prefetch/prefetch_filter.hh"
 namespace gem5
 {
 
@@ -32,11 +32,19 @@ class XSStridePrefetcher : public Queued
 {
   protected:
   const bool useXsDepth;
+  const bool useRedundantTable;
   const bool fuzzyStrideMatching;
   const unsigned shortStrideThres;
   const bool strideDynDepth{false};
   const bool enableNonStrideFilter;
+  protected:
+    const unsigned int regionSize;
+    const unsigned int regionBlks;
 
+
+    Addr regionAddress(Addr a) { return a / regionSize; };
+
+    Addr regionOffset(Addr a) { return (a / blkSize) % regionBlks; }
 
   class StrideEntry : public TaggedEntry
     {
@@ -74,7 +82,7 @@ class XSStridePrefetcher : public Queued
 
     bool strideLookup(AssociativeSet<StrideEntry> &stride, const PrefetchInfo &pfi, std::vector<AddrPriority> &address,
                       bool late, Addr &pf_addr, PrefetchSourceType src, bool enter_new_region, bool miss_repeat,
-                      int64_t &learned_bop_offset);
+                      int64_t &learned_bop_offset, bool is_first_shot);
 
     AssociativeSet<StrideEntry> strideUnique;
 
@@ -115,6 +123,24 @@ class XSStridePrefetcher : public Queued
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool miss_repeat, bool enter_new_region, bool is_first_shot,
                            Addr &pf_addr, int64_t &learned_bop_offset);
+  PrefetchFilter* stridestream_pfFilter_l1;
+  PrefetchFilter* stridestream_pfFilter_l2l3;
+
+  struct XSstrideStats : public statistics::Group
+  {
+      XSstrideStats(statistics::Group *parent);
+      statistics::Scalar strideUniquequeryCount;
+      statistics::Scalar strideUniquehitCount;
+      statistics::Scalar strideUniquemissCount;
+      statistics::Scalar strideUniquepfCount;
+      statistics::Scalar strideUniquereplaceusefulCount;
+      statistics::Scalar strideRedundantqueryCount;
+      statistics::Scalar strideRedundanthitCount;
+      statistics::Scalar strideRedundantmissCount;
+      statistics::Scalar strideRedundantpfCount;
+      statistics::Scalar strideRedundantreplaceusefulCount;
+
+  } stats;
 };
 }
 

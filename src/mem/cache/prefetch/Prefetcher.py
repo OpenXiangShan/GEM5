@@ -77,6 +77,7 @@ class BasePrefetcher(ClockedObject):
     on_write = Param.Bool(True, "Notify prefetcher on writes")
     on_data  = Param.Bool(True, "Notify prefetcher on data accesses")
     on_inst  = Param.Bool(True, "Notify prefetcher on instruction accesses")
+    prefetch_train = Param.Bool(True, "Allow upstream PF req train low level Prefetcher")
     prefetch_on_access = Param.Bool(False,
         "Notify the hardware prefetcher on every access (not just misses)")
     prefetch_on_pf_hit = Param.Bool(False,
@@ -88,6 +89,8 @@ class BasePrefetcher(ClockedObject):
 
     is_sub_prefetcher = Param.Bool(False, "Is this a sub-prefetcher")
 
+    training_buffer_size = Param.Unsigned(8,
+        "Maximum number of training requests buffered per cycle")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -186,6 +189,8 @@ class QueuedPrefetcher(BasePrefetcher):
         that can be throttled depending on the accuracy of the prefetcher.")
 
     max_pfahead_recv = Param.Int(1,"Maximum number of pfahead received")
+    use_pf_buffer = Param.Bool(False, "use prefetch buffer to filter prefetches")
+    max_pf_buffer_size = Param.Int(16, "size of prefetch buffer")
 
 
 class XSStridePrefetcher(QueuedPrefetcher):
@@ -199,23 +204,36 @@ class XSStridePrefetcher(QueuedPrefetcher):
     on_write = False
     on_data = True
     on_inst = False
+    region_size = Param.Int(1024, "region size")
 
     use_xs_depth = Param.Bool(True,"use xs rtl stride depth")
     fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
     stride_dyn_depth = Param.Bool(False, "Dynamic depth of stride table")
     stride_entries = Param.MemorySize("10", "Stride Entries")
-    stride_indexing_policy = Param.BaseIndexingPolicy(
+    stride_unique_indexing_policy = Param.BaseIndexingPolicy(
         SetAssociative(
             entry_size=1,
             assoc=Parent.stride_entries,
             size=Parent.stride_entries),
         "Indexing policy of stride table"
     )
-    stride_replacement_policy = Param.BaseReplacementPolicy(
+    stride_unique_replacement_policy = Param.BaseReplacementPolicy(
         TreePLRURP(num_leaves=Parent.stride_entries),
         "Replacement policy of stride table"
     )
+    stride_redundant_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.stride_entries,
+            size=Parent.stride_entries),
+        "Indexing policy of stride table"
+    )
+    stride_redundant_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.stride_entries),
+        "Replacement policy of stride table"
+    )
+    use_redundant_table = Param.Bool(False, "Use redundant stride table")
     fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
 
     # stride black list
@@ -274,7 +292,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
     type = "XsStreamPrefetcher"
     cxx_class = "gem5::prefetch::XsStreamPrefetcher"
     cxx_header = "mem/cache/prefetch/xs_stream.hh"
-
+    region_size = Param.Int(1024, "region size")
     use_virtual_addresses = True
     prefetch_on_pf_hit = True
     on_read = True
@@ -296,7 +314,7 @@ class XsStreamPrefetcher(QueuedPrefetcher):
         "Indexing policy of active generation table"
     )
     xs_stream_replacement_policy = Param.BaseReplacementPolicy(
-        LRURP(),
+         TreePLRURP(num_leaves = Parent.xs_stream_entries),
         "Replacement policy of active generation table"
     )
 
@@ -768,11 +786,23 @@ class XSVirtualLargeBOP(BOPPrefetcher):
     delay_queue_size = 16
     delay_queue_cycles = 300
 
-    offsets = [x for i in [
-        1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30, 32, 36, 40, 45, 48,
-        50, 54, 60, 64, 72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128, 135, 144, 150, 160, 162, 180, 192, 200, 216,
-        225, 240, 243, 250
-    ] for x in (i, -i)] + [-256]
+    offsets = [
+          -117, -147, -91, 117, 147, 91,
+          -256, -250, -243, -240, -225, -216, -200,
+          -192, -180, -162, -160, -150, -144, -135, -128,
+          -125, -120, -108, -100, -96, -90, -81, -80,
+          -75, -72, -64, -60, -54, -50, -48, -45,
+          -40, -36, -32, -30, -27, -25, -24, -20,
+          -18, -16, -15, -12, -10, -9, -8, -6,
+          -5, -4, -3, -2, -1,
+          1, 2, 3, 4, 5, 6, 8,
+          9, 10, 12, 15, 16, 18, 20, 24,
+          25, 27, 30, 32, 36, 40, 45, 48,
+          50, 54, 60, 64, 72, 75, 80, 81,
+          90, 96, 100, 108, 120, 125, 128, 135,
+          144, 150, 160, 162, 180, 192, 200, 216,
+          225, 240, 243, 250
+    ]
 
 class SmallBOPPrefetcher(BOPPrefetcher):
     score_max = 31
@@ -1019,6 +1049,11 @@ class XSCompositePrefetcher(QueuedPrefetcher):
     on_inst  = False
 
     region_size = Param.Int(1024, "region size")
+
+    # TrainFilter configuration
+    enable_train_filter = Param.Bool(True, "Enable TrainFilter for ROB-order training")
+    training_buffer_size = 8
+
     # filter table (full-assoc)
     filter_entries = Param.MemorySize("16", "num of filter table entries")
     filter_indexing_policy = Param.BaseIndexingPolicy(
@@ -1059,6 +1094,57 @@ class XSCompositePrefetcher(QueuedPrefetcher):
             size=Parent.re_act_entries),
         "Indexing policy of recently active generation table"
     )
+    sms_filter_entries = Param.MemorySize(
+        "16",
+        "num of pattern history table entries"
+    )
+    sms_filter_assoc = Param.Int(16, "Associativity of the pattern history table")
+    sms_filter_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.sms_filter_assoc,
+            size=Parent.sms_filter_entries),
+        "Indexing policy of filter table"
+    )
+    sms_filter_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.sms_filter_entries),
+        "Replacement policy of filter table"
+    )
+
+    stridestream_L1_filter_entries = Param.MemorySize(
+        "16",
+        "num of pattern history table entries"
+    )
+    stridestream_L1_filter_assoc = Param.Int(16, "Associativity of the pattern history table")
+    stridestream_L1_filter_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.stridestream_L1_filter_assoc,
+            size=Parent.stridestream_L1_filter_entries),
+        "Indexing policy of filter table"
+    )
+    stridestream_L1_filter_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.stridestream_L1_filter_entries),
+        "Replacement policy of filter table"
+    )
+    
+    stridestream_L2L3_filter_entries = Param.MemorySize(
+        "16",
+        "num of pattern history table entries"
+    )
+    stridestream_L2L3_filter_assoc = Param.Int(16, "Associativity of the pattern history table")
+    stridestream_L2L3_filter_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.stridestream_L2L3_filter_assoc,
+            size=Parent.stridestream_L2L3_filter_entries),
+        "Indexing policy of filter table"
+    )
+    stridestream_L2L3_filter_replacement_policy = Param.BaseReplacementPolicy(
+        TreePLRURP(num_leaves=Parent.stridestream_L2L3_filter_entries),
+        "Replacement policy of filter table"
+    )
+    vaddr_hash_width = Param.Int(5, "Width of virtual address hash")
     re_act_replacement_policy = Param.BaseReplacementPolicy(
         FIFORP(),
         "Replacement policy of recently active generation table"
@@ -1110,6 +1196,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
         "Indexing policy of pattern history table"
     )
     pht_replacement_policy = Param.BaseReplacementPolicy(
+        # TreePLRURP(num_leaves=Parent.pht_entries),
         LRURP(),
         "Replacement policy of pattern history table"
     )
@@ -1135,6 +1222,7 @@ class XSCompositePrefetcher(QueuedPrefetcher):
                                      "Small BOP used in composite prefetcher ")
     bop_learned = Param.BasePrefetcher(LearnedBOPPrefetcher(is_sub_prefetcher=True),
                                        "Learned BOP used in composite prefetcher ")
+    bop_pf_level = Param.Int(2, "L1 BOP prefetch target level")
     spp = Param.BasePrefetcher(SignaturePathPrefetcher(is_sub_prefetcher=True),
                                "SPP used in composite prefetcher")
     ipcp = Param.IPCPrefetcher(IPCPrefetcher(use_rrf = False, is_sub_prefetcher=True), "")

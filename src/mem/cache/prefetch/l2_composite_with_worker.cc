@@ -144,6 +144,46 @@ L2CompositeWithWorkerPrefetcher::notifyFill(const PacketPtr &pkt)
     }
     addressGenBuffer.clear();
 }
-
+bool 
+L2CompositeWithWorkerPrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) 
+{
+    //here we decide which to send for this cycle
+    //L1 Streamstride>berti>SMS>CMC
+    //L2 Streamstride>SMS>vBOP>pbop>TP
+    if(pfq.size() == queueSize) {
+        return false;
+    }
+    bool L2PFsent = false;
+    L2PFsent = ticksToCycles(latestTransferTick) == ticksToCycles(curTick());
+    if (!L2PFsent && largeBOP->hasPFRequestsInBuffer()){
+        L2PFsent = largeBOP->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L2PFsent && smallBOP->hasPFRequestsInBuffer()){
+        L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L2PFsent && despacitoStream->hasPFRequestsInBuffer()){
+        L2PFsent = despacitoStream->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L2PFsent && cdp->hasPFRequestsInBuffer()){
+        L2PFsent = cdp->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L2PFsent && cmc->hasPFRequestsInBuffer()){
+        L2PFsent = cmc->GetPFRequestsFromBuffer(addresses);
+    }
+    // For now we dont have L3PF
+    // bool L3PFsent = false;
+    // L3PFsent = stridestream_pfFilter_l2l3.GetPFAddrL3(addresses);
+    // if (!L3PFsent){
+    //     L3PFsent = sms_pfFilter.GetPFAddrL3(addresses);
+    // }
+    return L2PFsent;
+}
+bool L2CompositeWithWorkerPrefetcher::hasPFRequestsInBuffer() {
+    return  largeBOP->hasPFRequestsInBuffer() ||
+            smallBOP->hasPFRequestsInBuffer() ||
+            cmc->hasPFRequestsInBuffer() ||
+            cdp->hasPFRequestsInBuffer() ||
+            despacitoStream->hasPFRequestsInBuffer();
+        }
 }  // namespace prefetch
 }  // namespace gem5

@@ -27,6 +27,8 @@ ArchDBer::ArchDBer(const Params &p)
     dumpL1MissTrace(p.dump_l1_miss_trace),
     dumpBopTrainTrace(p.dump_bop_train_trace),
     dumpSMSTrainTrace(p.dump_sms_train_trace),
+    dumpStrideTrainTrace(p.dump_stride_train_trace),
+    dumpDespacitoTrainTrace(p.dump_despacito_train_trace),
     dumpL1WayPreTrace(p.dump_l1d_way_pre_trace),
     dumpVaddrTrace(p.dump_vaddr_trace),
     dumpLifetime(p.dump_lifetime),
@@ -169,7 +171,36 @@ ArchDBer::smsTrainTraceWrite(Tick tick, Addr old_addr, Addr cur_addr, Addr trigg
     fatal("SQL error: %s\n", zErrMsg);
   };
 }
+void
+ArchDBer::strideTraceWrite(Tick tick, Addr addr, Addr PC, Addr hashPC, bool hit, bool isFirstShot, bool miss, bool is_train)
+{
+  bool dump_me = dumpGlobal && dumpStrideTrainTrace;
+  if (!dump_me) return;
 
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO StrideTrainTrace(Tick,Addr,PC,HashPC,QueryHit,IsFirstShot,Miss,IsTrain,SITE) "
+          "VALUES(%ld,%ld,%ld,%ld,%d,%d,%d,%d,'%s');",
+          tick, addr, PC, hashPC, hit, isFirstShot, miss, is_train, "StrideTrain");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
+void
+ArchDBer::despacitoTraceWrite(Tick tick, Addr vaddr, Addr paddr, Addr PC, bool hasPC, bool miss, bool is_train)
+{
+  bool dump_me = dumpGlobal && dumpDespacitoTrainTrace;
+  if (!dump_me) return;
+
+  sprintf(memTraceSQLBuf,
+          "INSERT INTO DespacitoTrainTrace(Tick,vAddr,pAddr,PC,hasPC,Miss,IsTrain,SITE) "
+          "VALUES(%ld,%ld,%ld,%ld,%d,%d,%d,'%s');",
+          tick, vaddr, paddr, PC, hasPC, miss, is_train, is_train?"DespacitoTrain":"DespacitoPrefetch");
+  rc = sqlite3_exec(mem_db, memTraceSQLBuf, callback, 0, &zErrMsg);
+  if (rc != SQLITE_OK) {
+    fatal("SQL error: %s\n", zErrMsg);
+  };
+}
 void ArchDBer::L1MissTrace_write(
   uint64_t pc,
   uint64_t source,

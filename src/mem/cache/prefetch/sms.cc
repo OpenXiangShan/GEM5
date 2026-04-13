@@ -1,4 +1,7 @@
 #include "mem/cache/prefetch/sms.hh"
+#include <cstdint>
+#include <iterator>
+#include <climits>
 
 #include "base/stats/group.hh"
 #include "debug/BOPOffsets.hh"
@@ -10,10 +13,14 @@ namespace gem5
 namespace prefetch
 {
 
+// PrefetchFilter implementation moved to prefetch_filter.{hh,cc}
+
+
 XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &p)
     : Queued(p),
       regionSize(p.region_size),
       regionBlks(p.region_size / p.block_size),
+      enableTrainFilter(p.enable_train_filter),
       act(p.act_entries, p.act_entries, p.act_indexing_policy,
           p.act_replacement_policy, ACTEntry(SatCounter8(2, 1))),
       re_act(p.re_act_entries, p.re_act_entries, p.re_act_indexing_policy,
@@ -26,6 +33,17 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       phtPFLevel(std::min(p.pht_pf_level, (int) 3)),
       stats(this),
       pfBlockLRUFilter(pfFilterSize),
+      sms_pfFilter(p.sms_filter_indexing_policy, p.sms_filter_replacement_policy, p.sms_filter_entries,
+             p.region_size, p.block_size, this, p.vaddr_hash_width,
+             PrefetchSourceType::SPht, "sms_pfFilter"),
+      stridestream_pfFilter_l1(p.stridestream_L1_filter_indexing_policy, p.stridestream_L1_filter_replacement_policy,
+                     p.stridestream_L1_filter_entries, p.region_size, p.block_size, this,
+                     p.vaddr_hash_width, PrefetchSourceType::SStream,
+                     "stridestream_pfFilter_l1"),
+      stridestream_pfFilter_l2l3(p.stridestream_L2L3_filter_indexing_policy, p.stridestream_L2L3_filter_replacement_policy,
+                       p.stridestream_L2L3_filter_entries, p.region_size, p.block_size, this,
+                       p.vaddr_hash_width, PrefetchSourceType::SStream,
+                       "stridestream_pfFilter_l2l3"),
       pfPageLRUFilter(pfPageFilterSize),
       pfPageLRUFilterL2(pfPageFilterSize),
       pfPageLRUFilterL3(pfPageFilterSize),
@@ -50,7 +68,11 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
       enableOpt(p.enable_opt),
       enableXsstream(p.enable_xsstream),
       phtEarlyUpdate(p.pht_early_update),
-      neighborPhtUpdate(p.neighbor_pht_update)
+      neighborPhtUpdate(p.neighbor_pht_update),
+      phtSentPrefetch(),
+      phtReqSendEvent([this]{ phtSendEventWrapper(); },
+          name()),
+      BOPPFlevel(p.bop_pf_level)
 {
     assert(largeBOP);
     assert(smallBOP);
@@ -80,6 +102,20 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
 
     DPRINTF(XSCompositePrefetcher, "SMS: region_size: %d regionBlks: %d\n",
             regionSize, regionBlks);
+    if (Xsstream)
+    {
+        Xsstream->stridestream_pfFilter_l1 = &this->stridestream_pfFilter_l1;
+        Xsstream->stridestream_pfFilter_l2l3 = &this->stridestream_pfFilter_l2l3;
+    }
+    if (Sstride)
+    {
+        Sstride->stridestream_pfFilter_l1 = &this->stridestream_pfFilter_l1;
+        Sstride->stridestream_pfFilter_l2l3 = &this->stridestream_pfFilter_l2l3;
+    }
+    assert(phtSentPrefetch.size() == 0);
+    for(unsigned i = 0; i < 3; i++)
+        phtSentPrefetch.push_back(phtsentInfo());
+    
 }
 
 void
@@ -90,6 +126,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     if (!can_prefetch) {
         return;
     }
+    stats.totalTrainCount++;
 
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
@@ -112,8 +149,10 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     bool is_first_64 = false;
     if (pfi.isCacheMiss() || pfi.isPfFirstHit()) {
         assert(!(enableActivepage && enableXsstream));
-        if (enableXsstream)
+        if (enableXsstream) {
             Xsstream->calculatePrefetch(pfi, addresses, streamlatenum);
+            stats.streamTrainCount++;
+        }
         act_match_entry = actLookup(pfi, is_active_page, enter_new_region, is_first_shot);
         if (enableOpt){
             assert(Opt);
@@ -262,6 +301,7 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
     if (use_stride){
         DPRINTF(XSCompositePrefetcher, "Do Sstride traing/prefetching...\n");
         int64_t learned_bop_offset = 0;
+        stats.strideTrainCount++;
         Sstride->calculatePrefetch(pfi, addresses, late, pf_source, miss_repeat, enter_new_region, is_first_shot,
                                    stride_pf_addr, learned_bop_offset);
         if (learned_bop_offset != 0)
@@ -408,6 +448,7 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
             }
             pht_entry->pc = act_entry->pc;
             act_entry->hasIncreasedPht = true;
+            pht_entry->decr_mode = act_entry->inBackwardMode;
         } else {
             return;
         }
@@ -420,6 +461,7 @@ XSCompositePrefetcher::updatePht(XSCompositePrefetcher::ACTEntry *act_entry, Add
             pht_entry->hist[i].reset();
         }
         pht_entry->pc = act_entry->pc;
+        pht_entry->decr_mode = act_entry->inBackwardMode;
     }
 
     pht.accessEntry(pht_entry);
@@ -506,8 +548,13 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
     Addr pc = pfi.getPC();
     Addr vaddr = look_ahead_addr ? look_ahead_addr : pfi.getAddr();
     Addr blk_addr = blockAddress(vaddr);
-    // Addr region_addr = regionAddress(vaddr);
+    Addr region_addr = regionAddress(vaddr);
     Addr region_offset = regionOffset(vaddr);
+    uint64_t region_bit_cur = 0;
+    uint64_t region_bit_inc = 0;
+    Addr region_inc_addr = 0;
+    uint64_t region_bit_dec = 0;
+    Addr region_dec_addr = 0;
     bool secure = pfi.isSecure();
     PhtEntry *pht_entry = pht.findEntry(phtHash(pc, region_offset), secure);
     bool found = false;
@@ -520,17 +567,73 @@ XSCompositePrefetcher::phtLookup(const Base::PrefetchInfo &pfi, std::vector<Addr
         for (uint8_t i = 0; i < regionBlks - 1; i++) {
             if (pht_entry->hist[i + regionBlks - 1].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
-                sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
-                found = true;
+                if(regionAddress(pf_tgt_addr) == region_addr) {
+                    region_bit_cur |= (uint64_t(1) << regionOffset(pf_tgt_addr));
+                    sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
+                    found = true;
+                }
             }
         }
         for (int i = regionBlks - 2, j = 1; i >= 0; i--, j++) {
             if (pht_entry->hist[i].calcSaturation() > 0.5) {
                 Addr pf_tgt_addr = blk_addr - j * blkSize;
-                sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
-                found = true;
+                if(regionAddress(pf_tgt_addr) == region_addr) {
+                    region_bit_cur |= (uint64_t(1) << regionOffset(pf_tgt_addr));
+                    sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
+                    found = true;
+                }
             }
         }
+        if(found){
+            if(phtSentPrefetch[0].valid){
+                stats.smsCurRegionoverride++;
+            }
+            phtSentPrefetch[0] = phtsentInfo(region_addr, region_bit_cur ,0, true,pht_entry->decr_mode,secure,phtPFLevel, &pfi.trigger_info);
+            phtSentPrefetch[0].trigger.pfSourceType = PrefetchSourceType::SPht;
+        }
+        found = false;
+        for (uint8_t i = 0; i < regionBlks - 1; i++) {
+            if (pht_entry->hist[i + regionBlks - 1].calcSaturation() > 0.5) {
+                Addr pf_tgt_addr = blk_addr + (i + 1) * blkSize;
+                if(regionAddress(pf_tgt_addr) != region_addr) {
+                    region_inc_addr = regionAddress(pf_tgt_addr);
+                    region_bit_inc |= (uint64_t(1) << regionOffset(pf_tgt_addr));
+                    sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
+                    found = true;
+                }
+            }
+        }
+        if(found){
+            if(phtSentPrefetch[1].valid){
+                stats.smsIncrRegionoverride++;
+            }
+            phtSentPrefetch[1] = phtsentInfo(region_inc_addr, region_bit_inc ,0, true,pht_entry->decr_mode,secure,phtPFLevel, &pfi.trigger_info);
+            phtSentPrefetch[1].trigger.pfSourceType = PrefetchSourceType::SPht;
+        }
+        
+        found = false;
+        for (int i = regionBlks - 2, j = 1; i >= 0; i--, j++) {
+            if (pht_entry->hist[i].calcSaturation() > 0.5) {
+                Addr pf_tgt_addr = blk_addr - j * blkSize;
+                if(regionAddress(pf_tgt_addr) != region_addr) {
+                    region_dec_addr = regionAddress(pf_tgt_addr);
+                    region_bit_dec |= (uint64_t(1) << regionOffset(pf_tgt_addr));
+                    sendPFWithFilter(pfi, pf_tgt_addr, addresses, priority--, PrefetchSourceType::SPht, phtPFLevel);
+                    found = true;
+                }
+            }
+        }
+        if(found){
+            if(phtSentPrefetch[2].valid){
+                stats.smsDecrRegionoverride++;
+            }
+            phtSentPrefetch[2] = phtsentInfo(region_dec_addr, region_bit_dec ,0, true,pht_entry->decr_mode,secure,phtPFLevel, &pfi.trigger_info);
+            phtSentPrefetch[2].trigger.pfSourceType = PrefetchSourceType::SPht;
+        }
+        if (!phtReqSendEvent.scheduled()){
+            phtSendEventWrapper();
+        }
+        
         DPRINTF(XSCompositePrefetcher, "pht entry pattern:\n");
         for (uint8_t i = 0; i < 2 * (regionBlks - 1); i++) {
             DPRINTFR(XSCompositePrefetcher, "%.2f ", pht_entry->hist[i].calcSaturation());
@@ -547,20 +650,31 @@ bool
 XSCompositePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses,
                                         int prio, PrefetchSourceType src, int ahead_level)
 {
+    // Count generated prefetch
+    prefetchStats.pfGenerated++;
+
     if (ahead_level < 2 && pfPageLRUFilter.contains(regionAddress(addr))) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L1 prefetched page: %lx\n", regionAddress(addr));
+        // Count filtered prefetch
+        prefetchStats.pfFiltered++;
         return false;
 
     } else if (ahead_level == 2 && pfPageLRUFilterL2.contains(regionAddress(addr))) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L2 prefetched page: %lx\n", regionAddress(addr));
+        // Count filtered prefetch
+        prefetchStats.pfFiltered++;
         return false;
 
     } else if (ahead_level == 3 && pfPageLRUFilterL3.contains(regionAddress(addr))) {
         DPRINTF(XSCompositePrefetcher, "Skip recently L3 prefetched page: %lx\n", regionAddress(addr));
+        // Count filtered prefetch
+        prefetchStats.pfFiltered++;
         return false;
 
     } else if (pfBlockLRUFilter.contains(addr)) {
         DPRINTF(XSCompositePrefetcher, "Skip recently prefetched: %lx\n", addr);
+        // Count filtered prefetch
+        prefetchStats.pfFiltered++;
         return false;
 
     } else {
@@ -587,6 +701,7 @@ void
 XSCompositePrefetcher::sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, std::vector<AddrPriority> &addresses,
                                     boost::compute::detail::lru_cache<Addr, Addr> &Filter, bool decr, int pf_level)
 {
+    uint64_t region_bit = 0;
     Addr pf_tgt_region = regionAddress(pf_tgt_addr);
     Addr pf_tgt_offset = regionOffset(pf_tgt_addr);
     PrefetchSourceType stream_type = PrefetchSourceType::SStream;
@@ -597,10 +712,21 @@ XSCompositePrefetcher::sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, s
     DPRINTF(XSCompositePrefetcher, "tgt addr: %x, offset: %d ,page: %lx\n", pf_tgt_addr, pf_tgt_offset, pf_tgt_region);
     for (int i = 0; i < regionBlks; i++) {
         Addr cur = pf_tgt_region * regionSize + i * blkSize;
+        region_bit |= (uint64_t(1) << regionOffset(cur));
         sendPFWithFilter(pfi, cur, addresses, regionBlks - i, stream_type, pf_level);
         DPRINTF(XSCompositePrefetcher, "pf addr: %x [%d] pf_level %d\n", cur, i, pf_level);
         fatal_if(i < 0, "i < 0\n");
     }
+    //use for act to insert PFfilter
+    pfi.setTriggerInfo_PFsrc(stream_type);
+    if (pf_level > 1) {
+        stridestream_pfFilter_l2l3.Insert(regionAddress(pf_tgt_addr),
+        region_bit,0,true,decr,pfi.isSecure(),pf_level, &pfi.trigger_info);
+    } else {
+        stridestream_pfFilter_l1.Insert(regionAddress(pf_tgt_addr),
+        region_bit,0,true,decr,pfi.isSecure(),pf_level, &pfi.trigger_info);
+    }
+
     Filter.insert(pf_tgt_region, 0);
 }
 
@@ -640,7 +766,13 @@ XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *par
       ADD_STAT(allCntNum, statistics::units::Count::get(), "victim act access num"),
       ADD_STAT(actMNum, statistics::units::Count::get(), "victim act match num"),
       ADD_STAT(refillNotifyCount, statistics::units::Count::get(), "refill notify count"),
-      ADD_STAT(bopTrainCount, statistics::units::Count::get(), "bop train count")
+      ADD_STAT(bopTrainCount, statistics::units::Count::get(), "bop train count"),
+      ADD_STAT(smsCurRegionoverride, statistics::units::Count::get(), "sms current region override prefetches"),
+      ADD_STAT(smsIncrRegionoverride, statistics::units::Count::get(), "sms increased region override prefetches"),
+      ADD_STAT(smsDecrRegionoverride, statistics::units::Count::get(), "sms decreased region override prefetches"),
+      ADD_STAT(strideTrainCount, statistics::units::Count::get(), "stride train count"),
+      ADD_STAT(streamTrainCount, statistics::units::Count::get(), "stream train count"),
+      ADD_STAT(totalTrainCount, statistics::units::Count::get(), "total train count")
 {
 }
 
@@ -661,6 +793,101 @@ XSCompositePrefetcher::setParentInfo(System *sys, ProbeManager *pm, CacheAccesso
     if (ipcp)
         ipcp->setParentInfo(sys, pm, _cache, blk_size);
 }
-
+bool XSCompositePrefetcher::GetPFRequestsFromBuffer(std::vector<AddrPriority> &addresses) 
+{
+    //here we decide which to send for this cycle
+    //L1 Streamstride>berti>SMS>CMC>learnedBOP>smallBOP>largeBOP
+    //L2 Streamstride>SMS>BOP>TP
+    //first we get 1 L1PF
+    bool L1PFsent = false;
+    if (stridestream_pfFilter_l1.hasPFRequestsInBuffer()){
+        L1PFsent = stridestream_pfFilter_l1.GetPFAddrL1(addresses);
+    }
+    if (!L1PFsent && berti->hasPFRequestsInBuffer()){
+        L1PFsent = berti->GetPFRequestsFromBuffer(addresses);
+    }
+    if(!L1PFsent && sms_pfFilter.hasPFRequestsInBuffer()){
+        L1PFsent = sms_pfFilter.GetPFAddrL1(addresses);
+    }
+    if(!L1PFsent && cmc->hasPFRequestsInBuffer()){
+        L1PFsent = cmc->GetPFRequestsFromBuffer(addresses);
+    }
+    if (BOPPFlevel == 1 && !L1PFsent && learnedBOP->hasPFRequestsInBuffer()){
+        L1PFsent = learnedBOP->GetPFRequestsFromBuffer(addresses);
+    }
+    if (BOPPFlevel == 1 && !L1PFsent && smallBOP->hasPFRequestsInBuffer()){
+        L1PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
+    }
+    if (BOPPFlevel == 1 && !L1PFsent && largeBOP->hasPFRequestsInBuffer()){
+        L1PFsent = largeBOP->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L1PFsent && spp->hasPFRequestsInBuffer()){
+        L1PFsent = spp->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L1PFsent && ipcp->hasPFRequestsInBuffer()){
+        L1PFsent = ipcp->GetPFRequestsFromBuffer(addresses);
+    }
+    if (!L1PFsent && Opt->hasPFRequestsInBuffer()){
+        L1PFsent = Opt->GetPFRequestsFromBuffer(addresses);
+    }
+    bool L2PFsent = false;
+    if (stridestream_pfFilter_l2l3.hasPFRequestsInBuffer()){
+        L2PFsent = stridestream_pfFilter_l2l3.GetPFAddrL2(addresses);
+    }
+    if (!L2PFsent && sms_pfFilter.hasPFRequestsInBuffer()){
+        L2PFsent = sms_pfFilter.GetPFAddrL2(addresses);
+    }
+    if (BOPPFlevel == 2 && !L2PFsent && largeBOP->hasPFRequestsInBuffer()){
+        L2PFsent = largeBOP->GetPFRequestsFromBuffer(addresses);
+        addresses.back().pfahead_host = 2;
+        addresses.back().pfahead = true;
+    }
+    if (BOPPFlevel == 2 && !L2PFsent && smallBOP->hasPFRequestsInBuffer()){
+        L2PFsent = smallBOP->GetPFRequestsFromBuffer(addresses);
+        addresses.back().pfahead_host = 2;
+        addresses.back().pfahead = true;
+    }
+    if (BOPPFlevel == 2 && !L2PFsent && learnedBOP->hasPFRequestsInBuffer()){
+        L2PFsent = learnedBOP->GetPFRequestsFromBuffer(addresses);
+        addresses.back().pfahead_host = 2;
+        addresses.back().pfahead = true;
+    }
+    bool L3PFsent = false;
+    L3PFsent = stridestream_pfFilter_l2l3.GetPFAddrL3(addresses);
+    if (!L3PFsent && sms_pfFilter.hasPFRequestsInBuffer()){
+        L3PFsent = sms_pfFilter.GetPFAddrL3(addresses);
+    }
+    return L1PFsent || L2PFsent || L3PFsent;
+}
+bool XSCompositePrefetcher::hasPFRequestsInBuffer() {
+    return sms_pfFilter.hasPFRequestsInBuffer() ||
+            stridestream_pfFilter_l1.hasPFRequestsInBuffer() ||
+            stridestream_pfFilter_l2l3.hasPFRequestsInBuffer() ||
+            largeBOP->hasPFRequestsInBuffer() ||
+            smallBOP->hasPFRequestsInBuffer() ||
+            learnedBOP->hasPFRequestsInBuffer() ||
+            berti->hasPFRequestsInBuffer() ||
+            cmc->hasPFRequestsInBuffer() ||
+            spp->hasPFRequestsInBuffer() ||
+            ipcp->hasPFRequestsInBuffer() ||
+            Opt->hasPFRequestsInBuffer() ;
+}
+void 
+XSCompositePrefetcher::phtSendEventWrapper(){
+    for(int i=0; i<3; i++){
+        if (phtSentPrefetch[i].valid){
+            sms_pfFilter.Insert(phtSentPrefetch[i].region_addr, phtSentPrefetch[i].region_bits,
+                phtSentPrefetch[i].alias_bits,phtSentPrefetch[i].paddr_valid, phtSentPrefetch[i].decr_mode,
+                phtSentPrefetch[i].is_secure,phtSentPrefetch[i].PFlevel, &phtSentPrefetch[i].trigger);
+            phtSentPrefetch[i].valid = false;
+            break;
+        }
+    }
+    if (!phtReqSendEvent.scheduled()){
+        if(phtSentPrefetch[0].valid || phtSentPrefetch[1].valid || phtSentPrefetch[2].valid)
+            schedule(phtReqSendEvent, nextCycle());
+    }
+        
+}
 }  // prefetch
 }  // gem5

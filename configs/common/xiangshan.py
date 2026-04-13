@@ -708,6 +708,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_l3_evict_trace = False
         test_sys.arch_db.dump_l1_miss_trace = False
         test_sys.arch_db.dump_bop_train_trace = False
+        test_sys.arch_db.dump_stride_train_trace = False
         test_sys.arch_db.dump_sms_train_trace = False
         test_sys.arch_db.dump_vaddr_trace = False
         test_sys.arch_db.dump_lifetime = False
@@ -779,6 +780,29 @@ CREATE TABLE LoadLifeTimeCommitTrace(
             "TriggerOffset INT NOT NULL," \
             "Conf INT NOT NULL," \
             "Miss BOOL NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE StrideTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "Addr INT NOT NULL," \
+            "PC INT NOT NULL," \
+            "HashPC INT NOT NULL," \
+            "QueryHit BOOL NOT NULL," \
+            "IsFirstShot BOOL NOT NULL," \
+            "Miss BOOL NOT NULL," \
+            "IsTrain BOOL NOT NULL," \
+            "SITE TEXT);"
+            ,
+            "CREATE TABLE DespacitoTrainTrace(" \
+            "ID INTEGER PRIMARY KEY AUTOINCREMENT," \
+            "Tick INT NOT NULL," \
+            "vAddr INT NOT NULL," \
+            "pAddr INT NOT NULL," \
+            "PC INT NOT NULL," \
+            "hasPC BOOL NOT NULL," \
+            "Miss BOOL NOT NULL," \
+            "IsTrain BOOL NOT NULL," \
             "SITE TEXT);"
             ,# perfCounter CommitTrace
             perfCCT_cmd

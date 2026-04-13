@@ -15,10 +15,15 @@ def create_prefetcher(cpu, cache_level, options):
     prefetcher_attr = '{}_hwp_type'.format(cache_level)
     prefetcher_name = ''
     prefetcher = NULL
+    pf_buffer_enabled = getattr(options, 'enable_pf_buffer', False)
     if hasattr(options, prefetcher_attr):
         prefetcher_name = getattr(options, prefetcher_attr)
         prefetcher = _get_hwp(prefetcher_name)
         print(f"create_prefetcher at {cache_level}: {prefetcher_name}")
+
+    if prefetcher != NULL and pf_buffer_enabled:
+        if hasattr(prefetcher, 'use_pf_buffer'):
+            prefetcher.use_pf_buffer = True
 
     if prefetcher == NULL:
         return NULL
@@ -59,6 +64,10 @@ def create_prefetcher(cpu, cache_level, options):
             prefetcher.enable_activepage = False
             prefetcher.enable_pht = True
             prefetcher.enable_xsstream = True
+        if hasattr(prefetcher, 'prefetch_train'):
+            prefetcher.prefetch_train = not pf_buffer_enabled
+        if hasattr(prefetcher, 'queue_filter'):
+            prefetcher.queue_filter = not pf_buffer_enabled
 
     if cache_level == 'l2':
         if options.classic_l2:
@@ -72,6 +81,10 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_despacito_stream = False
                 prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
                 prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
+            if hasattr(prefetcher, 'prefetch_train'):
+                prefetcher.prefetch_train = not pf_buffer_enabled
+            if hasattr(prefetcher, 'queue_filter'):
+                prefetcher.queue_filter = not pf_buffer_enabled
             if options.l1_to_l2_pf_hint:
                 prefetcher.queue_size = 64
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
@@ -88,10 +101,17 @@ def create_prefetcher(cpu, cache_level, options):
                 prefetcher.enable_bop = True
                 prefetcher.enable_cdp = False
                 prefetcher.enable_despacito_stream = False
+                if prefetcher.enable_despacito_stream:
+                    # if you want to check despacito pattern trace, set this to True
+                    prefetcher.despacito_stream.enable_despacito_db = False
                 prefetcher.bop_large = XSVirtualLargeBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
                 prefetcher.bop_small = XSPhysicalSmallBOP(is_sub_prefetcher=True,enable_adaptoffset=False)
+            if hasattr(prefetcher, 'prefetch_train'):
+                prefetcher.prefetch_train = not pf_buffer_enabled
+            if hasattr(prefetcher, 'queue_filter'):
+                prefetcher.queue_filter = not pf_buffer_enabled
             if options.l1_to_l2_pf_hint:
-                prefetcher.queue_size = 64
+                prefetcher.queue_size = 32
                 prefetcher.max_prefetch_requests_with_pending_translation = 128
 
     if cache_level == 'l3':
