@@ -444,6 +444,25 @@ TEST_F(BTBTAGETest, UsefulBitIgnoresWeakCounterTransition) {
         << "Useful bit should not be cleared only because the provider becomes weak";
 }
 
+// Test short folded history is repeated to cover the full index width.
+TEST_F(BTBTAGETest, IndexRepeatsShortFoldedHistory) {
+    const Addr pc = 0x0;
+
+    // Test table 0: histLen=4, indexBits=10 in unit-test constructor.
+    const int t0 = 0;
+    const Addr t0FoldedHist = 0xa;
+    const Addr t0ExpectedFolded = 0x2aa;
+    EXPECT_EQ(tage->getTageIndex(pc, t0, t0FoldedHist), t0ExpectedFolded)
+        << "t0 index should repeat 4-bit history to cover all index bits";
+
+    // Test table 1: histLen=8, indexBits=10 in unit-test constructor.
+    const int t1 = 1;
+    const Addr t1FoldedHist = 0xa5;
+    const Addr t1ExpectedFolded = 0x1a5;
+    EXPECT_EQ(tage->getTageIndex(pc, t1, t1FoldedHist), t1ExpectedFolded)
+        << "t1 index should repeat 8-bit history to cover all index bits";
+}
+
 // Test entry allocation mechanism
 TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     // Instead of creating two different PCs, we'll create two entries with the same PC
