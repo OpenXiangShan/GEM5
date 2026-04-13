@@ -224,7 +224,8 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
       ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue"),
       ADD_STAT(portissued, statistics::units::Count::get(), "count each port issues"),
       ADD_STAT(portBusy, statistics::units::Count::get(), "count each port busy cycles"),
-      ADD_STAT(avgInsts, statistics::units::Count::get(), "average insts")
+      ADD_STAT(avgInsts, statistics::units::Count::get(), "average insts"),
+      ADD_STAT(instsNum, statistics::units::Count::get(), "insts per thread")
 {
     insertDist.init(que->inports + 1).flags(statistics::nozero);
     issueDist.init(que->outports + 1).flags(statistics::nozero);
@@ -235,6 +236,7 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
     loadmiss.flags(statistics::nozero);
     arbFailed.flags(statistics::nozero);
     issueOccupy.flags(statistics::nozero);
+    instsNum.flags(statistics::nozero);
 }
 
 IssueQue::IssueQue(const IssueQueParams& params)
@@ -364,6 +366,7 @@ IssueQue::setCPU(CPU* cpu)
     this->cpu = cpu;
     _name = cpu->name() + ".scheduler." + getName();
     iqstats = new IssueQueStats(cpu, this, "scheduler." + this->getName());
+    iqstats->instsNum.init(cpu->numThreads);
 }
 
 void
@@ -875,7 +878,10 @@ IssueQue::incInIQInstsCounter(ThreadID tid)
 {
     if (instsCounter) {
         instsCounter->incCounter(tid);
-    } 
+    }
+    if (iqstats) {
+        iqstats->instsNum[tid]++;
+    }
 }
     
 void
