@@ -903,16 +903,14 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
 
     // When the table history is shorter than the index width (for example
     // t0/t1), the folded history only affects the low bits by default.
-    // Repeat short history across chunks and rotate within histBits to
-    // decorrelate neighboring chunk content.
+    // Repeat the available history pattern so every index bit is perturbed.
     const unsigned histBits = std::min(histLengths[t], tableIndexBits[t]);
     if (histBits > 0 && histBits < tableIndexBits[t]) {
         const Addr histMask = (1ULL << histBits) - 1;
-        Addr chunk = foldedHist & histMask;
+        const Addr baseHist = foldedHist & histMask;
         foldedBits = 0;
         for (unsigned pos = 0; pos < tableIndexBits[t]; pos += histBits) {
-            foldedBits |= (chunk << pos);
-            chunk = ((chunk << 1) | (chunk >> (histBits - 1))) & histMask;
+            foldedBits |= (baseHist << pos);
         }
         foldedBits &= mask;
     }
