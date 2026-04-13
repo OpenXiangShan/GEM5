@@ -372,7 +372,7 @@ class Fetch
      * @param pc The actual PC of the current instruction.
      * @return Any fault that occured.
      */
-    bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc);
+    bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc, unsigned requestSpan);
 
     /**
      * Send a pipelined I-cache access request for the next FTQ entry.
@@ -411,7 +411,8 @@ class Fetch
      * @param pc Program counter
      * @return true if requests were successfully initiated
      */
-    bool handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc);
+    bool handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc,
+                                   unsigned requestSpan);
 
     /** Process multi-cacheline fetch completion when both packets have arrived.
      * Merges data from both cache lines into the fetch buffer.
@@ -559,6 +560,13 @@ class Fetch
      */
     StallReason checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
                                  const StaticInstPtr &curMacroop);
+    Addr currentValidEndPC(ThreadID tid) const;
+    unsigned currentFetchRequestSpan(
+        const branch_prediction::btb_pred::FetchTarget &stream) const;
+    void maybeMigrateSplitControlOwner(ThreadID tid, Addr inst_pc);
+    bool shouldFetchFollowingTarget(ThreadID tid,
+                                    const PCStateBase &pc_state) const;
+    bool keepFetchedBufferAfterTargetConsume(ThreadID tid) const;
 
 
     /**
@@ -747,6 +755,12 @@ class Fetch
             completedPackets = 0;
         }
 
+        void releaseStoredPackets() {
+            packets.clear();
+            requests.clear();
+            completedPackets = 0;
+        }
+
         /** Add a new request */
         void addRequest(RequestPtr req) {
             requests.push_back(req);
@@ -838,9 +852,7 @@ class Fetch
         }
     };
 
-    /** The size of the fetch buffer in bytes. Default is 66 bytes,
-    *  make sure we could decode tail 4bytes if it is in [62, 66)
-     */
+    /** Fetch buffer capacity in bytes. Default remains 66B as scratch space. */
     unsigned fetchBufferSize;
 
     /**
@@ -862,11 +874,15 @@ class Fetch
         /** Whether the fetch buffer data is valid */
         bool valid;
 
-        /** Size of the fetch buffer in bytes. Set by Fetch class during init. */
+        /** Buffer capacity in bytes. Set by Fetch class during init. */
         unsigned size;
 
+        /** Number of valid bytes currently stored in the buffer. */
+        unsigned validSize;
+
         /** Constructor initializes buffer with default size */
-        FetchBuffer() : data(nullptr), startPC(0), valid(false), size(0) {
+        FetchBuffer() : data(nullptr), startPC(0), valid(false), size(0),
+                        validSize(0) {
         }
 
         /** Destructor is not needed as Fetch class manages memory */
@@ -877,12 +893,13 @@ class Fetch
         void reset() {
             valid = false;
             startPC = 0;
+            validSize = 0;
             // No need to clear data as it will be overwritten
         }
 
         /** Check if a PC is within the current buffer range */
         bool contains(Addr pc) const {
-            return valid && (pc >= startPC) && (pc < startPC + size);
+            return valid && (pc >= startPC) && (pc < startPC + validSize);
         }
 
         /** Get offset of PC within the buffer */
@@ -895,12 +912,13 @@ class Fetch
         void setData(Addr pc, const uint8_t* src_data, unsigned bytes_copied) {
             startPC = pc;
             valid = true;
+            validSize = bytes_copied;
             memcpy(data, src_data, bytes_copied);
         }
 
         /** Get end PC of the buffer */
         Addr getEndPC() const {
-            return startPC + size;
+            return startPC + validSize;
         }
     };
 

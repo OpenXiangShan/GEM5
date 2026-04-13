@@ -211,6 +211,81 @@ BPU::tick()
          components[i]->putPCHistory(s0PC, s0History, predsOfEachStage);
 ```
 
+### `FetchTarget` / `BranchInfo` 中的 PC 视图
+
+最近几轮 decoupled BTB 改动后，前端里和“控制指令 PC”相关的语义不再只有一个值，而是拆成了几种职责不同的视图。理解这些视图的区别，是理解跨块 4B RVI 控制指令行为的关键。
+
+#### 1. `startPC`
+
+- 表示该控制指令的**架构起始地址**，也就是指令前半部分所在的位置。
+- 它仍然是统计、trace、fall-through 计算、RAS/uRAS call fall-through 推导时最稳定的语义来源。
+- 对 2B 指令和不跨块的 4B 指令来说，`startPC` 通常也就是读者最直观理解的“这条 branch 的 PC”。
+
+#### 2. `controlPC`
+
+- 表示 predictor-visible 的控制指令视图。
+- 在当前实现里，对跨块的 4B RVI 控制指令，`controlPC` 可以是**尾半字（tail halfword）**所在的 PC，而不再强制等于前半字的 `startPC`。
+- 这样做的目的是让 decoupled BTB 在“当前块真正能触发预测的那个位置”上与 RTL 的边界更一致。
+- 因此 `controlPC` 主要服务于：
+  - BTB/TAGE/ITTAGE/uBTB 等预测器的 key / lookup / 覆盖判断
+  - `predEndPC` 等 coverage 计算
+  - fetch 侧“当前是否命中 taken 控制点”的判断
+
+#### 3. `ownerStartPC`
+
+- 这是 owner-migration 引入后的 fetch 侧语义，表示“当前 `FetchTarget` 真正拥有的最早 inst-start PC”。
+- 默认情况下它等于 `startPC`；只有在 split-control owner migration 发生时，它才会小于当前 target 的 `startPC`。
+- 典型场景是：
+  - 一条 4B 控制指令前半部分落在当前块末尾
+  - 尾半部分落在下一块开头
+  - predictor 仍以“下一块”为 fetch target
+  - 但真正应该在下一块消费的那条控制指令，其架构 `startPC` 仍位于上一块
+- 这时 following target 会携带 `ownerStartPC < startPC`，表示它在 fetch/buildInst 阶段对这条跨块控制指令拥有所有权。
+
+#### 4. `predEndPC`
+
+- 表示当前 `FetchTarget` 的预测覆盖上界（右开区间）。
+- fetch request、decode/buildInst 侧的“当前 PC 是否还属于本 target”判断，统一依赖 `[ownerStartPC, predEndPC)` 或 `[startPC, predEndPC)` 这样的 coverage 区间，而不是旧的固定大窗口。
+
+### split-control owner migration 的 fetch 语义
+
+在 tail-halfword control-PC 视图下，跨块 4B 控制指令的“触发预测位置”与“架构起始位置”可能已经不在同一个 fetch target 中。为了解决这个问题，fetch 侧引入了 owner migration：
+
+- 当前正在 fetch 的 target 记为 `current`
+- 顺序上的下一项 target 记为 `following`
+- 若 `following` 声明 `ownerStartPC < following.startPC`，并且当前 inst-start PC 已进入这个 owner 区间，则 fetch 会先把 `current` 消费掉，再把这条跨块控制指令交给 `following`
+
+这套语义只允许发生在**顺序相邻的 split-control handoff** 中，不允许把普通 taken-target target 误判成 owner handoff。当前代码里已经把这部分条件收敛成 `FetchTarget` helper，而不是继续散落在 `fetch.cc` 和测试里各写一套。
+
+### trace / FS 模式下的边界
+
+- FS/trace 模式都需要保留 `startPC` 作为架构语义来源，尤其是恢复、trace wrong-path NOP sizing、call fall-through 等路径。
+- trace mode 不再在 fetch 阶段执行 FTQ owner migration；这样做的目的是避免 trace-only 的顺序消费路径受 FTQ owner handoff 状态机影响。
+- 也因此当前可以把这几层语义理解为：
+  - predictor key / trigger / coverage：优先看 `controlPC`
+  - 架构归属 / stats / trace / fall-through：优先看 `startPC`
+  - fetch owner handoff：看 `ownerStartPC`
+
+### 这轮收敛后的读码顺序
+
+如果要快速验证 owner-migration 语义是否仍然成立，建议按下面顺序读：
+
+1. `src/cpu/pred/btb/common.hh`
+   - 先确认 `startPC / controlPC / ownerStartPC` 的职责划分
+   - 再确认 `FetchTarget` helper 是否仍然完整表达 owner contract
+2. `src/cpu/o3/fetch.cc`
+   - 看 `maybeMigrateSplitControlOwner()` 是否只消费 helper，而没有重新拼一套手写判定
+   - 看 normal fetch 里的 in-owner-range / taken match 是否仍然走 helper
+3. `src/cpu/o3/trace/TraceFetch.cc`
+   - 看 trace mode 是否仍然保持“跳过 fetch-time owner migration、优先顺序消费”的边界
+4. `src/cpu/pred/btb/test/btb.test.cc`
+   - 看 helper 级测试是否还覆盖默认 owner、split-control handoff、taken match 等回归点
+
+这样读的好处是把问题分成两类：
+
+- 如果 helper 本身就错了，问题属于 `FetchTarget` 契约
+- 如果 helper 正确、但 fetch 行为不对，问题才属于 fetch 消费流程
+
 
 ### 正在修订的内容
 

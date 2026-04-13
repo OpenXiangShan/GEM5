@@ -34,7 +34,8 @@ BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
                            bool isIndirect = false, bool isCall = false,
                            bool isReturn = false, uint8_t size = 4) {
     BranchInfo info;
-    info.pc = pc;
+    info.pc = controlPCFromStartPC(pc, size);
+    info.setStartPC(pc);
     info.target = target;
     info.isCond = isCond;
     info.isIndirect = isIndirect;
@@ -71,7 +72,7 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
  * @brief Helper function to find conditional taken prediction for a given PC
  *
  * @param condTakens Vector of conditional predictions
- * @param pc Branch PC to search for
+ * @param pc Predictor-visible control PC to search for
  * @return Pair of (found, prediction) where found indicates if PC was found
  */
 std::pair<bool, bool> findCondTaken(const CondTakens& condTakens, Addr pc) {
@@ -113,11 +114,12 @@ predictUpdateCycle(MBTB* btb,
      Addr startPC,
      const BranchInfo& branch,
      bool taken,
-     const boost::dynamic_bitset<>& history = boost::dynamic_bitset<>(8, 0),
+    const boost::dynamic_bitset<>& history = boost::dynamic_bitset<>(8, 0),
      Addr endInstPC = 0) {
-    // If endInstPC not specified, use branch.pc + branch.size
+    // If endInstPC not specified, use the end-exclusive byte range of the
+    // architectural instruction rather than predictor-visible controlPC.
     if (endInstPC == 0) {
-        endInstPC = branch.pc + branch.size;
+        endInstPC = branch.getEnd();
     }
 
     // Prediction phase
@@ -239,6 +241,113 @@ TEST_F(BTBTest, PredictionAfterUpdateLargeAddr) {
     verifyPrediction(stagePreds, mbtb->getDelay(), {branch});
 }
 
+// Derived view semantics: 2B RVC control instruction
+TEST_F(BTBTest, Rvc2B_DerivedPcViews) {
+    BranchInfo branch = createBranchInfo(0x1000, 0x2000, true, false, false, false, 2);
+    EXPECT_EQ(branch.startPC(), 0x1000);
+    EXPECT_EQ(branch.controlPC(), 0x1000);
+    EXPECT_EQ(branch.triggerPC(), 0x1000);
+    EXPECT_EQ(branch.endPCExclusive(), 0x1002);
+    EXPECT_EQ(branch.getEnd(), 0x1002);
+}
+
+// Derived view semantics: 4B RVI control instruction
+TEST_F(BTBTest, Rvi4B_DerivedPcViews) {
+    BranchInfo branch = createBranchInfo(0x1000, 0x2000, true, false, false, false, 4);
+    EXPECT_EQ(branch.startPC(), 0x1000);
+    EXPECT_EQ(branch.controlPC(), 0x1002);
+    EXPECT_EQ(branch.triggerPC(), 0x1002);
+    EXPECT_EQ(branch.endPCExclusive(), 0x1004);
+    EXPECT_EQ(branch.getEnd(), 0x1004);
+}
+
+TEST_F(BTBTest, FetchTargetOwnerStartPC_DefaultsToStreamStart) {
+    FetchTarget stream;
+    stream.startPC = 0x1020;
+
+    EXPECT_EQ(stream.ownerStartPC(), 0x1020);
+}
+
+TEST_F(BTBTest, Rvi4B_ControlPC_CrossBoundaryPredictInNextBlock) {
+    BranchInfo branch = createBranchInfo(0x101e, 0x2000, true, false, false,
+                                         false, 4);
+    FetchTarget following;
+    following.startPC = 0x1020;
+    following.predTaken = true;
+    following.predBranchInfo = branch;
+    following.predEndPC = branch.coverageEndPC(0x1020);
+    following.setOwnerStartPC(branch.startPC());
+
+    EXPECT_EQ(branch.controlPC(), 0x1020);
+    EXPECT_EQ(following.startPC, branch.controlPC());
+    EXPECT_EQ(following.ownerStartPC(), branch.startPC());
+    EXPECT_LT(following.ownerStartPC(), following.startPC);
+    EXPECT_EQ(following.predEndPC, 0x1022);
+}
+
+TEST_F(BTBTest, SplitControlOwnershipMigratesBeforeBuildInst) {
+    BranchInfo branch = createBranchInfo(0x101e, 0x2000, true, false, false,
+                                         false, 4);
+    FetchTarget current;
+    current.startPC = 0x1000;
+    current.predEndPC = 0x1020;
+
+    FetchTarget following;
+    following.startPC = 0x1020;
+    following.predTaken = true;
+    following.predBranchInfo = branch;
+    following.setOwnerStartPC(branch.startPC());
+
+    const Addr inst_pc = branch.startPC();
+    EXPECT_TRUE(following.shouldTakeSplitControlOwnershipFrom(current, inst_pc));
+    EXPECT_LT(inst_pc, current.predEndPC);
+    EXPECT_LT(inst_pc, following.startPC);
+}
+
+TEST_F(BTBTest, SplitControlOwnershipDoesNotMigrateToTakenTarget) {
+    FetchTarget current;
+    current.startPC = 0x20;
+    current.predEndPC = 0x60;
+
+    FetchTarget following;
+    following.startPC = 0x10;
+    following.setOwnerStartPC(0x10);
+
+    const Addr inst_pc = 0x20;
+    EXPECT_FALSE(following.shouldTakeSplitControlOwnershipFrom(current, inst_pc));
+}
+
+TEST_F(BTBTest, TakenMatchUsesOwnerTargetStartPC) {
+    BranchInfo branch = createBranchInfo(0x101e, 0x2000, true, false, false,
+                                         false, 4);
+    FetchTarget following;
+    following.startPC = 0x1020;
+    following.predTaken = true;
+    following.predBranchInfo = branch;
+    following.setOwnerStartPC(branch.startPC());
+
+    EXPECT_TRUE(following.isTakenControlAt(branch.startPC()));
+    EXPECT_FALSE(following.isTakenControlAt(branch.controlPC()));
+    EXPECT_EQ(following.ownerStartPC(), branch.startPC());
+}
+
+TEST_F(BTBTest, Rvi4B_TriggerCoverage_InSingleBlock) {
+    BranchInfo branch = createBranchInfo(0x1008, 0x2000, true, false, false, false, 4);
+
+    EXPECT_EQ(branch.coverageEndPC(0x100c), 0x100c);
+    EXPECT_TRUE(branch.triggerPCCoveredByFetchWindow(0x1008, 0x100c));
+    EXPECT_FALSE(branch.triggerPCCoveredByFetchWindow(0x100a, 0x100c));
+}
+
+TEST_F(BTBTest, Rvi4B_TriggerCoverage_CrossBoundary) {
+    BranchInfo branch = createBranchInfo(0x101e, 0x2000, true, false, false, false, 4);
+
+    EXPECT_EQ(branch.triggerPC(), 0x1020);
+    EXPECT_EQ(branch.coverageEndPC(0x1020), 0x1022);
+    EXPECT_FALSE(branch.triggerPCCoveredByFetchWindow(0x101e, 0x1020));
+    EXPECT_TRUE(branch.triggerPCCoveredByFetchWindow(0x101e, 0x1022));
+}
+
 // Test conditional branch prediction counter, for mBTB
 TEST_F(BTBTest, ConditionalCounter) {
     // Create conditional branch info
@@ -333,7 +442,8 @@ TEST_F(BTBTest, IndirectBranchPrediction) {
     // Verify indirect target
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
         ASSERT_FALSE(stagePreds[i].btbEntries.empty());
-        auto [found1, target1] = findIndirectTarget(stagePreds[i].indirectTargets, 0x1000);
+        auto [found1, target1] = findIndirectTarget(
+            stagePreds[i].indirectTargets, branch.controlPC());
         ASSERT_TRUE(found1);
         EXPECT_EQ(target1, 0x2000);
     }
@@ -344,7 +454,8 @@ TEST_F(BTBTest, IndirectBranchPrediction) {
 
     // Verify new indirect target
     for (int i = mbtb->getDelay(); i < stagePreds.size(); i++) {
-        auto [found2, target2] = findIndirectTarget(stagePreds[i].indirectTargets, 0x1000);
+        auto [found2, target2] = findIndirectTarget(
+            stagePreds[i].indirectTargets, updatedBranch.controlPC());
         ASSERT_TRUE(found2);
         EXPECT_EQ(target2, 0x3000);
     }

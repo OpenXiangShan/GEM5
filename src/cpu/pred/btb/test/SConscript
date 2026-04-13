@@ -41,8 +41,12 @@ GTest('folded_hist.test',
     '../folded_hist.cc',
 )
 
+GTest('fetch_coverage.test',
+    'fetch_coverage.test.cc',
+)
+
 # add --unit-test to enable unit test mode for RAS
-# TODO: Fix RAS test
+# TODO: Fix broader historical ras.test expectations, then re-enable target.
 # GTest('ras.test',
 #     'ras_test.cc',
 #     '../ras.cc',
@@ -55,6 +59,7 @@ env.Append(UNITTESTS=['uras.test',
         'tage.test',
         'mgsc.test',
         'folded_hist.test',
+        'fetch_coverage.test',
         'jump_ahead.test',
         'fetch_target_queue.test',
         'decoupled_bpred.test'])

@@ -455,20 +455,101 @@ Fetch::resetStage()
     dbpbtb->resetPC(threads[0].fetchpc->instAddr());
 }
 
-bool
-Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
+Addr
+Fetch::currentValidEndPC(ThreadID tid) const
 {
-    DPRINTF(Fetch, "[tid:%i] Handling multi-cacheline fetch for addr %#x, pc=%#lx\n", tid, vaddr, pc);
+    return threads[tid].startPC + threads[tid].validSize;
+}
+
+unsigned
+Fetch::currentFetchRequestSpan(
+    const branch_prediction::btb_pred::FetchTarget &stream) const
+{
+    return branch_prediction::btb_pred::fetchCoverageSpan(
+        stream.startPC, stream.predEndPC, fetchBufferSize);
+}
+
+void
+Fetch::maybeMigrateSplitControlOwner(ThreadID tid, Addr inst_pc)
+{
+    if (!dbpbtb || isTraceMode()) {
+        return;
+    }
+
+    while (dbpbtb->ftqHasFetching(tid) && dbpbtb->ftqHasFollowing(tid)) {
+        const auto &stream = dbpbtb->ftqFetchingTarget(tid);
+        const auto &following = dbpbtb->ftqFollowingTarget(tid);
+        // Do not hand ownership to the following target until the decoder has
+        // already consumed the leading halfword from the current fetch block.
+        // Otherwise fetch may discard the current block and later supply only
+        // the trailing bytes, leaving decode() to return nullptr.
+        if (inst_pc < following.startPC && !decoder[tid]->hasPartialInst()) {
+            break;
+        }
+        if (!following.shouldTakeSplitControlOwnershipFrom(stream, inst_pc)) {
+            break;
+        }
+
+        DPRINTF(DecoupleBP,
+                "[tid:%i] migrate split-control ownership: inst=%#lx "
+                "currentStart=%#lx currentOwnerStart=%#lx "
+                "followingStart=%#lx followingOwnerStart=%#lx\n",
+                tid, inst_pc, stream.startPC, stream.ownerStartPC(),
+                following.startPC, following.ownerStartPC());
+
+        dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
+        ftqEntryFetchedInsts[tid] = 0;
+        threads[tid].valid = keepFetchedBufferAfterTargetConsume(tid);
+    }
+}
+
+bool
+Fetch::shouldFetchFollowingTarget(ThreadID tid, const PCStateBase &pc_state) const
+{
+    if (!dbpbtb || !dbpbtb->ftqHasFetching(tid) || !dbpbtb->ftqHasFollowing(tid)) {
+        return false;
+    }
+
+    if (macroop[tid] || decoder[tid]->instReady() ||
+        !decoder[tid]->hasPartialInst()) {
+        return false;
+    }
+
+    const auto &stream = dbpbtb->ftqFetchingTarget(tid);
+    const auto &following = dbpbtb->ftqFollowingTarget(tid);
+    const Addr inst_pc = pc_state.instAddr();
+
+    return inst_pc < stream.predEndPC &&
+           inst_pc + decoder[tid]->moreBytesSize() > stream.predEndPC &&
+           stream.predEndPC == following.startPC;
+}
+
+bool
+Fetch::keepFetchedBufferAfterTargetConsume(ThreadID tid) const
+{
+    return threads[tid].valid && dbpbtb && dbpbtb->ftqHasFetching(tid) &&
+           threads[tid].startPC == dbpbtb->ftqFetchingTarget(tid).startPC;
+}
+
+bool
+Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc,
+                                 unsigned requestSpan)
+{
+    DPRINTF(Fetch,
+            "[tid:%i] Handling coverage-window fetch for addr %#x, pc=%#lx, "
+            "requestSpan=%u, capacity=%u\n",
+            tid, vaddr, pc, requestSpan, fetchBufferSize);
     // Transition to WaitingCache state when initiating cache access
     setThreadStatus(tid, WaitingCache);
 
     // Reset cache request state for this thread
     threads[tid].cacheReq.reset();
     threads[tid].cacheReq.baseAddr = vaddr;
-    threads[tid].cacheReq.totalSize = fetchBufferSize;
+    threads[tid].cacheReq.totalSize = requestSpan;
 
     Addr fetchPC = vaddr;
     unsigned fetchSize = cacheBlkSize - fetchPC % cacheBlkSize;  // Size for first cache line
+    fetchSize = std::min(fetchSize, requestSpan);
 
     DPRINTF(Fetch, "[tid:%i] Creating first cache line request: addr=%#x, size=%d\n",
             tid, fetchPC, fetchSize);
@@ -492,10 +573,14 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     cpu->mmu->translateTiming(first_mem_req, cpu->thread[tid]->getTC(),
                               trans, BaseMMU::Execute);
 
+    if (requestSpan == fetchSize) {
+        return true;
+    }
+
     // Prepare second request (head of second cache line)
     fetchPC += fetchSize;  // Move to start of next cache line
     assert(fetchPC % cacheBlkSize == 0);
-    fetchSize = fetchBufferSize - fetchSize;  // Remaining size
+    fetchSize = requestSpan - fetchSize;  // Remaining size
 
     DPRINTF(Fetch, "[tid:%i] Creating second cache line request: addr=%#x, size=%d\n",
             tid, fetchPC, fetchSize);
@@ -559,28 +644,24 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
     // All packets have arrived - merge them directly into fetchBuffer
     DPRINTF(Fetch, "[tid:%i] All packets arrived, merging data into fetchBuffer.\n", tid);
 
-    // Find the packets by request number
-    PacketPtr firstPkt = nullptr;
-    PacketPtr secondPkt = nullptr;
-
+    unsigned copiedBytes = 0;
     for (size_t i = 0; i < threads[tid].cacheReq.packets.size(); i++) {
-        if (threads[tid].cacheReq.requests[i]->getReqNum() == 1) {
-            firstPkt = threads[tid].cacheReq.packets[i];
-        } else if (threads[tid].cacheReq.requests[i]->getReqNum() == 2) {
-            secondPkt = threads[tid].cacheReq.packets[i];
-        }
+        auto *packet = threads[tid].cacheReq.packets[i];
+        assert(packet);
+        memcpy(threads[tid].data + copiedBytes,
+               packet->getConstPtr<uint8_t>(), packet->getSize());
+        copiedBytes += packet->getSize();
     }
 
-    assert(firstPkt && secondPkt);
-
-    // Copy merged data directly into fetchBuffer
-    memcpy(threads[tid].data, firstPkt->getConstPtr<uint8_t>(), firstPkt->getSize());
-    memcpy(threads[tid].data + firstPkt->getSize(), secondPkt->getConstPtr<uint8_t>(), secondPkt->getSize());
     threads[tid].valid = true;
+    threads[tid].validSize = copiedBytes;
+    assert(copiedBytes == threads[tid].cacheReq.totalSize);
 
     // Clean up the packets
-    delete firstPkt;
-    delete secondPkt;
+    for (auto *packet : threads[tid].cacheReq.packets) {
+        delete packet;
+    }
+    threads[tid].cacheReq.releaseStoredPackets();
 
     DPRINTF(Fetch, "[tid:%i] Dual cacheline fetch completion processed successfully.\n", tid);
     return true;
@@ -618,12 +699,20 @@ Fetch::processCacheCompletion(PacketPtr pkt)
                 "[TRACE] Icache completion: keep timing only; no trace bytes injection\n");
     }
 
-    // Verify fetchBufferPC alignment with the supplying FSQ entry.
-    if (threads[tid].valid && dbpbtb->ftqHasFetching(0)) {
-        const auto &stream = dbpbtb->ftqFetchingTarget(0);
-        if (threads[tid].startPC != stream.startPC) {
-            panic("fetchBufferPC %#x should be aligned with FSQ startPC %#x",
-                  threads[tid].startPC, stream.startPC);
+    // Verify fetchBufferPC alignment with either the current FSQ head, or the
+    // following head when servicing the trailing half of a split 4B instruction.
+    if (threads[tid].valid && dbpbtb->ftqHasFetching(tid)) {
+        const auto &stream = dbpbtb->ftqFetchingTarget(tid);
+        const bool matches_current = threads[tid].startPC == stream.startPC;
+        const bool matches_following =
+            dbpbtb->ftqHasFollowing(tid) &&
+            threads[tid].startPC == dbpbtb->ftqFollowingTarget(tid).startPC;
+        if (!matches_current && !matches_following) {
+            panic("fetchBufferPC %#x should be aligned with current/following "
+                  "FSQ startPC (%#x / %#x)",
+                  threads[tid].startPC, stream.startPC,
+                  dbpbtb->ftqHasFollowing(tid) ?
+                      dbpbtb->ftqFollowingTarget(tid).startPC : 0);
         }
     }
 
@@ -756,23 +845,48 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // Decoupled+BTB-only: compute next PC directly from the supplying FSQ entry.
     ThreadID tid = inst->threadNumber;
     assert(dbpbtb);
-    assert(dbpbtb->ftqHasFetching(0));
+    assert(dbpbtb->ftqHasFetching(tid));
     const auto &stream = dbpbtb->ftqFetchingTarget(tid);
 
     const Addr curr_pc = next_pc.instAddr();
-    assert(stream.startPC <= curr_pc && curr_pc < stream.predEndPC);
+    const bool in_owner_stream = stream.ownsInstPC(curr_pc);
+    if (!in_owner_stream) {
+        if (isTraceMode()) {
+            DPRINTF(DecoupleBP,
+                    "[tid:%i] trace-mode fetch PC %#lx is outside owner stream "
+                    "[%#lx, %#lx); fall back to sequential advance\n",
+                    tid, curr_pc, stream.ownerStartPC(), stream.predEndPC);
+            inst->staticInst->advancePC(next_pc);
+            return false;
+        }
+        assert(in_owner_stream);
+    }
 
     bool run_out = false;
 
-    // Taken when the current PC matches the predicted control PC.
-    predict_taken = stream.predTaken && (curr_pc == stream.predBranchInfo.pc);
+    // Decoupled+BTB-only:
+    // `predBranchInfo.pc` is the predictor-visible controlPC, while redirect
+    // ownership is carried by the current FTQ target. Once fetch migrates
+    // split-control ownership before buildInst, taken matching only needs to
+    // compare the current inst-start PC against the owner target's
+    // predicted branch start PC.
+    const bool is_microop = inst->staticInst->isMicroop();
+    predict_taken = !is_microop && stream.isTakenControlAt(curr_pc);
     if (predict_taken) {
+        const auto &pred_info = stream.predBranchInfo;
         auto &rpc = next_pc.as<GenericISA::PCStateWithNext>();
-        rpc.pc(stream.predBranchInfo.target);
-        rpc.npc(stream.predBranchInfo.target + 4);
+        DPRINTF(DecoupleBP,
+                "[tid:%i] decoupled+BTB taken-match: startPC=%#lx "
+                "controlPC=%#lx ownerStart=%#lx streamEndPC=%#lx "
+                "endPCExclusive=%#lx size=%u inst=%#lx\n",
+                tid, pred_info.startPC(), pred_info.controlPC(),
+                stream.ownerStartPC(), stream.predEndPC,
+                pred_info.endPCExclusive(), pred_info.size, curr_pc);
+        rpc.pc(pred_info.target);
+        rpc.npc(pred_info.target + 4);
         rpc.uReset();
         run_out = true;
-    } else if (inst->staticInst->isMicroop()) {
+    } else if (is_microop) {
         // Microops must advance uPC explicitly; they do not rely on decoder NPC.
         inst->staticInst->advancePC(next_pc);
         run_out = next_pc.instAddr() >= stream.predEndPC;
@@ -792,7 +906,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     if (run_out) {
         dbpbtb->consumeFetchTarget(ftqEntryFetchedInsts[tid], tid);
         ftqEntryFetchedInsts[tid] = 0;
-        threads[tid].valid = false;
+        threads[tid].valid = keepFetchedBufferAfterTargetConsume(tid);
         DPRINTF(DecoupleBP, "Used up fetch targets.\n");
     }
 
@@ -823,9 +937,10 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
 }
 
 bool
-Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
+Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc, unsigned requestSpan)
 {
     assert(!cpu->switchedOut());
+    assert(requestSpan > 0);
 
     // Check for blocking conditions
     if (cacheBlocked) {
@@ -842,11 +957,12 @@ Fetch::fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc)
         return false;
     }
 
-    DPRINTF(Fetch, "[tid:%i] Fetching cache line %#x for addr %#x, pc=%#lx\n",
-            tid, vaddr, vaddr, pc);
+    DPRINTF(Fetch,
+            "[tid:%i] Fetching coverage window %#x for addr %#x, pc=%#lx, "
+            "requestSpan=%u, capacity=%u\n",
+            tid, vaddr, vaddr, pc, requestSpan, fetchBufferSize);
 
-    // With 66-byte fetchBufferSize, we always need to access 2 cache lines
-    return handleMultiCacheLineFetch(vaddr, tid, pc);
+    return handleMultiCacheLineFetch(vaddr, tid, pc, requestSpan);
 }
 
 bool
@@ -889,7 +1005,7 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
 
     // Build packet here.
     PacketPtr data_pkt = new Packet(mem_req, MemCmd::ReadReq);
-    data_pkt->dataDynamic(new uint8_t[fetchBufferSize]);
+    data_pkt->dataDynamic(new uint8_t[mem_req->getSize()]);
     // All requests are multi-cacheline, always set send right away
     data_pkt->setSendRightAway();
 
@@ -1783,32 +1899,60 @@ Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
     }
 
     Addr fetch_pc = this_pc.instAddr();
+    auto *dec_ptr = decoder[tid];
 
-    // Check if fetch buffer is valid and contains this PC
+    if (dec_ptr->instReady()) {
+        return StallReason::NoStall;
+    }
+
     if (!threads[tid].valid) {
         DPRINTF(Fetch, "[tid:%i] Fetch buffer invalid, stalling on ICache\n", tid);
         return StallReason::IcacheStall;
     }
 
-    // Check if the fetch buffer contains enough bytes for this instruction
-    // We need at least 4 bytes to decode any RISC-V instruction (including compressed)
-    if (fetch_pc < threads[tid].startPC ||
-        fetch_pc + 4 > threads[tid].startPC + fetchBufferSize) {
-        DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
-                tid, fetch_pc, threads[tid].startPC, threads[tid].startPC + fetchBufferSize);
+    const Addr valid_end = currentValidEndPC(tid);
+    const Addr delivery_pc = std::max(fetch_pc, threads[tid].startPC);
+    assert(delivery_pc >= fetch_pc);
+    assert(delivery_pc - fetch_pc < dec_ptr->moreBytesSize());
+    if (delivery_pc >= valid_end) {
+        DPRINTF(Fetch,
+                "[tid:%i] No valid fetch bytes for PC %#x in [%#x, %#x), "
+                "stalling on ICache\n",
+                tid, fetch_pc, threads[tid].startPC, valid_end);
         return StallReason::IcacheStall;
     }
 
-    // Supply bytes to decoder - always provide 4 bytes for RISC-V
-    auto *dec_ptr = decoder[tid];
-    Addr offset_in_buffer = fetch_pc - threads[tid].startPC;
-    memcpy(dec_ptr->moreBytesPtr(), threads[tid].data + offset_in_buffer, 4);
+    const unsigned bytes_available = valid_end - delivery_pc;
+    const unsigned bytes_needed =
+        dec_ptr->moreBytesSize() - (delivery_pc - fetch_pc);
+    const unsigned bytes_to_supply =
+        std::min(bytes_available, bytes_needed);
+    const Addr offset_in_buffer = delivery_pc - threads[tid].startPC;
 
-    DPRINTF(Fetch, "[tid:%i] Supplying 4 bytes from fetchBuffer at PC %#x (offset %d)\n",
-            tid, fetch_pc, offset_in_buffer);
+    memset(dec_ptr->moreBytesPtr(), 0, dec_ptr->moreBytesSize());
+    memcpy(dec_ptr->moreBytesPtr(), threads[tid].data + offset_in_buffer,
+           bytes_to_supply);
 
-    // Call decoder with the actual instruction PC
-    decoder[tid]->moreBytes(this_pc, fetch_pc);
+    DPRINTF(Fetch,
+            "[tid:%i] Supplying %u valid bytes from fetchBuffer for inst PC "
+            "%#x (deliveryPC=%#x, offset=%#lx, validEnd=%#x, bufferStart=%#x)\n",
+            tid, bytes_to_supply, fetch_pc, delivery_pc, offset_in_buffer,
+            valid_end, threads[tid].startPC);
+
+    dec_ptr->moreBytes(this_pc, delivery_pc, bytes_to_supply);
+
+    if (dec_ptr->instReady()) {
+        return StallReason::NoStall;
+    }
+
+    if (delivery_pc + bytes_to_supply >= valid_end) {
+        threads[tid].valid = false;
+        DPRINTF(Fetch,
+                "[tid:%i] Decoder still waiting for trailing bytes after "
+                "consuming [%#x, %#x); request next coverage block\n",
+                tid, delivery_pc, valid_end);
+        return StallReason::IcacheStall;
+    }
 
     return StallReason::NoStall;
 }
@@ -1823,6 +1967,8 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Create a copy of the current PC state to calculate the next PC.
     std::unique_ptr<PCStateBase> next_pc(pc.clone());
+
+    maybeMigrateSplitControlOwner(tid, pc.instAddr());
 
     // Decode the instruction, handling macro-op transitions.
     StaticInstPtr staticInst = nullptr;
@@ -1937,6 +2083,8 @@ Fetch::performInstructionFetch(ThreadID tid)
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
            !predictedBranch && !ftqEmpty(tid) && !waitForVsetvl) {
 
+        maybeMigrateSplitControlOwner(tid, pc_state.instAddr());
+
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
         if (stall != StallReason::NoStall) {
@@ -2001,14 +2149,28 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     }
 
     assert(dbpbtb);
-    const auto &stream = dbpbtb->ftqFetchingTarget(tid);
+    if (decoder[tid]->hasPartialInst() && !dbpbtb->ftqHasFollowing(tid)) {
+        DPRINTF(Fetch,
+                "[tid:%i] Waiting for following FSQ entry to complete split "
+                "32b instruction at PC %#x\n",
+                tid, pc_state.instAddr());
+        return;
+    }
+
+    maybeMigrateSplitControlOwner(tid, pc_state.instAddr());
+
+    const auto &stream =
+        shouldFetchFollowingTarget(tid, pc_state) ?
+        dbpbtb->ftqFollowingTarget(tid) :
+        dbpbtb->ftqFetchingTarget(tid);
     const Addr start_pc = stream.startPC;
+    const unsigned request_span = currentFetchRequestSpan(stream);
     threads[tid].startPC = start_pc;
 
     DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FSQ entry, "
-                  "starting at PC %#x (endPC %#x; original PC %s)\n",
-            tid, start_pc, stream.predEndPC, pc_state);
-    fetchCacheLine(start_pc, tid, pc_state.instAddr());
+                  "starting at PC %#x (endPC %#x; requestSpan=%u; original PC %s)\n",
+            tid, start_pc, stream.predEndPC, request_span, pc_state);
+    fetchCacheLine(start_pc, tid, pc_state.instAddr(), request_span);
 }
 
 void

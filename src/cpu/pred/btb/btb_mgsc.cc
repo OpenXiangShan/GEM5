@@ -1366,7 +1366,7 @@ BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         return;
     }
     auto meta = std::static_pointer_cast<MgscMeta>(stream.predMetas[getComponentIdx()]);
-    auto pc = inst->getPC();
+    const Addr pc = controlPCFromStartPC(inst->getPC(), inst->getInstBytes());
     auto pred_it = meta->preds.find(pc);
     bool pred_hit = false;
     bool sc_taken = false;

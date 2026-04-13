@@ -28,6 +28,8 @@
 #ifndef __ARCH_GENERIC_DECODER_HH__
 #define __ARCH_GENERIC_DECODER_HH__
 
+#include <cassert>
+
 #include "arch/generic/pcstate.hh"
 #include "base/bitfield.hh"
 #include "base/intmath.hh"
@@ -105,6 +107,7 @@ class InstDecoder : public SimObject
      * decode a full instruction.
      */
     bool instReady() const { return instDone; }
+    virtual bool hasPartialInst() const { return false; }
 
     /**
      * Can the decoder accept more data?
@@ -141,6 +144,20 @@ class InstDecoder : public SimObject
      * @param fetchPC The address this chunk was fetched from.
      */
     virtual void moreBytes(const PCStateBase &pc, Addr fetchPC) = 0;
+
+    /**
+     * Feed data to the decoder with an explicit valid-byte count.
+     *
+     * Most decoders still consume a full MachInst-sized payload and can rely
+     * on the legacy two-argument interface. Decoders that need partial-byte
+     * delivery semantics may override this method.
+     */
+    virtual void
+    moreBytes(const PCStateBase &pc, Addr fetchPC, size_t validBytes)
+    {
+        assert(validBytes == moreBytesSize());
+        moreBytes(pc, fetchPC);
+    }
 
     /**
      * Decode an instruction or fetch it from the code cache.

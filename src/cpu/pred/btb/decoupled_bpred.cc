@@ -439,7 +439,10 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     // Update target state
     target.resolved = true;
     target.exeTaken = actually_taken;
-    target.squashPC = squash_pc.instAddr();
+    target.squashPC =
+        squash_type == SQUASH_CTRL && static_inst ?
+        controlPCFromStartPC(squash_pc.instAddr(), control_inst_size) :
+        squash_pc.instAddr();
     target.squashType = squash_type;
 
     // Special handling for control squash - create branch info
@@ -668,7 +671,7 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &target_id, uint64_t resolvedInstP
     }
     auto &target = ftq.get(target_id, tid);
 
-    if (target.updateNewBTBEntry.pc == resolvedInstPC) {
+    if (target.updateNewBTBEntry.startPC() == resolvedInstPC) {
         target.updateNewBTBEntry.resolved = true;
     }
 
@@ -763,6 +766,10 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
     if (taken) {
         entry.predBranchInfo = finalPred.getTakenEntry().getBranchInfo();
         entry.predBranchInfo.target = nextPC; // Use final target (may not be from BTB)
+        entry.predEndPC = entry.predBranchInfo.coverageEndPC(fallThroughAddr);
+        if (entry.predBranchInfo.startPC() < entry.startPC) {
+            entry.setOwnerStartPC(entry.predBranchInfo.startPC());
+        }
     }
 
     // Record current history and prediction metadata
@@ -1011,8 +1018,12 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Update global history with actual outcome
     histShiftIn(real_shamt, real_taken, s0History);
 
-    // Update path history with actual outcome
-    pHistShiftIn(2, real_taken, s0PHistory, squash_pc.instAddr(), redirect_pc);
+    // Predictor path history is keyed by the predictor-visible controlPC.
+    // Keep recovery aligned with speculative updates so folded histories
+    // remain self-consistent for split 4B control instructions.
+    const Addr path_hist_pc =
+        squash_type == SQUASH_CTRL ? target.getControlPC() : squash_pc.instAddr();
+    pHistShiftIn(2, real_taken, s0PHistory, path_hist_pc, redirect_pc);
 
     // Update global backward history with actual outcome
     histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);

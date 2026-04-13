@@ -1,6 +1,8 @@
 #ifndef __CPU_PRED_BTB_STREAM_STRUCT_HH__
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
+#include <algorithm>
+#include <cassert>
 #include <queue>
 #include <string>
 
@@ -17,6 +19,33 @@ namespace gem5 {
 namespace branch_prediction {
 
 namespace btb_pred {
+
+inline unsigned
+fetchCoverageSpan(Addr startPC, Addr predEndPC, unsigned capacity)
+{
+    assert(predEndPC >= startPC);
+    const Addr span = predEndPC - startPC;
+    const Addr clampedSpan = std::min<Addr>(span, capacity);
+    return static_cast<unsigned>(clampedSpan);
+}
+
+inline Addr
+controlPCFromStartPC(Addr startPC, unsigned size)
+{
+    if (size <= 2) {
+        return startPC;
+    }
+    return startPC + size - 2;
+}
+
+inline Addr
+startPCFromControlPC(Addr controlPC, unsigned size)
+{
+    if (size <= 2) {
+        return controlPC;
+    }
+    return controlPC - (size - 2);
+}
 
 enum EndType
 {
@@ -80,7 +109,9 @@ enum class HistoryType
 struct BranchInfo
 {
     Addr pc;
+    Addr instStartAddr;
     Addr target;
+    bool hasExplicitStartAddr;
     // An independent resolved bit to indicate whether CFI is resolved
     // or not for training, which is trained in resolve stage so
     // it's necessary to know whether the branch is resolved and skip
@@ -93,16 +124,88 @@ struct BranchInfo
     bool isReturn;
     uint8_t size;
     bool isUncond() const { return !this->isCond; }
-    Addr getEnd() { return this->pc + this->size; }
+    /**
+     * Instruction-start view.
+     *
+     * `pc` is the predictor-visible controlPC. The original instruction start
+     * address is kept explicitly when available and otherwise reconstructed from
+     * `(pc, size)`.
+     */
+    Addr startPC() const
+    {
+        return hasExplicitStartAddr ?
+            instStartAddr : startPCFromControlPC(this->pc, this->size);
+    }
+
+    Addr controlPC() const { return this->pc; }
+
+    void setStartPC(Addr start_pc)
+    {
+        instStartAddr = start_pc;
+        hasExplicitStartAddr = true;
+    }
+
+    /**
+     * Derived range view.
+     *
+     * - endPCExclusive = startPC + size
+     * - triggerPC = controlPC
+     */
+    Addr endPCExclusive() const { return startPC() + this->size; }
+    Addr fallThroughPC() const { return endPCExclusive(); }
+    Addr triggerPC() const { return controlPC(); }
+
+    /**
+     * Stream coverage end for this control instruction.
+     *
+     * The natural stream end is usually the aligned fall-through boundary.
+     * When a 4B control instruction straddles that boundary, the fetch stream
+     * must stay alive until the instruction tail is covered.
+     */
+    Addr coverageEndPC(Addr naturalStreamEndPCExclusive) const
+    {
+        const Addr control_end = endPCExclusive();
+        return control_end > naturalStreamEndPCExclusive ?
+            control_end : naturalStreamEndPCExclusive;
+    }
+
+    /**
+     * Whether the current fetch/decode event has already covered triggerPC.
+     *
+     * Fetch observes instruction-start PCs, not a synthetic "back half" PC.
+     * Therefore, a 4B control instruction should still match on startPC, while
+     * coverage is represented by the end-exclusive range already brought into
+     * the current stream.
+     *
+     * For a cross-boundary 4B RVI branch:
+     * - current stream ending exactly at triggerPC means only the leading 2B
+     *   are available, so redirect must stay blocked
+     * - redirect becomes eligible only after a later stream extends strictly
+     *   beyond triggerPC
+     */
+    bool triggerPCCoveredByFetchWindow(Addr instStartPC,
+                                       Addr fetchEndPCExclusive) const
+    {
+        return instStartPC == startPC() && fetchEndPCExclusive > controlPC();
+    }
+
+    // Backward-compatible end-PC helper.
+    Addr getEnd() { return endPCExclusive(); }
+    Addr getEnd() const { return endPCExclusive(); }
     BranchInfo()
-        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0)
+        : pc(0), instStartAddr(0), target(0), hasExplicitStartAddr(false),
+          resolved(false), isCond(false), isIndirect(false), isDirect(false),
+          isCall(false), isReturn(false), size(0)
     {
     }
     // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
     // pc(pc), target(target_pc), isCond(is_cond), isIndirect(false), isCall(false), isReturn(false), size(0) {}
-    BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
-        : pc(control_pc),
+    BranchInfo(const Addr &inst_start_pc, const Addr &target_pc,
+               const StaticInstPtr &static_inst, unsigned size)
+        : pc(controlPCFromStartPC(inst_start_pc, size)),
+          instStartAddr(inst_start_pc),
           target(target_pc),
+          hasExplicitStartAddr(true),
           resolved(false),
           isCond(static_inst->isCondCtrl()),
           isIndirect(static_inst->isIndirectCtrl()),
@@ -277,8 +380,10 @@ struct FetchTarget
 {
     ThreadID tid;
     Addr startPC;       // start pc of the stream
+    Addr ownerInstStartAddr; // earliest inst-start PC owned by this target
+    bool hasExplicitOwnerStartAddr;
     bool predTaken;     // whether the FetchTarget has taken branch
-    Addr predEndPC;     // predicted stream end pc (fall through pc)
+    Addr predEndPC;     // predicted stream coverage end pc
     BranchInfo predBranchInfo; // predicted branch info
 
     bool isHit;          // whether the predicted btb entry is hit
@@ -324,6 +429,8 @@ struct FetchTarget
 
    FetchTarget()
        : startPC(0),
+         ownerInstStartAddr(0),
+         hasExplicitOwnerStartAddr(false),
          predTaken(false),
          predEndPC(0),
          predBranchInfo(BranchInfo()),
@@ -353,6 +460,42 @@ struct FetchTarget
        updateBTBEntries.clear();
    }
 
+    Addr ownerStartPC() const
+    {
+        return hasExplicitOwnerStartAddr ? ownerInstStartAddr : startPC;
+    }
+
+    void setOwnerStartPC(Addr pc)
+    {
+        ownerInstStartAddr = pc;
+        hasExplicitOwnerStartAddr = true;
+    }
+
+    bool hasSplitControlOwnership() const
+    {
+        return ownerStartPC() < startPC;
+    }
+
+    bool ownsInstPC(Addr inst_pc) const
+    {
+        return ownerStartPC() <= inst_pc && inst_pc < predEndPC;
+    }
+
+    bool shouldTakeSplitControlOwnershipFrom(const FetchTarget &previous,
+                                             Addr inst_pc) const
+    {
+        return hasSplitControlOwnership() &&
+               previous.predEndPC == startPC &&
+               previous.startPC < startPC &&
+               ownerStartPC() <= inst_pc &&
+               inst_pc < startPC;
+    }
+
+    bool isTakenControlAt(Addr inst_pc) const
+    {
+        return predTaken && inst_pc == predBranchInfo.startPC();
+    }
+
     // the default exe result should be consistent with prediction
     void setDefaultResolve() {
         resolved = false;
@@ -362,8 +505,13 @@ struct FetchTarget
 
     // bool getEnded() const { return resolved ? exeEnded : predEnded; }
     BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
-    Addr getControlPC() const { return getBranchInfo().pc; }
-    Addr getEndPC() const { return getBranchInfo().getEnd(); } // FIXME: should be end of squash inst when non-control squash of trap squash
+    Addr getControlPC() const { return getBranchInfo().controlPC(); }
+    Addr getEndPC() const
+    {
+        // FIXME: should be end of squash inst when non-control squash of trap
+        // squash.
+        return getBranchInfo().getEnd();
+    }
     Addr getTaken() const { return resolved ? exeTaken : predTaken; }
     Addr getTakenTarget() const { return getBranchInfo().target; }
 
@@ -376,7 +524,8 @@ struct FetchTarget
         int shamt = 0;
         bool cond_taken = false;
         for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+            if (entry.valid && entry.pc >= startPC &&
+                entry.startPC() < squash_pc) {
                 shamt++;
             }
         }
@@ -392,7 +541,8 @@ struct FetchTarget
         int shamt = 0;
         bool cond_taken = false;
         for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+            if (entry.valid && entry.pc >= startPC &&
+                entry.startPC() < squash_pc) {
                 shamt++;
             }
         }
@@ -434,7 +584,7 @@ struct FetchTarget
     void markBTBEntryResolved(Addr resolvedInstPC)
     {
         for (auto &entry : updateBTBEntries) {
-            if (entry.valid && entry.pc == resolvedInstPC) {
+            if (entry.valid && entry.startPC() == resolvedInstPC) {
                 entry.resolved = true;
             }
         }

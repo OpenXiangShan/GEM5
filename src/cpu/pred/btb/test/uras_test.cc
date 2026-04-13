@@ -10,6 +10,14 @@ namespace gem5 {
 namespace branch_prediction {
 namespace btb_pred {
 
+static void
+setBranchLocation(BranchInfo &info, Addr startPC, unsigned size)
+{
+    info.pc = controlPCFromStartPC(startPC, size);
+    info.setStartPC(startPC);
+    info.size = size;
+}
+
 // Mock class for uRAS entry
 struct uRASEntry {
     Addr retAddr;   // return address
@@ -83,7 +91,7 @@ public:
         pred.returnTarget = stack[sp].retAddr;
         auto takenSlot = pred.getTakenEntry();
         if (takenSlot.isCall) { // call inst, push retAddr to spec stack
-            Addr retAddr = takenSlot.pc + takenSlot.size;
+            Addr retAddr = takenSlot.fallThroughPC();
             push(retAddr, stack, sp);
         }
         if (takenSlot.isReturn) { // return inst, pop retAddr from spec stack
@@ -116,7 +124,7 @@ public:
                 pop(stack, sp);
             }
             if (takenSlot.isCall) {
-                Addr retAddr = takenSlot.pc + takenSlot.size;
+                Addr retAddr = takenSlot.fallThroughPC();
                 push(retAddr, stack, sp);
             }
         }
@@ -287,9 +295,8 @@ TEST_F(URASTest, SpecUpdateHistCall) {
     // Setup a call instruction in BTBEntry
     BTBEntry callEntry;
     callEntry.valid = true;
-    callEntry.pc = 0x1000;
+    setBranchLocation(callEntry, 0x1000, 4);
     callEntry.isCall = true;
-    callEntry.size = 4;
     callEntry.target = 0x2000;  // 目标地址
     pred.btbEntries.push_back(callEntry);
     
@@ -322,7 +329,7 @@ TEST_F(URASTest, SpecUpdateHistReturn) {
     // Setup a return instruction in BTBEntry
     BTBEntry retEntry;
     retEntry.valid = true;
-    retEntry.pc = 0x1000;
+    setBranchLocation(retEntry, 0x1000, 4);
     retEntry.isReturn = true;
     retEntry.target = 0x2000;
     pred.btbEntries.push_back(retEntry);
@@ -346,9 +353,8 @@ TEST_F(URASTest, SpecUpdateHistCallReturn) {
     
     BTBEntry callEntry;
     callEntry.valid = true;
-    callEntry.pc = 0x1000;
+    setBranchLocation(callEntry, 0x1000, 4);
     callEntry.isCall = true;
-    callEntry.size = 4;
     callEntry.target = 0x2000;
     pred1.btbEntries.push_back(callEntry);
     
@@ -361,7 +367,7 @@ TEST_F(URASTest, SpecUpdateHistCallReturn) {
     
     BTBEntry retEntry;
     retEntry.valid = true;
-    retEntry.pc = 0x2000;
+    setBranchLocation(retEntry, 0x2000, 4);
     retEntry.isReturn = true;
     retEntry.target = 0x1004;  // 返回到call的下一条指令
     pred2.btbEntries.push_back(retEntry);
@@ -393,7 +399,7 @@ TEST_F(URASTest, RecoverHistBasic) {
     meta.sp = 0;  // restore to initial sp
     meta.tos = uRASEntry(0x2000);  // set different tos
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
-    
+
     // recover
     uras->recoverHist(history, entry, 0, false);
     
@@ -421,8 +427,8 @@ TEST_F(URASTest, RecoverHistReturn) {
     // 设置return指令信息
     entry.exeTaken = true;
     entry.exeBranchInfo.isReturn = true;
-    entry.exeBranchInfo.pc = 0x2000;
-    
+    setBranchLocation(entry.exeBranchInfo, 0x2000, 4);
+
     // 执行恢复
     uras->recoverHist(history, entry, 0, false);
     
@@ -439,19 +445,18 @@ TEST_F(URASTest, RecoverHistCall) {
     // 设置初始状态
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
-    
+
     // 设置meta数据
     uRASMeta meta;
     meta.sp = 0;
     meta.tos = uRASEntry(0x80000000L);
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
-    
+
     // 设置call指令信息
     entry.exeTaken = true;
     entry.exeBranchInfo.isCall = true;
-    entry.exeBranchInfo.pc = 0x1000;
-    entry.exeBranchInfo.size = 4;
-    
+    setBranchLocation(entry.exeBranchInfo, 0x1000, 4);
+
     // 执行恢复
     uras->recoverHist(history, entry, 0, false);
     
@@ -467,18 +472,17 @@ TEST_F(URASTest, RecoverHistCallReturn) {
 
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
-    
+
     // 第一步：call指令恢复
     uRASMeta meta1;
     meta1.sp = 0;
     meta1.tos = uRASEntry(0x80000000L);
     entry1.predMetas[0] = std::make_shared<uRASMeta>(meta1);
-    
+
     entry1.exeTaken = true;
     entry1.exeBranchInfo.isCall = true;
-    entry1.exeBranchInfo.pc = 0x1000;
-    entry1.exeBranchInfo.size = 4;
-    
+    setBranchLocation(entry1.exeBranchInfo, 0x1000, 4);
+
     uras->recoverHist(history, entry1, 0, false);
     
     // 验证call的结果
@@ -490,11 +494,11 @@ TEST_F(URASTest, RecoverHistCallReturn) {
     meta2.sp = 1;
     meta2.tos = uRASEntry(0x1004);
     entry2.predMetas[0] = std::make_shared<uRASMeta>(meta2);
-    
+
     entry2.exeTaken = true;
     entry2.exeBranchInfo.isReturn = true;
-    entry2.exeBranchInfo.pc = 0x2000;
-    
+    setBranchLocation(entry2.exeBranchInfo, 0x2000, 4);
+
     uras->recoverHist(history, entry2, 0, false);
     
     // 验证return的结果

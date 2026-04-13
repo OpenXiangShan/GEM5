@@ -1209,7 +1209,8 @@ BTBTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         return;
     }
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    auto pc = inst->pcState().instAddr();
+    const Addr pc =
+        controlPCFromStartPC(inst->pcState().instAddr(), inst->getInstBytes());
     auto it = meta->preds.find(pc);
     bool pred_taken = false;
     bool pred_hit = false;

@@ -586,7 +586,7 @@ BTBITTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         return;
     }
     auto meta = std::static_pointer_cast<TageMeta>(stream.predMetas[getComponentIdx()]);
-    auto pc = inst->getPC();
+    const Addr pc = controlPCFromStartPC(inst->getPC(), inst->getInstBytes());
     auto npc = inst->getNPC();
     auto pred_it = meta->preds.find(pc);
     bool this_branch_hit = false;

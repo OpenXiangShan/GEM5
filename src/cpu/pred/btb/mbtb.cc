@@ -806,7 +806,7 @@ MBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
 {
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &hit_entries = meta->hit_entries;
-    auto pc = inst->getPC();
+    const Addr pc = controlPCFromStartPC(inst->getPC(), inst->getInstBytes());
     auto npc = inst->getNPC();
     // auto &static_inst = inst->staticInst();
     bool this_branch_hit = false;

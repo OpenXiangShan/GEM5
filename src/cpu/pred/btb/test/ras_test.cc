@@ -28,14 +28,20 @@ protected:
         ras.reset();
     }
 
+    void setBranchLocation(BranchInfo &info, Addr startPC, unsigned size)
+    {
+        info.pc = controlPCFromStartPC(startPC, size);
+        info.setStartPC(startPC);
+        info.size = size;
+    }
+
     // Helper function to create a call BTBEntry
     BTBEntry createCallEntry(Addr pc, Addr target, unsigned size = 4) {
         BTBEntry entry;
         entry.valid = true;
-        entry.pc = pc;
+        setBranchLocation(entry, pc, size);
         entry.isCall = true;
         entry.isReturn = false;
-        entry.size = size;
         entry.target = target;
         return entry;
     }
@@ -44,10 +50,9 @@ protected:
     BTBEntry createReturnEntry(Addr pc, Addr target, unsigned size = 4) {
         BTBEntry entry;
         entry.valid = true;
-        entry.pc = pc;
+        setBranchLocation(entry, pc, size);
         entry.isCall = false;
         entry.isReturn = true;
-        entry.size = size;
         entry.target = target;
         return entry;
     }
@@ -82,10 +87,9 @@ protected:
         FetchTarget stream;
         stream.startPC = startPC;
         stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
+        setBranchLocation(stream.exeBranchInfo, branchPC, size);
         stream.exeBranchInfo.isCall = true;
         stream.exeBranchInfo.isReturn = false;
-        stream.exeBranchInfo.size = size;
         stream.predMetas[0] = meta;
         return stream;
     }
@@ -96,10 +100,9 @@ protected:
         FetchTarget stream;
         stream.startPC = startPC;
         stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
+        setBranchLocation(stream.exeBranchInfo, branchPC, size);
         stream.exeBranchInfo.isCall = false;
         stream.exeBranchInfo.isReturn = true;
-        stream.exeBranchInfo.size = size;
         stream.predMetas[0] = meta;
         return stream;
     }
@@ -110,10 +113,9 @@ protected:
         FetchTarget stream;
         stream.startPC = startPC;
         stream.exeTaken = taken;
-        stream.exeBranchInfo.pc = branchPC;
+        setBranchLocation(stream.exeBranchInfo, branchPC, size);
         stream.exeBranchInfo.isCall = isCall;
         stream.exeBranchInfo.isReturn = !isCall;
-        stream.exeBranchInfo.size = size;
         stream.predMetas[0] = meta;
         return stream;
     }
@@ -168,6 +170,15 @@ TEST_F(RASTest, BasicPushPop) {
 
     // Check final state - should be back to initial state
     checkReturnTarget(0x1004, 0x80000000L);
+}
+
+TEST_F(RASTest, SplitRvi4BCallUsesArchitecturalFallThrough)
+{
+    boost::dynamic_bitset<> history(8, 0);
+    auto callPred = createCallPrediction(0x101e, 0x101e, 0x3000, 4);
+    ras->specUpdateHist(history, callPred);
+
+    checkReturnTarget(0x3000, 0x1022);
 }
 
 // Test multiple pushes
@@ -408,9 +419,8 @@ TEST_F(RASTest, ComplexRecovery) {
     FetchTarget recoverStream;
     recoverStream.startPC = 0x2000;
     recoverStream.exeTaken = true;  // The first call was actually taken
-    recoverStream.exeBranchInfo.pc = 0x1000;
+    setBranchLocation(recoverStream.exeBranchInfo, 0x1000, 4);
     recoverStream.exeBranchInfo.isCall = true;
-    recoverStream.exeBranchInfo.size = 4;
     recoverStream.predMetas[0] = meta1;
 
     ras->recoverHist(history, recoverStream, 0, true);

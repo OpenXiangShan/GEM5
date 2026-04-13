@@ -74,6 +74,44 @@ mispredicted() 不是直接拿 inst->pcState().npc() 和预测比，而是：
 
 所以这里“看起来绕”，但它本质上是在把“实际 next（藏在 npc 里）”先做一次 advance，转换成和 predPC 同一种表示再比较。
 
+## decoupled BTB 的控制 PC / owner 视图补充
+
+上面主要描述的是通用 `PCState` 生命周期；但在当前 decoupled BTB 前端里，和控制指令相关的语义还需要再区分三组视角：
+
+- `startPC`
+  - 架构视角的指令起始地址
+  - 仍然是 RAS/uRAS fall-through、trace wrong-path NOP sizing、统计归因等路径的主要依据
+- `controlPC`
+  - predictor-visible 的控制指令身份
+  - 对跨块 4B RVI 控制指令，当前实现允许它落在尾半字（tail halfword）所在的 PC 上
+  - 主要服务 BTB 覆盖、trigger 和 taken-control 匹配
+- `ownerStartPC`
+  - fetch owner 视角下“这个 `FetchTarget` 真正拥有的最早 inst-start PC”
+  - 默认等于 `startPC`
+  - 只有 split-control owner migration 发生时，才会小于当前 target 的 `startPC`
+
+### 当前代码入口（2026-04 收敛版）
+
+如果要对照代码阅读这一轮 control-PC / owner-migration 语义，建议直接看下面几个入口：
+
+- `src/cpu/pred/btb/common.hh`
+  - 定义 `startPC / controlPC / ownerStartPC` 三组视角
+  - `FetchTarget` 上的 `ownsInstPC()` / `shouldTakeSplitControlOwnershipFrom()` / `isTakenControlAt()` 也在这里
+- `src/cpu/o3/fetch.cc`
+  - `maybeMigrateSplitControlOwner()` 只负责消费上述 helper，不再自己维护 owner 协议
+  - 正常 fetch 中的 owner-range 校验、taken matching 也统一走 helper
+- `src/cpu/o3/trace/TraceFetch.cc`
+  - trace rollback / wrong-path NOP sizing 仍然属于 startPC consumer
+- `src/cpu/pred/btb/ras.cc` / `src/cpu/pred/btb/uras.cc`
+  - call fall-through 仍然以 architectural `startPC` 为准，不能跟着 controlPC 一起漂移
+- `src/cpu/pred/btb/test/btb.test.cc`
+  - helper 级回归点都集中在这里，适合确认 owner contract 是否被意外改坏
+
+额外提醒：
+
+- 如果后续代码里还看到 `decodeStartPC`，应把它视为旧命名；当前语义已经收敛到 `ownerStartPC`
+- 这轮简化的重点不是“fetch 发明了新的协议”，而是“fetch 终于只消费 `FetchTarget` 已经定义好的 owner contract”
+
 
 ## 模块与接口
 | 模块 | 核心函数 | 触碰 PC 的原因 | 备注 |

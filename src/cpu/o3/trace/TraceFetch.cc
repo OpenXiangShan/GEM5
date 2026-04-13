@@ -539,7 +539,7 @@ TraceFetch::chooseWrongPathNopSize(ThreadID tid, Addr pc)
         if (fetch.dbpbtb->ftqHasFetching(tid)) {
             const auto &stream = fetch.dbpbtb->ftqFetchingTarget(tid);
             block_end = stream.predEndPC;
-            taken_pc = stream.predBranchInfo.pc;
+            taken_pc = stream.predBranchInfo.startPC();
             taken = stream.predTaken;
         }
     }
@@ -941,11 +941,12 @@ TraceFetch::rollbackTraceReader(InstSeqNum seqNum, bool squash_itself)
         return false;
     }
 
-    bool need_to_decrement_index = squash_itself;
-    // Find trace index to rollback to (1-based). We want the next getNextInstruction()
-    // to return the instruction at 'index'.
+    // Find trace index for the squashed dynamic instruction. seqNumToTraceIndex
+    // stores 1-based trace indices, so we compute the next instruction to
+    // return explicitly instead of decrementing blindly.
     uint64_t index = findTraceIndexForSeqNum(seqNum);
     bool found = index != 0;
+    bool reused_prev_mapping = false;
     if (!found) {
         if (squash_itself) {
             // If squashing the instruction itself, try one earlier
@@ -956,7 +957,7 @@ TraceFetch::rollbackTraceReader(InstSeqNum seqNum, bool squash_itself)
             index = findTraceIndexForSeqNum(seqNum - 1);
             if (index != 0) {
                 found = true;
-                need_to_decrement_index = false; // already moved back
+                reused_prev_mapping = true;
             } else {
                 DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: No mapped trace index (skip)\n", seqNum);
                 return false;
@@ -964,22 +965,28 @@ TraceFetch::rollbackTraceReader(InstSeqNum seqNum, bool squash_itself)
         }
     }
 
-    if (need_to_decrement_index) {
-        // If squashing the instruction itself, we need to go back one more instruction
-        if (index > 0) {
-            DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Squashing itself, moving back one instruction\n", seqNum);
-            --index;
-        } else {
-            DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Cannot move back before start of trace\n", seqNum);
-            return false;
-        }
+    uint64_t desired_trace_index = 0;
+    if (reused_prev_mapping) {
+        desired_trace_index = index + 1;
+    } else if (squash_itself) {
+        desired_trace_index = index;
+    } else {
+        desired_trace_index = index + 1;
+    }
+
+    if (desired_trace_index == 0) {
+        DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: Cannot move back before start of trace\n", seqNum);
+        return false;
     }
 
     // 交由 TraceReader 软回滚（命中本地历史窗口则不触碰文件指针），超界时内部自行降级
-    const uint64_t seek_cursor = (index > 0) ? (index - 1) : 0;
+    const uint64_t seek_cursor = desired_trace_index - 1;
     const bool success = traceReader->softSeekToInstruction(seek_cursor);
-    DPRINTF(Fetch, "rollbackTraceReader[sn:%lli]: softSeekToInstruction(index=%lu,cursor=%lu) => %d\n",
-            seqNum, index, seek_cursor, (int)success);
+    DPRINTF(Fetch,
+            "rollbackTraceReader[sn:%lli]: mappedIndex=%lu desiredTraceIndex=%lu "
+            "cursor=%lu squash_itself=%d reused_prev=%d => %d\n",
+            seqNum, index, desired_trace_index, seek_cursor,
+            squash_itself, reused_prev_mapping, (int)success);
     return success;
 }
 

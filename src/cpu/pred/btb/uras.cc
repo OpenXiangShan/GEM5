@@ -100,7 +100,7 @@ BTBuRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPredictio
     pred.returnTarget = stack[sp].retAddr;
     auto takenSlot = pred.getTakenEntry();
     if (takenSlot.isCall) {
-        Addr retAddr = takenSlot.pc + takenSlot.size;
+        Addr retAddr = takenSlot.fallThroughPC();
         if (enableDB) {
             SpecRASTrace rec(When::SPECULATIVE, RAS_OP::PUSH, pred.bbStart, takenSlot.pc,
                 retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
@@ -150,7 +150,7 @@ BTBuRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &
             pop(stack, sp);
         }
         if (takenSlot.isCall) {
-            Addr retAddr = takenSlot.pc + takenSlot.size;
+            Addr retAddr = takenSlot.fallThroughPC();
             if (enableDB) {
                 SpecRASTrace rec(When::REDIRECT, RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
                 specRasTrace->write_record(rec);
@@ -175,7 +175,7 @@ BTBuRAS::update(const FetchTarget &entry)
         auto pred_tos = meta_ptr->tos;
         auto miss = entry.squashType == SQUASH_CTRL && entry.squashPC == entry.exeBranchInfo.pc;
         if (takenSlot.isCall) {
-            Addr retAddr = takenSlot.pc + takenSlot.size;
+            Addr retAddr = takenSlot.fallThroughPC();
             if (enableDB) {
                 NonSpecRASTrace rec(RAS_OP::PUSH, entry.startPC, takenSlot.pc, retAddr,
                     pred_sp, pred_tos.retAddr, pred_tos.ctr, sp, stack[sp].retAddr, stack[sp].ctr, miss);
