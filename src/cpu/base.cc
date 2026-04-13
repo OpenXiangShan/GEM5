@@ -1684,8 +1684,6 @@ BaseCPU::difftestStep(ThreadID tid, InstSeqNum seq)
                     assert(diffAllStates->proxy->ref_get_backed_memory);
                     diffAllStates->proxy->ref_get_backed_memory(
                         system->createCopyOnWriteBranch(), pmemSize);
-                    diffAllStates->proxy->memcpy_init(
-                        0x80000000u, goldenMemPtr, pmemSize, DUT_TO_REF);
                 } else {
                     assert(diffAllStates->proxy->ref_get_backed_memory);
                     diffAllStates->proxy->ref_get_backed_memory(system->createCopyOnWriteBranch(), pmemSize);
