@@ -335,10 +335,12 @@ BTBMGSC::calculatePercsum(const std::vector<std::vector<std::vector<int16_t>>> &
  * @return Found weight or 0 if not found
  */
 int
-BTBMGSC::findWeight(const std::vector<int16_t> &weightTable, Addr pc)
+BTBMGSC::findWeight(const std::vector<int16_t> &weightTable, Addr pc,
+                    uint8_t asidHash)
 {
     auto mask = (1 << weightTableIdxWidth) - 1;
     auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
+    pcHash = xorAsidHashIntoIndex(pcHash, weightTableIdxWidth, asidHash);
     auto &entry = weightTable[pcHash];
     return entry;
 }
@@ -359,10 +361,12 @@ BTBMGSC::calculateScaledPercsum(int weight, int percsum)
  * @return Found threshold or default value if not found
  */
 int
-BTBMGSC::findThreshold(const std::vector<int16_t> &thresholdTable, Addr pc)
+BTBMGSC::findThreshold(const std::vector<int16_t> &thresholdTable, Addr pc,
+                       uint8_t asidHash)
 {
     auto mask = (1 << thresholdTablelogSize) - 1;
     auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
+    pcHash = xorAsidHashIntoIndex(pcHash, thresholdTablelogSize, asidHash);
     auto &entry = thresholdTable[pcHash];
     return entry;
 }
@@ -393,7 +397,7 @@ BTBMGSC::calculateWeightScaleDiff(int total_sum, int scale_percsum, int percsum)
 BTBMGSC::MgscPrediction
 BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
                                   const TageInfoForMGSC &tage_info,
-                                  ThreadID tid)
+                                  ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(MGSC, "generateSinglePrediction for btbEntry: %#lx, always taken %d\n", btb_entry.pc,
             btb_entry.alwaysTaken);
@@ -402,12 +406,15 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     // Calculate indices for all tables
     for (unsigned int i = 0; i < bwTableNum; ++i) {
         bwIndex[i] = getHistIndex(startPC, bwTableIdxWidth - numCtrsPerLineBits,
-                                  state.indexBwFoldedHist[i].get());
+                                  state.indexBwFoldedHist[i].get(), asidHash);
     }
 
+    const Addr localHistoryIndex =
+        getPcIndex(startPC, log2(numEntriesFirstLocalHistories), asidHash);
     for (unsigned int i = 0; i < lTableNum; ++i) {
         lIndex[i] = getHistIndex(startPC, lTableIdxWidth - numCtrsPerLineBits,
-                                 state.indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][i].get());
+                                 state.indexLFoldedHist[localHistoryIndex][i].get(),
+                                 asidHash);
     }
     // std::string buf;
     // boost::to_string(indexLFoldedHist[getPcIndex(startPC, log2(numEntriesFirstLocalHistories))][0].getAsBitset(), buf);
@@ -415,46 +422,46 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     for (unsigned int i = 0; i < iTableNum; ++i) {
         iIndex[i] = getHistIndex(startPC, iTableIdxWidth - numCtrsPerLineBits,
-                                 state.indexIFoldedHist[i].get());
+                                 state.indexIFoldedHist[i].get(), asidHash);
     }
 
     for (unsigned int i = 0; i < gTableNum; ++i) {
         gIndex[i] = getHistIndex(startPC, gTableIdxWidth - numCtrsPerLineBits,
-                                 state.indexGFoldedHist[i].get());
+                                 state.indexGFoldedHist[i].get(), asidHash);
     }
 
     for (unsigned int i = 0; i < pTableNum; ++i) {
         pIndex[i] = getHistIndex(startPC, pTableIdxWidth - numCtrsPerLineBits,
-                                 state.indexPFoldedHist[i].get());
+                                 state.indexPFoldedHist[i].get(), asidHash);
     }
 
     for (unsigned int i = 0; i < biasTableNum; ++i) {
         biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth - numCtrsPerLineBits, tage_info.tage_main_taken,
-                                    tage_info.tage_pred_conf_low);
+                                    tage_info.tage_pred_conf_low, asidHash);
     }
 
     int bw_percsum = enableBwTable ? calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.pc) : 0;
-    int bw_weight = findWeight(bwWeightTable, btb_entry.pc);
+    int bw_weight = findWeight(bwWeightTable, btb_entry.pc, asidHash);
     int bw_scaled_percsum = calculateScaledPercsum(bw_weight, bw_percsum);
 
     int l_percsum = enableLTable ? calculatePercsum(lTable, lIndex, lTableNum, btb_entry.pc) : 0;
-    int l_weight = findWeight(lWeightTable, btb_entry.pc);
+    int l_weight = findWeight(lWeightTable, btb_entry.pc, asidHash);
     int l_scaled_percsum = calculateScaledPercsum(l_weight, l_percsum);
 
     int i_percsum = enableITable ? calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc) : 0;
-    int i_weight = findWeight(iWeightTable, btb_entry.pc);
+    int i_weight = findWeight(iWeightTable, btb_entry.pc, asidHash);
     int i_scaled_percsum = calculateScaledPercsum(i_weight, i_percsum);
 
     int g_percsum = enableGTable ? calculatePercsum(gTable, gIndex, gTableNum, btb_entry.pc) : 0;
-    int g_weight = findWeight(gWeightTable, btb_entry.pc);
+    int g_weight = findWeight(gWeightTable, btb_entry.pc, asidHash);
     int g_scaled_percsum = calculateScaledPercsum(g_weight, g_percsum);
 
     int p_percsum = enablePTable ? calculatePercsum(pTable, pIndex, pTableNum, btb_entry.pc) : 0;
-    int p_weight = findWeight(pWeightTable, btb_entry.pc);
+    int p_weight = findWeight(pWeightTable, btb_entry.pc, asidHash);
     int p_scaled_percsum = calculateScaledPercsum(p_weight, p_percsum);
 
     int bias_percsum = enableBiasTable ? calculatePercsum(biasTable, biasIndex, biasTableNum, btb_entry.pc) : 0;
-    int bias_weight = findWeight(biasWeightTable, btb_entry.pc);
+    int bias_weight = findWeight(biasWeightTable, btb_entry.pc, asidHash);
     int bias_scaled_percsum = calculateScaledPercsum(bias_weight, bias_percsum);
 
     // Calculate total sum of all weighted percsums
@@ -463,7 +470,8 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     // Find thresholds
     // pc-indexed threshold table (only if enabled)
-    int p_update_thres = enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.pc) : 0;
+    int p_update_thres =
+        enablePCThreshold ? findThreshold(pUpdateThreshold, btb_entry.pc, asidHash) : 0;
 
     int total_thres = (updateThreshold / 8) + p_update_thres;
     // Threshold is used as a confidence gate; avoid negative values which
@@ -520,7 +528,7 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 void
 BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntries,
                       const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens &results, ThreadID tid)
+                      CondTakens &results, ThreadID tid, uint8_t asidHash)
 {
     DPRINTF(MGSC, "lookupHelper startAddr: %#lx\n", startPC);
 
@@ -531,7 +539,8 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             auto tage_info = tageInfoForMgscs.find(btb_entry.pc);
             if (tage_info != tageInfoForMgscs.end()) {
                 auto pred = generateSinglePrediction(btb_entry, startPC,
-                                                     tage_info->second, tid);
+                                                     tage_info->second, tid,
+                                                     asidHash);
                 threadMeta[tid]->preds[btb_entry.pc] = pred;
                 results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
             } else {
@@ -559,6 +568,7 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
 {
     const ThreadID tid = predictorTid(stagePreds);
     const auto &state = historyState(tid);
+    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     DPRINTF(MGSC, "putPCHistory startAddr: %#lx\n", stream_start);
 
     // IMPORTANT: when this function is called,
@@ -582,7 +592,8 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
         auto &stage_pred = stagePreds[s];
         stage_pred.condTakens.clear();
         lookupHelper(stream_start, stage_pred.btbEntries,
-                     stage_pred.tageInfoForMgscs, stage_pred.condTakens, tid);
+                     stage_pred.tageInfoForMgscs, stage_pred.condTakens, tid,
+                     asidHash);
     }
 }
 
@@ -695,10 +706,11 @@ BTBMGSC::updateWeightTable(std::vector<int16_t> &weightTable, Addr tableIndex, A
  * @param update_direction Direction to update (true=increment, false=decrement)
  */
 void
-BTBMGSC::updatePCThresholdTable(Addr pc, bool update_direction)
+BTBMGSC::updatePCThresholdTable(Addr pc, uint8_t asidHash, bool update_direction)
 {
     auto mask = (1 << thresholdTablelogSize) - 1;
     auto pcHash = ((pc >> instShiftAmt) ^ ((pc >> instShiftAmt) >> 2)) & mask;
+    pcHash = xorAsidHashIntoIndex(pcHash, thresholdTablelogSize, asidHash);
     auto &entry = pUpdateThreshold[pcHash];
     updateCounter(update_direction, pUpdateThresholdWidth, entry);
 }
@@ -852,10 +864,11 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
     }
 #endif
 
-    // Only update tables if prediction was wrong or confidence was low
+        // Only update tables if prediction was wrong or confidence was low
     if (sc_pred_taken != actual_taken || abs(total_sum) < (total_thres / 2)) {
         // get weight table index from startPC
-        Addr weightTableIdx = getPcIndex(stream.startPC, weightTableIdxWidth);
+        Addr weightTableIdx = getPcIndex(stream.startPC, weightTableIdxWidth,
+                                         stream.asidHash);
         bool threshold_inc = (sc_pred_taken != actual_taken);
         if (threshold_inc) {
             mgscStats.pcThresholdInc++;
@@ -897,7 +910,8 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 
         // Update PC-indexed threshold table (only if enabled)
         if (enablePCThreshold) {
-            updatePCThresholdTable(entry.pc, sc_pred_taken != actual_taken);
+            updatePCThresholdTable(entry.pc, stream.asidHash,
+                                   sc_pred_taken != actual_taken);
         }
 
         // Update global threshold table
@@ -983,7 +997,8 @@ BTBMGSC::updateCounter<uint64_t>(bool taken, unsigned width, uint64_t &counter);
 
 
 Addr
-BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist)
+BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist,
+                      uint8_t asidHash)
 {
     // Create mask to limit result size to tableIndexBits
     Addr mask = (1ULL << tableIndexBits) - 1;
@@ -992,11 +1007,12 @@ BTBMGSC::getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist)
     Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
     Addr foldedBits = foldedHist & mask;
 
-    return pcBits ^ foldedBits;
+    return xorAsidHashIntoIndex(pcBits ^ foldedBits, tableIndexBits, asidHash);
 }
 
 Addr
-BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbit1)
+BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0,
+                      bool lowbit1, uint8_t asidHash)
 {
     // Create mask for tableIndexBits-2 to extract PC bits
     Addr mask = (1ULL << (tableIndexBits - 2)) - 1;
@@ -1004,17 +1020,18 @@ BTBMGSC::getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbi
     // Extract lower bits of PC directly and combine with low bits
     Addr pcBits = (pc >> floorLog2(blockSize)) & mask;
     unsigned index = (pcBits << 2) + (lowbit1 << 1) + lowbit0;
-    return index;
+    return xorAsidHashIntoIndex(index, tableIndexBits, asidHash);
 }
 
 Addr
-BTBMGSC::getPcIndex(Addr pc, unsigned tableIndexBits)
+BTBMGSC::getPcIndex(Addr pc, unsigned tableIndexBits, uint8_t asidHash)
 {
     // Create mask to extract tableIndexBits from PC
     Addr mask = (1ULL << tableIndexBits) - 1;
 
     // Extract lower bits of PC directly without bitset
-    return (pc >> floorLog2(blockSize)) & mask;
+    Addr baseIndex = (pc >> floorLog2(blockSize)) & mask;
+    return xorAsidHashIntoIndex(baseIndex, tableIndexBits, asidHash);
 }
 
 template<typename T>
@@ -1220,8 +1237,10 @@ BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, Fu
     int shamt;
     bool cond_taken;
     std::tie(shamt, cond_taken) = pred.getHistInfo();
-    doUpdateHist(history[getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories))], shamt, cond_taken,
-                 state.indexLFoldedHist[getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories))]);
+    const Addr localHistoryIndex =
+        getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories), pred.asidHash);
+    doUpdateHist(history[localHistoryIndex], shamt, cond_taken,
+                 state.indexLFoldedHist[localHistoryIndex]);
 }
 
 /**
@@ -1362,9 +1381,11 @@ BTBMGSC::recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const
             state.indexLFoldedHist[k][i].recover(predMeta->indexLFoldedHist[k][i]);
         }
     }
-            doUpdateHist(history[getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories))], shamt, cond_taken,
-                         state.indexLFoldedHist[getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories))]);
-        }
+    const Addr localHistoryIndex =
+        getPcIndex(entry.startPC, log2(numEntriesFirstLocalHistories), entry.asidHash);
+    doUpdateHist(history[localHistoryIndex], shamt, cond_taken,
+                 state.indexLFoldedHist[localHistoryIndex]);
+}
 
 #ifndef UNIT_TEST
 // Constructor for TAGE statistics

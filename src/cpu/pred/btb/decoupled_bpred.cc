@@ -1083,8 +1083,12 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
 
     // Update local history
+    const Addr localHistoryIndex =
+        mgsc->getPcIndex(finalPred.bbStart,
+                         log2(mgsc->getNumEntriesFirstLocalHistories()),
+                         finalPred.asidHash);
     histShiftIn(shamt, taken,
-        s0LHistory[mgsc->getPcIndex(finalPred.bbStart, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
+        s0LHistory[localHistoryIndex]);
 
 #ifndef NDEBUG
     if (tage->isEnabled()) {
@@ -1169,8 +1173,12 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);
 
     // Update local history with actual outcome
+    const Addr localHistoryIndex =
+        mgsc->getPcIndex(target.startPC,
+                         log2(mgsc->getNumEntriesFirstLocalHistories()),
+                         target.asidHash);
     histShiftIn(real_shamt, real_taken,
-                s0LHistory[mgsc->getPcIndex(target.startPC, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
+                s0LHistory[localHistoryIndex]);
 
     // Update history manager with appropriate branch info
     if (squash_type == SQUASH_CTRL) {

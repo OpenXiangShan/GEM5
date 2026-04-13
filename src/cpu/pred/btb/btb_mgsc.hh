@@ -198,7 +198,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
                          ThreadID tid, const char *when);  // Check GHR folded
 
     // Calculate MGSC weight index
-    Addr getPcIndex(Addr pc, unsigned tableIndexBits);
+    Addr getPcIndex(Addr pc, unsigned tableIndexBits, uint8_t asidHash = 0);
 
   private:
     // Utility functions for reducing code duplication
@@ -211,7 +211,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Find weight in a weight table for a given PC
      */
-    int findWeight(const std::vector<int16_t> &weightTable, Addr pc);
+    int findWeight(const std::vector<int16_t> &weightTable, Addr pc, uint8_t asidHash);
 
     /**
      * Calculate scaled percsum using weight
@@ -221,7 +221,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Find threshold in a threshold table for a given PC
      */
-    int findThreshold(const std::vector<int16_t> &thresholdTable, Addr pc);
+    int findThreshold(const std::vector<int16_t> &thresholdTable, Addr pc, uint8_t asidHash);
 
     /**
      * Calculate if weight scale causes prediction difference
@@ -243,7 +243,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     /**
      * Update a threshold table and allocate new entry if needed
      */
-    void updatePCThresholdTable(Addr pc, bool update_direction);
+    void updatePCThresholdTable(Addr pc, uint8_t asidHash, bool update_direction);
 
     /**
      * Update the global threshold table and allocate new entry if needed
@@ -253,13 +253,15 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Look up predictions in MGSC tables for a stream of instructions
     void lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
                       const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs,
-                      CondTakens &results, ThreadID tid);
+                      CondTakens &results, ThreadID tid, uint8_t asidHash);
 
     // Calculate MGSC history index with folded history
-    Addr getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist);
+    Addr getHistIndex(Addr pc, unsigned tableIndexBits, uint64_t foldedHist,
+                      uint8_t asidHash = 0);
 
     // Calculate MGSC bias index
-    Addr getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbit1);
+    Addr getBiasIndex(Addr pc, unsigned tableIndexBits, bool lowbit0, bool lowbit1,
+                      uint8_t asidHash = 0);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) { return (pc & (blockSize - 1)) >> 1; }
@@ -284,7 +286,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     // Helper method to generate prediction for a single BTB entry
     MgscPrediction generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC,
                                             const TageInfoForMGSC &tage_info,
-                                            ThreadID tid);
+                                            ThreadID tid, uint8_t asidHash);
 
     // Helper method to prepare BTB entries for update
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
