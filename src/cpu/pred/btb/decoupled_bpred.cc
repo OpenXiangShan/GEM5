@@ -34,6 +34,9 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       predictWidth(p.predictWidth),
       maxInstsNum(p.predictWidth / 2),
       historyBits(p.maxHistLen),
+      enableInterflushPenalty(p.enableInterflushPenalty),
+      interflushEntryLimit(p.interflushEntryLimit),
+      interflushPenaltyCycles(p.interflushPenaltyCycles),
       ubtb(p.ubtb),
       abtb(p.abtb),
       mbtb(p.mbtb),
@@ -309,17 +312,26 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     }
 
     // 4. Record override bubbles and update statistics
+    const unsigned predSourceStage = first_hit_stage;
+
     if (first_hit_stage > 0) {
         dbpBtbStats.overrideCount++;
     }
 
+    if (enableInterflushPenalty) {
+        first_hit_stage += interflushBubblePenalty(
+            finalPred.btbEntries.size(),
+            interflushEntryLimit,
+            interflushPenaltyCycles);
+    }
+
     // 5. Finalize prediction process
-    finalPred.predSource = first_hit_stage;
+    finalPred.predSource = predSourceStage;
     finalPred.overrideReason = overrideReason;
 
     // Debug output for final prediction
     printFullBTBPrediction(finalPred);
-    dbpBtbStats.predsOfEachStage[first_hit_stage]++;
+    dbpBtbStats.predsOfEachStage[predSourceStage]++;
 
     // Clear stage predictions for next cycle
     clearPreds(tid);

@@ -1206,3 +1206,10 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
+    enableInterflushPenalty = Param.Bool(
+        False,
+        "Approximate an internal interflush when a block exposes too many branches")
+    interflushEntryLimit = Param.Unsigned(
+        8,
+        "Maximum number of branch entries that can be consumed without interflush")
+    interflushPenaltyCycles = Param.Unsigned(2, "Additional bubbles injected when interflush approximation triggers")
