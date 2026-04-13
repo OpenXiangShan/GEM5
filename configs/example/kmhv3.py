@@ -108,6 +108,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.abtb.enabled = True
             cpu.branchPred.microtage.enabled = True
             cpu.branchPred.mbtb.enabled = True
+            cpu.branchPred.mbtb.victimCacheSize = 16
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
