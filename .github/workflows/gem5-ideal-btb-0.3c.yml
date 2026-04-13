@@ -12,4 +12,4 @@ jobs:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv3.py
-      benchmark_type: "gcc12-spec06-0.3c"
+      benchmark_type: "gcc15-spec06-0.3c"

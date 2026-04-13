@@ -39,13 +39,13 @@
 
 **目标**: 在合入前，按需检查有性能风险的 PR
 
-**触发**: 在 PR 上添加 `perf` 标签（默认跑 gcc12-spec06-0.8c），或手动触发 workflow 选择 benchmark
+**触发**: 在 PR 上添加 `perf` 标签（默认跑 gcc15-spec06-0.8c）
 
 ### 支持的命令
 
 ```bash
-/run-spec                              # 默认：gcc12 SPEC06 INT 80%覆盖率 (~500 checkpoints)
-/run-spec gcc12-spec06-1.0c            # gcc12 SPEC06 100%覆盖率
+/run-spec                              # 默认：gcc15 SPEC06 INT 80%覆盖率 (~148 checkpoints)
+/run-spec gcc15-spec06-1.0c            # gcc15 SPEC06 100%覆盖率
 /run-spec spec17-1.0c        # SPEC17 100%覆盖率
 /run-spec spec06-rvv-1.0c    # SPEC06 RVV扩展 100%
 /run-spec spec06int-rvv-0.8c # SPEC06 INT RVV 80%
@@ -57,8 +57,8 @@
 
 ### 当前实现
 
-- 添加 `perf` 标签会自动触发 gcc12-spec06-0.8c，workflow 会记录标签创建时 PR 的 head SHA 确保结果对应正确的 commit
-- 需要其他 benchmark 时，可通过 Actions -> On-Demand SPEC workflow 手动输入 PR 号和类型
+- 添加 `perf` 标签会自动触发 gcc15-spec06-0.8c，workflow 会记录标签创建时 PR 的 head SHA 确保结果对应正确的 commit
+- 需要手动选择配置、benchmark 或 branch/SHA 时，请使用 `manual-perf.yml`
 
 ### 性能结果
 
@@ -90,15 +90,14 @@
 - ~~`unit_tests`~~ → 在 `pr-quick-check.yml`
 - ~~`difftest_check`~~ → 在 `pr-quick-check.yml`
 
-#### 2. `gem5-perf.yml` - 标准性能测试
-SPEC06 80%覆盖率性能基线
+#### 2. `gem5-ideal-btb-perf.yml` - Ideal BTB 性能测试
+默认跑 `gcc15-spec06-0.8c`，在 `xs-dev` 与 `*-perf` 分支上自动触发
 
-#### 3. `gem5-ideal-btb-perf.yml` - BTB性能测试
-BTB 配置下的 SPEC06 性能测试
+#### 3. `gem5-ideal-btb-0.3c.yml` - Align 性能测试
+默认跑 `gcc15-spec06-0.3c`，在 `xs-dev` 与 `*-align` 分支上自动触发
 
 #### 4. 其他测试
 - `gem5-vector.yml` - RVV 扩展测试
-- `gem5-ideal-btb-perf-nosc.yml` - 无SC的BTB测试
 - `gem5-ideal-btb-perf-weekly.yml` - 定时任务（每周四）
 
 ---
@@ -139,10 +138,11 @@ git push origin xs-dev
 # 只需要通过 Tier 1 快速检查即可
 
 # 场景2: 性能相关改动
-/run-spec                    # 标准性能测试（默认 gcc12-spec06-0.8c）
-/run-spec gcc12-spec06-1.0c  # 完整覆盖率测试
+/run-spec                    # 标准性能测试（默认 gcc15-spec06-0.8c）
+/run-spec gcc15-spec06-1.0c  # 完整覆盖率测试
 
-# 或者把当前分支改名为*-perf, 这样每次push 会自动运行v3 的性能。
+# 或者把当前分支改名为*-perf, 每次 push 会自动运行 gcc15-spec06-0.8c。
+# 如果是对齐 RTL 的轻量评估，可使用 *-align, 每次 push 会自动运行 gcc15-spec06-0.3c。
 ```
 
 ### 维护者
@@ -185,6 +185,8 @@ python actions_gem5.py --token <github-token> --always-on
 - `.github/workflows/on-demand-spec.yml` - Tier 1.5
 - `.github/workflows/gem5-perf-template.yml` - 性能测试模板
 - `.github/workflows/gem5.yml` - Tier 2 功能测试
+- `.github/workflows/gem5-ideal-btb-perf.yml` - `xs-dev` / `*-perf` 默认性能测试
+- `.github/workflows/gem5-ideal-btb-0.3c.yml` - `xs-dev` / `*-align` 默认对齐性能测试
 - `env-scripts/github/actions_gem5.py` - 性能评论机器人
 
 ---
