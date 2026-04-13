@@ -18,7 +18,7 @@ jobs:
     continue-on-error: false
     name: Quick Build, Unit Tests & Smoke Test
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       
       - uses: ./.github/actions/build-dramsim
       
@@ -104,4 +104,3 @@ jobs:
               issue_number: context.issue.number,
               body: comment
             });
-

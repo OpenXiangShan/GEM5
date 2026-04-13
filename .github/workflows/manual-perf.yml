@@ -22,7 +22,7 @@ on:
         description: 'Benchmark coverage type'
         required: true
         type: choice
-        default: 'gcc12-spec06-0.8c'
+        default: 'gcc15-spec06-0.8c'
         options:
           - gcc12-spec06-0.3c
           - gcc12-spec06-0.8c
