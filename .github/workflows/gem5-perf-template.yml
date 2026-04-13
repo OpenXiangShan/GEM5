@@ -40,7 +40,7 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Run performance test (${{ inputs.benchmark_type }})
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.pr_sha || github.sha }}
       

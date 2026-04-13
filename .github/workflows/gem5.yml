@@ -14,7 +14,7 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Running test checkpoints
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: |
@@ -28,7 +28,7 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Running h test checkpoints
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: |
@@ -41,7 +41,7 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Check memory corruption
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 debug
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.debug --linker=gold -j64
@@ -56,7 +56,7 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Test new simulation script on RV64GCB
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
@@ -74,7 +74,7 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Test new simulation script on RV64GCBV
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64 --rvv-impl=simple
@@ -92,7 +92,7 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Test Multi-core + RV64GCB
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Build GEM5 opt
         run: |
           CC=clang CXX=clang++ scons build/RISCV_CHI/gem5.opt -j 48 --gold-linker
@@ -111,7 +111,7 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Test fix L2TLB bugs
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
@@ -129,7 +129,7 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Test new simulation script on RV64GCBH
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
@@ -148,7 +148,7 @@ jobs:
     timeout-minutes: 30
     name: XS-GEM5 - Boot raw Linux
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/build-dramsim
       - name: Build GEM5 opt
         run: |
