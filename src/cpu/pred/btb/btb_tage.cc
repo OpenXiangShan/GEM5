@@ -1,6 +1,7 @@
 #include "cpu/pred/btb/btb_tage.hh"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <ctime>
 
@@ -165,11 +166,13 @@ BTBTAGE::setTrace()
             std::make_pair("mainUseful", UINT64),
             std::make_pair("mainTable", UINT64),
             std::make_pair("mainIndex", UINT64),
+            std::make_pair("mainSlot", UINT64),
             std::make_pair("altFound", UINT64),
             std::make_pair("altCounter", UINT64),
             std::make_pair("altUseful", UINT64),
             std::make_pair("altTable", UINT64),
             std::make_pair("altIndex", UINT64),
+            std::make_pair("altSlot", UINT64),
             std::make_pair("useAlt", UINT64),
             std::make_pair("predTaken", UINT64),
             std::make_pair("actualTaken", UINT64),
@@ -177,6 +180,7 @@ BTBTAGE::setTrace()
             std::make_pair("allocTable", UINT64),
             std::make_pair("allocIndex", UINT64),
             std::make_pair("allocWay", UINT64),
+            std::make_pair("allocSlot", UINT64),
             std::make_pair("history", TEXT),
             std::make_pair("indexFoldedHist", UINT64),
         };
@@ -212,55 +216,74 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     bool alt_provided = false;
     TageTableInfo main_info, alt_info;
 
-    // Search from highest to lowest table for matches
-    // Calculate branch position within the block (like RTL's cfiPosition)
+    // Search from highest to lowest table for matches.
+    const Addr blockBase = startPC & ~(blockSize - 1);
     unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
 
     for (int i = numPredictors - 1; i >= 0; --i) {
-        // Calculate index and tag: use snapshot if provided, otherwise use current folded history
-        // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
-        Addr index = predMeta ? getTageIndex(startPC, i, predMeta->indexFoldedHist[i].get())
-                          : getTageIndex(startPC, i);
-        Addr tag = predMeta ? getTageTag(startPC, i,
-                            predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(), position)
-                        : getTageTag(startPC, i, position);
+        // Compute block-level index/tag.
+        Addr index = predMeta ? getTageIndex(blockBase, i, predMeta->indexFoldedHist[i].get())
+                          : getTageIndex(blockBase, i);
+        Addr tag = predMeta ? getTageTag(blockBase, i,
+                            predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get())
+                        : getTageTag(blockBase, i);
 
-        bool match = false; // for each table, only one way can be matched
-        TageEntry matching_entry;
+        unsigned tag_match_count = 0;
         unsigned matching_way = 0;
+        const TageEntry *matching_entry = nullptr;
 
         // Search all ways for a matching entry
         const unsigned ways = getNumWays(i);
         for (unsigned way = 0; way < ways; way++) {
             auto &entry = tageTable[i][index][way];
-            // entry valid, tag match (position already encoded in tag, no need to check pc)
+            // Stage-1 invariant: in one table/index, same tag must map to at most one entry.
             if (entry.valid && tag == entry.tag) {
-                matching_entry = entry;
+                matching_entry = &entry;
                 matching_way = way;
-                match = true;
-
-                // Do not use LRU; keep logic simple and align with CBP-style replacement
-
-                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
-                break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
+                ++tag_match_count;
             }
         }
+        assert(tag_match_count <= 1 &&
+               "Duplicate same-tag entries detected in BTBTAGE lookup path");
 
-        if (match) {
-            if (!provided) {
-                // First match becomes main prediction
-                main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
-                provided = true;
-            } else if (!alt_provided) {
-                // Second match becomes alternative prediction
-                alt_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
-                alt_provided = true;
-                break;
+        if (matching_entry) {
+            bool slot_match = false;
+            unsigned matching_slot = 0;
+            TageSlot matching_slot_info;
+            for (unsigned slot = 0; slot < matching_entry->slots.size(); ++slot) {
+                const auto &slot_entry = matching_entry->slots[slot];
+                if (slot_entry.valid && slot_entry.position == position) {
+                    matching_slot = slot;
+                    matching_slot_info = slot_entry;
+                    slot_match = true;
+                    break;
+                }
+            }
+
+            if (slot_match) {
+                DPRINTF(TAGE,
+                    "hit table %d[%lu][%u] slot %u: tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
+                    i, index, matching_way, matching_slot, tag, matching_slot_info.counter,
+                    matching_slot_info.useful, btb_entry.pc, position);
+                if (!provided) {
+                    // First slot hit becomes main prediction.
+                    main_info = TageTableInfo(true, *matching_entry, i, index, tag, matching_way,
+                                              matching_slot, matching_slot_info);
+                    provided = true;
+                } else if (!alt_provided) {
+                    // Second slot hit becomes alternate prediction.
+                    alt_info = TageTableInfo(true, *matching_entry, i, index, tag, matching_way,
+                                             matching_slot, matching_slot_info);
+                    alt_provided = true;
+                    break;
+                }
+            } else {
+                DPRINTF(TAGE, "tag hit but slot miss table %d[%lu][%u], tag %lu, btb_pc %#lx, pos %u\n",
+                    i, index, matching_way, tag, btb_entry.pc, position);
             }
         } else {
-            DPRINTF(TAGE, "miss table %d[%lu] for tag %lu (with pos %u), btb_pc %#lx\n",
-                i, index, tag, position, btb_entry.pc);
+            DPRINTF(TAGE, "miss table %d[%lu] for tag %lu, btb_pc %#lx, pos %u\n",
+                i, index, tag, btb_entry.pc, position);
         }
     }
 
@@ -277,7 +300,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     if (!provided) {
         use_alt = true;
     } else {
-        bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
+        bool main_weak = (main_info.slotInfo.counter == 0 || main_info.slotInfo.counter == -1);
         if (main_weak) {
             Addr uidx = getUseAltIdx(btb_entry.pc);
             use_alt = (useAlt[uidx] >= 0);
@@ -329,12 +352,12 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = pred.taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) == 7; // counter saturated, -4 or 3
+                                         abs(pred.mainInfo.slotInfo.counter*2 + 1) == 7; // counter saturated, -4 or 3
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_mid = pred.mainInfo.found &&
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) < 7 &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
+                                         (abs(pred.mainInfo.slotInfo.counter*2 + 1) < 7 &&
+                                         abs(pred.mainInfo.slotInfo.counter*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_low = !pred.mainInfo.found ||
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
+                                         (abs(pred.mainInfo.slotInfo.counter*2 + 1) <= 1); // counter initialized, -1 or 0
             // main predict is different from alt predict/base predict
             tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
         }
@@ -436,6 +459,102 @@ BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
     return all_entries;
 }
 
+int
+BTBTAGE::findSlotByPosition(const TageEntry &entry, unsigned position) const
+{
+    for (unsigned i = 0; i < entry.slots.size(); ++i) {
+        if (entry.slots[i].valid && entry.slots[i].position == position) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+bool
+BTBTAGE::isWeakishCounter(short counter) const
+{
+    return std::abs(counter * 2 + 1) <= 3;
+}
+
+bool
+BTBTAGE::isSlotUnprotected(const TageSlot &slot) const
+{
+    return !slot.valid || (!slot.useful && isWeakishCounter(slot.counter));
+}
+
+bool
+BTBTAGE::isEntryWholeEvictable(const TageEntry &entry) const
+{
+    if (!entry.valid) {
+        return true;
+    }
+
+    for (const auto &slot : entry.slots) {
+        if (!isSlotUnprotected(slot)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void
+BTBTAGE::sortEntrySlotsByPosition(TageEntry &entry)
+{
+    std::stable_sort(entry.slots.begin(), entry.slots.end(),
+        [](const TageSlot &lhs, const TageSlot &rhs) {
+            if (lhs.valid != rhs.valid) {
+                return lhs.valid > rhs.valid;
+            }
+            if (!lhs.valid) {
+                return false;
+            }
+            return lhs.position < rhs.position;
+        });
+}
+
+void
+BTBTAGE::noteAllocationFailure()
+{
+    tageStats.updateAllocFailure++;
+    usefulResetCnt++;
+
+    if (usefulResetCnt >= 256) {
+        usefulResetCnt = 0;
+        tageStats.updateResetU++;
+        DPRINTF(TAGE, "reset useful bit of all entries\n");
+        for (auto &table : tageTable) {
+            for (auto &set : table) {
+                for (auto &way : set) {
+                    resetEntryUsefulBits(way);
+                }
+            }
+        }
+    }
+}
+
+void
+BTBTAGE::resetEntryUsefulBits(TageEntry &entry)
+{
+    for (auto &slot : entry.slots) {
+        if (slot.valid) {
+            slot.useful = false;
+        }
+    }
+    syncEntryLegacyMirror(entry);
+}
+
+void
+BTBTAGE::syncEntryLegacyMirror(TageEntry &entry)
+{
+    if (entry.slots[0].valid) {
+        entry.counter = entry.slots[0].counter;
+        entry.useful = entry.slots[0].useful;
+    } else {
+        entry.counter = 0;
+        entry.useful = false;
+    }
+}
+
 /**
  * @brief Update predictor state for a single entry
  * 
@@ -456,13 +575,12 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     auto &alt_info = pred.altInfo;
     bool used_alt = pred.useAlt;
     // Use base table instead of entry.ctr for fallback prediction
-    Addr startPC = stream.getRealStartPC();
     bool base_taken = entry.ctr >= 0;
     bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
-        bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
+        bool main_weak = (main_info.slotInfo.counter == 0 || main_info.slotInfo.counter == -1);
         if (main_weak) {
             tageStats.updateProviderNa++;
             Addr uidx = getUseAltIdx(entry.pc);
@@ -479,45 +597,70 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
     // Update main prediction provider
     if (main_info.found) {
-        DPRINTF(TAGE, "prediction provided by table %d, idx %lu, way %u, updating corresponding entry\n",
-            main_info.table, main_info.index, main_info.way);
+        DPRINTF(TAGE,
+            "prediction provided by table %d, idx %lu, way %u, slot %u, updating corresponding slot\n",
+            main_info.table, main_info.index, main_info.way, main_info.slot);
 
-        auto &way = tageTable[main_info.table][main_info.index][main_info.way];
+        auto &entry_ref = tageTable[main_info.table][main_info.index][main_info.way];
+        unsigned main_slot_idx = main_info.slot;
+        if (main_slot_idx >= entry_ref.slots.size() ||
+            !entry_ref.slots[main_slot_idx].valid ||
+            entry_ref.slots[main_slot_idx].position != main_info.slotInfo.position) {
+            int fallback = findSlotByPosition(entry_ref, main_info.slotInfo.position);
+            if (fallback >= 0) {
+                main_slot_idx = static_cast<unsigned>(fallback);
+            }
+        }
+        assert(main_slot_idx < entry_ref.slots.size() && entry_ref.slots[main_slot_idx].valid);
+        auto &main_slot = entry_ref.slots[main_slot_idx];
 
-        // Update prediction counter
-        updateCounter(actual_taken, 3, way.counter);
+        // Update prediction counter for provider slot.
+        updateCounter(actual_taken, 3, main_slot.counter);
 
         // Update useful bit based on several conditions
         bool main_is_correct = main_info.taken() == actual_taken;
         bool alt_is_correct_and_strong = alt_info.found &&
                                      (alt_info.taken() == actual_taken) &&
-                                     (abs(2 * alt_info.entry.counter + 1) == 7);
+                                     (abs(2 * alt_info.slotInfo.counter + 1) == 7);
 
         // a. Special reset (humility mechanism)
         if (alt_is_correct_and_strong && main_is_correct) {
-            way.useful = 0;
+            main_slot.useful = 0;
             DPRINTF(TAGEUseful, "useful bit reset to 0 due to humility rule\n");
         } else if (main_info.taken() != alt_taken) {
             // b. Original logic to set useful bit high
             if (main_is_correct) {
-                way.useful = 1;
+                main_slot.useful = 1;
             }
         }
 
         // c. Reset u on counter sign flip (becomes weak)
-        if (way.counter == 0 || way.counter == -1) {
-            way.useful = 0;
+        if (main_slot.counter == 0 || main_slot.counter == -1) {
+            main_slot.useful = 0;
             DPRINTF(TAGEUseful, "useful bit reset to 0 due to weak counter\n");
         }
-        DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
+        syncEntryLegacyMirror(entry_ref);
+        DPRINTF(TAGE, "useful bit is now %d\n", main_slot.useful);
 
         // No LRU maintenance
     }
 
     // Update alternative prediction provider
     if (used_alt && alt_info.found) {
-        auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
-        updateCounter(actual_taken, 3, way.counter);
+        auto &entry_ref = tageTable[alt_info.table][alt_info.index][alt_info.way];
+        unsigned alt_slot_idx = alt_info.slot;
+        if (alt_slot_idx >= entry_ref.slots.size() ||
+            !entry_ref.slots[alt_slot_idx].valid ||
+            entry_ref.slots[alt_slot_idx].position != alt_info.slotInfo.position) {
+            int fallback = findSlotByPosition(entry_ref, alt_info.slotInfo.position);
+            if (fallback >= 0) {
+                alt_slot_idx = static_cast<unsigned>(fallback);
+            }
+        }
+        if (alt_slot_idx < entry_ref.slots.size() && entry_ref.slots[alt_slot_idx].valid) {
+            updateCounter(actual_taken, 3, entry_ref.slots[alt_slot_idx].counter);
+            syncEntryLegacyMirror(entry_ref);
+        }
         // No LRU maintenance
     }
 
@@ -582,69 +725,159 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  std::shared_ptr<TageMeta> meta,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
-                                 uint64_t &allocated_way) {
-    // Simple set-associative allocation (no LFSR, no per-way table gating):
-    // - For each table from start_table upward, check the set at computed index.
-    // - Prefer invalid ways; else choose any way with useful==0 and weak counter.
-    // - If none, apply a one-step age penalty to a strong, not-useful way (no allocation).
+                                 uint64_t &allocated_way,
+                                 uint64_t &allocated_slot) {
+    const Addr blockBase = startPC & ~(blockSize - 1);
+    const unsigned position = getBranchIndexInBlock(entry.pc, startPC);
+    const short initCounter = actual_taken ? 0 : -1;
 
-    // Calculate branch position within the block (like RTL's cfiPosition)
-    unsigned position = getBranchIndexInBlock(entry.pc, startPC);
+    // Simple set-associative allocation:
+    // - same-tag requests stay within the matched entry and never manufacture a
+    //   duplicate tag in the same set.
+    // - different-tag requests may only evict a whole entry when both slots are
+    //   unprotected.
+    // - if no whole-entry victim exists, weaken one non-useful strong slot by one
+    //   step toward zero.
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
-        Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get());
-        Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
+        Addr newIndex = getTageIndex(blockBase, ti, meta->indexFoldedHist[ti].get());
+        Addr newTag = getTageTag(blockBase, ti,
+            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get());
 
         auto &set = tageTable[ti][newIndex];
-
         const unsigned ways = getNumWays(ti);
-
-        // Allocate into invalid way or not-useful and weak way
+        unsigned same_tag_matches = 0;
+        unsigned same_tag_way = 0;
         for (unsigned way = 0; way < ways; ++way) {
             auto &cand = set[way];
-            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3; // -3,-2,-1,0,1,2
-            if (!cand.valid || (!cand.useful && weakish)) {
-                short newCounter = actual_taken ? 0 : -1;
-                DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                        ti, newIndex, way, newTag, position, newCounter, entry.pc);
-                cand = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+            if (cand.valid && cand.tag == newTag) {
+                ++same_tag_matches;
+                same_tag_way = way;
+            }
+        }
+        assert(same_tag_matches <= 1 &&
+               "Duplicate same-tag entries detected in BTBTAGE update path");
+
+        if (same_tag_matches == 1) {
+            auto &same_entry = set[same_tag_way];
+            int hit_slot = findSlotByPosition(same_entry, position);
+            if (hit_slot >= 0) {
+                // same-tag + position hit: slot training is handled in provider update path.
+                return false;
+            }
+
+            int empty_slot = -1;
+            for (unsigned slot = 0; slot < same_entry.slots.size(); ++slot) {
+                if (!same_entry.slots[slot].valid) {
+                    empty_slot = static_cast<int>(slot);
+                    break;
+                }
+            }
+            if (empty_slot >= 0) {
+                // same-tag + position miss + empty slot: insert.
+                same_entry.slots[empty_slot] = TageSlot(true, position, initCounter, false);
+                sortEntrySlotsByPosition(same_entry);
+                syncEntryLegacyMirror(same_entry);
+                tageStats.updateAllocSuccess++;
+                allocated_table = ti;
+                allocated_index = newIndex;
+                allocated_way = same_tag_way;
+                allocated_slot = findSlotByPosition(same_entry, position);
+                return true;
+            }
+
+            int replace_slot = -1;
+            for (unsigned slot = 0; slot < same_entry.slots.size(); ++slot) {
+                const auto &cand_slot = same_entry.slots[slot];
+                if (!cand_slot.useful && isWeakishCounter(cand_slot.counter)) {
+                    replace_slot = static_cast<int>(slot);
+                    break;
+                }
+            }
+            if (replace_slot >= 0) {
+                // same-tag + full slots + replaceable slot: replace.
+                same_entry.slots[replace_slot] = TageSlot(true, position, initCounter, false);
+                sortEntrySlotsByPosition(same_entry);
+                syncEntryLegacyMirror(same_entry);
+                tageStats.updateAllocSuccess++;
+                allocated_table = ti;
+                allocated_index = newIndex;
+                allocated_way = same_tag_way;
+                allocated_slot = findSlotByPosition(same_entry, position);
+                return true;
+            }
+
+            // same-tag + full slots + no replaceable slot: weaken one non-useful strong slot.
+            for (auto &cand_slot : same_entry.slots) {
+                if (!cand_slot.useful && !isWeakishCounter(cand_slot.counter)) {
+                    if (cand_slot.counter > 0) {
+                        cand_slot.counter--;
+                    } else {
+                        cand_slot.counter++;
+                    }
+                    break;
+                }
+            }
+            sortEntrySlotsByPosition(same_entry);
+            syncEntryLegacyMirror(same_entry);
+            noteAllocationFailure();
+            return false;
+        }
+
+        // different-tag path: allocate into an invalid way, or evict a whole
+        // entry only when every slot is unprotected.
+        for (unsigned way = 0; way < ways; ++way) {
+            auto &cand = set[way];
+            if (!cand.valid || isEntryWholeEvictable(cand)) {
+                TageEntry new_entry;
+                new_entry.valid = true;
+                new_entry.tag = newTag;
+                new_entry.lruCounter = 0;
+                new_entry.slots[0] = TageSlot(true, position, initCounter, false);
+                new_entry.slots[1] = TageSlot();
+                new_entry.pc = entry.pc;
+                syncEntryLegacyMirror(new_entry);
+
+                DPRINTF(TAGE,
+                        "%s whole entry in table %d[%lu][%u], tag %lu, initial slot pos %u, ctr %d, pc %#lx\n",
+                        cand.valid ? "evicting" : "allocating",
+                        ti, newIndex, way, newTag, position, initCounter, entry.pc);
+                cand = new_entry;
                 tageStats.updateAllocSuccess++;
                 allocated_table = ti;
                 allocated_index = newIndex;
                 allocated_way = way;
+                allocated_slot = 0;
                 usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
                 return true;
             }
         }
 
-        // 3) Apply age penalty to one strong, not-useful way to make it replacable later
-        for (unsigned way = 0; way < ways; ++way) {
+        // No whole-entry victim: weaken one non-useful strong slot by one step
+        // toward zero to make a later replacement possible.
+        bool weakened = false;
+        for (unsigned way = 0; way < ways && !weakened; ++way) {
             auto &cand = set[way];
-            const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-            if (!cand.useful && !weakish) {
-                if (cand.counter > 0) cand.counter--; else cand.counter++;
-                DPRINTF(TAGE, "age penalty applied on table %d[%lu][%u], new ctr %d\n",
-                        ti, newIndex, way, cand.counter);
-                break; // one penalty per table per update
-            }
-        }
-
-        tageStats.updateAllocFailure++;
-        usefulResetCnt++;
-    }
-
-    if (usefulResetCnt >= 256) {
-        usefulResetCnt = 0;
-        tageStats.updateResetU++;
-        DPRINTF(TAGE, "reset useful bit of all entries\n");
-        for (auto &table : tageTable) {
-            for (auto &set : table) {
-                for (auto &way : set) {
-                    way.useful = false;
+            for (unsigned slot = 0; slot < cand.slots.size(); ++slot) {
+                auto &cand_slot = cand.slots[slot];
+                if (!cand_slot.valid || cand_slot.useful || isWeakishCounter(cand_slot.counter)) {
+                    continue;
                 }
+                if (cand_slot.counter > 0) {
+                    cand_slot.counter--;
+                } else {
+                    cand_slot.counter++;
+                }
+                syncEntryLegacyMirror(cand);
+                DPRINTF(TAGE,
+                        "counter weakening by one step toward zero on table %d[%lu][%u] slot %u, new ctr %d\n",
+                        ti, newIndex, way, slot, cand_slot.counter);
+                weakened = true;
+                break; // one weakening per table per update
             }
         }
+
+        noteAllocationFailure();
     }
 
     DPRINTF(TAGE, "no eligible way found for allocation starting from table %d\n", start_table);
@@ -759,7 +992,7 @@ BTBTAGE::update(const FetchTarget &stream) {
             if (has_original_pred && recomputed.taken != original_pred.taken) {
                 hasRecomputedVsOriginalDiff = true;
             }
-        } else { // otherwise, use the prediction from the prediction-time main/alt
+        } else {
             recomputed = original_pred;
         }
         if (recomputed.taken != actual_taken) {
@@ -774,6 +1007,7 @@ BTBTAGE::update(const FetchTarget &stream) {
         uint64_t allocated_table = 0;
         uint64_t allocated_index = 0;
         uint64_t allocated_way = 0;
+        uint64_t allocated_slot = 0;
         if (need_allocate) {
 
             // Handle allocation of new entries
@@ -783,7 +1017,8 @@ BTBTAGE::update(const FetchTarget &stream) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
             alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
-                                   start_table, predMeta, allocated_table, allocated_index, allocated_way);
+                                   start_table, predMeta, allocated_table, allocated_index,
+                                   allocated_way, allocated_slot);
         }
 
 #ifndef UNIT_TEST
@@ -799,12 +1034,12 @@ BTBTAGE::update(const FetchTarget &stream) {
             auto main_info = trace_pred.mainInfo;
             auto alt_info = trace_pred.altInfo;
             t.set(startAddr, btb_entry.pc, main_info.way,
-                main_info.found, main_info.entry.counter, main_info.entry.useful,
-                main_info.table, main_info.index,
-                alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
-                alt_info.table, alt_info.index,
+                main_info.found, main_info.slotInfo.counter, main_info.slotInfo.useful,
+                main_info.table, main_info.index, main_info.slot,
+                alt_info.found, alt_info.slotInfo.counter, alt_info.slotInfo.useful,
+                alt_info.table, alt_info.index, alt_info.slot,
                 trace_pred.useAlt, trace_pred.taken, actual_taken, alloc_success,
-                allocated_table, allocated_index, allocated_way,
+                allocated_table, allocated_index, allocated_way, allocated_slot,
                 history_str, predMeta->indexFoldedHist[main_info.table].get());
             tageMissTrace->write_record(t);
         }
@@ -867,14 +1102,15 @@ BTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 
 // Calculate TAGE tag with folded history - optimized version using bitwise operations
 Addr
-BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist, Addr position)
+BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist)
 {
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
 
+    Addr blockBase = pc & ~(blockSize - 1);
     unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
     pcShift += tableIndexBits[t] - 1;   // since tableIndexBits = log(2048) = 11, RTL is 10
-    Addr pcBits = (pc >> pcShift) & mask;
+    Addr pcBits = (blockBase >> pcShift) & mask;
 
     // Extract and prepare folded history bits
     Addr foldedBits = foldedHist & mask;
@@ -882,14 +1118,14 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
     // Extract alt tag bits and shift left by 1
     Addr altTagBits = (altFoldedHist << 1) & mask;
 
-    // XOR all components together, including position (like RTL)
-    return pcBits ^ foldedBits ^ altTagBits ^ position;
+    // XOR block-level components (position is no longer part of tag in stage-1).
+    return pcBits ^ foldedBits ^ altTagBits;
 }
 
 Addr
-BTBTAGE::getTageTag(Addr pc, int t, Addr position)
+BTBTAGE::getTageTag(Addr pc, int t)
 {
-    return getTageTag(pc, t, tagFoldedHist[t].get(), altTagFoldedHist[t].get(), position);
+    return getTageTag(pc, t, tagFoldedHist[t].get(), altTagFoldedHist[t].get());
 }
 
 Addr

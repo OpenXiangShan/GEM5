@@ -187,7 +187,10 @@ BTBTAGEUpperBound::makeTableInfo(bool found, const TageEntry *entry,
     if (!found || entry == nullptr) {
         return TageTableInfo();
     }
-    return TageTableInfo(true, *entry, table, 0, 0, 0);
+    // UpperBound keeps exact entries as single-branch records. Expose them to
+    // shared BTBTAGE logic through a fixed single-slot shim.
+    TageSlot slotInfo(true, 0, entry->counter, entry->useful);
+    return TageTableInfo(true, *entry, table, 0, 0, 0, 0, slotInfo);
 }
 
 BTBTAGE::TagePrediction
@@ -234,7 +237,7 @@ BTBTAGEUpperBound::lookupExactPrediction(
         useAltPred = true;
     } else {
         const bool mainWeak =
-            (mainInfo.entry.counter == 0 || mainInfo.entry.counter == -1);
+            (mainInfo.slotInfo.counter == 0 || mainInfo.slotInfo.counter == -1);
         if (mainWeak) {
             Addr uidx = getUseAltIdx(btbEntry.pc);
             useAltPred = (useAlt[uidx] >= 0);
@@ -267,14 +270,14 @@ BTBTAGEUpperBound::notePredictionResult(
     tageInfoForMgscs[btbEntry.pc].tage_main_taken =
         pred.mainInfo.found ? pred.mainInfo.taken() : false;
     tageInfoForMgscs[btbEntry.pc].tage_pred_conf_high =
-        pred.mainInfo.found && abs(pred.mainInfo.entry.counter * 2 + 1) == 7;
+        pred.mainInfo.found && abs(pred.mainInfo.slotInfo.counter * 2 + 1) == 7;
     tageInfoForMgscs[btbEntry.pc].tage_pred_conf_mid =
         pred.mainInfo.found &&
-        (abs(pred.mainInfo.entry.counter * 2 + 1) < 7 &&
-         abs(pred.mainInfo.entry.counter * 2 + 1) > 1);
+        (abs(pred.mainInfo.slotInfo.counter * 2 + 1) < 7 &&
+         abs(pred.mainInfo.slotInfo.counter * 2 + 1) > 1);
     tageInfoForMgscs[btbEntry.pc].tage_pred_conf_low =
         !pred.mainInfo.found ||
-        (abs(pred.mainInfo.entry.counter * 2 + 1) <= 1);
+        (abs(pred.mainInfo.slotInfo.counter * 2 + 1) <= 1);
     tageInfoForMgscs[btbEntry.pc].tage_pred_alt_diff =
         pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
 }
@@ -386,7 +389,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
 
     if (mainInfo.found) {
         const bool mainWeak =
-            (mainInfo.entry.counter == 0 || mainInfo.entry.counter == -1);
+            (mainInfo.slotInfo.counter == 0 || mainInfo.slotInfo.counter == -1);
         if (mainWeak) {
             tageStats.updateProviderNa++;
             Addr uidx = getUseAltIdx(entry.pc);
@@ -411,7 +414,7 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
         const bool mainIsCorrect = mainInfo.taken() == actualTaken;
         const bool altIsCorrectAndStrong = altInfo.found &&
             (altInfo.taken() == actualTaken) &&
-            (abs(2 * altInfo.entry.counter + 1) == 7);
+            (abs(2 * altInfo.slotInfo.counter + 1) == 7);
 
         if (altIsCorrectAndStrong && mainIsCorrect) {
             way.useful = 0;

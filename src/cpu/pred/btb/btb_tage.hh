@@ -2,6 +2,7 @@
 #define __CPU_PRED_BTB_TAGE_HH__
 
 #include <cstdint>
+#include <array>
 #include <deque>
 #include <map>
 #include <utility>
@@ -53,23 +54,49 @@ class BTBTAGE : public TimedBaseBTBPredictor
     typedef BTBTAGEParams Params;
 #endif
 
-    // Represents a single entry in the TAGE prediction table
+    struct TageSlot
+    {
+        public:
+            bool valid;      // Whether this slot is valid
+            unsigned position; // Branch position within fetch block
+            short counter;   // Prediction counter (-4 to 3), 0 and -1 are weak
+            bool useful;     // 1-bit usefulness counter
+
+            TageSlot() : valid(false), position(0), counter(0), useful(false) {}
+            TageSlot(bool valid, unsigned position, short counter, bool useful) :
+                    valid(valid), position(position), counter(counter), useful(useful) {}
+
+            bool taken() const {
+                return counter >= 0;
+            }
+    };
+
+    // Represents one table entry (one block/tag) with two branch slots
     struct TageEntry
     {
         public:
             bool valid;      // Whether this entry is valid
             Addr tag;       // Tag for matching
-            short counter;  // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
-            bool useful;    // 1-bit usefulness counter; true means useful
-            Addr pc;        // branch pc, like branch position, for btb entry pc check
             unsigned lruCounter; // Counter for LRU replacement policy
+            std::array<TageSlot, 2> slots;
 
-            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0), lruCounter(0) {}
+            // Stage-1 compatibility mirror for legacy entry-level readers/writers.
+            // These fields map to slots[0] during the transition.
+            short counter;
+            bool useful;
+            Addr pc;
+
+            TageEntry() : valid(false), tag(0), lruCounter(0), slots{},
+                          counter(0), useful(false), pc(0) {}
 
             TageEntry(Addr tag, short counter, Addr pc) :
-                      valid(true), tag(tag), counter(counter), useful(false), pc(pc), lruCounter(0) {}
+                      valid(true), tag(tag), lruCounter(0), slots{},
+                      counter(counter), useful(false), pc(pc)
+            {
+                slots[0] = TageSlot(true, 0, counter, useful);
+            }
             bool taken() const {
-                return counter >= 0;
+                return slots[0].valid && slots[0].taken();
             }
     };
 
@@ -83,11 +110,24 @@ class BTBTAGE : public TimedBaseBTBPredictor
             Addr index;     // Index in the table
             Addr tag;       // Tag that was matched
             unsigned way;    // Which way this entry was found in
-            TageTableInfo() : found(false), table(0), index(0), tag(0), way(0) {}
-            TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag, unsigned way) :
-                        found(found), entry(entry), table(table), index(index), tag(tag), way(way) {}
+            unsigned slot;   // Which slot this branch matched in the entry
+            TageSlot slotInfo; // Matching slot snapshot
+            TageTableInfo() : found(false), table(0), index(0), tag(0), way(0), slot(0), slotInfo() {}
+            TageTableInfo(bool found, const TageEntry &entry, unsigned table, Addr index, Addr tag,
+                          unsigned way, unsigned slot = 0, TageSlot slotInfo = TageSlot()) :
+                        found(found), entry(entry), table(table), index(index),
+                        tag(tag), way(way), slot(slot)
+            {
+                if (slotInfo.valid) {
+                    this->slotInfo = slotInfo;
+                } else if (slot < entry.slots.size() && entry.slots[slot].valid) {
+                    this->slotInfo = entry.slots[slot];
+                } else {
+                    this->slotInfo = TageSlot();
+                }
+            }
             bool taken() const {
-                return entry.taken();
+                return slotInfo.taken();
             }
     };
 
@@ -185,13 +225,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Calculate TAGE index with folded history (uint64_t version for performance)
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
 
-    // Calculate TAGE tag for a given PC and table
-    // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, Addr position = 0);
+    // Calculate TAGE tag for a given (block-aligned) PC and table.
+    Addr getTageTag(Addr pc, int table);
 
     // Calculate TAGE tag with folded history (uint64_t version for performance)
-    // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0);
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist);
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) {
@@ -446,8 +484,17 @@ private:
                                  std::shared_ptr<TageMeta> meta,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
-                                 uint64_t &allocated_way);
+                                 uint64_t &allocated_way,
+                                 uint64_t &allocated_slot);
 
+    int findSlotByPosition(const TageEntry &entry, unsigned position) const;
+    bool isWeakishCounter(short counter) const;
+    bool isSlotUnprotected(const TageSlot &slot) const;
+    bool isEntryWholeEvictable(const TageEntry &entry) const;
+    void sortEntrySlotsByPosition(TageEntry &entry);
+    void noteAllocationFailure();
+    void resetEntryUsefulBits(TageEntry &entry);
+    void syncEntryLegacyMirror(TageEntry &entry);
 
     // Helper methods for LRU management
     void updateLRU(int table, Addr index, unsigned way);

@@ -1,5 +1,9 @@
 # BTB-TAGE Predictor Design Document
 
+> Note: the current dual-slot entry semantics are documented in
+> [btb_tage_dual_slot_entry.md](./btb_tage_dual_slot_entry.md).
+> This document still contains historical single-entry descriptions in several sections.
+
 ## 1. Overview
 
 The BTB-TAGE (Branch Target Buffer - Tagged Geometric Length) predictor is a sophisticated branch prediction mechanism implemented in gem5. It combines a BTB (Branch Target Buffer) for target address prediction with a TAGE (Tagged Geometric Length) predictor for direction prediction of conditional branches. The TAGE component uses multiple prediction tables with different history lengths to capture various correlation patterns in branch behavior.
