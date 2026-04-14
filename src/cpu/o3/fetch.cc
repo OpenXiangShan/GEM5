@@ -70,6 +70,7 @@
 #include "debug/O3CPU.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/TraceReader.hh"
+#include "mem/cache/base.hh"
 #include "mem/packet.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
@@ -139,6 +140,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
             branchPred);
     assert(dbpbtb);
     dbpbtb->setCpu(_cpu);
+    fdipIcacheAccessor = params.fdipIcacheAccessor;
 
     assert(params.decoder.size());
     for (ThreadID tid = 0; tid < numThreads; tid++) {
@@ -286,6 +288,32 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of FDIP cachelines filtered by translation faults"),
     ADD_STAT(fdipFilteredUncacheable, statistics::units::Count::get(),
              "Number of FDIP cachelines filtered by uncacheable regions"),
+    ADD_STAT(fdipFilteredRecentUnused, statistics::units::Count::get(),
+             "Number of FDIP cachelines filtered by recent-unused suppression"),
+    ADD_STAT(fdipCandidateLines, statistics::units::Count::get(),
+             "Number of FDIP candidate line touches from predictor targets"),
+    ADD_STAT(fdipUniqueCandidateLines, statistics::units::Count::get(),
+             "Number of unique FDIP candidate lines seen across the run"),
+    ADD_STAT(fdipRepeatedCandidateLines, statistics::units::Count::get(),
+             "Number of repeated FDIP candidate line touches"),
+    ADD_STAT(fdipDirectProbeHit, statistics::units::Count::get(),
+             "Number of FDIP translated lines that hit via direct ICache probe"),
+    ADD_STAT(fdipUniqueIssuedLines, statistics::units::Count::get(),
+             "Number of unique physical lines issued by FDIP"),
+    ADD_STAT(fdipRepeatedIssuedLines, statistics::units::Count::get(),
+             "Number of repeated FDIP issued-line touches"),
+    ADD_STAT(fdipWrongPathIssuedLines, statistics::units::Count::get(),
+             "Number of FDIP issued lines that later belonged to squashed FTQs"),
+    ADD_STAT(fdipWrongPathUniqueIssuedLines, statistics::units::Count::get(),
+             "Number of unique physical lines later attributed to wrong-path FDIP"),
+    ADD_STAT(fdipWrongPathDemandAccesses, statistics::units::Count::get(),
+             "Number of demand fetch line accesses to previously squashed FDIP lines"),
+    ADD_STAT(fdipWrongPathDemandReusedLines, statistics::units::Count::get(),
+             "Number of unique squashed FDIP lines later revisited by demand"),
+    ADD_STAT(fdipWayHintsInstalled, statistics::units::Count::get(),
+             "Number of FDIP selected-way hints installed by direct probe hit"),
+    ADD_STAT(fdipWayHintsConsumed, statistics::units::Count::get(),
+             "Number of FDIP selected-way hints consumed by demand fetch"),
     ADD_STAT(fdipOutstandingMax, statistics::units::Count::get(),
              "Peak number of outstanding FDIP cacheline requests"),
     ADD_STAT(fdipEpochMismatch, statistics::units::Count::get(),
@@ -379,6 +407,32 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(fdipFilteredFault);
         fdipFilteredUncacheable
             .prereq(fdipFilteredUncacheable);
+        fdipFilteredRecentUnused
+            .prereq(fdipFilteredRecentUnused);
+        fdipCandidateLines
+            .prereq(fdipCandidateLines);
+        fdipUniqueCandidateLines
+            .prereq(fdipUniqueCandidateLines);
+        fdipRepeatedCandidateLines
+            .prereq(fdipRepeatedCandidateLines);
+        fdipDirectProbeHit
+            .prereq(fdipDirectProbeHit);
+        fdipUniqueIssuedLines
+            .prereq(fdipUniqueIssuedLines);
+        fdipRepeatedIssuedLines
+            .prereq(fdipRepeatedIssuedLines);
+        fdipWrongPathIssuedLines
+            .prereq(fdipWrongPathIssuedLines);
+        fdipWrongPathUniqueIssuedLines
+            .prereq(fdipWrongPathUniqueIssuedLines);
+        fdipWrongPathDemandAccesses
+            .prereq(fdipWrongPathDemandAccesses);
+        fdipWrongPathDemandReusedLines
+            .prereq(fdipWrongPathDemandReusedLines);
+        fdipWayHintsInstalled
+            .prereq(fdipWayHintsInstalled);
+        fdipWayHintsConsumed
+            .prereq(fdipWayHintsConsumed);
         fdipOutstandingMax
             .prereq(fdipOutstandingMax);
         fdipEpochMismatch
@@ -437,6 +491,8 @@ Fetch::clearStates(ThreadID tid)
     threads[tid].cacheReq.reset();
     threads[tid].reset();
     resetFdipState(tid);
+    resetFdipProbeHints(tid);
+    resetFdipTracking(tid);
     fdipEpoch[tid] = 0;
     fetchQueue[tid].clear();
 
@@ -466,6 +522,8 @@ Fetch::resetStage()
 
         threads[tid].reset();
         resetFdipState(tid);
+        resetFdipProbeHints(tid);
+        resetFdipTracking(tid);
         fdipEpoch[tid] = 0;
         ftqEntryFetchedInsts[tid] = 0;
 
@@ -517,6 +575,93 @@ Fetch::resetFdipState(ThreadID tid)
     }
 }
 
+void
+Fetch::resetFdipProbeHints(ThreadID tid)
+{
+    fdipProbeHints[tid].clear();
+}
+
+void
+Fetch::resetFdipTracking(ThreadID tid)
+{
+    fdipTrackedTargets[tid].clear();
+    fdipCandidateLineSeen[tid].clear();
+    fdipIssuedLineSeen[tid].clear();
+    fdipWrongPathIssuedLineSeen[tid].clear();
+    fdipWrongPathDemandReuseLineSeen[tid].clear();
+}
+
+void
+Fetch::noteFdipCandidateLine(ThreadID tid, Addr lineAddr)
+{
+    ++fetchStats.fdipCandidateLines;
+    auto &count = fdipCandidateLineSeen[tid][lineAddr];
+    if (count == 0) {
+        ++fetchStats.fdipUniqueCandidateLines;
+    } else {
+        ++fetchStats.fdipRepeatedCandidateLines;
+    }
+    ++count;
+}
+
+void
+Fetch::noteFdipIssuedLine(ThreadID tid,
+                          branch_prediction::btb_pred::FetchTargetId ftqId,
+                          Addr physLineAddr)
+{
+    auto &target = fdipTrackedTargets[tid][ftqId];
+    ++target.issuedLines;
+    target.issuedPhysLines.insert(physLineAddr);
+
+    auto &count = fdipIssuedLineSeen[tid][physLineAddr];
+    if (count == 0) {
+        ++fetchStats.fdipUniqueIssuedLines;
+    } else {
+        ++fetchStats.fdipRepeatedIssuedLines;
+    }
+    ++count;
+}
+
+void
+Fetch::noteFdipWrongPathTargets(
+    ThreadID tid, branch_prediction::btb_pred::FetchTargetId squashFtqId)
+{
+    auto &tracked = fdipTrackedTargets[tid];
+    auto &wrong_path_seen = fdipWrongPathIssuedLineSeen[tid];
+    auto it = tracked.upper_bound(squashFtqId);
+    while (it != tracked.end()) {
+        fetchStats.fdipWrongPathIssuedLines += it->second.issuedLines;
+        for (const Addr phys_line_addr : it->second.issuedPhysLines) {
+            if (wrong_path_seen.insert(phys_line_addr).second) {
+                ++fetchStats.fdipWrongPathUniqueIssuedLines;
+            }
+        }
+        it = tracked.erase(it);
+    }
+}
+
+void
+Fetch::retireCommittedFdipTargets(
+    ThreadID tid, branch_prediction::btb_pred::FetchTargetId doneFtqId)
+{
+    auto &tracked = fdipTrackedTargets[tid];
+    auto end = tracked.upper_bound(doneFtqId);
+    tracked.erase(tracked.begin(), end);
+}
+
+void
+Fetch::noteDemandOnWrongPathFdipLine(ThreadID tid, Addr physLineAddr)
+{
+    if (!fdipWrongPathIssuedLineSeen[tid].count(physLineAddr)) {
+        return;
+    }
+
+    ++fetchStats.fdipWrongPathDemandAccesses;
+    if (fdipWrongPathDemandReuseLineSeen[tid].insert(physLineAddr).second) {
+        ++fetchStats.fdipWrongPathDemandReusedLines;
+    }
+}
+
 unsigned
 Fetch::computeFdipLineAddrs(
     const branch_prediction::btb_pred::FetchTarget &target,
@@ -530,10 +675,8 @@ Fetch::computeFdipLineAddrs(
         return 1;
     }
 
-    const unsigned span = std::max(1u, currentFetchRequestSpan(target));
-    const Addr end_exclusive = target.startPC + span;
-    const Addr last_line =
-        (end_exclusive - 1) - ((end_exclusive - 1) % cacheBlkSize);
+    const Addr last_line = branch_prediction::btb_pred::fetchCoverageLastLineAddr(
+        target.startPC, target.predEndPC, fetchBufferSize, cacheBlkSize);
 
     if (last_line == first_line) {
         return 1;
@@ -562,6 +705,7 @@ Fetch::initFdipTargetState(ThreadID tid)
     state.lineCount = computeFdipLineAddrs(target, line_addrs);
     for (unsigned i = 0; i < state.lineCount; ++i) {
         state.lines[i].lineAddr = line_addrs[i];
+        noteFdipCandidateLine(tid, line_addrs[i]);
     }
 
     DPRINTF(Fetch,
@@ -667,8 +811,16 @@ Fetch::issueFdipReadyLine(ThreadID tid, unsigned lineIndex,
     }
     assert(found_pending);
 
+    if (line.req->hasPaddr()) {
+        line.physLineAddr = line.req->getPaddr() -
+                            (line.req->getPaddr() % cacheBlkSize);
+    } else {
+        line.physLineAddr = line.lineAddr;
+    }
+
     line.status = FdipInflight;
     ++fetchStats.fdipIssuedLines;
+    noteFdipIssuedLine(tid, state.ftqId, line.physLineAddr);
     ++fdipOutstandingLines;
     if (fdipOutstandingLines > fetchStats.fdipOutstandingMax.value()) {
         fetchStats.fdipOutstandingMax = fdipOutstandingLines;
@@ -717,6 +869,99 @@ Fetch::finishFdipTargetIfReady(ThreadID tid)
 
     state.reset();
     return true;
+}
+
+bool
+Fetch::tryCompleteFdipLineByDirectProbe(ThreadID tid, unsigned lineIndex,
+                                        const RequestPtr &mem_req)
+{
+    if (!fdipIcacheAccessor || !mem_req->hasPaddr()) {
+        return false;
+    }
+
+    auto &state = fdipState[tid];
+    assert(state.valid);
+    assert(lineIndex < state.lineCount);
+
+    auto &line = state.lines[lineIndex];
+    line.physLineAddr = mem_req->getPaddr() -
+                        (mem_req->getPaddr() % cacheBlkSize);
+
+    uint8_t hit_way = 0;
+    if (!fdipIcacheAccessor->lookupHitWay(line.physLineAddr,
+                                          mem_req->isSecure(), hit_way)) {
+        return false;
+    }
+
+    installFdipProbeHint(tid, state.ftqId, state.epoch, line.physLineAddr,
+                         mem_req->isSecure(), hit_way);
+    line.directProbeHit = true;
+    line.status = FdipDone;
+    line.req.reset();
+    ++fetchStats.fdipDirectProbeHit;
+
+    DPRINTF(Fetch,
+            "[tid:%i] FDIP direct probe hit: ftqId=%u line[%u] vaddr=%#lx "
+            "paddr=%#lx\n",
+            tid, state.ftqId, lineIndex, line.lineAddr, line.physLineAddr);
+
+    finishFdipTargetIfReady(tid);
+    return true;
+}
+
+void
+Fetch::installFdipProbeHint(
+    ThreadID tid, branch_prediction::btb_pred::FetchTargetId ftqId,
+    uint64_t epoch, Addr physLineAddr, bool isSecure, uint8_t selectedWay)
+{
+    auto &hints = fdipProbeHints[tid];
+    for (auto it = hints.begin(); it != hints.end();) {
+        if (it->ftqId == ftqId && it->physLineAddr == physLineAddr &&
+            it->isSecure == isSecure) {
+            it = hints.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    FdipProbeHint hint;
+    hint.epoch = epoch;
+    hint.ftqId = ftqId;
+    hint.physLineAddr = physLineAddr;
+    hint.isSecure = isSecure;
+    hint.selectedWay = selectedWay;
+    hint.installTick = curTick();
+    hints.push_back(hint);
+
+    const size_t max_hints = std::max<size_t>(
+        4, static_cast<size_t>(
+               2 * std::max(1u, dbpbtb->fdipLookaheadEntries()) + 4));
+    while (hints.size() > max_hints) {
+        hints.pop_front();
+    }
+
+    ++fetchStats.fdipWayHintsInstalled;
+}
+
+bool
+Fetch::lookupAndConsumeFdipProbeHint(
+    ThreadID tid, branch_prediction::btb_pred::FetchTargetId ftqId,
+    Addr physLineAddr, bool isSecure, FdipProbeHint &hint)
+{
+    auto &hints = fdipProbeHints[tid];
+    for (auto it = hints.begin(); it != hints.end(); ++it) {
+        if (it->epoch != fdipEpoch[tid] || it->ftqId != ftqId ||
+            it->physLineAddr != physLineAddr || it->isSecure != isSecure) {
+            continue;
+        }
+
+        hint = *it;
+        hints.erase(it);
+        ++fetchStats.fdipWayHintsConsumed;
+        return true;
+    }
+
+    return false;
 }
 
 void
@@ -780,6 +1025,26 @@ Fetch::finishFdipTranslation(const Fault &fault, const RequestPtr &mem_req)
     }
 
     if (!state_matches) {
+        fdipPendingReqs.erase(it);
+        return;
+    }
+
+    if (tryCompleteFdipLineByDirectProbe(pending.tid, pending.lineIndex,
+                                         mem_req)) {
+        fdipPendingReqs.erase(it);
+        return;
+    }
+
+    const auto recent_unused_cycles = dbpbtb->fdipRecentUnusedCycles();
+    if (recent_unused_cycles > 0 && fdipIcacheAccessor &&
+        mem_req->hasPaddr() &&
+        fdipIcacheAccessor->shouldSuppressFdipLine(
+            mem_req->getPaddr(), mem_req->isSecure(),
+            recent_unused_cycles)) {
+        ++fetchStats.fdipFilteredRecentUnused;
+        state.lines[pending.lineIndex].status = FdipFilteredRecentUnused;
+        state.lines[pending.lineIndex].req.reset();
+        finishFdipTargetIfReady(pending.tid);
         fdipPendingReqs.erase(it);
         return;
     }
@@ -1421,6 +1686,31 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
         return;
     }
 
+    if (mem_req->hasPaddr() && dbpbtb->ftqHasFetching(tid)) {
+        FdipProbeHint hint;
+        const Addr phys_line_addr =
+            mem_req->getPaddr() - (mem_req->getPaddr() % cacheBlkSize);
+        noteDemandOnWrongPathFdipLine(tid, phys_line_addr);
+        const auto ftq_id = dbpbtb->ftqHeadId(tid);
+        if (lookupAndConsumeFdipProbeHint(tid, ftq_id, phys_line_addr,
+                                          mem_req->isSecure(), hint)) {
+            Request::XsMetadata xs_meta = mem_req->hasXsMetadata() ?
+                mem_req->getXsMetadata() : Request::XsMetadata();
+            xs_meta.fdipEpoch = hint.epoch;
+            xs_meta.fdipFtqId = hint.ftqId;
+            xs_meta.fdipSelectedWayValid = true;
+            xs_meta.fdipSelectedWay = hint.selectedWay;
+            xs_meta.fdipSelectedWayTick = hint.installTick;
+            mem_req->setXsMetadata(xs_meta);
+
+            DPRINTF(Fetch,
+                    "[tid:%i] FDIP demand consumes way hint: ftqId=%u "
+                    "paddr=%#lx way=%u age=%lu\n",
+                    tid, hint.ftqId, phys_line_addr, hint.selectedWay,
+                    curTick() - hint.installTick);
+        }
+    }
+
     // Build packet here.
     PacketPtr data_pkt = new Packet(mem_req, MemCmd::ReadReq);
     data_pkt->dataDynamic(new uint8_t[mem_req->getSize()]);
@@ -1608,6 +1898,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     threads[tid].cacheReq.reset();
     ++fdipEpoch[tid];
     resetFdipState(tid);
+    resetFdipProbeHints(tid);
 
     // Get rid of the retrying packet if it was from this thread.
     if (retryTid == tid) {
@@ -1848,6 +2139,7 @@ Fetch::sendInstructionsToDecode()
 
         if (blocked_tid != InvalidThreadID) {
             setAllFetchStalls(stallSig->fetchBlockReason[blocked_tid]);
+            profileStall(blocked_tid);
         }
 
         toDecode->fetchStallReason = stallReason;
@@ -1883,6 +2175,9 @@ Fetch::sendInstructionsToDecode()
 
     // Update stall reasons based on fetch/decode status
     updateStallReasons(insts_to_decode, tid);
+    if (insts_to_decode == 0) {
+        profileStall(tid);
+    }
 
     // Intel TopDown method for measuring frontend bubbles
     measureFrontendBubbles(insts_to_decode, tid);
@@ -2055,6 +2350,10 @@ Fetch::handleIEWSignals()
 bool
 Fetch::handleCommitSignals(ThreadID tid)
 {
+    if (fromCommit->commitInfo[tid].doneFtqId) {
+        retireCommittedFdipTargets(tid, fromCommit->commitInfo[tid].doneFtqId);
+    }
+
     // Check squash signals from commit.
     if (!fromCommit->commitInfo[tid].squash) {
         if (fromCommit->commitInfo[tid].doneFtqId) {
@@ -2092,6 +2391,7 @@ Fetch::handleCommitSignals(ThreadID tid)
     auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
 
     if (mispred_inst) {
+        noteFdipWrongPathTargets(tid, mispred_inst->getFtqId());
         DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
         const auto corr_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
@@ -2100,6 +2400,8 @@ Fetch::handleCommitSignals(ThreadID tid)
                               mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
                               mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
     } else if (fromCommit->commitInfo[tid].isTrapSquash) {
+        noteFdipWrongPathTargets(tid,
+                                 fromCommit->commitInfo[tid].squashedTargetId);
         DPRINTF(Fetch, "Treating as trap squash\n", tid);
         const auto trap_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
@@ -2107,6 +2409,8 @@ Fetch::handleCommitSignals(ThreadID tid)
                            trap_pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
     } else {
         if (fromCommit->commitInfo[tid].pc && fromCommit->commitInfo[tid].squashedTargetId != 0) {
+            noteFdipWrongPathTargets(
+                tid, fromCommit->commitInfo[tid].squashedTargetId);
             DPRINTF(Fetch, "Squash with stream id and target id from IEW\n");
             const auto nc_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
             assert(dbpbtb);
@@ -2130,6 +2434,7 @@ Fetch::handleDecodeSquash(ThreadID tid)
 
         auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
         if (fromDecode->decodeInfo[tid].branchMispredict) {
+            noteFdipWrongPathTargets(tid, mispred_inst->getFtqId());
             assert(dbpbtb);
             const auto next_pc =
                 fromDecode->decodeInfo[tid].nextPC->as<RiscvISA::PCState>();
@@ -2639,10 +2944,13 @@ Fetch::profileStall(ThreadID tid)
     } else if (fetchStatus[tid] == Squashing) {
         ++fetchStats.squashCycles;
         DPRINTF(Fetch, "[tid:%i] Fetch is squashing!\n", tid);
-    } else if (threads[tid].cacheReq.getOverallStatus() == CacheWaitResponse) {
+    } else if (threads[tid].cacheReq.getOverallStatus() == CacheWaitResponse ||
+               stallReason[tid] == StallReason::IcacheStall) {
         ++fetchStats.icacheStallCycles;
-        DPRINTF(Fetch, "[tid:%i] Fetch is waiting cache response!\n",
-                tid);
+        DPRINTF(Fetch,
+                "[tid:%i] Fetch is stalled on ICache (cacheStatus=%d, "
+                "stallReason=%d)\n",
+                tid, threads[tid].cacheReq.getOverallStatus(), stallReason[tid]);
     } else if (threads[tid].cacheReq.getOverallStatus() == TlbWait) {
         ++fetchStats.tlbCycles;
         DPRINTF(Fetch, "[tid:%i] Fetch is waiting ITLB walk to "

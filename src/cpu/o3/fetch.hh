@@ -44,7 +44,10 @@
 #include <array>
 #include <cstring>
 #include <deque>
+#include <map>
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -72,6 +75,7 @@ namespace gem5
 {
 
 struct BaseO3CPUParams;
+struct CacheAccessor;
 
 namespace o3
 {
@@ -243,27 +247,33 @@ class Fetch
         FdipInflight,
         FdipDone,
         FdipFilteredFault,
-        FdipFilteredUncacheable
+        FdipFilteredUncacheable,
+        FdipFilteredRecentUnused
     };
 
     struct FdipLineState
     {
         Addr lineAddr = 0;
+        Addr physLineAddr = 0;
         RequestPtr req;
         FdipLineStatus status = FdipIdle;
+        bool directProbeHit = false;
 
         void reset()
         {
             lineAddr = 0;
+            physLineAddr = 0;
             req.reset();
             status = FdipIdle;
+            directProbeHit = false;
         }
 
         bool isTerminal() const
         {
             return status == FdipDone ||
                    status == FdipFilteredFault ||
-                   status == FdipFilteredUncacheable;
+                   status == FdipFilteredUncacheable ||
+                   status == FdipFilteredRecentUnused;
         }
     };
 
@@ -299,6 +309,22 @@ class Fetch
         unsigned lineIndex = 0;
         bool outstanding = false;
         RequestPtr req;
+    };
+
+    struct FdipProbeHint
+    {
+        uint64_t epoch = 0;
+        branch_prediction::btb_pred::FetchTargetId ftqId = 0;
+        Addr physLineAddr = 0;
+        bool isSecure = false;
+        uint8_t selectedWay = 0;
+        Tick installTick = 0;
+    };
+
+    struct FdipTrackedTarget
+    {
+        uint64_t issuedLines = 0;
+        std::unordered_set<Addr> issuedPhysLines;
     };
 
   private:
@@ -514,6 +540,8 @@ class Fetch
     void runFdip();
     void runFdip(ThreadID tid);
     void resetFdipState(ThreadID tid);
+    void resetFdipProbeHints(ThreadID tid);
+    void resetFdipTracking(ThreadID tid);
     bool initFdipTargetState(ThreadID tid);
     unsigned computeFdipLineAddrs(
         const branch_prediction::btb_pred::FetchTarget &target,
@@ -522,6 +550,24 @@ class Fetch
     bool issueFdipReadyLine(ThreadID tid, unsigned lineIndex,
                             unsigned &remainingBudget);
     bool finishFdipTargetIfReady(ThreadID tid);
+    bool tryCompleteFdipLineByDirectProbe(ThreadID tid, unsigned lineIndex,
+                                          const RequestPtr &mem_req);
+    void installFdipProbeHint(
+        ThreadID tid, branch_prediction::btb_pred::FetchTargetId ftqId,
+        uint64_t epoch, Addr physLineAddr, bool isSecure,
+        uint8_t selectedWay);
+    bool lookupAndConsumeFdipProbeHint(
+        ThreadID tid, branch_prediction::btb_pred::FetchTargetId ftqId,
+        Addr physLineAddr, bool isSecure, FdipProbeHint &hint);
+    void noteFdipCandidateLine(ThreadID tid, Addr lineAddr);
+    void noteFdipIssuedLine(
+        ThreadID tid, branch_prediction::btb_pred::FetchTargetId ftqId,
+        Addr physLineAddr);
+    void noteFdipWrongPathTargets(
+        ThreadID tid, branch_prediction::btb_pred::FetchTargetId squashFtqId);
+    void retireCommittedFdipTargets(
+        ThreadID tid, branch_prediction::btb_pred::FetchTargetId doneFtqId);
+    void noteDemandOnWrongPathFdipLine(ThreadID tid, Addr physLineAddr);
 
 
     /** Check if an interrupt is pending and that we need to handle
@@ -1081,9 +1127,17 @@ class Fetch
 
     /** Fetch-directed ICache prefetch bookkeeping. */
     FdipThreadState fdipState[MaxThreads];
+    std::deque<FdipProbeHint> fdipProbeHints[MaxThreads];
+    std::map<branch_prediction::btb_pred::FetchTargetId, FdipTrackedTarget>
+        fdipTrackedTargets[MaxThreads];
+    std::unordered_map<Addr, uint64_t> fdipCandidateLineSeen[MaxThreads];
+    std::unordered_map<Addr, uint64_t> fdipIssuedLineSeen[MaxThreads];
+    std::unordered_set<Addr> fdipWrongPathIssuedLineSeen[MaxThreads];
+    std::unordered_set<Addr> fdipWrongPathDemandReuseLineSeen[MaxThreads];
     uint64_t fdipEpoch[MaxThreads]{};
     std::vector<FdipPendingRequest> fdipPendingReqs;
     unsigned fdipOutstandingLines = 0;
+    CacheAccessor *fdipIcacheAccessor = nullptr;
 
     /**
      * Check if the thread can fetch instructions
@@ -1239,6 +1293,32 @@ class Fetch
         statistics::Scalar fdipFilteredFault;
         /** Number of FDIP lines filtered due to uncacheable/strict regions. */
         statistics::Scalar fdipFilteredUncacheable;
+        /** Number of FDIP lines filtered due to recent-unused suppression. */
+        statistics::Scalar fdipFilteredRecentUnused;
+        /** Number of FDIP candidate line touches from predictor targets. */
+        statistics::Scalar fdipCandidateLines;
+        /** Number of unique FDIP candidate lines seen across the run. */
+        statistics::Scalar fdipUniqueCandidateLines;
+        /** Number of repeated FDIP candidate line touches. */
+        statistics::Scalar fdipRepeatedCandidateLines;
+        /** Number of FDIP translated lines that hit via direct ICache probe. */
+        statistics::Scalar fdipDirectProbeHit;
+        /** Number of unique physical lines issued by FDIP. */
+        statistics::Scalar fdipUniqueIssuedLines;
+        /** Number of repeated FDIP issued-line touches. */
+        statistics::Scalar fdipRepeatedIssuedLines;
+        /** Number of FDIP issued lines that later belonged to squashed FTQs. */
+        statistics::Scalar fdipWrongPathIssuedLines;
+        /** Number of unique physical lines later attributed to wrong-path FDIP. */
+        statistics::Scalar fdipWrongPathUniqueIssuedLines;
+        /** Number of demand fetch line accesses to previously squashed FDIP lines. */
+        statistics::Scalar fdipWrongPathDemandAccesses;
+        /** Number of unique squashed FDIP lines later revisited by demand. */
+        statistics::Scalar fdipWrongPathDemandReusedLines;
+        /** Number of selected-way hints installed by direct probe hit. */
+        statistics::Scalar fdipWayHintsInstalled;
+        /** Number of selected-way hints consumed by demand fetch. */
+        statistics::Scalar fdipWayHintsConsumed;
         /** Peak number of outstanding FDIP cacheline requests. */
         statistics::Scalar fdipOutstandingMax;
         /** Number of stale FDIP translation/response events ignored by epoch. */

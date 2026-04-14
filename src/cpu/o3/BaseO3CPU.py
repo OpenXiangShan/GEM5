@@ -246,6 +246,8 @@ class BaseO3CPU(BaseCPU):
 
     branchPred = Param.BranchPredictor(DecoupledBPUWithBTB(),
                                        "Branch Predictor")
+    fdipIcacheAccessor = Param.BaseCache(NULL,
+        "Optional direct ICache accessor for FDIP phase-2 tag probes")
     resolveQueueSize = Param.Unsigned(16, "Number of entries in the branch resolution queue")
     needsTSO = Param.Bool(False, "Enable TSO Memory model")
 

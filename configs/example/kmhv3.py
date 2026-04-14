@@ -128,6 +128,7 @@ def setKmhV3Params(args, system):
                 cpu.icache.mshrs = 14
                 cpu.icache.demand_fetch_mshrs = 4
                 cpu.icache.fdip_prefetch_mshrs = 10
+                cpu.fdipIcacheAccessor = cpu.icache
             cpu.dcache.size = '64kB'
             cpu.dcache.tag_load_read_ports = 3
             cpu.dcache.mshrs = 16
