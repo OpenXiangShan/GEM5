@@ -406,6 +406,44 @@ TEST_F(BTBTAGETest, UsefulBitMechanism) {
         << "Useful bit should remain set when main predicts incorrectly (no decrement)";
 }
 
+TEST_F(BTBTAGETest, UsefulBitIgnoresStrongCorrectAlternative) {
+    BTBEntry entry = createBTBEntry(0x1000);
+
+    // Provider and alternative both predict taken correctly. RTL-aligned
+    // behavior keeps useful unchanged instead of clearing it.
+    setupTageEntry(tage, 0x1000, 3, 2, true);
+    setupTageEntry(tage, 0x1000, 1, 2, false);
+
+    Addr mainIndex = tage->getTageIndex(0x1000, 3);
+
+    predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+    FetchTarget stream = createStream(0x1000, entry, true, meta);
+    tage->update(stream);
+
+    EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
+        << "Useful bit should not be cleared only because alt is also correct and strong";
+}
+
+TEST_F(BTBTAGETest, UsefulBitIgnoresWeakCounterTransition) {
+    BTBEntry entry = createBTBEntry(0x1000);
+
+    // Counter transitions to a weak state after update, but useful should not
+    // be cleared by that transition alone.
+    setupTageEntry(tage, 0x1000, 3, 1, true);
+
+    Addr mainIndex = tage->getTageIndex(0x1000, 3);
+
+    predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+    FetchTarget stream = createStream(0x1000, entry, false, meta);
+    tage->update(stream);
+
+    EXPECT_EQ(tage->tageTable[3][mainIndex][0].counter, 0);
+    EXPECT_TRUE(tage->tageTable[3][mainIndex][0].useful)
+        << "Useful bit should not be cleared only because the provider becomes weak";
+}
+
 // Test entry allocation mechanism
 TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     // Instead of creating two different PCs, we'll create two entries with the same PC
@@ -437,12 +475,35 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     stream.squashType = SquashType::SQUASH_CTRL; // Mark as control misprediction
     stream.squashPC = 0x1000;
 
-    // Update the predictor (this should try to allocate but fail)
+    // Update the predictor. With RTL-aligned highest-table gating, this should
+    // not report a final allocation failure.
     tage->update(stream);
 
     int alloc_failed_no_valid = tage->tageStats.updateAllocFailureNoValidTable;
-    EXPECT_GE(alloc_failed_no_valid, 1) << "Allocate failed due to no valid table to allocate (all useful)";
+    EXPECT_EQ(alloc_failed_no_valid, 0)
+        << "A highest-table provider should suppress final allocation failure";
 
+}
+
+TEST_F(BTBTAGETest, HighestTableProviderSuppressesAllocation) {
+    BTBEntry entry = createBTBEntry(0x1000);
+
+    int highestTable = tage->numPredictors - 1;
+    setupTageEntry(tage, 0x1000, highestTable, 2, false);
+
+    predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    FetchTarget stream = createStream(0x1000, entry, false, meta);
+    stream.squashType = SquashType::SQUASH_CTRL;
+    stream.squashPC = 0x1000;
+
+    int alloc_failed_before = tage->tageStats.updateAllocFailureNoValidTable;
+    tage->update(stream);
+
+    EXPECT_EQ(tage->tageStats.updateAllocSuccess, 0);
+    EXPECT_EQ(tage->tageStats.updateAllocFailureNoValidTable, alloc_failed_before)
+        << "A highest-table provider should suppress allocation instead of reporting final failure";
 }
 
 // Test history recovery mechanism
@@ -870,6 +931,37 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     int alloc_failure_after_step3 = tage->tageStats.updateAllocFailure;
     EXPECT_GE(alloc_failure_after_step3, alloc_failure_after_step2 + 1)
         << "Allocation failures should increase after additional failed attempt";
+}
+
+TEST_F(BTBTAGETest, AllocationReplacesStrongNotUsefulEntry) {
+    tage = new BTBTAGE(1, 2, 10); // only 1 predictor table, 2 ways
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+    history.resize(64, false);
+    stagePreds.resize(2);
+
+    Addr startPC = 0x1000;
+    int testTable = 0;
+    Addr testIndex = tage->getTageIndex(startPC, testTable);
+
+    createManualTageEntry(
+        tage, testTable, testIndex, 0, tage->getTageTag(startPC, testTable, 0), 2, false, 0x1000);
+    createManualTageEntry(
+        tage, testTable, testIndex, 1, tage->getTageTag(startPC, testTable, 2), -2, false, 0x1004);
+
+    BTBEntry newEntry = createBTBEntry(0x1008);
+    predictUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
+
+    bool found = false;
+    for (unsigned way = 0; way < tage->numWays[testTable]; way++) {
+        if (tage->tageTable[testTable][testIndex][way].valid &&
+            tage->tageTable[testTable][testIndex][way].pc == newEntry.pc) {
+            found = true;
+            break;
+        }
+    }
+
+    EXPECT_TRUE(found)
+        << "A strong but not-useful entry should be replaceable";
 }
 
 TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
