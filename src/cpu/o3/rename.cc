@@ -66,9 +66,9 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       renameWidth(params.renameWidth),
       releaseWidth(params.phyregReleaseWidth),
       numThreads(params.numThreads),
-      stats(_cpu),
+      stats(_cpu, this),
       valuePred(params.valuePred),
-        enableSelectiveVPFlush(params.enableSelectiveVPFlush)
+      enableSelectiveVPFlush(params.enableSelectiveVPFlush)
 {
     if (renameWidth > MaxWidth)
         fatal("renameWidth (%d) is larger than compiled limit (%d),\n"
@@ -94,8 +94,8 @@ Rename::name() const
     return cpu->name() + ".rename";
 }
 
-Rename::RenameStats::RenameStats(statistics::Group *parent)
-    : statistics::Group(parent, "rename"),
+Rename::RenameStats::RenameStats(CPU *cpu, Rename *rename)
+    : statistics::Group(cpu, "rename"),
       ADD_STAT(squashCycles, statistics::units::Cycle::get(),
                "Number of cycles rename is squashing"),
       ADD_STAT(idleCycles, statistics::units::Cycle::get(),
@@ -109,7 +109,7 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
       ADD_STAT(unblockCycles, statistics::units::Cycle::get(),
                "Number of cycles rename is unblocking"),
       ADD_STAT(renamedInsts, statistics::units::Count::get(),
-               "Number of instructions processed by rename"),
+               "Number of instructions processed by rename per thread"),
       ADD_STAT(squashedInsts, statistics::units::Count::get(),
                "Number of squashed instructions processed by rename"),
       ADD_STAT(ROBFullEvents, statistics::units::Count::get(),
@@ -149,7 +149,9 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
       ADD_STAT(constantFolded, statistics::units::Count::get(),
                "count of insts eliminated by constant folding"),
       ADD_STAT(stallEvents, statistics::units::Count::get(),
-               "count of stall events")
+               "count of stall events"),
+      ADD_STAT(smtStallEvents, statistics::units::Count::get(),
+               "Number of events the Rename has stalled per thread")
 {
     squashCycles.prereq(squashCycles);
     idleCycles.prereq(idleCycles);
@@ -158,14 +160,12 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
     runCycles.prereq(idleCycles);
     unblockCycles.prereq(unblockCycles);
 
-    renamedInsts.prereq(renamedInsts);
     squashedInsts.prereq(squashedInsts);
 
     ROBFullEvents.prereq(ROBFullEvents);
     IQFullEvents.prereq(IQFullEvents);
     LQFullEvents.prereq(LQFullEvents);
     SQFullEvents.prereq(SQFullEvents);
-    fullRegistersEvents.prereq(fullRegistersEvents);
 
     renamedOperands.prereq(renamedOperands);
     lookups.prereq(lookups);
@@ -182,7 +182,13 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
     moveEliminated.flags(statistics::total);
     constantFolded.flags(statistics::total);
 
+    renamedInsts.init(cpu->numThreads).flags(statistics::total);
+    fullRegistersEvents.init(cpu->numThreads).flags(statistics::total);
+    
     stallEvents.init(StallEventCount).flags(statistics::total);
+    smtStallEvents
+        .init(StallEventCount,0,cpu->numThreads-1,1)
+        .flags(statistics::total);
     std::map < StallEvent, const char* > stall_event_str = {
         { ROBWalk, "ROBWalk"},
         { IEWStall, "IEWStall"},
@@ -196,6 +202,7 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
 
     for (int i = 0; i < StallEventCount; i++) {
         stallEvents.subname(i, stall_event_str[static_cast<StallEvent>(i)]);
+        smtStallEvents.subname(i, stall_event_str[static_cast<StallEvent>(i)]);
     }
 }
 
@@ -361,10 +368,23 @@ Rename::tick()
             block_reason = checkRenameStallFromIEW(i);
             if (block_reason == StallReason::NoStall) {
                 block_reason = StallReason::RegFull;
-                ++stats.fullRegistersEvents;
+                ++stats.fullRegistersEvents[i];
                 stats.stallEvents[RegFull]++;
             }
         }
+
+        if (block_reason == StallReason::ROBFull) {
+            stats.smtStallEvents[ROBFull].sample(i);
+        } else if (block_reason == StallReason::RegFull) {
+            stats.smtStallEvents[RegFull].sample(i);
+        } else if (block_reason == StallReason::SerializeStall) {
+            stats.smtStallEvents[SerializeInst].sample(i);
+        } else if ( block_reason == StallReason::MemDQBandwidth ||
+                    block_reason == StallReason::IntDQBandwidth ||
+                    block_reason == StallReason::FVDQBandwidth) {
+            stats.smtStallEvents[BWFull].sample(i);
+        }
+
         DPRINTF(Rename, "[tid:%i] blockRename: %i, canRename: %i, block: %i, active: %i\n",
                 i, stallSig->blockRename[i], can_rename, block, active);
 
@@ -402,6 +422,7 @@ Rename::tick()
     renameInsts(tid);
     if (stallSig->blockRename[tid]) {
         setAllStalls(stallSig->renameBlockReason[tid]);
+        stats.smtStallEvents[stallSig->renameBlockReason[tid]].sample(tid);
     } else if (toIEW->size > 0 && renameStalls[0] == StallReason::NoStall) {
         for (int i = 0; i < renameStalls.size(); i++) {
             if (i < toIEW->size) {
@@ -584,8 +605,9 @@ Rename::renameInsts(ThreadID tid)
             breakRename = checkRenameStallFromIEW(tid);
             if (breakRename == StallReason::NoStall) {
                 breakRename = StallReason::RegFull;
-                ++stats.fullRegistersEvents;
+                ++stats.fullRegistersEvents[tid];
                 stats.stallEvents[RegFull]++;
+                // stats.smtStallEvents[RegFull].sample(tid);
             }
         }
         blockReason = breakRename;
@@ -599,7 +621,20 @@ Rename::renameInsts(ThreadID tid)
     } else if (breakRename != StallReason::NoStall) {
         setAllStalls(breakRename);
     }
-    stats.renamedInsts += renamed_insts;
+
+    stats.renamedInsts[tid] += renamed_insts;
+
+    if (breakRename == StallReason::ROBFull) {
+        stats.smtStallEvents[ROBFull].sample(tid);
+    } else if (breakRename == StallReason::RegFull) {
+        stats.smtStallEvents[RegFull].sample(tid);
+    } else if (breakRename == StallReason::SerializeStall) {
+        stats.smtStallEvents[SerializeInst].sample(tid);
+    } else if ( breakRename == StallReason::MemDQBandwidth ||
+                breakRename == StallReason::IntDQBandwidth ||
+                breakRename == StallReason::FVDQBandwidth) {
+        stats.smtStallEvents[BWFull].sample(tid);
+    }
 
     // If we wrote to the time buffer, record this.
     if (toIEWIndex) {

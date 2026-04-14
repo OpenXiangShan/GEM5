@@ -207,6 +207,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Average fanout of values written-back"),
     ADD_STAT(stallEvents, statistics::units::Count::get(),
              "Number of events the IEW has stalled"),
+    ADD_STAT(smtStallEvents, statistics::units::Count::get(),
+             "Number of events the IEW has stalled per thread"),
     ADD_STAT(fetchStallReason, statistics::units::Count::get(),
              "Number of fetch stall reasons each tick (Total)"),
     ADD_STAT(decodeStallReason, statistics::units::Count::get(),
@@ -243,6 +245,11 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     stallEvents
         .init(StallEventCount)
         .flags(statistics::total);
+        
+    smtStallEvents
+        .init(StallEventCount,0,cpu->numThreads-1,1)
+        .flags(statistics::total);
+
 
     dispDist.init(0,10,1).flags(statistics::nozero);
 
@@ -257,6 +264,7 @@ IEW::IEWStats::IEWStats(CPU *cpu)
 
     for (int i = 0; i < StallEventCount; i++) {
         stallEvents.subname(i, stall_event_str[static_cast<StallEvent>(i)]);
+        smtStallEvents.subname(i, stall_event_str[static_cast<StallEvent>(i)]);
     }
 
     fetchStallReason
@@ -829,6 +837,7 @@ IEW::checkSquash()
 
             fetchRedirect[i] = false;
             iewStats.stallEvents[ROBWalk]++;
+            iewStats.smtStallEvents[ROBWalk].sample(i);
             setAllStalls(StallReason::CommitSquash);
         }
 
@@ -837,6 +846,7 @@ IEW::checkSquash()
 
             wroteToTimeBuffer = true;
             iewStats.stallEvents[ROBWalk]++;
+            iewStats.smtStallEvents[ROBWalk].sample(i);
             setAllStalls(StallReason::CommitSquash);
         }
     }
@@ -1014,6 +1024,7 @@ IEW::dispatchInstFromRename(ThreadID tid)
             DPRINTF(IEW, "[tid:%i] Dispatch: %s has become full.\n", tid, inst->isLoad() ? "LQ" : "SQ");
 
             iewStats.stallEvents[LSQFull]++;
+            iewStats.smtStallEvents[LSQFull].sample(tid);
 
             ++iewStats.lsqFullEvents;
             dispatch_stalls.push(checkDispatchStall(tid, NumDQ, inst, disp_seq));
@@ -1025,6 +1036,8 @@ IEW::dispatchInstFromRename(ThreadID tid)
         if (!scheduler->ready(inst, disp_seq)) {
             DPRINTF(IEW, "[tid:%i] Dispatch: IQ is full or bwFull.\n", tid);
             iewStats.stallEvents[IQFull]++;
+            iewStats.smtStallEvents[IQFull].sample(tid);
+
             ++iewStats.iqFullEvents;
 
             dispatch_stalls.push(checkDispatchStall(tid, NumDQ, inst, disp_seq));
@@ -1158,6 +1171,8 @@ IEW::dispatchInstFromRename(ThreadID tid)
         DPRINTF(IEW,"[tid:%i] Dispatch: Bandwidth Full. Blocking.\n", tid);
 
         iewStats.stallEvents[DispBWFull]++;
+        iewStats.smtStallEvents[DispBWFull].sample(tid);
+        
     }
 
 }
@@ -1270,6 +1285,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
     if (!insts_to_dispatch.empty()) {
         DPRINTF(IEW,"[tid:%i] Dispatch: Bandwidth Full. Blocking.\n", tid);
         iewStats.stallEvents[DispBWFull]++;
+        iewStats.smtStallEvents[DispBWFull].sample(tid);
     }
 }
 
@@ -1302,6 +1318,7 @@ IEW::dispatchInstFromDispQue()
                 DPRINTF(IEW, "[tid:%i] Dispatch: IQ is full or bwFull.\n", tid);
 
                 iewStats.stallEvents[IQFull]++;
+                iewStats.smtStallEvents[IQFull].sample(tid);
                 ++iewStats.iqFullEvents;
                 break;
             }
@@ -1314,7 +1331,7 @@ IEW::dispatchInstFromDispQue()
                         inst->isLoad() ? "LQ" : "SQ");
 
                 iewStats.stallEvents[LSQFull]++;
-
+                iewStats.smtStallEvents[LSQFull].sample(tid);
                 ++iewStats.lsqFullEvents;
                 break;
             }
