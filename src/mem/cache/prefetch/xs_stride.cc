@@ -382,7 +382,7 @@ XSStridePrefetcher::triggerFromCommitTable(const PrefetchInfo &pfi,
     if (useXsDepth) {
         sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 2)),
                          addresses, 0, PrefetchSourceType::SStride, 1);
-        sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 5)),
+        sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 6)),
                          addresses, 0, PrefetchSourceType::SStride, 2);
         stats.strideUniquepfCount += 2;
         if (archDBer) {
@@ -416,11 +416,13 @@ XSStridePrefetcher::captureAndTriggerFromS1(const PrefetchInfo &pfi,
     const InstSeqNum seq_num = pfi.getSeqNum();
     auto [it, inserted] = pendingSnapshots.try_emplace(seq_num, pfi);
     if (!inserted) {
+        stats.commitOrderedS1DuplicateCount++;
         traceCommitOrderStage("SkipDup", seq_num, pfi.getPC(), pfi.getAddr(),
                               true, pendingSnapshots.size(), "duplicate_seq");
         return;
     }
 
+    stats.commitOrderedS1CaptureCount++;
     traceCommitOrderStage("S1Capture", it->second, pendingSnapshots.size(), "");
     triggerFromCommitTable(pfi, addresses);
     traceCommitOrderStage("S1Trigger", it->second, pendingSnapshots.size(), "");
@@ -441,6 +443,7 @@ XSStridePrefetcher::markCommitted(InstSeqNum seq_num)
     it->second.readyForTrain = true;
     it->second.readyCycle = curCycle();
     readyToTrain.insert(seq_num);
+    stats.commitOrderedReadyCount++;
     traceCommitOrderStage("CommitReady", it->second, readyToTrain.size(), "");
     scheduleCommitTrain();
 }
@@ -452,6 +455,7 @@ XSStridePrefetcher::dropYoungerThan(InstSeqNum boundary)
 
     for (auto it = pendingSnapshots.upper_bound(boundary);
          it != pendingSnapshots.end(); ) {
+        stats.commitOrderedSquashDropCount++;
         traceCommitOrderStage("DropSquash", it->second, pendingSnapshots.size(),
                               "squash_boundary");
         it = pendingSnapshots.erase(it);
@@ -461,7 +465,10 @@ XSStridePrefetcher::dropYoungerThan(InstSeqNum boundary)
 void
 XSStridePrefetcher::trainFromSnapshot(const CommitTrainSnapshot &snapshot)
 {
+    stats.commitOrderedTrainEnterCount++;
+
     if (enableNonStrideFilter && isNonStridePC(snapshot.pc)) {
+        stats.commitOrderedTrainFilteredNonStrideCount++;
         return;
     }
 
@@ -478,8 +485,13 @@ XSStridePrefetcher::trainFromSnapshot(const CommitTrainSnapshot &snapshot)
     if (entry) {
         strideUnique.accessEntry(entry);
         const int64_t new_stride = lookupAddr - entry->lastAddr;
-        if (new_stride == 0 || (labs(new_stride) < 64 &&
-            entry->longStride.calcSaturation() >= 0.5)) {
+        if (new_stride == 0) {
+            stats.commitOrderedTrainZeroStrideCount++;
+            return;
+        }
+        if (labs(new_stride) < 64 &&
+            entry->longStride.calcSaturation() >= 0.5) {
+            stats.commitOrderedTrainGuardedCount++;
             return;
         }
 
@@ -491,6 +503,7 @@ XSStridePrefetcher::trainFromSnapshot(const CommitTrainSnapshot &snapshot)
         stride_match |= new_stride == entry->stride;
 
         if (shortStrideThres) {
+            stats.commitOrderedTrainLongStrideAdjustCount++;
             if (labs(new_stride) > shortStrideThres) {
                 entry->longStride.saturate();
             } else {
@@ -501,17 +514,23 @@ XSStridePrefetcher::trainFromSnapshot(const CommitTrainSnapshot &snapshot)
         if (shortStrideThres &&
             entry->longStride.calcSaturation() > 0.5 &&
             labs(new_stride) < shortStrideThres) {
+            stats.commitOrderedTrainGuardedCount++;
             return;
         }
 
         if (stride_match) {
+            stats.commitOrderedTrainUpdateCount++;
+            stats.commitOrderedTrainMatchCount++;
             entry->conf++;
             entry->lastAddr = lookupAddr;
             entry->histStrides.clear();
             entry->matchedSinceAlloc = true;
         } else if (labs(entry->stride) > 64L && labs(new_stride) < 64L) {
+            stats.commitOrderedTrainGuardedCount++;
             return;
         } else {
+            stats.commitOrderedTrainUpdateCount++;
+            stats.commitOrderedTrainMismatchCount++;
             entry->conf--;
             entry->lastAddr = lookupAddr;
             if ((int)entry->conf == 0) {
@@ -544,6 +563,7 @@ XSStridePrefetcher::trainFromSnapshot(const CommitTrainSnapshot &snapshot)
                 entry->stride = new_stride;
                 entry->depth = 1;
                 entry->lateConf.reset();
+                stats.commitOrderedTrainRetargetCount++;
             }
         }
 
@@ -551,6 +571,8 @@ XSStridePrefetcher::trainFromSnapshot(const CommitTrainSnapshot &snapshot)
         return;
     }
 
+    stats.commitOrderedTrainUpdateCount++;
+    stats.commitOrderedTrainAllocCount++;
     entry = strideUnique.findVictim(0);
     if (enableNonStrideFilter &&
         (entry->histStrides.size() >= maxHistStrides - 1 ||
@@ -589,6 +611,7 @@ XSStridePrefetcher::processCommitTrain()
         }
 
         if (it->second.readyCycle >= current_cycle) {
+            stats.commitOrderedDeferCount++;
             traceCommitOrderStage("CommitDefer", it->second,
                                   readyToTrain.size(), "ready_this_cycle");
             break;
@@ -597,6 +620,7 @@ XSStridePrefetcher::processCommitTrain()
         const CommitTrainSnapshot snapshot = it->second;
         readyToTrain.erase(ready_it);
         pendingSnapshots.erase(it);
+        stats.commitOrderedTrainDispatchCount++;
         traceCommitOrderStage("CommitTrain", snapshot, readyToTrain.size(),
                               "");
         trainFromSnapshot(snapshot);
@@ -942,7 +966,41 @@ XSStridePrefetcher::XSstrideStats::XSstrideStats(statistics::Group *parent)
       ADD_STAT(strideRedundanthitCount, statistics::units::Count::get(), "stride table hit num"),
       ADD_STAT(strideRedundantmissCount, statistics::units::Count::get(), "stride table miss num"),
       ADD_STAT(strideRedundantpfCount, statistics::units::Count::get(), "stride prefetch num"),
-      ADD_STAT(strideRedundantreplaceusefulCount, statistics::units::Count::get(), "stride table replace num")
+      ADD_STAT(strideRedundantreplaceusefulCount, statistics::units::Count::get(), "stride table replace num"),
+      ADD_STAT(commitOrderedS1CaptureCount, statistics::units::Count::get(),
+               "successful S1 captures for commit-ordered stride training"),
+      ADD_STAT(commitOrderedS1DuplicateCount, statistics::units::Count::get(),
+               "duplicate S1 captures skipped by seqNum"),
+      ADD_STAT(commitOrderedReadyCount, statistics::units::Count::get(),
+               "snapshots marked ready by load commit"),
+      ADD_STAT(commitOrderedSquashDropCount, statistics::units::Count::get(),
+               "commit-ordered stride snapshots dropped by squash"),
+      ADD_STAT(commitOrderedDeferCount, statistics::units::Count::get(),
+               "training events deferred because snapshot became ready this cycle"),
+      ADD_STAT(commitOrderedTrainDispatchCount, statistics::units::Count::get(),
+               "snapshots dispatched from ready queue into trainFromSnapshot"),
+      ADD_STAT(commitOrderedTrainEnterCount, statistics::units::Count::get(),
+               "entries entering trainFromSnapshot"),
+      ADD_STAT(commitOrderedTrainFilteredNonStrideCount,
+               statistics::units::Count::get(),
+               "train entries skipped because the PC is in the non-stride filter"),
+      ADD_STAT(commitOrderedTrainZeroStrideCount, statistics::units::Count::get(),
+               "train entries skipped because the new stride delta is zero"),
+      ADD_STAT(commitOrderedTrainGuardedCount, statistics::units::Count::get(),
+               "train entries skipped by stride guard conditions"),
+      ADD_STAT(commitOrderedTrainLongStrideAdjustCount,
+               statistics::units::Count::get(),
+               "train entries that adjusted longStride saturation state"),
+      ADD_STAT(commitOrderedTrainUpdateCount, statistics::units::Count::get(),
+               "train entries that updated primary stride entry state"),
+      ADD_STAT(commitOrderedTrainAllocCount, statistics::units::Count::get(),
+               "train entries that allocated a new stride entry"),
+      ADD_STAT(commitOrderedTrainMatchCount, statistics::units::Count::get(),
+               "train entries that matched and strengthened an existing stride"),
+      ADD_STAT(commitOrderedTrainMismatchCount, statistics::units::Count::get(),
+               "train entries that mismatched and decayed an existing stride"),
+      ADD_STAT(commitOrderedTrainRetargetCount, statistics::units::Count::get(),
+               "train entries that rewrote an existing stride after confidence dropped to zero")
 {
 }
 

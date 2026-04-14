@@ -203,6 +203,22 @@ class XSStridePrefetcher : public Queued
       statistics::Scalar strideRedundantmissCount;
       statistics::Scalar strideRedundantpfCount;
       statistics::Scalar strideRedundantreplaceusefulCount;
+      statistics::Scalar commitOrderedS1CaptureCount;
+      statistics::Scalar commitOrderedS1DuplicateCount;
+      statistics::Scalar commitOrderedReadyCount;
+      statistics::Scalar commitOrderedSquashDropCount;
+      statistics::Scalar commitOrderedDeferCount;
+      statistics::Scalar commitOrderedTrainDispatchCount;
+      statistics::Scalar commitOrderedTrainEnterCount;
+      statistics::Scalar commitOrderedTrainFilteredNonStrideCount;
+      statistics::Scalar commitOrderedTrainZeroStrideCount;
+      statistics::Scalar commitOrderedTrainGuardedCount;
+      statistics::Scalar commitOrderedTrainLongStrideAdjustCount;
+      statistics::Scalar commitOrderedTrainUpdateCount;
+      statistics::Scalar commitOrderedTrainAllocCount;
+      statistics::Scalar commitOrderedTrainMatchCount;
+      statistics::Scalar commitOrderedTrainMismatchCount;
+      statistics::Scalar commitOrderedTrainRetargetCount;
 
   } stats;
 };

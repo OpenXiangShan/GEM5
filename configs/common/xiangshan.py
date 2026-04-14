@@ -702,14 +702,14 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_from_start = args.arch_db_fromstart
         test_sys.arch_db.enable_rolling = args.enable_rolling
         dump_l1_pf_trace = False
-        dump_mem_trace = False
+        dump_mem_trace = True
         dump_l1_evict_trace = False
         dump_l2_evict_trace = False
         dump_l3_evict_trace = False
         dump_l1_miss_trace = False
         dump_bop_train_trace = False
-        dump_stride_train_trace = False
-        dump_stride_order_trace = False
+        dump_stride_train_trace = True
+        dump_stride_order_trace = True
         dump_sms_train_trace = False
         dump_train_filter_trace = False
         dump_despacito_train_trace = False
