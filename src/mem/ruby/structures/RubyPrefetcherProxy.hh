@@ -193,6 +193,15 @@ class RubyPrefetcherProxy : public CacheAccessor, public Named
       return cacheCntrl->findBlock(addr, is_secure)->getDataBlk().getData(0, RubySystem::getBlockSizeBytes());
     }
 
+    bool shouldSuppressFdipLine(Addr addr, bool is_secure,
+                                uint64_t cooldown_cycles) const override
+    {
+        (void)addr;
+        (void)is_secure;
+        (void)cooldown_cycles;
+        return false;
+    }
+
 };
 
 } // namespace ruby

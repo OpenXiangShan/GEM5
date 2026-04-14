@@ -24,6 +24,7 @@ public:
     {}
 
     bool inCache(Addr addr, bool is_secure) const override;
+    bool lookupHitWay(Addr addr, bool is_secure, uint8_t &way) const override;
     unsigned level() const override;
     bool hasBeenPrefetched(Addr addr, bool is_secure) const override;
     bool hasBeenPrefetched(Addr addr, bool is_secure, RequestorID requestor) const override;
@@ -32,6 +33,8 @@ public:
     bool inMissQueue(Addr addr, bool is_secure) const override;
     bool coalesce() const override;
     const uint8_t* findBlock(Addr addr, bool is_secure) const override;
+    bool shouldSuppressFdipLine(Addr addr, bool is_secure,
+                                uint64_t cooldown_cycles) const override;
 };
 
 } // namespace gem5

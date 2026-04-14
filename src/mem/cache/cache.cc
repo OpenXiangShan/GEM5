@@ -383,6 +383,8 @@ Cache::handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk, Tick forward_time,
                 stats.fdipProbeMerged++;
                 if (mshr->hasFromDemand() && mshr->markFdipLateSeen()) {
                     stats.fdipLate++;
+                    noteFdipLateLifecycle(pkt->getBlockAddr(blkSize),
+                                          pkt->isSecure());
                 }
             }
 

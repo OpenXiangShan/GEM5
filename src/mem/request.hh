@@ -387,6 +387,9 @@ class Request
         uint64_t fdipEpoch;
         uint64_t fdipFtqId;
         Addr fdipStartPC;
+        bool fdipSelectedWayValid;
+        uint8_t fdipSelectedWay;
+        Tick fdipSelectedWayTick;
 
         XsMetadata() :
             validXsMetadata(false),
@@ -395,7 +398,10 @@ class Request
             prefetchDepth(0),
             fdipEpoch(0),
             fdipFtqId(0),
-            fdipStartPC(0) {}
+            fdipStartPC(0),
+            fdipSelectedWayValid(false),
+            fdipSelectedWay(0),
+            fdipSelectedWayTick(0) {}
 
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
             validXsMetadata(true),
@@ -404,7 +410,10 @@ class Request
             prefetchDepth(0),
             fdipEpoch(0),
             fdipFtqId(0),
-            fdipStartPC(0) {}
+            fdipStartPC(0),
+            fdipSelectedWayValid(false),
+            fdipSelectedWay(0),
+            fdipSelectedWayTick(0) {}
 
         XsMetadata(PrefetchSourceType pfSource) :
             validXsMetadata(true),
@@ -413,7 +422,10 @@ class Request
             prefetchDepth(0),
             fdipEpoch(0),
             fdipFtqId(0),
-            fdipStartPC(0) {}
+            fdipStartPC(0),
+            fdipSelectedWayValid(false),
+            fdipSelectedWay(0),
+            fdipSelectedWayTick(0) {}
 
         XsMetadata(PrefetchSourceType pfSource,int pfDepth) :
             validXsMetadata(true),
@@ -422,7 +434,10 @@ class Request
             prefetchDepth(pfDepth),
             fdipEpoch(0),
             fdipFtqId(0),
-            fdipStartPC(0) {}
+            fdipStartPC(0),
+            fdipSelectedWayValid(false),
+            fdipSelectedWay(0),
+            fdipSelectedWayTick(0) {}
 
         bool isFdip() const { return prefetchSource == PF_FDIP; }
 
@@ -434,6 +449,9 @@ class Request
             fdipEpoch = 0;
             fdipFtqId = 0;
             fdipStartPC = 0;
+            fdipSelectedWayValid = false;
+            fdipSelectedWay = 0;
+            fdipSelectedWayTick = 0;
         }
     } XsMetadata;
 

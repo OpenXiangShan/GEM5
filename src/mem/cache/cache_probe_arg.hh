@@ -55,6 +55,9 @@ struct CacheAccessor
 {
     /** Determine if address is in cache */
     virtual bool inCache(Addr addr, bool is_secure) const = 0;
+    /** Return hit way for an address already known to be in cache. */
+    virtual bool lookupHitWay(Addr addr, bool is_secure,
+                              uint8_t &way) const = 0;
 
     // cache level, l1 is 1, l2 is 2, etc.
     virtual unsigned level() const = 0;
@@ -76,6 +79,10 @@ struct CacheAccessor
     virtual bool coalesce() const = 0;
 
     virtual const uint8_t* findBlock(Addr addr, bool is_secure) const = 0;
+
+    /** Best-effort suppress query for recently-unused FDIP lines. */
+    virtual bool shouldSuppressFdipLine(Addr addr, bool is_secure,
+                                        uint64_t cooldown_cycles) const = 0;
 };
 
 /**

@@ -18,6 +18,13 @@ SlicedCacheAccessor::inCache(Addr addr, bool is_secure) const
     return getSlice(addr)->inCache(addr, is_secure);
 }
 
+bool
+SlicedCacheAccessor::lookupHitWay(Addr addr, bool is_secure, uint8_t &way) const
+{
+    fatal_if(l2_wrapper->cache_accessors.empty(), "No slice accessors available.");
+    return getSlice(addr)->lookupHitWay(addr, is_secure, way);
+}
+
 unsigned
 SlicedCacheAccessor::level() const
 {
@@ -72,6 +79,15 @@ SlicedCacheAccessor::findBlock(Addr addr, bool is_secure) const
 {
     fatal_if(l2_wrapper->cache_accessors.empty(), "No slice accessors available.");
     return getSlice(addr)->findBlock(addr, is_secure);
+}
+
+bool
+SlicedCacheAccessor::shouldSuppressFdipLine(Addr addr, bool is_secure,
+                                            uint64_t cooldown_cycles) const
+{
+    fatal_if(l2_wrapper->cache_accessors.empty(), "No slice accessors available.");
+    return getSlice(addr)->shouldSuppressFdipLine(addr, is_secure,
+                                                  cooldown_cycles);
 }
 
 } // namespace gem5

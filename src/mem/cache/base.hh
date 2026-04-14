@@ -52,6 +52,7 @@
 #include <cstdint>
 #include <queue>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "base/addr_range.hh"
@@ -413,6 +414,63 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     uint64_t lastMSHRAllocCycle;
     int accessCounter = 0;
+
+    struct FdipMissAllocTracker
+    {
+        uint64_t lastAllocCycle = 0;
+        uint64_t allocCount = 0;
+    };
+
+    enum class FdipLastOutcome
+    {
+        UsefulDemandHit,
+        UnusedEvict
+    };
+
+    struct FdipLastOutcomeRecord
+    {
+        FdipLastOutcome outcome = FdipLastOutcome::UnusedEvict;
+        uint64_t cycle = 0;
+    };
+
+    enum class FdipMissAllocPriorClass
+    {
+        ColdOrUnknown,
+        AfterUseful,
+        AfterUnused
+    };
+
+    struct FdipPendingMissAlloc
+    {
+        FdipMissAllocPriorClass priorClass;
+    };
+
+    struct FdipLineKey
+    {
+        Addr blkAddr = 0;
+        bool isSecure = false;
+
+        bool operator==(const FdipLineKey &other) const
+        {
+            return blkAddr == other.blkAddr && isSecure == other.isSecure;
+        }
+    };
+
+    struct FdipLineKeyHash
+    {
+        size_t operator()(const FdipLineKey &key) const
+        {
+            return (std::hash<Addr>{}(key.blkAddr) << 1) ^
+                   std::hash<bool>{}(key.isSecure);
+        }
+    };
+
+    std::unordered_map<FdipLineKey, FdipMissAllocTracker, FdipLineKeyHash>
+        fdipMissAllocTrackers;
+    std::unordered_map<FdipLineKey, FdipLastOutcomeRecord, FdipLineKeyHash>
+        fdipLastOutcomes;
+    std::unordered_map<FdipLineKey, FdipPendingMissAlloc, FdipLineKeyHash>
+        fdipPendingMissAllocs;
 
     /** Max number of MSHR allocations/merges allowed per cycle.
      * -1 means unlimited (no arbitration limit). Configured per cache via
@@ -1374,6 +1432,72 @@ class BaseCache : public ClockedObject, public CacheAccessor
         /** Number of FDIP probe merges onto existing in-flight misses. */
         statistics::Scalar fdipProbeMerged;
 
+        /** Number of FDIP misses that allocate a real MSHR. */
+        statistics::Scalar fdipMissAlloc;
+        /** Number of FDIP miss allocs with no prior FDIP lifecycle outcome. */
+        statistics::Scalar fdipMissAllocColdOrUnknown;
+        /** Number of FDIP miss allocs following a prior useful FDIP lifecycle. */
+        statistics::Scalar fdipMissAllocAfterUseful;
+        /** Number of FDIP miss allocs following a prior unused FDIP lifecycle. */
+        statistics::Scalar fdipMissAllocAfterUnused;
+        /** Number of cold/unknown FDIP miss allocs later observed as late. */
+        statistics::Scalar fdipMissAllocColdOrUnknownThenLate;
+        /** Number of cold/unknown FDIP miss allocs later observed as useful. */
+        statistics::Scalar fdipMissAllocColdOrUnknownThenUseful;
+        /** Number of cold/unknown FDIP miss allocs later observed as unused. */
+        statistics::Scalar fdipMissAllocColdOrUnknownThenUnused;
+        /** Number of cold/unknown FDIP miss allocs later dropped on refill. */
+        statistics::Scalar fdipMissAllocColdOrUnknownThenDropped;
+        /** Number of after-useful FDIP miss allocs later observed as late. */
+        statistics::Scalar fdipMissAllocAfterUsefulThenLate;
+        /** Number of after-useful FDIP miss allocs later observed as useful. */
+        statistics::Scalar fdipMissAllocAfterUsefulThenUseful;
+        /** Number of after-useful FDIP miss allocs later observed as unused. */
+        statistics::Scalar fdipMissAllocAfterUsefulThenUnused;
+        /** Number of after-useful FDIP miss allocs later dropped on refill. */
+        statistics::Scalar fdipMissAllocAfterUsefulThenDropped;
+        /** Number of after-unused FDIP miss allocs later observed as late. */
+        statistics::Scalar fdipMissAllocAfterUnusedThenLate;
+        /** Number of after-unused FDIP miss allocs later observed as useful. */
+        statistics::Scalar fdipMissAllocAfterUnusedThenUseful;
+        /** Number of after-unused FDIP miss allocs later observed as unused. */
+        statistics::Scalar fdipMissAllocAfterUnusedThenUnused;
+        /** Number of after-unused FDIP miss allocs later dropped on refill. */
+        statistics::Scalar fdipMissAllocAfterUnusedThenDropped;
+
+        /** Number of repeated FDIP miss allocs on the same physical line. */
+        statistics::Scalar fdipMissAllocRepeat;
+
+        /** Number of unique physical lines that saw repeated FDIP miss allocs. */
+        statistics::Scalar fdipMissAllocRepeatLines;
+
+        /** Sum of repeat miss-alloc intervals in cycles. */
+        statistics::Scalar fdipMissAllocRepeatDeltaCyclesSum;
+
+        /** Maximum number of FDIP miss allocs observed on one line. */
+        statistics::Scalar fdipMissAllocMaxAllocsPerLine;
+
+        /** Repeat FDIP miss allocs within 64 cycles. */
+        statistics::Scalar fdipMissAllocRepeatLe64;
+
+        /** Repeat FDIP miss allocs within 256 cycles. */
+        statistics::Scalar fdipMissAllocRepeatLe256;
+
+        /** Repeat FDIP miss allocs within 1K cycles. */
+        statistics::Scalar fdipMissAllocRepeatLe1K;
+
+        /** Repeat FDIP miss allocs within 4K cycles. */
+        statistics::Scalar fdipMissAllocRepeatLe4K;
+
+        /** Repeat FDIP miss allocs within 16K cycles. */
+        statistics::Scalar fdipMissAllocRepeatLe16K;
+
+        /** Repeat FDIP miss allocs within 64K cycles. */
+        statistics::Scalar fdipMissAllocRepeatLe64K;
+
+        /** Repeat FDIP miss allocs beyond 64K cycles. */
+        statistics::Scalar fdipMissAllocRepeatGt64K;
+
         /** Number of FDIP misses rejected by pure-FDIP quota. */
         statistics::Scalar fdipRejectedNoPrefetchMSHR;
 
@@ -1594,6 +1718,18 @@ class BaseCache : public ClockedObject, public CacheAccessor
         return blk && blk->getXsMetadata().isFdip();
     }
 
+    bool shouldUseFdipWayHint(const PacketPtr pkt, const CacheBlk *blk) const
+    {
+        if (!isL1I() || !pkt || !pkt->req || !blk || !pkt->req->isInstFetch() ||
+            !pkt->isRead() || isFdipPkt(pkt) || !pkt->req->hasXsMetadata()) {
+            return false;
+        }
+
+        const auto xs_meta = pkt->req->getXsMetadata();
+        return xs_meta.fdipSelectedWayValid &&
+               blk->getWay() == xs_meta.fdipSelectedWay;
+    }
+
     enum class FdipMissAllocDecision
     {
         Allow,
@@ -1619,6 +1755,24 @@ class BaseCache : public ClockedObject, public CacheAccessor
     }
 
     bool shouldDropFdipRefill(MSHR *mshr, const PacketPtr pkt) const;
+    FdipLineKey makeFdipLineKey(Addr blkAddr, bool is_secure) const
+    {
+        return FdipLineKey{blkAddr, is_secure};
+    }
+    FdipMissAllocPriorClass classifyFdipMissAllocPriorClass(
+        const FdipLineKey &key) const;
+    void noteFdipMissAllocEvent(const FdipLineKey &key,
+                                statistics::Scalar &cold_stat,
+                                statistics::Scalar &after_useful_stat,
+                                statistics::Scalar &after_unused_stat,
+                                bool terminal);
+    void noteFdipMissAlloc(Addr blkAddr, bool is_secure);
+    void noteFdipLateLifecycle(Addr blkAddr, bool is_secure);
+    void noteFdipUsefulLifecycle(Addr blkAddr, bool is_secure);
+    void noteFdipUnusedLifecycle(Addr blkAddr, bool is_secure);
+    void noteFdipDroppedLifecycle(Addr blkAddr, bool is_secure);
+    bool shouldSuppressFdipLine(Addr addr, bool is_secure,
+                                uint64_t cooldown_cycles) const override;
 
     Tick nextPrefetchReadyTime() const
     {
@@ -1717,6 +1871,16 @@ public:
     // CacheAccessor overrided function
 
     bool inCache(Addr addr, bool is_secure) const override { return tags->findBlock(addr, is_secure); }
+    bool lookupHitWay(Addr addr, bool is_secure, uint8_t &way) const override
+    {
+        CacheBlk *block = tags->findBlock(addr, is_secure);
+        if (!block) {
+            return false;
+        }
+
+        way = block->getWay();
+        return true;
+    }
 
     unsigned level() const override { return cacheLevel; }
 
@@ -1768,6 +1932,7 @@ public:
         auto blk = tags->findBlock(addr, is_secure);
         return blk ? blk->data: nullptr;
     }
+
     private:
     const bool Prefetch_CanOffload;
 };
