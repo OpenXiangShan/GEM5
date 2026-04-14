@@ -107,7 +107,9 @@ Someone picking up the task later should be able to understand why this approach
 
 Prefer one ExecPlan file per complex task rather than putting everything into one large document.
 
-Recommended directory structure:
+By default, ExecPlan instances should be treated as local working documents instead of repository-tracked artifacts. They are useful as intermediate notes during long investigations, but they are often too noisy and task-specific to keep in git by default.
+
+Recommended local directory structure:
 
 ```text
 docs/
@@ -120,7 +122,7 @@ docs/
 Meaning:
 
 - `active/`: tasks currently in progress
-- `completed/`: finished tasks
+- `completed/`: finished tasks kept locally for later reference
 - `blocked/`: tasks paused pending external conditions
 
 Use concise, descriptive file names, for example:
@@ -128,6 +130,8 @@ Use concise, descriptive file names, for example:
 - `docs/exec-plans/active/gem5-rtl-fetch-align.md`
 - `docs/exec-plans/active/bpu-override-investigation.md`
 - `docs/exec-plans/active/spec06-regression-debug.md`
+
+Only commit an ExecPlan when there is explicit value in sharing it through the repository, such as cross-person handoff, review, or preserving a decision record that should live with the codebase.
 
 ## 5. Recommended Structure
 
