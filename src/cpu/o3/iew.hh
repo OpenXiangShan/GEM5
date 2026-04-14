@@ -571,6 +571,8 @@ class IEW
 
         statistics::Vector stallEvents;
 
+        statistics::VectorDistribution smtStallEvents;
+
         /** Distribution of number of fetch stall reasons each tick. */
         statistics::Vector fetchStallReason;
         /** Distribution of number of decode stall reasons each tick. */
