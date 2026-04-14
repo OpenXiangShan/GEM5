@@ -60,12 +60,13 @@ compile_commands.json
 .direnv
 .cursor/
 
+docs/exec-plans/
+
 # for use npm to install claude-code locally
 CLAUDE.md
 node_modules/
 package-lock.json
 package.json
-AGENTS.md
 
 microbench/build/
 microbench/output/
