@@ -725,6 +725,12 @@ def addXiangshanFDIPOptions(parser):
         help="Enable FTQ-directed ICache prefetch in DecoupledBPUWithBTB",
     )
     parser.add_argument(
+        "--bpu-runahead-entries",
+        type=int,
+        default=8,
+        help="Maximum BPU next-alloc-fetchPtr distance in FTQ entries when FDIP is enabled (0 disables, default: 8)",
+    )
+    parser.add_argument(
         "--fdip-lookahead-entries",
         type=int,
         default=1,
@@ -767,4 +773,10 @@ def addXiangshanFDIPOptions(parser):
         action="store_true",
         default=False,
         help="Drop old-path FDIP refill installation on epoch mismatch",
+    )
+    parser.add_argument(
+        "--fdip-recent-unused-cycles",
+        type=int,
+        default=0,
+        help="Suppress FDIP issue for recently-unused lines for N cycles (default: 0)",
     )

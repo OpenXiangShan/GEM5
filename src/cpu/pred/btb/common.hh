@@ -29,6 +29,18 @@ fetchCoverageSpan(Addr startPC, Addr predEndPC, unsigned capacity)
     return static_cast<unsigned>(clampedSpan);
 }
 
+inline Addr
+fetchCoverageLastLineAddr(Addr startPC, Addr predEndPC, unsigned capacity,
+                          unsigned cacheBlkSize)
+{
+    assert(cacheBlkSize > 0);
+    const unsigned span = std::max(1u,
+        fetchCoverageSpan(startPC, predEndPC, capacity));
+    const Addr endExclusive = startPC + span;
+    const Addr lastByte = endExclusive - 1;
+    return lastByte - (lastByte % cacheBlkSize);
+}
+
 enum EndType
 {
     END_CALL=0,

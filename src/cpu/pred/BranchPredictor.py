@@ -1084,7 +1084,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
     tableSizes = VectorParam.Unsigned([512] * 4,"the TAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([16] * 4 ,"the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 4 ,"when the T0~Tn entry's tag generating, PC right shift")
-    blockSize = Param.Unsigned(32,"tage index function uses 32B aligned block address")
+    blockSize = 32
 
     histLengths = VectorParam.Unsigned([5,9,17,27] ,"the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970,"The length of history passed from DBP")
@@ -1096,7 +1096,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
     useAltOnNaWidth = Param.Unsigned(7,"Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4,"Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False,"Enable bank conflict simulation")
-    numDelay = Param.Unsigned(0,"Prediction latency in cycles")
+    numDelay = 0
 
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'
@@ -1206,6 +1206,8 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
+    bpu_runahead_entries = Param.Unsigned(
+        8, "Maximum next-alloc-fetchPtr distance in FTQ entries for BPU when FDIP is enabled (0 disables)")
     enable_fdip = Param.Bool(False, "Enable FTQ-directed ICache prefetch")
     fdip_lookahead_entries = Param.Unsigned(
         0, "Maximum allowed prefetchPtr-fetchPtr distance in FTQ entries")
@@ -1220,3 +1222,5 @@ class DecoupledBPUWithBTB(BranchPredictor):
         True, "Flush FDIP partial per-entry state on redirect/epoch change")
     fdip_drop_refill_on_epoch_mismatch = Param.Bool(
         False, "Drop old-path FDIP refill installation on epoch mismatch")
+    fdip_recent_unused_cycles = Param.Unsigned(
+        0, "Suppress FDIP issue for recently-unused lines for N cycles")

@@ -101,9 +101,11 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool enableBranchTrace{false};
     bool enablePredFSQTrace{false};
     const bool enableFDIP;
+    const unsigned bpuRunaheadEntriesCfg;
     const unsigned fdipLookaheadEntriesCfg;
     const unsigned fdipIssueBandwidthCfg;
     const unsigned fdipMaxOutstandingCfg;
+    const unsigned fdipRecentUnusedCyclesCfg;
     const bool fdipFlushPartialOnEpochChangeCfg;
     const bool fdipDropRefillOnEpochMismatchCfg;
     const std::string prefetchLinesPerFtqCfg;
@@ -152,6 +154,20 @@ class DecoupledBPUWithBTB : public BPredUnit
     HistoryManager historyManager;
     unsigned resolveDequeueFailCounter{0};
     const unsigned resolveBlockThreshold;
+
+    unsigned ftqFetchToAllocDistance(ThreadID tid) const
+    {
+        if (!ftq.hasTarget(ftq.fetchId(tid), tid)) {
+            return 0;
+        }
+        return ftq.backId(tid) - ftq.fetchId(tid) + 1;
+    }
+
+    bool bpuRunaheadBlocked(ThreadID tid) const
+    {
+        return fdipEnabled() && bpuRunaheadEntriesCfg > 0 &&
+               ftqFetchToAllocDistance(tid) >= bpuRunaheadEntriesCfg;
+    }
 
     ThreadID scheduleThread() { return 0; }
 
@@ -305,6 +321,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         // Window blocking statistics
         statistics::Scalar predictionBlockedForUpdate;  // Times prediction was blocked for update priority
+        statistics::Scalar predictionBlockedForRunahead; // Times prediction was blocked by BPU runahead window
 
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
@@ -415,6 +432,10 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned fdipLookaheadEntries() const { return fdipLookaheadEntriesCfg; }
     unsigned fdipIssueBandwidth() const { return fdipIssueBandwidthCfg; }
     unsigned fdipMaxOutstanding() const { return fdipMaxOutstandingCfg; }
+    unsigned fdipRecentUnusedCycles() const
+    {
+        return fdipRecentUnusedCyclesCfg;
+    }
     bool fdipFlushPartialOnEpochChange() const
     {
         return fdipFlushPartialOnEpochChangeCfg;

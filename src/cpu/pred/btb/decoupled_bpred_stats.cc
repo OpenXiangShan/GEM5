@@ -458,6 +458,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
     ADD_STAT(predictionBlockedForUpdate, statistics::units::Count::get(), "prediction blocked for update priority"),
+    ADD_STAT(predictionBlockedForRunahead, statistics::units::Count::get(),
+             "prediction blocked by BPU runahead window"),
     ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
     ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
     ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),

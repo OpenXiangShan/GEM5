@@ -45,9 +45,11 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       // uras(p.uras),
       bpDBSwitches(p.bpDBSwitches),
       enableFDIP(p.enable_fdip),
+      bpuRunaheadEntriesCfg(p.bpu_runahead_entries),
       fdipLookaheadEntriesCfg(p.fdip_lookahead_entries),
       fdipIssueBandwidthCfg(p.fdip_issue_bandwidth),
       fdipMaxOutstandingCfg(p.fdip_max_outstanding),
+      fdipRecentUnusedCyclesCfg(p.fdip_recent_unused_cycles),
       fdipFlushPartialOnEpochChangeCfg(p.fdip_flush_partial_on_epoch_change),
       fdipDropRefillOnEpochMismatchCfg(p.fdip_drop_refill_on_epoch_mismatch),
       prefetchLinesPerFtqCfg(p.prefetch_lines_per_ftq),
@@ -174,7 +176,13 @@ DecoupledBPUWithBTB::tick()
 
     // 1. Request new prediction if FSQ not full and we are idle
     if (!threads[curTid].validprediction && !ftq.full(curTid)) {
-        if (threads[curTid].blockPredictionPending) {
+        if (bpuRunaheadBlocked(curTid)) {
+            dbpBtbStats.predictionBlockedForRunahead++;
+            DPRINTF(Override,
+                    "Prediction blocked by BPU runahead window: "
+                    "distance=%u limit=%u\n",
+                    ftqFetchToAllocDistance(curTid), bpuRunaheadEntriesCfg);
+        } else if (threads[curTid].blockPredictionPending) {
             DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
             dbpBtbStats.predictionBlockedForUpdate++;
             threads[curTid].blockPredictionPending = false;
@@ -380,6 +388,15 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     if (ftq.full(tid)) {
         dbpBtbStats.fsqFullCannotEnq++;
         DPRINTF(Override, "FSQ is full (%lu entries)\n", ftq.size(tid));
+        return;
+    }
+
+    if (bpuRunaheadBlocked(tid)) {
+        dbpBtbStats.predictionBlockedForRunahead++;
+        DPRINTF(Override,
+                "Delaying FSQ enqueue due to BPU runahead window: "
+                "distance=%u limit=%u\n",
+                ftqFetchToAllocDistance(tid), bpuRunaheadEntriesCfg);
         return;
     }
 

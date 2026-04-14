@@ -36,6 +36,27 @@ TEST(FetchCoverageSpanHelper, CoverageSpan_ClampsBeforeUnsignedNarrowing)
     EXPECT_EQ(fetchCoverageSpan(0x0, static_cast<Addr>(1) << 40, 66), 66u);
 }
 
+TEST(FetchCoverageSpanHelper, CoverageLastLine_StaysInFirstLineForInBlockRvi4B)
+{
+    EXPECT_EQ(fetchCoverageLastLineAddr(0x1008, 0x100c, 66, 64), 0x1000u);
+}
+
+TEST(FetchCoverageSpanHelper, CoverageLastLine_ExtendsToNextLineForCrossBoundaryRvi4B)
+{
+    EXPECT_EQ(fetchCoverageLastLineAddr(0x103e, 0x1042, 66, 64), 0x1040u);
+}
+
+TEST(FetchCoverageSpanHelper,
+     CoverageLastLine_UsesActualControlTailWithoutLegacyOverfetch)
+{
+    const Addr start_pc = 0x103e;
+    const Addr first_line = start_pc - (start_pc % 64);
+    const Addr last_line =
+        fetchCoverageLastLineAddr(start_pc, 0x1042, 66, 64);
+
+    EXPECT_NE(first_line, last_line);
+}
+
 } // namespace btb_pred
 
 } // namespace branch_prediction
