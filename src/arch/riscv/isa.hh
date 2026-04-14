@@ -34,12 +34,15 @@
 #ifndef __ARCH_RISCV_ISA_HH__
 #define __ARCH_RISCV_ISA_HH__
 
+#include <cstdint>
 #include <vector>
 
 #include "arch/generic/isa.hh"
+#include "arch/riscv/insts/matrix.hh"
 #include "arch/riscv/pcstate.hh"
 #include "arch/riscv/types.hh"
 #include "base/types.hh"
+#include "cpu/exec_context.hh"
 
 namespace gem5
 {
@@ -78,6 +81,19 @@ class ISA : public BaseISA
 {
   protected:
     std::vector<RegVal> miscRegFile;
+    uint32_t matrixTileM = 0;
+    uint32_t matrixTileK = 0;
+    uint32_t matrixTileN = 0;
+    std::vector<int8_t> matrixTileA;
+    std::vector<int8_t> matrixTileB;
+    std::vector<int32_t> matrixAcc;
+    std::vector<RegVal> matrixTokens;
+
+    RegVal &
+    matrixToken(size_t idx);
+
+    const RegVal &
+    matrixToken(size_t idx) const;
 
   public:
     using Params = RiscvISAParams;
@@ -113,6 +129,23 @@ class ISA : public BaseISA
     void unserialize(CheckpointIn &cp) override;
 
     ISA(const Params &p);
+
+    void resetMatrixState();
+    void matrixSyncReset(uint64_t token_idx);
+    void matrixRelease(uint64_t token_idx);
+    void matrixAcquire(uint64_t token_idx, uint64_t target);
+    void setMatrixTileM(uint64_t value);
+    void setMatrixTileK(uint64_t value);
+    void setMatrixTileN(uint64_t value);
+    uint32_t getMatrixTileM() const { return matrixTileM; }
+    uint32_t getMatrixTileK() const { return matrixTileK; }
+    uint32_t getMatrixTileN() const { return matrixTileN; }
+    Fault matrixLoadA8(ExecContext *xc, Addr base, Addr stride);
+    Fault matrixLoadB8(ExecContext *xc, Addr base, Addr stride);
+    Fault matrixLoadC32(ExecContext *xc, Addr base, Addr stride);
+    Fault matrixStoreC32(ExecContext *xc, Addr base, Addr stride);
+    void matrixZeroAcc();
+    void matrixMMAccWB();
 
     void handleLockedRead(const RequestPtr &req) override;
 
