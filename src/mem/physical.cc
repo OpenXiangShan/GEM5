@@ -750,35 +750,33 @@ PhysicalMemory::unserializeFromZstd(std::string filepath, unsigned store_id, lon
     }
 
     auto file_size = lseek(fd, 0, SEEK_END);
+    if (file_size < 0) {
+        close(fd);
+        fatal("Failed to determine size of compressed file %s\n", filepath.c_str());
+    }
     if (file_size == 0) {
+        close(fd);
         fatal("File size is zero\n");
     }
     lseek(fd, 0, SEEK_SET);
+    warn("Read zstd file size %lu\n", file_size);
 
-    auto compress_file_buffer = malloc(file_size);
+    const size_t compress_file_buffer_size = ZSTD_DStreamInSize();
+    auto compress_file_buffer = static_cast<uint8_t*>(malloc(compress_file_buffer_size));
     if (!compress_file_buffer) {
         close(fd);
         fatal("Compress file buffer create failed\n");
     }
 
-    // read compressed file
-    ssize_t compressed_file_buffer_size = read(fd, compress_file_buffer, file_size);
-    warn("Read zstd file size %lu\n", compressed_file_buffer_size);
-    if (compressed_file_buffer_size != file_size) {
-        free(compress_file_buffer);
-        close(fd);
-        fatal("Compress file read failed\n");
-    }
-    close(fd);
-
-    // create decompress input buffer
-    ZSTD_inBuffer input = {compress_file_buffer, (size_t)compressed_file_buffer_size, 0};
+    // Stream compressed input to avoid large allocations and large single read() calls.
+    ZSTD_inBuffer input = {compress_file_buffer, 0, 0};
 
     // alloc decompress buffer
     const uint32_t decompress_file_buffer_size = 16384;
     uint64_t* decompress_file_buffer = (uint64_t*)calloc(decompress_file_buffer_size, sizeof(long));
     if (!decompress_file_buffer) {
         free(compress_file_buffer);
+        close(fd);
         fatal("Decompress file creating failed\n");
     }
 
@@ -788,6 +786,7 @@ PhysicalMemory::unserializeFromZstd(std::string filepath, unsigned store_id, lon
     if (!dstream) {
         free(compress_file_buffer);
         free(decompress_file_buffer);
+        close(fd);
         fatal("Cannot create zstd dstream object\n");
     }
 
@@ -796,51 +795,86 @@ PhysicalMemory::unserializeFromZstd(std::string filepath, unsigned store_id, lon
         ZSTD_freeDStream(dstream);
         free(compress_file_buffer);
         free(decompress_file_buffer);
+        close(fd);
         fatal("Cannot init dstream object: %s\n", ZSTD_getErrorName(init_result));
     }
 
-    // decompress and write in memory
+    // Decompress with the standard outer-read / inner-consume loop.
     uint64_t* pmem_current;
     uint64_t total_write_size = 0;
     uint64_t non_zero_dword = 0;
-    while (total_write_size < range.size()) {
-        ZSTD_outBuffer output = {decompress_file_buffer, decompress_file_buffer_size * sizeof(long), 0};
-        size_t result = ZSTD_decompressStream(dstream, &output, &input);
-        if (ZSTD_isError(result)) {
+    size_t last_result = 1;
+
+    while (true) {
+        ssize_t bytes_read = 0;
+        do {
+            bytes_read = read(fd, compress_file_buffer, compress_file_buffer_size);
+        } while (bytes_read < 0 && errno == EINTR);
+
+        if (bytes_read < 0) {
             ZSTD_freeDStream(dstream);
             free(compress_file_buffer);
             free(decompress_file_buffer);
-            fatal("Decompress failed: %s\n", ZSTD_getErrorName(result));
+            close(fd);
+            fatal("Compress file read failed\n");
         }
 
-        if (output.pos == 0) {
+        if (bytes_read == 0) {
             break;
         }
 
-        for (uint64_t x = 0; x < output.pos; x += sizeof(long)) {
-            pmem_current = (uint64_t*)(pmem + total_write_size + x);
-            uint64_t read_data = *(decompress_file_buffer + x / sizeof(long));
-            if (read_data != 0 || *pmem_current != 0) {
-                *pmem_current = read_data;
-                non_zero_dword++;
+        input.src = compress_file_buffer;
+        input.size = static_cast<size_t>(bytes_read);
+        input.pos = 0;
+
+        while (input.pos < input.size) {
+            ZSTD_outBuffer output = {
+                decompress_file_buffer,
+                decompress_file_buffer_size * sizeof(long),
+                0
+            };
+            last_result = ZSTD_decompressStream(dstream, &output, &input);
+            if (ZSTD_isError(last_result)) {
+                ZSTD_freeDStream(dstream);
+                free(compress_file_buffer);
+                free(decompress_file_buffer);
+                close(fd);
+                fatal("Decompress failed: %s\n", ZSTD_getErrorName(last_result));
             }
+
+            if (total_write_size + output.pos > range.size()) {
+                ZSTD_freeDStream(dstream);
+                free(compress_file_buffer);
+                free(decompress_file_buffer);
+                close(fd);
+                fatal("Decompress failed: No error detected. Binary size is larger than memory!\n");
+            }
+
+            for (uint64_t x = 0; x < output.pos; x += sizeof(long)) {
+                pmem_current = (uint64_t*)(pmem + total_write_size + x);
+                uint64_t read_data = *(decompress_file_buffer + x / sizeof(long));
+                if (read_data != 0 || *pmem_current != 0) {
+                    *pmem_current = read_data;
+                    non_zero_dword++;
+                }
+            }
+            total_write_size += output.pos;
         }
-        total_write_size += output.pos;
     }
     warn("Total write non-zero bytes: %lu\n", non_zero_dword * 8);
 
-    ZSTD_outBuffer output = {decompress_file_buffer, decompress_file_buffer_size * sizeof(long), 0};
-    size_t result = ZSTD_decompressStream(dstream, &output, &input);
-    if (ZSTD_isError(result) || output.pos != 0) {
+    if (last_result != 0) {
         ZSTD_freeDStream(dstream);
         free(compress_file_buffer);
         free(decompress_file_buffer);
-        fatal("Decompress failed: %s. Binary size is larger than memory!\n", ZSTD_getErrorName(result));
+        close(fd);
+        fatal("Decompress failed: unexpected end of compressed input\n");
     }
 
     ZSTD_freeDStream(dstream);
     free(compress_file_buffer);
     free(decompress_file_buffer);
+    close(fd);
 }
 
 bool
