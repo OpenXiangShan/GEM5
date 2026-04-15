@@ -380,7 +380,7 @@ XSStridePrefetcher::triggerFromCommitTable(const PrefetchInfo &pfi,
     }
 
     if (useXsDepth) {
-        sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 2)),
+        sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 3)),
                          addresses, 0, PrefetchSourceType::SStride, 1);
         sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 6)),
                          addresses, 0, PrefetchSourceType::SStride, 2);
