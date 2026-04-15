@@ -116,6 +116,9 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         fetchRedirect[tid] = false;
         serializeOnNextInst[tid] = false;
+        bypassDispatchStageAfterSquash[tid] = false;
+        bypassingDispatchStageAfterSquash[tid] = false;
+        bypassDispatchStageSquashVersion[tid].update(0);
     }
 
     assert(renameToIEWDelay == 1);
@@ -392,6 +395,9 @@ IEW::startupStage()
 void
 IEW::clearStates(ThreadID tid)
 {
+    bypassDispatchStageAfterSquash[tid] = false;
+    bypassingDispatchStageAfterSquash[tid] = false;
+    bypassDispatchStageSquashVersion[tid].update(0);
 }
 
 void
@@ -512,6 +518,9 @@ IEW::takeOverFrom()
 
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         fetchRedirect[tid] = false;
+        bypassDispatchStageAfterSquash[tid] = false;
+        bypassingDispatchStageAfterSquash[tid] = false;
+        bypassDispatchStageSquashVersion[tid].update(0);
     }
 
     updateLSQNextCycle = false;
@@ -542,6 +551,10 @@ IEW::squash(ThreadID tid)
     updatedQueues = true;
 
     fixedbuffer[tid].clear();
+    bypassDispatchStageAfterSquash[tid] = enableDispatchStage;
+    bypassingDispatchStageAfterSquash[tid] = false;
+    bypassDispatchStageSquashVersion[tid].update(
+        fromCommit->commitInfo[tid].squashVersion.getVersion());
 
     stallSig->blockRename[tid] = true;
 
@@ -890,6 +903,35 @@ IEW::deactivateStage()
 }
 
 bool
+IEW::dispQueHasLiveInsts() const
+{
+    for (const auto &dp : dispQue) {
+        for (const auto &inst : dp) {
+            if (!inst->isSquashed()) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool
+IEW::hasSquashRecoveryInsts(ThreadID tid) const
+{
+    return !fixedbuffer[tid].empty() &&
+           fixedbuffer[tid].front()->getVersion() ==
+               bypassDispatchStageSquashVersion[tid].getVersion();
+}
+
+bool
+IEW::canBypassDispatchStageAfterSquash(ThreadID tid) const
+{
+    return enableDispatchStage &&
+           hasSquashRecoveryInsts(tid) &&
+           !dispQueHasLiveInsts();
+}
+
+bool
 IEW::canInsertLDSTQue(ThreadID tid)
 {
     int freeLQEntries = ldstQueue.getFreeLQEntries(tid);
@@ -946,7 +988,31 @@ IEW::dispatchInsts()
 
         // dispatch to IQ
         if (enableDispatchStage) {
-            classifyInstToDispQue(tid);
+            bool recovery_batch_arrived =
+                bypassDispatchStageAfterSquash[tid] &&
+                hasSquashRecoveryInsts(tid);
+            bool bypass_after_squash =
+                (bypassingDispatchStageAfterSquash[tid] ||
+                 recovery_batch_arrived) &&
+                canBypassDispatchStageAfterSquash(tid);
+
+            if (bypass_after_squash) {
+                bypassingDispatchStageAfterSquash[tid] = true;
+                bypassDispatchStageAfterSquash[tid] = false;
+                DPRINTF(IEW, "[tid:%i] Bypassing dispatch-stage latency after squash recovery.\n", tid);
+                dispatchInstFromRename(tid);
+                if (fixedbuffer[tid].empty()) {
+                    bypassingDispatchStageAfterSquash[tid] = false;
+                }
+            } else {
+                if (bypassingDispatchStageAfterSquash[tid]) {
+                    bypassingDispatchStageAfterSquash[tid] = false;
+                }
+                if (recovery_batch_arrived) {
+                    bypassDispatchStageAfterSquash[tid] = false;
+                }
+                classifyInstToDispQue(tid);
+            }
         } else {
             dispatchInstFromRename(tid);
         }

@@ -332,6 +332,9 @@ class IEW
      */
     void dispatchInstFromDispQue();
     void classifyInstToDispQue(ThreadID tid);
+    bool dispQueHasLiveInsts() const;
+    bool hasSquashRecoveryInsts(ThreadID tid) const;
+    bool canBypassDispatchStageAfterSquash(ThreadID tid) const;
 
     /** Executes instructions. In the case of memory operations, it informs the
      * LSQ to execute the instructions. Also handles any redirects that occur
@@ -401,6 +404,10 @@ class IEW
     std::deque<DynInstPtr> fixedbuffer[MaxThreads];
 
     std::deque<DynInstPtr> dispQue[3];
+
+    bool bypassDispatchStageAfterSquash[MaxThreads]{};
+    bool bypassingDispatchStageAfterSquash[MaxThreads]{};
+    SquashVersion bypassDispatchStageSquashVersion[MaxThreads];
 
     /** Scoreboard pointer. */
     Scoreboard* scoreboard;
