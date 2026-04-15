@@ -1,8 +1,8 @@
 #ifndef __CPU_PRED_BTB_TAGE_HH__
 #define __CPU_PRED_BTB_TAGE_HH__
 
-#include <cstdint>
 #include <array>
+#include <cstdint>
 #include <deque>
 #include <map>
 #include <utility>
@@ -85,13 +85,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
             short counter;
             bool useful;
             Addr pc;
+            Addr ownerBlockBase;
 
             TageEntry() : valid(false), tag(0), lruCounter(0), slots{},
-                          counter(0), useful(false), pc(0) {}
+                          counter(0), useful(false), pc(0), ownerBlockBase(0) {}
 
             TageEntry(Addr tag, short counter, Addr pc) :
                       valid(true), tag(tag), lruCounter(0), slots{},
-                      counter(counter), useful(false), pc(pc)
+                      counter(counter), useful(false), pc(pc), ownerBlockBase(pc)
             {
                 slots[0] = TageSlot(true, 0, counter, useful);
             }
@@ -387,6 +388,20 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateAllocSuccess;
         Scalar updateMispred;
         Scalar updateResetU;
+        Scalar predTagHitSlotMiss;
+        Scalar allocSameTagTrueBlockReuse;
+        Scalar allocSameTagAliasCollision;
+        Scalar allocSameTagWhileInvalidWayExists;
+        Scalar allocSameTagFillEmptySlot;
+        Scalar allocSameTagReplaceWeakishSlot;
+        Scalar allocSameTagFullBlocked;
+        Scalar allocSameTagFullBlockedWhileInvalidWayExists;
+        Scalar allocSameTagSpillUseInvalidWay;
+        Scalar allocSameTagSpillWholeEvict;
+        Scalar allocDifferentTagUseInvalidWay;
+        Scalar allocDifferentTagWholeEvict;
+        Scalar allocDifferentTagBlockedProtected;
+        Scalar allocDifferentTagWeakenOnly;
         Scalar predFinalSourceBase;
         Scalar updateFinalSourceBaseCorrect;
         Scalar updateFinalSourceBaseWrong;
@@ -412,6 +427,20 @@ class BTBTAGE : public TimedBaseBTBPredictor
         statistics::Vector predFinalSourceTable;
         statistics::Vector updateFinalSourceTableCorrect;
         statistics::Vector updateFinalSourceTableWrong;
+        statistics::Vector predTagHitSlotMissByTable;
+        statistics::Vector allocSameTagTrueBlockReuseByTable;
+        statistics::Vector allocSameTagAliasCollisionByTable;
+        statistics::Vector allocSameTagWhileInvalidWayExistsByTable;
+        statistics::Vector allocSameTagFillEmptySlotByTable;
+        statistics::Vector allocSameTagReplaceWeakishSlotByTable;
+        statistics::Vector allocSameTagFullBlockedByTable;
+        statistics::Vector allocSameTagFullBlockedWhileInvalidWayExistsByTable;
+        statistics::Vector allocSameTagSpillUseInvalidWayByTable;
+        statistics::Vector allocSameTagSpillWholeEvictByTable;
+        statistics::Vector allocDifferentTagUseInvalidWayByTable;
+        statistics::Vector allocDifferentTagWholeEvictByTable;
+        statistics::Vector allocDifferentTagBlockedProtectedByTable;
+        statistics::Vector allocDifferentTagWeakenOnlyByTable;
 #endif
 
         Scalar condPredwrong;
@@ -488,6 +517,10 @@ private:
                                  uint64_t &allocated_slot);
 
     int findSlotByPosition(const TageEntry &entry, unsigned position) const;
+    bool findLiveSameTagSlot(unsigned table, Addr index, Addr tag,
+                             unsigned position, unsigned preferred_way,
+                             unsigned &resolved_way,
+                             unsigned &resolved_slot) const;
     bool isWeakishCounter(short counter) const;
     bool isSlotUnprotected(const TageSlot &slot) const;
     bool isEntryWholeEvictable(const TageEntry &entry) const;
@@ -495,6 +528,7 @@ private:
     void noteAllocationFailure();
     void resetEntryUsefulBits(TageEntry &entry);
     void syncEntryLegacyMirror(TageEntry &entry);
+    bool weakenFirstNonUsefulStrongSlot(unsigned table, Addr index);
 
     // Helper methods for LRU management
     void updateLRU(int table, Addr index, unsigned way);

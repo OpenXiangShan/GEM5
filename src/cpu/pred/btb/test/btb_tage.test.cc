@@ -234,6 +234,7 @@ void setupTageEntry(BTBTAGE* tage, Addr pc, int table_idx,
     auto& entry = tage->tageTable[table_idx][index][way];
     entry.valid = true;
     entry.tag = tag;
+    entry.ownerBlockBase = startPC;
     entry.slots[0] = BTBTAGE::TageSlot();
     entry.slots[1] = BTBTAGE::TageSlot();
     entry.slots[slot] = BTBTAGE::TageSlot(true, position, counter, useful);
@@ -750,6 +751,7 @@ void createManualTageEntry(BTBTAGE* tage, int table, Addr index, int way,
     if (reset_slots) {
         entry.valid = true;
         entry.tag = tag;
+        entry.ownerBlockBase = startPC;
         entry.slots[0] = BTBTAGE::TageSlot();
         entry.slots[1] = BTBTAGE::TageSlot();
     }
@@ -804,6 +806,23 @@ unsigned countWaysWithTag(BTBTAGE* tage, int table, Addr index, Addr tag)
         }
     }
     return matches;
+}
+
+int findWayWithTagAndPosition(BTBTAGE* tage, int table, Addr index,
+                              Addr tag, unsigned position)
+{
+    for (unsigned way = 0; way < tage->numWays[table]; ++way) {
+        const auto &entry = tage->tageTable[table][index][way];
+        if (!entry.valid || entry.tag != tag) {
+            continue;
+        }
+        for (const auto &slot : entry.slots) {
+            if (slot.valid && slot.position == position) {
+                return static_cast<int>(way);
+            }
+        }
+    }
+    return -1;
 }
 
 
@@ -975,6 +994,44 @@ TEST_F(BTBTAGETest, DifferentTagWholeEntryEvictionRequiresAllSlotsUnprotected) {
         << "Evicting an unprotected whole entry should count as a successful allocation";
 }
 
+TEST_F(BTBTAGETest, DifferentTagUseInvalidWayRequiresExistingDifferentTagEntry) {
+    tage = new BTBTAGE(1, 2, 32);
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+    history.resize(64, false);
+    stagePreds.resize(2);
+
+    const int testTable = 0;
+    const Addr startA = 0x1000;
+    auto collidingBlocks = findCollidingBlockStarts(tage, startA, testTable, 1);
+    ASSERT_EQ(collidingBlocks.size(), 1u);
+    const Addr startB = collidingBlocks[0];
+    const Addr testIndex = tage->getTageIndex(startA, testTable);
+    const Addr tagA = tage->getTageTag(startA, testTable);
+    const Addr tagB = tage->getTageTag(startB, testTable);
+    ASSERT_EQ(testIndex, tage->getTageIndex(startB, testTable));
+    ASSERT_NE(tagA, tagB);
+
+    BTBEntry entryA = createBTBEntry(startA);
+    predictUpdateCycle(tage, startA, entryA, false, history, stagePreds);
+
+    EXPECT_EQ(tage->tageStats.allocDifferentTagUseInvalidWay, 0)
+        << "Filling an empty set should not count as reusing an invalid way next to an existing different-tag entry";
+
+    tage = new BTBTAGE(1, 2, 32);
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+    history.reset();
+    stagePreds.assign(2, FullBTBPrediction{});
+
+    createManualTageEntry(tage, testTable, testIndex, 0, tagA,
+                          2, true, startA, 0, 0, startA, true);
+
+    BTBEntry entryB = createBTBEntry(startB);
+    predictUpdateCycle(tage, startB, entryB, false, history, stagePreds);
+
+    EXPECT_EQ(tage->tageStats.allocDifferentTagUseInvalidWay, 1)
+        << "The counter should increment only once the set already contains another valid different-tag entry";
+}
+
 TEST_F(BTBTAGETest, SameTagPositionMissFillsEmptySlotAndSortsByPosition) {
     tage = new BTBTAGE(1, 2, 32);
     memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
@@ -1044,7 +1101,7 @@ TEST_F(BTBTAGETest, SameTagFullEntryReplacesWeakishNonUsefulSlot) {
     EXPECT_FALSE(entry.slots[1].useful);
 }
 
-TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotOnlyWeakensCounter) {
+TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotSpillsToInvalidWay) {
     tage = new BTBTAGE(1, 2, 32);
     memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
     history.resize(64, false);
@@ -1066,22 +1123,110 @@ TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotOnlyWeakensCounter) {
     BTBEntry newEntry = createBTBEntry(newPC);
     predictUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
 
-    const auto &entry = tage->tageTable[testTable][index][0];
-    ASSERT_TRUE(entry.valid);
+    const auto &entry0 = tage->tageTable[testTable][index][0];
+    const auto &entry1 = tage->tageTable[testTable][index][1];
+    ASSERT_TRUE(entry0.valid);
+    ASSERT_TRUE(entry1.valid);
+    EXPECT_EQ(countWaysWithTag(tage, testTable, index, tag), 2u);
+    EXPECT_EQ(entry0.slots[0].position, tage->getBranchIndexInBlock(weakenedPC, startPC));
+    EXPECT_EQ(entry0.slots[0].counter, 2);
+    EXPECT_EQ(entry0.slots[1].position, tage->getBranchIndexInBlock(protectedPC, startPC));
+    EXPECT_EQ(entry0.slots[1].counter, -2);
+    EXPECT_EQ(findWayWithTagAndPosition(tage, testTable, index, tag,
+                                        tage->getBranchIndexInBlock(newPC, startPC)),
+              1);
+    EXPECT_EQ(entry1.slots[0].counter, -1);
+    EXPECT_EQ(tage->tageStats.allocSameTagSpillUseInvalidWay, 1)
+        << "a full non-replaceable same-tag working set should spill into an invalid way";
+    EXPECT_EQ(tage->tageStats.updateAllocFailure, 0)
+        << "successful same-tag spill should not count as an allocation failure";
+}
+
+TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotSpillsByWholeEntryEviction) {
+    tage = new BTBTAGE(1, 2, 32);
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+    history.resize(64, false);
+    stagePreds.resize(2);
+
+    const int testTable = 0;
+    const Addr startPC = 0x3400;
+    auto collidingBlocks = findCollidingBlockStarts(tage, startPC, testTable, 1);
+    ASSERT_EQ(collidingBlocks.size(), 1u);
+    const Addr otherBlock = collidingBlocks[0];
+    const Addr keptPC = startPC;
+    const Addr protectedPC = startPC + 4;
+    const Addr newPC = startPC + 8;
+    const Addr index = tage->getTageIndex(startPC, testTable);
+    const Addr tag = tage->getTageTag(startPC, testTable);
+    const Addr otherTag = tage->getTageTag(otherBlock, testTable);
+
+    createManualTageEntry(tage, testTable, index, 0, tag,
+                          2, false, keptPC, 0, 0, startPC, true);
+    createManualTageEntry(tage, testTable, index, 0, tag,
+                          -2, true, protectedPC, 0, 1, startPC, false);
+
+    createManualTageEntry(tage, testTable, index, 1, otherTag,
+                          0, false, otherBlock, 0, 0, otherBlock, true);
+    createManualTageEntry(tage, testTable, index, 1, otherTag,
+                          -1, false, otherBlock + 4, 0, 1, otherBlock, false);
+
+    BTBEntry newEntry = createBTBEntry(newPC);
+    predictUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
+
+    const auto &entry0 = tage->tageTable[testTable][index][0];
+    const auto &entry1 = tage->tageTable[testTable][index][1];
+    ASSERT_TRUE(entry0.valid);
+    ASSERT_TRUE(entry1.valid);
+    EXPECT_EQ(countWaysWithTag(tage, testTable, index, tag), 2u);
+    EXPECT_EQ(entry1.tag, tag)
+        << "same-tag spill should be allowed to reuse a whole-entry eviction victim";
+    EXPECT_EQ(findWayWithTagAndPosition(tage, testTable, index, tag,
+                                        tage->getBranchIndexInBlock(newPC, startPC)),
+              1);
+    EXPECT_EQ(tage->tageStats.allocSameTagSpillWholeEvict, 1);
+}
+
+TEST_F(BTBTAGETest, SameTagSpillFailureWeakensSetAndCountsAllocationFailure) {
+    tage = new BTBTAGE(1, 2, 32);
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+    history.resize(64, false);
+    stagePreds.resize(2);
+
+    const int testTable = 0;
+    const Addr startPC = 0x3800;
+    auto collidingBlocks = findCollidingBlockStarts(tage, startPC, testTable, 1);
+    ASSERT_EQ(collidingBlocks.size(), 1u);
+    const Addr otherBlock = collidingBlocks[0];
+    const Addr weakenedPC = startPC;
+    const Addr protectedPC = startPC + 4;
+    const Addr newPC = startPC + 8;
+    const Addr index = tage->getTageIndex(startPC, testTable);
+    const Addr tag = tage->getTageTag(startPC, testTable);
+    const Addr otherTag = tage->getTageTag(otherBlock, testTable);
+
+    createManualTageEntry(tage, testTable, index, 0, tag,
+                          2, false, weakenedPC, 0, 0, startPC, true);
+    createManualTageEntry(tage, testTable, index, 0, tag,
+                          -2, true, protectedPC, 0, 1, startPC, false);
+    createManualTageEntry(tage, testTable, index, 1, otherTag,
+                          2, false, otherBlock, 0, 0, otherBlock, true);
+    createManualTageEntry(tage, testTable, index, 1, otherTag,
+                          -2, true, otherBlock + 4, 0, 1, otherBlock, false);
+
+    BTBEntry newEntry = createBTBEntry(newPC);
+    predictUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
+
+    const auto &entry0 = tage->tageTable[testTable][index][0];
+    ASSERT_TRUE(entry0.valid);
     EXPECT_EQ(countWaysWithTag(tage, testTable, index, tag), 1u);
-    ASSERT_TRUE(entry.slots[0].valid);
-    ASSERT_TRUE(entry.slots[1].valid);
-    EXPECT_EQ(entry.slots[0].position, tage->getBranchIndexInBlock(weakenedPC, startPC));
-    EXPECT_EQ(entry.slots[0].counter, 1)
-        << "no replaceable slot means the first strong non-useful slot should be weakened toward zero";
-    EXPECT_EQ(entry.slots[1].position, tage->getBranchIndexInBlock(protectedPC, startPC));
-    EXPECT_EQ(entry.slots[1].counter, -2);
-    EXPECT_EQ(entry.slots[1].useful, true);
-    EXPECT_NE(entry.slots[0].position, tage->getBranchIndexInBlock(newPC, startPC));
-    EXPECT_NE(entry.slots[1].position, tage->getBranchIndexInBlock(newPC, startPC))
-        << "no new slot should be inserted when both slots are full and none is replaceable";
+    EXPECT_EQ(entry0.slots[0].position, tage->getBranchIndexInBlock(weakenedPC, startPC));
+    EXPECT_EQ(entry0.slots[0].counter, 1)
+        << "when same-tag spill has no invalid way or whole-entry victim, the set should weaken the first strong non-useful slot";
+    EXPECT_EQ(findWayWithTagAndPosition(tage, testTable, index, tag,
+                                        tage->getBranchIndexInBlock(newPC, startPC)),
+              -1);
     EXPECT_EQ(tage->tageStats.updateAllocFailure, 1)
-        << "same-tag full-slot miss without replacement should still count as an allocation failure";
+        << "same-tag spill failure should still count as an allocation failure";
 }
 
 TEST_F(BTBTAGETest, UpdateUsesBranchPositionWhenSlotOrderChanges) {
@@ -1133,6 +1278,111 @@ TEST_F(BTBTAGETest, UpdateUsesBranchPositionWhenSlotOrderChanges) {
     EXPECT_EQ(entry.slots[1].position, tage->getBranchIndexInBlock(lateEntry.pc, startPC));
     EXPECT_EQ(entry.slots[1].counter, 1)
         << "the later branch update should follow branch position after slot reordering";
+}
+
+TEST_F(BTBTAGETest, DuplicateSameTagEntriesLookupByPosition) {
+    tage = new BTBTAGE(1, 2, 32);
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+    history.resize(64, false);
+    stagePreds.resize(2);
+
+    const int testTable = 0;
+    const Addr startPC = 0x4400;
+    const Addr entry1PC = startPC;
+    const Addr entry2PC = startPC + 4;
+    const Addr index = tage->getTageIndex(startPC, testTable);
+    const Addr tag = tage->getTageTag(startPC, testTable);
+
+    createManualTageEntry(tage, testTable, index, 0, tag,
+                          2, false, entry1PC, 0, 0, startPC, true);
+    createManualTageEntry(tage, testTable, index, 1, tag,
+                          -2, false, entry2PC, 0, 0, startPC, true);
+
+    stagePreds[1].btbEntries = {createBTBEntry(entry1PC), createBTBEntry(entry2PC)};
+    tage->putPCHistory(startPC, history, stagePreds);
+
+    auto result1 = findCondTaken(stagePreds[1].condTakens, entry1PC);
+    auto result2 = findCondTaken(stagePreds[1].condTakens, entry2PC);
+    ASSERT_TRUE(result1.first);
+    ASSERT_TRUE(result2.first);
+    EXPECT_TRUE(result1.second);
+    EXPECT_FALSE(result2.second);
+
+    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
+    ASSERT_TRUE(meta->preds.count(entry1PC));
+    ASSERT_TRUE(meta->preds.count(entry2PC));
+    EXPECT_EQ(meta->preds[entry1PC].mainInfo.way, 0u);
+    EXPECT_EQ(meta->preds[entry2PC].mainInfo.way, 1u);
+}
+
+TEST_F(BTBTAGETest, DuplicateSameTagEntriesCountSingleSlotMiss) {
+    tage = new BTBTAGE(1, 2, 32);
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+    history.resize(64, false);
+    stagePreds.resize(2);
+
+    const int testTable = 0;
+    const Addr startPC = 0x4800;
+    const Addr index = tage->getTageIndex(startPC, testTable);
+    const Addr tag = tage->getTageTag(startPC, testTable);
+
+    createManualTageEntry(tage, testTable, index, 0, tag,
+                          2, false, startPC, 0, 0, startPC, true);
+    createManualTageEntry(tage, testTable, index, 1, tag,
+                          -2, false, startPC + 4, 0, 0, startPC, true);
+
+    stagePreds[1].btbEntries = {createBTBEntry(startPC + 8)};
+    tage->putPCHistory(startPC, history, stagePreds);
+
+    EXPECT_EQ(tage->tageStats.predTagHitSlotMiss, 1)
+        << "multiple same-tag entries without the requested position should still count as one table-level slot miss";
+}
+
+TEST_F(BTBTAGETest, UpdateUsesBranchPositionWhenProviderWayChanges) {
+    tage = new BTBTAGE(1, 2, 32);
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+    history.resize(64, false);
+    stagePreds.resize(2);
+
+    const Addr startPC = 0x4c00;
+    const Addr index = tage->getTageIndex(startPC, 0);
+    const Addr tag = tage->getTageTag(startPC, 0);
+    BTBEntry lateEntry = createBTBEntry(startPC + 4, true, true, false, 0);
+    BTBEntry earlierEntry = createBTBEntry(startPC, true, true, false, 0);
+
+    createManualTageEntry(tage, 0, index, 0, tag,
+                          2, false, lateEntry.pc, 0, 0, startPC, true);
+
+    stagePreds[1].btbEntries = {lateEntry};
+    tage->putPCHistory(startPC, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+    auto tage_meta = std::static_pointer_cast<BTBTAGE::TageMeta>(meta);
+    ASSERT_TRUE(tage_meta->preds.count(lateEntry.pc));
+    ASSERT_EQ(tage_meta->preds[lateEntry.pc].mainInfo.way, 0u);
+
+    createManualTageEntry(tage, 0, index, 0, tag,
+                          -1, false, earlierEntry.pc, 0, 0, startPC, true);
+    createManualTageEntry(tage, 0, index, 1, tag,
+                          2, false, lateEntry.pc, 0, 0, startPC, true);
+
+    FetchTarget stream;
+    stream.startPC = startPC;
+    stream.exeBranchInfo = lateEntry;
+    stream.exeTaken = true;
+    stream.resolved = true;
+    stream.predBranchInfo = lateEntry;
+    stream.updateBTBEntries = {lateEntry};
+    stream.updateIsOldEntry = true;
+    stream.predMetas[0] = meta;
+
+    tage->update(stream);
+
+    const auto &way0 = tage->tageTable[0][index][0];
+    const auto &way1 = tage->tageTable[0][index][1];
+    EXPECT_EQ(way0.slots[0].counter, -1)
+        << "set-level fallback should not update the stale preferred way";
+    EXPECT_EQ(way1.slots[0].counter, 3)
+        << "set-level fallback should relocate to the live same-tag entry by position";
 }
 
 TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {

@@ -648,8 +648,8 @@ struct FullBTBPrediction
 struct TageMissTrace : public Record
 {
     void set(uint64_t startPC, uint64_t branchPC, uint64_t wayIdx,
-        uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful, uint64_t mainTable, uint64_t mainIndex, uint64_t mainSlot,
-        uint64_t altFound, uint64_t altCounter, uint64_t altUseful, uint64_t altTable, uint64_t altIndex, uint64_t altSlot,
+        uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful, uint64_t mainTable, uint64_t mainIndex, uint64_t mainWay, uint64_t mainSlot,
+        uint64_t altFound, uint64_t altCounter, uint64_t altUseful, uint64_t altTable, uint64_t altIndex, uint64_t altWay, uint64_t altSlot,
         uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess,
         uint64_t allocTable, uint64_t allocIndex, uint64_t allocWay, uint64_t allocSlot,
         std::string history, uint64_t indexFoldedHist)
@@ -663,12 +663,14 @@ struct TageMissTrace : public Record
         _uint64_data["mainUseful"] = mainUseful;
         _uint64_data["mainTable"] = mainTable;
         _uint64_data["mainIndex"] = mainIndex;
+        _uint64_data["mainWay"] = mainWay;
         _uint64_data["mainSlot"] = mainSlot;
         _uint64_data["altFound"] = altFound;
         _uint64_data["altCounter"] = altCounter;
         _uint64_data["altUseful"] = altUseful;
         _uint64_data["altTable"] = altTable;
         _uint64_data["altIndex"] = altIndex;
+        _uint64_data["altWay"] = altWay;
         _uint64_data["altSlot"] = altSlot;
         _uint64_data["useAlt"] = useAlt;
         _uint64_data["predTaken"] = predTaken;
