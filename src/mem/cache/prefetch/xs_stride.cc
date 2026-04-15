@@ -382,7 +382,7 @@ XSStridePrefetcher::triggerFromCommitTable(const PrefetchInfo &pfi,
     if (useXsDepth) {
         sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 4)),
                          addresses, 0, PrefetchSourceType::SStride, 1);
-        sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 6)),
+        sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 7)),
                          addresses, 0, PrefetchSourceType::SStride, 2);
         stats.strideUniquepfCount += 2;
         if (archDBer) {
