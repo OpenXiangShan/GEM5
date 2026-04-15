@@ -29,6 +29,13 @@ GTest('tage.test',
     '../timed_base_pred.cc',
 )
 
+GTest('microtage.test',
+    '../microtage.cc',
+    '../folded_hist.cc',
+    '../timed_base_pred.cc',
+    'microtage.test.cc',
+)
+
 GTest('mgsc.test',
     '../btb_mgsc.cc',
     'btb_mgsc.test.cc',
@@ -53,6 +60,7 @@ GTest('folded_hist.test',
 env.Append(UNITTESTS=['uras.test',
         'btb.test',
         'tage.test',
+        'microtage.test',
         'mgsc.test',
         'folded_hist.test',
         'jump_ahead.test',

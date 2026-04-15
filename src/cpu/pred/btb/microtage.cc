@@ -267,6 +267,7 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
         if (btb_entry.isCond && btb_entry.valid) {
             auto pred = generateSinglePrediction(btb_entry, startPC);
             meta->preds[btb_entry.pc] = pred;
+            meta->btbEntries[btb_entry.pc] = btb_entry;
             tageStats.updateStatsWithTagePrediction(pred, true);
             results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
         }
@@ -387,7 +388,7 @@ bool
 MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchTarget &stream) {
+                             bool this_fb_mispred) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -467,9 +468,6 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         }
     }
 
-    // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.pc;
     // No allocation if no misprediction
     if (!this_fb_mispred) {
         return false;
@@ -608,6 +606,140 @@ MicroTAGE::doResolveUpdate(const FetchTarget &stream) {
     update(stream);
 }
 
+std::vector<MicroTAGE::ResolveTrainUpdate>
+MicroTAGE::prepareResolveTrainEntries(const ResolvedTrainPacket &packet,
+                                      const std::shared_ptr<TageMeta> &predMeta)
+{
+    std::vector<ResolveTrainUpdate> updates;
+    bool synthesizedNewEntry = false;
+
+    for (const auto &resolved : packet.realBranches) {
+        if (!resolved.branch.isCond) {
+            continue;
+        }
+
+        auto pred_it = predMeta->btbEntries.find(resolved.branch.pc);
+        BTBEntry entry;
+        ResolveTrainUpdate::EntryClass entryClass;
+        if (pred_it != predMeta->btbEntries.end()) {
+            entry = pred_it->second;
+            entryClass = ResolveTrainUpdate::EntryClass::ExistingPredictedEntry;
+        } else {
+            // Legacy update only exposes at most one MBTB-generated new entry,
+            // and only for the actually taken unpredicted branch.
+            if (synthesizedNewEntry || !resolved.taken) {
+                continue;
+            }
+
+            entry = BTBEntry(resolved.branch);
+            entry.valid = true;
+            entryClass = ResolveTrainUpdate::EntryClass::NewEntryCandidate;
+            synthesizedNewEntry = true;
+        }
+
+        if (entry.alwaysTaken) {
+            continue;
+        }
+
+        updates.push_back({entry, resolved, entryClass});
+    }
+
+    return updates;
+}
+
+bool
+MicroTAGE::canResolveTrain(const ResolvedTrainPacket &packet,
+                           const FetchTarget &target)
+{
+    Addr startAddr = packet.startPC;
+    unsigned updateBank = getBankId(startAddr);
+
+#ifndef UNIT_TEST
+    tageStats.updateAccessPerBank[updateBank]++;
+#endif
+
+    if (enableBankConflict && predBankValid && updateBank == lastPredBankId) {
+        tageStats.updateBankConflict++;
+        tageStats.updateDeferredDueToConflict++;
+#ifndef UNIT_TEST
+        tageStats.updateBankConflictPerBank[updateBank]++;
+#endif
+        DPRINTF(UTAGE, "Bank conflict detected: resolve-train bank %u conflicts with prediction bank %u, "
+                       "deferring this packet\n",
+                       updateBank, lastPredBankId);
+        predBankValid = false;
+        return false;
+    }
+
+    return true;
+}
+
+void
+MicroTAGE::resolveTrain(const ResolvedTrainPacket &packet,
+                        const FetchTarget &target)
+{
+    if (enableBankConflict && predBankValid) {
+        predBankValid = false;
+    }
+
+    auto predMeta = std::static_pointer_cast<TageMeta>(
+        target.predMetas[getComponentIdx()]);
+    if (!predMeta) {
+        DPRINTF(UTAGE, "resolveTrain: no live prediction meta, skip\n");
+        return;
+    }
+
+    auto entries_to_update = prepareResolveTrainEntries(packet, predMeta);
+
+    bool utage_hit = false;
+    for (const auto &update : entries_to_update) {
+        const auto &btb_entry = update.entry;
+        const bool isNewEntry =
+            update.entryClass == ResolveTrainUpdate::EntryClass::NewEntryCandidate;
+        TagePrediction recomputed;
+        if (!isNewEntry && !updateOnRead) {
+            auto pred_it = predMeta->preds.find(btb_entry.pc);
+            if (pred_it != predMeta->preds.end()) {
+                recomputed = pred_it->second;
+            } else {
+                recomputed = generateSinglePrediction(btb_entry, packet.startPC,
+                                                      predMeta);
+            }
+        } else {
+            recomputed = generateSinglePrediction(btb_entry, packet.startPC,
+                                                  predMeta);
+        }
+
+        if (recomputed.mainprovided) {
+            utage_hit = true;
+        }
+
+        bool need_allocate = updatePredictorStateAndCheckAllocation(
+            btb_entry, update.resolved.taken, recomputed, update.resolved.mispredict);
+
+        if (need_allocate) {
+            uint start_table = 0;
+            auto &main_info = recomputed.mainInfo;
+            if (main_info.found) {
+                start_table = main_info.table + 1;
+            }
+
+            uint64_t allocated_table = 0;
+            uint64_t allocated_index = 0;
+            uint64_t allocated_way = 0;
+            handleNewEntryAllocation(packet.startPC, btb_entry,
+                                     update.resolved.taken, start_table,
+                                     predMeta, allocated_table,
+                                     allocated_index, allocated_way);
+        }
+    }
+
+    if (utage_hit) {
+        tageStats.updateUtageHit++;
+    }
+    DPRINTF(UTAGE, "end resolveTrain\n");
+}
+
 /**
  * @brief Updates the TAGE predictor state based on actual branch execution results
  *
@@ -652,8 +784,10 @@ MicroTAGE::update(const FetchTarget &stream) {
         if (recomputed.mainprovided) {
             utage_hit = true;
         }
-        // Update predictor state and check if need to allocate new entry
-        bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
+        bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
+                               stream.squashPC == btb_entry.pc;
+        bool need_allocate = updatePredictorStateAndCheckAllocation(
+            btb_entry, actual_taken, recomputed, this_fb_mispred);
 
         // Handle new entry allocation if needed
         bool alloc_success = false;

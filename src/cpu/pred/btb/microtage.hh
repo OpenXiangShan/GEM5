@@ -5,6 +5,7 @@
 #include <deque>
 #include <map>
 #include <queue>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -150,6 +151,10 @@ class MicroTAGE : public TimedBaseBTBPredictor
     void update(const FetchTarget &entry) override;
     bool canResolveUpdate(const FetchTarget &entry) override;
     void doResolveUpdate(const FetchTarget &entry) override;
+    bool canResolveTrain(const ResolvedTrainPacket &packet,
+                         const FetchTarget &target) override;
+    void resolveTrain(const ResolvedTrainPacket &packet,
+                      const FetchTarget &target) override;
 
 #ifndef UNIT_TEST
     void commitBranch(const FetchTarget &stream, const DynInstPtr &inst) override;
@@ -335,6 +340,7 @@ public:
     typedef struct TageMeta
     {
         std::unordered_map<Addr, TagePrediction> preds;
+        std::unordered_map<Addr, BTBEntry> btbEntries;
         std::vector<PathFoldedHist> tagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
         std::vector<PathFoldedHist> altTagFoldedHist;
@@ -358,9 +364,26 @@ private:
 
     // Helper method to update predictor state for a single entry
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
-                                 bool actual_taken,
-                                 const TagePrediction &pred,
-                                 const FetchTarget &stream);
+                                  bool actual_taken,
+                                  const TagePrediction &pred,
+                                  bool this_fb_mispred);
+
+    struct ResolveTrainUpdate
+    {
+        enum class EntryClass
+        {
+            ExistingPredictedEntry,
+            NewEntryCandidate,
+        };
+
+        BTBEntry entry;
+        ResolvedBranch resolved;
+        EntryClass entryClass;
+    };
+
+    std::vector<ResolveTrainUpdate>
+    prepareResolveTrainEntries(const ResolvedTrainPacket &packet,
+                               const std::shared_ptr<TageMeta> &predMeta);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,

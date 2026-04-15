@@ -1102,6 +1102,8 @@ class MicroTAGE(TimedBaseBTBPredictor):
     numBanks = Param.Unsigned(4,"Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False,"Enable bank conflict simulation")
     numDelay = Param.Unsigned(0,"Prediction latency in cycles")
+    resolvedUpdate = Param.Bool(Parent.enableFullResolveTrain,
+        "Train MicroTAGE from full resolve packets instead of commit fallback")
 
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'
