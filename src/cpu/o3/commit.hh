@@ -601,6 +601,8 @@ class Commit
         statistics::Vector memRefs;
         /** Stat for the total number of committed loads. */
         statistics::Vector loads;
+        /** Stat for the total number of committed stores. */
+        statistics::Vector stores;
         /** Stat for the total number of committed atomics. */
         statistics::Vector amos;
         /** Total number of committed memory barriers. */

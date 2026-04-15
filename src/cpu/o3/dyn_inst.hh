@@ -243,6 +243,14 @@ class DynInst : public ExecContext, public RefCounted
         MaxFlags
     };
 
+  public:
+    enum class LoadPipeSource
+    {
+        IssueQueue,
+        ReplayQueue,
+        FastReplay
+    };
+
   private:
     /* An amalgamation of a lot of boolean values into one */
     std::bitset<MaxFlags> instFlags;
@@ -252,6 +260,9 @@ class DynInst : public ExecContext, public RefCounted
 
     /* replay type of this instruction */
     std::optional<LdStReplayType> replayType;
+    std::bitset<LdStReplayTypeCount> replayFlags;
+
+    LoadPipeSource loadPipeSource = LoadPipeSource::IssueQueue;
 
     bool _hasProducerStorePC = false;
     Addr _producerStorePC = 0;
@@ -1039,6 +1050,7 @@ class DynInst : public ExecContext, public RefCounted
                     (1 << SkipFollowingPipe));
         status.set(InPipe);
         clearReplayType();
+        clearReplayFlags();
     }
 
     void endPipelining() {
@@ -1051,6 +1063,7 @@ class DynInst : public ExecContext, public RefCounted
     bool cacheHit() const { return status[CacheHit]; }
 
     void setReplay(LdStReplayType type) {
+        markReplayFlag(type);
         setNeedReplay();
         replayType = type;
     }
@@ -1058,6 +1071,77 @@ class DynInst : public ExecContext, public RefCounted
         return replayType;
     }
     void clearReplayType() { replayType.reset(); }
+    void clearReplayFlags() { replayFlags.reset(); }
+    void markReplayFlag(LdStReplayType type) {
+        replayFlags.set(static_cast<size_t>(type));
+    }
+    bool hasReplayFlag(LdStReplayType type) const {
+        return replayFlags.test(static_cast<size_t>(type));
+    }
+    std::optional<LdStReplayType> selectReplayTypeFromFlags() const {
+        auto rtlReplayPriority = [](LdStReplayType type) -> int {
+            switch (type) {
+              case LdStReplayType::MdpAddrReplay:
+                return 2;  // C_MA
+              case LdStReplayType::TLBMissReplay:
+                return 3;  // C_TM
+              case LdStReplayType::STLFReplay:
+                return 4;  // C_FF
+              case LdStReplayType::CacheBlockedReplay:
+              case LdStReplayType::MshrAliasFailReplay:
+              case LdStReplayType::HitInWriteBufferReplay:
+              case LdStReplayType::MshrArbFailReplay:
+                return 5;  // C_DR
+              case LdStReplayType::CacheMissReplay:
+                return 6;  // C_DM
+              case LdStReplayType::BankConflictReplay:
+                return 8;  // C_BC
+              case LdStReplayType::RARReplay:
+                return 9;  // C_RAR
+              case LdStReplayType::RAWReplay:
+                return 10; // C_RAW
+              case LdStReplayType::NukeReplay:
+                return 11; // C_NK
+              default:
+                return 100 + static_cast<int>(type);
+            }
+        };
+
+        std::optional<LdStReplayType> selected;
+        int bestPriority = 1000;
+        for (int i = 0; i < LdStReplayTypeCount; ++i) {
+            auto type = static_cast<LdStReplayType>(i);
+            if (!replayFlags.test(i)) {
+                continue;
+            }
+
+            const int priority = rtlReplayPriority(type);
+            if (!selected || priority < bestPriority) {
+                selected = type;
+                bestPriority = priority;
+            }
+        }
+
+        if (selected) {
+            return selected;
+        }
+
+        return {};
+    }
+
+    bool finalizeReplayTypeFromFlags() {
+        auto selected = selectReplayTypeFromFlags();
+        if (!selected) {
+            return false;
+        }
+
+        replayType = *selected;
+        status.set(NeedReplay);
+        return true;
+    }
+
+    void setLoadPipeSource(LoadPipeSource source) { loadPipeSource = source; }
+    LoadPipeSource getLoadPipeSource() const { return loadPipeSource; }
 
     // only can be set once!!!
     void setNeedReplay() {

@@ -316,7 +316,7 @@ TLB::l2TLBEvictLRU(int l2TLBlevel, Addr vaddr)
 
 TlbEntry *
 TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
-            bool sign_used,uint8_t translateMode)
+            bool sign_used, uint8_t translateMode, bool is_prefetch)
 {
     TlbEntry *entry = trie.lookup(buildKey(vpn, asid, translateMode));
 
@@ -324,25 +324,46 @@ TLB::lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
         if (entry)
             entry->lruSeq = nextSeq();
 
-        if (mode == BaseMMU::Write)
-            stats.writeAccesses++;
-        else
-            stats.readAccesses++;
+        if (is_prefetch) {
+            if (mode == BaseMMU::Write)
+                stats.writeprefetchAccesses++;
+            else
+                stats.readprefetchAccesses++;
+        } else {
+            if (mode == BaseMMU::Write)
+                stats.writeAccesses++;
+            else
+                stats.readAccesses++;
+        }
 
         if (!entry) {
-            if (mode == BaseMMU::Write)
-                stats.writeMisses++;
-            else
-                stats.readMisses++;
+            if (is_prefetch) {
+                if (mode == BaseMMU::Write)
+                    stats.writeprefetchMisses++;
+                else
+                    stats.readprefetchMisses++;
+            } else {
+                if (mode == BaseMMU::Write)
+                    stats.writeMisses++;
+                else
+                    stats.readMisses++;
+            }
         }
         else {
-            if (mode == BaseMMU::Write)
-                stats.writeHits++;
-            else
-                stats.readHits++;
+            if (is_prefetch) {
+                if (mode == BaseMMU::Write)
+                    stats.writeprefetchHits++;
+                else
+                    stats.readprefetchHits++;
+            } else {
+                if (mode == BaseMMU::Write)
+                    stats.writeHits++;
+                else
+                    stats.readHits++;
+            }
         }
 
-        if (entry) {
+        if (entry && !is_prefetch) {
             if (entry->isSquashed) {
                 if (mode == BaseMMU::Write)
                     stats.writeHitsSquashed++;
@@ -1371,10 +1392,13 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
     TlbEntry *e_l2tlb = nullptr;
     TlbEntry *e_l2tlbVsstage = nullptr;
     TlbEntry *e_l2tlbGstage = nullptr;
+    const bool is_prefetch = req->isPrefetch();
     if (vsatp.mode != 0)
-        e[0] = lookup(vaddr, vsatp.asid, mode, false, true, allstage);
+        e[0] = lookup(vaddr, vsatp.asid, mode, false, true, allstage,
+                      is_prefetch);
     else
-        e[0] = lookup(vaddr, hgatp.vmid, mode, false, true, gstage);
+        e[0] = lookup(vaddr, hgatp.vmid, mode, false, true, gstage,
+                      is_prefetch);
 
     vs_top_level = PTW_TOP_LEVEL(vsatp.mode);
     g_top_level = PTW_TOP_LEVEL(hgatp.mode);
@@ -1416,7 +1440,8 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
         Addr pg_mask = 0;
 
 
-        e[0] = lookup(vaddr, vsatp.asid, mode, false, true, vsstage);
+        e[0] = lookup(vaddr, vsatp.asid, mode, false, true, vsstage,
+                      is_prefetch);
         if (e[0]){
             req->setPte(e[0]->pte);
             hit_type = h_l1VSstageHit;
@@ -1443,7 +1468,8 @@ TLB::checkHL1Tlb(const RequestPtr &req, ThreadContext *tc,
 
             DPRINTFR(TLB, "\tpass check, try to lookup for Gstage pte\n");
 
-            e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true, gstage);
+            e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true, gstage,
+                          is_prefetch);
             if (e[0]) {
                 hit_type = h_l1GstageHit;
                 DPRINTF(TLB, "l1tlb hit in Gstage: level %d, ppn %#x\n", e[0]->level, e[0]->pte.ppn);
@@ -1518,6 +1544,7 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
     TlbEntry *e_l2tlb = nullptr;
     TlbEntry *e_l2tlbVsstage = nullptr;
     TlbEntry *e_l2tlbGstage = nullptr;
+    const bool is_prefetch = req->isPrefetch();
 
     if ((!e[0]) && (l1tlbtype == h_l1VSstageHit)) {
         hit_level = PTW_TOP_LEVEL(vsatp.mode);
@@ -1580,7 +1607,8 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
 
     if (!e[0]) {
         DPRINTF(TLB, "l1tlb miss, lookup l2tlb at VSstage.\n");
-        e[0] = lookup(vaddr, vsatp.asid, mode, false, true, vsstage);
+        e[0] = lookup(vaddr, vsatp.asid, mode, false, true, vsstage,
+                      is_prefetch);
         hit_level = PTW_TOP_LEVEL(vsatp.mode);
         if (!e[0]) {
             for (int i_e = 1; i_e < L_L2SUM; i_e++) {
@@ -1629,7 +1657,8 @@ TLB::checkHL2Tlb(const RequestPtr &req, ThreadContext *tc, BaseMMU::Translation 
 
                 DPRINTFR(TLB, "\tlookup (gPaddr: %#x) in l1tlb again for Gstage.\n", gPaddr);
                 e[0] = nullptr;
-                e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true, gstage);
+                e[0] = lookup(gPaddr, hgatp.vmid, mode, false, true, gstage,
+                              is_prefetch);
                 if (!e[0]) {
                     DPRINTF(TLB, "l1tlb miss, lookup (gPaddr: %#x) l2tlb for Gstage.\n", gPaddr);
                     hit_level = PTW_TOP_LEVEL(hgatp.mode);
@@ -1861,7 +1890,8 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
     TlbEntry *e[L_L2SUM] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     TlbEntry *forward_pre[L_L2SUM] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     TlbEntry *back_pre[L_L2SUM] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
-    e[0] = lookup(vaddr, satp.asid, mode, false, true, direct);
+    const bool is_prefetch = req->isPrefetch();
+    e[0] = lookup(vaddr, satp.asid, mode, false, true, direct, is_prefetch);
     Addr paddr = 0;
     Fault fault = NoFault;
     Fault fault_return = NoFault;
@@ -2043,12 +2073,14 @@ TLB::doTranslate(const RequestPtr &req, ThreadContext *tc,
                 delayed = true;
                 return fault;
             }
-            e[0] = lookup(vaddr, satp.asid, mode, false, true, direct);
+            e[0] = lookup(vaddr, satp.asid, mode, false, true, direct,
+                          is_prefetch);
             assert(e[0] != nullptr);
         }
     }
     if (!e[0])
-        e[0] = lookup(vaddr, satp.asid, mode, false, true, direct);
+        e[0] = lookup(vaddr, satp.asid, mode, false, true, direct,
+                      is_prefetch);
     assert(e[0] != nullptr);
 
     status = tc->readMiscReg(MISCREG_STATUS);

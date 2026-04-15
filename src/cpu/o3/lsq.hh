@@ -1222,10 +1222,22 @@ class LSQ
     {
         LSQStats(statistics::Group *parent);
 
+        /** Per-cycle occupancy samples for the aggregated LSQ structures. */
+        statistics::Average lqAvgEntryNum;
+        statistics::Average sqAvgEntryNum;
+        statistics::Average sbufferAvgEntryNum;
+        /** Per-cycle full signals based on whether a full enqueue bundle fits. */
+        statistics::Scalar lqFullCycles;
+        statistics::Scalar sqFullCycles;
+        statistics::Scalar lsqFullCycles;
+        statistics::Scalar sbufferFullCycles;
         statistics::Scalar sbufferEvictDuetoFlush;
         statistics::Scalar sbufferEvictDuetoFull;
         statistics::Scalar sbufferEvictDuetoSQFull;
         statistics::Scalar sbufferEvictDuetoTimeout;
+        /** Handshake-level sbuffer to dcache request outcomes. */
+        statistics::Scalar sbufferDcacheReqFire;
+        statistics::Scalar sbufferDcacheReqBlocked;
     } stats;
 
     void recordStoreBufferEviction(StoreBufferEvictCause cause);
@@ -1237,6 +1249,9 @@ class LSQ
     unsigned LQEntries;
     /** Total Size of SQ Entries. */
     unsigned SQEntries;
+
+    /** Max number of memory instructions that may enter LSQ in one cycle. */
+    const unsigned enqueueWidth;
 
     /** Max LQ Size - Used to Enforce Sharing Policies. */
     unsigned maxLQEntries;

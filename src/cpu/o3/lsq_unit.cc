@@ -443,6 +443,7 @@ LSQUnit::LSQUnit(uint32_t lqEntries, uint32_t sqEntries,
 void
 LSQUnit::tick()
 {
+    countedStLdViolationThisCycle = false;
     loadPipe.advance();
     storePipe.advance();
 }
@@ -558,6 +559,10 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "squashed"),
       ADD_STAT(memOrderViolation, statistics::units::Count::get(),
                "Number of memory ordering violations"),
+      ADD_STAT(ldLdViolation, statistics::units::Count::get(),
+               "Number of load-load violation events"),
+      ADD_STAT(stLdViolation, statistics::units::Count::get(),
+               "Number of store-load violation events"),
       ADD_STAT(busForwardSuccess, statistics::units::Count::get(),
                "Number of successfully forwarding from bus"),
       ADD_STAT(cacheMissReplayEarly, statistics::units::Count::get(),
@@ -574,6 +579,10 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "Number of times an access to memory failed due to the cache "
                "being blocked"),
       ADD_STAT(sbufferFull, statistics::units::Count::get(), "blocked cycle"),
+      ADD_STAT(sbufferMerge, statistics::units::Count::get(),
+               "Number of stores merged into an existing store buffer line"),
+      ADD_STAT(sbufferNewline, statistics::units::Count::get(),
+               "Number of stores that allocate a new store buffer line"),
       ADD_STAT(sbufferCreateVice, statistics::units::Count::get(), "create vice"),
       ADD_STAT(sbufferFullForward, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferPartiForward, statistics::units::Count::get(), ""),
@@ -589,12 +598,34 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
       ADD_STAT(unitStrideAligned, "Number of vector unitStride 16-byte aligned"),
       ADD_STAT(skipRawWhenLoadAtS0, "Number of times RAW check skipped because load is at S0"),
       ADD_STAT(RARQueueFull, "Number of times RAR queue was full"),
+      ADD_STAT(RARQueueFullCycles, statistics::units::Cycle::get(),
+               "Number of cycles that RAR queue is physically full"),
       ADD_STAT(RARQueueReplay, "Number of instructions replayed from RAR queue"),
       ADD_STAT(RARQueueLatency, statistics::units::Cycle::get(), "RAR queue latency distribution"),
+      ADD_STAT(RARQueueAvgEntryNum, statistics::units::Count::get(),
+               "Average number of entries in RAR queue"),
       ADD_STAT(RAWQueueFull, "Number of times RAW queue was full"),
+      ADD_STAT(RAWQueueFullCycles, statistics::units::Cycle::get(),
+               "Number of cycles that RAW queue is physically full"),
       ADD_STAT(RAWQueueReplay, "Number of instructions replayed from RAW queue"),
       ADD_STAT(RAWQueueLatency, statistics::units::Cycle::get(), "RAW queue latency distribution"),
-      ADD_STAT(loadReplayEvents, statistics::units::Count::get(), "event distribution of load replay")
+      ADD_STAT(RAWQueueAvgEntryNum, statistics::units::Count::get(),
+               "Average number of entries in RAW queue"),
+      ADD_STAT(loadPipeAccepted, statistics::units::Count::get(),
+               "Number of load requests accepted by each load pipe"),
+      ADD_STAT(storePipeAccepted, statistics::units::Count::get(),
+               "Number of store requests accepted by each store pipe slot"),
+      ADD_STAT(storeReplayTotal, statistics::units::Count::get(),
+               "Number of store replay events at the store pipe replay exit"),
+      ADD_STAT(storeReplayTlbMiss, statistics::units::Count::get(),
+               "Number of store TLB miss replay events at the store pipe replay exit"),
+      ADD_STAT(loadPipeReplayAccepted, statistics::units::Count::get(),
+               "Number of replayQ load requests accepted by load pipe"),
+      ADD_STAT(loadPipeFastReplayAccepted, statistics::units::Count::get(),
+               "Number of fast replay load requests accepted by load pipe"),
+      ADD_STAT(loadReplayEvents, statistics::units::Count::get(), "event distribution of load replay"),
+      ADD_STAT(loadReplayEventsFromIssueQueue, statistics::units::Count::get(),
+               "load replay events counted only when the load enters from issue queue")
 {
     loadToUse
         .init(0, 299, 10)
@@ -610,11 +641,46 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
     RAWQueueLatency
         .init(0, 500, 20)
         .flags(statistics::nozero);
+    // TODO: load-pipe PMU vectors currently assume exactly three load pipes.
+    // Extend the vector sizing and IssueQue loadPipeId mapping together if the
+    // model grows more load pipes; the replay pipe counters below share this
+    // same assumption.
+    loadPipeAccepted
+        .init(3)
+        .flags(statistics::total | statistics::nozero);
+    for (int i = 0; i < 3; i++) {
+        loadPipeAccepted.subname(i, csprintf("pipe%d", i));
+    }
+    storePipeAccepted
+        .init(MaxPipeWidth)
+        .flags(statistics::total | statistics::nozero);
+    for (int i = 0; i < MaxPipeWidth; i++) {
+        storePipeAccepted.subname(i, csprintf("pipe%d", i));
+    }
+    loadPipeReplayAccepted
+        .init(3)
+        .flags(statistics::total | statistics::nozero);
+    for (int i = 0; i < 3; i++) {
+        loadPipeReplayAccepted.subname(i, csprintf("pipe%d", i));
+    }
+    loadPipeFastReplayAccepted
+        .init(3)
+        .flags(statistics::total | statistics::nozero);
+    for (int i = 0; i < 3; i++) {
+        loadPipeFastReplayAccepted.subname(i, csprintf("pipe%d", i));
+    }
     loadReplayEvents
         .init(LdStReplayTypeCount)
         .flags(statistics::total);
     for (int i = 0; i < LdStReplayTypeCount; i++) {
         loadReplayEvents.subname(i, load_store_replay_event_str[static_cast<LdStReplayType>(i)]);
+    }
+    loadReplayEventsFromIssueQueue
+        .init(LdStReplayTypeCount)
+        .flags(statistics::total);
+    for (int i = 0; i < LdStReplayTypeCount; i++) {
+        loadReplayEventsFromIssueQueue.subname(
+            i, load_store_replay_event_str[static_cast<LdStReplayType>(i)]);
     }
 }
 
@@ -930,6 +996,7 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                                 memDepViolator = ld_inst;
 
                                 ++stats.memOrderViolation;
+                                ++stats.ldLdViolation;
 
                                 return std::make_shared<GenericISA::M5PanicFault>(
                                     "Detected fault with inst [sn:%lli] and "
@@ -978,6 +1045,10 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                         memDepViolator = ld_inst;
 
                         ++stats.memOrderViolation;
+                        if (inst->isStore() && !countedStLdViolationThisCycle) {
+                            ++stats.stLdViolation;
+                            countedStLdViolationThisCycle = true;
+                        }
 
                         return std::make_shared<GenericISA::M5PanicFault>(
                             "Detected fault with "
@@ -1025,6 +1096,19 @@ LSQUnit::issueToLoadPipe(const DynInstPtr &inst)
     loadPipeSx[0]->insts[idx] = inst;
     loadPipeSx[0]->size++;
 
+    const int load_pipe_id = inst->issueQue->getLoadPipeId();
+    panic_if(load_pipe_id < 0,
+        "Per-load-pipe PMU stats require dedicated load IQ naming; "
+        "unsupported issue queue %s for load [sn:%llu]\n",
+        inst->issueQue->getName().c_str(), inst->seqNum);
+    stats.loadPipeAccepted[load_pipe_id]++;
+    const auto load_pipe_source = inst->getLoadPipeSource();
+    if (load_pipe_source == DynInst::LoadPipeSource::ReplayQueue) {
+        stats.loadPipeReplayAccepted[load_pipe_id]++;
+    } else if (load_pipe_source == DynInst::LoadPipeSource::FastReplay) {
+        stats.loadPipeFastReplayAccepted[load_pipe_id]++;
+    }
+
     DPRINTF(LoadPipeline, "issueToLoadPipe: [sn:%llu]\n", inst->seqNum);
 }
 
@@ -1039,6 +1123,7 @@ LSQUnit::issueToStorePipe(const DynInstPtr &inst)
     int idx = storePipeSx[0]->size;
     storePipeSx[0]->insts[idx] = inst;
     storePipeSx[0]->size++;
+    stats.storePipeAccepted[idx]++;
 
     DPRINTF(LSQUnit, "issueToStorePipe: [sn:%lli]\n", inst->seqNum);
 }
@@ -1166,6 +1251,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
 
     assert(!inst->isSquashed());
     LSQRequest* request = inst->savedRequest;
+    bool earlyWakeupCacheMissReplay = false;
 
     if (inst->wakeUpEarly()) {
         auto& bus = getLsq()->bus;
@@ -1177,12 +1263,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
 
             DPRINTF(LoadPipeline, "Load [sn:%ld]: Early wakeup, no data on bus\n",
                     inst->seqNum);
-
-            loadSetReplay(inst, request,true);
-            inst->setCacheMissReplay();
-            inst->setWaitingCacheRefill();
-            stats.cacheMissReplayEarly++;
-            return fault;
+            earlyWakeupCacheMissReplay = true;
         } else {
             // Load received TimingResp any time at [s1, s2], forward from data bus
             DPRINTF(LoadPipeline, "Load [sn:%ld]: Forward from bus at load s2, data: %lx\n",
@@ -1192,66 +1273,93 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
-    // check if cache hit & get cache response?
-    // NOTE: cache miss replay has higher priority than nuke replay!
-    if (lsq->enableLdMissReplay() && request && request->isNormalLd() && !inst->fullForward() && !inst->cacheHit()) {
-        // cannot get cache data at load s2, replay this load
-        loadSetReplay(inst, request, false);
-        inst->setCacheMissReplay();
-        inst->setWaitingCacheRefill();
-        DPRINTF(LoadPipeline, "Load [sn:%llu] setCacheMissReplay\n", inst->seqNum);
-        return fault;
-    } else if (inst->isNormalLd() && !request) {
-        loadSetReplay(inst, request, false);
-        inst->setBankConflictReplay();// fast replay
-        DPRINTF(LoadPipeline, "Load [sn:%llu] setBankConflictReplay\n", inst->seqNum);
-        return fault;
-    }
+    const bool cacheMissReplay =
+        earlyWakeupCacheMissReplay ||
+        (lsq->enableLdMissReplay() && request && request->isNormalLd() &&
+         !inst->fullForward() && !inst->cacheHit());
+    const bool bankConflictReplay = inst->isNormalLd() && !request;
 
+    bool nukeReplay = false;
     for (int i = 0; i < storePipeSx[1]->size; i++) {
         auto& store_inst = storePipeSx[1]->insts[i];
         if (pipeLineNukeCheck(inst, store_inst)) {
-            DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
-            inst->setNukeReplay();
+            nukeReplay = true;
+            break;
+        }
+    }
+
+    const bool trackRAR =
+        loadCompletedIdx != loadQueue.tail() && inst->isNormalLd() &&
+        inst->lqIt.idx() > loadCompletedIdx + 1;
+    const bool rarReplay = trackRAR && RARQueue.size() >= maxRARQEntries;
+    const bool trackRAW =
+        storeCompletedIdx != storeQueue.tail() && inst->isNormalLd() &&
+        inst->sqIt.idx() > storeCompletedIdx + 1;
+    const bool rawReplay = trackRAW && RAWQueue.size() >= maxRAWQEntries;
+
+    if (cacheMissReplay) {
+        inst->markReplayFlag(LdStReplayType::CacheMissReplay);
+    }
+    if (bankConflictReplay) {
+        inst->markReplayFlag(LdStReplayType::BankConflictReplay);
+    }
+    if (nukeReplay) {
+        inst->markReplayFlag(LdStReplayType::NukeReplay);
+    }
+    if (rarReplay) {
+        inst->markReplayFlag(LdStReplayType::RARReplay);
+    }
+    if (rawReplay) {
+        inst->markReplayFlag(LdStReplayType::RAWReplay);
+    }
+
+    if (inst->finalizeReplayTypeFromFlags()) {
+        switch (*inst->getReplayType()) {
+          case LdStReplayType::CacheMissReplay:
+            loadSetReplay(inst, request, earlyWakeupCacheMissReplay);
+            inst->setWaitingCacheRefill();
+            if (earlyWakeupCacheMissReplay) {
+                stats.cacheMissReplayEarly++;
+            }
+            DPRINTF(LoadPipeline, "Load [sn:%llu] setCacheMissReplay\n", inst->seqNum);
             return fault;
+          case LdStReplayType::BankConflictReplay:
+            loadSetReplay(inst, request, false);
+            DPRINTF(LoadPipeline, "Load [sn:%llu] setBankConflictReplay\n", inst->seqNum);
+            return fault;
+          case LdStReplayType::RARReplay:
+            DPRINTF(LSQUnit, "RARQueue full, reschedule [sn:%llu], LoadCompletedItIdx: %d, inst->lqItIdx: %d\n",
+                    inst->seqNum, loadCompletedIdx, inst->lqIt._idx);
+            stats.RARQueueFull++;
+            loadSetReplay(inst, request, true);
+            addToRARReplayQueue(inst);
+            return fault;
+          case LdStReplayType::RAWReplay:
+            DPRINTF(LSQUnit, "RAWQueue full, reschedule [sn:%lli], StoreCompletedItIdx: %d, inst->sqItIdx: %d\n",
+                    inst->seqNum, storeCompletedIdx, inst->sqIt.idx());
+            stats.RAWQueueFull++;
+            loadSetReplay(inst, request, true);
+            addToRAWReplayQueue(inst);
+            return fault;
+          case LdStReplayType::NukeReplay:
+            DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
+            return fault;
+          default:
+            panic("Unsupported load replay type selected in s2");
         }
     }
 
-    if (loadCompletedIdx != loadQueue.tail() && inst->isNormalLd()) {
-        if (inst->lqIt.idx() > loadCompletedIdx + 1) {
-            if (RARQueue.size() >= maxRARQEntries) {
-                DPRINTF(LSQUnit, "RARQueue full, reschedule [sn:%llu], LoadCompletedItIdx: %d, inst->lqItIdx: %d\n",
-                        inst->seqNum, loadCompletedIdx, inst->lqIt._idx);
-                stats.RARQueueFull++;
-                loadSetReplay(inst, request, true);
-                addToRARReplayQueue(inst);
-                inst->setRARReplay();
-                return fault;
-            } else {
-                auto existingIt = std::find(RARQueue.begin(), RARQueue.end(), inst);
-                if (existingIt == RARQueue.end()) {
-                    RARQueue.push_back(inst);
-                }
-            }
+    if (trackRAR) {
+        auto existingIt = std::find(RARQueue.begin(), RARQueue.end(), inst);
+        if (existingIt == RARQueue.end()) {
+            RARQueue.push_back(inst);
         }
     }
 
-    if (storeCompletedIdx != storeQueue.tail() && inst->isNormalLd()) {
-        if (inst->sqIt.idx() > storeCompletedIdx + 1) {
-            if (RAWQueue.size() >= maxRAWQEntries) {
-                DPRINTF(LSQUnit, "RAWQueue full, reschedule [sn:%lli], StoreCompletedItIdx: %d, inst->sqItIdx: %d\n",
-                        inst->seqNum, storeCompletedIdx, inst->sqIt.idx());
-                stats.RAWQueueFull++;
-                loadSetReplay(inst, request, true);
-                addToRAWReplayQueue(inst);
-                inst->setRAWReplay();
-                return fault;
-            } else {
-                auto existingIt = std::find(RAWQueue.begin(), RAWQueue.end(), inst);
-                if (existingIt == RAWQueue.end()) {
-                    RAWQueue.push_back(inst);
-                }
-            }
+    if (trackRAW) {
+        auto existingIt = std::find(RAWQueue.begin(), RAWQueue.end(), inst);
+        if (existingIt == RAWQueue.end()) {
+            RAWQueue.push_back(inst);
         }
     }
 
@@ -1343,6 +1451,11 @@ LSQUnit::executeLoadPipeSx()
                 // record replay stats
                 assert(inst->getReplayType());
                 stats.loadReplayEvents[*inst->getReplayType()]++;
+                // RTL only increments the main replay_* counters when a load
+                // first enters slow replay from the IssueQueue.
+                if (inst->getLoadPipeSource() == DynInst::LoadPipeSource::IssueQueue) {
+                    stats.loadReplayEventsFromIssueQueue[*inst->getReplayType()]++;
+                }
 
                 if (inst->needCacheBlockedReplay()) {
                     cpu->perfCCT->updateInstMeta(inst->seqNum, InstDetail::ReplayStr, TT_DcacheStall);
@@ -1369,6 +1482,11 @@ LSQUnit::executeLoadPipeSx()
                 // record replay stats
                 assert(inst->getReplayType());
                 stats.loadReplayEvents[*inst->getReplayType()]++;
+                // Use the load-pipe entry source to detect that first entry
+                // and match RTL, which only counts replay_* on first issue.
+                if (inst->getLoadPipeSource() == DynInst::LoadPipeSource::IssueQueue) {
+                    stats.loadReplayEventsFromIssueQueue[*inst->getReplayType()]++;
+                }
 
                 if (inst->needBankConflictReplay()) inst->issueQue->retryMem(inst);
                 else if (inst->needMshrArbFailReplay()) inst->issueQue->retryMem(inst);
@@ -1571,7 +1689,11 @@ LSQUnit::executeStorePipeSx()
 
 
             if (i == storeWhenToReplay && inst->needReplay()) [[unlikely]] {
-                if (inst->needTLBMissReplay()) iewStage->deferMemInst(inst);
+                stats.storeReplayTotal++;
+                if (inst->needTLBMissReplay()) {
+                    iewStage->deferMemInst(inst);
+                    stats.storeReplayTlbMiss++;
+                }
                 inst->endPipelining();
                 inst = nullptr;
                 continue;
@@ -2004,6 +2126,7 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
         if (entry->sending) {
             if (entry->vice) {
                 // merge into vice
+                stats.sbufferMerge++;
                 entry = entry->vice;
                 entry->merge(offset, datas, size, mask);
                 DPRINTF(StoreBuffer, "Merging vice entry[%#x] for addr %#x\n",
@@ -2015,6 +2138,7 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
                     stats.sbufferFull++;
                     return false;
                 }
+                stats.sbufferNewline++;
                 stats.sbufferCreateVice++;
                 auto vice = storeBuffer.createVice(entry);
                 vice->reset(lsqID, blockVaddr, blockPaddr, offset, datas, size, mask);
@@ -2023,6 +2147,7 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
             }
         } else {
             // merge into unsent
+            stats.sbufferMerge++;
             storeBuffer.update(entry->index);
             entry->merge(offset, datas, size, mask);
             DPRINTF(StoreBuffer, "Merging entry[%#x] for addr %#x\n",
@@ -2036,6 +2161,7 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
             return false;
         }
         // insert
+        stats.sbufferNewline++;
         auto entry = storeBuffer.getEmpty();
         entry->reset(lsqID, blockVaddr, blockPaddr, offset, datas, size, mask);
         storeBuffer.insert(entry);
@@ -2664,6 +2790,20 @@ LSQUnit::updateCompletedIdx()
     }
 
     processReplayQueues();
+
+    if (RARQueue.size() >= maxRARQEntries) {
+        ++stats.RARQueueFullCycles;
+    }
+
+    if (RAWQueue.size() >= maxRAWQEntries) {
+        ++stats.RAWQueueFullCycles;
+    }
+
+    // Sample the tracked RAR queue occupancy once per cycle.
+    stats.RARQueueAvgEntryNum = RARQueue.size();
+
+    // Sample the tracked RAW queue occupancy once per cycle.
+    stats.RAWQueueAvgEntryNum = RAWQueue.size();
 }
 
 void

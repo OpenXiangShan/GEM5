@@ -178,6 +178,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       blocked(0),
       order(0),
       noTargetMSHR(nullptr),
+      noMshrBlockedStartCycle(Cycles(0)),
       missCount(p.max_miss_count),
       addrRanges(p.addr_ranges.begin(), p.addr_ranges.end()),
       archDBer(p.arch_db),
@@ -310,6 +311,14 @@ BaseCache::init()
         fatal("Cache ports on %s are not connected\n", name());
     cpuSidePort.sendRangeChange();
     forwardSnoops = cpuSidePort.isSnooping();
+    mshrQueue.resetOccupancyStats(curTick());
+}
+
+void
+BaseCache::resetStats()
+{
+    ClockedObject::resetStats();
+    mshrQueue.resetOccupancyStats(curTick());
 }
 
 Port &
@@ -333,6 +342,30 @@ BaseCache::inRange(Addr addr) const
        }
     }
     return false;
+}
+
+double
+BaseCache::getMshrAvgEntryNum() const
+{
+    const Tick now = curTick();
+    const Tick elapsed = mshrQueue.getOccupancyElapsedTicks(now);
+    if (elapsed == 0) {
+        return 0.0;
+    }
+
+    return static_cast<double>(mshrQueue.getOccupancyEntryTicks(now)) /
+        static_cast<double>(elapsed);
+}
+
+double
+BaseCache::getMshrOccupancyRatio() const
+{
+    const int num_entries = mshrQueue.getNumEntries();
+    if (num_entries <= 0) {
+        return 0.0;
+    }
+
+    return getMshrAvgEntryNum() / static_cast<double>(num_entries);
 }
 
 bool
@@ -2862,6 +2895,12 @@ BaseCache::CacheStats::CacheStats(BaseCache &c)
     ADD_STAT(overallAvgMshrUncacheableLatency, statistics::units::Rate<
                 statistics::units::Tick, statistics::units::Count>::get(),
              "average overall mshr uncacheable latency"),
+    ADD_STAT(mshrAvgEntryNum, statistics::units::Ratio::get(),
+             "average number of allocated MSHR entries"),
+    ADD_STAT(mshrOccupancyRatio, statistics::units::Ratio::get(),
+             "average allocated MSHR entry ratio"),
+    ADD_STAT(noMshrBlockedCycles, statistics::units::Cycle::get(),
+             "number of cycles blocked by no MSHR entries"),
     ADD_STAT(bytesRecvPerCycle, statistics::units::Ratio::get(),
              "average bandwidth receiving data from lower cache."),
     ADD_STAT(replacements, statistics::units::Count::get(),
@@ -3158,6 +3197,14 @@ BaseCache::CacheStats::regStats()
         overallAvgMshrUncacheableLatency.subname(i,
             system->getRequestorName(i));
     }
+
+    mshrAvgEntryNum
+        .flags(nonan)
+        .functor([this]() { return cache.getMshrAvgEntryNum(); });
+
+    mshrOccupancyRatio
+        .flags(nonan)
+        .functor([this]() { return cache.getMshrOccupancyRatio(); });
 
     bytesRecvPerCycle.flags(total | nozero | nonan);
     bytesRecvPerCycle = bytesRecv / simTicks * cache.clockPeriod();

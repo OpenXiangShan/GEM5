@@ -718,6 +718,9 @@ class LSQUnit
     /** Flag for memory model. */
     bool needsTSO;
 
+    /** Avoid counting the same store-load violation more than once per cycle. */
+    bool countedStLdViolationThisCycle = false;
+
     unsigned lastClockSQPopEntries;
     unsigned lastClockLQPopEntries;
     /** Store requests for potential RAR violations */
@@ -779,6 +782,12 @@ class LSQUnit
         /** Tota number of memory ordering violations. */
         statistics::Scalar memOrderViolation;
 
+        /** Total number of load-load violation events. */
+        statistics::Scalar ldLdViolation;
+
+        /** Total number of store-load violation events. */
+        statistics::Scalar stLdViolation;
+
         /** Tota number of successfully forwarding from bus. */
         statistics::Scalar busForwardSuccess;
 
@@ -802,6 +811,9 @@ class LSQUnit
 
         statistics::Scalar sbufferFull;
 
+        /** Store-buffer line management counters. */
+        statistics::Scalar sbufferMerge;
+        statistics::Scalar sbufferNewline;
         statistics::Scalar sbufferCreateVice;
 
         statistics::Scalar sbufferFullForward;
@@ -825,15 +837,33 @@ class LSQUnit
 
         /** RAR replay queue related stats */
         statistics::Scalar RARQueueFull;
+        statistics::Scalar RARQueueFullCycles;
         statistics::Scalar RARQueueReplay;
         statistics::Distribution RARQueueLatency;
+        statistics::Average RARQueueAvgEntryNum;
 
         /** RAW replay queue related stats */
         statistics::Scalar RAWQueueFull;
+        statistics::Scalar RAWQueueFullCycles;
         statistics::Scalar RAWQueueReplay;
         statistics::Distribution RAWQueueLatency;
+        statistics::Average RAWQueueAvgEntryNum;
 
+        /** Pipe-entry counters sampled at the actual pipe accept point. */
+        statistics::Vector loadPipeAccepted;
+        statistics::Vector storePipeAccepted;
+        /** Store replay counters recorded at the replay exit. */
+        statistics::Scalar storeReplayTotal;
+        statistics::Scalar storeReplayTlbMiss;
+        statistics::Vector loadPipeReplayAccepted;
+        statistics::Vector loadPipeFastReplayAccepted;
         statistics::Vector loadReplayEvents;
+        /**
+         * Replay causes counted only on the first IssueQueue -> load-pipe
+         * attempt, to better align with the RTL counters that count only the
+         * first enqueue into LRQ.
+         */
+        statistics::Vector loadReplayEventsFromIssueQueue;
     } stats;
 
     void bankConflictReplay();

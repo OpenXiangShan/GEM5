@@ -77,6 +77,45 @@ namespace gem5
 
 namespace RiscvISA {
 
+Walker::WalkerStats::WalkerStats(statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(ptwMemCount, statistics::units::Count::get(),
+               "Number of PTW memory requests sent"),
+      ADD_STAT(ptwMemCycle, statistics::units::Cycle::get(),
+               "Cycles with at least one PTW memory request in flight"),
+      ADD_STAT(ptwAvgMemLatency,
+               statistics::units::Rate<
+                   statistics::units::Cycle,
+                   statistics::units::Count>::get(),
+               "Average PTW memory latency",
+               ptwMemCycle / ptwMemCount)
+{
+}
+
+void
+Walker::updatePtwMemCycleStats()
+{
+    const Tick now = curTick();
+    if (outstandingPtwMemReqs != 0 && now > lastPtwMemCycleTick) {
+        stats.ptwMemCycle += ticksToCycles(now - lastPtwMemCycleTick);
+    }
+    lastPtwMemCycleTick = now;
+}
+
+void
+Walker::preDumpStats()
+{
+    ClockedObject::preDumpStats();
+    updatePtwMemCycleStats();
+}
+
+void
+Walker::resetStats()
+{
+    ClockedObject::resetStats();
+    lastPtwMemCycleTick = curTick();
+}
+
 std::pair<bool, Fault>
 Walker::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *translation,
                     const RequestPtr &req, BaseMMU::Mode mode, bool from_l2tlb,
@@ -199,6 +238,11 @@ Walker::recvTimingResp(PacketPtr pkt)
         dynamic_cast<WalkerSenderState *>(pkt->popSenderState());
     DPRINTF(PageTableWalker,
             "Received timing response for sender state: %#lx\n", senderState);
+    if (pkt->isRead()) {
+        updatePtwMemCycleStats();
+        assert(outstandingPtwMemReqs > 0);
+        outstandingPtwMemReqs--;
+    }
     WalkerState * senderWalk = senderState->senderWalk;
     bool walkComplete = senderWalk->recvPacket(pkt);
     delete senderState;
@@ -247,6 +291,11 @@ bool Walker::sendTiming(WalkerState* sendingState, PacketPtr pkt)
             pkt->getAddr(), walker_state);
     pkt->pushSenderState(walker_state);
     if (port.sendTimingReq(pkt)) {
+        if (pkt->isRead()) {
+            updatePtwMemCycleStats();
+            outstandingPtwMemReqs++;
+            stats.ptwMemCount++;
+        }
         return true;
     } else {
         // undo the adding of the sender state and delete it, as we
