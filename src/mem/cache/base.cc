@@ -1358,31 +1358,35 @@ BaseCache::getNextQueueEntry()
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
             PrefetchSourceType pf_type = pkt->req->getXsMetadata().prefetchSource;
-            if (tags->findBlock(pf_addr, pkt->isSecure())) {
+            const auto cache_cover = probeCacheCover(pf_addr, pkt->isSecure());
+            if (cache_cover.hit) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
-                prefetcher->pfHitInCache(pf_type);
-                if (pf_type == PrefetchSourceType::SStream)
-                    prefetcher->streamPflate();
-                // free the request and packet
-                delete pkt;
-            } else if (mshrQueue.findMatch(pf_addr, pkt->isSecure())) {
-                DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
-                        "dropped.\n", pf_addr);
-                prefetcher->pfHitInMSHR(pf_type);
-                if (pf_type == PrefetchSourceType::SStream)
-                    prefetcher->streamPflate();
-                // free the request and packet
-                delete pkt;
-            } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
-                DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
-                        "Write Buffer, dropped.\n", pf_addr);
-                prefetcher->pfHitInWB(pf_type);
+                prefetcher->pfHitInCache(pf_type, cache_cover);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
                 // free the request and packet
                 delete pkt;
             } else {
+                const auto missq_cover =
+                    probeMissQueueCover(pf_addr, pkt->isSecure());
+                if (missq_cover.hit) {
+                DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
+                        "dropped.\n", pf_addr);
+                    prefetcher->pfHitInMSHR(pf_type, missq_cover);
+                    if (pf_type == PrefetchSourceType::SStream)
+                        prefetcher->streamPflate();
+                    // free the request and packet
+                    delete pkt;
+                } else if (writeBuffer.findMatch(pf_addr, pkt->isSecure())) {
+                DPRINTF(HWPrefetch, "Prefetch %#x has hit in the "
+                        "Write Buffer, dropped.\n", pf_addr);
+                    prefetcher->pfHitInWB(pf_type);
+                    if (pf_type == PrefetchSourceType::SStream)
+                        prefetcher->streamPflate();
+                    // free the request and packet
+                    delete pkt;
+                } else {
                 // Update statistic on number of prefetches issued
                 // (hwpf_mshr_misses)
                 assert(pkt->req->requestorId() < system->maxRequestors());
@@ -1394,6 +1398,7 @@ BaseCache::getNextQueueEntry()
                 DPRINTF(HWPrefetch, "Allocating MSHR for prefetching addr %#x\n", pf_addr);
                 auto buf = allocateMissBuffer(pkt, curTick(), false);
                 return buf;
+                }
             }
             // if (prefetcher->hasHintsWaiting() && !memSidePort.hasSchedSendEvent()) {
             //     DPRINTF(HWPrefetch, "Prefetcher has hints waiting, issuing them next cycle (%llu).\n", nextCycle());

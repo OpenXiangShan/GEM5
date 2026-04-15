@@ -58,7 +58,11 @@ class PrefetcherForwarder : public Base
     void incrDemandMhsrMisses() override;
     void prefetchUnused(PrefetchSourceType pf_type) override;
     void pfHitInMSHR(PrefetchSourceType pf_type) override;
+    void pfHitInMSHR(PrefetchSourceType pf_type,
+                     const CacheAccessor::MissQueueCoverInfo &cover) override;
     void pfHitInCache(PrefetchSourceType pf_type) override;
+    void pfHitInCache(PrefetchSourceType pf_type,
+                      const CacheAccessor::CacheCoverInfo &cover) override;
     void pfHitInWB(PrefetchSourceType pf_type) override;
 
     void recvPrefetchFromCache(const PacketPtr &pkt) override;

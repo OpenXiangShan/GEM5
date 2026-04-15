@@ -64,6 +64,25 @@ namespace prefetch
 namespace
 {
 
+void
+initSourceVector(statistics::Vector &stat)
+{
+    stat.init(NUM_PF_SOURCES).flags(statistics::total);
+    for (int i = 0; i < NUM_PF_SOURCES; ++i) {
+        stat.subname(i, prefetchSourceName(static_cast<PrefetchSourceType>(i)));
+    }
+}
+
+void
+initSourceMatrix(statistics::Vector2d &stat)
+{
+    stat.init(NUM_PF_SOURCES, NUM_PF_SOURCES).flags(statistics::total);
+    for (int i = 0; i < NUM_PF_SOURCES; ++i) {
+        stat.subname(i, prefetchSourceName(static_cast<PrefetchSourceType>(i)));
+        stat.ysubname(i, prefetchSourceName(static_cast<PrefetchSourceType>(i)));
+    }
+}
+
 Request::XsMetadata
 buildTrainingMetadata(const PacketPtr &pkt, PrefetchSourceType pfSource,
                       int pfDepth)
@@ -289,6 +308,18 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
         "number of prefetches hit in the Write Buffer"),
     ADD_STAT(late_srcs, statistics::units::Count::get(),
         "number of prefetches late"),
+    ADD_STAT(lateCoverCacheLivePref_srcs, statistics::units::Count::get(),
+        "late prefetches that hit live prefetched cache blocks owned by source"),
+    ADD_STAT(lateCoverCacheEverPref_srcs, statistics::units::Count::get(),
+        "late prefetches that hit already-used prefetched cache blocks owned by source"),
+    ADD_STAT(lateCoverCacheDemand_srcs, statistics::units::Count::get(),
+        "late prefetches that hit demand-owned cache blocks"),
+    ADD_STAT(lateCoverMSHRPrefOnly_srcs, statistics::units::Count::get(),
+        "late prefetches that hit prefetch-only MSHRs owned by source"),
+    ADD_STAT(lateCoverMSHRMerged_srcs, statistics::units::Count::get(),
+        "late prefetches that hit prefetch MSHRs already merged with demand"),
+    ADD_STAT(lateCoverMSHRDemand_srcs, statistics::units::Count::get(),
+        "late prefetches that hit demand-owned MSHRs"),
     ADD_STAT(pfUsefulButMiss, statistics::units::Count::get(),
         "number of hit on prefetch but cache block is not in an usable "
         "state"),
@@ -311,30 +342,21 @@ Base::StatGroup::StatGroup(statistics::Group *parent)
 {
     using namespace statistics;
 
-    pfIssued_srcs
-        .init(NUM_PF_SOURCES)
-        .flags(total);
+    initSourceVector(pfIssued_srcs);
 
     pfUnused.flags(nozero);
-    pfUnused_srcs
-        .init(NUM_PF_SOURCES)
-        .flags(total);
-    pfUseful_srcs
-        .init(NUM_PF_SOURCES)
-        .flags(total);
-
-    pfHitInCache_srcs
-        .init(NUM_PF_SOURCES)
-        .flags(total);
-    pfHitInMSHR_srcs
-        .init(NUM_PF_SOURCES)
-        .flags(total);
-    pfHitInWB_srcs
-        .init(NUM_PF_SOURCES)
-        .flags(total);
-    late_srcs
-        .init(NUM_PF_SOURCES)
-        .flags(total);
+    initSourceVector(pfUnused_srcs);
+    initSourceVector(pfUseful_srcs);
+    initSourceVector(pfHitInCache_srcs);
+    initSourceVector(pfHitInMSHR_srcs);
+    initSourceVector(pfHitInWB_srcs);
+    initSourceVector(late_srcs);
+    initSourceMatrix(lateCoverCacheLivePref_srcs);
+    initSourceMatrix(lateCoverCacheEverPref_srcs);
+    initSourceVector(lateCoverCacheDemand_srcs);
+    initSourceMatrix(lateCoverMSHRPrefOnly_srcs);
+    initSourceMatrix(lateCoverMSHRMerged_srcs);
+    initSourceVector(lateCoverMSHRDemand_srcs);
 
 
     accuracy.flags(total);

@@ -186,10 +186,30 @@ PrefetcherForwarder::pfHitInMSHR(PrefetchSourceType pf_type)
 }
 
 void
+PrefetcherForwarder::pfHitInMSHR(
+    PrefetchSourceType pf_type,
+    const CacheAccessor::MissQueueCoverInfo &cover)
+{
+    if (real_pf) {
+        real_pf->pfHitInMSHR(pf_type, cover);
+    }
+}
+
+void
 PrefetcherForwarder::pfHitInCache(PrefetchSourceType pf_type)
 {
     if (real_pf) {
         real_pf->pfHitInCache(pf_type);
+    }
+}
+
+void
+PrefetcherForwarder::pfHitInCache(
+    PrefetchSourceType pf_type,
+    const CacheAccessor::CacheCoverInfo &cover)
+{
+    if (real_pf) {
+        real_pf->pfHitInCache(pf_type, cover);
     }
 }
 

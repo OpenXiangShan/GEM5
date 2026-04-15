@@ -34,6 +34,9 @@ class PrefetchFilter
         bool decr_mode;       // 1 if decrementing prefetch mode
         uint64_t PFlevel;      // prefetch level for this region, L1/L2/L3
         std::vector<std::unique_ptr<TriggerInfo>> bitTriggers;
+        std::vector<PrefetchSourceType> bitFirstOwners;
+        std::vector<PrefetchSourceType> bitLastOwners;
+        std::vector<PrefetchSourceType> bitIssuedOwners;
 
         Entry()
             : TaggedEntry(), region_addr(0), region_bits(0), filter_bits(0), alias_bits(0),
@@ -47,7 +50,10 @@ class PrefetchFilter
               alias_bits(other.alias_bits),
               paddr_valid(other.paddr_valid),
               decr_mode(other.decr_mode),
-              PFlevel(other.PFlevel)
+              PFlevel(other.PFlevel),
+              bitFirstOwners(other.bitFirstOwners),
+              bitLastOwners(other.bitLastOwners),
+              bitIssuedOwners(other.bitIssuedOwners)
         {
             copyTriggers(other);
         }
@@ -63,6 +69,9 @@ class PrefetchFilter
                 paddr_valid = other.paddr_valid;
                 decr_mode = other.decr_mode;
                 PFlevel = other.PFlevel;
+                bitFirstOwners = other.bitFirstOwners;
+                bitLastOwners = other.bitLastOwners;
+                bitIssuedOwners = other.bitIssuedOwners;
                 copyTriggers(other);
             }
             return *this;
@@ -141,8 +150,12 @@ class PrefetchFilter
     const unsigned REGION_ADDR_RAW_WIDTH;
     const unsigned vaddrHashWidth; // width for vaddr hash (per chisel spec)
 
-    void ensureTriggerStorage(Entry &e);
+    void ensurePerBitStorage(Entry &e);
+    void clearPerBitState(Entry &e);
     void storeTriggersForBits(Entry &e, uint64_t bits, const TriggerInfo *trigger);
+    PrefetchSourceType effectiveSource(const TriggerInfo *trigger) const;
+    PrefetchSourceType effectiveBitOwner(const Entry &e, unsigned idx,
+                                         const TriggerInfo *trigger = nullptr) const;
 
     // Compute region-hash tag as described by chisel:
     // low  = region_tag[BLK_ADDR_RAW_WIDTH-1:0]
@@ -168,6 +181,12 @@ class PrefetchFilter
         statistics::Scalar l3Calls;
         statistics::Scalar l3Issued;
         statistics::Scalar hashcollisionCount;
+        statistics::Vector bitInsert_srcs;
+        statistics::Vector newBit_srcs;
+        statistics::Vector2d coverPending_srcs;
+        statistics::Vector2d coverIssued_srcs;
+        statistics::Vector2d takeoverPending_srcs;
+        statistics::Vector2d replaceDropPending_srcs;
     } stats;
     PrefetchSourceType pfSourceType;
     const std::string table_name;

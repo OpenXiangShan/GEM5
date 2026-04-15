@@ -30,6 +30,8 @@ public:
     bool hasEverBeenPrefetched(Addr addr, bool is_secure) const override;
     Request::XsMetadata getHitBlkXsMetadata(PacketPtr pkt) override;
     bool inMissQueue(Addr addr, bool is_secure) const override;
+    CacheCoverInfo probeCacheCover(Addr addr, bool is_secure) const override;
+    MissQueueCoverInfo probeMissQueueCover(Addr addr, bool is_secure) const override;
     bool coalesce() const override;
     const uint8_t* findBlock(Addr addr, bool is_secure) const override;
 };

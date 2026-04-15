@@ -58,6 +58,30 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
+namespace
+{
+
+void
+initSourceVector(statistics::Vector &stat)
+{
+    stat.init(NUM_PF_SOURCES).flags(statistics::total);
+    for (int i = 0; i < NUM_PF_SOURCES; ++i) {
+        stat.subname(i, prefetchSourceName(static_cast<PrefetchSourceType>(i)));
+    }
+}
+
+void
+initSourceMatrix(statistics::Vector2d &stat)
+{
+    stat.init(NUM_PF_SOURCES, NUM_PF_SOURCES).flags(statistics::total);
+    for (int i = 0; i < NUM_PF_SOURCES; ++i) {
+        stat.subname(i, prefetchSourceName(static_cast<PrefetchSourceType>(i)));
+        stat.ysubname(i, prefetchSourceName(static_cast<PrefetchSourceType>(i)));
+    }
+}
+
+} // anonymous namespace
+
 void
 Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID requestor_id, bool tag_prefetch, Tick t,
                                   PrefetchSourceType pf_src, int prf_depth)
@@ -148,6 +172,70 @@ Queued::~Queued()
     for (DeferredPacket &p : pfq) {
         delete p.pkt;
     }
+}
+
+void
+Queued::recordCacheCoverBeforeQueue(
+    PrefetchSourceType incoming,
+    const CacheAccessor::CacheCoverInfo &info)
+{
+    if (!info.hit) {
+        return;
+    }
+
+    if (info.livePrefetched && info.owner != PrefetchSourceType::PF_NONE) {
+        statsQueued.coverBeforeQueueCacheLivePref_srcs[incoming][info.owner]++;
+    } else if (info.everPrefetched &&
+               info.owner != PrefetchSourceType::PF_NONE) {
+        statsQueued.coverBeforeQueueCacheEverPref_srcs[incoming][info.owner]++;
+    } else {
+        statsQueued.coverBeforeQueueCacheDemand_srcs[incoming]++;
+    }
+}
+
+void
+Queued::recordMissQueueCoverBeforeQueue(
+    PrefetchSourceType incoming,
+    const CacheAccessor::MissQueueCoverInfo &info)
+{
+    if (!info.hit) {
+        return;
+    }
+
+    if (info.hasPrefetch && info.owner != PrefetchSourceType::PF_NONE) {
+        if (info.hasDemand) {
+            statsQueued.coverBeforeQueueMSHRMerged_srcs[incoming][info.owner]++;
+        } else {
+            statsQueued.coverBeforeQueueMSHRPrefOnly_srcs[incoming][info.owner]++;
+        }
+    } else {
+        statsQueued.coverBeforeQueueMSHRDemand_srcs[incoming]++;
+    }
+}
+
+bool
+Queued::recordCoverBeforeQueue(Addr target_paddr, bool is_secure,
+                               PrefetchSourceType incoming)
+{
+    const auto cache_cover = cache->probeCacheCover(target_paddr, is_secure);
+    if (cache_cover.hit) {
+        statsQueued.pfInCache++;
+        recordCacheCoverBeforeQueue(incoming, cache_cover);
+        DPRINTF(HWPrefetch, "Dropping redundant in cache prefetch addr:%#x\n",
+                target_paddr);
+        return true;
+    }
+
+    const auto missq_cover = cache->probeMissQueueCover(target_paddr, is_secure);
+    if (missq_cover.hit) {
+        statsQueued.pfInCache++;
+        recordMissQueueCoverBeforeQueue(incoming, missq_cover);
+        DPRINTF(HWPrefetch, "Dropping redundant in MSHR prefetch addr:%#x\n",
+                target_paddr);
+        return true;
+    }
+
+    return false;
 }
 
 void
@@ -404,11 +492,30 @@ Queued::QueuedStats::QueuedStats(statistics::Group *parent)
     ADD_STAT(pfUsefulSpanPage, statistics::units::Count::get(),
              "number of prefetches that is useful and crossed the page"),
     ADD_STAT(pfRemovedFull_srcs, statistics::units::Count::get(),
-        "src distribute of Removedfull prefetch")
+        "src distribute of Removedfull prefetch"),
+    ADD_STAT(pfBufferHitCover_srcs, statistics::units::Count::get(),
+        "incoming source hit an existing PFQ entry owned by source"),
+    ADD_STAT(coverBeforeQueueCacheLivePref_srcs, statistics::units::Count::get(),
+        "incoming source hit a live prefetched cache block before PFQ insert"),
+    ADD_STAT(coverBeforeQueueCacheEverPref_srcs, statistics::units::Count::get(),
+        "incoming source hit an already-used prefetched cache block before PFQ insert"),
+    ADD_STAT(coverBeforeQueueCacheDemand_srcs, statistics::units::Count::get(),
+        "incoming source became redundant on a demand-owned cache block before PFQ insert"),
+    ADD_STAT(coverBeforeQueueMSHRPrefOnly_srcs, statistics::units::Count::get(),
+        "incoming source hit a prefetch-only MSHR before PFQ insert"),
+    ADD_STAT(coverBeforeQueueMSHRMerged_srcs, statistics::units::Count::get(),
+        "incoming source hit a prefetch MSHR already merged with demand before PFQ insert"),
+    ADD_STAT(coverBeforeQueueMSHRDemand_srcs, statistics::units::Count::get(),
+        "incoming source hit a demand-owned MSHR before PFQ insert")
 {   using namespace statistics;
-    pfRemovedFull_srcs
-        .init(NUM_PF_SOURCES)
-        .flags(total);
+    initSourceVector(pfRemovedFull_srcs);
+    initSourceMatrix(pfBufferHitCover_srcs);
+    initSourceMatrix(coverBeforeQueueCacheLivePref_srcs);
+    initSourceMatrix(coverBeforeQueueCacheEverPref_srcs);
+    initSourceVector(coverBeforeQueueCacheDemand_srcs);
+    initSourceMatrix(coverBeforeQueueMSHRPrefOnly_srcs);
+    initSourceMatrix(coverBeforeQueueMSHRMerged_srcs);
+    initSourceVector(coverBeforeQueueMSHRDemand_srcs);
 }
 
 
@@ -459,11 +566,9 @@ Queued::translationComplete(DeferredPacket *dp, bool failed)
                     it->translationRequest->getPaddr());
             Addr target_paddr = it->translationRequest->getPaddr();
             // check if this prefetch is already redundant
-            if (cacheSnoop && queueFilter && (inCache(target_paddr, it->pfInfo.isSecure()) ||
-                        inMissQueue(target_paddr, it->pfInfo.isSecure()))) {
-                statsQueued.pfInCache++;
-                DPRINTF(HWPrefetch, "Dropping redundant in "
-                        "cache/MSHR prefetch addr:%#x\n", target_paddr);
+            if (cacheSnoop && queueFilter &&
+                recordCoverBeforeQueue(target_paddr, it->pfInfo.isSecure(),
+                    it->pfInfo.getXsMetadata().prefetchSource)) {
             } else if (!system->isMemAddr(target_paddr)) {
                 DPRINTF(HWPrefetch, "wrong paddr of prefetch:%#x\n", target_paddr);
 
@@ -497,6 +602,8 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
     /* If the address is already in the queue, update priority and leave */
     if (it != queue.end()) {
         statsQueued.pfBufferHit++;
+        statsQueued.pfBufferHitCover_srcs[pfi.getXsMetadata().prefetchSource]
+                                        [it->pfInfo.getXsMetadata().prefetchSource]++;
         if (it->priority < priority) {
             /* Update priority value and position in the queue */
             it->priority = priority;
@@ -630,11 +737,8 @@ Queued::insert(const PacketPtr &pkt, PrefetchInfo &new_pfi, const AddrPriority &
         }
     }
     if (has_target_pa && cacheSnoop && queueFilter &&
-            (inCache(target_paddr, new_pfi.isSecure()) ||
-            inMissQueue(target_paddr, new_pfi.isSecure()))) {
-        statsQueued.pfInCache++;
-        DPRINTF(HWPrefetch, "Dropping redundant in "
-                "cache/MSHR prefetch addr:%#x\n", target_paddr);
+        recordCoverBeforeQueue(target_paddr, new_pfi.isSecure(),
+            new_pfi.getXsMetadata().prefetchSource)) {
         return;
     }
     if (has_target_pa && !system->isMemAddr(target_paddr)) {

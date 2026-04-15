@@ -921,6 +921,12 @@ class Base : public ClockedObject
         statistics::Vector pfHitInMSHR_srcs;
         statistics::Vector pfHitInWB_srcs;
         statistics::Vector late_srcs;
+        statistics::Vector2d lateCoverCacheLivePref_srcs;
+        statistics::Vector2d lateCoverCacheEverPref_srcs;
+        statistics::Vector lateCoverCacheDemand_srcs;
+        statistics::Vector2d lateCoverMSHRPrefOnly_srcs;
+        statistics::Vector2d lateCoverMSHRMerged_srcs;
+        statistics::Vector lateCoverMSHRDemand_srcs;
         /** The number of times there is a hit on prefetch but cache block
          * is not in an usable state */
         statistics::Scalar pfUsefulButMiss;
@@ -1006,11 +1012,44 @@ class Base : public ClockedObject
     }
 
     virtual void
+    pfHitInCache(PrefetchSourceType pf_type,
+                 const CacheAccessor::CacheCoverInfo &cover)
+    {
+        pfHitInCache(pf_type);
+        if (cover.livePrefetched &&
+            cover.owner != PrefetchSourceType::PF_NONE) {
+            prefetchStats.lateCoverCacheLivePref_srcs[pf_type][cover.owner]++;
+        } else if (cover.everPrefetched &&
+                   cover.owner != PrefetchSourceType::PF_NONE) {
+            prefetchStats.lateCoverCacheEverPref_srcs[pf_type][cover.owner]++;
+        } else {
+            prefetchStats.lateCoverCacheDemand_srcs[pf_type]++;
+        }
+    }
+
+    virtual void
     pfHitInMSHR(PrefetchSourceType pf_type)
     {
         prefetchStats.pfHitInMSHR++;
         prefetchStats.pfHitInMSHR_srcs[pf_type]++;
         prefetchStats.late_srcs[pf_type]++;
+    }
+
+    virtual void
+    pfHitInMSHR(PrefetchSourceType pf_type,
+                const CacheAccessor::MissQueueCoverInfo &cover)
+    {
+        pfHitInMSHR(pf_type);
+        if (cover.hasPrefetch &&
+            cover.owner != PrefetchSourceType::PF_NONE) {
+            if (cover.hasDemand) {
+                prefetchStats.lateCoverMSHRMerged_srcs[pf_type][cover.owner]++;
+            } else {
+                prefetchStats.lateCoverMSHRPrefOnly_srcs[pf_type][cover.owner]++;
+            }
+        } else {
+            prefetchStats.lateCoverMSHRDemand_srcs[pf_type]++;
+        }
     }
 
     virtual void

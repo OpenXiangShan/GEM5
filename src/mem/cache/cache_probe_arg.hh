@@ -53,6 +53,22 @@ namespace gem5
  */
 struct CacheAccessor
 {
+    struct CacheCoverInfo
+    {
+        bool hit = false;
+        bool livePrefetched = false;
+        bool everPrefetched = false;
+        PrefetchSourceType owner = PrefetchSourceType::PF_NONE;
+    };
+
+    struct MissQueueCoverInfo
+    {
+        bool hit = false;
+        bool hasPrefetch = false;
+        bool hasDemand = false;
+        PrefetchSourceType owner = PrefetchSourceType::PF_NONE;
+    };
+
     /** Determine if address is in cache */
     virtual bool inCache(Addr addr, bool is_secure) const = 0;
 
@@ -71,6 +87,13 @@ struct CacheAccessor
 
     /** Determine if address is in cache miss queue */
     virtual bool inMissQueue(Addr addr, bool is_secure) const = 0;
+
+    /** Probe ownership metadata for an address that already hits in cache. */
+    virtual CacheCoverInfo probeCacheCover(Addr addr, bool is_secure) const = 0;
+
+    /** Probe ownership metadata for an address that already hits in MSHR. */
+    virtual MissQueueCoverInfo probeMissQueueCover(Addr addr,
+                                                   bool is_secure) const = 0;
 
     /** Determine if cache is coalescing writes */
     virtual bool coalesce() const = 0;

@@ -60,6 +60,20 @@ SlicedCacheAccessor::inMissQueue(Addr addr, bool is_secure) const
     return getSlice(addr)->inMissQueue(addr, is_secure);
 }
 
+CacheAccessor::CacheCoverInfo
+SlicedCacheAccessor::probeCacheCover(Addr addr, bool is_secure) const
+{
+    fatal_if(l2_wrapper->cache_accessors.empty(), "No slice accessors available.");
+    return getSlice(addr)->probeCacheCover(addr, is_secure);
+}
+
+CacheAccessor::MissQueueCoverInfo
+SlicedCacheAccessor::probeMissQueueCover(Addr addr, bool is_secure) const
+{
+    fatal_if(l2_wrapper->cache_accessors.empty(), "No slice accessors available.");
+    return getSlice(addr)->probeMissQueueCover(addr, is_secure);
+}
+
 bool
 SlicedCacheAccessor::coalesce() const
 {

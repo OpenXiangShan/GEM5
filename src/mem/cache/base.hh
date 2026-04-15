@@ -1683,6 +1683,41 @@ public:
         return mshrQueue.findMatch(addr, is_secure);
     }
 
+    CacheCoverInfo probeCacheCover(Addr addr, bool is_secure) const override
+    {
+        CacheCoverInfo info;
+        CacheBlk *block = tags->findBlock(addr, is_secure);
+        if (!block) {
+            return info;
+        }
+
+        info.hit = true;
+        info.livePrefetched = block->wasPrefetched();
+        info.everPrefetched = block->wasEverPrefetched();
+        if (info.everPrefetched) {
+            info.owner = block->getXsMetadata().prefetchSource;
+        }
+        return info;
+    }
+
+    MissQueueCoverInfo probeMissQueueCover(Addr addr,
+                                           bool is_secure) const override
+    {
+        MissQueueCoverInfo info;
+        MSHR *mshr = mshrQueue.findMatch(addr, is_secure);
+        if (!mshr) {
+            return info;
+        }
+
+        info.hit = true;
+        info.hasPrefetch = mshr->hasFromPref();
+        info.hasDemand = mshr->hasFromCPU();
+        if (info.hasPrefetch) {
+            info.owner = mshr->getPFSource();
+        }
+        return info;
+    }
+
     bool coalesce() const override;
 
     const uint8_t* findBlock(Addr addr, bool is_secure) const override {

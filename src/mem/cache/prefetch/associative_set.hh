@@ -94,9 +94,11 @@ class AssociativeSet
     /**
      * Find a victim to be replaced
      * @param addr key to select the possible victim
+     * @param was_valid optional out-parameter indicating whether the victim
+     *   held a valid entry before replacement
      * @result entry to be victimized
      */
-    Entry* findVictim(Addr addr);
+    Entry* findVictim(Addr addr, bool *was_valid = nullptr);
 
     /**
      * Find the set of entries that could be replaced given

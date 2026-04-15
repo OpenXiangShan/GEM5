@@ -227,6 +227,13 @@ class Queued : public Base
         statistics::Scalar pfSpanPage;
         statistics::Scalar pfUsefulSpanPage;
         statistics::Vector pfRemovedFull_srcs;
+        statistics::Vector2d pfBufferHitCover_srcs;
+        statistics::Vector2d coverBeforeQueueCacheLivePref_srcs;
+        statistics::Vector2d coverBeforeQueueCacheEverPref_srcs;
+        statistics::Vector coverBeforeQueueCacheDemand_srcs;
+        statistics::Vector2d coverBeforeQueueMSHRPrefOnly_srcs;
+        statistics::Vector2d coverBeforeQueueMSHRMerged_srcs;
+        statistics::Vector coverBeforeQueueMSHRDemand_srcs;
     } statsQueued;
 
   public:
@@ -279,6 +286,14 @@ class Queued : public Base
      * @param failed whether the translation was successful
      */
     void translationComplete(DeferredPacket *dp, bool failed);
+
+    bool recordCoverBeforeQueue(Addr target_paddr, bool is_secure,
+                                PrefetchSourceType incoming);
+    void recordCacheCoverBeforeQueue(PrefetchSourceType incoming,
+                                     const CacheAccessor::CacheCoverInfo &info);
+    void recordMissQueueCoverBeforeQueue(
+        PrefetchSourceType incoming,
+        const CacheAccessor::MissQueueCoverInfo &info);
 
     /**
      * Checks whether the specified prefetch request is already in the

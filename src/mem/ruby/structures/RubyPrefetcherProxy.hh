@@ -185,6 +185,29 @@ class RubyPrefetcherProxy : public CacheAccessor, public Named
         return cacheCntrl->inMissQueue(addr, is_secure);
     }
 
+    CacheCoverInfo probeCacheCover(Addr addr, bool is_secure) const override
+    {
+        CacheCoverInfo info;
+        if (!cacheCntrl->inCache(addr, is_secure)) {
+            return info;
+        }
+
+        info.hit = true;
+        info.livePrefetched = cacheCntrl->hasBeenPrefetched(addr, is_secure);
+        info.everPrefetched = cacheCntrl->hasEverBeenPrefetched(addr, is_secure);
+        if (info.everPrefetched) {
+            info.owner = cacheCntrl->getHitBlkXsMetadata(addr, is_secure).prefetchSource;
+        }
+        return info;
+    }
+
+    MissQueueCoverInfo probeMissQueueCover(Addr addr, bool is_secure) const override
+    {
+        MissQueueCoverInfo info;
+        info.hit = cacheCntrl->inMissQueue(addr, is_secure);
+        return info;
+    }
+
     bool coalesce() const override
     { return cacheCntrl->coalesce(); }
 
