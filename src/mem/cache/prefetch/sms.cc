@@ -261,6 +261,9 @@ XSCompositePrefetcher::calculatePrefetch(const PrefetchInfo &pfi, std::vector<Ad
         return;
     }
     stats.totalTrainCount++;
+    if (enableSstride && Sstride && !pfi.isStore()) {
+        Sstride->observeGlobalDepthFeedback(pfi, late, pf_source);
+    }
 
     Addr pc = pfi.getPC();
     Addr vaddr = pfi.getAddr();
@@ -895,6 +898,46 @@ XSCompositePrefetcher::notifyFill(const PacketPtr &pkt)
         stats.refillNotifyCount++;
         berti->notifyFill(pkt);
         pfBlockLRUFilter.insert(pkt->req->getVaddr(), 0);
+    }
+}
+
+void
+XSCompositePrefetcher::pfHitInCache(PrefetchSourceType pf_type)
+{
+    Queued::pfHitInCache(pf_type);
+    if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
+        Sstride->observeGlobalDepthIssueLateCache();
+    }
+}
+
+void
+XSCompositePrefetcher::pfHitInCache(
+    PrefetchSourceType pf_type,
+    const CacheAccessor::CacheCoverInfo &cover)
+{
+    Queued::pfHitInCache(pf_type, cover);
+    if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
+        Sstride->observeGlobalDepthIssueLateCache();
+    }
+}
+
+void
+XSCompositePrefetcher::pfHitInMSHR(PrefetchSourceType pf_type)
+{
+    Queued::pfHitInMSHR(pf_type);
+    if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
+        Sstride->observeGlobalDepthIssueLateMSHR();
+    }
+}
+
+void
+XSCompositePrefetcher::pfHitInMSHR(
+    PrefetchSourceType pf_type,
+    const CacheAccessor::MissQueueCoverInfo &cover)
+{
+    Queued::pfHitInMSHR(pf_type, cover);
+    if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
+        Sstride->observeGlobalDepthIssueLateMSHR();
     }
 }
 

@@ -167,6 +167,8 @@ class XSStridePrefetcher : public Queued
     void triggerFromCommitTable(const PrefetchInfo &pfi,
                                 std::vector<AddrPriority> &addresses);
     void trainFromSnapshot(const CommitTrainSnapshot &snapshot);
+    void evaluateGlobalL1Depth();
+    statistics::Counter getGlobalL1DepthStat() const;
 
   public:
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
@@ -187,8 +189,28 @@ class XSStridePrefetcher : public Queued
                                  std::vector<AddrPriority> &addresses);
     void markCommitted(InstSeqNum seq_num);
     void dropYoungerThan(InstSeqNum boundary);
+    void observeGlobalDepthFeedback(const PrefetchInfo &pfi, bool late,
+                                    PrefetchSourceType pf_source);
+    void observeGlobalDepthIssueLateCache();
+    void observeGlobalDepthIssueLateMSHR();
   PrefetchFilter* stridestream_pfFilter_l1;
   PrefetchFilter* stridestream_pfFilter_l2l3;
+
+    static constexpr int globalL1DepthInit = 4;
+    static constexpr int globalL1DepthMin = 1;
+    static constexpr int globalL1DepthMax = 64;
+    static constexpr uint64_t globalL1DepthFeedbackWindow = 256;
+    static constexpr uint64_t strongLateWeight = 4;
+    static constexpr uint64_t issueLateMSHRWeight = 2;
+    static constexpr uint64_t issueLateCacheWeight = 1;
+    static constexpr uint64_t raiseThresholdPct = 20;
+    static constexpr uint64_t lowerWeakLateThresholdPct = 5;
+    static constexpr uint64_t lowerTimelyThresholdPct = 60;
+    int globalL1Depth{globalL1DepthInit};
+    uint64_t globalL1DepthLateStrongWindow{0};
+    uint64_t globalL1DepthLateCacheWindow{0};
+    uint64_t globalL1DepthLateMSHRWindow{0};
+    uint64_t globalL1DepthTimelyFirstHitWindow{0};
 
   struct XSstrideStats : public statistics::Group
   {
@@ -219,6 +241,14 @@ class XSStridePrefetcher : public Queued
       statistics::Scalar commitOrderedTrainMatchCount;
       statistics::Scalar commitOrderedTrainMismatchCount;
       statistics::Scalar commitOrderedTrainRetargetCount;
+      statistics::Value globalL1DepthCurrent;
+      statistics::Scalar globalL1DepthEvalCount;
+      statistics::Scalar globalL1DepthRaiseCount;
+      statistics::Scalar globalL1DepthLowerCount;
+      statistics::Scalar globalL1DepthLateStrongCount;
+      statistics::Scalar globalL1DepthLateHitInCacheCount;
+      statistics::Scalar globalL1DepthLateHitInMSHRCount;
+      statistics::Scalar globalL1DepthTimelyFirstHitCount;
 
   } stats;
 };
