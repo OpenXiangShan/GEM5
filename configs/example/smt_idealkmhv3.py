@@ -36,6 +36,7 @@ if __name__ == '__m5_main__':
     args.smt = True
     args.bp_type = 'DecoupledBPUWithBTB'
     args.l2_size = '2MB'
+    args.l3_size = '32MB'
 
     Simulation.setMemClass(args)
 
