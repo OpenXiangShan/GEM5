@@ -463,20 +463,6 @@ TEST_F(BTBTAGETest, IndexRepeatsShortFoldedHistory) {
         << "t1 index should repeat 8-bit history to cover all index bits";
 }
 
-// Test short folded history is repeated to cover the full tag width as well.
-TEST_F(BTBTAGETest, TagRepeatsShortFoldedHistory) {
-    const Addr pc = 0x0;
-    const int t0 = 0;
-    const Addr foldedHist = 0x9;
-    const Addr altFoldedHist = 0x3;
-    const Addr position = 0x2;
-    const Addr expectedTag = 0x99 ^ 0x66 ^ position;
-
-    EXPECT_EQ(tage->getTageTag(pc, t0, foldedHist, altFoldedHist, position),
-              expectedTag)
-        << "t0 tag should repeat short main/alt histories to cover all tag bits";
-}
-
 // Test entry allocation mechanism
 TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     // Instead of creating two different PCs, we'll create two entries with the same PC

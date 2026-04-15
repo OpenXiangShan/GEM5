@@ -28,34 +28,6 @@ namespace branch_prediction {
 
 namespace btb_pred{
 
-namespace {
-
-Addr
-expandShortFoldedHist(uint64_t foldedHist, unsigned histLen, unsigned width)
-{
-    if (width == 0) {
-        return 0;
-    }
-
-    const Addr mask = (1ULL << width) - 1;
-    Addr foldedBits = foldedHist & mask;
-
-    const unsigned histBits = std::min(histLen, width);
-    if (histBits > 0 && histBits < width) {
-        const Addr histMask = (1ULL << histBits) - 1;
-        const Addr baseHist = foldedHist & histMask;
-        foldedBits = 0;
-        for (unsigned pos = 0; pos < width; pos += histBits) {
-            foldedBits |= (baseHist << pos);
-        }
-        foldedBits &= mask;
-    }
-
-    return foldedBits;
-}
-
-} // namespace
-
 #ifdef UNIT_TEST
 namespace test {
 #endif
@@ -906,12 +878,11 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
     pcShift += tableIndexBits[t] - 1;   // since tableIndexBits = log(2048) = 11, RTL is 10
     Addr pcBits = (pc >> pcShift) & mask;
 
-    // Repeat short histories so they perturb the full tag width as well.
-    Addr foldedBits =
-        expandShortFoldedHist(foldedHist, histLengths[t], tableTagBits[t]);
-    Addr altTagBits = expandShortFoldedHist(
-        altFoldedHist, histLengths[t], tableTagBits[t] - 1);
-    altTagBits = (altTagBits << 1) & mask;
+    // Extract and prepare folded history bits
+    Addr foldedBits = foldedHist & mask;
+
+    // Extract alt tag bits and shift left by 1
+    Addr altTagBits = (altFoldedHist << 1) & mask;
 
     // XOR all components together, including position (like RTL)
     return pcBits ^ foldedBits ^ altTagBits ^ position;
@@ -931,8 +902,21 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
 
     const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
     Addr pcBits = (pc >> pcShift) & mask;
-    Addr foldedBits =
-        expandShortFoldedHist(foldedHist, histLengths[t], tableIndexBits[t]);
+    Addr foldedBits = foldedHist & mask;
+
+    // When the table history is shorter than the index width (for example
+    // t0/t1), the folded history only affects the low bits by default.
+    // Repeat the available history pattern so every index bit is perturbed.
+    const unsigned histBits = std::min(histLengths[t], tableIndexBits[t]);
+    if (histBits > 0 && histBits < tableIndexBits[t]) {
+        const Addr histMask = (1ULL << histBits) - 1;
+        const Addr baseHist = foldedHist & histMask;
+        foldedBits = 0;
+        for (unsigned pos = 0; pos < tableIndexBits[t]; pos += histBits) {
+            foldedBits |= (baseHist << pos);
+        }
+        foldedBits &= mask;
+    }
 
     // Support non-power-of-two table sizes when tuning capacities.
     return (pcBits ^ foldedBits) % tableSizes[t];
