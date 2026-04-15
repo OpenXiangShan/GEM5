@@ -1049,7 +1049,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     TTagPcShifts = VectorParam.Unsigned([1] * 8, "when the T0~Tn entry's tag generating, PC right shift")
     blockSize = 32 # tage index function uses 32B aligned block address
 
-    histLengths = VectorParam.Unsigned([4, 12, 20, 31, 60, 116, 200, 336],"the BTB TAGE T0~Tn history length")
+    histLengths = VectorParam.Unsigned([ 9, 17, 23, 29, 56, 109, 211, 397],"the BTB TAGE T0~Tn history length")
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numWays = VectorParam.Unsigned([2] * 8,"the T0~Tn number of ways per set")
