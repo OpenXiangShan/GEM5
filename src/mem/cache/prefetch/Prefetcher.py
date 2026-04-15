@@ -220,6 +220,7 @@ class XSStridePrefetcher(QueuedPrefetcher):
     )
 
     use_xs_depth = Param.Bool(True,"use xs rtl stride depth")
+    enable_auto_depth = Param.Bool(False, "Enable auto depth for xs stride")
     fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
     stride_dyn_depth = Param.Bool(False, "Dynamic depth of stride table")

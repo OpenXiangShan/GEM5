@@ -38,6 +38,7 @@ class XSStridePrefetcher : public Queued
 {
   protected:
   const bool useXsDepth;
+  const bool enableAutoDepth;
   const bool useRedundantTable;
   const bool fuzzyStrideMatching;
   const unsigned shortStrideThres;

@@ -61,7 +61,8 @@ sqlEscape(const std::string &value)
 } // anonymous namespace
 
 XSStridePrefetcher::XSStridePrefetcher(const XSStridePrefetcherParams &p)
-    : Queued(p),useXsDepth(p.use_xs_depth),useRedundantTable(p.use_redundant_table),
+    : Queued(p),useXsDepth(p.use_xs_depth),enableAutoDepth(p.enable_auto_depth),
+      useRedundantTable(p.use_redundant_table),
       fuzzyStrideMatching(p.fuzzy_stride_matching),
       shortStrideThres(p.short_stride_thres),
       strideDynDepth(p.stride_dyn_depth),
@@ -886,7 +887,8 @@ void
 XSStridePrefetcher::observeGlobalDepthFeedback(const PrefetchInfo &pfi, bool late,
                                                PrefetchSourceType pf_source)
 {
-    if (!useXsDepth || pf_source != PrefetchSourceType::SStride) {
+    if (!useXsDepth || !enableAutoDepth ||
+        pf_source != PrefetchSourceType::SStride) {
         return;
     }
 
@@ -906,7 +908,7 @@ XSStridePrefetcher::observeGlobalDepthFeedback(const PrefetchInfo &pfi, bool lat
 void
 XSStridePrefetcher::observeGlobalDepthIssueLateCache()
 {
-    if (!useXsDepth) {
+    if (!useXsDepth || !enableAutoDepth) {
         return;
     }
 
@@ -918,7 +920,7 @@ XSStridePrefetcher::observeGlobalDepthIssueLateCache()
 void
 XSStridePrefetcher::observeGlobalDepthIssueLateMSHR()
 {
-    if (!useXsDepth) {
+    if (!useXsDepth || !enableAutoDepth) {
         return;
     }
 
@@ -930,6 +932,10 @@ XSStridePrefetcher::observeGlobalDepthIssueLateMSHR()
 void
 XSStridePrefetcher::evaluateGlobalL1Depth()
 {
+    if (!enableAutoDepth) {
+        return;
+    }
+
     const uint64_t total_feedback =
         globalL1DepthLateStrongWindow +
         globalL1DepthLateCacheWindow +
