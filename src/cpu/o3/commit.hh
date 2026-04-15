@@ -372,6 +372,7 @@ class Commit
 
     /** Commits as many instructions as possible. */
     void commitInsts();
+    bool hasExecutedYoungerInst(ThreadID tid, InstSeqNum seq_num) const;
     void updateMstatusSd(ThreadID tid);
 
     /** Tries to commit the head ROB instruction passed in.
