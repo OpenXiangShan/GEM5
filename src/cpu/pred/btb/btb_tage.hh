@@ -45,6 +45,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     using defer = std::shared_ptr<void>;
     using bitset = boost::dynamic_bitset<>;
   public:
+    static constexpr unsigned kNumSlotsPerEntry = 2;
 #ifdef UNIT_TEST
     // Test constructor
     BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2,
@@ -71,14 +72,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
             }
     };
 
-    // Represents one table entry (one block/tag) with two branch slots
+    // Represents one table entry (one block/tag) with fixed branch slots.
     struct TageEntry
     {
         public:
             bool valid;      // Whether this entry is valid
             Addr tag;       // Tag for matching
             unsigned lruCounter; // Counter for LRU replacement policy
-            std::array<TageSlot, 2> slots;
+            std::array<TageSlot, kNumSlotsPerEntry> slots;
 
             // Stage-1 compatibility mirror for legacy entry-level readers/writers.
             // These fields map to slots[0] during the transition.
@@ -398,6 +399,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar allocSameTagFullBlockedWhileInvalidWayExists;
         Scalar allocSameTagSpillUseInvalidWay;
         Scalar allocSameTagSpillWholeEvict;
+        Scalar allocSameTagSpillWholeEvictSameTagVictim;
+        Scalar allocSameTagSpillWholeEvictDifferentTagVictim;
         Scalar allocDifferentTagUseInvalidWay;
         Scalar allocDifferentTagWholeEvict;
         Scalar allocDifferentTagBlockedProtected;
@@ -437,6 +440,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         statistics::Vector allocSameTagFullBlockedWhileInvalidWayExistsByTable;
         statistics::Vector allocSameTagSpillUseInvalidWayByTable;
         statistics::Vector allocSameTagSpillWholeEvictByTable;
+        statistics::Vector allocSameTagSpillWholeEvictSameTagVictimByTable;
+        statistics::Vector allocSameTagSpillWholeEvictDifferentTagVictimByTable;
         statistics::Vector allocDifferentTagUseInvalidWayByTable;
         statistics::Vector allocDifferentTagWholeEvictByTable;
         statistics::Vector allocDifferentTagBlockedProtectedByTable;

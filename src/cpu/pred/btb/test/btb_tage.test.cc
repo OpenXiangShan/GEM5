@@ -208,6 +208,35 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
     return predicted_taken;
 }
 
+void forceMispredPredictUpdateCycle(BTBTAGE* tage, Addr startPC,
+                                    const BTBEntry& entry,
+                                    boost::dynamic_bitset<>& history,
+                                    std::vector<FullBTBPrediction>& stagePreds) {
+    stagePreds[1].btbEntries = {entry};
+    tage->putPCHistory(startPC, history, stagePreds);
+
+    bool predicted_taken = false;
+    auto result = findCondTaken(stagePreds[1].condTakens, entry.pc);
+    if (result.first) {
+        predicted_taken = result.second;
+    }
+
+    predictUpdateCycle(tage, startPC, entry, !predicted_taken, history, stagePreds);
+}
+
+void forceAllocationUpdateCycle(BTBTAGE* tage, Addr startPC,
+                                const BTBEntry& entry,
+                                bool actual_taken,
+                                boost::dynamic_bitset<>& history,
+                                std::vector<FullBTBPrediction>& stagePreds) {
+    stagePreds[1].btbEntries = {entry};
+    tage->putPCHistory(startPC, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+    FetchTarget stream = createStream(startPC, entry, actual_taken, meta);
+    stream = setMispredStream(stream);
+    tage->update(stream);
+}
+
 /**
  * @brief Directly setup TAGE table entries for testing
  *
@@ -235,8 +264,9 @@ void setupTageEntry(BTBTAGE* tage, Addr pc, int table_idx,
     entry.valid = true;
     entry.tag = tag;
     entry.ownerBlockBase = startPC;
-    entry.slots[0] = BTBTAGE::TageSlot();
-    entry.slots[1] = BTBTAGE::TageSlot();
+    for (auto &slot_ref : entry.slots) {
+        slot_ref = BTBTAGE::TageSlot();
+    }
     entry.slots[slot] = BTBTAGE::TageSlot(true, position, counter, useful);
 
     // Keep legacy mirrors only for transition compatibility.
@@ -752,8 +782,9 @@ void createManualTageEntry(BTBTAGE* tage, int table, Addr index, int way,
         entry.valid = true;
         entry.tag = tag;
         entry.ownerBlockBase = startPC;
-        entry.slots[0] = BTBTAGE::TageSlot();
-        entry.slots[1] = BTBTAGE::TageSlot();
+        for (auto &slot_ref : entry.slots) {
+            slot_ref = BTBTAGE::TageSlot();
+        }
     }
     entry.slots[slot] = BTBTAGE::TageSlot(true, position, counter, useful);
 
@@ -1048,7 +1079,7 @@ TEST_F(BTBTAGETest, SameTagPositionMissFillsEmptySlotAndSortsByPosition) {
     setupTageEntry(tage, existingPC, testTable, 2, false, 0, startPC, 0);
 
     BTBEntry newEntry = createBTBEntry(newPC);
-    predictUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
+    forceAllocationUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
 
     const auto &entry = tage->tageTable[testTable][index][0];
     ASSERT_TRUE(entry.valid);
@@ -1078,14 +1109,22 @@ TEST_F(BTBTAGETest, SameTagFullEntryReplacesWeakishNonUsefulSlot) {
     const Addr newPC = startPC + 8;
     const Addr index = tage->getTageIndex(startPC, testTable);
     const Addr tag = tage->getTageTag(startPC, testTable);
+    auto collidingBlocks = findCollidingBlockStarts(tage, startPC, testTable, 1);
+    ASSERT_EQ(collidingBlocks.size(), 1u);
+    const Addr otherBlock = collidingBlocks[0];
+    const Addr otherTag = tage->getTageTag(otherBlock, testTable);
 
     createManualTageEntry(tage, testTable, index, 0, tag,
                           2, true, keepPC, 0, 0, startPC, true);
     createManualTageEntry(tage, testTable, index, 0, tag,
                           0, false, replacePC, 0, 1, startPC, false);
+    createManualTageEntry(tage, testTable, index, 1, otherTag,
+                          2, true, otherBlock, 0, 0, otherBlock, true);
+    createManualTageEntry(tage, testTable, index, 1, otherTag,
+                          -2, true, otherBlock + 4, 0, 1, otherBlock, false);
 
     BTBEntry newEntry = createBTBEntry(newPC);
-    predictUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
+    forceMispredPredictUpdateCycle(tage, startPC, newEntry, history, stagePreds);
 
     const auto &entry = tage->tageTable[testTable][index][0];
     ASSERT_TRUE(entry.valid);
@@ -1119,9 +1158,8 @@ TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotSpillsToInvalidWay) {
                           2, false, weakenedPC, 0, 0, startPC, true);
     createManualTageEntry(tage, testTable, index, 0, tag,
                           -2, true, protectedPC, 0, 1, startPC, false);
-
     BTBEntry newEntry = createBTBEntry(newPC);
-    predictUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
+    forceMispredPredictUpdateCycle(tage, startPC, newEntry, history, stagePreds);
 
     const auto &entry0 = tage->tageTable[testTable][index][0];
     const auto &entry1 = tage->tageTable[testTable][index][1];
@@ -1171,7 +1209,7 @@ TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotSpillsByWholeEntryEvic
                           -1, false, otherBlock + 4, 0, 1, otherBlock, false);
 
     BTBEntry newEntry = createBTBEntry(newPC);
-    predictUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
+    forceMispredPredictUpdateCycle(tage, startPC, newEntry, history, stagePreds);
 
     const auto &entry0 = tage->tageTable[testTable][index][0];
     const auto &entry1 = tage->tageTable[testTable][index][1];
@@ -1214,7 +1252,7 @@ TEST_F(BTBTAGETest, SameTagSpillFailureWeakensSetAndCountsAllocationFailure) {
                           -2, true, otherBlock + 4, 0, 1, otherBlock, false);
 
     BTBEntry newEntry = createBTBEntry(newPC);
-    predictUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
+    forceAllocationUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
 
     const auto &entry0 = tage->tageTable[testTable][index][0];
     ASSERT_TRUE(entry0.valid);

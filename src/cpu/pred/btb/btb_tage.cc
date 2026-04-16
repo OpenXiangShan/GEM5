@@ -805,11 +805,12 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     const unsigned position = getBranchIndexInBlock(entry.pc, startPC);
     const short initCounter = actual_taken ? 0 : -1;
 
-    // Simple set-associative allocation:
-    // - same-tag requests first try to absorb into any existing same-tag entry.
-    // - only when every same-tag entry rejects the position may the allocator
-    //   spill into another way with the same tag.
-    // - different-tag requests may only evict a whole entry when both slots are
+    // Experimental aggressive set-associative allocation:
+    // - same-tag requests still first try to absorb into any existing same-tag
+    //   entry by position hit or empty-slot fill.
+    // - once all same-tag entries are full, prefer spilling into another way
+    //   (invalid or whole-entry victim) before replacing a weakish slot.
+    // - different-tag requests may only evict a whole entry when all slots are
     //   unprotected.
     // - if no spill/whole-entry victim exists, weaken one non-useful strong slot
     //   by one step toward zero.
@@ -841,30 +842,26 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         }
 
         if (!same_tag_ways.empty()) {
-            bool same_block_reuse = false;
-            for (unsigned way : same_tag_ways) {
-                if (set[way].ownerBlockBase == blockBase) {
-                    same_block_reuse = true;
-                    break;
-                }
-            }
-            if (same_block_reuse) {
-                tageStats.allocSameTagTrueBlockReuse++;
-#ifndef UNIT_TEST
-                tageStats.allocSameTagTrueBlockReuseByTable[ti]++;
-#endif
-            } else {
-                tageStats.allocSameTagAliasCollision++;
-#ifndef UNIT_TEST
-                tageStats.allocSameTagAliasCollisionByTable[ti]++;
-#endif
-            }
             if (first_invalid_way >= 0) {
                 tageStats.allocSameTagWhileInvalidWayExists++;
 #ifndef UNIT_TEST
                 tageStats.allocSameTagWhileInvalidWayExistsByTable[ti]++;
 #endif
             }
+
+            auto classifyReusedSameTagEntry = [&](unsigned way) {
+                if (set[way].ownerBlockBase == blockBase) {
+                    tageStats.allocSameTagTrueBlockReuse++;
+#ifndef UNIT_TEST
+                    tageStats.allocSameTagTrueBlockReuseByTable[ti]++;
+#endif
+                } else {
+                    tageStats.allocSameTagAliasCollision++;
+#ifndef UNIT_TEST
+                    tageStats.allocSameTagAliasCollisionByTable[ti]++;
+#endif
+                }
+            };
 
             int fill_way = -1;
             int fill_slot = -1;
@@ -875,6 +872,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                 int hit_slot = findSlotByPosition(same_entry, position);
                 if (hit_slot >= 0) {
                     // same-tag + position hit: slot training is handled in provider update path.
+                    classifyReusedSameTagEntry(way);
                     return false;
                 }
 
@@ -902,6 +900,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
             if (fill_way >= 0) {
                 // same-tag + position miss + empty slot: insert.
+                classifyReusedSameTagEntry(fill_way);
                 tageStats.allocSameTagFillEmptySlot++;
 #ifndef UNIT_TEST
                 tageStats.allocSameTagFillEmptySlotByTable[ti]++;
@@ -918,25 +917,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                 return true;
             }
 
-            if (replace_way >= 0) {
-                // same-tag + full slots + replaceable slot: replace.
-                tageStats.allocSameTagReplaceWeakishSlot++;
-#ifndef UNIT_TEST
-                tageStats.allocSameTagReplaceWeakishSlotByTable[ti]++;
-#endif
-                auto &same_entry = set[replace_way];
-                same_entry.slots[replace_slot] = TageSlot(true, position, initCounter, false);
-                sortEntrySlotsByPosition(same_entry);
-                syncEntryLegacyMirror(same_entry);
-                tageStats.updateAllocSuccess++;
-                allocated_table = ti;
-                allocated_index = newIndex;
-                allocated_way = replace_way;
-                allocated_slot = findSlotByPosition(same_entry, position);
-                return true;
-            }
-
-            // same-tag + all existing entries cannot absorb this position.
+            // same-tag + all existing entries cannot absorb this position with
+            // position hit or empty-slot fill.
             tageStats.allocSameTagFullBlocked++;
 #ifndef UNIT_TEST
             tageStats.allocSameTagFullBlockedByTable[ti]++;
@@ -958,7 +940,9 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                 new_entry.tag = newTag;
                 new_entry.lruCounter = 0;
                 new_entry.slots[0] = TageSlot(true, position, initCounter, false);
-                new_entry.slots[1] = TageSlot();
+                for (unsigned slot = 1; slot < new_entry.slots.size(); ++slot) {
+                    new_entry.slots[slot] = TageSlot();
+                }
                 new_entry.pc = entry.pc;
                 new_entry.ownerBlockBase = blockBase;
                 syncEntryLegacyMirror(new_entry);
@@ -979,19 +963,26 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
             for (unsigned way = 0; way < ways; ++way) {
                 auto &cand = set[way];
-                if (!isEntryWholeEvictable(cand)) {
+                if (!cand.valid || cand.tag == newTag ||
+                    !isEntryWholeEvictable(cand)) {
                     continue;
                 }
                 tageStats.allocSameTagSpillWholeEvict++;
 #ifndef UNIT_TEST
                 tageStats.allocSameTagSpillWholeEvictByTable[ti]++;
 #endif
+                tageStats.allocSameTagSpillWholeEvictDifferentTagVictim++;
+#ifndef UNIT_TEST
+                tageStats.allocSameTagSpillWholeEvictDifferentTagVictimByTable[ti]++;
+#endif
                 TageEntry new_entry;
                 new_entry.valid = true;
                 new_entry.tag = newTag;
                 new_entry.lruCounter = 0;
                 new_entry.slots[0] = TageSlot(true, position, initCounter, false);
-                new_entry.slots[1] = TageSlot();
+                for (unsigned slot = 1; slot < new_entry.slots.size(); ++slot) {
+                    new_entry.slots[slot] = TageSlot();
+                }
                 new_entry.pc = entry.pc;
                 new_entry.ownerBlockBase = blockBase;
                 syncEntryLegacyMirror(new_entry);
@@ -1006,6 +997,26 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                 allocated_way = way;
                 allocated_slot = 0;
                 usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+                return true;
+            }
+
+            if (replace_way >= 0) {
+                // Aggressive mode fallback: no extra way can be borrowed, so
+                // replace inside an existing same-tag entry.
+                classifyReusedSameTagEntry(replace_way);
+                tageStats.allocSameTagReplaceWeakishSlot++;
+#ifndef UNIT_TEST
+                tageStats.allocSameTagReplaceWeakishSlotByTable[ti]++;
+#endif
+                auto &same_entry = set[replace_way];
+                same_entry.slots[replace_slot] = TageSlot(true, position, initCounter, false);
+                sortEntrySlotsByPosition(same_entry);
+                syncEntryLegacyMirror(same_entry);
+                tageStats.updateAllocSuccess++;
+                allocated_table = ti;
+                allocated_index = newIndex;
+                allocated_way = replace_way;
+                allocated_slot = findSlotByPosition(same_entry, position);
                 return true;
             }
 
@@ -1035,7 +1046,9 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                 new_entry.tag = newTag;
                 new_entry.lruCounter = 0;
                 new_entry.slots[0] = TageSlot(true, position, initCounter, false);
-                new_entry.slots[1] = TageSlot();
+                for (unsigned slot = 1; slot < new_entry.slots.size(); ++slot) {
+                    new_entry.slots[slot] = TageSlot();
+                }
                 new_entry.pc = entry.pc;
                 new_entry.ownerBlockBase = blockBase;
                 syncEntryLegacyMirror(new_entry);
@@ -1507,19 +1520,55 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
     ADD_STAT(predTagHitSlotMiss, statistics::units::Count::get(), "prediction-time tag hits whose entry has no matching slot"),
-    ADD_STAT(allocSameTagTrueBlockReuse, statistics::units::Count::get(), "same-tag allocation/update cases that reuse the original block container"),
-    ADD_STAT(allocSameTagAliasCollision, statistics::units::Count::get(), "same-tag allocation/update cases caused by a different block aliasing to the existing tag"),
-    ADD_STAT(allocSameTagWhileInvalidWayExists, statistics::units::Count::get(), "same-tag cases observed while the set still had an invalid way"),
-    ADD_STAT(allocSameTagFillEmptySlot, statistics::units::Count::get(), "same-tag position misses that fill an empty slot"),
-    ADD_STAT(allocSameTagReplaceWeakishSlot, statistics::units::Count::get(), "same-tag position misses that replace a weakish non-useful slot"),
-    ADD_STAT(allocSameTagFullBlocked, statistics::units::Count::get(), "same-tag position misses that no existing same-tag entry can absorb"),
-    ADD_STAT(allocSameTagFullBlockedWhileInvalidWayExists, statistics::units::Count::get(), "same-tag absorption failures observed while the set still had an invalid way"),
-    ADD_STAT(allocSameTagSpillUseInvalidWay, statistics::units::Count::get(), "same-tag spills that allocate a new duplicate-tag entry into an invalid way"),
-    ADD_STAT(allocSameTagSpillWholeEvict, statistics::units::Count::get(), "same-tag spills that allocate a new duplicate-tag entry by whole-entry eviction"),
-    ADD_STAT(allocDifferentTagUseInvalidWay, statistics::units::Count::get(), "different-tag allocations that use an invalid way while the set already contains another valid different-tag entry"),
-    ADD_STAT(allocDifferentTagWholeEvict, statistics::units::Count::get(), "different-tag allocations that succeed by whole-entry eviction"),
-    ADD_STAT(allocDifferentTagBlockedProtected, statistics::units::Count::get(), "different-tag allocations blocked because no whole-entry victim was unprotected"),
-    ADD_STAT(allocDifferentTagWeakenOnly, statistics::units::Count::get(), "different-tag blocked cases that only weaken one slot counter"),
+    ADD_STAT(allocSameTagTrueBlockReuse, statistics::units::Count::get(),
+             "same-tag cases that ultimately reuse an existing same-tag "
+             "entry owned by the same block"),
+    ADD_STAT(allocSameTagAliasCollision, statistics::units::Count::get(),
+             "same-tag cases that ultimately reuse an existing same-tag "
+             "entry owned by a different block"),
+    ADD_STAT(allocSameTagWhileInvalidWayExists,
+             statistics::units::Count::get(),
+             "same-tag cases observed while the set still had an invalid "
+             "way"),
+    ADD_STAT(allocSameTagFillEmptySlot, statistics::units::Count::get(),
+             "same-tag position misses that fill an empty slot"),
+    ADD_STAT(allocSameTagReplaceWeakishSlot, statistics::units::Count::get(),
+             "same-tag position misses that fall back to replacing a weakish "
+             "non-useful slot after spill attempts fail"),
+    ADD_STAT(allocSameTagFullBlocked, statistics::units::Count::get(),
+             "same-tag position misses that no existing same-tag entry can "
+             "absorb via hit or empty-slot fill"),
+    ADD_STAT(allocSameTagFullBlockedWhileInvalidWayExists,
+             statistics::units::Count::get(),
+             "same-tag absorption failures observed while the set still had "
+             "an invalid way"),
+    ADD_STAT(allocSameTagSpillUseInvalidWay, statistics::units::Count::get(),
+             "same-tag spills that allocate a new duplicate-tag entry into "
+             "an invalid way"),
+    ADD_STAT(allocSameTagSpillWholeEvict, statistics::units::Count::get(),
+             "same-tag spills that allocate a new duplicate-tag entry by "
+             "whole-entry eviction against a different-tag victim"),
+    ADD_STAT(allocSameTagSpillWholeEvictSameTagVictim,
+             statistics::units::Count::get(),
+             "reserved sanity counter: strict same-tag spill policy should "
+             "not whole-evict a same-tag victim"),
+    ADD_STAT(allocSameTagSpillWholeEvictDifferentTagVictim,
+             statistics::units::Count::get(),
+             "same-tag spills by whole-entry eviction whose victim had a "
+             "different tag"),
+    ADD_STAT(allocDifferentTagUseInvalidWay, statistics::units::Count::get(),
+             "different-tag allocations that use an invalid way while the "
+             "set already contains another valid different-tag entry"),
+    ADD_STAT(allocDifferentTagWholeEvict, statistics::units::Count::get(),
+             "different-tag allocations that succeed by whole-entry "
+             "eviction"),
+    ADD_STAT(allocDifferentTagBlockedProtected,
+             statistics::units::Count::get(),
+             "different-tag allocations blocked because no whole-entry "
+             "victim was unprotected"),
+    ADD_STAT(allocDifferentTagWeakenOnly, statistics::units::Count::get(),
+             "different-tag blocked cases that only weaken one slot "
+             "counter"),
     ADD_STAT(predFinalSourceBase, statistics::units::Count::get(), "predictions whose final source is base BTB"),
     ADD_STAT(updateFinalSourceBaseCorrect, statistics::units::Count::get(), "base BTB final-source predictions that are correct"),
     ADD_STAT(updateFinalSourceBaseWrong, statistics::units::Count::get(), "base BTB final-source predictions that are wrong"),
@@ -1537,24 +1586,72 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateFinalSourceTableCorrect, statistics::units::Count::get(), "correct predictions grouped by final-source table"),
     ADD_STAT(updateFinalSourceTableWrong, statistics::units::Count::get(), "wrong predictions grouped by final-source table"),
     ADD_STAT(predTagHitSlotMissByTable, statistics::units::Count::get(), "prediction-time tag hits with slot miss, grouped by table"),
-    ADD_STAT(allocSameTagTrueBlockReuseByTable, statistics::units::Count::get(), "same-tag true block reuse, grouped by table"),
-    ADD_STAT(allocSameTagAliasCollisionByTable, statistics::units::Count::get(), "same-tag alias collisions, grouped by table"),
-    ADD_STAT(allocSameTagWhileInvalidWayExistsByTable, statistics::units::Count::get(), "same-tag cases while an invalid way still existed, grouped by table"),
-    ADD_STAT(allocSameTagFillEmptySlotByTable, statistics::units::Count::get(), "same-tag fills into empty slots, grouped by table"),
-    ADD_STAT(allocSameTagReplaceWeakishSlotByTable, statistics::units::Count::get(), "same-tag weakish-slot replacements, grouped by table"),
-    ADD_STAT(allocSameTagFullBlockedByTable, statistics::units::Count::get(), "same-tag absorption failures, grouped by table"),
-    ADD_STAT(allocSameTagFullBlockedWhileInvalidWayExistsByTable, statistics::units::Count::get(), "same-tag absorption failures while an invalid way existed, grouped by table"),
-    ADD_STAT(allocSameTagSpillUseInvalidWayByTable, statistics::units::Count::get(), "same-tag spills via invalid way, grouped by table"),
-    ADD_STAT(allocSameTagSpillWholeEvictByTable, statistics::units::Count::get(), "same-tag spills via whole-entry eviction, grouped by table"),
-    ADD_STAT(allocDifferentTagUseInvalidWayByTable, statistics::units::Count::get(), "different-tag allocations via invalid ways while the set already contains another valid different-tag entry, grouped by table"),
-    ADD_STAT(allocDifferentTagWholeEvictByTable, statistics::units::Count::get(), "different-tag allocations via whole-entry eviction, grouped by table"),
-    ADD_STAT(allocDifferentTagBlockedProtectedByTable, statistics::units::Count::get(), "different-tag blocked-protected cases, grouped by table"),
-    ADD_STAT(allocDifferentTagWeakenOnlyByTable, statistics::units::Count::get(), "different-tag weaken-only cases, grouped by table"),
+    ADD_STAT(allocSameTagTrueBlockReuseByTable,
+             statistics::units::Count::get(),
+             "same-tag reuse of a same-block existing entry, grouped by "
+             "table"),
+    ADD_STAT(allocSameTagAliasCollisionByTable,
+             statistics::units::Count::get(),
+             "same-tag reuse of a different-block existing entry, grouped "
+             "by table"),
+    ADD_STAT(allocSameTagWhileInvalidWayExistsByTable,
+             statistics::units::Count::get(),
+             "same-tag cases while an invalid way still existed, grouped by "
+             "table"),
+    ADD_STAT(allocSameTagFillEmptySlotByTable,
+             statistics::units::Count::get(),
+             "same-tag fills into empty slots, grouped by table"),
+    ADD_STAT(allocSameTagReplaceWeakishSlotByTable,
+             statistics::units::Count::get(),
+             "same-tag fallback weakish-slot replacements after spill "
+             "attempts fail, grouped by table"),
+    ADD_STAT(allocSameTagFullBlockedByTable,
+             statistics::units::Count::get(),
+             "same-tag hit/fill absorption failures, grouped by table"),
+    ADD_STAT(allocSameTagFullBlockedWhileInvalidWayExistsByTable,
+             statistics::units::Count::get(),
+             "same-tag absorption failures while an invalid way existed, "
+             "grouped by table"),
+    ADD_STAT(allocSameTagSpillUseInvalidWayByTable,
+             statistics::units::Count::get(),
+             "same-tag spills via invalid way, grouped by table"),
+    ADD_STAT(allocSameTagSpillWholeEvictByTable,
+             statistics::units::Count::get(),
+             "same-tag spills via whole-entry eviction against a "
+             "different-tag victim, grouped by table"),
+    ADD_STAT(allocSameTagSpillWholeEvictSameTagVictimByTable,
+             statistics::units::Count::get(),
+             "reserved sanity counter for same-tag whole-entry victims, "
+             "grouped by table"),
+    ADD_STAT(allocSameTagSpillWholeEvictDifferentTagVictimByTable,
+             statistics::units::Count::get(),
+             "same-tag whole-entry spills whose victim had a different tag, "
+             "grouped by table"),
+    ADD_STAT(allocDifferentTagUseInvalidWayByTable,
+             statistics::units::Count::get(),
+             "different-tag allocations via invalid ways while the set "
+             "already contains another valid different-tag entry, grouped "
+             "by table"),
+    ADD_STAT(allocDifferentTagWholeEvictByTable,
+             statistics::units::Count::get(),
+             "different-tag allocations via whole-entry eviction, grouped "
+             "by table"),
+    ADD_STAT(allocDifferentTagBlockedProtectedByTable,
+             statistics::units::Count::get(),
+             "different-tag blocked-protected cases, grouped by table"),
+    ADD_STAT(allocDifferentTagWeakenOnlyByTable,
+             statistics::units::Count::get(),
+             "different-tag weaken-only cases, grouped by table"),
 
     ADD_STAT(condPredwrong, statistics::units::Count::get(), "number of conditional branch mispredictions committed"),
-    ADD_STAT(condMissTakens, statistics::units::Count::get(), "number of conditional branch mispredictions committed with no prediction"),
-    ADD_STAT(condCorrect, statistics::units::Count::get(), "number of conditional branch correct predictions committed"),
-    ADD_STAT(condMissNoTakens, statistics::units::Count::get(), "number of conditional branch correct predictions committed with no prediction"),
+    ADD_STAT(condMissTakens, statistics::units::Count::get(),
+             "number of conditional branch mispredictions committed with no "
+             "prediction"),
+    ADD_STAT(condCorrect, statistics::units::Count::get(),
+             "number of conditional branch correct predictions committed"),
+    ADD_STAT(condMissNoTakens, statistics::units::Count::get(),
+             "number of conditional branch correct predictions committed "
+             "with no prediction"),
     ADD_STAT(predHit, statistics::units::Count::get(), "number of conditional branch predictions that hit"),
     ADD_STAT(predMiss, statistics::units::Count::get(), "number of conditional branch predictions that miss")
 {
@@ -1574,6 +1671,8 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     allocSameTagFullBlockedWhileInvalidWayExistsByTable.init(numPredictors);
     allocSameTagSpillUseInvalidWayByTable.init(numPredictors);
     allocSameTagSpillWholeEvictByTable.init(numPredictors);
+    allocSameTagSpillWholeEvictSameTagVictimByTable.init(numPredictors);
+    allocSameTagSpillWholeEvictDifferentTagVictimByTable.init(numPredictors);
     allocDifferentTagUseInvalidWayByTable.init(numPredictors);
     allocDifferentTagWholeEvictByTable.init(numPredictors);
     allocDifferentTagBlockedProtectedByTable.init(numPredictors);
