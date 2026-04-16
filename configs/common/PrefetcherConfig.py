@@ -47,6 +47,7 @@ def create_prefetcher(cpu, cache_level, options):
         if cpu != NULL:
             prefetcher.enable_sstride = True
             prefetcher.commit_ordered_stride_train = True
+            prefetcher.commit_probe_cpu = cpu
         prefetcher.pht_pf_level = 2 if options.kmh_align else options.pht_pf_level
         prefetcher.short_stride_thres = options.short_stride_thres
         prefetcher.enable_temporal = not options.kmh_align
