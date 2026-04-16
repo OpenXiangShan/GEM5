@@ -1,4 +1,4 @@
-# Kunminghu BPU 顶层设计
+# Kunminghu BPU 顶层设计说明
 
 ## 1. 文档范围
 
@@ -220,11 +220,19 @@ Kunminghu v3 不是无代价升级。它至少引入了以下顶层权衡：
 
 ## 12. 参考资料
 
+- 本目录阅读入口
+  - `docs/design-docs/frontend/README.md`
 - XiangShan Microarchitecture Design Philosophy, Micro25 slides
   - `https://tutorial.xiangshan.cc/micro25/slides/Microarchitecture%20Design%20Philosophy.pdf`
 - XiangShan 公开前端/BPU 设计文档
   - `https://docs.xiangshan.cc/projects/design/zh-cn/latest/frontend/BPU/`
-- 本地已有设计说明风格参考
+- 本地已有设计说明
   - `docs/design-docs/frontend/phr_design.md`
+  - `docs/design-docs/frontend/mbtb_design.md`
+  - `docs/design-docs/frontend/btb_tage_design.md`
+  - `docs/design-docs/frontend/abtb_design.md`
+  - `docs/design-docs/frontend/ubtb_design.md`
+  - `docs/design-docs/frontend/microtage_design.md`
+  - `docs/design-docs/frontend/mgsc_design.md`
 
 如果后续把现有的 BTB-TAGE v3 草图正式归档到仓库中，可将其作为辅助图链接到这里，而不应让正文理解依赖读者逐框对照原图。

@@ -1,4 +1,4 @@
-# BTB 顶层 PHR 设计说明
+# Kunminghu PHR 设计说明
 
 本文档面向设计说明，但保留必要的关键实现，回答四个问题：
 
@@ -353,3 +353,19 @@ folded history 的作用非常直接：
 - predictor 侧通过 folded history 等效维护完整 PHR 的压缩表示，以换取可接受的时序
 
 这就是当前设计在“路径信息强度”和“实现代价”之间做出的平衡。
+
+## 11. 实现锚点
+
+- `src/cpu/pred/btb/decoupled_bpred.cc`
+- `src/cpu/pred/btb/common.hh`
+- `src/cpu/pred/btb/folded_hist.hh`
+- `src/cpu/pred/btb/folded_hist.cc`
+- `src/cpu/pred/BranchPredictor.py`
+
+## 12. 参考资料
+
+- `docs/design-docs/frontend/README.md`
+- `docs/design-docs/frontend/bpu_top_level.md`
+- `docs/design-docs/frontend/btb_tage_design.md`
+- `docs/design-docs/frontend/microtage_design.md`
+- `docs/design-docs/frontend/mgsc_design.md`

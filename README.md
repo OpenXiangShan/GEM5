@@ -1,5 +1,9 @@
 # About
 
+Documentation website: https://xs-gem5.readthedocs.io/zh-cn/latest/
+
+Design-doc entry for Kunminghu v3: [docs/design-docs](docs/design-docs)
+
 XS-GEM5 is a gem5-based, full-system RISC-V simulator for XiangShan.
 
 XS-GEM5 is the ONLY open-source RISC-V simulator strictly calibrated against high-performance RTL (XiangShan Nanhu/Kunminghu), achieving >95% correlation on SPECCPU 2006.
@@ -17,6 +21,8 @@ Our Chinese website is [here](https://xs-gem5.readthedocs.io/zh-cn/latest/), wel
 
 For a high-level map of the repository, see [ARCHITECTURE.md](ARCHITECTURE.md).
 It focuses on the XiangShan-aligned O3 CPU, the decoupled frontend, and the configuration/code boundaries that matter most for current development.
+
+For design-oriented frontend notes, see [docs/design-docs/frontend/README.md](docs/design-docs/frontend/README.md).
 
 ## Thanks
 

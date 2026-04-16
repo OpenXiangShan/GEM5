@@ -27,6 +27,7 @@ Start with these directories first:
 - `tests/`: test entry points
 - `util/`: helper scripts and tools
 - `docs/`: documentation, including architecture and execution plans
+  - `docs/design-docs/frontend/`: design-oriented Kunminghu v3 frontend/BPU notes; prefer this directory for design motivation, constraints, and tradeoffs
 
 For a higher-level map of the codebase, see [ARCHITECTURE.md](ARCHITECTURE.md).
 

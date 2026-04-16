@@ -89,6 +89,11 @@ Useful supporting documents already inside the repository:
 
 - `src/cpu/pred/README.md`
 - `src/cpu/o3/fetch.md`
+- `docs/design-docs/frontend/README.md`
+  - Design-oriented Kunminghu v3 frontend/BPU notes.
+  - Prefer this directory when you need "why / constraints / tradeoffs".
+- `docs/Gem5_Docs/`
+  - More detailed implementation notes and local deep dives.
 
 ## The O3 Mental Model
 
@@ -202,6 +207,7 @@ For Kunminghu V3, the important components include:
 
 The predictor produces higher-level fetch supply structures such as fetch streams and fetch targets.
 For orientation, `src/cpu/pred/README.md` is a useful companion.
+For design rationale of the active Kunminghu v3 BTB path, read `docs/design-docs/frontend/README.md` before diving into individual predictor files.
 
 **Architecture invariant:** predictor state, fetch supply state, and commit-time training state are separate concepts.
 Do not collapse them mentally into "the BPU".

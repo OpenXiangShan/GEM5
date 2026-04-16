@@ -12,6 +12,19 @@ GEM5是一个模块化的离散事件驱动的计算机系统架构模拟器平�
 
 查看[介绍](introduction.md)了解更多信息。
 
+## 设计文档入口
+
+如果你想先理解 Kunminghu v3 前端 / BPU 的顶层设计动机、关键约束和模块分工，建议优先阅读：
+
+- [Kunminghu Frontend 设计文档索引](design-docs/frontend/README.md)
+
+这部分文档更偏“为什么这样设计”，重点覆盖：
+
+- Kunminghu v2 `FTB` 到 Kunminghu v3 `BTB` 的顶层演进
+- `PHR`、`mBTB`、`BTBTAGE`、`MGSC`、`uBTB`、`AheadBTB`、`MicroTAGE` 等模块的设计取舍
+
+与之对应，`Gem5_Docs` 目录中的文档继续保留更多实现细节、代码路径和局部说明，更适合作为补充参考。
+
 ## 快速开始
 
 查看[快速开始](quick_start.md)部分了解更多信息。
