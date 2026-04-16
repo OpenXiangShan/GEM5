@@ -287,7 +287,10 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
 
 LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     : cpu(cpu_ptr), iewStage(iew_ptr),
-      recentlyloadAddr(8 * (params.DcacheSetDivNum ? params.DcacheSetDivNum : 1)),
+      recentlyloadAddr(
+          (params.DcacheSetDivNum ? params.DcacheSetDivNum : 1) *
+          std::max<unsigned>(1, params.DcacheBankBytes ?
+              cpu_ptr->cacheLineSize() / params.DcacheBankBytes : 1)),
       _cacheBlocked(false),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
       cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),
@@ -299,7 +302,18 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       dcacheSetBits(params.DcacheSetBits),
       dcacheSetDivNum(params.DcacheSetDivNum),
       dcacheLineBits(floorLog2(cpu_ptr->cacheLineSize())),
-      dcacheSetBankBits(params.DcacheSetBits + 3),
+      dcacheBankBytes(params.DcacheBankBytes),
+      dcacheBankOffsetBits(params.DcacheBankBytes ?
+          floorLog2(params.DcacheBankBytes) : 0),
+      dcacheBankIndexBits(
+          (params.DcacheBankBytes &&
+           params.DcacheBankBytes <= cpu_ptr->cacheLineSize() &&
+           (cpu_ptr->cacheLineSize() % params.DcacheBankBytes == 0) &&
+           isPowerOf2(cpu_ptr->cacheLineSize() / params.DcacheBankBytes)) ?
+              floorLog2(cpu_ptr->cacheLineSize() / params.DcacheBankBytes) : 0),
+      numBank(params.DcacheBankBytes ?
+          cpu_ptr->cacheLineSize() / params.DcacheBankBytes : 0),
+      dcacheSetBankBits(params.DcacheSetBits + dcacheBankIndexBits),
       _enableLdMissReplay(params.EnableLdMissReplay),
       _enablePipeNukeCheck(params.EnablePipeNukeCheck),
       _enableReplayBasedMDP(params.EnableReplayBasedMDP),
@@ -322,6 +336,19 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
         panic("LSQ can not support pipeline nuke replay when EnableLdMissReplay is False");
     }
     assert(_storeWbStage >= 2 && _storeWbStage <= 4);
+    panic_if(dcacheBankBytes == 0, "DcacheBankBytes must be >= 1\n");
+    panic_if(!isPowerOf2(dcacheBankBytes),
+             "DcacheBankBytes must be power of two (got %u)\n",
+             dcacheBankBytes);
+    panic_if(dcacheBankBytes > cpu_ptr->cacheLineSize(),
+             "DcacheBankBytes (%u) must be <= cache line size (%u)\n",
+             dcacheBankBytes, cpu_ptr->cacheLineSize());
+    panic_if(cpu_ptr->cacheLineSize() % dcacheBankBytes != 0,
+             "Cache line size (%u) must be divisible by DcacheBankBytes (%u)\n",
+             cpu_ptr->cacheLineSize(), dcacheBankBytes);
+    panic_if(!isPowerOf2(numBank),
+             "Number of dcache banks must be power of two (got %u)\n",
+             numBank);
     panic_if(dcacheSetDivNum == 0, "DcacheSetDivNum must be >= 1\n");
     panic_if(!isPowerOf2(dcacheSetDivNum),
              "DcacheSetDivNum must be power of two (got %u)\n",
@@ -521,8 +548,9 @@ uint64_t
 LSQ::getDcacheBankSetKey(Addr vaddr) const
 {
     // [setIndex][bankIndex][dataOffset]
-    //         ^ (cacheLineBits)   ^ (3 bits)
-    return (vaddr >> 3) & ((1ULL << dcacheSetBankBits) - 1);
+    //         ^ (cacheLineBits)   ^ (bank offset bits)
+    return (vaddr >> dcacheBankOffsetBits) &
+        ((1ULL << dcacheSetBankBits) - 1);
 }
 
 uint64_t
@@ -533,27 +561,43 @@ LSQ::getDcacheDivBankSetKey(Addr vaddr) const
 }
 
 bool
-LSQ::loadBankConflictedCheck(Addr vaddr)
+LSQ::loadBankConflictedCheck(Addr vaddr, unsigned size)
 {
-    bool now_bank_conflict = false;
-    const int bankIndex = bankNum(vaddr);
-    const unsigned div = getDcacheDiv(vaddr);
-    const uint64_t key = getDcacheDivBankSetKey(vaddr);
+    if (!enableBankConflictCheck || size == 0) {
+        return false;
+    }
 
-    if (enableBankConflictCheck) {
+    std::vector<std::pair<unsigned, Addr>> banks_to_mark;
+    std::vector<uint64_t> keys_to_insert;
+    const Addr access_end = vaddr + size;
+
+    for (Addr current_addr = vaddr; current_addr < access_end;) {
+        const Addr bankIndex = bankNum(current_addr);
+        const unsigned div = getDcacheDiv(current_addr);
+        const uint64_t key = getDcacheDivBankSetKey(current_addr);
+
         if (recentlyloadAddr.contains(key)) {
             recentlyloadAddr.get(key);
-            return false;
-        }
-        if (bankOccupied[div][bankIndex]) {
-            now_bank_conflict = true;
-
+        } else if (bankOccupied[div][bankIndex]) {
+            return true;
         } else {
-            bankOccupied[div][bankIndex] = true;
-            recentlyloadAddr.insert(key, {});
+            banks_to_mark.emplace_back(div, bankIndex);
+            keys_to_insert.push_back(key);
         }
+
+        const Addr next_bank_addr =
+            ((current_addr >> dcacheBankOffsetBits) + 1) << dcacheBankOffsetBits;
+        current_addr = std::min(access_end, next_bank_addr);
     }
-    return now_bank_conflict;
+
+    for (const auto &[div, bank] : banks_to_mark) {
+        bankOccupied[div][bank] = true;
+    }
+    for (const auto &key : keys_to_insert) {
+        recentlyloadAddr.insert(key, {});
+    }
+
+    return false;
 }
 
 void

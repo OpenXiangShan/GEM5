@@ -1052,17 +1052,18 @@ class LSQ
     uint64_t
     getDcacheDivBankSetKey(Addr vaddr) const;
 
-    Addr bankNum(Addr a) const { return (a >> 3) & 0x7; };
+    Addr bankNum(Addr a) const { return (a >> dcacheBankOffsetBits) & (numBank - 1); };
 
-    bool loadBankConflictedCheck(Addr vaddr);
+    bool loadBankConflictedCheck(Addr vaddr, unsigned size);
 
     void sbufferWriteBank(Addr vaddr, const std::vector<bool>& mask) {
-        assert(mask.size() == 8 * numBank);
+        assert(mask.size() == dcacheBankBytes * numBank);
         dcacheWriteStall = true;
         const unsigned div = getDcacheDiv(vaddr);
         if (sbufferBankWriteAccurately) {
-            for (int i=0; i<numBank; i++) {
-                if (std::any_of(mask.begin() + 8 * i, mask.begin() + 8 * i + 8,
+            for (unsigned i = 0; i < numBank; i++) {
+                if (std::any_of(mask.begin() + dcacheBankBytes * i,
+                                mask.begin() + dcacheBankBytes * (i + 1),
                                 [](bool v) { return v; })) {
                     bankOccupied.at(div).at(i) = true;
                 }
@@ -1161,7 +1162,6 @@ class LSQ
     /** The number of used cache ports in this cycle by loads. */
     int usedLoadPorts;
 
-    const int numBank = 8;
     bool dcacheWriteStall = false;
     const uint32_t sbufferEvictThreshold;
     const uint32_t sbufferEntries;
@@ -1179,6 +1179,10 @@ class LSQ
     const unsigned dcacheSetBits;
     const unsigned dcacheSetDivNum;
     const unsigned dcacheLineBits;
+    const unsigned dcacheBankBytes;
+    const unsigned dcacheBankOffsetBits;
+    const unsigned dcacheBankIndexBits;
+    const unsigned numBank;
     const unsigned dcacheSetBankBits;
 
     bool _enableLdMissReplay;
