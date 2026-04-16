@@ -32,6 +32,7 @@ def setKmhV3IdealParams(args, system):
         cpu.fetchQueueSize = 64
 
         # decode
+        cpu.fetchToDecodeDelay = 5
         cpu.decodeWidth = 8
         cpu.enable_loadFusion = False
         cpu.enableConstantFolding = False
@@ -42,7 +43,7 @@ def setKmhV3IdealParams(args, system):
         cpu.numPhysFloatRegs = 256
 
         # dispatch
-        cpu.enableDispatchStage = True
+        cpu.enableDispatchStage = False
         cpu.numDQEntries = [8, 8, 8]
         cpu.dispWidth = [8, 8, 8]
 
@@ -66,7 +67,7 @@ def setKmhV3IdealParams(args, system):
         cpu.DcacheSetDivNum = 2
 
         # value predictor
-        cpu.valuePred = IdealConstantLVP()
+        cpu.valuePred = NULL
 
         # lsq
         cpu.LQEntries = 128
@@ -104,13 +105,15 @@ def setKmhV3IdealParams(args, system):
         for i in range(args.num_cpus):
             if args.classic_l2:
                 system.l2_caches[i].slice_num = 0 # 4 -> 0, no slice
+                system.l2_caches[i].wpu = NULL
             else:
                 l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.data_sram_banks = 2
-                l2_wrapper.dir_sram_banks = 2
-                l2_wrapper.pipe_dir_write_stage = 4
-                l2_wrapper.dir_read_bypass = True
+                l2_wrapper.data_sram_banks = 1
+                l2_wrapper.dir_sram_banks = 1
+                l2_wrapper.pipe_dir_write_stage = 3
+                l2_wrapper.dir_read_bypass = False
                 for j in range(args.l2_slices):
+                    l2_wrapper.slices[j].inner_cache.wpu = NULL
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
@@ -121,14 +124,15 @@ def setKmhV3IdealParams(args, system):
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
             # RespLayer[1]: L2 → DCache, allow 2 responses per cycle
-            system.tol2bus_list[i].layer_bandwidth_configs = [
-                LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
-                LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
-            ]
+            # system.tol2bus_list[i].layer_bandwidth_configs = [
+            #     LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
+            #     LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
+            # ]
 
     # l3 cache
     if args.l3cache:
         system.l3.mshrs = 128
+        system.l3.num_slices = 4
 
 if __name__ == '__m5_main__':
     FutureClass = None
