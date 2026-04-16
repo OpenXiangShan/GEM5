@@ -59,7 +59,9 @@ Kunminghu v3 从 FTB 转向 BTB，核心不是“换一种实现风格”，而�
 
 从顶层看，Kunminghu v3 采用的是一个分阶段、解耦、以 BTB 为组织核心的预测流水。
 
-现有 BTB-TAGE v3 草图可作为辅助参考，见 `../images/BPU-TAGE.jpeg`。该图更适合帮助读者建立模块位置和阶段关系；本文正文仍以文字解释设计动机与权衡为主。
+现有 BTB-TAGE v3 草图可作为辅助参考。该图更适合帮助读者建立模块位置和阶段关系；本文正文仍以文字解释设计动机与权衡为主。
+
+![BTB-TAGE v3 草图](../images/BPU-TAGE.jpeg)
 
 ```mermaid
 flowchart LR
@@ -223,6 +225,6 @@ Kunminghu v3 不是无代价升级。它至少引入了以下顶层权衡：
 - XiangShan 公开前端/BPU 设计文档
   - `https://docs.xiangshan.cc/projects/design/zh-cn/latest/frontend/BPU/`
 - 本地已有设计说明风格参考
-  - `docs/Gem5_Docs/frontend/phr_design.md`
+  - `docs/design-docs/frontend/phr_design.md`
 
 如果后续把现有的 BTB-TAGE v3 草图正式归档到仓库中，可将其作为辅助图链接到这里，而不应让正文理解依赖读者逐框对照原图。
