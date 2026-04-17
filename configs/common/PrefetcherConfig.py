@@ -110,7 +110,7 @@ def create_prefetcher(cpu, cache_level, options):
             if options.kmh_align:
                 assert prefetcher_name == 'L2CompositeWithWorkerPrefetcher'
                 prefetcher.enable_cmc = False
-                prefetcher.enable_bop = True
+                prefetcher.enable_bop = False
                 prefetcher.enable_cdp = False
                 prefetcher.enable_despacito_stream = False
                 if prefetcher.enable_despacito_stream:
