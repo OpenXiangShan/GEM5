@@ -197,7 +197,7 @@ class XSStridePrefetcher : public Queued
   PrefetchFilter* stridestream_pfFilter_l1;
   PrefetchFilter* stridestream_pfFilter_l2l3;
 
-    static constexpr int globalL1DepthInit = 4;
+    static constexpr int globalL1DepthInit = 6;
     static constexpr int globalL1DepthMin = 1;
     static constexpr int globalL1DepthMax = 64;
     static constexpr uint64_t globalL1DepthFeedbackWindow = 256;
