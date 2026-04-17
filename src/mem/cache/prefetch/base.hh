@@ -1013,6 +1013,15 @@ class Base : public ClockedObject
 
     virtual void
     pfHitInCache(PrefetchSourceType pf_type,
+                 int pf_depth,
+                 int pf_ahead_level,
+                 const CacheAccessor::CacheCoverInfo &cover)
+    {
+        pfHitInCache(pf_type, cover);
+    }
+
+    virtual void
+    pfHitInCache(PrefetchSourceType pf_type,
                  const CacheAccessor::CacheCoverInfo &cover)
     {
         pfHitInCache(pf_type);
@@ -1033,6 +1042,15 @@ class Base : public ClockedObject
         prefetchStats.pfHitInMSHR++;
         prefetchStats.pfHitInMSHR_srcs[pf_type]++;
         prefetchStats.late_srcs[pf_type]++;
+    }
+
+    virtual void
+    pfHitInMSHR(PrefetchSourceType pf_type,
+                int pf_depth,
+                int pf_ahead_level,
+                const CacheAccessor::MissQueueCoverInfo &cover)
+    {
+        pfHitInMSHR(pf_type, cover);
     }
 
     virtual void

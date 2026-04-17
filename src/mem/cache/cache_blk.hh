@@ -268,6 +268,7 @@ class CacheBlk : public TaggedEntry
     {
         _prefetched = false;
         _xsMeta.prefetchDepth = 0;
+        _xsMeta.prefetchAheadLevel = 0;
     }
 
 
@@ -276,6 +277,7 @@ class CacheBlk : public TaggedEntry
         _prefetched = false;
         _ever_prefetched = false;
         _xsMeta.prefetchDepth = 0;
+        _xsMeta.prefetchAheadLevel = 0;
     }
 
     /** Marks this blocks as a recently prefetched block. */

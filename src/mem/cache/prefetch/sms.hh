@@ -273,9 +273,15 @@ class XSCompositePrefetcher : public Queued
     void regProbeListeners() override;
     void loadPFTriggerNotify(const PacketPtr &pkt) override;
     void pfHitInCache(PrefetchSourceType pf_type) override;
+    void pfHitInCache(PrefetchSourceType pf_type, int pf_depth,
+                      int pf_ahead_level,
+                      const CacheAccessor::CacheCoverInfo &cover) override;
     void pfHitInCache(PrefetchSourceType pf_type,
                       const CacheAccessor::CacheCoverInfo &cover) override;
     void pfHitInMSHR(PrefetchSourceType pf_type) override;
+    void pfHitInMSHR(PrefetchSourceType pf_type, int pf_depth,
+                     int pf_ahead_level,
+                     const CacheAccessor::MissQueueCoverInfo &cover) override;
     void pfHitInMSHR(PrefetchSourceType pf_type,
                      const CacheAccessor::MissQueueCoverInfo &cover) override;
 

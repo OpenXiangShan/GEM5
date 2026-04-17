@@ -169,7 +169,9 @@ class XSStridePrefetcher : public Queued
                                 std::vector<AddrPriority> &addresses);
     void trainFromSnapshot(const CommitTrainSnapshot &snapshot);
     void evaluateGlobalL1Depth();
+    void evaluateGlobalL2Depth();
     statistics::Counter getGlobalL1DepthStat() const;
+    statistics::Counter getGlobalL2DepthStat() const;
 
   public:
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
@@ -192,14 +194,17 @@ class XSStridePrefetcher : public Queued
     void dropYoungerThan(InstSeqNum boundary);
     void observeGlobalDepthFeedback(const PrefetchInfo &pfi, bool late,
                                     PrefetchSourceType pf_source);
-    void observeGlobalDepthIssueLateCache();
-    void observeGlobalDepthIssueLateMSHR();
+    void observeGlobalDepthIssueLateCache(int ahead_level);
+    void observeGlobalDepthIssueLateMSHR(int ahead_level);
   PrefetchFilter* stridestream_pfFilter_l1;
   PrefetchFilter* stridestream_pfFilter_l2l3;
 
     static constexpr int globalL1DepthInit = 6;
     static constexpr int globalL1DepthMin = 1;
     static constexpr int globalL1DepthMax = 64;
+    static constexpr int globalL2DepthInit = 32;
+    static constexpr int globalL2DepthMin = 1;
+    static constexpr int globalL2DepthMax = 64;
     static constexpr uint64_t globalL1DepthFeedbackWindow = 256;
     static constexpr uint64_t strongLateWeight = 4;
     static constexpr uint64_t issueLateMSHRWeight = 2;
@@ -208,10 +213,15 @@ class XSStridePrefetcher : public Queued
     static constexpr uint64_t lowerWeakLateThresholdPct = 5;
     static constexpr uint64_t lowerTimelyThresholdPct = 60;
     int globalL1Depth{globalL1DepthInit};
+    int globalL2Depth{globalL2DepthInit};
     uint64_t globalL1DepthLateStrongWindow{0};
     uint64_t globalL1DepthLateCacheWindow{0};
     uint64_t globalL1DepthLateMSHRWindow{0};
     uint64_t globalL1DepthTimelyFirstHitWindow{0};
+    uint64_t globalL2DepthLateStrongWindow{0};
+    uint64_t globalL2DepthLateCacheWindow{0};
+    uint64_t globalL2DepthLateMSHRWindow{0};
+    uint64_t globalL2DepthTimelyFirstHitWindow{0};
 
   struct XSstrideStats : public statistics::Group
   {
@@ -243,13 +253,21 @@ class XSStridePrefetcher : public Queued
       statistics::Scalar commitOrderedTrainMismatchCount;
       statistics::Scalar commitOrderedTrainRetargetCount;
       statistics::Value globalL1DepthCurrent;
+      statistics::Value globalL2DepthCurrent;
       statistics::Scalar globalL1DepthEvalCount;
+      statistics::Scalar globalL2DepthEvalCount;
       statistics::Scalar globalL1DepthRaiseCount;
+      statistics::Scalar globalL2DepthRaiseCount;
       statistics::Scalar globalL1DepthLowerCount;
+      statistics::Scalar globalL2DepthLowerCount;
       statistics::Scalar globalL1DepthLateStrongCount;
+      statistics::Scalar globalL2DepthLateStrongCount;
       statistics::Scalar globalL1DepthLateHitInCacheCount;
+      statistics::Scalar globalL2DepthLateHitInCacheCount;
       statistics::Scalar globalL1DepthLateHitInMSHRCount;
+      statistics::Scalar globalL2DepthLateHitInMSHRCount;
       statistics::Scalar globalL1DepthTimelyFirstHitCount;
+      statistics::Scalar globalL2DepthTimelyFirstHitCount;
 
   } stats;
 };

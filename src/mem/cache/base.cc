@@ -1362,7 +1362,10 @@ BaseCache::getNextQueueEntry()
             if (cache_cover.hit) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
-                prefetcher->pfHitInCache(pf_type, cache_cover);
+                const auto xs_meta = pkt->req->getXsMetadata();
+                prefetcher->pfHitInCache(
+                    pf_type, xs_meta.prefetchDepth,
+                    xs_meta.prefetchAheadLevel, cache_cover);
                 if (pf_type == PrefetchSourceType::SStream)
                     prefetcher->streamPflate();
                 // free the request and packet
@@ -1373,7 +1376,10 @@ BaseCache::getNextQueueEntry()
                 if (missq_cover.hit) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in a MSHR, "
                         "dropped.\n", pf_addr);
-                    prefetcher->pfHitInMSHR(pf_type, missq_cover);
+                    const auto xs_meta = pkt->req->getXsMetadata();
+                    prefetcher->pfHitInMSHR(
+                        pf_type, xs_meta.prefetchDepth,
+                        xs_meta.prefetchAheadLevel, missq_cover);
                     if (pf_type == PrefetchSourceType::SStream)
                         prefetcher->streamPflate();
                     // free the request and packet

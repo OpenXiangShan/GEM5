@@ -188,8 +188,8 @@ XSCompositePrefetcher::insertTriggeredAddresses(
         }
 
         PrefetchInfo new_pfi(pfi, addr_prio.addr);
-        new_pfi.setXsMetadata(
-            Request::XsMetadata(addr_prio.pfSource, addr_prio.depth));
+        new_pfi.setXsMetadata(Request::XsMetadata(
+            addr_prio.pfSource, addr_prio.depth, addr_prio.pfahead_host));
         statsQueued.pfIdentified++;
         insert(trigger_pkt, new_pfi, addr_prio);
         num_pfs += 1;
@@ -906,7 +906,7 @@ XSCompositePrefetcher::pfHitInCache(PrefetchSourceType pf_type)
 {
     Queued::pfHitInCache(pf_type);
     if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
-        Sstride->observeGlobalDepthIssueLateCache();
+        Sstride->observeGlobalDepthIssueLateCache(1);
     }
 }
 
@@ -917,7 +917,18 @@ XSCompositePrefetcher::pfHitInCache(
 {
     Queued::pfHitInCache(pf_type, cover);
     if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
-        Sstride->observeGlobalDepthIssueLateCache();
+        Sstride->observeGlobalDepthIssueLateCache(1);
+    }
+}
+
+void
+XSCompositePrefetcher::pfHitInCache(
+    PrefetchSourceType pf_type, int pf_depth, int pf_ahead_level,
+    const CacheAccessor::CacheCoverInfo &cover)
+{
+    Queued::pfHitInCache(pf_type, pf_depth, pf_ahead_level, cover);
+    if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
+        Sstride->observeGlobalDepthIssueLateCache(pf_ahead_level);
     }
 }
 
@@ -926,7 +937,7 @@ XSCompositePrefetcher::pfHitInMSHR(PrefetchSourceType pf_type)
 {
     Queued::pfHitInMSHR(pf_type);
     if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
-        Sstride->observeGlobalDepthIssueLateMSHR();
+        Sstride->observeGlobalDepthIssueLateMSHR(1);
     }
 }
 
@@ -937,7 +948,18 @@ XSCompositePrefetcher::pfHitInMSHR(
 {
     Queued::pfHitInMSHR(pf_type, cover);
     if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
-        Sstride->observeGlobalDepthIssueLateMSHR();
+        Sstride->observeGlobalDepthIssueLateMSHR(1);
+    }
+}
+
+void
+XSCompositePrefetcher::pfHitInMSHR(
+    PrefetchSourceType pf_type, int pf_depth, int pf_ahead_level,
+    const CacheAccessor::MissQueueCoverInfo &cover)
+{
+    Queued::pfHitInMSHR(pf_type, pf_depth, pf_ahead_level, cover);
+    if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
+        Sstride->observeGlobalDepthIssueLateMSHR(pf_ahead_level);
     }
 }
 

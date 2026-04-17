@@ -91,7 +91,8 @@ buildTrainingMetadata(const PacketPtr &pkt, PrefetchSourceType pfSource,
     xsMetadata.validXsMetadata = xsMetadata.validXsMetadata ||
                                  xsMetadata.instXsMetadata ||
                                  pfSource != PrefetchSourceType::PF_NONE ||
-                                 pfDepth != 0;
+                                 pfDepth != 0 ||
+                                 xsMetadata.prefetchAheadLevel != 0;
     xsMetadata.prefetchSource = pfSource;
     xsMetadata.prefetchDepth = pfDepth;
     return xsMetadata;
