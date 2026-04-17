@@ -64,7 +64,7 @@ def setKmhV3IdealParams(args, system):
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
         cpu.DcacheSetDivNum = 1
-        cpu.DcacheBankBytes = 2
+        cpu.DcacheBankBytes = 8
 
         # value predictor
         cpu.valuePred = IdealConstantLVP()
