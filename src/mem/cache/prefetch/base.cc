@@ -84,17 +84,21 @@ initSourceMatrix(statistics::Vector2d &stat)
 }
 
 Request::XsMetadata
-buildTrainingMetadata(const PacketPtr &pkt, PrefetchSourceType pfSource,
-                      int pfDepth)
+buildTrainingMetadata(const PacketPtr &pkt,
+                      const Request::XsMetadata &pfMetadata)
 {
-    Request::XsMetadata xsMetadata = pkt->req->getXsMetadata();
+    Request::XsMetadata xsMetadata = pkt->req->hasXsMetadata()
+        ? pkt->req->getXsMetadata()
+        : Request::XsMetadata();
     xsMetadata.validXsMetadata = xsMetadata.validXsMetadata ||
                                  xsMetadata.instXsMetadata ||
-                                 pfSource != PrefetchSourceType::PF_NONE ||
-                                 pfDepth != 0 ||
-                                 xsMetadata.prefetchAheadLevel != 0;
-    xsMetadata.prefetchSource = pfSource;
-    xsMetadata.prefetchDepth = pfDepth;
+                                 pfMetadata.validXsMetadata ||
+                                 pfMetadata.prefetchSource != PrefetchSourceType::PF_NONE ||
+                                 pfMetadata.prefetchDepth != 0 ||
+                                 pfMetadata.prefetchAheadLevel != 0;
+    xsMetadata.prefetchSource = pfMetadata.prefetchSource;
+    xsMetadata.prefetchDepth = pfMetadata.prefetchDepth;
+    xsMetadata.prefetchAheadLevel = pfMetadata.prefetchAheadLevel;
     return xsMetadata;
 }
 
@@ -510,14 +514,19 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 
     // Verify this access type is observed by prefetcher
     if (observeAccess(pkt, miss)) {
-        PrefetchSourceType pf_source;
-        int pf_depth;
+        Request::XsMetadata pfMetadata = pkt->req->hasXsMetadata()
+            ? pkt->req->getXsMetadata()
+            : Request::XsMetadata();
         if (!miss) {
-            pf_source = cache->getHitBlkXsMetadata(pkt).prefetchSource;
-            pf_depth = cache->getHitBlkXsMetadata(pkt).prefetchDepth;
+            const Request::XsMetadata hit_blk_xsMetadata =
+                cache->getHitBlkXsMetadata(pkt);
+            pfMetadata.prefetchSource = hit_blk_xsMetadata.prefetchSource;
+            pfMetadata.prefetchDepth = hit_blk_xsMetadata.prefetchDepth;
+            pfMetadata.prefetchAheadLevel =
+                hit_blk_xsMetadata.prefetchAheadLevel;
         } else {  // miss & late
-            pf_source = pkt->getPFSource();
-            pf_depth = pkt->getPFDepth();
+            pfMetadata.prefetchSource = pkt->getPFSource();
+            pfMetadata.prefetchDepth = pkt->getPFDepth();
         }
         if (!useVirtualAddresses || pkt->req->hasVaddr()) {
             // condition1:  useVirtualAddresses && pkt->req->hasVaddr()
@@ -525,7 +534,7 @@ Base::probeNotify(const PacketPtr &pkt, bool miss)
 
             Addr addr = pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr();
             Request::XsMetadata xsMetadata =
-                buildTrainingMetadata(pkt, pf_source, pf_depth);
+                buildTrainingMetadata(pkt, pfMetadata);
             Addr pc = pkt->req->hasPC() ? pkt->req->getPC() : 0;
 
             // Query and save all state information needed for training
@@ -818,7 +827,12 @@ Base::coreDirectAddrNotify(const PacketPtr& pkt)
 
     PrefetchSourceType pf_source = PrefetchSourceType::StoreStream;
     bool miss = true;
-    Request::XsMetadata xsMetadata = buildTrainingMetadata(pkt, pf_source, 0);
+    Request::XsMetadata pfMetadata = pkt->req->hasXsMetadata()
+        ? pkt->req->getXsMetadata()
+        : Request::XsMetadata();
+    pfMetadata.prefetchSource = pf_source;
+    pfMetadata.prefetchDepth = 0;
+    Request::XsMetadata xsMetadata = buildTrainingMetadata(pkt, pfMetadata);
     PrefetchInfo pfi(pkt, pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr(), miss,
                      xsMetadata);
     pkt->missOnLatePf = true;

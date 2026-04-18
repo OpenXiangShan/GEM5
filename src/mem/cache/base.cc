@@ -85,6 +85,35 @@
 namespace gem5
 {
 
+namespace
+{
+
+Request::XsMetadata
+requestXsMetadataOrDefault(const PacketPtr &pkt)
+{
+    return pkt->req->hasXsMetadata() ? pkt->req->getXsMetadata()
+                                     : Request::XsMetadata();
+}
+
+Request::XsMetadata
+mergePrefetchMetadata(const Request::XsMetadata &base_meta,
+                     const Request::XsMetadata &pf_meta)
+{
+    Request::XsMetadata merged = base_meta;
+    merged.validXsMetadata = merged.validXsMetadata ||
+                             merged.instXsMetadata ||
+                             pf_meta.validXsMetadata ||
+                             pf_meta.prefetchSource != PrefetchSourceType::PF_NONE ||
+                             pf_meta.prefetchDepth != 0 ||
+                             pf_meta.prefetchAheadLevel != 0;
+    merged.prefetchSource = pf_meta.prefetchSource;
+    merged.prefetchDepth = pf_meta.prefetchDepth;
+    merged.prefetchAheadLevel = pf_meta.prefetchAheadLevel;
+    return merged;
+}
+
+} // anonymous namespace
+
 BaseCache::SendTimingRespEvent::SendTimingRespEvent(BaseCache* cache, PacketPtr pkt)
     : Event(Delayed_Writeback_Pri, AutoDelete),
       cache(cache),
@@ -513,6 +542,16 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                     pkt->missOnLatePf = true;
                     pkt->pfSource = mshr->getPFSource();
                     pkt->pfDepth = mshr->getPFDepth();
+                    pkt->req->setPFSource(mshr->getPFSource());
+                    pkt->req->setPFDepth(mshr->getPFDepth());
+                    Request::XsMetadata late_pf_meta =
+                        requestXsMetadataOrDefault(pkt);
+                    late_pf_meta.prefetchSource = mshr->getPFSource();
+                    late_pf_meta.prefetchDepth = mshr->getPFDepth();
+                    late_pf_meta.prefetchAheadLevel = mshr->getPFAheadLevel();
+                    pkt->req->setXsMetadata(
+                        mergePrefetchMetadata(
+                            requestXsMetadataOrDefault(pkt), late_pf_meta));
 
                     // Demand request merging into prefetch-only MSHR
                     if (pkt->isDemand()) {
@@ -772,12 +811,15 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
         bool first_acc_after_pf = false;
         if (prefetcher && blk && blk->wasPrefetched()) {
+            const auto blk_meta = blk->getXsMetadata();
+            pkt->req->setXsMetadata(
+                mergePrefetchMetadata(requestXsMetadataOrDefault(pkt), blk_meta));
             DPRINTF(Cache, "Hit on prefetch for addr %#x (%s), source: %i\n", pkt->getAddr(),
-                    pkt->isSecure() ? "s" : "ns", blk->getXsMetadata().prefetchSource);
+                    pkt->isSecure() ? "s" : "ns", blk_meta.prefetchSource);
             // pass the pf source from block to req, it may be used by either load inst or L(n-1) cache
-            pkt->req->setPFSource(blk->getXsMetadata().prefetchSource);
+            pkt->req->setPFSource(blk_meta.prefetchSource);
             DPRINTF(Cache, "Mark req %p pf source: %i\n", pkt->req, pkt->req->getPFSource());
-            pkt->req->setPFDepth(0);
+            pkt->req->setPFDepth(blk_meta.prefetchDepth);
             blk->clearPrefetched();
             first_acc_after_pf = true;
         }
@@ -2202,7 +2244,16 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
     }
 
     Request::XsMetadata blk_meta = blk->getXsMetadata();
+    const Request::XsMetadata req_meta = requestXsMetadataOrDefault(pkt);
+    blk_meta.validXsMetadata = blk_meta.validXsMetadata ||
+                               blk_meta.instXsMetadata ||
+                               req_meta.validXsMetadata ||
+                               pkt->req->getPFSource() != PrefetchSourceType::PF_NONE ||
+                               pkt->req->getPFDepth() != 0 ||
+                               req_meta.prefetchAheadLevel != 0;
     blk_meta.prefetchSource = pkt->req->getPFSource();
+    blk_meta.prefetchDepth = pkt->req->getPFDepth();
+    blk_meta.prefetchAheadLevel = req_meta.prefetchAheadLevel;
     blk->setXsMetadata(blk_meta);
     DPRINTF(Cache, "%s: Mark blk as prefetched by source %i, form req %p\n", __func__,
             pkt->req->getPFSource(), pkt->req);

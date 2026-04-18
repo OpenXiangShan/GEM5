@@ -172,6 +172,8 @@ class XSStridePrefetcher : public Queued
     void evaluateGlobalL2Depth();
     statistics::Counter getGlobalL1DepthStat() const;
     statistics::Counter getGlobalL2DepthStat() const;
+    statistics::Counter getGlobalL2GapStat() const;
+    int getEffectiveGlobalL2Depth() const;
 
   public:
     boost::compute::detail::lru_cache<Addr, Addr> *filter;
@@ -203,9 +205,12 @@ class XSStridePrefetcher : public Queued
     static constexpr int globalL1DepthMin = 1;
     static constexpr int globalL1DepthMax = 64;
     static constexpr int globalL2DepthInit = 16;
-    static constexpr int globalL2DepthMin = 1;
-    static constexpr int globalL2DepthMax = 64;
+    static constexpr int globalL2DepthMax = 128;
+    static constexpr int globalL2GapInit = globalL2DepthInit - globalL1DepthInit;
+    static constexpr int globalL2GapMin = 1;
+    static constexpr int globalL2GapMax = 64;
     static constexpr uint64_t globalL1DepthFeedbackWindow = 256;
+    static constexpr uint64_t globalL2DepthFeedbackWindow = 128;
     static constexpr uint64_t strongLateWeight = 4;
     static constexpr uint64_t issueLateMSHRWeight = 2;
     static constexpr uint64_t issueLateCacheWeight = 1;
@@ -213,7 +218,7 @@ class XSStridePrefetcher : public Queued
     static constexpr uint64_t lowerWeakLateThresholdPct = 5;
     static constexpr uint64_t lowerTimelyThresholdPct = 60;
     int globalL1Depth{globalL1DepthInit};
-    int globalL2Depth{globalL2DepthInit};
+    int globalL2Gap{globalL2GapInit};
     uint64_t globalL1DepthLateStrongWindow{0};
     uint64_t globalL1DepthLateCacheWindow{0};
     uint64_t globalL1DepthLateMSHRWindow{0};
@@ -253,6 +258,7 @@ class XSStridePrefetcher : public Queued
       statistics::Scalar commitOrderedTrainMismatchCount;
       statistics::Scalar commitOrderedTrainRetargetCount;
       statistics::Value globalL1DepthCurrent;
+      statistics::Value globalL2GapCurrent;
       statistics::Value globalL2DepthCurrent;
       statistics::Scalar globalL1DepthEvalCount;
       statistics::Scalar globalL2DepthEvalCount;

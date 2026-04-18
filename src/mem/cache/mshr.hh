@@ -188,6 +188,8 @@ class MSHR : public QueueEntry, public Printable
 
         int pfDepth = 0;
 
+        int pfAheadLevel = 0;
+
         TargetList(const std::string &name = ".unnamedTargetList");
 
         /**
@@ -228,6 +230,7 @@ class MSHR : public QueueEntry, public Printable
 
             pfSource = PF_NONE;
             pfDepth = 0;
+            pfAheadLevel = 0;
         }
 
         /**
@@ -378,6 +381,10 @@ class MSHR : public QueueEntry, public Printable
 
     int getPFDepth() const {
         return targets.pfDepth;
+    }
+
+    int getPFAheadLevel() const {
+        return targets.pfAheadLevel;
     }
 
     /**

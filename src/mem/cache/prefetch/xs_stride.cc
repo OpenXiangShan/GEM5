@@ -86,6 +86,7 @@ XSStridePrefetcher::XSStridePrefetcher(const XSStridePrefetcherParams &p)
       stats(this)
 {
     stats.globalL1DepthCurrent.method(this, &XSStridePrefetcher::getGlobalL1DepthStat);
+    stats.globalL2GapCurrent.method(this, &XSStridePrefetcher::getGlobalL2GapStat);
     stats.globalL2DepthCurrent.method(this, &XSStridePrefetcher::getGlobalL2DepthStat);
     if (enableTraceDb) {
         initReplayTraceDb(p);
@@ -385,7 +386,7 @@ XSStridePrefetcher::triggerFromCommitTable(const PrefetchInfo &pfi,
     if (useXsDepth) {
         sendPFWithFilter(pfi, blockAddress(lookupAddr + entry->stride * globalL1Depth),
                          addresses, 0, PrefetchSourceType::SStride, 1);
-        sendPFWithFilter(pfi, blockAddress(lookupAddr + entry->stride * globalL2Depth),
+        sendPFWithFilter(pfi, blockAddress(lookupAddr + entry->stride * getEffectiveGlobalL2Depth()),
                          addresses, 0, PrefetchSourceType::SStride, 2);
         stats.strideUniquepfCount += 2;
         if (archDBer) {
@@ -394,7 +395,7 @@ XSStridePrefetcher::triggerFromCommitTable(const PrefetchInfo &pfi,
                 pfi.getPC(), stride_hash_pc, true, true, false, false,
                 triggerSeqNum);
             archDBer->strideTraceWrite(
-                curTick(), blockAddress(lookupAddr + entry->stride * globalL2Depth),
+                curTick(), blockAddress(lookupAddr + entry->stride * getEffectiveGlobalL2Depth()),
                 pfi.getPC(), stride_hash_pc, true, true, false, false,
                 triggerSeqNum);
         }
@@ -786,10 +787,16 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             unsigned start_depth = pfi.isCacheMiss() ? std::max(1, (entry->depth - 4)) : entry->depth;
             Addr pf_addr = 0;
             if (useXsDepth) {
-                sendPFWithFilter(pfi, blockAddress(lookupAddr + entry->stride * globalL1Depth), addresses, 0,
-                                 PrefetchSourceType::SStride, 1);
-                sendPFWithFilter(pfi, blockAddress(lookupAddr + entry->stride * globalL2Depth), addresses, 0,
-                                 PrefetchSourceType::SStride, 2);
+                sendPFWithFilter(
+                    pfi,
+                    blockAddress(lookupAddr + entry->stride * globalL1Depth),
+                    addresses, 0, PrefetchSourceType::SStride, 1);
+                sendPFWithFilter(
+                    pfi,
+                    blockAddress(
+                        lookupAddr +
+                        entry->stride * getEffectiveGlobalL2Depth()),
+                    addresses, 0, PrefetchSourceType::SStride, 2);
                 if (is_first_shot) {
                     stats.strideUniquepfCount += 2;
                 } else {
@@ -804,7 +811,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                         triggerSeqNum);
                     archDBer->strideTraceWrite(
                         curTick(),
-                        blockAddress(lookupAddr + entry->stride * globalL2Depth),
+                        blockAddress(lookupAddr + entry->stride * getEffectiveGlobalL2Depth()),
                         pfi.getPC(), stride_hash_pc,
                         true, is_first_shot, pfi.isCacheMiss(), false,
                         triggerSeqNum);
@@ -1030,7 +1037,7 @@ XSStridePrefetcher::evaluateGlobalL2Depth()
         globalL2DepthLateCacheWindow +
         globalL2DepthLateMSHRWindow +
         globalL2DepthTimelyFirstHitWindow;
-    if (total_feedback < globalL1DepthFeedbackWindow) {
+    if (total_feedback < globalL2DepthFeedbackWindow) {
         return;
     }
 
@@ -1043,13 +1050,14 @@ XSStridePrefetcher::evaluateGlobalL2Depth()
     const uint64_t weighted_total = total_feedback * strongLateWeight;
 
     if (weighted_late * 100 >= weighted_total * raiseThresholdPct &&
-        globalL2Depth < globalL2DepthMax) {
-        globalL2Depth++;
+        globalL2Gap < globalL2GapMax) {
+        globalL2Gap++;
         stats.globalL2DepthRaiseCount++;
         DPRINTF(XSStridePrefetcher,
-                "Global stride L2 depth increased to %d "
+                "Global stride L2 gap increased to %d (effective depth %d) "
                 "(lateStrong=%lu lateMSHR=%lu lateCache=%lu timely=%lu)\n",
-                globalL2Depth, globalL2DepthLateStrongWindow,
+                globalL2Gap, getEffectiveGlobalL2Depth(),
+                globalL2DepthLateStrongWindow,
                 globalL2DepthLateMSHRWindow, globalL2DepthLateCacheWindow,
                 globalL2DepthTimelyFirstHitWindow);
     } else {
@@ -1059,13 +1067,14 @@ XSStridePrefetcher::evaluateGlobalL2Depth()
             weak_late * 100 <= total_feedback * lowerWeakLateThresholdPct &&
             globalL2DepthTimelyFirstHitWindow * 100 >=
                 total_feedback * lowerTimelyThresholdPct &&
-            globalL2Depth > globalL2DepthMin) {
-            globalL2Depth--;
+            globalL2Gap > globalL2GapMin) {
+            globalL2Gap--;
             stats.globalL2DepthLowerCount++;
             DPRINTF(XSStridePrefetcher,
-                    "Global stride L2 depth decreased to %d "
+                    "Global stride L2 gap decreased to %d (effective depth %d) "
                     "(lateStrong=%lu lateMSHR=%lu lateCache=%lu timely=%lu)\n",
-                    globalL2Depth, globalL2DepthLateStrongWindow,
+                    globalL2Gap, getEffectiveGlobalL2Depth(),
+                    globalL2DepthLateStrongWindow,
                     globalL2DepthLateMSHRWindow, globalL2DepthLateCacheWindow,
                     globalL2DepthTimelyFirstHitWindow);
         }
@@ -1086,7 +1095,21 @@ XSStridePrefetcher::getGlobalL1DepthStat() const
 statistics::Counter
 XSStridePrefetcher::getGlobalL2DepthStat() const
 {
-    return globalL2Depth;
+    return getEffectiveGlobalL2Depth();
+}
+
+statistics::Counter
+XSStridePrefetcher::getGlobalL2GapStat() const
+{
+    return globalL2Gap;
+}
+
+int
+XSStridePrefetcher::getEffectiveGlobalL2Depth() const
+{
+    return std::clamp(globalL1Depth + globalL2Gap,
+                      globalL1Depth + globalL2GapMin,
+                      globalL2DepthMax);
 }
 
 void
@@ -1124,7 +1147,9 @@ XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
     prefetchStats.pfGenerated++;
     pfi.setTriggerInfo_PFsrc(src);
     if (ahead_level > 1){
-        stridestream_pfFilter_l2l3->Insert(regionAddress(addr), uint64_t(1) << regionOffset(addr),0,true,false,pfi.isSecure(),ahead_level, &pfi.trigger_info);
+        stridestream_pfFilter_l2l3->Insert(
+            regionAddress(addr), uint64_t(1) << regionOffset(addr), 0,
+            true, false, pfi.isSecure(), ahead_level, &pfi.trigger_info);
         if (filterL2->contains(addr)) {
             DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
             // Count filtered prefetch
@@ -1137,11 +1162,13 @@ XSStridePrefetcher::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::ve
             addresses.back().pfahead_host = ahead_level;
             addresses.back().pfahead = true;
             if (useXsDepth) {
-                addresses.back().depth = globalL2Depth;
+                addresses.back().depth = getEffectiveGlobalL2Depth();
             }
         }
     } else {
-        stridestream_pfFilter_l1->Insert(regionAddress(addr), uint64_t(1) << regionOffset(addr),0,true,false,pfi.isSecure(),ahead_level, &pfi.trigger_info);
+        stridestream_pfFilter_l1->Insert(
+            regionAddress(addr), uint64_t(1) << regionOffset(addr), 0,
+            true, false, pfi.isSecure(), ahead_level, &pfi.trigger_info);
         if (filter->contains(addr)) {
             DPRINTF(XSStridePrefetcher, "Skip recently prefetched: %lx\n", addr);
             // Count filtered prefetch
@@ -1218,8 +1245,10 @@ XSStridePrefetcher::XSstrideStats::XSstrideStats(statistics::Group *parent)
                "train entries that rewrote an existing stride after confidence dropped to zero"),
       ADD_STAT(globalL1DepthCurrent, statistics::units::Count::get(),
                "current global stride L1 depth"),
+      ADD_STAT(globalL2GapCurrent, statistics::units::Count::get(),
+               "current global stride L2 gap over L1 depth"),
       ADD_STAT(globalL2DepthCurrent, statistics::units::Count::get(),
-               "current global stride L2 depth"),
+               "current effective global stride L2 depth"),
       ADD_STAT(globalL1DepthEvalCount, statistics::units::Count::get(),
                "number of global stride L1 depth controller evaluations"),
       ADD_STAT(globalL2DepthEvalCount, statistics::units::Count::get(),
@@ -1227,11 +1256,11 @@ XSStridePrefetcher::XSstrideStats::XSstrideStats(statistics::Group *parent)
       ADD_STAT(globalL1DepthRaiseCount, statistics::units::Count::get(),
                "number of times global stride L1 depth increased"),
       ADD_STAT(globalL2DepthRaiseCount, statistics::units::Count::get(),
-               "number of times global stride L2 depth increased"),
+               "number of times global stride L2 gap increased"),
       ADD_STAT(globalL1DepthLowerCount, statistics::units::Count::get(),
                "number of times global stride L1 depth decreased"),
       ADD_STAT(globalL2DepthLowerCount, statistics::units::Count::get(),
-               "number of times global stride L2 depth decreased"),
+               "number of times global stride L2 gap decreased"),
       ADD_STAT(globalL1DepthLateStrongCount, statistics::units::Count::get(),
                "number of strong late feedback events for global stride depth"),
       ADD_STAT(globalL2DepthLateStrongCount, statistics::units::Count::get(),

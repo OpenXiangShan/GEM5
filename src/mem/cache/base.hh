@@ -1674,6 +1674,8 @@ public:
         if (!block->wasEverPrefetched()) {
             Request::XsMetadata blkMeta = block->getXsMetadata();
             blkMeta.prefetchSource = PrefetchSourceType::PF_NONE;
+            blkMeta.prefetchDepth = 0;
+            blkMeta.prefetchAheadLevel = 0;
             block->setXsMetadata(blkMeta);
         }
         return block->getXsMetadata();

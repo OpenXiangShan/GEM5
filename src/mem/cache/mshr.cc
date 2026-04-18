@@ -108,6 +108,7 @@ MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
         } else if (!hasFromPref) {  // first pkt && is pref
             pfSource = pkt->req->getXsMetadata().prefetchSource;
             pfDepth = pkt->req->getXsMetadata().prefetchDepth;
+            pfAheadLevel = pkt->req->getXsMetadata().prefetchAheadLevel;
             DPRINTF(Cache, "MSHR: set source as prefetcher %i\n", pfSource);
         }
 
