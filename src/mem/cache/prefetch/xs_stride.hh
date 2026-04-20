@@ -203,12 +203,12 @@ class XSStridePrefetcher : public Queued
 
     static constexpr int globalL1DepthInit = 6;
     static constexpr int globalL1DepthMin = 1;
-    static constexpr int globalL1DepthMax = 64;
-    static constexpr int globalL2DepthInit = 16;
-    static constexpr int globalL2DepthMax = 128;
-    static constexpr int globalL2GapInit = globalL2DepthInit - globalL1DepthInit;
-    static constexpr int globalL2GapMin = 1;
+    static constexpr int globalL1DepthMax = 32;
+    static constexpr int globalL2GapMin = 12;
     static constexpr int globalL2GapMax = 64;
+    static constexpr int globalL2GapInit = globalL2GapMin;
+    static constexpr int globalL2DepthInit = globalL1DepthInit + globalL2GapInit;
+    static constexpr int globalL2DepthMax = 128;
     static constexpr uint64_t globalL1DepthFeedbackWindow = 256;
     static constexpr uint64_t globalL2DepthFeedbackWindow = 128;
     static constexpr uint64_t strongLateWeight = 4;
