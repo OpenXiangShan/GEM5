@@ -40,14 +40,12 @@ template <class T>
 class TimeBuffer
 {
   protected:
-    int past;
-    int future;
-    unsigned size;
-    int _id;
-
-    char *data;
-    std::vector<char *> index;
-    unsigned base;
+    int _id = -1;
+    int past = 0;
+    int future = 0;
+    unsigned size = 0;
+    unsigned base = 0;
+    T* datas = nullptr;
 
     void valid(int idx) const
     {
@@ -138,31 +136,38 @@ class TimeBuffer
 
   public:
     TimeBuffer(int p, int f)
-        : past(p), future(f), size(past + future + 1),
-          data(new char[size * sizeof(T)]), index(size), base(0)
+        : past(p), future(f), size(past + future + 1)
     {
         assert(past >= 0 && future >= 0);
-        char *ptr = data;
+        datas = (T*)new char[sizeof(T) * size];
+        std::memset((void*)datas, 0, sizeof(T) * size);
         for (unsigned i = 0; i < size; i++) {
-            index[i] = ptr;
-            std::memset(ptr, 0, sizeof(T));
-            new (ptr) T;
-            ptr += sizeof(T);
+            new (datas + i) T;
         }
-
         _id = -1;
     }
 
-    TimeBuffer()
-        : data(NULL)
+    TimeBuffer() {}
+
+    TimeBuffer(const TimeBuffer<T> &other)
+        : _id(other._id), past(other.past), future(other.future), size(other.size), base(other.base)
     {
+        datas = new T[size];
+        for (unsigned i = 0; i < size; i++) {
+            datas[i] = other.datas[i]; // must use explicit copy to handle non-POD types
+        }
+    }
+
+    TimeBuffer(TimeBuffer<T> &&other) noexcept
+        :  _id(other._id), past(other.past), future(other.future), size(other.size), base(other.base), datas(other.datas)
+    {
+        // Null out the other datas pointer to avoid double deletion
+        other.datas = nullptr;
     }
 
     ~TimeBuffer()
     {
-        for (unsigned i = 0; i < size; ++i)
-            (reinterpret_cast<T *>(index[i]))->~T();
-        delete [] data;
+        delete [] datas;
     }
 
     void id(int id)
@@ -184,9 +189,9 @@ class TimeBuffer
         int ptr = base + future;
         if (ptr >= (int)size)
             ptr -= size;
-        (reinterpret_cast<T *>(index[ptr]))->~T();
-        std::memset(index[ptr], 0, sizeof(T));
-        new (index[ptr]) T;
+        datas[ptr].~T();
+        std::memset((void*)(datas + ptr), 0, sizeof(T));
+        new (datas + ptr) T;
     }
 
   protected:
@@ -212,21 +217,21 @@ class TimeBuffer
     {
         int vector_index = calculateVectorIndex(idx);
 
-        return reinterpret_cast<T *>(index[vector_index]);
+        return datas + vector_index;
     }
 
     T &operator[](int idx)
     {
         int vector_index = calculateVectorIndex(idx);
 
-        return reinterpret_cast<T &>(*index[vector_index]);
+        return datas[vector_index];
     }
 
     const T &operator[] (int idx) const
     {
         int vector_index = calculateVectorIndex(idx);
 
-        return reinterpret_cast<const T &>(*index[vector_index]);
+        return datas[vector_index];
     }
 
     wire getWire(int idx)
