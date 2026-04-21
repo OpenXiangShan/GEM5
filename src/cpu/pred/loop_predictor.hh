@@ -84,6 +84,7 @@ class LoopPredictor : public SimObject
     const bool useDirectionBit;
     const bool useSpeculation;
     const bool useHashing;
+    const bool forceLoopUse;
     const bool restrictAllocation;
     const unsigned initialLoopIter;
     const unsigned initialLoopAge;

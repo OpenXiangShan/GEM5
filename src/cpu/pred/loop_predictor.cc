@@ -61,6 +61,7 @@ LoopPredictor::LoopPredictor(const LoopPredictorParams &p)
     useDirectionBit(p.useDirectionBit),
     useSpeculation(p.useSpeculation),
     useHashing(p.useHashing),
+    forceLoopUse(p.forceLoopUse),
     restrictAllocation(p.restrictAllocation),
     initialLoopIter(p.initialLoopIter),
     initialLoopAge(p.initialLoopAge),
@@ -288,7 +289,7 @@ LoopPredictor::loopPredict(ThreadID tid, Addr branch_pc, bool cond_branch,
         // loop prediction
         bi->loopPred = getLoop(branch_pc, bi, useSpeculation, instShiftAmt);
 
-        if ((loopUseCounter >= 0) && bi->loopPredValid) {
+        if ((forceLoopUse || loopUseCounter >= 0) && bi->loopPredValid) {
             pred_taken = bi->loopPred;
             bi->loopPredUsed = true;
         }

@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <memory>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -13,6 +15,7 @@
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
+#include "cpu/pred/loop_predictor.hh"
 
 // Conditional includes based on build mode
 #ifdef UNIT_TEST
@@ -83,9 +86,12 @@ class BTBTAGE : public TimedBaseBTBPredictor
             Addr index;     // Index in the table
             Addr tag;       // Tag that was matched
             unsigned way;    // Which way this entry was found in
-            TageTableInfo() : found(false), table(0), index(0), tag(0), way(0) {}
-            TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag, unsigned way) :
-                        found(found), entry(entry), table(table), index(index), tag(tag), way(way) {}
+            bool inShadow;   // Whether this entry comes from the shadow overflow
+            TageTableInfo() : found(false), table(0), index(0), tag(0), way(0), inShadow(false) {}
+            TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag,
+                          unsigned way, bool inShadow = false) :
+                        found(found), entry(entry), table(table), index(index), tag(tag), way(way),
+                        inShadow(inShadow) {}
             bool taken() const {
                 return entry.taken();
             }
@@ -185,6 +191,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Calculate TAGE index with folded history (uint64_t version for performance)
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
 
+    // Calculate TAGE index with optional branch-position mixing
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, Addr position);
+
+    Addr getShadowIndex(Addr mainIndex, unsigned table, Addr position = 0) const;
+
     // Calculate TAGE tag for a given PC and table
     // position: branch position within the block (xored into tag like RTL)
     Addr getTageTag(Addr pc, int table, Addr position = 0);
@@ -252,8 +263,16 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // The actual TAGE prediction tables (table x index x way)
     std::vector<std::vector<std::vector<TageEntry>>> tageTable;
+    std::vector<std::vector<std::vector<TageEntry>>> shadowTageTable;
 
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
+    const bool usePositionForIndexMix;
+    const unsigned indexMixTables;
+    const bool enableShadowOverflow;
+    const unsigned shadowTables;
+    const bool usePositionForShadowIndex;
+    std::vector<unsigned> shadowTableSizes;
+    std::vector<unsigned> shadowNumWays;
 
     // Table for tracking when to use alternative prediction on provider weak
     // use_alt_on_na: indexed by PC, 7-bit signed saturating counter [-64, 63]
@@ -299,6 +318,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Whether statistical corrector is enabled
     bool enableSC;
+    bool enableLoopPredictor;
+    branch_prediction::LoopPredictor *loopPredictor;
 
     // Whether to update on read
     bool updateOnRead;
@@ -352,6 +373,15 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar predFinalSourceBase;
         Scalar updateFinalSourceBaseCorrect;
         Scalar updateFinalSourceBaseWrong;
+        Scalar loopPredValid;
+        Scalar loopPredUsed;
+        Scalar loopPredOverride;
+        Scalar loopPredUsedCorrect;
+        Scalar loopPredUsedWrong;
+        Scalar shadowPredHit;
+        Scalar shadowMainProvider;
+        Scalar shadowAltProvider;
+        Scalar shadowAllocSuccess;
 
         // Recomputed prediction difference statistics (per fetchBlock)
         Scalar recomputedVsActualDiff;   // recomputed.taken != actual_taken
@@ -412,7 +442,14 @@ public:
     // Metadata for TAGE prediction
     typedef struct TageMeta
     {
+        struct LoopPredictionMeta
+        {
+            std::unique_ptr<branch_prediction::LoopPredictor::BranchInfo> loopInfo;
+            bool tagePredTaken{false};
+        };
+
         std::unordered_map<Addr, TagePrediction> preds;
+        std::unordered_map<Addr, LoopPredictionMeta> loopPreds;
         std::vector<PathFoldedHist> tagFoldedHist;
         std::vector<PathFoldedHist> altTagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
@@ -453,6 +490,7 @@ private:
     void updateLRU(int table, Addr index, unsigned way);
     unsigned getLRUVictim(int table, Addr index);
     unsigned getNumWays(unsigned table) const;
+    unsigned getShadowNumWays(unsigned table) const;
 
     std::shared_ptr<TageMeta> meta;
 };

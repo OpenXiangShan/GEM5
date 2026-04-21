@@ -211,6 +211,9 @@ class LoopPredictor(SimObject):
     # Add a direction bit to the loop table entries
     useDirectionBit = Param.Bool(False, "Use direction info")
 
+    forceLoopUse = Param.Bool(False,
+        "Always allow the loop predictor to override when its prediction is valid")
+
     # If true, use random to decide whether to allocate or not, and only try
     # with one entry
     restrictAllocation = Param.Bool(False,
@@ -1042,6 +1045,11 @@ class BTBTAGE(TimedBaseBTBPredictor):
 
     needMoreHistories = Param.Bool(True, "BTBTAGE needs more histories")
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
+    enableLoopPredictor = Param.Bool(False,
+        "Enable optional loop predictor override inside BTBTAGE")
+    loop_predictor = Param.LoopPredictor(
+        LoopPredictor(useSpeculation=False),
+        "Loop predictor used by optional BTBTAGE loop override")
     updateOnRead = Param.Bool(False, "Enable update on read, no need to save tage meta in FTQ")
     numPredictors = Param.Unsigned(8, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([2048, 2048, 2048, 2048, 2048, 2048, 2048,2048],"the TAGE T0~Tn length")
@@ -1054,6 +1062,20 @@ class BTBTAGE(TimedBaseBTBPredictor):
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numWays = VectorParam.Unsigned([2] * 8,"the T0~Tn number of ways per set")
     maxBranchPositions = Param.Unsigned(32, "Maximum branch positions per 64-byte block")
+    usePositionForIndexMix = Param.Bool(
+        False, "Mix branch position into low-table index calculation")
+    indexMixTables = Param.Unsigned(
+        4, "Number of low-history tables using branch-position index mix")
+    enableShadowOverflow = Param.Bool(
+        False, "Enable sparse low-table shadow ways as conflict rescue")
+    shadowTables = Param.Unsigned(
+        4, "Number of low-history tables equipped with shadow overflow")
+    usePositionForShadowIndex = Param.Bool(
+        False, "Mix branch position into shadow overflow index calculation")
+    shadowTableSizes = VectorParam.Unsigned(
+        [1024, 1024, 1024, 1024], "Per-table shadow set counts for low tables")
+    shadowNumWays = VectorParam.Unsigned(
+        [2, 2, 2, 2], "Per-table shadow ways for low tables")
     useAltOnNaSize = Param.Unsigned(128, "Size of the useAltOnNa table")
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
