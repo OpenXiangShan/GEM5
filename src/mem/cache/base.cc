@@ -112,6 +112,42 @@ mergePrefetchMetadata(const Request::XsMetadata &base_meta,
     return merged;
 }
 
+uint64_t
+trackedForceHitLineKey(Addr line_addr, bool is_secure)
+{
+    return static_cast<uint64_t>(line_addr | (is_secure ? 1ULL : 0ULL));
+}
+
+void
+writeForceHitTrace(ArchDBer *arch_db, const BaseCache &cache,
+                   const char *event, const PacketPtr pkt,
+                   const CacheBlk *blk, bool mshr_hit, bool wb_hit,
+                   bool allocated, const char *site)
+{
+    if (!arch_db || !pkt) {
+        return;
+    }
+
+    const Addr line_addr = pkt->getBlockAddr(cache.getBlockSize());
+    const Addr pc = (pkt->req && pkt->req->hasPC()) ? pkt->req->getPC() : 0;
+    const Addr vaddr =
+        (pkt->req && pkt->req->hasVaddr()) ? pkt->req->getVaddr() : 0;
+    const bool is_request = pkt->isRequest();
+    const bool needs_writable = is_request ? pkt->needsWritable() : false;
+    const bool needs_response = is_request ? pkt->needsResponse() : false;
+
+    arch_db->forceHitTraceWrite(
+        curTick(), cache.name().c_str(), event, line_addr, pc, vaddr,
+        pkt->cmdString().c_str(),
+        pkt->req ? reinterpret_cast<uintptr_t>(pkt->req.get()) : 0,
+        reinterpret_cast<uintptr_t>(pkt), cache.level(), pkt->isSecure(),
+        pkt->fromCache(), needs_writable, needs_response,
+        pkt->hasSharers(), pkt->isBlockCached(), mshr_hit, wb_hit, allocated,
+        blk && blk->isValid(), blk && blk->isSet(CacheBlk::ReadableBit),
+        blk && blk->isSet(CacheBlk::WritableBit),
+        blk && blk->isSet(CacheBlk::DirtyBit), site);
+}
+
 } // anonymous namespace
 
 BaseCache::SendTimingRespEvent::SendTimingRespEvent(BaseCache* cache, PacketPtr pkt)
@@ -747,7 +783,8 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         return;
     }
 
-    if (!satisfied && forceHit && !pkt->req->isInstFetch() && pkt->isRead() && pkt->req->hasPC() &&
+    if (!satisfied && forceHit && cacheLevel == 1 &&
+        !pkt->req->isInstFetch() && pkt->isRead() && pkt->req->hasPC() &&
         forceHitPCs.count(pkt->req->getPC())) {
         bool mshr_hit = mshrQueue.findMatch(pkt->getAddr(), pkt->isSecure()) != nullptr;
         bool wb_hit = writeBuffer.findMatch(pkt->getBlockAddr(blkSize), pkt->isSecure()) != nullptr;
@@ -758,6 +795,13 @@ BaseCache::recvTimingReq(PacketPtr pkt)
 
             memSidePort.sendFunctional(pkt);
             satisfied = true;
+            if (archDBer) {
+                archDBer->trackForceHitLine(
+                    trackedForceHitLineKey(
+                        pkt->getBlockAddr(blkSize), pkt->isSecure()));
+                writeForceHitTrace(archDBer, *this, "ForceHitChosen", pkt,
+                                   blk, mshr_hit, wb_hit, false, __func__);
+            }
         } else {
             DPRINTF(Cache, "%s: mshr/wb_buffer hit for force hit PC %#lx, forced to miss\n", __func__,
                     pkt->req->getPC());
@@ -1003,6 +1047,12 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         }
         blk = handleFill(pkt, blk, writebacks, allocate);
         assert(blk != nullptr);
+        if (archDBer && archDBer->isTrackedForceHitLine(
+                trackedForceHitLineKey(pkt->getBlockAddr(blkSize),
+                                       pkt->isSecure()))) {
+            writeForceHitTrace(archDBer, *this, "TimingRespFill", pkt, blk,
+                               false, false, allocate, __func__);
+        }
         ppFill->notify(pkt);
     }
 
@@ -1820,6 +1870,10 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 {
     // sanity check
     assert(pkt->isRequest());
+    const bool tracked_force_hit_line =
+        archDBer && archDBer->isTrackedForceHitLine(
+            trackedForceHitLineKey(
+                pkt->getBlockAddr(blkSize), pkt->isSecure()));
 
     gem5_assert(!(isReadOnly && pkt->isWrite()),
                 "Should never see a write in a read-only cache %s\n",
@@ -1899,6 +1953,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
     if (pkt->isWriteback()) {
         DPRINTF(Cache, "Writeback for %s\n", pkt->print());
         assert(blkSize == pkt->getSize());
+        const bool allocated = !blk;
 
         // we could get a clean writeback while we are having
         // outstanding accesses to a block, do the simple thing for
@@ -1908,6 +1963,10 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
             mshrQueue.findMatch(pkt->getAddr(), pkt->isSecure())) {
             DPRINTF(Cache, "Clean writeback %#llx to block with MSHR, "
                     "dropping\n", pkt->getAddr());
+            if (tracked_force_hit_line) {
+                writeForceHitTrace(archDBer, *this, "WritebackDropMSHR", pkt,
+                                   blk, true, false, allocated, __func__);
+            }
 
             // A writeback searches for the block, then writes the data.
             // As the writeback is being dropped, the data is not touched,
@@ -1957,6 +2016,10 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 
         updateBlockData(blk, pkt, has_old_data);
         DPRINTF(Cache, "%s new state is %s\n", __func__, blk->print());
+        if (tracked_force_hit_line) {
+            writeForceHitTrace(archDBer, *this, "WritebackRecv", pkt, blk,
+                               false, false, allocated, __func__);
+        }
         incHitCount(pkt);
         incSquashedDemandHitCount(pkt, blk);
 
@@ -1991,6 +2054,7 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         // block immediately. The WriteClean transfers the ownership
         // of the block as well.
         assert(blkSize == pkt->getSize());
+        const bool allocated = !blk && !pkt->writeThrough();
 
         const bool has_old_data = blk && blk->isValid();
         if (!blk) {
@@ -2035,6 +2099,10 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
 
         updateBlockData(blk, pkt, has_old_data);
         DPRINTF(Cache, "%s new state is %s\n", __func__, blk->print());
+        if (tracked_force_hit_line) {
+            writeForceHitTrace(archDBer, *this, "WriteCleanRecv", pkt, blk,
+                               false, false, allocated, __func__);
+        }
 
         incHitCount(pkt);
         incSquashedDemandHitCount(pkt, blk);
@@ -2088,7 +2156,8 @@ BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
         }
 
         return true;
-    } else if (forceHit && !pkt->req->isInstFetch() && pkt->req->hasPC() &&
+    } else if (forceHit && cacheLevel == 1 &&
+               !pkt->req->isInstFetch() && pkt->req->hasPC() &&
                forceHitPCs.count(pkt->req->getPC())) {
         bool mshr_hit = mshrQueue.findMatch(pkt->getAddr(), pkt->isSecure()) != nullptr;
 
@@ -2656,6 +2725,20 @@ BaseCache::sendWriteQueuePacket(WriteQueueEntry* wq_entry)
     PacketPtr tgt_pkt = wq_entry->getTarget()->pkt;
 
     DPRINTF(Cache, "%s: write %s\n", __func__, tgt_pkt->print());
+    if (archDBer && archDBer->isTrackedForceHitLine(
+            trackedForceHitLineKey(
+                tgt_pkt->getBlockAddr(blkSize), tgt_pkt->isSecure()))) {
+        const char *event = "WriteQueueSend";
+        if (tgt_pkt->isWriteback()) {
+            event = "WritebackSend";
+        } else if (tgt_pkt->cmd == MemCmd::CleanEvict) {
+            event = "CleanEvictSend";
+        } else if (tgt_pkt->cmd == MemCmd::WriteClean) {
+            event = "WriteCleanSend";
+        }
+        writeForceHitTrace(archDBer, *this, event, tgt_pkt, nullptr,
+                           false, false, false, __func__);
+    }
 
     // forward as is, both for evictions and uncacheable writes
     if (!memSidePort.sendTimingReq(tgt_pkt)) {

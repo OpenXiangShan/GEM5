@@ -157,6 +157,7 @@ class SnoopFilter(SimObject):
     lookup_latency = Param.Cycles(1, "Lookup latency")
 
     system = Param.System(Parent.any, "System that the crossbar belongs to.")
+    arch_db = Param.ArchDBer(Parent.any, "Arch DB")
 
     # Sanity check on max capacity to track, adjust if needed.
     max_capacity = Param.MemorySize('8MiB', "Maximum capacity of snoop filter")

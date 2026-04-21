@@ -702,7 +702,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_from_start = args.arch_db_fromstart
         test_sys.arch_db.enable_rolling = args.enable_rolling
         dump_l1_pf_trace = False
-        dump_mem_trace = True
+        dump_mem_trace = False
         dump_l1_evict_trace = False
         dump_l2_evict_trace = False
         dump_l3_evict_trace = False
@@ -711,6 +711,8 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         dump_stride_train_trace = False
         dump_stride_order_trace = False
         dump_stride_depth_ctrl_trace = False
+        dump_force_hit_trace = False
+        dump_snoop_filter_trace = False
         dump_sms_train_trace = False
         dump_train_filter_trace = False
         dump_despacito_train_trace = False
@@ -727,6 +729,8 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_stride_train_trace = dump_stride_train_trace
         test_sys.arch_db.dump_stride_order_trace = dump_stride_order_trace
         test_sys.arch_db.dump_stride_depth_ctrl_trace = dump_stride_depth_ctrl_trace
+        test_sys.arch_db.dump_force_hit_trace = dump_force_hit_trace
+        test_sys.arch_db.dump_snoop_filter_trace = dump_snoop_filter_trace
         test_sys.arch_db.dump_sms_train_trace = dump_sms_train_trace
         test_sys.arch_db.dump_train_filter_trace = dump_train_filter_trace
         test_sys.arch_db.dump_despacito_train_trace = dump_despacito_train_trace
@@ -903,6 +907,61 @@ CREATE TABLE LoadLifeTimeCommitTrace(
                 "LowerTimelyPct INT NOT NULL,"
                 "SITE TEXT);"
             ])
+        if dump_force_hit_trace:
+            table_cmds.append(
+                "CREATE TABLE ForceHitTrace("
+                "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "Tick INT NOT NULL,"
+                "Cache TEXT NOT NULL,"
+                "Event TEXT NOT NULL,"
+                "LineAddr INT NOT NULL,"
+                "PC INT NOT NULL,"
+                "VAddr INT NOT NULL,"
+                "Cmd TEXT NOT NULL,"
+                "ReqPtr INT NOT NULL,"
+                "PktPtr INT NOT NULL,"
+                "CacheLevel INT NOT NULL,"
+                "IsSecure INT NOT NULL,"
+                "FromCache INT NOT NULL,"
+                "NeedsWritable INT NOT NULL,"
+                "NeedsResponse INT NOT NULL,"
+                "HasSharers INT NOT NULL,"
+                "BlockCached INT NOT NULL,"
+                "MshrHit INT NOT NULL,"
+                "WbHit INT NOT NULL,"
+                "Allocated INT NOT NULL,"
+                "BlkValid INT NOT NULL,"
+                "BlkReadable INT NOT NULL,"
+                "BlkWritable INT NOT NULL,"
+                "BlkDirty INT NOT NULL,"
+                "SITE TEXT NOT NULL);"
+            )
+        if dump_snoop_filter_trace:
+            table_cmds.append(
+                "CREATE TABLE SnoopFilterTrace("
+                "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "Tick INT NOT NULL,"
+                "FilterName TEXT NOT NULL,"
+                "Event TEXT NOT NULL,"
+                "LineAddr INT NOT NULL,"
+                "Cmd TEXT NOT NULL,"
+                "ReqPortMask INT NOT NULL,"
+                "RequestedBefore INT NOT NULL,"
+                "HolderBefore INT NOT NULL,"
+                "RequestedAfter INT NOT NULL,"
+                "HolderAfter INT NOT NULL,"
+                "Allocate INT NOT NULL,"
+                "IsHit INT NOT NULL,"
+                "IsSecure INT NOT NULL,"
+                "FromCache INT NOT NULL,"
+                "NeedsResponse INT NOT NULL,"
+                "CacheResponding INT NOT NULL,"
+                "BlockCached INT NOT NULL,"
+                "HasSharers INT NOT NULL,"
+                "ReqPortName TEXT NOT NULL,"
+                "RspPortName TEXT NOT NULL,"
+                "SITE TEXT NOT NULL);"
+            )
         if dump_train_filter_trace:
             table_cmds.extend([
                 "CREATE TABLE TrainFilterTrace("

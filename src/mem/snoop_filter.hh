@@ -51,6 +51,7 @@
 #include "mem/port.hh"
 #include "mem/qport.hh"
 #include "params/SnoopFilter.hh"
+#include "sim/arch_db.hh"
 #include "sim/sim_object.hh"
 #include "sim/system.hh"
 
@@ -99,6 +100,7 @@ class SnoopFilter : public SimObject
         SimObject(p), reqLookupResult(cachedLocations.end()),
         linesize(p.system->cacheLineSize()), lookupLatency(p.lookup_latency),
         maxEntryCount(p.max_capacity / p.system->cacheLineSize()),
+        archDBer(p.arch_db),
         stats(this)
     {
     }
@@ -307,6 +309,8 @@ class SnoopFilter : public SimObject
     const Cycles lookupLatency;
     /** Max capacity in terms of cache blocks tracked, for sanity checking */
     const unsigned maxEntryCount;
+    /** ArchDB trace sink for snoop filter state transitions. */
+    ArchDBer *archDBer;
 
     /**
      * Use the lower bits of the address to keep track of the line status
@@ -316,6 +320,21 @@ class SnoopFilter : public SimObject
         /** block holds data from the secure memory space */
         LineSecure = 0x01,
     };
+
+    uint64_t trackedLineKey(Addr line_addr) const
+    {
+        return static_cast<uint64_t>(line_addr);
+    }
+
+    uint64_t maskToUInt64(const SnoopMask &mask) const;
+
+    bool shouldTraceLine(Addr line_addr) const;
+
+    void traceState(const char *event, const Packet *cpkt,
+                    Addr line_addr, const ResponsePort *req_port,
+                    const ResponsePort *rsp_port,
+                    const SnoopItem &before, const SnoopItem &after,
+                    bool allocate, bool is_hit, const char *site) const;
 
     /** Statistics */
     struct SnoopFilterStats : public statistics::Group

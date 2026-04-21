@@ -51,12 +51,14 @@ ArchDBer::ArchDBer(const Params &p)
     dumpStrideTrainTrace(p.dump_stride_train_trace),
     dumpStrideOrderTrace(p.dump_stride_order_trace),
     dumpStrideDepthCtrlTrace(p.dump_stride_depth_ctrl_trace),
+    dumpForceHitTrace(p.dump_force_hit_trace),
+    dumpSnoopFilterTrace(p.dump_snoop_filter_trace),
     dumpTrainFilterTrace(p.dump_train_filter_trace),
     dumpDespacitoTrainTrace(p.dump_despacito_train_trace),
     dumpL1WayPreTrace(p.dump_l1d_way_pre_trace),
     dumpVaddrTrace(p.dump_vaddr_trace),
     dumpLifetime(p.dump_lifetime),
-    mem_db(nullptr), zErrMsg(nullptr),rc(0),
+    mem_db(nullptr), panic_trace_db(nullptr), zErrMsg(nullptr),rc(0),
     db_path(p.arch_db_file)
 {
   int rc = sqlite3_open(":memory:", &mem_db);
@@ -68,6 +70,24 @@ ArchDBer::ArchDBer(const Params &p)
   fatal_if(db_path == "" || db_path == "None",
             "Arch db file path is not given!");
 
+  if (dumpForceHitTrace || dumpSnoopFilterTrace) {
+    if (::unlink(db_path.c_str()) != 0 && errno != ENOENT) {
+      warn("Failed to remove old ArchDB file %s: %s\n",
+           db_path.c_str(), std::strerror(errno));
+    }
+
+    int panic_rc = sqlite3_open(db_path.c_str(), &panic_trace_db);
+    if (panic_rc != SQLITE_OK) {
+      const char *err =
+          panic_trace_db ? sqlite3_errmsg(panic_trace_db) : "unknown";
+      if (panic_trace_db) {
+        sqlite3_close(panic_trace_db);
+        panic_trace_db = nullptr;
+      }
+      fatal("Can't open panic trace database: %s\n", err);
+    }
+  }
+
   for (const auto &s : p.table_cmds) {
     create_table(s);
   }
@@ -78,10 +98,50 @@ static int callback(void *NotUsed, int argc, char **argv, char **azColName){
   return 0;
 }
 
+void
+ArchDBer::execmdOn(sqlite3 *db, const std::string &cmd, const char *db_name)
+{
+  char *err_msg = nullptr;
+  const int local_rc = sqlite3_exec(db, cmd.c_str(), callback, 0, &err_msg);
+  if (local_rc != SQLITE_OK) {
+    const std::string err = err_msg ? err_msg : "unknown";
+    sqlite3_free(err_msg);
+    fatal("SQL error on %s: %s\n", db_name, err.c_str());
+  }
+}
+
+bool
+ArchDBer::shouldMirrorPanicTable(const std::string &sql) const
+{
+  return (dumpForceHitTrace &&
+          sql.find("CREATE TABLE ForceHitTrace(") != std::string::npos) ||
+         (dumpSnoopFilterTrace &&
+          sql.find("CREATE TABLE SnoopFilterTrace(") != std::string::npos);
+}
+
+void
+ArchDBer::mirrorPanicTraceWrite(const std::string &sql, bool force_hit,
+                                bool snoop_filter)
+{
+  if (!panic_trace_db) {
+    return;
+  }
+
+  if ((force_hit && !dumpForceHitTrace) ||
+      (snoop_filter && !dumpSnoopFilterTrace)) {
+    return;
+  }
+
+  execmdOn(panic_trace_db, sql, "panic_trace_db");
+}
+
 void ArchDBer::create_table(const std::string &sql) {
   // create table
   rc = sqlite3_exec(mem_db, sql.c_str(), callback, 0, &zErrMsg);
   fatal_if(rc != SQLITE_OK, "SQL error: %s\n", zErrMsg);
+  if (panic_trace_db && shouldMirrorPanicTable(sql)) {
+    execmdOn(panic_trace_db, sql, "panic_trace_db");
+  }
   inform("Table created: %s\n", sql.c_str());
 }
 
@@ -91,18 +151,31 @@ void ArchDBer::start_recording() {
 
 void ArchDBer::save_db() {
   warn("saving memdb to %s ...\n", db_path.c_str());
-  sqlite3 *disk_db;
+  sqlite3 *disk_db = panic_trace_db;
   sqlite3_backup *pBackup;
-  int rc = sqlite3_open(db_path.c_str(), &disk_db);
-  if (rc == SQLITE_OK){
+  bool close_after_backup = false;
+  if (!disk_db) {
+    int rc = sqlite3_open(db_path.c_str(), &disk_db);
+    fatal_if(rc != SQLITE_OK, "Can't open backup database: %s\n",
+             disk_db ? sqlite3_errmsg(disk_db) : "unknown");
+    close_after_backup = true;
+  }
+  if (disk_db) {
     pBackup = sqlite3_backup_init(disk_db, "main", mem_db, "main");
+    fatal_if(!pBackup, "SQL backup init error: %s\n", sqlite3_errmsg(disk_db));
     if (pBackup){
       (void)sqlite3_backup_step(pBackup, -1);
       (void)sqlite3_backup_finish(pBackup);
     }
     rc = sqlite3_errcode(disk_db);
+    fatal_if(rc != SQLITE_OK, "SQL backup error: %s\n", sqlite3_errmsg(disk_db));
   }
-  sqlite3_close(disk_db);
+  if (close_after_backup && disk_db) {
+    sqlite3_close(disk_db);
+  } else if (panic_trace_db) {
+    sqlite3_close(panic_trace_db);
+    panic_trace_db = nullptr;
+  }
 }
 
 void
@@ -336,6 +409,113 @@ ArchDBer::strideDepthDecisionTraceWrite(
       std::to_string(sqliteSignedInt(lowerTimelyPct)) + ",'" +
       sqlEscape(site) + "');";
   execmd(sql);
+}
+
+void
+ArchDBer::trackForceHitLine(uint64_t lineKey)
+{
+  if (!(dumpGlobal && (dumpForceHitTrace || dumpSnoopFilterTrace))) {
+    return;
+  }
+  trackedForceHitLines.insert(lineKey);
+}
+
+bool
+ArchDBer::isTrackedForceHitLine(uint64_t lineKey) const
+{
+  return trackedForceHitLines.find(lineKey) != trackedForceHitLines.end();
+}
+
+void
+ArchDBer::forceHitTraceWrite(
+    Tick tick, const char *cache, const char *event, Addr lineAddr,
+    Addr pc, Addr vaddr, const char *cmd, uint64_t reqPtr,
+    uint64_t pktPtr, int cacheLevel, bool isSecure, bool fromCache,
+    bool needsWritable, bool needsResponse, bool hasSharers,
+    bool blockCached, bool mshrHit, bool wbHit, bool allocated,
+    bool blkValid, bool blkReadable, bool blkWritable, bool blkDirty,
+    const char *site)
+{
+  const bool dump_me = dumpGlobal && dumpForceHitTrace;
+  if (!dump_me) {
+    return;
+  }
+
+  const std::string sql =
+      "INSERT INTO ForceHitTrace("
+      "Tick,Cache,Event,LineAddr,PC,VAddr,Cmd,ReqPtr,PktPtr,"
+      "CacheLevel,IsSecure,FromCache,NeedsWritable,NeedsResponse,"
+      "HasSharers,BlockCached,MshrHit,WbHit,Allocated,BlkValid,"
+      "BlkReadable,BlkWritable,BlkDirty,SITE) VALUES(" +
+      std::to_string(sqliteSignedInt(tick)) + ",'" +
+      sqlEscape(cache) + "','" + sqlEscape(event) + "'," +
+      std::to_string(sqliteSignedInt(lineAddr)) + "," +
+      std::to_string(sqliteSignedInt(pc)) + "," +
+      std::to_string(sqliteSignedInt(vaddr)) + ",'" +
+      sqlEscape(cmd) + "'," +
+      std::to_string(sqliteSignedInt(reqPtr)) + "," +
+      std::to_string(sqliteSignedInt(pktPtr)) + "," +
+      std::to_string(cacheLevel) + "," +
+      std::to_string(isSecure ? 1 : 0) + "," +
+      std::to_string(fromCache ? 1 : 0) + "," +
+      std::to_string(needsWritable ? 1 : 0) + "," +
+      std::to_string(needsResponse ? 1 : 0) + "," +
+      std::to_string(hasSharers ? 1 : 0) + "," +
+      std::to_string(blockCached ? 1 : 0) + "," +
+      std::to_string(mshrHit ? 1 : 0) + "," +
+      std::to_string(wbHit ? 1 : 0) + "," +
+      std::to_string(allocated ? 1 : 0) + "," +
+      std::to_string(blkValid ? 1 : 0) + "," +
+      std::to_string(blkReadable ? 1 : 0) + "," +
+      std::to_string(blkWritable ? 1 : 0) + "," +
+      std::to_string(blkDirty ? 1 : 0) + ",'" +
+      sqlEscape(site) + "');";
+  execmd(sql);
+  mirrorPanicTraceWrite(sql, true, false);
+}
+
+void
+ArchDBer::snoopFilterTraceWrite(
+    Tick tick, const char *filterName, const char *event, Addr lineAddr,
+    const char *cmd, uint64_t reqPortMask, uint64_t requestedBefore,
+    uint64_t holderBefore, uint64_t requestedAfter, uint64_t holderAfter,
+    bool allocate, bool isHit, bool isSecure, bool fromCache,
+    bool needsResponse, bool cacheResponding, bool blockCached,
+    bool hasSharers, const char *reqPortName, const char *rspPortName,
+    const char *site)
+{
+  const bool dump_me = dumpGlobal && dumpSnoopFilterTrace;
+  if (!dump_me) {
+    return;
+  }
+
+  const std::string sql =
+      "INSERT INTO SnoopFilterTrace("
+      "Tick,FilterName,Event,LineAddr,Cmd,ReqPortMask,RequestedBefore,"
+      "HolderBefore,RequestedAfter,HolderAfter,Allocate,IsHit,IsSecure,"
+      "FromCache,NeedsResponse,CacheResponding,BlockCached,HasSharers,"
+      "ReqPortName,RspPortName,SITE) VALUES(" +
+      std::to_string(sqliteSignedInt(tick)) + ",'" +
+      sqlEscape(filterName) + "','" + sqlEscape(event) + "'," +
+      std::to_string(sqliteSignedInt(lineAddr)) + ",'" +
+      sqlEscape(cmd) + "'," +
+      std::to_string(sqliteSignedInt(reqPortMask)) + "," +
+      std::to_string(sqliteSignedInt(requestedBefore)) + "," +
+      std::to_string(sqliteSignedInt(holderBefore)) + "," +
+      std::to_string(sqliteSignedInt(requestedAfter)) + "," +
+      std::to_string(sqliteSignedInt(holderAfter)) + "," +
+      std::to_string(allocate ? 1 : 0) + "," +
+      std::to_string(isHit ? 1 : 0) + "," +
+      std::to_string(isSecure ? 1 : 0) + "," +
+      std::to_string(fromCache ? 1 : 0) + "," +
+      std::to_string(needsResponse ? 1 : 0) + "," +
+      std::to_string(cacheResponding ? 1 : 0) + "," +
+      std::to_string(blockCached ? 1 : 0) + "," +
+      std::to_string(hasSharers ? 1 : 0) + ",'" +
+      sqlEscape(reqPortName) + "','" + sqlEscape(rspPortName) + "','" +
+      sqlEscape(site) + "');";
+  execmd(sql);
+  mirrorPanicTraceWrite(sql, false, true);
 }
 
 void

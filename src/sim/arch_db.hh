@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <unordered_set>
 
 #include "base/logging.hh"
 #include "base/types.hh"
@@ -63,6 +64,8 @@ class ArchDBer : public SimObject
     bool dumpStrideTrainTrace;
     bool dumpStrideOrderTrace;
     bool dumpStrideDepthCtrlTrace;
+    bool dumpForceHitTrace;
+    bool dumpSnoopFilterTrace;
     bool dumpTrainFilterTrace;
     bool dumpDespacitoTrainTrace;
     bool dumpL1WayPreTrace;
@@ -71,14 +74,20 @@ class ArchDBer : public SimObject
     bool dumpLifetimeMore;
 
     sqlite3 *mem_db;
+    sqlite3 *panic_trace_db;
     char * zErrMsg;
     int rc;
     //path to save
     std::string db_path;
     // a trace corrsponds to a table
     std::map<std::string, DBTraceManager> _traces;
+    std::unordered_set<uint64_t> trackedForceHitLines;
 
     void create_table(const std::string &sql);
+    void execmdOn(sqlite3 *db, const std::string &cmd, const char *db_name);
+    bool shouldMirrorPanicTable(const std::string &sql) const;
+    void mirrorPanicTraceWrite(const std::string &sql, bool force_hit,
+                               bool snoop_filter);
 
     void save_db();
   public:
@@ -134,6 +143,24 @@ class ArchDBer : public SimObject
         uint64_t cacheLateWeight, uint64_t raiseThresholdPct,
         uint64_t lowerWeakLatePct, uint64_t lowerTimelyPct,
         const char *site);
+    void trackForceHitLine(uint64_t lineKey);
+    bool isTrackedForceHitLine(uint64_t lineKey) const;
+    void forceHitTraceWrite(
+        Tick tick, const char *cache, const char *event, Addr lineAddr,
+        Addr pc, Addr vaddr, const char *cmd, uint64_t reqPtr,
+        uint64_t pktPtr, int cacheLevel, bool isSecure, bool fromCache,
+        bool needsWritable, bool needsResponse, bool hasSharers,
+        bool blockCached, bool mshrHit, bool wbHit, bool allocated,
+        bool blkValid, bool blkReadable, bool blkWritable, bool blkDirty,
+        const char *site);
+    void snoopFilterTraceWrite(
+        Tick tick, const char *filterName, const char *event, Addr lineAddr,
+        const char *cmd, uint64_t reqPortMask, uint64_t requestedBefore,
+        uint64_t holderBefore, uint64_t requestedAfter,
+        uint64_t holderAfter, bool allocate, bool isHit, bool isSecure,
+        bool fromCache, bool needsResponse, bool cacheResponding,
+        bool blockCached, bool hasSharers, const char *reqPortName,
+        const char *rspPortName, const char *site);
     void trainFilterTraceWrite(Tick tick, const char *stage, uint64_t seqNum,
                                Addr pc, Addr addr, Addr blockAddr,
                                bool isLoad, bool miss, int pfSource,

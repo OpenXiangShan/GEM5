@@ -64,6 +64,10 @@ class ArchDBer(SimObject):
     dump_stride_depth_ctrl_trace = Param.Bool(
         False, "Dump stride global depth controller trace"
     )
+    dump_force_hit_trace = Param.Bool(False, "Dump force-hit cache path trace")
+    dump_snoop_filter_trace = Param.Bool(
+        False, "Dump snoop filter state trace for force-hit lines"
+    )
     dump_train_filter_trace = Param.Bool(False, "Dump TrainFilter trace")
     dump_despacito_train_trace = Param.Bool(False, "Dump despacito train trace")
     dump_l1d_way_pre_trace = Param.Bool(False, "Dump l1d way predction trace")
