@@ -1043,11 +1043,9 @@ class BTBTAGE(TimedBaseBTBPredictor):
     needMoreHistories = Param.Bool(True, "BTBTAGE needs more histories")
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
     updateOnRead = Param.Bool(False, "Enable update on read, no need to save tage meta in FTQ")
+    indexHistMixMode = Param.String("full", "BTBTAGE index history mix mode: full, low, or high")
     numPredictors = Param.Unsigned(8, "Number of TAGE predictors")
-    tableSizes = VectorParam.Unsigned(
-        [1024, 1024, 4096, 4096, 2048, 2048, 1024, 1024],
-        "the TAGE T0~Tn length",
-    )
+    tableSizes = VectorParam.Unsigned([2048] * 8, "the TAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([13] * 8, "the T0~Tn entry's tag bit size")
     TTagPcShifts = VectorParam.Unsigned([1] * 8, "when the T0~Tn entry's tag generating, PC right shift")
     blockSize = 32 # tage index function uses 32B aligned block address

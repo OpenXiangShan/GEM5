@@ -99,6 +99,8 @@ def setKmhV3Params(args, system):
             if args.btb_tage_upper_bound:
                 cpu.branchPred.tage = BTBTAGEUpperBound(
                     usePathHashHistory=True)
+            else:
+                cpu.branchPred.tage.indexHistMixMode = "low"
 
             cpu.branchPred.mbtb.resolvedUpdate = True
             cpu.branchPred.tage.resolvedUpdate = True

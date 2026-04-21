@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -46,6 +47,12 @@ class BTBTAGE : public TimedBaseBTBPredictor
     using bitset = boost::dynamic_bitset<>;
   public:
     static constexpr unsigned kNumSlotsPerEntry = 2;
+    enum class IndexHistMixMode
+    {
+        Full,
+        Low,
+        High,
+    };
 #ifdef UNIT_TEST
     // Test constructor
     BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2,
@@ -227,6 +234,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Calculate TAGE index with folded history (uint64_t version for performance)
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist);
 
+    void setIndexHistMixMode(const std::string &mode);
+
     // Calculate TAGE tag for a given (block-aligned) PC and table.
     Addr getTageTag(Addr pc, int table);
 
@@ -312,6 +321,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Number of tables to allocate on misprediction
     unsigned numTablesToAlloc;
+
+    IndexHistMixMode indexHistMixMode;
 
     // Instruction shift amount
     unsigned instShiftAmt {1};

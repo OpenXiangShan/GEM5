@@ -856,6 +856,37 @@ int findWayWithTagAndPosition(BTBTAGE* tage, int table, Addr index,
     return -1;
 }
 
+Addr expectedIndexForMixMode(BTBTAGE *tage, Addr pc, int table,
+                             uint64_t foldedHist,
+                             BTBTAGE::IndexHistMixMode mode)
+{
+    const unsigned width = tage->tableIndexBits[table];
+    const Addr mask = (Addr(1) << width) - 1;
+    const unsigned pcShift =
+        tage->enableBankConflict ? tage->indexShift : tage->bankBaseShift;
+    const Addr pcBits = (pc >> pcShift) & mask;
+    const Addr foldedBits = foldedHist & mask;
+    Addr mixedBits = pcBits ^ foldedBits;
+
+    if (mode != BTBTAGE::IndexHistMixMode::Full && width > 0) {
+        const unsigned lowBits = width / 2;
+        const unsigned highBits = width - lowBits;
+        const Addr lowMask = lowBits == 0 ? 0 : ((Addr(1) << lowBits) - 1);
+        const Addr highMask = mask & ~lowMask;
+
+        if (mode == BTBTAGE::IndexHistMixMode::Low) {
+            mixedBits = (foldedBits & highMask) |
+                        ((pcBits ^ foldedBits) & lowMask);
+        } else {
+            const Addr highMixed = highBits == 0 ? 0
+                : ((pcBits ^ foldedBits) & highMask);
+            mixedBits = (foldedBits & lowMask) | highMixed;
+        }
+    }
+
+    return mixedBits % tage->tableSizes[table];
+}
+
 
 /**
  * @brief Test slot-aware lookup in a shared tag entry
@@ -1109,19 +1140,11 @@ TEST_F(BTBTAGETest, SameTagFullEntryReplacesWeakishNonUsefulSlot) {
     const Addr newPC = startPC + 8;
     const Addr index = tage->getTageIndex(startPC, testTable);
     const Addr tag = tage->getTageTag(startPC, testTable);
-    auto collidingBlocks = findCollidingBlockStarts(tage, startPC, testTable, 1);
-    ASSERT_EQ(collidingBlocks.size(), 1u);
-    const Addr otherBlock = collidingBlocks[0];
-    const Addr otherTag = tage->getTageTag(otherBlock, testTable);
 
     createManualTageEntry(tage, testTable, index, 0, tag,
                           2, true, keepPC, 0, 0, startPC, true);
     createManualTageEntry(tage, testTable, index, 0, tag,
                           0, false, replacePC, 0, 1, startPC, false);
-    createManualTageEntry(tage, testTable, index, 1, otherTag,
-                          2, true, otherBlock, 0, 0, otherBlock, true);
-    createManualTageEntry(tage, testTable, index, 1, otherTag,
-                          -2, true, otherBlock + 4, 0, 1, otherBlock, false);
 
     BTBEntry newEntry = createBTBEntry(newPC);
     forceMispredPredictUpdateCycle(tage, startPC, newEntry, history, stagePreds);
@@ -1140,7 +1163,7 @@ TEST_F(BTBTAGETest, SameTagFullEntryReplacesWeakishNonUsefulSlot) {
     EXPECT_FALSE(entry.slots[1].useful);
 }
 
-TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotSpillsToInvalidWay) {
+TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotIgnoresInvalidWay) {
     tage = new BTBTAGE(1, 2, 32);
     memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
     history.resize(64, false);
@@ -1159,28 +1182,26 @@ TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotSpillsToInvalidWay) {
     createManualTageEntry(tage, testTable, index, 0, tag,
                           -2, true, protectedPC, 0, 1, startPC, false);
     BTBEntry newEntry = createBTBEntry(newPC);
-    forceMispredPredictUpdateCycle(tage, startPC, newEntry, history, stagePreds);
+    forceAllocationUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
 
     const auto &entry0 = tage->tageTable[testTable][index][0];
     const auto &entry1 = tage->tageTable[testTable][index][1];
     ASSERT_TRUE(entry0.valid);
-    ASSERT_TRUE(entry1.valid);
-    EXPECT_EQ(countWaysWithTag(tage, testTable, index, tag), 2u);
+    EXPECT_FALSE(entry1.valid);
+    EXPECT_EQ(countWaysWithTag(tage, testTable, index, tag), 1u);
     EXPECT_EQ(entry0.slots[0].position, tage->getBranchIndexInBlock(weakenedPC, startPC));
-    EXPECT_EQ(entry0.slots[0].counter, 2);
+    EXPECT_EQ(entry0.slots[0].counter, 1);
     EXPECT_EQ(entry0.slots[1].position, tage->getBranchIndexInBlock(protectedPC, startPC));
     EXPECT_EQ(entry0.slots[1].counter, -2);
     EXPECT_EQ(findWayWithTagAndPosition(tage, testTable, index, tag,
                                         tage->getBranchIndexInBlock(newPC, startPC)),
-              1);
-    EXPECT_EQ(entry1.slots[0].counter, -1);
-    EXPECT_EQ(tage->tageStats.allocSameTagSpillUseInvalidWay, 1)
-        << "a full non-replaceable same-tag working set should spill into an invalid way";
-    EXPECT_EQ(tage->tageStats.updateAllocFailure, 0)
-        << "successful same-tag spill should not count as an allocation failure";
+              -1);
+    EXPECT_EQ(tage->tageStats.allocSameTagSpillUseInvalidWay, 0);
+    EXPECT_EQ(tage->tageStats.updateAllocFailure, 1)
+        << "unique same-tag policy should refuse to consume another invalid way";
 }
 
-TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotSpillsByWholeEntryEviction) {
+TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotIgnoresWholeEntryVictim) {
     tage = new BTBTAGE(1, 2, 32);
     memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
     history.resize(64, false);
@@ -1209,22 +1230,25 @@ TEST_F(BTBTAGETest, SameTagFullEntryWithoutReplaceableSlotSpillsByWholeEntryEvic
                           -1, false, otherBlock + 4, 0, 1, otherBlock, false);
 
     BTBEntry newEntry = createBTBEntry(newPC);
-    forceMispredPredictUpdateCycle(tage, startPC, newEntry, history, stagePreds);
+    forceAllocationUpdateCycle(tage, startPC, newEntry, false, history, stagePreds);
 
     const auto &entry0 = tage->tageTable[testTable][index][0];
     const auto &entry1 = tage->tageTable[testTable][index][1];
     ASSERT_TRUE(entry0.valid);
     ASSERT_TRUE(entry1.valid);
-    EXPECT_EQ(countWaysWithTag(tage, testTable, index, tag), 2u);
-    EXPECT_EQ(entry1.tag, tag)
-        << "same-tag spill should be allowed to reuse a whole-entry eviction victim";
+    EXPECT_EQ(countWaysWithTag(tage, testTable, index, tag), 1u);
+    EXPECT_EQ(entry1.tag, otherTag)
+        << "unique same-tag policy should not evict a different-tag entry just to clone a tag";
+    EXPECT_EQ(entry0.slots[0].counter, 1)
+        << "failed same-tag allocation should weaken the first strong non-useful slot";
     EXPECT_EQ(findWayWithTagAndPosition(tage, testTable, index, tag,
                                         tage->getBranchIndexInBlock(newPC, startPC)),
-              1);
-    EXPECT_EQ(tage->tageStats.allocSameTagSpillWholeEvict, 1);
+              -1);
+    EXPECT_EQ(tage->tageStats.allocSameTagSpillWholeEvict, 0);
+    EXPECT_EQ(tage->tageStats.updateAllocFailure, 1);
 }
 
-TEST_F(BTBTAGETest, SameTagSpillFailureWeakensSetAndCountsAllocationFailure) {
+TEST_F(BTBTAGETest, SameTagFailureWeakensSetAndCountsAllocationFailure) {
     tage = new BTBTAGE(1, 2, 32);
     memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
     history.resize(64, false);
@@ -1259,12 +1283,13 @@ TEST_F(BTBTAGETest, SameTagSpillFailureWeakensSetAndCountsAllocationFailure) {
     EXPECT_EQ(countWaysWithTag(tage, testTable, index, tag), 1u);
     EXPECT_EQ(entry0.slots[0].position, tage->getBranchIndexInBlock(weakenedPC, startPC));
     EXPECT_EQ(entry0.slots[0].counter, 1)
-        << "when same-tag spill has no invalid way or whole-entry victim, the set should weaken the first strong non-useful slot";
+        << "when same-tag allocation cannot hit, fill, or replace, the set "
+           "should weaken the first strong non-useful slot";
     EXPECT_EQ(findWayWithTagAndPosition(tage, testTable, index, tag,
                                         tage->getBranchIndexInBlock(newPC, startPC)),
               -1);
     EXPECT_EQ(tage->tageStats.updateAllocFailure, 1)
-        << "same-tag spill failure should still count as an allocation failure";
+        << "same-tag allocation failure should still count as an allocation failure";
 }
 
 TEST_F(BTBTAGETest, UpdateUsesBranchPositionWhenSlotOrderChanges) {
@@ -1318,7 +1343,7 @@ TEST_F(BTBTAGETest, UpdateUsesBranchPositionWhenSlotOrderChanges) {
         << "the later branch update should follow branch position after slot reordering";
 }
 
-TEST_F(BTBTAGETest, DuplicateSameTagEntriesLookupByPosition) {
+TEST_F(BTBTAGETest, UniqueSameTagEntryCountsSingleSlotMiss) {
     tage = new BTBTAGE(1, 2, 32);
     memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
     history.resize(64, false);
@@ -1326,101 +1351,68 @@ TEST_F(BTBTAGETest, DuplicateSameTagEntriesLookupByPosition) {
 
     const int testTable = 0;
     const Addr startPC = 0x4400;
-    const Addr entry1PC = startPC;
-    const Addr entry2PC = startPC + 4;
-    const Addr index = tage->getTageIndex(startPC, testTable);
-    const Addr tag = tage->getTageTag(startPC, testTable);
-
-    createManualTageEntry(tage, testTable, index, 0, tag,
-                          2, false, entry1PC, 0, 0, startPC, true);
-    createManualTageEntry(tage, testTable, index, 1, tag,
-                          -2, false, entry2PC, 0, 0, startPC, true);
-
-    stagePreds[1].btbEntries = {createBTBEntry(entry1PC), createBTBEntry(entry2PC)};
-    tage->putPCHistory(startPC, history, stagePreds);
-
-    auto result1 = findCondTaken(stagePreds[1].condTakens, entry1PC);
-    auto result2 = findCondTaken(stagePreds[1].condTakens, entry2PC);
-    ASSERT_TRUE(result1.first);
-    ASSERT_TRUE(result2.first);
-    EXPECT_TRUE(result1.second);
-    EXPECT_FALSE(result2.second);
-
-    auto meta = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
-    ASSERT_TRUE(meta->preds.count(entry1PC));
-    ASSERT_TRUE(meta->preds.count(entry2PC));
-    EXPECT_EQ(meta->preds[entry1PC].mainInfo.way, 0u);
-    EXPECT_EQ(meta->preds[entry2PC].mainInfo.way, 1u);
-}
-
-TEST_F(BTBTAGETest, DuplicateSameTagEntriesCountSingleSlotMiss) {
-    tage = new BTBTAGE(1, 2, 32);
-    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
-    history.resize(64, false);
-    stagePreds.resize(2);
-
-    const int testTable = 0;
-    const Addr startPC = 0x4800;
     const Addr index = tage->getTageIndex(startPC, testTable);
     const Addr tag = tage->getTageTag(startPC, testTable);
 
     createManualTageEntry(tage, testTable, index, 0, tag,
                           2, false, startPC, 0, 0, startPC, true);
-    createManualTageEntry(tage, testTable, index, 1, tag,
-                          -2, false, startPC + 4, 0, 0, startPC, true);
 
     stagePreds[1].btbEntries = {createBTBEntry(startPC + 8)};
     tage->putPCHistory(startPC, history, stagePreds);
 
     EXPECT_EQ(tage->tageStats.predTagHitSlotMiss, 1)
-        << "multiple same-tag entries without the requested position should still count as one table-level slot miss";
+        << "a unique same-tag entry without the requested position should count as one table-level slot miss";
 }
 
-TEST_F(BTBTAGETest, UpdateUsesBranchPositionWhenProviderWayChanges) {
+TEST_F(BTBTAGETest, GetTageIndexSupportsFullLowAndHighModes) {
     tage = new BTBTAGE(1, 2, 32);
-    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
-    history.resize(64, false);
-    stagePreds.resize(2);
+    const Addr startPC = 0x4c12;
+    const uint64_t foldedHist = 0x15;
 
-    const Addr startPC = 0x4c00;
-    const Addr index = tage->getTageIndex(startPC, 0);
-    const Addr tag = tage->getTageTag(startPC, 0);
-    BTBEntry lateEntry = createBTBEntry(startPC + 4, true, true, false, 0);
-    BTBEntry earlierEntry = createBTBEntry(startPC, true, true, false, 0);
+    tage->setIndexHistMixMode("full");
+    EXPECT_EQ(tage->getTageIndex(startPC, 0, foldedHist),
+              expectedIndexForMixMode(tage, startPC, 0, foldedHist,
+                                      BTBTAGE::IndexHistMixMode::Full));
 
-    createManualTageEntry(tage, 0, index, 0, tag,
-                          2, false, lateEntry.pc, 0, 0, startPC, true);
+    tage->setIndexHistMixMode("low");
+    const Addr lowIndex = tage->getTageIndex(startPC, 0, foldedHist);
+    EXPECT_EQ(lowIndex,
+              expectedIndexForMixMode(tage, startPC, 0, foldedHist,
+                                      BTBTAGE::IndexHistMixMode::Low));
 
-    stagePreds[1].btbEntries = {lateEntry};
-    tage->putPCHistory(startPC, history, stagePreds);
-    auto meta = tage->getPredictionMeta();
-    auto tage_meta = std::static_pointer_cast<BTBTAGE::TageMeta>(meta);
-    ASSERT_TRUE(tage_meta->preds.count(lateEntry.pc));
-    ASSERT_EQ(tage_meta->preds[lateEntry.pc].mainInfo.way, 0u);
+    tage->setIndexHistMixMode("high");
+    const Addr highIndex = tage->getTageIndex(startPC, 0, foldedHist);
+    EXPECT_EQ(highIndex,
+              expectedIndexForMixMode(tage, startPC, 0, foldedHist,
+                                      BTBTAGE::IndexHistMixMode::High));
 
-    createManualTageEntry(tage, 0, index, 0, tag,
-                          -1, false, earlierEntry.pc, 0, 0, startPC, true);
-    createManualTageEntry(tage, 0, index, 1, tag,
-                          2, false, lateEntry.pc, 0, 0, startPC, true);
+    tage->setIndexHistMixMode("full");
+    const Addr fullIndex = tage->getTageIndex(startPC, 0, foldedHist);
+    EXPECT_NE(fullIndex, lowIndex);
+    EXPECT_NE(fullIndex, highIndex);
+}
 
-    FetchTarget stream;
-    stream.startPC = startPC;
-    stream.exeBranchInfo = lateEntry;
-    stream.exeTaken = true;
-    stream.resolved = true;
-    stream.predBranchInfo = lateEntry;
-    stream.updateBTBEntries = {lateEntry};
-    stream.updateIsOldEntry = true;
-    stream.predMetas[0] = meta;
+TEST_F(BTBTAGETest, GetTageIndexHighModeUsesExtraUpperBitOnOddWidths) {
+    tage = new BTBTAGE(1, 2, 32);
+    const Addr startPC = 0x5096;
+    const uint64_t foldedHist = 0x1b;
 
-    tage->update(stream);
+    ASSERT_EQ(tage->tableIndexBits[0], 5u)
+        << "tableSize=32 should create an odd index width for this test";
 
-    const auto &way0 = tage->tageTable[0][index][0];
-    const auto &way1 = tage->tageTable[0][index][1];
-    EXPECT_EQ(way0.slots[0].counter, -1)
-        << "set-level fallback should not update the stale preferred way";
-    EXPECT_EQ(way1.slots[0].counter, 3)
-        << "set-level fallback should relocate to the live same-tag entry by position";
+    tage->setIndexHistMixMode("low");
+    const Addr lowIndex = tage->getTageIndex(startPC, 0, foldedHist);
+    EXPECT_EQ(lowIndex,
+              expectedIndexForMixMode(tage, startPC, 0, foldedHist,
+                                      BTBTAGE::IndexHistMixMode::Low));
+
+    tage->setIndexHistMixMode("high");
+    const Addr highIndex = tage->getTageIndex(startPC, 0, foldedHist);
+    EXPECT_EQ(highIndex,
+              expectedIndexForMixMode(tage, startPC, 0, foldedHist,
+                                      BTBTAGE::IndexHistMixMode::High));
+    EXPECT_NE(lowIndex, highIndex)
+        << "odd-width partial XOR should give the extra bit to the high half";
 }
 
 TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {

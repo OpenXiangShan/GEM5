@@ -43,6 +43,7 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
+      indexHistMixMode(IndexHistMixMode::Full),
       updateOnRead(false),
       numBanks(numBanks),
       bankIdWidth(ceilLog2(numBanks)),
@@ -81,6 +82,7 @@ maxBranchPositions(p.maxBranchPositions),
 useAltOnNaSize(p.useAltOnNaSize),
 useAltOnNaWidth(p.useAltOnNaWidth),
 numTablesToAlloc(p.numTablesToAlloc),
+indexHistMixMode(IndexHistMixMode::Full),
 enableSC(p.enableSC),
 updateOnRead(p.updateOnRead),
 numBanks(p.numBanks),
@@ -99,6 +101,7 @@ tageStats(this, p.numPredictors, p.numBanks)
     if (!p.updateOnRead) {
         warn("BTBTAGE: Bank simulation works better with updateOnRead=true");
     }
+    setIndexHistMixMode(p.indexHistMixMode);
 #endif
     if (numWays.size() == 1 && numPredictors > 1) {
         numWays.resize(numPredictors, numWays.front());
@@ -149,6 +152,26 @@ tageStats(this, p.numPredictors, p.numBanks)
 
 BTBTAGE::~BTBTAGE()
 {
+}
+
+void
+BTBTAGE::setIndexHistMixMode(const std::string &mode)
+{
+    if (mode == "low") {
+        indexHistMixMode = IndexHistMixMode::Low;
+        return;
+    }
+    if (mode == "high") {
+        indexHistMixMode = IndexHistMixMode::High;
+        return;
+    }
+    if (mode != "full") {
+#ifndef UNIT_TEST
+        warn("BTBTAGE: invalid indexHistMixMode '%s', fallback to 'full'",
+             mode);
+#endif
+    }
+    indexHistMixMode = IndexHistMixMode::Full;
 }
 
 // Set up tracing for debugging
@@ -231,51 +254,45 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                         : getTageTag(blockBase, i);
 
         const unsigned ways = getNumWays(i);
-        bool saw_same_tag_entry = false;
-        bool slot_hit_in_table = false;
+        int same_tag_way = -1;
         for (unsigned way = 0; way < ways; way++) {
             auto &entry = tageTable[i][index][way];
             if (!entry.valid || tag != entry.tag) {
                 continue;
             }
-            saw_same_tag_entry = true;
-
-            for (unsigned slot = 0; slot < entry.slots.size(); ++slot) {
-                const auto &slot_entry = entry.slots[slot];
-                if (!slot_entry.valid || slot_entry.position != position) {
-                    continue;
-                }
-
-                assert(!slot_hit_in_table &&
-                       "Duplicate same-tag positions detected in BTBTAGE lookup path");
-                slot_hit_in_table = true;
-
-                DPRINTF(TAGE,
-                    "hit table %d[%lu][%u] slot %u: tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, slot, tag, slot_entry.counter,
-                    slot_entry.useful, btb_entry.pc, position);
-                if (!provided) {
-                    // First slot hit becomes main prediction.
-                    main_info = TageTableInfo(true, entry, i, index, tag, way,
-                                              slot, slot_entry);
-                    provided = true;
-                } else if (!alt_provided) {
-                    // Second slot hit becomes alternate prediction.
-                    alt_info = TageTableInfo(true, entry, i, index, tag, way,
-                                             slot, slot_entry);
-                    alt_provided = true;
-                }
-            }
+            assert(same_tag_way < 0 &&
+                   "Duplicate same-tag entries detected in BTBTAGE lookup path");
+            same_tag_way = static_cast<int>(way);
         }
 
-        if (saw_same_tag_entry && !slot_hit_in_table) {
-            tageStats.predTagHitSlotMiss++;
+        if (same_tag_way >= 0) {
+            auto &entry = tageTable[i][index][same_tag_way];
+            int slot = findSlotByPosition(entry, position);
+            if (slot >= 0) {
+                const auto &slot_entry = entry.slots[slot];
+                DPRINTF(TAGE,
+                    "hit table %d[%lu][%u] slot %d: tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
+                    i, index, same_tag_way, slot, tag, slot_entry.counter,
+                    slot_entry.useful, btb_entry.pc, position);
+                if (!provided) {
+                    main_info = TageTableInfo(true, entry, i, index, tag,
+                                              same_tag_way, slot, slot_entry);
+                    provided = true;
+                } else if (!alt_provided) {
+                    alt_info = TageTableInfo(true, entry, i, index, tag,
+                                             same_tag_way, slot, slot_entry);
+                    alt_provided = true;
+                }
+            } else {
+                tageStats.predTagHitSlotMiss++;
 #ifndef UNIT_TEST
-            tageStats.predTagHitSlotMissByTable[i]++;
+                tageStats.predTagHitSlotMissByTable[i]++;
 #endif
-            DPRINTF(TAGE, "tag hit but slot miss table %d[%lu], tag %lu, btb_pc %#lx, pos %u\n",
-                i, index, tag, btb_entry.pc, position);
-        } else if (!saw_same_tag_entry) {
+                DPRINTF(TAGE,
+                        "tag hit but slot miss table %d[%lu], tag %lu, btb_pc %#lx, pos %u\n",
+                        i, index, tag, btb_entry.pc, position);
+            }
+        } else {
             DPRINTF(TAGE, "miss table %d[%lu] for tag %lu, btb_pc %#lx, pos %u\n",
                 i, index, tag, btb_entry.pc, position);
         }
@@ -476,40 +493,39 @@ BTBTAGE::findLiveSameTagSlot(unsigned table, Addr index, Addr tag,
 {
     const auto &set = tageTable[table][index];
     const unsigned ways = getNumWays(table);
+    bool found = false;
+    bool saw_same_tag_entry = false;
 
-    auto searchWay = [&](unsigned way) {
+    auto inspectWay = [&](unsigned way) {
         if (way >= ways) {
-            return false;
+            return;
         }
         const auto &entry = set[way];
         if (!entry.valid || entry.tag != tag) {
-            return false;
+            return;
         }
+
+        assert(!saw_same_tag_entry &&
+               "Duplicate same-tag entries detected in BTBTAGE fallback path");
+        saw_same_tag_entry = true;
 
         int slot = findSlotByPosition(entry, position);
-        if (slot < 0) {
-            return false;
+        if (slot >= 0) {
+            resolved_way = way;
+            resolved_slot = static_cast<unsigned>(slot);
+            found = true;
         }
-
-        resolved_way = way;
-        resolved_slot = static_cast<unsigned>(slot);
-        return true;
     };
 
-    if (searchWay(preferred_way)) {
-        return true;
-    }
-
+    inspectWay(preferred_way);
     for (unsigned way = 0; way < ways; ++way) {
         if (way == preferred_way) {
             continue;
         }
-        if (searchWay(way)) {
-            return true;
-        }
+        inspectWay(way);
     }
 
-    return false;
+    return found;
 }
 
 bool
@@ -805,15 +821,14 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     const unsigned position = getBranchIndexInBlock(entry.pc, startPC);
     const short initCounter = actual_taken ? 0 : -1;
 
-    // Experimental aggressive set-associative allocation:
-    // - same-tag requests still first try to absorb into any existing same-tag
-    //   entry by position hit or empty-slot fill.
-    // - once all same-tag entries are full, prefer spilling into another way
-    //   (invalid or whole-entry victim) before replacing a weakish slot.
+    // Unique same-tag set-associative allocation:
+    // - each table/set may contain at most one entry for a given tag.
+    // - same-tag requests try position hit, then empty-slot fill, then
+    //   weakish-slot replacement inside that unique container.
     // - different-tag requests may only evict a whole entry when all slots are
     //   unprotected.
-    // - if no spill/whole-entry victim exists, weaken one non-useful strong slot
-    //   by one step toward zero.
+    // - if a same-tag request cannot hit/fill/replace, weaken one non-useful
+    //   strong slot by one step toward zero and report allocation failure.
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(blockBase, ti, meta->indexFoldedHist[ti].get());
@@ -822,10 +837,9 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         auto &set = tageTable[ti][newIndex];
         const unsigned ways = getNumWays(ti);
-        std::vector<unsigned> same_tag_ways;
+        int same_tag_way = -1;
         int first_invalid_way = -1;
         bool has_existing_different_tag_entry = false;
-        same_tag_ways.reserve(ways);
         for (unsigned way = 0; way < ways; ++way) {
             auto &cand = set[way];
             if (!cand.valid) {
@@ -835,13 +849,15 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                 continue;
             }
             if (cand.tag == newTag) {
-                same_tag_ways.push_back(way);
+                assert(same_tag_way < 0 &&
+                       "Duplicate same-tag entries detected in BTBTAGE allocation path");
+                same_tag_way = static_cast<int>(way);
             } else {
                 has_existing_different_tag_entry = true;
             }
         }
 
-        if (!same_tag_ways.empty()) {
+        if (same_tag_way >= 0) {
             if (first_invalid_way >= 0) {
                 tageStats.allocSameTagWhileInvalidWayExists++;
 #ifndef UNIT_TEST
@@ -863,62 +879,52 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                 }
             };
 
-            int fill_way = -1;
             int fill_slot = -1;
-            int replace_way = -1;
             int replace_slot = -1;
-            for (unsigned way : same_tag_ways) {
-                auto &same_entry = set[way];
-                int hit_slot = findSlotByPosition(same_entry, position);
-                if (hit_slot >= 0) {
-                    // same-tag + position hit: slot training is handled in provider update path.
-                    classifyReusedSameTagEntry(way);
-                    return false;
-                }
+            auto &same_entry = set[same_tag_way];
+            int hit_slot = findSlotByPosition(same_entry, position);
+            if (hit_slot >= 0) {
+                // same-tag + position hit: slot training is handled in provider
+                // update path.
+                classifyReusedSameTagEntry(same_tag_way);
+                return false;
+            }
 
-                if (fill_way < 0) {
-                    for (unsigned slot = 0; slot < same_entry.slots.size(); ++slot) {
-                        if (!same_entry.slots[slot].valid) {
-                            fill_way = static_cast<int>(way);
-                            fill_slot = static_cast<int>(slot);
-                            break;
-                        }
-                    }
-                }
-
-                if (replace_way < 0) {
-                    for (unsigned slot = 0; slot < same_entry.slots.size(); ++slot) {
-                        const auto &cand_slot = same_entry.slots[slot];
-                        if (!cand_slot.useful && isWeakishCounter(cand_slot.counter)) {
-                            replace_way = static_cast<int>(way);
-                            replace_slot = static_cast<int>(slot);
-                            break;
-                        }
-                    }
+            for (unsigned slot = 0; slot < same_entry.slots.size(); ++slot) {
+                if (!same_entry.slots[slot].valid) {
+                    fill_slot = static_cast<int>(slot);
+                    break;
                 }
             }
 
-            if (fill_way >= 0) {
+            if (fill_slot >= 0) {
                 // same-tag + position miss + empty slot: insert.
-                classifyReusedSameTagEntry(fill_way);
+                classifyReusedSameTagEntry(same_tag_way);
                 tageStats.allocSameTagFillEmptySlot++;
 #ifndef UNIT_TEST
                 tageStats.allocSameTagFillEmptySlotByTable[ti]++;
 #endif
-                auto &same_entry = set[fill_way];
                 same_entry.slots[fill_slot] = TageSlot(true, position, initCounter, false);
                 sortEntrySlotsByPosition(same_entry);
                 syncEntryLegacyMirror(same_entry);
                 tageStats.updateAllocSuccess++;
                 allocated_table = ti;
                 allocated_index = newIndex;
-                allocated_way = fill_way;
+                allocated_way = same_tag_way;
                 allocated_slot = findSlotByPosition(same_entry, position);
                 return true;
             }
 
-            // same-tag + all existing entries cannot absorb this position with
-            // position hit or empty-slot fill.
+            for (unsigned slot = 0; slot < same_entry.slots.size(); ++slot) {
+                const auto &cand_slot = same_entry.slots[slot];
+                if (!cand_slot.useful && isWeakishCounter(cand_slot.counter)) {
+                    replace_slot = static_cast<int>(slot);
+                    break;
+                }
+            }
+
+            // same-tag + the unique existing entry cannot absorb this position
+            // via position hit or empty-slot fill.
             tageStats.allocSameTagFullBlocked++;
 #ifndef UNIT_TEST
             tageStats.allocSameTagFullBlockedByTable[ti]++;
@@ -930,92 +936,19 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 #endif
             }
 
-            if (first_invalid_way >= 0) {
-                tageStats.allocSameTagSpillUseInvalidWay++;
-#ifndef UNIT_TEST
-                tageStats.allocSameTagSpillUseInvalidWayByTable[ti]++;
-#endif
-                TageEntry new_entry;
-                new_entry.valid = true;
-                new_entry.tag = newTag;
-                new_entry.lruCounter = 0;
-                new_entry.slots[0] = TageSlot(true, position, initCounter, false);
-                for (unsigned slot = 1; slot < new_entry.slots.size(); ++slot) {
-                    new_entry.slots[slot] = TageSlot();
-                }
-                new_entry.pc = entry.pc;
-                new_entry.ownerBlockBase = blockBase;
-                syncEntryLegacyMirror(new_entry);
-
-                DPRINTF(TAGE,
-                        "spilling same-tag entry into invalid way table %d[%lu][%d], tag %lu, initial slot pos %u, ctr %d, pc %#lx\n",
-                        ti, newIndex, first_invalid_way, newTag, position,
-                        initCounter, entry.pc);
-                set[first_invalid_way] = new_entry;
-                tageStats.updateAllocSuccess++;
-                allocated_table = ti;
-                allocated_index = newIndex;
-                allocated_way = first_invalid_way;
-                allocated_slot = 0;
-                usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
-                return true;
-            }
-
-            for (unsigned way = 0; way < ways; ++way) {
-                auto &cand = set[way];
-                if (!cand.valid || cand.tag == newTag ||
-                    !isEntryWholeEvictable(cand)) {
-                    continue;
-                }
-                tageStats.allocSameTagSpillWholeEvict++;
-#ifndef UNIT_TEST
-                tageStats.allocSameTagSpillWholeEvictByTable[ti]++;
-#endif
-                tageStats.allocSameTagSpillWholeEvictDifferentTagVictim++;
-#ifndef UNIT_TEST
-                tageStats.allocSameTagSpillWholeEvictDifferentTagVictimByTable[ti]++;
-#endif
-                TageEntry new_entry;
-                new_entry.valid = true;
-                new_entry.tag = newTag;
-                new_entry.lruCounter = 0;
-                new_entry.slots[0] = TageSlot(true, position, initCounter, false);
-                for (unsigned slot = 1; slot < new_entry.slots.size(); ++slot) {
-                    new_entry.slots[slot] = TageSlot();
-                }
-                new_entry.pc = entry.pc;
-                new_entry.ownerBlockBase = blockBase;
-                syncEntryLegacyMirror(new_entry);
-
-                DPRINTF(TAGE,
-                        "spilling same-tag entry by whole-entry eviction in table %d[%lu][%u], tag %lu, initial slot pos %u, ctr %d, pc %#lx\n",
-                        ti, newIndex, way, newTag, position, initCounter, entry.pc);
-                cand = new_entry;
-                tageStats.updateAllocSuccess++;
-                allocated_table = ti;
-                allocated_index = newIndex;
-                allocated_way = way;
-                allocated_slot = 0;
-                usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
-                return true;
-            }
-
-            if (replace_way >= 0) {
-                // Aggressive mode fallback: no extra way can be borrowed, so
-                // replace inside an existing same-tag entry.
-                classifyReusedSameTagEntry(replace_way);
+            if (replace_slot >= 0) {
+                classifyReusedSameTagEntry(same_tag_way);
                 tageStats.allocSameTagReplaceWeakishSlot++;
 #ifndef UNIT_TEST
                 tageStats.allocSameTagReplaceWeakishSlotByTable[ti]++;
 #endif
-                auto &same_entry = set[replace_way];
                 same_entry.slots[replace_slot] = TageSlot(true, position, initCounter, false);
                 sortEntrySlotsByPosition(same_entry);
                 syncEntryLegacyMirror(same_entry);
                 tageStats.updateAllocSuccess++;
                 allocated_table = ti;
                 allocated_index = newIndex;
-                allocated_way = replace_way;
+                allocated_way = same_tag_way;
                 allocated_slot = findSlotByPosition(same_entry, position);
                 return true;
             }
@@ -1335,15 +1268,36 @@ BTBTAGE::getTageTag(Addr pc, int t)
 Addr
 BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist)
 {
-    // Create mask for tableIndexBits[t] to limit result size
-    Addr mask = (1ULL << tableIndexBits[t]) - 1;
-
+    const unsigned width = tableIndexBits[t];
+    // Create mask for tableIndexBits[t] to limit result size.
+    Addr mask = (1ULL << width) - 1;
     const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
     Addr pcBits = (pc >> pcShift) & mask;
     Addr foldedBits = foldedHist & mask;
+    Addr mixedBits = pcBits ^ foldedBits;
+
+    if (indexHistMixMode != IndexHistMixMode::Full && width > 0) {
+        const unsigned lowBits = width / 2;
+        const unsigned highBits = width - lowBits;
+        const Addr lowMask = lowBits == 0 ? 0 : ((Addr(1) << lowBits) - 1);
+        const Addr highMask = mask & ~lowMask;
+
+        if (indexHistMixMode == IndexHistMixMode::Low) {
+            // Low mode: only the low half of the original pcBits window
+            // participates in XOR; the high half comes directly from history.
+            mixedBits = (foldedBits & highMask) |
+                        ((pcBits ^ foldedBits) & lowMask);
+        } else {
+            assert(indexHistMixMode == IndexHistMixMode::High);
+            // High mode: only the high half of the original pcBits window
+            // participates in XOR; the low half comes directly from history.
+            mixedBits = (foldedBits & lowMask) |
+                        ((pcBits ^ foldedBits) & highMask);
+        }
+    }
 
     // Support non-power-of-two table sizes when tuning capacities.
-    return (pcBits ^ foldedBits) % tableSizes[t];
+    return mixedBits % tableSizes[t];
 }
 
 Addr
@@ -1519,7 +1473,10 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
-    ADD_STAT(predTagHitSlotMiss, statistics::units::Count::get(), "prediction-time tag hits whose entry has no matching slot"),
+    ADD_STAT(predTagHitSlotMiss,
+             statistics::units::Count::get(),
+             "prediction-time tag hits whose unique same-tag entry has no "
+             "matching slot"),
     ADD_STAT(allocSameTagTrueBlockReuse, statistics::units::Count::get(),
              "same-tag cases that ultimately reuse an existing same-tag "
              "entry owned by the same block"),
@@ -1533,8 +1490,8 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(allocSameTagFillEmptySlot, statistics::units::Count::get(),
              "same-tag position misses that fill an empty slot"),
     ADD_STAT(allocSameTagReplaceWeakishSlot, statistics::units::Count::get(),
-             "same-tag position misses that fall back to replacing a weakish "
-             "non-useful slot after spill attempts fail"),
+             "same-tag position misses that replace a weakish non-useful "
+             "slot inside the unique same-tag entry"),
     ADD_STAT(allocSameTagFullBlocked, statistics::units::Count::get(),
              "same-tag position misses that no existing same-tag entry can "
              "absorb via hit or empty-slot fill"),
@@ -1543,19 +1500,19 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
              "same-tag absorption failures observed while the set still had "
              "an invalid way"),
     ADD_STAT(allocSameTagSpillUseInvalidWay, statistics::units::Count::get(),
-             "same-tag spills that allocate a new duplicate-tag entry into "
-             "an invalid way"),
+             "reserved sanity counter: unique same-tag policy should never "
+             "spill into an invalid way"),
     ADD_STAT(allocSameTagSpillWholeEvict, statistics::units::Count::get(),
-             "same-tag spills that allocate a new duplicate-tag entry by "
-             "whole-entry eviction against a different-tag victim"),
+             "reserved sanity counter: unique same-tag policy should never "
+             "whole-entry spill into another way"),
     ADD_STAT(allocSameTagSpillWholeEvictSameTagVictim,
              statistics::units::Count::get(),
              "reserved sanity counter: strict same-tag spill policy should "
              "not whole-evict a same-tag victim"),
     ADD_STAT(allocSameTagSpillWholeEvictDifferentTagVictim,
              statistics::units::Count::get(),
-             "same-tag spills by whole-entry eviction whose victim had a "
-             "different tag"),
+             "reserved sanity counter for forbidden same-tag whole-entry "
+             "spills against a different-tag victim"),
     ADD_STAT(allocDifferentTagUseInvalidWay, statistics::units::Count::get(),
              "different-tag allocations that use an invalid way while the "
              "set already contains another valid different-tag entry"),
@@ -1585,7 +1542,10 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(predFinalSourceTable, statistics::units::Count::get(), "predictions whose final source is a TAGE table"),
     ADD_STAT(updateFinalSourceTableCorrect, statistics::units::Count::get(), "correct predictions grouped by final-source table"),
     ADD_STAT(updateFinalSourceTableWrong, statistics::units::Count::get(), "wrong predictions grouped by final-source table"),
-    ADD_STAT(predTagHitSlotMissByTable, statistics::units::Count::get(), "prediction-time tag hits with slot miss, grouped by table"),
+    ADD_STAT(predTagHitSlotMissByTable,
+             statistics::units::Count::get(),
+             "prediction-time tag hits whose unique same-tag entry has slot "
+             "miss, grouped by table"),
     ADD_STAT(allocSameTagTrueBlockReuseByTable,
              statistics::units::Count::get(),
              "same-tag reuse of a same-block existing entry, grouped by "
@@ -1603,8 +1563,8 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
              "same-tag fills into empty slots, grouped by table"),
     ADD_STAT(allocSameTagReplaceWeakishSlotByTable,
              statistics::units::Count::get(),
-             "same-tag fallback weakish-slot replacements after spill "
-             "attempts fail, grouped by table"),
+             "same-tag weakish-slot replacements inside the unique entry, "
+             "grouped by table"),
     ADD_STAT(allocSameTagFullBlockedByTable,
              statistics::units::Count::get(),
              "same-tag hit/fill absorption failures, grouped by table"),
@@ -1614,19 +1574,20 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
              "grouped by table"),
     ADD_STAT(allocSameTagSpillUseInvalidWayByTable,
              statistics::units::Count::get(),
-             "same-tag spills via invalid way, grouped by table"),
+             "reserved sanity counter for unique same-tag policy spilling "
+             "via invalid way, grouped by table"),
     ADD_STAT(allocSameTagSpillWholeEvictByTable,
              statistics::units::Count::get(),
-             "same-tag spills via whole-entry eviction against a "
-             "different-tag victim, grouped by table"),
+             "reserved sanity counter for unique same-tag policy whole-entry "
+             "spills, grouped by table"),
     ADD_STAT(allocSameTagSpillWholeEvictSameTagVictimByTable,
              statistics::units::Count::get(),
              "reserved sanity counter for same-tag whole-entry victims, "
              "grouped by table"),
     ADD_STAT(allocSameTagSpillWholeEvictDifferentTagVictimByTable,
              statistics::units::Count::get(),
-             "same-tag whole-entry spills whose victim had a different tag, "
-             "grouped by table"),
+             "reserved sanity counter for forbidden same-tag whole-entry "
+             "spills against a different-tag victim, grouped by table"),
     ADD_STAT(allocDifferentTagUseInvalidWayByTable,
              statistics::units::Count::get(),
              "different-tag allocations via invalid ways while the set "
