@@ -1624,7 +1624,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     std::unordered_map<Addr, uint64_t> pcMissCount;
 
     // std::set<Addr> forceHitPCs{0x11474, 0x11470, 0x11472, 0x119fa, 0x119fe, 0x119ea};
-    std::set<Addr> forceHitPCs{};
+    std::set<Addr> forceHitPCs{0x1086c,0x10872,0x10876,0x1087a};
 
     const bool forceHit;
     const bool simulateDcacheRefill;

@@ -284,6 +284,9 @@ class XSCompositePrefetcher : public Queued
                      const CacheAccessor::MissQueueCoverInfo &cover) override;
     void pfHitInMSHR(PrefetchSourceType pf_type,
                      const CacheAccessor::MissQueueCoverInfo &cover) override;
+    void notifyDownstreamDemandMergeLate(PrefetchSourceType pf_type,
+                                         int pf_depth,
+                                         int pf_ahead_level) override;
 
   protected:
     using TriggerInfo = Base::PFtriggerInfo;

@@ -87,7 +87,7 @@ class L1_DCache(L1Cache):
     tags = VIPTSetAssoc()
     tags.indexing_policy = VIPTSetAssociative()
 
-    force_hit = False
+    force_hit = True
 
     demand_mshr_reserve = 6
 

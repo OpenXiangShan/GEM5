@@ -165,7 +165,7 @@ class BaseCache(ClockedObject):
 
     pipe_latency = Param.Cycles(0, "pipeline latency")
 
-    force_hit = Param.Bool(False, "Force some PC to hit in L1")
+    force_hit = Param.Bool(True, "Force some PC to hit in L1")
     way_entries = Param.MemorySize(
         "64",
         "num of active generation table entries"

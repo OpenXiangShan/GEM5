@@ -556,6 +556,11 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                     // Demand request merging into prefetch-only MSHR
                     if (pkt->isDemand()) {
                         stats.demandMergedIntoPfMSHR++;
+                        if (prefetcher) {
+                            prefetcher->demandMergedIntoPfMSHR(
+                                mshr->getPFSource(), mshr->getPFDepth(),
+                                mshr->getPFAheadLevel());
+                        }
                         DPRINTF(Cache, "Demand request %#lx merged into prefetch MSHR\n",
                                 pkt->getAddr());
                     }

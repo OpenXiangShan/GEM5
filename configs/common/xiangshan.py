@@ -708,8 +708,9 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         dump_l3_evict_trace = False
         dump_l1_miss_trace = False
         dump_bop_train_trace = False
-        dump_stride_train_trace = True
-        dump_stride_order_trace = True
+        dump_stride_train_trace = False
+        dump_stride_order_trace = False
+        dump_stride_depth_ctrl_trace = False
         dump_sms_train_trace = False
         dump_train_filter_trace = False
         dump_despacito_train_trace = False
@@ -725,6 +726,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_bop_train_trace = dump_bop_train_trace
         test_sys.arch_db.dump_stride_train_trace = dump_stride_train_trace
         test_sys.arch_db.dump_stride_order_trace = dump_stride_order_trace
+        test_sys.arch_db.dump_stride_depth_ctrl_trace = dump_stride_depth_ctrl_trace
         test_sys.arch_db.dump_sms_train_trace = dump_sms_train_trace
         test_sys.arch_db.dump_train_filter_trace = dump_train_filter_trace
         test_sys.arch_db.dump_despacito_train_trace = dump_despacito_train_trace
@@ -850,6 +852,57 @@ CREATE TABLE LoadLifeTimeCommitTrace(
                 "Reason TEXT NOT NULL,"
                 "SITE TEXT);"
             )
+        if dump_stride_depth_ctrl_trace:
+            table_cmds.extend([
+                "CREATE TABLE StrideDepthFeedbackTrace("
+                "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "Tick INT NOT NULL,"
+                "Level INT NOT NULL,"
+                "EventKind TEXT NOT NULL,"
+                "PfSource INT NOT NULL,"
+                "PfDepth INT NOT NULL,"
+                "AheadLevel INT NOT NULL,"
+                "GlobalL1Depth INT NOT NULL,"
+                "GlobalL2Gap INT NOT NULL,"
+                "EffectiveL2Depth INT NOT NULL,"
+                "LateStrongWindow INT NOT NULL,"
+                "LateMSHRWindow INT NOT NULL,"
+                "LateCacheWindow INT NOT NULL,"
+                "TimelyWindow INT NOT NULL,"
+                "SITE TEXT);",
+                "CREATE TABLE StrideDepthDecisionTrace("
+                "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "Tick INT NOT NULL,"
+                "Level INT NOT NULL,"
+                "EvalSite TEXT NOT NULL,"
+                "TotalFeedback INT NOT NULL,"
+                "FeedbackWindow INT NOT NULL,"
+                "WeightedLate INT NOT NULL,"
+                "WeightedTotal INT NOT NULL,"
+                "Action TEXT NOT NULL,"
+                "Reason TEXT NOT NULL,"
+                "OldL1Depth INT NOT NULL,"
+                "OldL2Gap INT NOT NULL,"
+                "OldEffectiveL2Depth INT NOT NULL,"
+                "NewL1Depth INT NOT NULL,"
+                "NewL2Gap INT NOT NULL,"
+                "NewEffectiveL2Depth INT NOT NULL,"
+                "PreLateStrongWindow INT NOT NULL,"
+                "PreLateMSHRWindow INT NOT NULL,"
+                "PreLateCacheWindow INT NOT NULL,"
+                "PreTimelyWindow INT NOT NULL,"
+                "PostLateStrongWindow INT NOT NULL,"
+                "PostLateMSHRWindow INT NOT NULL,"
+                "PostLateCacheWindow INT NOT NULL,"
+                "PostTimelyWindow INT NOT NULL,"
+                "StrongLateWeight INT NOT NULL,"
+                "MSHRLateWeight INT NOT NULL,"
+                "CacheLateWeight INT NOT NULL,"
+                "RaiseThresholdPct INT NOT NULL,"
+                "LowerWeakLatePct INT NOT NULL,"
+                "LowerTimelyPct INT NOT NULL,"
+                "SITE TEXT);"
+            ])
         if dump_train_filter_trace:
             table_cmds.extend([
                 "CREATE TABLE TrainFilterTrace("

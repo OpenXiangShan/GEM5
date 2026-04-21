@@ -134,6 +134,28 @@ class XSStridePrefetcher : public Queued
     void recordReplayCandidateTrace(Addr trigger_addr, Addr trigger_pc,
                                     Addr pf_addr, int priority, bool pfahead,
                                     int pfahead_host, int ahead_level);
+    struct DepthWindowSnapshot
+    {
+        uint64_t lateStrong;
+        uint64_t lateMSHR;
+        uint64_t lateCache;
+        uint64_t timely;
+    };
+    DepthWindowSnapshot getDepthWindowSnapshot(int level) const;
+    void recordDepthFeedbackTrace(const char *event_kind, int level,
+                                  PrefetchSourceType pf_source, int pf_depth,
+                                  int ahead_level) const;
+    void recordDepthDecisionTrace(const char *site, int level,
+                                  const DepthWindowSnapshot &pre_window,
+                                  const DepthWindowSnapshot &post_window,
+                                  uint64_t total_feedback,
+                                  uint64_t feedback_window,
+                                  uint64_t weighted_late,
+                                  uint64_t weighted_total,
+                                  const char *action,
+                                  const char *reason,
+                                  int old_l1_depth,
+                                  int old_l2_gap) const;
 
     struct CommitTrainSnapshot
     {
@@ -196,8 +218,9 @@ class XSStridePrefetcher : public Queued
     void dropYoungerThan(InstSeqNum boundary);
     void observeGlobalDepthFeedback(const PrefetchInfo &pfi, bool late,
                                     PrefetchSourceType pf_source);
-    void observeGlobalDepthIssueLateCache(int ahead_level);
-    void observeGlobalDepthIssueLateMSHR(int ahead_level);
+    void observeGlobalDepthIssueLateCache(int ahead_level, int pf_depth);
+    void observeGlobalDepthIssueLateMSHR(int ahead_level, int pf_depth);
+    void observeGlobalDepthDownstreamDemandLate(int ahead_level, int pf_depth);
   PrefetchFilter* stridestream_pfFilter_l1;
   PrefetchFilter* stridestream_pfFilter_l2l3;
 
@@ -268,6 +291,8 @@ class XSStridePrefetcher : public Queued
       statistics::Scalar globalL2DepthLowerCount;
       statistics::Scalar globalL1DepthLateStrongCount;
       statistics::Scalar globalL2DepthLateStrongCount;
+      statistics::Scalar globalL1DepthDownstreamDemandLateCount;
+      statistics::Scalar globalL2DepthDownstreamDemandLateCount;
       statistics::Scalar globalL1DepthLateHitInCacheCount;
       statistics::Scalar globalL2DepthLateHitInCacheCount;
       statistics::Scalar globalL1DepthLateHitInMSHRCount;

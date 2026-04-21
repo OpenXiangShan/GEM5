@@ -65,6 +65,7 @@ class BasePrefetcher(ClockedObject):
         PyBindMethod("addEventProbe"),
         PyBindMethod("addTLB"),
         PyBindMethod("addHintDownStream"),
+        PyBindMethod("addFeedbackUpStream"),
     ]
     sys = Param.System(Parent.any, "System this prefetcher belongs to")
     arch_db = Param.ArchDBer(Parent.any, "Arch DB")
@@ -98,6 +99,7 @@ class BasePrefetcher(ClockedObject):
         self._tlbs = []
         self._functional_tlb = False
         self._downstream_pf = []
+        self._feedback_upstream = []
 
     def addEvent(self, newObject):
         self._events.append(newObject)
@@ -114,6 +116,11 @@ class BasePrefetcher(ClockedObject):
         if len(self._downstream_pf):
             print(f"{self} addHintDownStream {self._downstream_pf[0]}")
             self.getCCObject().addHintDownStream(self._downstream_pf[0].getCCObject())
+        assert len(self._feedback_upstream) <= 1
+        if len(self._feedback_upstream):
+            print(f"{self} addFeedbackUpStream {self._feedback_upstream[0]}")
+            self.getCCObject().addFeedbackUpStream(
+                self._feedback_upstream[0].getCCObject())
 
         for event in self._events:
             event.register()
@@ -136,6 +143,11 @@ class BasePrefetcher(ClockedObject):
         if not isinstance(other_prefetcher, SimObject):
             raise TypeError("other_prefetcher must be a SimObject type")
         self._downstream_pf.append(other_prefetcher)
+
+    def add_feedback_upstream(self, other_prefetcher):
+        if not isinstance(other_prefetcher, SimObject):
+            raise TypeError("other_prefetcher must be a SimObject type")
+        self._feedback_upstream.append(other_prefetcher)
 
 
 class PrefetcherForwarder(BasePrefetcher):

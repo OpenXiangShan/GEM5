@@ -245,5 +245,25 @@ PrefetcherForwarder::pfHitInWB(PrefetchSourceType pf_type)
     }
 }
 
+void
+PrefetcherForwarder::demandMergedIntoPfMSHR(PrefetchSourceType pf_type,
+                                            int pf_depth,
+                                            int pf_ahead_level)
+{
+    if (real_pf) {
+        real_pf->demandMergedIntoPfMSHR(pf_type, pf_depth, pf_ahead_level);
+    }
+}
+
+void
+PrefetcherForwarder::notifyDownstreamDemandMergeLate(
+    PrefetchSourceType pf_type, int pf_depth, int pf_ahead_level)
+{
+    if (real_pf) {
+        real_pf->notifyDownstreamDemandMergeLate(
+            pf_type, pf_depth, pf_ahead_level);
+    }
+}
+
 } // namespace prefetch
 } // namespace gem5

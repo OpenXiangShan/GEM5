@@ -906,7 +906,7 @@ XSCompositePrefetcher::pfHitInCache(PrefetchSourceType pf_type)
 {
     Queued::pfHitInCache(pf_type);
     if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
-        Sstride->observeGlobalDepthIssueLateCache(1);
+        Sstride->observeGlobalDepthIssueLateCache(1, 0);
     }
 }
 
@@ -917,7 +917,7 @@ XSCompositePrefetcher::pfHitInCache(
 {
     Queued::pfHitInCache(pf_type, cover);
     if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
-        Sstride->observeGlobalDepthIssueLateCache(1);
+        Sstride->observeGlobalDepthIssueLateCache(1, 0);
     }
 }
 
@@ -928,7 +928,7 @@ XSCompositePrefetcher::pfHitInCache(
 {
     Queued::pfHitInCache(pf_type, pf_depth, pf_ahead_level, cover);
     if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
-        Sstride->observeGlobalDepthIssueLateCache(pf_ahead_level);
+        Sstride->observeGlobalDepthIssueLateCache(pf_ahead_level, pf_depth);
     }
 }
 
@@ -937,7 +937,7 @@ XSCompositePrefetcher::pfHitInMSHR(PrefetchSourceType pf_type)
 {
     Queued::pfHitInMSHR(pf_type);
     if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
-        Sstride->observeGlobalDepthIssueLateMSHR(1);
+        Sstride->observeGlobalDepthIssueLateMSHR(1, 0);
     }
 }
 
@@ -948,7 +948,7 @@ XSCompositePrefetcher::pfHitInMSHR(
 {
     Queued::pfHitInMSHR(pf_type, cover);
     if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
-        Sstride->observeGlobalDepthIssueLateMSHR(1);
+        Sstride->observeGlobalDepthIssueLateMSHR(1, 0);
     }
 }
 
@@ -959,8 +959,20 @@ XSCompositePrefetcher::pfHitInMSHR(
 {
     Queued::pfHitInMSHR(pf_type, pf_depth, pf_ahead_level, cover);
     if (pf_type == PrefetchSourceType::SStride && enableSstride && Sstride) {
-        Sstride->observeGlobalDepthIssueLateMSHR(pf_ahead_level);
+        Sstride->observeGlobalDepthIssueLateMSHR(pf_ahead_level, pf_depth);
     }
+}
+
+void
+XSCompositePrefetcher::notifyDownstreamDemandMergeLate(
+    PrefetchSourceType pf_type, int pf_depth, int pf_ahead_level)
+{
+    if (pf_type != PrefetchSourceType::SStride ||
+        !enableSstride || !Sstride) {
+        return;
+    }
+
+    Sstride->observeGlobalDepthDownstreamDemandLate(pf_ahead_level, pf_depth);
 }
 
 XSCompositePrefetcher::XSCompositeStats::XSCompositeStats(statistics::Group *parent)

@@ -1,6 +1,8 @@
 
 #include "sim/arch_db.hh"
 
+#include <string>
+
 #include "params/ArchDBer.hh"
 
 namespace gem5{
@@ -12,6 +14,25 @@ long long
 sqliteSignedInt(uint64_t value)
 {
     return static_cast<long long>(static_cast<int64_t>(value));
+}
+
+std::string
+sqlEscape(const char *text)
+{
+    if (!text) {
+        return "";
+    }
+
+    std::string escaped;
+    escaped.reserve(std::strlen(text));
+    for (const char *p = text; *p != '\0'; ++p) {
+        if (*p == '\'') {
+            escaped += "''";
+        } else {
+            escaped += *p;
+        }
+    }
+    return escaped;
 }
 
 } // anonymous namespace
@@ -29,6 +50,7 @@ ArchDBer::ArchDBer(const Params &p)
     dumpSMSTrainTrace(p.dump_sms_train_trace),
     dumpStrideTrainTrace(p.dump_stride_train_trace),
     dumpStrideOrderTrace(p.dump_stride_order_trace),
+    dumpStrideDepthCtrlTrace(p.dump_stride_depth_ctrl_trace),
     dumpTrainFilterTrace(p.dump_train_filter_trace),
     dumpDespacitoTrainTrace(p.dump_despacito_train_trace),
     dumpL1WayPreTrace(p.dump_l1d_way_pre_trace),
@@ -220,6 +242,100 @@ ArchDBer::strideOrderTraceWrite(Tick tick, const char *stage, uint64_t seqNum,
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
   };
+}
+
+void
+ArchDBer::strideDepthFeedbackTraceWrite(
+    Tick tick, int level, const char *eventKind, int pfSource,
+    int pfDepth, int aheadLevel, int globalL1Depth, int globalL2Gap,
+    int effectiveL2Depth, uint64_t lateStrongWindow,
+    uint64_t lateMSHRWindow, uint64_t lateCacheWindow,
+    uint64_t timelyWindow, const char *site)
+{
+  bool dump_me = dumpGlobal && dumpStrideDepthCtrlTrace;
+  if (!dump_me) return;
+
+  const std::string sql =
+      "INSERT INTO StrideDepthFeedbackTrace("
+      "Tick,Level,EventKind,PfSource,PfDepth,AheadLevel,"
+      "GlobalL1Depth,GlobalL2Gap,EffectiveL2Depth,LateStrongWindow,"
+      "LateMSHRWindow,LateCacheWindow,TimelyWindow,SITE) VALUES(" +
+      std::to_string(sqliteSignedInt(tick)) + "," +
+      std::to_string(level) + ",'" +
+      sqlEscape(eventKind) + "'," +
+      std::to_string(pfSource) + "," +
+      std::to_string(pfDepth) + "," +
+      std::to_string(aheadLevel) + "," +
+      std::to_string(globalL1Depth) + "," +
+      std::to_string(globalL2Gap) + "," +
+      std::to_string(effectiveL2Depth) + "," +
+      std::to_string(sqliteSignedInt(lateStrongWindow)) + "," +
+      std::to_string(sqliteSignedInt(lateMSHRWindow)) + "," +
+      std::to_string(sqliteSignedInt(lateCacheWindow)) + "," +
+      std::to_string(sqliteSignedInt(timelyWindow)) + ",'" +
+      sqlEscape(site) + "');";
+  execmd(sql);
+}
+
+void
+ArchDBer::strideDepthDecisionTraceWrite(
+    Tick tick, int level, const char *evalSite, uint64_t totalFeedback,
+    uint64_t feedbackWindow, uint64_t weightedLate,
+    uint64_t weightedTotal, const char *action, const char *reason,
+    int oldL1Depth, int oldL2Gap, int oldEffectiveL2Depth,
+    int newL1Depth, int newL2Gap, int newEffectiveL2Depth,
+    uint64_t preLateStrongWindow, uint64_t preLateMSHRWindow,
+    uint64_t preLateCacheWindow, uint64_t preTimelyWindow,
+    uint64_t postLateStrongWindow, uint64_t postLateMSHRWindow,
+    uint64_t postLateCacheWindow, uint64_t postTimelyWindow,
+    uint64_t strongLateWeight, uint64_t mshrLateWeight,
+    uint64_t cacheLateWeight, uint64_t raiseThresholdPct,
+    uint64_t lowerWeakLatePct, uint64_t lowerTimelyPct,
+    const char *site)
+{
+  bool dump_me = dumpGlobal && dumpStrideDepthCtrlTrace;
+  if (!dump_me) return;
+
+  const std::string sql =
+      "INSERT INTO StrideDepthDecisionTrace("
+      "Tick,Level,EvalSite,TotalFeedback,FeedbackWindow,WeightedLate,"
+      "WeightedTotal,Action,Reason,OldL1Depth,OldL2Gap,OldEffectiveL2Depth,"
+      "NewL1Depth,NewL2Gap,NewEffectiveL2Depth,PreLateStrongWindow,"
+      "PreLateMSHRWindow,PreLateCacheWindow,PreTimelyWindow,"
+      "PostLateStrongWindow,PostLateMSHRWindow,PostLateCacheWindow,"
+      "PostTimelyWindow,StrongLateWeight,MSHRLateWeight,CacheLateWeight,"
+      "RaiseThresholdPct,LowerWeakLatePct,LowerTimelyPct,SITE) VALUES(" +
+      std::to_string(sqliteSignedInt(tick)) + "," +
+      std::to_string(level) + ",'" +
+      sqlEscape(evalSite) + "'," +
+      std::to_string(sqliteSignedInt(totalFeedback)) + "," +
+      std::to_string(sqliteSignedInt(feedbackWindow)) + "," +
+      std::to_string(sqliteSignedInt(weightedLate)) + "," +
+      std::to_string(sqliteSignedInt(weightedTotal)) + ",'" +
+      sqlEscape(action) + "','" +
+      sqlEscape(reason) + "'," +
+      std::to_string(oldL1Depth) + "," +
+      std::to_string(oldL2Gap) + "," +
+      std::to_string(oldEffectiveL2Depth) + "," +
+      std::to_string(newL1Depth) + "," +
+      std::to_string(newL2Gap) + "," +
+      std::to_string(newEffectiveL2Depth) + "," +
+      std::to_string(sqliteSignedInt(preLateStrongWindow)) + "," +
+      std::to_string(sqliteSignedInt(preLateMSHRWindow)) + "," +
+      std::to_string(sqliteSignedInt(preLateCacheWindow)) + "," +
+      std::to_string(sqliteSignedInt(preTimelyWindow)) + "," +
+      std::to_string(sqliteSignedInt(postLateStrongWindow)) + "," +
+      std::to_string(sqliteSignedInt(postLateMSHRWindow)) + "," +
+      std::to_string(sqliteSignedInt(postLateCacheWindow)) + "," +
+      std::to_string(sqliteSignedInt(postTimelyWindow)) + "," +
+      std::to_string(sqliteSignedInt(strongLateWeight)) + "," +
+      std::to_string(sqliteSignedInt(mshrLateWeight)) + "," +
+      std::to_string(sqliteSignedInt(cacheLateWeight)) + "," +
+      std::to_string(sqliteSignedInt(raiseThresholdPct)) + "," +
+      std::to_string(sqliteSignedInt(lowerWeakLatePct)) + "," +
+      std::to_string(sqliteSignedInt(lowerTimelyPct)) + ",'" +
+      sqlEscape(site) + "');";
+  execmd(sql);
 }
 
 void

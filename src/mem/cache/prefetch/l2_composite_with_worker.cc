@@ -114,6 +114,16 @@ L2CompositeWithWorkerPrefetcher::recvCustomInfoFrmUpStream(CustomPfInfo& info)
 }
 
 void
+L2CompositeWithWorkerPrefetcher::demandMergedIntoPfMSHR(
+    PrefetchSourceType pf_type, int pf_depth, int pf_ahead_level)
+{
+    if (hasFeedbackUpStream()) {
+        feedbackUpStream->notifyDownstreamDemandMergeLate(
+            pf_type, pf_depth, pf_ahead_level);
+    }
+}
+
+void
 L2CompositeWithWorkerPrefetcher::pfHitNotify(float accuracy, PrefetchSourceType pf_source, const PacketPtr &pkt)
 {
     if (enableCDP) {

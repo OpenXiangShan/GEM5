@@ -62,6 +62,7 @@ class ArchDBer : public SimObject
     bool dumpSMSTrainTrace;
     bool dumpStrideTrainTrace;
     bool dumpStrideOrderTrace;
+    bool dumpStrideDepthCtrlTrace;
     bool dumpTrainFilterTrace;
     bool dumpDespacitoTrainTrace;
     bool dumpL1WayPreTrace;
@@ -113,6 +114,26 @@ class ArchDBer : public SimObject
                                bool isLoad, bool miss, int pfSource,
                                int pfDepth, Tick observedTick,
                                int queueSize, const char *reason);
+    void strideDepthFeedbackTraceWrite(
+        Tick tick, int level, const char *eventKind, int pfSource,
+        int pfDepth, int aheadLevel, int globalL1Depth, int globalL2Gap,
+        int effectiveL2Depth, uint64_t lateStrongWindow,
+        uint64_t lateMSHRWindow, uint64_t lateCacheWindow,
+        uint64_t timelyWindow, const char *site);
+    void strideDepthDecisionTraceWrite(
+        Tick tick, int level, const char *evalSite, uint64_t totalFeedback,
+        uint64_t feedbackWindow, uint64_t weightedLate,
+        uint64_t weightedTotal, const char *action, const char *reason,
+        int oldL1Depth, int oldL2Gap, int oldEffectiveL2Depth,
+        int newL1Depth, int newL2Gap, int newEffectiveL2Depth,
+        uint64_t preLateStrongWindow, uint64_t preLateMSHRWindow,
+        uint64_t preLateCacheWindow, uint64_t preTimelyWindow,
+        uint64_t postLateStrongWindow, uint64_t postLateMSHRWindow,
+        uint64_t postLateCacheWindow, uint64_t postTimelyWindow,
+        uint64_t strongLateWeight, uint64_t mshrLateWeight,
+        uint64_t cacheLateWeight, uint64_t raiseThresholdPct,
+        uint64_t lowerWeakLatePct, uint64_t lowerTimelyPct,
+        const char *site);
     void trainFilterTraceWrite(Tick tick, const char *stage, uint64_t seqNum,
                                Addr pc, Addr addr, Addr blockAddr,
                                bool isLoad, bool miss, int pfSource,

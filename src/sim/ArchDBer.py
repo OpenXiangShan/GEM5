@@ -61,6 +61,9 @@ class ArchDBer(SimObject):
     dump_sms_train_trace = Param.Bool(False, "Dump sms train trace")
     dump_stride_train_trace = Param.Bool(False, "Dump stride train trace")
     dump_stride_order_trace = Param.Bool(False, "Dump stride order trace")
+    dump_stride_depth_ctrl_trace = Param.Bool(
+        False, "Dump stride global depth controller trace"
+    )
     dump_train_filter_trace = Param.Bool(False, "Dump TrainFilter trace")
     dump_despacito_train_trace = Param.Bool(False, "Dump despacito train trace")
     dump_l1d_way_pre_trace = Param.Bool(False, "Dump l1d way predction trace")

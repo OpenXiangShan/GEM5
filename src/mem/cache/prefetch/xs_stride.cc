@@ -126,7 +126,7 @@ XSStridePrefetcher::initReplayTraceDb(const XSStridePrefetcherParams &p)
     replayInputTableName = "SStrideInputTrace" + suffix;
     replayCandidateTableName = "SStrideCandidateTrace" + suffix;
 
-    if (!tableExists(traceDb, replayConfigTableName)) {
+    if (enableTraceDb && !tableExists(traceDb, replayConfigTableName)) {
         execReplayTraceSql(
             "CREATE TABLE " + replayConfigTableName +
             "(TRACEKIND TEXT NOT NULL,"
@@ -146,7 +146,7 @@ XSStridePrefetcher::initReplayTraceDb(const XSStridePrefetcherParams &p)
             "PRIMARY KEY (TRACEKIND, SITE));");
     }
 
-    if (!tableExists(traceDb, replayInputTableName)) {
+    if (enableTraceDb && !tableExists(traceDb, replayInputTableName)) {
         execReplayTraceSql(
             "CREATE TABLE " + replayInputTableName +
             "(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -163,7 +163,7 @@ XSStridePrefetcher::initReplayTraceDb(const XSStridePrefetcherParams &p)
             "SITE TEXT);");
     }
 
-    if (!tableExists(traceDb, replayCandidateTableName)) {
+    if (enableTraceDb && !tableExists(traceDb, replayCandidateTableName)) {
         execReplayTraceSql(
             "CREATE TABLE " + replayCandidateTableName +
             "(ID INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -306,6 +306,71 @@ XSStridePrefetcher::recordReplayCandidateTrace(Addr trigger_addr, Addr trigger_p
         std::to_string(ahead_level) + "," +
         std::to_string(sqliteSignedInt(stamp)) + ",'" + sqlEscape(name()) + "');";
     execReplayTraceSql(sql);
+}
+
+void
+XSStridePrefetcher::recordDepthFeedbackTrace(const char *event_kind, int level,
+                                             PrefetchSourceType pf_source,
+                                             int pf_depth, int ahead_level) const
+{
+    if (!archDBer) {
+        return;
+    }
+
+    const DepthWindowSnapshot window = getDepthWindowSnapshot(level);
+    archDBer->strideDepthFeedbackTraceWrite(
+        curCycle(), level, event_kind, static_cast<unsigned>(pf_source),
+        pf_depth, ahead_level, globalL1Depth, globalL2Gap,
+        getEffectiveGlobalL2Depth(), window.lateStrong, window.lateMSHR,
+        window.lateCache, window.timely, name().c_str());
+}
+
+void
+XSStridePrefetcher::recordDepthDecisionTrace(
+    const char *site, int level, const DepthWindowSnapshot &pre_window,
+    const DepthWindowSnapshot &post_window, uint64_t total_feedback,
+    uint64_t feedback_window, uint64_t weighted_late,
+    uint64_t weighted_total, const char *action,
+    const char *reason, int old_l1_depth, int old_l2_gap) const
+{
+    if (!archDBer) {
+        return;
+    }
+
+    const int old_effective_l2_depth =
+        std::clamp(old_l1_depth + old_l2_gap,
+                   old_l1_depth + globalL2GapMin, globalL2DepthMax);
+    archDBer->strideDepthDecisionTraceWrite(
+        curCycle(), level, site, total_feedback, feedback_window,
+        weighted_late, weighted_total, action, reason, old_l1_depth,
+        old_l2_gap, old_effective_l2_depth, globalL1Depth, globalL2Gap,
+        getEffectiveGlobalL2Depth(), pre_window.lateStrong,
+        pre_window.lateMSHR, pre_window.lateCache, pre_window.timely,
+        post_window.lateStrong, post_window.lateMSHR,
+        post_window.lateCache, post_window.timely, strongLateWeight,
+        issueLateMSHRWeight, issueLateCacheWeight, raiseThresholdPct,
+        lowerWeakLateThresholdPct, lowerTimelyThresholdPct,
+        name().c_str());
+}
+
+XSStridePrefetcher::DepthWindowSnapshot
+XSStridePrefetcher::getDepthWindowSnapshot(int level) const
+{
+    if (level > 1) {
+        return DepthWindowSnapshot{
+            globalL2DepthLateStrongWindow,
+            globalL2DepthLateMSHRWindow,
+            globalL2DepthLateCacheWindow,
+            globalL2DepthTimelyFirstHitWindow,
+        };
+    }
+
+    return DepthWindowSnapshot{
+        globalL1DepthLateStrongWindow,
+        globalL1DepthLateMSHRWindow,
+        globalL1DepthLateCacheWindow,
+        globalL1DepthTimelyFirstHitWindow,
+    };
 }
 
 void
@@ -902,22 +967,31 @@ XSStridePrefetcher::observeGlobalDepthFeedback(const PrefetchInfo &pfi, bool lat
 
     const int ahead_level =
         pfi.getXsMetadata().prefetchAheadLevel > 1 ? 2 : 1;
+    const int pf_depth = pfi.getXsMetadata().prefetchDepth;
 
     if (late) {
         if (ahead_level > 1) {
             stats.globalL2DepthLateStrongCount++;
             globalL2DepthLateStrongWindow++;
+            recordDepthFeedbackTrace("late_strong", 2, pf_source, pf_depth,
+                                     ahead_level);
         } else {
             stats.globalL1DepthLateStrongCount++;
             globalL1DepthLateStrongWindow++;
+            recordDepthFeedbackTrace("late_strong", 1, pf_source, pf_depth,
+                                     ahead_level);
         }
     } else if (pfi.isPfFirstHit()) {
         if (ahead_level > 1) {
             stats.globalL2DepthTimelyFirstHitCount++;
             globalL2DepthTimelyFirstHitWindow++;
+            recordDepthFeedbackTrace("timely_first_hit", 2, pf_source,
+                                     pf_depth, ahead_level);
         } else {
             stats.globalL1DepthTimelyFirstHitCount++;
             globalL1DepthTimelyFirstHitWindow++;
+            recordDepthFeedbackTrace("timely_first_hit", 1, pf_source,
+                                     pf_depth, ahead_level);
         }
     } else {
         return;
@@ -931,7 +1005,7 @@ XSStridePrefetcher::observeGlobalDepthFeedback(const PrefetchInfo &pfi, bool lat
 }
 
 void
-XSStridePrefetcher::observeGlobalDepthIssueLateCache(int ahead_level)
+XSStridePrefetcher::observeGlobalDepthIssueLateCache(int ahead_level, int pf_depth)
 {
     if (!useXsDepth || !enableAutoDepth) {
         return;
@@ -940,16 +1014,22 @@ XSStridePrefetcher::observeGlobalDepthIssueLateCache(int ahead_level)
     if (ahead_level > 1) {
         stats.globalL2DepthLateHitInCacheCount++;
         globalL2DepthLateCacheWindow++;
+        recordDepthFeedbackTrace("late_hit_cache", 2,
+                                 PrefetchSourceType::SStride, pf_depth,
+                                 ahead_level);
         evaluateGlobalL2Depth();
     } else {
         stats.globalL1DepthLateHitInCacheCount++;
         globalL1DepthLateCacheWindow++;
+        recordDepthFeedbackTrace("late_hit_cache", 1,
+                                 PrefetchSourceType::SStride, pf_depth,
+                                 ahead_level);
         evaluateGlobalL1Depth();
     }
 }
 
 void
-XSStridePrefetcher::observeGlobalDepthIssueLateMSHR(int ahead_level)
+XSStridePrefetcher::observeGlobalDepthIssueLateMSHR(int ahead_level, int pf_depth)
 {
     if (!useXsDepth || !enableAutoDepth) {
         return;
@@ -958,10 +1038,43 @@ XSStridePrefetcher::observeGlobalDepthIssueLateMSHR(int ahead_level)
     if (ahead_level > 1) {
         stats.globalL2DepthLateHitInMSHRCount++;
         globalL2DepthLateMSHRWindow++;
+        recordDepthFeedbackTrace("late_hit_mshr", 2,
+                                 PrefetchSourceType::SStride, pf_depth,
+                                 ahead_level);
         evaluateGlobalL2Depth();
     } else {
         stats.globalL1DepthLateHitInMSHRCount++;
         globalL1DepthLateMSHRWindow++;
+        recordDepthFeedbackTrace("late_hit_mshr", 1,
+                                 PrefetchSourceType::SStride, pf_depth,
+                                 ahead_level);
+        evaluateGlobalL1Depth();
+    }
+}
+
+void
+XSStridePrefetcher::observeGlobalDepthDownstreamDemandLate(int ahead_level,
+                                                           int pf_depth)
+{
+    if (!useXsDepth || !enableAutoDepth) {
+        return;
+    }
+
+    if (ahead_level > 1) {
+        stats.globalL2DepthDownstreamDemandLateCount++;
+        stats.globalL2DepthLateStrongCount++;
+        globalL2DepthLateStrongWindow++;
+        recordDepthFeedbackTrace("downstream_demand_merge_late", 2,
+                                 PrefetchSourceType::SStride, pf_depth,
+                                 ahead_level);
+        evaluateGlobalL2Depth();
+    } else {
+        stats.globalL1DepthDownstreamDemandLateCount++;
+        stats.globalL1DepthLateStrongCount++;
+        globalL1DepthLateStrongWindow++;
+        recordDepthFeedbackTrace("downstream_demand_merge_late", 1,
+                                 PrefetchSourceType::SStride, pf_depth,
+                                 ahead_level);
         evaluateGlobalL1Depth();
     }
 }
@@ -973,56 +1086,76 @@ XSStridePrefetcher::evaluateGlobalL1Depth()
         return;
     }
 
+    const DepthWindowSnapshot pre_window = getDepthWindowSnapshot(1);
+    const int old_l1_depth = globalL1Depth;
+    const int old_l2_gap = globalL2Gap;
     const uint64_t total_feedback =
-        globalL1DepthLateStrongWindow +
-        globalL1DepthLateCacheWindow +
-        globalL1DepthLateMSHRWindow +
-        globalL1DepthTimelyFirstHitWindow;
+        pre_window.lateStrong + pre_window.lateCache +
+        pre_window.lateMSHR + pre_window.timely;
+    const uint64_t weighted_late =
+        pre_window.lateStrong * strongLateWeight +
+        pre_window.lateMSHR * issueLateMSHRWeight +
+        pre_window.lateCache * issueLateCacheWeight;
+    const uint64_t weighted_total = total_feedback * strongLateWeight;
+
     if (total_feedback < globalL1DepthFeedbackWindow) {
+        recordDepthDecisionTrace(__func__, 1, pre_window, pre_window,
+                                 total_feedback, globalL1DepthFeedbackWindow,
+                                 weighted_late, weighted_total, "hold",
+                                 "feedback_window_not_reached", old_l1_depth,
+                                 old_l2_gap);
         return;
     }
 
     stats.globalL1DepthEvalCount++;
 
-    const uint64_t weighted_late =
-        globalL1DepthLateStrongWindow * strongLateWeight +
-        globalL1DepthLateMSHRWindow * issueLateMSHRWeight +
-        globalL1DepthLateCacheWindow * issueLateCacheWeight;
-    const uint64_t weighted_total = total_feedback * strongLateWeight;
+    const bool raise_preferred =
+        weighted_late * 100 >= weighted_total * raiseThresholdPct;
+    const uint64_t weak_late = pre_window.lateCache + pre_window.lateMSHR;
+    const bool lower_preferred =
+        pre_window.lateStrong == 0 &&
+        weak_late * 100 <= total_feedback * lowerWeakLateThresholdPct &&
+        pre_window.timely * 100 >= total_feedback * lowerTimelyThresholdPct;
+    const char *action = "hold";
+    const char *reason = "between_raise_and_lower_thresholds";
 
-    if (weighted_late * 100 >= weighted_total * raiseThresholdPct &&
-        globalL1Depth < globalL1DepthMax) {
-        globalL1Depth++;
-        stats.globalL1DepthRaiseCount++;
-        DPRINTF(XSStridePrefetcher,
-                "Global stride L1 depth increased to %d "
-                "(lateStrong=%lu lateMSHR=%lu lateCache=%lu timely=%lu)\n",
-                globalL1Depth, globalL1DepthLateStrongWindow,
-                globalL1DepthLateMSHRWindow, globalL1DepthLateCacheWindow,
-                globalL1DepthTimelyFirstHitWindow);
-    } else {
-        const uint64_t weak_late =
-            globalL1DepthLateCacheWindow + globalL1DepthLateMSHRWindow;
-        if (globalL1DepthLateStrongWindow == 0 &&
-            weak_late * 100 <= total_feedback * lowerWeakLateThresholdPct &&
-            globalL1DepthTimelyFirstHitWindow * 100 >=
-                total_feedback * lowerTimelyThresholdPct &&
-            globalL1Depth > globalL1DepthMin) {
+    if (raise_preferred) {
+        if (globalL1Depth < globalL1DepthMax) {
+            globalL1Depth++;
+            stats.globalL1DepthRaiseCount++;
+            action = "raise";
+            reason = "raise_threshold_met";
+        } else {
+            reason = "raise_threshold_met_at_max";
+        }
+    } else if (lower_preferred) {
+        if (globalL1Depth > globalL1DepthMin) {
             globalL1Depth--;
             stats.globalL1DepthLowerCount++;
-            DPRINTF(XSStridePrefetcher,
-                    "Global stride L1 depth decreased to %d "
-                    "(lateStrong=%lu lateMSHR=%lu lateCache=%lu timely=%lu)\n",
-                    globalL1Depth, globalL1DepthLateStrongWindow,
-                    globalL1DepthLateMSHRWindow, globalL1DepthLateCacheWindow,
-                    globalL1DepthTimelyFirstHitWindow);
+            action = "lower";
+            reason = "lower_conditions_met";
+        } else {
+            reason = "lower_conditions_met_at_min";
         }
+    } else if (pre_window.lateStrong != 0) {
+        reason = "strong_late_blocks_lower";
+    } else if (weak_late * 100 >
+               total_feedback * lowerWeakLateThresholdPct) {
+        reason = "weak_late_above_lower_threshold";
+    } else if (pre_window.timely * 100 <
+               total_feedback * lowerTimelyThresholdPct) {
+        reason = "timely_below_lower_threshold";
     }
 
     globalL1DepthLateStrongWindow >>= 1;
     globalL1DepthLateCacheWindow >>= 1;
     globalL1DepthLateMSHRWindow >>= 1;
     globalL1DepthTimelyFirstHitWindow >>= 1;
+    const DepthWindowSnapshot post_window = getDepthWindowSnapshot(1);
+    recordDepthDecisionTrace(__func__, 1, pre_window, post_window,
+                             total_feedback, globalL1DepthFeedbackWindow,
+                             weighted_late, weighted_total, action, reason,
+                             old_l1_depth, old_l2_gap);
 }
 
 void
@@ -1032,58 +1165,76 @@ XSStridePrefetcher::evaluateGlobalL2Depth()
         return;
     }
 
+    const DepthWindowSnapshot pre_window = getDepthWindowSnapshot(2);
+    const int old_l1_depth = globalL1Depth;
+    const int old_l2_gap = globalL2Gap;
     const uint64_t total_feedback =
-        globalL2DepthLateStrongWindow +
-        globalL2DepthLateCacheWindow +
-        globalL2DepthLateMSHRWindow +
-        globalL2DepthTimelyFirstHitWindow;
+        pre_window.lateStrong + pre_window.lateCache +
+        pre_window.lateMSHR + pre_window.timely;
+    const uint64_t weighted_late =
+        pre_window.lateStrong * strongLateWeight +
+        pre_window.lateMSHR * issueLateMSHRWeight +
+        pre_window.lateCache * issueLateCacheWeight;
+    const uint64_t weighted_total = total_feedback * strongLateWeight;
+
     if (total_feedback < globalL2DepthFeedbackWindow) {
+        recordDepthDecisionTrace(__func__, 2, pre_window, pre_window,
+                                 total_feedback, globalL2DepthFeedbackWindow,
+                                 weighted_late, weighted_total, "hold",
+                                 "feedback_window_not_reached", old_l1_depth,
+                                 old_l2_gap);
         return;
     }
 
     stats.globalL2DepthEvalCount++;
 
-    const uint64_t weighted_late =
-        globalL2DepthLateStrongWindow * strongLateWeight +
-        globalL2DepthLateMSHRWindow * issueLateMSHRWeight +
-        globalL2DepthLateCacheWindow * issueLateCacheWeight;
-    const uint64_t weighted_total = total_feedback * strongLateWeight;
+    const bool raise_preferred =
+        weighted_late * 100 >= weighted_total * raiseThresholdPct;
+    const uint64_t weak_late = pre_window.lateCache + pre_window.lateMSHR;
+    const bool lower_preferred =
+        pre_window.lateStrong == 0 &&
+        weak_late * 100 <= total_feedback * lowerWeakLateThresholdPct &&
+        pre_window.timely * 100 >= total_feedback * lowerTimelyThresholdPct;
+    const char *action = "hold";
+    const char *reason = "between_raise_and_lower_thresholds";
 
-    if (weighted_late * 100 >= weighted_total * raiseThresholdPct &&
-        globalL2Gap < globalL2GapMax) {
-        globalL2Gap++;
-        stats.globalL2DepthRaiseCount++;
-        DPRINTF(XSStridePrefetcher,
-                "Global stride L2 gap increased to %d (effective depth %d) "
-                "(lateStrong=%lu lateMSHR=%lu lateCache=%lu timely=%lu)\n",
-                globalL2Gap, getEffectiveGlobalL2Depth(),
-                globalL2DepthLateStrongWindow,
-                globalL2DepthLateMSHRWindow, globalL2DepthLateCacheWindow,
-                globalL2DepthTimelyFirstHitWindow);
-    } else {
-        const uint64_t weak_late =
-            globalL2DepthLateCacheWindow + globalL2DepthLateMSHRWindow;
-        if (globalL2DepthLateStrongWindow == 0 &&
-            weak_late * 100 <= total_feedback * lowerWeakLateThresholdPct &&
-            globalL2DepthTimelyFirstHitWindow * 100 >=
-                total_feedback * lowerTimelyThresholdPct &&
-            globalL2Gap > globalL2GapMin) {
+    if (raise_preferred) {
+        if (globalL2Gap < globalL2GapMax) {
+            globalL2Gap++;
+            stats.globalL2DepthRaiseCount++;
+            action = "raise";
+            reason = "raise_threshold_met";
+        } else {
+            reason = "raise_threshold_met_at_max";
+        }
+    } else if (lower_preferred) {
+        if (globalL2Gap > globalL2GapMin) {
             globalL2Gap--;
             stats.globalL2DepthLowerCount++;
-            DPRINTF(XSStridePrefetcher,
-                    "Global stride L2 gap decreased to %d (effective depth %d) "
-                    "(lateStrong=%lu lateMSHR=%lu lateCache=%lu timely=%lu)\n",
-                    globalL2Gap, getEffectiveGlobalL2Depth(),
-                    globalL2DepthLateStrongWindow,
-                    globalL2DepthLateMSHRWindow, globalL2DepthLateCacheWindow,
-                    globalL2DepthTimelyFirstHitWindow);
+            action = "lower";
+            reason = "lower_conditions_met";
+        } else {
+            reason = "lower_conditions_met_at_min";
         }
+    } else if (pre_window.lateStrong != 0) {
+        reason = "strong_late_blocks_lower";
+    } else if (weak_late * 100 >
+               total_feedback * lowerWeakLateThresholdPct) {
+        reason = "weak_late_above_lower_threshold";
+    } else if (pre_window.timely * 100 <
+               total_feedback * lowerTimelyThresholdPct) {
+        reason = "timely_below_lower_threshold";
     }
 
     globalL2DepthLateStrongWindow >>= 1;
     globalL2DepthLateCacheWindow >>= 1;
     globalL2DepthLateMSHRWindow >>= 1;
     globalL2DepthTimelyFirstHitWindow >>= 1;
+    const DepthWindowSnapshot post_window = getDepthWindowSnapshot(2);
+    recordDepthDecisionTrace(__func__, 2, pre_window, post_window,
+                             total_feedback, globalL2DepthFeedbackWindow,
+                             weighted_late, weighted_total, action, reason,
+                             old_l1_depth, old_l2_gap);
 }
 
 statistics::Counter
@@ -1265,6 +1416,12 @@ XSStridePrefetcher::XSstrideStats::XSstrideStats(statistics::Group *parent)
                "number of strong late feedback events for global stride depth"),
       ADD_STAT(globalL2DepthLateStrongCount, statistics::units::Count::get(),
                "number of strong late feedback events for global stride L2 depth"),
+      ADD_STAT(globalL1DepthDownstreamDemandLateCount,
+               statistics::units::Count::get(),
+               "number of downstream demand-merge late events fed into global stride L1 depth"),
+      ADD_STAT(globalL2DepthDownstreamDemandLateCount,
+               statistics::units::Count::get(),
+               "number of downstream demand-merge late events fed into global stride L2 depth"),
       ADD_STAT(globalL1DepthLateHitInCacheCount, statistics::units::Count::get(),
                "number of pfHitInCache feedback events for global stride depth"),
       ADD_STAT(globalL2DepthLateHitInCacheCount, statistics::units::Count::get(),

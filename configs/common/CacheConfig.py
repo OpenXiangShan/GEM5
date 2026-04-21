@@ -307,6 +307,9 @@ def config_cache(options, system):
             dcache.do_fast_writeline = not options.kmh_align
             dcache.pipe_latency = 3 if options.kmh_align else 0
             l2_prefetcher = system.l2_caches[i].prefetcher if options.classic_l2 else system.l2_wrappers[i].prefetcher
+            if (not options.no_pf) and dcache.prefetcher != NULL and \
+                    l2_prefetcher != NULL:
+                l2_prefetcher.add_feedback_upstream(dcache.prefetcher)
             if (not options.no_pf) and options.l1_to_l2_pf_hint:
                 assert dcache.prefetcher != NULL and \
                     l2_prefetcher != NULL

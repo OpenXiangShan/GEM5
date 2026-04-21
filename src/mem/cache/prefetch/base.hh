@@ -1113,6 +1113,7 @@ class Base : public ClockedObject
 
   protected:
     Base *hintDownStream{nullptr};
+    Base *feedbackUpStream{nullptr};
 
     bool squashMark{false};
 
@@ -1122,6 +1123,10 @@ class Base : public ClockedObject
     virtual void addHintDownStream(Base* down_stream)
     {
         hintDownStream = down_stream;
+    }
+    virtual void addFeedbackUpStream(Base *up_stream)
+    {
+        feedbackUpStream = up_stream;
     }
     virtual void rxHint(BaseMMU::Translation *dpp) = 0;
 
@@ -1136,6 +1141,11 @@ class Base : public ClockedObject
     virtual bool hasHintDownStream() const
     {
         return hintDownStream != nullptr;
+    }
+
+    virtual bool hasFeedbackUpStream() const
+    {
+        return feedbackUpStream != nullptr;
     }
 
     virtual void sendCustomInfoToDownStream()
@@ -1154,6 +1164,17 @@ class Base : public ClockedObject
     }
 
     virtual void recvCustomInfoFrmUpStream(CustomPfInfo& info) {}
+
+    virtual void demandMergedIntoPfMSHR(PrefetchSourceType,
+                                        int,
+                                        int)
+    {}
+
+    virtual void notifyDownstreamDemandMergeLate(
+        PrefetchSourceType,
+        int,
+        int)
+    {}
 
     virtual void offloadToDownStream() { panic("offloadToDownStream() not implemented"); }
 

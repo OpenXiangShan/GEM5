@@ -39,7 +39,7 @@ def create_prefetcher(cpu, cache_level, options):
 
     if prefetcher_name == 'XSCompositePrefetcher':
         prefetcher.sstride.use_xs_depth = True
-        prefetcher.sstride.enable_auto_depth = True
+        prefetcher.sstride.enable_auto_depth = False
         if options.l1d_enable_spp:
             prefetcher.enable_spp = True
         if options.l1d_enable_cplx:

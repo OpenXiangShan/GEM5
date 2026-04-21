@@ -70,6 +70,11 @@ class PrefetcherForwarder : public Base
     void pfHitInCache(PrefetchSourceType pf_type,
                       const CacheAccessor::CacheCoverInfo &cover) override;
     void pfHitInWB(PrefetchSourceType pf_type) override;
+    void demandMergedIntoPfMSHR(PrefetchSourceType pf_type, int pf_depth,
+                                int pf_ahead_level) override;
+    void notifyDownstreamDemandMergeLate(PrefetchSourceType pf_type,
+                                         int pf_depth,
+                                         int pf_ahead_level) override;
 
     void recvPrefetchFromCache(const PacketPtr &pkt) override;
 };
