@@ -1,8 +1,13 @@
 name: Manual Performance Test
+run-name: ${{ github.event.inputs.test_name || format('Manual Perf | {0} | {1}', github.event.inputs.configuration, github.event.inputs.benchmark_type) }}
 
 on:
   workflow_dispatch:
     inputs:
+      test_name:
+        description: 'Optional label shown in Actions run list'
+        required: false
+        type: string
       configuration:
         description: 'Choose Kunminghu configuration'
         required: true
@@ -19,6 +24,7 @@ on:
         default: 'spec06-0.8c'
         options:
           - spec06-0.3c
+          - gcc15-spec06-0.8c
           - spec06-0.8c
           - spec06-1.0c
           - spec17-1.0c
