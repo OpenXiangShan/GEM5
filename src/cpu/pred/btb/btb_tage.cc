@@ -317,7 +317,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                     } else if (entry.secondaryValid &&
                                entry.secondaryPosition == position) {
                         matching_subentry = 1;
+                        tageStats.rowBundleSecondaryPredHit++;
                     } else {
+                        tageStats.rowBundleTagMatchNoSubentry++;
                         continue;
                     }
                 }
@@ -449,7 +451,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     if (!provided) {
         use_alt = true;
     } else {
-        bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
+        const short main_counter = main_info.counter();
+        bool main_weak = (main_counter == 0 || main_counter == -1);
         if (main_weak) {
             Addr uidx = getUseAltIdx(btb_entry.pc);
             use_alt = (useAlt[uidx] >= 0);
@@ -523,12 +526,12 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             tageInfoForMgscs[btb_entry.pc].tage_pred_taken = tage_pred_taken;
             tageInfoForMgscs[btb_entry.pc].tage_main_taken = pred.mainInfo.found ? pred.mainInfo.taken() : false;
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_high = pred.mainInfo.found &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) == 7; // counter saturated, -4 or 3
+                                         abs(pred.mainInfo.counter()*2 + 1) == 7; // counter saturated, -4 or 3
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_mid = pred.mainInfo.found &&
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) < 7 &&
-                                         abs(pred.mainInfo.entry.counter*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
+                                         (abs(pred.mainInfo.counter()*2 + 1) < 7 &&
+                                         abs(pred.mainInfo.counter()*2 + 1) > 1); // counter not saturated, -3, -2, 1, 2
             tageInfoForMgscs[btb_entry.pc].tage_pred_conf_low = !pred.mainInfo.found ||
-                                         (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
+                                         (abs(pred.mainInfo.counter()*2 + 1) <= 1); // counter initialized, -1 or 0
             // main predict is different from alt predict/base predict
             tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
         }
@@ -829,6 +832,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         auto &set = tageTable[ti][newIndex];
         if (useRowBundle(ti)) {
+            bool already_present = false;
             for (unsigned way = 0; way < ways; ++way) {
                 auto &row = set[way];
                 if (!row.valid || row.tag != newTag) {
@@ -836,6 +840,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                 }
                 if (row.position == position ||
                     (row.secondaryValid && row.secondaryPosition == position)) {
+                    already_present = true;
                     break;
                 }
                 if (!row.secondaryValid) {
@@ -847,6 +852,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                     row.secondaryPosition = position;
                     row.useful = row.useful || row.secondaryUseful;
                     tageStats.updateAllocSuccess++;
+                    tageStats.rowBundleSecondaryAllocSuccess++;
                     allocated_table = ti;
                     allocated_index = newIndex;
                     allocated_way = way;
@@ -860,6 +866,10 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                             entry.pc);
                     return true;
                 }
+                tageStats.rowBundleAllocRowFull++;
+            }
+            if (already_present) {
+                continue;
             }
         }
         int selected_way = selectVictim(set);
@@ -1206,9 +1216,9 @@ BTBTAGE::update(const FetchTarget &stream) {
             auto main_info = trace_pred.mainInfo;
             auto alt_info = trace_pred.altInfo;
             t.set(startAddr, btb_entry.pc, main_info.way,
-                main_info.found, main_info.entry.counter, main_info.entry.useful,
+                main_info.found, main_info.counter(), main_info.useful(),
                 main_info.table, main_info.index,
-                alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
+                alt_info.found, alt_info.counter(), alt_info.useful(),
                 alt_info.table, alt_info.index,
                 trace_pred.useAlt, trace_pred.taken, actual_taken, alloc_success,
                 allocated_table, allocated_index, allocated_way,
@@ -1571,6 +1581,18 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(shadowAltProvider, statistics::units::Count::get(),
              "predictions whose alternate provider comes from shadow overflow"),
     ADD_STAT(shadowAllocSuccess, statistics::units::Count::get(), "allocations that land in shadow overflow"),
+    ADD_STAT(rowBundleSecondaryPredHit, statistics::units::Count::get(),
+             "row-bundle predictions that hit the secondary subentry"),
+    ADD_STAT(rowBundleSecondaryMainProvider, statistics::units::Count::get(),
+             "predictions whose main provider is a row-bundle secondary subentry"),
+    ADD_STAT(rowBundleSecondaryAltProvider, statistics::units::Count::get(),
+             "predictions whose alternate provider is a row-bundle secondary subentry"),
+    ADD_STAT(rowBundleSecondaryAllocSuccess, statistics::units::Count::get(),
+             "allocations that land in row-bundle secondary subentries"),
+    ADD_STAT(rowBundleTagMatchNoSubentry, statistics::units::Count::get(),
+             "row-bundle row-tag matches that found no matching subentry"),
+    ADD_STAT(rowBundleAllocRowFull, statistics::units::Count::get(),
+             "row-bundle allocations that saw a matching row with both subentries occupied"),
     ADD_STAT(recomputedVsActualDiff, statistics::units::Count::get(),
              "fetchBlocks where recomputed.taken != actual_taken"),
     ADD_STAT(recomputedVsOriginalDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != original pred.taken"),
@@ -1631,6 +1653,12 @@ BTBTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, bo
     }
     if (pred.altInfo.found && pred.altInfo.inShadow) {
         shadowAltProvider++;
+    }
+    if (pred.mainInfo.found && pred.mainInfo.subentry == 1) {
+        rowBundleSecondaryMainProvider++;
+    }
+    if (pred.altInfo.found && pred.altInfo.subentry == 1) {
+        rowBundleSecondaryAltProvider++;
     }
     if (when_pred) {
         if (hit) {

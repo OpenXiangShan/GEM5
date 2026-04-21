@@ -83,8 +83,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
                       position(0), secondaryValid(false), secondaryCounter(0),
                       secondaryUseful(false), secondaryPc(0),
                       secondaryPosition(0), lruCounter(0) {}
+            short getCounter(unsigned subentry = 0) const {
+                return subentry == 0 ? counter : secondaryCounter;
+            }
+            bool getUseful(unsigned subentry = 0) const {
+                return subentry == 0 ? useful : secondaryUseful;
+            }
             bool taken(unsigned subentry = 0) const {
-                return subentry == 0 ? counter >= 0 : secondaryCounter >= 0;
+                return getCounter(subentry) >= 0;
             }
     };
 
@@ -115,6 +121,12 @@ class BTBTAGE : public TimedBaseBTBPredictor
                         way(way), subentry(subentry),
                         inHotSetRescue(inHotSetRescue), inShadow(inShadow),
                         viaAltHash(viaAltHash) {}
+            short counter() const {
+                return entry.getCounter(subentry);
+            }
+            bool useful() const {
+                return entry.getUseful(subentry);
+            }
             bool taken() const {
                 return entry.taken(subentry);
             }
@@ -428,6 +440,12 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar shadowMainProvider;
         Scalar shadowAltProvider;
         Scalar shadowAllocSuccess;
+        Scalar rowBundleSecondaryPredHit;
+        Scalar rowBundleSecondaryMainProvider;
+        Scalar rowBundleSecondaryAltProvider;
+        Scalar rowBundleSecondaryAllocSuccess;
+        Scalar rowBundleTagMatchNoSubentry;
+        Scalar rowBundleAllocRowFull;
 
         // Recomputed prediction difference statistics (per fetchBlock)
         Scalar recomputedVsActualDiff;   // recomputed.taken != actual_taken
