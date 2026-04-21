@@ -12,5 +12,10 @@ jobs:
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv3.py
-      extra_args: "--btb-tage-upper-bound"
+      extra_args: >-
+        -P system.cpu[0].branchPred.tage.enableShadowOverflow=True
+        -P system.cpu[0].branchPred.tage.shadowTables=4
+        -P system.cpu[0].branchPred.tage.usePositionForShadowIndex=True
+        -P system.cpu[0].branchPred.tage.shadowTableSizes=[2048,2048,2048,2048]
+        -P system.cpu[0].branchPred.tage.shadowNumWays=[1,1,1,1]
       benchmark_type: "gcc15-spec06-0.3c"
