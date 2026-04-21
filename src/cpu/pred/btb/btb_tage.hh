@@ -86,12 +86,19 @@ class BTBTAGE : public TimedBaseBTBPredictor
             Addr index;     // Index in the table
             Addr tag;       // Tag that was matched
             unsigned way;    // Which way this entry was found in
+            bool inHotSetRescue; // Whether this entry comes from hot-set rescue
             bool inShadow;   // Whether this entry comes from the shadow overflow
-            TageTableInfo() : found(false), table(0), index(0), tag(0), way(0), inShadow(false) {}
+            bool viaAltHash; // Whether this entry was found via alternate hash
+            TageTableInfo() : found(false), table(0), index(0), tag(0), way(0),
+                              inHotSetRescue(false), inShadow(false),
+                              viaAltHash(false) {}
             TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag,
-                          unsigned way, bool inShadow = false) :
+                          unsigned way, bool inHotSetRescue = false,
+                          bool inShadow = false,
+                          bool viaAltHash = false) :
                         found(found), entry(entry), table(table), index(index), tag(tag), way(way),
-                        inShadow(inShadow) {}
+                        inHotSetRescue(inHotSetRescue), inShadow(inShadow),
+                        viaAltHash(viaAltHash) {}
             bool taken() const {
                 return entry.taken();
             }
@@ -193,6 +200,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Calculate TAGE index with optional branch-position mixing
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, Addr position);
+    Addr getAltTageIndex(Addr pc, int table, uint64_t foldedHist,
+                         uint64_t altFoldedHist);
 
     Addr getShadowIndex(Addr mainIndex, unsigned table, Addr position = 0) const;
 
@@ -268,9 +277,19 @@ class BTBTAGE : public TimedBaseBTBPredictor
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
     const bool usePositionForIndexMix;
     const unsigned indexMixTables;
+    const bool enableDualHashOracle;
+    const unsigned dualHashTables;
+    const bool enableHotSetRescueOracle;
+    const unsigned hotSetRescueTables;
+    const unsigned hotSetRescueEntriesPerSet;
+    const unsigned hotSetRescueThreshold;
+    const unsigned hotSetRescueMaxSets;
     const bool enableShadowOverflow;
     const unsigned shadowTables;
     const bool usePositionForShadowIndex;
+    std::vector<std::unordered_map<Addr, std::vector<TageEntry>>> hotSetRescueTable;
+    std::vector<std::vector<unsigned>> hotSetFailCount;
+    std::vector<unsigned> hotSetActiveSetCount;
     std::vector<unsigned> shadowTableSizes;
     std::vector<unsigned> shadowNumWays;
 
@@ -378,6 +397,15 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar loopPredOverride;
         Scalar loopPredUsedCorrect;
         Scalar loopPredUsedWrong;
+        Scalar dualHashPredHit;
+        Scalar dualHashMainProvider;
+        Scalar dualHashAltProvider;
+        Scalar dualHashAllocSuccess;
+        Scalar hotSetPredHit;
+        Scalar hotSetMainProvider;
+        Scalar hotSetAltProvider;
+        Scalar hotSetAllocSuccess;
+        Scalar hotSetActivated;
         Scalar shadowPredHit;
         Scalar shadowMainProvider;
         Scalar shadowAltProvider;

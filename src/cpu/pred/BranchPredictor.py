@@ -1066,6 +1066,20 @@ class BTBTAGE(TimedBaseBTBPredictor):
         False, "Mix branch position into low-table index calculation")
     indexMixTables = Param.Unsigned(
         4, "Number of low-history tables using branch-position index mix")
+    enableDualHashOracle = Param.Bool(
+        False, "Enable alternate low-table hash probing as an alias oracle")
+    dualHashTables = Param.Unsigned(
+        4, "Number of low-history tables equipped with alternate hash probing")
+    enableHotSetRescueOracle = Param.Bool(
+        False, "Enable rescue entries only for low-table hot conflict sets")
+    hotSetRescueTables = Param.Unsigned(
+        4, "Number of low-history tables equipped with hot-set rescue")
+    hotSetRescueEntriesPerSet = Param.Unsigned(
+        2, "Number of rescue entries per activated hot set")
+    hotSetRescueThreshold = Param.Unsigned(
+        8, "Allocation-failure threshold to activate a hot set")
+    hotSetRescueMaxSets = Param.Unsigned(
+        64, "Maximum activated hot sets per table")
     enableShadowOverflow = Param.Bool(
         False, "Enable sparse low-table shadow ways as conflict rescue")
     shadowTables = Param.Unsigned(

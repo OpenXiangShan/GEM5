@@ -42,6 +42,13 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
       maxBranchPositions(32),
       usePositionForIndexMix(false),
       indexMixTables(0),
+      enableDualHashOracle(false),
+      dualHashTables(0),
+      enableHotSetRescueOracle(false),
+      hotSetRescueTables(0),
+      hotSetRescueEntriesPerSet(0),
+      hotSetRescueThreshold(0),
+      hotSetRescueMaxSets(0),
       enableShadowOverflow(false),
       shadowTables(0),
       usePositionForShadowIndex(false),
@@ -86,6 +93,13 @@ numWays(p.numWays),
 maxBranchPositions(p.maxBranchPositions),
 usePositionForIndexMix(p.usePositionForIndexMix),
 indexMixTables(p.indexMixTables),
+enableDualHashOracle(p.enableDualHashOracle),
+dualHashTables(p.dualHashTables),
+enableHotSetRescueOracle(p.enableHotSetRescueOracle),
+hotSetRescueTables(p.hotSetRescueTables),
+hotSetRescueEntriesPerSet(p.hotSetRescueEntriesPerSet),
+hotSetRescueThreshold(p.hotSetRescueThreshold),
+hotSetRescueMaxSets(p.hotSetRescueMaxSets),
 enableShadowOverflow(p.enableShadowOverflow),
 shadowTables(p.shadowTables),
 usePositionForShadowIndex(p.usePositionForShadowIndex),
@@ -136,6 +150,11 @@ tageStats(this, p.numPredictors, p.numBanks)
 
     assert(numWays.size() >= numPredictors);
     tageTable.resize(numPredictors);
+    if (enableHotSetRescueOracle) {
+        hotSetRescueTable.resize(hotSetRescueTables);
+        hotSetFailCount.resize(hotSetRescueTables);
+        hotSetActiveSetCount.assign(hotSetRescueTables, 0);
+    }
     if (enableShadowOverflow) {
         shadowTageTable.resize(shadowTables);
     }
@@ -166,6 +185,9 @@ tageStats(this, p.numPredictors, p.numBanks)
         tagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i], 16));
         altTagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16));
         indexFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16));
+        if (enableHotSetRescueOracle && i < hotSetRescueTables) {
+            hotSetFailCount[i].assign(tableSizes[i], 0);
+        }
     }
     if (enableShadowOverflow) {
         for (unsigned i = 0; i < shadowTables; ++i) {
@@ -269,7 +291,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                         : getTageTag(startPC, i, position);
 
         bool match = false; // for each table, only one way can be matched
+        bool match_in_hot_set_rescue = false;
         bool match_in_shadow = false;
+        bool match_via_alt_hash = false;
         TageEntry matching_entry;
         unsigned matching_way = 0;
 
@@ -288,6 +312,59 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
                     i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
                 break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
+            }
+        }
+
+        if (!match && enableDualHashOracle && (unsigned)i < dualHashTables) {
+            Addr altIndex = predMeta ?
+                getAltTageIndex(startPC, i,
+                    predMeta->indexFoldedHist[i].get(),
+                    predMeta->altTagFoldedHist[i].get()) :
+                getAltTageIndex(startPC, i,
+                    indexFoldedHist[i].get(),
+                    altTagFoldedHist[i].get());
+            if (altIndex != index) {
+                for (unsigned way = 0; way < ways; way++) {
+                    auto &entry = tageTable[i][altIndex][way];
+                    if (entry.valid && tag == entry.tag) {
+                        matching_entry = entry;
+                        matching_way = way;
+                        index = altIndex;
+                        match = true;
+                        match_via_alt_hash = true;
+                        tageStats.dualHashPredHit++;
+                        DPRINTF(TAGE,
+                            "hit alt-hash table %d[%lu][%u]: valid %d, "
+                            "tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
+                            i, altIndex, way, entry.valid, entry.tag,
+                            entry.counter, entry.useful, btb_entry.pc, position);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!match && enableHotSetRescueOracle &&
+            (unsigned)i < hotSetRescueTables) {
+            auto it = hotSetRescueTable[i].find(index);
+            if (it != hotSetRescueTable[i].end()) {
+                auto &rescueSet = it->second;
+                for (unsigned way = 0; way < rescueSet.size(); ++way) {
+                    auto &entry = rescueSet[way];
+                    if (entry.valid && tag == entry.tag) {
+                        matching_entry = entry;
+                        matching_way = way;
+                        match = true;
+                        match_in_hot_set_rescue = true;
+                        tageStats.hotSetPredHit++;
+                        DPRINTF(TAGE,
+                            "hit hot-set rescue table %d[%lu][%u]: valid %d, "
+                            "tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
+                            i, index, way, entry.valid, entry.tag,
+                            entry.counter, entry.useful, btb_entry.pc, position);
+                        break;
+                    }
+                }
             }
         }
 
@@ -316,11 +393,19 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         if (match) {
             if (!provided) {
                 // First match becomes main prediction
-                main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way, match_in_shadow);
+                main_info = TageTableInfo(true, matching_entry, i, index, tag,
+                                          matching_way,
+                                          match_in_hot_set_rescue,
+                                          match_in_shadow,
+                                          match_via_alt_hash);
                 provided = true;
             } else if (!alt_provided) {
                 // Second match becomes alternative prediction
-                alt_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way, match_in_shadow);
+                alt_info = TageTableInfo(true, matching_entry, i, index, tag,
+                                         matching_way,
+                                         match_in_hot_set_rescue,
+                                         match_in_shadow,
+                                         match_via_alt_hash);
                 alt_provided = true;
                 break;
             }
@@ -570,9 +655,11 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         DPRINTF(TAGE, "prediction provided by table %d, idx %lu, way %u, updating corresponding entry\n",
             main_info.table, main_info.index, main_info.way);
 
-        auto &way = main_info.inShadow ?
-            shadowTageTable[main_info.table][main_info.index][main_info.way] :
-            tageTable[main_info.table][main_info.index][main_info.way];
+        auto &way = main_info.inHotSetRescue ?
+            hotSetRescueTable[main_info.table][main_info.index][main_info.way] :
+            (main_info.inShadow ?
+                shadowTageTable[main_info.table][main_info.index][main_info.way] :
+                tageTable[main_info.table][main_info.index][main_info.way]);
 
         // Update prediction counter
         updateCounter(actual_taken, 3, way.counter);
@@ -591,9 +678,11 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
     // Update alternative prediction provider
     if (used_alt && alt_info.found) {
-        auto &way = alt_info.inShadow ?
-            shadowTageTable[alt_info.table][alt_info.index][alt_info.way] :
-            tageTable[alt_info.table][alt_info.index][alt_info.way];
+        auto &way = alt_info.inHotSetRescue ?
+            hotSetRescueTable[alt_info.table][alt_info.index][alt_info.way] :
+            (alt_info.inShadow ?
+                shadowTageTable[alt_info.table][alt_info.index][alt_info.way] :
+                tageTable[alt_info.table][alt_info.index][alt_info.way]);
         updateCounter(actual_taken, 3, way.counter);
         // No LRU maintenance
     }
@@ -679,37 +768,32 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         Addr newTag = getTageTag(startPC, ti,
             meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
 
-        auto &set = tageTable[ti][newIndex];
-
         const unsigned ways = getNumWays(ti);
-
-        int selected_way = -1;
-        for (unsigned way = 0; way < ways; ++way) {
-            if (!set[way].valid) {
-                selected_way = way;
-                break;
+        auto selectVictim = [ways](auto &set) -> int {
+            for (unsigned way = 0; way < ways; ++way) {
+                if (!set[way].valid) {
+                    return way;
+                }
             }
-        }
 
-        if (selected_way == -1) {
             for (unsigned way = 0; way < ways; ++way) {
                 auto &cand = set[way];
                 const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
                 if (!cand.useful && weakish) {
-                    selected_way = way;
-                    break;
+                    return way;
                 }
             }
-        }
 
-        if (selected_way == -1) {
             for (unsigned way = 0; way < ways; ++way) {
                 if (!set[way].useful) {
-                    selected_way = way;
-                    break;
+                    return way;
                 }
             }
-        }
+            return -1;
+        };
+
+        auto &set = tageTable[ti][newIndex];
+        int selected_way = selectVictim(set);
 
         if (selected_way != -1) {
             short newCounter = actual_taken ? 0 : -1;
@@ -722,6 +806,76 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             allocated_way = selected_way;
             usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
             return true;
+        }
+
+        if (enableDualHashOracle && ti < dualHashTables) {
+            Addr altIndex = getAltTageIndex(startPC, ti,
+                meta->indexFoldedHist[ti].get(),
+                meta->altTagFoldedHist[ti].get());
+            if (altIndex != newIndex) {
+                auto &altSet = tageTable[ti][altIndex];
+                int alt_selected_way = selectVictim(altSet);
+                if (alt_selected_way != -1) {
+                    short newCounter = actual_taken ? 0 : -1;
+                    DPRINTF(TAGE,
+                            "allocating alt-hash entry in table %d[%lu][%u], "
+                            "tag %lu (with pos %u), counter %d, pc %#lx\n",
+                            ti, altIndex, alt_selected_way, newTag, position,
+                            newCounter, entry.pc);
+                    altSet[alt_selected_way] = TageEntry(newTag, newCounter,
+                                                         entry.pc);
+                    tageStats.updateAllocSuccess++;
+                    tageStats.dualHashAllocSuccess++;
+                    allocated_table = ti;
+                    allocated_index = altIndex;
+                    allocated_way = alt_selected_way;
+                    usefulResetCnt =
+                        usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+                    return true;
+                }
+            }
+        }
+
+        if (enableHotSetRescueOracle && ti < hotSetRescueTables) {
+            auto &failCnt = hotSetFailCount[ti][newIndex];
+            failCnt++;
+            auto rescueIt = hotSetRescueTable[ti].find(newIndex);
+            if (rescueIt == hotSetRescueTable[ti].end() &&
+                failCnt >= hotSetRescueThreshold &&
+                hotSetActiveSetCount[ti] < hotSetRescueMaxSets) {
+                auto [it, inserted] = hotSetRescueTable[ti].emplace(
+                    newIndex,
+                    std::vector<TageEntry>(hotSetRescueEntriesPerSet));
+                if (inserted) {
+                    hotSetActiveSetCount[ti]++;
+                    tageStats.hotSetActivated++;
+                }
+                rescueIt = it;
+            }
+            if (rescueIt != hotSetRescueTable[ti].end()) {
+                auto &rescueSet = rescueIt->second;
+                int rescue_selected_way = selectVictim(rescueSet);
+                if (rescue_selected_way != -1) {
+                    short newCounter = actual_taken ? 0 : -1;
+                    DPRINTF(TAGE,
+                            "allocating hot-set rescue entry in table "
+                            "%d[%lu][%u], tag %lu (with pos %u), counter %d, "
+                            "pc %#lx\n",
+                            ti, newIndex, rescue_selected_way, newTag, position,
+                            newCounter, entry.pc);
+                    rescueSet[rescue_selected_way] = TageEntry(newTag,
+                                                               newCounter,
+                                                               entry.pc);
+                    tageStats.updateAllocSuccess++;
+                    tageStats.hotSetAllocSuccess++;
+                    allocated_table = ti;
+                    allocated_index = newIndex;
+                    allocated_way = rescue_selected_way;
+                    usefulResetCnt =
+                        usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+                    return true;
+                }
+            }
         }
 
         if (enableShadowOverflow && ti < shadowTables) {
@@ -790,6 +944,15 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             for (auto &table : shadowTageTable) {
                 for (auto &set : table) {
                     for (auto &way : set) {
+                        way.useful = false;
+                    }
+                }
+            }
+        }
+        if (enableHotSetRescueOracle) {
+            for (auto &table : hotSetRescueTable) {
+                for (auto &kv : table) {
+                    for (auto &way : kv.second) {
                         way.useful = false;
                     }
                 }
@@ -1098,6 +1261,21 @@ BTBTAGE::getTageIndex(Addr pc, int t)
 }
 
 Addr
+BTBTAGE::getAltTageIndex(Addr pc, int t, uint64_t foldedHist,
+                         uint64_t altFoldedHist)
+{
+    Addr mask = (1ULL << tableIndexBits[t]) - 1;
+
+    const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
+    Addr pcBits = (pc >> pcShift) & mask;
+    Addr foldedBits = foldedHist & mask;
+    Addr altBits = ((altFoldedHist << 1) ^ (altFoldedHist >> 1)) & mask;
+    Addr salt = ((0x9e3779b1ULL * (t + 1)) >> 1) & mask;
+
+    return (pcBits ^ foldedBits ^ altBits ^ salt) % tableSizes[t];
+}
+
+Addr
 BTBTAGE::getShadowIndex(Addr mainIndex, unsigned table, Addr position) const
 {
     assert(enableShadowOverflow);
@@ -1293,6 +1471,24 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(loopPredOverride, statistics::units::Count::get(), "loop predictor changed the original TAGE direction"),
     ADD_STAT(loopPredUsedCorrect, statistics::units::Count::get(), "loop predictor used and final direction correct"),
     ADD_STAT(loopPredUsedWrong, statistics::units::Count::get(), "loop predictor used and final direction wrong"),
+    ADD_STAT(dualHashPredHit, statistics::units::Count::get(),
+             "alternate-hash hits at lookup"),
+    ADD_STAT(dualHashMainProvider, statistics::units::Count::get(),
+             "predictions whose main provider comes from alternate hash"),
+    ADD_STAT(dualHashAltProvider, statistics::units::Count::get(),
+             "predictions whose alternate provider comes from alternate hash"),
+    ADD_STAT(dualHashAllocSuccess, statistics::units::Count::get(),
+             "allocations that land in alternate hash sets"),
+    ADD_STAT(hotSetPredHit, statistics::units::Count::get(),
+             "hot-set rescue hits at lookup"),
+    ADD_STAT(hotSetMainProvider, statistics::units::Count::get(),
+             "predictions whose main provider comes from hot-set rescue"),
+    ADD_STAT(hotSetAltProvider, statistics::units::Count::get(),
+             "predictions whose alternate provider comes from hot-set rescue"),
+    ADD_STAT(hotSetAllocSuccess, statistics::units::Count::get(),
+             "allocations that land in hot-set rescue entries"),
+    ADD_STAT(hotSetActivated, statistics::units::Count::get(),
+             "number of hot sets activated for rescue"),
     ADD_STAT(shadowPredHit, statistics::units::Count::get(), "shadow overflow hits at lookup"),
     ADD_STAT(shadowMainProvider, statistics::units::Count::get(),
              "predictions whose main provider comes from shadow overflow"),
@@ -1342,6 +1538,18 @@ BTBTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, bo
     bool hit = pred.mainInfo.found;
     unsigned hit_table = pred.mainInfo.table;
     bool useAlt = pred.useAlt;
+    if (pred.mainInfo.found && pred.mainInfo.inHotSetRescue) {
+        hotSetMainProvider++;
+    }
+    if (pred.altInfo.found && pred.altInfo.inHotSetRescue) {
+        hotSetAltProvider++;
+    }
+    if (pred.mainInfo.found && pred.mainInfo.viaAltHash) {
+        dualHashMainProvider++;
+    }
+    if (pred.altInfo.found && pred.altInfo.viaAltHash) {
+        dualHashAltProvider++;
+    }
     if (pred.mainInfo.found && pred.mainInfo.inShadow) {
         shadowMainProvider++;
     }
