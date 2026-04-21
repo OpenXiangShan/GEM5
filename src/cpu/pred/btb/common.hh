@@ -696,18 +696,24 @@ struct BTBTrace : public Record {
 struct MgscTrace : public Record
 {
     void set(uint64_t branchPC,
+        uint64_t bbStart, uint64_t branchOffset,
         // TAGE prediction info
         uint64_t tagePred, uint64_t tageConfHigh, uint64_t tageConfMid, uint64_t tageConfLow,
         // Percsum for each table (signed values stored as int64)
         int64_t bwPercsum, int64_t lPercsum, int64_t iPercsum,
         int64_t gPercsum, int64_t pPercsum, int64_t biasPercsum,
         // SC decision
-        int64_t totalSum, int64_t totalThres, uint64_t useSc, uint64_t scPred,
+        int64_t totalSum, int64_t totalThres, int64_t effectiveGate, int64_t margin,
+        uint64_t bwIndexSig, uint64_t lIndexSig, uint64_t iIndexSig,
+        uint64_t gIndexSig, uint64_t pIndexSig, uint64_t biasIndexSig,
+        uint64_t useSc, uint64_t scPred,
         // Result
         uint64_t actualTaken)
     {
         _tick = curTick();
         _uint64_data["branchPC"] = branchPC;
+        _uint64_data["bbStart"] = bbStart;
+        _uint64_data["branchOffset"] = branchOffset;
         // TAGE info
         _uint64_data["tagePred"] = tagePred;
         _uint64_data["tageConfHigh"] = tageConfHigh;
@@ -723,6 +729,14 @@ struct MgscTrace : public Record
         // SC decision
         _uint64_data["totalSum"] = static_cast<uint64_t>(totalSum);
         _uint64_data["totalThres"] = static_cast<uint64_t>(totalThres);
+        _uint64_data["effectiveGate"] = static_cast<uint64_t>(effectiveGate);
+        _uint64_data["margin"] = static_cast<uint64_t>(margin);
+        _uint64_data["bwIndexSig"] = bwIndexSig;
+        _uint64_data["lIndexSig"] = lIndexSig;
+        _uint64_data["iIndexSig"] = iIndexSig;
+        _uint64_data["gIndexSig"] = gIndexSig;
+        _uint64_data["pIndexSig"] = pIndexSig;
+        _uint64_data["biasIndexSig"] = biasIndexSig;
         _uint64_data["useSc"] = useSc;
         _uint64_data["scPred"] = scPred;
         // Result
