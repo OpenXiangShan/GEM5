@@ -13,6 +13,7 @@ jobs:
     with:
       config_path: configs/example/kmhv3.py
       extra_args: >-
+        -P system.cpu[0].branchPred.tage.tableSizes=[8192,8192,8192,8192,2048,2048,2048,2048]
         -P system.cpu[0].branchPred.tage.enableShadowOverflow=True
         -P system.cpu[0].branchPred.tage.shadowTables=4
         -P system.cpu[0].branchPred.tage.shadowTableSizes=[2048,2048,2048,2048]
