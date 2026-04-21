@@ -65,14 +65,26 @@ class BTBTAGE : public TimedBaseBTBPredictor
             short counter;  // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
             bool useful;    // 1-bit usefulness counter; true means useful
             Addr pc;        // branch pc, like branch position, for btb entry pc check
+            unsigned position; // branch position for row-bundle matching
+            bool secondaryValid;
+            short secondaryCounter;
+            bool secondaryUseful;
+            Addr secondaryPc;
+            unsigned secondaryPosition;
             unsigned lruCounter; // Counter for LRU replacement policy
 
-            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0), lruCounter(0) {}
+            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0),
+                          position(0), secondaryValid(false), secondaryCounter(0),
+                          secondaryUseful(false), secondaryPc(0),
+                          secondaryPosition(0), lruCounter(0) {}
 
             TageEntry(Addr tag, short counter, Addr pc) :
-                      valid(true), tag(tag), counter(counter), useful(false), pc(pc), lruCounter(0) {}
-            bool taken() const {
-                return counter >= 0;
+                      valid(true), tag(tag), counter(counter), useful(false), pc(pc),
+                      position(0), secondaryValid(false), secondaryCounter(0),
+                      secondaryUseful(false), secondaryPc(0),
+                      secondaryPosition(0), lruCounter(0) {}
+            bool taken(unsigned subentry = 0) const {
+                return subentry == 0 ? counter >= 0 : secondaryCounter >= 0;
             }
     };
 
@@ -86,21 +98,25 @@ class BTBTAGE : public TimedBaseBTBPredictor
             Addr index;     // Index in the table
             Addr tag;       // Tag that was matched
             unsigned way;    // Which way this entry was found in
+            unsigned subentry; // Which subentry matched inside the row bundle
             bool inHotSetRescue; // Whether this entry comes from hot-set rescue
             bool inShadow;   // Whether this entry comes from the shadow overflow
             bool viaAltHash; // Whether this entry was found via alternate hash
             TageTableInfo() : found(false), table(0), index(0), tag(0), way(0),
+                              subentry(0),
                               inHotSetRescue(false), inShadow(false),
                               viaAltHash(false) {}
             TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag,
-                          unsigned way, bool inHotSetRescue = false,
+                          unsigned way, unsigned subentry = 0,
+                          bool inHotSetRescue = false,
                           bool inShadow = false,
                           bool viaAltHash = false) :
-                        found(found), entry(entry), table(table), index(index), tag(tag), way(way),
+                        found(found), entry(entry), table(table), index(index), tag(tag),
+                        way(way), subentry(subentry),
                         inHotSetRescue(inHotSetRescue), inShadow(inShadow),
                         viaAltHash(viaAltHash) {}
             bool taken() const {
-                return entry.taken();
+                return entry.taken(subentry);
             }
     };
 
@@ -284,6 +300,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     const unsigned hotSetRescueEntriesPerSet;
     const unsigned hotSetRescueThreshold;
     const unsigned hotSetRescueMaxSets;
+    const bool enableRowBundle;
+    const unsigned rowBundleTables;
     const bool enableShadowOverflow;
     const unsigned shadowTables;
     const bool usePositionForShadowIndex;
@@ -519,6 +537,7 @@ private:
     unsigned getLRUVictim(int table, Addr index);
     unsigned getNumWays(unsigned table) const;
     unsigned getShadowNumWays(unsigned table) const;
+    bool useRowBundle(unsigned table) const;
 
     std::shared_ptr<TageMeta> meta;
 };

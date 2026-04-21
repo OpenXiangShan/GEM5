@@ -49,6 +49,8 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
       hotSetRescueEntriesPerSet(0),
       hotSetRescueThreshold(0),
       hotSetRescueMaxSets(0),
+      enableRowBundle(false),
+      rowBundleTables(0),
       enableShadowOverflow(false),
       shadowTables(0),
       usePositionForShadowIndex(false),
@@ -100,6 +102,8 @@ hotSetRescueTables(p.hotSetRescueTables),
 hotSetRescueEntriesPerSet(p.hotSetRescueEntriesPerSet),
 hotSetRescueThreshold(p.hotSetRescueThreshold),
 hotSetRescueMaxSets(p.hotSetRescueMaxSets),
+enableRowBundle(p.enableRowBundle),
+rowBundleTables(p.rowBundleTables),
 enableShadowOverflow(p.enableShadowOverflow),
 shadowTables(p.shadowTables),
 usePositionForShadowIndex(p.usePositionForShadowIndex),
@@ -286,9 +290,12 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         Addr index = predMeta ?
             getTageIndex(startPC, i, predMeta->indexFoldedHist[i].get(), position) :
             getTageIndex(startPC, i, indexFoldedHist[i].get(), position);
+        const Addr tagPosition = useRowBundle(i) ? 0 : position;
         Addr tag = predMeta ? getTageTag(startPC, i,
-                            predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(), position)
-                        : getTageTag(startPC, i, position);
+                            predMeta->tagFoldedHist[i].get(),
+                            predMeta->altTagFoldedHist[i].get(),
+                            tagPosition)
+                        : getTageTag(startPC, i, tagPosition);
 
         bool match = false; // for each table, only one way can be matched
         bool match_in_hot_set_rescue = false;
@@ -296,6 +303,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         bool match_via_alt_hash = false;
         TageEntry matching_entry;
         unsigned matching_way = 0;
+        unsigned matching_subentry = 0;
 
         // Search all ways for a matching entry
         const unsigned ways = getNumWays(i);
@@ -303,6 +311,16 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
             auto &entry = tageTable[i][index][way];
             // entry valid, tag match (position already encoded in tag, no need to check pc)
             if (entry.valid && tag == entry.tag) {
+                if (useRowBundle(i)) {
+                    if (entry.position == position) {
+                        matching_subentry = 0;
+                    } else if (entry.secondaryValid &&
+                               entry.secondaryPosition == position) {
+                        matching_subentry = 1;
+                    } else {
+                        continue;
+                    }
+                }
                 matching_entry = entry;
                 matching_way = way;
                 match = true;
@@ -329,6 +347,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                     if (entry.valid && tag == entry.tag) {
                         matching_entry = entry;
                         matching_way = way;
+                        matching_subentry = 0;
                         index = altIndex;
                         match = true;
                         match_via_alt_hash = true;
@@ -354,6 +373,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                     if (entry.valid && tag == entry.tag) {
                         matching_entry = entry;
                         matching_way = way;
+                        matching_subentry = 0;
                         match = true;
                         match_in_hot_set_rescue = true;
                         tageStats.hotSetPredHit++;
@@ -376,6 +396,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 if (entry.valid && tag == entry.tag) {
                     matching_entry = entry;
                     matching_way = way;
+                    matching_subentry = 0;
                     index = shadowIndex;
                     match = true;
                     match_in_shadow = true;
@@ -394,7 +415,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
             if (!provided) {
                 // First match becomes main prediction
                 main_info = TageTableInfo(true, matching_entry, i, index, tag,
-                                          matching_way,
+                                          matching_way, matching_subentry,
                                           match_in_hot_set_rescue,
                                           match_in_shadow,
                                           match_via_alt_hash);
@@ -402,7 +423,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
             } else if (!alt_provided) {
                 // Second match becomes alternative prediction
                 alt_info = TageTableInfo(true, matching_entry, i, index, tag,
-                                         matching_way,
+                                         matching_way, matching_subentry,
                                          match_in_hot_set_rescue,
                                          match_in_shadow,
                                          match_via_alt_hash);
@@ -635,7 +656,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
-        bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
+        short main_counter = main_info.subentry == 0 ?
+            main_info.entry.counter : main_info.entry.secondaryCounter;
+        bool main_weak = (main_counter == 0 || main_counter == -1);
         if (main_weak) {
             tageStats.updateProviderNa++;
             Addr uidx = getUseAltIdx(entry.pc);
@@ -661,17 +684,25 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                 shadowTageTable[main_info.table][main_info.index][main_info.way] :
                 tageTable[main_info.table][main_info.index][main_info.way]);
 
+        short &wayCtr =
+            main_info.subentry == 0 ? way.counter : way.secondaryCounter;
+        bool &wayUseful =
+            main_info.subentry == 0 ? way.useful : way.secondaryUseful;
+
         // Update prediction counter
-        updateCounter(actual_taken, 3, way.counter);
+        updateCounter(actual_taken, 3, wayCtr);
 
         // Match RTL behavior: useful only increases when the provider proves
         // itself against the alternative prediction. There is no local
         // decrement/reset path tied to weak counters or "humility" cases.
         bool main_is_correct = main_info.taken() == actual_taken;
         if (main_info.taken() != alt_taken && main_is_correct) {
-            way.useful = 1;
+            wayUseful = 1;
         }
-        DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
+        if (useRowBundle(main_info.table)) {
+            way.useful = way.useful || way.secondaryUseful;
+        }
+        DPRINTF(TAGE, "useful bit is now %d\n", wayUseful);
 
         // No LRU maintenance
     }
@@ -683,7 +714,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
             (alt_info.inShadow ?
                 shadowTageTable[alt_info.table][alt_info.index][alt_info.way] :
                 tageTable[alt_info.table][alt_info.index][alt_info.way]);
-        updateCounter(actual_taken, 3, way.counter);
+        short &wayCtr =
+            alt_info.subentry == 0 ? way.counter : way.secondaryCounter;
+        updateCounter(actual_taken, 3, wayCtr);
         // No LRU maintenance
     }
 
@@ -765,8 +798,10 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
         Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get(), position);
+        const Addr tagPosition = useRowBundle(ti) ? 0 : position;
         Addr newTag = getTageTag(startPC, ti,
-            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
+            meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(),
+            tagPosition);
 
         const unsigned ways = getNumWays(ti);
         auto selectVictim = [ways](auto &set) -> int {
@@ -793,13 +828,48 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         };
 
         auto &set = tageTable[ti][newIndex];
+        if (useRowBundle(ti)) {
+            for (unsigned way = 0; way < ways; ++way) {
+                auto &row = set[way];
+                if (!row.valid || row.tag != newTag) {
+                    continue;
+                }
+                if (row.position == position ||
+                    (row.secondaryValid && row.secondaryPosition == position)) {
+                    break;
+                }
+                if (!row.secondaryValid) {
+                    short newCounter = actual_taken ? 0 : -1;
+                    row.secondaryValid = true;
+                    row.secondaryCounter = newCounter;
+                    row.secondaryUseful = false;
+                    row.secondaryPc = entry.pc;
+                    row.secondaryPosition = position;
+                    row.useful = row.useful || row.secondaryUseful;
+                    tageStats.updateAllocSuccess++;
+                    allocated_table = ti;
+                    allocated_index = newIndex;
+                    allocated_way = way;
+                    usefulResetCnt =
+                        usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+                    DPRINTF(TAGE,
+                            "allocating row-bundle secondary entry in table "
+                            "%d[%lu][%u], tag %lu, pos %u, counter %d, "
+                            "pc %#lx\n",
+                            ti, newIndex, way, newTag, position, newCounter,
+                            entry.pc);
+                    return true;
+                }
+            }
+        }
         int selected_way = selectVictim(set);
 
         if (selected_way != -1) {
             short newCounter = actual_taken ? 0 : -1;
             DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
                     ti, newIndex, selected_way, newTag, position, newCounter, entry.pc);
-            set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+            set[selected_way] = TageEntry(newTag, newCounter, entry.pc);
+            set[selected_way].position = position;
             tageStats.updateAllocSuccess++;
             allocated_table = ti;
             allocated_index = newIndex;
@@ -1340,6 +1410,12 @@ BTBTAGE::getShadowNumWays(unsigned table) const
     assert(enableShadowOverflow);
     assert(table < shadowTables);
     return shadowNumWays[table];
+}
+
+bool
+BTBTAGE::useRowBundle(unsigned table) const
+{
+    return enableRowBundle && table < rowBundleTables;
 }
 
 /**

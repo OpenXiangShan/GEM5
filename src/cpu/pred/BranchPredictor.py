@@ -1080,6 +1080,10 @@ class BTBTAGE(TimedBaseBTBPredictor):
         8, "Allocation-failure threshold to activate a hot set")
     hotSetRescueMaxSets = Param.Unsigned(
         64, "Maximum activated hot sets per table")
+    enableRowBundle = Param.Bool(
+        False, "Enable same-tag dual-subentry rows for low-history tables")
+    rowBundleTables = Param.Unsigned(
+        4, "Number of low-history tables equipped with row bundles")
     enableShadowOverflow = Param.Bool(
         False, "Enable sparse low-table shadow ways as conflict rescue")
     shadowTables = Param.Unsigned(
