@@ -938,7 +938,9 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
 
 #ifndef NDEBUG
     if (tage->isEnabled()) {
-        tage->checkFoldedHist(s0PHistory, "speculative update");
+        tage->checkFoldedHist(
+            tage->usesPathHistory() ? s0PHistory : s0History,
+            "speculative update");
     }
     if (ittage->isEnabled()) {
         ittage->checkFoldedHist(s0PHistory, "speculative update");
@@ -1032,7 +1034,8 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
 #ifndef NDEBUG
     checkHistory(s0History);
     if (tage->isEnabled()) {
-        tage->checkFoldedHist(s0PHistory,
+        tage->checkFoldedHist(
+            tage->usesPathHistory() ? s0PHistory : s0History,
             squash_type == SQUASH_CTRL ? "control squash" :
             squash_type == SQUASH_OTHER ? "non control squash" : "trap squash");
     }

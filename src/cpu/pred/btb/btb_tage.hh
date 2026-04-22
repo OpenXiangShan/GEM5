@@ -47,7 +47,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 #ifdef UNIT_TEST
     // Test constructor
     BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2,
-            unsigned tableSize = 1024, unsigned numBanks = 4);
+            unsigned tableSize = 1024, unsigned numBanks = 4,
+            bool usePathHistory = true);
 #else
     // Production constructor
     typedef BTBTAGEParams Params;
@@ -134,28 +135,17 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     std::shared_ptr<void> getPredictionMeta() override;
 
-    // speculative update 3 folded history, according history and pred.taken
-    // the other specUpdateHist methods are left blank
+    // Update folded history from GHR when configured in direction-history mode.
+    void specUpdateHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred) override;
+    // Update folded history from PHR when configured in path-history mode.
     void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
 
-    // Recover 3 folded history after a misprediction, then update 3 folded history according to history and pred.taken
-    // the other recoverHist methods are left blank
+    void recoverHist(const boost::dynamic_bitset<> &history,
+                     const FetchTarget &entry, int shamt,
+                     bool cond_taken) override;
     void recoverPHist(const boost::dynamic_bitset<> &history,
                         const FetchTarget &entry,int shamt, bool cond_taken) override;
-
-#ifdef UNIT_TEST
-    // API compatibility wrappers for testing
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override
-    {
-        specUpdatePHist(history, pred);
-    }
-
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                     bool cond_taken) override
-    {
-        recoverPHist(history, entry, shamt, cond_taken);
-    }
-#endif
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchTarget &entry) override;
@@ -206,7 +196,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     unsigned getBankId(Addr pc) const;
 
     // Update branch history
-    void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
+    void doUpdateHist(const bitset &history, int shamt, bool taken,
+                      Addr pc, Addr target);
 
     // Number of TAGE predictor tables
     const unsigned numPredictors;
@@ -233,13 +224,16 @@ class BTBTAGE : public TimedBaseBTBPredictor
     std::vector<unsigned> histLengths;
 
     // Folded history for tag calculation
-    std::vector<PathFoldedHist> tagFoldedHist;
+    std::vector<SelectableFoldedHist> tagFoldedHist;
 
     // Folded history for alternative tag calculation
-    std::vector<PathFoldedHist> altTagFoldedHist;
+    std::vector<SelectableFoldedHist> altTagFoldedHist;
 
     // Folded history for index calculation
-    std::vector<PathFoldedHist> indexFoldedHist;
+    std::vector<SelectableFoldedHist> indexFoldedHist;
+
+    // Select whether BTBTAGE consumes PHR or GHR folded history.
+    const bool usePathHistory;
 
     // Linear feedback shift register for allocation
     LFSR64 allocLFSR;
@@ -422,6 +416,7 @@ public:
 
     // Recover folded history after misprediction
     void recoverFoldedHist(const bitset& history);
+    bool usesPathHistory() const { return usePathHistory; }
 
 public:
 
@@ -430,9 +425,9 @@ public:
     typedef struct TageMeta
     {
         std::unordered_map<Addr, TagePrediction> preds;
-        std::vector<PathFoldedHist> tagFoldedHist;
-        std::vector<PathFoldedHist> altTagFoldedHist;
-        std::vector<PathFoldedHist> indexFoldedHist;
+        std::vector<SelectableFoldedHist> tagFoldedHist;
+        std::vector<SelectableFoldedHist> altTagFoldedHist;
+        std::vector<SelectableFoldedHist> indexFoldedHist;
         bitset history;     // for viewing
         TageMeta() {}
     } TageMeta;

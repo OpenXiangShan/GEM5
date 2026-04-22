@@ -3,6 +3,9 @@
 
 #include <array>
 #include <cstdint>
+#include <type_traits>
+#include <utility>
+#include <variant>
 
 #include <boost/dynamic_bitset.hpp>
 
@@ -170,6 +173,48 @@ class PathFoldedHist : public FoldedHistBase
 };
 
 using FoldedHist = FoldedHistBase;
+
+/**
+ * Runtime-selectable folded history wrapper used by predictors that want to
+ * switch between direction-based (GHR) and path-based (PHR) folding.
+ *
+ * This keeps the folded-history snapshots copyable so predictor metadata can
+ * store and recover them without heap allocation.
+ */
+class SelectableFoldedHist
+{
+  public:
+    SelectableFoldedHist();
+    SelectableFoldedHist(int histLen, int foldedLen, int maxShamt,
+                         HistoryType historyType);
+
+    uint64_t get() const;
+    boost::dynamic_bitset<> getAsBitset() const;
+    void update(const boost::dynamic_bitset<> &history, int shamt, bool taken,
+                Addr pc = 0, Addr target = 0);
+    void recover(const SelectableFoldedHist &other);
+    void check(const boost::dynamic_bitset<> &history) const;
+    HistoryType getHistoryType() const { return historyType; }
+    bool isPathBased() const { return historyType == HistoryType::PATH; }
+
+  private:
+    using Storage = std::variant<DirectionFoldedHist, PathFoldedHist>;
+
+    template <typename Fn>
+    decltype(auto) visit(Fn &&fn)
+    {
+        return std::visit(std::forward<Fn>(fn), storage);
+    }
+
+    template <typename Fn>
+    decltype(auto) visit(Fn &&fn) const
+    {
+        return std::visit(std::forward<Fn>(fn), storage);
+    }
+
+    HistoryType historyType;
+    Storage storage;
+};
 
 }  // namespace btb_pred
 

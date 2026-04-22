@@ -1,6 +1,8 @@
 #include "cpu/pred/btb/folded_hist.hh"
 // #include "debug/MGSC.hh"
 
+#include "base/logging.hh"
+
 namespace gem5
 {
 
@@ -226,6 +228,71 @@ PathFoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken
         }
         _folded = temp;
     }
+}
+
+SelectableFoldedHist::SelectableFoldedHist()
+    : historyType(HistoryType::PATH),
+      storage(std::in_place_type<PathFoldedHist>, 1, 1, 1)
+{
+}
+
+SelectableFoldedHist::SelectableFoldedHist(int histLen, int foldedLen,
+                                           int maxShamt,
+                                           HistoryType historyType)
+    : historyType(historyType),
+      storage(std::in_place_type<PathFoldedHist>, 1, 1, 1)
+{
+    switch (historyType) {
+      case HistoryType::PATH:
+        storage.emplace<PathFoldedHist>(histLen, foldedLen, maxShamt);
+        break;
+      case HistoryType::GLOBAL:
+        storage.emplace<DirectionFoldedHist>(histLen, foldedLen, maxShamt);
+        break;
+      default:
+        panic("SelectableFoldedHist only supports GLOBAL and PATH, got %d",
+              static_cast<int>(historyType));
+    }
+}
+
+uint64_t
+SelectableFoldedHist::get() const
+{
+    return visit([](const auto &hist) { return hist.get(); });
+}
+
+boost::dynamic_bitset<>
+SelectableFoldedHist::getAsBitset() const
+{
+    return visit([](const auto &hist) { return hist.getAsBitset(); });
+}
+
+void
+SelectableFoldedHist::update(const boost::dynamic_bitset<> &history, int shamt,
+                             bool taken, Addr pc, Addr target)
+{
+    visit([&](auto &hist) { hist.update(history, shamt, taken, pc, target); });
+}
+
+void
+SelectableFoldedHist::recover(const SelectableFoldedHist &other)
+{
+    assert(historyType == other.historyType);
+    visit([&](auto &hist) {
+        using HistType = std::decay_t<decltype(hist)>;
+        auto &otherHist =
+            const_cast<HistType &>(std::get<HistType>(other.storage));
+        hist.recover(otherHist);
+    });
+}
+
+void
+SelectableFoldedHist::check(const boost::dynamic_bitset<> &history) const
+{
+    visit([&](const auto &hist) {
+        auto &mutableHist = const_cast<std::decay_t<decltype(hist)> &>(hist);
+        mutableHist.check(history);
+    });
 }
 
 }  // namespace btb_pred

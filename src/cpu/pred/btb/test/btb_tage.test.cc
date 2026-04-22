@@ -90,6 +90,15 @@ void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr targe
     }
 }
 
+void applyOutcomeHistory(boost::dynamic_bitset<>& history, int shamt, bool taken)
+{
+    if (shamt <= 0) {
+        return;
+    }
+    history <<= shamt;
+    history[0] = taken;
+}
+
 /**
  * @brief Helper function to find conditional taken prediction for a given PC
  *
@@ -314,7 +323,7 @@ TEST_F(BTBTAGETest, HistoryUpdate) {
 
     // Test case 1: Update with taken branch (PHR shifts in 2 bits from PC hash)
     // Correct order: first update folded histories with pre-update PHR, then mutate PHR
-    tage->doUpdateHist(history, true, pc, target);
+    tage->doUpdateHist(history, 2, true, pc, target);
     applyPathHistoryTaken(history, pc, target);
 
     // Verify folded history matches the ideal fold of the updated PHR
@@ -322,11 +331,28 @@ TEST_F(BTBTAGETest, HistoryUpdate) {
 
     // Test case 2: Update with not-taken branch (PHR unchanged, folded update is no-op)
     boost::dynamic_bitset<> before_not_taken = history;
-    tage->doUpdateHist(history, false, pc, target);
+    tage->doUpdateHist(history, 2, false, pc, target);
 
     // Verify folded history remains consistent
     tage->checkFoldedHist(history, "not-taken update");
     EXPECT_EQ(history, before_not_taken);
+}
+
+TEST_F(BTBTAGETest, GlobalHistoryModeUpdate) {
+    BTBTAGE ghrTage(4, 2, 1024, 4, false);
+    boost::dynamic_bitset<> ghr(64, false);
+
+    ghrTage.doUpdateHist(ghr, 1, true, 0, 0);
+    applyOutcomeHistory(ghr, 1, true);
+    ghrTage.checkFoldedHist(ghr, "ghr taken update");
+
+    boost::dynamic_bitset<> before_not_taken = ghr;
+    ghrTage.doUpdateHist(ghr, 1, false, 0, 0);
+    applyOutcomeHistory(ghr, 1, false);
+    ghrTage.checkFoldedHist(ghr, "ghr not-taken update");
+
+    EXPECT_NE(ghr, before_not_taken)
+        << "GHR mode should still shift history on not-taken branches";
 }
 
 // Test main and alternative prediction mechanism by direct setup
@@ -514,16 +540,6 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
     boost::dynamic_bitset<> originalHistory = history;
 
     // Store original folded history state
-    std::vector<PathFoldedHist> originalTagFoldedHist;
-    std::vector<PathFoldedHist> originalAltTagFoldedHist;
-    std::vector<PathFoldedHist> originalIndexFoldedHist;
-
-    for (int i = 0; i < tage->numPredictors; i++) {
-        originalTagFoldedHist.push_back(tage->tagFoldedHist[i]);
-        originalAltTagFoldedHist.push_back(tage->altTagFoldedHist[i]);
-        originalIndexFoldedHist.push_back(tage->indexFoldedHist[i]);
-    }
-
     // Make a prediction
     bool predicted_taken = predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
 
