@@ -1104,6 +1104,33 @@ class MicroTAGE(TimedBaseBTBPredictor):
     enableBankConflict = Param.Bool(False,"Enable bank conflict simulation")
     numDelay = 0
 
+class PairTAGE(TimedBaseBTBPredictor):
+    """Pair-aware MicroTAGE storage skeleton for two-block emissions."""
+    type = 'PairTAGE'
+    cxx_class = 'gem5::branch_prediction::btb_pred::PairTAGE'
+    cxx_header = "cpu/pred/btb/pairtage.hh"
+
+    needMoreHistories = Param.Bool(True, "PairTAGE needs more histories")
+    enableSC = Param.Bool(False, "Enable SC or not")
+    updateOnRead = Param.Bool(True,"Enable update on read, no need to save tage meta in FTQ")
+    numPredictors = Param.Unsigned(4, "Number of TAGE predictors")
+    tableSizes = VectorParam.Unsigned([512] * 4,"the TAGE T0~Tn length")
+    TTagBitSizes = VectorParam.Unsigned([16] * 4 ,"the T0~Tn entry's tag bit size")
+    TTagPcShifts = VectorParam.Unsigned([1] * 4 ,"when the T0~Tn entry's tag generating, PC right shift")
+    blockSize = Param.Unsigned(32,"tage index function uses 32B aligned block address")
+
+    histLengths = VectorParam.Unsigned([5,9,17,27] ,"the BTB TAGE T0~Tn history length")
+    maxHistLen = Param.Unsigned(970,"The length of history passed from DBP")
+    numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
+    numWays = Param.Unsigned(1, "Number of ways per set")
+    baseTableSize = Param.Unsigned(256,"Base table size")
+    maxBranchPositions = Param.Unsigned(32,"Maximum branch positions per 64-byte block")
+    useAltOnNaSize = Param.Unsigned(128,"Size of the useAltOnNa table")
+    useAltOnNaWidth = Param.Unsigned(7,"Width of the useAltOnNa table")
+    numBanks = Param.Unsigned(4,"Number of banks for bank conflict simulation")
+    enableBankConflict = Param.Bool(False,"Enable bank conflict simulation")
+    numDelay = Param.Unsigned(0,"Prediction latency in cycles")
+
 class BTBITTAGE(TimedBaseBTBPredictor):
     type = 'BTBITTAGE'
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBITTAGE'
