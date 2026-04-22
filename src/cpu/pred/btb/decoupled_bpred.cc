@@ -126,8 +126,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     if (ubtb->isEnabled()) components.push_back(ubtb);
     if (abtb->isEnabled()) components.push_back(abtb);
     if (microtage->isEnabled()) components.push_back(microtage);
-    if (mbtb->isEnabled()) components.push_back(mbtb);
     if (pairtage->isEnabled()) components.push_back(pairtage);
+    if (mbtb->isEnabled()) components.push_back(mbtb);
     if (tage->isEnabled()) components.push_back(tage);
     if (ras->isEnabled()) components.push_back(ras);
     if (ittage->isEnabled()) components.push_back(ittage);
