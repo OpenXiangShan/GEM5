@@ -472,6 +472,7 @@ struct FullBTBPrediction
     int s3Source;
 
     FullBTBPrediction() :
+        tid(0),
         bbStart(0),
         btbEntries(),
         condTakens(),
@@ -479,6 +480,7 @@ struct FullBTBPrediction
         returnTarget(0),
         tageInfoForMgscs(),
         predSource(0),
+        overrideReason(OverrideReason::NO_OVERRIDE),
         predTick(0),
         s1Source(-1),
         s3Source(-1) {}

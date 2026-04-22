@@ -144,6 +144,8 @@ class MBTB : public TimedBaseBTBPredictor
     void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
+    std::vector<BTBEntry> getPredictedEntriesNoSideEffect(Addr startAddr) const;
+
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
      */
@@ -215,7 +217,7 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch to look up.
      *  @return Returns the index into the BTB.
      */
-    inline Addr getIndex(Addr instPC) {
+    inline Addr getIndex(Addr instPC) const {
         return (instPC >> idxShiftAmt) & idxMask;
     }
 
@@ -225,7 +227,7 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch's address.
      *  @return Returns the tag bits.
      */
-    inline Addr getTag(Addr instPC) {
+    inline Addr getTag(Addr instPC) const {
         return (instPC >> tagShiftAmt) & tagMask;
     }
 
@@ -256,6 +258,8 @@ class MBTB : public TimedBaseBTBPredictor
      */
     std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries, 
                                               Addr startAddr);
+    std::vector<TickedBTBEntry> processEntriesNoSideEffect(
+        const std::vector<TickedBTBEntry>& entries, Addr startAddr) const;
 
     /** Fill predictions for pipeline stages
      *  @param entries Processed BTB entries
@@ -341,15 +345,18 @@ class MBTB : public TimedBaseBTBPredictor
      *  @return Returns all hit BTB entries.
      */
     std::vector<TickedBTBEntry> lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta);
+    std::vector<TickedBTBEntry> lookupNoSideEffect(Addr block_pc) const;
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
      * @return Vector of matching BTB entries
      */
     std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc);
+    std::vector<TickedBTBEntry> lookupSingleBlockNoSideEffect(Addr block_pc) const;
 
     /** Victim cache operations */
     std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc);
+    std::vector<TickedBTBEntry> lookupVictimCacheNoSideEffect(Addr block_pc) const;
     void insertVictimCache(const TickedBTBEntry& evicted_entry);
     bool eraseFromVictimCacheByPC(Addr pc);
 
@@ -382,7 +389,7 @@ class MBTB : public TimedBaseBTBPredictor
     unsigned numSets;       // Number of sets per SRAM (numEntries/numWays/2)
     
     /** SRAM selection helper function */
-    inline int getSRAMId(Addr pc) {
+    inline int getSRAMId(Addr pc) const {
         // Use the bit after block offset to select SRAM
         // For 32B blocks: bit 5 selects SRAM (blockSize=32, log2(32)=5)
         return ((pc >> floorLog2(blockSize)) & 1);
