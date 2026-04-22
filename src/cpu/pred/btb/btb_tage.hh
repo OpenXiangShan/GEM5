@@ -104,18 +104,25 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
             int finalProviderTable; // Table that supplied the final prediction, -1 means base BTB
             bool finalProviderIsAlt; // Whether final prediction came from alternate provider
+            Addr useAltIdx;        // useAltOnNa index consulted at prediction time
+            short useAltCtr;       // useAltOnNa counter value before update
+            uint64_t hitTableMask; // Bitmask of all TAGE tables that matched during lookup
 
 
             TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false),
-                               finalProviderTable(-1), finalProviderIsAlt(false) {}
+                               finalProviderTable(-1), finalProviderIsAlt(false),
+                               useAltIdx(0), useAltCtr(0), hitTableMask(0) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
                             bool useAlt, bool taken, bool altPred,
-                            int finalProviderTable, bool finalProviderIsAlt) :
+                            int finalProviderTable, bool finalProviderIsAlt,
+                            Addr useAltIdx, short useAltCtr, uint64_t hitTableMask) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
                             useAlt(useAlt), taken(taken), altPred(altPred),
                             finalProviderTable(finalProviderTable),
-                            finalProviderIsAlt(finalProviderIsAlt) {}
+                            finalProviderIsAlt(finalProviderIsAlt),
+                            useAltIdx(useAltIdx), useAltCtr(useAltCtr),
+                            hitTableMask(hitTableMask) {}
     };
 
 

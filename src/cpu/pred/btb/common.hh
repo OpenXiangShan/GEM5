@@ -652,7 +652,9 @@ struct TageMissTrace : public Record
         uint64_t altFound, uint64_t altCounter, uint64_t altUseful, uint64_t altTable, uint64_t altIndex,
         uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess,
         uint64_t allocTable, uint64_t allocIndex, uint64_t allocWay,
-        std::string history, uint64_t indexFoldedHist)
+        std::string history, std::string phistory, uint64_t indexFoldedHist,
+        uint64_t useAltIdx, uint64_t useAltCtr, uint64_t hitTableMask,
+        uint64_t finalProviderTable, uint64_t finalProviderIsAlt)
     {
         _tick = curTick();
         _uint64_data["startPC"] = startPC;
@@ -676,7 +678,13 @@ struct TageMissTrace : public Record
         _uint64_data["allocIndex"] = allocIndex;
         _uint64_data["allocWay"] = allocWay;
         _text_data["history"] = history;
+        _text_data["phistory"] = phistory;
         _uint64_data["indexFoldedHist"] = indexFoldedHist;
+        _uint64_data["useAltIdx"] = useAltIdx;
+        _uint64_data["useAltCtr"] = useAltCtr;
+        _uint64_data["hitTableMask"] = hitTableMask;
+        _uint64_data["finalProviderTable"] = finalProviderTable;
+        _uint64_data["finalProviderIsAlt"] = finalProviderIsAlt;
     }
 };
 

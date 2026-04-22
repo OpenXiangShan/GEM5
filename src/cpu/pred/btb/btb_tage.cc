@@ -190,6 +190,12 @@ BTBTAGE::setTrace()
             std::make_pair("allocWay", UINT64),
             std::make_pair("history", TEXT),
             std::make_pair("indexFoldedHist", UINT64),
+            std::make_pair("phistory", TEXT),
+            std::make_pair("useAltIdx", UINT64),
+            std::make_pair("useAltCtr", UINT64),
+            std::make_pair("hitTableMask", UINT64),
+            std::make_pair("finalProviderTable", UINT64),
+            std::make_pair("finalProviderIsAlt", UINT64),
         };
         tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
         tageMissTrace->init_table();
@@ -222,6 +228,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     bool provided = false;
     bool alt_provided = false;
     TageTableInfo main_info, alt_info;
+    uint64_t hit_table_mask = 0;
 
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
@@ -259,6 +266,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         }
 
         if (match) {
+            if (i < 64) {
+                hit_table_mask |= (1ULL << i);
+            }
             if (!provided) {
                 // First match becomes main prediction
                 main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
@@ -282,6 +292,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     bool base_taken = btb_entry.ctr >= 0;
     //bool base_taken = btb_entry.ctr >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
+    Addr use_alt_idx = getUseAltIdx(btb_entry.pc);
+    short use_alt_ctr = useAlt[use_alt_idx];
 
     // use_alt_on_na gating: when provider weak, consult per-PC counter
     bool use_alt = false;
@@ -290,8 +302,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     } else {
         bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
         if (main_weak) {
-            Addr uidx = getUseAltIdx(btb_entry.pc);
-            use_alt = (useAlt[uidx] >= 0);
+            use_alt = (use_alt_ctr >= 0);
         } else {
             use_alt = false;
         }
@@ -312,8 +323,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     DPRINTF(TAGE, "tage final source %#lx table %d alt %d\n",
         btb_entry.pc, final_provider_table, final_provider_is_alt);
 
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred,
-        final_provider_table, final_provider_is_alt);
+    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken,
+        alt_pred, final_provider_table, final_provider_is_alt, use_alt_idx,
+        use_alt_ctr, hit_table_mask);
 }
 
 /**
@@ -841,11 +853,17 @@ BTBTAGE::update(const FetchTarget &stream) {
         if (enableDB) {
             TageMissTrace t;
             std::string history_str;
+            std::string phistory_str;
             boost::dynamic_bitset<> history_low50 = predMeta->history;
+            boost::dynamic_bitset<> phistory_low50 = stream.phistory;
             if (history_low50.size() > 50) {
                 history_low50.resize(50);  // get the lower 50 bits of history
             }
+            if (phistory_low50.size() > 50) {
+                phistory_low50.resize(50);  // get the lower 50 bits of path history
+            }
             boost::to_string(history_low50, history_str);
+            boost::to_string(phistory_low50, phistory_str);
             TagePrediction trace_pred = predMeta->preds[btb_entry.pc];
             auto main_info = trace_pred.mainInfo;
             auto alt_info = trace_pred.altInfo;
@@ -856,7 +874,11 @@ BTBTAGE::update(const FetchTarget &stream) {
                 alt_info.table, alt_info.index,
                 trace_pred.useAlt, trace_pred.taken, actual_taken, alloc_success,
                 allocated_table, allocated_index, allocated_way,
-                history_str, predMeta->indexFoldedHist[main_info.table].get());
+                history_str, phistory_str,
+                predMeta->indexFoldedHist[main_info.table].get(),
+                trace_pred.useAltIdx, trace_pred.useAltCtr,
+                trace_pred.hitTableMask, trace_pred.finalProviderTable,
+                trace_pred.finalProviderIsAlt);
             tageMissTrace->write_record(t);
         }
 #endif

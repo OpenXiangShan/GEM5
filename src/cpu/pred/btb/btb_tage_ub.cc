@@ -200,12 +200,16 @@ BTBTAGEUpperBound::lookupExactPrediction(
     bool altProvided = false;
     TageTableInfo mainInfo, altInfo;
     BranchPredictionMeta localMeta;
+    uint64_t hitTableMask = 0;
 
     for (int i = numPredictors - 1; i >= 0; --i) {
         auto key = buildKey(btbEntry.pc, historyWords, histLengths[i]);
         auto it = exactTables[i].find(key);
         if (it == exactTables[i].end()) {
             continue;
+        }
+        if (i < 64) {
+            hitTableMask |= (1ULL << i);
         }
 
         if (!provided) {
@@ -228,6 +232,8 @@ BTBTAGEUpperBound::lookupExactPrediction(
     const bool altTaken = altInfo.taken();
     const bool baseTaken = btbEntry.ctr >= 0;
     const bool altPred = altProvided ? altTaken : baseTaken;
+    Addr useAltIdx = getUseAltIdx(btbEntry.pc);
+    short useAltCtr = useAlt[useAltIdx];
 
     bool useAltPred = false;
     if (!provided) {
@@ -236,8 +242,7 @@ BTBTAGEUpperBound::lookupExactPrediction(
         const bool mainWeak =
             (mainInfo.entry.counter == 0 || mainInfo.entry.counter == -1);
         if (mainWeak) {
-            Addr uidx = getUseAltIdx(btbEntry.pc);
-            useAltPred = (useAlt[uidx] >= 0);
+            useAltPred = (useAltCtr >= 0);
         }
     }
 
@@ -252,7 +257,8 @@ BTBTAGEUpperBound::lookupExactPrediction(
     }
 
     return TagePrediction(btbEntry.pc, mainInfo, altInfo, useAltPred, taken,
-                          altPred, finalProviderTable, finalProviderIsAlt);
+                          altPred, finalProviderTable, finalProviderIsAlt,
+                          useAltIdx, useAltCtr, hitTableMask);
 }
 
 void
