@@ -53,8 +53,8 @@ buildPredictionFromPairBlock(ThreadID tid,
     pred.predSource = basePred.predSource;
     pred.overrideReason = OverrideReason::NO_OVERRIDE;
     pred.predTick = basePred.predTick;
-    pred.s1Source = basePred.s1Source;
-    pred.s3Source = basePred.s3Source;
+    pred.s1Source = pairComponentIdx;
+    pred.s3Source = pairComponentIdx;
 
     auto entry = buildPairBlockEntry(block, pairComponentIdx);
     pred.btbEntries.push_back(entry);
@@ -221,14 +221,20 @@ DecoupledBPUWithBTB::tick()
     }
 
     for (int tid = 0; tid < numThreads; tid++) {
+        FetchTargetId firstBlockTargetId = 0;
+        if (threads[tid].firstBlockProcessedThisTick && !ftq.empty(tid)) {
+            firstBlockTargetId = ftq.backId(tid);
+        }
+
         prepareSecondBlockTrainingPrediction(tid);
         processSecondBlock(tid);
 
-        if (threads[tid].firstBlockProcessedThisTick && pairtage &&
-            pairtage->isEnabled() && !ftq.empty(tid)) {
+        if (firstBlockTargetId != 0 && pairtage && pairtage->isEnabled() &&
+            ftq.hasTarget(firstBlockTargetId, tid)) {
             const auto *secondPred = threads[tid].secondBlockTrainPredReady ?
                 &threads[tid].secondBlockTrainPred : nullptr;
-            pairtage->trainFromActualPred(ftq.back(tid), secondPred);
+            pairtage->trainFromActualPred(ftq.get(firstBlockTargetId, tid),
+                                          secondPred);
         }
     }
 
@@ -437,7 +443,7 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     s0PC = threads[tid].finalPred.getTarget(predictWidth);;
 
     // 3. Update history information
-    updateHistoryForPrediction(entry);
+    updateHistoryForPrediction(entry, threads[tid].finalPred);
 
     // 4. Fill ahead pipeline
     fillAheadPipeline(entry);
@@ -477,6 +483,13 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
         return;
     }
 
+    if (ftq.full(tid)) {
+        DPRINTF(DecoupleBP,
+                "Skip PairTAGE second block enqueue for thread %u because FTQ is full\n",
+                tid);
+        return;
+    }
+
     auto secondBlock = pairtage->getSecondPredBlock();
     if (!secondBlock.valid) {
         DPRINTF(DecoupleBP,
@@ -488,14 +501,22 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     auto secondPred = buildPredictionFromPairBlock(
         tid, secondBlock, thread.s0PC, thread.finalPred, pairtage->getComponentIdx());
     auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
+
+    thread.s0PC = secondPred.getTarget(predictWidth);
+    updateHistoryForPrediction(entry, secondPred);
     fillAheadPipeline(entry);
+    ftq.insert(entry);
 
     thread.pendingSecondBlockEntry = entry;
     thread.pendingSecondBlockValid = true;
 
     DPRINTF(DecoupleBP,
-            "Packaged PairTAGE second block for thread %u: startPC %#lx, branchPC %#lx, target %#lx, taken %d\n",
-            tid, entry.startPC, secondBlock.branchPC, secondBlock.targetPC, secondBlock.taken);
+            "Inserted PairTAGE second block %lu for thread %u: startPC %#lx, branchPC %#lx, target %#lx, taken %d\n",
+            ftq.backId(tid), tid, entry.startPC, secondBlock.branchPC,
+            secondBlock.targetPC, secondBlock.taken);
+
+    printTarget(entry);
+    dbpBtbStats.fsqEntryEnqueued++;
 }
 
 void
@@ -1048,32 +1069,33 @@ DecoupledBPUWithBTB::getPreservedReturnAddr(const DynInstPtr &dynInst)
  * @param entry The fetch target entry to update history for
  */
 void
-DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
+DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
+                                                FullBTBPrediction &pred)
 {
     ThreadID tid = entry.tid;
     auto& s0History = threads[tid].s0History;
     auto& s0PHistory = threads[tid].s0PHistory;
     auto& s0BwHistory = threads[tid].s0BwHistory;
     auto& s0LHistory = threads[tid].s0LHistory;
-    auto& finalPred = threads[tid].finalPred;
 
 
     // Update component-specific history, for TAGE/ITTAGE/MGSC
     for (int i = 0; i < numComponents; i++) {
-        // use old s0History to update folded history, then use finalPred to update folded history
-        components[i]->specUpdateHist(s0History, finalPred);
-        components[i]->specUpdatePHist(s0PHistory, finalPred);
-        if (components[i]->needMoreHistories) {
-            components[i]->specUpdateBwHist(s0BwHistory, finalPred);
-            components[i]->specUpdateIHist(finalPred);
-            components[i]->specUpdateLHist(s0LHistory, finalPred);
+        // use old s0History to update folded history, then use pred to update folded history
+        components[i]->specUpdateHist(s0History, pred);
+        components[i]->specUpdatePHist(s0PHistory, pred);
+        if (components[i]->needMoreHistories){
+            components[i]->specUpdatePHist(s0PHistory, pred);
+            components[i]->specUpdateBwHist(s0BwHistory, pred);
+            components[i]->specUpdateIHist(pred);
+            components[i]->specUpdateLHist(s0LHistory, pred);
         }
     }
 
     // Get prediction information for history updates
     int shamt;
     bool taken;
-    std::tie(shamt, taken) = finalPred.getHistInfo();
+    std::tie(shamt, taken) = pred.getHistInfo();
 
     // Update global history
     histShiftIn(shamt, taken, s0History);
@@ -1085,10 +1107,10 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     // Get prediction information for global backward history updates
     int bw_shamt;
     bool bw_taken;
-    std::tie(bw_shamt, bw_taken) = finalPred.getBwHistInfo();
+    std::tie(bw_shamt, bw_taken) = pred.getBwHistInfo();
 
     // Get prediction information for path history updates
-    auto [p_pc, p_target, p_taken]= finalPred.getPHistInfo(); // p_taken = taken
+    auto [p_pc, p_target, p_taken]= pred.getPHistInfo(); // p_taken = taken
 
     // Update global backward history
     histShiftIn(bw_shamt, bw_taken, s0BwHistory);
@@ -1098,7 +1120,8 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
 
     // Update local history
     histShiftIn(shamt, taken,
-        s0LHistory[mgsc->getPcIndex(finalPred.bbStart, log2(mgsc->getNumEntriesFirstLocalHistories()))]);
+        s0LHistory[mgsc->getPcIndex(pred.bbStart,
+            log2(mgsc->getNumEntriesFirstLocalHistories()))]);
 
 #ifndef NDEBUG
     if (tage->isEnabled()) {
