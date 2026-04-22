@@ -115,15 +115,22 @@ def setKmhV3Params(args, system):
 
             # Standalone SC experiment: disable direction TAGE sources while
             # keeping ITTAGE for indirect targets, and let MGSC run with
-            # default metadata using only path/IMLI tables.
+            # low-confidence not-taken fallback metadata using only
+            # path/IMLI/bias tables.
             cpu.branchPred.mgsc.forceUseSC = True
             cpu.branchPred.mgsc.allowMissingTageInfo = True
+            cpu.branchPred.mgsc.defaultMissingTagePredTaken = False
+            cpu.branchPred.mgsc.defaultMissingTageMainTaken = False
+            cpu.branchPred.mgsc.defaultMissingTagePredConfHigh = False
+            cpu.branchPred.mgsc.defaultMissingTagePredConfMid = False
+            cpu.branchPred.mgsc.defaultMissingTagePredConfLow = True
+            cpu.branchPred.mgsc.defaultMissingTagePredAltDiff = False
             cpu.branchPred.mgsc.enableBwTable = False
             cpu.branchPred.mgsc.enableLTable = False
             cpu.branchPred.mgsc.enableITable = True
             cpu.branchPred.mgsc.enableGTable = False
             cpu.branchPred.mgsc.enablePTable = True
-            cpu.branchPred.mgsc.enableBiasTable = False
+            cpu.branchPred.mgsc.enableBiasTable = True
 
         # l1 cache per core
         if args.caches:

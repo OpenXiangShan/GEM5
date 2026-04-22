@@ -330,6 +330,100 @@ struct MgscHarness
 
         return result;
     }
+
+    StepResult
+    stepWithoutTageInfo(Addr start_pc, const BTBEntry &entry, bool actual_taken)
+    {
+        for (auto &pred : stage_preds) {
+            pred.bbStart = start_pc;
+            pred.btbEntries = {entry};
+            pred.tageInfoForMgscs.clear();
+        }
+
+        boost::dynamic_bitset<> ghr_before = ghr;
+        boost::dynamic_bitset<> phr_before = phr;
+        boost::dynamic_bitset<> bwhr_before = bwhr;
+        auto lhr_before = lhr;
+
+        mgsc.putPCHistory(start_pc, ghr, stage_preds);
+        auto meta = mgsc.getPredictionMeta();
+
+        auto [found, pred_taken] = findCondTaken(stage_preds[1].condTakens, entry.pc);
+        EXPECT_TRUE(found);
+
+        StepResult result;
+        result.predicted_taken = pred_taken;
+        {
+            const auto &preds = BTBMGSC::TestAccess::preds(mgsc);
+            auto it = preds.find(entry.pc);
+            EXPECT_NE(it, preds.end());
+            if (it != preds.end()) {
+                result.mgsc_pred = it->second;
+            }
+        }
+
+        mgsc.specUpdateHist(ghr_before, stage_preds[1]);
+        mgsc.specUpdatePHist(phr_before, stage_preds[1]);
+        mgsc.specUpdateBwHist(bwhr_before, stage_preds[1]);
+        mgsc.specUpdateIHist(stage_preds[1]);
+        mgsc.specUpdateLHist(lhr_before, stage_preds[1]);
+
+        int shamt;
+        bool cond_taken;
+        std::tie(shamt, cond_taken) = stage_preds[1].getHistInfo();
+        histShiftIn(shamt, cond_taken, ghr);
+
+        int bw_shamt;
+        bool bw_taken;
+        std::tie(bw_shamt, bw_taken) = stage_preds[1].getBwHistInfo();
+        histShiftIn(bw_shamt, bw_taken, bwhr);
+
+        auto [p_pc, p_target, p_taken] = stage_preds[1].getPHistInfo();
+        pHistShiftIn(2, p_taken, phr, p_pc, p_target);
+
+        unsigned lhr_idx =
+            mgsc.getPcIndex(stage_preds[1].bbStart, log2(mgsc.getNumEntriesFirstLocalHistories()));
+        histShiftIn(shamt, cond_taken, lhr[lhr_idx]);
+
+        if (pred_taken != actual_taken) {
+            ghr = ghr_before;
+            phr = phr_before;
+            bwhr = bwhr_before;
+            lhr = lhr_before;
+
+            FetchTarget recover_stream;
+            recover_stream.startPC = start_pc;
+            recover_stream.predMetas[mgsc.getComponentIdx()] = meta;
+            recover_stream.resolved = true;
+            recover_stream.exeBranchInfo = entry;
+            recover_stream.exeTaken = actual_taken;
+
+            mgsc.recoverHist(ghr, recover_stream, shamt, actual_taken);
+            mgsc.recoverPHist(phr, recover_stream, 2, actual_taken);
+
+            bool actual_bw_taken = actual_taken && (entry.target < entry.pc);
+            mgsc.recoverBwHist(bwhr, recover_stream, bw_shamt, actual_bw_taken);
+            mgsc.recoverIHist(recover_stream, bw_shamt, actual_bw_taken);
+            mgsc.recoverLHist(lhr, recover_stream, shamt, actual_taken);
+
+            histShiftIn(shamt, actual_taken, ghr);
+            histShiftIn(bw_shamt, actual_bw_taken, bwhr);
+            pHistShiftIn(2, actual_taken, phr, entry.pc, entry.target);
+            histShiftIn(shamt, actual_taken, lhr[lhr_idx]);
+        }
+
+        FetchTarget update_stream;
+        update_stream.startPC = start_pc;
+        update_stream.updateBTBEntries = {entry};
+        update_stream.updateIsOldEntry = true;
+        update_stream.resolved = true;
+        update_stream.exeBranchInfo = entry;
+        update_stream.exeTaken = actual_taken;
+        update_stream.predMetas[mgsc.getComponentIdx()] = meta;
+        mgsc.update(update_stream);
+
+        return result;
+    }
 };
 
 } // namespace
@@ -726,6 +820,61 @@ TEST(BTBMGSCTest, BiasTableLearnsTwoTageContexts)
     EXPECT_GE(seen_bias_indices.size(), 2u);
     double acc = static_cast<double>(correct_after_warmup) / static_cast<double>(total_after_warmup);
     EXPECT_GE(acc, 0.90) << "Accuracy too low for two-context bias learning: " << acc;
+}
+
+TEST(BTBMGSCTest, MissingTageInfoUsesConfiguredLowConfNotTakenBiasContext)
+{
+    MgscHarness h;
+    h.setOnlyBiasTable();
+    BTBMGSC::TestAccess::allowMissingTageInfo(h.mgsc) = true;
+    BTBMGSC::TestAccess::defaultMissingTageInfo(h.mgsc) =
+        TageInfoForMGSC(
+            /*tage_pred_taken=*/false,
+            /*tage_main_taken=*/false,
+            /*tage_pred_conf_high=*/false,
+            /*tage_pred_conf_mid=*/false,
+            /*tage_pred_conf_low=*/true,
+            /*tage_pred_alt_diff=*/false);
+
+    const Addr start_pc = 0x1000;
+    const Addr branch_pc = 0x1000;
+    auto entry = makeCondBTBEntry(branch_pc);
+
+    std::set<unsigned> seen_bias_indices;
+    const int iters = 200;
+    const int warmup = 100;
+    int correct_after_warmup = 0;
+    int total_after_warmup = 0;
+
+    for (int i = 0; i < iters; ++i) {
+        auto step = h.stepWithoutTageInfo(start_pc, entry, /*actual_taken=*/false);
+        if (!step.mgsc_pred.biasIndex.empty()) {
+            seen_bias_indices.insert(step.mgsc_pred.biasIndex[0]);
+        }
+
+        if (i >= warmup) {
+            total_after_warmup++;
+            if (!step.predicted_taken) {
+                correct_after_warmup++;
+            }
+        }
+    }
+
+    EXPECT_EQ(seen_bias_indices.size(), 1u);
+    const TageInfoForMGSC expected_ctx(
+        /*tage_pred_taken=*/false,
+        /*tage_main_taken=*/false,
+        /*tage_pred_conf_high=*/false,
+        /*tage_pred_conf_mid=*/false,
+        /*tage_pred_conf_low=*/true,
+        /*tage_pred_alt_diff=*/false);
+    const auto [expected_bias_idx, _] =
+        lineLaneForBiasIndex(h.mgsc, start_pc, branch_pc,
+            BTBMGSC::TestAccess::biasTableIdxWidth(h.mgsc), expected_ctx);
+    EXPECT_TRUE(seen_bias_indices.count(expected_bias_idx));
+
+    double acc = static_cast<double>(correct_after_warmup) / static_cast<double>(total_after_warmup);
+    EXPECT_GE(acc, 0.90) << "Accuracy too low for missing-TAGE lowConf-NT fallback: " << acc;
 }
 
 TEST(BTBMGSCTest, LTableLearnsTwoIndependentLocalHistories)

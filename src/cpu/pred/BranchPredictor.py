@@ -1174,6 +1174,18 @@ class BTBMGSC(TimedBaseBTBPredictor):
     forceUseSC = Param.Bool(False, "Force use SC prediction, ignore TAGE confidence")
     allowMissingTageInfo = Param.Bool(
         False, "Allow MGSC to run with default TAGE metadata when TAGE info is unavailable")
+    defaultMissingTagePredTaken = Param.Bool(
+        False, "Default TAGE predicted direction used by MGSC when TAGE info is unavailable")
+    defaultMissingTageMainTaken = Param.Bool(
+        False, "Default TAGE main prediction used by MGSC when TAGE info is unavailable")
+    defaultMissingTagePredConfHigh = Param.Bool(
+        False, "Default high-confidence flag used by MGSC when TAGE info is unavailable")
+    defaultMissingTagePredConfMid = Param.Bool(
+        False, "Default mid-confidence flag used by MGSC when TAGE info is unavailable")
+    defaultMissingTagePredConfLow = Param.Bool(
+        False, "Default low-confidence flag used by MGSC when TAGE info is unavailable")
+    defaultMissingTagePredAltDiff = Param.Bool(
+        False, "Default alt-diff flag used by MGSC when TAGE info is unavailable")
     enableBwTable = Param.Bool(True, "Enable BW (backward) table")
     enableLTable = Param.Bool(True, "Enable L (local) table")
     enableITable = Param.Bool(True, "Enable I (IMLI) table")

@@ -200,6 +200,13 @@ BTBMGSC::BTBMGSC(const Params &p)
       numCtrsPerLine(p.numCtrsPerLine),
       forceUseSC(p.forceUseSC),
       allowMissingTageInfo(p.allowMissingTageInfo),
+      defaultMissingTageInfo(
+          p.defaultMissingTagePredTaken,
+          p.defaultMissingTageMainTaken,
+          p.defaultMissingTagePredConfHigh,
+          p.defaultMissingTagePredConfMid,
+          p.defaultMissingTagePredConfLow,
+          p.defaultMissingTagePredAltDiff),
       enableBwTable(p.enableBwTable),
       enableLTable(p.enableLTable),
       enableITable(p.enableITable),
@@ -488,8 +495,9 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                 meta->preds[btb_entry.pc] = pred;
                 results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
             } else if (allowMissingTageInfo) {
-                // Standalone SC experiment mode: keep running with neutral TAGE metadata.
-                auto pred = generateSinglePrediction(btb_entry, startPC, TageInfoForMGSC());
+                // Standalone SC experiment mode: keep running with configurable
+                // fallback TAGE metadata when TAGE does not provide info.
+                auto pred = generateSinglePrediction(btb_entry, startPC, defaultMissingTageInfo);
                 meta->preds[btb_entry.pc] = pred;
                 results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
             } else {
