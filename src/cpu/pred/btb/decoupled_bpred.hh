@@ -176,7 +176,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     FetchTarget createFetchTargetEntry(ThreadID tid);
     FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);
 
-    void updateHistoryForPrediction(FetchTarget &entry);
+    void updateHistoryForPrediction(FetchTarget &entry, FullBTBPrediction &pred);
 
     void fillAheadPipeline(FetchTarget &entry);
 
