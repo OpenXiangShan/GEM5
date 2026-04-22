@@ -158,6 +158,9 @@ class BTBMGSC : public TimedBaseBTBPredictor
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta() override;
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
     // speculative update all folded history, according history and pred.taken
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;

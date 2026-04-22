@@ -191,6 +191,20 @@ AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startA
     return processed_entries;
 }
 
+std::vector<AheadBTB::TickedBTBEntry>
+AheadBTB::processEntriesNoSideEffect(const std::vector<TickedBTBEntry>& entries,
+                                     Addr startAddr) const
+{
+    (void)startAddr;
+
+    auto processed_entries = entries;
+    std::sort(processed_entries.begin(), processed_entries.end(),
+             [](const BTBEntry &a, const BTBEntry &b) {
+                 return a.pc < b.pc;
+             });
+    return processed_entries;
+}
+
 /**
  * Fill predictions for each pipeline stage:
  * 1. Copy BTB entries
@@ -324,6 +338,22 @@ AheadBTB::getPredictionMeta()
 }
 
 void
+AheadBTB::refreshPredictionMeta(Addr startAddr,
+                                const boost::dynamic_bitset<> &history,
+                                FullBTBPrediction &pred)
+{
+    (void)history;
+    (void)pred;
+
+    meta = std::make_shared<BTBMeta>();
+    auto found_entries = lookupNoSideEffect(startAddr);
+    auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
+    for (const auto &entry : processed_entries) {
+        meta->hit_entries.push_back(BTBEntry(entry));
+    }
+}
+
+void
 AheadBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
 
 void
@@ -391,6 +421,39 @@ AheadBTB::lookupSingleBlock(Addr block_pc)
 }
 
 std::vector<AheadBTB::TickedBTBEntry>
+AheadBTB::lookupSingleBlockNoSideEffect(Addr block_pc) const
+{
+    std::vector<TickedBTBEntry> res;
+    if (block_pc & 0x1) {
+        return res;
+    }
+
+    Addr btb_idx = getIndex(block_pc);
+    auto btb_set = btb[btb_idx];
+    assert(btb_idx < numSets);
+
+    auto queued_sets = aheadReadBtbEntries;
+    queued_sets.push(std::make_tuple(block_pc, btb_idx, btb_set));
+
+    Addr tag_curStartpc = getTag(block_pc);
+    BTBSet set;
+    if (queued_sets.size() >= aheadPipelinedStages + 1) {
+        assert(queued_sets.size() == aheadPipelinedStages + 1);
+        Addr pc = 0;
+        Addr idx_prvStartpc = 0;
+        std::tie(pc, idx_prvStartpc, set) = queued_sets.front();
+        queued_sets.pop();
+    }
+
+    for (const auto &way : set) {
+        if (way.valid && way.tag == tag_curStartpc) {
+            res.push_back(way);
+        }
+    }
+    return res;
+}
+
+std::vector<AheadBTB::TickedBTBEntry>
 AheadBTB::lookup(Addr block_pc)
 {
     std::vector<TickedBTBEntry> res;
@@ -401,6 +464,17 @@ AheadBTB::lookup(Addr block_pc)
     // AheadBTB always uses single block lookup
     res = lookupSingleBlock(block_pc);
     return res;
+}
+
+std::vector<AheadBTB::TickedBTBEntry>
+AheadBTB::lookupNoSideEffect(Addr block_pc) const
+{
+    std::vector<TickedBTBEntry> res;
+    if (block_pc & 0x1) {
+        return res;
+    }
+
+    return lookupSingleBlockNoSideEffect(block_pc);
 }
 
 

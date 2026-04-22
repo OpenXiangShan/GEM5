@@ -122,6 +122,19 @@ BTBRAS::getPredictionMeta()
 }
 
 void
+BTBRAS::refreshPredictionMeta(Addr startAddr,
+                              const boost::dynamic_bitset<> &history,
+                              FullBTBPrediction &pred)
+{
+    (void)startAddr;
+    (void)history;
+    (void)pred;
+
+    meta = std::make_shared<RASMeta>();
+    getTop_meta();
+}
+
+void
 BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     // do push & pops on prediction
