@@ -172,6 +172,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void processNewPrediction(ThreadID tid);
     void prepareSecondBlockTrainingPrediction(ThreadID tid);
     void processSecondBlock(ThreadID tid);
+    bool pairtageFirstBlockStillValidForSecondBlock(ThreadID tid) const;
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
     FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);

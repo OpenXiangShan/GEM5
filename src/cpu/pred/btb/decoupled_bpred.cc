@@ -661,6 +661,13 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
         return;
     }
 
+    if (!pairtageFirstBlockStillValidForSecondBlock(tid)) {
+        DPRINTF(DecoupleBP,
+                "Skip PairTAGE second block for thread %u because first block was overridden by final prediction\n",
+                tid);
+        return;
+    }
+
     if (ftq.full(tid)) {
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block enqueue for thread %u because FTQ is full\n",
@@ -712,6 +719,13 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
         return;
     }
 
+    if (!pairtageFirstBlockStillValidForSecondBlock(tid)) {
+        DPRINTF(DecoupleBP,
+                "Skip PairTAGE second-block training prediction for thread %u because first block was overridden\n",
+                tid);
+        return;
+    }
+
     auto &secondPred = thread.secondBlockTrainPred;
     secondPred.tid = tid;
     secondPred.bbStart = thread.s0PC;
@@ -746,6 +760,29 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
             "Prepared PairTAGE second-block training prediction for thread %u: startPC %#lx, %zu BTB entries, %zu "
             "cond takens\n",
             tid, secondPred.bbStart, secondPred.btbEntries.size(), secondPred.condTakens.size());
+}
+
+bool
+DecoupledBPUWithBTB::pairtageFirstBlockStillValidForSecondBlock(ThreadID tid) const
+{
+    if (!pairtage || !pairtage->isEnabled()) {
+        return false;
+    }
+
+    auto pairMeta = std::static_pointer_cast<PairTAGE::TageMeta>(
+        pairtage->getPredictionMeta());
+    if (!pairMeta || !pairMeta->firstBlockValid ||
+        !pairMeta->predictedFirstBlock.valid) {
+        return false;
+    }
+
+    auto &thread = threads[tid];
+    auto pairFirstPred = buildPredictionFromPairBlock(
+        tid, pairMeta->predictedFirstBlock, thread.finalPred.bbStart,
+        thread.finalPred, pairtage->getComponentIdx());
+    auto finalPredCopy = thread.finalPred;
+
+    return pairFirstPred.match(finalPredCopy, predictWidth).first;
 }
 
 /**
