@@ -241,10 +241,10 @@ PairTAGE::update(const FetchTarget &entry)
 }
 
 PairTAGE::TageTableInfo
-PairTAGE::lookupEntry(Addr startPC) const
+PairTAGE::lookupEntry(Addr startPC, const TageMeta &predMeta) const
 {
     for (int table = numPredictors - 1; table >= 0; --table) {
-        const Addr index = getTageIndex(startPC, table);
+        const Addr index = getTageIndex(startPC, table, predMeta.indexFoldedHist[table].get());
         auto &set = tageTable[table][index];
 
         for (unsigned way = 0; way < numWays; ++way) {
@@ -254,16 +254,28 @@ PairTAGE::lookupEntry(Addr startPC) const
             }
 
             const unsigned position = getBranchIndexInBlock(entry.firstBlock().branchPC, startPC);
-            const Addr tag =
-                getTageTag(startPC, table, tagFoldedHist[table].get(), altTagFoldedHist[table].get(), position);
+            const Addr tag = getTageTag(startPC, table,
+                predMeta.tagFoldedHist[table].get(),
+                predMeta.altTagFoldedHist[table].get(), position);
 
             if (entry.tag == tag) {
-                return TageTableInfo{true, entry, static_cast<unsigned>(table), index, tag, way};
+                return TageTableInfo{
+                    true, entry, static_cast<unsigned>(table), index, tag, way};
             }
         }
     }
 
     return TageTableInfo{};
+}
+
+PairTAGE::TageTableInfo
+PairTAGE::lookupEntry(Addr startPC) const
+{
+    auto predMeta = TageMeta();
+    predMeta.tagFoldedHist = tagFoldedHist;
+    predMeta.altTagFoldedHist = altTagFoldedHist;
+    predMeta.indexFoldedHist = indexFoldedHist;
+    return lookupEntry(startPC, predMeta);
 }
 
 BTBEntry
@@ -303,6 +315,90 @@ PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pre
     auto entry = buildBTBEntry(block);
     pred.btbEntries.push_back(entry);
     pred.condTakens.push_back({entry.pc, block.taken});
+}
+
+PairTAGE::PairBlockInfo
+PairTAGE::buildTrainingBlock(const FetchTarget &entry) const
+{
+    const BTBEntry *trainEntry = nullptr;
+
+    if (entry.predTaken) {
+        for (const auto &btbEntry : entry.predBTBEntries) {
+            if (btbEntry.valid && btbEntry.pc == entry.predBranchInfo.pc) {
+                trainEntry = &btbEntry;
+                break;
+            }
+        }
+    } else {
+        // This simplified PairTAGE format only stores a single not-taken
+        // conditional. Use the furthest not-taken conditional in the block as
+        // the representative first block.
+        for (auto it = entry.predBTBEntries.rbegin();
+             it != entry.predBTBEntries.rend(); ++it) {
+            if (it->valid && it->isCond && it->isDirect &&
+                !it->isIndirect && !it->isCall && !it->isReturn) {
+                trainEntry = &*it;
+                break;
+            }
+        }
+    }
+
+    if (!trainEntry || !trainEntry->valid || !trainEntry->isCond ||
+        !trainEntry->isDirect || trainEntry->isIndirect ||
+        trainEntry->isCall || trainEntry->isReturn) {
+        return PairBlockInfo{};
+    }
+
+    const Addr targetPC = entry.predTaken ?
+        entry.predBranchInfo.target : trainEntry->target;
+    return PairBlockInfo(entry.predTaken, trainEntry->pc, targetPC);
+}
+
+void
+PairTAGE::trainFromActualPred(const FetchTarget &entry)
+{
+    auto predMeta = std::static_pointer_cast<TageMeta>(
+        entry.predMetas[getComponentIdx()]);
+    if (!predMeta) {
+        return;
+    }
+
+    auto provider = lookupEntry(entry.startPC, *predMeta);
+    auto trainedBlock = buildTrainingBlock(entry);
+
+    if (!trainedBlock.valid) {
+        if (provider.found) {
+            tageTable[provider.table][provider.index][provider.way] = TageEntry{};
+        }
+        return;
+    }
+
+    unsigned table = provider.found ? provider.table : 0;
+    Addr index = provider.found ? provider.index :
+        getTageIndex(entry.startPC, table, predMeta->indexFoldedHist[table].get());
+    unsigned way = provider.found ? provider.way : 0;
+
+    if (!provider.found) {
+        auto &set = tageTable[table][index];
+        for (unsigned candidateWay = 0; candidateWay < numWays; ++candidateWay) {
+            if (!set[candidateWay].valid) {
+                way = candidateWay;
+                break;
+            }
+        }
+    }
+
+    auto &trainedEntry = tageTable[table][index][way];
+    trainedEntry = TageEntry{};
+    trainedEntry.valid = true;
+    trainedEntry.tag = getTageTag(entry.startPC, table,
+        predMeta->tagFoldedHist[table].get(),
+        predMeta->altTagFoldedHist[table].get(),
+        getBranchIndexInBlock(trainedBlock.branchPC, entry.startPC));
+    trainedEntry.counter = trainedBlock.taken ? 0 : -1;
+    trainedEntry.useful = provider.found ? provider.entry.useful : false;
+    trainedEntry.setBlock(0, trainedBlock);
+    trainedEntry.clearBlock(1);
 }
 
 Addr

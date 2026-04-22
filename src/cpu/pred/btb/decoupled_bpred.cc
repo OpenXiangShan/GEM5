@@ -386,6 +386,11 @@ DecoupledBPUWithBTB::tick()
 
     for (int tid = 0; tid < numThreads; tid++) {
         processSecondBlock(tid);
+
+        if (threads[tid].firstBlockProcessedThisTick && pairtage &&
+            pairtage->isEnabled() && !ftq.empty(tid)) {
+            pairtage->trainFromActualPred(ftq.back(tid));
+        }
     }
 
     DPRINTF(Override, "Prediction cycle complete\n");
