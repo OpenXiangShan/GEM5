@@ -459,6 +459,29 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     Addr startPC = stream.getRealStartPC();
     bool base_taken = entry.ctr >= 0;
     bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
+    bool use_provider = main_info.found && !used_alt;
+    bool use_alt_table = used_alt && alt_info.found;
+    bool use_base_table = !use_provider && !use_alt_table;
+
+    tageStats.resolveBranchHasProvider += main_info.found;
+    tageStats.resolveBranchUseProvider += use_provider;
+    tageStats.resolveBranchHasAlt += alt_info.found;
+    tageStats.resolveBranchUseAltTable += use_alt_table;
+    tageStats.resolveBranchUseBaseTable += use_base_table;
+#ifndef UNIT_TEST
+    if (main_info.found) {
+        tageStats.resolveProviderTable[main_info.table]++;
+    }
+    if (alt_info.found) {
+        tageStats.resolveAltTable[alt_info.table]++;
+    }
+    if (use_provider) {
+        tageStats.resolveUseProviderTable[main_info.table]++;
+    }
+    if (use_alt_table) {
+        tageStats.resolveUseAltTable[alt_info.table]++;
+    }
+#endif
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
@@ -522,6 +545,21 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     // Check if misprediction occurred
     bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
                                stream.squashPC == entry.pc;
+    if (this_fb_mispred) {
+        tageStats.mispredictBranchHasProvider += main_info.found;
+        tageStats.mispredictBranchUseProvider += use_provider;
+        tageStats.mispredictBranchHasAlt += alt_info.found;
+        tageStats.mispredictBranchUseAltTable += use_alt_table;
+        tageStats.mispredictBranchUseBaseTable += use_base_table;
+#ifndef UNIT_TEST
+        if (use_provider) {
+            tageStats.mispredictUseProviderTable[main_info.table]++;
+        }
+        if (use_alt_table) {
+            tageStats.mispredictUseAltTable[alt_info.table]++;
+        }
+#endif
+    }
     if (getDelay() == 2){
         if (this_fb_mispred) {
             tageStats.updateMispred++;
@@ -1081,6 +1119,26 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
+    ADD_STAT(resolveBranchHasProvider, statistics::units::Count::get(),
+        "resolved conditional branches whose recomputed TAGE state has a provider"),
+    ADD_STAT(resolveBranchUseProvider, statistics::units::Count::get(),
+        "resolved conditional branches that use the provider table"),
+    ADD_STAT(resolveBranchHasAlt, statistics::units::Count::get(),
+        "resolved conditional branches whose recomputed TAGE state has an alt table"),
+    ADD_STAT(resolveBranchUseAltTable, statistics::units::Count::get(),
+        "resolved conditional branches that use the alt table as final prediction"),
+    ADD_STAT(resolveBranchUseBaseTable, statistics::units::Count::get(),
+        "resolved conditional branches that fall back to base prediction"),
+    ADD_STAT(mispredictBranchHasProvider, statistics::units::Count::get(),
+        "mispredicted branches whose recomputed TAGE state has a provider"),
+    ADD_STAT(mispredictBranchUseProvider, statistics::units::Count::get(),
+        "mispredicted branches that use the provider table"),
+    ADD_STAT(mispredictBranchHasAlt, statistics::units::Count::get(),
+        "mispredicted branches whose recomputed TAGE state has an alt table"),
+    ADD_STAT(mispredictBranchUseAltTable, statistics::units::Count::get(),
+        "mispredicted branches that use the alt table as final prediction"),
+    ADD_STAT(mispredictBranchUseBaseTable, statistics::units::Count::get(),
+        "mispredicted branches that fall back to base prediction"),
     ADD_STAT(predFinalSourceBase, statistics::units::Count::get(), "predictions whose final source is base BTB"),
     ADD_STAT(updateFinalSourceBaseCorrect, statistics::units::Count::get(), "base BTB final-source predictions that are correct"),
     ADD_STAT(updateFinalSourceBaseWrong, statistics::units::Count::get(), "base BTB final-source predictions that are wrong"),
@@ -1091,6 +1149,18 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
     ADD_STAT(updateAccessPerBank, statistics::units::Count::get(), "update accesses per bank"),
     ADD_STAT(predAccessPerBank, statistics::units::Count::get(), "prediction accesses per bank"),
+    ADD_STAT(resolveProviderTable, statistics::units::Count::get(),
+        "resolved conditional branches grouped by provider table"),
+    ADD_STAT(resolveAltTable, statistics::units::Count::get(),
+        "resolved conditional branches grouped by alt table"),
+    ADD_STAT(resolveUseProviderTable, statistics::units::Count::get(),
+        "resolved conditional branches that use the provider table, grouped by table"),
+    ADD_STAT(resolveUseAltTable, statistics::units::Count::get(),
+        "resolved conditional branches that use the alt table, grouped by table"),
+    ADD_STAT(mispredictUseProviderTable, statistics::units::Count::get(),
+        "mispredicted branches that use the provider table, grouped by table"),
+    ADD_STAT(mispredictUseAltTable, statistics::units::Count::get(),
+        "mispredicted branches that use the alt table, grouped by table"),
     ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
     ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
     ADD_STAT(updateTableMispreds, statistics::units::Count::get(), "mispreds of each table when update"),
@@ -1111,6 +1181,12 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     predFinalSourceTable.init(numPredictors);
     updateFinalSourceTableCorrect.init(numPredictors);
     updateFinalSourceTableWrong.init(numPredictors);
+    resolveProviderTable.init(numPredictors);
+    resolveAltTable.init(numPredictors);
+    resolveUseProviderTable.init(numPredictors);
+    resolveUseAltTable.init(numPredictors);
+    mispredictUseProviderTable.init(numPredictors);
+    mispredictUseAltTable.init(numPredictors);
 
     // Initialize per-bank statistics vectors
     updateBankConflictPerBank.init(numBanks);

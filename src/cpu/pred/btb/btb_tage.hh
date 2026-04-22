@@ -349,6 +349,16 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateAllocSuccess;
         Scalar updateMispred;
         Scalar updateResetU;
+        Scalar resolveBranchHasProvider;
+        Scalar resolveBranchUseProvider;
+        Scalar resolveBranchHasAlt;
+        Scalar resolveBranchUseAltTable;
+        Scalar resolveBranchUseBaseTable;
+        Scalar mispredictBranchHasProvider;
+        Scalar mispredictBranchUseProvider;
+        Scalar mispredictBranchHasAlt;
+        Scalar mispredictBranchUseAltTable;
+        Scalar mispredictBranchUseBaseTable;
         Scalar predFinalSourceBase;
         Scalar updateFinalSourceBaseCorrect;
         Scalar updateFinalSourceBaseWrong;
@@ -366,6 +376,13 @@ class BTBTAGE : public TimedBaseBTBPredictor
         statistics::Vector updateBankConflictPerBank;  // Conflicts per bank
         statistics::Vector updateAccessPerBank;        // Update accesses per bank
         statistics::Vector predAccessPerBank;          // Prediction accesses per bank
+
+        statistics::Vector resolveProviderTable;
+        statistics::Vector resolveAltTable;
+        statistics::Vector resolveUseProviderTable;
+        statistics::Vector resolveUseAltTable;
+        statistics::Vector mispredictUseProviderTable;
+        statistics::Vector mispredictUseAltTable;
 
         statistics::Distribution predTableHits;
         statistics::Distribution updateTableHits;

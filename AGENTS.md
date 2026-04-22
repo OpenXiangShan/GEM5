@@ -53,8 +53,11 @@ Common entry points:
   `scons build/RISCV/gem5.opt --gold-linker -j64`
 - Build debug binary:
   `scons build/RISCV/gem5.debug --gold-linker -j64 --debug-cycle`
-- Run the XiangShan configuration:
+- Run the XiangShan configuration with a normal bin image:
   `./build/RISCV/gem5.opt ./configs/example/kmhv3.py --raw-cpt --generic-rv-cpt=<path>`
+- Run the XiangShan configuration with a checkpoint slice (`.zstd` GCPT slice):
+  `./build/RISCV/gem5.opt ./configs/example/kmhv3.py --generic-rv-cpt=<path>`
+  - do not add `--raw-cpt` for checkpoint slices such as SPEC slice `.zstd` inputs
 - SE mode example:
   `./build/RISCV/gem5.opt ./configs/example/se.py -c <binary>`
 - Build all unit tests:
