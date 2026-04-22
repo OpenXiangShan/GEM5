@@ -78,6 +78,60 @@ buildPredictionFromPairBlock(ThreadID tid,
     return pred;
 }
 
+PairTAGE::PairBlockInfo
+buildTrainingPairBlockFromPrediction(const FullBTBPrediction &pred)
+{
+    auto predCopy = pred;
+    const BTBEntry *trainEntry = nullptr;
+
+    if (predCopy.isTaken()) {
+        auto takenEntry = predCopy.getTakenEntry();
+        if (takenEntry.valid) {
+            for (const auto &btbEntry : predCopy.btbEntries) {
+                if (btbEntry.valid && btbEntry.pc == takenEntry.pc) {
+                    trainEntry = &btbEntry;
+                    break;
+                }
+            }
+        }
+    } else {
+        for (auto it = predCopy.btbEntries.rbegin();
+             it != predCopy.btbEntries.rend(); ++it) {
+            if (it->valid && it->isCond && it->isDirect &&
+                !it->isIndirect && !it->isCall && !it->isReturn) {
+                trainEntry = &*it;
+                break;
+            }
+        }
+    }
+
+    if (!trainEntry || !trainEntry->valid || !trainEntry->isCond ||
+        !trainEntry->isDirect || trainEntry->isIndirect ||
+        trainEntry->isCall || trainEntry->isReturn) {
+        return PairTAGE::PairBlockInfo{};
+    }
+
+    return PairTAGE::PairBlockInfo(
+        predCopy.isTaken(), trainEntry->pc, trainEntry->target);
+}
+
+bool
+pairBlocksMatch(const PairTAGE::PairBlockInfo &lhs,
+                const PairTAGE::PairBlockInfo &rhs)
+{
+    if (lhs.valid != rhs.valid) {
+        return false;
+    }
+
+    if (!lhs.valid) {
+        return true;
+    }
+
+    return lhs.taken == rhs.taken &&
+           lhs.branchPC == rhs.branchPC &&
+           lhs.targetPC == rhs.targetPC;
+}
+
 } // namespace
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
@@ -681,6 +735,23 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
                 "No pending PairTAGE second block for thread %u after first block\n",
                 tid);
         return;
+    }
+
+    if (thread.secondBlockTrainPredReady) {
+        auto trainedSecondBlock =
+            buildTrainingPairBlockFromPrediction(thread.secondBlockTrainPred);
+        if (!pairBlocksMatch(secondBlock, trainedSecondBlock)) {
+            DPRINTF(DecoupleBP,
+                    "Skip PairTAGE second block enqueue for thread %u because training prediction disagrees: "
+                    "pairtage(valid=%d pc=%#lx target=%#lx taken=%d) vs "
+                    "teacher(valid=%d pc=%#lx target=%#lx taken=%d)\n",
+                    tid,
+                    secondBlock.valid, secondBlock.branchPC,
+                    secondBlock.targetPC, secondBlock.taken,
+                    trainedSecondBlock.valid, trainedSecondBlock.branchPC,
+                    trainedSecondBlock.targetPC, trainedSecondBlock.taken);
+            return;
+        }
     }
 
     auto secondPred = buildPredictionFromPairBlock(
