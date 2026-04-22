@@ -50,7 +50,7 @@ SimObject('BranchPredictor.py', sim_objects=[
     'TimedBaseFTBPredictor', 'FTBTAGE', 'FTBRAS', 'FTBuRAS', 'FTBITTAGE',
     'AheadBTB', 'MBTB', 'UBTB', 'DecoupledBPUWithBTB',
     'TimedBaseBTBPredictor', 'BTBRAS', 'BTBTAGE', 'BTBTAGEUpperBound',
-    'MicroTAGE',
+    'MicroTAGE', 'PairTAGE',
     'BTBITTAGE', 'BTBMGSC'], enums=["BpType"])
 
 DebugFlag('Indirect')
@@ -104,6 +104,7 @@ Source('btb/timed_base_pred.cc')
 Source('btb/btb_tage.cc')
 Source('btb/btb_tage_ub.cc')
 Source('btb/microtage.cc')
+Source('btb/pairtage.cc')
 Source('btb/btb_ittage.cc')
 Source('btb/btb_mgsc.cc')
 Source('btb/folded_hist.cc')
