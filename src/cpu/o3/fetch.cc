@@ -490,8 +490,7 @@ Fetch::clearStates(ThreadID tid)
     delayedCommit[tid] = false;
     threads[tid].cacheReq.reset();
     threads[tid].reset();
-    resetFdipState(tid);
-    resetFdipProbeHints(tid);
+    resetFdipPartialState(tid);
     resetFdipTracking(tid);
     fdipEpoch[tid] = 0;
     fetchQueue[tid].clear();
@@ -521,8 +520,7 @@ Fetch::resetStage()
         threads[tid].cacheReq.reset();
 
         threads[tid].reset();
-        resetFdipState(tid);
-        resetFdipProbeHints(tid);
+        resetFdipPartialState(tid);
         resetFdipTracking(tid);
         fdipEpoch[tid] = 0;
         ftqEntryFetchedInsts[tid] = 0;
@@ -555,6 +553,15 @@ Fetch::currentFetchRequestSpan(
 {
     return branch_prediction::btb_pred::fetchCoverageSpan(
         stream.startPC, stream.predEndPC, fetchBufferSize);
+}
+
+void
+Fetch::resetFdipPartialState(ThreadID tid)
+{
+    const auto summary = cleanupFdipPartialState(
+        tid, fdipState[tid], fdipPendingReqs, fdipProbeHints[tid],
+        fdipOutstandingLines);
+    fdipOutstandingLines = summary.outstandingLines;
 }
 
 void
@@ -1897,8 +1904,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // Reset the cache request after cancelling
     threads[tid].cacheReq.reset();
     ++fdipEpoch[tid];
-    resetFdipState(tid);
-    resetFdipProbeHints(tid);
+    resetFdipPartialState(tid);
 
     // Get rid of the retrying packet if it was from this thread.
     if (retryTid == tid) {

@@ -107,6 +107,8 @@ if env['CONF']['TARGET_ISA'] == 'null':
     # Generate required debug flag headers for reader in NULL builds
     DebugFlag('TraceReader')
     env.Append(LIBS=['z'])
+    GTest('fdip_cleanup.test',
+          'fdip_cleanup.test.cc')
     GTest('champsim_trace_reader.test',
           'trace/ChampSimTraceReader.test.cc',
           'trace/TraceReader.cc',
@@ -126,6 +128,8 @@ else:
     # Under real ISAs, link against common trace infra and avoid duplicate
     # compilation of cur_tick and stats glue (already provided by libs).
     env.Append(LIBS=['z'])
+    GTest('fdip_cleanup.test',
+          'fdip_cleanup.test.cc')
     GTest('champsim_trace_reader.test',
           'trace/ChampSimTraceReader.test.cc',
           'trace/TraceReader.cc',
