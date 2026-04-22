@@ -106,14 +106,16 @@ def setKmhV3Params(args, system):
 
             cpu.branchPred.ubtb.enabled = True
             cpu.branchPred.abtb.enabled = True
-            cpu.branchPred.microtage.enabled = True
+            cpu.branchPred.microtage.enabled = False
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
 
-            # RTL alignment: only enable bias + path + IMLI tables, disable PC threshold
+            # SC-only experiment: keep TAGE metadata for MGSC, but force final
+            # conditional direction decisions to come from SC using bias/path/IMLI only.
+            cpu.branchPred.mgsc.forceUseSC = True
             cpu.branchPred.mgsc.enableBwTable = False
             cpu.branchPred.mgsc.enableLTable = False
             cpu.branchPred.mgsc.enableITable = True
