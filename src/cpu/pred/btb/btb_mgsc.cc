@@ -150,6 +150,7 @@ BTBMGSC::BTBMGSC()
       // This models "read a whole SRAM line, then pick a lane" behavior in `posHash()`.
       numCtrsPerLine(8),
       forceUseSC(false),
+      allowMissingTageInfo(false),
       enableBwTable(true),
       enableLTable(true),
       enableITable(true),
@@ -198,6 +199,7 @@ BTBMGSC::BTBMGSC(const Params &p)
       weightTableIdxWidth(p.weightTableIdxWidth),
       numCtrsPerLine(p.numCtrsPerLine),
       forceUseSC(p.forceUseSC),
+      allowMissingTageInfo(p.allowMissingTageInfo),
       enableBwTable(p.enableBwTable),
       enableLTable(p.enableLTable),
       enableITable(p.enableITable),
@@ -377,9 +379,13 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
         pIndex[i] = getHistIndex(startPC, pTableIdxWidth - numCtrsPerLineBits, indexPFoldedHist[i].get());
     }
 
-    for (unsigned int i = 0; i < biasTableNum; ++i) {
-        biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth - numCtrsPerLineBits, tage_info.tage_main_taken,
-                                    tage_info.tage_pred_conf_low);
+    if (enableBiasTable) {
+        for (unsigned int i = 0; i < biasTableNum; ++i) {
+            biasIndex[i] = getBiasIndex(startPC, biasTableIdxWidth - numCtrsPerLineBits, tage_info.tage_main_taken,
+                                        tage_info.tage_pred_conf_low);
+        }
+    } else {
+        std::fill(biasIndex.begin(), biasIndex.end(), 0);
     }
 
     int bw_percsum = enableBwTable ? calculatePercsum(bwTable, bwIndex, bwTableNum, btb_entry.pc) : 0;
@@ -479,6 +485,11 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             auto tage_info = tageInfoForMgscs.find(btb_entry.pc);
             if (tage_info != tageInfoForMgscs.end()) {
                 auto pred = generateSinglePrediction(btb_entry, startPC, tage_info->second);
+                meta->preds[btb_entry.pc] = pred;
+                results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
+            } else if (allowMissingTageInfo) {
+                // Standalone SC experiment mode: keep running with neutral TAGE metadata.
+                auto pred = generateSinglePrediction(btb_entry, startPC, TageInfoForMGSC());
                 meta->preds[btb_entry.pc] = pred;
                 results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
             } else {

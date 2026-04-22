@@ -1172,6 +1172,8 @@ class BTBMGSC(TimedBaseBTBPredictor):
 
     # Test switches for SC tables
     forceUseSC = Param.Bool(False, "Force use SC prediction, ignore TAGE confidence")
+    allowMissingTageInfo = Param.Bool(
+        False, "Allow MGSC to run with default TAGE metadata when TAGE info is unavailable")
     enableBwTable = Param.Bool(True, "Enable BW (backward) table")
     enableLTable = Param.Bool(True, "Enable L (local) table")
     enableITable = Param.Bool(True, "Enable I (IMLI) table")

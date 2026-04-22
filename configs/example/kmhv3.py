@@ -108,20 +108,21 @@ def setKmhV3Params(args, system):
             cpu.branchPred.abtb.enabled = True
             cpu.branchPred.microtage.enabled = False
             cpu.branchPred.mbtb.enabled = True
-            cpu.branchPred.tage.enabled = True
-            cpu.branchPred.ittage.enabled = True
+            cpu.branchPred.tage.enabled = False
+            cpu.branchPred.ittage.enabled = False
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
 
-            # SC-only experiment: keep TAGE metadata for MGSC, but force final
-            # conditional direction decisions to come from SC using bias/path/IMLI only.
+            # Standalone SC experiment: disable TAGE direction sources and let
+            # MGSC run with default metadata, using only path/IMLI tables.
             cpu.branchPred.mgsc.forceUseSC = True
+            cpu.branchPred.mgsc.allowMissingTageInfo = True
             cpu.branchPred.mgsc.enableBwTable = False
             cpu.branchPred.mgsc.enableLTable = False
             cpu.branchPred.mgsc.enableITable = True
             cpu.branchPred.mgsc.enableGTable = False
             cpu.branchPred.mgsc.enablePTable = True
-            cpu.branchPred.mgsc.enableBiasTable = True
+            cpu.branchPred.mgsc.enableBiasTable = False
 
         # l1 cache per core
         if args.caches:

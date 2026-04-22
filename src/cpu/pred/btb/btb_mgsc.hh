@@ -344,6 +344,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // Test switches for SC tables
     bool forceUseSC;
+    bool allowMissingTageInfo;
     bool enableBwTable;
     bool enableLTable;
     bool enableITable;
