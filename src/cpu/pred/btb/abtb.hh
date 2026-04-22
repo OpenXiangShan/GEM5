@@ -148,6 +148,9 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @return Returns the prediction meta
      */
     std::shared_ptr<void> getPredictionMeta() override;
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
     // not used
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
@@ -224,7 +227,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch to look up.
      *  @return Returns the index into the BTB.
      */
-    inline Addr getIndex(Addr instPC) {
+    inline Addr getIndex(Addr instPC) const {
         return (instPC >> idxShiftAmt) & idxMask;
     }
 
@@ -234,7 +237,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch's address.
      *  @return Returns the tag bits.
      */
-    inline Addr getTag(Addr instPC) {
+    inline Addr getTag(Addr instPC) const {
         return (instPC >> tagShiftAmt) & tagMask;
     }
 
@@ -275,6 +278,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries, 
                                               Addr startAddr);
+    std::vector<TickedBTBEntry> processEntriesNoSideEffect(
+        const std::vector<TickedBTBEntry>& entries, Addr startAddr) const;
 
     /** Fill predictions for pipeline stages
      *  @param entries Processed BTB entries
@@ -366,12 +371,14 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @return Returns all hit BTB entries.
      */
     std::vector<TickedBTBEntry> lookup(Addr block_pc);
+    std::vector<TickedBTBEntry> lookupNoSideEffect(Addr block_pc) const;
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
      * @return Vector of matching BTB entries
      */
     std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc);
+    std::vector<TickedBTBEntry> lookupSingleBlockNoSideEffect(Addr block_pc) const;
 
     /** The BTB structure:
      *  - Organized as numSets sets

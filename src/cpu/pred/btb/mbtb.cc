@@ -360,6 +360,22 @@ MBTB::getPredictionMeta()
 }
 
 void
+MBTB::refreshPredictionMeta(Addr startAddr,
+                            const boost::dynamic_bitset<> &history,
+                            FullBTBPrediction &pred)
+{
+    (void)history;
+    (void)pred;
+
+    meta = std::make_shared<BTBMeta>();
+    auto found_entries = lookupNoSideEffect(startAddr);
+    auto processed_entries = processEntriesNoSideEffect(found_entries, startAddr);
+    for (const auto &entry : processed_entries) {
+        meta->hit_entries.push_back(BTBEntry(entry));
+    }
+}
+
+void
 MBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
 
 void

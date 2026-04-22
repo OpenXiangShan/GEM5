@@ -141,6 +141,9 @@ class PairTAGE : public TimedBaseBTBPredictor
     void putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta() override;
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
     void specUpdateHist(const bitset &history, FullBTBPrediction &pred) override;
     void recoverHist(const bitset &history, const FetchTarget &entry, int shamt, bool cond_taken) override;
     void update(const FetchTarget &entry) override;
