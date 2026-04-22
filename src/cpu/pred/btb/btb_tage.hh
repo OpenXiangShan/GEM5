@@ -148,6 +148,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
                             CondTakens &results) const;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
     // Update folded history from GHR when configured in direction-history mode.
     void specUpdateGHist(const boost::dynamic_bitset<> &history,

@@ -125,6 +125,9 @@ class MicroTAGE : public TimedBaseBTBPredictor
                       std::vector<FullBTBPrediction> &stagePreds) override;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
     // Speculatively update path folded histories.
     void specUpdatePHist(const boost::dynamic_bitset<> &history,

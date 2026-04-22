@@ -685,6 +685,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
 
     auto secondPred = buildPredictionFromPairBlock(
         tid, secondBlock, thread.s0PC, thread.finalPred, pairtage->getComponentIdx());
+    refreshSecondBlockPredictionMetas(tid, secondPred);
     auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
 
     thread.s0PC = secondPred.getTarget(predictWidth);
@@ -702,6 +703,18 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
 
     printTarget(entry);
     dbpBtbStats.fsqEntryEnqueued++;
+}
+
+void
+DecoupledBPUWithBTB::refreshSecondBlockPredictionMetas(
+    ThreadID tid, FullBTBPrediction &pred)
+{
+    auto &thread = threads[tid];
+
+    pred.tageInfoForMgscs.clear();
+    for (int i = 0; i < numComponents; ++i) {
+        components[i]->refreshPredictionMeta(thread.s0PC, thread.s0History, pred);
+    }
 }
 
 void

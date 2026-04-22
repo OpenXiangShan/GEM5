@@ -186,9 +186,40 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
 }
 
 std::shared_ptr<void>
-PairTAGE::getPredictionMeta()
+PairTAGE::getPredictionMeta(ThreadID tid)
 {
+    (void)tid;
     return meta;
+}
+
+void
+PairTAGE::refreshPredictionMeta(Addr startAddr,
+                                const bitset &history,
+                                FullBTBPrediction &pred)
+{
+    (void)pred;
+
+    meta = std::make_shared<TageMeta>();
+    meta->tagFoldedHist = tagFoldedHist;
+    meta->altTagFoldedHist = altTagFoldedHist;
+    meta->indexFoldedHist = indexFoldedHist;
+    meta->aheadIndexFoldedHistValid = !aheadIndexFoldedHist.empty();
+    if (meta->aheadIndexFoldedHistValid) {
+        meta->aheadIndexFoldedHist = aheadIndexFoldedHist.front();
+    }
+    meta->history = history;
+    meta->predictedFirstBlock.clear();
+    meta->predictedSecondBlock.clear();
+
+    auto tableInfo = lookupEntry(startAddr);
+    if (!tableInfo.found) {
+        return;
+    }
+
+    meta->firstBlockValid = tableInfo.entry.firstBlock().valid;
+    meta->secondBlockValid = tableInfo.entry.secondBlock().valid;
+    meta->predictedFirstBlock = tableInfo.entry.firstBlock();
+    meta->predictedSecondBlock = tableInfo.entry.secondBlock();
 }
 
 PairTAGE::PairBlockInfo

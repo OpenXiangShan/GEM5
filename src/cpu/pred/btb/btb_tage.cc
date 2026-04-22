@@ -526,6 +526,42 @@ BTBTAGE::getPredictionMeta(ThreadID tid) {
     return threadMeta[tid];
 }
 
+void
+BTBTAGE::refreshPredictionMeta(Addr startPC,
+                               const bitset &history,
+                               FullBTBPrediction &pred)
+{
+    meta = std::make_shared<TageMeta>();
+    meta->tagFoldedHist = tagFoldedHist;
+    meta->altTagFoldedHist = altTagFoldedHist;
+    meta->indexFoldedHist = indexFoldedHist;
+    meta->history = history;
+
+    pred.tageInfoForMgscs.clear();
+    for (const auto &btb_entry : pred.btbEntries) {
+        if (!(btb_entry.isCond && btb_entry.valid)) {
+            continue;
+        }
+
+        auto tage_pred = generateSinglePrediction(btb_entry, startPC);
+        meta->preds[btb_entry.pc] = tage_pred;
+
+        auto &tage_info = pred.tageInfoForMgscs[btb_entry.pc];
+        tage_info.tage_pred_taken = tage_pred.taken;
+        tage_info.tage_main_taken =
+            tage_pred.mainInfo.found ? tage_pred.mainInfo.taken() : false;
+        tage_info.tage_pred_conf_high = tage_pred.mainInfo.found &&
+            abs(tage_pred.mainInfo.entry.counter * 2 + 1) == 7;
+        tage_info.tage_pred_conf_mid = tage_pred.mainInfo.found &&
+            (abs(tage_pred.mainInfo.entry.counter * 2 + 1) < 7 &&
+             abs(tage_pred.mainInfo.entry.counter * 2 + 1) > 1);
+        tage_info.tage_pred_conf_low = !tage_pred.mainInfo.found ||
+            (abs(tage_pred.mainInfo.entry.counter * 2 + 1) <= 1);
+        tage_info.tage_pred_alt_diff = tage_pred.mainInfo.found &&
+            tage_pred.mainInfo.taken() != tage_pred.altPred;
+    }
+}
+
 /**
  * @brief Prepare BTB entries for update by filtering and processing
  * 

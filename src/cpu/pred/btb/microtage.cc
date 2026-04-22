@@ -387,6 +387,31 @@ MicroTAGE::getPredictionMeta(ThreadID tid) {
     return threadMeta[tid];
 }
 
+void
+MicroTAGE::refreshPredictionMeta(Addr startPC,
+                                 const bitset &history,
+                                 FullBTBPrediction &pred)
+{
+    meta = std::make_shared<TageMeta>();
+    meta->tagFoldedHist = tagFoldedHist;
+    meta->altTagFoldedHist = altTagFoldedHist;
+    meta->indexFoldedHist = indexFoldedHist;
+    meta->aheadIndexFoldedHistValid = !aheadindexFoldedHist.empty();
+    if (meta->aheadIndexFoldedHistValid) {
+        meta->aheadIndexFoldedHist = aheadindexFoldedHist.front();
+    } else {
+        meta->aheadIndexFoldedHist.clear();
+    }
+    meta->history = history;
+
+    for (const auto &btb_entry : pred.btbEntries) {
+        if (!(btb_entry.isCond && btb_entry.valid)) {
+            continue;
+        }
+        meta->preds[btb_entry.pc] = generateSinglePrediction(btb_entry, startPC);
+    }
+}
+
 /**
  * @brief Prepare BTB entries for update by filtering and processing
  *

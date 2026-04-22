@@ -151,6 +151,9 @@ class MBTB : public TimedBaseBTBPredictor
      *  @return Returns the prediction meta
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
     /**
      * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
