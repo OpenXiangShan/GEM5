@@ -37,6 +37,48 @@ DecoupledBPUWithBTB::getThreadAsidHash(ThreadID tid) const
     return foldAsidHash16To4(asid);
 }
 
+namespace
+{
+
+BTBEntry
+buildPairBlockEntry(const PairTAGE::PairBlockInfo &block, int pairComponentIdx)
+{
+    BTBEntry entry;
+    entry.valid = block.valid;
+    entry.pc = block.branchPC;
+    entry.target = block.targetPC;
+    entry.size = 4;
+    entry.isCond = true;
+    entry.isDirect = true;
+    entry.alwaysTaken = false;
+    entry.ctr = block.taken ? 0 : -1;
+    entry.source = pairComponentIdx;
+    return entry;
+}
+
+FullBTBPrediction
+buildPredictionFromPairBlock(ThreadID tid,
+    const PairTAGE::PairBlockInfo &block,
+    Addr blockStartPC,
+    const FullBTBPrediction &basePred,
+    int pairComponentIdx)
+{
+    FullBTBPrediction pred;
+    pred.tid = tid;
+    pred.bbStart = blockStartPC;
+    pred.predSource = basePred.predSource;
+    pred.overrideReason = OverrideReason::NO_OVERRIDE;
+    pred.predTick = basePred.predTick;
+    pred.s1Source = basePred.s1Source;
+    pred.s3Source = basePred.s3Source;
+
+    auto entry = buildPairBlockEntry(block, pairComponentIdx);
+    pred.btbEntries.push_back(entry);
+    pred.condTakens.push_back({entry.pc, block.taken});
+    return pred;
+}
+
+} // namespace
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 {
@@ -54,6 +96,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       abtb(p.abtb),
       mbtb(p.mbtb),
       microtage(p.microtage),
+      pairtage(p.pairtage),
       tage(p.tage),
       ittage(p.ittage),
       mgsc(p.mgsc),
@@ -84,6 +127,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     if (abtb->isEnabled()) components.push_back(abtb);
     if (microtage->isEnabled()) components.push_back(microtage);
     if (mbtb->isEnabled()) components.push_back(mbtb);
+    if (pairtage->isEnabled()) components.push_back(pairtage);
     if (tage->isEnabled()) components.push_back(tage);
     if (ras->isEnabled()) components.push_back(ras);
     if (ittage->isEnabled()) components.push_back(ittage);
@@ -301,6 +345,9 @@ DecoupledBPUWithBTB::tick()
             threads[tid].validprediction = false;
             threads[tid].numOverrideBubbles = 0;
             threads[tid].nextPredictionAfterSquash = true;
+            threads[tid].pendingSecondBlockValid = false;
+            threads[tid].firstBlockProcessedThisTick = false;
+            threads[tid].pendingSecondBlockEntry = FetchTarget();
             tage->dryRunCycle(threads[tid].s0PC);
             DPRINTF(Override, "Squashing, BPU state updated.\n");
             threads[tid].squashing = false;
@@ -313,6 +360,9 @@ DecoupledBPUWithBTB::tick()
     }
 
     if (curTid != InvalidThreadID) {
+        for (int tid = 0; tid < numThreads; tid++) {
+            threads[tid].firstBlockProcessedThisTick = false;
+        }
         if (threads[curTid].blockPredictionPending) {
             DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
             dbpBtbStats.predictionBlockedForUpdate++;
@@ -332,6 +382,10 @@ DecoupledBPUWithBTB::tick()
             dbpBtbStats.overrideBubbleNum++;
             DPRINTF(Override, "Consuming override bubble, %d remaining\n", numOverrideBubbles);
         }
+    }
+
+    for (int tid = 0; tid < numThreads; tid++) {
+        processSecondBlock(tid);
     }
 
     DPRINTF(Override, "Prediction cycle complete\n");
@@ -563,6 +617,7 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     ftq.insert(entry);
     threads[tid].nextPredictionAfterSquash = false;
     threads[tid].validprediction = false;
+    threads[tid].firstBlockProcessedThisTick = true;
 
     // 6. Debug output and update statistics
     dumpFsq("after insert new target");
@@ -572,6 +627,43 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     // 7. Increment statistics
     printTarget(entry);
     dbpBtbStats.fsqEntryEnqueued++;
+}
+
+void
+DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
+{
+    auto &thread = threads[tid];
+
+    thread.pendingSecondBlockValid = false;
+    thread.pendingSecondBlockEntry = FetchTarget();
+
+    if (!thread.firstBlockProcessedThisTick) {
+        return;
+    }
+
+    if (!pairtage || !pairtage->isEnabled()) {
+        return;
+    }
+
+    auto secondBlock = pairtage->getSecondPredBlock();
+    if (!secondBlock.valid) {
+        DPRINTF(DecoupleBP,
+                "No pending PairTAGE second block for thread %u after first block\n",
+                tid);
+        return;
+    }
+
+    auto secondPred = buildPredictionFromPairBlock(
+        tid, secondBlock, thread.s0PC, thread.finalPred, pairtage->getComponentIdx());
+    auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
+    fillAheadPipeline(entry);
+
+    thread.pendingSecondBlockEntry = entry;
+    thread.pendingSecondBlockValid = true;
+
+    DPRINTF(DecoupleBP,
+            "Packaged PairTAGE second block for thread %u: startPC %#lx, branchPC %#lx, target %#lx, taken %d\n",
+            tid, entry.startPC, secondBlock.branchPC, secondBlock.targetPC, secondBlock.taken);
 }
 
 /**
@@ -929,34 +1021,43 @@ DecoupledBPUWithBTB::pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<>
 FetchTarget
 DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
 {
-    auto& s0PC = threads[tid].s0PC;
+    return createFetchTargetEntry(tid, threads[tid].s0PC, threads[tid].finalPred);
+}
+
+FetchTarget
+DecoupledBPUWithBTB::createFetchTargetEntry(
+    ThreadID tid, Addr startPC, FullBTBPrediction &pred)
+{
     auto& s0History = threads[tid].s0History;
     auto& s0PHistory = threads[tid].s0PHistory;
     auto& s0BwHistory = threads[tid].s0BwHistory;
     auto& s0LHistory = threads[tid].s0LHistory;
-    auto& finalPred = threads[tid].finalPred;
 
     // Create a new fetch target entry
     FetchTarget entry;
     entry.tid = tid;
-    entry.asidHash = finalPred.asidHash;
-    entry.startPC = s0PC;
+    entry.asidHash = pred.asidHash;
+    entry.startPC = startPC;
 
     // Extract branch prediction information
-    bool taken = finalPred.isTaken();
-    Addr fallThroughAddr = finalPred.getFallThrough(predictWidth);
-    Addr nextPC = finalPred.getTarget(predictWidth);
+    bool taken = pred.isTaken();
+    Addr fallThroughAddr = pred.getFallThrough(predictWidth);
+    Addr nextPC = pred.getTarget(predictWidth);
 
     // Configure target entry with prediction details
-    entry.isHit = !finalPred.btbEntries.empty();
+    panic_if(numComponents > entry.predMetas.size(),
+             "Too many BTB predictor components (%u) for FetchTarget meta slots (%zu)",
+             numComponents, entry.predMetas.size());
+
+    entry.isHit = !pred.btbEntries.empty();
     entry.falseHit = false;
-    entry.predBTBEntries = finalPred.btbEntries;
+    entry.predBTBEntries = pred.btbEntries;
     entry.predTaken = taken;
     entry.predEndPC = fallThroughAddr;
 
     // Set branch info for taken predictions
     if (taken) {
-        entry.predBranchInfo = finalPred.getTakenEntry().getBranchInfo();
+        entry.predBranchInfo = pred.getTakenEntry().getBranchInfo();
         entry.predBranchInfo.target = nextPC; // Use final target (may not be from BTB)
     }
 
@@ -965,12 +1066,12 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
     entry.phistory = s0PHistory;
     entry.bwhistory = s0BwHistory;
     entry.lhistory = s0LHistory;
-    entry.predTick = finalPred.predTick;
-    entry.predSource = finalPred.predSource;
-    entry.overrideReason = finalPred.overrideReason;
+    entry.predTick = pred.predTick;
+    entry.predSource = pred.predSource;
+    entry.overrideReason = pred.overrideReason;
 
-    entry.s1Source = finalPred.s1Source;
-    entry.s3Source = finalPred.s3Source;
+    entry.s1Source = pred.s1Source;
+    entry.s3Source = pred.s3Source;
 
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {

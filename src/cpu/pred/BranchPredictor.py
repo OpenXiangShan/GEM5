@@ -1240,6 +1240,7 @@ class DecoupledBPUWithBTB(BranchPredictor):
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")
     mgsc = Param.BTBMGSC(BTBMGSC(), "MGSC predictor")
     ras = Param.BTBRAS(BTBRAS(), "RAS")
+    pairtage = Param.PairTAGE(PairTAGE(), "PairTAGE predictor")
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
