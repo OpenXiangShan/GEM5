@@ -22,6 +22,7 @@
 #include "cpu/pred/btb/ftq.hh"
 #include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/microtage.hh"
+#include "cpu/pred/btb/pairtage.hh"
 #include "cpu/pred/btb/ras.hh"
 #include "cpu/pred/general_arch_db.hh"
 
@@ -88,6 +89,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     AheadBTB *abtb{};
     MBTB *mbtb{};
     MicroTAGE *microtage{};
+    PairTAGE *pairtage{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};
     BTBMGSC *mgsc{};
@@ -135,10 +137,13 @@ class DecoupledBPUWithBTB : public BPredUnit
         std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
         boost::dynamic_bitset<> commitHistory;
         FullBTBPrediction finalPred;      ///< Final prediction
+        FetchTarget pendingSecondBlockEntry;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
         bool blockPredictionPending{false};
+        bool pendingSecondBlockValid{false};
+        bool firstBlockProcessedThisTick{false};
     } threads[MaxThreads];
 
     HistoryManager historyManager;
@@ -148,8 +153,10 @@ class DecoupledBPUWithBTB : public BPredUnit
     ThreadID scheduleThread() { return 0; }
 
     void processNewPrediction(ThreadID tid);
+    void processSecondBlock(ThreadID tid);
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
+    FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);
 
     void updateHistoryForPrediction(FetchTarget &entry);
 
