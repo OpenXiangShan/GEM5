@@ -38,6 +38,11 @@ on:
         required: false
         type: string
         default: ''
+      extra_args:
+        description: 'Extra gem5 args passed to kmhv3.py, e.g. "-P system.cpu[0].branchPred.tage.enableRowBundle=True"'
+        required: false
+        type: string
+        default: ''
       vector_type:
         description: 'Vector decode strategy (only for rvv benchmarks)'
         required: false
@@ -76,6 +81,7 @@ jobs:
       config_path: ${{ needs.setup.outputs.config_path }}
       benchmark_type: ${{ github.event.inputs.benchmark_type }}
       specific_benchmarks: ${{ github.event.inputs.specific_benchmarks }}
+      extra_args: ${{ github.event.inputs.extra_args }}
       vector_type: ${{ github.event.inputs.vector_type }}
       pr_sha: ${{ needs.setup.outputs.pr_sha }}
       check_result: true
