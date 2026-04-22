@@ -299,7 +299,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                                  const Addr &startPC,
                                  std::shared_ptr<TageMeta> predMeta,
                                  ThreadID tid,
-                                 uint8_t asidHash) {
+                                 uint8_t asidHash) const
+{
     DPRINTF(TAGE, "generateSinglePrediction for btbEntry: %#lx\n", btb_entry.pc);
     const auto &state = historyState(tid);
 
@@ -442,6 +443,19 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                                          (abs(pred.mainInfo.entry.counter*2 + 1) <= 1); // counter initialized, -1 or 0
             // main predict is different from alt predict/base predict
             tageInfoForMgscs[btb_entry.pc].tage_pred_alt_diff = pred.mainInfo.found && pred.mainInfo.taken() != pred.altPred;
+        }
+    }
+}
+
+void
+BTBTAGE::lookupNoSideEffect(const Addr &startPC,
+                            const std::vector<BTBEntry> &btbEntries,
+                            CondTakens &results) const
+{
+    for (const auto &btb_entry : btbEntries) {
+        if (btb_entry.isCond && btb_entry.valid) {
+            auto pred = generateSinglePrediction(btb_entry, startPC);
+            results.push_back({btb_entry.pc, pred.taken || btb_entry.alwaysTaken});
         }
     }
 }
@@ -1047,6 +1061,7 @@ BTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 // Calculate TAGE tag with folded history - optimized version using bitwise operations
 Addr
 BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
+                    Addr position, uint8_t asidHash) const
                     Addr position, uint8_t asidHash)
 {
     // Create mask for tableTagBits[t] to limit result size
@@ -1068,6 +1083,7 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
 }
 
 Addr
+BTBTAGE::getTageTag(Addr pc, int t, Addr position, uint8_t asidHash) const
 BTBTAGE::getTageTag(Addr pc, int t, Addr position, uint8_t asidHash)
 {
     const auto &state = historyState(0);
@@ -1076,6 +1092,7 @@ BTBTAGE::getTageTag(Addr pc, int t, Addr position, uint8_t asidHash)
 }
 
 Addr
+BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash) const
 BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash)
 {
     // Create mask for tableIndexBits[t] to limit result size
@@ -1089,13 +1106,14 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash)
 }
 
 Addr
+BTBTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash) const
 BTBTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash)
 {
     return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get(), asidHash);
 }
 
 bool
-BTBTAGE::matchTag(Addr expected, Addr found)
+BTBTAGE::matchTag(Addr expected, Addr found) const
 {
     return expected == found;
 }
@@ -1125,7 +1143,7 @@ BTBTAGE::getUseAltIdx(Addr pc) const {
 }
 
 unsigned
-BTBTAGE::getBranchIndexInBlock(Addr branchPC, Addr startPC) {
+BTBTAGE::getBranchIndexInBlock(Addr branchPC, Addr startPC) const {
     // Calculate branch position within the fetch block (0 .. maxBranchPositions-1)
     Addr alignedPC = startPC & ~(blockSize - 1);
     Addr offset = (branchPC - alignedPC) >> instShiftAmt;

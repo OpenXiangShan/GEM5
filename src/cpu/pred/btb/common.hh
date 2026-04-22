@@ -556,6 +556,7 @@ struct FullBTBPrediction
         returnTarget(0),
         tageInfoForMgscs(),
         predSource(0),
+        overrideReason(OverrideReason::NO_OVERRIDE),
         predTick(0),
         s1Source(-1),
         s3Source(-1) {}

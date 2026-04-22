@@ -143,6 +143,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void putPCHistory(Addr startAddr,
                       const boost::dynamic_bitset<> &history,
                       std::vector<FullBTBPrediction> &stagePreds) override;
+    void lookupNoSideEffect(const Addr &startPC,
+                            const std::vector<BTBEntry> &btbEntries,
+                            CondTakens &results) const;
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
@@ -202,12 +205,12 @@ class BTBTAGE : public TimedBaseBTBPredictor
                     Addr position = 0, uint8_t asidHash = 0);
 
     // Get offset within a block for a given PC
-    Addr getOffset(Addr pc) {
+    Addr getOffset(Addr pc) const {
         return (pc & (blockSize - 1)) >> 1;
     }
 
     // Get branch index within a prediction block
-    unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC);
+    unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC) const;
 
     // Get bank ID from PC (after removing instruction alignment bits)
     // Extract bits [bankBaseShift + bankIdWidth - 1 : bankBaseShift]
@@ -277,7 +280,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     int usefulResetCnt{0};
 
     // Check if a tag matches
-    bool matchTag(Addr expected, Addr found);
+    bool matchTag(Addr expected, Addr found) const;
 
     // Set tag bits for a given table
     void setTag(Addr &dest, Addr src, int table);
@@ -470,7 +473,7 @@ private:
                                            const Addr &startPC,
                                            const std::shared_ptr<TageMeta> predMeta = nullptr,
                                            ThreadID tid = 0,
-                                           uint8_t asidHash = 0);
+                                           uint8_t asidHash = 0) const;
 
     // Helper method to prepare BTB entries for update
     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);

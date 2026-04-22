@@ -346,7 +346,9 @@ DecoupledBPUWithBTB::tick()
             threads[tid].numOverrideBubbles = 0;
             threads[tid].nextPredictionAfterSquash = true;
             threads[tid].pendingSecondBlockValid = false;
+            threads[tid].secondBlockTrainPredReady = false;
             threads[tid].firstBlockProcessedThisTick = false;
+            threads[tid].secondBlockTrainPred = FullBTBPrediction();
             threads[tid].pendingSecondBlockEntry = FetchTarget();
             tage->dryRunCycle(threads[tid].s0PC);
             DPRINTF(Override, "Squashing, BPU state updated.\n");
@@ -385,11 +387,14 @@ DecoupledBPUWithBTB::tick()
     }
 
     for (int tid = 0; tid < numThreads; tid++) {
+        prepareSecondBlockTrainingPrediction(tid);
         processSecondBlock(tid);
 
         if (threads[tid].firstBlockProcessedThisTick && pairtage &&
             pairtage->isEnabled() && !ftq.empty(tid)) {
-            pairtage->trainFromActualPred(ftq.back(tid));
+            const auto *secondPred = threads[tid].secondBlockTrainPredReady ?
+                &threads[tid].secondBlockTrainPred : nullptr;
+            pairtage->trainFromActualPred(ftq.back(tid), secondPred);
         }
     }
 
@@ -669,6 +674,57 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     DPRINTF(DecoupleBP,
             "Packaged PairTAGE second block for thread %u: startPC %#lx, branchPC %#lx, target %#lx, taken %d\n",
             tid, entry.startPC, secondBlock.branchPC, secondBlock.targetPC, secondBlock.taken);
+}
+
+void
+DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
+{
+    auto &thread = threads[tid];
+    thread.secondBlockTrainPredReady = false;
+    thread.secondBlockTrainPred = FullBTBPrediction();
+
+    if (!thread.firstBlockProcessedThisTick) {
+        return;
+    }
+
+    if (!pairtage || !pairtage->isEnabled() || !mbtb || !mbtb->isEnabled()) {
+        return;
+    }
+
+    auto &secondPred = thread.secondBlockTrainPred;
+    secondPred.tid = tid;
+    secondPred.bbStart = thread.s0PC;
+    secondPred.predSource = thread.finalPred.predSource;
+    secondPred.overrideReason = OverrideReason::NO_OVERRIDE;
+    secondPred.predTick = thread.finalPred.predTick;
+    secondPred.s1Source = mbtb->getComponentIdx();
+    secondPred.s3Source = mbtb->getComponentIdx();
+
+    secondPred.btbEntries = mbtb->getPredictedEntriesNoSideEffect(thread.s0PC);
+    secondPred.condTakens.clear();
+    secondPred.indirectTargets.clear();
+    secondPred.tageInfoForMgscs.clear();
+    secondPred.returnTarget = 0;
+
+    if (tage && tage->isEnabled()) {
+        tage->lookupNoSideEffect(thread.s0PC, secondPred.btbEntries,
+                                 secondPred.condTakens);
+        secondPred.s3Source = tage->getComponentIdx();
+    } else {
+        for (const auto &entry : secondPred.btbEntries) {
+            if (entry.valid && entry.isCond) {
+                secondPred.condTakens.push_back(
+                    {entry.pc, entry.alwaysTaken || (entry.ctr >= 0)});
+            }
+        }
+    }
+
+    thread.secondBlockTrainPredReady = true;
+
+    DPRINTF(DecoupleBP,
+            "Prepared PairTAGE second-block training prediction for thread %u: startPC %#lx, %zu BTB entries, %zu "
+            "cond takens\n",
+            tid, secondPred.bbStart, secondPred.btbEntries.size(), secondPred.condTakens.size());
 }
 
 /**

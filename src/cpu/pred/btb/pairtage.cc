@@ -354,8 +354,44 @@ PairTAGE::buildTrainingBlock(const FetchTarget &entry) const
     return PairBlockInfo(entry.predTaken, trainEntry->pc, targetPC);
 }
 
+PairTAGE::PairBlockInfo
+PairTAGE::buildTrainingBlock(const FullBTBPrediction &pred) const
+{
+    auto predCopy = pred;
+    const BTBEntry *trainEntry = nullptr;
+
+    if (predCopy.isTaken()) {
+        auto takenEntry = predCopy.getTakenEntry();
+        if (takenEntry.valid) {
+            for (const auto &btbEntry : predCopy.btbEntries) {
+                if (btbEntry.valid && btbEntry.pc == takenEntry.pc) {
+                    trainEntry = &btbEntry;
+                    break;
+                }
+            }
+        }
+    } else {
+        for (auto it = predCopy.btbEntries.rbegin(); it != predCopy.btbEntries.rend(); ++it) {
+            if (it->valid && it->isCond && it->isDirect &&
+                !it->isIndirect && !it->isCall && !it->isReturn) {
+                trainEntry = &*it;
+                break;
+            }
+        }
+    }
+
+    if (!trainEntry || !trainEntry->valid || !trainEntry->isCond ||
+        !trainEntry->isDirect || trainEntry->isIndirect ||
+        trainEntry->isCall || trainEntry->isReturn) {
+        return PairBlockInfo{};
+    }
+
+    return PairBlockInfo(predCopy.isTaken(), trainEntry->pc, trainEntry->target);
+}
+
 void
-PairTAGE::trainFromActualPred(const FetchTarget &entry)
+PairTAGE::trainFromActualPred(const FetchTarget &entry,
+                              const FullBTBPrediction *secondPred)
 {
     auto predMeta = std::static_pointer_cast<TageMeta>(
         entry.predMetas[getComponentIdx()]);
@@ -365,6 +401,8 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry)
 
     auto provider = lookupEntry(entry.startPC, *predMeta);
     auto trainedBlock = buildTrainingBlock(entry);
+    auto trainedSecondBlock = secondPred ? buildTrainingBlock(*secondPred)
+                                         : PairBlockInfo{};
 
     if (!trainedBlock.valid) {
         if (provider.found) {
@@ -398,7 +436,11 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry)
     trainedEntry.counter = trainedBlock.taken ? 0 : -1;
     trainedEntry.useful = provider.found ? provider.entry.useful : false;
     trainedEntry.setBlock(0, trainedBlock);
-    trainedEntry.clearBlock(1);
+    if (trainedSecondBlock.valid) {
+        trainedEntry.setBlock(1, trainedSecondBlock);
+    } else {
+        trainedEntry.clearBlock(1);
+    }
 }
 
 Addr

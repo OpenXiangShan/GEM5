@@ -140,6 +140,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
         boost::dynamic_bitset<> commitHistory;
         FullBTBPrediction finalPred;      ///< Final prediction
+        FullBTBPrediction secondBlockTrainPred;
         FetchTarget pendingSecondBlockEntry;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
@@ -148,6 +149,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         bool blockPredictionPending{false};
         bool redirectPending{false};
         bool pendingSecondBlockValid{false};
+        bool secondBlockTrainPredReady{false};
         bool firstBlockProcessedThisTick{false};
     } threads[MaxThreads];
 
@@ -168,6 +170,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     ThreadID scheduleThread();
 
     void processNewPrediction(ThreadID tid);
+    void prepareSecondBlockTrainingPrediction(ThreadID tid);
     void processSecondBlock(ThreadID tid);
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
