@@ -145,7 +145,8 @@ class PairTAGE : public TimedBaseBTBPredictor
     void recoverHist(const bitset &history, const FetchTarget &entry, int shamt, bool cond_taken) override;
     void update(const FetchTarget &entry) override;
     PairBlockInfo getSecondPredBlock() const;
-    void trainFromActualPred(const FetchTarget &entry);
+    void trainFromActualPred(const FetchTarget &entry,
+                             const FullBTBPrediction *secondPred = nullptr);
 
     unsigned getNumPredictors() const { return numPredictors; }
     unsigned getNumWays() const { return numWays; }
@@ -161,6 +162,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     BTBEntry buildBTBEntry(const PairBlockInfo &block) const;
     void fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const;
     PairBlockInfo buildTrainingBlock(const FetchTarget &entry) const;
+    PairBlockInfo buildTrainingBlock(const FullBTBPrediction &pred) const;
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist) const;
     Addr getTageIndex(Addr pc, int table) const;
     Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0) const;
