@@ -109,12 +109,13 @@ def setKmhV3Params(args, system):
             cpu.branchPred.microtage.enabled = False
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = False
-            cpu.branchPred.ittage.enabled = False
+            cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
 
-            # Standalone SC experiment: disable TAGE direction sources and let
-            # MGSC run with default metadata, using only path/IMLI tables.
+            # Standalone SC experiment: disable direction TAGE sources while
+            # keeping ITTAGE for indirect targets, and let MGSC run with
+            # default metadata using only path/IMLI tables.
             cpu.branchPred.mgsc.forceUseSC = True
             cpu.branchPred.mgsc.allowMissingTageInfo = True
             cpu.branchPred.mgsc.enableBwTable = False
