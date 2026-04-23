@@ -171,6 +171,8 @@ class PairTAGE : public TimedBaseBTBPredictor
     Addr getTageIndex(Addr pc, int table) const;
     Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0) const;
     unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC) const;
+    Addr getFallThrough(Addr startPC) const;
+    bool isBranchInFirstBlock(Addr branchPC, Addr startPC) const;
     void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
 
     const unsigned numPredictors;
