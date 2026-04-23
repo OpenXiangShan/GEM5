@@ -660,12 +660,23 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         return false;
     }
 
-    // Special case: provider is weak but direction is correct
-    // In this case, provider just needs more training, not a longer history table
-    // This avoids wasteful allocation and prevents ping-pong effects
-    if (used_alt && main_info.found && main_info.taken() == actual_taken) {
-        return false;
-    }
+    // Classic TAGE would also stop here when the provider is weak but its
+    // direction matches the resolved outcome while the final prediction came
+    // from alt/base. That rule assumes the provider only needs more training.
+    //
+    // For BTBTAGE with path history, h264ref's 0x588d6/0x58962 loop-phase
+    // pattern shows a corner case where two opposite local contexts collide in
+    // the same short-history entry, keeping the provider counter weak forever.
+    // If we keep the classic gate here, the pattern never gets a chance to
+    // allocate into a longer-history table and stays locked in the short table.
+    //
+    // Therefore we intentionally allow allocation to proceed even when:
+    //   used_alt && main_info.found && main_info.taken() == actual_taken
+    // so the minority pattern can escape to a longer-history entry.
+    //
+    // if (used_alt && main_info.found && main_info.taken() == actual_taken) {
+    //     return false;
+    // }
 
     // All other cases: allocate longer history table
     return true;
