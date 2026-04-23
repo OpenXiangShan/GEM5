@@ -292,6 +292,12 @@ struct LFSR64
 
 using FetchTargetId = uint64_t;
 
+enum class PairPhase : uint8_t
+{
+    Even = 0,
+    Odd = 1
+};
+
 // {branch pc -> istaken} maps
 using CondTakens = std::vector<std::pair<Addr, bool>>;
 // {branch pc -> target pc} maps
@@ -363,6 +369,7 @@ struct FetchTarget
     Addr squashPC;         // pc of the squash inst
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)
+    PairPhase pairPhase;   // PairTAGE logical phase of this block start
 
     // prediction metas
     // FIXME: use vec
@@ -400,6 +407,7 @@ struct FetchTarget
          squashType(SquashType::SQUASH_NONE),
          squashPC(0),
          predSource(0),
+         pairPhase(PairPhase::Even),
          predTick(0),
          history(),
          phistory(),

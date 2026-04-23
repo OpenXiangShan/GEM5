@@ -132,6 +132,18 @@ pairBlocksMatch(const PairTAGE::PairBlockInfo &lhs,
            lhs.targetPC == rhs.targetPC;
 }
 
+PairPhase
+flippedPairPhase(PairPhase phase)
+{
+    return phase == PairPhase::Even ? PairPhase::Odd : PairPhase::Even;
+}
+
+void
+advancePairPhase(PairPhase &phase)
+{
+    phase = flippedPairPhase(phase);
+}
+
 } // namespace
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
@@ -231,6 +243,7 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
             thread.s0LHistory[i].resize(historyBits, 0);
         }
         thread.commitHistory.resize(historyBits, 0);
+        thread.s0PairPhase = PairPhase::Even;
         thread.squashing = true;
     }
 
@@ -485,6 +498,10 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
         predsOfEachStage[i].predSource = i;
     }
 
+    if (pairtage && pairtage->isEnabled()) {
+        pairtage->setPredictionPhase(thread.s0PairPhase);
+    }
+
     // Query each predictor component with current PC and history
     for (int i = 0; i < numComponents; i++) {
         components[i]->putPCHistory(thread.s0PC, thread.s0History, predsOfEachStage);  //s0History not used
@@ -686,6 +703,7 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     // 5. Add entry to fetch target queue
     ftq.insert(entry);
     threads[tid].nextPredictionAfterSquash = false;
+    advancePairPhase(threads[tid].s0PairPhase);
     threads[tid].validprediction = false;
     threads[tid].firstBlockProcessedThisTick = true;
 
@@ -712,6 +730,13 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     }
 
     if (!pairtage || !pairtage->isEnabled()) {
+        return;
+    }
+
+    if (!currentFirstBlockHasEvenPairPhase(tid)) {
+        DPRINTF(DecoupleBP,
+                "Skip PairTAGE second block for thread %u because first block phase is Odd\n",
+                tid);
         return;
     }
 
@@ -763,6 +788,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     updateHistoryForPrediction(entry, secondPred);
     fillAheadPipeline(entry);
     ftq.insert(entry);
+    advancePairPhase(thread.s0PairPhase);
 
     thread.pendingSecondBlockEntry = entry;
     thread.pendingSecondBlockValid = true;
@@ -782,6 +808,10 @@ DecoupledBPUWithBTB::refreshSecondBlockPredictionMetas(
 {
     auto &thread = threads[tid];
 
+    if (pairtage && pairtage->isEnabled()) {
+        pairtage->setPredictionPhase(thread.s0PairPhase);
+    }
+
     pred.tageInfoForMgscs.clear();
     for (int i = 0; i < numComponents; ++i) {
         components[i]->refreshPredictionMeta(thread.s0PC, thread.s0History, pred);
@@ -800,6 +830,10 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
     }
 
     if (!pairtage || !pairtage->isEnabled() || !mbtb || !mbtb->isEnabled()) {
+        return;
+    }
+
+    if (!currentFirstBlockHasEvenPairPhase(tid)) {
         return;
     }
 
@@ -847,9 +881,21 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
 }
 
 bool
+DecoupledBPUWithBTB::currentFirstBlockHasEvenPairPhase(ThreadID tid) const
+{
+    return threads[tid].firstBlockProcessedThisTick &&
+           !ftq.empty(tid) &&
+           ftq.back(tid).pairPhase == PairPhase::Even;
+}
+
+bool
 DecoupledBPUWithBTB::pairtageFirstBlockStillValidForSecondBlock(ThreadID tid) const
 {
     if (!pairtage || !pairtage->isEnabled()) {
+        return false;
+    }
+
+    if (!currentFirstBlockHasEvenPairPhase(tid)) {
         return false;
     }
 
@@ -1269,6 +1315,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.phistory = s0PHistory;
     entry.bwhistory = s0BwHistory;
     entry.lhistory = s0LHistory;
+    entry.pairPhase = threads[tid].s0PairPhase;
     entry.predTick = pred.predTick;
     entry.predSource = pred.predSource;
     entry.overrideReason = pred.overrideReason;
@@ -1458,6 +1505,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     s0PHistory = target.phistory;
     s0BwHistory = target.bwhistory;
     s0LHistory = target.lhistory;
+    threads[tid].s0PairPhase = target.pairPhase;
 
     // Get actual history update information.
     const auto ghist_update = target.getGHistUpdateDuringSquash(
@@ -1507,6 +1555,8 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
                          target.asidHash);
     histShiftIn(ghist_update.shamt, ghist_update.taken,
                 s0LHistory[localHistoryIndex]);
+
+    advancePairPhase(threads[tid].s0PairPhase);
 
     // Update history manager with appropriate branch info
     if (squash_type == SQUASH_CTRL) {

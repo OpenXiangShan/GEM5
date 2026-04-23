@@ -149,6 +149,12 @@ PairTAGE::dryRunCycle(Addr startAddr)
 }
 
 void
+PairTAGE::setPredictionPhase(PairPhase phase)
+{
+    predictionPhase = phase;
+}
+
+void
 PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds)
 {
     secondPredBlock.clear();
@@ -164,6 +170,10 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
     meta->history = history;
     meta->predictedFirstBlock.clear();
     meta->predictedSecondBlock.clear();
+
+    if (predictionPhase == PairPhase::Odd) {
+        return;
+    }
 
     auto tableInfo = lookupEntry(startAddr);
     if (!tableInfo.found) {
@@ -210,6 +220,10 @@ PairTAGE::refreshPredictionMeta(Addr startAddr,
     meta->history = history;
     meta->predictedFirstBlock.clear();
     meta->predictedSecondBlock.clear();
+
+    if (predictionPhase == PairPhase::Odd) {
+        return;
+    }
 
     auto tableInfo = lookupEntry(startAddr);
     if (!tableInfo.found) {
@@ -424,6 +438,10 @@ void
 PairTAGE::trainFromActualPred(const FetchTarget &entry,
                               const FullBTBPrediction *secondPred)
 {
+    if (entry.pairPhase != PairPhase::Even) {
+        return;
+    }
+
     auto predMeta = std::static_pointer_cast<TageMeta>(
         entry.predMetas[getComponentIdx()]);
     if (!predMeta) {

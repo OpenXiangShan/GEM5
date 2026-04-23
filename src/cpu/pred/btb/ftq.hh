@@ -48,9 +48,16 @@ public:
     inline FetchTargetId backId(ThreadID tid) const { return queue[tid].baseTargetId + queue[tid].cap.size() - 1; }
     inline FetchTargetId fetchId(ThreadID tid) const { return queue[tid].fetchptr; }
     inline FetchTarget& front(ThreadID tid) { return queue[tid].cap.front(); }
+    inline const FetchTarget& front(ThreadID tid) const { return queue[tid].cap.front(); }
     inline FetchTarget& back(ThreadID tid) { return queue[tid].cap.back(); }
+    inline const FetchTarget& back(ThreadID tid) const { return queue[tid].cap.back(); }
     inline FetchTarget& fetching(ThreadID tid) { return get(queue[tid].fetchptr, tid); }
     inline FetchTarget& get(FetchTargetId targetId, ThreadID tid) {
+        assert(targetId >= queue[tid].baseTargetId &&
+               targetId < queue[tid].baseTargetId + queue[tid].cap.size());
+        return queue[tid].cap[targetId - queue[tid].baseTargetId];
+    }
+    inline const FetchTarget& get(FetchTargetId targetId, ThreadID tid) const {
         assert(targetId >= queue[tid].baseTargetId &&
                targetId < queue[tid].baseTargetId + queue[tid].cap.size());
         return queue[tid].cap[targetId - queue[tid].baseTargetId];

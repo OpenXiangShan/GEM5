@@ -139,6 +139,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         boost::dynamic_bitset<> s0BwHistory;  ///< global backward History bits
         std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
         boost::dynamic_bitset<> commitHistory;
+        PairPhase s0PairPhase{PairPhase::Even};
         FullBTBPrediction finalPred;      ///< Final prediction
         FullBTBPrediction secondBlockTrainPred;
         FetchTarget pendingSecondBlockEntry;
@@ -173,6 +174,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void prepareSecondBlockTrainingPrediction(ThreadID tid);
     void processSecondBlock(ThreadID tid);
     void refreshSecondBlockPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
+    bool currentFirstBlockHasEvenPairPhase(ThreadID tid) const;
     bool pairtageFirstBlockStillValidForSecondBlock(ThreadID tid) const;
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
