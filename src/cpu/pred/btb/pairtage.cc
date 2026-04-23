@@ -298,7 +298,15 @@ PairTAGE::lookupEntry(Addr startPC, const TageMeta &predMeta) const
                 continue;
             }
 
-            const unsigned position = getBranchIndexInBlock(entry.firstBlock().branchPC, startPC);
+            // Todo: why this check is needed? If the first block is invalid or meet
+            // aliasing, the entry should be override by higher predictors and should
+            // not in final stage pred.
+            const auto &firstBlock = entry.firstBlock();
+            if (!isBranchInFirstBlock(firstBlock.branchPC, startPC)) {
+                continue;
+            }
+
+            const unsigned position = getBranchIndexInBlock(firstBlock.branchPC, startPC);
             const Addr tag = getTageTag(startPC, table,
                 predMeta.tagFoldedHist[table].get(),
                 predMeta.altTagFoldedHist[table].get(), position);
@@ -535,6 +543,18 @@ PairTAGE::getBranchIndexInBlock(Addr branchPC, Addr startPC) const
     }
 
     return position;
+}
+
+Addr
+PairTAGE::getFallThrough(Addr startPC) const
+{
+    return (startPC + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
+}
+
+bool
+PairTAGE::isBranchInFirstBlock(Addr branchPC, Addr startPC) const
+{
+    return branchPC >= startPC && branchPC < getFallThrough(startPC);
 }
 
 void
