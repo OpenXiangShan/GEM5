@@ -648,13 +648,21 @@ struct FullBTBPrediction
 struct TageMissTrace : public Record
 {
     void set(uint64_t startPC, uint64_t branchPC, uint64_t wayIdx,
-        uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful, uint64_t mainTable, uint64_t mainIndex,
-        uint64_t altFound, uint64_t altCounter, uint64_t altUseful, uint64_t altTable, uint64_t altIndex,
+        uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful,
+        uint64_t mainTable, uint64_t mainIndex, uint64_t mainTag,
+        uint64_t altFound, uint64_t altCounter, uint64_t altUseful,
+        uint64_t altTable, uint64_t altIndex, uint64_t altTag,
         uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess,
         uint64_t allocTable, uint64_t allocIndex, uint64_t allocWay,
+        uint64_t allocTag,
+        uint64_t victimValid, uint64_t victimTag,
+        uint64_t victimCounter, uint64_t victimUseful, uint64_t victimPC,
         std::string history, std::string phistory, uint64_t indexFoldedHist,
         uint64_t useAltIdx, uint64_t useAltCtr, uint64_t hitTableMask,
-        uint64_t finalProviderTable, uint64_t finalProviderIsAlt)
+        uint64_t finalProviderTable, uint64_t finalProviderIsAlt,
+        uint64_t historyHash, uint64_t phistoryHash,
+        uint64_t indexFoldedHistHash, uint64_t tagFoldedHistHash,
+        uint64_t altTagFoldedHistHash)
     {
         _tick = curTick();
         _uint64_data["startPC"] = startPC;
@@ -665,11 +673,13 @@ struct TageMissTrace : public Record
         _uint64_data["mainUseful"] = mainUseful;
         _uint64_data["mainTable"] = mainTable;
         _uint64_data["mainIndex"] = mainIndex;
+        _uint64_data["mainTag"] = mainTag;
         _uint64_data["altFound"] = altFound;
         _uint64_data["altCounter"] = altCounter;
         _uint64_data["altUseful"] = altUseful;
         _uint64_data["altTable"] = altTable;
         _uint64_data["altIndex"] = altIndex;
+        _uint64_data["altTag"] = altTag;
         _uint64_data["useAlt"] = useAlt;
         _uint64_data["predTaken"] = predTaken;
         _uint64_data["actualTaken"] = actualTaken;
@@ -677,6 +687,12 @@ struct TageMissTrace : public Record
         _uint64_data["allocTable"] = allocTable;
         _uint64_data["allocIndex"] = allocIndex;
         _uint64_data["allocWay"] = allocWay;
+        _uint64_data["allocTag"] = allocTag;
+        _uint64_data["victimValid"] = victimValid;
+        _uint64_data["victimTag"] = victimTag;
+        _uint64_data["victimCounter"] = victimCounter;
+        _uint64_data["victimUseful"] = victimUseful;
+        _uint64_data["victimPC"] = victimPC;
         _text_data["history"] = history;
         _text_data["phistory"] = phistory;
         _uint64_data["indexFoldedHist"] = indexFoldedHist;
@@ -685,6 +701,11 @@ struct TageMissTrace : public Record
         _uint64_data["hitTableMask"] = hitTableMask;
         _uint64_data["finalProviderTable"] = finalProviderTable;
         _uint64_data["finalProviderIsAlt"] = finalProviderIsAlt;
+        _uint64_data["historyHash"] = historyHash;
+        _uint64_data["phistoryHash"] = phistoryHash;
+        _uint64_data["indexFoldedHistHash"] = indexFoldedHistHash;
+        _uint64_data["tagFoldedHistHash"] = tagFoldedHistHash;
+        _uint64_data["altTagFoldedHistHash"] = altTagFoldedHistHash;
     }
 };
 

@@ -439,6 +439,20 @@ public:
         TageMeta() {}
     } TageMeta;
 
+    struct AllocationTraceInfo
+    {
+        bool success = false;
+        uint64_t table = 0;
+        uint64_t index = 0;
+        uint64_t way = 0;
+        uint64_t tag = 0;
+        bool victimValid = false;
+        uint64_t victimTag = 0;
+        short victimCounter = 0;
+        bool victimUseful = false;
+        uint64_t victimPC = 0;
+    };
+
 private:
 
     // Helper method to generate prediction for a single BTB entry
@@ -463,9 +477,7 @@ private:
                                  bool actual_taken,
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
-                                 uint64_t &allocated_table,
-                                 uint64_t &allocated_index,
-                                 uint64_t &allocated_way);
+                                 AllocationTraceInfo &allocInfo);
 
 
     // Helper methods for LRU management

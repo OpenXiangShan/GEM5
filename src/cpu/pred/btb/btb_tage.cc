@@ -28,6 +28,48 @@ namespace branch_prediction {
 
 namespace btb_pred{
 
+namespace
+{
+
+inline uint64_t
+mixTraceHash(uint64_t value)
+{
+    value ^= value >> 30;
+    value *= 0xbf58476d1ce4e5b9ULL;
+    value ^= value >> 27;
+    value *= 0x94d049bb133111ebULL;
+    value ^= value >> 31;
+    return value;
+}
+
+uint64_t
+hashBitset(const boost::dynamic_bitset<> &bits)
+{
+    uint64_t seed = mixTraceHash(bits.size());
+    for (size_t pos = bits.find_first();
+         pos != boost::dynamic_bitset<>::npos;
+         pos = bits.find_next(pos)) {
+        seed ^= mixTraceHash(static_cast<uint64_t>(pos) + 0x9e3779b97f4a7c15ULL +
+                             (seed << 6) + (seed >> 2));
+    }
+    return seed;
+}
+
+uint64_t
+hashFoldedHistVec(const std::vector<SelectableFoldedHist> &folded)
+{
+    uint64_t seed = mixTraceHash(folded.size());
+    for (size_t i = 0; i < folded.size(); ++i) {
+        uint64_t value = folded[i].get();
+        value ^= static_cast<uint64_t>(folded[i].getHistoryType()) << 56;
+        seed ^= mixTraceHash(value + static_cast<uint64_t>(i) * 0x9e3779b97f4a7c15ULL +
+                             (seed << 6) + (seed >> 2));
+    }
+    return seed;
+}
+
+} // anonymous namespace
+
 #ifdef UNIT_TEST
 namespace test {
 #endif
@@ -176,11 +218,13 @@ BTBTAGE::setTrace()
             std::make_pair("mainUseful", UINT64),
             std::make_pair("mainTable", UINT64),
             std::make_pair("mainIndex", UINT64),
+            std::make_pair("mainTag", UINT64),
             std::make_pair("altFound", UINT64),
             std::make_pair("altCounter", UINT64),
             std::make_pair("altUseful", UINT64),
             std::make_pair("altTable", UINT64),
             std::make_pair("altIndex", UINT64),
+            std::make_pair("altTag", UINT64),
             std::make_pair("useAlt", UINT64),
             std::make_pair("predTaken", UINT64),
             std::make_pair("actualTaken", UINT64),
@@ -188,6 +232,12 @@ BTBTAGE::setTrace()
             std::make_pair("allocTable", UINT64),
             std::make_pair("allocIndex", UINT64),
             std::make_pair("allocWay", UINT64),
+            std::make_pair("allocTag", UINT64),
+            std::make_pair("victimValid", UINT64),
+            std::make_pair("victimTag", UINT64),
+            std::make_pair("victimCounter", UINT64),
+            std::make_pair("victimUseful", UINT64),
+            std::make_pair("victimPC", UINT64),
             std::make_pair("history", TEXT),
             std::make_pair("indexFoldedHist", UINT64),
             std::make_pair("phistory", TEXT),
@@ -196,6 +246,11 @@ BTBTAGE::setTrace()
             std::make_pair("hitTableMask", UINT64),
             std::make_pair("finalProviderTable", UINT64),
             std::make_pair("finalProviderIsAlt", UINT64),
+            std::make_pair("historyHash", UINT64),
+            std::make_pair("phistoryHash", UINT64),
+            std::make_pair("indexFoldedHistHash", UINT64),
+            std::make_pair("tagFoldedHistHash", UINT64),
+            std::make_pair("altTagFoldedHistHash", UINT64),
         };
         tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
         tageMissTrace->init_table();
@@ -632,9 +687,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  bool actual_taken,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
-                                 uint64_t &allocated_table,
-                                 uint64_t &allocated_index,
-                                 uint64_t &allocated_way) {
+                                 AllocationTraceInfo &allocInfo) {
     // Match RTL victim priority:
     // 1) invalid way
     // 2) weak and not-useful way
@@ -682,17 +735,24 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         if (selected_way != -1) {
             short newCounter = actual_taken ? 0 : -1;
+            auto &victim = set[selected_way];
             DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
                     ti, newIndex, selected_way, newTag, position, newCounter, entry.pc);
+            allocInfo.success = true;
+            allocInfo.table = ti;
+            allocInfo.index = newIndex;
+            allocInfo.way = selected_way;
+            allocInfo.tag = newTag;
+            allocInfo.victimValid = victim.valid;
+            allocInfo.victimTag = victim.tag;
+            allocInfo.victimCounter = victim.counter;
+            allocInfo.victimUseful = victim.useful;
+            allocInfo.victimPC = victim.pc;
             set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
             tageStats.updateAllocSuccess++;
-            allocated_table = ti;
-            allocated_index = newIndex;
-            allocated_way = selected_way;
             usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
             return true;
         }
-
         tageStats.updateAllocFailure++;
         usefulResetCnt++;
     }
@@ -833,10 +893,7 @@ BTBTAGE::update(const FetchTarget &stream) {
         bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
 
         // Handle new entry allocation if needed
-        bool alloc_success = false;
-        uint64_t allocated_table = 0;
-        uint64_t allocated_index = 0;
-        uint64_t allocated_way = 0;
+        AllocationTraceInfo allocInfo;
         if (need_allocate) {
 
             // Handle allocation of new entries
@@ -845,8 +902,8 @@ BTBTAGE::update(const FetchTarget &stream) {
             if (main_info.found) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
-            alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
-                                   start_table, predMeta, allocated_table, allocated_index, allocated_way);
+            handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
+                                     start_table, predMeta, allocInfo);
         }
 
 #ifndef UNIT_TEST
@@ -867,18 +924,31 @@ BTBTAGE::update(const FetchTarget &stream) {
             TagePrediction trace_pred = predMeta->preds[btb_entry.pc];
             auto main_info = trace_pred.mainInfo;
             auto alt_info = trace_pred.altInfo;
+            const uint64_t history_hash = hashBitset(predMeta->history);
+            const uint64_t phistory_hash = hashBitset(stream.phistory);
+            const uint64_t index_folded_hist_hash =
+                hashFoldedHistVec(predMeta->indexFoldedHist);
+            const uint64_t tag_folded_hist_hash =
+                hashFoldedHistVec(predMeta->tagFoldedHist);
+            const uint64_t alt_tag_folded_hist_hash =
+                hashFoldedHistVec(predMeta->altTagFoldedHist);
             t.set(startAddr, btb_entry.pc, main_info.way,
                 main_info.found, main_info.entry.counter, main_info.entry.useful,
-                main_info.table, main_info.index,
+                main_info.table, main_info.index, main_info.entry.tag,
                 alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
-                alt_info.table, alt_info.index,
-                trace_pred.useAlt, trace_pred.taken, actual_taken, alloc_success,
-                allocated_table, allocated_index, allocated_way,
+                alt_info.table, alt_info.index, alt_info.entry.tag,
+                trace_pred.useAlt, trace_pred.taken, actual_taken, allocInfo.success,
+                allocInfo.table, allocInfo.index, allocInfo.way, allocInfo.tag,
+                allocInfo.victimValid, allocInfo.victimTag,
+                allocInfo.victimCounter, allocInfo.victimUseful,
+                allocInfo.victimPC,
                 history_str, phistory_str,
                 predMeta->indexFoldedHist[main_info.table].get(),
                 trace_pred.useAltIdx, trace_pred.useAltCtr,
                 trace_pred.hitTableMask, trace_pred.finalProviderTable,
-                trace_pred.finalProviderIsAlt);
+                trace_pred.finalProviderIsAlt, history_hash, phistory_hash,
+                index_folded_hist_hash, tag_folded_hist_hash,
+                alt_tag_folded_hist_hash);
             tageMissTrace->write_record(t);
         }
 #endif
