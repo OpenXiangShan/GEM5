@@ -148,6 +148,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     void recoverHist(const bitset &history, const FetchTarget &entry, int shamt, bool cond_taken) override;
     void update(const FetchTarget &entry) override;
     PairBlockInfo getSecondPredBlock() const;
+    void setPredictionPhase(PairPhase phase);
     void trainFromActualPred(const FetchTarget &entry,
                              const FullBTBPrediction *secondPred = nullptr);
 
@@ -189,6 +190,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     std::queue<std::vector<PathFoldedHist>> aheadIndexFoldedHist;
     std::shared_ptr<TageMeta> meta;
     PairBlockInfo secondPredBlock;
+    PairPhase predictionPhase{PairPhase::Even};
 };
 
 #ifdef UNIT_TEST
