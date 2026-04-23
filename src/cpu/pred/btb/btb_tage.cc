@@ -31,6 +31,7 @@ namespace btb_pred{
 namespace
 {
 
+#ifndef UNIT_TEST
 inline uint64_t
 mixTraceHash(uint64_t value)
 {
@@ -67,6 +68,7 @@ hashFoldedHistVec(const std::vector<SelectableFoldedHist> &folded)
     }
     return seed;
 }
+#endif
 
 } // anonymous namespace
 
