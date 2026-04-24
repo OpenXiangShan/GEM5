@@ -500,6 +500,11 @@ class IEW
         statistics::Scalar iqFullEvents;
         /** Stat for number of times the LSQ becomes full. */
         statistics::Scalar lsqFullEvents;
+        /** Number of IEW-originated downstream backpressure block edges. */
+        statistics::Scalar iqBackpressureBlockEvents;
+        /** Number of IEW-originated downstream backpressure unblock edges. */
+        statistics::Scalar iqBackpressureUnblockEvents;
+        statistics::Distribution unblockToDispatchDelay;
         /** Stat for total number of memory ordering violation events. */
         statistics::Scalar memOrderViolationEvents;
         /** Stat for total number of incorrect predicted taken branches. */
@@ -565,6 +570,15 @@ class IEW
 
     /** The width that can be dispatched to the scheduler per cycle. */
     std::vector<StallReason> dispatchStalls;
+
+    bool iqBackpressureActive[MaxThreads];
+    uint64_t iqBackpressureBlockEventId[MaxThreads];
+    Cycles iqBackpressureBlockOriginCycle[MaxThreads];
+    uint64_t iqBackpressureUnblockEventId[MaxThreads];
+    Cycles iqBackpressureUnblockOriginCycle[MaxThreads];
+    bool wasDispatchBlocked[MaxThreads];
+    bool unblockToDispatchPending[MaxThreads];
+    Cycles unblockToDispatchStartCycle[MaxThreads];
 
     StallReason blockReason{NoStall};
 

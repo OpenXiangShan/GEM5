@@ -339,6 +339,13 @@ class Rename
     /** Tracks which stages are telling decode to stall. */
     Stalls stalls[MaxThreads];
 
+    uint64_t lastIqBackpressureBlockEventId[MaxThreads];
+    uint64_t lastIqBackpressureUnblockEventId[MaxThreads];
+    bool iqBackpressureBlockingDecode[MaxThreads];
+    bool wasRenameBlocked[MaxThreads];
+    bool unblockToIEWPending[MaxThreads];
+    Cycles unblockToIEWStartCycle[MaxThreads];
+
     StallSignals* stallSig;
 
     /** Delay between iew and rename, in ticks. */
@@ -438,6 +445,11 @@ class Rename
 
         statistics::Scalar moveEliminated;
         statistics::Scalar constantFolded;
+        statistics::Scalar iqBackpressureBlockEvents;
+        statistics::Scalar iqBackpressureUnblockEvents;
+        statistics::Distribution iqBackpressureBlockDelay;
+        statistics::Distribution iqBackpressureUnblockDelay;
+        statistics::Distribution unblockToIEWDelay;
 
         statistics::Vector stallEvents;
     } stats;

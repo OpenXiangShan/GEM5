@@ -112,6 +112,16 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       icachePort(this, _cpu),
       finishTranslationEvent(this), fetchStats(_cpu, this)
 {
+    for (ThreadID tid = 0; tid < MaxThreads; ++tid) {
+        lastIqBackpressureBlockEventId[tid] = 0;
+        lastIqBackpressureUnblockEventId[tid] = 0;
+        iqBackpressureBlocked[tid] = false;
+        wasFetchBlocked[tid] = false;
+        unblockToDecodePending[tid] = false;
+        unblockToDecodeStartCycle[tid] = Cycles(0);
+        unblockToDecodeStartCycle[tid] = Cycles(0);
+    }
+
     if (numThreads > MaxThreads)
         fatal("numThreads (%d) is larger than compiled limit (%d),\n"
               "\tincrease MaxThreads in src/cpu/o3/limits.hh\n",
@@ -248,6 +258,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Number of decode stalls per cycle",
              decodeStalls / cpu->baseStats.numCycles),
+    ADD_STAT(iqBackpressureBlockEvents, statistics::units::Count::get(),
+             "Number of IEW backpressure block edges observed by fetch"),
+    ADD_STAT(iqBackpressureUnblockEvents, statistics::units::Count::get(),
+             "Number of IEW backpressure unblock edges observed by fetch"),
+    ADD_STAT(iqBackpressureBlockDelay, statistics::units::Cycle::get(),
+             "Delay from IEW backpressure block edge to fetch observing blockFetch"),
+    ADD_STAT(iqBackpressureUnblockDelay, statistics::units::Cycle::get(),
+             "Delay from IEW backpressure unblock edge to fetch observing blockFetch clear"),
+    ADD_STAT(unblockToDecodeDelay, statistics::units::Cycle::get(),
+             "Cycles from fetch block clear to first instruction sent to decode"),
     ADD_STAT(fetchBubbles, statistics::units::Count::get(),
              "Unutilized issue-pipeline slots while there is no backend-stall"),
     ADD_STAT(fetchBubbles_max, statistics::units::Count::get(),
@@ -341,6 +361,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(decodeStalls);
         decodeStallRate
             .flags(statistics::total);
+        iqBackpressureBlockEvents
+            .prereq(iqBackpressureBlockEvents);
+        iqBackpressureUnblockEvents
+            .prereq(iqBackpressureUnblockEvents);
+        iqBackpressureBlockDelay
+            .init(0, 64, 1);
+        iqBackpressureUnblockDelay
+            .init(0, 64, 1);
+        unblockToDecodeDelay
+            .init(0, 64, 1);
         fetchBubbles
             .prereq(fetchBubbles);
         fetchBubbles_max
@@ -417,6 +447,9 @@ Fetch::clearStates(ThreadID tid)
     cacheReq[tid].reset();
     fetchBuffer[tid].reset();
     fetchQueue[tid].clear();
+    wasFetchBlocked[tid] = false;
+    unblockToDecodePending[tid] = false;
+    unblockToDecodeStartCycle[tid] = Cycles(0);
 
     // TODO not sure what to do with priorityList for now
     // priorityList.push_back(tid);
@@ -444,6 +477,9 @@ Fetch::resetStage()
         ftqEntryFetchedInsts[tid] = 0;
 
         fetchQueue[tid].clear();
+        wasFetchBlocked[tid] = false;
+        unblockToDecodePending[tid] = false;
+        unblockToDecodeStartCycle[tid] = Cycles(0);
 
         priorityList.push_back(tid);
     }
@@ -1138,6 +1174,7 @@ Fetch::squashFromDecode(PCStateBase &new_pc, const DynInstPtr squashInst,
 {
     DPRINTF(Fetch, "[tid:%i] Squashing from decode.\n", tid);
 
+    unblockToDecodePending[tid] = false;
     doSquash(new_pc, squashInst, seq_num, tid);
 
     // Tell the CPU to remove any instructions that are in flight between
@@ -1324,6 +1361,12 @@ Fetch::sendInstructionsToDecode()
     auto& insts = fetchQueue[tid];
     while (!insts.empty() && insts_to_decode < decodeWidth) {
         const auto& inst = insts.front();
+        if (unblockToDecodePending[tid]) {
+            fetchStats.unblockToDecodeDelay.sample(
+                static_cast<uint64_t>(cpu->curCycle() -
+                unblockToDecodeStartCycle[tid]));
+            unblockToDecodePending[tid] = false;
+        }
         toDecode->insts[toDecode->size++] = inst;
         DPRINTF(Fetch, "[tid:%i] [sn:%llu] Sending instruction to decode "
                 "from fetch queue. Fetch queue size: %i.\n",
@@ -1401,6 +1444,39 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
 bool
 Fetch::checkSignalsAndUpdate(ThreadID tid)
 {
+    const bool currentlyBlocked = stallSig->blockFetch[tid];
+    if (currentlyBlocked) {
+        unblockToDecodePending[tid] = false;
+    } else if (wasFetchBlocked[tid]) {
+        unblockToDecodePending[tid] = true;
+        unblockToDecodeStartCycle[tid] = cpu->curCycle();
+    }
+    wasFetchBlocked[tid] = currentlyBlocked;
+
+    if (stallSig->blockFetch[tid]) {
+        const auto event_id = stallSig->iqBackpressureBlockEventId[tid];
+        if (event_id != 0 && lastIqBackpressureBlockEventId[tid] != event_id) {
+            fetchStats.iqBackpressureBlockDelay.sample(
+                static_cast<uint64_t>(cpu->curCycle() -
+                stallSig->iqBackpressureBlockOriginCycle[tid]));
+            ++fetchStats.iqBackpressureBlockEvents;
+            lastIqBackpressureBlockEventId[tid] = event_id;
+            iqBackpressureBlocked[tid] = true;
+        }
+    }
+    if (!stallSig->blockFetch[tid] && iqBackpressureBlocked[tid]) {
+        const auto event_id = stallSig->iqBackpressureUnblockEventId[tid];
+        if (event_id != 0 &&
+            lastIqBackpressureUnblockEventId[tid] != event_id) {
+            fetchStats.iqBackpressureUnblockDelay.sample(
+                static_cast<uint64_t>(cpu->curCycle() -
+                stallSig->iqBackpressureUnblockOriginCycle[tid]));
+            ++fetchStats.iqBackpressureUnblockEvents;
+            lastIqBackpressureUnblockEventId[tid] = event_id;
+            iqBackpressureBlocked[tid] = false;
+        }
+    }
+
     // Check squash signals from commit.
     bool commitSquashed = handleCommitSignals(tid);
 
