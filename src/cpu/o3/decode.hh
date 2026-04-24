@@ -248,6 +248,13 @@ class Decode
     /** List of active thread ids */
     std::list<ThreadID> *activeThreads;
 
+    uint64_t lastIqBackpressureBlockEventId[MaxThreads];
+    uint64_t lastIqBackpressureUnblockEventId[MaxThreads];
+    bool iqBackpressureBlockingFetch[MaxThreads];
+    bool wasDecodeBlocked[MaxThreads];
+    bool unblockToRenamePending[MaxThreads];
+    Cycles unblockToRenameStartCycle[MaxThreads];
+
     bool enableLoadFusion;
 
     struct DecodeStats : public statistics::Group
@@ -283,6 +290,11 @@ class Decode
         statistics::Scalar mispredictedByPC;
         /** stat for total number of instructions that mispredicted due to npc. */
         statistics::Scalar mispredictedByNPC;
+        statistics::Scalar iqBackpressureBlockEvents;
+        statistics::Scalar iqBackpressureUnblockEvents;
+        statistics::Distribution iqBackpressureBlockDelay;
+        statistics::Distribution iqBackpressureUnblockDelay;
+        statistics::Distribution unblockToRenameDelay;
     } stats;
 
     std::vector<StallReason> decodeStalls;

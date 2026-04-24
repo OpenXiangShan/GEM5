@@ -334,6 +334,11 @@ struct StallSignals
     bool blockDecode[MaxThreads];// rename to decode
     bool blockRename[MaxThreads];// iew to rename (if iew is stalling, rename all threads would be stalled)
     bool blockIEW[MaxThreads];// commit to iew
+
+    uint64_t iqBackpressureBlockEventId[MaxThreads];
+    Cycles iqBackpressureBlockOriginCycle[MaxThreads];
+    uint64_t iqBackpressureUnblockEventId[MaxThreads];
+    Cycles iqBackpressureUnblockOriginCycle[MaxThreads];
 };
 
 

@@ -85,6 +85,12 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     // @todo: Make into a parameter
     for (int i=0;i<numThreads;i++) {
         fixedbuffer[i] = boost::circular_buffer<DynInstPtr>(decodeWidth);
+        lastIqBackpressureBlockEventId[i] = 0;
+        lastIqBackpressureUnblockEventId[i] = 0;
+        iqBackpressureBlockingFetch[i] = false;
+        wasDecodeBlocked[i] = false;
+        unblockToRenamePending[i] = false;
+        unblockToRenameStartCycle[i] = Cycles(0);
     }
     stallBuffer = boost::circular_buffer<DynInstPtr>(decodeWidth * (fetchToDecodeDelay + 1));
     eachstallSize = boost::circular_buffer<int>(fetchToDecodeDelay + 1);
@@ -111,13 +117,20 @@ Decode::startupStage()
 void
 Decode::clearStates(ThreadID tid)
 {
-
+    wasDecodeBlocked[tid] = false;
+    unblockToRenamePending[tid] = false;
+    unblockToRenameStartCycle[tid] = Cycles(0);
 }
 
 void
 Decode::resetStage()
 {
     _status = Inactive;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        wasDecodeBlocked[tid] = false;
+        unblockToRenamePending[tid] = false;
+        unblockToRenameStartCycle[tid] = Cycles(0);
+    }
 }
 
 std::string
@@ -156,7 +169,17 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
       ADD_STAT(mispredictedByPC, statistics::units::Count::get(),
                "Number of instructions that mispredicted due to pc"),
       ADD_STAT(mispredictedByNPC, statistics::units::Count::get(),
-               "Number of instructions that mispredicted due to npc")
+               "Number of instructions that mispredicted due to npc"),
+      ADD_STAT(iqBackpressureBlockEvents, statistics::units::Count::get(),
+               "Number of IEW backpressure block edges observed by decode"),
+      ADD_STAT(iqBackpressureUnblockEvents, statistics::units::Count::get(),
+               "Number of IEW backpressure unblock edges observed by decode"),
+      ADD_STAT(iqBackpressureBlockDelay, statistics::units::Cycle::get(),
+               "Delay from IEW backpressure block edge to decode blocking fetch"),
+      ADD_STAT(iqBackpressureUnblockDelay, statistics::units::Cycle::get(),
+               "Delay from IEW backpressure unblock edge to decode unblocking fetch"),
+      ADD_STAT(unblockToRenameDelay, statistics::units::Cycle::get(),
+               "Cycles from decode block clear to first instruction sent to rename")
 {
     idleCycles.prereq(idleCycles);
     blockedCycles.prereq(blockedCycles);
@@ -170,6 +193,11 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     squashedInsts.prereq(squashedInsts);
     mispredictedByPC.flags(statistics::total);
     mispredictedByNPC.flags(statistics::total);
+    iqBackpressureBlockEvents.prereq(iqBackpressureBlockEvents);
+    iqBackpressureUnblockEvents.prereq(iqBackpressureUnblockEvents);
+    iqBackpressureBlockDelay.init(0, 64, 1);
+    iqBackpressureUnblockDelay.init(0, 64, 1);
+    unblockToRenameDelay.init(0, 64, 1);
     fusedInsts.init(128).flags(statistics::nozero);
 }
 
@@ -433,6 +461,8 @@ Decode::tick()
     wroteToTimeBuffer = false;
     bool status_change = false;
     toRenameIndex = 0;
+    bool squashing = false;
+    bool blocked = false;
 
     moveInstsToBuffer();
 
@@ -443,8 +473,43 @@ Decode::tick()
     for (int i = 0; i < numThreads; i++) {
         bool block = stallSig->blockDecode[i];
         bool active = !block && !fixedbuffer[i].empty();
+        squashing = squashing || fromCommit->commitInfo[i].squash;
+        const bool localBlocked = block && !fixedbuffer[i].empty();
+        blocked = blocked || localBlocked;
+
+        if (localBlocked) {
+            unblockToRenamePending[i] = false;
+        } else if (wasDecodeBlocked[i]) {
+            unblockToRenamePending[i] = true;
+            unblockToRenameStartCycle[i] = cpu->curCycle();
+        }
+        wasDecodeBlocked[i] = localBlocked;
 
         stallSig->blockFetch[i] = block;
+        if (stallSig->blockDecode[i] && stallSig->blockFetch[i]) {
+            const auto event_id = stallSig->iqBackpressureBlockEventId[i];
+            if (event_id != 0 && lastIqBackpressureBlockEventId[i] != event_id) {
+                stats.iqBackpressureBlockDelay.sample(
+                    static_cast<uint64_t>(cpu->curCycle() -
+                    stallSig->iqBackpressureBlockOriginCycle[i]));
+                ++stats.iqBackpressureBlockEvents;
+                lastIqBackpressureBlockEventId[i] = event_id;
+                iqBackpressureBlockingFetch[i] = true;
+            }
+        }
+        if (!stallSig->blockDecode[i] && !stallSig->blockFetch[i] &&
+            iqBackpressureBlockingFetch[i]) {
+            const auto event_id = stallSig->iqBackpressureUnblockEventId[i];
+            if (event_id != 0 &&
+                lastIqBackpressureUnblockEventId[i] != event_id) {
+                stats.iqBackpressureUnblockDelay.sample(
+                    static_cast<uint64_t>(cpu->curCycle() -
+                    stallSig->iqBackpressureUnblockOriginCycle[i]));
+                ++stats.iqBackpressureUnblockEvents;
+                lastIqBackpressureUnblockEventId[i] = event_id;
+                iqBackpressureBlockingFetch[i] = false;
+            }
+        }
         if (active) {
             if (tid == InvalidThreadID)
                 tid = i;
@@ -457,14 +522,25 @@ Decode::tick()
             }
         }
     }
+
+    if (squashing) {
+        ++stats.squashCycles;
+    } else if (tid == InvalidThreadID) {
+        if (blocked) {
+            ++stats.blockedCycles;
+        } else {
+            ++stats.idleCycles;
+        }
+    }
+
     if (tid == InvalidThreadID) {
         // all threads are stalled, no need to process
         return;
     }
     DPRINTF(Decode,"Processing [tid:%i]\n",tid);
 
-    decodeInsts(tid);
     ++stats.runCycles;
+    decodeInsts(tid);
 
     toFetch->decodeInfo[tid].blockReason = blockReason;
 
@@ -732,6 +808,12 @@ Decode::decodeInsts(ThreadID tid)
     // Record that decode has written to the time buffer for activity
     // tracking.
     if (toRenameIndex) {
+        if (unblockToRenamePending[tid]) {
+            stats.unblockToRenameDelay.sample(
+                static_cast<uint64_t>(cpu->curCycle() -
+                unblockToRenameStartCycle[tid]));
+            unblockToRenamePending[tid] = false;
+        }
         wroteToTimeBuffer = true;
     }
 }

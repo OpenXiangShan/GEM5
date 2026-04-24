@@ -77,6 +77,12 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
         fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(renameWidth);
         renameMap[tid] = nullptr;
         stalls[tid] = {false, false};
+        lastIqBackpressureBlockEventId[tid] = 0;
+        lastIqBackpressureUnblockEventId[tid] = 0;
+        iqBackpressureBlockingDecode[tid] = false;
+        wasRenameBlocked[tid] = false;
+        unblockToIEWPending[tid] = false;
+        unblockToIEWStartCycle[tid] = Cycles(0);
     }
 
     assert(decodeToRenameDelay == 1);
@@ -144,6 +150,16 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
                "count of insts eliminated by move elimination"),
       ADD_STAT(constantFolded, statistics::units::Count::get(),
                "count of insts eliminated by constant folding"),
+      ADD_STAT(iqBackpressureBlockEvents, statistics::units::Count::get(),
+               "Number of IEW backpressure block edges observed by rename"),
+      ADD_STAT(iqBackpressureUnblockEvents, statistics::units::Count::get(),
+               "Number of IEW backpressure unblock edges observed by rename"),
+      ADD_STAT(iqBackpressureBlockDelay, statistics::units::Cycle::get(),
+               "Delay from IEW backpressure block edge to rename blocking decode"),
+      ADD_STAT(iqBackpressureUnblockDelay, statistics::units::Cycle::get(),
+               "Delay from IEW backpressure unblock edge to rename unblocking decode"),
+      ADD_STAT(unblockToIEWDelay, statistics::units::Cycle::get(),
+               "Cycles from rename block clear to first instruction sent to IEW"),
       ADD_STAT(stallEvents, statistics::units::Count::get(),
                "count of stall events")
 {
@@ -151,7 +167,7 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
     idleCycles.prereq(idleCycles);
     blockCycles.prereq(blockCycles);
     serializeStallCycles.flags(statistics::total);
-    runCycles.prereq(idleCycles);
+    runCycles.prereq(runCycles);
     unblockCycles.prereq(unblockCycles);
 
     renamedInsts.prereq(renamedInsts);
@@ -177,6 +193,11 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
     skidInsts.flags(statistics::total);
     moveEliminated.flags(statistics::total);
     constantFolded.flags(statistics::total);
+    iqBackpressureBlockEvents.prereq(iqBackpressureBlockEvents);
+    iqBackpressureUnblockEvents.prereq(iqBackpressureUnblockEvents);
+    iqBackpressureBlockDelay.init(0, 64, 1);
+    iqBackpressureUnblockDelay.init(0, 64, 1);
+    unblockToIEWDelay.init(0, 64, 1);
 
     stallEvents.init(StallEventCount).flags(statistics::total);
     std::map < StallEvent, const char* > stall_event_str = {
@@ -247,6 +268,8 @@ void
 Rename::clearStates(ThreadID tid)
 {
     stalls[tid].iew = false;
+    wasRenameBlocked[tid] = false;
+    unblockToIEWPending[tid] = false;
 }
 
 void
@@ -259,6 +282,9 @@ Rename::resetStage()
     for (ThreadID tid = 0; tid < numThreads; tid++) {
 
         stalls[tid].iew = false;
+        wasRenameBlocked[tid] = false;
+        unblockToIEWPending[tid] = false;
+        unblockToIEWStartCycle[tid] = Cycles(0);
     }
 }
 
@@ -317,6 +343,7 @@ Rename::drainSanityCheck() const
 void
 Rename::squash(const InstSeqNum &squash_seq_num, ThreadID tid)
 {
+    unblockToIEWPending[tid] = false;
     DPRINTF(Rename, "[tid:%i] [squash sn:%llu] Squashing instructions.\n",
         tid,squash_seq_num);
 
@@ -334,6 +361,8 @@ Rename::tick()
     wroteToTimeBuffer = false;
 
     bool status_change = false;
+    bool squashing = false;
+    bool blocked = false;
 
     moveInstsToBuffer();
 
@@ -346,11 +375,45 @@ Rename::tick()
     for (int i = 0; i < numThreads; i++) {
         bool block = stallSig->blockRename[i] || !canRename(i);
         bool active = !block && !fixedbuffer[i].empty();
+        squashing = squashing || fromCommit->commitInfo[i].squash;
+        const bool localBlocked = block && !fixedbuffer[i].empty();
+        blocked = blocked || localBlocked;
+        if (localBlocked) {
+            unblockToIEWPending[i] = false;
+        } else if (wasRenameBlocked[i]) {
+            unblockToIEWPending[i] = true;
+            unblockToIEWStartCycle[i] = cpu->curCycle();
+        }
+        wasRenameBlocked[i] = localBlocked;
         DPRINTF(Rename, "[tid:%i] blockRename: %i, canRename: %i, block: %i, active: %i\n",
                 i, stallSig->blockRename[i], canRename(i), block, active);
 
         // if rename has no insts, no need to block decode, even if rename is blocked for other reasons
         stallSig->blockDecode[i] = block && !fixedbuffer[i].empty();
+        if (stallSig->blockRename[i] && stallSig->blockDecode[i]) {
+            const auto event_id = stallSig->iqBackpressureBlockEventId[i];
+            if (event_id != 0 && lastIqBackpressureBlockEventId[i] != event_id) {
+                stats.iqBackpressureBlockDelay.sample(
+                    static_cast<uint64_t>(cpu->curCycle() -
+                    stallSig->iqBackpressureBlockOriginCycle[i]));
+                ++stats.iqBackpressureBlockEvents;
+                lastIqBackpressureBlockEventId[i] = event_id;
+                iqBackpressureBlockingDecode[i] = true;
+            }
+        }
+        if (!stallSig->blockRename[i] && !stallSig->blockDecode[i] &&
+            iqBackpressureBlockingDecode[i]) {
+            const auto event_id = stallSig->iqBackpressureUnblockEventId[i];
+            if (event_id != 0 &&
+                lastIqBackpressureUnblockEventId[i] != event_id) {
+                stats.iqBackpressureUnblockDelay.sample(
+                    static_cast<uint64_t>(cpu->curCycle() -
+                    stallSig->iqBackpressureUnblockOriginCycle[i]));
+                ++stats.iqBackpressureUnblockEvents;
+                lastIqBackpressureUnblockEventId[i] = event_id;
+                iqBackpressureBlockingDecode[i] = false;
+            }
+        }
         if (active) {
             if (tid == InvalidThreadID) tid = i;
             else {
@@ -363,12 +426,23 @@ Rename::tick()
         }
     }
 
+    if (squashing) {
+        ++stats.squashCycles;
+    } else if (tid == InvalidThreadID) {
+        if (blocked) {
+            ++stats.blockCycles;
+        } else {
+            ++stats.idleCycles;
+        }
+    }
+
     if (tid == InvalidThreadID) {
         // all threads are stalled, no need to process
         return;
     }
     DPRINTF(Rename, "Processing [tid:%i]\n", tid);
 
+    ++stats.runCycles;
     renameInsts(tid);
 
     toDecode->renameInfo[tid].blockReason = blockReason;
@@ -539,6 +613,12 @@ Rename::renameInsts(ThreadID tid)
 
     // If we wrote to the time buffer, record this.
     if (toIEWIndex) {
+        if (unblockToIEWPending[tid]) {
+            stats.unblockToIEWDelay.sample(
+                static_cast<uint64_t>(cpu->curCycle() -
+                unblockToIEWStartCycle[tid]));
+            unblockToIEWPending[tid] = false;
+        }
         wroteToTimeBuffer = true;
     }
 }

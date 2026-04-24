@@ -114,6 +114,15 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         fetchRedirect[tid] = false;
         serializeOnNextInst[tid] = false;
+        iqBackpressureActive[tid] = false;
+        iqBackpressureBlockEventId[tid] = 0;
+        iqBackpressureBlockOriginCycle[tid] = Cycles(0);
+        iqBackpressureUnblockEventId[tid] = 0;
+        iqBackpressureUnblockOriginCycle[tid] = Cycles(0);
+        wasDispatchBlocked[tid] = false;
+        unblockToDispatchPending[tid] = false;
+        unblockToDispatchStartCycle[tid] = Cycles(0);
+        unblockToDispatchStartCycle[tid] = Cycles(0);
     }
 
     assert(renameToIEWDelay == 1);
@@ -177,6 +186,12 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of times the IQ has become full, causing a stall"),
     ADD_STAT(lsqFullEvents, statistics::units::Count::get(),
              "Number of times the LSQ has become full, causing a stall"),
+    ADD_STAT(iqBackpressureBlockEvents, statistics::units::Count::get(),
+             "Number of IEW-originated IQ/dispatch backpressure block edges"),
+    ADD_STAT(iqBackpressureUnblockEvents, statistics::units::Count::get(),
+             "Number of IEW-originated IQ/dispatch backpressure unblock edges"),
+    ADD_STAT(unblockToDispatchDelay, statistics::units::Cycle::get(),
+             "Cycles from IEW block clear to first instruction dispatched downstream"),
     ADD_STAT(memOrderViolationEvents, statistics::units::Count::get(),
              "Number of memory order violations"),
     ADD_STAT(predictedTakenIncorrect, statistics::units::Count::get(),
@@ -243,6 +258,7 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         .flags(statistics::total);
 
     dispDist.init(0,10,1).flags(statistics::nozero);
+    unblockToDispatchDelay.init(0, 64, 1);
 
     std::map < StallEvent, const char* > stall_event_str = {
         { CacheMiss, "CacheMiss" },
@@ -388,6 +404,9 @@ IEW::startupStage()
 void
 IEW::clearStates(ThreadID tid)
 {
+    wasDispatchBlocked[tid] = false;
+    unblockToDispatchPending[tid] = false;
+    unblockToDispatchStartCycle[tid] = Cycles(0);
 }
 
 void
@@ -490,6 +509,9 @@ IEW::takeOverFrom()
 
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         fetchRedirect[tid] = false;
+        wasDispatchBlocked[tid] = false;
+        unblockToDispatchPending[tid] = false;
+        unblockToDispatchStartCycle[tid] = Cycles(0);
     }
 
     updateLSQNextCycle = false;
@@ -502,6 +524,7 @@ IEW::takeOverFrom()
 void
 IEW::squash(ThreadID tid)
 {
+    unblockToDispatchPending[tid] = false;
     DPRINTF(IEW, "[tid:%i] Squashing all instructions.\n", tid);
 
     for (auto& dp : dispQue) {
@@ -823,11 +846,28 @@ IEW::dispatchInsts()
         dispatchInstFromDispQue();
     }
 
+    bool iqBackpressureBlocked[MaxThreads] = {};
+    bool squashing = false;
+    bool blocked = false;
+
     // check threads stall & status
     ThreadID tid = InvalidThreadID;
     for (int i = 0; i < numThreads; i++) {
-        bool block = stallSig->blockIEW[i] || !canInsertLDSTQue(i);
+        iqBackpressureBlocked[i] = !canInsertLDSTQue(i);
+        bool block = stallSig->blockIEW[i] || iqBackpressureBlocked[i];
         bool active = !block && !fixedbuffer[i].empty();
+        squashing = squashing || fromCommit->commitInfo[i].squash ||
+            fromCommit->commitInfo[i].robSquashing;
+        const bool localBlocked = block && !fixedbuffer[i].empty();
+        blocked = blocked || localBlocked;
+
+        if (localBlocked) {
+            unblockToDispatchPending[i] = false;
+        } else if (wasDispatchBlocked[i]) {
+            unblockToDispatchPending[i] = true;
+            unblockToDispatchStartCycle[i] = cpu->curCycle();
+        }
+        wasDispatchBlocked[i] = localBlocked;
 
         stallSig->blockRename[i] = block;
         if (active) {
@@ -842,8 +882,16 @@ IEW::dispatchInsts()
         }
     }
 
+    if (squashing) {
+        ++iewStats.squashCycles;
+    } else if (tid == InvalidThreadID && blocked) {
+        ++iewStats.blockCycles;
+    }
+
     if (tid != InvalidThreadID) {
         DPRINTF(IEW,"Processing [tid:%i]\n",tid);
+
+        const auto bufferedBeforeDispatch = fixedbuffer[tid].size();
 
         // dispatch to IQ
         if (enableDispatchStage) {
@@ -854,6 +902,7 @@ IEW::dispatchInsts()
         // check stall again
         if (!fixedbuffer[tid].empty()) {
             stallSig->blockRename[tid] = true;
+            iqBackpressureBlocked[tid] = true;
             DPRINTF(IEW, "Dispatch bandwidth full, blocking thread %i\n", tid);
         }
 
@@ -863,6 +912,35 @@ IEW::dispatchInsts()
         toRename->iewInfo[tid].sqHeadStallReason =
             ldstQueue.sqEmpty() ? StallReason::NoStall : checkLSQStall(tid, false);
         toRename->iewInfo[tid].blockReason = blockReason;
+        if (unblockToDispatchPending[tid] &&
+            fixedbuffer[tid].size() < bufferedBeforeDispatch) {
+            iewStats.unblockToDispatchDelay.sample(
+                static_cast<uint64_t>(cpu->curCycle() -
+                unblockToDispatchStartCycle[tid]));
+            unblockToDispatchPending[tid] = false;
+        }
+    }
+
+    for (int i = 0; i < numThreads; i++) {
+        if (!iqBackpressureActive[i] && iqBackpressureBlocked[i]) {
+            iqBackpressureActive[i] = true;
+            iqBackpressureBlockOriginCycle[i] = cpu->curCycle();
+            ++iqBackpressureBlockEventId[i];
+            ++iewStats.iqBackpressureBlockEvents;
+        } else if (iqBackpressureActive[i] && !iqBackpressureBlocked[i]) {
+            iqBackpressureActive[i] = false;
+            iqBackpressureUnblockOriginCycle[i] = cpu->curCycle();
+            ++iqBackpressureUnblockEventId[i];
+            ++iewStats.iqBackpressureUnblockEvents;
+        }
+
+        stallSig->iqBackpressureBlockEventId[i] = iqBackpressureBlockEventId[i];
+        stallSig->iqBackpressureBlockOriginCycle[i] =
+            iqBackpressureBlockOriginCycle[i];
+        stallSig->iqBackpressureUnblockEventId[i] =
+            iqBackpressureUnblockEventId[i];
+        stallSig->iqBackpressureUnblockOriginCycle[i] =
+            iqBackpressureUnblockOriginCycle[i];
     }
 }
 

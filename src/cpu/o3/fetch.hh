@@ -638,6 +638,13 @@ class Fetch
     };
 
     /** Tracks which stages are telling fetch to stall. */
+    uint64_t lastIqBackpressureBlockEventId[MaxThreads];
+    uint64_t lastIqBackpressureUnblockEventId[MaxThreads];
+    bool iqBackpressureBlocked[MaxThreads];
+    bool wasFetchBlocked[MaxThreads];
+    bool unblockToDecodePending[MaxThreads];
+    Cycles unblockToDecodeStartCycle[MaxThreads];
+
     StallSignals* stallSig;
 
     /** Decode to fetch delay. */
@@ -1075,6 +1082,11 @@ class Fetch
         statistics::Scalar decodeStalls;
         /** Number of decode stalls per cycle */
         statistics::Formula decodeStallRate;
+        statistics::Scalar iqBackpressureBlockEvents;
+        statistics::Scalar iqBackpressureUnblockEvents;
+        statistics::Distribution iqBackpressureBlockDelay;
+        statistics::Distribution iqBackpressureUnblockDelay;
+        statistics::Distribution unblockToDecodeDelay;
         /** Unutilized issue-pipeline slots while there is no backend-stall */
         statistics::Scalar fetchBubbles;
         /** Cycles that fetch 0 instruction while there is no backend-stall */
