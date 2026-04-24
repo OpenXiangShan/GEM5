@@ -274,6 +274,15 @@ class Decode
     /** Tracks which stages are telling decode to stall. */
     Stalls stalls[MaxThreads];
 
+    uint64_t iqBackpressureBlockEventId[MaxThreads];
+    Cycles iqBackpressureBlockOriginCycle[MaxThreads];
+    uint64_t lastIqBackpressureBlockEventId[MaxThreads];
+    uint64_t iqBackpressureUnblockEventId[MaxThreads];
+    Cycles iqBackpressureUnblockOriginCycle[MaxThreads];
+    uint64_t lastIqBackpressureUnblockEventId[MaxThreads];
+    bool unblockToRenamePending[MaxThreads];
+    Cycles unblockToRenameStartCycle[MaxThreads];
+
     /** Rename to decode delay. */
     Cycles renameToDecodeDelay;
 
@@ -348,6 +357,11 @@ class Decode
         statistics::Scalar mispredictedByPC;
         /** stat for total number of instructions that mispredicted due to npc. */
         statistics::Scalar mispredictedByNPC;
+        statistics::Scalar iqBackpressureBlockEvents;
+        statistics::Scalar iqBackpressureUnblockEvents;
+        statistics::Distribution iqBackpressureBlockDelay;
+        statistics::Distribution iqBackpressureUnblockDelay;
+        statistics::Distribution unblockToRenameDelay;
     } stats;
 
     std::vector<StallReason> decodeStalls;

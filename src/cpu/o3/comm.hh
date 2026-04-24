@@ -338,6 +338,11 @@ struct TimeStruct
 
     CommitComm commitInfo[MaxThreads];
 
+    uint64_t iqBackpressureBlockEventId[MaxThreads];
+    Cycles iqBackpressureBlockOriginCycle[MaxThreads];
+    uint64_t iqBackpressureUnblockEventId[MaxThreads];
+    Cycles iqBackpressureUnblockOriginCycle[MaxThreads];
+
     bool decodeBlock[MaxThreads];
     bool decodeUnblock[MaxThreads];
     bool renameBlock[MaxThreads];

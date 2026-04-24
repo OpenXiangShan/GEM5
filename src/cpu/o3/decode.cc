@@ -86,6 +86,14 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     skidBufferMax = (fetchToDecodeDelay + 1) *  params.fetchWidth;
     for (int tid = 0; tid < MaxThreads; tid++) {
         stalls[tid] = {false};
+        iqBackpressureBlockEventId[tid] = 0;
+        iqBackpressureBlockOriginCycle[tid] = Cycles(0);
+        lastIqBackpressureBlockEventId[tid] = 0;
+        iqBackpressureUnblockEventId[tid] = 0;
+        iqBackpressureUnblockOriginCycle[tid] = Cycles(0);
+        lastIqBackpressureUnblockEventId[tid] = 0;
+        unblockToRenamePending[tid] = false;
+        unblockToRenameStartCycle[tid] = Cycles(0);
         decodeStatus[tid] = Idle;
         bdelayDoneSeqNum[tid] = 0;
         squashInst[tid] = nullptr;
@@ -116,6 +124,7 @@ Decode::clearStates(ThreadID tid)
 {
     decodeStatus[tid] = Idle;
     stalls[tid].rename = false;
+    unblockToRenamePending[tid] = false;
 }
 
 void
@@ -128,6 +137,7 @@ Decode::resetStage()
         decodeStatus[tid] = Idle;
 
         stalls[tid].rename = false;
+        unblockToRenamePending[tid] = false;
     }
 }
 
@@ -167,7 +177,17 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
       ADD_STAT(mispredictedByPC, statistics::units::Count::get(),
                "Number of instructions that mispredicted due to pc"),
       ADD_STAT(mispredictedByNPC, statistics::units::Count::get(),
-               "Number of instructions that mispredicted due to npc")
+               "Number of instructions that mispredicted due to npc"),
+      ADD_STAT(iqBackpressureBlockEvents, statistics::units::Count::get(),
+               "Number of IEW backpressure block edges observed by decode"),
+      ADD_STAT(iqBackpressureUnblockEvents, statistics::units::Count::get(),
+               "Number of IEW backpressure unblock edges observed by decode"),
+      ADD_STAT(iqBackpressureBlockDelay, statistics::units::Cycle::get(),
+               "Delay from IEW backpressure block edge to decode blocking fetch"),
+      ADD_STAT(iqBackpressureUnblockDelay, statistics::units::Cycle::get(),
+               "Delay from IEW backpressure unblock edge to decode unblocking fetch"),
+      ADD_STAT(unblockToRenameDelay, statistics::units::Cycle::get(),
+               "Cycles from decode block clear to first instruction sent to rename")
 {
     idleCycles.prereq(idleCycles);
     blockedCycles.prereq(blockedCycles);
@@ -181,6 +201,11 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     squashedInsts.prereq(squashedInsts);
     mispredictedByPC.flags(statistics::total);
     mispredictedByNPC.flags(statistics::total);
+    iqBackpressureBlockEvents.prereq(iqBackpressureBlockEvents);
+    iqBackpressureUnblockEvents.prereq(iqBackpressureUnblockEvents);
+    iqBackpressureBlockDelay.init(0, 64, 1);
+    iqBackpressureUnblockDelay.init(0, 64, 1);
+    unblockToRenameDelay.init(0, 64, 1);
     fusedInsts.init(128).flags(statistics::nozero);
 }
 
@@ -265,6 +290,7 @@ bool
 Decode::block(ThreadID tid)
 {
     DPRINTF(Decode, "[tid:%i] Blocking.\n", tid);
+    unblockToRenamePending[tid] = false;
 
     // Add the current inputs to the skid buffer so they can be
     // reprocessed when this stage unblocks.
@@ -281,6 +307,17 @@ Decode::block(ThreadID tid)
             toFetch->decodeUnblock[tid] = false;
         } else {
             toFetch->decodeBlock[tid] = true;
+            if (stalls[tid].rename && iqBackpressureBlockEventId[tid] != 0) {
+                toFetch->iqBackpressureBlockEventId[tid] =
+                    iqBackpressureBlockEventId[tid];
+                toFetch->iqBackpressureBlockOriginCycle[tid] =
+                    iqBackpressureBlockOriginCycle[tid];
+                stats.iqBackpressureBlockDelay.sample(
+                    static_cast<uint64_t>(cpu->curCycle() -
+                    iqBackpressureBlockOriginCycle[tid]));
+            } else {
+                toFetch->iqBackpressureBlockEventId[tid] = 0;
+            }
             wroteToTimeBuffer = true;
         }
 
@@ -297,6 +334,19 @@ Decode::unblock(ThreadID tid)
     if (skidBuffer[tid].empty()) {
         DPRINTF(Decode, "[tid:%i] Done unblocking.\n", tid);
         toFetch->decodeUnblock[tid] = true;
+        if (iqBackpressureUnblockEventId[tid] != 0) {
+            toFetch->iqBackpressureUnblockEventId[tid] =
+                iqBackpressureUnblockEventId[tid];
+            toFetch->iqBackpressureUnblockOriginCycle[tid] =
+                iqBackpressureUnblockOriginCycle[tid];
+            stats.iqBackpressureUnblockDelay.sample(
+                static_cast<uint64_t>(cpu->curCycle() -
+                iqBackpressureUnblockOriginCycle[tid]));
+            iqBackpressureUnblockEventId[tid] = 0;
+            iqBackpressureUnblockOriginCycle[tid] = Cycles(0);
+        } else {
+            toFetch->iqBackpressureUnblockEventId[tid] = 0;
+        }
         wroteToTimeBuffer = true;
 
         decodeStatus[tid] = Running;
@@ -311,6 +361,7 @@ Decode::unblock(ThreadID tid)
 void
 Decode::squash(const DynInstPtr &inst, ThreadID tid)
 {
+    unblockToRenamePending[tid] = false;
     DPRINTF(Decode, "[tid:%i] [sn:%llu] Squashing due to incorrect branch "
             "prediction detected at decode.\n", tid, inst->seqNum);
 
@@ -520,11 +571,32 @@ Decode::readStallSignals(ThreadID tid)
 {
     if (fromRename->renameBlock[tid]) {
         stalls[tid].rename = true;
+        iqBackpressureBlockEventId[tid] = fromRename->iqBackpressureBlockEventId[tid];
+        iqBackpressureBlockOriginCycle[tid] =
+            fromRename->iqBackpressureBlockOriginCycle[tid];
+        if (iqBackpressureBlockEventId[tid] != 0 &&
+            lastIqBackpressureBlockEventId[tid] !=
+                iqBackpressureBlockEventId[tid]) {
+            ++stats.iqBackpressureBlockEvents;
+            lastIqBackpressureBlockEventId[tid] =
+                iqBackpressureBlockEventId[tid];
+        }
     }
 
     if (fromRename->renameUnblock[tid]) {
         assert(stalls[tid].rename);
         stalls[tid].rename = false;
+        iqBackpressureUnblockEventId[tid] =
+            fromRename->iqBackpressureUnblockEventId[tid];
+        iqBackpressureUnblockOriginCycle[tid] =
+            fromRename->iqBackpressureUnblockOriginCycle[tid];
+        if (iqBackpressureUnblockEventId[tid] != 0 &&
+            lastIqBackpressureUnblockEventId[tid] !=
+                iqBackpressureUnblockEventId[tid]) {
+            ++stats.iqBackpressureUnblockEvents;
+            lastIqBackpressureUnblockEventId[tid] =
+                iqBackpressureUnblockEventId[tid];
+        }
     }
 }
 
@@ -567,6 +639,8 @@ Decode::checkSignalsAndUpdate(ThreadID tid)
                 tid);
 
         decodeStatus[tid] = Unblocking;
+        unblockToRenamePending[tid] = true;
+        unblockToRenameStartCycle[tid] = cpu->curCycle();
 
         unblock(tid);
 
@@ -934,6 +1008,12 @@ Decode::decodeInsts(ThreadID tid)
     // Record that decode has written to the time buffer for activity
     // tracking.
     if (toRenameIndex) {
+        if (unblockToRenamePending[tid]) {
+            stats.unblockToRenameDelay.sample(
+                static_cast<uint64_t>(cpu->curCycle() -
+                unblockToRenameStartCycle[tid]));
+            unblockToRenamePending[tid] = false;
+        }
         wroteToTimeBuffer = true;
     }
 }

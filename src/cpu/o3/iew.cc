@@ -114,6 +114,10 @@ IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     for (ThreadID tid = 0; tid < MaxThreads; tid++) {
         dispatchStatus[tid] = Running;
         fetchRedirect[tid] = false;
+        unblockToDispatchPending[tid] = false;
+        iqBackpressureBlockEventId[tid] = 0;
+        iqBackpressureUnblockEventId[tid] = 0;
+        unblockToDispatchStartCycle[tid] = Cycles(0);
     }
 
     updateLSQNextCycle = false;
@@ -175,6 +179,12 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of times the IQ has become full, causing a stall"),
     ADD_STAT(lsqFullEvents, statistics::units::Count::get(),
              "Number of times the LSQ has become full, causing a stall"),
+    ADD_STAT(iqBackpressureBlockEvents, statistics::units::Count::get(),
+             "Number of IEW-originated IQ/dispatch backpressure block edges"),
+    ADD_STAT(iqBackpressureUnblockEvents, statistics::units::Count::get(),
+             "Number of IEW-originated IQ/dispatch backpressure unblock edges"),
+    ADD_STAT(unblockToDispatchDelay, statistics::units::Cycle::get(),
+             "Cycles from IEW block clear to first instruction dispatched downstream"),
     ADD_STAT(memOrderViolationEvents, statistics::units::Count::get(),
              "Number of memory order violations"),
     ADD_STAT(predictedTakenIncorrect, statistics::units::Count::get(),
@@ -241,6 +251,7 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         .flags(statistics::total);
 
     dispDist.init(0,10,1).flags(statistics::nozero);
+    unblockToDispatchDelay.init(0, 64, 1);
 
     std::map < StallEvent, const char* > stall_event_str = {
         { CacheMiss, "CacheMiss" },
@@ -398,6 +409,8 @@ IEW::clearStates(ThreadID tid)
 {
     toRename->iewInfo[tid].usedIQ = true;
 
+    unblockToDispatchPending[tid] = false;
+    unblockToDispatchStartCycle[tid] = Cycles(0);
     toRename->iewInfo[tid].usedLSQ = true;
     toRename->iewInfo[tid].freeLQEntries = ldstQueue.numFreeLoadEntries(tid);
     toRename->iewInfo[tid].freeSQEntries = ldstQueue.numFreeStoreEntries(tid);
@@ -516,6 +529,7 @@ IEW::takeOverFrom()
 void
 IEW::squash(ThreadID tid)
 {
+    unblockToDispatchPending[tid] = false;
     DPRINTF(IEW, "[tid:%i] Squashing all instructions.\n", tid);
 
     for (auto& dp : dispQue) {
@@ -630,10 +644,14 @@ void
 IEW::block(ThreadID tid)
 {
     DPRINTF(IEW, "[tid:%i] Blocking.\n", tid);
+    unblockToDispatchPending[tid] = false;
 
     if (dispatchStatus[tid] != Blocked &&
         dispatchStatus[tid] != Unblocking) {
         toRename->iewBlock[tid] = true;
+        toRename->iqBackpressureBlockEventId[tid] = ++iqBackpressureBlockEventId[tid];
+        toRename->iqBackpressureBlockOriginCycle[tid] = cpu->curCycle();
+        ++iewStats.iqBackpressureBlockEvents;
         wroteToTimeBuffer = true;
     }
 
@@ -654,6 +672,9 @@ IEW::unblock(ThreadID tid)
     // Also switch status to running.
     if (skidBuffer[tid].empty()) {
         toRename->iewUnblock[tid] = true;
+        toRename->iqBackpressureUnblockEventId[tid] = ++iqBackpressureUnblockEventId[tid];
+        toRename->iqBackpressureUnblockOriginCycle[tid] = cpu->curCycle();
+        ++iewStats.iqBackpressureUnblockEvents;
         wroteToTimeBuffer = true;
         DPRINTF(IEW, "[tid:%i] Done unblocking.\n",tid);
         dispatchStatus[tid] = Running;
@@ -894,6 +915,8 @@ IEW::checkSignalsAndUpdate(ThreadID tid)
                 tid);
 
         dispatchStatus[tid] = Unblocking;
+        unblockToDispatchPending[tid] = true;
+        unblockToDispatchStartCycle[tid] = cpu->curCycle();
 
         unblock(tid);
 
@@ -1023,6 +1046,13 @@ IEW::dispatch(ThreadID tid)
         }
 
         unblock(tid);
+    }
+
+    if (unblockToDispatchPending[tid] && toRename->iewInfo[tid].dispatched != 0) {
+        iewStats.unblockToDispatchDelay.sample(
+            static_cast<uint64_t>(cpu->curCycle() -
+            unblockToDispatchStartCycle[tid]));
+        unblockToDispatchPending[tid] = false;
     }
 }
 

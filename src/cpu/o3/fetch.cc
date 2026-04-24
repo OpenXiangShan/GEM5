@@ -128,6 +128,10 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         macroop[i] = nullptr;
         delayedCommit[i] = false;
         stalls[i] = {false, false};
+        lastIqBackpressureBlockEventId[i] = 0;
+        lastIqBackpressureUnblockEventId[i] = 0;
+        unblockToDecodePending[i] = false;
+        unblockToDecodeStartCycle[i] = Cycles(0);
         lastIcacheStall[i] = 0;
     }
 
@@ -249,6 +253,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Number of decode stalls per cycle",
              decodeStalls / cpu->baseStats.numCycles),
+    ADD_STAT(iqBackpressureBlockEvents, statistics::units::Count::get(),
+             "Number of IEW backpressure block edges observed by fetch"),
+    ADD_STAT(iqBackpressureUnblockEvents, statistics::units::Count::get(),
+             "Number of IEW backpressure unblock edges observed by fetch"),
+    ADD_STAT(iqBackpressureBlockDelay, statistics::units::Cycle::get(),
+             "Delay from IEW backpressure block edge to fetch observing decode block"),
+    ADD_STAT(iqBackpressureUnblockDelay, statistics::units::Cycle::get(),
+             "Delay from IEW backpressure unblock edge to fetch observing decode unblock"),
+    ADD_STAT(unblockToDecodeDelay, statistics::units::Cycle::get(),
+             "Cycles from fetch block clear to first instruction sent to decode"),
     ADD_STAT(fetchBubbles, statistics::units::Count::get(),
              "Unutilized issue-pipeline slots while there is no backend-stall"),
     ADD_STAT(fetchBubbles_max, statistics::units::Count::get(),
@@ -342,6 +356,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(decodeStalls);
         decodeStallRate
             .flags(statistics::total);
+        iqBackpressureBlockEvents
+            .prereq(iqBackpressureBlockEvents);
+        iqBackpressureUnblockEvents
+            .prereq(iqBackpressureUnblockEvents);
+        iqBackpressureBlockDelay
+            .init(0, 64, 1);
+        iqBackpressureUnblockDelay
+            .init(0, 64, 1);
+        unblockToDecodeDelay
+            .init(0, 64, 1);
         fetchBubbles
             .prereq(fetchBubbles);
         fetchBubbles_max
@@ -1349,6 +1373,12 @@ Fetch::sendInstructionsToDecode()
         ThreadID tid = *tid_itr;
         if (!stalls[tid].decode && !fetchQueue[tid].empty()) {
             const auto& inst = fetchQueue[tid].front();
+            if (unblockToDecodePending[tid]) {
+                fetchStats.unblockToDecodeDelay.sample(
+                    static_cast<uint64_t>(cpu->curCycle() -
+                    unblockToDecodeStartCycle[tid]));
+                unblockToDecodePending[tid] = false;
+            }
             toDecode->insts[toDecode->size++] = inst;
             DPRINTF(Fetch, "[tid:%i] [sn:%llu] Sending instruction to decode "
                     "from fetch queue. Fetch queue size: %i.\n",
@@ -1443,12 +1473,37 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
     // Update the per thread stall statuses.
     if (fromDecode->decodeBlock[tid]) {
         stalls[tid].decode = true;
+        unblockToDecodePending[tid] = false;
+        if (fromDecode->iqBackpressureBlockEventId[tid] != 0) {
+            if (lastIqBackpressureBlockEventId[tid] !=
+                fromDecode->iqBackpressureBlockEventId[tid]) {
+                ++fetchStats.iqBackpressureBlockEvents;
+                lastIqBackpressureBlockEventId[tid] =
+                    fromDecode->iqBackpressureBlockEventId[tid];
+            }
+            fetchStats.iqBackpressureBlockDelay.sample(
+                static_cast<uint64_t>(cpu->curCycle() -
+                fromDecode->iqBackpressureBlockOriginCycle[tid]));
+        }
     }
 
     if (fromDecode->decodeUnblock[tid]) {
+        if (fromDecode->iqBackpressureUnblockEventId[tid] != 0) {
+            if (lastIqBackpressureUnblockEventId[tid] !=
+                fromDecode->iqBackpressureUnblockEventId[tid]) {
+                ++fetchStats.iqBackpressureUnblockEvents;
+                lastIqBackpressureUnblockEventId[tid] =
+                    fromDecode->iqBackpressureUnblockEventId[tid];
+            }
+            fetchStats.iqBackpressureUnblockDelay.sample(
+                static_cast<uint64_t>(cpu->curCycle() -
+                fromDecode->iqBackpressureUnblockOriginCycle[tid]));
+        }
         assert(stalls[tid].decode);
         assert(!fromDecode->decodeBlock[tid]);
         stalls[tid].decode = false;
+        unblockToDecodePending[tid] = true;
+        unblockToDecodeStartCycle[tid] = cpu->curCycle();
     }
 
     // Check squash signals from commit.
