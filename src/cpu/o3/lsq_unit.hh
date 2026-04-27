@@ -808,6 +808,24 @@ class LSQUnit
         /** Tota number of memory ordering violations. */
         statistics::Scalar memOrderViolation;
 
+        /** RAW memory ordering violations caused by a younger load. */
+        statistics::Scalar rawMemOrderViolation;
+
+        /** RAW violations where replay-based MDP had no producer prediction. */
+        statistics::Scalar rawViolationMdpNoPred;
+
+        /** RAW violations where replay-based MDP predicted the violating store. */
+        statistics::Scalar rawViolationMdpHit;
+
+        /** RAW violations where replay-based MDP predicted other stores only. */
+        statistics::Scalar rawViolationMdpMiss;
+
+        /** RAW violations where replay-based MDP used strict wait. */
+        statistics::Scalar rawViolationMdpStrict;
+
+        /** Load-load/snoop ordering violations. */
+        statistics::Scalar loadOrderViolation;
+
         /** Tota number of successfully forwarding from bus. */
         statistics::Scalar busForwardSuccess;
 

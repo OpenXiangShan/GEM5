@@ -588,6 +588,18 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
                "squashed"),
       ADD_STAT(memOrderViolation, statistics::units::Count::get(),
                "Number of memory ordering violations"),
+      ADD_STAT(rawMemOrderViolation, statistics::units::Count::get(),
+               "Number of RAW memory ordering violations"),
+      ADD_STAT(rawViolationMdpNoPred, statistics::units::Count::get(),
+               "Number of RAW violations where replay-based MDP had no producer prediction"),
+      ADD_STAT(rawViolationMdpHit, statistics::units::Count::get(),
+               "Number of RAW violations where replay-based MDP predicted the violating store"),
+      ADD_STAT(rawViolationMdpMiss, statistics::units::Count::get(),
+               "Number of RAW violations where replay-based MDP predicted other stores only"),
+      ADD_STAT(rawViolationMdpStrict, statistics::units::Count::get(),
+               "Number of RAW violations where replay-based MDP used strict wait"),
+      ADD_STAT(loadOrderViolation, statistics::units::Count::get(),
+               "Number of load-load or snoop ordering violations"),
       ADD_STAT(busForwardSuccess, statistics::units::Count::get(),
                "Number of successfully forwarding from bus"),
       ADD_STAT(cacheMissReplayEarly, statistics::units::Count::get(),
@@ -1118,6 +1130,7 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                                 memDepViolator = ld_inst;
 
                                 ++stats.memOrderViolation;
+                                ++stats.loadOrderViolation;
 
                                 return std::make_shared<GenericISA::M5PanicFault>(
                                     "Detected fault with inst [sn:%lli] and "
@@ -1166,6 +1179,19 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                         memDepViolator = ld_inst;
 
                         ++stats.memOrderViolation;
+                        ++stats.rawMemOrderViolation;
+                        if (ld_inst->mdpPredStrictWait) {
+                            ++stats.rawViolationMdpStrict;
+                        } else if (ld_inst->mdpProducingStores.empty()) {
+                            ++stats.rawViolationMdpNoPred;
+                        } else if (std::find(ld_inst->mdpProducingStores.begin(),
+                                             ld_inst->mdpProducingStores.end(),
+                                             inst->seqNum) !=
+                                   ld_inst->mdpProducingStores.end()) {
+                            ++stats.rawViolationMdpHit;
+                        } else {
+                            ++stats.rawViolationMdpMiss;
+                        }
 
                         return std::make_shared<GenericISA::M5PanicFault>(
                             "Detected fault with "
@@ -1268,6 +1294,7 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
             auto& store_inst = storePipeSx[1]->insts[i];
             if (pipeLineNukeCheck(inst, store_inst)) {
                 DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
+                ++stats.pipeRawNukeReplay;
                 inst->setProducerStorePC(store_inst->pcState().instAddr());
                 inst->setNukeReplay();
                 return NoFault;
@@ -1399,6 +1426,7 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         auto& store_inst = storePipeSx[1]->insts[i];
         if (pipeLineNukeCheck(inst, store_inst)) {
             DPRINTF(LoadPipeline, "Load [sn:%llu] Nuke need replay\n", inst->seqNum);
+            ++stats.pipeRawNukeReplay;
             inst->setNukeReplay();
             return fault;
         }

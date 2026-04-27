@@ -119,6 +119,17 @@ InstructionQueue::MdpAddrReplayLdInst::MdpAddrReplayLdInst(
 {
 }
 
+bool
+InstructionQueue::hasMdpAddrReplayInsts() const
+{
+    for (const auto &replay_ld_insts : mdpAddrReplayLdInsts) {
+        if (!replay_ld_insts.empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
         const BaseO3CPUParams &params)
     : cpu(cpu_ptr),
@@ -384,7 +395,9 @@ InstructionQueue::resetState()
     deferredMemInsts.clear();
     cacheMissLdInsts.clear();
     stlfFailLdInsts.clear();
-    mdpAddrReplayLdInsts.clear();
+    for (auto &replay_ld_insts : mdpAddrReplayLdInsts) {
+        replay_ld_insts.clear();
+    }
     blockedMemInsts.clear();
     retryMemInsts.clear();
     wbOutstanding = 0;
@@ -683,7 +696,7 @@ InstructionQueue::scheduleReadyInsts()
     // removed from the code below.
     if (total_issued || !retryMemInsts.empty() || !deferredMemInsts.empty() ||
        !cacheMissLdInsts.empty() || !stlfFailLdInsts.empty() ||
-       !mdpAddrReplayLdInsts.empty()) {
+       hasMdpAddrReplayInsts()) {
         cpu->activityThisCycle();
     } else {
         DPRINTF(IQ, "Not able to schedule any instructions.\n");
@@ -708,14 +721,15 @@ InstructionQueue::resolveMdpAddrReplayStoreAddr(const DynInstPtr &store_inst)
 
     const ThreadID tid = store_inst->threadNumber;
     const InstSeqNum store_sn = store_inst->seqNum;
+    auto &replay_ld_insts = mdpAddrReplayLdInsts[tid];
 
-    for (auto it = mdpAddrReplayLdInsts.begin(); it != mdpAddrReplayLdInsts.end();) {
+    for (auto it = replay_ld_insts.begin(); it != replay_ld_insts.end();) {
         if (!it->inst || it->inst->isSquashed()) {
-            it = mdpAddrReplayLdInsts.erase(it);
+            it = replay_ld_insts.erase(it);
             continue;
         }
 
-        if (it->inst->threadNumber != tid || it->strict) {
+        if (it->strict) {
             ++it;
             continue;
         }
@@ -725,7 +739,7 @@ InstructionQueue::resolveMdpAddrReplayStoreAddr(const DynInstPtr &store_inst)
             DPRINTF(IQ, "Load[sn:%llu] MDP addr replay ready (store[sn:%llu] addr ready)\n",
                     it->inst->seqNum, store_sn);
             it->inst->issueQue->retryMem(it->inst);
-            it = mdpAddrReplayLdInsts.erase(it);
+            it = replay_ld_insts.erase(it);
             continue;
         }
         ++it;
@@ -982,8 +996,10 @@ InstructionQueue::mdpAddrReplayRegister(
         return;
     }
 
+    auto &replay_ld_insts = mdpAddrReplayLdInsts[load_inst->threadNumber];
+
     // Avoid duplicate registration for the same dynamic inst.
-    for (const auto &entry : mdpAddrReplayLdInsts) {
+    for (const auto &entry : replay_ld_insts) {
         if (entry.inst && entry.inst->seqNum == load_inst->seqNum) {
             return;
         }
@@ -991,7 +1007,7 @@ InstructionQueue::mdpAddrReplayRegister(
 
     DPRINTF(IQ, "Load[sn:%llu] MDP addr replay register, wait %lu stores\n",
             load_inst->seqNum, store_seq_nums.size());
-    mdpAddrReplayLdInsts.emplace_back(load_inst, store_seq_nums);
+    replay_ld_insts.emplace_back(load_inst, store_seq_nums);
 }
 
 void
@@ -1002,7 +1018,9 @@ InstructionQueue::mdpAddrReplayRegisterStrict(const DynInstPtr &load_inst,
         return;
     }
 
-    for (const auto &entry : mdpAddrReplayLdInsts) {
+    auto &replay_ld_insts = mdpAddrReplayLdInsts[load_inst->threadNumber];
+
+    for (const auto &entry : replay_ld_insts) {
         if (entry.inst && entry.inst->seqNum == load_inst->seqNum) {
             return;
         }
@@ -1010,7 +1028,7 @@ InstructionQueue::mdpAddrReplayRegisterStrict(const DynInstPtr &load_inst,
 
     DPRINTF(IQ, "Load[sn:%llu] MDP strict addr replay register, wait storeCompletedIdx >= %lu\n",
             load_inst->seqNum, required_store_completed_idx);
-    mdpAddrReplayLdInsts.emplace_back(load_inst, required_store_completed_idx);
+    replay_ld_insts.emplace_back(load_inst, required_store_completed_idx);
 }
 
 void
@@ -1021,8 +1039,8 @@ InstructionQueue::mdpAddrReplayPipeDone(const DynInstPtr &load_inst)
     }
 
     const ThreadID tid = load_inst->threadNumber;
-    for (auto it = mdpAddrReplayLdInsts.begin(); it != mdpAddrReplayLdInsts.end();
-         ++it) {
+    auto &replay_ld_insts = mdpAddrReplayLdInsts[tid];
+    for (auto it = replay_ld_insts.begin(); it != replay_ld_insts.end(); ++it) {
         if (!it->inst || it->inst->seqNum != load_inst->seqNum) {
             continue;
         }
@@ -1033,13 +1051,13 @@ InstructionQueue::mdpAddrReplayPipeDone(const DynInstPtr &load_inst)
                 DPRINTF(IQ, "Load[sn:%llu] MDP strict addr replay ready (pipeDone)\n",
                         load_inst->seqNum);
                 load_inst->issueQue->retryMem(load_inst);
-                mdpAddrReplayLdInsts.erase(it);
+                replay_ld_insts.erase(it);
             }
         } else if (it->storeSeqNums.empty()) {
             DPRINTF(IQ, "Load[sn:%llu] MDP addr replay ready (pipeDone)\n",
                     load_inst->seqNum);
             load_inst->issueQue->retryMem(load_inst);
-            mdpAddrReplayLdInsts.erase(it);
+            replay_ld_insts.erase(it);
         }
         return;
     }
@@ -1059,19 +1077,20 @@ InstructionQueue::mdpAddrReplayUpdateStoreCompletedIdx(
     }
 
     mdpStoreCompletedIdx[tid] = store_completed_idx;
+    auto &replay_ld_insts = mdpAddrReplayLdInsts[tid];
 
-    for (auto it = mdpAddrReplayLdInsts.begin(); it != mdpAddrReplayLdInsts.end();) {
+    for (auto it = replay_ld_insts.begin(); it != replay_ld_insts.end();) {
         if (!it->inst || it->inst->isSquashed()) {
-            it = mdpAddrReplayLdInsts.erase(it);
+            it = replay_ld_insts.erase(it);
             continue;
         }
 
-        if (it->inst->threadNumber == tid && it->strict && it->pipeDone &&
+        if (it->strict && it->pipeDone &&
             store_completed_idx >= it->requiredStoreCompletedIdx) {
             DPRINTF(IQ, "Load[sn:%llu] MDP strict addr replay ready (storeCompletedIdx=%lu)\n",
                     it->inst->seqNum, store_completed_idx);
             it->inst->issueQue->retryMem(it->inst);
-            it = mdpAddrReplayLdInsts.erase(it);
+            it = replay_ld_insts.erase(it);
             continue;
         }
         ++it;
@@ -1127,11 +1146,10 @@ InstructionQueue::doSquash(ThreadID tid)
     squashInfo.squashSn  = squashedSeqNum[tid];
     scheduler->doSquash(squashInfo);
 
-    for (auto it = mdpAddrReplayLdInsts.begin(); it != mdpAddrReplayLdInsts.end();) {
-        if (!it->inst ||
-            (it->inst->threadNumber == tid &&
-             it->inst->seqNum > squashedSeqNum[tid])) {
-            it = mdpAddrReplayLdInsts.erase(it);
+    auto &replay_ld_insts = mdpAddrReplayLdInsts[tid];
+    for (auto it = replay_ld_insts.begin(); it != replay_ld_insts.end();) {
+        if (!it->inst || it->inst->seqNum > squashedSeqNum[tid]) {
+            it = replay_ld_insts.erase(it);
         } else {
             ++it;
         }

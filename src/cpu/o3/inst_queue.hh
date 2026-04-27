@@ -42,6 +42,7 @@
 #ifndef __CPU_O3_INST_QUEUE_HH__
 #define __CPU_O3_INST_QUEUE_HH__
 
+#include <array>
 #include <list>
 #include <map>
 #include <queue>
@@ -373,9 +374,11 @@ class InstructionQueue
       MdpAddrReplayLdInst(const DynInstPtr &inst,
                           size_t required_store_completed_idx);
     };
-    std::list<MdpAddrReplayLdInst> mdpAddrReplayLdInsts;
+    std::array<std::list<MdpAddrReplayLdInst>, MaxThreads> mdpAddrReplayLdInsts;
 
     size_t mdpStoreCompletedIdx[MaxThreads] = {};
+
+    bool hasMdpAddrReplayInsts() const;
 
     /** List of instructions that have been cache blocked. */
     std::list<DynInstPtr> blockedMemInsts;
