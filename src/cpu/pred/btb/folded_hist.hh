@@ -70,7 +70,7 @@ class FoldedHistBase
     std::array<std::size_t, staticMaxShamtLimit> posHighestBitsInOldFoldedHist;  // Positions in old folded history
 
     // Perform an immediate fold on given history bitvec
-    uint64_t fold(const boost::dynamic_bitset<> &historyBitVec);
+    uint64_t fold(const boost::dynamic_bitset<> &historyBitVec) const;
 
   public:
     /**
@@ -119,13 +119,13 @@ class FoldedHistBase
      * Used during branch misprediction recovery
      * @param other The FoldedHistBase to recover from
      */
-    void recover(FoldedHistBase &other);
+    void recover(const FoldedHistBase &other);
 
     /**
      * Verify that the folded history is consistent with the global history
      * @param ghr Global history register to check against
      */
-    void check(const boost::dynamic_bitset<> &ghr);
+    void check(const boost::dynamic_bitset<> &ghr) const;
 };
 
 /**
@@ -170,6 +170,33 @@ class PathFoldedHist : public FoldedHistBase
 };
 
 using FoldedHist = FoldedHistBase;
+
+/**
+ * BTBTAGE folded history wrapper. BTBTAGE can be configured to fold either
+ * direction history (GHR) or path history (PHR), while update/recover code
+ * should not care which source is active.
+ */
+class TageFoldedHist
+{
+  public:
+    TageFoldedHist();
+    TageFoldedHist(int histLen, int foldedLen, int maxShamt,
+                   HistoryType historyType);
+
+    uint64_t get() const;
+    boost::dynamic_bitset<> getAsBitset() const;
+    void update(const boost::dynamic_bitset<> &history, int shamt, bool taken,
+                Addr pc = 0, Addr target = 0);
+    void recover(const TageFoldedHist &other);
+    void check(const boost::dynamic_bitset<> &history) const;
+    HistoryType getHistoryType() const { return historyType; }
+    bool isPathBased() const { return historyType == HistoryType::PATH; }
+
+  private:
+    HistoryType historyType;
+    DirectionFoldedHist directionHist;
+    PathFoldedHist pathHist;
+};
 
 }  // namespace btb_pred
 

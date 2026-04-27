@@ -227,6 +227,8 @@ BTBMGSC::setTrace()
     if (enableDB) {
         std::vector<std::pair<std::string, DataType>> fields_vec = {
             std::make_pair("branchPC", UINT64),
+            std::make_pair("bbStart", UINT64),
+            std::make_pair("branchOffset", UINT64),
             std::make_pair("tagePred", UINT64),
             std::make_pair("tageConfHigh", UINT64),
             std::make_pair("tageConfMid", UINT64),
@@ -239,6 +241,14 @@ BTBMGSC::setTrace()
             std::make_pair("biasPercsum", UINT64),
             std::make_pair("totalSum", UINT64),
             std::make_pair("totalThres", UINT64),
+            std::make_pair("effectiveGate", UINT64),
+            std::make_pair("margin", UINT64),
+            std::make_pair("bwIndexSig", UINT64),
+            std::make_pair("lIndexSig", UINT64),
+            std::make_pair("iIndexSig", UINT64),
+            std::make_pair("gIndexSig", UINT64),
+            std::make_pair("pIndexSig", UINT64),
+            std::make_pair("biasIndexSig", UINT64),
             std::make_pair("useSc", UINT64),
             std::make_pair("scPred", UINT64),
             std::make_pair("actualTaken", UINT64),
@@ -782,12 +792,26 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 #ifndef UNIT_TEST
     // Write trace record
     if (enableDB && (focusBranchPC == 0 || entry.pc == focusBranchPC)) {
+        auto effective_gate = pred.tage_conf_high ? (total_thres / 2)
+            : (pred.tage_conf_mid ? (total_thres / 4) : (total_thres / 8));
+        auto margin = std::abs(total_sum) - effective_gate;
+        auto foldIndexSig = [](const std::vector<unsigned> &indices) -> uint64_t {
+            uint64_t sig = 0xcbf29ce484222325ULL;
+            for (auto idx : indices) {
+                sig ^= static_cast<uint64_t>(idx) + 0x9e3779b97f4a7c15ULL + (sig << 6) + (sig >> 2);
+            }
+            return sig;
+        };
         MgscTrace t;
         t.set(entry.pc,
+            stream.startPC, getOffset(entry.pc),
             tage_pred_taken, pred.tage_conf_high, pred.tage_conf_mid, pred.tage_conf_low,
             pred.bw_percsum, pred.l_percsum, pred.i_percsum,
             pred.g_percsum, pred.p_percsum, pred.bias_percsum,
-            total_sum, total_thres, use_mgsc, sc_pred_taken,
+            total_sum, total_thres, effective_gate, margin,
+            foldIndexSig(pred.bwIndex), foldIndexSig(pred.lIndex), foldIndexSig(pred.iIndex),
+            foldIndexSig(pred.gIndex), foldIndexSig(pred.pIndex), foldIndexSig(pred.biasIndex),
+            use_mgsc, sc_pred_taken,
             actual_taken);
         mgscMissTrace->write_record(t);
     }

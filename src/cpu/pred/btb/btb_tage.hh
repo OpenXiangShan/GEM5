@@ -47,7 +47,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
 #ifdef UNIT_TEST
     // Test constructor
     BTBTAGE(unsigned numPredictors = 4, unsigned numWays = 2,
-            unsigned tableSize = 1024, unsigned numBanks = 4);
+            unsigned tableSize = 1024, unsigned numBanks = 4,
+            bool usePathHistory = true);
 #else
     // Production constructor
     typedef BTBTAGEParams Params;
@@ -103,18 +104,25 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
             int finalProviderTable; // Table that supplied the final prediction, -1 means base BTB
             bool finalProviderIsAlt; // Whether final prediction came from alternate provider
+            Addr useAltIdx;        // useAltOnNa index consulted at prediction time
+            short useAltCtr;       // useAltOnNa counter value before update
+            uint64_t hitTableMask; // Bitmask of all TAGE tables that matched during lookup
 
 
             TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false),
-                               finalProviderTable(-1), finalProviderIsAlt(false) {}
+                               finalProviderTable(-1), finalProviderIsAlt(false),
+                               useAltIdx(0), useAltCtr(0), hitTableMask(0) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
                             bool useAlt, bool taken, bool altPred,
-                            int finalProviderTable, bool finalProviderIsAlt) :
+                            int finalProviderTable, bool finalProviderIsAlt,
+                            Addr useAltIdx, short useAltCtr, uint64_t hitTableMask) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
                             useAlt(useAlt), taken(taken), altPred(altPred),
                             finalProviderTable(finalProviderTable),
-                            finalProviderIsAlt(finalProviderIsAlt) {}
+                            finalProviderIsAlt(finalProviderIsAlt),
+                            useAltIdx(useAltIdx), useAltCtr(useAltCtr),
+                            hitTableMask(hitTableMask) {}
     };
 
 
@@ -134,28 +142,17 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     std::shared_ptr<void> getPredictionMeta() override;
 
-    // speculative update 3 folded history, according history and pred.taken
-    // the other specUpdateHist methods are left blank
+    // Update folded history from GHR when configured in direction-history mode.
+    void specUpdateHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred) override;
+    // Update folded history from PHR when configured in path-history mode.
     void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
 
-    // Recover 3 folded history after a misprediction, then update 3 folded history according to history and pred.taken
-    // the other recoverHist methods are left blank
+    void recoverHist(const boost::dynamic_bitset<> &history,
+                     const FetchTarget &entry, int shamt,
+                     bool cond_taken) override;
     void recoverPHist(const boost::dynamic_bitset<> &history,
                         const FetchTarget &entry,int shamt, bool cond_taken) override;
-
-#ifdef UNIT_TEST
-    // API compatibility wrappers for testing
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override
-    {
-        specUpdatePHist(history, pred);
-    }
-
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                     bool cond_taken) override
-    {
-        recoverPHist(history, entry, shamt, cond_taken);
-    }
-#endif
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchTarget &entry) override;
@@ -206,7 +203,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     unsigned getBankId(Addr pc) const;
 
     // Update branch history
-    void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
+    void doUpdateHist(const bitset &history, int shamt, bool taken,
+                      Addr pc, Addr target);
+    void recoverFoldedHist(const FetchTarget &entry);
 
     // Number of TAGE predictor tables
     const unsigned numPredictors;
@@ -233,13 +232,16 @@ class BTBTAGE : public TimedBaseBTBPredictor
     std::vector<unsigned> histLengths;
 
     // Folded history for tag calculation
-    std::vector<PathFoldedHist> tagFoldedHist;
+    std::vector<TageFoldedHist> tagFoldedHist;
 
     // Folded history for alternative tag calculation
-    std::vector<PathFoldedHist> altTagFoldedHist;
+    std::vector<TageFoldedHist> altTagFoldedHist;
 
     // Folded history for index calculation
-    std::vector<PathFoldedHist> indexFoldedHist;
+    std::vector<TageFoldedHist> indexFoldedHist;
+
+    // Select whether BTBTAGE consumes PHR or GHR folded history.
+    const bool usePathHistory;
 
     // Linear feedback shift register for allocation
     LFSR64 allocLFSR;
@@ -349,6 +351,16 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateAllocSuccess;
         Scalar updateMispred;
         Scalar updateResetU;
+        Scalar resolveBranchHasProvider;
+        Scalar resolveBranchUseProvider;
+        Scalar resolveBranchHasAlt;
+        Scalar resolveBranchUseAltTable;
+        Scalar resolveBranchUseBaseTable;
+        Scalar mispredictBranchHasProvider;
+        Scalar mispredictBranchUseProvider;
+        Scalar mispredictBranchHasAlt;
+        Scalar mispredictBranchUseAltTable;
+        Scalar mispredictBranchUseBaseTable;
         Scalar predFinalSourceBase;
         Scalar updateFinalSourceBaseCorrect;
         Scalar updateFinalSourceBaseWrong;
@@ -366,6 +378,13 @@ class BTBTAGE : public TimedBaseBTBPredictor
         statistics::Vector updateBankConflictPerBank;  // Conflicts per bank
         statistics::Vector updateAccessPerBank;        // Update accesses per bank
         statistics::Vector predAccessPerBank;          // Prediction accesses per bank
+
+        statistics::Vector resolveProviderTable;
+        statistics::Vector resolveAltTable;
+        statistics::Vector resolveUseProviderTable;
+        statistics::Vector resolveUseAltTable;
+        statistics::Vector mispredictUseProviderTable;
+        statistics::Vector mispredictUseAltTable;
 
         statistics::Distribution predTableHits;
         statistics::Distribution updateTableHits;
@@ -405,6 +424,7 @@ public:
 
     // Recover folded history after misprediction
     void recoverFoldedHist(const bitset& history);
+    bool usesPathHistory() const { return usePathHistory; }
 
 public:
 
@@ -413,12 +433,26 @@ public:
     typedef struct TageMeta
     {
         std::unordered_map<Addr, TagePrediction> preds;
-        std::vector<PathFoldedHist> tagFoldedHist;
-        std::vector<PathFoldedHist> altTagFoldedHist;
-        std::vector<PathFoldedHist> indexFoldedHist;
+        std::vector<TageFoldedHist> tagFoldedHist;
+        std::vector<TageFoldedHist> altTagFoldedHist;
+        std::vector<TageFoldedHist> indexFoldedHist;
         bitset history;     // for viewing
         TageMeta() {}
     } TageMeta;
+
+    struct AllocationTraceInfo
+    {
+        bool success = false;
+        uint64_t table = 0;
+        uint64_t index = 0;
+        uint64_t way = 0;
+        uint64_t tag = 0;
+        bool victimValid = false;
+        uint64_t victimTag = 0;
+        short victimCounter = 0;
+        bool victimUseful = false;
+        uint64_t victimPC = 0;
+    };
 
 private:
 
@@ -444,9 +478,7 @@ private:
                                  bool actual_taken,
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
-                                 uint64_t &allocated_table,
-                                 uint64_t &allocated_index,
-                                 uint64_t &allocated_way);
+                                 AllocationTraceInfo &allocInfo);
 
 
     // Helper methods for LRU management

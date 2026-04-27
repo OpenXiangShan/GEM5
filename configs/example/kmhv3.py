@@ -113,14 +113,6 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
 
-            # RTL alignment: only enable bias + path + IMLI tables, disable PC threshold
-            cpu.branchPred.mgsc.enableBwTable = False
-            cpu.branchPred.mgsc.enableLTable = False
-            cpu.branchPred.mgsc.enableITable = True
-            cpu.branchPred.mgsc.enableGTable = False
-            cpu.branchPred.mgsc.enablePTable = True
-            cpu.branchPred.mgsc.enableBiasTable = True
-
         # l1 cache per core
         if args.caches:
             cpu.icache.size = '64kB'

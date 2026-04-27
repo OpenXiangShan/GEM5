@@ -81,8 +81,6 @@ lastPredBankId(0),
 predBankValid(false),
 tageStats(this, p.numPredictors, p.numBanks)
 {
-    this->needMoreHistories = p.needMoreHistories;
-
     // Warn if updateOnRead is disabled (bank simulation works better with it enabled)
     if (!p.updateOnRead) {
         warn("MicroTAGE: Bank simulation works better with updateOnRead=true");

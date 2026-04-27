@@ -28,6 +28,50 @@ namespace branch_prediction {
 
 namespace btb_pred{
 
+namespace
+{
+
+#ifndef UNIT_TEST
+inline uint64_t
+mixTraceHash(uint64_t value)
+{
+    value ^= value >> 30;
+    value *= 0xbf58476d1ce4e5b9ULL;
+    value ^= value >> 27;
+    value *= 0x94d049bb133111ebULL;
+    value ^= value >> 31;
+    return value;
+}
+
+uint64_t
+hashBitset(const boost::dynamic_bitset<> &bits)
+{
+    uint64_t seed = mixTraceHash(bits.size());
+    for (size_t pos = bits.find_first();
+         pos != boost::dynamic_bitset<>::npos;
+         pos = bits.find_next(pos)) {
+        seed ^= mixTraceHash(static_cast<uint64_t>(pos) + 0x9e3779b97f4a7c15ULL +
+                             (seed << 6) + (seed >> 2));
+    }
+    return seed;
+}
+
+uint64_t
+hashFoldedHistVec(const std::vector<TageFoldedHist> &folded)
+{
+    uint64_t seed = mixTraceHash(folded.size());
+    for (size_t i = 0; i < folded.size(); ++i) {
+        uint64_t value = folded[i].get();
+        value ^= static_cast<uint64_t>(folded[i].getHistoryType()) << 56;
+        seed ^= mixTraceHash(value + static_cast<uint64_t>(i) * 0x9e3779b97f4a7c15ULL +
+                             (seed << 6) + (seed >> 2));
+    }
+    return seed;
+}
+#endif
+
+} // anonymous namespace
+
 #ifdef UNIT_TEST
 namespace test {
 #endif
@@ -35,9 +79,11 @@ namespace test {
 #ifdef UNIT_TEST
 // Test constructor for unit testing mode
 BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
-                 unsigned tableSize, unsigned numBanks)
+                 unsigned tableSize, unsigned numBanks, bool usePathHistory)
     : TimedBaseBTBPredictor(),
       numPredictors(numPredictors),
+      usePathHistory(usePathHistory),
+      maxHistLen(0),
       numWays(numPredictors, numWaysPerTable),
       maxBranchPositions(32),
       useAltOnNaSize(1024),
@@ -74,6 +120,7 @@ tableSizes(p.tableSizes),
 tableTagBits(p.TTagBitSizes),
 tablePcShifts(p.TTagPcShifts),
 histLengths(p.histLengths),
+usePathHistory(p.usePathHistory),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
 maxBranchPositions(p.maxBranchPositions),
@@ -92,8 +139,6 @@ lastPredBankId(0),
 predBankValid(false),
 tageStats(this, p.numPredictors, p.numBanks)
 {
-    this->needMoreHistories = p.needMoreHistories;
-
     // Warn if updateOnRead is disabled (bank simulation works better with it enabled)
     if (!p.updateOnRead) {
         warn("BTBTAGE: Bank simulation works better with updateOnRead=true");
@@ -129,9 +174,16 @@ tageStats(this, p.numPredictors, p.numBanks)
 
         assert(tablePcShifts.size() >= numPredictors);
 
-        tagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i], 16));
-        altTagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16));
-        indexFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16));
+        const auto historyType =
+            usePathHistory ? HistoryType::PATH : HistoryType::GLOBAL;
+        tagFoldedHist.emplace_back((int)histLengths[i], (int)tableTagBits[i],
+                                   16, historyType);
+        altTagFoldedHist.emplace_back((int)histLengths[i],
+                                      (int)tableTagBits[i] - 1, 16,
+                                      historyType);
+        indexFoldedHist.emplace_back((int)histLengths[i],
+                                     (int)tableIndexBits[i], 16,
+                                     historyType);
     }
     usefulResetCnt = 0;
 
@@ -165,11 +217,13 @@ BTBTAGE::setTrace()
             std::make_pair("mainUseful", UINT64),
             std::make_pair("mainTable", UINT64),
             std::make_pair("mainIndex", UINT64),
+            std::make_pair("mainTag", UINT64),
             std::make_pair("altFound", UINT64),
             std::make_pair("altCounter", UINT64),
             std::make_pair("altUseful", UINT64),
             std::make_pair("altTable", UINT64),
             std::make_pair("altIndex", UINT64),
+            std::make_pair("altTag", UINT64),
             std::make_pair("useAlt", UINT64),
             std::make_pair("predTaken", UINT64),
             std::make_pair("actualTaken", UINT64),
@@ -177,8 +231,25 @@ BTBTAGE::setTrace()
             std::make_pair("allocTable", UINT64),
             std::make_pair("allocIndex", UINT64),
             std::make_pair("allocWay", UINT64),
+            std::make_pair("allocTag", UINT64),
+            std::make_pair("victimValid", UINT64),
+            std::make_pair("victimTag", UINT64),
+            std::make_pair("victimCounter", UINT64),
+            std::make_pair("victimUseful", UINT64),
+            std::make_pair("victimPC", UINT64),
             std::make_pair("history", TEXT),
             std::make_pair("indexFoldedHist", UINT64),
+            std::make_pair("phistory", TEXT),
+            std::make_pair("useAltIdx", UINT64),
+            std::make_pair("useAltCtr", UINT64),
+            std::make_pair("hitTableMask", UINT64),
+            std::make_pair("finalProviderTable", UINT64),
+            std::make_pair("finalProviderIsAlt", UINT64),
+            std::make_pair("historyHash", UINT64),
+            std::make_pair("phistoryHash", UINT64),
+            std::make_pair("indexFoldedHistHash", UINT64),
+            std::make_pair("tagFoldedHistHash", UINT64),
+            std::make_pair("altTagFoldedHistHash", UINT64),
         };
         tageMissTrace = _db->addAndGetTrace("TAGEMISSTRACE", fields_vec);
         tageMissTrace->init_table();
@@ -211,6 +282,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     bool provided = false;
     bool alt_provided = false;
     TageTableInfo main_info, alt_info;
+    uint64_t hit_table_mask = 0;
 
     // Search from highest to lowest table for matches
     // Calculate branch position within the block (like RTL's cfiPosition)
@@ -248,6 +320,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         }
 
         if (match) {
+            if (i < 64) {
+                hit_table_mask |= (1ULL << i);
+            }
             if (!provided) {
                 // First match becomes main prediction
                 main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
@@ -271,6 +346,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     bool base_taken = btb_entry.ctr >= 0;
     //bool base_taken = btb_entry.ctr >= 0;
     bool alt_pred = alt_provided ? alt_taken : base_taken; // if alt provided, use alt prediction, otherwise use base
+    Addr use_alt_idx = getUseAltIdx(btb_entry.pc);
+    short use_alt_ctr = useAlt[use_alt_idx];
 
     // use_alt_on_na gating: when provider weak, consult per-PC counter
     bool use_alt = false;
@@ -279,8 +356,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     } else {
         bool main_weak = (main_info.entry.counter == 0 || main_info.entry.counter == -1);
         if (main_weak) {
-            Addr uidx = getUseAltIdx(btb_entry.pc);
-            use_alt = (useAlt[uidx] >= 0);
+            use_alt = (use_alt_ctr >= 0);
         } else {
             use_alt = false;
         }
@@ -301,8 +377,9 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     DPRINTF(TAGE, "tage final source %#lx table %d alt %d\n",
         btb_entry.pc, final_provider_table, final_provider_is_alt);
 
-    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred,
-        final_provider_table, final_provider_is_alt);
+    return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken,
+        alt_pred, final_provider_table, final_provider_is_alt, use_alt_idx,
+        use_alt_ctr, hit_table_mask);
 }
 
 /**
@@ -459,6 +536,29 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     Addr startPC = stream.getRealStartPC();
     bool base_taken = entry.ctr >= 0;
     bool alt_taken = alt_info.found ? alt_info.taken() : base_taken;
+    bool use_provider = main_info.found && !used_alt;
+    bool use_alt_table = used_alt && alt_info.found;
+    bool use_base_table = !use_provider && !use_alt_table;
+
+    tageStats.resolveBranchHasProvider += main_info.found;
+    tageStats.resolveBranchUseProvider += use_provider;
+    tageStats.resolveBranchHasAlt += alt_info.found;
+    tageStats.resolveBranchUseAltTable += use_alt_table;
+    tageStats.resolveBranchUseBaseTable += use_base_table;
+#ifndef UNIT_TEST
+    if (main_info.found) {
+        tageStats.resolveProviderTable[main_info.table]++;
+    }
+    if (alt_info.found) {
+        tageStats.resolveAltTable[alt_info.table]++;
+    }
+    if (use_provider) {
+        tageStats.resolveUseProviderTable[main_info.table]++;
+    }
+    if (use_alt_table) {
+        tageStats.resolveUseAltTable[alt_info.table]++;
+    }
+#endif
 
     // Update use_alt_on_na when provider is weak (0 or -1)
     if (main_info.found) {
@@ -522,6 +622,21 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     // Check if misprediction occurred
     bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
                                stream.squashPC == entry.pc;
+    if (this_fb_mispred) {
+        tageStats.mispredictBranchHasProvider += main_info.found;
+        tageStats.mispredictBranchUseProvider += use_provider;
+        tageStats.mispredictBranchHasAlt += alt_info.found;
+        tageStats.mispredictBranchUseAltTable += use_alt_table;
+        tageStats.mispredictBranchUseBaseTable += use_base_table;
+#ifndef UNIT_TEST
+        if (use_provider) {
+            tageStats.mispredictUseProviderTable[main_info.table]++;
+        }
+        if (use_alt_table) {
+            tageStats.mispredictUseAltTable[alt_info.table]++;
+        }
+#endif
+    }
     if (getDelay() == 2){
         if (this_fb_mispred) {
             tageStats.updateMispred++;
@@ -544,12 +659,23 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         return false;
     }
 
-    // Special case: provider is weak but direction is correct
-    // In this case, provider just needs more training, not a longer history table
-    // This avoids wasteful allocation and prevents ping-pong effects
-    if (used_alt && main_info.found && main_info.taken() == actual_taken) {
-        return false;
-    }
+    // Classic TAGE would also stop here when the provider is weak but its
+    // direction matches the resolved outcome while the final prediction came
+    // from alt/base. That rule assumes the provider only needs more training.
+    //
+    // For BTBTAGE with path history, h264ref's 0x588d6/0x58962 loop-phase
+    // pattern shows a corner case where two opposite local contexts collide in
+    // the same short-history entry, keeping the provider counter weak forever.
+    // If we keep the classic gate here, the pattern never gets a chance to
+    // allocate into a longer-history table and stays locked in the short table.
+    //
+    // Therefore we intentionally allow allocation to proceed even when:
+    //   used_alt && main_info.found && main_info.taken() == actual_taken
+    // so the minority pattern can escape to a longer-history entry.
+    //
+    // if (used_alt && main_info.found && main_info.taken() == actual_taken) {
+    //     return false;
+    // }
 
     // All other cases: allocate longer history table
     return true;
@@ -571,9 +697,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  bool actual_taken,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
-                                 uint64_t &allocated_table,
-                                 uint64_t &allocated_index,
-                                 uint64_t &allocated_way) {
+                                 AllocationTraceInfo &allocInfo) {
     // Match RTL victim priority:
     // 1) invalid way
     // 2) weak and not-useful way
@@ -621,17 +745,24 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         if (selected_way != -1) {
             short newCounter = actual_taken ? 0 : -1;
+            auto &victim = set[selected_way];
             DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
                     ti, newIndex, selected_way, newTag, position, newCounter, entry.pc);
+            allocInfo.success = true;
+            allocInfo.table = ti;
+            allocInfo.index = newIndex;
+            allocInfo.way = selected_way;
+            allocInfo.tag = newTag;
+            allocInfo.victimValid = victim.valid;
+            allocInfo.victimTag = victim.tag;
+            allocInfo.victimCounter = victim.counter;
+            allocInfo.victimUseful = victim.useful;
+            allocInfo.victimPC = victim.pc;
             set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
             tageStats.updateAllocSuccess++;
-            allocated_table = ti;
-            allocated_index = newIndex;
-            allocated_way = selected_way;
             usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
             return true;
         }
-
         tageStats.updateAllocFailure++;
         usefulResetCnt++;
     }
@@ -772,10 +903,7 @@ BTBTAGE::update(const FetchTarget &stream) {
         bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
 
         // Handle new entry allocation if needed
-        bool alloc_success = false;
-        uint64_t allocated_table = 0;
-        uint64_t allocated_index = 0;
-        uint64_t allocated_way = 0;
+        AllocationTraceInfo allocInfo;
         if (need_allocate) {
 
             // Handle allocation of new entries
@@ -784,30 +912,53 @@ BTBTAGE::update(const FetchTarget &stream) {
             if (main_info.found) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
-            alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
-                                   start_table, predMeta, allocated_table, allocated_index, allocated_way);
+            handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
+                                     start_table, predMeta, allocInfo);
         }
 
 #ifndef UNIT_TEST
         if (enableDB) {
             TageMissTrace t;
             std::string history_str;
+            std::string phistory_str;
             boost::dynamic_bitset<> history_low50 = predMeta->history;
+            boost::dynamic_bitset<> phistory_low50 = stream.phistory;
             if (history_low50.size() > 50) {
                 history_low50.resize(50);  // get the lower 50 bits of history
             }
+            if (phistory_low50.size() > 50) {
+                phistory_low50.resize(50);  // get the lower 50 bits of path history
+            }
             boost::to_string(history_low50, history_str);
+            boost::to_string(phistory_low50, phistory_str);
             TagePrediction trace_pred = predMeta->preds[btb_entry.pc];
             auto main_info = trace_pred.mainInfo;
             auto alt_info = trace_pred.altInfo;
+            const uint64_t history_hash = hashBitset(predMeta->history);
+            const uint64_t phistory_hash = hashBitset(stream.phistory);
+            const uint64_t index_folded_hist_hash =
+                hashFoldedHistVec(predMeta->indexFoldedHist);
+            const uint64_t tag_folded_hist_hash =
+                hashFoldedHistVec(predMeta->tagFoldedHist);
+            const uint64_t alt_tag_folded_hist_hash =
+                hashFoldedHistVec(predMeta->altTagFoldedHist);
             t.set(startAddr, btb_entry.pc, main_info.way,
                 main_info.found, main_info.entry.counter, main_info.entry.useful,
-                main_info.table, main_info.index,
+                main_info.table, main_info.index, main_info.entry.tag,
                 alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
-                alt_info.table, alt_info.index,
-                trace_pred.useAlt, trace_pred.taken, actual_taken, alloc_success,
-                allocated_table, allocated_index, allocated_way,
-                history_str, predMeta->indexFoldedHist[main_info.table].get());
+                alt_info.table, alt_info.index, alt_info.entry.tag,
+                trace_pred.useAlt, trace_pred.taken, actual_taken, allocInfo.success,
+                allocInfo.table, allocInfo.index, allocInfo.way, allocInfo.tag,
+                allocInfo.victimValid, allocInfo.victimTag,
+                allocInfo.victimCounter, allocInfo.victimUseful,
+                allocInfo.victimPC,
+                history_str, phistory_str,
+                predMeta->indexFoldedHist[main_info.table].get(),
+                trace_pred.useAltIdx, trace_pred.useAltCtr,
+                trace_pred.hitTableMask, trace_pred.finalProviderTable,
+                trace_pred.finalProviderIsAlt, history_hash, phistory_hash,
+                index_folded_hist_hash, tag_folded_hist_hash,
+                alt_tag_folded_hist_hash);
             tageMissTrace->write_record(t);
         }
 #endif
@@ -973,23 +1124,33 @@ BTBTAGE::getBankId(Addr pc) const
  * @param taken Whether the branch was taken
  */
 void
-BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc, Addr target)
+BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt,
+                      bool taken, Addr pc, Addr target)
 {
     if (debug::TAGEHistory) {   // if debug flag is off, do not use to_string since it's too slow
         std::string buf;
         boost::to_string(history, buf);
-        DPRINTF(TAGEHistory, "in doUpdateHist, taken %d, pc %#lx, history %s\n", taken, pc, buf.c_str());
+        DPRINTF(TAGEHistory, "in doUpdateHist, shamt %d, taken %d, pc %#lx, target %#lx, history %s\n",
+                shamt, taken, pc, target, buf.c_str());
     }
-    if (!taken) {
-        DPRINTF(TAGEHistory, "not updating folded history, since FB not taken\n");
+
+    if (usePathHistory) {
+        if (!taken) {
+            DPRINTF(TAGEHistory,
+                    "not updating path folded history, since FB not taken\n");
+            return;
+        }
+        shamt = 2;
+    } else if (shamt == 0) {
+        DPRINTF(TAGEHistory,
+                "not updating direction folded history, shamt is 0\n");
         return;
     }
 
     for (int t = 0; t < numPredictors; t++) {
         for (int type = 0; type < 3; type++) {
             auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
-            // since we have folded path history, we can put arbitrary shamt here, and it wouldn't make a difference
-            foldedHist.update(history, 2, taken, pc, target);
+            foldedHist.update(history, shamt, taken, pc, target);
             DPRINTF(TAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist.get());
         }
     }
@@ -1008,10 +1169,38 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr p
  * @param pred The prediction metadata containing history information
  */
 void
+BTBTAGE::specUpdateHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred)
+{
+    if (usePathHistory) {
+        return;
+    }
+
+    auto [shamt, taken] = pred.getHistInfo();
+    doUpdateHist(history, shamt, taken, 0, 0);
+}
+
+void
 BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
+    if (!usePathHistory) {
+        return;
+    }
+
     auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, taken, pc, target);
+    doUpdateHist(history, 2, taken, pc, target);
+}
+
+void
+BTBTAGE::recoverFoldedHist(const FetchTarget &entry)
+{
+    auto predMeta =
+        std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
+    for (int i = 0; i < numPredictors; i++) {
+        tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
+        altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
+        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+    }
 }
 
 /**
@@ -1028,16 +1217,28 @@ BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredicti
  * @param cond_taken The actual branch outcome
  */
 void
+BTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
+    const FetchTarget &entry, int shamt, bool cond_taken)
+{
+    if (usePathHistory) {
+        return;
+    }
+
+    recoverFoldedHist(entry);
+    doUpdateHist(history, shamt, cond_taken, 0, 0);
+}
+
+void
 BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
     const FetchTarget &entry, int shamt, bool cond_taken)
 {
-    std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
-    for (int i = 0; i < numPredictors; i++) {
-        tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
-        altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
-        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+    if (!usePathHistory) {
+        return;
     }
-    doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
+
+    recoverFoldedHist(entry);
+    doUpdateHist(history, 2, cond_taken, entry.getControlPC(),
+                 entry.getTakenTarget());
 }
 
 // Check folded history after speculative update and recovery
@@ -1081,6 +1282,26 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
+    ADD_STAT(resolveBranchHasProvider, statistics::units::Count::get(),
+        "resolved conditional branches whose recomputed TAGE state has a provider"),
+    ADD_STAT(resolveBranchUseProvider, statistics::units::Count::get(),
+        "resolved conditional branches that use the provider table"),
+    ADD_STAT(resolveBranchHasAlt, statistics::units::Count::get(),
+        "resolved conditional branches whose recomputed TAGE state has an alt table"),
+    ADD_STAT(resolveBranchUseAltTable, statistics::units::Count::get(),
+        "resolved conditional branches that use the alt table as final prediction"),
+    ADD_STAT(resolveBranchUseBaseTable, statistics::units::Count::get(),
+        "resolved conditional branches that fall back to base prediction"),
+    ADD_STAT(mispredictBranchHasProvider, statistics::units::Count::get(),
+        "mispredicted branches whose recomputed TAGE state has a provider"),
+    ADD_STAT(mispredictBranchUseProvider, statistics::units::Count::get(),
+        "mispredicted branches that use the provider table"),
+    ADD_STAT(mispredictBranchHasAlt, statistics::units::Count::get(),
+        "mispredicted branches whose recomputed TAGE state has an alt table"),
+    ADD_STAT(mispredictBranchUseAltTable, statistics::units::Count::get(),
+        "mispredicted branches that use the alt table as final prediction"),
+    ADD_STAT(mispredictBranchUseBaseTable, statistics::units::Count::get(),
+        "mispredicted branches that fall back to base prediction"),
     ADD_STAT(predFinalSourceBase, statistics::units::Count::get(), "predictions whose final source is base BTB"),
     ADD_STAT(updateFinalSourceBaseCorrect, statistics::units::Count::get(), "base BTB final-source predictions that are correct"),
     ADD_STAT(updateFinalSourceBaseWrong, statistics::units::Count::get(), "base BTB final-source predictions that are wrong"),
@@ -1091,6 +1312,18 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
     ADD_STAT(updateAccessPerBank, statistics::units::Count::get(), "update accesses per bank"),
     ADD_STAT(predAccessPerBank, statistics::units::Count::get(), "prediction accesses per bank"),
+    ADD_STAT(resolveProviderTable, statistics::units::Count::get(),
+        "resolved conditional branches grouped by provider table"),
+    ADD_STAT(resolveAltTable, statistics::units::Count::get(),
+        "resolved conditional branches grouped by alt table"),
+    ADD_STAT(resolveUseProviderTable, statistics::units::Count::get(),
+        "resolved conditional branches that use the provider table, grouped by table"),
+    ADD_STAT(resolveUseAltTable, statistics::units::Count::get(),
+        "resolved conditional branches that use the alt table, grouped by table"),
+    ADD_STAT(mispredictUseProviderTable, statistics::units::Count::get(),
+        "mispredicted branches that use the provider table, grouped by table"),
+    ADD_STAT(mispredictUseAltTable, statistics::units::Count::get(),
+        "mispredicted branches that use the alt table, grouped by table"),
     ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
     ADD_STAT(updateTableHits, statistics::units::Count::get(), "hit of each tage table on update"),
     ADD_STAT(updateTableMispreds, statistics::units::Count::get(), "mispreds of each table when update"),
@@ -1111,6 +1344,12 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     predFinalSourceTable.init(numPredictors);
     updateFinalSourceTableCorrect.init(numPredictors);
     updateFinalSourceTableWrong.init(numPredictors);
+    resolveProviderTable.init(numPredictors);
+    resolveAltTable.init(numPredictors);
+    resolveUseProviderTable.init(numPredictors);
+    resolveUseAltTable.init(numPredictors);
+    mispredictUseProviderTable.init(numPredictors);
+    mispredictUseAltTable.init(numPredictors);
 
     // Initialize per-bank statistics vectors
     updateBankConflictPerBank.init(numBanks);

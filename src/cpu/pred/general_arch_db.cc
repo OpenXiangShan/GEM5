@@ -21,7 +21,7 @@ sqliteSignedInt(uint64_t value)
 void
 TraceManager::init_table() {
   // create table
-  char sql[1024];
+  char sql[8192];
   int pos = 0;
   pos = sprintf(sql,
     "CREATE TABLE %s(" \
@@ -40,7 +40,7 @@ TraceManager::init_table() {
     }
   }
   pos += sprintf(sql+pos, ");");
-  assert(pos < 1024);
+  assert(pos < 8192);
   printf("%s\n", sql);
   char *zErrMsg;
   int rc = sqlite3_exec(_db, sql, callback, 0, &zErrMsg);
@@ -54,7 +54,7 @@ TraceManager::init_table() {
 void
 TraceManager::write_record(const Record &record)
 {
-    char sql[1024];
+    char sql[8192];
     int pos = 0;
     pos = sprintf(sql, "INSERT INTO %s(TICK", _name.c_str());
     for (auto it = _fields.begin(); it != _fields.end(); it++) {
@@ -92,7 +92,7 @@ TraceManager::write_record(const Record &record)
         }
     }
     pos += sprintf(sql+pos, ");");
-    assert(pos < 1024);
+    assert(pos < 8192);
     char *zErrMsg;
     int rc = sqlite3_exec(_db, sql, callback, 0, &zErrMsg);
     if (rc != SQLITE_OK) {

@@ -90,6 +90,64 @@ void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr targe
     }
 }
 
+void applyOutcomeHistory(boost::dynamic_bitset<>& history, int shamt, bool taken)
+{
+    if (shamt <= 0) {
+        return;
+    }
+    history <<= shamt;
+    history[0] = taken;
+}
+
+void specUpdateSelectedHistory(BTBTAGE* tage,
+                               const boost::dynamic_bitset<>& history,
+                               FullBTBPrediction& pred)
+{
+    if (tage->usesPathHistory()) {
+        tage->specUpdatePHist(history, pred);
+    } else {
+        tage->specUpdateHist(history, pred);
+    }
+}
+
+void recoverSelectedHistory(BTBTAGE* tage,
+                            const boost::dynamic_bitset<>& history,
+                            const FetchTarget& stream, int shamt,
+                            bool cond_taken)
+{
+    if (tage->usesPathHistory()) {
+        tage->recoverPHist(history, stream, shamt, cond_taken);
+    } else {
+        tage->recoverHist(history, stream, shamt, cond_taken);
+    }
+}
+
+void applyPredictedHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
+                           FullBTBPrediction& pred)
+{
+    if (tage->usesPathHistory()) {
+        auto [pred_pc, pred_target, pred_taken] = pred.getPHistInfo();
+        if (pred_taken) {
+            applyPathHistoryTaken(history, pred_pc, pred_target);
+        }
+    } else {
+        auto [shamt, taken] = pred.getHistInfo();
+        applyOutcomeHistory(history, shamt, taken);
+    }
+}
+
+void applyActualHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
+                        const BTBEntry& entry, int shamt, bool taken)
+{
+    if (tage->usesPathHistory()) {
+        if (taken) {
+            applyPathHistoryTaken(history, entry.pc, entry.target);
+        }
+    } else {
+        applyOutcomeHistory(history, shamt, taken);
+    }
+}
+
 /**
  * @brief Helper function to find conditional taken prediction for a given PC
  *
@@ -163,16 +221,22 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
     bool predicted_taken = it->second;
 
     // 3. Speculatively update folded history
-    tage->specUpdateHist(history, stagePreds[1]);
+    specUpdateSelectedHistory(tage, history, stagePreds[1]);
     auto meta = tage->getPredictionMeta();
 
     // 4. Update path history register, see pHistShiftIn
     bool history_updated = false;
-    auto [pred_pc, pred_target, pred_taken] = stagePreds[1].getPHistInfo();
     boost::dynamic_bitset<> pre_spec_history = history;
-    if (pred_taken) {
-        history_updated = true;
-        applyPathHistoryTaken(history, pred_pc, pred_target);
+    if (tage->usesPathHistory()) {
+        auto [pred_pc, pred_target, pred_taken] = stagePreds[1].getPHistInfo();
+        history_updated = pred_taken;
+        if (pred_taken) {
+            applyPathHistoryTaken(history, pred_pc, pred_target);
+        }
+    } else {
+        auto [shamt, taken] = stagePreds[1].getHistInfo();
+        history_updated = shamt > 0;
+        applyOutcomeHistory(history, shamt, taken);
     }
     tage->checkFoldedHist(history, "speculative update");
 
@@ -187,12 +251,8 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
             history = pre_spec_history;
         }
         // Recover from misprediction
-        tage->recoverHist(history, stream, 1, actual_taken);
-
-        if (actual_taken) {
-            applyPathHistoryTaken(history, stream.exeBranchInfo.pc,
-                                  stream.exeBranchInfo.target);
-        }
+        recoverSelectedHistory(tage, history, stream, 1, actual_taken);
+        applyActualHistory(tage, history, stream.exeBranchInfo, 1, actual_taken);
         tage->checkFoldedHist(history, "recover");
     }
 
@@ -314,7 +374,7 @@ TEST_F(BTBTAGETest, HistoryUpdate) {
 
     // Test case 1: Update with taken branch (PHR shifts in 2 bits from PC hash)
     // Correct order: first update folded histories with pre-update PHR, then mutate PHR
-    tage->doUpdateHist(history, true, pc, target);
+    tage->doUpdateHist(history, 2, true, pc, target);
     applyPathHistoryTaken(history, pc, target);
 
     // Verify folded history matches the ideal fold of the updated PHR
@@ -322,11 +382,28 @@ TEST_F(BTBTAGETest, HistoryUpdate) {
 
     // Test case 2: Update with not-taken branch (PHR unchanged, folded update is no-op)
     boost::dynamic_bitset<> before_not_taken = history;
-    tage->doUpdateHist(history, false, pc, target);
+    tage->doUpdateHist(history, 2, false, pc, target);
 
     // Verify folded history remains consistent
     tage->checkFoldedHist(history, "not-taken update");
     EXPECT_EQ(history, before_not_taken);
+}
+
+TEST_F(BTBTAGETest, GlobalHistoryModeUpdate) {
+    BTBTAGE ghrTage(4, 2, 1024, 4, false);
+    boost::dynamic_bitset<> ghr(64, false);
+
+    ghrTage.doUpdateHist(ghr, 1, true, 0, 0);
+    applyOutcomeHistory(ghr, 1, true);
+    ghrTage.checkFoldedHist(ghr, "ghr taken update");
+
+    boost::dynamic_bitset<> before_not_taken = ghr;
+    ghrTage.doUpdateHist(ghr, 1, false, 0, 0);
+    applyOutcomeHistory(ghr, 1, false);
+    ghrTage.checkFoldedHist(ghr, "ghr not-taken update");
+
+    EXPECT_NE(ghr, before_not_taken)
+        << "GHR mode should still shift history on not-taken branches";
 }
 
 // Test main and alternative prediction mechanism by direct setup
@@ -514,27 +591,15 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
     boost::dynamic_bitset<> originalHistory = history;
 
     // Store original folded history state
-    std::vector<PathFoldedHist> originalTagFoldedHist;
-    std::vector<PathFoldedHist> originalAltTagFoldedHist;
-    std::vector<PathFoldedHist> originalIndexFoldedHist;
-
-    for (int i = 0; i < tage->numPredictors; i++) {
-        originalTagFoldedHist.push_back(tage->tagFoldedHist[i]);
-        originalAltTagFoldedHist.push_back(tage->altTagFoldedHist[i]);
-        originalIndexFoldedHist.push_back(tage->indexFoldedHist[i]);
-    }
-
     // Make a prediction
     bool predicted_taken = predictTAGE(tage, 0x1000, {entry}, history, stagePreds);
 
     // Speculatively update history
-    tage->specUpdateHist(history, stagePreds[1]);
+    specUpdateSelectedHistory(tage, history, stagePreds[1]);
     auto meta = tage->getPredictionMeta();
 
-    // Update PHR register (speculative) to mirror pHistShiftIn
-    if (predicted_taken) {
-        applyPathHistoryTaken(history, entry.pc, entry.target);
-    }
+    // Update speculative history register to mirror decoupled_bpred behavior.
+    applyPredictedHistory(tage, history, stagePreds[1]);
 
     // Create a recovery stream with opposite outcome
     FetchTarget stream = createStream(0x1000, entry, !predicted_taken, meta);
@@ -542,13 +607,11 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
 
     // Recover to pre-speculative state and update with correct outcome
     boost::dynamic_bitset<> recoveryHistory = originalHistory;
-    tage->recoverHist(recoveryHistory, stream, 1, !predicted_taken);
+    recoverSelectedHistory(tage, recoveryHistory, stream, 1, !predicted_taken);
 
-    // Expected history should be original updated with PHR if actually taken
+    // Expected history should be original updated with the actual outcome.
     boost::dynamic_bitset<> expectedHistory = originalHistory;
-    if (!predicted_taken) { // actual_taken
-        applyPathHistoryTaken(expectedHistory, entry.pc, entry.target);
-    }
+    applyActualHistory(tage, expectedHistory, entry, 1, !predicted_taken);
 
     // Verify recovery produced the expected history
     for (int i = 0; i < tage->numPredictors; i++) {
