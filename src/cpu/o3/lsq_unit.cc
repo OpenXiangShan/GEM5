@@ -2338,7 +2338,7 @@ LSQUnit::countStoreBufferOffloadableEntries(uint32_t max_entries) const
 }
 
 void
-LSQUnit::offloadToStoreBuffer(uint32_t max_entries)
+LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_fail)
 {
     assert(!lsq->storeBufferBlocked());
     if (isStoreBlocked) return;
@@ -2415,6 +2415,7 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries)
                 if (success) {
                     request->_numOutstandingPackets++;
                 } else {
+                    offload_fail[lsqID] = true;
                     break;
                 }
             }
@@ -2435,6 +2436,7 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries)
                 vaddr, paddr, (uint8_t *)storeWBIt->data(), request->_size,
                 request->mainReq()->getByteEnable(), inst->seqNum);
             if (!success) {
+                offload_fail[lsqID] = true;
                 break;
             }
             ++accepted_entries;
@@ -2501,6 +2503,7 @@ LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
         // create new entry
         if (storeBuffer.full()) {
             stats.sbufferFull++;
+            // lsq->nextStoreBufferInsertTid = lsqID;
             DPRINTF(StoreBuffer, "Insert %#x failed due to sbuffer full\n", paddr);
             return false;
         }

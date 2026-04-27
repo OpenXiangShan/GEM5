@@ -646,6 +646,13 @@ IssueQue::selectInst()
     selectQ.clear();
     for (int pi = 0; pi < outports; pi++) {
         auto readyQ = readyQs[pi];
+        // iq->getInstsCounter()->getCounter(tid)
+        int iqcount = 0;
+        for (auto it = readyQ->begin(); it != readyQ->end(); ++it) {
+            DPRINTF(Schedule, "readyQ for port %d has [sn:%llu] %s [tid:%u]\n", pi, (*it)->seqNum,
+                    (*it)->genDisassembly(), (*it)->threadNumber);
+        }
+        
         selector->begin(readyQ);
         for (auto it = selector->select(readyQ->begin(), pi); it != readyQ->end(); it = selector->select(it, pi)) {
             auto& inst = *it;
@@ -659,7 +666,15 @@ IssueQue::selectInst()
             uint64_t busy_bit = (lat > 63 ? -1 : (1llu << lat));
             if (!(portBusy[pi] & busy_bit)) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
-
+                for (ThreadID tid = 0; tid < MaxThreads; tid++) {
+                    if (inst->threadNumber == tid) {
+                        independentIQICountScheduler->scheduleNum[tid]++;
+                    } else {
+                        independentIQICountScheduler->scheduleNum[tid] = 0;
+                    }
+                }
+                DPRINTF(Schedule, "smtScheduler->scheduleNum[0]=%d, smtScheduler->scheduleNum[1]=%d\n",
+                        independentIQICountScheduler->scheduleNum[0], independentIQICountScheduler->scheduleNum[1]);
                 // get regfile write port
                 for (int i = 0; i < inst->numDestRegs(); i++) {
                     auto pdst = inst->renamedDestIdx(i);
@@ -786,7 +801,7 @@ IssueQue::insert(const DynInstPtr& inst)
 
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueQue);
 
-    DPRINTF(Schedule, "[sn:%llu] %s insert into %s\n", inst->seqNum, enums::OpClassStrings[inst->opClass()], iqname);
+    DPRINTF(Schedule, "[tid:%u] [sn:%llu] %s insert into %s\n", inst->threadNumber, inst->seqNum, enums::OpClassStrings[inst->opClass()], iqname);
     selector->allocate(inst);
     inst->issueQue = this;
     instList.emplace_back(inst);
@@ -906,6 +921,7 @@ IssueQue::incInIQInstsCounter(ThreadID tid)
 {
     if (instsCounter) {
         instsCounter->incCounter(tid);
+        DPRINTF(Schedule, "Thread %d: incInIQInstsCounter to %d\n", tid, instsCounter->getCounter(tid));
     }
     if (iqstats) {
         iqstats->instsNum[tid]++;
@@ -917,6 +933,7 @@ IssueQue::decInIQInstsCounter(ThreadID tid)
 {
     if (instsCounter) {
         instsCounter->decCounter(tid);
+        DPRINTF(Schedule, "Thread %d: decInIQInstsCounter to %d\n", tid, instsCounter->getCounter(tid));
     }
 }
 

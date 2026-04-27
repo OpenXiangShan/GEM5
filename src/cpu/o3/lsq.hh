@@ -1294,6 +1294,7 @@ class LSQ
     uint64_t storeBufferWritebackInactive = 0;
     StoreBufferEntry *blockedSbufferEntry = nullptr;
     ThreadID nextStoreBufferOffloadTid = InvalidThreadID;
+    ThreadID nextStoreBufferInsertTid  = 0;
 
     bool enableBankConflictCheck;
     bool sbufferBankWriteAccurately;
