@@ -49,7 +49,8 @@ injectAsidHashIntoTag(Addr base_tag, unsigned tag_bits, uint8_t asid_hash)
 
     const unsigned hash_bits = std::min<unsigned>(4, tag_bits);
     const Addr hash_mask = mask(hash_bits);
-    return (base_tag & ~hash_mask) | (static_cast<Addr>(asid_hash) & hash_mask);
+    return (base_tag ^ (static_cast<Addr>(asid_hash) & hash_mask)) &
+           mask(tag_bits);
 }
 
 inline Addr
