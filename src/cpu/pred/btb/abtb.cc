@@ -66,12 +66,16 @@ namespace test {
  */
 #ifdef UNIT_TEST
 // Test constructor for unit testing mode - fixed ahead-pipelined configuration
-AheadBTB::AheadBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay)
+AheadBTB::AheadBTB(unsigned numEntries, unsigned tagBits, unsigned numWays,
+                   unsigned numDelay, unsigned numThreads)
     : TimedBaseBTBPredictor(),
       numEntries(numEntries),
       numWays(numWays),
+      numThreads(numThreads),
+      threadStates(numThreads),
       tagBits(tagBits)
 {
+    usingS3Pred = false;
     setNumDelay(numDelay);
     this->aheadPipelinedStages = 1; // fixed ahead-pipelined stages = 1
 #else
@@ -80,6 +84,8 @@ AheadBTB::AheadBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
     numEntries(p.numEntries),
     numWays(p.numWays),
+    numThreads(p.numThreads),
+    threadStates(p.numThreads),
     tagBits(p.tagBits),
     usingS3Pred(p.usingS3Pred),
     btbStats(this)
@@ -91,6 +97,7 @@ AheadBTB::AheadBTB(const Params &p)
     // AheadBTB always uses single instruction alignment: | tag | idx | instShiftAmt
     idxShiftAmt = 1;
 
+    assert(numThreads > 0);
     assert(numEntries % numWays == 0);
     numSets = numEntries / numWays;
     // AheadBTB always uses ahead-pipelined stages = 1
@@ -128,6 +135,27 @@ AheadBTB::AheadBTB(const Params &p)
     hasDB = true;
     dbName = std::string("AheadBTB");
 #endif
+}
+
+ThreadID
+AheadBTB::predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const
+{
+    assert(!stagePreds.empty());
+    return stagePreds.front().tid;
+}
+
+AheadBTB::ThreadState &
+AheadBTB::threadState(ThreadID tid)
+{
+    assert(tid < threadStates.size());
+    return threadStates[tid];
+}
+
+const AheadBTB::ThreadState &
+AheadBTB::threadState(ThreadID tid) const
+{
+    assert(tid < threadStates.size());
+    return threadStates[tid];
 }
 
 #ifndef UNIT_TEST
@@ -297,14 +325,17 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
  */
 void
 AheadBTB::updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
-                                   std::vector<FullBTBPrediction>& stagePreds)
+                                   std::vector<FullBTBPrediction>& stagePreds,
+                                   ThreadID tid)
 {
+    auto &state = threadState(tid);
+
     // Save current BTB entries
     for (auto e: entries) {
-        meta->hit_entries.push_back(BTBEntry(e));
+        state.meta->hit_entries.push_back(BTBEntry(e));
     }
 
-    lastPredEntries = meta->hit_entries;
+    state.lastPredEntries = state.meta->hit_entries;
 }
 
 void
@@ -312,10 +343,12 @@ AheadBTB::putPCHistory(Addr startAddr,
                          const boost::dynamic_bitset<> &history,
                          std::vector<FullBTBPrediction> &stagePreds)
 {
-    meta = std::make_shared<BTBMeta>();
+    const ThreadID tid = predictorTid(stagePreds);
+    auto &state = threadState(tid);
+    state.meta = std::make_shared<BTBMeta>();
     const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     // Lookup all matching entries in BTB
-    auto find_entries = lookup(startAddr, asidHash);
+    auto find_entries = lookup(startAddr, tid, asidHash);
 
     // Process BTB entries
     auto processed_entries = processEntries(find_entries, startAddr);
@@ -324,19 +357,22 @@ AheadBTB::putPCHistory(Addr startAddr,
     fillStagePredictions(processed_entries, stagePreds);
     
     // Update metadata for later stages
-    updatePredictionMeta(processed_entries, stagePreds);
+    updatePredictionMeta(processed_entries, stagePreds, tid);
 }
 
 std::shared_ptr<void>
 AheadBTB::getPredictionMeta(ThreadID tid)
 {
-    (void)tid;
+    if (tid >= threadStates.size()) {
+        return nullptr;
+    }
+    auto &state = threadStates[tid];
     // Lazy-initialize meta so callers never observe a null pointer
     // This avoids early-cycle crashes when prediction hasn't populated meta yet
-    if (!meta) {
-        meta = std::make_shared<BTBMeta>();
+    if (!state.meta) {
+        state.meta = std::make_shared<BTBMeta>();
     }
-    return meta;
+    return state.meta;
 }
 
 void
@@ -345,9 +381,10 @@ AheadBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPredicti
 void
 AheadBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
 {
+    auto &state = threadState(entry.tid);
     // clear ahead pipeline first
-    while (!aheadReadBtbEntries.empty()) {
-        aheadReadBtbEntries.pop();
+    while (!state.aheadReadBtbEntries.empty()) {
+        state.aheadReadBtbEntries.pop();
     }
 }
 
@@ -358,19 +395,22 @@ AheadBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget 
  * @return Vector of matching BTB entries
  */
 std::vector<AheadBTB::TickedBTBEntry>
-AheadBTB::lookupSingleBlock(Addr block_pc, uint8_t asidHash)
+AheadBTB::lookupSingleBlock(Addr block_pc, ThreadID tid, uint8_t asidHash)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
         return res; // ignore false hit when lowest bit is 1
     }
+    auto &state = threadState(tid);
     Addr btb_idx = getIndex(block_pc, asidHash);
     auto btb_set = btb[btb_idx];
     assert(btb_idx < numSets);
     // AheadBTB always uses ahead-pipelined implementation:
     // memory access with previous block PC, tag compare with current PC
-    DPRINTF(AheadPipeline, "AheadBTB: pushing set for ahead-pipelined stages, idx %ld\n", btb_idx);
-    aheadReadBtbEntries.push(std::make_tuple(block_pc, btb_idx, btb_set));
+    DPRINTF(AheadPipeline,
+            "AheadBTB: [tid:%u] pushing set for ahead-pipelined stages, idx %ld\n",
+            tid, btb_idx);
+    state.aheadReadBtbEntries.push(std::make_tuple(block_pc, btb_idx, btb_set));
 
     Addr tag_curStartpc = getTag(block_pc, asidHash);// abtb uses current FB pc to get tag
     Addr pc = 0;
@@ -378,21 +418,24 @@ AheadBTB::lookupSingleBlock(Addr block_pc, uint8_t asidHash)
     BTBSet set;
     // AheadBTB always uses ahead-pipelined logic (aheadPipelinedStages > 0)
     // only if the ahead-pipeline is filled can we use the entry
-    if (aheadReadBtbEntries.size() >= aheadPipelinedStages+1) {
+    if (state.aheadReadBtbEntries.size() >= aheadPipelinedStages+1) {
         // +1 because we pushed a new set in this cycle before
         // in case there are push without corresponding pop
-        assert(aheadReadBtbEntries.size() == aheadPipelinedStages+1);
-        std::tie(pc, idx_prvStartpc, set) = aheadReadBtbEntries.front();
-        DPRINTF(AheadPipeline, "AheadBTB: ahead-pipeline filled, using set %ld from pc %#lx\n",
-            idx_prvStartpc, pc);
+        assert(state.aheadReadBtbEntries.size() == aheadPipelinedStages+1);
+        std::tie(pc, idx_prvStartpc, set) = state.aheadReadBtbEntries.front();
+        DPRINTF(AheadPipeline,
+            "AheadBTB: [tid:%u] ahead-pipeline filled, using set %ld from pc %#lx\n",
+            tid, idx_prvStartpc, pc);
         DPRINTF(AheadPipeline, "AheadBTB: dumping btb set\n");
         for (auto &entry : set) {
             printTickedBTBEntry(entry);
         }
-        aheadReadBtbEntries.pop();
+        state.aheadReadBtbEntries.pop();
     } else {
-        DPRINTF(AheadPipeline, "AheadBTB: ahead-pipeline not filled, only have %ld sets read,"
-            " skipping tag compare, assigning miss\n", aheadReadBtbEntries.size());
+        DPRINTF(AheadPipeline,
+            "AheadBTB: [tid:%u] ahead-pipeline not filled, only have %ld sets read,"
+            " skipping tag compare, assigning miss\n",
+            tid, state.aheadReadBtbEntries.size());
     }
     DPRINTF(ABTB, "BTB: Doing tag comparison for index 0x%lx tag %#lx\n",
         idx_prvStartpc, tag_curStartpc);
@@ -407,7 +450,7 @@ AheadBTB::lookupSingleBlock(Addr block_pc, uint8_t asidHash)
 }
 
 std::vector<AheadBTB::TickedBTBEntry>
-AheadBTB::lookup(Addr block_pc, uint8_t asidHash)
+AheadBTB::lookup(Addr block_pc, ThreadID tid, uint8_t asidHash)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -415,7 +458,7 @@ AheadBTB::lookup(Addr block_pc, uint8_t asidHash)
     }
 
     // AheadBTB always uses single block lookup
-    res = lookupSingleBlock(block_pc, asidHash);
+    res = lookupSingleBlock(block_pc, tid, asidHash);
     return res;
 }
 
@@ -603,7 +646,8 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
                             (s3Pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
 
     // AheadBTB use S3 prediction for update
-    auto old_entries= processOldEntries(lastPredEntries, end_inst_pc);
+    auto &state = threadState(s3Pred.tid);
+    auto old_entries= processOldEntries(state.lastPredEntries, end_inst_pc);
 
     auto entries_to_update = collectEntriesToUpdateFromS3Pred(old_entries,s3Pred);
 
