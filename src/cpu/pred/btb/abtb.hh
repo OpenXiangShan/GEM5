@@ -40,7 +40,10 @@
 #ifndef __CPU_PRED_BTB_BTB_HH__
 #define __CPU_PRED_BTB_BTB_HH__
 
+#include <memory>
 #include <queue>
+#include <tuple>
+#include <vector>
 
 #include "base/types.hh"
 #include "cpu/pred/btb/common.hh"
@@ -83,7 +86,8 @@ class AheadBTB : public TimedBaseBTBPredictor
 
 #ifdef UNIT_TEST
     // Test constructor - fixed ahead-pipelined configuration
-    AheadBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay);
+    AheadBTB(unsigned numEntries, unsigned tagBits, unsigned numWays,
+             unsigned numDelay, unsigned numThreads = 1);
 #else
     // Production constructor
     typedef AheadBTBParams Params;
@@ -260,15 +264,30 @@ class AheadBTB : public TimedBaseBTBPredictor
         }
     }BTBMeta;
 
-    std::shared_ptr<BTBMeta> meta; // metadata for BTB, set in putPCHistory, used in update
-
     /**
-    * lastPredEntries is using in updateusingS3pred() to store the hit entries during prediction
-    * it is using to hold the hit entries for later use in S3 update
-    * because in gem5 generat pred and updateusingS3pred finish in the same cycle
-    * so we can use this instead of using BTBMeta
+    * Per-thread ABTB prediction-time state. The BTB storage itself remains
+    * shared, but the ahead-read pipeline must not be shared across SMT
+    * threads because index read and tag compare occur in different cycles.
     */
-    std::vector<BTBEntry> lastPredEntries; // cached hit entries for the latest prediction
+    struct ThreadState
+    {
+        // metadata for BTB, set in putPCHistory, used in update
+        std::shared_ptr<BTBMeta> meta;
+
+        /**
+        * lastPredEntries is used in updateUsingS3Pred() to store hit entries
+        * during prediction. It holds the hit entries for later S3 update.
+        * Because gem5 generate pred and updateUsingS3Pred finish in the same
+        * cycle, we can use this instead of BTBMeta.
+        */
+        std::vector<BTBEntry> lastPredEntries;
+
+        std::queue<std::tuple<Addr, Addr, BTBSet>> aheadReadBtbEntries;
+    };
+
+    ThreadID predictorTid(const std::vector<FullBTBPrediction> &stagePreds) const;
+    ThreadState &threadState(ThreadID tid);
+    const ThreadState &threadState(ThreadID tid) const;
 
     /** Process BTB entries for prediction
      *  @param entries Vector of BTB entries to process
@@ -289,7 +308,8 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param entries Processed BTB entries
      */
     void updatePredictionMeta(const std::vector<TickedBTBEntry>& entries,
-                               std::vector<FullBTBPrediction>& stagePreds);
+                               std::vector<FullBTBPrediction>& stagePreds,
+                               ThreadID tid);
 
     /** Process prediction metadata and old entries
      *  @param meta BTB metadata from prediction
@@ -367,13 +387,15 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The address of the block to look up.
      *  @return Returns all hit BTB entries.
      */
-    std::vector<TickedBTBEntry> lookup(Addr block_pc, uint8_t asidHash);
+    std::vector<TickedBTBEntry> lookup(Addr block_pc, ThreadID tid,
+                                       uint8_t asidHash);
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
      * @return Vector of matching BTB entries
      */
-    std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc, uint8_t asidHash);
+    std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc, ThreadID tid,
+                                                  uint8_t asidHash);
 
     /** The BTB structure:
      *  - Organized as numSets sets
@@ -389,12 +411,12 @@ class AheadBTB : public TimedBaseBTBPredictor
      */
     std::vector<BTBHeap> mruList;
 
-    std::queue<std::tuple<Addr, Addr, BTBSet>> aheadReadBtbEntries;
-
     /** BTB configuration parameters */
     unsigned numEntries;    // Total number of entries
     unsigned numWays;       // Number of ways per set
     unsigned numSets;       // Number of sets (numEntries/numWays)
+    unsigned numThreads;    // Number of SMT threads with isolated pipeline state
+    std::vector<ThreadState> threadStates;
 
 #ifdef UNIT_TEST
     uint64_t blockSize{32};  // max size in byte of a Fetch Block

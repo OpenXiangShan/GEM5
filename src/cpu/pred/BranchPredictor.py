@@ -1000,7 +1000,7 @@ class AheadBTB(TimedBaseBTBPredictor):
     numEntries = Param.Unsigned(1024, "Number of entries in the BTB")
     tagBits = Param.Unsigned(38, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
-    numThreads = Param.Unsigned(1, "Number of threads")
+    numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     numWays = Param.Unsigned(8, "Number of ways per set")
     aheadPipelinedStages = Param.Unsigned(1, "Number of stages ahead pipelined")
     entryHalfAligned = Param.Bool(False, "Whether the entries are half-aligned")
