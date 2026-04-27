@@ -888,6 +888,7 @@ LSQ::processWriteback()
     std::vector<uint32_t> offload_quota(numThreads, 0);
     std::vector<uint32_t> offload_demand(numThreads, 0);
     std::vector<ThreadID> requester_tids;
+    std::vector<bool> offload_fail(numThreads, false);
     requester_tids.reserve(activeThreads->size());
 
     for (ThreadID tid : *activeThreads) {
@@ -940,9 +941,14 @@ LSQ::processWriteback()
         }
     }
     threads = activeThreads->begin();
-    while (threads != end) {
-        ThreadID tid = *threads++;
-        thread[tid].offloadToStoreBuffer(offload_quota[tid]);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        thread[(nextStoreBufferInsertTid + tid) % numThreads].offloadToStoreBuffer(offload_quota[(nextStoreBufferInsertTid + tid) % numThreads], offload_fail);
+    }
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        if (offload_fail[tid]) {
+            nextStoreBufferInsertTid = tid;
+        }
     }
 
     // A fence/flush only waits for the requesting thread's sbuffer domain.

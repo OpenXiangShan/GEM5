@@ -1141,7 +1141,7 @@ public:
 
   private:
 
-    bool waitForVsetvl = false;
+    bool waitForVsetvl [MaxThreads];
 
     /** Value predictor */
     valuepred::VPUnit *valuePred;
