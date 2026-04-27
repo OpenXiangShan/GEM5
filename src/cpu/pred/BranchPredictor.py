@@ -1040,7 +1040,6 @@ class BTBTAGE(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBTAGE'
     cxx_header = "cpu/pred/btb/btb_tage.hh"
 
-    needMoreHistories = Param.Bool(True, "BTBTAGE needs more histories")
     usePathHistory = Param.Bool(True, "Use PHR-based folded history; false selects GHR-based folded history")
     enableSC = Param.Bool(False, "Enable SC or not")    # TODO: BTBTAGE doesn't support SC
     updateOnRead = Param.Bool(False, "Enable update on read, no need to save tage meta in FTQ")
@@ -1066,7 +1065,6 @@ class BTBTAGEUpperBound(BTBTAGE):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBTAGEUpperBound'
     cxx_header = "cpu/pred/btb/btb_tage_ub.hh"
 
-    needMoreHistories = False
     updateOnRead = False
     usePathHashHistory = Param.Bool(
         False, "Use exact path-hash history instead of exact outcome history")
@@ -1077,7 +1075,6 @@ class MicroTAGE(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::MicroTAGE'
     cxx_header = "cpu/pred/btb/microtage.hh"
 
-    needMoreHistories = Param.Bool(True, "MicroTAGE needs more histories")
     enableSC = Param.Bool(False, "Enable SC or not")
     updateOnRead = Param.Bool(True,"Enable update on read, no need to save tage meta in FTQ")
     # Keep vector parameters consistent with numPredictors to avoid constructor asserts.
@@ -1104,7 +1101,6 @@ class BTBITTAGE(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBITTAGE'
     cxx_header = "cpu/pred/btb/btb_ittage.hh"
 
-    needMoreHistories = Param.Bool(True, "BTBITTAGE needs more histories")
     numPredictors = Param.Unsigned(5, "Number of TAGE predictors")
     tableSizes = VectorParam.Unsigned([256]*2 + [512]*3, "the ITTAGE T0~Tn length")
     TTagBitSizes = VectorParam.Unsigned([9]*5, "the T0~Tn entry's tag bit size")
@@ -1121,7 +1117,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBMGSC'
     cxx_header = "cpu/pred/btb/btb_mgsc.hh"
 
-    needMoreHistories = Param.Bool(True, "MGSC needs more histories")
+    needMoreHistories = Param.Bool(True, "MGSC needs auxiliary histories")
 
     bwTableNum = Param.Unsigned(2, "Num global backward branch GEHL tables")
     bwHistLen = VectorParam.Int([4, 8], "Global backward branch GEHL history lengths")

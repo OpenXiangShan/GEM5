@@ -56,7 +56,6 @@ BTBTAGEUpperBound::BTBTAGEUpperBound(unsigned numPredictors,
       ubStats(numPredictors),
       historySource(source)
 {
-    needMoreHistories = (historySource == HistorySource::PathHash);
     updateOnRead = false;
     initUpperBoundState();
 }
@@ -67,7 +66,6 @@ BTBTAGEUpperBound::BTBTAGEUpperBound(const Params &p)
       historySource(p.usePathHashHistory ? HistorySource::PathHash
                                          : HistorySource::Outcome)
 {
-    needMoreHistories = (historySource == HistorySource::PathHash);
     updateOnRead = false;
     initUpperBoundState();
 }

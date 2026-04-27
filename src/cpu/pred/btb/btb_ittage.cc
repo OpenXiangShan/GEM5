@@ -31,7 +31,6 @@ maxHistLen(p.maxHistLen),
 numTablesToAlloc(p.numTablesToAlloc),
 ittageStats(this, p.numPredictors)
 {
-    this->needMoreHistories = p.needMoreHistories;
     DPRINTF(ITTAGE, "BTBITTAGE constructor numBr=%d\n", numBr);
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);

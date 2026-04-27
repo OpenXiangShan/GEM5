@@ -205,6 +205,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Update branch history
     void doUpdateHist(const bitset &history, int shamt, bool taken,
                       Addr pc, Addr target);
+    void recoverFoldedHist(const FetchTarget &entry);
 
     // Number of TAGE predictor tables
     const unsigned numPredictors;
@@ -231,13 +232,13 @@ class BTBTAGE : public TimedBaseBTBPredictor
     std::vector<unsigned> histLengths;
 
     // Folded history for tag calculation
-    std::vector<SelectableFoldedHist> tagFoldedHist;
+    std::vector<TageFoldedHist> tagFoldedHist;
 
     // Folded history for alternative tag calculation
-    std::vector<SelectableFoldedHist> altTagFoldedHist;
+    std::vector<TageFoldedHist> altTagFoldedHist;
 
     // Folded history for index calculation
-    std::vector<SelectableFoldedHist> indexFoldedHist;
+    std::vector<TageFoldedHist> indexFoldedHist;
 
     // Select whether BTBTAGE consumes PHR or GHR folded history.
     const bool usePathHistory;
@@ -432,9 +433,9 @@ public:
     typedef struct TageMeta
     {
         std::unordered_map<Addr, TagePrediction> preds;
-        std::vector<SelectableFoldedHist> tagFoldedHist;
-        std::vector<SelectableFoldedHist> altTagFoldedHist;
-        std::vector<SelectableFoldedHist> indexFoldedHist;
+        std::vector<TageFoldedHist> tagFoldedHist;
+        std::vector<TageFoldedHist> altTagFoldedHist;
+        std::vector<TageFoldedHist> indexFoldedHist;
         bitset history;     // for viewing
         TageMeta() {}
     } TageMeta;

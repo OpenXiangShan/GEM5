@@ -13,7 +13,7 @@ namespace btb_pred
 {
 
 uint64_t
-FoldedHistBase::fold(const boost::dynamic_bitset<> &ghr)
+FoldedHistBase::fold(const boost::dynamic_bitset<> &ghr) const
 {
     // Create ideal folded history from GHR
     uint64_t folded = 0;
@@ -45,7 +45,7 @@ FoldedHistBase::fold(const boost::dynamic_bitset<> &ghr)
  * Used during branch misprediction recovery.
  */
 void
-FoldedHistBase::recover(FoldedHistBase &other)
+FoldedHistBase::recover(const FoldedHistBase &other)
 {
     // Verify both histories have same configuration
     assert(foldedLen == other.foldedLen);
@@ -63,7 +63,7 @@ FoldedHistBase::recover(FoldedHistBase &other)
  * This method can be commonly used for checking both GHR and PHR.
  */
 void
-FoldedHistBase::check(const boost::dynamic_bitset<> &historyBitVec)
+FoldedHistBase::check(const boost::dynamic_bitset<> &historyBitVec) const
 {
     // Verify our folded history matches ideal
     auto expected = fold(historyBitVec);
@@ -230,69 +230,70 @@ PathFoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken
     }
 }
 
-SelectableFoldedHist::SelectableFoldedHist()
+TageFoldedHist::TageFoldedHist()
     : historyType(HistoryType::PATH),
-      storage(std::in_place_type<PathFoldedHist>, 1, 1, 1)
+      directionHist(1, 1, 1),
+      pathHist(1, 1, 1)
 {
 }
 
-SelectableFoldedHist::SelectableFoldedHist(int histLen, int foldedLen,
-                                           int maxShamt,
-                                           HistoryType historyType)
+TageFoldedHist::TageFoldedHist(int histLen, int foldedLen,
+                               int maxShamt,
+                               HistoryType historyType)
     : historyType(historyType),
-      storage(std::in_place_type<PathFoldedHist>, 1, 1, 1)
+      directionHist(histLen, foldedLen, maxShamt),
+      pathHist(histLen, foldedLen, maxShamt)
 {
-    switch (historyType) {
-      case HistoryType::PATH:
-        storage.emplace<PathFoldedHist>(histLen, foldedLen, maxShamt);
-        break;
-      case HistoryType::GLOBAL:
-        storage.emplace<DirectionFoldedHist>(histLen, foldedLen, maxShamt);
-        break;
-      default:
-        panic("SelectableFoldedHist only supports GLOBAL and PATH, got %d",
-              static_cast<int>(historyType));
+    if (historyType != HistoryType::GLOBAL &&
+        historyType != HistoryType::PATH) {
+        panic("TageFoldedHist only supports GLOBAL and PATH, got %d",
+            static_cast<int>(historyType));
     }
 }
 
 uint64_t
-SelectableFoldedHist::get() const
+TageFoldedHist::get() const
 {
-    return visit([](const auto &hist) { return hist.get(); });
+    return isPathBased() ? pathHist.get() : directionHist.get();
 }
 
 boost::dynamic_bitset<>
-SelectableFoldedHist::getAsBitset() const
+TageFoldedHist::getAsBitset() const
 {
-    return visit([](const auto &hist) { return hist.getAsBitset(); });
+    return isPathBased() ? pathHist.getAsBitset() :
+        directionHist.getAsBitset();
 }
 
 void
-SelectableFoldedHist::update(const boost::dynamic_bitset<> &history, int shamt,
-                             bool taken, Addr pc, Addr target)
+TageFoldedHist::update(const boost::dynamic_bitset<> &history, int shamt,
+                       bool taken, Addr pc, Addr target)
 {
-    visit([&](auto &hist) { hist.update(history, shamt, taken, pc, target); });
+    if (isPathBased()) {
+        pathHist.update(history, shamt, taken, pc, target);
+    } else {
+        directionHist.update(history, shamt, taken, pc, target);
+    }
 }
 
 void
-SelectableFoldedHist::recover(const SelectableFoldedHist &other)
+TageFoldedHist::recover(const TageFoldedHist &other)
 {
     assert(historyType == other.historyType);
-    visit([&](auto &hist) {
-        using HistType = std::decay_t<decltype(hist)>;
-        auto &otherHist =
-            const_cast<HistType &>(std::get<HistType>(other.storage));
-        hist.recover(otherHist);
-    });
+    if (isPathBased()) {
+        pathHist.recover(other.pathHist);
+    } else {
+        directionHist.recover(other.directionHist);
+    }
 }
 
 void
-SelectableFoldedHist::check(const boost::dynamic_bitset<> &history) const
+TageFoldedHist::check(const boost::dynamic_bitset<> &history) const
 {
-    visit([&](const auto &hist) {
-        auto &mutableHist = const_cast<std::decay_t<decltype(hist)> &>(hist);
-        mutableHist.check(history);
-    });
+    if (isPathBased()) {
+        pathHist.check(history);
+    } else {
+        directionHist.check(history);
+    }
 }
 
 }  // namespace btb_pred

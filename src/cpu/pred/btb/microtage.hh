@@ -134,15 +134,13 @@ class MicroTAGE : public TimedBaseBTBPredictor
 
 #ifdef UNIT_TEST
     // API compatibility wrappers for testing
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override
+    void specUpdateHist(const boost::dynamic_bitset<> &, FullBTBPrediction &) override
     {
-        specUpdatePHist(history, pred);
     }
 
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
-                     bool cond_taken) override
+    void recoverHist(const boost::dynamic_bitset<> &, const FetchTarget &, int,
+                     bool) override
     {
-        recoverPHist(history, entry, shamt, cond_taken);
     }
 #endif
 

@@ -57,7 +57,7 @@ hashBitset(const boost::dynamic_bitset<> &bits)
 }
 
 uint64_t
-hashFoldedHistVec(const std::vector<SelectableFoldedHist> &folded)
+hashFoldedHistVec(const std::vector<TageFoldedHist> &folded)
 {
     uint64_t seed = mixTraceHash(folded.size());
     for (size_t i = 0; i < folded.size(); ++i) {
@@ -111,7 +111,6 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
     maxHistLen = histLengths[numPredictors-1];
     numTablesToAlloc = 1;
     enableSC = false;
-    needMoreHistories = usePathHistory;
 #else
 // Constructor: Initialize TAGE predictor with given parameters
 BTBTAGE::BTBTAGE(const Params& p):
@@ -140,8 +139,6 @@ lastPredBankId(0),
 predBankValid(false),
 tageStats(this, p.numPredictors, p.numBanks)
 {
-    this->needMoreHistories = p.needMoreHistories && p.usePathHistory;
-
     // Warn if updateOnRead is disabled (bank simulation works better with it enabled)
     if (!p.updateOnRead) {
         warn("BTBTAGE: Bank simulation works better with updateOnRead=true");
@@ -1194,6 +1191,18 @@ BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredicti
     doUpdateHist(history, 2, taken, pc, target);
 }
 
+void
+BTBTAGE::recoverFoldedHist(const FetchTarget &entry)
+{
+    auto predMeta =
+        std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
+    for (int i = 0; i < numPredictors; i++) {
+        tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
+        altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
+        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+    }
+}
+
 /**
  * @brief Recovers branch history state after a misprediction
  * 
@@ -1215,13 +1224,7 @@ BTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
         return;
     }
 
-    std::shared_ptr<TageMeta> predMeta =
-        std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
-    for (int i = 0; i < numPredictors; i++) {
-        tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
-        altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
-        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
-    }
+    recoverFoldedHist(entry);
     doUpdateHist(history, shamt, cond_taken, 0, 0);
 }
 
@@ -1233,12 +1236,7 @@ BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         return;
     }
 
-    std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
-    for (int i = 0; i < numPredictors; i++) {
-        tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
-        altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
-        indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
-    }
+    recoverFoldedHist(entry);
     doUpdateHist(history, 2, cond_taken, entry.getControlPC(),
                  entry.getTakenTarget());
 }

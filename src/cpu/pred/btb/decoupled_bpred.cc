@@ -898,8 +898,8 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     for (int i = 0; i < numComponents; i++) {
         // use old s0History to update folded history, then use finalPred to update folded history
         components[i]->specUpdateHist(s0History, finalPred);
-        if(components[i]->needMoreHistories){
-            components[i]->specUpdatePHist(s0PHistory, finalPred);
+        components[i]->specUpdatePHist(s0PHistory, finalPred);
+        if (components[i]->needMoreHistories) {
             components[i]->specUpdateBwHist(s0BwHistory, finalPred);
             components[i]->specUpdateIHist(finalPred);
             components[i]->specUpdateLHist(s0LHistory, finalPred);
@@ -1002,8 +1002,8 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     // Recover component-specific history
     for (int i = 0; i < numComponents; ++i) {
         components[i]->recoverHist(s0History, target, real_shamt, real_taken);
-        if (components[i]->needMoreHistories){
-            components[i]->recoverPHist(s0PHistory, target, real_shamt, real_taken);
+        components[i]->recoverPHist(s0PHistory, target, real_shamt, real_taken);
+        if (components[i]->needMoreHistories) {
             components[i]->recoverBwHist(s0BwHistory, target, real_bw_shamt, real_bw_taken);
             components[i]->recoverIHist(target, real_bw_shamt, real_bw_taken);
             components[i]->recoverLHist(s0LHistory, target, real_shamt, real_taken);
