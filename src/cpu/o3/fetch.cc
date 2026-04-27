@@ -502,6 +502,7 @@ Fetch::resetStage()
         fetchQueue[tid].clear();
 
         priorityList.push_back(tid);
+        waitForVsetvl[tid] = false;
     }
 
     wroteToTimeBuffer = false;
@@ -1329,14 +1330,12 @@ Fetch::initializeTickState()
         // for each thread.
         bool updated_status = checkSignalsAndUpdate(tid);
         status_change =  status_change || updated_status;
+        if (fromCommit->commitInfo[tid].emptyROB) {
+            waitForVsetvl[tid] = false;
+        }
     }
 
     DPRINTF(Fetch, "Running stage.\n");
-
-    if (fromCommit->commitInfo[0].emptyROB) {
-        waitForVsetvl = false;
-    }
-
     return status_change;
 }
 
@@ -1391,22 +1390,32 @@ Fetch::selectUnstalledThread()
     // if (numThreads == 1) {
     //     return 0;
     // }
+    ThreadID selected = -1;
+    bool all_stalled = true;
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (!stallSig->blockFetch[tid]) {
+        if (!stallSig->blockFetch[tid] &&fetchQueue[tid].size() > 0) {
             lsqCounter->setCounter(tid, fromIEW->iewInfo[tid].ldstqCount);
             iqCounter->setCounter(tid, fromIEW->iewInfo[tid].iqCount);
             robCounter->setCounter(tid, fromIEW->iewInfo[tid].robCount);
+            all_stalled = false;
            
-        } else {
+        }else {
             lsqCounter->setCounter(tid, UINT64_MAX);
             iqCounter->setCounter(tid, UINT64_MAX);
             robCounter->setCounter(tid, UINT64_MAX);
             
         }
+
+        if(all_stalled)
+        {
+            selected = -1;
+        }else{
+            selected = decodeScheduler->getThread();
+        }
         DPRINTF(Fetch, "lsqCounter->setCounter: %d iqCounter->setCounter: %d robCounter->setCounter: %d\n",fromIEW->iewInfo[tid].ldstqCount,fromIEW->iewInfo[tid].iqCount,fromIEW->iewInfo[tid].robCount);
     }
 
-    ThreadID selected = decodeScheduler->getThread();
+     
     return selected;
 }
 
@@ -1450,6 +1459,12 @@ Fetch::sendInstructionsToDecode()
     }
 
     ThreadID tid =selectUnstalledThread();
+
+    if(tid == -1)
+    {
+        DPRINTF(Fetch, "All threads are stalled, no thread selected.\n");
+        return;
+    }
     DPRINTF(Fetch, "select Unstalled [tid:%i]\n",tid);
 
     // fetch totally stalled
@@ -1997,9 +2012,9 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Special handling for RISC-V vector configuration instructions.
     if (staticInst->isVectorConfig()) {
-        waitForVsetvl = dec_ptr->stall();
-        DPRINTF(Fetch, "[tid:%i] Vector config instruction, waitForVsetvl=%d\n",
-                tid, waitForVsetvl);
+        waitForVsetvl[tid] = dec_ptr->stall();
+        DPRINTF(Fetch, "[tid:%i] Vector config instruction, waitForVsetvl[tid]=%d\n",
+                tid, waitForVsetvl[tid]);
     }
 
     instruction->setVersion(localSquashVer[tid]);
@@ -2076,7 +2091,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     // For decoupled frontend (including trace mode), check FTQ availability
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !ftqEmpty(tid) && !waitForVsetvl) {
+           !predictedBranch && !ftqEmpty(tid) && !waitForVsetvl[tid]) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);

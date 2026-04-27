@@ -359,7 +359,7 @@ class LSQUnit
     uint32_t countStoreBufferOffloadableEntries(uint32_t max_entries) const;
 
     /** Writes back stores. */
-    void offloadToStoreBuffer(uint32_t max_entries);
+    void offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_fail);
 
     bool insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
                            uint64_t size, const std::vector<bool>& mask,
