@@ -9,7 +9,7 @@ This script helps answer:
 Typical usage:
   python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
     --outdir debug/sc_table_probe \
-    --profiles off,l_only,g_only,i_only,full \
+    --profiles off,bw_only,l_only,g_only,i_only,p_only,bias_only,full \
     --max-workers 4
 """
 
@@ -27,7 +27,15 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+def find_repo_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "configs" / "example" / "kmhv3.py").exists() and (parent / "src").exists():
+            return parent
+    raise RuntimeError(f"Cannot locate repo root from {here}")
+
+
+REPO_ROOT = find_repo_root()
 DEFAULT_GEM5 = REPO_ROOT / "build" / "RISCV" / "gem5.opt"
 DEFAULT_CONFIG = REPO_ROOT / "configs" / "example" / "kmhv3.py"
 DEFAULT_CPT_DIR = Path("/nfs/home/yanyue/tools/nexus-am/tests/frontendtest/mgsc_test/build")
@@ -86,11 +94,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--outdir", default=str(REPO_ROOT / "debug" / "sc_table_probe"))
     parser.add_argument(
         "--profiles",
-        default="off,l_only,g_only,i_only,full",
+        default="off,bw_only,l_only,g_only,i_only,p_only,bias_only,full",
         help="Comma separated profile names",
     )
     parser.add_argument("--tests", default="", help="Comma separated test names, empty means all")
     parser.add_argument("--extra-param", action="append", default=[])
+    parser.add_argument("--disable-difftest", action="store_true", default=True)
+    parser.add_argument("--enable-difftest", action="store_false", dest="disable_difftest")
     parser.add_argument("--max-workers", type=int, default=1)
     parser.add_argument("--skip-run", action="store_true", help="Reuse existing outdir results")
     parser.add_argument("--copy-cpt-to-tmp", action="store_true", default=True)
@@ -138,6 +148,20 @@ def builtin_profiles() -> Dict[str, Profile]:
             ),
             focus_table="l",
         ),
+        "bw_only": Profile(
+            name="bw_only",
+            params=(
+                "system.cpu[0].branchPred.mgsc.enabled=True",
+                "system.cpu[0].branchPred.mgsc.enableBwTable=True",
+                "system.cpu[0].branchPred.mgsc.enableLTable=False",
+                "system.cpu[0].branchPred.mgsc.enableITable=False",
+                "system.cpu[0].branchPred.mgsc.enableGTable=False",
+                "system.cpu[0].branchPred.mgsc.enablePTable=False",
+                "system.cpu[0].branchPred.mgsc.enableBiasTable=False",
+                "system.cpu[0].branchPred.microtage.enabled=False",
+            ),
+            focus_table="bw",
+        ),
         "g_only": Profile(
             name="g_only",
             params=(
@@ -165,6 +189,71 @@ def builtin_profiles() -> Dict[str, Profile]:
                 "system.cpu[0].branchPred.microtage.enabled=False",
             ),
             focus_table="i",
+        ),
+        "p_only": Profile(
+            name="p_only",
+            params=(
+                "system.cpu[0].branchPred.mgsc.enabled=True",
+                "system.cpu[0].branchPred.mgsc.enableBwTable=False",
+                "system.cpu[0].branchPred.mgsc.enableLTable=False",
+                "system.cpu[0].branchPred.mgsc.enableITable=False",
+                "system.cpu[0].branchPred.mgsc.enableGTable=False",
+                "system.cpu[0].branchPred.mgsc.enablePTable=True",
+                "system.cpu[0].branchPred.mgsc.enableBiasTable=False",
+                "system.cpu[0].branchPred.microtage.enabled=False",
+            ),
+            focus_table="p",
+        ),
+        "bias_only": Profile(
+            name="bias_only",
+            params=(
+                "system.cpu[0].branchPred.mgsc.enabled=True",
+                "system.cpu[0].branchPred.mgsc.enableBwTable=False",
+                "system.cpu[0].branchPred.mgsc.enableLTable=False",
+                "system.cpu[0].branchPred.mgsc.enableITable=False",
+                "system.cpu[0].branchPred.mgsc.enableGTable=False",
+                "system.cpu[0].branchPred.mgsc.enablePTable=False",
+                "system.cpu[0].branchPred.mgsc.enableBiasTable=True",
+                "system.cpu[0].branchPred.microtage.enabled=False",
+            ),
+            focus_table="bias",
+        ),
+        "i_p_only": Profile(
+            name="i_p_only",
+            params=(
+                "system.cpu[0].branchPred.mgsc.enabled=True",
+                "system.cpu[0].branchPred.mgsc.enableBwTable=False",
+                "system.cpu[0].branchPred.mgsc.enableLTable=False",
+                "system.cpu[0].branchPred.mgsc.enableITable=True",
+                "system.cpu[0].branchPred.mgsc.enableGTable=False",
+                "system.cpu[0].branchPred.mgsc.enablePTable=True",
+                "system.cpu[0].branchPred.mgsc.enableBiasTable=False",
+                "system.cpu[0].branchPred.microtage.enabled=False",
+            ),
+            focus_table=None,
+        ),
+        "standalone_lowconf_nt_bias": Profile(
+            name="standalone_lowconf_nt_bias",
+            params=(
+                "system.cpu[0].branchPred.mgsc.enabled=True",
+                "system.cpu[0].branchPred.mgsc.forceUseSC=True",
+                "system.cpu[0].branchPred.mgsc.allowMissingTageInfo=True",
+                "system.cpu[0].branchPred.mgsc.defaultMissingTagePredTaken=False",
+                "system.cpu[0].branchPred.mgsc.defaultMissingTageMainTaken=False",
+                "system.cpu[0].branchPred.mgsc.defaultMissingTagePredConfHigh=False",
+                "system.cpu[0].branchPred.mgsc.defaultMissingTagePredConfMid=False",
+                "system.cpu[0].branchPred.mgsc.defaultMissingTagePredConfLow=True",
+                "system.cpu[0].branchPred.mgsc.defaultMissingTagePredAltDiff=False",
+                "system.cpu[0].branchPred.mgsc.enableBwTable=False",
+                "system.cpu[0].branchPred.mgsc.enableLTable=False",
+                "system.cpu[0].branchPred.mgsc.enableITable=True",
+                "system.cpu[0].branchPred.mgsc.enableGTable=False",
+                "system.cpu[0].branchPred.mgsc.enablePTable=True",
+                "system.cpu[0].branchPred.mgsc.enableBiasTable=True",
+                "system.cpu[0].branchPred.microtage.enabled=False",
+                "system.cpu[0].branchPred.tage.enabled=False",
+            ),
+            focus_table=None,
         ),
     }
 
@@ -354,6 +443,8 @@ def run_one(
         str(Path(args.config)),
         "--raw-cpt",
     ]
+    if args.disable_difftest:
+        cmd.append("--disable-difftest")
     cpt_path = maybe_copy_to_tmp(case, run_dir) if args.copy_cpt_to_tmp else case.bin_path
     cmd.extend(["--generic-rv-cpt", str(cpt_path)])
     if profile.enable_db:
@@ -409,6 +500,53 @@ def build_reports(results: List[RunResult], profiles: List[Profile], outdir: Pat
 
     for r in results:
         base = baseline.get(r.case.name)
+        base_ok = base is not None and base.ok
+        row: Dict[str, object] = {
+            "case": r.case.name,
+            "profile": r.profile.name,
+            "ok": int(r.ok),
+            "error": r.error,
+            "source": str(r.case.src_path) if r.case.src_path else "",
+        }
+
+        if not base_ok:
+            row.update(
+                {
+                    "off_condMiss": "",
+                    "on_condMiss": "",
+                    "condMiss_delta": "",
+                    "off_condMissRate": "",
+                    "on_condMissRate": "",
+                    "condMissRate_delta_pct": "",
+                    "off_branchMisp": "",
+                    "on_branchMisp": "",
+                    "mgsc_fix_use": "",
+                    "mgsc_hurt_use": "",
+                    "mgsc_net_use": "",
+                }
+            )
+            summary_rows.append(row)
+            continue
+
+        if not r.ok:
+            row.update(
+                {
+                    "off_condMiss": base.stats.get("system.cpu.branchPred.condMiss", 0.0),
+                    "on_condMiss": "",
+                    "condMiss_delta": "",
+                    "off_condMissRate": "",
+                    "on_condMissRate": "",
+                    "condMissRate_delta_pct": "",
+                    "off_branchMisp": base.stats.get("system.cpu.commit.branchMispredicts", 0.0),
+                    "on_branchMisp": "",
+                    "mgsc_fix_use": "",
+                    "mgsc_hurt_use": "",
+                    "mgsc_net_use": "",
+                }
+            )
+            summary_rows.append(row)
+            continue
+
         off_cond_miss = base.stats.get("system.cpu.branchPred.condMiss", 0.0) if base else 0.0
         on_cond_miss = r.stats.get("system.cpu.branchPred.condMiss", 0.0)
         off_cond_num = base.stats.get("system.cpu.branchPred.condNum", 0.0) if base else 0.0
@@ -416,27 +554,24 @@ def build_reports(results: List[RunResult], profiles: List[Profile], outdir: Pat
         off_rate = off_cond_miss / off_cond_num if off_cond_num else 0.0
         on_rate = on_cond_miss / on_cond_num if on_cond_num else 0.0
 
-        summary_rows.append(
+        row.update(
             {
-                "case": r.case.name,
-                "profile": r.profile.name,
-                "ok": int(r.ok),
                 "off_condMiss": off_cond_miss,
                 "on_condMiss": on_cond_miss,
                 "condMiss_delta": on_cond_miss - off_cond_miss,
                 "off_condMissRate": off_rate,
                 "on_condMissRate": on_rate,
                 "condMissRate_delta_pct": pct(off_rate, on_rate),
-                "off_branchMisp": base.stats.get("system.cpu.commit.branchMispredicts", 0.0) if base else 0.0,
+                "off_branchMisp": base.stats.get("system.cpu.commit.branchMispredicts", 0.0),
                 "on_branchMisp": r.stats.get("system.cpu.commit.branchMispredicts", 0.0),
                 "mgsc_fix_use": r.db_overall.get("fix_use", 0.0),
                 "mgsc_hurt_use": r.db_overall.get("hurt_use", 0.0),
                 "mgsc_net_use": r.db_overall.get("net_use", 0.0),
-                "source": str(r.case.src_path) if r.case.src_path else "",
             }
         )
+        summary_rows.append(row)
 
-        if base is None or r.profile.name == "off":
+        if r.profile.name == "off":
             continue
         pcs = set(base.top.keys()) | set(r.top.keys())
         for pc in sorted(pcs):
@@ -514,14 +649,20 @@ def render_markdown(
 
     lines.append("## Overall (sorted by condMiss reduction)")
     lines.append("")
-    lines.append("| case | profile | off condMiss | on condMiss | delta | off rate | on rate | delta% | net_use |")
-    lines.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
-    sorted_rows = sorted(summary_rows, key=lambda x: float(x.get("condMiss_delta", 0.0)))
+    lines.append("| case | profile | status | off condMiss | on condMiss | delta | off rate | on rate | delta% | net_use |")
+    lines.append("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+    ok_rows = [r for r in summary_rows if r["ok"]]
+    fail_rows = [r for r in summary_rows if not r["ok"]]
+    sorted_rows = sorted(ok_rows, key=lambda x: float(x.get("condMiss_delta", 0.0)))
     for r in sorted_rows[:80]:
         lines.append(
-            f"| {r['case']} | {r['profile']} | {r['off_condMiss']:.0f} | {r['on_condMiss']:.0f} | "
+            f"| {r['case']} | {r['profile']} | OK | {r['off_condMiss']:.0f} | {r['on_condMiss']:.0f} | "
             f"{r['condMiss_delta']:.0f} | {r['off_condMissRate']:.4f} | {r['on_condMissRate']:.4f} | "
             f"{r['condMissRate_delta_pct']:+.2f}% | {r['mgsc_net_use']:.0f} |"
+        )
+    for r in fail_rows[:40]:
+        lines.append(
+            f"| {r['case']} | {r['profile']} | FAIL | {r['off_condMiss']} |  |  |  |  |  |  |"
         )
     lines.append("")
 

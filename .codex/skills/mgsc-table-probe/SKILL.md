@@ -19,7 +19,7 @@ description: 分析香山 MGSC/SC 在前端微测试上的效果。适用于以�
 ```bash
 python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
   --outdir debug/sc_table_probe \
-  --profiles off,l_only,g_only,i_only,full \
+  --profiles off,bw_only,l_only,g_only,i_only,p_only,bias_only,full \
   --max-workers 4
 ```
 
@@ -28,7 +28,7 @@ python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
 python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
   --outdir debug/sc_table_probe_smoke \
   --tests fp_sc_alias_pair \
-  --profiles off,g_only,i_only \
+  --profiles off,bw_only,g_only,i_only,p_only,bias_only \
   --max-workers 1
 ```
 
@@ -36,7 +36,7 @@ python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
 ```bash
 python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
   --outdir debug/sc_table_probe \
-  --profiles off,l_only,g_only,i_only,full \
+  --profiles off,bw_only,l_only,g_only,i_only,p_only,bias_only,full \
   --skip-run
 ```
 
@@ -69,9 +69,11 @@ python3 .codex/skills/mgsc-table-probe/scripts/mgsc_table_probe.py \
 
 ## 关键参数
 
-- `--profiles`：从 `off,l_only,g_only,i_only,full` 中选择。
+- `--profiles`：从 `off,bw_only,l_only,g_only,i_only,p_only,bias_only,i_p_only,standalone_lowconf_nt_bias,full` 中选择。
 - `--tests`：逗号分隔的测试名（不带后缀），例如 `fp_sc_alias_pair,imli_iter`。
 - `--extra-param`：透传额外的 gem5 `--param`。
+- `--disable-difftest`：默认开启，避免前端微测试被不必要的 difftest 拖慢。
+- `--enable-difftest`：如确实需要参考对比，再显式打开。
 - `--copy-cpt-to-tmp`：避免路径访问问题。
 - `--skip-run`：仅生成报告，不执行运行。
 
