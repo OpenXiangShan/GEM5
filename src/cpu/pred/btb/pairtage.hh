@@ -161,12 +161,60 @@ class PairTAGE : public TimedBaseBTBPredictor
     std::vector<std::vector<std::vector<TageEntry>>> &getTageTable() { return tageTable; }
 
   private:
+#ifndef UNIT_TEST
+    struct PairTageStats : public statistics::Group
+    {
+        statistics::Scalar predCalls;
+        statistics::Scalar predOddPhaseSkipped;
+        statistics::Scalar predHit;
+        statistics::Scalar predMiss;
+        statistics::Scalar predSecondBlockAvailable;
+        statistics::Scalar refreshCalls;
+        statistics::Scalar refreshOddPhaseSkipped;
+        statistics::Scalar refreshHit;
+        statistics::Scalar refreshMiss;
+        statistics::Scalar trainCalls;
+        statistics::Scalar trainOddPhaseSkipped;
+        statistics::Scalar trainNoMeta;
+        statistics::Scalar trainProviderHit;
+        statistics::Scalar trainProviderMiss;
+        statistics::Scalar trainFirstBlockValid;
+        statistics::Scalar trainFirstBlockInvalid;
+        statistics::Scalar trainSecondBlockValid;
+        statistics::Scalar clearEntryOnInvalidTrain;
+        statistics::Scalar updateExistingProvider;
+        statistics::Scalar allocIntoInvalidSlot;
+        statistics::Scalar allocOverwriteValid;
+        statistics::Scalar allocOverwriteValidSecondBlock;
+        statistics::Scalar allocFailureNoCandidate;
+        statistics::Scalar usefulReset;
+        statistics::Scalar installSecondBlock;
+        statistics::Scalar clearSecondBlock;
+        statistics::Scalar liveValidEntries;
+        statistics::Scalar liveSecondBlockEntries;
+        statistics::Vector predTableHits;
+        statistics::Vector trainProviderTableHits;
+        statistics::Vector allocTableInstalls;
+        statistics::Vector tableWrites;
+        statistics::Vector tableOverwrites;
+        statistics::Vector liveValidEntriesPerTable;
+        statistics::Vector liveSecondBlockEntriesPerTable;
+        statistics::Formula liveOccupancyRate;
+        statistics::Formula liveSecondBlockEntryRate;
+
+        PairTageStats(statistics::Group *parent, unsigned numPredictors,
+                      unsigned numWays, const std::vector<unsigned> &tableSizes);
+    };
+#endif
+
     TageTableInfo lookupEntry(Addr startPC) const;
     TageTableInfo lookupEntry(Addr startPC, const TageMeta &predMeta) const;
     BTBEntry buildBTBEntry(const PairBlockInfo &block) const;
     void fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const;
     PairBlockInfo buildTrainingBlock(const FetchTarget &entry) const;
     PairBlockInfo buildTrainingBlock(const FullBTBPrediction &pred) const;
+    void noteEntryRewrite(unsigned table, const TageEntry &oldEntry,
+                          const TageEntry &newEntry);
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist) const;
     Addr getTageIndex(Addr pc, int table) const;
     Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0) const;
@@ -193,6 +241,9 @@ class PairTAGE : public TimedBaseBTBPredictor
     std::shared_ptr<TageMeta> meta;
     PairBlockInfo secondPredBlock;
     PairPhase predictionPhase{PairPhase::Even};
+#ifndef UNIT_TEST
+    PairTageStats pairTageStats;
+#endif
 };
 
 #ifdef UNIT_TEST

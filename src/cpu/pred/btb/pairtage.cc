@@ -1,6 +1,8 @@
 #include "cpu/pred/btb/pairtage.hh"
 
 #include <cassert>
+#include <numeric>
+#include <string>
 
 #include "base/intmath.hh"
 
@@ -104,7 +106,8 @@ PairTAGE::PairTAGE(const Params &p)
       histLengths(p.histLengths),
       maxHistLen(p.maxHistLen),
       numWays(p.numWays),
-      maxBranchPositions(p.maxBranchPositions)
+      maxBranchPositions(p.maxBranchPositions),
+      pairTageStats(this, numPredictors, numWays, tableSizes)
 {
     needMoreHistories = p.needMoreHistories;
 
@@ -132,6 +135,114 @@ PairTAGE::PairTAGE(const Params &p)
 
 PairTAGE::~PairTAGE() = default;
 
+#ifndef UNIT_TEST
+PairTAGE::PairTageStats::PairTageStats(
+    statistics::Group *parent, unsigned numPredictors, unsigned numWays,
+    const std::vector<unsigned> &tableSizes)
+    : statistics::Group(parent),
+      ADD_STAT(predCalls, statistics::units::Count::get(),
+               "prediction lookups issued to PairTAGE"),
+      ADD_STAT(predOddPhaseSkipped, statistics::units::Count::get(),
+               "prediction lookups skipped because PairTAGE phase is Odd"),
+      ADD_STAT(predHit, statistics::units::Count::get(),
+               "prediction lookups that hit a valid PairTAGE first block"),
+      ADD_STAT(predMiss, statistics::units::Count::get(),
+               "prediction lookups that missed in PairTAGE"),
+      ADD_STAT(predSecondBlockAvailable, statistics::units::Count::get(),
+               "prediction hits that also carried a valid second block"),
+      ADD_STAT(refreshCalls, statistics::units::Count::get(),
+               "second-boundary meta refresh lookups issued to PairTAGE"),
+      ADD_STAT(refreshOddPhaseSkipped, statistics::units::Count::get(),
+               "meta refresh lookups skipped because PairTAGE phase is Odd"),
+      ADD_STAT(refreshHit, statistics::units::Count::get(),
+               "meta refresh lookups that hit a valid PairTAGE first block"),
+      ADD_STAT(refreshMiss, statistics::units::Count::get(),
+               "meta refresh lookups that missed in PairTAGE"),
+      ADD_STAT(trainCalls, statistics::units::Count::get(),
+               "training calls issued to PairTAGE"),
+      ADD_STAT(trainOddPhaseSkipped, statistics::units::Count::get(),
+               "training calls skipped because the FTQ entry phase is Odd"),
+      ADD_STAT(trainNoMeta, statistics::units::Count::get(),
+               "training calls skipped because prediction meta is unavailable"),
+      ADD_STAT(trainProviderHit, statistics::units::Count::get(),
+               "training calls whose provider lookup hit an existing entry"),
+      ADD_STAT(trainProviderMiss, statistics::units::Count::get(),
+               "training calls whose provider lookup missed and required allocation"),
+      ADD_STAT(trainFirstBlockValid, statistics::units::Count::get(),
+               "training calls with a valid first block to install"),
+      ADD_STAT(trainFirstBlockInvalid, statistics::units::Count::get(),
+               "training calls whose first block could not be formed"),
+      ADD_STAT(trainSecondBlockValid, statistics::units::Count::get(),
+               "training calls with a valid second block to install"),
+      ADD_STAT(clearEntryOnInvalidTrain, statistics::units::Count::get(),
+               "existing provider entries cleared because no valid first block was trainable"),
+      ADD_STAT(updateExistingProvider, statistics::units::Count::get(),
+               "writes that updated an existing provider entry in place"),
+      ADD_STAT(allocIntoInvalidSlot, statistics::units::Count::get(),
+               "allocations that found an invalid way"),
+      ADD_STAT(allocOverwriteValid, statistics::units::Count::get(),
+               "allocations that had to overwrite a valid entry"),
+      ADD_STAT(allocOverwriteValidSecondBlock, statistics::units::Count::get(),
+               "allocations that overwrote a valid entry carrying a second block"),
+      ADD_STAT(allocFailureNoCandidate, statistics::units::Count::get(),
+               "allocations that could not find a victim in higher tables"),
+      ADD_STAT(usefulReset, statistics::units::Count::get(),
+               "global useful-bit resets triggered by allocation pressure"),
+      ADD_STAT(installSecondBlock, statistics::units::Count::get(),
+               "writes that installed a second block into the table"),
+      ADD_STAT(clearSecondBlock, statistics::units::Count::get(),
+               "writes that removed a previously stored second block"),
+      ADD_STAT(liveValidEntries, statistics::units::Count::get(),
+               "current number of valid PairTAGE entries"),
+      ADD_STAT(liveSecondBlockEntries, statistics::units::Count::get(),
+               "current number of PairTAGE entries carrying a valid second block"),
+      ADD_STAT(predTableHits, statistics::units::Count::get(),
+               "prediction hits per PairTAGE table"),
+      ADD_STAT(trainProviderTableHits, statistics::units::Count::get(),
+               "provider hits per PairTAGE table during training"),
+      ADD_STAT(allocTableInstalls, statistics::units::Count::get(),
+               "new allocations installed per PairTAGE table"),
+      ADD_STAT(tableWrites, statistics::units::Count::get(),
+               "writes per PairTAGE table"),
+      ADD_STAT(tableOverwrites, statistics::units::Count::get(),
+               "valid-entry overwrites per PairTAGE table"),
+      ADD_STAT(liveValidEntriesPerTable, statistics::units::Count::get(),
+               "current valid entries per PairTAGE table"),
+      ADD_STAT(liveSecondBlockEntriesPerTable, statistics::units::Count::get(),
+               "current second-block-carrying entries per PairTAGE table"),
+      ADD_STAT(liveOccupancyRate, statistics::units::Ratio::get(),
+               "current live PairTAGE occupancy ratio"),
+      ADD_STAT(liveSecondBlockEntryRate, statistics::units::Ratio::get(),
+               "current ratio of second-block-carrying entries over all PairTAGE slots")
+{
+    const auto totalTableSlots =
+        std::accumulate(tableSizes.begin(), tableSizes.end(), uint64_t(0)) * numWays;
+
+    predTableHits.init(numPredictors);
+    trainProviderTableHits.init(numPredictors);
+    allocTableInstalls.init(numPredictors);
+    tableWrites.init(numPredictors);
+    tableOverwrites.init(numPredictors);
+    liveValidEntriesPerTable.init(numPredictors);
+    liveSecondBlockEntriesPerTable.init(numPredictors);
+
+    for (unsigned i = 0; i < numPredictors; ++i) {
+        const auto tableName = "T" + std::to_string(i);
+        predTableHits.subname(i, tableName);
+        trainProviderTableHits.subname(i, tableName);
+        allocTableInstalls.subname(i, tableName);
+        tableWrites.subname(i, tableName);
+        tableOverwrites.subname(i, tableName);
+        liveValidEntriesPerTable.subname(i, tableName);
+        liveSecondBlockEntriesPerTable.subname(i, tableName);
+    }
+
+    liveOccupancyRate = liveValidEntries / statistics::constant(totalTableSlots);
+    liveSecondBlockEntryRate =
+        liveSecondBlockEntries / statistics::constant(totalTableSlots);
+}
+#endif
+
 void
 PairTAGE::tickStart()
 {
@@ -158,6 +269,9 @@ void
 PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBTBPrediction> &stagePreds)
 {
     secondPredBlock.clear();
+#ifndef UNIT_TEST
+    pairTageStats.predCalls++;
+#endif
 
     meta = std::make_shared<TageMeta>();
     meta->tagFoldedHist = tagFoldedHist;
@@ -172,19 +286,34 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
     meta->predictedSecondBlock.clear();
 
     if (predictionPhase == PairPhase::Odd) {
+#ifndef UNIT_TEST
+        pairTageStats.predOddPhaseSkipped++;
+#endif
         return;
     }
 
     auto tableInfo = lookupEntry(startAddr);
     if (!tableInfo.found) {
+#ifndef UNIT_TEST
+        pairTageStats.predMiss++;
+#endif
         return;
     }
+#ifndef UNIT_TEST
+    pairTageStats.predHit++;
+    pairTageStats.predTableHits[tableInfo.table]++;
+#endif
 
     meta->firstBlockValid = tableInfo.entry.firstBlock().valid;
     meta->secondBlockValid = tableInfo.entry.secondBlock().valid;
     meta->predictedFirstBlock = tableInfo.entry.firstBlock();
     meta->predictedSecondBlock = tableInfo.entry.secondBlock();
     secondPredBlock = tableInfo.entry.secondBlock();
+#ifndef UNIT_TEST
+    if (tableInfo.entry.secondBlock().valid) {
+        pairTageStats.predSecondBlockAvailable++;
+    }
+#endif
 
     if (!tableInfo.entry.firstBlock().valid) {
         return;
@@ -208,6 +337,9 @@ PairTAGE::refreshPredictionMeta(Addr startAddr,
                                 FullBTBPrediction &pred)
 {
     (void)pred;
+#ifndef UNIT_TEST
+    pairTageStats.refreshCalls++;
+#endif
 
     meta = std::make_shared<TageMeta>();
     meta->tagFoldedHist = tagFoldedHist;
@@ -222,13 +354,22 @@ PairTAGE::refreshPredictionMeta(Addr startAddr,
     meta->predictedSecondBlock.clear();
 
     if (predictionPhase == PairPhase::Odd) {
+#ifndef UNIT_TEST
+        pairTageStats.refreshOddPhaseSkipped++;
+#endif
         return;
     }
 
     auto tableInfo = lookupEntry(startAddr);
     if (!tableInfo.found) {
+#ifndef UNIT_TEST
+        pairTageStats.refreshMiss++;
+#endif
         return;
     }
+#ifndef UNIT_TEST
+    pairTageStats.refreshHit++;
+#endif
 
     meta->firstBlockValid = tableInfo.entry.firstBlock().valid;
     meta->secondBlockValid = tableInfo.entry.secondBlock().valid;
@@ -240,6 +381,37 @@ PairTAGE::PairBlockInfo
 PairTAGE::getSecondPredBlock() const
 {
     return secondPredBlock;
+}
+
+void
+PairTAGE::noteEntryRewrite(unsigned table, const TageEntry &oldEntry,
+                           const TageEntry &newEntry)
+{
+#ifdef UNIT_TEST
+    (void)table;
+    (void)oldEntry;
+    (void)newEntry;
+#else
+    if (!oldEntry.valid && newEntry.valid) {
+        pairTageStats.liveValidEntries++;
+        pairTageStats.liveValidEntriesPerTable[table]++;
+    } else if (oldEntry.valid && !newEntry.valid) {
+        pairTageStats.liveValidEntries--;
+        pairTageStats.liveValidEntriesPerTable[table]--;
+    }
+
+    const bool oldHasSecond = oldEntry.hasSecondBlock();
+    const bool newHasSecond = newEntry.hasSecondBlock();
+    if (!oldHasSecond && newHasSecond) {
+        pairTageStats.liveSecondBlockEntries++;
+        pairTageStats.liveSecondBlockEntriesPerTable[table]++;
+        pairTageStats.installSecondBlock++;
+    } else if (oldHasSecond && !newHasSecond) {
+        pairTageStats.liveSecondBlockEntries--;
+        pairTageStats.liveSecondBlockEntriesPerTable[table]--;
+        pairTageStats.clearSecondBlock++;
+    }
+#endif
 }
 
 void
@@ -446,13 +618,22 @@ void
 PairTAGE::trainFromActualPred(const FetchTarget &entry,
                               const FullBTBPrediction *secondPred)
 {
+#ifndef UNIT_TEST
+    pairTageStats.trainCalls++;
+#endif
     if (entry.pairPhase != PairPhase::Even) {
+#ifndef UNIT_TEST
+        pairTageStats.trainOddPhaseSkipped++;
+#endif
         return;
     }
 
     auto predMeta = std::static_pointer_cast<TageMeta>(
         entry.predMetas[getComponentIdx()]);
     if (!predMeta) {
+#ifndef UNIT_TEST
+        pairTageStats.trainNoMeta++;
+#endif
         return;
     }
 
@@ -460,13 +641,36 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
     auto trainedBlock = buildTrainingBlock(entry);
     auto trainedSecondBlock = secondPred ? buildTrainingBlock(*secondPred)
                                          : PairBlockInfo{};
+#ifndef UNIT_TEST
+    if (provider.found) {
+        pairTageStats.trainProviderHit++;
+        pairTageStats.trainProviderTableHits[provider.table]++;
+    } else {
+        pairTageStats.trainProviderMiss++;
+    }
+#endif
 
     if (!trainedBlock.valid) {
+#ifndef UNIT_TEST
+        pairTageStats.trainFirstBlockInvalid++;
+#endif
         if (provider.found) {
-            tageTable[provider.table][provider.index][provider.way] = TageEntry{};
+            auto &providerEntry =
+                tageTable[provider.table][provider.index][provider.way];
+#ifndef UNIT_TEST
+            pairTageStats.clearEntryOnInvalidTrain++;
+            noteEntryRewrite(provider.table, providerEntry, TageEntry{});
+#endif
+            providerEntry = TageEntry{};
         }
         return;
     }
+#ifndef UNIT_TEST
+    pairTageStats.trainFirstBlockValid++;
+    if (trainedSecondBlock.valid) {
+        pairTageStats.trainSecondBlockValid++;
+    }
+#endif
 
     unsigned table = provider.found ? provider.table : 0;
     Addr index = provider.found ? provider.index :
@@ -484,20 +688,40 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
     }
 
     auto &trainedEntry = tageTable[table][index][way];
-    trainedEntry = TageEntry{};
-    trainedEntry.valid = true;
-    trainedEntry.tag = getTageTag(entry.startPC, table,
+    auto oldEntry = trainedEntry;
+    TageEntry newEntry;
+    newEntry.valid = true;
+    newEntry.tag = getTageTag(entry.startPC, table,
         predMeta->tagFoldedHist[table].get(),
         predMeta->altTagFoldedHist[table].get(),
         getBranchIndexInBlock(trainedBlock.branchPC, entry.startPC));
-    trainedEntry.counter = trainedBlock.taken ? 0 : -1;
-    trainedEntry.useful = provider.found ? provider.entry.useful : false;
-    trainedEntry.setBlock(0, trainedBlock);
+    newEntry.counter = trainedBlock.taken ? 0 : -1;
+    newEntry.useful = provider.found ? provider.entry.useful : false;
+    newEntry.setBlock(0, trainedBlock);
     if (trainedSecondBlock.valid) {
-        trainedEntry.setBlock(1, trainedSecondBlock);
+        newEntry.setBlock(1, trainedSecondBlock);
     } else {
-        trainedEntry.clearBlock(1);
+        newEntry.clearBlock(1);
     }
+#ifndef UNIT_TEST
+    pairTageStats.tableWrites[table]++;
+    if (provider.found) {
+        pairTageStats.updateExistingProvider++;
+    } else {
+        pairTageStats.allocTableInstalls[table]++;
+        if (!oldEntry.valid) {
+            pairTageStats.allocIntoInvalidSlot++;
+        } else {
+            pairTageStats.allocOverwriteValid++;
+            pairTageStats.tableOverwrites[table]++;
+            if (oldEntry.hasSecondBlock()) {
+                pairTageStats.allocOverwriteValidSecondBlock++;
+            }
+        }
+    }
+    noteEntryRewrite(table, oldEntry, newEntry);
+#endif
+    trainedEntry = newEntry;
 }
 
 Addr

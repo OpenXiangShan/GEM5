@@ -506,7 +506,69 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(s3PredWrongMbtb, statistics::units::Count::get(), "S3pred wrong blame mbtb "),
     ADD_STAT(s3PredWrongTage, statistics::units::Count::get(), "S3pred wrong blame tage "),
     ADD_STAT(s3PredWrongIttage, statistics::units::Count::get(), "S3pred wrong blame ittage "),
-    ADD_STAT(s3PredWrongRas, statistics::units::Count::get(), "S3pred wrong blame ras ")
+    ADD_STAT(s3PredWrongRas, statistics::units::Count::get(), "S3pred wrong blame ras "),
+    ADD_STAT(pairtageFirstBlockCandidates, statistics::units::Count::get(),
+             "PairTAGE first-block candidates seen before final arbitration"),
+    ADD_STAT(pairtageFirstBlockSelected, statistics::units::Count::get(),
+             "PairTAGE first-block candidates that survived final arbitration"),
+    ADD_STAT(pairtageFirstBlockOverridden, statistics::units::Count::get(),
+             "PairTAGE first-block candidates overridden before enqueue"),
+    ADD_STAT(pairtageFirstBlockFetched, statistics::units::Count::get(),
+             "PairTAGE first-block entries whose fetch completed"),
+    ADD_STAT(pairtageFirstBlockCommitted, statistics::units::Count::get(),
+             "PairTAGE first-block entries that reached commit accounting"),
+    ADD_STAT(pairtageFirstBlockCorrect, statistics::units::Count::get(),
+             "PairTAGE first-block entries that were ultimately correct"),
+    ADD_STAT(pairtageFirstBlockWrong, statistics::units::Count::get(),
+             "PairTAGE first-block entries that ultimately mispredicted"),
+    ADD_STAT(pairtageFirstBlockFetchedInsts, statistics::units::Count::get(),
+             "Instructions fetched from PairTAGE first-block entries"),
+    ADD_STAT(pairtageFirstBlockCommittedInsts, statistics::units::Count::get(),
+             "Instructions committed from PairTAGE first-block entries"),
+    ADD_STAT(pairtageSecondBlockTrainPrepared, statistics::units::Count::get(),
+             "Second-block teacher predictions prepared for PairTAGE"),
+    ADD_STAT(pairtageSecondBlockAttempted, statistics::units::Count::get(),
+             "Second-block emission attempts after a PairTAGE first block"),
+    ADD_STAT(pairtageSecondBlockSkippedDisabled, statistics::units::Count::get(),
+             "Second-block emission attempts skipped because PairTAGE second block is disabled"),
+    ADD_STAT(pairtageSecondBlockSkippedOddPhase, statistics::units::Count::get(),
+             "Second-block emission attempts skipped because first-block phase was Odd"),
+    ADD_STAT(pairtageSecondBlockSkippedFirstBlockOverridden, statistics::units::Count::get(),
+             "Second-block emission attempts skipped because first block was overridden"),
+    ADD_STAT(pairtageSecondBlockSkippedFtqFull, statistics::units::Count::get(),
+             "Second-block emission attempts skipped because FTQ was full"),
+    ADD_STAT(pairtageSecondBlockNoCandidate, statistics::units::Count::get(),
+             "Second-block emission attempts with no valid PairTAGE second-block candidate"),
+    ADD_STAT(pairtageSecondBlockNoTeacher, statistics::units::Count::get(),
+             "Second-block emission attempts that proceeded without a teacher prediction"),
+    ADD_STAT(pairtageSecondBlockTeacherAgree, statistics::units::Count::get(),
+             "Second-block emission attempts whose teacher prediction agreed"),
+    ADD_STAT(pairtageSecondBlockTeacherDisagree, statistics::units::Count::get(),
+             "Second-block emission attempts skipped because teacher prediction disagreed"),
+    ADD_STAT(pairtageSecondBlockEnqueued, statistics::units::Count::get(),
+             "Second blocks actually emitted into the FTQ"),
+    ADD_STAT(pairtageSecondBlockPredTaken, statistics::units::Count::get(),
+             "Emitted PairTAGE second blocks predicted taken"),
+    ADD_STAT(pairtageSecondBlockPredNotTaken, statistics::units::Count::get(),
+             "Emitted PairTAGE second blocks predicted not taken"),
+    ADD_STAT(pairtageSecondBlockPredBytes, statistics::units::Byte::get(),
+             "Predicted fallthrough bytes covered by emitted PairTAGE second blocks"),
+    ADD_STAT(pairtageSecondBlockFetched, statistics::units::Count::get(),
+             "PairTAGE second-block entries whose fetch completed"),
+    ADD_STAT(pairtageSecondBlockCommitted, statistics::units::Count::get(),
+             "PairTAGE second-block entries that reached commit accounting"),
+    ADD_STAT(pairtageSecondBlockCorrect, statistics::units::Count::get(),
+             "PairTAGE second-block entries that were ultimately correct"),
+    ADD_STAT(pairtageSecondBlockWrong, statistics::units::Count::get(),
+             "PairTAGE second-block entries that ultimately mispredicted"),
+    ADD_STAT(pairtageSecondBlockFetchedInsts, statistics::units::Count::get(),
+             "Instructions fetched from PairTAGE second-block entries"),
+    ADD_STAT(pairtageSecondBlockCommittedInsts, statistics::units::Count::get(),
+             "Instructions committed from PairTAGE second-block entries"),
+    ADD_STAT(pairtageSecondBlockFetchedInstsDist, statistics::units::Count::get(),
+             "Fetched instruction-count distribution for PairTAGE second-block entries"),
+    ADD_STAT(pairtageSecondBlockCommittedInstsDist, statistics::units::Count::get(),
+             "Committed instruction-count distribution for PairTAGE second-block entries")
 
 {
     predsOfEachStage.init(numStages);
@@ -517,6 +579,8 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
     s1PredWrongBySourceAndReason.init(NumS1SourceBuckets, NumOverrideReasonBuckets);
+    pairtageSecondBlockFetchedInstsDist.init(0, maxInstsNum >> 1, 1);
+    pairtageSecondBlockCommittedInstsDist.init(0, maxInstsNum >> 1, 1);
     branchClassCounts.init(NumBranchClasses);
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);
@@ -781,6 +845,28 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
     // Track which predictor stage was used
     dbpBtbStats.commitPredsFromEachStage[target.predSource]++;
     overrideStats(target.overrideReason);
+
+    if (target.pairtageUsed) {
+        if (target.pairtageSecondBlock) {
+            dbpBtbStats.pairtageSecondBlockCommitted++;
+            dbpBtbStats.pairtageSecondBlockCommittedInsts += target.commitInstNum;
+            dbpBtbStats.pairtageSecondBlockCommittedInstsDist.sample(
+                target.commitInstNum, 1);
+            if (miss_predicted) {
+                dbpBtbStats.pairtageSecondBlockWrong++;
+            } else {
+                dbpBtbStats.pairtageSecondBlockCorrect++;
+            }
+        } else {
+            dbpBtbStats.pairtageFirstBlockCommitted++;
+            dbpBtbStats.pairtageFirstBlockCommittedInsts += target.commitInstNum;
+            if (miss_predicted) {
+                dbpBtbStats.pairtageFirstBlockWrong++;
+            } else {
+                dbpBtbStats.pairtageFirstBlockCorrect++;
+            }
+        }
+    }
 
     // --- Instruction Statistics ---
     // Track committed instruction counts

@@ -148,7 +148,19 @@ advancePairPhase(PairPhase &phase)
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 {
-    ftq.fetching(tid).fetchInstNum = fetched_inst_num;
+    auto &target = ftq.fetching(tid);
+    target.fetchInstNum = fetched_inst_num;
+    if (target.pairtageUsed) {
+        if (target.pairtageSecondBlock) {
+            dbpBtbStats.pairtageSecondBlockFetched++;
+            dbpBtbStats.pairtageSecondBlockFetchedInsts += fetched_inst_num;
+            dbpBtbStats.pairtageSecondBlockFetchedInstsDist.sample(
+                fetched_inst_num, 1);
+        } else {
+            dbpBtbStats.pairtageFirstBlockFetched++;
+            dbpBtbStats.pairtageFirstBlockFetchedInsts += fetched_inst_num;
+        }
+    }
     ftq.finishTarget(tid);
 }
 
@@ -686,6 +698,18 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
 
     // 1. Create a new fetch target entry with prediction information
     FetchTarget entry = createFetchTargetEntry(tid);
+    if (pairtage && pairtage->isEnabled()) {
+        auto pairMeta = std::static_pointer_cast<PairTAGE::TageMeta>(
+            pairtage->getPredictionMeta());
+        if (pairMeta && pairMeta->predictedFirstBlock.valid) {
+            dbpBtbStats.pairtageFirstBlockCandidates++;
+            if (entry.pairtageUsed) {
+                dbpBtbStats.pairtageFirstBlockSelected++;
+            } else {
+                dbpBtbStats.pairtageFirstBlockOverridden++;
+            }
+        }
+    }
 
     // 2. Update global PC state to target or fall-through
     s0PC = threads[tid].finalPred.getTarget(predictWidth);;
@@ -733,7 +757,10 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
         return;
     }
 
+    dbpBtbStats.pairtageSecondBlockAttempted++;
+
     if (!currentFirstBlockHasEvenPairPhase(tid)) {
+        dbpBtbStats.pairtageSecondBlockSkippedOddPhase++;
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block for thread %u because first block phase is Odd\n",
                 tid);
@@ -741,6 +768,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     }
 
     if (!pairtageFirstBlockStillValidForSecondBlock(tid)) {
+        dbpBtbStats.pairtageSecondBlockSkippedFirstBlockOverridden++;
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block for thread %u because first block was overridden by final prediction\n",
                 tid);
@@ -748,6 +776,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     }
 
     if (ftq.full(tid)) {
+        dbpBtbStats.pairtageSecondBlockSkippedFtqFull++;
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block enqueue for thread %u because FTQ is full\n",
                 tid);
@@ -756,6 +785,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
 
     auto secondBlock = pairtage->getSecondPredBlock();
     if (!secondBlock.valid) {
+        dbpBtbStats.pairtageSecondBlockNoCandidate++;
         DPRINTF(DecoupleBP,
                 "No pending PairTAGE second block for thread %u after first block\n",
                 tid);
@@ -766,6 +796,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
         auto trainedSecondBlock =
             buildTrainingPairBlockFromPrediction(thread.secondBlockTrainPred);
         if (!pairBlocksMatch(secondBlock, trainedSecondBlock)) {
+            dbpBtbStats.pairtageSecondBlockTeacherDisagree++;
             DPRINTF(DecoupleBP,
                     "Skip PairTAGE second block enqueue for thread %u because training prediction disagrees: "
                     "pairtage(valid=%d pc=%#lx target=%#lx taken=%d) vs "
@@ -777,12 +808,17 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
                     trainedSecondBlock.targetPC, trainedSecondBlock.taken);
             return;
         }
+        dbpBtbStats.pairtageSecondBlockTeacherAgree++;
+    } else {
+        dbpBtbStats.pairtageSecondBlockNoTeacher++;
     }
 
     auto secondPred = buildPredictionFromPairBlock(
         tid, secondBlock, thread.s0PC, thread.finalPred, pairtage->getComponentIdx());
     refreshSecondBlockPredictionMetas(tid, secondPred);
     auto entry = createFetchTargetEntry(tid, thread.s0PC, secondPred);
+    entry.pairtageUsed = true;
+    entry.pairtageSecondBlock = true;
 
     thread.s0PC = secondPred.getTarget(predictWidth);
     updateHistoryForPrediction(entry, secondPred);
@@ -792,6 +828,13 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
 
     thread.pendingSecondBlockEntry = entry;
     thread.pendingSecondBlockValid = true;
+    dbpBtbStats.pairtageSecondBlockEnqueued++;
+    dbpBtbStats.pairtageSecondBlockPredBytes += entry.predEndPC - entry.startPC;
+    if (entry.predTaken) {
+        dbpBtbStats.pairtageSecondBlockPredTaken++;
+    } else {
+        dbpBtbStats.pairtageSecondBlockPredNotTaken++;
+    }
 
     DPRINTF(DecoupleBP,
             "Inserted PairTAGE second block %lu for thread %u: startPC %#lx, branchPC %#lx, target %#lx, taken %d\n",
@@ -873,6 +916,7 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
     }
 
     thread.secondBlockTrainPredReady = true;
+    dbpBtbStats.pairtageSecondBlockTrainPrepared++;
 
     DPRINTF(DecoupleBP,
             "Prepared PairTAGE second-block training prediction for thread %u: startPC %#lx, %zu BTB entries, %zu "
@@ -913,6 +957,25 @@ DecoupledBPUWithBTB::pairtageFirstBlockStillValidForSecondBlock(ThreadID tid) co
     auto finalPredCopy = thread.finalPred;
 
     return pairFirstPred.match(finalPredCopy, predictWidth).first;
+}
+
+bool
+DecoupledBPUWithBTB::predictionMatchesPairtageFirstBlock(
+    const FullBTBPrediction &pred) const
+{
+    if (!pairtage || !pairtage->isEnabled()) {
+        return false;
+    }
+
+    auto pairMeta = std::static_pointer_cast<PairTAGE::TageMeta>(
+        pairtage->getPredictionMeta());
+    if (!pairMeta || !pairMeta->firstBlockValid ||
+        !pairMeta->predictedFirstBlock.valid) {
+        return false;
+    }
+
+    return pairBlocksMatch(buildTrainingPairBlockFromPrediction(pred),
+                           pairMeta->predictedFirstBlock);
 }
 
 /**
@@ -1319,6 +1382,8 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
     entry.predTick = pred.predTick;
     entry.predSource = pred.predSource;
     entry.overrideReason = pred.overrideReason;
+    entry.pairtageUsed = predictionMatchesPairtageFirstBlock(pred);
+    entry.pairtageSecondBlock = false;
 
     entry.s1Source = pred.s1Source;
     entry.s3Source = pred.s3Source;

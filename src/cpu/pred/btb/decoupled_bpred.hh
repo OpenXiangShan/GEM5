@@ -176,6 +176,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void refreshSecondBlockPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
     bool currentFirstBlockHasEvenPairPhase(ThreadID tid) const;
     bool pairtageFirstBlockStillValidForSecondBlock(ThreadID tid) const;
+    bool predictionMatchesPairtageFirstBlock(const FullBTBPrediction &pred) const;
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
     FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);
@@ -335,6 +336,37 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s3PredWrongTage;
         statistics::Scalar s3PredWrongIttage;
         statistics::Scalar s3PredWrongRas;
+        statistics::Scalar pairtageFirstBlockCandidates;
+        statistics::Scalar pairtageFirstBlockSelected;
+        statistics::Scalar pairtageFirstBlockOverridden;
+        statistics::Scalar pairtageFirstBlockFetched;
+        statistics::Scalar pairtageFirstBlockCommitted;
+        statistics::Scalar pairtageFirstBlockCorrect;
+        statistics::Scalar pairtageFirstBlockWrong;
+        statistics::Scalar pairtageFirstBlockFetchedInsts;
+        statistics::Scalar pairtageFirstBlockCommittedInsts;
+        statistics::Scalar pairtageSecondBlockTrainPrepared;
+        statistics::Scalar pairtageSecondBlockAttempted;
+        statistics::Scalar pairtageSecondBlockSkippedDisabled;
+        statistics::Scalar pairtageSecondBlockSkippedOddPhase;
+        statistics::Scalar pairtageSecondBlockSkippedFirstBlockOverridden;
+        statistics::Scalar pairtageSecondBlockSkippedFtqFull;
+        statistics::Scalar pairtageSecondBlockNoCandidate;
+        statistics::Scalar pairtageSecondBlockNoTeacher;
+        statistics::Scalar pairtageSecondBlockTeacherAgree;
+        statistics::Scalar pairtageSecondBlockTeacherDisagree;
+        statistics::Scalar pairtageSecondBlockEnqueued;
+        statistics::Scalar pairtageSecondBlockPredTaken;
+        statistics::Scalar pairtageSecondBlockPredNotTaken;
+        statistics::Scalar pairtageSecondBlockPredBytes;
+        statistics::Scalar pairtageSecondBlockFetched;
+        statistics::Scalar pairtageSecondBlockCommitted;
+        statistics::Scalar pairtageSecondBlockCorrect;
+        statistics::Scalar pairtageSecondBlockWrong;
+        statistics::Scalar pairtageSecondBlockFetchedInsts;
+        statistics::Scalar pairtageSecondBlockCommittedInsts;
+        statistics::Distribution pairtageSecondBlockFetchedInstsDist;
+        statistics::Distribution pairtageSecondBlockCommittedInstsDist;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;

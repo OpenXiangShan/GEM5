@@ -370,6 +370,8 @@ struct FetchTarget
     unsigned predSource;   // source of the prediction(numStage)
     OverrideReason overrideReason; // reason of the override(for profiling)
     PairPhase pairPhase;   // PairTAGE logical phase of this block start
+    bool pairtageUsed;     // final prediction matches PairTAGE first block
+    bool pairtageSecondBlock; // entry is emitted by PairTAGE second-block path
 
     // prediction metas
     // FIXME: use vec
@@ -408,6 +410,8 @@ struct FetchTarget
          squashPC(0),
          predSource(0),
          pairPhase(PairPhase::Even),
+         pairtageUsed(false),
+         pairtageSecondBlock(false),
          predTick(0),
          history(),
          phistory(),
