@@ -151,6 +151,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     void setPredictionPhase(PairPhase phase);
     void trainFromActualPred(const FetchTarget &entry,
                              const FullBTBPrediction *secondPred = nullptr);
+    bool secondBlockEnabled() const { return enableSecondBlock; }
 
     unsigned getNumPredictors() const { return numPredictors; }
     unsigned getNumWays() const { return numWays; }
@@ -241,6 +242,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     std::shared_ptr<TageMeta> meta;
     PairBlockInfo secondPredBlock;
     PairPhase predictionPhase{PairPhase::Even};
+    const bool enableSecondBlock;
 #ifndef UNIT_TEST
     PairTageStats pairTageStats;
 #endif
