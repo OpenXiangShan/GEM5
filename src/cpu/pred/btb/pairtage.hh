@@ -130,6 +130,12 @@ class PairTAGE : public TimedBaseBTBPredictor
         }
     };
 
+    struct ProviderInfo
+    {
+        TageTableInfo main;
+        TageTableInfo alt;
+    };
+
 #ifndef UNIT_TEST
     PairTAGE(const Params &p);
 #endif
@@ -208,14 +214,28 @@ class PairTAGE : public TimedBaseBTBPredictor
     };
 #endif
 
+    ProviderInfo lookupProviders(Addr startPC) const;
+    ProviderInfo lookupProviders(Addr startPC, const TageMeta &predMeta) const;
     TageTableInfo lookupEntry(Addr startPC) const;
     TageTableInfo lookupEntry(Addr startPC, const TageMeta &predMeta) const;
     BTBEntry buildBTBEntry(const PairBlockInfo &block) const;
     void fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const;
     PairBlockInfo buildTrainingBlock(const FetchTarget &entry) const;
     PairBlockInfo buildTrainingBlock(const FullBTBPrediction &pred) const;
+    bool blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const;
+    bool entryMatchesTraining(const TageEntry &entry, const PairBlockInfo &firstBlock,
+                              const PairBlockInfo &secondBlock) const;
     void noteEntryRewrite(unsigned table, const TageEntry &oldEntry,
                           const TageEntry &newEntry);
+    void updateCounter(bool taken, unsigned width, short &counter);
+    bool satIncrement(int max, short &counter);
+    bool satDecrement(int min, short &counter);
+    int selectAllocationWay(const std::vector<TageEntry> &set) const;
+    void resetUsefulBits();
+    bool allocateEntries(Addr startPC, const TageMeta &predMeta,
+                         const PairBlockInfo &trainedBlock,
+                         const PairBlockInfo &trainedSecondBlock,
+                         unsigned startTable);
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist) const;
     Addr getTageIndex(Addr pc, int table) const;
     Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0) const;
@@ -233,10 +253,13 @@ class PairTAGE : public TimedBaseBTBPredictor
     std::vector<PathFoldedHist> tagFoldedHist;
     std::vector<PathFoldedHist> altTagFoldedHist;
     std::vector<PathFoldedHist> indexFoldedHist;
+    LFSR64 allocLFSR;
     unsigned maxHistLen;
+    const unsigned numTablesToAlloc;
     const unsigned numWays;
     std::vector<std::vector<std::vector<TageEntry>>> tageTable;
     const unsigned maxBranchPositions;
+    int usefulResetCnt{0};
     unsigned instShiftAmt{1};
     std::queue<std::vector<PathFoldedHist>> aheadIndexFoldedHist;
     std::shared_ptr<TageMeta> meta;
