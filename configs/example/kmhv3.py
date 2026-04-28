@@ -25,7 +25,7 @@ def setKmhV3Params(args, system):
 
         # fetch (idealfetch not care)
         cpu.mmu.itb.size = 96
-        cpu.mmu.dtb.size = 1024
+        # cpu.mmu.dtb.size = 1024
         cpu.fetchWidth = 32
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2
