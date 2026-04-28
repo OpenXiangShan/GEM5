@@ -772,8 +772,25 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
         return;
     }
 
-    if (!pairtageFirstBlockStillValidForSecondBlock(tid)) {
+    auto firstBlockStatus = pairtageFirstBlockStatusForSecondBlock(tid);
+    if (firstBlockStatus != PairtageFirstBlockSecondBlockStatus::Match) {
         dbpBtbStats.pairtageSecondBlockSkippedFirstBlockOverridden++;
+        switch (firstBlockStatus) {
+          case PairtageFirstBlockSecondBlockStatus::NoCandidate:
+            dbpBtbStats.pairtageSecondBlockNoFirstBlockCandidate++;
+            break;
+          case PairtageFirstBlockSecondBlockStatus::FallThruMismatch:
+            dbpBtbStats.pairtageSecondBlockFirstBlockMismatchFallThru++;
+            break;
+          case PairtageFirstBlockSecondBlockStatus::ControlAddrMismatch:
+            dbpBtbStats.pairtageSecondBlockFirstBlockMismatchControlAddr++;
+            break;
+          case PairtageFirstBlockSecondBlockStatus::TargetMismatch:
+            dbpBtbStats.pairtageSecondBlockFirstBlockMismatchTarget++;
+            break;
+          case PairtageFirstBlockSecondBlockStatus::Match:
+            break;
+        }
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block for thread %u because first block was overridden by final prediction\n",
                 tid);
@@ -889,7 +906,8 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
         return;
     }
 
-    if (!pairtageFirstBlockStillValidForSecondBlock(tid)) {
+    if (pairtageFirstBlockStatusForSecondBlock(tid) !=
+        PairtageFirstBlockSecondBlockStatus::Match) {
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second-block training prediction for thread %u because first block was overridden\n",
                 tid);
@@ -941,22 +959,22 @@ DecoupledBPUWithBTB::currentFirstBlockHasEvenPairPhase(ThreadID tid) const
            ftq.back(tid).pairPhase == PairPhase::Even;
 }
 
-bool
-DecoupledBPUWithBTB::pairtageFirstBlockStillValidForSecondBlock(ThreadID tid) const
+DecoupledBPUWithBTB::PairtageFirstBlockSecondBlockStatus
+DecoupledBPUWithBTB::pairtageFirstBlockStatusForSecondBlock(ThreadID tid) const
 {
     if (!pairtage || !pairtage->isEnabled()) {
-        return false;
+        return PairtageFirstBlockSecondBlockStatus::NoCandidate;
     }
 
     if (!currentFirstBlockHasEvenPairPhase(tid)) {
-        return false;
+        return PairtageFirstBlockSecondBlockStatus::NoCandidate;
     }
 
     auto pairMeta = std::static_pointer_cast<PairTAGE::TageMeta>(
         pairtage->getPredictionMeta());
     if (!pairMeta || !pairMeta->firstBlockValid ||
         !pairMeta->predictedFirstBlock.valid) {
-        return false;
+        return PairtageFirstBlockSecondBlockStatus::NoCandidate;
     }
 
     auto &thread = threads[tid];
@@ -964,8 +982,22 @@ DecoupledBPUWithBTB::pairtageFirstBlockStillValidForSecondBlock(ThreadID tid) co
         tid, pairMeta->predictedFirstBlock, thread.finalPred.bbStart,
         thread.finalPred, pairtage->getComponentIdx());
     auto finalPredCopy = thread.finalPred;
+    auto [matches, reason] = pairFirstPred.match(finalPredCopy, predictWidth);
 
-    return pairFirstPred.match(finalPredCopy, predictWidth).first;
+    if (matches) {
+        return PairtageFirstBlockSecondBlockStatus::Match;
+    }
+
+    switch (reason) {
+      case OverrideReason::FALL_THRU:
+        return PairtageFirstBlockSecondBlockStatus::FallThruMismatch;
+      case OverrideReason::CONTROL_ADDR:
+        return PairtageFirstBlockSecondBlockStatus::ControlAddrMismatch;
+      case OverrideReason::TARGET:
+        return PairtageFirstBlockSecondBlockStatus::TargetMismatch;
+      default:
+        return PairtageFirstBlockSecondBlockStatus::TargetMismatch;
+    }
 }
 
 bool

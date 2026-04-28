@@ -175,7 +175,16 @@ class DecoupledBPUWithBTB : public BPredUnit
     void processSecondBlock(ThreadID tid);
     void refreshSecondBlockPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
     bool currentFirstBlockHasEvenPairPhase(ThreadID tid) const;
-    bool pairtageFirstBlockStillValidForSecondBlock(ThreadID tid) const;
+    enum class PairtageFirstBlockSecondBlockStatus
+    {
+        Match,
+        NoCandidate,
+        FallThruMismatch,
+        ControlAddrMismatch,
+        TargetMismatch
+    };
+    PairtageFirstBlockSecondBlockStatus
+    pairtageFirstBlockStatusForSecondBlock(ThreadID tid) const;
     bool predictionMatchesPairtageFirstBlock(const FullBTBPrediction &pred) const;
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
@@ -350,6 +359,10 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar pairtageSecondBlockSkippedDisabled;
         statistics::Scalar pairtageSecondBlockSkippedOddPhase;
         statistics::Scalar pairtageSecondBlockSkippedFirstBlockOverridden;
+        statistics::Scalar pairtageSecondBlockNoFirstBlockCandidate;
+        statistics::Scalar pairtageSecondBlockFirstBlockMismatchFallThru;
+        statistics::Scalar pairtageSecondBlockFirstBlockMismatchControlAddr;
+        statistics::Scalar pairtageSecondBlockFirstBlockMismatchTarget;
         statistics::Scalar pairtageSecondBlockSkippedFtqFull;
         statistics::Scalar pairtageSecondBlockNoCandidate;
         statistics::Scalar pairtageSecondBlockNoTeacher;
