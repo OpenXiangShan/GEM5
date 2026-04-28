@@ -163,7 +163,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     enum class PairtageFirstBlockSecondBlockStatus
     {
         Match,
-        NoCandidate,
+        NoCandidateLookupMiss,
+        NoCandidateUntrainable,
         FallThruMismatch,
         ControlAddrMismatch,
         TargetMismatch
@@ -344,6 +345,8 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar pairtageSecondBlockSkippedOddPhase;
         statistics::Scalar pairtageSecondBlockSkippedFirstBlockOverridden;
         statistics::Scalar pairtageSecondBlockNoFirstBlockCandidate;
+        statistics::Scalar pairtageSecondBlockNoFirstBlockLookupMiss;
+        statistics::Scalar pairtageSecondBlockNoFirstBlockUntrainable;
         statistics::Scalar pairtageSecondBlockFirstBlockMismatchFallThru;
         statistics::Scalar pairtageSecondBlockFirstBlockMismatchControlAddr;
         statistics::Scalar pairtageSecondBlockFirstBlockMismatchTarget;
