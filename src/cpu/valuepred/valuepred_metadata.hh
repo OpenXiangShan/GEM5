@@ -15,6 +15,7 @@ class VPPredMetaData
   public:
     Addr pc;
     uint64_t seq_no;
+    ThreadID tid = 0;
     virtual ~VPPredMetaData() {};
 };
 
@@ -23,6 +24,7 @@ class VPUpdateMetaData
   public:
     Addr pc;
     uint64_t seq_no;
+    ThreadID tid = 0;
     RegVal actualValue;
     bool isMisprediction;
     virtual ~VPUpdateMetaData() {};
@@ -31,6 +33,7 @@ class VPUpdateMetaData
 class VPSpecUpdateMetaData
 {
   public:
+    ThreadID tid = 0;
     virtual ~VPSpecUpdateMetaData() {};
 };
 

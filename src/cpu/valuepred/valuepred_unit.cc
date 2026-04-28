@@ -1,5 +1,6 @@
 #include "cpu/valuepred/valuepred_unit.hh"
 
+#include "base/logging.hh"
 #include "base/stats/group.hh"
 #include "base/stats/units.hh"
 
@@ -9,7 +10,20 @@ namespace gem5
 namespace valuepred
 {
 
-VPUnit::VPUnit(const Params &params) : SimObject(params), stats(this) {}
+VPUnit::VPUnit(const Params &params)
+    : SimObject(params),
+      numThreads(params.numThreads),
+      stats(this)
+{
+    gem5_assert(numThreads > 0, "Value predictor needs at least one thread\n");
+}
+
+void
+VPUnit::assertValidTid(ThreadID tid) const
+{
+    gem5_assert(tid < numThreads, "%s got invalid tid %u, numThreads=%u\n",
+                name().c_str(), static_cast<unsigned>(tid), numThreads);
+}
 
 VPUnit::ValuePredUnitStats::ValuePredUnitStats(VPUnit *vp)
     : statistics::Group(vp),

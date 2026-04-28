@@ -4,6 +4,7 @@
 #include <string>
 
 #include "base/statistics.hh"
+#include "base/types.hh"
 #include "cpu/valuepred/valuepred_metadata.hh"
 #include "enums/ValuePredType.hh"
 #include "params/ValuePredictor.hh"
@@ -23,6 +24,11 @@ class VPUnit : public SimObject
   private:
     using Params = ValuePredictorParams;
 
+  protected:
+    const unsigned numThreads;
+
+    void assertValidTid(ThreadID tid) const;
+
   public:
     VPUnit(const Params &params);
 
@@ -38,7 +44,7 @@ class VPUnit : public SimObject
     virtual void specUpdateValuePredictor(VPSpecUpdateMetaData *specupdateMetadata) = 0;
 
     // If predict error, squash the inflight instructions in value predictor.
-    virtual void squash(const uint64_t seq_no) = 0;
+    virtual void squash(ThreadID tid, const uint64_t seq_no) = 0;
 
     // Get the value predictor type
     virtual ValuePredType getValuePredictorType() = 0;

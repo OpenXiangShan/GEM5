@@ -108,7 +108,7 @@ EStride::EStride(const Params &params)
       logMaxConfidence(params.logMaxConfidence),
       MAXCONFIDENCE(1 << logMaxConfidence),
       confidenceThreshold(static_cast<int>(params.thresholdPercent * MAXCONFIDENCE)),
-      inflightWindow(params.inflightWindowTagLength, params.idealWindow),
+      inflightWindows(),
       enableTimeMsgInUpdate(params.enableTimeMsgInUpdate),
       esstats(this)
 {
@@ -122,9 +122,17 @@ EStride::EStride(const Params &params)
     gem5_assert(params.inflightWindowTagLength, "EStride inflightWindowTagLength must > 0 \n");
 
     // init stats
-    ESTables.resize(ways);
-    for (auto &table : ESTables) {
-        table.resize(entryCounts);
+    inflightWindows.reserve(numThreads);
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        inflightWindows.emplace_back(params.inflightWindowTagLength, params.idealWindow);
+    }
+
+    ESTables.resize(numThreads);
+    for (auto &threadTables : ESTables) {
+        threadTables.resize(ways);
+        for (auto &table : threadTables) {
+            table.resize(entryCounts);
+        }
     }
 
     esstats.allocate.init(ways, entryCounts);
@@ -289,8 +297,9 @@ EStride::doPredict(ESPredMetaData *esPredMetaData, int inflights)
     int way;
     uint32_t index;
     ESEntry entryCopy;
+    const ThreadID tid = esPredMetaData->tid;
     for (int i = 0; i < ways; ++i) {
-        const ESEntry &entry = ESTables[i][indexEachWays[i]];
+        const ESEntry &entry = ESTables[tid][i][indexEachWays[i]];
         if (!compareTags(entry.tag, tagEachWays[i])) {
             found = true;
             way = i;
@@ -329,10 +338,11 @@ EStride::valuePredict(VPPredMetaData *predMetaData)
 {
     gem5_assert(predMetaData, "can't pass nullptr to vpunit\n");
     ESPredMetaData *esPredMetaData = dynamic_cast<ESPredMetaData *>(predMetaData);
+    assertValidTid(esPredMetaData->tid);
 
 
     // value prediction
-    int inflights = inflightWindow.addToInflightWindow(esPredMetaData->pc);
+    int inflights = inflightWindows[esPredMetaData->tid].addToInflightWindow(esPredMetaData->pc);
     esstats.inflightSH.sample(inflights, 1);
 
     return doPredict(esPredMetaData, inflights);
@@ -343,10 +353,12 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
 {
     gem5_assert(updateMetaData, "can't pass nullptr to vpunit\n");
     ESUpdateMetaData *esUpdateMetaData = dynamic_cast<ESUpdateMetaData *>(updateMetaData);
+    assertValidTid(esUpdateMetaData->tid);
+    const ThreadID tid = esUpdateMetaData->tid;
 
 
     // the first step update inflights window
-    inflightWindow.removeFromWindow(esUpdateMetaData->pc, esUpdateMetaData->seq_no);
+    inflightWindows[tid].removeFromWindow(esUpdateMetaData->pc, esUpdateMetaData->seq_no);
 
     // Given the nature of the current hash method, the same PC gets the
     // same hash value every time it is computed. So instead of storing
@@ -387,7 +399,7 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
     int way;
     uint32_t index;
     for (size_t i = 0; i < ways; ++i) {
-        const ESEntry &entry = ESTables[i][indexEachWays[i]];
+        const ESEntry &entry = ESTables[tid][i][indexEachWays[i]];
         // todo maybe change the occupied
         if (!compareTags(entry.tag, tagEachWays[i])) {
             found = true;
@@ -400,7 +412,7 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
 
     if (found) {
         // update
-        ESEntry &entry = ESTables[way][index];
+        ESEntry &entry = ESTables[tid][way][index];
         DPRINTF(EStride, "[way: %d index: %u][confidence: %d  useful: %d lastValue: %lu]\n", way, index,
                 entry.confidence, entry.useful, entry.lastValue);
 
@@ -468,7 +480,7 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
 
         // first find no confidence
         for (size_t i = 0; i < ways; ++i) {
-            ESEntry &entry = ESTables[wayBegin][indexEachWays[wayBegin]];
+            ESEntry &entry = ESTables[tid][wayBegin][indexEachWays[wayBegin]];
             if (entry.confidence == 0) {
                 DPRINTF(EStride, "allocate by confidence: [way: %d index: %u] \n", wayBegin, indexEachWays[wayBegin]);
                 esstats.allocate[wayBegin][indexEachWays[wayBegin]]++;
@@ -485,7 +497,7 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
 
         // second find not useful
         for (size_t i = 0; i < ways; ++i) {
-            ESEntry &entry = ESTables[wayBegin][indexEachWays[wayBegin]];
+            ESEntry &entry = ESTables[tid][wayBegin][indexEachWays[wayBegin]];
             if (entry.useful == 0) {
                 DPRINTF(EStride, "allocate by useful: [way: %d index: %u] \n", wayBegin, indexEachWays[wayBegin]);
                 esstats.allocate[wayBegin][indexEachWays[wayBegin]]++;
@@ -501,7 +513,7 @@ EStride::updateValuePredictor(VPUpdateMetaData *updateMetaData)
         }
 
         // can't allocate, just random dec some useful count
-        ESEntry &entry = ESTables[wayBegin][indexEachWays[wayBegin]];
+        ESEntry &entry = ESTables[tid][wayBegin][indexEachWays[wayBegin]];
         DPRINTF(EStride, "try dec useful \n");
         if (tryDecUseful(entry) == 0) {
             DPRINTF(EStride, "[dec useful count]=> way: %d index: %d", wayBegin, indexEachWays[wayBegin]);
@@ -518,9 +530,10 @@ EStride::specUpdateValuePredictor(VPSpecUpdateMetaData *specUpdateMetaData)
 }
 
 void
-EStride::squash(const uint64_t seq_no)
+EStride::squash(ThreadID tid, const uint64_t seq_no)
 {
-    inflightWindow.squash(seq_no);
+    assertValidTid(tid);
+    inflightWindows[tid].squash(seq_no);
 }
 
 }

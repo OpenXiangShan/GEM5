@@ -2061,6 +2061,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
         vpPredMetaData->pc = instruction->getPC();
         vpPredMetaData->seq_no = instruction->seqNum;
+        vpPredMetaData->tid = tid;
         instruction->vpResult = valuePred->valuePredict(vpPredMetaData);
         delete vpPredMetaData;
     }
