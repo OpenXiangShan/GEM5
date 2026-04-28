@@ -898,10 +898,16 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
 
     const bool providerMatchesTraining = provider.found &&
         entryMatchesTraining(provider.entry, trainedBlock, trainedSecondBlock);
+    const bool providerFirstBlockMatches = provider.found &&
+        blocksMatch(provider.entry.firstBlock(), trainedBlock);
     const bool altMatchesTraining = altProvider.found &&
         entryMatchesTraining(altProvider.entry, trainedBlock, trainedSecondBlock);
+    const bool canAllocHigher = provider.found &&
+        provider.table < numPredictors - 1;
+    const bool preserveProviderOnMismatch = provider.found &&
+        !providerMatchesTraining && canAllocHigher;
 
-    if (provider.found) {
+    if (provider.found && !preserveProviderOnMismatch) {
         auto &providerEntry =
             tageTable[provider.table][provider.index][provider.way];
         auto oldEntry = providerEntry;
@@ -938,6 +944,28 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
 #endif
         noteEntryRewrite(provider.table, oldEntry, newEntry);
         providerEntry = newEntry;
+    } else if (provider.found && providerFirstBlockMatches) {
+        auto &providerEntry =
+            tageTable[provider.table][provider.index][provider.way];
+        auto oldEntry = providerEntry;
+        TageEntry newEntry = oldEntry;
+        short trainedCounter = oldEntry.counter;
+
+        updateCounter(trainedBlock.taken, 3, trainedCounter);
+        newEntry.counter = trainedCounter;
+        if (altProvider.found && !altMatchesTraining) {
+            newEntry.useful = true;
+        }
+
+        if (newEntry.counter != oldEntry.counter ||
+            newEntry.useful != oldEntry.useful) {
+#ifndef UNIT_TEST
+            pairTageStats.updateExistingProvider++;
+            pairTageStats.tableWrites[provider.table]++;
+#endif
+            noteEntryRewrite(provider.table, oldEntry, newEntry);
+            providerEntry = newEntry;
+        }
     }
 
     bool needHigherAlloc = false;
