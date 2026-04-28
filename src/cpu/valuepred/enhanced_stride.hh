@@ -110,12 +110,13 @@ class EStride : public VPUnit
     const int logMaxConfidence;
     const int MAXCONFIDENCE;
     const int confidenceThreshold;
-    InflightWindow inflightWindow;
+    std::vector<InflightWindow> inflightWindows;
     const bool enableTimeMsgInUpdate;
 
   private:
 
-    std::vector<std::vector<ESEntry>> ESTables;
+    // [tid][way][index]
+    std::vector<std::vector<std::vector<ESEntry>>> ESTables;
 
   private:
     // This function really implements the prediction function.
@@ -155,7 +156,7 @@ class EStride : public VPUnit
     // speculative updates may no longer be needed.
     virtual void specUpdateValuePredictor(VPSpecUpdateMetaData *specUpdateMetaData) override;
 
-    virtual void squash(const uint64_t seq_no) override;
+    virtual void squash(ThreadID tid, const uint64_t seq_no) override;
 
     virtual ValuePredType getValuePredictorType() override { return ValuePredType::EStride; }
 

@@ -701,7 +701,7 @@ Commit::squashAll(ThreadID tid)
     changedROBNumEntries[tid] = true;
 
     if (valuePred)
-        valuePred->squash(squashed_inst);
+        valuePred->squash(tid, squashed_inst);
 
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
@@ -1079,7 +1079,7 @@ Commit::commit()
             changedROBNumEntries[tid] = true;
 
             if (valuePred)
-                valuePred->squash(squashed_inst);
+                valuePred->squash(tid, squashed_inst);
 
             toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
             toIEW->commitInfo[tid].doneMemSeqNum = squashed_inst;
@@ -1899,6 +1899,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
                     VPDataStructFactory::buildUpdateMetaData(valuePred->getValuePredictorType());
         updateMetaData->pc = head_inst->getPC();
         updateMetaData->seq_no = head_inst->seqNum;
+        updateMetaData->tid = tid;
         updateMetaData->actualValue = head_inst->actualValue;
         updateMetaData->isMisprediction = head_inst->vpMisprediction;
         valuePred->updateValuePredictor(updateMetaData);
