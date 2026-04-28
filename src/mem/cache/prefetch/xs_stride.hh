@@ -34,7 +34,7 @@ class XSStridePrefetcher : public Queued
   const bool useXsDepth;
   const bool useRedundantTable;
   const bool fuzzyStrideMatching;
-  const unsigned shortStrideThres;
+  const unsigned shortStrideThres; // cacheline units
   const bool strideDynDepth{false};
   const bool enableNonStrideFilter;
   protected:

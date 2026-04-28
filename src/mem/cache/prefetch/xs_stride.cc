@@ -15,7 +15,7 @@ namespace prefetch
 XSStridePrefetcher::XSStridePrefetcher(const XSStridePrefetcherParams &p)
     : Queued(p),useXsDepth(p.use_xs_depth),useRedundantTable(p.use_redundant_table),
       fuzzyStrideMatching(p.fuzzy_stride_matching),
-      shortStrideThres(p.short_stride_thres),
+      shortStrideThres(p.short_stride_thres / p.block_size),
       strideDynDepth(p.stride_dyn_depth),
       enableNonStrideFilter(p.enable_non_stride_filter),
       regionSize(p.region_size),
@@ -58,6 +58,7 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
         stats.strideRedundantqueryCount++;
     }
     Addr lookupAddr = pfi.getAddr();
+    Addr lookupLine = blockIndex(lookupAddr);
     Addr stride_hash_pc = strideHashPc(pfi.getPC());
     StrideEntry *entry = stride.findEntry(stride_hash_pc, pfi.isSecure());
     learned_bop_offset = 0;
@@ -83,12 +84,12 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             stats.strideRedundanthitCount++;
         }
         stride.accessEntry(entry);
-        int64_t new_stride = lookupAddr - entry->lastAddr;
-        if (new_stride == 0 || (labs(new_stride) < 64 && (miss_repeat || entry->longStride.calcSaturation() >= 0.5))) {
+        int64_t new_stride = static_cast<int64_t>(lookupLine) - static_cast<int64_t>(entry->lastAddr);
+        if (new_stride == 0) {
             DPRINTF(XSStridePrefetcher, "Stride touch in the same blk, ignore redundant req\n");
             return false;
         }
-        bool stride_match = fuzzyStrideMatching ? (entry->stride > 64 && new_stride % entry->stride == 0) : false;
+        bool stride_match = fuzzyStrideMatching ? (entry->stride > 1 && new_stride % entry->stride == 0) : false;
         stride_match |= new_stride == entry->stride;
         DPRINTF(XSStridePrefetcher, "Stride hit, with stride: %ld(%lx), old stride: %ld(%lx), long stride: %.2f\n",
                 new_stride, new_stride, entry->stride, entry->stride, entry->longStride.calcSaturation());
@@ -127,17 +128,13 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             }
             DPRINTF(XSStridePrefetcher, "Stride match, inc conf to %d, late: %i, late sat:%i, depth: %i\n",
                     (int)entry->conf, late, (uint8_t)entry->lateConf, entry->depth);
-            entry->lastAddr = lookupAddr;
+            entry->lastAddr = lookupLine;
             entry->histStrides.clear();
             entry->matchedSinceAlloc = true;
 
-        } else if (labs(entry->stride) > 64L && labs(new_stride) < 64L) {
-            // different stride, but in the same cache line
-            DPRINTF(XSStridePrefetcher, "Stride unmatch, but access goes to the same line, ignore\n");
-
         } else {
             entry->conf--;
-            entry->lastAddr = lookupAddr;
+            entry->lastAddr = lookupLine;
             DPRINTF(XSStridePrefetcher, "Stride unmatch, dec conf to %d\n", (int)entry->conf);
             if ((int)entry->conf == 0) {
                 DPRINTF(XSStridePrefetcher, "Stride conf = 0, reset stride to %ld\n", new_stride);
@@ -177,26 +174,29 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
             unsigned start_depth = pfi.isCacheMiss() ? std::max(1, (entry->depth - 4)) : entry->depth;
             Addr pf_addr = 0;
             if (useXsDepth) {
-                sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 2)), addresses, 0,
-                                 PrefetchSourceType::SStride, 1);
-                sendPFWithFilter(pfi, blockAddress(lookupAddr + (entry->stride << 5)), addresses, 0,
-                                 PrefetchSourceType::SStride, 2);
+                Addr pf_line_1 = static_cast<Addr>(static_cast<int64_t>(lookupLine) + entry->stride * 4);
+                Addr pf_line_2 = static_cast<Addr>(static_cast<int64_t>(lookupLine) + entry->stride * 32);
+                Addr pf_addr_1 = pf_line_1 << lBlkSize;
+                Addr pf_addr_2 = pf_line_2 << lBlkSize;
+                sendPFWithFilter(pfi, pf_addr_1, addresses, 0, PrefetchSourceType::SStride, 1);
+                sendPFWithFilter(pfi, pf_addr_2, addresses, 0, PrefetchSourceType::SStride, 2);
                 if (is_first_shot) {
                     stats.strideUniquepfCount += 2;
                 } else {
                     stats.strideRedundantpfCount += 2;
                 }
                 if (archDBer){
-                    archDBer->strideTraceWrite(curTick(),  blockAddress(lookupAddr + (entry->stride << 2)), pfi.getPC(), stride_hash_pc,
+                    archDBer->strideTraceWrite(curTick(),  pf_addr_1, pfi.getPC(), stride_hash_pc,
                                             true, is_first_shot, pfi.isCacheMiss(), false);
-                    archDBer->strideTraceWrite(curTick(),  blockAddress(lookupAddr + (entry->stride << 5)), pfi.getPC(), stride_hash_pc,
+                    archDBer->strideTraceWrite(curTick(),  pf_addr_2, pfi.getPC(), stride_hash_pc,
                                             true, is_first_shot, pfi.isCacheMiss(), false);
                 }
             } else {
                 for (unsigned i = start_depth; i <= entry->depth; i++) {
-                    pf_addr = lookupAddr + entry->stride * i;
+                    Addr pf_line = static_cast<Addr>(static_cast<int64_t>(lookupLine) + entry->stride * i);
+                    pf_addr = pf_line << lBlkSize;
                     DPRINTF(XSStridePrefetcher, "Stride conf >= 2, send pf: %x with depth %i\n", pf_addr, i);
-                    sendPFWithFilter(pfi, blockAddress(pf_addr), addresses, 0, PrefetchSourceType::SStride, 1);
+                    sendPFWithFilter(pfi, pf_addr, addresses, 0, PrefetchSourceType::SStride, 1);
                     if (is_first_shot) {
                         stats.strideUniquepfCount++;
                     } else {
@@ -229,14 +229,15 @@ XSStridePrefetcher::strideLookup(AssociativeSet<StrideEntry> &stride, const Pref
                 stats.strideRedundantreplaceusefulCount++;
             }
         }
-        if (entry->conf >= 2 && entry->stride > 1024) {  // > 1k
-            DPRINTF(XSStridePrefetcher, "Stride Evicting a useful stride, send it to BOP with offset %i\n",
-                    entry->stride / 64);
-            // learnedBOP->tryAddOffset(entry->stride / 64);
-            learned_bop_offset = entry->stride / 64;
+        const int64_t bopLineThreshold = 1024 / static_cast<int64_t>(blkSize);
+        if (entry->conf >= 2 && entry->stride > bopLineThreshold) {  // > 1kB
+            DPRINTF(XSStridePrefetcher, "Stride Evicting a useful stride, send it to BOP with offset %ld\n",
+                    entry->stride);
+            // learnedBOP->tryAddOffset(entry->stride);
+            learned_bop_offset = entry->stride;
         }
         entry->conf.reset();
-        entry->lastAddr = lookupAddr;
+        entry->lastAddr = lookupLine;
         entry->stride = 0;
         entry->depth = 1;
         entry->lateConf.reset();
