@@ -1,6 +1,8 @@
 #include "cpu/pred/btb/pairtage.hh"
 
+#include <algorithm>
 #include <cassert>
+#include <cstdlib>
 #include <numeric>
 #include <string>
 
@@ -76,6 +78,7 @@ PairTAGE::PairTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
       tablePcShifts(numPredictors, 1),
       histLengths(defaultHistLengths(numPredictors)),
       maxHistLen(histLengths.empty() ? 0 : histLengths.back()),
+      numTablesToAlloc(1),
       numWays(numWays),
       maxBranchPositions(32),
       enableSecondBlock(true)
@@ -106,6 +109,7 @@ PairTAGE::PairTAGE(const Params &p)
       tablePcShifts(p.TTagPcShifts),
       histLengths(p.histLengths),
       maxHistLen(p.maxHistLen),
+      numTablesToAlloc(p.numTablesToAlloc),
       numWays(p.numWays),
       maxBranchPositions(p.maxBranchPositions),
       enableSecondBlock(p.enableSecondBlock),
@@ -417,6 +421,170 @@ PairTAGE::noteEntryRewrite(unsigned table, const TageEntry &oldEntry,
 }
 
 void
+PairTAGE::updateCounter(bool taken, unsigned width, short &counter)
+{
+    const int max = (1 << (width - 1)) - 1;
+    const int min = -(1 << (width - 1));
+    if (taken) {
+        satIncrement(max, counter);
+    } else {
+        satDecrement(min, counter);
+    }
+}
+
+bool
+PairTAGE::satIncrement(int max, short &counter)
+{
+    if (counter < max) {
+        ++counter;
+        return true;
+    }
+    return false;
+}
+
+bool
+PairTAGE::satDecrement(int min, short &counter)
+{
+    if (counter > min) {
+        --counter;
+        return true;
+    }
+    return false;
+}
+
+int
+PairTAGE::selectAllocationWay(const std::vector<TageEntry> &set) const
+{
+    for (unsigned way = 0; way < set.size(); ++way) {
+        if (!set[way].valid) {
+            return way;
+        }
+    }
+
+    for (unsigned way = 0; way < set.size(); ++way) {
+        const auto &cand = set[way];
+        const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
+        if (!cand.useful && weakish) {
+            return way;
+        }
+    }
+
+    for (unsigned way = 0; way < set.size(); ++way) {
+        if (!set[way].useful) {
+            return way;
+        }
+    }
+
+    return -1;
+}
+
+void
+PairTAGE::resetUsefulBits()
+{
+#ifndef UNIT_TEST
+    pairTageStats.usefulReset++;
+#endif
+    usefulResetCnt = 0;
+    for (auto &table : tageTable) {
+        for (auto &set : table) {
+            for (auto &entry : set) {
+                entry.useful = false;
+            }
+        }
+    }
+}
+
+bool
+PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
+                          const PairBlockInfo &trainedBlock,
+                          const PairBlockInfo &trainedSecondBlock,
+                          unsigned startTable)
+{
+    if (startTable >= numPredictors) {
+        return false;
+    }
+
+    std::vector<unsigned> candidateTables;
+    std::vector<unsigned> candidateWays;
+    candidateTables.reserve(numPredictors - startTable);
+    candidateWays.reserve(numPredictors - startTable);
+    for (unsigned table = startTable; table < numPredictors; ++table) {
+        const Addr index =
+            getTageIndex(startPC, table, predMeta.indexFoldedHist[table].get());
+        const auto &set = tageTable[table][index];
+        const int selectedWay = selectAllocationWay(set);
+        if (selectedWay >= 0) {
+            candidateTables.push_back(table);
+            candidateWays.push_back(static_cast<unsigned>(selectedWay));
+        }
+    }
+
+    if (candidateTables.empty()) {
+#ifndef UNIT_TEST
+        pairTageStats.allocFailureNoCandidate++;
+#endif
+        usefulResetCnt++;
+        if (usefulResetCnt >= 256) {
+            resetUsefulBits();
+        }
+        return false;
+    }
+
+    usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+
+    const unsigned rotateBy = allocLFSR.get() % candidateTables.size();
+    std::rotate(candidateTables.begin(), candidateTables.begin() + rotateBy,
+                candidateTables.end());
+    std::rotate(candidateWays.begin(), candidateWays.begin() + rotateBy,
+                candidateWays.end());
+
+    const unsigned allocCount =
+        std::min<unsigned>(numTablesToAlloc, candidateTables.size());
+    for (unsigned allocIdx = 0; allocIdx < allocCount; ++allocIdx) {
+        const unsigned table = candidateTables[allocIdx];
+        const unsigned way = candidateWays[allocIdx];
+        const Addr index =
+            getTageIndex(startPC, table, predMeta.indexFoldedHist[table].get());
+        auto &targetEntry = tageTable[table][index][way];
+        const auto oldEntry = targetEntry;
+
+#ifndef UNIT_TEST
+        if (!oldEntry.valid) {
+            pairTageStats.allocIntoInvalidSlot++;
+        } else {
+            pairTageStats.allocOverwriteValid++;
+            pairTageStats.tableOverwrites[table]++;
+            if (oldEntry.hasSecondBlock()) {
+                pairTageStats.allocOverwriteValidSecondBlock++;
+            }
+        }
+        pairTageStats.allocTableInstalls[table]++;
+        pairTageStats.tableWrites[table]++;
+#endif
+
+        TageEntry newEntry;
+        newEntry.valid = true;
+        newEntry.tag = getTageTag(
+            startPC, table, predMeta.tagFoldedHist[table].get(),
+            predMeta.altTagFoldedHist[table].get(),
+            getBranchIndexInBlock(trainedBlock.branchPC, startPC));
+        newEntry.counter = trainedBlock.taken ? 0 : -1;
+        newEntry.useful = false;
+        newEntry.setBlock(0, trainedBlock);
+        if (trainedSecondBlock.valid) {
+            newEntry.setBlock(1, trainedSecondBlock);
+        } else {
+            newEntry.clearBlock(1);
+        }
+
+        noteEntryRewrite(table, oldEntry, newEntry);
+        targetEntry = newEntry;
+    }
+
+    return true;
+}
+
+void
 PairTAGE::specUpdateHist(const bitset &history, FullBTBPrediction &pred)
 {
     auto [pc, target, taken] = pred.getPHistInfo();
@@ -459,9 +627,11 @@ PairTAGE::update(const FetchTarget &entry)
     // initialized and exposed, but no state mutation happens on update yet.
 }
 
-PairTAGE::TageTableInfo
-PairTAGE::lookupEntry(Addr startPC, const TageMeta &predMeta) const
+PairTAGE::ProviderInfo
+PairTAGE::lookupProviders(Addr startPC, const TageMeta &predMeta) const
 {
+    ProviderInfo providers;
+
     for (int table = numPredictors - 1; table >= 0; --table) {
         const Addr index = getTageIndex(startPC, table, predMeta.indexFoldedHist[table].get());
         auto &set = tageTable[table][index];
@@ -486,23 +656,45 @@ PairTAGE::lookupEntry(Addr startPC, const TageMeta &predMeta) const
                 predMeta.altTagFoldedHist[table].get(), position);
 
             if (entry.tag == tag) {
-                return TageTableInfo{
+                auto info = TageTableInfo{
                     true, entry, static_cast<unsigned>(table), index, tag, way};
+                if (!providers.main.found) {
+                    providers.main = info;
+                } else if (!providers.alt.found) {
+                    providers.alt = info;
+                    break;
+                }
             }
+        }
+
+        if (providers.alt.found) {
+            break;
         }
     }
 
-    return TageTableInfo{};
+    return providers;
 }
 
-PairTAGE::TageTableInfo
-PairTAGE::lookupEntry(Addr startPC) const
+PairTAGE::ProviderInfo
+PairTAGE::lookupProviders(Addr startPC) const
 {
     auto predMeta = TageMeta();
     predMeta.tagFoldedHist = tagFoldedHist;
     predMeta.altTagFoldedHist = altTagFoldedHist;
     predMeta.indexFoldedHist = indexFoldedHist;
-    return lookupEntry(startPC, predMeta);
+    return lookupProviders(startPC, predMeta);
+}
+
+PairTAGE::TageTableInfo
+PairTAGE::lookupEntry(Addr startPC, const TageMeta &predMeta) const
+{
+    return lookupProviders(startPC, predMeta).main;
+}
+
+PairTAGE::TageTableInfo
+PairTAGE::lookupEntry(Addr startPC) const
+{
+    return lookupProviders(startPC).main;
 }
 
 BTBEntry
@@ -616,6 +808,33 @@ PairTAGE::buildTrainingBlock(const FullBTBPrediction &pred) const
     return PairBlockInfo(predCopy.isTaken(), trainEntry->pc, trainEntry->target);
 }
 
+bool
+PairTAGE::blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const
+{
+    if (lhs.valid != rhs.valid) {
+        return false;
+    }
+    if (!lhs.valid) {
+        return true;
+    }
+    return lhs.taken == rhs.taken && lhs.branchPC == rhs.branchPC &&
+           lhs.targetPC == rhs.targetPC;
+}
+
+bool
+PairTAGE::entryMatchesTraining(const TageEntry &entry,
+                               const PairBlockInfo &firstBlock,
+                               const PairBlockInfo &secondBlock) const
+{
+    if (!blocksMatch(entry.firstBlock(), firstBlock)) {
+        return false;
+    }
+    if (!enableSecondBlock) {
+        return true;
+    }
+    return blocksMatch(entry.secondBlock(), secondBlock);
+}
+
 void
 PairTAGE::trainFromActualPred(const FetchTarget &entry,
                               const FullBTBPrediction *secondPred)
@@ -639,7 +858,9 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
         return;
     }
 
-    auto provider = lookupEntry(entry.startPC, *predMeta);
+    auto providers = lookupProviders(entry.startPC, *predMeta);
+    auto provider = providers.main;
+    auto altProvider = providers.alt;
     auto trainedBlock = buildTrainingBlock(entry);
     auto trainedSecondBlock =
         (enableSecondBlock && secondPred) ? buildTrainingBlock(*secondPred)
@@ -675,56 +896,65 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
     }
 #endif
 
-    unsigned table = provider.found ? provider.table : 0;
-    Addr index = provider.found ? provider.index :
-        getTageIndex(entry.startPC, table, predMeta->indexFoldedHist[table].get());
-    unsigned way = provider.found ? provider.way : 0;
+    const bool providerMatchesTraining = provider.found &&
+        entryMatchesTraining(provider.entry, trainedBlock, trainedSecondBlock);
+    const bool altMatchesTraining = altProvider.found &&
+        entryMatchesTraining(altProvider.entry, trainedBlock, trainedSecondBlock);
 
-    if (!provider.found) {
-        auto &set = tageTable[table][index];
-        for (unsigned candidateWay = 0; candidateWay < numWays; ++candidateWay) {
-            if (!set[candidateWay].valid) {
-                way = candidateWay;
-                break;
-            }
-        }
-    }
-
-    auto &trainedEntry = tageTable[table][index][way];
-    auto oldEntry = trainedEntry;
-    TageEntry newEntry;
-    newEntry.valid = true;
-    newEntry.tag = getTageTag(entry.startPC, table,
-        predMeta->tagFoldedHist[table].get(),
-        predMeta->altTagFoldedHist[table].get(),
-        getBranchIndexInBlock(trainedBlock.branchPC, entry.startPC));
-    newEntry.counter = trainedBlock.taken ? 0 : -1;
-    newEntry.useful = provider.found ? provider.entry.useful : false;
-    newEntry.setBlock(0, trainedBlock);
-    if (trainedSecondBlock.valid) {
-        newEntry.setBlock(1, trainedSecondBlock);
-    } else {
-        newEntry.clearBlock(1);
-    }
-#ifndef UNIT_TEST
-    pairTageStats.tableWrites[table]++;
     if (provider.found) {
-        pairTageStats.updateExistingProvider++;
-    } else {
-        pairTageStats.allocTableInstalls[table]++;
-        if (!oldEntry.valid) {
-            pairTageStats.allocIntoInvalidSlot++;
+        auto &providerEntry =
+            tageTable[provider.table][provider.index][provider.way];
+        auto oldEntry = providerEntry;
+        TageEntry newEntry = oldEntry;
+
+        short trainedCounter = oldEntry.counter;
+        if (blocksMatch(oldEntry.firstBlock(), trainedBlock)) {
+            updateCounter(trainedBlock.taken, 3, trainedCounter);
         } else {
-            pairTageStats.allocOverwriteValid++;
-            pairTageStats.tableOverwrites[table]++;
-            if (oldEntry.hasSecondBlock()) {
-                pairTageStats.allocOverwriteValidSecondBlock++;
-            }
+            trainedCounter = trainedBlock.taken ? 0 : -1;
         }
-    }
-    noteEntryRewrite(table, oldEntry, newEntry);
+
+        newEntry.valid = true;
+        newEntry.tag = getTageTag(
+            entry.startPC, provider.table,
+            predMeta->tagFoldedHist[provider.table].get(),
+            predMeta->altTagFoldedHist[provider.table].get(),
+            getBranchIndexInBlock(trainedBlock.branchPC, entry.startPC));
+        newEntry.counter = trainedCounter;
+        newEntry.useful = oldEntry.useful;
+        if (providerMatchesTraining && altProvider.found && !altMatchesTraining) {
+            newEntry.useful = true;
+        }
+        newEntry.setBlock(0, trainedBlock);
+        if (trainedSecondBlock.valid) {
+            newEntry.setBlock(1, trainedSecondBlock);
+        } else {
+            newEntry.clearBlock(1);
+        }
+
+#ifndef UNIT_TEST
+        pairTageStats.updateExistingProvider++;
+        pairTageStats.tableWrites[provider.table]++;
 #endif
-    trainedEntry = newEntry;
+        noteEntryRewrite(provider.table, oldEntry, newEntry);
+        providerEntry = newEntry;
+    }
+
+    bool needHigherAlloc = false;
+    unsigned allocStartTable = 0;
+    if (!provider.found) {
+        needHigherAlloc = true;
+        allocStartTable = 0;
+    } else if (!providerMatchesTraining &&
+               provider.table < numPredictors - 1) {
+        needHigherAlloc = true;
+        allocStartTable = provider.table + 1;
+    }
+
+    if (needHigherAlloc) {
+        allocateEntries(entry.startPC, *predMeta, trainedBlock,
+                        trainedSecondBlock, allocStartTable);
+    }
 }
 
 Addr
