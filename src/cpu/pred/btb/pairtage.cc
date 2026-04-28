@@ -77,7 +77,8 @@ PairTAGE::PairTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
       histLengths(defaultHistLengths(numPredictors)),
       maxHistLen(histLengths.empty() ? 0 : histLengths.back()),
       numWays(numWays),
-      maxBranchPositions(32)
+      maxBranchPositions(32),
+      enableSecondBlock(true)
 {
     setNumDelay(0);
     needMoreHistories = true;
@@ -107,6 +108,7 @@ PairTAGE::PairTAGE(const Params &p)
       maxHistLen(p.maxHistLen),
       numWays(p.numWays),
       maxBranchPositions(p.maxBranchPositions),
+      enableSecondBlock(p.enableSecondBlock),
       pairTageStats(this, numPredictors, numWays, tableSizes)
 {
     needMoreHistories = p.needMoreHistories;
@@ -639,8 +641,9 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
 
     auto provider = lookupEntry(entry.startPC, *predMeta);
     auto trainedBlock = buildTrainingBlock(entry);
-    auto trainedSecondBlock = secondPred ? buildTrainingBlock(*secondPred)
-                                         : PairBlockInfo{};
+    auto trainedSecondBlock =
+        (enableSecondBlock && secondPred) ? buildTrainingBlock(*secondPred)
+                                          : PairBlockInfo{};
 #ifndef UNIT_TEST
     if (provider.found) {
         pairTageStats.trainProviderHit++;

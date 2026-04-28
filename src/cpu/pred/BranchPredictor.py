@@ -1129,6 +1129,7 @@ class PairTAGE(TimedBaseBTBPredictor):
     useAltOnNaWidth = Param.Unsigned(7,"Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4,"Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False,"Enable bank conflict simulation")
+    enableSecondBlock = Param.Bool(True, "Enable PairTAGE second-block emission and training")
     numDelay = Param.Unsigned(0,"Prediction latency in cycles")
 
 class BTBITTAGE(TimedBaseBTBPredictor):

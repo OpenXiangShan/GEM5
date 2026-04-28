@@ -759,6 +759,11 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
 
     dbpBtbStats.pairtageSecondBlockAttempted++;
 
+    if (!pairtage->secondBlockEnabled()) {
+        dbpBtbStats.pairtageSecondBlockSkippedDisabled++;
+        return;
+    }
+
     if (!currentFirstBlockHasEvenPairPhase(tid)) {
         dbpBtbStats.pairtageSecondBlockSkippedOddPhase++;
         DPRINTF(DecoupleBP,
@@ -873,6 +878,10 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
     }
 
     if (!pairtage || !pairtage->isEnabled() || !mbtb || !mbtb->isEnabled()) {
+        return;
+    }
+
+    if (!pairtage->secondBlockEnabled()) {
         return;
     }
 
