@@ -776,8 +776,13 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
     if (firstBlockStatus != PairtageFirstBlockSecondBlockStatus::Match) {
         dbpBtbStats.pairtageSecondBlockSkippedFirstBlockOverridden++;
         switch (firstBlockStatus) {
-          case PairtageFirstBlockSecondBlockStatus::NoCandidate:
+          case PairtageFirstBlockSecondBlockStatus::NoCandidateLookupMiss:
             dbpBtbStats.pairtageSecondBlockNoFirstBlockCandidate++;
+            dbpBtbStats.pairtageSecondBlockNoFirstBlockLookupMiss++;
+            break;
+          case PairtageFirstBlockSecondBlockStatus::NoCandidateUntrainable:
+            dbpBtbStats.pairtageSecondBlockNoFirstBlockCandidate++;
+            dbpBtbStats.pairtageSecondBlockNoFirstBlockUntrainable++;
             break;
           case PairtageFirstBlockSecondBlockStatus::FallThruMismatch:
             dbpBtbStats.pairtageSecondBlockFirstBlockMismatchFallThru++;
@@ -963,21 +968,23 @@ DecoupledBPUWithBTB::PairtageFirstBlockSecondBlockStatus
 DecoupledBPUWithBTB::pairtageFirstBlockStatusForSecondBlock(ThreadID tid) const
 {
     if (!pairtage || !pairtage->isEnabled()) {
-        return PairtageFirstBlockSecondBlockStatus::NoCandidate;
+        return PairtageFirstBlockSecondBlockStatus::NoCandidateLookupMiss;
     }
 
     if (!currentFirstBlockHasEvenPairPhase(tid)) {
-        return PairtageFirstBlockSecondBlockStatus::NoCandidate;
+        return PairtageFirstBlockSecondBlockStatus::NoCandidateLookupMiss;
     }
 
+    auto &thread = threads[tid];
     auto pairMeta = std::static_pointer_cast<PairTAGE::TageMeta>(
         pairtage->getPredictionMeta());
     if (!pairMeta || !pairMeta->firstBlockValid ||
         !pairMeta->predictedFirstBlock.valid) {
-        return PairtageFirstBlockSecondBlockStatus::NoCandidate;
+        return buildTrainingPairBlockFromPrediction(thread.finalPred).valid ?
+            PairtageFirstBlockSecondBlockStatus::NoCandidateLookupMiss :
+            PairtageFirstBlockSecondBlockStatus::NoCandidateUntrainable;
     }
 
-    auto &thread = threads[tid];
     auto pairFirstPred = buildPredictionFromPairBlock(
         tid, pairMeta->predictedFirstBlock, thread.finalPred.bbStart,
         thread.finalPred, pairtage->getComponentIdx());

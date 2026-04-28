@@ -178,6 +178,24 @@ PairTAGE::PairTageStats::PairTageStats(
                "training calls with a valid first block to install"),
       ADD_STAT(trainFirstBlockInvalid, statistics::units::Count::get(),
                "training calls whose first block could not be formed"),
+      ADD_STAT(trainFirstBlockInvalidNoTakenEntry,
+               statistics::units::Count::get(),
+               "invalid first-block trains with no taken entry to encode"),
+      ADD_STAT(trainFirstBlockInvalidNoNotTakenDirectCond,
+               statistics::units::Count::get(),
+               "invalid first-block trains with no not-taken direct conditional"),
+      ADD_STAT(trainFirstBlockInvalidFilteredIndirect,
+               statistics::units::Count::get(),
+               "invalid first-block trains filtered by indirect branches"),
+      ADD_STAT(trainFirstBlockInvalidFilteredCall,
+               statistics::units::Count::get(),
+               "invalid first-block trains filtered by call entries"),
+      ADD_STAT(trainFirstBlockInvalidFilteredReturn,
+               statistics::units::Count::get(),
+               "invalid first-block trains filtered by return entries"),
+      ADD_STAT(trainFirstBlockInvalidUnsupportedFormat,
+               statistics::units::Count::get(),
+               "invalid first-block trains rejected by unsupported formats"),
       ADD_STAT(trainSecondBlockValid, statistics::units::Count::get(),
                "training calls with a valid second block to install"),
       ADD_STAT(clearEntryOnInvalidTrain, statistics::units::Count::get(),
@@ -739,7 +757,38 @@ PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pre
 PairTAGE::PairBlockInfo
 PairTAGE::buildTrainingBlock(const FetchTarget &entry) const
 {
+    return buildTrainingBlockResult(entry).block;
+}
+
+PairTAGE::PairBlockInfo
+PairTAGE::buildTrainingBlock(const FullBTBPrediction &pred) const
+{
+    return buildTrainingBlockResult(pred).block;
+}
+
+PairTAGE::TrainingBlockBuildStatus
+PairTAGE::classifyUnsupportedTrainingEntry(const BTBEntry &entry) const
+{
+    if (!entry.valid) {
+        return TrainingBlockBuildStatus::UnsupportedFormat;
+    }
+    if (entry.isIndirect) {
+        return TrainingBlockBuildStatus::FilteredIndirect;
+    }
+    if (entry.isCall) {
+        return TrainingBlockBuildStatus::FilteredCall;
+    }
+    if (entry.isReturn) {
+        return TrainingBlockBuildStatus::FilteredReturn;
+    }
+    return TrainingBlockBuildStatus::UnsupportedFormat;
+}
+
+PairTAGE::TrainingBlockBuildResult
+PairTAGE::buildTrainingBlockResult(const FetchTarget &entry) const
+{
     const BTBEntry *trainEntry = nullptr;
+    const BTBEntry *fallbackEntry = nullptr;
 
     if (entry.predTaken) {
         for (const auto &btbEntry : entry.predBTBEntries) {
@@ -748,64 +797,112 @@ PairTAGE::buildTrainingBlock(const FetchTarget &entry) const
                 break;
             }
         }
+        if (!trainEntry) {
+            return TrainingBlockBuildResult(
+                PairBlockInfo{}, TrainingBlockBuildStatus::NoTakenEntry);
+        }
     } else {
-        // This simplified PairTAGE format only stores a single not-taken
-        // conditional. Use the furthest not-taken conditional in the block as
-        // the representative first block.
+        // PairTAGE stores only one not-taken direct conditional per block.
         for (auto it = entry.predBTBEntries.rbegin();
              it != entry.predBTBEntries.rend(); ++it) {
-            if (it->valid && it->isCond && it->isDirect &&
+            if (!it->valid) {
+                continue;
+            }
+            if (!fallbackEntry) {
+                fallbackEntry = &*it;
+            }
+            if (it->isCond && it->isDirect &&
                 !it->isIndirect && !it->isCall && !it->isReturn) {
                 trainEntry = &*it;
                 break;
             }
         }
+        if (!trainEntry) {
+            if (fallbackEntry) {
+                return TrainingBlockBuildResult(
+                    PairBlockInfo{},
+                    classifyUnsupportedTrainingEntry(*fallbackEntry));
+            }
+            return TrainingBlockBuildResult(
+                PairBlockInfo{},
+                TrainingBlockBuildStatus::NoNotTakenDirectCond);
+        }
     }
 
-    if (!trainEntry || !trainEntry->valid || !trainEntry->isCond ||
+    if (!trainEntry->valid || !trainEntry->isCond ||
         !trainEntry->isDirect || trainEntry->isIndirect ||
         trainEntry->isCall || trainEntry->isReturn) {
-        return PairBlockInfo{};
+        return TrainingBlockBuildResult(
+            PairBlockInfo{}, classifyUnsupportedTrainingEntry(*trainEntry));
     }
 
     const Addr targetPC = entry.predTaken ?
         entry.predBranchInfo.target : trainEntry->target;
-    return PairBlockInfo(entry.predTaken, trainEntry->pc, targetPC);
+    return TrainingBlockBuildResult(
+        PairBlockInfo(entry.predTaken, trainEntry->pc, targetPC),
+        TrainingBlockBuildStatus::Valid);
 }
 
-PairTAGE::PairBlockInfo
-PairTAGE::buildTrainingBlock(const FullBTBPrediction &pred) const
+PairTAGE::TrainingBlockBuildResult
+PairTAGE::buildTrainingBlockResult(const FullBTBPrediction &pred) const
 {
     auto predCopy = pred;
     const BTBEntry *trainEntry = nullptr;
+    const BTBEntry *fallbackEntry = nullptr;
 
     if (predCopy.isTaken()) {
         auto takenEntry = predCopy.getTakenEntry();
-        if (takenEntry.valid) {
-            for (const auto &btbEntry : predCopy.btbEntries) {
-                if (btbEntry.valid && btbEntry.pc == takenEntry.pc) {
-                    trainEntry = &btbEntry;
-                    break;
-                }
+        if (!takenEntry.valid) {
+            return TrainingBlockBuildResult(
+                PairBlockInfo{}, TrainingBlockBuildStatus::NoTakenEntry);
+        }
+        for (const auto &btbEntry : predCopy.btbEntries) {
+            if (btbEntry.valid && btbEntry.pc == takenEntry.pc) {
+                trainEntry = &btbEntry;
+                break;
             }
         }
+        if (!trainEntry) {
+            return TrainingBlockBuildResult(
+                PairBlockInfo{}, TrainingBlockBuildStatus::NoTakenEntry);
+        }
     } else {
-        for (auto it = predCopy.btbEntries.rbegin(); it != predCopy.btbEntries.rend(); ++it) {
-            if (it->valid && it->isCond && it->isDirect &&
+        for (auto it = predCopy.btbEntries.rbegin();
+             it != predCopy.btbEntries.rend(); ++it) {
+            if (!it->valid) {
+                continue;
+            }
+            if (!fallbackEntry) {
+                fallbackEntry = &*it;
+            }
+            if (it->isCond && it->isDirect &&
                 !it->isIndirect && !it->isCall && !it->isReturn) {
                 trainEntry = &*it;
                 break;
             }
         }
+        if (!trainEntry) {
+            if (fallbackEntry) {
+                return TrainingBlockBuildResult(
+                    PairBlockInfo{},
+                    classifyUnsupportedTrainingEntry(*fallbackEntry));
+            }
+            return TrainingBlockBuildResult(
+                PairBlockInfo{},
+                TrainingBlockBuildStatus::NoNotTakenDirectCond);
+        }
     }
 
-    if (!trainEntry || !trainEntry->valid || !trainEntry->isCond ||
+    if (!trainEntry->valid || !trainEntry->isCond ||
         !trainEntry->isDirect || trainEntry->isIndirect ||
         trainEntry->isCall || trainEntry->isReturn) {
-        return PairBlockInfo{};
+        return TrainingBlockBuildResult(
+            PairBlockInfo{}, classifyUnsupportedTrainingEntry(*trainEntry));
     }
 
-    return PairBlockInfo(predCopy.isTaken(), trainEntry->pc, trainEntry->target);
+    return TrainingBlockBuildResult(
+        PairBlockInfo(predCopy.isTaken(), trainEntry->pc, trainEntry->target),
+        TrainingBlockBuildStatus::Valid);
 }
 
 bool
@@ -861,7 +958,8 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
     auto providers = lookupProviders(entry.startPC, *predMeta);
     auto provider = providers.main;
     auto altProvider = providers.alt;
-    auto trainedBlock = buildTrainingBlock(entry);
+    auto trainedBlockResult = buildTrainingBlockResult(entry);
+    auto trainedBlock = trainedBlockResult.block;
     auto trainedSecondBlock =
         (enableSecondBlock && secondPred) ? buildTrainingBlock(*secondPred)
                                           : PairBlockInfo{};
@@ -877,6 +975,28 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
     if (!trainedBlock.valid) {
 #ifndef UNIT_TEST
         pairTageStats.trainFirstBlockInvalid++;
+        switch (trainedBlockResult.status) {
+          case TrainingBlockBuildStatus::NoTakenEntry:
+            pairTageStats.trainFirstBlockInvalidNoTakenEntry++;
+            break;
+          case TrainingBlockBuildStatus::NoNotTakenDirectCond:
+            pairTageStats.trainFirstBlockInvalidNoNotTakenDirectCond++;
+            break;
+          case TrainingBlockBuildStatus::FilteredIndirect:
+            pairTageStats.trainFirstBlockInvalidFilteredIndirect++;
+            break;
+          case TrainingBlockBuildStatus::FilteredCall:
+            pairTageStats.trainFirstBlockInvalidFilteredCall++;
+            break;
+          case TrainingBlockBuildStatus::FilteredReturn:
+            pairTageStats.trainFirstBlockInvalidFilteredReturn++;
+            break;
+          case TrainingBlockBuildStatus::UnsupportedFormat:
+            pairTageStats.trainFirstBlockInvalidUnsupportedFormat++;
+            break;
+          case TrainingBlockBuildStatus::Valid:
+            break;
+        }
 #endif
         if (provider.found) {
             auto &providerEntry =

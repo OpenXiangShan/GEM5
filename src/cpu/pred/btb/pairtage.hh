@@ -168,6 +168,31 @@ class PairTAGE : public TimedBaseBTBPredictor
     std::vector<std::vector<std::vector<TageEntry>>> &getTageTable() { return tageTable; }
 
   private:
+    enum class TrainingBlockBuildStatus
+    {
+        Valid,
+        NoTakenEntry,
+        NoNotTakenDirectCond,
+        FilteredIndirect,
+        FilteredCall,
+        FilteredReturn,
+        UnsupportedFormat
+    };
+
+    struct TrainingBlockBuildResult
+    {
+        PairBlockInfo block;
+        TrainingBlockBuildStatus status;
+
+        TrainingBlockBuildResult(
+            const PairBlockInfo &block = PairBlockInfo(),
+            TrainingBlockBuildStatus status =
+                TrainingBlockBuildStatus::UnsupportedFormat)
+            : block(block), status(status)
+        {
+        }
+    };
+
 #ifndef UNIT_TEST
     struct PairTageStats : public statistics::Group
     {
@@ -187,6 +212,12 @@ class PairTAGE : public TimedBaseBTBPredictor
         statistics::Scalar trainProviderMiss;
         statistics::Scalar trainFirstBlockValid;
         statistics::Scalar trainFirstBlockInvalid;
+        statistics::Scalar trainFirstBlockInvalidNoTakenEntry;
+        statistics::Scalar trainFirstBlockInvalidNoNotTakenDirectCond;
+        statistics::Scalar trainFirstBlockInvalidFilteredIndirect;
+        statistics::Scalar trainFirstBlockInvalidFilteredCall;
+        statistics::Scalar trainFirstBlockInvalidFilteredReturn;
+        statistics::Scalar trainFirstBlockInvalidUnsupportedFormat;
         statistics::Scalar trainSecondBlockValid;
         statistics::Scalar clearEntryOnInvalidTrain;
         statistics::Scalar updateExistingProvider;
@@ -220,6 +251,12 @@ class PairTAGE : public TimedBaseBTBPredictor
     TageTableInfo lookupEntry(Addr startPC, const TageMeta &predMeta) const;
     BTBEntry buildBTBEntry(const PairBlockInfo &block) const;
     void fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pred) const;
+    TrainingBlockBuildStatus classifyUnsupportedTrainingEntry(
+        const BTBEntry &entry) const;
+    TrainingBlockBuildResult buildTrainingBlockResult(
+        const FetchTarget &entry) const;
+    TrainingBlockBuildResult buildTrainingBlockResult(
+        const FullBTBPrediction &pred) const;
     PairBlockInfo buildTrainingBlock(const FetchTarget &entry) const;
     PairBlockInfo buildTrainingBlock(const FullBTBPrediction &pred) const;
     bool blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const;
