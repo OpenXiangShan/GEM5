@@ -188,6 +188,8 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
         htmStarts[tid] = 0;
         htmStops[tid] = 0;
         traceCommitIndex[tid] = 0;
+        committedTargetId[tid] = 1;
+        committedLoopIter[tid] = 0;
         fixedbuffer[tid] = boost::circular_buffer<DynInstPtr>(renameWidth);
     }
     interrupt = NoFault;
@@ -725,8 +727,8 @@ Commit::squashAll(ThreadID tid)
 
     set(toIEW->commitInfo[tid].pc, pc[tid]);
 
-    toIEW->commitInfo[tid].squashedTargetId = committedTargetId;
-    toIEW->commitInfo[tid].squashedLoopIter = committedLoopIter;
+    toIEW->commitInfo[tid].squashedTargetId = committedTargetId[tid];
+    toIEW->commitInfo[tid].squashedLoopIter = committedLoopIter[tid];
 
     cpu->mmu->useNewPriv(cpu->getContext(tid));
 
@@ -1412,8 +1414,8 @@ Commit::commitInsts()
                     if (head_inst->getFtqId() > 1) {
                         toIEW->commitInfo[tid].doneFtqId = head_inst->getFtqId() - 1;
                     }
-                    committedTargetId = head_inst->getFtqId();
-                    committedLoopIter = head_inst->getLoopIteration();
+                    committedTargetId[tid] = head_inst->getFtqId();
+                    committedLoopIter[tid] = head_inst->getLoopIteration();
 
                     if (tid == 0)
                         canHandleInterrupts = !head_inst->isDelayedCommit();

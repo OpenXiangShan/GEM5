@@ -567,8 +567,8 @@ class Commit
 
     // committed Stream and Target
 
-    uint64_t committedTargetId{1};
-    uint64_t committedLoopIter{};
+    uint64_t committedTargetId[MaxThreads];
+    uint64_t committedLoopIter[MaxThreads];
 
     struct CommitStats : public statistics::Group
     {
