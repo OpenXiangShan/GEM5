@@ -60,10 +60,10 @@ WorkerPrefetcher::transfer()
     auto dpp_it = localBuffer.begin();
     while (count < depth && !localBuffer.empty()) {
         if (queueFilter) {
-            if (alreadyInQueue(pfq, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(), dpp_it->priority)) {
+            if (alreadyInQueue(pfq, dpp_it->pfInfo, dpp_it->priority)) {
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);
-            } else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo.getAddr(), dpp_it->pfInfo.isSecure(),
+            } else if (alreadyInQueue(pfqMissingTranslation, dpp_it->pfInfo,
                                       dpp_it->priority)) {
                 DPRINTF(WorkerPref, "Worker: [%lx, %d] was already in pfq\n", dpp_it->pfInfo.getAddr(),
                         dpp_it->pfahead_host);

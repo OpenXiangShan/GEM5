@@ -67,11 +67,21 @@ Queued::DeferredPacket::createPkt(Addr paddr, unsigned blk_size, RequestorID req
     /* Create a prefetch memory request */
     RequestPtr req;
     if (owner->useVirtualAddresses && pfInfo.hasPC()) {
-        req = std::make_shared<Request>(pfInfo.getAddr(), blk_size, 0,
-                                        requestor_id, pfInfo.getPC(), 0);
+        if (pfInfo.hasContextId()) {
+            req = std::make_shared<Request>(pfInfo.getAddr(), blk_size, 0,
+                                            requestor_id, pfInfo.getPC(),
+                                            pfInfo.contextId());
+        } else {
+            req = std::make_shared<Request>();
+            req->setVirt(pfInfo.getAddr(), blk_size, 0, requestor_id,
+                         pfInfo.getPC());
+        }
         req->setPaddr(paddr);
     } else {
         req = std::make_shared<Request>(paddr, blk_size, 0, requestor_id);
+        if (pfInfo.hasContextId()) {
+            req->setContext(pfInfo.contextId());
+        }
     }
 
     req->setFlags(Request::PREFETCH);
@@ -213,7 +223,6 @@ void
 Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 {
     Addr blk_addr = blockAddress(pfi.getAddr());
-    bool is_secure = pfi.isSecure();
 
     bool late_in_mshr = pkt->missOnLatePf;  // hit in pf mshr
 
@@ -222,10 +231,10 @@ Queued::notify(const PacketPtr &pkt, const PrefetchInfo &pfi)
 
     // Squash queued prefetches if demand miss to same line
     if (queueSquash) {
+        PrefetchInfo blk_pfi(pfi, blk_addr);
         auto itr = pfq.begin();
         while (itr != pfq.end()) {
-            if (itr->pfInfo.getAddr() == blk_addr &&
-                itr->pfInfo.isSecure() == is_secure) {
+            if (itr->pfInfo.sameAddr(blk_pfi)) {
                 DPRINTF(HWPrefetch, "Removing pf candidate addr: %#x "
                         "(cl: %#x), demand request going to the same addr\n",
                         itr->pfInfo.getAddr(),
@@ -545,9 +554,10 @@ Queued::alreadyInQueue(std::list<DeferredPacket> &queue,
 RequestPtr
 Queued::createPrefetchRequest(Addr addr, PrefetchInfo const &pfi, PacketPtr pkt, PrefetchSourceType pf_src, int pf_depth)
 {
+    assert(pfi.hasContextId());
     RequestPtr translation_req = std::make_shared<Request>(
             addr, blkSize, pkt->req->getFlags(), requestorId, pfi.getPC(),
-            pkt->req->contextId());
+            pfi.contextId());
     translation_req->setFlags(Request::PF_EXCLUSIVE);
     translation_req->setPFSource(pf_src);
     translation_req->setPFDepth(pf_depth);
