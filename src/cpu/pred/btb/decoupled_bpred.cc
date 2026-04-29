@@ -613,7 +613,7 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
         return;
     }
 
-    if (!currentFirstBlockHasEvenPairPhase(tid)) {
+    if (!currentFirstBlockHasAllowedPairPhase(tid)) {
         dbpBtbStats.pairtageSecondBlockSkippedOddPhase++;
         DPRINTF(DecoupleBP,
                 "Skip PairTAGE second block for thread %u because first block phase is Odd\n",
@@ -757,7 +757,7 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
         return;
     }
 
-    if (!currentFirstBlockHasEvenPairPhase(tid)) {
+    if (!currentFirstBlockHasAllowedPairPhase(tid)) {
         return;
     }
 
@@ -807,11 +807,12 @@ DecoupledBPUWithBTB::prepareSecondBlockTrainingPrediction(ThreadID tid)
 }
 
 bool
-DecoupledBPUWithBTB::currentFirstBlockHasEvenPairPhase(ThreadID tid) const
+DecoupledBPUWithBTB::currentFirstBlockHasAllowedPairPhase(ThreadID tid) const
 {
     return threads[tid].firstBlockProcessedThisTick &&
            !ftq.empty(tid) &&
-           ftq.back(tid).pairPhase == PairPhase::Even;
+           pairtage &&
+           pairtage->phaseEnabled(ftq.back(tid).pairPhase);
 }
 
 DecoupledBPUWithBTB::PairtageFirstBlockSecondBlockStatus
@@ -821,7 +822,7 @@ DecoupledBPUWithBTB::pairtageFirstBlockStatusForSecondBlock(ThreadID tid) const
         return PairtageFirstBlockSecondBlockStatus::NoCandidateLookupMiss;
     }
 
-    if (!currentFirstBlockHasEvenPairPhase(tid)) {
+    if (!currentFirstBlockHasAllowedPairPhase(tid)) {
         return PairtageFirstBlockSecondBlockStatus::NoCandidateLookupMiss;
     }
 
