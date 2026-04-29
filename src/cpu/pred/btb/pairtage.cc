@@ -113,6 +113,7 @@ PairTAGE::PairTAGE(const Params &p)
       numWays(p.numWays),
       maxBranchPositions(p.maxBranchPositions),
       enableSecondBlock(p.enableSecondBlock),
+      trainStandaloneFallThrough(p.trainStandaloneFallThrough),
       pairTageStats(this, numPredictors, numWays, tableSizes)
 {
     needMoreHistories = p.needMoreHistories;
@@ -198,6 +199,9 @@ PairTAGE::PairTageStats::PairTageStats(
                "invalid first-block trains rejected by unsupported formats"),
       ADD_STAT(trainSecondBlockValid, statistics::units::Count::get(),
                "training calls with a valid second block to install"),
+      ADD_STAT(trainFallThroughSkippedNoSecondBlock,
+               statistics::units::Count::get(),
+               "fallthrough first-block trains skipped because no second block was available"),
       ADD_STAT(clearEntryOnInvalidTrain, statistics::units::Count::get(),
                "existing provider entries cleared because no valid first block was trainable"),
       ADD_STAT(updateExistingProvider, statistics::units::Count::get(),
@@ -719,12 +723,12 @@ BTBEntry
 PairTAGE::buildBTBEntry(const PairBlockInfo &block) const
 {
     BTBEntry entry;
-    entry.valid = block.valid;
+    entry.valid = block.valid && !block.isFallThrough();
     entry.pc = block.branchPC;
     entry.target = block.targetPC;
-    entry.size = 4;
-    entry.isCond = true;
-    entry.isDirect = true;
+    entry.size = block.isFallThrough() ? 0 : 4;
+    entry.isCond = !block.isFallThrough();
+    entry.isDirect = !block.isFallThrough();
     entry.alwaysTaken = false;
     entry.ctr = block.taken ? 0 : -1;
     entry.source = componentIdx;
@@ -746,6 +750,10 @@ PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pre
 #endif
 
     if (!block.valid) {
+        return;
+    }
+
+    if (block.isFallThrough()) {
         return;
     }
 
@@ -824,8 +832,8 @@ PairTAGE::buildTrainingBlockResult(const FetchTarget &entry) const
                     classifyUnsupportedTrainingEntry(*fallbackEntry));
             }
             return TrainingBlockBuildResult(
-                PairBlockInfo{},
-                TrainingBlockBuildStatus::NoNotTakenDirectCond);
+                PairBlockInfo(false, entry.startPC, entry.predEndPC, true),
+                TrainingBlockBuildStatus::Valid);
         }
     }
 
@@ -915,6 +923,7 @@ PairTAGE::blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const
         return true;
     }
     return lhs.taken == rhs.taken && lhs.branchPC == rhs.branchPC &&
+           lhs.fallThrough == rhs.fallThrough &&
            lhs.targetPC == rhs.targetPC;
 }
 
@@ -1007,6 +1016,15 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
 #endif
             providerEntry = TageEntry{};
         }
+        return;
+    }
+    const bool skipStandaloneFallThrough =
+        trainedBlock.isFallThrough() && !trainedSecondBlock.valid &&
+        !trainStandaloneFallThrough;
+    if (skipStandaloneFallThrough) {
+#ifndef UNIT_TEST
+        pairTageStats.trainFallThroughSkippedNoSecondBlock++;
+#endif
         return;
     }
 #ifndef UNIT_TEST

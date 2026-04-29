@@ -44,12 +44,12 @@ BTBEntry
 buildPairBlockEntry(const PairTAGE::PairBlockInfo &block, int pairComponentIdx)
 {
     BTBEntry entry;
-    entry.valid = block.valid;
+    entry.valid = block.valid && !block.isFallThrough();
     entry.pc = block.branchPC;
     entry.target = block.targetPC;
-    entry.size = 4;
-    entry.isCond = true;
-    entry.isDirect = true;
+    entry.size = block.isFallThrough() ? 0 : 4;
+    entry.isCond = !block.isFallThrough();
+    entry.isDirect = !block.isFallThrough();
     entry.alwaysTaken = false;
     entry.ctr = block.taken ? 0 : -1;
     entry.source = pairComponentIdx;
@@ -74,12 +74,26 @@ buildPredictionFromPairBlock(ThreadID tid,
 
     auto entry = buildPairBlockEntry(block, pairComponentIdx);
     pred.btbEntries.push_back(entry);
-    pred.condTakens.push_back({entry.pc, block.taken});
+    if (!block.isFallThrough()) {
+        pred.condTakens.push_back({entry.pc, block.taken});
+    }
     return pred;
 }
 
+bool
+predictionHasUsableEntry(const FullBTBPrediction &pred)
+{
+    for (const auto &entry : pred.btbEntries) {
+        if (entry.valid) {
+            return true;
+        }
+    }
+    return false;
+}
+
 PairTAGE::PairBlockInfo
-buildTrainingPairBlockFromPrediction(const FullBTBPrediction &pred)
+buildTrainingPairBlockFromPrediction(const FullBTBPrediction &pred,
+                                     Addr predictWidth)
 {
     auto predCopy = pred;
     const BTBEntry *trainEntry = nullptr;
@@ -108,6 +122,18 @@ buildTrainingPairBlockFromPrediction(const FullBTBPrediction &pred)
     if (!trainEntry || !trainEntry->valid || !trainEntry->isCond ||
         !trainEntry->isDirect || trainEntry->isIndirect ||
         trainEntry->isCall || trainEntry->isReturn) {
+        if (!predCopy.isTaken() && predCopy.btbEntries.empty()) {
+            return PairTAGE::PairBlockInfo(
+                false, predCopy.bbStart, predCopy.getFallThrough(predictWidth),
+                true);
+        }
+        if (!predCopy.isTaken() && predCopy.btbEntries.size() == 1) {
+            const auto &marker = predCopy.btbEntries.front();
+            if (!marker.valid && marker.pc == predCopy.bbStart) {
+                return PairTAGE::PairBlockInfo(
+                    false, marker.pc, marker.target, true);
+            }
+        }
         return PairTAGE::PairBlockInfo{};
     }
 
@@ -128,6 +154,7 @@ pairBlocksMatch(const PairTAGE::PairBlockInfo &lhs,
     }
 
     return lhs.taken == rhs.taken &&
+           lhs.fallThrough == rhs.fallThrough &&
            lhs.branchPC == rhs.branchPC &&
            lhs.targetPC == rhs.targetPC;
 }
@@ -547,7 +574,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     // Search from last stage to first for valid predictions
     for (int i = (int)numStages - 1; i >= 0; i--) {
-        if (predsOfEachStage[i].btbEntries.size() > 0) {
+        if (predictionHasUsableEntry(predsOfEachStage[i])) {
             chosenPrediction = &predsOfEachStage[i];
             DPRINTF(Override, "Selected prediction from stage %d\n", i);
             break;
@@ -620,7 +647,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     }
 
     // update ubtb/abtb using final S3 prediction
-    if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
+    if (predictionHasUsableEntry(predsOfEachStage[numStages - 1])) {
         if (ubtb->isEnabled()) {
             ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
         }
@@ -821,7 +848,8 @@ DecoupledBPUWithBTB::processSecondBlock(ThreadID tid)
 
     if (thread.secondBlockTrainPredReady) {
         auto trainedSecondBlock =
-            buildTrainingPairBlockFromPrediction(thread.secondBlockTrainPred);
+            buildTrainingPairBlockFromPrediction(thread.secondBlockTrainPred,
+                                                 predictWidth);
         if (!pairBlocksMatch(secondBlock, trainedSecondBlock)) {
             dbpBtbStats.pairtageSecondBlockTeacherDisagree++;
             DPRINTF(DecoupleBP,
@@ -980,31 +1008,35 @@ DecoupledBPUWithBTB::pairtageFirstBlockStatusForSecondBlock(ThreadID tid) const
         pairtage->getPredictionMeta());
     if (!pairMeta || !pairMeta->firstBlockValid ||
         !pairMeta->predictedFirstBlock.valid) {
-        return buildTrainingPairBlockFromPrediction(thread.finalPred).valid ?
+        return buildTrainingPairBlockFromPrediction(thread.finalPred,
+                                                    predictWidth).valid ?
             PairtageFirstBlockSecondBlockStatus::NoCandidateLookupMiss :
             PairtageFirstBlockSecondBlockStatus::NoCandidateUntrainable;
     }
 
-    auto pairFirstPred = buildPredictionFromPairBlock(
-        tid, pairMeta->predictedFirstBlock, thread.finalPred.bbStart,
-        thread.finalPred, pairtage->getComponentIdx());
-    auto finalPredCopy = thread.finalPred;
-    auto [matches, reason] = pairFirstPred.match(finalPredCopy, predictWidth);
+    auto actualFirstBlock = buildTrainingPairBlockFromPrediction(
+        thread.finalPred, predictWidth);
+    if (!actualFirstBlock.valid) {
+        return PairtageFirstBlockSecondBlockStatus::NoCandidateUntrainable;
+    }
 
-    if (matches) {
+    if (pairBlocksMatch(actualFirstBlock, pairMeta->predictedFirstBlock)) {
         return PairtageFirstBlockSecondBlockStatus::Match;
     }
 
-    switch (reason) {
-      case OverrideReason::FALL_THRU:
+    if (actualFirstBlock.taken != pairMeta->predictedFirstBlock.taken) {
         return PairtageFirstBlockSecondBlockStatus::FallThruMismatch;
-      case OverrideReason::CONTROL_ADDR:
+    }
+    if (actualFirstBlock.branchPC != pairMeta->predictedFirstBlock.branchPC) {
         return PairtageFirstBlockSecondBlockStatus::ControlAddrMismatch;
-      case OverrideReason::TARGET:
-        return PairtageFirstBlockSecondBlockStatus::TargetMismatch;
-      default:
+    }
+    if (actualFirstBlock.targetPC != pairMeta->predictedFirstBlock.targetPC ||
+        actualFirstBlock.fallThrough !=
+            pairMeta->predictedFirstBlock.fallThrough) {
         return PairtageFirstBlockSecondBlockStatus::TargetMismatch;
     }
+
+    return PairtageFirstBlockSecondBlockStatus::TargetMismatch;
 }
 
 bool
@@ -1022,7 +1054,7 @@ DecoupledBPUWithBTB::predictionMatchesPairtageFirstBlock(
         return false;
     }
 
-    return pairBlocksMatch(buildTrainingPairBlockFromPrediction(pred),
+    return pairBlocksMatch(buildTrainingPairBlockFromPrediction(pred, predictWidth),
                            pairMeta->predictedFirstBlock);
 }
 
@@ -1409,9 +1441,20 @@ DecoupledBPUWithBTB::createFetchTargetEntry(
              "Too many BTB predictor components (%u) for FetchTarget meta slots (%zu)",
              numComponents, entry.predMetas.size());
 
-    entry.isHit = !pred.btbEntries.empty();
+    auto pairMeta = pairtage ? std::static_pointer_cast<PairTAGE::TageMeta>(
+        pairtage->getPredictionMeta()) : nullptr;
+    const bool pairtageFallThroughHit = pairMeta &&
+        pairMeta->firstBlockValid &&
+        pairMeta->predictedFirstBlock.valid &&
+        pairMeta->predictedFirstBlock.isFallThrough();
+
+    entry.isHit = !pred.btbEntries.empty() || pairtageFallThroughHit;
     entry.falseHit = false;
     entry.predBTBEntries = pred.btbEntries;
+    if (pairtageFallThroughHit && entry.predBTBEntries.empty()) {
+        entry.predBTBEntries.push_back(buildPairBlockEntry(
+            pairMeta->predictedFirstBlock, pairtage->getComponentIdx()));
+    }
     entry.predTaken = taken;
     entry.predEndPC = fallThroughAddr;
 
