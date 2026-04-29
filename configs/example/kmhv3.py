@@ -165,10 +165,10 @@ def setKmhV3Params(args, system):
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
             # RespLayer[1]: L2 → DCache, allow 2 responses per cycle
-            # system.tol2bus_list[i].layer_bandwidth_configs = [
-            #     LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
-            #     LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
-            # ]
+            system.tol2bus_list[i].layer_bandwidth_configs = [
+                LayerBandwidthConfig(direction="req", port_index=0, max_per_cycle=2),
+                LayerBandwidthConfig(direction="resp", port_index=1, max_per_cycle=2),
+            ]
 
     # l3 cache
     if args.l3cache:
