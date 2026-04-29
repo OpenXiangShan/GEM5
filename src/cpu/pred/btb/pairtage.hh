@@ -49,13 +49,20 @@ class PairTAGE : public TimedBaseBTBPredictor
     {
         bool valid;
         bool taken;
+        bool fallThrough;
         Addr branchPC;
         Addr targetPC;
 
-        PairBlockInfo() : valid(false), taken(false), branchPC(0), targetPC(0) {}
+        PairBlockInfo()
+            : valid(false), taken(false), fallThrough(false),
+              branchPC(0), targetPC(0)
+        {
+        }
 
-        PairBlockInfo(bool taken, Addr branchPC, Addr targetPC)
-            : valid(true), taken(taken), branchPC(branchPC), targetPC(targetPC)
+        PairBlockInfo(bool taken, Addr branchPC, Addr targetPC,
+                      bool fallThrough = false)
+            : valid(true), taken(taken), fallThrough(fallThrough),
+              branchPC(branchPC), targetPC(targetPC)
         {
         }
 
@@ -63,9 +70,12 @@ class PairTAGE : public TimedBaseBTBPredictor
         {
             valid = false;
             taken = false;
+            fallThrough = false;
             branchPC = 0;
             targetPC = 0;
         }
+
+        bool isFallThrough() const { return valid && fallThrough; }
     };
 
     struct TageEntry
@@ -219,6 +229,7 @@ class PairTAGE : public TimedBaseBTBPredictor
         statistics::Scalar trainFirstBlockInvalidFilteredReturn;
         statistics::Scalar trainFirstBlockInvalidUnsupportedFormat;
         statistics::Scalar trainSecondBlockValid;
+        statistics::Scalar trainFallThroughSkippedNoSecondBlock;
         statistics::Scalar clearEntryOnInvalidTrain;
         statistics::Scalar updateExistingProvider;
         statistics::Scalar allocIntoInvalidSlot;
@@ -303,6 +314,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     PairBlockInfo secondPredBlock;
     PairPhase predictionPhase{PairPhase::Even};
     const bool enableSecondBlock;
+    const bool trainStandaloneFallThrough;
 #ifndef UNIT_TEST
     PairTageStats pairTageStats;
 #endif
