@@ -1130,6 +1130,9 @@ class PairTAGE(TimedBaseBTBPredictor):
     numBanks = Param.Unsigned(4,"Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False,"Enable bank conflict simulation")
     enableSecondBlock = Param.Bool(True, "Enable PairTAGE second-block emission and training")
+    allowOddPhase = Param.Bool(
+        True,
+        "Allow PairTAGE predict/train/second-block paths to operate on odd pair phase")
     trainStandaloneFallThrough = Param.Bool(
         True,
         "Allow PairTAGE to train fallthrough first blocks even when no valid second block exists")

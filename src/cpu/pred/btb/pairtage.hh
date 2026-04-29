@@ -168,6 +168,11 @@ class PairTAGE : public TimedBaseBTBPredictor
     void trainFromActualPred(const FetchTarget &entry,
                              const FullBTBPrediction *secondPred = nullptr);
     bool secondBlockEnabled() const { return enableSecondBlock; }
+    bool oddPhaseAllowed() const { return allowOddPhase; }
+    bool phaseEnabled(PairPhase phase) const
+    {
+        return allowOddPhase || phase == PairPhase::Even;
+    }
 
     unsigned getNumPredictors() const { return numPredictors; }
     unsigned getNumWays() const { return numWays; }
@@ -314,6 +319,7 @@ class PairTAGE : public TimedBaseBTBPredictor
     PairBlockInfo secondPredBlock;
     PairPhase predictionPhase{PairPhase::Even};
     const bool enableSecondBlock;
+    const bool allowOddPhase;
     const bool trainStandaloneFallThrough;
 #ifndef UNIT_TEST
     PairTageStats pairTageStats;

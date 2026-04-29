@@ -174,7 +174,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     void prepareSecondBlockTrainingPrediction(ThreadID tid);
     void processSecondBlock(ThreadID tid);
     void refreshSecondBlockPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
-    bool currentFirstBlockHasEvenPairPhase(ThreadID tid) const;
+    bool currentFirstBlockHasAllowedPairPhase(ThreadID tid) const;
     enum class PairtageFirstBlockSecondBlockStatus
     {
         Match,

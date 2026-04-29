@@ -81,7 +81,9 @@ PairTAGE::PairTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
       numTablesToAlloc(1),
       numWays(numWays),
       maxBranchPositions(32),
-      enableSecondBlock(true)
+      enableSecondBlock(true),
+      allowOddPhase(false),
+      trainStandaloneFallThrough(false)
 {
     setNumDelay(0);
     needMoreHistories = true;
@@ -113,6 +115,7 @@ PairTAGE::PairTAGE(const Params &p)
       numWays(p.numWays),
       maxBranchPositions(p.maxBranchPositions),
       enableSecondBlock(p.enableSecondBlock),
+      allowOddPhase(p.allowOddPhase),
       trainStandaloneFallThrough(p.trainStandaloneFallThrough),
       pairTageStats(this, numPredictors, numWays, tableSizes)
 {
@@ -313,7 +316,7 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
     meta->predictedFirstBlock.clear();
     meta->predictedSecondBlock.clear();
 
-    if (predictionPhase == PairPhase::Odd) {
+    if (!phaseEnabled(predictionPhase)) {
 #ifndef UNIT_TEST
         pairTageStats.predOddPhaseSkipped++;
 #endif
@@ -381,7 +384,7 @@ PairTAGE::refreshPredictionMeta(Addr startAddr,
     meta->predictedFirstBlock.clear();
     meta->predictedSecondBlock.clear();
 
-    if (predictionPhase == PairPhase::Odd) {
+    if (!phaseEnabled(predictionPhase)) {
 #ifndef UNIT_TEST
         pairTageStats.refreshOddPhaseSkipped++;
 #endif
@@ -948,7 +951,7 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
 #ifndef UNIT_TEST
     pairTageStats.trainCalls++;
 #endif
-    if (entry.pairPhase != PairPhase::Even) {
+    if (!phaseEnabled(entry.pairPhase)) {
 #ifndef UNIT_TEST
         pairTageStats.trainOddPhaseSkipped++;
 #endif
