@@ -119,6 +119,7 @@ class IssueQue : public SimObject
 
     int numLoadPipe = 0;
     int numStorePipe = 0;
+    int loadPipeId = -1;
 
     struct select_policy
     {
@@ -222,6 +223,7 @@ class IssueQue : public SimObject
 
     int getIssueStages() { return scheduleToExecDelay; }
     int getId() { return IQID; }
+    int getLoadPipeId() const { return loadPipeId; }
     // return IQ's name
     std::string getName() { return iqname; }
     // return gem5 simobject's name

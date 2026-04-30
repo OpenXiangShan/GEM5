@@ -123,6 +123,7 @@ class TLB : public BaseTLB
         statistics::Scalar writeHits;
         statistics::Scalar writeMisses;
         statistics::Scalar writeAccesses;
+        /** Prefetch translations are tracked separately from demand accesses. */
         statistics::Scalar readprefetchHits;
         statistics::Scalar writeprefetchHits;
         statistics::Scalar readprefetchAccesses;
@@ -252,7 +253,9 @@ class TLB : public BaseTLB
                               BaseMMU::Translation *translation, BaseMMU::Mode mode) override;
     Fault finalizePhysical(const RequestPtr &req, ThreadContext *tc,
                            BaseMMU::Mode mode) const override;
-    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden, bool sign_used, uint8_t translateMode);
+    TlbEntry *lookup(Addr vpn, uint16_t asid, BaseMMU::Mode mode, bool hidden,
+                     bool sign_used, uint8_t translateMode,
+                     bool is_prefetch = false);
     TlbEntry *lookupForwardPre(Addr vpn, uint64_t asid, bool hidden);
     TlbEntry *lookupBackPre(Addr vpn, uint64_t asid, bool hidden);
     bool autoOpenNextline();

@@ -48,6 +48,7 @@
 
 #include "debug/MSHR.hh"
 #include "mem/cache/mshr.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5
 {
@@ -56,8 +57,22 @@ MSHRQueue::MSHRQueue(const std::string &_label,
                      int num_entries, int reserve,
                      int demand_reserve, std::string cache_name = "")
     : Queue<MSHR>(_label, num_entries, reserve, cache_name + ".mshr_queue"),
-      demandReserve(demand_reserve)
+      demandReserve(demand_reserve),
+      occupancyStartTick(curTick()),
+      occupancyLastUpdate(curTick()),
+      occupancyEntryTicks(0)
 {}
+
+void
+MSHRQueue::updateOccupancyStats(Tick now)
+{
+    if (now > occupancyLastUpdate) {
+        occupancyEntryTicks +=
+            static_cast<Counter>(allocated) *
+            static_cast<Counter>(now - occupancyLastUpdate);
+    }
+    occupancyLastUpdate = now;
+}
 
 MSHR *
 MSHRQueue::allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
@@ -71,6 +86,7 @@ MSHRQueue::allocate(Addr blk_addr, unsigned blk_size, PacketPtr pkt,
     DPRINTF(MSHR, "Allocating new MSHR. Number in use will be %lu/%lu\n",
             allocatedList.size() + 1, numEntries);
 
+    updateOccupancyStats(curTick());
     mshr->allocate(blk_addr, blk_size, pkt, when_ready, order, alloc_on_fill);
     mshr->allocIter = allocatedList.insert(allocatedList.end(), mshr);
     mshr->readyIter = addToReadyList(mshr);
@@ -84,9 +100,35 @@ MSHRQueue::deallocate(MSHR* mshr)
 {
 
     DPRINTF(MSHR, "Deallocating all targets: %s", mshr->print());
+    updateOccupancyStats(curTick());
     Queue<MSHR>::deallocate(mshr);
     DPRINTF(MSHR, "MSHR deallocated. Number in use: %lu/%lu\n",
             allocatedList.size(), numEntries);
+}
+
+void
+MSHRQueue::resetOccupancyStats(Tick now)
+{
+    occupancyStartTick = now;
+    occupancyLastUpdate = now;
+    occupancyEntryTicks = 0;
+}
+
+Counter
+MSHRQueue::getOccupancyEntryTicks(Tick now) const
+{
+    Counter total = occupancyEntryTicks;
+    if (now > occupancyLastUpdate) {
+        total += static_cast<Counter>(allocated) *
+            static_cast<Counter>(now - occupancyLastUpdate);
+    }
+    return total;
+}
+
+Tick
+MSHRQueue::getOccupancyElapsedTicks(Tick now) const
+{
+    return now > occupancyStartTick ? now - occupancyStartTick : 0;
 }
 
 

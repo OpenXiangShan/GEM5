@@ -68,6 +68,15 @@ class MSHRQueue : public Queue<MSHR>
      */
     const int demandReserve;
 
+    /** Tick at which the current occupancy accounting window starts. */
+    Tick occupancyStartTick;
+    /** Tick of the last occupancy integral update. */
+    Tick occupancyLastUpdate;
+    /** Time integral of allocated-entry count over the accounting window. */
+    Counter occupancyEntryTicks;
+
+    void updateOccupancyStats(Tick now);
+
   public:
 
     /**
@@ -103,6 +112,20 @@ class MSHRQueue : public Queue<MSHR>
      * Deallocate a MSHR and its targets
      */
     void deallocate(MSHR *mshr) override;
+
+    /** Reset the occupancy integration window to start at @p now. */
+    void resetOccupancyStats(Tick now);
+
+    /** Return accumulated entry*tick integral up to @p now. */
+    Counter getOccupancyEntryTicks(Tick now) const;
+
+    /** Return elapsed ticks in the current occupancy accounting window. */
+    Tick getOccupancyElapsedTicks(Tick now) const;
+
+    int getNumEntries() const
+    {
+        return numEntries;
+    }
 
     /**
      * Moves the MSHR to the front of the pending list if it is not

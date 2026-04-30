@@ -1095,11 +1095,14 @@ class BaseCache : public ClockedObject, public CacheAccessor
     /** Increasing order number assigned to each incoming request. */
     uint64_t order;
 
+    /** The MSHR that blocked because it has no targets. */
+    MSHR *noTargetMSHR;
+
     /** Stores time the cache blocked for statistics. */
     Cycles blockedCycle;
 
-    /** Pointer to the MSHR that has no targets. */
-    MSHR *noTargetMSHR;
+    /** Start cycle of the current NoMSHR blocked interval, if any. */
+    Cycles noMshrBlockedStartCycle;
 
     /** The number of misses to trigger an exit event. */
     Counter missCount;
@@ -1268,6 +1271,13 @@ class BaseCache : public ClockedObject, public CacheAccessor
         /** The average overall latency of an MSHR miss. */
         statistics::Formula overallAvgMshrUncacheableLatency;
 
+        /** Average number of allocated MSHR entries over the dump window. */
+        statistics::Value mshrAvgEntryNum;
+        /** Average allocated-entry ratio normalized by queue capacity. */
+        statistics::Value mshrOccupancyRatio;
+        /** Cycles for which the cache stayed blocked due to no free MSHR. */
+        statistics::Scalar noMshrBlockedCycles;
+
         /** The average bandwidth receiving data from lower cache. */
         statistics::Formula bytesRecvPerCycle;
 
@@ -1363,6 +1373,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     ~BaseCache();
 
     void init() override;
+    void resetStats() override;
 
     Port &getPort(const std::string &if_name,
                   PortID idx=InvalidPortID) override;
@@ -1454,6 +1465,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
     void setBlocked(BlockedCause cause)
     {
         uint8_t flag = 1 << cause;
+        if (cause == Blocked_NoMSHRs && !(blocked & flag)) {
+            noMshrBlockedStartCycle = curCycle();
+        }
         if (blocked == 0) {
             stats.blockedCauses[cause]++;
             blockedCycle = curCycle();
@@ -1473,6 +1487,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
     void clearBlocked(BlockedCause cause)
     {
         uint8_t flag = 1 << cause;
+        if (cause == Blocked_NoMSHRs && (blocked & flag)) {
+            stats.noMshrBlockedCycles += curCycle() - noMshrBlockedStartCycle;
+            noMshrBlockedStartCycle = Cycles(0);
+        }
         blocked &= ~flag;
         DPRINTF(Cache,"Unblocking for cause %d, mask=%d\n", cause, blocked);
         if (blocked == 0) {
@@ -1683,6 +1701,10 @@ public:
     }
 
     bool coalesce() const override;
+
+    double getMshrAvgEntryNum() const;
+
+    double getMshrOccupancyRatio() const;
 
     const uint8_t* findBlock(Addr addr, bool is_secure) const override {
         auto blk = tags->findBlock(addr, is_secure);

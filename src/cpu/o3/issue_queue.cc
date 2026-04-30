@@ -195,6 +195,17 @@ IssueQue::IssueQue(const IssueQueParams& params)
       inflightIssues(scheduleToExecDelay, 0),
       selector(params.sel)
 {
+    // TODO: keep this in sync with the current load IQ naming convention.
+    // This should become an explicit IssueQue parameter when the config grows
+    // more load pipes or renames the queues.
+    if (iqname == "ld0" || iqname == "load0") {
+        loadPipeId = 0;
+    } else if (iqname == "ld1" || iqname == "load1") {
+        loadPipeId = 1;
+    } else if (iqname == "ld2" || iqname == "load2") {
+        loadPipeId = 2;
+    }
+
     toIssue = inflightIssues.getWire(0);
     toFu = inflightIssues.getWire(-scheduleToExecDelay);
     if (outports > 8) {
@@ -445,6 +456,19 @@ IssueQue::retryMem(const DynInstPtr& inst)
 {
     assert(!inst->isNonSpeculative());
     iqstats->retryMem++;
+    if (inst->isLoad()) {
+        const auto replay_type = inst->getReplayType();
+        const bool is_fast_replay = replay_type &&
+            (*replay_type == LdStReplayType::BankConflictReplay ||
+             *replay_type == LdStReplayType::MshrArbFailReplay ||
+             *replay_type == LdStReplayType::MshrAliasFailReplay ||
+             *replay_type == LdStReplayType::HitInWriteBufferReplay ||
+             *replay_type == LdStReplayType::NukeReplay);
+
+        inst->setLoadPipeSource(is_fast_replay ?
+            DynInst::LoadPipeSource::FastReplay :
+            DynInst::LoadPipeSource::ReplayQueue);
+    }
     DPRINTF(Schedule, "retry %s [sn:%llu]\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
     replayQ.push(inst);
 }

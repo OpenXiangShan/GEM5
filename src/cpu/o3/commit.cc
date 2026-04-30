@@ -251,6 +251,8 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(memRefs, statistics::units::Count::get(),
                "Number of memory references committed"),
       ADD_STAT(loads, statistics::units::Count::get(), "Number of loads committed"),
+      ADD_STAT(stores, statistics::units::Count::get(),
+               "Number of stores committed"),
       ADD_STAT(amos, statistics::units::Count::get(),
                "Number of atomic instructions committed"),
       ADD_STAT(membars, statistics::units::Count::get(),
@@ -345,6 +347,10 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
         .flags(total);
 
     loads
+        .init(cpu->numThreads)
+        .flags(total);
+
+    stores
         .init(cpu->numThreads)
         .flags(total);
 
@@ -2076,6 +2082,10 @@ Commit::updateComInstStats(const DynInstPtr &inst)
 
         if (inst->isLoad()) {
             stats.loads[tid]++;
+        }
+
+        if (inst->isStore()) {
+            stats.stores[tid]++;
         }
 
         if (inst->isAtomic()) {

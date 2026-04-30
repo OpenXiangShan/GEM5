@@ -278,10 +278,28 @@ LSQ::StoreBuffer::release(StoreBufferEntry *entry)
 
 LSQ::LSQStats::LSQStats(statistics::Group *parent)
     : statistics::Group(parent),
+      ADD_STAT(lqAvgEntryNum, statistics::units::Count::get(),
+               "Average number of entries in load queue"),
+      ADD_STAT(sqAvgEntryNum, statistics::units::Count::get(),
+               "Average number of entries in store queue"),
+      ADD_STAT(sbufferAvgEntryNum, statistics::units::Count::get(),
+               "Average number of valid entries in store buffer"),
+      ADD_STAT(lqFullCycles, statistics::units::Cycle::get(),
+               "Cycles that LQ cannot accept a full enqueue bundle"),
+      ADD_STAT(sqFullCycles, statistics::units::Cycle::get(),
+               "Cycles that SQ cannot accept a full enqueue bundle"),
+      ADD_STAT(lsqFullCycles, statistics::units::Cycle::get(),
+               "Cycles that LSQ cannot accept a full enqueue bundle"),
+      ADD_STAT(sbufferFullCycles, statistics::units::Cycle::get(),
+               "Number of cycles that store buffer is physically full"),
       ADD_STAT(sbufferEvictDuetoFlush, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferEvictDuetoFull, statistics::units::Count::get(), ""),
       ADD_STAT(sbufferEvictDuetoSQFull, statistics::units::Count::get(), ""),
-      ADD_STAT(sbufferEvictDuetoTimeout, statistics::units::Count::get(), "")
+      ADD_STAT(sbufferEvictDuetoTimeout, statistics::units::Count::get(), ""),
+      ADD_STAT(sbufferDcacheReqFire, statistics::units::Count::get(),
+               "Number of sbuffer write requests accepted by dcache"),
+      ADD_STAT(sbufferDcacheReqBlocked, statistics::units::Count::get(),
+               "Number of sbuffer write request attempts rejected by dcache")
 {
 }
 
@@ -310,6 +328,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       stats(nullptr),
       LQEntries(params.LQEntries),
       SQEntries(params.SQEntries),
+      enqueueWidth(params.renameWidth),
       maxLQEntries(maxLSQAllocation(lsqPolicy, LQEntries, params.numThreads,
                   params.smtLSQThreshold)),
       maxSQEntries(maxLSQAllocation(lsqPolicy, SQEntries, params.numThreads,
@@ -466,10 +485,43 @@ LSQ::tick()
     // tick lsq_unit
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
+    unsigned lq_entry_num = 0;
+    unsigned sq_entry_num = 0;
+    bool lq_full = false;
+    bool sq_full = false;
 
     while (threads != end) {
         ThreadID tid = *threads++;
+        lq_entry_num += thread[tid].numLoads();
+        sq_entry_num += thread[tid].numStores();
+        // TODO: this per-thread OR is an approximation for SMT/shared-LSQ
+        // configurations. With multiple active threads it may not match the
+        // aggregate free-entry condition seen by rename/dispatch.
+        lq_full = lq_full || thread[tid].numFreeLoadEntries() < enqueueWidth;
+        sq_full = sq_full || thread[tid].numFreeStoreEntries() < enqueueWidth;
         thread[tid].tick();
+    }
+
+    // Sample current load queue occupancy once per cycle.
+    stats.lqAvgEntryNum = lq_entry_num;
+
+    // Sample current store queue occupancy once per cycle.
+    stats.sqAvgEntryNum = sq_entry_num;
+
+    // Sample current store buffer occupancy once per cycle.
+    stats.sbufferAvgEntryNum = storeBuffer.size();
+    if (storeBuffer.full()) {
+        ++stats.sbufferFullCycles;
+    }
+
+    if (lq_full) {
+        ++stats.lqFullCycles;
+    }
+    if (sq_full) {
+        ++stats.sqFullCycles;
+    }
+    if (lq_full || sq_full) {
+        ++stats.lsqFullCycles;
     }
 
 }
@@ -885,13 +937,17 @@ LSQ::sbufferSendPacket(PacketPtr data_pkt)
     }
 
     if (ret) {
+        stats.sbufferDcacheReqFire++;
         cachePortBusy(false);
-    } else if (cache_got_blocked) {
-        cacheBlocked(true);
+    } else {
+        stats.sbufferDcacheReqBlocked++;
+        if (cache_got_blocked) {
+            cacheBlocked(true);
 
-        auto request = dynamic_cast<SbufferRequest *>(data_pkt->senderState);
-        assert(request);
-        request->_port.recordStoreBufferBlockedByCache();
+            auto request = dynamic_cast<SbufferRequest *>(data_pkt->senderState);
+            assert(request);
+            request->_port.recordStoreBufferBlockedByCache();
+        }
     }
 
     return ret;

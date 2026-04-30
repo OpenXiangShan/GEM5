@@ -46,6 +46,7 @@
 #include "arch/riscv/pma_checker.hh"
 #include "arch/riscv/pmp.hh"
 #include "arch/riscv/tlb.hh"
+#include "base/statistics.hh"
 #include "base/types.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
@@ -278,6 +279,20 @@ namespace RiscvISA
         // State for functional accesses (only need one of these per walker)
         WalkerState funcState;
 
+        /**
+         * PTW memory-side statistics. These counters intentionally track only
+         * the requests that leave the walker and the time window during which
+         * at least one walker memory request is still outstanding.
+         */
+        struct WalkerStats : public statistics::Group
+        {
+            WalkerStats(statistics::Group *parent);
+
+            statistics::Scalar ptwMemCount;
+            statistics::Scalar ptwMemCycle;
+            statistics::Formula ptwAvgMemLatency;
+        } stats;
+
         struct WalkerSenderState : public Packet::SenderState
         {
             WalkerState * senderWalk;
@@ -329,6 +344,12 @@ namespace RiscvISA
         bool ptwSquash;
         bool openNextLine;
         bool autoOpenNextLine;
+        /** Last tick at which PTW in-flight time accounting was updated. */
+        Tick lastPtwMemCycleTick;
+        /** Number of PTW memory requests currently in flight. */
+        unsigned outstandingPtwMemReqs;
+
+        void updatePtwMemCycleStats();
       public:
         bool is_from_pre_req;
 
@@ -341,6 +362,8 @@ namespace RiscvISA
         //void handlePendingSquash();
 
         void dol2TLBHit();
+        void preDumpStats() override;
+        void resetStats() override;
 
         /**
          * Event used to call startWalkWrapper.
@@ -370,7 +393,8 @@ namespace RiscvISA
 
         Walker(const Params &params) :
             ClockedObject(params), port(name() + ".port", this),
-            funcState(this, NULL, NULL, true), tlb(NULL), sys(params.system),
+            funcState(this, NULL, NULL, true), stats(this), tlb(NULL),
+            sys(params.system),
             pma(params.pma_checker),
             pmp(params.pmp),
             requestorId(sys->getRequestorId(this)),
@@ -379,6 +403,8 @@ namespace RiscvISA
             ptwSquash(params.ptw_squash),
             openNextLine(params.open_nextline),
             autoOpenNextLine(true),
+            lastPtwMemCycleTick(0),
+            outstandingPtwMemReqs(0),
             doL2TLBHitEvent([this]{dol2TLBHit();},name())
         {
         }
