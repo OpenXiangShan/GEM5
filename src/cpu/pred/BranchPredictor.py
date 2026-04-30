@@ -1138,6 +1138,10 @@ class BTBMGSC(TimedBaseBTBPredictor):
     iHistLen = VectorParam.Int([8], "IMLI history GEHL history lengths")
     iTableIdxWidth = Param.Unsigned(12, "Log number of IMLI GEHL entries")
 
+    imHistTableNum = Param.Unsigned(1, "Num constant-IMLI-history GEHL tables")
+    imHistHistLen = VectorParam.Int([8], "Constant-IMLI-history GEHL history lengths")
+    imHistTableIdxWidth = Param.Unsigned(12, "Log number of constant-IMLI-history GEHL entries")
+
     gTableNum = Param.Unsigned(2, "Num global branch GEHL tables")
     gHistLen = VectorParam.Int([8, 16], "Global branch GEHL history lengths")
     gTableIdxWidth = Param.Unsigned(11, "Log number of global branch GEHL entries")
@@ -1189,6 +1193,7 @@ class BTBMGSC(TimedBaseBTBPredictor):
     enableBwTable = Param.Bool(True, "Enable BW (backward) table")
     enableLTable = Param.Bool(True, "Enable L (local) table")
     enableITable = Param.Bool(True, "Enable I (IMLI) table")
+    enableIMHistTable = Param.Bool(True, "Enable constant-IMLI-history helper for the I family")
     enableGTable = Param.Bool(True, "Enable G (global) table")
     enablePTable = Param.Bool(True, "Enable P (path) table")
     enableBiasTable = Param.Bool(True, "Enable Bias table")

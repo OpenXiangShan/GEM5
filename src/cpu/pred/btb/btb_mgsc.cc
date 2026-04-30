@@ -84,6 +84,26 @@ BTBMGSC::initStorage()
     }
     iIndex.resize(iTableNum);
 
+    auto imHistTableSize = allocPredTable(imHistTable, imHistTableNum, imHistTableIdxWidth);
+    for (unsigned int i = 0; i < imHistTableNum; ++i) {
+        assert(imHistHistLen[i] >= 0);
+        assert(static_cast<unsigned>(imHistHistLen[i]) < 63);
+        assert(pow2(static_cast<unsigned>(imHistHistLen[i])) <= imHistTableSize);
+    }
+    imHistIndex.resize(imHistTableNum);
+    if (!iHistLen.empty()) {
+        imHist.resize(pow2(static_cast<unsigned>(iHistLen[0])), 0);
+        imHistStoreBits = 0;
+        for (const auto &hist_len : imHistHistLen) {
+            imHistStoreBits = std::max(imHistStoreBits, static_cast<unsigned>(std::max(hist_len, 0)));
+        }
+        if (imHistStoreBits == 0 && enableIMHistTable) {
+            imHistStoreBits = 1;
+        }
+        imHistStoreMask = (imHistStoreBits == 0) ? 0 : ((1ULL << imHistStoreBits) - 1);
+    }
+    imliCount = 0;
+
     auto gTableSize = allocPredTable(gTable, gTableNum, gTableIdxWidth);
     for (unsigned int i = 0; i < gTableNum; ++i) {
         assert(gTable.size() >= gTableNum);
@@ -130,6 +150,9 @@ BTBMGSC::BTBMGSC()
       // foldedLen is small (5 - log2(8) = 2), so keep histLen=1 for unit tests.
       // Also keep it >= 2 so we can build loop-trip-count tests on IMLI.
       iHistLen({2}),
+      imHistTableNum(1),
+      imHistTableIdxWidth(6),
+      imHistHistLen({4}),
       gTableNum(1),
       // Use a slightly larger idx width so foldedLen is not too small (helps pattern-learning tests).
       gTableIdxWidth(6),
@@ -154,6 +177,7 @@ BTBMGSC::BTBMGSC()
       enableBwTable(true),
       enableLTable(true),
       enableITable(true),
+      enableIMHistTable(false),
       enableGTable(true),
       enablePTable(true),
       enableBiasTable(true),
@@ -183,6 +207,9 @@ BTBMGSC::BTBMGSC(const Params &p)
       iTableNum(p.iTableNum),
       iTableIdxWidth(p.iTableIdxWidth),
       iHistLen(p.iHistLen),
+      imHistTableNum(p.imHistTableNum),
+      imHistTableIdxWidth(p.imHistTableIdxWidth),
+      imHistHistLen(p.imHistHistLen),
       gTableNum(p.gTableNum),
       gTableIdxWidth(p.gTableIdxWidth),
       gHistLen(p.gHistLen),
@@ -210,6 +237,7 @@ BTBMGSC::BTBMGSC(const Params &p)
       enableBwTable(p.enableBwTable),
       enableLTable(p.enableLTable),
       enableITable(p.enableITable),
+      enableIMHistTable(p.enableIMHistTable),
       enableGTable(p.enableGTable),
       enablePTable(p.enablePTable),
       enableBiasTable(p.enableBiasTable),
@@ -315,6 +343,54 @@ BTBMGSC::calculateScaledPercsum(int weight, int percsum)
     return percsum; // disable weight scaling for test
 }
 
+uint64_t
+BTBMGSC::foldIntHistory(uint64_t history, unsigned histLen, unsigned foldedLen) const
+{
+    if (foldedLen == 0 || histLen == 0) {
+        return 0;
+    }
+    const uint64_t foldedMask = (1ULL << foldedLen) - 1;
+    uint64_t folded = 0;
+    unsigned bitsLeft = histLen;
+    while (bitsLeft > 0) {
+        folded ^= (history & foldedMask);
+        history >>= foldedLen;
+        bitsLeft = (bitsLeft > foldedLen) ? (bitsLeft - foldedLen) : 0;
+    }
+    return folded & foldedMask;
+}
+
+void
+BTBMGSC::updateImHistState(bool cond_taken)
+{
+    if (!enableIMHistTable || imHist.empty()) {
+        return;
+    }
+    assert(imliCount < imHist.size());
+    auto &hist = imHist[imliCount];
+    if (imHistStoreMask) {
+        hist = ((hist << 1) | static_cast<uint64_t>(cond_taken)) & imHistStoreMask;
+    } else {
+        hist = 0;
+    }
+}
+
+void
+BTBMGSC::updateImliCountState(bool bw_taken)
+{
+    if (iHistLen.empty()) {
+        return;
+    }
+    const uint64_t maxCount = (1ULL << static_cast<unsigned>(iHistLen[0])) - 1;
+    if (bw_taken) {
+        if (imliCount < maxCount) {
+            imliCount++;
+        }
+    } else {
+        imliCount = 0;
+    }
+}
+
 /**
  * Find threshold in a threshold table for a given PC
  * @param thresholdTable The threshold table to search
@@ -377,6 +453,17 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     for (unsigned int i = 0; i < iTableNum; ++i) {
         iIndex[i] = getHistIndex(startPC, iTableIdxWidth - numCtrsPerLineBits, indexIFoldedHist[i].get());
     }
+    if (enableIMHistTable && !imHist.empty()) {
+        assert(imliCount < imHist.size());
+        const uint64_t currentImHist = imHist[imliCount];
+        for (unsigned int i = 0; i < imHistTableNum; ++i) {
+            auto folded = foldIntHistory(
+                currentImHist, static_cast<unsigned>(imHistHistLen[i]), imHistTableIdxWidth - numCtrsPerLineBits);
+            imHistIndex[i] = getHistIndex(startPC, imHistTableIdxWidth - numCtrsPerLineBits, folded);
+        }
+    } else {
+        std::fill(imHistIndex.begin(), imHistIndex.end(), 0);
+    }
 
     for (unsigned int i = 0; i < gTableNum; ++i) {
         gIndex[i] = getHistIndex(startPC, gTableIdxWidth - numCtrsPerLineBits, indexGFoldedHist[i].get());
@@ -403,7 +490,10 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
     int l_weight = findWeight(lWeightTable, btb_entry.pc);
     int l_scaled_percsum = calculateScaledPercsum(l_weight, l_percsum);
 
-    int i_percsum = enableITable ? calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc) : 0;
+    int i_count_percsum = enableITable ? calculatePercsum(iTable, iIndex, iTableNum, btb_entry.pc) : 0;
+    int imHist_percsum =
+        enableIMHistTable ? calculatePercsum(imHistTable, imHistIndex, imHistTableNum, btb_entry.pc) : 0;
+    int i_percsum = i_count_percsum + imHist_percsum;
     int i_weight = findWeight(iWeightTable, btb_entry.pc);
     int i_scaled_percsum = calculateScaledPercsum(i_weight, i_percsum);
 
@@ -467,9 +557,11 @@ BTBMGSC::generateSinglePrediction(const BTBEntry &btb_entry, const Addr &startPC
 
     return MgscPrediction(btb_entry.pc, total_sum, use_sc_pred, taken, tage_info.tage_pred_taken,
                           tage_info.tage_pred_conf_high, tage_info.tage_pred_conf_mid, tage_info.tage_pred_conf_low,
-                          total_thres, bwIndex, lIndex, iIndex, gIndex, pIndex, biasIndex, bw_weight_scale_diff,
-                          l_weight_scale_diff, i_weight_scale_diff, g_weight_scale_diff, p_weight_scale_diff,
-                          bias_weight_scale_diff, bw_percsum, l_percsum, i_percsum, g_percsum, p_percsum, bias_percsum);
+                          total_thres, bwIndex, lIndex, iIndex, imHistIndex, gIndex, pIndex, biasIndex,
+                          bw_weight_scale_diff, l_weight_scale_diff, i_weight_scale_diff, g_weight_scale_diff,
+                          p_weight_scale_diff, bias_weight_scale_diff, bw_percsum, l_percsum, i_percsum,
+                          imHist_percsum, g_percsum,
+                          p_percsum, bias_percsum);
 }
 
 /**
@@ -540,6 +632,8 @@ BTBMGSC::putPCHistory(Addr stream_start, const boost::dynamic_bitset<> &history,
     meta->indexIFoldedHist = indexIFoldedHist;
     meta->indexGFoldedHist = indexGFoldedHist;
     meta->indexPFoldedHist = indexPFoldedHist;
+    meta->imliCount = imliCount;
+    meta->imHist = imHist;
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
@@ -837,6 +931,7 @@ BTBMGSC::updateSinglePredictor(const BTBEntry &entry, bool actual_taken, const M
 
         // Update I tables
         updatePredTable(iTable, pred.iIndex, iTableNum, entry.pc, actual_taken);
+        updatePredTable(imHistTable, pred.imHistIndex, imHistTableNum, entry.pc, actual_taken);
         updateWeightTable(iWeightTable, weightTableIdx, entry.pc, pred.i_weight_scale_diff,
                           (pred.i_percsum >= 0) == actual_taken);
 
@@ -1140,21 +1235,28 @@ BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPredict
  * This function updates the branch history for speculative execution
  * based on the prediction information.
  *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- * Note: IMLI only uses counter, not history bits.
+ * It first updates the per-IMLI-count outcome history using the current
+ * conditional prediction, then advances the loop counter state using the
+ * backward-taken event.
  *
  * @param pred The prediction metadata containing history information
  */
 void
 BTBMGSC::specUpdateIHist(FullBTBPrediction &pred)
 {
+    int histShamt;
+    bool histTaken;
+    std::tie(histShamt, histTaken) = pred.getHistInfo();
+    if (histShamt > 0) {
+        updateImHistState(histTaken);
+    }
+
     int shamt;
-    bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getBwHistInfo();
-    // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
+    bool bw_taken;
+    std::tie(shamt, bw_taken) = pred.getBwHistInfo();
     boost::dynamic_bitset<> dummy;
-    doUpdateHist(dummy, shamt, cond_taken, indexIFoldedHist);
+    doUpdateHist(dummy, shamt, bw_taken, indexIFoldedHist);
+    updateImliCountState(bw_taken);
 }
 
 /**
@@ -1261,14 +1363,13 @@ BTBMGSC::recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget
  * @brief Recovers branch imli history state after a misprediction
  *
  * This function:
- * 1. Restores the folded histories from the saved metadata
+ * 1. Restores the folded histories and IMLI helper state from the saved metadata
  * 2. Updates the histories with the correct branch outcome
  * 3. Ensures predictor state is consistent after recovery
- * Note: IMLI only uses counter, not history bits.
  *
  * @param entry The fetch stream entry containing recovery information
  * @param shamt Number of bits to shift in history update
- * @param cond_taken The actual branch outcome
+ * @param cond_taken Whether the resolved branch contributes a backward-taken event
  */
 void
 BTBMGSC::recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken)
@@ -1280,9 +1381,14 @@ BTBMGSC::recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken)
     for (int i = 0; i < iTableNum; i++) {
         indexIFoldedHist[i].recover(predMeta->indexIFoldedHist[i]);
     }
-    // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
+    imliCount = predMeta->imliCount;
+    imHist = predMeta->imHist;
+    if (entry.exeBranchInfo.isCond) {
+        updateImHistState(entry.exeTaken);
+    }
     boost::dynamic_bitset<> dummy;
     doUpdateHist(dummy, shamt, cond_taken, indexIFoldedHist);
+    updateImliCountState(cond_taken);
 }
 
 /**

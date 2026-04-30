@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <iostream>
 #include <vector>
 
@@ -172,6 +173,21 @@ struct MgscHarness
         BTBMGSC::TestAccess::enableBwTable(mgsc) = false;
         BTBMGSC::TestAccess::enableLTable(mgsc) = false;
         BTBMGSC::TestAccess::enableITable(mgsc) = true;
+        BTBMGSC::TestAccess::enableIMHistTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableGTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableBiasTable(mgsc) = false;
+        BTBMGSC::TestAccess::enablePCThreshold(mgsc) = false;
+        BTBMGSC::TestAccess::forceUseSC(mgsc) = true;
+    }
+
+    void
+    setOnlyIMHistTable()
+    {
+        BTBMGSC::TestAccess::enableBwTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableLTable(mgsc) = false;
+        BTBMGSC::TestAccess::enableITable(mgsc) = false;
+        BTBMGSC::TestAccess::enableIMHistTable(mgsc) = true;
         BTBMGSC::TestAccess::enableGTable(mgsc) = false;
         BTBMGSC::TestAccess::enablePTable(mgsc) = false;
         BTBMGSC::TestAccess::enableBiasTable(mgsc) = false;
@@ -766,6 +782,77 @@ TEST(BTBMGSCTest, ITableLearnsFixedTripCountLoop)
     EXPECT_GE(seen_i_indices.size(), 3u);
     double acc = static_cast<double>(correct_after_warmup) / static_cast<double>(total_after_warmup);
     EXPECT_GE(acc, 0.85) << "Accuracy too low for fixed-trip loop: " << acc;
+}
+
+TEST(BTBMGSCTest, IMHistTableSeparatesOuterPhaseAtSameIteration)
+{
+    MgscHarness sic_only;
+    sic_only.setOnlyITable();
+
+    MgscHarness enhanced_i;
+    enhanced_i.setOnlyITable();
+    BTBMGSC::TestAccess::enableIMHistTable(enhanced_i.mgsc) = true;
+
+    const Addr target_start_pc = 0x1000;
+    const Addr target_branch_pc = 0x1000;
+    auto target_entry = makeCondBTBEntry(target_branch_pc);
+    target_entry.target = target_branch_pc + 4;
+
+    const Addr loop_start_pc = 0x1100;
+    const Addr loop_branch_pc = 0x1100;
+    auto loop_entry = makeCondBTBEntry(loop_branch_pc);
+    loop_entry.target = loop_branch_pc - 4; // backward loop branch
+
+    const TageInfoForMGSC tage_info(
+        /*tage_pred_taken=*/false,
+        /*tage_main_taken=*/false,
+        /*tage_pred_conf_high=*/true,
+        /*tage_pred_conf_mid=*/false,
+        /*tage_pred_conf_low=*/false,
+        /*tage_pred_alt_diff=*/false);
+
+    constexpr int trip_count = 4;
+    constexpr int outer_iters = 160;
+    constexpr int warmup_iters = 40;
+    std::array<bool, trip_count> slot_state = {false, true, false, true};
+
+    int sic_correct = 0;
+    int enhanced_correct = 0;
+    int total = 0;
+
+    for (int outer = 0; outer < outer_iters; ++outer) {
+        for (int pos = 0; pos < trip_count; ++pos) {
+            bool actual_taken = slot_state[pos];
+            slot_state[pos] = !slot_state[pos];
+
+            auto sic_step = sic_only.step(target_start_pc, target_entry, tage_info, actual_taken);
+            auto enhanced_step = enhanced_i.step(target_start_pc, target_entry, tage_info, actual_taken);
+
+            if (outer >= warmup_iters) {
+                total++;
+                if (sic_step.predicted_taken == actual_taken) {
+                    sic_correct++;
+                }
+                if (enhanced_step.predicted_taken == actual_taken) {
+                    enhanced_correct++;
+                }
+            }
+
+            bool loop_taken = (pos + 1) < trip_count;
+            sic_only.step(loop_start_pc, loop_entry, tage_info, loop_taken);
+            enhanced_i.step(loop_start_pc, loop_entry, tage_info, loop_taken);
+        }
+    }
+
+    ASSERT_GT(total, 0);
+    const double sic_acc = static_cast<double>(sic_correct) / static_cast<double>(total);
+    const double enhanced_acc = static_cast<double>(enhanced_correct) / static_cast<double>(total);
+    EXPECT_LT(sic_acc, 0.75) << "Count-only IMLI unexpectedly handled outer-phase aliasing: " << sic_acc;
+    EXPECT_GT(enhanced_acc, sic_acc + 0.15)
+        << "IMHIST-assisted IMLI did not materially improve outer-phase correlation: sic=" << sic_acc
+        << " enhanced=" << enhanced_acc;
+    EXPECT_GT(enhanced_acc, 0.85)
+        << "Combined SIC+IMHIST path still failed to learn outer-phase correlation: " << enhanced_acc;
 }
 
 TEST(BTBMGSCTest, BiasTableLearnsTwoTageContexts)
