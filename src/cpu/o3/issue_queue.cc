@@ -640,6 +640,11 @@ IssueQue::selectInst()
 
             int lat = scheduler->getCorrectedOpLat(inst);
             uint64_t busy_bit = (lat > 63 ? -1 : (1llu << lat));
+            DPRINTF(Schedule, "portBusy[%d]=%d, busy_bit=%d\n", pi, portBusy[pi], busy_bit);
+	    if(!(portBusy[pi] & busy_bit) == 0 && independentIQICountScheduler->scheduleNum[~(inst->threadNumber) == 100]){
+		DPRINTF(Schedule, "tid:%d long time not schedule,wait port not busy\n", ~inst->threadNumber);
+		break;
+            }
             if (!(portBusy[pi] & busy_bit)) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
                 for (ThreadID tid = 0; tid < MaxThreads; tid++) {
