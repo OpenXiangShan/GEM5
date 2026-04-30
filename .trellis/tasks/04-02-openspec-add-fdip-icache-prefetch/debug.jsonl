@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Code quality and validation guidance"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer verification workflow"}
+{"file": ".trellis/tasks/04-02-openspec-add-fdip-icache-prefetch/prd.md", "reason": "Task-local ownership and stabilization plan"}
+{"file": "src/cpu/o3/fetch.cc", "reason": "Primary debug surface for FDIP scheduling and translation"}
+{"file": "src/mem/cache/base.cc", "reason": "Primary debug surface for cache-side FDIP feedback and refill gating"}

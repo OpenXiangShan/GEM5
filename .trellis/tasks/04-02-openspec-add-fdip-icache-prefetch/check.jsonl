@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Finish and validation quality gate expectations"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec index for quality check context"}
+{"file": ".trellis/spec/backend/fdip-guidelines.md", "reason": "FDIP-specific verification guidance for fetch/bpu/cache/request changes"}
+{"file": ".trellis/spec/backend/control-pc-contracts.md", "reason": "Control-PC witness requirements and config contracts"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer verification checklist"}
+{"file": ".trellis/tasks/04-02-openspec-add-fdip-icache-prefetch/prd.md", "reason": "Task-local validation scope and stop rules"}
+{"file": ".trellis/tasks/04-02-openspec-add-fdip-icache-prefetch/openspec_variants.md", "reason": "Self-contained record of imported OpenSpec variants and selected source"}
+{"file": ".trellis/workspace/glr/fdip-params-stats-limitations-2026-04-22.md", "reason": "Trellis-owned FDIP parameter, stats, validation, and limitations record"}

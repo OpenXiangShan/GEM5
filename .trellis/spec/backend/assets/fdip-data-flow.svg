@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="920" viewBox="0 0 1600 920" role="img" aria-labelledby="title desc">
+  <title id="title">FDIP data flow</title>
+  <desc id="desc">Current Phase 1 and 1.5 FTQ-directed ICache prefetch data flow, demand correctness path, selected-way hint, redirect cleanup, and old-path refill drop.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .lane { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; }
+      .lane-alt { fill: #f1f5f9; stroke: #cbd5e1; stroke-width: 2; }
+      .lane-title { fill: #0f172a; font: 700 22px Arial, sans-serif; }
+      .title { fill: #0f172a; font: 700 30px Arial, sans-serif; }
+      .subtitle { fill: #475569; font: 16px Arial, sans-serif; }
+      .node { fill: #ffffff; stroke: #64748b; stroke-width: 2; rx: 12; }
+      .node-fdip { fill: #eff6ff; stroke: #2563eb; }
+      .node-demand { fill: #ecfdf5; stroke: #059669; }
+      .node-hint { fill: #faf5ff; stroke: #9333ea; }
+      .node-clean { fill: #fffbeb; stroke: #d97706; }
+      .node-drop { fill: #fef2f2; stroke: #dc2626; }
+      .node-text { fill: #0f172a; font: 700 17px Arial, sans-serif; text-anchor: middle; }
+      .node-sub { fill: #475569; font: 13px Arial, sans-serif; text-anchor: middle; }
+      .fdip-line { fill: none; stroke: #2563eb; stroke-width: 4; marker-end: url(#arrow-blue); }
+      .demand-line { fill: none; stroke: #059669; stroke-width: 4; marker-end: url(#arrow-green); }
+      .hint-line { fill: none; stroke: #9333ea; stroke-width: 3; stroke-dasharray: 10 7; marker-end: url(#arrow-purple); }
+      .clean-line { fill: none; stroke: #d97706; stroke-width: 3; stroke-dasharray: 10 7; marker-end: url(#arrow-orange); }
+      .drop-line { fill: none; stroke: #dc2626; stroke-width: 4; stroke-dasharray: 12 7; marker-end: url(#arrow-red); }
+      .step { fill: #0f172a; stroke: #ffffff; stroke-width: 3; }
+      .step-text { fill: #ffffff; font: 700 17px Arial, sans-serif; text-anchor: middle; dominant-baseline: central; }
+      .legend-text { fill: #334155; font: 14px Arial, sans-serif; }
+      .legend-title { fill: #0f172a; font: 700 16px Arial, sans-serif; }
+    </style>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/>
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#9333ea"/>
+    </marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d97706"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#dc2626"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1600" height="920"/>
+  <text class="title" x="48" y="48">FDIP Data Flow</text>
+  <text class="subtitle" x="48" y="76">Current model: Phase 1 / 1.5 FTQ-directed ICache prefetch; demand fetch remains the correctness path.</text>
+
+  <rect class="lane-alt" x="40" y="100" width="1520" height="120" rx="16"/>
+  <rect class="lane" x="40" y="240" width="1520" height="150" rx="16"/>
+  <rect class="lane-alt" x="40" y="410" width="1520" height="105" rx="16"/>
+  <rect class="lane" x="40" y="535" width="1520" height="150" rx="16"/>
+  <rect class="lane-alt" x="40" y="705" width="1520" height="105" rx="16"/>
+
+  <text class="lane-title" x="68" y="132">Predictor / FTQ</text>
+  <text class="lane-title" x="68" y="272">Fetch FDIP Engine</text>
+  <text class="lane-title" x="68" y="442">MMU</text>
+  <text class="lane-title" x="68" y="567">L1I BaseCache</text>
+  <text class="lane-title" x="68" y="737">Demand Fetch</text>
+
+  <!-- Predictor / FTQ lane -->
+  <rect class="node" x="235" y="128" width="170" height="62" rx="12"/>
+  <text class="node-text" x="320" y="154">BPU / BTB</text>
+  <text class="node-sub" x="320" y="176">predict targets</text>
+
+  <rect class="node" x="470" y="128" width="190" height="62" rx="12"/>
+  <text class="node-text" x="565" y="154">FTQ</text>
+  <text class="node-sub" x="565" y="176">fetchptr + prefetchptr</text>
+
+  <rect class="node node-fdip" x="725" y="128" width="205" height="62" rx="12"/>
+  <text class="node-text" x="827" y="154">FetchTarget</text>
+  <text class="node-sub" x="827" y="176">startPC / endPC / ftqId</text>
+
+  <rect class="node node-clean" x="1195" y="128" width="205" height="62" rx="12"/>
+  <text class="node-text" x="1298" y="154">Redirect / squash</text>
+  <text class="node-sub" x="1298" y="176">new epoch</text>
+
+  <!-- Fetch FDIP lane -->
+  <rect class="node node-fdip" x="180" y="292" width="190" height="64" rx="12"/>
+  <text class="node-text" x="275" y="319">runFdip()</text>
+  <text class="node-sub" x="275" y="340">peek prefetchptr</text>
+
+  <rect class="node node-fdip" x="430" y="292" width="200" height="64" rx="12"/>
+  <text class="node-text" x="530" y="319">line coverage</text>
+  <text class="node-sub" x="530" y="340">actual fetch span</text>
+
+  <rect class="node node-fdip" x="690" y="292" width="205" height="64" rx="12"/>
+  <text class="node-text" x="792" y="319">XsMetadata</text>
+  <text class="node-sub" x="792" y="340">epoch / ftqId / PC</text>
+
+  <rect class="node node-fdip" x="955" y="292" width="235" height="64" rx="12"/>
+  <text class="node-text" x="1073" y="319">issueFdipReadyLine()</text>
+  <text class="node-sub" x="1073" y="340">best-effort request</text>
+
+  <rect class="node node-hint" x="1250" y="292" width="205" height="64" rx="12"/>
+  <text class="node-text" x="1352" y="319">selectedWay hint</text>
+  <text class="node-sub" x="1352" y="340">FDIP scoped only</text>
+
+  <!-- MMU lane -->
+  <rect class="node node-fdip" x="485" y="435" width="215" height="56" rx="12"/>
+  <text class="node-text" x="592" y="459">MMU translate</text>
+  <text class="node-sub" x="592" y="480">vaddr to paddr</text>
+
+  <rect class="node node-fdip" x="835" y="435" width="215" height="56" rx="12"/>
+  <text class="node-text" x="942" y="459">paddr line req</text>
+  <text class="node-sub" x="942" y="480">cacheline identity</text>
+
+  <!-- L1I lane -->
+  <rect class="node node-fdip" x="245" y="585" width="220" height="64" rx="12"/>
+  <text class="node-text" x="355" y="612">L1I FDIP req</text>
+  <text class="node-sub" x="355" y="633">scoped prefetch</text>
+
+  <rect class="node node-hint" x="560" y="585" width="210" height="64" rx="12"/>
+  <text class="node-text" x="665" y="612">directProbeHit</text>
+  <text class="node-sub" x="665" y="633">no miss allocation</text>
+
+  <rect class="node node-fdip" x="875" y="585" width="215" height="64" rx="12"/>
+  <text class="node-text" x="982" y="612">refill / stats</text>
+  <text class="node-sub" x="982" y="633">useful / late / unused</text>
+
+  <rect class="node node-drop" x="1215" y="585" width="220" height="64" rx="12"/>
+  <text class="node-text" x="1325" y="612">drop old refill</text>
+  <text class="node-sub" x="1325" y="633">epoch mismatch</text>
+
+  <!-- Demand lane -->
+  <rect class="node node-demand" x="355" y="735" width="205" height="56" rx="12"/>
+  <text class="node-text" x="458" y="759">Demand fetch</text>
+  <text class="node-sub" x="458" y="780">correctness owner</text>
+
+  <rect class="node node-demand" x="815" y="735" width="235" height="56" rx="12"/>
+  <text class="node-text" x="932" y="759">demand I$ access</text>
+  <text class="node-sub" x="932" y="780">architectural path</text>
+
+  <!-- Main FDIP path -->
+  <path class="fdip-line" d="M 405 159 L 470 159"/>
+  <path class="fdip-line" d="M 660 159 L 725 159"/>
+  <path class="fdip-line" d="M 827 190 L 827 226 L 275 226 L 275 292"/>
+  <path class="fdip-line" d="M 370 324 L 430 324"/>
+  <path class="fdip-line" d="M 630 324 L 690 324"/>
+  <path class="fdip-line" d="M 895 324 L 955 324"/>
+  <path class="fdip-line" d="M 1073 356 L 1073 394 L 592 394 L 592 435"/>
+  <path class="fdip-line" d="M 700 463 L 835 463"/>
+  <path class="fdip-line" d="M 942 491 L 942 524 L 355 524 L 355 585"/>
+  <path class="fdip-line" d="M 465 617 L 560 617"/>
+  <path class="fdip-line" d="M 770 617 L 875 617"/>
+
+  <!-- Demand correctness path -->
+  <path class="demand-line" d="M 565 190 L 565 700 L 458 700 L 458 735"/>
+  <path class="demand-line" d="M 560 763 L 815 763"/>
+  <path class="demand-line" d="M 932 735 L 932 681"/>
+
+  <!-- Direct probe and selected-way hint -->
+  <path class="hint-line" d="M 665 585 L 665 530 L 1352 530 L 1352 356"/>
+  <path class="hint-line" d="M 1352 292 L 1190 292"/>
+
+  <!-- Redirect cleanup and old-path drop -->
+  <path class="clean-line" d="M 1298 190 L 1298 245 L 1073 245 L 1073 292"/>
+  <path class="clean-line" d="M 1298 190 L 1298 520 L 982 520 L 982 585"/>
+  <path class="drop-line" d="M 1298 190 L 1325 190 L 1325 585"/>
+
+  <!-- Step badges -->
+  <circle class="step" cx="713" cy="121" r="18"/>
+  <text class="step-text" x="713" y="121">1</text>
+  <circle class="step" cx="172" cy="290" r="18"/>
+  <text class="step-text" x="172" y="290">2</text>
+  <circle class="step" cx="682" cy="290" r="18"/>
+  <text class="step-text" x="682" y="290">3</text>
+  <circle class="step" cx="477" cy="432" r="18"/>
+  <text class="step-text" x="477" y="432">4</text>
+  <circle class="step" cx="237" cy="583" r="18"/>
+  <text class="step-text" x="237" y="583">5</text>
+  <circle class="step" cx="552" cy="583" r="18"/>
+  <text class="step-text" x="552" y="583">6</text>
+  <circle class="step" cx="1187" cy="126" r="18"/>
+  <text class="step-text" x="1187" y="126">7</text>
+
+  <!-- Legend -->
+  <rect x="40" y="835" width="1520" height="58" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="legend-title" x="64" y="867">Legend</text>
+  <path class="fdip-line" d="M 155 863 L 225 863"/>
+  <text class="legend-text" x="238" y="868">FDIP prefetch path</text>
+  <path class="demand-line" d="M 410 863 L 480 863"/>
+  <text class="legend-text" x="493" y="868">demand correctness path</text>
+  <path class="hint-line" d="M 705 863 L 775 863"/>
+  <text class="legend-text" x="788" y="868">probe / selected-way hint</text>
+  <path class="clean-line" d="M 1010 863 L 1080 863"/>
+  <text class="legend-text" x="1093" y="868">redirect / epoch cleanup</text>
+  <path class="drop-line" d="M 1305 863 L 1375 863"/>
+  <text class="legend-text" x="1388" y="868">drop old-path refill</text>
+</svg>

@@ -1,0 +1,17 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "File placement and package conventions"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Validation and code-quality expectations"}
+{"file": ".trellis/spec/backend/fdip-guidelines.md", "reason": "FDIP-specific implementation contracts for fetch, predictor, request, and cache changes"}
+{"file": ".trellis/spec/backend/control-pc-contracts.md", "reason": "Control-PC and owner-migration contracts that FDIP must respect"}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guides index"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer checklist for fetch/bpu/cache/request changes"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse and boundary guidance for shared helpers"}
+{"file": ".trellis/workspace/glr/wave1-execution-checklists-2026-04-13.md", "reason": "Wave-1 kickoff plan and isolation boundaries"}
+{"file": ".trellis/tasks/04-02-openspec-add-fdip-icache-prefetch/prd.md", "reason": "Task-local status snapshot, ownership, and stop rules"}
+{"file": ".trellis/tasks/04-02-openspec-add-fdip-icache-prefetch/openspec_variants.md", "reason": "Self-contained record of imported OpenSpec variants and selected source"}
+{"file": "docs/Gem5_Docs/frontend/fdip.md", "reason": "Branch-local FDIP documentation that replaces ignored OpenSpec context"}
+{"file": "src/cpu/o3/fetch.cc", "reason": "Primary FDIP scheduler and state machine"}
+{"file": "src/cpu/o3/fetch.hh", "reason": "FDIP state, stats, and ownership declarations"}
+{"file": "src/cpu/pred/btb/decoupled_bpred.hh", "reason": "FDIP predictor-facing knobs and FTQ helper APIs"}
+{"file": "src/mem/cache/base.cc", "reason": "Cache-side gating, refill handling, and FDIP feedback accounting"}

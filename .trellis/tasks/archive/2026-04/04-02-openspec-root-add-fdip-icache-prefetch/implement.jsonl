@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md","reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md","reason": "Backend development guide"}
+{"file": ".trellis/tasks/04-02-openspec-add-fdip-icache-prefetch/openspec_variants.md","reason": "Repo-local summary replacing ignored OpenSpec FDIP change context"}
+{"file": ".trellis/tasks/04-02-openspec-add-fdip-icache-prefetch/prd.md","reason": "Repo-local PRD replacing ignored OpenSpec FDIP change context"}
+{"file": ".trellis/spec/backend/fdip-guidelines.md","reason": "Repo-local FDIP contract replacing ignored OpenSpec FDIP change context"}

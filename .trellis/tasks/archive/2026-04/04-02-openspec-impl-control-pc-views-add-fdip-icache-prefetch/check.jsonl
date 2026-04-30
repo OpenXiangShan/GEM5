@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/index.md","reason": "Repo-local backend guide replacing archived skill context"}
+{"file": ".trellis/spec/backend/quality-guidelines.md","reason": "Repo-local quality guide replacing archived skill context"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md","reason": "Repo-local cross-layer guide replacing archived skill context"}
+{"file": ".trellis/spec/backend/fdip-guidelines.md","reason": "Repo-local FDIP guide replacing archived skill context"}
+{"file": ".trellis/tasks/04-02-openspec-add-fdip-icache-prefetch/openspec_variants.md","reason": "Repo-local summary replacing ignored OpenSpec FDIP change context"}
+{"file": ".trellis/tasks/04-02-openspec-add-fdip-icache-prefetch/prd.md","reason": "Repo-local PRD replacing ignored OpenSpec FDIP change context"}

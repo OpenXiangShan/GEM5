@@ -1,0 +1,59 @@
+{
+  "id": "openspec-impl-control-pc-views-add-fdip-icache-prefetch",
+  "name": "openspec-impl-control-pc-views-add-fdip-icache-prefetch",
+  "title": "OpenSpec import: Add FDIP (FTQ-directed ICache prefetch) for decoupled frontend [impl-control-pc-views]",
+  "description": "Imported from .worktrees/impl-control-pc-views/openspec/changes/add-fdip-icache-prefetch",
+  "status": "planning",
+  "dev_type": "backend",
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "glr",
+  "assignee": "glr",
+  "createdAt": "2026-04-02",
+  "completedAt": null,
+  "branch": "impl-control-pc-views",
+  "base_branch": "impl-control-pc-views",
+  "worktree_path": ".worktrees/impl-control-pc-views",
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".worktrees/impl-control-pc-views/openspec/changes/add-fdip-icache-prefetch"
+  ],
+  "notes": "Imported from existing OpenSpec change. Superseded by deduplicated OpenSpec import task.",
+  "meta": {
+    "import_source": "openspec",
+    "openspec_root": ".worktrees/impl-control-pc-views/openspec",
+    "openspec_change": ".worktrees/impl-control-pc-views/openspec/changes/add-fdip-icache-prefetch",
+    "openspec_change_id": "add-fdip-icache-prefetch",
+    "openspec_source_tag": "impl-control-pc-views",
+    "openspec_task_total": 42,
+    "openspec_task_done": 0,
+    "openspec_imported_at": "2026-04-02",
+    "openspec_superseded_by": ".trellis/tasks/04-02-openspec-add-fdip-icache-prefetch",
+    "openspec_superseded_at": "2026-04-02",
+    "openspec_superseded_reason": "deduplicated by logical change_id"
+  }
+}

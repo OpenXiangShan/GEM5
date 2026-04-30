@@ -1,0 +1,131 @@
+{
+  "id": "openspec-add-fdip-icache-prefetch",
+  "name": "openspec-add-fdip-icache-prefetch",
+  "title": "OpenSpec import: Add FDIP (FTQ-directed ICache prefetch) for decoupled frontend",
+  "description": "Imported from deduplicated OpenSpec change add-fdip-icache-prefetch; active Trellis context now uses branch-local specs, docs, and task notes.",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "scope": "Stabilize and slice the existing FDIP branch only. Own the fdip-phase2-xsdev worktree, finish P0/P1 closure, and do not mix in research-framework or SRAM-study work.",
+  "package": null,
+  "priority": "P2",
+  "creator": "glr",
+  "assignee": "glr",
+  "createdAt": "2026-04-02",
+  "completedAt": null,
+  "branch": "fdip-phase2-xsdev",
+  "base_branch": "impl-control-pc-views",
+  "worktree_path": ".",
+  "current_phase": 2,
+  "next_action": [
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": "f02d1a1f62",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/04-02-openspec-add-fdip-icache-prefetch/openspec_variants.md",
+    ".trellis/spec/backend/fdip-guidelines.md",
+    "src/cpu/o3/fetch.cc",
+    "src/cpu/o3/fetch.hh",
+    "src/cpu/pred/btb/decoupled_bpred.cc",
+    "src/cpu/pred/btb/decoupled_bpred.hh",
+    "src/mem/cache/base.cc",
+    "src/mem/cache/base.hh",
+    "src/mem/request.hh",
+    ".trellis/workspace/glr/fdip-p0-analysis-2026-04-13.md",
+    ".trellis/workspace/glr/fdip-slice-status-2026-04-14.md",
+    ".trellis/workspace/glr/fdip-commit-slices-2026-04-13.md",
+    ".trellis/workspace/glr/fdip-cleanup-witness-2026-04-22.md",
+    "src/cpu/o3/fdip_cleanup.hh",
+    "src/cpu/o3/fdip_cleanup.test.cc",
+    ".trellis/workspace/glr/fdip-params-stats-limitations-2026-04-22.md"
+  ],
+  "notes": "Imported from existing OpenSpec change and deduplicated by logical change id.\n\nIsolation contract:\n- Dedicated worktree: .worktrees/fdip-phase2-xsdev\n- This task owns only the FDIP branch/worktree and must not edit the Wave-1 research-framework or SRAM-study worktrees.\n- Primary ownership: src/cpu/o3/fetch.*, src/cpu/pred/btb/decoupled_bpred.*, src/mem/request.hh, src/mem/cache/base.*, src/mem/cache/cache_probe_arg.hh, configs/common/{Options.py,xiangshan.py}, configs/example/kmhv3.py\n\nCurrent Trellis status:\n- P0/P1 stabilization has been cut into three reviewable commits on this branch:\n  - 917eb08d37 cpu,cpu-o3,tests: Tighten FDIP predictor semantics\n  - 5925a5da8c mem-cache,cpu-o3: Add FDIP cache contract and refill gating\n  - ce57b30b6c cpu-o3: Extend FDIP fetch engine with probe and tracking\n- Validation completed in the main worktree:\n  - openspec validate add-fdip-icache-prefetch --strict\n  - scons build/RISCV/gem5.opt -j8\n  - build/RISCV/cpu/pred/btb/test/fetch_coverage.test.opt\n  - srv67 smoke / 5M\n  - high-I$ sanity on crypto14 and compute_int_32\n- Remaining gaps if this task continues:\n  - parameter/stats/limitations docs cleanup\n  - optional deeper RTL-alignment phases remain out of scope for the current cut\n  - investigate why system.cpu.iew.fetchStallReason::IcacheStall remains zero while fetch.icacheStallCycles now moves\n  - redirect / partial-state cleanup witness now committed in f02d1a1f62\n- Trellis-owned parameter/stats/limitations note: .trellis/workspace/glr/fdip-params-stats-limitations-2026-04-22.md",
+  "meta": {
+    "import_source": "openspec",
+    "openspec_change_id": "add-fdip-icache-prefetch",
+    "openspec_deduped": true,
+    "openspec_canonical_root": ".worktrees/fdip-phase2-xsdev/openspec",
+    "openspec_canonical_change": ".worktrees/fdip-phase2-xsdev/openspec/changes/add-fdip-icache-prefetch",
+    "openspec_canonical_source_tag": "fdip-phase2-xsdev",
+    "openspec_task_total": 116,
+    "openspec_task_done": 38,
+    "openspec_imported_at": "2026-04-02",
+    "openspec_variants": [
+      {
+        "source_tag": "fdip-phase2-xsdev",
+        "path": ".worktrees/fdip-phase2-xsdev/openspec/changes/add-fdip-icache-prefetch",
+        "selected": true,
+        "task_total": 116,
+        "task_done": 38,
+        "file_count": 16,
+        "ownership_score": 1,
+        "ownership_tokens": [
+          "fdip"
+        ],
+        "same_as_canonical": true,
+        "digest": "461949b96c7a172f"
+      },
+      {
+        "source_tag": "fdip-rtl-align-xsdev",
+        "path": ".worktrees/fdip-rtl-align-xsdev/openspec/changes/add-fdip-icache-prefetch",
+        "selected": false,
+        "task_total": 52,
+        "task_done": 34,
+        "file_count": 12,
+        "ownership_score": 1,
+        "ownership_tokens": [
+          "fdip"
+        ],
+        "same_as_canonical": false,
+        "digest": "4dc0e97e134c0077"
+      },
+      {
+        "source_tag": "impl-control-pc-tail-halfword",
+        "path": ".worktrees/impl-control-pc-tail-halfword/openspec/changes/add-fdip-icache-prefetch",
+        "selected": false,
+        "task_total": 88,
+        "task_done": 0,
+        "file_count": 4,
+        "ownership_score": 0,
+        "ownership_tokens": [],
+        "same_as_canonical": false,
+        "digest": "c71d75cb47782ae0"
+      },
+      {
+        "source_tag": "impl-control-pc-views",
+        "path": ".worktrees/impl-control-pc-views/openspec/changes/add-fdip-icache-prefetch",
+        "selected": false,
+        "task_total": 42,
+        "task_done": 0,
+        "file_count": 4,
+        "ownership_score": 0,
+        "ownership_tokens": [],
+        "same_as_canonical": false,
+        "digest": "1796ca34ff396dbb"
+      },
+      {
+        "source_tag": "root",
+        "path": "openspec/changes/add-fdip-icache-prefetch",
+        "selected": false,
+        "task_total": 88,
+        "task_done": 0,
+        "file_count": 6,
+        "ownership_score": 0,
+        "ownership_tokens": [],
+        "same_as_canonical": false,
+        "digest": "10ca369d586981c0"
+      }
+    ],
+    "openspec_selection_rule": "collapse identical-to-root copies; then task_done > ownership_overlap > file_count > root_bonus > latest_mtime"
+  }
+}
