@@ -616,6 +616,18 @@ Decode::decodeInsts(ThreadID tid)
         }
 #endif
 
+        if (inst->staticInst->isVectorConfig()) {
+            inst->setSerializeBefore();
+            inst->setSerializeAfter();
+            decode_stalls.push(StallReason::SerializeStall);
+            breakDecode = StallReason::SerializeStall;
+            DPRINTF(Decode,
+                    "[tid:%i] [sn:%llu] Vector config decoded, set serialize barrier and stop decoding younger "
+                    "instructions.\n",
+                    tid, inst->seqNum);
+            break;
+        }
+
         // Ensure that if it was predicted as a branch, it really is a
         // branch.
         if (inst->readPredTaken() && !inst->isControl()) {

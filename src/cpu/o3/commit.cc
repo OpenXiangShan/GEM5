@@ -813,6 +813,20 @@ Commit::squashAfter(ThreadID tid, const DynInstPtr &head_inst)
     squashAfterInst[tid] = head_inst;
 }
 
+bool
+Commit::hasExecutedYoungerInst(ThreadID tid, InstSeqNum seq_num) const
+{
+    for (const auto &inst : rob->getInstList(tid)) {
+        if (!inst || inst->isSquashed()) {
+            continue;
+        }
+        if (inst->seqNum > seq_num && inst->isExecuted()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void
 Commit::tick()
 {
@@ -1378,6 +1392,13 @@ Commit::commitInsts()
                         auto tc = head_inst->tcBase();
                         RiscvISA::VTYPE new_vtype = head_inst->readMiscReg(RiscvISA::MISCREG_VTYPE);
                         tc->getDecoderPtr()->as<RiscvISA::Decoder>().setVtype(new_vtype);
+                    }
+                    if (hasExecutedYoungerInst(tid, head_inst->seqNum)) {
+                        DPRINTF(Commit,
+                                "[tid:%i] [sn:%llu] Vector config committed with executed younger instructions in "
+                                "ROB, squash younger instructions.\n",
+                                tid, head_inst->seqNum);
+                        squashAfter(tid, head_inst);
                     }
                 }
                 if (head_inst->isFloating() && head_inst->isLoad()){
