@@ -61,6 +61,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         std::vector<unsigned> bwIndex;    // BW table indices
         std::vector<unsigned> lIndex;     // L table indices
         std::vector<unsigned> iIndex;     // I table indices
+        std::vector<unsigned> imHistIndex; // constant-IMLI-history table indices
         std::vector<unsigned> gIndex;     // G table indices
         std::vector<unsigned> pIndex;     // P table indices
         std::vector<unsigned> biasIndex;  // Bias table indices
@@ -74,6 +75,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         int bw_percsum;
         int l_percsum;
         int i_percsum;
+        int imHist_percsum;
         int g_percsum;
         int p_percsum;
         int bias_percsum;
@@ -91,6 +93,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
               bwIndex(0),
               lIndex(0),
               iIndex(0),
+              imHistIndex(0),
               gIndex(0),
               pIndex(0),
               biasIndex(0),
@@ -103,6 +106,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
               bw_percsum(0),
               l_percsum(0),
               i_percsum(0),
+              imHist_percsum(0),
               g_percsum(0),
               p_percsum(0),
               bias_percsum(0)
@@ -112,10 +116,12 @@ class BTBMGSC : public TimedBaseBTBPredictor
         MgscPrediction(Addr btb_pc, int total_sum, bool use_mgsc, bool taken, bool taken_before_sc,
                        bool tage_conf_high, bool tage_conf_mid, bool tage_conf_low, int16_t total_thres,
                        std::vector<unsigned> bwIndex, std::vector<unsigned> lIndex, std::vector<unsigned> iIndex,
-                       std::vector<unsigned> gIndex, std::vector<unsigned> pIndex, std::vector<unsigned> biasIndex,
+                       std::vector<unsigned> imHistIndex, std::vector<unsigned> gIndex, std::vector<unsigned> pIndex,
+                       std::vector<unsigned> biasIndex,
                        bool bw_weight_scale_diff, bool l_weight_scale_diff, bool i_weight_scale_diff,
                        bool g_weight_scale_diff, bool p_weight_scale_diff, bool bias_weight_scale_diff, int bw_percsum,
-                       int l_percsum, int i_percsum, int g_percsum, int p_percsum, int bias_percsum)
+                       int l_percsum, int i_percsum, int imHist_percsum, int g_percsum, int p_percsum,
+                       int bias_percsum)
             : btb_pc(btb_pc),
               total_sum(total_sum),
               use_mgsc(use_mgsc),
@@ -128,6 +134,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
               bwIndex(bwIndex),
               lIndex(lIndex),
               iIndex(iIndex),
+              imHistIndex(imHistIndex),
               gIndex(gIndex),
               pIndex(pIndex),
               biasIndex(biasIndex),
@@ -140,6 +147,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
               bw_percsum(bw_percsum),
               l_percsum(l_percsum),
               i_percsum(i_percsum),
+              imHist_percsum(imHist_percsum),
               g_percsum(g_percsum),
               p_percsum(p_percsum),
               bias_percsum(bias_percsum)
@@ -245,6 +253,10 @@ class BTBMGSC : public TimedBaseBTBPredictor
      */
     void updateGlobalThreshold(Addr pc, bool update_direction);
 
+    uint64_t foldIntHistory(uint64_t history, unsigned histLen, unsigned foldedLen) const;
+    void updateImHistState(bool cond_taken);
+    void updateImliCountState(bool bw_taken);
+
     // Look up predictions in MGSC tables for a stream of instructions
     void lookupHelper(const Addr &stream_start, const std::vector<BTBEntry> &btbEntries,
                       const std::unordered_map<Addr, TageInfoForMGSC> &tageInfoForMgscs, CondTakens &results);
@@ -310,6 +322,11 @@ class BTBMGSC : public TimedBaseBTBPredictor
     unsigned iTableIdxWidth;
     std::vector<int> iHistLen;
 
+    /** constant-IMLI-history indexed tables param */
+    unsigned imHistTableNum;
+    unsigned imHistTableIdxWidth;
+    std::vector<int> imHistHistLen;
+
     /** global history indexed table param*/
     unsigned gTableNum;
     unsigned gTableIdxWidth;
@@ -347,6 +364,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     bool enableBwTable;
     bool enableLTable;
     bool enableITable;
+    bool enableIMHistTable;
     bool enableGTable;
     bool enablePTable;
     bool enableBiasTable;
@@ -374,6 +392,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
     std::vector<std::vector<std::vector<int16_t>>> iTable;
     // The actual MGSC prediction tables (index x line)
     std::vector<int16_t> iWeightTable;
+    // Constant-IMLI-history tables share the I-family weighting path.
+    std::vector<std::vector<std::vector<int16_t>>> imHistTable;
 
     // The actual MGSC prediction tables (table x index x line)
     std::vector<std::vector<std::vector<int16_t>>> gTable;
@@ -413,9 +433,15 @@ class BTBMGSC : public TimedBaseBTBPredictor
     std::vector<unsigned> bwIndex;
     std::vector<unsigned> lIndex;
     std::vector<unsigned> iIndex;
+    std::vector<unsigned> imHistIndex;
     std::vector<unsigned> gIndex;
     std::vector<unsigned> pIndex;
     std::vector<unsigned> biasIndex;
+
+    uint64_t imliCount{0};
+    std::vector<uint64_t> imHist;
+    unsigned imHistStoreBits{0};
+    uint64_t imHistStoreMask{0};
 
 #ifdef UNIT_TEST
     typedef uint64_t Scalar;
@@ -519,6 +545,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static bool &enableBwTable(BTBMGSC &mgsc) { return mgsc.enableBwTable; }
         static bool &enableLTable(BTBMGSC &mgsc) { return mgsc.enableLTable; }
         static bool &enableITable(BTBMGSC &mgsc) { return mgsc.enableITable; }
+        static bool &enableIMHistTable(BTBMGSC &mgsc) { return mgsc.enableIMHistTable; }
         static bool &enableGTable(BTBMGSC &mgsc) { return mgsc.enableGTable; }
         static bool &enablePTable(BTBMGSC &mgsc) { return mgsc.enablePTable; }
         static bool &enableBiasTable(BTBMGSC &mgsc) { return mgsc.enableBiasTable; }
@@ -528,6 +555,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
         static auto &bwTable(BTBMGSC &mgsc) { return mgsc.bwTable; }
         static auto &lTable(BTBMGSC &mgsc) { return mgsc.lTable; }
         static auto &iTable(BTBMGSC &mgsc) { return mgsc.iTable; }
+        static auto &imHistTable(BTBMGSC &mgsc) { return mgsc.imHistTable; }
         static auto &gTable(BTBMGSC &mgsc) { return mgsc.gTable; }
         static auto &pTable(BTBMGSC &mgsc) { return mgsc.pTable; }
         static auto &biasTable(BTBMGSC &mgsc) { return mgsc.biasTable; }
@@ -570,16 +598,20 @@ class BTBMGSC : public TimedBaseBTBPredictor
         std::vector<ImliFoldedHist> indexIFoldedHist;
         std::vector<GlobalFoldedHist> indexGFoldedHist;
         std::vector<PathFoldedHist> indexPFoldedHist;
+        uint64_t imliCount{0};
+        std::vector<uint64_t> imHist;
         MgscMeta(std::unordered_map<Addr, MgscPrediction> preds, std::vector<GlobalBwFoldedHist> indexBwFoldedHist,
                  std::vector<std::vector<LocalFoldedHist>> indexLFoldedHist,
                  std::vector<ImliFoldedHist> indexIFoldedHist, std::vector<GlobalFoldedHist> indexGFoldedHist,
-                 std::vector<PathFoldedHist> indexPFoldedHist)
+                 std::vector<PathFoldedHist> indexPFoldedHist, uint64_t imliCount, std::vector<uint64_t> imHist)
             : preds(preds),
               indexBwFoldedHist(indexBwFoldedHist),
               indexLFoldedHist(indexLFoldedHist),
               indexIFoldedHist(indexIFoldedHist),
               indexGFoldedHist(indexGFoldedHist),
-              indexPFoldedHist(indexPFoldedHist)
+              indexPFoldedHist(indexPFoldedHist),
+              imliCount(imliCount),
+              imHist(imHist)
         {
         }
         MgscMeta() {}
@@ -591,6 +623,8 @@ class BTBMGSC : public TimedBaseBTBPredictor
             indexIFoldedHist = other.indexIFoldedHist;
             indexGFoldedHist = other.indexGFoldedHist;
             indexPFoldedHist = other.indexPFoldedHist;
+            imliCount = other.imliCount;
+            imHist = other.imHist;
         }
     } MgscMeta;
 
