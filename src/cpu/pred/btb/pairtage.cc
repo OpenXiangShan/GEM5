@@ -729,10 +729,13 @@ PairTAGE::buildBTBEntry(const PairBlockInfo &block) const
     entry.valid = block.valid && !block.isFallThrough();
     entry.pc = block.branchPC;
     entry.target = block.targetPC;
-    entry.size = block.isFallThrough() ? 0 : 4;
-    entry.isCond = !block.isFallThrough();
-    entry.isDirect = !block.isFallThrough();
-    entry.alwaysTaken = false;
+    entry.size = block.isFallThrough() ? 0 : block.size;
+    entry.isCond = block.isCond;
+    entry.isDirect = block.isDirect;
+    entry.isIndirect = block.isIndirect;
+    entry.isCall = block.isCall;
+    entry.isReturn = block.isReturn;
+    entry.alwaysTaken = entry.valid && !block.isCond;
     entry.ctr = block.taken ? 0 : -1;
     entry.source = componentIdx;
     return entry;
@@ -762,7 +765,16 @@ PairTAGE::fillStagePrediction(const PairBlockInfo &block, FullBTBPrediction &pre
 
     auto entry = buildBTBEntry(block);
     pred.btbEntries.push_back(entry);
-    pred.condTakens.push_back({entry.pc, block.taken});
+    if (entry.isCond) {
+        pred.condTakens.push_back({entry.pc, block.taken});
+    }
+    if (entry.isIndirect) {
+        if (entry.isReturn) {
+            pred.returnTarget = block.targetPC;
+        } else {
+            pred.indirectTargets.push_back({entry.pc, block.targetPC});
+        }
+    }
 }
 
 PairTAGE::PairBlockInfo
@@ -840,17 +852,26 @@ PairTAGE::buildTrainingBlockResult(const FetchTarget &entry) const
         }
     }
 
-    if (!trainEntry->valid || !trainEntry->isCond ||
-        !trainEntry->isDirect || trainEntry->isIndirect ||
-        trainEntry->isCall || trainEntry->isReturn) {
+    if (!entry.predTaken &&
+        (!trainEntry->valid || !trainEntry->isCond ||
+         !trainEntry->isDirect || trainEntry->isIndirect ||
+         trainEntry->isCall || trainEntry->isReturn)) {
         return TrainingBlockBuildResult(
             PairBlockInfo{}, classifyUnsupportedTrainingEntry(*trainEntry));
     }
 
-    const Addr targetPC = entry.predTaken ?
-        entry.predBranchInfo.target : trainEntry->target;
+    if (entry.predTaken) {
+        const auto &branchInfo = entry.predBranchInfo;
+        return TrainingBlockBuildResult(
+            PairBlockInfo(true, branchInfo.pc, branchInfo.target,
+                          branchInfo.isCond, branchInfo.isDirect,
+                          branchInfo.isIndirect, branchInfo.isCall,
+                          branchInfo.isReturn, branchInfo.size),
+            TrainingBlockBuildStatus::Valid);
+    }
+
     return TrainingBlockBuildResult(
-        PairBlockInfo(entry.predTaken, trainEntry->pc, targetPC),
+        PairBlockInfo(false, trainEntry->pc, trainEntry->target),
         TrainingBlockBuildStatus::Valid);
 }
 
@@ -927,7 +948,13 @@ PairTAGE::blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const
     }
     return lhs.taken == rhs.taken && lhs.branchPC == rhs.branchPC &&
            lhs.fallThrough == rhs.fallThrough &&
-           lhs.targetPC == rhs.targetPC;
+           lhs.targetPC == rhs.targetPC &&
+           lhs.isCond == rhs.isCond &&
+           lhs.isDirect == rhs.isDirect &&
+           lhs.isIndirect == rhs.isIndirect &&
+           lhs.isCall == rhs.isCall &&
+           lhs.isReturn == rhs.isReturn &&
+           lhs.size == rhs.size;
 }
 
 bool
