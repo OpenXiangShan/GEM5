@@ -1649,6 +1649,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
     if (ras->isEnabled()) {
         ras->specUpdateState(finalPred);
     }
+    }
 
     // Update component-local folded histories.
     for (int i = 0; i < numComponents; i++) {
