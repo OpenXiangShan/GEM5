@@ -52,17 +52,38 @@ class PairTAGE : public TimedBaseBTBPredictor
         bool fallThrough;
         Addr branchPC;
         Addr targetPC;
+        bool isCond;
+        bool isDirect;
+        bool isIndirect;
+        bool isCall;
+        bool isReturn;
+        uint8_t size;
 
         PairBlockInfo()
             : valid(false), taken(false), fallThrough(false),
-              branchPC(0), targetPC(0)
+              branchPC(0), targetPC(0),
+              isCond(false), isDirect(false), isIndirect(false),
+              isCall(false), isReturn(false), size(0)
         {
         }
 
         PairBlockInfo(bool taken, Addr branchPC, Addr targetPC,
                       bool fallThrough = false)
             : valid(true), taken(taken), fallThrough(fallThrough),
-              branchPC(branchPC), targetPC(targetPC)
+              branchPC(branchPC), targetPC(targetPC),
+              isCond(!fallThrough), isDirect(!fallThrough), isIndirect(false),
+              isCall(false), isReturn(false), size(fallThrough ? 0 : 4)
+        {
+        }
+
+        PairBlockInfo(bool taken, Addr branchPC, Addr targetPC,
+                      bool isCond, bool isDirect, bool isIndirect,
+                      bool isCall, bool isReturn, uint8_t size,
+                      bool fallThrough = false)
+            : valid(true), taken(taken), fallThrough(fallThrough),
+              branchPC(branchPC), targetPC(targetPC),
+              isCond(isCond), isDirect(isDirect), isIndirect(isIndirect),
+              isCall(isCall), isReturn(isReturn), size(size)
         {
         }
 
@@ -73,6 +94,12 @@ class PairTAGE : public TimedBaseBTBPredictor
             fallThrough = false;
             branchPC = 0;
             targetPC = 0;
+            isCond = false;
+            isDirect = false;
+            isIndirect = false;
+            isCall = false;
+            isReturn = false;
+            size = 0;
         }
 
         bool isFallThrough() const { return valid && fallThrough; }
@@ -181,6 +208,38 @@ class PairTAGE : public TimedBaseBTBPredictor
     const std::vector<std::vector<std::vector<TageEntry>>> &getTageTable() const { return tageTable; }
 
     std::vector<std::vector<std::vector<TageEntry>>> &getTageTable() { return tageTable; }
+
+#ifdef UNIT_TEST
+    PairBlockInfo buildFirstTrainingBlockForTest(const FetchTarget &entry) const
+    {
+        return buildTrainingBlockResult(entry).block;
+    }
+
+    PairBlockInfo buildSecondTrainingBlockForTest(
+        const FullBTBPrediction &pred) const
+    {
+        return buildTrainingBlockResult(pred).block;
+    }
+
+    BTBEntry buildBTBEntryForTest(const PairBlockInfo &block) const
+    {
+        return buildBTBEntry(block);
+    }
+
+    FullBTBPrediction buildStagePredictionForTest(
+        const PairBlockInfo &block) const
+    {
+        FullBTBPrediction pred;
+        fillStagePrediction(block, pred);
+        return pred;
+    }
+
+    bool blocksMatchForTest(const PairBlockInfo &lhs,
+                            const PairBlockInfo &rhs) const
+    {
+        return blocksMatch(lhs, rhs);
+    }
+#endif
 
   private:
     enum class TrainingBlockBuildStatus
