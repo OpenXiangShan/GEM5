@@ -126,6 +126,7 @@ def setKmhV3IdealParams(args, system):
     # l3 cache
     if args.l3cache:
         system.l3.mshrs = 128
+        system.l3.num_slices = 4
 
 if __name__ == '__m5_main__':
     FutureClass = None
