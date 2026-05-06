@@ -229,6 +229,19 @@ TEST(PairTAGETest, RepeatedFirstIdentityMismatchRewritesProvider)
     EXPECT_FALSE(entry.useful);
 }
 
+TEST(PairTAGETest, FirstTrainingBlockDoesNotRecordImplicitFallThrough)
+{
+    PairTAGE pairtage;
+    FetchTarget target;
+    target.startPC = 0x1500;
+    target.predTaken = false;
+    target.predEndPC = 0x1540;
+
+    auto block = pairtage.buildFirstTrainingBlockForTest(target);
+
+    EXPECT_FALSE(block.valid);
+}
+
 }  // namespace test
 
 }  // namespace btb_pred

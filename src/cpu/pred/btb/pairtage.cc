@@ -98,8 +98,8 @@ PairTAGE::PairTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
       numTablesToAlloc(1),
       numWays(numWays),
       maxBranchPositions(32),
-      enableSecondBlock(true),
-      allowOddPhase(false),
+      enableSecondBlock(false),
+      allowOddPhase(true),
       trainStandaloneFallThrough(false)
 {
     setNumDelay(0);
@@ -396,12 +396,15 @@ PairTAGE::putPCHistory(Addr startAddr, const bitset &history, std::vector<FullBT
 #endif
 
     meta->firstBlockValid = tableInfo.entry.firstBlock().valid;
-    meta->secondBlockValid = tableInfo.entry.secondBlock().valid;
+    meta->secondBlockValid =
+        enableSecondBlock && tableInfo.entry.secondBlock().valid;
     meta->predictedFirstBlock = tableInfo.entry.firstBlock();
-    meta->predictedSecondBlock = tableInfo.entry.secondBlock();
-    secondPredBlock = tableInfo.entry.secondBlock();
+    if (enableSecondBlock) {
+        meta->predictedSecondBlock = tableInfo.entry.secondBlock();
+        secondPredBlock = tableInfo.entry.secondBlock();
+    }
 #ifndef UNIT_TEST
-    if (tableInfo.entry.secondBlock().valid) {
+    if (enableSecondBlock && tableInfo.entry.secondBlock().valid) {
         pairTageStats.predSecondBlockAvailable++;
     }
 #endif
@@ -462,9 +465,12 @@ PairTAGE::refreshPredictionMeta(Addr startAddr,
 #endif
 
     meta->firstBlockValid = tableInfo.entry.firstBlock().valid;
-    meta->secondBlockValid = tableInfo.entry.secondBlock().valid;
+    meta->secondBlockValid =
+        enableSecondBlock && tableInfo.entry.secondBlock().valid;
     meta->predictedFirstBlock = tableInfo.entry.firstBlock();
-    meta->predictedSecondBlock = tableInfo.entry.secondBlock();
+    if (enableSecondBlock) {
+        meta->predictedSecondBlock = tableInfo.entry.secondBlock();
+    }
 }
 
 PairTAGE::PairBlockInfo
@@ -907,8 +913,7 @@ PairTAGE::buildTrainingBlockResult(const FetchTarget &entry) const
                     classifyUnsupportedTrainingEntry(*fallbackEntry));
             }
             return TrainingBlockBuildResult(
-                PairBlockInfo(false, entry.startPC, entry.predEndPC, true),
-                TrainingBlockBuildStatus::Valid);
+                PairBlockInfo{}, TrainingBlockBuildStatus::NoNotTakenDirectCond);
         }
     }
 

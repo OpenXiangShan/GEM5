@@ -990,6 +990,7 @@ class AheadBTB(TimedBaseBTBPredictor):
     type = 'AheadBTB'
     cxx_class = 'gem5::branch_prediction::btb_pred::AheadBTB'
     cxx_header = 'cpu/pred/btb/abtb.hh'
+    enabled = False
 
     numEntries = Param.Unsigned(1024, "Number of entries in the BTB")
     tagBits = Param.Unsigned(38, "Number of bits in the tag")
@@ -1074,6 +1075,7 @@ class MicroTAGE(TimedBaseBTBPredictor):
     type = 'MicroTAGE'
     cxx_class = 'gem5::branch_prediction::btb_pred::MicroTAGE'
     cxx_header = "cpu/pred/btb/microtage.hh"
+    enabled = False
 
     enableSC = Param.Bool(False, "Enable SC or not")
     updateOnRead = Param.Bool(True,"Enable update on read, no need to save tage meta in FTQ")
@@ -1121,12 +1123,12 @@ class PairTAGE(TimedBaseBTBPredictor):
     useAltOnNaWidth = Param.Unsigned(7,"Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4,"Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False,"Enable bank conflict simulation")
-    enableSecondBlock = Param.Bool(True, "Enable PairTAGE second-block emission and training")
+    enableSecondBlock = Param.Bool(False, "Enable PairTAGE second-block emission and training")
     allowOddPhase = Param.Bool(
         True,
         "Allow PairTAGE predict/train/second-block paths to operate on odd pair phase")
     trainStandaloneFallThrough = Param.Bool(
-        True,
+        False,
         "Allow PairTAGE to train fallthrough first blocks even when no valid second block exists")
     numDelay = Param.Unsigned(0,"Prediction latency in cycles")
 

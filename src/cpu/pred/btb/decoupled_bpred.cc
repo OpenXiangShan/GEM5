@@ -462,12 +462,17 @@ DecoupledBPUWithBTB::tick()
             firstBlockTargetId = ftq.backId(tid);
         }
 
-        prepareSecondBlockTrainingPrediction(tid);
-        processSecondBlock(tid);
+        if (pairtage && pairtage->isEnabled() &&
+            pairtage->secondBlockEnabled()) {
+            prepareSecondBlockTrainingPrediction(tid);
+            processSecondBlock(tid);
+        }
 
         if (firstBlockTargetId != 0 && pairtage && pairtage->isEnabled() &&
             ftq.hasTarget(firstBlockTargetId, tid)) {
-            const auto *secondPred = threads[tid].secondBlockTrainPredReady ?
+            const auto *secondPred =
+                pairtage->secondBlockEnabled() &&
+                threads[tid].secondBlockTrainPredReady ?
                 &threads[tid].secondBlockTrainPred : nullptr;
             pairtage->trainFromActualPred(ftq.get(firstBlockTargetId, tid),
                                           secondPred);
