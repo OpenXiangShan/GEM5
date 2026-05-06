@@ -19,8 +19,6 @@ from common import Simulation
 from common.Caches import *
 from common.xiangshan import *
 
-from m5.objects.ValuePredictor import *
-
 def setKmhV3IdealParams(args, system):
     for cpu in system.cpu:
 
@@ -64,9 +62,6 @@ def setKmhV3IdealParams(args, system):
         cpu.BankConflictCheck = True
         cpu.sbufferBankWriteAccurately = True
         cpu.DcacheSetDivNum = 2
-
-        # value predictor
-        cpu.valuePred = IdealConstantLVP()
 
         # lsq
         cpu.LQEntries = 128
