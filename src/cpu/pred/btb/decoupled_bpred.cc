@@ -1484,7 +1484,6 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
         components[i]->specUpdateHist(s0History, pred);
         components[i]->specUpdatePHist(s0PHistory, pred);
         if (components[i]->needMoreHistories){
-            components[i]->specUpdatePHist(s0PHistory, pred);
             components[i]->specUpdateBwHist(s0BwHistory, pred);
             components[i]->specUpdateIHist(pred);
             components[i]->specUpdateLHist(s0LHistory, pred);
