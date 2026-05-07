@@ -107,17 +107,27 @@ class PairTAGE : public TimedBaseBTBPredictor
 
     struct TageEntry
     {
+        static constexpr uint8_t MaxIdentityConfidence = 3;
+        static constexpr uint8_t InitialIdentityConfidence = 1;
+
         bool valid;
         Addr tag;
         short counter;
         bool useful;
+        uint8_t identityConfidence;
         std::array<PairBlockInfo, NumBlocksPerEntry> blocks;
 
-        TageEntry() : valid(false), tag(0), counter(0), useful(false), blocks{} {}
+        TageEntry()
+            : valid(false), tag(0), counter(0), useful(false),
+              identityConfidence(0), blocks{}
+        {
+        }
 
         TageEntry(Addr tag, short counter, const PairBlockInfo &firstBlock,
                   const PairBlockInfo &secondBlock = PairBlockInfo())
-            : valid(true), tag(tag), counter(counter), useful(false), blocks{firstBlock, secondBlock}
+            : valid(true), tag(tag), counter(counter), useful(false),
+              identityConfidence(InitialIdentityConfidence),
+              blocks{firstBlock, secondBlock}
         {
         }
 
@@ -132,6 +142,8 @@ class PairTAGE : public TimedBaseBTBPredictor
         void setBlock(unsigned blockIdx, const PairBlockInfo &block);
         void clearBlock(unsigned blockIdx);
         unsigned numValidBlocks() const;
+        void strengthenIdentity();
+        bool weakenIdentity();
     };
 
     struct TageMeta
@@ -239,6 +251,15 @@ class PairTAGE : public TimedBaseBTBPredictor
     {
         return blocksMatch(lhs, rhs);
     }
+
+    void installEntryForTest(unsigned table, unsigned way, Addr startPC,
+                             const PairBlockInfo &firstBlock,
+                             const PairBlockInfo &secondBlock = PairBlockInfo(),
+                             uint8_t identityConfidence =
+                                 TageEntry::InitialIdentityConfidence);
+
+    const TageEntry &tableEntryForTest(unsigned table, unsigned way,
+                                       Addr startPC) const;
 #endif
 
   private:
@@ -296,6 +317,9 @@ class PairTAGE : public TimedBaseBTBPredictor
         statistics::Scalar trainFallThroughSkippedNoSecondBlock;
         statistics::Scalar clearEntryOnInvalidTrain;
         statistics::Scalar updateExistingProvider;
+        statistics::Scalar providerIdentityStrengthened;
+        statistics::Scalar providerIdentityWeakened;
+        statistics::Scalar providerIdentityRewritten;
         statistics::Scalar allocIntoInvalidSlot;
         statistics::Scalar allocOverwriteValid;
         statistics::Scalar allocOverwriteValidSecondBlock;
@@ -335,6 +359,8 @@ class PairTAGE : public TimedBaseBTBPredictor
     PairBlockInfo buildTrainingBlock(const FetchTarget &entry) const;
     PairBlockInfo buildTrainingBlock(const FullBTBPrediction &pred) const;
     bool blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const;
+    bool blockIdentityMatches(const PairBlockInfo &lhs,
+                              const PairBlockInfo &rhs) const;
     bool entryMatchesTraining(const TageEntry &entry, const PairBlockInfo &firstBlock,
                               const PairBlockInfo &secondBlock) const;
     void noteEntryRewrite(unsigned table, const TageEntry &oldEntry,

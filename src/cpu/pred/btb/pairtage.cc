@@ -53,6 +53,23 @@ PairTAGE::TageEntry::numValidBlocks() const
     return validBlocks;
 }
 
+void
+PairTAGE::TageEntry::strengthenIdentity()
+{
+    if (identityConfidence < MaxIdentityConfidence) {
+        ++identityConfidence;
+    }
+}
+
+bool
+PairTAGE::TageEntry::weakenIdentity()
+{
+    if (identityConfidence > 0) {
+        --identityConfidence;
+    }
+    return identityConfidence == 0;
+}
+
 #ifdef UNIT_TEST
 namespace
 {
@@ -100,6 +117,43 @@ PairTAGE::PairTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
         altTagFoldedHist.emplace_back(histLengths[i], tableTagBits[i] - 1, 16);
         indexFoldedHist.emplace_back(histLengths[i], tableIndexBits[i], 16);
     }
+}
+
+void
+PairTAGE::installEntryForTest(unsigned table, unsigned way, Addr startPC,
+                              const PairBlockInfo &firstBlock,
+                              const PairBlockInfo &secondBlock,
+                              uint8_t identityConfidence)
+{
+    assert(table < numPredictors);
+    assert(way < numWays);
+
+    const Addr index = getTageIndex(startPC, table);
+    auto &entry = tageTable[table][index][way];
+    entry.valid = true;
+    entry.tag = getTageTag(
+        startPC, table, tagFoldedHist[table].get(),
+        altTagFoldedHist[table].get(),
+        getBranchIndexInBlock(firstBlock.branchPC, startPC));
+    entry.counter = firstBlock.taken ? 0 : -1;
+    entry.useful = false;
+    entry.identityConfidence = identityConfidence;
+    entry.setBlock(0, firstBlock);
+    if (secondBlock.valid) {
+        entry.setBlock(1, secondBlock);
+    } else {
+        entry.clearBlock(1);
+    }
+}
+
+const PairTAGE::TageEntry &
+PairTAGE::tableEntryForTest(unsigned table, unsigned way, Addr startPC) const
+{
+    assert(table < numPredictors);
+    assert(way < numWays);
+
+    const Addr index = getTageIndex(startPC, table);
+    return tageTable[table][index][way];
 }
 #else
 PairTAGE::PairTAGE(const Params &p)
@@ -209,6 +263,12 @@ PairTAGE::PairTageStats::PairTageStats(
                "existing provider entries cleared because no valid first block was trainable"),
       ADD_STAT(updateExistingProvider, statistics::units::Count::get(),
                "writes that updated an existing provider entry in place"),
+      ADD_STAT(providerIdentityStrengthened, statistics::units::Count::get(),
+               "provider entries whose identity confidence increased after matching training"),
+      ADD_STAT(providerIdentityWeakened, statistics::units::Count::get(),
+               "provider entries whose identity confidence decreased after mismatching training"),
+      ADD_STAT(providerIdentityRewritten, statistics::units::Count::get(),
+               "provider entries rewritten in place after repeated identity mismatches"),
       ADD_STAT(allocIntoInvalidSlot, statistics::units::Count::get(),
                "allocations that found an invalid way"),
       ADD_STAT(allocOverwriteValid, statistics::units::Count::get(),
@@ -595,6 +655,7 @@ PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
             getBranchIndexInBlock(trainedBlock.branchPC, startPC));
         newEntry.counter = trainedBlock.taken ? 0 : -1;
         newEntry.useful = false;
+        newEntry.identityConfidence = TageEntry::InitialIdentityConfidence;
         newEntry.setBlock(0, trainedBlock);
         if (trainedSecondBlock.valid) {
             newEntry.setBlock(1, trainedSecondBlock);
@@ -958,6 +1019,26 @@ PairTAGE::blocksMatch(const PairBlockInfo &lhs, const PairBlockInfo &rhs) const
 }
 
 bool
+PairTAGE::blockIdentityMatches(const PairBlockInfo &lhs,
+                               const PairBlockInfo &rhs) const
+{
+    if (lhs.valid != rhs.valid) {
+        return false;
+    }
+    if (!lhs.valid) {
+        return true;
+    }
+    return lhs.fallThrough == rhs.fallThrough &&
+           lhs.branchPC == rhs.branchPC &&
+           lhs.isCond == rhs.isCond &&
+           lhs.isDirect == rhs.isDirect &&
+           lhs.isIndirect == rhs.isIndirect &&
+           lhs.isCall == rhs.isCall &&
+           lhs.isReturn == rhs.isReturn &&
+           lhs.size == rhs.size;
+}
+
+bool
 PairTAGE::entryMatchesTraining(const TageEntry &entry,
                                const PairBlockInfo &firstBlock,
                                const PairBlockInfo &secondBlock) const
@@ -1068,14 +1149,78 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
         entryMatchesTraining(provider.entry, trainedBlock, trainedSecondBlock);
     const bool providerFirstBlockMatches = provider.found &&
         blocksMatch(provider.entry.firstBlock(), trainedBlock);
+    const bool providerFirstBlockIdentityMatches = provider.found &&
+        blockIdentityMatches(provider.entry.firstBlock(), trainedBlock);
     const bool altMatchesTraining = altProvider.found &&
         entryMatchesTraining(altProvider.entry, trainedBlock, trainedSecondBlock);
     const bool canAllocHigher = provider.found &&
         provider.table < numPredictors - 1;
-    const bool preserveProviderOnMismatch = provider.found &&
+    bool preserveProviderOnMismatch = provider.found &&
         !providerMatchesTraining && canAllocHigher;
+    bool providerRewrittenForIdentity = false;
 
-    if (provider.found && !preserveProviderOnMismatch) {
+    if (provider.found && !providerFirstBlockIdentityMatches &&
+        canAllocHigher) {
+        auto &providerEntry =
+            tageTable[provider.table][provider.index][provider.way];
+        const auto oldEntry = providerEntry;
+        const bool shouldRewrite = providerEntry.weakenIdentity();
+#ifndef UNIT_TEST
+        if (providerEntry.identityConfidence != oldEntry.identityConfidence) {
+            pairTageStats.providerIdentityWeakened++;
+        }
+#endif
+        if (shouldRewrite && oldEntry.identityConfidence == 0) {
+            TageEntry newEntry;
+            newEntry.valid = true;
+            newEntry.tag = getTageTag(
+                entry.startPC, provider.table,
+                predMeta->tagFoldedHist[provider.table].get(),
+                predMeta->altTagFoldedHist[provider.table].get(),
+                getBranchIndexInBlock(trainedBlock.branchPC, entry.startPC));
+            newEntry.counter = trainedBlock.taken ? 0 : -1;
+            newEntry.useful = false;
+            newEntry.identityConfidence = TageEntry::InitialIdentityConfidence;
+            newEntry.setBlock(0, trainedBlock);
+            if (trainedSecondBlock.valid) {
+                newEntry.setBlock(1, trainedSecondBlock);
+            } else {
+                newEntry.clearBlock(1);
+            }
+
+#ifndef UNIT_TEST
+            pairTageStats.updateExistingProvider++;
+            pairTageStats.providerIdentityRewritten++;
+            pairTageStats.tableWrites[provider.table]++;
+#endif
+            noteEntryRewrite(provider.table, oldEntry, newEntry);
+            providerEntry = newEntry;
+            preserveProviderOnMismatch = false;
+            providerRewrittenForIdentity = true;
+        } else if (providerEntry.identityConfidence !=
+                   oldEntry.identityConfidence) {
+#ifndef UNIT_TEST
+            pairTageStats.updateExistingProvider++;
+            pairTageStats.tableWrites[provider.table]++;
+#endif
+        }
+    } else if (provider.found && providerFirstBlockIdentityMatches &&
+               !providerFirstBlockMatches && preserveProviderOnMismatch) {
+        auto &providerEntry =
+            tageTable[provider.table][provider.index][provider.way];
+        const auto oldEntry = providerEntry;
+        providerEntry.strengthenIdentity();
+#ifndef UNIT_TEST
+        if (providerEntry.identityConfidence != oldEntry.identityConfidence) {
+            pairTageStats.updateExistingProvider++;
+            pairTageStats.providerIdentityStrengthened++;
+            pairTageStats.tableWrites[provider.table]++;
+        }
+#endif
+    }
+
+    if (provider.found && !preserveProviderOnMismatch &&
+        !providerRewrittenForIdentity) {
         auto &providerEntry =
             tageTable[provider.table][provider.index][provider.way];
         auto oldEntry = providerEntry;
@@ -1098,6 +1243,17 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
         newEntry.useful = oldEntry.useful;
         if (providerMatchesTraining && altProvider.found && !altMatchesTraining) {
             newEntry.useful = true;
+        }
+        if (providerFirstBlockIdentityMatches) {
+            const auto oldConfidence = newEntry.identityConfidence;
+            newEntry.strengthenIdentity();
+#ifndef UNIT_TEST
+            if (newEntry.identityConfidence != oldConfidence) {
+                pairTageStats.providerIdentityStrengthened++;
+            }
+#endif
+        } else {
+            newEntry.identityConfidence = TageEntry::InitialIdentityConfidence;
         }
         newEntry.setBlock(0, trainedBlock);
         if (trainedSecondBlock.valid) {
@@ -1124,9 +1280,17 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
         if (altProvider.found && !altMatchesTraining) {
             newEntry.useful = true;
         }
+        const auto oldConfidence = newEntry.identityConfidence;
+        newEntry.strengthenIdentity();
+#ifndef UNIT_TEST
+        if (newEntry.identityConfidence != oldConfidence) {
+            pairTageStats.providerIdentityStrengthened++;
+        }
+#endif
 
         if (newEntry.counter != oldEntry.counter ||
-            newEntry.useful != oldEntry.useful) {
+            newEntry.useful != oldEntry.useful ||
+            newEntry.identityConfidence != oldEntry.identityConfidence) {
 #ifndef UNIT_TEST
             pairTageStats.updateExistingProvider++;
             pairTageStats.tableWrites[provider.table]++;
