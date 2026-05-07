@@ -112,9 +112,9 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
             # SC table ablation config for gcc15 slice CI.
-            cpu.branchPred.mgsc.enableBwTable = False
+            cpu.branchPred.mgsc.enableBwTable = True
             cpu.branchPred.mgsc.enableLTable = False
-            cpu.branchPred.mgsc.enableITable = True
+            cpu.branchPred.mgsc.enableITable = False
             cpu.branchPred.mgsc.enableGTable = False
             cpu.branchPred.mgsc.enablePTable = False
             cpu.branchPred.mgsc.enableBiasTable = False
