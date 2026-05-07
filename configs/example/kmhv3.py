@@ -112,7 +112,6 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
-            cpu.branchPred.tage.numWays = [4, 4, 4, 4, 2, 2, 2, 2]
             cpu.branchPred.tage.enableRowBundle = True
             cpu.branchPred.tage.rowBundleTables = 4
 
