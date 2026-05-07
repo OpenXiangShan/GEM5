@@ -15,12 +15,13 @@
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/folded_hist.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
-#include "cpu/pred/loop_predictor.hh"
 
 // Conditional includes based on build mode
 #ifdef UNIT_TEST
     #include "cpu/pred/btb/test/test_dprintf.hh"
+namespace gem5 { namespace branch_prediction { class LoopPredictor; } }
 #else
+    #include "cpu/pred/loop_predictor.hh"
     #include "debug/DecoupleBP.hh"
     #include "debug/TAGEUseful.hh"
     #include "debug/TAGEHistory.hh"
@@ -217,7 +218,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Calculate TAGE index with optional branch-position mixing
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, Addr position);
 
-    Addr getShadowIndex(Addr mainIndex, unsigned table, Addr position = 0) const;
+    Addr getShadowIndex(Addr mainIndex, unsigned table, Addr position = 0,
+                        Addr pc = 0, uint64_t foldedHist = 0) const;
 
     // Calculate TAGE tag for a given PC and table
     // position: branch position within the block (xored into tag like RTL)
@@ -299,6 +301,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     const bool enableShadowOverflow;
     const unsigned shadowTables;
     const bool usePositionForShadowIndex;
+    const bool useAltHashForShadowIndex;
     std::vector<unsigned> shadowTableSizes;
     std::vector<unsigned> shadowNumWays;
     const bool enableRowBundle;
@@ -496,14 +499,18 @@ public:
     // Metadata for TAGE prediction
     typedef struct TageMeta
     {
+#ifndef UNIT_TEST
         struct LoopPredictionMeta
         {
             std::unique_ptr<branch_prediction::LoopPredictor::BranchInfo> loopInfo;
             bool tagePredTaken{false};
         };
+#endif
 
         std::unordered_map<Addr, TagePrediction> preds;
+#ifndef UNIT_TEST
         std::unordered_map<Addr, LoopPredictionMeta> loopPreds;
+#endif
         std::vector<TageFoldedHist> tagFoldedHist;
         std::vector<TageFoldedHist> altTagFoldedHist;
         std::vector<TageFoldedHist> indexFoldedHist;

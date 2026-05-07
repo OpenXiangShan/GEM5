@@ -1072,6 +1072,9 @@ class BTBTAGE(TimedBaseBTBPredictor):
         4, "Number of low-history tables equipped with shadow overflow")
     usePositionForShadowIndex = Param.Bool(
         False, "Mix branch position into shadow overflow index calculation")
+    useAltHashForShadowIndex = Param.Bool(
+        False,
+        "Use an alternate early PC/history hash for shadow overflow indexing")
     shadowTableSizes = VectorParam.Unsigned(
         [1024, 1024, 1024, 1024], "Per-table shadow set counts for low tables")
     shadowNumWays = VectorParam.Unsigned(

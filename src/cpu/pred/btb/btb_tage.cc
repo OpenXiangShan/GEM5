@@ -31,6 +31,13 @@ namespace btb_pred{
 namespace
 {
 
+inline uint64_t
+rotateLeft64(uint64_t value, unsigned shift)
+{
+    shift &= 63;
+    return shift == 0 ? value : ((value << shift) | (value >> (64 - shift)));
+}
+
 #ifndef UNIT_TEST
 inline uint64_t
 mixTraceHash(uint64_t value)
@@ -91,13 +98,14 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
       enableShadowOverflow(false),
       shadowTables(0),
       usePositionForShadowIndex(false),
+      useAltHashForShadowIndex(false),
       enableRowBundle(false),
       rowBundleTables(0),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
-      updateOnRead(false),
       enableLoopPredictor(false),
       loopPredictor(nullptr),
+      updateOnRead(false),
       numBanks(numBanks),
       bankIdWidth(ceilLog2(numBanks)),
       blockWidth(floorLog2(blockSize)),
@@ -138,6 +146,7 @@ indexMixTables(p.indexMixTables),
 enableShadowOverflow(p.enableShadowOverflow),
 shadowTables(p.shadowTables),
 usePositionForShadowIndex(p.usePositionForShadowIndex),
+useAltHashForShadowIndex(p.useAltHashForShadowIndex),
 enableRowBundle(p.enableRowBundle),
 rowBundleTables(p.rowBundleTables),
 useAltOnNaSize(p.useAltOnNaSize),
@@ -384,7 +393,8 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         }
 
         if (!match && enableShadowOverflow && (unsigned)i < shadowTables) {
-            const Addr shadowIndex = getShadowIndex(index, i, position);
+            const Addr shadowIndex = getShadowIndex(
+                index, i, position, startPC, indexFoldedHist[i].get());
             const unsigned shadowWays = getShadowNumWays(i);
             for (unsigned way = 0; way < shadowWays; way++) {
                 auto &entry = shadowTageTable[i][shadowIndex][way];
@@ -494,6 +504,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
             auto pred = generateSinglePrediction(btb_entry, startPC);
             const bool tage_pred_taken = pred.taken;
 
+#ifndef UNIT_TEST
             if (enableLoopPredictor && loopPredictor && !btb_entry.alwaysTaken) {
                 auto loop_info = std::unique_ptr<branch_prediction::LoopPredictor::BranchInfo>(
                     loopPredictor->makeBranchInfo());
@@ -513,6 +524,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
                     std::move(loop_info), tage_pred_taken
                 };
             }
+#endif
 
             meta->preds[btb_entry.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
@@ -947,7 +959,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         }
 
         if (enableShadowOverflow && ti < shadowTables) {
-            const Addr shadowIndex = getShadowIndex(newIndex, ti, position);
+            const Addr shadowIndex = getShadowIndex(
+                newIndex, ti, position, startPC, indexFoldedHist[ti].get());
             auto &shadowSet = shadowTageTable[ti][shadowIndex];
             const unsigned shadowWays = getShadowNumWays(ti);
             int shadow_selected_way = -1;
@@ -1145,16 +1158,19 @@ BTBTAGE::update(const FetchTarget &stream) {
             recomputed = original_pred;
         }
 
+#ifndef UNIT_TEST
         if (enableLoopPredictor && has_original_pred) {
             auto loop_it = predMeta->loopPreds.find(btb_entry.pc);
             if (loop_it != predMeta->loopPreds.end() && loop_it->second.loopInfo) {
                 recomputed.taken = loop_it->second.loopInfo->predTaken;
             }
         }
+#endif
         if (recomputed.taken != actual_taken) {
             hasRecomputedVsActualDiff = true;
         }
 
+#ifndef UNIT_TEST
         if (enableLoopPredictor && has_original_pred) {
             auto loop_it = predMeta->loopPreds.find(btb_entry.pc);
             if (loop_it != predMeta->loopPreds.end() && loop_it->second.loopInfo) {
@@ -1171,6 +1187,7 @@ BTBTAGE::update(const FetchTarget &stream) {
                     loop_it->second.loopInfo.get(), instShiftAmt);
             }
         }
+#endif
 
         // Update predictor state and check if need to allocate new entry
         bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
@@ -1350,11 +1367,20 @@ BTBTAGE::getTageIndex(Addr pc, int t)
 }
 
 Addr
-BTBTAGE::getShadowIndex(Addr mainIndex, unsigned table, Addr position) const
+BTBTAGE::getShadowIndex(Addr mainIndex, unsigned table, Addr position,
+                        Addr pc, uint64_t foldedHist) const
 {
     assert(enableShadowOverflow);
     assert(table < shadowTables);
     Addr mixedIndex = mainIndex;
+    if (useAltHashForShadowIndex) {
+        const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
+        const uint64_t pcBits = pc >> pcShift;
+        const uint64_t salt = 0x9e3779b97f4a7c15ULL * (table + 1);
+        mixedIndex ^= rotateLeft64(foldedHist, table * 7 + 3);
+        mixedIndex ^= rotateLeft64(pcBits, table * 5 + 11);
+        mixedIndex ^= salt;
+    }
     if (usePositionForShadowIndex && position != 0) {
         const Addr posMix = (position * 0x9e3779b1ULL);
         mixedIndex ^= posMix;
