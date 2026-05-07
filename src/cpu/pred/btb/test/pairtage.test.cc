@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/pairtage.hh"
 
@@ -67,6 +69,15 @@ makeTakenPrediction(const BTBEntry &entry, Addr final_target)
         }
     }
     return pred;
+}
+
+void
+attachMeta(PairTAGE &pairtage, FetchTarget &target)
+{
+    std::vector<FullBTBPrediction> stage_preds(1);
+    pairtage.putPCHistory(target.startPC, boost::dynamic_bitset<>(64),
+                          stage_preds);
+    target.predMetas[pairtage.getComponentIdx()] = pairtage.getPredictionMeta();
 }
 
 }  // namespace
@@ -153,6 +164,69 @@ TEST(PairTAGETest, SecondTrainingBlockStillRejectsIndirectReturn)
     auto block = pairtage.buildSecondTrainingBlockForTest(pred);
 
     EXPECT_FALSE(block.valid);
+}
+
+TEST(PairTAGETest, MatchingProviderStrengthensIdentityConfidence)
+{
+    PairTAGE pairtage(2, 1, 512);
+    const Addr start_pc = 0x2000;
+    PairTAGE::PairBlockInfo block(true, 0x2008, 0x3000);
+    pairtage.installEntryForTest(1, 0, start_pc, block,
+                                 PairTAGE::PairBlockInfo{}, 1);
+
+    FetchTarget target = makeTakenFetchTarget(
+        pairtage.buildBTBEntryForTest(block), block.targetPC);
+    attachMeta(pairtage, target);
+
+    pairtage.trainFromActualPred(target);
+
+    const auto &entry = pairtage.tableEntryForTest(1, 0, start_pc);
+    EXPECT_EQ(entry.identityConfidence, 2);
+    EXPECT_EQ(entry.firstBlock().branchPC, block.branchPC);
+}
+
+TEST(PairTAGETest, FirstIdentityMismatchAgesProviderBeforeRewrite)
+{
+    PairTAGE pairtage(2, 1, 512);
+    const Addr start_pc = 0x2000;
+    PairTAGE::PairBlockInfo old_block(true, 0x2008, 0x3000);
+    PairTAGE::PairBlockInfo trained_block(true, 0x2010, 0x4000);
+    pairtage.installEntryForTest(
+        0, 0, start_pc, old_block, PairTAGE::PairBlockInfo{},
+        PairTAGE::TageEntry::InitialIdentityConfidence);
+
+    FetchTarget target = makeTakenFetchTarget(
+        pairtage.buildBTBEntryForTest(trained_block), trained_block.targetPC);
+    attachMeta(pairtage, target);
+
+    pairtage.trainFromActualPred(target);
+
+    const auto &entry = pairtage.tableEntryForTest(0, 0, start_pc);
+    EXPECT_EQ(entry.identityConfidence, 0);
+    EXPECT_EQ(entry.firstBlock().branchPC, old_block.branchPC);
+}
+
+TEST(PairTAGETest, RepeatedFirstIdentityMismatchRewritesProvider)
+{
+    PairTAGE pairtage(2, 1, 512);
+    const Addr start_pc = 0x2000;
+    PairTAGE::PairBlockInfo old_block(true, 0x2008, 0x3000);
+    PairTAGE::PairBlockInfo trained_block(true, 0x2010, 0x4000);
+    pairtage.installEntryForTest(0, 0, start_pc, old_block,
+                                 PairTAGE::PairBlockInfo{}, 0);
+
+    FetchTarget target = makeTakenFetchTarget(
+        pairtage.buildBTBEntryForTest(trained_block), trained_block.targetPC);
+    attachMeta(pairtage, target);
+
+    pairtage.trainFromActualPred(target);
+
+    const auto &entry = pairtage.tableEntryForTest(0, 0, start_pc);
+    EXPECT_EQ(entry.identityConfidence,
+              PairTAGE::TageEntry::InitialIdentityConfidence);
+    EXPECT_EQ(entry.firstBlock().branchPC, trained_block.branchPC);
+    EXPECT_EQ(entry.firstBlock().targetPC, trained_block.targetPC);
+    EXPECT_FALSE(entry.useful);
 }
 
 }  // namespace test
