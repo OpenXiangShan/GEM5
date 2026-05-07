@@ -116,8 +116,8 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mgsc.enableLTable = False
             cpu.branchPred.mgsc.enableITable = False
             cpu.branchPred.mgsc.enableGTable = False
-            cpu.branchPred.mgsc.enablePTable = True
-            cpu.branchPred.mgsc.enableBiasTable = False
+            cpu.branchPred.mgsc.enablePTable = False
+            cpu.branchPred.mgsc.enableBiasTable = True
             cpu.branchPred.ras.enabled = True
 
         # l1 cache per core
