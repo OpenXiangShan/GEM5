@@ -85,6 +85,9 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
       usePathHistory(usePathHistory),
       maxHistLen(0),
       numWays(numPredictors, numWaysPerTable),
+      enableProviderHitProtect(false),
+      providerHitProtectBudget(1),
+      providerHitProtectTables(0),
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
@@ -123,6 +126,9 @@ histLengths(p.histLengths),
 usePathHistory(p.usePathHistory),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
+enableProviderHitProtect(p.enableProviderHitProtect),
+providerHitProtectBudget(p.providerHitProtectBudget),
+providerHitProtectTables(p.providerHitProtectTables),
 maxBranchPositions(p.maxBranchPositions),
 useAltOnNaSize(p.useAltOnNaSize),
 useAltOnNaWidth(p.useAltOnNaWidth),
@@ -594,6 +600,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         if (main_info.taken() != alt_taken && main_is_correct) {
             way.useful = 1;
         }
+        if (main_is_correct) {
+            grantProviderHitProtection(way, main_info);
+        }
         DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
 
         // No LRU maintenance
@@ -603,6 +612,9 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     if (used_alt && alt_info.found) {
         auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
         updateCounter(actual_taken, 3, way.counter);
+        if (alt_taken == actual_taken) {
+            grantProviderHitProtection(way, alt_info);
+        }
         // No LRU maintenance
     }
 
@@ -681,6 +693,21 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     return true;
 }
 
+void
+BTBTAGE::grantProviderHitProtection(TageEntry &entry,
+                                     const TageTableInfo &info)
+{
+    if (!enableProviderHitProtect || providerHitProtectBudget == 0 ||
+        info.table >= providerHitProtectTables) {
+        return;
+    }
+
+    if (entry.allocProtect < providerHitProtectBudget) {
+        entry.allocProtect = providerHitProtectBudget;
+        tageStats.providerHitProtectGrants++;
+    }
+}
+
 /**
  * @brief Handle allocation of new entries
  * 
@@ -714,6 +741,24 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         auto &set = tageTable[ti][newIndex];
 
         const unsigned ways = getNumWays(ti);
+        std::vector<bool> protectedThisAttempt(ways, false);
+        auto shouldSkipProtectedVictim = [&](unsigned way) {
+            if (!enableProviderHitProtect ||
+                ti >= providerHitProtectTables) {
+                return false;
+            }
+            auto &cand = set[way];
+            if (protectedThisAttempt[way]) {
+                return true;
+            }
+            if (cand.allocProtect == 0) {
+                return false;
+            }
+            cand.allocProtect--;
+            protectedThisAttempt[way] = true;
+            tageStats.providerHitProtectSkips++;
+            return true;
+        };
 
         int selected_way = -1;
         for (unsigned way = 0; way < ways; ++way) {
@@ -727,7 +772,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             for (unsigned way = 0; way < ways; ++way) {
                 auto &cand = set[way];
                 const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-                if (!cand.useful && weakish) {
+                if (!cand.useful && weakish &&
+                    !shouldSkipProtectedVictim(way)) {
                     selected_way = way;
                     break;
                 }
@@ -736,7 +782,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         if (selected_way == -1) {
             for (unsigned way = 0; way < ways; ++way) {
-                if (!set[way].useful) {
+                if (!set[way].useful &&
+                    !shouldSkipProtectedVictim(way)) {
                     selected_way = way;
                     break;
                 }
@@ -1280,6 +1327,10 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateAllocFailure, statistics::units::Count::get(), "alloc failure when update"),
     ADD_STAT(updateAllocFailureNoValidTable, statistics::units::Count::get(), "alloc failure no valid table when update"),
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
+    ADD_STAT(providerHitProtectGrants, statistics::units::Count::get(),
+        "correct provider hits granted transient replacement protection"),
+    ADD_STAT(providerHitProtectSkips, statistics::units::Count::get(),
+        "replacement candidates skipped because of provider-hit protection"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
     ADD_STAT(resolveBranchHasProvider, statistics::units::Count::get(),

@@ -63,12 +63,15 @@ class BTBTAGE : public TimedBaseBTBPredictor
             short counter;  // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
             bool useful;    // 1-bit usefulness counter; true means useful
             Addr pc;        // branch pc, like branch position, for btb entry pc check
+            unsigned allocProtect; // transient replacement protection after correct provider hits
             unsigned lruCounter; // Counter for LRU replacement policy
 
-            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0), lruCounter(0) {}
+            TageEntry() : valid(false), tag(0), counter(0), useful(false),
+                          pc(0), allocProtect(0), lruCounter(0) {}
 
             TageEntry(Addr tag, short counter, Addr pc) :
-                      valid(true), tag(tag), counter(counter), useful(false), pc(pc), lruCounter(0) {}
+                      valid(true), tag(tag), counter(counter), useful(false),
+                      pc(pc), allocProtect(0), lruCounter(0) {}
             bool taken() const {
                 return counter >= 0;
             }
@@ -255,6 +258,10 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // The actual TAGE prediction tables (table x index x way)
     std::vector<std::vector<std::vector<TageEntry>>> tageTable;
 
+    const bool enableProviderHitProtect;
+    const unsigned providerHitProtectBudget;
+    const unsigned providerHitProtectTables;
+
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
 
     // Table for tracking when to use alternative prediction on provider weak
@@ -349,6 +356,8 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateAllocFailure;
         Scalar updateAllocFailureNoValidTable;
         Scalar updateAllocSuccess;
+        Scalar providerHitProtectGrants;
+        Scalar providerHitProtectSkips;
         Scalar updateMispred;
         Scalar updateResetU;
         Scalar resolveBranchHasProvider;
@@ -479,6 +488,9 @@ private:
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
                                  AllocationTraceInfo &allocInfo);
+
+    void grantProviderHitProtection(TageEntry &entry,
+                                    const TageTableInfo &info);
 
 
     // Helper methods for LRU management

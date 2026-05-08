@@ -1058,6 +1058,12 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
+    enableProviderHitProtect = Param.Bool(
+        True, "Grant replacement protection after an entry is used as a correct provider")
+    providerHitProtectBudget = Param.Unsigned(
+        1, "Victim-search attempts to protect a correct provider-hit entry")
+    providerHitProtectTables = Param.Unsigned(
+        6, "Number of TAGE tables whose correct provider-hit entries get protection")
     numDelay = 2
 
 class BTBTAGEUpperBound(BTBTAGE):
