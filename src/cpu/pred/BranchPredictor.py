@@ -1061,7 +1061,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     enableProviderHitProtect = Param.Bool(
         True, "Grant replacement protection after an entry is used as a correct provider")
     providerHitProtectBudget = Param.Unsigned(
-        1, "Victim-search attempts to protect a correct provider-hit entry")
+        2, "Victim-search attempts to protect a correct provider-hit entry")
     providerHitProtectTables = Param.Unsigned(
         6, "Number of TAGE tables whose correct provider-hit entries get protection")
     numDelay = 2
