@@ -149,6 +149,40 @@ jobs:
               ;;
           esac
 
+      - name: Prepare performance archive
+        id: archive
+        run: |
+          ARCHIVE_ROOT="/nfs/home/share/gem5_ci/performance_data"
+          BENCHMARK_DIR="${ARCHIVE_ROOT}/${{ inputs.benchmark_type }}"
+          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          RUN_NUMBER="${{ github.run_number }}"
+          TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_run${RUN_NUMBER}"
+
+          mkdir -p "$TARGET_DIR"
+
+          {
+            echo "benchmark_dir=$BENCHMARK_DIR"
+            echo "target_dir=$TARGET_DIR"
+            echo "timestamp=$TIMESTAMP"
+            echo "commit_short=$COMMIT_SHORT"
+            echo "run_number=$RUN_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "timestamp: $TIMESTAMP" > "$TARGET_DIR/metadata.txt"
+          echo "commit: $(git rev-parse HEAD)" >> "$TARGET_DIR/metadata.txt"
+          echo "commit_short: $COMMIT_SHORT" >> "$TARGET_DIR/metadata.txt"
+          echo "branch: ${GITHUB_REF#refs/heads/}" >> "$TARGET_DIR/metadata.txt"
+          echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
+          echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
+          echo "specific_benchmarks: ${{ inputs.specific_benchmarks }}" >> "$TARGET_DIR/metadata.txt"
+          echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
+
+          {
+            echo "### Live archive output"
+            echo "- Path: \`$TARGET_DIR\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: XS-GEM5 - Run performance test
         # ${{ steps.config.outputs.comment }}
         env:
@@ -156,9 +190,10 @@ jobs:
           GCB_RESTORER: ""
           GEM5_HOME: ${{ github.workspace }}
           GEM5_BUILD_TYPE: fast
+          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
         run: |
-          mkdir -p $GEM5_HOME/util/xs_scripts/test
-          cd $GEM5_HOME/util/xs_scripts/test
+          mkdir -p "$PERF_ARCHIVE_DIR"
+          cd "$PERF_ARCHIVE_DIR"
 
           CONFIG_PATH="${{ inputs.config_path }}"
           if [[ "$CONFIG_PATH" == /* ]]; then
@@ -172,7 +207,7 @@ jobs:
 
           CONFIG_PATH="$GEM5_HOME/$CONFIG_PATH"
 
-          bash ../parallel_sim.sh "$(realpath "$CONFIG_PATH")" \
+          bash "$GEM5_HOME/util/xs_scripts/parallel_sim.sh" "$(realpath "$CONFIG_PATH")" \
             ${{ steps.config.outputs.checkpoint_list }} \
             ${{ steps.config.outputs.checkpoint_root_node}} \
             spec_all \
@@ -184,6 +219,8 @@ jobs:
           cd $GITHUB_WORKSPACE
           cp -r /nfs/home/share/gem5_ci/gem5_data_proc .
       - name: Check performance test result
+        env:
+          PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}
         run: |
           # 添加yanyue的 Python 包路径, 包含pandas等
           export PYTHONPATH=/nfs/home/yanyue/.local/lib/python3.12/site-packages:$PYTHONPATH
@@ -192,9 +229,10 @@ jobs:
           cd $GITHUB_WORKSPACE/gem5_data_proc
           # 使用已有的数据spec_all生成测试报告
           bash example-scripts/${{ steps.config.outputs.score_script }} \
-            $GEM5_HOME/util/xs_scripts/test/spec_all \
+            "$PERF_ARCHIVE_DIR/spec_all" \
             ${{ steps.config.outputs.cluster_config }} \
             > $GITHUB_WORKSPACE/score.txt
+          cp "$GITHUB_WORKSPACE/score.txt" "$PERF_ARCHIVE_DIR/"
           # 提取最后42行score信息
           echo "### performance test result :rocket:" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
@@ -206,11 +244,12 @@ jobs:
           echo "- Final Int score per GHz: **${FINAL_SCORE}**" >> $GITHUB_STEP_SUMMARY
           
           # 最后检查是否存在abort文件， 如果存在，打出前10个错误名字
-          if find $GEM5_HOME/util/xs_scripts/test/spec_all -type f -name "abort" | grep -q .; then
+          ABORT_COUNT=$(find "$PERF_ARCHIVE_DIR/spec_all" -type f -name "abort" | wc -l)
+          if [ "$ABORT_COUNT" -gt 0 ]; then
             echo "### :x: Test Failures Detected!" >> $GITHUB_STEP_SUMMARY
-            echo "Failed test count: $(find $GEM5_HOME/util/xs_scripts/test/spec_all -type f -name "abort" | wc -l)" >> $GITHUB_STEP_SUMMARY
+            echo "Failed test count: $ABORT_COUNT" >> $GITHUB_STEP_SUMMARY
             echo "First 10 failed tests:" >> $GITHUB_STEP_SUMMARY
-            find $GEM5_HOME/util/xs_scripts/test/spec_all -type f -name "abort" | 
+            find "$PERF_ARCHIVE_DIR/spec_all" -type f -name "abort" |
               sed 's|.*/\([^/]*\)/abort|\1|' |
               head -n 10 |
               while read -r line; do
@@ -221,37 +260,17 @@ jobs:
               fi
           fi
       - name: Archive performance data
-        if: always()
+        if: ${{ always() && steps.archive.outputs.target_dir != '' }}
         run: |
-          # Create archive directory with timestamp and commit
-          ARCHIVE_ROOT="/nfs/home/share/gem5_ci/performance_data"
-          BENCHMARK_DIR="${ARCHIVE_ROOT}/${{ inputs.benchmark_type }}"
-          TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-          COMMIT_SHORT=$(git rev-parse --short HEAD)
-          RUN_NUMBER="${{ github.run_number }}"
-          TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_run${RUN_NUMBER}"
-          
-          # Create target directory
-          mkdir -p "$TARGET_DIR"
-          
-          # Archive entire spec_all directory without compression
-          echo "Archiving performance data to $TARGET_DIR"
-          cp -a "$GITHUB_WORKSPACE/util/xs_scripts/test/spec_all" "$TARGET_DIR/"
+          BENCHMARK_DIR="${{ steps.archive.outputs.benchmark_dir }}"
+          TARGET_DIR="${{ steps.archive.outputs.target_dir }}"
+
+          echo "Performance data already written to $TARGET_DIR"
           
           # Also save score.txt for quick reference
           if [ -f "$GITHUB_WORKSPACE/score.txt" ]; then
             cp "$GITHUB_WORKSPACE/score.txt" "$TARGET_DIR/"
           fi
-          
-          # Save metadata
-          echo "timestamp: $TIMESTAMP" > "$TARGET_DIR/metadata.txt"
-          echo "commit: $(git rev-parse HEAD)" >> "$TARGET_DIR/metadata.txt"
-          echo "commit_short: $COMMIT_SHORT" >> "$TARGET_DIR/metadata.txt"
-          echo "branch: ${GITHUB_REF#refs/heads/}" >> "$TARGET_DIR/metadata.txt"
-          echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
-          echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
-          echo "specific_benchmarks: ${{ inputs.specific_benchmarks }}" >> "$TARGET_DIR/metadata.txt"
-          echo "workflow_run_id: ${{ github.run_id }}" >> "$TARGET_DIR/metadata.txt"
           
           # Auto cleanup: keep only last 200 runs for this benchmark type
           if [ -d "$BENCHMARK_DIR" ] && [ $(ls -1 "$BENCHMARK_DIR" 2>/dev/null | wc -l) -gt 200 ]; then
@@ -267,7 +286,7 @@ jobs:
           fi
           
           echo "Performance data archived successfully"
-          ARCHIVE_SIZE=$(du -sh "$TARGET_DIR/spec_all" | cut -f1)
+          ARCHIVE_SIZE=$(du -sh "$TARGET_DIR/spec_all" 2>/dev/null | cut -f1 || echo "missing")
           echo "Archive size: ${ARCHIVE_SIZE}"
           {
             echo "### Archive output"
