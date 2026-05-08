@@ -1063,7 +1063,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     providerHitProtectBudget = Param.Unsigned(
         1, "Victim-search attempts to protect a correct provider-hit entry")
     providerHitProtectTables = Param.Unsigned(
-        6, "Number of TAGE tables whose correct provider-hit entries get protection")
+        8, "Number of TAGE tables whose correct provider-hit entries get protection")
     numDelay = 2
 
 class BTBTAGEUpperBound(BTBTAGE):
