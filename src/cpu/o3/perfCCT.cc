@@ -20,7 +20,11 @@ InstMeta::reset(const DynInstPtr inst)
     vaddr = 0;
     paddr = 0;
     lastReplay = 0;
+    blockStartTick = 0;
+    blockStartTickValid = false;
+    replayEvents.clear();
     replayStr.str(std::string());
+    replayStr.clear();
 }
 
 
@@ -39,6 +43,8 @@ PerfCCT::PerfCCT(bool enable, ArchDBer* db) : enableCCT(enable), archdb(db)
         ss.str(std::string());
 
         ld_insert_cmd = "insert into LoadLifeTimeCommitTrace(ID, VAddress, PAddress, LastReplay, ReplayStr) Values (";
+        ld_replay_insert_cmd = "insert into LoadReplayTrace"
+                               "(ID, ReplayIdx, ReplayReason, ReplayTick, BlockStartTick, Extra0, Extra1) Values (";
     }
 }
 
@@ -96,6 +102,14 @@ PerfCCT::updateInstMeta(InstSeqNum sn, const InstDetail detail, const uint64_t v
     case InstDetail::ReplayStr:{
         assert(val < TT_NumReplay);
         meta->replayStr << ReplayReasonStr[val];
+        meta->replayEvents.emplace_back(static_cast<uint8_t>(val), curTick());
+        break;
+    }
+    case InstDetail::BlockStartTick:{
+        if (!meta->blockStartTickValid) {
+            meta->blockStartTick = val;
+            meta->blockStartTickValid = true;
+        }
         break;
     }
     }
@@ -132,6 +146,21 @@ PerfCCT::commitMeta(InstSeqNum sn)
         ss << ");";
         archdb->execmd(ss.str());
         ss.str(std::string());
+
+        for (size_t i = 0; i < meta->replayEvents.size(); ++i) {
+            const auto &event = meta->replayEvents[i];
+            ss << ld_replay_insert_cmd;
+            ss << id << ',';
+            ss << i << ',';
+            ss << '\'' << ReplayReasonStr[event.first] << '\'' << ',';
+            ss << event.second << ',';
+            ss << meta->blockStartTick << ',';
+            ss << 0 << ',';
+            ss << 0;
+            ss << ");";
+            archdb->execmd(ss.str());
+            ss.str(std::string());
+        }
     }
 }
 

@@ -696,6 +696,19 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         foreign key (ID) references LifeTimeCommitTrace(ID)
 );
 
+CREATE TABLE LoadReplayTrace(
+    ID int unsigned not null,
+    ReplayIdx int unsigned not null,
+    ReplayReason char(1) not null,
+    ReplayTick bigint unsigned not null,
+    BlockStartTick bigint unsigned not null,
+    Extra0 bigint unsigned not null,
+    Extra1 bigint unsigned not null,
+    primary key (ID, ReplayIdx),
+    constraint fk_replay_id
+        foreign key (ID) references LoadLifeTimeCommitTrace(ID)
+);
+
 """
 
         test_sys.arch_db = ArchDBer(arch_db_file=args.arch_db_file)
@@ -711,7 +724,7 @@ CREATE TABLE LoadLifeTimeCommitTrace(
         test_sys.arch_db.dump_bop_replay_trace = args.arch_db_dump_bop_replay_trace
         test_sys.arch_db.dump_sms_train_trace = False
         test_sys.arch_db.dump_vaddr_trace = False
-        test_sys.arch_db.dump_lifetime = False
+        test_sys.arch_db.dump_lifetime = True
         arch_db_table_cmds = [
             "CREATE TABLE L1MissTrace(" \
             "ID INTEGER PRIMARY KEY AUTOINCREMENT," \

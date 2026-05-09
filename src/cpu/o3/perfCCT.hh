@@ -1,7 +1,10 @@
 #ifndef __CPU_O3_PERFCCT_HH__
 #define __CPU_O3_PERFCCT_HH__
 
+#include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "base/types.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
@@ -20,6 +23,7 @@ enum class InstDetail
     PAddress,
     LastReplay,
     ReplayStr,
+    BlockStartTick,
 };
 
 enum ReplayReason
@@ -60,6 +64,9 @@ class InstMeta
     Addr vaddr;
     Addr paddr;
     Tick lastReplay;
+    Tick blockStartTick;
+    bool blockStartTickValid;
+    std::vector<std::pair<uint8_t, Tick>> replayEvents;
     std::stringstream replayStr;
   public:
 
@@ -74,6 +81,7 @@ class PerfCCT
     ArchDBer* archdb;
     std::string sql_insert_cmd;
     std::string ld_insert_cmd;
+    std::string ld_replay_insert_cmd;
 
     uint64_t id = 0;
     std::vector<InstMeta> metas;

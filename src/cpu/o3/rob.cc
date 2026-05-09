@@ -449,6 +449,25 @@ ROB::isHeadGroupReady(ThreadID tid)
     return false;
 }
 
+DynInstPtr
+ROB::getHeadGroupBlocker(ThreadID tid)
+{
+    if (!threadGroups[tid].empty() && threadGroups[tid].front() != 0) {
+        auto it = instList[tid].begin();
+        for (int i = 0; i < threadGroups[tid].front(); i++, it++) {
+            auto &inst = *it;
+            if (!inst->readyToCommit()) {
+                if (i > 0 && inst->isSerializeBefore()) {
+                    return nullptr;
+                }
+                return inst;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 InstSeqNum
 ROB::getHeadGroupLastDoneSeq(ThreadID tid)
 {
