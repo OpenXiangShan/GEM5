@@ -109,6 +109,12 @@ def setKmhV3Params(args, system):
             cpu.branchPred.microtage.enabled = True
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
+            cpu.branchPred.tage.enableContextAllocFilter = True
+            cpu.branchPred.tage.contextAllocHistoryBits = 20
+            cpu.branchPred.tage.contextAllocThreshold = 1
+            cpu.branchPred.tage.contextAllocProtectBudget = 1
+            cpu.branchPred.tage.contextAllocUsePcInstability = False
+            cpu.branchPred.tage.contextAllocMinTable = 5
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
