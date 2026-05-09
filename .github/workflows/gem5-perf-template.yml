@@ -151,13 +151,18 @@ jobs:
 
       - name: Prepare performance archive
         id: archive
+        env:
+          CONFIG_PATH_INPUT: ${{ inputs.config_path }}
         run: |
           ARCHIVE_ROOT="/nfs/home/share/gem5_ci/performance_data"
           BENCHMARK_DIR="${ARCHIVE_ROOT}/${{ inputs.benchmark_type }}"
           TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
           COMMIT_SHORT=$(git rev-parse --short HEAD)
           RUN_NUMBER="${{ github.run_number }}"
-          TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_run${RUN_NUMBER}"
+          CONFIG_NAME=$(basename "$CONFIG_PATH_INPUT" .py)
+          CONFIG_NAME=$(printf '%s' "$CONFIG_NAME" | tr -c 'A-Za-z0-9._-' '_')
+          CONFIG_NAME=${CONFIG_NAME:-config}
+          TARGET_DIR="${BENCHMARK_DIR}/${TIMESTAMP}_${COMMIT_SHORT}_${CONFIG_NAME}_run${RUN_NUMBER}"
 
           mkdir -p "$TARGET_DIR"
 
@@ -166,6 +171,7 @@ jobs:
             echo "target_dir=$TARGET_DIR"
             echo "timestamp=$TIMESTAMP"
             echo "commit_short=$COMMIT_SHORT"
+            echo "config_name=$CONFIG_NAME"
             echo "run_number=$RUN_NUMBER"
           } >> "$GITHUB_OUTPUT"
 
@@ -173,6 +179,8 @@ jobs:
           echo "commit: $(git rev-parse HEAD)" >> "$TARGET_DIR/metadata.txt"
           echo "commit_short: $COMMIT_SHORT" >> "$TARGET_DIR/metadata.txt"
           echo "branch: ${GITHUB_REF#refs/heads/}" >> "$TARGET_DIR/metadata.txt"
+          echo "config_path: $CONFIG_PATH_INPUT" >> "$TARGET_DIR/metadata.txt"
+          echo "config_name: $CONFIG_NAME" >> "$TARGET_DIR/metadata.txt"
           echo "run_number: $RUN_NUMBER" >> "$TARGET_DIR/metadata.txt"
           echo "benchmark_type: ${{ inputs.benchmark_type }}" >> "$TARGET_DIR/metadata.txt"
           echo "specific_benchmarks: ${{ inputs.specific_benchmarks }}" >> "$TARGET_DIR/metadata.txt"
