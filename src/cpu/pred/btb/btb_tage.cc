@@ -85,6 +85,22 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
       usePathHistory(usePathHistory),
       maxHistLen(0),
       numWays(numPredictors, numWaysPerTable),
+      enableContextAllocFilter(false),
+      contextAllocEntries(0),
+      contextAllocHistoryBits(0),
+      contextAllocThreshold(0),
+      contextAllocExplorePeriod(0),
+      contextAllocColdAccept(false),
+      contextAllocMaxInstability(3),
+      contextAllocInstabilityStableDecimation(1),
+      contextAllocProtectBudget(0),
+      contextAllocProtectTables(0),
+      contextAllocProtectProviderHit(false),
+      contextAllocMinTable(0),
+      contextAllocUsePcInstability(false),
+      contextAllocPcEntries(0),
+      contextAllocPcThreshold(0),
+      contextAllocPcStableDecimation(1),
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
@@ -123,6 +139,22 @@ histLengths(p.histLengths),
 usePathHistory(p.usePathHistory),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
+enableContextAllocFilter(p.enableContextAllocFilter),
+contextAllocEntries(p.contextAllocEntries),
+contextAllocHistoryBits(p.contextAllocHistoryBits),
+contextAllocThreshold(p.contextAllocThreshold),
+contextAllocExplorePeriod(p.contextAllocExplorePeriod),
+contextAllocColdAccept(p.contextAllocColdAccept),
+contextAllocMaxInstability(p.contextAllocMaxInstability),
+contextAllocInstabilityStableDecimation(p.contextAllocInstabilityStableDecimation),
+contextAllocProtectBudget(p.contextAllocProtectBudget),
+contextAllocProtectTables(p.contextAllocProtectTables),
+contextAllocProtectProviderHit(p.contextAllocProtectProviderHit),
+contextAllocMinTable(p.contextAllocMinTable),
+contextAllocUsePcInstability(p.contextAllocUsePcInstability),
+contextAllocPcEntries(p.contextAllocPcEntries),
+contextAllocPcThreshold(p.contextAllocPcThreshold),
+contextAllocPcStableDecimation(p.contextAllocPcStableDecimation),
 maxBranchPositions(p.maxBranchPositions),
 useAltOnNaSize(p.useAltOnNaSize),
 useAltOnNaWidth(p.useAltOnNaWidth),
@@ -150,6 +182,12 @@ tageStats(this, p.numPredictors, p.numBanks)
 
     assert(numWays.size() >= numPredictors);
     tageTable.resize(numPredictors);
+    if (enableContextAllocFilter) {
+        contextAllocTable.resize(contextAllocEntries);
+        if (contextAllocUsePcInstability) {
+            contextAllocPcTable.resize(contextAllocPcEntries);
+        }
+    }
     tableIndexBits.resize(numPredictors);
     tableIndexMasks.resize(numPredictors);
     tableTagBits.resize(numPredictors);
@@ -594,6 +632,15 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         if (main_info.taken() != alt_taken && main_is_correct) {
             way.useful = 1;
         }
+        if (contextAllocProtectProviderHit && main_is_correct &&
+            main_info.table < contextAllocProtectTables &&
+            contextAllocProtectBudget > 0 &&
+            contextAllocContextIsProven(entry, actual_taken, stream,
+                                        nullptr)) {
+            way.allocProtect = std::max(way.allocProtect,
+                                        contextAllocProtectBudget);
+            tageStats.contextAllocProviderHitProtected++;
+        }
         DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
 
         // No LRU maintenance
@@ -697,6 +744,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  bool actual_taken,
                                  unsigned start_table,
                                  std::shared_ptr<TageMeta> meta,
+                                 const FetchTarget &stream,
                                  AllocationTraceInfo &allocInfo) {
     // Match RTL victim priority:
     // 1) invalid way
@@ -714,6 +762,23 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         auto &set = tageTable[ti][newIndex];
 
         const unsigned ways = getNumWays(ti);
+        std::vector<bool> protectedThisAttempt(ways, false);
+        auto shouldSkipProtectedVictim = [&](unsigned way) {
+            if (!enableContextAllocFilter || ti >= contextAllocProtectTables) {
+                return false;
+            }
+            auto &cand = set[way];
+            if (protectedThisAttempt[way]) {
+                return true;
+            }
+            if (cand.allocProtect == 0) {
+                return false;
+            }
+            cand.allocProtect--;
+            protectedThisAttempt[way] = true;
+            tageStats.contextAllocProtectSkips++;
+            return true;
+        };
 
         int selected_way = -1;
         for (unsigned way = 0; way < ways; ++way) {
@@ -727,7 +792,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             for (unsigned way = 0; way < ways; ++way) {
                 auto &cand = set[way];
                 const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-                if (!cand.useful && weakish) {
+                if (!cand.useful && weakish &&
+                    !shouldSkipProtectedVictim(way)) {
                     selected_way = way;
                     break;
                 }
@@ -736,7 +802,8 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
 
         if (selected_way == -1) {
             for (unsigned way = 0; way < ways; ++way) {
-                if (!set[way].useful) {
+                if (!set[way].useful &&
+                    !shouldSkipProtectedVictim(way)) {
                     selected_way = way;
                     break;
                 }
@@ -744,6 +811,12 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         }
 
         if (selected_way != -1) {
+            unsigned protect_budget = 0;
+            if (!shouldAllocateByContextFilter(entry, actual_taken, stream, meta,
+                                               set[selected_way].valid, ti,
+                                               protect_budget)) {
+                continue;
+            }
             short newCounter = actual_taken ? 0 : -1;
             auto &victim = set[selected_way];
             DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
@@ -759,6 +832,7 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             allocInfo.victimUseful = victim.useful;
             allocInfo.victimPC = victim.pc;
             set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+            set[selected_way].allocProtect = protect_budget;
             tageStats.updateAllocSuccess++;
             usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
             return true;
@@ -783,6 +857,227 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     DPRINTF(TAGE, "no eligible way found for allocation starting from table %d\n", start_table);
     tageStats.updateAllocFailureNoValidTable++;
     return false;
+}
+
+Addr
+BTBTAGE::getContextAllocKey(const BTBEntry &entry,
+                            const FetchTarget &stream,
+                            std::shared_ptr<TageMeta> meta) const
+{
+    Addr histSig = 0;
+    const auto &hist = stream.phistory.empty() && meta ? meta->history
+                                                       : stream.phistory;
+    const unsigned maxBits = sizeof(Addr) * 8;
+    const unsigned bits = std::min(contextAllocHistoryBits, maxBits);
+    const unsigned limit = std::min<unsigned>(bits, hist.size());
+    for (unsigned i = 0; i < limit; ++i) {
+        if (hist[i]) {
+            histSig |= (Addr(1) << i);
+        }
+    }
+
+    Addr key = entry.pc ^ (entry.pc >> 3) ^ (histSig << 1);
+    key ^= (histSig >> 7) ^ (histSig << 17);
+    return key;
+}
+
+bool
+BTBTAGE::contextAllocContextIsProven(const BTBEntry &entry,
+                                     bool actual_taken,
+                                     const FetchTarget &stream,
+                                     std::shared_ptr<TageMeta> meta) const
+{
+    if (!enableContextAllocFilter || contextAllocTable.empty()) {
+        return false;
+    }
+
+    const Addr key = getContextAllocKey(entry, stream, meta);
+    const auto &slot = contextAllocTable[key % contextAllocTable.size()];
+    return slot.valid && slot.tag == key &&
+           slot.lastTaken == actual_taken &&
+           slot.confidence >= contextAllocThreshold &&
+           slot.instability <= contextAllocMaxInstability;
+}
+
+bool
+BTBTAGE::shouldAllocateByContextFilter(const BTBEntry &entry,
+                                       bool actual_taken,
+                                       const FetchTarget &stream,
+                                       std::shared_ptr<TageMeta> meta,
+                                       bool replacing_valid,
+                                       unsigned table,
+                                       unsigned &protect_budget)
+{
+    protect_budget = 0;
+    if (!enableContextAllocFilter) {
+        return true;
+    }
+    if (!replacing_valid || contextAllocTable.empty()) {
+        tageStats.contextAllocAccepted++;
+        return true;
+    }
+
+    const Addr key = getContextAllocKey(entry, stream, meta);
+    auto &slot = contextAllocTable[key % contextAllocTable.size()];
+    contextAllocProbeCount++;
+    const bool explore = contextAllocExplorePeriod > 0 &&
+                         contextAllocProbeCount % contextAllocExplorePeriod == 0;
+
+    auto accept = [&]() {
+        if (table < contextAllocProtectTables &&
+            contextAllocProtectBudget > 0) {
+            protect_budget = contextAllocProtectBudget;
+            tageStats.contextAllocProtected++;
+        }
+        tageStats.contextAllocAccepted++;
+        return true;
+    };
+
+    auto contextIsProven = [&]() {
+        return contextAllocContextIsProven(entry, actual_taken, stream, meta);
+    };
+
+    if (table < contextAllocMinTable) {
+        if (contextIsProven()) {
+            return accept();
+        }
+        tageStats.contextAllocAccepted++;
+        tageStats.contextAllocBypassedStablePc++;
+        return true;
+    }
+
+    if (contextAllocUsePcInstability && !contextAllocPcTable.empty()) {
+        const Addr pcKey = entry.pc ^ (entry.pc >> 2);
+        auto &pcSlot = contextAllocPcTable[pcKey % contextAllocPcTable.size()];
+        const bool pcIsUnstable =
+            pcSlot.valid && pcSlot.tag == pcKey &&
+            pcSlot.instability >= contextAllocPcThreshold;
+        if (!pcIsUnstable) {
+            if (contextIsProven()) {
+                return accept();
+            }
+            tageStats.contextAllocAccepted++;
+            tageStats.contextAllocBypassedStablePc++;
+            return true;
+        }
+    }
+
+    if (!slot.valid || slot.tag != key) {
+        if (contextAllocColdAccept || explore) {
+            if (explore && !contextAllocColdAccept) {
+                tageStats.contextAllocExplored++;
+            }
+            return accept();
+        }
+        tageStats.contextAllocRejectedCold++;
+        return false;
+    }
+
+    if (slot.lastTaken != actual_taken) {
+        if (explore) {
+            tageStats.contextAllocExplored++;
+            return accept();
+        }
+        tageStats.contextAllocRejectedMismatch++;
+        return false;
+    }
+
+    if (slot.confidence < contextAllocThreshold) {
+        if (explore) {
+            tageStats.contextAllocExplored++;
+            return accept();
+        }
+        tageStats.contextAllocRejectedWeak++;
+        return false;
+    }
+
+    if (slot.instability > contextAllocMaxInstability) {
+        if (explore) {
+            tageStats.contextAllocExplored++;
+            return accept();
+        }
+        tageStats.contextAllocRejectedUnstable++;
+        return false;
+    }
+
+    return accept();
+}
+
+void
+BTBTAGE::updateContextAllocFilter(const BTBEntry &entry,
+                                  bool actual_taken,
+                                  const FetchTarget &stream,
+                                  std::shared_ptr<TageMeta> meta)
+{
+    if (!enableContextAllocFilter || contextAllocTable.empty()) {
+        return;
+    }
+
+    const Addr key = getContextAllocKey(entry, stream, meta);
+    auto &slot = contextAllocTable[key % contextAllocTable.size()];
+    const bool hadSameContext = slot.valid && slot.tag == key;
+    const bool wasConsistent = hadSameContext && slot.lastTaken == actual_taken;
+    const bool wasConfident = wasConsistent &&
+                              slot.confidence >= contextAllocThreshold;
+    const bool wasInconsistent = hadSameContext &&
+                                 slot.lastTaken != actual_taken;
+    if (!slot.valid || slot.tag != key) {
+        slot.valid = true;
+        slot.tag = key;
+        slot.lastTaken = actual_taken;
+        slot.confidence = 0;
+        slot.instability = 0;
+        slot.stableUpdates = 0;
+    } else if (slot.lastTaken == actual_taken) {
+        slot.confidence = std::min(slot.confidence + 1, 3U);
+        if (slot.confidence >= contextAllocThreshold &&
+            slot.instability > 0) {
+            const unsigned decimation =
+                std::max(contextAllocInstabilityStableDecimation, 1U);
+            slot.stableUpdates++;
+            if (slot.stableUpdates >= decimation) {
+                slot.stableUpdates = 0;
+                slot.instability--;
+                tageStats.contextAllocInstabilityDecays++;
+            }
+        }
+        tageStats.contextAllocConsistentUpdates++;
+    } else {
+        tageStats.contextAllocInconsistentUpdates++;
+        slot.instability = std::min(slot.instability + 1, 3U);
+        slot.stableUpdates = 0;
+        if (slot.confidence > 0) {
+            slot.confidence--;
+        } else {
+            slot.lastTaken = actual_taken;
+        }
+    }
+
+    if (contextAllocUsePcInstability && !contextAllocPcTable.empty()) {
+        const Addr pcKey = entry.pc ^ (entry.pc >> 2);
+        auto &pcSlot = contextAllocPcTable[pcKey % contextAllocPcTable.size()];
+        if (!pcSlot.valid || pcSlot.tag != pcKey) {
+            pcSlot.valid = true;
+            pcSlot.tag = pcKey;
+            pcSlot.instability = 0;
+            pcSlot.stableUpdates = 0;
+        }
+
+        if (wasInconsistent) {
+            pcSlot.instability = std::min(pcSlot.instability + 1, 3U);
+            pcSlot.stableUpdates = 0;
+            tageStats.contextAllocPcThrottleUpdates++;
+        } else if (wasConfident && pcSlot.instability > 0) {
+            const unsigned decimation =
+                std::max(contextAllocPcStableDecimation, 1U);
+            pcSlot.stableUpdates++;
+            if (pcSlot.stableUpdates >= decimation) {
+                pcSlot.stableUpdates = 0;
+                pcSlot.instability--;
+                tageStats.contextAllocPcStableUpdates++;
+            }
+        }
+    }
 }
 
 /**
@@ -913,8 +1208,9 @@ BTBTAGE::update(const FetchTarget &stream) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
             handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
-                                     start_table, predMeta, allocInfo);
+                                     start_table, predMeta, stream, allocInfo);
         }
+        updateContextAllocFilter(btb_entry, actual_taken, stream, predMeta);
 
 #ifndef UNIT_TEST
         if (enableDB) {
@@ -1280,6 +1576,36 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateAllocFailure, statistics::units::Count::get(), "alloc failure when update"),
     ADD_STAT(updateAllocFailureNoValidTable, statistics::units::Count::get(), "alloc failure no valid table when update"),
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
+    ADD_STAT(contextAllocAccepted, statistics::units::Count::get(),
+        "allocation candidates accepted by PC+PHR context filter"),
+    ADD_STAT(contextAllocRejectedCold, statistics::units::Count::get(),
+        "valid-victim allocations rejected on cold context-filter entries"),
+    ADD_STAT(contextAllocRejectedWeak, statistics::units::Count::get(),
+        "valid-victim allocations rejected on weak context confidence"),
+    ADD_STAT(contextAllocRejectedMismatch, statistics::units::Count::get(),
+        "valid-victim allocations rejected on context outcome mismatch"),
+    ADD_STAT(contextAllocRejectedUnstable, statistics::units::Count::get(),
+        "valid-victim allocations rejected on recently unstable context outcomes"),
+    ADD_STAT(contextAllocExplored, statistics::units::Count::get(),
+        "context-filtered allocations accepted by periodic exploration"),
+    ADD_STAT(contextAllocProtected, statistics::units::Count::get(),
+        "context-filtered allocations granted replacement protection"),
+    ADD_STAT(contextAllocProtectSkips, statistics::units::Count::get(),
+        "replacement candidates skipped by context allocation protection"),
+    ADD_STAT(contextAllocProviderHitProtected, statistics::units::Count::get(),
+        "correct provider hits granted context allocation protection"),
+    ADD_STAT(contextAllocConsistentUpdates, statistics::units::Count::get(),
+        "context-filter entries updated with the same outcome"),
+    ADD_STAT(contextAllocInconsistentUpdates, statistics::units::Count::get(),
+        "context-filter entries updated with a changed outcome"),
+    ADD_STAT(contextAllocInstabilityDecays, statistics::units::Count::get(),
+        "context-filter instability decrements from confident stable contexts"),
+    ADD_STAT(contextAllocBypassedStablePc, statistics::units::Count::get(),
+        "context-filter candidates accepted before PC instability throttling"),
+    ADD_STAT(contextAllocPcThrottleUpdates, statistics::units::Count::get(),
+        "PC instability increments from context outcome changes"),
+    ADD_STAT(contextAllocPcStableUpdates, statistics::units::Count::get(),
+        "PC instability decrements from confident stable contexts"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
     ADD_STAT(resolveBranchHasProvider, statistics::units::Count::get(),

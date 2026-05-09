@@ -1058,6 +1058,38 @@ class BTBTAGE(TimedBaseBTBPredictor):
     useAltOnNaWidth = Param.Unsigned(7, "Width of the useAltOnNa table")
     numBanks = Param.Unsigned(4, "Number of banks for bank conflict simulation")
     enableBankConflict = Param.Bool(False, "Enable bank conflict simulation")
+    enableContextAllocFilter = Param.Bool(
+        False, "Gate valid-victim TAGE allocations with PC+PHR context consistency")
+    contextAllocEntries = Param.Unsigned(
+        4096, "Number of entries in the TAGE context allocation filter")
+    contextAllocHistoryBits = Param.Unsigned(
+        16, "Low PHR bits mixed into the TAGE context allocation filter key")
+    contextAllocThreshold = Param.Unsigned(
+        1, "Confidence threshold for accepting a context-filtered allocation")
+    contextAllocExplorePeriod = Param.Unsigned(
+        0, "If non-zero, periodically accept a rejected context allocation")
+    contextAllocColdAccept = Param.Bool(
+        False, "Accept valid-victim allocations on cold context-filter entries")
+    contextAllocMaxInstability = Param.Unsigned(
+        3, "Maximum recent PC+PHR outcome instability accepted by the context filter")
+    contextAllocInstabilityStableDecimation = Param.Unsigned(
+        1, "Stable same-context updates required before instability decays")
+    contextAllocProtectBudget = Param.Unsigned(
+        1, "Victim-search attempts to protect accepted context-filter allocations")
+    contextAllocProtectTables = Param.Unsigned(
+        8, "Number of TAGE tables whose context-filtered allocations get protection")
+    contextAllocProtectProviderHit = Param.Bool(
+        False, "Protect correct provider hits when their PC+PHR context is stable")
+    contextAllocMinTable = Param.Unsigned(
+        0, "Lowest TAGE table where context allocation gating is applied")
+    contextAllocUsePcInstability = Param.Bool(
+        True, "Only gate allocations after a PC shows unstable PC+PHR outcomes")
+    contextAllocPcEntries = Param.Unsigned(
+        1024, "Number of PC entries for TAGE context allocation instability")
+    contextAllocPcThreshold = Param.Unsigned(
+        2, "PC instability threshold for strict context allocation gating")
+    contextAllocPcStableDecimation = Param.Unsigned(
+        1, "Confident stable updates required before PC instability decrements")
     numDelay = 2
 
 class BTBTAGEUpperBound(BTBTAGE):

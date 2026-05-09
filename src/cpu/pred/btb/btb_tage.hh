@@ -63,15 +63,45 @@ class BTBTAGE : public TimedBaseBTBPredictor
             short counter;  // Prediction counter (-4 to 3), 3bits， 0 and -1 are weak
             bool useful;    // 1-bit usefulness counter; true means useful
             Addr pc;        // branch pc, like branch position, for btb entry pc check
+            unsigned allocProtect; // transient protection for admitted allocations
             unsigned lruCounter; // Counter for LRU replacement policy
 
-            TageEntry() : valid(false), tag(0), counter(0), useful(false), pc(0), lruCounter(0) {}
+            TageEntry() : valid(false), tag(0), counter(0), useful(false),
+                          pc(0), allocProtect(0), lruCounter(0) {}
 
             TageEntry(Addr tag, short counter, Addr pc) :
-                      valid(true), tag(tag), counter(counter), useful(false), pc(pc), lruCounter(0) {}
+                      valid(true), tag(tag), counter(counter), useful(false),
+                      pc(pc), allocProtect(0), lruCounter(0) {}
             bool taken() const {
                 return counter >= 0;
             }
+    };
+
+    struct ContextAllocEntry
+    {
+        bool valid;
+        Addr tag;
+        bool lastTaken;
+        unsigned confidence;
+        unsigned instability;
+        unsigned stableUpdates;
+
+        ContextAllocEntry()
+            : valid(false), tag(0), lastTaken(false), confidence(0),
+              instability(0), stableUpdates(0)
+        {}
+    };
+
+    struct ContextAllocPcEntry
+    {
+        bool valid;
+        Addr tag;
+        unsigned instability;
+        unsigned stableUpdates;
+
+        ContextAllocPcEntry()
+            : valid(false), tag(0), instability(0), stableUpdates(0)
+        {}
     };
 
     // Contains information about a TAGE table lookup
@@ -255,6 +285,26 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // The actual TAGE prediction tables (table x index x way)
     std::vector<std::vector<std::vector<TageEntry>>> tageTable;
 
+    const bool enableContextAllocFilter;
+    const unsigned contextAllocEntries;
+    const unsigned contextAllocHistoryBits;
+    const unsigned contextAllocThreshold;
+    const unsigned contextAllocExplorePeriod;
+    const bool contextAllocColdAccept;
+    const unsigned contextAllocMaxInstability;
+    const unsigned contextAllocInstabilityStableDecimation;
+    const unsigned contextAllocProtectBudget;
+    const unsigned contextAllocProtectTables;
+    const bool contextAllocProtectProviderHit;
+    const unsigned contextAllocMinTable;
+    const bool contextAllocUsePcInstability;
+    const unsigned contextAllocPcEntries;
+    const unsigned contextAllocPcThreshold;
+    const unsigned contextAllocPcStableDecimation;
+    std::vector<ContextAllocEntry> contextAllocTable;
+    std::vector<ContextAllocPcEntry> contextAllocPcTable;
+    uint64_t contextAllocProbeCount{0};
+
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
 
     // Table for tracking when to use alternative prediction on provider weak
@@ -349,6 +399,21 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateAllocFailure;
         Scalar updateAllocFailureNoValidTable;
         Scalar updateAllocSuccess;
+        Scalar contextAllocAccepted;
+        Scalar contextAllocRejectedCold;
+        Scalar contextAllocRejectedWeak;
+        Scalar contextAllocRejectedMismatch;
+        Scalar contextAllocRejectedUnstable;
+        Scalar contextAllocExplored;
+        Scalar contextAllocProtected;
+        Scalar contextAllocProtectSkips;
+        Scalar contextAllocProviderHitProtected;
+        Scalar contextAllocConsistentUpdates;
+        Scalar contextAllocInconsistentUpdates;
+        Scalar contextAllocInstabilityDecays;
+        Scalar contextAllocBypassedStablePc;
+        Scalar contextAllocPcThrottleUpdates;
+        Scalar contextAllocPcStableUpdates;
         Scalar updateMispred;
         Scalar updateResetU;
         Scalar resolveBranchHasProvider;
@@ -478,7 +543,27 @@ private:
                                  bool actual_taken,
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
+                                 const FetchTarget &stream,
                                  AllocationTraceInfo &allocInfo);
+
+    Addr getContextAllocKey(const BTBEntry &entry,
+                            const FetchTarget &stream,
+                            std::shared_ptr<TageMeta> meta) const;
+    bool contextAllocContextIsProven(const BTBEntry &entry,
+                                     bool actual_taken,
+                                     const FetchTarget &stream,
+                                     std::shared_ptr<TageMeta> meta) const;
+    bool shouldAllocateByContextFilter(const BTBEntry &entry,
+                                       bool actual_taken,
+                                       const FetchTarget &stream,
+                                       std::shared_ptr<TageMeta> meta,
+                                       bool replacing_valid,
+                                       unsigned table,
+                                       unsigned &protect_budget);
+    void updateContextAllocFilter(const BTBEntry &entry,
+                                  bool actual_taken,
+                                  const FetchTarget &stream,
+                                  std::shared_ptr<TageMeta> meta);
 
 
     // Helper methods for LRU management
