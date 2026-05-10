@@ -148,13 +148,13 @@ void BertiPrefetcher::searchTimelyDeltas(
     DPRINTF(BertiPrefetcher, "latency: %lu, demand_cycle: %lu, history count: %lu\n", search_latency, demand_cycle,
             entry.history.size());
     std::list<int64_t> new_deltas;
-    int delta_thres = useByteAddr ? blkSize : 8;
+    int delta_thres = useByteAddr ? blkSize : 1;
     for (auto it = entry.history.rbegin(); it != entry.history.rend(); it++) {
         int64_t delta = trigger_addr - it->vAddr;
         DPRINTF(BertiPrefetcher, "delta (%x - %x) = %ld\n", trigger_addr, it->vAddr, delta);
 
         // skip short deltas
-        if (labs(delta) <= delta_thres) {
+        if (labs(delta) < delta_thres) {
             continue;
         }
 

@@ -52,7 +52,6 @@ def create_prefetcher(cpu, cache_level, options):
         prefetcher.max_prefetch_requests_with_pending_translation = 128
         prefetcher.region_size = 64*16  # 64B * blocks per region
 
-        prefetcher.berti.use_byte_addr = True
         prefetcher.berti.aggressive_pf = False
         prefetcher.berti.trigger_pht = True
 
