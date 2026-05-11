@@ -916,6 +916,20 @@ IEW::canInsertLDSTQue(ThreadID tid)
 }
 
 void
+IEW::setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos)
+{
+    constexpr uint64_t dispatchAgeScale = 8;
+
+    assert(dispatch_pos >= 0);
+    assert(dispatch_pos < static_cast<int>(dispatchAgeScale));
+    inst->ageCtr = static_cast<uint64_t>(cpu->curCycle()) * dispatchAgeScale +
+                   static_cast<uint64_t>(dispatch_pos);
+    DPRINTF(IEW, "[tid:%i] [sn:%llu] ageCtr=%llu at dispatch pos %d.\n",
+            inst->threadNumber, inst->seqNum,
+            static_cast<unsigned long long>(inst->ageCtr), dispatch_pos);
+}
+
+void
 IEW::dispatchInsts()
 {
     if (enableDispatchStage) {
@@ -1054,6 +1068,8 @@ IEW::dispatchInstFromRename(ThreadID tid)
         } else {
             inst->clearHtmTransactionalState();
         }
+
+        setDispatchAgeCtr(inst, dispatched);
 
         if (!inst->isNop() && !inst->isEliminated()) {
             scheduler->addProducer(inst);
@@ -1220,6 +1236,8 @@ IEW::classifyInstToDispQue(ThreadID tid)
             } else {
                 inst->clearHtmTransactionalState();
             }
+
+            setDispatchAgeCtr(inst, dispatched);
 
             if (inst->isAtomic()) {
                 ++iewStats.dispStoreInsts;

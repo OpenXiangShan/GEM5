@@ -1455,6 +1455,9 @@ class DynInst : public ExecContext, public RefCounted
     Tick lastWakeDependents = -1;
     Tick translatedTick = -1;
 
+    /** Dispatch age = dispatch cycle * 8 + dispatch position. */
+    uint64_t ageCtr = static_cast<uint64_t>(-1);
+
     Tick readyTick = -1;
     Tick completionTick = -1;
 

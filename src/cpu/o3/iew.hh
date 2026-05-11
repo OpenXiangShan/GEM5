@@ -327,6 +327,7 @@ class IEW
 
     /** Dispatches instructions to IQ and LSQ. */
     void dispatchInsts();
+    void setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos);
 
     void dispatchInstFromRename(ThreadID tid);
 

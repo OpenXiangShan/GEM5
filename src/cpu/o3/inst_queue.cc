@@ -163,8 +163,7 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
     scheduler->setCPU(cpu_ptr, &iew_ptr->ldstQueue);
     scheduler->resetDepGraph(numPhysRegs);
     scheduler->setMemDepUnit(memDepUnit);
-    scheduler->initIQICountSmtScheduler(numThreads);
-    
+
     resetState();
 }
 
