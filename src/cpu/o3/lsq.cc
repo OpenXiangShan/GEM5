@@ -941,12 +941,16 @@ LSQ::processWriteback()
         }
     }
     threads = activeThreads->begin();
+    bool has_thread_offloaded = false;
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         thread[(nextStoreBufferInsertTid + tid) % numThreads].offloadToStoreBuffer(offload_quota[(nextStoreBufferInsertTid + tid) % numThreads], offload_fail);
+        has_thread_offloaded |= ((offload_quota[(nextStoreBufferInsertTid + tid) % numThreads] != 0) 
+                                && !(offload_fail[(nextStoreBufferInsertTid + tid) % numThreads]));
+        
     }
 
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (offload_fail[tid]) {
+        if (offload_fail[tid] && has_thread_offloaded) {
             nextStoreBufferInsertTid = tid;
         }
     }
