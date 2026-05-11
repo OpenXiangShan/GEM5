@@ -140,61 +140,12 @@ PAgeSelector::select(ReadyQue::iterator begin, int portid)
     }
 }
 
-void
-SMTBasedSelector::setparent(Scheduler* scheduler, IssueQue* iq)
-{
-    BaseSelector::setparent(scheduler, iq);
-
-    smtScheduler = iq->getIndependentIQICountScheduler();
-}
-
-ReadyQue::iterator
-SMTBasedSelector::select(ReadyQue::iterator begin, int portid)
-{
-    if (begin == end) {
-        return end;
-    }
-    
-    ThreadID priorityThread = 0;
-    
-    if (smtScheduler) {
-        priorityThread = smtScheduler->getThread();
-        
-        DPRINTF(Schedule, 
-            "SMTBasedSelector: priority thread = %d\n", 
-            priorityThread);
-    }
-    
-    for (auto it = begin; it != end; it++) {
-        auto& inst = *it;
-        
-        if (inst->threadNumber == priorityThread) {
-            DPRINTF(Schedule, 
-                "[sn:%llu] selected by SMT policy (tid=%d)\n",
-                inst->seqNum, priorityThread);
-            return it;
-        }
-    }
-    
-    
-    for (auto it = begin; it != end; it++) {
-        auto& inst = *it;
-        
-        if (inst->threadNumber != priorityThread) {
-            DPRINTF(Schedule, 
-                "[sn:%llu] selected by default (tid=%d, priority=%d)\n",
-                inst->seqNum, inst->threadNumber, priorityThread);
-            return it;
-        }
-    }
-    
-    DPRINTF(Schedule, "SMTBasedSelector: no available instruction\n");
-    return begin;
-}
-
 bool
 IssueQue::select_policy::operator()(const DynInstPtr& a, const DynInstPtr& b) const
 {
+    if (a->ageCtr != b->ageCtr) {
+        return a->ageCtr < b->ageCtr;
+    }
     return a->seqNum < b->seqNum;
 }
 
@@ -622,8 +573,6 @@ IssueQue::selectInst()
     selectQ.clear();
     for (int pi = 0; pi < outports; pi++) {
         auto readyQ = readyQs[pi];
-        // iq->getInstsCounter()->getCounter(tid)
-        int iqcount = 0;
         for (auto it = readyQ->begin(); it != readyQ->end(); ++it) {
             DPRINTF(Schedule, "readyQ for port %d has [sn:%llu] %s [tid:%u]\n", pi, (*it)->seqNum,
                     (*it)->genDisassembly(), (*it)->threadNumber);
@@ -642,15 +591,6 @@ IssueQue::selectInst()
             uint64_t busy_bit = (lat > 63 ? -1 : (1llu << lat));
             if (!(portBusy[pi] & busy_bit)) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
-                for (ThreadID tid = 0; tid < MaxThreads; tid++) {
-                    if (inst->threadNumber == tid) {
-                        independentIQICountScheduler->scheduleNum[tid]++;
-                    } else {
-                        independentIQICountScheduler->scheduleNum[tid] = 0;
-                    }
-                }
-                DPRINTF(Schedule, "smtScheduler->scheduleNum[0]=%d, smtScheduler->scheduleNum[1]=%d\n",
-                        independentIQICountScheduler->scheduleNum[0], independentIQICountScheduler->scheduleNum[1]);
                 // get regfile write port
                 for (int i = 0; i < inst->numDestRegs(); i++) {
                     auto pdst = inst->renamedDestIdx(i);
@@ -913,17 +853,6 @@ IssueQue::decInIQInstsCounter(ThreadID tid)
     }
 }
 
-void
-IssueQue::initIndependentIQICountScheduler(int numThreads)
-{
-       assert(instsCounter != nullptr && "InstsCounter must be set first");
-        
-        independentIQICountScheduler = new IndependentIQICountScheduler(
-            numThreads, instsCounter);
-        
-        DPRINTF(Schedule, "[%s] IndependentIQICountScheduler created.\n",iqname);    
-}
-
 Scheduler::SpecWakeupCompletion::SpecWakeupCompletion(const DynInstPtr& inst, IssueQue* to,
                                                       PendingWakeEventsType* owner)
     : Event(Stat_Event_Pri, AutoDelete), inst(inst), owner(owner), to_issue_queue(to)
@@ -1122,6 +1051,7 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq)
     this->lsq = lsq;
     for (auto it : issueQues) {
         it->setCPU(cpu);
+        it->selector->setparent(this, it);
     }
 }
 
@@ -1736,20 +1666,6 @@ Scheduler::setMainRdpOpt(bool enable)
 {
     for (auto iq : issueQues) {
         iq->setMainRdpOpt(enable);
-    }
-}
-
-void
-Scheduler::initIQICountSmtScheduler(int numThreads)
-{
-    DPRINTF(Schedule, "Initializing IQ SMT schedulers for %d thread.\n", numThreads);
-        
-    // to do: add switch;add SMTSchedulingPolicy
-    for (auto iq : issueQues) {
-        InstsCounter* counter = iq->getInstsCounter();
-        assert(counter);
-        iq->initIndependentIQICountScheduler(numThreads);
-        iq->selector->setparent(this, iq);
     }
 }
 

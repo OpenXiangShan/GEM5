@@ -127,38 +127,5 @@ class MultiPrioritySched : public SMTScheduler
     }
 };
 
-class IndependentIQICountScheduler : public SMTScheduler {
-private:
-     InstsCounter* counter;  // Counter for this IQ only
-
-
-public:
-    IndependentIQICountScheduler(int numThreads, InstsCounter* counter)
-        : SMTScheduler(numThreads), counter(counter){}
-
-    ThreadID getThread() override {
-        ThreadID selectedTid = 0;
-        uint64_t maxCount = counter->getCounter(0);
-        if(scheduleNum[0] >= 100){
-            selectedTid = 1;
-            return selectedTid;
-        }
-        for (ThreadID tid = 1; tid < numThreads; ++tid) {
-            if(scheduleNum[tid] >= 100){
-                selectedTid = 0;
-                return selectedTid;
-            }
-            uint64_t count = counter->getCounter(tid);
-            if (count > maxCount) {
-                maxCount = count;
-                selectedTid = tid;
-            }
-        }
-        return selectedTid;
-    }
-    int scheduleNum[MaxThreads];
-
-};
-
 }}
 #endif
