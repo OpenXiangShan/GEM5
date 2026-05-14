@@ -45,6 +45,7 @@ import os
 import sys
 import m5
 from m5.objects import *
+from m5.util.convert import toMemorySize
 from common.Caches import *
 from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
 from common import ObjectList
@@ -115,6 +116,133 @@ def _cli_opt_provided(flag_name):
         arg == flag_name or arg.startswith(flag_name + "=")
         for arg in sys.argv
     )
+
+
+def _split_l3_resources_for_multi_hn(total_l3_size, total_l3_mshrs,
+                                     hn_count, cacheline_size, l3_assoc):
+    """
+    将“总 L3 资源预算”按 HN 数量做严格等分。
+
+    设计原则：
+    1) 单 HN 保持现有行为不变；
+    2) 多 HN 时保持总容量、总 MSHR 不变，只改变每个 HN 实例的份额；
+    3) 任一资源无法整分都立即失败，避免静默截断污染实验结论。
+    """
+    if hn_count <= 0:
+        raise ValueError(f"hn_count must be > 0, got {hn_count}")
+
+    total_l3_size_bytes = int(toMemorySize(total_l3_size))
+    if total_l3_size_bytes % hn_count != 0:
+        raise ValueError(
+            "L3 size cannot be evenly split across HNs: "
+            f"total={total_l3_size} ({total_l3_size_bytes}B), hn_count={hn_count}. "
+            "Please choose an --l3-size divisible by --chi-hn-count."
+        )
+
+    per_hn_l3_size = total_l3_size_bytes // hn_count
+    cacheline_size = int(cacheline_size)
+    l3_assoc = int(l3_assoc)
+    if per_hn_l3_size % cacheline_size != 0:
+        raise ValueError(
+            "Per-HN L3 size must align to cache line size: "
+            f"per_hn={per_hn_l3_size}B, cacheline={cacheline_size}B"
+        )
+    if per_hn_l3_size % (cacheline_size * l3_assoc) != 0:
+        raise ValueError(
+            "Per-HN L3 size must be divisible by cacheline_size * l3_assoc: "
+            f"per_hn={per_hn_l3_size}B, cacheline={cacheline_size}B, "
+            f"l3_assoc={l3_assoc}"
+        )
+
+    total_l3_mshrs = int(total_l3_mshrs)
+    if total_l3_mshrs % hn_count != 0:
+        raise ValueError(
+            "L3 MSHRs cannot be evenly split across HNs: "
+            f"total={total_l3_mshrs}, hn_count={hn_count}. "
+            "Please use an L3 MSHR count divisible by --chi-hn-count."
+        )
+
+    per_hn_l3_mshrs = total_l3_mshrs // hn_count
+    if per_hn_l3_mshrs <= 0:
+        raise ValueError(
+            "Per-HN L3 MSHRs must be > 0 after splitting: "
+            f"total={total_l3_mshrs}, hn_count={hn_count}"
+        )
+
+    return per_hn_l3_size, per_hn_l3_mshrs
+
+
+def _build_xschi_sam_intlv_masks(target_count):
+    """
+    生成与 xsCHI SystemAddressMapHN/SystemAddressMapRN 完全同构的 XOR masks。
+
+    对应 C++ 逻辑：
+      select_bits = floor(log2(target_count))
+      select[i] = XOR(addr[6 + i], addr[6 + i + select_bits], ...)
+    """
+    if target_count <= 0:
+        raise ValueError(f"target_count must be > 0, got {target_count}")
+    if target_count == 1:
+        return []
+    if target_count & (target_count - 1):
+        raise ValueError(
+            "xsCHI interleaved ranges require target_count to be a power of 2, "
+            f"got {target_count}"
+        )
+
+    select_bits = int(math.log2(target_count))
+    masks = []
+    for i in range(select_bits):
+        mask = 0
+        for bit in range(6 + i, 52, select_bits):
+            mask |= 1 << bit
+        masks.append(mask)
+    return masks
+
+
+def _build_xschi_dram_interleaved_ranges(base_range, dram_count):
+    """
+    按当前 xsCHI HN SAM 的地址哈希规则，为每个 DRAM 生成一条 interleaved range。
+    """
+    if dram_count <= 0:
+        raise ValueError(f"dram_count must be > 0, got {dram_count}")
+    if dram_count & (dram_count - 1):
+        raise ValueError(
+            "CHI topology 'L2L3DramSys_5x3' requires --chi-dram-count to be a "
+            f"power of 2 when dram_count > 1, got {dram_count}"
+        )
+
+    base_masks = list(getattr(base_range, "masks", []))
+    if base_masks:
+        raise ValueError(
+            "CHI topology 'L2L3DramSys_5x3' only supports a non-interleaved "
+            f"base memory range, got {base_range}"
+        )
+
+    start = int(base_range.start)
+    end = int(base_range.end)
+    if end <= start:
+        raise ValueError(
+            "CHI topology 'L2L3DramSys_5x3' requires a valid base memory range, "
+            f"got start={start:#x}, end={end:#x}"
+        )
+
+    total_size = end - start
+    if total_size % dram_count != 0:
+        raise ValueError(
+            "CHI topology 'L2L3DramSys_5x3' requires the base memory range size "
+            f"to be divisible by --chi-dram-count: size={total_size}B, "
+            f"dram_count={dram_count}"
+        )
+
+    if dram_count == 1:
+        return [base_range]
+
+    masks = _build_xschi_sam_intlv_masks(dram_count)
+    return [
+        AddrRange(start=start, end=end, masks=masks, intlvMatch=match)
+        for match in range(dram_count)
+    ]
 
 
 def _validate_shadow_dst_windows_non_overlapping(dst_bases, window_sizes):
@@ -513,7 +641,249 @@ def config_cache(options, system):
                         "shadow_dst_bases": shadow_dst_bases,
                     }
 
-                if chi_topology in (
+                def _build_attach_points(
+                    raw_attach_points,
+                    flag_name,
+                    count,
+                    kind,
+                    default_attach_point,
+                    default_attach_points=None,
+                ):
+                    attach_opt_provided = _cli_opt_provided(flag_name)
+                    if attach_opt_provided or (
+                        raw_attach_points not in (None, "", default_attach_point)
+                    ):
+                        attach_points = _parse_csv_list(raw_attach_points)
+                    else:
+                        if default_attach_points is not None:
+                            if count > len(default_attach_points):
+                                raise ValueError(
+                                    f"{kind.lower()} attach default list is insufficient: "
+                                    f"count={count}, max_default={len(default_attach_points)}; "
+                                    f"please specify {flag_name} explicitly"
+                                )
+                            attach_points = list(default_attach_points[:count])
+                        else:
+                            attach_points = _parse_csv_list(default_attach_point)
+
+                    if len(attach_points) != count:
+                        raise ValueError(
+                            f"{kind.lower()} attach points count mismatch: expected {count}, "
+                            f"got {len(attach_points)}"
+                        )
+                    return attach_points
+
+                def _build_mesh_node_5x3(node_x, node_y):
+                    kwargs = dict(
+                        node_x=node_x,
+                        node_y=node_y,
+                        voq_depth=chi_voq_depth,
+                        voq_depth_per_ingress=chi_voq_depth_per_ingress,
+                        port_local0=CHIPort(recv_buffer_size=4),
+                        port_local1=CHIPort(recv_buffer_size=4),
+                    )
+                    if node_x + 1 < 5:
+                        kwargs["port_east"] = CHIPort(recv_buffer_size=4)
+                    if node_x > 0:
+                        kwargs["port_west"] = CHIPort(recv_buffer_size=4)
+                    if node_y + 1 < 3:
+                        kwargs["port_north"] = CHIPort(recv_buffer_size=4)
+                    if node_y > 0:
+                        kwargs["port_south"] = CHIPort(recv_buffer_size=4)
+                    return MeshNode(**kwargs)
+
+                if chi_topology == 'L2L3DramSys_5x3':
+                    l2l3_topo_cls = globals().get('L2L3DramSys5x3')
+                    if l2l3_topo_cls is None:
+                        raise RuntimeError(
+                            "CHI topology 'L2L3DramSys_5x3' requires SimObject "
+                            "'L2L3DramSys5x3', but it is unavailable in this build. "
+                            "Please rebuild gem5 with xsCHI TopoSys enabled."
+                        )
+
+                    shadow_cfg = _build_shadow_l2_config(
+                        default_attach_point="mesh14.local0",
+                        default_attach_points=[
+                            "mesh14.local0",
+                            "mesh12.local0",
+                            "mesh10.local0",
+                        ],
+                        enable_auto_mapping_defaults=True,
+                    )
+                    hn_count = int(getattr(options, "chi_hn_count", 1))
+                    dram_count = int(getattr(options, "chi_dram_count", 1))
+                    if hn_count <= 0:
+                        raise ValueError("--chi-hn-count must be > 0")
+                    if dram_count <= 0:
+                        raise ValueError("--chi-dram-count must be > 0")
+
+                    hn_attach_points = _build_attach_points(
+                        getattr(options, "chi_hn_attach_points", None),
+                        "--chi-hn-attach-points",
+                        hn_count,
+                        "HN",
+                        "mesh6.local0",
+                    )
+                    dram_attach_points = _build_attach_points(
+                        getattr(options, "chi_dram_attach_points", None),
+                        "--chi-dram-attach-points",
+                        dram_count,
+                        "DRAM",
+                        "mesh6.local1",
+                    )
+
+                    per_hn_l3_size, per_hn_l3_mshrs = (
+                        _split_l3_resources_for_multi_hn(
+                            total_l3_size=options.l3_size,
+                            total_l3_mshrs=L3Cache.mshrs,
+                            hn_count=hn_count,
+                            cacheline_size=system.cache_line_size,
+                            l3_assoc=options.l3_assoc,
+                        )
+                    )
+                    print(
+                        "[xsCHI][L3Split] "
+                        f"hn_count={hn_count} "
+                        f"total_l3_size={options.l3_size} "
+                        f"per_hn_l3_size={per_hn_l3_size}B "
+                        f"total_l3_mshrs={int(L3Cache.mshrs)} "
+                        f"per_hn_l3_mshrs={per_hn_l3_mshrs}"
+                    )
+                    per_hn_l3_size_str = f"{per_hn_l3_size}B"
+
+                    hn_objs = []
+                    for i in range(hn_count):
+                        hn_cache_wrapper = L3CacheWrapper(
+                            clk_domain=system.cpu_clk_domain,
+                            num_slices=1,
+                            cache_size=per_hn_l3_size_str,
+                            cache_assoc=options.l3_assoc,
+                            block_bits=int(math.log2(system.cache_line_size)),
+                        )
+                        hn_cache_slice = L2CacheSlice(clk_domain=system.cpu_clk_domain)
+                        hn_cache_opts = _get_cache_opts(system.cpu[0], 'l3', options)
+                        hn_cache_opts['size'] = per_hn_l3_size_str
+                        hn_cache = L3Cache(
+                            clk_domain=system.cpu_clk_domain,
+                            **hn_cache_opts
+                        )
+                        hn_cache_wrapper.slices = [hn_cache_slice]
+                        hn_cache_slice.inner_cache = hn_cache
+                        hn_cache.tags.indexing_policy.num_slices = 1
+                        hn_cache.tags.indexing_policy.slice_idx = 0
+                        if isinstance(hn_cache.replacement_policy, DRRIPRP):
+                            hn_cache.replacement_policy.num_slices = 1
+                            hn_cache.replacement_policy.num_sets_per_slice = (
+                                hn_cache.size // (64 * hn_cache.assoc)
+                            )
+                        hn_cache_wrapper.addCacheAccessor(hn_cache)
+                        hn_cache_wrapper.addSliceAccessor(hn_cache_slice)
+                        hn_cache_slice.setCacheAccessor(hn_cache)
+                        hn_cache.do_fast_writeline = not options.kmh_align
+                        hn_cache.mshrs = per_hn_l3_mshrs
+                        if options.ideal_cache:
+                            hn_cache.response_latency = 0
+                            hn_cache.tag_latency = 1
+                            hn_cache.data_latency = 1
+                            hn_cache.sequential_access = False
+                            hn_cache.writeback_clean = False
+                            hn_cache.mshrs = per_hn_l3_mshrs
+                        if options.xiangshan_ecore:
+                            hn_cache.response_latency = 66
+                            hn_cache.writeback_clean = False
+                        hn_cache_wrapper.slice_cpuside_ports = hn_cache_slice.cpu_side
+                        hn_cache_slice.inner_cpu_port = hn_cache.cpu_side
+                        hn_cache.mem_side = hn_cache_slice.inner_mem_port
+
+                        hn_obj = CHI_L3(
+                            networkPort=CHIPort(recv_buffer_size=4),
+                            coherent_xbar=L2XBar(clk_domain=system.cpu_clk_domain),
+                            cache_wrapper=hn_cache_wrapper,
+                        )
+                        hn_obj.inner_req_port = hn_obj.coherent_xbar.cpu_side_ports
+                        hn_obj.coherent_xbar.mem_side_ports = (
+                            hn_obj.cache_wrapper.cpu_side
+                        )
+                        hn_obj.inner_resp_port = hn_cache_slice.mem_side
+                        hn_objs.append(hn_obj)
+
+                    if len(system.mem_ranges) != 1:
+                        raise ValueError(
+                            "CHI topology 'L2L3DramSys_5x3' currently supports "
+                            "exactly one base memory range, got "
+                            f"{len(system.mem_ranges)}"
+                        )
+
+                    dram_ranges = _build_xschi_dram_interleaved_ranges(
+                        system.mem_ranges[0],
+                        dram_count,
+                    )
+                    for idx, dram_range in enumerate(dram_ranges):
+                        print(
+                            "[xsCHI][DRAMRange] "
+                            f"idx={idx} "
+                            f"match={getattr(dram_range, 'intlvMatch', 0)} "
+                            f"masks={[hex(mask) for mask in getattr(dram_range, 'masks', [])]} "
+                            f"range={dram_range}"
+                        )
+
+                    dram_objs = [
+                        DDRWrapper(
+                            networkPort=CHIPort(recv_buffer_size=4),
+                            range=dram_ranges[i],
+                            configFile=os.path.join(
+                                root_dir,
+                                'ext/dramsim3/xiangshan_configs/xiangshan_DDR4_8Gb_x8_3200_8ch.ini',
+                            ),
+                            filePath=os.path.join(root_dir, 'ext/dramsim3/DRAMsim3/'),
+                        )
+                        for i in range(dram_count)
+                    ]
+
+                    mesh_nodes = []
+                    for y in range(3):
+                        for x in range(5):
+                            mesh_nodes.append(_build_mesh_node_5x3(x, y))
+                    mesh_kwargs = {
+                        f"MeshNode{i}": mesh_nodes[i]
+                        for i in range(len(mesh_nodes))
+                    }
+
+                    system.CHIsys = l2l3_topo_cls(
+                        L2Wrapper=CHI_L2(
+                            RNBridge=CHIBridge(networkPort=CHIPort(recv_buffer_size=4)),
+                            ShadowRNBridges=shadow_cfg["shadow_bridges"],
+                            shadow_enable=shadow_cfg["shadow_enable"],
+                            shadow_src_bases=shadow_cfg["shadow_src_bases"],
+                            shadow_window_sizes=shadow_cfg["shadow_window_sizes"],
+                            shadow_dst_bases=shadow_cfg["shadow_dst_bases"],
+                        ),
+                        HNs=hn_objs,
+                        hn_attach_points=hn_attach_points,
+                        dramsim3s=dram_objs,
+                        dram_attach_points=dram_attach_points,
+                        ShadowRNBridges=shadow_cfg["shadow_bridges"],
+                        shadow_attach_points=shadow_cfg["shadow_attach_points"],
+                        **mesh_kwargs,
+                    )
+                    system.memories = dram_objs
+                    system.CHIsys.ShadowRNBridges = shadow_cfg["shadow_bridges"]
+                    system.CHIsys.shadow_attach_points = shadow_cfg["shadow_attach_points"]
+                    system.CHIsys.mem_side_port = system.membus.cpu_side_ports
+                    print(
+                        "[xsCHI][Build] mesh=5x3 "
+                        "M0=(0,0) M1=(1,0) M2=(2,0) M3=(3,0) M4=(4,0) "
+                        "M5=(0,1) M6=(1,1) M7=(2,1) M8=(3,1) M9=(4,1) "
+                        "M10=(0,2) M11=(1,2) M12=(2,2) M13=(3,2) M14=(4,2) "
+                        f"endpoints: RN@M0.local0 HN@{hn_attach_points} "
+                        f"DRAM@{dram_attach_points} topology={chi_topology} "
+                        "variant=rn_m0_local0_hn_m6_local0_dram_m6_local1 "
+                        f"shadow_enable={shadow_cfg['shadow_enable']} "
+                        f"shadow_count={len(shadow_cfg['shadow_bridges'])} "
+                        f"shadow_attach={shadow_cfg['shadow_attach_points']}"
+                    )
+
+                elif chi_topology in (
                     'L2L3DramSys',
                     'L2L3DramSys_M1Local1Dram',
                     'L2L3DramSys_3x3',
