@@ -26,6 +26,17 @@ namespace gem5
 {
 namespace xsCHI
 {
+namespace
+{
+
+Addr
+blockAddrForDebug(Addr addr)
+{
+    return addr & ~static_cast<Addr>(0x3f);
+}
+
+} // namespace
+
     CHI_L2::WrapperStats::WrapperStats(CHI_L2 *parent)
         : statistics::Group(parent, "addr_observe"),
           ADD_STAT(observed_req_count, statistics::units::Count::get(),
@@ -259,7 +270,27 @@ namespace xsCHI
         }
         
         assert(pkt->isRequest());
-        DPRINTF(CHIL2Wrapper,"RecvReq, cmd:%s, addr: %lx\n",pkt->cmdString(),pkt->getAddr());
+        const unsigned mapSizeBefore = wrapper->outstanding_pkts.size();
+        if (pkt->req && pkt->req->hasPC()) {
+            DPRINTF(CHIL2Wrapper,
+                    "cpu_req_track stage=recvTimingReq cmd=%s addr=%#lx "
+                    "blk=%#lx pc=%#lx map_size_before=%u tick=%llu\n",
+                    pkt->cmdString(),
+                    pkt->getAddr(),
+                    blockAddrForDebug(pkt->getAddr()),
+                    pkt->req->getPC(),
+                    mapSizeBefore,
+                    static_cast<unsigned long long>(curTick()));
+        } else {
+            DPRINTF(CHIL2Wrapper,
+                    "cpu_req_track stage=recvTimingReq cmd=%s addr=%#lx "
+                    "blk=%#lx pc=NA map_size_before=%u tick=%llu\n",
+                    pkt->cmdString(),
+                    pkt->getAddr(),
+                    blockAddrForDebug(pkt->getAddr()),
+                    mapSizeBefore,
+                    static_cast<unsigned long long>(curTick()));
+        }
         wrapper->recordObservedAddress(pkt->getAddr());
         ReqPtr req = wrapper->CreateRequest(pkt);
 
@@ -267,10 +298,24 @@ namespace xsCHI
         // 这样在主路径出现后续 backpressure/时序变化时，影子与主请求仍保持同源同拍注入。
         wrapper->mirrorReqToShadows(req);
         wrapper->bridge->ReceiveReq(req, false);
-        assert(wrapper->outstanding_pkts.count(pkt->getAddr())==0);
         if (pkt->needsResponse() && !pkt->cacheResponding()) {
+            if (wrapper->outstanding_pkts.count(pkt->getAddr()) != 0) {
+                wrapper->dumpOutstandingPkts("recvTimingReq_duplicate_addr",
+                                            pkt->getAddr());
+            }
+            assert(wrapper->outstanding_pkts.count(pkt->getAddr())==0);
             assert(!pkt->isWrite());
             wrapper->outstanding_pkts[pkt->getAddr()] = pkt;
+            DPRINTF(CHIL2Wrapper,
+                    "cpu_req_track stage=outstanding_insert cmd=%s "
+                    "addr=%#lx blk=%#lx map_size_before=%u "
+                    "map_size_after=%u tick=%llu\n",
+                    pkt->cmdString(),
+                    pkt->getAddr(),
+                    blockAddrForDebug(pkt->getAddr()),
+                    mapSizeBefore,
+                    static_cast<unsigned>(wrapper->outstanding_pkts.size()),
+                    static_cast<unsigned long long>(curTick()));
         }
         //always true
         return true;
@@ -759,8 +804,40 @@ namespace xsCHI
     }
 
     void
+    CHI_L2::dumpOutstandingPkts(const char *reason, Addr focusAddr) const
+    {
+        DPRINTF(CHIL2Wrapper,
+                "outstanding_pkts_dump reason=%s focus=%#lx size=%u tick=%llu\n",
+                reason,
+                focusAddr,
+                static_cast<unsigned>(outstanding_pkts.size()),
+                static_cast<unsigned long long>(curTick()));
+        for (const auto &[addr, pkt] : outstanding_pkts) {
+            DPRINTF(CHIL2Wrapper,
+                    "outstanding_pkts_dump addr=%#lx blk=%#lx cmd=%s pkt=%p needsResp=%d cacheResponding=%d\n",
+                    addr,
+                    blockAddrForDebug(addr),
+                    pkt ? pkt->cmdString() : "null",
+                    pkt,
+                    pkt ? pkt->needsResponse() : 0,
+                    pkt ? pkt->cacheResponding() : 0);
+        }
+    }
+
+    void
     CHI_L2::recvReadResp(ReqPtr &req){
-        DPRINTF(CHIL2Wrapper,"Recv Read/upgrade Resp, op:%s, addr: %lx, size:%d\n",CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),req->getAddr(),req->getSize());
+        const unsigned mapSizeBefore = outstanding_pkts.size();
+        DPRINTF(CHIL2Wrapper,
+                "recvReadResp stage=recv addr=%#lx blk=%#lx opcode=%s size=%u map_size_before=%u tick=%llu\n",
+                req->getAddr(),
+                blockAddrForDebug(req->getAddr()),
+                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),
+                req->getSize(),
+                mapSizeBefore,
+                static_cast<unsigned long long>(curTick()));
+        if (outstanding_pkts.count(req->getAddr()) == 0) {
+            dumpOutstandingPkts("recvReadResp_missing_addr", req->getAddr());
+        }
         assert(outstanding_pkts.count(req->getAddr())>0);
         PacketPtr pkt = outstanding_pkts[req->getAddr()];
         assert(pkt->needsResponse());
@@ -781,6 +858,16 @@ namespace xsCHI
         cpuSidePort.schedTimingResp(pkt, curTick());
 
         outstanding_pkts.erase(req->getAddr());
+        DPRINTF(CHIL2Wrapper,
+                "recvReadResp stage=erase addr=%#lx blk=%#lx opcode=%s "
+                "size=%u map_size_before=%u map_size_after=%u tick=%llu\n",
+                req->getAddr(),
+                blockAddrForDebug(req->getAddr()),
+                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),
+                req->getSize(),
+                mapSizeBefore,
+                static_cast<unsigned>(outstanding_pkts.size()),
+                static_cast<unsigned long long>(curTick()));
 
     }
 

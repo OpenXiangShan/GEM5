@@ -195,6 +195,7 @@ namespace xsCHI {
     std::vector<Addr> shadowDstBases;
     void recvReadResp(ReqPtr &req);
     void recvShadowReadResp(size_t shadowIdx, ReqPtr &req);
+    void dumpOutstandingPkts(const char *reason, Addr focusAddr) const;
 
     std::unordered_map<uint64_t, PacketPtr> outstanding_pkts;
 
