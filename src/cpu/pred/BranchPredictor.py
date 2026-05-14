@@ -1055,7 +1055,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     numWays = VectorParam.Unsigned([2] * 8,"the T0~Tn number of ways per set")
     enableShareTable = Param.Bool(True, "Enable runtime-bound share table")
     shareTableSize = Param.Unsigned(2048, "Share table entries per set-index domain")
-    shareTableWays = Param.Unsigned(2, "Number of ways in the share table")
+    shareTableWays = Param.Unsigned(6, "Number of ways in the share table")
     shareAllocWindow = Param.Unsigned(1400, "Alloc-success count per share FSM window")
     shareAllocConsecutive = Param.Unsigned(2, "Consecutive winning windows needed to bind share table")
     maxBranchPositions = Param.Unsigned(32, "Maximum branch positions per 64-byte block")
