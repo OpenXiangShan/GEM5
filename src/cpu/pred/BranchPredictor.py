@@ -1053,7 +1053,7 @@ class BTBTAGE(TimedBaseBTBPredictor):
     maxHistLen = Param.Unsigned(970, "The length of history passed from DBP")
     numTablesToAlloc = Param.Unsigned(1,"The number of table to allocated each time")
     numWays = VectorParam.Unsigned([2] * 8,"the T0~Tn number of ways per set")
-    enableShareTable = Param.Bool(False, "Enable runtime-bound share table")
+    enableShareTable = Param.Bool(True, "Enable runtime-bound share table")
     shareTableSize = Param.Unsigned(2048, "Share table entries per set-index domain")
     shareTableWays = Param.Unsigned(2, "Number of ways in the share table")
     shareAllocWindow = Param.Unsigned(1400, "Alloc-success count per share FSM window")
