@@ -190,7 +190,8 @@ MeshNode::MeshNode(const Params &p)
       outVoq(),
       rrCursor(),
       stats(this),
-      sendEvent([this] { onSendEvent(); }, name())
+      sendEvent([this] { onSendEvent(); }, name()),
+      retryOnNextCycle(false)
 {
     registerCallbacks();
 }
@@ -318,6 +319,7 @@ void
 MeshNode::onSendEvent()
 {
     stats.send_event_cycles++;
+    retryOnNextCycle = false;
     bool sentAny = false;
     // Try every output each cycle; each output has independent arbitration.
     for (size_t i = 0; i < NumPorts; ++i) {
@@ -346,7 +348,9 @@ MeshNode::onSendEvent()
     const bool pending = hasPendingFlits();
     // Avoid blind per-cycle polling under full downstream backpressure.
     // Retry will be re-armed by ingress enqueue or credit-unblock callback.
-    if (pending && sentAny) {
+    // If send failed only because a just-returned credit cannot be consumed in
+    // the same cycle, no unblock callback will fire, so retry explicitly.
+    if (pending && (sentAny || retryOnNextCycle)) {
         scheduleSendEventAtNextCycle();
     }
 
@@ -442,11 +446,17 @@ MeshNode::trySendForOutputAndChannel(PortIndex egress,
             return true;
         }
 
+        const bool creditBlocked = egressPort->isChannelBlockedByCredit(channel);
+        if (!creditBlocked) {
+            retryOnNextCycle = true;
+        }
         DPRINTF(CHIMeshNode,
-                "%s blocked egress=%s channel=%d ingress=%s op=%s tgt=%u\n",
+                "%s blocked egress=%s channel=%d ingress=%s op=%s tgt=%u "
+                "credit_blocked=%d retry_next=%d\n",
                 name(), portName(egress), static_cast<int>(channel),
                 portName(static_cast<PortIndex>(srcIdx)),
-                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op).c_str(), tgt);
+                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op).c_str(), tgt,
+                creditBlocked ? 1 : 0, retryOnNextCycle ? 1 : 0);
         if (forwardToDirection) {
             head->setMeshHopCount(oldHopCount);
         }

@@ -347,7 +347,10 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
 
         bool success = false;
         int txn_id = TXN_Manager.getID();
-        DPRINTF(CHIBridge,"RecvCHIReq, op:%s, addr: %#x, size:%d , try allocate Txn_id:%d\n",static_cast<int>(req->getOpcode()),req->getAddr(),req->getSize(),txn_id);
+        DPRINTF(CHIBridge,
+                "RecvCHIReq, op:%s, addr: %#lx, size:%u, try allocate Txn_id:%d\n",
+                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),
+                req->getAddr(), req->getSize(), txn_id);
         if (txn_id < 0) {
             if (!isRetry) {
                 Req_tobesent.push(req); // 将请求放入待发送队列, try later //err:push req fault
@@ -490,8 +493,11 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
         flit->setSrcId(_NodeID);
         flit->setCacheResponding(req->getCacheResponding());
         flit->setResponderHadWritable(req->getResponderHadWritable());
-        DPRINTF(CHIBridge,"Create Flit, op:%s, addr: %#x, size:%d , tgtId:%d ,SrcId:%d\n",\
-            static_cast<int>(req->getOpcode()),req->getAddr(),req->getSize(),SAM->getTargetID(req->getAddr()),_NodeID);
+        DPRINTF(CHIBridge,
+                "Create Flit, op:%s, addr: %#lx, size:%u, tgtId:%u, SrcId:%u\n",
+                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),
+                req->getAddr(), req->getSize(), SAM->getTargetID(req->getAddr()),
+                _NodeID);
         // flit->setTxnId(GenTxnID(flit));
 
 
@@ -534,8 +540,11 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
             case CHI_OP_TYPE::CHI_DAT_COMPDATA:{
                 // if we receive a CompData Flit,
                 req->gatherDataFlit(flit); // 收集数据Flit
-                DPRINTF(CHIBridge,"Gather data Flit, op:%s, addr: %#x, size:%d , txn_id:%d, dataId:%d\n",\
-                    static_cast<int>(flit->getOpcode()),flit->getAddr(),flit->getSize(),flit->getTxnId(),flit->getDataId());
+                DPRINTF(CHIBridge,
+                        "Gather data Flit, op:%s, addr: %#lx, size:%u, txn_id:%u, dataId:%u\n",
+                        CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(flit->getOpcode()),
+                        flit->getAddr(), flit->getSize(), flit->getTxnId(),
+                        flit->getDataId());
 
                 if (req->dataTransferFinished()) {
                     // we have received both data and response, so we can finish this request
@@ -547,8 +556,11 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
             case CHI_OP_TYPE::CHI_DAT_DATASEPRESP: {
 
                 req->gatherDataFlit(flit); // 收集数据Flit
-                DPRINTF(CHIBridge,"Gather data Flit, op:%s, addr: %#x, size:%d , txn_id:%d, dataId:%d\n",\
-                    static_cast<int>(flit->getOpcode()),flit->getAddr(),flit->getSize(),flit->getTxnId(),flit->getDataId());
+                DPRINTF(CHIBridge,
+                        "Gather data Flit, op:%s, addr: %#lx, size:%u, txn_id:%u, dataId:%u\n",
+                        CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(flit->getOpcode()),
+                        flit->getAddr(), flit->getSize(), flit->getTxnId(),
+                        flit->getDataId());
 
                 if (req->dataTransferFinished() && req->isRecvSepData()) {
                         // we have received both data and response, so we can finish this request
