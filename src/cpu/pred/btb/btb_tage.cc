@@ -39,6 +39,16 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
     : TimedBaseBTBPredictor(),
       numPredictors(numPredictors),
       numWays(numPredictors, numWaysPerTable),
+      enableShareTable(false),
+      shareTableSize(2048),
+      shareTableWays(2),
+      shareAllocWindow(1400),
+      shareAllocConsecutive(2),
+      shareBound(false),
+      shareTargetTable(-1),
+      shareCurrentWinner(-1),
+      shareCurrentWinnerStreak(0),
+      shareWindowAllocCount(0),
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
@@ -76,6 +86,16 @@ tablePcShifts(p.TTagPcShifts),
 histLengths(p.histLengths),
 maxHistLen(p.maxHistLen),
 numWays(p.numWays),
+enableShareTable(p.enableShareTable),
+shareTableSize(p.shareTableSize),
+shareTableWays(p.shareTableWays),
+shareAllocWindow(p.shareAllocWindow),
+shareAllocConsecutive(p.shareAllocConsecutive),
+shareBound(false),
+shareTargetTable(-1),
+shareCurrentWinner(-1),
+shareCurrentWinnerStreak(0),
+shareWindowAllocCount(0),
 maxBranchPositions(p.maxBranchPositions),
 useAltOnNaSize(p.useAltOnNaSize),
 useAltOnNaWidth(p.useAltOnNaWidth),
@@ -104,6 +124,13 @@ tageStats(this, p.numPredictors, p.numBanks)
     }
 
     assert(numWays.size() >= numPredictors);
+    assert(numTablesToAlloc == 1);
+    if (enableShareTable) {
+        fatal_if(updateOnRead,
+            "BTBTAGE share table V1 does not support updateOnRead=true");
+        fatal_if(shareTableSize != 2048,
+            "BTBTAGE share table V1 only supports shareTableSize=2048");
+    }
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
     tableIndexMasks.resize(numPredictors);
@@ -133,6 +160,22 @@ tageStats(this, p.numPredictors, p.numBanks)
         altTagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16));
         indexFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16));
     }
+    if (enableShareTable) {
+        shareAllocCounters.assign(numPredictors, 0);
+        shareTable.resize(shareTableSize);
+        for (unsigned i = 0; i < shareTableSize; ++i) {
+            shareTable[i].resize(shareTableWays);
+        }
+        bool has_compatible_target = false;
+        for (unsigned i = 0; i < numPredictors; ++i) {
+            if (tableSizes[i] == shareTableSize) {
+                has_compatible_target = true;
+                break;
+            }
+        }
+        fatal_if(!has_compatible_target,
+            "BTBTAGE share table V1 requires at least one predictor table with size 2048");
+    }
     usefulResetCnt = 0;
 
     // initialize use_alt_on_na table
@@ -150,6 +193,96 @@ BTBTAGE::~BTBTAGE()
 {
 }
 
+bool
+BTBTAGE::canUseShareForTable(unsigned table) const
+{
+    return enableShareTable && shareBound && shareTargetTable == (int)table &&
+           table < tableSizes.size() && tableSizes[table] == shareTableSize;
+}
+
+void
+BTBTAGE::clearShareTable()
+{
+    if (!enableShareTable) {
+        return;
+    }
+    for (auto &set : shareTable) {
+        for (auto &way : set) {
+            way = TageEntry();
+        }
+    }
+}
+
+const BTBTAGE::TageEntry *
+BTBTAGE::findShareEntry(unsigned table, Addr index, Addr tag, unsigned &way) const
+{
+    if (!canUseShareForTable(table) || index >= shareTable.size()) {
+        return nullptr;
+    }
+    for (unsigned i = 0; i < shareTableWays; ++i) {
+        const auto &entry = shareTable[index][i];
+        if (entry.valid && entry.tag == tag) {
+            way = i;
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+BTBTAGE::TageEntry &
+BTBTAGE::resolveProviderEntry(const TageTableInfo &info)
+{
+    assert(info.found);
+    if (info.fromShareTable) {
+        assert(canUseShareForTable(info.table));
+        return shareTable[info.index][info.way];
+    }
+    return tageTable[info.table][info.index][info.way];
+}
+
+void
+BTBTAGE::updateShareBindingOnAlloc(unsigned allocatedTable)
+{
+    if (!enableShareTable) {
+        return;
+    }
+    assert(allocatedTable < shareAllocCounters.size());
+    shareAllocCounters[allocatedTable]++;
+    shareWindowAllocCount++;
+    if (shareWindowAllocCount < shareAllocWindow) {
+        return;
+    }
+
+    unsigned winner = 0;
+    unsigned winnerCount = shareAllocCounters[0];
+    for (unsigned i = 1; i < numPredictors; ++i) {
+        if (!canUseShareForTable(i) && tableSizes[i] != shareTableSize) {
+            continue;
+        }
+        if (shareAllocCounters[i] > winnerCount) {
+            winner = i;
+            winnerCount = shareAllocCounters[i];
+        }
+    }
+
+    if ((int)winner == shareCurrentWinner) {
+        shareCurrentWinnerStreak++;
+    } else {
+        shareCurrentWinner = (int)winner;
+        shareCurrentWinnerStreak = 1;
+    }
+
+    if (!shareBound && shareCurrentWinnerStreak >= shareAllocConsecutive) {
+        shareBound = true;
+        shareTargetTable = winner;
+        clearShareTable();
+        tageStats.shareBindCount++;
+    }
+
+    std::fill(shareAllocCounters.begin(), shareAllocCounters.end(), 0);
+    shareWindowAllocCount = 0;
+}
+
 // Set up tracing for debugging
 void
 BTBTAGE::setTrace()
@@ -160,16 +293,24 @@ BTBTAGE::setTrace()
             std::make_pair("startPC", UINT64),
             std::make_pair("branchPC", UINT64),
             std::make_pair("wayIdx", UINT64),
+            std::make_pair("branchPos", UINT64),
             std::make_pair("mainFound", UINT64),
             std::make_pair("mainCounter", UINT64),
             std::make_pair("mainUseful", UINT64),
             std::make_pair("mainTable", UINT64),
             std::make_pair("mainIndex", UINT64),
+            std::make_pair("mainStoredPC", UINT64),
+            std::make_pair("mainStoredTag", UINT64),
             std::make_pair("altFound", UINT64),
             std::make_pair("altCounter", UINT64),
             std::make_pair("altUseful", UINT64),
             std::make_pair("altTable", UINT64),
             std::make_pair("altIndex", UINT64),
+            std::make_pair("altWay", UINT64),
+            std::make_pair("altStoredPC", UINT64),
+            std::make_pair("altStoredTag", UINT64),
+            std::make_pair("mainFromShare", UINT64),
+            std::make_pair("altFromShare", UINT64),
             std::make_pair("useAlt", UINT64),
             std::make_pair("predTaken", UINT64),
             std::make_pair("actualTaken", UINT64),
@@ -177,6 +318,15 @@ BTBTAGE::setTrace()
             std::make_pair("allocTable", UINT64),
             std::make_pair("allocIndex", UINT64),
             std::make_pair("allocWay", UINT64),
+            std::make_pair("allocTag", UINT64),
+            std::make_pair("allocToShare", UINT64),
+            std::make_pair("shareBound", UINT64),
+            std::make_pair("shareTargetTable", UINT64),
+            std::make_pair("victimOldValid", UINT64),
+            std::make_pair("victimOldPC", UINT64),
+            std::make_pair("victimOldTag", UINT64),
+            std::make_pair("victimOldCounter", UINT64),
+            std::make_pair("victimOldUseful", UINT64),
             std::make_pair("history", TEXT),
             std::make_pair("indexFoldedHist", UINT64),
         };
@@ -225,9 +375,10 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                             predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(), position)
                         : getTageTag(startPC, i, position);
 
-        bool match = false; // for each table, only one way can be matched
+        bool match = false; // for each logical table layer, only one match is kept
         TageEntry matching_entry;
         unsigned matching_way = 0;
+        bool matching_from_share = false;
 
         // Search all ways for a matching entry
         const unsigned ways = getNumWays(i);
@@ -238,6 +389,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
                 matching_entry = entry;
                 matching_way = way;
                 match = true;
+                matching_from_share = false;
 
                 // Do not use LRU; keep logic simple and align with CBP-style replacement
 
@@ -247,14 +399,36 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
             }
         }
 
+        if (!match) {
+            unsigned share_way = 0;
+            const TageEntry *share_entry = findShareEntry(i, index, tag, share_way);
+            if (share_entry != nullptr) {
+                matching_entry = *share_entry;
+                matching_way = share_way;
+                match = true;
+                matching_from_share = true;
+                tageStats.shareLookupHit++;
+                DPRINTF(TAGE,
+                    "hit share table for table %d[%lu][%u]: valid %d, "
+                    "tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
+                    i, index, share_way, share_entry->valid,
+                    share_entry->tag, share_entry->counter,
+                    share_entry->useful, btb_entry.pc, position);
+            } else if (canUseShareForTable(i)) {
+                tageStats.shareLookupMiss++;
+            }
+        }
+
         if (match) {
             if (!provided) {
                 // First match becomes main prediction
-                main_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
+                main_info = TageTableInfo(true, matching_entry, i, index, tag,
+                                          matching_way, matching_from_share);
                 provided = true;
             } else if (!alt_provided) {
                 // Second match becomes alternative prediction
-                alt_info = TageTableInfo(true, matching_entry, i, index, tag, matching_way);
+                alt_info = TageTableInfo(true, matching_entry, i, index, tag,
+                                         matching_way, matching_from_share);
                 alt_provided = true;
                 break;
             }
@@ -288,11 +462,14 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     bool taken = use_alt ? alt_pred : main_taken;
     int final_provider_table = -1;
     bool final_provider_is_alt = false;
+    bool final_provider_from_share = false;
     if (!use_alt && provided) {
         final_provider_table = main_info.table;
+        final_provider_from_share = main_info.fromShareTable;
     } else if (use_alt && alt_provided) {
         final_provider_table = alt_info.table;
         final_provider_is_alt = true;
+        final_provider_from_share = alt_info.fromShareTable;
     }
 
     DPRINTF(TAGE, "tage predict %#lx taken %d\n", btb_entry.pc, taken);
@@ -302,7 +479,7 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         btb_entry.pc, final_provider_table, final_provider_is_alt);
 
     return TagePrediction(btb_entry.pc, main_info, alt_info, use_alt, taken, alt_pred,
-        final_provider_table, final_provider_is_alt);
+        final_provider_table, final_provider_is_alt, final_provider_from_share);
 }
 
 /**
@@ -482,7 +659,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         DPRINTF(TAGE, "prediction provided by table %d, idx %lu, way %u, updating corresponding entry\n",
             main_info.table, main_info.index, main_info.way);
 
-        auto &way = tageTable[main_info.table][main_info.index][main_info.way];
+        auto &way = resolveProviderEntry(main_info);
 
         // Update prediction counter
         updateCounter(actual_taken, 3, way.counter);
@@ -501,7 +678,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
 
     // Update alternative prediction provider
     if (used_alt && alt_info.found) {
-        auto &way = tageTable[alt_info.table][alt_info.index][alt_info.way];
+        auto &way = resolveProviderEntry(alt_info);
         updateCounter(actual_taken, 3, way.counter);
         // No LRU maintenance
     }
@@ -573,7 +750,14 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                                  std::shared_ptr<TageMeta> meta,
                                  uint64_t &allocated_table,
                                  uint64_t &allocated_index,
-                                 uint64_t &allocated_way) {
+                                 uint64_t &allocated_way,
+                                 uint64_t &allocated_tag,
+                                 bool &allocated_to_share,
+                                 uint64_t &victim_old_valid,
+                                 uint64_t &victim_old_pc,
+                                 uint64_t &victim_old_tag,
+                                 uint64_t &victim_old_counter,
+                                 uint64_t &victim_old_useful) {
     // Match RTL victim priority:
     // 1) invalid way
     // 2) weak and not-useful way
@@ -592,10 +776,20 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         const unsigned ways = getNumWays(ti);
 
         int selected_way = -1;
+        bool selected_from_share = false;
         for (unsigned way = 0; way < ways; ++way) {
             if (!set[way].valid) {
                 selected_way = way;
                 break;
+            }
+        }
+        if (selected_way == -1 && canUseShareForTable(ti)) {
+            for (unsigned way = 0; way < shareTableWays; ++way) {
+                if (!shareTable[newIndex][way].valid) {
+                    selected_way = way;
+                    selected_from_share = true;
+                    break;
+                }
             }
         }
 
@@ -608,6 +802,17 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                     break;
                 }
             }
+            if (selected_way == -1 && canUseShareForTable(ti)) {
+                for (unsigned way = 0; way < shareTableWays; ++way) {
+                    auto &cand = shareTable[newIndex][way];
+                    const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
+                    if (!cand.useful && weakish) {
+                        selected_way = way;
+                        selected_from_share = true;
+                        break;
+                    }
+                }
+            }
         }
 
         if (selected_way == -1) {
@@ -617,22 +822,48 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
                     break;
                 }
             }
+            if (selected_way == -1 && canUseShareForTable(ti)) {
+                for (unsigned way = 0; way < shareTableWays; ++way) {
+                    if (!shareTable[newIndex][way].useful) {
+                        selected_way = way;
+                        selected_from_share = true;
+                        break;
+                    }
+                }
+            }
         }
 
         if (selected_way != -1) {
             short newCounter = actual_taken ? 0 : -1;
-            DPRINTF(TAGE, "allocating entry in table %d[%lu][%u], tag %lu (with pos %u), counter %d, pc %#lx\n",
-                    ti, newIndex, selected_way, newTag, position, newCounter, entry.pc);
-            set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+            auto &selected_set = selected_from_share ? shareTable[newIndex] : set;
+            const auto old_entry = selected_set[selected_way];
+            DPRINTF(TAGE, "allocating entry in table %d[%lu][%u]%s, tag %lu (with pos %u), counter %d, pc %#lx\n",
+                    ti, newIndex, selected_way, selected_from_share ? " [share]" : "",
+                    newTag, position, newCounter, entry.pc);
+            victim_old_valid = old_entry.valid;
+            victim_old_pc = old_entry.pc;
+            victim_old_tag = old_entry.tag;
+            victim_old_counter = old_entry.counter;
+            victim_old_useful = old_entry.useful;
+            selected_set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
             tageStats.updateAllocSuccess++;
+            if (selected_from_share) {
+                tageStats.shareAllocSuccess++;
+            }
             allocated_table = ti;
             allocated_index = newIndex;
             allocated_way = selected_way;
+            allocated_tag = newTag;
+            allocated_to_share = selected_from_share;
             usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
+            updateShareBindingOnAlloc(ti);
             return true;
         }
 
         tageStats.updateAllocFailure++;
+        if (canUseShareForTable(ti)) {
+            tageStats.shareAllocFailure++;
+        }
         usefulResetCnt++;
     }
 
@@ -642,6 +873,13 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
         DPRINTF(TAGE, "reset useful bit of all entries\n");
         for (auto &table : tageTable) {
             for (auto &set : table) {
+                for (auto &way : set) {
+                    way.useful = false;
+                }
+            }
+        }
+        if (enableShareTable) {
+            for (auto &set : shareTable) {
                 for (auto &way : set) {
                     way.useful = false;
                 }
@@ -743,8 +981,14 @@ BTBTAGE::update(const FetchTarget &stream) {
         if (has_original_pred && original_pred.finalProviderTable >= 0) {
             if (original_pred.taken == actual_taken) {
                 tageStats.updateFinalSourceTableCorrect[original_pred.finalProviderTable]++;
+                if (original_pred.finalProviderFromShare) {
+                    tageStats.shareFinalSourceCorrect++;
+                }
             } else {
                 tageStats.updateFinalSourceTableWrong[original_pred.finalProviderTable]++;
+                if (original_pred.finalProviderFromShare) {
+                    tageStats.shareFinalSourceWrong++;
+                }
             }
         } else if (has_original_pred && original_pred.taken == actual_taken) {
             tageStats.updateFinalSourceBaseCorrect++;
@@ -773,9 +1017,16 @@ BTBTAGE::update(const FetchTarget &stream) {
 
         // Handle new entry allocation if needed
         bool alloc_success = false;
+        bool alloc_to_share = false;
         uint64_t allocated_table = 0;
         uint64_t allocated_index = 0;
         uint64_t allocated_way = 0;
+        uint64_t allocated_tag = 0;
+        uint64_t victim_old_valid = 0;
+        uint64_t victim_old_pc = 0;
+        uint64_t victim_old_tag = 0;
+        uint64_t victim_old_counter = 0;
+        uint64_t victim_old_useful = 0;
         if (need_allocate) {
 
             // Handle allocation of new entries
@@ -785,7 +1036,9 @@ BTBTAGE::update(const FetchTarget &stream) {
                 start_table = main_info.table + 1; // start from the table after the main prediction table
             }
             alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
-                                   start_table, predMeta, allocated_table, allocated_index, allocated_way);
+                                   start_table, predMeta, allocated_table, allocated_index, allocated_way,
+                                   allocated_tag, alloc_to_share, victim_old_valid, victim_old_pc, victim_old_tag,
+                                   victim_old_counter, victim_old_useful);
         }
 
 #ifndef UNIT_TEST
@@ -800,13 +1053,21 @@ BTBTAGE::update(const FetchTarget &stream) {
             TagePrediction trace_pred = predMeta->preds[btb_entry.pc];
             auto main_info = trace_pred.mainInfo;
             auto alt_info = trace_pred.altInfo;
+            const auto branch_pos = getBranchIndexInBlock(btb_entry.pc, startAddr);
             t.set(startAddr, btb_entry.pc, main_info.way,
+                branch_pos,
                 main_info.found, main_info.entry.counter, main_info.entry.useful,
                 main_info.table, main_info.index,
+                main_info.entry.pc, main_info.entry.tag,
                 alt_info.found, alt_info.entry.counter, alt_info.entry.useful,
                 alt_info.table, alt_info.index,
+                alt_info.way, alt_info.entry.pc, alt_info.entry.tag,
+                main_info.fromShareTable, alt_info.fromShareTable,
                 trace_pred.useAlt, trace_pred.taken, actual_taken, alloc_success,
-                allocated_table, allocated_index, allocated_way,
+                allocated_table, allocated_index, allocated_way, allocated_tag, alloc_to_share,
+                shareBound, shareTargetTable < 0 ? 0 : (uint64_t)shareTargetTable,
+                victim_old_valid, victim_old_pc, victim_old_tag,
+                victim_old_counter, victim_old_useful,
                 history_str, predMeta->indexFoldedHist[main_info.table].get());
             tageMissTrace->write_record(t);
         }
@@ -1081,14 +1342,31 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
     ADD_STAT(updateAllocSuccess, statistics::units::Count::get(), "alloc success when update"),
     ADD_STAT(updateMispred, statistics::units::Count::get(), "mispred when update"),
     ADD_STAT(updateResetU, statistics::units::Count::get(), "reset u when update"),
-    ADD_STAT(predFinalSourceBase, statistics::units::Count::get(), "predictions whose final source is base BTB"),
-    ADD_STAT(updateFinalSourceBaseCorrect, statistics::units::Count::get(), "base BTB final-source predictions that are correct"),
-    ADD_STAT(updateFinalSourceBaseWrong, statistics::units::Count::get(), "base BTB final-source predictions that are wrong"),
-    ADD_STAT(recomputedVsActualDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != actual_taken"),
-    ADD_STAT(recomputedVsOriginalDiff, statistics::units::Count::get(), "fetchBlocks where recomputed.taken != original pred.taken"),
-    ADD_STAT(updateBankConflict, statistics::units::Count::get(), "number of bank conflicts detected"),
-    ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(), "number of updates deferred due to bank conflict (retried later)"),
-    ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(), "bank conflicts per bank"),
+    ADD_STAT(predFinalSourceBase, statistics::units::Count::get(),
+        "predictions whose final source is base BTB"),
+    ADD_STAT(updateFinalSourceBaseCorrect, statistics::units::Count::get(),
+        "base BTB final-source predictions that are correct"),
+    ADD_STAT(updateFinalSourceBaseWrong, statistics::units::Count::get(),
+        "base BTB final-source predictions that are wrong"),
+    ADD_STAT(shareBindCount, statistics::units::Count::get(), "number of times the share table becomes bound"),
+    ADD_STAT(shareLookupHit, statistics::units::Count::get(), "number of share table lookup hits"),
+    ADD_STAT(shareLookupMiss, statistics::units::Count::get(), "number of share table lookup misses"),
+    ADD_STAT(shareAllocSuccess, statistics::units::Count::get(), "number of successful share table allocations"),
+    ADD_STAT(shareAllocFailure, statistics::units::Count::get(), "number of failed share table allocations"),
+    ADD_STAT(shareFinalSourceCorrect, statistics::units::Count::get(),
+        "share table final-source predictions that are correct"),
+    ADD_STAT(shareFinalSourceWrong, statistics::units::Count::get(),
+        "share table final-source predictions that are wrong"),
+    ADD_STAT(recomputedVsActualDiff, statistics::units::Count::get(),
+        "fetchBlocks where recomputed.taken != actual_taken"),
+    ADD_STAT(recomputedVsOriginalDiff, statistics::units::Count::get(),
+        "fetchBlocks where recomputed.taken != original pred.taken"),
+    ADD_STAT(updateBankConflict, statistics::units::Count::get(),
+        "number of bank conflicts detected"),
+    ADD_STAT(updateDeferredDueToConflict, statistics::units::Count::get(),
+        "number of updates deferred due to bank conflict (retried later)"),
+    ADD_STAT(updateBankConflictPerBank, statistics::units::Count::get(),
+        "bank conflicts per bank"),
     ADD_STAT(updateAccessPerBank, statistics::units::Count::get(), "update accesses per bank"),
     ADD_STAT(predAccessPerBank, statistics::units::Count::get(), "prediction accesses per bank"),
     ADD_STAT(predTableHits, statistics::units::Count::get(), "hit of each tage table on prediction"),
@@ -1142,6 +1420,9 @@ BTBTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, bo
             predFinalSourceTable[pred.finalProviderTable]++;
         } else {
             predFinalSourceBase++;
+        }
+        if (pred.finalProviderFromShare) {
+            shareLookupHit++;
         }
 #endif
     } else {

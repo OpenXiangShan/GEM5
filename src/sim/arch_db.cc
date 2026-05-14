@@ -1,6 +1,8 @@
 
 #include "sim/arch_db.hh"
 
+#include <sstream>
+
 #include "params/ArchDBer.hh"
 
 namespace gem5{
@@ -282,30 +284,28 @@ ArchDBer::evictTraceWrite(int cache_level, Tick tick, uint64_t paddr, uint64_t s
 
 void
 DBTraceManager::init_table() {
-  // create table
-  char sql[1024];
-  int pos = 0;
-  pos = sprintf(sql,
-    "CREATE TABLE %s(" \
-    "ID INTEGER PRIMARY KEY AUTOINCREMENT, " \
-    "TICK INT NOT NULL", _name.c_str());
+  std::ostringstream sql;
+  sql << "CREATE TABLE " << _name
+      << "("
+      << "ID INTEGER PRIMARY KEY AUTOINCREMENT, "
+      << "TICK INT NOT NULL";
   for (auto it = _fields.begin(); it != _fields.end(); it++) {
     switch (it->second) {
       case UINT64:
-        pos += sprintf(sql+pos, ",%s INT NOT NULL", it->first.c_str());
+        sql << "," << it->first << " INT NOT NULL";
         break;
       case TEXT:
-        pos += sprintf(sql+pos, ",%s TEXT", it->first.c_str());
+        sql << "," << it->first << " TEXT";
         break;
       default:
         fatal("Unknown data type");
     }
   }
-  pos += sprintf(sql+pos, ");");
-  assert(pos < 1024);
-  printf("%s\n", sql);
+  sql << ");";
+  const auto sqlStr = sql.str();
+  printf("%s\n", sqlStr.c_str());
   char *zErrMsg;
-  int rc = sqlite3_exec(_db, sql, callback, 0, &zErrMsg);
+  int rc = sqlite3_exec(_db, sqlStr.c_str(), callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
   } else {
@@ -316,14 +316,12 @@ DBTraceManager::init_table() {
 void
 DBTraceManager::write_record(const Record &record)
 {
-  char sql[1024];
-  int pos = 0;
-  pos = sprintf(sql, "INSERT INTO %s(TICK", _name.c_str());
+  std::ostringstream sql;
+  sql << "INSERT INTO " << _name << "(TICK";
   for (auto it = _fields.begin(); it != _fields.end(); it++) {
-    pos += sprintf(sql+pos, ",%s", it->first.c_str());
+    sql << "," << it->first;
   }
-  pos += sprintf(sql+pos, ") VALUES(%lld",
-      sqliteSignedInt(record._tick));
+  sql << ") VALUES(" << sqliteSignedInt(record._tick);
   for (auto it = _fields.begin(); it != _fields.end(); it++) {
     switch (it->second) {
       case UINT64:
@@ -334,8 +332,7 @@ DBTraceManager::write_record(const Record &record)
           fatal("Can't find data for %s\n", it->first.c_str());
         }
         assert(data != m.end());
-        pos += sprintf(sql+pos, ",%lld",
-            sqliteSignedInt(data->second));
+        sql << "," << sqliteSignedInt(data->second);
         break;
       }
       case TEXT:
@@ -346,17 +343,17 @@ DBTraceManager::write_record(const Record &record)
           fatal("Can't find data for %s\n", it->first.c_str());
         }
         assert(data != m.end());
-        pos += sprintf(sql+pos, ",'%s'", data->second.c_str());
+        sql << ",'" << data->second << "'";
         break;
       }
       default:
         fatal("Unknown data type!\n");
     }
   }
-  pos += sprintf(sql+pos, ");");
-  assert(pos < 1024);
+  sql << ");";
+  const auto sqlStr = sql.str();
   char *zErrMsg;
-  int rc = sqlite3_exec(_db, sql, callback, 0, &zErrMsg);
+  int rc = sqlite3_exec(_db, sqlStr.c_str(), callback, 0, &zErrMsg);
   if (rc != SQLITE_OK) {
     fatal("SQL error: %s\n", zErrMsg);
   };

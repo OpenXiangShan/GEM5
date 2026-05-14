@@ -648,26 +648,41 @@ struct FullBTBPrediction
 struct TageMissTrace : public Record
 {
     void set(uint64_t startPC, uint64_t branchPC, uint64_t wayIdx,
+        uint64_t branchPos,
         uint64_t mainFound, uint64_t mainCounter, uint64_t mainUseful, uint64_t mainTable, uint64_t mainIndex,
+        uint64_t mainStoredPC, uint64_t mainStoredTag,
         uint64_t altFound, uint64_t altCounter, uint64_t altUseful, uint64_t altTable, uint64_t altIndex,
+        uint64_t altWay, uint64_t altStoredPC, uint64_t altStoredTag,
+        uint64_t mainFromShare, uint64_t altFromShare,
         uint64_t useAlt, uint64_t predTaken, uint64_t actualTaken, uint64_t allocSuccess,
-        uint64_t allocTable, uint64_t allocIndex, uint64_t allocWay,
+        uint64_t allocTable, uint64_t allocIndex, uint64_t allocWay, uint64_t allocTag, uint64_t allocToShare,
+        uint64_t shareBound, uint64_t shareTargetTable,
+        uint64_t victimOldValid, uint64_t victimOldPC, uint64_t victimOldTag,
+        uint64_t victimOldCounter, uint64_t victimOldUseful,
         std::string history, uint64_t indexFoldedHist)
     {
         _tick = curTick();
         _uint64_data["startPC"] = startPC;
         _uint64_data["branchPC"] = branchPC;
         _uint64_data["wayIdx"] = wayIdx;
+        _uint64_data["branchPos"] = branchPos;
         _uint64_data["mainFound"] = mainFound;
         _uint64_data["mainCounter"] = mainCounter;
         _uint64_data["mainUseful"] = mainUseful;
         _uint64_data["mainTable"] = mainTable;
         _uint64_data["mainIndex"] = mainIndex;
+        _uint64_data["mainStoredPC"] = mainStoredPC;
+        _uint64_data["mainStoredTag"] = mainStoredTag;
         _uint64_data["altFound"] = altFound;
         _uint64_data["altCounter"] = altCounter;
         _uint64_data["altUseful"] = altUseful;
         _uint64_data["altTable"] = altTable;
         _uint64_data["altIndex"] = altIndex;
+        _uint64_data["altWay"] = altWay;
+        _uint64_data["altStoredPC"] = altStoredPC;
+        _uint64_data["altStoredTag"] = altStoredTag;
+        _uint64_data["mainFromShare"] = mainFromShare;
+        _uint64_data["altFromShare"] = altFromShare;
         _uint64_data["useAlt"] = useAlt;
         _uint64_data["predTaken"] = predTaken;
         _uint64_data["actualTaken"] = actualTaken;
@@ -675,6 +690,15 @@ struct TageMissTrace : public Record
         _uint64_data["allocTable"] = allocTable;
         _uint64_data["allocIndex"] = allocIndex;
         _uint64_data["allocWay"] = allocWay;
+        _uint64_data["allocTag"] = allocTag;
+        _uint64_data["allocToShare"] = allocToShare;
+        _uint64_data["shareBound"] = shareBound;
+        _uint64_data["shareTargetTable"] = shareTargetTable;
+        _uint64_data["victimOldValid"] = victimOldValid;
+        _uint64_data["victimOldPC"] = victimOldPC;
+        _uint64_data["victimOldTag"] = victimOldTag;
+        _uint64_data["victimOldCounter"] = victimOldCounter;
+        _uint64_data["victimOldUseful"] = victimOldUseful;
         _text_data["history"] = history;
         _uint64_data["indexFoldedHist"] = indexFoldedHist;
     }

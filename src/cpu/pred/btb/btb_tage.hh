@@ -83,9 +83,12 @@ class BTBTAGE : public TimedBaseBTBPredictor
             Addr index;     // Index in the table
             Addr tag;       // Tag that was matched
             unsigned way;    // Which way this entry was found in
-            TageTableInfo() : found(false), table(0), index(0), tag(0), way(0) {}
-            TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag, unsigned way) :
-                        found(found), entry(entry), table(table), index(index), tag(tag), way(way) {}
+            bool fromShareTable; // Whether this entry was sourced from the share table
+            TageTableInfo() : found(false), table(0), index(0), tag(0), way(0), fromShareTable(false) {}
+            TageTableInfo(bool found, TageEntry entry, unsigned table, Addr index, Addr tag,
+                          unsigned way, bool fromShareTable = false) :
+                        found(found), entry(entry), table(table), index(index), tag(tag),
+                        way(way), fromShareTable(fromShareTable) {}
             bool taken() const {
                 return entry.taken();
             }
@@ -103,18 +106,22 @@ class BTBTAGE : public TimedBaseBTBPredictor
             bool altPred;          // Alternative prediction = alt_provided ? alt_taken : base_taken;
             int finalProviderTable; // Table that supplied the final prediction, -1 means base BTB
             bool finalProviderIsAlt; // Whether final prediction came from alternate provider
+            bool finalProviderFromShare; // Whether final prediction came from share table
 
 
             TagePrediction() : btb_pc(0), useAlt(false), taken(false), altPred(false),
-                               finalProviderTable(-1), finalProviderIsAlt(false) {}
+                               finalProviderTable(-1), finalProviderIsAlt(false),
+                               finalProviderFromShare(false) {}
 
             TagePrediction(Addr btb_pc, TageTableInfo mainInfo, TageTableInfo altInfo,
                             bool useAlt, bool taken, bool altPred,
-                            int finalProviderTable, bool finalProviderIsAlt) :
+                            int finalProviderTable, bool finalProviderIsAlt,
+                            bool finalProviderFromShare) :
                             btb_pc(btb_pc), mainInfo(mainInfo), altInfo(altInfo),
                             useAlt(useAlt), taken(taken), altPred(altPred),
                             finalProviderTable(finalProviderTable),
-                            finalProviderIsAlt(finalProviderIsAlt) {}
+                            finalProviderIsAlt(finalProviderIsAlt),
+                            finalProviderFromShare(finalProviderFromShare) {}
     };
 
 
@@ -154,6 +161,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
                      bool cond_taken) override
     {
         recoverPHist(history, entry, shamt, cond_taken);
+    }
+
+    void testUpdateShareBindingOnAlloc(unsigned allocatedTable)
+    {
+        updateShareBindingOnAlloc(allocatedTable);
     }
 #endif
 
@@ -252,6 +264,20 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // The actual TAGE prediction tables (table x index x way)
     std::vector<std::vector<std::vector<TageEntry>>> tageTable;
+
+    // Runtime-bound share table acting as extra ways for one selected target table.
+    bool enableShareTable;
+    unsigned shareTableSize;
+    unsigned shareTableWays;
+    unsigned shareAllocWindow;
+    unsigned shareAllocConsecutive;
+    bool shareBound;
+    int shareTargetTable;
+    std::vector<std::vector<TageEntry>> shareTable;
+    std::vector<unsigned> shareAllocCounters;
+    int shareCurrentWinner;
+    unsigned shareCurrentWinnerStreak;
+    unsigned shareWindowAllocCount;
 
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
 
@@ -352,6 +378,13 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar predFinalSourceBase;
         Scalar updateFinalSourceBaseCorrect;
         Scalar updateFinalSourceBaseWrong;
+        Scalar shareBindCount;
+        Scalar shareLookupHit;
+        Scalar shareLookupMiss;
+        Scalar shareAllocSuccess;
+        Scalar shareAllocFailure;
+        Scalar shareFinalSourceCorrect;
+        Scalar shareFinalSourceWrong;
 
         // Recomputed prediction difference statistics (per fetchBlock)
         Scalar recomputedVsActualDiff;   // recomputed.taken != actual_taken
@@ -445,8 +478,21 @@ private:
                                  unsigned main_table,
                                  std::shared_ptr<TageMeta> meta,
                                  uint64_t &allocated_table,
-                                 uint64_t &allocated_index,
-                                 uint64_t &allocated_way);
+                                  uint64_t &allocated_index,
+                                 uint64_t &allocated_way,
+                                 uint64_t &allocated_tag,
+                                 bool &allocated_to_share,
+                                 uint64_t &victim_old_valid,
+                                 uint64_t &victim_old_pc,
+                                 uint64_t &victim_old_tag,
+                                 uint64_t &victim_old_counter,
+                                 uint64_t &victim_old_useful);
+
+    TageEntry &resolveProviderEntry(const TageTableInfo &info);
+    const TageEntry *findShareEntry(unsigned table, Addr index, Addr tag, unsigned &way) const;
+    bool canUseShareForTable(unsigned table) const;
+    void clearShareTable();
+    void updateShareBindingOnAlloc(unsigned allocatedTable);
 
 
     // Helper methods for LRU management

@@ -252,7 +252,7 @@ BTBTAGEUpperBound::lookupExactPrediction(
     }
 
     return TagePrediction(btbEntry.pc, mainInfo, altInfo, useAltPred, taken,
-                          altPred, finalProviderTable, finalProviderIsAlt);
+                          altPred, finalProviderTable, finalProviderIsAlt, false);
 }
 
 void
