@@ -135,6 +135,10 @@ class MeshNode : public ClockedObject
 
     // Global retry/scheduling event for all output ports.
     EventFunctionWrapper sendEvent;
+    // A send can fail because a just-returned credit is not usable until the
+    // next cycle. That case has no future credit-unblock callback, so the
+    // scheduler must explicitly retry once.
+    bool retryOnNextCycle;
 
     // Ingress callback registered to each physical port.
     bool handleIngress(PortIndex ingress, FlitPtr &flit);
