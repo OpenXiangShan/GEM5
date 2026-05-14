@@ -144,6 +144,14 @@ class CHI_L3 : public ClockedObject
     bool hasDdrWriteInFlight(Addr addr) const;
     void enqueueBlockedDdrRead(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp);
     void wakeBlockedDdrReads(Addr addr);
+    struct TxnMeta;
+    void dumpTxnTableState(const char *reason) const;
+    void dumpPendingDdrState(const char *reason) const;
+    void dumpDataQueueState(const char *reason) const;
+    void dumpBlockState(const char *reason, Addr addr) const;
+    void logTxnLifecycle(const char *stage, uint32_t txnKey,
+                         const TxnMeta &meta, uint32_t tgtId) const;
+    void scanAgedReadTxns(const char *where);
     void trackCacheReqTxn(PacketPtr pkt, Addr addr, uint32_t txnId);
     uint32_t peekCacheReqTxn(PacketPtr pkt, Addr addr) const;
     bool popCacheReqTxn(PacketPtr pkt, Addr addr, uint32_t &txnId);
@@ -162,18 +170,28 @@ class CHI_L3 : public ClockedObject
     {
       CHI_OP_TYPE opcode{CHI_OP_TYPE::CHI_REQ_OP_START};
       Addr addr{0};
+      Addr rawAddr{0};
+      Addr blkAddr{0};
       unsigned size{0};
       uint32_t srcId{0};
       uint32_t txnId{0};
       uint32_t returnNid{0};
       uint32_t returnTxnId{0};
       uint32_t dbid{0};
+      uint32_t upstreamSrcId{0};
+      uint32_t upstreamTxnId{0};
+      Tick createTick{0};
+      Tick reqToDdrTick{0};
+      Tick compDataRecvTick{0};
+      Tick dataSendTick{0};
+      Tick compAckSendTick{0};
       PacketPtr pkt;              // pseudo-packet associated with this txn
       std::vector<bool> dataBits; // track COMPDATA fragments
       ReqPtr req;                 // for data slicing / resend
       bool cacheResponding{false};
       bool responderHadWritable{false};
       bool retireAfterXbarSend{false};
+      bool agingWarned{false};
     };
 
     struct CacheReqKey

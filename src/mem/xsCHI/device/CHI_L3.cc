@@ -21,6 +21,28 @@ namespace gem5
 {
 namespace xsCHI
 {
+namespace
+{
+
+constexpr uint64_t DiagnosticAgeWarnCycles = 10000;
+
+bool
+isReadLifecycleTxn(CHI_OP_TYPE op)
+{
+    switch (op) {
+      case CHI_OP_TYPE::CHI_REQ_READUNIQUE:
+      case CHI_OP_TYPE::CHI_REQ_READSHARED:
+      case CHI_OP_TYPE::CHI_REQ_READCLEAN:
+      case CHI_OP_TYPE::CHI_REQ_READNOSNP:
+      case CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE:
+        return true;
+      default:
+        return false;
+    }
+}
+
+} // namespace
+
 
 CHI_L3::CHI_L3(const Params &p)
         : ClockedObject(p),
@@ -80,6 +102,190 @@ Addr
 CHI_L3::blockAddr(Addr addr) const
 {
     return addr & ~static_cast<Addr>(0x3f);
+}
+
+void
+CHI_L3::logTxnLifecycle(const char *stage, uint32_t txnKey,
+                        const TxnMeta &meta, uint32_t tgtId) const
+{
+    DPRINTF(CHIL3Txn,
+            "txn_lifecycle stage=%s key=%u txn=%u addr=%#lx blk=%#lx "
+            "src=%u tgt=%u retTxn=%u upSrc=%u upTxn=%u dbid=%u tick=%llu "
+            "create=%llu reqToDdr=%llu compDataRecv=%llu dataSend=%llu "
+            "compAckSend=%llu opcode=%s\n",
+            stage,
+            txnKey,
+            meta.txnId,
+            meta.rawAddr,
+            meta.blkAddr,
+            meta.srcId,
+            tgtId,
+            meta.returnTxnId,
+            meta.upstreamSrcId,
+            meta.upstreamTxnId,
+            meta.dbid,
+            static_cast<unsigned long long>(curTick()),
+            static_cast<unsigned long long>(meta.createTick),
+            static_cast<unsigned long long>(meta.reqToDdrTick),
+            static_cast<unsigned long long>(meta.compDataRecvTick),
+            static_cast<unsigned long long>(meta.dataSendTick),
+            static_cast<unsigned long long>(meta.compAckSendTick),
+            CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(meta.opcode));
+}
+
+void
+CHI_L3::dumpTxnTableState(const char *reason) const
+{
+    DPRINTF(CHIL3Txn,
+            "txn_dump reason=%s size=%u tick=%llu\n",
+            reason,
+            static_cast<unsigned>(txnTable.size()),
+            static_cast<unsigned long long>(curTick()));
+    for (const auto &[txnKey, meta] : txnTable) {
+        DPRINTF(CHIL3Txn,
+                "txn_dump key=%u txn=%u addr=%#lx blk=%#lx src=%u "
+                "retTxn=%u upSrc=%u upTxn=%u dbid=%u opcode=%s create=%llu "
+                "reqToDdr=%llu compDataRecv=%llu dataSend=%llu "
+                "compAckSend=%llu agingWarned=%d pkt=%p req=%p\n",
+                txnKey,
+                meta.txnId,
+                meta.rawAddr,
+                meta.blkAddr,
+                meta.srcId,
+                meta.returnTxnId,
+                meta.upstreamSrcId,
+                meta.upstreamTxnId,
+                meta.dbid,
+                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(meta.opcode),
+                static_cast<unsigned long long>(meta.createTick),
+                static_cast<unsigned long long>(meta.reqToDdrTick),
+                static_cast<unsigned long long>(meta.compDataRecvTick),
+                static_cast<unsigned long long>(meta.dataSendTick),
+                static_cast<unsigned long long>(meta.compAckSendTick),
+                meta.agingWarned,
+                meta.pkt,
+                meta.req.get());
+    }
+}
+
+void
+CHI_L3::dumpPendingDdrState(const char *reason) const
+{
+    DPRINTF(CHIL3Txn,
+            "pending_ddr_dump reason=%s queue=%u blocked_blk=%u tick=%llu\n",
+            reason,
+            static_cast<unsigned>(pendingDdrQ.size()),
+            static_cast<unsigned>(blockedDdrReadByAddr.size()),
+            static_cast<unsigned long long>(curTick()));
+    for (const auto &pending : pendingDdrQ) {
+        DPRINTF(CHIL3Txn,
+                "pending_ddr_dump queue txn=%u addr=%#lx blk=%#lx opcode=%s\n",
+                pending.txnId,
+                pending.pkt ? pending.pkt->getAddr() : 0,
+                pending.pkt ? blockAddr(pending.pkt->getAddr()) : 0,
+                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(pending.chiOp));
+    }
+    for (const auto &[blk, cnt] : ddrReadInFlightCount) {
+        DPRINTF(CHIL3Txn,
+                "pending_ddr_dump inflight_read blk=%#lx count=%u\n",
+                blk, cnt);
+    }
+    for (const auto &[blk, cnt] : ddrWriteInFlightCount) {
+        DPRINTF(CHIL3Txn,
+                "pending_ddr_dump inflight_write blk=%#lx count=%u\n",
+                blk, cnt);
+    }
+    for (const auto &[blk, queue] : blockedDdrReadByAddr) {
+        DPRINTF(CHIL3Txn,
+                "pending_ddr_dump blocked_read blk=%#lx count=%u\n",
+                blk, static_cast<unsigned>(queue.size()));
+    }
+}
+
+void
+CHI_L3::dumpDataQueueState(const char *reason) const
+{
+    DPRINTF(CHIL3Txn,
+            "dataq_dump reason=%s queue=%u tick=%llu\n",
+            reason,
+            static_cast<unsigned>(dataQ.size()),
+            static_cast<unsigned long long>(curTick()));
+    for (const auto &pd : dataQ) {
+        DPRINTF(CHIL3Txn,
+                "dataq_dump txn=%u addr=%#lx blk=%#lx tgt=%u dbid=%u req=%p\n",
+                pd.txnId,
+                pd.req ? pd.req->getAddr() : 0,
+                pd.req ? blockAddr(pd.req->getAddr()) : 0,
+                pd.tgtId,
+                pd.dbid,
+                pd.req.get());
+    }
+}
+
+void
+CHI_L3::dumpBlockState(const char *reason, Addr addr) const
+{
+    const Addr blk = blockAddr(addr);
+    const auto pendingReadIt = pendingReadCount.find(blk);
+    const auto pendingWriteIt = pendingWriteCount.find(blk);
+    const auto ddrReadIt = ddrReadInFlightCount.find(blk);
+    const auto ddrWriteIt = ddrWriteInFlightCount.find(blk);
+    const auto blockedReadIt = blockedReadByAddr.find(blk);
+    const auto blockedWriteIt = blockedWriteByAddr.find(blk);
+    const auto blockedDdrReadIt = blockedDdrReadByAddr.find(blk);
+
+    DPRINTF(CHIL3Txn,
+            "blk_dump reason=%s blk=%#lx pendingRead=%u pendingWrite=%u "
+            "ddrRead=%u ddrWrite=%u blockedRead=%u blockedWrite=%u "
+            "blockedDdrRead=%u tick=%llu\n",
+            reason,
+            blk,
+            pendingReadIt == pendingReadCount.end() ? 0 : pendingReadIt->second,
+            pendingWriteIt == pendingWriteCount.end() ? 0 : pendingWriteIt->second,
+            ddrReadIt == ddrReadInFlightCount.end() ? 0 : ddrReadIt->second,
+            ddrWriteIt == ddrWriteInFlightCount.end() ? 0 : ddrWriteIt->second,
+            blockedReadIt == blockedReadByAddr.end() ? 0 :
+                static_cast<unsigned>(blockedReadIt->second.size()),
+            blockedWriteIt == blockedWriteByAddr.end() ? 0 :
+                static_cast<unsigned>(blockedWriteIt->second.size()),
+            blockedDdrReadIt == blockedDdrReadByAddr.end() ? 0 :
+                static_cast<unsigned>(blockedDdrReadIt->second.size()),
+            static_cast<unsigned long long>(curTick()));
+}
+
+void
+CHI_L3::scanAgedReadTxns(const char *where)
+{
+    const Tick warnThreshold = clockPeriod() * DiagnosticAgeWarnCycles;
+    for (auto &[txnKey, meta] : txnTable) {
+        if (!isReadLifecycleTxn(meta.opcode) || meta.agingWarned ||
+            meta.createTick == 0) {
+            continue;
+        }
+        const Tick age = curTick() - meta.createTick;
+        if (age < warnThreshold) {
+            continue;
+        }
+        meta.agingWarned = true;
+        DPRINTF(CHIL3Txn,
+                "txn_aging_warn where=%s key=%u age_cycles=%llu "
+                "age_ticks=%llu addr=%#lx blk=%#lx reqToDdr=%llu "
+                "compDataRecv=%llu dataSend=%llu opcode=%s\n",
+                where,
+                txnKey,
+                static_cast<unsigned long long>(age / clockPeriod()),
+                static_cast<unsigned long long>(age),
+                meta.rawAddr,
+                meta.blkAddr,
+                static_cast<unsigned long long>(meta.reqToDdrTick),
+                static_cast<unsigned long long>(meta.compDataRecvTick),
+                static_cast<unsigned long long>(meta.dataSendTick),
+                CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(meta.opcode));
+        logTxnLifecycle("aging_warn", txnKey, meta, meta.srcId);
+        dumpBlockState("aging_warn", meta.rawAddr);
+        dumpPendingDdrState("aging_warn");
+        dumpDataQueueState("aging_warn");
+    }
 }
 
 void
@@ -362,6 +568,7 @@ CHI_L3::eraseCacheReqTxn(PacketPtr pkt, Addr addr, uint32_t txnId)
 bool
 CHI_L3::handleNetworkFlit(FlitPtr &flit)
 {
+    scanAgedReadTxns("handleNetworkFlit");
     const CHI_OP_TYPE op = flit->getOpcode();
     if (op == CHI_OP_TYPE::CHI_RSP_DBIDRESP ||
         op == CHI_OP_TYPE::CHI_DAT_COMPDATA) {
@@ -410,11 +617,18 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                 TxnMeta meta;
                 meta.opcode = op;
                 meta.addr = flit->getAddr();
+                meta.rawAddr = flit->getAddr();
+                meta.blkAddr = blockAddr(flit->getAddr());
                 meta.size = flit->getSize();
                 meta.srcId = flit->getSrcId();
+                meta.txnId = flit->getTxnId();
+                meta.returnNid = flit->getReturnNid();
+                meta.returnTxnId = flit->getReturnTxnid();
+                meta.upstreamSrcId = flit->getSrcId();
+                meta.upstreamTxnId = flit->getTxnId();
+                meta.createTick = curTick();
                 // meta.returnNid = flit->getReturnNid();
                 // meta.returnTxnId = flit->getReturnTxnid();
-                meta.txnId = flit->getTxnId();
                 meta.dbid = txnId;
                 meta.pkt = pkt;
                 meta.dataBits.assign((flit->getSize() + 31) / 32, false);
@@ -427,6 +641,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                     txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op),
                     flit->getAddr(), flit->getSize(), flit->getSrcId(),
                     flit->getReturnTxnid(), static_cast<unsigned>(txnTable.size()));
+                logTxnLifecycle("cpu_req_track", txnId, txnTable[txnId], _NodeID);
                 trackCacheReqTxn(pkt, flit->getAddr(), txnId);
                 trackPendingRead(pkt->getAddr());
                 if (hasPendingWrite(pkt->getAddr())) {
@@ -457,8 +672,15 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                 TxnMeta meta;
                 meta.opcode = op;
                 meta.addr = flit->getAddr();
+                meta.rawAddr = flit->getAddr();
+                meta.blkAddr = blockAddr(flit->getAddr());
                 meta.size = flit->getSize();
                 meta.srcId = flit->getSrcId();
+                meta.txnId = flit->getTxnId();
+                meta.returnTxnId = flit->getTxnId();
+                meta.upstreamSrcId = flit->getSrcId();
+                meta.upstreamTxnId = flit->getTxnId();
+                meta.createTick = curTick();
                 meta.returnTxnId = flit->getTxnId(); // original cpu txn
                 meta.dbid = dbid;
                 meta.pkt = pkt;
@@ -473,6 +695,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                     dbid, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op), flit->getAddr(),
                     flit->getSize(), flit->getSrcId(), flit->getTxnId(),
                     static_cast<unsigned>(txnTable.size()));
+                logTxnLifecycle("cpu_writeback_req", dbid, txnTable[dbid], _NodeID);
 
                 FlitPtr resp = std::make_unique<Flit>();
                 resp->setOpcode(CHI_OP_TYPE::CHI_RSP_COMPDBIDRESP);
@@ -532,11 +755,18 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                 TxnMeta meta;
                 meta.opcode = op;
                 meta.addr = flit->getAddr();
+                meta.rawAddr = flit->getAddr();
+                meta.blkAddr = blockAddr(flit->getAddr());
                 meta.size = flit->getSize();
                 meta.srcId = flit->getSrcId();
+                meta.txnId = flit->getTxnId();
+                meta.returnNid = flit->getReturnNid();
+                meta.returnTxnId = flit->getReturnTxnid();
+                meta.upstreamSrcId = flit->getSrcId();
+                meta.upstreamTxnId = flit->getTxnId();
+                meta.createTick = curTick();
                 // meta.returnNid = flit->getReturnNid();
                 // meta.returnTxnId = flit->getReturnTxnid();
-                meta.txnId = flit->getTxnId();
                 meta.dbid = txnId;
                 meta.pkt = pkt;
                 meta.dataBits.assign((flit->getSize() + 31) / 32, false);
@@ -550,6 +780,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                     txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op),
                     flit->getAddr(), flit->getSize(), flit->getSrcId(),
                     flit->getReturnTxnid(), static_cast<unsigned>(txnTable.size()));
+                logTxnLifecycle("cpu_req_track", txnId, txnTable[txnId], _NodeID);
                 trackCacheReqTxn(pkt, flit->getAddr(), txnId);
                 //although CLEANUNIQUE is not a read-type request, it has same ordering constraint as read,
                 // so we treat it as write for tracking purpose.
@@ -604,11 +835,18 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                 TxnMeta meta;
                 meta.opcode = op;
                 meta.addr = flit->getAddr();
+                meta.rawAddr = flit->getAddr();
+                meta.blkAddr = blockAddr(flit->getAddr());
                 meta.size = flit->getSize();
                 meta.srcId = flit->getSrcId();
+                meta.txnId = flit->getTxnId();
+                meta.returnNid = flit->getReturnNid();
+                meta.returnTxnId = flit->getReturnTxnid();
+                meta.upstreamSrcId = flit->getSrcId();
+                meta.upstreamTxnId = flit->getTxnId();
+                meta.createTick = curTick();
                 // meta.returnNid = flit->getReturnNid();
                 // meta.returnTxnId = flit->getReturnTxnid();
-                meta.txnId = flit->getTxnId();
                 meta.dbid = txnId;
                 meta.pkt = pkt;
                 meta.dataBits.assign((flit->getSize() + 31) / 32, false);
@@ -622,6 +860,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
                     txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op),
                     flit->getAddr(), flit->getSize(), flit->getSrcId(),
                     flit->getReturnTxnid(), static_cast<unsigned>(txnTable.size()));
+                logTxnLifecycle("cpu_req_track", txnId, txnTable[txnId], _NodeID);
                 trackCacheReqTxn(pkt, flit->getAddr(), txnId);
                 //although CHI_REQ_EVICT is not a read-type request, it has same ordering constraint as read,
                 // so we treat it as write for tracking purpose.
@@ -642,13 +881,23 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
       }
       case Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP: {
           auto it = txnTable.find(flit->getTxnId());
-          if (it == txnTable.end())
+          if (it == txnTable.end()) {
+              dumpTxnTableState("cpu_rsp_unknown_txn");
+              dumpPendingDdrState("cpu_rsp_unknown_txn");
+              dumpDataQueueState("cpu_rsp_unknown_txn");
               panic("RSP for unknown txn %u", flit->getTxnId());
+          }
           if (flit->getOpcode() == CHI_OP_TYPE::CHI_RSP_COMPACK) {
+                it->second.compAckSendTick = curTick();
+                logTxnLifecycle("cpu_rsp_compack_recv", flit->getTxnId(),
+                                it->second, flit->getSrcId());
                 DPRINTF(CHIL3, "Txn %u completed via COMPACK\n", flit->getTxnId());
                 completePendingRead(it->second.addr);
                 eraseCacheReqTxn(it->second.pkt, it->second.addr,
                                  flit->getTxnId());
+                    logTxnLifecycle("txn_erase_cpu_rsp_compack",
+                                    flit->getTxnId(), it->second,
+                                    it->second.srcId);
                     DPRINTF(CHIL3Txn,
                         "txnTable erase key=%u reason=cpu_rsp_compack size_before=%u\n",
                         flit->getTxnId(), static_cast<unsigned>(txnTable.size()));
@@ -670,6 +919,7 @@ CHI_L3::handleCpuSideFlit(FlitPtr &flit)
           // For writeback, COPYBACKWRDATA txnId is DBID assigned by us.
           auto it = txnTable.find(flit->getTxnId());
           if (it == txnTable.end()) {
+              dumpTxnTableState("cpu_copyback_unknown_txn");
               panic("COPYBACKWRDATA for unknown DBID txn %u", flit->getTxnId());
           }
           if (!it->second.req) {
@@ -707,6 +957,8 @@ CHI_L3::handleMemSideFlit(FlitPtr &flit)
       case CHI_OP_TYPE::CHI_RSP_DBIDRESP: {
           auto it = txnTable.find(flit->getTxnId());
           if (it == txnTable.end()) {
+              dumpTxnTableState("mem_dbidresp_unknown_txn");
+              dumpPendingDdrState("mem_dbidresp_unknown_txn");
               panic("DBIDRESP for unknown txn %u", flit->getTxnId());
           }
 
@@ -741,7 +993,11 @@ CHI_L3::handleMemSideFlit(FlitPtr &flit)
               warn("COMPDBIDRESP send failed txn=%u", flit->getTxnId());
               return false;
           }
+          logTxnLifecycle("mem_dbidresp_forward", flit->getTxnId(),
+                          it->second, it->second.srcId);
           releaseTxn(flit->getTxnId());
+          logTxnLifecycle("txn_erase_mem_dbidresp", flit->getTxnId(),
+                          it->second, it->second.srcId);
           DPRINTF(CHIL3Txn,
               "txnTable erase key=%u reason=mem_dbidresp_forwarded size_before=%u\n",
               flit->getTxnId(), static_cast<unsigned>(txnTable.size()));
@@ -754,15 +1010,25 @@ CHI_L3::handleMemSideFlit(FlitPtr &flit)
       case CHI_OP_TYPE::CHI_DAT_COMPDATA: {
           auto it = txnTable.find(flit->getTxnId());
           if (it == txnTable.end()) {
+              dumpTxnTableState("mem_compdata_unknown_txn");
+              dumpPendingDdrState("mem_compdata_unknown_txn");
+              dumpDataQueueState("mem_compdata_unknown_txn");
+              dumpBlockState("mem_compdata_unknown_txn", flit->getAddr());
               panic("COMPDATA for unknown txn %u", flit->getTxnId());
           }
           auto &meta = it->second;
+          if (meta.compDataRecvTick == 0) {
+              meta.compDataRecvTick = curTick();
+          }
+          logTxnLifecycle("mem_compdata_recv", flit->getTxnId(), meta, _NodeID);
           const unsigned idx = flit->getDataId();
           if (idx >= meta.dataBits.size()) {
+              dumpTxnTableState("mem_compdata_dataid_oob");
               panic("COMPDATA dataId out of range idx=%u", idx);
           }
           meta.dataBits[idx] = true;
           if (!meta.req) {
+              dumpTxnTableState("mem_compdata_missing_req");
               panic("txn %u missing req for COMPDATA gather", flit->getTxnId());
           }
           meta.req->gatherDataFlit(flit);
@@ -784,6 +1050,8 @@ CHI_L3::handleMemSideFlit(FlitPtr &flit)
 
           if (!innerCacheRespPort.sendTimingResp(resp)) {
               warn("cache resp send failed txn=%u", flit->getTxnId());
+              logTxnLifecycle("mem_compdata_cache_resp_blocked",
+                              flit->getTxnId(), meta, _NodeID);
               return false;
           }
 
@@ -792,7 +1060,11 @@ CHI_L3::handleMemSideFlit(FlitPtr &flit)
           if (meta.opcode == CHI_OP_TYPE::CHI_REQ_READNOSNP) {
               completeDdrRead(meta.addr);
           }
+          logTxnLifecycle("mem_compdata_cache_resp_sent",
+                          flit->getTxnId(), meta, _NodeID);
           releaseTxn(flit->getTxnId());
+          logTxnLifecycle("txn_erase_mem_compdata_done",
+                          flit->getTxnId(), meta, _NodeID);
           DPRINTF(CHIL3Txn,
               "txnTable erase key=%u reason=mem_compdata_done size_before=%u\n",
               flit->getTxnId(), static_cast<unsigned>(txnTable.size()));
@@ -815,16 +1087,19 @@ CHI_L3::handleXBarCpuTimingReq(PacketPtr pkt)
             pkt->getAddr(), pkt->getSize(), pkt->cmd.toString());
     uint32_t txnId = TxnIDManager::InvalidTxnId;
     if (!popCacheReqTxn(pkt, pkt->getAddr(), txnId)) {
+        dumpTxnTableState("xbar_resp_untracked_pkt");
         panic("xbar resp pkt not tracked for addr=%#lx", pkt->getAddr());
     }
     auto metaIt = txnTable.find(txnId);
     if (metaIt == txnTable.end()) {
+        dumpTxnTableState("xbar_resp_missing_meta");
         panic("txn %u missing meta for xbar resp", txnId);
     }
     // Handle CLEANUNIQUE completion: send CHI_RSP_COMP and wait COMPACK
     if (metaIt->second.req->getOpcode() == CHI_OP_TYPE::CHI_REQ_CLEANUNIQUE) {
         assert(pkt->cmd == MemCmd::UpgradeResp);
         pendingCompRspQ.push_back(txnId);
+        logTxnLifecycle("comp_rspq_push", txnId, metaIt->second, metaIt->second.srcId);
         scheduleNetworkRetry(
             compRspSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP);
         return true;
@@ -841,6 +1116,13 @@ CHI_L3::handleXBarCpuTimingReq(PacketPtr pkt)
     // pd.returnTxnId = metaIt->second.returnTxnId;
     pd.dbid = metaIt->second.dbid;
     dataQ.push_back(pd);
+    logTxnLifecycle("dataq_push", txnId, metaIt->second, pd.tgtId);
+    DPRINTF(CHIL3Txn,
+            "dataq_push key=%u addr=%#lx blk=%#lx queue_size=%u\n",
+            txnId,
+            metaIt->second.rawAddr,
+            metaIt->second.blkAddr,
+            static_cast<unsigned>(dataQ.size()));
     scheduleNetworkRetry(
         dataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
     return true;
@@ -982,6 +1264,7 @@ CHI_L3::wakeBlockedDdrReads(Addr addr)
 bool
 CHI_L3::handleCacheMemTimingResp(PacketPtr pkt)
 {
+    scanAgedReadTxns("handleCacheMemTimingResp");
     DPRINTF(CHIL3, "cache->CHI_L3 timing resp addr=%#lx size=%u cmd=%s\n",
             pkt->getAddr(), pkt->getSize(), pkt->cmd.toString());
     if (pkt->cmd == MemCmd::UpgradeReq) {
@@ -1027,11 +1310,17 @@ CHI_L3::handleCacheMemTimingResp(PacketPtr pkt)
         TxnMeta meta;
         meta.opcode = chiOp;
         meta.addr = pkt->getAddr();
+        meta.rawAddr = pkt->getAddr();
+        meta.blkAddr = blockAddr(pkt->getAddr());
         meta.size = pkt->getSize();
         meta.srcId = _NodeID;
+        meta.txnId = txnId;
         meta.returnNid = 0;
         meta.returnTxnId = 0;
         meta.dbid = txnId;
+        meta.upstreamSrcId = _NodeID;
+        meta.upstreamTxnId = txnId;
+        meta.createTick = curTick();
         meta.pkt = pkt;
         meta.dataBits.assign((pkt->getSize() + 31) / 32, false);
         meta.req = std::make_shared<Request>(chiOp, pkt->getAddr(), pkt->getSize());
@@ -1048,6 +1337,8 @@ CHI_L3::handleCacheMemTimingResp(PacketPtr pkt)
                 meta.srcId = upTxnIt->second.srcId;
                 meta.returnTxnId = upTxnId; // original cpu txn id
                 meta.returnNid = upTxnIt->second.returnNid;
+                meta.upstreamSrcId = upTxnIt->second.upstreamSrcId;
+                meta.upstreamTxnId = upTxnIt->second.upstreamTxnId;
             }
         }
 
@@ -1057,6 +1348,8 @@ CHI_L3::handleCacheMemTimingResp(PacketPtr pkt)
             txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(chiOp), pkt->getAddr(),
             pkt->getSize(), meta.srcId, meta.returnTxnId,
             static_cast<unsigned>(txnTable.size()));
+        logTxnLifecycle("cache_miss_downstream", txnId, txnTable[txnId],
+                        SAM ? SAM->getTargetID(pkt->getAddr()) : 0);
         downstreamMap[pkt] = txnId;
 
         if (pkt->isRead()) {
@@ -1167,24 +1460,35 @@ CHI_L3::sendPktToXbar(PacketPtr pkt)
 bool
 CHI_L3::sendReadToDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp)
 {
+    scanAgedReadTxns("sendReadToDdr");
     FlitPtr f = std::make_unique<Flit>();
     f->setOpcode(chiOp);
     f->setAddr(pkt->getAddr());
     f->setSize(pkt->getSize());
     f->setTxnId(txnId);
-    f->setTgtId(SAM ? SAM->getTargetID(pkt->getAddr()) : 0);
+    const uint32_t tgtId = SAM ? SAM->getTargetID(pkt->getAddr()) : 0;
+    f->setTgtId(tgtId);
     f->setSrcId(_NodeID);
     f->setReturnNid(_NodeID);
     f->setReturnTxnid(txnId);
-        DPRINTF(CHIL3,
-            "send REQ->DDR opcode=%s src=%u tgt=%u txn=%u retTxn=%u addr=%#lx size=%u\n",
-            CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(chiOp), _NodeID,
-            SAM ? SAM->getTargetID(pkt->getAddr()) : 0, txnId, txnId,
-            pkt->getAddr(), pkt->getSize());
-        const bool ok = networkPort->send(f);
-        DPRINTF(CHIL3, "send REQ->DDR %s txn=%u addr=%#lx\n",
-            ok ? "success" : "blocked", txnId, pkt->getAddr());
-        return ok;
+    DPRINTF(CHIL3,
+        "send REQ->DDR opcode=%s src=%u tgt=%u txn=%u retTxn=%u addr=%#lx size=%u\n",
+        CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(chiOp), _NodeID,
+        tgtId, txnId, txnId, pkt->getAddr(), pkt->getSize());
+    auto metaIt = txnTable.find(txnId);
+    if (metaIt != txnTable.end()) {
+        logTxnLifecycle("req_to_ddr_attempt", txnId, metaIt->second, tgtId);
+    }
+    const bool ok = networkPort->send(f);
+    if (ok && metaIt != txnTable.end() && metaIt->second.reqToDdrTick == 0) {
+        metaIt->second.reqToDdrTick = curTick();
+        logTxnLifecycle("req_to_ddr_sent", txnId, metaIt->second, tgtId);
+    } else if (!ok && metaIt != txnTable.end()) {
+        logTxnLifecycle("req_to_ddr_blocked", txnId, metaIt->second, tgtId);
+    }
+    DPRINTF(CHIL3, "send REQ->DDR %s txn=%u addr=%#lx\n",
+        ok ? "success" : "blocked", txnId, pkt->getAddr());
+    return ok;
 }
 
 bool
@@ -1258,6 +1562,7 @@ CHI_L3::handleCreditUnblock(Flit::CHI_CHN_TYPE channel)
 void
 CHI_L3::drainDataQueue()
 {
+    scanAgedReadTxns("drainDataQueue");
     if (dataQ.empty()) {
         return;
     }
@@ -1287,6 +1592,10 @@ CHI_L3::drainDataQueue()
     dat->setHomeNid(pd.HomeNid);
     dat->setDbid(pd.dbid);
 
+    auto metaIt = txnTable.find(pd.dbid);
+    if (metaIt != txnTable.end()) {
+        logTxnLifecycle("dataq_pop_attempt", pd.dbid, metaIt->second, pd.tgtId);
+    }
     DPRINTF(CHIL3,
             "send DAT->cpu opcode=%s txn=%u dataId=%u addr=%#lx size=%u tgt=%u\n",
             CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(CHI_OP_TYPE::CHI_DAT_COMPDATA),
@@ -1296,12 +1605,19 @@ CHI_L3::drainDataQueue()
         DPRINTF(CHIL3,
                 "send DAT->cpu blocked txn=%u dataId=%u\n",
                 pd.txnId, dataId);
+        if (metaIt != txnTable.end()) {
+            logTxnLifecycle("dataq_send_blocked", pd.dbid, metaIt->second, pd.tgtId);
+        }
         scheduleNetworkRetry(
             dataSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA);
         return;
     }
 
     pd.req->finishTransferdata(dataId);
+    if (metaIt != txnTable.end()) {
+        metaIt->second.dataSendTick = curTick();
+        logTxnLifecycle("dataq_send", pd.dbid, metaIt->second, pd.tgtId);
+    }
 
     if (pd.req->dataTransferFinished()) {
         // FlitPtr comp = std::make_unique<Flit>();
@@ -1337,6 +1653,14 @@ CHI_L3::drainDataQueue()
         //             txnTable.size());
         // }
         // releaseTxn(pd.txnId);
+        if (metaIt != txnTable.end()) {
+            DPRINTF(CHIL3Txn,
+                    "dataq_done key=%u addr=%#lx blk=%#lx queue_size_before_pop=%u\n",
+                    pd.dbid,
+                    metaIt->second.rawAddr,
+                    metaIt->second.blkAddr,
+                    static_cast<unsigned>(dataQ.size()));
+        }
         dataQ.pop_front();
     }
 
@@ -1349,6 +1673,7 @@ CHI_L3::drainDataQueue()
 void
 CHI_L3::drainCompRspQueue()
 {
+    scanAgedReadTxns("drainCompRspQueue");
     if (pendingCompRspQ.empty()) {
         return;
     }
@@ -1356,6 +1681,9 @@ CHI_L3::drainCompRspQueue()
     const uint32_t txnKey = pendingCompRspQ.front();
     auto it = txnTable.find(txnKey);
     if (it == txnTable.end()) {
+        dumpTxnTableState("pending_comp_missing_txn");
+        dumpPendingDdrState("pending_comp_missing_txn");
+        dumpDataQueueState("pending_comp_missing_txn");
         panic("pending COMP txn %u not found in txnTable", txnKey);
         pendingCompRspQ.pop_front();
         if (!pendingCompRspQ.empty()) {
@@ -1376,19 +1704,25 @@ CHI_L3::drainCompRspQueue()
     DPRINTF(CHIL3,
             "send RSP->cpu COMP src=%u tgt=%u txn=%u dbid=%u addr=%#lx\n",
             _NodeID, meta.srcId, meta.txnId, txnKey, meta.addr);
+    logTxnLifecycle("comp_rsp_send_attempt", txnKey, meta, meta.srcId);
 
     if (!networkPort->send(comp)) {
         DPRINTF(CHIL3,
                 "send RSP->cpu COMP blocked txn=%u dbid=%u\n",
                 meta.txnId, txnKey);
+        logTxnLifecycle("comp_rsp_send_blocked", txnKey, meta, meta.srcId);
         scheduleNetworkRetry(
             compRspSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_RSP);
         return;
     }
+    meta.compAckSendTick = curTick();
+    logTxnLifecycle("comp_rsp_send", txnKey, meta, meta.srcId);
     if (meta.opcode == CHI_OP_TYPE::CHI_REQ_EVICT){
         DPRINTF(CHIL3, "Txn %u completed via COMPACK\n", txnKey);
         completePendingRead(it->second.addr);
         eraseCacheReqTxn(it->second.pkt, it->second.addr, txnKey);
+            logTxnLifecycle("txn_erase_evict_comp", txnKey, it->second,
+                            it->second.srcId);
             DPRINTF(CHIL3Txn,
                 "txnTable erase key=%u reason=cpu_rsp_compack size_before=%u\n",
                 txnKey, static_cast<unsigned>(txnTable.size()));
@@ -1548,6 +1882,7 @@ CHI_L3::drainPendingXbarQueue()
 void
 CHI_L3::drainPendingDdrQueue()
 {
+    scanAgedReadTxns("drainPendingDdrQueue");
     if (pendingDdrQ.empty()) {
         return;
     }
@@ -1566,6 +1901,12 @@ CHI_L3::drainPendingDdrQueue()
         DPRINTF(CHIL3,
                 "pending REQ->DDR still blocked txn=%u addr=%#lx queue=%u\n",
                 p.txnId, p.pkt->getAddr(), static_cast<unsigned>(pendingDdrQ.size()));
+        auto metaIt = txnTable.find(p.txnId);
+        if (metaIt != txnTable.end()) {
+            logTxnLifecycle("pending_req_to_ddr_blocked", p.txnId,
+                            metaIt->second,
+                            SAM ? SAM->getTargetID(p.pkt->getAddr()) : 0);
+        }
         scheduleNetworkRetry(
             pendingDdrSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ);
         return;
@@ -1574,6 +1915,11 @@ CHI_L3::drainPendingDdrQueue()
     DPRINTF(CHIL3,
             "pending REQ->DDR sent txn=%u addr=%#lx\n",
             p.txnId, p.pkt->getAddr());
+    auto metaIt = txnTable.find(p.txnId);
+    if (metaIt != txnTable.end()) {
+        logTxnLifecycle("pending_req_to_ddr_sent", p.txnId, metaIt->second,
+                        SAM ? SAM->getTargetID(p.pkt->getAddr()) : 0);
+    }
     pendingDdrQ.pop_front();
 
     if (!pendingDdrQ.empty()) {
@@ -1590,6 +1936,11 @@ CHI_L3::enqueuePendingDdr(PacketPtr pkt, uint32_t txnId, CHI_OP_TYPE chiOp)
             pkt->getAddr(), txnId, CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(chiOp),
             static_cast<unsigned>(pendingDdrQ.size() + 1));
     pendingDdrQ.push_back({pkt, txnId, chiOp});
+    auto metaIt = txnTable.find(txnId);
+    if (metaIt != txnTable.end()) {
+        logTxnLifecycle("pending_ddrq_push", txnId, metaIt->second,
+                        SAM ? SAM->getTargetID(pkt->getAddr()) : 0);
+    }
     scheduleNetworkRetry(
         pendingDdrSendEvent, Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_REQ);
 }
