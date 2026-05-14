@@ -155,6 +155,19 @@ def addNoISAOptions(parser, configure_xiangshan=False):
                         help="MeshNode VOQ backpressure mode: "
                              "per_ingress uses per-(egress,channel,ingress) "
                              "depth, aggregate uses per-(egress,channel) sum")
+    parser.add_argument("--chi-hn-count", type=int, default=1,
+                        help="Number of CHI_L3/HN endpoints for topologies "
+                             "that support multiple HNs")
+    parser.add_argument("--chi-hn-attach-points", type=str, default="mesh6.local0",
+                        help="Comma-separated HN attach points for multi-HN "
+                             "CHI topologies (e.g. mesh6.local0,mesh8.local0)")
+    parser.add_argument("--chi-dram-count", type=int, default=1,
+                        help="Number of DDRWrapper/DRAM endpoints for "
+                             "topologies that support multiple DRAMs")
+    parser.add_argument("--chi-dram-attach-points", type=str, default="mesh6.local1",
+                        help="Comma-separated DRAM attach points for "
+                             "multi-DRAM CHI topologies "
+                             "(e.g. mesh6.local1,mesh8.local1)")
     # 影子 L2 参数组：
     # - 目标：在不引入一致性协议复杂度的前提下，复制主 L2 请求形成“额外 RN 流量源”。
     # - 要点：每个影子都必须给出 attach + src/window/dst 三元组，才能保证地址空间隔离。
