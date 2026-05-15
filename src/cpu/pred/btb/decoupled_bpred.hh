@@ -152,6 +152,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     HistoryManager historyManager;
     unsigned resolveDequeueFailCounter{0};
     const unsigned resolveBlockThreshold;
+    const bool enable2Fetch;
+    const unsigned maxFetchBytesPerCycle;
 
     ThreadID scheduleThread() { return 0; }
 
@@ -466,6 +468,17 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
     const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    bool ftqHasNext(ThreadID tid) const
+    {
+        return ftq.hasTarget(ftq.fetchId(tid) + 1, tid);
+    }
+    const FetchTarget &ftqNext(ThreadID tid)
+    {
+        assert(ftqHasNext(tid));
+        return ftq.get(ftq.fetchId(tid) + 1, tid);
+    }
+    bool is2FetchEnabled() const { return enable2Fetch; }
+    unsigned getMaxFetchBytesPerCycle() const { return maxFetchBytesPerCycle; }
 
     void dumpFsq(const char *when);
 

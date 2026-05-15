@@ -26,6 +26,8 @@ def setKmhV3Params(args, system):
         # fetch (idealfetch not care)
         cpu.mmu.itb.size = 96
         cpu.fetchWidth = 32
+        cpu.fetchBufferSize = 258
+        cpu.idealFetchWindowFill = True
         cpu.iewToFetchDelay = 2 # for resolved update, should train branch after squash
         cpu.commitToFetchDelay = 2
         cpu.fetchQueueSize = 64
@@ -112,6 +114,8 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
+            cpu.branchPred.enable2Fetch = True
+            cpu.branchPred.maxFetchBytesPerCycle = 256
 
         # l1 cache per core
         if args.caches:

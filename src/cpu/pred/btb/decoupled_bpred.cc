@@ -327,6 +327,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ftq(2, p.ftq_size),
       historyManager(16), // TODO: fix this
       resolveBlockThreshold(p.resolveBlockThreshold),
+      enable2Fetch(p.enable2Fetch),
+      maxFetchBytesPerCycle(p.maxFetchBytesPerCycle),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
 {
     if (bpDBSwitches.size() > 0) {
