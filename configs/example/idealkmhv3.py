@@ -49,6 +49,18 @@ def setKmhV3IdealParams(args, system):
 
         # scheduler
         cpu.scheduler = KMHV3Scheduler()
+        cpu.scheduler.intRegfileBanks = 4
+        # intiq0
+        cpu.scheduler.IQs[0].oports[0].rp = [IntRD(0, 0), IntRD(1, 0)]
+        cpu.scheduler.IQs[0].oports[1].rp = [IntRD(1, 1), IntRD(7, 2)]
+
+        # intiq1
+        cpu.scheduler.IQs[1].oports[0].rp = [IntRD(2, 0), IntRD(3, 0)]
+        cpu.scheduler.IQs[1].oports[1].rp = [IntRD(3, 1), IntRD(9, 2)]
+
+        # intiq2
+        cpu.scheduler.IQs[2].oports[0].rp = [IntRD(4, 0), IntRD(5, 0)]
+        cpu.scheduler.IQs[2].oports[1].rp = [IntRD(5, 1), IntRD(11, 2)]
 
         # rob
         cpu.commitWidth = 12
