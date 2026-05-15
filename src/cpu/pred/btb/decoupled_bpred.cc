@@ -224,9 +224,13 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     // Initially assume stage 0 (UBTB) prediction
     FullBTBPrediction *chosenPrediction = &predsOfEachStage[0];
 
+    auto hasPrediction = [](const FullBTBPrediction &pred) {
+        return !pred.btbEntries.empty() || pred.fallThroughOverrideValid;
+    };
+
     // Search from last stage to first for valid predictions
     for (int i = (int)numStages - 1; i >= 0; i--) {
-        if (predsOfEachStage[i].btbEntries.size() > 0) {
+        if (hasPrediction(predsOfEachStage[i])) {
             chosenPrediction = &predsOfEachStage[i];
             DPRINTF(Override, "Selected prediction from stage %d\n", i);
             break;

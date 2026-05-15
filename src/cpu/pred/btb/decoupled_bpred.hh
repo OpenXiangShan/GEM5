@@ -196,6 +196,8 @@ class DecoupledBPUWithBTB : public BPredUnit
             stagePred.condTakens.clear();
             stagePred.indirectTargets.clear();
             stagePred.btbEntries.clear();
+            stagePred.fallThroughOverrideValid = false;
+            stagePred.fallThroughOverride = 0;
         }
     }
 

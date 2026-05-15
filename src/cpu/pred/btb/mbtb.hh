@@ -254,15 +254,18 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param startAddr Start address of the fetch block
      *  @return Vector of processed entries in program order
      */
-    std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries, 
-                                              Addr startAddr);
+    std::vector<TickedBTBEntry> processEntries(const std::vector<TickedBTBEntry>& entries,
+                                              Addr startAddr,
+                                              Addr endAddr);
 
     /** Fill predictions for pipeline stages
      *  @param entries Processed BTB entries
      *  @param stagePreds Vector of predictions for each stage
      */
     void fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
-                             std::vector<FullBTBPrediction>& stagePreds);
+                             std::vector<FullBTBPrediction>& stagePreds,
+                             bool fallThroughOverrideValid,
+                             Addr fallThroughOverride);
 
     /** Update prediction metadata
      *  @param entries Processed BTB entries
@@ -350,8 +353,12 @@ class MBTB : public TimedBaseBTBPredictor
 
     /** Victim cache operations */
     std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc);
+    std::vector<TickedBTBEntry> lookupVictimCacheBlock(Addr alignedPC);
     void insertVictimCache(const TickedBTBEntry& evicted_entry);
+    void insertSetAssocVictimCache(const TickedBTBEntry& evicted_entry);
     bool eraseFromVictimCacheByPC(Addr pc);
+    unsigned victimCacheSetIndex(Addr pc);
+    size_t victimCacheSetBase(Addr pc);
 
     /** Dual SRAM BTB structure:
      *  - Two independent 4-way SRAMs (sram0 and sram1)
@@ -375,6 +382,12 @@ class MBTB : public TimedBaseBTBPredictor
      */
     std::vector<TickedBTBEntry> victimCache;
     unsigned victimCacheSize;
+    bool victimCacheSetAssoc;
+    unsigned victimCacheNumWays;
+    unsigned victimCacheNumSets;
+    bool victimCacheSplitOnHit;
+    bool lastLookupFallThroughOverrideValid;
+    Addr lastLookupFallThroughOverride;
 
     /** BTB configuration parameters */
     unsigned numEntries;    // Total number of entries
@@ -467,6 +480,8 @@ public:
 
         // Victim cache statistics
         Scalar victimCacheHit;
+        Scalar victimCacheHitEntries;
+        Scalar victimCacheSplit;
 
 #ifndef UNIT_TEST
         statistics::Distribution predHitCount;

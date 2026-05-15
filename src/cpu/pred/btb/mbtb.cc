@@ -68,6 +68,12 @@ namespace test {
 MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned numDelay)
     : TimedBaseBTBPredictor(),
       victimCacheSize(8),
+      victimCacheSetAssoc(false),
+      victimCacheNumWays(4),
+      victimCacheNumSets(1),
+      victimCacheSplitOnHit(false),
+      lastLookupFallThroughOverrideValid(false),
+      lastLookupFallThroughOverride(0),
       numEntries(numEntries),
       numWays(numWays),
       tagBits(tagBits)
@@ -78,6 +84,12 @@ MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned num
 MBTB::MBTB(const Params &p)
     : TimedBaseBTBPredictor(p),
     victimCacheSize(p.victimCacheSize),
+    victimCacheSetAssoc(p.victimCacheSetAssoc),
+    victimCacheNumWays(p.victimCacheNumWays),
+    victimCacheNumSets(0),
+    victimCacheSplitOnHit(p.victimCacheSplitOnHit),
+    lastLookupFallThroughOverrideValid(false),
+    lastLookupFallThroughOverride(0),
     numEntries(p.numEntries),
     numWays(p.numWays),
     tagBits(p.tagBits),
@@ -135,6 +147,21 @@ MBTB::MBTB(const Params &p)
     tagShiftAmt = idxShiftAmt + floorLog2(numSets);
 
     // Initialize victim cache
+    if (victimCacheSetAssoc && victimCacheSize > 0) {
+        if (victimCacheNumWays == 0) {
+            fatal("Victim cache set associativity must be non-zero");
+        }
+        if (victimCacheSize % (victimCacheNumWays * 2) != 0) {
+            fatal("Set-associative victim cache needs size divisible by ways * two 32B SRAMs");
+        }
+        victimCacheNumSets = victimCacheSize / (victimCacheNumWays * 2);
+        if (victimCacheNumSets == 0) {
+            fatal("Set-associative victim cache needs at least one set per SRAM");
+        }
+    } else {
+        victimCacheNumSets = victimCacheSize > 0 ? 1 : 0;
+    }
+
     victimCache.resize(victimCacheSize);
     for (auto& entry : victimCache) {
         entry.valid = false;
@@ -142,8 +169,11 @@ MBTB::MBTB(const Params &p)
     }
 
     DPRINTF(BTB, "numEntries %d, numSets %d, numWays %d, tagBits %d, tagShiftAmt %d, "
-        "idxMask %#lx, tagMask %#lx, victimCacheSize %d\n",
-        numEntries, numSets, numWays, tagBits, tagShiftAmt, idxMask, tagMask, victimCacheSize);
+        "idxMask %#lx, tagMask %#lx, victimCacheSize %d, victimCacheSetAssoc %d, "
+        "victimCacheNumWays %d, victimCacheNumSets %d, victimCacheSplitOnHit %d\n",
+        numEntries, numSets, numWays, tagBits, tagShiftAmt, idxMask, tagMask,
+        victimCacheSize, victimCacheSetAssoc, victimCacheNumWays, victimCacheNumSets,
+        victimCacheSplitOnHit);
 
 #ifndef UNIT_TEST
     hasDB = true;
@@ -185,7 +215,7 @@ MBTB::setTrace()
  * 2. Remove entries before the start PC
  */
 std::vector<MBTB::TickedBTBEntry>
-MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
+MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr, Addr endAddr)
 {
     auto processed_entries = entries;
     
@@ -203,10 +233,9 @@ MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
     processed_entries.erase(it, processed_entries.end());
 
     // remove entries after the range of mBTB
-    Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     it = std::remove_if(processed_entries.begin(), processed_entries.end(),
-                        [mbtb_end](const BTBEntry &e) {
-                            return e.pc >= mbtb_end;
+                        [endAddr](const BTBEntry &e) {
+                            return e.pc >= endAddr;
                         });
     processed_entries.erase(it, processed_entries.end());
 
@@ -238,11 +267,15 @@ MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
  */
 void
 MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
-                                    std::vector<FullBTBPrediction>& stagePreds)
+                                    std::vector<FullBTBPrediction>& stagePreds,
+                                    bool fallThroughOverrideValid,
+                                    Addr fallThroughOverride)
 {
 
     FillStageLoop(s) {
         DPRINTF(BTB, "BTB: assigning prediction for stage %d\n", s);
+        stagePreds[s].fallThroughOverrideValid = fallThroughOverrideValid;
+        stagePreds[s].fallThroughOverride = fallThroughOverride;
         // Copy BTB entries to stage prediction
         stagePreds[s].btbEntries.clear();
         for (auto e : entries) {
@@ -302,12 +335,18 @@ MBTB::putPCHistory(Addr startAddr,
     // Lookup all matching entries in BTB
     auto find_entries = lookup(startAddr, meta);
 
+    Addr predictionEnd = lastLookupFallThroughOverrideValid ?
+        lastLookupFallThroughOverride :
+        (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
+
     // Process BTB entries
-    auto processed_entries = processEntries(find_entries, startAddr);
-    
+    auto processed_entries = processEntries(find_entries, startAddr, predictionEnd);
+
     // Fill predictions for each pipeline stage
-    fillStagePredictions(processed_entries, stagePreds);
-    
+    fillStagePredictions(processed_entries, stagePreds,
+                         lastLookupFallThroughOverrideValid,
+                         lastLookupFallThroughOverride);
+
     // Update metadata for later stages
     updatePredictionMeta(processed_entries, stagePreds);
 }
@@ -367,6 +406,8 @@ std::vector<MBTB::TickedBTBEntry>
 MBTB::lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta)
 {
     std::vector<TickedBTBEntry> res;
+    lastLookupFallThroughOverrideValid = false;
+    lastLookupFallThroughOverride = 0;
     if (block_pc & 0x1) {
         return res; // ignore false hit when lowest bit is 1
     }
@@ -375,20 +416,42 @@ MBTB::lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta)
     // Calculate 32B aligned address
     Addr alignedPC = block_pc & ~(blockSize - 1);
     // Lookup first 32B block
-    res = lookupSingleBlock(alignedPC);
+    auto firstBlockRes = lookupSingleBlock(alignedPC);
     // Lookup next 32B block
     auto nextBlockRes = lookupSingleBlock(alignedPC + blockSize);
-    // Merge results
-    res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
 
     // lookup victim cache if victim cache is enabled
     if (victimCacheSize > 0) {
-        auto victimResults = lookupVictimCache(block_pc);
-        if (!victimResults.empty()) {
+        auto firstVictimRes = lookupVictimCacheBlock(alignedPC);
+        auto firstVisibleEnd = std::remove_if(firstVictimRes.begin(), firstVictimRes.end(),
+            [block_pc](const TickedBTBEntry &entry) {
+                return entry.pc < block_pc;
+            });
+        firstVictimRes.erase(firstVisibleEnd, firstVictimRes.end());
+        auto nextVictimRes = lookupVictimCacheBlock(alignedPC + blockSize);
+
+        if (!firstVictimRes.empty() || !nextVictimRes.empty()) {
             DPRINTF(BTB, "Victim cache hit for lookup at %#lx\n", block_pc);
             btbStats.victimCacheHit++;
-            res.insert(res.end(), victimResults.begin(), victimResults.end()); // merge victim results
+            btbStats.victimCacheHitEntries += firstVictimRes.size() + nextVictimRes.size();
         }
+
+        if (victimCacheSplitOnHit && (!firstVictimRes.empty() || !nextVictimRes.empty())) {
+            lastLookupFallThroughOverrideValid = true;
+            lastLookupFallThroughOverride = alignedPC + blockSize;
+            btbStats.victimCacheSplit++;
+
+            res = firstBlockRes;
+            res.insert(res.end(), firstVictimRes.begin(), firstVictimRes.end());
+        } else {
+            res = firstBlockRes;
+            res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
+            res.insert(res.end(), firstVictimRes.begin(), firstVictimRes.end());
+            res.insert(res.end(), nextVictimRes.begin(), nextVictimRes.end());
+        }
+    } else {
+        res = firstBlockRes;
+        res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
     }
 
     // Sort entries by PC order
@@ -727,21 +790,44 @@ MBTB::lookupVictimCache(Addr block_pc)
     std::vector<TickedBTBEntry> results;
     Addr alignedPC = block_pc & ~(blockSize - 1);
 
-    // Check both 32B blocks for half-aligned lookup
-    for (auto &entry : victimCache) {
-        if (!entry.valid) continue;
+    auto firstBlockResults = lookupVictimCacheBlock(alignedPC);
+    auto nextBlockResults = lookupVictimCacheBlock(alignedPC + blockSize);
+    results.insert(results.end(), firstBlockResults.begin(), firstBlockResults.end());
+    results.insert(results.end(), nextBlockResults.begin(), nextBlockResults.end());
+
+    return results;
+}
+
+std::vector<MBTB::TickedBTBEntry>
+MBTB::lookupVictimCacheBlock(Addr alignedPC)
+{
+    std::vector<TickedBTBEntry> results;
+
+    auto checkEntry = [&](TickedBTBEntry &entry) {
+        if (!entry.valid) {
+            return;
+        }
 
         Addr entryAlignedPC = entry.pc & ~(blockSize - 1);
-        // Check if this entry is in either of the two 32B blocks we're looking for
-        if (entryAlignedPC == alignedPC || entryAlignedPC == (alignedPC + blockSize)) {
-            Addr current_tag = getTag(entry.pc);
-            if (entry.tag == current_tag) {
-                results.push_back(entry);
-                DPRINTF(BTB, "Victim cache hit for pc %#lx\n", entry.pc);
-                // refresh LRU timestamp on hit
-                entry.tick = curTick();
-            }
+        if (entryAlignedPC == alignedPC && entry.tag == getTag(entry.pc)) {
+            results.push_back(entry);
+            DPRINTF(BTB, "Victim cache hit for pc %#lx\n", entry.pc);
+            entry.tick = curTick();
         }
+    };
+
+    if (victimCacheSetAssoc) {
+        size_t base = victimCacheSetBase(alignedPC);
+        for (unsigned way = 0; way < victimCacheNumWays; ++way) {
+            size_t idx = base + way;
+            assert(idx < victimCache.size());
+            checkEntry(victimCache[idx]);
+        }
+        return results;
+    }
+
+    for (auto &entry : victimCache) {
+        checkEntry(entry);
     }
 
     return results;
@@ -766,6 +852,11 @@ void
 MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
 {
     if (victimCacheSize == 0) return;
+
+    if (victimCacheSetAssoc) {
+        insertSetAssocVictimCache(evicted_entry);
+        return;
+    }
 
     // 1) If same PC exists, update and refresh tick
     for (auto &entry : victimCache) {
@@ -797,6 +888,53 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
             lru_it->pc, evicted_entry.pc);
     *lru_it = evicted_entry;
     lru_it->tick = curTick();
+}
+
+unsigned
+MBTB::victimCacheSetIndex(Addr pc)
+{
+    assert(victimCacheNumSets > 0);
+    return getIndex(pc) % victimCacheNumSets;
+}
+
+size_t
+MBTB::victimCacheSetBase(Addr pc)
+{
+    assert(victimCacheSetAssoc);
+    Addr alignedPC = pc & ~(blockSize - 1);
+    unsigned sram_id = getSRAMId(alignedPC);
+    return ((sram_id * victimCacheNumSets) + victimCacheSetIndex(pc)) * victimCacheNumWays;
+}
+
+void
+MBTB::insertSetAssocVictimCache(const TickedBTBEntry& evicted_entry)
+{
+    size_t base = victimCacheSetBase(evicted_entry.pc);
+    TickedBTBEntry *empty = nullptr;
+    TickedBTBEntry *lru = &victimCache[base];
+
+    for (unsigned way = 0; way < victimCacheNumWays; ++way) {
+        auto &entry = victimCache[base + way];
+        if (entry.valid && entry.pc == evicted_entry.pc) {
+            entry = evicted_entry;
+            entry.tick = curTick();
+            entry.valid = true;
+            return;
+        }
+        if (!entry.valid && empty == nullptr) {
+            empty = &entry;
+        }
+        if (entry.tick < lru->tick) {
+            lru = &entry;
+        }
+    }
+
+    auto *slot = empty ? empty : lru;
+    DPRINTF(BTB, "Set-assoc victim cache replace, evict pc %#lx with pc %#lx\n",
+            slot->valid ? slot->pc : 0, evicted_entry.pc);
+    *slot = evicted_entry;
+    slot->tick = curTick();
+    slot->valid = true;
 }
 
 #ifndef UNIT_TEST
@@ -947,7 +1085,9 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     ADD_STAT(returnHits, statistics::units::Count::get(), "returns committed that was predicted hit"),
     ADD_STAT(returnMisses, statistics::units::Count::get(), "returns committed that was predicted miss"),
 
-    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits")
+    ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits"),
+    ADD_STAT(victimCacheHitEntries, statistics::units::Count::get(), "victim cache hit entries"),
+    ADD_STAT(victimCacheSplit, statistics::units::Count::get(), "victim cache hits that split the predicted block")
 
 {
     predHitCount.init(0, numWays * 2, 1);   // max 4ways * 2(halfAligned) + VC

@@ -411,7 +411,8 @@ struct FetchTarget
                 updateEndInstPC = getControlPC();
             } else { // natural fall through, align to the next block
                 // assert(halfAligned);
-                updateEndInstPC = (startPC + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
+                updateEndInstPC = predEndPC ? predEndPC :
+                    (startPC + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
             }
         } else {
             updateEndInstPC = squashPC;
@@ -460,6 +461,8 @@ struct FullBTBPrediction
     // for indirect predictor, mapped with lowest bits of branches
     IndirectTargets indirectTargets;
     Addr returnTarget; // for RAS
+    bool fallThroughOverrideValid;
+    Addr fallThroughOverride;
 
     std::unordered_map<Addr, TageInfoForMGSC> tageInfoForMgscs;
 
@@ -477,6 +480,8 @@ struct FullBTBPrediction
         condTakens(),
         indirectTargets(),
         returnTarget(0),
+        fallThroughOverrideValid(false),
+        fallThroughOverride(0),
         tageInfoForMgscs(),
         predSource(0),
         predTick(0),
@@ -512,6 +517,9 @@ struct FullBTBPrediction
     }
 
     Addr getFallThrough(Addr predictWidth) {
+        if (fallThroughOverrideValid) {
+            return fallThroughOverride;
+        }
         // max 64 byte block, 32 byte aligned
         return (bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     }
@@ -577,6 +585,9 @@ struct FullBTBPrediction
                     return std::make_pair(true, btb_pred::OverrideReason::NO_OVERRIDE);
                 }
             } else {
+                if (this->getFallThrough(predictWidth) != other.getFallThrough(predictWidth)) {
+                    return std::make_pair(false, OverrideReason::FALL_THRU);
+                }
                 return std::make_pair(true, btb_pred::OverrideReason::NO_OVERRIDE);
             }
         }

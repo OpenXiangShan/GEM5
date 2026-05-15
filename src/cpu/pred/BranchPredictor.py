@@ -985,6 +985,12 @@ class MBTB(TimedBaseBTBPredictor):
     blockSize = 32  # max 64 byte block, 32 byte aligned
     # MBTB is always half-aligned - no parameter needed
     victimCacheSize = Param.Unsigned(0, "Number of entries in the victim cache")
+    victimCacheSetAssoc = Param.Bool(
+        False, "Use RTL-style set-associative victim cache organization")
+    victimCacheNumWays = Param.Unsigned(
+        4, "Number of ways in each victim-cache set when set associative")
+    victimCacheSplitOnHit = Param.Bool(
+        False, "End the current prediction at the next 32B boundary on a victim-cache hit")
 
 class AheadBTB(TimedBaseBTBPredictor):
     type = 'AheadBTB'
