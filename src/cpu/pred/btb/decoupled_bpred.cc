@@ -344,6 +344,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
       resolveBlockThreshold(p.resolveBlockThreshold),
+      enable2Fetch(p.enable2Fetch),
+      maxFetchBytesPerCycle(p.maxFetchBytesPerCycle),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
 {
     panic_if(ftqMode == SMTFTQMode::Shared &&
