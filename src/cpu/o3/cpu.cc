@@ -484,6 +484,7 @@ CPU::CPUStats::CPUStats(CPU *cpu)
         .precision(6);
     totalIpc = sum(committedInsts) / cpu->baseStats.numCycles;
 
+    // Use retired instruction count here to match RTL commitInstr semantics.
     baseRetiring = committedInsts / (cpu->issueWidth * cpu->baseStats.numCycles);
 
     frontendBound = cpu->fetch.getFetchStats().fetchBubbles /
@@ -493,40 +494,63 @@ CPU::CPUStats::CPUStats(CPU *cpu)
 
     frontendBandwidthBound = frontendBound - frontendLatencyBound;
 
+    // Match the RTL/scripting semantics: use decode-stage inst_spec, and keep
+    // the branch-vs-clear split within the commit redirect/squash domain.
+    const auto &decodeStats = cpu->decode.getDecodeStats();
+    const auto &commitStats = cpu->commit.getCommitStats();
+    const auto &badSpecSquash = commitStats.totalSquash;
+
     // badSpecBound = (INST_SPEC - INST_RETIRED + RECOVERY_BUBBLE)/(IssueBW * CPU_CYCLES)
-    badSpecBound = (cpu->iew.getIEWStats().dispatchedInsts - committedInsts + cpu->commit.getCommitStats().recovery_bubble) /
-         (cpu->issueWidth * cpu->baseStats.numCycles);
+    badSpecBound = (decodeStats.decodedInsts - committedInsts +
+                    decodeStats.recovery_bubble) /
+                   (cpu->issueWidth * cpu->baseStats.numCycles);
 
     // branchMissPrediction = Bad Speculation * BR_MIS_PRED/TOTAL_FLUSH
-    branchMissPrediction = badSpecBound * cpu->commit.getCommitStats().branchMispredicts / cpu->commit.getCommitStats().totalSquash;
+    branchMissPrediction = badSpecBound * commitStats.branchMispredicts / badSpecSquash;
 
     machineClears = badSpecBound - branchMissPrediction;
 
     backendBound = 1 - (frontendBound + badSpecBound + baseRetiring);
 
-    Scheduler* scheduler = cpu->iew.getScheduler();
-    const auto &stats = scheduler->getStats();
+    auto &iewStats = cpu->iew.getIEWStats();
+    auto &robHead = iewStats.robHeadStallReason;
+    auto &schedulerStats = cpu->iew.getScheduler()->getStats();
 
-    // Calculate raw proportions first
-    auto rawCore = stats.exec_stall_cycle - stats.memstall_any_load - stats.memstall_any_store;
-    auto rawMemory = stats.memstall_any_load + stats.memstall_any_store;
-    auto rawTotal = rawCore + rawMemory;
+    // Match the RTL-style raw-counter difference tree for Level3.
+    const auto loadL1Cycles =
+        schedulerStats.memstall_any_load - schedulerStats.memstall_l1miss;
+    const auto loadL2Cycles =
+        schedulerStats.memstall_l1miss - schedulerStats.memstall_l2miss;
+    const auto loadL3Cycles =
+        schedulerStats.memstall_l2miss - schedulerStats.memstall_l3miss;
+    const auto &loadMemCycles = schedulerStats.memstall_l3miss;
+    const auto &storeCycles = schedulerStats.memstall_any_store;
+    const auto memoryCycles = loadL1Cycles + loadL2Cycles + loadL3Cycles +
+        loadMemCycles + storeCycles;
+    const auto coreCycles =
+        robHead[StallReason::SerializeStall] +
+        robHead[StallReason::ScalarLongExecute] +
+        robHead[StallReason::VectorLongExecute] +
+        robHead[StallReason::InstNotReady] +
+        robHead[StallReason::MemDQBandwidth] +
+        robHead[StallReason::IntDQBandwidth] +
+        robHead[StallReason::FVDQBandwidth] +
+        robHead[StallReason::VectorReadyButNotIssued] +
+        robHead[StallReason::ScalarReadyButNotIssued] +
+        robHead[StallReason::ResumeUnblock] +
+        robHead[StallReason::ROBFull] +
+        robHead[StallReason::RegFull] +
+        robHead[StallReason::OtherStall];
+    const auto backendCycles = coreCycles + memoryCycles;
+    constexpr double tdEpsilon = 1e-9;
 
-    // Scale Level 2: ensure Core + Memory = Backend
-    coreBound = backendBound * rawCore / rawTotal;
-    memoryBound = backendBound * rawMemory / rawTotal;
-
-    // Scale Level 3: ensure sub-components sum to Memory
-    auto rawL1 = stats.memstall_any_load - stats.memstall_l1miss;
-    auto rawL2 = stats.memstall_l1miss - stats.memstall_l2miss;
-    auto rawL3 = stats.memstall_l2miss - stats.memstall_l3miss;
-    auto rawL3Total = rawL1 + rawL2 + rawL3 + stats.memstall_l3miss + stats.memstall_any_store;
-
-    l1Bound = memoryBound * rawL1 / rawL3Total;
-    l2Bound = memoryBound * rawL2 / rawL3Total;
-    l3Bound = memoryBound * rawL3 / rawL3Total;
-    memBound = memoryBound * stats.memstall_l3miss / rawL3Total;
-    storeBound = memoryBound * stats.memstall_any_store / rawL3Total;
+    coreBound = backendBound * coreCycles / (backendCycles + tdEpsilon);
+    memoryBound = backendBound * memoryCycles / (backendCycles + tdEpsilon);
+    l1Bound = memoryBound * loadL1Cycles / (memoryCycles + tdEpsilon);
+    l2Bound = memoryBound * loadL2Cycles / (memoryCycles + tdEpsilon);
+    l3Bound = memoryBound * loadL3Cycles / (memoryCycles + tdEpsilon);
+    memBound = memoryBound * loadMemCycles / (memoryCycles + tdEpsilon);
+    storeBound = memoryBound * storeCycles / (memoryCycles + tdEpsilon);
 
     intRegfileReads
         .prereq(intRegfileReads);

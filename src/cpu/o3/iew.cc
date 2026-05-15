@@ -214,7 +214,9 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     ADD_STAT(renameStallReason, statistics::units::Count::get(),
              "Number of rename stall reasons each tick (Total)"),
     ADD_STAT(dispatchStallReason, statistics::units::Count::get(),
-             "Number of dispatch stall reasons each tick (Total)")
+             "Number of dispatch stall reasons each tick (Total)"),
+    ADD_STAT(robHeadStallReason, statistics::units::Count::get(),
+             "ROB-head stall reason sampled once per tick (Total)")
 {
     instsToCommit
         .init(cpu->numThreads)
@@ -275,6 +277,10 @@ IEW::IEWStats::IEWStats(CPU *cpu)
             .init(NumStallReasons)
             .flags(statistics::total | statistics::pdf);
 
+    robHeadStallReason
+            .init(NumStallReasons)
+            .flags(statistics::total | statistics::pdf);
+
     std::map <StallReason, const char*> stallReasonStr = {
         {StallReason::NoStall, "NoStall"},
         {StallReason::IcacheStall, "IcacheStall"},
@@ -325,6 +331,7 @@ IEW::IEWStats::IEWStats(CPU *cpu)
         decodeStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
         renameStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
         dispatchStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
+        robHeadStallReason.subname(i, stallReasonStr[static_cast<StallReason>(i)]);
     }
 }
 
@@ -956,11 +963,14 @@ IEW::dispatchInsts()
             DPRINTF(IEW, "Dispatch bandwidth full, blocking thread %i\n", tid);
         }
 
-        toRename->iewInfo[tid].robHeadStallReason = checkDispatchStall(tid, NumDQ, nullptr, -1);
-        toRename->iewInfo[tid].lqHeadStallReason =
+        robHeadTopdownReason[tid] = checkDispatchStall(tid, NumDQ, nullptr, -1);
+        lqHeadTopdownReason[tid] =
             ldstQueue.lqEmpty() ? StallReason::NoStall : checkLSQStall(tid, true);
-        toRename->iewInfo[tid].sqHeadStallReason =
+        sqHeadTopdownReason[tid] =
             ldstQueue.sqEmpty() ? StallReason::NoStall : checkLSQStall(tid, false);
+        toRename->iewInfo[tid].robHeadStallReason = robHeadTopdownReason[tid];
+        toRename->iewInfo[tid].lqHeadStallReason = lqHeadTopdownReason[tid];
+        toRename->iewInfo[tid].sqHeadStallReason = sqHeadTopdownReason[tid];
         toRename->iewInfo[tid].blockReason = blockReason;
     }
 }
@@ -1776,6 +1786,10 @@ IEW::tick()
     checkSquash();
     dispatchInsts();
 
+    for (ThreadID tid = 0; tid < numThreads; tid++) {
+        iewStats.robHeadStallReason[robHeadTopdownReason[tid]]++;
+    }
+
     for (int i = 0;i < dispatchStalls.size();i++) {
         iewStats.dispatchStallReason[dispatchStalls[i]]++;
     }
@@ -1992,13 +2006,61 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
     if (inst->isAtomic() || inst->isStoreConditional()) {
         return StallReason::Atomic;
     }
-    if (!inst->readyToIssue()){
-        return StallReason::MemNotReady;
-    }
     assert(inst->isLoad() || inst->isStore());
+
+    auto classifyDepth = [inst](int depth) {
+        bool isLoad = inst->isLoad();
+        if (depth == 0) {
+            return isLoad ? StallReason::LoadL1Bound : StallReason::StoreL1Bound;
+        }
+        if (depth == 1) {
+            return isLoad ? StallReason::LoadL2Bound : StallReason::StoreL2Bound;
+        }
+        if (depth == 2) {
+            return isLoad ? StallReason::LoadL3Bound : StallReason::StoreL3Bound;
+        }
+        return isLoad ? StallReason::LoadMemBound : StallReason::StoreMemBound;
+    };
+
+    if (inst->isIssued()) {
+        if (inst->hasReplayFlag(LdStReplayType::CacheMissReplay) ||
+            inst->waitingCacheRefill()) {
+            if (inst->savedRequest) {
+                const int depth = inst->savedRequest->mainReq()->depth;
+                return classifyDepth(depth);
+            }
+            return classifyDepth(0);
+        }
+
+        if (inst->hasReplayFlag(LdStReplayType::BankConflictReplay)) {
+            return classifyDepth(0);
+        }
+    }
+
+    if (!inst->readyToIssue()) {
+        return inst->isLoad() ? StallReason::MemNotReady :
+            StallReason::StoreL1Bound;
+    }
 
     if (inst->isIssued() && inst->translationStarted() && !inst->translationCompleted()) {
         return StallReason::DTlbStall;
+    }
+
+    if (inst->isIssued() && inst->hasReplayFlag(LdStReplayType::TLBMissReplay)) {
+        return StallReason::DTlbStall;
+    }
+
+    if (inst->isIssued() && (inst->hasReplayFlag(LdStReplayType::MshrArbFailReplay) ||
+        inst->hasReplayFlag(LdStReplayType::MshrAliasFailReplay) ||
+        inst->hasReplayFlag(LdStReplayType::HitInWriteBufferReplay) ||
+        inst->hasReplayFlag(LdStReplayType::CacheBlockedReplay) ||
+        inst->hasReplayFlag(LdStReplayType::RARReplay) ||
+        inst->hasReplayFlag(LdStReplayType::RAWReplay) ||
+        inst->hasReplayFlag(LdStReplayType::NukeReplay) ||
+        inst->hasReplayFlag(LdStReplayType::MdpAddrReplay) ||
+        inst->hasReplayFlag(LdStReplayType::STLFReplay) ||
+        inst->hasReplayFlag(LdStReplayType::RescheduleReplay))) {
+        return StallReason::OtherMemStall;
     }
 
     bool inFlight = inst->isIssued() && inst->hasPendingCacheReq();
@@ -2019,19 +2081,20 @@ IEW::checkLoadStoreInst(DynInstPtr inst)
     // so we can not use in_mem = depth==3
     bool in_mem = !(in_l1 ||  in_l2 || in_l3 || other_stall);
     if (inFlight && in_l1) {
-        return inst->isLoad() ? StallReason::LoadL1Bound : StallReason::StoreL1Bound;
+        return classifyDepth(0);
     } else if (inFlight && in_l2) {
-        return inst->isLoad() ? StallReason::LoadL2Bound : StallReason::StoreL2Bound;
+        return classifyDepth(1);
     } else if (inFlight && in_l3) {
-        return inst->isLoad() ? StallReason::LoadL3Bound : StallReason::StoreL3Bound;
+        return classifyDepth(2);
     } else if (inFlight && in_mem) {
-        return inst->isLoad() ? StallReason::LoadMemBound : StallReason::StoreMemBound;
+        return classifyDepth(3);
     } else if (inFlight && other_stall) {
         return StallReason::OtherMemStall;
     }
 
     if (lsuStall) {
-        return inst->isLoad() ? StallReason::LoadL1Bound : StallReason::StoreL1Bound;
+        return inst->isLoad() ? StallReason::LoadL1Bound :
+            StallReason::StoreL1Bound;
     } else {
         return StallReason::OtherMemStall;
     }

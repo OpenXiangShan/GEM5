@@ -894,6 +894,9 @@ class LSQ
     int numLoads(ThreadID tid);
 
     int anyInflightLoadsNotComplete();
+    int oldestInflightLoadsNotComplete();
+    void inflightLoadIssued(LSQRequest *request);
+    void inflightLoadCompleted(LSQRequest *request);
 
     bool anyStoreNotExecute();
 

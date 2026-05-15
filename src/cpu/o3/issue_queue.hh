@@ -262,7 +262,8 @@ class Scheduler : public SimObject
     CPU* cpu;
     MemDepUnit* memDepUnit;
     LSQ* lsq;
-    const int intel_fewops = 8;
+    // Match XiangShan's few-uop threshold for topdown FEW execution stalls.
+    const int rtl_fewops = 4;
     bool old_disp = false;
     const int intRegfileBanks;
 
@@ -276,6 +277,29 @@ class Scheduler : public SimObject
         statistics::Scalar memstall_l2miss;
         statistics::Scalar memstall_l3miss;
     } stats;
+
+    struct TopDownState
+    {
+        bool anyLoadPending = false;
+        bool noUopsIssued = false;
+        bool noStoreIssued = true;
+        bool lqEmpty = true;
+        bool sqEmpty = true;
+        bool l1Miss = false;
+        bool l2Miss = false;
+        bool l3Miss = false;
+    };
+
+    struct TopDownIssueSnapshot
+    {
+        bool anyIssued = false;
+        bool storeIssued = false;
+        int fewUopsIssued = 0;
+    };
+
+    TopDownState topDownStateD1;
+    TopDownState topDownStateD2;
+    TopDownIssueSnapshot currentIssueSnapshot;
 
     struct disp_policy
     {

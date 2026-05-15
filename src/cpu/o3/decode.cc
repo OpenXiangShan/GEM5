@@ -111,13 +111,16 @@ Decode::startupStage()
 void
 Decode::clearStates(ThreadID tid)
 {
-
+    recoveryPending[tid] = false;
 }
 
 void
 Decode::resetStage()
 {
     _status = Inactive;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        recoveryPending[tid] = false;
+    }
 }
 
 std::string
@@ -149,6 +152,8 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
       ADD_STAT(controlMispred, statistics::units::Count::get(),
                "Number of times decode detected an instruction incorrectly "
                "predicted as a control"),
+      ADD_STAT(recovery_bubble, statistics::units::Cycle::get(),
+               "Cycles spent recovering from earlier miss-speculation at decode"),
       ADD_STAT(decodedInsts, statistics::units::Count::get(),
                "Number of instructions handled by decode"),
       ADD_STAT(squashedInsts, statistics::units::Count::get(),
@@ -166,6 +171,7 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     branchResolved.prereq(branchResolved);
     branchMispred.prereq(branchMispred);
     controlMispred.prereq(controlMispred);
+    recovery_bubble.prereq(recovery_bubble);
     decodedInsts.prereq(decodedInsts);
     squashedInsts.prereq(squashedInsts);
     mispredictedByPC.flags(statistics::total);
@@ -419,6 +425,7 @@ Decode::checkSquash()
             DPRINTF(Decode, "[tid:%i] Squashing instructions due to squash "
                     "from commit.\n", i);
             squash(i);
+            recoveryPending[i] = true;
             localSquashVer.update(fromCommit->commitInfo[i].squashVersion.getVersion());
             DPRINTF(Decode, "Updating squash version to %u\n",
                     localSquashVer.getVersion());
@@ -429,6 +436,14 @@ Decode::checkSquash()
 void
 Decode::tick()
 {
+    bool anyRecoveryPending = false;
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        anyRecoveryPending |= recoveryPending[tid];
+    }
+    if (anyRecoveryPending) {
+        ++stats.recovery_bubble;
+    }
+
     toRename->fetchStallReason = fromFetch->fetchStallReason;
     wroteToTimeBuffer = false;
     toRenameIndex = 0;
@@ -477,6 +492,9 @@ Decode::tick()
     DPRINTF(Decode,"Processing [tid:%i]\n",tid);
 
     decodeInsts(tid);
+    if (toRenameIndex > 0) {
+        recoveryPending[tid] = false;
+    }
     ++stats.runCycles;
     if (stallSig->blockDecode[tid]) {
         setAllStalls(stallSig->decodeBlockReason[tid]);

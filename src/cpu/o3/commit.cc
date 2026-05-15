@@ -237,7 +237,7 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(commitNonSpecStalls, statistics::units::Count::get(),
                "The number of times commit has been forced to stall to "
                "communicate backwards"),
-      ADD_STAT(recovery_bubble, "Unutilized issue-pipeline slots due to recovery from earlier miss-speculation"),
+      ADD_STAT(recovery_bubble, "Cycles spent recovering from earlier miss-speculation"),
       ADD_STAT(branchMispredicts, statistics::units::Count::get(),
                "The number of times a branch was mispredicted"),
       ADD_STAT(numCommittedDist, statistics::units::Count::get(),
@@ -1296,7 +1296,7 @@ Commit::commitInsts()
 
                 if (ismispred) {
                     ismispred = false;
-                    stats.recovery_bubble += (cpu->curCycle() - lastCommitCycle) * renameWidth;
+                    stats.recovery_bubble += (cpu->curCycle() - lastCommitCycle);
                 }
                 if (head_inst->mispredicted()) {
                     ismispred = true;

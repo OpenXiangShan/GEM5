@@ -221,6 +221,14 @@ class IEW
 
     /** Moves load instruction onto the Set of cache missed instructions */
     void cacheMissLdReplay(const DynInstPtr &inst);
+    int anyCacheMissLoadsNotComplete() const
+    {
+        return instQueue.anyCacheMissLoadsNotComplete();
+    }
+    int oldestCacheMissLoadNotComplete() const
+    {
+        return instQueue.oldestCacheMissLoadNotComplete();
+    }
 
     /** Notifies that the cache has become unblocked */
     void cacheUnblocked();
@@ -576,10 +584,15 @@ class IEW
         /** Distribution of number of dispatch stall reasons each tick. */
 
         statistics::Vector dispatchStallReason;
+        /** One-per-cycle ROB-head stall reason, closer to RTL's topdown tree. */
+        statistics::Vector robHeadStallReason;
     } iewStats;
 
     /** The width that can be dispatched to the scheduler per cycle. */
     std::vector<StallReason> dispatchStalls;
+    std::array<StallReason, MaxThreads> robHeadTopdownReason{};
+    std::array<StallReason, MaxThreads> lqHeadTopdownReason{};
+    std::array<StallReason, MaxThreads> sqHeadTopdownReason{};
 
     StallReason blockReason{NoStall};
 
@@ -599,6 +612,7 @@ class IEW
 
   public:
 
+    IEWStats& getIEWStats() { return iewStats; }
     const IEWStats& getIEWStats() const { return iewStats; }
 
     void setRob(ROB *rob);

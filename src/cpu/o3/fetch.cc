@@ -410,6 +410,7 @@ Fetch::clearStates(ThreadID tid)
     set(threads[tid].fetchpc, cpu->pcState(tid));
     macroop[tid] = NULL;
     delayedCommit[tid] = false;
+    frontendHeadBubble[tid] = false;
     threads[tid].cacheReq.reset();
     threads[tid].reset();
     fetchQueue[tid].clear();
@@ -434,6 +435,7 @@ Fetch::resetStage()
         macroop[tid] = NULL;
 
         delayedCommit[tid] = false;
+        frontendHeadBubble[tid] = false;
         threads[tid].cacheReq.reset();
 
         threads[tid].reset();
@@ -1105,6 +1107,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // Force a new I-cache request for the next FTQ head after squash.
     threads[tid].valid = false;
     ftqEntryFetchedInsts[tid] = 0;
+    frontendHeadBubble[tid] = true;
 
     if (traceFetch) {
         traceFetch->handleTraceSquash(tid, new_pc, squashInst, seqNum);
@@ -1349,6 +1352,9 @@ Fetch::sendInstructionsToDecode()
 
     // Intel TopDown method for measuring frontend bubbles
     measureFrontendBubbles(insts_to_decode, tid);
+    if (insts_to_decode > 0) {
+        frontendHeadBubble[tid] = false;
+    }
 
     // If there was activity this cycle, inform the CPU of it
     if (wroteToTimeBuffer) {
@@ -1392,7 +1398,9 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
     // For N-wide machine, if frontend supplies 0 instructions:
     // - fetchBubbles += N (count total empty slots)
     // - fetchBubbles_max += 1 (count occurrence of all slots being empty)
-    if (!stallSig->blockFetch[tid] && !fromCommit->commitInfo[tid].robSquashing) {
+    if (!stallSig->blockFetch[tid] &&
+        !fromCommit->commitInfo[tid].robSquashing &&
+        !frontendHeadBubble[tid]) {
         // backend not stalled
         int unused_slots = decodeWidth - insts_to_decode;
         if (unused_slots > 0) {

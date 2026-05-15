@@ -261,6 +261,7 @@ class LSQUnit
     using StoreQueue = CircularQueue<SQEntry>;
 
     std::vector<LSQRequest*> inflightLoads;
+    int topdownInflightLoadMask = 0;
 
   public:
     /** Constructs an LSQ unit. init() must be called prior to use. */

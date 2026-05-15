@@ -16,6 +16,7 @@
 #include "base/types.hh"
 #include "cpu/func_unit.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/inst_queue.hh"
@@ -64,6 +65,25 @@ namespace gem5
 
 namespace o3
 {
+
+namespace
+{
+
+bool
+isTopdownStoreIssue(const DynInstPtr& inst)
+{
+    return inst->isStore() || inst->isSplitStoreData();
+}
+
+bool
+isTopdownFewUopsCounted(const DynInstPtr& inst)
+{
+    // Match XiangShan's TopDownGen: fp issue activity contributes to the
+    // boolean "uopsIssued" gate, but not to the few-uop count.
+    return !inst->isFloating();
+}
+
+} // namespace
 
 IssuePort::IssuePort(const IssuePortParams& params) : SimObject(params), rp(params.rp), fu(params.fu)
 {
@@ -848,8 +868,9 @@ Scheduler::SchedulerStats::SchedulerStats(statistics::Group* parent)
     : statistics::Group(parent),
       ADD_STAT(exec_stall_cycle, "SUM(OpsExecuted[= FEW])"),
       ADD_STAT(memstall_any_load,
-               "Cycles with no uops executed and at least X in-flight load that is not completed yet"),
-      ADD_STAT(memstall_any_store, "Cycles with few uops executed and no more stores can be issued"),
+               "Cycles with no uops executed and a non-empty load queue"),
+      ADD_STAT(memstall_any_store,
+               "Cycles with issued uops, no store issue, and a non-empty store queue"),
       ADD_STAT(memstall_l1miss,
                "Cycles with no uops executed and at least X in-flight load that has missed the L1-cache"),
       ADD_STAT(memstall_l2miss,
@@ -1053,6 +1074,13 @@ Scheduler::addToFU(const DynInstPtr& inst)
     inst->clearCancel();
     DPRINTF(Schedule, "%s [sn:%llu] add to FUs\n", enums::OpClassStrings[inst->opClass()], inst->seqNum);
     instsToFu.push_back(inst);
+    currentIssueSnapshot.anyIssued = true;
+    if (isTopdownStoreIssue(inst)) {
+        currentIssueSnapshot.storeIssued = true;
+    }
+    if (isTopdownFewUopsCounted(inst)) {
+        ++currentIssueSnapshot.fewUopsIssued;
+    }
 }
 
 void
@@ -1068,6 +1096,8 @@ Scheduler::tick()
 void
 Scheduler::issueAndSelect()
 {
+    currentIssueSnapshot = {};
+
     // must wait for all insts was issued
     for (auto it : issueQues) {
         it->selectInst();
@@ -1081,23 +1111,57 @@ Scheduler::issueAndSelect()
     for (auto it : issueQues) {
         it->issueToFu();
     }
-    if (instsToFu.size() < intel_fewops) {
+
+    TopDownState currentTopDownState;
+    currentTopDownState.noUopsIssued = !currentIssueSnapshot.anyIssued;
+    currentTopDownState.noStoreIssued = !currentIssueSnapshot.storeIssued;
+
+    currentTopDownState.lqEmpty = lsq->lqEmpty();
+    currentTopDownState.sqEmpty = lsq->sqEmpty();
+
+    const int anyMisslevel = lsq->anyInflightLoadsNotComplete() |
+        cpu->anyCacheMissLoadsNotComplete();
+    // Match RTL raw counter semantics: MEMSTALL_ANY_LOAD is driven by load
+    // queue occupancy, while the nested miss tiers come from any outstanding
+    // load/cache miss with prefix bits set by miss depth.
+    currentTopDownState.anyLoadPending = !currentTopDownState.lqEmpty;
+    currentTopDownState.l1Miss = anyMisslevel & (1 << 0);
+    currentTopDownState.l2Miss = anyMisslevel & (1 << 1);
+    currentTopDownState.l3Miss = anyMisslevel & (1 << 2);
+
+    if (currentIssueSnapshot.fewUopsIssued < rtl_fewops) {
         stats.exec_stall_cycle++;
     }
-    if (instsToFu.size() == 0) {
-        int misslevel = lsq->anyInflightLoadsNotComplete();
-        if (misslevel != 0)
-            stats.memstall_any_load++;
-        if ((misslevel & ((1 << 1) - 1)) == ((1 << 1) - 1))
-            stats.memstall_l1miss++;
-        if ((misslevel & ((1 << 2) - 1)) == ((1 << 2) - 1))
-            stats.memstall_l2miss++;
-        if ((misslevel & ((1 << 3) - 1)) == ((1 << 3) - 1))
-            stats.memstall_l3miss++;
-    } else if (instsToFu.size() < intel_fewops) {
-        if (lsq->anyStoreNotExecute())
-            stats.memstall_any_store++;
+
+    // RTL VirtualLoadQueue uses noUopsIssued[D1] with load-queue validCount[D2]
+    // for MEMSTALL_ANY_LOAD.
+    if (topDownStateD1.noUopsIssued && topDownStateD2.anyLoadPending) {
+        stats.memstall_any_load++;
     }
+
+    // RTL TopDownGen sees miss-depth inputs after the frontend/backend
+    // pipeline delays (D1 here), while the load-queue occupancy still comes
+    // from the older VirtualLoadQueue state (D2 here).
+    if (topDownStateD1.noUopsIssued && topDownStateD2.anyLoadPending &&
+        (topDownStateD1.l1Miss ||
+         topDownStateD1.l2Miss ||
+         topDownStateD1.l3Miss)) {
+        if (topDownStateD1.l1Miss)
+            stats.memstall_l1miss++;
+        if (topDownStateD1.l2Miss)
+            stats.memstall_l2miss++;
+        if (topDownStateD1.l3Miss)
+            stats.memstall_l3miss++;
+    }
+
+    if (!topDownStateD1.noUopsIssued &&
+        topDownStateD2.noStoreIssued &&
+        !topDownStateD2.sqEmpty) {
+        stats.memstall_any_store++;
+    }
+
+    topDownStateD2 = topDownStateD1;
+    topDownStateD1 = currentTopDownState;
 }
 
 void

@@ -956,6 +956,10 @@ class Fetch
     // Used to explicitly notify the BPU when an entry is consumed (Phase5 prep).
     unsigned ftqEntryFetchedInsts[MaxThreads]{};
 
+    // Suppress frontend bubble counting until the first valid instruction
+    // appears after a squash/flush, matching RTL head-bubble semantics.
+    bool frontendHeadBubble[MaxThreads]{};
+
     /** fetch stall reasons */
     std::vector<StallReason> stallReason;
 

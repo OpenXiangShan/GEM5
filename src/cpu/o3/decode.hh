@@ -70,6 +70,7 @@ class CPU;
 class Decode
 {
   public:
+
     /** Overall decode stage status. Used to determine if the CPU can
      * deschedule itself due to a lack of activity.
      */
@@ -275,6 +276,8 @@ class Decode
          * incorrectly predicted as a branch.
          */
         statistics::Scalar controlMispred;
+        /** Stat for cycles spent in redirect recovery at decode. */
+        statistics::Scalar recovery_bubble;
         /** Stat for total number of decoded instructions. */
         statistics::Scalar decodedInsts;
         /** Stat for total number of squashed instructions. */
@@ -293,7 +296,11 @@ class Decode
 
     void setAllStalls(StallReason decodeStall);
 
+    bool recoveryPending[MaxThreads] = {};
     SquashVersion localSquashVer;
+
+  public:
+    const DecodeStats &getDecodeStats() const { return stats; }
 };
 
 } // namespace o3

@@ -1035,33 +1035,89 @@ int LSQ::numLoads(ThreadID tid) { return thread.at(tid).numLoads(); }
 
 int LSQ::anyInflightLoadsNotComplete()
 {
+    return thread.at(0).topdownInflightLoadMask;
+}
+
+void
+LSQ::inflightLoadIssued(LSQRequest *request)
+{
+    auto &mask = thread.at(request->_port.lsqID).topdownInflightLoadMask;
+    const int depth = request->mainReq()->depth;
+
+    if (depth >= 1) {
+        mask |= 1 << 0;
+    }
+    if (depth >= 2) {
+        mask |= 1 << 1;
+    }
+    if (depth >= 3) {
+        mask |= 1 << 2;
+    }
+    mask |= 1 << 3;
+}
+
+void
+LSQ::inflightLoadCompleted(LSQRequest *request)
+{
+    auto &unit = thread.at(request->_port.lsqID);
     int l1miss = 0, l2miss = 0, l3miss = 0, any = 0;
+    for (auto it : unit.inflightLoads) {
+        if (!it->isAnyOutstandingRequest()) {
+            continue;
+        }
+        const int depth = it->mainReq()->depth;
+        if (depth >= 1) {
+            l1miss = 1;
+        }
+        if (depth >= 2) {
+            l2miss = 1 << 1;
+        }
+        if (depth >= 3) {
+            l3miss = 1 << 2;
+        }
+        any = 1 << 3;
+    }
+    unit.topdownInflightLoadMask = l1miss | l2miss | l3miss | any;
+}
+
+int
+LSQ::oldestInflightLoadsNotComplete()
+{
+    LSQRequest* oldest = nullptr;
     for (auto it : thread.at(0).inflightLoads) {
-        if (it->isAnyOutstandingRequest()) {
-            if (it->mainReq()->depth == 1) {
-                l1miss = 1;
-            }
-            if (it->mainReq()->depth == 2) {
-                l2miss = 1 << 1;
-            }
-            if (it->mainReq()->depth == 3) {
-                l3miss = 1 << 2;
-            }
-            any = 1 << 3;
+        if (!it->isAnyOutstandingRequest()) {
+            continue;
+        }
+        if (oldest == nullptr ||
+            it->instruction()->seqNum < oldest->instruction()->seqNum) {
+            oldest = it;
         }
     }
-    return l1miss | l2miss | l3miss | any;
+
+    if (oldest == nullptr) {
+        return 0;
+    }
+
+    int misslevel = 1 << 3;
+    const int depth = oldest->mainReq()->depth;
+    if (depth >= 1) {
+        misslevel |= 1 << 0;
+    }
+    if (depth >= 2) {
+        misslevel |= 1 << 1;
+    }
+    if (depth >= 3) {
+        misslevel |= 1 << 2;
+    }
+    return misslevel;
 }
 
 bool
 LSQ::anyStoreNotExecute()
 {
-    for (auto& it : thread.at(0).storeQueue) {
-        if (!it.instruction()->isIssued()) {
-            return true;
-        }
-    }
-    return false;
+    // Match RTL TopDownGen's mem_stall_store gate, which only requires the
+    // store queue to be non-empty when a no-store-issued cycle is observed.
+    return !sqEmpty();
 }
 
 int LSQ::numStores(ThreadID tid) { return thread.at(tid).numStores(); }
@@ -2186,6 +2242,7 @@ LSQ::SingleDataRequest::recvTimingResp(PacketPtr pkt)
         auto it = std::find(lsqUnit()->inflightLoads.begin(), lsqUnit()->inflightLoads.end(), this);
         if (it != lsqUnit()->inflightLoads.end()) {
             lsqUnit()->inflightLoads.erase(it);
+            lsqUnit()->getLsq()->inflightLoadCompleted(this);
         }
     }
 
@@ -2428,6 +2485,7 @@ LSQ::SingleDataRequest::sendPacketToCache()
         if (isLoad()) {
             assert(lsqUnit()->inflightLoads.size() < lsqUnit()->numLoads() + 4);
             lsqUnit()->inflightLoads.emplace_back(this);
+            lsqUnit()->getLsq()->inflightLoadIssued(this);
         }
 
         if (!bank_conflict) {

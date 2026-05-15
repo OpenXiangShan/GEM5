@@ -371,6 +371,17 @@ class CPU : public BaseCPU
     /** Reads the commit PC state of a specific thread. */
     const PCStateBase &pcState(ThreadID tid);
 
+    const DynInstPtr& readRobHeadInst(ThreadID tid) { return rob.readHeadInst(tid); }
+    const DynInstPtr& readRobDummyInst() { return rob.dummyInst; }
+    int anyCacheMissLoadsNotComplete() const
+    {
+        return iew.anyCacheMissLoadsNotComplete();
+    }
+    int oldestCacheMissLoadNotComplete() const
+    {
+        return iew.oldestCacheMissLoadNotComplete();
+    }
+
     /** Check if the CPU is in trace mode */
     bool isTraceMode() const { return fetch.isTraceMode(); }
 

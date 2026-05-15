@@ -863,6 +863,20 @@ InstructionQueue::cacheMissLdReplay(const DynInstPtr &deferred_inst)
     DPRINTF(IQ, "Get Cache Missed Load, insert to Replay Queue "
             "[sn:%llu]\n", deferred_inst->seqNum);
     cacheMissLdInsts.insert(deferred_inst);
+    if (!deferred_inst->isSquashed() && deferred_inst->savedRequest &&
+        !deferred_inst->cacheHit()) {
+        const int depth = deferred_inst->savedRequest->mainReq()->depth;
+        if (depth >= 1) {
+            topdownCacheMissMask |= 1 << 0;
+        }
+        if (depth >= 2) {
+            topdownCacheMissMask |= 1 << 1;
+        }
+        if (depth >= 3) {
+            topdownCacheMissMask |= 1 << 2;
+        }
+        topdownCacheMissMask |= 1 << 3;
+    }
 }
 
 void
@@ -925,6 +939,24 @@ InstructionQueue::getCacheMissInstToExecute()
                     "execute\n", (*it)->seqNum, (*it)->pcState());
             DynInstPtr mem_inst = *it;
             cacheMissLdInsts.erase(it);
+            topdownCacheMissMask = 0;
+            for (const auto& inst : cacheMissLdInsts) {
+                if (inst->isSquashed() || !inst->savedRequest ||
+                    inst->cacheHit()) {
+                    continue;
+                }
+                const int depth = inst->savedRequest->mainReq()->depth;
+                if (depth >= 1) {
+                    topdownCacheMissMask |= 1 << 0;
+                }
+                if (depth >= 2) {
+                    topdownCacheMissMask |= 1 << 1;
+                }
+                if (depth >= 3) {
+                    topdownCacheMissMask |= 1 << 2;
+                }
+                topdownCacheMissMask |= 1 << 3;
+            }
             return mem_inst;
         }
         if ((*it)->waitingCacheRefill()) {
@@ -936,6 +968,56 @@ InstructionQueue::getCacheMissInstToExecute()
         }
     }
     return nullptr;
+}
+
+namespace
+{
+
+int
+topdownMissLevelFromDepth(int depth)
+{
+    int misslevel = 0;
+    if (depth >= 1) {
+        misslevel |= 1 << 0;
+    }
+    if (depth >= 2) {
+        misslevel |= 1 << 1;
+    }
+    if (depth >= 3) {
+        misslevel |= 1 << 2;
+    }
+    return misslevel;
+}
+
+} // namespace
+
+int
+InstructionQueue::anyCacheMissLoadsNotComplete() const
+{
+    return topdownCacheMissMask;
+}
+
+int
+InstructionQueue::oldestCacheMissLoadNotComplete() const
+{
+    DynInstPtr oldest = nullptr;
+    for (const auto& inst : cacheMissLdInsts) {
+        if (inst->isSquashed() || !inst->savedRequest || inst->cacheHit()) {
+            continue;
+        }
+
+        if (!oldest || inst->seqNum < oldest->seqNum) {
+            oldest = inst;
+        }
+    }
+
+    if (!oldest) {
+        return 0;
+    }
+
+    int misslevel = 1 << 3;
+    misslevel |= topdownMissLevelFromDepth(oldest->savedRequest->mainReq()->depth);
+    return misslevel;
 }
 
 DynInstPtr

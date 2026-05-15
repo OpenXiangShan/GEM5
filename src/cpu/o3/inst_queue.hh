@@ -198,6 +198,8 @@ class InstructionQueue
      *  if it is now ready to execute.  NULL if none available.
      */
     DynInstPtr getCacheMissInstToExecute();
+    int anyCacheMissLoadsNotComplete() const;
+    int oldestCacheMissLoadNotComplete() const;
 
     /** Gets a load instruction that was referred due to data unready store
      *  if it is now ready to execute.  NULL if none available.
@@ -344,6 +346,7 @@ class InstructionQueue
       size_t operator()(const DynInstPtr& ptr) const;
     };
     std::unordered_set<DynInstPtr, CacheMissLdInstsHash> cacheMissLdInsts;
+    int topdownCacheMissMask = 0;
 
     struct STLFFailLdInst
     {
