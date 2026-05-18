@@ -24,7 +24,9 @@ namespace btb_pred
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 {
-    ftq.fetching(tid).fetchInstNum = fetched_inst_num;
+    auto &target = ftq.fetching(tid);
+    target.fetchInstNum = fetched_inst_num;
+    recordFdipFetchedTarget(target);
     ftq.finishTarget(tid);
 }
 
@@ -113,6 +115,77 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     registerExitCallback([this]() {
         this->dumpStats();
     });
+}
+
+unsigned
+DecoupledBPUWithBTB::fdipCandidateCacheBlocks(const FetchTarget &target) const
+{
+    const Addr blk_size = cpu ? cpu->cacheLineSize() : 64;
+    Addr end_pc = target.predEndPC;
+    if (end_pc <= target.startPC) {
+        end_pc = target.startPC + 1;
+    }
+
+    const Addr start_blk = target.startPC & ~(blk_size - 1);
+    const Addr end_blk = (end_pc - 1) & ~(blk_size - 1);
+    return (end_blk - start_blk) / blk_size + 1;
+}
+
+uint64_t
+DecoupledBPUWithBTB::fdipTargetAgeCycles(const FetchTarget &target) const
+{
+    if (!cpu || curTick() < target.predTick) {
+        return 0;
+    }
+    return static_cast<uint64_t>(cpu->ticksToCycles(curTick() - target.predTick));
+}
+
+void
+DecoupledBPUWithBTB::recordFdipCandidateTarget(const FetchTarget &target)
+{
+    const unsigned blocks = fdipCandidateCacheBlocks(target);
+    dbpBtbStats.fdipCandidateTargets++;
+    dbpBtbStats.fdipCandidateCacheBlocks.sample(blocks, 1);
+    dbpBtbStats.fdipCandidateCacheBlocksTotal += blocks;
+}
+
+void
+DecoupledBPUWithBTB::recordFdipFetchedTarget(const FetchTarget &target)
+{
+    dbpBtbStats.fdipTargetFetched++;
+    dbpBtbStats.fdipTargetFetchLatency.sample(fdipTargetAgeCycles(target), 1);
+}
+
+void
+DecoupledBPUWithBTB::recordFdipCommittedTarget(const FetchTarget &target)
+{
+    dbpBtbStats.fdipTargetCommitted++;
+    dbpBtbStats.fdipTargetCommitLatency.sample(fdipTargetAgeCycles(target), 1);
+}
+
+void
+DecoupledBPUWithBTB::recordFdipSquashedTargets(ThreadID tid,
+                                               FetchTargetId firstTargetId,
+                                               FetchTargetId lastTargetId)
+{
+    if (lastTargetId < firstTargetId) {
+        return;
+    }
+
+    unsigned squashed = 0;
+    for (auto id = firstTargetId; id <= lastTargetId; ++id) {
+        if (!ftq.hasTarget(id, tid)) {
+            continue;
+        }
+        const auto &target = ftq.get(id, tid);
+        dbpBtbStats.fdipTargetsSquashed++;
+        dbpBtbStats.fdipTargetSquashLatency.sample(fdipTargetAgeCycles(target), 1);
+        squashed++;
+    }
+
+    if (squashed > 0) {
+        dbpBtbStats.fdipSquashBatchSize.sample(squashed, 1);
+    }
 }
 
 
@@ -380,6 +453,8 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
         predTraceManager->write_record(PredictionTrace(ftq.backId(tid), entry));
     }
 
+    recordFdipCandidateTarget(entry);
+
     // 5. Add entry to fetch target queue
     ftq.insert(entry);
     threads[tid].validprediction = false;
@@ -447,6 +522,10 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
         // Use full branch info with static_inst if available
         target.exeBranchInfo = BranchInfo(squash_pc.instAddr(), redirect_pc, static_inst, control_inst_size);
         dumpFsq("Before control squash");
+    }
+
+    if (ftq.backId(tid) > target_id) {
+        recordFdipSquashedTargets(tid, target_id + 1, ftq.backId(tid));
     }
 
     // Remove targets after the squashed one
@@ -561,6 +640,8 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
                 "pred target: %#lx\n",
                 target.startPC, target.exeBranchInfo.pc, target.exeBranchInfo.target, target.predBranchInfo.pc,
                 target.predBranchInfo.target);
+
+        recordFdipCommittedTarget(target);
 
         // Update statistics
         updateStatistics(target);

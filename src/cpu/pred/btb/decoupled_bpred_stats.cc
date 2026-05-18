@@ -451,6 +451,26 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(commitFsqEntryHasInsts, statistics::units::Count::get(), "number of insts that commit fsq entries have"),
     ADD_STAT(commitFsqEntryFetchedInsts, statistics::units::Count::get(), "number of insts that commit fsq entries fetched"),
     ADD_STAT(commitFsqEntryOnlyHasOneJump, statistics::units::Count::get(), "number of fsq entries with only one instruction (jump)"),
+    ADD_STAT(fdipCandidateTargets, statistics::units::Count::get(),
+             "number of FSQ entries that could seed FDIP"),
+    ADD_STAT(fdipCandidateCacheBlocks, statistics::units::Count::get(),
+             "cache blocks covered by each FDIP candidate FSQ entry"),
+    ADD_STAT(fdipCandidateCacheBlocksTotal, statistics::units::Count::get(),
+             "total cache blocks covered by FDIP candidate FSQ entries"),
+    ADD_STAT(fdipTargetFetched, statistics::units::Count::get(),
+             "number of FDIP candidate FSQ entries consumed by fetch"),
+    ADD_STAT(fdipTargetFetchLatency, statistics::units::Cycle::get(),
+             "cycles from prediction to fetch consuming the FSQ entry"),
+    ADD_STAT(fdipTargetCommitted, statistics::units::Count::get(),
+             "number of FDIP candidate FSQ entries committed"),
+    ADD_STAT(fdipTargetCommitLatency, statistics::units::Cycle::get(),
+             "cycles from prediction to committing the FSQ entry"),
+    ADD_STAT(fdipTargetsSquashed, statistics::units::Count::get(),
+             "number of younger FDIP candidate FSQ entries removed by squash"),
+    ADD_STAT(fdipTargetSquashLatency, statistics::units::Cycle::get(),
+             "cycles from prediction to squash removal for FDIP candidates"),
+    ADD_STAT(fdipSquashBatchSize, statistics::units::Count::get(),
+             "number of younger FSQ entries removed by each squash"),
     ADD_STAT(btbHit, statistics::units::Count::get(), "btb hits (in predict block)"),
     ADD_STAT(btbMiss, statistics::units::Count::get(), "btb misses (in predict block)"),
     ADD_STAT(btbEntriesWithDifferentStart, statistics::units::Count::get(), "number of btb entries with different start PC"),
@@ -474,6 +494,11 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
+    fdipCandidateCacheBlocks.init(0, 8, 1);
+    fdipTargetFetchLatency.init(0, 4096, 16);
+    fdipTargetCommitLatency.init(0, 4096, 16);
+    fdipTargetSquashLatency.init(0, 4096, 16);
+    fdipSquashBatchSize.init(0, fsqSize, 1);
     branchClassCounts.init(NumBranchClasses);
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);

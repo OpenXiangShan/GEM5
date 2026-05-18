@@ -187,6 +187,14 @@ class DecoupledBPUWithBTB : public BPredUnit
      */
     void generateFinalPredAndCreateBubbles(ThreadID tid);
 
+    unsigned fdipCandidateCacheBlocks(const FetchTarget &target) const;
+    uint64_t fdipTargetAgeCycles(const FetchTarget &target) const;
+    void recordFdipCandidateTarget(const FetchTarget &target);
+    void recordFdipFetchedTarget(const FetchTarget &target);
+    void recordFdipCommittedTarget(const FetchTarget &target);
+    void recordFdipSquashedTargets(ThreadID tid, FetchTargetId firstTargetId,
+                                   FetchTargetId lastTargetId);
+
     void clearPreds(ThreadID tid) {
         for (auto &stagePred : threads[tid].predsOfEachStage) {
             stagePred.condTakens.clear();
@@ -286,6 +294,19 @@ class DecoupledBPUWithBTB : public BPredUnit
         // write back once an fsq entry finishes fetch
         statistics::Distribution commitFsqEntryFetchedInsts;
         statistics::Scalar commitFsqEntryOnlyHasOneJump;
+
+        // FDIP opportunity statistics. These do not issue prefetches; they
+        // measure whether predicted FSQ targets live long enough to be useful.
+        statistics::Scalar fdipCandidateTargets;
+        statistics::Distribution fdipCandidateCacheBlocks;
+        statistics::Scalar fdipCandidateCacheBlocksTotal;
+        statistics::Scalar fdipTargetFetched;
+        statistics::Distribution fdipTargetFetchLatency;
+        statistics::Scalar fdipTargetCommitted;
+        statistics::Distribution fdipTargetCommitLatency;
+        statistics::Scalar fdipTargetsSquashed;
+        statistics::Distribution fdipTargetSquashLatency;
+        statistics::Distribution fdipSquashBatchSize;
 
         statistics::Scalar btbHit;
         statistics::Scalar btbMiss;
