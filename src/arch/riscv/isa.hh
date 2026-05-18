@@ -38,11 +38,10 @@
 #include <vector>
 
 #include "arch/generic/isa.hh"
-#include "arch/riscv/insts/matrix.hh"
 #include "arch/riscv/pcstate.hh"
 #include "arch/riscv/types.hh"
 #include "base/types.hh"
-#include "cpu/exec_context.hh"
+#include "matrix/matrix_types.hh"
 
 namespace gem5
 {
@@ -79,26 +78,96 @@ enum class VPUStatus
 
 class ISA : public BaseISA
 {
+  public:
+    static constexpr RegVal MatrixTokenCount = 32;
+    static constexpr RegVal MatrixRowNum = 128;
+    static constexpr RegVal MatrixTrLenE8Max = 64;
+    static constexpr RegVal MatrixTrLenE16Max = 32;
+    static constexpr RegVal MatrixAccE32Max = 128;
+    static constexpr RegVal MatrixSewE8 = 0;
+    static constexpr RegVal MatrixSewE16 = 1;
+    static constexpr RegVal MatrixSewE32 = 2;
+
+    struct MatrixLsuStubRequest
+    {
+        bool valid = false;
+        bool isLoad = false;
+        bool transpose = false;
+        bool isAcc = false;
+        bool isA = false;
+        bool isB = false;
+        RegVal op = 0;
+        RegVal ms = 0;
+        RegVal baseAddr = 0;
+        RegVal stride = 0;
+        RegVal row = 0;
+        RegVal column = 0;
+        RegVal widths = 0;
+        matrix::MatrixElemType elemType = matrix::MatrixElemType::Int8;
+    };
+
+    struct MatrixMmaStubRequest
+    {
+        bool valid = false;
+        bool isFp = false;
+        RegVal op = 0;
+        RegVal md = 0;
+        RegVal ms1 = 0;
+        RegVal ms2 = 0;
+        RegVal mtilem = 0;
+        RegVal mtilen = 0;
+        RegVal mtilek = 0;
+        RegVal rm = 0;
+        RegVal frm = 0;
+        RegVal types1 = 0;
+        RegVal types2 = 0;
+        RegVal typed = 0;
+        matrix::MatrixElemType lhsElemType = matrix::MatrixElemType::Int8;
+        matrix::MatrixElemType rhsElemType = matrix::MatrixElemType::Int8;
+        matrix::MatrixElemType dstElemType = matrix::MatrixElemType::Int32;
+        RegVal sat = 0;
+    };
+
+    struct MatrixArithStubRequest
+    {
+        bool valid = false;
+        RegVal op = 0;
+        RegVal md = 0;
+    };
+
   protected:
     std::vector<RegVal> miscRegFile;
-    uint32_t matrixTileM = 0;
-    uint32_t matrixTileK = 0;
-    uint32_t matrixTileN = 0;
-    std::vector<int8_t> matrixTileA;
-    std::vector<int8_t> matrixTileB;
-    std::vector<int32_t> matrixAcc;
+    RegVal matrixXmxrm = 0;
+    RegVal matrixXmsat = 0;
+    RegVal matrixXmfflags = 0;
+    RegVal matrixXmfrm = 0;
+    RegVal matrixXmsaten = 0;
+    RegVal matrixTileM = 0;
+    RegVal matrixTileK = 0;
+    RegVal matrixTileN = 0;
     std::vector<RegVal> matrixTokens;
-
-    RegVal &
-    matrixToken(size_t idx);
-
-    const RegVal &
-    matrixToken(size_t idx) const;
+    MatrixLsuStubRequest matrixLastLsuReq;
+    MatrixMmaStubRequest matrixLastMmaReq;
+    MatrixArithStubRequest matrixLastArithReq;
+    bool readMatrixMiscReg(int misc_reg, RegVal &val) const;
 
   public:
     using Params = RiscvISAParams;
 
     void clear();
+    void clearMatrixStubRequests();
+    void recordMatrixLsuRequest(const MatrixLsuStubRequest &req);
+    void recordMatrixMmaRequest(const MatrixMmaStubRequest &req);
+    void recordMatrixArithRequest(const MatrixArithStubRequest &req);
+    void resetMatrixToken(RegVal token_idx);
+    void releaseMatrixToken(RegVal token_idx);
+    bool matrixTokenReady(RegVal token_idx, RegVal threshold) const;
+    const MatrixLsuStubRequest &lastMatrixLsuRequest() const
+    { return matrixLastLsuReq; }
+    const MatrixMmaStubRequest &lastMatrixMmaRequest() const
+    { return matrixLastMmaReq; }
+    const MatrixArithStubRequest &lastMatrixArithRequest() const
+    { return matrixLastArithReq; }
 
     PCStateBase *
     newPCState(Addr new_inst_addr=0) const override
@@ -129,23 +198,7 @@ class ISA : public BaseISA
     void unserialize(CheckpointIn &cp) override;
 
     ISA(const Params &p);
-
     void resetMatrixState();
-    void matrixSyncReset(uint64_t token_idx);
-    void matrixRelease(uint64_t token_idx);
-    void matrixAcquire(uint64_t token_idx, uint64_t target);
-    void setMatrixTileM(uint64_t value);
-    void setMatrixTileK(uint64_t value);
-    void setMatrixTileN(uint64_t value);
-    uint32_t getMatrixTileM() const { return matrixTileM; }
-    uint32_t getMatrixTileK() const { return matrixTileK; }
-    uint32_t getMatrixTileN() const { return matrixTileN; }
-    Fault matrixLoadA8(ExecContext *xc, Addr base, Addr stride);
-    Fault matrixLoadB8(ExecContext *xc, Addr base, Addr stride);
-    Fault matrixLoadC32(ExecContext *xc, Addr base, Addr stride);
-    Fault matrixStoreC32(ExecContext *xc, Addr base, Addr stride);
-    void matrixZeroAcc();
-    void matrixMMAccWB();
 
     void handleLockedRead(const RequestPtr &req) override;
 

@@ -106,6 +106,13 @@ static const OpClass VectorFloatReduceOp = enums::VectorFloatReduce;
 static const OpClass VectorMiscOp = enums::VectorMisc;
 static const OpClass VectorIntegerExtensionOp = enums::VectorIntegerExtension;
 static const OpClass VectorConfigOp = enums::VectorConfig;
+static const OpClass MatrixIntOp = enums::MatrixInt;
+static const OpClass MatrixReleaseOp = enums::MatrixRelease;
+static const OpClass MatrixCsrOp = enums::MatrixCsr;
+static const OpClass MatrixMmaOp = enums::MatrixMma;
+static const OpClass MatrixArithOp = enums::MatrixArith;
+static const OpClass MatrixSyncOp = enums::MatrixSync;
+static const OpClass MatrixMemOp = enums::MatrixMem;
 static const OpClass Num_OpClasses = enums::Num_OpClass;
 
 } // namespace gem5

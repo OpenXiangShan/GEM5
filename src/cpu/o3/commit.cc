@@ -76,7 +76,9 @@
 #include "debug/Faults.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/InstCommited.hh"
+#include "debug/MatrixCuteTrace.hh"
 #include "debug/O3PipeView.hh"
+#include "matrix/matrix_types.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
@@ -89,6 +91,28 @@ namespace gem5
 
 namespace o3
 {
+
+namespace
+{
+
+const char *
+requestKindName(matrix::CuteRequestKind kind)
+{
+    switch (kind) {
+      case matrix::CuteRequestKind::Lsu:
+        return "lsu";
+      case matrix::CuteRequestKind::Mma:
+        return "mma";
+      case matrix::CuteRequestKind::Arith:
+        return "arith";
+      case matrix::CuteRequestKind::Release:
+        return "release";
+    }
+
+    return "unknown";
+}
+
+} // anonymous namespace
 
 void
 Commit::processTrapEvent(ThreadID tid)
@@ -1262,6 +1286,27 @@ Commit::commitInsts()
                 "Trying to commit head instruction, [tid:%i] [sn:%llu]\n",
                 tid, head_inst->seqNum);
 
+        if (head_inst->isMatrixInst()) {
+            const auto &info = head_inst->matrixInstInfo();
+            DPRINTF(Commit,
+                    "Matrix ROB head [tid:%i] [sn:%llu] class=%s route=%s "
+                    "boundary=%s funct7=%#x rd=x%u rs1=x%u rs2=x%u "
+                    "executed=%d canCommit=%d fault=%d squashed=%d "
+                    "needAmu=%d dirtyMs=%d renamed=%d rob=%d "
+                    "renameAttempt=%u robAttempt=%u squashAttempt=%u.\n",
+                    tid, head_inst->seqNum, head_inst->matrixInstClassName(),
+                    head_inst->matrixRouteName(),
+                    head_inst->matrixCommitBoundaryName(), info.funct7,
+                    info.rd, info.rs1, info.rs2,
+                    head_inst->isExecuted(), head_inst->readyToCommit(),
+                    head_inst->getFault() != NoFault, head_inst->isSquashed(),
+                    head_inst->matrixNeedAmuCtrl(),
+                    head_inst->matrixDirtyMs(),
+                    info.renameSeen,
+                    info.robInserted, info.renameAttempt,
+                    info.robAttempt, info.squashAttempt);
+        }
+
         // If the head instruction is squashed, it is ready to retire
         // (be removed from the ROB) at any time.
         if (head_inst->isSquashed()) {
@@ -1564,6 +1609,38 @@ Commit::commitInsts()
         toIEW->commitInfo[tid].robheadSeqNum = robheadSeqNum;
     }
 
+    bool firedMatrixAmuProxy = false;
+    for (auto it = activeThreads->begin();
+         it != activeThreads->end() && !firedMatrixAmuProxy; ++it) {
+        ThreadID tid = *it;
+        ROB::MatrixAmuEntry entry;
+        if (!rob->peekReadyMatrixAmuEntry(tid, entry)) {
+            continue;
+        }
+
+        if (!cpu->canAcceptMatrixBackendReq(
+                entry.backendReq, entry.seqNum)) {
+            DPRINTF(Commit,
+                    "Matrix toAMU proxy blocked [tid:%i] [sn:%llu] "
+                    "kind=%s backend cannot accept yet.\n",
+                    tid, entry.seqNum,
+                    requestKindName(entry.backendReq.kind));
+            DPRINTF(MatrixCuteTrace,
+                    "amu proxy blocked [tid:%i] [sn:%llu] kind=%s.\n",
+                    tid, entry.seqNum,
+                    requestKindName(entry.backendReq.kind));
+            continue;
+        }
+
+        const bool popped = rob->popReadyMatrixAmuEntry(tid, entry);
+        panic_if(!popped,
+                 "Matrix AMU entry disappeared after backend accept "
+                 "[tid:%i] [sn:%llu]",
+                 tid, entry.seqNum);
+        cpu->consumeMatrixAmuProxy(tid, entry);
+        firedMatrixAmuProxy = true;
+    }
+
     DPRINTF(CommitRate, "%i\n", num_committed);
     stats.numCommittedDist.sample(num_committed);
 
@@ -1860,6 +1937,12 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     if (head_inst->isHtmStart())
         iewStage->setLastRetiredHtmUid(tid, head_inst->getHtmTransactionUid());
 
+    if (head_inst->hasStagedMatrixTokenReset()) {
+        cpu->commitMatrixResetToken(
+            tid, head_inst->stagedMatrixTokenResetIndex(),
+            head_inst->seqNum);
+    }
+
     if (valuePred && head_inst->canLVP() && (inst_fault == NoFault)) {
         valuepred::VPUpdateMetaData *updateMetaData = valuepred::
                     VPDataStructFactory::buildUpdateMetaData(valuePred->getValuePredictorType());
@@ -1879,6 +1962,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         delete updateMetaData;
     }
 
+    rob->noteMatrixAmuCommit(head_inst);
     // Finally clear the head ROB entry.
     rob->retireHead(tid);
 
@@ -1919,7 +2003,17 @@ Commit::moveInstsToBuffer()
     ThreadID tid = InvalidThreadID;
     for (int i = 0; i < numThreads; i++) {
         bool robblock = commitStatus[i] == ROBSquashing || commitStatus[i] == TrapPending;
-        bool block = (rob->getMaxEntries(i) - rob->getThreadEntries(i) < fixedbuffer[i].size()) || robblock;
+        const bool robEntryBlock =
+            rob->getMaxEntries(i) - rob->getThreadEntries(i) < fixedbuffer[i].size();
+        unsigned amuEntryDemand = 0;
+        for (const auto &inst : fixedbuffer[i]) {
+            if (inst && !inst->isSquashed()) {
+                ++amuEntryDemand;
+            }
+        }
+        const bool matrixAmuEntryBlock =
+            rob->numFreeMatrixAmuEntries(i) < amuEntryDemand;
+        bool block = robEntryBlock || matrixAmuEntryBlock || robblock;
         bool active = !block && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (robblock) {
@@ -1930,7 +2024,14 @@ Commit::moveInstsToBuffer()
                 block_reason = StallReason::ROBFull;
             }
         }
-        DPRINTF(Commit, "Thread %i: block %i robblock %i active %i\n", i, block, robblock, active);
+        DPRINTF(Commit,
+                "Thread %i: block %i robblock %i robEntryBlock %i "
+                "matrixAmuEntryBlock %i active %i shadowFree %u shadowDemand %u "
+                "renameBuffered %llu\n",
+                i, block, robblock, robEntryBlock, matrixAmuEntryBlock, active,
+                rob->numFreeMatrixAmuEntries(i),
+                amuEntryDemand,
+                static_cast<unsigned long long>(fixedbuffer[i].size()));
 
         stallSig->blockIEW[i] = block;
         stallSig->iewBlockReason[i] = block ? block_reason : StallReason::NoStall;
@@ -2020,6 +2121,7 @@ Commit::markCompletedInsts()
             // Mark the instruction as ready to commit.
             fromIEW->insts[inst_num]->setCanCommit();
             auto &inst = fromIEW->insts[inst_num];
+            rob->noteMatrixAmuWriteback(inst);
 
             panic_if(!rob->findInst(0, inst->seqNum), "[sn:%llu] Committed instruction not found in ROB",
                      inst->seqNum);

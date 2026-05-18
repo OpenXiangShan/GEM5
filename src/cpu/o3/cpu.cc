@@ -45,7 +45,6 @@
 #include <cassert>
 #include <limits>
 
-#include "arch/riscv/regs/misc.hh"
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
 #include "cpu/checker/cpu.hh"
@@ -61,6 +60,7 @@
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/Drain.hh"
+#include "debug/MatrixCuteTrace.hh"
 #include "debug/O3CPU.hh"
 #include "debug/Quiesce.hh"
 #include "debug/ValueCommit.hh"
@@ -72,6 +72,13 @@
 #include "sim/stat_control.hh"
 #include "sim/system.hh"
 
+#if THE_ISA_IS_RISCV
+#include "arch/riscv/regs/misc.hh"
+#include "matrix/detailed_cute_backend.hh"
+#include "matrix/matrix_memory_adapter.hh"
+
+#endif
+
 namespace gem5
 {
 
@@ -79,6 +86,30 @@ struct BaseCPUParams;
 
 namespace o3
 {
+
+#if THE_ISA_IS_RISCV
+namespace
+{
+
+const char *
+requestKindName(matrix::CuteRequestKind kind)
+{
+    switch (kind) {
+      case matrix::CuteRequestKind::Lsu:
+        return "lsu";
+      case matrix::CuteRequestKind::Mma:
+        return "mma";
+      case matrix::CuteRequestKind::Arith:
+        return "arith";
+      case matrix::CuteRequestKind::Release:
+        return "release";
+    }
+
+    return "unknown";
+}
+
+} // anonymous namespace
+#endif
 
 CPU::CPU(const BaseO3CPUParams &params)
     : BaseCPU(params),
@@ -161,6 +192,22 @@ CPU::CPU(const BaseO3CPUParams &params)
         thread.resize(numThreads);
         tids.resize(numThreads);
     }
+
+#if THE_ISA_IS_RISCV
+    matrixShadowTokens.assign(
+        numThreads,
+        std::vector<RegVal>(TheISA::ISA::MatrixTokenCount, 0));
+    matrixTokenResetSeqs.assign(
+        numThreads,
+        std::vector<InstSeqNum>(TheISA::ISA::MatrixTokenCount, 0));
+    auto makeMemoryAdapter = [this]() {
+        return std::make_unique<matrix::Gem5MatrixMemoryAdapter>(
+            system->physProxy);
+    };
+    constexpr unsigned detailedCuteFifoDepth = 8;
+    matrixBackend = std::make_unique<matrix::DetailedCuteBackend>(
+        makeMemoryAdapter(), detailedCuteFifoDepth);
+#endif
 
     // The stages also need their CPU pointer setup.  However this
     // must be done at the upper level CPU because they have pointers
@@ -586,6 +633,7 @@ CPU::tick()
     rename.tick();
     decode.tick();
     fetch.tick();
+    serviceMatrixBackend();
 
     fetchTimebuffer.advance();
     decodeTimebuffer.advance();
@@ -921,6 +969,21 @@ CPU::trap(const Fault &fault, ThreadID tid, const StaticInstPtr &inst)
 void
 CPU::serializeThread(CheckpointOut &cp, ThreadID tid) const
 {
+#if THE_ISA_IS_RISCV
+    if (tid == 0 && matrixBackend &&
+        matrixBackend->hasArchitecturalState()) {
+        panic("Serializing O3 CPU with live matrix register state is "
+              "unsupported; checkpoint would lose backend register contents.");
+    }
+
+    if (tid == 0 && matrixBackend &&
+        (matrixBackend->hasWork() || matrixBackend->hasCompletion() ||
+         !matrixBackendOwners.empty())) {
+        panic("Serializing O3 CPU with pending or live matrix backend state "
+              "is unsupported; drain/checkpoint must not lose matrix "
+              "register contents.");
+    }
+#endif
     thread[tid]->serialize(cp);
 }
 
@@ -935,6 +998,13 @@ CPU::drain()
 {
     // Deschedule any power gating event (if any)
     deschedulePowerGatingEvent();
+
+#if THE_ISA_IS_RISCV
+    if (matrixBackend && matrixBackend->hasArchitecturalState()) {
+        panic("Draining O3 CPU with live matrix register state is unsupported; "
+              "checkpoint would lose backend register contents.");
+    }
+#endif
 
     // If the CPU isn't doing anything, then return immediately.
     if (switchedOut())
@@ -1053,6 +1123,15 @@ CPU::isCpuDrained() const
         drained = false;
     }
 
+#if THE_ISA_IS_RISCV
+    if (matrixBackend &&
+        (matrixBackend->hasWork() || matrixBackend->hasCompletion() ||
+         !matrixBackendOwners.empty())) {
+        DPRINTF(Drain, "Matrix backend not drained.\n");
+        drained = false;
+    }
+#endif
+
     return drained;
 }
 
@@ -1155,6 +1234,289 @@ CPU::setMiscReg(int misc_reg, RegVal val, ThreadID tid)
 {
     cpuStats.miscRegfileWrites++;
     isa[tid]->setMiscReg(misc_reg, val);
+}
+
+void
+CPU::commitMatrixResetToken(ThreadID tid, RegVal token_idx,
+                            InstSeqNum seq_num)
+{
+#if THE_ISA_IS_RISCV
+    assert(tid < matrixShadowTokens.size());
+    assert(token_idx < matrixShadowTokens[tid].size());
+    DPRINTF(Commit,
+            "Matrix reset token commit [tid:%i] [sn:%llu] token=%llu.\n",
+            tid, seq_num, token_idx);
+    matrixShadowTokens[tid][token_idx] = 0;
+    matrixTokenResetSeqs[tid][token_idx] = seq_num;
+    isa[tid]->resetMatrixToken(token_idx);
+#else
+    panic("Matrix token reset is only supported by the RISC-V ISA");
+#endif
+}
+
+void
+CPU::releaseMatrixShadowToken(ThreadID tid, RegVal token_idx)
+{
+#if THE_ISA_IS_RISCV
+    assert(tid < matrixShadowTokens.size());
+    assert(token_idx < matrixShadowTokens[tid].size());
+    matrixShadowTokens[tid][token_idx]++;
+#else
+    panic("Matrix token release is only supported by the RISC-V ISA");
+#endif
+}
+
+bool
+CPU::matrixShadowTokenReady(ThreadID tid, RegVal token_idx,
+                            RegVal threshold) const
+{
+#if THE_ISA_IS_RISCV
+    assert(tid < matrixShadowTokens.size());
+    assert(token_idx < matrixShadowTokens[tid].size());
+    return matrixShadowTokens[tid][token_idx] >= threshold;
+#else
+    return true;
+#endif
+}
+
+void
+CPU::commitMatrixReleaseToken(ThreadID tid, RegVal token_idx,
+                              InstSeqNum seq_num)
+{
+#if THE_ISA_IS_RISCV
+    assert(tid < matrixShadowTokens.size());
+    assert(token_idx < matrixShadowTokens[tid].size());
+    const auto reset_seq = matrixTokenResetSeqs[tid][token_idx];
+    if (reset_seq != 0 && seq_num <= reset_seq) {
+        DPRINTF(Commit,
+                "Matrix release ignored after newer reset [tid:%i] "
+                "[sn:%llu] token=%llu resetSn=%llu.\n",
+                tid, seq_num, token_idx, reset_seq);
+        return;
+    }
+    DPRINTF(Commit,
+            "Matrix release temporary token update [tid:%i] [sn:%llu] "
+            "token=%llu value=%#x.\n",
+            tid, seq_num, token_idx, matrixShadowTokens[tid][token_idx] + 1);
+    matrixShadowTokens[tid][token_idx]++;
+    isa[tid]->releaseMatrixToken(token_idx);
+#else
+    panic("Matrix token release is only supported by the RISC-V ISA");
+#endif
+}
+
+bool
+CPU::canAcceptMatrixBackendReq(const matrix::CuteRequest &req,
+                               InstSeqNum seq_num)
+{
+#if THE_ISA_IS_RISCV
+    if (!matrixBackend) {
+        return true;
+    }
+
+    const bool accepted = matrixBackend->canAccept(req);
+    if (!accepted) {
+        DPRINTF(MatrixCuteTrace,
+                "backend blocked [sn:%llu] kind=%s cannot accept.\n",
+                seq_num, requestKindName(req.kind));
+    }
+    return accepted;
+#else
+    return true;
+#endif
+}
+
+bool
+CPU::submitMatrixBackendReq(ThreadID tid, const matrix::CuteRequest &req,
+                            InstSeqNum seq_num)
+{
+#if THE_ISA_IS_RISCV
+    if (!matrixBackend) {
+        return true;
+    }
+
+    if (!matrixBackend->canAccept(req)) {
+        return false;
+    }
+
+    const bool inserted = matrixBackendOwners.emplace(seq_num, tid).second;
+    panic_if(!inserted,
+             "Duplicate matrix backend owner [tid:%i] [sn:%llu]",
+             tid, seq_num);
+
+    DPRINTF(MatrixCuteTrace,
+            "backend submit [tid:%i] [sn:%llu] kind=%s.\n",
+            tid, seq_num, requestKindName(req.kind));
+    auto submit_req = req;
+    if (submit_req.kind == matrix::CuteRequestKind::Lsu) {
+        submit_req.lsu.tc = tcBase(tid);
+    }
+    matrixBackend->submit(submit_req);
+    return true;
+#else
+    panic("Matrix backend requests are only supported by the RISC-V ISA");
+#endif
+}
+
+void
+CPU::serviceMatrixBackend()
+{
+#if THE_ISA_IS_RISCV
+    if (!matrixBackend) {
+        return;
+    }
+
+    if (matrixBackend->hasWork()) {
+        DPRINTF(MatrixCuteTrace, "backend step begin.\n");
+        matrixBackend->step();
+    }
+
+    while (matrixBackend->hasCompletion()) {
+        auto completion = matrixBackend->popCompletion();
+        auto it = matrixBackendOwners.find(completion.seq);
+        panic_if(it == matrixBackendOwners.end(),
+                 "Matrix backend completion missing owner [sn:%llu]",
+                 completion.seq);
+
+        DPRINTF(MatrixCuteTrace,
+                "backend completion [tid:%i] [sn:%llu] kind=%d status=%d "
+                "tokenRelease=%d token=%u.\n",
+                it->second, completion.seq, static_cast<int>(completion.kind),
+                static_cast<int>(completion.status),
+                completion.hasTokenRelease, completion.tokenIdx);
+        if (completion.status == matrix::CuteCompletionStatus::Success &&
+            completion.kind == matrix::CuteRequestKind::Release &&
+            completion.hasTokenRelease) {
+            commitMatrixReleaseToken(
+                it->second, completion.tokenIdx, completion.seq);
+        }
+        matrixBackendOwners.erase(it);
+    }
+
+    if (matrixBackend->hasWork() || matrixBackend->hasCompletion() ||
+        !matrixBackendOwners.empty()) {
+        activityRec.activity();
+        DPRINTF(MatrixCuteTrace,
+                "backend pending keeps cpu active work=%d completion=%d "
+                "owners=%llu.\n",
+                matrixBackend->hasWork(), matrixBackend->hasCompletion(),
+                static_cast<unsigned long long>(matrixBackendOwners.size()));
+    }
+#endif
+}
+
+void
+CPU::consumeMatrixAmuProxy(ThreadID tid,
+                           const o3::MatrixAmuBuffer::Entry &entry)
+{
+#if THE_ISA_IS_RISCV
+    const auto &backend_req = entry.backendReq;
+    const auto seq_num = entry.seqNum;
+
+    DPRINTF(Commit,
+            "Matrix toAMU proxy fire [tid:%i] [sn:%llu] kind=%s.\n",
+            tid, seq_num, requestKindName(backend_req.kind));
+
+    switch (backend_req.kind) {
+      case matrix::CuteRequestKind::Release:
+        {
+            const bool submitted = submitMatrixBackendReq(
+                tid, backend_req, seq_num);
+            panic_if(!submitted,
+                     "Matrix backend rejected release request after toAMU proxy "
+                     "[tid:%i] [sn:%llu]",
+                     tid, seq_num);
+            DPRINTF(MatrixCuteTrace,
+                    "release submit [tid:%i] [sn:%llu] token=%llu.\n",
+                    tid, seq_num, backend_req.release.tokenIndex);
+        }
+        DPRINTF(Commit,
+                "Matrix release backend-visible after toAMU proxy "
+                "[tid:%i] [sn:%llu] token=%llu.\n",
+                tid, seq_num, backend_req.release.tokenIndex);
+        break;
+      case matrix::CuteRequestKind::Mma:
+        {
+            RiscvISA::ISA::MatrixMmaStubRequest req;
+            req.valid = true;
+            req.isFp = backend_req.mma.isFp;
+            req.op = backend_req.op;
+            req.md = backend_req.mma.md;
+            req.ms1 = backend_req.mma.ms1;
+            req.ms2 = backend_req.mma.ms2;
+            req.mtilem = backend_req.mma.mtilem;
+            req.mtilen = backend_req.mma.mtilen;
+            req.mtilek = backend_req.mma.mtilek;
+            req.rm = backend_req.mma.rm;
+            req.frm = backend_req.mma.frm;
+            req.types1 = backend_req.mma.types1;
+            req.types2 = backend_req.mma.types2;
+            req.typed = backend_req.mma.typed;
+            req.lhsElemType = backend_req.mma.lhsElemType;
+            req.rhsElemType = backend_req.mma.rhsElemType;
+            req.dstElemType = backend_req.mma.dstElemType;
+            req.sat = backend_req.mma.sat;
+            const bool submitted = submitMatrixBackendReq(
+                tid, backend_req, seq_num);
+            panic_if(!submitted,
+                     "Matrix backend rejected MMA request after toAMU proxy "
+                     "[tid:%i] [sn:%llu]",
+                     tid, seq_num);
+            isa[tid]->recordMatrixMmaRequest(req);
+        }
+        break;
+      case matrix::CuteRequestKind::Arith:
+        {
+            RiscvISA::ISA::MatrixArithStubRequest req;
+            req.valid = true;
+            req.op = backend_req.op;
+            req.md = backend_req.arith.reg;
+            const bool submitted = submitMatrixBackendReq(
+                tid, backend_req, seq_num);
+            panic_if(!submitted,
+                     "Matrix backend rejected arith request after toAMU proxy "
+                     "[tid:%i] [sn:%llu]",
+                     tid, seq_num);
+            isa[tid]->recordMatrixArithRequest(req);
+        }
+        break;
+      case matrix::CuteRequestKind::Lsu:
+        {
+            RiscvISA::ISA::MatrixLsuStubRequest req;
+            req.valid = true;
+            req.isLoad = !backend_req.lsu.isStore;
+            req.transpose = backend_req.lsu.transpose;
+            req.isAcc = backend_req.lsu.isAcc;
+            req.isA = backend_req.lsu.isA;
+            req.isB = backend_req.lsu.isB;
+            req.op = backend_req.op;
+            req.ms = backend_req.lsu.ms;
+            req.baseAddr = backend_req.lsu.baseAddr;
+            req.stride = backend_req.lsu.stride;
+            req.row = backend_req.lsu.row;
+            req.column = backend_req.lsu.column;
+            req.widths = backend_req.lsu.widths;
+            req.elemType = backend_req.lsu.elemType;
+            const bool submitted = submitMatrixBackendReq(
+                tid, backend_req, seq_num);
+            panic_if(!submitted,
+                     "Matrix backend rejected LSU request after toAMU proxy "
+                     "[tid:%i] [sn:%llu]",
+                     tid, seq_num);
+            isa[tid]->recordMatrixLsuRequest(req);
+            DPRINTF(Commit,
+                    "Matrix LSU backend-visible after toAMU proxy "
+                    "[tid:%i] [sn:%llu] load=%d store=%d base=%#llx "
+                    "stride=%#llx row=%#llx column=%#llx.\n",
+                    tid, seq_num, req.isLoad, backend_req.lsu.isStore,
+                    backend_req.lsu.baseAddr, backend_req.lsu.stride,
+                    backend_req.lsu.row, backend_req.lsu.column);
+        }
+        break;
+    }
+#else
+    panic("Matrix AMU proxy is only supported by the RISC-V ISA");
+#endif
 }
 
 RegVal

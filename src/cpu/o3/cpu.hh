@@ -43,10 +43,13 @@
 #ifndef __CPU_O3_CPU_HH__
 #define __CPU_O3_CPU_HH__
 
+#include <deque>
 #include <iostream>
 #include <list>
+#include <memory>
 #include <queue>
 #include <set>
+#include <unordered_map>
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
@@ -55,6 +58,7 @@
 #include "cpu/activity.hh"
 #include "cpu/base.hh"
 #include "cpu/difftest.hh"
+#include "cpu/exec_context.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/commit.hh"
 #include "cpu/o3/cpu_def.hh"
@@ -76,6 +80,11 @@
 #include "params/BaseO3CPU.hh"
 #include "sim/process.hh"
 #include "sim/rolling.hh"
+
+#if THE_ISA_IS_RISCV
+#include "matrix/matrix_backend.hh"
+
+#endif
 
 namespace gem5
 {
@@ -342,6 +351,20 @@ class CPU : public BaseCPU
      * might have as defined by the architecture.
      */
     void setMiscReg(int misc_reg, RegVal val, ThreadID tid);
+    void commitMatrixResetToken(
+        ThreadID tid, RegVal token_idx, InstSeqNum seq_num);
+    void releaseMatrixShadowToken(ThreadID tid, RegVal token_idx);
+    bool matrixShadowTokenReady(ThreadID tid, RegVal token_idx,
+                                RegVal threshold) const;
+    void commitMatrixReleaseToken(
+        ThreadID tid, RegVal token_idx, InstSeqNum seq_num);
+    bool canAcceptMatrixBackendReq(const matrix::CuteRequest &req,
+                                   InstSeqNum seq_num);
+    bool submitMatrixBackendReq(ThreadID tid, const matrix::CuteRequest &req,
+                                InstSeqNum seq_num);
+    void serviceMatrixBackend();
+    void consumeMatrixAmuProxy(ThreadID tid,
+        const o3::MatrixAmuBuffer::Entry &entry);
 
     RegVal getReg(PhysRegIdPtr phys_reg);
     RegVal getReg(VirtRegId phys_reg);
@@ -616,6 +639,14 @@ class CPU : public BaseCPU
 
     /** Available thread ids in the cpu*/
     std::vector<ThreadID> tids;
+
+
+#if THE_ISA_IS_RISCV
+    std::vector<std::vector<RegVal>> matrixShadowTokens;
+    std::vector<std::vector<InstSeqNum>> matrixTokenResetSeqs;
+    std::unique_ptr<matrix::MatrixBackend> matrixBackend;
+#endif
+    std::unordered_map<InstSeqNum, ThreadID> matrixBackendOwners;
 
     /** CPU pushRequest function, forwards request to LSQ. */
     Fault

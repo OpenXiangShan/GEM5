@@ -74,7 +74,10 @@ class OpClass(Enum):
 
             'VectorIntegerArith', 'VectorFloatArith', 'VectorFloatConvert',
             'VectorIntegerReduce', 'VectorFloatReduce',
-            'VectorMisc', 'VectorIntegerExtension', 'VectorConfig'
+            'VectorMisc', 'VectorIntegerExtension', 'VectorConfig',
+
+            'MatrixInt', 'MatrixRelease', 'MatrixCsr',
+            'MatrixMma', 'MatrixArith', 'MatrixSync', 'MatrixMem'
             ]
 
 class OpDesc(SimObject):

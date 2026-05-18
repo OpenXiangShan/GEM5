@@ -148,8 +148,10 @@ class IssueQue : public SimObject
     // issueport : regfileport : priority
     std::vector<std::vector<std::pair<int, int>>> intRdRfTPI;
     std::vector<std::vector<std::pair<int, int>>> fpRdRfTPI;
+    std::vector<std::vector<std::pair<int, int>>> rMiscRdRfTPI;
 
     std::vector<std::vector<std::pair<int, int>>> intWrRfTPI;
+    std::vector<std::vector<std::pair<int, int>>> rMiscWrRfTPI;
 
     std::vector<int64_t> portBusy;
 

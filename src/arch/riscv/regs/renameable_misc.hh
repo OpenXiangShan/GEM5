@@ -17,7 +17,10 @@ enum : RegIndex
     _VlIdx,
     _VtypeIdx,
     _FuseTmp,
-    NumRegs=10
+    _MtilemIdx,
+    _MtilenIdx,
+    _MtilekIdx,
+    NumRegs
 };
 
 }

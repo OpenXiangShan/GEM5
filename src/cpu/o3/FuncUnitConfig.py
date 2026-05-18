@@ -43,9 +43,38 @@ from m5.params import *
 
 from m5.objects.FuncUnit import *
 
+MATRIX_INT_LATENCY = 1
+MATRIX_RELEASE_LATENCY = 1
+MATRIX_CSR_LATENCY = 1
+MATRIX_MMA_LATENCY = 1
+MATRIX_ARITH_LATENCY = 1
+MATRIX_SYNC_LATENCY = 1
+MATRIX_MEM_LATENCY = 3
+
 class IntMisc(FUDesc):
     opList = [ OpDesc(opClass='No_OpClass', opLat=5, pipelined=False),
                OpDesc(opClass='VectorConfig') ]
+
+class MatrixIntFU(FUDesc):
+    opList = [ OpDesc(opClass='MatrixInt', opLat=MATRIX_INT_LATENCY) ]
+
+class MatrixReleaseFU(FUDesc):
+    opList = [ OpDesc(opClass='MatrixRelease', opLat=MATRIX_RELEASE_LATENCY) ]
+
+class MatrixCsrFU(FUDesc):
+    opList = [ OpDesc(opClass='MatrixCsr', opLat=MATRIX_CSR_LATENCY) ]
+
+class MatrixMmaFU(FUDesc):
+    opList = [ OpDesc(opClass='MatrixMma', opLat=MATRIX_MMA_LATENCY) ]
+
+class MatrixArithFU(FUDesc):
+    opList = [ OpDesc(opClass='MatrixArith', opLat=MATRIX_ARITH_LATENCY) ]
+
+class MatrixSyncFU(FUDesc):
+    opList = [ OpDesc(opClass='MatrixSync', opLat=MATRIX_SYNC_LATENCY, pipelined=False) ]
+
+class MatrixMemFU(FUDesc):
+    opList = [ OpDesc(opClass='MatrixMem', opLat=MATRIX_MEM_LATENCY) ]
 
 class IntCvt(FUDesc):
     opList = [ OpDesc(opClass='Int2Fp', opLat=4) ]

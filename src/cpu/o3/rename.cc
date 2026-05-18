@@ -540,6 +540,23 @@ Rename::renameInsts(ThreadID tid)
         renameSrcRegs(inst, inst->threadNumber);
 
         renameDestRegs(inst, inst->threadNumber);
+        inst->noteMatrixRenamed();
+
+        if (inst->isMatrixInst()) {
+            const auto &info = inst->matrixInstInfo();
+            DPRINTF(Rename,
+                    "[tid:%i] Matrix rename complete [sn:%llu] class=%s "
+                    "route=%s boundary=%s needAmu=%d dirtyMs=%d usesLsq=%d "
+                    "renamed=%d squashed=%d renameAttempt=%u "
+                    "robAttempt=%u squashAttempt=%u.\n",
+                    tid, inst->seqNum, inst->matrixInstClassName(),
+                    inst->matrixRouteName(),
+                    inst->matrixCommitBoundaryName(),
+                    inst->matrixNeedAmuCtrl(), inst->matrixDirtyMs(),
+                    info.usesLsq,
+                    info.renameSeen, info.squashed, info.renameAttempt,
+                    info.robAttempt, info.squashAttempt);
+        }
 
         cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtRename);
 
@@ -784,8 +801,11 @@ Rename::renameSrcRegs(const DynInstPtr &inst, ThreadID tid)
     UnifiedRenameMap *map = renameMap[tid];
     unsigned num_src_regs = inst->numSrcRegs();
 
-    // Get the architectual register numbers from the source and
-    // operands, and redirect them to the right physical register.
+    // Get the architectural source registers and redirect them to the
+    // right physical registers. Matrix state reads intentionally reuse
+    // this same slot-based rename path; decode fixes the src slot order
+    // so later execute-side code can read PRF values through the normal
+    // getRegOperand() interface.
     for (int src_idx = 0; src_idx < num_src_regs; src_idx++) {
         const RegId& src_reg = inst->srcRegIdx(src_idx);
         VirtRegId renamed_reg;

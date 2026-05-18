@@ -108,6 +108,98 @@ class DynInst : public ExecContext, public RefCounted
         uint8_t *readySrcIdx;
     };
 
+    enum class MatrixInstClass : uint8_t
+    {
+        None,
+        Init,
+        Set,
+        Csr,
+        Lsu,
+        Mma,
+        Arith,
+        Sync
+    };
+
+    enum class MatrixRouteKind : uint8_t
+    {
+        None,
+        Init,
+        SetTile,
+        TileCsr,
+        Lsu,
+        Mma,
+        Arith,
+        Release,
+        SyncReset,
+        Acquire
+    };
+
+    enum class MatrixCommitBoundary : uint8_t
+    {
+        None,
+        ArchStateOnly,
+        TokenSyncOnly,
+        FutureAmuProducer
+    };
+
+    enum class MatrixStateOperand : uint8_t
+    {
+        None,
+        Mtilem,
+        Mtilen,
+        Mtilek,
+    };
+
+    static constexpr size_t MaxMatrixSummarySrcs = 6;
+    static constexpr size_t MaxMatrixSummaryDests = 2;
+    static constexpr size_t MaxMatrixStateOperands = 6;
+
+    struct MatrixInstInfo
+    {
+        bool valid = false;
+        MatrixInstClass instClass = MatrixInstClass::None;
+        MatrixRouteKind route = MatrixRouteKind::None;
+        MatrixCommitBoundary commitBoundary = MatrixCommitBoundary::None;
+        uint16_t csrIndex = 0;
+        uint8_t opcode7 = 0;
+        uint8_t funct7 = 0;
+        uint8_t funct3 = 0;
+        uint8_t rd = 0;
+        uint8_t rs1 = 0;
+        uint8_t rs2 = 0;
+        uint8_t staticNumSrcs = 0;
+        uint8_t staticNumDests = 0;
+        uint8_t tokenIndex = 0;
+        bool loadLike = false;
+        bool storeLike = false;
+        bool tokenLike = false;
+        bool usesLsq = false;
+        bool needAmuCtrlCandidate = false;
+        bool renameSeen = false;
+        bool robInserted = false;
+        bool squashed = false;
+        uint16_t renameAttempt = 0;
+        uint16_t robAttempt = 0;
+        uint16_t squashAttempt = 0;
+        std::array<RegClassType, MaxMatrixSummarySrcs> staticSrcClasses = {
+            InvalidRegClass, InvalidRegClass, InvalidRegClass,
+            InvalidRegClass, InvalidRegClass
+        };
+        std::array<uint16_t, MaxMatrixSummarySrcs> staticSrcIndices = {};
+        std::array<RegClassType, MaxMatrixSummaryDests> staticDestClasses = {
+            InvalidRegClass, InvalidRegClass
+        };
+        std::array<uint16_t, MaxMatrixSummaryDests> staticDestIndices = {};
+        std::array<MatrixStateOperand, MaxMatrixStateOperands> stateReads = {
+            MatrixStateOperand::None, MatrixStateOperand::None,
+            MatrixStateOperand::None, MatrixStateOperand::None,
+            MatrixStateOperand::None, MatrixStateOperand::None
+        };
+        std::array<MatrixStateOperand, MaxMatrixSummaryDests> stateWrites = {
+            MatrixStateOperand::None, MatrixStateOperand::None
+        };
+    };
+
     static void *operator new(size_t count, Arrays &arrays);
     static void  operator delete(void* ptr);
 
@@ -143,6 +235,12 @@ class DynInst : public ExecContext, public RefCounted
 
     /** The sequence number of the instruction. */
     InstSeqNum seqNum = 0;
+
+    /** Virtual MLS queue slot allocated at dispatch for matrix mem ops. */
+    unsigned matrixMlsqSlot = 0;
+    bool matrixMlsqSlotValid = false;
+    unsigned matrixMlsReplaySlot = 0;
+    bool matrixMlsReplaySlotValid = false;
 
     /** The StaticInst used by this BaseDynInst. */
     const StaticInstPtr staticInst;
@@ -258,6 +356,11 @@ class DynInst : public ExecContext, public RefCounted
     /** The status of this BaseDynInst.  Several bits can be set. */
     std::bitset<NumStatus> status;
 
+    MatrixInstInfo matrixInst;
+    ExecContext::MatrixExecPayload matrixExecPayload;
+    bool stagedMatrixTokenResetValid = false;
+    RegVal stagedMatrixTokenReset = 0;
+
     /* replay type of this instruction */
     std::optional<LdStReplayType> replayType;
     std::bitset<LdStReplayTypeCount> replayFlags;
@@ -266,6 +369,8 @@ class DynInst : public ExecContext, public RefCounted
 
     bool _hasProducerStorePC = false;
     Addr _producerStorePC = 0;
+
+    void initMatrixInstInfo();
 
   protected:
     /** The result of the instruction; assumes an instruction can have many
@@ -764,6 +869,7 @@ class DynInst : public ExecContext, public RefCounted
     bool isInteger()      const { return staticInst->isInteger(); }
     bool isFloating()     const { return staticInst->isFloating(); }
     bool isVector()       const { return staticInst->isVector(); }
+    bool isMatrixInst()   const { return matrixInst.valid; }
     bool isControl()      const { return staticInst->isControl(); }
     bool isCall()         const { return staticInst->isCall(); }
     bool isReturn()       const { return staticInst->isReturn(); }
@@ -808,6 +914,88 @@ class DynInst : public ExecContext, public RefCounted
     bool isHtmStop() const { return staticInst->isHtmStop(); }
     bool isHtmCancel() const { return staticInst->isHtmCancel(); }
     bool isHtmCmd() const { return staticInst->isHtmCmd(); }
+    const MatrixInstInfo &
+    matrixInstInfo() const
+    {
+        return matrixInst;
+    }
+    const char *matrixInstClassName() const;
+    const char *matrixRouteName() const;
+    const char *matrixCommitBoundaryName() const;
+    const char *matrixPayloadKindName() const;
+    bool matrixNeedAmuCtrl() const
+    {
+        return matrixInst.valid && matrixInst.needAmuCtrlCandidate;
+    }
+    bool matrixDirtyMs() const
+    {
+        return matrixInst.valid &&
+               (matrixInst.route == MatrixRouteKind::Init ||
+                matrixInst.route == MatrixRouteKind::SetTile ||
+                matrixInst.route == MatrixRouteKind::Mma ||
+                matrixInst.route == MatrixRouteKind::Arith ||
+                (matrixInst.route == MatrixRouteKind::Lsu &&
+                 matrixInst.loadLike));
+    }
+    const ExecContext::MatrixExecPayload &
+    matrixPayload() const
+    {
+        return matrixExecPayload;
+    }
+    bool matrixPayloadValid() const
+    {
+        return matrixExecPayload.valid;
+    }
+    bool hasStagedMatrixTokenReset() const
+    {
+        return stagedMatrixTokenResetValid;
+    }
+    RegVal stagedMatrixTokenResetIndex() const
+    {
+        return stagedMatrixTokenReset;
+    }
+    bool hasMatrixMlsqSlot() const
+    {
+        return matrixMlsqSlotValid;
+    }
+    unsigned getMatrixMlsqSlot() const
+    {
+        return matrixMlsqSlot;
+    }
+    void setMatrixMlsqSlot(unsigned slot)
+    {
+        matrixMlsqSlot = slot;
+        matrixMlsqSlotValid = true;
+    }
+    void clearMatrixMlsqSlot()
+    {
+        matrixMlsqSlotValid = false;
+    }
+    bool hasMatrixMlsReplaySlot() const
+    {
+        return matrixMlsReplaySlotValid;
+    }
+    unsigned getMatrixMlsReplaySlot() const
+    {
+        return matrixMlsReplaySlot;
+    }
+    void setMatrixMlsReplaySlot(unsigned slot)
+    {
+        matrixMlsReplaySlot = slot;
+        matrixMlsReplaySlotValid = true;
+    }
+    void clearMatrixMlsReplaySlot()
+    {
+        matrixMlsReplaySlotValid = false;
+    }
+    void clearMatrixPayload()
+    {
+        matrixExecPayload = {};
+        stagedMatrixTokenResetValid = false;
+        stagedMatrixTokenReset = 0;
+    }
+    void noteMatrixRenamed();
+    void noteMatrixRobInserted();
 
     uint64_t
     getHtmTransactionUid() const override
@@ -1279,7 +1467,13 @@ class DynInst : public ExecContext, public RefCounted
     void setInROB() { status.set(RobEntry); }
 
     /** Sets this instruction as a entry the ROB. */
-    void clearInROB() { status.reset(RobEntry); }
+    void clearInROB()
+    {
+        status.reset(RobEntry);
+        if (matrixInst.valid) {
+            matrixInst.robInserted = false;
+        }
+    }
 
     /** Returns whether or not this instruction is in the ROB. */
     bool isInROB() const { return status[RobEntry]; }
@@ -1491,6 +1685,37 @@ class DynInst : public ExecContext, public RefCounted
         DPRINTF(RiscvMisc, "Push misc reg %i: %#lx\n", misc_reg, val);
         _destMiscRegIdx.push_back(misc_reg);
         _destMiscRegVal.push_back(val);
+    }
+
+    bool
+    stageMatrixExecPayload(const ExecContext::MatrixExecPayload &payload) override
+    {
+        matrixExecPayload = payload;
+        return true;
+    }
+
+    bool
+    stageMatrixTokenReset(RegVal token_idx) override
+    {
+        stagedMatrixTokenReset = token_idx;
+        stagedMatrixTokenResetValid = true;
+        return true;
+    }
+
+    bool
+    stageMatrixTokenRelease(RegVal token_idx) override
+    {
+        panic("Legacy stageMatrixTokenRelease is unsupported; "
+              "matrix release token must be updated from backend completion.");
+    }
+
+    bool
+    readStagedMatrixTokenReady(RegVal token_idx, RegVal threshold,
+                               bool &ready) override
+    {
+        ready = cpu->matrixShadowTokenReady(threadNumber, token_idx,
+                                            threshold);
+        return true;
     }
 
     /** Reads a misc. register, including any side-effects the read

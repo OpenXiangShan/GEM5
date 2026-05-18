@@ -185,6 +185,13 @@ class BaseO3CPU(BaseCPU):
 
     StoreWbStage = Param.Unsigned(4, "Which PipeLine Stage store instruction writeback, 4 means S4")
 
+    matrixMlsVirtualQueueEntries = Param.Unsigned(
+        8, "Number of matrix MLS virtual queue entries")
+    matrixMlsReplayQueueEntries = Param.Unsigned(
+        8, "Number of matrix MLS replay queue entries")
+    matrixMlsReplaySelectLatency = Param.Unsigned(
+        10000,
+        "Ticks to wait before a ready matrix MLS replay entry becomes schedulable")
     LSQDepCheckShift = Param.Unsigned(0,
             "Number of places to shift addr before check")
     LSQCheckLoads = Param.Bool(True,
