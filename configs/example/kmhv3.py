@@ -111,7 +111,7 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mbtb.victimCacheSize = 16
             cpu.branchPred.mbtb.victimCacheSetAssoc = True
             cpu.branchPred.mbtb.victimCacheNumWays = 4
-            cpu.branchPred.mbtb.victimCacheSplitOnHit = True
+            cpu.branchPred.mbtb.victimCacheSplitOnHit = False
             cpu.branchPred.enableInterflushPenalty = False
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
