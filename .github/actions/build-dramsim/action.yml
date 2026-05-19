@@ -12,6 +12,7 @@ runs:
         if [ ! -d "DRAMsim3" ]; then
           cp -r /nfs/home/share/gem5_ci/DRAMsim3 .
         fi
+        rm -rf DRAMsim3/build
         cd DRAMsim3 && mkdir -p build
         cd build
         cmake ..
