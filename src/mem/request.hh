@@ -85,8 +85,52 @@ enum PrefetchSourceType
     CDP,
     SOpt,
     DespacitoStream,
+    OracleStride,
     NUM_PF_SOURCES
 };
+
+inline const char *
+prefetchSourceName(PrefetchSourceType source)
+{
+    switch (source) {
+      case PF_NONE:
+        return "PF_NONE";
+      case SStream:
+        return "SStream";
+      case SStride:
+        return "SStride";
+      case SPht:
+        return "SPht";
+      case HWP_BOP:
+        return "HWP_BOP";
+      case SPP:
+        return "SPP";
+      case CMC:
+        return "CMC";
+      case IPCP:
+        return "IPCP";
+      case IPCP_CS:
+        return "IPCP_CS";
+      case IPCP_CPLX:
+        return "IPCP_CPLX";
+      case Berti:
+        return "Berti";
+      case StoreStream:
+        return "StoreStream";
+      case CDP:
+        return "CDP";
+      case SOpt:
+        return "SOpt";
+      case DespacitoStream:
+        return "DespacitoStream";
+      case OracleStride:
+        return "OracleStride";
+      case NUM_PF_SOURCES:
+        return "NUM_PF_SOURCES";
+    }
+
+    return "UnknownPFSource";
+}
 
 enum DcacheRespType
 {

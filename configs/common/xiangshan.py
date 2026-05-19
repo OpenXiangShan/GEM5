@@ -877,6 +877,12 @@ def xiangshan_system_init():
         default=False,
         help="Use BTBTAGEUpperBound in kmhv3 instead of the default BTBTAGE",
     )
+    parser.add_argument(
+        "--oracle-l1-window-lines",
+        type=int,
+        default=None,
+        help="Override Oracle segmented-stride fixed L1 lead distance",
+    )
 
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:

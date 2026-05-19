@@ -207,6 +207,58 @@ class XSStridePrefetcher(QueuedPrefetcher):
     region_size = Param.Int(1024, "region size")
 
     use_xs_depth = Param.Bool(True,"use xs rtl stride depth")
+    enable_oracle_segmented_stride = Param.Bool(
+        False,
+        "Enable Oracle segmented-stride validation path in XS stride prefetcher",
+    )
+    oracle_segmented_stride_pcs = VectorParam.Addr(
+        [],
+        "PC whitelist for the Oracle segmented-stride validation path",
+    )
+    oracle_major_stride_bytes = Param.UInt64(
+        0,
+        "Major stride in bytes inside one segment for Oracle segmented-stride",
+    )
+    oracle_minor_stride_bytes = Param.UInt64(
+        0,
+        "Minor stride in bytes between adjacent segments for Oracle segmented-stride",
+    )
+    oracle_segment_length_lines = Param.Unsigned(
+        0,
+        "Number of unique cache lines in one Oracle segmented-stride segment",
+    )
+    oracle_step_override_offsets = VectorParam.Unsigned(
+        [],
+        "Offsets whose intra-segment step to the next line overrides the default major stride",
+    )
+    oracle_step_override_bytes = VectorParam.Addr(
+        [],
+        "Override step sizes in bytes for the corresponding Oracle intra-segment offsets",
+    )
+    oracle_l1_window_lines = Param.Unsigned(
+        0,
+        "Fixed lead distance in lines for Oracle segmented-stride L1 issues",
+    )
+    oracle_l2_window_lines = Param.Unsigned(
+        48,
+        "Number of lines kept ahead in the Oracle L2 warm window",
+    )
+    oracle_observe_tolerance_lines = Param.Unsigned(
+        16,
+        "Maximum line reordering distance tolerated by Oracle segmented-stride",
+    )
+    oracle_deactivate_misses = Param.Unsigned(
+        32,
+        "Consecutive Oracle window misses before the stream deactivates",
+    )
+    oracle_recent_history_window_ticks = Param.UInt64(
+        20000,
+        "Keep recent Oracle touch history for this many ticks to separate repeat touches from uncovered first touches",
+    )
+    oracle_override_regular_stride = Param.Bool(
+        True,
+        "Bypass regular SStride training/lookup when Oracle segmented-stride matches",
+    )
     fuzzy_stride_matching = Param.Bool(False, "Match stride with fuzzy condition")
     short_stride_thres = Param.Unsigned(512, "Ignore short strides when there are long strides (Bytes)")
     stride_dyn_depth = Param.Bool(False, "Dynamic depth of stride table")

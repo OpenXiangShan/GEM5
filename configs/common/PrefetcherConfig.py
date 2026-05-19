@@ -28,10 +28,25 @@ def create_prefetcher(cpu, cache_level, options):
     if prefetcher == NULL:
         return NULL
 
+    def _apply_oracle_overrides(target_pf):
+        if target_pf == NULL:
+            return
+        oracle_override_pairs = (
+            ('oracle_l1_window_lines', 'oracle_l1_window_lines'),
+        )
+        for option_attr, param_attr in oracle_override_pairs:
+            if hasattr(options, option_attr) and \
+                    getattr(options, option_attr) is not None and \
+                    hasattr(target_pf, param_attr):
+                setattr(target_pf, param_attr, getattr(options, option_attr))
+
+    _apply_oracle_overrides(prefetcher)
+
     if cpu != NULL:
         prefetcher.registerTLB(cpu.mmu.dtb, cpu.mmu.functional)
 
     if prefetcher_name == 'XSCompositePrefetcher':
+        _apply_oracle_overrides(prefetcher.sstride)
         if options.l1d_enable_spp:
             prefetcher.enable_spp = True
         if options.l1d_enable_cplx:
