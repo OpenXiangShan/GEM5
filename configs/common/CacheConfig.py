@@ -387,6 +387,16 @@ def config_cache(options, system):
         else:
             system.cpu[i].connectBus(system.membus)
 
+        if options.l1i_hwp_type == 'FDIPPrefetcher':
+            icache.mshrs = 14
+            icache.prefetcher.prefetchLatency = 2
+            icache.prefetcher.numPrefetchMSHR = 10
+            system.cpu[i].enableFdip = not options.disable_fdip
+            system.cpu[i].enablePdip = options.enable_pdip
+            system.cpu[i].enableUdp = options.enable_udp
+            system.cpu[i].branchPred.useStaticPrefetchDistance = not options.fdip_no_use_static_distance
+            system.cpu[i].branchPred.staticPrefetchDistance = options.fdip_static_distance
+
     print('Finish memory system configuration')
     return system
 

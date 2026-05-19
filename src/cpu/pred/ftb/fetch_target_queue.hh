@@ -87,6 +87,7 @@ class FetchTargetQueue
 
     bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &in_loop);
 
+    unsigned capacity() const { return ftqSize; }
 
     bool empty() const { return ftq.empty(); }
 

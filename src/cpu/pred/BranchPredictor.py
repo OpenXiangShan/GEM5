@@ -953,6 +953,9 @@ class DecoupledBPUWithFTB(BranchPredictor):
     ras = Param.FTBRAS(FTBRAS(), "RAS")
     uras = Param.FTBuRAS(FTBuRAS(), "uRAS")
 
+    useStaticPrefetchDistance = Param.Bool(True, "Use static prefetch distance limit")
+    staticPrefetchDistance = Param.Unsigned(32, "max distance from prefetchPtr to IFUPtr")
+
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     enableLoopBuffer = Param.Bool(False, "Enable loop buffer to supply inst for loops")
     enableLoopPredictor = Param.Bool(False, "Use loop predictor to predict loop exit")
@@ -1212,6 +1215,9 @@ class DecoupledBPUWithBTB(BranchPredictor):
     ittage = Param.BTBITTAGE(BTBITTAGE(), "ITTAGE predictor")
     mgsc = Param.BTBMGSC(BTBMGSC(), "MGSC predictor")
     ras = Param.BTBRAS(BTBRAS(), "RAS")
+
+    useStaticPrefetchDistance = Param.Bool(True, "Use static prefetch distance limit")
+    staticPrefetchDistance = Param.Unsigned(32, "max distance from prefetchPtr to IFUPtr")
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")

@@ -101,6 +101,8 @@ class MemCmd
         SoftPFReq,
         SoftPFExReq,
         HardPFReq,
+        PFFlushReq,
+        PFFetchReq,
         SoftPFResp,
         HardPFResp,
         WriteLineReq,
@@ -623,6 +625,11 @@ class Packet : public Printable
     inline int cmdToIndex() const { return cmd.toInt(); }
 
     bool isStorePFTrain() const     { return cmd == MemCmd::StorePFTrain;  }
+
+    bool isFromFetchPF() const      { return cmd == MemCmd::PFFlushReq ||
+                                             cmd == MemCmd::PFFetchReq; }
+
+    bool isPFFlush() const          { return cmd == MemCmd::PFFlushReq; }
 
     bool isRead() const              { return cmd.isRead(); }
     bool isWrite() const             { return cmd.isWrite(); }

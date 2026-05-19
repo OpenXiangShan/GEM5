@@ -1294,3 +1294,11 @@ class L3CompositeWithWorkerPrefetcher(CompositeWithWorkerPrefetcher):
     cxx_header = "mem/cache/prefetch/l3_composite_with_worker.hh"
 
     bop = Param.BasePrefetcher(FallenBOPPrefetcher(is_sub_prefetcher=True), "")
+
+class FDIPPrefetcher(BasePrefetcher):
+    type = "FDIPPrefetcher"
+    cxx_class = 'gem5::prefetch::FDIP'
+    cxx_header = "mem/cache/prefetch/fdip.hh"
+
+    numPrefetchMSHR = Param.UInt64(8, "maximum number of pending (waiting for L2) prefetch requests")
+    prefetchLatency = Param.Cycles(1, "prefetch pipe latency (ftq enqueue -> issue to L2)")

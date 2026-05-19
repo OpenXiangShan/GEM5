@@ -74,6 +74,7 @@ public:
         return true;
     }
     inline uint32_t size(ThreadID tid) const { return queue[tid].cap.size(); }
+    inline uint32_t capacity(ThreadID tid) const { return ftqSize[tid]; }
 
     int getTargetTid();
     void insert(FetchTarget& target);

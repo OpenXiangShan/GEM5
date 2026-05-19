@@ -535,6 +535,13 @@ class Fetch
     /** Pipeline the next I-cache access to the current one. */
     void pipelineIcacheAccesses(ThreadID tid);
 
+    /** handle fdip prefetch req to icache by IPrefetch port. */
+    void handlePrefetch(ThreadID tid, bool fetchIsStall);
+
+    bool sendPrefetchReq(Addr prefetchAddr, ThreadID tid, Addr pc);
+
+    bool sendFlushReq(ThreadID tid, Addr pc);
+
     /** Profile the reasons of fetch stall. */
     void profileStall(ThreadID tid);
 
@@ -651,6 +658,9 @@ class Fetch
 
     /** Tracks how many instructions has been fetched this cycle. */
     int numInst;
+
+    /** Has accessed cache in current cycle. */
+    bool hasCacheAccess{false};
 
     /** Source of possible stalls. */
     struct Stalls
@@ -964,6 +974,11 @@ class Fetch
     /** Instruction port. Note that it has to appear after the fetch stage. */
     IcachePort icachePort;
 
+    /** FDIP enable */
+    bool enableFdip{true};
+    bool enablePdip{false};
+    bool enableUdp{false};
+
     /** Event used to delay fault generation of translation faults */
     FinishTranslationEvent finishTranslationEvent;
 
@@ -1079,6 +1094,12 @@ class Fetch
         statistics::Scalar icacheWaitRetryStallCycles;
         /** Stat for total number of fetched cache lines. */
         statistics::Scalar cacheLines;
+        /** Stat for total number of accesses to the cache. */
+        statistics::Scalar cacheAccess;
+        /** Stat for total number of try to send prefetch req. */
+        statistics::Scalar trySendPrefetch;
+        /** Stat for total number of demand send prefetch req. */
+        statistics::Scalar demandSendPrefetch;
         /** Total number of outstanding icache accesses that were dropped
          * due to a squash.
          */

@@ -199,6 +199,9 @@ if __name__ == '__m5_main__':
     args.l2_size = '1MB'
     args.kmh_align = True   # align prefetcher in RTL, spec06 decrease 1 score
 
+    # NOTE: Non-portable options for fdip experiments
+    args.l1i_hwp_type = 'FDIPPrefetcher'
+
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 

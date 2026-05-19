@@ -128,6 +128,15 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     FetchTargetQueue ftq;
 
+    bool useStaticPrefetchDistance;
+    unsigned staticPrefetchDistance;
+
+    FetchTargetId prefetchID[MaxThreads] = {};
+    Addr lastPrefetchAddr[MaxThreads] = {};
+    bool enablePrefetch[MaxThreads] = {};
+    bool fsqFlushFlag[MaxThreads] = {};
+    Cycles fetchStallCycles[MaxThreads] = {};
+
     struct
     {
         Addr s0PC;
@@ -307,6 +316,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         // Window blocking statistics
         statistics::Scalar predictionBlockedForUpdate;  // Times prediction was blocked for update priority
+        statistics::Distribution fetchStallDist;
 
         statistics::Scalar s1PredWrongFallthrough;
         statistics::Scalar s1PredWrongUbtb;
@@ -415,6 +425,12 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
     const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    bool prefetchLimited(ThreadID tid) const;
+    bool prefetchAvailable(ThreadID tid) const;
+    bool prefetchAvailable() const;
+    bool getPrefetchAddr(Addr &prefetchAddr, bool &flush, bool fetchIsStall,
+                         ThreadID tid = 0);
+    void updatePrefetch(Addr prefetchAddr, ThreadID tid = 0);
 
     void dumpFsq(const char *when);
 
