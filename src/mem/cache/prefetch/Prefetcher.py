@@ -212,19 +212,19 @@ class XSStridePrefetcher(QueuedPrefetcher):
         "Enable Oracle segmented-stride validation path in XS stride prefetcher",
     )
     oracle_segmented_stride_pcs = VectorParam.Addr(
-        [],
+        [0x1086c, 0x10872, 0x10876, 0x1087a],
         "PC whitelist for the Oracle segmented-stride validation path",
     )
     oracle_major_stride_bytes = Param.UInt64(
-        0,
+        0x58f600,
         "Major stride in bytes inside one segment for Oracle segmented-stride",
     )
     oracle_minor_stride_bytes = Param.UInt64(
-        0,
+        0x40,
         "Minor stride in bytes between adjacent segments for Oracle segmented-stride",
     )
     oracle_segment_length_lines = Param.Unsigned(
-        0,
+        300,
         "Number of unique cache lines in one Oracle segmented-stride segment",
     )
     oracle_step_override_offsets = VectorParam.Unsigned(
@@ -236,11 +236,11 @@ class XSStridePrefetcher(QueuedPrefetcher):
         "Override step sizes in bytes for the corresponding Oracle intra-segment offsets",
     )
     oracle_l1_window_lines = Param.Unsigned(
-        0,
+        32,
         "Fixed lead distance in lines for Oracle segmented-stride L1 issues",
     )
     oracle_l2_window_lines = Param.Unsigned(
-        48,
+        300,
         "Number of lines kept ahead in the Oracle L2 warm window",
     )
     oracle_observe_tolerance_lines = Param.Unsigned(

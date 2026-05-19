@@ -142,10 +142,10 @@ def setKmhV3IdealParams(args, system):
                         is_sub_prefetcher=True, enable_adaptoffset=False)
             else:
                 l2_wrapper = system.l2_wrappers[i]
-                l2_wrapper.data_sram_banks = 1
-                l2_wrapper.dir_sram_banks = 1
-                l2_wrapper.pipe_dir_write_stage = 3
-                l2_wrapper.dir_read_bypass = False
+                l2_wrapper.data_sram_banks = 2
+                l2_wrapper.dir_sram_banks = 2
+                l2_wrapper.pipe_dir_write_stage = 4
+                l2_wrapper.dir_read_bypass = True
                 if l2_wrapper.prefetcher != NULL:
                     l2_wrapper.prefetcher.enable_cmc = False
                     l2_wrapper.prefetcher.enable_bop = True
