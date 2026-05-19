@@ -2190,8 +2190,15 @@ IEW::checkDispatchStall(ThreadID tid, int dq_stall, const DynInstPtr &dispatch_i
         if (head_inst->isNonSpeculative()) {
             return StallReason::SerializeStall;
         } else if (head_inst->isLoad() && ldstQueue.lqFull(tid)) {
+            if (ldstQueue.lqEmpty(tid)) {
+                return StallReason::InstNotReady;
+            }
             return checkLSQStall(tid, true);
-        } else if ((head_inst->isStore() || head_inst->isAtomic()) && ldstQueue.sqFull(tid)) {
+        } else if ((head_inst->isStore() || head_inst->isAtomic()) &&
+                   ldstQueue.sqFull(tid)) {
+            if (ldstQueue.sqEmpty(tid)) {
+                return StallReason::InstNotReady;
+            }
             return checkLSQStall(tid, false);
         } else {
             return StallReason::InstNotReady;
@@ -2222,6 +2229,11 @@ IEW::checkDispatchStall(ThreadID tid, int dq_stall, const DynInstPtr &dispatch_i
 StallReason
 IEW::checkLSQStall(ThreadID tid, bool isLoad)
 {
+    if ((isLoad && ldstQueue.lqEmpty(tid)) ||
+        (!isLoad && ldstQueue.sqEmpty(tid))) {
+        return StallReason::InstNotReady;
+    }
+
     DynInstPtr head_inst = ldstQueue.getLSQHeadInst(tid, isLoad);
     return checkLoadStoreInst(head_inst);
 }
