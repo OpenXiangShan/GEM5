@@ -458,6 +458,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(predFalseHit, statistics::units::Count::get(), "false hit detected at pred"),
     ADD_STAT(commitFalseHit, statistics::units::Count::get(), "false hit detected at commit"),
     ADD_STAT(predictionBlockedForUpdate, statistics::units::Count::get(), "prediction blocked for update priority"),
+    ADD_STAT(fetchStallDist, statistics::units::Count::get(), "distribution of cycles count from every fetch stall"),
     ADD_STAT(s1PredWrongFallthrough, statistics::units::Count::get(), "S1pred wrong full throughs"),
     ADD_STAT(s1PredWrongUbtb, statistics::units::Count::get(),"S1pred wrong using ubtb "),
     ADD_STAT(s1PredWrongAbtb, statistics::units::Count::get(), "S1pred wrong using abtb "),
@@ -474,6 +475,7 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     fsqEntryDist.init(0, fsqSize, 20).flags(statistics::total);
     commitFsqEntryHasInsts.init(0, maxInstsNum >> 1, 1);
     commitFsqEntryFetchedInsts.init(0, maxInstsNum >> 1, 1);
+    fetchStallDist.init(1, 200, 5);
     branchClassCounts.init(NumBranchClasses);
     branchClassMisses.init(NumBranchClasses);
     controlSquashByClass.init(NumBranchClasses);

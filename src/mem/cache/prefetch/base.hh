@@ -91,9 +91,11 @@ class Base : public ClockedObject
       public:
         PrefetchListener(Base &_parent, ProbeManager *pm,
                          const std::string &name, bool _isFill = false,
-                         bool _miss = false, bool _pftrain = false)
-            : ProbeListenerArgBase(pm, name),
-              parent(_parent), isFill(_isFill), miss(_miss), coreDirectNotify(_pftrain) {}
+                                                 bool _miss = false, bool _pftrain = false,
+                                                 bool _fdip = false)
+                        : ProbeListenerArgBase(pm, name),
+                            parent(_parent), isFill(_isFill), miss(_miss),
+                            coreDirectNotify(_pftrain), fdip(_fdip) {}
         void notify(const PacketPtr &pkt) override;
       protected:
         Base& parent;
@@ -102,6 +104,8 @@ class Base : public ClockedObject
 
         // Core can directly pass address to train or trigger prefetchers, for example, store prefetch
         const bool coreDirectNotify;
+
+        const bool fdip;
     };
 
     std::vector<PrefetchListener *> listeners;
@@ -987,9 +991,13 @@ class Base : public ClockedObject
      */
     virtual void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) = 0;
 
+    virtual void notify(const PacketPtr &pkt) {}
+
     /** Notify prefetcher of cache fill */
     virtual void notifyFill(const PacketPtr &pkt)
     {}
+
+    virtual bool enable() { return true; }
 
     virtual PacketPtr getPacket() = 0;
 
@@ -1052,6 +1060,8 @@ class Base : public ClockedObject
     virtual void probeNotify(const PacketPtr& pkt, bool miss);
 
     virtual void coreDirectAddrNotify(const PacketPtr& pkt);
+
+    void fdipNotify(const PacketPtr& pkt);
 
     /**
      * Add a SimObject and a probe name to listen events from

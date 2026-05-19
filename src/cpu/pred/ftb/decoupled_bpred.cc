@@ -30,6 +30,8 @@ DecoupledBPUWithFTB::DecoupledBPUWithFTB(const DecoupledBPUWithFTBParams &p)
       enableTwoTaken(p.enableTwoTaken),
       fetchTargetQueue(p.ftq_size),
       fetchStreamQueueSize(p.fsq_size),
+      useStaticPrefetchDistance(p.useStaticPrefetchDistance),
+      staticPrefetchDistance(p.staticPrefetchDistance),
       numBr(p.numBr),
       predictWidth(p.predictWidth),
       historyBits(p.maxHistLen),
@@ -572,6 +574,7 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ADD_STAT(commitTrapSquashLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit trap squash"),
     ADD_STAT(commitNonControlSquashLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit non-control squash"),
     ADD_STAT(updateLatencyDist, statistics::units::Count::get(), "distribution of cycles count from pred to commit update"),
+    ADD_STAT(fetchStallDist, statistics::units::Count::get(), "distribution of cycles count from every fetch stall"),
     ADD_STAT(controlDecodeSquashOfCond, statistics::units::Count::get(), "control squash of cond branch at decode"),
     ADD_STAT(controlDecodeSquashOfUncond, statistics::units::Count::get(), "control squash of uncond branch at decode"),
     ADD_STAT(controlDecodeSquashOfUncondDirect, statistics::units::Count::get(), "control squash of uncond direct branch at decode"),
@@ -605,6 +608,7 @@ DecoupledBPUWithFTB::DBPFTBStats::DBPFTBStats(statistics::Group* parent, unsigne
     ftqEndReasonDist.subname(static_cast<int>(FTQEndReason::TAKEN), "taken");
     ftqEndReasonDist.subname(static_cast<int>(FTQEndReason::SIZE_LIMIT), "size_limit");
     ftqEndReasonDist.subname(static_cast<int>(FTQEndReason::LOOP_END), "loop_end");
+    fetchStallDist.init(1, 200, 5);
 }
 
 DecoupledBPUWithFTB::BpTrace::BpTrace(FetchStream &stream, const DynInstPtr &inst, bool mispred)
@@ -882,6 +886,71 @@ DecoupledBPUWithFTB::trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetch_
     return fetchTargetQueue.trySupplyFetchWithTarget(fetch_demand_pc, fetch_target_in_loop);
 }
 
+bool
+DecoupledBPUWithFTB::prefetchLimited()
+{
+    if (useStaticPrefetchDistance) {
+        return prefetchID > fetchTargetQueue.getSupplyingStreamId() + staticPrefetchDistance;
+    } else {
+        return prefetchID > fetchTargetQueue.getSupplyingStreamId() + fetchTargetQueue.size();
+    }
+}
+
+bool
+DecoupledBPUWithFTB::prefetchAvailable()
+{
+    return !prefetchLimited();
+}
+
+bool
+DecoupledBPUWithFTB::getPrefetchAddr(Addr &prefetchAddr, bool &flush,
+                                     bool fetchIsStall)
+{
+    FetchStreamId fetchID = fetchTargetQueue.getSupplyingStreamId();
+    flush = fsqFlushFlag;
+
+    if (fsqFlushFlag) {
+        fsqFlushFlag = false;
+        enablePrefetch = false;
+        fetchStallCycles = Cycles(0);
+        prefetchID = fetchID;
+        return true;
+    }
+
+    if (fetchIsStall) {
+        dbpFtbStats.fetchStallDist.sample(fetchStallCycles, 1);
+        enablePrefetch = true;
+    }
+
+    if (prefetchLimited() || !enablePrefetch) {
+        fetchStallCycles += Cycles(1);
+        return false;
+    }
+
+    if (prefetchID < fetchID) {
+        prefetchID = fetchID;
+    }
+
+    auto it = fetchStreamQueue.find(prefetchID);
+    if (it != fetchStreamQueue.end() && fetchTargetAvailable()) {
+        prefetchAddr = alignToCacheLine(it->second.startPC);
+        if (lastPrefetchAddr == prefetchAddr) {
+            prefetchID++;
+        } else {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void
+DecoupledBPUWithFTB::updatePrefetch(Addr prefetchAddr)
+{
+    prefetchID++;
+    lastPrefetchAddr = prefetchAddr;
+}
+
 std::pair<bool, bool>
 DecoupledBPUWithFTB::decoupledPredict(const StaticInstPtr &inst,
                                const InstSeqNum &seqNum, PCStateBase &pc,
@@ -999,6 +1068,7 @@ DecoupledBPUWithFTB::controlSquash(unsigned target_id, unsigned stream_id,
                             const InstSeqNum &seq, ThreadID tid,
                             const unsigned &currentLoopIter, const bool fromCommit)
 {
+    fsqFlushFlag = true;
     dbpFtbStats.controlSquash++;
 
     bool is_conditional = static_inst->isCondCtrl();
@@ -1230,6 +1300,7 @@ DecoupledBPUWithFTB::nonControlSquash(unsigned target_id, unsigned stream_id,
                                const PCStateBase &inst_pc,
                                const InstSeqNum seq, ThreadID tid, const unsigned &currentLoopIter)
 {
+    fsqFlushFlag = true;
     dbpFtbStats.nonControlSquash++;
     DPRINTFV(this->debugFlagOn || ::gem5::debug::DecoupleBP,
             "non control squash: target id: %lu, stream id: %lu, inst_pc: %x, "
@@ -1336,6 +1407,7 @@ DecoupledBPUWithFTB::trapSquash(unsigned target_id, unsigned stream_id,
                          Addr last_committed_pc, const PCStateBase &inst_pc,
                          ThreadID tid, const unsigned &currentLoopIter)
 {
+    fsqFlushFlag = true;
     dbpFtbStats.trapSquash++;
     DPRINTF(DecoupleBP || debugFlagOn,
             "Trap squash: target id: %lu, stream id: %lu, inst_pc: %#lx\n",

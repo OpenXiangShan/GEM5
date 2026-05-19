@@ -66,6 +66,8 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
       ftqPolicy(p.smtFTQPolicy),
       smtFTQThreshold(p.smtFTQThreshold),
       ftq(p.numThreads, p.ftq_size),
+      useStaticPrefetchDistance(p.useStaticPrefetchDistance),
+      staticPrefetchDistance(p.staticPrefetchDistance),
       resolveBlockThreshold(p.resolveBlockThreshold),
       dbpBtbStats(this, p.numStages, p.fsq_size, maxInstsNum)
 {
@@ -134,6 +136,11 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
         }
         thread.commitHistory.resize(historyBits, 0);
         thread.squashing = true;
+        prefetchID[tid] = 1;
+        lastPrefetchAddr[tid] = 0;
+        enablePrefetch[tid] = false;
+        fsqFlushFlag[tid] = true;
+        fetchStallCycles[tid] = Cycles(0);
     }
 
     commitFsqEntryHasInstsVector.resize(maxInstsNum+1, 0);
@@ -300,6 +307,80 @@ DecoupledBPUWithBTB::tick()
     }
 
     DPRINTF(Override, "Prediction cycle complete\n");
+}
+
+bool
+DecoupledBPUWithBTB::prefetchLimited(ThreadID tid) const
+{
+    if (useStaticPrefetchDistance) {
+        return prefetchID[tid] >= ftq.fetchId(tid) + staticPrefetchDistance;
+    } else {
+        return prefetchID[tid] >= ftq.fetchId(tid) + ftq.size(tid);
+    }
+}
+
+bool
+DecoupledBPUWithBTB::prefetchAvailable(ThreadID tid) const
+{
+
+    return ftqHasFetching(tid) && !prefetchLimited(tid);
+}
+
+bool
+DecoupledBPUWithBTB::prefetchAvailable() const
+{
+    return prefetchAvailable(0);
+}
+
+bool
+DecoupledBPUWithBTB::getPrefetchAddr(Addr &prefetchAddr, bool &flush,
+                                     bool fetchIsStall, ThreadID tid)
+{
+    FetchTargetId fetchID = ftq.fetchId(tid);
+    flush = fsqFlushFlag[tid];
+
+    if (fsqFlushFlag[tid]) {
+        fsqFlushFlag[tid] = false;
+        enablePrefetch[tid] = false;
+        fetchStallCycles[tid] = Cycles(0);
+        prefetchID[tid] = fetchID;
+        return true;
+    }
+
+    if (fetchIsStall) {
+        dbpBtbStats.fetchStallDist.sample(fetchStallCycles[tid], 1);
+        enablePrefetch[tid] = true;
+    }
+
+    if (prefetchLimited(tid) ||
+        !enablePrefetch[tid]) {
+        fetchStallCycles[tid] += Cycles(1);
+        return false;
+    }
+
+    if (prefetchID[tid] < fetchID) {
+        prefetchID[tid] = fetchID;
+    }
+
+    if (ftq.hasTarget(prefetchID[tid], tid)) {
+        auto &target = ftq.get(prefetchID[tid], tid);
+        Addr aligned = target.startPC & ~((Addr)63);
+        if (lastPrefetchAddr[tid] == aligned) {
+            prefetchID[tid]++;
+        } else {
+            prefetchAddr = aligned;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void
+DecoupledBPUWithBTB::updatePrefetch(Addr prefetchAddr, ThreadID tid)
+{
+    prefetchID[tid]++;
+    lastPrefetchAddr[tid] = prefetchAddr;
 }
 
 /**
@@ -559,6 +640,7 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
                                  const StaticInstPtr &static_inst,
                                  unsigned control_inst_size)
 {
+    fsqFlushFlag[tid] = true;
     // Set squashing state
     threads[tid].squashing = true;
 

@@ -932,6 +932,33 @@ def xiangshan_system_init():
         help="Disable direction TAGE sources in kmhv3 and force MGSC standalone SC prediction",
     )
 
+    # NOTE: Non-portable options for fdip experiments
+    parser.add_argument(
+        "--enable-fdip",
+        action="store_true",
+        default=True,
+    )
+    parser.add_argument(
+        "--enable-pdip",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--enable-udp",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--fdip-use-static-distance",
+        action="store_true",
+        default=True,
+    )
+    parser.add_argument(
+        "--fdip-static-distance",
+        type=int,
+        default=32,
+    )
+
     # Add the ruby specific and protocol specific args
     if '--ruby' in sys.argv:
         Ruby.define_options(parser)

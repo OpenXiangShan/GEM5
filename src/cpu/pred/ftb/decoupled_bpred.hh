@@ -206,8 +206,15 @@ class DecoupledBPUWithFTB : public BPredUnit
     std::map<FetchStreamId, FetchStream> fetchStreamQueue;
     unsigned fetchStreamQueueSize;
     FetchStreamId fsqId{1};
+    FetchStreamId prefetchID{1};
+    bool useStaticPrefetchDistance;
+    unsigned staticPrefetchDistance;
     FetchStream lastCommittedStream;
     FetchStream streamToEnqueue;
+    Addr lastPrefetchAddr{0};
+    bool enablePrefetch{false};
+    bool fsqFlushFlag{false};
+    Cycles fetchStallCycles{0};
 
     CPU *cpu;
 
@@ -532,6 +539,7 @@ class DecoupledBPUWithFTB : public BPredUnit
         statistics::Distribution commitTrapSquashLatencyDist;
         statistics::Distribution commitNonControlSquashLatencyDist;
         statistics::Distribution updateLatencyDist;
+        statistics::Distribution fetchStallDist;
 
         statistics::Scalar controlDecodeSquashOfCond;
         statistics::Scalar controlDecodeSquashOfUncond;
@@ -562,6 +570,13 @@ class DecoupledBPUWithFTB : public BPredUnit
     void ideal_tick();
 
     bool trySupplyFetchWithTarget(Addr fetch_demand_pc, bool &fetchTargetInLoop);
+
+    bool prefetchLimited();
+    bool prefetchAvailable();
+
+    bool getPrefetchAddr(Addr &prefetchAddr, bool &flush, bool fetchIsStall);
+
+    void updatePrefetch(Addr prefetchAddr);
 
     void squash(const InstSeqNum &squashed_sn, ThreadID tid)
     {
