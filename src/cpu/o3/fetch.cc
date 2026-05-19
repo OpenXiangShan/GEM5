@@ -100,6 +100,17 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       retryPkt(),
       retryTid(InvalidThreadID),
       cacheBlkSize(cpu->cacheLineSize()),
+      fdip(params.fdip),
+      fdipLookaheadTargets(params.fdipLookaheadTargets),
+      fdipMaxPrefetchesPerCycle(params.fdipMaxPrefetchesPerCycle),
+      fdipMaxBlocksPerTarget(params.fdipMaxBlocksPerTarget),
+      fdipMinTargetDistance(params.fdipMinTargetDistance),
+      fdipMinTargetAgeCycles(params.fdipMinTargetAgeCycles),
+      fdipSkipTargetStartBlock(params.fdipSkipTargetStartBlock),
+      fdipMaxPendingTranslations(params.fdipMaxPendingTranslations),
+      fdipPendingTranslations(0),
+      fdipPendingPrefetches(0),
+      fdipGeneration(0),
       fetchBufferSize(params.fetchBufferSize),
       fetchQueueSize(params.fetchQueueSize),
       numThreads(params.numThreads),
@@ -277,7 +288,33 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(traceMetaCleanupSquashEntries, statistics::units::Count::get(),
              "Total entries erased by squash/rollback cleanups"),
     ADD_STAT(traceMetaCleanupCommitCalls, statistics::units::Count::get(),
-             "Number of times cleanup was called on successful commit")
+             "Number of times cleanup was called on successful commit"),
+    ADD_STAT(fdipTargetsIdentified, statistics::units::Count::get(),
+             "Number of future FSQ targets considered by FDIP"),
+    ADD_STAT(fdipTargetsAlreadyIssued, statistics::units::Count::get(),
+             "Number of future FSQ targets skipped because FDIP already issued them"),
+    ADD_STAT(fdipBlocksIdentified, statistics::units::Count::get(),
+             "Number of cache blocks identified by FDIP"),
+    ADD_STAT(fdipTranslationsStarted, statistics::units::Count::get(),
+             "Number of FDIP translations started"),
+    ADD_STAT(fdipTranslationThrottled, statistics::units::Count::get(),
+             "Number of FDIP translations blocked by the pending translation limit"),
+    ADD_STAT(fdipTranslationFaults, statistics::units::Count::get(),
+             "Number of FDIP translations that faulted"),
+    ADD_STAT(fdipPrefetchesIssued, statistics::units::Count::get(),
+             "Number of FDIP prefetch packets issued to the I-cache"),
+    ADD_STAT(fdipPrefetchesDropped, statistics::units::Count::get(),
+             "Number of queued FDIP prefetch packets dropped before reaching the I-cache"),
+    ADD_STAT(fdipPrefetchRetriesQueued, statistics::units::Count::get(),
+             "Number of FDIP prefetch packets queued for I-cache retry"),
+    ADD_STAT(fdipPrefetchRetriesSent, statistics::units::Count::get(),
+             "Number of FDIP prefetch retry packets accepted by the I-cache"),
+    ADD_STAT(fdipPrefetchResponses, statistics::units::Count::get(),
+             "Number of FDIP prefetch responses received"),
+    ADD_STAT(fdipStaleTranslations, statistics::units::Count::get(),
+             "Number of FDIP translations discarded after squash or reset"),
+    ADD_STAT(fdipStalePrefetchResponses, statistics::units::Count::get(),
+             "Number of FDIP prefetch responses discarded after squash or reset")
 {
         icacheStallCycles
             .prereq(icacheStallCycles);
@@ -315,6 +352,32 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(icacheSquashes);
         tlbSquashes
             .prereq(tlbSquashes);
+        fdipTargetsIdentified
+            .prereq(fdipTargetsIdentified);
+        fdipTargetsAlreadyIssued
+            .prereq(fdipTargetsAlreadyIssued);
+        fdipBlocksIdentified
+            .prereq(fdipBlocksIdentified);
+        fdipTranslationsStarted
+            .prereq(fdipTranslationsStarted);
+        fdipTranslationThrottled
+            .prereq(fdipTranslationThrottled);
+        fdipTranslationFaults
+            .prereq(fdipTranslationFaults);
+        fdipPrefetchesIssued
+            .prereq(fdipPrefetchesIssued);
+        fdipPrefetchesDropped
+            .prereq(fdipPrefetchesDropped);
+        fdipPrefetchRetriesQueued
+            .prereq(fdipPrefetchRetriesQueued);
+        fdipPrefetchRetriesSent
+            .prereq(fdipPrefetchRetriesSent);
+        fdipPrefetchResponses
+            .prereq(fdipPrefetchResponses);
+        fdipStaleTranslations
+            .prereq(fdipStaleTranslations);
+        fdipStalePrefetchResponses
+            .prereq(fdipStalePrefetchResponses);
         nisnDist
             .init(/* base value */ 0,
               /* last value */ fetch->fetchWidth,
@@ -424,6 +487,8 @@ Fetch::resetStage()
     numInst = 0;
     interruptPending = false;
     cacheBlocked = false;
+    ++fdipGeneration;
+    discardFdipRetryPackets();
 
     priorityList.clear();
 
@@ -438,6 +503,7 @@ Fetch::resetStage()
 
         threads[tid].reset();
         ftqEntryFetchedInsts[tid] = 0;
+        fdipIssuedTargets[tid].clear();
 
         fetchQueue[tid].clear();
 
@@ -521,6 +587,220 @@ Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
     cpu->mmu->translateTiming(second_mem_req, cpu->thread[tid]->getTC(),
                               trans2, BaseMMU::Execute);
     return true;
+}
+
+void
+Fetch::issueFdipPrefetches(ThreadID tid)
+{
+    if (!fdip || isTraceMode() || cacheBlocked || !fdipRetryPkt.empty() ||
+        fetchStatus[tid] != Running || !dbpbtb->ftqHasFetching(tid)) {
+        return;
+    }
+
+    const CacheRequestStatus cache_status =
+        threads[tid].cacheReq.getOverallStatus();
+    if (cache_status == TlbWait || cache_status == CacheWaitRetry ||
+        cache_status == CacheWaitResponse) {
+        return;
+    }
+
+    auto &issued_targets = fdipIssuedTargets[tid];
+    if (issued_targets.size() > 4096) {
+        issued_targets.clear();
+    }
+
+    const auto fetch_id = dbpbtb->ftqHeadId(tid);
+    const auto back_id = dbpbtb->ftqBackId(tid);
+    if (back_id <= fetch_id || fdipMaxPrefetchesPerCycle == 0 ||
+        fdipMaxBlocksPerTarget == 0) {
+        return;
+    }
+
+    unsigned issued_this_cycle = 0;
+    const auto first_id = fetch_id + fdipMinTargetDistance;
+    const auto last_id = std::min(back_id, fetch_id + fdipLookaheadTargets);
+
+    for (auto target_id = first_id; target_id <= last_id; ++target_id) {
+        if (!dbpbtb->ftqHasTarget(target_id, tid)) {
+            continue;
+        }
+
+        if (issued_targets.count(target_id)) {
+            ++fetchStats.fdipTargetsAlreadyIssued;
+            continue;
+        }
+
+        const auto &target = dbpbtb->ftqTarget(target_id, tid);
+        if (fdipMinTargetAgeCycles > 0) {
+            const uint64_t target_age = curTick() < target.predTick ? 0 :
+                static_cast<uint64_t>(
+                    cpu->ticksToCycles(curTick() - target.predTick));
+            if (target_age < fdipMinTargetAgeCycles) {
+                continue;
+            }
+        }
+
+        Addr end_pc = target.predEndPC;
+        if (end_pc <= target.startPC) {
+            end_pc = target.startPC + 1;
+        }
+
+        Addr block = target.startPC & ~(Addr(cacheBlkSize) - 1);
+        const Addr end_block = (end_pc - 1) & ~(Addr(cacheBlkSize) - 1);
+        unsigned blocks_for_target = 0;
+
+        ++fetchStats.fdipTargetsIdentified;
+        bool started_for_target = false;
+        if (fdipSkipTargetStartBlock) {
+            block += cacheBlkSize;
+        }
+
+        while (block <= end_block &&
+               blocks_for_target < fdipMaxBlocksPerTarget &&
+               issued_this_cycle < fdipMaxPrefetchesPerCycle) {
+            ++fetchStats.fdipBlocksIdentified;
+            if (!startFdipTranslation(tid, block, target.startPC)) {
+                break;
+            }
+            issued_this_cycle++;
+            blocks_for_target++;
+            started_for_target = true;
+            block += cacheBlkSize;
+        }
+
+        if (started_for_target) {
+            issued_targets.insert(target_id);
+        } else if (fdipSkipTargetStartBlock) {
+            issued_targets.insert(target_id);
+        }
+
+        if (issued_this_cycle >= fdipMaxPrefetchesPerCycle) {
+            break;
+        }
+    }
+}
+
+bool
+Fetch::startFdipTranslation(ThreadID tid, Addr vaddr, Addr pc)
+{
+    if (fdipPendingTranslations >= fdipMaxPendingTranslations) {
+        ++fetchStats.fdipTranslationThrottled;
+        return false;
+    }
+
+    RequestPtr req = std::make_shared<Request>(
+        vaddr, cacheBlkSize, Request::INST_FETCH | Request::PREFETCH,
+        cpu->instRequestorId(), pc, cpu->thread[tid]->contextId());
+    req->taskId(context_switch_task_id::Prefetcher);
+
+    ++fdipPendingTranslations;
+    ++fetchStats.fdipTranslationsStarted;
+
+    auto *translation = new FdipTranslation(this, fdipGeneration);
+    cpu->mmu->translateTiming(req, cpu->thread[tid]->getTC(), translation,
+                              BaseMMU::Execute);
+    return true;
+}
+
+void
+Fetch::finishFdipTranslation(const Fault &fault, const RequestPtr &mem_req,
+                             uint64_t generation)
+{
+    assert(fdipPendingTranslations > 0);
+    --fdipPendingTranslations;
+
+    if (generation != fdipGeneration || cpu->switchedOut()) {
+        ++fetchStats.fdipStaleTranslations;
+        return;
+    }
+
+    if (fault != NoFault) {
+        ++fetchStats.fdipTranslationFaults;
+        return;
+    }
+
+    if (!cpu->system->isMemAddr(mem_req->getPaddr())) {
+        ++fetchStats.fdipPrefetchesDropped;
+        return;
+    }
+
+    PacketPtr pkt = new Packet(mem_req, MemCmd::SoftPFReq);
+    pkt->allocate();
+    pkt->setSendRightAway();
+    fdipPacketGenerations[mem_req] = generation;
+
+    if (cacheBlocked || !fdipRetryPkt.empty() || !icachePort.sendTimingReq(pkt)) {
+        ++fetchStats.fdipPrefetchRetriesQueued;
+        fdipRetryPkt.push_back(pkt);
+        return;
+    }
+
+    ++fetchStats.fdipPrefetchesIssued;
+    ++fdipPendingPrefetches;
+}
+
+void
+Fetch::completeFdipPrefetch(PacketPtr pkt)
+{
+    auto it = fdipPacketGenerations.find(pkt->req);
+    const bool stale = it == fdipPacketGenerations.end() ||
+        it->second != fdipGeneration;
+    if (it != fdipPacketGenerations.end()) {
+        fdipPacketGenerations.erase(it);
+    }
+
+    assert(fdipPendingPrefetches > 0);
+    --fdipPendingPrefetches;
+
+    if (stale) {
+        ++fetchStats.fdipStalePrefetchResponses;
+    } else {
+        ++fetchStats.fdipPrefetchResponses;
+    }
+    delete pkt;
+}
+
+void
+Fetch::retryFdipPrefetches()
+{
+    if (!fdip || cacheBlocked || fdipRetryPkt.empty()) {
+        return;
+    }
+
+    for (auto it = fdipRetryPkt.begin(); it != fdipRetryPkt.end();) {
+        PacketPtr pkt = *it;
+        auto gen_it = fdipPacketGenerations.find(pkt->req);
+        if (gen_it == fdipPacketGenerations.end() ||
+            gen_it->second != fdipGeneration) {
+            if (gen_it != fdipPacketGenerations.end()) {
+                fdipPacketGenerations.erase(gen_it);
+            }
+            ++fetchStats.fdipStaleTranslations;
+            delete pkt;
+            it = fdipRetryPkt.erase(it);
+            continue;
+        }
+
+        if (!icachePort.sendTimingReq(pkt)) {
+            break;
+        }
+
+        ++fetchStats.fdipPrefetchesIssued;
+        ++fetchStats.fdipPrefetchRetriesSent;
+        ++fdipPendingPrefetches;
+        it = fdipRetryPkt.erase(it);
+    }
+}
+
+void
+Fetch::discardFdipRetryPackets()
+{
+    for (PacketPtr pkt : fdipRetryPkt) {
+        fdipPacketGenerations.erase(pkt->req);
+        ++fetchStats.fdipPrefetchesDropped;
+        delete pkt;
+    }
+    fdipRetryPkt.clear();
 }
 
 bool
@@ -650,9 +930,12 @@ Fetch::drainSanityCheck() const
 {
     assert(isDrained());
     assert(retryPkt.size() == 0);
+    assert(fdipRetryPkt.size() == 0);
     assert(retryTid == InvalidThreadID);
     assert(!cacheBlocked);
     assert(!interruptPending);
+    assert(fdipPendingTranslations == 0);
+    assert(fdipPendingPrefetches == 0);
 
     for (ThreadID i = 0; i < numThreads; ++i) {
         assert(threads[i].cacheReq.packets.empty());
@@ -686,7 +969,10 @@ Fetch::isDrained() const
      * cycle if the finish translation event is scheduled, so make
      * sure that's not the case.
      */
-    return !finishTranslationEvent.scheduled();
+    return !finishTranslationEvent.scheduled() &&
+        fdipPendingTranslations == 0 &&
+        fdipPendingPrefetches == 0 &&
+        fdipRetryPkt.empty();
 }
 
 void
@@ -1105,6 +1391,9 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // Force a new I-cache request for the next FTQ head after squash.
     threads[tid].valid = false;
     ftqEntryFetchedInsts[tid] = 0;
+    ++fdipGeneration;
+    discardFdipRetryPackets();
+    fdipIssuedTargets[tid].clear();
 
     if (traceFetch) {
         traceFetch->handleTraceSquash(tid, new_pc, squashInst, seqNum);
@@ -1207,6 +1496,10 @@ Fetch::tick()
 
     // Perform fetch operations and instruction delivery
     fetchAndProcessInstructions(status_change);
+
+    for (auto tid : *activeThreads) {
+        issueFdipPrefetches(tid);
+    }
 }
 
 bool
@@ -2019,6 +2312,7 @@ Fetch::recvReqRetry()
         // Access has been squashed since it was sent out.  Just clear
         // the cache being blocked.
         cacheBlocked = false;
+        retryFdipPrefetches();
         return;
     }
     assert(cacheBlocked);
@@ -2043,6 +2337,7 @@ Fetch::recvReqRetry()
     if (retryPkt.size() == 0) {
         retryTid = InvalidThreadID;
         cacheBlocked = false;
+        retryFdipPrefetches();
     }
 }
 
@@ -2107,6 +2402,11 @@ Fetch::IcachePort::recvTimingResp(PacketPtr pkt)
 
     DPRINTF(Fetch, "received pkt addr=%#lx, req addr=%#lx\n", pkt->getAddr(),
             pkt->req->getVaddr());
+
+    if (pkt->cmd == MemCmd::SoftPFResp || pkt->cmd == MemCmd::HardPFResp) {
+        fetch->completeFdipPrefetch(pkt);
+        return true;
+    }
 
     fetch->processCacheCompletion(pkt);
 

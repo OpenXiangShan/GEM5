@@ -44,6 +44,8 @@
 #include <cstring>
 #include <deque>
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include "arch/generic/decoder.hh"
@@ -128,6 +130,29 @@ class Fetch
         {
             assert(mode == BaseMMU::Execute);
             fetch->finishTranslation(fault, req);
+            delete this;
+        }
+    };
+
+    class FdipTranslation : public BaseMMU::Translation
+    {
+      protected:
+        Fetch *fetch;
+        uint64_t generation;
+
+      public:
+        FdipTranslation(Fetch *_fetch, uint64_t _generation)
+            : fetch(_fetch), generation(_generation)
+        {}
+
+        void markDelayed() {}
+
+        void
+        finish(const Fault &fault, const RequestPtr &req,
+            gem5::ThreadContext *tc, BaseMMU::Mode mode)
+        {
+            assert(mode == BaseMMU::Execute);
+            fetch->finishFdipTranslation(fault, req, generation);
             delete this;
         }
     };
@@ -421,6 +446,25 @@ class Fetch
      */
     bool processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt);
 
+    /** Try to issue fetch-directed instruction prefetches from queued FSQ targets. */
+    void issueFdipPrefetches(ThreadID tid);
+
+    /** Start an address translation for a single FDIP cache block. */
+    bool startFdipTranslation(ThreadID tid, Addr vaddr, Addr pc);
+
+    /** Finish an FDIP translation and send the prefetch if it succeeded. */
+    void finishFdipTranslation(const Fault &fault, const RequestPtr &mem_req,
+                               uint64_t generation);
+
+    /** Complete and discard an FDIP response packet. */
+    void completeFdipPrefetch(PacketPtr pkt);
+
+    /** Try to send queued FDIP prefetches after the I-cache port retries. */
+    void retryFdipPrefetches();
+
+    /** Drop queued FDIP retry packets that have not reached the cache. */
+    void discardFdipRetryPackets();
+
 
     /** Check if an interrupt is pending and that we need to handle
      */
@@ -665,6 +709,22 @@ class Fetch
 
     /** Cache block size. */
     unsigned int cacheBlkSize;
+
+    const bool fdip;
+    const unsigned fdipLookaheadTargets;
+    const unsigned fdipMaxPrefetchesPerCycle;
+    const unsigned fdipMaxBlocksPerTarget;
+    const unsigned fdipMinTargetDistance;
+    const unsigned fdipMinTargetAgeCycles;
+    const bool fdipSkipTargetStartBlock;
+    const unsigned fdipMaxPendingTranslations;
+    unsigned fdipPendingTranslations;
+    unsigned fdipPendingPrefetches;
+    uint64_t fdipGeneration;
+    std::vector<PacketPtr> fdipRetryPkt;
+    std::unordered_map<RequestPtr, uint64_t> fdipPacketGenerations;
+    std::unordered_set<branch_prediction::btb_pred::FetchTargetId>
+        fdipIssuedTargets[MaxThreads];
 
     // Constants for misaligned fetch handling
     static constexpr unsigned CACHE_LINE_SIZE_BYTES = 64;
@@ -1105,6 +1165,20 @@ class Fetch
         statistics::Scalar traceMetaCleanupSquashEntries;
         /** Number of times cleanup was called on successful commit. */
         statistics::Scalar traceMetaCleanupCommitCalls;
+
+        statistics::Scalar fdipTargetsIdentified;
+        statistics::Scalar fdipTargetsAlreadyIssued;
+        statistics::Scalar fdipBlocksIdentified;
+        statistics::Scalar fdipTranslationsStarted;
+        statistics::Scalar fdipTranslationThrottled;
+        statistics::Scalar fdipTranslationFaults;
+        statistics::Scalar fdipPrefetchesIssued;
+        statistics::Scalar fdipPrefetchesDropped;
+        statistics::Scalar fdipPrefetchRetriesQueued;
+        statistics::Scalar fdipPrefetchRetriesSent;
+        statistics::Scalar fdipPrefetchResponses;
+        statistics::Scalar fdipStaleTranslations;
+        statistics::Scalar fdipStalePrefetchResponses;
     } fetchStats;
 
     SquashVersion localSquashVer;

@@ -404,6 +404,9 @@ Cache::handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk, Tick forward_time,
         // If an outstanding request is in progress (we found an
         // MSHR) this is set to null
         pkt = pf;
+        if (pkt == nullptr) {
+            return;
+        }
     }
 
     WriteQueueEntry *wb_entry = writeBuffer.findMatch(pkt->getAddr(),

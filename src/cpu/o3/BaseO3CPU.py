@@ -255,6 +255,22 @@ class BaseO3CPU(BaseCPU):
 
     store_prefetch_train = Param.Bool(True, "Training store prefetcher with store addresses")
 
+    fdip = Param.Bool(False, "Enable fetch-directed instruction prefetch")
+    fdipLookaheadTargets = Param.Unsigned(
+        4, "Number of future FSQ targets to scan for FDIP")
+    fdipMaxPrefetchesPerCycle = Param.Unsigned(
+        2, "Maximum FDIP prefetch requests generated per cycle")
+    fdipMaxBlocksPerTarget = Param.Unsigned(
+        1, "Maximum cache blocks to prefetch for each FDIP target")
+    fdipMinTargetDistance = Param.Unsigned(
+        1, "Minimum distance from the current fetch target to prefetch")
+    fdipMinTargetAgeCycles = Param.Unsigned(
+        0, "Minimum predicted-target age before FDIP prefetches it")
+    fdipSkipTargetStartBlock = Param.Bool(
+        False, "Skip the first cache block of each FDIP target")
+    fdipMaxPendingTranslations = Param.Unsigned(
+        32, "Maximum FDIP translations in flight")
+
     # value predictor
     valuePred = Param.ValuePredictor(NULL, "valuepred unit")
     enableSelectiveVPFlush = Param.Bool(False,
