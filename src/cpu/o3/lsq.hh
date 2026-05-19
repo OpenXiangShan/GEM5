@@ -1134,6 +1134,10 @@ class LSQ
     std::vector<std::vector<bool>> bankOccupied;
 
     void notifyDcacheRefill(Addr addr);
+    void recordLoadCacheMiss(PacketPtr pkt, int cache_level);
+    void recordLoadCacheReturnTick(PacketPtr pkt, int cache_level, Tick tick);
+    void recordLoadEffectiveCacheReturnTick(PacketPtr pkt,
+                                            const Request::XsMetadata &cache_meta);
 
     std::vector<bool> pendingDcacheRefill;
     std::vector<uint32_t> dcacheRefillDataRead;

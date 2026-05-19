@@ -1251,6 +1251,11 @@ Commit::commitInsts()
                     "[sn:%llu] Head is ready to commit, but the group is not all ready, last done inst [sn:%llu]\n",
                     head_inst->seqNum, seqnum);
             }
+            const auto blocker = rob->getHeadGroupBlocker(commit_thread);
+            if (blocker && blocker->isLoad()) {
+                cpu->perfCCT->updateInstMeta(
+                    blocker->seqNum, InstDetail::BlockStartTick, curTick());
+            }
             break;
         }
 

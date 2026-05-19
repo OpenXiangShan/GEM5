@@ -383,35 +383,114 @@ class Request
         o3::XsDynInstMetaPtr instXsMetadata;
         PrefetchSourceType prefetchSource;
         int prefetchDepth;
+        uint8_t cacheReturnLevel;
+        Tick l1MissTick;
+        Tick l1SendTick;
+        Tick l1RespRecvTick;
+        Tick l1ReturnTick;
+        Tick l2MissTick;
+        Tick l2SendTick;
+        Tick l2RespRecvTick;
+        Tick l2ReturnTick;
+        Tick l3MissTick;
+        Tick l3SendTick;
+        Tick l3RespRecvTick;
+        Tick l3ReturnTick;
 
         XsMetadata() :
             validXsMetadata(false),
             instXsMetadata(nullptr),
             prefetchSource(PF_NONE),
-            prefetchDepth(0) {}
+            prefetchDepth(0),
+            cacheReturnLevel(0),
+            l1MissTick(0),
+            l1SendTick(0),
+            l1RespRecvTick(0),
+            l1ReturnTick(0),
+            l2MissTick(0),
+            l2SendTick(0),
+            l2RespRecvTick(0),
+            l2ReturnTick(0),
+            l3MissTick(0),
+            l3SendTick(0),
+            l3RespRecvTick(0),
+            l3ReturnTick(0) {}
 
         XsMetadata(o3::XsDynInstMetaPtr instMeta) :
             validXsMetadata(true),
             instXsMetadata(instMeta),
             prefetchSource(PF_NONE) ,
-            prefetchDepth(0) {}
+            prefetchDepth(0),
+            cacheReturnLevel(0),
+            l1MissTick(0),
+            l1SendTick(0),
+            l1RespRecvTick(0),
+            l1ReturnTick(0),
+            l2MissTick(0),
+            l2SendTick(0),
+            l2RespRecvTick(0),
+            l2ReturnTick(0),
+            l3MissTick(0),
+            l3SendTick(0),
+            l3RespRecvTick(0),
+            l3ReturnTick(0) {}
 
         XsMetadata(PrefetchSourceType pfSource) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource) ,
-            prefetchDepth(0) {}
+            prefetchDepth(0),
+            cacheReturnLevel(0),
+            l1MissTick(0),
+            l1SendTick(0),
+            l1RespRecvTick(0),
+            l1ReturnTick(0),
+            l2MissTick(0),
+            l2SendTick(0),
+            l2RespRecvTick(0),
+            l2ReturnTick(0),
+            l3MissTick(0),
+            l3SendTick(0),
+            l3RespRecvTick(0),
+            l3ReturnTick(0) {}
 
         XsMetadata(PrefetchSourceType pfSource,int pfDepth) :
             validXsMetadata(true),
             instXsMetadata(nullptr),
             prefetchSource(pfSource) ,
-            prefetchDepth(pfDepth) {}
+            prefetchDepth(pfDepth),
+            cacheReturnLevel(0),
+            l1MissTick(0),
+            l1SendTick(0),
+            l1RespRecvTick(0),
+            l1ReturnTick(0),
+            l2MissTick(0),
+            l2SendTick(0),
+            l2RespRecvTick(0),
+            l2ReturnTick(0),
+            l3MissTick(0),
+            l3SendTick(0),
+            l3RespRecvTick(0),
+            l3ReturnTick(0) {}
 
         void invalidate() {
             validXsMetadata = false;
             instXsMetadata = nullptr;
             prefetchSource = PF_NONE;
+            prefetchDepth = 0;
+            cacheReturnLevel = 0;
+            l1MissTick = 0;
+            l1SendTick = 0;
+            l1RespRecvTick = 0;
+            l1ReturnTick = 0;
+            l2MissTick = 0;
+            l2SendTick = 0;
+            l2RespRecvTick = 0;
+            l2ReturnTick = 0;
+            l3MissTick = 0;
+            l3SendTick = 0;
+            l3RespRecvTick = 0;
+            l3ReturnTick = 0;
         }
     } XsMetadata;
 
