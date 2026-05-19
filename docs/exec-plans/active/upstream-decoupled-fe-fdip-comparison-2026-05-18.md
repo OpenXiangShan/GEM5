@@ -114,6 +114,10 @@
 - [x] 2026-05-19 16:40 实现 cache-side `FetchDirectedPrefetcher` prototype：BPU/FTQ 发 `FTQInsert`/`FTQRemove` probe，L1I prefetcher 监听 target 生命周期，经 ITB timing translation 后以 `HardPFReq` 进入 cache 侧 snoop/MSHR 路径
 - [x] 2026-05-19 16:55 完成 cache-side FDP 的稳定化：默认 `pfq_size=1`、`tq_size=1`、`min_target_distance=32`、`latency=64`，并在 L1I 使用 FDP 时把 `demand_mshr_reserve` 提到 2，避免 4-entry L1I MSHR 被 FDP 抢占过多
 - [x] 2026-05-19 17:00 完成本地 `gcc_typeck_4528`、`gcc_expr2_27` 的 `5M+5M` A/B，结果为小幅正向但很接近噪声；准备以单独实验提交启用 `kmhv3.py` 默认 L1I FDP 后 push CI 观察全套 0.3c
+- [x] 2026-05-19 17:10 提交并 push cache-side FDP 实验序列：`58c7bb780c mem-cache: Add cache-side fetch directed prefetcher`、`2957b897f4 configs: Enable FDIP experiment for kmhv3`、`aab29b82b6 misc: Rebuild DRAMSim3 from a clean cache copy`
+- [x] 2026-05-19 18:20 CI run `26087243838` 成功完成，归档路径为 `/nfs/home/share/gem5_ci/performance_data/gcc15-spec06-0.3c/20260519_170615_aab29b8_kmhv3_run571`
+- [x] 2026-05-19 18:35 完成 CI 对比：cache-side FDP 的 SPEC06 0.3c overall score 为 19.921159，对比 stats-only baseline `20260518_201303_797e2e7_kmhv3_run569` 的 19.926709，约 -0.028%
+- [x] 2026-05-19 18:40 在高 I-cache-MPKI 切片 `gcc_s04_7630` 上本地测试 `min_target_distance=32/64/96/128/256`：`32` 会发包并变慢，`64+` 基本完全不发 FDP
 
 ## 发现和意外
 
@@ -141,6 +145,12 @@
 - `gcc_typeck_4528` 的 `5M+5M` 测量段结果为 cycles 1824859 -> 1822698（约 -0.12%），I-cache misses 15411 -> 15428，`pfIssued=113`、`pfUseful=41`、`pfUnused=49`、`demandMergedIntoPfMSHR=10`，no-MSHR blocked cycles 4171 -> 6655。
 - `gcc_expr2_27` 的 `5M+5M` 测量段结果为 cycles 2410537 -> 2410225（约 -0.013%），I-cache misses 13294 -> 13243，`pfIssued=293`、`pfUseful=146`、`pfUnused=115`、`demandMergedIntoPfMSHR=31`，no-MSHR blocked cycles 12493 -> 14211。
 - 目前 cache-side FDP 的局部信号是“有少量有效覆盖，但 MSHR/port 资源代价也可见”。这值得 push 一轮 CI 看全套 SPEC06 0.3c，但还不能说已经是可合入的收益方向。
+- 全套 CI 结果确认 cache-side FDP 初版不是可合入收益方向。对比 stats-only baseline，overall score 19.926709 -> 19.921159（约 -0.028%），Int 18.724052 -> 18.697521（约 -0.142%），FP 20.821866 -> 20.832814（约 +0.053%）。
+- benchmark 级主要负向来自 `omnetpp`（score -0.774%）、`libquantum`（-0.537%）、`milc`（-0.343%）、`sjeng`（-0.237%）、`gcc`（-0.172%）、`perlbench`（-0.171%）、`mcf`（-0.152%）；主要正向有 `zeusmp`（+0.762%）、`GemsFDTD`（+0.281%）、`gromacs`（+0.256%）。
+- 143 个切片 raw sum 中，FDP 减少了 4422 个 I-cache overall misses，但增加了 231269 个 L1I `noMshrBlockedCycles` 和 556832 个 cycles。全套发出 `pfIssued=24700`，`pfUseful=12176`，`demandMergedIntoPfMSHR=2780`，`pfOnlyFill=19818`。这说明机制确实覆盖到了一些将来 demand，但共享 L1I MSHR/端口压力抵消了收益。
+- 最明显负向切片包括 `gcc_s04_7630`（cycles +1.921%、miss +1246、noMSHR +12850、pfIssued 1620、pfUseful 776）、`gcc_typeck_4528`（+0.615%、miss +498、noMSHR +697、pfIssued 679、pfUseful 281）、`gcc_expr2_27`（+0.392%、miss +10、noMSHR +14479、pfIssued 944、pfUseful 319）。也存在正向切片，例如 `gcc_g23_8607`（cycles -0.583%、miss -161，但 noMSHR +6434、pfIssued 791、pfUseful 351）。
+- 在 `gcc_s04_7630` 本地 `5M+5M` 参数探测中，`min_target_distance=32`：cycles 1858483、pfIssued 342、pfUseful 161、noMSHR 2146；`64/96/128/256` 全部不发 FDP，cycles 1836924、noMSHR 1146。当前 target 距离分布很窄，阈值从 32 提到 64 就几乎等于关闭 FDP，说明简单调大距离阈值没有可用余地。
+- 机制判断：当前本地 BPU/FTQ 虽然能提供 target lifecycle，但大多数可预取 target 的 lead time 仍太短；cache-side HardPFReq 又与 demand fetch 共用 L1I MSHR 和下游端口。因此这个初版更像“late prefetch / MSHR competitor”，而不是有效隐藏 I-cache miss latency 的 side-channel。
 
 ## 第一版机制对照
 
@@ -203,3 +213,9 @@
 - Decision: 若继续 FDIP，应优先做 cache-side FDP/snoop 型实现，或至少为 fetch-side prototype 增加“只对 cache/MSHR miss 候选发包”的过滤接口。
 - Reason: 上游 FDP 的 TQ/PFQ/cache snoop 生命周期正是当前 prototype 缺失的关键能力；仅靠 target distance、skip-start-block、target-age 过滤无法稳定避免 L1I-hit prefetch 扰动。
 - Date: 2026-05-18
+- Decision: 不建议把当前 cache-side FDP 初版作为性能优化合入；`kmhv3.py` 默认启用 FDP 的提交只应视作实验开关。
+- Reason: 全套 SPEC06 0.3c CI 轻微负向，且机制计数显示 I-cache miss 减少不足以抵消 L1I MSHR/端口压力。`min_target_distance` 从 32 调到 64 就几乎完全不发 FDP，说明当前 ahead window 太窄，单纯调参很难获得稳定收益。
+- Date: 2026-05-19
+- Decision: 下一步若继续 FDIP，应转向更强 ahead source 或低优先级/不占 demand MSHR 的 cache-side 机制，而不是继续沿用当前 `HardPFReq` 直接进入 L1I MSHR 的路径。
+- Reason: 有效 prefetch 的必要条件是比 demand 早足够多且不明显抢 demand 资源；当前实现满足 lifecycle/snoop，但没有独立资源或足够提前量。
+- Date: 2026-05-19
