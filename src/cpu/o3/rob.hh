@@ -90,8 +90,14 @@ class ROB
     /** Per-thread ROB status. */
     Status robStatus[MaxThreads];
 
+    /** Whether a thread may donate unused ROB headroom this cycle. */
+    bool borrowingDonor[MaxThreads];
+
     /** ROB resource sharing policy for SMT mode. */
     SMTQueuePolicy robPolicy;
+
+    /** Minimum entries a donor thread keeps for restarting after a stall. */
+    const unsigned borrowingDonorReserveEntries;
 
     ROBWalkPolicy robWalkPolicy;
 
@@ -99,6 +105,11 @@ class ROB
     bool allocateGroup_kmhv2(const DynInstPtr inst, ThreadID tid);
     bool allocateGroup_MohBoE(const DynInstPtr inst, ThreadID tid);
     bool allocateGroup_kmhv3(const DynInstPtr inst, ThreadID tid);
+
+    unsigned activeThreadCount() const;
+    unsigned borrowingLimit(ThreadID tid) const;
+    unsigned totalEntries() const;
+    bool canBorrow(ThreadID tid) const;
 
   public:
     /** ROB constructor.
@@ -188,7 +199,19 @@ class ROB
 
     /** Returns the maximum number of entries for a specific thread. */
     unsigned getMaxEntries(ThreadID tid)
-    { return maxEntries[tid]; }
+    {
+        if (tid >= numThreads) {
+            return 0;
+        }
+        return canBorrow(tid) ? borrowingLimit(tid) : maxEntries[tid];
+    }
+
+    /** Returns whether the thread may borrow unused ROB capacity. */
+    void setBorrowingDonor(ThreadID tid, bool donor)
+    { borrowingDonor[tid] = donor; }
+
+    /** Returns whether the thread can reserve the requested ROB entries. */
+    bool canAllocate(ThreadID tid, unsigned entries) const;
 
     /** Returns the number of entries being used by a specific thread. */
     unsigned getThreadEntries(ThreadID tid)
@@ -197,6 +220,9 @@ class ROB
     /** Returns if the ROB is full. */
     bool isFull()
     {
+      if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
+        return totalEntries() >= numEntries;
+      }
       for (int i =0;i<MaxThreads;i++) {
         if (isFull(i)) return true;
       }
@@ -205,7 +231,12 @@ class ROB
 
     /** Returns if a specific thread's partition is full. */
     bool isFull(ThreadID tid)
-    { return threadGroups[tid].size() == numEntries; }
+    {
+      if (robPolicy == SMTQueuePolicy::DynamicBorrowing) {
+          return numFreeEntries(tid) == 0;
+      }
+      return threadGroups[tid].size() == numEntries;
+    }
 
     /** Returns if the ROB is empty. */
     bool isEmpty() const

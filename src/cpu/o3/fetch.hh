@@ -242,6 +242,10 @@ class Fetch
     InstsCounter* iqCounter;
     InstsCounter* robCounter;
 
+    unsigned smtBorrowThrottleCycles[MaxThreads];
+    unsigned smtBorrowThrottleHoldCycles;
+    unsigned smtLdstqHighWater;
+
     // Configuration parameters
     std::string smtDecodePolicy ="multi_priority";
     int delayedSchedulerDelay;

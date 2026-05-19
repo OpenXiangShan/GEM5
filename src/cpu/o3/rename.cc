@@ -355,8 +355,14 @@ Rename::tick()
     releasePhysRegs();
 
     // check threads stall & status
-    ThreadID tid = InvalidThreadID;
     ThreadID blocked_tid = InvalidThreadID;
+    SmtActiveThreadArbiter active_arbiter;
+    auto freezeActiveThread = [this](ThreadID tid) {
+        stallSig->blockDecode[tid] = true;
+        stallSig->decodeBlockReason[tid] = StallReason::OtherFragStall;
+        toDecode->renameInfo[tid].blockReason =
+            stallSig->decodeBlockReason[tid];
+    };
     for (int i = 0; i < numThreads; i++) {
         bool can_rename = canRename(i);
         bool block = stallSig->blockRename[i] || !can_rename;
@@ -394,18 +400,19 @@ Rename::tick()
             stallSig->blockDecode[i] ? block_reason : StallReason::NoStall;
         toDecode->renameInfo[i].blockReason = stallSig->decodeBlockReason[i];
         if (active) {
-            if (tid == InvalidThreadID) tid = i;
-            else {
-                // if there are multiple active threads, must exhaust all threads first
-                // to avoid starvation of other threads and also avoid resource conflict
-                stallSig->blockDecode[tid] = true;
-                stallSig->blockDecode[i] = true;
-                DPRINTF(Rename, "Multiple active threads detected, blocking all threads\n");
+            const auto freeze = active_arbiter.observe(
+                i, smtBorrowPriority(fromIEW->iewInfo[i]));
+            if (freeze.previousActive != InvalidThreadID) {
+                freezeActiveThread(freeze.previousActive);
+            }
+            if (freeze.freezeCurrent) {
+                freezeActiveThread(i);
             }
         } else if (stallSig->blockDecode[i] && blocked_tid == InvalidThreadID) {
             blocked_tid = i;
         }
     }
+    const ThreadID tid = active_arbiter.selected();
 
     if (tid == InvalidThreadID) {
         // all threads are stalled, no need to process

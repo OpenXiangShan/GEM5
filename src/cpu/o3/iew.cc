@@ -937,8 +937,26 @@ IEW::dispatchInsts()
     }
 
     // check threads stall & status
-    ThreadID tid = InvalidThreadID;
+    SmtActiveThreadArbiter active_arbiter;
+    auto freezeActiveThread = [this](ThreadID tid) {
+        stallSig->blockRename[tid] = true;
+        stallSig->renameBlockReason[tid] = StallReason::OtherFragStall;
+        toRename->iewInfo[tid].blockReason = StallReason::OtherFragStall;
+    };
     for (int i = 0; i < numThreads; i++) {
+        auto &iew_info = toRename->iewInfo[i];
+        iew_info.robHeadStallReason =
+            checkDispatchStall(i, NumDQ, nullptr, -1);
+        iew_info.lqHeadStallReason =
+            ldstQueue.lqEmpty(i) ? StallReason::NoStall :
+                                   checkLSQStall(i, true);
+        iew_info.sqHeadStallReason =
+            ldstQueue.sqEmpty(i) ? StallReason::NoStall :
+                                   checkLSQStall(i, false);
+        iew_info.ldstqCount = ldstQueue.getCount(i);
+        iew_info.robCount = rob->getThreadEntries(i);
+        iew_info.iqCount = scheduler->getIQInsts(i);
+
         bool ldst_block = !canInsertLDSTQue(i);
         bool block = stallSig->blockIEW[i] || ldst_block;
         bool active = !block && !fixedbuffer[i].empty();
@@ -946,25 +964,27 @@ IEW::dispatchInsts()
         if (stallSig->blockIEW[i]) {
             block_reason = stallSig->iewBlockReason[i];
         } else if (ldst_block) {
-            block_reason = checkDispatchStall(i, NumDQ, nullptr, -1);
+            block_reason = iew_info.robHeadStallReason;
             if (block_reason == StallReason::NoStall) {
                 block_reason = StallReason::OtherStall;
             }
         }
+        iew_info.blockReason = block ? block_reason : StallReason::NoStall;
 
         stallSig->blockRename[i] = block;
         stallSig->renameBlockReason[i] = block ? block_reason : StallReason::NoStall;
         if (active) {
-            if (tid == InvalidThreadID) tid = i;
-            else {
-                // if there are multiple active threads, must exhaust all threads first
-                // to avoid starvation of other threads and also avoid resource conflict
-                stallSig->blockRename[tid] = true;
-                stallSig->blockRename[i] = true;
-                DPRINTF(IEW, "Multiple active threads detected, blocking all threads\n");
+            const auto freeze =
+                active_arbiter.observe(i, smtBorrowPriority(iew_info));
+            if (freeze.previousActive != InvalidThreadID) {
+                freezeActiveThread(freeze.previousActive);
+            }
+            if (freeze.freezeCurrent) {
+                freezeActiveThread(i);
             }
         }
     }
+    const ThreadID tid = active_arbiter.selected();
 
     if (tid != InvalidThreadID) {
         DPRINTF(IEW,"Processing [tid:%i]\n",tid);
@@ -978,6 +998,9 @@ IEW::dispatchInsts()
         // check stall again
         if (!fixedbuffer[tid].empty()) {
             stallSig->blockRename[tid] = true;
+            stallSig->renameBlockReason[tid] =
+                blockReason == StallReason::NoStall ?
+                    StallReason::OtherFragStall : blockReason;
             DPRINTF(IEW, "Dispatch bandwidth full, blocking thread %i\n", tid);
         }
 
@@ -987,6 +1010,9 @@ IEW::dispatchInsts()
         toRename->iewInfo[tid].sqHeadStallReason =
             ldstQueue.sqEmpty(tid) ? StallReason::NoStall : checkLSQStall(tid, false);
         toRename->iewInfo[tid].blockReason = blockReason;
+        toRename->iewInfo[tid].ldstqCount = ldstQueue.getCount(tid);
+        toRename->iewInfo[tid].robCount = rob->getThreadEntries(tid);
+        toRename->iewInfo[tid].iqCount = scheduler->getIQInsts(tid);
     }
 }
 

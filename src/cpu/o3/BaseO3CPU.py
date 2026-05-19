@@ -51,7 +51,7 @@ class SMTFetchPolicy(ScopedEnum):
     vals = [ 'RoundRobin', 'Branch', 'IQCount', 'LSQCount' ]
 
 class SMTQueuePolicy(ScopedEnum):
-    vals = [ 'Dynamic', 'Partitioned', 'Threshold' ]
+    vals = [ 'Dynamic', 'Partitioned', 'Threshold', 'DynamicBorrowing' ]
 
 class SMTLSQMode(ScopedEnum):
     vals = [ 'Independent', 'Shared' ]
@@ -248,6 +248,16 @@ class BaseO3CPU(BaseCPU):
                                           "SMT ROB Sharing Policy")
     smtROBThreshold = Param.Int(100, "SMT ROB Threshold Sharing Parameter")
     smtCommitPolicy = Param.CommitPolicy('RoundRobin', "SMT Commit Policy")
+    smtBorrowThrottleCycles = Param.Unsigned(
+        8, "Cycles to keep a backend-stalled SMT thread throttled at fetch")
+    smtBorrowLdstqHighWater = Param.Unsigned(
+        0, "Explicit SMT borrowing LSQ high-water threshold; 0 uses percentage")
+    smtBorrowLdstqHighWaterPercent = Param.Percent(
+        75, "SMT borrowing LSQ high-water threshold as a percentage of LQ+SQ")
+    smtBorrowDonorHoldCycles = Param.Unsigned(
+        8, "Cycles to keep an SMT thread marked as a ROB borrowing donor")
+    smtBorrowDonorReserveEntries = Param.Unsigned(
+        8, "Minimum ROB entries reserved for a borrowing donor to resume")
 
     branchPred = Param.BranchPredictor(DecoupledBPUWithBTB(),
                                        "Branch Predictor")

@@ -486,8 +486,14 @@ Decode::tick()
     checkSquash();
 
     // check threads stall & status
-    ThreadID tid = InvalidThreadID;
     ThreadID blocked_tid = InvalidThreadID;
+    SmtActiveThreadArbiter active_arbiter;
+    auto freezeActiveThread = [this](ThreadID tid) {
+        stallSig->blockFetch[tid] = true;
+        stallSig->fetchBlockReason[tid] = StallReason::OtherFragStall;
+        toFetch->decodeInfo[tid].blockReason =
+            stallSig->fetchBlockReason[tid];
+    };
     const bool fifoBackpressured =
         !stallBuffer.empty() &&
         eachstallSize.size() + decodeToFetchDelay + 1 >=
@@ -520,19 +526,19 @@ Decode::tick()
                 StallReason::NoStall;
         toFetch->decodeInfo[i].blockReason = stallSig->fetchBlockReason[i];
         if (active) {
-            if (tid == InvalidThreadID)
-                tid = i;
-            else {
-                // if there are multiple active threads, must exhaust all threads first
-                // to avoid starvation of other threads and also avoid resource conflict
-                stallSig->blockFetch[tid] = true;
-                stallSig->blockFetch[i] = true;
-                DPRINTF(Decode, "Multiple active threads detected, blocking all threads\n");
+            const auto freeze = active_arbiter.observe(
+                i, smtBorrowPriority(fromIEW->iewInfo[i]));
+            if (freeze.previousActive != InvalidThreadID) {
+                freezeActiveThread(freeze.previousActive);
+            }
+            if (freeze.freezeCurrent) {
+                freezeActiveThread(i);
             }
         } else if (block && blocked_tid == InvalidThreadID) {
             blocked_tid = i;
         }
     }
+    const ThreadID tid = active_arbiter.selected();
     if (tid == InvalidThreadID) {
         // all threads are stalled, no need to process
         if (blocked_tid != InvalidThreadID) {
