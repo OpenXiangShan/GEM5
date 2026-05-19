@@ -69,6 +69,9 @@ def _get_cache_opts(cpu, level, options):
     prefetcher_attr = '{}_hwp_type'.format(level)
     if hasattr(options, prefetcher_attr) and (not options.no_pf):
         opts['prefetcher'] = create_prefetcher(cpu, level, options)
+        if level == 'l1i' and getattr(options, prefetcher_attr) == \
+                'FetchDirectedPrefetcher':
+            opts['demand_mshr_reserve'] = 2
 
     return opts
 

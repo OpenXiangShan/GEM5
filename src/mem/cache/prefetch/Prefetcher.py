@@ -932,6 +932,36 @@ class PIFPrefetcher(QueuedPrefetcher):
         self.addEvent(HWPProbeEventRetiredInsts(self, simObj,"RetiredInstsPC"))
 
 
+class FetchDirectedPrefetcher(BasePrefetcher):
+    type = "FetchDirectedPrefetcher"
+    cxx_class = "gem5::prefetch::FetchDirectedPrefetcher"
+    cxx_header = "mem/cache/prefetch/fdp.hh"
+
+    cpu = Param.BaseCPU(Parent.any, "CPU whose FTQ target probes are tracked")
+
+    latency = Param.Cycles(64, "Latency for generated prefetches")
+    pfq_size = Param.Unsigned(1, "Maximum number of queued prefetches")
+    tq_size = Param.Unsigned(1, "Maximum outstanding translations")
+    mark_req_as_prefetch = Param.Bool(
+        True,
+        "Mark translation requests as prefetches")
+    squash_prefetches = Param.Bool(
+        True,
+        "Squash queued prefetches when the source FTQ target is removed")
+    cache_snoop = Param.Bool(
+        True,
+        "Drop candidates that already hit in the cache or MSHR")
+    max_blocks_per_target = Param.Unsigned(
+        1,
+        "Maximum cache blocks to prefetch per target; 0 means unlimited")
+    skip_target_start_block = Param.Bool(
+        False,
+        "Skip the cache block containing the target start PC")
+    min_target_distance = Param.Unsigned(
+        32,
+        "Minimum FTQ distance from fetch head before generating candidates")
+
+
 class IPCPrefetcher(QueuedPrefetcher):
     type = 'IPCPrefetcher'
     cxx_class = 'gem5::prefetch::IPCP'

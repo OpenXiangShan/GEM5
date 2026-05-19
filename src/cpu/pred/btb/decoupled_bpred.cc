@@ -1,6 +1,7 @@
 #include "cpu/pred/btb/decoupled_bpred.hh"
 
 #include <array>
+#include <memory>
 
 #include "base/debug_helper.hh"
 #include "base/output.hh"
@@ -24,9 +25,11 @@ namespace btb_pred
 void
 DecoupledBPUWithBTB::consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid)
 {
+    const auto target_id = ftq.fetchId(tid);
     auto &target = ftq.fetching(tid);
     target.fetchInstNum = fetched_inst_num;
     recordFdipFetchedTarget(target);
+    notifyFdipTargetRemove(target, target_id);
     ftq.finishTarget(tid);
 }
 
@@ -180,12 +183,39 @@ DecoupledBPUWithBTB::recordFdipSquashedTargets(ThreadID tid,
         const auto &target = ftq.get(id, tid);
         dbpBtbStats.fdipTargetsSquashed++;
         dbpBtbStats.fdipTargetSquashLatency.sample(fdipTargetAgeCycles(target), 1);
+        notifyFdipTargetRemove(target, id);
         squashed++;
     }
 
     if (squashed > 0) {
         dbpBtbStats.fdipSquashBatchSize.sample(squashed, 1);
     }
+}
+
+void
+DecoupledBPUWithBTB::notifyFdipTargetInsert(const FetchTarget &target,
+                                            FetchTargetId target_id,
+                                            uint64_t distance_from_fetch_head) const
+{
+    if (!cpu || !cpu->ppFTQInsert) {
+        return;
+    }
+
+    cpu->ppFTQInsert->notify(
+        std::make_shared<FdipFetchTarget>(
+            target, target_id, distance_from_fetch_head));
+}
+
+void
+DecoupledBPUWithBTB::notifyFdipTargetRemove(const FetchTarget &target,
+                                            FetchTargetId target_id) const
+{
+    if (!cpu || !cpu->ppFTQRemove) {
+        return;
+    }
+
+    cpu->ppFTQRemove->notify(
+        std::make_shared<FdipFetchTarget>(target, target_id, 0));
 }
 
 
@@ -449,14 +479,22 @@ DecoupledBPUWithBTB::processNewPrediction(ThreadID tid)
     // 4. Fill ahead pipeline
     fillAheadPipeline(entry);
 
+    const FetchTargetId target_id =
+        ftq.empty(tid) ? ftq.frontId(tid) : ftq.backId(tid) + 1;
+    const FetchTargetId fetch_id =
+        ftq.empty(tid) ? target_id : ftq.fetchId(tid);
+    const uint64_t distance_from_fetch_head =
+        target_id >= fetch_id ? target_id - fetch_id : 0;
+
     if (enablePredFSQTrace) {
-        predTraceManager->write_record(PredictionTrace(ftq.backId(tid), entry));
+        predTraceManager->write_record(PredictionTrace(target_id, entry));
     }
 
     recordFdipCandidateTarget(entry);
 
     // 5. Add entry to fetch target queue
     ftq.insert(entry);
+    notifyFdipTargetInsert(entry, target_id, distance_from_fetch_head);
     threads[tid].validprediction = false;
 
     // 6. Debug output and update statistics

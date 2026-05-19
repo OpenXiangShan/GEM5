@@ -194,6 +194,11 @@ class DecoupledBPUWithBTB : public BPredUnit
     void recordFdipCommittedTarget(const FetchTarget &target);
     void recordFdipSquashedTargets(ThreadID tid, FetchTargetId firstTargetId,
                                    FetchTargetId lastTargetId);
+    void notifyFdipTargetInsert(const FetchTarget &target,
+                                FetchTargetId target_id,
+                                uint64_t distance_from_fetch_head) const;
+    void notifyFdipTargetRemove(const FetchTarget &target,
+                                FetchTargetId target_id) const;
 
     void clearPreds(ThreadID tid) {
         for (auto &stagePred : threads[tid].predsOfEachStage) {

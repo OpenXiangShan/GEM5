@@ -69,6 +69,7 @@
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
 #include "cpu/o3/thread_state.hh"
+#include "cpu/pred/btb/fdip_target.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/valuepred/valuepred_unit.hh"
@@ -193,6 +194,10 @@ class CPU : public BaseCPU
 
     ProbePointArg<PacketPtr> *ppInstAccessComplete;
     ProbePointArg<std::pair<DynInstPtr, PacketPtr> > *ppDataAccessComplete;
+    ProbePointArg<branch_prediction::btb_pred::FdipFetchTargetPtr>
+        *ppFTQInsert;
+    ProbePointArg<branch_prediction::btb_pred::FdipFetchTargetPtr>
+        *ppFTQRemove;
 
     /** Register probe points. */
     void regProbePoints() override;

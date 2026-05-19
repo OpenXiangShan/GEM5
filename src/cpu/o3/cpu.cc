@@ -340,6 +340,12 @@ CPU::regProbePoints()
     ppDataAccessComplete = new ProbePointArg<
         std::pair<DynInstPtr, PacketPtr>>(
                 getProbeManager(), "DataAccessComplete");
+    ppFTQInsert =
+        new ProbePointArg<branch_prediction::btb_pred::FdipFetchTargetPtr>(
+            getProbeManager(), "FTQInsert");
+    ppFTQRemove =
+        new ProbePointArg<branch_prediction::btb_pred::FdipFetchTargetPtr>(
+            getProbeManager(), "FTQRemove");
 
     fetch.regProbePoints();
     rename.regProbePoints();

@@ -29,7 +29,12 @@ def create_prefetcher(cpu, cache_level, options):
         return NULL
 
     if cpu != NULL:
-        prefetcher.registerTLB(cpu.mmu.dtb, cpu.mmu.functional)
+        prefetcher.registerTLB(
+            cpu.mmu.itb if cache_level == 'l1i' else cpu.mmu.dtb,
+            cpu.mmu.functional)
+
+    if prefetcher_name == 'FetchDirectedPrefetcher':
+        prefetcher.cpu = cpu
 
     if prefetcher_name == 'XSCompositePrefetcher':
         if options.l1d_enable_spp:
