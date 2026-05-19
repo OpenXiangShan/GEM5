@@ -457,6 +457,9 @@ class Commit
      */
     bool changedROBNumEntries[MaxThreads];
 
+    /** Donor hysteresis for dynamic ROB borrowing. */
+    unsigned borrowingDonorCycles[MaxThreads];
+
     /** Records if a thread has to squash this cycle due to a trap. */
     bool trapSquash[MaxThreads];
 
@@ -496,6 +499,9 @@ class Commit
 
     /** Number of Active Threads */
     const ThreadID numThreads;
+
+    /** Cycles to keep a stalled thread marked as a ROB borrowing donor. */
+    const unsigned smtBorrowDonorHoldCycles;
 
     /** Is a drain pending? Commit is looking for an instruction boundary while
      * there are no pending interrupts

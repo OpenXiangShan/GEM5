@@ -22,6 +22,7 @@ def setSharedLSQParams(args, system):
         # shared target queue and starve the other thread's frontend.
         cpu.smtLSQMode = 'Shared'
         cpu.smtLSQPolicy = 'Dynamic'
+        cpu.smtROBPolicy = 'DynamicBorrowing'
         cpu.branchPred.smtFTQMode = 'Shared'
         cpu.branchPred.smtFTQPolicy = 'Partitioned'
 

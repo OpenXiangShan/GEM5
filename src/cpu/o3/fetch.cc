@@ -116,6 +116,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              fetchWidth, static_cast<int>(MaxWidth));
 
+    smtBorrowThrottleHoldCycles = params.smtBorrowThrottleCycles;
     for (int i = 0; i < MaxThreads; i++) {
         setThreadStatus(i, Idle);
         decoder[i] = nullptr;
@@ -123,6 +124,13 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         macroop[i] = nullptr;
         delayedCommit[i] = false;
         lastIcacheStall[i] = 0;
+        smtBorrowThrottleCycles[i] = 0;
+    }
+    smtLdstqHighWater = params.smtBorrowLdstqHighWater;
+    if (smtLdstqHighWater == 0) {
+        smtLdstqHighWater =
+            (params.LQEntries + params.SQEntries) *
+            params.smtBorrowLdstqHighWaterPercent / 100;
     }
 
     branchPred = params.branchPred;
@@ -503,6 +511,7 @@ Fetch::resetStage()
 
         priorityList.push_back(tid);
         waitForVsetvl[tid] = false;
+        smtBorrowThrottleCycles[tid] = 0;
     }
 
     wroteToTimeBuffer = false;
@@ -1386,36 +1395,67 @@ Fetch::handleInterrupts()
 ThreadID
 Fetch::selectUnstalledThread()
 {
+    ThreadID selected = InvalidThreadID;
+    bool has_candidate = false;
+    bool has_unthrottled_candidate = false;
 
-    // if (numThreads == 1) {
-    //     return 0;
-    // }
-    ThreadID selected = -1;
-    bool all_stalled = true;
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (!stallSig->blockFetch[tid] &&fetchQueue[tid].size() > 0) {
-            lsqCounter->setCounter(tid, fromIEW->iewInfo[tid].ldstqCount);
-            iqCounter->setCounter(tid, fromIEW->iewInfo[tid].iqCount);
-            robCounter->setCounter(tid, fromIEW->iewInfo[tid].robCount);
-            all_stalled = false;
-           
-        }else {
+        const bool candidate = !stallSig->blockFetch[tid] &&
+                               !fetchQueue[tid].empty();
+        if (!candidate) {
+            smtBorrowThrottleCycles[tid] = 0;
             lsqCounter->setCounter(tid, UINT64_MAX);
             iqCounter->setCounter(tid, UINT64_MAX);
             robCounter->setCounter(tid, UINT64_MAX);
-            
+            continue;
+        }
+        has_candidate = true;
+
+        const bool throttle_now =
+            smtHasBorrowThrottleStall(fromIEW->iewInfo[tid]) ||
+            smtHasMemoryPressure(fromIEW->iewInfo[tid], smtLdstqHighWater);
+        if (throttle_now) {
+            smtBorrowThrottleCycles[tid] = smtBorrowThrottleHoldCycles;
+        } else if (smtBorrowThrottleCycles[tid] > 0) {
+            --smtBorrowThrottleCycles[tid];
         }
 
-        if(all_stalled)
-        {
-            selected = -1;
-        }else{
-            selected = decodeScheduler->getThread();
+        const bool throttled = smtBorrowThrottleCycles[tid] > 0;
+        if (!throttled) {
+            has_unthrottled_candidate = true;
         }
-        DPRINTF(Fetch, "lsqCounter->setCounter: %d iqCounter->setCounter: %d robCounter->setCounter: %d\n",fromIEW->iewInfo[tid].ldstqCount,fromIEW->iewInfo[tid].iqCount,fromIEW->iewInfo[tid].robCount);
+
+        lsqCounter->setCounter(
+            tid, throttled ? UINT64_MAX : fromIEW->iewInfo[tid].ldstqCount);
+        iqCounter->setCounter(
+            tid, throttled ? UINT64_MAX : fromIEW->iewInfo[tid].iqCount);
+        robCounter->setCounter(
+            tid, throttled ? UINT64_MAX : fromIEW->iewInfo[tid].robCount);
+
+        DPRINTF(Fetch,
+                "[tid:%i] lsq=%u iq=%u rob=%u throttled=%u mem_pressure=%u hold=%u\n",
+                tid, fromIEW->iewInfo[tid].ldstqCount,
+                fromIEW->iewInfo[tid].iqCount, fromIEW->iewInfo[tid].robCount,
+                throttled,
+                smtHasMemoryPressure(fromIEW->iewInfo[tid], smtLdstqHighWater),
+                smtBorrowThrottleCycles[tid]);
     }
 
-     
+    if (has_candidate && !has_unthrottled_candidate) {
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            if (stallSig->blockFetch[tid] || fetchQueue[tid].empty()) {
+                continue;
+            }
+            lsqCounter->setCounter(tid, fromIEW->iewInfo[tid].ldstqCount);
+            iqCounter->setCounter(tid, fromIEW->iewInfo[tid].iqCount);
+            robCounter->setCounter(tid, fromIEW->iewInfo[tid].robCount);
+        }
+    }
+
+    if (has_candidate) {
+        selected = decodeScheduler->getThread();
+    }
+
     return selected;
 }
 

@@ -147,6 +147,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       renameWidth(params.renameWidth),
       commitWidth(params.commitWidth),
       numThreads(params.numThreads),
+      smtBorrowDonorHoldCycles(params.smtBorrowDonorHoldCycles),
       drainPending(false),
       drainImminent(false),
       trapLatency(params.trapLatency),
@@ -175,6 +176,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         commitStatus[tid] = Idle;
         changedROBNumEntries[tid] = false;
+        borrowingDonorCycles[tid] = 0;
         trapSquash[tid] = false;
         tcSquash[tid] = false;
         squashAfterInst[tid] = nullptr;
@@ -563,6 +565,7 @@ Commit::takeOverFrom()
     for (ThreadID tid = 0; tid < numThreads; tid++) {
         commitStatus[tid] = Idle;
         changedROBNumEntries[tid] = false;
+        borrowingDonorCycles[tid] = 0;
         trapSquash[tid] = false;
         tcSquash[tid] = false;
         squashAfterInst[tid] = NULL;
@@ -1974,16 +1977,40 @@ Commit::moveInstsToBuffer()
         for (int i = 0; i < insts_from_rename; ++i) {
             const DynInstPtr &inst = fromRename->insts[i];
             assert(inst->threadNumber == tid);
-            if (!inst->isSquashed())
-            fixedbuffer[tid].push_back(inst);
+            if (!inst->isSquashed()) {
+                fixedbuffer[tid].push_back(inst);
+            }
         }
     }
 
+    for (int i = 0; i < numThreads; ++i) {
+        bool has_buffered_rename = !fixedbuffer[i].empty();
+        bool donor = false;
+
+        if (has_buffered_rename) {
+            borrowingDonorCycles[i] = 0;
+        } else {
+            donor = smtHasBorrowThrottleStall(robInfoFromIEW->iewInfo[i]);
+            if (donor) {
+                borrowingDonorCycles[i] = smtBorrowDonorHoldCycles;
+            } else if (borrowingDonorCycles[i] > 0) {
+                --borrowingDonorCycles[i];
+            }
+            donor = borrowingDonorCycles[i] > 0;
+        }
+
+        rob->setBorrowingDonor(i, donor);
+    }
+
     // check threads stall & status
-    ThreadID tid = InvalidThreadID;
+    SmtActiveThreadArbiter active_arbiter;
+    auto freezeActiveThread = [this](ThreadID tid) {
+        stallSig->blockIEW[tid] = true;
+        stallSig->iewBlockReason[tid] = StallReason::OtherFragStall;
+    };
     for (int i = 0; i < numThreads; i++) {
         bool robblock = commitStatus[i] == ROBSquashing || commitStatus[i] == TrapPending;
-        bool block = (rob->getMaxEntries(i) - rob->getThreadEntries(i) < fixedbuffer[i].size()) || robblock;
+        bool block = !rob->canAllocate(i, fixedbuffer[i].size()) || robblock;
         bool active = !block && !fixedbuffer[i].empty();
         StallReason block_reason = StallReason::NoStall;
         if (robblock) {
@@ -1999,16 +2026,17 @@ Commit::moveInstsToBuffer()
         stallSig->blockIEW[i] = block;
         stallSig->iewBlockReason[i] = block ? block_reason : StallReason::NoStall;
         if (active) {
-            if (tid == InvalidThreadID) tid = i;
-            else {
-                // if there are multiple active threads, must exhaust all threads first
-                // to avoid starvation of other threads and also avoid resource conflict
-                stallSig->blockIEW[tid] = true;
-                stallSig->blockIEW[i] = true;
-                DPRINTF(IEW, "Multiple active threads detected, blocking all threads\n");
+            const auto freeze = active_arbiter.observe(
+                i, smtBorrowPriority(robInfoFromIEW->iewInfo[i]));
+            if (freeze.previousActive != InvalidThreadID) {
+                freezeActiveThread(freeze.previousActive);
+            }
+            if (freeze.freezeCurrent) {
+                freezeActiveThread(i);
             }
         }
     }
+    const ThreadID tid = active_arbiter.selected();
     if (tid == InvalidThreadID) {
         DPRINTF(Commit, "No instructions from Rename stage.\n");
         return;
@@ -2028,7 +2056,7 @@ Commit::moveInstsToBuffer()
 
             rob->insertInst(inst);
 
-            assert(rob->getThreadEntries(tid) <= rob->getMaxEntries(tid));
+            assert(rob->canAllocate(tid, 0));
 
             youngestSeqNum[tid] = inst->seqNum;
         } else {

@@ -350,6 +350,133 @@ struct TimeStruct
     CommitComm commitInfo[MaxThreads];// commit to iew, rename, fetch
 };
 
+inline bool
+smtCanDonateRobHeadroom(StallReason reason)
+{
+    switch (reason) {
+      case NoStall:
+      case ROBFull:
+      case RegFull:
+      case MemDQBandwidth:
+      case IntDQBandwidth:
+      case FVDQBandwidth:
+      case VectorReadyButNotIssued:
+      case ScalarReadyButNotIssued:
+      case CommitSquash:
+        return false;
+      default:
+        return true;
+    }
+}
+
+inline bool
+smtIsMemoryPressureReason(StallReason reason)
+{
+    switch (reason) {
+      case DTlbStall:
+      case LoadL2Bound:
+      case LoadL3Bound:
+      case LoadMemBound:
+      case StoreL2Bound:
+      case StoreL3Bound:
+      case StoreMemBound:
+      case MemSquashed:
+      case MemNotReady:
+      case MemCommitRateLimit:
+      case Atomic:
+      case OtherMemStall:
+        return true;
+      default:
+        return false;
+    }
+}
+
+inline bool
+smtHasBorrowThrottleStall(const TimeStruct::IewComm &info)
+{
+    return smtCanDonateRobHeadroom(info.robHeadStallReason) ||
+           smtCanDonateRobHeadroom(info.lqHeadStallReason) ||
+           smtCanDonateRobHeadroom(info.sqHeadStallReason);
+}
+
+inline bool
+smtHasMemoryPressure(const TimeStruct::IewComm &info,
+                     unsigned ldstqHighWater = 0)
+{
+    if (ldstqHighWater != 0 && info.ldstqCount >= ldstqHighWater) {
+        return true;
+    }
+
+    return smtIsMemoryPressureReason(info.robHeadStallReason) ||
+           smtIsMemoryPressureReason(info.lqHeadStallReason) ||
+           smtIsMemoryPressureReason(info.sqHeadStallReason);
+}
+
+inline uint64_t
+smtBorrowPriority(const TimeStruct::IewComm &info)
+{
+    constexpr uint64_t backend_stall_penalty = 1ULL << 48;
+    constexpr uint64_t memory_pressure_penalty = 1ULL << 49;
+
+    uint64_t score = static_cast<uint64_t>(info.robCount) +
+                     static_cast<uint64_t>(info.iqCount) * 2 +
+                     static_cast<uint64_t>(info.ldstqCount) * 4;
+
+    if (smtHasBorrowThrottleStall(info)) {
+        score += backend_stall_penalty;
+    }
+    if (smtHasMemoryPressure(info)) {
+        score += memory_pressure_penalty;
+    }
+
+    return score;
+}
+
+struct SmtActiveThreadFreeze
+{
+    ThreadID previousActive = InvalidThreadID;
+    bool freezeCurrent = false;
+};
+
+class SmtActiveThreadArbiter
+{
+  public:
+    static constexpr uint64_t InvalidScore = static_cast<uint64_t>(-1);
+
+    SmtActiveThreadFreeze observe(ThreadID tid, uint64_t score)
+    {
+        if (score < bestScore) {
+            selectedTid = tid;
+            bestScore = score;
+        }
+
+        if (freezeActive) {
+            SmtActiveThreadFreeze freeze;
+            freeze.freezeCurrent = true;
+            return freeze;
+        }
+
+        if (firstActiveTid == InvalidThreadID) {
+            firstActiveTid = tid;
+            return {};
+        }
+
+        freezeActive = true;
+        SmtActiveThreadFreeze freeze;
+        freeze.previousActive = firstActiveTid;
+        freeze.freezeCurrent = true;
+        return freeze;
+    }
+
+    ThreadID selected() const { return selectedTid; }
+
+  private:
+    ThreadID selectedTid = InvalidThreadID;
+    ThreadID firstActiveTid = InvalidThreadID;
+    bool freezeActive = false;
+    uint64_t bestScore = InvalidScore;
+};
+
 
 struct StallSignals
 {
