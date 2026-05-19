@@ -1384,6 +1384,11 @@ LSQUnit::loadDoRecvData(const DynInstPtr &inst)
         }
     }
 
+    if (request && request->isNormalLd() && !inst->fullForward()) {
+        cpu->perfCCT->updateInstMeta(
+            inst->seqNum, InstDetail::DataReadyTick, curTick());
+    }
+
     return fault;
 }
 

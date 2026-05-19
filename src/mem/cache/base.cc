@@ -85,6 +85,74 @@
 namespace gem5
 {
 
+namespace
+{
+
+Request::XsMetadata
+requestXsMetadataOrDefault(const PacketPtr &pkt)
+{
+    return pkt->req->hasXsMetadata() ? pkt->req->getXsMetadata()
+                                     : Request::XsMetadata();
+}
+
+void
+setLatestTick(Tick &dst, Tick tick)
+{
+    dst = std::max(dst, tick);
+}
+
+void
+recordLoadCacheSendMetadata(PacketPtr pkt, int cache_level, Tick tick)
+{
+    if (!pkt || !pkt->req) {
+        return;
+    }
+
+    Request::XsMetadata xs_meta = requestXsMetadataOrDefault(pkt);
+    xs_meta.validXsMetadata = true;
+    switch (cache_level) {
+      case 1:
+        setLatestTick(xs_meta.l1SendTick, tick);
+        break;
+      case 2:
+        setLatestTick(xs_meta.l2SendTick, tick);
+        break;
+      case 3:
+        setLatestTick(xs_meta.l3SendTick, tick);
+        break;
+      default:
+        return;
+    }
+    pkt->req->setXsMetadata(xs_meta);
+}
+
+void
+recordLoadCacheRespRecvMetadata(PacketPtr pkt, int cache_level, Tick tick)
+{
+    if (!pkt || !pkt->req) {
+        return;
+    }
+
+    Request::XsMetadata xs_meta = requestXsMetadataOrDefault(pkt);
+    xs_meta.validXsMetadata = true;
+    switch (cache_level) {
+      case 1:
+        setLatestTick(xs_meta.l1RespRecvTick, tick);
+        break;
+      case 2:
+        setLatestTick(xs_meta.l2RespRecvTick, tick);
+        break;
+      case 3:
+        setLatestTick(xs_meta.l3RespRecvTick, tick);
+        break;
+      default:
+        return;
+    }
+    pkt->req->setXsMetadata(xs_meta);
+}
+
+} // namespace
+
 BaseCache::SendTimingRespEvent::SendTimingRespEvent(BaseCache* cache, PacketPtr pkt)
     : Event(Delayed_Writeback_Pri, AutoDelete),
       cache(cache),
@@ -892,6 +960,8 @@ void
 BaseCache::recvTimingResp(PacketPtr pkt)
 {
     assert(pkt->isResponse());
+
+    recordLoadCacheRespRecvMetadata(pkt, cacheLevel, curTick());
 
     stats.bytesRecv += pkt->getSize();
 
@@ -2565,6 +2635,14 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         // so, we know it is dirty, and we can determine if it is
         // being passed as Modified, making our MSHR the ordering
         // point
+        Request::XsMetadata xs_meta = requestXsMetadataOrDefault(pkt);
+        xs_meta.validXsMetadata = true;
+        xs_meta.cacheReturnLevel =
+            std::max(xs_meta.cacheReturnLevel,
+                     static_cast<uint8_t>(cacheLevel + 1));
+        pkt->req->setXsMetadata(xs_meta);
+        recordLoadCacheSendMetadata(pkt, cacheLevel, curTick());
+
         bool pending_modified_resp = !pkt->hasSharers() &&
             pkt->cacheResponding();
         markInService(mshr, pending_modified_resp);
@@ -2606,6 +2684,7 @@ BaseCache::sendWriteQueuePacket(WriteQueueEntry* wq_entry)
         // it gets retried
         return true;
     } else {
+        recordLoadCacheSendMetadata(tgt_pkt, cacheLevel, curTick());
         markInService(wq_entry);
         return false;
     }

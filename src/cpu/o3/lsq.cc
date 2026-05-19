@@ -614,6 +614,122 @@ LSQ::notifyDcacheRefill(Addr addr)
     pendingDcacheRefill.at(getDcacheDiv(addr)) = true;
 }
 
+void
+LSQ::recordLoadCacheMiss(PacketPtr pkt, int cache_level)
+{
+    if (!cpu || !cpu->perfCCT || !pkt || !pkt->req ||
+        !pkt->req->hasInstSeqNum() || !pkt->isRead() ||
+        pkt->cmd.isSWPrefetch()) {
+        return;
+    }
+
+    const InstSeqNum sn = pkt->req->getReqInstSeqNum();
+    switch (cache_level) {
+    case 1:
+        cpu->perfCCT->updateInstMeta(sn, InstDetail::L1Miss, 1);
+        break;
+    case 2:
+        cpu->perfCCT->updateInstMeta(sn, InstDetail::L2Miss, 1);
+        break;
+    case 3:
+        cpu->perfCCT->updateInstMeta(sn, InstDetail::L3Miss, 1);
+        break;
+    default:
+        break;
+    }
+}
+
+void
+LSQ::recordLoadCacheReturnTick(PacketPtr pkt, int cache_level, Tick tick)
+{
+    if (!cpu || !cpu->perfCCT || !pkt || !pkt->req ||
+        !pkt->req->hasInstSeqNum() || !pkt->isRead() ||
+        pkt->cmd.isSWPrefetch()) {
+        return;
+    }
+
+    const InstSeqNum sn = pkt->req->getReqInstSeqNum();
+    switch (cache_level) {
+    case 1:
+        cpu->perfCCT->updateInstMeta(sn, InstDetail::L1ReturnTick, tick);
+        break;
+    case 2:
+        cpu->perfCCT->updateInstMeta(sn, InstDetail::L2ReturnTick, tick);
+        break;
+    case 3:
+        cpu->perfCCT->updateInstMeta(sn, InstDetail::L3ReturnTick, tick);
+        break;
+    default:
+        break;
+    }
+}
+
+void
+LSQ::recordLoadEffectiveCacheReturnTick(
+    PacketPtr pkt, const Request::XsMetadata &cache_meta)
+{
+    if (!cpu || !cpu->perfCCT || !pkt || !pkt->req ||
+        !pkt->req->hasInstSeqNum() || !pkt->isRead() ||
+        pkt->cmd.isSWPrefetch()) {
+        return;
+    }
+
+    const InstSeqNum sn = pkt->req->getReqInstSeqNum();
+    cpu->perfCCT->updateInstMeta(sn, InstDetail::ReqCreateTick, pkt->req->time());
+
+    const Request::XsMetadata target_meta = pkt->req->getXsMetadata();
+    if (target_meta.l1MissTick > 0) {
+        cpu->perfCCT->updateInstMeta(sn, InstDetail::L1MissTick,
+                                     target_meta.l1MissTick);
+    }
+    if (cache_meta.l1SendTick > 0) {
+        cpu->perfCCT->updateInstMeta(sn, InstDetail::L1SendTick,
+                                     cache_meta.l1SendTick);
+    }
+    if (cache_meta.l1RespRecvTick > 0) {
+        cpu->perfCCT->updateInstMeta(sn, InstDetail::L1RespRecvTick,
+                                     cache_meta.l1RespRecvTick);
+    }
+    if (cache_meta.cacheReturnLevel > 2) {
+        cpu->perfCCT->updateInstMeta(sn, InstDetail::EffL2Miss, 1);
+        if (cache_meta.l2MissTick > 0) {
+            cpu->perfCCT->updateInstMeta(sn, InstDetail::EffL2MissTick,
+                                         cache_meta.l2MissTick);
+        }
+        if (cache_meta.l2SendTick > 0) {
+            cpu->perfCCT->updateInstMeta(sn, InstDetail::EffL2SendTick,
+                                         cache_meta.l2SendTick);
+        }
+        if (cache_meta.l2RespRecvTick > 0) {
+            cpu->perfCCT->updateInstMeta(
+                sn, InstDetail::EffL2RespRecvTick, cache_meta.l2RespRecvTick);
+        }
+    }
+    if (cache_meta.cacheReturnLevel > 3) {
+        cpu->perfCCT->updateInstMeta(sn, InstDetail::EffL3Miss, 1);
+        if (cache_meta.l3MissTick > 0) {
+            cpu->perfCCT->updateInstMeta(sn, InstDetail::EffL3MissTick,
+                                         cache_meta.l3MissTick);
+        }
+        if (cache_meta.l3SendTick > 0) {
+            cpu->perfCCT->updateInstMeta(sn, InstDetail::EffL3SendTick,
+                                         cache_meta.l3SendTick);
+        }
+        if (cache_meta.l3RespRecvTick > 0) {
+            cpu->perfCCT->updateInstMeta(
+                sn, InstDetail::EffL3RespRecvTick, cache_meta.l3RespRecvTick);
+        }
+    }
+    if (cache_meta.l2ReturnTick > 0) {
+        cpu->perfCCT->updateInstMeta(
+            sn, InstDetail::EffL2ReturnTick, cache_meta.l2ReturnTick);
+    }
+    if (cache_meta.l3ReturnTick > 0) {
+        cpu->perfCCT->updateInstMeta(
+            sn, InstDetail::EffL3ReturnTick, cache_meta.l3ReturnTick);
+    }
+}
+
 unsigned
 LSQ::getFreeLQEntries(ThreadID tid)
 {

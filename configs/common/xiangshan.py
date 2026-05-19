@@ -692,8 +692,42 @@ CREATE TABLE LoadLifeTimeCommitTrace(
     PAddress bigint unsigned not null,
     LastReplay bigint unsigned not null,
     ReplayStr char(10) not null,
+    L1Miss tinyint unsigned not null,
+    L2Miss tinyint unsigned not null,
+    L3Miss tinyint unsigned not null,
+    L1ReturnTick bigint unsigned not null,
+    L2ReturnTick bigint unsigned not null,
+    L3ReturnTick bigint unsigned not null,
+    DataReadyTick bigint unsigned not null,
+    EffL2Miss tinyint unsigned not null,
+    EffL3Miss tinyint unsigned not null,
+    EffL2ReturnTick bigint unsigned not null,
+    EffL3ReturnTick bigint unsigned not null,
+    ReqCreateTick bigint unsigned not null,
+    L1MissTick bigint unsigned not null,
+    L1SendTick bigint unsigned not null,
+    L1RespRecvTick bigint unsigned not null,
+    EffL2MissTick bigint unsigned not null,
+    EffL2SendTick bigint unsigned not null,
+    EffL2RespRecvTick bigint unsigned not null,
+    EffL3MissTick bigint unsigned not null,
+    EffL3SendTick bigint unsigned not null,
+    EffL3RespRecvTick bigint unsigned not null,
     constraint fk_id
         foreign key (ID) references LifeTimeCommitTrace(ID)
+);
+
+CREATE TABLE LoadReplayTrace(
+    ID int unsigned not null,
+    ReplayIdx int unsigned not null,
+    ReplayReason char(1) not null,
+    ReplayTick bigint unsigned not null,
+    BlockStartTick bigint unsigned not null,
+    Extra0 bigint unsigned not null,
+    Extra1 bigint unsigned not null,
+    primary key (ID, ReplayIdx),
+    constraint fk_replay_id
+        foreign key (ID) references LoadLifeTimeCommitTrace(ID)
 );
 
 """
