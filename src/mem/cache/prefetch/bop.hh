@@ -221,6 +221,13 @@ class BOP : public Queued
             statistics::Distribution issuedOffsetDist;
             statistics::Scalar learnOffsetCount;
             statistics::Scalar throttledCount;
+            statistics::Scalar pfSentTotal;
+            statistics::Scalar pfBlacklistedTotal;
+            statistics::Vector pfSentByBlacklistPc;
+            statistics::Vector pfBlacklistedByPc;
+            statistics::SparseHistogram pfGeneratedByTriggerPc;
+            statistics::SparseHistogram pfSentByTriggerPc;
+            statistics::SparseHistogram pfBlacklistedByTriggerPc;
         } stats;
 
     public:

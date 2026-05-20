@@ -49,20 +49,29 @@ static constexpr Addr bopPcBlacklist[] = {
     0x10882,
 };
 
-bool
-isBopPcBlacklisted(const Base::PrefetchInfo &pfi)
+static constexpr size_t bopPcBlacklistSize =
+    sizeof(bopPcBlacklist) / sizeof(bopPcBlacklist[0]);
+
+std::string
+bopPcStatName(Addr pc)
+{
+    return csprintf("0x%x", pc);
+}
+
+int
+getBopPcBlacklistIndex(const Base::PrefetchInfo &pfi)
 {
     if (!pfi.hasPC()) {
-        return false;
+        return -1;
     }
 
     const Addr pc = pfi.getPC();
-    for (const Addr blacklisted_pc : bopPcBlacklist) {
-        if (pc == blacklisted_pc) {
-            return true;
+    for (size_t i = 0; i < bopPcBlacklistSize; ++i) {
+        if (pc == bopPcBlacklist[i]) {
+            return static_cast<int>(i);
         }
     }
-    return false;
+    return -1;
 }
 
 } // anonymous namespace
@@ -516,12 +525,19 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
 {
     // Count generated prefetch
     prefetchStats.pfGenerated++;
+    if (pfi.hasPC()) {
+        stats.pfGeneratedByTriggerPc.sample(pfi.getPC(), 1);
+    }
 
-    if (isBopPcBlacklisted(pfi)) {
+    const int blacklist_pc_idx = getBopPcBlacklistIndex(pfi);
+    if (blacklist_pc_idx >= 0) {
         DPRINTF(BOPPrefetcher,
                 "Skip BOP prefetch from blacklisted PC %#lx addr %#lx\n",
                 pfi.getPC(), addr);
         prefetchStats.pfFiltered++;
+        stats.pfBlacklistedTotal++;
+        stats.pfBlacklistedByPc[blacklist_pc_idx]++;
+        stats.pfBlacklistedByTriggerPc.sample(pfi.getPC(), 1);
         return false;
     }
 
@@ -543,6 +559,13 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
         DPRINTF(BOPPrefetcher, "Send pf: %lx\n", addr);
         filter->insert(addr, 0);
         addresses.push_back(AddrPriority(addr, prio, src));
+        stats.pfSentTotal++;
+        if (pfi.hasPC()) {
+            stats.pfSentByTriggerPc.sample(pfi.getPC(), 1);
+        }
+        if (blacklist_pc_idx >= 0) {
+            stats.pfSentByBlacklistPc[blacklist_pc_idx]++;
+        }
         return true;
     }
 }
@@ -557,9 +580,32 @@ BOP::BopStats::BopStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(issuedOffsetDist, statistics::units::Count::get(), "Distribution of issued offsets"),
       ADD_STAT(learnOffsetCount, statistics::units::Count::get(), "Number of learning offsets"),
-      ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of throttled prefetches")
+      ADD_STAT(throttledCount, statistics::units::Count::get(), "Number of throttled prefetches"),
+      ADD_STAT(pfSentTotal, statistics::units::Count::get(),
+               "Number of BOP prefetches sent after BOP filtering"),
+      ADD_STAT(pfBlacklistedTotal, statistics::units::Count::get(),
+               "Number of BOP prefetches filtered by hardcoded PC blacklist"),
+      ADD_STAT(pfSentByBlacklistPc, statistics::units::Count::get(),
+               "Number of BOP prefetches sent, broken down by hardcoded blacklist PC"),
+      ADD_STAT(pfBlacklistedByPc, statistics::units::Count::get(),
+               "Number of BOP prefetches filtered by hardcoded blacklist PC"),
+      ADD_STAT(pfGeneratedByTriggerPc, statistics::units::Count::get(),
+               "Sparse histogram of BOP generated prefetch candidates by trigger PC"),
+      ADD_STAT(pfSentByTriggerPc, statistics::units::Count::get(),
+               "Sparse histogram of BOP prefetches sent by trigger PC"),
+      ADD_STAT(pfBlacklistedByTriggerPc, statistics::units::Count::get(),
+               "Sparse histogram of BOP prefetches filtered by PC blacklist")
 {
+    using namespace statistics;
+
     issuedOffsetDist.init(-64, 256, 1).prereq(issuedOffsetDist);
+    pfSentByBlacklistPc.init(bopPcBlacklistSize).flags(total);
+    pfBlacklistedByPc.init(bopPcBlacklistSize).flags(total);
+    for (size_t i = 0; i < bopPcBlacklistSize; ++i) {
+        const std::string subname = bopPcStatName(bopPcBlacklist[i]);
+        pfSentByBlacklistPc.subname(i, subname);
+        pfBlacklistedByPc.subname(i, subname);
+    }
 }
 
 } // namespace prefetch
