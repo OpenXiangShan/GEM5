@@ -944,9 +944,8 @@ Commit::handleInterrupt()
             cpu->difftestRaiseIntr(cpu->getInterruptsNO() | (1ULL << 63));
         }
         traceLogHandleInterrupt();
-        cpu->processInterrupts(cpu->getInterrupts());
-
         cpu->mmu->setOldPriv(cpu->getContext(0));
+        cpu->processInterrupts(cpu->getInterrupts());
 
         thread[0]->noSquashFromTC = false;
 
@@ -1760,11 +1759,10 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         // needed to update the state as soon as possible.  This
         // prevents external agents from changing any specific state
         // that the trap need.
+        cpu->mmu->setOldPriv(cpu->getContext(tid));
         cpu->trap(inst_fault, tid,
                   head_inst->notAnInst() ? nullStaticInstPtr :
                       head_inst->staticInst);
-
-        cpu->mmu->setOldPriv(cpu->getContext(tid));
 
         // Exit state update mode to avoid accidental updating.
         thread[tid]->noSquashFromTC = false;
