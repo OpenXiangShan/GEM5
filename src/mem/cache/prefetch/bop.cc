@@ -606,6 +606,9 @@ BOP::BopStats::BopStats(statistics::Group *parent)
         pfSentByBlacklistPc.subname(i, subname);
         pfBlacklistedByPc.subname(i, subname);
     }
+    pfGeneratedByTriggerPc.init(0).flags(nozero);
+    pfSentByTriggerPc.init(0).flags(nozero);
+    pfBlacklistedByTriggerPc.init(0).flags(nozero);
 }
 
 } // namespace prefetch
