@@ -208,7 +208,7 @@ class XSStridePrefetcher(QueuedPrefetcher):
 
     use_xs_depth = Param.Bool(True,"use xs rtl stride depth")
     enable_oracle_segmented_stride = Param.Bool(
-        True,
+        False,
         "Enable Oracle segmented-stride validation path in XS stride prefetcher",
     )
     oracle_segmented_stride_pcs = VectorParam.Addr(
