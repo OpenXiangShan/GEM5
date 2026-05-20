@@ -169,6 +169,7 @@ class XSCompositePrefetcher : public Queued
 
     /** Update the RR right table after a prefetch fill */
     void notifyFill(const PacketPtr& pkt) override;
+    void loadPFTriggerNotify(const PacketPtr& pkt) override;
 
   private:
     const unsigned pfFilterSize{256};
@@ -185,6 +186,9 @@ class XSCompositePrefetcher : public Queued
 
     bool sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriority> &addresses, int prio,
                           PrefetchSourceType src, int ahead_level = -1);
+    void insertTriggeredAddresses(const PacketPtr &trigger_pkt,
+                                  PrefetchInfo &pfi,
+                                  std::vector<AddrPriority> &addresses);
     void sendStreamPF(const PrefetchInfo &pfi, Addr pf_tgt_addr, std::vector<AddrPriority> &addresses,
                       boost::compute::detail::lru_cache<Addr, Addr> &Filter, bool decr, int pf_level);
     void updatePhtBits(bool accessed, bool early_update, bool re_act_mode, uint8_t hist_idx,

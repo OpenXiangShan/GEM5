@@ -342,6 +342,16 @@ XSStridePrefetcher::isOracleSegmentedStridePC(Addr pc) const
 }
 
 void
+XSStridePrefetcher::triggerFromS1(const PrefetchInfo &pfi,
+                                  std::vector<AddrPriority> &addresses)
+{
+    const bool oracle_matched = oracleGenerate(pfi, addresses);
+    if (oracle_matched && oracleOverrideRegularStride) {
+        return;
+    }
+}
+
+void
 XSStridePrefetcher::oracleResetStreamState(OracleStreamState &state)
 {
     state = OracleStreamState();

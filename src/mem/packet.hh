@@ -616,7 +616,15 @@ class Packet : public Printable
     /// Return the index of this command.
     inline int cmdToIndex() const { return cmd.toInt(); }
 
-    bool isStorePFTrain() const     { return cmd == MemCmd::StorePFTrain;  }
+    bool isStorePFTrain() const
+    {
+        return cmd == MemCmd::StorePFTrain && req && req->isStorePFTrain();
+    }
+
+    bool isLoadPFTrigger() const
+    {
+        return cmd == MemCmd::StorePFTrain && req && req->isLoadPFTrigger();
+    }
 
     bool isRead() const              { return cmd.isRead(); }
     bool isWrite() const             { return cmd.isWrite(); }
@@ -1112,7 +1120,7 @@ class Packet : public Printable
 
     static MemCmd
     makePFtrainCmd(const RequestPtr& req) {
-        assert(req->isStorePFTrain());
+        assert(req->isStorePFTrain() || req->isLoadPFTrigger());
         return MemCmd::StorePFTrain;
     }
 

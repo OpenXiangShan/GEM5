@@ -1,10 +1,12 @@
 #include "mem/cache/prefetch/sms.hh"
+
+#include <climits>
 #include <cstdint>
 #include <iterator>
-#include <climits>
 
 #include "base/stats/group.hh"
 #include "debug/BOPOffsets.hh"
+#include "debug/HWPrefetch.hh"
 #include "debug/XSCompositePrefetcher.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 
@@ -115,7 +117,77 @@ XSCompositePrefetcher::XSCompositePrefetcher(const XSCompositePrefetcherParams &
     assert(phtSentPrefetch.size() == 0);
     for(unsigned i = 0; i < 3; i++)
         phtSentPrefetch.push_back(phtsentInfo());
-    
+
+}
+
+void
+XSCompositePrefetcher::insertTriggeredAddresses(
+    const PacketPtr &trigger_pkt,
+    PrefetchInfo &pfi,
+    std::vector<AddrPriority> &addresses)
+{
+    const size_t max_pfs = getMaxPermittedPrefetches(addresses.size());
+    size_t num_pfs = 0;
+    for (AddrPriority &addr_prio : addresses) {
+        addr_prio.addr = blockAddress(addr_prio.addr);
+
+        if (!samePage(addr_prio.addr, pfi.getAddr())) {
+            statsQueued.pfSpanPage += 1;
+
+            if (hasBeenPrefetched(trigger_pkt->getAddr(),
+                                  trigger_pkt->isSecure())) {
+                statsQueued.pfUsefulSpanPage += 1;
+            }
+        }
+
+        const bool can_cross_page = (tlb != nullptr);
+        if (!(can_cross_page || samePage(addr_prio.addr, pfi.getAddr()))) {
+            DPRINTF(HWPrefetch, "Ignoring page crossing prefetch.\n");
+            continue;
+        }
+
+        PrefetchInfo new_pfi(pfi, addr_prio.addr);
+        new_pfi.setXsMetadata(
+            Request::XsMetadata(addr_prio.pfSource, addr_prio.depth));
+        statsQueued.pfIdentified++;
+        insert(trigger_pkt, new_pfi, addr_prio);
+        num_pfs += 1;
+        if (num_pfs == max_pfs) {
+            break;
+        }
+    }
+}
+
+void
+XSCompositePrefetcher::loadPFTriggerNotify(const PacketPtr &pkt)
+{
+    if (!enableSstride || !Sstride) {
+        return;
+    }
+
+    const Addr train_addr =
+        pkt->req->hasVaddr() ? pkt->req->getVaddr() : pkt->req->getPaddr();
+    const Request::XsMetadata xs_metadata =
+        pkt->req->hasXsMetadata() ? pkt->req->getXsMetadata()
+                                  : Request::XsMetadata();
+
+    PrefetchInfo pfi(pkt, train_addr, false, xs_metadata);
+    pfi.setReqAfterSquash(pkt->req->isFirstReqAfterSquash());
+    pfi.setEverPrefetched(false);
+    pfi.setPfFirstHit(false);
+    pfi.setPfHit(false);
+    pfi.setTriggerInfo(pkt);
+
+    std::vector<AddrPriority> addresses;
+    Sstride->triggerFromS1(pfi, addresses);
+    if (usePFBuffer) {
+        if (!PFReqSendEvent.scheduled()) {
+            schedule(PFReqSendEvent, nextCycle());
+        }
+        return;
+    }
+
+    insertTriggeredAddresses(pkt, pfi, addresses);
 }
 
 void

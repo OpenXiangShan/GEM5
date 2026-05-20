@@ -71,7 +71,7 @@ Base::PrefetchInfo::PrefetchInfo(PacketPtr pkt, Addr addr, bool miss)
     if (!write && miss) {
         data = nullptr;
         data_ptr = nullptr;
-    } else if (pkt->isStorePFTrain()) {
+    } else if (pkt->isStorePFTrain() || pkt->isLoadPFTrigger()) {
         data = nullptr;
         data_ptr = nullptr;
     } else {
@@ -94,7 +94,7 @@ Base::PrefetchInfo::PrefetchInfo(
     if (!write && miss) {
         data = nullptr;
         data_ptr = nullptr;
-    } else if (pkt->isStorePFTrain()) {
+    } else if (pkt->isStorePFTrain() || pkt->isLoadPFTrigger()) {
         data = nullptr;
         data_ptr = nullptr;
     } else {
@@ -129,7 +129,7 @@ Base::PrefetchInfo_old::PrefetchInfo_old(PacketPtr pkt, Addr addr, bool miss)
     if (!write && miss) {
         data = nullptr;
         data_ptr = nullptr;
-    } else if (pkt->isStorePFTrain()) {
+    } else if (pkt->isStorePFTrain() || pkt->isLoadPFTrigger()) {
         data = nullptr;
         data_ptr = nullptr;
     } else {
@@ -152,7 +152,7 @@ Base::PrefetchInfo_old::PrefetchInfo_old(
     if (!write && miss) {
         data = nullptr;
         data_ptr = nullptr;
-    } else if (pkt->isStorePFTrain()) {
+    } else if (pkt->isStorePFTrain() || pkt->isLoadPFTrigger()) {
         data = nullptr;
         data_ptr = nullptr;
     } else {
@@ -644,7 +644,8 @@ Base::processTraining()
     PacketPtr temp_pkt = new Packet(req.req, req.cmd);
 
     bool isWrite = temp_pkt->isWrite();
-    bool willAccessData = (isWrite || !req.miss) && !temp_pkt->isStorePFTrain();
+    bool willAccessData = (isWrite || !req.miss) &&
+        !temp_pkt->isStorePFTrain() && !temp_pkt->isLoadPFTrigger();
 
     if (req.dataCopy != nullptr) {
         temp_pkt->dataDynamic(req.dataCopy);
@@ -701,6 +702,11 @@ Base::isLoadRequest(const PacketPtr &pkt) const
 void
 Base::coreDirectAddrNotify(const PacketPtr& pkt)
 {
+    if (pkt->isLoadPFTrigger()) {
+        loadPFTriggerNotify(pkt);
+        return;
+    }
+
     assert(pkt->isStorePFTrain());
 
     DPRINTF(HWPrefetch, "prefetch train request from store\n");
@@ -730,6 +736,7 @@ Base::regProbeListeners()
      */
     if (listeners.empty() && !isSubPrefetcher && probeManager != nullptr) {
         listeners.push_back(new PrefetchListener(*this, probeManager, "StorePFtrain", false, true, true));
+        listeners.push_back(new PrefetchListener(*this, probeManager, "LoadPFtrigger", false, true, true));
         listeners.push_back(new PrefetchListener(*this, probeManager, "Miss", false, true, false));
         listeners.push_back(new PrefetchListener(*this, probeManager, "Fill", true, false, false));
         listeners.push_back(new PrefetchListener(*this, probeManager, "Hit", false, false, false));

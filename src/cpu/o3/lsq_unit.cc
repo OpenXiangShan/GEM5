@@ -1176,6 +1176,8 @@ LSQUnit::loadDoSendRequest(const DynInstPtr &inst)
     // normal inst cache access
     if (request && request->isTranslationComplete()) {
         if (request->isMemAccessRequired()) {
+            triggerLoadPFTrigger(inst);
+
             Fault fault;
             fault = read(request, inst->lqIdx);
             // inst->getFault() may have the first-fault of a
@@ -1760,6 +1762,39 @@ LSQUnit::triggerStorePFTrain(int sq_idx)
     bool success = dcachePort->sendTimingReq(pkt);
     assert(success); // must be true
 
+    return true;
+}
+
+bool
+LSQUnit::triggerLoadPFTrigger(const DynInstPtr &inst)
+{
+    assert(inst);
+    assert(inst->translationCompleted());
+    assert(inst->savedRequest);
+
+    LSQRequest *request = inst->savedRequest;
+    if (!request->isTranslationComplete() || !request->isMemAccessRequired()) {
+        return false;
+    }
+
+    const Addr vaddr = inst->effAddr;
+    const Addr pc = inst->pcState().instAddr();
+    const unsigned size = std::max<unsigned>(1, inst->effSize);
+
+    RequestPtr req = std::make_shared<Request>(
+        vaddr, size, Request::LOAD_PF_TRIGGER, inst->requestorId(),
+        pc, inst->contextId());
+    req->setPaddr(inst->physEffAddr);
+    req->setReqInstSeqNum(inst->seqNum);
+    req->setXsMetadata(Request::XsMetadata(inst->xsMeta));
+
+    if (request->mainReq() && request->mainReq()->isFirstReqAfterSquash()) {
+        req->setFirstReqAfterSquash();
+    }
+
+    PacketPtr pkt = Packet::createPFtrain(req);
+    const bool success = dcachePort->sendTimingReq(pkt);
+    assert(success);
     return true;
 }
 

@@ -238,6 +238,8 @@ class XSStridePrefetcher : public Queued
     void calculatePrefetch(const PrefetchInfo &pfi, std::vector<AddrPriority> &addresses, bool late,
                            PrefetchSourceType pf_source, bool miss_repeat, bool enter_new_region, bool is_first_shot,
                            Addr &pf_addr, int64_t &learned_bop_offset);
+    void triggerFromS1(const PrefetchInfo &pfi,
+                       std::vector<AddrPriority> &addresses);
     void prefetchUnused(Addr paddr, PrefetchSourceType pfSource) override;
   PrefetchFilter* stridestream_pfFilter_l1;
   PrefetchFilter* stridestream_pfFilter_l2l3;

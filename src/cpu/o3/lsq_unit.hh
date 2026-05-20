@@ -331,6 +331,7 @@ class LSQUnit
     void issueToLoadPipe(const DynInstPtr &inst);
 
     bool triggerStorePFTrain(int sq_idx);
+    bool triggerLoadPFTrigger(const DynInstPtr &inst);
 
     /** Executes an amo instruction. */
     Fault executeAmo(const DynInstPtr& inst);
