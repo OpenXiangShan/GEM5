@@ -195,7 +195,6 @@ jobs:
         # ${{ steps.config.outputs.comment }}
         env:
           GCBV_REF_SO: "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-notama-tvalref-so"
-          GCB_RESTORER: ""
           GEM5_HOME: ${{ github.workspace }}
           GEM5_BUILD_TYPE: fast
           PERF_ARCHIVE_DIR: ${{ steps.archive.outputs.target_dir }}

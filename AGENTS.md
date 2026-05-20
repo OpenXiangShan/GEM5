@@ -38,10 +38,11 @@ This repository is primarily developed on shared Linux servers.
 - For full-system, checkpoint, and difftest-related tasks, prefer assuming `GCBV_REF_SO` is available.
 - The default CI-style reference path is:
   `GCBV_REF_SO=/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so`
-- The default explicit setting for `GCB_RESTORER` is:
-  `GCB_RESTORER=""`
-- Whether `GCB_RESTORER` and `AM_HOME` are needed depends on the task:
-  - restore-related workflows may require checking `GCB_RESTORER`
+- Normal single-core GCB checkpoint slices are expected to carry their own restorer.
+  Do not require `GCB_RESTORER`; pass `--gcpt-restorer` only when intentionally
+  overriding the embedded restorer for legacy checkpoints.
+- Whether an external restorer and `AM_HOME` are needed depends on the task:
+  - legacy restore override workflows may require checking the relevant restorer variable
   - some frontend micro-tests and bare-metal test flows may require checking `AM_HOME`
 - Before running environment-dependent tasks, check the relevant variables instead of assuming local defaults are correct.
 

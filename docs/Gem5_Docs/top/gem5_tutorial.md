@@ -28,8 +28,6 @@ scons build/RISCV/gem5.debug --gold-linker -j48
 ```shell
 # 设置 diff 的 nemu
 export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
-# 设置 GCB_RESTORE 为空
-export GCB_RESTORER=""
 # 跑一个 bin (非 ckpt)
 ./build/RISCV/gem5.opt configs/example/kmhv3.py --generic-rv-cpt /nfs/home/share/gem5_ci/checkpoints/coremark-riscv64-xs.bin --raw-cpt
 # 跑一个 ckpt
@@ -45,7 +43,6 @@ export CHECKPOINT_ROOT="/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_archive/sp
 # 或者使用大机房 ckpt 路径
 # export CHECKPOINT_ROOT="/nfs/home/share/jiaxiaoyu/simpoint_checkpoint_zstd_format/spec06_rv64gcb_O3_20m_gcc12.2.0-intFpcOff-jeMalloc"
 export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
-export GCB_RESTORER=""
 export GEM5_HOME=$(pwd)
 mkdir -p $GEM5_HOME/util/xs_scripts/test
 cd $GEM5_HOME/util/xs_scripts/test
@@ -119,10 +116,6 @@ bash example-scripts/gem5-score-ci.sh \
             {
                 "name": "GCBV_REF_SO",
                 "value": "/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
-            },
-            {
-                "name": "GCB_RESTORER",
-                "value": ""
             },
             {
                 "name": "GEM5_HOME",
