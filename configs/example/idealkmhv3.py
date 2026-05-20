@@ -122,7 +122,7 @@ def setKmhV3IdealParams(args, system):
                 cpu.dcache.prefetcher.enable_berti = False
                 cpu.dcache.prefetcher.enable_sstride = True
                 cpu.dcache.prefetcher.enable_activepage = False
-                cpu.dcache.prefetcher.enable_pht = True
+                cpu.dcache.prefetcher.enable_pht = False
                 cpu.dcache.prefetcher.enable_xsstream = True
             set_lsq_bank_conflict_cache_params(cpu, system)
 
