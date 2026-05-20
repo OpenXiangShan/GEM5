@@ -126,17 +126,16 @@ export GCBV_REF_SO=`realpath difftest/build/riscv64-spike-so`
 
 ## 构建GCPT恢复器
 
-**Note:** 目前新版本切片或者裸机程序，都不需要使用GCPT恢复器了，所以可以跳过这一步。同时设置GCPT恢复器环境变量为空
-```bash
-export GCB_RESTORER=
-```
+**Note:** 目前新版本切片或者裸机程序，都不需要外部GCPT恢复器了，所以可以跳过这一步。
+只有需要覆盖旧切片内置恢复代码时，才需要传入 `--gcpt-restorer`。
 
 如果需要使用GCPT恢复器，请参考以下步骤：
 ```bash
 git clone https://github.com/OpenXiangShan/NEMU.git
 cd NEMU/resource/gcpt_restore
 make
-export GCB_RESTORER=`realpath build/gcpt.bin`
+# 在GEM5仓库运行旧切片时显式传入外部恢复器
+./build/RISCV/gem5.opt ./configs/example/kmhv3.py --generic-rv-cpt=<checkpoint> --gcpt-restorer=/path/to/NEMU/resource/gcpt_restore/build/gcpt.bin
 
 # 构建RVV版本
 git clone https://github.com/OpenXiangShan/NEMU.git -b gcpt_new_mem_layout

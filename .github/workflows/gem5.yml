@@ -51,23 +51,6 @@ jobs:
           bash util/memory_check/run-xs-with-valgrind.sh
           cd $GEM5_HOME
 
-  new_sim_script_test_gcb:
-    runs-on: [self-hosted, open]
-    continue-on-error: false
-    name: XS-GEM5 - Test new simulation script on RV64GCB
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/build-dramsim
-      - name: Build GEM5 opt
-        run: CC=gcc CXX=g++ scons build/RISCV/gem5.opt --linker=gold -j64
-      - name: XS-GEM5 - Test xiangshan.py simulation scripts
-        run: |
-          export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
-          export GCB_RESTORER="/nfs/home/share/gem5_ci/tools/normal-gcb-restorer.bin"
-          export GEM5_HOME=$(pwd)
-          mkdir -p $GEM5_HOME/util/xs_scripts/test
-          cd $GEM5_HOME/util/xs_scripts/test
-          bash ../kmh_6wide.sh /nfs/home/share/gem5_ci/checkpoints/gcb_test.zstd
 
   new_sim_script_test_gcbv:
     runs-on: [self-hosted, open]
@@ -118,7 +101,6 @@ jobs:
       - name: XS-GEM5 - Test xiangshan.py simulation scripts
         run: |
           export GCBV_REF_SO="/nfs/home/share/gem5_ci/ref/normal/riscv64-nemu-interpreter-so"
-          export GCB_RESTORER=""
           export GEM5_HOME=$(pwd)
           mkdir -p $GEM5_HOME/util/xs_scripts/test_l2tlb
           cd $GEM5_HOME/util/xs_scripts/test_l2tlb

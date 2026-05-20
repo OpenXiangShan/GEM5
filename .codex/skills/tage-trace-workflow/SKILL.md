@@ -65,7 +65,6 @@ rg -n "CondTrace_0_write|BpuPredictionTrace_write|microTageTrace_write" build/ch
 
 ```bash
 export GCBV_REF_SO=/nfs/home/yanyue/tools/gem5-tools/ref-h/riscv64-nemu-interpreter-so
-export GCB_RESTORER=""
 ```
 
 示例：
