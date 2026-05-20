@@ -532,6 +532,9 @@ LSQUnit::resetState()
     RAWQueue.clear();
     RARReplayQueue.clear();
     RAWReplayQueue.clear();
+    topdownInflightLoadMasks.clear();
+    topdownInflightLoadCounts = {};
+    topdownInflightLoadMask = 0;
 
     cacheBlockMask = ~(((uint64_t)cpu->cacheLineSize()) - 1);
 }
@@ -2256,6 +2259,7 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
 
     for (auto it = inflightLoads.begin(); it != inflightLoads.end();) {
         if ((*it)->instruction()->isSquashed()) {
+            getLsq()->inflightLoadCompleted(*it);
             it = inflightLoads.erase(it);
         } else {
             ++it;

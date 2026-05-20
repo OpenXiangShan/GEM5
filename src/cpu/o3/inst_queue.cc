@@ -73,6 +73,60 @@ namespace gem5
 namespace o3
 {
 
+namespace
+{
+
+int
+topdownMissLevelFromDepth(int depth)
+{
+    int misslevel = 0;
+    if (depth >= 1) {
+        misslevel |= 1 << 0;
+    }
+    if (depth >= 2) {
+        misslevel |= 1 << 1;
+    }
+    if (depth >= 3) {
+        misslevel |= 1 << 2;
+    }
+    return misslevel;
+}
+
+int
+topdownMissMaskFromCounts(const std::array<unsigned, 4>& counts)
+{
+    int misslevel = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (counts[i] != 0) {
+            misslevel |= 1 << i;
+        }
+    }
+    return misslevel;
+}
+
+void
+topdownAddMaskToCounts(std::array<unsigned, 4>& counts, int mask)
+{
+    for (int i = 0; i < 4; ++i) {
+        if (mask & (1 << i)) {
+            ++counts[i];
+        }
+    }
+}
+
+void
+topdownRemoveMaskFromCounts(std::array<unsigned, 4>& counts, int mask)
+{
+    for (int i = 0; i < 4; ++i) {
+        if (mask & (1 << i)) {
+            assert(counts[i] > 0);
+            --counts[i];
+        }
+    }
+}
+
+} // namespace
+
 InstructionQueue::FUCompletion::FUCompletion(const DynInstPtr &_inst,
     int fu_idx, InstructionQueue *iq_ptr)
     : Event(Stat_Event_Pri, AutoDelete),
@@ -381,6 +435,9 @@ InstructionQueue::resetState()
     nonSpecInsts.clear();
     deferredMemInsts.clear();
     cacheMissLdInsts.clear();
+    topdownCacheMissMasks.clear();
+    topdownCacheMissCounts = {};
+    topdownCacheMissMask = 0;
     stlfFailLdInsts.clear();
     mdpAddrReplayLdInsts.clear();
     blockedMemInsts.clear();
@@ -862,20 +919,15 @@ InstructionQueue::cacheMissLdReplay(const DynInstPtr &deferred_inst)
 {
     DPRINTF(IQ, "Get Cache Missed Load, insert to Replay Queue "
             "[sn:%llu]\n", deferred_inst->seqNum);
-    cacheMissLdInsts.insert(deferred_inst);
-    if (!deferred_inst->isSquashed() && deferred_inst->savedRequest &&
+    const auto [it, inserted] = cacheMissLdInsts.insert(deferred_inst);
+    if (inserted && !deferred_inst->isSquashed() && deferred_inst->savedRequest &&
         !deferred_inst->cacheHit()) {
-        const int depth = deferred_inst->savedRequest->mainReq()->depth;
-        if (depth >= 1) {
-            topdownCacheMissMask |= 1 << 0;
-        }
-        if (depth >= 2) {
-            topdownCacheMissMask |= 1 << 1;
-        }
-        if (depth >= 3) {
-            topdownCacheMissMask |= 1 << 2;
-        }
-        topdownCacheMissMask |= 1 << 3;
+        int mask = 1 << 3;
+        mask |= topdownMissLevelFromDepth(
+            deferred_inst->savedRequest->mainReq()->depth);
+        topdownAddMaskToCounts(topdownCacheMissCounts, mask);
+        topdownCacheMissMasks.emplace(deferred_inst, mask);
+        topdownCacheMissMask = topdownMissMaskFromCounts(topdownCacheMissCounts);
     }
 }
 
@@ -938,25 +990,14 @@ InstructionQueue::getCacheMissInstToExecute()
             DPRINTF(IQ, "CacheMissed load inst [sn:%llu] PC %s is ready to "
                     "execute\n", (*it)->seqNum, (*it)->pcState());
             DynInstPtr mem_inst = *it;
-            cacheMissLdInsts.erase(it);
-            topdownCacheMissMask = 0;
-            for (const auto& inst : cacheMissLdInsts) {
-                if (inst->isSquashed() || !inst->savedRequest ||
-                    inst->cacheHit()) {
-                    continue;
-                }
-                const int depth = inst->savedRequest->mainReq()->depth;
-                if (depth >= 1) {
-                    topdownCacheMissMask |= 1 << 0;
-                }
-                if (depth >= 2) {
-                    topdownCacheMissMask |= 1 << 1;
-                }
-                if (depth >= 3) {
-                    topdownCacheMissMask |= 1 << 2;
-                }
-                topdownCacheMissMask |= 1 << 3;
+            auto mask_it = topdownCacheMissMasks.find(mem_inst);
+            if (mask_it != topdownCacheMissMasks.end()) {
+                topdownRemoveMaskFromCounts(
+                    topdownCacheMissCounts, mask_it->second);
+                topdownCacheMissMasks.erase(mask_it);
             }
+            cacheMissLdInsts.erase(it);
+            topdownCacheMissMask = topdownMissMaskFromCounts(topdownCacheMissCounts);
             return mem_inst;
         }
         if ((*it)->waitingCacheRefill()) {
@@ -969,27 +1010,6 @@ InstructionQueue::getCacheMissInstToExecute()
     }
     return nullptr;
 }
-
-namespace
-{
-
-int
-topdownMissLevelFromDepth(int depth)
-{
-    int misslevel = 0;
-    if (depth >= 1) {
-        misslevel |= 1 << 0;
-    }
-    if (depth >= 2) {
-        misslevel |= 1 << 1;
-    }
-    if (depth >= 3) {
-        misslevel |= 1 << 2;
-    }
-    return misslevel;
-}
-
-} // namespace
 
 int
 InstructionQueue::anyCacheMissLoadsNotComplete() const

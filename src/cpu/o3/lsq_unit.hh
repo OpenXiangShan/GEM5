@@ -43,6 +43,7 @@
 #define __CPU_O3_LSQ_UNIT_HH__
 
 #include <algorithm>
+#include <array>
 #include <bitset>
 #include <cstddef>
 #include <cstdint>
@@ -50,6 +51,7 @@
 #include <map>
 #include <memory>
 #include <queue>
+#include <unordered_map>
 #include <vector>
 
 #include <base/logging.hh>
@@ -261,7 +263,9 @@ class LSQUnit
     using StoreQueue = CircularQueue<SQEntry>;
 
     std::vector<LSQRequest*> inflightLoads;
+    std::unordered_map<LSQRequest*, int> topdownInflightLoadMasks;
     int topdownInflightLoadMask = 0;
+    std::array<unsigned, 4> topdownInflightLoadCounts = {};
 
   public:
     /** Constructs an LSQ unit. init() must be called prior to use. */

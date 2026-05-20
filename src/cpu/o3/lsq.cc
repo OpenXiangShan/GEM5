@@ -83,6 +83,60 @@ namespace gem5
 namespace o3
 {
 
+namespace
+{
+
+int
+topdownMissMaskFromCounts(const std::array<unsigned, 4>& counts)
+{
+    int misslevel = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (counts[i] != 0) {
+            misslevel |= 1 << i;
+        }
+    }
+    return misslevel;
+}
+
+int
+topdownMissLevelFromDepth(int depth)
+{
+    int misslevel = 0;
+    if (depth >= 1) {
+        misslevel |= 1 << 0;
+    }
+    if (depth >= 2) {
+        misslevel |= 1 << 1;
+    }
+    if (depth >= 3) {
+        misslevel |= 1 << 2;
+    }
+    return misslevel;
+}
+
+void
+topdownAddMaskToCounts(std::array<unsigned, 4>& counts, int mask)
+{
+    for (int i = 0; i < 4; ++i) {
+        if (mask & (1 << i)) {
+            ++counts[i];
+        }
+    }
+}
+
+void
+topdownRemoveMaskFromCounts(std::array<unsigned, 4>& counts, int mask)
+{
+    for (int i = 0; i < 4; ++i) {
+        if (mask & (1 << i)) {
+            assert(counts[i] > 0);
+            --counts[i];
+        }
+    }
+}
+
+} // namespace
+
 LSQ::DcachePort::DcachePort(LSQ *_lsq, CPU *_cpu) :
     RequestPort(_cpu->name() + ".dcache_port", _cpu), lsq(_lsq), cpu(_cpu)
 {}
@@ -1041,43 +1095,26 @@ int LSQ::anyInflightLoadsNotComplete()
 void
 LSQ::inflightLoadIssued(LSQRequest *request)
 {
-    auto &mask = thread.at(request->_port.lsqID).topdownInflightLoadMask;
-    const int depth = request->mainReq()->depth;
+    auto &unit = thread.at(request->_port.lsqID);
+    auto &counts = unit.topdownInflightLoadCounts;
+    int mask = 1 << 3;
+    mask |= topdownMissLevelFromDepth(request->mainReq()->depth);
 
-    if (depth >= 1) {
-        mask |= 1 << 0;
-    }
-    if (depth >= 2) {
-        mask |= 1 << 1;
-    }
-    if (depth >= 3) {
-        mask |= 1 << 2;
-    }
-    mask |= 1 << 3;
+    topdownAddMaskToCounts(counts, mask);
+    unit.topdownInflightLoadMasks.emplace(request, mask);
+    unit.topdownInflightLoadMask = topdownMissMaskFromCounts(counts);
 }
 
 void
 LSQ::inflightLoadCompleted(LSQRequest *request)
 {
     auto &unit = thread.at(request->_port.lsqID);
-    int l1miss = 0, l2miss = 0, l3miss = 0, any = 0;
-    for (auto it : unit.inflightLoads) {
-        if (!it->isAnyOutstandingRequest()) {
-            continue;
-        }
-        const int depth = it->mainReq()->depth;
-        if (depth >= 1) {
-            l1miss = 1;
-        }
-        if (depth >= 2) {
-            l2miss = 1 << 1;
-        }
-        if (depth >= 3) {
-            l3miss = 1 << 2;
-        }
-        any = 1 << 3;
-    }
-    unit.topdownInflightLoadMask = l1miss | l2miss | l3miss | any;
+    auto &counts = unit.topdownInflightLoadCounts;
+    auto mask_it = unit.topdownInflightLoadMasks.find(request);
+    assert(mask_it != unit.topdownInflightLoadMasks.end());
+    topdownRemoveMaskFromCounts(counts, mask_it->second);
+    unit.topdownInflightLoadMasks.erase(mask_it);
+    unit.topdownInflightLoadMask = topdownMissMaskFromCounts(counts);
 }
 
 int

@@ -42,9 +42,11 @@
 #ifndef __CPU_O3_INST_QUEUE_HH__
 #define __CPU_O3_INST_QUEUE_HH__
 
+#include <array>
 #include <list>
 #include <map>
 #include <queue>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -346,7 +348,10 @@ class InstructionQueue
       size_t operator()(const DynInstPtr& ptr) const;
     };
     std::unordered_set<DynInstPtr, CacheMissLdInstsHash> cacheMissLdInsts;
+    std::unordered_map<DynInstPtr, int, CacheMissLdInstsHash>
+        topdownCacheMissMasks;
     int topdownCacheMissMask = 0;
+    std::array<unsigned, 4> topdownCacheMissCounts = {};
 
     struct STLFFailLdInst
     {
