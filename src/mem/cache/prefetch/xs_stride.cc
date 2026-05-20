@@ -30,6 +30,7 @@ XSStridePrefetcher::XSStridePrefetcher(const XSStridePrefetcherParams &p)
       oracleStepOverrideOffsets(p.oracle_step_override_offsets),
       oracleStepOverrideBytes(p.oracle_step_override_bytes),
       oracleL1WindowLines(p.oracle_l1_window_lines),
+      oracleEnableL1Prefetch(p.oracle_enable_l1_prefetch),
       oracleL2WindowLines(p.oracle_l2_window_lines),
       oracleObserveToleranceLines(p.oracle_observe_tolerance_lines),
       oracleDeactivateMisses(p.oracle_deactivate_misses),
@@ -642,7 +643,8 @@ XSStridePrefetcher::oracleIssuePrefetch(const PrefetchInfo &pfi,
 void
 XSStridePrefetcher::oracleMaybeArmL1Lead(OracleStreamState &state)
 {
-    if (!state.active || !state.aligned || state.l1Armed) {
+    if (!oracleEnableL1Prefetch || !state.active || !state.aligned ||
+        state.l1Armed) {
         return;
     }
 
@@ -687,7 +689,8 @@ XSStridePrefetcher::oracleDrainL1Lane(
     const PrefetchInfo &pfi, OracleStreamState &state,
     std::vector<AddrPriority> &addresses)
 {
-    if (!state.active || !state.aligned || !state.l1Armed) {
+    if (!oracleEnableL1Prefetch || !state.active || !state.aligned ||
+        !state.l1Armed) {
         return;
     }
 

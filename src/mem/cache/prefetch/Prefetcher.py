@@ -239,6 +239,10 @@ class XSStridePrefetcher(QueuedPrefetcher):
         32,
         "Fixed lead distance in lines for Oracle segmented-stride L1 issues",
     )
+    oracle_enable_l1_prefetch = Param.Bool(
+        False,
+        "Enable Oracle segmented-stride prefetches targeting L1",
+    )
     oracle_l2_window_lines = Param.Unsigned(
         300,
         "Number of lines kept ahead in the Oracle L2 warm window",

@@ -48,6 +48,7 @@ class XSStridePrefetcher : public Queued
   const std::vector<unsigned> oracleStepOverrideOffsets;
   const std::vector<Addr> oracleStepOverrideBytes;
   const unsigned oracleL1WindowLines;
+  const bool oracleEnableL1Prefetch;
   const unsigned oracleL2WindowLines;
   const unsigned oracleObserveToleranceLines;
   const unsigned oracleDeactivateMisses;
