@@ -78,6 +78,7 @@
 # Global Python imports
 import atexit
 import os
+import shlex
 import sys
 
 from os import mkdir, remove, environ
@@ -337,11 +338,21 @@ def config_embedded_python(env):
         # Since this function does not use the `unique` param, one should not
         # pass any value to this param.
         assert(unique==True)
-        flags = cmd_output.split()
+        flags = shlex.split(cmd_output)
         prefixes = ('-l', '-L', '-I')
         is_useful = lambda x: any(x.startswith(prefix) for prefix in prefixes)
         useful_flags = list(filter(is_useful, flags))
         env.MergeFlags(' '.join(useful_flags))
+
+        lib_paths = [
+            flag[2:] for flag in flags
+            if flag.startswith('-L') and len(flag) > 2
+        ]
+        for path in lib_paths:
+            if os.path.isabs(path):
+                # The configure test runs the embedded interpreter, so a
+                # non-system libpython path must be visible at run time too.
+                env.AppendUnique(RPATH=[path])
 
     env.ParseConfig(cmd, flag_filter)
 

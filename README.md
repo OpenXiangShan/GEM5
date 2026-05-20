@@ -193,22 +193,17 @@ If you have problem generating SPECCPU checkpoints, following links might help y
 
 Install dependencies as [official GEM5 tutorial](https://www.gem5.org/documentation/general_docs/building) says:
 
-### Setup on Ubuntu 22.04
-If compiling gem5 on Ubuntu 22.04, or related Linux distributions, you may install all these dependencies using APT:
+### Setup on Ubuntu 24.04
+
+Ubuntu 24.04 is the recommended environment for building and running this
+repository. The default system Python 3.12 works with the build flow; no
+separate Python environment is required.
 
 ``` shell
+sudo apt update
 sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
     libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
     python3-dev libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev
-```
-
-### Setup on Ubuntu 20.04
-If compiling gem5 on Ubuntu 20.04, or related Linux distributions, you may install all these dependencies using APT:
-
-``` shell
-sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
-    libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
-    python3-dev python-is-python3 libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev
 ```
 
 ### Setup using [Nix](https://github.com/NixOS/nix)
@@ -430,59 +425,11 @@ export GCBV_REF_SO=`realpath difftest/build/riscv64-spike-so`
 ```
 # FAQ
 
-## Python problems
-
-If your machine has a Python with very high version, you may need to install a lower version of Python
-to avoid some compatibility issues. We recommend to use miniconda to install Python 3.8.
-
-Installation command, copied from official [miniconda website](https://docs.conda.io/projects/miniconda/en/latest/)
-
-``` shell
-mkdir -p ~/miniconda3
-wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
-bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
-rm -rf ~/miniconda3/miniconda.sh
-```
-
-Then add conda to path in `~/.bashrc` or `~/.zshrc`. Note this will hide the system Python.
-
-``` shell
-# for bash
-~/miniconda3/bin/conda init bash
-# for zsh
-~/miniconda3/bin/conda init zsh
-```
-Restart your terminal, and you should be able to use conda. Then create a Python 3.8 env:
-
-``` shell
-# create env
-conda create --name py38 --file $gem5_home/ext/xs_env/gem5-py38.txt
-
-# This is mudatory to avoid conda auto activate base env
-conda config --set auto_activate_base false
-```
-
-Each time login, you need to activate the conda env before building GEM5:
-
-``` shell
-conda activate py38
-```
-
-In case that you don't like this or it causes problem, to completely remove Python and conda from your PATH, run:
-
-``` shell
-# for bash
-conda init bash --reverse
-# for zsh
-conda init zsh --reverse
-```
-
-
-
 ## It complains `Python not found`
 
-This is often not Python missing, but other problems.
-Because the build scripts (and scons) uses a strange way to find Python, see `site_scons/gem5_scons/configure.py` for more detail.
+This is often not Python missing, but another configure-time problem.
+Check `build/RISCV/gem5.build/scons_config.log` for the real compiler, linker,
+or runtime loader error.
 For example, when building with clang10, I encountered this problem:
 
 ```
@@ -493,15 +440,15 @@ Error: Check failed for Python.h header.
        CC = clang
 ```
 
-This is not becaues of Python, but because GCC and clang have different warning suppression flags.
+This is not because of Python, but because GCC and clang have different warning suppression flags.
 To fix it, I apply this path:
 
 ``` shell
 git apply ext/xs_env/clang-warning-suppress.patch
 ```
 
-But Python complaints are also possible caused by other problems,
-For similar errors, check `build/RISCV/gem5.build/scons_config.log` to get the real error message.
+Python complaints can also be caused by other problems. For similar errors,
+check `build/RISCV/gem5.build/scons_config.log` to get the real error message.
 
 
 # Original README
