@@ -1,0 +1,234 @@
+{
+  "candidate_sets": {
+    "all_positive_offsets": {
+      "0.0": {
+        "avg_abs_winner": 3.130434782608696,
+        "changed_phase_count_vs_eps0": 0,
+        "winner_counts": {
+          "2": 1,
+          "3": 43,
+          "5": 1,
+          "8": 1
+        }
+      },
+      "0.001": {
+        "avg_abs_winner": 8.0,
+        "changed_phase_count_vs_eps0": 45,
+        "winner_counts": {
+          "6": 1,
+          "8": 44,
+          "10": 1
+        }
+      },
+      "0.002": {
+        "avg_abs_winner": 12.065217391304348,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "12": 45,
+          "15": 1
+        }
+      },
+      "0.005": {
+        "avg_abs_winner": 29.76086956521739,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "20": 1,
+          "27": 1,
+          "30": 43,
+          "32": 1
+        }
+      },
+      "0.01": {
+        "avg_abs_winner": 53.608695652173914,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "36": 1,
+          "54": 45
+        }
+      },
+      "0.015": {
+        "avg_abs_winner": 80.41304347826087,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "54": 1,
+          "81": 45
+        }
+      },
+      "0.02": {
+        "avg_abs_winner": 107.04347826086956,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "64": 1,
+          "108": 45
+        }
+      },
+      "0.03": {
+        "avg_abs_winner": 160.65217391304347,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "100": 1,
+          "162": 45
+        }
+      },
+      "0.05": {
+        "avg_abs_winner": 248.08695652173913,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "162": 1,
+          "250": 45
+        }
+      }
+    },
+    "runtime_issue_support": {
+      "0.0": {
+        "avg_abs_winner": 45.0,
+        "changed_phase_count_vs_eps0": 0,
+        "winner_counts": {
+          "45": 46
+        }
+      },
+      "0.001": {
+        "avg_abs_winner": 45.0,
+        "changed_phase_count_vs_eps0": 0,
+        "winner_counts": {
+          "45": 46
+        }
+      },
+      "0.002": {
+        "avg_abs_winner": 45.0,
+        "changed_phase_count_vs_eps0": 0,
+        "winner_counts": {
+          "45": 46
+        }
+      },
+      "0.005": {
+        "avg_abs_winner": 45.0,
+        "changed_phase_count_vs_eps0": 0,
+        "winner_counts": {
+          "45": 46
+        }
+      },
+      "0.01": {
+        "avg_abs_winner": 90.0,
+        "changed_phase_count_vs_eps0": 45,
+        "winner_counts": {
+          "45": 1,
+          "91": 45
+        }
+      },
+      "0.015": {
+        "avg_abs_winner": 91.0,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "91": 46
+        }
+      },
+      "0.02": {
+        "avg_abs_winner": 91.0,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "91": 46
+        }
+      },
+      "0.03": {
+        "avg_abs_winner": 91.0,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "91": 46
+        }
+      },
+      "0.05": {
+        "avg_abs_winner": 91.0,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "91": 46
+        }
+      }
+    },
+    "teacher_support_from_stats": {
+      "0.0": {
+        "avg_abs_winner": 45.0,
+        "changed_phase_count_vs_eps0": 0,
+        "winner_counts": {
+          "45": 46
+        }
+      },
+      "0.001": {
+        "avg_abs_winner": 48.0,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "48": 46
+        }
+      },
+      "0.002": {
+        "avg_abs_winner": 53.869565217391305,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "48": 1,
+          "54": 45
+        }
+      },
+      "0.005": {
+        "avg_abs_winner": 71.73913043478261,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "60": 1,
+          "72": 45
+        }
+      },
+      "0.01": {
+        "avg_abs_winner": 95.54347826086956,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "75": 1,
+          "96": 45
+        }
+      },
+      "0.015": {
+        "avg_abs_winner": 124.3695652173913,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "96": 1,
+          "125": 45
+        }
+      },
+      "0.02": {
+        "avg_abs_winner": 149.08695652173913,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "108": 1,
+          "150": 45
+        }
+      },
+      "0.03": {
+        "avg_abs_winner": 198.84782608695653,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "147": 1,
+          "200": 45
+        }
+      },
+      "0.05": {
+        "avg_abs_winner": 239.1304347826087,
+        "changed_phase_count_vs_eps0": 46,
+        "winner_counts": {
+          "200": 1,
+          "240": 45
+        }
+      }
+    }
+  },
+  "db_path": "/nfs/home/lixin/myworkspace/simulator/perf/1212_cdp_perf/GEM5/test/libq_15361_nol2NL_studentBop/bop_trace.db",
+  "phase_count": 46,
+  "ratio_eps_list": [
+    0.0,
+    0.001,
+    0.002,
+    0.005,
+    0.01,
+    0.015,
+    0.02,
+    0.03,
+    0.05
+  ]
+}

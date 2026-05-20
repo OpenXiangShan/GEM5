@@ -1,0 +1,895 @@
+{
+  "triplets": {
+    "all": {
+      "benchmarks": {
+        "gcc": {
+          "score": {
+            "base": 19.14,
+            "hash": 19.173,
+            "hash_gain_pct": 0.17241379310343624,
+            "hash_vs_oracle_pct": -0.09899958315965979,
+            "oracle": 19.192,
+            "oracle_gain_pct": 0.2716823406478558,
+            "retention_ratio": 0.6346153846153452
+          },
+          "weighted_accuracy": {
+            "base": 0.10421342022658103,
+            "hash": 0.10621217436079541,
+            "hash_gain_pct": 1.9179431304228243,
+            "hash_vs_oracle_pct": -0.6606899714204585,
+            "oracle": 0.10691857466116744,
+            "oracle_gain_pct": 2.5957831809999687,
+            "retention_ratio": 0.7388687716529463
+          },
+          "weighted_coverage": {
+            "base": 0.5685303633267522,
+            "hash": 0.5720903101133199,
+            "hash_gain_pct": 0.6261665191875895,
+            "hash_vs_oracle_pct": 0.012038424511106021,
+            "oracle": 0.572021447743146,
+            "oracle_gain_pct": 0.6140541722285024,
+            "retention_ratio": 1.019725209121419
+          }
+        },
+        "libquantum": {
+          "score": {
+            "base": 44.65,
+            "hash": 44.219,
+            "hash_gain_pct": -0.9652855543113045,
+            "hash_vs_oracle_pct": 0.0,
+            "oracle": 44.219,
+            "oracle_gain_pct": -0.9652855543113045,
+            "retention_ratio": 1.0
+          },
+          "weighted_accuracy": {
+            "base": 0.5837686449536268,
+            "hash": 0.5878060801527275,
+            "hash_gain_pct": 0.6916156312954147,
+            "hash_vs_oracle_pct": 0.0,
+            "oracle": 0.5878060801527275,
+            "oracle_gain_pct": 0.6916156312954147,
+            "retention_ratio": 1.0
+          },
+          "weighted_coverage": {
+            "base": 0.9915834169198676,
+            "hash": 0.9931354939991605,
+            "hash_gain_pct": 0.1565251145601059,
+            "hash_vs_oracle_pct": 0.0,
+            "oracle": 0.9931354939991605,
+            "oracle_gain_pct": 0.1565251145601059,
+            "retention_ratio": 1.0
+          }
+        },
+        "mcf": {
+          "score": {
+            "base": 26.258,
+            "hash": 27.637,
+            "hash_gain_pct": 5.251732805240313,
+            "hash_vs_oracle_pct": -0.28143604546274364,
+            "oracle": 27.715,
+            "oracle_gain_pct": 5.548785132150205,
+            "retention_ratio": 0.9464653397391906
+          },
+          "weighted_accuracy": {
+            "base": 0.33575922858460944,
+            "hash": 0.3618705696439007,
+            "hash_gain_pct": 7.776805173565419,
+            "hash_vs_oracle_pct": 0.7447835578080049,
+            "oracle": 0.35919534179777857,
+            "oracle_gain_pct": 6.980035459327177,
+            "retention_ratio": 1.1141498089631545
+          },
+          "weighted_coverage": {
+            "base": 0.7097674594523351,
+            "hash": 0.7408100731467515,
+            "hash_gain_pct": 4.373631572003774,
+            "hash_vs_oracle_pct": 0.0069880771531108275,
+            "oracle": 0.7407583083846435,
+            "oracle_gain_pct": 4.366338371756479,
+            "retention_ratio": 1.0016703241082896
+          }
+        },
+        "omnetpp": {
+          "score": {
+            "base": 17.215,
+            "hash": 17.896,
+            "hash_gain_pct": 3.9558524542550155,
+            "hash_vs_oracle_pct": 1.5030344279961463,
+            "oracle": 17.631,
+            "oracle_gain_pct": 2.4164972407783933,
+            "retention_ratio": 1.6370192307692315
+          },
+          "weighted_accuracy": {
+            "base": 0.19682247269045894,
+            "hash": 0.2127252264518289,
+            "hash_gain_pct": 8.0797449315557,
+            "hash_vs_oracle_pct": -1.3857981079010449,
+            "oracle": 0.21571459523100658,
+            "oracle_gain_pct": 9.598559698139313,
+            "retention_ratio": 0.8417663884636739
+          },
+          "weighted_coverage": {
+            "base": 0.548465619813485,
+            "hash": 0.5779840040038098,
+            "hash_gain_pct": 5.381993533225118,
+            "hash_vs_oracle_pct": 0.808659201989054,
+            "oracle": 0.5733475760705342,
+            "oracle_gain_pct": 4.536648307237705,
+            "retention_ratio": 1.1863369537900392
+          }
+        },
+        "xalancbmk": {
+          "score": {
+            "base": 29.726,
+            "hash": 29.987,
+            "hash_gain_pct": 0.8780192424140458,
+            "hash_vs_oracle_pct": -0.06332066919949979,
+            "oracle": 30.006,
+            "oracle_gain_pct": 0.9419363520150749,
+            "retention_ratio": 0.9321428571428506
+          },
+          "weighted_accuracy": {
+            "base": 0.1440926753626397,
+            "hash": 0.15018779991178724,
+            "hash_gain_pct": 4.2300030406180396,
+            "hash_vs_oracle_pct": 0.3589727267338931,
+            "oracle": 0.1496505950900191,
+            "oracle_gain_pct": 3.8571840750348487,
+            "retention_ratio": 1.096655735980094
+          },
+          "weighted_coverage": {
+            "base": 0.5104680746135014,
+            "hash": 0.5148502976961056,
+            "hash_gain_pct": 0.8584715284931667,
+            "hash_vs_oracle_pct": -0.9212758891208863,
+            "oracle": 0.5196375935563482,
+            "oracle_gain_pct": 1.7962962619727878,
+            "retention_ratio": 0.47791199406625035
+          }
+        }
+      },
+      "overall": {
+        "base": 18.528074898759236,
+        "hash": 18.67434325088842,
+        "hash_gain_pct": 0.7894417144167458,
+        "hash_vs_oracle_pct": 0.11760614365635719,
+        "oracle": 18.65240687446427,
+        "oracle_gain_pct": 0.6710463789919106,
+        "retention_ratio": 1.1764339084918338
+      },
+      "representative_points": {
+        "libquantum": {
+          "all_base": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 6703.19197,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 3700.023755,
+            "system.cpu.dcache.demandMisses::total": 804730.0,
+            "system.cpu.ipc": 3.905333,
+            "system.l2_wrappers.prefetcher.accuracy": 0.564653,
+            "system.l2_wrappers.prefetcher.coverage": 0.988448,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 6580.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 409050.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 395228.0
+          },
+          "all_hash": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 6312.364326,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 3553.435994,
+            "system.cpu.dcache.demandMisses::total": 799732.0,
+            "system.cpu.ipc": 3.850688,
+            "system.l2_wrappers.prefetcher.accuracy": 0.563201,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 99.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 116.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 94.217391,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 322.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.992272,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 4352.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 4527.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 2939.0
+          },
+          "all_opt": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 6312.364326,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 3553.435994,
+            "system.cpu.dcache.demandMisses::total": 799732.0,
+            "system.cpu.ipc": 3.850688,
+            "system.l2_wrappers.prefetcher.accuracy": 0.563201,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 98.991379,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 116.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 91.742236,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 322.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.992272,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 4352.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 4527.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 2939.0
+          }
+        },
+        "mcf": {
+          "all_base": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 19847.924462,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 8574.467547,
+            "system.cpu.dcache.demandMisses::total": 4342647.0,
+            "system.cpu.ipc": 0.640864,
+            "system.l2_wrappers.prefetcher.accuracy": 0.189427,
+            "system.l2_wrappers.prefetcher.coverage": 0.532605,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 650391.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 821083.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 284921.0
+          },
+          "all_hash": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 8209.955119,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 6839.662001,
+            "system.cpu.dcache.demandMisses::total": 3787066.0,
+            "system.cpu.ipc": 0.690169,
+            "system.l2_wrappers.prefetcher.accuracy": 0.232957,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 55.878981,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 314.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 46.323024,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 873.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.601086,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 547878.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 866679.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 391362.0
+          },
+          "all_opt": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 8463.863893,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 6948.997187,
+            "system.cpu.dcache.demandMisses::total": 3805700.0,
+            "system.cpu.ipc": 0.689714,
+            "system.l2_wrappers.prefetcher.accuracy": 0.221945,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 28.888889,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 315.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 21.309795,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 878.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.600799,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 548157.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 845208.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 385298.0
+          }
+        },
+        "omnetpp": {
+          "all_base": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 17545.175542,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 10573.44552,
+            "system.cpu.dcache.demandMisses::total": 1017255.0,
+            "system.cpu.ipc": 1.332846,
+            "system.l2_wrappers.prefetcher.accuracy": 0.200194,
+            "system.l2_wrappers.prefetcher.coverage": 0.546706,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 205314.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 582125.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 147225.0
+          },
+          "all_hash": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 17342.756305,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 10005.27467,
+            "system.cpu.dcache.demandMisses::total": 1020644.0,
+            "system.cpu.ipc": 1.380544,
+            "system.l2_wrappers.prefetcher.accuracy": 0.215612,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 61.761364,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 88.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 52.086066,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 244.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.57475,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 188782.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 536267.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 162572.0
+          },
+          "all_opt": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 17489.509003,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 10133.872746,
+            "system.cpu.dcache.demandMisses::total": 1018217.0,
+            "system.cpu.ipc": 1.36926,
+            "system.l2_wrappers.prefetcher.accuracy": 0.217264,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 34.413793,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 87.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 28.244898,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 245.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.57118,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 189705.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 512546.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 153239.0
+          }
+        }
+      }
+    },
+    "pbop": {
+      "benchmarks": {
+        "gcc": {
+          "score": {
+            "base": 16.039,
+            "hash": 16.182,
+            "hash_gain_pct": 0.8915767815948445,
+            "hash_vs_oracle_pct": -0.4735838612460897,
+            "oracle": 16.259,
+            "oracle_gain_pct": 1.371656587069012,
+            "retention_ratio": 0.6499999999999904
+          },
+          "weighted_accuracy": {
+            "base": 0.23597750858695674,
+            "hash": 0.20166811975613577,
+            "hash_gain_pct": -14.539262252689685,
+            "hash_vs_oracle_pct": -3.0407768196770673,
+            "oracle": 0.2079927139897534,
+            "oracle_gain_pct": -11.859094014839572,
+            "retention_ratio": 1.2260010954037768
+          },
+          "weighted_coverage": {
+            "base": 0.22450600480976496,
+            "hash": 0.23162756426928638,
+            "hash_gain_pct": 3.17210199591582,
+            "hash_vs_oracle_pct": -2.1995076306711043,
+            "oracle": 0.23683680793198833,
+            "oracle_gain_pct": 5.492415729669178,
+            "retention_ratio": 0.5775422240491769
+          }
+        },
+        "libquantum": {
+          "score": {
+            "base": 17.402,
+            "hash": 21.816,
+            "hash_gain_pct": 25.36490058613951,
+            "hash_vs_oracle_pct": 0.0,
+            "oracle": 21.816,
+            "oracle_gain_pct": 25.36490058613951,
+            "retention_ratio": 1.0
+          },
+          "weighted_accuracy": {
+            "base": 0.982774609301165,
+            "hash": 0.5800131540905207,
+            "hash_gain_pct": -40.98207782321945,
+            "hash_vs_oracle_pct": 0.0,
+            "oracle": 0.5800131540905207,
+            "oracle_gain_pct": -40.98207782321945,
+            "retention_ratio": 1.0
+          },
+          "weighted_coverage": {
+            "base": 0.5376196528169666,
+            "hash": 0.647623761904037,
+            "hash_gain_pct": 20.46132586684318,
+            "hash_vs_oracle_pct": 0.0,
+            "oracle": 0.647623761904037,
+            "oracle_gain_pct": 20.46132586684318,
+            "retention_ratio": 1.0
+          }
+        },
+        "mcf": {
+          "score": {
+            "base": 22.112,
+            "hash": 23.014,
+            "hash_gain_pct": 4.0792329956584705,
+            "hash_vs_oracle_pct": -0.10417570969702625,
+            "oracle": 23.038,
+            "oracle_gain_pct": 4.187771345875552,
+            "retention_ratio": 0.9740820734341243
+          },
+          "weighted_accuracy": {
+            "base": 0.5102961753412278,
+            "hash": 0.48437331079379364,
+            "hash_gain_pct": -5.079964499067614,
+            "hash_vs_oracle_pct": -0.0018652145324216396,
+            "oracle": 0.4843823455636956,
+            "oracle_gain_pct": -5.078194003747735,
+            "retention_ratio": 1.0003486466485079
+          },
+          "weighted_coverage": {
+            "base": 0.4086545072140739,
+            "hash": 0.5194846823928845,
+            "hash_gain_pct": 27.120751936489008,
+            "hash_vs_oracle_pct": 0.005996174478784217,
+            "oracle": 0.5194535350525865,
+            "oracle_gain_pct": 27.113130011428076,
+            "retention_ratio": 1.0002811156460991
+          }
+        },
+        "omnetpp": {
+          "score": {
+            "base": 13.626,
+            "hash": 14.426,
+            "hash_gain_pct": 5.87112872449729,
+            "hash_vs_oracle_pct": 0.7613326814276733,
+            "oracle": 14.317,
+            "oracle_gain_pct": 5.071187435784535,
+            "retention_ratio": 1.1577424023154845
+          },
+          "weighted_accuracy": {
+            "base": 0.1966274315071793,
+            "hash": 0.17619064595993225,
+            "hash_gain_pct": -10.393659414963597,
+            "hash_vs_oracle_pct": -0.10057097875550564,
+            "oracle": 0.17636802100486856,
+            "oracle_gain_pct": -10.303450717440212,
+            "retention_ratio": 1.0087551927987284
+          },
+          "weighted_coverage": {
+            "base": 0.140724008175629,
+            "hash": 0.1588106788736953,
+            "hash_gain_pct": 12.852583530376304,
+            "hash_vs_oracle_pct": -0.12257512637519163,
+            "oracle": 0.15900558016452557,
+            "oracle_gain_pct": 12.991082492534225,
+            "retention_ratio": 0.9893389205835993
+          }
+        },
+        "xalancbmk": {
+          "score": {
+            "base": 26.365,
+            "hash": 26.989,
+            "hash_gain_pct": 2.3667741323724725,
+            "hash_vs_oracle_pct": -0.4059190376028614,
+            "oracle": 27.099,
+            "oracle_gain_pct": 2.7839939313483852,
+            "retention_ratio": 0.8501362397820175
+          },
+          "weighted_accuracy": {
+            "base": 0.2655650183980945,
+            "hash": 0.23815748146483326,
+            "hash_gain_pct": -10.320462046765526,
+            "hash_vs_oracle_pct": -4.023422275022663,
+            "oracle": 0.24814125186592706,
+            "oracle_gain_pct": -6.561017199203692,
+            "retention_ratio": 1.5729972553673714
+          },
+          "weighted_coverage": {
+            "base": 0.2261989745522067,
+            "hash": 0.2715210121209399,
+            "hash_gain_pct": 20.03635854603437,
+            "hash_vs_oracle_pct": -3.3763094657640886,
+            "oracle": 0.281008736697688,
+            "oracle_gain_pct": 24.23077392547207,
+            "retention_ratio": 0.8268971766094351
+          }
+        }
+      },
+      "overall": {
+        "base": 15.929392738859693,
+        "hash": 16.42965414747438,
+        "hash_gain_pct": 3.140492652895055,
+        "hash_vs_oracle_pct": -0.038956338590534684,
+        "oracle": 16.436057033503285,
+        "oracle_gain_pct": 3.180688071100076,
+        "retention_ratio": 0.9873626657796974
+      },
+      "representative_points": {
+        "libquantum": {
+          "pbop_base": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 40706.603548,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 29921.294099,
+            "system.cpu.dcache.demandMisses::total": 1787462.0,
+            "system.cpu.ipc": 1.682192,
+            "system.l2_wrappers.prefetcher.accuracy": 0.97152,
+            "system.l2_wrappers.prefetcher.coverage": 0.530061,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 267595.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 310678.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 301830.0
+          },
+          "pbop_hash": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 26482.338081,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 20512.664816,
+            "system.cpu.dcache.demandMisses::total": 1899454.0,
+            "system.cpu.ipc": 1.943,
+            "system.l2_wrappers.prefetcher.accuracy": 0.508305,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 85.561765,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 340.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.681696,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 112623.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 474516.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 241199.0
+          },
+          "pbop_opt": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 26482.338081,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 20512.664816,
+            "system.cpu.dcache.demandMisses::total": 1899454.0,
+            "system.cpu.ipc": 1.943,
+            "system.l2_wrappers.prefetcher.accuracy": 0.508305,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 80.541176,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 340.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.681696,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 112623.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 474516.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 241199.0
+          }
+        },
+        "mcf": {
+          "pbop_base": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 15424.88272,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 8097.134226,
+            "system.cpu.dcache.demandMisses::total": 4477586.0,
+            "system.cpu.ipc": 0.610317,
+            "system.l2_wrappers.prefetcher.accuracy": 0.343528,
+            "system.l2_wrappers.prefetcher.coverage": 0.289571,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 962430.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 1141932.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 392286.0
+          },
+          "pbop_hash": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 8786.690249,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 6734.941744,
+            "system.cpu.dcache.demandMisses::total": 4046955.0,
+            "system.cpu.ipc": 0.629626,
+            "system.l2_wrappers.prefetcher.accuracy": 0.347454,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 48.665375,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 774.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.346811,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 885198.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 1352688.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 469997.0
+          },
+          "pbop_opt": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 8610.062713,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 6711.150779,
+            "system.cpu.dcache.demandMisses::total": 4032731.0,
+            "system.cpu.ipc": 0.630593,
+            "system.l2_wrappers.prefetcher.accuracy": 0.349625,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 24.921087,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 773.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.34898,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 881926.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 1352184.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 472758.0
+          }
+        },
+        "omnetpp": {
+          "pbop_base": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 23475.073701,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 16117.99531,
+            "system.cpu.dcache.demandMisses::total": 1076193.0,
+            "system.cpu.ipc": 1.071202,
+            "system.l2_wrappers.prefetcher.accuracy": 0.203679,
+            "system.l2_wrappers.prefetcher.coverage": 0.145658,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 329951.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 276190.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 56254.0
+          },
+          "pbop_hash": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 21779.984217,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 15006.904254,
+            "system.cpu.dcache.demandMisses::total": 1069351.0,
+            "system.cpu.ipc": 1.145819,
+            "system.l2_wrappers.prefetcher.accuracy": 0.186333,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 52.298429,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 191.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.16592,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 305792.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 326458.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 60830.0
+          },
+          "pbop_opt": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 22205.344655,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 15282.9943,
+            "system.cpu.dcache.demandMisses::total": 1069801.0,
+            "system.cpu.ipc": 1.129336,
+            "system.l2_wrappers.prefetcher.accuracy": 0.187488,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": 28.322917,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 192.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.167008,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 305519.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 326709.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 61254.0
+          }
+        }
+      }
+    },
+    "vbop": {
+      "benchmarks": {
+        "gcc": {
+          "score": {
+            "base": 15.893,
+            "hash": 16.232,
+            "hash_gain_pct": 2.1330145347008034,
+            "hash_vs_oracle_pct": -0.17220172201723397,
+            "oracle": 16.26,
+            "oracle_gain_pct": 2.309192726357521,
+            "retention_ratio": 0.9237057220708388
+          },
+          "weighted_accuracy": {
+            "base": 0.22001639442560805,
+            "hash": 0.21445528462967436,
+            "hash_gain_pct": -2.5275888237565,
+            "hash_vs_oracle_pct": 0.8905958263370323,
+            "oracle": 0.2125622144196831,
+            "oracle_gain_pct": -3.3880111640704884,
+            "retention_ratio": 0.7460391071202248
+          },
+          "weighted_coverage": {
+            "base": 0.18793988227019995,
+            "hash": 0.19505064404429198,
+            "hash_gain_pct": 3.7835299714985124,
+            "hash_vs_oracle_pct": -0.6077365224001479,
+            "oracle": 0.1962432861670876,
+            "oracle_gain_pct": 4.418117004537606,
+            "retention_ratio": 0.8563670829931972
+          }
+        },
+        "libquantum": {
+          "score": {
+            "base": 39.413,
+            "hash": 37.15,
+            "hash_gain_pct": -5.741760332885085,
+            "hash_vs_oracle_pct": 0.0,
+            "oracle": 37.15,
+            "oracle_gain_pct": -5.741760332885085,
+            "retention_ratio": 1.0
+          },
+          "weighted_accuracy": {
+            "base": 0.9796603869463609,
+            "hash": 0.9385327954433963,
+            "hash_gain_pct": -4.198147853171946,
+            "hash_vs_oracle_pct": 0.0,
+            "oracle": 0.9385327954433963,
+            "oracle_gain_pct": -4.198147853171946,
+            "retention_ratio": 1.0
+          },
+          "weighted_coverage": {
+            "base": 0.9726424307688252,
+            "hash": 0.9959249436871515,
+            "hash_gain_pct": 2.393738148964221,
+            "hash_vs_oracle_pct": 0.0,
+            "oracle": 0.9959249436871515,
+            "oracle_gain_pct": 2.393738148964221,
+            "retention_ratio": 1.0
+          }
+        },
+        "mcf": {
+          "score": {
+            "base": 22.645,
+            "hash": 23.422,
+            "hash_gain_pct": 3.43122102009274,
+            "hash_vs_oracle_pct": -0.33615590825922564,
+            "oracle": 23.501,
+            "oracle_gain_pct": 3.7800839037315153,
+            "retention_ratio": 0.9077102803738312
+          },
+          "weighted_accuracy": {
+            "base": 0.5133432280993789,
+            "hash": 0.48590622319844334,
+            "hash_gain_pct": -5.344768061423422,
+            "hash_vs_oracle_pct": -4.677529546815087,
+            "oracle": 0.5097499266315,
+            "oracle_gain_pct": -0.6999802999608905,
+            "retention_ratio": 7.635597832856219
+          },
+          "weighted_coverage": {
+            "base": 0.5106178213224405,
+            "hash": 0.5462810204157097,
+            "hash_gain_pct": 6.984323226499554,
+            "hash_vs_oracle_pct": -0.8411456361008787,
+            "oracle": 0.5509150180486503,
+            "oracle_gain_pct": 7.891850821392164,
+            "retention_ratio": 0.8850044665780292
+          }
+        },
+        "omnetpp": {
+          "score": {
+            "base": 15.162,
+            "hash": 15.66,
+            "hash_gain_pct": 3.2845271072417836,
+            "hash_vs_oracle_pct": 0.3524511374559418,
+            "oracle": 15.605,
+            "oracle_gain_pct": 2.9217781295343594,
+            "retention_ratio": 1.1241534988713313
+          },
+          "weighted_accuracy": {
+            "base": 0.32107535191895026,
+            "hash": 0.3377030454551631,
+            "hash_gain_pct": 5.178751167548425,
+            "hash_vs_oracle_pct": 0.08339433273366813,
+            "oracle": 0.3374216549175457,
+            "oracle_gain_pct": 5.091111136653615,
+            "retention_ratio": 1.0172143228742037
+          },
+          "weighted_coverage": {
+            "base": 0.3044371772485759,
+            "hash": 0.3235276973769548,
+            "hash_gain_pct": 6.27075848650092,
+            "hash_vs_oracle_pct": 0.19171296076524602,
+            "oracle": 0.32290863966328953,
+            "oracle_gain_pct": 6.067413507658271,
+            "retention_ratio": 1.033514277308772
+          }
+        },
+        "xalancbmk": {
+          "score": {
+            "base": 26.409,
+            "hash": 26.99,
+            "hash_gain_pct": 2.2000075731758097,
+            "hash_vs_oracle_pct": -0.018521948508992622,
+            "oracle": 26.995,
+            "oracle_gain_pct": 2.2189405127040103,
+            "retention_ratio": 0.9914675767918045
+          },
+          "weighted_accuracy": {
+            "base": 0.2544615986937363,
+            "hash": 0.2613670304413455,
+            "hash_gain_pct": 2.71374218469814,
+            "hash_vs_oracle_pct": 0.8255567330204409,
+            "oracle": 0.25922696477980134,
+            "oracle_gain_pct": 1.872725043986112,
+            "retention_ratio": 1.4490873571711926
+          },
+          "weighted_coverage": {
+            "base": 0.2751789085368434,
+            "hash": 0.2943387089480231,
+            "hash_gain_pct": 6.9626703997971635,
+            "hash_vs_oracle_pct": 0.43219150963488845,
+            "oracle": 0.29307207631707005,
+            "oracle_gain_pct": 6.5023761724205515,
+            "retention_ratio": 1.0707886186789566
+          }
+        }
+      },
+      "overall": {
+        "base": 17.244565060142374,
+        "hash": 17.32940227796547,
+        "hash_gain_pct": 0.4919649612919625,
+        "hash_vs_oracle_pct": -0.0043211398958648796,
+        "oracle": 17.33015113804031,
+        "oracle_gain_pct": 0.4963075473312613,
+        "retention_ratio": 0.9912502115620653
+      },
+      "representative_points": {
+        "libquantum": {
+          "vbop_base": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 8411.109307,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 5479.696741,
+            "system.cpu.dcache.demandMisses::total": 1381004.0,
+            "system.cpu.ipc": 3.532379,
+            "system.l2_wrappers.prefetcher.accuracy": 0.97396,
+            "system.l2_wrappers.prefetcher.coverage": 0.957758,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 24689.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 574741.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 559775.0
+          },
+          "vbop_hash": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 8283.573381,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 5483.209424,
+            "system.cpu.dcache.demandMisses::total": 1418617.0,
+            "system.cpu.ipc": 3.104818,
+            "system.l2_wrappers.prefetcher.accuracy": 0.895519,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 99.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 110.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.99518,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 2575.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 593742.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 531707.0
+          },
+          "vbop_opt": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 8283.573381,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 5483.209424,
+            "system.cpu.dcache.demandMisses::total": 1418617.0,
+            "system.cpu.ipc": 3.104818,
+            "system.l2_wrappers.prefetcher.accuracy": 0.895519,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 98.990909,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 110.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.99518,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 2575.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 593742.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 531707.0
+          }
+        },
+        "mcf": {
+          "vbop_base": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 19247.669047,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 9171.700917,
+            "system.cpu.dcache.demandMisses::total": 4713035.0,
+            "system.cpu.ipc": 0.603114,
+            "system.l2_wrappers.prefetcher.accuracy": 0.326914,
+            "system.l2_wrappers.prefetcher.coverage": 0.2718,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 979623.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 1118468.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 365643.0
+          },
+          "vbop_hash": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 8568.951298,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 6779.718994,
+            "system.cpu.dcache.demandMisses::total": 4023383.0,
+            "system.cpu.ipc": 0.63589,
+            "system.l2_wrappers.prefetcher.accuracy": 0.339706,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 59.2397,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 267.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.349174,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 882027.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 1393017.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 473216.0
+          },
+          "vbop_opt": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 8434.249935,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 6761.980127,
+            "system.cpu.dcache.demandMisses::total": 4015135.0,
+            "system.cpu.ipc": 0.636885,
+            "system.l2_wrappers.prefetcher.accuracy": 0.341127,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 31.984906,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 265.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.34919,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 881666.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 1386746.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 473056.0
+          }
+        },
+        "omnetpp": {
+          "vbop_base": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 21443.772139,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 12894.507402,
+            "system.cpu.dcache.demandMisses::total": 1085155.0,
+            "system.cpu.ipc": 1.18227,
+            "system.l2_wrappers.prefetcher.accuracy": 0.320308,
+            "system.l2_wrappers.prefetcher.coverage": 0.307332,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 264532.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 366432.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 117371.0
+          },
+          "vbop_hash": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 20614.976179,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 12317.068198,
+            "system.cpu.dcache.demandMisses::total": 1081409.0,
+            "system.cpu.ipc": 1.213586,
+            "system.l2_wrappers.prefetcher.accuracy": 0.333196,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 65.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 68.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.322627,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 257865.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 368609.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 122819.0
+          },
+          "vbop_opt": {
+            "system.cpu.dcache.demandAvgMissLatency::total": 20857.352782,
+            "system.cpu.dcache.demandAvgMshrMissLatency::total": 12464.844773,
+            "system.cpu.dcache.demandMisses::total": 1082851.0,
+            "system.cpu.ipc": 1.204533,
+            "system.l2_wrappers.prefetcher.accuracy": 0.331269,
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": 38.014706,
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": 68.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": 0.0,
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": 0.0,
+            "system.l2_wrappers.prefetcher.coverage": 0.320312,
+            "system.l2_wrappers.prefetcher.demandMshrMisses": 257883.0,
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": 366865.0,
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": 121531.0
+          }
+        }
+      }
+    }
+  }
+}

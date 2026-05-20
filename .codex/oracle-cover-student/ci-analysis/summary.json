@@ -1,0 +1,4602 @@
+{
+  "groups": {
+    "all": {
+      "base": "all_base",
+      "benchmarks": {
+        "astar": {
+          "base_score": 13.116,
+          "base_time": 178.402,
+          "delta_pct": 0.1982311680390348,
+          "opt_score": 13.142,
+          "opt_time": 178.054,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.130988,
+              "delta_pct": -0.08779430176810395,
+              "opt": 0.130873
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 2563415.0,
+              "delta_pct": -0.47105131240942255,
+              "opt": 2551340.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 1713612.0,
+              "delta_pct": 0.2872879041463295,
+              "opt": 1718535.0
+            },
+            "system.cpu.ipc": {
+              "base": 0.87122,
+              "delta_pct": 0.6124744611005265,
+              "opt": 0.876556
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.214293,
+              "delta_pct": 9.340482423597587,
+              "opt": 0.234309
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 38.824324
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 148.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 148.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 105.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 32.040476
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 420.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 420.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 156.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.300878,
+              "delta_pct": 0.9033561775869284,
+              "opt": 0.303596
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 806256.0,
+              "delta_pct": -1.6593985037010577,
+              "opt": 792877.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 1619206.0,
+              "delta_pct": -8.893371195511875,
+              "opt": 1475204.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 329523.0,
+              "delta_pct": -20.001335263395877,
+              "opt": 263614.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 346985.0,
+              "delta_pct": -0.3835900687349597,
+              "opt": 345654.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 95435.0,
+              "delta_pct": 8.282076806203174,
+              "opt": 103339.0
+            }
+          }
+        },
+        "bzip2": {
+          "base_score": 10.648,
+          "base_time": 302.096,
+          "delta_pct": 0.0,
+          "opt_score": 10.648,
+          "opt_time": 302.103,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.12564,
+              "delta_pct": -0.02228589621139784,
+              "opt": 0.125612
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 38018.0,
+              "delta_pct": -0.0131516650007891,
+              "opt": 38013.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 38347.0,
+              "delta_pct": -0.005215531853860798,
+              "opt": 38345.0
+            },
+            "system.cpu.ipc": {
+              "base": 4.143511,
+              "delta_pct": 0.028574800453031443,
+              "opt": 4.144695
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.251337,
+              "delta_pct": -0.19097864620011398,
+              "opt": 0.250857
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 27.5
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 4.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 4.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 3.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 18.5
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 10.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 10.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 4.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.988726,
+              "delta_pct": 0.11398506765271563,
+              "opt": 0.989853
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 30.0,
+              "delta_pct": -10.0,
+              "opt": 27.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 10468.0,
+              "delta_pct": 0.30569354222392053,
+              "opt": 10500.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 45.0,
+              "delta_pct": -26.666666666666668,
+              "opt": 33.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 2631.0,
+              "delta_pct": 0.11402508551881414,
+              "opt": 2634.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 300.0,
+              "delta_pct": -3.3333333333333335,
+              "opt": 290.0
+            }
+          }
+        },
+        "gcc": {
+          "base_score": 19.14,
+          "base_time": 140.198,
+          "delta_pct": 0.2716823406478558,
+          "opt_score": 19.192,
+          "opt_time": 139.817,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.817969,
+              "delta_pct": 0.010880607944800566,
+              "opt": 0.818058
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 1815270.0,
+              "delta_pct": -0.0060046163931536355,
+              "opt": 1815161.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 1803653.0,
+              "delta_pct": 0.0020513923687095026,
+              "opt": 1803690.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.458095,
+              "delta_pct": 0.08600155811714874,
+              "opt": 2.460209
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.132682,
+              "delta_pct": -1.1018826969747149,
+              "opt": 0.13122
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 38.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 47.166667
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 6.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 6.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.496806,
+              "delta_pct": 3.431923124921992,
+              "opt": 0.513856
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 3466.0,
+              "delta_pct": -3.837276399307559,
+              "opt": 3333.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 25791.0,
+              "delta_pct": 4.098328874413555,
+              "opt": 26848.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 3268.0,
+              "delta_pct": 41.18727050183599,
+              "opt": 4614.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 3422.0,
+              "delta_pct": 2.951490356516657,
+              "opt": 3523.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 1025.0,
+              "delta_pct": 49.073170731707314,
+              "opt": 1528.0
+            }
+          }
+        },
+        "gobmk": {
+          "base_score": 15.25,
+          "base_time": 229.296,
+          "delta_pct": -0.13114754098360376,
+          "opt_score": 15.23,
+          "opt_time": 229.588,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.010116,
+              "delta_pct": 0.29655990510083546,
+              "opt": 0.010146
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 41823.0,
+              "delta_pct": 0.23671185711211534,
+              "opt": 41922.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 30078.0,
+              "delta_pct": 0.22607886162643795,
+              "opt": 30146.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.095776,
+              "delta_pct": 0.2736933718107367,
+              "opt": 2.101512
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.122595,
+              "delta_pct": 9.565642970757374,
+              "opt": 0.134322
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 36.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 35.571429
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 7.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 7.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.35627,
+              "delta_pct": -1.5603334549639265,
+              "opt": 0.350711
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 6483.0,
+              "delta_pct": -1.4499460126484651,
+              "opt": 6389.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 29267.0,
+              "delta_pct": -12.215122834591861,
+              "opt": 25692.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 7516.0,
+              "delta_pct": -34.16711016498137,
+              "opt": 4948.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 3588.0,
+              "delta_pct": -3.8182831661092527,
+              "opt": 3451.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 1066.0,
+              "delta_pct": -42.12007504690432,
+              "opt": 617.0
+            }
+          }
+        },
+        "h264ref": {
+          "base_score": 24.07,
+          "base_time": 306.469,
+          "delta_pct": 0.01661819692563912,
+          "opt_score": 24.074,
+          "opt_time": 306.421,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.012665,
+              "delta_pct": 0.5606000789577704,
+              "opt": 0.012736
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 75629.0,
+              "delta_pct": 0.5632759920136456,
+              "opt": 76055.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 45212.0,
+              "delta_pct": -0.601610191984429,
+              "opt": 44940.0
+            },
+            "system.cpu.ipc": {
+              "base": 5.34363,
+              "delta_pct": -0.16932310058892447,
+              "opt": 5.334582
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.19173,
+              "delta_pct": 9.569707401032689,
+              "opt": 0.210078
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 49.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 4.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 4.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 41.333333
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 12.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 12.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.566333,
+              "delta_pct": 6.934789249434525,
+              "opt": 0.605607
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 8110.0,
+              "delta_pct": -9.445129469790382,
+              "opt": 7344.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 55239.0,
+              "delta_pct": -2.8222813591846343,
+              "opt": 53680.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 12523.0,
+              "delta_pct": -11.099576778727142,
+              "opt": 11133.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 10591.0,
+              "delta_pct": 6.477197620621282,
+              "opt": 11277.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 5476.0,
+              "delta_pct": -3.8897005113221326,
+              "opt": 5263.0
+            }
+          }
+        },
+        "hmmer": {
+          "base_score": 16.536,
+          "base_time": 188.078,
+          "delta_pct": 0.0,
+          "opt_score": 16.536,
+          "opt_time": 188.069,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.009872,
+              "delta_pct": -0.01012965964344611,
+              "opt": 0.009871
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 66460.0,
+              "delta_pct": -0.01504664459825459,
+              "opt": 66450.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 65122.0,
+              "delta_pct": 0.015355793740978473,
+              "opt": 65132.0
+            },
+            "system.cpu.ipc": {
+              "base": 6.528054,
+              "delta_pct": 0.01991405095606799,
+              "opt": 6.529354
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.004033,
+              "delta_pct": 7.017108851971243,
+              "opt": 0.004316
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 83.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 5.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 5.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 76.25
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 12.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 12.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.256757,
+              "delta_pct": 0.6258836175839294,
+              "opt": 0.258364
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 385.0,
+              "delta_pct": 3.6363636363636362,
+              "opt": 399.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 32979.0,
+              "delta_pct": -2.353012523120774,
+              "opt": 32203.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 155.0,
+              "delta_pct": 1.2903225806451613,
+              "opt": 157.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 133.0,
+              "delta_pct": 4.511278195488721,
+              "opt": 139.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 17.0,
+              "delta_pct": -23.52941176470588,
+              "opt": 13.0
+            }
+          }
+        },
+        "libquantum": {
+          "base_score": 44.65,
+          "base_time": 154.684,
+          "delta_pct": -0.9652855543113045,
+          "opt_score": 44.219,
+          "opt_time": 156.193,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.173735,
+              "delta_pct": -0.496733530952314,
+              "opt": 0.172872
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 804730.0,
+              "delta_pct": -0.6210778770519305,
+              "opt": 799732.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 327084.0,
+              "delta_pct": -0.12871311345097897,
+              "opt": 326663.0
+            },
+            "system.cpu.ipc": {
+              "base": 3.905333,
+              "delta_pct": -1.3992404744998768,
+              "opt": 3.850688
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.564653,
+              "delta_pct": -0.2571490809399771,
+              "opt": 0.563201
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 98.991379
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 116.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 116.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 113.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 91.742236
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 322.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 322.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 196.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.988448,
+              "delta_pct": 0.3868691119816166,
+              "opt": 0.992272
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 6580.0,
+              "delta_pct": -33.86018237082067,
+              "opt": 4352.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 997092.0,
+              "delta_pct": -0.4925322838815274,
+              "opt": 992181.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 409050.0,
+              "delta_pct": -98.8932893289329,
+              "opt": 4527.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 563011.0,
+              "delta_pct": -0.7484756070485301,
+              "opt": 558797.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 395228.0,
+              "delta_pct": -99.25637859665814,
+              "opt": 2939.0
+            }
+          }
+        },
+        "mcf": {
+          "base_score": 26.258,
+          "base_time": 115.775,
+          "delta_pct": 5.548785132150205,
+          "opt_score": 27.715,
+          "opt_time": 109.688,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.050076,
+              "delta_pct": 0.025960539979229817,
+              "opt": 0.050089
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 392413.0,
+              "delta_pct": 0.002293501999169243,
+              "opt": 392422.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 341039.0,
+              "delta_pct": 0.6855520922827008,
+              "opt": 343377.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.479309,
+              "delta_pct": 0.404064196919369,
+              "opt": 2.489327
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.397399,
+              "delta_pct": 8.453217043827484,
+              "opt": 0.430992
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 67.770115
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 87.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 87.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 59.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 63.012346
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 243.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 243.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 115.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.887608,
+              "delta_pct": 1.1982767167488453,
+              "opt": 0.898244
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 47522.0,
+              "delta_pct": -10.51512983460292,
+              "opt": 42525.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 944391.0,
+              "delta_pct": -7.772733962945432,
+              "opt": 870986.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 167429.0,
+              "delta_pct": -51.40328139091794,
+              "opt": 81365.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 375300.0,
+              "delta_pct": 0.02344790833999467,
+              "opt": 375388.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 124938.0,
+              "delta_pct": -62.84477100641919,
+              "opt": 46421.0
+            }
+          }
+        },
+        "omnetpp": {
+          "base_score": 17.215,
+          "base_time": 121.021,
+          "delta_pct": 2.4164972407783933,
+          "opt_score": 17.631,
+          "opt_time": 118.166,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.122354,
+              "delta_pct": 0.2280268728443708,
+              "opt": 0.122633
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 1017255.0,
+              "delta_pct": 0.09456822527291583,
+              "opt": 1018217.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 762688.0,
+              "delta_pct": -0.05965742217000923,
+              "opt": 762233.0
+            },
+            "system.cpu.ipc": {
+              "base": 1.332846,
+              "delta_pct": 2.732048563750047,
+              "opt": 1.36926
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.200194,
+              "delta_pct": 8.526729072799386,
+              "opt": 0.217264
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 34.413793
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 87.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 87.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 14.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 28.244898
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 245.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 245.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 120.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.546706,
+              "delta_pct": 4.476629120587664,
+              "opt": 0.57118
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 205314.0,
+              "delta_pct": -7.602501534235366,
+              "opt": 189705.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 1236921.0,
+              "delta_pct": -5.974431673486019,
+              "opt": 1163022.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 582125.0,
+              "delta_pct": -11.952587502684132,
+              "opt": 512546.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 247624.0,
+              "delta_pct": 2.0430168319710527,
+              "opt": 252683.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 147225.0,
+              "delta_pct": 4.084904058413992,
+              "opt": 153239.0
+            }
+          }
+        },
+        "perlbench": {
+          "base_score": 13.507,
+          "base_time": 241.103,
+          "delta_pct": -0.044421411120161604,
+          "opt_score": 13.501,
+          "opt_time": 241.216,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.011454,
+              "delta_pct": -0.7420988301030208,
+              "opt": 0.011369
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 37093.0,
+              "delta_pct": -0.7036368047879654,
+              "opt": 36832.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 22478.0,
+              "delta_pct": 0.24468369071981494,
+              "opt": 22533.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.854007,
+              "delta_pct": 0.32133768417526015,
+              "opt": 2.863178
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.199412,
+              "delta_pct": 8.445830742382602,
+              "opt": 0.216254
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 32.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 3.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 3.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 3.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 27.3
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 10.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 10.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 8.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.59207,
+              "delta_pct": 0.9585015285354748,
+              "opt": 0.597745
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 7058.0,
+              "delta_pct": -2.422782657976764,
+              "opt": 6887.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 51371.0,
+              "delta_pct": -7.8779856339179695,
+              "opt": 47324.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 15326.0,
+              "delta_pct": -30.210100482839618,
+              "opt": 10696.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 10244.0,
+              "delta_pct": -0.09761811792268645,
+              "opt": 10234.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 3961.0,
+              "delta_pct": -24.76647311285029,
+              "opt": 2980.0
+            }
+          }
+        },
+        "sjeng": {
+          "base_score": 12.448,
+          "base_time": 324.002,
+          "delta_pct": -0.040167095115687515,
+          "opt_score": 12.443,
+          "opt_time": 324.143,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.003634,
+              "delta_pct": 0.0,
+              "opt": 0.003634
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 12476.0,
+              "delta_pct": 0.0,
+              "opt": 12476.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 10992.0,
+              "delta_pct": 0.0,
+              "opt": 10992.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.478249,
+              "delta_pct": 0.0,
+              "opt": 2.478249
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.049878,
+              "delta_pct": 0.0,
+              "opt": 0.049878
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.5
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 4.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 4.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.050425,
+              "delta_pct": 0.0,
+              "opt": 0.050425
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 6930.0,
+              "delta_pct": 0.0,
+              "opt": 6930.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 7378.0,
+              "delta_pct": 0.0,
+              "opt": 7378.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 1164.0,
+              "delta_pct": 0.0,
+              "opt": 1164.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 368.0,
+              "delta_pct": 0.0,
+              "opt": 368.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 43.0,
+              "delta_pct": 0.0,
+              "opt": 43.0
+            }
+          }
+        },
+        "xalancbmk": {
+          "base_score": 29.726,
+          "base_time": 77.374,
+          "delta_pct": 0.9419363520150749,
+          "opt_score": 30.006,
+          "opt_time": 76.65,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.023425,
+              "delta_pct": -0.7385272145144205,
+              "opt": 0.023252
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 133340.0,
+              "delta_pct": -0.7994600269986502,
+              "opt": 132274.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 99766.0,
+              "delta_pct": -0.5372571818054247,
+              "opt": 99230.0
+            },
+            "system.cpu.ipc": {
+              "base": 3.989261,
+              "delta_pct": 0.2915076250964806,
+              "opt": 4.00089
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.036056,
+              "delta_pct": 0.6767250942977623,
+              "opt": 0.0363
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 50.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 6.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 6.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 5.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 45.111111
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 18.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 18.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 12.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.364063,
+              "delta_pct": 0.8383164452306328,
+              "opt": 0.367115
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 4739.0,
+              "delta_pct": -4.726735598227474,
+              "opt": 4515.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 75244.0,
+              "delta_pct": -4.114613789803838,
+              "opt": 72148.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 3501.0,
+              "delta_pct": -37.44644387317909,
+              "opt": 2190.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 2713.0,
+              "delta_pct": -3.4647991153704387,
+              "opt": 2619.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 577.0,
+              "delta_pct": -5.025996533795494,
+              "opt": 548.0
+            }
+          }
+        }
+      },
+      "int_score_base": 18.528074898759236,
+      "int_score_delta_pct": 0.6710463789919106,
+      "int_score_opt": 18.65240687446427,
+      "opt": "all_opt",
+      "top_gains": [
+        [
+          "mcf",
+          5.548785132150205
+        ],
+        [
+          "omnetpp",
+          2.4164972407783933
+        ],
+        [
+          "xalancbmk",
+          0.9419363520150749
+        ],
+        [
+          "gcc",
+          0.2716823406478558
+        ],
+        [
+          "astar",
+          0.1982311680390348
+        ]
+      ],
+      "top_regressions": [
+        [
+          "libquantum",
+          -0.9652855543113045
+        ],
+        [
+          "gobmk",
+          -0.13114754098360376
+        ],
+        [
+          "perlbench",
+          -0.044421411120161604
+        ],
+        [
+          "sjeng",
+          -0.040167095115687515
+        ],
+        [
+          "hmmer",
+          0.0
+        ]
+      ]
+    },
+    "pbop": {
+      "base": "pbop_base",
+      "benchmarks": {
+        "astar": {
+          "base_score": 12.646,
+          "base_time": 185.041,
+          "delta_pct": 0.427012494069259,
+          "opt_score": 12.7,
+          "opt_time": 184.252,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.139501,
+              "delta_pct": 0.7684532727364087,
+              "opt": 0.140573
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 2783632.0,
+              "delta_pct": 0.26760002758985385,
+              "opt": 2791081.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 1789449.0,
+              "delta_pct": -0.8371850776412181,
+              "opt": 1774468.0
+            },
+            "system.cpu.ipc": {
+              "base": 0.86471,
+              "delta_pct": 0.9077031605971939,
+              "opt": 0.872559
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.305887,
+              "delta_pct": 0.3802057622586019,
+              "opt": 0.30705
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 33.215259
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 367.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 367.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 146.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.151059,
+              "delta_pct": 20.987163955805354,
+              "opt": 0.182762
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 900243.0,
+              "delta_pct": -5.51117864843159,
+              "opt": 850629.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 523680.0,
+              "delta_pct": 18.304689886953867,
+              "opt": 619538.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 523680.0,
+              "delta_pct": 18.304689886953867,
+              "opt": 619538.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 160187.0,
+              "delta_pct": 18.75433087578892,
+              "opt": 190229.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 160187.0,
+              "delta_pct": 18.75433087578892,
+              "opt": 190229.0
+            }
+          }
+        },
+        "bzip2": {
+          "base_score": 10.277,
+          "base_time": 312.999,
+          "delta_pct": 0.6130193636275237,
+          "opt_score": 10.34,
+          "opt_time": 311.103,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.125934,
+              "delta_pct": -0.13419727793924,
+              "opt": 0.125765
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 38110.0,
+              "delta_pct": -0.03411178168459722,
+              "opt": 38097.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 38417.0,
+              "delta_pct": 0.02082411432438764,
+              "opt": 38425.0
+            },
+            "system.cpu.ipc": {
+              "base": 4.094114,
+              "delta_pct": 0.7102391384314203,
+              "opt": 4.123192
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.213943,
+              "delta_pct": -3.2237558602057494,
+              "opt": 0.207046
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 24.666667
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 6.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 6.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.884817,
+              "delta_pct": 7.392263032920934,
+              "opt": 0.950225
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 308.0,
+              "delta_pct": -56.81818181818182,
+              "opt": 133.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 11059.0,
+              "delta_pct": 10.887060312867348,
+              "opt": 12263.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 11059.0,
+              "delta_pct": 10.887060312867348,
+              "opt": 12263.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 2366.0,
+              "delta_pct": 7.311918850380389,
+              "opt": 2539.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 2366.0,
+              "delta_pct": 7.311918850380389,
+              "opt": 2539.0
+            }
+          }
+        },
+        "gcc": {
+          "base_score": 16.039,
+          "base_time": 167.3,
+          "delta_pct": 1.371656587069012,
+          "opt_score": 16.259,
+          "opt_time": 165.039,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.817282,
+              "delta_pct": -0.008442618337365284,
+              "opt": 0.817213
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 1816687.0,
+              "delta_pct": 0.015082399995156018,
+              "opt": 1816961.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 1803640.0,
+              "delta_pct": -0.003936483999024195,
+              "opt": 1803569.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.429002,
+              "delta_pct": 0.28505534371728425,
+              "opt": 2.435926
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.237036,
+              "delta_pct": 8.672522317285146,
+              "opt": 0.257593
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 54.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 4.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 4.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.266786,
+              "delta_pct": 7.1379307759777415,
+              "opt": 0.285829
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 4510.0,
+              "delta_pct": -1.3303769401330376,
+              "opt": 4450.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 6923.0,
+              "delta_pct": -0.130001444460494,
+              "opt": 6914.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 6923.0,
+              "delta_pct": -0.130001444460494,
+              "opt": 6914.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 1641.0,
+              "delta_pct": 8.531383302864107,
+              "opt": 1781.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 1641.0,
+              "delta_pct": 8.531383302864107,
+              "opt": 1781.0
+            }
+          }
+        },
+        "gobmk": {
+          "base_score": 15.147,
+          "base_time": 230.851,
+          "delta_pct": 0.05281573909024308,
+          "opt_score": 15.155,
+          "opt_time": 230.726,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.011056,
+              "delta_pct": 0.35274963820550687,
+              "opt": 0.011095
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 45786.0,
+              "delta_pct": 0.45647141047481765,
+              "opt": 45995.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 31636.0,
+              "delta_pct": -0.006321911746112023,
+              "opt": 31634.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.08077,
+              "delta_pct": 0.15994079114944082,
+              "opt": 2.084098
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.239322,
+              "delta_pct": 1.3943557215801332,
+              "opt": 0.242659
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 30.6
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 5.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 5.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 4.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.20237,
+              "delta_pct": 8.579829026041418,
+              "opt": 0.219733
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 7067.0,
+              "delta_pct": -2.4196971840950896,
+              "opt": 6896.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 7492.0,
+              "delta_pct": 6.820608649225841,
+              "opt": 8003.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 7492.0,
+              "delta_pct": 6.820608649225841,
+              "opt": 8003.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 1793.0,
+              "delta_pct": 8.310094813162298,
+              "opt": 1942.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 1793.0,
+              "delta_pct": 8.310094813162298,
+              "opt": 1942.0
+            }
+          }
+        },
+        "h264ref": {
+          "base_score": 23.788,
+          "base_time": 310.107,
+          "delta_pct": 0.029426601647895786,
+          "opt_score": 23.795,
+          "opt_time": 310.009,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.02017,
+              "delta_pct": -12.736737729300952,
+              "opt": 0.017601
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 122129.0,
+              "delta_pct": -13.02884654750305,
+              "opt": 106217.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 55804.0,
+              "delta_pct": 0.050175614651279475,
+              "opt": 55832.0
+            },
+            "system.cpu.ipc": {
+              "base": 5.197196,
+              "delta_pct": 0.0700377665187125,
+              "opt": 5.200836
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.276424,
+              "delta_pct": 29.103116950771284,
+              "opt": 0.356872
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 57.166667
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 6.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 6.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.196309,
+              "delta_pct": 83.81734917910029,
+              "opt": 0.36085
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 9101.0,
+              "delta_pct": -19.349522030546094,
+              "opt": 7340.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 8042.0,
+              "delta_pct": 44.391942302909726,
+              "opt": 11612.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 8042.0,
+              "delta_pct": 44.391942302909726,
+              "opt": 11612.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 2223.0,
+              "delta_pct": 86.41475483580747,
+              "opt": 4144.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 2223.0,
+              "delta_pct": 86.41475483580747,
+              "opt": 4144.0
+            }
+          }
+        },
+        "hmmer": {
+          "base_score": 16.501,
+          "base_time": 188.476,
+          "delta_pct": 0.0,
+          "opt_score": 16.501,
+          "opt_time": 188.476,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.010031,
+              "delta_pct": 0.0,
+              "opt": 0.010031
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 67528.0,
+              "delta_pct": 0.0,
+              "opt": 67528.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 66242.0,
+              "delta_pct": 0.0,
+              "opt": 66242.0
+            },
+            "system.cpu.ipc": {
+              "base": 6.53289,
+              "delta_pct": 0.0,
+              "opt": 6.53289
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.141176,
+              "delta_pct": 0.0,
+              "opt": 0.141176
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.110092,
+              "delta_pct": 0.0,
+              "opt": 0.110092
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 291.0,
+              "delta_pct": 0.0,
+              "opt": 291.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 255.0,
+              "delta_pct": 0.0,
+              "opt": 255.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 255.0,
+              "delta_pct": 0.0,
+              "opt": 255.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 36.0,
+              "delta_pct": 0.0,
+              "opt": 36.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 36.0,
+              "delta_pct": 0.0,
+              "opt": 36.0
+            }
+          }
+        },
+        "libquantum": {
+          "base_score": 17.402,
+          "base_time": 396.894,
+          "delta_pct": 25.36490058613951,
+          "opt_score": 21.816,
+          "opt_time": 316.584,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.27662,
+              "delta_pct": 5.441399754175407,
+              "opt": 0.291672
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 1787462.0,
+              "delta_pct": 6.265419908227419,
+              "opt": 1899454.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 648656.0,
+              "delta_pct": 1.9267531634641475,
+              "opt": 661154.0
+            },
+            "system.cpu.ipc": {
+              "base": 1.682192,
+              "delta_pct": 15.504056611849313,
+              "opt": 1.943
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.97152,
+              "delta_pct": -47.679409584980235,
+              "opt": 0.508305
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 80.541176
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 340.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 340.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.530061,
+              "delta_pct": 28.607084844951803,
+              "opt": 0.681696
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 267595.0,
+              "delta_pct": -57.91289074907977,
+              "opt": 112623.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 310678.0,
+              "delta_pct": 52.735629816079665,
+              "opt": 474516.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 310678.0,
+              "delta_pct": 52.735629816079665,
+              "opt": 474516.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 301830.0,
+              "delta_pct": -20.08779776695491,
+              "opt": 241199.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 301830.0,
+              "delta_pct": -20.08779776695491,
+              "opt": 241199.0
+            }
+          }
+        },
+        "mcf": {
+          "base_score": 22.112,
+          "base_time": 137.485,
+          "delta_pct": 4.187771345875552,
+          "opt_score": 23.038,
+          "opt_time": 131.958,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.082893,
+              "delta_pct": -3.0786676800212307,
+              "opt": 0.080341
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 754691.0,
+              "delta_pct": -5.06233677094334,
+              "opt": 716486.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 601410.0,
+              "delta_pct": -1.4906636071897708,
+              "opt": 592445.0
+            },
+            "system.cpu.ipc": {
+              "base": 1.506771,
+              "delta_pct": 10.090849903535434,
+              "opt": 1.658817
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.593543,
+              "delta_pct": 1.80121743496259,
+              "opt": 0.604234
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 67.771552
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 232.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 232.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 77.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.440194,
+              "delta_pct": 46.7243987878072,
+              "opt": 0.645872
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 228804.0,
+              "delta_pct": -41.5604622296813,
+              "opt": 133712.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 303122.0,
+              "delta_pct": 33.14770950310436,
+              "opt": 403600.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 303122.0,
+              "delta_pct": 33.14770950310436,
+              "opt": 403600.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 179916.0,
+              "delta_pct": 35.546032592987835,
+              "opt": 243869.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 179916.0,
+              "delta_pct": 35.546032592987835,
+              "opt": 243869.0
+            }
+          }
+        },
+        "omnetpp": {
+          "base_score": 13.626,
+          "base_time": 152.897,
+          "delta_pct": 5.071187435784535,
+          "opt_score": 14.317,
+          "opt_time": 145.514,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.136826,
+              "delta_pct": -0.37346703111982477,
+              "opt": 0.136315
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 1151034.0,
+              "delta_pct": -0.5248324549926414,
+              "opt": 1144993.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 777363.0,
+              "delta_pct": -0.5148174019087608,
+              "opt": 773361.0
+            },
+            "system.cpu.ipc": {
+              "base": 0.972634,
+              "delta_pct": 3.668594764320391,
+              "opt": 1.008316
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.19464,
+              "delta_pct": -10.269728729963012,
+              "opt": 0.174651
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 28.363184
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 201.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 201.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 85.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.13743,
+              "delta_pct": 13.993305682893109,
+              "opt": 0.156661
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 349655.0,
+              "delta_pct": -7.628376542591983,
+              "opt": 322982.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 286215.0,
+              "delta_pct": 20.02550530195832,
+              "opt": 343531.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 286215.0,
+              "delta_pct": 20.02550530195832,
+              "opt": 343531.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 55709.0,
+              "delta_pct": 7.698935540038414,
+              "opt": 59998.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 55709.0,
+              "delta_pct": 7.698935540038414,
+              "opt": 59998.0
+            }
+          }
+        },
+        "perlbench": {
+          "base_score": 12.511,
+          "base_time": 260.306,
+          "delta_pct": 0.687395092318762,
+          "opt_score": 12.597,
+          "opt_time": 258.525,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.013957,
+              "delta_pct": -1.4831267464354845,
+              "opt": 0.01375
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 45575.0,
+              "delta_pct": -1.3406472846955568,
+              "opt": 44964.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 23047.0,
+              "delta_pct": 0.8504360654315096,
+              "opt": 23243.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.592949,
+              "delta_pct": 0.9239287004873689,
+              "opt": 2.616906
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.289308,
+              "delta_pct": -0.40475894202719354,
+              "opt": 0.288137
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 29.625
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 8.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 8.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 7.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.231383,
+              "delta_pct": 12.684164350881444,
+              "opt": 0.260732
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 12530.0,
+              "delta_pct": -5.027932960893855,
+              "opt": 11900.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 13038.0,
+              "delta_pct": 11.719588894002147,
+              "opt": 14566.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 13038.0,
+              "delta_pct": 11.719588894002147,
+              "opt": 14566.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 3772.0,
+              "delta_pct": 11.267232237539766,
+              "opt": 4197.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 3772.0,
+              "delta_pct": 11.267232237539766,
+              "opt": 4197.0
+            }
+          }
+        },
+        "sjeng": {
+          "base_score": 12.455,
+          "base_time": 323.837,
+          "delta_pct": 0.0,
+          "opt_score": 12.455,
+          "opt_time": 323.837,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.003573,
+              "delta_pct": 0.0,
+              "opt": 0.003573
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 12258.0,
+              "delta_pct": 0.0,
+              "opt": 12258.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 10862.0,
+              "delta_pct": 0.0,
+              "opt": 10862.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.486396,
+              "delta_pct": 0.0,
+              "opt": 2.486396
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": Infinity,
+              "delta_pct": NaN,
+              "opt": Infinity
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 3.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 3.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.00208,
+              "delta_pct": 0.0,
+              "opt": 0.00208
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 7197.0,
+              "delta_pct": 0.0,
+              "opt": 7197.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 15.0,
+              "delta_pct": 0.0,
+              "opt": 15.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 15.0,
+              "delta_pct": 0.0,
+              "opt": 15.0
+            }
+          }
+        },
+        "xalancbmk": {
+          "base_score": 26.365,
+          "base_time": 87.237,
+          "delta_pct": 2.7839939313483852,
+          "opt_score": 27.099,
+          "opt_time": 84.875,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.026419,
+              "delta_pct": -1.2150346341648126,
+              "opt": 0.026098
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 151487.0,
+              "delta_pct": -1.2608342630060665,
+              "opt": 149577.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 110308.0,
+              "delta_pct": -0.8993001414221997,
+              "opt": 109316.0
+            },
+            "system.cpu.ipc": {
+              "base": 3.960688,
+              "delta_pct": 0.21243783908249525,
+              "opt": 3.969102
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.070634,
+              "delta_pct": -2.830081830280036,
+              "opt": 0.068635
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 47.666667
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 6.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 6.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 3.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.120714,
+              "delta_pct": 31.510843812648076,
+              "opt": 0.158752
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 3744.0,
+              "delta_pct": -0.641025641025641,
+              "opt": 3720.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 7277.0,
+              "delta_pct": 40.5524254500481,
+              "opt": 10228.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 7277.0,
+              "delta_pct": 40.5524254500481,
+              "opt": 10228.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 514.0,
+              "delta_pct": 36.57587548638132,
+              "opt": 702.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 514.0,
+              "delta_pct": 36.57587548638132,
+              "opt": 702.0
+            }
+          }
+        }
+      },
+      "int_score_base": 15.929392738859693,
+      "int_score_delta_pct": 3.180688071100076,
+      "int_score_opt": 16.436057033503285,
+      "opt": "pbop_opt",
+      "top_gains": [
+        [
+          "libquantum",
+          25.36490058613951
+        ],
+        [
+          "omnetpp",
+          5.071187435784535
+        ],
+        [
+          "mcf",
+          4.187771345875552
+        ],
+        [
+          "xalancbmk",
+          2.7839939313483852
+        ],
+        [
+          "gcc",
+          1.371656587069012
+        ]
+      ],
+      "top_regressions": [
+        [
+          "sjeng",
+          0.0
+        ],
+        [
+          "hmmer",
+          0.0
+        ],
+        [
+          "h264ref",
+          0.029426601647895786
+        ],
+        [
+          "gobmk",
+          0.05281573909024308
+        ],
+        [
+          "astar",
+          0.427012494069259
+        ]
+      ]
+    },
+    "vbop": {
+      "base": "vbop_base",
+      "benchmarks": {
+        "astar": {
+          "base_score": 12.672,
+          "base_time": 184.662,
+          "delta_pct": 0.5445075757575684,
+          "opt_score": 12.741,
+          "opt_time": 183.661,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.142061,
+              "delta_pct": -2.192720028720062,
+              "opt": 0.138946
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 2861377.0,
+              "delta_pct": -3.7468323817518625,
+              "opt": 2754166.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 1820543.0,
+              "delta_pct": -2.4248259997154693,
+              "opt": 1776398.0
+            },
+            "system.cpu.ipc": {
+              "base": 0.860942,
+              "delta_pct": 1.229118802428036,
+              "opt": 0.871524
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.330938,
+              "delta_pct": -5.401313841263327,
+              "opt": 0.313063
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 40.626016
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 123.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 123.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 91.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.098269,
+              "delta_pct": 90.99817846930365,
+              "opt": 0.187692
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 930146.0,
+              "delta_pct": -7.906393189886318,
+              "opt": 856605.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 306299.0,
+              "delta_pct": 106.40844403670924,
+              "opt": 632227.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 306299.0,
+              "delta_pct": 106.40844403670924,
+              "opt": 632227.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 101366.0,
+              "delta_pct": 95.2597517905412,
+              "opt": 197927.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 101366.0,
+              "delta_pct": 95.2597517905412,
+              "opt": 197927.0
+            }
+          }
+        },
+        "bzip2": {
+          "base_score": 10.33,
+          "base_time": 311.383,
+          "delta_pct": 0.08712487899322692,
+          "opt_score": 10.339,
+          "opt_time": 311.126,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.125709,
+              "delta_pct": -0.06125257539236948,
+              "opt": 0.125632
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 38086.0,
+              "delta_pct": 0.007876910150711548,
+              "opt": 38089.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 38418.0,
+              "delta_pct": 0.010411786141912646,
+              "opt": 38422.0
+            },
+            "system.cpu.ipc": {
+              "base": 4.121216,
+              "delta_pct": -0.011161754200710396,
+              "opt": 4.120756
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.317811,
+              "delta_pct": -0.19382589023035873,
+              "opt": 0.317195
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 37.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.946896,
+              "delta_pct": 0.3949747385140583,
+              "opt": 0.950636
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 142.0,
+              "delta_pct": -7.042253521126761,
+              "opt": 132.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 7967.0,
+              "delta_pct": 0.5899334755867955,
+              "opt": 8014.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 7967.0,
+              "delta_pct": 0.5899334755867955,
+              "opt": 8014.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 2532.0,
+              "delta_pct": 0.3949447077409162,
+              "opt": 2542.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 2532.0,
+              "delta_pct": 0.3949447077409162,
+              "opt": 2542.0
+            }
+          }
+        },
+        "gcc": {
+          "base_score": 15.893,
+          "base_time": 168.842,
+          "delta_pct": 2.309192726357521,
+          "opt_score": 16.26,
+          "opt_time": 165.027,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.816777,
+              "delta_pct": 0.0,
+              "opt": 0.816777
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 1817180.0,
+              "delta_pct": 0.0,
+              "opt": 1817180.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 1803754.0,
+              "delta_pct": 0.0,
+              "opt": 1803754.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.403901,
+              "delta_pct": 0.0,
+              "opt": 2.403901
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.202877,
+              "delta_pct": 0.0,
+              "opt": 0.202877
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.1542,
+              "delta_pct": 0.0,
+              "opt": 0.1542
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 5337.0,
+              "delta_pct": 0.0,
+              "opt": 5337.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 4796.0,
+              "delta_pct": 0.0,
+              "opt": 4796.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 4796.0,
+              "delta_pct": 0.0,
+              "opt": 4796.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 973.0,
+              "delta_pct": 0.0,
+              "opt": 973.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 973.0,
+              "delta_pct": 0.0,
+              "opt": 973.0
+            }
+          }
+        },
+        "gobmk": {
+          "base_score": 15.14,
+          "base_time": 230.95,
+          "delta_pct": -0.013210039630123302,
+          "opt_score": 15.138,
+          "opt_time": 230.983,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.011221,
+              "delta_pct": -1.916050262899919,
+              "opt": 0.011006
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 46508.0,
+              "delta_pct": -1.9695536251827641,
+              "opt": 45592.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 31782.0,
+              "delta_pct": -0.5348939651374992,
+              "opt": 31612.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.077963,
+              "delta_pct": 0.10048302111250729,
+              "opt": 2.080051
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.233819,
+              "delta_pct": 5.867786621275435,
+              "opt": 0.247539
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 31.5
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.217172,
+              "delta_pct": 9.969977713517398,
+              "opt": 0.238824
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 6993.0,
+              "delta_pct": -2.6026026026026026,
+              "opt": 6811.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 8297.0,
+              "delta_pct": 4.049656502350247,
+              "opt": 8633.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 8297.0,
+              "delta_pct": 4.049656502350247,
+              "opt": 8633.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 1940.0,
+              "delta_pct": 10.154639175257731,
+              "opt": 2137.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 1940.0,
+              "delta_pct": 10.154639175257731,
+              "opt": 2137.0
+            }
+          }
+        },
+        "h264ref": {
+          "base_score": 23.738,
+          "base_time": 310.752,
+          "delta_pct": -0.04633920296570576,
+          "opt_score": 23.727,
+          "opt_time": 310.9,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.019534,
+              "delta_pct": -12.09173748336234,
+              "opt": 0.017172
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 118207.0,
+              "delta_pct": -12.402818783997564,
+              "opt": 103546.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 55780.0,
+              "delta_pct": 0.023305844388669773,
+              "opt": 55793.0
+            },
+            "system.cpu.ipc": {
+              "base": 5.206149,
+              "delta_pct": 0.3041787701427713,
+              "opt": 5.221985
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.238558,
+              "delta_pct": 51.388760804500386,
+              "opt": 0.36115
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 57.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.251366,
+              "delta_pct": 53.026264490822165,
+              "opt": 0.384656
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 8771.0,
+              "delta_pct": -19.803899213316612,
+              "opt": 7034.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 12345.0,
+              "delta_pct": -1.377075739165654,
+              "opt": 12175.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 12345.0,
+              "delta_pct": -1.377075739165654,
+              "opt": 12175.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 2945.0,
+              "delta_pct": 49.303904923599326,
+              "opt": 4397.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 2945.0,
+              "delta_pct": 49.303904923599326,
+              "opt": 4397.0
+            }
+          }
+        },
+        "hmmer": {
+          "base_score": 16.496,
+          "base_time": 188.532,
+          "delta_pct": -0.006062075654690043,
+          "opt_score": 16.495,
+          "opt_time": 188.539,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.01005,
+              "delta_pct": 0.0,
+              "opt": 0.01005
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 67655.0,
+              "delta_pct": 0.0,
+              "opt": 67655.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 66220.0,
+              "delta_pct": 0.0,
+              "opt": 66220.0
+            },
+            "system.cpu.ipc": {
+              "base": 6.521017,
+              "delta_pct": 0.0,
+              "opt": 6.521017
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": NaN,
+              "delta_pct": null,
+              "opt": NaN
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 372.0,
+              "delta_pct": 0.0,
+              "opt": 372.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            }
+          }
+        },
+        "libquantum": {
+          "base_score": 39.413,
+          "base_time": 175.239,
+          "delta_pct": -5.741760332885085,
+          "opt_score": 37.15,
+          "opt_time": 185.911,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.226918,
+              "delta_pct": 2.5921257899329264,
+              "opt": 0.2328
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 1381004.0,
+              "delta_pct": 2.72359819377786,
+              "opt": 1418617.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 633528.0,
+              "delta_pct": 0.9466037807326589,
+              "opt": 639525.0
+            },
+            "system.cpu.ipc": {
+              "base": 3.532379,
+              "delta_pct": -12.104052254868469,
+              "opt": 3.104818
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.97396,
+              "delta_pct": -8.0538215121771,
+              "opt": 0.895519
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 98.990909
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 110.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 110.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 105.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.957758,
+              "delta_pct": 3.9072500569037225,
+              "opt": 0.99518
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 24689.0,
+              "delta_pct": -89.57025395925311,
+              "opt": 2575.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 574741.0,
+              "delta_pct": 3.30601088142311,
+              "opt": 593742.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 574741.0,
+              "delta_pct": 3.30601088142311,
+              "opt": 593742.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 559775.0,
+              "delta_pct": -5.014157473985083,
+              "opt": 531707.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 559775.0,
+              "delta_pct": -5.014157473985083,
+              "opt": 531707.0
+            }
+          }
+        },
+        "mcf": {
+          "base_score": 22.645,
+          "base_time": 134.247,
+          "delta_pct": 3.7800839037315153,
+          "opt_score": 23.501,
+          "opt_time": 129.355,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.082962,
+              "delta_pct": -3.425664762180272,
+              "opt": 0.08012
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 758094.0,
+              "delta_pct": -5.730819660886381,
+              "opt": 714649.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 602813.0,
+              "delta_pct": -1.7073288067775578,
+              "opt": 592521.0
+            },
+            "system.cpu.ipc": {
+              "base": 1.574416,
+              "delta_pct": 6.696006646273922,
+              "opt": 1.679839
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.639749,
+              "delta_pct": -4.788909400405475,
+              "opt": 0.609112
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 71.886076
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 79.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 79.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 65.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.641982,
+              "delta_pct": 6.638659650893633,
+              "opt": 0.684601
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 152726.0,
+              "delta_pct": -21.909825439021517,
+              "opt": 119264.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 428076.0,
+              "delta_pct": -0.71833038993076,
+              "opt": 425001.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 428076.0,
+              "delta_pct": -0.71833038993076,
+              "opt": 425001.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 273861.0,
+              "delta_pct": -5.472849365188909,
+              "opt": 258873.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 273861.0,
+              "delta_pct": -5.472849365188909,
+              "opt": 258873.0
+            }
+          }
+        },
+        "omnetpp": {
+          "base_score": 15.162,
+          "base_time": 137.408,
+          "delta_pct": 2.9217781295343594,
+          "opt_score": 15.605,
+          "opt_time": 133.501,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.134244,
+              "delta_pct": -0.09758350466314489,
+              "opt": 0.134113
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 1126208.0,
+              "delta_pct": -0.2804100130704097,
+              "opt": 1123050.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 768631.0,
+              "delta_pct": -0.05581351779982852,
+              "opt": 768202.0
+            },
+            "system.cpu.ipc": {
+              "base": 1.076973,
+              "delta_pct": 3.724234497986482,
+              "opt": 1.117082
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.322973,
+              "delta_pct": 7.190384335532689,
+              "opt": 0.346196
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 38.070423
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 71.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 71.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 3.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.302184,
+              "delta_pct": 8.263508326052989,
+              "opt": 0.327155
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 289408.0,
+              "delta_pct": -4.1512328615656795,
+              "opt": 277394.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 388039.0,
+              "delta_pct": 0.4007329160213277,
+              "opt": 389594.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 388039.0,
+              "delta_pct": 0.4007329160213277,
+              "opt": 389594.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 125326.0,
+              "delta_pct": 7.620126709541515,
+              "opt": 134876.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 125326.0,
+              "delta_pct": 7.620126709541515,
+              "opt": 134876.0
+            }
+          }
+        },
+        "perlbench": {
+          "base_score": 12.59,
+          "base_time": 258.663,
+          "delta_pct": 0.23034154090547987,
+          "opt_score": 12.619,
+          "opt_time": 258.072,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.01358,
+              "delta_pct": 1.02356406480118,
+              "opt": 0.013719
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 44408.0,
+              "delta_pct": 0.9795532336515943,
+              "opt": 44843.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 23050.0,
+              "delta_pct": 0.8980477223427331,
+              "opt": 23257.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.616893,
+              "delta_pct": -0.407697219565341,
+              "opt": 2.606224
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.296353,
+              "delta_pct": -2.202778443275411,
+              "opt": 0.289825
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 35.5
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.283336,
+              "delta_pct": -3.3342039133749273,
+              "opt": 0.273889
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 11797.0,
+              "delta_pct": 2.093752648978554,
+              "opt": 12044.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 15738.0,
+              "delta_pct": -0.4003049942813572,
+              "opt": 15675.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 15738.0,
+              "delta_pct": -0.4003049942813572,
+              "opt": 15675.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 4664.0,
+              "delta_pct": -2.5943396226415096,
+              "opt": 4543.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 4664.0,
+              "delta_pct": -2.5943396226415096,
+              "opt": 4543.0
+            }
+          }
+        },
+        "sjeng": {
+          "base_score": 12.462,
+          "base_time": 323.65,
+          "delta_pct": -0.01604878831647321,
+          "opt_score": 12.46,
+          "opt_time": 323.697,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.003498,
+              "delta_pct": 0.0,
+              "opt": 0.003498
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 12011.0,
+              "delta_pct": 0.0,
+              "opt": 12011.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 10851.0,
+              "delta_pct": 0.0,
+              "opt": 10851.0
+            },
+            "system.cpu.ipc": {
+              "base": 2.481149,
+              "delta_pct": 0.0,
+              "opt": 2.481149
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": NaN,
+              "delta_pct": null,
+              "opt": NaN
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 1.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 7188.0,
+              "delta_pct": 0.0,
+              "opt": 7188.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 0.0,
+              "delta_pct": null,
+              "opt": 0.0
+            }
+          }
+        },
+        "xalancbmk": {
+          "base_score": 26.409,
+          "base_time": 87.093,
+          "delta_pct": 2.2189405127040103,
+          "opt_score": 26.995,
+          "opt_time": 85.201,
+          "stats": {
+            "system.cpu.dcache.demandMissRate::total": {
+              "base": 0.026173,
+              "delta_pct": 0.12608413250296788,
+              "opt": 0.026206
+            },
+            "system.cpu.dcache.demandMisses::total": {
+              "base": 149981.0,
+              "delta_pct": 0.14668524679792774,
+              "opt": 150201.0
+            },
+            "system.cpu.dcache.demandMshrMisses::total": {
+              "base": 109960.0,
+              "delta_pct": -0.029101491451436888,
+              "opt": 109928.0
+            },
+            "system.cpu.ipc": {
+              "base": 3.965027,
+              "delta_pct": -0.007994901421854144,
+              "opt": 3.96471
+            },
+            "system.l2_wrappers.prefetcher.accuracy": {
+              "base": 0.053087,
+              "delta_pct": -5.9035168685365615,
+              "opt": 0.049953
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentCovRatioPctDist::mean": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 53.333333
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 3.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 3.0
+            },
+            "system.l2_wrappers.prefetcher.bop_large.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 2.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentFallbackCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentIssueCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.studentPhaseCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.bop_small.teacherInjectedCount": {
+              "base": null,
+              "delta_pct": null,
+              "opt": 0.0
+            },
+            "system.l2_wrappers.prefetcher.coverage": {
+              "base": 0.168499,
+              "delta_pct": 0.9792342981263894,
+              "opt": 0.170149
+            },
+            "system.l2_wrappers.prefetcher.demandMshrMisses": {
+              "base": 3479.0,
+              "delta_pct": -4.110376544984191,
+              "opt": 3336.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued": {
+              "base": 13280.0,
+              "delta_pct": 3.1099397590361444,
+              "opt": 13693.0
+            },
+            "system.l2_wrappers.prefetcher.pfIssued_srcs::4": {
+              "base": 13280.0,
+              "delta_pct": 3.1099397590361444,
+              "opt": 13693.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful": {
+              "base": 705.0,
+              "delta_pct": -2.9787234042553195,
+              "opt": 684.0
+            },
+            "system.l2_wrappers.prefetcher.pfUseful_srcs::4": {
+              "base": 705.0,
+              "delta_pct": -2.9787234042553195,
+              "opt": 684.0
+            }
+          }
+        }
+      },
+      "int_score_base": 17.244565060142374,
+      "int_score_delta_pct": 0.4963075473312613,
+      "int_score_opt": 17.33015113804031,
+      "opt": "vbop_opt",
+      "top_gains": [
+        [
+          "mcf",
+          3.7800839037315153
+        ],
+        [
+          "omnetpp",
+          2.9217781295343594
+        ],
+        [
+          "gcc",
+          2.309192726357521
+        ],
+        [
+          "xalancbmk",
+          2.2189405127040103
+        ],
+        [
+          "astar",
+          0.5445075757575684
+        ]
+      ],
+      "top_regressions": [
+        [
+          "libquantum",
+          -5.741760332885085
+        ],
+        [
+          "h264ref",
+          -0.04633920296570576
+        ],
+        [
+          "sjeng",
+          -0.01604878831647321
+        ],
+        [
+          "gobmk",
+          -0.013210039630123302
+        ],
+        [
+          "hmmer",
+          -0.006062075654690043
+        ]
+      ]
+    }
+  },
+  "runs": {
+    "all_base": {
+      "int_score": 18.528074898759236,
+      "path": "/nfs/home/share/gem5_ci/performance_data/gcc12-spec06-0.8c/20260401_125045_94e484f_run134",
+      "scores": {
+        "astar": {
+          "coverage": 0.808,
+          "ref_time": 7020.0,
+          "score": 13.116,
+          "time": 178.402
+        },
+        "bzip2": {
+          "coverage": 0.813,
+          "ref_time": 9650.0,
+          "score": 10.648,
+          "time": 302.096
+        },
+        "gcc": {
+          "coverage": 0.82,
+          "ref_time": 8050.0,
+          "score": 19.14,
+          "time": 140.198
+        },
+        "gobmk": {
+          "coverage": 0.819,
+          "ref_time": 10490.0,
+          "score": 15.25,
+          "time": 229.296
+        },
+        "h264ref": {
+          "coverage": 0.826,
+          "ref_time": 22130.0,
+          "score": 24.07,
+          "time": 306.469
+        },
+        "hmmer": {
+          "coverage": 0.809,
+          "ref_time": 9330.0,
+          "score": 16.536,
+          "time": 188.078
+        },
+        "libquantum": {
+          "coverage": 0.808,
+          "ref_time": 20720.0,
+          "score": 44.65,
+          "time": 154.684
+        },
+        "mcf": {
+          "coverage": 0.841,
+          "ref_time": 9120.0,
+          "score": 26.258,
+          "time": 115.775
+        },
+        "omnetpp": {
+          "coverage": 0.809,
+          "ref_time": 6250.0,
+          "score": 17.215,
+          "time": 121.021
+        },
+        "perlbench": {
+          "coverage": 0.842,
+          "ref_time": 9770.0,
+          "score": 13.507,
+          "time": 241.103
+        },
+        "sjeng": {
+          "coverage": 0.831,
+          "ref_time": 12100.0,
+          "score": 12.448,
+          "time": 324.002
+        },
+        "xalancbmk": {
+          "coverage": 0.806,
+          "ref_time": 6900.0,
+          "score": 29.726,
+          "time": 77.374
+        }
+      }
+    },
+    "all_opt": {
+      "int_score": 18.65240687446427,
+      "path": "/nfs/home/share/gem5_ci/performance_data/gcc12-spec06-0.8c/20260401_125104_191cebc_run135",
+      "scores": {
+        "astar": {
+          "coverage": 0.808,
+          "ref_time": 7020.0,
+          "score": 13.142,
+          "time": 178.054
+        },
+        "bzip2": {
+          "coverage": 0.813,
+          "ref_time": 9650.0,
+          "score": 10.648,
+          "time": 302.103
+        },
+        "gcc": {
+          "coverage": 0.82,
+          "ref_time": 8050.0,
+          "score": 19.192,
+          "time": 139.817
+        },
+        "gobmk": {
+          "coverage": 0.819,
+          "ref_time": 10490.0,
+          "score": 15.23,
+          "time": 229.588
+        },
+        "h264ref": {
+          "coverage": 0.826,
+          "ref_time": 22130.0,
+          "score": 24.074,
+          "time": 306.421
+        },
+        "hmmer": {
+          "coverage": 0.809,
+          "ref_time": 9330.0,
+          "score": 16.536,
+          "time": 188.069
+        },
+        "libquantum": {
+          "coverage": 0.808,
+          "ref_time": 20720.0,
+          "score": 44.219,
+          "time": 156.193
+        },
+        "mcf": {
+          "coverage": 0.841,
+          "ref_time": 9120.0,
+          "score": 27.715,
+          "time": 109.688
+        },
+        "omnetpp": {
+          "coverage": 0.809,
+          "ref_time": 6250.0,
+          "score": 17.631,
+          "time": 118.166
+        },
+        "perlbench": {
+          "coverage": 0.842,
+          "ref_time": 9770.0,
+          "score": 13.501,
+          "time": 241.216
+        },
+        "sjeng": {
+          "coverage": 0.831,
+          "ref_time": 12100.0,
+          "score": 12.443,
+          "time": 324.143
+        },
+        "xalancbmk": {
+          "coverage": 0.806,
+          "ref_time": 6900.0,
+          "score": 30.006,
+          "time": 76.65
+        }
+      }
+    },
+    "pbop_base": {
+      "int_score": 15.929392738859693,
+      "path": "/nfs/home/share/gem5_ci/performance_data/gcc12-spec06-0.8c/20260401_151316_ed94f52_run139",
+      "scores": {
+        "astar": {
+          "coverage": 0.808,
+          "ref_time": 7020.0,
+          "score": 12.646,
+          "time": 185.041
+        },
+        "bzip2": {
+          "coverage": 0.813,
+          "ref_time": 9650.0,
+          "score": 10.277,
+          "time": 312.999
+        },
+        "gcc": {
+          "coverage": 0.82,
+          "ref_time": 8050.0,
+          "score": 16.039,
+          "time": 167.3
+        },
+        "gobmk": {
+          "coverage": 0.819,
+          "ref_time": 10490.0,
+          "score": 15.147,
+          "time": 230.851
+        },
+        "h264ref": {
+          "coverage": 0.826,
+          "ref_time": 22130.0,
+          "score": 23.788,
+          "time": 310.107
+        },
+        "hmmer": {
+          "coverage": 0.809,
+          "ref_time": 9330.0,
+          "score": 16.501,
+          "time": 188.476
+        },
+        "libquantum": {
+          "coverage": 0.808,
+          "ref_time": 20720.0,
+          "score": 17.402,
+          "time": 396.894
+        },
+        "mcf": {
+          "coverage": 0.841,
+          "ref_time": 9120.0,
+          "score": 22.112,
+          "time": 137.485
+        },
+        "omnetpp": {
+          "coverage": 0.809,
+          "ref_time": 6250.0,
+          "score": 13.626,
+          "time": 152.897
+        },
+        "perlbench": {
+          "coverage": 0.842,
+          "ref_time": 9770.0,
+          "score": 12.511,
+          "time": 260.306
+        },
+        "sjeng": {
+          "coverage": 0.831,
+          "ref_time": 12100.0,
+          "score": 12.455,
+          "time": 323.837
+        },
+        "xalancbmk": {
+          "coverage": 0.806,
+          "ref_time": 6900.0,
+          "score": 26.365,
+          "time": 87.237
+        }
+      }
+    },
+    "pbop_opt": {
+      "int_score": 16.436057033503285,
+      "path": "/nfs/home/share/gem5_ci/performance_data/gcc12-spec06-0.8c/20260401_151242_cac779f_run140",
+      "scores": {
+        "astar": {
+          "coverage": 0.808,
+          "ref_time": 7020.0,
+          "score": 12.7,
+          "time": 184.252
+        },
+        "bzip2": {
+          "coverage": 0.813,
+          "ref_time": 9650.0,
+          "score": 10.34,
+          "time": 311.103
+        },
+        "gcc": {
+          "coverage": 0.82,
+          "ref_time": 8050.0,
+          "score": 16.259,
+          "time": 165.039
+        },
+        "gobmk": {
+          "coverage": 0.819,
+          "ref_time": 10490.0,
+          "score": 15.155,
+          "time": 230.726
+        },
+        "h264ref": {
+          "coverage": 0.826,
+          "ref_time": 22130.0,
+          "score": 23.795,
+          "time": 310.009
+        },
+        "hmmer": {
+          "coverage": 0.809,
+          "ref_time": 9330.0,
+          "score": 16.501,
+          "time": 188.476
+        },
+        "libquantum": {
+          "coverage": 0.808,
+          "ref_time": 20720.0,
+          "score": 21.816,
+          "time": 316.584
+        },
+        "mcf": {
+          "coverage": 0.841,
+          "ref_time": 9120.0,
+          "score": 23.038,
+          "time": 131.958
+        },
+        "omnetpp": {
+          "coverage": 0.809,
+          "ref_time": 6250.0,
+          "score": 14.317,
+          "time": 145.514
+        },
+        "perlbench": {
+          "coverage": 0.842,
+          "ref_time": 9770.0,
+          "score": 12.597,
+          "time": 258.525
+        },
+        "sjeng": {
+          "coverage": 0.831,
+          "ref_time": 12100.0,
+          "score": 12.455,
+          "time": 323.837
+        },
+        "xalancbmk": {
+          "coverage": 0.806,
+          "ref_time": 6900.0,
+          "score": 27.099,
+          "time": 84.875
+        }
+      }
+    },
+    "vbop_base": {
+      "int_score": 17.244565060142374,
+      "path": "/nfs/home/share/gem5_ci/performance_data/gcc12-spec06-0.8c/20260401_140142_93accab_run137",
+      "scores": {
+        "astar": {
+          "coverage": 0.808,
+          "ref_time": 7020.0,
+          "score": 12.672,
+          "time": 184.662
+        },
+        "bzip2": {
+          "coverage": 0.813,
+          "ref_time": 9650.0,
+          "score": 10.33,
+          "time": 311.383
+        },
+        "gcc": {
+          "coverage": 0.82,
+          "ref_time": 8050.0,
+          "score": 15.893,
+          "time": 168.842
+        },
+        "gobmk": {
+          "coverage": 0.819,
+          "ref_time": 10490.0,
+          "score": 15.14,
+          "time": 230.95
+        },
+        "h264ref": {
+          "coverage": 0.826,
+          "ref_time": 22130.0,
+          "score": 23.738,
+          "time": 310.752
+        },
+        "hmmer": {
+          "coverage": 0.809,
+          "ref_time": 9330.0,
+          "score": 16.496,
+          "time": 188.532
+        },
+        "libquantum": {
+          "coverage": 0.808,
+          "ref_time": 20720.0,
+          "score": 39.413,
+          "time": 175.239
+        },
+        "mcf": {
+          "coverage": 0.841,
+          "ref_time": 9120.0,
+          "score": 22.645,
+          "time": 134.247
+        },
+        "omnetpp": {
+          "coverage": 0.809,
+          "ref_time": 6250.0,
+          "score": 15.162,
+          "time": 137.408
+        },
+        "perlbench": {
+          "coverage": 0.842,
+          "ref_time": 9770.0,
+          "score": 12.59,
+          "time": 258.663
+        },
+        "sjeng": {
+          "coverage": 0.831,
+          "ref_time": 12100.0,
+          "score": 12.462,
+          "time": 323.65
+        },
+        "xalancbmk": {
+          "coverage": 0.806,
+          "ref_time": 6900.0,
+          "score": 26.409,
+          "time": 87.093
+        }
+      }
+    },
+    "vbop_opt": {
+      "int_score": 17.33015113804031,
+      "path": "/nfs/home/share/gem5_ci/performance_data/gcc12-spec06-0.8c/20260401_140149_4088f34_run138",
+      "scores": {
+        "astar": {
+          "coverage": 0.808,
+          "ref_time": 7020.0,
+          "score": 12.741,
+          "time": 183.661
+        },
+        "bzip2": {
+          "coverage": 0.813,
+          "ref_time": 9650.0,
+          "score": 10.339,
+          "time": 311.126
+        },
+        "gcc": {
+          "coverage": 0.82,
+          "ref_time": 8050.0,
+          "score": 16.26,
+          "time": 165.027
+        },
+        "gobmk": {
+          "coverage": 0.819,
+          "ref_time": 10490.0,
+          "score": 15.138,
+          "time": 230.983
+        },
+        "h264ref": {
+          "coverage": 0.826,
+          "ref_time": 22130.0,
+          "score": 23.727,
+          "time": 310.9
+        },
+        "hmmer": {
+          "coverage": 0.809,
+          "ref_time": 9330.0,
+          "score": 16.495,
+          "time": 188.539
+        },
+        "libquantum": {
+          "coverage": 0.808,
+          "ref_time": 20720.0,
+          "score": 37.15,
+          "time": 185.911
+        },
+        "mcf": {
+          "coverage": 0.841,
+          "ref_time": 9120.0,
+          "score": 23.501,
+          "time": 129.355
+        },
+        "omnetpp": {
+          "coverage": 0.809,
+          "ref_time": 6250.0,
+          "score": 15.605,
+          "time": 133.501
+        },
+        "perlbench": {
+          "coverage": 0.842,
+          "ref_time": 9770.0,
+          "score": 12.619,
+          "time": 258.072
+        },
+        "sjeng": {
+          "coverage": 0.831,
+          "ref_time": 12100.0,
+          "score": 12.46,
+          "time": 323.697
+        },
+        "xalancbmk": {
+          "coverage": 0.806,
+          "ref_time": 6900.0,
+          "score": 26.995,
+          "time": 85.201
+        }
+      }
+    }
+  }
+}

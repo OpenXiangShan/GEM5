@@ -1,0 +1,18 @@
+[
+  {
+    "phase_idx": 8,
+    "phase_len": 5150,
+    "start_row_id": 41201,
+    "end_row_id": 46350,
+    "start_stamp": 2090491,
+    "end_stamp": 2386646,
+    "teacher_best": -1,
+    "teacher_score": 1,
+    "oracle_best": -1,
+    "oracle_cov": 923,
+    "teacher_cov": 923,
+    "cov_gap": 0,
+    "cov_neg1": 923,
+    "cov_pos1": 913
+  }
+]
