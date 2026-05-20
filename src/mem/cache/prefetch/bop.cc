@@ -41,6 +41,32 @@ GEM5_DEPRECATED_NAMESPACE(Prefetcher, prefetch);
 namespace prefetch
 {
 
+namespace
+{
+
+static constexpr Addr bopPcBlacklist[] = {
+    0x1087e,
+    0x10882,
+};
+
+bool
+isBopPcBlacklisted(const Base::PrefetchInfo &pfi)
+{
+    if (!pfi.hasPC()) {
+        return false;
+    }
+
+    const Addr pc = pfi.getPC();
+    for (const Addr blacklisted_pc : bopPcBlacklist) {
+        if (pc == blacklisted_pc) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // anonymous namespace
+
 BOP::BOP(const BOPPrefetcherParams &p)
     : Queued(p),
       scoreMax(p.score_max), roundMax(p.round_max),
@@ -490,6 +516,14 @@ BOP::sendPFWithFilter(const PrefetchInfo &pfi, Addr addr, std::vector<AddrPriori
 {
     // Count generated prefetch
     prefetchStats.pfGenerated++;
+
+    if (isBopPcBlacklisted(pfi)) {
+        DPRINTF(BOPPrefetcher,
+                "Skip BOP prefetch from blacklisted PC %#lx addr %#lx\n",
+                pfi.getPC(), addr);
+        prefetchStats.pfFiltered++;
+        return false;
+    }
 
     if (!samePage(pfi.getAddr(), addr) && !crossPage) {
         // Count filtered prefetch (cross-page)
