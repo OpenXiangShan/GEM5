@@ -2472,8 +2472,8 @@ LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
                         blockPaddr, paddr);
             } else {
                 // create vice for sending entry
-                if (storeBuffer.full()) {
-                    DPRINTF(StoreBuffer, "Insert %#x failed due to sbuffer full\n", paddr);
+                if (storeBuffer.full(lsqID) || storeBuffer.full()) {
+                    DPRINTF(StoreBuffer, "[tid:%u] Insert %#x failed due to sbuffer full\n", lsqID, paddr);
                     stats.sbufferFull++;
                     return false;
                 }
@@ -2498,10 +2498,10 @@ LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas,
         }
     } else {
         // create new entry
-        if (storeBuffer.full()) {
+        if (storeBuffer.full(lsqID) || storeBuffer.full()) {
             stats.sbufferFull++;
             // lsq->nextStoreBufferInsertTid = lsqID;
-            DPRINTF(StoreBuffer, "Insert %#x failed due to sbuffer full\n", paddr);
+            DPRINTF(StoreBuffer, "[tid:%u] Insert %#x failed due to sbuffer full\n", lsqID, paddr);
             return false;
         }
         // insert

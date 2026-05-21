@@ -189,12 +189,15 @@ class LSQ
 
         // key = (paddr & cacheblockmask)
         uint64_t _size = 0;
+        int max_size = 0;
+        int max_thread = 0;
         std::unordered_map<uint64_t, StoreBufferEntry *> data_map;
         std::vector<mapIter> crossRef;
         boost::circular_buffer<int> lru_index;
         boost::circular_buffer<int> free_list;
         std::vector<StoreBufferEntry *> data_vec;
         std::vector<bool> data_vld;
+        std::vector<int> vld_cnt_vec;
 
         uint64_t hashKey(ThreadID tid, Addr block_paddr) const
         {
@@ -204,8 +207,10 @@ class LSQ
 
       public:
         void setData(std::vector<StoreBufferEntry *> &data_vec);
-        bool full() const;
-        uint64_t size() const;
+        void setMaxThread(ThreadID max_thread);
+	bool full() const;
+        bool full(ThreadID tid) const;
+	uint64_t size() const;
         uint64_t size(ThreadID tid) const;
         uint64_t size(ThreadID tid, InstSeqNum seq_num) const;
         uint64_t unsentSize() const;
