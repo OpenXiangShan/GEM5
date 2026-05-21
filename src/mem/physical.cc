@@ -851,9 +851,9 @@ PhysicalMemory::unserializeFromZstd(std::string filepath, unsigned store_id, lon
             }
 
             for (uint64_t x = 0; x < output.pos; x += sizeof(long)) {
-                pmem_current = (uint64_t*)(pmem + total_write_size + x);
                 uint64_t read_data = *(decompress_file_buffer + x / sizeof(long));
-                if (read_data != 0 || *pmem_current != 0) {
+                if (read_data != 0) {
+                    pmem_current = (uint64_t*)(pmem + total_write_size + x);
                     *pmem_current = read_data;
                     non_zero_dword++;
                 }
