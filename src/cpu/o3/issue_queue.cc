@@ -405,6 +405,58 @@ IssueQue::issueToFu()
         issued++;
     }
 
+    // Vector memory instructions are issued from vectorReadyQ after replayQ,
+    // and before the normal toFu stream.
+    while (!vectorReadyQ.empty()) {
+        auto inst = vectorReadyQ.front();
+        if (!inst || inst->isSquashed() || inst->canceled()) {
+            if (inst) {
+                vectorReadyQSeqs.erase(inst->seqNum);
+            }
+            vectorReadyQ.pop();
+            continue;
+        }
+
+        bool bypassReady = true;
+        for (int i = 0; i < inst->numSrcRegs(); i++) {
+            auto src = inst->renamedSrcIdx(i);
+            if (src->isFixedMapping()) {
+                continue;
+            }
+            if (!scheduler->bypassScoreboard[src->flatIndex()]) {
+                bypassReady = false;
+                break;
+            }
+        }
+        if (!bypassReady) {
+            // Keep FIFO order in vectorReadyQ and retry in later cycles.
+            break;
+        }
+
+        bool blockLoad = inst->isLoad() && scheduler->lsq->isDcacheRefillTagWrite();
+        if (blockLoad) {
+            incTagRefillBlockStats = true;
+        }
+
+        if (issued >= outports || (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
+            (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad) {
+            break;
+        }
+
+        vectorReadyQSeqs.erase(inst->seqNum);
+        vectorReadyQ.pop();
+
+        if (inst->isLoad()) {
+            issuedLoad++;
+        }
+        if (inst->isStore()) {
+            issuedStore++;
+        }
+        addToFu(inst);
+        cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueReadReg);
+        issued++;
+    }
+
     for (int i = 0; i < size; i++) {
         auto inst = toFu->pop();
         if (!inst) {
@@ -417,7 +469,7 @@ IssueQue::issueToFu()
             incTagRefillBlockStats = true;
         }
 
-        if ((i + replayed >= outports) || (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
+        if ((issued >= outports) || (inst->isLoad() && (issuedLoad >= numLoadPipe)) ||
             (inst->isStore() && (issuedStore >= numStorePipe)) || blockLoad) {
             inst->clearScheduled();
             // only for load/store
@@ -542,15 +594,6 @@ IssueQue::addIfReady(const DynInstPtr& inst)
             DPRINTF(Counters, "set readyTick at addIfReady\n");
         }
 
-        if (inst->isVector() && !inst->isSquashed() &&
-            vectorReadyQSeqs.insert(inst->seqNum).second && inst->isMemRef()) {
-            vectorReadyQ.push(inst);
-            const bool is_micro = inst->isMicroop();
-            const bool is_first_uop = inst->isFirstMicroop();
-            const bool is_last_uop = inst->isLastMicroop();
-            DPRINTF(Schedule, "[sn:%llu] add to vectorReadyQ\n", inst->seqNum);
-        }
-
         // Add the instruction to the proper ready list.
         if (inst->isMemRef()) {
             if (inst->memDepSolved()) {
@@ -561,10 +604,20 @@ IssueQue::addIfReady(const DynInstPtr& inst)
             }
         }
 
+
+
         DPRINTF(Schedule, "[sn:%llu] add to readyInstsQue\n", inst->seqNum);
         inst->clearCancel();
         if (!inst->inReadyQ()) {
-            READYQ_PUSH(inst);
+            if (inst->isVector() && !inst->isSquashed() && inst->isMemRef()) {
+                if (vectorReadyQSeqs.insert(inst->seqNum).second) {
+                    vectorReadyQ.push(inst);
+                    DPRINTF(Schedule, "[sn:%llu] add to vectorReadyQ\n", inst->seqNum);
+                }
+            }
+            else{
+                READYQ_PUSH(inst);
+            }
         }
     }
 }
