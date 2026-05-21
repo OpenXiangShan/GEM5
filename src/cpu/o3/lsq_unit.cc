@@ -367,19 +367,16 @@ LSQUnit::completeDataAccess(PacketPtr pkt)
                 assert(size == inst->effSize);
 
                 if (inst->isAtomic()) {
-                    uint8_t current_golden[8] = {};
-                    panic_if(size > sizeof(current_golden),
-                             "Unexpected AMO size %u at addr %#lx\n",
+                    panic_if(size > sizeof(uint64_t),
+                             "Unexpected AMO size %zu at addr %#lx\n",
                              size, addr);
-                    cpu->goldenMemManager()->readGoldenMem(addr, current_golden,
-                                                           size);
-
                     // Preserve the DUT-observed old value until completeStore()
-                    // derives the post-AMO memory image. The golden old-value
-                    // snapshot used by difftest is captured when the request
-                    // is first sent, before later concurrent updates can
-                    // advance shared memory.
+                    // derives the post-AMO memory image. Keep the actual
+                    // response value for difftest, since the request may have
+                    // been serialized behind another hart's AMO by the cache.
                     inst->setGolden(loaded_data);
+                    std::memcpy(inst->getAmoOldGoldenValuePtr(), loaded_data,
+                                size);
                 } else {
                     // check data with golden mem
                     uint8_t *golden_data =
@@ -2933,7 +2930,6 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
                     paddr, *((uint64_t *)(tmp_data)), 0xff, request->_size);
             cpu->goldenMemManager()->updateGoldenMem(paddr, tmp_data, 0xff,
                                                      request->_size);
-            store_inst->setGolden(tmp_data);
         }
     }
 
