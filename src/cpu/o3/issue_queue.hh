@@ -167,6 +167,8 @@ class IssueQue : public SimObject
     std::vector<std::vector<std::pair<uint8_t, DynInstPtr>>> subDepGraph;
 
     std::queue<DynInstPtr> replayQ;  // only for mem
+    std::queue<DynInstPtr> vectorReadyQ;
+    std::unordered_set<InstSeqNum> vectorReadyQSeqs;
 
     CPU* cpu = nullptr;
     Scheduler* scheduler = nullptr;
@@ -220,6 +222,9 @@ class IssueQue : public SimObject
 
     void doCommit(const InstSeqNum inst);
     void doSquash(const InstSeqNum seqNum);
+
+    bool hasReadyVectorInst() const { return !vectorReadyQ.empty(); }
+    DynInstPtr popReadyVectorInst();
 
     int getIssueStages() { return scheduleToExecDelay; }
     int getId() { return IQID; }
