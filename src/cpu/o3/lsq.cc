@@ -245,6 +245,7 @@ LSQ::StoreBuffer::setData(std::vector<StoreBufferEntry *> &data_vec)
     this->data_vec = data_vec;
     int way = data_vec.size();
     _size = 0;
+    max_size = way;
     lru_index.set_capacity(way);
     free_list.set_capacity(way);
     crossRef.resize(way);
@@ -255,10 +256,24 @@ LSQ::StoreBuffer::setData(std::vector<StoreBufferEntry *> &data_vec)
     }
 }
 
+void
+LSQ::StoreBuffer::setMaxThread(ThreadID _max_thread)
+{
+    max_thread = _max_thread;
+    vld_cnt_vec.resize(max_thread, 0);
+}
+
 bool
 LSQ::StoreBuffer::full() const
 {
     return free_list.size() == 0;
+}
+
+bool
+LSQ::StoreBuffer::full(ThreadID tid) const
+{
+    assert(vld_cnt_vec[tid] <= max_size);
+    return (vld_cnt_vec[tid] == (max_size - max_thread + 1));
 }
 
 uint64_t
@@ -326,6 +341,8 @@ LSQ::StoreBuffer::insert(StoreBufferEntry *entry)
     assert(!data_vld[index]);
     assert(!lru_index.full());
     _size++;
+    vld_cnt_vec[tid]++;
+    assert(vld_cnt_vec[tid] <= max_size);
     auto [it, _] = data_map.insert({hashKey(tid, addr), data_vec[index]});
     crossRef[index] = it;
     data_vld[index] = true;
@@ -411,6 +428,9 @@ LSQ::StoreBuffer::createVice(StoreBufferEntry *entry)
     assert(!entry->vice);
     entry->vice = vice;
     data_vld[vice->index] = true;
+    assert(entry->tid < max_thread);
+    vld_cnt_vec[entry->tid]++;
+    assert(vld_cnt_vec[entry->tid] <= max_size);
     // do not insert map and lru_index
     return vice;
 }
@@ -420,6 +440,8 @@ LSQ::StoreBuffer::release(StoreBufferEntry *entry)
 {
     assert(_size > 0);
     _size--;
+    vld_cnt_vec[entry->tid]--;
+    assert(vld_cnt_vec[entry->tid] >= 0);
     int index = entry->index;
     data_vld[index] = false;
     data_map.erase(crossRef[index]);
@@ -544,7 +566,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
         store_buffer_entries.push_back(new StoreBufferEntry(cpu->cacheLineSize(), i));
     }
     storeBuffer.setData(store_buffer_entries);
-
+    storeBuffer.setMaxThread(numThreads);
     bankOccupied.resize(dcacheSetDivNum, std::vector<bool>(numBank, false));
     pendingDcacheRefill.resize(dcacheSetDivNum, false);
     dcacheRefillDataRead.resize(dcacheSetDivNum, 0);
