@@ -2,54 +2,16 @@
 
 ## 安装环境
 
-### Ubuntu 22.04 依赖安装
+### Ubuntu 24.04 依赖安装
 
 ```bash
+sudo apt update
 sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
     libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
     python3-dev libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev
 ```
 
-**Note:** 目前建议在ubuntu 22.04上进行编译，ubuntu 20.04可能存在兼容性问题。
-
-### Python环境配置
-
-如果您的机器Python版本过高，可能需要安装较低版本以避免兼容性问题。推荐使用miniconda安装Python 3.8：
-
-```bash
-mkdir -p ~/miniconda3
-wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda3/miniconda.sh
-bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
-rm -rf ~/miniconda3/miniconda.sh
-
-# for bash
-~/miniconda3/bin/conda init bash
-# for zsh
-~/miniconda3/bin/conda init zsh
-```
-
-重启终端后，创建Python 3.8环境：
-
-```bash
-# 创建环境
-conda create --name py38 --file $gem5_home/ext/xs_env/gem5-py38.txt
-# 避免conda自动激活base环境
-conda config --set auto_activate_base false
-# 每次登录需要激活conda环境
-conda activate py38
-```
-
-也可以使用pyenv安装Python 3.8：
-
-```bash
-pyenv install 3.8.13
-pyenv local 3.8.13
-```
-激活环境：
-
-```bash
-pyenv activate py38
-```
+**Note:** 目前建议在 Ubuntu 24.04 上编译和运行。默认的系统 Python 3.12 可以正常使用，不需要额外安装 miniconda 或降级到旧版本 Python。
 
 ## 克隆与构建
 
@@ -205,11 +167,7 @@ bash ../parallel_sim.sh `realpath ../kmh_v3_btb.sh` $workloads_lst /top/dir/of/c
 
 为了能够在没有root访问权限的服务器上运行，我们提供了一个简单的docker脚本来运行xs-gem5。更多细节请参阅关于在docker中运行的README。
 
-也可以使用我们提供的docker镜像，基于ubuntu22.04，镜像中已经安装了所有依赖。
-```bash
-docker pull zhangqianlong/ubuntu22_gem5:v1
-docker run -it zhangqianlong/ubuntu22_gem5:v1
-```
+如需使用 Docker 环境，请参考关于在 Docker 中运行的 README。当前本地编译和运行优先推荐 Ubuntu 24.04。
 
 
 ## Arch DB使用
@@ -220,7 +178,7 @@ Arch DB是一个使用SQLite存储程序微架构跟踪的数据库。您可以�
 
 ### Python问题
 
-如果出现"Python not found"错误，这通常不是Python缺失，而是其他问题。检查`build/RISCV/gem5.build/scons_config.log`获取真正的错误信息。
+Ubuntu 24.04 默认的系统 Python 3.12 可以正常使用。如果出现"Python not found"错误，这通常不是Python缺失，而是其他 configure 阶段问题。检查`build/RISCV/gem5.build/scons_config.log`获取真正的错误信息。
 
 对于使用clang10时遇到的问题，可以应用以下补丁：
 ```bash
