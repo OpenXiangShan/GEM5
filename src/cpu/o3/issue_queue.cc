@@ -558,6 +558,15 @@ IssueQue::addIfReady(const DynInstPtr& inst)
             DPRINTF(Counters, "set readyTick at addIfReady\n");
         }
 
+        if (inst->isVector() && !inst->isSquashed() &&
+            vectorReadyQSeqs.insert(inst->seqNum).second && inst->isMemRef()) {
+            vectorReadyQ.push(inst);
+            const bool is_micro = inst->isMicroop();
+            const bool is_first_uop = inst->isFirstMicroop();
+            const bool is_last_uop = inst->isLastMicroop();
+            DPRINTF(Schedule, "[sn:%llu] add to vectorReadyQ\n", inst->seqNum);
+        }
+
         // Add the instruction to the proper ready list.
         if (inst->isMemRef()) {
             if (inst->memDepSolved()) {
@@ -793,6 +802,29 @@ IssueQue::insertNonSpec(const DynInstPtr& inst)
     }
 }
 
+DynInstPtr
+IssueQue::popReadyVectorInst()
+{
+    while (!vectorReadyQ.empty()) {
+        auto inst = vectorReadyQ.front();
+        vectorReadyQ.pop();
+
+        if (!inst) {
+            continue;
+        }
+
+        vectorReadyQSeqs.erase(inst->seqNum);
+
+        if (inst->isSquashed()) {
+            continue;
+        }
+
+        return inst;
+    }
+
+    return nullptr;
+}
+
 void
 IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
 {
@@ -800,11 +832,16 @@ IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
         const auto &inst = *it;
         if (inst->threadNumber == tid && inst->seqNum <= seqNum) {
             assert(inst->isIssued());
+            vectorReadyQSeqs.erase(inst->seqNum);
             it = instList.erase(it);
         } else {
             ++it;
         }
-    }
+    // while (!instList.empty() && instList.front()->seqNum <= seqNum) {
+    //     assert(instList.front()->isIssued());
+    //     vectorReadyQSeqs.erase(instList.front()->seqNum);
+    //     instList.pop_front();
+    // }
 }
 
 void
@@ -827,6 +864,7 @@ IssueQue::doSquash(SquashInfo squashInfo)
             (*it)->setCanCommit();
             (*it)->clearScheduled();
             (*it)->setCancel();
+            vectorReadyQSeqs.erase((*it)->seqNum);
             it = instList.erase(it);
             assert(instList.size() >= instNum);
         } else {
