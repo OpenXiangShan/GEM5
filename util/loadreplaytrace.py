@@ -268,12 +268,25 @@ def compute_reason_block_ticks(events, block_start_tick, block_end_tick):
     return reason_ticks
 
 
-def format_reason_stat(count, avg_block_cycles, show_avg):
+def format_reason_stat(count, avg_replay_cycles, avg_block_cycles, show_avg):
     if count == 0:
         return "0"
     if not show_avg:
         return str(count)
-    return f"{count}({format_scalar(avg_block_cycles)})"
+    return f"{count}({format_scalar(avg_replay_cycles)},{format_scalar(avg_block_cycles)})"
+
+
+def compute_reason_replay_ticks(events, replay_end_tick):
+    reason_ticks = defaultdict(int)
+    if not events or replay_end_tick <= 0:
+        return reason_ticks
+
+    for idx, (tick, reason) in enumerate(events):
+        seg_end = events[idx + 1][0] if idx + 1 < len(events) else replay_end_tick
+        if seg_end > tick:
+            reason_ticks[reason] += seg_end - tick
+
+    return reason_ticks
 
 
 def normalize_rows(rows, col_name):
@@ -316,6 +329,7 @@ def summarize_by_pc(loads, col_name, has_detail):
                 "replay_span": 0,
                 "pos_sum": [0] * 10,
                 "replay_reason": defaultdict(int),
+                "replay_ticks": defaultdict(int),
                 "replay_block_ticks": defaultdict(int),
                 "disasm": disassemble(row[idx["DisAsm"]]),
                 "pc": pc,
@@ -340,6 +354,8 @@ def summarize_by_pc(loads, col_name, has_detail):
             item["replay_span"] += max(0, writeback_tick - events[0][0])
             for _, reason in events:
                 item["replay_reason"][reason] += 1
+            for reason, ticks in compute_reason_replay_ticks(events, writeback_tick).items():
+                item["replay_ticks"][reason] += ticks
         else:
             replay_str = row[idx["ReplayStr"]] if "ReplayStr" in idx else ""
             item["replay_count"] += len(replay_str)
@@ -363,10 +379,12 @@ def summarize_by_pc(loads, col_name, has_detail):
         reason_stats = []
         for code in replay_reason_order:
             reason_count = item["replay_reason"].get(code, 0)
+            avg_replay = 0
             avg_block = 0
             if reason_count > 0:
+                avg_replay = item["replay_ticks"].get(code, 0) / reason_count / period
                 avg_block = item["replay_block_ticks"].get(code, 0) / reason_count / period
-            reason_stats.append(format_reason_stat(reason_count, avg_block, has_detail))
+            reason_stats.append(format_reason_stat(reason_count, avg_replay, avg_block, has_detail))
         out.append([
             count,
             hex(pc),
