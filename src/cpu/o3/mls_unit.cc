@@ -1,8 +1,16 @@
 #include "cpu/o3/mls_unit.hh"
 
 #include <cassert>
+#include <cstdint>
 
-#include "arch/generic/mmu.hh"
+#include "base/logging.hh"
+#include "base/trace.hh"
+#include "config/the_isa.hh"
+#include "cpu/o3/dyn_inst.hh"
+#include "debug/IEW.hh"
+#include "sim/cur_tick.hh"
+
+#if THE_ISA_IS_RISCV
 #include "arch/riscv/faults.hh"
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/isa.hh"
@@ -11,19 +19,460 @@
 #include "arch/riscv/regs/misc.hh"
 #include "arch/riscv/tlb.hh"
 #include "cpu/exec_context.hh"
-#include "cpu/o3/dyn_inst.hh"
-#include "cpu/o3/mls_replay_queue.hh"
-#include "cpu/o3/mls_virtual_queue.hh"
 #include "cpu/op_class.hh"
-#include "debug/IEW.hh"
 #include "mem/request.hh"
 #include "sim/full_system.hh"
+#endif
 
 namespace gem5
 {
 
 namespace o3
 {
+
+MlsVirtualQueue::MlsVirtualQueue(unsigned num_threads, unsigned capacity)
+    : queueCapacity(capacity),
+      queues(num_threads),
+      entries(num_threads, std::vector<Entry>(capacity)),
+      nextSlots(num_threads, 0)
+{
+}
+
+bool
+MlsVirtualQueue::canAllocate(ThreadID tid, unsigned count) const
+{
+    panic_if(tid >= queues.size(), "Invalid thread id %u for MlsVirtualQueue", tid);
+    return queues[tid].size() + count <= queueCapacity;
+}
+
+MlsVirtualQueue::Entry *
+MlsVirtualQueue::findEntryBySlot(ThreadID tid, unsigned slot)
+{
+    if (tid >= entries.size() || slot >= queueCapacity) {
+        return nullptr;
+    }
+
+    auto &entry = entries[tid][slot];
+    return entry.allocated ? &entry : nullptr;
+}
+
+const MlsVirtualQueue::Entry *
+MlsVirtualQueue::findEntryBySlot(ThreadID tid, unsigned slot) const
+{
+    if (tid >= entries.size() || slot >= queueCapacity) {
+        return nullptr;
+    }
+
+    const auto &entry = entries[tid][slot];
+    return entry.allocated ? &entry : nullptr;
+}
+
+MlsVirtualQueue::Entry *
+MlsVirtualQueue::findEntryByInst(const DynInstPtr &inst)
+{
+    if (!inst || inst->threadNumber >= queues.size() ||
+        !inst->hasMatrixMlsqSlot()) {
+        return nullptr;
+    }
+
+    auto *entry =
+        findEntryBySlot(inst->threadNumber, inst->getMatrixMlsqSlot());
+    if (entry && entry->robSeqNum == inst->seqNum) {
+        return entry;
+    }
+
+    return nullptr;
+}
+
+const MlsVirtualQueue::Entry *
+MlsVirtualQueue::findEntryByInst(const DynInstPtr &inst) const
+{
+    if (!inst || inst->threadNumber >= queues.size() ||
+        !inst->hasMatrixMlsqSlot()) {
+        return nullptr;
+    }
+
+    auto *entry =
+        findEntryBySlot(inst->threadNumber, inst->getMatrixMlsqSlot());
+    if (entry && entry->robSeqNum == inst->seqNum) {
+        return entry;
+    }
+
+    return nullptr;
+}
+
+bool
+MlsVirtualQueue::hasEntry(const DynInstPtr &inst) const
+{
+    return findEntryByInst(inst) != nullptr;
+}
+
+bool
+MlsVirtualQueue::allocate(const DynInstPtr &inst)
+{
+    panic_if(!inst, "Attempted to allocate null matrix mem instruction");
+    const ThreadID tid = inst->threadNumber;
+    panic_if(tid >= queues.size(), "Invalid thread id %u for MlsVirtualQueue", tid);
+
+    if (hasEntry(inst) || !canAllocate(tid)) {
+        return false;
+    }
+
+    const unsigned slot = nextSlots[tid];
+    auto &entry = entries[tid][slot];
+    panic_if(entry.allocated,
+             "MLSQ slot still allocated [tid:%i] slot=%u [sn:%llu]",
+             tid, slot, inst->seqNum);
+
+    entry = {};
+    entry.robSeqNum = inst->seqNum;
+    entry.tid = tid;
+    entry.slot = slot;
+    entry.allocated = true;
+    queues[tid].push_back(slot);
+    nextSlots[tid] = (slot + 1) % queueCapacity;
+    inst->setMatrixMlsqSlot(slot);
+
+    DPRINTF(IEW,
+            "MlsVirtualQueue alloc [tid:%i] [sn:%llu] slot=%u robOrder=%llu "
+            "size=%u free=%u.\n",
+            tid, inst->seqNum, entry.slot, entry.robSeqNum,
+            static_cast<unsigned>(queues[tid].size()), freeEntries(tid));
+
+    return true;
+}
+
+bool
+MlsVirtualQueue::markFinished(const DynInstPtr &inst)
+{
+    auto *entry = findEntryByInst(inst);
+    if (!entry) {
+        return false;
+    }
+
+    entry->finished = true;
+    DPRINTF(IEW,
+            "MlsVirtualQueue finish [tid:%i] [sn:%llu] slot=%u robOrder=%llu.\n",
+            entry->tid, inst->seqNum, entry->slot, entry->robSeqNum);
+    return true;
+}
+
+unsigned
+MlsVirtualQueue::retireCommitted(ThreadID tid, InstSeqNum committed_seq)
+{
+    panic_if(tid >= queues.size(), "Invalid thread id %u for MlsVirtualQueue", tid);
+
+    auto &queue = queues[tid];
+    unsigned retired = 0;
+    while (!queue.empty()) {
+        auto &head = entries[tid][queue.front()];
+        if (!head.finished || head.robSeqNum > committed_seq) {
+            break;
+        }
+
+        DPRINTF(IEW,
+                "MlsVirtualQueue free [tid:%i] [sn:%llu] slot=%u "
+                "robOrder=%llu committed=%llu.\n",
+                tid, head.robSeqNum, head.slot, head.robSeqNum, committed_seq);
+        head = {};
+        queue.pop_front();
+        retired++;
+    }
+
+    return retired;
+}
+
+unsigned
+MlsVirtualQueue::squash(ThreadID tid, InstSeqNum squash_seq)
+{
+    panic_if(tid >= queues.size(), "Invalid thread id %u for MlsVirtualQueue", tid);
+
+    auto &queue = queues[tid];
+    unsigned canceled = 0;
+    while (!queue.empty()) {
+        auto &tail = entries[tid][queue.back()];
+        if (tail.robSeqNum <= squash_seq) {
+            break;
+        }
+
+        DPRINTF(IEW,
+                "MlsVirtualQueue cancel [tid:%i] [sn:%llu] slot=%u "
+                "robOrder=%llu squash=%llu.\n",
+                tid, tail.robSeqNum, tail.slot, tail.robSeqNum, squash_seq);
+        tail = {};
+        queue.pop_back();
+        canceled++;
+    }
+
+    if (canceled != 0) {
+        nextSlots[tid] =
+            (nextSlots[tid] + queueCapacity - (canceled % queueCapacity)) %
+            queueCapacity;
+    }
+
+    return canceled;
+}
+
+unsigned
+MlsVirtualQueue::freeEntries(ThreadID tid) const
+{
+    return queueCapacity - size(tid);
+}
+
+unsigned
+MlsVirtualQueue::size(ThreadID tid) const
+{
+    panic_if(tid >= queues.size(), "Invalid thread id %u for MlsVirtualQueue", tid);
+    return queues[tid].size();
+}
+
+MlsReplayQueue::MlsReplayQueue(unsigned num_threads, unsigned capacity,
+                               Tick replay_select_latency)
+    : queueCapacity(capacity),
+      replaySelectLatency(replay_select_latency),
+      entries(num_threads, std::vector<Entry>(capacity))
+{
+}
+
+MlsReplayQueue::Entry *
+MlsReplayQueue::findEntryBySlot(ThreadID tid, unsigned slot)
+{
+    if (tid >= entries.size() || slot >= queueCapacity) {
+        return nullptr;
+    }
+
+    auto &entry = entries[tid][slot];
+    return entry.allocated ? &entry : nullptr;
+}
+
+const MlsReplayQueue::Entry *
+MlsReplayQueue::findEntryBySlot(ThreadID tid, unsigned slot) const
+{
+    if (tid >= entries.size() || slot >= queueCapacity) {
+        return nullptr;
+    }
+
+    const auto &entry = entries[tid][slot];
+    return entry.allocated ? &entry : nullptr;
+}
+
+MlsReplayQueue::Entry *
+MlsReplayQueue::findEntryByInst(const DynInstPtr &inst)
+{
+    if (!inst || inst->threadNumber >= entries.size() ||
+        !inst->hasMatrixMlsReplaySlot()) {
+        return nullptr;
+    }
+
+    auto *entry =
+        findEntryBySlot(inst->threadNumber, inst->getMatrixMlsReplaySlot());
+    if (entry && entry->robSeqNum == inst->seqNum) {
+        return entry;
+    }
+
+    return nullptr;
+}
+
+const MlsReplayQueue::Entry *
+MlsReplayQueue::findEntryByInst(const DynInstPtr &inst) const
+{
+    if (!inst || inst->threadNumber >= entries.size() ||
+        !inst->hasMatrixMlsReplaySlot()) {
+        return nullptr;
+    }
+
+    auto *entry =
+        findEntryBySlot(inst->threadNumber, inst->getMatrixMlsReplaySlot());
+    if (entry && entry->robSeqNum == inst->seqNum) {
+        return entry;
+    }
+
+    return nullptr;
+}
+
+bool
+MlsReplayQueue::hasEntry(const DynInstPtr &inst) const
+{
+    return findEntryByInst(inst) != nullptr;
+}
+
+const MlsReplayQueue::ReplayState *
+MlsReplayQueue::getState(const DynInstPtr &inst) const
+{
+    const auto *entry = findEntryByInst(inst);
+    return entry ? &entry->state : nullptr;
+}
+
+std::optional<unsigned>
+MlsReplayQueue::allocateSlot(ThreadID tid)
+{
+    for (unsigned slot = 0; slot < queueCapacity; ++slot) {
+        if (!entries[tid][slot].allocated) {
+            return slot;
+        }
+    }
+    return std::nullopt;
+}
+
+bool
+MlsReplayQueue::allocateOrUpdate(
+    const DynInstPtr &inst, const ReplayState &state, bool ready)
+{
+    panic_if(!inst, "Attempted to allocate null matrix replay entry");
+    const ThreadID tid = inst->threadNumber;
+    panic_if(tid >= entries.size(), "Invalid thread id %u for MlsReplayQueue", tid);
+
+    if (auto *entry = findEntryByInst(inst)) {
+        entry->scheduled = false;
+        entry->ready = ready;
+        entry->availableTick = ready ? curTick() + replaySelectLatency : 0;
+        entry->state = state;
+        DPRINTF(IEW,
+                "MlsReplayQueue retry-arm [tid:%i] [sn:%llu] slot=%u "
+                "robOrder=%llu ready=%d vaddr=%#llx.\n",
+                tid, inst->seqNum, entry->slot, entry->robSeqNum,
+                ready, state.vaddr);
+        return true;
+    }
+
+    auto slot = allocateSlot(tid);
+    if (!slot) {
+        return false;
+    }
+
+    auto &entry = entries[tid][*slot];
+    entry = {};
+    entry.allocated = true;
+    entry.scheduled = false;
+    entry.ready = ready;
+    entry.availableTick = ready ? curTick() + replaySelectLatency : 0;
+    entry.robSeqNum = inst->seqNum;
+    entry.tid = tid;
+    entry.slot = *slot;
+    entry.inst = inst;
+    entry.state = state;
+    inst->setMatrixMlsReplaySlot(*slot);
+
+    DPRINTF(IEW,
+            "MlsReplayQueue alloc [tid:%i] [sn:%llu] slot=%u robOrder=%llu "
+            "ready=%d vaddr=%#llx stride=%#llx tile0=%#llx tile1=%#llx.\n",
+            tid, inst->seqNum, entry.slot, entry.robSeqNum,
+            ready, state.vaddr, state.stride, state.tile0, state.tile1);
+    return true;
+}
+
+void
+MlsReplayQueue::refreshReady(
+    ThreadID tid, const std::function<bool(const ReplayState &)> &ready_fn)
+{
+    panic_if(tid >= entries.size(), "Invalid thread id %u for MlsReplayQueue", tid);
+
+    for (auto &entry : entries[tid]) {
+        if (!entry.allocated || entry.scheduled) {
+            continue;
+        }
+
+        const bool was_ready = entry.ready;
+        entry.ready = ready_fn(entry.state);
+        if (entry.ready && !was_ready) {
+            entry.availableTick = curTick() + replaySelectLatency;
+        }
+    }
+}
+
+bool
+MlsReplayQueue::scheduleNext(ThreadID tid, DynInstPtr &inst_out)
+{
+    panic_if(tid >= entries.size(), "Invalid thread id %u for MlsReplayQueue", tid);
+
+    Entry *selected = nullptr;
+    for (auto &entry : entries[tid]) {
+        if (!entry.allocated || entry.scheduled || !entry.ready ||
+            entry.availableTick > curTick()) {
+            continue;
+        }
+        if (!selected || entry.robSeqNum < selected->robSeqNum) {
+            selected = &entry;
+        }
+    }
+
+    if (!selected) {
+        return false;
+    }
+
+    selected->scheduled = true;
+    inst_out = selected->inst;
+
+    DPRINTF(IEW,
+            "MlsReplayQueue schedule [tid:%i] [sn:%llu] slot=%u robOrder=%llu.\n",
+            tid, selected->robSeqNum, selected->slot, selected->robSeqNum);
+    return true;
+}
+
+void
+MlsReplayQueue::freeEntry(Entry &entry)
+{
+    if (entry.inst) {
+        entry.inst->clearMatrixMlsReplaySlot();
+    }
+
+    DPRINTF(IEW,
+            "MlsReplayQueue free [tid:%i] [sn:%llu] slot=%u robOrder=%llu.\n",
+            entry.tid, entry.robSeqNum, entry.slot, entry.robSeqNum);
+    entry = {};
+}
+
+bool
+MlsReplayQueue::completeRetry(const DynInstPtr &inst)
+{
+    auto *entry = findEntryByInst(inst);
+    if (!entry) {
+        return false;
+    }
+
+    freeEntry(*entry);
+    return true;
+}
+
+unsigned
+MlsReplayQueue::squash(ThreadID tid, InstSeqNum squash_seq)
+{
+    panic_if(tid >= entries.size(), "Invalid thread id %u for MlsReplayQueue", tid);
+
+    unsigned canceled = 0;
+    for (auto &entry : entries[tid]) {
+        if (!entry.allocated || entry.robSeqNum <= squash_seq) {
+            continue;
+        }
+
+        DPRINTF(IEW,
+                "MlsReplayQueue cancel [tid:%i] [sn:%llu] slot=%u robOrder=%llu squash=%llu.\n",
+                tid, entry.robSeqNum, entry.slot, entry.robSeqNum, squash_seq);
+        freeEntry(entry);
+        canceled++;
+    }
+    return canceled;
+}
+
+unsigned
+MlsReplayQueue::size(ThreadID tid) const
+{
+    panic_if(tid >= entries.size(), "Invalid thread id %u for MlsReplayQueue", tid);
+
+    unsigned total = 0;
+    for (const auto &entry : entries[tid]) {
+        total += entry.allocated ? 1 : 0;
+    }
+    return total;
+}
+
+unsigned
+MlsReplayQueue::freeEntries(ThreadID tid) const
+{
+    return queueCapacity - size(tid);
+}
+
+#if THE_ISA_IS_RISCV
 
 struct MlsUnit::StageState
 {
@@ -46,22 +495,94 @@ struct MlsUnit::StageState
     ExecContext::MatrixExecPayload payload = {};
 };
 
-unsigned
-MlsUnit::matrixMemAccessSizeBytes(const DynInstPtr &inst) const
+namespace
 {
-    switch (inst->matrixInstInfo().funct7) {
-      case 0x02:
-      case 0x0a:
+
+constexpr uint8_t MatrixFunct7A = 0x02;
+constexpr uint8_t MatrixFunct7B = 0x0a;
+constexpr uint8_t MatrixFunct7CLoad = 0x12;
+constexpr uint8_t MatrixFunct7CStore = 0x13;
+
+uint8_t
+matrixMd(uint8_t rd)
+{
+    return RiscvISA::ISA::matrixMd(rd);
+}
+
+uint8_t
+matrixMemWidth(uint8_t rd)
+{
+    return RiscvISA::ISA::matrixMemWidth(rd);
+}
+
+bool
+isMatrixAClass(uint8_t funct7)
+{
+    return funct7 == MatrixFunct7A;
+}
+
+bool
+isMatrixBClass(uint8_t funct7)
+{
+    return funct7 == MatrixFunct7B;
+}
+
+bool
+isMatrixCClass(uint8_t funct7)
+{
+    return funct7 == MatrixFunct7CLoad || funct7 == MatrixFunct7CStore;
+}
+
+bool
+isSupportedAbWidth(uint8_t width)
+{
+    return RiscvISA::ISA::matrixAbWidthSupported(width);
+}
+
+unsigned
+matrixAccessSize(uint8_t width)
+{
+    switch (width) {
+      case RiscvISA::ISA::MatrixSewE8:
         return 1;
-      case 0x12:
-      case 0x1a:
+      case RiscvISA::ISA::MatrixSewE16:
         return 2;
-      case 0x22:
-      case 0x13:
+      case RiscvISA::ISA::MatrixSewE32:
         return 4;
       default:
         return 1;
     }
+}
+
+matrix::MatrixElemType
+matrixElemType(uint8_t width)
+{
+    switch (width) {
+      case RiscvISA::ISA::MatrixSewE8:
+        return matrix::MatrixElemType::Int8;
+      case RiscvISA::ISA::MatrixSewE16:
+        return matrix::MatrixElemType::Fp16;
+      case RiscvISA::ISA::MatrixSewE32:
+        return matrix::MatrixElemType::Int32;
+      default:
+        panic("Unsupported matrix MLS width %#x at payload build", width);
+    }
+}
+
+RiscvISA::TLB *
+matrixDataTlb(CPU *cpu)
+{
+    auto *mmu = dynamic_cast<RiscvISA::MMU *>(cpu->mmu);
+    panic_if(!mmu, "Matrix MLS replay requires RISC-V MMU");
+    return static_cast<RiscvISA::TLB *>(mmu->dtb);
+}
+
+} // anonymous namespace
+
+unsigned
+MlsUnit::matrixMemAccessSizeBytes(const DynInstPtr &inst) const
+{
+    return matrixAccessSize(matrixMemWidth(inst->matrixInstInfo().rd));
 }
 
 Fault
@@ -78,39 +599,41 @@ MlsUnit::matrixMemEarlyFault(const DynInstPtr &inst,
             msg, riscv_inst->machInst);
     };
 
+    const auto md = matrixMd(info.rd);
+    const auto width = matrixMemWidth(info.rd);
     switch (info.funct7) {
-      case 0x02:
-        if ((info.rd & 0x4) != 0 || state.mtilem > RiscvISA::ISA::MatrixRowNum ||
+      case MatrixFunct7A:
+        if (md >= 4 || !isSupportedAbWidth(width) ||
+            state.mtilem > RiscvISA::ISA::MatrixRowNum ||
             state.mtilek > RiscvISA::ISA::MatrixTrLenE8Max) {
-            return illegal("mlae8 parameter check failed");
+            return illegal("mlae parameter check failed");
+        }
+        if (width == RiscvISA::ISA::MatrixSewE16 &&
+            state.mtilek > RiscvISA::ISA::MatrixTrLenE16Max) {
+            return illegal("mlae parameter check failed");
         }
         break;
-      case 0x0a:
-        if ((info.rd & 0x4) != 0 || state.mtilen > RiscvISA::ISA::MatrixRowNum ||
+      case MatrixFunct7B:
+        if (md >= 4 || !isSupportedAbWidth(width) ||
+            state.mtilen > RiscvISA::ISA::MatrixRowNum ||
             state.mtilek > RiscvISA::ISA::MatrixTrLenE8Max) {
-            return illegal("mlbe8 parameter check failed");
+            return illegal("mlbe parameter check failed");
         }
-        break;
-      case 0x12:
-        if ((info.rd & 0x4) != 0 || state.mtilem > RiscvISA::ISA::MatrixRowNum ||
+        if (width == RiscvISA::ISA::MatrixSewE16 &&
             state.mtilek > RiscvISA::ISA::MatrixTrLenE16Max) {
-            return illegal("mlae16 parameter check failed");
+            return illegal("mlbe parameter check failed");
         }
         break;
-      case 0x1a:
-        if ((info.rd & 0x4) != 0 || state.mtilen > RiscvISA::ISA::MatrixRowNum ||
-            state.mtilek > RiscvISA::ISA::MatrixTrLenE16Max) {
-            return illegal("mlbe16 parameter check failed");
-        }
-        break;
-      case 0x22:
-        if ((info.rd & 0x4) == 0 || state.mtilem > RiscvISA::ISA::MatrixRowNum ||
+      case MatrixFunct7CLoad:
+        if (md < 4 || width != RiscvISA::ISA::MatrixSewE32 ||
+            state.mtilem > RiscvISA::ISA::MatrixRowNum ||
             state.mtilen > RiscvISA::ISA::MatrixAccE32Max) {
             return illegal("mlce32 parameter check failed");
         }
         break;
-      case 0x13:
-        if ((info.rd & 0x4) == 0 || state.mtilem > RiscvISA::ISA::MatrixRowNum ||
+      case MatrixFunct7CStore:
+        if (md < 4 || width != RiscvISA::ISA::MatrixSewE32 ||
+            state.mtilem > RiscvISA::ISA::MatrixRowNum ||
             state.mtilen > RiscvISA::ISA::MatrixAccE32Max) {
             return illegal("msce32 parameter check failed");
         }
@@ -125,10 +648,7 @@ MlsUnit::matrixMemEarlyFault(const DynInstPtr &inst,
 void
 MlsUnit::probeTlbState(StageState &state) const
 {
-    auto *mmu = dynamic_cast<RiscvISA::MMU *>(cpu->mmu);
-    panic_if(!mmu, "Matrix MLS replay requires RISC-V MMU");
-    auto *dtb = static_cast<RiscvISA::TLB *>(mmu->dtb);
-    auto *entry = dtb->lookup(
+    auto *entry = matrixDataTlb(cpu)->lookup(
         state.vaddr, state.asid, state.mode, true, false, RiscvISA::direct);
     state.tlbMiss = (entry == nullptr);
 }
@@ -136,10 +656,7 @@ MlsUnit::probeTlbState(StageState &state) const
 bool
 MlsUnit::replayTlbReady(const MlsReplayQueue::ReplayState &state) const
 {
-    auto *mmu = dynamic_cast<RiscvISA::MMU *>(cpu->mmu);
-    panic_if(!mmu, "Matrix MLS replay requires RISC-V MMU");
-    auto *dtb = static_cast<RiscvISA::TLB *>(mmu->dtb);
-    auto *entry = dtb->lookup(
+    auto *entry = matrixDataTlb(cpu)->lookup(
         state.vaddr, state.asid, state.mode, true, false, RiscvISA::direct);
     return entry != nullptr;
 }
@@ -152,10 +669,6 @@ MlsUnit::ensureReplayReady(const MlsReplayQueue::ReplayState &state) const
     }
 
     if (!FullSystem) {
-        auto *mmu = dynamic_cast<RiscvISA::MMU *>(cpu->mmu);
-        panic_if(!mmu, "Matrix MLS replay requires RISC-V MMU");
-        auto *dtb = static_cast<RiscvISA::TLB *>(mmu->dtb);
-
         RiscvISA::TlbEntry entry;
         entry.vaddr = state.vaddr;
         entry.paddr = state.paddr >> RiscvISA::PGSHFT;
@@ -169,7 +682,8 @@ MlsUnit::ensureReplayReady(const MlsReplayQueue::ReplayState &state) const
         entry.pte.w = 1;
         entry.pte.a = 1;
         entry.pte.d = 1;
-        dtb->insert(state.vaddr, entry, false, RiscvISA::direct);
+        matrixDataTlb(cpu)->insert(state.vaddr, entry, false,
+                                   RiscvISA::direct);
     }
 
     return replayTlbReady(state);
@@ -183,24 +697,16 @@ MlsUnit::deriveStage0Shape(const DynInstPtr &inst, StageState &state) const
     state.accessSize = matrixMemAccessSizeBytes(inst);
 
     switch (info.funct7) {
-      case 0x02:
+      case MatrixFunct7A:
         state.mtilem = state.tile0;
         state.mtilek = state.tile1;
         break;
-      case 0x0a:
+      case MatrixFunct7B:
         state.mtilek = state.tile0;
         state.mtilen = state.tile1;
         break;
-      case 0x12:
-        state.mtilem = state.tile0;
-        state.mtilek = state.tile1;
-        break;
-      case 0x1a:
-        state.mtilek = state.tile0;
-        state.mtilen = state.tile1;
-        break;
-      case 0x22:
-      case 0x13:
+      case MatrixFunct7CLoad:
+      case MatrixFunct7CStore:
         state.mtilem = state.tile0;
         state.mtilen = state.tile1;
         break;
@@ -299,17 +805,6 @@ MlsUnit::runStage1(const DynInstPtr &inst, StageState &state) const
 }
 
 void
-MlsUnit::runStage2(const DynInstPtr &inst, StageState &state) const
-{
-    DPRINTF(IEW,
-            "MlsUnit S2 resolve [tid:%i] [sn:%llu] paddr=%#llx "
-            "fault=%d predicate=%d.\n",
-            inst->threadNumber, inst->seqNum, state.paddr,
-            state.fault != NoFault,
-            inst->readPredicate());
-}
-
-void
 MlsUnit::runStage3(const DynInstPtr &inst, StageState &state) const
 {
     if (state.needReplay) {
@@ -334,16 +829,12 @@ MlsUnit::runStage3(const DynInstPtr &inst, StageState &state) const
     payload.kind = ExecContext::MatrixExecPayload::Kind::Lsu;
     payload.isLoad = inst->matrixInstInfo().loadLike;
     payload.isStore = inst->matrixInstInfo().storeLike;
-    payload.isA = inst->matrixInstInfo().funct7 == 0x02 ||
-                  inst->matrixInstInfo().funct7 == 0x12;
-    payload.isB = inst->matrixInstInfo().funct7 == 0x0a ||
-                  inst->matrixInstInfo().funct7 == 0x1a;
-    payload.isAcc = inst->matrixInstInfo().funct7 == 0x22 ||
-                    inst->matrixInstInfo().funct7 == 0x13;
-    payload.transpose = inst->matrixInstInfo().funct7 == 0x0a ||
-                        inst->matrixInstInfo().funct7 == 0x1a;
+    payload.isA = isMatrixAClass(inst->matrixInstInfo().funct7);
+    payload.isB = isMatrixBClass(inst->matrixInstInfo().funct7);
+    payload.isAcc = isMatrixCClass(inst->matrixInstInfo().funct7);
+    payload.transpose = isMatrixBClass(inst->matrixInstInfo().funct7);
     payload.op = inst->matrixInstInfo().funct7;
-    payload.ms = inst->matrixInstInfo().rd & 0x7;
+    payload.ms = matrixMd(inst->matrixInstInfo().rd);
     payload.baseAddr = state.vaddr;
     payload.physBaseAddr = state.paddr;
     payload.stride = state.stride;
@@ -352,26 +843,8 @@ MlsUnit::runStage3(const DynInstPtr &inst, StageState &state) const
     payload.mtilem = state.mtilem;
     payload.mtilen = state.mtilen;
     payload.mtilek = state.mtilek;
-    switch (inst->matrixInstInfo().funct7) {
-      case 0x02:
-      case 0x0a:
-        payload.widths = RiscvISA::ISA::MatrixSewE8;
-        payload.elemType = matrix::MatrixElemType::Int8;
-        break;
-      case 0x12:
-      case 0x1a:
-        payload.widths = RiscvISA::ISA::MatrixSewE16;
-        payload.elemType = matrix::MatrixElemType::Fp16;
-        break;
-      case 0x22:
-      case 0x13:
-        payload.widths = RiscvISA::ISA::MatrixSewE32;
-        payload.elemType = matrix::MatrixElemType::Int32;
-        break;
-      default:
-        panic("Unsupported matrix MLS funct7 %#x at payload build",
-              inst->matrixInstInfo().funct7);
-    }
+    payload.widths = matrixMemWidth(inst->matrixInstInfo().rd);
+    payload.elemType = matrixElemType(payload.widths);
 
     inst->stageMatrixExecPayload(payload);
 
@@ -384,17 +857,6 @@ MlsUnit::runStage3(const DynInstPtr &inst, StageState &state) const
             payload.isA, payload.isB, payload.op, payload.ms,
             payload.baseAddr, payload.stride, payload.row,
             payload.column, payload.widths);
-}
-
-void
-MlsUnit::runStage4(const DynInstPtr &inst, const StageState &state) const
-{
-    DPRINTF(IEW,
-            "MlsUnit S4 handoff [tid:%i] [sn:%llu] payloadValid=%d "
-            "payload=%s fault=%d needReplay=%d.\n",
-            inst->threadNumber, inst->seqNum, state.payload.valid,
-            inst->matrixPayloadKindName(), state.fault != NoFault,
-            state.needReplay);
 }
 
 MlsReplayQueue::ReplayState
@@ -462,16 +924,6 @@ MlsUnit::issue(const DynInstPtr &inst)
         state.needReplay = true;
     }
 
-    if (state.fault == NoFault && !state.needReplay) {
-        runStage2(inst, state);
-    } else {
-        DPRINTF(IEW,
-                "MlsUnit S2 resolve skipped [tid:%i] [sn:%llu] "
-                "prefault=%d fault=%d needReplay=%d.\n",
-                inst->threadNumber, inst->seqNum,
-                inst->getFault() != NoFault, state.fault != NoFault,
-                state.needReplay);
-    }
     runStage3(inst, state);
 
     if (state.needReplay && replayQueue) {
@@ -490,10 +942,6 @@ MlsUnit::issue(const DynInstPtr &inst)
                  inst->threadNumber, inst->seqNum);
     }
 
-    if (!state.needReplay) {
-        runStage4(inst, state);
-    }
-
     if (state.fault == NoFault && !inst->readPredicate()) {
         inst->forwardOldRegs();
     }
@@ -507,6 +955,26 @@ MlsUnit::issue(const DynInstPtr &inst)
 
     return result;
 }
+
+#else // THE_ISA_IS_RISCV
+
+MlsUnit::MlsUnit(CPU *cpu_) : cpu(cpu_)
+{
+}
+
+bool
+MlsUnit::replayReady(const MlsReplayQueue::ReplayState &state) const
+{
+    panic("Matrix MLS replay is only supported by the RISC-V ISA");
+}
+
+MlsUnit::IssueResult
+MlsUnit::issue(const DynInstPtr &inst)
+{
+    panic("Matrix MLS execution is only supported by the RISC-V ISA");
+}
+
+#endif // THE_ISA_IS_RISCV
 
 } // namespace o3
 } // namespace gem5

@@ -5,27 +5,13 @@ Import('*')
 DebugFlag('MatrixCuteTrace')
 
 Source('matrix_regfile.cc')
-Source('matrix_reg_resource.cc')
-Source('matrix_memory_adapter.cc')
-Source('matrix_memory_adapter_gem5.cc')
-Source('taskcontrol.cc')
-Source('backend_runtime.cc')
-Source('detailed_cute_scoreboard.cc')
-Source('mregfile.cc')
-Source('memoryload.cc')
-Source('matrix_ex.cc')
-
-GTest(
-    'detailed_cute_backend.test',
-    'detailed_cute_backend.test.cc',
-    'matrix_regfile.cc',
-    'matrix_reg_resource.cc',
-    'matrix_memory_adapter.cc',
-    'detailed_cute_scoreboard.cc',
-    'taskcontrol.cc',
-    'backend_runtime.cc',
-    'mregfile.cc',
-    'memoryload.cc',
-    'matrix_ex.cc',
-    with_tag('gem5 trace'),
-)
+Source('MatrixRegArbiter.cc')
+Source('LocalMMU.cc')
+Source('MemoryAdapter.cc')
+Source('Gem5MemoryAdapter.cc')
+Source('TaskController.cc')
+Source('CUTETOP.cc')
+Source('Scoreboard.cc')
+Source('MatrixReg.cc')
+Source('MemoryLoader.cc')
+Source('MatrixTE.cc')

@@ -78,7 +78,7 @@
 #include "debug/InstCommited.hh"
 #include "debug/MatrixCuteTrace.hh"
 #include "debug/O3PipeView.hh"
-#include "matrix/matrix_types.hh"
+#include "matrix/CUTEParameters.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
@@ -91,28 +91,6 @@ namespace gem5
 
 namespace o3
 {
-
-namespace
-{
-
-const char *
-requestKindName(matrix::CuteRequestKind kind)
-{
-    switch (kind) {
-      case matrix::CuteRequestKind::Lsu:
-        return "lsu";
-      case matrix::CuteRequestKind::Mma:
-        return "mma";
-      case matrix::CuteRequestKind::Arith:
-        return "arith";
-      case matrix::CuteRequestKind::Release:
-        return "release";
-    }
-
-    return "unknown";
-}
-
-} // anonymous namespace
 
 void
 Commit::processTrapEvent(ThreadID tid)
@@ -1624,11 +1602,11 @@ Commit::commitInsts()
                     "Matrix toAMU proxy blocked [tid:%i] [sn:%llu] "
                     "kind=%s backend cannot accept yet.\n",
                     tid, entry.seqNum,
-                    requestKindName(entry.backendReq.kind));
+                    matrix::cuteRequestKindName(entry.backendReq.kind));
             DPRINTF(MatrixCuteTrace,
                     "amu proxy blocked [tid:%i] [sn:%llu] kind=%s.\n",
                     tid, entry.seqNum,
-                    requestKindName(entry.backendReq.kind));
+                    matrix::cuteRequestKindName(entry.backendReq.kind));
             continue;
         }
 

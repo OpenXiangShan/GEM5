@@ -26,30 +26,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "matrix/matrix_memory_adapter.hh"
+#include "matrix/MemoryAdapter.hh"
 
 namespace gem5
 {
 
 namespace matrix
 {
-
-namespace
-{
-
-Addr
-elemAddr(const AmuLsuDesc &desc, uint32_t row, uint32_t col)
-{
-    const Addr col_bytes = static_cast<Addr>(col) * elemBytes(desc.elemType);
-    if (!desc.transpose) {
-        return desc.baseAddr + static_cast<Addr>(row) * desc.stride + col_bytes;
-    }
-
-    return desc.baseAddr + static_cast<Addr>(col) * desc.stride +
-           static_cast<Addr>(row) * elemBytes(desc.elemType);
-}
-
-} // anonymous namespace
 
 bool
 NullMatrixMemoryAdapter::loadTile(const AmuLsuDesc &desc, MatrixTensor &out_tensor)
@@ -76,12 +59,12 @@ SparseMatrixMemoryAdapter::loadTile(const AmuLsuDesc &desc,
     out_tensor.cols = desc.column;
     out_tensor.elemType = desc.elemType;
     out_tensor.elements.clear();
-    out_tensor.elements.reserve(static_cast<size_t>(desc.row) * desc.column);
+    out_tensor.elements.reserve(lsuElementCount(desc));
 
     for (uint32_t r = 0; r < desc.row; ++r) {
         for (uint32_t c = 0; c < desc.column; ++c) {
             int64_t value = 0;
-            auto it = elements.find(elemAddr(desc, r, c));
+            auto it = elements.find(lsuElementAddr(desc, r, c));
             if (it != elements.end()) {
                 value = it->second;
             }
@@ -96,14 +79,13 @@ bool
 SparseMatrixMemoryAdapter::storeTile(const AmuLsuDesc &desc,
                                      const MatrixTensor &tensor)
 {
-    if (tensor.rows != desc.row || tensor.cols != desc.column ||
-        tensor.elemType != desc.elemType) {
+    if (!lsuTensorShapeMatches(desc, tensor)) {
         return false;
     }
 
     for (uint32_t r = 0; r < desc.row; ++r) {
         for (uint32_t c = 0; c < desc.column; ++c) {
-            elements[elemAddr(desc, r, c)] =
+            elements[lsuElementAddr(desc, r, c)] =
                 tensor.elements[static_cast<size_t>(r) * tensor.cols + c];
         }
     }

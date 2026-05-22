@@ -34,7 +34,7 @@
 #include <cstdint>
 #include <deque>
 
-#include "matrix/matrix_types.hh"
+#include "matrix/CUTEParameters.hh"
 
 namespace gem5
 {

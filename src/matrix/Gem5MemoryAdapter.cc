@@ -26,7 +26,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "matrix/matrix_memory_adapter.hh"
+#include "matrix/MemoryAdapter.hh"
 #include "mem/port_proxy.hh"
 #include "mem/se_translating_port_proxy.hh"
 #include "mem/translating_port_proxy.hh"
@@ -41,18 +41,6 @@ namespace matrix
 
 namespace
 {
-
-Addr
-elemAddr(const AmuLsuDesc &desc, uint32_t row, uint32_t col)
-{
-    const Addr col_bytes = static_cast<Addr>(col) * elemBytes(desc.elemType);
-    if (!desc.transpose) {
-        return desc.baseAddr + static_cast<Addr>(row) * desc.stride + col_bytes;
-    }
-
-    return desc.baseAddr + static_cast<Addr>(col) * desc.stride +
-           static_cast<Addr>(row) * elemBytes(desc.elemType);
-}
 
 template <typename T>
 T
@@ -70,7 +58,7 @@ writeGuestElem(PortProxy &proxy, Addr addr, T value)
 
 template <typename T>
 T
-readMatrixElem(const AmuLsuDesc &desc, PortProxy &fallback, Addr addr)
+readMatrixElem(const AmuLsuDesc &desc, Addr addr)
 {
     if (!desc.tc) {
         panic("Matrix access missing thread context");
@@ -87,7 +75,7 @@ readMatrixElem(const AmuLsuDesc &desc, PortProxy &fallback, Addr addr)
 
 template <typename T>
 void
-writeMatrixElem(const AmuLsuDesc &desc, PortProxy &fallback, Addr addr, T value)
+writeMatrixElem(const AmuLsuDesc &desc, Addr addr, T value)
 {
     if (!desc.tc) {
         panic("Matrix access missing thread context");
@@ -101,6 +89,66 @@ writeMatrixElem(const AmuLsuDesc &desc, PortProxy &fallback, Addr addr, T value)
 
     TranslatingPortProxy proxy(desc.tc);
     writeGuestElem<T>(proxy, addr, value);
+}
+
+int64_t
+loadMatrixElement(const AmuLsuDesc &desc, Addr addr)
+{
+    switch (desc.elemType) {
+      case MatrixElemType::Int8:
+        return static_cast<int8_t>(
+            readMatrixElem<uint8_t>(desc, addr));
+      case MatrixElemType::Int16:
+        return static_cast<int16_t>(
+            readMatrixElem<uint16_t>(desc, addr));
+      case MatrixElemType::Int32:
+        return static_cast<int32_t>(
+            readMatrixElem<uint32_t>(desc, addr));
+      case MatrixElemType::Int64:
+        return static_cast<int64_t>(
+            readMatrixElem<uint64_t>(desc, addr));
+      case MatrixElemType::Fp16:
+      case MatrixElemType::Bf16:
+        return static_cast<int64_t>(
+            readMatrixElem<uint16_t>(desc, addr));
+      case MatrixElemType::Tf32:
+        return static_cast<int64_t>(
+            readMatrixElem<uint32_t>(desc, addr));
+    }
+
+    return 0;
+}
+
+void
+storeMatrixElement(const AmuLsuDesc &desc, Addr addr, int64_t value)
+{
+    switch (desc.elemType) {
+      case MatrixElemType::Int8:
+        writeMatrixElem<uint8_t>(
+            desc, addr, static_cast<uint8_t>(value));
+        return;
+      case MatrixElemType::Int16:
+        writeMatrixElem<uint16_t>(
+            desc, addr, static_cast<uint16_t>(value));
+        return;
+      case MatrixElemType::Int32:
+        writeMatrixElem<uint32_t>(
+            desc, addr, static_cast<uint32_t>(value));
+        return;
+      case MatrixElemType::Int64:
+        writeMatrixElem<uint64_t>(
+            desc, addr, static_cast<uint64_t>(value));
+        return;
+      case MatrixElemType::Fp16:
+      case MatrixElemType::Bf16:
+        writeMatrixElem<uint16_t>(
+            desc, addr, static_cast<uint16_t>(value));
+        return;
+      case MatrixElemType::Tf32:
+        writeMatrixElem<uint32_t>(
+            desc, addr, static_cast<uint32_t>(value));
+        return;
+    }
 }
 
 } // anonymous namespace
@@ -122,40 +170,12 @@ Gem5MatrixMemoryAdapter::loadTile(const AmuLsuDesc &desc,
     out_tensor.cols = desc.column;
     out_tensor.elemType = desc.elemType;
     out_tensor.elements.clear();
-    out_tensor.elements.reserve(static_cast<size_t>(desc.row) * desc.column);
+    out_tensor.elements.reserve(lsuElementCount(desc));
 
     for (uint32_t r = 0; r < desc.row; ++r) {
         for (uint32_t c = 0; c < desc.column; ++c) {
-            const Addr addr = elemAddr(desc, r, c);
-            int64_t value = 0;
-            switch (desc.elemType) {
-              case MatrixElemType::Int8:
-                value = static_cast<int8_t>(
-                    readMatrixElem<uint8_t>(desc, *portProxy, addr));
-                break;
-              case MatrixElemType::Int16:
-                value = static_cast<int16_t>(
-                    readMatrixElem<uint16_t>(desc, *portProxy, addr));
-                break;
-              case MatrixElemType::Int32:
-                value = static_cast<int32_t>(
-                    readMatrixElem<uint32_t>(desc, *portProxy, addr));
-                break;
-              case MatrixElemType::Int64:
-                value = static_cast<int64_t>(
-                    readMatrixElem<uint64_t>(desc, *portProxy, addr));
-                break;
-              case MatrixElemType::Fp16:
-              case MatrixElemType::Bf16:
-                value = static_cast<int64_t>(
-                    readMatrixElem<uint16_t>(desc, *portProxy, addr));
-                break;
-              case MatrixElemType::Tf32:
-                value = static_cast<int64_t>(
-                    readMatrixElem<uint32_t>(desc, *portProxy, addr));
-                break;
-            }
-            out_tensor.elements.push_back(value);
+            out_tensor.elements.push_back(
+                loadMatrixElement(desc, lsuElementAddr(desc, r, c)));
         }
     }
 
@@ -166,43 +186,15 @@ bool
 Gem5MatrixMemoryAdapter::storeTile(const AmuLsuDesc &desc,
                                    const MatrixTensor &tensor)
 {
-    if (!portProxy || tensor.rows != desc.row || tensor.cols != desc.column ||
-        tensor.elemType != desc.elemType) {
+    if (!portProxy || !lsuTensorShapeMatches(desc, tensor)) {
         return false;
     }
 
     for (uint32_t r = 0; r < desc.row; ++r) {
         for (uint32_t c = 0; c < desc.column; ++c) {
-            const Addr addr = elemAddr(desc, r, c);
             const int64_t value =
                 tensor.elements[static_cast<size_t>(r) * tensor.cols + c];
-            switch (desc.elemType) {
-              case MatrixElemType::Int8:
-                writeMatrixElem<uint8_t>(
-                    desc, *portProxy, addr, static_cast<uint8_t>(value));
-                break;
-              case MatrixElemType::Int16:
-                writeMatrixElem<uint16_t>(
-                    desc, *portProxy, addr, static_cast<uint16_t>(value));
-                break;
-              case MatrixElemType::Int32:
-                writeMatrixElem<uint32_t>(
-                    desc, *portProxy, addr, static_cast<uint32_t>(value));
-                break;
-              case MatrixElemType::Int64:
-                writeMatrixElem<uint64_t>(
-                    desc, *portProxy, addr, static_cast<uint64_t>(value));
-                break;
-              case MatrixElemType::Fp16:
-              case MatrixElemType::Bf16:
-                writeMatrixElem<uint16_t>(
-                    desc, *portProxy, addr, static_cast<uint16_t>(value));
-                break;
-              case MatrixElemType::Tf32:
-                writeMatrixElem<uint32_t>(
-                    desc, *portProxy, addr, static_cast<uint32_t>(value));
-                break;
-            }
+            storeMatrixElement(desc, lsuElementAddr(desc, r, c), value);
         }
     }
 

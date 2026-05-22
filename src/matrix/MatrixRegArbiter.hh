@@ -26,14 +26,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __MATRIX_MATRIX_REG_RESOURCE_HH__
-#define __MATRIX_MATRIX_REG_RESOURCE_HH__
+#ifndef __MATRIX_MATRIXREGARBITER_HH__
+#define __MATRIX_MATRIXREGARBITER_HH__
 
 #include <cstdint>
 #include <deque>
 #include <vector>
 
-#include "matrix/matrix_types.hh"
+#include "matrix/CUTEParameters.hh"
 
 namespace gem5
 {
@@ -106,7 +106,6 @@ class MatrixRegResource
         uint64_t readyCycle = 0;
     };
 
-    static bool isAbBank(MatrixBankKind bank);
     void enqueueReadResponse(const Request &request);
 
     uint64_t cycle = 0;
@@ -116,4 +115,4 @@ class MatrixRegResource
 } // namespace matrix
 } // namespace gem5
 
-#endif // __MATRIX_MATRIX_REG_RESOURCE_HH__
+#endif // __MATRIX_MATRIXREGARBITER_HH__

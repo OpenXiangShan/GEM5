@@ -26,7 +26,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "matrix/detailed_cute_scoreboard.hh"
+#include "matrix/Scoreboard.hh"
 
 namespace gem5
 {
@@ -189,11 +189,16 @@ DetailedCuteScoreboard::onComputeReadFinishB(const DecodedFifoEntry &entry)
 }
 
 void
-DetailedCuteScoreboard::onComputeWriteFinishC(const DecodedFifoEntry &entry)
+DetailedCuteScoreboard::onComputeReadFinishC(const DecodedFifoEntry &entry)
 {
     decrementPendingReader(entry.readRegs[2], MatrixBankKind::C);
     auto &src = fuState(FuKind::Compute).srcs[SrcCIdx];
     src.readPending = false;
+}
+
+void
+DetailedCuteScoreboard::onComputeWriteFinishC(const DecodedFifoEntry &entry)
+{
     releaseDest(entry, FuKind::Compute);
     resetFu(fuState(FuKind::Compute));
 }

@@ -49,7 +49,7 @@
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst_fwd.hh"
 #include "cpu/translation.hh"
-#include "matrix/matrix_types.hh"
+#include "matrix/CUTEParameters.hh"
 #include "mem/request.hh"
 
 namespace gem5

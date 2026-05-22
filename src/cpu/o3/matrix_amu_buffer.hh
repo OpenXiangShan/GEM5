@@ -35,7 +35,7 @@
 #include "cpu/exec_context.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/limits.hh"
-#include "matrix/matrix_types.hh"
+#include "matrix/CUTEParameters.hh"
 
 namespace gem5
 {

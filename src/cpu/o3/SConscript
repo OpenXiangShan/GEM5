@@ -50,12 +50,7 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('lsq_unit.cc')
     Source('matrix_amu_buffer.cc')
     Source('mem_dep_unit.cc')
-    Source('mls_replay_queue.cc')
-    if env['CONF']['TARGET_ISA'] == 'riscv':
-        Source('mls_unit.cc')
-    else:
-        Source('mls_unit_stub.cc')
-    Source('mls_virtual_queue.cc')
+    Source('mls_unit.cc')
     Source('regfile.cc')
     Source('rename.cc')
     Source('rename_map.cc')

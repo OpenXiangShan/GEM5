@@ -41,7 +41,7 @@
 #include "arch/riscv/pcstate.hh"
 #include "arch/riscv/types.hh"
 #include "base/types.hh"
-#include "matrix/matrix_types.hh"
+#include "matrix/CUTEParameters.hh"
 
 namespace gem5
 {
@@ -88,6 +88,25 @@ class ISA : public BaseISA
     static constexpr RegVal MatrixSewE16 = 1;
     static constexpr RegVal MatrixSewE32 = 2;
 
+    static constexpr RegVal matrixMd(RegVal rd) { return rd & 0x7; }
+    static constexpr RegVal matrixMemWidth(RegVal rd)
+    {
+        return (rd >> 3) & 0x3;
+    }
+    static constexpr bool matrixAbWidthSupported(RegVal width)
+    {
+        return width == MatrixSewE8 || width == MatrixSewE16;
+    }
+    static constexpr RegVal matrixTrLenMax(RegVal width)
+    {
+        return width == MatrixSewE8 ? MatrixTrLenE8Max : MatrixTrLenE16Max;
+    }
+    static matrix::MatrixElemType matrixAbElemType(RegVal width)
+    {
+        return width == MatrixSewE8 ? matrix::MatrixElemType::Int8 :
+                                      matrix::MatrixElemType::Fp16;
+    }
+
     struct MatrixLsuStubRequest
     {
         bool valid = false;
@@ -105,6 +124,29 @@ class ISA : public BaseISA
         RegVal widths = 0;
         matrix::MatrixElemType elemType = matrix::MatrixElemType::Int8;
     };
+
+    static MatrixLsuStubRequest makeMatrixLsuStubRequest(
+        bool is_load, bool transpose, bool is_acc, bool is_a, bool is_b,
+        RegVal op, RegVal md, RegVal base_addr, RegVal stride, RegVal row,
+        RegVal column, RegVal width, matrix::MatrixElemType elem_type)
+    {
+        MatrixLsuStubRequest req;
+        req.valid = true;
+        req.isLoad = is_load;
+        req.transpose = transpose;
+        req.isAcc = is_acc;
+        req.isA = is_a;
+        req.isB = is_b;
+        req.op = op;
+        req.ms = md;
+        req.baseAddr = base_addr;
+        req.stride = stride;
+        req.row = row;
+        req.column = column;
+        req.widths = width;
+        req.elemType = elem_type;
+        return req;
+    }
 
     struct MatrixMmaStubRequest
     {

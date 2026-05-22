@@ -31,7 +31,7 @@
 #include <optional>
 #include <utility>
 
-#include "matrix/detailed_cute_backend.hh"
+#include "matrix/CUTETOP.hh"
 
 namespace gem5
 {
@@ -42,16 +42,6 @@ namespace matrix
 namespace
 {
 
-CuteCompletion
-makeCompletion(uint64_t seq, CuteRequestKind kind, CuteCompletionStatus status)
-{
-    CuteCompletion completion;
-    completion.seq = seq;
-    completion.kind = kind;
-    completion.status = status;
-    return completion;
-}
-
 constexpr unsigned RtlTensorMn = 128;
 constexpr unsigned RtlTensorK = 64;
 constexpr unsigned RtlMatrixMn = 8;
@@ -59,7 +49,6 @@ constexpr unsigned RtlReduceWidthBytes = 32;
 constexpr unsigned RtlResultWidthBytes = 4;
 constexpr unsigned MatrixRegReadResponseCycles = 1;
 constexpr unsigned FReducePePipelineTailCycles = 6;
-constexpr unsigned MatrixDToCdcWritebackCycles = 1;
 constexpr unsigned MicroTaskEndHandshakeCycles = 1;
 
 bool
@@ -377,12 +366,14 @@ DetailedCuteBackend::computeMteTiming(const AmuMmaDesc &desc) const
     timing.acceptedInputBeats = m_iters * n_iters * k_iters;
     timing.adcReadCycles = MatrixRegReadResponseCycles;
     timing.bdcReadCycles = MatrixRegReadResponseCycles;
+    timing.cdcReadCycles = MatrixRegReadResponseCycles;
     timing.mteAcceptedInputBeats = timing.acceptedInputBeats;
     timing.fReduceTailCycles = FReducePePipelineTailCycles;
-    timing.cdcWriteCycles = MatrixDToCdcWritebackCycles;
+    timing.cdcWriteCycles = timing.acceptedInputBeats;
     timing.terminalHandshakeCycles = MicroTaskEndHandshakeCycles;
     timing.totalCompletionCycles =
-        timing.adcReadCycles + timing.bdcReadCycles +
+        std::max({timing.adcReadCycles, timing.bdcReadCycles,
+                  timing.cdcReadCycles}) +
         timing.mteAcceptedInputBeats + timing.fReduceTailCycles +
         timing.cdcWriteCycles + timing.terminalHandshakeCycles;
     timing.supported = true;

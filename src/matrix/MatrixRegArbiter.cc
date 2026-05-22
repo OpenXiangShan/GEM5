@@ -26,9 +26,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "matrix/matrix_reg_resource.hh"
+#include "matrix/MatrixRegArbiter.hh"
 
 #include <algorithm>
+#include <optional>
 
 namespace gem5
 {
@@ -40,40 +41,21 @@ MatrixRegResource::Request
 MatrixRegResource::makeRead(MatrixBankKind bank, Client client,
                             uint32_t entry)
 {
-    Request request;
-    request.bank = bank;
-    request.client = client;
-    request.access = Access::Read;
-    request.entry = entry;
-    return request;
+    return {bank, client, Access::Read, entry};
 }
 
 MatrixRegResource::Request
 MatrixRegResource::makeWrite(MatrixBankKind bank, Client client,
                              uint32_t entry)
 {
-    Request request;
-    request.bank = bank;
-    request.client = client;
-    request.access = Access::Write;
-    request.entry = entry;
-    return request;
-}
-
-bool
-MatrixRegResource::isAbBank(MatrixBankKind bank)
-{
-    return bank == MatrixBankKind::A || bank == MatrixBankKind::B;
+    return {bank, client, Access::Write, entry};
 }
 
 void
 MatrixRegResource::enqueueReadResponse(const Request &request)
 {
-    ReadResponse response;
-    response.bank = request.bank;
-    response.client = request.client;
-    response.readyCycle = cycle + ReadLatencyCycles;
-    readResponses.push_back(response);
+    readResponses.push_back(
+        {request.bank, request.client, cycle + ReadLatencyCycles});
 }
 
 std::vector<MatrixRegResource::Grant>
@@ -132,26 +114,35 @@ MatrixRegResource::arbitrate(const std::vector<Request> &requests)
         }
     }
 
-    const bool c_conflict =
-        c_reads.size() == 1 && c_writes.size() == 1 &&
-        ((requests[c_reads.front()].entry & 1) ==
-         (requests[c_writes.front()].entry & 1));
-
-    if (c_conflict) {
-        grants[c_reads.front()].reason = StallReason::CReadWriteConflict;
-        grants[c_writes.front()].reason = StallReason::CReadWriteConflict;
-    } else {
-        if (!c_reads.empty()) {
-            grants[c_reads.front()].granted = true;
-            for (size_t i = 1; i < c_reads.size(); ++i) {
-                grants[c_reads[i]].reason = StallReason::BankConflict;
-            }
+    std::optional<size_t> c_write_grant;
+    if (!c_writes.empty()) {
+        c_write_grant = c_writes.front();
+        grants[*c_write_grant].granted = true;
+        for (size_t i = 1; i < c_writes.size(); ++i) {
+            grants[c_writes[i]].reason = StallReason::BankConflict;
         }
-        if (!c_writes.empty()) {
-            grants[c_writes.front()].granted = true;
-            for (size_t i = 1; i < c_writes.size(); ++i) {
-                grants[c_writes[i]].reason = StallReason::BankConflict;
+    }
+
+    if (!c_reads.empty()) {
+        const bool same_parity_write =
+            c_write_grant &&
+            ((requests[c_reads.front()].entry & 1) ==
+             (requests[*c_write_grant].entry & 1));
+        if (same_parity_write) {
+            grants[c_reads.front()].reason =
+                StallReason::CReadWriteConflict;
+            if (c_writes.size() == 1) {
+                grants[*c_write_grant].granted = false;
+                grants[*c_write_grant].reason =
+                    StallReason::CReadWriteConflict;
             }
+        } else if (c_writes.size() > 1) {
+            grants[c_reads.front()].reason = StallReason::BankConflict;
+        } else {
+            grants[c_reads.front()].granted = true;
+        }
+        for (size_t i = 1; i < c_reads.size(); ++i) {
+            grants[c_reads[i]].reason = StallReason::BankConflict;
         }
     }
 

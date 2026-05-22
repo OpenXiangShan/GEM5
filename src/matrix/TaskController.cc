@@ -28,7 +28,7 @@
 
 #include "base/trace.hh"
 #include "debug/MatrixCuteTrace.hh"
-#include "matrix/detailed_cute_backend.hh"
+#include "matrix/CUTETOP.hh"
 
 namespace gem5
 {
@@ -40,9 +40,23 @@ namespace matrix
 DetailedCuteBackend::DetailedCuteBackend(
     std::unique_ptr<MatrixMemoryAdapter> memory_adapter,
     size_t fifo_depth, size_t ab_reg_count, size_t c_reg_count)
+    : DetailedCuteBackend(
+          std::move(memory_adapter), fifo_depth, ab_reg_count, c_reg_count,
+          TimingConfig())
+{
+}
+
+DetailedCuteBackend::DetailedCuteBackend(
+    std::unique_ptr<MatrixMemoryAdapter> memory_adapter,
+    size_t fifo_depth, size_t ab_reg_count, size_t c_reg_count,
+    TimingConfig timing_config)
     : fifo(fifo_depth), regFile(ab_reg_count, c_reg_count),
       memory(std::move(memory_adapter)),
-      scoreboard(ab_reg_count, c_reg_count)
+      scoreboard(ab_reg_count, c_reg_count),
+      timingConfig(timing_config),
+      localMmu(LocalMmuModel::Config{
+          timing_config.localMmuLatencyCycles,
+          timing_config.localMmuMaxOutstanding})
 {
 }
 
@@ -309,6 +323,19 @@ DetailedCuteBackend::computeUnitBusyForTest(ComputeUnitKind kind) const
     }
 
     for (const auto &task : computeTasks) {
+        if (kind == ComputeUnitKind::ADC &&
+            task.adcReadIssued && !task.adcReadComplete) {
+            return true;
+        }
+        if (kind == ComputeUnitKind::BDC &&
+            task.bdcReadIssued && !task.bdcReadComplete) {
+            return true;
+        }
+        if (kind == ComputeUnitKind::CDC &&
+            ((task.cdcReadIssued && !task.cdcReadComplete) ||
+             task.activeUnit == ComputeUnitKind::CDC)) {
+            return true;
+        }
         if (task.activeUnit == kind) {
             return true;
         }
@@ -321,6 +348,16 @@ DetailedCuteBackend::activeComputeUnitForTest() const
 {
     if (computeTasks.empty()) {
         return ComputeUnitKind::None;
+    }
+    const auto &task = computeTasks.front();
+    if (task.adcReadIssued && !task.adcReadComplete) {
+        return ComputeUnitKind::ADC;
+    }
+    if (task.bdcReadIssued && !task.bdcReadComplete) {
+        return ComputeUnitKind::BDC;
+    }
+    if (task.cdcReadIssued && !task.cdcReadComplete) {
+        return ComputeUnitKind::CDC;
     }
     return computeTasks.front().activeUnit;
 }

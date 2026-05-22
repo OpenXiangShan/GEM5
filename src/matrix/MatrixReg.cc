@@ -28,7 +28,7 @@
 
 #include <cassert>
 
-#include "matrix/detailed_cute_backend.hh"
+#include "matrix/CUTETOP.hh"
 
 namespace gem5
 {
@@ -38,16 +38,6 @@ namespace matrix
 
 namespace
 {
-
-CuteCompletion
-makeCompletion(uint64_t seq, CuteRequestKind kind, CuteCompletionStatus status)
-{
-    CuteCompletion completion;
-    completion.seq = seq;
-    completion.kind = kind;
-    completion.status = status;
-    return completion;
-}
 
 CuteCompletion
 execRelease(uint64_t seq, const AmuReleaseDesc &desc)
@@ -97,24 +87,6 @@ DetailedCuteBackend::destBank(const DecodedFifoEntry &entry) const
 }
 
 CuteCompletion
-DetailedCuteBackend::executeEntry(const DecodedFifoEntry &entry)
-{
-    const auto &req = entry.request;
-    switch (req.kind) {
-      case CuteRequestKind::Lsu:
-        return executeLsu(req.seq, req.lsu, regFile, *memory);
-      case CuteRequestKind::Mma:
-        return executeMma(req.seq, req.mma, regFile);
-      case CuteRequestKind::Arith:
-        return executeArith(req.seq, req.arith, regFile);
-      case CuteRequestKind::Release:
-        return execRelease(req.seq, req.release);
-    }
-
-    return {};
-}
-
-CuteCompletion
 DetailedCuteBackend::executeTaskSlot(const TaskSlot &task)
 {
     const auto &entry = task.entry;
@@ -146,6 +118,23 @@ DetailedCuteBackend::executeLoadWrite(TaskSlot &task)
     return makeCompletion(
         task.entry.request.seq, CuteRequestKind::Lsu,
         CuteCompletionStatus::Success);
+}
+
+std::optional<MatrixRegResource::Request>
+DetailedCuteBackend::matrixRegWriteRequestForTask(
+    const TaskSlot &task, const CuteCompletion &completion) const
+{
+    if (completion.status != CuteCompletionStatus::Success) {
+        return std::nullopt;
+    }
+
+    if (task.entry.isZeroAcc || task.entry.isZeroTr) {
+        return MatrixRegResource::makeWrite(
+            destBank(task.entry), MatrixRegResource::Client::MemoryLoader,
+            task.entry.writeRegs[0]);
+    }
+
+    return std::nullopt;
 }
 
 CuteCompletion

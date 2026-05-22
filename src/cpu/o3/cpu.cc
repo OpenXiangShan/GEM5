@@ -74,8 +74,8 @@
 
 #if THE_ISA_IS_RISCV
 #include "arch/riscv/regs/misc.hh"
-#include "matrix/detailed_cute_backend.hh"
-#include "matrix/matrix_memory_adapter.hh"
+#include "matrix/CUTETOP.hh"
+#include "matrix/MemoryAdapter.hh"
 
 #endif
 
@@ -86,30 +86,6 @@ struct BaseCPUParams;
 
 namespace o3
 {
-
-#if THE_ISA_IS_RISCV
-namespace
-{
-
-const char *
-requestKindName(matrix::CuteRequestKind kind)
-{
-    switch (kind) {
-      case matrix::CuteRequestKind::Lsu:
-        return "lsu";
-      case matrix::CuteRequestKind::Mma:
-        return "mma";
-      case matrix::CuteRequestKind::Arith:
-        return "arith";
-      case matrix::CuteRequestKind::Release:
-        return "release";
-    }
-
-    return "unknown";
-}
-
-} // anonymous namespace
-#endif
 
 CPU::CPU(const BaseO3CPUParams &params)
     : BaseCPU(params),
@@ -1318,7 +1294,7 @@ CPU::canAcceptMatrixBackendReq(const matrix::CuteRequest &req,
     if (!accepted) {
         DPRINTF(MatrixCuteTrace,
                 "backend blocked [sn:%llu] kind=%s cannot accept.\n",
-                seq_num, requestKindName(req.kind));
+                seq_num, matrix::cuteRequestKindName(req.kind));
     }
     return accepted;
 #else
@@ -1346,7 +1322,7 @@ CPU::submitMatrixBackendReq(ThreadID tid, const matrix::CuteRequest &req,
 
     DPRINTF(MatrixCuteTrace,
             "backend submit [tid:%i] [sn:%llu] kind=%s.\n",
-            tid, seq_num, requestKindName(req.kind));
+            tid, seq_num, matrix::cuteRequestKindName(req.kind));
     auto submit_req = req;
     if (submit_req.kind == matrix::CuteRequestKind::Lsu) {
         submit_req.lsu.tc = tcBase(tid);
@@ -1415,7 +1391,7 @@ CPU::consumeMatrixAmuProxy(ThreadID tid,
 
     DPRINTF(Commit,
             "Matrix toAMU proxy fire [tid:%i] [sn:%llu] kind=%s.\n",
-            tid, seq_num, requestKindName(backend_req.kind));
+            tid, seq_num, matrix::cuteRequestKindName(backend_req.kind));
 
     switch (backend_req.kind) {
       case matrix::CuteRequestKind::Release:
@@ -1482,21 +1458,13 @@ CPU::consumeMatrixAmuProxy(ThreadID tid,
         break;
       case matrix::CuteRequestKind::Lsu:
         {
-            RiscvISA::ISA::MatrixLsuStubRequest req;
-            req.valid = true;
-            req.isLoad = !backend_req.lsu.isStore;
-            req.transpose = backend_req.lsu.transpose;
-            req.isAcc = backend_req.lsu.isAcc;
-            req.isA = backend_req.lsu.isA;
-            req.isB = backend_req.lsu.isB;
-            req.op = backend_req.op;
-            req.ms = backend_req.lsu.ms;
-            req.baseAddr = backend_req.lsu.baseAddr;
-            req.stride = backend_req.lsu.stride;
-            req.row = backend_req.lsu.row;
-            req.column = backend_req.lsu.column;
-            req.widths = backend_req.lsu.widths;
-            req.elemType = backend_req.lsu.elemType;
+            const auto req = RiscvISA::ISA::makeMatrixLsuStubRequest(
+                !backend_req.lsu.isStore, backend_req.lsu.transpose,
+                backend_req.lsu.isAcc, backend_req.lsu.isA,
+                backend_req.lsu.isB, backend_req.op, backend_req.lsu.ms,
+                backend_req.lsu.baseAddr, backend_req.lsu.stride,
+                backend_req.lsu.row, backend_req.lsu.column,
+                backend_req.lsu.widths, backend_req.lsu.elemType);
             const bool submitted = submitMatrixBackendReq(
                 tid, backend_req, seq_num);
             panic_if(!submitted,
