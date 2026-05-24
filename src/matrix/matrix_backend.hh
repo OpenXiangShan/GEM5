@@ -29,7 +29,7 @@
 #ifndef __MATRIX_MATRIX_BACKEND_HH__
 #define __MATRIX_MATRIX_BACKEND_HH__
 
-#include "matrix/CUTEParameters.hh"
+#include "matrix/matrix_types.hh"
 
 namespace gem5
 {

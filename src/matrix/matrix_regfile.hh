@@ -32,7 +32,7 @@
 #include <cstddef>
 #include <vector>
 
-#include "matrix/CUTEParameters.hh"
+#include "matrix/matrix_types.hh"
 
 namespace gem5
 {

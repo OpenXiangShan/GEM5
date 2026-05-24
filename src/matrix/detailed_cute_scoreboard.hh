@@ -26,8 +26,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __MATRIX_SCOREBOARD_HH__
-#define __MATRIX_SCOREBOARD_HH__
+#ifndef __MATRIX_DETAILED_CUTE_SCOREBOARD_HH__
+#define __MATRIX_DETAILED_CUTE_SCOREBOARD_HH__
 
 #include <array>
 #include <cstddef>
@@ -102,7 +102,6 @@ class DetailedCuteScoreboard
     void onComputeIssue(const DecodedFifoEntry &entry);
     void onComputeReadFinishA(const DecodedFifoEntry &entry);
     void onComputeReadFinishB(const DecodedFifoEntry &entry);
-    void onComputeReadFinishC(const DecodedFifoEntry &entry);
     void onComputeWriteFinishC(const DecodedFifoEntry &entry);
     void onArithIssue(const DecodedFifoEntry &entry);
     void onArithFinish(const DecodedFifoEntry &entry);
@@ -152,4 +151,4 @@ class DetailedCuteScoreboard
 } // namespace matrix
 } // namespace gem5
 
-#endif // __MATRIX_SCOREBOARD_HH__
+#endif // __MATRIX_DETAILED_CUTE_SCOREBOARD_HH__

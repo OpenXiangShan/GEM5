@@ -43,6 +43,24 @@
 
 Import('*')
 
+if env['TARGET_ISA'] == 'riscv':
+    Executable(
+        'matrix_sync_check',
+        'matrix_sync_check.cc',
+        'decoder.cc',
+        'faults.cc',
+        'isa.cc',
+        'process.cc',
+        'pagetable.cc',
+        'pagetable_walker.cc',
+        'pma_checker.cc',
+        'pmp.cc',
+        'reg_abi.cc',
+        'remote_gdb.cc',
+        'tlb.cc',
+        '../../base/date.cc',
+    )
+
 Source('decoder.cc', tags='riscv isa')
 Source('faults.cc', tags='riscv isa')
 Source('isa.cc', tags='riscv isa')

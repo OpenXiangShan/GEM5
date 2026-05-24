@@ -2632,24 +2632,62 @@ decode QUADRANT {
                 }
             }
             0x02: decode FUNCT3 {
-                0x0: MatrixCarrierOp::mlae({{
+                0x0: MatrixCarrierOp::mlae8({{
+                    auto *isa = static_cast<RiscvISA::ISA *>(
+                        xc->tcBase()->getIsaPtr());
+                    // Matrix state reads still follow the normal slot-based
+                    // operand contract: src slot 2/3 carry Mtilem/Mtilek.
+                    auto mtilem = xc->getRegOperand(this, 2);
+                    auto mtilek = xc->getRegOperand(this, 3);
+                    if ((RD & 0x4) != 0 ||
+                        mtilem > RiscvISA::ISA::MatrixRowNum ||
+                        mtilek > RiscvISA::ISA::MatrixTrLenE8Max) {
+                        return std::make_shared<IllegalInstFault>(
+                            "mlae8 parameter check failed", machInst);
+                    }
+                    RiscvISA::ISA::MatrixLsuStubRequest req;
+                    req.valid = true;
+                    req.isLoad = true;
+                    req.isA = true;
+                    req.op = 0x02;
+                    req.ms = RD & 0x7;
+                    req.baseAddr = Rs1_ud;
+                    req.stride = Rs2_ud;
+                    req.row = mtilem;
+                    req.column = mtilek;
+                    req.widths = RiscvISA::ISA::MatrixSewE8;
+                    req.elemType = matrix::MatrixElemType::Int8;
+                    isa->recordMatrixLsuRequest(req);
+                }}, {{
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileKReg);
+                }}, {{
+                }}, MatrixMemOp);
+            }
+            0x12: decode FUNCT3 {
+                0x0: MatrixCarrierOp::mlae16({{
                     auto *isa = static_cast<RiscvISA::ISA *>(
                         xc->tcBase()->getIsaPtr());
                     auto mtilem = xc->getRegOperand(this, 2);
                     auto mtilek = xc->getRegOperand(this, 3);
-                    const auto md = RiscvISA::ISA::matrixMd(RD);
-                    const auto width = RiscvISA::ISA::matrixMemWidth(RD);
-                    if (md >= 4 ||
-                        !RiscvISA::ISA::matrixAbWidthSupported(width) ||
+                    if ((RD & 0x4) != 0 ||
                         mtilem > RiscvISA::ISA::MatrixRowNum ||
-                        mtilek > RiscvISA::ISA::matrixTrLenMax(width)) {
+                        mtilek > RiscvISA::ISA::MatrixTrLenE16Max) {
                         return std::make_shared<IllegalInstFault>(
-                            "mlae parameter check failed", machInst);
+                            "mlae16 parameter check failed", machInst);
                     }
-                    const auto req = RiscvISA::ISA::makeMatrixLsuStubRequest(
-                        true, false, false, true, false, 0x02, md,
-                        Rs1_ud, Rs2_ud, mtilem, mtilek, width,
-                        RiscvISA::ISA::matrixAbElemType(width));
+                    RiscvISA::ISA::MatrixLsuStubRequest req;
+                    req.valid = true;
+                    req.isLoad = true;
+                    req.isA = true;
+                    req.op = 0x12;
+                    req.ms = RD & 0x7;
+                    req.baseAddr = Rs1_ud;
+                    req.stride = Rs2_ud;
+                    req.row = mtilem;
+                    req.column = mtilek;
+                    req.widths = RiscvISA::ISA::MatrixSewE16;
+                    req.elemType = matrix::MatrixElemType::Fp16;
                     isa->recordMatrixLsuRequest(req);
                 }}, {{
                     setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);
@@ -2658,24 +2696,31 @@ decode QUADRANT {
                 }}, MatrixMemOp);
             }
             0x0a: decode FUNCT3 {
-                0x0: MatrixCarrierOp::mlbe({{
+                0x0: MatrixCarrierOp::mlbe8({{
                     auto *isa = static_cast<RiscvISA::ISA *>(
                         xc->tcBase()->getIsaPtr());
+                    // src slot 2/3 carry Mtilek/Mtilen.
                     auto mtilek = xc->getRegOperand(this, 2);
                     auto mtilen = xc->getRegOperand(this, 3);
-                    const auto md = RiscvISA::ISA::matrixMd(RD);
-                    const auto width = RiscvISA::ISA::matrixMemWidth(RD);
-                    if (md >= 4 ||
-                        !RiscvISA::ISA::matrixAbWidthSupported(width) ||
+                    if ((RD & 0x4) != 0 ||
                         mtilen > RiscvISA::ISA::MatrixRowNum ||
-                        mtilek > RiscvISA::ISA::matrixTrLenMax(width)) {
+                        mtilek > RiscvISA::ISA::MatrixTrLenE8Max) {
                         return std::make_shared<IllegalInstFault>(
-                            "mlbe parameter check failed", machInst);
+                            "mlbe8 parameter check failed", machInst);
                     }
-                    const auto req = RiscvISA::ISA::makeMatrixLsuStubRequest(
-                        true, true, false, false, true, 0x0a, md,
-                        Rs1_ud, Rs2_ud, mtilek, mtilen, width,
-                        RiscvISA::ISA::matrixAbElemType(width));
+                    RiscvISA::ISA::MatrixLsuStubRequest req;
+                    req.valid = true;
+                    req.isLoad = true;
+                    req.isB = true;
+                    req.transpose = true;
+                    req.op = 0x0a;
+                    req.ms = RD & 0x7;
+                    req.baseAddr = Rs1_ud;
+                    req.stride = Rs2_ud;
+                    req.row = mtilek;
+                    req.column = mtilen;
+                    req.widths = RiscvISA::ISA::MatrixSewE8;
+                    req.elemType = matrix::MatrixElemType::Int8;
                     isa->recordMatrixLsuRequest(req);
                 }}, {{
                     setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileKReg);
@@ -2683,26 +2728,63 @@ decode QUADRANT {
                 }}, {{
                 }}, MatrixMemOp);
             }
-            0x12: decode FUNCT3 {
+            0x1a: decode FUNCT3 {
+                0x0: MatrixCarrierOp::mlbe16({{
+                    auto *isa = static_cast<RiscvISA::ISA *>(
+                        xc->tcBase()->getIsaPtr());
+                    auto mtilek = xc->getRegOperand(this, 2);
+                    auto mtilen = xc->getRegOperand(this, 3);
+                    if ((RD & 0x4) != 0 ||
+                        mtilen > RiscvISA::ISA::MatrixRowNum ||
+                        mtilek > RiscvISA::ISA::MatrixTrLenE16Max) {
+                        return std::make_shared<IllegalInstFault>(
+                            "mlbe16 parameter check failed", machInst);
+                    }
+                    RiscvISA::ISA::MatrixLsuStubRequest req;
+                    req.valid = true;
+                    req.isLoad = true;
+                    req.isB = true;
+                    req.transpose = true;
+                    req.op = 0x1a;
+                    req.ms = RD & 0x7;
+                    req.baseAddr = Rs1_ud;
+                    req.stride = Rs2_ud;
+                    req.row = mtilek;
+                    req.column = mtilen;
+                    req.widths = RiscvISA::ISA::MatrixSewE16;
+                    req.elemType = matrix::MatrixElemType::Fp16;
+                    isa->recordMatrixLsuRequest(req);
+                }}, {{
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileKReg);
+                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileNReg);
+                }}, {{
+                }}, MatrixMemOp);
+            }
+            0x22: decode FUNCT3 {
                 0x0: MatrixCarrierOp::mlce32({{
                     auto *isa = static_cast<RiscvISA::ISA *>(
                         xc->tcBase()->getIsaPtr());
+                    // src slot 2/3 carry Mtilem/Mtilen.
                     auto mtilem = xc->getRegOperand(this, 2);
                     auto mtilen = xc->getRegOperand(this, 3);
-                    const auto md = RiscvISA::ISA::matrixMd(RD);
-                    const auto width = RiscvISA::ISA::matrixMemWidth(RD);
-                    if (md < 4 ||
-                        width != RiscvISA::ISA::MatrixSewE32 ||
+                    if ((RD & 0x4) == 0 ||
                         mtilem > RiscvISA::ISA::MatrixRowNum ||
                         mtilen > RiscvISA::ISA::MatrixAccE32Max) {
                         return std::make_shared<IllegalInstFault>(
                             "mlce32 parameter check failed", machInst);
                     }
-                    const auto req = RiscvISA::ISA::makeMatrixLsuStubRequest(
-                        true, false, true, false, false, 0x12, md,
-                        Rs1_ud, Rs2_ud, mtilem, mtilen,
-                        RiscvISA::ISA::MatrixSewE32,
-                        matrix::MatrixElemType::Int32);
+                    RiscvISA::ISA::MatrixLsuStubRequest req;
+                    req.valid = true;
+                    req.isLoad = true;
+                    req.isAcc = true;
+                    req.op = 0x22;
+                    req.ms = RD & 0x7;
+                    req.baseAddr = Rs1_ud;
+                    req.stride = Rs2_ud;
+                    req.row = mtilem;
+                    req.column = mtilen;
+                    req.widths = RiscvISA::ISA::MatrixSewE32;
+                    req.elemType = matrix::MatrixElemType::Int32;
                     isa->recordMatrixLsuRequest(req);
                 }}, {{
                     setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);
@@ -2714,22 +2796,27 @@ decode QUADRANT {
                 0x0: MatrixCarrierOp::msce32({{
                     auto *isa = static_cast<RiscvISA::ISA *>(
                         xc->tcBase()->getIsaPtr());
+                    // src slot 2/3 carry Mtilem/Mtilen.
                     auto mtilem = xc->getRegOperand(this, 2);
                     auto mtilen = xc->getRegOperand(this, 3);
-                    const auto md = RiscvISA::ISA::matrixMd(RD);
-                    const auto width = RiscvISA::ISA::matrixMemWidth(RD);
-                    if (md < 4 ||
-                        width != RiscvISA::ISA::MatrixSewE32 ||
+                    if ((RD & 0x4) == 0 ||
                         mtilem > RiscvISA::ISA::MatrixRowNum ||
                         mtilen > RiscvISA::ISA::MatrixAccE32Max) {
                         return std::make_shared<IllegalInstFault>(
                             "msce32 parameter check failed", machInst);
                     }
-                    const auto req = RiscvISA::ISA::makeMatrixLsuStubRequest(
-                        false, false, true, false, false, 0x13, md,
-                        Rs1_ud, Rs2_ud, mtilem, mtilen,
-                        RiscvISA::ISA::MatrixSewE32,
-                        matrix::MatrixElemType::Int32);
+                    RiscvISA::ISA::MatrixLsuStubRequest req;
+                    req.valid = true;
+                    req.isAcc = true;
+                    req.isLoad = false;
+                    req.op = 0x13;
+                    req.ms = RD & 0x7;
+                    req.baseAddr = Rs1_ud;
+                    req.stride = Rs2_ud;
+                    req.row = mtilem;
+                    req.column = mtilen;
+                    req.widths = RiscvISA::ISA::MatrixSewE32;
+                    req.elemType = matrix::MatrixElemType::Int32;
                     isa->recordMatrixLsuRequest(req);
                 }}, {{
                     setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);

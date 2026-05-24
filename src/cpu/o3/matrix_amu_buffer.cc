@@ -37,6 +37,28 @@ namespace gem5
 namespace o3
 {
 
+namespace
+{
+
+const char *
+requestKindName(matrix::CuteRequestKind kind)
+{
+    switch (kind) {
+      case matrix::CuteRequestKind::Lsu:
+        return "lsu";
+      case matrix::CuteRequestKind::Mma:
+        return "mma";
+      case matrix::CuteRequestKind::Arith:
+        return "arith";
+      case matrix::CuteRequestKind::Release:
+        return "release";
+    }
+
+    return "unknown";
+}
+
+} // anonymous namespace
+
 MatrixAmuBuffer::MatrixAmuBuffer(unsigned capacity, unsigned fire_width)
     : capacity_(capacity), fireWidth_(fire_width ? fire_width : 1)
 {
@@ -209,8 +231,7 @@ MatrixAmuBuffer::popReady(ThreadID tid, Entry &entry_out)
     entry.canDeq = true;
     DPRINTF(ROB,
             "[tid:%i] Matrix AMU entry toAMU proxy ready [sn:%llu] kind=%s.\n",
-            tid, entry.seqNum,
-            matrix::cuteRequestKindName(entry.backendReq.kind));
+            tid, entry.seqNum, requestKindName(entry.backendReq.kind));
     cleanupFront(tid);
     return true;
 }

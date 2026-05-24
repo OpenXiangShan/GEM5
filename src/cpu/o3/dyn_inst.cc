@@ -672,6 +672,32 @@ DynInst::initMatrixInstInfo()
         matrixInst.needAmuCtrlCandidate = true;
         setStateReads({
             MatrixStateOperand::Mtilem,
+            MatrixStateOperand::Mtilek
+        });
+        break;
+      case 0x1a:
+        setMatrixRoute(
+            MatrixInstClass::Lsu,
+            MatrixRouteKind::Lsu,
+            MatrixCommitBoundary::FutureAmuProducer);
+        matrixInst.loadLike = true;
+        matrixInst.usesLsq = true;
+        matrixInst.needAmuCtrlCandidate = true;
+        setStateReads({
+            MatrixStateOperand::Mtilek,
+            MatrixStateOperand::Mtilen
+        });
+        break;
+      case 0x22:
+        setMatrixRoute(
+            MatrixInstClass::Lsu,
+            MatrixRouteKind::Lsu,
+            MatrixCommitBoundary::FutureAmuProducer);
+        matrixInst.loadLike = true;
+        matrixInst.usesLsq = true;
+        matrixInst.needAmuCtrlCandidate = true;
+        setStateReads({
+            MatrixStateOperand::Mtilem,
             MatrixStateOperand::Mtilen
         });
         break;

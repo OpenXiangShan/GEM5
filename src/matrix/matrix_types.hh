@@ -26,8 +26,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __MATRIX_CUTEPARAMETERS_HH__
-#define __MATRIX_CUTEPARAMETERS_HH__
+#ifndef __MATRIX_MATRIX_TYPES_HH__
+#define __MATRIX_MATRIX_TYPES_HH__
 
 #include <cstddef>
 #include <cstdint>
@@ -83,23 +83,6 @@ enum class CuteRequestKind : uint8_t
     Arith,
     Release
 };
-
-inline const char *
-cuteRequestKindName(CuteRequestKind kind)
-{
-    switch (kind) {
-      case CuteRequestKind::Lsu:
-        return "lsu";
-      case CuteRequestKind::Mma:
-        return "mma";
-      case CuteRequestKind::Arith:
-        return "arith";
-      case CuteRequestKind::Release:
-        return "release";
-    }
-
-    return "unknown";
-}
 
 enum class CuteCompletionStatus : uint8_t
 {
@@ -300,12 +283,6 @@ struct CuteCompletion
     uint32_t tokenIdx = 0;
 };
 
-inline CuteCompletion
-makeCompletion(uint64_t seq, CuteRequestKind kind, CuteCompletionStatus status)
-{
-    return {seq, kind, status};
-}
-
 inline constexpr size_t
 elemBytes(MatrixElemType elem_type)
 {
@@ -328,47 +305,7 @@ elemBytes(MatrixElemType elem_type)
     return 0;
 }
 
-inline size_t
-matrixElementCount(uint32_t rows, uint32_t cols)
-{
-    return static_cast<size_t>(rows) * cols;
-}
-
-inline size_t
-lsuElementCount(const AmuLsuDesc &desc)
-{
-    return matrixElementCount(desc.row, desc.column);
-}
-
-inline size_t
-lsuPayloadByteCount(const AmuLsuDesc &desc)
-{
-    return lsuElementCount(desc) * elemBytes(desc.elemType);
-}
-
-inline bool
-lsuTensorShapeMatches(const AmuLsuDesc &desc, const MatrixTensor &tensor)
-{
-    return tensor.rows == desc.row &&
-           tensor.cols == desc.column &&
-           tensor.elemType == desc.elemType &&
-           tensor.elements.size() == lsuElementCount(desc);
-}
-
-inline Addr
-lsuElementAddr(const AmuLsuDesc &desc, uint32_t row, uint32_t col)
-{
-    const Addr elem_bytes = elemBytes(desc.elemType);
-    if (!desc.transpose) {
-        return desc.baseAddr + static_cast<Addr>(row) * desc.stride +
-               static_cast<Addr>(col) * elem_bytes;
-    }
-
-    return desc.baseAddr + static_cast<Addr>(col) * desc.stride +
-           static_cast<Addr>(row) * elem_bytes;
-}
-
 } // namespace matrix
 } // namespace gem5
 
-#endif // __MATRIX_CUTEPARAMETERS_HH__
+#endif // __MATRIX_MATRIX_TYPES_HH__

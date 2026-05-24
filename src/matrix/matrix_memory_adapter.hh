@@ -26,12 +26,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __MATRIX_MEMORYADAPTER_HH__
-#define __MATRIX_MEMORYADAPTER_HH__
+#ifndef __MATRIX_MATRIX_MEMORY_ADAPTER_HH__
+#define __MATRIX_MATRIX_MEMORY_ADAPTER_HH__
 
 #include <unordered_map>
 
-#include "matrix/CUTEParameters.hh"
+#include "matrix/matrix_types.hh"
 
 namespace gem5
 {
@@ -89,4 +89,4 @@ class Gem5MatrixMemoryAdapter : public MatrixMemoryAdapter
 } // namespace matrix
 } // namespace gem5
 
-#endif // __MATRIX_MEMORYADAPTER_HH__
+#endif // __MATRIX_MATRIX_MEMORY_ADAPTER_HH__
