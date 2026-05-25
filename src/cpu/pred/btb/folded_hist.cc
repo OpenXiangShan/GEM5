@@ -53,6 +53,12 @@ FoldedHistBase::recover(FoldedHistBase &other)
     _folded = other._folded;
 }
 
+void
+FoldedHistBase::rebuild(const boost::dynamic_bitset<> &historyBitVec)
+{
+    _folded = fold(historyBitVec);
+}
+
 /**
  * Verify that folded history matches with what would be computed from GHR.
  *

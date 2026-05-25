@@ -122,6 +122,13 @@ class FoldedHistBase
     void recover(FoldedHistBase &other);
 
     /**
+     * Rebuild folded history directly from a full history bit vector.
+     * This is useful when the history update semantics differ from the
+     * built-in incremental update rule of a concrete folded-history type.
+     */
+    void rebuild(const boost::dynamic_bitset<> &historyBitVec);
+
+    /**
      * Verify that the folded history is consistent with the global history
      * @param ghr Global history register to check against
      */

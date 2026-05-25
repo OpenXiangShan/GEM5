@@ -332,6 +332,44 @@ TEST(BTBTAGEHistoryTest, V2PathHistoryNotTakenNoUpdate)
     ASSERT_EQ(history, before);
 }
 
+TEST(BTBTAGEHistoryTest, V2RecoverRestoresPreSpeculativeLocalHistory)
+{
+    BTBTAGE tage;
+    tage.useV2PHistory = true;
+
+    boost::dynamic_bitset<> sharedHistory(128, 0);
+    boost::dynamic_bitset<> speculativeSharedHistory(128, 0);
+    std::vector<FullBTBPrediction> stagePreds(2);
+
+    const Addr startPC = 0x1000;
+    const Addr branchPC = 0x1010;
+    const Addr predictedTarget = 0x1400;
+    const Addr actualTarget = 0x1800;
+
+    BTBEntry entry = createBTBEntry(branchPC, true, true, false, 0, predictedTarget);
+    stagePreds[1].btbEntries.push_back(entry);
+    stagePreds[1].condTakens.push_back({branchPC, true});
+
+    tage.putPCHistory(startPC, sharedHistory, stagePreds);
+    auto meta = tage.getPredictionMeta();
+
+    tage.specUpdatePHist(sharedHistory, stagePreds[1]);
+
+    speculativeSharedHistory = sharedHistory;
+    applyPathHistoryTaken(speculativeSharedHistory, branchPC, predictedTarget);
+
+    FetchTarget stream = createStream(startPC, entry, true, meta);
+    stream = setMispredStream(stream);
+    stream.exeBranchInfo.target = actualTarget;
+
+    boost::dynamic_bitset<> expectedRecoveredHistory(128, 0);
+    applyV2PathHistoryTaken(expectedRecoveredHistory, branchPC, actualTarget);
+
+    tage.recoverPHist(speculativeSharedHistory, stream, 1, true);
+    tage.checkFoldedHist(expectedRecoveredHistory,
+                         "v2 recover should restart from pre-spec state");
+}
+
 class BTBTAGETest : public ::testing::Test
 {
 protected:

@@ -638,6 +638,7 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     meta->predictEpoch = shareEpoch;
     meta->history = history;
     if (useV2PHistory) {
+        ensureV2PHistoryInitialized();
         meta->localV2PHistory = v2PHistory;
     }
 
@@ -1354,6 +1355,14 @@ BTBTAGE::updateFoldedHistoriesFromHistory(const boost::dynamic_bitset<> &history
     }
 }
 
+void
+BTBTAGE::ensureV2PHistoryInitialized()
+{
+    if (v2PHistory.empty()) {
+        v2PHistory.resize(std::max<unsigned>(maxHistLen, 10), 0);
+    }
+}
+
 uint16_t
 BTBTAGE::getV2Footprint(Addr branchPC, Addr targetPC) const
 {
@@ -1388,6 +1397,7 @@ BTBTAGE::doUpdateHistLegacy(const boost::dynamic_bitset<> &history, bool taken,
 void
 BTBTAGE::doUpdateHistV2(bool taken, Addr pc, Addr target)
 {
+    ensureV2PHistoryInitialized();
     if (debug::TAGEHistory) {
         std::string buf;
         boost::to_string(v2PHistory, buf);
@@ -1407,7 +1417,12 @@ BTBTAGE::doUpdateHistV2(bool taken, Addr pc, Addr target)
         const bool fp_bit = (footprint >> i) & 1;
         v2PHistory[i] = old_bit ^ fp_bit;
     }
-    updateFoldedHistoriesFromHistory(v2PHistory, taken, pc, target);
+    for (int t = 0; t < numPredictors; t++) {
+        indexFoldedHist[t].rebuild(v2PHistory);
+        tagFoldedHist[t].rebuild(v2PHistory);
+        altTagFoldedHist[t].rebuild(v2PHistory);
+        indexFoldedHist4k[t].rebuild(v2PHistory);
+    }
 }
 
 void
@@ -1437,9 +1452,6 @@ BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredicti
 {
     auto [pc, target, taken] = pred.getPHistInfo();
     doUpdateHist(history, taken, pc, target);
-    if (meta && useV2PHistory) {
-        meta->localV2PHistory = v2PHistory;
-    }
 }
 
 /**
@@ -1467,6 +1479,7 @@ BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         indexFoldedHist4k[i].recover(predMeta->indexFoldedHist4k[i]);
     }
     if (useV2PHistory) {
+        ensureV2PHistoryInitialized();
         v2PHistory = predMeta->localV2PHistory;
     }
     doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());

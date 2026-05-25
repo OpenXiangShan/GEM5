@@ -235,6 +235,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     void doUpdateHistV2(bool taken, Addr pc, Addr target);
     void updateFoldedHistoriesFromHistory(const bitset &history, bool taken, Addr pc,
                                           Addr target);
+    void ensureV2PHistoryInitialized();
     uint16_t getV2Footprint(Addr branchPC, Addr targetPC) const;
 
     // Number of TAGE predictor tables
