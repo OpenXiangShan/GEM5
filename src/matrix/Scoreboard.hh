@@ -35,7 +35,7 @@
 #include <string>
 #include <vector>
 
-#include "matrix/decoded_fifo.hh"
+#include "matrix/TaskController.hh"
 
 namespace gem5
 {
@@ -102,6 +102,7 @@ class DetailedCuteScoreboard
     void onComputeIssue(const DecodedFifoEntry &entry);
     void onComputeReadFinishA(const DecodedFifoEntry &entry);
     void onComputeReadFinishB(const DecodedFifoEntry &entry);
+    void onComputeReadFinishC(const DecodedFifoEntry &entry);
     void onComputeWriteFinishC(const DecodedFifoEntry &entry);
     void onArithIssue(const DecodedFifoEntry &entry);
     void onArithFinish(const DecodedFifoEntry &entry);

@@ -190,6 +190,19 @@ static constexpr uint8_t MatrixSewE8 = 0;
 static constexpr uint8_t MatrixSewE16 = 1;
 static constexpr uint8_t MatrixSewE32 = 2;
 
+inline MatrixElemKind
+matrixAbElemKind(uint8_t width)
+{
+    return width == MatrixSewE16 ? MatrixElemKind::Fp16 :
+                                   MatrixElemKind::Int8;
+}
+
+inline uint8_t
+matrixAccessSize(uint8_t width)
+{
+    return width == MatrixSewE16 ? 2 : 1;
+}
+
 inline bool
 isMatrixTileCsr(uint16_t csr_idx)
 {
@@ -344,26 +357,24 @@ matrixStaticInfoFromMachInst(ExtMachInst mach_inst)
         info.stateWrites[0] = MatrixStateOperand::Mtilen;
         break;
       case 0x02:
-        setLsu(info, true, false, true, false, false, false, MatrixSewE8,
-               MatrixElemKind::Int8, 1, MatrixStateOperand::Mtilem,
+      {
+        const auto width = static_cast<uint8_t>((mach_inst.rd >> 3) & 0x3);
+        setLsu(info, true, false, true, false, false, false, width,
+               matrixAbElemKind(width), matrixAccessSize(width),
+               MatrixStateOperand::Mtilem,
                MatrixStateOperand::Mtilek, false);
         break;
+      }
       case 0x0a:
-        setLsu(info, true, false, false, true, false, true, MatrixSewE8,
-               MatrixElemKind::Int8, 1, MatrixStateOperand::Mtilek,
+      {
+        const auto width = static_cast<uint8_t>((mach_inst.rd >> 3) & 0x3);
+        setLsu(info, true, false, false, true, false, true, width,
+               matrixAbElemKind(width), matrixAccessSize(width),
+               MatrixStateOperand::Mtilek,
                MatrixStateOperand::Mtilen, false);
         break;
+      }
       case 0x12:
-        setLsu(info, true, false, true, false, false, false, MatrixSewE16,
-               MatrixElemKind::Fp16, 2, MatrixStateOperand::Mtilem,
-               MatrixStateOperand::Mtilek, false);
-        break;
-      case 0x1a:
-        setLsu(info, true, false, false, true, false, true, MatrixSewE16,
-               MatrixElemKind::Fp16, 2, MatrixStateOperand::Mtilek,
-               MatrixStateOperand::Mtilen, false);
-        break;
-      case 0x22:
         setLsu(info, true, false, false, false, true, false, MatrixSewE32,
                MatrixElemKind::Int32, 4, MatrixStateOperand::Mtilem,
                MatrixStateOperand::Mtilen, true);

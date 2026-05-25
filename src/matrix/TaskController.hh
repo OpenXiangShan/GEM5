@@ -26,8 +26,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __MATRIX_DECODED_FIFO_HH__
-#define __MATRIX_DECODED_FIFO_HH__
+#ifndef __MATRIX_TASK_CONTROLLER_HH__
+#define __MATRIX_TASK_CONTROLLER_HH__
 
 #include <array>
 #include <cstddef>
@@ -41,6 +41,20 @@ namespace gem5
 
 namespace matrix
 {
+
+class MatrixBackend
+{
+  public:
+    virtual ~MatrixBackend() = default;
+
+    virtual bool canAccept(const CuteRequest &req) const = 0;
+    virtual void submit(const CuteRequest &req) = 0;
+    virtual bool hasWork() const = 0;
+    virtual void step() = 0;
+    virtual bool hasCompletion() const = 0;
+    virtual CuteCompletion popCompletion() = 0;
+    virtual bool hasArchitecturalState() const { return false; }
+};
 
 // Decoded FIFO normalizes request fields for issue gating and tracing.
 struct DecodedFifoEntry
@@ -122,4 +136,4 @@ class DecodedFifo
 } // namespace matrix
 } // namespace gem5
 
-#endif // __MATRIX_DECODED_FIFO_HH__
+#endif // __MATRIX_TASK_CONTROLLER_HH__

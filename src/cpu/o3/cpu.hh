@@ -81,11 +81,6 @@
 #include "sim/process.hh"
 #include "sim/rolling.hh"
 
-#if THE_ISA_IS_RISCV
-#include "matrix/matrix_backend.hh"
-
-#endif
-
 namespace gem5
 {
 
@@ -95,6 +90,14 @@ class ThreadContext;
 
 class Checkpoint;
 class Process;
+
+#if THE_ISA_IS_RISCV
+namespace matrix
+{
+struct CuteRequest;
+class MatrixBackend;
+} // namespace matrix
+#endif
 
 namespace o3
 {

@@ -26,6 +26,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "matrix/MatrixTE.hh"
+
 #include <algorithm>
 #include <cstring>
 #include <optional>
@@ -59,7 +61,6 @@ constexpr unsigned RtlReduceWidthBytes = 32;
 constexpr unsigned RtlResultWidthBytes = 4;
 constexpr unsigned MatrixRegReadResponseCycles = 1;
 constexpr unsigned FReducePePipelineTailCycles = 6;
-constexpr unsigned MatrixDToCdcWritebackCycles = 1;
 constexpr unsigned MicroTaskEndHandshakeCycles = 1;
 
 bool
@@ -342,7 +343,7 @@ DetailedCuteBackend::computeDatatypeSupported(const AmuMmaDesc &desc) const
            ((desc.types1 & 0x3) == (desc.types2 & 0x3));
 }
 
-DetailedCuteBackend::MteTiming
+MteTiming
 DetailedCuteBackend::computeMteTiming(const AmuMmaDesc &desc) const
 {
     MteTiming timing;
@@ -377,12 +378,14 @@ DetailedCuteBackend::computeMteTiming(const AmuMmaDesc &desc) const
     timing.acceptedInputBeats = m_iters * n_iters * k_iters;
     timing.adcReadCycles = MatrixRegReadResponseCycles;
     timing.bdcReadCycles = MatrixRegReadResponseCycles;
+    timing.cdcReadCycles = MatrixRegReadResponseCycles;
     timing.mteAcceptedInputBeats = timing.acceptedInputBeats;
     timing.fReduceTailCycles = FReducePePipelineTailCycles;
-    timing.cdcWriteCycles = MatrixDToCdcWritebackCycles;
+    timing.cdcWriteCycles = timing.acceptedInputBeats;
     timing.terminalHandshakeCycles = MicroTaskEndHandshakeCycles;
     timing.totalCompletionCycles =
-        timing.adcReadCycles + timing.bdcReadCycles +
+        std::max({timing.adcReadCycles, timing.bdcReadCycles,
+                  timing.cdcReadCycles}) +
         timing.mteAcceptedInputBeats + timing.fReduceTailCycles +
         timing.cdcWriteCycles + timing.terminalHandshakeCycles;
     timing.supported = true;

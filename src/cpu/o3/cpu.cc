@@ -75,7 +75,6 @@
 #if THE_ISA_IS_RISCV
 #include "arch/riscv/regs/misc.hh"
 #include "matrix/CUTETOP.hh"
-#include "matrix/MemoryAdapter.hh"
 
 #endif
 
@@ -200,13 +199,10 @@ CPU::CPU(const BaseO3CPUParams &params)
     matrixTokenResetSeqs.assign(
         numThreads,
         std::vector<InstSeqNum>(TheISA::ISA::MatrixTokenCount, 0));
-    auto makeMemoryAdapter = [this]() {
-        return std::make_unique<matrix::Gem5MatrixMemoryAdapter>(
-            system->physProxy);
-    };
     constexpr unsigned detailedCuteFifoDepth = 8;
     matrixBackend = std::make_unique<matrix::DetailedCuteBackend>(
-        makeMemoryAdapter(), detailedCuteFifoDepth);
+        std::make_unique<matrix::Gem5MatrixMemoryAdapter>(),
+        detailedCuteFifoDepth);
 #endif
 
     // The stages also need their CPU pointer setup.  However this

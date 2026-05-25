@@ -28,7 +28,10 @@
 
 #include "matrix/CUTETOP.hh"
 
+#include <algorithm>
 #include <cassert>
+#include <optional>
+#include <utility>
 
 #include "base/trace.hh"
 #include "debug/MatrixCuteTrace.hh"
@@ -42,6 +45,10 @@ namespace matrix
 namespace
 {
 
+constexpr unsigned MatrixTileMn = 8;
+constexpr unsigned Int8KGroup = 32;
+constexpr unsigned LocalMmuReadResponseMatrixRegChunks = 2;
+
 CuteCompletion
 makeCompletion(uint64_t seq, CuteRequestKind kind, CuteCompletionStatus status)
 {
@@ -50,6 +57,40 @@ makeCompletion(uint64_t seq, CuteRequestKind kind, CuteCompletionStatus status)
     completion.kind = kind;
     completion.status = status;
     return completion;
+}
+
+bool
+matrixRegWriteConflictsWithComputeRead(
+    const MatrixRegResource::Request &write_request,
+    const DecodedFifoEntry &entry)
+{
+    if (write_request.bank == MatrixBankKind::A ||
+        write_request.bank == MatrixBankKind::B) {
+        return true;
+    }
+
+    if (write_request.bank == MatrixBankKind::C) {
+        return (write_request.entry & 1) == (entry.readRegs[2] & 1);
+    }
+
+    return false;
+}
+
+bool
+isInt8TileWritebackMma(const AmuMmaDesc &desc)
+{
+    const bool int8_tags =
+        desc.lhsElemType == MatrixElemType::Int8 &&
+        desc.rhsElemType == MatrixElemType::Int8 &&
+        desc.dstElemType == MatrixElemType::Int32;
+    const bool int8_encodings =
+        (desc.types1 == 0 || desc.types1 == 0x4) &&
+        (desc.types2 == 0 || desc.types2 == 0x4) &&
+        (desc.typed == 0 || desc.typed == 0x2);
+    return !desc.isFp && int8_tags && int8_encodings &&
+           desc.mtilem % MatrixTileMn == 0 &&
+           desc.mtilen % MatrixTileMn == 0 &&
+           desc.mtilek % Int8KGroup == 0;
 }
 
 CuteCompletion
@@ -65,22 +106,184 @@ execRelease(uint64_t seq, const AmuReleaseDesc &desc)
 
 } // anonymous namespace
 
-CuteCompletion
-DetailedCuteBackend::executeArith(uint64_t seq, const AmuArithDesc &desc,
-                                  MatrixRegFile &state)
+MatrixRegResource::Request
+MatrixRegResource::makeRead(MatrixBankKind bank, Client client,
+                            uint32_t entry)
 {
-    switch (desc.op) {
-      case MatrixArithOpcode::Zero:
-        state.zero(desc.bank, desc.reg, desc.rows, desc.cols, desc.elemType);
-        return makeCompletion(seq, CuteRequestKind::Arith,
-                              CuteCompletionStatus::Success);
-    }
-
-    return makeCompletion(seq, CuteRequestKind::Arith,
-                          CuteCompletionStatus::Unsupported);
+    Request request;
+    request.bank = bank;
+    request.client = client;
+    request.access = Access::Read;
+    request.entry = entry;
+    return request;
 }
 
-// Active regfile helpers and backend writeback paths.
+MatrixRegResource::Request
+MatrixRegResource::makeWrite(MatrixBankKind bank, Client client,
+                             uint32_t entry)
+{
+    Request request;
+    request.bank = bank;
+    request.client = client;
+    request.access = Access::Write;
+    request.entry = entry;
+    return request;
+}
+
+bool
+MatrixRegResource::isAbBank(MatrixBankKind bank)
+{
+    return bank == MatrixBankKind::A || bank == MatrixBankKind::B;
+}
+
+void
+MatrixRegResource::enqueueReadResponse(const Request &request)
+{
+    ReadResponse response;
+    response.bank = request.bank;
+    response.client = request.client;
+    response.readyCycle = cycle + ReadLatencyCycles;
+    readResponses.push_back(response);
+}
+
+std::vector<MatrixRegResource::Grant>
+MatrixRegResource::arbitrate(const std::vector<Request> &requests)
+{
+    std::vector<Grant> grants(requests.size());
+    std::vector<bool> eligible(requests.size(), true);
+
+    for (size_t i = 0; i < requests.size(); ++i) {
+        if (requests[i].bankMask != FullBankMask) {
+            grants[i].reason = StallReason::PartialBankMask;
+            eligible[i] = false;
+        }
+    }
+
+    for (const auto bank : {MatrixBankKind::A, MatrixBankKind::B}) {
+        std::vector<size_t> reads;
+        std::vector<size_t> writes;
+        for (size_t i = 0; i < requests.size(); ++i) {
+            if (!eligible[i] || requests[i].bank != bank) {
+                continue;
+            }
+            if (requests[i].access == Access::Read) {
+                reads.push_back(i);
+            } else {
+                writes.push_back(i);
+            }
+        }
+
+        if (!writes.empty()) {
+            grants[writes.front()].granted = true;
+            for (size_t i = 1; i < writes.size(); ++i) {
+                grants[writes[i]].reason = StallReason::BankConflict;
+            }
+            for (const auto read_idx : reads) {
+                grants[read_idx].reason = StallReason::AbWritePriority;
+            }
+        } else if (!reads.empty()) {
+            grants[reads.front()].granted = true;
+            for (size_t i = 1; i < reads.size(); ++i) {
+                grants[reads[i]].reason = StallReason::BankConflict;
+            }
+        }
+    }
+
+    std::vector<size_t> c_reads;
+    std::vector<size_t> c_writes;
+    for (size_t i = 0; i < requests.size(); ++i) {
+        if (!eligible[i] || requests[i].bank != MatrixBankKind::C) {
+            continue;
+        }
+        if (requests[i].access == Access::Read) {
+            c_reads.push_back(i);
+        } else {
+            c_writes.push_back(i);
+        }
+    }
+
+    std::optional<size_t> c_write_grant;
+    if (!c_writes.empty()) {
+        c_write_grant = c_writes.front();
+        grants[*c_write_grant].granted = true;
+        for (size_t i = 1; i < c_writes.size(); ++i) {
+            grants[c_writes[i]].reason = StallReason::BankConflict;
+        }
+    }
+
+    if (!c_reads.empty()) {
+        const bool same_parity_write =
+            c_write_grant &&
+            ((requests[c_reads.front()].entry & 1) ==
+             (requests[*c_write_grant].entry & 1));
+        if (same_parity_write) {
+            grants[c_reads.front()].reason =
+                StallReason::CReadWriteConflict;
+            if (c_writes.size() == 1) {
+                grants[*c_write_grant].granted = false;
+                grants[*c_write_grant].reason =
+                    StallReason::CReadWriteConflict;
+            }
+        } else if (c_writes.size() > 1) {
+            grants[c_reads.front()].reason = StallReason::BankConflict;
+        } else {
+            grants[c_reads.front()].granted = true;
+        }
+        for (size_t i = 1; i < c_reads.size(); ++i) {
+            grants[c_reads[i]].reason = StallReason::BankConflict;
+        }
+    }
+
+    for (size_t i = 0; i < requests.size(); ++i) {
+        if (grants[i].granted && requests[i].access == Access::Read) {
+            enqueueReadResponse(requests[i]);
+        }
+    }
+
+    return grants;
+}
+
+bool
+MatrixRegResource::readResponseReady(MatrixBankKind bank, Client client) const
+{
+    return std::any_of(
+        readResponses.begin(), readResponses.end(),
+        [&](const ReadResponse &response) {
+            return response.bank == bank &&
+                   response.client == client &&
+                   response.readyCycle <= cycle;
+        });
+}
+
+bool
+MatrixRegResource::consumeReadResponse(MatrixBankKind bank, Client client)
+{
+    auto it = std::find_if(
+        readResponses.begin(), readResponses.end(),
+        [&](const ReadResponse &response) {
+            return response.bank == bank &&
+                   response.client == client &&
+                   response.readyCycle <= cycle;
+        });
+    if (it == readResponses.end()) {
+        return false;
+    }
+
+    readResponses.erase(it);
+    return true;
+}
+
+// Active backend register, memory, and writeback helpers.
+bool
+DetailedCuteBackend::useMemoryBudget()
+{
+    if (memoryBudget == 0) {
+        return false;
+    }
+    --memoryBudget;
+    return true;
+}
+
 MatrixBankKind
 DetailedCuteBackend::destBank(const DecodedFifoEntry &entry) const
 {
@@ -97,6 +300,64 @@ DetailedCuteBackend::destBank(const DecodedFifoEntry &entry) const
         return entry.request.lsu.isB ? MatrixBankKind::B : MatrixBankKind::A;
     }
     return MatrixBankKind::C;
+}
+
+CuteCompletion
+DetailedCuteBackend::executeLsu(uint64_t seq, const AmuLsuDesc &desc,
+                                MatrixRegFile &state,
+                                MatrixMemoryAdapter &memory)
+{
+    MatrixBankKind bank = MatrixBankKind::C;
+    if (desc.isAcc) {
+        bank = MatrixBankKind::C;
+    } else if (desc.isA) {
+        bank = MatrixBankKind::A;
+    } else if (desc.isB) {
+        bank = MatrixBankKind::B;
+    } else {
+        return makeCompletion(seq, CuteRequestKind::Lsu,
+                              CuteCompletionStatus::Unsupported);
+    }
+
+    if (!desc.isStore) {
+        MatrixTensor tensor;
+        if (!memory.loadTile(desc, tensor)) {
+            return makeCompletion(seq, CuteRequestKind::Lsu,
+                                  CuteCompletionStatus::Unsupported);
+        }
+        state.write(bank, desc.ms, tensor);
+        return makeCompletion(seq, CuteRequestKind::Lsu,
+                              CuteCompletionStatus::Success);
+    }
+
+    if (!state.hasRegister(bank, desc.ms)) {
+        return makeCompletion(seq, CuteRequestKind::Lsu,
+                              CuteCompletionStatus::Unsupported);
+    }
+
+    const auto &tensor = state.read(bank, desc.ms);
+    if (!memory.storeTile(desc, tensor)) {
+        return makeCompletion(seq, CuteRequestKind::Lsu,
+                              CuteCompletionStatus::Unsupported);
+    }
+
+    return makeCompletion(seq, CuteRequestKind::Lsu,
+                          CuteCompletionStatus::Success);
+}
+
+CuteCompletion
+DetailedCuteBackend::executeArith(uint64_t seq, const AmuArithDesc &desc,
+                                  MatrixRegFile &state)
+{
+    switch (desc.op) {
+      case MatrixArithOpcode::Zero:
+        state.zero(desc.bank, desc.reg, desc.rows, desc.cols, desc.elemType);
+        return makeCompletion(seq, CuteRequestKind::Arith,
+                              CuteCompletionStatus::Success);
+    }
+
+    return makeCompletion(seq, CuteRequestKind::Arith,
+                          CuteCompletionStatus::Unsupported);
 }
 
 CuteCompletion
@@ -139,16 +400,31 @@ DetailedCuteBackend::executeLoadWrite(TaskSlot &task)
     }
 
     if (!task.hasBufferedTensor) {
-        return makeCompletion(
-            task.entry.request.seq, CuteRequestKind::Lsu,
-            CuteCompletionStatus::Unsupported);
+        return makeCompletion(task.entry.request.seq, CuteRequestKind::Lsu,
+                              CuteCompletionStatus::Unsupported);
     }
 
-    regFile.write(
-        destBank(task.entry), task.entry.writeRegs[0], task.bufferedTensor);
-    return makeCompletion(
-        task.entry.request.seq, CuteRequestKind::Lsu,
-        CuteCompletionStatus::Success);
+    regFile.write(destBank(task.entry), task.entry.writeRegs[0],
+                  task.bufferedTensor);
+    return makeCompletion(task.entry.request.seq, CuteRequestKind::Lsu,
+                          CuteCompletionStatus::Success);
+}
+
+std::optional<MatrixRegResource::Request>
+DetailedCuteBackend::matrixRegWriteRequestForTask(
+    const TaskSlot &task, const CuteCompletion &completion) const
+{
+    if (completion.status != CuteCompletionStatus::Success) {
+        return std::nullopt;
+    }
+
+    if (task.entry.isZeroAcc || task.entry.isZeroTr) {
+        return MatrixRegResource::makeWrite(
+            destBank(task.entry), MatrixRegResource::Client::DataController,
+            task.entry.writeRegs[0]);
+    }
+
+    return std::nullopt;
 }
 
 CuteCompletion
@@ -161,20 +437,17 @@ DetailedCuteBackend::executeStoreWrite(const TaskSlot &task)
     }
 
     if (!task.hasBufferedTensor) {
-        return makeCompletion(
-            task.entry.request.seq, CuteRequestKind::Lsu,
-            CuteCompletionStatus::Unsupported);
+        return makeCompletion(task.entry.request.seq, CuteRequestKind::Lsu,
+                              CuteCompletionStatus::Unsupported);
     }
 
     if (!memory->storeTile(task.entry.request.lsu, task.bufferedTensor)) {
-        return makeCompletion(
-            task.entry.request.seq, CuteRequestKind::Lsu,
-            CuteCompletionStatus::Unsupported);
+        return makeCompletion(task.entry.request.seq, CuteRequestKind::Lsu,
+                              CuteCompletionStatus::Unsupported);
     }
 
-    return makeCompletion(
-        task.entry.request.seq, CuteRequestKind::Lsu,
-        CuteCompletionStatus::Success);
+    return makeCompletion(task.entry.request.seq, CuteRequestKind::Lsu,
+                          CuteCompletionStatus::Success);
 }
 
 CuteCompletion
@@ -187,16 +460,220 @@ DetailedCuteBackend::executeComputeWrite(ComputeTaskState &task)
     }
 
     if (!task.hasBufferedTensor) {
-        return makeCompletion(
-            task.entry.request.seq, CuteRequestKind::Mma,
-            CuteCompletionStatus::Unsupported);
+        return makeCompletion(task.entry.request.seq, CuteRequestKind::Mma,
+                              CuteCompletionStatus::Unsupported);
     }
 
-    regFile.write(
-        MatrixBankKind::C, task.entry.writeRegs[0], task.bufferedTensor);
-    return makeCompletion(
-        task.entry.request.seq, CuteRequestKind::Mma,
+    regFile.write(MatrixBankKind::C, task.entry.writeRegs[0],
+                  task.bufferedTensor);
+    return makeCompletion(task.entry.request.seq, CuteRequestKind::Mma,
+                          CuteCompletionStatus::Success);
+}
+
+size_t
+DetailedCuteBackend::lsuPayloadBytes(const AmuLsuDesc &desc) const
+{
+    return static_cast<size_t>(desc.row) * desc.column *
+           elemBytes(desc.elemType);
+}
+
+unsigned
+DetailedCuteBackend::lsuBeatCount(const AmuLsuDesc &desc) const
+{
+    const size_t bytes = lsuPayloadBytes(desc);
+    return bytes == 0 ? 0 : static_cast<unsigned>((bytes + 63) / 64);
+}
+
+LocalMmuModel::Client
+DetailedCuteBackend::localMmuClient(const TaskSlot &task) const
+{
+    switch (task.microTaskKind) {
+      case MicroTaskKind::AML:
+        return LocalMmuModel::Client::AML;
+      case MicroTaskKind::BML:
+        return LocalMmuModel::Client::BML;
+      case MicroTaskKind::CML:
+        return LocalMmuModel::Client::CML;
+      case MicroTaskKind::Compute:
+      case MicroTaskKind::Release:
+      case MicroTaskKind::Count:
+        break;
+    }
+
+    return LocalMmuModel::Client::CML;
+}
+
+bool
+DetailedCuteBackend::enqueueLocalMmuBeats(TaskSlot &task)
+{
+    if (task.lsuBeatsEnqueued) {
+        return true;
+    }
+
+    const auto &desc = task.entry.request.lsu;
+    const unsigned beats = lsuBeatCount(desc);
+    if (beats == 0) {
+        task.bufferedCompletion = makeCompletion(
+            task.entry.request.seq, CuteRequestKind::Lsu,
+            CuteCompletionStatus::Unsupported);
+        task.lsuBeatsEnqueued = true;
+        return false;
+    }
+
+    const size_t payload_bytes = lsuPayloadBytes(desc);
+    for (unsigned beat = 0; beat < beats; ++beat) {
+        const size_t offset = static_cast<size_t>(beat) * 64;
+        LocalMmuModel::Request request;
+        request.seq = task.entry.request.seq;
+        request.client = localMmuClient(task);
+        request.isStore = task.entry.isStore;
+        request.beatIndex = beat;
+        request.byteSize = static_cast<uint32_t>(
+            std::min<size_t>(64, payload_bytes - offset));
+        if (!localMmu.enqueue(request)) {
+            task.bufferedCompletion = makeCompletion(
+                task.entry.request.seq, CuteRequestKind::Lsu,
+                CuteCompletionStatus::Unsupported);
+            task.lsuBeatsEnqueued = true;
+            return false;
+        }
+        if (task.entry.isStore) {
+            ++counters.localMmuStoreBeatsEnqueued;
+        } else {
+            ++counters.localMmuLoadBeatsEnqueued;
+        }
+        DPRINTF(MatrixCuteTrace,
+                "local_mmu_enqueue [sn:%llu] unit=%u store=%u "
+                "beat=%u/%u bytes=%u pending=%llu outstanding=%llu "
+                "step=%llu.\n",
+                task.entry.request.seq,
+                static_cast<unsigned>(task.microTaskKind),
+                task.entry.isStore ? 1 : 0,
+                beat,
+                beats,
+                request.byteSize,
+                static_cast<unsigned long long>(localMmu.pendingCount()),
+                static_cast<unsigned long long>(localMmu.outstandingCount()),
+                static_cast<unsigned long long>(backendStep));
+    }
+
+    task.lsuTotalBeats = beats;
+    task.lsuBeatsEnqueued = true;
+    return true;
+}
+
+void
+DetailedCuteBackend::serviceLsuMatrixRegWriteChunk(TaskSlot &task)
+{
+    if (!task.entry.isLoad || task.lsuPendingMatrixRegWriteChunks == 0) {
+        return;
+    }
+    assert(!task.lsuPendingMatrixRegWriteEntries.empty());
+
+    const auto write_request = MatrixRegResource::makeWrite(
+        destBank(task.entry), MatrixRegResource::Client::MemoryLoader,
+        task.lsuPendingMatrixRegWriteEntries.front());
+    pendingMatrixRegWrites.push_back(write_request);
+
+    const auto grants = matrixRegResource.arbitrate({write_request});
+    assert(grants.size() == 1);
+    if (!grants[0].granted) {
+        ++counters.matrixRegLoaderWriteChunksStalled;
+        DPRINTF(MatrixCuteTrace,
+                "matrix_reg_loader_write_stall [sn:%llu] unit=%u "
+                "bank=%u entry=%u pending=%u done=%u step=%llu.\n",
+                task.entry.request.seq,
+                static_cast<unsigned>(task.microTaskKind),
+                static_cast<unsigned>(write_request.bank),
+                write_request.entry,
+                task.lsuPendingMatrixRegWriteChunks,
+                task.lsuMatrixRegWriteChunksDone,
+                static_cast<unsigned long long>(backendStep));
+        return;
+    }
+
+    --task.lsuPendingMatrixRegWriteChunks;
+    ++task.lsuMatrixRegWriteChunksDone;
+    task.lsuPendingMatrixRegWriteEntries.pop_front();
+    ++counters.matrixRegLoaderWriteChunksGranted;
+    DPRINTF(MatrixCuteTrace,
+            "matrix_reg_loader_write_grant [sn:%llu] unit=%u "
+            "bank=%u entry=%u pending=%u done=%u step=%llu.\n",
+            task.entry.request.seq,
+            static_cast<unsigned>(task.microTaskKind),
+            static_cast<unsigned>(write_request.bank),
+            write_request.entry,
+            task.lsuPendingMatrixRegWriteChunks,
+            task.lsuMatrixRegWriteChunksDone,
+            static_cast<unsigned long long>(backendStep));
+}
+
+void
+DetailedCuteBackend::advanceLoadFill(TaskSlot &task)
+{
+    assert(task.entry.isLoad);
+
+    if (!task.lsuBeatsEnqueued && !enqueueLocalMmuBeats(task)) {
+        return;
+    }
+
+    if (task.bufferedCompletion.status != CuteCompletionStatus::Success) {
+        return;
+    }
+
+    if (task.lsuResponsesReceived < task.lsuTotalBeats) {
+        return;
+    }
+
+    if (!task.lsuFunctionalDone) {
+        task.hasBufferedTensor = false;
+        task.bufferedCompletion = makeCompletion(
+            task.entry.request.seq, CuteRequestKind::Lsu,
+            CuteCompletionStatus::Success);
+
+        MatrixTensor tensor;
+        if (!memory->loadTile(task.entry.request.lsu, tensor)) {
+            task.bufferedCompletion.status =
+                CuteCompletionStatus::Unsupported;
+            task.lsuPendingMatrixRegWriteChunks = 0;
+            task.lsuPendingMatrixRegWriteEntries.clear();
+            task.lsuFunctionalDone = true;
+            return;
+        }
+
+        task.bufferedTensor = std::move(tensor);
+        task.hasBufferedTensor = true;
+        task.lsuFunctionalDone = true;
+    }
+
+    serviceLsuMatrixRegWriteChunk(task);
+}
+
+void
+DetailedCuteBackend::advanceStoreRead(TaskSlot &task)
+{
+    assert(task.entry.isStore);
+
+    if (!useMemoryBudget()) {
+        return;
+    }
+
+    task.hasBufferedTensor = false;
+    task.bufferedCompletion = makeCompletion(
+        task.entry.request.seq, CuteRequestKind::Lsu,
         CuteCompletionStatus::Success);
+
+    if (!regFile.hasRegister(MatrixBankKind::C, task.entry.readRegs[0])) {
+        task.bufferedCompletion.status = CuteCompletionStatus::Unsupported;
+    } else {
+        task.bufferedTensor =
+            regFile.read(MatrixBankKind::C, task.entry.readRegs[0]);
+        task.hasBufferedTensor = true;
+    }
+
+    enqueueLocalMmuBeats(task);
+
+    enqueueTaskEvent(task, TaskEventKind::ReadFinish);
 }
 
 // Active runtime path: task slots, task events, and final completions.
@@ -321,7 +798,8 @@ DetailedCuteBackend::retireComputeTask(uint64_t seq)
 {
     assert(!computeTasks.empty());
     assert(computeTasks.front().entry.request.seq == seq);
-    assert(computeTasks.front().activeUnit == ComputeUnitKind::CDC);
+    assert(computeTasks.front().terminalIssued);
+    assert(computeTasks.front().unitWorkDone);
     computeTasks.pop_front();
 }
 
@@ -359,6 +837,16 @@ DetailedCuteBackend::processTaskEvents()
           case TaskEventKind::ComputeReadBFinish:
             assert(event.entry.isMma);
             scoreboard.onComputeReadFinishB(event.entry);
+            DPRINTF(MatrixCuteTrace,
+                    "task_event [sn:%llu] unit=%u event=%u step=%llu.\n",
+                    event.entry.request.seq,
+                    static_cast<unsigned>(event.microTaskKind),
+                    static_cast<unsigned>(event.kind),
+                    static_cast<unsigned long long>(backendStep));
+            break;
+          case TaskEventKind::ComputeReadCFinish:
+            assert(event.entry.isMma);
+            scoreboard.onComputeReadFinishC(event.entry);
             DPRINTF(MatrixCuteTrace,
                     "task_event [sn:%llu] unit=%u event=%u step=%llu.\n",
                     event.entry.request.seq,
@@ -416,6 +904,9 @@ DetailedCuteBackend::finishTaskSlot(std::optional<TaskSlot> &slot)
 
     if (entry.isLoad || entry.isStore ||
         entry.isZeroAcc || entry.isZeroTr) {
+        if (auto request = matrixRegWriteRequestForTask(task, completion)) {
+            pendingMatrixRegWrites.push_back(*request);
+        }
         enqueueTaskEvent(task, TaskEventKind::WriteFinish, completion);
     }
     enqueueTaskEvent(task, TaskEventKind::TerminalCompletion, completion);
@@ -441,13 +932,31 @@ DetailedCuteBackend::beginComputeUnit(ComputeTaskState &task,
         task.executeCyclesRemaining = computeExecuteLatency(task.entry);
         break;
       case ComputeUnitKind::CDC:
+        task.cdcWritebackBeatsTotal = computeMteTiming(
+            task.entry.request.mma).cdcWriteCycles;
+        task.cdcWritebackBeatsRemaining = task.cdcWritebackBeatsTotal;
+        if (task.cdcWritebackBeatsTotal == 0) {
+            task.cdcWritebackBeatsTotal = 1;
+            task.cdcWritebackBeatsRemaining = 1;
+        }
+        task.cdcWritebackBeatsDone = 0;
+        task.cdcTileReadIssued = false;
+        task.cdcTileWriteReady = false;
+        task.hasCdcTileWriteTensor = false;
+        issueCdcTileRead(task);
+        DPRINTF(MatrixCuteTrace,
+                "compute_unit_issue [sn:%llu] unit=%u step=%llu.\n",
+                task.entry.request.seq,
+                static_cast<unsigned>(kind),
+                static_cast<unsigned long long>(backendStep));
         break;
       case ComputeUnitKind::None:
       case ComputeUnitKind::Count:
         break;
     }
     if (kind != ComputeUnitKind::None &&
-        kind != ComputeUnitKind::Count) {
+        kind != ComputeUnitKind::Count &&
+        kind != ComputeUnitKind::CDC) {
         recordComputeUnitIssue(kind);
         DPRINTF(MatrixCuteTrace,
                 "compute_unit_issue [sn:%llu] unit=%u step=%llu.\n",
@@ -476,6 +985,87 @@ DetailedCuteBackend::recordComputeUnitFinish(ComputeUnitKind kind)
 }
 
 void
+DetailedCuteBackend::advanceComputeReadC(ComputeTaskState &task)
+{
+    assert(task.entry.isMma);
+
+    task.hasBufferedTensorC = false;
+    if (regFile.hasRegister(MatrixBankKind::C, task.entry.readRegs[2])) {
+        task.bufferedTensorC =
+            regFile.read(MatrixBankKind::C, task.entry.readRegs[2]);
+        task.hasBufferedTensorC = true;
+    }
+
+    recordComputeUnitFinish(ComputeUnitKind::CDC);
+    DPRINTF(MatrixCuteTrace,
+            "compute_unit_finish [sn:%llu] unit=%u step=%llu.\n",
+            task.entry.request.seq,
+            static_cast<unsigned>(ComputeUnitKind::CDC),
+            static_cast<unsigned long long>(backendStep));
+    task.cdcReadComplete = true;
+    enqueueTaskEvent(task, TaskEventKind::ComputeReadCFinish);
+}
+
+bool
+DetailedCuteBackend::issueComputeReadFrontend(ComputeTaskState &task)
+{
+    assert(task.entry.isMma);
+    if (task.adcReadIssued || task.bdcReadIssued || task.cdcReadIssued) {
+        return false;
+    }
+
+    const auto a_read = MatrixRegResource::makeRead(
+        MatrixBankKind::A, MatrixRegResource::Client::DataController,
+        task.entry.readRegs[0]);
+    const auto b_read = MatrixRegResource::makeRead(
+        MatrixBankKind::B, MatrixRegResource::Client::DataController,
+        task.entry.readRegs[1]);
+    const auto c_read = MatrixRegResource::makeRead(
+        MatrixBankKind::C, MatrixRegResource::Client::DataController,
+        task.entry.readRegs[2]);
+
+    for (const auto &write_request : pendingMatrixRegWrites) {
+        if (matrixRegWriteConflictsWithComputeRead(
+                write_request, task.entry)) {
+            return false;
+        }
+    }
+
+    std::vector<MatrixRegResource::Request> requests = {
+        a_read, b_read, c_read};
+    requests.insert(requests.end(), pendingMatrixRegWrites.begin(),
+                    pendingMatrixRegWrites.end());
+
+    const auto grants = matrixRegResource.arbitrate(requests);
+    assert(grants.size() == requests.size());
+    if (!grants[0].granted || !grants[1].granted || !grants[2].granted) {
+        return false;
+    }
+
+    task.bufferedCompletion = makeCompletion(
+        task.entry.request.seq, CuteRequestKind::Mma,
+        CuteCompletionStatus::Success);
+    task.adcReadIssued = true;
+    task.bdcReadIssued = true;
+    task.cdcReadIssued = true;
+    task.unitIssueStep = backendStep;
+    task.unitOccupancyTraced = false;
+
+    for (auto kind : {ComputeUnitKind::ADC,
+                      ComputeUnitKind::BDC,
+                      ComputeUnitKind::CDC}) {
+        recordComputeUnitIssue(kind);
+        DPRINTF(MatrixCuteTrace,
+                "compute_unit_issue [sn:%llu] unit=%u step=%llu.\n",
+                task.entry.request.seq,
+                static_cast<unsigned>(kind),
+                static_cast<unsigned long long>(backendStep));
+    }
+
+    return true;
+}
+
+void
 DetailedCuteBackend::advanceComputeReadA(ComputeTaskState &task)
 {
     assert(task.entry.isMma);
@@ -499,7 +1089,7 @@ DetailedCuteBackend::advanceComputeReadA(ComputeTaskState &task)
             task.entry.request.seq,
             static_cast<unsigned>(ComputeUnitKind::ADC),
             static_cast<unsigned long long>(backendStep));
-    task.unitWorkDone = true;
+    task.adcReadComplete = true;
     enqueueTaskEvent(task, TaskEventKind::ComputeReadAFinish);
 }
 
@@ -524,7 +1114,7 @@ DetailedCuteBackend::advanceComputeReadB(ComputeTaskState &task)
             task.entry.request.seq,
             static_cast<unsigned>(ComputeUnitKind::BDC),
             static_cast<unsigned long long>(backendStep));
-    task.unitWorkDone = true;
+    task.bdcReadComplete = true;
     enqueueTaskEvent(task, TaskEventKind::ComputeReadBFinish);
 }
 
@@ -550,15 +1140,42 @@ DetailedCuteBackend::advanceComputeExecute(ComputeTaskState &task)
         return;
     }
 
+    if (isInt8TileWritebackMma(task.entry.request.mma)) {
+        const auto &desc = task.entry.request.mma;
+        task.bufferedCompletion = makeCompletion(
+            task.entry.request.seq, CuteRequestKind::Mma,
+            CuteCompletionStatus::Success);
+        if (task.bufferedTensorA.elemType != MatrixElemType::Int8 ||
+            task.bufferedTensorB.elemType != MatrixElemType::Int8 ||
+            task.bufferedTensorA.rows != desc.mtilem ||
+            task.bufferedTensorA.cols != desc.mtilek ||
+            task.bufferedTensorB.rows != desc.mtilek ||
+            task.bufferedTensorB.cols != desc.mtilen ||
+            (task.hasBufferedTensorC &&
+             (task.bufferedTensorC.elemType != MatrixElemType::Int32 ||
+              task.bufferedTensorC.rows != desc.mtilem ||
+              task.bufferedTensorC.cols != desc.mtilen))) {
+            task.bufferedCompletion.status = CuteCompletionStatus::Unsupported;
+        }
+        recordComputeUnitFinish(ComputeUnitKind::MTE);
+        DPRINTF(MatrixCuteTrace,
+                "compute_unit_finish [sn:%llu] unit=%u step=%llu.\n",
+                task.entry.request.seq,
+                static_cast<unsigned>(ComputeUnitKind::MTE),
+                static_cast<unsigned long long>(backendStep));
+        task.unitWorkDone = true;
+        return;
+    }
+
     MatrixRegFile scratch(regFile.abRegCount(), regFile.cRegCount());
     scratch.write(
         MatrixBankKind::A, task.entry.readRegs[0], task.bufferedTensorA);
     scratch.write(
         MatrixBankKind::B, task.entry.readRegs[1], task.bufferedTensorB);
-    if (regFile.hasRegister(MatrixBankKind::C, task.entry.readRegs[2])) {
+    if (task.hasBufferedTensorC) {
         scratch.write(
             MatrixBankKind::C, task.entry.readRegs[2],
-            regFile.read(MatrixBankKind::C, task.entry.readRegs[2]));
+            task.bufferedTensorC);
     }
 
     task.bufferedCompletion = executeMma(
@@ -590,21 +1207,219 @@ DetailedCuteBackend::advanceComputeExecute(ComputeTaskState &task)
     task.unitWorkDone = true;
 }
 
-void
-DetailedCuteBackend::finishComputeTask()
+bool
+DetailedCuteBackend::issueCdcTileRead(ComputeTaskState &task)
 {
-    assert(!computeTasks.empty());
-    auto &task = computeTasks.front();
-    const auto completion = executeComputeWrite(task);
+    assert(task.entry.isMma);
+    assert(task.activeUnit == ComputeUnitKind::CDC);
+    if (task.cdcTileReadIssued || task.cdcTileWriteReady) {
+        return false;
+    }
+
+    const auto &desc = task.entry.request.mma;
+    if (!isInt8TileWritebackMma(desc)) {
+        return false;
+    }
+
+    const unsigned n_tiles = desc.mtilen / MatrixTileMn;
+    const unsigned addr = task.cdcWritebackBeatsDone %
+                          ((desc.mtilem / MatrixTileMn) * n_tiles);
+    const unsigned m_tile = addr / n_tiles;
+    const unsigned n_tile = addr % n_tiles;
+    const unsigned c_tile_entry = m_tile * n_tiles + n_tile;
+
+    std::vector<MatrixRegResource::Request> requests =
+        pendingMatrixRegWrites;
+    requests.push_back(MatrixRegResource::makeRead(
+        MatrixBankKind::C, MatrixRegResource::Client::DataController,
+        c_tile_entry));
+    const auto grants = matrixRegResource.arbitrate(requests);
+    assert(grants.size() == requests.size());
+    if (!grants.back().granted) {
+        return false;
+    }
+
+    task.cdcTileReadIssued = true;
+    task.cdcTileReadBeatIndex = task.cdcWritebackBeatsDone;
+    return true;
+}
+
+bool
+DetailedCuteBackend::prepareCdcTileWrite(ComputeTaskState &task)
+{
+    assert(task.entry.isMma);
+    assert(task.cdcTileReadIssued);
+    assert(!task.cdcTileWriteReady);
+
+    if (!matrixRegResource.consumeReadResponse(
+            MatrixBankKind::C, MatrixRegResource::Client::DataController)) {
+        return false;
+    }
+
+    const auto &desc = task.entry.request.mma;
+    const unsigned m_tiles = desc.mtilem / MatrixTileMn;
+    const unsigned n_tiles = desc.mtilen / MatrixTileMn;
+    const unsigned tiles_per_k_group = m_tiles * n_tiles;
+    const unsigned addr = task.cdcTileReadBeatIndex % tiles_per_k_group;
+    const unsigned k_group = task.cdcTileReadBeatIndex / tiles_per_k_group;
+    const unsigned m_tile = addr / n_tiles;
+    const unsigned n_tile = addr % n_tiles;
+    const unsigned k_begin = k_group * Int8KGroup;
+    const unsigned k_end = std::min(k_begin + Int8KGroup, desc.mtilek);
+
+    MatrixTensor updated;
+    if (regFile.hasRegister(MatrixBankKind::C, task.entry.writeRegs[0])) {
+        updated = regFile.read(MatrixBankKind::C, task.entry.writeRegs[0]);
+    } else {
+        updated.rows = desc.mtilem;
+        updated.cols = desc.mtilen;
+        updated.elemType = desc.dstElemType;
+        updated.elements.assign(
+            static_cast<size_t>(updated.rows) * updated.cols, 0);
+    }
+
+    if (updated.elemType != MatrixElemType::Int32 ||
+        updated.rows != desc.mtilem ||
+        updated.cols != desc.mtilen ||
+        !task.hasBufferedTensorA || !task.hasBufferedTensorB ||
+        task.bufferedTensorA.elemType != MatrixElemType::Int8 ||
+        task.bufferedTensorB.elemType != MatrixElemType::Int8 ||
+        task.bufferedTensorA.rows != desc.mtilem ||
+        task.bufferedTensorA.cols != desc.mtilek ||
+        task.bufferedTensorB.rows != desc.mtilek ||
+        task.bufferedTensorB.cols != desc.mtilen) {
+        task.bufferedCompletion = makeCompletion(
+            task.entry.request.seq, CuteRequestKind::Mma,
+            CuteCompletionStatus::Unsupported);
+        task.cdcTileReadIssued = false;
+        task.cdcTileWriteReady = true;
+        task.cdcTileWriteBeatIndex = task.cdcTileReadBeatIndex;
+        task.hasCdcTileWriteTensor = false;
+        return true;
+    }
+
+    for (unsigned mi = 0; mi < MatrixTileMn; ++mi) {
+        const unsigned m = m_tile * MatrixTileMn + mi;
+        for (unsigned ni = 0; ni < MatrixTileMn; ++ni) {
+            const unsigned n = n_tile * MatrixTileMn + ni;
+            int64_t acc =
+                updated.elements[static_cast<size_t>(m) * updated.cols + n];
+            for (unsigned k = k_begin; k < k_end; ++k) {
+                const int64_t lhs =
+                    task.bufferedTensorA.elements[
+                        static_cast<size_t>(m) *
+                        task.bufferedTensorA.cols + k];
+                const int64_t rhs =
+                    task.bufferedTensorB.elements[
+                        static_cast<size_t>(k) *
+                        task.bufferedTensorB.cols + n];
+                acc += lhs * rhs;
+            }
+            updated.elements[static_cast<size_t>(m) * updated.cols + n] = acc;
+        }
+    }
+
+    task.cdcTileWriteTensor = std::move(updated);
+    task.hasCdcTileWriteTensor = true;
+    task.cdcTileReadIssued = false;
+    task.cdcTileWriteReady = true;
+    task.cdcTileWriteBeatIndex = task.cdcTileReadBeatIndex;
+    return true;
+}
+
+void
+DetailedCuteBackend::advanceComputeWriteback(ComputeTaskState &task)
+{
+    assert(task.entry.isMma);
+    assert(task.activeUnit == ComputeUnitKind::CDC);
+    assert(task.cdcWritebackBeatsRemaining != 0);
+
+    const bool int8_tile_writeback =
+        isInt8TileWritebackMma(task.entry.request.mma) &&
+        task.bufferedCompletion.status == CuteCompletionStatus::Success;
+
+    if (int8_tile_writeback && !task.cdcTileWriteReady) {
+        if (task.cdcTileReadIssued) {
+            prepareCdcTileWrite(task);
+        } else {
+            issueCdcTileRead(task);
+        }
+        if (!task.cdcTileWriteReady) {
+            return;
+        }
+    }
+
+    const auto write_entry = int8_tile_writeback ?
+        task.cdcTileWriteBeatIndex : task.entry.writeRegs[0];
+    const auto write_request = MatrixRegResource::makeWrite(
+        MatrixBankKind::C, MatrixRegResource::Client::DataController,
+        write_entry);
+    std::vector<MatrixRegResource::Request> requests =
+        pendingMatrixRegWrites;
+
+    const bool can_pipeline_next_read =
+        int8_tile_writeback &&
+        task.cdcWritebackBeatsRemaining > 1 &&
+        !task.cdcTileReadIssued;
+    if (can_pipeline_next_read) {
+        const auto &desc = task.entry.request.mma;
+        const unsigned n_tiles = desc.mtilen / MatrixTileMn;
+        const unsigned next_beat = task.cdcWritebackBeatsDone + 1;
+        const unsigned addr =
+            next_beat % ((desc.mtilem / MatrixTileMn) * n_tiles);
+        const unsigned m_tile = addr / n_tiles;
+        const unsigned n_tile = addr % n_tiles;
+        requests.push_back(MatrixRegResource::makeRead(
+            MatrixBankKind::C, MatrixRegResource::Client::DataController,
+            m_tile * n_tiles + n_tile));
+    }
+    requests.push_back(write_request);
+    const auto grants = matrixRegResource.arbitrate(requests);
+    assert(grants.size() == requests.size());
+    if (!grants.back().granted) {
+        return;
+    }
+
+    if (can_pipeline_next_read) {
+        const auto read_grant = grants[grants.size() - 2];
+        if (read_grant.granted) {
+            task.cdcTileReadIssued = true;
+            task.cdcTileReadBeatIndex = task.cdcWritebackBeatsDone + 1;
+        }
+    }
+
+    if (task.cdcTileWriteReady) {
+        if (task.bufferedCompletion.status == CuteCompletionStatus::Success) {
+            if (!task.hasCdcTileWriteTensor) {
+                task.bufferedCompletion.status =
+                    CuteCompletionStatus::Unsupported;
+            } else {
+                regFile.write(MatrixBankKind::C, task.entry.writeRegs[0],
+                              task.cdcTileWriteTensor);
+            }
+        }
+        task.cdcTileWriteReady = false;
+        task.hasCdcTileWriteTensor = false;
+    }
+
+    --task.cdcWritebackBeatsRemaining;
+    ++task.cdcWritebackBeatsDone;
+    if (task.cdcWritebackBeatsRemaining != 0) {
+        return;
+    }
+
+    const auto completion = isInt8TileWritebackMma(task.entry.request.mma) ?
+        task.bufferedCompletion : executeComputeWrite(task);
     enqueueTaskEvent(task, TaskEventKind::WriteFinish, completion);
     enqueueTaskEvent(task, TaskEventKind::TerminalCompletion, completion);
-    recordComputeUnitFinish(ComputeUnitKind::CDC);
     DPRINTF(MatrixCuteTrace,
             "compute_unit_finish [sn:%llu] unit=%u step=%llu.\n",
             task.entry.request.seq,
             static_cast<unsigned>(ComputeUnitKind::CDC),
             static_cast<unsigned long long>(backendStep));
+    task.unitWorkDone = true;
     task.terminalIssued = true;
+    task.activeUnit = ComputeUnitKind::None;
 }
 
 bool
@@ -642,10 +1457,12 @@ DetailedCuteBackend::advanceTaskSlot(std::optional<TaskSlot> &slot)
         } else if (task.entry.isZeroAcc || task.entry.isZeroTr) {
             task.stage = TaskStage::RegWrite;
         } else {
-            task.stage = TaskStage::MemReq;
+            enqueueLocalMmuBeats(task);
+            task.stage = TaskStage::FillPending;
         }
         break;
       case TaskStage::MemReq:
+        enqueueLocalMmuBeats(task);
         task.stage = TaskStage::FillPending;
         break;
       case TaskStage::FillPending:
@@ -653,7 +1470,8 @@ DetailedCuteBackend::advanceTaskSlot(std::optional<TaskSlot> &slot)
             advanceLoadFill(task);
             if (task.bufferedCompletion.status ==
                     CuteCompletionStatus::Success &&
-                !task.hasBufferedTensor) {
+                (!task.hasBufferedTensor ||
+                 task.lsuPendingMatrixRegWriteChunks != 0)) {
                 break;
             }
             if (task.bufferedCompletion.status !=
@@ -668,8 +1486,13 @@ DetailedCuteBackend::advanceTaskSlot(std::optional<TaskSlot> &slot)
         task.stage = TaskStage::RegWrite;
         break;
       case TaskStage::RegWrite:
-      case TaskStage::StorePending:
       case TaskStage::WaitPendingStoreClear:
+        finishTaskSlot(slot);
+        break;
+      case TaskStage::StorePending:
+        if (task.lsuResponsesReceived < task.lsuTotalBeats) {
+            break;
+        }
         finishTaskSlot(slot);
         break;
       case TaskStage::TerminalPending:
@@ -685,6 +1508,64 @@ DetailedCuteBackend::advanceTaskSlot(std::optional<TaskSlot> &slot)
 }
 
 void
+DetailedCuteBackend::serviceLocalMmuResponses()
+{
+    for (const auto &response : localMmu.takeReadyResponses()) {
+        auto service_slot = [&](std::optional<TaskSlot> &slot) {
+            if (!slot.has_value()) {
+                return false;
+            }
+            auto &task = slot.value();
+            if (task.entry.request.seq != response.seq ||
+                localMmuClient(task) != response.client) {
+                return false;
+            }
+
+            ++task.lsuResponsesReceived;
+            if (!response.isStore) {
+                ++counters.localMmuReadResponses;
+                const uint32_t base_entry = task.entry.writeRegs[0] +
+                    response.beatIndex *
+                    LocalMmuReadResponseMatrixRegChunks;
+                for (unsigned chunk = 0;
+                     chunk < LocalMmuReadResponseMatrixRegChunks;
+                     ++chunk) {
+                    task.lsuPendingMatrixRegWriteEntries.push_back(
+                        base_entry + chunk);
+                }
+                task.lsuPendingMatrixRegWriteChunks +=
+                    LocalMmuReadResponseMatrixRegChunks;
+                counters.matrixRegLoaderWriteChunksQueued +=
+                    LocalMmuReadResponseMatrixRegChunks;
+            } else {
+                ++counters.localMmuStoreAcks;
+            }
+            DPRINTF(MatrixCuteTrace,
+                    "local_mmu_response [sn:%llu] unit=%u store=%u "
+                    "beat=%u bytes=%u source=%u responses=%u/%u "
+                    "pendingFill=%u step=%llu.\n",
+                    task.entry.request.seq,
+                    static_cast<unsigned>(task.microTaskKind),
+                    response.isStore ? 1 : 0,
+                    response.beatIndex,
+                    response.byteSize,
+                    response.sourceId,
+                    task.lsuResponsesReceived,
+                    task.lsuTotalBeats,
+                    task.lsuPendingMatrixRegWriteChunks,
+                    static_cast<unsigned long long>(backendStep));
+            return true;
+        };
+
+        if (service_slot(amlTask) ||
+            service_slot(bmlTask) ||
+            service_slot(cmlTask)) {
+            continue;
+        }
+    }
+}
+
+void
 DetailedCuteBackend::advanceComputeTask()
 {
     if (computeTasks.empty()) {
@@ -693,13 +1574,6 @@ DetailedCuteBackend::advanceComputeTask()
 
     traceActiveComputeTasks();
     serviceActiveComputeUnits();
-
-    if (!computeTasks.empty() &&
-        computeTasks.front().activeUnit == ComputeUnitKind::CDC &&
-        computeTasks.front().unitWorkDone &&
-        !computeTasks.front().terminalIssued) {
-        finishComputeTask();
-    }
 
     dispatchReadyComputeUnits();
 }
@@ -739,15 +1613,23 @@ void
 DetailedCuteBackend::serviceActiveComputeUnits()
 {
     for (auto &task : computeTasks) {
-        if (task.activeUnit == ComputeUnitKind::ADC &&
-            !task.unitWorkDone &&
-            backendStep > task.unitIssueStep) {
+        if (task.adcReadIssued && !task.adcReadComplete &&
+            matrixRegResource.consumeReadResponse(
+                MatrixBankKind::A,
+                MatrixRegResource::Client::DataController)) {
             advanceComputeReadA(task);
         }
-        if (task.activeUnit == ComputeUnitKind::BDC &&
-            !task.unitWorkDone &&
-            backendStep > task.unitIssueStep) {
+        if (task.bdcReadIssued && !task.bdcReadComplete &&
+            matrixRegResource.consumeReadResponse(
+                MatrixBankKind::B,
+                MatrixRegResource::Client::DataController)) {
             advanceComputeReadB(task);
+        }
+        if (task.cdcReadIssued && !task.cdcReadComplete &&
+            matrixRegResource.consumeReadResponse(
+                MatrixBankKind::C,
+                MatrixRegResource::Client::DataController)) {
+            advanceComputeReadC(task);
         }
         if (task.activeUnit == ComputeUnitKind::MTE) {
             if (task.unitWorkDone) {
@@ -764,9 +1646,8 @@ DetailedCuteBackend::serviceActiveComputeUnits()
             }
         }
         if (task.activeUnit == ComputeUnitKind::CDC &&
-            !task.unitWorkDone &&
-            backendStep > task.unitIssueStep) {
-            task.unitWorkDone = true;
+            !task.unitWorkDone) {
+            advanceComputeWriteback(task);
         }
     }
 }
@@ -775,29 +1656,35 @@ void
 DetailedCuteBackend::dispatchReadyComputeUnits()
 {
     for (auto &task : computeTasks) {
+        if (task.terminalIssued) {
+            continue;
+        }
         if (task.activeUnit == ComputeUnitKind::None &&
-            computeUnitAvailable(ComputeUnitKind::ADC)) {
-            beginComputeUnit(task, ComputeUnitKind::ADC);
+            !task.adcReadIssued &&
+            computeUnitAvailable(ComputeUnitKind::ADC) &&
+            computeUnitAvailable(ComputeUnitKind::BDC) &&
+            computeUnitAvailable(ComputeUnitKind::CDC)) {
+            issueComputeReadFrontend(task);
         }
     }
 
     for (auto &task : computeTasks) {
-        if (task.activeUnit == ComputeUnitKind::ADC &&
-            task.unitWorkDone &&
-            computeUnitAvailable(ComputeUnitKind::BDC)) {
-            beginComputeUnit(task, ComputeUnitKind::BDC);
+        if (task.terminalIssued) {
+            continue;
         }
-    }
-
-    for (auto &task : computeTasks) {
-        if (task.activeUnit == ComputeUnitKind::BDC &&
-            task.unitWorkDone &&
+        if (task.activeUnit == ComputeUnitKind::None &&
+            task.adcReadComplete &&
+            task.bdcReadComplete &&
+            task.cdcReadComplete &&
             computeUnitAvailable(ComputeUnitKind::MTE)) {
             beginComputeUnit(task, ComputeUnitKind::MTE);
         }
     }
 
     for (auto &task : computeTasks) {
+        if (task.terminalIssued) {
+            continue;
+        }
         if (computeTaskFinishedMte(task) &&
             computeUnitAvailable(ComputeUnitKind::CDC)) {
             beginComputeUnit(task, ComputeUnitKind::CDC);
@@ -873,6 +1760,22 @@ void
 DetailedCuteBackend::step()
 {
     ++backendStep;
+    matrixRegResource.advanceCycle();
+    const auto issued_before = localMmu.issuedCount();
+    localMmu.step(backendStep);
+    const auto issued_after = localMmu.issuedCount();
+    if (issued_after != issued_before) {
+        counters.localMmuBeatsIssued += issued_after - issued_before;
+        DPRINTF(MatrixCuteTrace,
+                "local_mmu_issue step=%llu issued=%llu pending=%llu "
+                "outstanding=%llu.\n",
+                static_cast<unsigned long long>(backendStep),
+                static_cast<unsigned long long>(issued_after - issued_before),
+                static_cast<unsigned long long>(localMmu.pendingCount()),
+                static_cast<unsigned long long>(localMmu.outstandingCount()));
+    }
+    serviceLocalMmuResponses();
+    pendingMatrixRegWrites.clear();
     memoryBudget = 1;
     processFifoHead();
     advanceTaskSlots();

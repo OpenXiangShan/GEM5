@@ -29,23 +29,97 @@
 #ifndef __MATRIX_CUTE_TOP_HH__
 #define __MATRIX_CUTE_TOP_HH__
 
+#include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "matrix/MemoryAdapter.hh"
+#include "matrix/LocalMMUModel.hh"
+#include "matrix/MRegFile.hh"
+#include "matrix/MatrixTE.hh"
+#include "matrix/MemoryLoader.hh"
 #include "matrix/Scoreboard.hh"
-#include "matrix/decoded_fifo.hh"
-#include "matrix/matrix_backend.hh"
-#include "matrix/matrix_regfile.hh"
 
 namespace gem5
 {
 
 namespace matrix
 {
+
+class MatrixRegResource
+{
+  public:
+    static constexpr unsigned NumBanks = 8;
+    static constexpr unsigned EntryBytes = 32;
+    static constexpr unsigned ReadLatencyCycles = 1;
+    static constexpr uint16_t FullBankMask = (1U << NumBanks) - 1;
+
+    enum class Client : uint8_t
+    {
+        DataController,
+        MemoryLoader
+    };
+
+    enum class Access : uint8_t
+    {
+        Read,
+        Write
+    };
+
+    enum class StallReason : uint8_t
+    {
+        None,
+        PartialBankMask,
+        AbWritePriority,
+        BankConflict,
+        CReadWriteConflict
+    };
+
+    struct Request
+    {
+        MatrixBankKind bank = MatrixBankKind::A;
+        Client client = Client::DataController;
+        Access access = Access::Read;
+        uint32_t entry = 0;
+        uint16_t bankMask = FullBankMask;
+    };
+
+    struct Grant
+    {
+        bool granted = false;
+        StallReason reason = StallReason::None;
+    };
+
+    static Request makeRead(MatrixBankKind bank, Client client,
+                            uint32_t entry);
+    static Request makeWrite(MatrixBankKind bank, Client client,
+                             uint32_t entry);
+
+    std::vector<Grant> arbitrate(const std::vector<Request> &requests);
+    void advanceCycle() { ++cycle; }
+
+    bool readResponseReady(MatrixBankKind bank, Client client) const;
+    bool consumeReadResponse(MatrixBankKind bank, Client client);
+
+    uint64_t currentCycle() const { return cycle; }
+
+  private:
+    struct ReadResponse
+    {
+        MatrixBankKind bank = MatrixBankKind::A;
+        Client client = Client::DataController;
+        uint64_t readyCycle = 0;
+    };
+
+    static bool isAbBank(MatrixBankKind bank);
+    void enqueueReadResponse(const Request &request);
+
+    uint64_t cycle = 0;
+    std::deque<ReadResponse> readResponses;
+};
 
 // Detailed CUTE active state: keep this header lean and direct.
 class DetailedCuteBackend : public MatrixBackend
@@ -90,6 +164,14 @@ class DetailedCuteBackend : public MatrixBackend
         uint64_t microtaskFinish = 0;
         uint64_t microtaskLatencySum = 0;
         uint64_t lastMicrotaskLatency = 0;
+        uint64_t localMmuLoadBeatsEnqueued = 0;
+        uint64_t localMmuStoreBeatsEnqueued = 0;
+        uint64_t localMmuBeatsIssued = 0;
+        uint64_t localMmuReadResponses = 0;
+        uint64_t localMmuStoreAcks = 0;
+        uint64_t matrixRegLoaderWriteChunksQueued = 0;
+        uint64_t matrixRegLoaderWriteChunksGranted = 0;
+        uint64_t matrixRegLoaderWriteChunksStalled = 0;
         std::array<uint64_t,
             static_cast<size_t>(DetailedCuteScoreboard::BlockReason::Count)>
             scoreboardBlockReasons = {};
@@ -107,26 +189,10 @@ class DetailedCuteBackend : public MatrixBackend
             computeUnitFinishesByKind = {};
     };
 
-    struct MteTiming
+    struct TimingConfig
     {
-        unsigned tensorMn = 0;
-        unsigned tensorK = 0;
-        unsigned matrixMn = 0;
-        unsigned reduceWidthBytes = 0;
-        unsigned resultWidthBytes = 0;
-        unsigned aBytesPerBeat = 0;
-        unsigned bBytesPerBeat = 0;
-        unsigned cBytesPerBeat = 0;
-        unsigned dBytesPerBeat = 0;
-        unsigned acceptedInputBeats = 0;
-        unsigned adcReadCycles = 0;
-        unsigned bdcReadCycles = 0;
-        unsigned mteAcceptedInputBeats = 0;
-        unsigned fReduceTailCycles = 0;
-        unsigned cdcWriteCycles = 0;
-        unsigned terminalHandshakeCycles = 0;
-        unsigned totalCompletionCycles = 0;
-        bool supported = false;
+        unsigned localMmuLatencyCycles = 1;
+        unsigned localMmuMaxOutstanding = 64;
     };
 
     explicit DetailedCuteBackend(
@@ -135,6 +201,11 @@ class DetailedCuteBackend : public MatrixBackend
         size_t fifo_depth = 8,
         size_t ab_reg_count = MatrixRegFile::DefaultAbRegCount,
         size_t c_reg_count = MatrixRegFile::DefaultCRegCount);
+    DetailedCuteBackend(std::unique_ptr<MatrixMemoryAdapter> memory_adapter,
+        size_t fifo_depth,
+        size_t ab_reg_count,
+        size_t c_reg_count,
+        TimingConfig timing_config);
 
     bool canAccept(const CuteRequest &req) const override;
     void submit(const CuteRequest &req) override;
@@ -178,6 +249,7 @@ class DetailedCuteBackend : public MatrixBackend
         ReadFinish = 0,
         ComputeReadAFinish,
         ComputeReadBFinish,
+        ComputeReadCFinish,
         WriteFinish,
         TerminalCompletion
     };
@@ -195,6 +267,13 @@ class DetailedCuteBackend : public MatrixBackend
         bool hasBufferedTensorA = false;
         bool hasBufferedTensorB = false;
         unsigned stageCyclesRemaining = 0;
+        bool lsuBeatsEnqueued = false;
+        bool lsuFunctionalDone = false;
+        unsigned lsuTotalBeats = 0;
+        unsigned lsuResponsesReceived = 0;
+        unsigned lsuPendingMatrixRegWriteChunks = 0;
+        unsigned lsuMatrixRegWriteChunksDone = 0;
+        std::deque<uint32_t> lsuPendingMatrixRegWriteEntries;
         uint64_t issueStep = 0;
         bool occupancyTraced = false;
     };
@@ -205,13 +284,30 @@ class DetailedCuteBackend : public MatrixBackend
         MatrixTensor bufferedTensor = {};
         MatrixTensor bufferedTensorA = {};
         MatrixTensor bufferedTensorB = {};
+        MatrixTensor bufferedTensorC = {};
         CuteCompletion bufferedCompletion = {};
         bool hasBufferedTensor = false;
         bool hasBufferedTensorA = false;
         bool hasBufferedTensorB = false;
+        bool hasBufferedTensorC = false;
+        bool adcReadIssued = false;
+        bool bdcReadIssued = false;
+        bool cdcReadIssued = false;
+        bool adcReadComplete = false;
+        bool bdcReadComplete = false;
+        bool cdcReadComplete = false;
         ComputeUnitKind activeUnit = ComputeUnitKind::None;
         bool unitWorkDone = false;
         unsigned executeCyclesRemaining = 0;
+        unsigned cdcWritebackBeatsTotal = 0;
+        unsigned cdcWritebackBeatsRemaining = 0;
+        unsigned cdcWritebackBeatsDone = 0;
+        bool cdcTileReadIssued = false;
+        bool cdcTileWriteReady = false;
+        unsigned cdcTileReadBeatIndex = 0;
+        unsigned cdcTileWriteBeatIndex = 0;
+        MatrixTensor cdcTileWriteTensor = {};
+        bool hasCdcTileWriteTensor = false;
         uint64_t issueStep = 0;
         uint64_t unitIssueStep = 0;
         bool occupancyTraced = false;
@@ -260,14 +356,25 @@ class DetailedCuteBackend : public MatrixBackend
     void advanceTaskSlots();
     void advanceTaskSlot(std::optional<TaskSlot> &slot);
     void advanceComputeTask();
+    void serviceLocalMmuResponses();
     void traceActiveComputeTasks();
     void serviceActiveComputeUnits();
     void dispatchReadyComputeUnits();
     void advanceLoadFill(TaskSlot &task);
     void advanceStoreRead(TaskSlot &task);
+    size_t lsuPayloadBytes(const AmuLsuDesc &desc) const;
+    unsigned lsuBeatCount(const AmuLsuDesc &desc) const;
+    LocalMmuModel::Client localMmuClient(const TaskSlot &task) const;
+    bool enqueueLocalMmuBeats(TaskSlot &task);
+    void serviceLsuMatrixRegWriteChunk(TaskSlot &task);
+    bool issueComputeReadFrontend(ComputeTaskState &task);
     void advanceComputeReadA(ComputeTaskState &task);
     void advanceComputeReadB(ComputeTaskState &task);
+    void advanceComputeReadC(ComputeTaskState &task);
     void advanceComputeExecute(ComputeTaskState &task);
+    void advanceComputeWriteback(ComputeTaskState &task);
+    bool issueCdcTileRead(ComputeTaskState &task);
+    bool prepareCdcTileWrite(ComputeTaskState &task);
     void enqueueTaskEvent(const TaskSlot &task, TaskEventKind kind,
                           CuteCompletion completion = {});
     void enqueueTaskEvent(const ComputeTaskState &task, TaskEventKind kind,
@@ -287,11 +394,13 @@ class DetailedCuteBackend : public MatrixBackend
     CuteCompletion executeLoadWrite(TaskSlot &task);
     CuteCompletion executeStoreWrite(const TaskSlot &task);
     CuteCompletion executeComputeWrite(ComputeTaskState &task);
+    std::optional<MatrixRegResource::Request>
+    matrixRegWriteRequestForTask(const TaskSlot &task,
+                                 const CuteCompletion &completion) const;
     MteTiming computeMteTiming(const AmuMmaDesc &desc) const;
     unsigned computeExecuteLatency(const DecodedFifoEntry &entry) const;
     bool computeDatatypeSupported(const AmuMmaDesc &desc) const;
     void finishTaskSlot(std::optional<TaskSlot> &slot);
-    void finishComputeTask();
     void beginComputeUnit(ComputeTaskState &task, ComputeUnitKind kind);
     CuteCompletion executeLsu(uint64_t seq, const AmuLsuDesc &desc,
                               MatrixRegFile &state,
@@ -327,6 +436,10 @@ class DetailedCuteBackend : public MatrixBackend
     std::optional<TaskSlot> releaseTask;
     std::deque<TaskEvent> taskEvents;
     std::deque<CuteCompletion> completions;
+    MatrixRegResource matrixRegResource;
+    TimingConfig timingConfig;
+    LocalMmuModel localMmu;
+    std::vector<MatrixRegResource::Request> pendingMatrixRegWrites;
     unsigned pendingStoreCount = 0;
     unsigned memoryBudget = 1;
     uint64_t backendStep = 0;

@@ -26,9 +26,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <utility>
+#include "matrix/MemoryLoader.hh"
 
-#include "matrix/CUTETOP.hh"
+#include "base/logging.hh"
+#include "mem/port_proxy.hh"
+#include "mem/se_translating_port_proxy.hh"
+#include "mem/translating_port_proxy.hh"
+#include "sim/byteswap.hh"
+#include "sim/full_system.hh"
 
 namespace gem5
 {
@@ -39,119 +44,241 @@ namespace matrix
 namespace
 {
 
-CuteCompletion
-makeCompletion(uint64_t seq, CuteRequestKind kind, CuteCompletionStatus status)
+Addr
+elemAddr(const AmuLsuDesc &desc, uint32_t row, uint32_t col)
 {
-    CuteCompletion completion;
-    completion.seq = seq;
-    completion.kind = kind;
-    completion.status = status;
-    return completion;
+    const Addr col_bytes = static_cast<Addr>(col) * elemBytes(desc.elemType);
+    if (!desc.transpose) {
+        return desc.baseAddr + static_cast<Addr>(row) * desc.stride + col_bytes;
+    }
+
+    return desc.baseAddr + static_cast<Addr>(col) * desc.stride +
+           static_cast<Addr>(row) * elemBytes(desc.elemType);
+}
+
+template <typename T>
+T
+readGuestElem(PortProxy &proxy, Addr addr)
+{
+    return proxy.read<T>(addr, ByteOrder::little);
+}
+
+template <typename T>
+void
+writeGuestElem(PortProxy &proxy, Addr addr, T value)
+{
+    proxy.write<T>(addr, value, ByteOrder::little);
+}
+
+template <typename T>
+T
+readMatrixElem(const AmuLsuDesc &desc, Addr addr)
+{
+    if (!desc.tc) {
+        panic("Matrix access missing thread context");
+    }
+
+    if (!FullSystem) {
+        SETranslatingPortProxy proxy(desc.tc, SETranslatingPortProxy::Never);
+        return readGuestElem<T>(proxy, addr);
+    }
+
+    TranslatingPortProxy proxy(desc.tc);
+    return readGuestElem<T>(proxy, addr);
+}
+
+template <typename T>
+void
+writeMatrixElem(const AmuLsuDesc &desc, Addr addr, T value)
+{
+    if (!desc.tc) {
+        panic("Matrix access missing thread context");
+    }
+
+    if (!FullSystem) {
+        SETranslatingPortProxy proxy(desc.tc, SETranslatingPortProxy::Never);
+        writeGuestElem<T>(proxy, addr, value);
+        return;
+    }
+
+    TranslatingPortProxy proxy(desc.tc);
+    writeGuestElem<T>(proxy, addr, value);
 }
 
 } // anonymous namespace
 
-CuteCompletion
-DetailedCuteBackend::executeLsu(uint64_t seq, const AmuLsuDesc &desc,
-                                MatrixRegFile &state,
-                                MatrixMemoryAdapter &memory)
+bool
+NullMatrixMemoryAdapter::loadTile(const AmuLsuDesc &desc,
+                                  MatrixTensor &out_tensor)
 {
-    MatrixBankKind bank = MatrixBankKind::C;
-    if (desc.isAcc) {
-        bank = MatrixBankKind::C;
-    } else if (desc.isA) {
-        bank = MatrixBankKind::A;
-    } else if (desc.isB) {
-        bank = MatrixBankKind::B;
-    } else {
-        return makeCompletion(seq, CuteRequestKind::Lsu,
-                              CuteCompletionStatus::Unsupported);
-    }
-
-    if (!desc.isStore) {
-        MatrixTensor tensor;
-        if (!memory.loadTile(desc, tensor)) {
-            return makeCompletion(
-            seq, CuteRequestKind::Lsu, CuteCompletionStatus::Unsupported);
-        }
-        state.write(bank, desc.ms, tensor);
-        return makeCompletion(
-            seq, CuteRequestKind::Lsu, CuteCompletionStatus::Success);
-    }
-
-    if (!state.hasRegister(bank, desc.ms)) {
-        return makeCompletion(
-            seq, CuteRequestKind::Lsu, CuteCompletionStatus::Unsupported);
-    }
-
-    const auto &tensor = state.read(bank, desc.ms);
-    if (!memory.storeTile(desc, tensor)) {
-        return makeCompletion(
-            seq, CuteRequestKind::Lsu, CuteCompletionStatus::Unsupported);
-    }
-
-    return makeCompletion(
-        seq, CuteRequestKind::Lsu, CuteCompletionStatus::Success);
+    (void)desc;
+    (void)out_tensor;
+    return false;
 }
 
-// Active AML/BML/CML data path: load/store snapshots and memory budget.
 bool
-DetailedCuteBackend::useMemoryBudget()
+NullMatrixMemoryAdapter::storeTile(const AmuLsuDesc &desc,
+                                   const MatrixTensor &tensor)
 {
-    if (memoryBudget == 0) {
+    (void)desc;
+    (void)tensor;
+    return false;
+}
+
+bool
+SparseMatrixMemoryAdapter::loadTile(const AmuLsuDesc &desc,
+                                    MatrixTensor &out_tensor)
+{
+    out_tensor.rows = desc.row;
+    out_tensor.cols = desc.column;
+    out_tensor.elemType = desc.elemType;
+    out_tensor.elements.clear();
+    out_tensor.elements.reserve(static_cast<size_t>(desc.row) * desc.column);
+
+    for (uint32_t r = 0; r < desc.row; ++r) {
+        for (uint32_t c = 0; c < desc.column; ++c) {
+            int64_t value = 0;
+            auto it = elements.find(elemAddr(desc, r, c));
+            if (it != elements.end()) {
+                value = it->second;
+            }
+            out_tensor.elements.push_back(value);
+        }
+    }
+
+    return true;
+}
+
+bool
+SparseMatrixMemoryAdapter::storeTile(const AmuLsuDesc &desc,
+                                     const MatrixTensor &tensor)
+{
+    if (tensor.rows != desc.row || tensor.cols != desc.column ||
+        tensor.elemType != desc.elemType) {
         return false;
     }
-    --memoryBudget;
+
+    for (uint32_t r = 0; r < desc.row; ++r) {
+        for (uint32_t c = 0; c < desc.column; ++c) {
+            elements[elemAddr(desc, r, c)] =
+                tensor.elements[static_cast<size_t>(r) * tensor.cols + c];
+        }
+    }
+
     return true;
 }
 
 void
-DetailedCuteBackend::advanceLoadFill(TaskSlot &task)
+SparseMatrixMemoryAdapter::writeElement(Addr addr, int64_t value)
 {
-    assert(task.entry.isLoad);
-
-    if (!useMemoryBudget()) {
-        return;
-    }
-
-    task.hasBufferedTensor = false;
-    task.bufferedCompletion = makeCompletion(
-        task.entry.request.seq, CuteRequestKind::Lsu,
-        CuteCompletionStatus::Success);
-
-    MatrixTensor tensor;
-    if (!memory->loadTile(task.entry.request.lsu, tensor)) {
-        task.bufferedCompletion.status = CuteCompletionStatus::Unsupported;
-        return;
-    }
-
-    task.bufferedTensor = std::move(tensor);
-    task.hasBufferedTensor = true;
+    elements[addr] = value;
 }
 
-void
-DetailedCuteBackend::advanceStoreRead(TaskSlot &task)
+bool
+SparseMatrixMemoryAdapter::readElement(Addr addr, int64_t &value) const
 {
-    assert(task.entry.isStore);
-
-    if (!useMemoryBudget()) {
-        return;
+    auto it = elements.find(addr);
+    if (it == elements.end()) {
+        return false;
     }
 
-    task.hasBufferedTensor = false;
-    task.bufferedCompletion = makeCompletion(
-        task.entry.request.seq, CuteRequestKind::Lsu,
-        CuteCompletionStatus::Success);
+    value = it->second;
+    return true;
+}
 
-    if (!regFile.hasRegister(MatrixBankKind::C, task.entry.readRegs[0])) {
-        task.bufferedCompletion.status = CuteCompletionStatus::Unsupported;
-    } else {
-        task.bufferedTensor =
-            regFile.read(MatrixBankKind::C, task.entry.readRegs[0]);
-        task.hasBufferedTensor = true;
+bool
+Gem5MatrixMemoryAdapter::loadTile(const AmuLsuDesc &desc,
+                                  MatrixTensor &out_tensor)
+{
+    out_tensor.rows = desc.row;
+    out_tensor.cols = desc.column;
+    out_tensor.elemType = desc.elemType;
+    out_tensor.elements.clear();
+    out_tensor.elements.reserve(static_cast<size_t>(desc.row) * desc.column);
+
+    for (uint32_t r = 0; r < desc.row; ++r) {
+        for (uint32_t c = 0; c < desc.column; ++c) {
+            const Addr addr = elemAddr(desc, r, c);
+            int64_t value = 0;
+            switch (desc.elemType) {
+              case MatrixElemType::Int8:
+                value = static_cast<int8_t>(
+                    readMatrixElem<uint8_t>(desc, addr));
+                break;
+              case MatrixElemType::Int16:
+                value = static_cast<int16_t>(
+                    readMatrixElem<uint16_t>(desc, addr));
+                break;
+              case MatrixElemType::Int32:
+                value = static_cast<int32_t>(
+                    readMatrixElem<uint32_t>(desc, addr));
+                break;
+              case MatrixElemType::Int64:
+                value = static_cast<int64_t>(
+                    readMatrixElem<uint64_t>(desc, addr));
+                break;
+              case MatrixElemType::Fp16:
+              case MatrixElemType::Bf16:
+                value = static_cast<int64_t>(
+                    readMatrixElem<uint16_t>(desc, addr));
+                break;
+              case MatrixElemType::Tf32:
+                value = static_cast<int64_t>(
+                    readMatrixElem<uint32_t>(desc, addr));
+                break;
+            }
+            out_tensor.elements.push_back(value);
+        }
     }
 
-    enqueueTaskEvent(task, TaskEventKind::ReadFinish);
+    return true;
+}
+
+bool
+Gem5MatrixMemoryAdapter::storeTile(const AmuLsuDesc &desc,
+                                   const MatrixTensor &tensor)
+{
+    if (tensor.rows != desc.row || tensor.cols != desc.column ||
+        tensor.elemType != desc.elemType) {
+        return false;
+    }
+
+    for (uint32_t r = 0; r < desc.row; ++r) {
+        for (uint32_t c = 0; c < desc.column; ++c) {
+            const Addr addr = elemAddr(desc, r, c);
+            const int64_t value =
+                tensor.elements[static_cast<size_t>(r) * tensor.cols + c];
+            switch (desc.elemType) {
+              case MatrixElemType::Int8:
+                writeMatrixElem<uint8_t>(
+                    desc, addr, static_cast<uint8_t>(value));
+                break;
+              case MatrixElemType::Int16:
+                writeMatrixElem<uint16_t>(
+                    desc, addr, static_cast<uint16_t>(value));
+                break;
+              case MatrixElemType::Int32:
+                writeMatrixElem<uint32_t>(
+                    desc, addr, static_cast<uint32_t>(value));
+                break;
+              case MatrixElemType::Int64:
+                writeMatrixElem<uint64_t>(
+                    desc, addr, static_cast<uint64_t>(value));
+                break;
+              case MatrixElemType::Fp16:
+              case MatrixElemType::Bf16:
+                writeMatrixElem<uint16_t>(
+                    desc, addr, static_cast<uint16_t>(value));
+                break;
+              case MatrixElemType::Tf32:
+                writeMatrixElem<uint32_t>(
+                    desc, addr, static_cast<uint32_t>(value));
+                break;
+            }
+        }
+    }
+
+    return true;
 }
 
 } // namespace matrix

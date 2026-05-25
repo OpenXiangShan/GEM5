@@ -26,8 +26,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __MATRIX_MATRIX_BACKEND_HH__
-#define __MATRIX_MATRIX_BACKEND_HH__
+#ifndef __MATRIX_MREG_FILE_HH__
+#define __MATRIX_MREG_FILE_HH__
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 #include "matrix/CUTEParameters.hh"
 
@@ -37,21 +41,51 @@ namespace gem5
 namespace matrix
 {
 
-class MatrixBackend
+class MatrixRegFile
 {
   public:
-    virtual ~MatrixBackend() = default;
+    struct RegMetadata
+    {
+        bool allocated = false;
+    };
 
-    virtual bool canAccept(const CuteRequest &req) const = 0;
-    virtual void submit(const CuteRequest &req) = 0;
-    virtual bool hasWork() const = 0;
-    virtual void step() = 0;
-    virtual bool hasCompletion() const = 0;
-    virtual CuteCompletion popCompletion() = 0;
-    virtual bool hasArchitecturalState() const { return false; }
+    struct Register
+    {
+        RegMetadata meta = {};
+        MatrixTensor tensor = {};
+    };
+
+    static constexpr size_t DefaultAbRegCount = 8;
+    static constexpr size_t DefaultCRegCount = 8;
+
+    explicit MatrixRegFile(size_t ab_reg_count = DefaultAbRegCount,
+                           size_t c_reg_count = DefaultCRegCount);
+
+    size_t abRegCount() const { return _abRegCount; }
+    size_t cRegCount() const { return _cRegCount; }
+    size_t regCount(MatrixBankKind bank) const;
+
+    bool hasRegister(MatrixBankKind bank, size_t reg_idx) const;
+    const MatrixTensor &read(MatrixBankKind bank, size_t reg_idx) const;
+    void write(MatrixBankKind bank, size_t reg_idx, const MatrixTensor &tensor);
+    void zero(MatrixBankKind bank, size_t reg_idx, uint32_t rows,
+              uint32_t cols, MatrixElemType elem_type);
+
+    bool allocated(MatrixBankKind bank, size_t reg_idx) const;
+    bool hasAllocatedState() const;
+
+  private:
+    std::vector<Register> &bank(MatrixBankKind bank);
+    const std::vector<Register> &bank(MatrixBankKind bank) const;
+
+    size_t _abRegCount;
+    size_t _cRegCount;
+    std::vector<Register> aRegs;
+    std::vector<Register> bRegs;
+    std::vector<Register> cRegs;
 };
 
 } // namespace matrix
 } // namespace gem5
 
-#endif // __MATRIX_MATRIX_BACKEND_HH__
+#endif // __MATRIX_MREG_FILE_HH__

@@ -189,11 +189,16 @@ DetailedCuteScoreboard::onComputeReadFinishB(const DecodedFifoEntry &entry)
 }
 
 void
-DetailedCuteScoreboard::onComputeWriteFinishC(const DecodedFifoEntry &entry)
+DetailedCuteScoreboard::onComputeReadFinishC(const DecodedFifoEntry &entry)
 {
     decrementPendingReader(entry.readRegs[2], MatrixBankKind::C);
     auto &src = fuState(FuKind::Compute).srcs[SrcCIdx];
     src.readPending = false;
+}
+
+void
+DetailedCuteScoreboard::onComputeWriteFinishC(const DecodedFifoEntry &entry)
+{
     releaseDest(entry, FuKind::Compute);
     resetFu(fuState(FuKind::Compute));
 }

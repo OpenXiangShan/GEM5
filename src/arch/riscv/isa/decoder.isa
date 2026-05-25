@@ -2632,62 +2632,41 @@ decode QUADRANT {
                 }
             }
             0x02: decode FUNCT3 {
-                0x0: MatrixCarrierOp::mlae8({{
+                0x0: MatrixCarrierOp::mlae({{
                     auto *isa = static_cast<RiscvISA::ISA *>(
                         xc->tcBase()->getIsaPtr());
                     // Matrix state reads still follow the normal slot-based
                     // operand contract: src slot 2/3 carry Mtilem/Mtilek.
                     auto mtilem = xc->getRegOperand(this, 2);
                     auto mtilek = xc->getRegOperand(this, 3);
-                    if ((RD & 0x4) != 0 ||
+                    const auto md = RD & 0x7;
+                    const auto width = (RD >> 3) & 0x3;
+                    const bool isE8 =
+                        width == RiscvISA::ISA::MatrixSewE8;
+                    const bool isE16 =
+                        width == RiscvISA::ISA::MatrixSewE16;
+                    const auto maxK = isE8 ?
+                        RiscvISA::ISA::MatrixTrLenE8Max :
+                        RiscvISA::ISA::MatrixTrLenE16Max;
+                    if (md >= 4 || (!isE8 && !isE16) ||
                         mtilem > RiscvISA::ISA::MatrixRowNum ||
-                        mtilek > RiscvISA::ISA::MatrixTrLenE8Max) {
+                        mtilek > maxK) {
                         return std::make_shared<IllegalInstFault>(
-                            "mlae8 parameter check failed", machInst);
+                            "mlae parameter check failed", machInst);
                     }
                     RiscvISA::ISA::MatrixLsuStubRequest req;
                     req.valid = true;
                     req.isLoad = true;
                     req.isA = true;
                     req.op = 0x02;
-                    req.ms = RD & 0x7;
+                    req.ms = md;
                     req.baseAddr = Rs1_ud;
                     req.stride = Rs2_ud;
                     req.row = mtilem;
                     req.column = mtilek;
-                    req.widths = RiscvISA::ISA::MatrixSewE8;
-                    req.elemType = matrix::MatrixElemType::Int8;
-                    isa->recordMatrixLsuRequest(req);
-                }}, {{
-                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);
-                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileKReg);
-                }}, {{
-                }}, MatrixMemOp);
-            }
-            0x12: decode FUNCT3 {
-                0x0: MatrixCarrierOp::mlae16({{
-                    auto *isa = static_cast<RiscvISA::ISA *>(
-                        xc->tcBase()->getIsaPtr());
-                    auto mtilem = xc->getRegOperand(this, 2);
-                    auto mtilek = xc->getRegOperand(this, 3);
-                    if ((RD & 0x4) != 0 ||
-                        mtilem > RiscvISA::ISA::MatrixRowNum ||
-                        mtilek > RiscvISA::ISA::MatrixTrLenE16Max) {
-                        return std::make_shared<IllegalInstFault>(
-                            "mlae16 parameter check failed", machInst);
-                    }
-                    RiscvISA::ISA::MatrixLsuStubRequest req;
-                    req.valid = true;
-                    req.isLoad = true;
-                    req.isA = true;
-                    req.op = 0x12;
-                    req.ms = RD & 0x7;
-                    req.baseAddr = Rs1_ud;
-                    req.stride = Rs2_ud;
-                    req.row = mtilem;
-                    req.column = mtilek;
-                    req.widths = RiscvISA::ISA::MatrixSewE16;
-                    req.elemType = matrix::MatrixElemType::Fp16;
+                    req.widths = width;
+                    req.elemType = isE8 ? matrix::MatrixElemType::Int8 :
+                        matrix::MatrixElemType::Fp16;
                     isa->recordMatrixLsuRequest(req);
                 }}, {{
                     setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileMReg);
@@ -2696,17 +2675,26 @@ decode QUADRANT {
                 }}, MatrixMemOp);
             }
             0x0a: decode FUNCT3 {
-                0x0: MatrixCarrierOp::mlbe8({{
+                0x0: MatrixCarrierOp::mlbe({{
                     auto *isa = static_cast<RiscvISA::ISA *>(
                         xc->tcBase()->getIsaPtr());
                     // src slot 2/3 carry Mtilek/Mtilen.
                     auto mtilek = xc->getRegOperand(this, 2);
                     auto mtilen = xc->getRegOperand(this, 3);
-                    if ((RD & 0x4) != 0 ||
+                    const auto md = RD & 0x7;
+                    const auto width = (RD >> 3) & 0x3;
+                    const bool isE8 =
+                        width == RiscvISA::ISA::MatrixSewE8;
+                    const bool isE16 =
+                        width == RiscvISA::ISA::MatrixSewE16;
+                    const auto maxK = isE8 ?
+                        RiscvISA::ISA::MatrixTrLenE8Max :
+                        RiscvISA::ISA::MatrixTrLenE16Max;
+                    if (md >= 4 || (!isE8 && !isE16) ||
                         mtilen > RiscvISA::ISA::MatrixRowNum ||
-                        mtilek > RiscvISA::ISA::MatrixTrLenE8Max) {
+                        mtilek > maxK) {
                         return std::make_shared<IllegalInstFault>(
-                            "mlbe8 parameter check failed", machInst);
+                            "mlbe parameter check failed", machInst);
                     }
                     RiscvISA::ISA::MatrixLsuStubRequest req;
                     req.valid = true;
@@ -2714,13 +2702,14 @@ decode QUADRANT {
                     req.isB = true;
                     req.transpose = true;
                     req.op = 0x0a;
-                    req.ms = RD & 0x7;
+                    req.ms = md;
                     req.baseAddr = Rs1_ud;
                     req.stride = Rs2_ud;
                     req.row = mtilek;
                     req.column = mtilen;
-                    req.widths = RiscvISA::ISA::MatrixSewE8;
-                    req.elemType = matrix::MatrixElemType::Int8;
+                    req.widths = width;
+                    req.elemType = isE8 ? matrix::MatrixElemType::Int8 :
+                        matrix::MatrixElemType::Fp16;
                     isa->recordMatrixLsuRequest(req);
                 }}, {{
                     setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileKReg);
@@ -2728,46 +2717,17 @@ decode QUADRANT {
                 }}, {{
                 }}, MatrixMemOp);
             }
-            0x1a: decode FUNCT3 {
-                0x0: MatrixCarrierOp::mlbe16({{
-                    auto *isa = static_cast<RiscvISA::ISA *>(
-                        xc->tcBase()->getIsaPtr());
-                    auto mtilek = xc->getRegOperand(this, 2);
-                    auto mtilen = xc->getRegOperand(this, 3);
-                    if ((RD & 0x4) != 0 ||
-                        mtilen > RiscvISA::ISA::MatrixRowNum ||
-                        mtilek > RiscvISA::ISA::MatrixTrLenE16Max) {
-                        return std::make_shared<IllegalInstFault>(
-                            "mlbe16 parameter check failed", machInst);
-                    }
-                    RiscvISA::ISA::MatrixLsuStubRequest req;
-                    req.valid = true;
-                    req.isLoad = true;
-                    req.isB = true;
-                    req.transpose = true;
-                    req.op = 0x1a;
-                    req.ms = RD & 0x7;
-                    req.baseAddr = Rs1_ud;
-                    req.stride = Rs2_ud;
-                    req.row = mtilek;
-                    req.column = mtilen;
-                    req.widths = RiscvISA::ISA::MatrixSewE16;
-                    req.elemType = matrix::MatrixElemType::Fp16;
-                    isa->recordMatrixLsuRequest(req);
-                }}, {{
-                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileKReg);
-                    setSrcRegIdx(_numSrcRegs++, MatrixRenamedTileNReg);
-                }}, {{
-                }}, MatrixMemOp);
-            }
-            0x22: decode FUNCT3 {
+            0x12: decode FUNCT3 {
                 0x0: MatrixCarrierOp::mlce32({{
                     auto *isa = static_cast<RiscvISA::ISA *>(
                         xc->tcBase()->getIsaPtr());
                     // src slot 2/3 carry Mtilem/Mtilen.
                     auto mtilem = xc->getRegOperand(this, 2);
                     auto mtilen = xc->getRegOperand(this, 3);
-                    if ((RD & 0x4) == 0 ||
+                    const auto md = RD & 0x7;
+                    const auto width = (RD >> 3) & 0x3;
+                    if (md < 4 ||
+                        width != RiscvISA::ISA::MatrixSewE32 ||
                         mtilem > RiscvISA::ISA::MatrixRowNum ||
                         mtilen > RiscvISA::ISA::MatrixAccE32Max) {
                         return std::make_shared<IllegalInstFault>(
@@ -2777,8 +2737,8 @@ decode QUADRANT {
                     req.valid = true;
                     req.isLoad = true;
                     req.isAcc = true;
-                    req.op = 0x22;
-                    req.ms = RD & 0x7;
+                    req.op = 0x12;
+                    req.ms = md;
                     req.baseAddr = Rs1_ud;
                     req.stride = Rs2_ud;
                     req.row = mtilem;
@@ -2799,7 +2759,10 @@ decode QUADRANT {
                     // src slot 2/3 carry Mtilem/Mtilen.
                     auto mtilem = xc->getRegOperand(this, 2);
                     auto mtilen = xc->getRegOperand(this, 3);
-                    if ((RD & 0x4) == 0 ||
+                    const auto md = RD & 0x7;
+                    const auto width = (RD >> 3) & 0x3;
+                    if (md < 4 ||
+                        width != RiscvISA::ISA::MatrixSewE32 ||
                         mtilem > RiscvISA::ISA::MatrixRowNum ||
                         mtilen > RiscvISA::ISA::MatrixAccE32Max) {
                         return std::make_shared<IllegalInstFault>(
@@ -2810,7 +2773,7 @@ decode QUADRANT {
                     req.isAcc = true;
                     req.isLoad = false;
                     req.op = 0x13;
-                    req.ms = RD & 0x7;
+                    req.ms = md;
                     req.baseAddr = Rs1_ud;
                     req.stride = Rs2_ud;
                     req.row = mtilem;

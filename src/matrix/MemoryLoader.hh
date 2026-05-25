@@ -26,17 +26,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __MATRIX_MEMORY_ADAPTER_HH__
-#define __MATRIX_MEMORY_ADAPTER_HH__
+#ifndef __MATRIX_MEMORY_LOADER_HH__
+#define __MATRIX_MEMORY_LOADER_HH__
 
+#include <cstdint>
 #include <unordered_map>
 
 #include "matrix/CUTEParameters.hh"
 
 namespace gem5
 {
-
-class PortProxy;
 
 namespace matrix
 {
@@ -76,17 +75,12 @@ class SparseMatrixMemoryAdapter : public MatrixMemoryAdapter
 class Gem5MatrixMemoryAdapter : public MatrixMemoryAdapter
 {
   public:
-    explicit Gem5MatrixMemoryAdapter(PortProxy &proxy);
-
     bool loadTile(const AmuLsuDesc &desc, MatrixTensor &out_tensor) override;
     bool storeTile(const AmuLsuDesc &desc,
                    const MatrixTensor &tensor) override;
-
-  private:
-    PortProxy *portProxy = nullptr;
 };
 
 } // namespace matrix
 } // namespace gem5
 
-#endif // __MATRIX_MEMORY_ADAPTER_HH__
+#endif // __MATRIX_MEMORY_LOADER_HH__

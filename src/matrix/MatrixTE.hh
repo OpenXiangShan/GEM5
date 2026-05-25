@@ -26,13 +26,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __MATRIX_MATRIX_REGFILE_HH__
-#define __MATRIX_MATRIX_REGFILE_HH__
-
-#include <cstddef>
-#include <vector>
-
-#include "matrix/CUTEParameters.hh"
+#ifndef __MATRIX_MATRIX_TE_HH__
+#define __MATRIX_MATRIX_TE_HH__
 
 namespace gem5
 {
@@ -40,51 +35,30 @@ namespace gem5
 namespace matrix
 {
 
-class MatrixRegFile
+struct MteTiming
 {
-  public:
-    struct RegMetadata
-    {
-        bool allocated = false;
-    };
-
-    struct Register
-    {
-        RegMetadata meta = {};
-        MatrixTensor tensor = {};
-    };
-
-    static constexpr size_t DefaultAbRegCount = 8;
-    static constexpr size_t DefaultCRegCount = 8;
-
-    explicit MatrixRegFile(size_t ab_reg_count = DefaultAbRegCount,
-                           size_t c_reg_count = DefaultCRegCount);
-
-    size_t abRegCount() const { return _abRegCount; }
-    size_t cRegCount() const { return _cRegCount; }
-    size_t regCount(MatrixBankKind bank) const;
-
-    bool hasRegister(MatrixBankKind bank, size_t reg_idx) const;
-    const MatrixTensor &read(MatrixBankKind bank, size_t reg_idx) const;
-    void write(MatrixBankKind bank, size_t reg_idx, const MatrixTensor &tensor);
-    void zero(MatrixBankKind bank, size_t reg_idx, uint32_t rows,
-              uint32_t cols, MatrixElemType elem_type);
-
-    bool allocated(MatrixBankKind bank, size_t reg_idx) const;
-    bool hasAllocatedState() const;
-
-  private:
-    std::vector<Register> &bank(MatrixBankKind bank);
-    const std::vector<Register> &bank(MatrixBankKind bank) const;
-
-    size_t _abRegCount;
-    size_t _cRegCount;
-    std::vector<Register> aRegs;
-    std::vector<Register> bRegs;
-    std::vector<Register> cRegs;
+    unsigned tensorMn = 0;
+    unsigned tensorK = 0;
+    unsigned matrixMn = 0;
+    unsigned reduceWidthBytes = 0;
+    unsigned resultWidthBytes = 0;
+    unsigned aBytesPerBeat = 0;
+    unsigned bBytesPerBeat = 0;
+    unsigned cBytesPerBeat = 0;
+    unsigned dBytesPerBeat = 0;
+    unsigned acceptedInputBeats = 0;
+    unsigned adcReadCycles = 0;
+    unsigned bdcReadCycles = 0;
+    unsigned cdcReadCycles = 0;
+    unsigned mteAcceptedInputBeats = 0;
+    unsigned fReduceTailCycles = 0;
+    unsigned cdcWriteCycles = 0;
+    unsigned terminalHandshakeCycles = 0;
+    unsigned totalCompletionCycles = 0;
+    bool supported = false;
 };
 
 } // namespace matrix
 } // namespace gem5
 
-#endif // __MATRIX_MATRIX_REGFILE_HH__
+#endif // __MATRIX_MATRIX_TE_HH__
