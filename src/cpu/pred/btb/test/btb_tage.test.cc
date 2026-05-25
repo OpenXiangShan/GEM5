@@ -393,12 +393,12 @@ TEST_F(BTBTAGETest, GlobalHistoryModeUpdate) {
     BTBTAGE ghrTage(4, 2, 1024, 4, false);
     boost::dynamic_bitset<> ghr(64, false);
 
-    ghrTage.doUpdateHist(ghr, 1, true, 0, 0);
+    ghrTage.doUpdateHist(ghr, 1, true, 0, 0, 0);
     applyOutcomeHistory(ghr, 1, true);
     ghrTage.checkFoldedHist(ghr, "ghr taken update");
 
     boost::dynamic_bitset<> before_not_taken = ghr;
-    ghrTage.doUpdateHist(ghr, 1, false, 0, 0);
+    ghrTage.doUpdateHist(ghr, 1, false, 0, 0, 0);
     applyOutcomeHistory(ghr, 1, false);
     ghrTage.checkFoldedHist(ghr, "ghr not-taken update");
 
