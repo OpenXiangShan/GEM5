@@ -180,8 +180,7 @@ void
 PathFoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken, Addr pc, Addr target)
 {
     if (taken) {
-        // Calculate path hash
-        uint64_t hash = pathHash(pc, target);
+        const uint64_t footprint = pathHash(pc, target);
 
         const uint64_t foldedMask = ((1ULL << foldedLen) - 1);
         uint64_t temp = _folded;
@@ -193,7 +192,7 @@ PathFoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken
         if (foldedLen >= histLen) {
             // Simple shift and set case
             temp <<= shamt;
-            temp ^= hash;
+            temp ^= footprint;
             // Clear any bits beyond histLen
             temp &= ((1ULL << histLen) - 1);
         }
@@ -216,7 +215,7 @@ PathFoldedHist::update(const boost::dynamic_bitset<> &ghr, int shamt, bool taken
             }
 
             // Step 4: Add new branch outcome
-            uint64_t effectiveHash = hash;
+            uint64_t effectiveHash = footprint;
             if (histLen < pathHashLength) {
                 const uint64_t mask = (1ULL << histLen) - 1;
                 effectiveHash &= mask;

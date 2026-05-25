@@ -19,15 +19,31 @@ namespace branch_prediction
 namespace btb_pred
 {
 
-// PHR hash related
-constexpr static uint64_t pathHashLength = 15;
+// V2-like PHR footprint related.
+constexpr static uint64_t pathHashLength = 10;
 
 inline uint64_t
 pathHash(const Addr branchPC, const Addr targetPC)
 {
-    uint64_t hash = ((((branchPC >> 1) & ((1ULL << 9) - 1)) << 4) ^ ((targetPC >> 2) & ((1ULL << 15) - 1)));
-    hash &= ((1ULL << pathHashLength) - 1);
-    return hash;
+    auto b = [branchPC](unsigned bit) -> uint64_t {
+        return (branchPC >> bit) & 1;
+    };
+    auto t = [targetPC](unsigned bit) -> uint64_t {
+        return (targetPC >> bit) & 1;
+    };
+
+    uint64_t footprint = 0;
+    footprint |= ((b(2)  ^ t(7))  << 0);
+    footprint |= ((b(3)  ^ t(8))  << 1);
+    footprint |= ((b(4)  ^ t(9))  << 2);
+    footprint |= ((b(5)  ^ t(10)) << 3);
+    footprint |= ((b(6)  ^ b(12) ^ t(11)) << 4);
+    footprint |= ((b(7)  ^ b(13) ^ t(2))  << 5);
+    footprint |= ((b(8)  ^ b(14) ^ t(3))  << 6);
+    footprint |= ((b(9)  ^ b(15) ^ t(4))  << 7);
+    footprint |= ((b(10) ^ b(16) ^ t(5))  << 8);
+    footprint |= ((b(11) ^ b(17) ^ t(6))  << 9);
+    return footprint;
 }
 
 inline uint64_t

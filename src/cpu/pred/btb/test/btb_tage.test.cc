@@ -113,12 +113,12 @@ void specUpdateSelectedHistory(BTBTAGE* tage,
 void recoverSelectedHistory(BTBTAGE* tage,
                             const boost::dynamic_bitset<>& history,
                             const FetchTarget& stream, int shamt,
-                            bool cond_taken)
+                            bool path_taken)
 {
     if (tage->usesPathHistory()) {
-        tage->recoverPHist(history, stream, shamt, cond_taken);
+        tage->recoverPHist(history, stream, shamt, path_taken);
     } else {
-        tage->recoverHist(history, stream, shamt, cond_taken);
+        tage->recoverHist(history, stream, shamt, path_taken);
     }
 }
 
@@ -146,6 +146,11 @@ void applyActualHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
     } else {
         applyOutcomeHistory(history, shamt, taken);
     }
+}
+
+bool getActualPathTaken(const FetchTarget& stream)
+{
+    return stream.exeTaken && stream.exeBranchInfo.pc == stream.squashPC;
 }
 
 /**
@@ -251,7 +256,7 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
             history = pre_spec_history;
         }
         // Recover from misprediction
-        recoverSelectedHistory(tage, history, stream, 1, actual_taken);
+        recoverSelectedHistory(tage, history, stream, 1, getActualPathTaken(stream));
         applyActualHistory(tage, history, stream.exeBranchInfo, 1, actual_taken);
         tage->checkFoldedHist(history, "recover");
     }
@@ -1260,7 +1265,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
 TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesIndirectOverridePathHashSnapshot) {
     BTBEntry entry = createBTBEntry(0x1000, true, true, false, -1, 0x2000);
     entry.isIndirect = true;
-    const Addr indirectTarget = 0x3000;
+    const Addr indirectTarget = 0x2040;
 
     ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, indirectTarget));
 

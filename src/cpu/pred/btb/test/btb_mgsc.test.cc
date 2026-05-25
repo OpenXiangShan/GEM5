@@ -116,8 +116,7 @@ pHistShiftIn(int shamt, bool taken, boost::dynamic_bitset<> &history, Addr pc, A
         uint64_t hash = pathHash(pc, target);
         history <<= shamt;
         for (std::size_t i = 0; i < pathHashLength && i < history.size(); i++) {
-            history[i] = (hash & 1) ^ history[i];
-            hash >>= 1;
+            history[i] = ((hash >> i) & 1) ^ history[i];
         }
     }
 }
@@ -303,7 +302,8 @@ struct MgscHarness
             recover_stream.exeTaken = actual_taken;
 
             mgsc.recoverHist(ghr, recover_stream, shamt, actual_taken);
-            mgsc.recoverPHist(phr, recover_stream, 2, actual_taken);
+            bool actual_p_taken = actual_taken;
+            mgsc.recoverPHist(phr, recover_stream, 2, actual_p_taken);
 
             bool actual_bw_taken = actual_taken && (entry.target < entry.pc);
             mgsc.recoverBwHist(bwhr, recover_stream, bw_shamt, actual_bw_taken);
@@ -798,7 +798,7 @@ TEST(BTBMGSCTest, PTableLearnsOutcomeFromPreviousTakenBranchTarget)
     const Addr branch_pc_a = 0x1000;
     auto entry_a = makeCondBTBEntry(branch_pc_a);
     const Addr target0 = 0x2000;
-    const Addr target1 = 0x3000;
+    const Addr target1 = 0x1234;
 
     // B: outcome depends on the path context created by A's target.
     const Addr start_pc_b = 0x1020;
@@ -853,7 +853,7 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesIndirectTargetOverride)
     BTBEntry entry = makeCondBTBEntry(0x1000);
     entry.isIndirect = true;
     entry.target = 0x2000;
-    const Addr indirectTarget = 0x3000;
+    const Addr indirectTarget = 0x2040;
 
     ASSERT_NE(pathHash(entry.pc, entry.target), pathHash(entry.pc, indirectTarget));
 
