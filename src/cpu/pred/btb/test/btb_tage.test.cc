@@ -90,6 +90,39 @@ void applyPathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr targe
     }
 }
 
+uint16_t getV2Footprint(Addr branchPC, Addr targetPC)
+{
+    auto b = [branchPC](unsigned bit) -> uint16_t {
+        return (branchPC >> bit) & 1;
+    };
+    auto t = [targetPC](unsigned bit) -> uint16_t {
+        return (targetPC >> bit) & 1;
+    };
+
+    uint16_t footprint = 0;
+    footprint |= ((b(2)  ^ t(7))  << 0);
+    footprint |= ((b(3)  ^ t(8))  << 1);
+    footprint |= ((b(4)  ^ t(9))  << 2);
+    footprint |= ((b(5)  ^ t(10)) << 3);
+    footprint |= ((b(6)  ^ b(12) ^ t(11)) << 4);
+    footprint |= ((b(7)  ^ b(13) ^ t(2))  << 5);
+    footprint |= ((b(8)  ^ b(14) ^ t(3))  << 6);
+    footprint |= ((b(9)  ^ b(15) ^ t(4))  << 7);
+    footprint |= ((b(10) ^ b(16) ^ t(5))  << 8);
+    footprint |= ((b(11) ^ b(17) ^ t(6))  << 9);
+    return footprint;
+}
+
+void applyV2PathHistoryTaken(boost::dynamic_bitset<>& history, Addr pc, Addr target,
+                             int shamt = 2) {
+    history <<= shamt;
+    uint16_t footprint = getV2Footprint(pc, target);
+    for (std::size_t i = 0; i < 10 && i < history.size(); ++i) {
+        bool bit = history[i];
+        history[i] = ((footprint >> i) & 1) ^ bit;
+    }
+}
+
 /**
  * @brief Helper function to find conditional taken prediction for a given PC
  *
@@ -269,6 +302,34 @@ int findTableWithEntry(BTBTAGE* tage, Addr startPC, Addr branchPC) {
         }
     }
     return -1;
+}
+
+TEST(BTBTAGEHistoryTest, V2FootprintDiffersByTarget)
+{
+    Addr pc = 0x1000;
+    Addr targetA = 0x1200;
+    Addr targetB = 0x1280;
+    ASSERT_NE(getV2Footprint(pc, targetA), getV2Footprint(pc, targetB));
+}
+
+TEST(BTBTAGEHistoryTest, V2PathHistoryTakenUpdatesLowTenBits)
+{
+    boost::dynamic_bitset<> history(32, 0);
+    Addr pc = 0x1234;
+    Addr target = 0x5678;
+    uint16_t footprint = getV2Footprint(pc, target);
+    applyV2PathHistoryTaken(history, pc, target);
+    for (std::size_t i = 0; i < 10; ++i) {
+        ASSERT_EQ(history[i], static_cast<bool>((footprint >> i) & 1));
+    }
+}
+
+TEST(BTBTAGEHistoryTest, V2PathHistoryNotTakenNoUpdate)
+{
+    boost::dynamic_bitset<> history(32, 0x55AA);
+    boost::dynamic_bitset<> before = history;
+    // No helper call on not-taken: matches BTBTAGE V2-like semantics.
+    ASSERT_EQ(history, before);
 }
 
 class BTBTAGETest : public ::testing::Test
@@ -1115,6 +1176,10 @@ TEST_F(BTBTAGETest, ShareTableBindsAfterConsecutiveWindows) {
     tage->shareCurrentWinner = -1;
     tage->shareCurrentWinnerStreak = 0;
     tage->shareWindowAllocCount = 0;
+    tage->shareEpoch = 0;
+
+    tage->tageTable[2][17][0] = BTBTAGE::TageEntry(0x55, 0, 0x2000);
+    tage->tageTable[2][31][1] = BTBTAGE::TageEntry(0x66, 1, 0x2004);
 
     for (int i = 0; i < 4; ++i) {
         tage->testUpdateShareBindingOnAlloc(2);
@@ -1126,10 +1191,13 @@ TEST_F(BTBTAGETest, ShareTableBindsAfterConsecutiveWindows) {
     EXPECT_TRUE(tage->shareBound);
     EXPECT_EQ(tage->shareTargetTable, 2);
     EXPECT_EQ(tage->tageStats.shareBindCount, 1);
+    EXPECT_EQ(tage->shareEpoch, 1u);
+    EXPECT_FALSE(tage->tageTable[2][17][0].valid);
+    EXPECT_FALSE(tage->tageTable[2][31][1].valid);
 }
 
-TEST_F(BTBTAGETest, ShareTableActsAsExtraWaysForLookupAndUpdate) {
-    tage = new BTBTAGE(1, 2, 2048);
+TEST_F(BTBTAGETest, ShareTableUsesExpandedUpperHalfWithoutFallback) {
+    tage = new BTBTAGE(2, 2, 2048);
     memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
     tage->enableShareTable = true;
     tage->shareTableSize = 2048;
@@ -1146,25 +1214,159 @@ TEST_F(BTBTAGETest, ShareTableActsAsExtraWaysForLookupAndUpdate) {
     stagePreds.clear();
     stagePreds.resize(2);
 
-    Addr startPC = 0x1000;
-    BTBEntry entry = createBTBEntry(0x1000, true, true, false, 0);
+    Addr startPC = 0;
+    for (Addr candidate = 0x1000; candidate < 0x20000; candidate += 4) {
+        if (tage->testGetExpandedTageIndex(candidate, 0) >= 2048) {
+            startPC = candidate;
+            break;
+        }
+    }
+    ASSERT_NE(startPC, 0u);
+
+    BTBEntry entry = createBTBEntry(startPC, true, true, false, 0);
     unsigned pos = tage->getBranchIndexInBlock(entry.pc, startPC);
-    Addr index = tage->getTageIndex(startPC, 0);
-    Addr tag = tage->getTageTag(startPC, 0, pos);
-    tage->shareTable[index][0] = BTBTAGE::TageEntry(tag, 0, entry.pc);
+    Addr logicalIndex = tage->testGetExpandedTageIndex(startPC, 0);
+    ASSERT_GE(logicalIndex, 2048u);
+    Addr index = logicalIndex & 0x7ff;
+    Addr tag = tage->testGetExpandedTageTag(startPC, 0, pos);
+
+    // Opposite half contains a matching entry, but lookup must not fall back to it.
+    tage->tageTable[0][index][0] = BTBTAGE::TageEntry(tag, 0, entry.pc);
 
     stagePreds[1].btbEntries = {entry};
     tage->putPCHistory(startPC, history, stagePreds);
     auto meta_pred = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
     auto pred = meta_pred->preds[entry.pc];
+    EXPECT_FALSE(pred.mainInfo.found);
+
+    tage->shareTable[index][0] = BTBTAGE::TageEntry(tag, 2, entry.pc);
+    tage->putPCHistory(startPC, history, stagePreds);
+    meta_pred = std::static_pointer_cast<BTBTAGE::TageMeta>(tage->getPredictionMeta());
+    pred = meta_pred->preds[entry.pc];
     ASSERT_TRUE(pred.mainInfo.found);
     EXPECT_TRUE(pred.mainInfo.fromShareTable);
     EXPECT_EQ(pred.mainInfo.table, 0u);
+    EXPECT_TRUE(pred.finalProviderFromShare);
+}
 
+TEST_F(BTBTAGETest, ShareTableStalePredictionDropsProviderWriteback) {
+    tage = new BTBTAGE(1, 2, 2048);
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+    tage->enableShareTable = true;
+    tage->shareTableSize = 2048;
+    tage->shareTableWays = 2;
+    tage->shareAllocWindow = 1;
+    tage->shareAllocConsecutive = 1;
+    tage->shareAllocCounters.assign(tage->numPredictors, 0);
+    tage->shareTable.resize(tage->shareTableSize);
+    for (auto &set : tage->shareTable) {
+        set.resize(tage->shareTableWays);
+    }
+    tage->shareBound = false;
+    tage->shareTargetTable = -1;
+    tage->shareCurrentWinner = -1;
+    tage->shareCurrentWinnerStreak = 0;
+    tage->shareWindowAllocCount = 0;
+    tage->shareEpoch = 0;
+
+    history.resize(64, false);
+    stagePreds.clear();
+    stagePreds.resize(2);
+
+    Addr startPC = 0;
+    for (Addr candidate = 0x1000; candidate < 0x20000; candidate += 4) {
+        if (tage->testGetExpandedTageIndex(candidate, 0) >= 2048) {
+            startPC = candidate;
+            break;
+        }
+    }
+    ASSERT_NE(startPC, 0u);
+
+    BTBEntry entry = createBTBEntry(startPC, true, true, false, 1);
+    setupTageEntry(tage, startPC, 0, 0, false);
+
+    stagePreds[1].btbEntries = {entry};
+    tage->putPCHistory(startPC, history, stagePreds);
     auto meta = tage->getPredictionMeta();
-    FetchTarget stream = createStream(startPC, entry, true, meta);
+    auto old_meta = std::static_pointer_cast<BTBTAGE::TageMeta>(meta);
+    auto old_pred = old_meta->preds[entry.pc];
+    ASSERT_TRUE(old_pred.mainInfo.found);
+    ASSERT_FALSE(old_pred.mainInfo.fromShareTable);
+
+    // Trigger immediate bind to table 0 and clear the old 2k state.
+    tage->testUpdateShareBindingOnAlloc(0);
+    EXPECT_TRUE(tage->shareBound);
+    EXPECT_EQ(tage->shareTargetTable, 0);
+    EXPECT_EQ(tage->shareEpoch, 1u);
+
+    Addr old_index = old_pred.mainInfo.index;
+    EXPECT_FALSE(tage->tageTable[0][old_index][old_pred.mainInfo.way].valid);
+
+    FetchTarget stream = createStream(startPC, entry, false, meta);
+    stream = setMispredStream(stream);
     tage->update(stream);
-    EXPECT_EQ(tage->shareTable[index][0].counter, 1);
+
+    EXPECT_EQ(tage->tageStats.shareStalePredDropProviderUpdate, 1);
+    EXPECT_FALSE(tage->tageTable[0][old_index][old_pred.mainInfo.way].valid);
+}
+
+TEST_F(BTBTAGETest, ShareTableStalePredictionCanRefillExpandedTable) {
+    tage = new BTBTAGE(2, 2, 2048);
+    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
+    tage->enableShareTable = true;
+    tage->shareTableSize = 2048;
+    tage->shareTableWays = 2;
+    tage->shareAllocWindow = 1;
+    tage->shareAllocConsecutive = 1;
+    tage->shareAllocCounters.assign(tage->numPredictors, 0);
+    tage->shareTable.resize(tage->shareTableSize);
+    for (auto &set : tage->shareTable) {
+        set.resize(tage->shareTableWays);
+    }
+    tage->shareBound = false;
+    tage->shareTargetTable = -1;
+    tage->shareCurrentWinner = -1;
+    tage->shareCurrentWinnerStreak = 0;
+    tage->shareWindowAllocCount = 0;
+    tage->shareEpoch = 0;
+
+    history.resize(64, false);
+    stagePreds.clear();
+    stagePreds.resize(2);
+
+    Addr startPC = 0x1000;
+    BTBEntry entry = createBTBEntry(startPC, true, true, false, 1);
+
+    stagePreds[1].btbEntries = {entry};
+    tage->putPCHistory(startPC, history, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    tage->testUpdateShareBindingOnAlloc(0);
+    EXPECT_TRUE(tage->shareBound);
+    EXPECT_EQ(tage->shareTargetTable, 0);
+    EXPECT_EQ(tage->shareEpoch, 1u);
+
+    FetchTarget stream = createStream(startPC, entry, false, meta);
+    stream = setMispredStream(stream);
+    tage->update(stream);
+
+    bool found_refill = false;
+    for (const auto &set : tage->tageTable[0]) {
+        for (const auto &way : set) {
+            if (way.valid && way.pc == entry.pc) {
+                found_refill = true;
+            }
+        }
+    }
+    for (const auto &set : tage->shareTable) {
+        for (const auto &way : set) {
+            if (way.valid && way.pc == entry.pc) {
+                found_refill = true;
+            }
+        }
+    }
+    EXPECT_TRUE(found_refill);
+    EXPECT_EQ(tage->tageStats.updateAllocSuccess, 1);
 }
 
 class BTBTAGEUpperBoundTest : public ::testing::Test

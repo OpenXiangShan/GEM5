@@ -167,6 +167,18 @@ class BTBTAGE : public TimedBaseBTBPredictor
     {
         updateShareBindingOnAlloc(allocatedTable);
     }
+
+    Addr testGetExpandedTageIndex(Addr pc, int table)
+    {
+        return getExpandedTageIndex(pc, table, indexFoldedHist4k[table].get());
+    }
+
+    Addr testGetExpandedTageTag(Addr pc, int table, Addr position = 0)
+    {
+        return getTageTagWithIndexBits(pc, table, tagFoldedHist[table].get(),
+                                       altTagFoldedHist[table].get(),
+                                       position, getExpandedIndexBits());
+    }
 #endif
 
     // Update predictor state based on actual branch outcomes
@@ -219,6 +231,11 @@ class BTBTAGE : public TimedBaseBTBPredictor
 
     // Update branch history
     void doUpdateHist(const bitset &history, bool taken, Addr pc, Addr target);
+    void doUpdateHistLegacy(const bitset &history, bool taken, Addr pc, Addr target);
+    void doUpdateHistV2(bool taken, Addr pc, Addr target);
+    void updateFoldedHistoriesFromHistory(const bitset &history, bool taken, Addr pc,
+                                          Addr target);
+    uint16_t getV2Footprint(Addr branchPC, Addr targetPC) const;
 
     // Number of TAGE predictor tables
     const unsigned numPredictors;
@@ -253,6 +270,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Folded history for index calculation
     std::vector<PathFoldedHist> indexFoldedHist;
 
+    // 12-bit folded history for logical 4k expansion mode.
+    std::vector<PathFoldedHist> indexFoldedHist4k;
+
     // Linear feedback shift register for allocation
     LFSR64 allocLFSR;
 
@@ -278,6 +298,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
     int shareCurrentWinner;
     unsigned shareCurrentWinnerStreak;
     unsigned shareWindowAllocCount;
+    unsigned shareEpoch;
 
     const unsigned maxBranchPositions;  // Maximum branch positions per 64-byte block
 
@@ -326,8 +347,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Whether statistical corrector is enabled
     bool enableSC;
 
+    // Whether to use BTBTAGE-local V2-like path history update semantics.
+    bool useV2PHistory;
+
     // Whether to update on read
     bool updateOnRead;
+
+    // BTBTAGE-local path history used when useV2PHistory is enabled.
+    bitset v2PHistory;
 
     // ========== Bank Configuration ==========
     // Bank mechanism to simulate hardware bank conflicts
@@ -385,6 +412,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar shareAllocFailure;
         Scalar shareFinalSourceCorrect;
         Scalar shareFinalSourceWrong;
+        Scalar shareStalePredDropProviderUpdate;
 
         // Recomputed prediction difference statistics (per fetchBlock)
         Scalar recomputedVsActualDiff;   // recomputed.taken != actual_taken
@@ -449,8 +477,11 @@ public:
         std::vector<PathFoldedHist> tagFoldedHist;
         std::vector<PathFoldedHist> altTagFoldedHist;
         std::vector<PathFoldedHist> indexFoldedHist;
+        std::vector<PathFoldedHist> indexFoldedHist4k;
+        unsigned predictEpoch;
         bitset history;     // for viewing
-        TageMeta() {}
+        bitset localV2PHistory;
+        TageMeta() : predictEpoch(0) {}
     } TageMeta;
 
 private:
@@ -469,7 +500,9 @@ private:
     bool updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                                  bool actual_taken,
                                  const TagePrediction &pred,
-                                 const FetchTarget &stream);
+                                 const FetchTarget &stream,
+                                 bool staleMainProvider,
+                                 bool staleAltProvider);
 
     // Helper method to handle new entry allocation
     bool handleNewEntryAllocation(const Addr &startPC,
@@ -489,10 +522,23 @@ private:
                                  uint64_t &victim_old_useful);
 
     TageEntry &resolveProviderEntry(const TageTableInfo &info);
-    const TageEntry *findShareEntry(unsigned table, Addr index, Addr tag, unsigned &way) const;
     bool canUseShareForTable(unsigned table) const;
+    bool isExpandedShareTarget(unsigned table) const;
+    unsigned getExpandedIndexBits() const;
+    unsigned getLogicalTableSize(unsigned table) const;
+    Addr getExpandedTageIndex(Addr pc, int table, uint64_t foldedHist) const;
+    bool mapLogicalIndexToStorage(unsigned table, Addr logicalIndex,
+                                  Addr &physicalIndex, bool &fromShare) const;
+    std::vector<TageEntry> &selectTargetSet(unsigned table, Addr physicalIndex,
+                                            bool fromShare);
+    const std::vector<TageEntry> &selectTargetSet(unsigned table, Addr physicalIndex,
+                                                  bool fromShare) const;
+    void clearTargetTable(unsigned table);
     void clearShareTable();
-    void updateShareBindingOnAlloc(unsigned allocatedTable);
+    bool updateShareBindingOnAlloc(unsigned allocatedTable);
+    Addr getTageTagWithIndexBits(Addr pc, int table, uint64_t foldedHist,
+                                 uint64_t altFoldedHist, Addr position,
+                                 unsigned indexBits) const;
 
 
     // Helper methods for LRU management

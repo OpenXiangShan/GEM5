@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <ctime>
+#include <sstream>
 
 #ifdef UNIT_TEST
 // Define debug flags for unit testing
@@ -41,7 +42,7 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
       numWays(numPredictors, numWaysPerTable),
       enableShareTable(false),
       shareTableSize(2048),
-      shareTableWays(6),
+      shareTableWays(2),
       shareAllocWindow(1400),
       shareAllocConsecutive(2),
       shareBound(false),
@@ -49,9 +50,11 @@ BTBTAGE::BTBTAGE(unsigned numPredictors, unsigned numWaysPerTable,
       shareCurrentWinner(-1),
       shareCurrentWinnerStreak(0),
       shareWindowAllocCount(0),
+      shareEpoch(0),
       maxBranchPositions(32),
       useAltOnNaSize(1024),
       useAltOnNaWidth(7),
+      useV2PHistory(false),
       updateOnRead(false),
       numBanks(numBanks),
       bankIdWidth(ceilLog2(numBanks)),
@@ -96,9 +99,11 @@ shareTargetTable(-1),
 shareCurrentWinner(-1),
 shareCurrentWinnerStreak(0),
 shareWindowAllocCount(0),
+shareEpoch(0),
 maxBranchPositions(p.maxBranchPositions),
 useAltOnNaSize(p.useAltOnNaSize),
 useAltOnNaWidth(p.useAltOnNaWidth),
+useV2PHistory(p.useV2PHistory),
 numTablesToAlloc(p.numTablesToAlloc),
 enableSC(p.enableSC),
 updateOnRead(p.updateOnRead),
@@ -130,6 +135,8 @@ tageStats(this, p.numPredictors, p.numBanks)
             "BTBTAGE share table V1 does not support updateOnRead=true");
         fatal_if(shareTableSize != 2048,
             "BTBTAGE share table V1 only supports shareTableSize=2048");
+        fatal_if(shareTableWays != 2,
+            "BTBTAGE share table V2 only supports shareTableWays=2");
     }
     tageTable.resize(numPredictors);
     tableIndexBits.resize(numPredictors);
@@ -159,6 +166,7 @@ tageStats(this, p.numPredictors, p.numBanks)
         tagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i], 16));
         altTagFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableTagBits[i]-1, 16));
         indexFoldedHist.push_back(PathFoldedHist((int)histLengths[i], (int)tableIndexBits[i], 16));
+        indexFoldedHist4k.push_back(PathFoldedHist((int)histLengths[i], 12, 16));
     }
     if (enableShareTable) {
         shareAllocCounters.assign(numPredictors, 0);
@@ -180,6 +188,11 @@ tageStats(this, p.numPredictors, p.numBanks)
 
     // initialize use_alt_on_na table
     useAlt.resize(useAltOnNaSize, 0);
+    if (useV2PHistory) {
+        // Length is not the goal in this experiment. Reuse the current
+        // history framework capacity and only change update semantics.
+        v2PHistory.resize(std::max<unsigned>(maxHistLen, 10), 0);
+    }
 #ifndef UNIT_TEST
     hasDB = true;
     switch (getDelay()) {
@@ -200,6 +213,80 @@ BTBTAGE::canUseShareForTable(unsigned table) const
            table < tableSizes.size() && tableSizes[table] == shareTableSize;
 }
 
+bool
+BTBTAGE::isExpandedShareTarget(unsigned table) const
+{
+    return canUseShareForTable(table);
+}
+
+unsigned
+BTBTAGE::getExpandedIndexBits() const
+{
+    return ceilLog2(shareTableSize * 2);
+}
+
+unsigned
+BTBTAGE::getLogicalTableSize(unsigned table) const
+{
+    return isExpandedShareTarget(table) ? (shareTableSize * 2) : tableSizes[table];
+}
+
+Addr
+BTBTAGE::getExpandedTageIndex(Addr pc, int table, uint64_t foldedHist) const
+{
+    const unsigned indexBits = getExpandedIndexBits();
+    const Addr mask = (1ULL << indexBits) - 1;
+    const unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
+    Addr pcBits = (pc >> pcShift) & mask;
+    Addr foldedBits = foldedHist & mask;
+    return (pcBits ^ foldedBits) % (shareTableSize * 2);
+}
+
+bool
+BTBTAGE::mapLogicalIndexToStorage(unsigned table, Addr logicalIndex,
+                                  Addr &physicalIndex, bool &fromShare) const
+{
+    if (!isExpandedShareTarget(table)) {
+        physicalIndex = logicalIndex;
+        fromShare = false;
+        return false;
+    }
+    fromShare = logicalIndex >= shareTableSize;
+    physicalIndex = logicalIndex & (shareTableSize - 1);
+    return true;
+}
+
+std::vector<BTBTAGE::TageEntry> &
+BTBTAGE::selectTargetSet(unsigned table, Addr physicalIndex, bool fromShare)
+{
+    if (fromShare) {
+        return shareTable[physicalIndex];
+    }
+    return tageTable[table][physicalIndex];
+}
+
+const std::vector<BTBTAGE::TageEntry> &
+BTBTAGE::selectTargetSet(unsigned table, Addr physicalIndex, bool fromShare) const
+{
+    if (fromShare) {
+        return shareTable[physicalIndex];
+    }
+    return tageTable[table][physicalIndex];
+}
+
+void
+BTBTAGE::clearTargetTable(unsigned table)
+{
+    if (table >= tageTable.size()) {
+        return;
+    }
+    for (auto &set : tageTable[table]) {
+        for (auto &way : set) {
+            way = TageEntry();
+        }
+    }
+}
+
 void
 BTBTAGE::clearShareTable()
 {
@@ -213,22 +300,6 @@ BTBTAGE::clearShareTable()
     }
 }
 
-const BTBTAGE::TageEntry *
-BTBTAGE::findShareEntry(unsigned table, Addr index, Addr tag, unsigned &way) const
-{
-    if (!canUseShareForTable(table) || index >= shareTable.size()) {
-        return nullptr;
-    }
-    for (unsigned i = 0; i < shareTableWays; ++i) {
-        const auto &entry = shareTable[index][i];
-        if (entry.valid && entry.tag == tag) {
-            way = i;
-            return &entry;
-        }
-    }
-    return nullptr;
-}
-
 BTBTAGE::TageEntry &
 BTBTAGE::resolveProviderEntry(const TageTableInfo &info)
 {
@@ -240,23 +311,23 @@ BTBTAGE::resolveProviderEntry(const TageTableInfo &info)
     return tageTable[info.table][info.index][info.way];
 }
 
-void
+bool
 BTBTAGE::updateShareBindingOnAlloc(unsigned allocatedTable)
 {
     if (!enableShareTable) {
-        return;
+        return false;
     }
     assert(allocatedTable < shareAllocCounters.size());
     shareAllocCounters[allocatedTable]++;
     shareWindowAllocCount++;
     if (shareWindowAllocCount < shareAllocWindow) {
-        return;
+        return false;
     }
 
     unsigned winner = 0;
     unsigned winnerCount = shareAllocCounters[0];
     for (unsigned i = 1; i < numPredictors; ++i) {
-        if (!canUseShareForTable(i) && tableSizes[i] != shareTableSize) {
+        if (tableSizes[i] != shareTableSize) {
             continue;
         }
         if (shareAllocCounters[i] > winnerCount) {
@@ -272,15 +343,20 @@ BTBTAGE::updateShareBindingOnAlloc(unsigned allocatedTable)
         shareCurrentWinnerStreak = 1;
     }
 
+    bool bound_now_to_allocated = false;
     if (!shareBound && shareCurrentWinnerStreak >= shareAllocConsecutive) {
         shareBound = true;
         shareTargetTable = winner;
+        shareEpoch++;
+        clearTargetTable(winner);
         clearShareTable();
         tageStats.shareBindCount++;
+        bound_now_to_allocated = (winner == allocatedTable);
     }
 
     std::fill(shareAllocCounters.begin(), shareAllocCounters.end(), 0);
     shareWindowAllocCount = 0;
+    return bound_now_to_allocated;
 }
 
 // Set up tracing for debugging
@@ -367,10 +443,22 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
     unsigned position = getBranchIndexInBlock(btb_entry.pc, startPC);
 
     for (int i = numPredictors - 1; i >= 0; --i) {
-        // Calculate index and tag: use snapshot if provided, otherwise use current folded history
-        // Tag includes position XOR (like RTL: tag = tempTag ^ cfiPosition)
-        Addr index = predMeta ? getTageIndex(startPC, i, predMeta->indexFoldedHist[i].get())
-                          : getTageIndex(startPC, i);
+        const bool expanded = isExpandedShareTarget(i);
+        Addr logicalIndex = 0;
+        if (predMeta) {
+            logicalIndex = expanded ?
+                getExpandedTageIndex(startPC, i, predMeta->indexFoldedHist4k[i].get()) :
+                getTageIndex(startPC, i, predMeta->indexFoldedHist[i].get());
+        } else {
+            logicalIndex = expanded ?
+                getExpandedTageIndex(startPC, i, indexFoldedHist4k[i].get()) :
+                getTageIndex(startPC, i);
+        }
+
+        Addr index = 0;
+        bool matching_from_share = false;
+        mapLogicalIndexToStorage(i, logicalIndex, index, matching_from_share);
+
         Addr tag = predMeta ? getTageTag(startPC, i,
                             predMeta->tagFoldedHist[i].get(), predMeta->altTagFoldedHist[i].get(), position)
                         : getTageTag(startPC, i, position);
@@ -378,43 +466,26 @@ BTBTAGE::generateSinglePrediction(const BTBEntry &btb_entry,
         bool match = false; // for each logical table layer, only one match is kept
         TageEntry matching_entry;
         unsigned matching_way = 0;
-        bool matching_from_share = false;
 
-        // Search all ways for a matching entry
-        const unsigned ways = getNumWays(i);
+        const auto &set = selectTargetSet(i, index, matching_from_share);
+        const unsigned ways = matching_from_share ? shareTableWays : getNumWays(i);
         for (unsigned way = 0; way < ways; way++) {
-            auto &entry = tageTable[i][index][way];
-            // entry valid, tag match (position already encoded in tag, no need to check pc)
+            const auto &entry = set[way];
             if (entry.valid && tag == entry.tag) {
                 matching_entry = entry;
                 matching_way = way;
                 match = true;
-                matching_from_share = false;
-
-                // Do not use LRU; keep logic simple and align with CBP-style replacement
-
-                DPRINTF(TAGE, "hit  table %d[%lu][%u]: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, way, entry.valid, entry.tag, entry.counter, entry.useful, btb_entry.pc, position);
-                break;  // only one way can be matched, aviod multi hit, TODO: RTL how to do this?
+                DPRINTF(TAGE, "hit  table %d[%lu][%u]%s: valid %d, tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
+                    i, index, way, matching_from_share ? " [share]" : "", entry.valid, entry.tag,
+                    entry.counter, entry.useful, btb_entry.pc, position);
+                break;
             }
         }
 
-        if (!match) {
-            unsigned share_way = 0;
-            const TageEntry *share_entry = findShareEntry(i, index, tag, share_way);
-            if (share_entry != nullptr) {
-                matching_entry = *share_entry;
-                matching_way = share_way;
-                match = true;
-                matching_from_share = true;
+        if (matching_from_share) {
+            if (match) {
                 tageStats.shareLookupHit++;
-                DPRINTF(TAGE,
-                    "hit share table for table %d[%lu][%u]: valid %d, "
-                    "tag %lu, ctr %d, useful %d, btb_pc %#lx, pos %u\n",
-                    i, index, share_way, share_entry->valid,
-                    share_entry->tag, share_entry->counter,
-                    share_entry->useful, btb_entry.pc, position);
-            } else if (canUseShareForTable(i)) {
+            } else {
                 tageStats.shareLookupMiss++;
             }
         }
@@ -563,7 +634,12 @@ BTBTAGE::putPCHistory(Addr startPC, const bitset &history, std::vector<FullBTBPr
     meta->tagFoldedHist = tagFoldedHist;
     meta->altTagFoldedHist = altTagFoldedHist;
     meta->indexFoldedHist = indexFoldedHist;
+    meta->indexFoldedHist4k = indexFoldedHist4k;
+    meta->predictEpoch = shareEpoch;
     meta->history = history;
+    if (useV2PHistory) {
+        meta->localV2PHistory = v2PHistory;
+    }
 
     for (int s = getDelay(); s < stagePreds.size(); s++) {
         // TODO: only lookup once for one btb entry in different stages
@@ -626,7 +702,9 @@ bool
 BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
                              bool actual_taken,
                              const TagePrediction &pred,
-                             const FetchTarget &stream) {
+                             const FetchTarget &stream,
+                             bool staleMainProvider,
+                             bool staleAltProvider) {
     tageStats.updateStatsWithTagePrediction(pred, false);
 
     auto &main_info = pred.mainInfo;
@@ -655,7 +733,7 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Update main prediction provider
-    if (main_info.found) {
+    if (main_info.found && !staleMainProvider) {
         DPRINTF(TAGE, "prediction provided by table %d, idx %lu, way %u, updating corresponding entry\n",
             main_info.table, main_info.index, main_info.way);
 
@@ -674,13 +752,17 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
         DPRINTF(TAGE, "useful bit is now %d\n", way.useful);
 
         // No LRU maintenance
+    } else if (staleMainProvider) {
+        tageStats.shareStalePredDropProviderUpdate++;
     }
 
     // Update alternative prediction provider
-    if (used_alt && alt_info.found) {
+    if (used_alt && alt_info.found && !staleAltProvider) {
         auto &way = resolveProviderEntry(alt_info);
         updateCounter(actual_taken, 3, way.counter);
         // No LRU maintenance
+    } else if (used_alt && staleAltProvider) {
+        tageStats.shareStalePredDropProviderUpdate++;
     }
 
     // Update statistics
@@ -767,85 +849,74 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
     unsigned position = getBranchIndexInBlock(entry.pc, startPC);
 
     for (unsigned ti = start_table; ti < numPredictors; ++ti) {
-        Addr newIndex = getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get());
+        bool expanded = isExpandedShareTarget(ti);
+        Addr logicalIndex = expanded ?
+            getExpandedTageIndex(startPC, ti, meta->indexFoldedHist4k[ti].get()) :
+            getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get());
         Addr newTag = getTageTag(startPC, ti,
             meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
 
-        auto &set = tageTable[ti][newIndex];
-
-        const unsigned ways = getNumWays(ti);
-
-        int selected_way = -1;
+        Addr newIndex = 0;
         bool selected_from_share = false;
-        for (unsigned way = 0; way < ways; ++way) {
-            if (!set[way].valid) {
-                selected_way = way;
-                break;
-            }
-        }
-        if (selected_way == -1 && canUseShareForTable(ti)) {
-            for (unsigned way = 0; way < shareTableWays; ++way) {
-                if (!shareTable[newIndex][way].valid) {
-                    selected_way = way;
-                    selected_from_share = true;
-                    break;
+        mapLogicalIndexToStorage(ti, logicalIndex, newIndex, selected_from_share);
+
+        auto select_victim = [&](std::vector<TageEntry> &candidate_set,
+                                 unsigned candidate_ways) -> int {
+            for (unsigned way = 0; way < candidate_ways; ++way) {
+                if (!candidate_set[way].valid) {
+                    return way;
                 }
             }
-        }
-
-        if (selected_way == -1) {
-            for (unsigned way = 0; way < ways; ++way) {
-                auto &cand = set[way];
+            for (unsigned way = 0; way < candidate_ways; ++way) {
+                auto &cand = candidate_set[way];
                 const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
                 if (!cand.useful && weakish) {
-                    selected_way = way;
-                    break;
+                    return way;
                 }
             }
-            if (selected_way == -1 && canUseShareForTable(ti)) {
-                for (unsigned way = 0; way < shareTableWays; ++way) {
-                    auto &cand = shareTable[newIndex][way];
-                    const bool weakish = std::abs(cand.counter * 2 + 1) <= 3;
-                    if (!cand.useful && weakish) {
-                        selected_way = way;
-                        selected_from_share = true;
-                        break;
-                    }
+            for (unsigned way = 0; way < candidate_ways; ++way) {
+                if (!candidate_set[way].useful) {
+                    return way;
                 }
             }
-        }
+            return -1;
+        };
 
-        if (selected_way == -1) {
-            for (unsigned way = 0; way < ways; ++way) {
-                if (!set[way].useful) {
-                    selected_way = way;
-                    break;
-                }
-            }
-            if (selected_way == -1 && canUseShareForTable(ti)) {
-                for (unsigned way = 0; way < shareTableWays; ++way) {
-                    if (!shareTable[newIndex][way].useful) {
-                        selected_way = way;
-                        selected_from_share = true;
-                        break;
-                    }
-                }
-            }
-        }
+        auto *selected_set_ptr = &selectTargetSet(ti, newIndex, selected_from_share);
+        const unsigned ways = selected_from_share ? shareTableWays : getNumWays(ti);
+        int selected_way = select_victim(*selected_set_ptr, ways);
 
         if (selected_way != -1) {
+            const bool rebound_current_table = updateShareBindingOnAlloc(ti);
+            if (rebound_current_table) {
+                expanded = isExpandedShareTarget(ti);
+                logicalIndex = expanded ?
+                    getExpandedTageIndex(startPC, ti, meta->indexFoldedHist4k[ti].get()) :
+                    getTageIndex(startPC, ti, meta->indexFoldedHist[ti].get());
+                newTag = getTageTag(startPC, ti,
+                    meta->tagFoldedHist[ti].get(), meta->altTagFoldedHist[ti].get(), position);
+                mapLogicalIndexToStorage(ti, logicalIndex, newIndex, selected_from_share);
+                selected_set_ptr = &selectTargetSet(ti, newIndex, selected_from_share);
+                selected_way = select_victim(*selected_set_ptr,
+                    selected_from_share ? shareTableWays : getNumWays(ti));
+                assert(selected_way != -1);
+            }
+
             short newCounter = actual_taken ? 0 : -1;
-            auto &selected_set = selected_from_share ? shareTable[newIndex] : set;
+            auto &selected_set = *selected_set_ptr;
             const auto old_entry = selected_set[selected_way];
-            DPRINTF(TAGE, "allocating entry in table %d[%lu][%u]%s, tag %lu (with pos %u), counter %d, pc %#lx\n",
-                    ti, newIndex, selected_way, selected_from_share ? " [share]" : "",
+            DPRINTF(TAGE,
+                    "allocating entry in table %d[%lu][%u]%s, logicalIndex "
+                    "%lu, tag %lu (with pos %u), counter %d, pc %#lx\n",
+                    ti, newIndex, selected_way,
+                    selected_from_share ? " [share]" : "", logicalIndex,
                     newTag, position, newCounter, entry.pc);
             victim_old_valid = old_entry.valid;
             victim_old_pc = old_entry.pc;
             victim_old_tag = old_entry.tag;
             victim_old_counter = old_entry.counter;
             victim_old_useful = old_entry.useful;
-            selected_set[selected_way] = TageEntry(newTag, newCounter, entry.pc); // u = 0 default
+            selected_set[selected_way] = TageEntry(newTag, newCounter, entry.pc);
             tageStats.updateAllocSuccess++;
             if (selected_from_share) {
                 tageStats.shareAllocSuccess++;
@@ -856,12 +927,11 @@ BTBTAGE::handleNewEntryAllocation(const Addr &startPC,
             allocated_tag = newTag;
             allocated_to_share = selected_from_share;
             usefulResetCnt = usefulResetCnt <= 0 ? 0 : usefulResetCnt - 1;
-            updateShareBindingOnAlloc(ti);
             return true;
         }
 
         tageStats.updateAllocFailure++;
-        if (canUseShareForTable(ti)) {
+        if (selected_from_share) {
             tageStats.shareAllocFailure++;
         }
         usefulResetCnt++;
@@ -965,6 +1035,7 @@ BTBTAGE::update(const FetchTarget &stream) {
         const bool is_new_entry = !stream.updateIsOldEntry &&btb_entry.pc == stream.updateNewBTBEntry.pc;
         auto orig_it = predMeta->preds.find(btb_entry.pc);
         const bool has_original_pred = orig_it != predMeta->preds.end();
+        const bool stale_pred = predMeta->predictEpoch != shareEpoch;
         TagePrediction original_pred;
         if (has_original_pred) {
             original_pred = orig_it->second;
@@ -1012,8 +1083,15 @@ BTBTAGE::update(const FetchTarget &stream) {
             hasRecomputedVsActualDiff = true;
         }
 
+        const bool stale_main_provider = stale_pred && recomputed.mainInfo.found &&
+            shareBound && recomputed.mainInfo.table == (unsigned)shareTargetTable;
+        const bool stale_alt_provider = stale_pred && recomputed.altInfo.found &&
+            shareBound && recomputed.altInfo.table == (unsigned)shareTargetTable;
+
         // Update predictor state and check if need to allocate new entry
-        bool need_allocate = updatePredictorStateAndCheckAllocation(btb_entry, actual_taken, recomputed, stream);
+        bool need_allocate = updatePredictorStateAndCheckAllocation(
+            btb_entry, actual_taken, recomputed, stream,
+            stale_main_provider, stale_alt_provider);
 
         // Handle new entry allocation if needed
         bool alloc_success = false;
@@ -1033,7 +1111,11 @@ BTBTAGE::update(const FetchTarget &stream) {
             uint start_table = 0;
             auto &main_info = recomputed.mainInfo;
             if (main_info.found) {
-                start_table = main_info.table + 1; // start from the table after the main prediction table
+                if (stale_main_provider) {
+                    start_table = main_info.table;
+                } else {
+                    start_table = main_info.table + 1;
+                }
             }
             alloc_success = handleNewEntryAllocation(startAddr, btb_entry, actual_taken,
                                    start_table, predMeta, allocated_table, allocated_index, allocated_way,
@@ -1068,7 +1150,10 @@ BTBTAGE::update(const FetchTarget &stream) {
                 shareBound, shareTargetTable < 0 ? 0 : (uint64_t)shareTargetTable,
                 victim_old_valid, victim_old_pc, victim_old_tag,
                 victim_old_counter, victim_old_useful,
-                history_str, predMeta->indexFoldedHist[main_info.table].get());
+                history_str,
+                (main_info.found && isExpandedShareTarget(main_info.table)) ?
+                    predMeta->indexFoldedHist4k[main_info.table].get() :
+                    predMeta->indexFoldedHist[main_info.table].get());
             tageMissTrace->write_record(t);
         }
 #endif
@@ -1132,11 +1217,22 @@ BTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 Addr
 BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist, Addr position)
 {
+    const unsigned indexBits =
+        isExpandedShareTarget(t) ? getExpandedIndexBits() : tableIndexBits[t];
+    return getTageTagWithIndexBits(pc, t, foldedHist, altFoldedHist,
+                                   position, indexBits);
+}
+
+Addr
+BTBTAGE::getTageTagWithIndexBits(Addr pc, int t, uint64_t foldedHist,
+                                 uint64_t altFoldedHist, Addr position,
+                                 unsigned indexBits) const
+{
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
 
     unsigned pcShift = enableBankConflict ? indexShift : bankBaseShift;
-    pcShift += tableIndexBits[t] - 1;   // since tableIndexBits = log(2048) = 11, RTL is 10
+    pcShift += indexBits - 1;
     Addr pcBits = (pc >> pcShift) & mask;
 
     // Extract and prepare folded history bits
@@ -1234,7 +1330,8 @@ BTBTAGE::getBankId(Addr pc) const
  * @param taken Whether the branch was taken
  */
 void
-BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc, Addr target)
+BTBTAGE::updateFoldedHistoriesFromHistory(const boost::dynamic_bitset<> &history,
+                                          bool taken, Addr pc, Addr target)
 {
     if (debug::TAGEHistory) {   // if debug flag is off, do not use to_string since it's too slow
         std::string buf;
@@ -1253,7 +1350,74 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr p
             foldedHist.update(history, 2, taken, pc, target);
             DPRINTF(TAGEHistory, "t: %d, type: %d, foldedHist _folded 0x%lx\n", t, type, foldedHist.get());
         }
+        indexFoldedHist4k[t].update(history, 2, taken, pc, target);
     }
+}
+
+uint16_t
+BTBTAGE::getV2Footprint(Addr branchPC, Addr targetPC) const
+{
+    auto b = [branchPC](unsigned bit) -> uint16_t {
+        return (branchPC >> bit) & 1;
+    };
+    auto t = [targetPC](unsigned bit) -> uint16_t {
+        return (targetPC >> bit) & 1;
+    };
+
+    uint16_t footprint = 0;
+    footprint |= ((b(2)  ^ t(7))  << 0);
+    footprint |= ((b(3)  ^ t(8))  << 1);
+    footprint |= ((b(4)  ^ t(9))  << 2);
+    footprint |= ((b(5)  ^ t(10)) << 3);
+    footprint |= ((b(6)  ^ b(12) ^ t(11)) << 4);
+    footprint |= ((b(7)  ^ b(13) ^ t(2))  << 5);
+    footprint |= ((b(8)  ^ b(14) ^ t(3))  << 6);
+    footprint |= ((b(9)  ^ b(15) ^ t(4))  << 7);
+    footprint |= ((b(10) ^ b(16) ^ t(5))  << 8);
+    footprint |= ((b(11) ^ b(17) ^ t(6))  << 9);
+    return footprint;
+}
+
+void
+BTBTAGE::doUpdateHistLegacy(const boost::dynamic_bitset<> &history, bool taken,
+                            Addr pc, Addr target)
+{
+    updateFoldedHistoriesFromHistory(history, taken, pc, target);
+}
+
+void
+BTBTAGE::doUpdateHistV2(bool taken, Addr pc, Addr target)
+{
+    if (debug::TAGEHistory) {
+        std::string buf;
+        boost::to_string(v2PHistory, buf);
+        DPRINTF(TAGEHistory,
+                "in doUpdateHistV2, taken %d, pc %#lx, target %#lx, history %s\n",
+                taken, pc, target, buf.c_str());
+    }
+    if (!taken) {
+        DPRINTF(TAGEHistory, "not updating folded history, since FB not taken\n");
+        return;
+    }
+
+    const uint16_t footprint = getV2Footprint(pc, target);
+    v2PHistory <<= 2;
+    for (std::size_t i = 0; i < 10 && i < v2PHistory.size(); ++i) {
+        const bool old_bit = v2PHistory[i];
+        const bool fp_bit = (footprint >> i) & 1;
+        v2PHistory[i] = old_bit ^ fp_bit;
+    }
+    updateFoldedHistoriesFromHistory(v2PHistory, taken, pc, target);
+}
+
+void
+BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken, Addr pc, Addr target)
+{
+    if (useV2PHistory) {
+        doUpdateHistV2(taken, pc, target);
+        return;
+    }
+    doUpdateHistLegacy(history, taken, pc, target);
 }
 
 /**
@@ -1273,6 +1437,9 @@ BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredicti
 {
     auto [pc, target, taken] = pred.getPHistInfo();
     doUpdateHist(history, taken, pc, target);
+    if (meta && useV2PHistory) {
+        meta->localV2PHistory = v2PHistory;
+    }
 }
 
 /**
@@ -1297,6 +1464,10 @@ BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
         altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
+        indexFoldedHist4k[i].recover(predMeta->indexFoldedHist4k[i]);
+    }
+    if (useV2PHistory) {
+        v2PHistory = predMeta->localV2PHistory;
     }
     doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
 }
@@ -1317,6 +1488,7 @@ BTBTAGE::checkFoldedHist(const boost::dynamic_bitset<> &hist, const char * when)
             auto &foldedHist = type == 0 ? indexFoldedHist[t] : type == 1 ? tagFoldedHist[t] : altTagFoldedHist[t];
             foldedHist.check(hist);
         }
+        indexFoldedHist4k[t].check(hist);
     }
 }
 
@@ -1357,6 +1529,8 @@ BTBTAGE::TageStats::TageStats(statistics::Group* parent, int numPredictors, int 
         "share table final-source predictions that are correct"),
     ADD_STAT(shareFinalSourceWrong, statistics::units::Count::get(),
         "share table final-source predictions that are wrong"),
+    ADD_STAT(shareStalePredDropProviderUpdate, statistics::units::Count::get(),
+        "provider writebacks dropped because prediction epoch is stale for expanded share target"),
     ADD_STAT(recomputedVsActualDiff, statistics::units::Count::get(),
         "fetchBlocks where recomputed.taken != actual_taken"),
     ADD_STAT(recomputedVsOriginalDiff, statistics::units::Count::get(),
@@ -1420,9 +1594,6 @@ BTBTAGE::TageStats::updateStatsWithTagePrediction(const TagePrediction &pred, bo
             predFinalSourceTable[pred.finalProviderTable]++;
         } else {
             predFinalSourceBase++;
-        }
-        if (pred.finalProviderFromShare) {
-            shareLookupHit++;
         }
 #endif
     } else {
