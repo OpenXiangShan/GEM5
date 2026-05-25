@@ -39,8 +39,36 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from m5.objects.BaseISA import BaseISA
+from m5.params import *
 
 class RiscvISA(BaseISA):
     type = 'RiscvISA'
     cxx_class = 'gem5::RiscvISA::ISA'
     cxx_header = "arch/riscv/isa.hh"
+
+    matrix_issue_interval_cycles = Param.Unsigned(
+        1, "Analytic CUTE matrix issue interval in CPU cycles")
+    matrix_load_base_cycles = Param.Unsigned(
+        4, "Analytic CUTE matrix load base latency in CPU cycles")
+    matrix_store_base_cycles = Param.Unsigned(
+        4, "Analytic CUTE matrix store base latency in CPU cycles")
+    matrix_zero_cycles = Param.Unsigned(
+        1, "Analytic CUTE matrix zero latency in CPU cycles")
+    matrix_compute_base_cycles = Param.Unsigned(
+        2, "Fixed abstract CUTE matrix compute ready latency in CPU cycles")
+    matrix_compute_read_cycles = Param.Unsigned(
+        1, "Fixed abstract CUTE matrix compute source read latency in CPU cycles")
+    matrix_release_cycles = Param.Unsigned(
+        1, "Analytic CUTE matrix release latency in CPU cycles")
+    matrix_local_mmu_issue_per_cycle = Param.Unsigned(
+        1, "Analytic CUTE LocalMMU request issue throughput per CPU cycle")
+    matrix_local_mmu_arb_cycles = Param.Unsigned(
+        1, "Analytic CUTE LocalMMU arbitration latency in CPU cycles")
+    matrix_l2_request_pipeline_cycles = Param.Unsigned(
+        1, "Analytic CUTE-to-L2 request pipeline latency in CPU cycles")
+    matrix_l2_response_pipeline_cycles = Param.Unsigned(
+        1, "Analytic CUTE L2 response port service interval in CPU cycles")
+    matrix_local_mmu_read_latency_cycles = Param.Unsigned(
+        20, "Analytic CUTE LocalMMU read response latency in CPU cycles")
+    matrix_local_mmu_write_ack_latency_cycles = Param.Unsigned(
+        12, "Analytic CUTE LocalMMU write acknowledgement latency in CPU cycles")

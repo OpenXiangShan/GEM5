@@ -30,13 +30,14 @@
 
 #include "arch/riscv/isa.hh"
 
+#include <array>
 #include <ctime>
+#include <memory>
 #include <set>
 #include <sstream>
 
 #include "arch/riscv/interrupts.hh"
 #include "arch/riscv/mmu.hh"
-#include "arch/riscv/pagetable.hh"
 #include "arch/riscv/pmp.hh"
 #include "arch/riscv/regs/float.hh"
 #include "arch/riscv/regs/int.hh"
@@ -49,6 +50,7 @@
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "cpu/base.hh"
+#include "cpu/thread_context.hh"
 #include "debug/Checkpoint.hh"
 #include "debug/FloatRegs.hh"
 #include "debug/IntRegs.hh"
@@ -56,10 +58,8 @@
 #include "debug/MiscRegs.hh"
 #include "debug/RiscvMisc.hh"
 #include "debug/VecRegs.hh"
-#include "mem/packet.hh"
+#include "matrix/matrix_controller.hh"
 #include "mem/request.hh"
-#include "mem/se_translating_port_proxy.hh"
-#include "mem/translating_port_proxy.hh"
 #include "params/RiscvISA.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
@@ -70,47 +70,6 @@ namespace gem5
 
 namespace RiscvISA
 {
-
-namespace
-{
-
-Fault
-matrixReadBlob(ThreadContext *tc, Addr addr, void *dst, size_t size)
-{
-    bool ok = false;
-    if (FullSystem) {
-        TranslatingPortProxy proxy(tc);
-        ok = proxy.tryReadBlob(addr, dst, size);
-    } else {
-        SETranslatingPortProxy proxy(tc);
-        ok = proxy.tryReadBlob(addr, dst, size);
-    }
-
-    if (!ok) {
-        return std::make_shared<GenericPageTableFault>(addr);
-    }
-    return NoFault;
-}
-
-Fault
-matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
-{
-    bool ok = false;
-    if (FullSystem) {
-        TranslatingPortProxy proxy(tc);
-        ok = proxy.tryWriteBlob(addr, src, size);
-    } else {
-        SETranslatingPortProxy proxy(tc);
-        ok = proxy.tryWriteBlob(addr, src, size);
-    }
-
-    if (!ok) {
-        return std::make_shared<GenericPageTableFault>(addr);
-    }
-    return NoFault;
-}
-
-} // namespace
 
 [[maybe_unused]] const std::array<const char *, NUM_MISCREGS> MiscRegNames = {{
     [MISCREG_PRV]           = "PRV",
@@ -314,8 +273,30 @@ matrixWriteBlob(ThreadContext *tc, Addr addr, const void *src, size_t size)
 
 
 
-ISA::ISA(const Params &p) : BaseISA(p)
+ISA::ISA(const Params &p) : BaseISA(p),
+    matrixController(std::make_unique<matrix::MatrixController>(this))
 {
+    matrix::MatrixController::TimingConfig matrix_timing;
+    matrix_timing.issueIntervalCycles = p.matrix_issue_interval_cycles;
+    matrix_timing.loadBaseCycles = p.matrix_load_base_cycles;
+    matrix_timing.storeBaseCycles = p.matrix_store_base_cycles;
+    matrix_timing.zeroCycles = p.matrix_zero_cycles;
+    matrix_timing.computeBaseCycles = p.matrix_compute_base_cycles;
+    matrix_timing.computeReadCycles = p.matrix_compute_read_cycles;
+    matrix_timing.releaseCycles = p.matrix_release_cycles;
+    matrix_timing.localMmuIssuePerCycle =
+        p.matrix_local_mmu_issue_per_cycle;
+    matrix_timing.localMmuArbCycles = p.matrix_local_mmu_arb_cycles;
+    matrix_timing.l2RequestPipelineCycles =
+        p.matrix_l2_request_pipeline_cycles;
+    matrix_timing.l2ResponsePipelineCycles =
+        p.matrix_l2_response_pipeline_cycles;
+    matrix_timing.localMmuReadLatencyCycles =
+        p.matrix_local_mmu_read_latency_cycles;
+    matrix_timing.localMmuWriteAckLatencyCycles =
+        p.matrix_local_mmu_write_ack_latency_cycles;
+    matrixController->setTimingConfig(matrix_timing);
+
     _regClasses.emplace_back(IntRegClass, int_reg::NumRegs, debug::IntRegs, sizeof(RegVal));
     _regClasses.emplace_back(FloatRegClass, float_reg::NumRegs, debug::FloatRegs, sizeof(RegVal));
 
@@ -332,6 +313,8 @@ ISA::ISA(const Params &p) : BaseISA(p)
     resetMatrixState();
     clear();
 }
+
+ISA::~ISA() = default;
 
 bool ISA::inUserMode() const
 {
@@ -394,131 +377,101 @@ void ISA::clear()
 void
 ISA::resetMatrixState()
 {
-    matrixTileM = 0;
-    matrixTileK = 0;
-    matrixTileN = 0;
-    matrixTileA.assign(MatrixTileABytes, 0);
-    matrixTileB.assign(MatrixTileBBytes, 0);
-    matrixAcc.assign(MatrixAccElems, 0);
-    matrixTokens.assign(32, 0);
+    matrixController->reset();
 }
 
 void
 ISA::matrixSyncReset(uint64_t token_idx)
 {
-    matrixToken(token_idx) = 0;
+    matrixController->syncReset(token_idx);
 }
 
 void
-ISA::matrixRelease(uint64_t token_idx)
+ISA::matrixRelease(ExecContext *xc, uint64_t token_idx)
 {
-    ++matrixToken(token_idx);
+    matrixController->release(xc, token_idx);
 }
 
 void
-ISA::matrixAcquire(uint64_t token_idx, uint64_t target)
+ISA::matrixAcquire(ExecContext *xc, uint64_t token_idx, uint64_t target)
 {
-    panic_if(matrixToken(token_idx) < target,
-        "macquire tok%u target=%llu observed=%llu",
-        token_idx, target, matrixToken(token_idx));
+    if (matrixController->tokenTargetReached(token_idx, target)) {
+        return;
+    }
+
+    matrixController->acquire(xc, token_idx, target);
 }
 
 void
 ISA::setMatrixTileM(uint64_t value)
 {
-    matrixTileM = clampMatrixTileM(value);
+    matrixController->setTileM(value);
 }
 
 void
 ISA::setMatrixTileK(uint64_t value)
 {
-    matrixTileK = clampMatrixTileK(value);
+    matrixController->setTileK(value);
 }
 
 void
 ISA::setMatrixTileN(uint64_t value)
 {
-    matrixTileN = clampMatrixTileN(value);
+    matrixController->setTileN(value);
+}
+
+uint32_t
+ISA::getMatrixTileM() const
+{
+    return matrixController->getTileM();
+}
+
+uint32_t
+ISA::getMatrixTileK() const
+{
+    return matrixController->getTileK();
+}
+
+uint32_t
+ISA::getMatrixTileN() const
+{
+    return matrixController->getTileN();
 }
 
 Fault
 ISA::matrixLoadA8(ExecContext *xc, Addr base, Addr stride)
 {
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixTileA[row * MatrixMaxK]);
-        Fault fault = matrixReadBlob(tc, base + row * stride, dst, matrixTileK);
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
+    return matrixController->loadA8(xc, base, stride);
 }
 
 Fault
 ISA::matrixLoadB8(ExecContext *xc, Addr base, Addr stride)
 {
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileN; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixTileB[row * MatrixMaxK]);
-        Fault fault = matrixReadBlob(tc, base + row * stride, dst, matrixTileK);
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
+    return matrixController->loadB8(xc, base, stride);
 }
 
 Fault
 ISA::matrixLoadC32(ExecContext *xc, Addr base, Addr stride)
 {
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *dst = reinterpret_cast<uint8_t *>(&matrixAcc[row * MatrixMaxN]);
-        Fault fault = matrixReadBlob(
-            tc, base + row * stride, dst, matrixTileN * sizeof(int32_t));
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
+    return matrixController->loadC32(xc, base, stride);
 }
 
 Fault
 ISA::matrixStoreC32(ExecContext *xc, Addr base, Addr stride)
 {
-    ThreadContext *tc = xc->tcBase();
-    for (uint32_t row = 0; row < matrixTileM; ++row) {
-        auto *src = reinterpret_cast<uint8_t *>(&matrixAcc[row * MatrixMaxN]);
-        Fault fault = matrixWriteBlob(
-            tc, base + row * stride, src, matrixTileN * sizeof(int32_t));
-        if (fault != NoFault) {
-            return fault;
-        }
-    }
-    return NoFault;
+    return matrixController->storeC32(xc, base, stride);
 }
 
 void
-ISA::matrixZeroAcc()
+ISA::matrixZeroAcc(ExecContext *xc)
 {
-    std::fill(matrixAcc.begin(), matrixAcc.end(), 0);
+    matrixController->zeroAcc(xc);
 }
 
 void
-ISA::matrixMMAccWB()
+ISA::matrixMMAccWB(ExecContext *xc)
 {
-    for (uint32_t m = 0; m < matrixTileM; ++m) {
-        for (uint32_t n = 0; n < matrixTileN; ++n) {
-            int32_t acc = matrixAcc[m * MatrixMaxN + n];
-            for (uint32_t k = 0; k < matrixTileK; ++k) {
-                int8_t a = matrixTileA[m * MatrixMaxK + k];
-                int8_t b = matrixTileB[n * MatrixMaxK + k];
-                acc += static_cast<int32_t>(a) * static_cast<int32_t>(b);
-            }
-            matrixAcc[m * MatrixMaxN + n] = acc;
-        }
-    }
+    matrixController->mmaccWB(xc);
 }
 
 bool
@@ -999,13 +952,7 @@ ISA::serialize(CheckpointOut &cp) const
 {
     DPRINTF(Checkpoint, "Serializing Riscv Misc Registers\n");
     SERIALIZE_CONTAINER(miscRegFile);
-    SERIALIZE_SCALAR(matrixTileM);
-    SERIALIZE_SCALAR(matrixTileK);
-    SERIALIZE_SCALAR(matrixTileN);
-    SERIALIZE_CONTAINER(matrixTileA);
-    SERIALIZE_CONTAINER(matrixTileB);
-    SERIALIZE_CONTAINER(matrixAcc);
-    SERIALIZE_CONTAINER(matrixTokens);
+    matrixController->serialize(cp);
 }
 
 void
@@ -1013,29 +960,7 @@ ISA::unserialize(CheckpointIn &cp)
 {
     DPRINTF(Checkpoint, "Unserializing Riscv Misc Registers\n");
     UNSERIALIZE_CONTAINER(miscRegFile);
-    UNSERIALIZE_SCALAR(matrixTileM);
-    UNSERIALIZE_SCALAR(matrixTileK);
-    UNSERIALIZE_SCALAR(matrixTileN);
-    UNSERIALIZE_CONTAINER(matrixTileA);
-    UNSERIALIZE_CONTAINER(matrixTileB);
-    UNSERIALIZE_CONTAINER(matrixAcc);
-    UNSERIALIZE_CONTAINER(matrixTokens);
-}
-
-RegVal &
-ISA::matrixToken(size_t idx)
-{
-    panic_if(idx >= matrixTokens.size(), "matrix token index %u out of range",
-        idx);
-    return matrixTokens[idx];
-}
-
-const RegVal &
-ISA::matrixToken(size_t idx) const
-{
-    panic_if(idx >= matrixTokens.size(), "matrix token index %u out of range",
-        idx);
-    return matrixTokens[idx];
+    matrixController->unserialize(cp);
 }
 
 const int WARN_FAILURE = 10000;

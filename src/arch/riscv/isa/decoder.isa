@@ -2438,15 +2438,15 @@ decode QUADRANT {
                 0x0: MatrixConfOp::mrelease({{
                     auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
                     assert(isa != nullptr);
-                    isa->matrixRelease(RS2);
-                }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                    isa->matrixRelease(xc, RS2);
+                }}, IsNonSpeculative, IsSerializeAfter, IntAluOp);
             }
             0x50: decode RD {
                 0x0: MatrixConfOp::macquire({{
                     auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
                     assert(isa != nullptr);
-                    isa->matrixAcquire(RS2, Rs1_ud);
-                }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                    isa->matrixAcquire(xc, RS2, Rs1_ud);
+                }}, IsNonSpeculative, IsSerializeAfter, IsQuiesce, IntAluOp);
             }
             0x11: decode RS2 {
                 0x0: decode FUNCT3 {
@@ -2455,7 +2455,7 @@ decode QUADRANT {
                             auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
                             assert(isa != nullptr);
                             isa->setMatrixTileM(Rs1_ud);
-                        }}, No_OpClass);
+                        }}, IntAluOp);
                     }
                 }
             }
@@ -2466,7 +2466,7 @@ decode QUADRANT {
                             auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
                             assert(isa != nullptr);
                             isa->setMatrixTileK(Rs1_ud);
-                        }}, No_OpClass);
+                        }}, IntAluOp);
                     }
                 }
             }
@@ -2477,7 +2477,7 @@ decode QUADRANT {
                             auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
                             assert(isa != nullptr);
                             isa->setMatrixTileN(Rs1_ud);
-                        }}, No_OpClass);
+                        }}, IntAluOp);
                     }
                 }
             }
@@ -2488,8 +2488,8 @@ decode QUADRANT {
                             0x4: MatrixConfOp::mzero1r({{
                                 auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
                                 assert(isa != nullptr);
-                                isa->matrixZeroAcc();
-                            }}, No_OpClass);
+                                isa->matrixZeroAcc(xc);
+                            }}, IntAluOp);
                         }
                     }
                 }
@@ -2500,7 +2500,7 @@ decode QUADRANT {
                         auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
                         assert(isa != nullptr);
                         return isa->matrixLoadA8(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
+                    }}, MemReadOp);
                 }
             }
             0x0a: decode FUNCT3 {
@@ -2509,7 +2509,7 @@ decode QUADRANT {
                         auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
                         assert(isa != nullptr);
                         return isa->matrixLoadB8(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
+                    }}, MemReadOp);
                 }
             }
             0x12: decode FUNCT3 {
@@ -2518,7 +2518,7 @@ decode QUADRANT {
                         auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
                         assert(isa != nullptr);
                         return isa->matrixLoadC32(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
+                    }}, MemReadOp);
                 }
             }
             0x13: decode FUNCT3 {
@@ -2527,7 +2527,7 @@ decode QUADRANT {
                         auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
                         assert(isa != nullptr);
                         return isa->matrixStoreC32(xc, Rs1_ud, Rs2_ud);
-                    }}, No_OpClass);
+                    }}, MemWriteOp);
                 }
             }
             0x0c: decode FUNCT3 {
@@ -2537,8 +2537,8 @@ decode QUADRANT {
                             0x14: MatrixArithOp::mmacc_w_b({{
                                 auto *isa = dynamic_cast<RiscvISA::ISA *>(xc->tcBase()->getIsaPtr());
                                 assert(isa != nullptr);
-                                isa->matrixMMAccWB();
-                            }}, No_OpClass);
+                                isa->matrixMMAccWB(xc);
+                            }}, IntMultOp);
                         }
                     }
                 }

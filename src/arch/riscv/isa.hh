@@ -35,20 +35,23 @@
 #define __ARCH_RISCV_ISA_HH__
 
 #include <cstdint>
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "arch/generic/isa.hh"
-#include "arch/riscv/insts/matrix.hh"
 #include "arch/riscv/pcstate.hh"
 #include "arch/riscv/types.hh"
 #include "base/types.hh"
 #include "cpu/exec_context.hh"
+#include "matrix/matrix_controller.hh"
 
 namespace gem5
 {
 
 struct RiscvISAParams;
 class Checkpoint;
+class ThreadContext;
 
 namespace RiscvISA
 {
@@ -81,19 +84,7 @@ class ISA : public BaseISA
 {
   protected:
     std::vector<RegVal> miscRegFile;
-    uint32_t matrixTileM = 0;
-    uint32_t matrixTileK = 0;
-    uint32_t matrixTileN = 0;
-    std::vector<int8_t> matrixTileA;
-    std::vector<int8_t> matrixTileB;
-    std::vector<int32_t> matrixAcc;
-    std::vector<RegVal> matrixTokens;
-
-    RegVal &
-    matrixToken(size_t idx);
-
-    const RegVal &
-    matrixToken(size_t idx) const;
+    std::unique_ptr<matrix::MatrixController> matrixController;
 
   public:
     using Params = RiscvISAParams;
@@ -129,23 +120,24 @@ class ISA : public BaseISA
     void unserialize(CheckpointIn &cp) override;
 
     ISA(const Params &p);
+    ~ISA() override;
 
     void resetMatrixState();
     void matrixSyncReset(uint64_t token_idx);
-    void matrixRelease(uint64_t token_idx);
-    void matrixAcquire(uint64_t token_idx, uint64_t target);
+    void matrixRelease(ExecContext *xc, uint64_t token_idx);
+    void matrixAcquire(ExecContext *xc, uint64_t token_idx, uint64_t target);
     void setMatrixTileM(uint64_t value);
     void setMatrixTileK(uint64_t value);
     void setMatrixTileN(uint64_t value);
-    uint32_t getMatrixTileM() const { return matrixTileM; }
-    uint32_t getMatrixTileK() const { return matrixTileK; }
-    uint32_t getMatrixTileN() const { return matrixTileN; }
+    uint32_t getMatrixTileM() const;
+    uint32_t getMatrixTileK() const;
+    uint32_t getMatrixTileN() const;
     Fault matrixLoadA8(ExecContext *xc, Addr base, Addr stride);
     Fault matrixLoadB8(ExecContext *xc, Addr base, Addr stride);
     Fault matrixLoadC32(ExecContext *xc, Addr base, Addr stride);
     Fault matrixStoreC32(ExecContext *xc, Addr base, Addr stride);
-    void matrixZeroAcc();
-    void matrixMMAccWB();
+    void matrixZeroAcc(ExecContext *xc);
+    void matrixMMAccWB(ExecContext *xc);
 
     void handleLockedRead(const RequestPtr &req) override;
 
