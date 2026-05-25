@@ -1020,11 +1020,7 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
     const int initial_offset = initial_tgt->pkt->getOffset(blkSize);
 
     MSHR::TargetList targets = mshr->copyServiceableTargets(pkt);
-    // ResponseQueue is a forceOrder Queue, so if first tgt is delayed,
-    // all tgt will be delayed to the same time as the first tgt,
-    // for more details, see PacketQueue::schedSendTiming
-    bool firstTgt = true;
-    bool firstTgtDelayed = false;
+    std::vector<std::pair<Packet *, Tick>> scheduled_hints;
     for (auto &target: targets) {
         Packet *tgt_pkt = target.pkt;
         if (target.source == MSHR::Target::FromCPU) {
@@ -1034,10 +1030,19 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
             if (transfer_offset < 0) {
                 transfer_offset += blkSize;
             }
-            if (firstTgt) {
-                firstTgtDelayed = transfer_offset != 0 && pkt->payloadDelay != 0;
+
+            Tick sendHintTime = curTick() +
+                (transfer_offset ? pkt->payloadDelay : 0);
+
+            // Match the response queue's force-order behavior: a later target
+            // with the same packet address must not overtake an earlier one.
+            for (const auto& scheduled_hint : scheduled_hints) {
+                if (scheduled_hint.first->matchAddr(tgt_pkt) &&
+                    scheduled_hint.second > sendHintTime) {
+                    sendHintTime = scheduled_hint.second;
+                }
             }
-            Tick sendHintTime = curTick() + ((transfer_offset || firstTgtDelayed) ? pkt->payloadDelay : 0);
+
             DPRINTF(Cache, "sendHintViaMSHRTargets: pkt: %#lx, sendHintTime: %ld", tgt_pkt->getAddr(), sendHintTime);
             if (sendHintTime == curTick()) {
                 BaseCache::cpuSidePort.sendCustomSignal(tgt_pkt, DcacheRespType::Hint);
@@ -1046,7 +1051,7 @@ Cache::sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt)
                 SendCustomEvent* hintEvent = new SendCustomEvent(this, tgt_pkt, DcacheRespType::Hint, false);
                 schedule(hintEvent, sendHintTime);
             }
-            firstTgt = false;
+            scheduled_hints.emplace_back(tgt_pkt, sendHintTime);
         }
     }
 }
