@@ -47,7 +47,6 @@
 #include "arch/riscv/insts/mem.hh"
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/pcstate.hh"
-#include "arch/riscv/regs/misc.hh"
 #include "base/intmath.hh"
 #include "cpu/o3/trace/TraceInstruction.hh"
 #include "debug/DynInst.hh"
@@ -61,150 +60,6 @@ namespace gem5
 
 namespace o3
 {
-
-namespace
-{
-
-constexpr uint8_t MatrixOpcode7 = 0x2b;
-constexpr uint8_t SystemOpcode7 = 0x73;
-
-using MatrixCommitBoundary = DynInst::MatrixCommitBoundary;
-using MatrixExecPayload = ExecContext::MatrixExecPayload;
-using MatrixInstClass = DynInst::MatrixInstClass;
-using MatrixRouteKind = DynInst::MatrixRouteKind;
-using MatrixStateOperand = DynInst::MatrixStateOperand;
-
-const char *
-matrixInstClassNameStr(MatrixInstClass inst_class)
-{
-    switch (inst_class) {
-      case MatrixInstClass::Init:
-        return "init";
-      case MatrixInstClass::Set:
-        return "set";
-      case MatrixInstClass::Csr:
-        return "csr";
-      case MatrixInstClass::Lsu:
-        return "lsu";
-      case MatrixInstClass::Mma:
-        return "mma";
-      case MatrixInstClass::Arith:
-        return "arith";
-      case MatrixInstClass::Sync:
-        return "sync";
-      case MatrixInstClass::None:
-        return "unknown";
-    }
-
-    return "unknown";
-}
-
-const char *
-matrixRouteNameStr(MatrixRouteKind route)
-{
-    switch (route) {
-      case MatrixRouteKind::Init:
-        return "init";
-      case MatrixRouteKind::SetTile:
-        return "settile";
-      case MatrixRouteKind::TileCsr:
-        return "tile-csr";
-      case MatrixRouteKind::Lsu:
-        return "lsu";
-      case MatrixRouteKind::Mma:
-        return "mma";
-      case MatrixRouteKind::Arith:
-        return "arith";
-      case MatrixRouteKind::Release:
-        return "release";
-      case MatrixRouteKind::SyncReset:
-        return "sync-reset";
-      case MatrixRouteKind::Acquire:
-        return "acquire";
-      case MatrixRouteKind::None:
-        return "unknown";
-    }
-
-    return "unknown";
-}
-
-const char *
-matrixCommitBoundaryNameStr(MatrixCommitBoundary boundary)
-{
-    switch (boundary) {
-      case MatrixCommitBoundary::ArchStateOnly:
-        return "arch-only";
-      case MatrixCommitBoundary::TokenSyncOnly:
-        return "token-sync";
-      case MatrixCommitBoundary::FutureAmuProducer:
-        return "future-amu";
-      case MatrixCommitBoundary::None:
-        return "none";
-    }
-
-    return "none";
-}
-
-const char *
-matrixPayloadKindNameStr(MatrixExecPayload::Kind kind)
-{
-    switch (kind) {
-      case MatrixExecPayload::Kind::Lsu:
-        return "lsu";
-      case MatrixExecPayload::Kind::Mma:
-        return "mma";
-      case MatrixExecPayload::Kind::Arith:
-        return "arith";
-      case MatrixExecPayload::Kind::Release:
-        return "release";
-      case MatrixExecPayload::Kind::None:
-        return "none";
-    }
-
-    return "none";
-}
-
-bool
-isMatrixTileCsr(uint16_t csr_idx)
-{
-    return csr_idx == RiscvISA::CSR_MTILEM ||
-           csr_idx == RiscvISA::CSR_MTILEN ||
-           csr_idx == RiscvISA::CSR_MTILEK;
-}
-
-MatrixStateOperand
-tileCsrToMatrixStateOperand(uint16_t csr_idx)
-{
-    switch (csr_idx) {
-      case RiscvISA::CSR_MTILEM:
-        return MatrixStateOperand::Mtilem;
-      case RiscvISA::CSR_MTILEN:
-        return MatrixStateOperand::Mtilen;
-      case RiscvISA::CSR_MTILEK:
-        return MatrixStateOperand::Mtilek;
-      default:
-        return MatrixStateOperand::None;
-    }
-}
-
-bool
-csrWritesMatrixState(uint8_t funct3, uint8_t rs1)
-{
-    switch (funct3) {
-      case 0x1:
-      case 0x5:
-        return true;
-      case 0x2:
-      case 0x3:
-      case 0x6:
-      case 0x7:
-        return rs1 != 0;
-      default:
-        return false;
-    }
-}
-
-} // namespace
 
 DynInst::DynInst(const Arrays &arrays, const StaticInstPtr &static_inst,
         const StaticInstPtr &_macroop, InstSeqNum seq_num, CPU *_cpu)
@@ -532,24 +387,12 @@ DynInst::initMatrixInstInfo()
         return;
     }
 
-    const auto &mach_inst = riscv_inst->machInst;
-    const bool is_matrix_opcode = mach_inst.opcode7 == MatrixOpcode7;
-    const bool is_csr =
-        mach_inst.opcode7 == SystemOpcode7 && mach_inst.funct3 != 0;
-    const auto csr_idx = static_cast<uint16_t>(mach_inst.funct12);
-    const bool is_matrix_csr = is_csr && isMatrixTileCsr(csr_idx);
-    if (!is_matrix_opcode && !is_matrix_csr) {
+    const auto &static_info = riscv_inst->matrixStaticInfo();
+    if (!static_info.valid) {
         return;
     }
 
-    matrixInst.valid = true;
-    matrixInst.opcode7 = mach_inst.opcode7;
-    matrixInst.funct7 = mach_inst.funct7;
-    matrixInst.funct3 = mach_inst.funct3;
-    matrixInst.rd = mach_inst.rd;
-    matrixInst.rs1 = mach_inst.rs1;
-    matrixInst.rs2 = mach_inst.rs2;
-    matrixInst.csrIndex = is_matrix_csr ? csr_idx : 0;
+    static_cast<RiscvISA::MatrixStaticInfo &>(matrixInst) = static_info;
     matrixInst.staticNumSrcs = staticInst->numSrcRegs();
     matrixInst.staticNumDests = staticInst->numDestRegs();
 
@@ -568,233 +411,30 @@ DynInst::initMatrixInstInfo()
         matrixInst.staticDestClasses[i] = reg.classValue();
         matrixInst.staticDestIndices[i] = reg.index();
     }
-
-    if (is_matrix_csr) {
-        matrixInst.instClass = MatrixInstClass::Csr;
-        matrixInst.commitBoundary = MatrixCommitBoundary::ArchStateOnly;
-        const bool writes_matrix_state =
-            csrWritesMatrixState(mach_inst.funct3, mach_inst.rs1);
-
-        const auto csr_operand = tileCsrToMatrixStateOperand(csr_idx);
-        matrixInst.stateReads[0] = csr_operand;
-        if (writes_matrix_state) {
-            matrixInst.stateWrites[0] = csr_operand;
-        }
-
-        matrixInst.route = MatrixRouteKind::TileCsr;
-
-        return;
-    }
-
-    auto setMatrixRoute = [&](MatrixInstClass inst_class,
-                              MatrixRouteKind route,
-                              MatrixCommitBoundary boundary) {
-        matrixInst.instClass = inst_class;
-        matrixInst.route = route;
-        matrixInst.commitBoundary = boundary;
-    };
-
-    auto setStateReads =
-        [&](std::initializer_list<MatrixStateOperand> operands) {
-            size_t idx = 0;
-            for (auto operand : operands) {
-                if (idx >= matrixInst.stateReads.size()) {
-                    break;
-                }
-                matrixInst.stateReads[idx++] = operand;
-            }
-        };
-
-    switch (mach_inst.funct7) {
-      case 0x00:
-        setMatrixRoute(
-            MatrixInstClass::Init,
-            MatrixRouteKind::Init,
-            MatrixCommitBoundary::ArchStateOnly);
-        break;
-      case 0x08:
-      case 0x09:
-        setMatrixRoute(
-            MatrixInstClass::Set,
-            MatrixRouteKind::SetTile,
-            MatrixCommitBoundary::ArchStateOnly);
-        matrixInst.stateWrites[0] = MatrixStateOperand::Mtilek;
-        break;
-      case 0x10:
-      case 0x11:
-        setMatrixRoute(
-            MatrixInstClass::Set,
-            MatrixRouteKind::SetTile,
-            MatrixCommitBoundary::ArchStateOnly);
-        matrixInst.stateWrites[0] = MatrixStateOperand::Mtilem;
-        break;
-      case 0x18:
-      case 0x19:
-        setMatrixRoute(
-            MatrixInstClass::Set,
-            MatrixRouteKind::SetTile,
-            MatrixCommitBoundary::ArchStateOnly);
-        matrixInst.stateWrites[0] = MatrixStateOperand::Mtilen;
-        break;
-      case 0x02:
-        setMatrixRoute(
-            MatrixInstClass::Lsu,
-            MatrixRouteKind::Lsu,
-            MatrixCommitBoundary::FutureAmuProducer);
-        matrixInst.loadLike = true;
-        matrixInst.usesLsq = true;
-        matrixInst.needAmuCtrlCandidate = true;
-        setStateReads({
-            MatrixStateOperand::Mtilem,
-            MatrixStateOperand::Mtilek
-        });
-        break;
-      case 0x0a:
-        setMatrixRoute(
-            MatrixInstClass::Lsu,
-            MatrixRouteKind::Lsu,
-            MatrixCommitBoundary::FutureAmuProducer);
-        matrixInst.loadLike = true;
-        matrixInst.usesLsq = true;
-        matrixInst.needAmuCtrlCandidate = true;
-        setStateReads({
-            MatrixStateOperand::Mtilek,
-            MatrixStateOperand::Mtilen
-        });
-        break;
-      case 0x12:
-        setMatrixRoute(
-            MatrixInstClass::Lsu,
-            MatrixRouteKind::Lsu,
-            MatrixCommitBoundary::FutureAmuProducer);
-        matrixInst.loadLike = true;
-        matrixInst.usesLsq = true;
-        matrixInst.needAmuCtrlCandidate = true;
-        setStateReads({
-            MatrixStateOperand::Mtilem,
-            MatrixStateOperand::Mtilek
-        });
-        break;
-      case 0x1a:
-        setMatrixRoute(
-            MatrixInstClass::Lsu,
-            MatrixRouteKind::Lsu,
-            MatrixCommitBoundary::FutureAmuProducer);
-        matrixInst.loadLike = true;
-        matrixInst.usesLsq = true;
-        matrixInst.needAmuCtrlCandidate = true;
-        setStateReads({
-            MatrixStateOperand::Mtilek,
-            MatrixStateOperand::Mtilen
-        });
-        break;
-      case 0x22:
-        setMatrixRoute(
-            MatrixInstClass::Lsu,
-            MatrixRouteKind::Lsu,
-            MatrixCommitBoundary::FutureAmuProducer);
-        matrixInst.loadLike = true;
-        matrixInst.usesLsq = true;
-        matrixInst.needAmuCtrlCandidate = true;
-        setStateReads({
-            MatrixStateOperand::Mtilem,
-            MatrixStateOperand::Mtilen
-        });
-        break;
-      case 0x13:
-        setMatrixRoute(
-            MatrixInstClass::Lsu,
-            MatrixRouteKind::Lsu,
-            MatrixCommitBoundary::FutureAmuProducer);
-        matrixInst.storeLike = true;
-        matrixInst.usesLsq = true;
-        matrixInst.needAmuCtrlCandidate = true;
-        setStateReads({
-            MatrixStateOperand::Mtilem,
-            MatrixStateOperand::Mtilen
-        });
-        break;
-      case 0x04:
-      case 0x0c:
-        setMatrixRoute(
-            MatrixInstClass::Mma,
-            MatrixRouteKind::Mma,
-            MatrixCommitBoundary::FutureAmuProducer);
-        matrixInst.needAmuCtrlCandidate = true;
-        setStateReads({
-            MatrixStateOperand::Mtilem,
-            MatrixStateOperand::Mtilen,
-            MatrixStateOperand::Mtilek
-        });
-        break;
-      case 0x06:
-        setMatrixRoute(
-            MatrixInstClass::Arith,
-            MatrixRouteKind::Arith,
-            MatrixCommitBoundary::FutureAmuProducer);
-        matrixInst.needAmuCtrlCandidate = true;
-        setStateReads({
-            MatrixStateOperand::Mtilem,
-            MatrixStateOperand::Mtilen
-        });
-        break;
-      case 0x40:
-        setMatrixRoute(
-            MatrixInstClass::Sync,
-            MatrixRouteKind::SyncReset,
-            MatrixCommitBoundary::TokenSyncOnly);
-        matrixInst.tokenLike = true;
-        matrixInst.tokenIndex = mach_inst.rs2;
-        break;
-      case 0x48:
-        setMatrixRoute(
-            MatrixInstClass::Sync,
-            MatrixRouteKind::Release,
-            MatrixCommitBoundary::FutureAmuProducer);
-        matrixInst.tokenLike = true;
-        matrixInst.needAmuCtrlCandidate = true;
-        matrixInst.tokenIndex = mach_inst.rs2;
-        break;
-      case 0x50:
-        setMatrixRoute(
-            MatrixInstClass::Sync,
-            MatrixRouteKind::Acquire,
-            MatrixCommitBoundary::TokenSyncOnly);
-        matrixInst.tokenLike = true;
-        matrixInst.tokenIndex = mach_inst.rs2;
-        break;
-      default:
-        matrixInst.valid = false;
-        matrixInst.instClass = MatrixInstClass::None;
-        matrixInst.route = MatrixRouteKind::None;
-        matrixInst.commitBoundary = MatrixCommitBoundary::None;
-        break;
-    }
-
 }
 
 const char *
 DynInst::matrixInstClassName() const
 {
-    return matrixInstClassNameStr(matrixInst.instClass);
+    return RiscvISA::matrixInstClassName(matrixInst.instClass);
 }
 
 const char *
 DynInst::matrixRouteName() const
 {
-    return matrixRouteNameStr(matrixInst.route);
+    return RiscvISA::matrixRouteName(matrixInst.route);
 }
 
 const char *
 DynInst::matrixCommitBoundaryName() const
 {
-    return matrixCommitBoundaryNameStr(matrixInst.commitBoundary);
+    return RiscvISA::matrixCommitBoundaryName(matrixInst.commitBoundary);
 }
 
 const char *
 DynInst::matrixPayloadKindName() const
 {
-    return matrixPayloadKindNameStr(matrixExecPayload.kind);
+    return matrixExecPayload.kindName();
 }
 
 void

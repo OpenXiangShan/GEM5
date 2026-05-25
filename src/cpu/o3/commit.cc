@@ -78,7 +78,7 @@
 #include "debug/InstCommited.hh"
 #include "debug/MatrixCuteTrace.hh"
 #include "debug/O3PipeView.hh"
-#include "matrix/matrix_types.hh"
+#include "matrix/CUTEParameters.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"

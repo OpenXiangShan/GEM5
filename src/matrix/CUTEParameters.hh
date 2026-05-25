@@ -26,8 +26,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __MATRIX_MATRIX_TYPES_HH__
-#define __MATRIX_MATRIX_TYPES_HH__
+#ifndef __MATRIX_CUTE_PARAMETERS_HH__
+#define __MATRIX_CUTE_PARAMETERS_HH__
 
 #include <cstddef>
 #include <cstdint>
@@ -308,4 +308,4 @@ elemBytes(MatrixElemType elem_type)
 } // namespace matrix
 } // namespace gem5
 
-#endif // __MATRIX_MATRIX_TYPES_HH__
+#endif // __MATRIX_CUTE_PARAMETERS_HH__

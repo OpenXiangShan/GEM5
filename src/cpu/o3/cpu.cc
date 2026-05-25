@@ -74,8 +74,8 @@
 
 #if THE_ISA_IS_RISCV
 #include "arch/riscv/regs/misc.hh"
-#include "matrix/detailed_cute_backend.hh"
-#include "matrix/matrix_memory_adapter.hh"
+#include "matrix/CUTETOP.hh"
+#include "matrix/MemoryAdapter.hh"
 
 #endif
 

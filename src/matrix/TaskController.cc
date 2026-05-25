@@ -28,7 +28,7 @@
 
 #include "base/trace.hh"
 #include "debug/MatrixCuteTrace.hh"
-#include "matrix/detailed_cute_backend.hh"
+#include "matrix/CUTETOP.hh"
 
 namespace gem5
 {

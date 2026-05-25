@@ -49,7 +49,7 @@
 #include "cpu/reg_class.hh"
 #include "cpu/static_inst_fwd.hh"
 #include "cpu/translation.hh"
-#include "matrix/matrix_types.hh"
+#include "matrix/CUTEParameters.hh"
 #include "mem/request.hh"
 
 namespace gem5
@@ -84,6 +84,31 @@ class ExecContext
             Arith,
             Release
         };
+
+        static const char *
+        kindName(Kind kind)
+        {
+            switch (kind) {
+              case Kind::Lsu:
+                return "lsu";
+              case Kind::Mma:
+                return "mma";
+              case Kind::Arith:
+                return "arith";
+              case Kind::Release:
+                return "release";
+              case Kind::None:
+                return "none";
+            }
+
+            return "none";
+        }
+
+        const char *
+        kindName() const
+        {
+            return kindName(kind);
+        }
 
         Kind kind = Kind::None;
         bool valid = false;

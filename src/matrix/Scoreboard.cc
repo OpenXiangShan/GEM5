@@ -26,7 +26,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "matrix/detailed_cute_scoreboard.hh"
+#include "matrix/Scoreboard.hh"
 
 namespace gem5
 {

@@ -41,7 +41,7 @@
 #include "arch/riscv/pcstate.hh"
 #include "arch/riscv/types.hh"
 #include "base/types.hh"
-#include "matrix/matrix_types.hh"
+#include "matrix/CUTEParameters.hh"
 
 namespace gem5
 {

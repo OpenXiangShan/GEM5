@@ -26,8 +26,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __MATRIX_DETAILED_CUTE_BACKEND_HH__
-#define __MATRIX_DETAILED_CUTE_BACKEND_HH__
+#ifndef __MATRIX_CUTE_TOP_HH__
+#define __MATRIX_CUTE_TOP_HH__
 
 #include <deque>
 #include <memory>
@@ -35,10 +35,10 @@
 #include <string>
 #include <vector>
 
+#include "matrix/MemoryAdapter.hh"
+#include "matrix/Scoreboard.hh"
 #include "matrix/decoded_fifo.hh"
-#include "matrix/detailed_cute_scoreboard.hh"
 #include "matrix/matrix_backend.hh"
-#include "matrix/matrix_memory_adapter.hh"
 #include "matrix/matrix_regfile.hh"
 
 namespace gem5
@@ -337,4 +337,4 @@ class DetailedCuteBackend : public MatrixBackend
 } // namespace matrix
 } // namespace gem5
 
-#endif // __MATRIX_DETAILED_CUTE_BACKEND_HH__
+#endif // __MATRIX_CUTE_TOP_HH__

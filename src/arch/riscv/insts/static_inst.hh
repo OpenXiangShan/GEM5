@@ -32,6 +32,7 @@
 
 #include <string>
 
+#include "arch/riscv/insts/matrix_static_info.hh"
 #include "arch/riscv/pcstate.hh"
 #include "arch/riscv/regs/matrix.hh"
 #include "arch/riscv/regs/misc.hh"
@@ -54,11 +55,24 @@ class RiscvStaticInst : public StaticInst
   protected:
     RiscvStaticInst(const char *_mnemonic, ExtMachInst _machInst,
             OpClass __opClass) :
-        StaticInst(_mnemonic, __opClass), machInst(_machInst)
+        StaticInst(_mnemonic, __opClass), machInst(_machInst),
+        matrixStaticInfo_(matrixStaticInfoFromMachInst(_machInst))
     {}
+
+    void
+    setMatrixStaticInfo(const MatrixStaticInfo &info)
+    {
+        matrixStaticInfo_ = info;
+    }
 
   public:
     ExtMachInst machInst;
+
+    const MatrixStaticInfo &
+    matrixStaticInfo() const
+    {
+        return matrixStaticInfo_;
+    }
 
     void
     advancePC(PCStateBase &pc) const override
@@ -93,6 +107,9 @@ class RiscvStaticInst : public StaticInst
     virtual int64_t getImm() const override {
         return 0;
     }
+
+  private:
+    MatrixStaticInfo matrixStaticInfo_;
 };
 
 /**

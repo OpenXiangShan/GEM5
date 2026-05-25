@@ -31,7 +31,7 @@
 #include <optional>
 #include <utility>
 
-#include "matrix/detailed_cute_backend.hh"
+#include "matrix/CUTETOP.hh"
 
 namespace gem5
 {

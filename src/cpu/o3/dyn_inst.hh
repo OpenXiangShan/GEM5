@@ -50,6 +50,7 @@
 #include <optional>
 #include <string>
 
+#include "arch/riscv/insts/matrix_static_info.hh"
 #include "base/refcnt.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
@@ -108,73 +109,19 @@ class DynInst : public ExecContext, public RefCounted
         uint8_t *readySrcIdx;
     };
 
-    enum class MatrixInstClass : uint8_t
-    {
-        None,
-        Init,
-        Set,
-        Csr,
-        Lsu,
-        Mma,
-        Arith,
-        Sync
-    };
-
-    enum class MatrixRouteKind : uint8_t
-    {
-        None,
-        Init,
-        SetTile,
-        TileCsr,
-        Lsu,
-        Mma,
-        Arith,
-        Release,
-        SyncReset,
-        Acquire
-    };
-
-    enum class MatrixCommitBoundary : uint8_t
-    {
-        None,
-        ArchStateOnly,
-        TokenSyncOnly,
-        FutureAmuProducer
-    };
-
-    enum class MatrixStateOperand : uint8_t
-    {
-        None,
-        Mtilem,
-        Mtilen,
-        Mtilek,
-    };
+    using MatrixInstClass = RiscvISA::MatrixInstClass;
+    using MatrixRouteKind = RiscvISA::MatrixRouteKind;
+    using MatrixCommitBoundary = RiscvISA::MatrixCommitBoundary;
+    using MatrixStateOperand = RiscvISA::MatrixStateOperand;
+    using MatrixElemKind = RiscvISA::MatrixElemKind;
 
     static constexpr size_t MaxMatrixSummarySrcs = 6;
     static constexpr size_t MaxMatrixSummaryDests = 2;
-    static constexpr size_t MaxMatrixStateOperands = 6;
 
-    struct MatrixInstInfo
+    struct MatrixInstInfo : public RiscvISA::MatrixStaticInfo
     {
-        bool valid = false;
-        MatrixInstClass instClass = MatrixInstClass::None;
-        MatrixRouteKind route = MatrixRouteKind::None;
-        MatrixCommitBoundary commitBoundary = MatrixCommitBoundary::None;
-        uint16_t csrIndex = 0;
-        uint8_t opcode7 = 0;
-        uint8_t funct7 = 0;
-        uint8_t funct3 = 0;
-        uint8_t rd = 0;
-        uint8_t rs1 = 0;
-        uint8_t rs2 = 0;
         uint8_t staticNumSrcs = 0;
         uint8_t staticNumDests = 0;
-        uint8_t tokenIndex = 0;
-        bool loadLike = false;
-        bool storeLike = false;
-        bool tokenLike = false;
-        bool usesLsq = false;
-        bool needAmuCtrlCandidate = false;
         bool renameSeen = false;
         bool robInserted = false;
         bool squashed = false;
@@ -183,21 +130,13 @@ class DynInst : public ExecContext, public RefCounted
         uint16_t squashAttempt = 0;
         std::array<RegClassType, MaxMatrixSummarySrcs> staticSrcClasses = {
             InvalidRegClass, InvalidRegClass, InvalidRegClass,
-            InvalidRegClass, InvalidRegClass
+            InvalidRegClass, InvalidRegClass, InvalidRegClass
         };
         std::array<uint16_t, MaxMatrixSummarySrcs> staticSrcIndices = {};
         std::array<RegClassType, MaxMatrixSummaryDests> staticDestClasses = {
             InvalidRegClass, InvalidRegClass
         };
         std::array<uint16_t, MaxMatrixSummaryDests> staticDestIndices = {};
-        std::array<MatrixStateOperand, MaxMatrixStateOperands> stateReads = {
-            MatrixStateOperand::None, MatrixStateOperand::None,
-            MatrixStateOperand::None, MatrixStateOperand::None,
-            MatrixStateOperand::None, MatrixStateOperand::None
-        };
-        std::array<MatrixStateOperand, MaxMatrixSummaryDests> stateWrites = {
-            MatrixStateOperand::None, MatrixStateOperand::None
-        };
     };
 
     static void *operator new(size_t count, Arrays &arrays);
@@ -929,13 +868,7 @@ class DynInst : public ExecContext, public RefCounted
     }
     bool matrixDirtyMs() const
     {
-        return matrixInst.valid &&
-               (matrixInst.route == MatrixRouteKind::Init ||
-                matrixInst.route == MatrixRouteKind::SetTile ||
-                matrixInst.route == MatrixRouteKind::Mma ||
-                matrixInst.route == MatrixRouteKind::Arith ||
-                (matrixInst.route == MatrixRouteKind::Lsu &&
-                 matrixInst.loadLike));
+        return matrixInst.valid && matrixInst.dirtyMs;
     }
     const ExecContext::MatrixExecPayload &
     matrixPayload() const
