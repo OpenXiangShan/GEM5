@@ -229,6 +229,90 @@ TEST(PairTAGETest, RepeatedFirstIdentityMismatchRewritesProvider)
     EXPECT_FALSE(entry.useful);
 }
 
+TEST(PairTAGETest, TwoWayLookupChoosesBestSameTableProvider)
+{
+    PairTAGE pairtage(2, 2, 512);
+    const Addr start_pc = 0x2000;
+    PairTAGE::PairBlockInfo stale_block(true, 0x2008, 0x3000);
+    PairTAGE::PairBlockInfo better_block(true, 0x2010, 0x4000);
+    PairTAGE::PairBlockInfo second_block(true, 0x4004, 0x5000);
+    PairTAGE::PairBlockInfo lower_block(true, 0x2008, 0x3000);
+
+    pairtage.installEntryForTest(1, 0, start_pc, stale_block,
+                                 PairTAGE::PairBlockInfo{}, 0);
+    pairtage.installEntryForTest(1, 1, start_pc, better_block,
+                                 second_block, 3);
+    pairtage.installEntryForTest(0, 0, start_pc, lower_block,
+                                 PairTAGE::PairBlockInfo{}, 1);
+
+    auto providers = pairtage.lookupProvidersForTest(start_pc);
+
+    ASSERT_TRUE(providers.main.found);
+    EXPECT_EQ(providers.main.table, 1u);
+    EXPECT_EQ(providers.main.way, 1u);
+    EXPECT_EQ(providers.main.entry.firstBlock().branchPC,
+              better_block.branchPC);
+    EXPECT_TRUE(providers.main.entry.hasSecondBlock());
+
+    ASSERT_TRUE(providers.alt.found);
+    EXPECT_EQ(providers.alt.table, 0u);
+    EXPECT_EQ(providers.alt.way, 0u);
+}
+
+TEST(PairTAGETest, TwoWayAllocationReplacesStaleSameTagEntry)
+{
+    PairTAGE pairtage(2, 2, 512);
+    const Addr start_pc = 0x2000;
+    PairTAGE::PairBlockInfo stale_block(true, 0x2008, 0x3000);
+    PairTAGE::PairBlockInfo trained_block(true, 0x2008, 0x4000);
+    PairTAGE::PairBlockInfo second_block(true, 0x4004, 0x5000);
+
+    pairtage.installEntryForTest(1, 0, start_pc, stale_block,
+                                 PairTAGE::PairBlockInfo{}, 0);
+
+    ASSERT_TRUE(pairtage.allocateEntriesForTest(start_pc, trained_block,
+                                                second_block, 1));
+
+    const auto &way0 = pairtage.tableEntryForTest(1, 0, start_pc);
+    const auto &way1 = pairtage.tableEntryForTest(1, 1, start_pc);
+    EXPECT_TRUE(pairtage.blocksMatchForTest(way0.firstBlock(),
+                                            trained_block));
+    EXPECT_TRUE(pairtage.blocksMatchForTest(way0.secondBlock(),
+                                            second_block));
+    EXPECT_FALSE(way1.valid);
+
+    auto providers = pairtage.lookupProvidersForTest(start_pc);
+    ASSERT_TRUE(providers.main.found);
+    EXPECT_EQ(providers.main.table, 1u);
+    EXPECT_EQ(providers.main.way, 0u);
+    EXPECT_EQ(providers.main.entry.firstBlock().branchPC,
+              trained_block.branchPC);
+}
+
+TEST(PairTAGETest, TwoWayAllocationDoesNotReplaceDifferentIdentityBeforeInvalidWay)
+{
+    PairTAGE pairtage(2, 2, 512);
+    const Addr start_pc = 0x2000;
+    PairTAGE::PairBlockInfo other_identity(true, 0x2008, 0x3000);
+    PairTAGE::PairBlockInfo trained_block(true, 0x2010, 0x4000);
+    PairTAGE::PairBlockInfo second_block(true, 0x4004, 0x5000);
+
+    pairtage.installEntryForTest(1, 0, start_pc, other_identity,
+                                 PairTAGE::PairBlockInfo{}, 3);
+
+    ASSERT_TRUE(pairtage.allocateEntriesForTest(start_pc, trained_block,
+                                                second_block, 1));
+
+    const auto &way0 = pairtage.tableEntryForTest(1, 0, start_pc);
+    const auto &way1 = pairtage.tableEntryForTest(1, 1, start_pc);
+    EXPECT_TRUE(pairtage.blocksMatchForTest(way0.firstBlock(),
+                                            other_identity));
+    EXPECT_TRUE(pairtage.blocksMatchForTest(way1.firstBlock(),
+                                            trained_block));
+    EXPECT_TRUE(pairtage.blocksMatchForTest(way1.secondBlock(),
+                                            second_block));
+}
+
 }  // namespace test
 
 }  // namespace btb_pred

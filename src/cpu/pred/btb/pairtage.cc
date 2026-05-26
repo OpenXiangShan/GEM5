@@ -537,6 +537,80 @@ PairTAGE::satDecrement(int min, short &counter)
     return false;
 }
 
+bool
+PairTAGE::betterProviderCandidate(const TageTableInfo &candidate,
+                                  const TageTableInfo &current) const
+{
+    if (!candidate.found) {
+        return false;
+    }
+    if (!current.found) {
+        return true;
+    }
+
+    const auto &cand = candidate.entry;
+    const auto &cur = current.entry;
+    if (cand.identityConfidence != cur.identityConfidence) {
+        return cand.identityConfidence > cur.identityConfidence;
+    }
+    if (cand.useful != cur.useful) {
+        return cand.useful;
+    }
+    if (cand.hasSecondBlock() != cur.hasSecondBlock()) {
+        return cand.hasSecondBlock();
+    }
+    const int candStrength = std::abs(cand.counter * 2 + 1);
+    const int curStrength = std::abs(cur.counter * 2 + 1);
+    if (candStrength != curStrength) {
+        return candStrength > curStrength;
+    }
+    return candidate.way < current.way;
+}
+
+int
+PairTAGE::selectMatchingReplacementWay(
+    const std::vector<TageEntry> &set, Addr tag,
+    const PairBlockInfo &trainedBlock,
+    const PairBlockInfo &trainedSecondBlock) const
+{
+    auto selectVictim = [&](auto predicate) {
+        int selectedWay = -1;
+        TageTableInfo selectedInfo;
+        for (unsigned way = 0; way < set.size(); ++way) {
+            const auto &entry = set[way];
+            if (!entry.valid || entry.tag != tag ||
+                !blockIdentityMatches(entry.firstBlock(), trainedBlock) ||
+                entryMatchesTraining(entry, trainedBlock,
+                                     trainedSecondBlock) ||
+                !predicate(entry)) {
+                continue;
+            }
+
+            auto info = TageTableInfo{true, entry, 0, 0, tag, way};
+            if (!betterProviderCandidate(selectedInfo, info)) {
+                selectedInfo = info;
+                selectedWay = way;
+            }
+        }
+        return selectedWay;
+    };
+
+    const int firstBlockVictim = selectVictim([&](const TageEntry &entry) {
+        return !blocksMatch(entry.firstBlock(), trainedBlock);
+    });
+    if (firstBlockVictim >= 0) {
+        return firstBlockVictim;
+    }
+
+    if (trainedSecondBlock.valid) {
+        return selectVictim([&](const TageEntry &entry) {
+            return !blocksMatch(entry.secondBlock(), trainedSecondBlock);
+        });
+    }
+
+    return -1;
+}
+
 int
 PairTAGE::selectAllocationWay(const std::vector<TageEntry> &set) const
 {
@@ -596,8 +670,16 @@ PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
     for (unsigned table = startTable; table < numPredictors; ++table) {
         const Addr index =
             getTageIndex(startPC, table, predMeta.indexFoldedHist[table].get());
+        const Addr tag = getTageTag(
+            startPC, table, predMeta.tagFoldedHist[table].get(),
+            predMeta.altTagFoldedHist[table].get(),
+            getBranchIndexInBlock(trainedBlock.branchPC, startPC));
         const auto &set = tageTable[table][index];
-        const int selectedWay = selectAllocationWay(set);
+        int selectedWay = selectMatchingReplacementWay(
+            set, tag, trainedBlock, trainedSecondBlock);
+        if (selectedWay < 0) {
+            selectedWay = selectAllocationWay(set);
+        }
         if (selectedWay >= 0) {
             candidateTables.push_back(table);
             candidateWays.push_back(static_cast<unsigned>(selectedWay));
@@ -721,6 +803,7 @@ PairTAGE::lookupProviders(Addr startPC, const TageMeta &predMeta) const
     for (int table = numPredictors - 1; table >= 0; --table) {
         const Addr index = getTageIndex(startPC, table, predMeta.indexFoldedHist[table].get());
         auto &set = tageTable[table][index];
+        TageTableInfo bestInTable;
 
         for (unsigned way = 0; way < numWays; ++way) {
             const auto &entry = set[way];
@@ -744,15 +827,20 @@ PairTAGE::lookupProviders(Addr startPC, const TageMeta &predMeta) const
             if (entry.tag == tag) {
                 auto info = TageTableInfo{
                     true, entry, static_cast<unsigned>(table), index, tag, way};
-                if (!providers.main.found) {
-                    providers.main = info;
-                } else if (!providers.alt.found) {
-                    providers.alt = info;
-                    break;
+                if (betterProviderCandidate(info, bestInTable)) {
+                    bestInTable = info;
                 }
             }
         }
 
+        if (!bestInTable.found) {
+            continue;
+        }
+        if (!providers.main.found) {
+            providers.main = bestInTable;
+            continue;
+        }
+        providers.alt = bestInTable;
         if (providers.alt.found) {
             break;
         }
