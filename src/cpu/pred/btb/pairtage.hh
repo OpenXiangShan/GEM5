@@ -252,6 +252,24 @@ class PairTAGE : public TimedBaseBTBPredictor
         return blocksMatch(lhs, rhs);
     }
 
+    ProviderInfo lookupProvidersForTest(Addr startPC) const
+    {
+        return lookupProviders(startPC);
+    }
+
+    bool allocateEntriesForTest(Addr startPC,
+                                const PairBlockInfo &trainedBlock,
+                                const PairBlockInfo &trainedSecondBlock,
+                                unsigned startTable)
+    {
+        TageMeta predMeta;
+        predMeta.tagFoldedHist = tagFoldedHist;
+        predMeta.altTagFoldedHist = altTagFoldedHist;
+        predMeta.indexFoldedHist = indexFoldedHist;
+        return allocateEntries(startPC, predMeta, trainedBlock,
+                               trainedSecondBlock, startTable);
+    }
+
     void installEntryForTest(unsigned table, unsigned way, Addr startPC,
                              const PairBlockInfo &firstBlock,
                              const PairBlockInfo &secondBlock = PairBlockInfo(),
@@ -368,6 +386,12 @@ class PairTAGE : public TimedBaseBTBPredictor
     void updateCounter(bool taken, unsigned width, short &counter);
     bool satIncrement(int max, short &counter);
     bool satDecrement(int min, short &counter);
+    bool betterProviderCandidate(const TageTableInfo &candidate,
+                                 const TageTableInfo &current) const;
+    int selectMatchingReplacementWay(
+        const std::vector<TageEntry> &set, Addr tag,
+        const PairBlockInfo &trainedBlock,
+        const PairBlockInfo &trainedSecondBlock) const;
     int selectAllocationWay(const std::vector<TageEntry> &set) const;
     void resetUsefulBits();
     bool allocateEntries(Addr startPC, const TageMeta &predMeta,
