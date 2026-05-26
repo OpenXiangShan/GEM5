@@ -103,7 +103,7 @@ BaseCache::SendTimingRespEvent::description() const
 }
 
 BaseCache::SendCustomEvent::SendCustomEvent(BaseCache* cache, PacketPtr pkt, int sig, bool deletePkt)
-    : Event(Minimum_Pri, AutoDelete),
+    : Event(Stat_Event_Pri, AutoDelete),
       cache(cache),
       pkt(pkt),
       sig(sig),
