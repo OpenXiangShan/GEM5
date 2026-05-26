@@ -133,11 +133,23 @@ class ISA : public BaseISA
     uint32_t getMatrixTileK() const;
     uint32_t getMatrixTileN() const;
     Fault matrixLoadA8(ExecContext *xc, Addr base, Addr stride);
+    Fault matrixLoadA8(
+        ExecContext *xc, Addr base, Addr stride, uint64_t reg_idx);
     Fault matrixLoadB8(ExecContext *xc, Addr base, Addr stride);
+    Fault matrixLoadB8(
+        ExecContext *xc, Addr base, Addr stride, uint64_t reg_idx);
     Fault matrixLoadC32(ExecContext *xc, Addr base, Addr stride);
+    Fault matrixLoadC32(
+        ExecContext *xc, Addr base, Addr stride, uint64_t acc_idx);
     Fault matrixStoreC32(ExecContext *xc, Addr base, Addr stride);
+    Fault matrixStoreC32(
+        ExecContext *xc, Addr base, Addr stride, uint64_t acc_idx);
     void matrixZeroAcc(ExecContext *xc);
+    void matrixZeroAcc(ExecContext *xc, uint64_t acc_idx);
     void matrixMMAccWB(ExecContext *xc);
+    void matrixMMAccWB(
+        ExecContext *xc, uint64_t src_a_idx, uint64_t src_b_idx,
+        uint64_t dst_acc_idx);
 
     void handleLockedRead(const RequestPtr &req) override;
 

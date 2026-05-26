@@ -71,6 +71,29 @@ namespace gem5
 namespace RiscvISA
 {
 
+namespace
+{
+
+constexpr RegVal MatrixCapabilityBits = 1;
+constexpr int MatrixMxrmOffset = 0;
+constexpr int MatrixMsatOffset = 2;
+constexpr int MatrixMfflagsOffset = 3;
+constexpr int MatrixMfrmOffset = 8;
+constexpr int MatrixMsatenOffset = 11;
+
+RegVal
+composeMatrixCSR(RegVal mxrm, RegVal msat, RegVal mfflags, RegVal mfrm,
+    RegVal msaten)
+{
+    return ((mxrm & MCSR_MXRM_MASK) << MatrixMxrmOffset) |
+           ((msat & MCSR_MSAT_MASK) << MatrixMsatOffset) |
+           ((mfflags & MCSR_MFFLAGS_MASK) << MatrixMfflagsOffset) |
+           ((mfrm & MCSR_MFRM_MASK) << MatrixMfrmOffset) |
+           ((msaten & MCSR_MSATEN_MASK) << MatrixMsatenOffset);
+}
+
+} // anonymous namespace
+
 [[maybe_unused]] const std::array<const char *, NUM_MISCREGS> MiscRegNames = {{
     [MISCREG_PRV]           = "PRV",
     [MISCREG_VIRMODE]         = "VIRTUALIZATIONMODE",
@@ -269,6 +292,28 @@ namespace RiscvISA
     [MISCREG_NMIVEC]        = "NMIVEC",
     [MISCREG_NMIE]          = "NMIE",
     [MISCREG_NMIP]          = "NMIP",
+
+    [MISCREG_MCSR]          = "MCSR",
+    [MISCREG_MXRM]          = "MXRM",
+    [MISCREG_MSAT]          = "MSAT",
+    [MISCREG_MFFLAGS]       = "MFFLAGS",
+    [MISCREG_MFRM]          = "MFRM",
+    [MISCREG_MSATEN]        = "MSATEN",
+    [MISCREG_MTYPE]         = "MTYPE",
+    [MISCREG_MTILEM]        = "MTILEM",
+    [MISCREG_MTILEN]        = "MTILEN",
+    [MISCREG_MTILEK]        = "MTILEK",
+    [MISCREG_MLENB]         = "MLENB",
+    [MISCREG_MRLENB]        = "MRLENB",
+    [MISCREG_MAMUL]         = "MAMUL",
+    [MISCREG_XMISA]         = "XMISA",
+    [MISCREG_XTLENB]        = "XTLENB",
+    [MISCREG_XTRLENB]       = "XTRLENB",
+    [MISCREG_XALENB]        = "XALENB",
+    [MISCREG_MTOK]          = "MTOK",
+    [MISCREG_XMTILEM]       = "XMTILEM",
+    [MISCREG_XMTILEN]       = "XMTILEN",
+    [MISCREG_XMTILEK]       = "XMTILEK",
 }};
 
 
@@ -372,6 +417,33 @@ void ISA::clear()
     miscRegFile[MISCREG_VSSTATUS] = miscRegFile[MISCREG_STATUS] & NEMU_SSTATUS_RMASK;
     miscRegFile[MISCREG_ARCHID] = 0x19;
     miscRegFile[MISCREG_VENDORID] = (16ULL << 7) | 0x6FULL;
+
+    miscRegFile[MISCREG_MCSR] = 0;
+    miscRegFile[MISCREG_MXRM] = 0;
+    miscRegFile[MISCREG_MSAT] = 0;
+    miscRegFile[MISCREG_MFFLAGS] = 0;
+    miscRegFile[MISCREG_MFRM] = 0;
+    miscRegFile[MISCREG_MSATEN] = 0;
+    miscRegFile[MISCREG_MTYPE] = 0;
+    miscRegFile[MISCREG_MTILEM] = 0;
+    miscRegFile[MISCREG_MTILEN] = 0;
+    miscRegFile[MISCREG_MTILEK] = 0;
+    miscRegFile[MISCREG_MLENB] = matrix::MatrixController::MatrixABRegBytes;
+    miscRegFile[MISCREG_MRLENB] = matrix::MatrixController::ReduceWidthBytes;
+    miscRegFile[MISCREG_MAMUL] =
+        matrix::MatrixController::MatrixAccElems *
+        matrix::MatrixController::ResultWidthBytes;
+    miscRegFile[MISCREG_XMISA] = MatrixCapabilityBits;
+    miscRegFile[MISCREG_XTLENB] = matrix::MatrixController::MatrixABRegBytes;
+    miscRegFile[MISCREG_XTRLENB] =
+        matrix::MatrixController::ReduceWidthBytes;
+    miscRegFile[MISCREG_XALENB] =
+        matrix::MatrixController::MatrixAccElems *
+        matrix::MatrixController::ResultWidthBytes;
+    miscRegFile[MISCREG_MTOK] = matrix::MatrixController::TokenCount;
+    miscRegFile[MISCREG_XMTILEM] = 0;
+    miscRegFile[MISCREG_XMTILEN] = 0;
+    miscRegFile[MISCREG_XMTILEK] = 0;
 }
 
 void
@@ -406,18 +478,27 @@ void
 ISA::setMatrixTileM(uint64_t value)
 {
     matrixController->setTileM(value);
+    const auto tile_m = matrixController->getTileM();
+    miscRegFile[MISCREG_MTILEM] = tile_m;
+    miscRegFile[MISCREG_XMTILEM] = tile_m;
 }
 
 void
 ISA::setMatrixTileK(uint64_t value)
 {
     matrixController->setTileK(value);
+    const auto tile_k = matrixController->getTileK();
+    miscRegFile[MISCREG_MTILEK] = tile_k;
+    miscRegFile[MISCREG_XMTILEK] = tile_k;
 }
 
 void
 ISA::setMatrixTileN(uint64_t value)
 {
     matrixController->setTileN(value);
+    const auto tile_n = matrixController->getTileN();
+    miscRegFile[MISCREG_MTILEN] = tile_n;
+    miscRegFile[MISCREG_XMTILEN] = tile_n;
 }
 
 uint32_t
@@ -441,37 +522,80 @@ ISA::getMatrixTileN() const
 Fault
 ISA::matrixLoadA8(ExecContext *xc, Addr base, Addr stride)
 {
-    return matrixController->loadA8(xc, base, stride);
+    return matrixLoadA8(xc, base, stride,
+        matrix::MatrixController::DefaultAReg);
+}
+
+Fault
+ISA::matrixLoadA8(ExecContext *xc, Addr base, Addr stride, uint64_t reg_idx)
+{
+    return matrixController->loadA8(xc, base, stride, reg_idx);
 }
 
 Fault
 ISA::matrixLoadB8(ExecContext *xc, Addr base, Addr stride)
 {
-    return matrixController->loadB8(xc, base, stride);
+    return matrixLoadB8(xc, base, stride,
+        matrix::MatrixController::DefaultBReg);
+}
+
+Fault
+ISA::matrixLoadB8(ExecContext *xc, Addr base, Addr stride, uint64_t reg_idx)
+{
+    return matrixController->loadB8(xc, base, stride, reg_idx);
 }
 
 Fault
 ISA::matrixLoadC32(ExecContext *xc, Addr base, Addr stride)
 {
-    return matrixController->loadC32(xc, base, stride);
+    return matrixLoadC32(xc, base, stride,
+        matrix::MatrixController::DefaultAccReg);
+}
+
+Fault
+ISA::matrixLoadC32(ExecContext *xc, Addr base, Addr stride, uint64_t acc_idx)
+{
+    return matrixController->loadC32(xc, base, stride, acc_idx);
 }
 
 Fault
 ISA::matrixStoreC32(ExecContext *xc, Addr base, Addr stride)
 {
-    return matrixController->storeC32(xc, base, stride);
+    return matrixStoreC32(xc, base, stride,
+        matrix::MatrixController::DefaultAccReg);
+}
+
+Fault
+ISA::matrixStoreC32(ExecContext *xc, Addr base, Addr stride, uint64_t acc_idx)
+{
+    return matrixController->storeC32(xc, base, stride, acc_idx);
 }
 
 void
 ISA::matrixZeroAcc(ExecContext *xc)
 {
-    matrixController->zeroAcc(xc);
+    matrixZeroAcc(xc, matrix::MatrixController::DefaultAccReg);
+}
+
+void
+ISA::matrixZeroAcc(ExecContext *xc, uint64_t acc_idx)
+{
+    matrixController->zeroAcc(xc, acc_idx);
 }
 
 void
 ISA::matrixMMAccWB(ExecContext *xc)
 {
-    matrixController->mmaccWB(xc);
+    matrixMMAccWB(xc, matrix::MatrixController::DefaultAReg,
+        matrix::MatrixController::DefaultBReg,
+        matrix::MatrixController::DefaultAccReg);
+}
+
+void
+ISA::matrixMMAccWB(ExecContext *xc, uint64_t src_a_idx, uint64_t src_b_idx,
+    uint64_t dst_acc_idx)
+{
+    matrixController->mmaccWB(xc, src_a_idx, src_b_idx, dst_acc_idx);
 }
 
 bool
@@ -617,6 +741,63 @@ ISA::readMiscReg(int misc_reg)
       case MISCREG_VLENB:
         {
             return VLENB;
+        }
+        break;
+      case MISCREG_MCSR:
+        {
+            return composeMatrixCSR(
+                miscRegFile[MISCREG_MXRM],
+                miscRegFile[MISCREG_MSAT],
+                miscRegFile[MISCREG_MFFLAGS],
+                miscRegFile[MISCREG_MFRM],
+                miscRegFile[MISCREG_MSATEN]);
+        }
+        break;
+      case MISCREG_MTILEM:
+      case MISCREG_XMTILEM:
+        {
+            return matrixController->getTileM();
+        }
+        break;
+      case MISCREG_MTILEN:
+      case MISCREG_XMTILEN:
+        {
+            return matrixController->getTileN();
+        }
+        break;
+      case MISCREG_MTILEK:
+      case MISCREG_XMTILEK:
+        {
+            return matrixController->getTileK();
+        }
+        break;
+      case MISCREG_MLENB:
+      case MISCREG_XTLENB:
+        {
+            return matrix::MatrixController::MatrixABRegBytes;
+        }
+        break;
+      case MISCREG_MRLENB:
+      case MISCREG_XTRLENB:
+        {
+            return matrix::MatrixController::ReduceWidthBytes;
+        }
+        break;
+      case MISCREG_MAMUL:
+      case MISCREG_XALENB:
+        {
+            return matrix::MatrixController::MatrixAccElems *
+                matrix::MatrixController::ResultWidthBytes;
+        }
+        break;
+      case MISCREG_XMISA:
+        {
+            return MatrixCapabilityBits;
+        }
+        break;
+      case MISCREG_MTOK:
+        {
+            return matrix::MatrixController::TokenCount;
         }
         break;
       case MISCREG_VCSR:
@@ -916,6 +1097,62 @@ ISA::setMiscReg(int misc_reg, RegVal val)
 
                 setMiscRegNoEffect(MISCREG_VXSAT, val & 0x1);
                 setMiscRegNoEffect(MISCREG_VXRM, (val & 0x6) >> 1);
+            }
+            break;
+          case MISCREG_MCSR:
+            {
+                setMiscRegNoEffect(MISCREG_MXRM,
+                    (val >> MatrixMxrmOffset) & MCSR_MXRM_MASK);
+                setMiscRegNoEffect(MISCREG_MSAT,
+                    (val >> MatrixMsatOffset) & MCSR_MSAT_MASK);
+                setMiscRegNoEffect(MISCREG_MFFLAGS,
+                    (val >> MatrixMfflagsOffset) & MCSR_MFFLAGS_MASK);
+                setMiscRegNoEffect(MISCREG_MFRM,
+                    (val >> MatrixMfrmOffset) & MCSR_MFRM_MASK);
+                setMiscRegNoEffect(MISCREG_MSATEN,
+                    (val >> MatrixMsatenOffset) & MCSR_MSATEN_MASK);
+                setMiscRegNoEffect(MISCREG_MCSR,
+                    composeMatrixCSR(miscRegFile[MISCREG_MXRM],
+                        miscRegFile[MISCREG_MSAT],
+                        miscRegFile[MISCREG_MFFLAGS],
+                        miscRegFile[MISCREG_MFRM],
+                        miscRegFile[MISCREG_MSATEN]));
+            }
+            break;
+          case MISCREG_MXRM:
+          case MISCREG_MSAT:
+          case MISCREG_MFFLAGS:
+          case MISCREG_MFRM:
+          case MISCREG_MSATEN:
+            {
+                RegVal masked = val;
+                switch (misc_reg) {
+                  case MISCREG_MXRM:
+                    masked &= MCSR_MXRM_MASK;
+                    break;
+                  case MISCREG_MSAT:
+                    masked &= MCSR_MSAT_MASK;
+                    break;
+                  case MISCREG_MFFLAGS:
+                    masked &= MCSR_MFFLAGS_MASK;
+                    break;
+                  case MISCREG_MFRM:
+                    masked &= MCSR_MFRM_MASK;
+                    break;
+                  case MISCREG_MSATEN:
+                    masked &= MCSR_MSATEN_MASK;
+                    break;
+                  default:
+                    panic("Unexpected matrix CSR misc reg %d\n", misc_reg);
+                }
+
+                setMiscRegNoEffect(misc_reg, masked);
+                setMiscRegNoEffect(MISCREG_MCSR,
+                    composeMatrixCSR(miscRegFile[MISCREG_MXRM],
+                        miscRegFile[MISCREG_MSAT],
+                        miscRegFile[MISCREG_MFFLAGS],
+                        miscRegFile[MISCREG_MFRM],
+                        miscRegFile[MISCREG_MSATEN]));
             }
             break;
           case MISCREG_VTYPE:

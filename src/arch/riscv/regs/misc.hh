@@ -265,6 +265,28 @@ enum MiscRegIndex
     // non-maskable-interrupt-pending: NMI version of xIP
     MISCREG_NMIP,
 
+    MISCREG_MCSR,
+    MISCREG_MXRM,
+    MISCREG_MSAT,
+    MISCREG_MFFLAGS,
+    MISCREG_MFRM,
+    MISCREG_MSATEN,
+    MISCREG_MTYPE,
+    MISCREG_MTILEM,
+    MISCREG_MTILEN,
+    MISCREG_MTILEK,
+    MISCREG_MLENB,
+    MISCREG_MRLENB,
+    MISCREG_MAMUL,
+    MISCREG_XMISA,
+    MISCREG_XTLENB,
+    MISCREG_XTRLENB,
+    MISCREG_XALENB,
+    MISCREG_MTOK,
+    MISCREG_XMTILEM,
+    MISCREG_XMTILEN,
+    MISCREG_XMTILEK,
+
     NUM_MISCREGS
 };
 
@@ -462,6 +484,28 @@ enum CSRIndex
     CSR_VL           = 0xC20,
     CSR_VTYPE        = 0xC21,
     CSR_VLENB        = 0xC22,
+
+    CSR_MCSR         = 0x802,
+    CSR_MXRM         = 0x806,
+    CSR_MSAT         = 0x807,
+    CSR_MFFLAGS      = 0x808,
+    CSR_MFRM         = 0x809,
+    CSR_MSATEN       = 0x80A,
+    CSR_MTYPE        = 0xC40,
+    CSR_MTILEM_LEGACY = 0xC41,
+    CSR_MTILEN_LEGACY = 0xC42,
+    CSR_MTILEK_LEGACY = 0xC43,
+    CSR_MLENB        = 0xC44,
+    CSR_MRLENB       = 0xC45,
+    CSR_MAMUL        = 0xC46,
+    CSR_XMISA        = 0xCC0,
+    CSR_XTLENB       = 0xCC1,
+    CSR_XTRLENB      = 0xCC2,
+    CSR_XALENB       = 0xCC3,
+    CSR_MTOK         = 0xCC4,
+    CSR_XMTILEM      = 0xCC5,
+    CSR_XMTILEN      = 0xCC6,
+    CSR_XMTILEK      = 0xCC7,
 
     CSR_HSTATUS     = 0x600,
     CSR_HEDELEG     = 0x602,
@@ -688,6 +732,28 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_VL,           {"vl"    , MISCREG_VL}},
     {CSR_VTYPE,        {"vtype" , MISCREG_VTYPE}},
     {CSR_VLENB,        {"VLENB" , MISCREG_VLENB}},
+
+    {CSR_MCSR,         {"mcsr", MISCREG_MCSR}},
+    {CSR_MXRM,         {"mxrm", MISCREG_MXRM}},
+    {CSR_MSAT,         {"msat", MISCREG_MSAT}},
+    {CSR_MFFLAGS,      {"mfflags", MISCREG_MFFLAGS}},
+    {CSR_MFRM,         {"mfrm", MISCREG_MFRM}},
+    {CSR_MSATEN,       {"msaten", MISCREG_MSATEN}},
+    {CSR_MTYPE,        {"mtype", MISCREG_MTYPE}},
+    {CSR_MTILEM_LEGACY, {"mtilem", MISCREG_MTILEM}},
+    {CSR_MTILEN_LEGACY, {"mtilen", MISCREG_MTILEN}},
+    {CSR_MTILEK_LEGACY, {"mtilek", MISCREG_MTILEK}},
+    {CSR_MLENB,        {"mlenb", MISCREG_MLENB}},
+    {CSR_MRLENB,       {"mrlenb", MISCREG_MRLENB}},
+    {CSR_MAMUL,        {"mamul", MISCREG_MAMUL}},
+    {CSR_XMISA,        {"xmisa", MISCREG_XMISA}},
+    {CSR_XTLENB,       {"xtlenb", MISCREG_XTLENB}},
+    {CSR_XTRLENB,      {"xtrlenb", MISCREG_XTRLENB}},
+    {CSR_XALENB,       {"xalenb", MISCREG_XALENB}},
+    {CSR_MTOK,         {"mtok", MISCREG_MTOK}},
+    {CSR_XMTILEM,      {"xmtilem", MISCREG_XMTILEM}},
+    {CSR_XMTILEN,      {"xmtilen", MISCREG_XMTILEN}},
+    {CSR_XMTILEK,      {"xmtilek", MISCREG_XMTILEK}},
 
     {CSR_HSTATUS, {"hstatus", MISCREG_HSTATUS}},
     {CSR_HEDELEG, {"hedeleg", MISCREG_HEDELEG}},
@@ -917,6 +983,15 @@ const RegVal NEMU_MIP_MASK =  ((1 << 9) | (1 << 5) | (1 << 2) |(1 << 1));
 const RegVal SI_MASK = SEI_MASK | STI_MASK | SSI_MASK;
 const RegVal FFLAGS_MASK = (1 << FRM_OFFSET) - 1;
 const RegVal FRM_MASK = 0x7;
+const RegVal MCSR_MXRM_MASK = 0x3;
+const RegVal MCSR_MSAT_MASK = 0x1;
+const RegVal MCSR_MFFLAGS_MASK = 0x1f;
+const RegVal MCSR_MFRM_MASK = 0x7;
+const RegVal MCSR_MSATEN_MASK = 0x1;
+const RegVal MCSR_MASK = MCSR_MXRM_MASK | (MCSR_MSAT_MASK << 2) |
+                          (MCSR_MFFLAGS_MASK << 3) |
+                          (MCSR_MFRM_MASK << 8) |
+                          (MCSR_MSATEN_MASK << 11);
 const RegVal NEMU_MIE_MASK_BASE = 0xaaa;
 const RegVal NEMU_MIE_MASK_H = (1 << 2) | (1 << 6) | (1 << 10) | (1 << 12);
 const RegVal NEMU_LCOFI = 0;
@@ -929,7 +1004,13 @@ const std::map<int, RegVal> CSRMasks = {
     {CSR_SSTATUS, SSTATUS_MASK},
     {CSR_SIP, SI_MASK},
     {CSR_MISA, MISA_MASK},
-    {CSR_MIE,NEMU_MIE_MASK}
+    {CSR_MIE,NEMU_MIE_MASK},
+    {CSR_MCSR, MCSR_MASK},
+    {CSR_MXRM, MCSR_MXRM_MASK},
+    {CSR_MSAT, MCSR_MSAT_MASK},
+    {CSR_MFFLAGS, MCSR_MFFLAGS_MASK},
+    {CSR_MFRM, MCSR_MFRM_MASK},
+    {CSR_MSATEN, MCSR_MSATEN_MASK}
 };
 
 #define concat_temp(x, y) x ## y

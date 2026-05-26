@@ -156,5 +156,14 @@ def bitfield BIT30      <30>;
 def bitfield SIMM5     <19:15>;
 def bitfield SIMM3     <17:15>;
 
+// Matrix legacy OP_M encoding.
+def bitfield MATRIX_FUNCT6 <31:26>;
+def bitfield MATRIX_LS     <25>;
+def bitfield MATRIX_IMM10  <24:15>;
+def bitfield MATRIX_MA     <11>;
+def bitfield MATRIX_MD4    <10:7>;
+def bitfield MATRIX_MS2_4  <23:20>;
+def bitfield MATRIX_MS1_4  <18:15>;
+
 //h instructions
 def bitfield HFUNCT2 <31:20>;
