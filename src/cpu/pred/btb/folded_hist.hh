@@ -33,16 +33,16 @@ pathHash(const Addr branchPC, const Addr targetPC)
     };
 
     uint64_t footprint = 0;
-    footprint |= ((b(2)  ^ t(7))  << 0);
-    footprint |= ((b(3)  ^ t(8))  << 1);
-    footprint |= ((b(4)  ^ t(9))  << 2);
-    footprint |= ((b(5)  ^ t(10)) << 3);
-    footprint |= ((b(6)  ^ b(12) ^ t(11)) << 4);
-    footprint |= ((b(7)  ^ b(13) ^ t(2))  << 5);
-    footprint |= ((b(8)  ^ b(14) ^ t(3))  << 6);
-    footprint |= ((b(9)  ^ b(15) ^ t(4))  << 7);
-    footprint |= ((b(10) ^ b(16) ^ t(5))  << 8);
-    footprint |= ((b(11) ^ b(17) ^ t(6))  << 9);
+    footprint |= ((b(1)  ^ t(6))  << 0);
+    footprint |= ((b(2)  ^ t(7))  << 1);
+    footprint |= ((b(3)  ^ t(8))  << 2);
+    footprint |= ((b(4)  ^ t(9))  << 3);
+    footprint |= ((b(5)  ^ b(11) ^ t(10)) << 4);
+    footprint |= ((b(6)  ^ b(12) ^ t(1))  << 5);
+    footprint |= ((b(7)  ^ b(13) ^ t(2))  << 6);
+    footprint |= ((b(8)  ^ b(14) ^ t(3))  << 7);
+    footprint |= ((b(9)  ^ b(15) ^ t(4))  << 8);
+    footprint |= ((b(10) ^ b(16) ^ t(5))  << 9);
     return footprint;
 }
 
