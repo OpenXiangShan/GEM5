@@ -120,6 +120,8 @@ def get_processes(args):
 parser = argparse.ArgumentParser()
 Options.addCommonOptions(parser)
 Options.addSEOptions(parser)
+parser.add_argument("--matrix-kmhv3-scheduler", action="store_true",
+                    help="Use KMHV3Scheduler for SE matrix smoke runs.")
 
 if '--ruby' in sys.argv:
     Ruby.define_options(parser)
@@ -240,7 +242,8 @@ for cpu in system.cpu:
     cpu.clk_domain = system.cpu_clk_domain
     # Add scheduler for RISCV CPUs
     if buildEnv['TARGET_ISA'] == 'riscv':
-        cpu.scheduler = DefaultScheduler()
+        cpu.scheduler = KMHV3Scheduler() if args.matrix_kmhv3_scheduler else \
+            DefaultScheduler()
 
 if ObjectList.is_kvm_cpu(CPUClass) or ObjectList.is_kvm_cpu(FutureClass):
     if buildEnv['TARGET_ISA'] == 'x86':
