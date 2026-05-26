@@ -1441,8 +1441,6 @@ Commit::commitInsts()
                         }
                         lastLoadProducerStorePC[load_pc] = prodPC;
 
-                    // optional: clear after use to avoid confusing later stages
-                    head_inst->clearProducerStorePC();
                     }
                 }
 
@@ -1840,6 +1838,10 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         updateMetaData->seq_no = head_inst->seqNum;
         updateMetaData->actualValue = head_inst->actualValue;
         updateMetaData->isMisprediction = head_inst->vpMisprediction;
+        updateMetaData->hasProducerStorePC = head_inst->hasProducerStorePC();
+        if (updateMetaData->hasProducerStorePC) {
+            updateMetaData->producerStorePC = head_inst->producerStorePC();
+        }
         valuePred->updateValuePredictor(updateMetaData);
         valuePred->stats.VPsupported++;
         if (head_inst->vpResult.speculative) {
@@ -1850,6 +1852,10 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
         }
 
         delete updateMetaData;
+    }
+
+    if (head_inst->isLoad()) {
+        head_inst->clearProducerStorePC();
     }
 
     // Finally clear the head ROB entry.
