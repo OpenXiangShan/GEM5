@@ -259,6 +259,21 @@ TEST(PairTAGETest, TwoWayLookupChoosesBestSameTableProvider)
     EXPECT_EQ(providers.alt.way, 0u);
 }
 
+TEST(PairTAGETest, TagsIgnoreBranchPositionForSameStartPc)
+{
+    PairTAGE pairtage(2, 2, 512);
+    const Addr start_pc = 0x2000;
+    PairTAGE::PairBlockInfo early_block(true, 0x2008, 0x3000);
+    PairTAGE::PairBlockInfo late_block(true, 0x2010, 0x4000);
+
+    pairtage.installEntryForTest(1, 0, start_pc, early_block);
+    pairtage.installEntryForTest(1, 1, start_pc, late_block);
+
+    const auto &way0 = pairtage.tableEntryForTest(1, 0, start_pc);
+    const auto &way1 = pairtage.tableEntryForTest(1, 1, start_pc);
+    EXPECT_EQ(way0.tag, way1.tag);
+}
+
 TEST(PairTAGETest, TwoWayAllocationReplacesStaleSameTagEntry)
 {
     PairTAGE pairtage(2, 2, 512);

@@ -133,8 +133,7 @@ PairTAGE::installEntryForTest(unsigned table, unsigned way, Addr startPC,
     entry.valid = true;
     entry.tag = getTageTag(
         startPC, table, tagFoldedHist[table].get(),
-        altTagFoldedHist[table].get(),
-        getBranchIndexInBlock(firstBlock.branchPC, startPC));
+        altTagFoldedHist[table].get());
     entry.counter = firstBlock.taken ? 0 : -1;
     entry.useful = false;
     entry.identityConfidence = identityConfidence;
@@ -672,8 +671,7 @@ PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
             getTageIndex(startPC, table, predMeta.indexFoldedHist[table].get());
         const Addr tag = getTageTag(
             startPC, table, predMeta.tagFoldedHist[table].get(),
-            predMeta.altTagFoldedHist[table].get(),
-            getBranchIndexInBlock(trainedBlock.branchPC, startPC));
+            predMeta.altTagFoldedHist[table].get());
         const auto &set = tageTable[table][index];
         int selectedWay = selectMatchingReplacementWay(
             set, tag, trainedBlock, trainedSecondBlock);
@@ -733,8 +731,7 @@ PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
         newEntry.valid = true;
         newEntry.tag = getTageTag(
             startPC, table, predMeta.tagFoldedHist[table].get(),
-            predMeta.altTagFoldedHist[table].get(),
-            getBranchIndexInBlock(trainedBlock.branchPC, startPC));
+            predMeta.altTagFoldedHist[table].get());
         newEntry.counter = trainedBlock.taken ? 0 : -1;
         newEntry.useful = false;
         newEntry.identityConfidence = TageEntry::InitialIdentityConfidence;
@@ -819,10 +816,9 @@ PairTAGE::lookupProviders(Addr startPC, const TageMeta &predMeta) const
                 continue;
             }
 
-            const unsigned position = getBranchIndexInBlock(firstBlock.branchPC, startPC);
             const Addr tag = getTageTag(startPC, table,
                 predMeta.tagFoldedHist[table].get(),
-                predMeta.altTagFoldedHist[table].get(), position);
+                predMeta.altTagFoldedHist[table].get());
 
             if (entry.tag == tag) {
                 auto info = TageTableInfo{
@@ -1264,8 +1260,7 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
             newEntry.tag = getTageTag(
                 entry.startPC, provider.table,
                 predMeta->tagFoldedHist[provider.table].get(),
-                predMeta->altTagFoldedHist[provider.table].get(),
-                getBranchIndexInBlock(trainedBlock.branchPC, entry.startPC));
+                predMeta->altTagFoldedHist[provider.table].get());
             newEntry.counter = trainedBlock.taken ? 0 : -1;
             newEntry.useful = false;
             newEntry.identityConfidence = TageEntry::InitialIdentityConfidence;
@@ -1325,8 +1320,7 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
         newEntry.tag = getTageTag(
             entry.startPC, provider.table,
             predMeta->tagFoldedHist[provider.table].get(),
-            predMeta->altTagFoldedHist[provider.table].get(),
-            getBranchIndexInBlock(trainedBlock.branchPC, entry.startPC));
+            predMeta->altTagFoldedHist[provider.table].get());
         newEntry.counter = trainedCounter;
         newEntry.useful = oldEntry.useful;
         if (providerMatchesTraining && altProvider.found && !altMatchesTraining) {
@@ -1406,7 +1400,7 @@ PairTAGE::trainFromActualPred(const FetchTarget &entry,
 }
 
 Addr
-PairTAGE::getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position) const
+PairTAGE::getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist) const
 {
     const Addr mask = (1ULL << tableTagBits[table]) - 1;
     const unsigned pcShift = tablePcShifts[table];
@@ -1414,7 +1408,7 @@ PairTAGE::getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFolded
     const Addr foldedBits = foldedHist & mask;
     const Addr altTagBits = (altFoldedHist << 1) & mask;
 
-    return pcBits ^ foldedBits ^ altTagBits ^ position;
+    return pcBits ^ foldedBits ^ altTagBits;
 }
 
 Addr
