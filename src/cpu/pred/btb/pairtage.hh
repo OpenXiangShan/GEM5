@@ -400,7 +400,7 @@ class PairTAGE : public TimedBaseBTBPredictor
                          unsigned startTable);
     Addr getTageIndex(Addr pc, int table, uint64_t foldedHist) const;
     Addr getTageIndex(Addr pc, int table) const;
-    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist, Addr position = 0) const;
+    Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist) const;
     unsigned getBranchIndexInBlock(Addr branchPC, Addr startPC) const;
     Addr getFallThrough(Addr startPC) const;
     bool isBranchInFirstBlock(Addr branchPC, Addr startPC) const;
