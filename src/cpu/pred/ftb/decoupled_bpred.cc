@@ -892,7 +892,7 @@ DecoupledBPUWithFTB::prefetchLimited()
     if (useStaticPrefetchDistance) {
         return prefetchID > fetchTargetQueue.getSupplyingStreamId() + staticPrefetchDistance;
     } else {
-        return prefetchID > fetchTargetQueue.getSupplyingStreamId() + fetchTargetQueue.size();
+        return prefetchID > fetchTargetQueue.getSupplyingStreamId() + fetchTargetQueue.capacity();
     }
 }
 

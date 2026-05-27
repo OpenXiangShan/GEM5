@@ -315,7 +315,7 @@ DecoupledBPUWithBTB::prefetchLimited(ThreadID tid) const
     if (useStaticPrefetchDistance) {
         return prefetchID[tid] >= ftq.fetchId(tid) + staticPrefetchDistance;
     } else {
-        return prefetchID[tid] >= ftq.fetchId(tid) + ftq.size(tid);
+        return prefetchID[tid] >= ftq.fetchId(tid) + ftq.capacity(tid);
     }
 }
 
