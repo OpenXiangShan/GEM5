@@ -1617,9 +1617,11 @@ IEW::executeInsts()
     // @todo This doesn't actually work anymore, we should fix it.
 //    printAvailableInsts();
 
-    // Clear resolvedFSQId and resolvedInstPC since they are already handled in frontend
-    ThreadID tid = *activeThreads->begin();
-    toFetch->iewInfo[tid].resolvedCFIs.clear();
+    // Clear resolved CFI vectors before execute/writeback appends this cycle's
+    // producer-side updates.
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        toFetch->iewInfo[tid].resolvedCFIs.clear();
+    }
 
     
     // Execute/writeback any instructions that are available.
