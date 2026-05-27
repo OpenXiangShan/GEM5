@@ -225,17 +225,32 @@ DecoupledBPUWithBTB::ftqFull(ThreadID tid) const
     return logicalFreeFTQEntries(tid) == 0;
 }
 
+bool
+DecoupledBPUWithBTB::threadActive(ThreadID tid) const
+{
+    if (!cpu) {
+        return true;
+    }
+
+    auto *tc = cpu->getContext(tid);
+    return tc && tc->status() == gem5::ThreadContext::Active;
+}
+
+bool
+DecoupledBPUWithBTB::canStartPrediction(ThreadID tid) const
+{
+    return threadActive(tid) && !threads[tid].squashing &&
+        !threads[tid].validprediction && !ftqFull(tid);
+}
+
 ThreadID
 DecoupledBPUWithBTB::scheduleThread()
 {
     for (ThreadID offset = 0; offset < numThreads; ++offset) {
         const ThreadID tid = (nextPredictTid + offset) % numThreads;
 
-        if (cpu) {
-            auto *tc = cpu->getContext(tid);
-            if (!tc || tc->status() != gem5::ThreadContext::Active) {
-                continue;
-            }
+        if (!canStartPrediction(tid)) {
+            continue;
         }
 
         nextPredictTid = (tid + 1) % numThreads;
@@ -251,18 +266,9 @@ DecoupledBPUWithBTB::tick()
 {
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
 
-    ThreadID curTid = scheduleThread();
-    if (curTid == InvalidThreadID) {
-        return;
-    }
-
     // On squash, reset state if there was a valid prediction.
-    bool squashOccurred = false;
     for (int tid = 0; tid < numThreads; tid++) {
         if (threads[tid].squashing) {
-            if (tid == curTid) {
-                squashOccurred = true;
-            }
             threads[tid].validprediction = false;
             threads[tid].numOverrideBubbles = 0;
             tage->dryRunCycle(threads[tid].s0PC);
@@ -271,13 +277,10 @@ DecoupledBPUWithBTB::tick()
         }
     }
 
-    if (squashOccurred) {
-        DPRINTF(Override, "Squash occurred for current thread, skip predict.\n");
-        return;
-    }
+    ThreadID curTid = scheduleThread();
 
     // 1. Request new prediction if FSQ not full and we are idle
-    if (!threads[curTid].validprediction && !ftqFull(curTid)) {
+    if (curTid != InvalidThreadID) {
         if (threads[curTid].blockPredictionPending) {
             DPRINTF(Override, "Prediction blocked to prioritize resolve update\n");
             dbpBtbStats.predictionBlockedForUpdate++;

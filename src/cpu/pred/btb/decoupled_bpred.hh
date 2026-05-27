@@ -155,6 +155,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned logicalMaxFTQEntries(ThreadID tid) const;
     unsigned logicalFreeFTQEntries(ThreadID tid) const;
     bool ftqFull(ThreadID tid) const;
+    bool threadActive(ThreadID tid) const;
+    bool canStartPrediction(ThreadID tid) const;
 
     ThreadID scheduleThread();
 
