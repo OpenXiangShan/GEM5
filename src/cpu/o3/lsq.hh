@@ -1129,13 +1129,19 @@ class LSQ
     int storeWbStage() const { return _storeWbStage; }
 
   public:
+    struct PendingDcacheRefill
+    {
+        bool valid = false;
+        bool needDataRead = false;
+    };
+
     struct NullStruct {};
     boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
     std::vector<std::vector<bool>> bankOccupied;
 
-    void notifyDcacheRefill(Addr addr);
+    void notifyDcacheRefill(Addr addr, bool need_data_read);
 
-    std::vector<bool> pendingDcacheRefill;
+    std::vector<PendingDcacheRefill> pendingDcacheRefill;
     std::vector<uint32_t> dcacheRefillDataRead;
     std::vector<uint32_t> dcacheRefillDataWrite;
     std::vector<uint32_t> dcacheRefillTagWrite;

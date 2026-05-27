@@ -396,7 +396,7 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     storeBuffer.setData(store_buffer_entries);
 
     bankOccupied.resize(dcacheSetDivNum, std::vector<bool>(numBank, false));
-    pendingDcacheRefill.resize(dcacheSetDivNum, false);
+    pendingDcacheRefill.resize(dcacheSetDivNum);
     dcacheRefillDataRead.resize(dcacheSetDivNum, 0);
     dcacheRefillDataWrite.resize(dcacheSetDivNum, 0);
     dcacheRefillTagWrite.resize(dcacheSetDivNum, 0);
@@ -535,20 +535,21 @@ LSQ::clearAddresses()
         bool currentCycleBusy =
             (dcacheRefillDataRead[div] | dcacheRefillDataWrite[div]) & 0x1;
 
-        if (pendingDcacheRefill[div]) {
+        auto &pendingRefill = pendingDcacheRefill[div];
+        if (pendingRefill.valid) {
             // If current cycle is busy, we stall the new request (keep pending).
             // If free, we issue the new request.
             if (!currentCycleBusy) {
-                pendingDcacheRefill[div] = false;
-                // Data Read at current cycle (Bit 0)
-                dcacheRefillDataRead[div] |= 0x1;
+                // Clean victims don't need the extra data-read occupancy.
+                if (pendingRefill.needDataRead) {
+                    // Data Read at 1 cycle later (Bit 1)
+                    dcacheRefillDataRead[div] |= (1 << 1);
+                }
+                pendingRefill = {};
                 // Tag Write at 3 cycles later (Bit 3)
                 dcacheRefillTagWrite[div] |= (1 << 3);
                 // Data Write at 4 cycles later (Bit 4)
                 dcacheRefillDataWrite[div] |= (1 << 4);
-
-                // We just occupied the current cycle.
-                currentCycleBusy = true;
             }
         }
 
@@ -609,9 +610,12 @@ LSQ::loadBankConflictedCheck(Addr vaddr)
 }
 
 void
-LSQ::notifyDcacheRefill(Addr addr)
+LSQ::notifyDcacheRefill(Addr addr, bool need_data_read)
 {
-    pendingDcacheRefill.at(getDcacheDiv(addr)) = true;
+    const unsigned div = getDcacheDiv(addr);
+    auto &pendingRefill = pendingDcacheRefill.at(div);
+    pendingRefill.valid = true;
+    pendingRefill.needDataRead |= need_data_read;
 }
 
 unsigned

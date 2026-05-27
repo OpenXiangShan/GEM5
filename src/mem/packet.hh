@@ -1033,7 +1033,8 @@ class Packet : public Printable
            headerDelay(pkt->headerDelay),
            snoopDelay(0),
            payloadDelay(pkt->payloadDelay),
-           senderState(pkt->senderState)
+           senderState(pkt->senderState),
+           lsqPtr(pkt->lsqPtr)
     {
         if (!clear_flags)
             flags.set(pkt->flags & COPY_FLAGS);
