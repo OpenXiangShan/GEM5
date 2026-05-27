@@ -1962,29 +1962,54 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
     }
 }
 
+bool
+Fetch::canConsumeFetchTarget(ThreadID tid) const
+{
+    if (tid == InvalidThreadID) {
+        return false;
+    }
+
+    const CacheRequestStatus cache_status =
+        threads[tid].cacheReq.getOverallStatus();
+    if (fetchStatus[tid] == WaitingCache) {
+        return cache_status == AccessComplete;
+    }
+
+    return canFetchInstructions(tid);
+}
+
 void
 Fetch::fetch(bool &status_change)
 {
     //////////////////////////////////////////
     // Start actual fetch
     //////////////////////////////////////////
-    auto tid = dbpbtb->getTargetTid();
+    for (ThreadID attempt = 0; attempt < numThreads; attempt++) {
+        auto tid = dbpbtb->getTargetTid();
 
-    if (tid == InvalidThreadID) {
+        if (tid == InvalidThreadID) {
+            return;
+        }
+
+        if (!canConsumeFetchTarget(tid)) {
+            DPRINTF(Fetch, "[tid:%i] Skip FTQ target because fetch status "
+                    "%d is not ready to consume it.\n", tid, fetchStatus[tid]);
+            continue;
+        }
+
+        if (!checkDecoupledFrontend(tid)) {
+            continue;
+        }
+
+        if (!prepareFetchAddress(tid, status_change)) {
+            return;
+        }
+
+        ++fetchStats.cycles;
+
+        performInstructionFetch(tid);
         return;
     }
-
-    if (!checkDecoupledFrontend(tid)) {
-        return;
-    }
-
-    if (!prepareFetchAddress(tid, status_change)) {
-        return;
-    }
-
-    ++fetchStats.cycles;
-
-    performInstructionFetch(tid);
 }
 
 StallReason

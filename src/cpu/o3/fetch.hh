@@ -557,6 +557,9 @@ class Fetch
      */
     bool prepareFetchAddress(ThreadID tid, bool &status_change);
 
+    /** Check whether a selected FTQ target can be consumed this cycle. */
+    bool canConsumeFetchTarget(ThreadID tid) const;
+
     /**
      * The main instruction fetching logic, which processes instructions
      * for a given thread up to the fetch width.
