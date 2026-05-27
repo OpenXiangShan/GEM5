@@ -19,8 +19,8 @@ namespace branch_prediction
 namespace btb_pred
 {
 
-// V2-like PHR footprint related.
-constexpr static uint64_t pathHashLength = 10;
+// Path-history footprint related.
+constexpr static uint64_t pathHashLength = 11;
 
 inline uint64_t
 pathHash(const Addr branchPC, const Addr targetPC)
@@ -43,6 +43,7 @@ pathHash(const Addr branchPC, const Addr targetPC)
     footprint |= ((b(8)  ^ b(14) ^ t(3))  << 7);
     footprint |= ((b(9)  ^ b(15) ^ t(4))  << 8);
     footprint |= ((b(10) ^ b(16) ^ t(5))  << 9);
+    footprint |= ((b(11) ^ b(17) ^ t(6))  << 10);
     return footprint;
 }
 
