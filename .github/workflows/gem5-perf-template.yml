@@ -40,7 +40,7 @@ jobs:
     continue-on-error: false
     name: XS-GEM5 - Run performance test (${{ inputs.benchmark_type }})
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.pr_sha || github.sha }}
       
@@ -303,7 +303,7 @@ jobs:
       - name: Upload score artifact
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.config.outputs.artifact_name }}
           path: score.txt
