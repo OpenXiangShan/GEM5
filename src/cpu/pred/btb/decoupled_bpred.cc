@@ -632,17 +632,21 @@ DecoupledBPUWithBTB::controlSquash(unsigned target_id,
     bool is_conditional = static_inst->isCondCtrl();
     bool is_indirect = static_inst->isIndirectCtrl();
 
-    if (!ftq.hasTarget(target_id, tid)) {
-        DPRINTF(DecoupleBP, "The squashing target is insane, ignore squash on it");
-        return;
-    }
-    auto &target = ftq.get(target_id, tid);
     // Get target address
     Addr real_target = corr_target.instAddr();
-    if (!fromCommit && static_inst->isReturn() && !static_inst->isNonSpeculative()) {
-        // get ret addr from ras meta
-        real_target = ras->getTopAddrFromMetas(target);
-        // TODO: set real target to dynamic inst
+    if (ftq.hasTarget(target_id, tid)) {
+        auto &target = ftq.get(target_id, tid);
+        if (!fromCommit && static_inst->isReturn() &&
+            !static_inst->isNonSpeculative()) {
+            // get ret addr from ras meta
+            real_target = ras->getTopAddrFromMetas(target);
+            // TODO: set real target to dynamic inst
+        }
+    } else {
+        DPRINTF(DecoupleBP,
+                "Control squash target %u is missing for tid %u; "
+                "recovering to corr target %#lx\n",
+                target_id, tid, real_target);
     }
 
     // Detailed debugging for control squash
