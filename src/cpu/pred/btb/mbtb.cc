@@ -519,12 +519,13 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
     
     // Calculate index and tag for this entry
     Addr btb_idx = getIndex(entry.pc, stream.asidHash);
+    Addr entry_tag = getTag(entry.pc, stream.asidHash);
 
     // Look for matching entry in the target SRAM
     bool found = false;
     auto it = target_sram[btb_idx].begin();
     for (; it != target_sram[btb_idx].end(); it++) {
-        if (*it == entry) {
+        if (it->valid && it->pc == entry.pc && it->tag == entry_tag) {
             found = true;
             break;
         }
@@ -534,7 +535,8 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
     int vc_idx = -1;
     for (int i = 0; i < (int)victimCache.size(); i++) {
         auto &vc_entry = victimCache[i];
-        if (vc_entry.valid && vc_entry.pc == entry.pc) {    // pc is tag compared
+        if (vc_entry.valid && vc_entry.pc == entry.pc &&
+            vc_entry.tag == entry_tag) {
             found_in_vc = true;
             vc_idx = i;
             break;
@@ -620,7 +622,7 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
     std::make_heap(heap.begin(), heap.end(), older());
 
     // Ensure single source of truth: remove duplicate from victim cache if any
-    if (eraseFromVictimCacheByPC(ticked_entry.pc)) {
+    if (eraseFromVictimCacheEntry(ticked_entry.pc, ticked_entry.tag)) {
         DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM update, pc %#lx\n", ticked_entry.pc);
     }
 }
@@ -667,7 +669,7 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
     std::make_heap(heap.begin(), heap.end(), older());
 
     // Ensure single source of truth: remove duplicate from victim cache if any
-    if (eraseFromVictimCacheByPC(ticked_entry.pc)) {
+    if (eraseFromVictimCacheEntry(ticked_entry.pc, ticked_entry.tag)) {
         DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM replace, pc %#lx\n", ticked_entry.pc);
     }
 }
@@ -760,11 +762,11 @@ MBTB::lookupVictimCache(Addr block_pc, uint8_t asidHash)
 
 
 bool
-MBTB::eraseFromVictimCacheByPC(Addr pc)
+MBTB::eraseFromVictimCacheEntry(Addr pc, Addr tag)
 {
     bool erased = false;
     for (auto &entry : victimCache) {
-        if (entry.valid && entry.pc == pc) {
+        if (entry.valid && entry.pc == pc && entry.tag == tag) {
             entry.valid = false;
             erased = true;
             break;
@@ -778,9 +780,10 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
 {
     if (victimCacheSize == 0) return;
 
-    // 1) If same PC exists, update and refresh tick
+    // 1) If the same tagged entry exists, update and refresh tick
     for (auto &entry : victimCache) {
-        if (entry.valid && entry.pc == evicted_entry.pc) {
+        if (entry.valid && entry.pc == evicted_entry.pc &&
+            entry.tag == evicted_entry.tag) {
             entry = evicted_entry;
             entry.tick = curTick();
             return;
