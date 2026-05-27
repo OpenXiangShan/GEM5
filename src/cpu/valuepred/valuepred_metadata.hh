@@ -25,6 +25,8 @@ class VPUpdateMetaData
     uint64_t seq_no;
     RegVal actualValue;
     bool isMisprediction;
+    bool hasProducerStorePC = false;
+    Addr producerStorePC = 0;
     virtual ~VPUpdateMetaData() {};
 };
 
