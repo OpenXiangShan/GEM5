@@ -73,6 +73,7 @@ MBTB::MBTB(unsigned numEntries, unsigned tagBits, unsigned numWays, unsigned num
       tagBits(tagBits)
 {
     setNumDelay(numDelay);
+    btbStats.init(numWays);
 #else
 // Production constructor
 MBTB::MBTB(const Params &p)
@@ -217,9 +218,7 @@ MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
         DPRINTF(BTB, "BTB: lookup hit, dumping hit entry\n");
         btbStats.predHit++;
         btbStats.predHitNum += hitNum;
-#ifndef UNIT_TEST
         btbStats.predHitCount.sample(hitNum);
-#endif
         for (auto &entry: processed_entries) {
             printTickedBTBEntry(entry);
         }
@@ -952,9 +951,15 @@ MBTB::BTBStats::BTBStats(statistics::Group* parent, int numWays) :
     ADD_STAT(victimCacheHit, statistics::units::Count::get(), "victim cache hits")
 
 {
-    predHitCount.init(0, numWays * 2, 1);   // max 4ways * 2(halfAligned) + VC
+    init(numWays);
 }
 #endif
+
+void
+MBTB::BTBStats::init(int numWays)
+{
+    predHitCount.init(0, numWays * 2, 1);
+}
 
 // Close conditional namespace wrapper for testing
 #ifdef UNIT_TEST
