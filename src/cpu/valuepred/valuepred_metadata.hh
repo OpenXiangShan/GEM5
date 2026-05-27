@@ -27,6 +27,8 @@ class VPUpdateMetaData
     ThreadID tid = 0;
     RegVal actualValue;
     bool isMisprediction;
+    bool hasProducerStorePC = false;
+    Addr producerStorePC = 0;
     virtual ~VPUpdateMetaData() {};
 };
 
