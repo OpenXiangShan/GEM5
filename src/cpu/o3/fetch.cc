@@ -1140,7 +1140,8 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // restore vtype
     uint8_t restored_vtype = cpu->readMiscReg(RiscvISA::MISCREG_VTYPE, tid);
     for (auto& it : cpu->instList) {
-        if (!it->isSquashed() &&
+        if (it->threadNumber == tid &&
+            !it->isSquashed() &&
             it->seqNum <= seqNum &&
             it->staticInst->isVectorConfig()) {
             auto vset = static_cast<RiscvISA::VConfOp*>(it->staticInst.get());
