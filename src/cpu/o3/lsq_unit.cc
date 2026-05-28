@@ -956,25 +956,34 @@ Fault
 LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
         const DynInstPtr& inst)
 {
-    auto saved_it = loadIt;
-    for (auto req0 : inst->savedRequest->_reqs) {
-        Addr inst_eff_addr1 = req0->getPaddr() >> depCheckShift;
-        Addr inst_eff_addr2 = (req0->getPaddr() + req0->getSize() - 1) >> depCheckShift;
+    /** @todo in theory you only need to check an instruction that has executed
+     * however, there isn't a good way in the pipeline at the moment to check
+     * all instructions that will execute before the store writes back. Thus,
+     * like the implementation that came before it, we're overly conservative.
+     */
+    while (loadIt != loadQueue.end()) {
+        DynInstPtr ld_inst = loadIt->instruction();
+        if (!ld_inst->effAddrValid() || ld_inst->strictlyOrdered()) {
+            ++loadIt;
+            continue;
+        }
 
-        /** @todo in theory you only need to check an instruction that has executed
-            * however, there isn't a good way in the pipeline at the moment to check
-            * all instructions that will execute before the store writes back. Thus,
-            * like the implementation that came before it, we're overly conservative.
-            */
-        DPRINTF(LSQUnit, "Checking for violations for [sn:%lli], addr: %#lx\n",
-                inst->seqNum, req0->getPaddr());
-        loadIt = saved_it;
-        while (loadIt != loadQueue.end()) {
-            DynInstPtr ld_inst = loadIt->instruction();
-            if (!ld_inst->effAddrValid() || ld_inst->strictlyOrdered()) {
-                ++loadIt;
-                continue;
-            }
+        // The LQ is ordered oldest to youngest. Once the remaining loads are
+        // newer than an already-recorded violator, they cannot improve the
+        // squash point for this check.
+        if (!inst->isLoad() && memDepViolator &&
+                ld_inst->seqNum > memDepViolator->seqNum) {
+            return NoFault;
+        }
+
+        bool done_checking_load = false;
+        for (auto req0 : inst->savedRequest->_reqs) {
+            Addr inst_eff_addr1 = req0->getPaddr() >> depCheckShift;
+            Addr inst_eff_addr2 =
+                (req0->getPaddr() + req0->getSize() - 1) >> depCheckShift;
+
+            DPRINTF(LSQUnit, "Checking for violations for [sn:%lli], addr: %#lx\n",
+                    inst->seqNum, req0->getPaddr());
 
             for (auto req1 : loadIt->request()->_reqs) {
                 Addr ld_eff_addr1 = req1->getPaddr() >> depCheckShift;
@@ -1011,6 +1020,7 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                         DPRINTF(LSQUnit, "Found possible load violation at addr: %#x"
                                 " between instructions [sn:%lli] and [sn:%lli]\n",
                                 inst_eff_addr1, inst->seqNum, ld_inst->seqNum);
+                        done_checking_load = true;
                         break;
                     } else {
                         // A load/store incorrectly passed this store.
@@ -1024,6 +1034,7 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                         // So next time this load replaying to pipeline will forward from store correctly
                         // And no RAW violation happens
                         if (ld_inst->needNukeReplay()) {
+                            done_checking_load = true;
                             break;
                         }
 
@@ -1031,6 +1042,7 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                         // should occur since the load can forward data from store later
                         if (ld_inst->skipRawCheck()) {
                             ++stats.skipRawWhenLoadAtS0;
+                            done_checking_load = true;
                             break;
                         }
 
@@ -1057,8 +1069,11 @@ LSQUnit::checkViolations(typename LoadQueue::iterator& loadIt,
                     }
                 }
             }
-            ++loadIt;
+            if (done_checking_load) {
+                break;
+            }
         }
+        ++loadIt;
     }
     return NoFault;
 }
