@@ -112,9 +112,9 @@ def setKmhV3IdealParams(args, system):
                     # Configure XSDRRIP replacement policy (DRRIP mode)
                     # Each slice: 2MB/4 = 512KB, 8-way, 64B line → 1024 sets
                     l2_wrapper.slices[j].inner_cache.replacement_policy = XSDRRIPRP(mode=2, num_sets=1024)
-            system.tol2bus_list[i].forward_latency = 0  # 3->0
-            system.tol2bus_list[i].response_latency = 0  # 3->0
-            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 0  # 2->0
+            system.tol2bus_list[i].forward_latency = 3  # 0->3
+            system.tol2bus_list[i].response_latency = 3  # 0->3
+            system.tol2bus_list[i].hint_wakeup_ahead_cycles = 1  # 0->1
 
             # Enable dual-port for DCache → L2 communication
             # ReqLayer[0]: ICache+DCache+ITB+DTB → L2, allow 2 requests per cycle
@@ -141,7 +141,7 @@ if __name__ == '__m5_main__':
     args.l2_size = '2MB'
     args.l3_size = '32MB'
     # Enable prefetch buffers for all hardware prefetchers in this config.
-    args.enable_pf_buffer = False
+    args.enable_pf_buffer = True
     # Match the memories with the CPUs, based on the options for the test system
     TestMemClass = Simulation.setMemClass(args)
 
