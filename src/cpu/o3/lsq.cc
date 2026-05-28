@@ -396,10 +396,6 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     storeBuffer.setData(store_buffer_entries);
 
     bankOccupied.resize(dcacheSetDivNum, std::vector<bool>(numBank, false));
-    pendingDcacheRefill.resize(dcacheSetDivNum);
-    dcacheRefillDataRead.resize(dcacheSetDivNum, 0);
-    dcacheRefillDataWrite.resize(dcacheSetDivNum, 0);
-    dcacheRefillTagWrite.resize(dcacheSetDivNum, 0);
 }
 
 
@@ -529,45 +525,137 @@ LSQ::tick()
 void
 LSQ::clearAddresses()
 {
-    for (unsigned div = 0; div < dcacheSetDivNum; div++) {
-        // Check if the current cycle is already occupied by previous operations
-        // (e.g. delayed writeback).
-        bool currentCycleBusy =
-            (dcacheRefillDataRead[div] | dcacheRefillDataWrite[div]) & 0x1;
-
-        auto &pendingRefill = pendingDcacheRefill[div];
-        if (pendingRefill.valid) {
-            // If current cycle is busy, we stall the new request (keep pending).
-            // If free, we issue the new request.
-            if (!currentCycleBusy) {
-                // Clean victims don't need the extra data-read occupancy.
-                if (pendingRefill.needDataRead) {
-                    // Data Read at 1 cycle later (Bit 1)
-                    dcacheRefillDataRead[div] |= (1 << 1);
-                }
-                pendingRefill = {};
-                // Tag Write at 3 cycles later (Bit 3)
-                dcacheRefillTagWrite[div] |= (1 << 3);
-                // Data Write at 4 cycles later (Bit 4)
-                dcacheRefillDataWrite[div] |= (1 << 4);
-            }
-        }
-
-        // Advance the pipeline for the next cycle.
-        dcacheRefillDataRead[div] >>= 1;
-        dcacheRefillTagWrite[div] >>= 1;
-        dcacheRefillDataWrite[div] >>= 1;
-
-        std::fill(bankOccupied[div].begin(), bankOccupied[div].end(),
-                  currentCycleBusy);
-    }
+    advanceDcacheRefillPipe();
     recentlyloadAddr.clear();
+}
+
+void
+LSQ::advanceDcacheRefillPipe()
+{
+    DcacheRefillBufferedPipe next_pipe = {};
+    std::vector<bool> current_cycle_busy_divs(dcacheSetDivNum, false);
+
+    markDcacheRefillBusyDivs(current_cycle_busy_divs);
+
+    const auto &s1_data_read = dcacheRefillStage(DcacheRefillStage::S1DataRead);
+    const auto &s2_data_resp = dcacheRefillStage(DcacheRefillStage::S2DataResp);
+    const auto &s3_tag_write = dcacheRefillStage(DcacheRefillStage::S3TagWrite);
+    const auto &s4_data_write =
+        dcacheRefillStage(DcacheRefillStage::S4DataWrite);
+
+    auto &next_s1_data_read =
+        next_pipe.at(dcacheRefillPipeIndex(DcacheRefillStage::S1DataRead));
+    auto &next_s2_data_resp =
+        next_pipe.at(dcacheRefillPipeIndex(DcacheRefillStage::S2DataResp));
+    auto &next_s3_tag_write =
+        next_pipe.at(dcacheRefillPipeIndex(DcacheRefillStage::S3TagWrite));
+    auto &next_s4_data_write =
+        next_pipe.at(dcacheRefillPipeIndex(DcacheRefillStage::S4DataWrite));
+
+    // Advance s3 to s4
+    if (s3_tag_write.valid) {
+        next_s4_data_write = s3_tag_write;
+    }
+    // Advance s2 to s3
+    if (s2_data_resp.valid) {
+        next_s3_tag_write = s2_data_resp;
+    }
+    // Advance s1 to s2 or block at s1
+    if (hasDcacheRefillDataArrayConflict()) {
+        // A same-div S4 data write blocks the younger S1 data read and
+        // backpressures the S0 TagReadEntry admission path for one cycle.
+        next_s1_data_read = s1_data_read;
+    } else if (s1_data_read.valid) {
+        next_s2_data_resp = s1_data_read;
+    }
+
+    if (!dcacheRefillInputQ.empty()) {
+        const auto &queued_refill = dcacheRefillInputQ.front();
+        if (canEnterDcacheRefillPipe(queued_refill, next_pipe)) {
+            // S0 TagReadEntry is consumed at admission time. Once admitted, the
+            // request is recorded in the buffered S1 slot for later cycles.
+            next_s1_data_read.valid = true;
+            next_s1_data_read.refill = queued_refill;
+            dcacheRefillInputQ.pop();
+        }
+    }
+
+    dcacheRefillPipe = next_pipe;
+
+    for (unsigned div = 0; div < dcacheSetDivNum; div++) {
+        std::fill(bankOccupied[div].begin(), bankOccupied[div].end(),
+                  current_cycle_busy_divs[div]);
+    }
+}
+
+LSQ::DcacheRefillPipeSlot &
+LSQ::dcacheRefillStage(DcacheRefillStage stage)
+{
+    return dcacheRefillPipe.at(dcacheRefillPipeIndex(stage));
+}
+
+const LSQ::DcacheRefillPipeSlot &
+LSQ::dcacheRefillStage(DcacheRefillStage stage) const
+{
+    return dcacheRefillPipe.at(dcacheRefillPipeIndex(stage));
+}
+
+void
+LSQ::markDcacheRefillBusyDivs(std::vector<bool> &busy_divs) const
+{
+    const auto &s1_data_read = dcacheRefillStage(DcacheRefillStage::S1DataRead);
+    const auto &s4_data_write =
+        dcacheRefillStage(DcacheRefillStage::S4DataWrite);
+
+    if (s1_data_read.valid && s1_data_read.refill.needDataRead) {
+        busy_divs.at(s1_data_read.refill.div) = true;
+    }
+    if (s4_data_write.valid) {
+        busy_divs.at(s4_data_write.refill.div) = true;
+    }
+}
+
+bool
+LSQ::hasDcacheRefillDataArrayConflict() const
+{
+    const auto &s1_data_read = dcacheRefillStage(DcacheRefillStage::S1DataRead);
+    const auto &s4_data_write =
+        dcacheRefillStage(DcacheRefillStage::S4DataWrite);
+
+    return s1_data_read.valid &&
+        s1_data_read.refill.needDataRead &&
+        s4_data_write.valid &&
+        s1_data_read.refill.div == s4_data_write.refill.div;
+}
+
+bool
+LSQ::canEnterDcacheRefillPipe(const DcacheRefillRequest &request,
+                              const DcacheRefillBufferedPipe &next_pipe) const
+{
+    // Check if blocked by tag read
+    const bool s0_tag_read_blocked =
+        dcacheRefillStage(DcacheRefillStage::S3TagWrite).valid;
+    // Check if s1 is blocked
+    const bool s1_backpressured =
+        next_pipe.at(dcacheRefillPipeIndex(DcacheRefillStage::S1DataRead)).valid;
+
+    if (s0_tag_read_blocked || s1_backpressured) {
+        return false;
+    }
+    // Check if blocked by set conflict
+    return !isDcacheRefillSetBlocked(request.setKey);
 }
 
 unsigned
 LSQ::getDcacheDiv(Addr vaddr) const
 {
     return (vaddr >> dcacheLineBits) & (dcacheSetDivNum - 1);
+}
+
+uint64_t
+LSQ::getDcacheSetKey(Addr vaddr) const
+{
+    return (vaddr >> dcacheLineBits) & ((1ULL << dcacheSetBits) - 1);
 }
 
 uint64_t
@@ -583,6 +671,21 @@ LSQ::getDcacheDivBankSetKey(Addr vaddr) const
 {
     return (static_cast<uint64_t>(getDcacheDiv(vaddr)) << dcacheSetBankBits) |
         getDcacheBankSetKey(vaddr);
+}
+
+bool
+LSQ::isDcacheRefillSetBlocked(uint64_t set_key) const
+{
+    for (unsigned stage = static_cast<unsigned>(DcacheRefillStage::S1DataRead);
+         stage <= static_cast<unsigned>(DcacheRefillStage::S3TagWrite);
+         ++stage) {
+        const auto &pipe_stage =
+            dcacheRefillStage(static_cast<DcacheRefillStage>(stage));
+        if (pipe_stage.valid && pipe_stage.refill.setKey == set_key) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool
@@ -612,10 +715,8 @@ LSQ::loadBankConflictedCheck(Addr vaddr)
 void
 LSQ::notifyDcacheRefill(Addr addr, bool need_data_read)
 {
-    const unsigned div = getDcacheDiv(addr);
-    auto &pendingRefill = pendingDcacheRefill.at(div);
-    pendingRefill.valid = true;
-    pendingRefill.needDataRead |= need_data_read;
+    dcacheRefillInputQ.push(
+        {addr, getDcacheDiv(addr), getDcacheSetKey(addr), need_data_read});
 }
 
 unsigned

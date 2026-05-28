@@ -42,6 +42,7 @@
 #ifndef __CPU_O3_LSQ_HH__
 #define __CPU_O3_LSQ_HH__
 
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <list>
@@ -1043,14 +1044,22 @@ class LSQ
 
     void clearAddresses();
 
+    void advanceDcacheRefillPipe();
+
     unsigned
     getDcacheDiv(Addr vaddr) const;
+
+    uint64_t
+    getDcacheSetKey(Addr vaddr) const;
 
     uint64_t
     getDcacheBankSetKey(Addr vaddr) const;
 
     uint64_t
     getDcacheDivBankSetKey(Addr vaddr) const;
+
+    bool
+    isDcacheRefillSetBlocked(uint64_t set_key) const;
 
     Addr bankNum(Addr a) const { return (a >> 3) & 0x7; };
 
@@ -1129,11 +1138,61 @@ class LSQ
     int storeWbStage() const { return _storeWbStage; }
 
   public:
-    struct PendingDcacheRefill
+    enum class DcacheRefillStage : unsigned
     {
-        bool valid = false;
+        S0TagReadEntry = 0,
+        S1DataRead,
+        S2DataResp,
+        S3TagWrite,
+        S4DataWrite,
+        S5Complete,
+    };
+
+    struct DcacheRefillRequest
+    {
+        Addr addr = 0;
+        unsigned div = 0;
+        uint64_t setKey = 0;
         bool needDataRead = false;
     };
+
+    struct DcacheRefillPipeSlot
+    {
+        bool valid = false;
+        DcacheRefillRequest refill;
+    };
+
+    // S0 happens at admission time. The stored array keeps the buffered
+    // pipeline slots from S1 to S4, while S5 is the pipe exit.
+    static constexpr unsigned FirstBufferedDcacheRefillStage =
+        static_cast<unsigned>(DcacheRefillStage::S1DataRead);
+    static constexpr unsigned LastBufferedDcacheRefillStage =
+        static_cast<unsigned>(DcacheRefillStage::S4DataWrite);
+    static constexpr unsigned NumBufferedDcacheRefillStages =
+        LastBufferedDcacheRefillStage - FirstBufferedDcacheRefillStage + 1;
+
+    using DcacheRefillBufferedPipe =
+        std::array<DcacheRefillPipeSlot, NumBufferedDcacheRefillStages>;
+
+    static constexpr unsigned
+    dcacheRefillPipeIndex(DcacheRefillStage stage)
+    {
+        return static_cast<unsigned>(stage) - FirstBufferedDcacheRefillStage;
+    }
+
+    DcacheRefillPipeSlot &
+    dcacheRefillStage(DcacheRefillStage stage);
+
+    const DcacheRefillPipeSlot &
+    dcacheRefillStage(DcacheRefillStage stage) const;
+
+    void markDcacheRefillBusyDivs(std::vector<bool> &busy_divs) const;
+
+    bool hasDcacheRefillDataArrayConflict() const;
+
+    bool canEnterDcacheRefillPipe(const DcacheRefillRequest &request,
+                                  const DcacheRefillBufferedPipe &next_pipe)
+        const;
 
     struct NullStruct {};
     boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
@@ -1141,18 +1200,13 @@ class LSQ
 
     void notifyDcacheRefill(Addr addr, bool need_data_read);
 
-    std::vector<PendingDcacheRefill> pendingDcacheRefill;
-    std::vector<uint32_t> dcacheRefillDataRead;
-    std::vector<uint32_t> dcacheRefillDataWrite;
-    std::vector<uint32_t> dcacheRefillTagWrite;
+    std::queue<DcacheRefillRequest> dcacheRefillInputQ;
+    DcacheRefillBufferedPipe
+        dcacheRefillPipe = {};
 
     bool isDcacheRefillTagWrite() const
     {
-        for (auto stage : dcacheRefillTagWrite) {
-            if (stage & 0x1)
-                return true;
-        }
-        return false;
+        return dcacheRefillStage(DcacheRefillStage::S3TagWrite).valid;
     }
 
   protected:
