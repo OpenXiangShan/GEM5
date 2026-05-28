@@ -158,7 +158,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool threadActive(ThreadID tid) const;
     bool canStartPrediction(ThreadID tid) const;
 
-    ThreadID scheduleThread();
+    ThreadID scheduleThread(const std::array<bool, MaxThreads> &squashedThisCycle);
 
     void processNewPrediction(ThreadID tid);
 

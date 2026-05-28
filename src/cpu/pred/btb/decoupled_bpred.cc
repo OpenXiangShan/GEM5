@@ -244,10 +244,15 @@ DecoupledBPUWithBTB::canStartPrediction(ThreadID tid) const
 }
 
 ThreadID
-DecoupledBPUWithBTB::scheduleThread()
+DecoupledBPUWithBTB::scheduleThread(
+        const std::array<bool, MaxThreads> &squashedThisCycle)
 {
     for (ThreadID offset = 0; offset < numThreads; ++offset) {
         const ThreadID tid = (nextPredictTid + offset) % numThreads;
+
+        if (squashedThisCycle[tid]) {
+            continue;
+        }
 
         if (!canStartPrediction(tid)) {
             continue;
@@ -267,8 +272,10 @@ DecoupledBPUWithBTB::tick()
     DPRINTF(Override, "DecoupledBPUWithBTB::tick()\n");
 
     // On squash, reset state if there was a valid prediction.
+    std::array<bool, MaxThreads> squashedThisCycle = {};
     for (int tid = 0; tid < numThreads; tid++) {
         if (threads[tid].squashing) {
+            squashedThisCycle[tid] = true;
             threads[tid].validprediction = false;
             threads[tid].numOverrideBubbles = 0;
             tage->dryRunCycle(threads[tid].s0PC);
@@ -277,7 +284,10 @@ DecoupledBPUWithBTB::tick()
         }
     }
 
-    ThreadID curTid = scheduleThread();
+    // A thread that just consumed a squash is not allowed to restart
+    // prediction until the next tick. This preserves the single-thread squash
+    // bubble while still letting another ready SMT thread predict this tick.
+    ThreadID curTid = scheduleThread(squashedThisCycle);
 
     // 1. Request new prediction if FSQ not full and we are idle
     if (curTid != InvalidThreadID) {
