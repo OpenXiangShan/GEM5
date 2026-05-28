@@ -145,6 +145,9 @@ class UBTB : public TimedBaseBTBPredictor
     {
         return meta;
     }
+    void refreshPredictionMeta(Addr startAddr,
+                               const boost::dynamic_bitset<> &history,
+                               FullBTBPrediction &pred) override;
 
     // the following methods are not used
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override {}
@@ -218,7 +221,7 @@ class UBTB : public TimedBaseBTBPredictor
      *  @param startPC The start address of the fetch block
      *  @return Returns the tag bits.
      */
-    inline Addr getTag(Addr startPC) {
+    inline Addr getTag(Addr startPC) const {
         return (startPC >> 1) & tagMask;
     }
 
@@ -232,6 +235,7 @@ class UBTB : public TimedBaseBTBPredictor
      * @return Iterator to the matching entry if found, or ubtb.end() if not found
      */
     UBTBIter lookup(Addr startAddr);
+    TickedUBTBEntry lookupNoSideEffect(Addr startAddr) const;
 
     /** helper method called by putPCHistory: Check uBTB entry pc range and update statistics
      * @param entry The uBTB entry to check

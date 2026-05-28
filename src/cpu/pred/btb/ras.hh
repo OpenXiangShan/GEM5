@@ -95,6 +95,9 @@ namespace btb_pred {
                           std::vector<FullBTBPrediction> &stagePreds) override;
         
         std::shared_ptr<void> getPredictionMeta() override;
+        void refreshPredictionMeta(Addr startAddr,
+                                   const boost::dynamic_bitset<> &history,
+                                   FullBTBPrediction &pred) override;
 
         void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
 

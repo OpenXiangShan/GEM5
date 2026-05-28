@@ -22,6 +22,7 @@
 #include "cpu/pred/btb/ftq.hh"
 #include "cpu/pred/btb/mbtb.hh"
 #include "cpu/pred/btb/microtage.hh"
+#include "cpu/pred/btb/pairtage.hh"
 #include "cpu/pred/btb/ras.hh"
 #include "cpu/pred/general_arch_db.hh"
 
@@ -88,6 +89,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     AheadBTB *abtb{};
     MBTB *mbtb{};
     MicroTAGE *microtage{};
+    PairTAGE *pairtage{};
     BTBTAGE *tage{};
     BTBITTAGE *ittage{};
     BTBMGSC *mgsc{};
@@ -134,11 +136,17 @@ class DecoupledBPUWithBTB : public BPredUnit
         boost::dynamic_bitset<> s0BwHistory;  ///< global backward History bits
         std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
         boost::dynamic_bitset<> commitHistory;
+        PairPhase s0PairPhase{PairPhase::Even};
         FullBTBPrediction finalPred;      ///< Final prediction
+        FullBTBPrediction secondBlockTrainPred;
+        FetchTarget pendingSecondBlockEntry;
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
         bool blockPredictionPending{false};
+        bool pendingSecondBlockValid{false};
+        bool secondBlockTrainPredReady{false};
+        bool firstBlockProcessedThisTick{false};
     } threads[MaxThreads];
 
     HistoryManager historyManager;
@@ -148,10 +156,27 @@ class DecoupledBPUWithBTB : public BPredUnit
     ThreadID scheduleThread() { return 0; }
 
     void processNewPrediction(ThreadID tid);
+    void prepareSecondBlockTrainingPrediction(ThreadID tid);
+    void processSecondBlock(ThreadID tid);
+    void refreshSecondBlockPredictionMetas(ThreadID tid, FullBTBPrediction &pred);
+    bool currentFirstBlockHasAllowedPairPhase(ThreadID tid) const;
+    enum class PairtageFirstBlockSecondBlockStatus
+    {
+        Match,
+        NoCandidateLookupMiss,
+        NoCandidateUntrainable,
+        FallThruMismatch,
+        ControlAddrMismatch,
+        TargetMismatch
+    };
+    PairtageFirstBlockSecondBlockStatus
+    pairtageFirstBlockStatusForSecondBlock(ThreadID tid) const;
+    bool predictionMatchesPairtageFirstBlock(const FullBTBPrediction &pred) const;
 
     FetchTarget createFetchTargetEntry(ThreadID tid);
+    FetchTarget createFetchTargetEntry(ThreadID tid, Addr startPC, FullBTBPrediction &pred);
 
-    void updateHistoryForPrediction(FetchTarget &entry);
+    void updateHistoryForPrediction(FetchTarget &entry, FullBTBPrediction &pred);
 
     void fillAheadPipeline(FetchTarget &entry);
 
@@ -305,6 +330,43 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s3PredWrongTage;
         statistics::Scalar s3PredWrongIttage;
         statistics::Scalar s3PredWrongRas;
+        statistics::Scalar pairtageFirstBlockCandidates;
+        statistics::Scalar pairtageFirstBlockSelected;
+        statistics::Scalar pairtageFirstBlockOverridden;
+        statistics::Scalar pairtageFirstBlockFetched;
+        statistics::Scalar pairtageFirstBlockCommitted;
+        statistics::Scalar pairtageFirstBlockCorrect;
+        statistics::Scalar pairtageFirstBlockWrong;
+        statistics::Scalar pairtageFirstBlockFetchedInsts;
+        statistics::Scalar pairtageFirstBlockCommittedInsts;
+        statistics::Scalar pairtageSecondBlockTrainPrepared;
+        statistics::Scalar pairtageSecondBlockAttempted;
+        statistics::Scalar pairtageSecondBlockSkippedDisabled;
+        statistics::Scalar pairtageSecondBlockSkippedOddPhase;
+        statistics::Scalar pairtageSecondBlockSkippedFirstBlockOverridden;
+        statistics::Scalar pairtageSecondBlockNoFirstBlockCandidate;
+        statistics::Scalar pairtageSecondBlockNoFirstBlockLookupMiss;
+        statistics::Scalar pairtageSecondBlockNoFirstBlockUntrainable;
+        statistics::Scalar pairtageSecondBlockFirstBlockMismatchFallThru;
+        statistics::Scalar pairtageSecondBlockFirstBlockMismatchControlAddr;
+        statistics::Scalar pairtageSecondBlockFirstBlockMismatchTarget;
+        statistics::Scalar pairtageSecondBlockSkippedFtqFull;
+        statistics::Scalar pairtageSecondBlockNoCandidate;
+        statistics::Scalar pairtageSecondBlockNoTeacher;
+        statistics::Scalar pairtageSecondBlockTeacherAgree;
+        statistics::Scalar pairtageSecondBlockTeacherDisagree;
+        statistics::Scalar pairtageSecondBlockEnqueued;
+        statistics::Scalar pairtageSecondBlockPredTaken;
+        statistics::Scalar pairtageSecondBlockPredNotTaken;
+        statistics::Scalar pairtageSecondBlockPredBytes;
+        statistics::Scalar pairtageSecondBlockFetched;
+        statistics::Scalar pairtageSecondBlockCommitted;
+        statistics::Scalar pairtageSecondBlockCorrect;
+        statistics::Scalar pairtageSecondBlockWrong;
+        statistics::Scalar pairtageSecondBlockFetchedInsts;
+        statistics::Scalar pairtageSecondBlockCommittedInsts;
+        statistics::Distribution pairtageSecondBlockFetchedInstsDist;
+        statistics::Distribution pairtageSecondBlockCommittedInstsDist;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;
