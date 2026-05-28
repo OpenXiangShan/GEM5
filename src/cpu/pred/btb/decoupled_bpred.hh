@@ -28,6 +28,7 @@
 // #include "cpu/pred/btb/uras.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/history_manager.hh"
+#include "cpu/pred/btb/interflush.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 #include "cpu/timebuf.hh"
 #include "debug/DBPBTBStats.hh"
@@ -81,6 +82,9 @@ class DecoupledBPUWithBTB : public BPredUnit
     unsigned maxInstsNum;
 
     const unsigned historyBits{488}; // will be overridden later by the constructor
+    const bool enableInterflushPenalty;
+    const unsigned interflushEntryLimit;
+    const unsigned interflushPenaltyCycles;
 
     const Addr MaxAddr{~(0ULL)};
 
@@ -192,6 +196,8 @@ class DecoupledBPUWithBTB : public BPredUnit
             stagePred.condTakens.clear();
             stagePred.indirectTargets.clear();
             stagePred.btbEntries.clear();
+            stagePred.fallThroughOverrideValid = false;
+            stagePred.fallThroughOverride = 0;
         }
     }
 

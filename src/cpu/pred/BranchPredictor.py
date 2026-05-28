@@ -985,6 +985,12 @@ class MBTB(TimedBaseBTBPredictor):
     blockSize = 32  # max 64 byte block, 32 byte aligned
     # MBTB is always half-aligned - no parameter needed
     victimCacheSize = Param.Unsigned(0, "Number of entries in the victim cache")
+    victimCacheSetAssoc = Param.Bool(
+        False, "Use RTL-style set-associative victim cache organization")
+    victimCacheNumWays = Param.Unsigned(
+        4, "Number of ways in each victim-cache set when set associative")
+    victimCacheSplitOnHit = Param.Bool(
+        False, "End the current prediction at the next 32B boundary on a victim-cache hit")
 
 class AheadBTB(TimedBaseBTBPredictor):
     type = 'AheadBTB'
@@ -1203,3 +1209,10 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     bpDBSwitches = VectorParam.String([], "Enable which traces in the form of database")
     resolveBlockThreshold = Param.Unsigned(8, "Consecutive resolve dequeue failures before blocking prediction once")
+    enableInterflushPenalty = Param.Bool(
+        False,
+        "Approximate an internal interflush when a block exposes too many branches")
+    interflushEntryLimit = Param.Unsigned(
+        8,
+        "Maximum number of branch entries that can be consumed without interflush")
+    interflushPenaltyCycles = Param.Unsigned(2, "Additional bubbles injected when interflush approximation triggers")
