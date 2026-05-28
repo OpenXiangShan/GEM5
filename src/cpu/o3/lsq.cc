@@ -716,7 +716,7 @@ void
 LSQ::notifyDcacheRefill(Addr addr, bool need_data_read)
 {
     dcacheRefillInputQ.push(
-        {addr, getDcacheDiv(addr), getDcacheSetKey(addr), need_data_read});
+        {addr, getDcacheDiv(addr), getDcacheSetKey(addr), true});
 }
 
 unsigned
