@@ -577,8 +577,8 @@ BTBITTAGE::tageHit()
 void
 BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
-    auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, taken, pc, target, pred.tid);
+    const auto replay = pred.getPHistReplay();
+    doUpdateHist(history, replay.taken, replay.pc, replay.target, pred.tid);
 }
 
 /**
@@ -595,7 +595,9 @@ BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredic
  * @param cond_taken The actual branch outcome
  */
 void
-BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
+                        const FetchTarget &entry,
+                        const PathHistoryReplay &replay)
 {
     auto &state = historyState(entry.tid);
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
@@ -604,8 +606,7 @@ BTBITTAGE::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarge
         state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         state.indexFoldedHist[i].recover(predMeta->indexFoldedHist[i]);
     }
-    doUpdateHist(history, cond_taken, entry.getControlPC(),
-                 entry.getTakenTarget(), entry.tid);
+    doUpdateHist(history, replay.taken, replay.pc, replay.target, entry.tid);
 }
 
 void

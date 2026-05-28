@@ -1222,8 +1222,8 @@ BTBTAGE::specUpdateHist(const boost::dynamic_bitset<> &history,
         return;
     }
 
-    auto [shamt, taken] = pred.getHistInfo();
-    doUpdateHist(history, shamt, taken, 0, 0, pred.tid);
+    const auto replay = pred.getHistReplay();
+    doUpdateHist(history, replay.shamt, replay.taken, 0, 0, pred.tid);
 }
 
 void
@@ -1233,8 +1233,9 @@ BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredicti
         return;
     }
 
-    auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, 2, taken, pc, target, pred.tid);
+    const auto replay = pred.getPHistReplay();
+    doUpdateHist(history, replay.shamt, replay.taken, replay.pc,
+                 replay.target, pred.tid);
 }
 
 void
@@ -1276,15 +1277,15 @@ BTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
 
 void
 BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, int shamt, bool cond_taken)
+    const FetchTarget &entry, const PathHistoryReplay &replay)
 {
     if (!usePathHistory) {
         return;
     }
 
     recoverFoldedHist(entry);
-    doUpdateHist(history, 2, cond_taken, entry.getControlPC(),
-                 entry.getTakenTarget(), entry.tid);
+    doUpdateHist(history, replay.shamt, replay.taken, replay.pc,
+                 replay.target, entry.tid);
 }
 
 // Check folded history after speculative update and recovery

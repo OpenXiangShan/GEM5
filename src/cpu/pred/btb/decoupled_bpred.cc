@@ -1057,37 +1057,33 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     }
 
     // Get prediction information for history updates
-    int shamt;
-    bool taken;
-    std::tie(shamt, taken) = finalPred.getHistInfo();
+    auto ghist = finalPred.getHistReplay();
 
     // Update global history
-    histShiftIn(shamt, taken, s0History);
+    histShiftIn(ghist.shamt, ghist.taken, s0History);
 
     // Update history manager and verify TAGE folded history
     historyManagers[tid].addSpeculativeHist(
-        entry.startPC, shamt, taken, entry.predBranchInfo, ftq.backId(tid) + 1);
+        entry.startPC, ghist.shamt, ghist.taken,
+        entry.predBranchInfo, ftq.backId(tid) + 1);
 
     // Get prediction information for global backward history updates
-    int bw_shamt;
-    bool bw_taken;
-    std::tie(bw_shamt, bw_taken) = finalPred.getBwHistInfo();
-
-    // Get prediction information for path history updates
-    auto [p_pc, p_target, p_taken]= finalPred.getPHistInfo(); // p_taken = taken
+    auto bwhist = finalPred.getBwHistReplay();
+    auto phist = finalPred.getPHistReplay();
 
     // Update global backward history
-    histShiftIn(bw_shamt, bw_taken, s0BwHistory);
+    histShiftIn(bwhist.shamt, bwhist.taken, s0BwHistory);
 
     // Update path history
-    pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);
+    pHistShiftIn(phist.shamt, phist.taken, s0PHistory,
+                 phist.pc, phist.target);
 
     // Update local history
     const Addr localHistoryIndex =
         mgsc->getPcIndex(finalPred.bbStart,
                          log2(mgsc->getNumEntriesFirstLocalHistories()),
                          finalPred.asidHash);
-    histShiftIn(shamt, taken,
+    histShiftIn(ghist.shamt, ghist.taken,
         s0LHistory[localHistoryIndex]);
 
 #ifndef NDEBUG
@@ -1142,54 +1138,51 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     s0BwHistory = target.bwhistory;
     s0LHistory = target.lhistory;
 
-    // Get actual history shift information
-    int real_shamt;
-    bool real_taken;
-    std::tie(real_shamt, real_taken) = target.getHistInfoDuringSquash(
+    // Get actual history replay information.
+    auto ghist = target.getHistReplayDuringSquash(
         squash_pc.instAddr(), is_conditional, actually_taken);
-
-    // Get actual history shift information
-    int real_bw_shamt;
-    bool real_bw_taken;
-    std::tie(real_bw_shamt, real_bw_taken) = target.getBwHistInfoDuringSquash(
-    squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
-    bool real_p_taken = target.getPHistTakenDuringSquash(
-        squash_pc.instAddr(), actually_taken);
+    auto bwhist = target.getBwHistReplayDuringSquash(
+        squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
+    auto phist = target.getPHistReplayDuringSquash(
+        squash_pc.instAddr(), actually_taken, redirect_pc);
 
     // Recover component-specific history
     for (int i = 0; i < numComponents; ++i) {
-        components[i]->recoverHist(s0History, target, real_shamt, real_taken);
-        components[i]->recoverPHist(s0PHistory, target, 2, real_p_taken);
+        components[i]->recoverHist(s0History, target, ghist.shamt, ghist.taken);
+        components[i]->recoverPHist(s0PHistory, target, phist);
         if (components[i]->needMoreHistories) {
-            components[i]->recoverBwHist(s0BwHistory, target, real_bw_shamt, real_bw_taken);
-            components[i]->recoverIHist(target, real_bw_shamt, real_bw_taken);
-            components[i]->recoverLHist(s0LHistory, target, real_shamt, real_taken);
+            components[i]->recoverBwHist(s0BwHistory, target,
+                                         bwhist.shamt, bwhist.taken);
+            components[i]->recoverIHist(target, bwhist.shamt, bwhist.taken);
+            components[i]->recoverLHist(s0LHistory, target,
+                                        ghist.shamt, ghist.taken);
         }
     }
 
     // Update global history with actual outcome
-    histShiftIn(real_shamt, real_taken, s0History);
+    histShiftIn(ghist.shamt, ghist.taken, s0History);
 
     // Update path history with actual outcome
-    pHistShiftIn(2, real_p_taken, s0PHistory, squash_pc.instAddr(), redirect_pc);
+    pHistShiftIn(phist.shamt, phist.taken, s0PHistory,
+                 phist.pc, phist.target);
 
     // Update global backward history with actual outcome
-    histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);
+    histShiftIn(bwhist.shamt, bwhist.taken, s0BwHistory);
 
     // Update local history with actual outcome
     const Addr localHistoryIndex =
         mgsc->getPcIndex(target.startPC,
                          log2(mgsc->getNumEntriesFirstLocalHistories()),
                          target.asidHash);
-    histShiftIn(real_shamt, real_taken,
+    histShiftIn(ghist.shamt, ghist.taken,
                 s0LHistory[localHistoryIndex]);
 
     // Update history manager with appropriate branch info
     if (squash_type == SQUASH_CTRL) {
-        historyManagers[tid].squash(target_id, real_shamt, real_taken,
+        historyManagers[tid].squash(target_id, ghist.shamt, ghist.taken,
                                     target.exeBranchInfo);
     } else {
-        historyManagers[tid].squash(target_id, real_shamt, real_taken,
+        historyManagers[tid].squash(target_id, ghist.shamt, ghist.taken,
                                     BranchInfo());
     }
 

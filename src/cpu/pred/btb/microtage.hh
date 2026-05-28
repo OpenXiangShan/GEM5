@@ -133,7 +133,8 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // Recover 3 folded history after a misprediction, then update 3 folded history according to history and pred.taken
     // the other recoverHist methods are left blank
     void recoverPHist(const boost::dynamic_bitset<> &history,
-                        const FetchTarget &entry,int shamt, bool cond_taken) override;
+                      const FetchTarget &entry,
+                      const PathHistoryReplay &replay) override;
 
 #ifdef UNIT_TEST
     // API compatibility wrappers for testing

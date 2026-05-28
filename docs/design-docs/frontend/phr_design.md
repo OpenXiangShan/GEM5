@@ -65,33 +65,19 @@ thread.s0BwHistory.resize(historyBits, 0);
 
 顶层并不会对 block 内所有分支都更新 PHR。它只对“当前 block 最终选中的那次 taken 控制流”更新一次。
 
-决定更新来源的逻辑在 `FullBTBPrediction::getPHistInfo()`：
+决定更新来源的逻辑在 `FullBTBPrediction::getPHistReplay()`：
 
 ```cpp
-std::tuple<Addr, Addr, bool> getPHistInfo()
+PathHistoryReplay getPHistReplay()
 {
-    bool taken = false;
-    Addr pc = 0;
-    Addr target = 0;
-    for (auto &entry : btbEntries) {
-        if (entry.valid) {
-            if (entry.isCond) {
-                auto it = CondTakens_find(condTakens, entry.pc);
-                if (it != condTakens.end() && it->second) {
-                    taken = true;
-                    pc = entry.pc;
-                    target = entry.target;
-                    break;
-                }
-            } else {
-                taken = true;
-                pc = entry.pc;
-                target = entry.target;
-                break;
-            }
-        }
+    PathHistoryReplay replay;
+    const auto &entry = getTakenEntry();
+    if (entry.valid) {
+        replay.taken = true;
+        replay.pc = entry.pc;
+        replay.target = getEntryTarget(entry);
     }
-    return std::make_tuple(pc, target, taken);
+    return replay;
 }
 ```
 

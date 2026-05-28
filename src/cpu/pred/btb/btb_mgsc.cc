@@ -1169,10 +1169,9 @@ void
 BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     auto &state = historyState(pred.tid);
-    int shamt;
-    bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getHistInfo();
-    doUpdateHist(history, shamt, cond_taken, state.indexGFoldedHist);  // use global history to update G folded history
+    const auto replay = pred.getHistReplay();
+    doUpdateHist(history, replay.shamt, replay.taken,
+                 state.indexGFoldedHist);  // use global history to update G folded history
 }
 
 /**
@@ -1191,8 +1190,9 @@ void
 BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     auto &state = historyState(pred.tid);
-    auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, 2, taken, state.indexPFoldedHist, pc, target);  // only path history needs pc!
+    const auto replay = pred.getPHistReplay();
+    doUpdateHist(history, replay.shamt, replay.taken, state.indexPFoldedHist,
+                 replay.pc, replay.target);  // only path history needs pc!
 }
 
 
@@ -1212,10 +1212,8 @@ void
 BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
     auto &state = historyState(pred.tid);
-    int shamt;
-    bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getBwHistInfo();
-    doUpdateHist(history, shamt, cond_taken, state.indexBwFoldedHist);
+    const auto replay = pred.getBwHistReplay();
+    doUpdateHist(history, replay.shamt, replay.taken, state.indexBwFoldedHist);
 }
 
 /**
@@ -1234,12 +1232,10 @@ void
 BTBMGSC::specUpdateIHist(FullBTBPrediction &pred)
 {
     auto &state = historyState(pred.tid);
-    int shamt;
-    bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getBwHistInfo();
+    const auto replay = pred.getBwHistReplay();
     // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
     boost::dynamic_bitset<> dummy;
-    doUpdateHist(dummy, shamt, cond_taken, state.indexIFoldedHist);
+    doUpdateHist(dummy, replay.shamt, replay.taken, state.indexIFoldedHist);
 }
 
 /**
@@ -1258,12 +1254,10 @@ void
 BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred)
 {
     auto &state = historyState(pred.tid);
-    int shamt;
-    bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getHistInfo();
+    const auto replay = pred.getHistReplay();
     const Addr localHistoryIndex =
         getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories), pred.asidHash);
-    doUpdateHist(history[localHistoryIndex], shamt, cond_taken,
+    doUpdateHist(history[localHistoryIndex], replay.shamt, replay.taken,
                  state.indexLFoldedHist[localHistoryIndex]);
 }
 
@@ -1308,7 +1302,9 @@ BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
+                      const FetchTarget &entry,
+                      const PathHistoryReplay &replay)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
@@ -1318,8 +1314,8 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget 
     for (int i = 0; i < pTableNum; i++) {
         state.indexPFoldedHist[i].recover(predMeta->indexPFoldedHist[i]);
     }
-    doUpdateHist(history, 2, cond_taken, state.indexPFoldedHist,
-                 entry.getControlPC(), entry.getTakenTarget());
+    doUpdateHist(history, replay.shamt, replay.taken, state.indexPFoldedHist,
+                 replay.pc, replay.target);
 }
 
 /**

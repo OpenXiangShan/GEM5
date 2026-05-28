@@ -308,6 +308,22 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 
 #define FillStageLoop(x) for (int x = getDelay(); x < stagePreds.size(); ++x)
 
+struct DirectionHistoryReplay
+{
+    int shamt = 0;
+    bool taken = false;
+};
+
+struct PathHistoryReplay
+{
+    static constexpr int NumShift = 2;
+
+    int shamt = NumShift;
+    bool taken = false;
+    Addr pc = 0;
+    Addr target = 0;
+};
+
 /**
  * @brief Fetch Stream representing a sequence of instructions with prediction info
  *
@@ -419,42 +435,48 @@ struct FetchTarget
         return startPC;
     }
 
-    std::pair<int, bool> getHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken)
+    DirectionHistoryReplay getHistReplayDuringSquash(
+        Addr squash_pc, bool is_cond, bool actually_taken) const
     {
-        int shamt = 0;
-        bool cond_taken = false;
+        DirectionHistoryReplay replay;
         for (auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
-                shamt++;
+                replay.shamt++;
             }
         }
         if (is_cond) {
-            shamt++;
-            cond_taken = actually_taken;
+            replay.shamt++;
+            replay.taken = actually_taken;
         }
-        return std::make_pair(shamt, cond_taken);
+        return replay;
     }
 
-    std::pair<int, bool> getBwHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken, Addr target)
+    DirectionHistoryReplay getBwHistReplayDuringSquash(
+        Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
     {
-        int shamt = 0;
-        bool cond_taken = false;
+        DirectionHistoryReplay replay;
         for (auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
-                shamt++;
+                replay.shamt++;
             }
         }
         if (is_cond) {
-            shamt++;
-            cond_taken = actually_taken && (squash_pc > target);
+            replay.shamt++;
+            replay.taken = actually_taken && (squash_pc > target);
         }
-        return std::make_pair(shamt, cond_taken);
+        return replay;
     }
 
-    bool getPHistTakenDuringSquash(Addr squash_pc, bool actually_taken) const
+    PathHistoryReplay getPHistReplayDuringSquash(
+        Addr squash_pc, bool actually_taken, Addr target) const
     {
-        auto ctrl_pc = getControlPC();
-        return actually_taken && ctrl_pc == squash_pc;
+        PathHistoryReplay replay;
+        replay.taken = actually_taken && getControlPC() == squash_pc;
+        if (replay.taken) {
+            replay.pc = squash_pc;
+            replay.target = target;
+        }
+        return replay;
     }
 
     // should be called before components update
@@ -639,19 +661,18 @@ struct FullBTBPrediction
         }
     }
 
-    std::pair<int, bool> getHistInfo()  //global or local
+    DirectionHistoryReplay getHistReplay()  //global or local
     {
-        int shamt = 0; // shamt is the number of bits to shift in history update
-        bool taken = false;
+        DirectionHistoryReplay replay; // shamt is the number of bits to shift in history update
         for (auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) { // if found a cond branch, shamt++
-                    shamt++;
+                    replay.shamt++;
                     auto& pc = entry.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) { // if the cond branch is taken, taken = true
-                            taken = true;
+                            replay.taken = true;
                             break;
                         }
                     }
@@ -663,22 +684,21 @@ struct FullBTBPrediction
         }
         // For example, return (3, true) means 3 bits to shift in history update,
         // and the third branch is taken, new hist = xxx001
-        return std::make_pair(shamt, taken);
+        return replay;
     }
 
-    std::pair<int, bool> getBwHistInfo() //global backward or imli
+    DirectionHistoryReplay getBwHistReplay() //global backward or imli
     {
-        int shamt = 0;
-        bool taken = false;
+        DirectionHistoryReplay replay;
         for (auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) {
-                    shamt++;
+                    replay.shamt++;
                     auto& pc = entry.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {
-                            taken = (entry.target < entry.pc); // branch is backward if target < pc
+                            replay.taken = (entry.target < entry.pc); // branch is backward if target < pc
                             break;
                         }
                     }
@@ -688,16 +708,19 @@ struct FullBTBPrediction
                 }
             }
         }
-        return std::make_pair(shamt, taken);
+        return replay;
     }
 
-    std::tuple<Addr, Addr, bool> getPHistInfo() //path
+    PathHistoryReplay getPHistReplay() //path
     {
+        PathHistoryReplay replay;
         const auto &entry = getTakenEntry();
         if (entry.valid) {
-            return std::make_tuple(entry.pc, getEntryTarget(entry), true);
+            replay.taken = true;
+            replay.pc = entry.pc;
+            replay.target = getEntryTarget(entry);
         }
-        return std::make_tuple(0, 0, false);
+        return replay;
     }
 
 };

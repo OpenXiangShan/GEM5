@@ -345,8 +345,9 @@ BTBTAGEUpperBound::specUpdatePHist(const boost::dynamic_bitset<> &history,
     }
 
     exactPathHistory = history;
-    auto [pc, target, taken] = pred.getPHistInfo();
-    updatePathHistory(exactPathHistory, taken, pc, target);
+    const auto replay = pred.getPHistReplay();
+    updatePathHistory(exactPathHistory, replay.taken, replay.pc,
+                      replay.target);
 }
 
 void
@@ -362,18 +363,18 @@ BTBTAGEUpperBound::recoverHist(const boost::dynamic_bitset<> &history,
 
 void
 BTBTAGEUpperBound::recoverPHist(const boost::dynamic_bitset<> &history,
-                                const FetchTarget &entry, int shamt,
-                                bool cond_taken)
+                                const FetchTarget &entry,
+                                const PathHistoryReplay &replay)
 {
-    (void)shamt;
+    (void)entry;
 
     if (historySource != HistorySource::PathHash) {
         return;
     }
 
     exactPathHistory = history;
-    updatePathHistory(exactPathHistory, cond_taken,
-                      entry.getControlPC(), entry.getTakenTarget());
+    updatePathHistory(exactPathHistory, replay.taken, replay.pc,
+                      replay.target);
 }
 
 bool
