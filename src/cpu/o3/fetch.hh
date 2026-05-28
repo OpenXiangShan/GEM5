@@ -496,9 +496,6 @@ class Fetch
      */
     void handleIEWSignals();
 
-    /** Discards pending resolved-update work for a squashed thread. */
-    void discardResolveQueue(ThreadID tid);
-
     /** Handles decode squash signals.
      *  @return: Returns true if squash occurred and immediate return needed.
      */

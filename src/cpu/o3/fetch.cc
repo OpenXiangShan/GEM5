@@ -1638,18 +1638,6 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 }
 
 void
-Fetch::discardResolveQueue(ThreadID tid)
-{
-    auto remove_it = std::remove_if(
-        resolveQueue.begin(), resolveQueue.end(),
-        [tid](const ResolveQueueEntry &entry) {
-            return entry.resolvedTid == tid;
-        });
-
-    resolveQueue.erase(remove_it, resolveQueue.end());
-}
-
-void
 Fetch::handleIEWSignals()
 {
     // Currently resolve stage training is a btb-only feature
@@ -1661,11 +1649,10 @@ Fetch::handleIEWSignals()
     uint8_t enqueueCount = 0;
     uint8_t enqueueSize = 0;
 
+    // Resolved CFIs may arrive in the same cycle as a squash. Keep them so
+    // the predictor still learns the control instruction that caused redirect.
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (!fromCommit->commitInfo[tid].squash &&
-            !fromDecode->decodeInfo[tid].squash) {
-            enqueueSize += fromIEW->iewInfo[tid].resolvedCFIs.size();
-        }
+        enqueueSize += fromIEW->iewInfo[tid].resolvedCFIs.size();
     }
 
     if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
@@ -1673,11 +1660,6 @@ Fetch::handleIEWSignals()
         fetchStats.resolveEnqueueFailEvent += enqueueSize;
     } else {
         for (ThreadID tid = 0; tid < numThreads; ++tid) {
-            if (fromCommit->commitInfo[tid].squash ||
-                fromDecode->decodeInfo[tid].squash) {
-                continue;
-            }
-
             auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
             for (const auto &resolved : incoming) {
                 bool merged = false;
@@ -1748,8 +1730,6 @@ Fetch::handleCommitSignals(ThreadID tid)
             "from commit.\n",
             tid);
 
-    discardResolveQueue(tid);
-
         InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
         DynInstPtr squash_inst = fromCommit->commitInfo[tid].squashInst;
         if (fromCommit->commitInfo[tid].isTrapSquash &&
@@ -1808,8 +1788,6 @@ Fetch::handleDecodeSquash(ThreadID tid)
     if (fromDecode->decodeInfo[tid].squash) {
         DPRINTF(Fetch, "[tid:%i] Squashing instructions due to squash "
                 "from decode.\n",tid);
-
-        discardResolveQueue(tid);
 
         auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
         if (fromDecode->decodeInfo[tid].branchMispredict) {
