@@ -934,9 +934,9 @@ def xiangshan_system_init():
 
     # NOTE: Non-portable options for fdip experiments
     parser.add_argument(
-        "--enable-fdip",
+        "--disable-fdip",
         action="store_true",
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--enable-pdip",
@@ -949,9 +949,9 @@ def xiangshan_system_init():
         default=False,
     )
     parser.add_argument(
-        "--fdip-use-static-distance",
+        "--fdip-no-use-static-distance",
         action="store_true",
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--fdip-static-distance",
