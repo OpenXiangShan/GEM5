@@ -928,9 +928,21 @@ MlsUnit::issue(const DynInstPtr &inst)
     runStage1(inst, state);
     auto replayState = buildReplayState(state);
 
-    if (state.fault == NoFault && state.tlbMiss) {
+    const bool directPhysTranslation =
+        state.fault == NoFault && state.request &&
+        (state.request->getFlags() & Request::PHYSICAL);
+
+    if (state.fault == NoFault && state.tlbMiss && !directPhysTranslation) {
         state.replayReady = ensureReplayReady(replayState);
         state.needReplay = true;
+    } else if (state.fault == NoFault && state.tlbMiss &&
+               directPhysTranslation) {
+        DPRINTF(IEW,
+                "MlsUnit bypass replay on physical translation [tid:%i] "
+                "[sn:%llu] vaddr=%#llx paddr=%#llx flags=%#llx.\n",
+                inst->threadNumber, inst->seqNum, state.vaddr, state.paddr,
+                static_cast<unsigned long long>(static_cast<Request::FlagsType>(
+                    state.request->getFlags())));
     }
 
     if (state.fault == NoFault && !state.needReplay) {
