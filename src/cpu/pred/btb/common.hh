@@ -451,6 +451,12 @@ struct FetchTarget
         return std::make_pair(shamt, cond_taken);
     }
 
+    bool getPHistTakenDuringSquash(Addr squash_pc, bool actually_taken) const
+    {
+        auto ctrl_pc = getControlPC();
+        return actually_taken && ctrl_pc == squash_pc;
+    }
+
     // should be called before components update
     void setUpdateInstEndPC(unsigned predictWidth)
     {

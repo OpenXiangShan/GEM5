@@ -113,12 +113,12 @@ void specUpdateSelectedHistory(BTBTAGE* tage,
 void recoverSelectedHistory(BTBTAGE* tage,
                             const boost::dynamic_bitset<>& history,
                             const FetchTarget& stream, int shamt,
-                            bool cond_taken)
+                            bool path_taken)
 {
     if (tage->usesPathHistory()) {
-        tage->recoverPHist(history, stream, shamt, cond_taken);
+        tage->recoverPHist(history, stream, shamt, path_taken);
     } else {
-        tage->recoverHist(history, stream, shamt, cond_taken);
+        tage->recoverHist(history, stream, shamt, path_taken);
     }
 }
 
@@ -146,6 +146,11 @@ void applyActualHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
     } else {
         applyOutcomeHistory(history, shamt, taken);
     }
+}
+
+bool getActualPathTaken(const FetchTarget& stream)
+{
+    return stream.exeTaken && stream.exeBranchInfo.pc == stream.squashPC;
 }
 
 /**
@@ -251,7 +256,8 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
             history = pre_spec_history;
         }
         // Recover from misprediction
-        recoverSelectedHistory(tage, history, stream, 1, actual_taken);
+        recoverSelectedHistory(tage, history, stream, 1,
+                               getActualPathTaken(stream));
         applyActualHistory(tage, history, stream.exeBranchInfo, 1, actual_taken);
         tage->checkFoldedHist(history, "recover");
     }
@@ -1308,6 +1314,31 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesReturnOverridePathHashSnapsh
     bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
 
     EXPECT_TRUE(predicted);
+}
+
+TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
+    BTBEntry entry = createBTBEntry(0x1000, false, true, true, -1, 0x2040);
+    boost::dynamic_bitset<> pathHistoryBefore(128, 0);
+    boost::dynamic_bitset<> pathHistoryAfter(128, 0);
+    applyPathHistoryTaken(pathHistoryAfter, entry.pc, entry.target);
+
+    FullBTBPrediction pred;
+    pred.btbEntries.push_back(entry);
+    tage->putPCHistory(0x1000, pathHistoryBefore, stagePreds);
+    auto meta = tage->getPredictionMeta();
+
+    FetchTarget stream = createStream(0x1000, entry, true, meta);
+    stream = setMispredStream(stream);
+
+    auto [ghr_shamt, ghr_taken] =
+        stream.getHistInfoDuringSquash(entry.pc, false, true);
+    EXPECT_EQ(ghr_shamt, 0);
+    EXPECT_FALSE(ghr_taken);
+    EXPECT_TRUE(stream.getPHistTakenDuringSquash(entry.pc, true));
+
+    tage->recoverPHist(pathHistoryBefore, stream, 2,
+                       stream.getPHistTakenDuringSquash(entry.pc, true));
+    tage->checkFoldedHist(pathHistoryAfter, "recover taken control path");
 }
 
 

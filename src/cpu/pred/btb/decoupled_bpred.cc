@@ -1153,11 +1153,13 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     bool real_bw_taken;
     std::tie(real_bw_shamt, real_bw_taken) = target.getBwHistInfoDuringSquash(
     squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
+    bool real_p_taken = target.getPHistTakenDuringSquash(
+        squash_pc.instAddr(), actually_taken);
 
     // Recover component-specific history
     for (int i = 0; i < numComponents; ++i) {
         components[i]->recoverHist(s0History, target, real_shamt, real_taken);
-        components[i]->recoverPHist(s0PHistory, target, real_shamt, real_taken);
+        components[i]->recoverPHist(s0PHistory, target, 2, real_p_taken);
         if (components[i]->needMoreHistories) {
             components[i]->recoverBwHist(s0BwHistory, target, real_bw_shamt, real_bw_taken);
             components[i]->recoverIHist(target, real_bw_shamt, real_bw_taken);
@@ -1169,7 +1171,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     histShiftIn(real_shamt, real_taken, s0History);
 
     // Update path history with actual outcome
-    pHistShiftIn(2, real_taken, s0PHistory, squash_pc.instAddr(), redirect_pc);
+    pHistShiftIn(2, real_p_taken, s0PHistory, squash_pc.instAddr(), redirect_pc);
 
     // Update global backward history with actual outcome
     histShiftIn(real_bw_shamt, real_bw_taken, s0BwHistory);

@@ -303,7 +303,8 @@ struct MgscHarness
             recover_stream.exeTaken = actual_taken;
 
             mgsc.recoverHist(ghr, recover_stream, shamt, actual_taken);
-            mgsc.recoverPHist(phr, recover_stream, 2, actual_taken);
+            bool actual_p_taken = actual_taken;
+            mgsc.recoverPHist(phr, recover_stream, 2, actual_p_taken);
 
             bool actual_bw_taken = actual_taken && (entry.target < entry.pc);
             mgsc.recoverBwHist(bwhr, recover_stream, bw_shamt, actual_bw_taken);
