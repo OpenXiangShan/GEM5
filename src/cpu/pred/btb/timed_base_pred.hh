@@ -73,7 +73,7 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred) {}
     virtual void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
     virtual void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry,
-                              const PathHistoryReplay &replay) {}
+                              const PathHistoryUpdate &update) {}
     virtual void recoverBwHist(const boost::dynamic_bitset<> &history,
                                const FetchTarget &entry, int shamt,
                                bool cond_taken) {}

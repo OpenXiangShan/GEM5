@@ -266,13 +266,13 @@ struct MgscHarness
         mgsc.specUpdateLHist(lhr_before, stage_preds[1]);
 
         // Speculative external history update using predicted outcome.
-        const auto ghist = stage_preds[1].getHistReplay();
+        const auto ghist = stage_preds[1].getHistUpdate();
         histShiftIn(ghist.shamt, ghist.taken, ghr);
 
-        const auto bwhist = stage_preds[1].getBwHistReplay();
+        const auto bwhist = stage_preds[1].getBwHistUpdate();
         histShiftIn(bwhist.shamt, bwhist.taken, bwhr);
 
-        const auto phist = stage_preds[1].getPHistReplay();
+        const auto phist = stage_preds[1].getPHistUpdate();
         pHistShiftIn(phist.shamt, phist.taken, phr, phist.pc, phist.target);
 
         unsigned lhr_idx =
@@ -300,7 +300,7 @@ struct MgscHarness
             recover_stream.squashPC = entry.pc;
 
             mgsc.recoverHist(ghr, recover_stream, ghist.shamt, actual_taken);
-            const auto actual_phist = recover_stream.getPHistReplayDuringSquash(
+            const auto actual_phist = recover_stream.getPHistUpdateDuringSquash(
                 entry.pc, actual_taken, entry.target);
             mgsc.recoverPHist(phr, recover_stream, actual_phist);
 

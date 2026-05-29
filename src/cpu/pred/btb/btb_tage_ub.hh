@@ -107,7 +107,7 @@ class BTBTAGEUpperBound : public BTBTAGE
                      bool cond_taken) override;
     void recoverPHist(const boost::dynamic_bitset<> &history,
                       const FetchTarget &entry,
-                      const PathHistoryReplay &replay) override;
+                      const PathHistoryUpdate &update) override;
     void update(const FetchTarget &entry) override;
     void checkFoldedHist(const bitset &history, const char *when) override;
 

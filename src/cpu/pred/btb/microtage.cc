@@ -972,8 +972,8 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken,
 void
 MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
-    const auto replay = pred.getPHistReplay();
-    doUpdateHist(history, replay.taken, replay.pc, replay.target, pred.tid);
+    const auto update = pred.getPHistUpdate();
+    doUpdateHist(history, update.taken, update.pc, update.target, pred.tid);
 }
 
 /**
@@ -991,7 +991,7 @@ MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredic
  */
 void
 MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, const PathHistoryReplay &replay)
+    const FetchTarget &entry, const PathHistoryUpdate &update)
 {
     auto &state = historyState(entry.tid);
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
@@ -1020,7 +1020,7 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         if (queue_valid_mismatch) {
             DPRINTF(TAGEHistory,
                     "recoverPHist: ahead queue valid mismatch after restore, path_taken %d\n",
-                    replay.taken);
+                    update.taken);
         }
     }
 
@@ -1028,7 +1028,7 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
     }
-    doUpdateHist(history, replay.taken, replay.pc, replay.target, entry.tid);
+    doUpdateHist(history, update.taken, update.pc, update.target, entry.tid);
 }
 
 // Check folded history after speculative update and recovery

@@ -156,7 +156,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
                      bool cond_taken) override;
     void recoverPHist(const boost::dynamic_bitset<> &history,
                       const FetchTarget &entry,
-                      const PathHistoryReplay &replay) override;
+                      const PathHistoryUpdate &update) override;
 
     // Update predictor state based on actual branch outcomes
     void update(const FetchTarget &entry) override;

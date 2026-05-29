@@ -173,7 +173,7 @@ class BTBMGSC : public TimedBaseBTBPredictor
     void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
                      bool cond_taken) override;
     void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry,
-                      const PathHistoryReplay &replay) override;
+                      const PathHistoryUpdate &update) override;
     void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt,
                        bool cond_taken) override;
     void recoverIHist(const FetchTarget &entry, int shamt,

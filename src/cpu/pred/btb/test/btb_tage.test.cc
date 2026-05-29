@@ -115,10 +115,10 @@ void recoverSelectedHistory(BTBTAGE* tage,
                             const boost::dynamic_bitset<>& history,
                             const FetchTarget& stream, int shamt,
                             bool cond_taken,
-                            const PathHistoryReplay& path_replay)
+                            const PathHistoryUpdate& path_update)
 {
     if (tage->usesPathHistory()) {
-        tage->recoverPHist(history, stream, path_replay);
+        tage->recoverPHist(history, stream, path_update);
     } else {
         tage->recoverHist(history, stream, shamt, cond_taken);
     }
@@ -128,13 +128,13 @@ void applyPredictedHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
                            FullBTBPrediction& pred)
 {
     if (tage->usesPathHistory()) {
-        const auto replay = pred.getPHistReplay();
-        if (replay.taken) {
-            applyPathHistoryTaken(history, replay.pc, replay.target);
+        const auto update = pred.getPHistUpdate();
+        if (update.taken) {
+            applyPathHistoryTaken(history, update.pc, update.target);
         }
     } else {
-        const auto replay = pred.getHistReplay();
-        applyOutcomeHistory(history, replay.shamt, replay.taken);
+        const auto update = pred.getHistUpdate();
+        applyOutcomeHistory(history, update.shamt, update.taken);
     }
 }
 
@@ -150,13 +150,13 @@ void applyActualHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
     }
 }
 
-PathHistoryReplay getActualPathReplay(const FetchTarget& stream)
+PathHistoryUpdate getActualPathUpdate(const FetchTarget& stream)
 {
-    return stream.getPHistReplayDuringSquash(
+    return stream.getPHistUpdateDuringSquash(
         stream.squashPC, stream.exeTaken, stream.exeBranchInfo.target);
 }
 
-TEST(FetchTargetHistoryReplayTest, SquashReplaySeparatesDirectionAndPath)
+TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
 {
     struct Case
     {
@@ -242,7 +242,7 @@ TEST(FetchTargetHistoryReplayTest, SquashReplaySeparatesDirectionAndPath)
             0x2040,
         },
         {
-            "path replay requires resolved control pc",
+            "path update requires resolved control pc",
             {},
             createBTBEntry(0x1010, false, true, true, -1, 0x3000),
             0x1008,
@@ -289,11 +289,11 @@ TEST(FetchTargetHistoryReplayTest, SquashReplaySeparatesDirectionAndPath)
         stream.resolved = true;
         stream.squashPC = c.squashPC;
 
-        const auto ghist = stream.getHistReplayDuringSquash(
+        const auto ghist = stream.getHistUpdateDuringSquash(
             c.squashPC, c.isCond, c.actualTaken);
-        const auto bwhist = stream.getBwHistReplayDuringSquash(
+        const auto bwhist = stream.getBwHistUpdateDuringSquash(
             c.squashPC, c.isCond, c.actualTaken, c.redirectPC);
-        const auto phist = stream.getPHistReplayDuringSquash(
+        const auto phist = stream.getPHistUpdateDuringSquash(
             c.squashPC, c.actualTaken, c.redirectPC);
 
         EXPECT_EQ(ghist.shamt, c.expectedGHistShamt);
@@ -388,15 +388,15 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
     bool history_updated = false;
     boost::dynamic_bitset<> pre_spec_history = history;
     if (tage->usesPathHistory()) {
-        const auto replay = stagePreds[1].getPHistReplay();
-        history_updated = replay.taken;
-        if (replay.taken) {
-            applyPathHistoryTaken(history, replay.pc, replay.target);
+        const auto update = stagePreds[1].getPHistUpdate();
+        history_updated = update.taken;
+        if (update.taken) {
+            applyPathHistoryTaken(history, update.pc, update.target);
         }
     } else {
-        const auto replay = stagePreds[1].getHistReplay();
-        history_updated = replay.shamt > 0;
-        applyOutcomeHistory(history, replay.shamt, replay.taken);
+        const auto update = stagePreds[1].getHistUpdate();
+        history_updated = update.shamt > 0;
+        applyOutcomeHistory(history, update.shamt, update.taken);
     }
     tage->checkFoldedHist(history, "speculative update");
 
@@ -411,9 +411,9 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
             history = pre_spec_history;
         }
         // Recover from misprediction
-        const auto path_replay = getActualPathReplay(stream);
+        const auto path_update = getActualPathUpdate(stream);
         recoverSelectedHistory(tage, history, stream, 1, actual_taken,
-                               path_replay);
+                               path_update);
         applyActualHistory(tage, history, stream.exeBranchInfo, 1, actual_taken);
         tage->checkFoldedHist(history, "recover");
     }
@@ -769,9 +769,9 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
 
     // Recover to pre-speculative state and update with correct outcome
     boost::dynamic_bitset<> recoveryHistory = originalHistory;
-    const auto path_replay = getActualPathReplay(stream);
+    const auto path_update = getActualPathUpdate(stream);
     recoverSelectedHistory(tage, recoveryHistory, stream, 1, !predicted_taken,
-                           path_replay);
+                           path_update);
 
     // Expected history should be original updated with the actual outcome.
     boost::dynamic_bitset<> expectedHistory = originalHistory;
@@ -1488,8 +1488,8 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
     FetchTarget stream = createStream(0x1000, entry, true, meta);
     stream = setMispredStream(stream);
 
-    const auto ghist = stream.getHistReplayDuringSquash(entry.pc, false, true);
-    const auto phist = stream.getPHistReplayDuringSquash(
+    const auto ghist = stream.getHistUpdateDuringSquash(entry.pc, false, true);
+    const auto phist = stream.getPHistUpdateDuringSquash(
         entry.pc, true, entry.target);
     EXPECT_EQ(ghist.shamt, 0);
     EXPECT_FALSE(ghist.taken);

@@ -189,8 +189,8 @@ These histories are updated speculatively and recovered on mispredictions.
 
 ```cpp
 void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {
-    const auto replay = pred.getHistReplay();
-    doUpdateHist(history, replay.shamt, replay.taken);
+    const auto update = pred.getHistUpdate();
+    doUpdateHist(history, update.shamt, update.taken);
 }
 
 void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {

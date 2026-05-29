@@ -134,7 +134,7 @@ class MicroTAGE : public TimedBaseBTBPredictor
     // the other recoverHist methods are left blank
     void recoverPHist(const boost::dynamic_bitset<> &history,
                       const FetchTarget &entry,
-                      const PathHistoryReplay &replay) override;
+                      const PathHistoryUpdate &update) override;
 
 #ifdef UNIT_TEST
     // API compatibility wrappers for testing

@@ -1057,7 +1057,7 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     }
 
     // Get prediction information for history updates
-    auto ghist = finalPred.getHistReplay();
+    auto ghist = finalPred.getHistUpdate();
 
     // Update global history
     histShiftIn(ghist.shamt, ghist.taken, s0History);
@@ -1068,8 +1068,8 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
         entry.predBranchInfo, ftq.backId(tid) + 1);
 
     // Get prediction information for global backward history updates
-    auto bwhist = finalPred.getBwHistReplay();
-    auto phist = finalPred.getPHistReplay();
+    auto bwhist = finalPred.getBwHistUpdate();
+    auto phist = finalPred.getPHistUpdate();
 
     // Update global backward history
     histShiftIn(bwhist.shamt, bwhist.taken, s0BwHistory);
@@ -1138,12 +1138,12 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     s0BwHistory = target.bwhistory;
     s0LHistory = target.lhistory;
 
-    // Get actual history replay information.
-    auto ghist = target.getHistReplayDuringSquash(
+    // Get actual history update information.
+    auto ghist = target.getHistUpdateDuringSquash(
         squash_pc.instAddr(), is_conditional, actually_taken);
-    auto bwhist = target.getBwHistReplayDuringSquash(
+    auto bwhist = target.getBwHistUpdateDuringSquash(
         squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
-    auto phist = target.getPHistReplayDuringSquash(
+    auto phist = target.getPHistUpdateDuringSquash(
         squash_pc.instAddr(), actually_taken, redirect_pc);
 
     // Recover component-specific history

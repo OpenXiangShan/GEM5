@@ -308,13 +308,13 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 
 #define FillStageLoop(x) for (int x = getDelay(); x < stagePreds.size(); ++x)
 
-struct DirectionHistoryReplay
+struct DirectionHistoryUpdate
 {
     int shamt = 0;
     bool taken = false;
 };
 
-struct PathHistoryReplay
+struct PathHistoryUpdate
 {
     static constexpr int NumShift = 2;
 
@@ -435,48 +435,48 @@ struct FetchTarget
         return startPC;
     }
 
-    DirectionHistoryReplay getHistReplayDuringSquash(
+    DirectionHistoryUpdate getHistUpdateDuringSquash(
         Addr squash_pc, bool is_cond, bool actually_taken) const
     {
-        DirectionHistoryReplay replay;
+        DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
-                replay.shamt++;
+                update.shamt++;
             }
         }
         if (is_cond) {
-            replay.shamt++;
-            replay.taken = actually_taken;
+            update.shamt++;
+            update.taken = actually_taken;
         }
-        return replay;
+        return update;
     }
 
-    DirectionHistoryReplay getBwHistReplayDuringSquash(
+    DirectionHistoryUpdate getBwHistUpdateDuringSquash(
         Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
     {
-        DirectionHistoryReplay replay;
+        DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
             if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
-                replay.shamt++;
+                update.shamt++;
             }
         }
         if (is_cond) {
-            replay.shamt++;
-            replay.taken = actually_taken && (squash_pc > target);
+            update.shamt++;
+            update.taken = actually_taken && (squash_pc > target);
         }
-        return replay;
+        return update;
     }
 
-    PathHistoryReplay getPHistReplayDuringSquash(
+    PathHistoryUpdate getPHistUpdateDuringSquash(
         Addr squash_pc, bool actually_taken, Addr target) const
     {
-        PathHistoryReplay replay;
-        replay.taken = actually_taken && getControlPC() == squash_pc;
-        if (replay.taken) {
-            replay.pc = squash_pc;
-            replay.target = target;
+        PathHistoryUpdate update;
+        update.taken = actually_taken && getControlPC() == squash_pc;
+        if (update.taken) {
+            update.pc = squash_pc;
+            update.target = target;
         }
-        return replay;
+        return update;
     }
 
     // should be called before components update
@@ -661,18 +661,18 @@ struct FullBTBPrediction
         }
     }
 
-    DirectionHistoryReplay getHistReplay()  //global or local
+    DirectionHistoryUpdate getHistUpdate()  //global or local
     {
-        DirectionHistoryReplay replay; // shamt is the number of bits to shift in history update
+        DirectionHistoryUpdate update; // shamt is the number of bits to shift in history update
         for (auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) { // if found a cond branch, shamt++
-                    replay.shamt++;
+                    update.shamt++;
                     auto& pc = entry.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) { // if the cond branch is taken, taken = true
-                            replay.taken = true;
+                            update.taken = true;
                             break;
                         }
                     }
@@ -684,21 +684,21 @@ struct FullBTBPrediction
         }
         // For example, return (3, true) means 3 bits to shift in history update,
         // and the third branch is taken, new hist = xxx001
-        return replay;
+        return update;
     }
 
-    DirectionHistoryReplay getBwHistReplay() //global backward or imli
+    DirectionHistoryUpdate getBwHistUpdate() //global backward or imli
     {
-        DirectionHistoryReplay replay;
+        DirectionHistoryUpdate update;
         for (auto &entry : btbEntries) {
             if (entry.valid) {
                 if (entry.isCond) {
-                    replay.shamt++;
+                    update.shamt++;
                     auto& pc = entry.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {
-                            replay.taken = (entry.target < entry.pc); // branch is backward if target < pc
+                            update.taken = (entry.target < entry.pc); // branch is backward if target < pc
                             break;
                         }
                     }
@@ -708,19 +708,19 @@ struct FullBTBPrediction
                 }
             }
         }
-        return replay;
+        return update;
     }
 
-    PathHistoryReplay getPHistReplay() //path
+    PathHistoryUpdate getPHistUpdate() //path
     {
-        PathHistoryReplay replay;
+        PathHistoryUpdate update;
         const auto &entry = getTakenEntry();
         if (entry.valid) {
-            replay.taken = true;
-            replay.pc = entry.pc;
-            replay.target = getEntryTarget(entry);
+            update.taken = true;
+            update.pc = entry.pc;
+            update.target = getEntryTarget(entry);
         }
-        return replay;
+        return update;
     }
 
 };
