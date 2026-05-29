@@ -188,8 +188,9 @@ The predictor maintains three types of folded histories:
 These histories are updated speculatively and recovered on mispredictions.
 
 ```cpp
-void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {
-    const auto update = pred.getHistUpdate();
+void specUpdateHist(const boost::dynamic_bitset<> &history,
+                    FullBTBPrediction &pred,
+                    const DirectionHistoryUpdate &update) {
     doUpdateHist(history, update.shamt, update.taken);
 }
 

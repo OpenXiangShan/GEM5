@@ -163,10 +163,24 @@ class BTBMGSC : public TimedBaseBTBPredictor
 
     // speculative update all folded history, according history and pred.taken
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+    void specUpdateHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred,
+                        const DirectionHistoryUpdate &update) override;
     void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+    void specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update) override;
     void specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+    void specUpdateBwHist(const boost::dynamic_bitset<> &history,
+                          FullBTBPrediction &pred,
+                          const DirectionHistoryUpdate &update) override;
     void specUpdateIHist(FullBTBPrediction &pred) override;
+    void specUpdateIHist(FullBTBPrediction &pred,
+                         const DirectionHistoryUpdate &update) override;
     void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred) override;
+    void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history,
+                         FullBTBPrediction &pred,
+                         const DirectionHistoryUpdate &update) override;
 
     // Recover all folded history after a misprediction, then update all folded history according to history and
     // pred.taken

@@ -101,6 +101,9 @@ class BTBTAGEUpperBound : public BTBTAGE
                         FullBTBPrediction &pred) override;
     void specUpdatePHist(const boost::dynamic_bitset<> &history,
                          FullBTBPrediction &pred) override;
+    void specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update) override;
     void recoverHist(const boost::dynamic_bitset<> &history,
                      const FetchTarget &entry,
                      int shamt,

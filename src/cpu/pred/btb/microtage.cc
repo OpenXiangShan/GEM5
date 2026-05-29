@@ -972,7 +972,14 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken,
 void
 MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
-    const auto update = pred.getPHistUpdate();
+    specUpdatePHist(history, pred, pred.getPHistUpdate());
+}
+
+void
+MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
+                           FullBTBPrediction &pred,
+                           const PathHistoryUpdate &update)
+{
     doUpdateHist(history, update.taken, update.pc, update.target, pred.tid);
 }
 

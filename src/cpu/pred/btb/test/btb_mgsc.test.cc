@@ -258,21 +258,23 @@ struct MgscHarness
             }
         }
 
+        const auto history_update = stage_preds[1].getHistoryUpdate();
+        const auto &ghist = history_update.ghist;
+        const auto &bwhist = history_update.bwhist;
+        const auto &phist = history_update.phist;
+
         // Speculative folded-history update (use pre-update histories, like DecoupledBPUWithBTB does).
-        mgsc.specUpdateHist(ghr_before, stage_preds[1]);
-        mgsc.specUpdatePHist(phr_before, stage_preds[1]);
-        mgsc.specUpdateBwHist(bwhr_before, stage_preds[1]);
-        mgsc.specUpdateIHist(stage_preds[1]);
-        mgsc.specUpdateLHist(lhr_before, stage_preds[1]);
+        mgsc.specUpdateHist(ghr_before, stage_preds[1], ghist);
+        mgsc.specUpdatePHist(phr_before, stage_preds[1], phist);
+        mgsc.specUpdateBwHist(bwhr_before, stage_preds[1], bwhist);
+        mgsc.specUpdateIHist(stage_preds[1], bwhist);
+        mgsc.specUpdateLHist(lhr_before, stage_preds[1], ghist);
 
         // Speculative external history update using predicted outcome.
-        const auto ghist = stage_preds[1].getHistUpdate();
         histShiftIn(ghist.shamt, ghist.taken, ghr);
 
-        const auto bwhist = stage_preds[1].getBwHistUpdate();
         histShiftIn(bwhist.shamt, bwhist.taken, bwhr);
 
-        const auto phist = stage_preds[1].getPHistUpdate();
         pHistShiftIn(phist.shamt, phist.taken, phr, phist.pc, phist.target);
 
         unsigned lhr_idx =

@@ -1218,22 +1218,36 @@ void
 BTBTAGE::specUpdateHist(const boost::dynamic_bitset<> &history,
                         FullBTBPrediction &pred)
 {
+    specUpdateHist(history, pred, pred.getHistUpdate());
+}
+
+void
+BTBTAGE::specUpdateHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred,
+                        const DirectionHistoryUpdate &update)
+{
     if (usePathHistory) {
         return;
     }
 
-    const auto update = pred.getHistUpdate();
     doUpdateHist(history, update.shamt, update.taken, 0, 0, pred.tid);
 }
 
 void
 BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
+    specUpdatePHist(history, pred, pred.getPHistUpdate());
+}
+
+void
+BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update)
+{
     if (!usePathHistory) {
         return;
     }
 
-    const auto update = pred.getPHistUpdate();
     doUpdateHist(history, update.shamt, update.taken, update.pc,
                  update.target, pred.tid);
 }

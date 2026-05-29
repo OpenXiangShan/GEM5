@@ -1168,8 +1168,15 @@ BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool ta
 void
 BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
+    specUpdateHist(history, pred, pred.getHistUpdate());
+}
+
+void
+BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred,
+                        const DirectionHistoryUpdate &update)
+{
     auto &state = historyState(pred.tid);
-    const auto update = pred.getHistUpdate();
     doUpdateHist(history, update.shamt, update.taken,
                  state.indexGFoldedHist);  // use global history to update G folded history
 }
@@ -1189,8 +1196,15 @@ BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPredictio
 void
 BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
+    specUpdatePHist(history, pred, pred.getPHistUpdate());
+}
+
+void
+BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update)
+{
     auto &state = historyState(pred.tid);
-    const auto update = pred.getPHistUpdate();
     doUpdateHist(history, update.shamt, update.taken, state.indexPFoldedHist,
                  update.pc, update.target);  // only path history needs pc!
 }
@@ -1211,8 +1225,15 @@ BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredicti
 void
 BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
+    specUpdateBwHist(history, pred, pred.getBwHistUpdate());
+}
+
+void
+BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history,
+                          FullBTBPrediction &pred,
+                          const DirectionHistoryUpdate &update)
+{
     auto &state = historyState(pred.tid);
-    const auto update = pred.getBwHistUpdate();
     doUpdateHist(history, update.shamt, update.taken, state.indexBwFoldedHist);
 }
 
@@ -1231,8 +1252,14 @@ BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPredict
 void
 BTBMGSC::specUpdateIHist(FullBTBPrediction &pred)
 {
+    specUpdateIHist(pred, pred.getBwHistUpdate());
+}
+
+void
+BTBMGSC::specUpdateIHist(FullBTBPrediction &pred,
+                         const DirectionHistoryUpdate &update)
+{
     auto &state = historyState(pred.tid);
-    const auto update = pred.getBwHistUpdate();
     // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
     boost::dynamic_bitset<> dummy;
     doUpdateHist(dummy, update.shamt, update.taken, state.indexIFoldedHist);
@@ -1253,8 +1280,15 @@ BTBMGSC::specUpdateIHist(FullBTBPrediction &pred)
 void
 BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred)
 {
+    specUpdateLHist(history, pred, pred.getHistUpdate());
+}
+
+void
+BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history,
+                         FullBTBPrediction &pred,
+                         const DirectionHistoryUpdate &update)
+{
     auto &state = historyState(pred.tid);
-    const auto update = pred.getHistUpdate();
     const Addr localHistoryIndex =
         getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories), pred.asidHash);
     doUpdateHist(history[localHistoryIndex], update.shamt, update.taken,

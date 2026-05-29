@@ -577,7 +577,14 @@ BTBITTAGE::tageHit()
 void
 BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
-    const auto update = pred.getPHistUpdate();
+    specUpdatePHist(history, pred, pred.getPHistUpdate());
+}
+
+void
+BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
+                           FullBTBPrediction &pred,
+                           const PathHistoryUpdate &update)
+{
     doUpdateHist(history, update.taken, update.pc, update.target, pred.tid);
 }
 

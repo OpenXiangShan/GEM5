@@ -148,8 +148,14 @@ class BTBTAGE : public TimedBaseBTBPredictor
     // Update folded history from GHR when configured in direction-history mode.
     void specUpdateHist(const boost::dynamic_bitset<> &history,
                         FullBTBPrediction &pred) override;
+    void specUpdateHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred,
+                        const DirectionHistoryUpdate &update) override;
     // Update folded history from PHR when configured in path-history mode.
     void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+    void specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update) override;
 
     void recoverHist(const boost::dynamic_bitset<> &history,
                      const FetchTarget &entry, int shamt,

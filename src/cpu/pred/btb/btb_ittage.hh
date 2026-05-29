@@ -107,6 +107,9 @@ class BTBITTAGE : public TimedBaseBTBPredictor
     // speculative update 3 folded history, according history and pred.taken
     // the other specUpdateHist methods are left blank
     void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
+    void specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update) override;
 
     // Recover 3 folded history after a misprediction, then update 3 folded history according to history and pred.taken
     // the other recoverHist methods are left blank

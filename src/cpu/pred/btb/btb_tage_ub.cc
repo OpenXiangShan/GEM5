@@ -340,12 +340,21 @@ void
 BTBTAGEUpperBound::specUpdatePHist(const boost::dynamic_bitset<> &history,
                                    FullBTBPrediction &pred)
 {
+    specUpdatePHist(history, pred, pred.getPHistUpdate());
+}
+
+void
+BTBTAGEUpperBound::specUpdatePHist(const boost::dynamic_bitset<> &history,
+                                   FullBTBPrediction &pred,
+                                   const PathHistoryUpdate &update)
+{
+    (void)pred;
+
     if (historySource != HistorySource::PathHash) {
         return;
     }
 
     exactPathHistory = history;
-    const auto update = pred.getPHistUpdate();
     updatePathHistory(exactPathHistory, update.taken, update.pc,
                       update.target);
 }

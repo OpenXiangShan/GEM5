@@ -324,6 +324,13 @@ struct PathHistoryUpdate
     Addr target = 0;
 };
 
+struct BTBHistoryUpdate
+{
+    DirectionHistoryUpdate ghist;
+    DirectionHistoryUpdate bwhist;
+    PathHistoryUpdate phist;
+};
+
 /**
  * @brief Fetch Stream representing a sequence of instructions with prediction info
  *
@@ -476,6 +483,19 @@ struct FetchTarget
             update.pc = squash_pc;
             update.target = target;
         }
+        return update;
+    }
+
+    BTBHistoryUpdate getHistoryUpdateDuringSquash(
+        Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
+    {
+        BTBHistoryUpdate update;
+        update.ghist = getHistUpdateDuringSquash(
+            squash_pc, is_cond, actually_taken);
+        update.bwhist = getBwHistUpdateDuringSquash(
+            squash_pc, is_cond, actually_taken, target);
+        update.phist = getPHistUpdateDuringSquash(
+            squash_pc, actually_taken, target);
         return update;
     }
 
@@ -720,6 +740,15 @@ struct FullBTBPrediction
             update.pc = entry.pc;
             update.target = getEntryTarget(entry);
         }
+        return update;
+    }
+
+    BTBHistoryUpdate getHistoryUpdate()
+    {
+        BTBHistoryUpdate update;
+        update.ghist = getHistUpdate();
+        update.bwhist = getBwHistUpdate();
+        update.phist = getPHistUpdate();
         return update;
     }
 

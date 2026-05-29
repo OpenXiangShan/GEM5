@@ -67,12 +67,51 @@ class TimedBaseBTBPredictor: public SimObject
     }
 
     virtual void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
+    virtual void specUpdateHist(const boost::dynamic_bitset<> &history,
+                                FullBTBPrediction &pred,
+                                const DirectionHistoryUpdate &update)
+    {
+        (void)update;
+        specUpdateHist(history, pred);
+    }
     virtual void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
+    virtual void specUpdatePHist(const boost::dynamic_bitset<> &history,
+                                 FullBTBPrediction &pred,
+                                 const PathHistoryUpdate &update)
+    {
+        (void)update;
+        specUpdatePHist(history, pred);
+    }
     virtual void specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
+    virtual void specUpdateBwHist(const boost::dynamic_bitset<> &history,
+                                  FullBTBPrediction &pred,
+                                  const DirectionHistoryUpdate &update)
+    {
+        (void)update;
+        specUpdateBwHist(history, pred);
+    }
     virtual void specUpdateIHist(FullBTBPrediction &pred) {}
-    virtual void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred) {}
-    virtual void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
-    virtual void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry,
+    virtual void specUpdateIHist(FullBTBPrediction &pred,
+                                 const DirectionHistoryUpdate &update)
+    {
+        (void)update;
+        specUpdateIHist(pred);
+    }
+    virtual void specUpdateLHist(
+        const std::vector<boost::dynamic_bitset<>> &history,
+        FullBTBPrediction &pred) {}
+    virtual void specUpdateLHist(
+        const std::vector<boost::dynamic_bitset<>> &history,
+        FullBTBPrediction &pred, const DirectionHistoryUpdate &update)
+    {
+        (void)update;
+        specUpdateLHist(history, pred);
+    }
+    virtual void recoverHist(const boost::dynamic_bitset<> &history,
+                             const FetchTarget &entry, int shamt,
+                             bool cond_taken) {}
+    virtual void recoverPHist(const boost::dynamic_bitset<> &history,
+                              const FetchTarget &entry,
                               const PathHistoryUpdate &update) {}
     virtual void recoverBwHist(const boost::dynamic_bitset<> &history,
                                const FetchTarget &entry, int shamt,

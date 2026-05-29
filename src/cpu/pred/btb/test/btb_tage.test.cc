@@ -104,10 +104,11 @@ void specUpdateSelectedHistory(BTBTAGE* tage,
                                const boost::dynamic_bitset<>& history,
                                FullBTBPrediction& pred)
 {
+    const auto update = pred.getHistoryUpdate();
     if (tage->usesPathHistory()) {
-        tage->specUpdatePHist(history, pred);
+        tage->specUpdatePHist(history, pred, update.phist);
     } else {
-        tage->specUpdateHist(history, pred);
+        tage->specUpdateHist(history, pred, update.ghist);
     }
 }
 
@@ -127,13 +128,14 @@ void recoverSelectedHistory(BTBTAGE* tage,
 void applyPredictedHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
                            FullBTBPrediction& pred)
 {
+    const auto history_update = pred.getHistoryUpdate();
     if (tage->usesPathHistory()) {
-        const auto update = pred.getPHistUpdate();
+        const auto &update = history_update.phist;
         if (update.taken) {
             applyPathHistoryTaken(history, update.pc, update.target);
         }
     } else {
-        const auto update = pred.getHistUpdate();
+        const auto &update = history_update.ghist;
         applyOutcomeHistory(history, update.shamt, update.taken);
     }
 }
