@@ -42,6 +42,7 @@
 #ifndef __CPU_BASE_HH__
 #define __CPU_BASE_HH__
 
+#include <deque>
 #include <queue>
 #include <vector>
 
@@ -138,6 +139,17 @@ struct DiffAllStates
 class BaseCPU : public ClockedObject
 {
   protected:
+    struct RecentCommittedStore
+    {
+        bool valid = false;
+        Addr addr = 0;
+        size_t size = 0;
+        InstSeqNum seq = 0;
+        uint8_t data[16] = {};
+    };
+
+    std::vector<std::deque<RecentCommittedStore>> recentCommittedStores;
+    std::vector<bool> syncVisibleStoreReplayArmed;
 
     const unsigned IntRegIndexBase = 0;
     const unsigned FPRegIndexBase = 32;
@@ -693,7 +705,7 @@ class BaseCPU : public ClockedObject
     bool enableRVV{false};
     bool enableRVHDIFF{false};
     bool enableSkipCSR{false};
-    std::shared_ptr<DiffAllStates> diffAllStates{};
+    std::vector<std::shared_ptr<DiffAllStates>> diffAllStates{};
 
     enum  diffRegConfig
     {
@@ -701,7 +713,7 @@ class BaseCPU : public ClockedObject
       diffCsrNum = 36,
     };
 
-    virtual void readGem5Regs()
+    virtual void readGem5Regs(ThreadID tid)
     {
         panic("difftest:readGem5Regs() is not implemented\n");
     }
@@ -709,6 +721,7 @@ class BaseCPU : public ClockedObject
     void csrDiffMessage(uint64_t gem5_val, uint64_t ref_val, int error_num, uint64_t &error_reg, InstSeqNum seq,
                         std::string error_csr_name,int &diff_at);
     std::pair<int, bool> diffWithNEMU(ThreadID tid, InstSeqNum seq);
+    int difftestHartId(ThreadID tid) const;
 
     std::stringstream diffMsg;
     void reportDiffMismatch(ThreadID tid, InstSeqNum seq);
@@ -777,13 +790,25 @@ class BaseCPU : public ClockedObject
 
     void difftestStep(ThreadID tid, InstSeqNum seq);
 
+    void recordCommittedStore(ThreadID tid, const o3::DynInstPtr &inst);
+    void armSyncVisibleStoreReplay(ThreadID tid)
+    {
+        syncVisibleStoreReplayArmed.at(tid) = true;
+    }
+    bool consumeSyncVisibleStoreReplay(ThreadID tid)
+    {
+        bool armed = syncVisibleStoreReplayArmed.at(tid);
+        syncVisibleStoreReplayArmed.at(tid) = false;
+        return armed;
+    }
+
     inline bool difftestEnabled() const { return enableDifftest; }
 
-    void displayGem5Regs();
+    void displayGem5Regs(ThreadID tid);
 
-    void difftestRaiseIntr(uint64_t no);
+    void difftestRaiseIntr(uint64_t no, ThreadID tid = 0);
 
-    void setSCSuccess(bool success, paddr_t addr);
+    void setSCSuccess(bool success, paddr_t addr, ThreadID tid);
 
     void setExceptionGuideExecInfo(uint64_t exception_num, uint64_t mtval, uint64_t stval,
                                    // force set jump target
@@ -793,14 +818,14 @@ class BaseCPU : public ClockedObject
 
     void enableDiffPrint();
 
-    std::pair<bool, std::shared_ptr<DiffAllStates>> getDiffAllStates()
+    std::pair<bool, std::vector<std::shared_ptr<DiffAllStates>>> getDiffAllStates()
     {
         return std::make_pair(enableDifftest, diffAllStates);
     }
 
-    void takeOverDiffAllStates(std::shared_ptr<DiffAllStates> diffAllStates)
+    void takeOverDiffAllStates(std::vector<std::shared_ptr<DiffAllStates>> diffAllStates)
     {
-        this->diffAllStates = diffAllStates;
+        this->diffAllStates = std::move(diffAllStates);
     }
 
     int committedInstNum = 0;

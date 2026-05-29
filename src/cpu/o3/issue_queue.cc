@@ -143,6 +143,9 @@ PAgeSelector::select(ReadyQue::iterator begin, int portid)
 bool
 IssueQue::select_policy::operator()(const DynInstPtr& a, const DynInstPtr& b) const
 {
+    if (a->ageCtr != b->ageCtr) {
+        return a->ageCtr < b->ageCtr;
+    }
     return a->seqNum < b->seqNum;
 }
 
@@ -172,7 +175,8 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
       ADD_STAT(issueDist, statistics::units::Count::get(), "distruibution of issue"),
       ADD_STAT(portissued, statistics::units::Count::get(), "count each port issues"),
       ADD_STAT(portBusy, statistics::units::Count::get(), "count each port busy cycles"),
-      ADD_STAT(avgInsts, statistics::units::Count::get(), "average insts")
+      ADD_STAT(avgInsts, statistics::units::Count::get(), "average insts"),
+      ADD_STAT(instsNum, statistics::units::Count::get(), "insts per thread")
 {
     insertDist.init(que->inports + 1).flags(statistics::nozero);
     issueDist.init(que->outports + 1).flags(statistics::nozero);
@@ -183,6 +187,7 @@ IssueQue::IssueQueStats::IssueQueStats(statistics::Group* parent, IssueQue* que,
     loadmiss.flags(statistics::nozero);
     arbFailed.flags(statistics::nozero);
     issueOccupy.flags(statistics::nozero);
+    instsNum.flags(statistics::nozero);
 }
 
 IssueQue::IssueQue(const IssueQueParams& params)
@@ -312,6 +317,9 @@ IssueQue::IssueQue(const IssueQueParams& params)
         if (storePipeAcc)
             numStorePipe++;
     }
+
+    //Init InstsCounter
+    instsCounter = new InstsCounter();
 }
 
 void
@@ -320,6 +328,7 @@ IssueQue::setCPU(CPU* cpu)
     this->cpu = cpu;
     _name = cpu->name() + ".scheduler." + getName();
     iqstats = new IssueQueStats(cpu, this, "scheduler." + this->getName());
+    iqstats->instsNum.init(cpu->numThreads);
 }
 
 void
@@ -338,7 +347,9 @@ IssueQue::checkScoreboard(const DynInstPtr& inst)
         }
         // check bypass data ready or not
         if (!scheduler->bypassScoreboard[src->flatIndex()]) [[unlikely]] {
-            auto dst_inst = scheduler->getInstByDstReg(src->flatIndex());
+            auto dst_inst = scheduler->getInstByDstReg(src->flatIndex(),
+                                                       inst->threadNumber,
+                                                       inst->seqNum);
             assert(dst_inst);
             if (!dst_inst->isLoad()) panic("dst[sn:%llu] is not load, src[sn:%llu]", dst_inst->seqNum, inst->seqNum);
             warn_once(
@@ -361,6 +372,9 @@ IssueQue::addToFu(const DynInstPtr& inst)
     }
     inst->setIssued();
     POPINST(inst);
+    if (hasInstsCounter()) {
+        decInIQInstsCounter(inst->threadNumber);
+    }
     scheduler->addToFU(inst);
 }
 
@@ -513,14 +527,16 @@ IssueQue::wakeUpDependents(const DynInstPtr& inst, bool speculative)
         for (auto& it : depgraph) {
             int srcIdx = it.first;
             auto& consumer = it.second;
-            if (consumer->readySrcIdx(srcIdx)) {
-                continue;
+            if(consumer->threadNumber == inst->threadNumber){
+                if (consumer->readySrcIdx(srcIdx)) {
+                    continue;
+                }
+                consumer->markSrcRegReady(srcIdx);
+
+
+                DPRINTF(Schedule, "[sn:%llu] src%d was woken\n", consumer->seqNum, srcIdx);
+                addIfReady(consumer);
             }
-            consumer->markSrcRegReady(srcIdx);
-
-
-            DPRINTF(Schedule, "[sn:%llu] src%d was woken\n", consumer->seqNum, srcIdx);
-            addIfReady(consumer);
         }
 
         if (!speculative) {
@@ -581,6 +597,11 @@ IssueQue::selectInst()
     selectQ.clear();
     for (int pi = 0; pi < outports; pi++) {
         auto readyQ = readyQs[pi];
+        for (auto it = readyQ->begin(); it != readyQ->end(); ++it) {
+            DPRINTF(Schedule, "readyQ for port %d has [sn:%llu] %s [tid:%u]\n", pi, (*it)->seqNum,
+                    (*it)->genDisassembly(), (*it)->threadNumber);
+        }
+        
         selector->begin(readyQ);
         for (auto it = selector->select(readyQ->begin(), pi); it != readyQ->end(); it = selector->select(it, pi)) {
             auto& inst = *it;
@@ -594,7 +615,6 @@ IssueQue::selectInst()
             uint64_t busy_bit = (lat > 63 ? -1 : (1llu << lat));
             if (!(portBusy[pi] & busy_bit)) {
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
-
                 // get regfile write port
                 for (int i = 0; i < inst->numDestRegs(); i++) {
                     auto pdst = inst->renamedDestIdx(i);
@@ -721,10 +741,13 @@ IssueQue::insert(const DynInstPtr& inst)
 
     cpu->perfCCT->updateInstPos(inst->seqNum, PerfRecord::AtIssueQue);
 
-    DPRINTF(Schedule, "[sn:%llu] %s insert into %s\n", inst->seqNum, enums::OpClassStrings[inst->opClass()], iqname);
+    DPRINTF(Schedule, "[tid:%u] [sn:%llu] %s insert into %s\n", inst->threadNumber, inst->seqNum, enums::OpClassStrings[inst->opClass()], iqname);
     selector->allocate(inst);
     inst->issueQue = this;
     instList.emplace_back(inst);
+    if (hasInstsCounter()) {
+        incInIQInstsCounter(inst->threadNumber);
+    }
     bool addToDepGraph = false;
     for (int i = 0; i < inst->numSrcRegs(); i++) {
         auto src = inst->renamedSrcIdx(i);
@@ -771,20 +794,28 @@ IssueQue::insertNonSpec(const DynInstPtr& inst)
 }
 
 void
-IssueQue::doCommit(const InstSeqNum seqNum)
+IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
 {
-    while (!instList.empty() && instList.front()->seqNum <= seqNum) {
-        assert(instList.front()->isIssued());
-        instList.pop_front();
+    for (auto it = instList.begin(); it != instList.end();) {
+        const auto &inst = *it;
+        if (inst->threadNumber == tid && inst->seqNum <= seqNum) {
+            assert(inst->isIssued());
+            it = instList.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 
 void
-IssueQue::doSquash(const InstSeqNum seqNum)
+IssueQue::doSquash(SquashInfo squashInfo)
 {
     for (auto it = instList.begin(); it != instList.end();) {
-        if ((*it)->seqNum > seqNum) {
+        if (((*it)->seqNum > squashInfo.squashSn) && ((*it)->threadNumber == squashInfo.squashTid)) {
             if (!(*it)->isIssued()) {
+                if (hasInstsCounter()) {
+                    decInIQInstsCounter((*it)->threadNumber);
+                }
                 POPINST((*it));
                 (*it)->setIssued();
             }
@@ -807,7 +838,7 @@ IssueQue::doSquash(const InstSeqNum seqNum)
         int size = inflightIssues[-i].size;
         for (int j = 0; j < size; j++) {
             auto& inst = inflightIssues[-i].insts[j];
-            if (inst && inst->isSquashed()) {
+            if (inst && inst->isSquashed() && (inst->threadNumber == squashInfo.squashTid)) {
                 inst = nullptr;
             }
         }
@@ -816,12 +847,33 @@ IssueQue::doSquash(const InstSeqNum seqNum)
     // clear in depGraph
     for (auto& entrys : subDepGraph) {
         for (auto it = entrys.begin(); it != entrys.end();) {
-            if ((*it).second->isSquashed()) {
+            if ((*it).second->isSquashed() && ((*it).second->threadNumber == squashInfo.squashTid)) {
                 it = entrys.erase(it);
             } else {
                 it++;
             }
         }
+    }
+}
+
+void
+IssueQue::incInIQInstsCounter(ThreadID tid)
+{
+    if (instsCounter) {
+        instsCounter->incCounter(tid);
+        DPRINTF(Schedule, "Thread %d: incInIQInstsCounter to %d\n", tid, instsCounter->getCounter(tid));
+    }
+    if (iqstats) {
+        iqstats->instsNum[tid]++;
+    }
+}
+    
+void
+IssueQue::decInIQInstsCounter(ThreadID tid)
+{
+    if (instsCounter) {
+        instsCounter->decCounter(tid);
+        DPRINTF(Schedule, "Thread %d: decInIQInstsCounter to %d\n", tid, instsCounter->getCounter(tid));
     }
 }
 
@@ -1023,6 +1075,7 @@ Scheduler::setCPU(CPU* cpu, LSQ* lsq)
     this->lsq = lsq;
     for (auto it : issueQues) {
         it->setCPU(cpu);
+        it->selector->setparent(this, it);
     }
 }
 
@@ -1172,18 +1225,28 @@ Scheduler::ready(OpClass op, int disp_seq)
 }
 
 DynInstPtr
-Scheduler::getInstByDstReg(RegIndex flatIdx)
+Scheduler::getInstByDstReg(RegIndex flatIdx, ThreadID tid,
+                           InstSeqNum consumerSeqNum)
 {
+    DynInstPtr candidate = nullptr;
+
     for (auto iq : issueQues) {
-        for (auto& inst : iq->instList) {
-            for (auto i = 0; i < inst->numDestRegs(); i++) {
-                if (inst->renamedDestIdx(i)->flatIndex() == flatIdx) {
-                    return inst;
+        for (auto &inst : iq->instList) {
+            if (inst->threadNumber != tid || inst->seqNum >= consumerSeqNum) {
+                continue;
+            }
+            for (int i = 0; i < inst->numDestRegs(); i++) {
+                if (inst->renamedDestIdx(i)->flatIndex() != flatIdx) {
+                    continue;
+                }
+                if (!candidate || inst->seqNum > candidate->seqNum) {
+                    candidate = inst;
                 }
             }
         }
     }
-    return nullptr;
+
+    return candidate;
 }
 
 void
@@ -1451,24 +1514,26 @@ Scheduler::loadCancel(const DynInstPtr& inst)
                 for (auto& it : iq->subDepGraph[dst->flatIndex()]) {
                     int srcIdx = it.first;
                     auto& depInst = it.second;
-                    if (depInst->readySrcIdx(srcIdx)) {
-                        DPRINTF(Schedule, "cancel [sn:%llu], clear src p%d ready\n", depInst->seqNum,
-                                depInst->renamedSrcIdx(srcIdx)->flatIndex());
-                        if (depInst->isIssued()) {
-                            if (inst->vpMisprediction) {
-                                // VP misprediction: consumer may already be in-flight.
-                                // Mark canceled and propagate to its dependents.
-                                depInst->setCancel();
-                                depInst->clearSrcRegReady(srcIdx);
-                                dfs.push(depInst);
-                                needSquashFallback = true;
+                    if (depInst->threadNumber == inst->threadNumber) {
+                        if (depInst->readySrcIdx(srcIdx)) {
+                            DPRINTF(Schedule, "cancel [sn:%llu], clear src p%d ready\n", depInst->seqNum,
+                                    depInst->renamedSrcIdx(srcIdx)->flatIndex());
+                            if (depInst->isIssued()) {
+                                if (inst->vpMisprediction) {
+                                    // VP misprediction: consumer may already be in-flight.
+                                    // Mark canceled and propagate to its dependents.
+                                    depInst->setCancel();
+                                    depInst->clearSrcRegReady(srcIdx);
+                                    dfs.push(depInst);
+                                    needSquashFallback = true;
+                                }
+                                continue;
                             }
-                            continue;
-                        }
 
-                        depInst->issueQue->cancel(depInst);
-                        depInst->clearSrcRegReady(srcIdx);
-                        dfs.push(depInst);
+                            depInst->issueQue->cancel(depInst);
+                            depInst->clearSrcRegReady(srcIdx);
+                            dfs.push(depInst);
+                        }
                     }
                 }
             }
@@ -1583,19 +1648,19 @@ Scheduler::isDrained()
 }
 
 void
-Scheduler::doCommit(const InstSeqNum seqNum)
+Scheduler::doCommit(const InstSeqNum seqNum, ThreadID tid)
 {
     for (auto it : issueQues) {
-        it->doCommit(seqNum);
+        it->doCommit(seqNum, tid);
     }
 }
 
 void
-Scheduler::doSquash(const InstSeqNum seqNum)
+Scheduler::doSquash(SquashInfo squashInfo)
 {
-    DPRINTF(Schedule, "doSquash until seqNum %lu\n", seqNum);
+    DPRINTF(Schedule, "doSquash until seqNum %lu\n", squashInfo.squashSn);
     for (auto it : issueQues) {
-        it->doSquash(seqNum);
+        it->doSquash(squashInfo);
     }
 }
 
@@ -1608,6 +1673,17 @@ Scheduler::getIQInsts()
     }
     return total;
 }
+
+uint32_t
+Scheduler::getIQInsts(ThreadID tid)
+{
+    uint32_t total = 0;
+    for (auto iq : issueQues) {
+        total += iq->getInstsCounter()->getCounter(tid);;   
+    }
+    return total;
+}
+
 
 void
 Scheduler::setMainRdpOpt(bool enable)

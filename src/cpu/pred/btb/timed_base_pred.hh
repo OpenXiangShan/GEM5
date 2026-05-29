@@ -61,7 +61,10 @@ class TimedBaseBTBPredictor: public SimObject
                               const boost::dynamic_bitset<> &history,
                               std::vector<FullBTBPrediction> &stagePreds) {}
 
-    virtual std::shared_ptr<void> getPredictionMeta() { return nullptr; }
+    virtual std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0)
+    {
+        return nullptr;
+    }
 
     virtual void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
     virtual void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}

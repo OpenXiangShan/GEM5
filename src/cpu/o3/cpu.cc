@@ -135,13 +135,6 @@ CPU::CPU(const BaseO3CPUParams &params)
       cpuStats(this),
       valuePred(params.valuePred)
 {
-    fatal_if(FullSystem && params.numThreads > 1,
-            "SMT is not supported in O3 in full system mode currently.");
-
-    fatal_if(!FullSystem && params.numThreads < params.workload.size(),
-            "More workload items (%d) than threads (%d) on CPU %s.",
-            params.workload.size(), params.numThreads, name());
-
     if (!params.switched_out) {
         _status = Running;
     } else {
@@ -206,7 +199,10 @@ CPU::CPU(const BaseO3CPUParams &params)
 
     ThreadID active_threads;
     if (FullSystem) {
-        active_threads = 1;
+        // FS-SMT still uses one shared workload/system image, but the O3 core
+        // must provision per-thread architectural state for every hardware
+        // thread context exposed by the CPU.
+        active_threads = numThreads;
     } else {
         active_threads = params.workload.size();
 
@@ -283,9 +279,7 @@ CPU::CPU(const BaseO3CPUParams &params)
 
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         if (FullSystem) {
-            // SMT is not supported in FS mode yet.
-            assert(numThreads == 1);
-            thread[tid] = new ThreadState(this, 0, NULL);
+            thread[tid] = new ThreadState(this, tid, NULL);
         } else {
             if (tid < params.workload.size()) {
                 DPRINTF(O3CPU, "Workload[%i] process is %#x", tid,
@@ -1383,10 +1377,10 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
             cpi_r.roll(1);
         }
 
-        uint64_t committedInsts = totalInsts();
+        const uint64_t committedThreadInsts = thread[tid]->numInst;
 
         if (this->nextDumpInstCount && !dump_done
-                && committedInsts >= this->nextDumpInstCount) {
+                && committedThreadInsts >= this->nextDumpInstCount) {
             fprintf(stderr, "Will trigger stat dump and reset\n");
             statistics::schedStatEvent(true, true, curTick(), 0);
             scheduleInstStop(tid,0,"Will trigger stat dump and reset");
@@ -1400,7 +1394,8 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         // Check for instruction-count-based events.
         thread[tid]->comInstEventQueue.serviceEvents(thread[tid]->numInst);
 
-        if (this->warmupInstCount && !warmup_done && committedInsts >= this->warmupInstCount) {
+        if (this->warmupInstCount && !warmup_done &&
+                committedThreadInsts >= this->warmupInstCount) {
             fprintf(stderr, "Will trigger stat dump and reset\n");
             statistics::schedStatEvent(true, true, curTick(), 0);
             scheduleInstStop(tid,0,"Will trigger stat dump and reset");
@@ -1741,12 +1736,13 @@ CPU::htmSendAbortSignal(ThreadID tid, uint64_t htm_uid,
 }
 
 void
-CPU::readGem5Regs()
+CPU::readGem5Regs(ThreadID tid)
 {
+    auto diffAllStates = this->diffAllStates[tid];
     for (int i = 0; i < 32; i++) {
-        diffAllStates->gem5RegFile[i] = readArchIntReg(i, 0);
-        diffAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, 0);
-        readArchVecReg(i, (uint64_t*)&diffAllStates->gem5RegFile.vr[i], 0);
+        diffAllStates->gem5RegFile[i] = readArchIntReg(i, tid);
+        diffAllStates->gem5RegFile[i + 32] = readArchFloatReg(i, tid);
+        readArchVecReg(i, (uint64_t*)&diffAllStates->gem5RegFile.vr[i], tid);
     }
 }
 

@@ -147,7 +147,7 @@ class MBTB : public TimedBaseBTBPredictor
     /** Get prediction BTBMeta
      *  @return Returns the prediction meta
      */
-    std::shared_ptr<void> getPredictionMeta() override;
+    std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
     // not used
     void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
@@ -215,8 +215,9 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch to look up.
      *  @return Returns the index into the BTB.
      */
-    inline Addr getIndex(Addr instPC) {
-        return (instPC >> idxShiftAmt) & idxMask;
+    inline Addr getIndex(Addr instPC, uint8_t asidHash) {
+        Addr baseIndex = (instPC >> idxShiftAmt) & idxMask;
+        return xorAsidHashIntoIndex(baseIndex, floorLog2(numSets), asidHash);
     }
 
     /** Returns the tag bits of a given address.
@@ -225,8 +226,9 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The branch's address.
      *  @return Returns the tag bits.
      */
-    inline Addr getTag(Addr instPC) {
-        return (instPC >> tagShiftAmt) & tagMask;
+    inline Addr getTag(Addr instPC, uint8_t asidHash) {
+        Addr baseTag = (instPC >> tagShiftAmt) & tagMask;
+        return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
     }
 
     /** Update the 2-bit saturating counter for conditional branches
@@ -340,16 +342,16 @@ class MBTB : public TimedBaseBTBPredictor
      *  @param inst_PC The address of the block to look up.
      *  @return Returns all hit BTB entries.
      */
-    std::vector<TickedBTBEntry> lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta);
+    std::vector<TickedBTBEntry> lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta);
 
     /** Helper function to lookup entries in a single block
      * @param block_pc The aligned PC to lookup
      * @return Vector of matching BTB entries
      */
-    std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc);
+    std::vector<TickedBTBEntry> lookupSingleBlock(Addr block_pc, uint8_t asidHash);
 
     /** Victim cache operations */
-    std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc);
+    std::vector<TickedBTBEntry> lookupVictimCache(Addr block_pc, uint8_t asidHash);
     void insertVictimCache(const TickedBTBEntry& evicted_entry);
     bool eraseFromVictimCacheByPC(Addr pc);
 

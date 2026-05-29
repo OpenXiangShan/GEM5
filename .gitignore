@@ -71,3 +71,9 @@ package.json
 microbench/build/
 microbench/output/
 microbench/dramsim3*
+
+*.bin
+*.db
+*.log
+*.gz
+*.zstd

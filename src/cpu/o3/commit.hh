@@ -196,7 +196,7 @@ class Commit
     };
     std::list<BranchInfo> branchLog;
 
-    uint64_t lastCommitCycle = 0;
+    uint64_t lastCommitCycle[MaxThreads] = {0};
 
     EventFunctionWrapper stuckCheckEvent;
 
@@ -214,8 +214,6 @@ class Commit
 
     /** Returns the name of the Commit. */
     std::string name() const;
-
-    uint64_t getLastCommitCycle() const { return lastCommitCycle; }
 
     /** Registers probes. */
     void regProbePoints();
@@ -431,7 +429,7 @@ class Commit
     /** Wire to read information from rename queue. */
     TimeBuffer<RenameStruct>::wire fromRename;
 
-    SquashVersion localSquashVer;
+    SquashVersion localSquashVer[MaxThreads];
 
   public:
     /** ROB interface. */
@@ -458,6 +456,9 @@ class Commit
      * then the number of free entries must be re-broadcast.
      */
     bool changedROBNumEntries[MaxThreads];
+
+    /** Donor hysteresis for dynamic ROB borrowing. */
+    unsigned borrowingDonorCycles[MaxThreads];
 
     /** Records if a thread has to squash this cycle due to a trap. */
     bool trapSquash[MaxThreads];
@@ -498,6 +499,9 @@ class Commit
 
     /** Number of Active Threads */
     const ThreadID numThreads;
+
+    /** Cycles to keep a stalled thread marked as a ROB borrowing donor. */
+    const unsigned smtBorrowDonorHoldCycles;
 
     /** Is a drain pending? Commit is looking for an instruction boundary while
      * there are no pending interrupts
@@ -569,8 +573,8 @@ class Commit
 
     // committed Stream and Target
 
-    uint64_t committedTargetId{1};
-    uint64_t committedLoopIter{};
+    uint64_t committedTargetId[MaxThreads];
+    uint64_t committedLoopIter[MaxThreads];
 
     struct CommitStats : public statistics::Group
     {

@@ -959,6 +959,12 @@ class DecoupledBPUWithFTB(BranchPredictor):
     enableJumpAheadPredictor = Param.Bool(False, "Use jump ahead predictor to skip no-need-to-predict blocks")
     enableTwoTaken = Param.Bool(False, "Enable predicting two taken blocks per cycle")
 
+class SMTFTQMode(ScopedEnum):
+    vals = [ 'Independent', 'Shared' ]
+
+class SMTFTQPolicy(ScopedEnum):
+    vals = [ 'Dynamic', 'Partitioned', 'Threshold' ]
+
 class TimedBaseBTBPredictor(SimObject):
     type = 'TimedBaseBTBPredictor'
     cxx_class = 'gem5::branch_prediction::btb_pred::TimedBaseBTBPredictor'
@@ -994,7 +1000,7 @@ class AheadBTB(TimedBaseBTBPredictor):
     numEntries = Param.Unsigned(1024, "Number of entries in the BTB")
     tagBits = Param.Unsigned(38, "Number of bits in the tag")
     instShiftAmt = Param.Unsigned(1, "Amount to shift PC to get inst bits")
-    numThreads = Param.Unsigned(1, "Number of threads")
+    numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     numWays = Param.Unsigned(8, "Number of ways per set")
     aheadPipelinedStages = Param.Unsigned(1, "Number of stages ahead pipelined")
     entryHalfAligned = Param.Bool(False, "Whether the entries are half-aligned")
@@ -1021,6 +1027,7 @@ class BTBRAS(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBRAS'
     cxx_header = 'cpu/pred/btb/ras.hh'
 
+    numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     numEntries = Param.Unsigned(32, "Number of entries in the RAS")
     ctrWidth = Param.Unsigned(8, "Width of the counter")
     numInflightEntries = Param.Unsigned(384, "Number of inflight entries")
@@ -1187,6 +1194,11 @@ class DecoupledBPUWithBTB(BranchPredictor):
 
     # n = 2
     ftq_size = Param.Unsigned(128, "Fetch target queue size")
+    smtFTQMode = Param.SMTFTQMode('Independent',
+                                  "SMT FTQ mode: per-thread independent or shared quota")
+    smtFTQPolicy = Param.SMTFTQPolicy('Partitioned',
+                                      "SMT shared FTQ allocation policy")
+    smtFTQThreshold = Param.Int(100, "SMT FTQ Threshold Sharing Parameter")
     fsq_size = Param.Unsigned(64, "Fetch stream queue size")
     maxHistLen = Param.Unsigned(970, "The length of history")
 

@@ -299,8 +299,9 @@ MBTB::putPCHistory(Addr startAddr,
                          std::vector<FullBTBPrediction> &stagePreds)
 {
     meta = std::make_shared<BTBMeta>();
+    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
     // Lookup all matching entries in BTB
-    auto find_entries = lookup(startAddr, meta);
+    auto find_entries = lookup(startAddr, asidHash, meta);
 
     // Process BTB entries
     auto processed_entries = processEntries(find_entries, startAddr);
@@ -313,8 +314,9 @@ MBTB::putPCHistory(Addr startAddr,
 }
 
 std::shared_ptr<void>
-MBTB::getPredictionMeta()
+MBTB::getPredictionMeta(ThreadID tid)
 {
+    (void)tid;
     return meta;
 }
 
@@ -334,7 +336,7 @@ MBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &ent
  * @return Vector of matching BTB entries
  */
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupSingleBlock(Addr block_pc)
+MBTB::lookupSingleBlock(Addr block_pc, uint8_t asidHash)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -345,11 +347,11 @@ MBTB::lookupSingleBlock(Addr block_pc)
     auto& target_sram = (sram_id == 0) ? sram0 : sram1;
     auto& target_mru = (sram_id == 0) ? mru0 : mru1;
     
-    Addr btb_idx = getIndex(block_pc);
+    Addr btb_idx = getIndex(block_pc, asidHash);
     auto& btb_set = target_sram[btb_idx];
     assert(btb_idx < numSets);
 
-    Addr current_tag = getTag(block_pc);
+    Addr current_tag = getTag(block_pc, asidHash);
     DPRINTF(BTB, "BTB: Doing tag comparison for SRAM%d index 0x%lx tag %#lx\n",
         sram_id, btb_idx, current_tag);
         
@@ -364,7 +366,7 @@ MBTB::lookupSingleBlock(Addr block_pc)
 }
 
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta)
+MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
 {
     std::vector<TickedBTBEntry> res;
     if (block_pc & 0x1) {
@@ -375,15 +377,15 @@ MBTB::lookup(Addr block_pc, std::shared_ptr<BTBMeta> meta)
     // Calculate 32B aligned address
     Addr alignedPC = block_pc & ~(blockSize - 1);
     // Lookup first 32B block
-    res = lookupSingleBlock(alignedPC);
+    res = lookupSingleBlock(alignedPC, asidHash);
     // Lookup next 32B block
-    auto nextBlockRes = lookupSingleBlock(alignedPC + blockSize);
+    auto nextBlockRes = lookupSingleBlock(alignedPC + blockSize, asidHash);
     // Merge results
     res.insert(res.end(), nextBlockRes.begin(), nextBlockRes.end());
 
     // lookup victim cache if victim cache is enabled
     if (victimCacheSize > 0) {
-        auto victimResults = lookupVictimCache(block_pc);
+        auto victimResults = lookupVictimCache(block_pc, asidHash);
         if (!victimResults.empty()) {
             DPRINTF(BTB, "Victim cache hit for lookup at %#lx\n", block_pc);
             btbStats.victimCacheHit++;
@@ -459,7 +461,7 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
     }
 
     // Set tag and update stream metadata for use in update()
-    entry_to_write.tag = getTag(entry_to_write.pc);
+    entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
     stream.updateNewBTBEntry = entry_to_write;
     stream.updateIsOldEntry = is_old_entry;
 }
@@ -507,7 +509,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
     auto& target_mru = (sram_id == 0) ? mru0 : mru1;
     
     // Calculate index and tag for this entry
-    Addr btb_idx = getIndex(entry.pc);
+    Addr btb_idx = getIndex(entry.pc, stream.asidHash);
 
     // Look for matching entry in the target SRAM
     bool found = false;
@@ -563,7 +565,7 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
                               ? BTBEntry(*existing_entry)
                               : req_entry;
     // Always recalculate tag based on the actual PC being written
-    entry_to_write.tag = getTag(entry_to_write.pc);
+    entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
     entry_to_write.resolved = false; // reset resolved status
 
     // Update saturating counter and alwaysTaken
@@ -722,7 +724,7 @@ MBTB::prepareUpdateEntries(const FetchTarget &stream) {
  * Victim cache operations implementation
  */
 std::vector<MBTB::TickedBTBEntry>
-MBTB::lookupVictimCache(Addr block_pc)
+MBTB::lookupVictimCache(Addr block_pc, uint8_t asidHash)
 {
     std::vector<TickedBTBEntry> results;
     Addr alignedPC = block_pc & ~(blockSize - 1);
@@ -734,7 +736,7 @@ MBTB::lookupVictimCache(Addr block_pc)
         Addr entryAlignedPC = entry.pc & ~(blockSize - 1);
         // Check if this entry is in either of the two 32B blocks we're looking for
         if (entryAlignedPC == alignedPC || entryAlignedPC == (alignedPC + blockSize)) {
-            Addr current_tag = getTag(entry.pc);
+            Addr current_tag = getTag(entry.pc, asidHash);
             if (entry.tag == current_tag) {
                 results.push_back(entry);
                 DPRINTF(BTB, "Victim cache hit for pc %#lx\n", entry.pc);

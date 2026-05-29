@@ -562,8 +562,8 @@ void System::initState()
     }
 
     // have to initiate golden memory after checkpoint restored
-    if (numCPUs > 1 && enableDifftest) {
-        warn("Creating golden memory for multi-core difftest\n");
+    if (multiContextDifftest()) {
+        warn("Creating golden memory for multi-context difftest\n");
         assert(enableMemDedup);
         goldenMem = dedupMemManager.createCopyOnWriteBranch();
         goldenMemManager.initGoldenMem(physmem.getStartaddr(), memSize(), goldenMem);

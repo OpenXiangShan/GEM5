@@ -11,6 +11,7 @@ class ValuePredictor(SimObject):
     cxx_class = "gem5::valuepred::VPUnit"
     cxx_header = "cpu/valuepred/valuepred_unit.hh"
     abstract = True
+    numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
 
 class EStride(ValuePredictor):
     type = "EStride"

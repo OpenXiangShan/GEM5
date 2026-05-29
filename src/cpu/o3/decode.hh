@@ -236,6 +236,9 @@ class Decode
     /** Fetch to decode delay. */
     Cycles fetchToDecodeDelay;
 
+    /** Decode to fetch feedback delay for stage backpressure. */
+    Cycles decodeToFetchDelay;
+
     /** The width of decode, in instructions. */
     unsigned decodeWidth;
 
@@ -256,8 +259,12 @@ class Decode
 
         /** Stat for total number of idle cycles. */
         statistics::Scalar idleCycles;
+
+        statistics::Vector smtidleCycles;
         /** Stat for total number of blocked cycles. */
         statistics::Scalar blockedCycles;
+        statistics::Vector smtblockedCycles;
+        statistics::Vector smtnotactiveCycles;
         /** Stat for total number of normal running cycles. */
         statistics::Scalar runCycles;
         /** Stat for total number of unblocking cycles. */
@@ -293,7 +300,7 @@ class Decode
 
     void setAllStalls(StallReason decodeStall);
 
-    SquashVersion localSquashVer;
+    SquashVersion localSquashVer[MaxThreads];
 };
 
 } // namespace o3

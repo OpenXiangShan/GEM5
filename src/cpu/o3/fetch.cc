@@ -98,7 +98,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       fetchWidth(params.fetchWidth),
       decodeWidth(params.decodeWidth),
       retryPkt(),
-      retryTid(InvalidThreadID),
       cacheBlkSize(cpu->cacheLineSize()),
       fetchBufferSize(params.fetchBufferSize),
       fetchQueueSize(params.fetchQueueSize),
@@ -117,6 +116,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
              "\tincrease MaxWidth in src/cpu/o3/limits.hh\n",
              fetchWidth, static_cast<int>(MaxWidth));
 
+    smtBorrowThrottleHoldCycles = params.smtBorrowThrottleCycles;
     for (int i = 0; i < MaxThreads; i++) {
         setThreadStatus(i, Idle);
         decoder[i] = nullptr;
@@ -124,6 +124,13 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         macroop[i] = nullptr;
         delayedCommit[i] = false;
         lastIcacheStall[i] = 0;
+        smtBorrowThrottleCycles[i] = 0;
+    }
+    smtLdstqHighWater = params.smtBorrowLdstqHighWater;
+    if (smtLdstqHighWater == 0) {
+        smtLdstqHighWater =
+            (params.LQEntries + params.SQEntries) *
+            params.smtBorrowLdstqHighWaterPercent / 100;
     }
 
     branchPred = params.branchPred;
@@ -147,6 +154,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
         threads[tid].size = fetchBufferSize;
         threads[tid].data = new uint8_t[fetchBufferSize];
     }
+
+    initDecodeScheduler();
 
     // Get the size of an instruction.
     // stallReason size should be the same as decodeWidth,renameWidth,dispWidth
@@ -203,8 +212,12 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of cycles fetch has spent waiting for tlb"),
     ADD_STAT(idleCycles, statistics::units::Cycle::get(),
              "Number of cycles fetch was idle"),
+    ADD_STAT(smtidleCycles, statistics::units::Cycle::get(),
+             "Number of cycles fetch was idle per tid"),         
     ADD_STAT(blockedCycles, statistics::units::Cycle::get(),
              "Number of cycles fetch has spent blocked"),
+    ADD_STAT(smtblockedCycles, statistics::units::Cycle::get(),
+             "Number of cycles fetch has spent blocked per tid"),         
     ADD_STAT(miscStallCycles, statistics::units::Cycle::get(),
              "Number of cycles fetch has spent waiting on interrupts, or bad "
              "addresses, or out of MSHRs"),
@@ -240,6 +253,10 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Distribution of fetch status"),
     ADD_STAT(decodeStalls, statistics::units::Count::get(),
              "Number of decode stalls"),
+    ADD_STAT(smtdecodeStalls, statistics::units::Count::get(),
+             "Number of decode stalls per tid"),  
+    ADD_STAT(smtftqempty, statistics::units::Count::get(),
+             "Number of ftq empty per tid"),                  
     ADD_STAT(decodeStallRate, statistics::units::Rate<
                     statistics::units::Count, statistics::units::Cycle>::get(),
              "Number of decode stalls per cycle",
@@ -335,6 +352,18 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
         }
         decodeStalls
             .prereq(decodeStalls);
+        smtdecodeStalls
+            .init(fetch->numThreads)
+            .flags(statistics::total);  
+        smtftqempty
+            .init(fetch->numThreads)
+            .flags(statistics::total);
+        smtidleCycles
+            .init(fetch->numThreads)
+            .flags(statistics::total);
+        smtblockedCycles
+            .init(fetch->numThreads)
+            .flags(statistics::total);     
         decodeStallRate
             .flags(statistics::total);
         fetchBubbles
@@ -370,6 +399,41 @@ Fetch::setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer)
     fromRename = timeBuffer->getWire(-renameToFetchDelay);
     fromIEW = timeBuffer->getWire(-iewToFetchDelay);
     fromCommit = timeBuffer->getWire(-commitToFetchDelay);
+}
+
+void
+Fetch::initDecodeScheduler()
+{
+     // Initialize counters (same as before)
+    lsqCounter = new InstsCounter();
+    iqCounter  = new InstsCounter();
+    robCounter = new InstsCounter();
+    DPRINTF(Fetch, "Initialized SMT Decode Scheduler: 0\n");
+
+    for (ThreadID tid = 0; tid < numThreads; tid++) 
+    {
+        lsqCounter->setCounter(tid, 0);
+        iqCounter->setCounter(tid, 0);
+        robCounter->setCounter(tid, 0);
+    }
+    DPRINTF(Fetch, "Initialized SMT Decode Scheduler: 1\n");
+    
+    if (smtDecodePolicy == "icount") {
+        // Use ROB as default counter for icount
+        decodeScheduler = new ICountScheduler(numThreads, robCounter);
+    }
+    else if (smtDecodePolicy == "delayed") {
+        decodeScheduler = new DelayedICountScheduler(numThreads, robCounter, delayedSchedulerDelay);
+    }
+    else if (smtDecodePolicy == "multi_priority") {
+        decodeScheduler = new MultiPrioritySched(numThreads, {lsqCounter, iqCounter, robCounter});
+    }
+    else {
+        // Default: round-robin like (use delayed with thread cycling)
+        decodeScheduler = new DelayedICountScheduler(numThreads, robCounter, numThreads);
+    }
+
+    DPRINTF(Fetch, "Initialized SMT Decode Scheduler: %s\n", smtDecodePolicy.c_str());
 }
 
 void
@@ -423,6 +487,10 @@ Fetch::resetStage()
 {
     numInst = 0;
     interruptPending = false;
+    for (auto *pkt : retryPkt) {
+        delete pkt;
+    }
+    retryPkt.clear();
     cacheBlocked = false;
 
     priorityList.clear();
@@ -442,6 +510,8 @@ Fetch::resetStage()
         fetchQueue[tid].clear();
 
         priorityList.push_back(tid);
+        waitForVsetvl[tid] = false;
+        smtBorrowThrottleCycles[tid] = 0;
     }
 
     wroteToTimeBuffer = false;
@@ -452,7 +522,9 @@ Fetch::resetStage()
     }
 
     assert(dbpbtb);
-    dbpbtb->resetPC(threads[0].fetchpc->instAddr());
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        dbpbtb->resetPC(tid, threads[tid].fetchpc->instAddr());
+    }
 }
 
 bool
@@ -550,8 +622,35 @@ Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
         DPRINTF(Fetch, "[tid:%i] Waiting for remaining packets. Completed: %d, Total: %d\n",
                 tid, threads[tid].cacheReq.completedPackets, threads[tid].cacheReq.packets.size());
 
-        // Note: retry is handled completely by the standard gem5 recvReqRetry mechanism
-        // No need to handle retry here to avoid duplicate packet sending
+        bool waitingOnRetry = false;
+        for (const auto status : threads[tid].cacheReq.requestStatus) {
+            if (status == CacheWaitRetry) {
+                waitingOnRetry = true;
+                break;
+            }
+        }
+
+        if (waitingOnRetry && cacheBlocked && !retryPkt.empty()) {
+            PacketPtr queuedPkt = retryPkt.front();
+            const ThreadID queuedTid =
+                cpu->contextToThread(queuedPkt->req->contextId());
+            const bool sameThreadRetry = queuedTid == tid &&
+                threads[tid].cacheReq.findRequestIndex(queuedPkt->req) != SIZE_MAX;
+
+            if (sameThreadRetry && icachePort.sendTimingReq(queuedPkt)) {
+                DPRINTF(Fetch,
+                        "[tid:%i] Retrying matching queued I-cache packet %#lx "
+                        "after sibling response\n",
+                        tid, queuedPkt->req->getVaddr());
+                updateCacheRequestStatusByRequest(tid, queuedPkt->req,
+                                                  CacheWaitResponse);
+                ppFetchRequestSent->notify(queuedPkt->req);
+                retryPkt.erase(retryPkt.begin());
+                if (retryPkt.empty()) {
+                    cacheBlocked = false;
+                }
+            }
+        }
 
         return false;  // Return false to indicate we're still waiting
     }
@@ -619,8 +718,8 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     }
 
     // Verify fetchBufferPC alignment with the supplying FSQ entry.
-    if (threads[tid].valid && dbpbtb->ftqHasFetching(0)) {
-        const auto &stream = dbpbtb->ftqFetchingTarget(0);
+    if (threads[tid].valid && dbpbtb->ftqHasFetching(tid)) {
+        const auto &stream = dbpbtb->ftqFetchingTarget(tid);
         if (threads[tid].startPC != stream.startPC) {
             panic("fetchBufferPC %#x should be aligned with FSQ startPC %#x",
                   threads[tid].startPC, stream.startPC);
@@ -650,7 +749,6 @@ Fetch::drainSanityCheck() const
 {
     assert(isDrained());
     assert(retryPkt.size() == 0);
-    assert(retryTid == InvalidThreadID);
     assert(!cacheBlocked);
     assert(!interruptPending);
 
@@ -756,7 +854,7 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     // Decoupled+BTB-only: compute next PC directly from the supplying FSQ entry.
     ThreadID tid = inst->threadNumber;
     assert(dbpbtb);
-    assert(dbpbtb->ftqHasFetching(0));
+    assert(dbpbtb->ftqHasFetching(tid));
     const auto &stream = dbpbtb->ftqFetchingTarget(tid);
 
     const Addr curr_pc = next_pc.instAddr();
@@ -902,6 +1000,16 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
 
     fetchStats.cacheLines++;
 
+    if (cacheBlocked) {
+        DPRINTF(Fetch, "[tid:%i] I-cache port already waiting for retry, queueing %#lx\n",
+                tid, mem_req->getVaddr());
+
+        updateCacheRequestStatusByRequest(tid, mem_req, CacheWaitRetry);
+        setAllFetchStalls(StallReason::IcacheStall);
+        retryPkt.push_back(data_pkt);
+        return;
+    }
+
     // Access the cache.
     if (!icachePort.sendTimingReq(data_pkt)) {
         DPRINTF(Fetch, "[tid:%i] Out of MSHRs!\n", tid);
@@ -913,7 +1021,6 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
                 mem_req->getVaddr());
         setAllFetchStalls(StallReason::IcacheStall);
         retryPkt.push_back(data_pkt);
-        retryTid = tid;
         cacheBlocked = true;
     } else {
         DPRINTF(Fetch, "[tid:%i] Doing Icache access.\n", tid);
@@ -965,7 +1072,7 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     // We will use a nop in order to carry the fault.
     DynInstPtr instruction = buildInst(tid, nopStaticInstPtr, nullptr,
             fetch_pc, fetch_pc, false);
-    instruction->setVersion(localSquashVer);
+    instruction->setVersion(localSquashVer[tid]);
     instruction->setNotAnInst();
 
     instruction->setPredTarg(fetch_pc);
@@ -1073,15 +1180,17 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     // Reset the cache request after cancelling
     threads[tid].cacheReq.reset();
 
-    // Get rid of the retrying packet if it was from this thread.
-    if (retryTid == tid) {
-        assert(cacheBlocked);
-        for (auto it : retryPkt) {
-            delete it;
+    // Drop any retry packets that belong to this squashed thread.
+    for (auto it = retryPkt.begin(); it != retryPkt.end();) {
+        if (cpu->contextToThread((*it)->req->contextId()) == tid) {
+            delete *it;
+            it = retryPkt.erase(it);
+        } else {
+            ++it;
         }
-        retryPkt.clear();
-        retryTid = InvalidThreadID;
-        cacheBlocked = false;   // clear cache blocked
+    }
+    if (retryPkt.empty()) {
+        cacheBlocked = false;
     }
 
     if (squashInst && !squashInst->isControl()) {
@@ -1230,14 +1339,12 @@ Fetch::initializeTickState()
         // for each thread.
         bool updated_status = checkSignalsAndUpdate(tid);
         status_change =  status_change || updated_status;
+        if (fromCommit->commitInfo[tid].emptyROB) {
+            waitForVsetvl[tid] = false;
+        }
     }
 
     DPRINTF(Fetch, "Running stage.\n");
-
-    if (fromCommit->commitInfo[0].emptyROB) {
-        waitForVsetvl = false;
-    }
-
     return status_change;
 }
 
@@ -1285,6 +1392,73 @@ Fetch::handleInterrupts()
     }
 }
 
+ThreadID
+Fetch::selectUnstalledThread()
+{
+    ThreadID selected = InvalidThreadID;
+    bool has_candidate = false;
+    bool has_unthrottled_candidate = false;
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        const bool candidate = !stallSig->blockFetch[tid] &&
+                               !fetchQueue[tid].empty();
+        if (!candidate) {
+            smtBorrowThrottleCycles[tid] = 0;
+            lsqCounter->setCounter(tid, UINT64_MAX);
+            iqCounter->setCounter(tid, UINT64_MAX);
+            robCounter->setCounter(tid, UINT64_MAX);
+            continue;
+        }
+        has_candidate = true;
+
+        const bool throttle_now =
+            smtHasBorrowThrottleStall(fromIEW->iewInfo[tid]) ||
+            smtHasMemoryPressure(fromIEW->iewInfo[tid], smtLdstqHighWater);
+        if (throttle_now) {
+            smtBorrowThrottleCycles[tid] = smtBorrowThrottleHoldCycles;
+        } else if (smtBorrowThrottleCycles[tid] > 0) {
+            --smtBorrowThrottleCycles[tid];
+        }
+
+        const bool throttled = smtBorrowThrottleCycles[tid] > 0;
+        if (!throttled) {
+            has_unthrottled_candidate = true;
+        }
+
+        lsqCounter->setCounter(
+            tid, throttled ? UINT64_MAX : fromIEW->iewInfo[tid].ldstqCount);
+        iqCounter->setCounter(
+            tid, throttled ? UINT64_MAX : fromIEW->iewInfo[tid].iqCount);
+        robCounter->setCounter(
+            tid, throttled ? UINT64_MAX : fromIEW->iewInfo[tid].robCount);
+
+        DPRINTF(Fetch,
+                "[tid:%i] lsq=%u iq=%u rob=%u throttled=%u mem_pressure=%u hold=%u\n",
+                tid, fromIEW->iewInfo[tid].ldstqCount,
+                fromIEW->iewInfo[tid].iqCount, fromIEW->iewInfo[tid].robCount,
+                throttled,
+                smtHasMemoryPressure(fromIEW->iewInfo[tid], smtLdstqHighWater),
+                smtBorrowThrottleCycles[tid]);
+    }
+
+    if (has_candidate && !has_unthrottled_candidate) {
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            if (stallSig->blockFetch[tid] || fetchQueue[tid].empty()) {
+                continue;
+            }
+            lsqCounter->setCounter(tid, fromIEW->iewInfo[tid].ldstqCount);
+            iqCounter->setCounter(tid, fromIEW->iewInfo[tid].iqCount);
+            robCounter->setCounter(tid, fromIEW->iewInfo[tid].robCount);
+        }
+    }
+
+    if (has_candidate) {
+        selected = decodeScheduler->getThread();
+    }
+
+    return selected;
+}
+
 void
 Fetch::sendInstructionsToDecode()
 {
@@ -1296,9 +1470,12 @@ Fetch::sendInstructionsToDecode()
     for (int i = 0; i < numThreads; i++) {
         if (!stallSig->blockFetch[i]) {
             any_thread_active = true;
-            break;
+            //break;
+        }else{
+            fetchStats.smtdecodeStalls[i]++; 
         }
     }
+
     if (!any_thread_active) {
         // All threads are blocked, no instructions to send
         ThreadID blocked_tid = InvalidThreadID;
@@ -1321,7 +1498,14 @@ Fetch::sendInstructionsToDecode()
         return;
     }
 
-    ThreadID tid = 0; // TODO: smt support
+    ThreadID tid =selectUnstalledThread();
+
+    if(tid == -1)
+    {
+        DPRINTF(Fetch, "All threads are stalled, no thread selected.\n");
+        return;
+    }
+    DPRINTF(Fetch, "select Unstalled [tid:%i]\n",tid);
 
     // fetch totally stalled
     if (stallSig->blockFetch[tid]) {
@@ -1407,6 +1591,7 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
 
     if (stallSig->blockFetch[tid]) {
         fetchStats.decodeStalls++;
+        //fetchStats.smtdecodeStalls[tid]++;
     }
 }
 
@@ -1459,35 +1644,42 @@ Fetch::handleIEWSignals()
         return;
     }
 
-    auto &incoming = fromIEW->iewInfo->resolvedCFIs;
     const bool had_pending_resolve = !resolveQueue.empty();
-    uint8_t enqueueSize = fromIEW->iewInfo->resolvedCFIs.size();
     uint8_t enqueueCount = 0;
+    uint8_t enqueueSize = 0;
+
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        enqueueSize += fromIEW->iewInfo[tid].resolvedCFIs.size();
+    }
 
     if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
         fetchStats.resolveQueueFullEvents++;
         fetchStats.resolveEnqueueFailEvent += enqueueSize;
     } else {
-
-        for (const auto &resolved : incoming) {
-            bool merged = false;
-            for (auto &queued : resolveQueue) {
-                if (queued.resolvedFTQId == resolved.ftqId) {
-                    queued.resolvedInstPC.push_back(resolved.pc);
-                    merged = true;
-                    break;
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            auto &incoming = fromIEW->iewInfo[tid].resolvedCFIs;
+            for (const auto &resolved : incoming) {
+                bool merged = false;
+                for (auto &queued : resolveQueue) {
+                    if (queued.resolvedTid == tid &&
+                        queued.resolvedFTQId == resolved.ftqId) {
+                        queued.resolvedInstPC.push_back(resolved.pc);
+                        merged = true;
+                        break;
+                    }
                 }
-            }
 
-            if (merged) {
-                continue;
-            }
+                if (merged) {
+                    continue;
+                }
 
-            ResolveQueueEntry new_entry;
-            new_entry.resolvedFTQId = resolved.ftqId;
-            new_entry.resolvedInstPC.push_back(resolved.pc);
-            resolveQueue.push_back(std::move(new_entry));
-            enqueueCount++;
+                ResolveQueueEntry new_entry;
+                new_entry.resolvedTid = tid;
+                new_entry.resolvedFTQId = resolved.ftqId;
+                new_entry.resolvedInstPC.push_back(resolved.pc);
+                resolveQueue.push_back(std::move(new_entry));
+                enqueueCount++;
+            }
         }
         fetchStats.resolveEnqueueCount.sample(enqueueCount);
     }
@@ -1499,18 +1691,19 @@ Fetch::handleIEWSignals()
     // and fetch consuming them as predictor resolved updates.
     if (had_pending_resolve && !resolveQueue.empty()) {
         auto &entry = resolveQueue.front();
+        ThreadID tid = entry.resolvedTid;
         unsigned int stream_id = entry.resolvedFTQId;
-        dbpbtb->prepareResolveUpdateEntries(stream_id, 0);
+        dbpbtb->prepareResolveUpdateEntries(stream_id, tid);
         for (const auto resolvedInstPC : entry.resolvedInstPC) {
-            dbpbtb->markCFIResolved(stream_id, resolvedInstPC, 0);
+            dbpbtb->markCFIResolved(stream_id, resolvedInstPC, tid);
         }
-        bool success = dbpbtb->resolveUpdate(stream_id, 0);
+        bool success = dbpbtb->resolveUpdate(stream_id, tid);
         if (success) {
-            dbpbtb->notifyResolveSuccess();
+            dbpbtb->notifyResolveSuccess(tid);
             resolveQueue.pop_front();
             fetchStats.resolveDequeueCount++;
         } else {
-            dbpbtb->notifyResolveFailure();
+            dbpbtb->notifyResolveFailure(tid);
         }
     }
 }
@@ -1549,8 +1742,10 @@ Fetch::handleCommitSignals(ThreadID tid)
     squash(*fromCommit->commitInfo[tid].pc, squash_seq,
            squash_inst, tid);
 
-    localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
-    DPRINTF(Fetch, "Updating squash version to %u\n", localSquashVer.getVersion());
+    localSquashVer[tid].update(
+        fromCommit->commitInfo[tid].squashVersion.getVersion());
+    DPRINTF(Fetch, "Updating squash version to %u\n",
+            localSquashVer[tid].getVersion());
 
     auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
 
@@ -1658,8 +1853,8 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
             instruction->isMov());
     assert(dbpbtb);
     DPRINTF(DecoupleBP, "Set instruction %lu with fetch id %lu\n",
-            instruction->seqNum, dbpbtb->ftqHeadId(0));
-    instruction->setFtqId(dbpbtb->ftqHeadId(0));
+            instruction->seqNum, dbpbtb->ftqHeadId(tid));
+    instruction->setFtqId(dbpbtb->ftqHeadId(tid));
 
 #if TRACING_ON
     if (trace) {
@@ -1734,6 +1929,7 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
     } else {
         if (fetchStatus[tid] == Idle) {
             ++fetchStats.idleCycles;
+            ++fetchStats.smtidleCycles[tid];
             DPRINTF(Fetch, "[tid:%i] Fetch is idle!\n", tid);
         }
         // Status is Idle, so fetch should do nothing.
@@ -1856,12 +2052,12 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
     // Special handling for RISC-V vector configuration instructions.
     if (staticInst->isVectorConfig()) {
-        waitForVsetvl = dec_ptr->stall();
-        DPRINTF(Fetch, "[tid:%i] Vector config instruction, waitForVsetvl=%d\n",
-                tid, waitForVsetvl);
+        waitForVsetvl[tid] = dec_ptr->stall();
+        DPRINTF(Fetch, "[tid:%i] Vector config instruction, waitForVsetvl[tid]=%d\n",
+                tid, waitForVsetvl[tid]);
     }
 
-    instruction->setVersion(localSquashVer);
+    instruction->setVersion(localSquashVer[tid]);
     ppFetch->notify(instruction);
     numInst++;
 
@@ -1905,6 +2101,7 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
 
         vpPredMetaData->pc = instruction->getPC();
         vpPredMetaData->seq_no = instruction->seqNum;
+        vpPredMetaData->tid = tid;
         instruction->vpResult = valuePred->valuePredict(vpPredMetaData);
         delete vpPredMetaData;
     }
@@ -1935,7 +2132,7 @@ Fetch::performInstructionFetch(ThreadID tid)
     // For decoupled frontend (including trace mode), check FTQ availability
     StallReason stall = StallReason::NoStall;
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize &&
-           !predictedBranch && !ftqEmpty(tid) && !waitForVsetvl) {
+           !predictedBranch && !ftqEmpty(tid) && !waitForVsetvl[tid]) {
 
         // Check memory needs and supply bytes to decoder if required
         stall = checkMemoryNeeds(tid, pc_state, curMacroop);
@@ -1996,6 +2193,7 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     }
 
     if (ftqEmpty(tid)) {
+        ++fetchStats.smtftqempty[tid];
         DPRINTF(Fetch, "[tid:%i] No FSQ entry available for next fetch\n", tid);
         return;
     }
@@ -2003,7 +2201,21 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
     assert(dbpbtb);
     const auto &stream = dbpbtb->ftqFetchingTarget(tid);
     const Addr start_pc = stream.startPC;
+    const Addr current_pc = pc_state.instAddr();
     threads[tid].startPC = start_pc;
+
+    if (current_pc < stream.startPC ||
+        current_pc >= stream.predEndPC) {
+        auto &reset_pc = threads[tid].fetchpc->as<RiscvISA::PCState>();
+        reset_pc.pc(stream.startPC);
+        reset_pc.npc(stream.startPC + 4);
+        reset_pc.uReset();
+        DPRINTF(Fetch,
+                "[tid:%i] Resetting fetch PC to new FTQ stream start %s "
+                "(previous PC %#lx outside [%#lx, %#lx))\n",
+                tid, *threads[tid].fetchpc, current_pc,
+                stream.startPC, stream.predEndPC);
+    }
 
     DPRINTF(Fetch, "[tid:%i] Issuing a pipelined I-cache access for new FSQ entry, "
                   "starting at PC %#x (endPC %#x; original PC %s)\n",
@@ -2014,36 +2226,32 @@ Fetch::sendNextCacheRequest(ThreadID tid, const PCStateBase &pc_state) {
 void
 Fetch::recvReqRetry()
 {
-    if (retryPkt.size() == 0) {
-        assert(retryTid == InvalidThreadID);
+    if (retryPkt.empty()) {
         // Access has been squashed since it was sent out.  Just clear
         // the cache being blocked.
         cacheBlocked = false;
         return;
     }
     assert(cacheBlocked);
-    assert(retryTid != InvalidThreadID);
-    // Note: In multi-cacheline fetch, overall status may not be CacheWaitRetry
-    // if some requests have progressed while others still need retry.
-    // The presence of retryPkt itself indicates retry is needed.
+    retryPendingIcacheRequests();
+}
 
-    for (auto it = retryPkt.begin(); it != retryPkt.end();) {
-        if (icachePort.sendTimingReq(*it)) {
-            // Use new cache state management with specific RequestPtr
-            updateCacheRequestStatusByRequest(retryTid, (*it)->req, CacheWaitResponse);
-            // Notify Fetch Request probe when a retryPkt is successfully sent.
-            // Note that notify must be called before retryPkt is set to NULL.
-            ppFetchRequestSent->notify((*it)->req);
-            it = retryPkt.erase(it);
-        } else {
-            it++;
+void
+Fetch::retryPendingIcacheRequests()
+{
+    while (!retryPkt.empty()) {
+        PacketPtr pkt = retryPkt.front();
+        if (!icachePort.sendTimingReq(pkt)) {
+            return;
         }
+
+        const ThreadID tid = cpu->contextToThread(pkt->req->contextId());
+        updateCacheRequestStatusByRequest(tid, pkt->req, CacheWaitResponse);
+        ppFetchRequestSent->notify(pkt->req);
+        retryPkt.erase(retryPkt.begin());
     }
 
-    if (retryPkt.size() == 0) {
-        retryTid = InvalidThreadID;
-        cacheBlocked = false;
-    }
+    cacheBlocked = false;
 }
 
 void
@@ -2058,6 +2266,7 @@ Fetch::profileStall(ThreadID tid)
         DPRINTF(Fetch, "Fetch has no active thread!\n");
     } else if (fetchStatus[tid] == Blocked) {
         ++fetchStats.blockedCycles;
+        ++fetchStats.smtblockedCycles[tid];
         DPRINTF(Fetch, "[tid:%i] Fetch is blocked!\n", tid);
     } else if (fetchStatus[tid] == Squashing) {
         ++fetchStats.squashCycles;

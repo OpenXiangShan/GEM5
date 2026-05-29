@@ -416,6 +416,11 @@ class System : public SimObject, public PCEventScope
 
     bool multiCore() const { return numCPUs > 1; }
 
+    bool multiContextDifftest() const
+    {
+        return enableDifftest && (multiCore() || multiThread);
+    }
+
     uint8_t *getGoldenMemPtr() const { return goldenMem; }
 
     GoldenGloablMem *getGoldenMemManager() { return &goldenMemManager; }

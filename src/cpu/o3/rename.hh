@@ -277,9 +277,9 @@ class Rename
      */
     std::list<RenameHistory> historyBuffer[MaxThreads];
 
-    InstSeqNum finalCommitSeq = 0;
+    InstSeqNum finalCommitSeq[MaxThreads] = {};
 
-    InstSeqNum releaseSeq = 0;
+    InstSeqNum releaseSeq[MaxThreads] = {};
 
     void tryFreePReg(PhysRegIdPtr phys_reg);
 
@@ -382,7 +382,8 @@ class Rename
 
     struct RenameStats : public statistics::Group
     {
-        RenameStats(statistics::Group *parent);
+        // RenameStats(statistics::Group *parent);
+        RenameStats(CPU *cpu, Rename *rename);
 
         /** Stat for total number of cycles spent squashing. */
         statistics::Scalar squashCycles;
@@ -397,8 +398,10 @@ class Rename
         statistics::Scalar runCycles;
         /** Stat for total number of cycles spent unblocking. */
         statistics::Scalar unblockCycles;
-        /** Stat for total number of renamed instructions. */
-        statistics::Scalar renamedInsts;
+        // /** Stat for total number of renamed instructions. */
+        // statistics::Scalar renamedInsts;
+        /** Stat for total number of renamed instructions per thread. */
+        statistics::Vector renamedInsts;
         /** Stat for total number of squashed instructions that rename
          * discards. */
         statistics::Scalar squashedInsts;
@@ -416,7 +419,7 @@ class Rename
         statistics::Scalar SQFullEvents;
         /** Stat for total number of times that rename runs out of free
          *  registers to use to rename. */
-        statistics::Scalar fullRegistersEvents;
+        statistics::Vector fullRegistersEvents;
         /** Stat for total number of renamed destination registers. */
         statistics::Scalar renamedOperands;
         /** Stat for total number of source register rename lookups. */
@@ -441,6 +444,9 @@ class Rename
         statistics::Scalar constantFolded;
 
         statistics::Vector stallEvents;
+
+        statistics::VectorDistribution smtStallEvents;
+        
     } stats;
 
     std::vector<StallReason> renameStalls;
@@ -451,7 +457,7 @@ class Rename
 
     StallReason checkRenameStallFromIEW(ThreadID tid);
 
-    SquashVersion localSquashVer;
+    SquashVersion localSquashVer[MaxThreads];
 
     /** Value predictor */
     valuepred::VPUnit *valuePred;

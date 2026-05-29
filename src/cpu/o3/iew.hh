@@ -260,6 +260,10 @@ class IEW
      * the store queue or the store buffer to write back to.
      */
     bool flushStores(ThreadID tid) { return ldstQueue.flushStores(tid); }
+    bool flushStores(ThreadID tid, InstSeqNum seq_num)
+    {
+        return ldstQueue.flushStores(tid, seq_num);
+    }
 
     /** Check if we need to squash after a load/store/branch is executed. */
     void SquashCheckAfterExe(DynInstPtr inst);
@@ -323,6 +327,7 @@ class IEW
 
     /** Dispatches instructions to IQ and LSQ. */
     void dispatchInsts();
+    void setDispatchAgeCtr(const DynInstPtr& inst, int dispatch_pos);
 
     void dispatchInstFromRename(ThreadID tid);
 
@@ -405,7 +410,7 @@ class IEW
     /** Scoreboard pointer. */
     Scoreboard* scoreboard;
 
-    SquashVersion localSquashVer{0};
+    SquashVersion localSquashVer[MaxThreads];
 
     /** Value predictor */
     valuepred::VPUnit *valuePred;
@@ -566,6 +571,8 @@ class IEW
         statistics::Formula wbFanout;
 
         statistics::Vector stallEvents;
+
+        statistics::VectorDistribution smtStallEvents;
 
         /** Distribution of number of fetch stall reasons each tick. */
         statistics::Vector fetchStallReason;

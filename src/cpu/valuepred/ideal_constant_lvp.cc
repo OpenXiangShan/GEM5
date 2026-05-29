@@ -12,6 +12,7 @@ namespace valuepred
 
 IdealConstantLVP::IdealConstantLVP(const Params &params)
     : VPUnit(params),
+      idealConstTables(params.numThreads),
       satCounterBits(params.satCounterBits),
       resetConfidence(params.resetConfidence)
 {
@@ -20,6 +21,8 @@ IdealConstantLVP::IdealConstantLVP(const Params &params)
 VPResult
 IdealConstantLVP::valuePredict(VPPredMetaData *predMetaData)
 {
+    assertValidTid(predMetaData->tid);
+    auto &idealConstTable = idealConstTables[predMetaData->tid];
     auto it = idealConstTable.find(predMetaData->pc);
     if (it != idealConstTable.end()) {
         if (it->second.confidence.isSaturated()) {
@@ -32,6 +35,8 @@ IdealConstantLVP::valuePredict(VPPredMetaData *predMetaData)
 void
 IdealConstantLVP::updateValuePredictor(VPUpdateMetaData *updateMetaData)
 {
+    assertValidTid(updateMetaData->tid);
+    auto &idealConstTable = idealConstTables[updateMetaData->tid];
     auto it = idealConstTable.find(updateMetaData->pc);
     if (it == idealConstTable.end()) {
         // Not found, allocate a new entry
@@ -63,8 +68,10 @@ IdealConstantLVP::specUpdateValuePredictor(VPSpecUpdateMetaData *specUpdateMetaD
 }
 
 void
-IdealConstantLVP::squash(const uint64_t seq_no)
+IdealConstantLVP::squash(ThreadID tid, const uint64_t seq_no)
 {
+    (void)tid;
+    (void)seq_no;
     // Do nothing
 }
 

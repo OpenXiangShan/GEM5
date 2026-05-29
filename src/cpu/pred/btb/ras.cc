@@ -21,28 +21,13 @@ namespace btb_pred {
             : TimedBaseBTBPredictor(),
               numEntries(numEntries),
               ctrWidth(ctrWidth),
-              numInflightEntries(numInflightEntries)
+              numInflightEntries(numInflightEntries),
+              maxCtr((1 << ctrWidth) - 1),
+              numThreads(1),
+              threadStates(numThreads)
         {
-            // Initialize RAS state
-            ssp = 0;
-            nsp = 0;
-            sctr = 0;
-            stack.resize(numEntries);
-            maxCtr = (1 << ctrWidth) - 1;
-            TOSW = 0;
-            TOSR = 0;
-            inflightPtrDec(TOSR);
-            BOS = 0;
-            inflightStack.resize(numInflightEntries);
-
-            // Initialize stack entries
-            for (auto &entry : stack) {
-                entry.data.ctr = 0;
-                entry.data.retAddr = 0x80000000L;
-            }
-            for (auto &entry : inflightStack) {
-                entry.data.ctr = 0;
-                entry.data.retAddr = 0x80000000L;
+            for (auto &state : threadStates) {
+                initThreadState(state);
             }
         }
 #else
@@ -51,49 +36,61 @@ namespace btb_pred {
         : TimedBaseBTBPredictor(p),
           numEntries(p.numEntries),
           ctrWidth(p.ctrWidth),
-        numInflightEntries(p.numInflightEntries),
-        rasStats(this)
+          numInflightEntries(p.numInflightEntries),
+          maxCtr((1 << ctrWidth) - 1),
+          numThreads(p.numThreads),
+          threadStates(numThreads),
+          rasStats(this)
     {
-        // Initialize RAS state
-        ssp = 0;
-        nsp = 0;
-        sctr = 0;
-        stack.resize(numEntries);
-        maxCtr = (1 << ctrWidth) - 1;
-        TOSW = 0;
-        TOSR = 0;
-        inflightPtrDec(TOSR);
-        BOS = 0;
-        inflightStack.resize(numInflightEntries);
-
-        // Initialize stack entries
-        for (auto &entry : stack) {
-            entry.data.ctr = 0;
-            entry.data.retAddr = 0x80000000L;
-        }
-        for (auto &entry : inflightStack) {
-            entry.data.ctr = 0;
-            entry.data.retAddr = 0x80000000L;
+        for (auto &state : threadStates) {
+            initThreadState(state);
         }
     }
 #endif
 
 void
-BTBRAS::checkCorrectness() {
+BTBRAS::initThreadState(ThreadRASState &state)
+{
+    state.TOSW = 0;
+    state.TOSR = 0;
+    inflightPtrDec(state.TOSR);
+    state.BOS = 0;
+    state.ssp = 0;
+    state.nsp = 0;
+    state.sctr = 0;
+    state.meta.reset();
+
+    state.stack.resize(numEntries);
+    state.inflightStack.resize(numInflightEntries);
+
+    for (auto &entry : state.stack) {
+        entry.data.ctr = 0;
+        entry.data.retAddr = 0x80000000L;
+    }
+    for (auto &entry : state.inflightStack) {
+        entry.data.ctr = 0;
+        entry.data.retAddr = 0x80000000L;
+        entry.nos = 0;
+    }
+}
+
+void
+BTBRAS::checkCorrectness(ThreadID tid) {
+    auto &state = threadStates[tid];
     /*
-    auto tosr = TOSR;
-    int checkssp = ssp;
-    while (inflightInRange(tosr)) {
-        if (!inflightStack[tosr].data.ctr) {
+    auto tosr = state.TOSR;
+    int checkssp = state.ssp;
+    while (inflightInRange(state, tosr)) {
+        if (!state.inflightStack[tosr].data.ctr) {
             checkssp = (checkssp - 1 + numEntries) % numEntries;
         } else {
             // just dec sctr, fixme here
         }
-        tosr = inflightStack[tosr].nos;
+        tosr = state.inflightStack[tosr].nos;
     }
-    if (checkssp != (nsp + numEntries - 1) % numEntries) {
+    if (checkssp != (state.nsp + numEntries - 1) % numEntries) {
         DPRINTF(RAS, "NSP and SSP check failed\n");
-        printStack("checkCorrectness");
+        printStack("checkCorrectness", tid);
     }*/
 }
 
@@ -102,28 +99,39 @@ BTBRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
                   std::vector<FullBTBPrediction> &stagePreds)
 {
     assert(getDelay() < stagePreds.size());
-    meta = std::make_shared<RASMeta>();
+    const ThreadID tid = stagePreds.back().tid;
+    assert(tid < numThreads);
+    auto &state = threadStates[tid];
+    state.meta = std::make_shared<RASMeta>();
     DPRINTFR(RAS, "putPC startAddr %lx", startAddr);
-    // checkCorrectness();
+    // checkCorrectness(tid);
+    auto top = getTop_meta(tid);
     for (int i = getDelay(); i < stagePreds.size(); i++) {
-        stagePreds[i].returnTarget = getTop_meta().retAddr; // stack[sp].retAddr;
+        stagePreds[i].returnTarget = top.retAddr;
     }
     /*
     if (stagePreds.back().btbEntry.slots[0].isCall || stagePreds.back().btbEntry.slots[0].isReturn || stagePreds.back().btbEntry.slots[1].isCall || stagePreds.back().btbEntry.slots[1].isReturn) {
-        printStack("putPCHistory");
+        printStack("putPCHistory", tid);
     }
     */
 }
 
 std::shared_ptr<void>
-BTBRAS::getPredictionMeta()
+BTBRAS::getPredictionMeta(ThreadID tid)
 {
-    return meta;
+    if (tid >= threadStates.size()) {
+        return nullptr;
+    }
+    return threadStates[tid].meta;
 }
 
 void
 BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
 {
+    const ThreadID tid = pred.tid;
+    assert(tid < numThreads);
+    auto &state = threadStates[tid];
+    assert(state.meta);
     // do push & pops on prediction
     // pred.returnTarget = stack[sp].retAddr;
     auto takenEntry = pred.getTakenEntry();
@@ -131,11 +139,11 @@ BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction
 
     if (takenEntry.isCall) {
         Addr retAddr = takenEntry.pc + takenEntry.size;
-        push(retAddr);
+        push(tid, retAddr);
     }
     if (takenEntry.isReturn) {
         // do pop
-        pop();
+        pop(tid);
     }
     if (takenEntry.isCall) {
         DPRINTFR(RAS, "IsCall spec PC %lx\n", takenEntry.pc);
@@ -145,36 +153,39 @@ BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction
     }
     
     if (takenEntry.isCall || takenEntry.isReturn)
-        printStack("after specUpdateHist");
-    DPRINTFR(RAS, "meta TOSR %d TOSW %d\n", meta->TOSR, meta->TOSW);
+        printStack("after specUpdateHist", tid);
+    DPRINTFR(RAS, "meta TOSR %d TOSW %d\n", state.meta->TOSR, state.meta->TOSW);
 }
 
 void
 BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
 {
+    const ThreadID tid = entry.tid;
+    assert(tid < numThreads);
+    auto &state = threadStates[tid];
     auto takenEntry = entry.exeBranchInfo;
     /*
     if (takenEntry.isCall || takenEntry.isReturn) {
-        printStack("before recoverHist");
+        printStack("before recoverHist", tid);
     }*/
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
     DPRINTF(RAS, "recover called, meta TOSR %d TOSW %d ssp %d sctr %u entry PC %lx end PC %lx\n",
         meta_ptr->TOSR, meta_ptr->TOSW, meta_ptr->ssp, meta_ptr->sctr, entry.startPC, entry.predEndPC);
 
-    TOSR = meta_ptr->TOSR;
-    TOSW = meta_ptr->TOSW;
-    ssp = meta_ptr->ssp;
-    sctr = meta_ptr->sctr;
+    state.TOSR = meta_ptr->TOSR;
+    state.TOSW = meta_ptr->TOSW;
+    state.ssp = meta_ptr->ssp;
+    state.sctr = meta_ptr->sctr;
     Addr retAddr = takenEntry.pc + takenEntry.size;
 
     // do push & pops on control squash
     if (entry.exeTaken) {
         if (takenEntry.isCall) {
-            push(retAddr);
+            push(tid, retAddr);
         }
         if (takenEntry.isReturn) {
-            pop();
+            pop(tid);
             //TOSW = (TOSR + 1) % numInflightEntries;
         }
     }
@@ -186,7 +197,7 @@ BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &e
             DPRINTF(RAS, "IsRet expect target %lx, preded %lx, pred taken %d pred target %lx\n",
                 takenEntry.target, meta_ptr->target, entry.predTaken, entry.predBranchInfo.target);
         }
-        printStack("after recoverHist");
+        printStack("after recoverHist", tid);
     }
     
 }
@@ -194,83 +205,89 @@ BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &e
 void
 BTBRAS::update(const FetchTarget &entry)
 {
+    const ThreadID tid = entry.tid;
+    assert(tid < numThreads);
+    auto &state = threadStates[tid];
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
     auto takenEntry = entry.exeBranchInfo;
     if (entry.exeTaken) {
-        if (meta_ptr->ssp != nsp || meta_ptr->sctr != stack[nsp].data.ctr) {
+        if (meta_ptr->ssp != state.nsp || meta_ptr->sctr != state.stack[state.nsp].data.ctr) {
             DPRINTF(RAS, "ssp and nsp mismatch, recovering, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
-                meta_ptr->ssp, meta_ptr->sctr, nsp, stack[nsp].data.ctr);
-            nsp = meta_ptr->ssp;
+                meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);
+            state.nsp = meta_ptr->ssp;
         } else
             DPRINTF(RAS, "ssp and nsp match, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
-                meta_ptr->ssp, meta_ptr->sctr, nsp, stack[nsp].data.ctr);
+                meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);
         if (takenEntry.isCall) {
             DPRINTF(RAS, "real update call BTB hit %d meta TOSR %d TOSW %d\n entry PC %lx",
                 entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
             Addr retAddr = takenEntry.pc + takenEntry.size;
-            push_stack(retAddr);
-            BOS = inflightPtrPlus1(meta_ptr->TOSW);
+            push_stack(tid, retAddr);
+            state.BOS = inflightPtrPlus1(meta_ptr->TOSW);
         }
         if (takenEntry.isReturn) {
             DPRINTF(RAS, "update ret entry PC %lx\n", entry.startPC);
-            pop_stack();
+            pop_stack(tid);
         }
     }
     if (takenEntry.isCall || takenEntry.isReturn) {
-        printStack("after update(commit)");
+        printStack("after update(commit)", tid);
     }
 }
 
 void
-BTBRAS::push_stack(Addr retAddr)
+BTBRAS::push_stack(ThreadID tid, Addr retAddr)
 {
-    auto tos = stack[nsp];
+    auto &state = threadStates[tid];
+    auto tos = state.stack[state.nsp];
     if (tos.data.retAddr == retAddr && tos.data.ctr < maxCtr) {
-        stack[nsp].data.ctr++;
+        state.stack[state.nsp].data.ctr++;
     } else {
         // push new entry
-        ptrInc(nsp);
-        stack[nsp].data.retAddr = retAddr;
-        stack[nsp].data.ctr = 0;
+        ptrInc(state.nsp);
+        state.stack[state.nsp].data.retAddr = retAddr;
+        state.stack[state.nsp].data.ctr = 0;
     }
     // ++ndepth;
 }
 
 void
-BTBRAS::push(Addr retAddr)
+BTBRAS::push(ThreadID tid, Addr retAddr)
 {
+    auto &state = threadStates[tid];
     rasStats.Pushes++;
     DPRINTF(RAS, "doing push ");
     // update ssp and sctr first
     // meta has recorded their old value
-    auto topAddr = getTop();
-    if (retAddr == topAddr.retAddr && sctr < maxCtr) {
-        sctr++;
+    auto topAddr = getTop(tid);
+    if (retAddr == topAddr.retAddr && state.sctr < maxCtr) {
+        state.sctr++;
     } else {
-        ptrInc(ssp);
-        sctr = 0;
+        ptrInc(state.ssp);
+        state.sctr = 0;
         // do not update non-spec stack here
     }
 
     // push will always enter inflight queue
     RASInflightEntry t;
     t.data.retAddr = retAddr;
-    t.data.ctr = sctr;
-    t.nos = TOSR;
-    inflightStack[TOSW] = t;
-    TOSR = TOSW;
-    inflightPtrInc(TOSW);
+    t.data.ctr = state.sctr;
+    t.nos = state.TOSR;
+    state.inflightStack[state.TOSW] = t;
+    state.TOSR = state.TOSW;
+    inflightPtrInc(state.TOSW);
 }
 
 void
-BTBRAS::pop_stack()
+BTBRAS::pop_stack(ThreadID tid)
 {
+    auto &state = threadStates[tid];
     //if (ndepth) {
-    auto tos = stack[nsp];
+    auto tos = state.stack[state.nsp];
     if (tos.data.ctr > 0) {
-        stack[nsp].data.ctr--;
+        state.stack[state.nsp].data.ctr--;
     } else {
-        ptrDec(nsp);
+        ptrDec(state.nsp);
     }
     //--ndepth;
     //} else {
@@ -280,30 +297,31 @@ BTBRAS::pop_stack()
 }
 
 void
-BTBRAS::pop()
+BTBRAS::pop(ThreadID tid)
 {
+    auto &state = threadStates[tid];
     // DPRINTFR(RAS, "doing pop ndepth = %d", ndepth);
     rasStats.Pops++;
     // pop may need to deal with committed stack
-    if (inflightInRange(TOSR)) {
-        DPRINTF(RAS, "Select from inflight, addr %lx\n", inflightStack[TOSR].data.retAddr);
-        TOSR = inflightStack[TOSR].nos;
-        if (sctr > 0) {
-            sctr--; 
+    if (inflightInRange(state, state.TOSR)) {
+        DPRINTF(RAS, "Select from inflight, addr %lx\n", state.inflightStack[state.TOSR].data.retAddr);
+        state.TOSR = state.inflightStack[state.TOSR].nos;
+        if (state.sctr > 0) {
+            state.sctr--;
         } else {
-            ptrDec(ssp);
-            auto newTop = getTop();
-            sctr = newTop.ctr;
+            ptrDec(state.ssp);
+            auto newTop = getTop(tid);
+            state.sctr = newTop.ctr;
         }
     } else /*if (ndepth)*/ {
         // TOSR not valid, operate on committed stack
         DPRINTF(RAS, "in committed range\n");
-        if (sctr > 0) {
-            sctr--;
+        if (state.sctr > 0) {
+            state.sctr--;
         } else {
-            ptrDec(ssp);
-            auto newTop = getTop();
-            sctr = newTop.ctr;
+            ptrDec(state.ssp);
+            auto newTop = getTop(tid);
+            state.sctr = newTop.ctr;
         }
     }
     //else {
@@ -351,12 +369,12 @@ BTBRAS::inflightPtrPlus1(int ptr) {
 }
 
 bool
-BTBRAS::inflightInRange(int &ptr)
+BTBRAS::inflightInRange(const ThreadRASState &state, int ptr)
 {
-    if (TOSW > BOS) {
-        return ptr >= BOS && ptr < TOSW;
-    } else if (TOSW < BOS) {
-        return ptr < TOSW || ptr >= BOS;
+    if (state.TOSW > state.BOS) {
+        return ptr >= state.BOS && ptr < state.TOSW;
+    } else if (state.TOSW < state.BOS) {
+        return ptr < state.TOSW || ptr >= state.BOS;
     } else {
         // empty inflight queue
         return false;
@@ -364,64 +382,79 @@ BTBRAS::inflightInRange(int &ptr)
 }
 
 BTBRAS::RASEssential
-BTBRAS::getTop()
+BTBRAS::getTop(ThreadID tid)
 {
+    auto &state = threadStates[tid];
     // results may come from two sources: inflight queue and committed stack
-    if (inflightInRange(TOSR)) {
+    if (inflightInRange(state, state.TOSR)) {
         // result come from inflight queue
-        DPRINTF(RAS, "Select from inflight, addr %lx\n", inflightStack[TOSR].data.retAddr);
+        DPRINTF(RAS, "Select from inflight, addr %lx\n",
+                state.inflightStack[state.TOSR].data.retAddr);
         // additional check: if nos is out of bound, check if commit stack top == inflight[nos]
         /*
-        if (!inflightInRange(inflightStack[TOSR].nos)) {
-            auto top = stack[nsp];
-            if (top.data.retAddr != inflightStack[inflightStack[TOSR].nos].data.retAddr || top.data.ctr != inflightStack[inflightStack[TOSR].nos].data.ctr) {
+        if (!inflightInRange(state, state.inflightStack[state.TOSR].nos)) {
+            auto top = state.stack[state.nsp];
+            if (top.data.retAddr !=
+                    state.inflightStack[
+                        state.inflightStack[state.TOSR].nos].data.retAddr ||
+                top.data.ctr !=
+                    state.inflightStack[
+                        state.inflightStack[state.TOSR].nos].data.ctr) {
                 // inflight[nos] is not the same as stack[nsp]
                 DPRINTF(RAS, "Error: inflight[nos] is not the same as stack[nsp]\n");
-                printStack("Error case stack dump");
+                printStack("Error case stack dump", tid);
             }
         }*/
 
-        return inflightStack[TOSR].data;
+        return state.inflightStack[state.TOSR].data;
     } else {
         // result come from commit queue
-        DPRINTF(RAS, "Select from stack, addr %lx\n", stack[ssp].data.retAddr);
-        return stack[ssp].data;
+        DPRINTF(RAS, "Select from stack, addr %lx\n", state.stack[state.ssp].data.retAddr);
+        return state.stack[state.ssp].data;
     }
 }
 
 BTBRAS::RASEssential
-BTBRAS::getTop_meta() {
+BTBRAS::getTop_meta(ThreadID tid) {
+    auto &state = threadStates[tid];
+    assert(state.meta);
     // results may come from two sources: inflight queue and committed stack
-    if (inflightInRange(TOSR)) {
+    if (inflightInRange(state, state.TOSR)) {
         // result come from inflight queue
-        DPRINTF(RAS, "Select from inflight, addr %lx\n", inflightStack[TOSR].data.retAddr);
-        meta->ssp = ssp;
-        meta->sctr = sctr;
-        meta->TOSR = TOSR;
-        meta->TOSW = TOSW;
-        meta->target = inflightStack[TOSR].data.retAddr;
+        DPRINTF(RAS, "Select from inflight, addr %lx\n",
+                state.inflightStack[state.TOSR].data.retAddr);
+        state.meta->ssp = state.ssp;
+        state.meta->sctr = state.sctr;
+        state.meta->TOSR = state.TOSR;
+        state.meta->TOSW = state.TOSW;
+        state.meta->target = state.inflightStack[state.TOSR].data.retAddr;
 
         // additional check: if nos is out of bound, check if commit stack top == inflight[nos]
         /*
-        if (!inflightInRange(inflightStack[TOSR].nos)) {
-            auto top = stack[nsp];
-            if (top.data.retAddr != inflightStack[inflightStack[TOSR].nos].data.retAddr || top.data.ctr != inflightStack[inflightStack[TOSR].nos].data.ctr) {
+        if (!inflightInRange(state, state.inflightStack[state.TOSR].nos)) {
+            auto top = state.stack[state.nsp];
+            if (top.data.retAddr !=
+                    state.inflightStack[
+                        state.inflightStack[state.TOSR].nos].data.retAddr ||
+                top.data.ctr !=
+                    state.inflightStack[
+                        state.inflightStack[state.TOSR].nos].data.ctr) {
                 // inflight[nos] is not the same as stack[nsp]
                 DPRINTF(RAS, "Error: inflight[nos] is not the same as stack[nsp]\n");
-                printStack("Error case stack dump");
+                printStack("Error case stack dump", tid);
             }
         }*/
 
-        return inflightStack[TOSR].data;
+        return state.inflightStack[state.TOSR].data;
     } else {
         // result come from commit queue
-        meta->ssp = ssp;
-        meta->sctr = sctr;
-        meta->TOSR = TOSR;
-        meta->TOSW = TOSW;
-        meta->target = stack[ssp].data.retAddr;
-        DPRINTF(RAS, "Select from stack, addr %lx\n", stack[ssp].data.retAddr);
-        return stack[ssp].data;
+        state.meta->ssp = state.ssp;
+        state.meta->sctr = state.sctr;
+        state.meta->TOSR = state.TOSR;
+        state.meta->TOSW = state.TOSW;
+        state.meta->target = state.stack[state.ssp].data.retAddr;
+        DPRINTF(RAS, "Select from stack, addr %lx\n", state.stack[state.ssp].data.retAddr);
+        return state.stack[state.ssp].data;
     }
 }
 

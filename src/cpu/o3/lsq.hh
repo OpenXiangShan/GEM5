@@ -64,7 +64,9 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/utils.hh"
+#include "enums/SMTLSQMode.hh"
 #include "enums/SMTQueuePolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
@@ -146,10 +148,13 @@ class LSQ
       public:
         const int index;
         ThreadID tid;
+        InstSeqNum seqNum = 0;
         Addr blockVaddr;
         Addr blockPaddr;
         std::vector<uint8_t> blockDatas;
         std::vector<bool> validMask;
+        std::vector<uint64_t> byteGenerations;
+        uint64_t generation = 0;
         bool sending;
         // the another same addr entry when sending
         // another cannot sending until self sending finished
@@ -161,16 +166,20 @@ class LSQ
         {
             blockDatas.resize(size, 0);
             validMask.resize(size, false);
+            byteGenerations.resize(size, 0);
         }
 
-        void reset(ThreadID tid, uint64_t block_vaddr, uint64_t block_paddr,
-                   uint64_t offset, uint8_t *datas, uint64_t size,
-                   const std::vector<bool> &mask);
+        void reset(ThreadID tid, InstSeqNum seq_num, uint64_t block_vaddr,
+                   uint64_t block_paddr, uint64_t offset, uint8_t *datas,
+                   uint64_t size, const std::vector<bool> &mask,
+                   uint64_t generation);
 
         void merge(uint64_t offset, uint8_t *datas, uint64_t size,
-                   const std::vector<bool> &mask);
+                   const std::vector<bool> &mask, uint64_t generation);
 
-        bool recordForward(RequestPtr req, LSQRequest *lsqreq);
+        bool recordForward(RequestPtr req, LSQRequest *lsqreq,
+                           ThreadID load_tid, InstSeqNum load_seq,
+                           uint64_t visible_generation);
     };
 
     class StoreBuffer
@@ -180,12 +189,15 @@ class LSQ
 
         // key = (paddr & cacheblockmask)
         uint64_t _size = 0;
+        int max_size = 0;
+        int max_thread = 0;
         std::unordered_map<uint64_t, StoreBufferEntry *> data_map;
         std::vector<mapIter> crossRef;
         boost::circular_buffer<int> lru_index;
         boost::circular_buffer<int> free_list;
         std::vector<StoreBufferEntry *> data_vec;
         std::vector<bool> data_vld;
+        std::vector<int> vld_cnt_vec;
 
         uint64_t hashKey(ThreadID tid, Addr block_paddr) const
         {
@@ -195,14 +207,25 @@ class LSQ
 
       public:
         void setData(std::vector<StoreBufferEntry *> &data_vec);
-        bool full() const;
-        uint64_t size() const;
+        void setMaxThread(ThreadID max_thread);
+	bool full() const;
+        bool full(ThreadID tid) const;
+	uint64_t size() const;
+        uint64_t size(ThreadID tid) const;
+        uint64_t size(ThreadID tid, InstSeqNum seq_num) const;
         uint64_t unsentSize() const;
+        const std::vector<StoreBufferEntry *> &entries() const { return data_vec; }
+        bool valid(size_t index) const { return data_vld.at(index); }
         StoreBufferEntry *getEmpty();
         void insert(StoreBufferEntry *entry);
         StoreBufferEntry *get(ThreadID tid, uint64_t addr) const;
         void update(int index);
         StoreBufferEntry *getEvict();
+        StoreBufferEntry *getEvict(const bool *eligible_tids,
+                                   size_t num_threads);
+        StoreBufferEntry *getEvict(const bool *eligible_tids,
+                                   const InstSeqNum *eligible_seq,
+                                   size_t num_threads);
         StoreBufferEntry *createVice(StoreBufferEntry *entry);
         void release(StoreBufferEntry *entry);
     };
@@ -350,6 +373,8 @@ class LSQ
         AtomicOpFunctorPtr _amo_op;
         bool _hasStaleTranslation;
         bool _sbufferBypass;
+        bool _goldenSnapshotCaptured = false;
+        uint64_t _storeBufferGeneration = 0;
 
         struct FWDPacket
         {
@@ -369,6 +394,14 @@ class LSQ
 
         /** Install the request in the LQ/SQ. */
         void install();
+
+        /** If the request is still installed in the current LQ/SQ slot,
+         * detach that slot so later scans do not observe a discarded or
+         * deleted request through the queue entry. */
+        void detachLSQEntry();
+
+        /** Remove the request from the in-flight load tracker if present. */
+        void detachInflightLoad();
 
         bool squashed() const override;
 
@@ -476,6 +509,7 @@ class LSQ
 
         RequestPtr req(int idx = 0) { return _reqs.at(idx); }
         const RequestPtr req(int idx = 0) const { return _reqs.at(idx); }
+        size_t numReqs() const { return _reqs.size(); }
 
         Addr getVaddr(int idx = 0) const { return req(idx)->getVaddr(); }
         virtual void initiateTranslation() = 0;
@@ -491,6 +525,13 @@ class LSQ
 
         virtual RequestPtr
         mainReq()
+        {
+            assert (_reqs.size() == 1);
+            return req();
+        }
+
+        virtual RequestPtr
+        mainReq() const
         {
             assert (_reqs.size() == 1);
             return req();
@@ -635,6 +676,8 @@ class LSQ
         void
         discard()
         {
+            detachLSQEntry();
+            detachInflightLoad();
             release(Flag::Discarded);
         }
 
@@ -766,6 +809,7 @@ class LSQ
         virtual bool isCacheBlockHit(Addr blockAddr, Addr cacheBlockMask);
 
         virtual RequestPtr mainReq();
+        virtual RequestPtr mainReq() const;
         virtual PacketPtr mainPacket();
         virtual std::string name() const { return "SplitDataRequest"; }
     };
@@ -823,6 +867,7 @@ class LSQ
     void insertLoad(const DynInstPtr &load_inst);
     /** Inserts a store into the LSQ. */
     void insertStore(const DynInstPtr &store_inst);
+    bool splitStoreAddrSquashed(const DynInstPtr &inst);
 
     /** Executes an amo inst. */
     Fault executeAmo(const DynInstPtr &inst);
@@ -889,18 +934,28 @@ class LSQ
     int getCount(ThreadID tid);
 
     /** Returns the total number of loads in the load queue. */
-    int numLoads();
+    int numLoads() const;
     /** Returns the total number of loads for a single thread. */
-    int numLoads(ThreadID tid);
+    int numLoads(ThreadID tid) const;
 
     int anyInflightLoadsNotComplete();
 
     bool anyStoreNotExecute();
 
     /** Returns the total number of stores in the store queue. */
-    int numStores();
+    int numStores() const;
     /** Returns the total number of stores for a single thread. */
-    int numStores(ThreadID tid);
+    int numStores(ThreadID tid) const;
+
+    /** Returns the total number of entries in the RAR queue. */
+    int numRAREntries() const;
+    /** Returns the total number of RAR queue entries for a single thread. */
+    int numRAREntries(ThreadID tid) const;
+
+    /** Returns the total number of entries in the RAW queue. */
+    int numRAWEntries() const;
+    /** Returns the total number of RAW queue entries for a single thread. */
+    int numRAWEntries(ThreadID tid) const;
 
 
     // hardware transactional memory
@@ -938,8 +993,12 @@ class LSQ
     bool isEmpty() const;
     /** Returns if all of the LQs are empty. */
     bool lqEmpty() const;
+    /** Returns if the LQ of a given thread is empty. */
+    bool lqEmpty(ThreadID tid) const;
     /** Returns if all of the SQs are empty. */
     bool sqEmpty() const;
+    /** Returns if the SQ of a given thread is empty. */
+    bool sqEmpty(ThreadID tid) const;
 
     /** Returns if any of the LQs are full. */
     bool lqFull();
@@ -953,6 +1012,8 @@ class LSQ
 
     /** Returns whether the head instruction of sq has completed*/
     const DynInstPtr& getLSQHeadInst(ThreadID tid, bool isLoad);
+
+    int getLoadPFSource(const DynInstPtr &inst) const;
 
     /**
      * Returns if the LSQ is stalled due to a memory operation that must be
@@ -972,9 +1033,29 @@ class LSQ
      * to memory.
      */
     bool hasStoresToWB(ThreadID tid);
+    bool hasStoresToWBBefore(ThreadID tid, InstSeqNum seq_num);
 
     // true if all stores are flushed
     bool flushStores(ThreadID tid);
+    bool flushStores(ThreadID tid, InstSeqNum seq_num);
+    void requestGlobalStoreBufferFlush();
+    bool storeBufferHasConflict(ThreadID tid, Addr block_paddr) const;
+    uint64_t bumpStoreBufferBlockVersion(Addr block_paddr);
+    uint64_t currentStoreBufferBlockVersion(Addr block_paddr) const;
+    void markStoreBufferBlockVisible(Addr block_paddr, uint64_t generation);
+    uint64_t currentStoreBufferVisibleVersion(Addr block_paddr) const;
+    StoreBufferEntry *findForwardingStoreBufferEntry(Addr block_paddr,
+                                                     ThreadID load_tid,
+                                                     InstSeqNum load_seq) const;
+    bool hasLiveStoreBufferBlock(Addr block_paddr) const;
+    void reclaimStoreBufferBlockMetadata(Addr block_paddr);
+    void invalidateOtherThreadStoreBufferBytes(
+        ThreadID tid, Addr paddr, const std::vector<bool> &mask,
+        uint64_t generation);
+    void notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
+                                        const std::vector<bool> &byte_enable,
+                                        InstSeqNum store_seq,
+                                        bool replay_executed_loads);
 
     /** Returns the number of stores a specific thread has to write back. */
     int numStoresToSbuffer(ThreadID tid);
@@ -990,6 +1071,10 @@ class LSQ
     void dumpInsts() const;
     /** Debugging function to print out instructions from a specific thread. */
     void dumpInsts(ThreadID tid) const;
+    /** Debugging function to print store-buffer flush state for a thread. */
+    void dumpStoreBufferState(ThreadID tid, InstSeqNum seq_num) const;
+    /** Debugging function to print store-buffer entries for a thread. */
+    void dumpStoreBuffer(ThreadID tid) const;
 
     bool isMisaligned(const DynInstPtr& inst, Addr vaddr, int size);
 
@@ -1077,8 +1162,34 @@ class LSQ
     bool getDcacheWriteStall() { return dcacheWriteStall; }
     StoreBuffer &getStoreBuffer() { return storeBuffer; }
     bool storeBufferEmpty() const { return storeBuffer.size() == 0; }
-    bool storeBufferFlushing() const { return _storeBufferFlushing; }
-    void clearStoreBufferFlushing() { _storeBufferFlushing = false; }
+    bool storeBufferEmpty(ThreadID tid) const
+    {
+        return storeBuffer.size(tid) == 0;
+    }
+    bool storeBufferEmpty(ThreadID tid, InstSeqNum seq_num) const
+    {
+        return storeBuffer.size(tid, seq_num) == 0;
+    }
+    bool storeBufferFlushing(ThreadID tid) const { return _storeBufferFlushing[tid]; }
+    bool storeBufferFlushing() const
+    {
+        for (auto tid : *activeThreads) {
+            if (_storeBufferFlushing[tid])
+                return true;
+        }
+        return false;
+    }
+    void clearStoreBufferFlushing(ThreadID tid)
+    {
+        _storeBufferFlushing[tid] = false;
+        _storeBufferFlushBeforeSeq[tid] = static_cast<InstSeqNum>(-1);
+    }
+    void clearStoreBufferFlushing() {
+        for (auto tid : *activeThreads) {
+            _storeBufferFlushing[tid] = false;
+            _storeBufferFlushBeforeSeq[tid] = static_cast<InstSeqNum>(-1);
+        }
+    }
     uint32_t getSbufferEvictThreshold() const { return sbufferEvictThreshold; }
     uint32_t getSbufferEntries() const { return sbufferEntries; }
     uint64_t getStoreBufferInactiveCycles() const
@@ -1112,6 +1223,18 @@ class LSQ
     unsigned getFreeSQEntries(ThreadID tid);
     unsigned getAndResetLastSQPopEntries(ThreadID tid);
 
+    bool sharedLSQMode() const;
+    unsigned activeLSQThreads() const;
+    unsigned sharedLSQAllocation(unsigned entries) const;
+    unsigned logicalMaxLoadEntries(ThreadID tid) const;
+    unsigned logicalMaxStoreEntries(ThreadID tid) const;
+    unsigned logicalFreeLoadEntries(ThreadID tid) const;
+    unsigned logicalFreeStoreEntries(ThreadID tid) const;
+    unsigned logicalMaxRAREntries(ThreadID tid) const;
+    unsigned logicalMaxRAWEntries(ThreadID tid) const;
+    unsigned logicalFreeRAREntries(ThreadID tid) const;
+    unsigned logicalFreeRAWEntries(ThreadID tid) const;
+
     /** Is D-cache blocked? */
     bool cacheBlocked() const;
     /** Set D-cache blocked status */
@@ -1139,7 +1262,6 @@ class LSQ
     std::vector<uint32_t> dcacheRefillDataRead;
     std::vector<uint32_t> dcacheRefillDataWrite;
     std::vector<uint32_t> dcacheRefillTagWrite;
-
     bool isDcacheRefillTagWrite() const
     {
         for (auto stage : dcacheRefillTagWrite) {
@@ -1168,10 +1290,16 @@ class LSQ
     const uint64_t storeBufferInactiveThreshold;
     const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle = 2;
     StoreBuffer storeBuffer;
-    bool _storeBufferFlushing = false;
+    std::unordered_map<Addr, uint64_t> storeBufferBlockVersion;
+    std::unordered_map<Addr, uint64_t> storeBufferVisibleVersion;
+    bool _storeBufferFlushing[MaxThreads] = {false};
+    InstSeqNum _storeBufferFlushBeforeSeq[MaxThreads] = {
+        static_cast<InstSeqNum>(-1)
+    };
     uint64_t storeBufferWritebackInactive = 0;
     StoreBufferEntry *blockedSbufferEntry = nullptr;
     ThreadID nextStoreBufferOffloadTid = InvalidThreadID;
+    ThreadID nextStoreBufferInsertTid  = 0;
 
     bool enableBankConflictCheck;
     bool sbufferBankWriteAccurately;
@@ -1193,30 +1321,13 @@ class LSQ
     Addr staleTranslationWaitTxnId;
 
     /** The LSQ policy for SMT mode. */
+    SMTLSQMode lsqMode;
+
+    /** The LSQ allocation policy used in shared mode. */
     SMTQueuePolicy lsqPolicy;
 
-    /** Auxiliary function to calculate per-thread max LSQ allocation limit.
-     * Depending on a policy, number of entries and possibly number of threads
-     * and threshold, this function calculates how many resources each thread
-     * can occupy at most.
-     */
-    static uint32_t
-    maxLSQAllocation(SMTQueuePolicy pol, uint32_t entries,
-            uint32_t numThreads, uint32_t SMTThreshold)
-    {
-        if (pol == SMTQueuePolicy::Dynamic) {
-            return entries;
-        } else if (pol == SMTQueuePolicy::Partitioned) {
-            //@todo:make work if part_amt doesnt divide evenly.
-            return entries / numThreads;
-        } else if (pol == SMTQueuePolicy::Threshold) {
-            //Divide up by threshold amount
-            //@todo: Should threads check the max and the total
-            //amount of the LSQ
-            return SMTThreshold;
-        }
-        return 0;
-    }
+    /** The per-thread threshold used in shared threshold mode. */
+    unsigned smtLSQThreshold;
 
     struct LSQStats : public statistics::Group
     {
@@ -1253,11 +1364,10 @@ class LSQ
     /** Max number of memory instructions that may enter LSQ in one cycle. */
     const unsigned enqueueWidth;
 
-    /** Max LQ Size - Used to Enforce Sharing Policies. */
-    unsigned maxLQEntries;
-
-    /** Max SQ Size - Used to Enforce Sharing Policies. */
-    unsigned maxSQEntries;
+    /** Total Size of RARQ Entries. */
+    unsigned RARQEntries;
+    /** Total Size of RAWQ Entries. */
+    unsigned RAWQEntries;
 
     /** Data port. */
     DcachePort dcachePort;

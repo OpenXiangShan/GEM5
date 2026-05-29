@@ -16,6 +16,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
+#include "cpu/o3/smt_sched.hh"
 #include "cpu/reg_class.hh"
 #include "cpu/timebuf.hh"
 #include "params/BaseSelector.hh"
@@ -172,6 +173,9 @@ class IssueQue : public SimObject
     Scheduler* scheduler = nullptr;
     BaseSelector* selector = nullptr;
 
+    // iq per-thread occupancy counter, used for fetch-side feedback stats
+    InstsCounter* instsCounter = nullptr;
+
     struct IssueQueStats : public statistics::Group
     {
         IssueQueStats(statistics::Group* parent, IssueQue* que, std::string name);
@@ -186,6 +190,7 @@ class IssueQue : public SimObject
         statistics::Vector portissued;
         statistics::Vector portBusy;
         statistics::Average avgInsts;
+        statistics::Vector instsNum; 
     }* iqstats = nullptr;
 
     void replay(const DynInstPtr& inst);
@@ -207,6 +212,12 @@ class IssueQue : public SimObject
     void setMainRdpOpt(bool enable) { enableMainRdpOpt = enable; }
     void resetDepGraph(int numPhysRegs);
 
+    InstsCounter* getInstsCounter() const {return instsCounter; }
+
+    void incInIQInstsCounter(ThreadID tid);
+    void decInIQInstsCounter(ThreadID tid);
+    bool hasInstsCounter() const { return instsCounter != nullptr; }
+
     void tick();
     bool ready();
     int emptyEntries() const { return iqsize - instNum; }
@@ -218,8 +229,8 @@ class IssueQue : public SimObject
     void retryMem(const DynInstPtr& inst);
     bool idle();
 
-    void doCommit(const InstSeqNum inst);
-    void doSquash(const InstSeqNum seqNum);
+    void doCommit(const InstSeqNum inst, ThreadID tid);
+    void doSquash(SquashInfo squashInfo);
 
     int getIssueStages() { return scheduleToExecDelay; }
     int getId() { return IQID; }
@@ -336,7 +347,8 @@ class Scheduler : public SimObject
     void issueAndSelect();
     void lookahead(std::deque<DynInstPtr>& insts);
     bool ready(const DynInstPtr& inst, int disp_seq);
-    DynInstPtr getInstByDstReg(RegIndex flatIdx);
+    DynInstPtr getInstByDstReg(RegIndex flatIdx, ThreadID tid,
+                               InstSeqNum consumerSeqNum);
 
     void addProducer(const DynInstPtr& inst);
     // return true if insert successful
@@ -359,9 +371,10 @@ class Scheduler : public SimObject
     uint32_t getCorrectedOpLat(const DynInstPtr& inst);
     bool hasReadyInsts();
     bool isDrained();
-    void doCommit(const InstSeqNum seqNum);
-    void doSquash(const InstSeqNum seqNum);
+    void doCommit(const InstSeqNum seqNum, ThreadID tid);
+    void doSquash(SquashInfo squashInfo);
     uint32_t getIQInsts();
+    uint32_t getIQInsts(ThreadID tid);
 
     SchedulerStats& getStats() { return stats; }
 };

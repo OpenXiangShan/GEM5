@@ -137,7 +137,8 @@ void
 UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::vector<FullBTBPrediction> &stagePreds)
 {
     meta = std::make_shared<UBTBMeta>();
-    auto it = lookup(startAddr);
+    const uint8_t asidHash = stagePreds.empty() ? 0 : stagePreds.front().asidHash;
+    auto it = lookup(startAddr, asidHash);
     auto& entry = meta->hit_entry;
     entry = (it != ubtb.end()) ? *it : TickedUBTBEntry();
 
@@ -151,23 +152,29 @@ UBTB::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history, std::
 }
 
 UBTB::UBTBIter
-UBTB::lookup(Addr startAddr)
+UBTB::lookup(Addr startAddr, uint8_t asidHash)
 {
     if (startAddr & 0x1) {
         return ubtb.end();  // ignore false hit when lowest bit is 1
     }
 
-    Addr current_tag = getTag(startAddr);
+    Addr current_tag = getTag(startAddr, asidHash);
+    Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
 
     DPRINTF(UBTB, "UBTB: Doing tag comparison for tag %#lx\n", current_tag);
 
     auto it = std::find_if(ubtb.begin(), ubtb.end(),
-                           [current_tag](const TickedUBTBEntry &way) { return way.valid && way.tag == current_tag; });
+                           [current_tag, startAddr, block_end](const TickedUBTBEntry &way) {
+                               return way.valid && way.tag == current_tag &&
+                                      way.pc >= startAddr && way.pc < block_end;
+                           });
 
     if (it != ubtb.end()) {
         // Found a hit - verify no duplicates
-        auto duplicate = std::find_if(std::next(it), ubtb.end(), [current_tag](const TickedUBTBEntry &way) {
-            return way.valid && way.tag == current_tag;
+        auto duplicate = std::find_if(std::next(it), ubtb.end(),
+                                      [current_tag, startAddr, block_end](const TickedUBTBEntry &way) {
+            return way.valid && way.tag == current_tag &&
+                   way.pc >= startAddr && way.pc < block_end;
         });
         if (duplicate != ubtb.end()) {
             DPRINTF(UBTB, "UBTB: Multiple hits found in uBTB for the same tag %#lx\n", current_tag);
@@ -184,7 +191,8 @@ UBTB::lookup(Addr startAddr)
 
 
 void
-UBTB::replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry, Addr startAddr)
+UBTB::replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry,
+                      Addr startAddr, uint8_t asidHash)
 {
     assert(newTakenEntry.valid);
     TickedUBTBEntry newEntry = TickedUBTBEntry(newTakenEntry, curTick());
@@ -192,7 +200,7 @@ UBTB::replaceOldEntry(UBTBIter oldEntryIter, const BTBEntry &newTakenEntry, Addr
     newEntry.target = newTakenEntry.target;
     newEntry.ctr = 0; // have a bug here:ubtb will accept ctr from mbtb, reset it to 0 at here
     // important: update tag (mbtb and ubtb have different tags, even diffferent tag length)
-    newEntry.tag = getTag(startAddr);
+    newEntry.tag = getTag(startAddr, asidHash);
     *oldEntryIter = newEntry;
 }
 
@@ -213,13 +221,14 @@ UBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred)
     auto startAddr = s3Pred.bbStart;
     UBTBIter oldEntryIter = lastPred.hit_entry;
     takenEntry.source = getComponentIdx();
-    updateNewEntry(oldEntryIter, takenEntry, startAddr);
+    updateNewEntry(oldEntryIter, takenEntry, startAddr, s3Pred.asidHash);
 
 }
 
 
 
-void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry, const Addr startAddr)
+void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry,
+                          const Addr startAddr, uint8_t asidHash)
 {
     //using the FB final taken branch to update uBTB
     if (oldEntryIter != ubtb.end()) {
@@ -259,7 +268,7 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry, con
             }
 
             // Replace the entry with the new prediction
-            replaceOldEntry(toBeReplacedIter, takenEntry, startAddr);
+            replaceOldEntry(toBeReplacedIter, takenEntry, startAddr, asidHash);
 
         } else if (oldEntryIter != ubtb.end() && takenEntry.valid) {
             ubtbStats.s1Hits3Taken++;
@@ -269,7 +278,7 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry, con
                 updateUCtr(oldEntryIter->uctr, false);
                 if (oldEntryIter->uctr == 0) {
                     // replace the old entry with the new one
-                    replaceOldEntry(oldEntryIter, takenEntry, startAddr);
+                    replaceOldEntry(oldEntryIter, takenEntry, startAddr, asidHash);
                 }
             } else {
                 // S0 and S3 predict the same (brpc and target)
@@ -294,13 +303,15 @@ UBTB::update(const FetchTarget &stream)
      // Use BTBEntry instead of BranchInfo; make it invalid when not taken
     BTBEntry takenEntry = stream.exeTaken ? BTBEntry(stream.exeBranchInfo) : BTBEntry();
     auto startAddr = stream.getRealStartPC();
-    Addr oldtag = getTag(startAddr);
+    Addr oldtag = getTag(startAddr, stream.asidHash);
+    Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
 
     UBTBIter oldEntryIter = ubtb.end();
 
     oldEntryIter = meta->hit_entry.valid ?
-                    std::find_if(ubtb.begin(), ubtb.end(), [oldtag](const TickedUBTBEntry &e) {
-                        return e.valid && e.tag == oldtag;
+                    std::find_if(ubtb.begin(), ubtb.end(), [oldtag, startAddr, block_end](const TickedUBTBEntry &e) {
+                        return e.valid && e.tag == oldtag &&
+                               e.pc >= startAddr && e.pc < block_end;
                     }) : ubtb.end();
 
     if (stream.exeTaken) {
@@ -315,7 +326,7 @@ UBTB::update(const FetchTarget &stream)
     // Verify uBTB state
     assert(ubtb.size() <= numEntries);
     if (!usingS3Pred) {
-        updateNewEntry(oldEntryIter, takenEntry, startAddr);
+        updateNewEntry(oldEntryIter, takenEntry, startAddr, stream.asidHash);
     }
 }
 

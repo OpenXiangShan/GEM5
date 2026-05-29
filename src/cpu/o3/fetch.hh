@@ -65,6 +65,7 @@
 #include "mem/port.hh"
 #include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
+#include "cpu/o3/smt_sched.hh"
 
 namespace gem5
 {
@@ -233,6 +234,22 @@ class Fetch
     /** To probe when a fetch request is successfully sent. */
     ProbePointArg<RequestPtr> *ppFetchRequestSent;
 
+    // SMT Decode Scheduler
+    SMTScheduler* decodeScheduler;
+
+    // Counters from backend structures (to be passed in)
+    InstsCounter* lsqCounter;
+    InstsCounter* iqCounter;
+    InstsCounter* robCounter;
+
+    unsigned smtBorrowThrottleCycles[MaxThreads];
+    unsigned smtBorrowThrottleHoldCycles;
+    unsigned smtLdstqHighWater;
+
+    // Configuration parameters
+    std::string smtDecodePolicy ="multi_priority";
+    int delayedSchedulerDelay;
+
   public:
     /** Fetch constructor. */
     Fetch(CPU *_cpu, const BaseO3CPUParams &params);
@@ -299,9 +316,18 @@ class Fetch
 
     /** For priority-based fetch policies, need to keep update priorityList */
     void deactivateThread(ThreadID tid);
+
+    // Function to initialize scheduler
+    void initDecodeScheduler();
+
+    // Select a thread that is not fetch-blocked, using scheduler
+    ThreadID selectUnstalledThread();
   private:
     /** Reset this pipeline stage */
     void resetStage();
+
+    /** Retry queued I-cache packets once, stopping at the first new block. */
+    void retryPendingIcacheRequests();
 
     /** Changes the status of this stage to active, and indicates this
      * to the CPU.
@@ -657,11 +683,8 @@ class Fetch
     /** Is the cache blocked?  If so no threads can access it. */
     bool cacheBlocked;
 
-    /** The packet that is waiting to be retried. */
+    /** Packets waiting for the next cache-issued retry callback. */
     std::vector<PacketPtr> retryPkt;
-
-    /** The thread that is waiting on the cache to tell fetch to retry. */
-    ThreadID retryTid;
 
     /** Cache block size. */
     unsigned int cacheBlkSize;
@@ -1035,8 +1058,12 @@ class Fetch
          * the pipeline.
          */
         statistics::Scalar idleCycles;
+
+        statistics::Vector smtidleCycles;
         /** Total number of cycles spent blocked. */
         statistics::Scalar blockedCycles;
+
+        statistics::Vector smtblockedCycles;
         /** Total number of cycles spent in any other state. */
         statistics::Scalar miscStallCycles;
         /** Total number of cycles spent in waiting for drains. */
@@ -1072,6 +1099,10 @@ class Fetch
         statistics::Vector fetchStatusDist;
         /** Number of decode stalls */
         statistics::Scalar decodeStalls;
+
+        statistics::Vector smtdecodeStalls;
+
+        statistics::Vector smtftqempty;
         /** Number of decode stalls per cycle */
         statistics::Formula decodeStallRate;
         /** Unutilized issue-pipeline slots while there is no backend-stall */
@@ -1107,14 +1138,14 @@ class Fetch
         statistics::Scalar traceMetaCleanupCommitCalls;
     } fetchStats;
 
-    SquashVersion localSquashVer;
+    SquashVersion localSquashVer[MaxThreads];
 
 public:
     const FetchStatGroup &getFetchStats() { return fetchStats; }
 
   private:
 
-    bool waitForVsetvl = false;
+    bool waitForVsetvl [MaxThreads];
 
     /** Value predictor */
     valuepred::VPUnit *valuePred;

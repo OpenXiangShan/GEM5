@@ -290,7 +290,7 @@ def resolve_xiangshan_ref_so(args: argparse.Namespace):
     if args.difftest_ref_so is not None:
         ref_so = args.difftest_ref_so
         print("Obtained ref_so from args.difftest_ref_so: ", ref_so)
-    elif args.num_cpus > 1 and "GCBV_MULTI_CORE_REF_SO" in os.environ:
+    elif (args.num_cpus > 1 or args.smt) and "GCBV_MULTI_CORE_REF_SO" in os.environ:
         ref_so = os.environ["GCBV_MULTI_CORE_REF_SO"]
         print("Obtained ref_so from GCBV_MULTI_CORE_REF_SO: ", ref_so)
     elif "GCBV_REF_SO" in os.environ:
@@ -330,12 +330,12 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
         if args.raw_cpt:
             # If using raw binary, no restorer is needed.
             gcpt_restorer = None
-        elif args.num_cpus > 1:
+        elif args.num_cpus > 1 or args.smt:
             if "GCB_MULTI_CORE_RESTORER" in os.environ:
                 gcpt_restorer = os.environ["GCB_MULTI_CORE_RESTORER"]
                 print("Obtained gcpt_restorer from GCB_MULTI_CORE_RESTORER: ", gcpt_restorer)
             else:
-                fatal("Plz set $GCB_MULTI_CORE_RESTORER when model Xiangshan with multi-core")
+                fatal("Plz set $GCB_MULTI_CORE_RESTORER when model Xiangshan with multi-context difftest")
         elif args.restore_rvv_cpt:
             if "GCBV_RESTORER" in os.environ:
                 gcpt_restorer = os.environ["GCBV_RESTORER"]
@@ -355,8 +355,8 @@ def config_xiangshan_inputs(args: argparse.Namespace, sys):
         print("Obtained gcpt_restorer from args.gcpt_restorer: ", args.gcpt_restorer)
         gcpt_restorer = args.gcpt_restorer
 
-    if args.num_cpus > 1:
-        print("Simulating a multi-core system, demanding a larger GCPT restorer size (2M).")
+    if args.num_cpus > 1 or args.smt:
+        print("Simulating a multi-context system, demanding a larger GCPT restorer size (2M).")
         sys.gcpt_restorer_size_limit = 2**20
     elif args.restore_rvv_cpt:
         print("Simulating single core with RVV, demanding GCPT restorer size of 0x1000.")
@@ -403,7 +403,7 @@ def config_difftest(cpu_list, args, sys):
     if not args.enable_difftest:
         return
     else:
-        if len(cpu_list) > 1:
+        if len(cpu_list) > 1 or args.smt:
             sys.enable_mem_dedup = True
             for cpu in cpu_list:
                 cpu.enable_mem_dedup = True
@@ -439,7 +439,12 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     test_sys.cpu = [TestCPUClass(clk_domain=test_sys.cpu_clk_domain, cpu_id=i)
                     for i in range(np)]
     # Configure MMU for trace-aware FS mode
+    if args.smt:
+        test_sys.multi_thread = True
+
     for cpu in test_sys.cpu:
+        if args.smt:
+            cpu.numThreads = 2
         cpu.mmu.pma_checker = PMAChecker(
             uncacheable=[AddrRange(0, size=0x80000000)])
         cpu.mmu.functional = args.functional_tlb
@@ -822,8 +827,11 @@ def build_xiangshan_system(args):
 
     TestCPUClass = get_xiangshan_cpu_class(args)
     ruby = bool(hasattr(args, 'ruby') and args.ruby)
+    num_threads = np * (2 if getattr(args, 'smt', False) else 1)
 
-    test_sys = makeBareMetalXiangshanSystem('timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
+    test_sys = makeBareMetalXiangshanSystem(
+        'timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby,
+        num_threads=num_threads)
 
     if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:
         if bool(getattr(args, 'trace_timing_ptw', False)):

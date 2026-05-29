@@ -85,7 +85,7 @@ class IssueQue(SimObject):
     inports = Param.Int(2, "")
     scheduleToExecDelay = Param.Cycles(2, "")
     oports = VectorParam.IssuePort("")
-    sel = Param.BaseSelector(BaseSelector(), "Selector for this IQ (default: age first)")
+    sel = Param.BaseSelector(BaseSelector(), "Selector for this IQ")
 
 class Scheduler(SimObject):
     type = 'Scheduler'

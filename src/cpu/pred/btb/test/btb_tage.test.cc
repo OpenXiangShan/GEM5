@@ -380,7 +380,7 @@ TEST_F(BTBTAGETest, HistoryUpdate) {
 
     // Test case 1: Update with taken branch (PHR shifts in 2 bits from PC hash)
     // Correct order: first update folded histories with pre-update PHR, then mutate PHR
-    tage->doUpdateHist(history, 2, true, pc, target);
+    tage->doUpdateHist(history, 2, true, pc, target, 0);
     applyPathHistoryTaken(history, pc, target);
 
     // Verify folded history matches the ideal fold of the updated PHR
@@ -388,7 +388,7 @@ TEST_F(BTBTAGETest, HistoryUpdate) {
 
     // Test case 2: Update with not-taken branch (PHR unchanged, folded update is no-op)
     boost::dynamic_bitset<> before_not_taken = history;
-    tage->doUpdateHist(history, 2, false, pc, target);
+    tage->doUpdateHist(history, 2, false, pc, target, 0);
 
     // Verify folded history remains consistent
     tage->checkFoldedHist(history, "not-taken update");
@@ -399,12 +399,12 @@ TEST_F(BTBTAGETest, GlobalHistoryModeUpdate) {
     BTBTAGE ghrTage(4, 2, 1024, 4, false);
     boost::dynamic_bitset<> ghr(64, false);
 
-    ghrTage.doUpdateHist(ghr, 1, true, 0, 0);
+    ghrTage.doUpdateHist(ghr, 1, true, 0, 0, 0);
     applyOutcomeHistory(ghr, 1, true);
     ghrTage.checkFoldedHist(ghr, "ghr taken update");
 
     boost::dynamic_bitset<> before_not_taken = ghr;
-    ghrTage.doUpdateHist(ghr, 1, false, 0, 0);
+    ghrTage.doUpdateHist(ghr, 1, false, 0, 0, 0);
     applyOutcomeHistory(ghr, 1, false);
     ghrTage.checkFoldedHist(ghr, "ghr not-taken update");
 
@@ -621,9 +621,9 @@ TEST_F(BTBTAGETest, HistoryRecoveryCorrectness) {
 
     // Verify recovery produced the expected history
     for (int i = 0; i < tage->numPredictors; i++) {
-        tage->tagFoldedHist[i].check(expectedHistory);
-        tage->altTagFoldedHist[i].check(expectedHistory);
-        tage->indexFoldedHist[i].check(expectedHistory);
+        tage->threadHistory[0].tagFoldedHist[i].check(expectedHistory);
+        tage->threadHistory[0].altTagFoldedHist[i].check(expectedHistory);
+        tage->threadHistory[0].indexFoldedHist[i].check(expectedHistory);
     }
 }
 

@@ -85,8 +85,9 @@ BTBuRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
 }
 
 std::shared_ptr<void>
-BTBuRAS::getPredictionMeta()
+BTBuRAS::getPredictionMeta(ThreadID tid)
 {
+    (void)tid;
     std::shared_ptr<void> meta_void_ptr = std::make_shared<uRASMeta>(meta);
     return meta_void_ptr;
 }
