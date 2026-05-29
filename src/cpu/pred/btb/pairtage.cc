@@ -103,7 +103,6 @@ PairTAGE::PairTAGE(unsigned numPredictors, unsigned numWays, unsigned tableSize)
       trainStandaloneFallThrough(false)
 {
     setNumDelay(0);
-    needMoreHistories = true;
     blockSize = 32;
 
     tageTable.resize(numPredictors);
@@ -172,8 +171,6 @@ PairTAGE::PairTAGE(const Params &p)
       trainStandaloneFallThrough(p.trainStandaloneFallThrough),
       pairTageStats(this, numPredictors, numWays, tableSizes)
 {
-    needMoreHistories = p.needMoreHistories;
-
     if (tablePcShifts.size() < numPredictors) {
         tablePcShifts.resize(numPredictors, 1);
     }
@@ -750,17 +747,27 @@ PairTAGE::allocateEntries(Addr startPC, const TageMeta &predMeta,
 }
 
 void
-PairTAGE::specUpdateHist(const bitset &history, FullBTBPrediction &pred)
+PairTAGE::recoverHist(const bitset &history, const FetchTarget &entry, int shamt,
+                      bool cond_taken)
 {
-    auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, taken, pc, target);
+    (void)history;
+    (void)entry;
+    (void)shamt;
+    (void)cond_taken;
 }
 
 void
-PairTAGE::recoverHist(const bitset &history, const FetchTarget &entry, int shamt, bool cond_taken)
+PairTAGE::specUpdatePHist(const bitset &history, FullBTBPrediction &pred,
+                          const PathHistoryUpdate &update)
 {
-    (void)shamt;
+    (void)pred;
+    doUpdateHist(history, update.taken, update.pc, update.target);
+}
 
+void
+PairTAGE::recoverPHist(const bitset &history, const FetchTarget &entry,
+                       const PathHistoryUpdate &update)
+{
     auto predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
     if (!predMeta) {
         return;
@@ -780,7 +787,7 @@ PairTAGE::recoverHist(const bitset &history, const FetchTarget &entry, int shamt
         aheadIndexFoldedHist.push(predMeta->aheadIndexFoldedHist);
     }
 
-    doUpdateHist(history, cond_taken, entry.getControlPC(), entry.getTakenTarget());
+    doUpdateHist(history, update.taken, update.pc, update.target);
 }
 
 void

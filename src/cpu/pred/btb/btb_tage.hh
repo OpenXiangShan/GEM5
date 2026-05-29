@@ -193,19 +193,19 @@ class BTBTAGE : public TimedBaseBTBPredictor
                     CondTakens& results, ThreadID tid, uint8_t asidHash);
 
     // Calculate TAGE index for a given PC and table
-    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0);
+    Addr getTageIndex(Addr pc, int table, uint8_t asidHash = 0) const;
 
     // Calculate TAGE index with folded history (uint64_t version for performance)
-    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, uint8_t asidHash = 0);
+    Addr getTageIndex(Addr pc, int table, uint64_t foldedHist, uint8_t asidHash = 0) const;
 
     // Calculate TAGE tag for a given PC and table
     // position: branch position within the block (xored into tag like RTL)
-    Addr getTageTag(Addr pc, int table, Addr position = 0, uint8_t asidHash = 0);
+    Addr getTageTag(Addr pc, int table, Addr position = 0, uint8_t asidHash = 0) const;
 
     // Calculate TAGE tag with folded history (uint64_t version for performance)
     // position: branch position within the block (xored into tag like RTL)
     Addr getTageTag(Addr pc, int table, uint64_t foldedHist, uint64_t altFoldedHist,
-                    Addr position = 0, uint8_t asidHash = 0);
+                    Addr position = 0, uint8_t asidHash = 0) const;
 
     // Get offset within a block for a given PC
     Addr getOffset(Addr pc) const {

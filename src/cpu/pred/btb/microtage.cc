@@ -392,13 +392,15 @@ MicroTAGE::refreshPredictionMeta(Addr startPC,
                                  const bitset &history,
                                  FullBTBPrediction &pred)
 {
-    meta = std::make_shared<TageMeta>();
-    meta->tagFoldedHist = tagFoldedHist;
-    meta->altTagFoldedHist = altTagFoldedHist;
-    meta->indexFoldedHist = indexFoldedHist;
-    meta->aheadIndexFoldedHistValid = !aheadindexFoldedHist.empty();
+    auto &state = historyState(pred.tid);
+    threadMeta[pred.tid] = std::make_shared<TageMeta>();
+    auto &meta = threadMeta[pred.tid];
+    meta->tagFoldedHist = state.tagFoldedHist;
+    meta->altTagFoldedHist = state.altTagFoldedHist;
+    meta->indexFoldedHist = state.indexFoldedHist;
+    meta->aheadIndexFoldedHistValid = !state.aheadIndexFoldedHist.empty();
     if (meta->aheadIndexFoldedHistValid) {
-        meta->aheadIndexFoldedHist = aheadindexFoldedHist.front();
+        meta->aheadIndexFoldedHist = state.aheadIndexFoldedHist.front();
     } else {
         meta->aheadIndexFoldedHist.clear();
     }

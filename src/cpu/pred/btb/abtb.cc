@@ -423,20 +423,6 @@ AheadBTB::refreshPredictionMeta(Addr startAddr,
     }
 }
 
-void
-AheadBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
-
-void
-AheadBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
-{
-    auto &state = threadState(entry.tid);
-    // Clear ahead pipeline after squash.
-    while (!state.aheadReadBtbEntries.empty()) {
-        state.aheadReadBtbEntries.pop();
-    }
-}
-
-
 /**
  * Helper function to lookup entries in a single block
  * @param block_pc The aligned PC to lookup

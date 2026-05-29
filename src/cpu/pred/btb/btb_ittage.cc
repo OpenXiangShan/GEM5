@@ -251,19 +251,22 @@ BTBITTAGE::refreshPredictionMeta(Addr stream_start,
                                  FullBTBPrediction &pred)
 {
     (void)history;
+    auto &state = historyState(pred.tid);
 
-    meta = std::make_shared<TageMeta>();
-    meta->tagFoldedHist = tagFoldedHist;
-    meta->altTagFoldedHist = altTagFoldedHist;
-    meta->indexFoldedHist = indexFoldedHist;
+    threadMeta[pred.tid] = std::make_shared<TageMeta>();
+    auto &meta = threadMeta[pred.tid];
+    meta->tagFoldedHist = state.tagFoldedHist;
+    meta->altTagFoldedHist = state.altTagFoldedHist;
+    meta->indexFoldedHist = state.indexFoldedHist;
 
     lookupEntries.clear();
     lookupIndices.clear();
     lookupTags.clear();
     bitset useful_mask(numPredictors, false);
     for (int i = 0; i < numPredictors; ++i) {
-        Addr index = getTageIndex(stream_start, i);
-        Addr tag = getTageTag(stream_start, i);
+        Addr index = getTageIndex(stream_start, i, state.indexFoldedHist[i].get(), pred.asidHash);
+        Addr tag = getTageTag(stream_start, i, state.tagFoldedHist[i].get(),
+                              state.altTagFoldedHist[i].get(), pred.asidHash);
         auto &entry = tageTable[i][index];
         lookupEntries.push_back(entry);
         lookupIndices.push_back(index);

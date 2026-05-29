@@ -199,8 +199,13 @@ class PairTAGE : public TimedBaseBTBPredictor
     void refreshPredictionMeta(Addr startAddr,
                                const boost::dynamic_bitset<> &history,
                                FullBTBPrediction &pred) override;
-    void specUpdateHist(const bitset &history, FullBTBPrediction &pred) override;
+    void specUpdatePHist(const bitset &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update) override;
     void recoverHist(const bitset &history, const FetchTarget &entry, int shamt, bool cond_taken) override;
+    void recoverPHist(const bitset &history,
+                      const FetchTarget &entry,
+                      const PathHistoryUpdate &update) override;
     void update(const FetchTarget &entry) override;
     PairBlockInfo getSecondPredBlock() const;
     void setPredictionPhase(PairPhase phase);

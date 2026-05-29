@@ -255,7 +255,7 @@ UBTB::lookupNoSideEffect(Addr startAddr) const
         return TickedUBTBEntry();
     }
 
-    Addr current_tag = getTag(startAddr);
+    Addr current_tag = getTag(startAddr, 0);
     auto it = std::find_if(ubtb.begin(), ubtb.end(),
                            [current_tag](const TickedUBTBEntry &way) {
                                return way.valid && way.tag == current_tag;

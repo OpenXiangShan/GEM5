@@ -633,12 +633,14 @@ BTBMGSC::refreshPredictionMeta(Addr startAddr,
         return;
     }
 
-    meta = std::make_shared<MgscMeta>();
-    meta->indexBwFoldedHist = indexBwFoldedHist;
-    meta->indexLFoldedHist = indexLFoldedHist;
-    meta->indexIFoldedHist = indexIFoldedHist;
-    meta->indexGFoldedHist = indexGFoldedHist;
-    meta->indexPFoldedHist = indexPFoldedHist;
+    auto &state = historyState(pred.tid);
+    threadMeta[pred.tid] = std::make_shared<MgscMeta>();
+    auto &meta = threadMeta[pred.tid];
+    meta->indexBwFoldedHist = state.indexBwFoldedHist;
+    meta->indexLFoldedHist = state.indexLFoldedHist;
+    meta->indexIFoldedHist = state.indexIFoldedHist;
+    meta->indexGFoldedHist = state.indexGFoldedHist;
+    meta->indexPFoldedHist = state.indexPFoldedHist;
 
     for (const auto &btb_entry : pred.btbEntries) {
         if (!(btb_entry.isCond && btb_entry.valid)) {
@@ -651,7 +653,8 @@ BTBMGSC::refreshPredictionMeta(Addr startAddr,
         }
 
         meta->preds[btb_entry.pc] =
-            generateSinglePrediction(btb_entry, startAddr, tage_info->second);
+            generateSinglePrediction(btb_entry, startAddr, tage_info->second,
+                                     pred.tid, pred.asidHash);
     }
 }
 

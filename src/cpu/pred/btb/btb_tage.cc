@@ -531,10 +531,12 @@ BTBTAGE::refreshPredictionMeta(Addr startPC,
                                const bitset &history,
                                FullBTBPrediction &pred)
 {
-    meta = std::make_shared<TageMeta>();
-    meta->tagFoldedHist = tagFoldedHist;
-    meta->altTagFoldedHist = altTagFoldedHist;
-    meta->indexFoldedHist = indexFoldedHist;
+    auto &state = historyState(pred.tid);
+    threadMeta[pred.tid] = std::make_shared<TageMeta>();
+    auto &meta = threadMeta[pred.tid];
+    meta->tagFoldedHist = state.tagFoldedHist;
+    meta->altTagFoldedHist = state.altTagFoldedHist;
+    meta->indexFoldedHist = state.indexFoldedHist;
     meta->history = history;
 
     pred.tageInfoForMgscs.clear();
@@ -1098,7 +1100,6 @@ BTBTAGE::updateCounter(bool taken, unsigned width, short &counter) {
 Addr
 BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
                     Addr position, uint8_t asidHash) const
-                    Addr position, uint8_t asidHash)
 {
     // Create mask for tableTagBits[t] to limit result size
     Addr mask = (1ULL << tableTagBits[t]) - 1;
@@ -1120,7 +1121,6 @@ BTBTAGE::getTageTag(Addr pc, int t, uint64_t foldedHist, uint64_t altFoldedHist,
 
 Addr
 BTBTAGE::getTageTag(Addr pc, int t, Addr position, uint8_t asidHash) const
-BTBTAGE::getTageTag(Addr pc, int t, Addr position, uint8_t asidHash)
 {
     const auto &state = historyState(0);
     return getTageTag(pc, t, state.tagFoldedHist[t].get(),
@@ -1129,7 +1129,6 @@ BTBTAGE::getTageTag(Addr pc, int t, Addr position, uint8_t asidHash)
 
 Addr
 BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash) const
-BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash)
 {
     // Create mask for tableIndexBits[t] to limit result size
     Addr mask = (1ULL << tableIndexBits[t]) - 1;
@@ -1143,7 +1142,6 @@ BTBTAGE::getTageIndex(Addr pc, int t, uint64_t foldedHist, uint8_t asidHash)
 
 Addr
 BTBTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash) const
-BTBTAGE::getTageIndex(Addr pc, int t, uint8_t asidHash)
 {
     return getTageIndex(pc, t, historyState(0).indexFoldedHist[t].get(), asidHash);
 }

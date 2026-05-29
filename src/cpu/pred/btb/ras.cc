@@ -138,13 +138,6 @@ BTBRAS::refreshPredictionMeta(Addr startAddr,
 }
 
 void
-BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
-{
-    (void)history;
-    specUpdateState(pred);
-}
-
-void
 BTBRAS::specUpdateState(FullBTBPrediction &pred)
 {
     const ThreadID tid = pred.tid;

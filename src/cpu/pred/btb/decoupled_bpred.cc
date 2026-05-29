@@ -1703,26 +1703,25 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry,
     auto& s0BwHistory = threads[tid].s0BwHistory;
     auto& s0LHistory = threads[tid].s0LHistory;
 
-    const auto ghist_update = finalPred.getGHistUpdate();
-    const auto bwhist_update = finalPred.getBwHistUpdate();
-    const auto phist_update = finalPred.getPHistUpdate();
+    const auto ghist_update = pred.getGHistUpdate();
+    const auto bwhist_update = pred.getBwHistUpdate();
+    const auto phist_update = pred.getPHistUpdate();
 
     // RAS updates its speculative stack, not folded history.
     if (ras->isEnabled()) {
-        ras->specUpdateState(finalPred);
-    }
+        ras->specUpdateState(pred);
     }
 
     // Update component-local folded histories.
     for (int i = 0; i < numComponents; i++) {
         // use old histories to update predictor-local folded histories
-        components[i]->specUpdateGHist(s0History, finalPred, ghist_update);
-        components[i]->specUpdatePHist(s0PHistory, finalPred, phist_update);
+        components[i]->specUpdateGHist(s0History, pred, ghist_update);
+        components[i]->specUpdatePHist(s0PHistory, pred, phist_update);
     }
     if (mgsc->isEnabled()) {
-        mgsc->specUpdateBwHist(s0BwHistory, finalPred, bwhist_update);
-        mgsc->specUpdateIHist(finalPred, bwhist_update);
-        mgsc->specUpdateLHist(s0LHistory, finalPred, ghist_update);
+        mgsc->specUpdateBwHist(s0BwHistory, pred, bwhist_update);
+        mgsc->specUpdateIHist(pred, bwhist_update);
+        mgsc->specUpdateLHist(s0LHistory, pred, ghist_update);
     }
 
     // Update global history

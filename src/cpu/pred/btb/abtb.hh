@@ -247,8 +247,6 @@ class AheadBTB : public TimedBaseBTBPredictor
         Addr baseTag = (instPC >> tagShiftAmt) & tagMask;
         return injectAsidHashIntoTag(baseTag, tagBits, asidHash);
     }
-    }
-
 
     /** Update the 2-bit saturating counter for conditional branches
      *  Counter range: [-2, 1]
