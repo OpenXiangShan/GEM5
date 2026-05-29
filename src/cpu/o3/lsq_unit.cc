@@ -2352,8 +2352,9 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries, std::vector<bool>& offload_f
 {
     assert(!lsq->storeBufferBlocked());
     if (isStoreBlocked) return;
-    if (max_entries == 0) return;
 
+    // Zero-sized stores do not consume store-buffer quota, but they still need
+    // completeStore() to free SQ entries.
     uint32_t accepted_entries = 0;
     while (storesToWB > 0 &&
            storeWBIt.dereferenceable() &&
