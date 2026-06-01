@@ -66,16 +66,18 @@ class TimedBaseBTBPredictor: public SimObject
         return nullptr;
     }
 
-    virtual void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
-    virtual void specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
-    virtual void specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
-    virtual void specUpdateIHist(FullBTBPrediction &pred) {}
-    virtual void specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred) {}
-    virtual void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
-    virtual void recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
-    virtual void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
-    virtual void recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken) {}
-    virtual void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
+    virtual void specUpdateGHist(const boost::dynamic_bitset<> &history,
+                                FullBTBPrediction &pred,
+                                const DirectionHistoryUpdate &update) {}
+    virtual void specUpdatePHist(const boost::dynamic_bitset<> &history,
+                                 FullBTBPrediction &pred,
+                                 const PathHistoryUpdate &update) {}
+    virtual void recoverHist(const boost::dynamic_bitset<> &history,
+                             const FetchTarget &entry, int shamt,
+                             bool cond_taken) {}
+    virtual void recoverPHist(const boost::dynamic_bitset<> &history,
+                              const FetchTarget &entry,
+                              const PathHistoryUpdate &update) {}
     virtual void update(const FetchTarget &entry) {}
     virtual unsigned getDelay() {return numDelay;}
     virtual bool getResolvedUpdate() {return resolvedUpdate;}
@@ -89,7 +91,6 @@ class TimedBaseBTBPredictor: public SimObject
 
     int componentIdx{0};
     unsigned aheadPipelinedStages{0};
-    bool needMoreHistories{false};
     int getComponentIdx() { return componentIdx; }
     void setComponentIdx(int idx) { componentIdx = idx; }
 

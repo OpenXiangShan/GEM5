@@ -376,13 +376,10 @@ AheadBTB::getPredictionMeta(ThreadID tid)
 }
 
 void
-AheadBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
-
-void
-AheadBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+AheadBTB::recoverState(const FetchTarget &entry)
 {
     auto &state = threadState(entry.tid);
-    // clear ahead pipeline first
+    // Clear ahead pipeline after squash.
     while (!state.aheadReadBtbEntries.empty()) {
         state.aheadReadBtbEntries.pop();
     }

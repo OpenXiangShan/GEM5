@@ -958,22 +958,14 @@ MicroTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, bool taken,
 }
 
 /**
- * @brief Updates branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- *
- * @param history The current branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates path folded histories.
  */
 void
-MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
+                           FullBTBPrediction &pred,
+                           const PathHistoryUpdate &update)
 {
-    auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, taken, pc, target, pred.tid);
+    doUpdateHist(history, update.taken, update.pc, update.target, pred.tid);
 }
 
 /**
@@ -991,7 +983,7 @@ MicroTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPredic
  */
 void
 MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, int shamt, bool cond_taken)
+    const FetchTarget &entry, const PathHistoryUpdate &update)
 {
     auto &state = historyState(entry.tid);
     std::shared_ptr<TageMeta> predMeta = std::static_pointer_cast<TageMeta>(entry.predMetas[getComponentIdx()]);
@@ -1019,8 +1011,8 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
              !state.aheadIndexFoldedHist.empty());
         if (queue_valid_mismatch) {
             DPRINTF(TAGEHistory,
-                    "recoverPHist: ahead queue valid mismatch after restore, cond_taken %d\n",
-                    cond_taken);
+                    "recoverPHist: ahead queue valid mismatch after restore, path_taken %d\n",
+                    update.taken);
         }
     }
 
@@ -1028,8 +1020,7 @@ MicroTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
         state.altTagFoldedHist[i].recover(predMeta->altTagFoldedHist[i]);
         state.tagFoldedHist[i].recover(predMeta->tagFoldedHist[i]);
     }
-    doUpdateHist(history, cond_taken, entry.getControlPC(),
-                 entry.getTakenTarget(), entry.tid);
+    doUpdateHist(history, update.taken, update.pc, update.target, entry.tid);
 }
 
 // Check folded history after speculative update and recovery

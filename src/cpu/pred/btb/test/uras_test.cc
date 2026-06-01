@@ -75,7 +75,7 @@ public:
         meta.tos = stack[sp];
     }
 
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+    void specUpdateState(FullBTBPrediction &pred)
     {
         auto &stack = specStack;
         auto &sp = specSp;
@@ -93,14 +93,14 @@ public:
         }
     }
 
-    // recover hist, from entry.predMetas[0] to recover sp and tos
+    // recover state, from entry.predMetas[0] to recover sp and tos
     // then if exeTaken, do push & pops on control squash
     // input: only entry is used.
     // used when branch prediction error
     // two steps:
     // 1. recover sp and tos from entry.predMetas[0]
     // 2. do push & pops on control squash based on the actual branch type (call/return)
-    void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+    void recoverState(const FetchTarget &entry)
     {
         auto &stack = specStack;
         auto &sp = specSp;
@@ -278,8 +278,8 @@ TEST_F(URASTest, PutPCHistoryBasic) {
     EXPECT_EQ(meta->tos.ctr, 0);
 }
 
-// test specUpdateHist for call
-TEST_F(URASTest, SpecUpdateHistCall) {
+// test specUpdateState for call
+TEST_F(URASTest, SpecUpdateStateCall) {
     boost::dynamic_bitset<> history(8, 0);
     FullBTBPrediction pred;
     pred.bbStart = 0x1000;
@@ -299,9 +299,9 @@ TEST_F(URASTest, SpecUpdateHistCall) {
     EXPECT_EQ(sp, 0);
     EXPECT_EQ(stack[sp].retAddr, 0x80000000L);
     
-    // 执行specUpdateHist
-    uras->specUpdateHist(history, pred);
-    
+    // 执行 specUpdateState
+    uras->specUpdateState(pred);
+
     // 验证：
     // 1. 返回地址应该是call指令的下一条指令地址
     EXPECT_EQ(stack[sp].retAddr, 0x1004);  // pc + size
@@ -309,7 +309,7 @@ TEST_F(URASTest, SpecUpdateHistCall) {
     EXPECT_EQ(sp, 1);
 }
 
-TEST_F(URASTest, SpecUpdateHistReturn) {
+TEST_F(URASTest, SpecUpdateStateReturn) {
     boost::dynamic_bitset<> history(8, 0);
     FullBTBPrediction pred;
     pred.bbStart = 0x1000;
@@ -327,9 +327,9 @@ TEST_F(URASTest, SpecUpdateHistReturn) {
     retEntry.target = 0x2000;
     pred.btbEntries.push_back(retEntry);
     
-    // 执行specUpdateHist
-    uras->specUpdateHist(history, pred);
-    
+    // 执行 specUpdateState
+    uras->specUpdateState(pred);
+
     // 验证：
     // 1. returnTarget应该是栈顶的地址
     EXPECT_EQ(pred.returnTarget, 0x2000);
@@ -337,7 +337,7 @@ TEST_F(URASTest, SpecUpdateHistReturn) {
     EXPECT_EQ(sp, 0);
 }
 
-TEST_F(URASTest, SpecUpdateHistCallReturn) {
+TEST_F(URASTest, SpecUpdateStateCallReturn) {
     boost::dynamic_bitset<> history(8, 0);
     
     // First prediction with call
@@ -352,9 +352,9 @@ TEST_F(URASTest, SpecUpdateHistCallReturn) {
     callEntry.target = 0x2000;
     pred1.btbEntries.push_back(callEntry);
     
-    // 执行call的specUpdateHist
-    uras->specUpdateHist(history, pred1);
-    
+    // 执行 call 的 specUpdateState
+    uras->specUpdateState(pred1);
+
     // Second prediction with return
     FullBTBPrediction pred2;
     pred2.bbStart = 0x2000;
@@ -366,9 +366,9 @@ TEST_F(URASTest, SpecUpdateHistCallReturn) {
     retEntry.target = 0x1004;  // 返回到call的下一条指令
     pred2.btbEntries.push_back(retEntry);
     
-    // 执行return的specUpdateHist
-    uras->specUpdateHist(history, pred2);
-    
+    // 执行 return 的 specUpdateState
+    uras->specUpdateState(pred2);
+
     // 验证：
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
@@ -379,7 +379,7 @@ TEST_F(URASTest, SpecUpdateHistCallReturn) {
 }
 
 // Test basic recovery functionality
-TEST_F(URASTest, RecoverHistBasic) {
+TEST_F(URASTest, RecoverStateBasic) {
     boost::dynamic_bitset<> history(8, 0);
     FetchTarget entry;
 
@@ -395,15 +395,15 @@ TEST_F(URASTest, RecoverHistBasic) {
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
     
     // recover
-    uras->recoverHist(history, entry, 0, false);
-    
+    uras->recoverState(entry);
+
     // verify recovery result
     EXPECT_EQ(sp, 0);  // sp should be restored
     EXPECT_EQ(stack[sp].retAddr, 0x2000);  // tos should be restored
 }
 
 // Test recovery with return instruction
-TEST_F(URASTest, RecoverHistReturn) {
+TEST_F(URASTest, RecoverStateReturn) {
     boost::dynamic_bitset<> history(8, 0);
     FetchTarget entry;
 
@@ -424,15 +424,15 @@ TEST_F(URASTest, RecoverHistReturn) {
     entry.exeBranchInfo.pc = 0x2000;
     
     // 执行恢复
-    uras->recoverHist(history, entry, 0, false);
-    
+    uras->recoverState(entry);
+
     // 验证：应该先恢复sp和tos，然后执行pop
     EXPECT_EQ(sp, 0);  // 1(恢复) -> 0(pop)
     EXPECT_EQ(stack[sp].retAddr, 0x80000000L);  // 初始值
 }
 
 // Test recovery with call instruction
-TEST_F(URASTest, RecoverHistCall) {
+TEST_F(URASTest, RecoverStateCall) {
     boost::dynamic_bitset<> history(8, 0);
     FetchTarget entry;
 
@@ -453,15 +453,15 @@ TEST_F(URASTest, RecoverHistCall) {
     entry.exeBranchInfo.size = 4;
     
     // 执行恢复
-    uras->recoverHist(history, entry, 0, false);
-    
+    uras->recoverState(entry);
+
     // 验证：应该先恢复sp和tos，然后执行push
     EXPECT_EQ(sp, 1);  // 0(恢复) -> 1(push)
     EXPECT_EQ(stack[sp].retAddr, 0x1004);  // pc + size
 }
 
 // Test recovery with call-return sequence
-TEST_F(URASTest, RecoverHistCallReturn) {
+TEST_F(URASTest, RecoverStateCallReturn) {
     boost::dynamic_bitset<> history(8, 0);
     FetchTarget entry1, entry2;
 
@@ -479,8 +479,8 @@ TEST_F(URASTest, RecoverHistCallReturn) {
     entry1.exeBranchInfo.pc = 0x1000;
     entry1.exeBranchInfo.size = 4;
     
-    uras->recoverHist(history, entry1, 0, false);
-    
+    uras->recoverState(entry1);
+
     // 验证call的结果
     EXPECT_EQ(sp, 1);
     EXPECT_EQ(stack[sp].retAddr, 0x1004);
@@ -495,8 +495,8 @@ TEST_F(URASTest, RecoverHistCallReturn) {
     entry2.exeBranchInfo.isReturn = true;
     entry2.exeBranchInfo.pc = 0x2000;
     
-    uras->recoverHist(history, entry2, 0, false);
-    
+    uras->recoverState(entry2);
+
     // 验证return的结果
     EXPECT_EQ(sp, 0);
     EXPECT_EQ(stack[sp].retAddr, 0x80000000L);

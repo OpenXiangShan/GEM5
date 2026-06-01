@@ -184,10 +184,6 @@ BTBMGSC::BTBMGSC()
       mgscStats()
 {
     // Test-only small config: keep tables tiny and deterministic for fast unit tests.
-    // MGSC uses multiple histories (GHR/PHR/BWHR/LHR). Keep it enabled in unit tests so we can
-    // build training-loop style tests that exercise each table.
-    needMoreHistories = true;
-
     initStorage();
     updateThreshold = 35 * 8;
 }
@@ -232,7 +228,6 @@ BTBMGSC::BTBMGSC(const Params &p)
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
-    this->needMoreHistories = p.needMoreHistories;
     initStorage();
     updateThreshold = 35 * 8;
 
@@ -1154,116 +1149,69 @@ BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool ta
 
 
 /**
- * @brief Updates branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- *
- * @param history The current branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates global folded histories.
  */
 void
-BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBMGSC::specUpdateGHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred,
+                        const DirectionHistoryUpdate &update)
 {
     auto &state = historyState(pred.tid);
-    int shamt;
-    bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getHistInfo();
-    doUpdateHist(history, shamt, cond_taken, state.indexGFoldedHist);  // use global history to update G folded history
+    doUpdateHist(history, update.shamt, update.taken,
+                 state.indexGFoldedHist);  // use global history to update G folded history
 }
 
 /**
- * @brief Updates branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- *
- * @param history The current branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates path folded histories.
  */
 void
-BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update)
 {
     auto &state = historyState(pred.tid);
-    auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, 2, taken, state.indexPFoldedHist, pc, target);  // only path history needs pc!
+    doUpdateHist(history, update.shamt, update.taken, state.indexPFoldedHist,
+                 update.pc, update.target);  // only path history needs pc!
 }
 
 
 /**
- * @brief Updates global backward branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- *
- * @param history The current global backward branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates global backward folded histories.
  */
 void
-BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history,
+                          FullBTBPrediction &pred,
+                          const DirectionHistoryUpdate &update)
 {
     auto &state = historyState(pred.tid);
-    int shamt;
-    bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getBwHistInfo();
-    doUpdateHist(history, shamt, cond_taken, state.indexBwFoldedHist);
+    doUpdateHist(history, update.shamt, update.taken, state.indexBwFoldedHist);
 }
 
 /**
- * @brief Updates IMLI branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- * Note: IMLI only uses counter, not history bits.
- *
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates IMLI folded histories.
  */
 void
-BTBMGSC::specUpdateIHist(FullBTBPrediction &pred)
+BTBMGSC::specUpdateIHist(FullBTBPrediction &pred,
+                         const DirectionHistoryUpdate &update)
 {
     auto &state = historyState(pred.tid);
-    int shamt;
-    bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getBwHistInfo();
     // IMLI uses counter only, pass empty bitset (not used by ImliFoldedHist::update)
     boost::dynamic_bitset<> dummy;
-    doUpdateHist(dummy, shamt, cond_taken, state.indexIFoldedHist);
+    doUpdateHist(dummy, update.shamt, update.taken, state.indexIFoldedHist);
 }
 
 /**
- * @brief Updates local branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- *
- * @param history The current local branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates local folded histories.
  */
 void
-BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred)
+BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history,
+                         FullBTBPrediction &pred,
+                         const DirectionHistoryUpdate &update)
 {
     auto &state = historyState(pred.tid);
-    int shamt;
-    bool cond_taken;
-    std::tie(shamt, cond_taken) = pred.getHistInfo();
     const Addr localHistoryIndex =
         getPcIndex(pred.bbStart, log2(numEntriesFirstLocalHistories), pred.asidHash);
-    doUpdateHist(history[localHistoryIndex], shamt, cond_taken,
+    doUpdateHist(history[localHistoryIndex], update.shamt, update.taken,
                  state.indexLFoldedHist[localHistoryIndex]);
 }
 
@@ -1308,7 +1256,9 @@ BTBMGSC::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &
  * @param cond_taken The actual branch outcome
  */
 void
-BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history,
+                      const FetchTarget &entry,
+                      const PathHistoryUpdate &update)
 {
     if (!isEnabled()) {
         return;  // No recover when disabled
@@ -1318,8 +1268,8 @@ BTBMGSC::recoverPHist(const boost::dynamic_bitset<> &history, const FetchTarget 
     for (int i = 0; i < pTableNum; i++) {
         state.indexPFoldedHist[i].recover(predMeta->indexPFoldedHist[i]);
     }
-    doUpdateHist(history, 2, cond_taken, state.indexPFoldedHist,
-                 entry.getControlPC(), entry.getTakenTarget());
+    doUpdateHist(history, update.shamt, update.taken, state.indexPFoldedHist,
+                 update.pc, update.target);
 }
 
 /**

@@ -79,8 +79,8 @@ boost::dynamic_bitset<> history(64, 0);
 // Make prediction to generate meta data
 tage->putPCHistory(startPC, history, stagePreds);
 
-// update (folded) histories for tage
-tage->specUpdateHist(s0History, finalPred);
+// update folded histories for tage
+tage->specUpdateGHist(s0History, finalPred, finalPred.getGHistUpdate());
 tage->getPredictionMeta();
 
 // shift history

@@ -1190,38 +1190,31 @@ BTBTAGE::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt,
 }
 
 /**
- * @brief Updates branch history for speculative execution
- * 
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- * 
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- * 
- * @param history The current branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates direction folded histories.
  */
 void
-BTBTAGE::specUpdateHist(const boost::dynamic_bitset<> &history,
-                        FullBTBPrediction &pred)
+BTBTAGE::specUpdateGHist(const boost::dynamic_bitset<> &history,
+                        FullBTBPrediction &pred,
+                        const DirectionHistoryUpdate &update)
 {
     if (usePathHistory) {
         return;
     }
 
-    auto [shamt, taken] = pred.getHistInfo();
-    doUpdateHist(history, shamt, taken, 0, 0, pred.tid);
+    doUpdateHist(history, update.shamt, update.taken, 0, 0, pred.tid);
 }
 
 void
-BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
+                         FullBTBPrediction &pred,
+                         const PathHistoryUpdate &update)
 {
     if (!usePathHistory) {
         return;
     }
 
-    auto [pc, target, taken] = pred.getPHistInfo();
-    doUpdateHist(history, 2, taken, pc, target, pred.tid);
+    doUpdateHist(history, update.shamt, update.taken, update.pc,
+                 update.target, pred.tid);
 }
 
 void
@@ -1263,15 +1256,15 @@ BTBTAGE::recoverHist(const boost::dynamic_bitset<> &history,
 
 void
 BTBTAGE::recoverPHist(const boost::dynamic_bitset<> &history,
-    const FetchTarget &entry, int shamt, bool cond_taken)
+    const FetchTarget &entry, const PathHistoryUpdate &update)
 {
     if (!usePathHistory) {
         return;
     }
 
     recoverFoldedHist(entry);
-    doUpdateHist(history, 2, cond_taken, entry.getControlPC(),
-                 entry.getTakenTarget(), entry.tid);
+    doUpdateHist(history, update.shamt, update.taken, update.pc,
+                 update.target, entry.tid);
 }
 
 // Check folded history after speculative update and recovery

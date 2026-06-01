@@ -58,8 +58,7 @@ FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb,
 void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
     FetchTarget stream;
     stream.tid = tid;
-    boost::dynamic_bitset<> history(8, 0);
-    abtb->recoverHist(history, stream, 0, false);
+    abtb->recoverState(stream);
 }
 
 void updateBTB(FetchTarget &stream, AheadBTB *abtb, MBTB *mbtb) {

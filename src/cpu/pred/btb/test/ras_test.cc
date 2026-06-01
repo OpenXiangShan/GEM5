@@ -123,7 +123,7 @@ protected:
         boost::dynamic_bitset<> history(8, 0);
         auto meta = ras->getPredictionMeta();
         auto callPred = createCallPrediction(callPC, callPC, target, size);
-        ras->specUpdateHist(history, callPred);
+        ras->specUpdateState(callPred);
         return meta;
     }
 
@@ -144,7 +144,7 @@ TEST_F(RASTest, BasicConstruction) {
     checkReturnTarget(0x1000, 0x80000000L);
 }
 
-// Test basic push and pop operations through specUpdateHist
+// Test basic push and pop operations through specUpdateState
 TEST_F(RASTest, BasicPushPop) {
     boost::dynamic_bitset<> history(8, 0);
 
@@ -155,7 +155,7 @@ TEST_F(RASTest, BasicPushPop) {
     auto callPred = createCallPrediction(0x1000, 0x1000, 0x2000);
 
     // Execute speculative update (this should push return address)
-    ras->specUpdateHist(history, callPred);
+    ras->specUpdateState(callPred);
 
     // Check new state - should have return address (pc + size)
     checkReturnTarget(0x2000, 0x1004);
@@ -164,7 +164,7 @@ TEST_F(RASTest, BasicPushPop) {
     auto retPred = createReturnPrediction(0x2000, 0x2000, 0x1004);
 
     // Execute return speculative update (this should pop)
-    ras->specUpdateHist(history, retPred);
+    ras->specUpdateState(retPred);
 
     // Check final state - should be back to initial state
     checkReturnTarget(0x1004, 0x80000000L);
@@ -176,11 +176,11 @@ TEST_F(RASTest, MultiplePushes) {
 
     // Push first call
     auto callPred1 = createCallPrediction(0x1000, 0x1000, 0x2000);
-    ras->specUpdateHist(history, callPred1);
+    ras->specUpdateState(callPred1);
 
     // Push second call
     auto callPred2 = createCallPrediction(0x2000, 0x2000, 0x3000);
-    ras->specUpdateHist(history, callPred2);
+    ras->specUpdateState(callPred2);
 
     // Check current state (should be second call's return address)
     checkReturnTarget(0x3000, 0x2004);
@@ -195,7 +195,7 @@ TEST_F(RASTest, SameAddressCounter) {
     // Push same return address multiple times
     for (int i = 0; i < 3; i++) {
         auto callPred = createCallPrediction(0x1000, 0x1000, 0x2000);
-        ras->specUpdateHist(history, callPred);
+        ras->specUpdateState(callPred);
     }
 
     // Check that we still get the same return address
@@ -203,7 +203,7 @@ TEST_F(RASTest, SameAddressCounter) {
 
     // Pop once - should still get the same address due to counter
     auto retPred = createReturnPrediction(0x2000, 0x2000, retAddr);
-    ras->specUpdateHist(history, retPred);
+    ras->specUpdateState(retPred);
 
     // Should still be the same address due to counter > 0
     checkReturnTarget(0x1004, retAddr);
@@ -219,7 +219,7 @@ TEST_F(RASTest, BasicRecovery) {
 
     // Do some speculative operations
     auto callPred = createCallPrediction(0x1000, 0x1000, 0x2000);
-    ras->specUpdateHist(history, callPred);
+    ras->specUpdateState(callPred);
 
     // Create recovery stream
     FetchTarget recoverStream;
@@ -228,7 +228,7 @@ TEST_F(RASTest, BasicRecovery) {
     recoverStream.predMetas[0] = initialMeta;
 
     // Recover to initial state
-    ras->recoverHist(history, recoverStream, 0, false);
+    ras->recoverState(recoverStream);
 
     // Check that we're back to initial state
     checkReturnTarget(0x1000, 0x80000000L);
@@ -247,7 +247,7 @@ TEST_F(RASTest, SpeculativeStackOverflow) {
         Addr callPC = 0x1000 + i * 0x100;
         Addr target = 0x2000 + i * 0x100;
         auto callPred = createCallPrediction(callPC, callPC, target);
-        ras->specUpdateHist(history, callPred);
+        ras->specUpdateState(callPred);
     }
 
     // The top of stack should be the last pushed return address
@@ -265,7 +265,7 @@ TEST_F(RASTest, SpeculativeStackOverflow) {
 
         // Create return prediction to pop
         auto retPred = createReturnPrediction(currentPC, currentPC, expectedRetAddr);
-        ras->specUpdateHist(history, retPred);
+        ras->specUpdateState(retPred);
     }
 
     // After popping 8 entries, we should be back to the committed stack
@@ -282,7 +282,7 @@ TEST_F(RASTest, SpeculativeStackWraparound) {
         Addr callPC = 0x1000 + i * 0x10;
         Addr target = 0x2000 + i * 0x10;
         auto callPred = createCallPrediction(callPC, callPC, target);
-        ras->specUpdateHist(history, callPred);
+        ras->specUpdateState(callPred);
     }
 
     // Verify the top entry
@@ -290,14 +290,14 @@ TEST_F(RASTest, SpeculativeStackWraparound) {
 
     // Now push one more - this should wrap around and overwrite the first entry
     auto overflowCall = createCallPrediction(0x1080, 0x1080, 0x2080);
-    ras->specUpdateHist(history, overflowCall);
+    ras->specUpdateState(overflowCall);
 
     // Top should now be the overflow entry
     checkReturnTarget(0x2080, 0x1084);
 
     // Pop once - should get the overflow entry
     auto retPred = createReturnPrediction(0x2080, 0x2080, 0x1084);
-    ras->specUpdateHist(history, retPred);
+    ras->specUpdateState(retPred);
 
     // Now we should have entries 7,6,5,4,3,2,1 available (entry 0 was overwritten)
     // So the top should be entry 7: 0x1070 -> 0x1074
@@ -336,14 +336,14 @@ TEST_F(RASTest, EmptyStackPop) {
 
     // Try to pop from empty stack
     auto retPred = createReturnPrediction(0x1000, 0x1000, 0x1004);
-    ras->specUpdateHist(history, retPred);
+    ras->specUpdateState(retPred);
 
     // Should still return default value when popping from empty stack
     checkReturnTarget(0x1004, 0x80000000L);
 
     // Pop again to test multiple pops on empty stack
     auto retPred2 = createReturnPrediction(0x1004, 0x1004, 0x1008);
-    ras->specUpdateHist(history, retPred2);
+    ras->specUpdateState(retPred2);
 
     // Should gracefully handle multiple pops without crashing
     checkReturnTarget(0x1008, 0x80000000L);
@@ -361,7 +361,7 @@ TEST_F(RASTest, CounterOverflow) {
     // Push the same return address 5 times (more than maxCtr=3)
     for (int i = 0; i < 5; i++) {
         auto callPred = createCallPrediction(callPC, callPC, target);
-        ras->specUpdateHist(history, callPred);
+        ras->specUpdateState(callPred);
 
         // Should always get the same return address
         checkReturnTarget(target, retAddr);
@@ -371,7 +371,7 @@ TEST_F(RASTest, CounterOverflow) {
     // (due to counter), then move to next entry on 4th pop
     for (int i = 0; i < 3; i++) {
         auto retPred = createReturnPrediction(target, target, retAddr);
-        ras->specUpdateHist(history, retPred);
+        ras->specUpdateState(retPred);
 
         // Should still be the same address due to counter
         checkReturnTarget(0x3000, retAddr);
@@ -379,7 +379,7 @@ TEST_F(RASTest, CounterOverflow) {
 
     // One more pop should move to next entry (default in this case)
     auto retPred = createReturnPrediction(target, target, retAddr);
-    ras->specUpdateHist(history, retPred);
+    ras->specUpdateState(retPred);
     checkReturnTarget(0x3000, 0x80000000L);
 }
 
@@ -392,14 +392,14 @@ TEST_F(RASTest, ComplexRecovery) {
     auto call2 = createCallPrediction(0x2000, 0x2000, 0x3000);
     auto call3 = createCallPrediction(0x3000, 0x3000, 0x4000);
 
-    ras->specUpdateHist(history, call1);
+    ras->specUpdateState(call1);
 
     // Save state after first call
     checkReturnTarget(0x2000, 0x1004);
     auto meta1 = ras->getPredictionMeta();
 
-    ras->specUpdateHist(history, call2);
-    ras->specUpdateHist(history, call3);
+    ras->specUpdateState(call2);
+    ras->specUpdateState(call3);
 
     // Now we should have 3 entries on the stack
     checkReturnTarget(0x4000, 0x3004);
@@ -413,14 +413,14 @@ TEST_F(RASTest, ComplexRecovery) {
     recoverStream.exeBranchInfo.size = 4;
     recoverStream.predMetas[0] = meta1;
 
-    ras->recoverHist(history, recoverStream, 0, true);
+    ras->recoverState(recoverStream);
 
     // Should be back to state with just one call
     checkReturnTarget(0x2000, 0x1004);
 
     // Now do a different speculation path
     auto call2_alt = createCallPrediction(0x2000, 0x2000, 0x5000);
-    ras->specUpdateHist(history, call2_alt);
+    ras->specUpdateState(call2_alt);
 
     // Should have the new call's return address on top
     checkReturnTarget(0x5000, 0x2004);
@@ -447,7 +447,7 @@ TEST_F(RASTest, CommitFlow) {
     // Test recovery - should now use committed stack
     boost::dynamic_bitset<> history(8, 0);
     auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, initialMeta, false);
-    ras->recoverHist(history, recoverStream, 0, false);
+    ras->recoverState(recoverStream);
 
     // After recovery, committed stack should be available
     checkReturnTarget(0x2000, 0x1004);
@@ -473,7 +473,7 @@ TEST_F(RASTest, MixedOperations) {
 
     // Step 3: Simulate misprediction and recovery
     auto recoverStream = createCallCommitStream(0x1000, 0x1000, 4, meta0, true);
-    ras->recoverHist(history, recoverStream, 0, true);
+    ras->recoverState(recoverStream);
 
     // Should have committed call1, but lose speculative call2 and call3
     checkReturnTarget(0x2000, 0x1004);
@@ -484,11 +484,11 @@ TEST_F(RASTest, MixedOperations) {
 
     // Step 5: Pop operations
     auto ret1 = createReturnPrediction(0x5000, 0x5000, 0x2004);
-    ras->specUpdateHist(history, ret1);
+    ras->specUpdateState(ret1);
     checkReturnTarget(0x2004, 0x1004);
 
     auto ret2 = createReturnPrediction(0x2004, 0x2004, 0x1004);
-    ras->specUpdateHist(history, ret2);
+    ras->specUpdateState(ret2);
     checkReturnTarget(0x1004, 0x80000000L);
 }
 
@@ -527,7 +527,7 @@ TEST_F(RASTest, PointerWraparound) {
     // Pop all speculative entries - should eventually reach committed stack
     for (int i = 0; i < 10; i++) {
         auto retPred = createReturnPrediction(0x5000, 0x5000, 0x5004);
-        ras->specUpdateHist(history, retPred);
+        ras->specUpdateState(retPred);
     }
 
     // Should be back to committed stack top
