@@ -614,6 +614,7 @@ IssueQue::selectInst()
             int lat = scheduler->getCorrectedOpLat(inst);
             uint64_t busy_bit = (lat > 63 ? -1 : (1llu << lat));
             if (!(portBusy[pi] & busy_bit)) {
+
                 DPRINTF(Schedule, "[sn %ld] was selected\n", inst->seqNum);
                 // get regfile write port
                 for (int i = 0; i < inst->numDestRegs(); i++) {
