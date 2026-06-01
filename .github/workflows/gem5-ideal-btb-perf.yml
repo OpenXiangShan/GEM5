@@ -4,14 +4,45 @@ on:
   # Tier 2: Post-Merge testing
   push:
     branches: [ xs-dev, '*-perf' ]  # xs-dev for post-merge CI, *-perf for auto performance testing
-  # Removed pull_request trigger - use /run-spec for on-demand testing
-  
+  # Label-triggered PR performance testing
+  pull_request_target:
+    types: [labeled]
+
   # Support manual trigger
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
 jobs:
+  announce:
+    name: Announce PR performance test
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request_target' &&
+      github.event.label.name == 'perf' &&
+      github.event.pull_request.base.ref == 'xs-dev'
+    steps:
+      - name: Comment trigger
+        uses: actions/github-script@v9
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: '🚀 Performance test triggered: **idealkmhv3.py / gcc15-spec06-0.8c**'
+            });
+
   perf_test:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'perf' &&
+       github.event.pull_request.base.ref == 'xs-dev')
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py
       benchmark_type: "gcc15-spec06-0.8c"
+      pr_sha: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}

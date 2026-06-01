@@ -35,21 +35,20 @@
 
 ## 层次 1.5：按需性能测试 (Tier 1.5) 🎯
 
-**文件**: `.github/workflows/on-demand-spec.yml`
+**文件**:
+- `.github/workflows/gem5-ideal-btb-perf.yml`
+- `.github/workflows/gem5-ideal-btb-0.3c.yml`
+- `.github/workflows/on-demand-spec-rvv.yml`
 
 **目标**: 在合入前，按需检查有性能风险的 PR
 
-**触发**: 在 PR 上添加 `perf` 标签（默认跑 gcc15-spec06-0.8c）
+**触发**: 在 PR 上添加对应标签
 
-### 支持的命令
+### 支持的标签
 
-```bash
-/run-spec                              # 默认：gcc15 SPEC06 INT 80%覆盖率 (~148 checkpoints)
-/run-spec gcc15-spec06-1.0c            # gcc15 SPEC06 100%覆盖率
-/run-spec spec17-1.0c        # SPEC17 100%覆盖率
-/run-spec spec06-rvv-1.0c    # SPEC06 RVV扩展 100%
-/run-spec spec06int-rvv-0.8c # SPEC06 INT RVV 80%
-```
+- `perf`: 触发 `idealkmhv3.py` + `gcc15-spec06-0.8c`
+- `perf-align`: 触发 `kmhv3.py` + `gcc15-spec06-0.3c`
+- `rvv`: 触发 `idealkmhv3.py` + `spec06int-rvv-0.8c`
 
 ### 权限控制
 
@@ -57,7 +56,8 @@
 
 ### 当前实现
 
-- 添加 `perf` 标签会自动触发 gcc15-spec06-0.8c，workflow 会记录标签创建时 PR 的 head SHA 确保结果对应正确的 commit
+- 添加 `perf` / `perf-align` 标签会在对应性能 workflow 中触发测试，workflow 会记录标签创建时 PR 的 head SHA 确保结果对应正确的 commit
+- `rvv` 标签仍由独立的 RVV on-demand workflow 触发
 - 需要手动选择配置、benchmark 或 branch/SHA 时，请使用 `manual-perf.yml`
 
 ### 性能结果
@@ -65,7 +65,7 @@
 由现有的性能评论机器人 (`actions_gem5.py`) 自动处理：
 - 📊 与主分支性能对比
 - 📊 与PR上一个commit对比
-- �� 详细的性能指标表格
+- 📊 详细的性能指标表格
 
 ### 优势
 
@@ -91,10 +91,10 @@
 - ~~`difftest_check`~~ → 在 `pr-quick-check.yml`
 
 #### 2. `gem5-ideal-btb-perf.yml` - Ideal BTB 性能测试
-默认跑 `gcc15-spec06-0.8c`，在 `xs-dev` 与 `*-perf` 分支上自动触发
+默认跑 `gcc15-spec06-0.8c`，在 `xs-dev`、`*-perf` 分支和 PR `perf` 标签上自动触发
 
 #### 3. `gem5-ideal-btb-0.3c.yml` - Align 性能测试
-默认跑 `gcc15-spec06-0.3c`，在 `xs-dev` 与 `*-align` 分支上自动触发
+默认跑 `gcc15-spec06-0.3c`，在 `xs-dev`、`*-align` 分支和 PR `perf-align` 标签上自动触发
 
 #### 4. 其他测试
 - `gem5-vector.yml` - RVV 扩展测试
@@ -138,8 +138,8 @@ git push origin xs-dev
 # 只需要通过 Tier 1 快速检查即可
 
 # 场景2: 性能相关改动
-/run-spec                    # 标准性能测试（默认 gcc15-spec06-0.8c）
-/run-spec gcc15-spec06-1.0c  # 完整覆盖率测试
+# 在 PR 上添加 perf 标签，运行 Ideal BTB 性能测试（idealkmhv3.py / gcc15-spec06-0.8c）
+# 在 PR 上添加 perf-align 标签，运行 Align BTB 性能测试（kmhv3.py / gcc15-spec06-0.3c）
 
 # 或者把当前分支改名为*-perf, 每次 push 会自动运行 gcc15-spec06-0.8c。
 # 如果是对齐 RTL 的轻量评估，可使用 *-align, 每次 push 会自动运行 gcc15-spec06-0.3c。
@@ -148,7 +148,7 @@ git push origin xs-dev
 ### 维护者
 
 1. 检查 Tier 1 快速检查结果
-2. 对于性能敏感的 PR，评论 `/run-spec`
+2. 对于性能敏感的 PR，添加 `perf` 或 `perf-align` 标签
 3. 审查代码和性能影响
 4. 合入后监控 Tier 2 测试
 5. 如发现失败，立即回滚
@@ -182,11 +182,11 @@ python actions_gem5.py --token <github-token> --always-on
 ## 📚 相关文件
 
 - `.github/workflows/pr-quick-check.yml` - Tier 1
-- `.github/workflows/on-demand-spec.yml` - Tier 1.5
 - `.github/workflows/gem5-perf-template.yml` - 性能测试模板
 - `.github/workflows/gem5.yml` - Tier 2 功能测试
-- `.github/workflows/gem5-ideal-btb-perf.yml` - `xs-dev` / `*-perf` 默认性能测试
-- `.github/workflows/gem5-ideal-btb-0.3c.yml` - `xs-dev` / `*-align` 默认对齐性能测试
+- `.github/workflows/gem5-ideal-btb-perf.yml` - `xs-dev` / `*-perf` / `perf` 标签默认性能测试
+- `.github/workflows/gem5-ideal-btb-0.3c.yml` - `xs-dev` / `*-align` / `perf-align` 标签默认对齐性能测试
+- `.github/workflows/on-demand-spec-rvv.yml` - `rvv` 标签 RVV 性能测试
 - `env-scripts/github/actions_gem5.py` - 性能评论机器人
 
 ---
@@ -197,7 +197,7 @@ python actions_gem5.py --token <github-token> --always-on
 A: 性能测试耗时长，会拖慢 PR 审查。现在改为按需触发，既节省资源，又保持灵活性。
 
 **Q: 如何触发性能测试？**
-A: 在 PR 评论中输入 `/run-spec [可选benchmark类型]`
+A: 在 PR 上添加 `perf` 或 `perf-align` 标签；需要自定义配置时使用 `manual-perf.yml`。
 
 **Q: 新增 benchmark 类型需要修改哪些文件？**
 A: 只需修改 `gem5-perf-template.yml`

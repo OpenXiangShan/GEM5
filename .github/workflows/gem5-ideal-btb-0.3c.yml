@@ -3,13 +3,44 @@ name: gem5 Align BTB Performance Test(0.3c)
 on:
   push:
     branches: [ xs-dev, '*-align' ]  # xs-dev for normal CI, *-align for BTB-only performance testing (align to RTL)
-  # Removed pull_request trigger, only can be triggered use *-align branches
+  # Label-triggered PR align performance testing
+  pull_request_target:
+    types: [labeled]
 
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
 jobs:
+  announce:
+    name: Announce PR align performance test
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request_target' &&
+      github.event.label.name == 'perf-align' &&
+      github.event.pull_request.base.ref == 'xs-dev'
+    steps:
+      - name: Comment trigger
+        uses: actions/github-script@v9
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: '🚀 Align performance test triggered: **kmhv3.py / gcc15-spec06-0.3c**'
+            });
+
   perf_test:
+    if: |
+      github.event_name != 'pull_request_target' ||
+      (github.event.label.name == 'perf-align' &&
+       github.event.pull_request.base.ref == 'xs-dev')
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/kmhv3.py
       benchmark_type: "gcc15-spec06-0.3c"
+      pr_sha: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
