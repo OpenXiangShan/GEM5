@@ -493,7 +493,11 @@ Decode::tick()
         toFetch->decodeInfo[tid].blockReason =
             stallSig->fetchBlockReason[tid];
     };
+    // Single-thread mode already uses blockDecode feedback for real backend
+    // stalls; this extra FIFO guard is only needed when SMT arbitration can
+    // leave a non-selected thread's fetch groups queued behind another thread.
     const bool fifoBackpressured =
+        numThreads > 1 &&
         !stallBuffer.empty() &&
         eachstallSize.size() + fetchToDecodeDelay >=
             eachstallSize.capacity();
