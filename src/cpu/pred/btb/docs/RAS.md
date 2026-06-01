@@ -93,10 +93,10 @@ void putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
 - Fills prediction stages with current top-of-stack address
 - Prepares for potential speculative updates
 
-### 2. Speculative Update (`specUpdateHist`)
+### 2. Speculative Update (`specUpdateState`)
 
 ```cpp
-void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+void specUpdateState(FullBTBPrediction &pred)
 ```
 
 - **For Call Instructions**: Executes `push(retAddr)`
@@ -108,11 +108,10 @@ void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &p
   - Removes top entry from inflight queue or committed stack
   - Updates pointers and counters accordingly
 
-### 3. Recovery Phase (`recoverHist`)
+### 3. Recovery Phase (`recoverState`)
 
 ```cpp
-void recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, 
-                 int shamt, bool cond_taken)
+void recoverState(const FetchTarget &entry)
 ```
 
 - Restores RAS state to a previous checkpoint using stored metadata

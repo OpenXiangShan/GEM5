@@ -1043,43 +1043,48 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     auto& s0LHistory = threads[tid].s0LHistory;
     auto& finalPred = threads[tid].finalPred;
 
-    const auto ghist = finalPred.getHistUpdate();
-    const auto bwhist = finalPred.getBwHistUpdate();
-    const auto phist = finalPred.getPHistUpdate();
+    const auto ghist_update = finalPred.getGHistUpdate();
+    const auto bwhist_update = finalPred.getBwHistUpdate();
+    const auto phist_update = finalPred.getPHistUpdate();
 
-    // Update component-specific history, for TAGE/ITTAGE/MGSC
+    // RAS updates its speculative stack, not folded history.
+    if (ras->isEnabled()) {
+        ras->specUpdateState(finalPred);
+    }
+
+    // Update component-local folded histories.
     for (int i = 0; i < numComponents; i++) {
-        // use old s0History to update folded history, then use finalPred to update folded history
-        components[i]->specUpdateHist(s0History, finalPred, ghist);
-        components[i]->specUpdatePHist(s0PHistory, finalPred, phist);
-        if (components[i]->needMoreHistories) {
-            components[i]->specUpdateBwHist(s0BwHistory, finalPred, bwhist);
-            components[i]->specUpdateIHist(finalPred, bwhist);
-            components[i]->specUpdateLHist(s0LHistory, finalPred, ghist);
-        }
+        // use old histories to update predictor-local folded histories
+        components[i]->specUpdateGHist(s0History, finalPred, ghist_update);
+        components[i]->specUpdatePHist(s0PHistory, finalPred, phist_update);
+    }
+    if (mgsc->isEnabled()) {
+        mgsc->specUpdateBwHist(s0BwHistory, finalPred, bwhist_update);
+        mgsc->specUpdateIHist(finalPred, bwhist_update);
+        mgsc->specUpdateLHist(s0LHistory, finalPred, ghist_update);
     }
 
     // Update global history
-    histShiftIn(ghist.shamt, ghist.taken, s0History);
+    histShiftIn(ghist_update.shamt, ghist_update.taken, s0History);
 
     // Update history manager and verify TAGE folded history
     historyManagers[tid].addSpeculativeHist(
-        entry.startPC, ghist.shamt, ghist.taken,
+        entry.startPC, ghist_update.shamt, ghist_update.taken,
         entry.predBranchInfo, ftq.backId(tid) + 1);
 
     // Update global backward history
-    histShiftIn(bwhist.shamt, bwhist.taken, s0BwHistory);
+    histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);
 
     // Update path history
-    pHistShiftIn(phist.shamt, phist.taken, s0PHistory,
-                 phist.pc, phist.target);
+    pHistShiftIn(phist_update.shamt, phist_update.taken, s0PHistory,
+                 phist_update.pc, phist_update.target);
 
     // Update local history
     const Addr localHistoryIndex =
         mgsc->getPcIndex(finalPred.bbStart,
                          log2(mgsc->getNumEntriesFirstLocalHistories()),
                          finalPred.asidHash);
-    histShiftIn(ghist.shamt, ghist.taken,
+    histShiftIn(ghist_update.shamt, ghist_update.taken,
         s0LHistory[localHistoryIndex]);
 
 #ifndef NDEBUG
@@ -1135,51 +1140,61 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     s0LHistory = target.lhistory;
 
     // Get actual history update information.
-    const auto ghist = target.getHistUpdateDuringSquash(
+    const auto ghist_update = target.getGHistUpdateDuringSquash(
         squash_pc.instAddr(), is_conditional, actually_taken);
-    const auto bwhist = target.getBwHistUpdateDuringSquash(
+    const auto bwhist_update = target.getBwHistUpdateDuringSquash(
         squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
-    const auto phist = target.getPHistUpdateDuringSquash(
+    const auto phist_update = target.getPHistUpdateDuringSquash(
         squash_pc.instAddr(), actually_taken, redirect_pc);
 
-    // Recover component-specific history
+    // RAS recovers its speculative stack, not folded history.
+    if (ras->isEnabled()) {
+        ras->recoverState(target);
+    }
+    if (abtb->isEnabled()) {
+        abtb->recoverState(target);
+    }
+
+    // Recover component-local folded histories.
     for (int i = 0; i < numComponents; ++i) {
-        components[i]->recoverHist(s0History, target, ghist.shamt, ghist.taken);
-        components[i]->recoverPHist(s0PHistory, target, phist);
-        if (components[i]->needMoreHistories) {
-            components[i]->recoverBwHist(s0BwHistory, target,
-                                         bwhist.shamt, bwhist.taken);
-            components[i]->recoverIHist(target, bwhist.shamt, bwhist.taken);
-            components[i]->recoverLHist(s0LHistory, target,
-                                        ghist.shamt, ghist.taken);
-        }
+        components[i]->recoverHist(s0History, target, ghist_update.shamt,
+                                   ghist_update.taken);
+        components[i]->recoverPHist(s0PHistory, target, phist_update);
+    }
+    if (mgsc->isEnabled()) {
+        mgsc->recoverBwHist(s0BwHistory, target, bwhist_update.shamt,
+                            bwhist_update.taken);
+        mgsc->recoverIHist(target, bwhist_update.shamt,
+                           bwhist_update.taken);
+        mgsc->recoverLHist(s0LHistory, target, ghist_update.shamt,
+                           ghist_update.taken);
     }
 
     // Update global history with actual outcome
-    histShiftIn(ghist.shamt, ghist.taken, s0History);
+    histShiftIn(ghist_update.shamt, ghist_update.taken, s0History);
 
     // Update path history with actual outcome
-    pHistShiftIn(phist.shamt, phist.taken, s0PHistory,
-                 phist.pc, phist.target);
+    pHistShiftIn(phist_update.shamt, phist_update.taken, s0PHistory,
+                 phist_update.pc, phist_update.target);
 
     // Update global backward history with actual outcome
-    histShiftIn(bwhist.shamt, bwhist.taken, s0BwHistory);
+    histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);
 
     // Update local history with actual outcome
     const Addr localHistoryIndex =
         mgsc->getPcIndex(target.startPC,
                          log2(mgsc->getNumEntriesFirstLocalHistories()),
                          target.asidHash);
-    histShiftIn(ghist.shamt, ghist.taken,
+    histShiftIn(ghist_update.shamt, ghist_update.taken,
                 s0LHistory[localHistoryIndex]);
 
     // Update history manager with appropriate branch info
     if (squash_type == SQUASH_CTRL) {
-        historyManagers[tid].squash(target_id, ghist.shamt, ghist.taken,
-                                    target.exeBranchInfo);
+        historyManagers[tid].squash(target_id, ghist_update.shamt,
+                                    ghist_update.taken, target.exeBranchInfo);
     } else {
-        historyManagers[tid].squash(target_id, ghist.shamt, ghist.taken,
-                                    BranchInfo());
+        historyManagers[tid].squash(target_id, ghist_update.shamt,
+                                    ghist_update.taken, BranchInfo());
     }
 
     // Perform history consistency checks when not a fast build variant

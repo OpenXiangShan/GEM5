@@ -34,8 +34,10 @@ DecoupledBPUWithBTB 是一个解耦的分支预测器设计，主要包含以下
 
 - putPCHistry: 根据 startAddr 作为起始预测地址，记录在 stagePreds 中作为预测结果
 - getPredictionMeta：获取预测元数据，相当于 checkpoints, 存储预测时候的状态，预测错误时候回滚，指令提交时候验证
-- specUpdateHist：推测更新历史，只有 uRAS 实现！其他预测器不会推测更新！
-- recoverHist：squash（分支预测错误）后恢复历史，tage/RAS 实现，并更新 s0history
+- specUpdateGHist/specUpdatePHist：推测更新 TAGE/ITTAGE/MGSC 等预测器的 folded history
+- recoverHist/recoverPHist：squash（分支预测错误）后恢复 folded history，并用实际结果重放
+- RAS 的 `specUpdateState`/`recoverState`：只更新返回栈内部状态，不属于 folded history 接口
+- ABTB 的 `recoverState`：squash 后清理 ahead pipeline，不属于 folded history 接口
 - update：用 commit stream 更新预测器内容，是准确更新
 - commitBranch: 当前 FetchBlock 这条分支提交时候，统计数据
 

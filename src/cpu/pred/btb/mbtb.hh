@@ -149,12 +149,6 @@ class MBTB : public TimedBaseBTBPredictor
      */
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
-    // not used
-    void specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) override;
-
-    void recoverHist(const boost::dynamic_bitset<> &history,
-        const FetchTarget &entry, int shamt, bool cond_taken) override;
-
     /**
      * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
      *        only in L1BTB will this function be called before update

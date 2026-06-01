@@ -258,12 +258,12 @@ struct MgscHarness
             }
         }
 
-        const auto ghist = stage_preds[1].getHistUpdate();
+        const auto ghist = stage_preds[1].getGHistUpdate();
         const auto bwhist = stage_preds[1].getBwHistUpdate();
         const auto phist = stage_preds[1].getPHistUpdate();
 
         // Speculative folded-history update (use pre-update histories, like DecoupledBPUWithBTB does).
-        mgsc.specUpdateHist(ghr_before, stage_preds[1], ghist);
+        mgsc.specUpdateGHist(ghr_before, stage_preds[1], ghist);
         mgsc.specUpdatePHist(phr_before, stage_preds[1], phist);
         mgsc.specUpdateBwHist(bwhr_before, stage_preds[1], bwhist);
         mgsc.specUpdateIHist(stage_preds[1], bwhist);
@@ -867,7 +867,7 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesIndirectTargetOverride)
     boost::dynamic_bitset<> expected_phr = h.phr;
     pHistShiftIn(2, true, expected_phr, entry.pc, indirectTarget);
 
-    h.mgsc.specUpdatePHist(h.phr, pred);
+    h.mgsc.specUpdatePHist(h.phr, pred, pred.getPHistUpdate());
     h.mgsc.checkFoldedHist(h.ghr, expected_phr, h.lhr,
                            "indirect target override");
 }
@@ -892,7 +892,7 @@ TEST(BTBMGSCTest, SpecUpdatePHistUsesReturnTargetOverride)
     boost::dynamic_bitset<> expected_phr = h.phr;
     pHistShiftIn(2, true, expected_phr, entry.pc, returnTarget);
 
-    h.mgsc.specUpdatePHist(h.phr, pred);
+    h.mgsc.specUpdatePHist(h.phr, pred, pred.getPHistUpdate());
     h.mgsc.checkFoldedHist(h.ghr, expected_phr, h.lhr,
                            "return target override");
 }

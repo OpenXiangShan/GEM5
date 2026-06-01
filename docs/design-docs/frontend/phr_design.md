@@ -161,8 +161,8 @@ DecoupledBPUWithBTB::pHistShiftIn(
 关键顺序在 `updateHistoryForPrediction()`：
 
 ```cpp
-components[i]->specUpdateHist(s0History, finalPred);
-components[i]->specUpdatePHist(s0PHistory, finalPred);
+components[i]->specUpdateGHist(s0History, finalPred, ghist_update);
+components[i]->specUpdatePHist(s0PHistory, finalPred, phist_update);
 ...
 histShiftIn(shamt, taken, s0History);
 pHistShiftIn(2, p_taken, s0PHistory, p_pc, p_target);

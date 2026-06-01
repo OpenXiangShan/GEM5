@@ -54,7 +54,7 @@
 但要明确：
 
 - **继承 `BTBTAGE` 不等于自动继承了 UB-S(outcome) 需要的 history 生命周期**
-- 当前生产代码真正维护的是 path-history folding；`specUpdateHist/recoverHist` 这部分对 `UB-S(outcome)` 不能直接沿用
+- 当前生产代码真正维护的是 path-history folding；`specUpdateGHist/recoverHist` 这部分对 `UB-S(outcome)` 不能直接沿用
 
 ## 4. 核心设计决策
 
@@ -146,7 +146,7 @@ ubTable[i] : unordered_map<UBKey_i, UBEntry>
 
 所以子类必须自己实现：
 
-- `specUpdateHist`
+- `specUpdateGHist`
 - `recoverHist`
 
 并在自己的 `meta` 中保存与 exact outcome history 对应的 snapshot。
@@ -161,7 +161,7 @@ ubTable[i] : unordered_map<UBKey_i, UBEntry>
 规则：
 
 1. prediction 时按当前 exact history 构造各表 key
-2. `specUpdateHist` 用最终预测方向推测更新 exact history
+2. `specUpdateGHist` 用最终预测方向推测更新 exact history
 3. squash 时 `recoverHist` 先恢复 snapshot，再按真实结果重放
 
 是否继续调用基类的 `specUpdatePHist/recoverPHist`：
@@ -284,7 +284,7 @@ ubTable[i] : unordered_map<UBKey_i, UBEntry>
 
 1. 定义 `UBKey` / `UBEntry` / custom hash
 2. 搭 `BTBTAGEUpperBound : public BTBTAGE`
-3. 实现 exact outcome history 的 `specUpdateHist/recoverHist`
+3. 实现 exact outcome history 的 `specUpdateGHist/recoverHist`
 4. 实现 provider/alt 查找
 5. 实现 update + 统计
 6. 跑两个 gobmk slice

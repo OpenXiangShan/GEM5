@@ -126,7 +126,7 @@ BTBRAS::getPredictionMeta(ThreadID tid)
 }
 
 void
-BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
+BTBRAS::specUpdateState(FullBTBPrediction &pred)
 {
     const ThreadID tid = pred.tid;
     assert(tid < numThreads);
@@ -153,12 +153,12 @@ BTBRAS::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction
     }
     
     if (takenEntry.isCall || takenEntry.isReturn)
-        printStack("after specUpdateHist", tid);
+        printStack("after specUpdateState", tid);
     DPRINTFR(RAS, "meta TOSR %d TOSW %d\n", state.meta->TOSR, state.meta->TOSW);
 }
 
 void
-BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
+BTBRAS::recoverState(const FetchTarget &entry)
 {
     const ThreadID tid = entry.tid;
     assert(tid < numThreads);
@@ -166,7 +166,7 @@ BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &e
     auto takenEntry = entry.exeBranchInfo;
     /*
     if (takenEntry.isCall || takenEntry.isReturn) {
-        printStack("before recoverHist", tid);
+        printStack("before recoverState", tid);
     }*/
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
@@ -197,9 +197,9 @@ BTBRAS::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &e
             DPRINTF(RAS, "IsRet expect target %lx, preded %lx, pred taken %d pred target %lx\n",
                 takenEntry.target, meta_ptr->target, entry.predTaken, entry.predBranchInfo.target);
         }
-        printStack("after recoverHist", tid);
+        printStack("after recoverState", tid);
     }
-    
+
 }
 
 void

@@ -435,7 +435,7 @@ struct FetchTarget
         return startPC;
     }
 
-    DirectionHistoryUpdate getHistUpdateDuringSquash(
+    DirectionHistoryUpdate getGHistUpdateDuringSquash(
         Addr squash_pc, bool is_cond, bool actually_taken) const
     {
         DirectionHistoryUpdate update;
@@ -661,7 +661,7 @@ struct FullBTBPrediction
         }
     }
 
-    DirectionHistoryUpdate getHistUpdate()  //global or local
+    DirectionHistoryUpdate getGHistUpdate()  //global or local
     {
         DirectionHistoryUpdate update; // shamt is the number of bits to shift in history update
         for (auto &entry : btbEntries) {

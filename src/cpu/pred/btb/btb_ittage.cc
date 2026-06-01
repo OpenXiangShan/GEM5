@@ -563,23 +563,8 @@ BTBITTAGE::tageHit()
 }
 
 /**
- * @brief Updates branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- *
- * @param history The current branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates path folded histories.
  */
-void
-BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
-{
-    specUpdatePHist(history, pred, pred.getPHistUpdate());
-}
-
 void
 BTBITTAGE::specUpdatePHist(const boost::dynamic_bitset<> &history,
                            FullBTBPrediction &pred,

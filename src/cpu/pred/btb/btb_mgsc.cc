@@ -184,10 +184,6 @@ BTBMGSC::BTBMGSC()
       mgscStats()
 {
     // Test-only small config: keep tables tiny and deterministic for fast unit tests.
-    // MGSC uses multiple histories (GHR/PHR/BWHR/LHR). Keep it enabled in unit tests so we can
-    // build training-loop style tests that exercise each table.
-    needMoreHistories = true;
-
     initStorage();
     updateThreshold = 35 * 8;
 }
@@ -232,7 +228,6 @@ BTBMGSC::BTBMGSC(const Params &p)
       mgscStats(this)
 {
     DPRINTF(MGSC, "BTBMGSC constructor\n");
-    this->needMoreHistories = p.needMoreHistories;
     initStorage();
     updateThreshold = 35 * 8;
 
@@ -1154,25 +1149,10 @@ BTBMGSC::doUpdateHist(const boost::dynamic_bitset<> &history, int shamt, bool ta
 
 
 /**
- * @brief Updates branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- *
- * @param history The current branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates global folded histories.
  */
 void
-BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
-{
-    specUpdateHist(history, pred, pred.getHistUpdate());
-}
-
-void
-BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history,
+BTBMGSC::specUpdateGHist(const boost::dynamic_bitset<> &history,
                         FullBTBPrediction &pred,
                         const DirectionHistoryUpdate &update)
 {
@@ -1182,23 +1162,8 @@ BTBMGSC::specUpdateHist(const boost::dynamic_bitset<> &history,
 }
 
 /**
- * @brief Updates branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- *
- * @param history The current branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates path folded histories.
  */
-void
-BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
-{
-    specUpdatePHist(history, pred, pred.getPHistUpdate());
-}
-
 void
 BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history,
                          FullBTBPrediction &pred,
@@ -1211,23 +1176,8 @@ BTBMGSC::specUpdatePHist(const boost::dynamic_bitset<> &history,
 
 
 /**
- * @brief Updates global backward branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- *
- * @param history The current global backward branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates global backward folded histories.
  */
-void
-BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred)
-{
-    specUpdateBwHist(history, pred, pred.getBwHistUpdate());
-}
-
 void
 BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history,
                           FullBTBPrediction &pred,
@@ -1238,23 +1188,8 @@ BTBMGSC::specUpdateBwHist(const boost::dynamic_bitset<> &history,
 }
 
 /**
- * @brief Updates IMLI branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- * Note: IMLI only uses counter, not history bits.
- *
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates IMLI folded histories.
  */
-void
-BTBMGSC::specUpdateIHist(FullBTBPrediction &pred)
-{
-    specUpdateIHist(pred, pred.getBwHistUpdate());
-}
-
 void
 BTBMGSC::specUpdateIHist(FullBTBPrediction &pred,
                          const DirectionHistoryUpdate &update)
@@ -1266,23 +1201,8 @@ BTBMGSC::specUpdateIHist(FullBTBPrediction &pred,
 }
 
 /**
- * @brief Updates local branch history for speculative execution
- *
- * This function updates the branch history for speculative execution
- * based on the provided history and prediction information.
- *
- * It first retrieves the history information from the prediction metadata
- * and then calls the doUpdateHist function to update the folded histories.
- *
- * @param history The current local branch history
- * @param pred The prediction metadata containing history information
+ * @brief Speculatively updates local folded histories.
  */
-void
-BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history, FullBTBPrediction &pred)
-{
-    specUpdateLHist(history, pred, pred.getHistUpdate());
-}
-
 void
 BTBMGSC::specUpdateLHist(const std::vector<boost::dynamic_bitset<>> &history,
                          FullBTBPrediction &pred,

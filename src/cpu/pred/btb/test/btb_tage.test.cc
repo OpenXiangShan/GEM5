@@ -107,7 +107,7 @@ void specUpdateSelectedHistory(BTBTAGE* tage,
     if (tage->usesPathHistory()) {
         tage->specUpdatePHist(history, pred, pred.getPHistUpdate());
     } else {
-        tage->specUpdateHist(history, pred, pred.getHistUpdate());
+        tage->specUpdateGHist(history, pred, pred.getGHistUpdate());
     }
 }
 
@@ -133,7 +133,7 @@ void applyPredictedHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
             applyPathHistoryTaken(history, update.pc, update.target);
         }
     } else {
-        const auto update = pred.getHistUpdate();
+        const auto update = pred.getGHistUpdate();
         applyOutcomeHistory(history, update.shamt, update.taken);
     }
 }
@@ -289,7 +289,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         stream.resolved = true;
         stream.squashPC = c.squashPC;
 
-        const auto ghist = stream.getHistUpdateDuringSquash(
+        const auto ghist = stream.getGHistUpdateDuringSquash(
             c.squashPC, c.isCond, c.actualTaken);
         const auto bwhist = stream.getBwHistUpdateDuringSquash(
             c.squashPC, c.isCond, c.actualTaken, c.redirectPC);
@@ -394,7 +394,7 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
             applyPathHistoryTaken(history, update.pc, update.target);
         }
     } else {
-        const auto update = stagePreds[1].getHistUpdate();
+        const auto update = stagePreds[1].getGHistUpdate();
         history_updated = update.shamt > 0;
         applyOutcomeHistory(history, update.shamt, update.taken);
     }
@@ -1414,7 +1414,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesPathHashHistorySnapshot) {
     FullBTBPrediction pred;
     pred.btbEntries.push_back(entry);
     pred.condTakens.push_back({entry.pc, true});
-    tage->specUpdatePHist(pathHistoryA, pred);
+    tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
 
     bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
 
@@ -1439,7 +1439,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesIndirectOverridePathHashSnap
     pred.condTakens.push_back({entry.pc, true});
     pred.indirectTargets.push_back({entry.pc, indirectTarget});
 
-    tage->specUpdatePHist(pathHistoryA, pred);
+    tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
     tage->checkFoldedHist(pathHistoryB, "indirect target override");
 
     bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
@@ -1466,7 +1466,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, PredictionUsesReturnOverridePathHashSnapsh
     pred.condTakens.push_back({entry.pc, true});
     pred.returnTarget = returnTarget;
 
-    tage->specUpdatePHist(pathHistoryA, pred);
+    tage->specUpdatePHist(pathHistoryA, pred, pred.getPHistUpdate());
     tage->checkFoldedHist(pathHistoryB, "return target override");
 
     bool predicted = predictTAGE(tage, 0x1000, {entry}, outcomeHistory, stagePreds);
@@ -1488,7 +1488,7 @@ TEST_F(BTBTAGEUpperBoundPathHashTest, RecoverPHistUsesTakenControlPath) {
     FetchTarget stream = createStream(0x1000, entry, true, meta);
     stream = setMispredStream(stream);
 
-    const auto ghist = stream.getHistUpdateDuringSquash(entry.pc, false, true);
+    const auto ghist = stream.getGHistUpdateDuringSquash(entry.pc, false, true);
     const auto phist = stream.getPHistUpdateDuringSquash(
         entry.pc, true, entry.target);
     EXPECT_EQ(ghist.shamt, 0);

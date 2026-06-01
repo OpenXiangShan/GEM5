@@ -188,7 +188,7 @@ The predictor maintains three types of folded histories:
 These histories are updated speculatively and recovered on mispredictions.
 
 ```cpp
-void specUpdateHist(const boost::dynamic_bitset<> &history,
+void specUpdateGHist(const boost::dynamic_bitset<> &history,
                     FullBTBPrediction &pred,
                     const DirectionHistoryUpdate &update) {
     doUpdateHist(history, update.shamt, update.taken);
@@ -231,8 +231,8 @@ The key interactions include:
 The BTBTAGE predictor integrates with the fetch stream mechanism through:
 
 1. `putPCHistory`: Makes predictions for a stream of instructions
-2. `specUpdateHist`: Speculatively updates history based on predictions
-3. `recoverHist`: Recovers history state after mispredictions
+2. `specUpdateGHist`: Speculatively updates folded history based on explicit history updates
+3. `recoverHist`: Recovers folded history state after mispredictions
 4. `update`: Updates predictor state based on actual branch outcomes
 
 The fetch stream mechanism provides a unified interface for all branch predictors and manages the flow of predictions and updates.
@@ -304,7 +304,8 @@ tage->putPCHistory(startPC, history, stagePreds);
 auto meta = tage->getPredictionMeta();
 
 // Speculatively update history (folded histories)
-tage->specUpdateHist(history, stagePreds[1]);  // Use final prediction to update
+auto hist_update = stagePreds[1].getGHistUpdate();
+tage->specUpdateGHist(history, stagePreds[1], hist_update);
 
 // Shift actual history register
 history <<= shamt;  // Shift by amount corresponding to instructions

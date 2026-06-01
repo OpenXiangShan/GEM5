@@ -329,21 +329,6 @@ BTBTAGEUpperBound::getPredictionMeta(ThreadID tid)
 }
 
 void
-BTBTAGEUpperBound::specUpdateHist(const boost::dynamic_bitset<> &history,
-                                  FullBTBPrediction &pred)
-{
-    (void)history;
-    (void)pred;
-}
-
-void
-BTBTAGEUpperBound::specUpdatePHist(const boost::dynamic_bitset<> &history,
-                                   FullBTBPrediction &pred)
-{
-    specUpdatePHist(history, pred, pred.getPHistUpdate());
-}
-
-void
 BTBTAGEUpperBound::specUpdatePHist(const boost::dynamic_bitset<> &history,
                                    FullBTBPrediction &pred,
                                    const PathHistoryUpdate &update)

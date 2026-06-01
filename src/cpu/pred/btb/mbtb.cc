@@ -320,16 +320,6 @@ MBTB::getPredictionMeta(ThreadID tid)
     return meta;
 }
 
-void
-MBTB::specUpdateHist(const boost::dynamic_bitset<> &history, FullBTBPrediction &pred) {}
-
-void
-MBTB::recoverHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken)
-{
-    // MBTB doesn't support ahead-pipelined stages, nothing to recover
-}
-
-
 /**
  * Helper function to lookup entries in a single block
  * @param block_pc The aligned PC to lookup

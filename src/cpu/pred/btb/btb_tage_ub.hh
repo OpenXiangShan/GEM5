@@ -97,10 +97,6 @@ class BTBTAGEUpperBound : public BTBTAGE
 
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
-    void specUpdateHist(const boost::dynamic_bitset<> &history,
-                        FullBTBPrediction &pred) override;
-    void specUpdatePHist(const boost::dynamic_bitset<> &history,
-                         FullBTBPrediction &pred) override;
     void specUpdatePHist(const boost::dynamic_bitset<> &history,
                          FullBTBPrediction &pred,
                          const PathHistoryUpdate &update) override;

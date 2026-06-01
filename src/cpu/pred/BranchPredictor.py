@@ -1124,8 +1124,6 @@ class BTBMGSC(TimedBaseBTBPredictor):
     cxx_class = 'gem5::branch_prediction::btb_pred::BTBMGSC'
     cxx_header = "cpu/pred/btb/btb_mgsc.hh"
 
-    needMoreHistories = Param.Bool(True, "MGSC needs auxiliary histories")
-
     bwTableNum = Param.Unsigned(2, "Num global backward branch GEHL tables")
     bwHistLen = VectorParam.Int([4, 8], "Global backward branch GEHL history lengths")
     bwTableIdxWidth = Param.Unsigned(11,
