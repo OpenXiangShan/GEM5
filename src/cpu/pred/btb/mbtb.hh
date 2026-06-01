@@ -44,6 +44,7 @@
 
 #include "base/types.hh"
 #include "cpu/pred/btb/common.hh"
+#include "cpu/pred/btb/test_stats.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 
 // Conditional includes based on build mode
@@ -408,11 +409,8 @@ class MBTB : public TimedBaseBTBPredictor
         READ, WRITE, EVICT
     };
 
-#ifdef UNIT_TEST
-    typedef uint64_t Scalar;
-#else
-    typedef statistics::Scalar Scalar;
-#endif
+    using Scalar = test_stats::Scalar;
+    using Distribution = test_stats::Distribution;
 
 #ifdef UNIT_TEST
 public:
@@ -470,10 +468,11 @@ public:
         // Victim cache statistics
         Scalar victimCacheHit;
 
+        Distribution predHitCount;
 #ifndef UNIT_TEST
-        statistics::Distribution predHitCount;
         BTBStats(statistics::Group* parent, int numWays);
 #endif
+        void init(int numWays);
     } btbStats;
 
 };

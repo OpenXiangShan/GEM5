@@ -342,8 +342,6 @@ class BTBTAGETest : public ::testing::Test
 protected:
     void SetUp() override {
         tage = new BTBTAGE();
-        // memset tageStats to 0
-        memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
         history.resize(64, false);  // 64-bit history initialized to 0
         stagePreds.resize(2);  // 2 stages
     }
@@ -910,7 +908,6 @@ TEST_F(BTBTAGETest, SetAssociativeConflictHandling) {
 TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
     // Start with a fresh predictor
     tage = new BTBTAGE(1, 2, 10); // only 1 predictor table, 2 ways
-    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
     history.resize(64, false);
     stagePreds.resize(2);
 
@@ -1004,7 +1001,6 @@ TEST_F(BTBTAGETest, AllocationBehaviorWithMultipleWays) {
 
 TEST_F(BTBTAGETest, AllocationReplacesStrongNotUsefulEntry) {
     tage = new BTBTAGE(1, 2, 10); // only 1 predictor table, 2 ways
-    memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
     history.resize(64, false);
     stagePreds.resize(2);
 
@@ -1141,7 +1137,6 @@ class BTBTAGEUpperBoundTest : public ::testing::Test
   protected:
     void SetUp() override {
         tage = new BTBTAGEUpperBound();
-        memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
         history.resize(128, false);
         stagePreds.resize(2);
     }
@@ -1157,7 +1152,6 @@ class BTBTAGEUpperBoundPathHashTest : public ::testing::Test
     void SetUp() override {
         tage = new BTBTAGEUpperBound(4, 1024, 4,
             BTBTAGEUpperBound::HistorySource::PathHash);
-        memset(&tage->tageStats, 0, sizeof(BTBTAGE::TageStats));
         outcomeHistory.resize(128, false);
         pathHistory.resize(128, false);
         stagePreds.resize(2);

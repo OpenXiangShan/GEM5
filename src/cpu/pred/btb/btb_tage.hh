@@ -14,6 +14,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/pred/btb/common.hh"
 #include "cpu/pred/btb/folded_hist.hh"
+#include "cpu/pred/btb/test_stats.hh"
 #include "cpu/pred/btb/timed_base_pred.hh"
 
 // Conditional includes based on build mode
@@ -324,11 +325,9 @@ class BTBTAGE : public TimedBaseBTBPredictor
     unsigned lastPredBankId;         // Bank ID of last prediction
     bool predBankValid;              // Whether lastPredBankId is valid
 
-#ifdef UNIT_TEST
-    typedef uint64_t Scalar;
-#else
-    typedef statistics::Scalar Scalar;
-#endif
+    using Scalar = test_stats::Scalar;
+    using Vector = test_stats::Vector;
+    using Distribution = test_stats::Distribution;
 
     // Statistics for TAGE predictor
 #ifdef UNIT_TEST
@@ -378,27 +377,25 @@ class BTBTAGE : public TimedBaseBTBPredictor
         Scalar updateBankConflict;           // Number of bank conflicts detected
         Scalar updateDeferredDueToConflict;  // Number of updates deferred due to bank conflict (retried later)
 
-#ifndef UNIT_TEST
         // Fine-grained per-bank statistics
-        statistics::Vector updateBankConflictPerBank;  // Conflicts per bank
-        statistics::Vector updateAccessPerBank;        // Update accesses per bank
-        statistics::Vector predAccessPerBank;          // Prediction accesses per bank
+        Vector updateBankConflictPerBank;  // Conflicts per bank
+        Vector updateAccessPerBank;        // Update accesses per bank
+        Vector predAccessPerBank;          // Prediction accesses per bank
 
-        statistics::Vector resolveProviderTable;
-        statistics::Vector resolveAltTable;
-        statistics::Vector resolveUseProviderTable;
-        statistics::Vector resolveUseAltTable;
-        statistics::Vector mispredictUseProviderTable;
-        statistics::Vector mispredictUseAltTable;
+        Vector resolveProviderTable;
+        Vector resolveAltTable;
+        Vector resolveUseProviderTable;
+        Vector resolveUseAltTable;
+        Vector mispredictUseProviderTable;
+        Vector mispredictUseAltTable;
 
-        statistics::Distribution predTableHits;
-        statistics::Distribution updateTableHits;
+        Distribution predTableHits;
+        Distribution updateTableHits;
 
-        statistics::Vector updateTableMispreds;
-        statistics::Vector predFinalSourceTable;
-        statistics::Vector updateFinalSourceTableCorrect;
-        statistics::Vector updateFinalSourceTableWrong;
-#endif
+        Vector updateTableMispreds;
+        Vector predFinalSourceTable;
+        Vector updateFinalSourceTableCorrect;
+        Vector updateFinalSourceTableWrong;
 
         Scalar condPredwrong;
         Scalar condMissTakens;
@@ -416,6 +413,7 @@ class BTBTAGE : public TimedBaseBTBPredictor
 #ifndef UNIT_TEST
         TageStats(statistics::Group* parent, int numPredictors, int numBanks);
 #endif
+        void init(int numPredictors, int numBanks);
         void updateStatsWithTagePrediction(const TagePrediction &pred, bool when_pred);
     } ;
 
