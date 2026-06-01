@@ -258,10 +258,9 @@ struct MgscHarness
             }
         }
 
-        const auto history_update = stage_preds[1].getHistoryUpdate();
-        const auto &ghist = history_update.ghist;
-        const auto &bwhist = history_update.bwhist;
-        const auto &phist = history_update.phist;
+        const auto ghist = stage_preds[1].getHistUpdate();
+        const auto bwhist = stage_preds[1].getBwHistUpdate();
+        const auto phist = stage_preds[1].getPHistUpdate();
 
         // Speculative folded-history update (use pre-update histories, like DecoupledBPUWithBTB does).
         mgsc.specUpdateHist(ghr_before, stage_preds[1], ghist);

@@ -1043,10 +1043,9 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     auto& s0LHistory = threads[tid].s0LHistory;
     auto& finalPred = threads[tid].finalPred;
 
-    const auto history_update = finalPred.getHistoryUpdate();
-    const auto &ghist = history_update.ghist;
-    const auto &bwhist = history_update.bwhist;
-    const auto &phist = history_update.phist;
+    const auto ghist = finalPred.getHistUpdate();
+    const auto bwhist = finalPred.getBwHistUpdate();
+    const auto phist = finalPred.getPHistUpdate();
 
     // Update component-specific history, for TAGE/ITTAGE/MGSC
     for (int i = 0; i < numComponents; i++) {
@@ -1136,11 +1135,12 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     s0LHistory = target.lhistory;
 
     // Get actual history update information.
-    const auto history_update = target.getHistoryUpdateDuringSquash(
+    const auto ghist = target.getHistUpdateDuringSquash(
+        squash_pc.instAddr(), is_conditional, actually_taken);
+    const auto bwhist = target.getBwHistUpdateDuringSquash(
         squash_pc.instAddr(), is_conditional, actually_taken, redirect_pc);
-    const auto &ghist = history_update.ghist;
-    const auto &bwhist = history_update.bwhist;
-    const auto &phist = history_update.phist;
+    const auto phist = target.getPHistUpdateDuringSquash(
+        squash_pc.instAddr(), actually_taken, redirect_pc);
 
     // Recover component-specific history
     for (int i = 0; i < numComponents; ++i) {
