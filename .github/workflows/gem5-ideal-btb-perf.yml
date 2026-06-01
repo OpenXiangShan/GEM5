@@ -23,7 +23,8 @@ jobs:
     if: |
       github.event_name == 'pull_request_target' &&
       github.event.label.name == 'perf' &&
-      github.event.pull_request.base.ref == 'xs-dev'
+      github.event.pull_request.base.ref == 'xs-dev' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Comment trigger
         uses: actions/github-script@v9
@@ -40,7 +41,8 @@ jobs:
     if: |
       github.event_name != 'pull_request_target' ||
       (github.event.label.name == 'perf' &&
-       github.event.pull_request.base.ref == 'xs-dev')
+       github.event.pull_request.base.ref == 'xs-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/gem5-perf-template.yml
     with:
       config_path: configs/example/idealkmhv3.py

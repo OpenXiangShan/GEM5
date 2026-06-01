@@ -5,6 +5,11 @@ on:
   pull_request_target:
     types: [labeled]
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
 jobs:
   trigger:
     name: Trigger RVV SPEC Test
@@ -12,7 +17,8 @@ jobs:
     if: |
       github.event_name == 'pull_request_target' &&
       github.event.label.name == 'rvv' &&
-      github.event.pull_request.base.ref == 'xs-dev'
+      github.event.pull_request.base.ref == 'xs-dev' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     
     outputs:
       benchmark_type: ${{ steps.setup.outputs.benchmark }}
