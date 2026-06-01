@@ -621,20 +621,21 @@ DecoupledBPUWithBTB::notifyResolveSuccess()
 }
 
 void
-DecoupledBPUWithBTB::notifyResolveFailure()
+DecoupledBPUWithBTB::notifyResolveFailure(ThreadID tid)
 {
+    assert(tid < numThreads);
     resolveDequeueFailCounter++;
     if (resolveDequeueFailCounter >= resolveBlockThreshold) {
-        blockPredictionOnce();
+        blockPredictionOnce(tid);
         resolveDequeueFailCounter = 0;
     }
 }
 
 void
-DecoupledBPUWithBTB::blockPredictionOnce()
+DecoupledBPUWithBTB::blockPredictionOnce(ThreadID tid)
 {
-    // smtTODO
-    threads[0].blockPredictionPending = true;
+    assert(tid < numThreads);
+    threads[tid].blockPredictionPending = true;
 }
 
 void

@@ -180,6 +180,7 @@ class Commit
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
 
     StallSignals* stallSig;
+    StallSignalBank* stallSignalBank = nullptr;
 
     bool robSquashHolding{false};
     /** Commit policy used in SMT mode. */
@@ -240,6 +241,7 @@ class Commit
     void setDecodeStage(Decode *decode_stage);
 
     void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
+    void setStallSignalBank(StallSignalBank* bank) { stallSignalBank = bank; }
 
     /** The pointer to the IEW stage. Used solely to ensure that
      * various events (traps, interrupts, syscalls) do not occur until
@@ -297,7 +299,8 @@ class Commit
     /** Handles any squashes that are sent from IEW, and adds instructions
      * to the ROB and tries to commit instructions.
      */
-    void commit();
+    void commit(const IEWStruct *iew_input,
+                const RenameStruct *rename_input);
 
     /** Returns the number of free ROB entries for a specific thread. */
     size_t numROBFreeEntries(ThreadID tid);
@@ -309,8 +312,93 @@ class Commit
      * external state update through the TC.
      */
     void generateTCEvent(ThreadID tid);
+    void probeFuturePrepare(Cycles cycle,
+                            const TimeStruct *snapshot_backward,
+                            const RenameStruct *snapshot_rename,
+                            const IEWStruct *snapshot_iew);
+    bool previewFutureIEWLatch(Cycles cycle,
+                               const TimeStruct *snapshot_backward,
+                               const RenameStruct *snapshot_rename,
+                               const IEWStruct *snapshot_iew,
+                               StallSignalLatch &commit_to_iew) const;
 
   private:
+    struct CommitPrepareInput
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID numThreads = 0;
+        unsigned fixedbufferSize[MaxThreads] = {};
+        unsigned robFreeEntries[MaxThreads] = {};
+        bool robStateBlock[MaxThreads] = {};
+        StallReason robHeadStallReason[MaxThreads] = {};
+    };
+
+    struct CommitPrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID selectedTid = InvalidThreadID;
+        unsigned activeThreads = 0;
+        unsigned blockedThreads = 0;
+        bool multipleActive = false;
+        bool robStateBlock[MaxThreads] = {};
+        bool robCapacityBlock[MaxThreads] = {};
+        bool block[MaxThreads] = {};
+        bool active[MaxThreads] = {};
+        bool iewBlock[MaxThreads] = {};
+        StallReason iewBlockReason[MaxThreads] = {};
+    };
+
+    struct CommitThreadPrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID tid = InvalidThreadID;
+        bool robStateBlock = false;
+        bool robCapacityBlock = false;
+        bool block = false;
+        bool active = false;
+        bool blocked = false;
+        bool iewBlock = false;
+        StallReason iewBlockReason = StallReason::NoStall;
+    };
+
+    struct CommitThreadPrepareResults
+    {
+        CommitThreadPrepareResult byThread[MaxThreads];
+    };
+
+    struct PendingFuturePrepare
+    {
+        bool valid = false;
+        CommitPrepareResult result;
+    };
+
+    PendingFuturePrepare pendingFuturePrepare;
+
+    void setIEWStall(ThreadID tid, bool block, StallReason reason);
+    void setIEWBlock(ThreadID tid, bool block);
+    const RenameStruct *renameInput(Cycles cycle) const;
+    const IEWStruct *iewInput(Cycles cycle) const;
+    CommitPrepareInput buildCommitPrepareInput(Cycles cycle) const;
+    CommitPrepareInput buildCommitPrepareInput(
+            Cycles cycle, const TimeStruct *snapshot_backward,
+            const RenameStruct *snapshot_rename) const;
+    CommitThreadPrepareResult prepareCommitThreadControl(
+            const CommitPrepareInput &input, ThreadID tid) const;
+    CommitPrepareResult combineCommitThreadPrepareResults(
+            const CommitPrepareInput &input,
+            const CommitThreadPrepareResults &thread_results) const;
+    CommitPrepareResult prepareCommitControl(
+            const CommitPrepareInput &input) const;
+    CommitPrepareResult runCommitPrepare(Cycles cycle);
+    void mergeCommitPrepareResult(const CommitPrepareResult &result,
+                                  bool countPrepareStats);
+    bool canProbeFuturePrepare(const TimeStruct *snapshot_backward,
+                               const RenameStruct *snapshot_rename,
+                               const IEWStruct *snapshot_iew) const;
+    bool samePrepareResult(const CommitPrepareResult &lhs,
+                           const CommitPrepareResult &rhs) const;
+    void checkFuturePrepareResult(const CommitPrepareResult &actual);
+
     /** Updates the overall status of commit with the nextStatus, and
      * tell the CPU if commit is active/inactive.
      */
@@ -323,16 +411,17 @@ class Commit
     bool changedROBEntries();
 
     /** Squashes all in flight instructions. */
-    void squashAll(ThreadID tid);
+    void squashAll(ThreadID tid, const RenameStruct *rename_input);
 
     /** Handles squashing due to a trap. */
-    void squashFromTrap(ThreadID tid);
+    void squashFromTrap(ThreadID tid, const RenameStruct *rename_input);
 
     /** Handles squashing due to an TC write. */
-    void squashFromTC(ThreadID tid);
+    void squashFromTC(ThreadID tid, const RenameStruct *rename_input);
 
     /** Handles a squash from a squashAfter() request. */
-    void squashFromSquashAfter(ThreadID tid);
+    void squashFromSquashAfter(ThreadID tid,
+                               const RenameStruct *rename_input);
 
     /**
      * Handle squashing from instruction with SquashAfter set.
@@ -381,13 +470,14 @@ class Commit
     bool commitHead(const DynInstPtr &head_inst, unsigned inst_num);
 
     /** Gets instructions from rename and inserts them into the ROB. */
-    void moveInstsToBuffer();
+    void moveInstsToBuffer(const RenameStruct *rename_input);
 
     /** Squash instructions in the rename to ROB TimeBuffer. */
-    void squashInflightAndUpdateVersion(ThreadID tid);
+    void squashInflightAndUpdateVersion(ThreadID tid,
+                                        const RenameStruct *rename_input);
 
     /** Marks completed instructions using information sent from IEW. */
-    void markCompletedInsts();
+    void markCompletedInsts(const IEWStruct *iew_input);
 
     /** Gets the thread to commit, based on the SMT policy. */
     ThreadID getCommittingThread();
@@ -623,6 +713,27 @@ class Commit
 
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
+        /** Number of commit prepare tasks submitted. */
+        statistics::Scalar prepareTasks;
+        /** Number of commit prepare results merged. */
+        statistics::Scalar prepareMerges;
+        /** Number of active threads seen by commit prepare. */
+        statistics::Scalar prepareActiveThreads;
+        /** Number of blocked threads seen by commit prepare. */
+        statistics::Scalar prepareBlockedThreads;
+        /** Empty commit thread prepare slots evaluated inline by owner. */
+        statistics::Scalar prepareInlineEmptyThreads;
+        /** Number of cycles where commit prepare saw multiple active threads. */
+        statistics::Scalar prepareMultipleActive;
+        statistics::Scalar futurePrepareProbes;
+        statistics::Scalar futurePrepareSkipped;
+        statistics::Scalar futurePrepareMerges;
+        statistics::Scalar futurePrepareReuses;
+        statistics::Scalar futurePrepareInlineEmptyThreads;
+        statistics::Scalar futurePrepareChecks;
+        statistics::Scalar futurePrepareMatches;
+        statistics::Scalar futurePrepareMismatches;
+        statistics::Scalar futurePrepareStale;
         /** Number of load get the same pc && addr && value*/
         statistics::Scalar loadTriple;
         statistics::Scalar loadEAReused;
@@ -654,6 +765,8 @@ class Commit
     std::map<Addr, unsigned> misPredIndirect;
 
     ArchDBer *archDBer;
+
+    CommitPrepareResult lastPrepareResult;
 
     // Trace-mode commit stream index per thread: expected next trace instruction index
     uint64_t traceCommitIndex[MaxThreads] = {0};

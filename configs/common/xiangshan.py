@@ -419,6 +419,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     np = args.num_cpus
     # Set the cache line size for the entire system
     test_sys.cache_line_size = args.cacheline_size
+    Simulation.setTaskParallelOptions(test_sys, args)
 
     # Create a top-level voltage domain
     test_sys.voltage_domain = VoltageDomain(voltage = args.sys_voltage)

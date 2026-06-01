@@ -45,7 +45,9 @@
 
 #include "cpu/o3/iew.hh"
 
+#include <algorithm>
 #include <cassert>
+#include <memory>
 #include <queue>
 
 #include "arch/riscv/pcstate.hh"
@@ -76,6 +78,490 @@ namespace gem5
 
 namespace o3
 {
+
+namespace
+{
+
+constexpr unsigned NumIEWFutureInputSkipReasons = 4;
+constexpr unsigned NumIEWFutureInputCommitControlReasons = 6;
+constexpr unsigned NumIEWFutureInputAllowedCommitProgressReasons = 2;
+constexpr unsigned NumIEWDispatchDrainPreviewSkipReasons = 3;
+constexpr unsigned NumIEWFutureDispatchPreviewDifferenceReasons = 9;
+constexpr unsigned NumIEWDispatchOutputSnapshotFields = 8;
+constexpr unsigned NumIEWFutureDispatchOutputPublishabilityReasons = 6;
+constexpr unsigned NumIEWFutureRenameLatchPreviewDifferenceReasons = 2;
+constexpr unsigned NumIEWFutureDispatchBlockTokenDifferenceFields = 9;
+constexpr unsigned
+    NumIEWFutureDispatchPreviewDispatchedBeforeBlockDiffDirections = 2;
+constexpr unsigned NumIEWFutureDispatchPreviewDrainedDiffDirections = 2;
+
+enum IEWFutureInputSkipReason : uint8_t
+{
+    IEWFutureInputMissingSnapshot,
+    IEWFutureInputNoActiveThreads,
+    IEWFutureInputCommitControl,
+    IEWFutureInputCommitProgressWithLDSTBlock,
+};
+
+enum IEWFutureInputCommitControlReason : uint8_t
+{
+    IEWFutureInputCommitSquash,
+    IEWFutureInputCommitRobSquashing,
+    IEWFutureInputCommitDoneSeqNum,
+    IEWFutureInputCommitDoneMemSeqNum,
+    IEWFutureInputCommitNonSpecSeqNum,
+    IEWFutureInputCommitStrictlyOrdered,
+};
+
+enum IEWFutureInputAllowedCommitProgressReason : uint8_t
+{
+    IEWFutureInputAllowedDoneSeqNum,
+    IEWFutureInputAllowedDoneMemSeqNum,
+};
+
+enum IEWDispatchDrainPreviewSkipReason : uint8_t
+{
+    IEWDispatchDrainPreviewDispatchQueue,
+    IEWDispatchDrainPreviewSplitStore,
+    IEWDispatchDrainPreviewNeedsSchedulerOrResource,
+};
+
+enum IEWFutureDispatchPreviewDifferenceReason : uint8_t
+{
+    IEWFutureDispatchPreviewActualMissing,
+    IEWFutureDispatchPreviewValid,
+    IEWFutureDispatchPreviewTid,
+    IEWFutureDispatchPreviewVisibleInsts,
+    IEWFutureDispatchPreviewDispatchedBeforeBlock,
+    IEWFutureDispatchPreviewDrained,
+    IEWFutureDispatchPreviewBlockReason,
+    IEWFutureDispatchPreviewSchedulerBlockReason,
+    IEWFutureDispatchPreviewOther,
+};
+
+enum IEWFutureDispatchPreviewDispatchedBeforeBlockDiffDirection : uint8_t
+{
+    IEWFutureDispatchPreviewFutureLess,
+    IEWFutureDispatchPreviewFutureGreater,
+};
+
+enum IEWFutureDispatchPreviewDrainedDiffDirection : uint8_t
+{
+    IEWFutureDispatchPreviewFutureBlockedActualDrained,
+    IEWFutureDispatchPreviewFutureDrainedActualBlocked,
+};
+
+enum IEWDispatchOutputSnapshotField : uint8_t
+{
+    IEWDispatchOutputFixedBufferPops,
+    IEWDispatchOutputSquashedPops,
+    IEWDispatchOutputIQInserts,
+    IEWDispatchOutputLQInserts,
+    IEWDispatchOutputSQInserts,
+    IEWDispatchOutputNonSpecInserts,
+    IEWDispatchOutputBarrierInserts,
+    IEWDispatchOutputProducerAdds,
+};
+
+enum IEWFutureDispatchOutputPublishability : uint8_t
+{
+    IEWFutureDispatchOutputActualMissing,
+    IEWFutureDispatchOutputPreviewDifferent,
+    IEWFutureDispatchOutputOutputDifferent,
+    IEWFutureDispatchOutputStableDrained,
+    IEWFutureDispatchOutputStableBlockedNoSideEffect,
+    IEWFutureDispatchOutputStableBlockedSideEffect,
+};
+
+enum IEWFutureRenameLatchPreviewDifferenceReason : uint8_t
+{
+    IEWFutureRenameLatchPreviewBlock,
+    IEWFutureRenameLatchPreviewReason,
+};
+
+enum IEWFutureDispatchBlockTokenDifferenceField : uint8_t
+{
+    IEWFutureDispatchBlockTokenValid,
+    IEWFutureDispatchBlockTokenReason,
+    IEWFutureDispatchBlockTokenIQIndex,
+    IEWFutureDispatchBlockTokenSelector,
+    IEWFutureDispatchBlockTokenOpClass,
+    IEWFutureDispatchBlockTokenDispSeq,
+    IEWFutureDispatchBlockTokenFreeEntries,
+    IEWFutureDispatchBlockTokenFreeInports,
+    IEWFutureDispatchBlockTokenReplayBlocked,
+};
+
+const char *
+iewFutureInputSkipReasonName(unsigned reason)
+{
+    switch (reason) {
+      case IEWFutureInputMissingSnapshot:
+        return "MissingSnapshot";
+      case IEWFutureInputNoActiveThreads:
+        return "NoActiveThreads";
+      case IEWFutureInputCommitControl:
+        return "CommitControl";
+      case IEWFutureInputCommitProgressWithLDSTBlock:
+        return "CommitProgressWithLDSTBlock";
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureInputCommitControlReasonName(unsigned reason)
+{
+    switch (reason) {
+      case IEWFutureInputCommitSquash:
+        return "Squash";
+      case IEWFutureInputCommitRobSquashing:
+        return "RobSquashing";
+      case IEWFutureInputCommitDoneSeqNum:
+        return "DoneSeqNum";
+      case IEWFutureInputCommitDoneMemSeqNum:
+        return "DoneMemSeqNum";
+      case IEWFutureInputCommitNonSpecSeqNum:
+        return "NonSpecSeqNum";
+      case IEWFutureInputCommitStrictlyOrdered:
+        return "StrictlyOrdered";
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureInputAllowedCommitProgressReasonName(unsigned reason)
+{
+    switch (reason) {
+      case IEWFutureInputAllowedDoneSeqNum:
+        return "DoneSeqNum";
+      case IEWFutureInputAllowedDoneMemSeqNum:
+        return "DoneMemSeqNum";
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewDispatchDrainPreviewSkipReasonName(unsigned reason)
+{
+    switch (reason) {
+      case IEWDispatchDrainPreviewDispatchQueue:
+        return "DispatchQueue";
+      case IEWDispatchDrainPreviewSplitStore:
+        return "SplitStore";
+      case IEWDispatchDrainPreviewNeedsSchedulerOrResource:
+        return "NeedsSchedulerOrResource";
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureDispatchPreviewDifferenceReasonName(unsigned reason)
+{
+    switch (reason) {
+      case IEWFutureDispatchPreviewActualMissing:
+        return "ActualMissing";
+      case IEWFutureDispatchPreviewValid:
+        return "Valid";
+      case IEWFutureDispatchPreviewTid:
+        return "Tid";
+      case IEWFutureDispatchPreviewVisibleInsts:
+        return "VisibleInsts";
+      case IEWFutureDispatchPreviewDispatchedBeforeBlock:
+        return "DispatchedBeforeBlock";
+      case IEWFutureDispatchPreviewDrained:
+        return "Drained";
+      case IEWFutureDispatchPreviewBlockReason:
+        return "BlockReason";
+      case IEWFutureDispatchPreviewSchedulerBlockReason:
+        return "SchedulerBlockReason";
+      case IEWFutureDispatchPreviewOther:
+        return "Other";
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureDispatchPreviewDispatchedBeforeBlockDiffDirectionName(
+        unsigned reason)
+{
+    switch (reason) {
+      case IEWFutureDispatchPreviewFutureLess:
+        return "FutureLess";
+      case IEWFutureDispatchPreviewFutureGreater:
+        return "FutureGreater";
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureDispatchPreviewDrainedDiffDirectionName(unsigned direction)
+{
+    switch (direction) {
+      case IEWFutureDispatchPreviewFutureBlockedActualDrained:
+        return "FutureBlockedActualDrained";
+      case IEWFutureDispatchPreviewFutureDrainedActualBlocked:
+        return "FutureDrainedActualBlocked";
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewDispatchOutputSnapshotFieldName(unsigned field)
+{
+    switch (field) {
+      case IEWDispatchOutputFixedBufferPops:
+        return "FixedBufferPops";
+      case IEWDispatchOutputSquashedPops:
+        return "SquashedPops";
+      case IEWDispatchOutputIQInserts:
+        return "IQInserts";
+      case IEWDispatchOutputLQInserts:
+        return "LQInserts";
+      case IEWDispatchOutputSQInserts:
+        return "SQInserts";
+      case IEWDispatchOutputNonSpecInserts:
+        return "NonSpecInserts";
+      case IEWDispatchOutputBarrierInserts:
+        return "BarrierInserts";
+      case IEWDispatchOutputProducerAdds:
+        return "ProducerAdds";
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureDispatchOutputPublishabilityName(unsigned reason)
+{
+    switch (reason) {
+      case IEWFutureDispatchOutputActualMissing:
+        return "ActualMissing";
+      case IEWFutureDispatchOutputPreviewDifferent:
+        return "PreviewDifferent";
+      case IEWFutureDispatchOutputOutputDifferent:
+        return "OutputDifferent";
+      case IEWFutureDispatchOutputStableDrained:
+        return "StableDrained";
+      case IEWFutureDispatchOutputStableBlockedNoSideEffect:
+        return "StableBlockedNoSideEffect";
+      case IEWFutureDispatchOutputStableBlockedSideEffect:
+        return "StableBlockedSideEffect";
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureRenameLatchPreviewDifferenceReasonName(unsigned reason)
+{
+    switch (reason) {
+      case IEWFutureRenameLatchPreviewBlock:
+        return "Block";
+      case IEWFutureRenameLatchPreviewReason:
+        return "Reason";
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureDispatchBlockTokenDifferenceFieldName(unsigned field)
+{
+    switch (field) {
+      case IEWFutureDispatchBlockTokenValid:
+        return "Valid";
+      case IEWFutureDispatchBlockTokenReason:
+        return "Reason";
+      case IEWFutureDispatchBlockTokenIQIndex:
+        return "IQIndex";
+      case IEWFutureDispatchBlockTokenSelector:
+        return "Selector";
+      case IEWFutureDispatchBlockTokenOpClass:
+        return "OpClass";
+      case IEWFutureDispatchBlockTokenDispSeq:
+        return "DispSeq";
+      case IEWFutureDispatchBlockTokenFreeEntries:
+        return "FreeEntries";
+      case IEWFutureDispatchBlockTokenFreeInports:
+        return "FreeInports";
+      case IEWFutureDispatchBlockTokenReplayBlocked:
+        return "ReplayBlocked";
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFuturePreviewSkipReasonName(unsigned reason)
+{
+    using Reason = IEW::FuturePreviewSkipReason;
+
+    switch (static_cast<Reason>(reason)) {
+      case Reason::ActiveDispatch:
+        return "ActiveDispatch";
+      case Reason::MultipleActive:
+        return "MultipleActive";
+      case Reason::NumReasons:
+        break;
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureActiveDispatchSourceName(unsigned source)
+{
+    using Source = IEW::FutureActiveDispatchSource;
+
+    switch (static_cast<Source>(source)) {
+      case Source::ExistingFixedBuffer:
+        return "ExistingFixedBuffer";
+      case Source::RenameInput:
+        return "RenameInput";
+      case Source::Mixed:
+        return "Mixed";
+      case Source::Unknown:
+        return "Unknown";
+      case Source::NumSources:
+        break;
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureActiveDispatchModeName(unsigned mode)
+{
+    using Mode = IEW::FutureActiveDispatchMode;
+
+    switch (static_cast<Mode>(mode)) {
+      case Mode::DirectIssue:
+        return "DirectIssue";
+      case Mode::DispatchQueue:
+        return "DispatchQueue";
+      case Mode::NumModes:
+        break;
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureActiveDispatchPreviewOutcomeName(unsigned outcome)
+{
+    using Outcome = IEW::FutureActiveDispatchPreviewOutcome;
+
+    switch (static_cast<Outcome>(outcome)) {
+      case Outcome::Skipped:
+        return "Skipped";
+      case Outcome::DrainedNoResource:
+        return "DrainedNoResource";
+      case Outcome::DrainedWithResources:
+        return "DrainedWithResources";
+      case Outcome::BlockedWithResources:
+        return "BlockedWithResources";
+      case Outcome::NumOutcomes:
+        break;
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureActiveDispatchPreviewBlockReasonName(unsigned reason)
+{
+    using Reason = IEW::FutureActiveDispatchPreviewBlockReason;
+
+    switch (static_cast<Reason>(reason)) {
+      case Reason::BuildInputFailed:
+        return "BuildInputFailed";
+      case Reason::InvalidPreview:
+        return "InvalidPreview";
+      case Reason::UnsupportedTokens:
+        return "UnsupportedTokens";
+      case Reason::SerializeBlocked:
+        return "SerializeBlocked";
+      case Reason::LQFull:
+        return "LQFull";
+      case Reason::SQFull:
+        return "SQFull";
+      case Reason::SchedulerNotReady:
+        return "SchedulerNotReady";
+      case Reason::NumReasons:
+        break;
+    }
+
+    return "Unknown";
+}
+
+const char *
+iewFutureDispatchSchedulerBlockReasonName(unsigned reason)
+{
+    using Reason = IEW::FutureDispatchSchedulerBlockReason;
+
+    switch (static_cast<Reason>(reason)) {
+      case Reason::NoBlock:
+        return "NoBlock";
+      case Reason::InvalidState:
+        return "InvalidState";
+      case Reason::InvalidOp:
+        return "InvalidOp";
+      case Reason::InvalidDispSeq:
+        return "InvalidDispSeq";
+      case Reason::InvalidSelector:
+        return "InvalidSelector";
+      case Reason::ReplayBlocked:
+        return "ReplayBlocked";
+      case Reason::IQFull:
+        return "IQFull";
+      case Reason::InportFull:
+        return "InportFull";
+      case Reason::NumReasons:
+        break;
+    }
+
+    return "Unknown";
+}
+
+IEW::FutureDispatchSchedulerBlockReason
+iewFutureDispatchSchedulerBlockReason(
+        DispatchTokenBlockReason reason)
+{
+    using IEWReason = IEW::FutureDispatchSchedulerBlockReason;
+    using SchedulerReason = DispatchTokenBlockReason;
+
+    switch (reason) {
+      case SchedulerReason::NoBlock:
+        return IEWReason::NoBlock;
+      case SchedulerReason::InvalidState:
+        return IEWReason::InvalidState;
+      case SchedulerReason::InvalidOp:
+        return IEWReason::InvalidOp;
+      case SchedulerReason::InvalidDispSeq:
+        return IEWReason::InvalidDispSeq;
+      case SchedulerReason::InvalidSelector:
+        return IEWReason::InvalidSelector;
+      case SchedulerReason::ReplayBlocked:
+        return IEWReason::ReplayBlocked;
+      case SchedulerReason::IQFull:
+        return IEWReason::IQFull;
+      case SchedulerReason::InportFull:
+        return IEWReason::InportFull;
+      case SchedulerReason::NumReasons:
+        break;
+    }
+
+    return IEWReason::NumReasons;
+}
+
+} // anonymous namespace
 
 IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     : dqSize(params.numDQEntries),
@@ -169,6 +655,249 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of instructions dispatched to IQ"),
     ADD_STAT(dispSquashedInsts, statistics::units::Count::get(),
              "Number of squashed instructions skipped by dispatch"),
+    ADD_STAT(prepareTasks, statistics::units::Count::get(),
+             "Number of IEW prepare tasks submitted"),
+    ADD_STAT(prepareMerges, statistics::units::Count::get(),
+             "Number of IEW prepare results merged"),
+    ADD_STAT(prepareActiveThreads, statistics::units::Count::get(),
+             "Accumulated active thread count seen by IEW prepare"),
+    ADD_STAT(prepareBlockedThreads, statistics::units::Count::get(),
+             "Accumulated blocked thread count seen by IEW prepare"),
+    ADD_STAT(prepareInlineEmptyThreads, statistics::units::Count::get(),
+             "Accumulated empty-thread count evaluated inline by IEW prepare"),
+    ADD_STAT(prepareMultipleActive, statistics::units::Count::get(),
+             "Number of times IEW prepare saw multiple active threads"),
+    ADD_STAT(futurePrepareProbes, statistics::units::Count::get(),
+             "Number of future IEW prepare probes submitted"),
+    ADD_STAT(futurePrepareSkipped, statistics::units::Count::get(),
+             "Number of future IEW prepare probes skipped"),
+    ADD_STAT(futureInputSkipReasons, statistics::units::Count::get(),
+             "Breakdown of why future IEW prepare input construction was "
+             "not safe"),
+    ADD_STAT(futureInputCommitControlReasons,
+             statistics::units::Count::get(),
+             "Breakdown of which commit control field blocked future IEW "
+             "prepare input construction"),
+    ADD_STAT(futureInputAllowedCommitProgress,
+             statistics::units::Count::get(),
+             "Occurrences of commit progress fields accepted by future IEW "
+             "prepare input construction"),
+    ADD_STAT(futurePreviewSkipReasons,
+             statistics::units::Count::get(),
+             "Breakdown of why future IEW preview could not safely predict "
+             "the IEW-to-Rename latch"),
+    ADD_STAT(futureActiveDispatchSources,
+             statistics::units::Count::get(),
+             "Source of active dispatches that blocked future IEW preview"),
+    ADD_STAT(futureActiveDispatchModes,
+             statistics::units::Count::get(),
+             "Dispatch mode for active dispatches that blocked future IEW "
+             "preview"),
+    ADD_STAT(futureActiveDispatchPreviewOutcomes,
+             statistics::units::Count::get(),
+             "Preview outcome for active dispatches seen by future IEW "
+             "preview"),
+    ADD_STAT(futureActiveDispatchPreviewBlockReasons,
+             statistics::units::Count::get(),
+             "Block reason for skipped active dispatches seen by future IEW "
+             "preview"),
+    ADD_STAT(futureActiveDispatchSchedulerBlockReasons,
+             statistics::units::Count::get(),
+             "Scheduler token reason for future SchedulerNotReady dispatch "
+             "previews"),
+    ADD_STAT(futureActiveDispatchInsts,
+             statistics::units::Count::get(),
+             "Visible instruction count for active dispatches seen by "
+             "future IEW preview"),
+    ADD_STAT(futurePrepareMerges, statistics::units::Count::get(),
+             "Number of future IEW prepare results merged"),
+    ADD_STAT(futurePrepareReuses, statistics::units::Count::get(),
+             "Number of future IEW prepare results reused"),
+    ADD_STAT(futurePrepareChecks, statistics::units::Count::get(),
+             "Number of future IEW prepare results checked"),
+    ADD_STAT(futurePrepareMatches, statistics::units::Count::get(),
+             "Number of future IEW prepare checks that matched"),
+    ADD_STAT(futurePrepareMismatches, statistics::units::Count::get(),
+             "Number of future IEW prepare checks that mismatched"),
+    ADD_STAT(futurePrepareStale, statistics::units::Count::get(),
+             "Number of stale future IEW prepare results"),
+    ADD_STAT(dispatchStatusPrepareTasks, statistics::units::Count::get(),
+             "Number of IEW dispatch status prepare tasks submitted"),
+    ADD_STAT(dispatchStatusPrepareMerges, statistics::units::Count::get(),
+             "Number of IEW dispatch status prepare results merged"),
+    ADD_STAT(dispatchStatusPrepareMismatches,
+             statistics::units::Count::get(),
+             "Number of IEW dispatch status prepare validation mismatches"),
+    ADD_STAT(dispatchDrainPreviewProbes, statistics::units::Count::get(),
+             "Number of direct-dispatch drain previews built"),
+    ADD_STAT(dispatchDrainPreviewSkipped, statistics::units::Count::get(),
+             "Number of direct-dispatch drain previews skipped"),
+    ADD_STAT(dispatchDrainPreviewSkipReasons,
+             statistics::units::Count::get(),
+             "Breakdown of why direct-dispatch drain preview was skipped"),
+    ADD_STAT(dispatchDrainPreviewMatches, statistics::units::Count::get(),
+             "Number of direct-dispatch drain preview checks that matched"),
+    ADD_STAT(dispatchDrainPreviewMismatches, statistics::units::Count::get(),
+             "Number of direct-dispatch drain preview checks that mismatched"),
+    ADD_STAT(dispatchDrainPreviewStallReasonMatches,
+             statistics::units::Count::get(),
+             "Number of blocked direct-dispatch drain preview stall reasons "
+             "that matched"),
+    ADD_STAT(dispatchDrainPreviewStallReasonMismatches,
+             statistics::units::Count::get(),
+             "Number of blocked direct-dispatch drain preview stall reasons "
+             "that mismatched"),
+    ADD_STAT(dispatchDrainPreviewStallReasonSideEffectSkips,
+             statistics::units::Count::get(),
+             "Number of blocked direct-dispatch drain preview stall reason "
+             "checks skipped after previewed dispatch side effects"),
+    ADD_STAT(dispatchOutputSnapshotChecks,
+             statistics::units::Count::get(),
+             "Number of current-cycle direct-dispatch output snapshots "
+             "checked"),
+    ADD_STAT(dispatchOutputSnapshotMatches,
+             statistics::units::Count::get(),
+             "Number of current-cycle direct-dispatch output snapshots "
+             "matching actual dispatch side effects"),
+    ADD_STAT(dispatchOutputSnapshotMismatches,
+             statistics::units::Count::get(),
+             "Number of current-cycle direct-dispatch output snapshots "
+             "mismatching actual dispatch side effects"),
+    ADD_STAT(dispatchOutputSnapshotMismatchFields,
+             statistics::units::Count::get(),
+             "Fields mismatching in current-cycle dispatch output snapshots"),
+    ADD_STAT(futureDispatchPreviewChecks,
+             statistics::units::Count::get(),
+             "Number of future direct-dispatch previews checked next cycle"),
+    ADD_STAT(futureDispatchPreviewMatches,
+             statistics::units::Count::get(),
+             "Number of future direct-dispatch previews matching "
+             "current-cycle preview"),
+    ADD_STAT(futureDispatchPreviewDifferences,
+             statistics::units::Count::get(),
+             "Number of future direct-dispatch previews differing from "
+             "current-cycle preview"),
+    ADD_STAT(futureDispatchPreviewDifferenceReasons,
+             statistics::units::Count::get(),
+             "Breakdown of future direct-dispatch preview differences"),
+    ADD_STAT(futureDispatchPreviewDispatchedBeforeBlockDiffDirections,
+             statistics::units::Count::get(),
+             "Direction of dispatched-before-block count differences in "
+             "future direct-dispatch preview checks"),
+    ADD_STAT(futureDispatchPreviewDrainedDiffDirections,
+             statistics::units::Count::get(),
+             "Direction of drained/block state differences in future "
+             "direct-dispatch preview checks"),
+    ADD_STAT(futureDispatchPreviewDispatchedBeforeBlockDelta,
+             statistics::units::Count::get(),
+             "Absolute dispatched-before-block count difference in future "
+             "direct-dispatch preview checks"),
+    ADD_STAT(futureDispatchOutputSnapshotChecks,
+             statistics::units::Count::get(),
+             "Number of future direct-dispatch output snapshots checked "
+             "next cycle"),
+    ADD_STAT(futureDispatchOutputSnapshotMatches,
+             statistics::units::Count::get(),
+             "Number of future direct-dispatch output snapshots matching "
+             "current-cycle preview"),
+    ADD_STAT(futureDispatchOutputSnapshotDifferences,
+             statistics::units::Count::get(),
+             "Number of future direct-dispatch output snapshots differing "
+             "from current-cycle preview"),
+    ADD_STAT(futureDispatchOutputSnapshotDifferenceFields,
+             statistics::units::Count::get(),
+             "Fields differing in future dispatch output snapshots"),
+    ADD_STAT(futureDispatchOutputPublishability,
+             statistics::units::Count::get(),
+             "Publishability classification for checked future dispatch "
+             "output snapshots"),
+    ADD_STAT(futureDispatchOutputStableBlockedReasons,
+             statistics::units::Count::get(),
+             "Block reason for stable future blocked dispatch output "
+             "snapshots"),
+    ADD_STAT(futureDispatchOutputStableBlockedSchedulerReasons,
+             statistics::units::Count::get(),
+             "Scheduler token reason for stable future SchedulerNotReady "
+             "dispatch output snapshots"),
+    ADD_STAT(futureDispatchOutputStableBlockedPops,
+             statistics::units::Count::get(),
+             "Fixedbuffer pops in stable future blocked dispatch output "
+             "snapshots"),
+    ADD_STAT(futureDispatchOutputPreviewDifferentReasons,
+             statistics::units::Count::get(),
+             "Expected block reason for future dispatch previews that "
+             "differed from the next-cycle current preview"),
+    ADD_STAT(futureDispatchOutputPreviewDifferentSchedulerReasons,
+             statistics::units::Count::get(),
+             "Expected scheduler token reason for future SchedulerNotReady "
+             "dispatch previews that differed from the next-cycle current "
+             "preview"),
+    ADD_STAT(futureDispatchOutputPreviewDifferentPops,
+             statistics::units::Count::get(),
+             "Expected fixedbuffer pops in future dispatch previews that "
+             "differed from the next-cycle current preview"),
+    ADD_STAT(futureDispatchBlockTokenChecks,
+             statistics::units::Count::get(),
+             "Number of future scheduler block token snapshots checked next "
+             "cycle"),
+    ADD_STAT(futureDispatchBlockTokenMatches,
+             statistics::units::Count::get(),
+             "Number of future scheduler block token snapshots matching "
+             "next-cycle current preview"),
+    ADD_STAT(futureDispatchBlockTokenDifferences,
+             statistics::units::Count::get(),
+             "Number of future scheduler block token snapshots differing "
+             "from next-cycle current preview"),
+    ADD_STAT(futureDispatchBlockTokenDifferenceFields,
+             statistics::units::Count::get(),
+             "Fields differing in future scheduler block token snapshots"),
+    ADD_STAT(futureDispatchBlockTokenMatchesByPublishability,
+             statistics::units::Count::get(),
+             "Future scheduler block token snapshot matches by dispatch "
+             "output publishability class"),
+    ADD_STAT(futureDispatchBlockTokenDifferencesByPublishability,
+             statistics::units::Count::get(),
+             "Future scheduler block token snapshot differences by dispatch "
+             "output publishability class"),
+    ADD_STAT(futureRenameLatchPreviewChecks,
+             statistics::units::Count::get(),
+             "Number of future IEW-to-Rename latch previews checked next "
+             "cycle"),
+    ADD_STAT(futureRenameLatchPreviewMatches,
+             statistics::units::Count::get(),
+             "Number of future IEW-to-Rename latch previews matching actual "
+             "latch"),
+    ADD_STAT(futureRenameLatchPreviewDifferences,
+             statistics::units::Count::get(),
+             "Number of future IEW-to-Rename latch previews differing from "
+             "actual latch"),
+    ADD_STAT(futureRenameLatchPreviewDifferenceReasons,
+             statistics::units::Count::get(),
+             "Breakdown of future IEW-to-Rename latch preview differences"),
+    ADD_STAT(futureRenameLatchPreviewMatchesByPublishability,
+             statistics::units::Count::get(),
+             "Future IEW-to-Rename latch preview matches by dispatch output "
+             "publishability class"),
+    ADD_STAT(futureRenameLatchPreviewDifferencesByPublishability,
+             statistics::units::Count::get(),
+             "Future IEW-to-Rename latch preview differences by dispatch "
+             "output publishability class"),
+    ADD_STAT(futureRenameLatchPreviewStale,
+             statistics::units::Count::get(),
+             "Number of future IEW-to-Rename latch previews discarded before "
+             "checking"),
+    ADD_STAT(futureDispatchPreviewStale,
+             statistics::units::Count::get(),
+             "Number of future direct-dispatch previews discarded before "
+             "checking"),
+    ADD_STAT(writebackPrepareTasks, statistics::units::Count::get(),
+             "Number of IEW writeback prepare tasks submitted"),
+    ADD_STAT(writebackPrepareMerges, statistics::units::Count::get(),
+             "Number of IEW writeback prepare results merged"),
+    ADD_STAT(writebackPrepareNoWork, statistics::units::Count::get(),
+             "Number of IEW writeback prepare cycles with no entries"),
+    ADD_STAT(writebackPrepareMismatches, statistics::units::Count::get(),
+             "Number of IEW writeback prepare validation mismatches"),
     ADD_STAT(dispLoadInsts, statistics::units::Count::get(),
              "Number of dispatched load instructions"),
     ADD_STAT(dispStoreInsts, statistics::units::Count::get(),
@@ -258,6 +987,245 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     for (int i = 0; i < StallEventCount; i++) {
         stallEvents.subname(i, stall_event_str[static_cast<StallEvent>(i)]);
     }
+
+    futureInputSkipReasons
+        .init(NumIEWFutureInputSkipReasons)
+        .flags(statistics::total);
+    for (unsigned i = 0; i < NumIEWFutureInputSkipReasons; ++i)
+        futureInputSkipReasons.subname(i, iewFutureInputSkipReasonName(i));
+
+    futureInputCommitControlReasons
+        .init(NumIEWFutureInputCommitControlReasons)
+        .flags(statistics::total);
+    for (unsigned i = 0; i < NumIEWFutureInputCommitControlReasons; ++i) {
+        futureInputCommitControlReasons.subname(
+            i, iewFutureInputCommitControlReasonName(i));
+    }
+
+    futureInputAllowedCommitProgress
+        .init(NumIEWFutureInputAllowedCommitProgressReasons)
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < NumIEWFutureInputAllowedCommitProgressReasons; ++i) {
+        futureInputAllowedCommitProgress.subname(
+            i, iewFutureInputAllowedCommitProgressReasonName(i));
+    }
+
+    futurePreviewSkipReasons
+        .init(static_cast<unsigned>(
+            IEW::FuturePreviewSkipReason::NumReasons))
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < static_cast<unsigned>(
+             IEW::FuturePreviewSkipReason::NumReasons); ++i) {
+        futurePreviewSkipReasons.subname(
+            i, iewFuturePreviewSkipReasonName(i));
+    }
+
+    futureActiveDispatchSources
+        .init(static_cast<unsigned>(
+            IEW::FutureActiveDispatchSource::NumSources))
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < static_cast<unsigned>(
+             IEW::FutureActiveDispatchSource::NumSources); ++i) {
+        futureActiveDispatchSources.subname(
+            i, iewFutureActiveDispatchSourceName(i));
+    }
+
+    futureActiveDispatchModes
+        .init(static_cast<unsigned>(
+            IEW::FutureActiveDispatchMode::NumModes))
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < static_cast<unsigned>(
+             IEW::FutureActiveDispatchMode::NumModes); ++i) {
+        futureActiveDispatchModes.subname(
+            i, iewFutureActiveDispatchModeName(i));
+    }
+
+    futureActiveDispatchPreviewOutcomes
+        .init(static_cast<unsigned>(
+            IEW::FutureActiveDispatchPreviewOutcome::NumOutcomes))
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < static_cast<unsigned>(
+             IEW::FutureActiveDispatchPreviewOutcome::NumOutcomes); ++i) {
+        futureActiveDispatchPreviewOutcomes.subname(
+            i, iewFutureActiveDispatchPreviewOutcomeName(i));
+    }
+
+    futureActiveDispatchPreviewBlockReasons
+        .init(static_cast<unsigned>(
+            IEW::FutureActiveDispatchPreviewBlockReason::NumReasons))
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < static_cast<unsigned>(
+             IEW::FutureActiveDispatchPreviewBlockReason::NumReasons); ++i) {
+        futureActiveDispatchPreviewBlockReasons.subname(
+            i, iewFutureActiveDispatchPreviewBlockReasonName(i));
+    }
+
+    futureActiveDispatchSchedulerBlockReasons
+        .init(static_cast<unsigned>(
+            IEW::FutureDispatchSchedulerBlockReason::NumReasons))
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < static_cast<unsigned>(
+             IEW::FutureDispatchSchedulerBlockReason::NumReasons); ++i) {
+        futureActiveDispatchSchedulerBlockReasons.subname(
+            i, iewFutureDispatchSchedulerBlockReasonName(i));
+    }
+
+    futureActiveDispatchInsts.init(0, MaxWidth + 1, 1)
+        .flags(statistics::nozero);
+
+    dispatchDrainPreviewSkipReasons
+        .init(NumIEWDispatchDrainPreviewSkipReasons)
+        .flags(statistics::total);
+    for (unsigned i = 0; i < NumIEWDispatchDrainPreviewSkipReasons; ++i) {
+        dispatchDrainPreviewSkipReasons.subname(
+            i, iewDispatchDrainPreviewSkipReasonName(i));
+    }
+
+    dispatchOutputSnapshotMismatchFields
+        .init(NumIEWDispatchOutputSnapshotFields)
+        .flags(statistics::total);
+    futureDispatchOutputSnapshotDifferenceFields
+        .init(NumIEWDispatchOutputSnapshotFields)
+        .flags(statistics::total);
+    for (unsigned i = 0; i < NumIEWDispatchOutputSnapshotFields; ++i) {
+        const char *name = iewDispatchOutputSnapshotFieldName(i);
+        dispatchOutputSnapshotMismatchFields.subname(i, name);
+        futureDispatchOutputSnapshotDifferenceFields.subname(i, name);
+    }
+
+    futureDispatchOutputPublishability
+        .init(NumIEWFutureDispatchOutputPublishabilityReasons)
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < NumIEWFutureDispatchOutputPublishabilityReasons; ++i) {
+        futureDispatchOutputPublishability.subname(
+            i, iewFutureDispatchOutputPublishabilityName(i));
+    }
+
+    futureDispatchOutputStableBlockedReasons
+        .init(static_cast<unsigned>(
+            IEW::FutureActiveDispatchPreviewBlockReason::NumReasons))
+        .flags(statistics::total);
+    futureDispatchOutputPreviewDifferentReasons
+        .init(static_cast<unsigned>(
+            IEW::FutureActiveDispatchPreviewBlockReason::NumReasons))
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < static_cast<unsigned>(
+             IEW::FutureActiveDispatchPreviewBlockReason::NumReasons); ++i) {
+        const char *name = iewFutureActiveDispatchPreviewBlockReasonName(i);
+        futureDispatchOutputStableBlockedReasons.subname(i, name);
+        futureDispatchOutputPreviewDifferentReasons.subname(i, name);
+    }
+
+    futureDispatchOutputStableBlockedSchedulerReasons
+        .init(static_cast<unsigned>(
+            IEW::FutureDispatchSchedulerBlockReason::NumReasons))
+        .flags(statistics::total);
+    futureDispatchOutputPreviewDifferentSchedulerReasons
+        .init(static_cast<unsigned>(
+            IEW::FutureDispatchSchedulerBlockReason::NumReasons))
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < static_cast<unsigned>(
+             IEW::FutureDispatchSchedulerBlockReason::NumReasons); ++i) {
+        const char *name = iewFutureDispatchSchedulerBlockReasonName(i);
+        futureDispatchOutputStableBlockedSchedulerReasons.subname(i, name);
+        futureDispatchOutputPreviewDifferentSchedulerReasons.subname(i, name);
+    }
+
+    futureDispatchOutputStableBlockedPops
+        .init(0, MaxWidth * 2 + 1, 1)
+        .flags(statistics::nozero);
+    futureDispatchOutputPreviewDifferentPops
+        .init(0, MaxWidth * 2 + 1, 1)
+        .flags(statistics::nozero);
+
+    futureDispatchBlockTokenDifferenceFields
+        .init(NumIEWFutureDispatchBlockTokenDifferenceFields)
+        .flags(statistics::total);
+    for (unsigned i = 0; i < NumIEWFutureDispatchBlockTokenDifferenceFields;
+         ++i) {
+        futureDispatchBlockTokenDifferenceFields.subname(
+            i, iewFutureDispatchBlockTokenDifferenceFieldName(i));
+    }
+
+    futureDispatchBlockTokenMatchesByPublishability
+        .init(NumIEWFutureDispatchOutputPublishabilityReasons)
+        .flags(statistics::total);
+    futureDispatchBlockTokenDifferencesByPublishability
+        .init(NumIEWFutureDispatchOutputPublishabilityReasons)
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < NumIEWFutureDispatchOutputPublishabilityReasons; ++i) {
+        const char *name = iewFutureDispatchOutputPublishabilityName(i);
+        futureDispatchBlockTokenMatchesByPublishability.subname(i, name);
+        futureDispatchBlockTokenDifferencesByPublishability.subname(i, name);
+    }
+
+    futureRenameLatchPreviewDifferenceReasons
+        .init(NumIEWFutureRenameLatchPreviewDifferenceReasons)
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < NumIEWFutureRenameLatchPreviewDifferenceReasons; ++i) {
+        futureRenameLatchPreviewDifferenceReasons.subname(
+            i, iewFutureRenameLatchPreviewDifferenceReasonName(i));
+    }
+
+    futureRenameLatchPreviewMatchesByPublishability
+        .init(NumIEWFutureDispatchOutputPublishabilityReasons)
+        .flags(statistics::total);
+    futureRenameLatchPreviewDifferencesByPublishability
+        .init(NumIEWFutureDispatchOutputPublishabilityReasons)
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < NumIEWFutureDispatchOutputPublishabilityReasons; ++i) {
+        const char *name = iewFutureDispatchOutputPublishabilityName(i);
+        futureRenameLatchPreviewMatchesByPublishability.subname(i, name);
+        futureRenameLatchPreviewDifferencesByPublishability.subname(
+            i, name);
+    }
+
+    futureDispatchPreviewDifferenceReasons
+        .init(NumIEWFutureDispatchPreviewDifferenceReasons)
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < NumIEWFutureDispatchPreviewDifferenceReasons; ++i) {
+        futureDispatchPreviewDifferenceReasons.subname(
+            i, iewFutureDispatchPreviewDifferenceReasonName(i));
+    }
+
+    futureDispatchPreviewDispatchedBeforeBlockDiffDirections
+        .init(NumIEWFutureDispatchPreviewDispatchedBeforeBlockDiffDirections)
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < NumIEWFutureDispatchPreviewDispatchedBeforeBlockDiffDirections;
+         ++i) {
+        futureDispatchPreviewDispatchedBeforeBlockDiffDirections.subname(
+            i,
+            iewFutureDispatchPreviewDispatchedBeforeBlockDiffDirectionName(
+                i));
+    }
+
+    futureDispatchPreviewDrainedDiffDirections
+        .init(NumIEWFutureDispatchPreviewDrainedDiffDirections)
+        .flags(statistics::total);
+    for (unsigned i = 0;
+         i < NumIEWFutureDispatchPreviewDrainedDiffDirections; ++i) {
+        futureDispatchPreviewDrainedDiffDirections.subname(
+                i, iewFutureDispatchPreviewDrainedDiffDirectionName(i));
+    }
+
+    futureDispatchPreviewDispatchedBeforeBlockDelta
+        .init(0, MaxWidth * 2 + 1, 1)
+        .flags(statistics::nozero);
 
     fetchStallReason
             .init(NumStallReasons)
@@ -522,13 +1490,2088 @@ IEW::takeOverFrom()
 }
 
 void
-IEW::squash(ThreadID tid)
+IEW::setRenameStall(ThreadID tid, bool block, StallReason reason)
+{
+    if (stallSignalBank) {
+        stallSignalBank->set(StallSignalEdge::IEWToRename, tid, block,
+                             reason);
+    } else {
+        stallSig->blockRename[tid] = block;
+        stallSig->renameBlockReason[tid] = reason;
+    }
+    cpu->getTaskRuntime().recordStallSignalMerge(
+            static_cast<unsigned>(StallSignalEdge::IEWToRename), 1);
+}
+
+void
+IEW::setRenameBlock(ThreadID tid, bool block)
+{
+    if (stallSignalBank) {
+        stallSignalBank->setBlock(StallSignalEdge::IEWToRename, tid, block);
+    } else {
+        stallSig->blockRename[tid] = block;
+    }
+    cpu->getTaskRuntime().recordStallSignalMerge(
+            static_cast<unsigned>(StallSignalEdge::IEWToRename), 1);
+}
+
+IEW::IEWPrepareInput
+IEW::buildIEWPrepareInput(Cycles cycle,
+                          const StallSignalLatch *commit_to_iew_override,
+                          const RenameStruct *snapshot_rename,
+                          bool reset_lsq_pop_entries)
+{
+    IEWPrepareInput input;
+    input.cycle = cycle;
+    input.numThreads = numThreads;
+    input.dispatchStageEnabled = enableDispatchStage;
+
+    const StallSignalLatch *commit_to_iew =
+        commit_to_iew_override ? commit_to_iew_override :
+        (stallSignalBank ?
+        &cpu->stallSignalSnapshotOrCurrent(
+                cycle, StallSignalEdge::CommitToIEW) :
+        nullptr);
+
+    for (int tid = 0; tid < numThreads; ++tid) {
+        input.fixedbufferSize[tid] = fixedbuffer[tid].size();
+        for (const auto &inst : fixedbuffer[tid]) {
+            if (inst && inst->isSquashed())
+                ++input.fixedbufferSquashedInsts[tid];
+        }
+        if (snapshot_rename && snapshot_rename->size > 0) {
+            const int renamed_insts =
+                std::min(snapshot_rename->size, MaxWidth);
+            for (int i = 0; i < renamed_insts; ++i) {
+                const DynInstPtr &inst = snapshot_rename->insts[i];
+                if (inst && !inst->isSquashed() &&
+                    inst->threadNumber == tid) {
+                    ++input.renameInputInsts[tid];
+                }
+            }
+        }
+        const bool fixedbuffer_empty =
+            input.fixedbufferSize[tid] == 0 &&
+            input.renameInputInsts[tid] == 0;
+        input.fixedbufferEmpty[tid] = fixedbuffer_empty;
+        input.commitToIEW.block[tid] =
+            commit_to_iew ? commit_to_iew->block[tid] :
+                            stallSig->blockIEW[tid];
+        input.commitToIEW.reason[tid] =
+            commit_to_iew ? commit_to_iew->reason[tid] :
+                            stallSig->iewBlockReason[tid];
+        input.ldstCanInsert[tid] =
+            canInsertLDSTQue(tid, reset_lsq_pop_entries);
+        input.ldstBlockReason[tid] = StallReason::NoStall;
+        if (!input.ldstCanInsert[tid]) {
+            input.ldstBlockReason[tid] =
+                checkDispatchStall(tid, NumDQ, nullptr, -1);
+            if (input.ldstBlockReason[tid] == StallReason::NoStall)
+                input.ldstBlockReason[tid] = StallReason::OtherStall;
+        }
+    }
+
+    return input;
+}
+
+IEW::IEWThreadPrepareResult
+IEW::prepareIEWThreadControl(const IEWPrepareInput &input,
+                             ThreadID tid) const
+{
+    IEWThreadPrepareResult result;
+    result.cycle = input.cycle;
+    result.tid = tid;
+
+    const bool commit_block = input.commitToIEW.block[tid];
+    const bool ldst_block = !input.ldstCanInsert[tid];
+    const bool block = commit_block || ldst_block;
+    const bool active = !block && !input.fixedbufferEmpty[tid];
+    StallReason block_reason = StallReason::NoStall;
+
+    if (commit_block) {
+        block_reason = input.commitToIEW.reason[tid];
+    } else if (ldst_block) {
+        block_reason = input.ldstBlockReason[tid];
+    }
+
+    result.commitBlock = commit_block;
+    result.ldstBlock = ldst_block;
+    result.block = block;
+    result.active = active;
+    result.blocked = block;
+    result.renameBlock = block;
+    result.renameBlockReason = block ? block_reason : StallReason::NoStall;
+
+    return result;
+}
+
+IEW::IEWPrepareResult
+IEW::combineIEWThreadPrepareResults(
+        const IEWPrepareInput &input,
+        const IEWThreadPrepareResults &thread_results) const
+{
+    IEWPrepareResult result;
+    result.cycle = input.cycle;
+
+    for (int tid = 0; tid < input.numThreads; ++tid) {
+        const auto &thread_result = thread_results.byThread[tid];
+
+        result.commitBlock[tid] = thread_result.commitBlock;
+        result.ldstBlock[tid] = thread_result.ldstBlock;
+        result.block[tid] = thread_result.block;
+        result.active[tid] = thread_result.active;
+        result.renameBlock[tid] = thread_result.renameBlock;
+        result.renameBlockReason[tid] = thread_result.renameBlockReason;
+
+        if (thread_result.active) {
+            ++result.activeThreads;
+            if (result.selectedTid == InvalidThreadID) {
+                result.selectedTid = tid;
+            } else {
+                result.multipleActive = true;
+                result.renameBlock[result.selectedTid] = true;
+                result.renameBlock[tid] = true;
+            }
+        } else if (thread_result.blocked) {
+            ++result.blockedThreads;
+        }
+    }
+
+    return result;
+}
+
+IEW::IEWPrepareResult
+IEW::prepareIEWControl(const IEWPrepareInput &input) const
+{
+    IEWThreadPrepareResults thread_results;
+    for (int tid = 0; tid < input.numThreads; ++tid) {
+        thread_results.byThread[tid] =
+            prepareIEWThreadControl(input, static_cast<ThreadID>(tid));
+    }
+
+    return combineIEWThreadPrepareResults(input, thread_results);
+}
+
+void
+IEW::mergeIEWPrepareResult(const IEWPrepareResult &result,
+                           bool countPrepareStats)
+{
+    lastPrepareResult = result;
+
+    if (countPrepareStats) {
+        iewStats.prepareMerges++;
+        iewStats.prepareActiveThreads += result.activeThreads;
+        iewStats.prepareBlockedThreads += result.blockedThreads;
+        if (result.multipleActive)
+            iewStats.prepareMultipleActive++;
+    }
+}
+
+bool
+IEW::samePrepareResult(const IEWPrepareResult &lhs,
+                       const IEWPrepareResult &rhs) const
+{
+    if (lhs.cycle != rhs.cycle ||
+        lhs.selectedTid != rhs.selectedTid ||
+        lhs.activeThreads != rhs.activeThreads ||
+        lhs.blockedThreads != rhs.blockedThreads ||
+        lhs.multipleActive != rhs.multipleActive) {
+        return false;
+    }
+
+    for (int tid = 0; tid < numThreads; ++tid) {
+        if (lhs.commitBlock[tid] != rhs.commitBlock[tid] ||
+            lhs.ldstBlock[tid] != rhs.ldstBlock[tid] ||
+            lhs.block[tid] != rhs.block[tid] ||
+            lhs.active[tid] != rhs.active[tid] ||
+            lhs.renameBlock[tid] != rhs.renameBlock[tid] ||
+            lhs.renameBlockReason[tid] != rhs.renameBlockReason[tid]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+IEW::IEWPrepareResult
+IEW::runIEWPrepare(Cycles cycle)
+{
+    auto input = std::make_shared<IEWPrepareInput>(
+            buildIEWPrepareInput(cycle));
+    auto result = std::make_shared<IEWPrepareResult>();
+
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled()) {
+        *result = prepareIEWControl(*input);
+        mergeIEWPrepareResult(*result, false);
+        return *result;
+    }
+
+    if (pendingFuturePrepare.valid) {
+        if (pendingFuturePrepare.result.cycle == cycle) {
+            *result = pendingFuturePrepare.result;
+            pendingFuturePrepare.valid = false;
+            iewStats.futurePrepareReuses++;
+            mergeIEWPrepareResult(*result, true);
+
+            if (runtime.selfTestEnabled()) {
+                const IEWPrepareResult expected = prepareIEWControl(*input);
+                iewStats.futurePrepareChecks++;
+                if (samePrepareResult(*result, expected)) {
+                    iewStats.futurePrepareMatches++;
+                } else {
+                    iewStats.futurePrepareMismatches++;
+                }
+            }
+
+            return lastPrepareResult;
+        }
+
+        iewStats.futurePrepareChecks++;
+        iewStats.futurePrepareStale++;
+        pendingFuturePrepare.valid = false;
+    }
+
+    iewStats.prepareTasks++;
+    auto thread_results = std::make_shared<IEWThreadPrepareResults>();
+    for (int tid = 0; tid < input->numThreads; ++tid) {
+        if (input->fixedbufferEmpty[tid]) {
+            thread_results->byThread[tid] =
+                prepareIEWThreadControl(
+                        *input, static_cast<ThreadID>(tid));
+            iewStats.prepareInlineEmptyThreads++;
+            continue;
+        }
+
+        const TaskOrderKey thread_order{
+            cycle, TaskStage::IEW, 1, InvalidThreadID,
+            static_cast<uint64_t>(tid)};
+        runtime.submitWeak(
+                thread_order,
+                1,
+                [this, input, thread_results, tid] {
+                    thread_results->byThread[tid] =
+                        prepareIEWThreadControl(
+                                *input, static_cast<ThreadID>(tid));
+                });
+    }
+
+    const TaskOrderKey merge_order{
+        cycle, TaskStage::IEW, 1, InvalidThreadID,
+        static_cast<uint64_t>(input->numThreads)};
+    runtime.submitWeak(
+            merge_order,
+            0,
+            [] {},
+            [this, input, thread_results, result] {
+                *result = combineIEWThreadPrepareResults(
+                        *input, *thread_results);
+                mergeIEWPrepareResult(*result, true);
+            });
+    runtime.waitForOrder(merge_order);
+
+    return lastPrepareResult;
+}
+
+bool
+IEW::buildFutureRenameLatchInput(Cycles cycle,
+                                 const StallSignalLatch &commit_to_iew,
+                                 const RenameStruct *snapshot_rename,
+                                 const TimeStruct *snapshot_commit,
+                                 IEWPrepareInput &input)
+{
+    if (!snapshot_rename || !snapshot_commit) {
+        iewStats.futureInputSkipReasons[IEWFutureInputMissingSnapshot]++;
+        return false;
+    }
+    if (activeThreads->empty()) {
+        iewStats.futureInputSkipReasons[IEWFutureInputNoActiveThreads]++;
+        return false;
+    }
+
+    for (ThreadID tid : *activeThreads) {
+        const auto &commit_info = snapshot_commit->commitInfo[tid];
+        unsigned reason = NumIEWFutureInputCommitControlReasons;
+        if (commit_info.squash) {
+            reason = IEWFutureInputCommitSquash;
+        } else if (commit_info.robSquashing) {
+            reason = IEWFutureInputCommitRobSquashing;
+        } else if (commit_info.strictlyOrdered) {
+            reason = IEWFutureInputCommitStrictlyOrdered;
+        } else if (commit_info.nonSpecSeqNum != 0) {
+            reason = IEWFutureInputCommitNonSpecSeqNum;
+        }
+        if (reason != NumIEWFutureInputCommitControlReasons) {
+            iewStats.futureInputSkipReasons[IEWFutureInputCommitControl]++;
+            iewStats.futureInputCommitControlReasons[reason]++;
+            return false;
+        }
+    }
+
+    input = buildIEWPrepareInput(
+            cycle, &commit_to_iew, snapshot_rename, false);
+
+    unsigned accepted_done_seq = 0;
+    unsigned accepted_done_mem_seq = 0;
+    for (ThreadID tid : *activeThreads) {
+        const auto &commit_info = snapshot_commit->commitInfo[tid];
+        if (commit_info.doneSeqNum != 0 || commit_info.doneMemSeqNum != 0) {
+            // Commit progress is applied after prepare in IEW::tick().
+            // It is only unsafe here when the current LDST block reason can
+            // still change before the next-cycle self-test consumes it.
+            if (!input.ldstCanInsert[tid]) {
+                iewStats.futureInputSkipReasons[
+                    IEWFutureInputCommitProgressWithLDSTBlock]++;
+                return false;
+            }
+            if (commit_info.doneSeqNum != 0)
+                ++accepted_done_seq;
+            if (commit_info.doneMemSeqNum != 0)
+                ++accepted_done_mem_seq;
+        }
+    }
+    iewStats.futureInputAllowedCommitProgress[
+        IEWFutureInputAllowedDoneSeqNum] += accepted_done_seq;
+    iewStats.futureInputAllowedCommitProgress[
+        IEWFutureInputAllowedDoneMemSeqNum] += accepted_done_mem_seq;
+    return true;
+}
+
+bool
+IEW::previewFutureRenameLatch(const IEWPrepareInput &input,
+                              StallSignalLatch &iew_to_rename,
+                              IEWPrepareResult *prepare_result) const
+{
+    const IEWPrepareResult result = prepareIEWControl(input);
+    if (prepare_result)
+        *prepare_result = result;
+
+    if (result.selectedTid != InvalidThreadID &&
+        !futureActiveDispatchDrainsWithoutResources(input, result)) {
+        return false;
+    }
+
+    iew_to_rename.clear();
+    for (int tid = 0; tid < numThreads; ++tid) {
+        iew_to_rename.block[tid] = result.renameBlock[tid];
+        iew_to_rename.reason[tid] = result.renameBlockReason[tid];
+    }
+
+    return true;
+}
+
+bool
+IEW::previewFutureRenameLatch(
+        const IEWPrepareInput &input,
+        const RenameStruct *snapshot_rename,
+        const TimeStruct *snapshot_commit,
+        StallSignalLatch &iew_to_rename,
+        IEWPrepareResult *prepare_result,
+        FutureActiveDispatchPreviewOutcome *dispatch_outcome,
+        FutureActiveDispatchPreviewBlockReason *dispatch_block_reason,
+        FutureDispatchCandidateProfile *dispatch_profile)
+{
+    const IEWPrepareResult result = prepareIEWControl(input);
+    if (prepare_result)
+        *prepare_result = result;
+    if (dispatch_outcome) {
+        *dispatch_outcome =
+            FutureActiveDispatchPreviewOutcome::NumOutcomes;
+    }
+    if (dispatch_block_reason) {
+        *dispatch_block_reason =
+            FutureActiveDispatchPreviewBlockReason::NumReasons;
+    }
+    if (dispatch_profile)
+        *dispatch_profile = FutureDispatchCandidateProfile();
+
+    bool active_dispatch_drained = true;
+    if (result.selectedTid != InvalidThreadID) {
+        if (futureActiveDispatchDrainsWithoutResources(input, result)) {
+            if (dispatch_outcome) {
+                *dispatch_outcome =
+                    FutureActiveDispatchPreviewOutcome::DrainedNoResource;
+            }
+        } else {
+            FutureDispatchPreviewInput dispatch_input;
+            if (!buildFutureDispatchPreviewInput(
+                        input, result, snapshot_rename, snapshot_commit,
+                        dispatch_input)) {
+                if (dispatch_block_reason) {
+                    *dispatch_block_reason =
+                        FutureActiveDispatchPreviewBlockReason::
+                        BuildInputFailed;
+                }
+                return false;
+            }
+
+            const DispatchDrainPreviewResult dispatch_result =
+                previewFutureDirectDispatchDrain(dispatch_input);
+            if (dispatch_profile) {
+                dispatch_profile->valid = dispatch_result.valid;
+                dispatch_profile->drained = dispatch_result.drained;
+                dispatch_profile->fixedBufferPops =
+                    dispatch_result.output.fixedBufferPops;
+                dispatch_profile->dispatchedBeforeBlock =
+                    dispatch_result.dispatchedBeforeBlock;
+                dispatch_profile->blockReason =
+                    dispatch_result.blockReason;
+                dispatch_profile->schedulerBlockReason =
+                    dispatch_result.schedulerBlockReason;
+            }
+            if (!dispatch_result.valid) {
+                if (dispatch_block_reason) {
+                    *dispatch_block_reason =
+                        dispatch_result.blockReason ==
+                        FutureActiveDispatchPreviewBlockReason::NumReasons ?
+                        FutureActiveDispatchPreviewBlockReason::
+                        InvalidPreview :
+                        dispatch_result.blockReason;
+                }
+                return false;
+            }
+            setPendingFutureDispatchPreview(dispatch_result);
+            StallSignalLatch predicted_iew_to_rename;
+            predicted_iew_to_rename.clear();
+            for (int tid = 0; tid < numThreads; ++tid) {
+                predicted_iew_to_rename.block[tid] =
+                    result.renameBlock[tid];
+                predicted_iew_to_rename.reason[tid] =
+                    result.renameBlockReason[tid];
+            }
+            if (!dispatch_result.drained) {
+                predicted_iew_to_rename.block[result.selectedTid] = true;
+            }
+            setPendingFutureRenameLatchPreview(
+                    input.cycle, predicted_iew_to_rename);
+            iew_to_rename = predicted_iew_to_rename;
+            if (!dispatch_result.drained) {
+                if (dispatch_result.dispatchedBeforeBlock == 0 &&
+                    dispatch_result.blockReason ==
+                    FutureActiveDispatchPreviewBlockReason::
+                    SerializeBlocked) {
+                    active_dispatch_drained = false;
+                    if (dispatch_outcome) {
+                        *dispatch_outcome =
+                            FutureActiveDispatchPreviewOutcome::
+                            BlockedWithResources;
+                    }
+                } else if (dispatch_result.blockReason ==
+                           FutureActiveDispatchPreviewBlockReason::
+                           SchedulerNotReady) {
+                    active_dispatch_drained = false;
+                    if (dispatch_outcome) {
+                        *dispatch_outcome =
+                            FutureActiveDispatchPreviewOutcome::
+                            BlockedWithResources;
+                    }
+                } else {
+                    if (dispatch_result.blockReason ==
+                        FutureActiveDispatchPreviewBlockReason::
+                        SchedulerNotReady) {
+                        const unsigned reason = static_cast<unsigned>(
+                                dispatch_result.schedulerBlockReason);
+                        if (reason < static_cast<unsigned>(
+                                FutureDispatchSchedulerBlockReason::
+                                NumReasons)) {
+                            iewStats.futureActiveDispatchSchedulerBlockReasons[
+                                reason]++;
+                        }
+                    }
+                    if (dispatch_block_reason) {
+                        *dispatch_block_reason =
+                            dispatch_result.blockReason ==
+                            FutureActiveDispatchPreviewBlockReason::NumReasons ?
+                            FutureActiveDispatchPreviewBlockReason::
+                            InvalidPreview :
+                            dispatch_result.blockReason;
+                    }
+                    return false;
+                }
+            } else {
+                if (dispatch_outcome) {
+                    *dispatch_outcome =
+                        FutureActiveDispatchPreviewOutcome::
+                        DrainedWithResources;
+                }
+            }
+        }
+    }
+
+    iew_to_rename.clear();
+    for (int tid = 0; tid < numThreads; ++tid) {
+        iew_to_rename.block[tid] = result.renameBlock[tid];
+        iew_to_rename.reason[tid] = result.renameBlockReason[tid];
+    }
+
+    if (result.selectedTid != InvalidThreadID && !active_dispatch_drained)
+        iew_to_rename.block[result.selectedTid] = true;
+
+    return true;
+}
+
+IEW::IEWPrepareResult
+IEW::previewFuturePrepare(const IEWPrepareInput &input) const
+{
+    return prepareIEWControl(input);
+}
+
+IEW::FuturePreviewSkipReason
+IEW::futurePreviewSkipReason(const IEWPrepareResult &result)
+{
+    if (result.multipleActive)
+        return FuturePreviewSkipReason::MultipleActive;
+    return FuturePreviewSkipReason::ActiveDispatch;
+}
+
+IEW::FutureActiveDispatchSource
+IEW::futureActiveDispatchSource(const IEWPrepareInput &input,
+                                const IEWPrepareResult &result)
+{
+    if (result.selectedTid == InvalidThreadID)
+        return FutureActiveDispatchSource::Unknown;
+
+    const ThreadID tid = result.selectedTid;
+    const bool has_existing = input.fixedbufferSize[tid] != 0;
+    const bool has_rename = input.renameInputInsts[tid] != 0;
+    if (has_existing && has_rename)
+        return FutureActiveDispatchSource::Mixed;
+    if (has_existing)
+        return FutureActiveDispatchSource::ExistingFixedBuffer;
+    if (has_rename)
+        return FutureActiveDispatchSource::RenameInput;
+    return FutureActiveDispatchSource::Unknown;
+}
+
+IEW::FutureActiveDispatchMode
+IEW::futureActiveDispatchMode(const IEWPrepareInput &input)
+{
+    return input.dispatchStageEnabled ?
+        FutureActiveDispatchMode::DispatchQueue :
+        FutureActiveDispatchMode::DirectIssue;
+}
+
+bool
+IEW::futureActiveDispatchDrainsWithoutResources(
+        const IEWPrepareInput &input, const IEWPrepareResult &result)
+{
+    if (result.selectedTid == InvalidThreadID || result.multipleActive)
+        return false;
+
+    const ThreadID tid = result.selectedTid;
+    if (tid >= input.numThreads)
+        return false;
+
+    return !input.dispatchStageEnabled &&
+        input.renameInputInsts[tid] == 0 &&
+        input.fixedbufferSize[tid] != 0 &&
+        input.fixedbufferSquashedInsts[tid] == input.fixedbufferSize[tid];
+}
+
+bool
+IEW::buildFutureDispatchPreviewInput(
+        const IEWPrepareInput &input,
+        const IEWPrepareResult &result,
+        const RenameStruct *snapshot_rename,
+        const TimeStruct *snapshot_commit,
+        FutureDispatchPreviewInput &preview_input)
+{
+    preview_input = FutureDispatchPreviewInput();
+
+    if (result.selectedTid == InvalidThreadID || result.multipleActive ||
+        input.dispatchStageEnabled || !snapshot_commit) {
+        return false;
+    }
+
+    const ThreadID tid = result.selectedTid;
+    if (tid >= input.numThreads)
+        return false;
+
+    preview_input.valid = true;
+    preview_input.cycle = input.cycle;
+    preview_input.tid = tid;
+    preview_input.freeLQEntries = ldstQueue.numFreeLoadEntries(tid);
+    preview_input.freeSQEntries = ldstQueue.numFreeStoreEntries(tid);
+    preview_input.serializeNext = serializeOnNextInst[tid];
+    preview_input.robHeadSeqNum =
+        snapshot_commit->commitInfo[tid].robheadSeqNum;
+
+    auto append_inst = [this, &preview_input](
+            const DynInstPtr &inst, bool squash_by_version) -> bool
+    {
+        if (!inst)
+            return true;
+
+        if (preview_input.entries >= MaxFutureDispatchPreviewEntries)
+            return false;
+
+        auto &entry = preview_input.insts[preview_input.entries++];
+        entry.valid = true;
+        entry.squashed = inst->isSquashed() || squash_by_version;
+        entry.splitStoreAddr = inst->staticInst->isSplitStoreAddr();
+        entry.atomic = inst->isAtomic();
+        entry.load = inst->isLoad();
+        entry.store = inst->isStore();
+        entry.storeConditional = inst->isStoreConditional();
+        entry.readBarrier = inst->isReadBarrier();
+        entry.writeBarrier = inst->isWriteBarrier();
+        entry.nop = inst->isNop();
+        entry.eliminated = inst->isEliminated();
+        entry.nonSpeculative = inst->isNonSpeculative();
+        entry.serializeBefore = inst->isSerializeBefore();
+        entry.serializeAfter = inst->isSerializeAfter();
+        entry.opClass = inst->opClass();
+        entry.seqNum = inst->seqNum;
+        return true;
+    };
+
+    for (const auto &inst : fixedbuffer[tid]) {
+        if (!append_inst(inst, false))
+            return false;
+    }
+
+    if (snapshot_rename && snapshot_rename->size > 0) {
+        const DynInstPtr &first_inst = snapshot_rename->insts[0];
+        if (first_inst && first_inst->threadNumber == tid) {
+            if (!fixedbuffer[tid].empty())
+                return false;
+
+            for (int i = 0; i < snapshot_rename->size; ++i) {
+                const DynInstPtr &inst = snapshot_rename->insts[i];
+                if (!inst)
+                    continue;
+                if (inst->threadNumber != tid)
+                    return false;
+                const bool squash_by_version =
+                    localSquashVer.largerThan(inst->getVersion());
+                if (squash_by_version)
+                    continue;
+                if (!append_inst(inst, false))
+                    return false;
+            }
+        } else if (input.renameInputInsts[tid] != 0) {
+            return false;
+        }
+    } else if (input.renameInputInsts[tid] != 0) {
+        return false;
+    }
+
+    return true;
+}
+
+bool
+IEW::previewFutureRenameLatch(Cycles cycle,
+                              const StallSignalLatch &commit_to_iew,
+                              const RenameStruct *snapshot_rename,
+                              const TimeStruct *snapshot_commit,
+                              StallSignalLatch &iew_to_rename,
+                              IEWPrepareResult *prepare_result)
+{
+    IEWPrepareInput input;
+    if (!buildFutureRenameLatchInput(
+                cycle, commit_to_iew, snapshot_rename, snapshot_commit,
+                input)) {
+        return false;
+    }
+
+    return previewFutureRenameLatch(input, snapshot_rename, snapshot_commit,
+                                    iew_to_rename, prepare_result);
+}
+
+void
+IEW::recordFuturePrepareProbe()
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    iewStats.futurePrepareProbes++;
+}
+
+void
+IEW::recordFuturePrepareSkipped()
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    iewStats.futurePrepareSkipped++;
+}
+
+void
+IEW::recordFuturePreviewSkipped(FuturePreviewSkipReason reason)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    const unsigned index = static_cast<unsigned>(reason);
+    if (index >= static_cast<unsigned>(FuturePreviewSkipReason::NumReasons))
+        return;
+    iewStats.futurePreviewSkipReasons[index]++;
+}
+
+void
+IEW::recordFutureActiveDispatchPreviewSkipped(
+        const IEWPrepareInput &input, const IEWPrepareResult &result,
+        FutureActiveDispatchPreviewBlockReason block_reason)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    recordFuturePreviewSkipped(futurePreviewSkipReason(result));
+
+    if (futurePreviewSkipReason(result) !=
+        FuturePreviewSkipReason::ActiveDispatch) {
+        return;
+    }
+
+    const unsigned source = static_cast<unsigned>(
+            futureActiveDispatchSource(input, result));
+    if (source < static_cast<unsigned>(
+            FutureActiveDispatchSource::NumSources)) {
+        iewStats.futureActiveDispatchSources[source]++;
+    }
+
+    const unsigned mode = static_cast<unsigned>(
+            futureActiveDispatchMode(input));
+    if (mode < static_cast<unsigned>(FutureActiveDispatchMode::NumModes))
+        iewStats.futureActiveDispatchModes[mode]++;
+
+    const ThreadID tid = result.selectedTid;
+    if (tid < input.numThreads) {
+        iewStats.futureActiveDispatchPreviewOutcomes[
+            static_cast<unsigned>(
+                FutureActiveDispatchPreviewOutcome::Skipped)]++;
+        const unsigned reason = static_cast<unsigned>(block_reason);
+        if (reason < static_cast<unsigned>(
+                FutureActiveDispatchPreviewBlockReason::NumReasons)) {
+            iewStats.futureActiveDispatchPreviewBlockReasons[reason]++;
+        }
+        iewStats.futureActiveDispatchInsts.sample(
+            input.fixedbufferSize[tid] + input.renameInputInsts[tid]);
+    }
+}
+
+void
+IEW::recordFutureActiveDispatchPreviewAccepted(
+        const IEWPrepareInput &input, const IEWPrepareResult &result,
+        FutureActiveDispatchPreviewOutcome outcome)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    if (outcome == FutureActiveDispatchPreviewOutcome::NumOutcomes)
+        return;
+
+    const ThreadID tid = result.selectedTid;
+    if (tid >= input.numThreads)
+        return;
+
+    iewStats.futureActiveDispatchPreviewOutcomes[
+        static_cast<unsigned>(outcome)]++;
+    iewStats.futureActiveDispatchInsts.sample(
+        input.fixedbufferSize[tid] + input.renameInputInsts[tid]);
+}
+
+void
+IEW::setPendingFuturePrepare(const IEWPrepareResult &result)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    if (pendingFuturePrepare.valid)
+        iewStats.futurePrepareStale++;
+
+    pendingFuturePrepare.result = result;
+    pendingFuturePrepare.valid = true;
+    iewStats.futurePrepareMerges++;
+}
+
+IEW::DispatchHeadSnapshot
+IEW::snapshotDispatchHead(const DynInstPtr &inst) const
+{
+    DispatchHeadSnapshot snapshot;
+    if (!inst)
+        return snapshot;
+
+    snapshot.valid = true;
+    snapshot.squashed = inst->isSquashed();
+    snapshot.committed = inst->isCommitted();
+    snapshot.atomic = inst->isAtomic();
+    snapshot.storeConditional = inst->isStoreConditional();
+    snapshot.load = inst->isLoad();
+    snapshot.store = inst->isStore();
+    snapshot.vector = inst->isVector();
+    snapshot.nonSpeculative = inst->isNonSpeculative();
+    snapshot.readyToIssue = inst->readyToIssue();
+    snapshot.issued = inst->isIssued();
+    snapshot.translationStarted = inst->translationStarted();
+    snapshot.translationCompleted = inst->translationCompleted();
+    snapshot.hasPendingCacheReq = inst->hasPendingCacheReq();
+    snapshot.readyTickUnset = inst->readyTick == -1;
+    snapshot.firstIssueSet = inst->firstIssue != -1;
+
+    if (snapshot.hasPendingCacheReq) {
+        fatal_if(!inst->pendingCacheReq,
+                 "Instruction reports a pending cache request but has no "
+                 "request object.");
+        snapshot.pendingCacheDepth = inst->pendingCacheReq->mainReq()->depth;
+    }
+
+    return snapshot;
+}
+
+IEW::DispatchStatusPrepareInput
+IEW::buildDispatchStatusPrepareInput(Cycles cycle, ThreadID tid)
+{
+    DispatchStatusPrepareInput input;
+    input.cycle = cycle;
+    input.tid = tid;
+    input.lqEmpty = ldstQueue.lqEmpty();
+    input.sqEmpty = ldstQueue.sqEmpty();
+    input.lqFull = ldstQueue.lqFull(tid);
+    input.sqFull = ldstQueue.sqFull(tid);
+
+    const DynInstPtr &rob_head = rob->readHeadInst(tid);
+    if (rob_head != rob->dummyInst)
+        input.robHead = snapshotDispatchHead(rob_head);
+
+    if (!input.lqEmpty)
+        input.lqHead = snapshotDispatchHead(
+                ldstQueue.getLSQHeadInst(tid, true));
+    if (!input.sqEmpty)
+        input.sqHead = snapshotDispatchHead(
+                ldstQueue.getLSQHeadInst(tid, false));
+
+    return input;
+}
+
+StallReason
+IEW::checkLoadStoreSnapshot(const DispatchHeadSnapshot &inst) const
+{
+    fatal_if(!inst.valid,
+             "IEW dispatch status prepare expected a valid LSQ/ROB head.");
+
+    if (inst.squashed) {
+        return StallReason::MemSquashed;
+    }
+    if (inst.committed) {
+        return StallReason::MemCommitRateLimit;
+    }
+    if (inst.atomic || inst.storeConditional) {
+        return StallReason::Atomic;
+    }
+    if (!inst.readyToIssue) {
+        return StallReason::MemNotReady;
+    }
+    fatal_if(!(inst.load || inst.store),
+             "IEW dispatch status prepare saw a non-memory head in the "
+             "memory-stall classifier.");
+
+    if (inst.issued && inst.translationStarted &&
+        !inst.translationCompleted) {
+        return StallReason::DTlbStall;
+    }
+
+    const bool in_flight = inst.issued && inst.hasPendingCacheReq;
+    const bool lsu_stall = inst.issued && !inst.hasPendingCacheReq;
+    const int depth = inst.pendingCacheDepth;
+
+    assert(depth < 5);
+    const bool in_l1 = depth == 0;
+    const bool in_l2 = depth == 1;
+    const bool in_l3 = depth == 2;
+    const bool other_stall = depth == -1;
+    const bool in_mem = !(in_l1 || in_l2 || in_l3 || other_stall);
+
+    if (in_flight && in_l1) {
+        return inst.load ? StallReason::LoadL1Bound :
+                           StallReason::StoreL1Bound;
+    } else if (in_flight && in_l2) {
+        return inst.load ? StallReason::LoadL2Bound :
+                           StallReason::StoreL2Bound;
+    } else if (in_flight && in_l3) {
+        return inst.load ? StallReason::LoadL3Bound :
+                           StallReason::StoreL3Bound;
+    } else if (in_flight && in_mem) {
+        return inst.load ? StallReason::LoadMemBound :
+                           StallReason::StoreMemBound;
+    } else if (in_flight && other_stall) {
+        return StallReason::OtherMemStall;
+    }
+
+    if (lsu_stall) {
+        return inst.load ? StallReason::LoadL1Bound :
+                           StallReason::StoreL1Bound;
+    }
+    return StallReason::OtherMemStall;
+}
+
+StallReason
+IEW::checkDispatchHeadSnapshot(
+        const DispatchStatusPrepareInput &input) const
+{
+    const auto &head = input.robHead;
+    if (!head.valid)
+        return StallReason::NoStall;
+
+    if (head.readyTickUnset) {
+        DPRINTF(Counters,
+                "IEW: [tid:%i] Dispatch: Instruction not ready. "
+                "nonSpeculative:%d\n",
+                input.tid, head.nonSpeculative);
+        if (head.nonSpeculative) {
+            return StallReason::SerializeStall;
+        } else if (head.load && input.lqFull) {
+            return checkLoadStoreSnapshot(input.lqHead);
+        } else if ((head.store || head.atomic) && input.sqFull) {
+            return checkLoadStoreSnapshot(input.sqHead);
+        } else {
+            return StallReason::InstNotReady;
+        }
+    }
+
+    if (head.load || head.store || head.atomic) {
+        return checkLoadStoreSnapshot(head);
+    }
+
+    if (head.firstIssueSet) {
+        return head.vector ? StallReason::VectorLongExecute :
+                             StallReason::ScalarLongExecute;
+    }
+    return head.vector ? StallReason::VectorReadyButNotIssued :
+                         StallReason::ScalarReadyButNotIssued;
+}
+
+IEW::DispatchStatusPrepareResult
+IEW::prepareDispatchStatusControl(
+        const DispatchStatusPrepareInput &input) const
+{
+    DispatchStatusPrepareResult result;
+    result.cycle = input.cycle;
+    result.tid = input.tid;
+    result.robHeadStallReason = checkDispatchHeadSnapshot(input);
+    result.lqHeadStallReason =
+        input.lqEmpty ? StallReason::NoStall :
+                        checkLoadStoreSnapshot(input.lqHead);
+    result.sqHeadStallReason =
+        input.sqEmpty ? StallReason::NoStall :
+                        checkLoadStoreSnapshot(input.sqHead);
+    return result;
+}
+
+IEW::DispatchStatusPrepareResult
+IEW::runDispatchStatusPrepare(Cycles cycle, ThreadID tid)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled()) {
+        DispatchStatusPrepareResult result;
+        result.cycle = cycle;
+        result.tid = tid;
+        result.robHeadStallReason =
+            checkDispatchStall(tid, NumDQ, nullptr, -1);
+        result.lqHeadStallReason =
+            ldstQueue.lqEmpty() ? StallReason::NoStall :
+                                  checkLSQStall(tid, true);
+        result.sqHeadStallReason =
+            ldstQueue.sqEmpty() ? StallReason::NoStall :
+                                  checkLSQStall(tid, false);
+        return result;
+    }
+
+    auto input = std::make_shared<DispatchStatusPrepareInput>(
+            buildDispatchStatusPrepareInput(cycle, tid));
+    auto result = std::make_shared<DispatchStatusPrepareResult>();
+
+    iewStats.dispatchStatusPrepareTasks++;
+    const TaskOrderKey order{cycle, TaskStage::IEW, 2, tid, 0};
+    runtime.submitWeak(
+            order,
+            3,
+            [this, input, result] {
+                *result = prepareDispatchStatusControl(*input);
+            },
+            [this, tid, result] {
+                iewStats.dispatchStatusPrepareMerges++;
+                verifyDispatchStatusPrepareResult(tid, *result);
+            });
+    runtime.waitForOrder(order);
+
+    return *result;
+}
+
+void
+IEW::verifyDispatchStatusPrepareResult(
+        ThreadID tid, const DispatchStatusPrepareResult &result)
+{
+    DispatchStatusPrepareResult expected;
+    expected.cycle = result.cycle;
+    expected.tid = tid;
+    expected.robHeadStallReason =
+        checkDispatchStall(tid, NumDQ, nullptr, -1);
+    expected.lqHeadStallReason =
+        ldstQueue.lqEmpty() ? StallReason::NoStall :
+                              checkLSQStall(tid, true);
+    expected.sqHeadStallReason =
+        ldstQueue.sqEmpty() ? StallReason::NoStall :
+                              checkLSQStall(tid, false);
+
+    if (result.tid != expected.tid ||
+        result.robHeadStallReason != expected.robHeadStallReason ||
+        result.lqHeadStallReason != expected.lqHeadStallReason ||
+        result.sqHeadStallReason != expected.sqHeadStallReason) {
+        iewStats.dispatchStatusPrepareMismatches++;
+        panic("IEW dispatch status prepare mismatch for tid %i: "
+              "prepared rob/lq/sq=%i/%i/%i expected=%i/%i/%i",
+              tid, result.robHeadStallReason, result.lqHeadStallReason,
+              result.sqHeadStallReason, expected.robHeadStallReason,
+              expected.lqHeadStallReason, expected.sqHeadStallReason);
+    }
+}
+
+IEW::DispatchDrainPreviewResult
+IEW::previewDirectDispatchDrain(Cycles cycle, ThreadID tid,
+                                const TimeStruct *commit_input)
+{
+    DispatchDrainPreviewResult result;
+    result.cycle = cycle;
+    result.tid = tid;
+
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return result;
+
+    iewStats.dispatchDrainPreviewProbes++;
+
+    if (enableDispatchStage) {
+        iewStats.dispatchDrainPreviewSkipped++;
+        iewStats.dispatchDrainPreviewSkipReasons[
+            IEWDispatchDrainPreviewDispatchQueue]++;
+        return result;
+    }
+
+    const auto &insts_to_dispatch = fixedbuffer[tid];
+    result.visibleInsts = insts_to_dispatch.size();
+
+    auto token_state = scheduler->buildDispatchTokenState();
+    if (!token_state.supported) {
+        result.blockReason =
+            FutureActiveDispatchPreviewBlockReason::UnsupportedTokens;
+        iewStats.dispatchDrainPreviewSkipped++;
+        iewStats.dispatchDrainPreviewSkipReasons[
+            IEWDispatchDrainPreviewNeedsSchedulerOrResource]++;
+        return result;
+    }
+
+    unsigned free_lq_entries = ldstQueue.numFreeLoadEntries(tid);
+    unsigned free_sq_entries = ldstQueue.numFreeStoreEntries(tid);
+    bool serialize_next = serializeOnNextInst[tid];
+    int disp_seq = -1;
+
+    for (size_t i = 0; i < insts_to_dispatch.size(); ++i) {
+        const auto &inst = insts_to_dispatch[i];
+        disp_seq++;
+
+        if (inst->isSquashed()) {
+            result.output.fixedBufferPops++;
+            result.output.squashedPops++;
+            continue;
+        }
+
+        const bool skip_serialize =
+            commit_input &&
+            commit_input->commitInfo[tid].robheadSeqNum >= inst->seqNum;
+        const bool serialize_before =
+            inst->isSerializeBefore() || serialize_next;
+        serialize_next = false;
+
+        if (serialize_before && !skip_serialize) {
+            result.drained = false;
+            result.valid = true;
+            result.stallReason = checkDispatchStall(tid, NumDQ, inst,
+                                                    disp_seq);
+            result.blockReason =
+                FutureActiveDispatchPreviewBlockReason::SerializeBlocked;
+            return result;
+        }
+
+        if (inst->isStoreConditional() || inst->isSerializeAfter())
+            serialize_next = true;
+
+        const bool needs_lq = inst->isLoad();
+        const bool needs_sq = inst->isAtomic() || inst->isStore();
+
+        if (needs_lq && free_lq_entries == 0) {
+            result.drained = false;
+            result.valid = true;
+            result.stallReason = checkDispatchStall(tid, NumDQ, inst,
+                                                    disp_seq);
+            result.blockReason =
+                FutureActiveDispatchPreviewBlockReason::LQFull;
+            return result;
+        }
+
+        if (needs_sq && free_sq_entries == 0) {
+            result.drained = false;
+            result.valid = true;
+            result.stallReason = checkDispatchStall(tid, NumDQ, inst,
+                                                    disp_seq);
+            result.blockReason =
+                FutureActiveDispatchPreviewBlockReason::SQFull;
+            return result;
+        }
+
+        if (!scheduler->dryRunDispatchReady(token_state, inst, disp_seq,
+                                            false)) {
+            const auto block_token =
+                scheduler->dryRunDispatchBlockSnapshot(
+                    token_state, inst->opClass(),
+                    inst->staticInst->isSplitStoreAddr(), disp_seq);
+            result.drained = false;
+            result.valid = true;
+            result.stallReason = checkDispatchStall(tid, NumDQ, inst,
+                                                    disp_seq);
+            result.blockReason =
+                FutureActiveDispatchPreviewBlockReason::SchedulerNotReady;
+            result.schedulerBlockReason =
+                iewFutureDispatchSchedulerBlockReason(block_token.reason);
+            result.schedulerBlockToken.valid = block_token.valid;
+            result.schedulerBlockToken.reason =
+                result.schedulerBlockReason;
+            result.schedulerBlockToken.iqIndex = block_token.iqIndex;
+            result.schedulerBlockToken.selector = block_token.selector;
+            result.schedulerBlockToken.opClass = block_token.opClass;
+            result.schedulerBlockToken.dispSeq = block_token.dispSeq;
+            result.schedulerBlockToken.freeEntries =
+                block_token.freeEntries;
+            result.schedulerBlockToken.freeInports =
+                block_token.freeInports;
+            result.schedulerBlockToken.replayBlocked =
+                block_token.replayBlocked;
+            return result;
+        }
+
+        if (!inst->isNop() && !inst->isEliminated())
+            result.output.producerAdds++;
+
+        bool add_to_iq = false;
+        if (inst->isAtomic()) {
+            free_sq_entries--;
+            result.output.sqInserts++;
+            result.output.nonSpecInserts++;
+        } else if (inst->isLoad()) {
+            free_lq_entries--;
+            result.output.lqInserts++;
+            add_to_iq = true;
+        } else if (inst->isStore()) {
+            free_sq_entries--;
+            result.output.sqInserts++;
+            if (inst->isStoreConditional())
+                result.output.nonSpecInserts++;
+            add_to_iq = !inst->isStoreConditional();
+        } else if (inst->isReadBarrier() || inst->isWriteBarrier()) {
+            result.output.barrierInserts++;
+            add_to_iq = false;
+        } else if (inst->isNop() || inst->isEliminated()) {
+            add_to_iq = false;
+        } else {
+            add_to_iq = true;
+        }
+
+        if (add_to_iq && inst->isNonSpeculative()) {
+            result.output.nonSpecInserts++;
+            add_to_iq = false;
+        }
+
+        if (add_to_iq) {
+            result.output.iqInserts++;
+            scheduler->dryRunDispatchReady(token_state, inst, disp_seq,
+                                           true);
+        }
+        result.dispatchedBeforeBlock++;
+        result.output.fixedBufferPops++;
+    }
+
+    result.drained = true;
+    result.valid = true;
+    return result;
+}
+
+IEW::DispatchDrainPreviewResult
+IEW::previewFutureDirectDispatchDrain(
+        const FutureDispatchPreviewInput &input) const
+{
+    DispatchDrainPreviewResult result;
+    result.cycle = input.cycle;
+    result.tid = input.tid;
+    result.visibleInsts = input.entries;
+
+    if (!input.valid || input.tid == InvalidThreadID)
+        return result;
+
+    std::vector<OpClass> op_classes;
+    std::vector<OpClass> extra_sorted_ops;
+    op_classes.reserve(input.entries);
+    extra_sorted_ops.reserve(input.entries);
+    for (unsigned i = 0; i < input.entries; ++i) {
+        const auto &entry = input.insts[i];
+        if (!entry.valid)
+            continue;
+        op_classes.push_back(entry.opClass);
+        if (entry.splitStoreAddr)
+            extra_sorted_ops.push_back(StoreDataOp);
+    }
+
+    auto token_state = scheduler->buildLookaheadDispatchTokenState(
+            op_classes, extra_sorted_ops, true);
+    if (!token_state.supported) {
+        result.blockReason =
+            FutureActiveDispatchPreviewBlockReason::UnsupportedTokens;
+        return result;
+    }
+
+    unsigned free_lq_entries = input.freeLQEntries;
+    unsigned free_sq_entries = input.freeSQEntries;
+    bool serialize_next = input.serializeNext;
+    int disp_seq = -1;
+
+    for (unsigned i = 0; i < input.entries; ++i) {
+        const auto &entry = input.insts[i];
+        if (!entry.valid)
+            continue;
+
+        disp_seq++;
+        if (entry.squashed) {
+            result.output.fixedBufferPops++;
+            result.output.squashedPops++;
+            continue;
+        }
+
+        const bool skip_serialize = input.robHeadSeqNum >= entry.seqNum;
+        const bool serialize_before =
+            entry.serializeBefore || serialize_next;
+        serialize_next = false;
+
+        if (serialize_before && !skip_serialize) {
+            result.drained = false;
+            result.valid = true;
+            result.blockReason =
+                FutureActiveDispatchPreviewBlockReason::SerializeBlocked;
+            return result;
+        }
+
+        if (entry.storeConditional || entry.serializeAfter)
+            serialize_next = true;
+
+        const bool needs_lq = entry.load;
+        const bool needs_sq = entry.atomic || entry.store;
+
+        if (needs_lq && free_lq_entries == 0) {
+            result.drained = false;
+            result.valid = true;
+            result.blockReason =
+                FutureActiveDispatchPreviewBlockReason::LQFull;
+            return result;
+        }
+
+        if (needs_sq && free_sq_entries == 0) {
+            result.drained = false;
+            result.valid = true;
+            result.blockReason =
+                FutureActiveDispatchPreviewBlockReason::SQFull;
+            return result;
+        }
+
+        if (!scheduler->dryRunDispatchReady(
+                    token_state, entry.opClass, entry.splitStoreAddr,
+                    disp_seq, false)) {
+            const auto block_token =
+                scheduler->dryRunDispatchBlockSnapshot(
+                    token_state, entry.opClass, entry.splitStoreAddr,
+                    disp_seq);
+            result.drained = false;
+            result.valid = true;
+            result.blockReason =
+                FutureActiveDispatchPreviewBlockReason::SchedulerNotReady;
+            result.schedulerBlockReason =
+                iewFutureDispatchSchedulerBlockReason(block_token.reason);
+            result.schedulerBlockToken.valid = block_token.valid;
+            result.schedulerBlockToken.reason =
+                result.schedulerBlockReason;
+            result.schedulerBlockToken.iqIndex = block_token.iqIndex;
+            result.schedulerBlockToken.selector = block_token.selector;
+            result.schedulerBlockToken.opClass = block_token.opClass;
+            result.schedulerBlockToken.dispSeq = block_token.dispSeq;
+            result.schedulerBlockToken.freeEntries =
+                block_token.freeEntries;
+            result.schedulerBlockToken.freeInports =
+                block_token.freeInports;
+            result.schedulerBlockToken.replayBlocked =
+                block_token.replayBlocked;
+            return result;
+        }
+
+        if (!entry.nop && !entry.eliminated)
+            result.output.producerAdds++;
+
+        bool add_to_iq = false;
+        if (entry.atomic) {
+            free_sq_entries--;
+            result.output.sqInserts++;
+            result.output.nonSpecInserts++;
+        } else if (entry.load) {
+            free_lq_entries--;
+            result.output.lqInserts++;
+            add_to_iq = true;
+        } else if (entry.store) {
+            free_sq_entries--;
+            result.output.sqInserts++;
+            if (entry.storeConditional)
+                result.output.nonSpecInserts++;
+            add_to_iq = !entry.storeConditional;
+        } else if (entry.readBarrier || entry.writeBarrier) {
+            result.output.barrierInserts++;
+            add_to_iq = false;
+        } else if (entry.nop || entry.eliminated) {
+            add_to_iq = false;
+        } else {
+            add_to_iq = true;
+        }
+
+        if (add_to_iq && entry.nonSpeculative) {
+            result.output.nonSpecInserts++;
+            add_to_iq = false;
+        }
+
+        if (add_to_iq) {
+            result.output.iqInserts++;
+            scheduler->dryRunDispatchReady(
+                    token_state, entry.opClass, entry.splitStoreAddr,
+                    disp_seq, true);
+        }
+        result.dispatchedBeforeBlock++;
+        result.output.fixedBufferPops++;
+    }
+
+    result.drained = true;
+    result.valid = true;
+    return result;
+}
+
+void
+IEW::verifyDirectDispatchDrainPreview(
+        const DispatchDrainPreviewResult &result, ThreadID tid)
+{
+    if (!result.valid)
+        return;
+
+    const bool actual_drained = fixedbuffer[tid].empty();
+    if (result.drained == actual_drained) {
+        iewStats.dispatchDrainPreviewMatches++;
+        if (!result.drained) {
+            if (result.dispatchedBeforeBlock > 0) {
+                iewStats.dispatchDrainPreviewStallReasonSideEffectSkips++;
+                if (cpu->getTaskRuntime().traceEnabled()) {
+                    DPRINTF(IEW,
+                            "Direct-dispatch stall reason preview skipped "
+                            "cycle=%llu tid=%u predicted=%i actual=%i "
+                            "visibleInsts=%u dispatchedBeforeBlock=%u "
+                            "remaining=%llu\n",
+                            static_cast<unsigned long long>(result.cycle),
+                            tid, result.stallReason, blockReason,
+                            result.visibleInsts, result.dispatchedBeforeBlock,
+                            static_cast<unsigned long long>(
+                                fixedbuffer[tid].size()));
+                }
+            } else if (result.stallReason == blockReason) {
+                iewStats.dispatchDrainPreviewStallReasonMatches++;
+            } else {
+                iewStats.dispatchDrainPreviewStallReasonMismatches++;
+                if (cpu->getTaskRuntime().traceEnabled()) {
+                    DPRINTF(IEW,
+                            "Direct-dispatch stall reason preview mismatch "
+                            "cycle=%llu tid=%u predicted=%i actual=%i "
+                            "visibleInsts=%u remaining=%llu\n",
+                            static_cast<unsigned long long>(result.cycle),
+                            tid, result.stallReason, blockReason,
+                            result.visibleInsts,
+                            static_cast<unsigned long long>(
+                                fixedbuffer[tid].size()));
+                }
+            }
+        }
+    } else {
+        iewStats.dispatchDrainPreviewMismatches++;
+        if (cpu->getTaskRuntime().traceEnabled()) {
+            DPRINTF(IEW,
+                    "Direct-dispatch drain preview mismatch cycle=%llu "
+                    "tid=%u predictedDrained=%i actualDrained=%i "
+                    "visibleInsts=%u remaining=%llu\n",
+                    static_cast<unsigned long long>(result.cycle), tid,
+                    result.drained, actual_drained, result.visibleInsts,
+                    static_cast<unsigned long long>(fixedbuffer[tid].size()));
+        }
+    }
+}
+
+bool
+IEW::sameDispatchOutputSnapshot(
+        const DispatchDrainPreviewResult::OutputSnapshot &lhs,
+        const DispatchDrainPreviewResult::OutputSnapshot &rhs)
+{
+    return lhs.fixedBufferPops == rhs.fixedBufferPops &&
+           lhs.squashedPops == rhs.squashedPops &&
+           lhs.iqInserts == rhs.iqInserts &&
+           lhs.lqInserts == rhs.lqInserts &&
+           lhs.sqInserts == rhs.sqInserts &&
+           lhs.nonSpecInserts == rhs.nonSpecInserts &&
+           lhs.barrierInserts == rhs.barrierInserts &&
+           lhs.producerAdds == rhs.producerAdds;
+}
+
+void
+IEW::recordDispatchOutputSnapshotFieldDifferences(
+        const DispatchDrainPreviewResult::OutputSnapshot &expected,
+        const DispatchDrainPreviewResult::OutputSnapshot &actual,
+        statistics::Vector &fields)
+{
+    if (expected.fixedBufferPops != actual.fixedBufferPops)
+        fields[IEWDispatchOutputFixedBufferPops]++;
+    if (expected.squashedPops != actual.squashedPops)
+        fields[IEWDispatchOutputSquashedPops]++;
+    if (expected.iqInserts != actual.iqInserts)
+        fields[IEWDispatchOutputIQInserts]++;
+    if (expected.lqInserts != actual.lqInserts)
+        fields[IEWDispatchOutputLQInserts]++;
+    if (expected.sqInserts != actual.sqInserts)
+        fields[IEWDispatchOutputSQInserts]++;
+    if (expected.nonSpecInserts != actual.nonSpecInserts)
+        fields[IEWDispatchOutputNonSpecInserts]++;
+    if (expected.barrierInserts != actual.barrierInserts)
+        fields[IEWDispatchOutputBarrierInserts]++;
+    if (expected.producerAdds != actual.producerAdds)
+        fields[IEWDispatchOutputProducerAdds]++;
+}
+
+unsigned
+IEW::futureDispatchOutputPublishabilityReason(
+        const DispatchDrainPreviewResult &expected,
+        const DispatchDrainPreviewResult *actual) const
+{
+    if (!actual || !actual->valid)
+        return IEWFutureDispatchOutputActualMissing;
+
+    if (!sameDispatchDrainPreview(expected, *actual))
+        return IEWFutureDispatchOutputPreviewDifferent;
+
+    if (!sameDispatchOutputSnapshot(expected.output, actual->output))
+        return IEWFutureDispatchOutputOutputDifferent;
+
+    if (expected.drained)
+        return IEWFutureDispatchOutputStableDrained;
+
+    return expected.output.fixedBufferPops == 0 ?
+        IEWFutureDispatchOutputStableBlockedNoSideEffect :
+        IEWFutureDispatchOutputStableBlockedSideEffect;
+}
+
+void
+IEW::recordFutureDispatchOutputPublishability(
+        const DispatchDrainPreviewResult &expected,
+        const DispatchDrainPreviewResult *actual)
+{
+    const unsigned publishability =
+        futureDispatchOutputPublishabilityReason(expected, actual);
+    if (publishability >= NumIEWFutureDispatchOutputPublishabilityReasons)
+        return;
+
+    iewStats.futureDispatchOutputPublishability[publishability]++;
+
+    const unsigned reason = static_cast<unsigned>(expected.blockReason);
+    const bool valid_block_reason =
+        reason < static_cast<unsigned>(
+            FutureActiveDispatchPreviewBlockReason::NumReasons);
+    const unsigned scheduler_reason =
+        static_cast<unsigned>(expected.schedulerBlockReason);
+    const bool valid_scheduler_reason =
+        scheduler_reason < static_cast<unsigned>(
+            FutureDispatchSchedulerBlockReason::NumReasons);
+
+    if (publishability == IEWFutureDispatchOutputPreviewDifferent) {
+        if (valid_block_reason) {
+            iewStats.futureDispatchOutputPreviewDifferentReasons[reason]++;
+        }
+        if (expected.blockReason ==
+            FutureActiveDispatchPreviewBlockReason::SchedulerNotReady &&
+            valid_scheduler_reason) {
+            iewStats.futureDispatchOutputPreviewDifferentSchedulerReasons[
+                scheduler_reason]++;
+        }
+        iewStats.futureDispatchOutputPreviewDifferentPops.sample(
+                expected.output.fixedBufferPops);
+        return;
+    }
+
+    if (publishability != IEWFutureDispatchOutputStableBlockedNoSideEffect &&
+        publishability != IEWFutureDispatchOutputStableBlockedSideEffect) {
+        return;
+    }
+
+    if (valid_block_reason)
+        iewStats.futureDispatchOutputStableBlockedReasons[reason]++;
+
+    if (expected.blockReason ==
+        FutureActiveDispatchPreviewBlockReason::SchedulerNotReady &&
+        valid_scheduler_reason) {
+        iewStats.futureDispatchOutputStableBlockedSchedulerReasons[
+            scheduler_reason]++;
+    }
+    iewStats.futureDispatchOutputStableBlockedPops.sample(
+            expected.output.fixedBufferPops);
+}
+
+bool
+IEW::sameDispatchBlockTokenSnapshot(
+        const DispatchDrainPreviewResult::BlockTokenSnapshot &lhs,
+        const DispatchDrainPreviewResult::BlockTokenSnapshot &rhs)
+{
+    return lhs.valid == rhs.valid &&
+           lhs.reason == rhs.reason &&
+           lhs.iqIndex == rhs.iqIndex &&
+           lhs.selector == rhs.selector &&
+           lhs.opClass == rhs.opClass &&
+           lhs.dispSeq == rhs.dispSeq &&
+           lhs.freeEntries == rhs.freeEntries &&
+           lhs.freeInports == rhs.freeInports &&
+           lhs.replayBlocked == rhs.replayBlocked;
+}
+
+void
+IEW::recordDispatchBlockTokenDifferenceFields(
+        const DispatchDrainPreviewResult::BlockTokenSnapshot &expected,
+        const DispatchDrainPreviewResult::BlockTokenSnapshot &actual)
+{
+    if (expected.valid != actual.valid)
+        iewStats.futureDispatchBlockTokenDifferenceFields[
+            IEWFutureDispatchBlockTokenValid]++;
+    if (expected.reason != actual.reason)
+        iewStats.futureDispatchBlockTokenDifferenceFields[
+            IEWFutureDispatchBlockTokenReason]++;
+    if (expected.iqIndex != actual.iqIndex)
+        iewStats.futureDispatchBlockTokenDifferenceFields[
+            IEWFutureDispatchBlockTokenIQIndex]++;
+    if (expected.selector != actual.selector)
+        iewStats.futureDispatchBlockTokenDifferenceFields[
+            IEWFutureDispatchBlockTokenSelector]++;
+    if (expected.opClass != actual.opClass)
+        iewStats.futureDispatchBlockTokenDifferenceFields[
+            IEWFutureDispatchBlockTokenOpClass]++;
+    if (expected.dispSeq != actual.dispSeq)
+        iewStats.futureDispatchBlockTokenDifferenceFields[
+            IEWFutureDispatchBlockTokenDispSeq]++;
+    if (expected.freeEntries != actual.freeEntries)
+        iewStats.futureDispatchBlockTokenDifferenceFields[
+            IEWFutureDispatchBlockTokenFreeEntries]++;
+    if (expected.freeInports != actual.freeInports)
+        iewStats.futureDispatchBlockTokenDifferenceFields[
+            IEWFutureDispatchBlockTokenFreeInports]++;
+    if (expected.replayBlocked != actual.replayBlocked)
+        iewStats.futureDispatchBlockTokenDifferenceFields[
+            IEWFutureDispatchBlockTokenReplayBlocked]++;
+}
+
+void
+IEW::recordFutureDispatchBlockTokenCheck(
+        const DispatchDrainPreviewResult &expected,
+        const DispatchDrainPreviewResult *actual,
+        unsigned dispatch_publishability_reason)
+{
+    DispatchDrainPreviewResult::BlockTokenSnapshot missing_actual;
+    const auto &actual_token =
+        actual ? actual->schedulerBlockToken : missing_actual;
+
+    if (!expected.schedulerBlockToken.valid && !actual_token.valid)
+        return;
+
+    iewStats.futureDispatchBlockTokenChecks++;
+    if (sameDispatchBlockTokenSnapshot(
+                expected.schedulerBlockToken, actual_token)) {
+        iewStats.futureDispatchBlockTokenMatches++;
+        if (dispatch_publishability_reason <
+            NumIEWFutureDispatchOutputPublishabilityReasons) {
+            iewStats.futureDispatchBlockTokenMatchesByPublishability[
+                dispatch_publishability_reason]++;
+        }
+    } else {
+        iewStats.futureDispatchBlockTokenDifferences++;
+        if (dispatch_publishability_reason <
+            NumIEWFutureDispatchOutputPublishabilityReasons) {
+            iewStats.futureDispatchBlockTokenDifferencesByPublishability[
+                dispatch_publishability_reason]++;
+        }
+        recordDispatchBlockTokenDifferenceFields(
+                expected.schedulerBlockToken, actual_token);
+    }
+}
+
+void
+IEW::verifyDirectDispatchOutputSnapshot(
+        const DispatchDrainPreviewResult &result,
+        const DispatchDrainPreviewResult::OutputSnapshot &actual,
+        ThreadID tid)
+{
+    if (!result.valid)
+        return;
+
+    iewStats.dispatchOutputSnapshotChecks++;
+    if (sameDispatchOutputSnapshot(result.output, actual)) {
+        iewStats.dispatchOutputSnapshotMatches++;
+    } else {
+        iewStats.dispatchOutputSnapshotMismatches++;
+        recordDispatchOutputSnapshotFieldDifferences(
+                result.output, actual,
+                iewStats.dispatchOutputSnapshotMismatchFields);
+        if (cpu->getTaskRuntime().traceEnabled()) {
+            DPRINTF(IEW,
+                    "Direct-dispatch output snapshot mismatch cycle=%llu "
+                    "tid=%u expected(pop=%u squashed=%u iq=%u lq=%u "
+                    "sq=%u nonSpec=%u barrier=%u prod=%u) actual(pop=%u "
+                    "squashed=%u iq=%u lq=%u sq=%u nonSpec=%u barrier=%u "
+                    "prod=%u)\n",
+                    static_cast<unsigned long long>(result.cycle), tid,
+                    result.output.fixedBufferPops,
+                    result.output.squashedPops,
+                    result.output.iqInserts,
+                    result.output.lqInserts,
+                    result.output.sqInserts,
+                    result.output.nonSpecInserts,
+                    result.output.barrierInserts,
+                    result.output.producerAdds,
+                    actual.fixedBufferPops,
+                    actual.squashedPops,
+                    actual.iqInserts,
+                    actual.lqInserts,
+                    actual.sqInserts,
+                    actual.nonSpecInserts,
+                    actual.barrierInserts,
+                    actual.producerAdds);
+        }
+    }
+}
+
+void
+IEW::setPendingFutureDispatchPreview(
+        const DispatchDrainPreviewResult &result)
+{
+    if (!result.valid)
+        return;
+
+    pendingFutureDispatchPreview.result = result;
+    pendingFutureDispatchPreview.valid = true;
+}
+
+void
+IEW::setPendingFutureRenameLatchPreview(
+        Cycles cycle, const StallSignalLatch &latch)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    if (pendingFutureRenameLatchPreview.valid &&
+        pendingFutureRenameLatchPreview.cycle != cycle) {
+        iewStats.futureRenameLatchPreviewStale++;
+    }
+
+    pendingFutureRenameLatchPreview.cycle = cycle;
+    pendingFutureRenameLatchPreview.latch = latch;
+    pendingFutureRenameLatchPreview.valid = true;
+}
+
+bool
+IEW::sameRenameLatchPreview(const StallSignalLatch &lhs,
+                            const StallSignalLatch &rhs) const
+{
+    for (int tid = 0; tid < numThreads; ++tid) {
+        if (lhs.block[tid] != rhs.block[tid] ||
+            lhs.reason[tid] != rhs.reason[tid]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void
+IEW::recordRenameLatchPreviewDifferences(
+        const StallSignalLatch &expected,
+        const StallSignalLatch &actual)
+{
+    bool block_diff = false;
+    bool reason_diff = false;
+    for (int tid = 0; tid < numThreads; ++tid) {
+        block_diff = block_diff || expected.block[tid] != actual.block[tid];
+        reason_diff = reason_diff ||
+                      expected.reason[tid] != actual.reason[tid];
+    }
+    if (block_diff) {
+        iewStats.futureRenameLatchPreviewDifferenceReasons[
+            IEWFutureRenameLatchPreviewBlock]++;
+    }
+    if (reason_diff) {
+        iewStats.futureRenameLatchPreviewDifferenceReasons[
+            IEWFutureRenameLatchPreviewReason]++;
+    }
+}
+
+void
+IEW::verifyPendingFutureRenameLatchPreview(
+        unsigned dispatch_publishability_reason)
+{
+    if (!pendingFutureRenameLatchPreview.valid)
+        return;
+
+    const Cycles cycle = cpu->curCycle();
+    if (pendingFutureRenameLatchPreview.cycle != cycle) {
+        iewStats.futureRenameLatchPreviewStale++;
+        pendingFutureRenameLatchPreview.valid = false;
+        return;
+    }
+
+    StallSignalLatch legacy_actual;
+    const StallSignalLatch *actual = nullptr;
+    if (stallSignalBank) {
+        actual = &cpu->stallSignalSnapshotOrCurrent(
+                cycle, StallSignalEdge::IEWToRename);
+    } else {
+        legacy_actual.clear();
+        for (int tid = 0; tid < numThreads; ++tid) {
+            legacy_actual.block[tid] = stallSig->blockRename[tid];
+            legacy_actual.reason[tid] = stallSig->renameBlockReason[tid];
+        }
+        actual = &legacy_actual;
+    }
+
+    iewStats.futureRenameLatchPreviewChecks++;
+    if (sameRenameLatchPreview(
+                pendingFutureRenameLatchPreview.latch, *actual)) {
+        iewStats.futureRenameLatchPreviewMatches++;
+        if (dispatch_publishability_reason <
+            NumIEWFutureDispatchOutputPublishabilityReasons) {
+            iewStats.futureRenameLatchPreviewMatchesByPublishability[
+                dispatch_publishability_reason]++;
+        }
+    } else {
+        iewStats.futureRenameLatchPreviewDifferences++;
+        if (dispatch_publishability_reason <
+            NumIEWFutureDispatchOutputPublishabilityReasons) {
+            iewStats.futureRenameLatchPreviewDifferencesByPublishability[
+                dispatch_publishability_reason]++;
+        }
+        recordRenameLatchPreviewDifferences(
+                pendingFutureRenameLatchPreview.latch, *actual);
+        if (cpu->getTaskRuntime().traceEnabled()) {
+            DPRINTF(IEW,
+                    "Future IEW-to-Rename latch preview difference "
+                    "cycle=%llu\n",
+                    static_cast<unsigned long long>(cycle));
+        }
+    }
+    pendingFutureRenameLatchPreview.valid = false;
+}
+
+bool
+IEW::sameDispatchDrainPreview(const DispatchDrainPreviewResult &lhs,
+                              const DispatchDrainPreviewResult &rhs) const
+{
+    return futureDispatchPreviewDifferenceReason(lhs, &rhs) ==
+           NumIEWFutureDispatchPreviewDifferenceReasons;
+}
+
+unsigned
+IEW::futureDispatchPreviewDifferenceReason(
+        const DispatchDrainPreviewResult &expected,
+        const DispatchDrainPreviewResult *actual) const
+{
+    if (!actual)
+        return IEWFutureDispatchPreviewActualMissing;
+    if (expected.valid != actual->valid ||
+        expected.cycle != actual->cycle) {
+        return IEWFutureDispatchPreviewValid;
+    }
+    if (expected.tid != actual->tid)
+        return IEWFutureDispatchPreviewTid;
+    if (expected.visibleInsts != actual->visibleInsts)
+        return IEWFutureDispatchPreviewVisibleInsts;
+    if (expected.dispatchedBeforeBlock != actual->dispatchedBeforeBlock)
+        return IEWFutureDispatchPreviewDispatchedBeforeBlock;
+    if (expected.drained != actual->drained)
+        return IEWFutureDispatchPreviewDrained;
+    if (expected.blockReason != actual->blockReason)
+        return IEWFutureDispatchPreviewBlockReason;
+    if (expected.schedulerBlockReason != actual->schedulerBlockReason)
+        return IEWFutureDispatchPreviewSchedulerBlockReason;
+
+    return NumIEWFutureDispatchPreviewDifferenceReasons;
+}
+
+void
+IEW::verifyPendingFutureDispatchPreview(
+        const DispatchDrainPreviewResult *actual)
+{
+    if (!pendingFutureDispatchPreview.valid)
+        return;
+
+    const Cycles cycle = cpu->curCycle();
+    if (pendingFutureDispatchPreview.result.cycle != cycle) {
+        iewStats.futureDispatchPreviewStale++;
+        pendingFutureDispatchPreview.valid = false;
+        return;
+    }
+
+    iewStats.futureDispatchPreviewChecks++;
+    const unsigned publishability =
+        futureDispatchOutputPublishabilityReason(
+                pendingFutureDispatchPreview.result, actual);
+    recordFutureDispatchOutputPublishability(
+            pendingFutureDispatchPreview.result, actual);
+    recordFutureDispatchBlockTokenCheck(
+            pendingFutureDispatchPreview.result, actual, publishability);
+    if (actual && actual->valid) {
+        iewStats.futureDispatchOutputSnapshotChecks++;
+        if (sameDispatchOutputSnapshot(
+                    pendingFutureDispatchPreview.result.output,
+                    actual->output)) {
+            iewStats.futureDispatchOutputSnapshotMatches++;
+        } else {
+            iewStats.futureDispatchOutputSnapshotDifferences++;
+            recordDispatchOutputSnapshotFieldDifferences(
+                    pendingFutureDispatchPreview.result.output,
+                    actual->output,
+                    iewStats.futureDispatchOutputSnapshotDifferenceFields);
+        }
+    }
+    if (actual && actual->valid &&
+        sameDispatchDrainPreview(
+                pendingFutureDispatchPreview.result, *actual)) {
+        iewStats.futureDispatchPreviewMatches++;
+    } else {
+        iewStats.futureDispatchPreviewDifferences++;
+        const unsigned reason =
+            futureDispatchPreviewDifferenceReason(
+                    pendingFutureDispatchPreview.result, actual);
+        if (reason < NumIEWFutureDispatchPreviewDifferenceReasons)
+            iewStats.futureDispatchPreviewDifferenceReasons[reason]++;
+        const auto &expected = pendingFutureDispatchPreview.result;
+        if (actual && actual->valid && expected.valid &&
+            expected.drained != actual->drained) {
+            if (!expected.drained && actual->drained) {
+                iewStats.futureDispatchPreviewDrainedDiffDirections[
+                    IEWFutureDispatchPreviewFutureBlockedActualDrained]++;
+            } else {
+                iewStats.futureDispatchPreviewDrainedDiffDirections[
+                    IEWFutureDispatchPreviewFutureDrainedActualBlocked]++;
+            }
+        }
+        if (reason == IEWFutureDispatchPreviewDispatchedBeforeBlock &&
+            actual) {
+            const auto expected_count =
+                expected.dispatchedBeforeBlock;
+            const auto actual_count = actual->dispatchedBeforeBlock;
+            const unsigned delta = expected_count > actual_count ?
+                expected_count - actual_count : actual_count - expected_count;
+            if (expected_count < actual_count) {
+                iewStats
+                    .futureDispatchPreviewDispatchedBeforeBlockDiffDirections[
+                        IEWFutureDispatchPreviewFutureLess]++;
+            } else {
+                iewStats
+                    .futureDispatchPreviewDispatchedBeforeBlockDiffDirections[
+                        IEWFutureDispatchPreviewFutureGreater]++;
+            }
+            iewStats.futureDispatchPreviewDispatchedBeforeBlockDelta.sample(
+                    delta);
+        }
+        if (cpu->getTaskRuntime().traceEnabled()) {
+            if (actual) {
+                DPRINTF(IEW,
+                        "Future dispatch preview difference cycle=%llu "
+                        "expected(tid=%i valid=%i drained=%i block=%u "
+                        "sched=%u insts=%u before=%u) actual(tid=%i "
+                        "valid=%i drained=%i block=%u sched=%u insts=%u "
+                        "before=%u)\n",
+                        static_cast<unsigned long long>(cycle),
+                        expected.tid, expected.valid, expected.drained,
+                        static_cast<unsigned>(expected.blockReason),
+                        static_cast<unsigned>(
+                            expected.schedulerBlockReason),
+                        expected.visibleInsts,
+                        expected.dispatchedBeforeBlock,
+                        actual->tid, actual->valid, actual->drained,
+                        static_cast<unsigned>(actual->blockReason),
+                        static_cast<unsigned>(
+                            actual->schedulerBlockReason),
+                        actual->visibleInsts,
+                        actual->dispatchedBeforeBlock);
+            } else {
+                DPRINTF(IEW,
+                        "Future dispatch preview difference cycle=%llu "
+                        "expected active tid=%i but actual had no dispatch\n",
+                        static_cast<unsigned long long>(cycle),
+                        expected.tid);
+            }
+        }
+    }
+    pendingFutureDispatchPreview.valid = false;
+}
+
+IEW::WritebackPrepareInput
+IEW::buildWritebackPrepareInput(Cycles cycle) const
+{
+    WritebackPrepareInput input;
+    input.cycle = cycle;
+    input.width = wbWidth;
+
+    for (unsigned inst_num = 0; inst_num < wbWidth; ++inst_num) {
+        const DynInstPtr &inst = toCommit->insts[inst_num];
+        if (!inst)
+            break;
+
+        auto &entry = input.entries[inst_num];
+        entry.valid = true;
+        entry.tid = inst->threadNumber;
+        entry.loadWithSavedRequest = inst->savedRequest && inst->isLoad();
+        entry.wakeEligible = !inst->isSquashed() && inst->isExecuted() &&
+                             inst->getFault() == NoFault;
+        input.validInsts++;
+    }
+
+    return input;
+}
+
+IEW::WritebackPrepareResult
+IEW::prepareWritebackControl(const WritebackPrepareInput &input) const
+{
+    WritebackPrepareResult result;
+    result.cycle = input.cycle;
+
+    for (unsigned inst_num = 0; inst_num < input.validInsts; ++inst_num) {
+        const auto &entry = input.entries[inst_num];
+        fatal_if(!entry.valid,
+                 "IEW writeback prepare expected a valid entry at slot %u.",
+                 inst_num);
+        fatal_if(entry.tid == InvalidThreadID || entry.tid >= MaxThreads,
+                 "IEW writeback prepare saw invalid thread id %i.",
+                 entry.tid);
+        result.tid[inst_num] = entry.tid;
+        result.loadWithSavedRequest[inst_num] =
+            entry.loadWithSavedRequest;
+        result.wakeEligible[inst_num] = entry.wakeEligible;
+        result.instsToCommit[entry.tid]++;
+        result.validInsts++;
+    }
+
+    return result;
+}
+
+IEW::WritebackPrepareResult
+IEW::runWritebackPrepare(Cycles cycle)
+{
+    WritebackPrepareInput input = buildWritebackPrepareInput(cycle);
+
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return prepareWritebackControl(input);
+
+    if (input.validInsts == 0) {
+        iewStats.writebackPrepareNoWork++;
+        return prepareWritebackControl(input);
+    }
+
+    iewStats.writebackPrepareTasks++;
+    const TaskOrderKey order{cycle, TaskStage::IEW, 4, InvalidThreadID, 0};
+    auto input_ptr = std::make_shared<WritebackPrepareInput>(input);
+    auto result = std::make_shared<WritebackPrepareResult>();
+    runtime.submitWeak(
+            order,
+            std::max(1u, input_ptr->validInsts),
+            [this, input_ptr, result] {
+                *result = prepareWritebackControl(*input_ptr);
+            },
+            [this, result] {
+                iewStats.writebackPrepareMerges++;
+                verifyWritebackPrepareResult(*result);
+            });
+    runtime.waitForOrder(order);
+
+    return *result;
+}
+
+void
+IEW::verifyWritebackPrepareResult(
+        const WritebackPrepareResult &result)
+{
+    const WritebackPrepareResult expected =
+        prepareWritebackControl(buildWritebackPrepareInput(result.cycle));
+
+    auto mismatch = [&] {
+        if (result.validInsts != expected.validInsts)
+            return true;
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            if (result.instsToCommit[tid] != expected.instsToCommit[tid])
+                return true;
+        }
+        for (unsigned inst_num = 0; inst_num < expected.validInsts;
+             ++inst_num) {
+            if (result.tid[inst_num] != expected.tid[inst_num] ||
+                result.loadWithSavedRequest[inst_num] !=
+                    expected.loadWithSavedRequest[inst_num] ||
+                result.wakeEligible[inst_num] !=
+                    expected.wakeEligible[inst_num]) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    if (mismatch()) {
+        iewStats.writebackPrepareMismatches++;
+        panic("IEW writeback prepare mismatch: prepared valid=%u expected=%u",
+              result.validInsts, expected.validInsts);
+    }
+}
+
+const RenameStruct *
+IEW::renameInput(Cycles cycle) const
+{
+    const int rename_to_iew_offset = -static_cast<int>(
+            static_cast<uint64_t>(renameToIEWDelay));
+    const RenameStruct *snapshot =
+        cpu->pipelineInputRenameToIEW(cycle, rename_to_iew_offset);
+    return snapshot ? snapshot : &(*fromRename);
+}
+
+const TimeStruct *
+IEW::commitInput(Cycles cycle) const
+{
+    const int commit_to_iew_offset = -static_cast<int>(
+            static_cast<uint64_t>(commitToIEWDelay));
+    const TimeStruct *snapshot =
+        cpu->pipelineInputBackward(cycle, commit_to_iew_offset);
+    return snapshot ? snapshot : &(*fromCommit);
+}
+
+void
+IEW::squash(ThreadID tid, const TimeStruct *commit_input)
 {
     DPRINTF(IEW, "[tid:%i] Squashing all instructions.\n", tid);
 
     for (auto& dp : dispQue) {
         for (auto& it : dp) {
-            if (it->seqNum > fromCommit->commitInfo[tid].doneSeqNum) {
+            if (it->seqNum > commit_input->commitInfo[tid].doneSeqNum) {
                 it->setSquashed();
             }
         }
@@ -538,18 +3581,18 @@ IEW::squash(ThreadID tid)
     instQueue.squash(tid);
 
     // Tell the LDSTQ to start squashing.
-    ldstQueue.squash(fromCommit->commitInfo[tid].doneSeqNum, tid);
+    ldstQueue.squash(commit_input->commitInfo[tid].doneSeqNum, tid);
     updatedQueues = true;
 
     fixedbuffer[tid].clear();
 
-    stallSig->blockRename[tid] = true;
+    setRenameBlock(tid, true);
 
     // Clear the skid buffer in case it has any data in it.
     DPRINTF(IEW,
             "Removing skidbuffer instructions until "
             "[sn:%llu] [tid:%i]\n",
-            fromCommit->commitInfo[tid].doneSeqNum, tid);
+            commit_input->commitInfo[tid].doneSeqNum, tid);
 }
 
 void
@@ -582,7 +3625,7 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
                 toCommit->squashedLoopIter[tid]);
     }
 
-    stallSig->blockRename[tid] = true;
+    setRenameBlock(tid, true);
 }
 
 void
@@ -618,7 +3661,7 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
                 toCommit->squashedLoopIter[tid]);
     }
 
-    stallSig->blockRename[tid] = true;
+    setRenameBlock(tid, true);
 }
 
 void
@@ -655,7 +3698,7 @@ IEW::squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid)
                 toCommit->squashedLoopIter[tid]);
     }
 
-    stallSig->blockRename[tid] = true;
+    setRenameBlock(tid, true);
 }
 
 void
@@ -789,10 +3832,12 @@ IEW::updateActivate()
 }
 
 bool
-IEW::checkSerialize(const DynInstPtr& inst)
+IEW::checkSerialize(const DynInstPtr& inst,
+                    const TimeStruct *commit_input)
 {
     ThreadID tid = inst->threadNumber;
-    bool skipserialize = fromCommit->commitInfo[tid].robheadSeqNum >= inst->seqNum;
+    bool skipserialize =
+        commit_input->commitInfo[tid].robheadSeqNum >= inst->seqNum;
 
     if (serializeOnNextInst[tid]) {
         inst->setSerializeBefore();
@@ -810,7 +3855,7 @@ IEW::checkSerialize(const DynInstPtr& inst)
 }
 
 void
-IEW::checkSquash()
+IEW::checkSquash(const TimeStruct *commit_input)
 {
     // Check if there's a squash signal, squash if there is
     // Check stall signals, block if there is.
@@ -820,9 +3865,10 @@ IEW::checkSquash()
     //     check if squashing is not high.  Switch to running this cycle.
 
     for (int i = 0; i < numThreads; i++) {
-        if (fromCommit->commitInfo[i].squash) {
-            squash(i);
-            localSquashVer.update(fromCommit->commitInfo[i].squashVersion.getVersion());
+        if (commit_input->commitInfo[i].squash) {
+            squash(i, commit_input);
+            localSquashVer.update(
+                    commit_input->commitInfo[i].squashVersion.getVersion());
             DPRINTF(IEW, "Updating squash version to %u\n", localSquashVer.getVersion());
 
             fetchRedirect[i] = false;
@@ -831,7 +3877,7 @@ IEW::checkSquash()
             return;
         }
 
-        if (fromCommit->commitInfo[i].robSquashing) {
+        if (commit_input->commitInfo[i].robSquashing) {
             DPRINTF(IEW, "[tid:%i] ROB is still squashing.\n", i);
 
             wroteToTimeBuffer = true;
@@ -842,17 +3888,17 @@ IEW::checkSquash()
 }
 
 void
-IEW::moveInstsToBuffer()
+IEW::moveInstsToBuffer(const RenameStruct *rename_input)
 {
-    int insts_from_rename = fromRename->size;
+    int insts_from_rename = rename_input->size;
     if (insts_from_rename == 0) {
         DPRINTF(IEW, "No instructions from rename to move to buffer.\n");
         return;
     }
-    ThreadID tid = fromRename->insts[0]->threadNumber;
+    ThreadID tid = rename_input->insts[0]->threadNumber;
     assert(fixedbuffer[tid].empty());
     for (int i = 0; i < insts_from_rename; ++i) {
-        const DynInstPtr &inst = fromRename->insts[i];
+        const DynInstPtr &inst = rename_input->insts[i];
         assert(inst->threadNumber == tid);
         if (localSquashVer.largerThan(inst->getVersion())) {
             inst->setSquashed();
@@ -890,13 +3936,17 @@ IEW::deactivateStage()
 }
 
 bool
-IEW::canInsertLDSTQue(ThreadID tid)
+IEW::canInsertLDSTQue(ThreadID tid, bool reset_lsq_pop_entries)
 {
     int freeLQEntries = ldstQueue.getFreeLQEntries(tid);
     int freeSQEntries = ldstQueue.getFreeSQEntries(tid);
 
-    int lastClockLQPopEntries = ldstQueue.getAndResetLastLQPopEntries(tid);
-    int lastClockSQPopEntries = ldstQueue.getAndResetLastSQPopEntries(tid);
+    int lastClockLQPopEntries = reset_lsq_pop_entries ?
+        ldstQueue.getAndResetLastLQPopEntries(tid) :
+        ldstQueue.peekLastLQPopEntries(tid);
+    int lastClockSQPopEntries = reset_lsq_pop_entries ?
+        ldstQueue.getAndResetLastSQPopEntries(tid) :
+        ldstQueue.peekLastSQPopEntries(tid);
     if (freeLQEntries >= renameWidth + lastClockLQPopEntries &&
         freeSQEntries >= renameWidth + lastClockSQPopEntries) {
         return true;
@@ -905,74 +3955,86 @@ IEW::canInsertLDSTQue(ThreadID tid)
 }
 
 void
-IEW::dispatchInsts()
+IEW::dispatchInsts(const RenameStruct *rename_input,
+                   const TimeStruct *commit_input)
 {
     if (enableDispatchStage) {
         dispatchInstFromDispQue();
     }
 
     // check threads stall & status
-    ThreadID tid = InvalidThreadID;
+    const IEWPrepareResult prepare = runIEWPrepare(cpu->curCycle());
+    ThreadID tid = prepare.selectedTid;
     for (int i = 0; i < numThreads; i++) {
-        bool ldst_block = !canInsertLDSTQue(i);
-        bool block = stallSig->blockIEW[i] || ldst_block;
-        bool active = !block && !fixedbuffer[i].empty();
-        StallReason block_reason = StallReason::NoStall;
-        if (stallSig->blockIEW[i]) {
-            block_reason = stallSig->iewBlockReason[i];
-        } else if (ldst_block) {
-            block_reason = checkDispatchStall(i, NumDQ, nullptr, -1);
-            if (block_reason == StallReason::NoStall) {
-                block_reason = StallReason::OtherStall;
-            }
-        }
-
-        stallSig->blockRename[i] = block;
-        stallSig->renameBlockReason[i] = block ? block_reason : StallReason::NoStall;
-        if (active) {
-            if (tid == InvalidThreadID) tid = i;
-            else {
-                // if there are multiple active threads, must exhaust all threads first
-                // to avoid starvation of other threads and also avoid resource conflict
-                stallSig->blockRename[tid] = true;
-                stallSig->blockRename[i] = true;
-                DPRINTF(IEW, "Multiple active threads detected, blocking all threads\n");
-            }
-        }
+        setRenameStall(i, prepare.renameBlock[i],
+                       prepare.renameBlockReason[i]);
+    }
+    if (prepare.multipleActive) {
+        DPRINTF(IEW,
+                "Multiple active threads detected, blocking all threads\n");
     }
 
     if (tid != InvalidThreadID) {
         DPRINTF(IEW,"Processing [tid:%i]\n",tid);
 
+        DispatchDrainPreviewResult dispatch_drain_preview;
+
         // dispatch to IQ
         if (enableDispatchStage) {
-            classifyInstToDispQue(tid);
+            dispatch_drain_preview =
+                previewDirectDispatchDrain(cpu->curCycle(), tid, commit_input);
+            classifyInstToDispQue(tid, rename_input, commit_input);
         } else {
-            dispatchInstFromRename(tid);
+            dispatch_drain_preview =
+                dispatchInstFromRename(tid, rename_input, commit_input);
         }
         // check stall again
         if (!fixedbuffer[tid].empty()) {
-            stallSig->blockRename[tid] = true;
+            setRenameBlock(tid, true);
             DPRINTF(IEW, "Dispatch bandwidth full, blocking thread %i\n", tid);
         }
+        const unsigned dispatch_publishability =
+            pendingFutureDispatchPreview.valid &&
+            pendingFutureDispatchPreview.result.cycle == cpu->curCycle() ?
+            futureDispatchOutputPublishabilityReason(
+                    pendingFutureDispatchPreview.result,
+                    &dispatch_drain_preview) :
+            NumIEWFutureDispatchOutputPublishabilityReasons;
+        verifyPendingFutureDispatchPreview(&dispatch_drain_preview);
+        verifyPendingFutureRenameLatchPreview(dispatch_publishability);
+        verifyDirectDispatchDrainPreview(dispatch_drain_preview, tid);
 
-        toRename->iewInfo[tid].robHeadStallReason = checkDispatchStall(tid, NumDQ, nullptr, -1);
+        const DispatchStatusPrepareResult dispatch_status =
+            runDispatchStatusPrepare(cpu->curCycle(), tid);
+        toRename->iewInfo[tid].robHeadStallReason =
+            dispatch_status.robHeadStallReason;
         toRename->iewInfo[tid].lqHeadStallReason =
-            ldstQueue.lqEmpty() ? StallReason::NoStall : checkLSQStall(tid, true);
+            dispatch_status.lqHeadStallReason;
         toRename->iewInfo[tid].sqHeadStallReason =
-            ldstQueue.sqEmpty() ? StallReason::NoStall : checkLSQStall(tid, false);
+            dispatch_status.sqHeadStallReason;
         toRename->iewInfo[tid].blockReason = blockReason;
+    } else {
+        const unsigned dispatch_publishability =
+            pendingFutureDispatchPreview.valid &&
+            pendingFutureDispatchPreview.result.cycle == cpu->curCycle() ?
+            futureDispatchOutputPublishabilityReason(
+                    pendingFutureDispatchPreview.result, nullptr) :
+            NumIEWFutureDispatchOutputPublishabilityReasons;
+        verifyPendingFutureDispatchPreview(nullptr);
+        verifyPendingFutureRenameLatchPreview(dispatch_publishability);
     }
 }
 
-void
-IEW::dispatchInstFromRename(ThreadID tid)
+IEW::DispatchDrainPreviewResult
+IEW::dispatchInstFromRename(ThreadID tid,
+                            const RenameStruct *rename_input,
+                            const TimeStruct *commit_input)
 {
     DynInstPtr inst;
 
     auto &insts_to_dispatch = fixedbuffer[tid];
 
-    bool emptyROB = fromCommit->commitInfo[tid].emptyROB;
+    bool emptyROB = commit_input->commitInfo[tid].emptyROB;
 
     int insts_to_add = insts_to_dispatch.size();
     std::queue<StallReason> dispatch_stalls;
@@ -982,6 +4044,9 @@ IEW::dispatchInstFromRename(ThreadID tid)
     int disp_seq = -1;
 
     scheduler->lookahead(insts_to_dispatch);
+    const DispatchDrainPreviewResult dispatch_drain_preview =
+        previewDirectDispatchDrain(cpu->curCycle(), tid, commit_input);
+    DispatchDrainPreviewResult::OutputSnapshot actual_dispatch_output;
     while (!insts_to_dispatch.empty()) {
         bool add_to_iq = false;
         auto &inst = insts_to_dispatch.front();
@@ -993,13 +4058,15 @@ IEW::dispatchInstFromRename(ThreadID tid)
 
         if (inst->isSquashed()) {
             ++iewStats.dispSquashedInsts;
+            actual_dispatch_output.fixedBufferPops++;
+            actual_dispatch_output.squashedPops++;
             insts_to_dispatch.pop_front();
 
             dispatch_stalls.push(StallReason::InstSquashed);
             continue;
         }
 
-        if (checkSerialize(inst)) {
+        if (checkSerialize(inst, commit_input)) {
             DPRINTF(IEW, "[tid:%i] [sn:%llu] Dispatch: Serialize instruction encountered.\n", tid, inst->seqNum);
             dispatch_stalls.push(checkDispatchStall(tid, NumDQ, inst, disp_seq));
             breakDispatch = dispatch_stalls.back();
@@ -1043,6 +4110,7 @@ IEW::dispatchInstFromRename(ThreadID tid)
 
         if (!inst->isNop() && !inst->isEliminated()) {
             scheduler->addProducer(inst);
+            actual_dispatch_output.producerAdds++;
         }
 
         if (inst->isAtomic()) {
@@ -1054,8 +4122,10 @@ IEW::dispatchInstFromRename(ThreadID tid)
             ++iewStats.dispNonSpecInsts;
 
             ldstQueue.insertStore(inst);
+            actual_dispatch_output.sqInserts++;
             inst->setCanCommit();
             instQueue.insertNonSpec(inst);
+            actual_dispatch_output.nonSpecInserts++;
             add_to_iq = false;
         } else if (inst->isLoad()) {
             DPRINTF(IEW,
@@ -1065,6 +4135,7 @@ IEW::dispatchInstFromRename(ThreadID tid)
             ++iewStats.dispLoadInsts;
 
             ldstQueue.insertLoad(inst);
+            actual_dispatch_output.lqInserts++;
             add_to_iq = true;
             if (valuePred && inst->vpSupported && inst->vpResult.speculative) {
                 lvpWakeDependents(inst);
@@ -1077,10 +4148,12 @@ IEW::dispatchInstFromRename(ThreadID tid)
             ++iewStats.dispStoreInsts;
 
             ldstQueue.insertStore(inst);
+            actual_dispatch_output.sqInserts++;
             if (inst->isStoreConditional()) {
                 ++iewStats.dispNonSpecInsts;
                 inst->setCanCommit();
                 instQueue.insertNonSpec(inst);
+                actual_dispatch_output.nonSpecInserts++;
                 add_to_iq = false;
             } else {
                 add_to_iq = true;
@@ -1088,6 +4161,7 @@ IEW::dispatchInstFromRename(ThreadID tid)
         } else if (inst->isReadBarrier() || inst->isWriteBarrier()) {
             inst->setCanCommit();
             instQueue.insertBarrier(inst);
+            actual_dispatch_output.barrierInserts++;
             add_to_iq = false;
         } else if (inst->isNop() || inst->isEliminated()) {
             DPRINTF(IEW,
@@ -1111,19 +4185,24 @@ IEW::dispatchInstFromRename(ThreadID tid)
                     tid);
             inst->setCanCommit();
             instQueue.insertNonSpec(inst);
+            actual_dispatch_output.nonSpecInserts++;
             add_to_iq = false;
         }
 
         if (add_to_iq) {
             instQueue.insert(inst, disp_seq);
+            actual_dispatch_output.iqInserts++;
         }
         ppDispatch->notify(inst);
 
         ++iewStats.dispatchedInsts;
 
         insts_to_dispatch.pop_front();
+        actual_dispatch_output.fixedBufferPops++;
         dispatched++;
     }
+    verifyDirectDispatchOutputSnapshot(
+            dispatch_drain_preview, actual_dispatch_output, tid);
 
     iewStats.dispDist.sample(dispatched);
 
@@ -1139,10 +4218,11 @@ IEW::dispatchInstFromRename(ThreadID tid)
             if (i < dispatched) {   // dispatch success, no stall
                 dispatchStalls.at(i) = StallReason::NoStall;
             } else {    // dispatch no insts, pass rename stall
-                if (fromRename->renameStallReason.size() == 0) {    // initialize, no stall
+                if (rename_input->renameStallReason.size() == 0) {    // initialize, no stall
                     dispatchStalls.at(i) = StallReason::NoStall;
                 } else {    // not dispatch initialize, pass rename stall
-                    dispatchStalls.at(i) = fromRename->renameStallReason.at(i);
+                    dispatchStalls.at(i) =
+                        rename_input->renameStallReason.at(i);
                 }
             }
         }
@@ -1159,14 +4239,17 @@ IEW::dispatchInstFromRename(ThreadID tid)
         iewStats.stallEvents[DispBWFull]++;
     }
 
+    return dispatch_drain_preview;
 }
 
 void
-IEW::classifyInstToDispQue(ThreadID tid)
+IEW::classifyInstToDispQue(ThreadID tid,
+                           const RenameStruct *rename_input,
+                           const TimeStruct *commit_input)
 {
     auto &insts_to_dispatch = fixedbuffer[tid];
 
-    bool emptyROB = fromCommit->commitInfo[tid].emptyROB;
+    bool emptyROB = commit_input->commitInfo[tid].emptyROB;
 
     int insts_to_add = insts_to_dispatch.size();
     std::queue<StallReason> dispatch_stalls;
@@ -1188,7 +4271,7 @@ IEW::classifyInstToDispQue(ThreadID tid)
                 continue;
             }
 
-            if (checkSerialize(inst)) {
+            if (checkSerialize(inst, commit_input)) {
                 DPRINTF(IEW, "[tid:%i] [sn:%llu] Dispatch: Serialize instruction encountered.\n", tid, inst->seqNum);
                 break;
             }
@@ -1252,10 +4335,11 @@ IEW::classifyInstToDispQue(ThreadID tid)
             if (i < dispatched) {   // dispatch success, no stall
                 dispatchStalls.at(i) = StallReason::NoStall;
             } else {    // dispatch no insts, pass rename stall
-                if (fromRename->renameStallReason.size() == 0) {    // initialize, no stall
+                if (rename_input->renameStallReason.size() == 0) {    // initialize, no stall
                     dispatchStalls.at(i) = StallReason::NoStall;
                 } else {    // not dispatch initialize, pass rename stall
-                    dispatchStalls.at(i) = fromRename->renameStallReason.at(i);
+                    dispatchStalls.at(i) =
+                        rename_input->renameStallReason.at(i);
                 }
             }
         }
@@ -1700,19 +4784,30 @@ IEW::writebackInsts()
     // Either have IEW have direct access to scoreboard, or have this
     // as part of backwards communication.
 
-    for (int inst_num = 0; inst_num < wbWidth &&
-             toCommit->insts[inst_num]; inst_num++) {
-        DynInstPtr inst = toCommit->insts[inst_num];
-        ThreadID tid = inst->threadNumber;
+    const WritebackPrepareResult prepare =
+        runWritebackPrepare(cpu->curCycle());
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        iewStats.instsToCommit[tid] += prepare.instsToCommit[tid];
+    }
 
-        if (inst->savedRequest && inst->isLoad()) {
+    for (unsigned inst_num = 0; inst_num < prepare.validInsts; ++inst_num) {
+        DynInstPtr inst = toCommit->insts[inst_num];
+        fatal_if(!inst,
+                 "IEW writeback prepare expected an instruction at slot %u.",
+                 inst_num);
+        ThreadID tid = prepare.tid[inst_num];
+        fatal_if(inst->threadNumber != tid,
+                 "IEW writeback prepare tid mismatch at slot %u: "
+                 "prepared %i, current %i.",
+                 inst_num, tid, inst->threadNumber);
+
+        if (prepare.loadWithSavedRequest[inst_num]) {
             inst->pf_source = inst->savedRequest->mainReq()->getPFSource();
         }
 
         DPRINTF(IEW, "Sending instructions to commit, [sn:%lli] PC %s.\n",
                 inst->seqNum, inst->pcState());
 
-        iewStats.instsToCommit[tid]++;
         // Notify potential listeners that execution is complete for this
         // instruction.
         ppToCommit->notify(inst);
@@ -1722,8 +4817,7 @@ IEW::writebackInsts()
         // E.g. Strictly ordered loads have not actually executed when they
         // are first sent to commit.  Instead commit must tell the LSQ
         // when it's ready to execute the strictly ordered load.
-        if (!inst->isSquashed() && inst->isExecuted() &&
-                inst->getFault() == NoFault) {
+        if (prepare.wakeEligible[inst_num]) {
 
             scheduler->writebackWakeup(inst);
             int dependents = instQueue.wakeDependents(inst);
@@ -1751,15 +4845,18 @@ IEW::writebackInsts()
 void
 IEW::tick()
 {
+    const RenameStruct *rename_input = renameInput(cpu->curCycle());
+    const TimeStruct *commit_input = commitInput(cpu->curCycle());
+
     blockReason = StallReason::NoStall;
-    for (int i = 0;i < fromRename->fetchStallReason.size();i++) {
-        iewStats.fetchStallReason[fromRename->fetchStallReason[i]]++;
+    for (int i = 0;i < rename_input->fetchStallReason.size();i++) {
+        iewStats.fetchStallReason[rename_input->fetchStallReason[i]]++;
     }
-    for (int i = 0;i < fromRename->decodeStallReason.size();i++) {
-        iewStats.decodeStallReason[fromRename->decodeStallReason[i]]++;
+    for (int i = 0;i < rename_input->decodeStallReason.size();i++) {
+        iewStats.decodeStallReason[rename_input->decodeStallReason[i]]++;
     }
-    for (int i = 0;i < fromRename->renameStallReason.size();i++) {
-        iewStats.renameStallReason[fromRename->renameStallReason[i]]++;
+    for (int i = 0;i < rename_input->renameStallReason.size();i++) {
+        iewStats.renameStallReason[rename_input->renameStallReason[i]]++;
     }
 
     wbNumInst = 0;
@@ -1772,9 +4869,9 @@ IEW::tick()
     ldstQueue.tick();
 
     // dispatch
-    moveInstsToBuffer();
-    checkSquash();
-    dispatchInsts();
+    moveInstsToBuffer(rename_input);
+    checkSquash(commit_input);
+    dispatchInsts(rename_input, commit_input);
 
     for (int i = 0;i < dispatchStalls.size();i++) {
         iewStats.dispatchStallReason[dispatchStalls[i]]++;
@@ -1813,37 +4910,41 @@ IEW::tick()
 
         DPRINTF(IEW,"Commit processing [tid:%i]\n",tid);
 
-        if (fromCommit->commitInfo[tid].doneMemSeqNum != 0 &&
-            !fromCommit->commitInfo[tid].squash &&
-            !fromCommit->commitInfo[tid].robSquashing) {
+        if (commit_input->commitInfo[tid].doneMemSeqNum != 0 &&
+            !commit_input->commitInfo[tid].squash &&
+            !commit_input->commitInfo[tid].robSquashing) {
 
             // Marks some of the entries in the store queue as canWB and
             // they will be moved to the store buffer when appropriate.
-            ldstQueue.commitStores(fromCommit->commitInfo[tid].doneMemSeqNum,tid);
+            InstSeqNum done_mem_seq =
+                commit_input->commitInfo[tid].doneMemSeqNum;
+            ldstQueue.commitStores(done_mem_seq, tid);
             updateLSQNextCycle = true;
         }
 
         // Update structures based on instructions committed.
-        if (fromCommit->commitInfo[tid].doneSeqNum != 0 &&
-            !fromCommit->commitInfo[tid].squash &&
-            !fromCommit->commitInfo[tid].robSquashing) {
+        if (commit_input->commitInfo[tid].doneSeqNum != 0 &&
+            !commit_input->commitInfo[tid].squash &&
+            !commit_input->commitInfo[tid].robSquashing) {
 
-            ldstQueue.commitLoads(fromCommit->commitInfo[tid].doneSeqNum,tid);
+            InstSeqNum done_seq = commit_input->commitInfo[tid].doneSeqNum;
+            ldstQueue.commitLoads(done_seq, tid);
             updateLSQNextCycle = true;
 
-            instQueue.commit(fromCommit->commitInfo[tid].doneSeqNum,tid);
+            instQueue.commit(done_seq, tid);
         }
 
-        if (fromCommit->commitInfo[tid].nonSpecSeqNum != 0) {
+        if (commit_input->commitInfo[tid].nonSpecSeqNum != 0) {
 
             //DPRINTF(IEW,"NonspecInst from thread %i",tid);
-            if (fromCommit->commitInfo[tid].strictlyOrdered) {
+            if (commit_input->commitInfo[tid].strictlyOrdered) {
                 instQueue.replayMemInst(
-                    fromCommit->commitInfo[tid].strictlyOrderedLoad);
-                fromCommit->commitInfo[tid].strictlyOrderedLoad->setAtCommit();
+                    commit_input->commitInfo[tid].strictlyOrderedLoad);
+                commit_input->commitInfo[tid].strictlyOrderedLoad
+                    ->setAtCommit();
             } else {
                 instQueue.scheduleNonSpec(
-                    fromCommit->commitInfo[tid].nonSpecSeqNum);
+                    commit_input->commitInfo[tid].nonSpecSeqNum);
             }
         }
 

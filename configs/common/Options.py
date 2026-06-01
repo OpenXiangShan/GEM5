@@ -199,6 +199,36 @@ def addNoISAOptions(parser, configure_xiangshan=False):
         "Direct parameters of the root object are not accessible, "
         "only parameters of its children.")
 
+    # Host-side task-parallel simulation runtime. These are System-level
+    # knobs, not CPU-model parameters.
+    parser.add_argument("--enable-task-parallel-sim", action="store_true",
+                        default=False,
+                        help="Enable host-side task-parallel simulation runtime")
+    parser.add_argument("--task-parallel-threads", type=int, default=2,
+                        help="Number of host worker threads; 0 lets the "
+                        "runtime choose up to the default cap")
+    parser.add_argument("--task-window-cycles", type=int, default=1,
+                        help="Maximum task-preparation lookahead window in CPU cycles")
+    parser.add_argument("--no-task-deterministic", dest="task_deterministic",
+                        action="store_false", default=True,
+                        help="Allow non-deterministic task merge policy")
+    parser.add_argument("--task-min-work", type=int, default=0,
+                        help="Minimum estimated work before sending a task to a worker")
+    parser.add_argument("--task-trace", action="store_true", default=False,
+                        help="Enable task-runtime debug tracing")
+    parser.add_argument("--task-runtime-self-test", action="store_true",
+                        default=False,
+                        help="Run a task-runtime worker and deterministic-merge self-test")
+    parser.add_argument("--event-priority-audit", action="store_true",
+                        default=False,
+                        help="Audit same-time same-priority event ordering dependencies")
+    parser.add_argument("--max-in-flight-cycles", type=int, default=1,
+                        help="Maximum number of prepared but unpublished CPU cycles")
+    parser.add_argument("--max-ready-tasks", type=int, default=0,
+                        help="Maximum ready task backlog; 0 means no explicit limit")
+    parser.add_argument("--max-spec-task-waste", type=int, default=100,
+                        help="Maximum tolerated discarded speculative task percentage")
+
     # Dump options
     parser.add_argument("--dump-commit",
                         action="store_true",

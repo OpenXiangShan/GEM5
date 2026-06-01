@@ -210,27 +210,160 @@ class Rename
     void dumpHistory();
 
     void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
+    void setStallSignalBank(StallSignalBank* bank) { stallSignalBank = bank; }
+
+    struct RenamePrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID selectedTid = InvalidThreadID;
+        ThreadID blockedTid = InvalidThreadID;
+        unsigned activeThreads = 0;
+        unsigned blockedThreads = 0;
+        unsigned regFullEvents = 0;
+        bool multipleActive = false;
+        bool canRename[MaxThreads] = {};
+        bool iewBlock[MaxThreads] = {};
+        bool block[MaxThreads] = {};
+        bool active[MaxThreads] = {};
+        bool decodeBlock[MaxThreads] = {};
+        StallReason renameBlockReason[MaxThreads] = {};
+        StallReason decodeBlockReason[MaxThreads] = {};
+    };
+
+    static constexpr unsigned NumRenameRegClasses =
+        static_cast<unsigned>(RMiscRegClass) + 1;
+
+    struct RenamePrepareInput
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID numThreads = 0;
+        bool fixedbufferEmpty[MaxThreads] = {};
+        unsigned fixedbufferSize[MaxThreads] = {};
+        int demandPhyRegs[MaxThreads][NumRenameRegClasses] = {};
+        int freePhyRegs[MaxThreads][NumRenameRegClasses] = {};
+        StallSignalLatch iewToRename;
+        StallReason robHeadStallReason[MaxThreads] = {};
+        StallReason lqHeadStallReason[MaxThreads] = {};
+        StallReason sqHeadStallReason[MaxThreads] = {};
+    };
+
+    struct FutureCandidatePrepareProfile
+    {
+        bool valid = false;
+        unsigned blockReason = 0;
+        unsigned schedulerReason = 0;
+        unsigned fixedBufferPops = 0;
+        unsigned dispatchedBeforeBlock = 0;
+    };
+
+    bool previewFutureDecodeLatch(Cycles cycle,
+                                  const StallSignalLatch &iew_to_rename,
+                                  const DecodeStruct *snapshot_decode,
+                                  const TimeStruct *snapshot_iew,
+                                  const TimeStruct *snapshot_commit,
+                                  StallSignalLatch &rename_to_decode,
+                                  RenamePrepareResult *prepare_result =
+                                      nullptr);
+    bool buildFutureDecodeLatchInput(
+            Cycles cycle, const StallSignalLatch &iew_to_rename,
+            const DecodeStruct *snapshot_decode,
+            const TimeStruct *snapshot_iew,
+            const TimeStruct *snapshot_commit,
+            RenamePrepareInput &input,
+            bool count_stats = true);
+    bool previewFutureDecodeLatch(
+            const RenamePrepareInput &input,
+            StallSignalLatch &rename_to_decode,
+            RenamePrepareResult *prepare_result = nullptr) const;
+    RenamePrepareResult previewFuturePrepare(
+            const RenamePrepareInput &input) const;
+    void recordFuturePrepareProbe();
+    void recordFuturePrepareSkipped();
+    void recordFuturePreviewSkipped(const RenamePrepareResult &result);
+    void setPendingFuturePrepare(const RenamePrepareResult &result);
+    void setPendingFutureCandidatePrepare(
+            const RenamePrepareResult &result,
+            const FutureCandidatePrepareProfile &profile,
+            const RenamePrepareInput &input);
 
   private:
+    struct RenameThreadPrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID tid = InvalidThreadID;
+        bool canRename = true;
+        bool iewBlock = false;
+        bool block = false;
+        bool active = false;
+        bool blocked = false;
+        bool decodeBlock = false;
+        unsigned regFullEvents = 0;
+        StallReason renameBlockReason = StallReason::NoStall;
+        StallReason decodeBlockReason = StallReason::NoStall;
+    };
+
+    struct RenameThreadPrepareResults
+    {
+        RenameThreadPrepareResult byThread[MaxThreads];
+    };
+
+    void setDecodeStall(ThreadID tid, bool block, StallReason reason);
+    void setDecodeBlock(ThreadID tid, bool block);
+    RenamePrepareInput buildRenamePrepareInput(
+            Cycles cycle,
+            const StallSignalLatch *iew_to_rename_override = nullptr,
+            const DecodeStruct *snapshot_decode = nullptr,
+            const TimeStruct *snapshot_iew = nullptr) const;
+    RenameThreadPrepareResult prepareRenameThreadControl(
+            const RenamePrepareInput &input, ThreadID tid) const;
+    RenamePrepareResult combineRenameThreadPrepareResults(
+            const RenamePrepareInput &input,
+            const RenameThreadPrepareResults &thread_results) const;
+    RenamePrepareResult prepareRenameControl(
+            const RenamePrepareInput &input) const;
+    unsigned applyFutureReleaseDeltas(RenamePrepareInput &input) const;
+    RenamePrepareResult runRenamePrepare(Cycles cycle);
+    void mergeRenamePrepareResult(const RenamePrepareResult &result,
+                                  bool countPrepareStats);
+    bool samePrepareResult(const RenamePrepareResult &lhs,
+                           const RenamePrepareResult &rhs) const;
+    unsigned futurePrepareMismatchReason(
+            const RenamePrepareResult &lhs,
+            const RenamePrepareResult &rhs) const;
+    bool sameFutureCandidateInput(
+            const RenamePrepareInput &lhs,
+            const RenamePrepareInput &rhs) const;
+    void recordFutureCandidateInputDifferenceFields(
+            const RenamePrepareInput &expected,
+            const RenamePrepareInput &actual,
+            statistics::Vector &fields) const;
+    void recordFutureCandidateIEWBlockDiffDirections(
+            const RenamePrepareInput &expected,
+            const RenamePrepareInput &actual,
+            bool prepare_match);
+
     /** Reset this pipeline stage */
     void resetStage();
 
     /** Renames instructions for the given thread. Also handles serializing
      * instructions.
      */
-    void renameInsts(ThreadID tid);
+    void renameInsts(ThreadID tid, const TimeStruct *iew_input);
 
     /** Checks if the rename map can rename all the given number of instructions this cycle. */
     bool canRename(ThreadID tid);
 
-    void releasePhysRegs();
+    void releasePhysRegs(const TimeStruct *commit_input);
 
     /** Separates instructions from decode into individual lists of instructions
      * sorted by thread.
      */
-    void moveInstsToBuffer();
+    const TimeStruct *iewInput(Cycles cycle) const;
+    const TimeStruct *commitInput(Cycles cycle) const;
+    const DecodeStruct *decodeInput(Cycles cycle) const;
+    void moveInstsToBuffer(const DecodeStruct *decode_input);
 
-    void checkSquash();
+    void checkSquash(const TimeStruct *commit_input);
 
     /** Updates overall rename status based on all of the threads' statuses. */
     void updateActivate();
@@ -313,6 +446,23 @@ class Rename
     /** Queue of all instructions coming from decode this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
 
+    struct PendingFuturePrepare
+    {
+        bool valid = false;
+        RenamePrepareResult result;
+    };
+
+    struct PendingFutureCandidatePrepare
+    {
+        bool valid = false;
+        RenamePrepareResult result;
+        FutureCandidatePrepareProfile profile;
+        RenamePrepareInput input;
+    };
+
+    PendingFuturePrepare pendingFuturePrepare;
+    PendingFutureCandidatePrepare pendingFutureCandidatePrepare;
+
     /** Rename map interface. */
     UnifiedRenameMap *renameMap[MaxThreads];
 
@@ -341,6 +491,7 @@ class Rename
     Stalls stalls[MaxThreads];
 
     StallSignals* stallSig;
+    StallSignalBank* stallSignalBank = nullptr;
 
     /** Delay between iew and rename, in ticks. */
     int iewToRenameDelay;
@@ -402,6 +553,80 @@ class Rename
         /** Stat for total number of squashed instructions that rename
          * discards. */
         statistics::Scalar squashedInsts;
+        /** Stat for number of rename prepare tasks submitted. */
+        statistics::Scalar prepareTasks;
+        /** Stat for number of rename prepare results merged. */
+        statistics::Scalar prepareMerges;
+        /** Accumulated active thread count seen by rename prepare. */
+        statistics::Scalar prepareActiveThreads;
+        /** Accumulated blocked thread count seen by rename prepare. */
+        statistics::Scalar prepareBlockedThreads;
+        /** Accumulated inactive thread count seen by rename prepare. */
+        statistics::Scalar prepareInactiveThreads;
+        /** Number of times rename prepare saw multiple active threads. */
+        statistics::Scalar prepareMultipleActive;
+        /** Number of future rename prepare probes submitted. */
+        statistics::Scalar futurePrepareProbes;
+        /** Number of future rename prepare probes skipped. */
+        statistics::Scalar futurePrepareSkipped;
+        /** Breakdown of why future rename input construction was skipped. */
+        statistics::Vector futureInputSkipReasons;
+        /** Breakdown of commit controls blocking future rename input. */
+        statistics::Vector futureInputCommitControlReasons;
+        /** Breakdown of why future Rename-to-Decode latch preview failed. */
+        statistics::Vector futurePreviewSkipReasons;
+        /** Future rename inputs that projected pending phys-reg releases. */
+        statistics::Scalar futureInputVirtualReleaseSteps;
+        /** Phys regs virtually added by future rename release projection. */
+        statistics::Scalar futureInputVirtualReleaseRegs;
+        /** Number of future rename prepare results made pending. */
+        statistics::Scalar futurePrepareMerges;
+        /** Number of current rename prepares reused from future work. */
+        statistics::Scalar futurePrepareReuses;
+        /** Number of future rename prepare validation checks. */
+        statistics::Scalar futurePrepareChecks;
+        /** Number of future rename prepare validation matches. */
+        statistics::Scalar futurePrepareMatches;
+        /** Number of future rename prepare validation mismatches. */
+        statistics::Scalar futurePrepareMismatches;
+        /** Breakdown of future rename prepare validation mismatches. */
+        statistics::Vector futurePrepareMismatchReasons;
+        /** Number of stale future rename prepare results discarded. */
+        statistics::Scalar futurePrepareStale;
+        /** Diagnostic candidate future rename prepares checked. */
+        statistics::Scalar futureCandidatePrepareChecks;
+        /** Diagnostic candidate future rename prepares matching. */
+        statistics::Scalar futureCandidatePrepareMatches;
+        /** Diagnostic candidate future rename prepares mismatching. */
+        statistics::Scalar futureCandidatePrepareMismatches;
+        /** Candidate future rename prepare mismatch reasons. */
+        statistics::Vector futureCandidatePrepareMismatchReasons;
+        /** Diagnostic candidate future rename prepares discarded stale. */
+        statistics::Scalar futureCandidatePrepareStale;
+        /** Candidate future rename prepare matches by scheduler reason. */
+        statistics::Vector futureCandidatePrepareMatchesBySchedulerReason;
+        /** Candidate future rename prepare mismatches by scheduler reason. */
+        statistics::Vector futureCandidatePrepareMismatchesBySchedulerReason;
+        /** Candidate future rename prepare matches by expected pops. */
+        statistics::Vector futureCandidatePrepareMatchesByExpectedPops;
+        /** Candidate future rename prepare mismatches by expected pops. */
+        statistics::Vector futureCandidatePrepareMismatchesByExpectedPops;
+        /** Candidate prepare result stability vs candidate input stability. */
+        statistics::Vector futureCandidatePrepareInputStability;
+        /** Direction of candidate/current IEW block input differences. */
+        statistics::Vector futureCandidateIEWBlockDiffDirections;
+        /** Candidate future rename prepare inputs checked. */
+        statistics::Scalar futureCandidateInputChecks;
+        /** Candidate future rename prepare inputs matching current input. */
+        statistics::Scalar futureCandidateInputMatches;
+        /** Candidate future rename prepare inputs differing from current. */
+        statistics::Scalar futureCandidateInputDifferences;
+        /** Fields differing in candidate future rename prepare inputs. */
+        statistics::Vector futureCandidateInputDifferenceFields;
+        /** Input fields differing when candidate prepare still matched. */
+        statistics::Vector futureCandidateInputMatchDifferenceFields;
+        /** Input fields differing when candidate prepare mismatched. */
+        statistics::Vector futureCandidateInputMismatchDifferenceFields;
         /** Stat for total number of times that the ROB starts a stall in
          * rename. */
         statistics::Scalar ROBFullEvents;
@@ -447,9 +672,12 @@ class Rename
 
     StallReason blockReason{NoStall};
 
+    RenamePrepareResult lastPrepareResult;
+
     void setAllStalls(StallReason renameStall);
 
-    StallReason checkRenameStallFromIEW(ThreadID tid);
+    StallReason checkRenameStallFromIEW(
+            ThreadID tid, const TimeStruct *iew_input);
 
     SquashVersion localSquashVer;
 

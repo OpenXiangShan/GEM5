@@ -42,8 +42,10 @@
 
 #include "cpu/o3/cpu.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <limits>
+#include <memory>
 
 #include "arch/riscv/regs/misc.hh"
 #include "config/the_isa.hh"
@@ -63,10 +65,12 @@
 #include "debug/Drain.hh"
 #include "debug/O3CPU.hh"
 #include "debug/Quiesce.hh"
+#include "debug/TaskGraph.hh"
 #include "debug/ValueCommit.hh"
 #include "enums/MemoryMode.hh"
 #include "sim/async.hh"
 #include "sim/cur_tick.hh"
+#include "sim/eventq.hh"
 #include "sim/full_system.hh"
 #include "sim/process.hh"
 #include "sim/stat_control.hh"
@@ -79,6 +83,63 @@ struct BaseCPUParams;
 
 namespace o3
 {
+
+namespace
+{
+
+bool
+samePrepareSummary(const PipelineTimeBufferSnapshots::PrepareSummary &lhs,
+                   const PipelineTimeBufferSnapshots::PrepareSummary &rhs)
+{
+    return lhs.cycle == rhs.cycle &&
+           lhs.valid == rhs.valid &&
+           lhs.forwardInstRefs == rhs.forwardInstRefs &&
+           lhs.fetchGroups == rhs.fetchGroups &&
+           lhs.squashSignals == rhs.squashSignals &&
+           lhs.robSquashingSignals == rhs.robSquashingSignals &&
+           lhs.branchMispredictSignals == rhs.branchMispredictSignals &&
+           lhs.resolvedCFIs == rhs.resolvedCFIs;
+}
+
+bool
+sameStallLatch(const StallSignalLatch &lhs, const StallSignalLatch &rhs)
+{
+    for (int tid = 0; tid < MaxThreads; ++tid) {
+        if (lhs.block[tid] != rhs.block[tid] ||
+            lhs.reason[tid] != rhs.reason[tid]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool
+sameStallReasonVector(const std::vector<StallReason> &lhs,
+                      const std::vector<StallReason> &rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+    for (size_t i = 0; i < lhs.size(); ++i) {
+        if (lhs[i] != rhs[i])
+            return false;
+    }
+    return true;
+}
+
+bool
+sameFetchInstSeqNums(const std::vector<InstSeqNum> &expected,
+                     const FetchStruct &actual)
+{
+    if (expected.size() != static_cast<size_t>(actual.size))
+        return false;
+    for (size_t i = 0; i < expected.size(); ++i) {
+        if (!actual.insts[i] || actual.insts[i]->seqNum != expected[i])
+            return false;
+    }
+    return true;
+}
+
+} // anonymous namespace
 
 CPU::CPU(const BaseO3CPUParams &params)
     : BaseCPU(params),
@@ -132,6 +193,18 @@ CPU::CPU(const BaseO3CPUParams &params)
       enableMoveElimination(params.enableMoveElimination),
       enableConstantFolding(params.enableConstantFolding),
       enableMovImmElimination(params.enableMovImmElimination),
+      taskGraphFetchToDecodeDelay(params.fetchToDecodeDelay),
+      taskGraphDecodeToFetchDelay(params.decodeToFetchDelay),
+      taskGraphDecodeToRenameDelay(params.decodeToRenameDelay),
+      taskGraphRenameToIEWDelay(params.renameToIEWDelay),
+      taskGraphRenameToCommitDelay(params.renameToROBDelay),
+      taskGraphIEWToCommitDelay(params.iewToCommitDelay),
+      taskGraphCommitToIEWDelay(params.commitToIEWDelay),
+      taskGraphIEWToRenameDelay(params.iewToRenameDelay),
+      taskGraphCommitToRenameDelay(params.commitToRenameDelay),
+      taskGraphCommitToDecodeDelay(params.commitToDecodeDelay),
+      taskGraphCommitToFetchDelay(params.commitToFetchDelay),
+      taskRuntime(this, params.system),
       cpuStats(this),
       valuePred(params.valuePred)
 {
@@ -198,11 +271,20 @@ CPU::CPU(const BaseO3CPUParams &params)
     rename.setIEWStage(&iew);
     rename.setCommitStage(&commit);
 
-    fetch.setStallSignals(&stallSignals);
-    decode.setStallSignals(&stallSignals);
-    rename.setStallSignals(&stallSignals);
-    iew.setStallSignals(&stallSignals);
-    commit.setStallSignals(&stallSignals);
+    fetch.setStallSignals(&stallSignalBank.legacyView());
+    decode.setStallSignals(&stallSignalBank.legacyView());
+    rename.setStallSignals(&stallSignalBank.legacyView());
+    iew.setStallSignals(&stallSignalBank.legacyView());
+    commit.setStallSignals(&stallSignalBank.legacyView());
+    fetch.setStallSignalBank(&stallSignalBank);
+    decode.setStallSignalBank(&stallSignalBank);
+    rename.setStallSignalBank(&stallSignalBank);
+    iew.setStallSignalBank(&stallSignalBank);
+    commit.setStallSignalBank(&stallSignalBank);
+    const unsigned task_window = std::max(taskRuntime.windowCycles(),
+                                          taskRuntime.maxInFlightCycles());
+    stallSignalBank.configureWindow(task_window);
+    pipelineSnapshots.configureWindow(task_window);
 
     ThreadID active_threads;
     if (FullSystem) {
@@ -565,6 +647,290 @@ CPU::CPUStats::CPUStats(CPU *cpu)
         .prereq(miscRegfileWrites);
 }
 
+const PipelineTimeBufferSnapshots::Frame *
+CPU::pipelineInputSnapshot(Cycles cycle)
+{
+    const auto *frame = pipelineSnapshots.inputFrame(cycle);
+    const bool hit = frame != nullptr;
+    taskRuntime.recordTimeBufferStageInputRead(hit);
+    return frame;
+}
+
+const TimeStruct *
+CPU::pipelineInputBackward(Cycles cycle, int offset)
+{
+    const auto *frame = pipelineInputSnapshot(cycle);
+    const TimeStruct *slot = frame ? frame->backward.get(offset) : nullptr;
+    taskRuntime.recordTimeBufferBackwardSlotRead(slot != nullptr);
+    const bool require_hit = taskRuntime.enabled() && cycle == curCycle();
+    panic_if(require_hit && !frame,
+             "Missing current-cycle TimeBuffer input frame for backward "
+             "slot read: cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    panic_if(require_hit && !slot,
+             "Missing current-cycle backward TimeBuffer input slot: "
+             "cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    return slot;
+}
+
+const TimeStruct *
+CPU::pipelineInputFetchBackward(Cycles cycle, int offset)
+{
+    const auto *frame = pipelineInputSnapshot(cycle);
+    const TimeStruct *slot = frame ? frame->backward.get(offset) : nullptr;
+    taskRuntime.recordTimeBufferBackwardSlotRead(slot != nullptr);
+    taskRuntime.recordTimeBufferFetchBackwardSlotRead(slot != nullptr);
+    const bool require_hit = taskRuntime.enabled() && cycle == curCycle();
+    panic_if(require_hit && !frame,
+             "Missing current-cycle TimeBuffer input frame for Fetch "
+             "backward slot read: cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    panic_if(require_hit && !slot,
+             "Missing current-cycle Fetch backward TimeBuffer input slot: "
+             "cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    return slot;
+}
+
+const FetchStruct *
+CPU::pipelineInputFetchToDecode(Cycles cycle, int offset)
+{
+    const auto *frame = pipelineInputSnapshot(cycle);
+    const FetchStruct *slot = frame ?
+        frame->fetchToDecode.get(offset) : nullptr;
+    taskRuntime.recordTimeBufferFetchToDecodeSlotRead(slot != nullptr);
+    const bool require_hit = taskRuntime.enabled() && cycle == curCycle();
+    panic_if(require_hit && !frame,
+             "Missing current-cycle TimeBuffer input frame for "
+             "Fetch-to-Decode slot read: cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    panic_if(require_hit && !slot,
+             "Missing current-cycle Fetch-to-Decode input slot: "
+             "cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    return slot;
+}
+
+const DecodeStruct *
+CPU::pipelineInputDecodeToRename(Cycles cycle, int offset)
+{
+    const auto *frame = pipelineInputSnapshot(cycle);
+    const DecodeStruct *slot = frame ?
+        frame->decodeToRename.get(offset) : nullptr;
+    taskRuntime.recordTimeBufferDecodeToRenameSlotRead(slot != nullptr);
+    const bool require_hit = taskRuntime.enabled() && cycle == curCycle();
+    panic_if(require_hit && !frame,
+             "Missing current-cycle TimeBuffer input frame for "
+             "Decode-to-Rename slot read: cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    panic_if(require_hit && !slot,
+             "Missing current-cycle Decode-to-Rename input slot: "
+             "cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    return slot;
+}
+
+const RenameStruct *
+CPU::pipelineInputRenameToIEW(Cycles cycle, int offset)
+{
+    const auto *frame = pipelineInputSnapshot(cycle);
+    const RenameStruct *slot = frame ?
+        frame->renameToIEW.get(offset) : nullptr;
+    taskRuntime.recordTimeBufferRenameToIEWSlotRead(slot != nullptr);
+    const bool require_hit = taskRuntime.enabled() && cycle == curCycle();
+    panic_if(require_hit && !frame,
+             "Missing current-cycle TimeBuffer input frame for "
+             "Rename-to-IEW slot read: cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    panic_if(require_hit && !slot,
+             "Missing current-cycle Rename-to-IEW input slot: "
+             "cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    return slot;
+}
+
+const RenameStruct *
+CPU::pipelineInputRenameToCommit(Cycles cycle, int offset)
+{
+    const auto *frame = pipelineInputSnapshot(cycle);
+    const RenameStruct *slot = frame ?
+        frame->renameToIEW.get(offset) : nullptr;
+    taskRuntime.recordTimeBufferRenameToCommitSlotRead(slot != nullptr);
+    const bool require_hit = taskRuntime.enabled() && cycle == curCycle();
+    panic_if(require_hit && !frame,
+             "Missing current-cycle TimeBuffer input frame for "
+             "Rename-to-Commit slot read: cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    panic_if(require_hit && !slot,
+             "Missing current-cycle Rename-to-Commit input slot: "
+             "cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    return slot;
+}
+
+const IEWStruct *
+CPU::pipelineInputIEWToCommit(Cycles cycle, int offset)
+{
+    const auto *frame = pipelineInputSnapshot(cycle);
+    const IEWStruct *slot = frame ?
+        frame->iewToCommit.get(offset) : nullptr;
+    taskRuntime.recordTimeBufferIEWToCommitSlotRead(slot != nullptr);
+    const bool require_hit = taskRuntime.enabled() && cycle == curCycle();
+    panic_if(require_hit && !frame,
+             "Missing current-cycle TimeBuffer input frame for "
+             "IEW-to-Commit slot read: cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    panic_if(require_hit && !slot,
+             "Missing current-cycle IEW-to-Commit input slot: "
+             "cycle=%llu offset=%d",
+             static_cast<unsigned long long>(cycle), offset);
+    return slot;
+}
+
+const StallSignalLatch *
+CPU::stallSignalSnapshot(Cycles cycle, StallSignalEdge edge)
+{
+    const auto *latch = stallSignalBank.snapshot(cycle, edge);
+    taskRuntime.recordStallSignalInputRead(latch != nullptr);
+    if (!latch && cycle != curCycle())
+        taskRuntime.recordStallSignalFutureReadBlock();
+    return latch;
+}
+
+const StallSignalLatch &
+CPU::stallSignalSnapshotOrCurrent(Cycles cycle, StallSignalEdge edge)
+{
+    const auto *latch = stallSignalSnapshot(cycle, edge);
+    const bool require_hit = taskRuntime.enabled() && cycle == curCycle();
+    panic_if(require_hit && !latch,
+             "Missing current-cycle stall signal snapshot: cycle=%llu edge=%u",
+             static_cast<unsigned long long>(cycle),
+             static_cast<unsigned>(edge));
+    return latch ? *latch : stallSignalBank.snapshot(edge);
+}
+
+void
+CPU::checkFutureWavefrontPrepare(Cycles cycle)
+{
+    if (!pendingFutureWavefrontPrepare.valid)
+        return;
+
+    if (pendingFutureWavefrontPrepare.cycle != cycle) {
+        taskRuntime.recordFutureWavefrontPrepareCheck(false, false);
+        pendingFutureWavefrontPrepare.valid = false;
+        return;
+    }
+
+    const StallSignalLatch *commit_to_iew =
+        stallSignalBank.snapshot(cycle, StallSignalEdge::CommitToIEW);
+    // This wavefront only reuses IEW's prepare result.  Late IEW->Rename
+    // latch changes are validated by the consumer wavefronts that reuse them.
+    const bool latch_match = commit_to_iew &&
+        sameStallLatch(pendingFutureWavefrontPrepare.commitToIEW,
+                       *commit_to_iew);
+
+    taskRuntime.recordFutureWavefrontPrepareCheck(true, latch_match);
+    if (taskRuntime.traceEnabled() && !latch_match) {
+        DPRINTF(TaskGraph,
+                "Future wavefront prepare mismatch cycle=%llu\n",
+                cycle);
+    }
+
+    pendingFutureWavefrontPrepare.valid = false;
+}
+
+void
+CPU::checkFutureRenameWavefrontPrepare(Cycles cycle)
+{
+    if (!pendingFutureRenameWavefrontPrepare.valid)
+        return;
+
+    if (pendingFutureRenameWavefrontPrepare.cycle != cycle) {
+        taskRuntime.recordFutureRenameWavefrontPrepareCheck(false, false);
+        pendingFutureRenameWavefrontPrepare.valid = false;
+        return;
+    }
+
+    const StallSignalLatch *rename_to_decode =
+        stallSignalBank.snapshot(cycle, StallSignalEdge::RenameToDecode);
+    const bool latch_match = rename_to_decode &&
+        sameStallLatch(pendingFutureRenameWavefrontPrepare.renameToDecode,
+                       *rename_to_decode);
+
+    taskRuntime.recordFutureRenameWavefrontPrepareCheck(true, latch_match);
+    if (taskRuntime.traceEnabled() && !latch_match) {
+        DPRINTF(TaskGraph,
+                "Future rename wavefront prepare mismatch cycle=%llu\n",
+                cycle);
+    }
+
+    pendingFutureRenameWavefrontPrepare.valid = false;
+}
+
+void
+CPU::checkFutureDecodeWavefrontPrepare(Cycles cycle)
+{
+    if (!pendingFutureDecodeWavefrontPrepare.valid)
+        return;
+
+    if (pendingFutureDecodeWavefrontPrepare.cycle != cycle) {
+        taskRuntime.recordFutureDecodeWavefrontPrepareCheck(false, false);
+        pendingFutureDecodeWavefrontPrepare.valid = false;
+        return;
+    }
+
+    const StallSignalLatch *decode_to_fetch =
+        stallSignalBank.snapshot(cycle, StallSignalEdge::DecodeToFetch);
+    const bool latch_match = decode_to_fetch &&
+        sameStallLatch(pendingFutureDecodeWavefrontPrepare.decodeToFetch,
+                       *decode_to_fetch);
+
+    taskRuntime.recordFutureDecodeWavefrontPrepareCheck(true, latch_match);
+    if (taskRuntime.traceEnabled() && !latch_match) {
+        DPRINTF(TaskGraph,
+                "Future decode wavefront prepare mismatch cycle=%llu\n",
+                cycle);
+    }
+
+    pendingFutureDecodeWavefrontPrepare.valid = false;
+}
+
+void
+CPU::checkFutureFetchWavefrontPrepare(Cycles cycle)
+{
+    if (!pendingFutureFetchWavefrontPrepare.valid)
+        return;
+
+    if (pendingFutureFetchWavefrontPrepare.cycle != cycle) {
+        taskRuntime.recordFutureFetchWavefrontPrepareCheck(false, false);
+        pendingFutureFetchWavefrontPrepare.valid = false;
+        return;
+    }
+
+    const FetchStruct &fetch_to_decode = fetchTimebuffer[0];
+    const bool output_match =
+        pendingFutureFetchWavefrontPrepare.size ==
+            static_cast<unsigned>(fetch_to_decode.size) &&
+        sameStallReasonVector(
+            pendingFutureFetchWavefrontPrepare.fetchStallReason,
+            fetch_to_decode.fetchStallReason) &&
+        sameFetchInstSeqNums(
+            pendingFutureFetchWavefrontPrepare.instSeqNums,
+            fetch_to_decode);
+
+    taskRuntime.recordFutureFetchWavefrontPrepareCheck(true, output_match);
+    if (taskRuntime.traceEnabled() && !output_match) {
+        DPRINTF(TaskGraph,
+                "Future fetch wavefront prepare mismatch cycle=%llu "
+                "expectedSize=%u actualSize=%i\n",
+                cycle, pendingFutureFetchWavefrontPrepare.size,
+                fetch_to_decode.size);
+    }
+
+    pendingFutureFetchWavefrontPrepare.valid = false;
+}
+
 void
 CPU::tick()
 {
@@ -579,13 +945,973 @@ CPU::tick()
 
 //    activity = false;
 
-    //Tick each of the stages
+    const Cycles cycle = curCycle();
+    bool future_prepare_allowed = false;
+    const bool timebuffer_prepare_enabled =
+        taskRuntime.timeBufferPrepareEnabled();
+    taskRuntime.onSerialTickBegin(cycle);
+    taskRuntime.recordWavefrontPlan(cycle,
+            {taskGraphFetchToDecodeDelay, taskGraphDecodeToRenameDelay,
+             taskGraphRenameToIEWDelay, taskGraphRenameToCommitDelay,
+             taskGraphIEWToCommitDelay});
+    if (taskRuntime.enabled()) {
+        const unsigned candidate_cycles =
+            std::min(taskRuntime.windowCycles(),
+                     taskRuntime.maxInFlightCycles());
+        const Event *next_event = eventQueue()->getHead();
+        const bool has_next_event = next_event != nullptr;
+        const Tick next_event_tick =
+            has_next_event ? next_event->when() : MaxTick;
+        const int next_event_priority =
+            has_next_event ? next_event->priority() : Event::Maximum_Pri;
+        unsigned committable_cycles = candidate_cycles;
+        unsigned blocked_offset = 0;
+        bool blocked_by_earlier_tick_event = false;
+        for (unsigned offset = 1; offset <= candidate_cycles; ++offset) {
+            const Tick future_cpu_tick = clockEdge(Cycles(offset));
+            const bool event_before_cpu =
+                has_next_event && next_event_tick < future_cpu_tick;
+            const bool event_at_cpu_priority =
+                has_next_event &&
+                next_event_tick == future_cpu_tick &&
+                next_event_priority <= Event::CPU_Tick_Pri;
+            if (event_before_cpu || event_at_cpu_priority) {
+                committable_cycles = offset - 1;
+                blocked_offset = offset;
+                blocked_by_earlier_tick_event = event_before_cpu;
+                break;
+            }
+        }
+        taskRuntime.recordEventHorizon(cycle, candidate_cycles,
+                committable_cycles, has_next_event, next_event_tick,
+                next_event_priority, blocked_offset,
+                blocked_by_earlier_tick_event,
+                blocked_offset != 0 ? next_event : nullptr);
+        if (taskRuntime.traceEnabled() && has_next_event &&
+            blocked_offset != 0) {
+            DPRINTF(TaskGraph,
+                    "Event horizon blocker cycle=%llu blockedOffset=%u "
+                    "blockByEarlierTick=%i nextTick=%llu nextPriority=%d "
+                    "nextEvent=%s/%s\n",
+                    cycle, blocked_offset, blocked_by_earlier_tick_event,
+                    next_event_tick, next_event_priority,
+                    next_event->name(), next_event->description());
+        }
+        const bool event_horizon_allows_future_prepare =
+            committable_cycles > 0;
+        const bool speculation_allows_future_prepare =
+            taskRuntime.speculativePrepareAllowed();
+        future_prepare_allowed =
+            event_horizon_allows_future_prepare &&
+            speculation_allows_future_prepare;
+        if (event_horizon_allows_future_prepare &&
+            !speculation_allows_future_prepare) {
+            taskRuntime.recordSpecTaskThrottled();
+        }
 
-    commit.tick();
-    iew.tick();
-    rename.tick();
-    decode.tick();
-    fetch.tick();
+        const unsigned slots = pipelineSnapshots.captureInputs(
+                cycle, timeBuffer, fetchTimebuffer, decodeTimebuffer,
+                renameTimebuffer, iewTimebuffer);
+        taskRuntime.recordTimeBufferSnapshot(true, slots);
+        if (taskRuntime.traceEnabled()) {
+            DPRINTF(TaskGraph,
+                    "TimeBuffer input snapshot cycle=%llu slots=%u\n",
+                    cycle, slots);
+        }
+
+        if (timebuffer_prepare_enabled) {
+            auto merge_input_summary =
+                [this](const PipelineTimeBufferSnapshots::PrepareSummary
+                       &summary)
+            {
+                pipelineSnapshots.mergeInputSummary(summary);
+                const uint64_t control_signals =
+                    summary.squashSignals +
+                    summary.robSquashingSignals +
+                    summary.branchMispredictSignals;
+                taskRuntime.recordTimeBufferPrepareMerge(
+                        summary.forwardInstRefs, control_signals,
+                        summary.resolvedCFIs);
+                if (taskRuntime.traceEnabled()) {
+                    DPRINTF(TaskGraph,
+                            "TimeBuffer prepare merge cycle=%llu "
+                            "instRefs=%llu control=%llu resolvedCFIs=%llu "
+                            "fetchGroups=%llu\n",
+                            summary.cycle, summary.forwardInstRefs,
+                            control_signals, summary.resolvedCFIs,
+                            summary.fetchGroups);
+                }
+            };
+
+            auto expected_future_summary = std::make_shared<
+                    PipelineTimeBufferSnapshots::PrepareSummary>();
+            const bool has_expected_future =
+                pendingFutureTimeBufferPrepare.valid;
+            if (has_expected_future) {
+                *expected_future_summary =
+                    pendingFutureTimeBufferPrepare.summary;
+                pendingFutureTimeBufferPrepare.valid = false;
+            }
+            const PipelineTimeBufferSnapshots *snapshots = &pipelineSnapshots;
+            const bool can_reuse_future =
+                has_expected_future && expected_future_summary->cycle == cycle;
+            if (can_reuse_future) {
+                taskRuntime.recordFutureTimeBufferPrepareReuse();
+                merge_input_summary(*expected_future_summary);
+
+                auto verify_summary = std::make_shared<
+                        PipelineTimeBufferSnapshots::PrepareSummary>();
+                taskRuntime.submitWeak(
+                        {cycle, TaskStage::Runtime, 3, InvalidThreadID, 0},
+                        slots,
+                        [snapshots, verify_summary] {
+                            *verify_summary =
+                                snapshots->prepareInputSummary();
+                        },
+                        [this, expected_future_summary, verify_summary] {
+                            const bool summary_match =
+                                samePrepareSummary(*expected_future_summary,
+                                                   *verify_summary);
+                            taskRuntime.recordFutureTimeBufferPrepareCheck(
+                                    true, summary_match);
+                            if (taskRuntime.traceEnabled() &&
+                                !summary_match) {
+                                DPRINTF(TaskGraph,
+                                        "Future TimeBuffer prepare mismatch "
+                                        "expectedCycle=%llu actualCycle=%llu "
+                                        "cycleMatch=1\n",
+                                        expected_future_summary->cycle,
+                                        verify_summary->cycle);
+                            }
+                        });
+            } else {
+                if (has_expected_future) {
+                    taskRuntime.recordFutureTimeBufferPrepareCheck(false,
+                                                                   false);
+                    if (taskRuntime.traceEnabled()) {
+                        DPRINTF(TaskGraph,
+                                "Future TimeBuffer prepare stale "
+                                "expectedCycle=%llu actualCycle=%llu\n",
+                                expected_future_summary->cycle, cycle);
+                    }
+                }
+
+                auto prepare_summary = std::make_shared<
+                        PipelineTimeBufferSnapshots::PrepareSummary>();
+                taskRuntime.submitWeak(
+                        {cycle, TaskStage::Runtime, 1, InvalidThreadID, 0},
+                        slots,
+                        [snapshots, prepare_summary] {
+                            *prepare_summary =
+                                snapshots->prepareInputSummary();
+                        },
+                        [merge_input_summary, prepare_summary] {
+                            merge_input_summary(*prepare_summary);
+                        });
+            }
+        } else {
+            pendingFutureTimeBufferPrepare.valid = false;
+        }
+    }
+
+    bool future_commit_probe_submitted = false;
+    auto future_backward_slot = [this](int offset) -> const TimeStruct *
+    {
+        if (offset < -timeBuffer.pastCycles() ||
+            offset > timeBuffer.futureCycles()) {
+            return nullptr;
+        }
+        return &timeBuffer[offset];
+    };
+    auto future_fetch_slot = [this](int offset) -> const FetchStruct *
+    {
+        if (offset < -fetchTimebuffer.pastCycles() ||
+            offset > fetchTimebuffer.futureCycles()) {
+            return nullptr;
+        }
+        return &fetchTimebuffer[offset];
+    };
+    auto future_rename_slot = [this](int offset) -> const RenameStruct *
+    {
+        if (offset < -renameTimebuffer.pastCycles() ||
+            offset > renameTimebuffer.futureCycles()) {
+            return nullptr;
+        }
+        return &renameTimebuffer[offset];
+    };
+    auto future_iew_slot = [this](int offset) -> const IEWStruct *
+    {
+        if (offset < -iewTimebuffer.pastCycles() ||
+            offset > iewTimebuffer.futureCycles()) {
+            return nullptr;
+        }
+        return &iewTimebuffer[offset];
+    };
+    auto future_decode_slot = [this](int offset) -> const DecodeStruct *
+    {
+        if (offset < -decodeTimebuffer.pastCycles() ||
+            offset > decodeTimebuffer.futureCycles()) {
+            return nullptr;
+        }
+        return &decodeTimebuffer[offset];
+    };
+    auto record_future_iew_wavefront_skip =
+        [this](FutureWavefrontSkipReason reason)
+    {
+        taskRuntime.recordFutureWavefrontPrepareSkipped();
+        taskRuntime.recordFutureWavefrontSkipReason(reason);
+        iew.recordFuturePrepareSkipped();
+    };
+    auto record_future_rename_wavefront_skip =
+        [this](FutureWavefrontSkipReason reason)
+    {
+        taskRuntime.recordFutureRenameWavefrontPrepareSkipped();
+        taskRuntime.recordFutureWavefrontSkipReason(reason);
+        rename.recordFuturePrepareSkipped();
+    };
+    auto record_future_decode_wavefront_skip =
+        [this](FutureWavefrontSkipReason reason)
+    {
+        taskRuntime.recordFutureDecodeWavefrontPrepareSkipped();
+        taskRuntime.recordFutureWavefrontSkipReason(reason);
+        decode.recordFuturePrepareSkipped();
+    };
+    auto record_future_fetch_wavefront_skip =
+        [this](FutureWavefrontSkipReason reason)
+    {
+        taskRuntime.recordFutureFetchWavefrontPrepareSkipped();
+        taskRuntime.recordFutureWavefrontSkipReason(reason);
+        fetch.recordFutureToDecodePrepareSkipped();
+    };
+    auto record_future_rename_candidate_prepare =
+        [this](Cycles future_cycle,
+               const StallSignalLatch &candidate_iew_to_rename,
+               const DecodeStruct *future_decode_to_rename,
+               const TimeStruct *future_iew_to_rename,
+               const TimeStruct *future_commit_to_rename,
+               const IEW::FutureDispatchCandidateProfile &dispatch_profile)
+    {
+        using IEWBlockReason = IEW::FutureActiveDispatchPreviewBlockReason;
+        if (!dispatch_profile.valid ||
+            dispatch_profile.blockReason != IEWBlockReason::SchedulerNotReady) {
+            return;
+        }
+
+        Rename::RenamePrepareInput candidate_input;
+        if (!rename.buildFutureDecodeLatchInput(
+                    future_cycle, candidate_iew_to_rename,
+                    future_decode_to_rename, future_iew_to_rename,
+                    future_commit_to_rename, candidate_input, false)) {
+            return;
+        }
+
+        Rename::FutureCandidatePrepareProfile rename_profile;
+        rename_profile.valid = true;
+        rename_profile.blockReason =
+            static_cast<unsigned>(dispatch_profile.blockReason);
+        rename_profile.schedulerReason =
+            static_cast<unsigned>(dispatch_profile.schedulerBlockReason);
+        rename_profile.fixedBufferPops = dispatch_profile.fixedBufferPops;
+        rename_profile.dispatchedBeforeBlock =
+            dispatch_profile.dispatchedBeforeBlock;
+
+        rename.setPendingFutureCandidatePrepare(
+                rename.previewFuturePrepare(candidate_input),
+                rename_profile, candidate_input);
+    };
+    auto submit_future_commit_probe = [&]
+    {
+        if (!taskRuntime.enabled() || !future_prepare_allowed ||
+            future_commit_probe_submitted) {
+            return;
+        }
+
+        const Cycles future_cycle = cycle + Cycles(1);
+        const int rename_to_commit_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphRenameToCommitDelay));
+        const int iew_to_commit_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphIEWToCommitDelay));
+        constexpr int pre_advance_shift = 1;
+        commit.probeFuturePrepare(future_cycle,
+                future_backward_slot(iew_to_commit_offset +
+                                     pre_advance_shift),
+                future_rename_slot(rename_to_commit_offset +
+                                   pre_advance_shift),
+                future_iew_slot(iew_to_commit_offset + pre_advance_shift));
+        future_commit_probe_submitted = true;
+    };
+
+    bool future_wavefront_prepare_submitted = false;
+    auto submit_future_commit_iew_wavefront_probe = [&]
+    {
+        if (!taskRuntime.enabled() || !future_prepare_allowed ||
+            future_wavefront_prepare_submitted) {
+            return;
+        }
+
+        const Cycles future_cycle = cycle + Cycles(1);
+        const int commit_to_iew_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphCommitToIEWDelay));
+        const int iew_to_commit_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphIEWToCommitDelay));
+        const int rename_to_commit_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphRenameToCommitDelay));
+        const int rename_to_iew_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphRenameToIEWDelay));
+        constexpr int pre_advance_shift = 1;
+
+        const TimeStruct *future_backward =
+            future_backward_slot(iew_to_commit_offset + pre_advance_shift);
+        const TimeStruct *future_commit_to_iew =
+            future_backward_slot(commit_to_iew_offset + pre_advance_shift);
+        const RenameStruct *future_rename_to_commit =
+            future_rename_slot(rename_to_commit_offset + pre_advance_shift);
+        const RenameStruct *future_rename_to_iew =
+            future_rename_slot(rename_to_iew_offset + pre_advance_shift);
+        const IEWStruct *future_iew_to_commit =
+            future_iew_slot(iew_to_commit_offset + pre_advance_shift);
+
+        auto result = std::make_shared<PendingFutureWavefrontPrepare>();
+        taskRuntime.recordFutureWavefrontPrepareProbe();
+        iew.recordFuturePrepareProbe();
+        future_wavefront_prepare_submitted = true;
+
+        StallSignalLatch commit_to_iew;
+        if (!commit.previewFutureIEWLatch(
+                    future_cycle, future_backward, future_rename_to_commit,
+                    future_iew_to_commit, commit_to_iew)) {
+            record_future_iew_wavefront_skip(
+                    FutureWavefrontSkipReason::CommitPreview);
+            return;
+        }
+
+        auto iew_input = std::make_shared<IEW::IEWPrepareInput>();
+        if (!iew.buildFutureRenameLatchInput(
+                    future_cycle, commit_to_iew, future_rename_to_iew,
+                    future_commit_to_iew, *iew_input)) {
+            record_future_iew_wavefront_skip(
+                    FutureWavefrontSkipReason::IEWInput);
+            return;
+        }
+
+        taskRuntime.submitWeak(
+                {future_cycle, TaskStage::IEW, 2, InvalidThreadID, 0},
+                std::max(1u, static_cast<unsigned>(numThreads) * 2),
+                [this, result, future_cycle, commit_to_iew, iew_input] {
+                    result->cycle = future_cycle;
+                    result->commitToIEW = commit_to_iew;
+                    result->iewPrepare =
+                        iew.previewFuturePrepare(*iew_input);
+                    result->valid = true;
+                },
+                [this, result, record_future_iew_wavefront_skip] {
+                    if (result->valid) {
+                        pendingFutureWavefrontPrepare = *result;
+                        taskRuntime.recordFutureWavefrontPrepareMerge();
+                        iew.setPendingFuturePrepare(result->iewPrepare);
+                    } else {
+                        if (result->valid)
+                            taskRuntime.recordSpecTaskDiscarded();
+                        record_future_iew_wavefront_skip(
+                                FutureWavefrontSkipReason::IEWPreview);
+                    }
+                },
+                TaskLifetime::CrossTimeBufferAdvance);
+    };
+
+    bool future_rename_wavefront_prepare_submitted = false;
+    auto submit_future_commit_iew_rename_wavefront_probe = [&]
+    {
+        if (!taskRuntime.enabled() || !future_prepare_allowed ||
+            future_rename_wavefront_prepare_submitted) {
+            return;
+        }
+
+        const Cycles future_cycle = cycle + Cycles(1);
+        const int commit_to_iew_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphCommitToIEWDelay));
+        const int iew_to_commit_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphIEWToCommitDelay));
+        const int rename_to_commit_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphRenameToCommitDelay));
+        const int rename_to_iew_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphRenameToIEWDelay));
+        const int decode_to_rename_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphDecodeToRenameDelay));
+        const int iew_to_rename_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphIEWToRenameDelay));
+        const int commit_to_rename_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphCommitToRenameDelay));
+        constexpr int pre_advance_shift = 1;
+
+        const TimeStruct *future_commit_backward =
+            future_backward_slot(iew_to_commit_offset + pre_advance_shift);
+        const TimeStruct *future_commit_to_iew =
+            future_backward_slot(commit_to_iew_offset + pre_advance_shift);
+        const TimeStruct *future_iew_to_rename =
+            future_backward_slot(iew_to_rename_offset + pre_advance_shift);
+        const TimeStruct *future_commit_to_rename =
+            future_backward_slot(commit_to_rename_offset + pre_advance_shift);
+        const RenameStruct *future_rename_to_commit =
+            future_rename_slot(rename_to_commit_offset + pre_advance_shift);
+        const RenameStruct *future_rename_to_iew =
+            future_rename_slot(rename_to_iew_offset + pre_advance_shift);
+        const IEWStruct *future_iew_to_commit =
+            future_iew_slot(iew_to_commit_offset + pre_advance_shift);
+        const DecodeStruct *future_decode_to_rename =
+            future_decode_slot(decode_to_rename_offset + pre_advance_shift);
+
+        auto result = std::make_shared<
+                PendingFutureRenameWavefrontPrepare>();
+        taskRuntime.recordFutureRenameWavefrontPrepareProbe();
+        rename.recordFuturePrepareProbe();
+        future_rename_wavefront_prepare_submitted = true;
+
+        StallSignalLatch commit_to_iew;
+        if (!commit.previewFutureIEWLatch(
+                    future_cycle, future_commit_backward,
+                    future_rename_to_commit, future_iew_to_commit,
+                    commit_to_iew)) {
+            record_future_rename_wavefront_skip(
+                    FutureWavefrontSkipReason::CommitPreview);
+            return;
+        }
+
+        IEW::IEWPrepareInput iew_input;
+        if (!iew.buildFutureRenameLatchInput(
+                    future_cycle, commit_to_iew, future_rename_to_iew,
+                    future_commit_to_iew, iew_input)) {
+            record_future_rename_wavefront_skip(
+                    FutureWavefrontSkipReason::IEWInput);
+            return;
+        }
+
+        StallSignalLatch iew_to_rename;
+        IEW::IEWPrepareResult iew_prepare;
+        IEW::FutureActiveDispatchPreviewOutcome iew_dispatch_outcome =
+            IEW::FutureActiveDispatchPreviewOutcome::NumOutcomes;
+        IEW::FutureActiveDispatchPreviewBlockReason iew_dispatch_block =
+            IEW::FutureActiveDispatchPreviewBlockReason::NumReasons;
+        IEW::FutureDispatchCandidateProfile iew_dispatch_profile;
+        if (!iew.previewFutureRenameLatch(
+                    iew_input, future_rename_to_iew, future_commit_to_iew,
+                    iew_to_rename, &iew_prepare, &iew_dispatch_outcome,
+                    &iew_dispatch_block, &iew_dispatch_profile)) {
+            record_future_rename_candidate_prepare(
+                    future_cycle, iew_to_rename, future_decode_to_rename,
+                    future_iew_to_rename, future_commit_to_rename,
+                    iew_dispatch_profile);
+            iew.recordFutureActiveDispatchPreviewSkipped(
+                    iew_input, iew_prepare, iew_dispatch_block);
+            record_future_rename_wavefront_skip(
+                    FutureWavefrontSkipReason::IEWPreview);
+            return;
+        }
+        iew.recordFutureActiveDispatchPreviewAccepted(
+                iew_input, iew_prepare, iew_dispatch_outcome);
+
+        auto rename_input = std::make_shared<Rename::RenamePrepareInput>();
+        if (!rename.buildFutureDecodeLatchInput(
+                    future_cycle, iew_to_rename, future_decode_to_rename,
+                    future_iew_to_rename, future_commit_to_rename,
+                    *rename_input)) {
+            record_future_rename_wavefront_skip(
+                    FutureWavefrontSkipReason::RenameInput);
+            return;
+        }
+
+        taskRuntime.submitWeak(
+                {future_cycle, TaskStage::Rename, 2, InvalidThreadID, 0},
+                std::max(1u, static_cast<unsigned>(numThreads) * 3),
+                [this, result, future_cycle, iew_to_rename, rename_input] {
+                    result->cycle = future_cycle;
+                    if (!rename.previewFutureDecodeLatch(
+                                *rename_input, result->renameToDecode,
+                                &result->renamePrepare)) {
+                        return;
+                    }
+                    result->valid = true;
+                },
+                [this, result, record_future_rename_wavefront_skip] {
+                    if (result->valid) {
+                        pendingFutureRenameWavefrontPrepare = *result;
+                        taskRuntime.recordFutureRenameWavefrontPrepareMerge();
+                        rename.setPendingFuturePrepare(
+                                result->renamePrepare);
+                    } else {
+                        rename.recordFuturePreviewSkipped(
+                                result->renamePrepare);
+                        if (result->valid)
+                            taskRuntime.recordSpecTaskDiscarded();
+                        record_future_rename_wavefront_skip(
+                                FutureWavefrontSkipReason::RenamePreview);
+                    }
+                },
+                TaskLifetime::CrossTimeBufferAdvance);
+    };
+
+    bool future_decode_wavefront_prepare_submitted = false;
+    auto submit_future_commit_iew_rename_decode_wavefront_probe = [&]
+    {
+        if (!taskRuntime.enabled() || !future_prepare_allowed ||
+            future_decode_wavefront_prepare_submitted) {
+            return;
+        }
+
+        const Cycles future_cycle = cycle + Cycles(1);
+        const int commit_to_iew_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphCommitToIEWDelay));
+        const int iew_to_commit_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphIEWToCommitDelay));
+        const int rename_to_commit_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphRenameToCommitDelay));
+        const int rename_to_iew_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphRenameToIEWDelay));
+        const int decode_to_rename_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphDecodeToRenameDelay));
+        const int iew_to_rename_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphIEWToRenameDelay));
+        const int commit_to_rename_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphCommitToRenameDelay));
+        const int fetch_to_decode_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphFetchToDecodeDelay));
+        const int commit_to_decode_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphCommitToDecodeDelay));
+        constexpr int pre_advance_shift = 1;
+
+        const TimeStruct *future_commit_backward =
+            future_backward_slot(iew_to_commit_offset + pre_advance_shift);
+        const TimeStruct *future_commit_to_iew =
+            future_backward_slot(commit_to_iew_offset + pre_advance_shift);
+        const TimeStruct *future_iew_to_rename =
+            future_backward_slot(iew_to_rename_offset + pre_advance_shift);
+        const TimeStruct *future_commit_to_rename =
+            future_backward_slot(commit_to_rename_offset + pre_advance_shift);
+        const TimeStruct *future_commit_to_decode =
+            future_backward_slot(commit_to_decode_offset + pre_advance_shift);
+        const RenameStruct *future_rename_to_commit =
+            future_rename_slot(rename_to_commit_offset + pre_advance_shift);
+        const RenameStruct *future_rename_to_iew =
+            future_rename_slot(rename_to_iew_offset + pre_advance_shift);
+        const IEWStruct *future_iew_to_commit =
+            future_iew_slot(iew_to_commit_offset + pre_advance_shift);
+        const DecodeStruct *future_decode_to_rename =
+            future_decode_slot(decode_to_rename_offset + pre_advance_shift);
+        const FetchStruct *future_fetch_to_decode =
+            future_fetch_slot(fetch_to_decode_offset + pre_advance_shift);
+
+        auto result = std::make_shared<
+                PendingFutureDecodeWavefrontPrepare>();
+        taskRuntime.recordFutureDecodeWavefrontPrepareProbe();
+        decode.recordFuturePrepareProbe();
+        future_decode_wavefront_prepare_submitted = true;
+
+        StallSignalLatch commit_to_iew;
+        if (!commit.previewFutureIEWLatch(
+                    future_cycle, future_commit_backward,
+                    future_rename_to_commit, future_iew_to_commit,
+                    commit_to_iew)) {
+            record_future_decode_wavefront_skip(
+                    FutureWavefrontSkipReason::CommitPreview);
+            return;
+        }
+
+        IEW::IEWPrepareInput iew_input;
+        if (!iew.buildFutureRenameLatchInput(
+                    future_cycle, commit_to_iew, future_rename_to_iew,
+                    future_commit_to_iew, iew_input)) {
+            record_future_decode_wavefront_skip(
+                    FutureWavefrontSkipReason::IEWInput);
+            return;
+        }
+
+        StallSignalLatch iew_to_rename;
+        IEW::IEWPrepareResult iew_prepare;
+        IEW::FutureActiveDispatchPreviewOutcome iew_dispatch_outcome =
+            IEW::FutureActiveDispatchPreviewOutcome::NumOutcomes;
+        IEW::FutureActiveDispatchPreviewBlockReason iew_dispatch_block =
+            IEW::FutureActiveDispatchPreviewBlockReason::NumReasons;
+        IEW::FutureDispatchCandidateProfile iew_dispatch_profile;
+        if (!iew.previewFutureRenameLatch(
+                    iew_input, future_rename_to_iew, future_commit_to_iew,
+                    iew_to_rename, &iew_prepare, &iew_dispatch_outcome,
+                    &iew_dispatch_block, &iew_dispatch_profile)) {
+            record_future_rename_candidate_prepare(
+                    future_cycle, iew_to_rename, future_decode_to_rename,
+                    future_iew_to_rename, future_commit_to_rename,
+                    iew_dispatch_profile);
+            iew.recordFutureActiveDispatchPreviewSkipped(
+                    iew_input, iew_prepare, iew_dispatch_block);
+            record_future_decode_wavefront_skip(
+                    FutureWavefrontSkipReason::IEWPreview);
+            return;
+        }
+        iew.recordFutureActiveDispatchPreviewAccepted(
+                iew_input, iew_prepare, iew_dispatch_outcome);
+
+        Rename::RenamePrepareInput rename_input;
+        if (!rename.buildFutureDecodeLatchInput(
+                    future_cycle, iew_to_rename, future_decode_to_rename,
+                    future_iew_to_rename, future_commit_to_rename,
+                    rename_input)) {
+            record_future_decode_wavefront_skip(
+                    FutureWavefrontSkipReason::RenameInput);
+            return;
+        }
+
+        StallSignalLatch rename_to_decode;
+        Rename::RenamePrepareResult rename_prepare;
+        if (!rename.previewFutureDecodeLatch(
+                    rename_input, rename_to_decode, &rename_prepare)) {
+            rename.recordFuturePreviewSkipped(rename_prepare);
+            record_future_decode_wavefront_skip(
+                    FutureWavefrontSkipReason::RenamePreview);
+            return;
+        }
+
+        auto decode_input = std::make_shared<Decode::DecodePrepareInput>();
+        if (!decode.buildFutureFetchLatchInput(
+                    future_cycle, rename_to_decode, future_fetch_to_decode,
+                    future_commit_to_decode, *decode_input)) {
+            record_future_decode_wavefront_skip(
+                    FutureWavefrontSkipReason::DecodeInput);
+            return;
+        }
+
+        taskRuntime.submitWeak(
+                {future_cycle, TaskStage::Decode, 2, InvalidThreadID, 0},
+                std::max(1u, static_cast<unsigned>(numThreads) * 4),
+                [this, result, future_cycle, decode_input] {
+                    result->cycle = future_cycle;
+                    if (!decode.previewFutureFetchLatch(
+                                *decode_input, result->decodeToFetch,
+                                &result->decodePrepare)) {
+                        return;
+                    }
+                    result->valid = true;
+                },
+                [this, result, record_future_decode_wavefront_skip] {
+                    if (result->valid) {
+                        pendingFutureDecodeWavefrontPrepare = *result;
+                        taskRuntime.recordFutureDecodeWavefrontPrepareMerge();
+                        decode.setPendingFuturePrepare(
+                                result->decodePrepare);
+                    } else {
+                        decode.recordFuturePreviewSkipped(
+                                result->decodePrepare);
+                        if (result->valid)
+                            taskRuntime.recordSpecTaskDiscarded();
+                        record_future_decode_wavefront_skip(
+                                FutureWavefrontSkipReason::DecodePreview);
+                    }
+                },
+                TaskLifetime::CrossTimeBufferAdvance);
+    };
+
+    bool future_fetch_wavefront_prepare_submitted = false;
+    auto submit_future_commit_iew_rename_decode_fetch_wavefront_probe = [&]
+    {
+        if (!taskRuntime.enabled() || !future_prepare_allowed ||
+            future_fetch_wavefront_prepare_submitted) {
+            return;
+        }
+
+        const Cycles future_cycle = cycle + Cycles(1);
+        const int commit_to_iew_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphCommitToIEWDelay));
+        const int iew_to_commit_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphIEWToCommitDelay));
+        const int rename_to_commit_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphRenameToCommitDelay));
+        const int rename_to_iew_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphRenameToIEWDelay));
+        const int decode_to_rename_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphDecodeToRenameDelay));
+        const int iew_to_rename_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphIEWToRenameDelay));
+        const int commit_to_rename_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphCommitToRenameDelay));
+        const int fetch_to_decode_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphFetchToDecodeDelay));
+        const int decode_to_fetch_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphDecodeToFetchDelay));
+        const int commit_to_decode_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphCommitToDecodeDelay));
+        const int commit_to_fetch_offset = -static_cast<int>(
+                static_cast<uint64_t>(taskGraphCommitToFetchDelay));
+        constexpr int pre_advance_shift = 1;
+
+        const TimeStruct *future_commit_backward =
+            future_backward_slot(iew_to_commit_offset + pre_advance_shift);
+        const TimeStruct *future_commit_to_iew =
+            future_backward_slot(commit_to_iew_offset + pre_advance_shift);
+        const TimeStruct *future_iew_to_rename =
+            future_backward_slot(iew_to_rename_offset + pre_advance_shift);
+        const TimeStruct *future_commit_to_rename =
+            future_backward_slot(commit_to_rename_offset + pre_advance_shift);
+        const TimeStruct *future_commit_to_decode =
+            future_backward_slot(commit_to_decode_offset + pre_advance_shift);
+        const TimeStruct *future_decode_to_fetch =
+            future_backward_slot(decode_to_fetch_offset + pre_advance_shift);
+        const TimeStruct *future_commit_to_fetch =
+            future_backward_slot(commit_to_fetch_offset + pre_advance_shift);
+        const RenameStruct *future_rename_to_commit =
+            future_rename_slot(rename_to_commit_offset + pre_advance_shift);
+        const RenameStruct *future_rename_to_iew =
+            future_rename_slot(rename_to_iew_offset + pre_advance_shift);
+        const IEWStruct *future_iew_to_commit =
+            future_iew_slot(iew_to_commit_offset + pre_advance_shift);
+        const DecodeStruct *future_decode_to_rename =
+            future_decode_slot(decode_to_rename_offset + pre_advance_shift);
+        const FetchStruct *future_fetch_to_decode =
+            future_fetch_slot(fetch_to_decode_offset + pre_advance_shift);
+
+        taskRuntime.recordFutureFetchWavefrontPrepareProbe();
+        fetch.recordFutureToDecodePrepareProbe();
+        future_fetch_wavefront_prepare_submitted = true;
+
+        StallSignalLatch commit_to_iew;
+        if (!commit.previewFutureIEWLatch(
+                    future_cycle, future_commit_backward,
+                    future_rename_to_commit, future_iew_to_commit,
+                    commit_to_iew)) {
+            record_future_fetch_wavefront_skip(
+                    FutureWavefrontSkipReason::CommitPreview);
+            return;
+        }
+
+        IEW::IEWPrepareInput iew_input;
+        if (!iew.buildFutureRenameLatchInput(
+                    future_cycle, commit_to_iew, future_rename_to_iew,
+                    future_commit_to_iew, iew_input)) {
+            record_future_fetch_wavefront_skip(
+                    FutureWavefrontSkipReason::IEWInput);
+            return;
+        }
+
+        StallSignalLatch iew_to_rename;
+        IEW::IEWPrepareResult iew_prepare;
+        IEW::FutureActiveDispatchPreviewOutcome iew_dispatch_outcome =
+            IEW::FutureActiveDispatchPreviewOutcome::NumOutcomes;
+        IEW::FutureActiveDispatchPreviewBlockReason iew_dispatch_block =
+            IEW::FutureActiveDispatchPreviewBlockReason::NumReasons;
+        IEW::FutureDispatchCandidateProfile iew_dispatch_profile;
+        if (!iew.previewFutureRenameLatch(
+                    iew_input, future_rename_to_iew, future_commit_to_iew,
+                    iew_to_rename, &iew_prepare, &iew_dispatch_outcome,
+                    &iew_dispatch_block, &iew_dispatch_profile)) {
+            record_future_rename_candidate_prepare(
+                    future_cycle, iew_to_rename, future_decode_to_rename,
+                    future_iew_to_rename, future_commit_to_rename,
+                    iew_dispatch_profile);
+            iew.recordFutureActiveDispatchPreviewSkipped(
+                    iew_input, iew_prepare, iew_dispatch_block);
+            record_future_fetch_wavefront_skip(
+                    FutureWavefrontSkipReason::IEWPreview);
+            return;
+        }
+        iew.recordFutureActiveDispatchPreviewAccepted(
+                iew_input, iew_prepare, iew_dispatch_outcome);
+
+        Rename::RenamePrepareInput rename_input;
+        if (!rename.buildFutureDecodeLatchInput(
+                    future_cycle, iew_to_rename, future_decode_to_rename,
+                    future_iew_to_rename, future_commit_to_rename,
+                    rename_input)) {
+            record_future_fetch_wavefront_skip(
+                    FutureWavefrontSkipReason::RenameInput);
+            return;
+        }
+
+        StallSignalLatch rename_to_decode;
+        Rename::RenamePrepareResult rename_prepare;
+        if (!rename.previewFutureDecodeLatch(
+                    rename_input, rename_to_decode, &rename_prepare)) {
+            rename.recordFuturePreviewSkipped(rename_prepare);
+            record_future_fetch_wavefront_skip(
+                    FutureWavefrontSkipReason::RenamePreview);
+            return;
+        }
+
+        Decode::DecodePrepareInput decode_input;
+        if (!decode.buildFutureFetchLatchInput(
+                    future_cycle, rename_to_decode, future_fetch_to_decode,
+                    future_commit_to_decode, decode_input)) {
+            record_future_fetch_wavefront_skip(
+                    FutureWavefrontSkipReason::DecodeInput);
+            return;
+        }
+
+        StallSignalLatch decode_to_fetch;
+        Decode::DecodePrepareResult decode_prepare;
+        if (!decode.previewFutureFetchLatch(
+                    decode_input, decode_to_fetch, &decode_prepare)) {
+            decode.recordFuturePreviewSkipped(decode_prepare);
+            record_future_fetch_wavefront_skip(
+                    FutureWavefrontSkipReason::DecodePreview);
+            return;
+        }
+
+        auto fetch_input =
+            std::make_shared<Fetch::FutureDecodeQueueInput>();
+        Fetch::FutureDecodeQueueInputSkipInfo fetch_input_skip;
+        if (!fetch.buildFutureDecodeQueueInput(
+                    future_cycle, decode_to_fetch, future_decode_to_fetch,
+                    future_commit_to_fetch, *fetch_input,
+                    &fetch_input_skip)) {
+            fetch.recordFutureDecodeQueueInputSkipped(fetch_input_skip);
+            record_future_fetch_wavefront_skip(
+                    FutureWavefrontSkipReason::FetchInput);
+            return;
+        }
+        fetch.recordFutureDecodeQueueInputAccepted(*fetch_input);
+
+        auto result = std::make_shared<
+                PendingFutureFetchWavefrontPrepare>();
+        taskRuntime.submitWeak(
+                {future_cycle, TaskStage::Fetch, 4, InvalidThreadID, 0},
+                std::max(1u, static_cast<unsigned>(numThreads) * 5),
+                [this, result, future_cycle, fetch_input] {
+                    result->cycle = future_cycle;
+                    if (!fetch.previewFutureDecodeQueue(
+                                *fetch_input, result->size,
+                                result->fetchStallReason,
+                                result->instSeqNums,
+                                &result->fetchToDecodePrepare)) {
+                        return;
+                    }
+                    result->valid = true;
+                },
+                [this, result, record_future_fetch_wavefront_skip] {
+                    if (result->valid) {
+                        pendingFutureFetchWavefrontPrepare = *result;
+                        taskRuntime.recordFutureFetchWavefrontPrepareMerge();
+                        fetch.setPendingFutureToDecodePrepare(
+                                result->fetchToDecodePrepare);
+                    } else {
+                        if (result->valid)
+                            taskRuntime.recordSpecTaskDiscarded();
+                        record_future_fetch_wavefront_skip(
+                                FutureWavefrontSkipReason::FetchPreview);
+                    }
+                },
+                TaskLifetime::CrossTimeBufferAdvance);
+    };
+
+    bool future_timebuffer_prepare_submitted = false;
+    bool future_timebuffer_prepare_merged = false;
+    unsigned future_timebuffer_prepare_slots = 0;
+    auto future_timebuffer_prepare_summary = std::make_shared<
+            PipelineTimeBufferSnapshots::PrepareSummary>();
+    auto submit_future_timebuffer_prepare = [&]
+    {
+        if (!taskRuntime.enabled() || !timebuffer_prepare_enabled ||
+            !future_prepare_allowed ||
+            future_timebuffer_prepare_submitted) {
+            return;
+        }
+
+        const Cycles future_cycle = cycle + Cycles(1);
+        PipelineTimeBufferSnapshots::Frame frame;
+        constexpr int pre_advance_shift = 1;
+        future_timebuffer_prepare_slots = frame.captureShifted(
+                future_cycle, timeBuffer, fetchTimebuffer, decodeTimebuffer,
+                renameTimebuffer, iewTimebuffer, pre_advance_shift);
+        *future_timebuffer_prepare_summary =
+            PipelineTimeBufferSnapshots::summarizeFrame(frame);
+        future_timebuffer_prepare_submitted = true;
+
+        taskRuntime.submitWeak(
+                {future_cycle, TaskStage::Runtime, 2, InvalidThreadID, 0},
+                future_timebuffer_prepare_slots,
+                [] {},
+                [&future_timebuffer_prepare_merged] {
+                    future_timebuffer_prepare_merged = true;
+                });
+    };
+
+    stallSignalBank.beginCycle(cycle);
+    if (taskRuntime.traceEnabled()) {
+        DPRINTF(TaskGraph,
+                "Stall signal bank publish cycle=%llu valid=%i\n",
+                cycle, stallSignalBank.valid());
+    }
+
+    auto wait_future_stage_prepare =
+        [this, cycle](TaskStage stage, uint8_t phase)
+    {
+        if (!taskRuntime.enabled())
+            return;
+
+        taskRuntime.waitForOrder(
+                {cycle, stage, phase, InvalidThreadID,
+                 std::numeric_limits<uint64_t>::max()});
+    };
+
+    //Tick each of the stages
+    wait_future_stage_prepare(TaskStage::Commit, 2);
+    taskRuntime.runStrong({cycle, TaskStage::Commit, 0, InvalidThreadID, 0},
+            [this] { commit.tick(); });
+    wait_future_stage_prepare(TaskStage::IEW, 2);
+    taskRuntime.runStrong({cycle, TaskStage::IEW, 0, InvalidThreadID, 0},
+            [this] { iew.tick(); });
+    wait_future_stage_prepare(TaskStage::Rename, 2);
+    taskRuntime.runStrong({cycle, TaskStage::Rename, 0, InvalidThreadID, 0},
+            [this] { rename.tick(); });
+    submit_future_commit_probe();
+    submit_future_commit_iew_wavefront_probe();
+    wait_future_stage_prepare(TaskStage::Decode, 2);
+    taskRuntime.runStrong({cycle, TaskStage::Decode, 0, InvalidThreadID, 0},
+            [this] { decode.tick(); });
+    submit_future_commit_iew_rename_wavefront_probe();
+    wait_future_stage_prepare(TaskStage::Fetch, 4);
+    taskRuntime.runStrong({cycle, TaskStage::Fetch, 0, InvalidThreadID, 0},
+            [this] { fetch.tick(); });
+    submit_future_commit_iew_rename_decode_wavefront_probe();
+    submit_future_commit_iew_rename_decode_fetch_wavefront_probe();
+
+    stallSignalBank.endCycle(cycle);
+    checkFutureWavefrontPrepare(cycle);
+    checkFutureRenameWavefrontPrepare(cycle);
+    checkFutureDecodeWavefrontPrepare(cycle);
+    checkFutureFetchWavefrontPrepare(cycle);
+    taskRuntime.recordStallSignalWindow(cycle,
+            stallSignalBank.windowCapacity(),
+            stallSignalBank.validWindowSlots(),
+            stallSignalBank.edgeCount());
+    if (taskRuntime.traceEnabled()) {
+        DPRINTF(TaskGraph,
+                "Stall signal bank capture cycle=%llu valid=%i\n",
+                cycle, stallSignalBank.valid());
+    }
+    if (taskRuntime.enabled()) {
+        const unsigned slots = pipelineSnapshots.captureOutputs(
+                cycle, timeBuffer, fetchTimebuffer, decodeTimebuffer,
+                renameTimebuffer, iewTimebuffer);
+        taskRuntime.recordTimeBufferSnapshot(false, slots);
+        taskRuntime.recordTimeBufferSnapshotWindow(
+                pipelineSnapshots.windowCapacity(),
+                pipelineSnapshots.validInputFrames(),
+                pipelineSnapshots.validOutputFrames());
+        if (taskRuntime.traceEnabled()) {
+            DPRINTF(TaskGraph,
+                    "TimeBuffer output snapshot cycle=%llu slots=%u\n",
+                    cycle, slots);
+        }
+    }
+    submit_future_timebuffer_prepare();
+
+    // Future probes read current TimeBuffer slots; finish them before the
+    // circular buffers advance and invalidate those slot addresses.
+    if (taskRuntime.enabled()) {
+        const auto pending_tasks = taskRuntime.pendingTaskCount();
+        const auto pending_pre_advance_tasks =
+            taskRuntime.pendingPreAdvanceTaskCount();
+        taskRuntime.recordTimeBufferAdvanceWait(
+                cycle, pending_pre_advance_tasks,
+                pending_tasks - pending_pre_advance_tasks);
+        taskRuntime.waitForPreAdvance();
+    }
 
     fetchTimebuffer.advance();
     decodeTimebuffer.advance();
@@ -619,6 +1945,51 @@ CPU::tick()
         updateThreadPriority();
 
     tryDrain();
+
+    if (taskRuntime.enabled() && timebuffer_prepare_enabled) {
+        if (future_timebuffer_prepare_submitted)
+            taskRuntime.waitForAll();
+
+        if (future_prepare_allowed && tickEvent.scheduled() &&
+            future_timebuffer_prepare_submitted) {
+            assert(future_timebuffer_prepare_merged);
+            const auto &summary = *future_timebuffer_prepare_summary;
+            const uint64_t control_signals =
+                summary.squashSignals +
+                summary.robSquashingSignals +
+                summary.branchMispredictSignals;
+            taskRuntime.recordFutureTimeBufferSnapshot(
+                    future_timebuffer_prepare_slots);
+            taskRuntime.recordFutureTimeBufferPrepareMerge(
+                    summary.forwardInstRefs,
+                    control_signals,
+                    summary.resolvedCFIs);
+            pendingFutureTimeBufferPrepare.summary = summary;
+            pendingFutureTimeBufferPrepare.valid = true;
+            if (taskRuntime.traceEnabled()) {
+                DPRINTF(TaskGraph,
+                        "Future TimeBuffer prepare merge "
+                        "cycle=%llu instRefs=%llu control=%llu "
+                        "resolvedCFIs=%llu fetchGroups=%llu\n",
+                        summary.cycle,
+                        summary.forwardInstRefs,
+                        control_signals,
+                        summary.resolvedCFIs,
+                        summary.fetchGroups);
+            }
+        } else {
+            if (future_timebuffer_prepare_submitted)
+                taskRuntime.recordSpecTaskDiscarded();
+            taskRuntime.recordFutureTimeBufferPrepareSkipped();
+        }
+    }
+
+    bool defer_safe_tasks_to_next_tick = false;
+    if (taskRuntime.enabled() && tickEvent.scheduled()) {
+        const Event *next_event = eventQueue()->getHead();
+        defer_safe_tasks_to_next_tick = next_event == &tickEvent;
+    }
+    taskRuntime.onSerialTickEnd(curCycle(), defer_safe_tasks_to_next_tick);
 }
 
 void

@@ -35,9 +35,11 @@ if env['CONF']['TARGET_ISA'] != 'null':
               'IssuePort', 'IssueQue', 'BaseSelector', 'PAgeSelector', 'Scheduler'])
     SimObject('FuncUnitConfig.py', sim_objects=[])
     SimObject('BaseO3CPU.py', sim_objects=['BaseO3CPU'], enums=[
-        'SMTFetchPolicy', 'SMTQueuePolicy', 'CommitPolicy', 'ROBWalkPolicy', 'ROBCompressPolicy', 'PerfRecord'])
+        'SMTFetchPolicy', 'SMTQueuePolicy', 'CommitPolicy', 'ROBWalkPolicy',
+        'ROBCompressPolicy', 'PerfRecord'])
 
     Source('commit.cc')
+    Source('comm.cc')
     Source('cpu.cc')
     Source('decode.cc')
     Source('dyn_inst.cc')
@@ -49,12 +51,14 @@ if env['CONF']['TARGET_ISA'] != 'null':
     Source('lsq.cc')
     Source('lsq_unit.cc')
     Source('mem_dep_unit.cc')
+    Source('pipeline_snapshot.cc')
     Source('regfile.cc')
     Source('rename.cc')
     Source('rename_map.cc')
     Source('rob.cc')
     Source('scoreboard.cc')
     Source('store_set.cc')
+    Source('task_runtime.cc')
     Source('thread_context.cc')
     Source('thread_state.cc')
     Source('issue_queue.cc')
@@ -91,6 +95,9 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('Dispatch')
     DebugFlag('LoadPipeline')
     DebugFlag('StorePipeline')
+    DebugFlag('TaskGraph')
+    DebugFlag('TaskSched')
+    DebugFlag('TaskRace')
     DebugFlag('TraceReader')
 
     CompoundFlag('O3CPUAll', [ 'Fetch', 'Decode', 'Rename', 'IEW', 'Commit',

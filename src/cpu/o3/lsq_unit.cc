@@ -869,6 +869,18 @@ LSQUnit::getAndResetLastClockSQPopEntries(){
     return num;
 }
 
+unsigned
+LSQUnit::peekLastClockLQPopEntries() const
+{
+    return lastClockLQPopEntries;
+}
+
+unsigned
+LSQUnit::peekLastClockSQPopEntries() const
+{
+    return lastClockSQPopEntries;
+}
+
 void
 LSQUnit::checkSnoop(PacketPtr pkt)
 {

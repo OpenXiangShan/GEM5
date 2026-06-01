@@ -106,6 +106,7 @@ class Decode
     void setTimeBuffer(TimeBuffer<TimeStruct> *tb_ptr);
 
     void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
+    void setStallSignalBank(StallSignalBank* bank) { stallSignalBank = bank; }
 
     /** Sets pointer to time buffer used to communicate to the next stage. */
     void setDecodeQueue(TimeBuffer<DecodeStruct> *dq_ptr);
@@ -135,7 +136,7 @@ class Decode
      * fetch, so this function mostly checks if PC-relative branches are
      * correct.
      */
-    void decodeInsts(ThreadID tid);
+    void decodeInsts(ThreadID tid, const FetchStruct *fetch_input);
 
     void setIgnoreNextFusion(Addr pc) { ignoreFusionPC = pc; lastSetIgnoreTick = curTick(); }
 
@@ -149,9 +150,11 @@ class Decode
     /** Separates instructions from fetch into individual lists of instructions
      * sorted by thread.
      */
-    void moveInstsToBuffer();
+    const FetchStruct *fetchInput(Cycles cycle) const;
+    void moveInstsToBuffer(const FetchStruct *fetch_input);
 
-    void checkSquash();
+    const TimeStruct *commitInput(Cycles cycle) const;
+    void checkSquash(const TimeStruct *commit_input);
 
     /** Checks all stall signals, and returns if any are true. */
     bool checkStall(ThreadID tid) const;
@@ -175,7 +178,84 @@ class Decode
         fetch_ptr = fetch_stage;
     }
 
+    struct DecodePrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID selectedTid = InvalidThreadID;
+        ThreadID blockedTid = InvalidThreadID;
+        unsigned activeThreads = 0;
+        unsigned blockedThreads = 0;
+        bool multipleActive = false;
+        bool decodeBlock[MaxThreads] = {};
+        StallReason decodeBlockReason[MaxThreads] = {};
+        bool fetchBlock[MaxThreads] = {};
+        StallReason fetchBlockReason[MaxThreads] = {};
+    };
+
+    struct DecodePrepareInput
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID numThreads = 0;
+        bool fixedbufferEmpty[MaxThreads] = {};
+        StallSignalLatch renameToDecode;
+    };
+
+    bool previewFutureFetchLatch(Cycles cycle,
+                                 const StallSignalLatch &rename_to_decode,
+                                 const FetchStruct *snapshot_fetch,
+                                 const TimeStruct *snapshot_commit,
+                                 StallSignalLatch &decode_to_fetch,
+                                 DecodePrepareResult *prepare_result =
+                                     nullptr) const;
+    bool buildFutureFetchLatchInput(
+            Cycles cycle, const StallSignalLatch &rename_to_decode,
+            const FetchStruct *snapshot_fetch,
+            const TimeStruct *snapshot_commit,
+            DecodePrepareInput &input) const;
+    bool previewFutureFetchLatch(
+            const DecodePrepareInput &input,
+            StallSignalLatch &decode_to_fetch,
+            DecodePrepareResult *prepare_result = nullptr) const;
+    void recordFuturePrepareProbe();
+    void recordFuturePrepareSkipped();
+    void recordFuturePreviewSkipped(const DecodePrepareResult &result);
+    void setPendingFuturePrepare(const DecodePrepareResult &result);
+
   private:
+    struct DecodeThreadPrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID tid = InvalidThreadID;
+        bool active = false;
+        bool blocked = false;
+        bool decodeBlock = false;
+        StallReason decodeBlockReason = StallReason::NoStall;
+        bool fetchBlock = false;
+        StallReason fetchBlockReason = StallReason::NoStall;
+    };
+
+    struct DecodeThreadPrepareResults
+    {
+        DecodeThreadPrepareResult byThread[MaxThreads];
+    };
+
+    void setFetchStall(ThreadID tid, bool block, StallReason reason);
+    void setFetchBlock(ThreadID tid, bool block);
+    DecodePrepareInput buildDecodePrepareInput(
+            Cycles cycle,
+            const StallSignalLatch *rename_to_decode_override = nullptr,
+            const FetchStruct *snapshot_fetch = nullptr) const;
+    DecodeThreadPrepareResult prepareDecodeThreadControl(
+            const DecodePrepareInput &input, ThreadID tid) const;
+    DecodePrepareResult combineDecodeThreadPrepareResults(
+            const DecodePrepareInput &input,
+            const DecodeThreadPrepareResults &thread_results) const;
+    DecodePrepareResult prepareDecodeControl(
+            const DecodePrepareInput &input) const;
+    DecodePrepareResult runDecodePrepare(Cycles cycle);
+    bool samePrepareResult(const DecodePrepareResult &lhs,
+                           const DecodePrepareResult &rhs) const;
+
     // Interfaces to objects outside of decode.
     /** CPU interface. */
     CPU *cpu;
@@ -184,6 +264,7 @@ class Decode
     Fetch *fetch_ptr;
 
     StallSignals* stallSig;
+    StallSignalBank* stallSignalBank = nullptr;
 
     /** Time buffer interface. */
     TimeBuffer<TimeStruct> *timeBuffer;
@@ -215,6 +296,14 @@ class Decode
 
     /** Queue of all instructions coming from fetch this cycle. */
     boost::circular_buffer<DynInstPtr> fixedbuffer[MaxThreads];
+
+    struct PendingFuturePrepare
+    {
+        bool valid = false;
+        DecodePrepareResult result;
+    };
+
+    PendingFuturePrepare pendingFuturePrepare;
 
     boost::circular_buffer<DynInstPtr> stallBuffer;
     boost::circular_buffer<int> eachstallSize;
@@ -279,6 +368,36 @@ class Decode
         statistics::Scalar decodedInsts;
         /** Stat for total number of squashed instructions. */
         statistics::Scalar squashedInsts;
+        /** Stat for number of decode prepare tasks submitted. */
+        statistics::Scalar prepareTasks;
+        /** Stat for number of decode prepare results merged. */
+        statistics::Scalar prepareMerges;
+        /** Accumulated active thread count seen by decode prepare. */
+        statistics::Scalar prepareActiveThreads;
+        /** Accumulated blocked thread count seen by decode prepare. */
+        statistics::Scalar prepareBlockedThreads;
+        /** Accumulated inactive thread count seen by decode prepare. */
+        statistics::Scalar prepareInactiveThreads;
+        /** Number of times decode prepare saw multiple active threads. */
+        statistics::Scalar prepareMultipleActive;
+        /** Number of future decode prepare probes submitted. */
+        statistics::Scalar futurePrepareProbes;
+        /** Number of future decode prepare probes skipped. */
+        statistics::Scalar futurePrepareSkipped;
+        /** Breakdown of why future Decode-to-Fetch latch preview failed. */
+        statistics::Vector futurePreviewSkipReasons;
+        /** Number of future decode prepare results made pending. */
+        statistics::Scalar futurePrepareMerges;
+        /** Number of current decode prepares reused from future work. */
+        statistics::Scalar futurePrepareReuses;
+        /** Number of future decode prepare validation checks. */
+        statistics::Scalar futurePrepareChecks;
+        /** Number of future decode prepare validation matches. */
+        statistics::Scalar futurePrepareMatches;
+        /** Number of future decode prepare validation mismatches. */
+        statistics::Scalar futurePrepareMismatches;
+        /** Number of stale future decode prepare results discarded. */
+        statistics::Scalar futurePrepareStale;
         /** stat for total number of instructions that mispredicted due to pc. */
         statistics::Scalar mispredictedByPC;
         /** stat for total number of instructions that mispredicted due to npc. */
@@ -290,6 +409,8 @@ class Decode
     std::unordered_map<const char*, uint64_t> fusionType;
 
     StallReason blockReason{NoStall};
+
+    DecodePrepareResult lastPrepareResult;
 
     void setAllStalls(StallReason decodeStall);
 

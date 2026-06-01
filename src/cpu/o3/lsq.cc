@@ -48,6 +48,7 @@
 #include <cstdio>
 #include <cstring>
 #include <list>
+#include <memory>
 #include <string>
 
 #include "arch/riscv/insts/fusion.hh"
@@ -299,7 +300,21 @@ LSQ::LSQStats::LSQStats(statistics::Group *parent)
       ADD_STAT(sbufferDcacheReqFire, statistics::units::Count::get(),
                "Number of sbuffer write requests accepted by dcache"),
       ADD_STAT(sbufferDcacheReqBlocked, statistics::units::Count::get(),
-               "Number of sbuffer write request attempts rejected by dcache")
+               "Number of sbuffer write request attempts rejected by dcache"),
+      ADD_STAT(sbufferOffloadPrepareTasks, statistics::units::Count::get(),
+               "Number of store-buffer offload quota prepare tasks"),
+      ADD_STAT(sbufferOffloadPrepareMerges, statistics::units::Count::get(),
+               "Number of store-buffer offload quota prepare results merged"),
+      ADD_STAT(sbufferOffloadPrepareNoDemand, statistics::units::Count::get(),
+               "Number of store-buffer offload prepare cycles with no "
+               "offload demand"),
+      ADD_STAT(sbufferOffloadPrepareMismatches,
+               statistics::units::Count::get(),
+               "Number of store-buffer offload quota prepare validation "
+               "mismatches"),
+      ADD_STAT(sbufferOffloadPrepareGranted, statistics::units::Count::get(),
+               "Number of store queue entries granted to store-buffer "
+               "offload by prepare")
 {
 }
 
@@ -633,9 +648,21 @@ LSQ::getAndResetLastLQPopEntries(ThreadID tid)
 }
 
 unsigned
+LSQ::peekLastLQPopEntries(ThreadID tid) const
+{
+    return thread[tid].peekLastClockLQPopEntries();
+}
+
+unsigned
 LSQ::getAndResetLastSQPopEntries(ThreadID tid)
 {
     return thread[tid].getAndResetLastClockSQPopEntries();
+}
+
+unsigned
+LSQ::peekLastSQPopEntries(ThreadID tid) const
+{
+    return thread[tid].peekLastClockSQPopEntries();
 }
 
 bool
@@ -738,6 +765,150 @@ LSQ::commitStores(InstSeqNum &youngest_inst, ThreadID tid)
     thread.at(tid).commitStores(youngest_inst);
 }
 
+LSQ::StoreBufferOffloadPrepareInput
+LSQ::buildStoreBufferOffloadPrepareInput(Cycles cycle) const
+{
+    StoreBufferOffloadPrepareInput input;
+    input.cycle = cycle;
+    input.maxEntries = maxStoreBufferEntriesAcceptedFromSQPerCycle;
+    input.nextTid = nextStoreBufferOffloadTid;
+
+    for (ThreadID tid : *activeThreads) {
+        fatal_if(input.activeThreadCount >= MaxThreads,
+                 "LSQ store-buffer offload prepare has too many active "
+                 "threads.");
+        input.activeTids[input.activeThreadCount++] = tid;
+        input.demand[tid] = thread[tid].countStoreBufferOffloadableEntries(
+                input.maxEntries);
+        input.totalDemand += input.demand[tid];
+    }
+
+    return input;
+}
+
+LSQ::StoreBufferOffloadPrepareResult
+LSQ::prepareStoreBufferOffloadQuota(
+        const StoreBufferOffloadPrepareInput &input) const
+{
+    StoreBufferOffloadPrepareResult result;
+    result.cycle = input.cycle;
+    result.nextTid = input.nextTid;
+
+    ThreadID requester_tids[MaxThreads] = {};
+    ThreadID requester_count = 0;
+    for (ThreadID i = 0; i < input.activeThreadCount; ++i) {
+        const ThreadID tid = input.activeTids[i];
+        if (input.demand[tid] != 0) {
+            requester_tids[requester_count++] = tid;
+        }
+    }
+
+    if (requester_count == 0)
+        return result;
+
+    size_t start_idx = 0;
+    if (input.nextTid != InvalidThreadID) {
+        for (size_t i = 0; i < requester_count; ++i) {
+            if (requester_tids[i] == input.nextTid) {
+                start_idx = i;
+                break;
+            }
+        }
+    }
+
+    uint32_t remaining_budget = input.maxEntries;
+    size_t cursor = start_idx;
+    while (remaining_budget != 0) {
+        bool granted = false;
+        for (size_t scanned = 0; scanned < requester_count; ++scanned) {
+            const size_t idx = (cursor + scanned) % requester_count;
+            const ThreadID tid = requester_tids[idx];
+            if (result.quota[tid] >= input.demand[tid]) {
+                continue;
+            }
+
+            ++result.quota[tid];
+            ++result.grantedEntries;
+            --remaining_budget;
+            cursor = (idx + 1) % requester_count;
+            result.nextTid = requester_tids[cursor];
+            granted = true;
+            break;
+        }
+
+        if (!granted)
+            break;
+    }
+
+    return result;
+}
+
+LSQ::StoreBufferOffloadPrepareResult
+LSQ::runStoreBufferOffloadPrepare(Cycles cycle)
+{
+    StoreBufferOffloadPrepareInput input =
+        buildStoreBufferOffloadPrepareInput(cycle);
+
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return prepareStoreBufferOffloadQuota(input);
+
+    if (input.totalDemand == 0) {
+        stats.sbufferOffloadPrepareNoDemand++;
+        return prepareStoreBufferOffloadQuota(input);
+    }
+
+    stats.sbufferOffloadPrepareTasks++;
+    const TaskOrderKey order{cycle, TaskStage::IEW, 3, InvalidThreadID, 0};
+    auto input_ptr = std::make_shared<StoreBufferOffloadPrepareInput>(input);
+    auto result = std::make_shared<StoreBufferOffloadPrepareResult>();
+    runtime.submitWeak(
+            order,
+            std::max(1u, input_ptr->activeThreadCount +
+                         input_ptr->totalDemand),
+            [this, input_ptr, result] {
+                *result = prepareStoreBufferOffloadQuota(*input_ptr);
+            },
+            [this, input_ptr, result] {
+                stats.sbufferOffloadPrepareMerges++;
+                stats.sbufferOffloadPrepareGranted += result->grantedEntries;
+                verifyStoreBufferOffloadPrepareResult(*input_ptr, *result);
+            });
+    runtime.waitForOrder(order);
+
+    return *result;
+}
+
+void
+LSQ::verifyStoreBufferOffloadPrepareResult(
+        const StoreBufferOffloadPrepareInput &input,
+        const StoreBufferOffloadPrepareResult &result)
+{
+    const StoreBufferOffloadPrepareResult expected =
+        prepareStoreBufferOffloadQuota(input);
+
+    auto mismatch = [&] {
+        if (result.grantedEntries != expected.grantedEntries ||
+            result.nextTid != expected.nextTid) {
+            return true;
+        }
+
+        for (ThreadID tid = 0; tid < numThreads; ++tid) {
+            if (result.quota[tid] != expected.quota[tid])
+                return true;
+        }
+        return false;
+    };
+
+    if (mismatch()) {
+        stats.sbufferOffloadPrepareMismatches++;
+        panic("LSQ store-buffer offload prepare mismatch: "
+              "prepared granted=%u next=%i, expected granted=%u next=%i",
+              result.grantedEntries, result.nextTid,
+              expected.grantedEntries, expected.nextTid);
+    }
+}
+
 void
 LSQ::processWriteback()
 {
@@ -761,56 +932,13 @@ LSQ::processWriteback()
         DPRINTF(StoreBuffer, "Store buffer is blocking, skip SQ offload\n");
         return;
     }
-    std::vector<uint32_t> offload_quota(numThreads, 0);
-    std::vector<uint32_t> offload_demand(numThreads, 0);
-    std::vector<ThreadID> requester_tids;
-    requester_tids.reserve(activeThreads->size());
-    for (ThreadID tid : *activeThreads) {
-        offload_demand[tid] = thread[tid].countStoreBufferOffloadableEntries(
-            maxStoreBufferEntriesAcceptedFromSQPerCycle);
-        if (offload_demand[tid] != 0) {
-            requester_tids.push_back(tid);
-        }
-    }
-    if (!requester_tids.empty()) {
-        size_t start_idx = 0;
-        if (nextStoreBufferOffloadTid != InvalidThreadID) {
-            auto it = std::find(requester_tids.begin(), requester_tids.end(),
-                                nextStoreBufferOffloadTid);
-            if (it != requester_tids.end()) {
-                start_idx = std::distance(requester_tids.begin(), it);
-            }
-        }
-
-        uint32_t remaining_budget = maxStoreBufferEntriesAcceptedFromSQPerCycle;
-        size_t cursor = start_idx;
-        while (remaining_budget != 0) {
-            bool granted = false;
-            for (size_t scanned = 0; scanned < requester_tids.size();
-                ++scanned) {
-                const size_t idx = (cursor + scanned) % requester_tids.size();
-                const ThreadID tid = requester_tids[idx];
-                if (offload_quota[tid] >= offload_demand[tid]) {
-                    continue;
-                }
-
-                ++offload_quota[tid];
-                --remaining_budget;
-                cursor = (idx + 1) % requester_tids.size();
-                nextStoreBufferOffloadTid = requester_tids[cursor];
-                granted = true;
-                break;
-            }
-
-            if (!granted) {
-                break;
-            }
-        }
-    }
+    const StoreBufferOffloadPrepareResult offload_prepare =
+        runStoreBufferOffloadPrepare(cpu->curCycle());
+    nextStoreBufferOffloadTid = offload_prepare.nextTid;
     threads = activeThreads->begin();
     while (threads != end) {
         ThreadID tid = *threads++;
-        thread[tid].offloadToStoreBuffer(offload_quota[tid]);
+        thread[tid].offloadToStoreBuffer(offload_prepare.quota[tid]);
     }
 }
 

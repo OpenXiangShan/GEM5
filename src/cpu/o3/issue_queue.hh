@@ -37,11 +37,48 @@ namespace o3
 class FUPool;
 class CPU;
 class IEW;
-class Scheduler;
 class MemDepUnit;
+class Scheduler;
+class IssueQue;
 
 using ReadyQue = std::list<DynInstPtr>;
 using SelectQue = std::vector<std::pair<uint32_t, DynInstPtr>>;
+
+enum class DispatchTokenBlockReason : uint8_t
+{
+    NoBlock,
+    InvalidState,
+    InvalidOp,
+    InvalidDispSeq,
+    InvalidSelector,
+    ReplayBlocked,
+    IQFull,
+    InportFull,
+    NumReasons,
+};
+
+struct DispatchTokenState
+{
+    bool supported = false;
+    std::vector<int> freeEntries;
+    std::vector<int> freeInports;
+    std::vector<bool> replayBlocked;
+    std::vector<int> dispSeqVec;
+    std::vector<std::vector<IssueQue*>> dispatchTable;
+};
+
+struct DispatchTokenSnapshot
+{
+    bool valid = false;
+    DispatchTokenBlockReason reason = DispatchTokenBlockReason::NumReasons;
+    int iqIndex = -1;
+    int selector = -1;
+    OpClass opClass = No_OpClass;
+    int dispSeq = -1;
+    int freeEntries = 0;
+    int freeInports = 0;
+    bool replayBlocked = false;
+};
 
 /**
  *          insert into queue
@@ -222,7 +259,7 @@ class IssueQue : public SimObject
     void doSquash(const InstSeqNum seqNum);
 
     int getIssueStages() { return scheduleToExecDelay; }
-    int getId() { return IQID; }
+    int getId() const { return IQID; }
     int getLoadPipeId() const { return loadPipeId; }
     // return IQ's name
     std::string getName() { return iqname; }
@@ -243,6 +280,7 @@ class SpecWakeupChannel : public SimObject
 
 class Scheduler : public SimObject
 {
+  private:
     friend class IssueQue;
     class SpecWakeupCompletion;
     // structured as <instruction seqNum -> [pending speculate wakeup events]>
@@ -294,6 +332,7 @@ class Scheduler : public SimObject
 
     std::vector<uint8_t> totalDispCounter;
     std::vector<uint8_t*> dispOpdist;
+    std::vector<unsigned> dispOpdistIndex;
 
     std::vector<DynInstPtr> instsToFu;
 
@@ -321,6 +360,11 @@ class Scheduler : public SimObject
     // should call at issue first/last cycle,
     void specWakeUpDependents(const DynInstPtr& inst, IssueQue* from_issue_queue);
     bool ready(OpClass op, int disp_seq);
+    int issueQueueIndex(const IssueQue* iq) const;
+    bool dryRunDispatchTokenReady(const DispatchTokenState& state,
+                                  IssueQue* iq) const;
+    bool dryRunDispatchReady(DispatchTokenState& state, OpClass op,
+                             int disp_seq, bool consume) const;
 
   public:
     PendingWakeEventsType specWakeEvents;
@@ -336,6 +380,33 @@ class Scheduler : public SimObject
     void issueAndSelect();
     void lookahead(std::deque<DynInstPtr>& insts);
     bool ready(const DynInstPtr& inst, int disp_seq);
+    DispatchTokenState buildDispatchTokenState(
+            bool reset_inports = false) const;
+    DispatchTokenState buildLookaheadDispatchTokenState(
+            const std::vector<OpClass>& op_classes,
+            const std::vector<OpClass>& extra_sorted_ops,
+            bool reset_inports = false) const;
+    DispatchTokenBlockReason dryRunDispatchBlockReason(
+            const DispatchTokenState& state, OpClass op,
+            int disp_seq) const;
+    DispatchTokenBlockReason dryRunDispatchBlockReason(
+            const DispatchTokenState& state, OpClass op,
+            bool split_store_addr, int disp_seq) const;
+    DispatchTokenSnapshot dryRunDispatchBlockSnapshot(
+            const DispatchTokenState& state, OpClass op,
+            int disp_seq) const;
+    DispatchTokenSnapshot dryRunDispatchBlockSnapshot(
+            const DispatchTokenState& state, OpClass op,
+            bool split_store_addr, int disp_seq) const;
+    bool dryRunDispatchReady(DispatchTokenState& state,
+                             OpClass op,
+                             bool split_store_addr,
+                             int disp_seq,
+                             bool consume) const;
+    bool dryRunDispatchReady(DispatchTokenState& state,
+                             const DynInstPtr& inst,
+                             int disp_seq,
+                             bool consume) const;
     DynInstPtr getInstByDstReg(RegIndex flatIdx);
 
     void addProducer(const DynInstPtr& inst);

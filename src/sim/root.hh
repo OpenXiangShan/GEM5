@@ -99,6 +99,19 @@ class Root : public SimObject
   public: // Global statistics
     struct RootStats : public statistics::Group
     {
+        struct EventStats : public statistics::Group
+        {
+            EventStats();
+            void preDumpStats() override;
+
+            statistics::Value samePriorityGroups;
+            statistics::Value samePriorityInsertedEvents;
+            statistics::Value samePriorityMaxDepth;
+            statistics::Vector samePriorityGroupsByClass;
+            statistics::Vector samePriorityInsertedEventsByClass;
+            statistics::Vector samePriorityMaxDepthByClass;
+        };
+
         void resetStats() override;
 
         statistics::Formula simSeconds;
@@ -109,6 +122,8 @@ class Root : public SimObject
 
         statistics::Formula hostTickRate;
         statistics::Value hostMemory;
+
+        EventStats event;
 
         static RootStats instance;
 

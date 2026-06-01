@@ -64,6 +64,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/dyn_inst_xsmeta.hh"
+#include "cpu/o3/limits.hh"
 #include "cpu/utils.hh"
 #include "enums/SMTQueuePolicy.hh"
 #include "mem/packet.hh"
@@ -1108,9 +1109,11 @@ class LSQ
 
     unsigned getFreeLQEntries(ThreadID tid);
     unsigned getAndResetLastLQPopEntries(ThreadID tid);
+    unsigned peekLastLQPopEntries(ThreadID tid) const;
 
     unsigned getFreeSQEntries(ThreadID tid);
     unsigned getAndResetLastSQPopEntries(ThreadID tid);
+    unsigned peekLastSQPopEntries(ThreadID tid) const;
 
     /** Is D-cache blocked? */
     bool cacheBlocked() const;
@@ -1238,9 +1241,48 @@ class LSQ
         /** Handshake-level sbuffer to dcache request outcomes. */
         statistics::Scalar sbufferDcacheReqFire;
         statistics::Scalar sbufferDcacheReqBlocked;
+        /** Store-buffer offload quota prepare tasks submitted. */
+        statistics::Scalar sbufferOffloadPrepareTasks;
+        /** Store-buffer offload quota prepare results merged. */
+        statistics::Scalar sbufferOffloadPrepareMerges;
+        /** Store-buffer offload prepare cycles with no offload demand. */
+        statistics::Scalar sbufferOffloadPrepareNoDemand;
+        /** Store-buffer offload quota prepare validation mismatches. */
+        statistics::Scalar sbufferOffloadPrepareMismatches;
+        /** Store-buffer offload entries granted by prepare. */
+        statistics::Scalar sbufferOffloadPrepareGranted;
     } stats;
 
     void recordStoreBufferEviction(StoreBufferEvictCause cause);
+
+    struct StoreBufferOffloadPrepareInput
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID activeThreadCount = 0;
+        ThreadID activeTids[MaxThreads] = {};
+        uint32_t demand[MaxThreads] = {};
+        uint32_t maxEntries = 0;
+        ThreadID nextTid = InvalidThreadID;
+        uint32_t totalDemand = 0;
+    };
+
+    struct StoreBufferOffloadPrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        uint32_t quota[MaxThreads] = {};
+        uint32_t grantedEntries = 0;
+        ThreadID nextTid = InvalidThreadID;
+    };
+
+    StoreBufferOffloadPrepareInput buildStoreBufferOffloadPrepareInput(
+            Cycles cycle) const;
+    StoreBufferOffloadPrepareResult prepareStoreBufferOffloadQuota(
+            const StoreBufferOffloadPrepareInput &input) const;
+    StoreBufferOffloadPrepareResult runStoreBufferOffloadPrepare(
+            Cycles cycle);
+    void verifyStoreBufferOffloadPrepareResult(
+            const StoreBufferOffloadPrepareInput &input,
+            const StoreBufferOffloadPrepareResult &result);
 
     /** List of Active Threads in System. */
     std::list<ThreadID> *activeThreads;

@@ -43,6 +43,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
 #include <set>
 #include <string>
 
@@ -271,6 +272,46 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "Class of committed instruction"),
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
                "number cycles where commit BW limit reached"),
+      ADD_STAT(prepareTasks, statistics::units::Count::get(),
+               "Number of commit prepare tasks submitted"),
+      ADD_STAT(prepareMerges, statistics::units::Count::get(),
+               "Number of commit prepare results merged"),
+      ADD_STAT(prepareActiveThreads, statistics::units::Count::get(),
+               "Number of active threads seen by commit prepare"),
+      ADD_STAT(prepareBlockedThreads, statistics::units::Count::get(),
+               "Number of blocked threads seen by commit prepare"),
+      ADD_STAT(prepareInlineEmptyThreads, statistics::units::Count::get(),
+               "Accumulated empty-thread count evaluated inline by commit "
+               "prepare"),
+      ADD_STAT(prepareMultipleActive, statistics::units::Count::get(),
+               "Number of cycles where commit prepare saw multiple active threads"),
+      ADD_STAT(futurePrepareProbes, statistics::units::Count::get(),
+               "Number of horizon-gated future commit prepare probes "
+               "submitted"),
+      ADD_STAT(futurePrepareSkipped, statistics::units::Count::get(),
+               "Number of future commit prepare probes skipped because "
+               "pre-prepare commit control state was not read-only"),
+      ADD_STAT(futurePrepareMerges, statistics::units::Count::get(),
+               "Number of future commit prepare probe results merged"),
+      ADD_STAT(futurePrepareReuses, statistics::units::Count::get(),
+               "Number of next-cycle commit prepare results reused from a "
+               "future probe"),
+      ADD_STAT(futurePrepareInlineEmptyThreads,
+               statistics::units::Count::get(),
+               "Accumulated empty-thread count evaluated inline by future "
+               "commit prepare probes"),
+      ADD_STAT(futurePrepareChecks, statistics::units::Count::get(),
+               "Number of future commit prepare results checked against the "
+               "real next-cycle prepare result"),
+      ADD_STAT(futurePrepareMatches, statistics::units::Count::get(),
+               "Number of future commit prepare results matching the real "
+               "next-cycle prepare result"),
+      ADD_STAT(futurePrepareMismatches, statistics::units::Count::get(),
+               "Number of future commit prepare results that matched the "
+               "cycle but not the real next-cycle prepare result"),
+      ADD_STAT(futurePrepareStale, statistics::units::Count::get(),
+               "Number of future commit prepare results that did not match "
+               "the next commit prepare cycle"),
       ADD_STAT(loadTriple, statistics::units::Cycle::get(),
                "load trip number"),
       ADD_STAT(loadEAReused, statistics::units::Cycle::get(),
@@ -313,6 +354,21 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
     commitSquashedInsts.prereq(commitSquashedInsts);
     commitNonSpecStalls.prereq(commitNonSpecStalls);
     branchMispredicts.prereq(branchMispredicts);
+    prepareTasks.prereq(prepareTasks);
+    prepareMerges.prereq(prepareMerges);
+    prepareActiveThreads.prereq(prepareActiveThreads);
+    prepareBlockedThreads.prereq(prepareBlockedThreads);
+    prepareInlineEmptyThreads.prereq(prepareInlineEmptyThreads);
+    prepareMultipleActive.prereq(prepareMultipleActive);
+    futurePrepareProbes.prereq(futurePrepareProbes);
+    futurePrepareSkipped.prereq(futurePrepareSkipped);
+    futurePrepareMerges.prereq(futurePrepareMerges);
+    futurePrepareReuses.prereq(futurePrepareReuses);
+    futurePrepareInlineEmptyThreads.prereq(futurePrepareInlineEmptyThreads);
+    futurePrepareChecks.prereq(futurePrepareChecks);
+    futurePrepareMatches.prereq(futurePrepareMatches);
+    futurePrepareMismatches.prereq(futurePrepareMismatches);
+    futurePrepareStale.prereq(futurePrepareStale);
 
     numCommittedDist
         .init(0,commit->commitWidth * 8,1)
@@ -594,6 +650,441 @@ Commit::resetHtmStartsStops(ThreadID tid)
     }
 }
 
+void
+Commit::setIEWStall(ThreadID tid, bool block, StallReason reason)
+{
+    if (stallSignalBank) {
+        stallSignalBank->set(StallSignalEdge::CommitToIEW, tid, block,
+                             reason);
+    } else {
+        stallSig->blockIEW[tid] = block;
+        stallSig->iewBlockReason[tid] = reason;
+    }
+    cpu->getTaskRuntime().recordStallSignalMerge(
+            static_cast<unsigned>(StallSignalEdge::CommitToIEW), 1);
+}
+
+void
+Commit::setIEWBlock(ThreadID tid, bool block)
+{
+    if (stallSignalBank) {
+        stallSignalBank->setBlock(StallSignalEdge::CommitToIEW, tid, block);
+    } else {
+        stallSig->blockIEW[tid] = block;
+    }
+    cpu->getTaskRuntime().recordStallSignalMerge(
+            static_cast<unsigned>(StallSignalEdge::CommitToIEW), 1);
+}
+
+const RenameStruct *
+Commit::renameInput(Cycles cycle) const
+{
+    const int rename_to_commit_offset = -static_cast<int>(
+            static_cast<uint64_t>(renameToROBDelay));
+    const RenameStruct *snapshot =
+        cpu->pipelineInputRenameToCommit(cycle, rename_to_commit_offset);
+    return snapshot ? snapshot : &(*fromRename);
+}
+
+const IEWStruct *
+Commit::iewInput(Cycles cycle) const
+{
+    const int iew_to_commit_offset = -static_cast<int>(
+            static_cast<uint64_t>(iewToCommitDelay));
+    const IEWStruct *snapshot =
+        cpu->pipelineInputIEWToCommit(cycle, iew_to_commit_offset);
+    return snapshot ? snapshot : &(*fromIEW);
+}
+
+Commit::CommitPrepareInput
+Commit::buildCommitPrepareInput(Cycles cycle) const
+{
+    const int iew_to_commit_offset = -static_cast<int>(
+            static_cast<uint64_t>(iewToCommitDelay));
+    const TimeStruct *snapshot_backward =
+        cpu->pipelineInputBackward(cycle, iew_to_commit_offset);
+
+    return buildCommitPrepareInput(cycle, snapshot_backward, nullptr);
+}
+
+Commit::CommitPrepareInput
+Commit::buildCommitPrepareInput(Cycles cycle,
+                                const TimeStruct *snapshot_backward,
+                                const RenameStruct *snapshot_rename) const
+{
+    CommitPrepareInput input;
+    input.cycle = cycle;
+    input.numThreads = numThreads;
+
+    for (int tid = 0; tid < numThreads; ++tid) {
+        input.fixedbufferSize[tid] = fixedbuffer[tid].size();
+        input.robFreeEntries[tid] =
+            rob->getMaxEntries(tid) - rob->getThreadEntries(tid);
+        input.robStateBlock[tid] =
+            commitStatus[tid] == ROBSquashing ||
+            commitStatus[tid] == TrapPending;
+        input.robHeadStallReason[tid] =
+            snapshot_backward ?
+            snapshot_backward->iewInfo[tid].robHeadStallReason :
+            robInfoFromIEW->iewInfo[tid].robHeadStallReason;
+    }
+
+    if (snapshot_rename && snapshot_rename->size > 0) {
+        const int renamed_insts = std::min(snapshot_rename->size, MaxWidth);
+        for (int i = 0; i < renamed_insts; ++i) {
+            const DynInstPtr &inst = snapshot_rename->insts[i];
+            if (!inst || inst->isSquashed())
+                continue;
+            const ThreadID tid = inst->threadNumber;
+            if (tid < numThreads)
+                input.fixedbufferSize[tid]++;
+        }
+    }
+
+    return input;
+}
+
+Commit::CommitThreadPrepareResult
+Commit::prepareCommitThreadControl(const CommitPrepareInput &input,
+                                   ThreadID tid) const
+{
+    CommitThreadPrepareResult result;
+    result.cycle = input.cycle;
+    result.tid = tid;
+
+    const bool rob_state_block = input.robStateBlock[tid];
+    const bool rob_capacity_block =
+        input.robFreeEntries[tid] < input.fixedbufferSize[tid];
+    const bool block = rob_state_block || rob_capacity_block;
+    const bool active = !block && input.fixedbufferSize[tid] != 0;
+    StallReason block_reason = StallReason::NoStall;
+
+    if (rob_state_block) {
+        block_reason = StallReason::CommitSquash;
+    } else if (rob_capacity_block) {
+        block_reason = input.robHeadStallReason[tid];
+        if (block_reason == StallReason::NoStall)
+            block_reason = StallReason::ROBFull;
+    }
+
+    result.robStateBlock = rob_state_block;
+    result.robCapacityBlock = rob_capacity_block;
+    result.block = block;
+    result.active = active;
+    result.blocked = block;
+    result.iewBlock = block;
+    result.iewBlockReason = block ? block_reason : StallReason::NoStall;
+
+    return result;
+}
+
+Commit::CommitPrepareResult
+Commit::combineCommitThreadPrepareResults(
+        const CommitPrepareInput &input,
+        const CommitThreadPrepareResults &thread_results) const
+{
+    CommitPrepareResult result;
+    result.cycle = input.cycle;
+
+    for (int tid = 0; tid < input.numThreads; ++tid) {
+        const auto &thread_result = thread_results.byThread[tid];
+
+        result.robStateBlock[tid] = thread_result.robStateBlock;
+        result.robCapacityBlock[tid] = thread_result.robCapacityBlock;
+        result.block[tid] = thread_result.block;
+        result.active[tid] = thread_result.active;
+        result.iewBlock[tid] = thread_result.iewBlock;
+        result.iewBlockReason[tid] = thread_result.iewBlockReason;
+
+        if (thread_result.active) {
+            ++result.activeThreads;
+            if (result.selectedTid == InvalidThreadID) {
+                result.selectedTid = tid;
+            } else {
+                result.multipleActive = true;
+                result.iewBlock[result.selectedTid] = true;
+                result.iewBlock[tid] = true;
+            }
+        } else if (thread_result.blocked) {
+            ++result.blockedThreads;
+        }
+    }
+
+    return result;
+}
+
+Commit::CommitPrepareResult
+Commit::prepareCommitControl(const CommitPrepareInput &input) const
+{
+    CommitThreadPrepareResults thread_results;
+    for (int tid = 0; tid < input.numThreads; ++tid) {
+        thread_results.byThread[tid] =
+            prepareCommitThreadControl(input, static_cast<ThreadID>(tid));
+    }
+
+    return combineCommitThreadPrepareResults(input, thread_results);
+}
+
+void
+Commit::mergeCommitPrepareResult(const CommitPrepareResult &result,
+                                 bool countPrepareStats)
+{
+    lastPrepareResult = result;
+
+    if (countPrepareStats) {
+        stats.prepareMerges++;
+        stats.prepareActiveThreads += result.activeThreads;
+        stats.prepareBlockedThreads += result.blockedThreads;
+        if (result.multipleActive)
+            stats.prepareMultipleActive++;
+    }
+}
+
+bool
+Commit::canProbeFuturePrepare(const TimeStruct *snapshot_backward,
+                              const RenameStruct *snapshot_rename,
+                              const IEWStruct *snapshot_iew) const
+{
+    if (!snapshot_backward || !snapshot_rename || !snapshot_iew)
+        return false;
+
+    if (activeThreads->empty())
+        return false;
+
+    for (ThreadID tid : *activeThreads) {
+        if (trapSquash[tid] || tcSquash[tid] ||
+            commitStatus[tid] == SquashAfterPending ||
+            commitStatus[tid] == ROBSquashing) {
+            return false;
+        }
+
+        if (snapshot_iew->squash[tid] &&
+            commitStatus[tid] != TrapPending &&
+            snapshot_iew->squashedSeqNum[tid] <= youngestSeqNum[tid]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+Commit::CommitPrepareResult
+Commit::runCommitPrepare(Cycles cycle)
+{
+    auto input = std::make_shared<CommitPrepareInput>(
+            buildCommitPrepareInput(cycle));
+    auto result = std::make_shared<CommitPrepareResult>();
+
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled()) {
+        *result = prepareCommitControl(*input);
+        mergeCommitPrepareResult(*result, false);
+        checkFuturePrepareResult(*result);
+        return *result;
+    }
+
+    if (pendingFuturePrepare.valid) {
+        if (pendingFuturePrepare.result.cycle == cycle) {
+            *result = pendingFuturePrepare.result;
+            pendingFuturePrepare.valid = false;
+            stats.futurePrepareReuses++;
+            mergeCommitPrepareResult(*result, true);
+
+            if (runtime.selfTestEnabled()) {
+                const CommitPrepareResult expected =
+                    prepareCommitControl(*input);
+                stats.futurePrepareChecks++;
+                if (samePrepareResult(*result, expected)) {
+                    stats.futurePrepareMatches++;
+                } else {
+                    stats.futurePrepareMismatches++;
+                }
+            }
+
+            return lastPrepareResult;
+        }
+
+        stats.futurePrepareChecks++;
+        stats.futurePrepareStale++;
+        pendingFuturePrepare.valid = false;
+    }
+
+    stats.prepareTasks++;
+    auto thread_results = std::make_shared<CommitThreadPrepareResults>();
+    for (int tid = 0; tid < input->numThreads; ++tid) {
+        if (input->fixedbufferSize[tid] == 0) {
+            thread_results->byThread[tid] =
+                prepareCommitThreadControl(
+                        *input, static_cast<ThreadID>(tid));
+            stats.prepareInlineEmptyThreads++;
+            continue;
+        }
+
+        const TaskOrderKey thread_order{
+            cycle, TaskStage::Commit, 1, InvalidThreadID,
+            static_cast<uint64_t>(tid)};
+        runtime.submitWeak(
+                thread_order,
+                1,
+                [this, input, thread_results, tid] {
+                    thread_results->byThread[tid] =
+                        prepareCommitThreadControl(
+                                *input, static_cast<ThreadID>(tid));
+                });
+    }
+
+    const TaskOrderKey merge_order{
+        cycle, TaskStage::Commit, 1, InvalidThreadID,
+        static_cast<uint64_t>(input->numThreads)};
+    runtime.submitWeak(
+            merge_order,
+            1,
+            [] {},
+            [this, input, thread_results, result] {
+                *result = combineCommitThreadPrepareResults(
+                        *input, *thread_results);
+                mergeCommitPrepareResult(*result, true);
+            });
+    runtime.waitForOrder(merge_order);
+    checkFuturePrepareResult(lastPrepareResult);
+
+    return lastPrepareResult;
+}
+
+bool
+Commit::samePrepareResult(const CommitPrepareResult &lhs,
+                          const CommitPrepareResult &rhs) const
+{
+    if (lhs.cycle != rhs.cycle ||
+        lhs.selectedTid != rhs.selectedTid ||
+        lhs.activeThreads != rhs.activeThreads ||
+        lhs.blockedThreads != rhs.blockedThreads ||
+        lhs.multipleActive != rhs.multipleActive) {
+        return false;
+    }
+
+    for (int tid = 0; tid < numThreads; ++tid) {
+        if (lhs.robStateBlock[tid] != rhs.robStateBlock[tid] ||
+            lhs.robCapacityBlock[tid] != rhs.robCapacityBlock[tid] ||
+            lhs.block[tid] != rhs.block[tid] ||
+            lhs.active[tid] != rhs.active[tid] ||
+            lhs.iewBlock[tid] != rhs.iewBlock[tid] ||
+            lhs.iewBlockReason[tid] != rhs.iewBlockReason[tid]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void
+Commit::checkFuturePrepareResult(const CommitPrepareResult &actual)
+{
+    if (!pendingFuturePrepare.valid)
+        return;
+
+    stats.futurePrepareChecks++;
+    if (pendingFuturePrepare.result.cycle != actual.cycle) {
+        stats.futurePrepareStale++;
+    } else if (samePrepareResult(pendingFuturePrepare.result, actual)) {
+        stats.futurePrepareMatches++;
+    } else {
+        stats.futurePrepareMismatches++;
+    }
+
+    pendingFuturePrepare.valid = false;
+}
+
+void
+Commit::probeFuturePrepare(Cycles cycle,
+                           const TimeStruct *snapshot_backward,
+                           const RenameStruct *snapshot_rename,
+                           const IEWStruct *snapshot_iew)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    if (!canProbeFuturePrepare(snapshot_backward, snapshot_rename,
+                               snapshot_iew)) {
+        stats.futurePrepareSkipped++;
+        return;
+    }
+
+    auto input = std::make_shared<CommitPrepareInput>(
+            buildCommitPrepareInput(cycle, snapshot_backward,
+                                    snapshot_rename));
+    stats.futurePrepareProbes++;
+    auto thread_results = std::make_shared<CommitThreadPrepareResults>();
+    for (int tid = 0; tid < input->numThreads; ++tid) {
+        if (input->fixedbufferSize[tid] == 0) {
+            thread_results->byThread[tid] =
+                prepareCommitThreadControl(
+                        *input, static_cast<ThreadID>(tid));
+            stats.futurePrepareInlineEmptyThreads++;
+            continue;
+        }
+
+        const TaskOrderKey thread_order{
+            cycle, TaskStage::Commit, 2, InvalidThreadID,
+            static_cast<uint64_t>(tid)};
+        runtime.submitWeak(
+                thread_order,
+                1,
+                [this, input, thread_results, tid] {
+                    thread_results->byThread[tid] =
+                        prepareCommitThreadControl(
+                                *input, static_cast<ThreadID>(tid));
+                },
+                {},
+                TaskLifetime::CrossTimeBufferAdvance);
+    }
+
+    auto result = std::make_shared<CommitPrepareResult>();
+    const TaskOrderKey merge_order{
+        cycle, TaskStage::Commit, 2, InvalidThreadID,
+        static_cast<uint64_t>(input->numThreads)};
+    runtime.submitWeak(
+            merge_order,
+            1,
+            [] {},
+            [this, input, thread_results, result] {
+                *result = combineCommitThreadPrepareResults(
+                        *input, *thread_results);
+                if (pendingFuturePrepare.valid)
+                    stats.futurePrepareStale++;
+                pendingFuturePrepare.result = *result;
+                pendingFuturePrepare.valid = true;
+                stats.futurePrepareMerges++;
+            },
+            TaskLifetime::CrossTimeBufferAdvance);
+}
+
+bool
+Commit::previewFutureIEWLatch(Cycles cycle,
+                              const TimeStruct *snapshot_backward,
+                              const RenameStruct *snapshot_rename,
+                              const IEWStruct *snapshot_iew,
+                              StallSignalLatch &commit_to_iew) const
+{
+    if (!canProbeFuturePrepare(snapshot_backward, snapshot_rename,
+                               snapshot_iew)) {
+        return false;
+    }
+
+    const CommitPrepareInput input = buildCommitPrepareInput(
+            cycle, snapshot_backward, snapshot_rename);
+    const CommitPrepareResult result = prepareCommitControl(input);
+
+    commit_to_iew.clear();
+    for (int tid = 0; tid < numThreads; ++tid) {
+        commit_to_iew.block[tid] = result.iewBlock[tid];
+        commit_to_iew.reason[tid] = result.iewBlockReason[tid];
+    }
+
+    return true;
+}
+
 
 void
 Commit::updateStatus()
@@ -683,7 +1174,7 @@ Commit::generateTCEvent(ThreadID tid)
 }
 
 void
-Commit::squashAll(ThreadID tid)
+Commit::squashAll(ThreadID tid, const RenameStruct *rename_input)
 {
     // If we want to include the squashing instruction in the squash,
     // then use one older sequence number.
@@ -726,11 +1217,11 @@ Commit::squashAll(ThreadID tid)
 
     cpu->mmu->useNewPriv(cpu->getContext(tid));
 
-    squashInflightAndUpdateVersion(tid);
+    squashInflightAndUpdateVersion(tid, rename_input);
 }
 
 void
-Commit::squashFromTrap(ThreadID tid)
+Commit::squashFromTrap(ThreadID tid, const RenameStruct *rename_input)
 {
     DPRINTF(Commit,
             "[tid:%i] [squash-source=trap] tick=%llu committedPC=%#lx newPC=%s\n",
@@ -738,7 +1229,7 @@ Commit::squashFromTrap(ThreadID tid)
             (unsigned long long)curTick(),
             (unsigned long)committedPC[tid],
             *pc[tid]);
-    squashAll(tid);
+    squashAll(tid, rename_input);
 
     toIEW->commitInfo[tid].isTrapSquash = true;
     toIEW->commitInfo[tid].committedPC = committedPC[tid];
@@ -757,14 +1248,14 @@ Commit::squashFromTrap(ThreadID tid)
 }
 
 void
-Commit::squashFromTC(ThreadID tid)
+Commit::squashFromTC(ThreadID tid, const RenameStruct *rename_input)
 {
     DPRINTF(Commit,
             "[tid:%i] [squash-source=tc] tick=%llu newPC=%s\n",
             tid,
             (unsigned long long)curTick(),
             *pc[tid]);
-    squashAll(tid);
+    squashAll(tid, rename_input);
 
     DPRINTF(Commit, "Squashing from TC, restarting at PC %s\n", *pc[tid]);
 
@@ -779,7 +1270,8 @@ Commit::squashFromTC(ThreadID tid)
 }
 
 void
-Commit::squashFromSquashAfter(ThreadID tid)
+Commit::squashFromSquashAfter(ThreadID tid,
+                              const RenameStruct *rename_input)
 {
     if (squashAfterInst[tid]) {
         DPRINTF(Commit,
@@ -796,7 +1288,7 @@ Commit::squashFromSquashAfter(ThreadID tid)
                 *pc[tid]);
     }
 
-    squashAll(tid);
+    squashAll(tid, rename_input);
     // Make sure to inform the fetch stage of which instruction caused
     // the squash. It'll try to re-fetch an instruction executing in
     // microcode unless this is set.
@@ -836,6 +1328,9 @@ Commit::hasExecutedYoungerInst(ThreadID tid, InstSeqNum seq_num) const
 void
 Commit::tick()
 {
+    const RenameStruct *rename_input = renameInput(cpu->curCycle());
+    const IEWStruct *iew_input = iewInput(cpu->curCycle());
+
     wroteToTimeBuffer = false;
     _nextStatus = Inactive;
 
@@ -870,9 +1365,9 @@ Commit::tick()
         }
     }
 
-    commit();
+    commit(iew_input, rename_input);
 
-    markCompletedInsts();
+    markCompletedInsts(iew_input);
 
     threads = activeThreads->begin();
 
@@ -1002,7 +1497,8 @@ Commit::propagateInterrupt()
 }
 
 void
-Commit::commit()
+Commit::commit(const IEWStruct *iew_input,
+               const RenameStruct *rename_input)
 {
     if (FullSystem) {
         // Check if we have a interrupt and get read to handle it
@@ -1025,7 +1521,7 @@ Commit::commit()
         // both, that's a bad sign.
         if (trapSquash[tid]) {
             assert(!tcSquash[tid]);
-            squashFromTrap(tid);
+            squashFromTrap(tid, rename_input);
 
             // If the thread is trying to exit (i.e., an exit syscall was
             // executed), this trapSquash was originated by the exit
@@ -1035,53 +1531,54 @@ Commit::commit()
                 cpu->scheduleThreadExitEvent(tid);
         } else if (tcSquash[tid]) {
             assert(commitStatus[tid] != TrapPending);
-            squashFromTC(tid);
+            squashFromTC(tid, rename_input);
         } else if (commitStatus[tid] == SquashAfterPending) {
             // A squash from the previous cycle of the commit stage (i.e.,
             // commitInsts() called squashAfter) is pending. Squash the
             // thread now.
-            squashFromSquashAfter(tid);
+            squashFromSquashAfter(tid, rename_input);
         }
 
         // Squashed sequence number must be older than youngest valid
         // instruction in the ROB. This prevents squashes from younger
         // instructions overriding squashes from older instructions.
         DPRINTF(Commit, "fromIEW->squash %d, commitStatus %d, fromIEW->squashedSeqNum %d, youngestSeqNum %d\n",
-            fromIEW->squash[tid], commitStatus[tid], fromIEW->squashedSeqNum[tid], youngestSeqNum[tid]);
-        if (fromIEW->squash[tid] &&
+            iew_input->squash[tid], commitStatus[tid],
+            iew_input->squashedSeqNum[tid], youngestSeqNum[tid]);
+        if (iew_input->squash[tid] &&
             commitStatus[tid] != TrapPending &&
-            fromIEW->squashedSeqNum[tid] <= youngestSeqNum[tid]) {
+            iew_input->squashedSeqNum[tid] <= youngestSeqNum[tid]) {
 
-            if (fromIEW->mispredictInst[tid]) {
+            if (iew_input->mispredictInst[tid]) {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to branch mispred "
                     "PC:%#x [sn:%llu]\n",
                     tid,
-                    fromIEW->mispredictInst[tid]->pcState().instAddr(),
-                    fromIEW->squashedSeqNum[tid]);
+                    iew_input->mispredictInst[tid]->pcState().instAddr(),
+                    iew_input->squashedSeqNum[tid]);
                 stats.squashDueToBranch++;
-            } else if (fromIEW->valuePredictionError[tid]) {
+            } else if (iew_input->valuePredictionError[tid]) {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to value prediction error [sn:%llu]\n",
-                    tid, fromIEW->squashedSeqNum[tid]);
+                    tid, iew_input->squashedSeqNum[tid]);
                 stats.squashDueToValuePrediction++;
             } else {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
-                    tid, fromIEW->squashedSeqNum[tid]);
+                    tid, iew_input->squashedSeqNum[tid]);
                 stats.squashDueToOrderViolation++;
             }
 
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
-                    tid, *fromIEW->pc[tid]);
+                    tid, *iew_input->pc[tid]);
 
             commitStatus[tid] = ROBSquashing;
 
             // If we want to include the squashing instruction in the squash,
             // then use one older sequence number.
-            InstSeqNum squashed_inst = fromIEW->squashedSeqNum[tid];
+            InstSeqNum squashed_inst = iew_input->squashedSeqNum[tid];
 
-            if (fromIEW->includeSquashInst[tid]) {
+            if (iew_input->includeSquashInst[tid]) {
                 squashed_inst--;
             }
 
@@ -1105,9 +1602,9 @@ Commit::commit()
             toIEW->commitInfo[tid].robSquashing = true;
 
             toIEW->commitInfo[tid].mispredictInst =
-                fromIEW->mispredictInst[tid];
+                iew_input->mispredictInst[tid];
             toIEW->commitInfo[tid].branchTaken =
-                fromIEW->branchTaken[tid];
+                iew_input->branchTaken[tid];
 
             auto squashed_inst_ptr = rob->findInst(tid, squashed_inst);
             toIEW->commitInfo[tid].squashInst = squashed_inst_ptr;
@@ -1115,8 +1612,10 @@ Commit::commit()
                 DPRINTF(Commit,
                         "Unable to find squashed instruction in ROB\n");
             }
-            toIEW->commitInfo[tid].squashedTargetId = fromIEW->squashedTargetId[tid];
-            toIEW->commitInfo[tid].squashedLoopIter = fromIEW->squashedLoopIter[tid];
+            toIEW->commitInfo[tid].squashedTargetId =
+                iew_input->squashedTargetId[tid];
+            toIEW->commitInfo[tid].squashedLoopIter =
+                iew_input->squashedLoopIter[tid];
 
             if (toIEW->commitInfo[tid].mispredictInst) {
                 if (toIEW->commitInfo[tid].mispredictInst->isUncondCtrl()) {
@@ -1125,8 +1624,8 @@ Commit::commit()
                 ++stats.branchMispredicts;
             }
 
-            set(toIEW->commitInfo[tid].pc, fromIEW->pc[tid]);
-            squashInflightAndUpdateVersion(tid);
+            set(toIEW->commitInfo[tid].pc, iew_input->pc[tid]);
+            squashInflightAndUpdateVersion(tid, rename_input);
         }
 
         if (commitStatus[tid] == ROBSquashing) {
@@ -1141,7 +1640,7 @@ Commit::commit()
     }
 
     // If we're not currently squashing, then get instructions.
-    moveInstsToBuffer();
+    moveInstsToBuffer(rename_input);
 
     if (num_squashing_threads != numThreads) {
         // Try to commit any instructions.
@@ -1899,16 +2398,16 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 }
 
 void
-Commit::moveInstsToBuffer()
+Commit::moveInstsToBuffer(const RenameStruct *rename_input)
 {
     DPRINTF(Commit, "Getting instructions from Rename stage.\n");
-    int insts_from_rename = fromRename->size;
+    int insts_from_rename = rename_input->size;
     if (insts_from_rename != 0) {
         // move to buffer
-        ThreadID tid = fromRename->insts[0]->threadNumber;
+        ThreadID tid = rename_input->insts[0]->threadNumber;
         assert(fixedbuffer[tid].empty());
         for (int i = 0; i < insts_from_rename; ++i) {
-            const DynInstPtr &inst = fromRename->insts[i];
+            const DynInstPtr &inst = rename_input->insts[i];
             assert(inst->threadNumber == tid);
             if (!inst->isSquashed())
             fixedbuffer[tid].push_back(inst);
@@ -1916,35 +2415,20 @@ Commit::moveInstsToBuffer()
     }
 
     // check threads stall & status
-    ThreadID tid = InvalidThreadID;
+    const CommitPrepareResult prepare = runCommitPrepare(cpu->curCycle());
+    ThreadID tid = prepare.selectedTid;
     for (int i = 0; i < numThreads; i++) {
-        bool robblock = commitStatus[i] == ROBSquashing || commitStatus[i] == TrapPending;
-        bool block = (rob->getMaxEntries(i) - rob->getThreadEntries(i) < fixedbuffer[i].size()) || robblock;
-        bool active = !block && !fixedbuffer[i].empty();
-        StallReason block_reason = StallReason::NoStall;
-        if (robblock) {
-            block_reason = StallReason::CommitSquash;
-        } else if (block) {
-            block_reason = robInfoFromIEW->iewInfo[i].robHeadStallReason;
-            if (block_reason == StallReason::NoStall) {
-                block_reason = StallReason::ROBFull;
-            }
-        }
-        DPRINTF(Commit, "Thread %i: block %i robblock %i active %i\n", i, block, robblock, active);
-
-        stallSig->blockIEW[i] = block;
-        stallSig->iewBlockReason[i] = block ? block_reason : StallReason::NoStall;
-        if (active) {
-            if (tid == InvalidThreadID) tid = i;
-            else {
-                // if there are multiple active threads, must exhaust all threads first
-                // to avoid starvation of other threads and also avoid resource conflict
-                stallSig->blockIEW[tid] = true;
-                stallSig->blockIEW[i] = true;
-                DPRINTF(IEW, "Multiple active threads detected, blocking all threads\n");
-            }
-        }
+        DPRINTF(Commit, "Thread %i: block %i robblock %i active %i\n",
+                i, prepare.block[i], prepare.robStateBlock[i],
+                prepare.active[i]);
+        setIEWStall(i, prepare.iewBlock[i], prepare.iewBlockReason[i]);
     }
+    if (prepare.multipleActive) {
+        // if there are multiple active threads, must exhaust all threads first
+        // to avoid starvation of other threads and also avoid resource conflict
+        DPRINTF(IEW, "Multiple active threads detected, blocking all threads\n");
+    }
+
     if (tid == InvalidThreadID) {
         DPRINTF(Commit, "No instructions from Rename stage.\n");
         return;
@@ -1977,18 +2461,19 @@ Commit::moveInstsToBuffer()
     }
 
     if (!fixedbuffer[tid].empty()) {
-        stallSig->blockIEW[tid] = true;
+        setIEWBlock(tid, true);
         DPRINTF(Commit, "Not all instructions from Rename stage could be processed, blocking thread %i\n", tid);
     }
 }
 
 
 void
-Commit::squashInflightAndUpdateVersion(ThreadID tid)
+Commit::squashInflightAndUpdateVersion(ThreadID tid,
+                                       const RenameStruct *rename_input)
 {
     DPRINTF(Commit, "Squashing in-flight renamed instructions\n");
-    for (unsigned i_idx = 0; i_idx < fromRename->size; i_idx++) {
-        const DynInstPtr &inst = fromRename->insts[i_idx];
+    for (unsigned i_idx = 0; i_idx < rename_input->size; i_idx++) {
+        const DynInstPtr &inst = rename_input->insts[i_idx];
         DPRINTF(Commit, "[tid:%i] [sn:%llu] Squashing in-flight "
                 "instruction PC %s\n",
                 inst->threadNumber, inst->seqNum, inst->pcState());
@@ -2004,22 +2489,23 @@ Commit::squashInflightAndUpdateVersion(ThreadID tid)
 }
 
 void
-Commit::markCompletedInsts()
+Commit::markCompletedInsts(const IEWStruct *iew_input)
 {
     // Grab completed insts out of the IEW instruction queue, and mark
     // instructions completed within the ROB.
-    for (int inst_num = 0; inst_num < fromIEW->size; ++inst_num) {
-        assert(fromIEW->insts[inst_num]);
-        if (!fromIEW->insts[inst_num]->isSquashed()) {
+    for (int inst_num = 0; inst_num < iew_input->size; ++inst_num) {
+        assert(iew_input->insts[inst_num]);
+        if (!iew_input->insts[inst_num]->isSquashed()) {
             DPRINTF(Commit,
                     "[tid:%i] Marking PC %s, [sn:%llu] ready "
                     "within ROB.\n",
-                    fromIEW->insts[inst_num]->threadNumber, fromIEW->insts[inst_num]->pcState(),
-                    fromIEW->insts[inst_num]->seqNum);
+                    iew_input->insts[inst_num]->threadNumber,
+                    iew_input->insts[inst_num]->pcState(),
+                    iew_input->insts[inst_num]->seqNum);
 
             // Mark the instruction as ready to commit.
-            fromIEW->insts[inst_num]->setCanCommit();
-            auto &inst = fromIEW->insts[inst_num];
+            iew_input->insts[inst_num]->setCanCommit();
+            auto &inst = iew_input->insts[inst_num];
 
             panic_if(!rob->findInst(0, inst->seqNum), "[sn:%llu] Committed instruction not found in ROB",
                      inst->seqNum);

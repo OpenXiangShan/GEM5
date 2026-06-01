@@ -45,6 +45,7 @@
 #include <deque>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "arch/generic/decoder.hh"
 #include "arch/generic/mmu.hh"
@@ -249,6 +250,7 @@ class Fetch
     void setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer);
 
     void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
+    void setStallSignalBank(StallSignalBank* bank) { stallSignalBank = bank; }
 
     /** Sets pointer to list of active threads. */
     void setActiveThreads(std::list<ThreadID> *at_ptr);
@@ -299,7 +301,138 @@ class Fetch
 
     /** For priority-based fetch policies, need to keep update priorityList */
     void deactivateThread(ThreadID tid);
+
+    struct FetchToDecodePrepareResult;
+
   private:
+    struct FetchPrepareInput
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID tid = InvalidThreadID;
+        bool traceMode = false;
+        bool ftqHasFetching = false;
+        bool canFetch = false;
+        bool macroopValid = false;
+        bool fetchBufferValid = false;
+        bool waitForVsetvl = false;
+        bool interruptPending = false;
+        bool delayedCommit = false;
+        ThreadStatus fetchStatus = Idle;
+        CacheRequestStatus cacheStatus = CacheIdle;
+        Addr fetchPC = 0;
+    };
+
+    struct FetchTargetPrepareInput
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID numThreads = 0;
+        uint32_t roundRobinStart = 0;
+        bool anyTarget = false;
+        bool hasTarget[MaxThreads] = {};
+        ThreadID targetTid[MaxThreads] = {};
+    };
+
+    struct FetchTargetPrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID selectedTid = InvalidThreadID;
+        bool foundTarget = false;
+    };
+
+    struct FetchPrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID tid = InvalidThreadID;
+        bool frontendReady = false;
+        bool cacheAccessComplete = false;
+        bool canFetch = false;
+        bool interruptBlocked = false;
+        bool idle = false;
+        bool readyToFetch = false;
+        bool statusChange = false;
+        StallReason stallReason = StallReason::NoStall;
+    };
+
+    struct FetchToDecodePrepareInput
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID numThreads = 0;
+        unsigned decodeWidth = 0;
+        StallReason currentStallReason[MaxWidth] = {};
+        bool blocked[MaxThreads] = {};
+        StallReason blockReason[MaxThreads] = {};
+        unsigned fetchQueueSize[MaxThreads] = {};
+        bool commitRobSquashing[MaxThreads] = {};
+    };
+
+    struct ResolvePrepareInput
+    {
+        struct QueuedEntry
+        {
+            ThreadID tid = InvalidThreadID;
+            uint64_t ftqId = 0;
+        };
+
+        struct IncomingCFI
+        {
+            ThreadID tid = InvalidThreadID;
+            uint64_t ftqId = 0;
+            uint64_t pc = 0;
+        };
+
+        Cycles cycle = Cycles(0);
+        unsigned resolveQueueSize = 0;
+        std::vector<QueuedEntry> queuedEntries;
+        std::vector<IncomingCFI> incoming;
+    };
+
+    struct ResolvePrepareResult
+    {
+        struct AppendOp
+        {
+            ThreadID tid = InvalidThreadID;
+            uint64_t ftqId = 0;
+            uint64_t pc = 0;
+            unsigned queueIndex = 0;
+            bool createNewEntry = false;
+        };
+
+        Cycles cycle = Cycles(0);
+        bool queueFull = false;
+        uint64_t enqueueFailCount = 0;
+        uint64_t enqueueCount = 0;
+        uint64_t occupancyAfterEnqueue = 0;
+        std::vector<AppendOp> appendOps;
+    };
+
+    struct ResolveDequeuePrepareInput
+    {
+        Cycles cycle = Cycles(0);
+        bool hadPendingBeforeEnqueue = false;
+        bool frontValid = false;
+        ThreadID tid = InvalidThreadID;
+        uint64_t streamId = 0;
+        std::vector<uint64_t> resolvedInstPC;
+    };
+
+    struct ResolveDequeuePrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        bool processFront = false;
+        ThreadID tid = InvalidThreadID;
+        uint64_t streamId = 0;
+        std::vector<uint64_t> resolvedInstPC;
+    };
+
+    struct FetchBackwardInput
+    {
+        const TimeStruct *decode = nullptr;
+        const TimeStruct *iew = nullptr;
+        const TimeStruct *commit = nullptr;
+    };
+
+    FetchBackwardInput backwardInput(Cycles cycle) const;
+
     /** Reset this pipeline stage */
     void resetStage();
 
@@ -317,24 +450,53 @@ class Fetch
      * initialize the state for this tick cycle
      * @return whether there is a status change
      */
-    bool initializeTickState();
+    bool initializeTickState(const FetchBackwardInput &input);
 
     /**
      * execute fetch and process instructions
      * @param status_change status change flag
      */
-    void fetchAndProcessInstructions(bool status_change);
+    void fetchAndProcessInstructions(bool status_change,
+                                     const FetchBackwardInput &input);
 
     /**
      * handle interrupts and perform related operations
      */
-    void handleInterrupts();
+    void handleInterrupts(const FetchBackwardInput &input);
+
+    ResolvePrepareInput buildResolvePrepareInput(
+            Cycles cycle, ThreadID tid, const TimeStruct *iew_input) const;
+    ResolvePrepareResult prepareResolveControl(
+            const ResolvePrepareInput &input) const;
+    ResolvePrepareResult runResolvePrepare(
+            Cycles cycle, ThreadID tid, const TimeStruct *iew_input);
+    void applyResolvePrepareResult(const ResolvePrepareResult &result);
+    ResolveDequeuePrepareInput buildResolveDequeuePrepareInput(
+            Cycles cycle, bool had_pending_before_enqueue) const;
+    ResolveDequeuePrepareResult prepareResolveDequeueControl(
+            const ResolveDequeuePrepareInput &input) const;
+    ResolveDequeuePrepareResult runResolveDequeuePrepare(
+            Cycles cycle, bool had_pending_before_enqueue);
+    void verifyResolveDequeuePrepareResult(
+            bool had_pending_before_enqueue,
+            const ResolveDequeuePrepareResult &result);
 
     /**
      * send instructions to decode stage
      * update stall reasons and measure frontend bubbles
      */
-    void sendInstructionsToDecode();
+    void sendInstructionsToDecode(const FetchBackwardInput &input);
+    FetchToDecodePrepareInput buildFetchToDecodePrepareInput(
+            Cycles cycle, const FetchBackwardInput &input) const;
+    FetchToDecodePrepareResult prepareFetchToDecodeControl(
+            const FetchToDecodePrepareInput &input) const;
+    FetchToDecodePrepareResult runFetchToDecodePrepare(
+            Cycles cycle, const FetchBackwardInput &input);
+    void applyFetchToDecodePrepareResult(
+            const FetchToDecodePrepareResult &result);
+    bool sameFetchToDecodePrepareResult(
+            const FetchToDecodePrepareResult &lhs,
+            const FetchToDecodePrepareResult &rhs) const;
 
     /**
      * update stall reasons based on fetch status
@@ -343,12 +505,16 @@ class Fetch
      */
     void updateStallReasons(unsigned insts_to_decode, ThreadID tid);
 
+    bool fetchBlocked(ThreadID tid) const;
+    StallReason fetchBlockedReason(ThreadID tid) const;
+
     /**
      * measure frontend performance bubbles
      * @param insts_to_decode number of instructions to send to decode stage
      * @param tid thread ID
      */
-    void measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid);
+    void measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid,
+                                const FetchBackwardInput &input);
 
     /**
      * update branch predictors
@@ -455,25 +621,158 @@ class Fetch
      */
     void tick();
 
+    struct FetchToDecodePrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID selectedTid = InvalidThreadID;
+        bool allThreadsBlocked = false;
+        bool selectedBlocked = false;
+        unsigned instsToDecode = 0;
+        StallReason stallReason[MaxWidth] = {};
+        uint64_t fetchBubbles = 0;
+        uint64_t fetchBubblesMax = 0;
+        uint64_t decodeStalls = 0;
+        bool wroteToTimeBuffer = false;
+    };
+
+    enum class FutureQueueNotReadyState
+    {
+        DecodeBlocked,
+        FrontendNotReady,
+        CacheAccessComplete,
+        CachePending,
+        FetchNotRunning,
+        WaitForVsetvl,
+        InterruptBlocked,
+        FetchControlNotReady,
+        ReadyBuffered,
+        ReadyNeedsCacheLine,
+        ReadyOther,
+        NumStates,
+    };
+
+    enum class FutureToDecodePrepareMismatchReason
+    {
+        Cycle,
+        SelectedTid,
+        AllThreadsBlocked,
+        SelectedBlocked,
+        InstsToDecode,
+        FetchBubbles,
+        FetchBubblesMax,
+        DecodeStalls,
+        WroteToTimeBuffer,
+        StallReason,
+        NumReasons,
+    };
+
+    struct FutureDecodeQueueInput
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID numThreads = 0;
+        unsigned decodeWidth = 0;
+        StallSignalLatch decodeToFetch;
+        bool allThreadsBlocked = false;
+        ThreadID blockedTid = InvalidThreadID;
+        ThreadID selectedTid = InvalidThreadID;
+        bool selectedCommitRobSquashing = false;
+        StallReason shortQueueCurrentStallReason[MaxWidth] = {};
+        unsigned instSeqNumCount = 0;
+        InstSeqNum instSeqNums[MaxWidth] = {};
+        bool acceptedShortQueue = false;
+        FutureQueueNotReadyState shortQueueState =
+            FutureQueueNotReadyState::NumStates;
+    };
+
+    enum class FutureDecodeQueueInputSkipReason
+    {
+        MissingSnapshot,
+        NoActiveThreads,
+        CommitControl,
+        DecodeControl,
+        AllBlockedNoTid,
+        FetchQueueNotReady,
+        MissingInst,
+        NumReasons,
+    };
+
+    enum class FutureQueueNotReadyOutcome
+    {
+        NoSupplyStillNotReady,
+        PartialSupply,
+        FilledToWidth,
+        Blocked,
+        QueueShrank,
+        Stale,
+        NumOutcomes,
+    };
+
+    struct FutureDecodeQueueInputSkipInfo
+    {
+        Cycles cycle = Cycles(0);
+        FutureDecodeQueueInputSkipReason reason =
+            FutureDecodeQueueInputSkipReason::NumReasons;
+        ThreadID tid = InvalidThreadID;
+        unsigned queueSize = 0;
+        unsigned decodeWidth = 0;
+        FutureQueueNotReadyState queueState =
+            FutureQueueNotReadyState::NumStates;
+    };
+
+    bool previewFutureDecodeQueue(Cycles cycle,
+                                  const StallSignalLatch &decode_to_fetch,
+                                  const TimeStruct *snapshot_decode,
+                                  const TimeStruct *snapshot_commit,
+                                  unsigned &size,
+                                  std::vector<StallReason> &reasons,
+                                  std::vector<InstSeqNum> &inst_seq_nums,
+                                  FetchToDecodePrepareResult *prepare_result =
+                                      nullptr)
+                                  const;
+    bool buildFutureDecodeQueueInput(
+            Cycles cycle, const StallSignalLatch &decode_to_fetch,
+            const TimeStruct *snapshot_decode,
+            const TimeStruct *snapshot_commit,
+            FutureDecodeQueueInput &input,
+            FutureDecodeQueueInputSkipInfo *skip_info = nullptr) const;
+    bool previewFutureDecodeQueue(
+            const FutureDecodeQueueInput &input,
+            unsigned &size,
+            std::vector<StallReason> &reasons,
+            std::vector<InstSeqNum> &inst_seq_nums,
+            FetchToDecodePrepareResult *prepare_result = nullptr) const;
+    void recordFutureToDecodePrepareProbe();
+    void recordFutureToDecodePrepareSkipped();
+    void recordFutureToDecodePrepareMismatchReasons(
+            const FetchToDecodePrepareResult &expected,
+            const FetchToDecodePrepareResult &actual);
+    void recordFutureDecodeQueueInputAccepted(
+            const FutureDecodeQueueInput &input);
+    void recordFutureDecodeQueueInputSkipped(
+            const FutureDecodeQueueInputSkipInfo &skip_info);
+    void setPendingFutureToDecodePrepare(
+            const FetchToDecodePrepareResult &result);
+
     /** Checks all input signals and updates the status as necessary.
      *  @return: Returns if the status has changed due to input signals.
      */
-    bool checkSignalsAndUpdate(ThreadID tid);
+    bool checkSignalsAndUpdate(ThreadID tid,
+                               const FetchBackwardInput &input);
 
     /** Handles commit signals including squash and update operations.
      *  @return: Returns true if squash occurred and immediate return needed.
      */
-    bool handleCommitSignals(ThreadID tid);
+    bool handleCommitSignals(ThreadID tid, const TimeStruct *commit_input);
 
     /** Handles iew signals including resolved cfi, mark their btb entries
      *  and train predictors if they are configured to update in resolve stage.
      */
-    void handleIEWSignals();
+    void handleIEWSignals(ThreadID tid, const TimeStruct *iew_input);
 
     /** Handles decode squash signals.
      *  @return: Returns true if squash occurred and immediate return needed.
      */
-    bool handleDecodeSquash(ThreadID tid);
+    bool handleDecodeSquash(ThreadID tid, const TimeStruct *decode_input);
 
     /** Does the actual fetching of instructions and passing them on to the
      * next stage.
@@ -520,6 +819,17 @@ class Fetch
      * @return true if frontend is ready for fetch, false otherwise
      */
     bool checkDecoupledFrontend(ThreadID tid);
+    FetchTargetPrepareInput buildFetchTargetPrepareInput(
+            Cycles cycle) const;
+    FetchTargetPrepareResult prepareFetchTargetControl(
+            const FetchTargetPrepareInput &input) const;
+    FetchTargetPrepareResult runFetchTargetPrepare(Cycles cycle);
+    FetchPrepareInput buildFetchPrepareInput(Cycles cycle, ThreadID tid) const;
+    FetchPrepareResult prepareFetchControl(
+            const FetchPrepareInput &input) const;
+    FetchPrepareResult runFetchPrepare(Cycles cycle, ThreadID tid);
+    void mergeFetchPrepareResult(const FetchPrepareResult &result,
+                                 bool countPrepareStats);
 
     /** Prepare fetch address and handle status transitions.
      * @param tid Thread ID
@@ -635,6 +945,7 @@ class Fetch
 
     /** Tracks which stages are telling fetch to stall. */
     StallSignals* stallSig;
+    StallSignalBank* stallSignalBank = nullptr;
 
     /** Decode to fetch delay. */
     Cycles decodeToFetchDelay;
@@ -916,6 +1227,36 @@ class Fetch
     /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
     std::deque<DynInstPtr> fetchQueue[MaxThreads];
 
+    struct PendingFutureToDecodePrepare
+    {
+        bool valid = false;
+        FetchToDecodePrepareResult result;
+    };
+
+    PendingFutureToDecodePrepare pendingFutureToDecodePrepare;
+
+    struct PendingFutureQueueNotReady
+    {
+        bool valid = false;
+        Cycles cycle = Cycles(0);
+        ThreadID tid = InvalidThreadID;
+        unsigned queueSize = 0;
+        unsigned decodeWidth = 0;
+        FutureQueueNotReadyState state =
+            FutureQueueNotReadyState::NumStates;
+    };
+
+    PendingFutureQueueNotReady pendingFutureQueueNotReady;
+    void recordFutureQueueNotReadyOutcome(
+            Cycles cycle, const FetchToDecodePrepareInput &input);
+    void recordFutureQueueNotReadyOutcomeCount(
+            FutureQueueNotReadyState state,
+            FutureQueueNotReadyOutcome outcome);
+    FutureQueueNotReadyState classifyFutureQueueNotReadyState(
+            const FetchPrepareInput &input,
+            const FetchPrepareResult &result,
+            bool decode_blocked) const;
+
     unsigned currentLoopIter{0};  // todo: remove this
 
     /** Icache stall statistics. */
@@ -1020,6 +1361,84 @@ class Fetch
         statistics::Scalar icacheStallCycles;
         /** Stat for total number of fetched instructions. */
         statistics::Scalar insts;
+        /** Stat for number of fetch target prepare tasks submitted. */
+        statistics::Scalar targetPrepareTasks;
+        /** Stat for number of fetch target prepare results merged. */
+        statistics::Scalar targetPrepareMerges;
+        /** Number of fetch target prepare cycles with no selectable target. */
+        statistics::Scalar targetPrepareNoTarget;
+        /** Number of mismatches between prepared and applied target tid. */
+        statistics::Scalar targetPrepareMismatches;
+        /** Stat for number of fetch prepare tasks submitted. */
+        statistics::Scalar prepareTasks;
+        /** Stat for number of fetch prepare results merged. */
+        statistics::Scalar prepareMerges;
+        /** Number of fetch prepare tasks with a ready frontend target. */
+        statistics::Scalar prepareFrontendReady;
+        /** Number of fetch prepare tasks that allowed instruction fetch. */
+        statistics::Scalar prepareReadyToFetch;
+        /** Number of fetch prepare tasks blocked by interrupts. */
+        statistics::Scalar prepareInterruptBlocked;
+        /** Number of fetch-to-decode prepare tasks submitted. */
+        statistics::Scalar toDecodePrepareTasks;
+        /** Number of fetch-to-decode prepare results merged. */
+        statistics::Scalar toDecodePrepareMerges;
+        /** Number of fetch-to-decode prepare cycles with all threads blocked. */
+        statistics::Scalar toDecodePrepareAllBlocked;
+        /** Number of future fetch-to-decode prepare probes submitted. */
+        statistics::Scalar futureToDecodePrepareProbes;
+        /** Number of future fetch-to-decode prepare probes skipped. */
+        statistics::Scalar futureToDecodePrepareSkipped;
+        /** Breakdown of why future fetch input construction was skipped. */
+        statistics::Vector futureInputSkipReasons;
+        /** Outcomes of future inputs skipped because fetchQueue was short. */
+        statistics::Vector futureInputQueueNotReadyOutcomes;
+        /** Candidate fetch-side state for queue-not-ready skips. */
+        statistics::Vector futureInputQueueNotReadyStates;
+        /** Short-queue future inputs accepted by candidate fetch-side state. */
+        statistics::Vector futureInputQueueNotReadyAcceptedStates;
+        /** Accepted short-queue future inputs by visible queue size. */
+        statistics::Vector futureInputQueueNotReadyAcceptedSizes;
+        /** Accepted short-queue future inputs by frozen stall reason. */
+        statistics::Vector futureInputQueueNotReadyAcceptedStallReasons;
+        /** Next-cycle outcomes grouped by candidate fetch-side state. */
+        statistics::Vector2d futureInputQueueNotReadyStateOutcomes;
+        /** Queue entries visible when a future queue-not-ready input skipped. */
+        statistics::Scalar futureInputQueueNotReadyCandidateInsts;
+        /** Queue entries visible at the next-cycle owner prepare check. */
+        statistics::Scalar futureInputQueueNotReadyActualInsts;
+        /** Number of future fetch-to-decode prepare results made pending. */
+        statistics::Scalar futureToDecodePrepareMerges;
+        /** Number of current fetch-to-decode prepares reused from future work. */
+        statistics::Scalar futureToDecodePrepareReuses;
+        /** Number of future fetch-to-decode prepare validation checks. */
+        statistics::Scalar futureToDecodePrepareChecks;
+        /** Number of future fetch-to-decode prepare validation matches. */
+        statistics::Scalar futureToDecodePrepareMatches;
+        /** Number of future fetch-to-decode prepare validation mismatches. */
+        statistics::Scalar futureToDecodePrepareMismatches;
+        /** Field breakdown for future fetch-to-decode prepare mismatches. */
+        statistics::Vector futureToDecodePrepareMismatchReasons;
+        /** Number of stale future fetch-to-decode prepare results discarded. */
+        statistics::Scalar futureToDecodePrepareStale;
+        /** Number of resolve incoming-CFI prepare tasks submitted. */
+        statistics::Scalar resolvePrepareTasks;
+        /** Number of resolve incoming-CFI prepare results merged. */
+        statistics::Scalar resolvePrepareMerges;
+        /** Number of resolve prepare cycles without incoming CFIs. */
+        statistics::Scalar resolvePrepareNoIncoming;
+        /** Number of resolve prepare tasks seeing a full queue. */
+        statistics::Scalar resolvePrepareQueueFull;
+        /** Number of resolve dequeue prepare tasks submitted. */
+        statistics::Scalar resolveDequeuePrepareTasks;
+        /** Number of resolve dequeue prepare results merged. */
+        statistics::Scalar resolveDequeuePrepareMerges;
+        /** Number of resolve dequeue prepare cycles without an old front. */
+        statistics::Scalar resolveDequeuePrepareNoWork;
+        /** Number of resolve dequeue prepare validation mismatches. */
+        statistics::Scalar resolveDequeuePrepareMismatches;
+        /** Resolved CFI PCs carried by resolve dequeue prepare. */
+        statistics::Scalar resolveDequeuePrepareCFIs;
         /** Total number of fetched branches. */
         statistics::Scalar branches;
         /** Stat for total number of predicted branches. */
@@ -1108,6 +1527,8 @@ class Fetch
     } fetchStats;
 
     SquashVersion localSquashVer;
+
+    FetchPrepareResult lastPrepareResult;
 
 public:
     const FetchStatGroup &getFetchStats() { return fetchStats; }

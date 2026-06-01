@@ -115,6 +115,25 @@ def setWorkCountOptions(system, options):
     if options.work_cpus_checkpoint_count != None:
         system.work_cpus_ckpt_count = options.work_cpus_checkpoint_count
 
+def setTaskParallelOptions(system, options):
+    option_to_param = {
+        "enable_task_parallel_sim": "enable_task_parallel_sim",
+        "task_parallel_threads": "task_parallel_threads",
+        "task_window_cycles": "task_window_cycles",
+        "task_deterministic": "task_deterministic",
+        "task_min_work": "task_min_work",
+        "task_trace": "task_trace",
+        "task_runtime_self_test": "task_runtime_self_test",
+        "event_priority_audit": "event_priority_audit",
+        "max_in_flight_cycles": "max_in_flight_cycles",
+        "max_ready_tasks": "max_ready_tasks",
+        "max_spec_task_waste": "max_spec_task_waste",
+    }
+
+    for option_name, param_name in option_to_param.items():
+        if hasattr(options, option_name):
+            setattr(system, param_name, getattr(options, option_name))
+
 def findCptDir(options, cptdir, testsys):
     """Figures out the directory from which the checkpointed state is read.
 

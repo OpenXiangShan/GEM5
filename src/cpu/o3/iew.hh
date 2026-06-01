@@ -158,6 +158,7 @@ class IEW
     ProbePointArg<DynInstPtr> *ppToCommit;
 
     StallSignals* stallSig;
+    StallSignalBank* stallSignalBank = nullptr;
 
   public:
     /** Constructs a IEW with the given parameters. */
@@ -203,7 +204,7 @@ class IEW
     void takeOverFrom();
 
     /** Squashes instructions in IEW for a specific thread. */
-    void squash(ThreadID tid);
+    void squash(ThreadID tid, const TimeStruct *commit_input);
 
     /** Wakes all dependents of a completed instruction. */
     void wakeDependents(const DynInstPtr &inst);
@@ -302,8 +303,442 @@ class IEW
     uint32_t getIQInsts();
 
     void setStallSignals(StallSignals* stall_signals) { stallSig = stall_signals; }
+    void setStallSignalBank(StallSignalBank* bank) { stallSignalBank = bank; }
+
+    enum class FuturePreviewSkipReason : uint8_t
+    {
+        ActiveDispatch,
+        MultipleActive,
+        NumReasons,
+    };
+
+    enum class FutureActiveDispatchSource : uint8_t
+    {
+        ExistingFixedBuffer,
+        RenameInput,
+        Mixed,
+        Unknown,
+        NumSources,
+    };
+
+    enum class FutureActiveDispatchMode : uint8_t
+    {
+        DirectIssue,
+        DispatchQueue,
+        NumModes,
+    };
+
+    enum class FutureActiveDispatchPreviewOutcome : uint8_t
+    {
+        Skipped,
+        DrainedNoResource,
+        DrainedWithResources,
+        BlockedWithResources,
+        NumOutcomes,
+    };
+
+    enum class FutureActiveDispatchPreviewBlockReason : uint8_t
+    {
+        BuildInputFailed,
+        InvalidPreview,
+        UnsupportedTokens,
+        SerializeBlocked,
+        LQFull,
+        SQFull,
+        SchedulerNotReady,
+        NumReasons,
+    };
+
+    enum class FutureDispatchSchedulerBlockReason : uint8_t
+    {
+        NoBlock,
+        InvalidState,
+        InvalidOp,
+        InvalidDispSeq,
+        InvalidSelector,
+        ReplayBlocked,
+        IQFull,
+        InportFull,
+        NumReasons,
+    };
+
+    struct IEWPrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID selectedTid = InvalidThreadID;
+        unsigned activeThreads = 0;
+        unsigned blockedThreads = 0;
+        bool multipleActive = false;
+        bool commitBlock[MaxThreads] = {};
+        bool ldstBlock[MaxThreads] = {};
+        bool block[MaxThreads] = {};
+        bool active[MaxThreads] = {};
+        bool renameBlock[MaxThreads] = {};
+        StallReason renameBlockReason[MaxThreads] = {};
+    };
+
+    struct IEWPrepareInput
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID numThreads = 0;
+        bool fixedbufferEmpty[MaxThreads] = {};
+        unsigned fixedbufferSize[MaxThreads] = {};
+        unsigned fixedbufferSquashedInsts[MaxThreads] = {};
+        unsigned renameInputInsts[MaxThreads] = {};
+        bool ldstCanInsert[MaxThreads] = {};
+        StallReason ldstBlockReason[MaxThreads] = {};
+        bool dispatchStageEnabled = false;
+        StallSignalLatch commitToIEW;
+    };
+
+    static constexpr unsigned MaxFutureDispatchPreviewEntries = MaxWidth * 2;
+
+    struct FutureDispatchPreviewEntry
+    {
+        bool valid = false;
+        bool squashed = false;
+        bool splitStoreAddr = false;
+        bool atomic = false;
+        bool load = false;
+        bool store = false;
+        bool storeConditional = false;
+        bool readBarrier = false;
+        bool writeBarrier = false;
+        bool nop = false;
+        bool eliminated = false;
+        bool nonSpeculative = false;
+        bool serializeBefore = false;
+        bool serializeAfter = false;
+        OpClass opClass = No_OpClass;
+        InstSeqNum seqNum = 0;
+    };
+
+    struct FutureDispatchPreviewInput
+    {
+        bool valid = false;
+        Cycles cycle = Cycles(0);
+        ThreadID tid = InvalidThreadID;
+        unsigned entries = 0;
+        unsigned freeLQEntries = 0;
+        unsigned freeSQEntries = 0;
+        bool serializeNext = false;
+        InstSeqNum robHeadSeqNum = 0;
+        FutureDispatchPreviewEntry insts[
+            MaxFutureDispatchPreviewEntries];
+    };
+
+    struct FutureDispatchCandidateProfile
+    {
+        bool valid = false;
+        bool drained = false;
+        unsigned fixedBufferPops = 0;
+        unsigned dispatchedBeforeBlock = 0;
+        FutureActiveDispatchPreviewBlockReason blockReason =
+            FutureActiveDispatchPreviewBlockReason::NumReasons;
+        FutureDispatchSchedulerBlockReason schedulerBlockReason =
+            FutureDispatchSchedulerBlockReason::NumReasons;
+    };
+
+    bool previewFutureRenameLatch(Cycles cycle,
+                                  const StallSignalLatch &commit_to_iew,
+                                  const RenameStruct *snapshot_rename,
+                                  const TimeStruct *snapshot_commit,
+                                  StallSignalLatch &iew_to_rename,
+                                  IEWPrepareResult *prepare_result = nullptr);
+    bool buildFutureRenameLatchInput(
+            Cycles cycle, const StallSignalLatch &commit_to_iew,
+            const RenameStruct *snapshot_rename,
+            const TimeStruct *snapshot_commit,
+            IEWPrepareInput &input);
+    bool previewFutureRenameLatch(
+            const IEWPrepareInput &input,
+            StallSignalLatch &iew_to_rename,
+            IEWPrepareResult *prepare_result = nullptr) const;
+    bool previewFutureRenameLatch(
+            const IEWPrepareInput &input,
+            const RenameStruct *snapshot_rename,
+            const TimeStruct *snapshot_commit,
+            StallSignalLatch &iew_to_rename,
+            IEWPrepareResult *prepare_result = nullptr,
+            FutureActiveDispatchPreviewOutcome *dispatch_outcome = nullptr,
+            FutureActiveDispatchPreviewBlockReason *dispatch_block_reason =
+                nullptr,
+            FutureDispatchCandidateProfile *dispatch_profile = nullptr);
+    IEWPrepareResult previewFuturePrepare(
+            const IEWPrepareInput &input) const;
+    static FuturePreviewSkipReason futurePreviewSkipReason(
+            const IEWPrepareResult &result);
+    static FutureActiveDispatchSource futureActiveDispatchSource(
+            const IEWPrepareInput &input, const IEWPrepareResult &result);
+    static FutureActiveDispatchMode futureActiveDispatchMode(
+            const IEWPrepareInput &input);
+    static bool futureActiveDispatchDrainsWithoutResources(
+            const IEWPrepareInput &input, const IEWPrepareResult &result);
+    bool buildFutureDispatchPreviewInput(
+            const IEWPrepareInput &input,
+            const IEWPrepareResult &result,
+            const RenameStruct *snapshot_rename,
+            const TimeStruct *snapshot_commit,
+            FutureDispatchPreviewInput &preview_input);
+    void recordFuturePrepareProbe();
+    void recordFuturePrepareSkipped();
+    void recordFuturePreviewSkipped(FuturePreviewSkipReason reason);
+    void recordFutureActiveDispatchPreviewSkipped(
+            const IEWPrepareInput &input, const IEWPrepareResult &result,
+            FutureActiveDispatchPreviewBlockReason block_reason =
+                FutureActiveDispatchPreviewBlockReason::NumReasons);
+    void recordFutureActiveDispatchPreviewAccepted(
+            const IEWPrepareInput &input, const IEWPrepareResult &result,
+            FutureActiveDispatchPreviewOutcome outcome);
+    void setPendingFuturePrepare(const IEWPrepareResult &result);
 
   private:
+    struct IEWThreadPrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID tid = InvalidThreadID;
+        bool commitBlock = false;
+        bool ldstBlock = false;
+        bool block = false;
+        bool active = false;
+        bool blocked = false;
+        bool renameBlock = false;
+        StallReason renameBlockReason = StallReason::NoStall;
+    };
+
+    struct IEWThreadPrepareResults
+    {
+        IEWThreadPrepareResult byThread[MaxThreads];
+    };
+
+    struct DispatchHeadSnapshot
+    {
+        bool valid = false;
+        bool squashed = false;
+        bool committed = false;
+        bool atomic = false;
+        bool storeConditional = false;
+        bool load = false;
+        bool store = false;
+        bool vector = false;
+        bool nonSpeculative = false;
+        bool readyToIssue = false;
+        bool issued = false;
+        bool translationStarted = false;
+        bool translationCompleted = false;
+        bool hasPendingCacheReq = false;
+        bool readyTickUnset = false;
+        bool firstIssueSet = false;
+        int pendingCacheDepth = -1;
+    };
+
+    struct DispatchStatusPrepareInput
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID tid = InvalidThreadID;
+        bool lqEmpty = true;
+        bool sqEmpty = true;
+        bool lqFull = false;
+        bool sqFull = false;
+        DispatchHeadSnapshot robHead;
+        DispatchHeadSnapshot lqHead;
+        DispatchHeadSnapshot sqHead;
+    };
+
+    struct DispatchStatusPrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        ThreadID tid = InvalidThreadID;
+        StallReason robHeadStallReason = StallReason::NoStall;
+        StallReason lqHeadStallReason = StallReason::NoStall;
+        StallReason sqHeadStallReason = StallReason::NoStall;
+    };
+
+    struct DispatchDrainPreviewResult
+    {
+        struct OutputSnapshot
+        {
+            unsigned fixedBufferPops = 0;
+            unsigned squashedPops = 0;
+            unsigned iqInserts = 0;
+            unsigned lqInserts = 0;
+            unsigned sqInserts = 0;
+            unsigned nonSpecInserts = 0;
+            unsigned barrierInserts = 0;
+            unsigned producerAdds = 0;
+        };
+
+        struct BlockTokenSnapshot
+        {
+            bool valid = false;
+            FutureDispatchSchedulerBlockReason reason =
+                FutureDispatchSchedulerBlockReason::NumReasons;
+            int iqIndex = -1;
+            int selector = -1;
+            OpClass opClass = No_OpClass;
+            int dispSeq = -1;
+            int freeEntries = 0;
+            int freeInports = 0;
+            bool replayBlocked = false;
+        };
+
+        bool valid = false;
+        Cycles cycle = Cycles(0);
+        ThreadID tid = InvalidThreadID;
+        unsigned visibleInsts = 0;
+        unsigned dispatchedBeforeBlock = 0;
+        OutputSnapshot output;
+        bool drained = false;
+        StallReason stallReason = StallReason::NoStall;
+        FutureActiveDispatchPreviewBlockReason blockReason =
+            FutureActiveDispatchPreviewBlockReason::NumReasons;
+        FutureDispatchSchedulerBlockReason schedulerBlockReason =
+            FutureDispatchSchedulerBlockReason::NumReasons;
+        BlockTokenSnapshot schedulerBlockToken;
+    };
+
+    struct PendingFutureDispatchPreview
+    {
+        bool valid = false;
+        DispatchDrainPreviewResult result;
+    };
+
+    struct PendingFutureRenameLatchPreview
+    {
+        bool valid = false;
+        Cycles cycle = Cycles(0);
+        StallSignalLatch latch;
+    };
+
+    struct WritebackPrepareInput
+    {
+        struct Entry
+        {
+            bool valid = false;
+            ThreadID tid = InvalidThreadID;
+            bool loadWithSavedRequest = false;
+            bool wakeEligible = false;
+        };
+
+        Cycles cycle = Cycles(0);
+        unsigned width = 0;
+        unsigned validInsts = 0;
+        Entry entries[MaxWidth];
+    };
+
+    struct WritebackPrepareResult
+    {
+        Cycles cycle = Cycles(0);
+        unsigned validInsts = 0;
+        ThreadID tid[MaxWidth] = {};
+        bool loadWithSavedRequest[MaxWidth] = {};
+        bool wakeEligible[MaxWidth] = {};
+        uint64_t instsToCommit[MaxThreads] = {};
+    };
+
+    void setRenameStall(ThreadID tid, bool block, StallReason reason);
+    void setRenameBlock(ThreadID tid, bool block);
+    IEWPrepareInput buildIEWPrepareInput(
+            Cycles cycle,
+            const StallSignalLatch *commit_to_iew_override = nullptr,
+            const RenameStruct *snapshot_rename = nullptr,
+            bool reset_lsq_pop_entries = true);
+    IEWThreadPrepareResult prepareIEWThreadControl(
+            const IEWPrepareInput &input, ThreadID tid) const;
+    IEWPrepareResult combineIEWThreadPrepareResults(
+            const IEWPrepareInput &input,
+            const IEWThreadPrepareResults &thread_results) const;
+    IEWPrepareResult prepareIEWControl(const IEWPrepareInput &input) const;
+    IEWPrepareResult runIEWPrepare(Cycles cycle);
+    void mergeIEWPrepareResult(const IEWPrepareResult &result,
+                               bool countPrepareStats);
+    bool samePrepareResult(const IEWPrepareResult &lhs,
+                           const IEWPrepareResult &rhs) const;
+    DispatchHeadSnapshot snapshotDispatchHead(
+            const DynInstPtr &inst) const;
+    DispatchStatusPrepareInput buildDispatchStatusPrepareInput(
+            Cycles cycle, ThreadID tid);
+    StallReason checkLoadStoreSnapshot(
+            const DispatchHeadSnapshot &inst) const;
+    StallReason checkDispatchHeadSnapshot(
+            const DispatchStatusPrepareInput &input) const;
+    DispatchStatusPrepareResult prepareDispatchStatusControl(
+            const DispatchStatusPrepareInput &input) const;
+    DispatchStatusPrepareResult runDispatchStatusPrepare(
+            Cycles cycle, ThreadID tid);
+    void verifyDispatchStatusPrepareResult(
+            ThreadID tid, const DispatchStatusPrepareResult &result);
+    DispatchDrainPreviewResult previewDirectDispatchDrain(
+            Cycles cycle, ThreadID tid, const TimeStruct *commit_input);
+    DispatchDrainPreviewResult previewFutureDirectDispatchDrain(
+            const FutureDispatchPreviewInput &input) const;
+    void verifyDirectDispatchDrainPreview(
+            const DispatchDrainPreviewResult &result, ThreadID tid);
+    void verifyDirectDispatchOutputSnapshot(
+            const DispatchDrainPreviewResult &result,
+            const DispatchDrainPreviewResult::OutputSnapshot &actual,
+            ThreadID tid);
+    void setPendingFutureDispatchPreview(
+            const DispatchDrainPreviewResult &result);
+    void setPendingFutureRenameLatchPreview(
+            Cycles cycle, const StallSignalLatch &latch);
+    void verifyPendingFutureRenameLatchPreview(
+            unsigned dispatch_publishability_reason);
+    bool sameRenameLatchPreview(const StallSignalLatch &lhs,
+                                const StallSignalLatch &rhs) const;
+    void recordRenameLatchPreviewDifferences(
+            const StallSignalLatch &expected,
+            const StallSignalLatch &actual);
+    static bool sameDispatchOutputSnapshot(
+            const DispatchDrainPreviewResult::OutputSnapshot &lhs,
+            const DispatchDrainPreviewResult::OutputSnapshot &rhs);
+    void recordDispatchOutputSnapshotFieldDifferences(
+            const DispatchDrainPreviewResult::OutputSnapshot &expected,
+            const DispatchDrainPreviewResult::OutputSnapshot &actual,
+            statistics::Vector &fields);
+    unsigned futureDispatchOutputPublishabilityReason(
+            const DispatchDrainPreviewResult &expected,
+            const DispatchDrainPreviewResult *actual) const;
+    void recordFutureDispatchOutputPublishability(
+            const DispatchDrainPreviewResult &expected,
+            const DispatchDrainPreviewResult *actual);
+    void recordFutureDispatchBlockTokenCheck(
+            const DispatchDrainPreviewResult &expected,
+            const DispatchDrainPreviewResult *actual,
+            unsigned dispatch_publishability_reason);
+    static bool sameDispatchBlockTokenSnapshot(
+            const DispatchDrainPreviewResult::BlockTokenSnapshot &lhs,
+            const DispatchDrainPreviewResult::BlockTokenSnapshot &rhs);
+    void recordDispatchBlockTokenDifferenceFields(
+            const DispatchDrainPreviewResult::BlockTokenSnapshot &expected,
+            const DispatchDrainPreviewResult::BlockTokenSnapshot &actual);
+    void verifyPendingFutureDispatchPreview(
+            const DispatchDrainPreviewResult *actual);
+    bool sameDispatchDrainPreview(
+            const DispatchDrainPreviewResult &lhs,
+            const DispatchDrainPreviewResult &rhs) const;
+    unsigned futureDispatchPreviewDifferenceReason(
+            const DispatchDrainPreviewResult &expected,
+            const DispatchDrainPreviewResult *actual) const;
+    WritebackPrepareInput buildWritebackPrepareInput(Cycles cycle) const;
+    WritebackPrepareResult prepareWritebackControl(
+            const WritebackPrepareInput &input) const;
+    WritebackPrepareResult runWritebackPrepare(Cycles cycle);
+    void verifyWritebackPrepareResult(
+            const WritebackPrepareResult &result);
+    const RenameStruct *renameInput(Cycles cycle) const;
+    const TimeStruct *commitInput(Cycles cycle) const;
+
+    struct PendingFuturePrepare
+    {
+        bool valid = false;
+        IEWPrepareResult result;
+    };
+
+    PendingFuturePrepare pendingFuturePrepare;
+    PendingFutureDispatchPreview pendingFutureDispatchPreview;
+    PendingFutureRenameLatchPreview pendingFutureRenameLatchPreview;
+
     /** Sends commit proper information for a squash due to a branch
      * mispredict.
      */
@@ -319,19 +754,26 @@ class IEW
      */
     void squashDueToValuePrediction(const DynInstPtr &inst, ThreadID tid);
 
-    bool canInsertLDSTQue(ThreadID tid);
+    bool canInsertLDSTQue(ThreadID tid,
+                          bool reset_lsq_pop_entries = true);
 
     /** Dispatches instructions to IQ and LSQ. */
-    void dispatchInsts();
+    void dispatchInsts(const RenameStruct *rename_input,
+                       const TimeStruct *commit_input);
 
-    void dispatchInstFromRename(ThreadID tid);
+    DispatchDrainPreviewResult dispatchInstFromRename(
+            ThreadID tid,
+            const RenameStruct *rename_input,
+            const TimeStruct *commit_input);
 
     /** dispatchQueue is the buffer between rename and iq
      *  first, dispatch the inst from DispatchQueue to IQ
      *  second, receive new inst from rename, store it to DQ
      */
     void dispatchInstFromDispQue();
-    void classifyInstToDispQue(ThreadID tid);
+    void classifyInstToDispQue(ThreadID tid,
+                               const RenameStruct *rename_input,
+                               const TimeStruct *commit_input);
 
     /** Executes instructions. In the case of memory operations, it informs the
      * LSQ to execute the instructions. Also handles any redirects that occur
@@ -346,13 +788,14 @@ class IEW
      */
     void writebackInsts();
 
-    bool checkSerialize(const DynInstPtr& inst);
+    bool checkSerialize(const DynInstPtr& inst,
+                        const TimeStruct *commit_input);
 
     /** Processes inputs and changes state accordingly. */
-    void checkSquash();
+    void checkSquash(const TimeStruct *commit_input);
 
     /** Sorts instructions coming from rename into lists separated by thread. */
-    void moveInstsToBuffer();
+    void moveInstsToBuffer(const RenameStruct *rename_input);
 
   public:
     /** Ticks IEW stage, causing Dispatch, the IQ, the LSQ, Execute, and
@@ -505,6 +948,160 @@ class IEW
         statistics::Scalar dispatchedInsts;
         /** Stat for total number of squashed instructions dispatch skips. */
         statistics::Scalar dispSquashedInsts;
+        /** Stat for number of IEW prepare tasks submitted. */
+        statistics::Scalar prepareTasks;
+        /** Stat for number of IEW prepare results merged. */
+        statistics::Scalar prepareMerges;
+        /** Accumulated active thread count seen by IEW prepare. */
+        statistics::Scalar prepareActiveThreads;
+        /** Accumulated blocked thread count seen by IEW prepare. */
+        statistics::Scalar prepareBlockedThreads;
+        /** Accumulated empty-thread count evaluated inline by IEW prepare. */
+        statistics::Scalar prepareInlineEmptyThreads;
+        /** Number of times IEW prepare saw multiple active threads. */
+        statistics::Scalar prepareMultipleActive;
+        /** Stat for number of future IEW prepare probes submitted. */
+        statistics::Scalar futurePrepareProbes;
+        /** Stat for number of future IEW prepare probes skipped. */
+        statistics::Scalar futurePrepareSkipped;
+        /** Breakdown of future IEW input construction skip reasons. */
+        statistics::Vector futureInputSkipReasons;
+        /** Breakdown of commit control fields blocking future IEW input. */
+        statistics::Vector futureInputCommitControlReasons;
+        /** Commit progress fields accepted by future IEW input. */
+        statistics::Vector futureInputAllowedCommitProgress;
+        /** Breakdown of why future IEW preview could not predict a latch. */
+        statistics::Vector futurePreviewSkipReasons;
+        /** Source of active dispatches that blocked future IEW preview. */
+        statistics::Vector futureActiveDispatchSources;
+        /** Dispatch mode for active dispatches blocking future IEW preview. */
+        statistics::Vector futureActiveDispatchModes;
+        /** Preview outcome for active dispatches seen by future IEW preview. */
+        statistics::Vector futureActiveDispatchPreviewOutcomes;
+        /** Block reason for skipped active future dispatch previews. */
+        statistics::Vector futureActiveDispatchPreviewBlockReasons;
+        /** Scheduler token reason for future SchedulerNotReady previews. */
+        statistics::Vector futureActiveDispatchSchedulerBlockReasons;
+        /** Visible instruction count for active future dispatch previews. */
+        statistics::Distribution futureActiveDispatchInsts;
+        /** Stat for number of future IEW prepare results merged. */
+        statistics::Scalar futurePrepareMerges;
+        /** Stat for number of future IEW prepare results reused. */
+        statistics::Scalar futurePrepareReuses;
+        /** Stat for number of future IEW prepare results checked. */
+        statistics::Scalar futurePrepareChecks;
+        /** Stat for number of future IEW prepare checks that matched. */
+        statistics::Scalar futurePrepareMatches;
+        /** Stat for number of future IEW prepare checks that mismatched. */
+        statistics::Scalar futurePrepareMismatches;
+        /** Stat for number of stale future IEW prepare results. */
+        statistics::Scalar futurePrepareStale;
+        /** Stat for number of dispatch status prepare tasks submitted. */
+        statistics::Scalar dispatchStatusPrepareTasks;
+        /** Stat for number of dispatch status prepare results merged. */
+        statistics::Scalar dispatchStatusPrepareMerges;
+        /** Stat for dispatch status prepare validation mismatches. */
+        statistics::Scalar dispatchStatusPrepareMismatches;
+        /** Stat for direct-dispatch drain previews submitted. */
+        statistics::Scalar dispatchDrainPreviewProbes;
+        /** Stat for direct-dispatch drain previews skipped. */
+        statistics::Scalar dispatchDrainPreviewSkipped;
+        /** Breakdown of direct-dispatch drain preview skip reasons. */
+        statistics::Vector dispatchDrainPreviewSkipReasons;
+        /** Stat for direct-dispatch drain preview validation matches. */
+        statistics::Scalar dispatchDrainPreviewMatches;
+        /** Stat for direct-dispatch drain preview validation mismatches. */
+        statistics::Scalar dispatchDrainPreviewMismatches;
+        /** Direct-dispatch blocked stall reason validation matches. */
+        statistics::Scalar dispatchDrainPreviewStallReasonMatches;
+        /** Direct-dispatch blocked stall reason validation mismatches. */
+        statistics::Scalar dispatchDrainPreviewStallReasonMismatches;
+        /** Direct-dispatch stall reason checks skipped after side effects. */
+        statistics::Scalar dispatchDrainPreviewStallReasonSideEffectSkips;
+        /** Current-cycle direct-dispatch output snapshots checked. */
+        statistics::Scalar dispatchOutputSnapshotChecks;
+        /** Current-cycle direct-dispatch output snapshots matching. */
+        statistics::Scalar dispatchOutputSnapshotMatches;
+        /** Current-cycle direct-dispatch output snapshots mismatching. */
+        statistics::Scalar dispatchOutputSnapshotMismatches;
+        /** Fields mismatching in current-cycle dispatch output snapshots. */
+        statistics::Vector dispatchOutputSnapshotMismatchFields;
+        /** Future direct-dispatch previews checked next cycle. */
+        statistics::Scalar futureDispatchPreviewChecks;
+        /** Future direct-dispatch previews matching current-cycle preview. */
+        statistics::Scalar futureDispatchPreviewMatches;
+        /** Future direct-dispatch previews differing from current-cycle preview. */
+        statistics::Scalar futureDispatchPreviewDifferences;
+        /** Breakdown of future direct-dispatch preview differences. */
+        statistics::Vector futureDispatchPreviewDifferenceReasons;
+        /** Direction of dispatched-before-block count differences. */
+        statistics::Vector
+            futureDispatchPreviewDispatchedBeforeBlockDiffDirections;
+        /** Direction of drained/block state differences. */
+        statistics::Vector futureDispatchPreviewDrainedDiffDirections;
+        /** Absolute size of dispatched-before-block count differences. */
+        statistics::Distribution
+            futureDispatchPreviewDispatchedBeforeBlockDelta;
+        /** Future dispatch output snapshots checked next cycle. */
+        statistics::Scalar futureDispatchOutputSnapshotChecks;
+        /** Future dispatch output snapshots matching current-cycle preview. */
+        statistics::Scalar futureDispatchOutputSnapshotMatches;
+        /** Future dispatch output snapshots differing from current preview. */
+        statistics::Scalar futureDispatchOutputSnapshotDifferences;
+        /** Fields differing in future dispatch output snapshots. */
+        statistics::Vector futureDispatchOutputSnapshotDifferenceFields;
+        /** Publishability classification for future dispatch outputs. */
+        statistics::Vector futureDispatchOutputPublishability;
+        /** Block reason for stable future blocked dispatch outputs. */
+        statistics::Vector futureDispatchOutputStableBlockedReasons;
+        /** Scheduler reason for stable SchedulerNotReady outputs. */
+        statistics::Vector futureDispatchOutputStableBlockedSchedulerReasons;
+        /** Fixedbuffer pops in stable blocked future dispatch outputs. */
+        statistics::Distribution futureDispatchOutputStableBlockedPops;
+        /** Block reason for future previews that were not stable. */
+        statistics::Vector futureDispatchOutputPreviewDifferentReasons;
+        /** Scheduler reason for unstable SchedulerNotReady previews. */
+        statistics::Vector
+            futureDispatchOutputPreviewDifferentSchedulerReasons;
+        /** Expected fixedbuffer pops in unstable future previews. */
+        statistics::Distribution futureDispatchOutputPreviewDifferentPops;
+        /** Future scheduler block token snapshots checked next cycle. */
+        statistics::Scalar futureDispatchBlockTokenChecks;
+        /** Future scheduler block token snapshots matching actual. */
+        statistics::Scalar futureDispatchBlockTokenMatches;
+        /** Future scheduler block token snapshots differing from actual. */
+        statistics::Scalar futureDispatchBlockTokenDifferences;
+        /** Fields differing in future scheduler block token snapshots. */
+        statistics::Vector futureDispatchBlockTokenDifferenceFields;
+        /** Block token snapshot matches by output publishability class. */
+        statistics::Vector futureDispatchBlockTokenMatchesByPublishability;
+        /** Block token snapshot diffs by output publishability class. */
+        statistics::Vector futureDispatchBlockTokenDifferencesByPublishability;
+        /** Future IEW-to-Rename latch previews checked next cycle. */
+        statistics::Scalar futureRenameLatchPreviewChecks;
+        /** Future IEW-to-Rename latch previews matching actual latch. */
+        statistics::Scalar futureRenameLatchPreviewMatches;
+        /** Future IEW-to-Rename latch previews differing from actual latch. */
+        statistics::Scalar futureRenameLatchPreviewDifferences;
+        /** Breakdown of future IEW-to-Rename latch preview differences. */
+        statistics::Vector futureRenameLatchPreviewDifferenceReasons;
+        /** Future IEW-to-Rename latch preview matches by output class. */
+        statistics::Vector futureRenameLatchPreviewMatchesByPublishability;
+        /** Future IEW-to-Rename latch preview diffs by output class. */
+        statistics::Vector
+            futureRenameLatchPreviewDifferencesByPublishability;
+        /** Future IEW-to-Rename latch previews discarded before checking. */
+        statistics::Scalar futureRenameLatchPreviewStale;
+        /** Future direct-dispatch previews discarded before checking. */
+        statistics::Scalar futureDispatchPreviewStale;
+        /** Stat for number of writeback prepare tasks submitted. */
+        statistics::Scalar writebackPrepareTasks;
+        /** Stat for number of writeback prepare results merged. */
+        statistics::Scalar writebackPrepareMerges;
+        /** Stat for number of writeback prepare cycles with no entries. */
+        statistics::Scalar writebackPrepareNoWork;
+        /** Stat for writeback prepare validation mismatches. */
+        statistics::Scalar writebackPrepareMismatches;
         /** Stat for total number of dispatched load instructions. */
         statistics::Scalar dispLoadInsts;
         /** Stat for total number of dispatched store instructions. */
@@ -582,6 +1179,8 @@ class IEW
     std::vector<StallReason> dispatchStalls;
 
     StallReason blockReason{NoStall};
+
+    IEWPrepareResult lastPrepareResult;
 
     ROB* rob;
 

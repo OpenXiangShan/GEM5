@@ -45,6 +45,7 @@
 #include <cstring>
 #include <list>
 #include <map>
+#include <memory>
 #include <queue>
 
 #include "arch/generic/tlb.hh"
@@ -80,6 +81,129 @@ namespace gem5
 
 namespace o3
 {
+
+namespace
+{
+
+const char *
+futureDecodeQueueInputSkipReasonName(
+        Fetch::FutureDecodeQueueInputSkipReason reason)
+{
+    using Reason = Fetch::FutureDecodeQueueInputSkipReason;
+    switch (reason) {
+      case Reason::MissingSnapshot:
+        return "MissingSnapshot";
+      case Reason::NoActiveThreads:
+        return "NoActiveThreads";
+      case Reason::CommitControl:
+        return "CommitControl";
+      case Reason::DecodeControl:
+        return "DecodeControl";
+      case Reason::AllBlockedNoTid:
+        return "AllBlockedNoTid";
+      case Reason::FetchQueueNotReady:
+        return "FetchQueueNotReady";
+      case Reason::MissingInst:
+        return "MissingInst";
+      case Reason::NumReasons:
+        break;
+    }
+
+    return "Unknown";
+}
+
+const char *
+futureQueueNotReadyOutcomeName(Fetch::FutureQueueNotReadyOutcome outcome)
+{
+    using Outcome = Fetch::FutureQueueNotReadyOutcome;
+    switch (outcome) {
+      case Outcome::NoSupplyStillNotReady:
+        return "NoSupplyStillNotReady";
+      case Outcome::PartialSupply:
+        return "PartialSupply";
+      case Outcome::FilledToWidth:
+        return "FilledToWidth";
+      case Outcome::Blocked:
+        return "Blocked";
+      case Outcome::QueueShrank:
+        return "QueueShrank";
+      case Outcome::Stale:
+        return "Stale";
+      case Outcome::NumOutcomes:
+        break;
+    }
+
+    return "Unknown";
+}
+
+const char *
+futureQueueNotReadyStateName(Fetch::FutureQueueNotReadyState state)
+{
+    using State = Fetch::FutureQueueNotReadyState;
+    switch (state) {
+      case State::DecodeBlocked:
+        return "DecodeBlocked";
+      case State::FrontendNotReady:
+        return "FrontendNotReady";
+      case State::CacheAccessComplete:
+        return "CacheAccessComplete";
+      case State::CachePending:
+        return "CachePending";
+      case State::FetchNotRunning:
+        return "FetchNotRunning";
+      case State::WaitForVsetvl:
+        return "WaitForVsetvl";
+      case State::InterruptBlocked:
+        return "InterruptBlocked";
+      case State::FetchControlNotReady:
+        return "FetchControlNotReady";
+      case State::ReadyBuffered:
+        return "ReadyBuffered";
+      case State::ReadyNeedsCacheLine:
+        return "ReadyNeedsCacheLine";
+      case State::ReadyOther:
+        return "ReadyOther";
+      case State::NumStates:
+        break;
+    }
+
+    return "Unknown";
+}
+
+const char *
+futureToDecodePrepareMismatchReasonName(
+        Fetch::FutureToDecodePrepareMismatchReason reason)
+{
+    using Reason = Fetch::FutureToDecodePrepareMismatchReason;
+    switch (reason) {
+      case Reason::Cycle:
+        return "Cycle";
+      case Reason::SelectedTid:
+        return "SelectedTid";
+      case Reason::AllThreadsBlocked:
+        return "AllThreadsBlocked";
+      case Reason::SelectedBlocked:
+        return "SelectedBlocked";
+      case Reason::InstsToDecode:
+        return "InstsToDecode";
+      case Reason::FetchBubbles:
+        return "FetchBubbles";
+      case Reason::FetchBubblesMax:
+        return "FetchBubblesMax";
+      case Reason::DecodeStalls:
+        return "DecodeStalls";
+      case Reason::WroteToTimeBuffer:
+        return "WroteToTimeBuffer";
+      case Reason::StallReason:
+        return "StallReason";
+      case Reason::NumReasons:
+        break;
+    }
+
+    return "Unknown";
+}
+
+} // namespace
 
 Fetch::IcachePort::IcachePort(Fetch *_fetch, CPU *_cpu) :
         RequestPort(_cpu->name() + ".icache_port", _cpu), fetch(_fetch)
@@ -190,6 +314,111 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of cycles fetch is stalled on an Icache miss"),
     ADD_STAT(insts, statistics::units::Count::get(),
              "Number of instructions fetch has processed"),
+    ADD_STAT(targetPrepareTasks, statistics::units::Count::get(),
+             "Number of fetch target prepare tasks submitted"),
+    ADD_STAT(targetPrepareMerges, statistics::units::Count::get(),
+             "Number of fetch target prepare results merged"),
+    ADD_STAT(targetPrepareNoTarget, statistics::units::Count::get(),
+             "Number of fetch target prepare cycles with no selectable "
+             "target"),
+    ADD_STAT(targetPrepareMismatches, statistics::units::Count::get(),
+             "Number of mismatches between prepared and applied target tid"),
+    ADD_STAT(prepareTasks, statistics::units::Count::get(),
+             "Number of fetch prepare tasks submitted"),
+    ADD_STAT(prepareMerges, statistics::units::Count::get(),
+             "Number of fetch prepare results merged"),
+    ADD_STAT(prepareFrontendReady, statistics::units::Count::get(),
+             "Number of fetch prepare tasks with a ready frontend target"),
+    ADD_STAT(prepareReadyToFetch, statistics::units::Count::get(),
+             "Number of fetch prepare tasks that allowed instruction fetch"),
+    ADD_STAT(prepareInterruptBlocked, statistics::units::Count::get(),
+             "Number of fetch prepare tasks blocked by interrupts"),
+    ADD_STAT(toDecodePrepareTasks, statistics::units::Count::get(),
+             "Number of fetch-to-decode prepare tasks submitted"),
+    ADD_STAT(toDecodePrepareMerges, statistics::units::Count::get(),
+             "Number of fetch-to-decode prepare results merged"),
+    ADD_STAT(toDecodePrepareAllBlocked, statistics::units::Count::get(),
+             "Number of fetch-to-decode prepare cycles with all threads "
+             "blocked"),
+    ADD_STAT(futureToDecodePrepareProbes, statistics::units::Count::get(),
+             "Number of future fetch-to-decode prepare probes submitted"),
+    ADD_STAT(futureToDecodePrepareSkipped, statistics::units::Count::get(),
+             "Number of future fetch-to-decode prepare probes skipped"),
+    ADD_STAT(futureInputSkipReasons, statistics::units::Count::get(),
+             "Breakdown of why future fetch-to-decode input construction "
+             "was skipped"),
+    ADD_STAT(futureInputQueueNotReadyOutcomes,
+             statistics::units::Count::get(),
+             "Next-cycle outcome for future fetch inputs skipped because "
+             "fetchQueue was short"),
+    ADD_STAT(futureInputQueueNotReadyStates,
+             statistics::units::Count::get(),
+             "Candidate fetch-side state for future fetch inputs skipped "
+             "because fetchQueue was short"),
+    ADD_STAT(futureInputQueueNotReadyAcceptedStates,
+             statistics::units::Count::get(),
+             "Candidate fetch-side state for short-queue future fetch inputs "
+             "accepted as stable"),
+    ADD_STAT(futureInputQueueNotReadyAcceptedSizes,
+             statistics::units::Count::get(),
+             "Visible fetch queue size for short-queue future fetch inputs "
+             "accepted as stable"),
+    ADD_STAT(futureInputQueueNotReadyAcceptedStallReasons,
+             statistics::units::Count::get(),
+             "Frozen stall reason for short-queue future fetch inputs "
+             "accepted as stable"),
+    ADD_STAT(futureInputQueueNotReadyStateOutcomes,
+             statistics::units::Count::get(),
+             "Next-cycle outcome for future fetch inputs skipped because "
+             "fetchQueue was short, grouped by candidate fetch-side state"),
+    ADD_STAT(futureInputQueueNotReadyCandidateInsts,
+             statistics::units::Count::get(),
+             "Fetch queue entries visible when a future queue-not-ready "
+             "input was skipped"),
+    ADD_STAT(futureInputQueueNotReadyActualInsts,
+             statistics::units::Count::get(),
+             "Fetch queue entries visible at the next-cycle owner prepare "
+             "check for queue-not-ready candidates"),
+    ADD_STAT(futureToDecodePrepareMerges, statistics::units::Count::get(),
+             "Number of future fetch-to-decode prepare results made pending"),
+    ADD_STAT(futureToDecodePrepareReuses, statistics::units::Count::get(),
+             "Number of fetch-to-decode prepares reused from future work"),
+    ADD_STAT(futureToDecodePrepareChecks, statistics::units::Count::get(),
+             "Number of future fetch-to-decode prepare validation checks"),
+    ADD_STAT(futureToDecodePrepareMatches, statistics::units::Count::get(),
+             "Number of future fetch-to-decode prepare validation matches"),
+    ADD_STAT(futureToDecodePrepareMismatches, statistics::units::Count::get(),
+             "Number of future fetch-to-decode prepare validation "
+             "mismatches"),
+    ADD_STAT(futureToDecodePrepareMismatchReasons,
+             statistics::units::Count::get(),
+             "Field breakdown for future fetch-to-decode prepare "
+             "validation mismatches"),
+    ADD_STAT(futureToDecodePrepareStale, statistics::units::Count::get(),
+             "Number of stale future fetch-to-decode prepare results "
+             "discarded"),
+    ADD_STAT(resolvePrepareTasks, statistics::units::Count::get(),
+             "Number of fetch resolve incoming-CFI prepare tasks submitted"),
+    ADD_STAT(resolvePrepareMerges, statistics::units::Count::get(),
+             "Number of fetch resolve incoming-CFI prepare results merged"),
+    ADD_STAT(resolvePrepareNoIncoming, statistics::units::Count::get(),
+             "Number of fetch resolve incoming-CFI prepare cycles without "
+             "incoming CFIs"),
+    ADD_STAT(resolvePrepareQueueFull, statistics::units::Count::get(),
+             "Number of fetch resolve incoming-CFI prepare tasks seeing a "
+             "full queue"),
+    ADD_STAT(resolveDequeuePrepareTasks, statistics::units::Count::get(),
+             "Number of fetch resolve dequeue prepare tasks submitted"),
+    ADD_STAT(resolveDequeuePrepareMerges, statistics::units::Count::get(),
+             "Number of fetch resolve dequeue prepare results merged"),
+    ADD_STAT(resolveDequeuePrepareNoWork, statistics::units::Count::get(),
+             "Number of fetch resolve dequeue prepare cycles without an old "
+             "front entry"),
+    ADD_STAT(resolveDequeuePrepareMismatches,
+             statistics::units::Count::get(),
+             "Number of fetch resolve dequeue prepare validation mismatches"),
+    ADD_STAT(resolveDequeuePrepareCFIs, statistics::units::Count::get(),
+             "Number of resolved CFI PCs carried by resolve dequeue prepare"),
     ADD_STAT(branches, statistics::units::Count::get(),
              "Number of branches that fetch encountered"),
     ADD_STAT(predictedBranches, statistics::units::Count::get(),
@@ -283,6 +512,165 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(icacheStallCycles);
         insts
             .prereq(insts);
+        targetPrepareTasks
+            .prereq(targetPrepareTasks);
+        targetPrepareMerges
+            .prereq(targetPrepareMerges);
+        targetPrepareNoTarget
+            .prereq(targetPrepareNoTarget);
+        targetPrepareMismatches
+            .prereq(targetPrepareMismatches);
+        prepareTasks
+            .prereq(prepareTasks);
+        prepareMerges
+            .prereq(prepareMerges);
+        prepareFrontendReady
+            .prereq(prepareFrontendReady);
+        prepareReadyToFetch
+            .prereq(prepareReadyToFetch);
+        prepareInterruptBlocked
+            .prereq(prepareInterruptBlocked);
+        toDecodePrepareTasks
+            .prereq(toDecodePrepareTasks);
+        toDecodePrepareMerges
+            .prereq(toDecodePrepareMerges);
+        toDecodePrepareAllBlocked
+            .prereq(toDecodePrepareAllBlocked);
+        futureToDecodePrepareProbes
+            .prereq(futureToDecodePrepareProbes);
+        futureToDecodePrepareSkipped
+            .prereq(futureToDecodePrepareSkipped);
+        futureInputSkipReasons
+            .init(static_cast<unsigned>(
+                    FutureDecodeQueueInputSkipReason::NumReasons))
+            .flags(statistics::total);
+        for (unsigned i = 0;
+             i < static_cast<unsigned>(
+                    FutureDecodeQueueInputSkipReason::NumReasons);
+             ++i) {
+            futureInputSkipReasons.subname(
+                    i,
+                    futureDecodeQueueInputSkipReasonName(
+                        static_cast<FutureDecodeQueueInputSkipReason>(i)));
+        }
+        futureInputQueueNotReadyOutcomes
+            .init(static_cast<unsigned>(
+                    FutureQueueNotReadyOutcome::NumOutcomes))
+            .flags(statistics::total);
+        for (unsigned i = 0;
+             i < static_cast<unsigned>(
+                    FutureQueueNotReadyOutcome::NumOutcomes);
+             ++i) {
+            futureInputQueueNotReadyOutcomes.subname(
+                    i,
+                    futureQueueNotReadyOutcomeName(
+                        static_cast<FutureQueueNotReadyOutcome>(i)));
+        }
+        futureInputQueueNotReadyStates
+            .init(static_cast<unsigned>(
+                    FutureQueueNotReadyState::NumStates))
+            .flags(statistics::total);
+        for (unsigned i = 0;
+             i < static_cast<unsigned>(
+                    FutureQueueNotReadyState::NumStates);
+             ++i) {
+            futureInputQueueNotReadyStates.subname(
+                    i,
+                    futureQueueNotReadyStateName(
+                        static_cast<FutureQueueNotReadyState>(i)));
+        }
+        futureInputQueueNotReadyAcceptedStates
+            .init(static_cast<unsigned>(
+                    FutureQueueNotReadyState::NumStates))
+            .flags(statistics::total);
+        for (unsigned i = 0;
+             i < static_cast<unsigned>(
+                    FutureQueueNotReadyState::NumStates);
+             ++i) {
+            futureInputQueueNotReadyAcceptedStates.subname(
+                    i,
+                    futureQueueNotReadyStateName(
+                        static_cast<FutureQueueNotReadyState>(i)));
+        }
+        futureInputQueueNotReadyAcceptedSizes
+            .init(MaxWidth + 1)
+            .flags(statistics::total);
+        futureInputQueueNotReadyAcceptedStallReasons
+            .init(NumStallReasons)
+            .flags(statistics::total);
+        futureInputQueueNotReadyStateOutcomes
+            .init(static_cast<unsigned>(
+                    FutureQueueNotReadyState::NumStates),
+                  static_cast<unsigned>(
+                    FutureQueueNotReadyOutcome::NumOutcomes))
+            .flags(statistics::total);
+        for (unsigned state = 0;
+             state < static_cast<unsigned>(
+                    FutureQueueNotReadyState::NumStates);
+             ++state) {
+            futureInputQueueNotReadyStateOutcomes.subname(
+                    state,
+                    futureQueueNotReadyStateName(
+                        static_cast<FutureQueueNotReadyState>(state)));
+            for (unsigned outcome = 0;
+                 outcome < static_cast<unsigned>(
+                    FutureQueueNotReadyOutcome::NumOutcomes);
+                 ++outcome) {
+                futureInputQueueNotReadyStateOutcomes.ysubname(
+                        outcome,
+                        futureQueueNotReadyOutcomeName(
+                            static_cast<FutureQueueNotReadyOutcome>(
+                                outcome)));
+            }
+        }
+        futureInputQueueNotReadyCandidateInsts
+            .prereq(futureInputQueueNotReadyCandidateInsts);
+        futureInputQueueNotReadyActualInsts
+            .prereq(futureInputQueueNotReadyActualInsts);
+        futureToDecodePrepareMerges
+            .prereq(futureToDecodePrepareMerges);
+        futureToDecodePrepareReuses
+            .prereq(futureToDecodePrepareReuses);
+        futureToDecodePrepareChecks
+            .prereq(futureToDecodePrepareChecks);
+        futureToDecodePrepareMatches
+            .prereq(futureToDecodePrepareMatches);
+        futureToDecodePrepareMismatches
+            .prereq(futureToDecodePrepareMismatches);
+        futureToDecodePrepareMismatchReasons
+            .init(static_cast<unsigned>(
+                    FutureToDecodePrepareMismatchReason::NumReasons))
+            .flags(statistics::total);
+        for (unsigned i = 0;
+             i < static_cast<unsigned>(
+                    FutureToDecodePrepareMismatchReason::NumReasons);
+             ++i) {
+            futureToDecodePrepareMismatchReasons.subname(
+                    i,
+                    futureToDecodePrepareMismatchReasonName(
+                        static_cast<FutureToDecodePrepareMismatchReason>(
+                            i)));
+        }
+        futureToDecodePrepareStale
+            .prereq(futureToDecodePrepareStale);
+        resolvePrepareTasks
+            .prereq(resolvePrepareTasks);
+        resolvePrepareMerges
+            .prereq(resolvePrepareMerges);
+        resolvePrepareNoIncoming
+            .prereq(resolvePrepareNoIncoming);
+        resolvePrepareQueueFull
+            .prereq(resolvePrepareQueueFull);
+        resolveDequeuePrepareTasks
+            .prereq(resolveDequeuePrepareTasks);
+        resolveDequeuePrepareMerges
+            .prereq(resolveDequeuePrepareMerges);
+        resolveDequeuePrepareNoWork
+            .prereq(resolveDequeuePrepareNoWork);
+        resolveDequeuePrepareMismatches
+            .prereq(resolveDequeuePrepareMismatches);
+        resolveDequeuePrepareCFIs
+            .prereq(resolveDequeuePrepareCFIs);
         branches
             .prereq(branches);
         predictedBranches
@@ -1195,8 +1583,10 @@ Fetch::squash(PCStateBase &new_pc, const InstSeqNum seq_num,
 void
 Fetch::tick()
 {
+    const FetchBackwardInput input = backwardInput(cpu->curCycle());
+
     // Initialize state for this tick cycle
-    bool status_change = initializeTickState();
+    bool status_change = initializeTickState(input);
 
     // Simple decoupled+BTB ordering:
     // - first consume incoming squashes/redirects (in initializeTickState())
@@ -1206,11 +1596,276 @@ Fetch::tick()
     dbpbtb->tick();
 
     // Perform fetch operations and instruction delivery
-    fetchAndProcessInstructions(status_change);
+    fetchAndProcessInstructions(status_change, input);
 }
 
 bool
-Fetch::initializeTickState()
+Fetch::buildFutureDecodeQueueInput(
+        Cycles cycle, const StallSignalLatch &decode_to_fetch,
+        const TimeStruct *snapshot_decode,
+        const TimeStruct *snapshot_commit,
+        FutureDecodeQueueInput &input,
+        FutureDecodeQueueInputSkipInfo *skip_info) const
+{
+    auto skip = [skip_info, cycle, this, &decode_to_fetch](
+            FutureDecodeQueueInputSkipReason reason,
+            ThreadID tid = InvalidThreadID,
+            unsigned queue_size = 0) {
+        if (skip_info) {
+            skip_info->cycle = cycle;
+            skip_info->reason = reason;
+            skip_info->tid = tid;
+            skip_info->queueSize = queue_size;
+            skip_info->decodeWidth =
+                std::min<unsigned>(decodeWidth, MaxWidth);
+            skip_info->queueState = FutureQueueNotReadyState::NumStates;
+            if (reason == FutureDecodeQueueInputSkipReason::FetchQueueNotReady
+                && tid != InvalidThreadID && tid < numThreads) {
+                const FetchPrepareInput fetch_input =
+                    buildFetchPrepareInput(cycle, tid);
+                const FetchPrepareResult fetch_result =
+                    prepareFetchControl(fetch_input);
+                skip_info->queueState =
+                    classifyFutureQueueNotReadyState(
+                            fetch_input, fetch_result,
+                            decode_to_fetch.block[tid]);
+            }
+        }
+        return false;
+    };
+
+    if (!snapshot_decode || !snapshot_commit)
+        return skip(FutureDecodeQueueInputSkipReason::MissingSnapshot);
+
+    if (activeThreads->empty())
+        return skip(FutureDecodeQueueInputSkipReason::NoActiveThreads);
+
+    for (ThreadID tid : *activeThreads) {
+        if (snapshot_commit->commitInfo[tid].squash)
+            return skip(FutureDecodeQueueInputSkipReason::CommitControl);
+        if (snapshot_decode->decodeInfo[tid].squash)
+            return skip(FutureDecodeQueueInputSkipReason::DecodeControl);
+    }
+
+    input = FutureDecodeQueueInput{};
+    input.cycle = cycle;
+    input.numThreads = numThreads;
+    input.decodeWidth = decodeWidth;
+    input.decodeToFetch = decode_to_fetch;
+
+    ThreadID blocked_tid = InvalidThreadID;
+    bool all_threads_blocked = true;
+    for (int tid = 0; tid < numThreads; ++tid) {
+        if (!decode_to_fetch.block[tid])
+            all_threads_blocked = false;
+        else if (blocked_tid == InvalidThreadID)
+            blocked_tid = tid;
+    }
+
+    const unsigned width = std::min<unsigned>(decodeWidth, MaxWidth);
+    if (all_threads_blocked) {
+        if (blocked_tid == InvalidThreadID)
+            return skip(FutureDecodeQueueInputSkipReason::AllBlockedNoTid);
+        input.allThreadsBlocked = true;
+        input.blockedTid = blocked_tid;
+        return true;
+    }
+
+    const ThreadID tid = 0; // Preserve the current non-SMT send policy.
+    const auto queue_size = fetchQueue[tid].size();
+    input.selectedTid = tid;
+    input.selectedCommitRobSquashing =
+        snapshot_commit->commitInfo[tid].robSquashing;
+    if (queue_size < width) {
+        FetchPrepareInput fetch_input;
+        FetchPrepareResult fetch_result;
+        const bool decode_blocked = decode_to_fetch.block[tid];
+        const auto queue_state = [&] {
+            fetch_input = buildFetchPrepareInput(cycle, tid);
+            fetch_result = prepareFetchControl(fetch_input);
+            return classifyFutureQueueNotReadyState(
+                    fetch_input, fetch_result, decode_blocked);
+        }();
+        if (queue_state != FutureQueueNotReadyState::FrontendNotReady) {
+            return skip(FutureDecodeQueueInputSkipReason::FetchQueueNotReady,
+                        tid, queue_size);
+        }
+        const StallReason visible_stall =
+            !stallReason.empty() ? stallReason[0] : StallReason::NoStall;
+        if (queue_size == 0 &&
+            (visible_stall != StallReason::OtherFetchStall ||
+             fetch_input.cacheStatus != CacheIdle)) {
+            return skip(FutureDecodeQueueInputSkipReason::FetchQueueNotReady,
+                        tid, queue_size);
+        }
+
+        input.acceptedShortQueue = true;
+        input.shortQueueState = queue_state;
+        input.instSeqNumCount = queue_size;
+        for (unsigned i = 0; i < MaxWidth; ++i)
+            input.shortQueueCurrentStallReason[i] =
+                i < stallReason.size() ? stallReason[i] : StallReason::NoStall;
+        auto it = fetchQueue[tid].begin();
+        for (unsigned i = 0; i < queue_size; ++i, ++it) {
+            if (it == fetchQueue[tid].end() || !(*it))
+                return skip(FutureDecodeQueueInputSkipReason::MissingInst);
+            input.instSeqNums[i] = (*it)->seqNum;
+        }
+        return true;
+    }
+
+    input.instSeqNumCount = width;
+    auto it = fetchQueue[tid].begin();
+    for (unsigned i = 0; i < width; ++i, ++it) {
+        if (it == fetchQueue[tid].end() || !(*it))
+            return skip(FutureDecodeQueueInputSkipReason::MissingInst);
+        input.instSeqNums[i] = (*it)->seqNum;
+    }
+
+    return true;
+}
+
+bool
+Fetch::previewFutureDecodeQueue(
+        const FutureDecodeQueueInput &input,
+        unsigned &size,
+        std::vector<StallReason> &reasons,
+        std::vector<InstSeqNum> &inst_seq_nums,
+        FetchToDecodePrepareResult *prepare_result) const
+{
+    const unsigned width = std::min<unsigned>(input.decodeWidth, MaxWidth);
+    FetchToDecodePrepareResult prepare;
+    prepare.cycle = input.cycle;
+
+    if (input.allThreadsBlocked) {
+        if (input.blockedTid == InvalidThreadID)
+            return false;
+        size = 0;
+        reasons.assign(width, input.decodeToFetch.reason[input.blockedTid]);
+        inst_seq_nums.clear();
+        prepare.allThreadsBlocked = true;
+        for (int i = 0; i < width; ++i) {
+            prepare.stallReason[i] =
+                input.decodeToFetch.reason[input.blockedTid];
+        }
+        for (int tid = 0; tid < input.numThreads; ++tid) {
+            if (input.decodeToFetch.block[tid])
+                prepare.decodeStalls++;
+        }
+        if (prepare_result)
+            *prepare_result = prepare;
+        return true;
+    }
+
+    const ThreadID tid = input.selectedTid;
+    if (tid >= input.numThreads ||
+        (!input.acceptedShortQueue && input.instSeqNumCount < width)) {
+        return false;
+    }
+
+    size = input.acceptedShortQueue ? input.instSeqNumCount : width;
+    prepare.selectedTid = tid;
+    prepare.selectedBlocked = input.decodeToFetch.block[tid];
+    prepare.instsToDecode = size;
+    prepare.wroteToTimeBuffer = size != 0;
+    if (prepare.selectedBlocked)
+        prepare.decodeStalls++;
+
+    if (input.decodeToFetch.block[tid]) {
+        reasons.assign(width, input.decodeToFetch.reason[tid]);
+        for (int i = 0; i < width; ++i)
+            prepare.stallReason[i] = input.decodeToFetch.reason[tid];
+    } else {
+        for (int i = 0; i < width; ++i) {
+            if (i < size) {
+                prepare.stallReason[i] = StallReason::NoStall;
+            } else if (size == 0) {
+                const StallReason reason =
+                    input.shortQueueCurrentStallReason[0] !=
+                    StallReason::NoStall ?
+                    input.shortQueueCurrentStallReason[0] :
+                    StallReason::OtherFetchStall;
+                prepare.stallReason[i] = reason;
+            } else {
+                prepare.stallReason[i] = StallReason::FetchFragStall;
+            }
+        }
+        reasons.assign(prepare.stallReason,
+                       prepare.stallReason + width);
+    }
+
+    if (!input.decodeToFetch.block[tid] && !input.selectedCommitRobSquashing) {
+        const int unused_slots =
+            static_cast<int>(input.decodeWidth) - static_cast<int>(size);
+        if (unused_slots > 0) {
+            prepare.fetchBubbles += unused_slots;
+            if (unused_slots == static_cast<int>(input.decodeWidth))
+                prepare.fetchBubblesMax++;
+        }
+    }
+
+    inst_seq_nums.clear();
+    inst_seq_nums.reserve(size);
+    for (unsigned i = 0; i < size; ++i)
+        inst_seq_nums.push_back(input.instSeqNums[i]);
+
+    if (prepare_result)
+        *prepare_result = prepare;
+
+    return true;
+}
+
+bool
+Fetch::previewFutureDecodeQueue(Cycles cycle,
+                                const StallSignalLatch &decode_to_fetch,
+                                const TimeStruct *snapshot_decode,
+                                const TimeStruct *snapshot_commit,
+                                unsigned &size,
+                                std::vector<StallReason> &reasons,
+                                std::vector<InstSeqNum> &inst_seq_nums,
+                                FetchToDecodePrepareResult *prepare_result)
+                                const
+{
+    FutureDecodeQueueInput input;
+    if (!buildFutureDecodeQueueInput(
+                cycle, decode_to_fetch, snapshot_decode, snapshot_commit,
+                input)) {
+        return false;
+    }
+
+    return previewFutureDecodeQueue(
+            input, size, reasons, inst_seq_nums, prepare_result);
+}
+
+Fetch::FetchBackwardInput
+Fetch::backwardInput(Cycles cycle) const
+{
+    FetchBackwardInput input;
+    const int decode_to_fetch_offset = -static_cast<int>(
+            static_cast<uint64_t>(decodeToFetchDelay));
+    const int iew_to_fetch_offset = -static_cast<int>(
+            static_cast<uint64_t>(iewToFetchDelay));
+    const int commit_to_fetch_offset = -static_cast<int>(
+            static_cast<uint64_t>(commitToFetchDelay));
+
+    input.decode = cpu->pipelineInputFetchBackward(
+            cycle, decode_to_fetch_offset);
+    input.iew = cpu->pipelineInputFetchBackward(cycle, iew_to_fetch_offset);
+    input.commit = cpu->pipelineInputFetchBackward(
+            cycle, commit_to_fetch_offset);
+
+    if (!input.decode)
+        input.decode = &(*fromDecode);
+    if (!input.iew)
+        input.iew = &(*fromIEW);
+    if (!input.commit)
+        input.commit = &(*fromCommit);
+
+    return input;
+}
+
+bool
+Fetch::initializeTickState(const FetchBackwardInput &input)
 {
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
@@ -1228,13 +1883,13 @@ Fetch::initializeTickState()
 
         // Check the signals for each thread to determine the proper status
         // for each thread.
-        bool updated_status = checkSignalsAndUpdate(tid);
+        bool updated_status = checkSignalsAndUpdate(tid, input);
         status_change =  status_change || updated_status;
     }
 
     DPRINTF(Fetch, "Running stage.\n");
 
-    if (fromCommit->commitInfo[0].emptyROB) {
+    if (input.commit->commitInfo[0].emptyROB) {
         waitForVsetvl = false;
     }
 
@@ -1242,7 +1897,8 @@ Fetch::initializeTickState()
 }
 
 void
-Fetch::fetchAndProcessInstructions(bool status_change)
+Fetch::fetchAndProcessInstructions(bool status_change,
+                                   const FetchBackwardInput &input)
 {
     // Fetch instructions from active threads
     for (threadFetched = 0; threadFetched < numFetchingThreads;
@@ -1263,38 +1919,68 @@ Fetch::fetchAndProcessInstructions(bool status_change)
     }
 
     // Handle interrupt processing in full system mode
-    handleInterrupts();
+    handleInterrupts(input);
 
     // Send instructions to decode stage, update stall reasons and measure frontend bubbles.
-    sendInstructionsToDecode();
+    sendInstructionsToDecode(input);
 }
 
 void
-Fetch::handleInterrupts()
+Fetch::handleInterrupts(const FetchBackwardInput &input)
 {
     if (FullSystem) {
-        if (fromCommit->commitInfo[0].interruptPending) {
+        if (input.commit->commitInfo[0].interruptPending) {
             DPRINTF(Fetch, "Set interrupt pending.\n");
             interruptPending = true;
         }
 
-        if (fromCommit->commitInfo[0].clearInterrupt) {
+        if (input.commit->commitInfo[0].clearInterrupt) {
             DPRINTF(Fetch, "Clear interrupt pending.\n");
             interruptPending = false;
         }
     }
 }
 
-void
-Fetch::sendInstructionsToDecode()
+bool
+Fetch::fetchBlocked(ThreadID tid) const
 {
+    if (stallSignalBank) {
+        return cpu->stallSignalSnapshotOrCurrent(
+            cpu->curCycle(), StallSignalEdge::DecodeToFetch)
+            .block[tid];
+    }
+
+    return stallSig->blockFetch[tid];
+}
+
+StallReason
+Fetch::fetchBlockedReason(ThreadID tid) const
+{
+    if (stallSignalBank) {
+        return cpu->stallSignalSnapshotOrCurrent(
+            cpu->curCycle(), StallSignalEdge::DecodeToFetch)
+            .reason[tid];
+    }
+
+    return stallSig->fetchBlockReason[tid];
+}
+
+void
+Fetch::sendInstructionsToDecode(const FetchBackwardInput &input)
+{
+    if (cpu->getTaskRuntime().enabled()) {
+        const auto prepare =
+            runFetchToDecodePrepare(cpu->curCycle(), input);
+        applyFetchToDecodePrepareResult(prepare);
+        return;
+    }
 
     // Reset the number of instructions we've fetched
     numInst = 0;
 
     bool any_thread_active = false;
     for (int i = 0; i < numThreads; i++) {
-        if (!stallSig->blockFetch[i]) {
+        if (!fetchBlocked(i)) {
             any_thread_active = true;
             break;
         }
@@ -1303,20 +1989,20 @@ Fetch::sendInstructionsToDecode()
         // All threads are blocked, no instructions to send
         ThreadID blocked_tid = InvalidThreadID;
         for (int i = 0; i < numThreads; i++) {
-            if (stallSig->blockFetch[i]) {
+            if (fetchBlocked(i)) {
                 blocked_tid = i;
                 break;
             }
         }
 
         if (blocked_tid != InvalidThreadID) {
-            setAllFetchStalls(stallSig->fetchBlockReason[blocked_tid]);
+            setAllFetchStalls(fetchBlockedReason(blocked_tid));
         }
 
         toDecode->fetchStallReason = stallReason;
 
         for (int i = 0; i < numThreads; i++) {
-            measureFrontendBubbles(0, i);
+            measureFrontendBubbles(0, i, input);
         }
         return;
     }
@@ -1324,10 +2010,10 @@ Fetch::sendInstructionsToDecode()
     ThreadID tid = 0; // TODO: smt support
 
     // fetch totally stalled
-    if (stallSig->blockFetch[tid]) {
+    if (fetchBlocked(tid)) {
         // If decode stalled, use decode's stall reason
         DPRINTF(Fetch, "[tid:%i] Fetch stalled\n", tid);
-        setAllFetchStalls(stallSig->fetchBlockReason[tid]);
+        setAllFetchStalls(fetchBlockedReason(tid));
     }
 
     int insts_to_decode = 0;
@@ -1348,7 +2034,7 @@ Fetch::sendInstructionsToDecode()
     updateStallReasons(insts_to_decode, tid);
 
     // Intel TopDown method for measuring frontend bubbles
-    measureFrontendBubbles(insts_to_decode, tid);
+    measureFrontendBubbles(insts_to_decode, tid, input);
 
     // If there was activity this cycle, inform the CPU of it
     if (wroteToTimeBuffer) {
@@ -1357,11 +2043,475 @@ Fetch::sendInstructionsToDecode()
     }
 }
 
+Fetch::FetchToDecodePrepareInput
+Fetch::buildFetchToDecodePrepareInput(
+        Cycles cycle, const FetchBackwardInput &input) const
+{
+    FetchToDecodePrepareInput prepare_input;
+    prepare_input.cycle = cycle;
+    prepare_input.numThreads = numThreads;
+    prepare_input.decodeWidth = decodeWidth;
+
+    for (int i = 0; i < MaxWidth; ++i) {
+        prepare_input.currentStallReason[i] =
+            i < stallReason.size() ? stallReason[i] : StallReason::NoStall;
+    }
+
+    for (int tid = 0; tid < numThreads; ++tid) {
+        prepare_input.blocked[tid] = fetchBlocked(tid);
+        prepare_input.blockReason[tid] = fetchBlockedReason(tid);
+        prepare_input.fetchQueueSize[tid] = fetchQueue[tid].size();
+        prepare_input.commitRobSquashing[tid] =
+            input.commit->commitInfo[tid].robSquashing;
+    }
+
+    return prepare_input;
+}
+
+Fetch::FetchToDecodePrepareResult
+Fetch::prepareFetchToDecodeControl(
+        const FetchToDecodePrepareInput &input) const
+{
+    FetchToDecodePrepareResult result;
+    result.cycle = input.cycle;
+
+    const unsigned width = std::min<unsigned>(input.decodeWidth, MaxWidth);
+    for (int i = 0; i < MaxWidth; ++i) {
+        result.stallReason[i] = i < width ?
+            input.currentStallReason[i] : StallReason::NoStall;
+    }
+
+    auto measure_bubbles = [&input, &result](ThreadID tid,
+                                             unsigned insts_to_decode) {
+        if (!input.blocked[tid] && !input.commitRobSquashing[tid]) {
+            const int unused_slots =
+                static_cast<int>(input.decodeWidth) -
+                static_cast<int>(insts_to_decode);
+            if (unused_slots > 0) {
+                result.fetchBubbles += unused_slots;
+                if (unused_slots == static_cast<int>(input.decodeWidth))
+                    result.fetchBubblesMax++;
+            }
+        }
+
+        if (input.blocked[tid])
+            result.decodeStalls++;
+    };
+
+    bool any_thread_active = false;
+    for (int tid = 0; tid < input.numThreads; ++tid) {
+        if (!input.blocked[tid]) {
+            any_thread_active = true;
+            break;
+        }
+    }
+
+    if (!any_thread_active) {
+        result.allThreadsBlocked = true;
+        ThreadID blocked_tid = InvalidThreadID;
+        for (int tid = 0; tid < input.numThreads; ++tid) {
+            if (input.blocked[tid]) {
+                blocked_tid = tid;
+                break;
+            }
+        }
+
+        if (blocked_tid != InvalidThreadID) {
+            for (int i = 0; i < width; ++i)
+                result.stallReason[i] = input.blockReason[blocked_tid];
+        }
+
+        for (int tid = 0; tid < input.numThreads; ++tid)
+            measure_bubbles(tid, 0);
+        return result;
+    }
+
+    result.selectedTid = 0; // Preserve the current non-SMT send policy.
+    const ThreadID tid = result.selectedTid;
+    result.selectedBlocked = input.blocked[tid];
+    result.instsToDecode = std::min<unsigned>(
+            input.fetchQueueSize[tid], width);
+    result.wroteToTimeBuffer = result.instsToDecode != 0;
+
+    if (input.blocked[tid]) {
+        for (int i = 0; i < width; ++i)
+            result.stallReason[i] = input.blockReason[tid];
+    } else if (result.instsToDecode == 0) {
+        const StallReason reason = width > 0 &&
+            input.currentStallReason[0] != StallReason::NoStall ?
+            input.currentStallReason[0] : StallReason::OtherFetchStall;
+        for (int i = 0; i < width; ++i)
+            result.stallReason[i] = reason;
+    } else {
+        for (int i = 0; i < width; ++i) {
+            result.stallReason[i] = i < result.instsToDecode ?
+                StallReason::NoStall : StallReason::FetchFragStall;
+        }
+    }
+
+    measure_bubbles(tid, result.instsToDecode);
+    return result;
+}
+
+bool
+Fetch::sameFetchToDecodePrepareResult(
+        const FetchToDecodePrepareResult &lhs,
+        const FetchToDecodePrepareResult &rhs) const
+{
+    if (lhs.cycle != rhs.cycle ||
+        lhs.selectedTid != rhs.selectedTid ||
+        lhs.allThreadsBlocked != rhs.allThreadsBlocked ||
+        lhs.selectedBlocked != rhs.selectedBlocked ||
+        lhs.instsToDecode != rhs.instsToDecode ||
+        lhs.fetchBubbles != rhs.fetchBubbles ||
+        lhs.fetchBubblesMax != rhs.fetchBubblesMax ||
+        lhs.decodeStalls != rhs.decodeStalls ||
+        lhs.wroteToTimeBuffer != rhs.wroteToTimeBuffer) {
+        return false;
+    }
+
+    for (int i = 0; i < MaxWidth; ++i) {
+        if (lhs.stallReason[i] != rhs.stallReason[i])
+            return false;
+    }
+
+    return true;
+}
+
+Fetch::FetchToDecodePrepareResult
+Fetch::runFetchToDecodePrepare(Cycles cycle, const FetchBackwardInput &input)
+{
+    auto prepare_input = std::make_shared<FetchToDecodePrepareInput>(
+            buildFetchToDecodePrepareInput(cycle, input));
+    auto result = std::make_shared<FetchToDecodePrepareResult>();
+
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return prepareFetchToDecodeControl(*prepare_input);
+
+    recordFutureQueueNotReadyOutcome(cycle, *prepare_input);
+
+    if (pendingFutureToDecodePrepare.valid) {
+        if (pendingFutureToDecodePrepare.result.cycle == cycle) {
+            *result = pendingFutureToDecodePrepare.result;
+            pendingFutureToDecodePrepare.valid = false;
+            fetchStats.futureToDecodePrepareReuses++;
+
+            if (runtime.selfTestEnabled()) {
+                const FetchToDecodePrepareResult expected =
+                    prepareFetchToDecodeControl(*prepare_input);
+                fetchStats.futureToDecodePrepareChecks++;
+                if (sameFetchToDecodePrepareResult(*result, expected)) {
+                    fetchStats.futureToDecodePrepareMatches++;
+                } else {
+                    fetchStats.futureToDecodePrepareMismatches++;
+                    recordFutureToDecodePrepareMismatchReasons(
+                            expected, *result);
+                }
+            }
+
+            return *result;
+        }
+
+        fetchStats.futureToDecodePrepareChecks++;
+        fetchStats.futureToDecodePrepareStale++;
+        pendingFutureToDecodePrepare.valid = false;
+    }
+
+    bool all_threads_blocked = true;
+    for (int tid = 0; tid < prepare_input->numThreads; ++tid) {
+        if (!prepare_input->blocked[tid]) {
+            all_threads_blocked = false;
+            break;
+        }
+    }
+
+    if (all_threads_blocked) {
+        fetchStats.toDecodePrepareAllBlocked++;
+        return prepareFetchToDecodeControl(*prepare_input);
+    }
+
+    fetchStats.toDecodePrepareTasks++;
+    const TaskOrderKey order{
+        cycle, TaskStage::Fetch, 3, InvalidThreadID, 0};
+    runtime.submitWeak(
+            order,
+            std::max(1u, prepare_input->numThreads +
+                         prepare_input->decodeWidth),
+            [this, prepare_input, result] {
+                *result = prepareFetchToDecodeControl(*prepare_input);
+            },
+            [this, result] {
+                fetchStats.toDecodePrepareMerges++;
+                if (result->allThreadsBlocked)
+                    fetchStats.toDecodePrepareAllBlocked++;
+            });
+    runtime.waitForOrder(order);
+
+    return *result;
+}
+
+void
+Fetch::recordFutureToDecodePrepareProbe()
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    fetchStats.futureToDecodePrepareProbes++;
+}
+
+void
+Fetch::recordFutureToDecodePrepareSkipped()
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    fetchStats.futureToDecodePrepareSkipped++;
+}
+
+void
+Fetch::recordFutureToDecodePrepareMismatchReasons(
+        const FetchToDecodePrepareResult &expected,
+        const FetchToDecodePrepareResult &actual)
+{
+    auto record = [this](FutureToDecodePrepareMismatchReason reason) {
+        fetchStats.futureToDecodePrepareMismatchReasons[
+            static_cast<unsigned>(reason)]++;
+    };
+
+    if (actual.cycle != expected.cycle)
+        record(FutureToDecodePrepareMismatchReason::Cycle);
+    if (actual.selectedTid != expected.selectedTid)
+        record(FutureToDecodePrepareMismatchReason::SelectedTid);
+    if (actual.allThreadsBlocked != expected.allThreadsBlocked)
+        record(FutureToDecodePrepareMismatchReason::AllThreadsBlocked);
+    if (actual.selectedBlocked != expected.selectedBlocked)
+        record(FutureToDecodePrepareMismatchReason::SelectedBlocked);
+    if (actual.instsToDecode != expected.instsToDecode)
+        record(FutureToDecodePrepareMismatchReason::InstsToDecode);
+    if (actual.fetchBubbles != expected.fetchBubbles)
+        record(FutureToDecodePrepareMismatchReason::FetchBubbles);
+    if (actual.fetchBubblesMax != expected.fetchBubblesMax)
+        record(FutureToDecodePrepareMismatchReason::FetchBubblesMax);
+    if (actual.decodeStalls != expected.decodeStalls)
+        record(FutureToDecodePrepareMismatchReason::DecodeStalls);
+    if (actual.wroteToTimeBuffer != expected.wroteToTimeBuffer)
+        record(FutureToDecodePrepareMismatchReason::WroteToTimeBuffer);
+
+    for (int i = 0; i < MaxWidth; ++i) {
+        if (actual.stallReason[i] != expected.stallReason[i]) {
+            record(FutureToDecodePrepareMismatchReason::StallReason);
+            break;
+        }
+    }
+}
+
+void
+Fetch::recordFutureDecodeQueueInputAccepted(
+        const FutureDecodeQueueInput &input)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled() || !input.acceptedShortQueue)
+        return;
+
+    const auto state_index = static_cast<unsigned>(input.shortQueueState);
+    if (state_index < static_cast<unsigned>(
+                FutureQueueNotReadyState::NumStates)) {
+        fetchStats.futureInputQueueNotReadyAcceptedStates[state_index]++;
+    }
+    fetchStats.futureInputQueueNotReadyAcceptedSizes[
+        std::min<unsigned>(input.instSeqNumCount, MaxWidth)]++;
+    const StallReason reason = input.shortQueueCurrentStallReason[0];
+    if (reason < NumStallReasons)
+        fetchStats.futureInputQueueNotReadyAcceptedStallReasons[reason]++;
+}
+
+void
+Fetch::recordFutureQueueNotReadyOutcomeCount(
+        FutureQueueNotReadyState state,
+        FutureQueueNotReadyOutcome outcome)
+{
+    const auto state_index = static_cast<unsigned>(state);
+    const auto outcome_index = static_cast<unsigned>(outcome);
+    if (state_index >= static_cast<unsigned>(
+                FutureQueueNotReadyState::NumStates) ||
+        outcome_index >= static_cast<unsigned>(
+                FutureQueueNotReadyOutcome::NumOutcomes)) {
+        return;
+    }
+
+    fetchStats.futureInputQueueNotReadyStateOutcomes
+        [state_index][outcome_index]++;
+}
+
+void
+Fetch::recordFutureDecodeQueueInputSkipped(
+        const FutureDecodeQueueInputSkipInfo &skip_info)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    const auto index = static_cast<unsigned>(skip_info.reason);
+    if (index >= static_cast<unsigned>(
+                FutureDecodeQueueInputSkipReason::NumReasons)) {
+        return;
+    }
+
+    fetchStats.futureInputSkipReasons[index]++;
+
+    if (skip_info.reason !=
+            FutureDecodeQueueInputSkipReason::FetchQueueNotReady) {
+        return;
+    }
+
+    const auto state_index = static_cast<unsigned>(skip_info.queueState);
+    if (state_index < static_cast<unsigned>(
+                FutureQueueNotReadyState::NumStates)) {
+        fetchStats.futureInputQueueNotReadyStates[state_index]++;
+    }
+
+    if (pendingFutureQueueNotReady.valid) {
+        fetchStats.futureInputQueueNotReadyOutcomes[
+            static_cast<unsigned>(FutureQueueNotReadyOutcome::Stale)]++;
+        recordFutureQueueNotReadyOutcomeCount(
+                pendingFutureQueueNotReady.state,
+                FutureQueueNotReadyOutcome::Stale);
+    }
+
+    pendingFutureQueueNotReady.valid = true;
+    pendingFutureQueueNotReady.cycle = skip_info.cycle;
+    pendingFutureQueueNotReady.tid = skip_info.tid;
+    pendingFutureQueueNotReady.queueSize = skip_info.queueSize;
+    pendingFutureQueueNotReady.decodeWidth = skip_info.decodeWidth;
+    pendingFutureQueueNotReady.state = skip_info.queueState;
+}
+
+void
+Fetch::recordFutureQueueNotReadyOutcome(
+        Cycles cycle, const FetchToDecodePrepareInput &input)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled() || !pendingFutureQueueNotReady.valid)
+        return;
+
+    if (pendingFutureQueueNotReady.cycle != cycle) {
+        fetchStats.futureInputQueueNotReadyOutcomes[
+            static_cast<unsigned>(FutureQueueNotReadyOutcome::Stale)]++;
+        recordFutureQueueNotReadyOutcomeCount(
+                pendingFutureQueueNotReady.state,
+                FutureQueueNotReadyOutcome::Stale);
+        pendingFutureQueueNotReady.valid = false;
+        return;
+    }
+
+    const ThreadID tid = pendingFutureQueueNotReady.tid;
+    FutureQueueNotReadyOutcome outcome = FutureQueueNotReadyOutcome::Stale;
+    const unsigned candidate_size = pendingFutureQueueNotReady.queueSize;
+    unsigned actual_size = 0;
+
+    if (tid != InvalidThreadID && tid < input.numThreads) {
+        actual_size = input.fetchQueueSize[tid];
+        const unsigned width =
+            std::min<unsigned>(input.decodeWidth, MaxWidth);
+        if (input.blocked[tid]) {
+            outcome = FutureQueueNotReadyOutcome::Blocked;
+        } else if (actual_size < candidate_size) {
+            outcome = FutureQueueNotReadyOutcome::QueueShrank;
+        } else if (actual_size >= width) {
+            outcome = FutureQueueNotReadyOutcome::FilledToWidth;
+        } else if (actual_size > candidate_size) {
+            outcome = FutureQueueNotReadyOutcome::PartialSupply;
+        } else {
+            outcome = FutureQueueNotReadyOutcome::NoSupplyStillNotReady;
+        }
+    }
+
+    fetchStats.futureInputQueueNotReadyCandidateInsts += candidate_size;
+    fetchStats.futureInputQueueNotReadyActualInsts += actual_size;
+    fetchStats.futureInputQueueNotReadyOutcomes[
+        static_cast<unsigned>(outcome)]++;
+    recordFutureQueueNotReadyOutcomeCount(
+            pendingFutureQueueNotReady.state, outcome);
+    pendingFutureQueueNotReady.valid = false;
+}
+
+void
+Fetch::setPendingFutureToDecodePrepare(
+        const FetchToDecodePrepareResult &result)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    if (pendingFutureToDecodePrepare.valid)
+        fetchStats.futureToDecodePrepareStale++;
+
+    pendingFutureToDecodePrepare.result = result;
+    pendingFutureToDecodePrepare.valid = true;
+    fetchStats.futureToDecodePrepareMerges++;
+}
+
+void
+Fetch::applyFetchToDecodePrepareResult(
+        const FetchToDecodePrepareResult &result)
+{
+    // Reset the number of instructions we've fetched.
+    numInst = 0;
+
+    const unsigned width = std::min<unsigned>(decodeWidth, MaxWidth);
+    for (int i = 0; i < width; ++i)
+        stallReason[i] = result.stallReason[i];
+    toDecode->fetchStallReason = stallReason;
+
+    fetchStats.fetchBubbles += result.fetchBubbles;
+    fetchStats.fetchBubbles_max += result.fetchBubblesMax;
+    fetchStats.decodeStalls += result.decodeStalls;
+
+    if (result.allThreadsBlocked)
+        return;
+
+    const ThreadID tid = result.selectedTid;
+    fatal_if(tid >= numThreads,
+             "Fetch-to-decode prepare selected invalid tid %i.", tid);
+    if (result.selectedBlocked)
+        DPRINTF(Fetch, "[tid:%i] Fetch stalled\n", tid);
+    fatal_if(fetchQueue[tid].size() < result.instsToDecode,
+             "Fetch queue for tid %i changed during fetch-to-decode "
+             "prepare: prepared %u entries, current size %zu.",
+             tid, result.instsToDecode, fetchQueue[tid].size());
+
+    unsigned insts_to_decode = 0;
+    auto &insts = fetchQueue[tid];
+    while (!insts.empty() && insts_to_decode < result.instsToDecode) {
+        const auto &inst = insts.front();
+        toDecode->insts[toDecode->size++] = inst;
+        DPRINTF(Fetch, "[tid:%i] [sn:%llu] Sending instruction to decode "
+                "from fetch queue. Fetch queue size: %i.\n",
+                tid, inst->seqNum, insts.size());
+
+        wroteToTimeBuffer = true;
+        insts.pop_front();
+        insts_to_decode++;
+    }
+
+    fatal_if(insts_to_decode != result.instsToDecode,
+             "Fetch-to-decode prepare sent %u insts but prepared %u.",
+             insts_to_decode, result.instsToDecode);
+
+    if (result.wroteToTimeBuffer) {
+        DPRINTF(Activity, "Activity this cycle.\n");
+        cpu->activityThisCycle();
+    }
+}
+
 void
 Fetch::updateStallReasons(unsigned insts_to_decode, ThreadID tid)
 {
-    if (stallSig->blockFetch[tid]) {
-        setAllFetchStalls(stallSig->fetchBlockReason[tid]);
+    if (fetchBlocked(tid)) {
+        setAllFetchStalls(fetchBlockedReason(tid));
     } else if (insts_to_decode == 0) {
         // fetch stalled
         if (stallReason[0] != StallReason::NoStall) {
@@ -1385,14 +2535,15 @@ Fetch::updateStallReasons(unsigned insts_to_decode, ThreadID tid)
 }
 
 void
-Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
+Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid,
+                              const FetchBackwardInput &input)
 {
     // Intel TopDown method for measuring frontend bubbles
     // Count unutilized issue slots when backend is not stalled (decode not stalled)
     // For N-wide machine, if frontend supplies 0 instructions:
     // - fetchBubbles += N (count total empty slots)
     // - fetchBubbles_max += 1 (count occurrence of all slots being empty)
-    if (!stallSig->blockFetch[tid] && !fromCommit->commitInfo[tid].robSquashing) {
+    if (!fetchBlocked(tid) && !input.commit->commitInfo[tid].robSquashing) {
         // backend not stalled
         int unused_slots = decodeWidth - insts_to_decode;
         if (unused_slots > 0) {
@@ -1405,24 +2556,24 @@ Fetch::measureFrontendBubbles(unsigned insts_to_decode, ThreadID tid)
         }
     }
 
-    if (stallSig->blockFetch[tid]) {
+    if (fetchBlocked(tid)) {
         fetchStats.decodeStalls++;
     }
 }
 
 bool
-Fetch::checkSignalsAndUpdate(ThreadID tid)
+Fetch::checkSignalsAndUpdate(ThreadID tid, const FetchBackwardInput &input)
 {
     // Check squash signals from commit.
-    bool commitSquashed = handleCommitSignals(tid);
+    bool commitSquashed = handleCommitSignals(tid, input.commit);
 
-    handleIEWSignals();
+    handleIEWSignals(tid, input.iew);
 
     if (commitSquashed) {
         return true;
     }
 
-    if (handleDecodeSquash(tid)) {
+    if (handleDecodeSquash(tid, input.decode)) {
         return true;
     }
 
@@ -1452,78 +2603,341 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
 }
 
 void
-Fetch::handleIEWSignals()
+Fetch::handleIEWSignals(ThreadID tid, const TimeStruct *iew_input)
 {
     // Currently resolve stage training is a btb-only feature
     if (!isBTBPred()) {
         return;
     }
 
-    auto &incoming = fromIEW->iewInfo->resolvedCFIs;
     const bool had_pending_resolve = !resolveQueue.empty();
-    uint8_t enqueueSize = fromIEW->iewInfo->resolvedCFIs.size();
-    uint8_t enqueueCount = 0;
-
-    if (resolveQueueSize && resolveQueue.size() > resolveQueueSize - 4) {
-        fetchStats.resolveQueueFullEvents++;
-        fetchStats.resolveEnqueueFailEvent += enqueueSize;
-    } else {
-
-        for (const auto &resolved : incoming) {
-            bool merged = false;
-            for (auto &queued : resolveQueue) {
-                if (queued.resolvedFTQId == resolved.ftqId) {
-                    queued.resolvedInstPC.push_back(resolved.pc);
-                    merged = true;
-                    break;
-                }
-            }
-
-            if (merged) {
-                continue;
-            }
-
-            ResolveQueueEntry new_entry;
-            new_entry.resolvedFTQId = resolved.ftqId;
-            new_entry.resolvedInstPC.push_back(resolved.pc);
-            resolveQueue.push_back(std::move(new_entry));
-            enqueueCount++;
-        }
-        fetchStats.resolveEnqueueCount.sample(enqueueCount);
-    }
-
-    fetchStats.resolveQueueOccupancy.sample(resolveQueue.size());
+    const ResolvePrepareResult prepare =
+        runResolvePrepare(cpu->curCycle(), tid, iew_input);
+    applyResolvePrepareResult(prepare);
 
     // Process only entries that were already pending before this cycle.
     // This preserves a cycle of separation between IEW producing resolved CFIs
     // and fetch consuming them as predictor resolved updates.
-    if (had_pending_resolve && !resolveQueue.empty()) {
-        auto &entry = resolveQueue.front();
-        unsigned int stream_id = entry.resolvedFTQId;
-        dbpbtb->prepareResolveUpdateEntries(stream_id, 0);
-        for (const auto resolvedInstPC : entry.resolvedInstPC) {
-            dbpbtb->markCFIResolved(stream_id, resolvedInstPC, 0);
+    const ResolveDequeuePrepareResult dequeue_prepare =
+        runResolveDequeuePrepare(cpu->curCycle(), had_pending_resolve);
+    if (dequeue_prepare.processFront) {
+        fatal_if(resolveQueue.empty(),
+                 "Resolve dequeue prepare expected a front entry.");
+        fatal_if(resolveQueue.front().resolvedFTQId !=
+                     dequeue_prepare.streamId,
+                 "Resolve dequeue prepare stream mismatch: prepared %llu, "
+                 "front %llu.",
+                 static_cast<unsigned long long>(
+                         dequeue_prepare.streamId),
+                 static_cast<unsigned long long>(
+                         resolveQueue.front().resolvedFTQId));
+        fatal_if(resolveQueue.front().tid != dequeue_prepare.tid,
+                 "Resolve dequeue prepare tid mismatch: prepared %i, "
+                 "front %i.",
+                 dequeue_prepare.tid, resolveQueue.front().tid);
+        unsigned int stream_id = dequeue_prepare.streamId;
+        const ThreadID resolve_tid = dequeue_prepare.tid;
+        dbpbtb->prepareResolveUpdateEntries(stream_id, resolve_tid);
+        for (const auto resolvedInstPC :
+             dequeue_prepare.resolvedInstPC) {
+            dbpbtb->markCFIResolved(stream_id, resolvedInstPC,
+                                    resolve_tid);
         }
-        bool success = dbpbtb->resolveUpdate(stream_id, 0);
+        bool success = dbpbtb->resolveUpdate(stream_id, resolve_tid);
         if (success) {
             dbpbtb->notifyResolveSuccess();
             resolveQueue.pop_front();
             fetchStats.resolveDequeueCount++;
         } else {
-            dbpbtb->notifyResolveFailure();
+            dbpbtb->notifyResolveFailure(resolve_tid);
         }
     }
 }
 
+Fetch::ResolvePrepareInput
+Fetch::buildResolvePrepareInput(
+        Cycles cycle, ThreadID tid, const TimeStruct *iew_input) const
+{
+    ResolvePrepareInput input;
+    input.cycle = cycle;
+    input.resolveQueueSize = resolveQueueSize;
+    input.queuedEntries.reserve(resolveQueue.size());
+    for (const auto &entry : resolveQueue) {
+        ResolvePrepareInput::QueuedEntry queued;
+        queued.tid = entry.tid;
+        queued.ftqId = entry.resolvedFTQId;
+        input.queuedEntries.push_back(queued);
+    }
+
+    const auto &incoming = iew_input->iewInfo[tid].resolvedCFIs;
+    input.incoming.reserve(incoming.size());
+    for (const auto &resolved : incoming) {
+        ResolvePrepareInput::IncomingCFI cfi;
+        cfi.tid = tid;
+        cfi.ftqId = resolved.ftqId;
+        cfi.pc = resolved.pc;
+        input.incoming.push_back(cfi);
+    }
+
+    return input;
+}
+
+Fetch::ResolveDequeuePrepareInput
+Fetch::buildResolveDequeuePrepareInput(
+        Cycles cycle, bool had_pending_before_enqueue) const
+{
+    ResolveDequeuePrepareInput input;
+    input.cycle = cycle;
+    input.hadPendingBeforeEnqueue = had_pending_before_enqueue;
+
+    if (had_pending_before_enqueue && !resolveQueue.empty()) {
+        const auto &entry = resolveQueue.front();
+        input.frontValid = true;
+        input.tid = entry.tid;
+        input.streamId = entry.resolvedFTQId;
+        input.resolvedInstPC = entry.resolvedInstPC;
+    }
+
+    return input;
+}
+
+Fetch::ResolveDequeuePrepareResult
+Fetch::prepareResolveDequeueControl(
+        const ResolveDequeuePrepareInput &input) const
+{
+    ResolveDequeuePrepareResult result;
+    result.cycle = input.cycle;
+    if (!input.hadPendingBeforeEnqueue || !input.frontValid)
+        return result;
+
+    result.processFront = true;
+    result.tid = input.tid;
+    result.streamId = input.streamId;
+    result.resolvedInstPC = input.resolvedInstPC;
+    return result;
+}
+
+Fetch::ResolveDequeuePrepareResult
+Fetch::runResolveDequeuePrepare(
+        Cycles cycle, bool had_pending_before_enqueue)
+{
+    ResolveDequeuePrepareInput input =
+        buildResolveDequeuePrepareInput(cycle, had_pending_before_enqueue);
+
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return prepareResolveDequeueControl(input);
+
+    if (!input.hadPendingBeforeEnqueue || !input.frontValid) {
+        fetchStats.resolveDequeuePrepareNoWork++;
+        return prepareResolveDequeueControl(input);
+    }
+
+    fetchStats.resolveDequeuePrepareTasks++;
+    const TaskOrderKey order{cycle, TaskStage::Fetch, 1, InvalidThreadID, 0};
+    auto input_ptr = std::make_shared<ResolveDequeuePrepareInput>(input);
+    auto result = std::make_shared<ResolveDequeuePrepareResult>();
+    runtime.submitWeak(
+            order,
+            std::max(1u, static_cast<unsigned>(
+                    input_ptr->resolvedInstPC.size() + 1)),
+            [this, input_ptr, result] {
+                *result = prepareResolveDequeueControl(*input_ptr);
+            },
+            [this, had_pending_before_enqueue, result] {
+                fetchStats.resolveDequeuePrepareMerges++;
+                fetchStats.resolveDequeuePrepareCFIs +=
+                    result->resolvedInstPC.size();
+                verifyResolveDequeuePrepareResult(
+                        had_pending_before_enqueue, *result);
+            });
+    runtime.waitForOrder(order);
+
+    return *result;
+}
+
+void
+Fetch::verifyResolveDequeuePrepareResult(
+        bool had_pending_before_enqueue,
+        const ResolveDequeuePrepareResult &result)
+{
+    const ResolveDequeuePrepareResult expected =
+        prepareResolveDequeueControl(buildResolveDequeuePrepareInput(
+                result.cycle, had_pending_before_enqueue));
+
+    auto mismatch = [&] {
+        if (result.processFront != expected.processFront ||
+            result.tid != expected.tid ||
+            result.streamId != expected.streamId ||
+            result.resolvedInstPC.size() !=
+                expected.resolvedInstPC.size()) {
+            return true;
+        }
+        for (size_t i = 0; i < expected.resolvedInstPC.size(); ++i) {
+            if (result.resolvedInstPC[i] != expected.resolvedInstPC[i])
+                return true;
+        }
+        return false;
+    };
+
+    if (mismatch()) {
+        fetchStats.resolveDequeuePrepareMismatches++;
+        panic("Fetch resolve dequeue prepare mismatch: prepared "
+              "process=%d tid=%i stream=%llu cfi=%zu, expected process=%d "
+              "tid=%i stream=%llu cfi=%zu",
+              result.processFront,
+              result.tid,
+              static_cast<unsigned long long>(result.streamId),
+              result.resolvedInstPC.size(),
+              expected.processFront,
+              expected.tid,
+              static_cast<unsigned long long>(expected.streamId),
+              expected.resolvedInstPC.size());
+    }
+}
+
+Fetch::ResolvePrepareResult
+Fetch::prepareResolveControl(const ResolvePrepareInput &input) const
+{
+    ResolvePrepareResult result;
+    result.cycle = input.cycle;
+    result.occupancyAfterEnqueue = input.queuedEntries.size();
+
+    if (input.resolveQueueSize &&
+        input.queuedEntries.size() > input.resolveQueueSize - 4) {
+        result.queueFull = true;
+        result.enqueueFailCount = input.incoming.size();
+        return result;
+    }
+
+    std::vector<ResolvePrepareInput::QueuedEntry> queued_entries =
+        input.queuedEntries;
+    result.appendOps.reserve(input.incoming.size());
+    for (const auto &resolved : input.incoming) {
+        bool found = false;
+        unsigned queue_index = 0;
+        for (unsigned i = 0; i < queued_entries.size(); ++i) {
+            if (queued_entries[i].tid == resolved.tid &&
+                queued_entries[i].ftqId == resolved.ftqId) {
+                found = true;
+                queue_index = i;
+                break;
+            }
+        }
+
+        ResolvePrepareResult::AppendOp op;
+        op.tid = resolved.tid;
+        op.ftqId = resolved.ftqId;
+        op.pc = resolved.pc;
+        op.queueIndex = queue_index;
+        if (!found) {
+            op.createNewEntry = true;
+            op.queueIndex = queued_entries.size();
+            ResolvePrepareInput::QueuedEntry queued;
+            queued.tid = resolved.tid;
+            queued.ftqId = resolved.ftqId;
+            queued_entries.push_back(queued);
+            result.enqueueCount++;
+        }
+        result.appendOps.push_back(op);
+    }
+
+    result.occupancyAfterEnqueue = queued_entries.size();
+    return result;
+}
+
+Fetch::ResolvePrepareResult
+Fetch::runResolvePrepare(Cycles cycle, ThreadID tid,
+                         const TimeStruct *iew_input)
+{
+    auto input = std::make_shared<ResolvePrepareInput>(
+            buildResolvePrepareInput(cycle, tid, iew_input));
+    auto result = std::make_shared<ResolvePrepareResult>();
+
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return prepareResolveControl(*input);
+
+    if (input->incoming.empty()) {
+        fetchStats.resolvePrepareNoIncoming++;
+        return prepareResolveControl(*input);
+    }
+
+    fetchStats.resolvePrepareTasks++;
+    const TaskOrderKey order{cycle, TaskStage::Fetch, 0, InvalidThreadID, 0};
+    runtime.submitWeak(
+            order,
+            std::max(1u,
+                static_cast<unsigned>(input->incoming.size() +
+                                      input->queuedEntries.size())),
+            [this, input, result] {
+                *result = prepareResolveControl(*input);
+            },
+            [this, result] {
+                fetchStats.resolvePrepareMerges++;
+                if (result->queueFull)
+                    fetchStats.resolvePrepareQueueFull++;
+            });
+    runtime.waitForOrder(order);
+
+    return *result;
+}
+
+void
+Fetch::applyResolvePrepareResult(const ResolvePrepareResult &result)
+{
+    if (result.queueFull) {
+        fetchStats.resolveQueueFullEvents++;
+        fetchStats.resolveEnqueueFailEvent += result.enqueueFailCount;
+    } else {
+        for (const auto &op : result.appendOps) {
+            if (op.createNewEntry) {
+                fatal_if(op.queueIndex != resolveQueue.size(),
+                         "Resolve prepare expected to create queue index %u "
+                         "but queue size is %zu.",
+                         op.queueIndex, resolveQueue.size());
+                ResolveQueueEntry new_entry;
+                new_entry.tid = op.tid;
+                new_entry.resolvedFTQId = op.ftqId;
+                resolveQueue.push_back(std::move(new_entry));
+            }
+
+            fatal_if(op.queueIndex >= resolveQueue.size(),
+                     "Resolve prepare append index %u is outside queue size "
+                     "%zu.",
+                     op.queueIndex, resolveQueue.size());
+            auto &entry = resolveQueue[op.queueIndex];
+            fatal_if(entry.tid != op.tid,
+                     "Resolve prepare append tid mismatch: op %i, "
+                     "queue %i.",
+                     op.tid, entry.tid);
+            fatal_if(entry.resolvedFTQId != op.ftqId,
+                     "Resolve prepare append FTQ id mismatch: op %llu, "
+                     "queue %llu.",
+                     static_cast<unsigned long long>(op.ftqId),
+                     static_cast<unsigned long long>(entry.resolvedFTQId));
+            entry.resolvedInstPC.push_back(op.pc);
+        }
+        fetchStats.resolveEnqueueCount.sample(result.enqueueCount);
+    }
+
+    fetchStats.resolveQueueOccupancy.sample(resolveQueue.size());
+    fatal_if(resolveQueue.size() != result.occupancyAfterEnqueue,
+             "Resolve prepare occupancy mismatch: expected %llu, got %zu.",
+             static_cast<unsigned long long>(result.occupancyAfterEnqueue),
+             resolveQueue.size());
+}
+
 bool
-Fetch::handleCommitSignals(ThreadID tid)
+Fetch::handleCommitSignals(ThreadID tid, const TimeStruct *commit_input)
 {
     // Check squash signals from commit.
-    if (!fromCommit->commitInfo[tid].squash) {
-        if (fromCommit->commitInfo[tid].doneFtqId) {
-            DPRINTF(DecoupleBP, "Commit stream Id: %lu\n", fromCommit->commitInfo[tid].doneFtqId);
+    if (!commit_input->commitInfo[tid].squash) {
+        if (commit_input->commitInfo[tid].doneFtqId) {
+            DPRINTF(DecoupleBP, "Commit stream Id: %lu\n",
+                    commit_input->commitInfo[tid].doneFtqId);
             assert(dbpbtb);
-            dbpbtb->commit(fromCommit->commitInfo[tid].doneFtqId, tid);
+            dbpbtb->commit(commit_input->commitInfo[tid].doneFtqId, tid);
         }
         return false;
     }
@@ -1534,11 +2948,11 @@ Fetch::handleCommitSignals(ThreadID tid)
             "from commit.\n",
             tid);
 
-        InstSeqNum squash_seq = fromCommit->commitInfo[tid].doneSeqNum;
-        DynInstPtr squash_inst = fromCommit->commitInfo[tid].squashInst;
-        if (fromCommit->commitInfo[tid].isTrapSquash &&
-            fromCommit->commitInfo[tid].traceTrapSkipInst) {
-            squash_seq = fromCommit->commitInfo[tid].traceTrapSeqNum;
+        InstSeqNum squash_seq = commit_input->commitInfo[tid].doneSeqNum;
+        DynInstPtr squash_inst = commit_input->commitInfo[tid].squashInst;
+        if (commit_input->commitInfo[tid].isTrapSquash &&
+            commit_input->commitInfo[tid].traceTrapSkipInst) {
+            squash_seq = commit_input->commitInfo[tid].traceTrapSeqNum;
             squash_inst = nullptr;
             DPRINTF(Fetch,
                     "[tid:%i] Trap squash with trace ctrl-flow fault: rollback seq=%llu (skip head)\n",
@@ -1546,35 +2960,46 @@ Fetch::handleCommitSignals(ThreadID tid)
         }
 
     // In any case, squash.
-    squash(*fromCommit->commitInfo[tid].pc, squash_seq,
+    squash(*commit_input->commitInfo[tid].pc, squash_seq,
            squash_inst, tid);
 
-    localSquashVer.update(fromCommit->commitInfo[tid].squashVersion.getVersion());
+    localSquashVer.update(
+            commit_input->commitInfo[tid].squashVersion.getVersion());
     DPRINTF(Fetch, "Updating squash version to %u\n", localSquashVer.getVersion());
 
-    auto mispred_inst = fromCommit->commitInfo[tid].mispredictInst;
+    auto mispred_inst = commit_input->commitInfo[tid].mispredictInst;
 
     if (mispred_inst) {
         DPRINTF(Fetch, "Use mispred inst to redirect, treating as control squash\n");
-        const auto corr_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
+        const auto corr_pc =
+            commit_input->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
         dbpbtb->controlSquash(mispred_inst->getFtqId(), mispred_inst->pcState(),
                               corr_pc, mispred_inst->staticInst,
-                              mispred_inst->getInstBytes(), fromCommit->commitInfo[tid].branchTaken,
+                              mispred_inst->getInstBytes(),
+                              commit_input->commitInfo[tid].branchTaken,
                               mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(), true);
-    } else if (fromCommit->commitInfo[tid].isTrapSquash) {
+    } else if (commit_input->commitInfo[tid].isTrapSquash) {
         DPRINTF(Fetch, "Treating as trap squash\n", tid);
-        const auto trap_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
+        const auto trap_pc =
+            commit_input->commitInfo[tid].pc->as<RiscvISA::PCState>();
         assert(dbpbtb);
-        dbpbtb->trapSquash(fromCommit->commitInfo[tid].squashedTargetId, fromCommit->commitInfo[tid].committedPC,
-                           trap_pc, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+        dbpbtb->trapSquash(
+                commit_input->commitInfo[tid].squashedTargetId,
+                commit_input->commitInfo[tid].committedPC,
+                trap_pc, tid,
+                commit_input->commitInfo[tid].squashedLoopIter);
     } else {
-        if (fromCommit->commitInfo[tid].pc && fromCommit->commitInfo[tid].squashedTargetId != 0) {
+        if (commit_input->commitInfo[tid].pc &&
+            commit_input->commitInfo[tid].squashedTargetId != 0) {
             DPRINTF(Fetch, "Squash with stream id and target id from IEW\n");
-            const auto nc_pc = fromCommit->commitInfo[tid].pc->as<RiscvISA::PCState>();
+            const auto nc_pc =
+                commit_input->commitInfo[tid].pc->as<RiscvISA::PCState>();
             assert(dbpbtb);
-            dbpbtb->nonControlSquash(fromCommit->commitInfo[tid].squashedTargetId, nc_pc,
-                                     0, tid, fromCommit->commitInfo[tid].squashedLoopIter);
+            dbpbtb->nonControlSquash(
+                    commit_input->commitInfo[tid].squashedTargetId, nc_pc,
+                    0, tid,
+                    commit_input->commitInfo[tid].squashedLoopIter);
         } else {
             DPRINTF(Fetch, "Dont squash dbq because no meaningful stream\n");
         }
@@ -1584,24 +3009,24 @@ Fetch::handleCommitSignals(ThreadID tid)
 }
 
 bool
-Fetch::handleDecodeSquash(ThreadID tid)
+Fetch::handleDecodeSquash(ThreadID tid, const TimeStruct *decode_input)
 {
     // Check squash signals from decode.
-    if (fromDecode->decodeInfo[tid].squash) {
+    if (decode_input->decodeInfo[tid].squash) {
         DPRINTF(Fetch, "[tid:%i] Squashing instructions due to squash "
                 "from decode.\n",tid);
 
-        auto mispred_inst = fromDecode->decodeInfo[tid].mispredictInst;
-        if (fromDecode->decodeInfo[tid].branchMispredict) {
+        auto mispred_inst = decode_input->decodeInfo[tid].mispredictInst;
+        if (decode_input->decodeInfo[tid].branchMispredict) {
             assert(dbpbtb);
             const auto next_pc =
-                fromDecode->decodeInfo[tid].nextPC->as<RiscvISA::PCState>();
+                decode_input->decodeInfo[tid].nextPC->as<RiscvISA::PCState>();
             dbpbtb->controlSquash(
                 mispred_inst->getFtqId(),
                 mispred_inst->pcState(),
                 next_pc,
                 mispred_inst->staticInst, mispred_inst->getInstBytes(),
-                fromDecode->decodeInfo[tid].branchTaken,
+                decode_input->decodeInfo[tid].branchTaken,
                 mispred_inst->seqNum, tid, mispred_inst->getLoopIteration(),
                 false);
         } else {
@@ -1611,11 +3036,11 @@ Fetch::handleDecodeSquash(ThreadID tid)
         if (fetchStatus[tid] != Squashing) {
 
             DPRINTF(Fetch, "Squashing from decode with PC = %s\n",
-                *fromDecode->decodeInfo[tid].nextPC);
+                *decode_input->decodeInfo[tid].nextPC);
             // Squash unless we're already squashing
-            squashFromDecode(*fromDecode->decodeInfo[tid].nextPC,
-                             fromDecode->decodeInfo[tid].squashInst,
-                             fromDecode->decodeInfo[tid].doneSeqNum,
+            squashFromDecode(*decode_input->decodeInfo[tid].nextPC,
+                             decode_input->decodeInfo[tid].squashInst,
+                             decode_input->decodeInfo[tid].doneSeqNum,
                              tid);
 
             return true;
@@ -1704,6 +3129,237 @@ Fetch::checkDecoupledFrontend(ThreadID tid)
     return true;
 }
 
+Fetch::FetchTargetPrepareInput
+Fetch::buildFetchTargetPrepareInput(Cycles cycle) const
+{
+    FetchTargetPrepareInput input;
+    input.cycle = cycle;
+    input.numThreads = numThreads;
+
+    for (int tid = 0; tid < MaxThreads; ++tid)
+        input.targetTid[tid] = InvalidThreadID;
+
+    if (!dbpbtb)
+        return input;
+
+    input.roundRobinStart = dbpbtb->ftqRoundRobinStart();
+    for (int tid = 0; tid < numThreads; ++tid) {
+        input.hasTarget[tid] = dbpbtb->ftqHasFetching(tid);
+        if (input.hasTarget[tid]) {
+            input.anyTarget = true;
+            input.targetTid[tid] = dbpbtb->ftqFetchingTargetTid(tid);
+        }
+    }
+
+    return input;
+}
+
+Fetch::FetchTargetPrepareResult
+Fetch::prepareFetchTargetControl(
+        const FetchTargetPrepareInput &input) const
+{
+    FetchTargetPrepareResult result;
+    result.cycle = input.cycle;
+
+    if (input.numThreads == 0)
+        return result;
+
+    for (int i = input.roundRobinStart;
+         i < input.numThreads + input.roundRobinStart; ++i) {
+        const ThreadID tid = i % input.numThreads;
+        if (input.hasTarget[tid]) {
+            result.selectedTid = input.targetTid[tid];
+            result.foundTarget = true;
+            return result;
+        }
+    }
+
+    return result;
+}
+
+Fetch::FetchTargetPrepareResult
+Fetch::runFetchTargetPrepare(Cycles cycle)
+{
+    auto input = std::make_shared<FetchTargetPrepareInput>(
+            buildFetchTargetPrepareInput(cycle));
+    auto result = std::make_shared<FetchTargetPrepareResult>();
+
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return prepareFetchTargetControl(*input);
+
+    if (!input->anyTarget) {
+        fetchStats.targetPrepareNoTarget++;
+        return prepareFetchTargetControl(*input);
+    }
+
+    fetchStats.targetPrepareTasks++;
+    const TaskOrderKey order{
+        cycle, TaskStage::Fetch, 1, InvalidThreadID, 0};
+    runtime.submitWeak(
+            order,
+            1,
+            [this, input, result] {
+                *result = prepareFetchTargetControl(*input);
+            },
+            [this, result] {
+                fetchStats.targetPrepareMerges++;
+            });
+    runtime.waitForOrder(order);
+
+    return *result;
+}
+
+Fetch::FetchPrepareInput
+Fetch::buildFetchPrepareInput(Cycles cycle, ThreadID tid) const
+{
+    FetchPrepareInput input;
+    input.cycle = cycle;
+    input.tid = tid;
+    input.traceMode = isTraceMode();
+    input.ftqHasFetching = dbpbtb && dbpbtb->ftqHasFetching(tid);
+    input.canFetch = canFetchInstructions(tid);
+    input.macroopValid = static_cast<bool>(macroop[tid]);
+    input.fetchBufferValid = threads[tid].valid;
+    input.waitForVsetvl = waitForVsetvl;
+    input.interruptPending = interruptPending;
+    input.delayedCommit = delayedCommit[tid];
+    input.fetchStatus = fetchStatus[tid];
+    input.cacheStatus = threads[tid].cacheReq.getOverallStatus();
+    input.fetchPC = threads[tid].fetchpc->instAddr();
+    return input;
+}
+
+Fetch::FetchPrepareResult
+Fetch::prepareFetchControl(const FetchPrepareInput &input) const
+{
+    FetchPrepareResult result;
+    result.cycle = input.cycle;
+    result.tid = input.tid;
+    result.frontendReady = input.traceMode || input.ftqHasFetching;
+
+    if (!result.frontendReady) {
+        result.stallReason = StallReason::FTQBubble;
+        return result;
+    }
+
+    result.cacheAccessComplete =
+        input.cacheStatus == AccessComplete;
+    if (result.cacheAccessComplete) {
+        result.statusChange = true;
+        result.readyToFetch = true;
+        result.canFetch = true;
+        return result;
+    }
+
+    result.canFetch = input.canFetch;
+    if (input.canFetch) {
+        if (!input.macroopValid && !input.fetchBufferValid) {
+            result.readyToFetch = true;
+        } else if (input.interruptPending && !input.delayedCommit) {
+            result.interruptBlocked = true;
+            return result;
+        } else {
+            result.readyToFetch = true;
+        }
+        return result;
+    }
+
+    result.idle = input.fetchStatus == Idle;
+    return result;
+}
+
+Fetch::FutureQueueNotReadyState
+Fetch::classifyFutureQueueNotReadyState(
+        const FetchPrepareInput &input,
+        const FetchPrepareResult &result,
+        bool decode_blocked) const
+{
+    using State = FutureQueueNotReadyState;
+
+    if (decode_blocked)
+        return State::DecodeBlocked;
+
+    if (!result.frontendReady)
+        return State::FrontendNotReady;
+
+    if (input.cacheStatus == AccessComplete)
+        return State::CacheAccessComplete;
+
+    if (input.cacheStatus == TlbWait ||
+        input.cacheStatus == CacheWaitResponse ||
+        input.cacheStatus == CacheWaitRetry) {
+        return State::CachePending;
+    }
+
+    if (input.fetchStatus != Running)
+        return State::FetchNotRunning;
+
+    if (input.waitForVsetvl)
+        return State::WaitForVsetvl;
+
+    if (result.interruptBlocked)
+        return State::InterruptBlocked;
+
+    if (!result.readyToFetch)
+        return State::FetchControlNotReady;
+
+    if (input.macroopValid || input.fetchBufferValid)
+        return State::ReadyBuffered;
+
+    if (result.canFetch)
+        return State::ReadyNeedsCacheLine;
+
+    return State::ReadyOther;
+}
+
+void
+Fetch::mergeFetchPrepareResult(const FetchPrepareResult &result,
+                               bool countPrepareStats)
+{
+    lastPrepareResult = result;
+
+    if (countPrepareStats) {
+        fetchStats.prepareMerges++;
+        if (result.frontendReady)
+            fetchStats.prepareFrontendReady++;
+        if (result.readyToFetch)
+            fetchStats.prepareReadyToFetch++;
+        if (result.interruptBlocked)
+            fetchStats.prepareInterruptBlocked++;
+    }
+}
+
+Fetch::FetchPrepareResult
+Fetch::runFetchPrepare(Cycles cycle, ThreadID tid)
+{
+    auto input = std::make_shared<FetchPrepareInput>(
+            buildFetchPrepareInput(cycle, tid));
+    auto result = std::make_shared<FetchPrepareResult>();
+
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled()) {
+        *result = prepareFetchControl(*input);
+        mergeFetchPrepareResult(*result, false);
+        return *result;
+    }
+
+    fetchStats.prepareTasks++;
+    const TaskOrderKey order{cycle, TaskStage::Fetch, 2, tid, 0};
+    runtime.submitWeak(
+            order,
+            1,
+            [this, input, result] {
+                *result = prepareFetchControl(*input);
+            },
+            [this, result] {
+                mergeFetchPrepareResult(*result, true);
+            });
+    runtime.waitForOrder(order);
+
+    return lastPrepareResult;
+}
+
 bool
 Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
 {
@@ -1747,17 +3403,48 @@ Fetch::fetch(bool &status_change)
     //////////////////////////////////////////
     // Start actual fetch
     //////////////////////////////////////////
-    auto tid = dbpbtb->getTargetTid();
+    const FetchTargetPrepareResult target_prepare =
+        runFetchTargetPrepare(cpu->curCycle());
+    auto tid = target_prepare.selectedTid;
 
     if (tid == InvalidThreadID) {
         return;
     }
 
-    if (!checkDecoupledFrontend(tid)) {
+    const FetchPrepareResult prepare =
+        runFetchPrepare(cpu->curCycle(), tid);
+    const auto selected_tid = dbpbtb->getTargetTid();
+    if (selected_tid != tid) {
+        fetchStats.targetPrepareMismatches++;
+        panic("Fetch target prepare mismatch: prepared tid %i, "
+              "selected tid %i", tid, selected_tid);
+    }
+
+    if (!prepare.frontendReady) {
+        dbpbtb->addFtqNotValid();
+        DPRINTF(Fetch, "Skip fetch when FSQ head is not available\n");
+        setAllFetchStalls(prepare.stallReason);
         return;
     }
 
-    if (!prepareFetchAddress(tid, status_change)) {
+    DPRINTF(Fetch, "Attempting to fetch from [tid:%i]\n", tid);
+
+    if (prepare.cacheAccessComplete) {
+        DPRINTF(Fetch, "[tid:%i] Icache miss is complete.\n", tid);
+        setThreadStatus(tid, Running);
+        setAllFetchStalls(StallReason::NoStall);
+        status_change = true;
+    } else if (prepare.canFetch) {
+        if (prepare.interruptBlocked) {
+            ++fetchStats.miscStallCycles;
+            DPRINTF(Fetch, "[tid:%i] Fetch is stalled!\n", tid);
+            return;
+        }
+    } else {
+        if (prepare.idle) {
+            ++fetchStats.idleCycles;
+            DPRINTF(Fetch, "[tid:%i] Fetch is idle!\n", tid);
+        }
         return;
     }
 

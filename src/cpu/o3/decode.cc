@@ -39,6 +39,7 @@
  */
 #include "cpu/o3/decode.hh"
 
+#include <memory>
 #include <queue>
 
 #include "arch/generic/pcstate.hh"
@@ -65,6 +66,32 @@ namespace gem5
 
 namespace o3
 {
+
+namespace
+{
+
+constexpr unsigned NumDecodeFuturePreviewSkipReasons = 2;
+
+enum DecodeFuturePreviewSkipReason
+{
+    DecodeFuturePreviewActiveDecode,
+    DecodeFuturePreviewMultipleActive,
+};
+
+const char *
+decodeFuturePreviewSkipReasonName(unsigned reason)
+{
+    switch (reason) {
+      case DecodeFuturePreviewActiveDecode:
+        return "ActiveDecode";
+      case DecodeFuturePreviewMultipleActive:
+        return "MultipleActive";
+    }
+
+    return "Unknown";
+}
+
+} // namespace
 
 Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
     : cpu(_cpu),
@@ -153,6 +180,38 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
                "Number of instructions handled by decode"),
       ADD_STAT(squashedInsts, statistics::units::Count::get(),
                "Number of squashed instructions handled by decode"),
+      ADD_STAT(prepareTasks, statistics::units::Count::get(),
+               "Number of decode prepare tasks submitted"),
+      ADD_STAT(prepareMerges, statistics::units::Count::get(),
+               "Number of decode prepare results merged"),
+      ADD_STAT(prepareActiveThreads, statistics::units::Count::get(),
+               "Accumulated active thread count seen by decode prepare"),
+      ADD_STAT(prepareBlockedThreads, statistics::units::Count::get(),
+               "Accumulated blocked thread count seen by decode prepare"),
+      ADD_STAT(prepareInactiveThreads, statistics::units::Count::get(),
+               "Accumulated inactive thread count seen by decode prepare"),
+      ADD_STAT(prepareMultipleActive, statistics::units::Count::get(),
+               "Number of times decode prepare saw multiple active threads"),
+      ADD_STAT(futurePrepareProbes, statistics::units::Count::get(),
+               "Number of future decode prepare probes submitted"),
+      ADD_STAT(futurePrepareSkipped, statistics::units::Count::get(),
+               "Number of future decode prepare probes skipped"),
+      ADD_STAT(futurePreviewSkipReasons,
+               statistics::units::Count::get(),
+               "Breakdown of why future Decode-to-Fetch latch preview "
+               "failed"),
+      ADD_STAT(futurePrepareMerges, statistics::units::Count::get(),
+               "Number of future decode prepare results made pending"),
+      ADD_STAT(futurePrepareReuses, statistics::units::Count::get(),
+               "Number of decode prepares reused from future work"),
+      ADD_STAT(futurePrepareChecks, statistics::units::Count::get(),
+               "Number of future decode prepare validation checks"),
+      ADD_STAT(futurePrepareMatches, statistics::units::Count::get(),
+               "Number of future decode prepare validation matches"),
+      ADD_STAT(futurePrepareMismatches, statistics::units::Count::get(),
+               "Number of future decode prepare validation mismatches"),
+      ADD_STAT(futurePrepareStale, statistics::units::Count::get(),
+               "Number of stale future decode prepare results discarded"),
       ADD_STAT(mispredictedByPC, statistics::units::Count::get(),
                "Number of instructions that mispredicted due to pc"),
       ADD_STAT(mispredictedByNPC, statistics::units::Count::get(),
@@ -168,9 +227,397 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     controlMispred.prereq(controlMispred);
     decodedInsts.prereq(decodedInsts);
     squashedInsts.prereq(squashedInsts);
+    prepareTasks.prereq(prepareTasks);
+    prepareMerges.prereq(prepareMerges);
+    prepareActiveThreads.prereq(prepareActiveThreads);
+    prepareBlockedThreads.prereq(prepareBlockedThreads);
+    prepareInactiveThreads.prereq(prepareInactiveThreads);
+    prepareMultipleActive.prereq(prepareMultipleActive);
+    futurePrepareProbes.prereq(futurePrepareProbes);
+    futurePrepareSkipped.prereq(futurePrepareSkipped);
+    futurePreviewSkipReasons
+        .init(NumDecodeFuturePreviewSkipReasons)
+        .flags(statistics::total);
+    for (unsigned i = 0; i < NumDecodeFuturePreviewSkipReasons; ++i) {
+        futurePreviewSkipReasons.subname(
+                i, decodeFuturePreviewSkipReasonName(i));
+    }
+    futurePrepareMerges.prereq(futurePrepareMerges);
+    futurePrepareReuses.prereq(futurePrepareReuses);
+    futurePrepareChecks.prereq(futurePrepareChecks);
+    futurePrepareMatches.prereq(futurePrepareMatches);
+    futurePrepareMismatches.prereq(futurePrepareMismatches);
+    futurePrepareStale.prereq(futurePrepareStale);
     mispredictedByPC.flags(statistics::total);
     mispredictedByNPC.flags(statistics::total);
     fusedInsts.init(128).flags(statistics::nozero);
+}
+
+void
+Decode::setFetchStall(ThreadID tid, bool block, StallReason reason)
+{
+    if (stallSignalBank) {
+        stallSignalBank->set(StallSignalEdge::DecodeToFetch, tid, block,
+                             reason);
+    } else {
+        stallSig->blockFetch[tid] = block;
+        stallSig->fetchBlockReason[tid] = reason;
+    }
+    cpu->getTaskRuntime().recordStallSignalMerge(
+            static_cast<unsigned>(StallSignalEdge::DecodeToFetch), 1);
+}
+
+void
+Decode::setFetchBlock(ThreadID tid, bool block)
+{
+    if (stallSignalBank) {
+        stallSignalBank->setBlock(StallSignalEdge::DecodeToFetch, tid,
+                                  block);
+    } else {
+        stallSig->blockFetch[tid] = block;
+    }
+    cpu->getTaskRuntime().recordStallSignalMerge(
+            static_cast<unsigned>(StallSignalEdge::DecodeToFetch), 1);
+}
+
+Decode::DecodePrepareInput
+Decode::buildDecodePrepareInput(
+        Cycles cycle,
+        const StallSignalLatch *rename_to_decode_override,
+        const FetchStruct *snapshot_fetch) const
+{
+    DecodePrepareInput input;
+    input.cycle = cycle;
+    input.numThreads = numThreads;
+
+    const StallSignalLatch *rename_to_decode =
+        rename_to_decode_override ? rename_to_decode_override :
+        (stallSignalBank ?
+        &cpu->stallSignalSnapshotOrCurrent(
+                cycle, StallSignalEdge::RenameToDecode) :
+        nullptr);
+
+    for (int i = 0; i < numThreads; ++i) {
+        input.fixedbufferEmpty[i] = fixedbuffer[i].empty();
+        input.renameToDecode.block[i] =
+            rename_to_decode ? rename_to_decode->block[i] :
+                               stallSig->blockDecode[i];
+        input.renameToDecode.reason[i] =
+            rename_to_decode ? rename_to_decode->reason[i] :
+                               stallSig->decodeBlockReason[i];
+    }
+
+    const DynInstPtr *future_front = nullptr;
+    if (!stallBuffer.empty()) {
+        future_front = &stallBuffer.front();
+    } else if (snapshot_fetch && snapshot_fetch->size > 0) {
+        future_front = &snapshot_fetch->insts[0];
+    }
+
+    if (future_front && *future_front) {
+        const ThreadID tid = (*future_front)->threadNumber;
+        if (tid < numThreads)
+            input.fixedbufferEmpty[tid] = false;
+    }
+
+    return input;
+}
+
+Decode::DecodeThreadPrepareResult
+Decode::prepareDecodeThreadControl(const DecodePrepareInput &input,
+                                   ThreadID tid) const
+{
+    DecodeThreadPrepareResult result;
+    result.cycle = input.cycle;
+    result.tid = tid;
+
+    const bool block = input.renameToDecode.block[tid];
+    const bool active = !block && !input.fixedbufferEmpty[tid];
+
+    result.active = active;
+    result.blocked = block;
+    result.decodeBlock = block;
+    result.decodeBlockReason = block ?
+        input.renameToDecode.reason[tid] : StallReason::NoStall;
+    result.fetchBlock = block;
+    result.fetchBlockReason = result.decodeBlockReason;
+
+    return result;
+}
+
+Decode::DecodePrepareResult
+Decode::combineDecodeThreadPrepareResults(
+        const DecodePrepareInput &input,
+        const DecodeThreadPrepareResults &thread_results) const
+{
+    DecodePrepareResult result;
+    result.cycle = input.cycle;
+
+    for (int i = 0; i < input.numThreads; ++i) {
+        const auto &thread_result = thread_results.byThread[i];
+
+        result.decodeBlock[i] = thread_result.decodeBlock;
+        result.decodeBlockReason[i] = thread_result.decodeBlockReason;
+        result.fetchBlock[i] = thread_result.fetchBlock;
+        result.fetchBlockReason[i] = thread_result.fetchBlockReason;
+
+        if (thread_result.active) {
+            ++result.activeThreads;
+            if (result.selectedTid == InvalidThreadID) {
+                result.selectedTid = i;
+            } else {
+                result.multipleActive = true;
+                result.fetchBlock[result.selectedTid] = true;
+                result.fetchBlock[i] = true;
+            }
+        } else if (thread_result.blocked) {
+            ++result.blockedThreads;
+            if (result.blockedTid == InvalidThreadID)
+                result.blockedTid = i;
+        }
+    }
+
+    return result;
+}
+
+Decode::DecodePrepareResult
+Decode::prepareDecodeControl(const DecodePrepareInput &input) const
+{
+    DecodeThreadPrepareResults thread_results;
+    for (int i = 0; i < input.numThreads; ++i) {
+        thread_results.byThread[i] =
+            prepareDecodeThreadControl(input, static_cast<ThreadID>(i));
+    }
+
+    return combineDecodeThreadPrepareResults(input, thread_results);
+}
+
+bool
+Decode::samePrepareResult(const DecodePrepareResult &lhs,
+                          const DecodePrepareResult &rhs) const
+{
+    if (lhs.cycle != rhs.cycle ||
+        lhs.selectedTid != rhs.selectedTid ||
+        lhs.blockedTid != rhs.blockedTid ||
+        lhs.activeThreads != rhs.activeThreads ||
+        lhs.blockedThreads != rhs.blockedThreads ||
+        lhs.multipleActive != rhs.multipleActive) {
+        return false;
+    }
+
+    for (int tid = 0; tid < numThreads; ++tid) {
+        if (lhs.decodeBlock[tid] != rhs.decodeBlock[tid] ||
+            lhs.decodeBlockReason[tid] != rhs.decodeBlockReason[tid] ||
+            lhs.fetchBlock[tid] != rhs.fetchBlock[tid] ||
+            lhs.fetchBlockReason[tid] != rhs.fetchBlockReason[tid]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+Decode::DecodePrepareResult
+Decode::runDecodePrepare(Cycles cycle)
+{
+    auto input = std::make_shared<DecodePrepareInput>(
+            buildDecodePrepareInput(cycle));
+    auto result = std::make_shared<DecodePrepareResult>();
+
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled()) {
+        *result = prepareDecodeControl(*input);
+        lastPrepareResult = *result;
+        return *result;
+    }
+
+    if (pendingFuturePrepare.valid) {
+        if (pendingFuturePrepare.result.cycle == cycle) {
+            *result = pendingFuturePrepare.result;
+            pendingFuturePrepare.valid = false;
+            stats.futurePrepareReuses++;
+            lastPrepareResult = *result;
+            stats.prepareMerges++;
+            stats.prepareActiveThreads += result->activeThreads;
+            stats.prepareBlockedThreads += result->blockedThreads;
+            if (result->multipleActive)
+                stats.prepareMultipleActive++;
+
+            if (runtime.selfTestEnabled()) {
+                const DecodePrepareResult expected =
+                    prepareDecodeControl(*input);
+                stats.futurePrepareChecks++;
+                if (samePrepareResult(*result, expected)) {
+                    stats.futurePrepareMatches++;
+                } else {
+                    stats.futurePrepareMismatches++;
+                }
+            }
+
+            return lastPrepareResult;
+        }
+
+        stats.futurePrepareChecks++;
+        stats.futurePrepareStale++;
+        pendingFuturePrepare.valid = false;
+    }
+
+    stats.prepareTasks++;
+    auto thread_results = std::make_shared<DecodeThreadPrepareResults>();
+    for (int tid = 0; tid < input->numThreads; ++tid) {
+        const bool inactive =
+            !input->renameToDecode.block[tid] &&
+            input->fixedbufferEmpty[tid];
+        if (inactive) {
+            thread_results->byThread[tid] =
+                prepareDecodeThreadControl(
+                        *input, static_cast<ThreadID>(tid));
+            stats.prepareInactiveThreads++;
+            continue;
+        }
+
+        const TaskOrderKey thread_order{
+            cycle, TaskStage::Decode, 1, InvalidThreadID,
+            static_cast<uint64_t>(tid)};
+        runtime.submitWeak(
+                thread_order,
+                1,
+                [this, input, thread_results, tid] {
+                    thread_results->byThread[tid] =
+                        prepareDecodeThreadControl(
+                                *input, static_cast<ThreadID>(tid));
+                });
+    }
+
+    const TaskOrderKey merge_order{
+        cycle, TaskStage::Decode, 1, InvalidThreadID,
+        static_cast<uint64_t>(input->numThreads)};
+    runtime.submitWeak(
+            merge_order,
+            0,
+            [] {},
+            [this, input, thread_results, result] {
+                *result = combineDecodeThreadPrepareResults(
+                        *input, *thread_results);
+                lastPrepareResult = *result;
+                stats.prepareMerges++;
+                stats.prepareActiveThreads += result->activeThreads;
+                stats.prepareBlockedThreads += result->blockedThreads;
+                if (result->multipleActive)
+                    stats.prepareMultipleActive++;
+            });
+    runtime.waitForOrder(merge_order);
+
+    return lastPrepareResult;
+}
+
+bool
+Decode::buildFutureFetchLatchInput(Cycles cycle,
+                                   const StallSignalLatch &rename_to_decode,
+                                   const FetchStruct *snapshot_fetch,
+                                   const TimeStruct *snapshot_commit,
+                                   DecodePrepareInput &input) const
+{
+    if (!snapshot_fetch || !snapshot_commit || activeThreads->empty())
+        return false;
+
+    for (ThreadID tid : *activeThreads) {
+        if (snapshot_commit->commitInfo[tid].squash)
+            return false;
+    }
+
+    input = buildDecodePrepareInput(
+            cycle, &rename_to_decode, snapshot_fetch);
+    return true;
+}
+
+bool
+Decode::previewFutureFetchLatch(const DecodePrepareInput &input,
+                                StallSignalLatch &decode_to_fetch,
+                                DecodePrepareResult *prepare_result) const
+{
+    const DecodePrepareResult result = prepareDecodeControl(input);
+
+    if (prepare_result)
+        *prepare_result = result;
+
+    if (result.selectedTid != InvalidThreadID)
+        return false;
+
+    decode_to_fetch.clear();
+    for (int tid = 0; tid < numThreads; ++tid) {
+        decode_to_fetch.block[tid] = result.fetchBlock[tid];
+        decode_to_fetch.reason[tid] = result.fetchBlockReason[tid];
+    }
+
+    return true;
+}
+
+bool
+Decode::previewFutureFetchLatch(Cycles cycle,
+                                const StallSignalLatch &rename_to_decode,
+                                const FetchStruct *snapshot_fetch,
+                                const TimeStruct *snapshot_commit,
+                                StallSignalLatch &decode_to_fetch,
+                                DecodePrepareResult *prepare_result) const
+{
+    DecodePrepareInput input;
+    if (!buildFutureFetchLatchInput(
+                cycle, rename_to_decode, snapshot_fetch, snapshot_commit,
+                input)) {
+        return false;
+    }
+
+    return previewFutureFetchLatch(input, decode_to_fetch, prepare_result);
+}
+
+void
+Decode::recordFuturePrepareProbe()
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    stats.futurePrepareProbes++;
+}
+
+void
+Decode::recordFuturePrepareSkipped()
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    stats.futurePrepareSkipped++;
+}
+
+void
+Decode::recordFuturePreviewSkipped(const DecodePrepareResult &result)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    if (result.multipleActive) {
+        stats.futurePreviewSkipReasons[DecodeFuturePreviewMultipleActive]++;
+    } else {
+        stats.futurePreviewSkipReasons[DecodeFuturePreviewActiveDecode]++;
+    }
+}
+
+void
+Decode::setPendingFuturePrepare(const DecodePrepareResult &result)
+{
+    auto &runtime = cpu->getTaskRuntime();
+    if (!runtime.enabled())
+        return;
+
+    if (pendingFuturePrepare.valid)
+        stats.futurePrepareStale++;
+
+    pendingFuturePrepare.result = result;
+    pendingFuturePrepare.valid = true;
+    stats.futurePrepareMerges++;
 }
 
 void
@@ -241,7 +688,27 @@ Decode::checkStall(ThreadID tid) const
 bool
 Decode::fetchInstsValid()
 {
-    return fromFetch->size > 0;
+    return fetchInput(cpu->curCycle())->size > 0;
+}
+
+const FetchStruct *
+Decode::fetchInput(Cycles cycle) const
+{
+    const int fetch_to_decode_offset = -static_cast<int>(
+            static_cast<uint64_t>(fetchToDecodeDelay));
+    const FetchStruct *snapshot =
+        cpu->pipelineInputFetchToDecode(cycle, fetch_to_decode_offset);
+    return snapshot ? snapshot : &(*fromFetch);
+}
+
+const TimeStruct *
+Decode::commitInput(Cycles cycle) const
+{
+    const int commit_to_decode_offset = -static_cast<int>(
+            static_cast<uint64_t>(commitToDecodeDelay));
+    const TimeStruct *snapshot =
+        cpu->pipelineInputBackward(cycle, commit_to_decode_offset);
+    return snapshot ? snapshot : &(*fromCommit);
 }
 
 void
@@ -284,7 +751,7 @@ Decode::selfSquash(const DynInstPtr &inst, ThreadID tid)
 
     InstSeqNum squash_seq_num = inst->seqNum;
 
-    stallSig->blockFetch[tid] = true; // tell fetch don't send new insts
+    setFetchBlock(tid, true); // tell fetch don't send new insts
 
     fixedbuffer[tid].clear();
 
@@ -339,11 +806,19 @@ Decode::updateActivate()
 
     list<ThreadID>::iterator threads = activeThreads->begin();
     list<ThreadID>::iterator end = activeThreads->end();
+    const StallSignalLatch *rename_to_decode =
+        stallSignalBank ?
+        &cpu->stallSignalSnapshotOrCurrent(
+                cpu->curCycle(), StallSignalEdge::RenameToDecode) :
+        nullptr;
 
     while (threads != end) {
         ThreadID tid = *threads++;
 
-        if (!stallSig->blockDecode[tid]) {
+        const bool decode_block =
+            rename_to_decode ? rename_to_decode->block[tid] :
+                               stallSig->blockDecode[tid];
+        if (!decode_block) {
             any_unblocking = true;
             break;
         }
@@ -371,18 +846,20 @@ Decode::updateActivate()
 }
 
 void
-Decode::moveInstsToBuffer()
+Decode::moveInstsToBuffer(const FetchStruct *fetch_input)
 {
+    assert(fetch_input);
+
     // do not support mixed thread instructions in one fetch group
-    int insts_from_fetch = fromFetch->size;
+    int insts_from_fetch = fetch_input->size;
     if (insts_from_fetch != 0) {
-        ThreadID tid = fromFetch->insts[0]->threadNumber;
+        ThreadID tid = fetch_input->insts[0]->threadNumber;
 
         // move to stallbuffer
         panic_if(eachstallSize.full(), "Decode stallbuffer overflow, has %d stalls\n", eachstallSize.size() + 1);
         eachstallSize.push_back(insts_from_fetch);
         for (int i = 0; i < insts_from_fetch; i++) {
-            stallBuffer.push_back(fromFetch->insts[i]);
+            stallBuffer.push_back(fetch_input->insts[i]);
         }
     }
 
@@ -412,14 +889,16 @@ Decode::moveInstsToBuffer()
 }
 
 void
-Decode::checkSquash()
+Decode::checkSquash(const TimeStruct *commit_input)
 {
+    assert(commit_input);
     for (int i = 0;i < numThreads; i++) {
-        if (fromCommit->commitInfo[i].squash) {
+        if (commit_input->commitInfo[i].squash) {
             DPRINTF(Decode, "[tid:%i] Squashing instructions due to squash "
                     "from commit.\n", i);
             squash(i);
-            localSquashVer.update(fromCommit->commitInfo[i].squashVersion.getVersion());
+            localSquashVer.update(
+                    commit_input->commitInfo[i].squashVersion.getVersion());
             DPRINTF(Decode, "Updating squash version to %u\n",
                     localSquashVer.getVersion());
         }
@@ -429,46 +908,39 @@ Decode::checkSquash()
 void
 Decode::tick()
 {
-    toRename->fetchStallReason = fromFetch->fetchStallReason;
+    const FetchStruct *fetch_input = fetchInput(cpu->curCycle());
+    const TimeStruct *commit_input = commitInput(cpu->curCycle());
+
+    toRename->fetchStallReason = fetch_input->fetchStallReason;
     wroteToTimeBuffer = false;
     toRenameIndex = 0;
     blockReason = StallReason::NoStall;
     setAllStalls(StallReason::NoStall);
 
-    moveInstsToBuffer();
+    moveInstsToBuffer(fetch_input);
 
-    checkSquash();
+    checkSquash(commit_input);
 
     // check threads stall & status
-    ThreadID tid = InvalidThreadID;
-    ThreadID blocked_tid = InvalidThreadID;
+    const DecodePrepareResult prepare = runDecodePrepare(cpu->curCycle());
+    ThreadID tid = prepare.selectedTid;
+    ThreadID blocked_tid = prepare.blockedTid;
     for (int i = 0; i < numThreads; i++) {
-        bool block = stallSig->blockDecode[i];
-        bool active = !block && !fixedbuffer[i].empty();
-
-        stallSig->blockFetch[i] = block;
-        stallSig->fetchBlockReason[i] =
-            block ? stallSig->decodeBlockReason[i] : StallReason::NoStall;
-        toFetch->decodeInfo[i].blockReason = stallSig->fetchBlockReason[i];
-        if (active) {
-            if (tid == InvalidThreadID)
-                tid = i;
-            else {
-                // if there are multiple active threads, must exhaust all threads first
-                // to avoid starvation of other threads and also avoid resource conflict
-                stallSig->blockFetch[tid] = true;
-                stallSig->blockFetch[i] = true;
-                DPRINTF(Decode, "Multiple active threads detected, blocking all threads\n");
-            }
-        } else if (block && blocked_tid == InvalidThreadID) {
-            blocked_tid = i;
-        }
+        setFetchStall(i, prepare.fetchBlock[i],
+                      prepare.fetchBlockReason[i]);
+        toFetch->decodeInfo[i].blockReason = prepare.fetchBlockReason[i];
+    }
+    if (prepare.multipleActive) {
+        DPRINTF(Decode,
+                "Multiple active threads detected, blocking all threads\n");
     }
     if (tid == InvalidThreadID) {
         // all threads are stalled, no need to process
         if (blocked_tid != InvalidThreadID) {
-            setAllStalls(stallSig->fetchBlockReason[blocked_tid]);
-            blockReason = stallSig->fetchBlockReason[blocked_tid];
+            const StallReason fetch_block_reason =
+                prepare.fetchBlockReason[blocked_tid];
+            setAllStalls(fetch_block_reason);
+            blockReason = fetch_block_reason;
         }
         toRename->decodeStallReason = decodeStalls;
         updateActivate();
@@ -476,22 +948,30 @@ Decode::tick()
     }
     DPRINTF(Decode,"Processing [tid:%i]\n",tid);
 
-    decodeInsts(tid);
+    decodeInsts(tid, fetch_input);
     ++stats.runCycles;
-    if (stallSig->blockDecode[tid]) {
-        setAllStalls(stallSig->decodeBlockReason[tid]);
+    const bool decode_block = prepare.decodeBlock[tid];
+    if (decode_block) {
+        setAllStalls(prepare.decodeBlockReason[tid]);
     } else if (toRenameIndex > 0 && decodeStalls[0] == StallReason::NoStall) {
         for (int i = 0; i < decodeStalls.size(); i++) {
             if (i < toRenameIndex) {
                 decodeStalls.at(i) = StallReason::NoStall;
             } else {
-                decodeStalls.at(i) = fromFetch->fetchStallReason.at(i);
+                decodeStalls.at(i) = fetch_input->fetchStallReason.at(i);
             }
         }
     }
-    stallSig->fetchBlockReason[tid] =
-        stallSig->blockFetch[tid] ? blockReason : StallReason::NoStall;
-    toFetch->decodeInfo[tid].blockReason = stallSig->fetchBlockReason[tid];
+    const bool fetch_block =
+        stallSignalBank ?
+        cpu->stallSignalSnapshotOrCurrent(
+            cpu->curCycle(), StallSignalEdge::DecodeToFetch)
+            .block[tid] :
+        stallSig->blockFetch[tid];
+    const StallReason fetch_block_reason =
+        fetch_block ? blockReason : StallReason::NoStall;
+    setFetchStall(tid, fetch_block, fetch_block_reason);
+    toFetch->decodeInfo[tid].blockReason = fetch_block_reason;
     updateActivate();
 
     // if (stalls[tid].rename) {
@@ -524,8 +1004,10 @@ Decode::tick()
 }
 
 void
-Decode::decodeInsts(ThreadID tid)
+Decode::decodeInsts(ThreadID tid, const FetchStruct *fetch_input)
 {
+    assert(fetch_input);
+
     // Instructions can come either from the skid buffer or the list of
     // instructions coming from fetch, depending on decode's status.
     int insts_available = fixedbuffer[tid].size();
@@ -541,7 +1023,7 @@ Decode::decodeInsts(ThreadID tid)
         ++stats.idleCycles;
 
         StallReason stall = StallReason::NoStall;
-        for (auto iter : fromFetch->fetchStallReason) {
+        for (auto iter : fetch_input->fetchStallReason) {
             if (iter != StallReason::NoStall) {
                 stall = iter;
                 break;
@@ -746,7 +1228,7 @@ Decode::decodeInsts(ThreadID tid)
 
     if (insts_available) {
         // current cycle insts was not all processed, need to block fetch in next cycle
-        stallSig->blockFetch[tid] = true;
+        setFetchBlock(tid, true);
         if (breakDecode == StallReason::NoStall) {
             breakDecode = StallReason::OtherFragStall;
         }

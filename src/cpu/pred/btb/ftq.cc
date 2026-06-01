@@ -10,17 +10,25 @@ namespace btb_pred
 {
 
 int
-FetchTargetQueue::getTargetTid()
+FetchTargetQueue::peekTargetTid() const
 {
     for (int i = roundRobinPtr; i < numThreads + roundRobinPtr; ++i) {
         ThreadID tid = i % numThreads;
         if (!queue[tid].cap.empty() && hasTarget(fetchId(tid), tid)) {
-            roundRobinPtr = (tid + 1) % numThreads;
-            FetchTarget& target = get(queue[tid].fetchptr, tid);
+            const FetchTarget& target = get(queue[tid].fetchptr, tid);
             return target.tid;
         }
     }
     return -1;
+}
+
+int
+FetchTargetQueue::getTargetTid()
+{
+    const int tid = peekTargetTid();
+    if (tid != -1)
+        roundRobinPtr = (tid + 1) % numThreads;
+    return tid;
 }
 
 void

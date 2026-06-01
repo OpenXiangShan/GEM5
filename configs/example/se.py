@@ -210,6 +210,7 @@ system = System(cpu = [CPUClass(cpu_id=i) for i in range(np)],
                 mem_mode = test_mem_mode,
                 mem_ranges = [AddrRange(args.mem_size)],
                 cache_line_size = args.cacheline_size)
+Simulation.setTaskParallelOptions(system, args)
 
 if numThreads > 1:
     system.multi_thread = True

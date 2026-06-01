@@ -48,7 +48,13 @@ public:
     inline FetchTarget& front(ThreadID tid) { return queue[tid].cap.front(); }
     inline FetchTarget& back(ThreadID tid) { return queue[tid].cap.back(); }
     inline FetchTarget& fetching(ThreadID tid) { return get(queue[tid].fetchptr, tid); }
+    inline const FetchTarget& fetching(ThreadID tid) const { return get(queue[tid].fetchptr, tid); }
     inline FetchTarget& get(FetchTargetId targetId, ThreadID tid) {
+        assert(targetId >= queue[tid].baseTargetId &&
+               targetId < queue[tid].baseTargetId + queue[tid].cap.size());
+        return queue[tid].cap[targetId - queue[tid].baseTargetId];
+    }
+    inline const FetchTarget& get(FetchTargetId targetId, ThreadID tid) const {
         assert(targetId >= queue[tid].baseTargetId &&
                targetId < queue[tid].baseTargetId + queue[tid].cap.size());
         return queue[tid].cap[targetId - queue[tid].baseTargetId];
@@ -57,6 +63,7 @@ public:
         return targetId >= queue[tid].baseTargetId &&
                targetId < queue[tid].baseTargetId + queue[tid].cap.size();
     }
+    inline uint32_t roundRobinStart() const { return roundRobinPtr; }
     inline bool empty(ThreadID tid) const { return queue[tid].cap.empty(); }
     inline bool full(ThreadID tid) const { return queue[tid].cap.size() >= ftqSize[tid]; }
     inline bool anyEmpty() const {
@@ -75,6 +82,7 @@ public:
     }
     inline uint32_t size(ThreadID tid) const { return queue[tid].cap.size(); }
 
+    int peekTargetTid() const;
     int getTargetTid();
     void insert(FetchTarget& target);
     void finishTarget(ThreadID tid);

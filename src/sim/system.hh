@@ -318,6 +318,29 @@ class System : public SimObject, public PCEventScope
 
     const bool multiThread;
 
+    struct TaskParallelConfig
+    {
+        bool enableTaskParallelSim = false;
+        unsigned taskParallelThreads = 2;
+        unsigned taskWindowCycles = 1;
+        bool taskDeterministic = true;
+        unsigned taskMinWork = 0;
+        bool taskTrace = false;
+        bool taskRuntimeSelfTest = false;
+        bool eventPriorityAudit = false;
+        unsigned maxInFlightCycles = 1;
+        unsigned maxReadyTasks = 0;
+        unsigned maxSpecTaskWaste = 100;
+    };
+
+    const TaskParallelConfig taskParallel;
+
+    const TaskParallelConfig &
+    taskParallelConfig() const
+    {
+        return taskParallel;
+    }
+
     using SimObject::schedule;
 
     bool schedule(PCEvent *event) override;

@@ -36,8 +36,10 @@
 #define __SIM_EVENTQ_HH__
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <climits>
+#include <cstdint>
 #include <functional>
 #include <iosfwd>
 #include <list>
@@ -78,6 +80,28 @@ extern __thread EventQueue *_curEventQueue;
 
 //! Current mode of execution: parallel / serial
 extern bool inParallelMode;
+
+void setEventPriorityAudit(bool enabled);
+bool getEventPriorityAudit();
+
+constexpr unsigned NumEventPriorityAuditClasses = 8;
+
+struct EventPriorityAuditStats
+{
+    uint64_t samePriorityGroups = 0;
+    uint64_t samePriorityInsertedEvents = 0;
+    uint64_t samePriorityMaxDepth = 0;
+    std::array<uint64_t, NumEventPriorityAuditClasses>
+        samePriorityGroupsByClass = {};
+    std::array<uint64_t, NumEventPriorityAuditClasses>
+        samePriorityInsertedEventsByClass = {};
+    std::array<uint64_t, NumEventPriorityAuditClasses>
+        samePriorityMaxDepthByClass = {};
+};
+
+const char *eventPriorityAuditClassName(unsigned class_id);
+EventPriorityAuditStats eventPriorityAuditStats();
+void resetEventPriorityAuditStats();
 
 //! Function for returning eventq queue for the provided
 //! index. The function allocates a new queue in case one
@@ -660,6 +684,7 @@ class EventQueue
     //! by thread operating this queue.
     void insert(Event *event);
     void remove(Event *event);
+    void auditSamePriorityInsert(Event *event, Event *sameBinTop) const;
 
     //! Function for adding events to the async queue. The added events
     //! are added to main event queue later. Threads, other than the

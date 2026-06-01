@@ -120,6 +120,30 @@ class System(SimObject):
     multi_thread = Param.Bool(False,
             "Supports multi-threaded CPUs? Impacts Thread/Context IDs")
 
+    enable_task_parallel_sim = Param.Bool(False,
+            "Enable experimental host-side task-parallel simulation")
+    task_parallel_threads = Param.Unsigned(2,
+            "Number of host worker threads for task-parallel simulation; "
+            "zero lets the runtime choose up to the default cap")
+    task_window_cycles = Param.Unsigned(1,
+            "Maximum task-preparation lookahead window in CPU cycles")
+    task_deterministic = Param.Bool(True,
+            "Require deterministic task merge ordering")
+    task_min_work = Param.Unsigned(0,
+            "Minimum estimated work before a task is sent to a worker")
+    task_trace = Param.Bool(False,
+            "Enable task-runtime debug tracing")
+    task_runtime_self_test = Param.Bool(False,
+            "Run a task-runtime worker and deterministic-merge self-test")
+    event_priority_audit = Param.Bool(False,
+            "Audit same-time same-priority event ordering dependencies")
+    max_in_flight_cycles = Param.Unsigned(1,
+            "Maximum number of prepared but unpublished CPU cycles")
+    max_ready_tasks = Param.Unsigned(0,
+            "Maximum ready task backlog; zero means no explicit limit")
+    max_spec_task_waste = Param.Unsigned(100,
+            "Maximum tolerated discarded speculative task percentage")
+
     # Dynamic voltage and frequency handler for the system, disabled by default
     # Provide list of domains that need to be controlled by the handler
     dvfs_handler = DVFSHandler()

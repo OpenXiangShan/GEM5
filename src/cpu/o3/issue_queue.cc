@@ -931,6 +931,7 @@ Scheduler::Scheduler(const SchedulerParams& params)
 
     // dispatch distance counter allocate
     dispOpdist.resize(Num_OpClasses, nullptr);
+    dispOpdistIndex.resize(Num_OpClasses, 0);
     totalDispCounter.reserve(Num_OpClasses);
     std::vector<std::vector<OpClass>> reuse_table;
     for (int i = 0; i < Num_OpClasses; i++) {
@@ -946,9 +947,11 @@ Scheduler::Scheduler(const SchedulerParams& params)
 
         if (counter_reuse && dispOpdist[reuse_op]) {
             dispOpdist[i] = dispOpdist[reuse_op];
+            dispOpdistIndex[i] = dispOpdistIndex[reuse_op];
         } else {
             totalDispCounter.push_back(0);
             dispOpdist[i] = &totalDispCounter.back();
+            dispOpdistIndex[i] = totalDispCounter.size() - 1;
             reuse_table.push_back(std::vector<OpClass>());
         }
         reuse_table.back().push_back((OpClass)i);
@@ -1169,6 +1172,280 @@ Scheduler::ready(OpClass op, int disp_seq)
 
     DPRINTF(Schedule, "IQ not ready, opclass: %s\n", enums::OpClassStrings[op]);
     return false;
+}
+
+int
+Scheduler::issueQueueIndex(const IssueQue* iq) const
+{
+    if (!iq)
+        return -1;
+
+    const int index = iq->getId();
+    if (index < 0 || index >= static_cast<int>(issueQues.size()) ||
+        issueQues[index] != iq) {
+        return -1;
+    }
+
+    return index;
+}
+
+DispatchTokenState
+Scheduler::buildDispatchTokenState(bool reset_inports) const
+{
+    DispatchTokenState state;
+    if (old_disp)
+        return state;
+
+    state.supported = true;
+    state.dispSeqVec = dispSeqVec;
+    state.freeEntries.reserve(issueQues.size());
+    state.freeInports.reserve(issueQues.size());
+    state.replayBlocked.reserve(issueQues.size());
+
+    for (const auto *iq : issueQues) {
+        state.freeEntries.push_back(static_cast<int>(iq->iqsize) -
+                                    static_cast<int>(iq->instNum));
+        const int used_inports = reset_inports ?
+            0 : static_cast<int>(iq->instNumInsert);
+        state.freeInports.push_back(static_cast<int>(iq->inports) -
+                                    used_inports);
+        state.replayBlocked.push_back(iq->replayQ.size() > iq->replayQsize);
+    }
+
+    return state;
+}
+
+DispatchTokenState
+Scheduler::buildLookaheadDispatchTokenState(
+        const std::vector<OpClass>& op_classes,
+        const std::vector<OpClass>& extra_sorted_ops,
+        bool reset_inports) const
+{
+    DispatchTokenState state = buildDispatchTokenState(reset_inports);
+    if (!state.supported)
+        return state;
+
+    state.dispatchTable = dispTable;
+    std::vector<bool> needs_sort(Num_OpClasses, false);
+    for (auto op : op_classes) {
+        if (op >= 0 && op < Num_OpClasses)
+            needs_sort[op] = true;
+    }
+    for (auto op : extra_sorted_ops) {
+        if (op >= 0 && op < Num_OpClasses)
+            needs_sort[op] = true;
+    }
+
+    for (int op = 0; op < Num_OpClasses; ++op) {
+        if (needs_sort[op] && !state.dispatchTable[op].empty()) {
+            std::sort(state.dispatchTable[op].begin(),
+                      state.dispatchTable[op].end(),
+                      disp_policy(static_cast<OpClass>(op)));
+        }
+    }
+
+    // Match lookahead(): each preview starts from zero, with OpClasses that
+    // share a dispatch table also sharing the same local selector counter.
+    std::vector<int> local_disp(totalDispCounter.size(), 0);
+
+    state.dispSeqVec.resize(op_classes.size());
+    for (size_t i = 0; i < op_classes.size(); ++i) {
+        const OpClass op = op_classes[i];
+        if (op < 0 || op >= Num_OpClasses ||
+            state.dispatchTable[op].empty()) {
+            state.supported = false;
+            return state;
+        }
+
+        const unsigned counter_index = dispOpdistIndex[op];
+        if (counter_index >= local_disp.size()) {
+            state.supported = false;
+            return state;
+        }
+
+        state.dispSeqVec[i] =
+            local_disp[counter_index] % state.dispatchTable[op].size();
+        local_disp[counter_index]++;
+    }
+
+    return state;
+}
+
+bool
+Scheduler::dryRunDispatchTokenReady(const DispatchTokenState& state,
+                                    IssueQue* iq) const
+{
+    if (!state.supported)
+        return false;
+
+    const int index = issueQueueIndex(iq);
+    if (index < 0)
+        return false;
+
+    return !state.replayBlocked[index] &&
+           state.freeEntries[index] > 0 &&
+           state.freeInports[index] > 0;
+}
+
+DispatchTokenBlockReason
+Scheduler::dryRunDispatchBlockReason(const DispatchTokenState& state,
+                                     OpClass op, int disp_seq) const
+{
+    return dryRunDispatchBlockSnapshot(state, op, disp_seq).reason;
+}
+
+DispatchTokenSnapshot
+Scheduler::dryRunDispatchBlockSnapshot(const DispatchTokenState& state,
+                                       OpClass op, int disp_seq) const
+{
+    DispatchTokenSnapshot snapshot;
+    snapshot.opClass = op;
+    snapshot.dispSeq = disp_seq;
+
+    if (!state.supported) {
+        snapshot.reason = DispatchTokenBlockReason::InvalidState;
+        return snapshot;
+    }
+
+    const auto& table =
+        state.dispatchTable.empty() ? dispTable : state.dispatchTable;
+    if (op < 0 || op >= Num_OpClasses || table[op].empty()) {
+        snapshot.reason = DispatchTokenBlockReason::InvalidOp;
+        return snapshot;
+    }
+
+    if (disp_seq < 0 ||
+        disp_seq >= static_cast<int>(state.dispSeqVec.size())) {
+        snapshot.reason = DispatchTokenBlockReason::InvalidDispSeq;
+        return snapshot;
+    }
+
+    const auto& iqs = table[op];
+    const int selector = state.dispSeqVec.at(disp_seq);
+    snapshot.selector = selector;
+    if (selector < 0 || selector >= static_cast<int>(iqs.size())) {
+        snapshot.reason = DispatchTokenBlockReason::InvalidSelector;
+        return snapshot;
+    }
+
+    IssueQue *iq = iqs[selector];
+    const int index = issueQueueIndex(iq);
+    if (index < 0) {
+        snapshot.reason = DispatchTokenBlockReason::InvalidSelector;
+        return snapshot;
+    }
+
+    snapshot.valid = true;
+    snapshot.iqIndex = index;
+    snapshot.freeEntries = state.freeEntries[index];
+    snapshot.freeInports = state.freeInports[index];
+    snapshot.replayBlocked = state.replayBlocked[index];
+
+    if (snapshot.replayBlocked) {
+        snapshot.reason = DispatchTokenBlockReason::ReplayBlocked;
+        return snapshot;
+    }
+    if (snapshot.freeEntries <= 0) {
+        snapshot.reason = DispatchTokenBlockReason::IQFull;
+        return snapshot;
+    }
+    if (snapshot.freeInports <= 0) {
+        snapshot.reason = DispatchTokenBlockReason::InportFull;
+        return snapshot;
+    }
+
+    snapshot.reason = DispatchTokenBlockReason::NoBlock;
+    return snapshot;
+}
+
+DispatchTokenBlockReason
+Scheduler::dryRunDispatchBlockReason(const DispatchTokenState& state,
+                                     OpClass op, bool split_store_addr,
+                                     int disp_seq) const
+{
+    return dryRunDispatchBlockSnapshot(state, op, split_store_addr,
+                                       disp_seq).reason;
+}
+
+DispatchTokenSnapshot
+Scheduler::dryRunDispatchBlockSnapshot(const DispatchTokenState& state,
+                                       OpClass op, bool split_store_addr,
+                                       int disp_seq) const
+{
+    if (!split_store_addr)
+        return dryRunDispatchBlockSnapshot(state, op, disp_seq);
+
+    DispatchTokenState trial = state;
+    auto snapshot =
+        dryRunDispatchBlockSnapshot(trial, StoreDataOp, disp_seq);
+    if (snapshot.reason != DispatchTokenBlockReason::NoBlock)
+        return snapshot;
+
+    if (!dryRunDispatchReady(trial, StoreDataOp, disp_seq, true)) {
+        snapshot.valid = false;
+        snapshot.reason = DispatchTokenBlockReason::InvalidState;
+        return snapshot;
+    }
+
+    return dryRunDispatchBlockSnapshot(trial, op, disp_seq);
+}
+
+bool
+Scheduler::dryRunDispatchReady(DispatchTokenState& state, OpClass op,
+                               int disp_seq, bool consume) const
+{
+    if (dryRunDispatchBlockReason(state, op, disp_seq) !=
+        DispatchTokenBlockReason::NoBlock) {
+        return false;
+    }
+
+    const auto& table =
+        state.dispatchTable.empty() ? dispTable : state.dispatchTable;
+    auto& iqs = table[op];
+    const int selector = state.dispSeqVec.at(disp_seq);
+    IssueQue *iq = iqs[selector];
+
+    if (consume) {
+        const int index = issueQueueIndex(iq);
+        assert(index >= 0);
+        state.freeEntries[index]--;
+        state.freeInports[index]--;
+    }
+
+    return true;
+}
+
+bool
+Scheduler::dryRunDispatchReady(DispatchTokenState& state,
+                               OpClass op,
+                               bool split_store_addr,
+                               int disp_seq,
+                               bool consume) const
+{
+    if (split_store_addr) {
+        DispatchTokenState trial = state;
+        if (!dryRunDispatchReady(trial, StoreDataOp, disp_seq, true))
+            return false;
+        if (!dryRunDispatchReady(trial, op, disp_seq, true))
+            return false;
+
+        if (consume)
+            state = trial;
+        return true;
+    }
+
+    return dryRunDispatchReady(state, op, disp_seq, consume);
+}
+
+bool
+Scheduler::dryRunDispatchReady(DispatchTokenState& state,
+                               const DynInstPtr& inst,
+                               int disp_seq,
+                               bool consume) const
+{
+    return dryRunDispatchReady(state, inst->opClass(),
+                               inst->staticInst->isSplitStoreAddr(),
+                               disp_seq, consume);
 }
 
 DynInstPtr

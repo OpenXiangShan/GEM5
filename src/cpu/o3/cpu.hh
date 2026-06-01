@@ -65,9 +65,11 @@
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/perfCCT.hh"
+#include "cpu/o3/pipeline_snapshot.hh"
 #include "cpu/o3/rename.hh"
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
+#include "cpu/o3/task_runtime.hh"
 #include "cpu/o3/thread_state.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
@@ -527,7 +529,49 @@ class CPU : public BaseCPU
         NumStages
     };
 
-    StallSignals stallSignals;
+    StallSignalBank stallSignalBank;
+    PipelineTimeBufferSnapshots pipelineSnapshots;
+    struct PendingFutureTimeBufferPrepare
+    {
+        bool valid = false;
+        PipelineTimeBufferSnapshots::PrepareSummary summary;
+    };
+    PendingFutureTimeBufferPrepare pendingFutureTimeBufferPrepare;
+    struct PendingFutureWavefrontPrepare
+    {
+        bool valid = false;
+        Cycles cycle = Cycles(0);
+        StallSignalLatch commitToIEW;
+        StallSignalLatch iewToRename;
+        IEW::IEWPrepareResult iewPrepare;
+    };
+    PendingFutureWavefrontPrepare pendingFutureWavefrontPrepare;
+    struct PendingFutureRenameWavefrontPrepare
+    {
+        bool valid = false;
+        Cycles cycle = Cycles(0);
+        StallSignalLatch renameToDecode;
+        Rename::RenamePrepareResult renamePrepare;
+    };
+    PendingFutureRenameWavefrontPrepare pendingFutureRenameWavefrontPrepare;
+    struct PendingFutureDecodeWavefrontPrepare
+    {
+        bool valid = false;
+        Cycles cycle = Cycles(0);
+        StallSignalLatch decodeToFetch;
+        Decode::DecodePrepareResult decodePrepare;
+    };
+    PendingFutureDecodeWavefrontPrepare pendingFutureDecodeWavefrontPrepare;
+    struct PendingFutureFetchWavefrontPrepare
+    {
+        bool valid = false;
+        Cycles cycle = Cycles(0);
+        unsigned size = 0;
+        std::vector<StallReason> fetchStallReason;
+        std::vector<InstSeqNum> instSeqNums;
+        Fetch::FetchToDecodePrepareResult fetchToDecodePrepare;
+    };
+    PendingFutureFetchWavefrontPrepare pendingFutureFetchWavefrontPrepare;
 
     /** The main time buffer to do backwards communication. */
     TimeBuffer<TimeStruct> timeBuffer;
@@ -543,8 +587,6 @@ class CPU : public BaseCPU
 
     /** The IEW stage's instruction queue. */
     TimeBuffer<IEWStruct> iewTimebuffer;
-
-    StallSignals stallSig;
 
   private:
     /** The activity recorder; used to tell if the CPU has any
@@ -655,6 +697,42 @@ class CPU : public BaseCPU
     bool enableMoveElimination; // Control flag of register move elimination
     bool enableConstantFolding; // Control flag of Constant Folding (add-immediate elimination)
     bool enableMovImmElimination;
+
+    const Cycles taskGraphFetchToDecodeDelay;
+    const Cycles taskGraphDecodeToFetchDelay;
+    const Cycles taskGraphDecodeToRenameDelay;
+    const Cycles taskGraphRenameToIEWDelay;
+    const Cycles taskGraphRenameToCommitDelay;
+    const Cycles taskGraphIEWToCommitDelay;
+    const Cycles taskGraphCommitToIEWDelay;
+    const Cycles taskGraphIEWToRenameDelay;
+    const Cycles taskGraphCommitToRenameDelay;
+    const Cycles taskGraphCommitToDecodeDelay;
+    const Cycles taskGraphCommitToFetchDelay;
+
+    TaskRuntime taskRuntime;
+
+  public:
+    TaskRuntime &getTaskRuntime() { return taskRuntime; }
+    const TaskRuntime &getTaskRuntime() const { return taskRuntime; }
+    bool taskParallelEnabled() const { return taskRuntime.enabled(); }
+    const StallSignalLatch *stallSignalSnapshot(
+            Cycles cycle, StallSignalEdge edge);
+    const StallSignalLatch &stallSignalSnapshotOrCurrent(
+            Cycles cycle, StallSignalEdge edge);
+    const PipelineTimeBufferSnapshots::Frame *pipelineInputSnapshot(
+            Cycles cycle);
+    const TimeStruct *pipelineInputBackward(Cycles cycle, int offset);
+    const TimeStruct *pipelineInputFetchBackward(Cycles cycle, int offset);
+    const FetchStruct *pipelineInputFetchToDecode(Cycles cycle, int offset);
+    const DecodeStruct *pipelineInputDecodeToRename(Cycles cycle, int offset);
+    const RenameStruct *pipelineInputRenameToIEW(Cycles cycle, int offset);
+    const RenameStruct *pipelineInputRenameToCommit(Cycles cycle, int offset);
+    const IEWStruct *pipelineInputIEWToCommit(Cycles cycle, int offset);
+    void checkFutureWavefrontPrepare(Cycles cycle);
+    void checkFutureRenameWavefrontPrepare(Cycles cycle);
+    void checkFutureDecodeWavefrontPrepare(Cycles cycle);
+    void checkFutureFetchWavefrontPrepare(Cycles cycle);
 
     struct CPUStats : public statistics::Group
     {

@@ -392,6 +392,12 @@ class LSQUnit
     /** Returns the number of Poped SQ entries in LAST CLOCK. */
     unsigned getAndResetLastClockSQPopEntries();
 
+    /** Returns the number of popped LQ entries without consuming it. */
+    unsigned peekLastClockLQPopEntries() const;
+
+    /** Returns the number of popped SQ entries without consuming it. */
+    unsigned peekLastClockSQPopEntries() const;
+
     /** Returns the number of loads in the LQ. */
     int numLoads() { return loadQueue.size(); }
 

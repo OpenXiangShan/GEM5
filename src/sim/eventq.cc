@@ -30,6 +30,7 @@
 
 #include "sim/eventq.hh"
 
+#include <atomic>
 #include <cassert>
 #include <iostream>
 #include <mutex>
@@ -41,6 +42,7 @@
 #include "base/trace.hh"
 #include "cpu/smt.hh"
 #include "debug/Checkpoint.hh"
+#include "debug/EventPriorityAudit.hh"
 
 namespace gem5
 {
@@ -57,6 +59,167 @@ uint32_t numMainEventQueues = 0;
 std::vector<EventQueue *> mainEventQueue;
 __thread EventQueue *_curEventQueue = NULL;
 bool inParallelMode = false;
+
+namespace
+{
+
+std::atomic_bool eventPriorityAuditFlag{false};
+std::atomic<unsigned> eventPriorityAuditReports{0};
+std::atomic<uint64_t> eventPriorityAuditSamePriorityGroups{0};
+std::atomic<uint64_t> eventPriorityAuditSamePriorityInsertedEvents{0};
+std::atomic<uint64_t> eventPriorityAuditSamePriorityMaxDepth{0};
+std::array<std::atomic<uint64_t>, NumEventPriorityAuditClasses>
+    eventPriorityAuditSamePriorityGroupsByClass{};
+std::array<std::atomic<uint64_t>, NumEventPriorityAuditClasses>
+    eventPriorityAuditSamePriorityInsertedEventsByClass{};
+std::array<std::atomic<uint64_t>, NumEventPriorityAuditClasses>
+    eventPriorityAuditSamePriorityMaxDepthByClass{};
+constexpr unsigned EventPriorityAuditReportLimit = 64;
+
+enum EventPriorityAuditClassIndex : unsigned
+{
+    AuditPriorityMinimum,
+    AuditPriorityEarly,
+    AuditPriorityCpuSwitch,
+    AuditPriorityDelayedWriteback,
+    AuditPriorityDefault,
+    AuditPriorityDvfsSerialize,
+    AuditPriorityCpuTick,
+    AuditPriorityOther,
+};
+
+unsigned
+eventPriorityAuditClass(Event::Priority priority)
+{
+    if (priority == Event::Minimum_Pri)
+        return AuditPriorityMinimum;
+    if (priority < Event::CPU_Switch_Pri)
+        return AuditPriorityEarly;
+    if (priority == Event::CPU_Switch_Pri)
+        return AuditPriorityCpuSwitch;
+    if (priority == Event::Delayed_Writeback_Pri)
+        return AuditPriorityDelayedWriteback;
+    if (priority == Event::Default_Pri)
+        return AuditPriorityDefault;
+    if (priority == Event::DVFS_Update_Pri ||
+        priority == Event::Serialize_Pri) {
+        return AuditPriorityDvfsSerialize;
+    }
+    if (priority == Event::CPU_Tick_Pri)
+        return AuditPriorityCpuTick;
+    return AuditPriorityOther;
+}
+
+void
+updateAtomicMax(std::atomic<uint64_t> &target, uint64_t value)
+{
+    uint64_t old_value = target.load(std::memory_order_relaxed);
+    while (old_value < value &&
+           !target.compare_exchange_weak(old_value, value,
+                   std::memory_order_relaxed)) {
+    }
+}
+
+void
+recordEventPriorityAuditDepth(Event::Priority priority, unsigned depth)
+{
+    eventPriorityAuditSamePriorityGroups.fetch_add(
+            1, std::memory_order_relaxed);
+    eventPriorityAuditSamePriorityInsertedEvents.fetch_add(
+            depth + 1, std::memory_order_relaxed);
+    updateAtomicMax(eventPriorityAuditSamePriorityMaxDepth, depth);
+
+    const unsigned priority_class = eventPriorityAuditClass(priority);
+    eventPriorityAuditSamePriorityGroupsByClass[priority_class].fetch_add(
+            1, std::memory_order_relaxed);
+    eventPriorityAuditSamePriorityInsertedEventsByClass[
+            priority_class].fetch_add(depth + 1, std::memory_order_relaxed);
+    updateAtomicMax(
+            eventPriorityAuditSamePriorityMaxDepthByClass[priority_class],
+            depth);
+}
+
+} // namespace
+
+void
+setEventPriorityAudit(bool enabled)
+{
+    if (enabled)
+        eventPriorityAuditFlag.store(true, std::memory_order_relaxed);
+}
+
+bool
+getEventPriorityAudit()
+{
+    return eventPriorityAuditFlag.load(std::memory_order_relaxed);
+}
+
+const char *
+eventPriorityAuditClassName(unsigned class_id)
+{
+    switch (class_id) {
+      case AuditPriorityMinimum:
+        return "Minimum";
+      case AuditPriorityEarly:
+        return "EarlyPriority";
+      case AuditPriorityCpuSwitch:
+        return "CpuSwitch";
+      case AuditPriorityDelayedWriteback:
+        return "DelayedWriteback";
+      case AuditPriorityDefault:
+        return "Default";
+      case AuditPriorityDvfsSerialize:
+        return "DvfsSerialize";
+      case AuditPriorityCpuTick:
+        return "CpuTick";
+      case AuditPriorityOther:
+        return "Other";
+    }
+    return "Unknown";
+}
+
+EventPriorityAuditStats
+eventPriorityAuditStats()
+{
+    EventPriorityAuditStats stats{
+        eventPriorityAuditSamePriorityGroups.load(std::memory_order_relaxed),
+        eventPriorityAuditSamePriorityInsertedEvents.load(
+                std::memory_order_relaxed),
+        eventPriorityAuditSamePriorityMaxDepth.load(
+                std::memory_order_relaxed)
+    };
+    for (unsigned i = 0; i < NumEventPriorityAuditClasses; ++i) {
+        stats.samePriorityGroupsByClass[i] =
+            eventPriorityAuditSamePriorityGroupsByClass[i].load(
+                    std::memory_order_relaxed);
+        stats.samePriorityInsertedEventsByClass[i] =
+            eventPriorityAuditSamePriorityInsertedEventsByClass[i].load(
+                    std::memory_order_relaxed);
+        stats.samePriorityMaxDepthByClass[i] =
+            eventPriorityAuditSamePriorityMaxDepthByClass[i].load(
+                    std::memory_order_relaxed);
+    }
+    return stats;
+}
+
+void
+resetEventPriorityAuditStats()
+{
+    eventPriorityAuditReports.store(0, std::memory_order_relaxed);
+    eventPriorityAuditSamePriorityGroups.store(0, std::memory_order_relaxed);
+    eventPriorityAuditSamePriorityInsertedEvents.store(
+            0, std::memory_order_relaxed);
+    eventPriorityAuditSamePriorityMaxDepth.store(0,
+            std::memory_order_relaxed);
+    for (unsigned i = 0; i < NumEventPriorityAuditClasses; ++i) {
+        eventPriorityAuditSamePriorityGroupsByClass[i].store(
+                0, std::memory_order_relaxed);
+        eventPriorityAuditSamePriorityInsertedEventsByClass[i].store(
+                0, std::memory_order_relaxed);
+        eventPriorityAuditSamePriorityMaxDepthByClass[i].store(
+                0, std::memory_order_relaxed);
+    }
+}
 
 EventQueue *
 getEventQueue(uint32_t index)
@@ -113,6 +276,8 @@ EventQueue::insert(Event *event)
 {
     // Deal with the head case
     if (!head || *event <= *head) {
+        if (head && *event == *head)
+            auditSamePriorityInsert(event, head);
         head = Event::insertBefore(event, head);
         return;
     }
@@ -126,9 +291,51 @@ EventQueue::insert(Event *event)
         curr = curr->nextBin;
     }
 
+    if (curr && *curr == *event)
+        auditSamePriorityInsert(event, curr);
+
     // Note: this operation may render all nextBin pointers on the
     // prev 'in bin' list stale (except for the top one)
     prev->nextBin = Event::insertBefore(event, curr);
+}
+
+void
+EventQueue::auditSamePriorityInsert(Event *event, Event *sameBinTop) const
+{
+    if (!getEventPriorityAudit())
+        return;
+
+    unsigned depth = 0;
+    for (Event *bin = sameBinTop; bin; bin = bin->nextInBin)
+        ++depth;
+    recordEventPriorityAuditDepth(event->priority(), depth);
+
+    const std::string event_name = event->name();
+    const std::string same_bin_name = sameBinTop->name();
+    const std::string queue_name = name();
+
+    DPRINTF(EventPriorityAudit,
+            "queue=%s same-bin insert when=%llu priority=%d "
+            "new=%s/%s existing_top=%s/%s depth=%u\n",
+            queue_name.c_str(), static_cast<unsigned long long>(event->when()),
+            event->priority(), event_name.c_str(), event->description(),
+            same_bin_name.c_str(), sameBinTop->description(), depth);
+
+    const unsigned report =
+        eventPriorityAuditReports.fetch_add(1, std::memory_order_relaxed);
+    if (report < EventPriorityAuditReportLimit) {
+        warn("Event priority audit: queue %s inserts %s (%s) into an "
+             "existing same-time same-priority bin at tick %llu priority %d; "
+             "current top is %s (%s), depth %u. This bin depends on LIFO "
+             "insertion order unless the events get explicit priorities.\n",
+             queue_name.c_str(), event_name.c_str(), event->description(),
+             static_cast<unsigned long long>(event->when()),
+             event->priority(), same_bin_name.c_str(),
+             sameBinTop->description(), depth);
+    } else if (report == EventPriorityAuditReportLimit) {
+        warn("Event priority audit report limit reached; enable the "
+             "EventPriorityAudit debug flag for detailed traces.\n");
+    }
 }
 
 Event *

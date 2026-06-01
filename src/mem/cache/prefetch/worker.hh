@@ -29,7 +29,6 @@ namespace prefetch
 
 class WorkerPrefetcher : public Queued
 {
-    bool firstCall = false;
     Event *transferEvent;
 
   public:
@@ -42,10 +41,8 @@ class WorkerPrefetcher : public Queued
 
     void notify(const PacketPtr &pkt, const PrefetchInfo &pfi) override
     {
-        if (!firstCall) {
-            firstCall = true;
+        if (!localBuffer.empty() && !transferEvent->scheduled())
             schedule(transferEvent, nextCycle());
-        }
     };
 
     void rxHint(BaseMMU::Translation *dpp) override;

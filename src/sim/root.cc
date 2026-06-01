@@ -56,6 +56,77 @@ Root *Root::_root = NULL;
 Root::RootStats Root::RootStats::instance;
 Root::RootStats &rootStats = Root::RootStats::instance;
 
+Root::RootStats::EventStats::EventStats()
+    : statistics::Group(nullptr),
+      ADD_STAT(samePriorityGroups, statistics::units::Count::get(),
+               "Number of event-priority audit insertions into an existing "
+               "same-time same-priority bin"),
+      ADD_STAT(samePriorityInsertedEvents, statistics::units::Count::get(),
+               "Accumulated number of events in audited same-time "
+               "same-priority bins after insertion"),
+      ADD_STAT(samePriorityMaxDepth, statistics::units::Count::get(),
+               "Maximum existing same-time same-priority bin depth observed "
+               "before audited insertion"),
+      ADD_STAT(samePriorityGroupsByClass, statistics::units::Count::get(),
+               "Event-priority audit insertions into existing same-time "
+               "same-priority bins by priority class"),
+      ADD_STAT(samePriorityInsertedEventsByClass,
+               statistics::units::Count::get(),
+               "Accumulated number of events in audited same-time "
+               "same-priority bins after insertion by priority class"),
+      ADD_STAT(samePriorityMaxDepthByClass, statistics::units::Count::get(),
+               "Maximum existing same-time same-priority bin depth observed "
+               "before audited insertion by priority class")
+{
+    samePriorityGroups
+        .functor([]() {
+            return eventPriorityAuditStats().samePriorityGroups;
+        })
+        .prereq(samePriorityGroups);
+    samePriorityInsertedEvents
+        .functor([]() {
+            return eventPriorityAuditStats().samePriorityInsertedEvents;
+        })
+        .prereq(samePriorityInsertedEvents);
+    samePriorityMaxDepth
+        .functor([]() {
+            return eventPriorityAuditStats().samePriorityMaxDepth;
+        })
+        .prereq(samePriorityMaxDepth);
+
+    samePriorityGroupsByClass
+        .init(NumEventPriorityAuditClasses)
+        .flags(statistics::nozero);
+    samePriorityInsertedEventsByClass
+        .init(NumEventPriorityAuditClasses)
+        .flags(statistics::nozero);
+    samePriorityMaxDepthByClass
+        .init(NumEventPriorityAuditClasses)
+        .flags(statistics::nozero);
+    for (unsigned i = 0; i < NumEventPriorityAuditClasses; ++i) {
+        const char *name = eventPriorityAuditClassName(i);
+        samePriorityGroupsByClass.subname(i, name);
+        samePriorityInsertedEventsByClass.subname(i, name);
+        samePriorityMaxDepthByClass.subname(i, name);
+    }
+}
+
+void
+Root::RootStats::EventStats::preDumpStats()
+{
+    const auto snapshot = eventPriorityAuditStats();
+    for (unsigned i = 0; i < NumEventPriorityAuditClasses; ++i) {
+        samePriorityGroupsByClass[i] =
+            snapshot.samePriorityGroupsByClass[i];
+        samePriorityInsertedEventsByClass[i] =
+            snapshot.samePriorityInsertedEventsByClass[i];
+        samePriorityMaxDepthByClass[i] =
+            snapshot.samePriorityMaxDepthByClass[i];
+    }
+
+    statistics::Group::preDumpStats();
+}
+
 Root::RootStats::RootStats()
     : statistics::Group(nullptr),
     ADD_STAT(simSeconds, statistics::units::Second::get(),
@@ -76,6 +147,7 @@ Root::RootStats::RootStats()
     ADD_STAT(hostMemory, statistics::units::Byte::get(),
              "Number of bytes of host memory used"),
 
+    event(),
     statTime(true),
     startTick(0)
 {
@@ -108,6 +180,7 @@ Root::RootStats::resetStats()
 {
     statTime.setTimer();
     startTick = curTick();
+    resetEventPriorityAuditStats();
 
     statistics::Group::resetStats();
 }
@@ -193,6 +266,7 @@ Root::Root(const RootParams &p, int)
     // having a single global stat group for global stats. Merge that
     // group into the root object here.
     mergeStatGroup(&Root::RootStats::instance);
+    addStatGroup("event", &Root::RootStats::instance.event);
 }
 
 void

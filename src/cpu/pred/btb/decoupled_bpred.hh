@@ -335,7 +335,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void consumeFetchTarget(unsigned fetched_inst_num, ThreadID tid);
 
+    int peekTargetTid() const { return ftq.peekTargetTid(); }
     int getTargetTid() { return ftq.getTargetTid(); }
+    uint32_t ftqRoundRobinStart() const { return ftq.roundRobinStart(); }
 
     struct BpTrace : public Record
     {
@@ -404,6 +406,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool ftqHasFetching(ThreadID tid) const { return ftq.hasTarget(ftq.fetchId(tid), tid); }
     FetchTargetId ftqHeadId(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetchId(tid); }
     const FetchTarget &ftqFetchingTarget(ThreadID tid) { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    const FetchTarget &ftqFetchingTarget(ThreadID tid) const { assert(ftqHasFetching(tid)); return ftq.fetching(tid); }
+    ThreadID ftqFetchingTargetTid(ThreadID tid) const { return ftqFetchingTarget(tid).tid; }
 
     void dumpFsq(const char *when);
 
@@ -712,8 +716,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     void updatePredictorComponents(FetchTarget &target);
     void updateStatistics(const FetchTarget &target);
     void notifyResolveSuccess();
-    void notifyResolveFailure();
-    void blockPredictionOnce();
+    void notifyResolveFailure(ThreadID tid);
+    void blockPredictionOnce(ThreadID tid);
 
     /**
      * @brief Types of control flow instructions for misprediction tracking

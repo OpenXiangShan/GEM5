@@ -42,6 +42,9 @@
 #ifndef __CPU_O3_COMM_HH__
 #define __CPU_O3_COMM_HH__
 
+#include <cassert>
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "arch/generic/pcstate.hh"
@@ -57,6 +60,12 @@ namespace gem5
 
 namespace o3
 {
+
+inline std::unique_ptr<PCStateBase>
+clonePCState(const std::unique_ptr<PCStateBase> &pc)
+{
+    return pc ? std::unique_ptr<PCStateBase>(pc->clone()) : nullptr;
+}
 
 /** stall reasons in each stages*/
 enum StallReason {
@@ -143,6 +152,12 @@ struct RenameStruct
 /** Struct that defines the information passed from IEW to commit. */
 struct IEWStruct
 {
+    IEWStruct() = default;
+
+    IEWStruct(const IEWStruct &other);
+
+    IEWStruct &operator=(const IEWStruct &other);
+
     int size;
 
     DynInstPtr insts[MaxWidth];
@@ -199,15 +214,28 @@ struct SquashVersion
 
 struct ResolveQueueEntry
 {
-    uint64_t resolvedFTQId;
+    ThreadID tid = InvalidThreadID;
+    uint64_t resolvedFTQId = 0;
     std::vector<uint64_t> resolvedInstPC;
 };
 
 /** Struct that defines all backwards communication. */
 struct TimeStruct
 {
+    TimeStruct() = default;
+
+    TimeStruct(const TimeStruct &other);
+
+    TimeStruct &operator=(const TimeStruct &other);
+
     struct DecodeComm
     {
+        DecodeComm() = default;
+
+        DecodeComm(const DecodeComm &other);
+
+        DecodeComm &operator=(const DecodeComm &other);
+
         std::unique_ptr<PCStateBase> nextPC;
         DynInstPtr mispredictInst;
         DynInstPtr squashInst;
@@ -252,6 +280,12 @@ struct TimeStruct
 
     struct CommitComm
     {
+        CommitComm() = default;
+
+        CommitComm(const CommitComm &other);
+
+        CommitComm &operator=(const CommitComm &other);
+
         /////////////////////////////////////////////////////////////////////
         // This code has been re-structured for better packing of variables
         // instead of by stage which is the more logical way to arrange the
@@ -335,6 +369,12 @@ struct StallSignals
 {
     StallSignals()
     {
+        clear();
+    }
+
+    void
+    clear()
+    {
         for (int i = 0; i < MaxThreads; ++i) {
             blockFetch[i] = false;
             blockDecode[i] = false;
@@ -355,6 +395,369 @@ struct StallSignals
     StallReason decodeBlockReason[MaxThreads];// rename to decode root cause
     StallReason renameBlockReason[MaxThreads];// iew to rename root cause
     StallReason iewBlockReason[MaxThreads];// commit to iew root cause
+};
+
+enum class StallSignalEdge : uint8_t
+{
+    CommitToIEW,
+    IEWToRename,
+    RenameToDecode,
+    DecodeToFetch,
+    NumEdges
+};
+
+struct StallSignalLatch
+{
+    StallSignalLatch()
+    {
+        clear();
+    }
+
+    void
+    clear()
+    {
+        for (int i = 0; i < MaxThreads; ++i) {
+            block[i] = false;
+            reason[i] = StallReason::NoStall;
+        }
+    }
+
+    bool block[MaxThreads];
+    StallReason reason[MaxThreads];
+};
+
+class StallSignalBank
+{
+  public:
+    StallSignalBank()
+    {
+        reset();
+    }
+
+    StallSignals &
+    legacyView()
+    {
+        return legacyView_;
+    }
+
+    const StallSignals &
+    legacyView() const
+    {
+        return legacyView_;
+    }
+
+    void
+    reset()
+    {
+        currentCycle_ = Cycles(0);
+        valid_ = false;
+        legacyView_.clear();
+        for (auto &edge : edges)
+            edge.clear();
+        if (window_.empty())
+            window_.resize(1);
+        for (auto &slot : window_)
+            slot.clear();
+    }
+
+    void
+    configureWindow(unsigned cycles)
+    {
+        if (cycles == 0)
+            cycles = 1;
+        window_.resize(cycles);
+        for (auto &slot : window_)
+            slot.clear();
+    }
+
+    void
+    beginCycle(Cycles cycle)
+    {
+        currentCycle_ = cycle;
+        valid_ = true;
+        publishToLegacyView();
+        captureCurrentSlot();
+    }
+
+    void
+    endCycle(Cycles cycle)
+    {
+        currentCycle_ = cycle;
+        valid_ = true;
+        captureFromLegacyView();
+        captureCurrentSlot();
+    }
+
+    Cycles
+    currentCycle() const
+    {
+        return currentCycle_;
+    }
+
+    bool
+    valid() const
+    {
+        return valid_;
+    }
+
+    unsigned
+    windowCapacity() const
+    {
+        return window_.size();
+    }
+
+    unsigned
+    validWindowSlots() const
+    {
+        unsigned count = 0;
+        for (const auto &slot : window_) {
+            if (slot.valid)
+                ++count;
+        }
+        return count;
+    }
+
+    unsigned
+    edgeCount() const
+    {
+        return static_cast<unsigned>(StallSignalEdge::NumEdges);
+    }
+
+    const StallSignalLatch &
+    snapshot(StallSignalEdge edge_id) const
+    {
+        return edges[edgeIndex(edge_id)];
+    }
+
+    const StallSignalLatch *
+    snapshot(Cycles cycle, StallSignalEdge edge_id) const
+    {
+        const auto *slot = findCycleSlot(cycle);
+        return slot ? &slot->edges[edgeIndex(edge_id)] : nullptr;
+    }
+
+    void
+    set(StallSignalEdge edge_id, ThreadID tid, bool block,
+        StallReason reason)
+    {
+        const int idx = tid;
+        assert(idx >= 0 && idx < MaxThreads);
+
+        auto &edge_latch = edges[edgeIndex(edge_id)];
+        edge_latch.block[idx] = block;
+        edge_latch.reason[idx] = reason;
+
+        legacyBlock(edge_id)[idx] = block;
+        legacyReason(edge_id)[idx] = reason;
+        updateCurrentSlot(edge_id);
+    }
+
+    void
+    set(Cycles cycle, StallSignalEdge edge_id, ThreadID tid, bool block,
+        StallReason reason)
+    {
+        if (valid_ && cycle == currentCycle_) {
+            set(edge_id, tid, block, reason);
+            return;
+        }
+
+        const int idx = tid;
+        assert(idx >= 0 && idx < MaxThreads);
+
+        auto &slot = prepareCycleSlot(cycle);
+        auto &edge_latch = slot.edges[edgeIndex(edge_id)];
+        edge_latch.block[idx] = block;
+        edge_latch.reason[idx] = reason;
+    }
+
+    void
+    setBlock(StallSignalEdge edge_id, ThreadID tid, bool block)
+    {
+        const int idx = tid;
+        assert(idx >= 0 && idx < MaxThreads);
+
+        edges[edgeIndex(edge_id)].block[idx] = block;
+        legacyBlock(edge_id)[idx] = block;
+        updateCurrentSlot(edge_id);
+    }
+
+    void
+    setBlock(Cycles cycle, StallSignalEdge edge_id, ThreadID tid, bool block)
+    {
+        if (valid_ && cycle == currentCycle_) {
+            setBlock(edge_id, tid, block);
+            return;
+        }
+
+        const int idx = tid;
+        assert(idx >= 0 && idx < MaxThreads);
+
+        auto &slot = prepareCycleSlot(cycle);
+        slot.edges[edgeIndex(edge_id)].block[idx] = block;
+    }
+
+  private:
+    struct CycleSlot
+    {
+        bool valid = false;
+        Cycles cycle;
+        StallSignalLatch edges[static_cast<unsigned>(
+                StallSignalEdge::NumEdges)];
+
+        void
+        clear()
+        {
+            valid = false;
+            cycle = Cycles(0);
+            for (auto &edge : edges)
+                edge.clear();
+        }
+
+        void
+        reset(Cycles new_cycle)
+        {
+            valid = true;
+            cycle = new_cycle;
+            for (auto &edge : edges)
+                edge.clear();
+        }
+    };
+
+    static unsigned
+    edgeIndex(StallSignalEdge edge)
+    {
+        return static_cast<unsigned>(edge);
+    }
+
+    static void
+    copyToLatch(StallSignalLatch &dst, const bool *block,
+                const StallReason *reason)
+    {
+        for (int i = 0; i < MaxThreads; ++i) {
+            dst.block[i] = block[i];
+            dst.reason[i] = reason[i];
+        }
+    }
+
+    static void
+    copyFromLatch(bool *block, StallReason *reason,
+                  const StallSignalLatch &src)
+    {
+        for (int i = 0; i < MaxThreads; ++i) {
+            block[i] = src.block[i];
+            reason[i] = src.reason[i];
+        }
+    }
+
+    const CycleSlot *
+    findCycleSlot(Cycles cycle) const
+    {
+        if (window_.empty())
+            return nullptr;
+
+        const auto index = static_cast<uint64_t>(cycle) % window_.size();
+        const auto &slot = window_[index];
+        return slot.valid && slot.cycle == cycle ? &slot : nullptr;
+    }
+
+    CycleSlot &
+    prepareCycleSlot(Cycles cycle)
+    {
+        assert(!window_.empty());
+        const auto index = static_cast<uint64_t>(cycle) % window_.size();
+        auto &slot = window_[index];
+        if (!slot.valid || slot.cycle != cycle)
+            slot.reset(cycle);
+        return slot;
+    }
+
+    void
+    captureCurrentSlot()
+    {
+        auto &slot = prepareCycleSlot(currentCycle_);
+        for (unsigned i = 0; i < edgeCount(); ++i)
+            slot.edges[i] = edges[i];
+    }
+
+    void
+    updateCurrentSlot(StallSignalEdge edge)
+    {
+        if (!valid_)
+            return;
+
+        auto &slot = prepareCycleSlot(currentCycle_);
+        slot.edges[edgeIndex(edge)] = edges[edgeIndex(edge)];
+    }
+
+    bool *
+    legacyBlock(StallSignalEdge edge)
+    {
+        switch (edge) {
+          case StallSignalEdge::CommitToIEW:
+            return legacyView_.blockIEW;
+          case StallSignalEdge::IEWToRename:
+            return legacyView_.blockRename;
+          case StallSignalEdge::RenameToDecode:
+            return legacyView_.blockDecode;
+          case StallSignalEdge::DecodeToFetch:
+            return legacyView_.blockFetch;
+          case StallSignalEdge::NumEdges:
+            break;
+        }
+
+        return legacyView_.blockFetch;
+    }
+
+    StallReason *
+    legacyReason(StallSignalEdge edge)
+    {
+        switch (edge) {
+          case StallSignalEdge::CommitToIEW:
+            return legacyView_.iewBlockReason;
+          case StallSignalEdge::IEWToRename:
+            return legacyView_.renameBlockReason;
+          case StallSignalEdge::RenameToDecode:
+            return legacyView_.decodeBlockReason;
+          case StallSignalEdge::DecodeToFetch:
+            return legacyView_.fetchBlockReason;
+          case StallSignalEdge::NumEdges:
+            break;
+        }
+
+        return legacyView_.fetchBlockReason;
+    }
+
+    void
+    captureFromLegacyView()
+    {
+        copyToLatch(edges[edgeIndex(StallSignalEdge::CommitToIEW)],
+                    legacyView_.blockIEW, legacyView_.iewBlockReason);
+        copyToLatch(edges[edgeIndex(StallSignalEdge::IEWToRename)],
+                    legacyView_.blockRename, legacyView_.renameBlockReason);
+        copyToLatch(edges[edgeIndex(StallSignalEdge::RenameToDecode)],
+                    legacyView_.blockDecode, legacyView_.decodeBlockReason);
+        copyToLatch(edges[edgeIndex(StallSignalEdge::DecodeToFetch)],
+                    legacyView_.blockFetch, legacyView_.fetchBlockReason);
+    }
+
+    void
+    publishToLegacyView()
+    {
+        copyFromLatch(legacyView_.blockIEW, legacyView_.iewBlockReason,
+                      edges[edgeIndex(StallSignalEdge::CommitToIEW)]);
+        copyFromLatch(legacyView_.blockRename, legacyView_.renameBlockReason,
+                      edges[edgeIndex(StallSignalEdge::IEWToRename)]);
+        copyFromLatch(legacyView_.blockDecode, legacyView_.decodeBlockReason,
+                      edges[edgeIndex(StallSignalEdge::RenameToDecode)]);
+        copyFromLatch(legacyView_.blockFetch, legacyView_.fetchBlockReason,
+                      edges[edgeIndex(StallSignalEdge::DecodeToFetch)]);
+    }
+
+    StallSignals legacyView_;
+    StallSignalLatch edges[static_cast<unsigned>(StallSignalEdge::NumEdges)];
+    std::vector<CycleSlot> window_;
+    Cycles currentCycle_;
+    bool valid_ = false;
 };
 
 
