@@ -37,7 +37,7 @@
 
 **文件**:
 - `.github/workflows/gem5-ideal-btb-perf.yml`
-- `.github/workflows/gem5-ideal-btb-0.3c.yml`
+- `.github/workflows/gem5-align-btb-0.3c.yml`
 - `.github/workflows/on-demand-spec-rvv.yml`
 
 **目标**: 在合入前，按需检查有性能风险的 PR
@@ -93,7 +93,7 @@
 #### 2. `gem5-ideal-btb-perf.yml` - Ideal BTB 性能测试
 默认跑 `gcc15-spec06-0.8c`，在 `xs-dev`、`*-perf` 分支和 PR `perf` 标签上自动触发
 
-#### 3. `gem5-ideal-btb-0.3c.yml` - Align 性能测试
+#### 3. `gem5-align-btb-0.3c.yml` - Align 性能测试
 默认跑 `gcc15-spec06-0.3c`，在 `xs-dev`、`*-align` 分支和 PR `perf-align` 标签上自动触发
 
 #### 4. 其他测试
@@ -185,7 +185,7 @@ python actions_gem5.py --token <github-token> --always-on
 - `.github/workflows/gem5-perf-template.yml` - 性能测试模板
 - `.github/workflows/gem5.yml` - Tier 2 功能测试
 - `.github/workflows/gem5-ideal-btb-perf.yml` - `xs-dev` / `*-perf` / `perf` 标签默认性能测试
-- `.github/workflows/gem5-ideal-btb-0.3c.yml` - `xs-dev` / `*-align` / `perf-align` 标签默认对齐性能测试
+- `.github/workflows/gem5-align-btb-0.3c.yml` - `xs-dev` / `*-align` / `perf-align` 标签默认对齐性能测试
 - `.github/workflows/on-demand-spec-rvv.yml` - `rvv` 标签 RVV 性能测试
 - `env-scripts/github/actions_gem5.py` - 性能评论机器人
 
