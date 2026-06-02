@@ -297,7 +297,7 @@ struct MgscHarness
             recover_stream.startPC = start_pc;
             recover_stream.predMetas[mgsc.getComponentIdx()] = meta;
             recover_stream.resolved = true;
-            recover_stream.exeBranchInfo = entry.getBranchInfo();
+            recover_stream.exeBranchInfo = entry.slot;
             recover_stream.exeTaken = actual_taken;
             recover_stream.squashPC = entry.slot.pc;
 
@@ -327,7 +327,7 @@ struct MgscHarness
         update_stream.updateBTBEntries = {entry};
         update_stream.updateIsOldEntry = true;
         update_stream.resolved = true;
-        update_stream.exeBranchInfo = entry.getBranchInfo();
+        update_stream.exeBranchInfo = entry.slot;
         update_stream.exeTaken = actual_taken;
         update_stream.predMetas[mgsc.getComponentIdx()] = meta;
         mgsc.update(update_stream);
@@ -515,7 +515,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         stream.updateBTBEntries = {entry};
         stream.updateIsOldEntry = true;
         stream.resolved = true;
-        stream.exeBranchInfo = entry.getBranchInfo();
+        stream.exeBranchInfo = entry.slot;
         stream.exeTaken = true;
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         mgsc.update(stream);
@@ -529,7 +529,7 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
         stream.updateBTBEntries = {entry};
         stream.updateIsOldEntry = true;
         stream.resolved = true;
-        stream.exeBranchInfo = entry.getBranchInfo();
+        stream.exeBranchInfo = entry.slot;
         stream.exeTaken = false;
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         mgsc.update(stream);

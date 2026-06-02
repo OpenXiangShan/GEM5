@@ -81,9 +81,9 @@ public:
         auto &sp = specSp;
         // do push & pops on prediction
         pred.returnTarget = stack[sp].retAddr;
-        auto takenSlot = pred.getTakenEntry();
+        auto takenSlot = pred.getTakenEntry().slot;
         if (takenSlot.isCall()) { // call inst, push retAddr to spec stack
-            Addr retAddr = takenSlot.slot.pc + takenSlot.slot.size;
+            Addr retAddr = takenSlot.pc + takenSlot.size;
             push(retAddr, stack, sp);
         }
         if (takenSlot.isReturn()) { // return inst, pop retAddr from spec stack

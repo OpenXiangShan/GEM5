@@ -108,7 +108,8 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
     DPRINTF(ITTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
     std::vector<TagePrediction> preds;
     for (auto &btb_entry : btbEntries) {
-        if (btb_entry.isIndirect() && !btb_entry.isReturn() && btb_entry.valid) {
+        if (btb_entry.slot.isIndirect() && !btb_entry.slot.isReturn() &&
+            btb_entry.valid) {
             DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx, always taken %d\n",
                     btb_entry.slot.pc, btb_entry.alwaysTaken);
             bool provided = false;
@@ -271,11 +272,17 @@ BTBITTAGE::update(const FetchTarget &stream)
     if (getResolvedUpdate()) {
         auto remove_it =
             std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
-                           [](const BTBEntry &e) { return !(e.isIndirect() && !e.isReturn() && e.slot.resolved); });
+                           [](const BTBEntry &e) {
+                               return !(e.slot.isIndirect() &&
+                                        !e.slot.isReturn() && e.slot.resolved);
+                           });
         all_entries_to_update.erase(remove_it, all_entries_to_update.end());
     } else {
         auto remove_it = std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
-                                        [](const BTBEntry &e) { return !(e.isIndirect() && !e.isReturn()); });
+                                        [](const BTBEntry &e) {
+                                            return !(e.slot.isIndirect() &&
+                                                     !e.slot.isReturn());
+                                        });
         all_entries_to_update.erase(remove_it, all_entries_to_update.end());
     }
 
@@ -289,7 +296,8 @@ BTBITTAGE::update(const FetchTarget &stream)
     
     // update each branch
     for (auto &btb_entry : all_entries_to_update) {
-        bool this_indirect_actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+        bool this_indirect_actual_taken = stream.exeTaken &&
+            stream.exeBranchInfo == btb_entry.slot;
         auto pred_it = preds.find(btb_entry.slot.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {

@@ -301,7 +301,7 @@ MicroTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEnt
     // Process each BTB entry to make predictions
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
-        if (btb_entry.isCond() && btb_entry.valid) {
+        if (btb_entry.slot.isCond() && btb_entry.valid) {
             auto pred = generateSinglePrediction(btb_entry, startPC, nullptr,
                                                  tid, asidHash);
             threadMeta[tid]->preds[btb_entry.slot.pc] = pred;
@@ -412,11 +412,15 @@ MicroTAGE::prepareUpdateEntries(const FetchTarget &stream) {
     // Filter: only keep conditional branches that are not always taken
     if (getResolvedUpdate()) {
         auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond() && !e.alwaysTaken && e.slot.resolved); });
+            [](const BTBEntry &e) {
+                return !(e.slot.isCond() && !e.alwaysTaken && e.slot.resolved);
+            });
         all_entries.erase(remove_it, all_entries.end());
     } else {
         auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond() && !e.alwaysTaken); });
+            [](const BTBEntry &e) {
+                return !(e.slot.isCond() && !e.alwaysTaken);
+            });
         all_entries.erase(remove_it, all_entries.end());
     }
 
@@ -686,7 +690,8 @@ MicroTAGE::update(const FetchTarget &stream) {
     bool utage_hit = false;
     // Process each BTB entry
     for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+        bool actual_taken = stream.exeTaken &&
+            stream.exeBranchInfo == btb_entry.slot;
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)

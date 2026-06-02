@@ -118,18 +118,18 @@ UBTB::fillStagePredictions(const TickedUBTBEntry &entry, std::vector<FullBTBPred
 
     if (entry.valid) {
         FillStageLoop(s) stagePreds[s].btbEntries.push_back(BTBEntry(entry));
-        if (entry.isCond()) {
+        if (entry.slot.isCond()) {
             // the always taken field of BTBEntry is ignored in uBTB
             // uBTB always assumes present entries to be taken
             FillStageLoop(s) stagePreds[s].condTakens.push_back(
                 {entry.slot.pc, true});
-        } else if (entry.isIndirect()) {
+        } else if (entry.slot.isIndirect()) {
             // Set predicted target for indirect branches
             DPRINTF(UBTB, "setting indirect target for pc %#lx to %#lx\n",
                     entry.slot.pc, entry.slot.target);
             FillStageLoop(s) stagePreds[s].indirectTargets.push_back(
                 {entry.slot.pc, entry.slot.target});
-            if (entry.isReturn()) {
+            if (entry.slot.isReturn()) {
                 FillStageLoop(s) stagePreds[s].returnTarget =
                     entry.slot.target;
             }
@@ -321,7 +321,8 @@ UBTB::update(const FetchTarget &stream)
                     }) : ubtb.end();
 
     if (stream.exeTaken) {
-        if (!pred_hit_entry.valid || pred_hit_entry != stream.exeBranchInfo) {
+        if (!pred_hit_entry.valid ||
+            pred_hit_entry.slot != stream.exeBranchInfo) {
             DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
             ubtbStats.updateMiss++;
         }else {

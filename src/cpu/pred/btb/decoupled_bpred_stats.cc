@@ -320,9 +320,7 @@ DecoupledBPUWithBTB::dumpStats()
         for (int i = 0; i <= outputTopNEntries && i < btbEntries.size(); i++) {
             const auto &entry = btbEntries[i];
             out << "," << std::hex << std::get<0>(entry);
-            // BTBEntry.getType() is not a const method, need to create a copy
-            BTBEntry btbEntry = std::get<1>(entry);
-            out << "," << std::dec << btbEntry.getType();
+            out << "," << std::dec << std::get<1>(entry).slot.getType();
         }
 
         out << std::endl;

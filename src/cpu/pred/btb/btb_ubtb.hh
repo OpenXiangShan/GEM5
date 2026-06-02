@@ -155,7 +155,8 @@ class UBTB : public TimedBaseBTBPredictor
         DPRINTF(UBTB, "uBTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, tick:%lu\n",
             e.valid, e.slot.pc, e.tag, e.slot.size, e.slot.target,
-            e.isCond(), e.isIndirect(), e.isCall(), e.isReturn(), e.tick);
+            e.slot.isCond(), e.slot.isIndirect(), e.slot.isCall(),
+            e.slot.isReturn(), e.tick);
     }
 
     void dumpMruList() {

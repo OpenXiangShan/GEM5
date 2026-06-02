@@ -426,7 +426,7 @@ BTBTAGE::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
     // Process each BTB entry to make predictions
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
-        if (btb_entry.isCond() && btb_entry.valid) {
+        if (btb_entry.slot.isCond() && btb_entry.valid) {
             auto pred = generateSinglePrediction(btb_entry, startPC, nullptr, tid, asidHash);
             threadMeta[tid]->preds[btb_entry.slot.pc] = pred;
             tageStats.updateStatsWithTagePrediction(pred, true);
@@ -536,11 +536,15 @@ BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
     // Filter: only keep conditional branches that are not always taken
     if (getResolvedUpdate()) {
         auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond() && !e.alwaysTaken && e.slot.resolved); });
+            [](const BTBEntry &e) {
+                return !(e.slot.isCond() && !e.alwaysTaken && e.slot.resolved);
+            });
         all_entries.erase(remove_it, all_entries.end());
     } else {
         auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !(e.isCond() && !e.alwaysTaken); });
+            [](const BTBEntry &e) {
+                return !(e.slot.isCond() && !e.alwaysTaken);
+            });
         all_entries.erase(remove_it, all_entries.end());
     }
 
@@ -880,7 +884,8 @@ BTBTAGE::update(const FetchTarget &stream) {
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
     for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+        bool actual_taken = stream.exeTaken &&
+            stream.exeBranchInfo == btb_entry.slot;
         const bool is_new_entry = !stream.updateIsOldEntry &&btb_entry.slot.pc == stream.updateNewBTBEntry.slot.pc;
         auto orig_it = predMeta->preds.find(btb_entry.slot.pc);
         const bool has_original_pred = orig_it != predMeta->preds.end();

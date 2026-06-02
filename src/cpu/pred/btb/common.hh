@@ -113,15 +113,15 @@ enum class HistoryType
 };
 
 /**
- * @brief Branch information structure containing branch properties and targets
+ * @brief Branch slot observed in a fetch block
  *
- * Stores essential information about a branch instruction including:
+ * Stores essential information about a branch instruction slot including:
  * - PC and target address
  * - Resolved bit
  * - Branch type (conditional, indirect, call, return)
  * - Instruction size
  */
-struct BranchInfo
+struct BranchSlot
 {
   public:
     Addr pc;
@@ -233,7 +233,7 @@ struct BranchInfo
     bool isUncond() const { return !isCond(); }
     bool needIttage() const { return attribute.needIttage(); }
     Addr getEnd() const { return this->pc + this->size; }
-    BranchInfo()
+    BranchSlot()
         : pc(0),
           target(0),
           resolved(false),
@@ -241,7 +241,8 @@ struct BranchInfo
           size(0)
     {
     }
-    BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
+    BranchSlot(const Addr &control_pc, const Addr &target_pc,
+               const StaticInstPtr &static_inst, unsigned size)
         : pc(control_pc),
           target(target_pc),
           resolved(false),
@@ -294,27 +295,29 @@ struct BranchInfo
         }
     }
 
-    bool operator < (const BranchInfo &other) const
+    bool operator < (const BranchSlot &other) const
     {
         return this->pc < other.pc;
     }
 
-    bool operator == (const BranchInfo &other) const
+    bool operator == (const BranchSlot &other) const
     {
         return this->pc == other.pc;
     }
 
-    bool operator > (const BranchInfo &other) const
+    bool operator > (const BranchSlot &other) const
     {
         return this->pc > other.pc;
     }
 
-    bool operator != (const BranchInfo &other) const
+    bool operator != (const BranchSlot &other) const
     {
         return this->pc != other.pc;
     }
 
 };
+
+using BranchInfo = BranchSlot;
 
 
 /**
@@ -328,7 +331,7 @@ struct BranchInfo
  */
 struct BTBEntry
 {
-    BranchInfo slot;
+    BranchSlot slot;
     bool valid;
     bool alwaysTaken;
     int ctr;
@@ -344,8 +347,8 @@ struct BTBEntry
           source(-1)
     {
     }
-    BTBEntry(const BranchInfo &bi)
-        : slot(bi),
+    BTBEntry(const BranchSlot &branch_slot)
+        : slot(branch_slot),
           valid(true),
           alwaysTaken(true),
           ctr(0),
@@ -353,17 +356,6 @@ struct BTBEntry
           source(-1)
     {
     }
-    BranchInfo getBranchInfo() const { return slot; }
-
-    bool isCond() const { return slot.isCond(); }
-    bool isIndirect() const { return slot.isIndirect(); }
-    bool isDirect() const { return slot.isDirect(); }
-    bool isCall() const { return slot.isCall(); }
-    bool isReturn() const { return slot.isReturn(); }
-    bool isUncond() const { return slot.isUncond(); }
-    bool needIttage() const { return slot.needIttage(); }
-    Addr getEnd() const { return slot.getEnd(); }
-    int getType() const { return slot.getType(); }
 
     bool operator < (const BTBEntry &other) const
     {
@@ -373,11 +365,6 @@ struct BTBEntry
     bool operator == (const BTBEntry &other) const
     {
         return slot == other.slot;
-    }
-
-    bool operator == (const BranchInfo &other) const
-    {
-        return slot == other;
     }
 
     bool operator > (const BTBEntry &other) const
@@ -390,11 +377,6 @@ struct BTBEntry
         return slot != other.slot;
     }
 
-    bool operator != (const BranchInfo &other) const
-    {
-        return slot != other;
-    }
-
     int getsource() const {
         return source;
     }
@@ -403,18 +385,6 @@ struct BTBEntry
         source = src;
     }
 };
-
-inline bool
-operator == (const BranchInfo &lhs, const BTBEntry &rhs)
-{
-    return lhs == rhs.getBranchInfo();
-}
-
-inline bool
-operator != (const BranchInfo &lhs, const BTBEntry &rhs)
-{
-    return lhs != rhs.getBranchInfo();
-}
 
 /**
  * @brief Tage prediction info for MGSC
@@ -518,7 +488,7 @@ struct FetchTarget
     Addr startPC;       // start pc of the stream
     bool predTaken;     // whether the FetchTarget has taken branch
     Addr predEndPC;     // predicted stream end pc (fall through pc)
-    BranchInfo predBranchInfo; // predicted branch info
+    BranchSlot predBranchInfo; // predicted branch slot
 
     bool isHit;          // whether the predicted btb entry is hit
     bool falseHit;       // not used
@@ -526,7 +496,7 @@ struct FetchTarget
 
     // for commit, write at redirect or fetch
     bool exeTaken;         // whether the branch is taken(resolved)
-    BranchInfo exeBranchInfo; // executed branch info
+    BranchSlot exeBranchInfo; // executed branch slot
 
     BTBEntry updateNewBTBEntry; // the possible new entry, set by L1BTB.getAndSetNewBTBEntry, used by L1BTB/L0BTB.update
     bool updateIsOldEntry; // whether the BTB entry is old, true: update the old entry, false: use updateNewBTBEntry
@@ -602,11 +572,13 @@ struct FetchTarget
     }
 
     // bool getEnded() const { return resolved ? exeEnded : predEnded; }
-    BranchInfo getBranchInfo() const { return resolved ? exeBranchInfo : predBranchInfo; }
-    Addr getControlPC() const { return getBranchInfo().pc; }
-    Addr getEndPC() const { return getBranchInfo().getEnd(); } // FIXME: should be end of squash inst when non-control squash of trap squash
+    BranchSlot getBranchSlot() const { return resolved ? exeBranchInfo : predBranchInfo; }
+    BranchSlot getBranchInfo() const { return getBranchSlot(); }
+    Addr getControlPC() const { return getBranchSlot().pc; }
+    // FIXME: should be end of squash inst when non-control squash of trap squash.
+    Addr getEndPC() const { return getBranchSlot().getEnd(); }
     Addr getTaken() const { return resolved ? exeTaken : predTaken; }
-    Addr getTakenTarget() const { return getBranchInfo().target; }
+    Addr getTakenTarget() const { return getBranchSlot().target; }
 
     Addr getRealStartPC() const {
         return startPC;
@@ -707,6 +679,25 @@ struct FetchTarget
  */
 struct FullBTBPrediction
 {
+    struct TakenSlotResult
+    {
+        BTBEntry entry;
+        Addr target = 0;
+        Addr fallThrough = 0;
+
+        bool taken() const { return entry.valid; }
+        Addr controlPC() const { return entry.slot.pc; }
+        Addr endPC() const { return taken() ? entry.slot.getEnd() : fallThrough; }
+
+        BranchSlot
+        resolvedSlot() const
+        {
+            auto resolved_slot = entry.slot;
+            resolved_slot.target = target;
+            return resolved_slot;
+        }
+    };
+
     ThreadID tid;
     uint8_t asidHash;
     Addr bbStart;
@@ -742,15 +733,15 @@ struct FullBTBPrediction
         s1Source(-1),
         s3Source(-1) {}
 
-    BTBEntry getTakenEntry() {
+    BTBEntry getTakenEntry() const {
         // IMPORTANT: assume entries are sorted
-        for (auto &entry : this->btbEntries) {
+        for (const auto &entry : this->btbEntries) {
             // hit
             if (entry.valid) {
-                if (entry.isCond()) {
+                if (entry.slot.isCond()) {
                     // find corresponding direction pred in condTakens
                     // TODO: use lower-bit offset of branch instruction
-                    auto& pc = entry.slot.pc;
+                    const auto& pc = entry.slot.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {   // find and taken, return the entry
@@ -758,7 +749,7 @@ struct FullBTBPrediction
                         }
                     }
                 }
-                if (entry.isUncond()) { // find the first uncond entry
+                if (entry.slot.isUncond()) { // find the first uncond entry
                     return entry;
                 }
             }
@@ -766,22 +757,22 @@ struct FullBTBPrediction
         return BTBEntry(); // not found, return empty entry
     }
 
-    bool isTaken() {
+    bool isTaken() const {
         return getTakenEntry().valid;   // if find a taken entry, return true
     }
 
-    Addr getFallThrough(Addr predictWidth) {
+    Addr getFallThrough(Addr predictWidth) const {
         // max 64 byte block, 32 byte aligned
         return (bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     }
 
-    Addr getEntryTarget(const BTBEntry &entry) {
+    Addr getEntryTarget(const BTBEntry &entry) const {
         Addr target = entry.slot.target;
         // indirect target should come from ipred or ras,
         // or btb itself when ipred miss
-        if (entry.isIndirect()) {
-            if (!entry.isReturn()) { // normal indirect, see ittage
-                auto& pc = entry.slot.pc;
+        if (entry.slot.isIndirect()) {
+            if (!entry.slot.isReturn()) { // normal indirect, see ittage
+                const auto& pc = entry.slot.pc;
                 auto it = IndirectTakens_find(indirectTargets, pc);
                 if (it != indirectTargets.end()) { // found in ittage, use it
                     target = it->second;
@@ -793,31 +784,34 @@ struct FullBTBPrediction
         return target;
     }
 
-    Addr getTarget(Addr predictWidth) {
-        Addr target;
+    TakenSlotResult getTakenSlotResult(Addr predictWidth) const
+    {
+        TakenSlotResult result;
+        result.fallThrough = getFallThrough(predictWidth);
+        result.entry = getTakenEntry();
+        result.target = result.entry.valid ? getEntryTarget(result.entry) :
+                                             result.fallThrough;
+        return result;
+    }
+
+    Addr getTarget(Addr predictWidth) const {
+        return getTakenSlotResult(predictWidth).target;
+    }
+
+    Addr getEnd(Addr predictWidth) const {
+        return getTakenSlotResult(predictWidth).endPC();
+    }
+
+    Addr controlAddr() const {
         const auto &entry = getTakenEntry();
-        if (entry.valid) { // found a taken entry
-            target = getEntryTarget(entry);
-        } else {
-            target = getFallThrough(predictWidth);
+        if (entry.valid) {
+            return entry.slot.pc;
         }
-        return target;
+        return 0;
     }
 
-    Addr getEnd(Addr predictWidth) {
-        if (isTaken()) {
-            return getTakenEntry().getEnd();
-        } else {
-            return getFallThrough(predictWidth);
-        }
-    }
-
-
-    Addr controlAddr() {
-        return getTakenEntry().slot.pc;
-    }
-
-    std::pair<bool, OverrideReason> match(FullBTBPrediction &other, Addr predictWidth)
+    std::pair<bool, OverrideReason> match(const FullBTBPrediction &other,
+                                          Addr predictWidth) const
     {
         auto this_taken_entry = this->getTakenEntry();
         auto other_taken_entry = other.getTakenEntry();
@@ -841,14 +835,14 @@ struct FullBTBPrediction
         }
     }
 
-    DirectionHistoryUpdate getGHistUpdate()  //global or local
+    DirectionHistoryUpdate getGHistUpdate() const  //global or local
     {
         DirectionHistoryUpdate update; // shamt is the number of bits to shift in history update
-        for (auto &entry : btbEntries) {
+        for (const auto &entry : btbEntries) {
             if (entry.valid) {
-                if (entry.isCond()) { // if found a cond branch, shamt++
+                if (entry.slot.isCond()) { // if found a cond branch, shamt++
                     update.shamt++;
-                    auto& pc = entry.slot.pc;
+                    const auto& pc = entry.slot.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) { // if the cond branch is taken, taken = true
@@ -867,14 +861,14 @@ struct FullBTBPrediction
         return update;
     }
 
-    DirectionHistoryUpdate getBwHistUpdate() //global backward or imli
+    DirectionHistoryUpdate getBwHistUpdate() const //global backward or imli
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : btbEntries) {
+        for (const auto &entry : btbEntries) {
             if (entry.valid) {
-                if (entry.isCond()) {
+                if (entry.slot.isCond()) {
                     update.shamt++;
-                    auto& pc = entry.slot.pc;
+                    const auto& pc = entry.slot.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {
@@ -893,7 +887,7 @@ struct FullBTBPrediction
         return update;
     }
 
-    PathHistoryUpdate getPHistUpdate() //path
+    PathHistoryUpdate getPHistUpdate() const //path
     {
         PathHistoryUpdate update;
         const auto &entry = getTakenEntry();

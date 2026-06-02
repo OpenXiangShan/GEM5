@@ -541,7 +541,7 @@ BTBMGSC::lookupHelper(const Addr &startPC, const std::vector<BTBEntry> &btbEntri
     // Process each BTB entry to make predictions
     for (auto &btb_entry : btbEntries) {
         // Only predict for valid conditional branches
-        if (btb_entry.isCond() && btb_entry.valid) {
+        if (btb_entry.slot.isCond() && btb_entry.valid) {
             const Addr branch_pc = btb_entry.slot.pc;
             auto tage_info = tageInfoForMgscs.find(branch_pc);
             if (tage_info != tageInfoForMgscs.end()) {
@@ -626,12 +626,15 @@ BTBMGSC::prepareUpdateEntries(const FetchTarget &stream)
 
     // Filter out non-conditional and always-taken branches
     auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-                                    [](const BTBEntry &e) { return !e.isCond() && !e.alwaysTaken; });
+                                    [](const BTBEntry &e) {
+                                        return !e.slot.isCond() && !e.alwaysTaken;
+                                    });
     all_entries.erase(remove_it, all_entries.end());
 
     // Handle potential new BTB entry
     auto &potential_new_entry = stream.updateNewBTBEntry;
-    if (!stream.updateIsOldEntry && potential_new_entry.isCond() && !potential_new_entry.alwaysTaken) {
+    if (!stream.updateIsOldEntry && potential_new_entry.slot.isCond() &&
+        !potential_new_entry.alwaysTaken) {
         all_entries.push_back(potential_new_entry);
     }
 
@@ -959,7 +962,8 @@ BTBMGSC::update(const FetchTarget &stream)
 
     // Process each BTB entry
     for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
+        bool actual_taken = stream.exeTaken &&
+            stream.exeBranchInfo == btb_entry.slot;
         auto pred_it = preds.find(btb_entry.slot.pc);
 
         if (pred_it == preds.end()) {

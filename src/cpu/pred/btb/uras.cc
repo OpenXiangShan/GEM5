@@ -99,11 +99,12 @@ BTBuRAS::specUpdateState(FullBTBPrediction &pred)
     auto &sp = specSp;
     // do push & pops on prediction
     pred.returnTarget = stack[sp].retAddr;
-    auto takenSlot = pred.getTakenEntry();
+    auto takenEntry = pred.getTakenEntry();
+    auto takenSlot = takenEntry.slot;
     if (takenSlot.isCall()) {
-        Addr retAddr = takenSlot.slot.pc + takenSlot.slot.size;
+        Addr retAddr = takenSlot.pc + takenSlot.size;
         if (enableDB) {
-            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::PUSH, pred.bbStart, takenSlot.slot.pc,
+            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::PUSH, pred.bbStart, takenSlot.pc,
                 retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
             specRasTrace->write_record(rec);
         }
@@ -112,7 +113,7 @@ BTBuRAS::specUpdateState(FullBTBPrediction &pred)
     }
     if (takenSlot.isReturn()) {
         if (enableDB) {
-            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::POP, pred.bbStart, takenSlot.slot.pc,
+            SpecRASTrace rec(When::SPECULATIVE, RAS_OP::POP, pred.bbStart, takenSlot.pc,
                 stack[sp].retAddr, sp, stack[sp].retAddr, stack[sp].ctr);
             specRasTrace->write_record(rec);
         }

@@ -172,7 +172,8 @@ class MBTB : public TimedBaseBTBPredictor
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, \
             cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d, tick:%lu\n",
             e.valid, e.slot.pc, e.tag, e.slot.size, e.slot.target,
-            e.isCond(), e.isIndirect(), e.isCall(), e.isReturn(),
+            e.slot.isCond(), e.slot.isIndirect(), e.slot.isCall(),
+            e.slot.isReturn(),
             e.alwaysTaken, tick);
     }
 

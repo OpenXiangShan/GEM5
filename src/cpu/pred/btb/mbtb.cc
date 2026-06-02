@@ -258,13 +258,13 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     // Set predictions for each branch
     for (auto &e : entries) {
         assert(e.valid);
-        if (e.isCond()) {
+        if (e.slot.isCond()) {
             // TODO: a performance bug here, mbtb should not update condTakens!
 
             FillStageLoop(s) stagePreds[s].condTakens.push_back(
                 {e.slot.pc, e.alwaysTaken || (e.ctr >= 0)});
 
-        } else if (e.isIndirect()) {
+        } else if (e.slot.isIndirect()) {
             // Set predicted target for indirect branches
             DPRINTF(BTB, "setting indirect target for pc %#lx to %#lx\n",
                     e.slot.pc, e.slot.target);
@@ -272,7 +272,7 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
             FillStageLoop(s) stagePreds[s].indirectTargets.push_back(
                 {e.slot.pc, e.slot.target});
 
-            if (e.isReturn()) {
+            if (e.slot.isReturn()) {
                 FillStageLoop(s) stagePreds[s].returnTarget = e.slot.target;
             }
             break;
@@ -421,7 +421,7 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
     bool pred_branch_hit = false;
     BTBEntry entry_to_write = BTBEntry();
     for (auto &e: predBTBEntries) {
-        if (stream.exeBranchInfo == e) {
+        if (stream.exeBranchInfo == e.slot) {
             pred_branch_hit = true;
             entry_to_write = e;
             break;
@@ -435,7 +435,7 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
         BTBEntry new_entry = BTBEntry(stream.exeBranchInfo);
         new_entry.valid = true;
         // For conditional branches, initialize as always taken
-        if (new_entry.isCond()) {
+        if (new_entry.slot.isCond()) {
             new_entry.alwaysTaken = true;
             new_entry.ctr = 0;  // Start with positive prediction
             btbStats.newEntryWithCond++;
@@ -467,7 +467,7 @@ MBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (stream.exeBranchInfo == e) {
+        if (stream.exeBranchInfo == e.slot) {
             pred_branch_hit = true;
             break;
         }
@@ -553,7 +553,7 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
                         const FetchTarget &stream)
 {
     // For conditional branches, prefer the existing entry to preserve up-to-date ctr
-    auto entry_to_write = (req_entry.isCond() && existing_entry)
+    auto entry_to_write = (req_entry.slot.isCond() && existing_entry)
                               ? BTBEntry(*existing_entry)
                               : req_entry;
     // Always recalculate tag based on the actual PC being written
@@ -561,7 +561,7 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
     entry_to_write.slot.resolved = false; // reset resolved status
 
     // Update saturating counter and alwaysTaken
-    if (entry_to_write.isCond()) {
+    if (entry_to_write.slot.isCond()) {
         bool this_cond_taken = stream.exeTaken &&
             stream.getControlPC() == entry_to_write.slot.pc;
         if (!this_cond_taken) {
@@ -575,7 +575,7 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
     }
 
     // Update indirect target if necessary
-    if (entry_to_write.isIndirect() && stream.exeTaken &&
+    if (entry_to_write.slot.isIndirect() && stream.exeTaken &&
         stream.getControlPC() == entry_to_write.slot.pc) {
         entry_to_write.slot.target = stream.exeBranchInfo.target;
     }
@@ -596,7 +596,7 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;
-        rec.set(ticked_entry.slot.pc, ticked_entry.getType(),
+        rec.set(ticked_entry.slot.pc, ticked_entry.slot.getType(),
                 ticked_entry.slot.target, btb_idx, Mode::WRITE, 1);
         btbTrace->write_record(rec);
     }
@@ -625,7 +625,8 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;
-        rec.set(entry_in_btb_now->slot.pc, entry_in_btb_now->getType(),
+        rec.set(entry_in_btb_now->slot.pc,
+                entry_in_btb_now->slot.getType(),
                 entry_in_btb_now->slot.target, btb_idx, Mode::EVICT, 0);
         btbTrace->write_record(rec);
     }
@@ -645,7 +646,8 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;
-        rec.set(entry_in_btb_now->slot.pc, entry_in_btb_now->getType(),
+        rec.set(entry_in_btb_now->slot.pc,
+                entry_in_btb_now->slot.getType(),
                 entry_in_btb_now->slot.target, btb_idx, Mode::WRITE, 0);
         btbTrace->write_record(rec);
     }

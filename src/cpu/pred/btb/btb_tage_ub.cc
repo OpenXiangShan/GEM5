@@ -305,7 +305,7 @@ BTBTAGEUpperBound::putPCHistory(Addr startAddr, const bitset &history,
         stagePred.tageInfoForMgscs.clear();
 
         for (auto &btbEntry : stagePred.btbEntries) {
-            if (!(btbEntry.isCond() && btbEntry.valid)) {
+            if (!(btbEntry.slot.isCond() && btbEntry.valid)) {
                 continue;
             }
 
@@ -510,14 +510,14 @@ BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(const FetchTarget &stream)
         auto removeIt = std::remove_if(
             allEntries.begin(), allEntries.end(),
             [](const BTBEntry &e) {
-                return !(e.isCond() && !e.alwaysTaken && e.slot.resolved);
+                return !(e.slot.isCond() && !e.alwaysTaken && e.slot.resolved);
             });
         allEntries.erase(removeIt, allEntries.end());
     } else {
         auto removeIt = std::remove_if(
             allEntries.begin(), allEntries.end(),
             [](const BTBEntry &e) {
-                return !(e.isCond() && !e.alwaysTaken);
+                return !(e.slot.isCond() && !e.alwaysTaken);
             });
         allEntries.erase(removeIt, allEntries.end());
     }
@@ -546,7 +546,7 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
         auto predIt = predMeta->preds.find(btbEntry.slot.pc);
         auto metaIt = predMeta->branchMeta.find(btbEntry.slot.pc);
         const bool actualTaken =
-            stream.exeTaken && stream.exeBranchInfo == btbEntry;
+            stream.exeTaken && stream.exeBranchInfo == btbEntry.slot;
         TagePrediction storedPred;
         BranchPredictionMeta storedMeta;
         if (predIt != predMeta->preds.end() &&

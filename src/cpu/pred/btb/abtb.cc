@@ -301,15 +301,15 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     // Set predictions for each branch
     for (auto &e : mixed_entries) {
         assert(e.valid);
-        if (e.isCond()) {
+        if (e.slot.isCond()) {
             FillStageLoop(s) stagePreds[s].condTakens.push_back({e.slot.pc, e.alwaysTaken || (e.ctr >= 0)});
-        } else if (e.isIndirect()) {
+        } else if (e.slot.isIndirect()) {
             // Set predicted target for indirect branches
             DPRINTF(ABTB, "setting indirect target for pc %#lx to %#lx\n", e.slot.pc, e.slot.target);
 
             FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.slot.pc, e.slot.target});
 
-            if (e.isReturn()) {
+            if (e.slot.isReturn()) {
                 FillStageLoop(s) stagePreds[s].returnTarget = e.slot.target;
             }
             break;
@@ -496,7 +496,7 @@ AheadBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (stream.exeBranchInfo == e) {
+        if (stream.exeBranchInfo == e.slot) {
             pred_branch_hit = true;
             break;
         }
@@ -563,11 +563,11 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
     }
     // if cond entry in btb now, use the one in btb, since we need the up-to-date counter
     // else use the recorded entry
-    auto entry_to_write = entry.isCond() && found ? BTBEntry(*it) : entry;
+    auto entry_to_write = entry.slot.isCond() && found ? BTBEntry(*it) : entry;
     entry_to_write.slot.resolved = false; // reset resolved bit on update
     entry_to_write.tag = btb_tag;   // update tag after found it!
     // update saturating counter if necessary
-    if (entry_to_write.isCond()) {
+    if (entry_to_write.slot.isCond()) {
         bool this_cond_taken = isTaken && takenbranchinfo.pc == entry_to_write.slot.pc;
         if (!this_cond_taken) {
             entry_to_write.alwaysTaken = false;
@@ -577,7 +577,8 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
         }
     }
     // update indirect target if necessary
-    if (entry_to_write.isIndirect() && isTaken && takenbranchinfo.pc == entry_to_write.slot.pc) {
+    if (entry_to_write.slot.isIndirect() && isTaken &&
+        takenbranchinfo.pc == entry_to_write.slot.pc) {
         entry_to_write.slot.target = takenbranchinfo.target;
     }
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
@@ -587,7 +588,7 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(ticked_entry.slot.pc, ticked_entry.getType(),
+            rec.set(ticked_entry.slot.pc, ticked_entry.slot.getType(),
                 ticked_entry.slot.target, btb_idx, Mode::WRITE, 1);
             btbTrace->write_record(rec);
         }
@@ -603,7 +604,8 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(entry_in_btb_now->slot.pc, entry_in_btb_now->getType(),
+            rec.set(entry_in_btb_now->slot.pc,
+                entry_in_btb_now->slot.getType(),
                     entry_in_btb_now->slot.target, btb_idx, Mode::EVICT, 0);
                 btbTrace->write_record(rec);
         }
@@ -620,7 +622,8 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(entry_in_btb_now->slot.pc, entry_in_btb_now->getType(),
+            rec.set(entry_in_btb_now->slot.pc,
+                entry_in_btb_now->slot.getType(),
                 entry_in_btb_now->slot.target, btb_idx, Mode::WRITE, 0);
             btbTrace->write_record(rec);
         }
@@ -639,8 +642,9 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         return;
     }
 
-    Addr end_inst_pc = s3Pred.isTaken() ? s3Pred.getTakenEntry().slot.pc :
-                            (s3Pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
+    auto taken_result = s3Pred.getTakenSlotResult(predictWidth);
+    Addr end_inst_pc = taken_result.taken() ? taken_result.controlPC() :
+                       taken_result.fallThrough;
 
     // AheadBTB use S3 prediction for update
     auto &state = threadState(s3Pred.tid);
@@ -656,12 +660,14 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
             return;
         }
         Addr btb_idx = getIndex(previousPC, s3Pred.asidHash);  // use last pc to get idx
-        BranchInfo takenbranchinfo;
-        takenbranchinfo.pc = s3Pred.getTakenEntry().slot.pc;
-        takenbranchinfo.target = s3Pred.getTakenEntry().slot.target;
+        BranchSlot takenbranchinfo;
+        if (taken_result.taken()) {
+            takenbranchinfo = taken_result.resolvedSlot();
+        }
         entry.source = getComponentIdx(); // mark the entry source as AheadBTB
 
-        updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo, s3Pred.isTaken());
+        updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo,
+                       taken_result.taken());
     }
 }
 std::vector<BTBEntry>
@@ -670,20 +676,21 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
 {
     auto all_entries = old_entries;
     BTBEntry new_entry = BTBEntry();
+    auto taken_entry = s3Pred.getTakenEntry();
     // which causes its counter to update twice unintentionally
     // we need to check if the new entry already exists in uBTB
     bool pred_branch_hit = false;
     for (auto &e: old_entries) {
-        if (s3Pred.getTakenEntry() == e) {
+        if (taken_entry == e) {
             pred_branch_hit = true;
             break;
         }
     }
-    if (!pred_branch_hit&& s3Pred.isTaken()) {
-        new_entry = s3Pred.getTakenEntry();
+    if (!pred_branch_hit && taken_entry.valid) {
+        new_entry = taken_entry;
         new_entry.valid = true;
 
-        if (new_entry.isCond()) {
+        if (new_entry.slot.isCond()) {
             new_entry.alwaysTaken = true;
             new_entry.ctr = 0;
         }

@@ -62,11 +62,11 @@ FetchTarget createStream(Addr startPC, const BTBEntry& entry, bool taken,
                          std::shared_ptr<void> meta) {
     FetchTarget stream;
     stream.startPC = startPC;
-    stream.exeBranchInfo = entry.getBranchInfo();
+    stream.exeBranchInfo = entry.slot;
     stream.exeTaken = taken;
     // Mark as resolved so recover paths use exe* info
     stream.resolved = true;
-    stream.predBranchInfo = entry.getBranchInfo(); // keep fields consistent
+    stream.predBranchInfo = entry.slot; // keep fields consistent
     stream.updateBTBEntries = {entry};
     stream.updateIsOldEntry = true;
     stream.predMetas[0] = meta;
@@ -1198,10 +1198,10 @@ TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
     BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.exeBranchInfo = newEntry.getBranchInfo();
+    stream.exeBranchInfo = newEntry.slot;
     stream.exeTaken = true;
     stream.resolved = true;
-    stream.predBranchInfo = newEntry.getBranchInfo();
+    stream.predBranchInfo = newEntry.slot;
     stream.updateBTBEntries.clear();
     stream.updateIsOldEntry = false;
     stream.updateNewBTBEntry = newEntry;
@@ -1385,10 +1385,10 @@ TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrain
     BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.exeBranchInfo = newEntry.getBranchInfo();
+    stream.exeBranchInfo = newEntry.slot;
     stream.exeTaken = true;
     stream.resolved = true;
-    stream.predBranchInfo = newEntry.getBranchInfo();
+    stream.predBranchInfo = newEntry.slot;
     stream.updateBTBEntries.clear();
     stream.updateIsOldEntry = false;
     stream.updateNewBTBEntry = newEntry;
