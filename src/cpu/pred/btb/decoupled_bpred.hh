@@ -20,6 +20,7 @@
 #include "cpu/pred/btb/btb_tage.hh"
 #include "cpu/pred/btb/btb_ubtb.hh"
 #include "cpu/pred/btb/common.hh"
+#include "cpu/pred/btb/final_prediction_selector.hh"
 #include "cpu/pred/btb/ftq.hh"
 #include "cpu/pred/btb/history_manager.hh"
 #include "cpu/pred/btb/mbtb.hh"

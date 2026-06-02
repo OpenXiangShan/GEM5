@@ -353,88 +353,25 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
         printFullBTBPrediction(predsOfEachStage[i]);
     }
 
-    // 2. Select the most accurate prediction (prioritize later stages)
-    // Initially assume stage 0 (UBTB) prediction
-    FullBTBPrediction *chosenPrediction = &predsOfEachStage[0];
-
-    // Search from last stage to first for valid predictions
-    for (int i = (int)numStages - 1; i >= 0; i--) {
-        if (predsOfEachStage[i].btbEntries.size() > 0) {
-            chosenPrediction = &predsOfEachStage[i];
-            DPRINTF(Override, "Selected prediction from stage %d\n", i);
-            break;
-        }
-    }
+    const FinalPredictionSelectorConfig selector_config{
+        ras->getComponentIdx(),
+        ittage->getComponentIdx(),
+        tage->getComponentIdx(),
+        mbtb->getComponentIdx(),
+    };
+    const auto selection =
+        selectFinalPrediction(predsOfEachStage, predictWidth, selector_config,
+                              [this]() { return ittage->tageHit(); });
+    DPRINTF(Override, "Selected prediction from stage %u\n",
+            selection.chosenStage);
 
     // Store the chosen prediction as our final prediction
-    finalPred = *chosenPrediction;
-
-    finalPred.s1Source = -1;//meaning fallthrough
-    finalPred.s3Source = -1;
-
-    if (predsOfEachStage[0].btbEntries.size() != 0) {
-        for (auto entry : predsOfEachStage[0].btbEntries){
-            if (entry.slot.isIndirect() || entry.slot.isDirect() ||
-                entry.ctr >= 0 || entry.alwaysTaken) {
-                finalPred.s1Source = entry.source;
-                break;
-            }
-        }
-    }
-
-    bool found_s3_taken = false;
-    bool na_s3_taken_but_have_cond = false;
-
-    for (BTBEntry entry : predsOfEachStage[2].btbEntries) {
-        if (entry.slot.isDirect() || entry.slot.isIndirect() ||
-            entry.ctr >= 0 || entry.alwaysTaken) {
-            found_s3_taken = true;
-        } else if (entry.slot.isCond()) {
-            //only use when there's no taken prediction in s3
-            na_s3_taken_but_have_cond = true;
-        }
-    }
-
-    if (found_s3_taken) {
-        auto pred_taken_entry = finalPred.getTakenEntry();
-        if (pred_taken_entry.valid) {
-            if (pred_taken_entry.slot.isReturn()) {
-                finalPred.s3Source = ras->getComponentIdx();
-            } else if (pred_taken_entry.slot.isIndirect() && ittage->tageHit()) {
-                finalPred.s3Source = ittage->getComponentIdx();
-            } else if (pred_taken_entry.slot.isCond()) {
-                finalPred.s3Source = tage->getComponentIdx();
-            } else {
-                finalPred.s3Source = mbtb->getComponentIdx();
-            }
-        }else {
-            if (na_s3_taken_but_have_cond) {
-                finalPred.s3Source = tage->getComponentIdx();
-            }else {
-                finalPred.s3Source = -1;
-            }
-        }
-    }
-
-
-
-    // 3. Calculate override bubbles needed for pipeline consistency
-    // Override bubbles are needed when earlier stages predict differently from later stages
-    unsigned first_hit_stage = 0;
-    OverrideReason overrideReason = OverrideReason::NO_OVERRIDE;
-
-    // Find first stage that matches the chosen prediction
-    while (first_hit_stage < numStages - 1) {
-        auto [matches, reason] = predsOfEachStage[first_hit_stage].match(*chosenPrediction, predictWidth);
-        if (matches) {
-            break;
-        }
-        first_hit_stage++;
-        overrideReason = reason;
-    }
+    finalPred = predsOfEachStage[selection.chosenStage];
+    finalPred.s1Source = selection.s1Source;
+    finalPred.s3Source = selection.s3Source;
 
     // update ubtb/abtb using final S3 prediction
-    if (predsOfEachStage[numStages - 1].btbEntries.size() > 0) {
+    if (selection.updateAheadFromLastStage) {
         if (ubtb->isEnabled()) {
             ubtb->updateUsingS3Pred(predsOfEachStage[numStages - 1]);
         }
@@ -447,23 +384,24 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     }
 
     // 4. Record override bubbles and update statistics
-    if (first_hit_stage > 0) {
+    if (selection.firstMatchingStage > 0) {
         dbpBtbStats.overrideCount++;
     }
 
     // 5. Finalize prediction process
-    finalPred.predSource = first_hit_stage;
-    finalPred.overrideReason = overrideReason;
+    finalPred.predSource = selection.firstMatchingStage;
+    finalPred.overrideReason = selection.overrideReason;
 
     // Debug output for final prediction
     printFullBTBPrediction(finalPred);
-    dbpBtbStats.predsOfEachStage[first_hit_stage]++;
+    dbpBtbStats.predsOfEachStage[selection.firstMatchingStage]++;
 
     // Clear stage predictions for next cycle
     clearPreds(tid);
 
-    DPRINTF(Override, "Prediction complete: override bubbles=%d\n", first_hit_stage);
-    threads[tid].numOverrideBubbles = first_hit_stage;
+    DPRINTF(Override, "Prediction complete: override bubbles=%d\n",
+            selection.firstMatchingStage);
+    threads[tid].numOverrideBubbles = selection.firstMatchingStage;
 }
 
 // this function enqueues fsq and update s0PC and s0History
