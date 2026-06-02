@@ -139,6 +139,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         std::vector<boost::dynamic_bitset<>> s0LHistory;  ///< local History bits
         boost::dynamic_bitset<> commitHistory;
         FullBTBPrediction finalPred;      ///< Final prediction
+        FinalPredictionMetadata finalPredMetadata; ///< Final attribution
         unsigned numOverrideBubbles{0};
         bool validprediction{false};
         bool squashing{false};
@@ -202,7 +203,6 @@ class DecoupledBPUWithBTB : public BPredUnit
     void clearPreds(ThreadID tid) {
         for (int i = 0; i < threads[tid].predsOfEachStage.size(); ++i) {
             threads[tid].predsOfEachStage[i] = FullBTBPrediction();
-            threads[tid].predsOfEachStage[i].predSource = i;
         }
     }
 
@@ -390,7 +390,8 @@ class DecoupledBPUWithBTB : public BPredUnit
             _tick = curTick();
             set(id, entry.startPC, entry.predTaken, entry.predEndPC,
                 entry.getControlPC(), entry.getTakenTarget(),
-                entry.predSource, entry.isHit ? 1 : 0);
+                entry.finalPredMetadata.firstMatchingStage,
+                entry.isHit ? 1 : 0);
         }
     };
 

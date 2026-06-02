@@ -48,7 +48,6 @@ FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb,
         stagePreds[i].tid = tid;
         stagePreds[i].asidHash = asidHash;
         stagePreds[i].bbStart = startPC;
-        stagePreds[i].predSource = i;
     }
     boost::dynamic_bitset<> history(8, 0); // history does not matter for BTB
     abtb->putPCHistory(startPC, history, stagePreds);

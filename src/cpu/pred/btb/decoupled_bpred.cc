@@ -122,9 +122,6 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
 
         thread.s0PC = 0x80000000;
         thread.predsOfEachStage.resize(numStages);
-        for (unsigned i = 0; i < numStages; i++) {
-            thread.predsOfEachStage[i].predSource = i;
-        }
         thread.s0History.resize(historyBits, 0);
         thread.s0PHistory.resize(historyBits, 0);
         thread.s0BwHistory.resize(historyBits, 0);
@@ -323,7 +320,6 @@ DecoupledBPUWithBTB::requestNewPrediction(ThreadID tid)
         predsOfEachStage[i].tid = tid;
         predsOfEachStage[i].asidHash = asid_hash;
         predsOfEachStage[i].bbStart = thread.s0PC;
-        predsOfEachStage[i].predSource = i;
     }
 
     // Query each predictor component with current PC and history
@@ -347,6 +343,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     auto& predsOfEachStage = threads[tid].predsOfEachStage;
     auto& finalPred = threads[tid].finalPred;
+    auto& finalPredMetadata = threads[tid].finalPredMetadata;
 
     // 1. Debug output: dump predictions from all stages
     for (int i = 0; i < numStages; i++) {
@@ -367,8 +364,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     // Store the chosen prediction as our final prediction
     finalPred = predsOfEachStage[selection.chosenStage];
-    finalPred.s1Source = selection.s1Source;
-    finalPred.s3Source = selection.s3Source;
+    finalPredMetadata = selection.metadata;
 
     // update ubtb/abtb using final S3 prediction
     if (selection.updateAheadFromLastStage) {
@@ -384,24 +380,20 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     }
 
     // 4. Record override bubbles and update statistics
-    if (selection.firstMatchingStage > 0) {
+    if (finalPredMetadata.firstMatchingStage > 0) {
         dbpBtbStats.overrideCount++;
     }
 
-    // 5. Finalize prediction process
-    finalPred.predSource = selection.firstMatchingStage;
-    finalPred.overrideReason = selection.overrideReason;
-
     // Debug output for final prediction
     printFullBTBPrediction(finalPred);
-    dbpBtbStats.predsOfEachStage[selection.firstMatchingStage]++;
+    dbpBtbStats.predsOfEachStage[finalPredMetadata.firstMatchingStage]++;
 
     // Clear stage predictions for next cycle
     clearPreds(tid);
 
     DPRINTF(Override, "Prediction complete: override bubbles=%d\n",
-            selection.firstMatchingStage);
-    threads[tid].numOverrideBubbles = selection.firstMatchingStage;
+            finalPredMetadata.firstMatchingStage);
+    threads[tid].numOverrideBubbles = finalPredMetadata.firstMatchingStage;
 }
 
 // this function enqueues fsq and update s0PC and s0History
@@ -823,6 +815,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
     auto& s0BwHistory = threads[tid].s0BwHistory;
     auto& s0LHistory = threads[tid].s0LHistory;
     auto& finalPred = threads[tid].finalPred;
+    const auto &finalPredMetadata = threads[tid].finalPredMetadata;
 
     // Create a new fetch target entry
     FetchTarget entry;
@@ -853,11 +846,7 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
     entry.bwhistory = s0BwHistory;
     entry.lhistory = s0LHistory;
     entry.predTick = finalPred.predTick;
-    entry.predSource = finalPred.predSource;
-    entry.overrideReason = finalPred.overrideReason;
-
-    entry.s1Source = finalPred.s1Source;
-    entry.s3Source = finalPred.s3Source;
+    entry.finalPredMetadata = finalPredMetadata;
 
     // Save predictors' metadata
     for (int i = 0; i < numComponents; i++) {

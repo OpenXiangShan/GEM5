@@ -31,10 +31,7 @@ struct FinalPredictionSelectorConfig
 struct FinalPredictionSelection
 {
     unsigned chosenStage = 0;
-    unsigned firstMatchingStage = 0;
-    OverrideReason overrideReason = OverrideReason::NO_OVERRIDE;
-    int s1Source = -1;
-    int s3Source = -1;
+    FinalPredictionMetadata metadata;
     bool updateAheadFromLastStage = false;
 };
 
@@ -156,17 +153,17 @@ selectFinalPrediction(const std::vector<FullBTBPrediction> &stage_preds,
 
     FinalPredictionSelection selection;
     selection.chosenStage = chooseFinalPredictionStage(stage_preds);
-    selection.s1Source =
+    selection.metadata.s1Source =
         findS1PredictionSource(stage_preds, config.s1SourceStage);
-    selection.s3Source =
+    selection.metadata.s3Source =
         findS3PredictionSource(stage_preds, selection.chosenStage,
                                config, ittage_hit);
 
     const auto [first_matching_stage, override_reason] =
         findFirstMatchingStage(stage_preds, selection.chosenStage,
                                predict_width);
-    selection.firstMatchingStage = first_matching_stage;
-    selection.overrideReason = override_reason;
+    selection.metadata.firstMatchingStage = first_matching_stage;
+    selection.metadata.overrideReason = override_reason;
     selection.updateAheadFromLastStage = !stage_preds.back().btbEntries.empty();
 
     return selection;

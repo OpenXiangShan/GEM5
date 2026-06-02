@@ -70,7 +70,6 @@ makeStagePreds(unsigned num_stages = 4)
     std::vector<FullBTBPrediction> stage_preds(num_stages);
     for (unsigned stage = 0; stage < num_stages; ++stage) {
         stage_preds[stage].bbStart = 0x1000;
-        stage_preds[stage].predSource = stage;
     }
     return stage_preds;
 }
@@ -97,8 +96,9 @@ TEST(FinalPredictionSelectorTest, EmptyPredictionsFallBackToStageZero)
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig());
 
     EXPECT_EQ(selection.chosenStage, 0);
-    EXPECT_EQ(selection.firstMatchingStage, 0);
-    EXPECT_EQ(selection.overrideReason, OverrideReason::NO_OVERRIDE);
+    EXPECT_EQ(selection.metadata.firstMatchingStage, 0);
+    EXPECT_EQ(selection.metadata.overrideReason,
+              OverrideReason::NO_OVERRIDE);
     EXPECT_FALSE(selection.updateAheadFromLastStage);
 }
 
@@ -114,8 +114,9 @@ TEST(FinalPredictionSelectorTest, FirstMatchingStageKeepsEarlierMismatchReason)
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig());
 
     EXPECT_EQ(selection.chosenStage, 3);
-    EXPECT_EQ(selection.firstMatchingStage, 1);
-    EXPECT_EQ(selection.overrideReason, OverrideReason::FALL_THRU);
+    EXPECT_EQ(selection.metadata.firstMatchingStage, 1);
+    EXPECT_EQ(selection.metadata.overrideReason,
+              OverrideReason::FALL_THRU);
 }
 
 TEST(FinalPredictionSelectorTest, S1SourceUsesFirstTakenLikeEntrySource)
@@ -129,7 +130,7 @@ TEST(FinalPredictionSelectorTest, S1SourceUsesFirstTakenLikeEntrySource)
     const auto selection =
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig());
 
-    EXPECT_EQ(selection.s1Source, 7);
+    EXPECT_EQ(selection.metadata.s1Source, 7);
 }
 
 TEST(FinalPredictionSelectorTest, S3SourceClassifiesTakenEntry)
@@ -141,28 +142,28 @@ TEST(FinalPredictionSelectorTest, S3SourceClassifiesTakenEntry)
 
     auto selection =
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig());
-    EXPECT_EQ(selection.s3Source, RasSource);
+    EXPECT_EQ(selection.metadata.s3Source, RasSource);
 
     stage_preds[2].btbEntries = {makeEntry(0x1010, 0x1200, false, true)};
     selection =
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig(true));
-    EXPECT_EQ(selection.s3Source, IttageSource);
+    EXPECT_EQ(selection.metadata.s3Source, IttageSource);
 
     selection =
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig(false));
-    EXPECT_EQ(selection.s3Source, MbtbSource);
+    EXPECT_EQ(selection.metadata.s3Source, MbtbSource);
 
     stage_preds[2].btbEntries = {makeEntry(0x1010, 0x1200, true)};
     stage_preds[2].condTakens = {{0x1010, true}};
     selection =
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig());
-    EXPECT_EQ(selection.s3Source, TageSource);
+    EXPECT_EQ(selection.metadata.s3Source, TageSource);
 
     stage_preds[2].btbEntries = {makeEntry(0x1010, 0x1200)};
     stage_preds[2].condTakens.clear();
     selection =
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig());
-    EXPECT_EQ(selection.s3Source, MbtbSource);
+    EXPECT_EQ(selection.metadata.s3Source, MbtbSource);
 }
 
 TEST(FinalPredictionSelectorTest, IttageHitProviderIsLazy)
@@ -178,7 +179,7 @@ TEST(FinalPredictionSelectorTest, IttageHitProviderIsLazy)
     auto selection =
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig(),
                               ittage_hit);
-    EXPECT_EQ(selection.s3Source, MbtbSource);
+    EXPECT_EQ(selection.metadata.s3Source, MbtbSource);
     EXPECT_EQ(ittage_hit_calls, 0);
 
     stage_preds[2].btbEntries = {
@@ -187,7 +188,7 @@ TEST(FinalPredictionSelectorTest, IttageHitProviderIsLazy)
     selection =
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig(),
                               ittage_hit);
-    EXPECT_EQ(selection.s3Source, RasSource);
+    EXPECT_EQ(selection.metadata.s3Source, RasSource);
     EXPECT_EQ(ittage_hit_calls, 0);
 
     stage_preds[2].btbEntries = {makeEntry(0x1010, 0x1200, true)};
@@ -195,7 +196,7 @@ TEST(FinalPredictionSelectorTest, IttageHitProviderIsLazy)
     selection =
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig(),
                               ittage_hit);
-    EXPECT_EQ(selection.s3Source, TageSource);
+    EXPECT_EQ(selection.metadata.s3Source, TageSource);
     EXPECT_EQ(ittage_hit_calls, 0);
 
     stage_preds[2].btbEntries = {makeEntry(0x1010, 0x1200, false, true)};
@@ -203,7 +204,7 @@ TEST(FinalPredictionSelectorTest, IttageHitProviderIsLazy)
     selection =
         selectFinalPrediction(stage_preds, 64, makeSelectorConfig(),
                               ittage_hit);
-    EXPECT_EQ(selection.s3Source, IttageSource);
+    EXPECT_EQ(selection.metadata.s3Source, IttageSource);
     EXPECT_EQ(ittage_hit_calls, 1);
 }
 
@@ -222,7 +223,7 @@ TEST(FinalPredictionSelectorTest, S3TakenLikeEntryPlusCondCanAttributeToTage)
 
     EXPECT_EQ(selection.chosenStage, 3);
     EXPECT_FALSE(stage_preds[selection.chosenStage].isTaken());
-    EXPECT_EQ(selection.s3Source, TageSource);
+    EXPECT_EQ(selection.metadata.s3Source, TageSource);
 }
 
 TEST(FinalPredictionSelectorTest, AheadUpdateUsesLastStage)

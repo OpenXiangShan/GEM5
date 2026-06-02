@@ -104,6 +104,14 @@ enum class OverrideReason
     HIST_INFO
 };
 
+struct FinalPredictionMetadata
+{
+    unsigned firstMatchingStage = 0;
+    OverrideReason overrideReason = OverrideReason::NO_OVERRIDE;
+    int s1Source = -1;
+    int s3Source = -1;
+};
+
 enum class HistoryType
 {
     GLOBAL,
@@ -495,8 +503,7 @@ struct FetchTarget
 
     int squashType;         // squash type
     Addr squashPC;         // pc of the squash inst
-    unsigned predSource;   // source of the prediction(numStage)
-    OverrideReason overrideReason; // reason of the override(for profiling)
+    FinalPredictionMetadata finalPredMetadata; // final prediction attribution
 
     // prediction metas
     // FIXME: use vec
@@ -512,9 +519,6 @@ struct FetchTarget
     // for profiling
     int fetchInstNum;
     int commitInstNum;
-
-    int s1Source; // which stage the prediction comes from
-    int s3Source; // which stage the prediction comes from
 
    FetchTarget()
        : tid(0),
@@ -533,16 +537,14 @@ struct FetchTarget
          updateEndInstPC(0),
          squashType(SquashType::SQUASH_NONE),
          squashPC(0),
-         predSource(0),
+         finalPredMetadata(),
          predTick(0),
          history(),
          phistory(),
          bwhistory(),
          lhistory(),
          fetchInstNum(0),
-         commitInstNum(0),
-         s1Source(-1),
-         s3Source(-1)
+         commitInstNum(0)
    {
        predMetas.fill(nullptr);
        predBTBEntries.clear();
@@ -682,13 +684,7 @@ struct FullBTBPrediction
 
     std::unordered_map<Addr, TageInfoForMGSC> tageInfoForMgscs;
 
-    unsigned predSource;
-    OverrideReason overrideReason;
     Tick predTick;
-
-    //only use for countering the source of the prediction
-    int s1Source;
-    int s3Source;
 
     FullBTBPrediction() :
         tid(0),
@@ -699,10 +695,7 @@ struct FullBTBPrediction
         indirectTargets(),
         returnTarget(0),
         tageInfoForMgscs(),
-        predSource(0),
-        predTick(0),
-        s1Source(-1),
-        s3Source(-1) {}
+        predTick(0) {}
 
     PredictionResult
     resultView() const

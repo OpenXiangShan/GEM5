@@ -342,7 +342,9 @@ DecoupledBPUWithBTB::BpTrace::BpTrace(uint64_t fsqId, FetchTarget &target, const
     Addr targetpc = rv_pc.npc();
     Addr fallThru = rv_pc.getFallThruPC();
     BranchInfo info(pc, targetpc, inst->staticInst, fallThru-pc);
-    set(fsqId, target.startPC, pc, info.getType(), inst->branching(), mispred, fallThru, target.predSource, targetpc);
+    set(fsqId, target.startPC, pc, info.getType(), inst->branching(),
+        mispred, fallThru, target.finalPredMetadata.firstMatchingStage,
+        targetpc);
     // for (auto it = _uint64_data.begin(); it != _uint64_data.end(); it++) {
     //     printf("%s: %ld\n", it->first.c_str(), it->second);
     // }
@@ -734,8 +736,9 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
     }
 
     // Track which predictor stage was used
-    dbpBtbStats.commitPredsFromEachStage[target.predSource]++;
-    overrideStats(target.overrideReason);
+    dbpBtbStats.commitPredsFromEachStage[
+        target.finalPredMetadata.firstMatchingStage]++;
+    overrideStats(target.finalPredMetadata.overrideReason);
 
     // --- Instruction Statistics ---
     // Track committed instruction counts
@@ -842,8 +845,8 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
     int ittageid = ittage->getComponentIdx();
     int rasid = ras->getComponentIdx();
 
-    int s1PredSource = entry.s1Source;
-    int s3PredSource = entry.s3Source;
+    int s1PredSource = entry.finalPredMetadata.s1Source;
+    int s3PredSource = entry.finalPredMetadata.s3Source;
 
     auto exeBranchInfo = entry.exeBranchInfo;
 
