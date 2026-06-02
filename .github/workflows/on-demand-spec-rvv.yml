@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
   pull-requests: read
 
 jobs:
@@ -26,27 +25,12 @@ jobs:
       pr_sha: ${{ steps.setup.outputs.pr_sha }}
     
     steps:
-      - name: Setup RVV parameters
+      - name: Set RVV parameters
         id: setup
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const prNumber = context.payload.pull_request.number;
-            const benchmark = 'spec06int-rvv-0.8c';
-            const prSha = context.payload.pull_request.head.sha;
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              body: '🚀 RVV Performance test triggered: **spec06int-rvv-0.8c**'
-            });
-            
-            const vectorType = benchmark.includes('rvv') ? 'simple' : '';
-            
-            core.setOutput('benchmark', benchmark);
-            core.setOutput('vector_type', vectorType);
-            core.setOutput('pr_sha', prSha);
+        run: |
+          echo "benchmark=spec06int-rvv-0.8c" >> "$GITHUB_OUTPUT"
+          echo "vector_type=simple" >> "$GITHUB_OUTPUT"
+          echo "pr_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
 
   run_rvv_spec_test:
     name: Run RVV SPEC Test
