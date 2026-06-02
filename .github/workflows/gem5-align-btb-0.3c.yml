@@ -11,30 +11,9 @@ on:
 
 permissions:
   contents: read
-  issues: write
   pull-requests: read
 
 jobs:
-  announce:
-    name: Announce PR align performance test
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'pull_request_target' &&
-      github.event.label.name == 'perf-align' &&
-      github.event.pull_request.base.ref == 'xs-dev' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    steps:
-      - name: Comment trigger
-        uses: actions/github-script@v9
-        with:
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: '🚀 Align performance test triggered: **kmhv3.py / gcc15-spec06-0.3c**'
-            });
-
   perf_test:
     if: |
       github.event_name != 'pull_request_target' ||
