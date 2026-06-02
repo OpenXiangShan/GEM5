@@ -10,6 +10,7 @@
 // #include "arch/generic/pcstate.hh"
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/pred/btb/prediction_result.hh"
 #include "cpu/pred/general_arch_db.hh"
 #include "cpu/static_inst.hh"
 
@@ -455,22 +456,6 @@ using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 
 #define FillStageLoop(x) for (int x = getDelay(); x < stagePreds.size(); ++x)
 
-struct DirectionHistoryUpdate
-{
-    int shamt = 0;
-    bool taken = false;
-};
-
-struct PathHistoryUpdate
-{
-    static constexpr int NumShift = 2;
-
-    int shamt = NumShift;
-    bool taken = false;
-    Addr pc = 0;
-    Addr target = 0;
-};
-
 /**
  * @brief Fetch Stream representing a sequence of instructions with prediction info
  *
@@ -679,24 +664,10 @@ struct FetchTarget
  */
 struct FullBTBPrediction
 {
-    struct TakenSlotResult
-    {
-        BTBEntry entry;
-        Addr target = 0;
-        Addr fallThrough = 0;
-
-        bool taken() const { return entry.valid; }
-        Addr controlPC() const { return entry.slot.pc; }
-        Addr endPC() const { return taken() ? entry.slot.getEnd() : fallThrough; }
-
-        BranchSlot
-        resolvedSlot() const
-        {
-            auto resolved_slot = entry.slot;
-            resolved_slot.target = target;
-            return resolved_slot;
-        }
-    };
+    using PredictionResult =
+        PredictionBlockResultView<std::vector<BTBEntry>, CondTakens,
+                                  IndirectTargets>;
+    using TakenSlotResult = PredictionResult::TakenSlotResult;
 
     ThreadID tid;
     uint8_t asidHash;
@@ -733,172 +704,87 @@ struct FullBTBPrediction
         s1Source(-1),
         s3Source(-1) {}
 
+    PredictionResult
+    resultView() const
+    {
+        return PredictionResult(bbStart, btbEntries, condTakens,
+                                indirectTargets, returnTarget);
+    }
+
     BTBEntry getTakenEntry() const {
-        // IMPORTANT: assume entries are sorted
-        for (const auto &entry : this->btbEntries) {
-            // hit
-            if (entry.valid) {
-                if (entry.slot.isCond()) {
-                    // find corresponding direction pred in condTakens
-                    // TODO: use lower-bit offset of branch instruction
-                    const auto& pc = entry.slot.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) {   // find and taken, return the entry
-                            return entry;
-                        }
-                    }
-                }
-                if (entry.slot.isUncond()) { // find the first uncond entry
-                    return entry;
-                }
-            }
-        }
-        return BTBEntry(); // not found, return empty entry
+        return resultView().getTakenEntry();
     }
 
     bool isTaken() const {
-        return getTakenEntry().valid;   // if find a taken entry, return true
+        return resultView().isTaken();
     }
 
     Addr getFallThrough(Addr predictWidth) const {
-        // max 64 byte block, 32 byte aligned
-        return (bbStart + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
+        return resultView().getFallThrough(predictWidth);
     }
 
     Addr getEntryTarget(const BTBEntry &entry) const {
-        Addr target = entry.slot.target;
-        // indirect target should come from ipred or ras,
-        // or btb itself when ipred miss
-        if (entry.slot.isIndirect()) {
-            if (!entry.slot.isReturn()) { // normal indirect, see ittage
-                const auto& pc = entry.slot.pc;
-                auto it = IndirectTakens_find(indirectTargets, pc);
-                if (it != indirectTargets.end()) { // found in ittage, use it
-                    target = it->second;
-                }
-            } else { // indirect return, use RAS target
-                target = returnTarget;
-            }
-        } // else: normal taken, use btb target
-        return target;
+        return resultView().getEntryTarget(entry);
     }
 
     TakenSlotResult getTakenSlotResult(Addr predictWidth) const
     {
-        TakenSlotResult result;
-        result.fallThrough = getFallThrough(predictWidth);
-        result.entry = getTakenEntry();
-        result.target = result.entry.valid ? getEntryTarget(result.entry) :
-                                             result.fallThrough;
-        return result;
+        return resultView().getTakenSlotResult(predictWidth);
     }
 
     Addr getTarget(Addr predictWidth) const {
-        return getTakenSlotResult(predictWidth).target;
+        return resultView().getTarget(predictWidth);
     }
 
     Addr getEnd(Addr predictWidth) const {
-        return getTakenSlotResult(predictWidth).endPC();
+        return resultView().getEnd(predictWidth);
     }
 
     Addr controlAddr() const {
-        const auto &entry = getTakenEntry();
-        if (entry.valid) {
-            return entry.slot.pc;
-        }
-        return 0;
+        return resultView().controlAddr();
     }
 
     std::pair<bool, OverrideReason> match(const FullBTBPrediction &other,
                                           Addr predictWidth) const
     {
-        auto this_taken_entry = this->getTakenEntry();
-        auto other_taken_entry = other.getTakenEntry();
-        if (this_taken_entry.valid != other_taken_entry.valid) {
-            return std::make_pair(false, OverrideReason::FALL_THRU);
-        } else {
-            // all taken or all not taken, check target and end
-            if (this_taken_entry.valid && other_taken_entry.valid) {
-                if (this->controlAddr() != other.controlAddr()) {
-                    return std::make_pair(false, OverrideReason::CONTROL_ADDR);
-                }
-                else if (this->getTarget(predictWidth) != other.getTarget(predictWidth)) {
-                    return std::make_pair(false, OverrideReason::TARGET);
-                }
-                else {
-                    return std::make_pair(true, btb_pred::OverrideReason::NO_OVERRIDE);
-                }
-            } else {
-                return std::make_pair(true, btb_pred::OverrideReason::NO_OVERRIDE);
-            }
-        }
+        const auto match =
+            resultView().match(other.resultView(), predictWidth);
+        return std::make_pair(match.matches,
+                              toOverrideReason(match.reason));
     }
 
     DirectionHistoryUpdate getGHistUpdate() const  //global or local
     {
-        DirectionHistoryUpdate update; // shamt is the number of bits to shift in history update
-        for (const auto &entry : btbEntries) {
-            if (entry.valid) {
-                if (entry.slot.isCond()) { // if found a cond branch, shamt++
-                    update.shamt++;
-                    const auto& pc = entry.slot.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) { // if the cond branch is taken, taken = true
-                            update.taken = true;
-                            break;
-                        }
-                    }
-                } else {
-                    // uncond
-                    break;
-                }
-            }
-        }
-        // For example, return (3, true) means 3 bits to shift in history update,
-        // and the third branch is taken, new hist = xxx001
-        return update;
+        return resultView().getGHistUpdate();
     }
 
     DirectionHistoryUpdate getBwHistUpdate() const //global backward or imli
     {
-        DirectionHistoryUpdate update;
-        for (const auto &entry : btbEntries) {
-            if (entry.valid) {
-                if (entry.slot.isCond()) {
-                    update.shamt++;
-                    const auto& pc = entry.slot.pc;
-                    auto it = CondTakens_find(condTakens, pc);
-                    if (it != condTakens.end()) {
-                        if (it->second) {
-                            // branch is backward if target < pc
-                            update.taken =
-                                (entry.slot.target < entry.slot.pc);
-                            break;
-                        }
-                    }
-                } else {
-                    // uncond
-                    break;
-                }
-            }
-        }
-        return update;
+        return resultView().getBwHistUpdate();
     }
 
     PathHistoryUpdate getPHistUpdate() const //path
     {
-        PathHistoryUpdate update;
-        const auto &entry = getTakenEntry();
-        if (entry.valid) {
-            update.taken = true;
-            update.pc = entry.slot.pc;
-            update.target = getEntryTarget(entry);
-        }
-        return update;
+        return resultView().getPHistUpdate();
     }
 
+  private:
+    static OverrideReason
+    toOverrideReason(PredictionResultMismatchReason reason)
+    {
+        switch (reason) {
+          case PredictionResultMismatchReason::NoOverride:
+            return OverrideReason::NO_OVERRIDE;
+          case PredictionResultMismatchReason::FallThrough:
+            return OverrideReason::FALL_THRU;
+          case PredictionResultMismatchReason::ControlAddr:
+            return OverrideReason::CONTROL_ADDR;
+          case PredictionResultMismatchReason::Target:
+            return OverrideReason::TARGET;
+        }
+
+        return OverrideReason::NO_OVERRIDE;
+    }
 };
 
 struct TageMissTrace : public Record
