@@ -167,7 +167,8 @@ BTBRAS::recoverState(const FetchTarget &entry)
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
     DPRINTF(RAS, "recover called, meta TOSR %d TOSW %d ssp %d sctr %u entry PC %lx end PC %lx\n",
-        meta_ptr->TOSR, meta_ptr->TOSW, meta_ptr->ssp, meta_ptr->sctr, entry.startPC, entry.predEndPC);
+        meta_ptr->TOSR, meta_ptr->TOSW, meta_ptr->ssp, meta_ptr->sctr,
+        entry.startPC, entry.prediction.fallThrough);
 
     state.TOSR = meta_ptr->TOSR;
     state.TOSW = meta_ptr->TOSW;
@@ -192,8 +193,8 @@ BTBRAS::recoverState(const FetchTarget &entry)
                 takenSlot.isReturn());
         if (takenSlot.isReturn()) {
             DPRINTF(RAS, "IsRet expect target %lx, preded %lx, pred taken %d pred target %lx\n",
-                takenSlot.target, meta_ptr->target, entry.predTaken,
-                entry.predBranchInfo.target);
+                takenSlot.target, meta_ptr->target, entry.prediction.taken,
+                entry.prediction.branchSlot.target);
         }
         printStack("after recoverState", tid);
     }
@@ -218,7 +219,8 @@ BTBRAS::update(const FetchTarget &entry)
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);
         if (takenSlot.isCall()) {
             DPRINTF(RAS, "real update call BTB hit %d meta TOSR %d TOSW %d\n entry PC %lx",
-                entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
+                entry.prediction.btbHit, meta_ptr->TOSR, meta_ptr->TOSW,
+                entry.startPC);
             Addr retAddr = takenSlot.pc + takenSlot.size;
             push_stack(tid, retAddr);
             state.BOS = inflightPtrPlus1(meta_ptr->TOSW);

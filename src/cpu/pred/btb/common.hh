@@ -455,6 +455,16 @@ using CondTakens = std::vector<std::pair<Addr, bool>>;
 // {branch pc -> target pc} maps
 using IndirectTargets = std::vector<std::pair<Addr, Addr>>;
 
+struct FetchPredictionSnapshot
+{
+    bool taken = false;        // whether the final prediction is taken
+    Addr fallThrough = 0;      // predicted stream end pc
+    BranchSlot branchSlot;     // predicted taken branch slot
+    bool btbHit = false;       // whether any BTB entry was predicted
+    bool falseHit = false;     // not used
+    std::vector<BTBEntry> btbEntries; // predicted BTB entries
+};
+
 #define CondTakens_find(condTakens, branch_pc) \
     std::find_if(condTakens.begin(), condTakens.end(), \
                  [&branch_pc](const auto &p) { return p.first == branch_pc; })
@@ -479,13 +489,7 @@ struct FetchTarget
     ThreadID tid;
     uint8_t asidHash;
     Addr startPC;       // start pc of the stream
-    bool predTaken;     // whether the FetchTarget has taken branch
-    Addr predEndPC;     // predicted stream end pc (fall through pc)
-    BranchSlot predBranchInfo; // predicted branch slot
-
-    bool isHit;          // whether the predicted btb entry is hit
-    bool falseHit;       // not used
-    std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
+    FetchPredictionSnapshot prediction; // final prediction snapshot
 
     // for commit, write at redirect or fetch
     bool exeTaken;         // whether the branch is taken(resolved)
@@ -499,7 +503,7 @@ struct FetchTarget
     // used to decide which branches to update (don't update if not actually executed)
     Addr updateEndInstPC;   // end pc of the squash inst/taken inst
     // for components to decide which entries to update
-    std::vector<BTBEntry> updateBTBEntries; // mostly like predBTBEntries
+    std::vector<BTBEntry> updateBTBEntries; // mostly like prediction.btbEntries
 
     int squashType;         // squash type
     Addr squashPC;         // pc of the squash inst
@@ -524,11 +528,7 @@ struct FetchTarget
        : tid(0),
          asidHash(0),
          startPC(0),
-         predTaken(false),
-         predEndPC(0),
-         predBranchInfo(BranchInfo()),
-         isHit(false),
-         falseHit(false),
+         prediction(),
          exeTaken(false),
          exeBranchInfo(BranchInfo()),
          updateNewBTBEntry(BTBEntry()),
@@ -547,24 +547,26 @@ struct FetchTarget
          commitInstNum(0)
    {
        predMetas.fill(nullptr);
-       predBTBEntries.clear();
        updateBTBEntries.clear();
    }
 
     // the default exe result should be consistent with prediction
     void setDefaultResolve() {
         resolved = false;
-        exeBranchInfo = predBranchInfo;
-        exeTaken = predTaken;
+        exeBranchInfo = prediction.branchSlot;
+        exeTaken = prediction.taken;
     }
 
     // bool getEnded() const { return resolved ? exeEnded : predEnded; }
-    BranchSlot getBranchSlot() const { return resolved ? exeBranchInfo : predBranchInfo; }
+    BranchSlot getBranchSlot() const
+    {
+        return resolved ? exeBranchInfo : prediction.branchSlot;
+    }
     BranchSlot getBranchInfo() const { return getBranchSlot(); }
     Addr getControlPC() const { return getBranchSlot().pc; }
     // FIXME: should be end of squash inst when non-control squash of trap squash.
     Addr getEndPC() const { return getBranchSlot().getEnd(); }
-    Addr getTaken() const { return resolved ? exeTaken : predTaken; }
+    Addr getTaken() const { return resolved ? exeTaken : prediction.taken; }
     Addr getTakenTarget() const { return getBranchSlot().target; }
 
     Addr getRealStartPC() const {
@@ -575,7 +577,7 @@ struct FetchTarget
         Addr squash_pc, bool is_cond, bool actually_taken) const
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : predBTBEntries) {
+        for (auto &entry : prediction.btbEntries) {
             if (entry.valid && entry.slot.pc >= startPC &&
                 entry.slot.pc < squash_pc) {
                 update.shamt++;
@@ -592,7 +594,7 @@ struct FetchTarget
         Addr squash_pc, bool is_cond, bool actually_taken, Addr target) const
     {
         DirectionHistoryUpdate update;
-        for (auto &entry : predBTBEntries) {
+        for (auto &entry : prediction.btbEntries) {
             if (entry.valid && entry.slot.pc >= startPC &&
                 entry.slot.pc < squash_pc) {
                 update.shamt++;
@@ -636,7 +638,7 @@ struct FetchTarget
     void setUpdateBTBEntries()
     {
         updateBTBEntries.clear();
-        for (auto &entry : predBTBEntries) {
+        for (auto &entry : prediction.btbEntries) {
             if (entry.valid && entry.slot.pc >= startPC &&
                 entry.slot.pc <= updateEndInstPC) {
                 updateBTBEntries.push_back(entry);

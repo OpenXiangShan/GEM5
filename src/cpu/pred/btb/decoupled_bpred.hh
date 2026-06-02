@@ -388,10 +388,11 @@ class DecoupledBPUWithBTB : public BPredUnit
 
         PredictionTrace(uint64_t id, const FetchTarget &entry) {
             _tick = curTick();
-            set(id, entry.startPC, entry.predTaken, entry.predEndPC,
+            set(id, entry.startPC, entry.prediction.taken,
+                entry.prediction.fallThrough,
                 entry.getControlPC(), entry.getTakenTarget(),
                 entry.finalPredMetadata.firstMatchingStage,
-                entry.isHit ? 1 : 0);
+                entry.prediction.btbHit ? 1 : 0);
         }
     };
 

@@ -702,7 +702,7 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
     }
 
     // --- BTB Statistics ---
-    if (target.isHit) {
+    if (target.prediction.btbHit) {
         // Count BTB hits
         dbpBtbStats.btbHit++;
     } else {
@@ -717,12 +717,12 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
         }
 
         // Count false hits
-        if (target.falseHit) {
+        if (target.prediction.falseHit) {
             dbpBtbStats.commitFalseHit++;
         }
     }
 
-    if (target.isHit || target.exeTaken) {
+    if (target.prediction.btbHit || target.exeTaken) {
         // Update BTB entry statistics
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
@@ -850,7 +850,7 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
 
     auto exeBranchInfo = entry.exeBranchInfo;
 
-    bool onlyDirectionWrong = entry.exeTaken != entry.predTaken;
+    bool onlyDirectionWrong = entry.exeTaken != entry.prediction.taken;
 
     assert(s1PredSource < mbtbid);
     if (s1PredSource == ubtbid) {
@@ -989,7 +989,7 @@ DecoupledBPUWithBTB::processMisprediction(
         } else {
             // Check if this branch was in the predicted BTB entries
             bool predBranchInBTB = false;
-            for (auto &e: entry.predBTBEntries) {
+            for (auto &e: entry.prediction.btbEntries) {
                 if (e.slot.pc == branchAddr) {
                     predBranchInBTB = true;
                     break;
@@ -998,7 +998,8 @@ DecoupledBPUWithBTB::processMisprediction(
 
             if (!predBranchInBTB) {
                 mispredType = NO_PRED; // Branch wasn't predicted at all
-            } else if (entry.predTaken && entry.predBranchInfo.pc == branchAddr) {
+            } else if (entry.prediction.taken &&
+                       entry.prediction.branchSlot.pc == branchAddr) {
                 mispredType = TARGET_WRONG; // Branch predicted taken but wrong target
             } else {
                 // Branch predicted not taken or different branch predicted taken

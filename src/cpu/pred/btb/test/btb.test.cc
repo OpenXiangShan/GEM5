@@ -127,7 +127,8 @@ predictUpdateCycle(MBTB* btb,
     // Populate predicted BTB entries in stream from stage predictions
     // Use entries from the first valid stage (delay)
     if (btb->getDelay() < stagePreds.size()) {
-        stream.predBTBEntries = stagePreds[btb->getDelay()].btbEntries;
+        stream.prediction.btbEntries =
+            stagePreds[btb->getDelay()].btbEntries;
     }
     stream.setUpdateBTBEntries();
     btb->getAndSetNewBTBEntry(stream);

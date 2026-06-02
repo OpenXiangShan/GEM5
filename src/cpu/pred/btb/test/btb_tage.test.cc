@@ -66,7 +66,7 @@ FetchTarget createStream(Addr startPC, const BTBEntry& entry, bool taken,
     stream.exeTaken = taken;
     // Mark as resolved so recover paths use exe* info
     stream.resolved = true;
-    stream.predBranchInfo = entry.slot; // keep fields consistent
+    stream.prediction.branchSlot = entry.slot; // keep fields consistent
     stream.updateBTBEntries = {entry};
     stream.updateIsOldEntry = true;
     stream.predMetas[0] = meta;
@@ -283,7 +283,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
 
         FetchTarget stream;
         stream.startPC = 0x1000;
-        stream.predBTBEntries = c.predictedBeforeSquash;
+        stream.prediction.btbEntries = c.predictedBeforeSquash;
         stream.exeBranchInfo = c.resolvedEntry;
         stream.exeTaken = c.actualTaken;
         stream.resolved = true;
@@ -1201,7 +1201,7 @@ TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
     stream.exeBranchInfo = newEntry.slot;
     stream.exeTaken = true;
     stream.resolved = true;
-    stream.predBranchInfo = newEntry.slot;
+    stream.prediction.branchSlot = newEntry.slot;
     stream.updateBTBEntries.clear();
     stream.updateIsOldEntry = false;
     stream.updateNewBTBEntry = newEntry;
@@ -1388,7 +1388,7 @@ TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrain
     stream.exeBranchInfo = newEntry.slot;
     stream.exeTaken = true;
     stream.resolved = true;
-    stream.predBranchInfo = newEntry.slot;
+    stream.prediction.branchSlot = newEntry.slot;
     stream.updateBTBEntries.clear();
     stream.updateIsOldEntry = false;
     stream.updateNewBTBEntry = newEntry;

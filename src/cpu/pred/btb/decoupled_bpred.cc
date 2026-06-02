@@ -633,8 +633,9 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
                 "Commit target start %#lx, which is predicted, "
                 "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
                 "pred target: %#lx\n",
-                target.startPC, target.exeBranchInfo.pc, target.exeBranchInfo.target, target.predBranchInfo.pc,
-                target.predBranchInfo.target);
+                target.startPC, target.exeBranchInfo.pc,
+                target.exeBranchInfo.target, target.prediction.branchSlot.pc,
+                target.prediction.branchSlot.target);
 
         // Update statistics
         updateStatistics(target);
@@ -665,7 +666,7 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &target_id, ThreadID tid)
     auto &target = ftq.get(target_id, tid);
 
     // Update predictor components only if the target is hit or taken
-    if (!(target.isHit || target.exeTaken)) {
+    if (!(target.prediction.btbHit || target.exeTaken)) {
         return true;
     }
 
@@ -720,7 +721,7 @@ DecoupledBPUWithBTB::prepareResolveUpdateEntries(unsigned &target_id, ThreadID t
     }
     auto &target = ftq.get(target_id, tid);
 
-    if (target.isHit || target.exeTaken) {
+    if (target.prediction.btbHit || target.exeTaken) {
         // Prepare target for update
         target.setUpdateInstEndPC(predictWidth);
         target.setUpdateBTBEntries();
@@ -753,7 +754,7 @@ void
 DecoupledBPUWithBTB::updatePredictorComponents(FetchTarget &target)
 {
     // Update predictor components only if the target is hit or taken
-    if (target.isHit || target.exeTaken) {
+    if (target.prediction.btbHit || target.exeTaken) {
         // Prepare target for update
         target.setUpdateInstEndPC(predictWidth);
         target.setUpdateBTBEntries();
@@ -829,15 +830,15 @@ DecoupledBPUWithBTB::createFetchTargetEntry(ThreadID tid)
     Addr fallThroughAddr = takenResult.fallThrough;
 
     // Configure target entry with prediction details
-    entry.isHit = !finalPred.btbEntries.empty();
-    entry.falseHit = false;
-    entry.predBTBEntries = finalPred.btbEntries;
-    entry.predTaken = taken;
-    entry.predEndPC = fallThroughAddr;
+    entry.prediction.btbHit = !finalPred.btbEntries.empty();
+    entry.prediction.falseHit = false;
+    entry.prediction.btbEntries = finalPred.btbEntries;
+    entry.prediction.taken = taken;
+    entry.prediction.fallThrough = fallThroughAddr;
 
     // Set branch info for taken predictions
     if (taken) {
-        entry.predBranchInfo = takenResult.resolvedSlot();
+        entry.prediction.branchSlot = takenResult.resolvedSlot();
     }
 
     // Record current history and prediction metadata
@@ -959,7 +960,8 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
     // Update history manager and verify TAGE folded history
     historyManagers[tid].addSpeculativeHist(
         entry.startPC, entry.history, entry.phistory, ghist_update,
-        phist_update, entry.predBranchInfo, ftq.backId(tid) + 1);
+        phist_update, entry.prediction.branchSlot,
+        ftq.backId(tid) + 1);
 
     // Update global backward history
     histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);

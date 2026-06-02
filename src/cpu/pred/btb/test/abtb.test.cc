@@ -23,11 +23,11 @@ FetchTarget createStream(Addr startPC, FullBTBPrediction &pred, AheadBTB *abtb) 
     stream.asidHash = pred.asidHash;
     stream.startPC = startPC;
     Addr fallThroughAddr = pred.getFallThrough(abtb->predictWidth);
-    stream.isHit = pred.btbEntries.size() > 0; // TODO: fix isHit and falseHit
-    stream.falseHit = false;
-    stream.predBTBEntries = pred.btbEntries;
-    stream.predTaken = pred.isTaken();
-    stream.predEndPC = fallThroughAddr;
+    stream.prediction.btbHit = pred.btbEntries.size() > 0;
+    stream.prediction.falseHit = false;
+    stream.prediction.btbEntries = pred.btbEntries;
+    stream.prediction.taken = pred.isTaken();
+    stream.prediction.fallThrough = fallThroughAddr;
     stream.predMetas[0] = abtb->getPredictionMeta(stream.tid);
     return stream;
 }
