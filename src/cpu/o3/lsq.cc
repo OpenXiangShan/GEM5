@@ -89,86 +89,16 @@ LSQ::DcachePort::DcachePort(LSQ *_lsq, CPU *_cpu) :
 
 std::list<LSQ::SingleDataRequest*> LSQ::SingleDataRequest::singleList;
 
-namespace
-{
-
-bool
-storeBufferEntryEligibleForLoad(const LSQ::StoreBufferEntry *entry,
-                                ThreadID load_tid, InstSeqNum load_seq,
-                                uint64_t visible_generation)
-{
-    if (!entry) {
-        return false;
-    }
-
-    if (entry->tid == load_tid) {
-        return entry->seqNum < load_seq;
-    }
-
-    return entry->generation != 0 && entry->generation <= visible_generation;
-}
-
-bool
-storeBufferByteEligibleForLoad(const LSQ::StoreBufferEntry *entry,
-                               size_t byte_idx, ThreadID load_tid,
-                               InstSeqNum load_seq,
-                               uint64_t visible_generation)
-{
-    if (!entry) {
-        return false;
-    }
-
-    if (entry->tid == load_tid) {
-        return entry->seqNum < load_seq;
-    }
-
-    if (!entry->sending) {
-        return false;
-    }
-
-    return byte_idx < entry->byteGenerations.size() &&
-           entry->byteGenerations[byte_idx] != 0 &&
-           entry->byteGenerations[byte_idx] <= visible_generation;
-}
-
-uint64_t
-storeBufferEligibleGeneration(const LSQ::StoreBufferEntry *entry,
-                              ThreadID load_tid, InstSeqNum load_seq,
-                              uint64_t visible_generation)
-{
-    if (!entry) {
-        return 0;
-    }
-
-    uint64_t best_generation = 0;
-    if (storeBufferEntryEligibleForLoad(entry, load_tid, load_seq,
-                                        visible_generation)) {
-        best_generation = entry->generation;
-    }
-    if (storeBufferEntryEligibleForLoad(entry->vice, load_tid, load_seq,
-                                        visible_generation)) {
-        best_generation = std::max(best_generation, entry->vice->generation);
-    }
-    return best_generation;
-}
-
-} // anonymous namespace
-
 void
 LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
                              uint64_t block_vaddr, uint64_t block_paddr,
                              uint64_t offset, uint8_t *datas, uint64_t size,
-                             const std::vector<bool> &mask,
-                             uint64_t generation)
+                             const std::vector<bool> &mask)
 {
     std::fill(validMask.begin(), validMask.begin() + offset, false);
-    std::fill(byteGenerations.begin(), byteGenerations.end(), 0);
 
     for (int i = 0; i < size; i++) {
         validMask[offset + i] = mask[i];
-        if (mask[i]) {
-            byteGenerations[offset + i] = generation;
-        }
     }
 
     std::fill(validMask.begin() + offset + size, validMask.end(), false);
@@ -178,7 +108,6 @@ LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
     this->seqNum = seq_num;
     this->blockVaddr = block_vaddr;
     this->blockPaddr = block_paddr;
-    this->generation = generation;
     this->sending = false;
     this->request = nullptr;
     this->vice = nullptr;
@@ -186,23 +115,20 @@ LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
 
 void
 LSQ::StoreBufferEntry::merge(uint64_t offset, uint8_t *datas, uint64_t size,
-                             const std::vector<bool> &mask,
-                             uint64_t generation)
+                             const std::vector<bool> &mask)
 {
     assert(offset + size <= validMask.size());
     for (uint64_t i = 0; i < size; ++i) {
         if (mask[i]) {
             blockDatas[offset + i] = datas[i];
             validMask[offset + i] = true;
-            byteGenerations[offset + i] = generation;
         }
     }
 }
 
 bool
 LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
-                                     ThreadID load_tid, InstSeqNum load_seq,
-                                     uint64_t visible_generation)
+                                     ThreadID load_tid, InstSeqNum load_seq)
 {
     int offset = req->getPaddr() & (validMask.size() - 1);
     // the offset in the split request
@@ -211,16 +137,14 @@ LSQ::StoreBufferEntry::recordForward(RequestPtr req, LSQRequest *lsqreq,
         assert(offset == 0);
     }
     bool full_forward = true;
+    auto byteEligible = [&](StoreBufferEntry *entry, int byte_idx) {
+        return entry && entry->tid == load_tid && entry->seqNum < load_seq &&
+               entry->validMask[byte_idx];
+    };
     for (int i = 0; i < req->getSize(); i++) {
         assert(goffset + i < lsqreq->_size);
-        const bool vice_eligible =
-            vice && vice->validMask[offset + i] &&
-            storeBufferByteEligibleForLoad(vice, offset + i, load_tid,
-                                           load_seq, visible_generation);
-        const bool self_eligible =
-            validMask[offset + i] &&
-            storeBufferByteEligibleForLoad(this, offset + i, load_tid,
-                                           load_seq, visible_generation);
+        const bool vice_eligible = byteEligible(vice, offset + i);
+        const bool self_eligible = byteEligible(this, offset + i);
         if (vice_eligible) {
             // vice is newer
             assert(vice->blockVaddr == blockVaddr);
@@ -377,12 +301,6 @@ LSQ::StoreBuffer::getEvict()
     lru_index.pop_back();
     assert(data_vld[index]);
     return data_vec[index];
-}
-
-LSQ::StoreBufferEntry *
-LSQ::StoreBuffer::getEvict(const bool *eligible_tids, size_t num_threads)
-{
-    return getEvict(eligible_tids, nullptr, num_threads);
 }
 
 LSQ::StoreBufferEntry *
@@ -944,12 +862,11 @@ LSQ::processWriteback()
     // before sbuffer sendpackets
     clearAddresses();
 
-    bool storeblocked = false;
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
     while (threads != end) {
         ThreadID tid = *threads++;
-        storeblocked |= thread[tid].writebackBlockedStore(); // amo
+        thread[tid].writebackBlockedStore(); // amo
     }
 
     storeBufferWriteback();
@@ -969,14 +886,7 @@ LSQ::processWriteback()
     for (ThreadID tid : *activeThreads) {
         offload_demand[tid] = thread[tid].countStoreBufferOffloadableEntries(
             maxStoreBufferEntriesAcceptedFromSQPerCycle);
-        // During a global sbuffer flush, only threads that requested the
-        // flush may keep draining older committed stores from their SQ.
-        // If both SMT threads are flushing simultaneously, both must still be
-        // allowed to make forward progress, otherwise they can deadlock while
-        // waiting on each other's flush bit.
-        const bool conti =
-            !storeBufferFlushing() || storeBufferFlushing(tid);
-        if (conti && offload_demand[tid] != 0) {
+        if (offload_demand[tid] != 0) {
             requester_tids.push_back(tid);
         }
     }
@@ -1015,7 +925,6 @@ LSQ::processWriteback()
             }
         }
     }
-    threads = activeThreads->begin();
     bool has_thread_offloaded = false;
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
         thread[(nextStoreBufferInsertTid + tid) % numThreads].offloadToStoreBuffer(offload_quota[(nextStoreBufferInsertTid + tid) % numThreads], offload_fail);
@@ -1067,37 +976,36 @@ LSQ::storeBufferWriteback()
         }
 
         std::optional<StoreBufferEvictCause> cause;
+        StoreBufferEntry *entry = nullptr;
         if (storeBufferFlushing()) {
-            cause = StoreBufferEvictCause::Flush;
-            DPRINTF(StoreBuffer, "sbuffer flushing\n");
-        } else if (storeBuffer.unsentSize() > getSbufferEvictThreshold()) {
+            entry = storeBuffer.getEvict(
+                _storeBufferFlushing, _storeBufferFlushBeforeSeq, numThreads);
+            if (entry) {
+                cause = StoreBufferEvictCause::Flush;
+                DPRINTF(StoreBuffer, "sbuffer flushing\n");
+            }
+        }
+        if (!entry && storeBuffer.unsentSize() > getSbufferEvictThreshold()) {
             cause = StoreBufferEvictCause::Full;
             DPRINTF(StoreBuffer, "sbuffer has reached threshold\n");
-        } else if (any_sq_will_full) {
+        } else if (!entry && any_sq_will_full) {
             cause = StoreBufferEvictCause::SQFull;
             DPRINTF(StoreBuffer, "sbuffer has reached SQ threshold\n");
-        } else if (getStoreBufferInactiveCycles() >
+        } else if (!entry && getStoreBufferInactiveCycles() >
                    getStoreBufferInactiveThreshold()) {
             cause = StoreBufferEvictCause::Timeout;
             DPRINTF(StoreBuffer, "sbuffer has reached timeout\n");
-        } else {
+        } else if (!entry) {
             incStoreBufferInactiveCycles();
         }
 
         if (cause) {
-            StoreBufferEntry *entry = nullptr;
-            if (*cause == StoreBufferEvictCause::Flush) {
-                entry = storeBuffer.getEvict(
-                    _storeBufferFlushing, _storeBufferFlushBeforeSeq,
-                    numThreads);
-            } else {
+            if (!entry) {
                 entry = storeBuffer.getEvict();
             }
             if (!entry) {
-                /* Disabled with the broad sbuffer watchdog above. */
                 return;
             }
-            /* Disabled with the broad sbuffer watchdog above. */
             auto &owner_unit = thread[entry->tid];
             recordStoreBufferEviction(*cause);
             DPRINTF(StoreBuffer, "Evicting sbuffer entry[%#x]\n",
@@ -1191,20 +1099,10 @@ void
 LSQ::completeSbufferEvict(PacketPtr pkt)
 {
     auto request = dynamic_cast<SbufferRequest *>(pkt->senderState);
-    const Addr block_paddr = request->sbuffer_entry->blockPaddr;
-    invalidateOtherThreadStoreBufferBytes(request->sbuffer_entry->tid,
-                                          request->mainReq()->getPaddr(),
-                                          request->mainReq()->getByteEnable(),
-                                          request->sbuffer_entry->generation);
-    markStoreBufferBlockVisible(block_paddr,
-                                request->sbuffer_entry->generation);
-    const bool replay_executed_loads =
-        cpu->consumeSyncVisibleStoreReplay(request->sbuffer_entry->tid);
+    cpu->consumeSyncVisibleStoreReplay(request->sbuffer_entry->tid);
     notifyOtherThreadsStoreVisible(request->sbuffer_entry->tid,
                                    request->mainReq()->getPaddr(),
-                                   request->mainReq()->getByteEnable(),
-                                   request->sbuffer_entry->seqNum,
-                                   replay_executed_loads);
+                                   request->mainReq()->getByteEnable());
     if (cpu->goldenMemManager() &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
         Addr paddr = request->mainReq()->getPaddr();
@@ -1216,7 +1114,6 @@ LSQ::completeSbufferEvict(PacketPtr pkt)
     }
 
     storeBuffer.release(request->sbuffer_entry);
-    reclaimStoreBufferBlockMetadata(block_paddr);
     DPRINTF(StoreBuffer,
             "finish entry[%#x] evict to cache, sbuffer size: %d, "
             "unsentsize: %d\n",
@@ -2017,179 +1914,26 @@ LSQ::flushStores(ThreadID tid, InstSeqNum seq_num)
     return false;
 }
 
-void
-LSQ::requestGlobalStoreBufferFlush()
-{
-    for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        _storeBufferFlushing[tid] = true;
-        _storeBufferFlushBeforeSeq[tid] = static_cast<InstSeqNum>(-1);
-    }
-}
-
-bool
-LSQ::storeBufferHasConflict(ThreadID tid, Addr block_paddr) const
-{
-    for (ThreadID other_tid = 0; other_tid < numThreads; ++other_tid) {
-        if (other_tid == tid) {
-            continue;
-        }
-
-        if (storeBuffer.get(other_tid, block_paddr)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-uint64_t
-LSQ::bumpStoreBufferBlockVersion(Addr block_paddr)
-{
-    auto &version = storeBufferBlockVersion[block_paddr];
-    ++version;
-    if (version == 0) {
-        version = 1;
-    }
-    return version;
-}
-
-uint64_t
-LSQ::currentStoreBufferBlockVersion(Addr block_paddr) const
-{
-    auto it = storeBufferBlockVersion.find(block_paddr);
-    return it == storeBufferBlockVersion.end() ? 0 : it->second;
-}
-
-void
-LSQ::markStoreBufferBlockVisible(Addr block_paddr, uint64_t generation)
-{
-    auto &visible = storeBufferVisibleVersion[block_paddr];
-    visible = std::max(visible, generation);
-    reclaimStoreBufferBlockMetadata(block_paddr);
-}
-
-uint64_t
-LSQ::currentStoreBufferVisibleVersion(Addr block_paddr) const
-{
-    auto it = storeBufferVisibleVersion.find(block_paddr);
-    return it == storeBufferVisibleVersion.end() ? 0 : it->second;
-}
-
 LSQ::StoreBufferEntry *
 LSQ::findForwardingStoreBufferEntry(Addr block_paddr, ThreadID load_tid,
                                     InstSeqNum load_seq) const
 {
-    StoreBufferEntry *best_entry = nullptr;
-    uint64_t best_generation = 0;
-    const auto visible_generation =
-        currentStoreBufferVisibleVersion(block_paddr);
-
-    for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        auto entry = storeBuffer.get(tid, block_paddr);
-        if (!entry) {
-            continue;
-        }
-
-        const uint64_t entry_generation =
-            storeBufferEligibleGeneration(entry, load_tid, load_seq,
-                                          visible_generation);
-        if (entry_generation == 0) {
-            continue;
-        }
-
-        if (!best_entry || entry_generation > best_generation) {
-            best_entry = entry;
-            best_generation = entry_generation;
-        }
+    auto entry = storeBuffer.get(load_tid, block_paddr);
+    if (!entry) {
+        return nullptr;
     }
 
-    return best_entry;
-}
-
-bool
-LSQ::hasLiveStoreBufferBlock(Addr block_paddr) const
-{
-    for (ThreadID tid = 0; tid < numThreads; ++tid) {
-        if (storeBuffer.get(tid, block_paddr)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void
-LSQ::reclaimStoreBufferBlockMetadata(Addr block_paddr)
-{
-    if (hasLiveStoreBufferBlock(block_paddr)) {
-        return;
+    if (entry->seqNum < load_seq ||
+        (entry->vice && entry->vice->seqNum < load_seq)) {
+        return entry;
     }
 
-    auto version_it = storeBufferBlockVersion.find(block_paddr);
-    if (version_it == storeBufferBlockVersion.end()) {
-        storeBufferVisibleVersion.erase(block_paddr);
-        return;
-    }
-
-    auto visible_it = storeBufferVisibleVersion.find(block_paddr);
-    const uint64_t visible_generation =
-        visible_it == storeBufferVisibleVersion.end() ? 0 : visible_it->second;
-    if (visible_generation < version_it->second) {
-        return;
-    }
-
-    storeBufferBlockVersion.erase(version_it);
-    if (visible_it != storeBufferVisibleVersion.end()) {
-        storeBufferVisibleVersion.erase(visible_it);
-    }
-}
-
-void
-LSQ::invalidateOtherThreadStoreBufferBytes(
-    ThreadID tid, Addr paddr, const std::vector<bool> &mask,
-    uint64_t generation)
-{
-    const Addr cache_block_mask =
-        ~((static_cast<Addr>(cpu->cacheLineSize())) - 1);
-    const Addr block_paddr = paddr & cache_block_mask;
-    const Addr offset = paddr & ~cache_block_mask;
-    auto invalidate_entry = [&](StoreBufferEntry *entry) {
-        if (!entry || offset + mask.size() > entry->validMask.size()) {
-            return;
-        }
-
-        if (!entry->sending) {
-            return;
-        }
-
-        for (size_t i = 0; i < mask.size(); ++i) {
-            if (mask[i] &&
-                entry->byteGenerations[offset + i] != 0 &&
-                entry->byteGenerations[offset + i] <= generation) {
-                entry->validMask[offset + i] = false;
-            }
-        }
-    };
-
-    for (ThreadID other_tid = 0; other_tid < numThreads; ++other_tid) {
-        if (other_tid == tid) {
-            continue;
-        }
-
-        auto entry = storeBuffer.get(other_tid, block_paddr);
-        if (!entry) {
-            continue;
-        }
-
-        invalidate_entry(entry);
-        invalidate_entry(entry->vice);
-    }
+    return nullptr;
 }
 
 void
 LSQ::notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
-                                    const std::vector<bool> &byte_enable,
-                                    InstSeqNum store_seq,
-                                    bool replay_executed_loads)
+                                    const std::vector<bool> &byte_enable)
 {
     if (numThreads <= 1) {
         return;
@@ -2215,9 +1959,7 @@ LSQ::notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
         if (other_tid == tid) {
             continue;
         }
-        thread[other_tid].checkLocalStoreVisible(store_paddr, byte_enable,
-                                                 store_seq,
-                                                 replay_executed_loads);
+        thread[other_tid].checkLocalStoreVisible(store_paddr, byte_enable);
     }
 }
 
@@ -2306,14 +2048,13 @@ LSQ::dumpStoreBuffer(ThreadID tid) const
             continue;
         }
 
-        cprintf("  idx:%d seq:%llu paddr:%#lx vaddr:%#lx sending=%d vice=%d generation=%llu request=%p\n",
+        cprintf("  idx:%d seq:%llu paddr:%#lx vaddr:%#lx sending=%d vice=%d request=%p\n",
                 entry->index,
                 static_cast<unsigned long long>(entry->seqNum),
                 entry->blockPaddr,
                 entry->blockVaddr,
                 entry->sending,
                 entry->vice != nullptr,
-                static_cast<unsigned long long>(entry->generation),
                 entry->request);
     }
 }

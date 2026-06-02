@@ -153,8 +153,6 @@ class LSQ
         Addr blockPaddr;
         std::vector<uint8_t> blockDatas;
         std::vector<bool> validMask;
-        std::vector<uint64_t> byteGenerations;
-        uint64_t generation = 0;
         bool sending;
         // the another same addr entry when sending
         // another cannot sending until self sending finished
@@ -166,20 +164,17 @@ class LSQ
         {
             blockDatas.resize(size, 0);
             validMask.resize(size, false);
-            byteGenerations.resize(size, 0);
         }
 
         void reset(ThreadID tid, InstSeqNum seq_num, uint64_t block_vaddr,
                    uint64_t block_paddr, uint64_t offset, uint8_t *datas,
-                   uint64_t size, const std::vector<bool> &mask,
-                   uint64_t generation);
+                   uint64_t size, const std::vector<bool> &mask);
 
         void merge(uint64_t offset, uint8_t *datas, uint64_t size,
-                   const std::vector<bool> &mask, uint64_t generation);
+                   const std::vector<bool> &mask);
 
         bool recordForward(RequestPtr req, LSQRequest *lsqreq,
-                           ThreadID load_tid, InstSeqNum load_seq,
-                           uint64_t visible_generation);
+                           ThreadID load_tid, InstSeqNum load_seq);
     };
 
     class StoreBuffer
@@ -187,7 +182,7 @@ class LSQ
         using mapIter =
             typename std::unordered_map<uint64_t, StoreBufferEntry *>::iterator;
 
-        // key = (paddr & cacheblockmask)
+        // key = (paddr & cacheblockmask) plus tid
         uint64_t _size = 0;
         int max_size = 0;
         int max_thread = 0;
@@ -221,8 +216,6 @@ class LSQ
         StoreBufferEntry *get(ThreadID tid, uint64_t addr) const;
         void update(int index);
         StoreBufferEntry *getEvict();
-        StoreBufferEntry *getEvict(const bool *eligible_tids,
-                                   size_t num_threads);
         StoreBufferEntry *getEvict(const bool *eligible_tids,
                                    const InstSeqNum *eligible_seq,
                                    size_t num_threads);
@@ -374,7 +367,6 @@ class LSQ
         bool _hasStaleTranslation;
         bool _sbufferBypass;
         bool _goldenSnapshotCaptured = false;
-        uint64_t _storeBufferGeneration = 0;
 
         struct FWDPacket
         {
@@ -1038,24 +1030,11 @@ class LSQ
     // true if all stores are flushed
     bool flushStores(ThreadID tid);
     bool flushStores(ThreadID tid, InstSeqNum seq_num);
-    void requestGlobalStoreBufferFlush();
-    bool storeBufferHasConflict(ThreadID tid, Addr block_paddr) const;
-    uint64_t bumpStoreBufferBlockVersion(Addr block_paddr);
-    uint64_t currentStoreBufferBlockVersion(Addr block_paddr) const;
-    void markStoreBufferBlockVisible(Addr block_paddr, uint64_t generation);
-    uint64_t currentStoreBufferVisibleVersion(Addr block_paddr) const;
     StoreBufferEntry *findForwardingStoreBufferEntry(Addr block_paddr,
                                                      ThreadID load_tid,
                                                      InstSeqNum load_seq) const;
-    bool hasLiveStoreBufferBlock(Addr block_paddr) const;
-    void reclaimStoreBufferBlockMetadata(Addr block_paddr);
-    void invalidateOtherThreadStoreBufferBytes(
-        ThreadID tid, Addr paddr, const std::vector<bool> &mask,
-        uint64_t generation);
     void notifyOtherThreadsStoreVisible(ThreadID tid, Addr store_paddr,
-                                        const std::vector<bool> &byte_enable,
-                                        InstSeqNum store_seq,
-                                        bool replay_executed_loads);
+                                        const std::vector<bool> &byte_enable);
 
     /** Returns the number of stores a specific thread has to write back. */
     int numStoresToSbuffer(ThreadID tid);
@@ -1290,8 +1269,6 @@ class LSQ
     const uint64_t storeBufferInactiveThreshold;
     const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle = 2;
     StoreBuffer storeBuffer;
-    std::unordered_map<Addr, uint64_t> storeBufferBlockVersion;
-    std::unordered_map<Addr, uint64_t> storeBufferVisibleVersion;
     bool _storeBufferFlushing[MaxThreads] = {false};
     InstSeqNum _storeBufferFlushBeforeSeq[MaxThreads] = {
         static_cast<InstSeqNum>(-1)
