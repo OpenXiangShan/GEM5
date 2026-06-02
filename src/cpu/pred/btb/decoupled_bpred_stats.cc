@@ -697,7 +697,7 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
     // Check if this target was mispredicted
     bool miss_predicted = target.squashType == SQUASH_CTRL;
     // Track indirect mispredictions
-    if (miss_predicted && target.exeBranchInfo.isIndirect) {
+    if (miss_predicted && target.exeBranchInfo.isIndirect()) {
         topMispredIndirect[target.startPC]++;
     }
 
@@ -713,7 +713,7 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
                     target.startPC, target.predTick);
             auto &slot = target.exeBranchInfo;
             DPRINTF(BTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
-                slot.pc, slot.size, slot.target, slot.isCond, slot.isIndirect, slot.isCall, slot.isReturn);
+                slot.pc, slot.size, slot.target, slot.isCond(), slot.isIndirect(), slot.isCall(), slot.isReturn());
         }
 
         // Count false hits
@@ -861,23 +861,23 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
     }
 
     if (s3PredSource == rasid) {
-        if (exeBranchInfo.isCond) {
+        if (exeBranchInfo.isCond()) {
             dbpBtbStats.s3PredWrongTage++;
-        } else if (exeBranchInfo.isReturn) {
+        } else if (exeBranchInfo.isReturn()) {
             dbpBtbStats.s3PredWrongRas++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == ittageid) {
-        if (exeBranchInfo.isIndirect) {
+        if (exeBranchInfo.isIndirect()) {
             dbpBtbStats.s3PredWrongIttage++;
-        } else if (exeBranchInfo.isCond) {
+        } else if (exeBranchInfo.isCond()) {
             dbpBtbStats.s3PredWrongTage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == tageid) {
-        if (exeBranchInfo.isCond) {
+        if (exeBranchInfo.isCond()) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
@@ -887,13 +887,13 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
             dbpBtbStats.s3PredWrongMbtb++;
         }
     }else if (s3PredSource == mbtbid) {
-        if (exeBranchInfo.isCond) {
+        if (exeBranchInfo.isCond()) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
                 dbpBtbStats.s3PredWrongMbtb++;
             }
-        } else if (exeBranchInfo.isIndirect) {
+        } else if (exeBranchInfo.isIndirect()) {
             dbpBtbStats.s3PredWrongIttage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
@@ -983,13 +983,13 @@ DecoupledBPUWithBTB::processMisprediction(
     if (mispred) {
         if (!taken) {
             // Only conditional branches can be not-taken
-            assert(info.isCond);
+            assert(info.isCond());
             mispredType = DIR_WRONG; // Direction was wrong
         } else {
             // Check if this branch was in the predicted BTB entries
             bool predBranchInBTB = false;
             for (auto &e: entry.predBTBEntries) {
-                if (e.pc == branchAddr) {
+                if (e.slot.pc == branchAddr) {
                     predBranchInBTB = true;
                     break;
                 }

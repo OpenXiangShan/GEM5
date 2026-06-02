@@ -36,10 +36,7 @@ BranchInfo createBranchInfo(Addr pc, Addr target, bool isCond = false,
     BranchInfo info;
     info.pc = pc;
     info.target = target;
-    info.isCond = isCond;
-    info.isIndirect = isIndirect;
-    info.isCall = isCall;
-    info.isReturn = isReturn;
+    info.setTypeFromFlags(isCond, isIndirect, false, isCall, isReturn);
     info.size = size;
     return info;
 }
@@ -136,9 +133,9 @@ predictUpdateCycle(MBTB* btb,
     btb->getAndSetNewBTBEntry(stream);
 
     for (auto &entry : stream.updateBTBEntries) {
-        entry.resolved = true;
+        entry.slot.resolved = true;
     }
-    stream.updateNewBTBEntry.resolved = true;
+    stream.updateNewBTBEntry.slot.resolved = true;
 
     btb->update(stream);
 
@@ -164,8 +161,10 @@ void verifyPrediction(const std::vector<FullBTBPrediction>& stagePreds,
     for (int i = delay; i < stagePreds.size(); i++) {
         ASSERT_EQ(stagePreds[i].btbEntries.size(), expectedEntries.size());
         for (size_t j = 0; j < expectedEntries.size(); j++) {
-            EXPECT_EQ(stagePreds[i].btbEntries[j].pc, expectedEntries[j].pc);
-            EXPECT_EQ(stagePreds[i].btbEntries[j].target, expectedEntries[j].target);
+            EXPECT_EQ(stagePreds[i].btbEntries[j].slot.pc,
+                      expectedEntries[j].pc);
+            EXPECT_EQ(stagePreds[i].btbEntries[j].slot.target,
+                      expectedEntries[j].target);
         }
     }
 }

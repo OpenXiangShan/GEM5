@@ -109,11 +109,6 @@ BTBRAS::putPCHistory(Addr startAddr, const boost::dynamic_bitset<> &history,
     for (int i = getDelay(); i < stagePreds.size(); i++) {
         stagePreds[i].returnTarget = top.retAddr;
     }
-    /*
-    if (stagePreds.back().btbEntry.slots[0].isCall || stagePreds.back().btbEntry.slots[0].isReturn || stagePreds.back().btbEntry.slots[1].isCall || stagePreds.back().btbEntry.slots[1].isReturn) {
-        printStack("putPCHistory", tid);
-    }
-    */
 }
 
 std::shared_ptr<void>
@@ -137,22 +132,22 @@ BTBRAS::specUpdateState(FullBTBPrediction &pred)
     auto takenEntry = pred.getTakenEntry();
     DPRINTFR(RAS, "Do specUpdate for PC %lx pred target %lx ", pred.bbStart, pred.returnTarget);
 
-    if (takenEntry.isCall) {
-        Addr retAddr = takenEntry.pc + takenEntry.size;
+    if (takenEntry.isCall()) {
+        Addr retAddr = takenEntry.slot.pc + takenEntry.slot.size;
         push(tid, retAddr);
     }
-    if (takenEntry.isReturn) {
+    if (takenEntry.isReturn()) {
         // do pop
         pop(tid);
     }
-    if (takenEntry.isCall) {
-        DPRINTFR(RAS, "IsCall spec PC %lx\n", takenEntry.pc);
+    if (takenEntry.isCall()) {
+        DPRINTFR(RAS, "IsCall spec PC %lx\n", takenEntry.slot.pc);
     }
-    if (takenEntry.isReturn) {
-        DPRINTFR(RAS, "IsRet spec PC %lx\n", takenEntry.pc);
+    if (takenEntry.isReturn()) {
+        DPRINTFR(RAS, "IsRet spec PC %lx\n", takenEntry.slot.pc);
     }
     
-    if (takenEntry.isCall || takenEntry.isReturn)
+    if (takenEntry.isCall() || takenEntry.isReturn())
         printStack("after specUpdateState", tid);
     DPRINTFR(RAS, "meta TOSR %d TOSW %d\n", state.meta->TOSR, state.meta->TOSW);
 }
@@ -165,7 +160,7 @@ BTBRAS::recoverState(const FetchTarget &entry)
     auto &state = threadStates[tid];
     auto takenEntry = entry.exeBranchInfo;
     /*
-    if (takenEntry.isCall || takenEntry.isReturn) {
+    if (takenEntry.isCall() || takenEntry.isReturn()) {
         printStack("before recoverState", tid);
     }*/
     // recover sp and tos first
@@ -181,10 +176,10 @@ BTBRAS::recoverState(const FetchTarget &entry)
 
     // do push & pops on control squash
     if (entry.exeTaken) {
-        if (takenEntry.isCall) {
+        if (takenEntry.isCall()) {
             push(tid, retAddr);
         }
-        if (takenEntry.isReturn) {
+        if (takenEntry.isReturn()) {
             pop(tid);
             //TOSW = (TOSR + 1) % numInflightEntries;
         }
@@ -192,8 +187,8 @@ BTBRAS::recoverState(const FetchTarget &entry)
 
     
     if (entry.exeTaken) {
-        DPRINTF(RAS, "isCall %d, isRet %d\n", takenEntry.isCall, takenEntry.isReturn);
-        if (takenEntry.isReturn) {
+        DPRINTF(RAS, "isCall %d, isRet %d\n", takenEntry.isCall(), takenEntry.isReturn());
+        if (takenEntry.isReturn()) {
             DPRINTF(RAS, "IsRet expect target %lx, preded %lx, pred taken %d pred target %lx\n",
                 takenEntry.target, meta_ptr->target, entry.predTaken, entry.predBranchInfo.target);
         }
@@ -218,19 +213,19 @@ BTBRAS::update(const FetchTarget &entry)
         } else
             DPRINTF(RAS, "ssp and nsp match, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);
-        if (takenEntry.isCall) {
+        if (takenEntry.isCall()) {
             DPRINTF(RAS, "real update call BTB hit %d meta TOSR %d TOSW %d\n entry PC %lx",
                 entry.isHit, meta_ptr->TOSR, meta_ptr->TOSW, entry.startPC);
             Addr retAddr = takenEntry.pc + takenEntry.size;
             push_stack(tid, retAddr);
             state.BOS = inflightPtrPlus1(meta_ptr->TOSW);
         }
-        if (takenEntry.isReturn) {
+        if (takenEntry.isReturn()) {
             DPRINTF(RAS, "update ret entry PC %lx\n", entry.startPC);
             pop_stack(tid);
         }
     }
-    if (takenEntry.isCall || takenEntry.isReturn) {
+    if (takenEntry.isCall() || takenEntry.isReturn()) {
         printStack("after update(commit)", tid);
     }
 }

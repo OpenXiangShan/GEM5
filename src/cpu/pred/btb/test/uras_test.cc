@@ -82,11 +82,11 @@ public:
         // do push & pops on prediction
         pred.returnTarget = stack[sp].retAddr;
         auto takenSlot = pred.getTakenEntry();
-        if (takenSlot.isCall) { // call inst, push retAddr to spec stack
-            Addr retAddr = takenSlot.pc + takenSlot.size;
+        if (takenSlot.isCall()) { // call inst, push retAddr to spec stack
+            Addr retAddr = takenSlot.slot.pc + takenSlot.slot.size;
             push(retAddr, stack, sp);
         }
-        if (takenSlot.isReturn) { // return inst, pop retAddr from spec stack
+        if (takenSlot.isReturn()) { // return inst, pop retAddr from spec stack
             // do pop
             auto retAddr = stack[sp].retAddr;
             pop(stack, sp);
@@ -112,10 +112,10 @@ public:
 
         if (entry.exeTaken) {
             // do push & pops on control squash
-            if (takenSlot.isReturn) {
+            if (takenSlot.isReturn()) {
                 pop(stack, sp);
             }
-            if (takenSlot.isCall) {
+            if (takenSlot.isCall()) {
                 Addr retAddr = takenSlot.pc + takenSlot.size;
                 push(retAddr, stack, sp);
             }
@@ -287,10 +287,10 @@ TEST_F(URASTest, SpecUpdateStateCall) {
     // Setup a call instruction in BTBEntry
     BTBEntry callEntry;
     callEntry.valid = true;
-    callEntry.pc = 0x1000;
-    callEntry.isCall = true;
-    callEntry.size = 4;
-    callEntry.target = 0x2000;  // 目标地址
+    callEntry.slot.pc = 0x1000;
+    callEntry.slot.setTypeFromFlags(false, false, true, true, false);
+    callEntry.slot.size = 4;
+    callEntry.slot.target = 0x2000;  // 目标地址
     pred.btbEntries.push_back(callEntry);
     
     // 初始状态检查
@@ -322,9 +322,9 @@ TEST_F(URASTest, SpecUpdateStateReturn) {
     // Setup a return instruction in BTBEntry
     BTBEntry retEntry;
     retEntry.valid = true;
-    retEntry.pc = 0x1000;
-    retEntry.isReturn = true;
-    retEntry.target = 0x2000;
+    retEntry.slot.pc = 0x1000;
+    retEntry.slot.setTypeFromFlags(false, true, false, false, true);
+    retEntry.slot.target = 0x2000;
     pred.btbEntries.push_back(retEntry);
     
     // 执行 specUpdateState
@@ -346,10 +346,10 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     
     BTBEntry callEntry;
     callEntry.valid = true;
-    callEntry.pc = 0x1000;
-    callEntry.isCall = true;
-    callEntry.size = 4;
-    callEntry.target = 0x2000;
+    callEntry.slot.pc = 0x1000;
+    callEntry.slot.setTypeFromFlags(false, false, true, true, false);
+    callEntry.slot.size = 4;
+    callEntry.slot.target = 0x2000;
     pred1.btbEntries.push_back(callEntry);
     
     // 执行 call 的 specUpdateState
@@ -361,9 +361,9 @@ TEST_F(URASTest, SpecUpdateStateCallReturn) {
     
     BTBEntry retEntry;
     retEntry.valid = true;
-    retEntry.pc = 0x2000;
-    retEntry.isReturn = true;
-    retEntry.target = 0x1004;  // 返回到call的下一条指令
+    retEntry.slot.pc = 0x2000;
+    retEntry.slot.setTypeFromFlags(false, true, false, false, true);
+    retEntry.slot.target = 0x1004;  // 返回到call的下一条指令
     pred2.btbEntries.push_back(retEntry);
     
     // 执行 return 的 specUpdateState
@@ -420,7 +420,7 @@ TEST_F(URASTest, RecoverStateReturn) {
     
     // 设置return指令信息
     entry.exeTaken = true;
-    entry.exeBranchInfo.isReturn = true;
+    entry.exeBranchInfo.setTypeFromFlags(false, true, false, false, true);
     entry.exeBranchInfo.pc = 0x2000;
     
     // 执行恢复
@@ -448,7 +448,7 @@ TEST_F(URASTest, RecoverStateCall) {
     
     // 设置call指令信息
     entry.exeTaken = true;
-    entry.exeBranchInfo.isCall = true;
+    entry.exeBranchInfo.setTypeFromFlags(false, false, true, true, false);
     entry.exeBranchInfo.pc = 0x1000;
     entry.exeBranchInfo.size = 4;
     
@@ -475,7 +475,7 @@ TEST_F(URASTest, RecoverStateCallReturn) {
     entry1.predMetas[0] = std::make_shared<uRASMeta>(meta1);
     
     entry1.exeTaken = true;
-    entry1.exeBranchInfo.isCall = true;
+    entry1.exeBranchInfo.setTypeFromFlags(false, false, true, true, false);
     entry1.exeBranchInfo.pc = 0x1000;
     entry1.exeBranchInfo.size = 4;
     
@@ -492,7 +492,7 @@ TEST_F(URASTest, RecoverStateCallReturn) {
     entry2.predMetas[0] = std::make_shared<uRASMeta>(meta2);
     
     entry2.exeTaken = true;
-    entry2.exeBranchInfo.isReturn = true;
+    entry2.exeBranchInfo.setTypeFromFlags(false, true, false, false, true);
     entry2.exeBranchInfo.pc = 0x2000;
     
     uras->recoverState(entry2);

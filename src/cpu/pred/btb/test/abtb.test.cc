@@ -36,7 +36,7 @@ void resolveStream(FetchTarget &stream, bool taken, Addr brPc, Addr target, bool
     stream.resolved = true;
     stream.exeBranchInfo.pc = brPc;
     stream.exeBranchInfo.target = target;
-    stream.exeBranchInfo.isCond = isCond;
+    stream.exeBranchInfo.setTypeFromFlags(isCond, false, !isCond, false, false);
     stream.exeBranchInfo.size = size;
     stream.exeTaken = taken;
 }
@@ -118,8 +118,8 @@ TEST_F(ABTBTest, BasicPredictionUpdateCycle){
     auto pred_B_test = makePrediction(startPC_B, abtb);
     EXPECT_EQ(pred_B_test.btbEntries.size(), 1);
     if (!pred_B_test.btbEntries.empty()) {
-        EXPECT_EQ(pred_B_test.btbEntries[0].pc, brPC_B);
-        EXPECT_EQ(pred_B_test.btbEntries[0].target, target_B);
+        EXPECT_EQ(pred_B_test.btbEntries[0].slot.pc, brPC_B);
+        EXPECT_EQ(pred_B_test.btbEntries[0].slot.target, target_B);
     }
 
 }
@@ -194,8 +194,8 @@ TEST_F(ABTBTest, AheadPipelineIsThreadIsolated){
 
     EXPECT_EQ(pred_t0_test.btbEntries.size(), 1);
     if (!pred_t0_test.btbEntries.empty()) {
-        EXPECT_EQ(pred_t0_test.btbEntries[0].pc, t0BrPC);
-        EXPECT_EQ(pred_t0_test.btbEntries[0].target, t0Target);
+        EXPECT_EQ(pred_t0_test.btbEntries[0].slot.pc, t0BrPC);
+        EXPECT_EQ(pred_t0_test.btbEntries[0].slot.target, t0Target);
     }
 }
 

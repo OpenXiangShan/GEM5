@@ -193,13 +193,13 @@ MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
     // Sort by instruction order
     std::sort(processed_entries.begin(), processed_entries.end(), 
              [](const BTBEntry &a, const BTBEntry &b) {
-                 return a.pc < b.pc;
+                 return a.slot.pc < b.slot.pc;
              });
     
     // Remove entries before the start PC
     auto it = std::remove_if(processed_entries.begin(), processed_entries.end(),
                            [startAddr](const BTBEntry &e) {
-                               return e.pc < startAddr;
+                               return e.slot.pc < startAddr;
                            });
     processed_entries.erase(it, processed_entries.end());
 
@@ -207,7 +207,7 @@ MBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startAddr)
     Addr mbtb_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
     it = std::remove_if(processed_entries.begin(), processed_entries.end(),
                         [mbtb_end](const BTBEntry &e) {
-                            return e.pc >= mbtb_end;
+                            return e.slot.pc >= mbtb_end;
                         });
     processed_entries.erase(it, processed_entries.end());
 
@@ -258,19 +258,22 @@ MBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     // Set predictions for each branch
     for (auto &e : entries) {
         assert(e.valid);
-        if (e.isCond) {
+        if (e.isCond()) {
             // TODO: a performance bug here, mbtb should not update condTakens!
 
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
+            FillStageLoop(s) stagePreds[s].condTakens.push_back(
+                {e.slot.pc, e.alwaysTaken || (e.ctr >= 0)});
 
-        } else if (e.isIndirect) {
+        } else if (e.isIndirect()) {
             // Set predicted target for indirect branches
-            DPRINTF(BTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
+            DPRINTF(BTB, "setting indirect target for pc %#lx to %#lx\n",
+                    e.slot.pc, e.slot.target);
 
-            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.pc, e.target});
+            FillStageLoop(s) stagePreds[s].indirectTargets.push_back(
+                {e.slot.pc, e.slot.target});
 
-            if (e.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = e.target;
+            if (e.isReturn()) {
+                FillStageLoop(s) stagePreds[s].returnTarget = e.slot.target;
             }
             break;
         }
@@ -385,7 +388,7 @@ MBTB::lookup(Addr block_pc, uint8_t asidHash, std::shared_ptr<BTBMeta> meta)
     // Sort entries by PC order
     std::sort(res.begin(), res.end(),
              [](const TickedBTBEntry &a, const TickedBTBEntry &b) {
-                 return a.pc < b.pc;
+                 return a.slot.pc < b.slot.pc;
              });
 
     DPRINTF(BTB, "MBTB: Half-aligned lookup results:\n");
@@ -432,7 +435,7 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
         BTBEntry new_entry = BTBEntry(stream.exeBranchInfo);
         new_entry.valid = true;
         // For conditional branches, initialize as always taken
-        if (new_entry.isCond) {
+        if (new_entry.isCond()) {
             new_entry.alwaysTaken = true;
             new_entry.ctr = 0;  // Start with positive prediction
             btbStats.newEntryWithCond++;
@@ -441,7 +444,7 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
         }
         btbStats.newEntry++;
         entry_to_write = new_entry;
-        entry_to_write.resolved = stream.exeBranchInfo.resolved;
+        entry_to_write.slot.resolved = stream.exeBranchInfo.resolved;
         is_old_entry = false;
     } else {
         DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, stream.exeTaken=%d\n",
@@ -450,7 +453,7 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
     }
 
     // Set tag and update stream metadata for use in update()
-    entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
+    entry_to_write.tag = getTag(entry_to_write.slot.pc, stream.asidHash);
     stream.updateNewBTBEntry = entry_to_write;
     stream.updateIsOldEntry = is_old_entry;
 }
@@ -492,13 +495,13 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
 {
     btbStats.updateTotal++;
     // Select SRAM based on entry PC's 32B-aligned address
-    Addr alignedPC = entry.pc & ~(blockSize - 1);
+    Addr alignedPC = entry.slot.pc & ~(blockSize - 1);
     int sram_id = getSRAMId(alignedPC);
     auto& target_sram = (sram_id == 0) ? sram0 : sram1;
     auto& target_mru = (sram_id == 0) ? mru0 : mru1;
     
     // Calculate index and tag for this entry
-    Addr btb_idx = getIndex(entry.pc, stream.asidHash);
+    Addr btb_idx = getIndex(entry.slot.pc, stream.asidHash);
 
     // Look for matching entry in the target SRAM
     bool found = false;
@@ -514,7 +517,7 @@ MBTB::updateBTBEntry(const BTBEntry& entry, const FetchTarget &stream)
     int vc_idx = -1;
     for (int i = 0; i < (int)victimCache.size(); i++) {
         auto &vc_entry = victimCache[i];
-        if (vc_entry.valid && vc_entry.pc == entry.pc) {    // pc is tag compared
+        if (vc_entry.valid && vc_entry.slot.pc == entry.slot.pc) {    // pc is tag compared
             found_in_vc = true;
             vc_idx = i;
             break;
@@ -550,20 +553,21 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
                         const FetchTarget &stream)
 {
     // For conditional branches, prefer the existing entry to preserve up-to-date ctr
-    auto entry_to_write = (req_entry.isCond && existing_entry)
+    auto entry_to_write = (req_entry.isCond() && existing_entry)
                               ? BTBEntry(*existing_entry)
                               : req_entry;
     // Always recalculate tag based on the actual PC being written
-    entry_to_write.tag = getTag(entry_to_write.pc, stream.asidHash);
-    entry_to_write.resolved = false; // reset resolved status
+    entry_to_write.tag = getTag(entry_to_write.slot.pc, stream.asidHash);
+    entry_to_write.slot.resolved = false; // reset resolved status
 
     // Update saturating counter and alwaysTaken
-    if (entry_to_write.isCond) {
-        bool this_cond_taken = stream.exeTaken && stream.getControlPC() == entry_to_write.pc;
+    if (entry_to_write.isCond()) {
+        bool this_cond_taken = stream.exeTaken &&
+            stream.getControlPC() == entry_to_write.slot.pc;
         if (!this_cond_taken) {
             entry_to_write.alwaysTaken = false;
             DPRINTF(BTB, "BTB: unset alwaysTaken, pc %#lx, alwaysTaken %d\n",
-                    entry_to_write.pc, entry_to_write.alwaysTaken);
+                    entry_to_write.slot.pc, entry_to_write.alwaysTaken);
         }
         if (!entry_to_write.alwaysTaken) {
             updateCtr(entry_to_write.ctr, this_cond_taken);
@@ -571,8 +575,9 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
     }
 
     // Update indirect target if necessary
-    if (entry_to_write.isIndirect && stream.exeTaken && stream.getControlPC() == entry_to_write.pc) {
-        entry_to_write.target = stream.exeBranchInfo.target;
+    if (entry_to_write.isIndirect() && stream.exeTaken &&
+        stream.getControlPC() == entry_to_write.slot.pc) {
+        entry_to_write.slot.target = stream.exeBranchInfo.target;
     }
     return entry_to_write;
 }
@@ -583,7 +588,7 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
                               BTBSetIter it_found,
                               const TickedBTBEntry &ticked_entry)
 {
-    if (it_found->target != ticked_entry.target) {
+    if (it_found->slot.target != ticked_entry.slot.target) {
         btbStats.updateFixTarget++;
     }
     // Update existing entry
@@ -591,8 +596,8 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;
-        rec.set(ticked_entry.pc, ticked_entry.getType(),
-                ticked_entry.target, btb_idx, Mode::WRITE, 1);
+        rec.set(ticked_entry.slot.pc, ticked_entry.getType(),
+                ticked_entry.slot.target, btb_idx, Mode::WRITE, 1);
         btbTrace->write_record(rec);
     }
 #endif
@@ -600,8 +605,9 @@ MBTB::updateExistingInSRAMSet(Addr btb_idx,
     std::make_heap(heap.begin(), heap.end(), older());
 
     // Ensure single source of truth: remove duplicate from victim cache if any
-    if (eraseFromVictimCacheByPC(ticked_entry.pc)) {
-        DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM update, pc %#lx\n", ticked_entry.pc);
+    if (eraseFromVictimCacheByPC(ticked_entry.slot.pc)) {
+        DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM update, pc %#lx\n",
+                ticked_entry.slot.pc);
     }
 }
 
@@ -619,8 +625,8 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;
-        rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
+        rec.set(entry_in_btb_now->slot.pc, entry_in_btb_now->getType(),
+                entry_in_btb_now->slot.target, btb_idx, Mode::EVICT, 0);
         btbTrace->write_record(rec);
     }
 #endif
@@ -634,21 +640,22 @@ MBTB::replaceOldestInSRAMSet(int sram_id,
     }
     btbStats.updateReplace++;
     DPRINTF(BTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
-            entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
+            entry_in_btb_now->tag, entry_in_btb_now->slot.pc, btb_idx);
     *entry_in_btb_now = ticked_entry;
 #ifndef UNIT_TEST
     if (enableDB) {
         BTBTrace rec;
-        rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
+        rec.set(entry_in_btb_now->slot.pc, entry_in_btb_now->getType(),
+                entry_in_btb_now->slot.target, btb_idx, Mode::WRITE, 0);
         btbTrace->write_record(rec);
     }
 #endif
     std::make_heap(heap.begin(), heap.end(), older());
 
     // Ensure single source of truth: remove duplicate from victim cache if any
-    if (eraseFromVictimCacheByPC(ticked_entry.pc)) {
-        DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM replace, pc %#lx\n", ticked_entry.pc);
+    if (eraseFromVictimCacheByPC(ticked_entry.slot.pc)) {
+        DPRINTF(BTB, "BTB: removed duplicate from VC after SRAM replace, pc %#lx\n",
+                ticked_entry.slot.pc);
     }
 }
 
@@ -692,7 +699,8 @@ MBTB::prepareUpdateEntries(const FetchTarget &stream) {
     // Add potential new BTB entry if it's a btb miss during prediction
     if (!stream.updateIsOldEntry) {
         BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.pc;
+        bool new_entry_taken = stream.exeTaken &&
+            stream.getControlPC() == potential_new_entry.slot.pc;
         if (!new_entry_taken) {
             potential_new_entry.alwaysTaken = false;
         }
@@ -702,7 +710,7 @@ MBTB::prepareUpdateEntries(const FetchTarget &stream) {
     // Filter: only keep conditional branches that are not always taken
     if (getResolvedUpdate()) {
         auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
-            [](const BTBEntry &e) { return !e.resolved; });
+            [](const BTBEntry &e) { return !e.slot.resolved; });
         all_entries.erase(remove_it, all_entries.end());
     }
 
@@ -722,13 +730,13 @@ MBTB::lookupVictimCache(Addr block_pc, uint8_t asidHash)
     for (auto &entry : victimCache) {
         if (!entry.valid) continue;
 
-        Addr entryAlignedPC = entry.pc & ~(blockSize - 1);
+        Addr entryAlignedPC = entry.slot.pc & ~(blockSize - 1);
         // Check if this entry is in either of the two 32B blocks we're looking for
         if (entryAlignedPC == alignedPC || entryAlignedPC == (alignedPC + blockSize)) {
-            Addr current_tag = getTag(entry.pc, asidHash);
+            Addr current_tag = getTag(entry.slot.pc, asidHash);
             if (entry.tag == current_tag) {
                 results.push_back(entry);
-                DPRINTF(BTB, "Victim cache hit for pc %#lx\n", entry.pc);
+                DPRINTF(BTB, "Victim cache hit for pc %#lx\n", entry.slot.pc);
                 // refresh LRU timestamp on hit
                 entry.tick = curTick();
             }
@@ -744,7 +752,7 @@ MBTB::eraseFromVictimCacheByPC(Addr pc)
 {
     bool erased = false;
     for (auto &entry : victimCache) {
-        if (entry.valid && entry.pc == pc) {
+        if (entry.valid && entry.slot.pc == pc) {
             entry.valid = false;
             erased = true;
             break;
@@ -760,7 +768,7 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
 
     // 1) If same PC exists, update and refresh tick
     for (auto &entry : victimCache) {
-        if (entry.valid && entry.pc == evicted_entry.pc) {
+        if (entry.valid && entry.slot.pc == evicted_entry.slot.pc) {
             entry = evicted_entry;
             entry.tick = curTick();
             return;
@@ -785,7 +793,7 @@ MBTB::insertVictimCache(const TickedBTBEntry& evicted_entry)
         }
     }
     DPRINTF(BTB, "LRU replace in victim cache, evict pc %#lx with pc %#lx\n",
-            lru_it->pc, evicted_entry.pc);
+            lru_it->slot.pc, evicted_entry.slot.pc);
     *lru_it = evicted_entry;
     lru_it->tick = curTick();
 }
@@ -803,7 +811,7 @@ MBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
     bool this_branch_hit = false;
     auto entry = BTBEntry();
     for (auto e : hit_entries) {
-        if (e.pc == pc) {
+        if (e.slot.pc == pc) {
             this_branch_hit = true;
             entry = e;
             break;
@@ -843,7 +851,7 @@ MBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         if (!inst->isNonSpeculative()) {
             if (inst->isIndirectCtrl()) {
                 btbStats.indirectHits++;
-                Addr pred_target = entry.target;
+                Addr pred_target = entry.slot.target;
                 if (pred_target == this_branch_target) {
                     btbStats.indirectPredCorrect++;
                 } else {

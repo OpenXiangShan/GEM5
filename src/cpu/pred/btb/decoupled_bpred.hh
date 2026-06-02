@@ -209,7 +209,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void printBTBEntry(const BTBEntry &e) {
         DPRINTF(BTB, "BTB entry: valid %d, pc:%#lx, tag: %#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d, always_taken:%d\n",
-            e.valid, e.pc, e.tag, e.size, e.target, e.isCond, e.isIndirect, e.isCall, e.isReturn, e.alwaysTaken);
+            e.valid, e.slot.pc, e.tag, e.slot.size, e.slot.target,
+            e.isCond(), e.isIndirect(), e.isCall(), e.isReturn(),
+            e.alwaysTaken);
     }
 
     void printFullBTBPrediction(const FullBTBPrediction &pred) {

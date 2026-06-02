@@ -108,8 +108,9 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
     DPRINTF(ITTAGE, "lookupHelper startAddr: %#lx\n", startAddr);
     std::vector<TagePrediction> preds;
     for (auto &btb_entry : btbEntries) {
-        if (btb_entry.isIndirect && !btb_entry.isReturn && btb_entry.valid) {
-            DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx, always taken %d\n", btb_entry.pc, btb_entry.alwaysTaken);
+        if (btb_entry.isIndirect() && !btb_entry.isReturn() && btb_entry.valid) {
+            DPRINTF(ITTAGE, "lookupHelper btbEntry: %#lx, always taken %d\n",
+                    btb_entry.slot.pc, btb_entry.alwaysTaken);
             bool provided = false;
             bool alt_provided = false;
 
@@ -118,9 +119,12 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
             for (int i = numPredictors - 1; i >= 0; --i) {
                 auto &way = lookupEntries[i];
                 // TODO: count alias hit (offset match but pc differs)
-                bool match = way.valid && lookupTags[i] == way.tag && btb_entry.pc == way.pc;
-                DPRINTF(ITTAGE, "hit %d, table %d, index %d, lookup tag %d, tag %d, useful %d, btb_pc %#lx, entry_pc %#lx\n",
-                    match, i, lookupIndices[i], lookupTags[i], way.tag, way.useful, btb_entry.pc, way.pc);
+                bool match = way.valid && lookupTags[i] == way.tag &&
+                    btb_entry.slot.pc == way.pc;
+                DPRINTF(ITTAGE, "hit %d, table %d, index %d, lookup tag %d, "
+                    "tag %d, useful %d, btb_pc %#lx, entry_pc %#lx\n",
+                    match, i, lookupIndices[i], lookupTags[i], way.tag,
+                    way.useful, btb_entry.slot.pc, way.pc);
 
                 if (match) {
                     if (!provided) {
@@ -137,7 +141,7 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
             Addr main_target = main_info.entry.target;
             Addr alt_target = alt_info.entry.target;
 
-            Addr base_target = btb_entry.target;
+            Addr base_target = btb_entry.slot.target;
             bool base_as_alt = false;
 
 
@@ -164,9 +168,10 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
                 warn("no target found\n");
             }
             if (taken) {
-                results.push_back({btb_entry.pc, target});
+                results.push_back({btb_entry.slot.pc, target});
             }
-            DPRINTF(ITTAGE, "tage predict %#lx target %#lx\n", btb_entry.pc, target);
+            DPRINTF(ITTAGE, "tage predict %#lx target %#lx\n",
+                    btb_entry.slot.pc, target);
 
             // Update prediction statistics
             if (!provided) {
@@ -179,8 +184,9 @@ BTBITTAGE::lookupHelper(Addr startAddr, const std::vector<BTBEntry> &btbEntries,
                 ittageStats.predTableHits.sample(main_info.table, 1);
             }
             // Note: predTargetHit will be updated in the update phase when we know the actual target
-            TagePrediction pred(btb_entry.pc, main_info, alt_info, use_alt, main_target);
-            threadMeta[tid]->preds[btb_entry.pc] = pred;
+            TagePrediction pred(btb_entry.slot.pc, main_info, alt_info,
+                                use_alt, main_target);
+            threadMeta[tid]->preds[btb_entry.slot.pc] = pred;
         }
     }
 }
@@ -265,11 +271,11 @@ BTBITTAGE::update(const FetchTarget &stream)
     if (getResolvedUpdate()) {
         auto remove_it =
             std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
-                           [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn && e.resolved); });
+                           [](const BTBEntry &e) { return !(e.isIndirect() && !e.isReturn() && e.slot.resolved); });
         all_entries_to_update.erase(remove_it, all_entries_to_update.end());
     } else {
         auto remove_it = std::remove_if(all_entries_to_update.begin(), all_entries_to_update.end(),
-                                        [](const BTBEntry &e) { return !(e.isIndirect && !e.isReturn); });
+                                        [](const BTBEntry &e) { return !(e.isIndirect() && !e.isReturn()); });
         all_entries_to_update.erase(remove_it, all_entries_to_update.end());
     }
 
@@ -284,12 +290,13 @@ BTBITTAGE::update(const FetchTarget &stream)
     // update each branch
     for (auto &btb_entry : all_entries_to_update) {
         bool this_indirect_actual_taken = stream.exeTaken && stream.exeBranchInfo == btb_entry;
-        auto pred_it = preds.find(btb_entry.pc);
+        auto pred_it = preds.find(btb_entry.slot.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {
             pred = pred_it->second;
         }
-        bool mispred = stream.squashType == SQUASH_CTRL && stream.squashPC == btb_entry.pc;
+        bool mispred = stream.squashType == SQUASH_CTRL &&
+            stream.squashPC == btb_entry.slot.pc;
         Addr exe_target = stream.exeBranchInfo.target;
         auto &main_info = pred.mainInfo;
 
@@ -414,7 +421,8 @@ BTBITTAGE::update(const FetchTarget &stream)
                     if (allocate[ti - startTable]) {
                         DPRINTF(ITTAGE, "found allocatable entry, table %d, index %d, tag %d, counter %d\n",
                             ti, newIndex, newTag, 2);
-                        newEntry = TageEntry(newTag, exe_target, 2, btb_entry.pc);
+                        newEntry = TageEntry(newTag, exe_target, 2,
+                                             btb_entry.slot.pc);
                         ittageStats.updateAllocSuccess++;
                         break; // allocate only 1 entry
                     }

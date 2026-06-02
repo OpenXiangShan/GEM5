@@ -199,12 +199,12 @@ AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startA
     // Sort by instruction order
     std::sort(processed_entries.begin(), processed_entries.end(), 
              [](const BTBEntry &a, const BTBEntry &b) {
-                 return a.pc < b.pc;
+                 return a.slot.pc < b.slot.pc;
              });
 
     auto it = std::remove_if(processed_entries.begin(), processed_entries.end(),
                            [startAddr](const BTBEntry &e) {
-                               return e.pc < startAddr;
+                               return e.slot.pc < startAddr;
                            });
     processed_entries.erase(it, processed_entries.end());
 
@@ -212,7 +212,7 @@ AheadBTB::processEntries(const std::vector<TickedBTBEntry>& entries, Addr startA
                     ~mask(floorLog2(predictWidth) - 1);
     it = std::remove_if(processed_entries.begin(), processed_entries.end(),
                         [abtb_end](const BTBEntry &e) {
-                            return e.pc >= abtb_end;
+                            return e.slot.pc >= abtb_end;
                         });
     processed_entries.erase(it, processed_entries.end());
 
@@ -256,7 +256,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         assert(ubtb_pred_entry.valid);
         mixed_entries = entries;
         for (auto &entry : mixed_entries) {
-            if (entry.pc == ubtb_pred_entry.pc) {
+            if (entry.slot.pc == ubtb_pred_entry.slot.pc) {
                 entry.valid = false; // invalidate duplicated entry from aBTB (only use for align counter)
                 break;
             }
@@ -265,7 +265,7 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
         // Deduplicate entries by pc (order can change)
         std::sort(mixed_entries.begin(), mixed_entries.end(),
               [](const TickedBTBEntry& a, const TickedBTBEntry& b) {
-                  return a.pc < b.pc;
+                  return a.slot.pc < b.slot.pc;
               });
         // Drop entries invalidated during deduplication above
         mixed_entries.erase(std::remove_if(mixed_entries.begin(), mixed_entries.end(),
@@ -301,16 +301,16 @@ AheadBTB::fillStagePredictions(const std::vector<TickedBTBEntry>& entries,
     // Set predictions for each branch
     for (auto &e : mixed_entries) {
         assert(e.valid);
-        if (e.isCond) {
-            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.pc, e.alwaysTaken || (e.ctr >= 0)});
-        } else if (e.isIndirect) {
+        if (e.isCond()) {
+            FillStageLoop(s) stagePreds[s].condTakens.push_back({e.slot.pc, e.alwaysTaken || (e.ctr >= 0)});
+        } else if (e.isIndirect()) {
             // Set predicted target for indirect branches
-            DPRINTF(ABTB, "setting indirect target for pc %#lx to %#lx\n", e.pc, e.target);
+            DPRINTF(ABTB, "setting indirect target for pc %#lx to %#lx\n", e.slot.pc, e.slot.target);
 
-            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.pc, e.target});
+            FillStageLoop(s) stagePreds[s].indirectTargets.push_back({e.slot.pc, e.slot.target});
 
-            if (e.isReturn) {
-                FillStageLoop(s) stagePreds[s].returnTarget = e.target;
+            if (e.isReturn()) {
+                FillStageLoop(s) stagePreds[s].returnTarget = e.slot.target;
             }
             break;
         }
@@ -478,7 +478,7 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
     DPRINTF(ABTB, "old_entries.size(): %lu\n", old_entries.size());
     //dumpBTBEntries(old_entries);
     auto remove_it = std::remove_if(old_entries.begin(), old_entries.end(),
-        [end_inst_pc](const BTBEntry &e) { return e.pc > end_inst_pc; });
+        [end_inst_pc](const BTBEntry &e) { return e.slot.pc > end_inst_pc; });
     old_entries.erase(remove_it, old_entries.end());
     DPRINTF(ABTB, "after removing not executed insts, old_entries.size(): %lu\n", old_entries.size());
     //dumpBTBEntries(old_entries);
@@ -563,12 +563,12 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
     }
     // if cond entry in btb now, use the one in btb, since we need the up-to-date counter
     // else use the recorded entry
-    auto entry_to_write = entry.isCond && found ? BTBEntry(*it) : entry;
-    entry_to_write.resolved = false; // reset resolved bit on update
+    auto entry_to_write = entry.isCond() && found ? BTBEntry(*it) : entry;
+    entry_to_write.slot.resolved = false; // reset resolved bit on update
     entry_to_write.tag = btb_tag;   // update tag after found it!
     // update saturating counter if necessary
-    if (entry_to_write.isCond) {
-        bool this_cond_taken = isTaken && takenbranchinfo.pc == entry_to_write.pc;
+    if (entry_to_write.isCond()) {
+        bool this_cond_taken = isTaken && takenbranchinfo.pc == entry_to_write.slot.pc;
         if (!this_cond_taken) {
             entry_to_write.alwaysTaken = false;
         }
@@ -577,8 +577,8 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
         }
     }
     // update indirect target if necessary
-    if (entry_to_write.isIndirect && isTaken && takenbranchinfo.pc == entry_to_write.pc) {
-        entry_to_write.target = takenbranchinfo.target;
+    if (entry_to_write.isIndirect() && isTaken && takenbranchinfo.pc == entry_to_write.slot.pc) {
+        entry_to_write.slot.target = takenbranchinfo.target;
     }
     auto ticked_entry = TickedBTBEntry(entry_to_write, curTick());
     if (found) {
@@ -587,8 +587,8 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(ticked_entry.pc, ticked_entry.getType(),
-                ticked_entry.target, btb_idx, Mode::WRITE, 1);
+            rec.set(ticked_entry.slot.pc, ticked_entry.getType(),
+                ticked_entry.slot.target, btb_idx, Mode::WRITE, 1);
             btbTrace->write_record(rec);
         }
 #endif
@@ -603,8 +603,8 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                    entry_in_btb_now->target, btb_idx, Mode::EVICT, 0);
+            rec.set(entry_in_btb_now->slot.pc, entry_in_btb_now->getType(),
+                    entry_in_btb_now->slot.target, btb_idx, Mode::EVICT, 0);
                 btbTrace->write_record(rec);
         }
 #endif
@@ -615,13 +615,13 @@ AheadBTB::updateBTBEntry(Addr btb_idx, Addr btb_tag, const BTBEntry& entry,
         }
         btbStats.updateReplace++;
         DPRINTF(ABTB, "BTB: Replacing entry with tag %#lx, pc %#lx in set %#lx\n",
-                entry_in_btb_now->tag, entry_in_btb_now->pc, btb_idx);
+                entry_in_btb_now->tag, entry_in_btb_now->slot.pc, btb_idx);
         *entry_in_btb_now = ticked_entry;
 #ifndef UNIT_TEST
         if (enableDB) {
             BTBTrace rec;
-            rec.set(entry_in_btb_now->pc, entry_in_btb_now->getType(),
-                entry_in_btb_now->target, btb_idx, Mode::WRITE, 0);
+            rec.set(entry_in_btb_now->slot.pc, entry_in_btb_now->getType(),
+                entry_in_btb_now->slot.target, btb_idx, Mode::WRITE, 0);
             btbTrace->write_record(rec);
         }
 #endif
@@ -639,7 +639,7 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         return;
     }
 
-    Addr end_inst_pc = s3Pred.isTaken() ? s3Pred.getTakenEntry().pc :
+    Addr end_inst_pc = s3Pred.isTaken() ? s3Pred.getTakenEntry().slot.pc :
                             (s3Pred.bbStart + predictWidth) & ~mask(floorLog2(predictWidth)-1);
 
     // AheadBTB use S3 prediction for update
@@ -657,8 +657,8 @@ AheadBTB::updateUsingS3Pred(FullBTBPrediction &s3Pred, const Addr previousPC)
         }
         Addr btb_idx = getIndex(previousPC, s3Pred.asidHash);  // use last pc to get idx
         BranchInfo takenbranchinfo;
-        takenbranchinfo.pc = s3Pred.getTakenEntry().pc;
-        takenbranchinfo.target = s3Pred.getTakenEntry().target;
+        takenbranchinfo.pc = s3Pred.getTakenEntry().slot.pc;
+        takenbranchinfo.target = s3Pred.getTakenEntry().slot.target;
         entry.source = getComponentIdx(); // mark the entry source as AheadBTB
 
         updateBTBEntry(btb_idx, btb_tag, entry, takenbranchinfo, s3Pred.isTaken());
@@ -683,7 +683,7 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
         new_entry = s3Pred.getTakenEntry();
         new_entry.valid = true;
 
-        if (new_entry.isCond) {
+        if (new_entry.isCond()) {
             new_entry.alwaysTaken = true;
             new_entry.ctr = 0;
         }
@@ -779,7 +779,7 @@ AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
     bool this_branch_hit = false;
     auto entry = BTBEntry();
     for (auto e : hit_entries) {
-        if (e.pc == pc) {
+        if (e.slot.pc == pc) {
             this_branch_hit = true;
             entry = e;
             break;
@@ -817,7 +817,7 @@ AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         if (!inst->isNonSpeculative()) {
             if (inst->isIndirectCtrl()) {
                 btbStats.indirectHits++;
-                Addr pred_target = entry.target;
+                Addr pred_target = entry.slot.target;
                 if (pred_target == this_branch_target) {
                     btbStats.indirectPredCorrect++;
                 } else {

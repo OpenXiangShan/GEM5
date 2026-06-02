@@ -374,7 +374,7 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
 
     if (predsOfEachStage[0].btbEntries.size() != 0) {
         for (auto entry : predsOfEachStage[0].btbEntries){
-            if (entry.isIndirect || entry.isDirect || entry.ctr >= 0 ||entry.alwaysTaken){
+            if (entry.isIndirect() || entry.isDirect() || entry.ctr >= 0 ||entry.alwaysTaken){
                 finalPred.s1Source = entry.source;
                 break;
             }
@@ -385,9 +385,9 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     bool na_s3_taken_but_have_cond = false;
 
     for (BTBEntry entry : predsOfEachStage[2].btbEntries) {
-        if (entry.isDirect || entry.isIndirect || entry.ctr >= 0 || entry.alwaysTaken) {
+        if (entry.isDirect() || entry.isIndirect() || entry.ctr >= 0 || entry.alwaysTaken) {
             found_s3_taken = true;
-        }else if (entry.isCond){
+        }else if (entry.isCond()){
             //only use when there's no taken prediction in s3
             na_s3_taken_but_have_cond = true;
         }
@@ -396,11 +396,11 @@ DecoupledBPUWithBTB::generateFinalPredAndCreateBubbles(ThreadID tid)
     if (found_s3_taken) {
         auto pred_taken_entry = finalPred.getTakenEntry();
         if (pred_taken_entry.valid) {
-            if (pred_taken_entry.isReturn) {
+            if (pred_taken_entry.isReturn()) {
                 finalPred.s3Source = ras->getComponentIdx();
-            } else if (pred_taken_entry.isIndirect && ittage->tageHit()) {
+            } else if (pred_taken_entry.isIndirect() && ittage->tageHit()) {
                 finalPred.s3Source = ittage->getComponentIdx();
-            }else if (pred_taken_entry.isCond) {
+            }else if (pred_taken_entry.isCond()) {
                 finalPred.s3Source = tage->getComponentIdx();
             } else {
                 finalPred.s3Source = mbtb->getComponentIdx();
@@ -810,8 +810,8 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &target_id, uint64_t resolvedInstP
     }
     auto &target = ftq.get(target_id, tid);
 
-    if (target.updateNewBTBEntry.pc == resolvedInstPC) {
-        target.updateNewBTBEntry.resolved = true;
+    if (target.updateNewBTBEntry.slot.pc == resolvedInstPC) {
+        target.updateNewBTBEntry.slot.resolved = true;
     }
 
     target.markBTBEntryResolved(resolvedInstPC);

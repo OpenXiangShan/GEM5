@@ -112,7 +112,6 @@ enum class HistoryType
     PATH
 };
 
-
 /**
  * @brief Branch information structure containing branch properties and targets
  *
@@ -124,6 +123,7 @@ enum class HistoryType
  */
 struct BranchInfo
 {
+  public:
     Addr pc;
     Addr target;
     // An independent resolved bit to indicate whether CFI is resolved
@@ -131,54 +131,161 @@ struct BranchInfo
     // it's necessary to know whether the branch is resolved and skip
     // the BTB entry or not.
     bool resolved;
-    bool isCond;
-    bool isIndirect;
-    bool isDirect;
-    bool isCall;
-    bool isReturn;
+
+  private:
+    /**
+     * Branch control-flow class and RAS action.
+     *
+     * This keeps branch kind and RAS behavior as one semantic attribute instead
+     * of spreading legal combinations across public bools.
+     */
+    struct Attribute
+    {
+        Attribute() = default;
+
+        static Attribute
+        fromFlags(bool is_cond, bool is_indirect, bool is_direct,
+                  bool is_call, bool is_return)
+        {
+            ControlType control_type = ControlType::None;
+            if (is_cond) {
+                control_type = ControlType::Conditional;
+            } else if (is_indirect) {
+                control_type = ControlType::Indirect;
+            } else if (is_direct || is_call || is_return) {
+                control_type = ControlType::Direct;
+            }
+
+            RasAction ras_action = RasAction::None;
+            if (is_call && is_return) {
+                ras_action = RasAction::PopAndPush;
+            } else if (is_call) {
+                ras_action = RasAction::Push;
+            } else if (is_return) {
+                ras_action = RasAction::Pop;
+            }
+
+            return Attribute(control_type, ras_action);
+        }
+
+        bool isConditional() const
+        {
+            return controlType == ControlType::Conditional;
+        }
+
+        bool isDirect() const { return controlType == ControlType::Direct; }
+
+        bool isIndirect() const
+        {
+            return controlType == ControlType::Indirect;
+        }
+
+        bool isCall() const
+        {
+            return rasAction == RasAction::Push ||
+                   rasAction == RasAction::PopAndPush;
+        }
+
+        bool isReturn() const
+        {
+            return rasAction == RasAction::Pop ||
+                   rasAction == RasAction::PopAndPush;
+        }
+
+        bool needIttage() const { return isIndirect() && !isReturn(); }
+
+      private:
+        enum class ControlType : uint8_t
+        {
+            None,
+            Conditional,
+            Direct,
+            Indirect
+        };
+
+        enum class RasAction : uint8_t
+        {
+            None,
+            Push,
+            Pop,
+            PopAndPush
+        };
+
+        Attribute(ControlType control_type, RasAction ras_action)
+            : controlType(control_type), rasAction(ras_action)
+        {
+        }
+
+        ControlType controlType = ControlType::None;
+        RasAction rasAction = RasAction::None;
+    };
+
+    Attribute attribute;
+
+  public:
     uint8_t size;
-    bool isUncond() const { return !this->isCond; }
-    Addr getEnd() { return this->pc + this->size; }
+
+    bool isCond() const { return attribute.isConditional(); }
+    bool isIndirect() const { return attribute.isIndirect(); }
+    bool isDirect() const { return attribute.isDirect(); }
+    bool isCall() const { return attribute.isCall(); }
+    bool isReturn() const { return attribute.isReturn(); }
+    bool isUncond() const { return !isCond(); }
+    bool needIttage() const { return attribute.needIttage(); }
+    Addr getEnd() const { return this->pc + this->size; }
     BranchInfo()
-        : pc(0), target(0), resolved(false), isCond(false), isIndirect(false), isCall(false), isReturn(false), size(0)
+        : pc(0),
+          target(0),
+          resolved(false),
+          attribute(),
+          size(0)
     {
     }
-    // BranchInfo(const Addr &pc, const Addr &target_pc, bool is_cond) :
-    // pc(pc), target(target_pc), isCond(is_cond), isIndirect(false), isCall(false), isReturn(false), size(0) {}
     BranchInfo(const Addr &control_pc, const Addr &target_pc, const StaticInstPtr &static_inst, unsigned size)
         : pc(control_pc),
           target(target_pc),
           resolved(false),
-          isCond(static_inst->isCondCtrl()),
-          isIndirect(static_inst->isIndirectCtrl()),
-          isDirect(static_inst->isDirectCtrl()),
-          isCall(static_inst->isCall()),
-          isReturn(static_inst->isReturn() && !static_inst->isNonSpeculative() && !static_inst->isDirectCtrl()),
+          attribute(Attribute::fromFlags(
+              static_inst->isCondCtrl(),
+              static_inst->isIndirectCtrl(),
+              static_inst->isDirectCtrl(),
+              static_inst->isCall(),
+              static_inst->isReturn() && !static_inst->isNonSpeculative() &&
+                  !static_inst->isDirectCtrl())),
           size(size)
     {
     }
+
+    void
+    setTypeFromFlags(bool is_cond, bool is_indirect, bool is_direct,
+                     bool is_call, bool is_return)
+    {
+        attribute = Attribute::fromFlags(is_cond, is_indirect, is_direct,
+                                         is_call, is_return);
+    }
+
     int getType() const {
-        if (isCond) {
+        if (isCond()) {
             return BR_COND;
-        } else if (!isIndirect) { // uncond direct
-            if (isReturn) {
+        } else if (!isIndirect()) { // uncond direct
+            if (isReturn()) {
                 fatal("jal return detected!\n");
                 return BR_DIRECT_RET;
             }
-            if (!isCall) {
+            if (!isCall()) {
                 return BR_DIRECT_NORMAL;
             } else {
                 return BR_DIRECT_CALL;
             }
         } else {  // uncond indirect
-            if (!isCall) {
-                if (!isReturn) {
+            if (!isCall()) {
+                if (!isReturn()) {
                     return BR_INDIRECT_NORMAL; // normal indirect
                 } else {
                     return BR_INDIRECT_RET; // indirect return
                 }
             } else {
-                if (!isReturn) { // indirect call
+                if (!isReturn()) { // indirect call
                     return BR_INDIRECT_CALL;
                 } else { // call & return
                     return BR_INDIRECT_CALL_RET;
@@ -206,29 +313,87 @@ struct BranchInfo
     {
         return this->pc != other.pc;
     }
+
 };
 
 
 /**
- * @brief Branch Target Buffer entry extending BranchInfo with prediction metadata
+ * @brief Branch Target Buffer entry containing a branch slot plus BTB metadata
  *
- * Contains branch information plus prediction state:
+ * Contains the branch slot observed in a fetch block plus prediction state:
  * - Valid bit
  * - Always taken bit
  * - Counter for prediction
  * - Tag for BTB lookup
  */
-struct BTBEntry : BranchInfo
+struct BTBEntry
 {
+    BranchInfo slot;
     bool valid;
     bool alwaysTaken;
     int ctr;
     Addr tag;
     int source;//only use for countering the source of the entry
     // Addr offset; // retrived from lowest bits of pc
-    BTBEntry() : BranchInfo(), valid(false), alwaysTaken(false), ctr(0), tag(0) ,source(-1){}
-    BTBEntry(const BranchInfo &bi) : BranchInfo(bi), valid(true), alwaysTaken(true), ctr(0),source(-1){}
-    BranchInfo getBranchInfo() { return BranchInfo(*this); }
+    BTBEntry()
+        : slot(),
+          valid(false),
+          alwaysTaken(false),
+          ctr(0),
+          tag(0),
+          source(-1)
+    {
+    }
+    BTBEntry(const BranchInfo &bi)
+        : slot(bi),
+          valid(true),
+          alwaysTaken(true),
+          ctr(0),
+          tag(0),
+          source(-1)
+    {
+    }
+    BranchInfo getBranchInfo() const { return slot; }
+
+    bool isCond() const { return slot.isCond(); }
+    bool isIndirect() const { return slot.isIndirect(); }
+    bool isDirect() const { return slot.isDirect(); }
+    bool isCall() const { return slot.isCall(); }
+    bool isReturn() const { return slot.isReturn(); }
+    bool isUncond() const { return slot.isUncond(); }
+    bool needIttage() const { return slot.needIttage(); }
+    Addr getEnd() const { return slot.getEnd(); }
+    int getType() const { return slot.getType(); }
+
+    bool operator < (const BTBEntry &other) const
+    {
+        return slot < other.slot;
+    }
+
+    bool operator == (const BTBEntry &other) const
+    {
+        return slot == other.slot;
+    }
+
+    bool operator == (const BranchInfo &other) const
+    {
+        return slot == other;
+    }
+
+    bool operator > (const BTBEntry &other) const
+    {
+        return slot > other.slot;
+    }
+
+    bool operator != (const BTBEntry &other) const
+    {
+        return slot != other.slot;
+    }
+
+    bool operator != (const BranchInfo &other) const
+    {
+        return slot != other;
+    }
 
     int getsource() const {
         return source;
@@ -238,6 +403,18 @@ struct BTBEntry : BranchInfo
         source = src;
     }
 };
+
+inline bool
+operator == (const BranchInfo &lhs, const BTBEntry &rhs)
+{
+    return lhs == rhs.getBranchInfo();
+}
+
+inline bool
+operator != (const BranchInfo &lhs, const BTBEntry &rhs)
+{
+    return lhs != rhs.getBranchInfo();
+}
 
 /**
  * @brief Tage prediction info for MGSC
@@ -440,7 +617,8 @@ struct FetchTarget
     {
         DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+            if (entry.valid && entry.slot.pc >= startPC &&
+                entry.slot.pc < squash_pc) {
                 update.shamt++;
             }
         }
@@ -456,7 +634,8 @@ struct FetchTarget
     {
         DirectionHistoryUpdate update;
         for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+            if (entry.valid && entry.slot.pc >= startPC &&
+                entry.slot.pc < squash_pc) {
                 update.shamt++;
             }
         }
@@ -499,7 +678,8 @@ struct FetchTarget
     {
         updateBTBEntries.clear();
         for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc <= updateEndInstPC) {
+            if (entry.valid && entry.slot.pc >= startPC &&
+                entry.slot.pc <= updateEndInstPC) {
                 updateBTBEntries.push_back(entry);
             }
         }
@@ -510,8 +690,8 @@ struct FetchTarget
     void markBTBEntryResolved(Addr resolvedInstPC)
     {
         for (auto &entry : updateBTBEntries) {
-            if (entry.valid && entry.pc == resolvedInstPC) {
-                entry.resolved = true;
+            if (entry.valid && entry.slot.pc == resolvedInstPC) {
+                entry.slot.resolved = true;
             }
         }
     }
@@ -567,10 +747,10 @@ struct FullBTBPrediction
         for (auto &entry : this->btbEntries) {
             // hit
             if (entry.valid) {
-                if (entry.isCond) {
+                if (entry.isCond()) {
                     // find corresponding direction pred in condTakens
                     // TODO: use lower-bit offset of branch instruction
-                    auto& pc = entry.pc;
+                    auto& pc = entry.slot.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {   // find and taken, return the entry
@@ -596,12 +776,12 @@ struct FullBTBPrediction
     }
 
     Addr getEntryTarget(const BTBEntry &entry) {
-        Addr target = entry.target;
+        Addr target = entry.slot.target;
         // indirect target should come from ipred or ras,
         // or btb itself when ipred miss
-        if (entry.isIndirect) {
-            if (!entry.isReturn) { // normal indirect, see ittage
-                auto& pc = entry.pc;
+        if (entry.isIndirect()) {
+            if (!entry.isReturn()) { // normal indirect, see ittage
+                auto& pc = entry.slot.pc;
                 auto it = IndirectTakens_find(indirectTargets, pc);
                 if (it != indirectTargets.end()) { // found in ittage, use it
                     target = it->second;
@@ -634,7 +814,7 @@ struct FullBTBPrediction
 
 
     Addr controlAddr() {
-        return getTakenEntry().pc;
+        return getTakenEntry().slot.pc;
     }
 
     std::pair<bool, OverrideReason> match(FullBTBPrediction &other, Addr predictWidth)
@@ -666,9 +846,9 @@ struct FullBTBPrediction
         DirectionHistoryUpdate update; // shamt is the number of bits to shift in history update
         for (auto &entry : btbEntries) {
             if (entry.valid) {
-                if (entry.isCond) { // if found a cond branch, shamt++
+                if (entry.isCond()) { // if found a cond branch, shamt++
                     update.shamt++;
-                    auto& pc = entry.pc;
+                    auto& pc = entry.slot.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) { // if the cond branch is taken, taken = true
@@ -692,13 +872,15 @@ struct FullBTBPrediction
         DirectionHistoryUpdate update;
         for (auto &entry : btbEntries) {
             if (entry.valid) {
-                if (entry.isCond) {
+                if (entry.isCond()) {
                     update.shamt++;
-                    auto& pc = entry.pc;
+                    auto& pc = entry.slot.pc;
                     auto it = CondTakens_find(condTakens, pc);
                     if (it != condTakens.end()) {
                         if (it->second) {
-                            update.taken = (entry.target < entry.pc); // branch is backward if target < pc
+                            // branch is backward if target < pc
+                            update.taken =
+                                (entry.slot.target < entry.slot.pc);
                             break;
                         }
                     }
@@ -717,7 +899,7 @@ struct FullBTBPrediction
         const auto &entry = getTakenEntry();
         if (entry.valid) {
             update.taken = true;
-            update.pc = entry.pc;
+            update.pc = entry.slot.pc;
             update.target = getEntryTarget(entry);
         }
         return update;

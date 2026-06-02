@@ -3,7 +3,6 @@ Import('*')
 # all below tests must add --unit-test to enable unit test mode!
 # eg: scons build/RISCV/cpu/pred/btb/test/tage.test.debug --unit-test -j100
 
-# Add the test source files
 GTest('uras.test', 'uras_test.cc')
 
 # Add BTB test with minimal dependencies
