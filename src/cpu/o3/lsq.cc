@@ -49,6 +49,7 @@
 #include <cstring>
 #include <list>
 #include <string>
+#include <utility>
 
 #include "arch/riscv/insts/fusion.hh"
 #include "arch/riscv/insts/vector.hh"
@@ -581,6 +582,10 @@ LSQ::advanceDcacheMainPipe()
         ++stats.dcacheMainPipeBlockedByDataConflict;
     }
 
+    if (s3_write.valid && s3_can_go && s3_write.req.onComplete) {
+        s3_write.req.onComplete(curTick());
+    }
+
     if (s3_write.valid && !s3_can_go) {
         next_s3_write = s3_write;
     }
@@ -652,7 +657,9 @@ LSQ::storeMaskToDcacheBanks(const std::vector<bool> &mask) const
 }
 
 LSQ::DcacheMainPipeRequest
-LSQ::makeDcacheRefillMainPipeRequest(Addr addr, bool need_data_read) const
+LSQ::makeDcacheRefillMainPipeRequest(
+    Addr addr, bool need_data_read,
+    DcacheMainPipeCompleteCallback on_complete) const
 {
     DcacheMainPipeRequest req;
     req.source = DcacheMainPipeSource::Refill;
@@ -665,6 +672,7 @@ LSQ::makeDcacheRefillMainPipeRequest(Addr addr, bool need_data_read) const
     req.needWritebackPort = need_data_read;
     req.readBanks = need_data_read ? fullDcacheBankMask() : DcacheBankMask{};
     req.writeBanks = fullDcacheBankMask();
+    req.onComplete = std::move(on_complete);
     return req;
 }
 
@@ -887,10 +895,14 @@ LSQ::loadBankConflictedCheck(Addr vaddr)
 }
 
 void
-LSQ::notifyDcacheRefill(Addr addr, bool need_data_read)
+LSQ::notifyDcacheRefill(
+    Addr addr, bool need_data_read,
+    DcacheMainPipeCompleteCallback on_complete)
 {
     dcacheMainPipeRefillQ.push(
-        makeDcacheRefillMainPipeRequest(addr, need_data_read));
+        makeDcacheRefillMainPipeRequest(
+            addr, need_data_read, std::move(on_complete)));
+    cpu->activityThisCycle();
 }
 
 unsigned
@@ -1834,6 +1846,15 @@ LSQ::numStoresToSbuffer(ThreadID tid)
 bool
 LSQ::willWB()
 {
+    if (!dcacheMainPipeRefillQ.empty()) {
+        return true;
+    }
+    for (const auto &stage : dcacheMainPipe) {
+        if (stage.valid) {
+            return true;
+        }
+    }
+
     if (blockedSbufferEntry && !cacheBlocked()) {
         return true;
     }

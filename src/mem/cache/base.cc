@@ -47,6 +47,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <utility>
 
 #include "base/compiler.hh"
 #include "base/logging.hh"
@@ -888,6 +889,85 @@ BaseCache::handleUncacheableWriteResp(PacketPtr pkt)
     cpuSidePort.schedTimingResp(pkt, completion_time);
 }
 
+BaseCache::PendingDcacheMainPipeMSHRRelease::
+PendingDcacheMainPipeMSHRRelease(
+    MSHR *mshr, PacketPtr pkt, CacheBlk *blk, PacketList &&writebacks)
+    : mshr(mshr), pkt(pkt), blk(blk), writebacks(std::move(writebacks))
+{
+}
+
+void
+BaseCache::finishMSHRRelease(MSHR *mshr, PacketPtr pkt, CacheBlk *blk,
+                             PacketList &writebacks, bool service_targets)
+{
+    if (service_targets && mshr->hasTargets()) {
+        serviceMSHRTargets(mshr, pkt, blk);
+    }
+
+    // We are stopping servicing targets early for the Locked RMW Read until
+    // the write comes.
+    if (!mshr->hasLockedRMWReadTarget()) {
+        if (mshr->promoteDeferredTargets()) {
+            // avoid later read getting stale data while write miss is
+            // outstanding.. see comment in timingAccess()
+            if (blk) {
+                blk->clearCoherenceBits(CacheBlk::ReadableBit);
+            }
+            mshrQueue.markPending(mshr);
+            schedMemSideSendEvent(clockEdge() + pkt->payloadDelay);
+        } else {
+            // while we deallocate an mshr from the queue we still have to
+            // check the isFull condition before and after as we might
+            // have been using the reserved entries already
+            const bool was_full = mshrQueue.isFull();
+            mshrQueue.deallocate(mshr);
+            if (was_full && !mshrQueue.isFull()) {
+                clearBlocked(Blocked_NoMSHRs);
+            }
+
+            // Request the bus for a prefetch if this deallocation freed enough
+            // MSHRs for a prefetch to take place
+            if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
+                Tick next_pf_time = std::max(nextPrefetchReadyTime(),
+                                             clockEdge());
+                if (next_pf_time != MaxTick)
+                    schedMemSideSendEvent(next_pf_time);
+            }
+        }
+
+        // if we used temp block, check to see if its valid and then clear it
+        if (blk == tempBlock && tempBlock->isValid()) {
+            evictBlock(blk, writebacks);
+        }
+    }
+
+    const Tick forward_time = clockEdge(forwardLatency) + pkt->headerDelay;
+    // copy writebacks to write buffer
+    doWritebacks(writebacks, forward_time);
+
+    DPRINTF(CacheVerbose, "%s: Leaving with %s\n", __func__, pkt->print());
+    delete pkt;
+}
+
+void
+BaseCache::scheduleDcacheMainPipeMSHRRelease(
+    PendingDcacheMainPipeMSHRRelease *pending, Tick tick)
+{
+    Event *event = new EventFunctionWrapper(
+        [this, pending] { processDcacheMainPipeMSHRRelease(pending); },
+        name() + ".dcache_mainpipe_mshr_release", true);
+    schedule(event, std::max(tick, curTick()));
+}
+
+void
+BaseCache::processDcacheMainPipeMSHRRelease(
+    PendingDcacheMainPipeMSHRRelease *pending)
+{
+    finishMSHRRelease(pending->mshr, pending->pkt, pending->blk,
+                      pending->writebacks, true);
+    delete pending;
+}
+
 void
 BaseCache::recvTimingResp(PacketPtr pkt)
 {
@@ -954,6 +1034,8 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     assert(doFastWriteline ? !mshr->wasWholeLineWrite || pkt->isInvalidate() : true);
 
     CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+    o3::LSQ *dcache_refill_lsq = nullptr;
+    Addr dcache_refill_addr = 0;
 
     if (is_fill && !is_error) {
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
@@ -964,10 +1046,10 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         // Optionally indicate that the Dcache received a refill request
         // to drive LSQ-side modelling.
         if (simulateDcacheRefill && cacheLevel == 1 && pkt->getLSQPtr()) {
-            const Addr refill_addr =
+            dcache_refill_lsq = pkt->getLSQPtr();
+            dcache_refill_addr =
                 pkt->req && pkt->req->hasVaddr() ? pkt->req->getVaddr() :
                 pkt->getAddr();
-            pkt->getLSQPtr()->notifyDcacheRefill(refill_addr);
             stats.DcacheRefillTimes++;
         }
         blk = handleFill(pkt, blk, writebacks, allocate);
@@ -1000,48 +1082,23 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     }
 
     serviceMSHRTargets(mshr, pkt, blk);
-    // We are stopping servicing targets early for the Locked RMW Read until
-    // the write comes.
-    if (!mshr->hasLockedRMWReadTarget()) {
-        if (mshr->promoteDeferredTargets()) {
-            // avoid later read getting stale data while write miss is
-            // outstanding.. see comment in timingAccess()
-            if (blk) {
-                blk->clearCoherenceBits(CacheBlk::ReadableBit);
-            }
-            mshrQueue.markPending(mshr);
-            schedMemSideSendEvent(clockEdge() + pkt->payloadDelay);
-        } else {
-            // while we deallocate an mshr from the queue we still have to
-            // check the isFull condition before and after as we might
-            // have been using the reserved entries already
-            const bool was_full = mshrQueue.isFull();
-            mshrQueue.deallocate(mshr);
-            if (was_full && !mshrQueue.isFull()) {
-                clearBlocked(Blocked_NoMSHRs);
-            }
 
-            // Request the bus for a prefetch if this deallocation freed enough
-            // MSHRs for a prefetch to take place
-            if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
-                Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
-                if (next_pf_time != MaxTick)
-                    schedMemSideSendEvent(next_pf_time);
-            }
+    if (dcache_refill_lsq) {
+        if (!mshr->hasLockedRMWReadTarget()) {
+            auto *pending = new PendingDcacheMainPipeMSHRRelease(
+                mshr, pkt, blk, std::move(writebacks));
+            dcache_refill_lsq->notifyDcacheRefill(
+                dcache_refill_addr, true,
+                [this, pending](Tick tick) {
+                    scheduleDcacheMainPipeMSHRRelease(pending, tick);
+                });
+            return;
         }
 
-        // if we used temp block, check to see if its valid and then clear it
-        if (blk == tempBlock && tempBlock->isValid()) {
-            evictBlock(blk, writebacks);
-        }
+        dcache_refill_lsq->notifyDcacheRefill(dcache_refill_addr);
     }
 
-    const Tick forward_time = clockEdge(forwardLatency) + pkt->headerDelay;
-    // copy writebacks to write buffer
-    doWritebacks(writebacks, forward_time);
-
-    DPRINTF(CacheVerbose, "%s: Leaving with %s\n", __func__, pkt->print());
-    delete pkt;
+    finishMSHRRelease(mshr, pkt, blk, writebacks);
 }
 
 void
