@@ -151,12 +151,11 @@ class MBTB : public TimedBaseBTBPredictor
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
     /**
-     * @brief derive new btb entry from old ones and set update payload in stream
-     *        only in L1BTB will this function be called before update
-     * 
-     * @param stream 
+     * @brief derive the old or new BTB entry used by update payload
+     *
+     * Only the L1 BTB prepares this selection before component updates.
      */
-    void getAndSetNewBTBEntry(FetchTarget &stream);
+    FetchUpdateEntrySelection selectUpdateEntry(const FetchTarget &stream);
 
     /** Updates the BTB with the branch info of a block and execution result.
      *  This function:

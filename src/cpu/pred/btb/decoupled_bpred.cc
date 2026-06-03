@@ -728,7 +728,8 @@ DecoupledBPUWithBTB::prepareResolveUpdateEntries(unsigned &target_id, ThreadID t
 
         // only mbtb can generate new entry
         if (mbtb->isEnabled()) {
-            mbtb->getAndSetNewBTBEntry(target);
+            target.update.setEntrySelection(
+                mbtb->selectUpdateEntry(target));
         }
     }
 }
@@ -761,7 +762,8 @@ DecoupledBPUWithBTB::updatePredictorComponents(FetchTarget &target)
 
         // only mbtb can generate new entry
         if (mbtb->isEnabled()) {
-            mbtb->getAndSetNewBTBEntry(target);
+            target.update.setEntrySelection(
+                mbtb->selectUpdateEntry(target));
         }
 
         // Update predictor components

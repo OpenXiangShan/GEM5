@@ -61,7 +61,7 @@ void clearAheadPipeline(AheadBTB *abtb, ThreadID tid) {
 }
 
 void updateBTB(FetchTarget &stream, AheadBTB *abtb, MBTB *mbtb) {
-    mbtb->getAndSetNewBTBEntry(stream); // usually called by mbtb, here for testing purpose
+    stream.update.setEntrySelection(mbtb->selectUpdateEntry(stream));
     abtb->update(stream);
 }
 

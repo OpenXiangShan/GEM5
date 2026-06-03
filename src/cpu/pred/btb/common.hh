@@ -474,12 +474,25 @@ struct FetchResolveResult
     Addr squashPC = 0;         // pc of the squash inst
 };
 
+struct FetchUpdateEntrySelection
+{
+    BTBEntry entry;            // old entry to update, or possible new entry
+    bool isOldEntry = false;   // true: update old entry; false: use entry
+};
+
 struct FetchUpdatePayload
 {
     BTBEntry newBTBEntry;      // possible new entry from L1 BTB update prep
     bool isOldEntry = false;   // true: update old entry; false: use newBTBEntry
     Addr endInstPC = 0;        // end pc of the squash inst/taken inst
     std::vector<BTBEntry> btbEntries; // entries that were actually executed
+
+    void
+    setEntrySelection(const FetchUpdateEntrySelection &selection)
+    {
+        newBTBEntry = selection.entry;
+        isOldEntry = selection.isOldEntry;
+    }
 };
 
 #define CondTakens_find(condTakens, branch_pc) \
