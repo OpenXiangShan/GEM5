@@ -421,7 +421,7 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
     bool pred_branch_hit = false;
     BTBEntry entry_to_write = BTBEntry();
     for (auto &e: predBTBEntries) {
-        if (stream.exeBranchInfo == e.slot) {
+        if (stream.resolve.branchSlot == e.slot) {
             pred_branch_hit = true;
             entry_to_write = e;
             break;
@@ -430,9 +430,9 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
     bool is_old_entry = pred_branch_hit;
 
     // If branch was not predicted but was actually taken in execution, create new entry
-    if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n", stream.exeBranchInfo.pc);
-        BTBEntry new_entry = BTBEntry(stream.exeBranchInfo);
+    if (!pred_branch_hit && stream.resolve.taken) {
+        DPRINTF(BTB, "Creating new BTB entry for pc %#lx\n", stream.resolve.branchSlot.pc);
+        BTBEntry new_entry = BTBEntry(stream.resolve.branchSlot);
         new_entry.valid = true;
         // For conditional branches, initialize as always taken
         if (new_entry.slot.isCond()) {
@@ -444,18 +444,18 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
         }
         btbStats.newEntry++;
         entry_to_write = new_entry;
-        entry_to_write.slot.resolved = stream.exeBranchInfo.resolved;
+        entry_to_write.slot.resolved = stream.resolve.branchSlot.resolved;
         is_old_entry = false;
     } else {
-        DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, stream.exeTaken=%d\n",
-                pred_branch_hit, stream.exeTaken);
+        DPRINTF(BTB, "Not creating new entry: pred_branch_hit=%d, stream.resolve.taken=%d\n",
+                pred_branch_hit, stream.resolve.taken);
         // Existing entries will be updated in update()
     }
 
     // Set tag and update stream metadata for use in update()
     entry_to_write.tag = getTag(entry_to_write.slot.pc, stream.asidHash);
-    stream.updateNewBTBEntry = entry_to_write;
-    stream.updateIsOldEntry = is_old_entry;
+    stream.update.newBTBEntry = entry_to_write;
+    stream.update.isOldEntry = is_old_entry;
 }
 
 /**
@@ -467,13 +467,13 @@ MBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (stream.exeBranchInfo == e.slot) {
+        if (stream.resolve.branchSlot == e.slot) {
             pred_branch_hit = true;
             break;
         }
     }
-    if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(BTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+    if (!pred_branch_hit && stream.resolve.taken) {
+        DPRINTF(BTB, "update miss detected, pc %#lx, predTick %lu\n", stream.resolve.branchSlot.pc, stream.predTick);
         btbStats.updateMiss++;
     } else {
         btbStats.updateHit++;
@@ -562,7 +562,7 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
 
     // Update saturating counter and alwaysTaken
     if (entry_to_write.slot.isCond()) {
-        bool this_cond_taken = stream.exeTaken &&
+        bool this_cond_taken = stream.resolve.taken &&
             stream.getControlPC() == entry_to_write.slot.pc;
         if (!this_cond_taken) {
             entry_to_write.alwaysTaken = false;
@@ -575,9 +575,9 @@ MBTB::buildUpdatedEntry(const BTBEntry& req_entry,
     }
 
     // Update indirect target if necessary
-    if (entry_to_write.slot.isIndirect() && stream.exeTaken &&
+    if (entry_to_write.slot.isIndirect() && stream.resolve.taken &&
         stream.getControlPC() == entry_to_write.slot.pc) {
-        entry_to_write.slot.target = stream.exeBranchInfo.target;
+        entry_to_write.slot.target = stream.resolve.branchSlot.target;
     }
     return entry_to_write;
 }
@@ -696,12 +696,12 @@ MBTB::update(const FetchTarget &stream)
 
 std::vector<BTBEntry>
 MBTB::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
+    auto all_entries = stream.update.btbEntries;
 
     // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken &&
+    if (!stream.update.isOldEntry) {
+        BTBEntry potential_new_entry = stream.update.newBTBEntry;
+        bool new_entry_taken = stream.resolve.taken &&
             stream.getControlPC() == potential_new_entry.slot.pc;
         if (!new_entry_taken) {
             potential_new_entry.alwaysTaken = false;
@@ -821,7 +821,7 @@ MBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
     }
     // bool this_branch_miss = !this_branch_hit;
     bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc; // all uncond should be taken
+    bool this_branch_taken = stream.resolve.taken && stream.getControlPC() == pc; // all uncond should be taken
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         btbStats.allBranchHits++;

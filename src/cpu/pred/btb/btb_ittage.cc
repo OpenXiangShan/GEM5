@@ -261,11 +261,11 @@ BTBITTAGE::update(const FetchTarget &stream)
     Addr startAddr = stream.getRealStartPC();
     DPRINTF(ITTAGE, "update startAddr: %#lx\n", startAddr);
     // update at the basis of btb entries
-    auto all_entries_to_update = stream.updateBTBEntries;
+    auto all_entries_to_update = stream.update.btbEntries;
 
     // add new entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        all_entries_to_update.push_back(stream.updateNewBTBEntry);
+    if (!stream.update.isOldEntry) {
+        all_entries_to_update.push_back(stream.update.newBTBEntry);
     }
 
     // // only update indirect branches that are not returns
@@ -296,16 +296,16 @@ BTBITTAGE::update(const FetchTarget &stream)
     
     // update each branch
     for (auto &btb_entry : all_entries_to_update) {
-        bool this_indirect_actual_taken = stream.exeTaken &&
-            stream.exeBranchInfo == btb_entry.slot;
+        bool this_indirect_actual_taken = stream.resolve.taken &&
+            stream.resolve.branchSlot == btb_entry.slot;
         auto pred_it = preds.find(btb_entry.slot.pc);
         TagePrediction pred;
         if (pred_it != preds.end()) {
             pred = pred_it->second;
         }
-        bool mispred = stream.squashType == SQUASH_CTRL &&
-            stream.squashPC == btb_entry.slot.pc;
-        Addr exe_target = stream.exeBranchInfo.target;
+        bool mispred = stream.resolve.squashType == SQUASH_CTRL &&
+            stream.resolve.squashPC == btb_entry.slot.pc;
+        Addr exe_target = stream.resolve.branchSlot.target;
         auto &main_info = pred.mainInfo;
 
         // Update misprediction statistics

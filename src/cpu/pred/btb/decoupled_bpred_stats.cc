@@ -695,9 +695,9 @@ void
 DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
 {
     // Check if this target was mispredicted
-    bool miss_predicted = target.squashType == SQUASH_CTRL;
+    bool miss_predicted = target.resolve.squashType == SQUASH_CTRL;
     // Track indirect mispredictions
-    if (miss_predicted && target.exeBranchInfo.isIndirect()) {
+    if (miss_predicted && target.resolve.branchSlot.isIndirect()) {
         topMispredIndirect[target.startPC]++;
     }
 
@@ -707,11 +707,11 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
         dbpBtbStats.btbHit++;
     } else {
         // Count BTB misses for taken branches
-        if (target.exeTaken) {
+        if (target.resolve.taken) {
             dbpBtbStats.btbMiss++;
             DPRINTF(BTB, "BTB miss detected when update, target start %#lx, predTick %lu, printing branch info:\n",
                     target.startPC, target.predTick);
-            auto &slot = target.exeBranchInfo;
+            auto &slot = target.resolve.branchSlot;
             DPRINTF(BTB, "    pc:%#lx, size:%d, target:%#lx, cond:%d, indirect:%d, call:%d, return:%d\n",
                 slot.pc, slot.size, slot.target, slot.isCond(), slot.isIndirect(), slot.isCall(), slot.isReturn());
         }
@@ -722,16 +722,16 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
         }
     }
 
-    if (target.prediction.btbHit || target.exeTaken) {
+    if (target.prediction.btbHit || target.resolve.taken) {
         // Update BTB entry statistics
         auto it = totalBTBEntries.find(target.startPC);
         if (it == totalBTBEntries.end()) {
-            auto &btb_entry = target.updateNewBTBEntry;
+            auto &btb_entry = target.update.newBTBEntry;
             totalBTBEntries[target.startPC] = std::make_pair(btb_entry, 1);
             dbpBtbStats.btbEntriesWithDifferentStart++;
         } else {
             it->second.second++;
-            it->second.first = target.updateNewBTBEntry;
+            it->second.first = target.update.newBTBEntry;
         }
     }
 
@@ -745,7 +745,7 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
     dbpBtbStats.commitFsqEntryHasInsts.sample(target.commitInstNum, 1);
     if (target.commitInstNum >= 0 && target.commitInstNum <= maxInstsNum) {
         commitFsqEntryHasInstsVector[target.commitInstNum]++;
-        if (target.commitInstNum == 1 && target.exeBranchInfo.isUncond()) {
+        if (target.commitInstNum == 1 && target.resolve.branchSlot.isUncond()) {
             dbpBtbStats.commitFsqEntryOnlyHasOneJump++;
         }
     }
@@ -758,11 +758,11 @@ DecoupledBPUWithBTB::updateStatistics(const FetchTarget &target)
 
     // --- Misprediction Statistics ---
     // Track control squashes (mispredictions)
-    if (target.squashType == SQUASH_CTRL) {
+    if (target.resolve.squashType == SQUASH_CTRL) {
         // Record mispredict pair (start PC, branch PC)
-        auto find_it = topMispredicts.find(std::make_pair(target.startPC, target.exeBranchInfo.pc));
+        auto find_it = topMispredicts.find(std::make_pair(target.startPC, target.resolve.branchSlot.pc));
         if (find_it == topMispredicts.end()) {
-            topMispredicts[std::make_pair(target.startPC, target.exeBranchInfo.pc)] = 1;
+            topMispredicts[std::make_pair(target.startPC, target.resolve.branchSlot.pc)] = 1;
         } else {
             find_it->second++;
         }
@@ -848,9 +848,9 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
     int s1PredSource = entry.finalPredMetadata.s1Source;
     int s3PredSource = entry.finalPredMetadata.s3Source;
 
-    auto exeBranchInfo = entry.exeBranchInfo;
+    auto resolvedSlot = entry.resolve.branchSlot;
 
-    bool onlyDirectionWrong = entry.exeTaken != entry.prediction.taken;
+    bool onlyDirectionWrong = entry.resolve.taken != entry.prediction.taken;
 
     assert(s1PredSource < mbtbid);
     if (s1PredSource == ubtbid) {
@@ -862,23 +862,23 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
     }
 
     if (s3PredSource == rasid) {
-        if (exeBranchInfo.isCond()) {
+        if (resolvedSlot.isCond()) {
             dbpBtbStats.s3PredWrongTage++;
-        } else if (exeBranchInfo.isReturn()) {
+        } else if (resolvedSlot.isReturn()) {
             dbpBtbStats.s3PredWrongRas++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == ittageid) {
-        if (exeBranchInfo.isIndirect()) {
+        if (resolvedSlot.isIndirect()) {
             dbpBtbStats.s3PredWrongIttage++;
-        } else if (exeBranchInfo.isCond()) {
+        } else if (resolvedSlot.isCond()) {
             dbpBtbStats.s3PredWrongTage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;
         }
     } else if (s3PredSource == tageid) {
-        if (exeBranchInfo.isCond()) {
+        if (resolvedSlot.isCond()) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
@@ -888,13 +888,13 @@ DecoupledBPUWithBTB::commitPredWrongSource(const FetchTarget &entry)
             dbpBtbStats.s3PredWrongMbtb++;
         }
     }else if (s3PredSource == mbtbid) {
-        if (exeBranchInfo.isCond()) {
+        if (resolvedSlot.isCond()) {
             if (onlyDirectionWrong) {
                 dbpBtbStats.s3PredWrongTage++;
             } else {
                 dbpBtbStats.s3PredWrongMbtb++;
             }
-        } else if (exeBranchInfo.isIndirect()) {
+        } else if (resolvedSlot.isIndirect()) {
             dbpBtbStats.s3PredWrongIttage++;
         } else {
             dbpBtbStats.s3PredWrongMbtb++;

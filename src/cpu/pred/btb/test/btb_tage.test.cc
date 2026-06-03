@@ -62,20 +62,20 @@ FetchTarget createStream(Addr startPC, const BTBEntry& entry, bool taken,
                          std::shared_ptr<void> meta) {
     FetchTarget stream;
     stream.startPC = startPC;
-    stream.exeBranchInfo = entry.slot;
-    stream.exeTaken = taken;
-    // Mark as resolved so recover paths use exe* info
-    stream.resolved = true;
+    stream.resolve.branchSlot = entry.slot;
+    stream.resolve.taken = taken;
+    // Mark as resolved so recover paths use actual branch info
+    stream.resolve.valid = true;
     stream.prediction.branchSlot = entry.slot; // keep fields consistent
-    stream.updateBTBEntries = {entry};
-    stream.updateIsOldEntry = true;
+    stream.update.btbEntries = {entry};
+    stream.update.isOldEntry = true;
     stream.predMetas[0] = meta;
     return stream;
 }
 
 FetchTarget setMispredStream(FetchTarget stream) {
-    stream.squashType = SquashType::SQUASH_CTRL;
-    stream.squashPC = stream.exeBranchInfo.pc;
+    stream.resolve.squashType = SquashType::SQUASH_CTRL;
+    stream.resolve.squashPC = stream.resolve.branchSlot.pc;
     return stream;
 }
 
@@ -153,7 +153,7 @@ void applyActualHistory(BTBTAGE* tage, boost::dynamic_bitset<>& history,
 PathHistoryUpdate getActualPathUpdate(const FetchTarget& stream)
 {
     return stream.getPHistUpdateDuringSquash(
-        stream.squashPC, stream.exeTaken, stream.exeBranchInfo.target);
+        stream.resolve.squashPC, stream.resolve.taken, stream.resolve.branchSlot.target);
 }
 
 TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
@@ -284,10 +284,10 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         FetchTarget stream;
         stream.startPC = 0x1000;
         stream.prediction.btbEntries = c.predictedBeforeSquash;
-        stream.exeBranchInfo = c.resolvedEntry.slot;
-        stream.exeTaken = c.actualTaken;
-        stream.resolved = true;
-        stream.squashPC = c.squashPC;
+        stream.resolve.branchSlot = c.resolvedEntry.slot;
+        stream.resolve.taken = c.actualTaken;
+        stream.resolve.valid = true;
+        stream.resolve.squashPC = c.squashPC;
 
         const auto ghist = stream.getGHistUpdateDuringSquash(
             c.squashPC, c.isCond, c.actualTaken);
@@ -415,7 +415,7 @@ bool predictUpdateCycle(BTBTAGE* tage, Addr startPC,
         const auto path_update = getActualPathUpdate(stream);
         recoverSelectedHistory(tage, history, stream, 1, actual_taken,
                                path_update);
-        applyActualHistory(tage, history, stream.exeBranchInfo, 1, actual_taken);
+        applyActualHistory(tage, history, stream.resolve.branchSlot, 1, actual_taken);
         tage->checkFoldedHist(history, "recover");
     }
 
@@ -710,8 +710,8 @@ TEST_F(BTBTAGETest, EntryAllocationAndReplacement) {
     // Although it has the same PC, we'll treat it as a different branch context
     // by setting a specific tag that doesn't match existing entries
     FetchTarget stream = createStream(0x1000, entry2, !predicted, meta);
-    stream.squashType = SquashType::SQUASH_CTRL; // Mark as control misprediction
-    stream.squashPC = 0x1000;
+    stream.resolve.squashType = SquashType::SQUASH_CTRL; // Mark as control misprediction
+    stream.resolve.squashPC = 0x1000;
 
     // Update the predictor. With RTL-aligned highest-table gating, this should
     // not report a final allocation failure.
@@ -733,8 +733,8 @@ TEST_F(BTBTAGETest, HighestTableProviderSuppressesAllocation) {
     auto meta = tage->getPredictionMeta();
 
     FetchTarget stream = createStream(0x1000, entry, false, meta);
-    stream.squashType = SquashType::SQUASH_CTRL;
-    stream.squashPC = 0x1000;
+    stream.resolve.squashType = SquashType::SQUASH_CTRL;
+    stream.resolve.squashPC = 0x1000;
 
     int alloc_failed_before = tage->tageStats.updateAllocFailureNoValidTable;
     tage->update(stream);
@@ -813,8 +813,8 @@ TEST_F(BTBTAGETest, MultipleBranchSequence) {
 
     // Update second branch (incorrect prediction), allocate 1 entry
     FetchTarget stream2 = createStream(0x1000, btbEntries[1], !second_pred, meta);
-    stream2.squashType = SquashType::SQUASH_CTRL;
-    stream2.squashPC = 0x1004;
+    stream2.resolve.squashType = SquashType::SQUASH_CTRL;
+    stream2.resolve.squashPC = 0x1004;
     tage->update(stream2);
 
     // Verify both branches have entries allocated
@@ -1198,13 +1198,13 @@ TEST_F(BTBTAGETest, NewConditionalEntryWithoutPredictionMetaStillTrains) {
     BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.exeBranchInfo = newEntry.slot;
-    stream.exeTaken = true;
-    stream.resolved = true;
+    stream.resolve.branchSlot = newEntry.slot;
+    stream.resolve.taken = true;
+    stream.resolve.valid = true;
     stream.prediction.branchSlot = newEntry.slot;
-    stream.updateBTBEntries.clear();
-    stream.updateIsOldEntry = false;
-    stream.updateNewBTBEntry = newEntry;
+    stream.update.btbEntries.clear();
+    stream.update.isOldEntry = false;
+    stream.update.newBTBEntry = newEntry;
     stream.predMetas[0] = meta;
     stream = setMispredStream(stream);
 
@@ -1385,13 +1385,13 @@ TEST_F(BTBTAGEUpperBoundTest, NewConditionalEntryWithoutPredictionMetaStillTrain
     BTBEntry newEntry = createBTBEntry(0x1010, true, true, false, -1);
     FetchTarget stream;
     stream.startPC = 0x1000;
-    stream.exeBranchInfo = newEntry.slot;
-    stream.exeTaken = true;
-    stream.resolved = true;
+    stream.resolve.branchSlot = newEntry.slot;
+    stream.resolve.taken = true;
+    stream.resolve.valid = true;
     stream.prediction.branchSlot = newEntry.slot;
-    stream.updateBTBEntries.clear();
-    stream.updateIsOldEntry = false;
-    stream.updateNewBTBEntry = newEntry;
+    stream.update.btbEntries.clear();
+    stream.update.isOldEntry = false;
+    stream.update.newBTBEntry = newEntry;
     stream.predMetas[0] = meta;
     stream = setMispredStream(stream);
 

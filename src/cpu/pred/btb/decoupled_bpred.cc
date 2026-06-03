@@ -511,15 +511,15 @@ DecoupledBPUWithBTB::handleSquash(ThreadID tid, unsigned target_id,
     auto &target = ftq.get(target_id, tid);
 
     // Update target state
-    target.resolved = true;
-    target.exeTaken = actually_taken;
-    target.squashPC = squash_pc.instAddr();
-    target.squashType = squash_type;
+    target.resolve.valid = true;
+    target.resolve.taken = actually_taken;
+    target.resolve.squashPC = squash_pc.instAddr();
+    target.resolve.squashType = squash_type;
 
     // Special handling for control squash - create branch info
     if (squash_type == SQUASH_CTRL && static_inst) {
         // Use full branch info with static_inst if available
-        target.exeBranchInfo = BranchInfo(squash_pc.instAddr(), redirect_pc, static_inst, control_inst_size);
+        target.resolve.branchSlot = BranchInfo(squash_pc.instAddr(), redirect_pc, static_inst, control_inst_size);
         dumpFsq("Before control squash");
     }
 
@@ -633,8 +633,8 @@ DecoupledBPUWithBTB::commit(unsigned target_id, ThreadID tid)
                 "Commit target start %#lx, which is predicted, "
                 "final br addr: %#lx, final target: %#lx, pred br addr: %#lx, "
                 "pred target: %#lx\n",
-                target.startPC, target.exeBranchInfo.pc,
-                target.exeBranchInfo.target, target.prediction.branchSlot.pc,
+                target.startPC, target.resolve.branchSlot.pc,
+                target.resolve.branchSlot.target, target.prediction.branchSlot.pc,
                 target.prediction.branchSlot.target);
 
         // Update statistics
@@ -666,7 +666,7 @@ DecoupledBPUWithBTB::resolveUpdate(unsigned &target_id, ThreadID tid)
     auto &target = ftq.get(target_id, tid);
 
     // Update predictor components only if the target is hit or taken
-    if (!(target.prediction.btbHit || target.exeTaken)) {
+    if (!(target.prediction.btbHit || target.resolve.taken)) {
         return true;
     }
 
@@ -721,7 +721,7 @@ DecoupledBPUWithBTB::prepareResolveUpdateEntries(unsigned &target_id, ThreadID t
     }
     auto &target = ftq.get(target_id, tid);
 
-    if (target.prediction.btbHit || target.exeTaken) {
+    if (target.prediction.btbHit || target.resolve.taken) {
         // Prepare target for update
         target.setUpdateInstEndPC(predictWidth);
         target.setUpdateBTBEntries();
@@ -743,8 +743,8 @@ DecoupledBPUWithBTB::markCFIResolved(unsigned &target_id, uint64_t resolvedInstP
     }
     auto &target = ftq.get(target_id, tid);
 
-    if (target.updateNewBTBEntry.slot.pc == resolvedInstPC) {
-        target.updateNewBTBEntry.slot.resolved = true;
+    if (target.update.newBTBEntry.slot.pc == resolvedInstPC) {
+        target.update.newBTBEntry.slot.resolved = true;
     }
 
     target.markBTBEntryResolved(resolvedInstPC);
@@ -754,7 +754,7 @@ void
 DecoupledBPUWithBTB::updatePredictorComponents(FetchTarget &target)
 {
     // Update predictor components only if the target is hit or taken
-    if (target.prediction.btbHit || target.exeTaken) {
+    if (target.prediction.btbHit || target.resolve.taken) {
         // Prepare target for update
         target.setUpdateInstEndPC(predictWidth);
         target.setUpdateBTBEntries();
@@ -1083,7 +1083,7 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
     if (squash_type == SQUASH_CTRL) {
         historyManagers[tid].squash(target_id, ghist_update,
                                     phist_update,
-                                    target.exeBranchInfo);
+                                    target.resolve.branchSlot);
     } else {
         historyManagers[tid].squash(target_id, ghist_update,
                                     phist_update, BranchInfo());

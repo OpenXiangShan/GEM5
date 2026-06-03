@@ -302,12 +302,12 @@ UBTB::update(const FetchTarget &stream)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
     // hit entries whose corresponding insts are acutally executed
-    Addr end_inst_pc = stream.updateEndInstPC;
+    Addr end_inst_pc = stream.update.endInstPC;
 
     auto pred_hit_entry = meta->hit_entry;
     // Find the iterator in ubtb that matches pred_hit_entry (by tag and pc)
      // Use BTBEntry instead of BranchInfo; make it invalid when not taken
-    BTBEntry takenEntry = stream.exeTaken ? BTBEntry(stream.exeBranchInfo) : BTBEntry();
+    BTBEntry takenEntry = stream.resolve.taken ? BTBEntry(stream.resolve.branchSlot) : BTBEntry();
     auto startAddr = stream.getRealStartPC();
     Addr oldtag = getTag(startAddr, stream.asidHash);
     Addr block_end = (startAddr + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
@@ -320,10 +320,12 @@ UBTB::update(const FetchTarget &stream)
                                e.slot.pc >= startAddr && e.slot.pc < block_end;
                     }) : ubtb.end();
 
-    if (stream.exeTaken) {
+    if (stream.resolve.taken) {
         if (!pred_hit_entry.valid ||
-            pred_hit_entry.slot != stream.exeBranchInfo) {
-            DPRINTF(UBTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+            pred_hit_entry.slot != stream.resolve.branchSlot) {
+            DPRINTF(UBTB, "update miss detected, pc %#lx, "
+                    "predTick %lu\n",
+                    stream.resolve.branchSlot.pc, stream.predTick);
             ubtbStats.updateMiss++;
         }else {
             ubtbStats.updateHit++;
@@ -347,7 +349,7 @@ UBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
     bool this_branch_hit = hit_entry.slot.pc == pc;
 
     bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc;  // all uncond should be taken
+    bool this_branch_taken = stream.resolve.taken && stream.getControlPC() == pc;  // all uncond should be taken
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         ubtbStats.allBranchHits++;

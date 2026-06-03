@@ -471,7 +471,7 @@ AheadBTB::processOldEntries(const std::vector<BTBEntry>& hit_entries,
 {
     // auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     // // hit entries whose corresponding insts are acutally executed
-    // Addr end_inst_pc = stream.updateEndInstPC;
+    // Addr end_inst_pc = stream.update.endInstPC;
     DPRINTF(ABTB, "end_inst_pc: %#lx\n", end_inst_pc);
     // remove not executed btb entries, pc > end_inst_pc
     auto old_entries = hit_entries;
@@ -496,13 +496,13 @@ AheadBTB::checkPredictionHit(const FetchTarget &stream, const BTBMeta* meta)
 {
     bool pred_branch_hit = false;
     for (auto &e : meta->hit_entries) {
-        if (stream.exeBranchInfo == e.slot) {
+        if (stream.resolve.branchSlot == e.slot) {
             pred_branch_hit = true;
             break;
         }
     }
-    if (!pred_branch_hit && stream.exeTaken) {
-        DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n", stream.exeBranchInfo.pc, stream.predTick);
+    if (!pred_branch_hit && stream.resolve.taken) {
+        DPRINTF(ABTB, "update miss detected, pc %#lx, predTick %lu\n", stream.resolve.branchSlot.pc, stream.predTick);
         btbStats.updateMiss++;
     }
 
@@ -525,13 +525,13 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
     // we need to check if the new entry already exists in uBTB
     bool pred_branch_hit = false;
     for (auto &e: all_entries) {
-        if (stream.updateNewBTBEntry == e) {
+        if (stream.update.newBTBEntry == e) {
             pred_branch_hit = true;
             break;
         }
     }
     if (!pred_branch_hit) {
-        all_entries.push_back(stream.updateNewBTBEntry);
+        all_entries.push_back(stream.update.newBTBEntry);
     }
 
     DPRINTF(ABTB, "all_entries_to_update.size(): %lu\n", all_entries.size());
@@ -718,7 +718,7 @@ AheadBTB::update(const FetchTarget &stream)
         return;
     }
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]).get();
-    Addr end_inst_pc = stream.updateEndInstPC;
+    Addr end_inst_pc = stream.update.endInstPC;
 
     // 1. Process old entries
     auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
@@ -743,7 +743,7 @@ AheadBTB::update(const FetchTarget &stream)
         }
         Addr btb_idx = getIndex(previousPC, stream.asidHash);  // use last pc to get idx
         entry.source = getComponentIdx(); // mark the entry source as AheadBTB
-        updateBTBEntry(btb_idx, btb_tag, entry, stream.exeBranchInfo, stream.exeTaken);
+        updateBTBEntry(btb_idx, btb_tag, entry, stream.resolve.branchSlot, stream.resolve.taken);
     }
 }
 
@@ -794,7 +794,7 @@ AheadBTB::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
     }
     // bool this_branch_miss = !this_branch_hit;
     bool cond_not_taken = inst->isCondCtrl() && !inst->branching();
-    bool this_branch_taken = stream.exeTaken && stream.getControlPC() == pc; // all uncond should be taken
+    bool this_branch_taken = stream.resolve.taken && stream.getControlPC() == pc; // all uncond should be taken
     Addr this_branch_target = npc;
     if (this_branch_hit) {
         btbStats.allBranchHits++;

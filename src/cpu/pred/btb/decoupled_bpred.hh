@@ -178,7 +178,7 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     void printTarget(const FetchTarget &e)
     {
-        if (!e.resolved) {
+        if (!e.resolve.valid) {
             DPRINTFR(DecoupleBPProbe, "FSQ Predicted target: ");
         } else {
             DPRINTFR(DecoupleBPProbe, "FSQ Resolved target: ");

@@ -133,7 +133,7 @@ BTBuRAS::recoverState(const FetchTarget &entry)
     printStack("before recoverState", stack, sp);
     // recover sp and tos first
     auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
-    auto takenSlot = entry.exeBranchInfo;
+    auto takenSlot = entry.resolve.branchSlot;
     if (enableDB) {
         SpecRASTrace rec(When::REDIRECT, RAS_OP::RECOVER, entry.startPC, takenSlot.pc, 0, sp, stack[sp].retAddr, stack[sp].ctr);
         specRasTrace->write_record(rec);
@@ -141,7 +141,7 @@ BTBuRAS::recoverState(const FetchTarget &entry)
     sp = meta_ptr->sp;
     stack[sp] = meta_ptr->tos;
 
-    if (entry.exeTaken) {
+    if (entry.resolve.taken) {
         // do push & pops on control squash
         if (takenSlot.isReturn()) {
             if (enableDB) {
@@ -170,12 +170,12 @@ BTBuRAS::update(const FetchTarget &entry)
     auto &stack = nonSpecStack;
     auto &sp = nonSpecSp;
     printStack("before update", stack, sp);
-    auto takenSlot = entry.exeBranchInfo;
-    if (entry.exeTaken && (takenSlot.isReturn() || takenSlot.isCall())) {
+    auto takenSlot = entry.resolve.branchSlot;
+    if (entry.resolve.taken && (takenSlot.isReturn() || takenSlot.isCall())) {
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[getComponentIdx()]);
         auto pred_sp = meta_ptr->sp;
         auto pred_tos = meta_ptr->tos;
-        auto miss = entry.squashType == SQUASH_CTRL && entry.squashPC == entry.exeBranchInfo.pc;
+        auto miss = entry.resolve.squashType == SQUASH_CTRL && entry.resolve.squashPC == entry.resolve.branchSlot.pc;
         if (takenSlot.isCall()) {
             Addr retAddr = takenSlot.pc + takenSlot.size;
             if (enableDB) {

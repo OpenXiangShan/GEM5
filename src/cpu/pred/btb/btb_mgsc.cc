@@ -622,7 +622,7 @@ BTBMGSC::getPredictionMeta(ThreadID tid)
 std::vector<BTBEntry>
 BTBMGSC::prepareUpdateEntries(const FetchTarget &stream)
 {
-    auto all_entries = stream.updateBTBEntries;
+    auto all_entries = stream.update.btbEntries;
 
     // Filter out non-conditional and always-taken branches
     auto remove_it = std::remove_if(all_entries.begin(), all_entries.end(),
@@ -632,8 +632,8 @@ BTBMGSC::prepareUpdateEntries(const FetchTarget &stream)
     all_entries.erase(remove_it, all_entries.end());
 
     // Handle potential new BTB entry
-    auto &potential_new_entry = stream.updateNewBTBEntry;
-    if (!stream.updateIsOldEntry && potential_new_entry.slot.isCond() &&
+    auto &potential_new_entry = stream.update.newBTBEntry;
+    if (!stream.update.isOldEntry && potential_new_entry.slot.isCond() &&
         !potential_new_entry.alwaysTaken) {
         all_entries.push_back(potential_new_entry);
     }
@@ -962,8 +962,8 @@ BTBMGSC::update(const FetchTarget &stream)
 
     // Process each BTB entry
     for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken &&
-            stream.exeBranchInfo == btb_entry.slot;
+        bool actual_taken = stream.resolve.taken &&
+            stream.resolve.branchSlot == btb_entry.slot;
         auto pred_it = preds.find(btb_entry.slot.pc);
 
         if (pred_it == preds.end()) {
@@ -1448,7 +1448,7 @@ BTBMGSC::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         tage_taken = pred_it->second.taken_before_sc;
         pred_hit = true;
     }
-    auto actual_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    auto actual_taken = stream.resolve.taken && stream.resolve.branchSlot.pc == pc;
     if (pred_hit) {
         mgscStats.predHit++;
         if (sc_taken == actual_taken) {

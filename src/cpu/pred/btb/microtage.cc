@@ -396,12 +396,12 @@ MicroTAGE::getPredictionMeta(ThreadID tid) {
  */
 std::vector<BTBEntry>
 MicroTAGE::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
+    auto all_entries = stream.update.btbEntries;
 
     // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken &&
+    if (!stream.update.isOldEntry) {
+        BTBEntry potential_new_entry = stream.update.newBTBEntry;
+        bool new_entry_taken = stream.resolve.taken &&
             stream.getControlPC() == potential_new_entry.slot.pc;
         if (!new_entry_taken) {
             potential_new_entry.alwaysTaken = false;
@@ -521,8 +521,8 @@ MicroTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.slot.pc;
+    bool this_fb_mispred = stream.resolve.squashType == SquashType::SQUASH_CTRL &&
+                               stream.resolve.squashPC == entry.slot.pc;
     // No allocation if no misprediction
     if (!this_fb_mispred) {
         return false;
@@ -690,8 +690,8 @@ MicroTAGE::update(const FetchTarget &stream) {
     bool utage_hit = false;
     // Process each BTB entry
     for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken &&
-            stream.exeBranchInfo == btb_entry.slot;
+        bool actual_taken = stream.resolve.taken &&
+            stream.resolve.branchSlot == btb_entry.slot;
         TagePrediction recomputed;
         if (updateOnRead) { // if update on read is enabled, re-read providers using snapshot
             // Re-read providers using snapshot (do not rely on prediction-time main/alt)
@@ -788,10 +788,10 @@ MicroTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
             break;
         }
     }
-    bool fallthrough_mispred = (!has_taken_pred && stream.exeTaken) ||
-                                (has_taken_pred && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && has_taken_pred &&
-                          first_taken_pc != stream.exeBranchInfo.pc;
+    bool fallthrough_mispred = (!has_taken_pred && stream.resolve.taken) ||
+                                (has_taken_pred && !stream.resolve.taken);
+    bool branch_mispred = stream.resolve.taken && has_taken_pred &&
+                          first_taken_pc != stream.resolve.branchSlot.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }
@@ -1171,7 +1171,7 @@ MicroTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         pred_taken = it->second.taken;
         pred_hit = true;
     }
-    bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    bool this_cond_taken = stream.resolve.taken && stream.resolve.branchSlot.pc == pc;
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

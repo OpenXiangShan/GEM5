@@ -521,12 +521,12 @@ BTBTAGE::getPredictionMeta(ThreadID tid) {
  */
 std::vector<BTBEntry>
 BTBTAGE::prepareUpdateEntries(const FetchTarget &stream) {
-    auto all_entries = stream.updateBTBEntries;
+    auto all_entries = stream.update.btbEntries;
 
     // Add potential new BTB entry if it's a btb miss during prediction
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potential_new_entry = stream.updateNewBTBEntry;
-        bool new_entry_taken = stream.exeTaken && stream.getControlPC() == potential_new_entry.slot.pc;
+    if (!stream.update.isOldEntry) {
+        BTBEntry potential_new_entry = stream.update.newBTBEntry;
+        bool new_entry_taken = stream.resolve.taken && stream.getControlPC() == potential_new_entry.slot.pc;
         if (!new_entry_taken) {
             potential_new_entry.alwaysTaken = false;
         }
@@ -656,8 +656,8 @@ BTBTAGE::updatePredictorStateAndCheckAllocation(const BTBEntry &entry,
     }
 
     // Check if misprediction occurred
-    bool this_fb_mispred = stream.squashType == SquashType::SQUASH_CTRL &&
-                               stream.squashPC == entry.slot.pc;
+    bool this_fb_mispred = stream.resolve.squashType == SquashType::SQUASH_CTRL &&
+                               stream.resolve.squashPC == entry.slot.pc;
     if (this_fb_mispred) {
         tageStats.mispredictBranchHasProvider += main_info.found;
         tageStats.mispredictBranchUseProvider += use_provider;
@@ -884,9 +884,9 @@ BTBTAGE::update(const FetchTarget &stream) {
     bool hasRecomputedVsActualDiff = false;
     bool hasRecomputedVsOriginalDiff = false;
     for (auto &btb_entry : entries_to_update) {
-        bool actual_taken = stream.exeTaken &&
-            stream.exeBranchInfo == btb_entry.slot;
-        const bool is_new_entry = !stream.updateIsOldEntry &&btb_entry.slot.pc == stream.updateNewBTBEntry.slot.pc;
+        bool actual_taken = stream.resolve.taken &&
+            stream.resolve.branchSlot == btb_entry.slot;
+        const bool is_new_entry = !stream.update.isOldEntry &&btb_entry.slot.pc == stream.update.newBTBEntry.slot.pc;
         auto orig_it = predMeta->preds.find(btb_entry.slot.pc);
         const bool has_original_pred = orig_it != predMeta->preds.end();
         TagePrediction original_pred;
@@ -1030,9 +1030,9 @@ BTBTAGE::checkUtageUpdateMisspred(const FetchTarget &stream) {
             break;
         }
     }
-    bool fallthrough_mispred = (first_taken_pc == 0 && stream.exeTaken) ||
-                                (first_taken_pc != 0 && !stream.exeTaken);
-    bool branch_mispred = stream.exeTaken && first_taken_pc != stream.exeBranchInfo.pc;
+    bool fallthrough_mispred = (first_taken_pc == 0 && stream.resolve.taken) ||
+                                (first_taken_pc != 0 && !stream.resolve.taken);
+    bool branch_mispred = stream.resolve.taken && first_taken_pc != stream.resolve.branchSlot.pc;
     if (fallthrough_mispred || branch_mispred) {
         tageStats.updateMispred++;
     }
@@ -1503,7 +1503,7 @@ BTBTAGE::commitBranch(const FetchTarget &stream, const DynInstPtr &inst)
         pred_taken = it->second.taken;
         pred_hit = true;
     }
-    bool this_cond_taken = stream.exeTaken && stream.exeBranchInfo.pc == pc;
+    bool this_cond_taken = stream.resolve.taken && stream.resolve.branchSlot.pc == pc;
     bool predcorrect = (pred_taken == this_cond_taken);
     if (!predcorrect) {
         tageStats.condPredwrong++;

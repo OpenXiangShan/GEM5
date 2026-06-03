@@ -55,12 +55,12 @@ FetchTarget setupStream(Addr startPC, const BranchInfo& branch, bool taken,
                        std::shared_ptr<void> meta, Addr endInstPC) {
     FetchTarget stream;
     stream.startPC = startPC;
-    stream.resolved = true;
-    stream.exeBranchInfo = branch;
-    stream.exeTaken = taken;
+    stream.resolve.valid = true;
+    stream.resolve.branchSlot = branch;
+    stream.resolve.taken = taken;
     stream.predMetas[0] = meta;
-    stream.updateEndInstPC = endInstPC;
-    stream.squashType = SQUASH_CTRL; // mispredict default
+    stream.update.endInstPC = endInstPC;
+    stream.resolve.squashType = SQUASH_CTRL; // mispredict default
     return stream;
 }
 
@@ -133,10 +133,10 @@ predictUpdateCycle(MBTB* btb,
     stream.setUpdateBTBEntries();
     btb->getAndSetNewBTBEntry(stream);
 
-    for (auto &entry : stream.updateBTBEntries) {
+    for (auto &entry : stream.update.btbEntries) {
         entry.slot.resolved = true;
     }
-    stream.updateNewBTBEntry.slot.resolved = true;
+    stream.update.newBTBEntry.slot.resolved = true;
 
     btb->update(stream);
 

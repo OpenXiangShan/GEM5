@@ -443,8 +443,8 @@ BTBTAGEUpperBound::updatePredictorStateAndCheckAllocation(
     }
 
     const bool thisFbMispred =
-        stream.squashType == SquashType::SQUASH_CTRL &&
-        stream.squashPC == entry.slot.pc;
+        stream.resolve.squashType == SquashType::SQUASH_CTRL &&
+        stream.resolve.squashPC == entry.slot.pc;
     if (getDelay() == 2 && thisFbMispred) {
         tageStats.updateMispred++;
         if (!usedAlt && mainInfo.found) {
@@ -494,12 +494,12 @@ BTBTAGEUpperBound::allocateExactEntry(
 std::vector<BTBEntry>
 BTBTAGEUpperBound::prepareUpperBoundUpdateEntries(const FetchTarget &stream)
 {
-    auto allEntries = stream.updateBTBEntries;
+    auto allEntries = stream.update.btbEntries;
 
-    if (!stream.updateIsOldEntry) {
-        BTBEntry potentialNewEntry = stream.updateNewBTBEntry;
+    if (!stream.update.isOldEntry) {
+        BTBEntry potentialNewEntry = stream.update.newBTBEntry;
         bool newEntryTaken =
-            stream.exeTaken && stream.getControlPC() == potentialNewEntry.slot.pc;
+            stream.resolve.taken && stream.getControlPC() == potentialNewEntry.slot.pc;
         if (!newEntryTaken) {
             potentialNewEntry.alwaysTaken = false;
         }
@@ -546,7 +546,7 @@ BTBTAGEUpperBound::update(const FetchTarget &stream)
         auto predIt = predMeta->preds.find(btbEntry.slot.pc);
         auto metaIt = predMeta->branchMeta.find(btbEntry.slot.pc);
         const bool actualTaken =
-            stream.exeTaken && stream.exeBranchInfo == btbEntry.slot;
+            stream.resolve.taken && stream.resolve.branchSlot == btbEntry.slot;
         TagePrediction storedPred;
         BranchPredictionMeta storedMeta;
         if (predIt != predMeta->preds.end() &&

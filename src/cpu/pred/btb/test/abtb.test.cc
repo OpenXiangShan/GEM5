@@ -33,12 +33,12 @@ FetchTarget createStream(Addr startPC, FullBTBPrediction &pred, AheadBTB *abtb) 
 }
 
 void resolveStream(FetchTarget &stream, bool taken, Addr brPc, Addr target, bool isCond, int size=4) {
-    stream.resolved = true;
-    stream.exeBranchInfo.pc = brPc;
-    stream.exeBranchInfo.target = target;
-    stream.exeBranchInfo.setTypeFromFlags(isCond, false, !isCond, false, false);
-    stream.exeBranchInfo.size = size;
-    stream.exeTaken = taken;
+    stream.resolve.valid = true;
+    stream.resolve.branchSlot.pc = brPc;
+    stream.resolve.branchSlot.target = target;
+    stream.resolve.branchSlot.setTypeFromFlags(isCond, false, !isCond, false, false);
+    stream.resolve.branchSlot.size = size;
+    stream.resolve.taken = taken;
 }
 
 FullBTBPrediction makePrediction(Addr startPC, AheadBTB *abtb,

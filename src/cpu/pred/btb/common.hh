@@ -465,6 +465,23 @@ struct FetchPredictionSnapshot
     std::vector<BTBEntry> btbEntries; // predicted BTB entries
 };
 
+struct FetchResolveResult
+{
+    bool valid = false;        // whether execution resolved this stream
+    bool taken = false;        // actual taken result
+    BranchSlot branchSlot;     // executed branch slot
+    SquashType squashType = SquashType::SQUASH_NONE;
+    Addr squashPC = 0;         // pc of the squash inst
+};
+
+struct FetchUpdatePayload
+{
+    BTBEntry newBTBEntry;      // possible new entry from L1 BTB update prep
+    bool isOldEntry = false;   // true: update old entry; false: use newBTBEntry
+    Addr endInstPC = 0;        // end pc of the squash inst/taken inst
+    std::vector<BTBEntry> btbEntries; // entries that were actually executed
+};
+
 #define CondTakens_find(condTakens, branch_pc) \
     std::find_if(condTakens.begin(), condTakens.end(), \
                  [&branch_pc](const auto &p) { return p.first == branch_pc; })
@@ -491,22 +508,8 @@ struct FetchTarget
     Addr startPC;       // start pc of the stream
     FetchPredictionSnapshot prediction; // final prediction snapshot
 
-    // for commit, write at redirect or fetch
-    bool exeTaken;         // whether the branch is taken(resolved)
-    BranchSlot exeBranchInfo; // executed branch slot
-
-    BTBEntry updateNewBTBEntry; // the possible new entry, set by L1BTB.getAndSetNewBTBEntry, used by L1BTB/L0BTB.update
-    bool updateIsOldEntry; // whether the BTB entry is old, true: update the old entry, false: use updateNewBTBEntry
-    bool resolved;  // whether the branch is resolved/executed
-
-    // below two should be set before components update
-    // used to decide which branches to update (don't update if not actually executed)
-    Addr updateEndInstPC;   // end pc of the squash inst/taken inst
-    // for components to decide which entries to update
-    std::vector<BTBEntry> updateBTBEntries; // mostly like prediction.btbEntries
-
-    int squashType;         // squash type
-    Addr squashPC;         // pc of the squash inst
+    FetchResolveResult resolve; // execution result written by squash/commit
+    FetchUpdatePayload update;  // payload prepared before predictor update
     FinalPredictionMetadata finalPredMetadata; // final prediction attribution
 
     // prediction metas
@@ -529,14 +532,8 @@ struct FetchTarget
          asidHash(0),
          startPC(0),
          prediction(),
-         exeTaken(false),
-         exeBranchInfo(BranchInfo()),
-         updateNewBTBEntry(BTBEntry()),
-         updateIsOldEntry(false),
-         resolved(false),
-         updateEndInstPC(0),
-         squashType(SquashType::SQUASH_NONE),
-         squashPC(0),
+         resolve(),
+         update(),
          finalPredMetadata(),
          predTick(0),
          history(),
@@ -547,26 +544,27 @@ struct FetchTarget
          commitInstNum(0)
    {
        predMetas.fill(nullptr);
-       updateBTBEntries.clear();
    }
 
     // the default exe result should be consistent with prediction
     void setDefaultResolve() {
-        resolved = false;
-        exeBranchInfo = prediction.branchSlot;
-        exeTaken = prediction.taken;
+        resolve.valid = false;
+        resolve.branchSlot = prediction.branchSlot;
+        resolve.taken = prediction.taken;
+        resolve.squashType = SQUASH_NONE;
+        resolve.squashPC = 0;
     }
 
     // bool getEnded() const { return resolved ? exeEnded : predEnded; }
     BranchSlot getBranchSlot() const
     {
-        return resolved ? exeBranchInfo : prediction.branchSlot;
+        return resolve.valid ? resolve.branchSlot : prediction.branchSlot;
     }
     BranchSlot getBranchInfo() const { return getBranchSlot(); }
     Addr getControlPC() const { return getBranchSlot().pc; }
     // FIXME: should be end of squash inst when non-control squash of trap squash.
     Addr getEndPC() const { return getBranchSlot().getEnd(); }
-    Addr getTaken() const { return resolved ? exeTaken : prediction.taken; }
+    Addr getTaken() const { return resolve.valid ? resolve.taken : prediction.taken; }
     Addr getTakenTarget() const { return getBranchSlot().target; }
 
     Addr getRealStartPC() const {
@@ -622,26 +620,27 @@ struct FetchTarget
     // should be called before components update
     void setUpdateInstEndPC(unsigned predictWidth)
     {
-        if (squashType == SQUASH_NONE) {
-            if (exeTaken) { // taken inst pc
-                updateEndInstPC = getControlPC();
+        if (resolve.squashType == SQUASH_NONE) {
+            if (resolve.taken) { // taken inst pc
+                update.endInstPC = getControlPC();
             } else { // natural fall through, align to the next block
                 // assert(halfAligned);
-                updateEndInstPC = (startPC + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
+                update.endInstPC =
+                    (startPC + predictWidth) & ~mask(floorLog2(predictWidth) - 1);
             }
         } else {
-            updateEndInstPC = squashPC;
+            update.endInstPC = resolve.squashPC;
         }
     }
 
     // should be called before components update, after setUpdateInstEndPC
     void setUpdateBTBEntries()
     {
-        updateBTBEntries.clear();
+        update.btbEntries.clear();
         for (auto &entry : prediction.btbEntries) {
             if (entry.valid && entry.slot.pc >= startPC &&
-                entry.slot.pc <= updateEndInstPC) {
-                updateBTBEntries.push_back(entry);
+                entry.slot.pc <= update.endInstPC) {
+                update.btbEntries.push_back(entry);
             }
         }
     }
@@ -650,7 +649,7 @@ struct FetchTarget
     // Just ignore it in that case.
     void markBTBEntryResolved(Addr resolvedInstPC)
     {
-        for (auto &entry : updateBTBEntries) {
+        for (auto &entry : update.btbEntries) {
             if (entry.valid && entry.slot.pc == resolvedInstPC) {
                 entry.slot.resolved = true;
             }

@@ -159,7 +159,7 @@ BTBRAS::recoverState(const FetchTarget &entry)
     const ThreadID tid = entry.tid;
     assert(tid < numThreads);
     auto &state = threadStates[tid];
-    auto takenSlot = entry.exeBranchInfo;
+    auto takenSlot = entry.resolve.branchSlot;
     /*
     if (takenSlot.isCall() || takenSlot.isReturn()) {
         printStack("before recoverState", tid);
@@ -177,7 +177,7 @@ BTBRAS::recoverState(const FetchTarget &entry)
     Addr retAddr = takenSlot.pc + takenSlot.size;
 
     // do push & pops on control squash
-    if (entry.exeTaken) {
+    if (entry.resolve.taken) {
         if (takenSlot.isCall()) {
             push(tid, retAddr);
         }
@@ -188,7 +188,7 @@ BTBRAS::recoverState(const FetchTarget &entry)
     }
 
     
-    if (entry.exeTaken) {
+    if (entry.resolve.taken) {
         DPRINTF(RAS, "isCall %d, isRet %d\n", takenSlot.isCall(),
                 takenSlot.isReturn());
         if (takenSlot.isReturn()) {
@@ -208,8 +208,8 @@ BTBRAS::update(const FetchTarget &entry)
     assert(tid < numThreads);
     auto &state = threadStates[tid];
     auto meta_ptr = std::static_pointer_cast<RASMeta>(entry.predMetas[getComponentIdx()]);
-    auto takenSlot = entry.exeBranchInfo;
-    if (entry.exeTaken) {
+    auto takenSlot = entry.resolve.branchSlot;
+    if (entry.resolve.taken) {
         if (meta_ptr->ssp != state.nsp || meta_ptr->sctr != state.stack[state.nsp].data.ctr) {
             DPRINTF(RAS, "ssp and nsp mismatch, recovering, ssp = %d, sctr = %d, nsp = %d, nctr = %d\n",
                 meta_ptr->ssp, meta_ptr->sctr, state.nsp, state.stack[state.nsp].data.ctr);

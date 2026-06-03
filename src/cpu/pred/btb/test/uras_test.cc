@@ -94,7 +94,7 @@ public:
     }
 
     // recover state, from entry.predMetas[0] to recover sp and tos
-    // then if exeTaken, do push & pops on control squash
+    // then if actually taken, do push & pops on control squash
     // input: only entry is used.
     // used when branch prediction error
     // two steps:
@@ -106,11 +106,11 @@ public:
         auto &sp = specSp;
         // recover sp and tos first
         auto meta_ptr = std::static_pointer_cast<uRASMeta>(entry.predMetas[0]);
-        auto takenSlot = entry.exeBranchInfo;
+        auto takenSlot = entry.resolve.branchSlot;
         sp = meta_ptr->sp;
         stack[sp] = meta_ptr->tos;
 
-        if (entry.exeTaken) {
+        if (entry.resolve.taken) {
             // do push & pops on control squash
             if (takenSlot.isReturn()) {
                 pop(stack, sp);
@@ -417,12 +417,12 @@ TEST_F(URASTest, RecoverStateReturn) {
     meta.sp = 1;
     meta.tos = uRASEntry(0x1000);
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
-    
+
     // 设置return指令信息
-    entry.exeTaken = true;
-    entry.exeBranchInfo.setTypeFromFlags(false, true, false, false, true);
-    entry.exeBranchInfo.pc = 0x2000;
-    
+    entry.resolve.taken = true;
+    entry.resolve.branchSlot.setTypeFromFlags(false, true, false, false, true);
+    entry.resolve.branchSlot.pc = 0x2000;
+
     // 执行恢复
     uras->recoverState(entry);
 
@@ -439,19 +439,19 @@ TEST_F(URASTest, RecoverStateCall) {
     // 设置初始状态
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
-    
+
     // 设置meta数据
     uRASMeta meta;
     meta.sp = 0;
     meta.tos = uRASEntry(0x80000000L);
     entry.predMetas[0] = std::make_shared<uRASMeta>(meta);
-    
+
     // 设置call指令信息
-    entry.exeTaken = true;
-    entry.exeBranchInfo.setTypeFromFlags(false, false, true, true, false);
-    entry.exeBranchInfo.pc = 0x1000;
-    entry.exeBranchInfo.size = 4;
-    
+    entry.resolve.taken = true;
+    entry.resolve.branchSlot.setTypeFromFlags(false, false, true, true, false);
+    entry.resolve.branchSlot.pc = 0x1000;
+    entry.resolve.branchSlot.size = 4;
+
     // 执行恢复
     uras->recoverState(entry);
 
@@ -467,34 +467,34 @@ TEST_F(URASTest, RecoverStateCallReturn) {
 
     auto& stack = uras->getSpecStack();
     auto& sp = uras->getSpecSp();
-    
+
     // 第一步：call指令恢复
     uRASMeta meta1;
     meta1.sp = 0;
     meta1.tos = uRASEntry(0x80000000L);
     entry1.predMetas[0] = std::make_shared<uRASMeta>(meta1);
-    
-    entry1.exeTaken = true;
-    entry1.exeBranchInfo.setTypeFromFlags(false, false, true, true, false);
-    entry1.exeBranchInfo.pc = 0x1000;
-    entry1.exeBranchInfo.size = 4;
-    
+
+    entry1.resolve.taken = true;
+    entry1.resolve.branchSlot.setTypeFromFlags(false, false, true, true, false);
+    entry1.resolve.branchSlot.pc = 0x1000;
+    entry1.resolve.branchSlot.size = 4;
+
     uras->recoverState(entry1);
 
     // 验证call的结果
     EXPECT_EQ(sp, 1);
     EXPECT_EQ(stack[sp].retAddr, 0x1004);
-    
+
     // 第二步：return指令恢复
     uRASMeta meta2;
     meta2.sp = 1;
     meta2.tos = uRASEntry(0x1004);
     entry2.predMetas[0] = std::make_shared<uRASMeta>(meta2);
-    
-    entry2.exeTaken = true;
-    entry2.exeBranchInfo.setTypeFromFlags(false, true, false, false, true);
-    entry2.exeBranchInfo.pc = 0x2000;
-    
+
+    entry2.resolve.taken = true;
+    entry2.resolve.branchSlot.setTypeFromFlags(false, true, false, false, true);
+    entry2.resolve.branchSlot.pc = 0x2000;
+
     uras->recoverState(entry2);
 
     // 验证return的结果

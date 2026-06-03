@@ -296,10 +296,10 @@ struct MgscHarness
             FetchTarget recover_stream;
             recover_stream.startPC = start_pc;
             recover_stream.predMetas[mgsc.getComponentIdx()] = meta;
-            recover_stream.resolved = true;
-            recover_stream.exeBranchInfo = entry.slot;
-            recover_stream.exeTaken = actual_taken;
-            recover_stream.squashPC = entry.slot.pc;
+            recover_stream.resolve.valid = true;
+            recover_stream.resolve.branchSlot = entry.slot;
+            recover_stream.resolve.taken = actual_taken;
+            recover_stream.resolve.squashPC = entry.slot.pc;
 
             mgsc.recoverHist(ghr, recover_stream, ghist.shamt, actual_taken);
             const auto actual_phist = recover_stream.getPHistUpdateDuringSquash(
@@ -324,11 +324,11 @@ struct MgscHarness
         // Training update using prediction meta
         FetchTarget update_stream;
         update_stream.startPC = start_pc;
-        update_stream.updateBTBEntries = {entry};
-        update_stream.updateIsOldEntry = true;
-        update_stream.resolved = true;
-        update_stream.exeBranchInfo = entry.slot;
-        update_stream.exeTaken = actual_taken;
+        update_stream.update.btbEntries = {entry};
+        update_stream.update.isOldEntry = true;
+        update_stream.resolve.valid = true;
+        update_stream.resolve.branchSlot = entry.slot;
+        update_stream.resolve.taken = actual_taken;
         update_stream.predMetas[mgsc.getComponentIdx()] = meta;
         mgsc.update(update_stream);
 
@@ -512,11 +512,11 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
     {
         FetchTarget stream;
         stream.startPC = start_pc;
-        stream.updateBTBEntries = {entry};
-        stream.updateIsOldEntry = true;
-        stream.resolved = true;
-        stream.exeBranchInfo = entry.slot;
-        stream.exeTaken = true;
+        stream.update.btbEntries = {entry};
+        stream.update.isOldEntry = true;
+        stream.resolve.valid = true;
+        stream.resolve.branchSlot = entry.slot;
+        stream.resolve.taken = true;
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         mgsc.update(stream);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], before);
@@ -526,11 +526,11 @@ TEST(BTBMGSCTest, UpdateOnlyOnWrongOrLowMargin)
     {
         FetchTarget stream;
         stream.startPC = start_pc;
-        stream.updateBTBEntries = {entry};
-        stream.updateIsOldEntry = true;
-        stream.resolved = true;
-        stream.exeBranchInfo = entry.slot;
-        stream.exeTaken = false;
+        stream.update.btbEntries = {entry};
+        stream.update.isOldEntry = true;
+        stream.resolve.valid = true;
+        stream.resolve.branchSlot = entry.slot;
+        stream.resolve.taken = false;
         stream.predMetas[mgsc.getComponentIdx()] = meta;
         mgsc.update(stream);
         EXPECT_EQ(bw_table[0][bw_i1][bw_i2], static_cast<int16_t>(before - 1));

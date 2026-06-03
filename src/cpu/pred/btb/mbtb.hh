@@ -151,7 +151,7 @@ class MBTB : public TimedBaseBTBPredictor
     std::shared_ptr<void> getPredictionMeta(ThreadID tid = 0) override;
 
     /**
-     * @brief derive new btb entry from old ones and set updateNewBTBEntry field in stream
+     * @brief derive new btb entry from old ones and set update payload in stream
      *        only in L1BTB will this function be called before update
      * 
      * @param stream 
