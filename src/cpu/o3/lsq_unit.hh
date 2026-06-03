@@ -331,9 +331,7 @@ class LSQUnit
      */
     void checkSnoop(PacketPtr pkt);
     void checkLocalStoreVisible(Addr store_paddr,
-                                const std::vector<bool> &store_byte_enable,
-                                InstSeqNum store_seq,
-                                bool replay_executed_loads);
+                                const std::vector<bool> &store_byte_enable);
 
     /** Iq issues a load to load pipeline. */
     void issueToLoadPipe(const DynInstPtr &inst);
