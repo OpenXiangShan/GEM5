@@ -957,52 +957,13 @@ DecoupledBPUWithBTB::fillAheadPipeline(FetchTarget &entry)
 }
 
 void
-DecoupledBPUWithBTB::checkHistory(const boost::dynamic_bitset<> &history,
-                                  ThreadID tid)
+DecoupledBPUWithBTB::checkHistories(const boost::dynamic_bitset<> &history,
+                                    const boost::dynamic_bitset<> &phistory,
+                                    ThreadID tid)
 {
-    // This function performs a crucial validation of branch history consistency
-    // It rebuilds the "ideal" history from HistoryManager's records and compares
-    // it with the actual history being used by the branch predictor
-
-    // Initialize counter for total history bits and a bitset for rebuilt history
-    unsigned ideal_size = 0;
-    boost::dynamic_bitset<> ideal_hash_hist(historyBits, 0);
-
-    // Iterate through all speculative history entries stored in HistoryManager
-    for (const auto entry: historyManagers[tid].getSpeculativeHist()) {
-        // Only process entries that have non-zero shift amount (actual branches)
-        if (entry.shamt != 0) {
-            // Accumulate total history bits
-            ideal_size += entry.shamt;
-            DPRINTF(DecoupleBPVerbose, "pc: %#lx, shamt: %lu, cond_taken: %d\n", entry.pc,
-                    entry.shamt, entry.cond_taken);
-
-            // Rebuild history by shifting and setting bits based on recorded outcomes
-            // This emulates how history would be built if all branches were predicted perfectly
-            ideal_hash_hist <<= entry.shamt;
-            ideal_hash_hist[0] = entry.cond_taken;
-        }
-    }
-
-    // Determine how many bits to compare (minimum of ideal size and actual history bits)
-    unsigned comparable_size = std::min(ideal_size, historyBits);
-
-    // Prepare actual history for comparison by creating a copy
-    boost::dynamic_bitset<> sized_real_hist(history);
-
-    // Resize both histories to the comparable size for accurate comparison
-    ideal_hash_hist.resize(comparable_size);
-    sized_real_hist.resize(comparable_size);
-
-    // boost::to_string(ideal_hash_hist, buf1);
-    // boost::to_string(sized_real_hist, buf2);
-    DPRINTF(DecoupleBP,
-            "Ideal size:\t%u, real history size:\t%u, comparable size:\t%u\n",
-            ideal_size, historyBits, comparable_size);
-    // DPRINTF(DecoupleBP, "Ideal history:\t%s\nreal history:\t%s\n",
-    //         buf1.c_str(), buf2.c_str());
-
-    assert(ideal_hash_hist == sized_real_hist);
+    DPRINTF(DecoupleBP, "Checking GHR/PHR speculative history replay\n");
+    assert(historyManagers[tid].checkGHist(history, historyBits));
+    assert(historyManagers[tid].checkPHist(phistory, historyBits));
 }
 
 void
@@ -1069,8 +1030,8 @@ DecoupledBPUWithBTB::updateHistoryForPrediction(FetchTarget &entry)
 
     // Update history manager and verify TAGE folded history
     historyManagers[tid].addSpeculativeHist(
-        entry.startPC, ghist_update.shamt, ghist_update.taken,
-        entry.predBranchInfo, ftq.backId(tid) + 1);
+        entry.startPC, entry.history, entry.phistory, ghist_update,
+        phist_update, entry.predBranchInfo, ftq.backId(tid) + 1);
 
     // Update global backward history
     histShiftIn(bwhist_update.shamt, bwhist_update.taken, s0BwHistory);
@@ -1190,16 +1151,17 @@ DecoupledBPUWithBTB::recoverHistoryForSquash(
 
     // Update history manager with appropriate branch info
     if (squash_type == SQUASH_CTRL) {
-        historyManagers[tid].squash(target_id, ghist_update.shamt,
-                                    ghist_update.taken, target.exeBranchInfo);
+        historyManagers[tid].squash(target_id, ghist_update,
+                                    phist_update,
+                                    target.exeBranchInfo);
     } else {
-        historyManagers[tid].squash(target_id, ghist_update.shamt,
-                                    ghist_update.taken, BranchInfo());
+        historyManagers[tid].squash(target_id, ghist_update,
+                                    phist_update, BranchInfo());
     }
 
     // Perform history consistency checks when not a fast build variant
 #ifndef NDEBUG
-    checkHistory(s0History, tid);
+    checkHistories(s0History, s0PHistory, tid);
     if (tage->isEnabled()) {
         tage->checkFoldedHist(
             tage->usesPathHistory() ? s0PHistory : s0History, tid,
