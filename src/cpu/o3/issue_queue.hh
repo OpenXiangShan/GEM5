@@ -24,6 +24,7 @@
 #include "params/PAgeSelector.hh"
 #include "params/Scheduler.hh"
 #include "params/SpecWakeupChannel.hh"
+#include "sim/eventq.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
@@ -168,7 +169,10 @@ class IssueQue : public SimObject
 
     std::queue<DynInstPtr> replayQ;  // only for mem
     std::queue<DynInstPtr> vectorReadyQ;
+    std::queue<Tick> vectorReadyQReleaseTicks;
+    std::queue<DynInstPtr> vectorDelayedReadyQ;
     std::unordered_set<InstSeqNum> vectorReadyQSeqs;
+    EventFunctionWrapper vectorReadyQEvent;
 
     CPU* cpu = nullptr;
     Scheduler* scheduler = nullptr;
@@ -199,6 +203,7 @@ class IssueQue : public SimObject
     void scheduleInst();
     void addIfReady(const DynInstPtr& inst);
     void cancel(const DynInstPtr& inst);
+    void processVectorReadyQ();
 
   public:
     inline void clearBusy(uint32_t pi) { portBusy.at(pi) = 0; }
@@ -223,7 +228,7 @@ class IssueQue : public SimObject
     void doCommit(const InstSeqNum inst);
     void doSquash(const InstSeqNum seqNum);
 
-    bool hasReadyVectorInst() const { return !vectorReadyQ.empty(); }
+    bool hasReadyVectorInst() const { return !vectorDelayedReadyQ.empty(); }
     DynInstPtr popReadyVectorInst();
 
     int getIssueStages() { return scheduleToExecDelay; }
