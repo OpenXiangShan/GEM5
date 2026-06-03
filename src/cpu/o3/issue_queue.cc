@@ -198,6 +198,8 @@ IssueQue::IssueQue(const IssueQueParams& params)
       scheduleToExecDelay(params.scheduleToExecDelay),
       iqname(params.name),
       inflightIssues(scheduleToExecDelay, 0),
+      vectorReadyQEvent([this]() { processVectorReadyQ(); },
+                        csprintf("%s.vectorReadyQEvent", params.name)),
       selector(params.sel)
 {
     // TODO: keep this in sync with the current load IQ naming convention.
@@ -379,6 +381,32 @@ IssueQue::addToFu(const DynInstPtr& inst)
 }
 
 void
+IssueQue::processVectorReadyQ()
+{
+    while (!vectorReadyQ.empty() && !vectorReadyQReleaseTicks.empty() &&
+           vectorReadyQReleaseTicks.front() <= curTick()) {
+        auto inst = vectorReadyQ.front();
+        vectorReadyQ.pop();
+        vectorReadyQReleaseTicks.pop();
+
+        if (!inst || inst->isSquashed() || inst->canceled()) {
+            if (inst) {
+                vectorReadyQSeqs.erase(inst->seqNum);
+            }
+            continue;
+        }
+
+        vectorDelayedReadyQ.push(inst);
+        DPRINTF(Schedule, "[sn:%llu] moved to vectorDelayedReadyQ\n",
+                inst->seqNum);
+    }
+
+    if (!vectorReadyQ.empty() && !vectorReadyQReleaseTicks.empty()) {
+        cpu->schedule(vectorReadyQEvent, vectorReadyQReleaseTicks.front());
+    }
+}
+
+void
 IssueQue::issueToFu()
 {
     int size = toFu->size;
@@ -419,15 +447,15 @@ IssueQue::issueToFu()
         issued++;
     }
 
-    // Vector memory instructions are issued from vectorReadyQ after replayQ,
-    // and before the normal toFu stream.
-    while (!vectorReadyQ.empty()) {
-        auto inst = vectorReadyQ.front();
+    // Vector memory instructions are issued from vectorDelayedReadyQ after
+    // replayQ, and before the normal toFu stream.
+    while (!vectorDelayedReadyQ.empty()) {
+        auto inst = vectorDelayedReadyQ.front();
         if (!inst || inst->isSquashed() || inst->canceled()) {
             if (inst) {
                 vectorReadyQSeqs.erase(inst->seqNum);
             }
-            vectorReadyQ.pop();
+            vectorDelayedReadyQ.pop();
             continue;
         }
 
@@ -443,7 +471,7 @@ IssueQue::issueToFu()
             }
         }
         if (!bypassReady) {
-            // Keep FIFO order in vectorReadyQ and retry in later cycles.
+            // Keep FIFO order in vectorDelayedReadyQ and retry in later cycles.
             break;
         }
 
@@ -458,7 +486,11 @@ IssueQue::issueToFu()
         }
 
         vectorReadyQSeqs.erase(inst->seqNum);
-        vectorReadyQ.pop();
+        vectorDelayedReadyQ.pop();
+
+        if (!checkScoreboard(inst)) {
+            continue;
+        }
 
         if (inst->isLoad()) {
             issuedLoad++;
@@ -549,6 +581,8 @@ IssueQue::idle()
         }
     }
     idle |= replayQ.size() > 0;
+    idle |= vectorReadyQ.size() > 0;
+    idle |= vectorDelayedReadyQ.size() > 0;
     return idle;
 }
 
@@ -627,11 +661,19 @@ IssueQue::addIfReady(const DynInstPtr& inst)
         if (!inst->inReadyQ()) {
             if (inst->isVector() && !inst->isSquashed() && inst->isMemRef()) {
                 if (vectorReadyQSeqs.insert(inst->seqNum).second) {
+                    assert(cpu);
+                    const Tick releaseTick = cpu->clockEdge(Cycles(3));
+                    const bool needSchedule = vectorReadyQ.empty();
                     vectorReadyQ.push(inst);
-                    DPRINTF(Schedule, "[sn:%llu] add to vectorReadyQ\n", inst->seqNum);
+                    vectorReadyQReleaseTicks.push(releaseTick);
+                    DPRINTF(Schedule,
+                            "[sn:%llu] add to vectorReadyQ, release at %llu\n",
+                            inst->seqNum, releaseTick);
+                    if (needSchedule && !vectorReadyQEvent.scheduled()) {
+                        cpu->schedule(vectorReadyQEvent, releaseTick);
+                    }
                 }
-            }
-            else{
+            } else {
                 READYQ_PUSH(inst);
             }
         }
@@ -858,9 +900,9 @@ IssueQue::insertNonSpec(const DynInstPtr& inst)
 DynInstPtr
 IssueQue::popReadyVectorInst()
 {
-    while (!vectorReadyQ.empty()) {
-        auto inst = vectorReadyQ.front();
-        vectorReadyQ.pop();
+    while (!vectorDelayedReadyQ.empty()) {
+        auto inst = vectorDelayedReadyQ.front();
+        vectorDelayedReadyQ.pop();
 
         if (!inst) {
             continue;
