@@ -53,7 +53,7 @@ class HistoryManager
         {
         }
       Addr pc;           ///< Program counter of the branch
-      Addr shamt;        ///< Shift amount for history update
+      int shamt;         ///< Shift amount for history update
       bool cond_taken;   ///< Whether conditional branch was taken
       bool is_call;      ///< Whether branch is a call instruction
       bool is_return;    ///< Whether branch is a return instruction
@@ -264,11 +264,11 @@ class HistoryManager
     void printEntry(const char* when, const HistoryEntry& entry)
     {
         DPRINTF(DecoupleBPVerbose,
-                "%s stream: %lu, pc %#lx, shamt %ld, cond_taken %d, "
+                "%s stream: %lu, pc %#lx, shamt %d, cond_taken %d, "
                 "is_call %d, is_ret %d, retAddr %#lx\n",
                 when, entry.streamId, entry.pc, entry.shamt, entry.cond_taken,
                 entry.is_call, entry.is_return, entry.retAddr);
-    }
+
 };
 
 } // namespace btb_pred
