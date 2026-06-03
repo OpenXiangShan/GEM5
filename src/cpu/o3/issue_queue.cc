@@ -932,6 +932,7 @@ IssueQue::doCommit(const InstSeqNum seqNum, ThreadID tid)
         } else {
             ++it;
         }
+    }
     // while (!instList.empty() && instList.front()->seqNum <= seqNum) {
     //     assert(instList.front()->isIssued());
     //     vectorReadyQSeqs.erase(instList.front()->seqNum);
