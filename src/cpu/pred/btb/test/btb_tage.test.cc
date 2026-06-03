@@ -284,7 +284,7 @@ TEST(FetchTargetHistoryUpdateTest, SquashUpdateSeparatesDirectionAndPath)
         FetchTarget stream;
         stream.startPC = 0x1000;
         stream.prediction.btbEntries = c.predictedBeforeSquash;
-        stream.exeBranchInfo = c.resolvedEntry;
+        stream.exeBranchInfo = c.resolvedEntry.slot;
         stream.exeTaken = c.actualTaken;
         stream.resolved = true;
         stream.squashPC = c.squashPC;

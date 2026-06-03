@@ -53,7 +53,7 @@ makeBranchInfo(Addr pc, Addr target, bool is_cond)
     BranchInfo info;
     info.pc = pc;
     info.target = target;
-    info.isCond = is_cond;
+    info.setTypeFromFlags(is_cond, false, !is_cond, false, false);
     info.size = 4;
     return info;
 }
