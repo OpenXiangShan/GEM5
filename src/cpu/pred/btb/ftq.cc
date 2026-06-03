@@ -49,7 +49,19 @@ FetchTargetQueue::commitTarget(ThreadID tid)
 void
 FetchTargetQueue::squashAfter(FetchTargetId squashId, ThreadID tid)
 {
+    squashAfter(squashId, tid, {});
+}
+
+void
+FetchTargetQueue::squashAfter(
+    FetchTargetId squashId,
+    ThreadID tid,
+    const std::function<void(FetchTargetId, const FetchTarget&)> &onSquash)
+{
     while (!empty(tid) && backId(tid) > squashId) {
+        if (onSquash) {
+            onSquash(backId(tid), back(tid));
+        }
         queue[tid].cap.pop_back();
     }
     queue[tid].fetchptr = squashId + 1;
@@ -58,12 +70,25 @@ FetchTargetQueue::squashAfter(FetchTargetId squashId, ThreadID tid)
 void
 FetchTargetQueue::clear(ThreadID tid)
 {
+    clear(tid, {});
+}
+
+void
+FetchTargetQueue::clear(
+    ThreadID tid,
+    const std::function<void(FetchTargetId, const FetchTarget&)> &onClear)
+{
     const FetchTargetId nextTargetId = std::max(
         queue[tid].fetchptr,
         queue[tid].baseTargetId +
             static_cast<FetchTargetId>(queue[tid].cap.size()));
 
-    queue[tid].cap.clear();
+    while (!queue[tid].cap.empty()) {
+        if (onClear) {
+            onClear(backId(tid), back(tid));
+        }
+        queue[tid].cap.pop_back();
+    }
     queue[tid].baseTargetId = nextTargetId;
     queue[tid].fetchptr = nextTargetId;
 }

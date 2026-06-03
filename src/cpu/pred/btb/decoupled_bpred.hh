@@ -1,11 +1,15 @@
 #ifndef __CPU_PRED_BTB_DECOUPLED_BPRED_HH__
 #define __CPU_PRED_BTB_DECOUPLED_BPRED_HH__
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <deque>
 #include <queue>
 #include <stack>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -98,6 +102,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool someDBenabled{false};
     bool enableBranchTrace{false};
     bool enablePredFSQTrace{false};
+    bool enableSelectiveOracleTrace{false};
 
     bool checkGivenSwitch(std::vector<std::string> switches, std::string switchName) {
         for (auto &sw : switches) {
@@ -114,6 +119,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     DataBase bpdb;
     TraceManager *bptrace;
     TraceManager *predTraceManager;  // Trace manager for prediction-time events
+    TraceManager *selectiveOracleTraceManager{};
 
     void initDB();
 
@@ -147,6 +153,94 @@ class DecoupledBPUWithBTB : public BPredUnit
     std::vector<HistoryManager> historyManagers;
     std::vector<unsigned> resolveDequeueFailCounters;
     const unsigned resolveBlockThreshold;
+
+    struct SelectiveOracleOutcome
+    {
+        ThreadID tid = 0;
+        uint64_t ftqId = 0;
+        Addr startPC = 0;
+        Addr branchPC = 0;
+        bool taken = false;
+        Addr target = 0;
+        Addr fallThrough = 0;
+        unsigned size = 0;
+    };
+
+    struct SelectiveOracleBlock
+    {
+        ThreadID tid = 0;
+        uint64_t recordFtqId = 0;
+        Addr startPC = 0;
+        Addr endPC = 0;
+        bool hasSelectedPC = false;
+        bool fallThroughToEnd = true;
+        std::vector<SelectiveOracleOutcome> outcomes;
+    };
+
+    struct SelectiveOracleRecordBuilder
+    {
+        SelectiveOracleBlock block;
+        Addr nextPC = 0;
+        Addr limitPC = 0;
+        bool complete = false;
+    };
+
+    bool selectiveOracleRecording{false};
+    bool selectiveOracleReplaying{false};
+    bool selectiveOraclePanicOnMismatch{false};
+    std::unordered_set<Addr> selectiveOracleBranchPCs;
+    std::array<std::unordered_set<Addr>, MaxThreads> selectiveOracleReplayStartPCs;
+    std::array<std::unordered_map<FetchTargetId, SelectiveOracleBlock>, MaxThreads>
+        selectiveOracleRecordBlocks;
+    std::array<std::deque<SelectiveOracleRecordBuilder>, MaxThreads>
+        selectiveOracleActiveRecordBuilders;
+    std::array<std::unordered_map<Addr, std::deque<SelectiveOracleBlock>>, MaxThreads>
+        selectiveOracleReplayBlocks;
+    std::array<std::unordered_map<FetchTargetId, std::vector<SelectiveOracleBlock>>, MaxThreads>
+        selectiveOracleConsumedBlocks;
+    uint64_t selectiveOracleReplayOutcomesLoadedCount{0};
+    uint64_t selectiveOracleReplayBlocksLoadedCount{0};
+    uint64_t selectiveOracleNextRecordBlockId{1};
+
+    void initSelectiveOracle(const Params &params);
+    void initSelectiveOracleTrace();
+    void loadSelectiveOracleReplayDB(const std::string &path);
+    void publishSelectiveOracleLoadedStat();
+    bool selectiveOracleEnabledForPC(Addr branchPC) const;
+    bool selectiveOracleReplayEnabledForStartPC(
+        ThreadID tid,
+        Addr startPC) const;
+    void recordSelectiveOracleOutcome(
+        uint64_t ftqId,
+        const FetchTarget &entry,
+        const DynInstPtr &inst,
+        bool taken,
+        Addr target,
+        Addr fallThrough);
+    Addr selectiveOracleBlockFallThrough(Addr startPC) const;
+    void appendSelectiveOracleRecordBlock(
+        SelectiveOracleRecordBuilder &builder,
+        const SelectiveOracleBlock &block);
+    void flushSelectiveOracleRecordBuilders();
+    void writeSelectiveOracleRecordBlock(
+        ThreadID tid,
+        FetchTargetId targetId,
+        const FetchTarget &target);
+    void writeSelectiveOracleRecordTrace(const SelectiveOracleBlock &block);
+    bool getSelectiveOracleBlock(
+        ThreadID tid,
+        Addr startPC,
+        SelectiveOracleBlock &block);
+    void restoreSelectiveOracleBlock(ThreadID tid, FetchTargetId targetId);
+    void commitSelectiveOracleBlock(ThreadID tid, FetchTargetId targetId);
+    void applySelectiveOracle(ThreadID tid, FetchTargetId targetId);
+    void setOracleCondTaken(
+        FullBTBPrediction &pred,
+        BTBEntry &entry,
+        const SelectiveOracleOutcome &outcome);
+    bool getCurrentCondTaken(
+        const FullBTBPrediction &pred,
+        Addr branchPC) const;
 
     bool sharedFTQMode() const;
     unsigned activeFTQThreads() const;
@@ -315,6 +409,20 @@ class DecoupledBPUWithBTB : public BPredUnit
         statistics::Scalar s3PredWrongTage;
         statistics::Scalar s3PredWrongIttage;
         statistics::Scalar s3PredWrongRas;
+
+        statistics::Scalar selectiveOracleRecordOutcomes;
+        statistics::Scalar selectiveOracleRecordBlocks;
+        statistics::Scalar selectiveOracleReplayBlocksLoaded;
+        statistics::Scalar selectiveOracleReplayBlocksConsumed;
+        statistics::Scalar selectiveOracleReplayBlocksRestored;
+        statistics::Scalar selectiveOracleReplayOutcomesLoaded;
+        statistics::Scalar selectiveOracleReplayAttempts;
+        statistics::Scalar selectiveOracleReplayApplied;
+        statistics::Scalar selectiveOracleReplayTaken;
+        statistics::Scalar selectiveOracleReplayNotTaken;
+        statistics::Scalar selectiveOracleReplayTraceMissing;
+        statistics::Scalar selectiveOracleReplaySkippedOutcomes;
+        statistics::Scalar selectiveOracleReplayNoEligibleBranch;
 
         DBPBTBStats(statistics::Group* parent, unsigned numStages, unsigned fsqSize, unsigned maxInstsNum);
     } dbpBtbStats;

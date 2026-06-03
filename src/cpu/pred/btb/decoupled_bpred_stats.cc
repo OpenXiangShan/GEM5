@@ -58,11 +58,19 @@ DecoupledBPUWithBTB::initDB()
         removeGivenSwitch(bpDBSwitches, std::string("predfsq"));
         someDBenabled = true;
     }
+
+    enableSelectiveOracleTrace =
+        checkGivenSwitch(bpDBSwitches, std::string("oracle"));
+    if (enableSelectiveOracleTrace) {
+        initSelectiveOracleTrace();
+    }
 }
 
 void
 DecoupledBPUWithBTB::dumpStats()
 {
+    publishSelectiveOracleLoadedStat();
+
     // Helper function: create output file and write header
     auto createOutputFile = [](const std::string& filename, const std::string& header) {
         auto handle = simout.create(filename, false, true);
@@ -464,7 +472,33 @@ DecoupledBPUWithBTB::DBPBTBStats::DBPBTBStats(
     ADD_STAT(s3PredWrongMbtb, statistics::units::Count::get(), "S3pred wrong blame mbtb "),
     ADD_STAT(s3PredWrongTage, statistics::units::Count::get(), "S3pred wrong blame tage "),
     ADD_STAT(s3PredWrongIttage, statistics::units::Count::get(), "S3pred wrong blame ittage "),
-    ADD_STAT(s3PredWrongRas, statistics::units::Count::get(), "S3pred wrong blame ras ")
+    ADD_STAT(s3PredWrongRas, statistics::units::Count::get(), "S3pred wrong blame ras "),
+    ADD_STAT(selectiveOracleRecordOutcomes, statistics::units::Count::get(),
+        "conditional branch outcomes recorded into selective oracle block trace"),
+    ADD_STAT(selectiveOracleRecordBlocks, statistics::units::Count::get(),
+        "fetch blocks recorded into selective oracle block trace"),
+    ADD_STAT(selectiveOracleReplayBlocksLoaded, statistics::units::Count::get(),
+        "fetch blocks loaded from selective oracle block trace"),
+    ADD_STAT(selectiveOracleReplayBlocksConsumed, statistics::units::Count::get(),
+        "fetch blocks consumed by selective oracle replay"),
+    ADD_STAT(selectiveOracleReplayBlocksRestored, statistics::units::Count::get(),
+        "fetch blocks restored to selective oracle replay after squash"),
+    ADD_STAT(selectiveOracleReplayOutcomesLoaded, statistics::units::Count::get(),
+        "conditional branch outcomes loaded from selective oracle block trace"),
+    ADD_STAT(selectiveOracleReplayAttempts, statistics::units::Count::get(),
+        "selected startPC prediction blocks probed by selective oracle replay"),
+    ADD_STAT(selectiveOracleReplayApplied, statistics::units::Count::get(),
+        "conditional branches overridden by selective oracle replay"),
+    ADD_STAT(selectiveOracleReplayTaken, statistics::units::Count::get(),
+        "selective oracle replay overrides to taken"),
+    ADD_STAT(selectiveOracleReplayNotTaken, statistics::units::Count::get(),
+        "selective oracle replay overrides to not taken"),
+    ADD_STAT(selectiveOracleReplayTraceMissing, statistics::units::Count::get(),
+        "selective oracle replay attempts with no remaining trace outcome"),
+    ADD_STAT(selectiveOracleReplaySkippedOutcomes, statistics::units::Count::get(),
+        "selective oracle replay blocks or branch outcomes skipped to recover alignment"),
+    ADD_STAT(selectiveOracleReplayNoEligibleBranch, statistics::units::Count::get(),
+        "prediction blocks whose startPC is not selected for selective oracle replay")
 
 {
     predsOfEachStage.init(numStages);
@@ -813,6 +847,8 @@ DecoupledBPUWithBTB::commitBranch(const DynInstPtr &inst, bool mispred)
     Addr fallThruPC = rv_pc.getFallThruPC();
     BranchInfo info(branchAddr, targetAddr, inst->staticInst, fallThruPC-branchAddr);
     bool taken = rv_pc.branching() || inst->isUncondCtrl();
+    recordSelectiveOracleOutcome(
+        inst->ftqId, entry, inst, taken, targetAddr, fallThruPC);
 
     // ---------- Process misprediction and update statistics ----------
     processMisprediction(entry, branchAddr, info, taken, mispred);
