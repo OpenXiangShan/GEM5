@@ -665,6 +665,26 @@ class BaseCache : public ClockedObject, public CacheAccessor
 
     virtual void sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt) = 0;
 
+    struct PendingDcacheMainPipeMSHRRelease
+    {
+        MSHR *mshr;
+        PacketPtr pkt;
+        CacheBlk *blk;
+        PacketList writebacks;
+
+        PendingDcacheMainPipeMSHRRelease(
+            MSHR *mshr, PacketPtr pkt, CacheBlk *blk,
+            PacketList &&writebacks);
+    };
+
+    void finishMSHRRelease(MSHR *mshr, PacketPtr pkt, CacheBlk *blk,
+                           PacketList &writebacks,
+                           bool service_targets = false);
+    void scheduleDcacheMainPipeMSHRRelease(
+        PendingDcacheMainPipeMSHRRelease *pending, Tick tick);
+    void processDcacheMainPipeMSHRRelease(
+        PendingDcacheMainPipeMSHRRelease *pending);
+
     /**
      * Handles a response (cache line fill/write ack) from the bus.
      * @param pkt The response packet
