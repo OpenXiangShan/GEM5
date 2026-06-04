@@ -127,6 +127,19 @@ class MSHRQueue : public Queue<MSHR>
         return numEntries;
     }
 
+    bool isFullWithExtraAllocated(int extra) const
+    {
+        return allocated + extra >= numEntries - numReserve;
+    }
+
+    bool canPrefetchWithExtraAllocated(int extra) const
+    {
+        // @todo we may want to revisit the +1, currently added to
+        // keep regressions unchanged
+        return allocated + extra < numEntries -
+            (numReserve + 1 + demandReserve);
+    }
+
     /**
      * Moves the MSHR to the front of the pending list if it is not
      * in service.
@@ -180,9 +193,7 @@ class MSHRQueue : public Queue<MSHR>
      */
     bool canPrefetch() const
     {
-        // @todo we may want to revisit the +1, currently added to
-        // keep regressions unchanged
-        return (allocated < numEntries - (numReserve + 1 + demandReserve));
+        return canPrefetchWithExtraAllocated(0);
     }
 };
 

@@ -47,7 +47,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <utility>
 
 #include "base/compiler.hh"
 #include "base/logging.hh"
@@ -889,83 +888,51 @@ BaseCache::handleUncacheableWriteResp(PacketPtr pkt)
     cpuSidePort.schedTimingResp(pkt, completion_time);
 }
 
-BaseCache::PendingDcacheMainPipeMSHRRelease::
-PendingDcacheMainPipeMSHRRelease(
-    MSHR *mshr, PacketPtr pkt, CacheBlk *blk, PacketList &&writebacks)
-    : mshr(mshr), pkt(pkt), blk(blk), writebacks(std::move(writebacks))
+bool
+BaseCache::dcacheMainPipeEffectiveMSHRFull() const
 {
+    return mshrQueue.isFullWithExtraAllocated(dcacheMainPipeHeldMSHRCredits);
+}
+
+bool
+BaseCache::dcacheMainPipeCanPrefetch() const
+{
+    return mshrQueue.canPrefetchWithExtraAllocated(
+        dcacheMainPipeHeldMSHRCredits);
 }
 
 void
-BaseCache::finishMSHRRelease(MSHR *mshr, PacketPtr pkt, CacheBlk *blk,
-                             PacketList &writebacks, bool service_targets)
+BaseCache::holdDcacheMainPipeMSHRCredit()
 {
-    if (service_targets && mshr->hasTargets()) {
-        serviceMSHRTargets(mshr, pkt, blk);
-    }
-
-    // We are stopping servicing targets early for the Locked RMW Read until
-    // the write comes.
-    if (!mshr->hasLockedRMWReadTarget()) {
-        if (mshr->promoteDeferredTargets()) {
-            // avoid later read getting stale data while write miss is
-            // outstanding.. see comment in timingAccess()
-            if (blk) {
-                blk->clearCoherenceBits(CacheBlk::ReadableBit);
-            }
-            mshrQueue.markPending(mshr);
-            schedMemSideSendEvent(clockEdge() + pkt->payloadDelay);
-        } else {
-            // while we deallocate an mshr from the queue we still have to
-            // check the isFull condition before and after as we might
-            // have been using the reserved entries already
-            const bool was_full = mshrQueue.isFull();
-            mshrQueue.deallocate(mshr);
-            if (was_full && !mshrQueue.isFull()) {
-                clearBlocked(Blocked_NoMSHRs);
-            }
-
-            // Request the bus for a prefetch if this deallocation freed enough
-            // MSHRs for a prefetch to take place
-            if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
-                Tick next_pf_time = std::max(nextPrefetchReadyTime(),
-                                             clockEdge());
-                if (next_pf_time != MaxTick)
-                    schedMemSideSendEvent(next_pf_time);
-            }
-        }
-
-        // if we used temp block, check to see if its valid and then clear it
-        if (blk == tempBlock && tempBlock->isValid()) {
-            evictBlock(blk, writebacks);
-        }
-    }
-
-    const Tick forward_time = clockEdge(forwardLatency) + pkt->headerDelay;
-    // copy writebacks to write buffer
-    doWritebacks(writebacks, forward_time);
-
-    DPRINTF(CacheVerbose, "%s: Leaving with %s\n", __func__, pkt->print());
-    delete pkt;
+    ++dcacheMainPipeHeldMSHRCredits;
 }
 
 void
-BaseCache::scheduleDcacheMainPipeMSHRRelease(
-    PendingDcacheMainPipeMSHRRelease *pending, Tick tick)
+BaseCache::scheduleDcacheMainPipeMSHRCreditRelease(Tick tick)
 {
     Event *event = new EventFunctionWrapper(
-        [this, pending] { processDcacheMainPipeMSHRRelease(pending); },
-        name() + ".dcache_mainpipe_mshr_release", true);
+        [this] { releaseDcacheMainPipeMSHRCredit(); },
+        name() + ".dcache_mainpipe_mshr_credit_release", true);
     schedule(event, std::max(tick, curTick()));
 }
 
 void
-BaseCache::processDcacheMainPipeMSHRRelease(
-    PendingDcacheMainPipeMSHRRelease *pending)
+BaseCache::releaseDcacheMainPipeMSHRCredit()
 {
-    finishMSHRRelease(pending->mshr, pending->pkt, pending->blk,
-                      pending->writebacks, true);
-    delete pending;
+    const bool was_full = dcacheMainPipeEffectiveMSHRFull();
+    assert(dcacheMainPipeHeldMSHRCredits > 0);
+    --dcacheMainPipeHeldMSHRCredits;
+
+    if (was_full && !dcacheMainPipeEffectiveMSHRFull()) {
+        clearBlocked(Blocked_NoMSHRs);
+    }
+
+    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+        Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
+        if (next_pf_time != MaxTick) {
+            schedMemSideSendEvent(next_pf_time);
+        }
+    }
 }
 
 void
@@ -1083,22 +1050,76 @@ BaseCache::recvTimingResp(PacketPtr pkt)
 
     serviceMSHRTargets(mshr, pkt, blk);
 
-    if (dcache_refill_lsq) {
-        if (!mshr->hasLockedRMWReadTarget()) {
-            auto *pending = new PendingDcacheMainPipeMSHRRelease(
-                mshr, pkt, blk, std::move(writebacks));
-            dcache_refill_lsq->notifyDcacheRefill(
-                dcache_refill_addr, true,
-                [this, pending](Tick tick) {
-                    scheduleDcacheMainPipeMSHRRelease(pending, tick);
-                });
+    bool dcache_refill_notified = false;
+    auto notify_dcache_refill = [&](bool hold_mshr_credit) {
+        if (!dcache_refill_lsq) {
             return;
         }
 
-        dcache_refill_lsq->notifyDcacheRefill(dcache_refill_addr);
+        dcache_refill_notified = true;
+        if (hold_mshr_credit) {
+            holdDcacheMainPipeMSHRCredit();
+            dcache_refill_lsq->notifyDcacheRefill(
+                dcache_refill_addr, true,
+                [this](Tick tick) {
+                    scheduleDcacheMainPipeMSHRCreditRelease(tick);
+                });
+        } else {
+            dcache_refill_lsq->notifyDcacheRefill(dcache_refill_addr);
+        }
+    };
+
+    // We are stopping servicing targets early for the Locked RMW Read until
+    // the write comes.
+    if (!mshr->hasLockedRMWReadTarget()) {
+        if (mshr->promoteDeferredTargets()) {
+            // avoid later read getting stale data while write miss is
+            // outstanding.. see comment in timingAccess()
+            if (blk) {
+                blk->clearCoherenceBits(CacheBlk::ReadableBit);
+            }
+            mshrQueue.markPending(mshr);
+            schedMemSideSendEvent(clockEdge() + pkt->payloadDelay);
+            notify_dcache_refill(false);
+        } else {
+            // Keep classic-cache release functional, but hold an extra MSHR
+            // credit until the refill leaves the fake mainpipe.
+            notify_dcache_refill(true);
+
+            // while we deallocate an mshr from the queue we still have to
+            // check the isFull condition before and after as we might
+            // have been using the reserved entries already
+            const bool was_full = dcacheMainPipeEffectiveMSHRFull();
+            mshrQueue.deallocate(mshr);
+            if (was_full && !dcacheMainPipeEffectiveMSHRFull()) {
+                clearBlocked(Blocked_NoMSHRs);
+            }
+
+            // Request the bus for a prefetch if this deallocation freed enough
+            // MSHRs for a prefetch to take place
+            if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
+                Tick next_pf_time = std::max(nextPrefetchReadyTime(), clockEdge());
+                if (next_pf_time != MaxTick)
+                    schedMemSideSendEvent(next_pf_time);
+            }
+        }
+
+        // if we used temp block, check to see if its valid and then clear it
+        if (blk == tempBlock && tempBlock->isValid()) {
+            evictBlock(blk, writebacks);
+        }
     }
 
-    finishMSHRRelease(mshr, pkt, blk, writebacks);
+    if (!dcache_refill_notified) {
+        notify_dcache_refill(false);
+    }
+
+    const Tick forward_time = clockEdge(forwardLatency) + pkt->headerDelay;
+    // copy writebacks to write buffer
+    doWritebacks(writebacks, forward_time);
+
+    DPRINTF(CacheVerbose, "%s: Leaving with %s\n", __func__, pkt->print());
+    delete pkt;
 }
 
 void
@@ -1414,7 +1435,7 @@ BaseCache::getNextQueueEntry()
 
     // fall through... no pending requests.  Try a prefetch.
     assert(!miss_mshr && !wq_entry);
-    if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
+    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
         // If we have a miss queue slot, we can try a prefetch
         bool has_pending_pkt = prefetcher->hasPendingPacket();
         PacketPtr pkt = nullptr;
@@ -1477,7 +1498,7 @@ BaseCache::getNextQueueEntry()
         }
     }
 
-    if (prefetcher && (!mshrQueue.canPrefetch() || isBlocked()) &&
+    if (prefetcher && (!dcacheMainPipeCanPrefetch() || isBlocked()) &&
         prefetcher->hasHintDownStream() && Prefetch_CanOffload) {
         DPRINTF(HWPrefetch, "Offloading prefetch to downstream cache\n");
         prefetcher->offloadToDownStream();
@@ -2533,7 +2554,7 @@ BaseCache::nextQueueReadyTime() const
 
     // Don't signal prefetch ready time if no MSHRs available
     // Will signal once enoguh MSHRs are deallocated
-    if (prefetcher && mshrQueue.canPrefetch() && !isBlocked()) {
+    if (prefetcher && dcacheMainPipeCanPrefetch() && !isBlocked()) {
         nextReady = std::min(nextReady, nextPrefetchReadyTime());
     }
 
