@@ -54,6 +54,15 @@ class MatrixBackend
     virtual bool hasCompletion() const = 0;
     virtual CuteCompletion popCompletion() = 0;
     virtual bool hasArchitecturalState() const { return false; }
+    virtual bool completeTimingMemoryResponse(
+        uint32_t source_id, const uint8_t *data = nullptr,
+        uint32_t size = 0)
+    {
+        (void)source_id;
+        (void)data;
+        (void)size;
+        return false;
+    }
 };
 
 // Decoded FIFO normalizes request fields for issue gating and tracing.

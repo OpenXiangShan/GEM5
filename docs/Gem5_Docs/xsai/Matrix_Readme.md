@@ -43,9 +43,9 @@
 backend 的边界如下：
 
 - RTL 侧对应口径：抽象建模 AML/BML/CML、ADC/BDC/MTE/CDC、matrix regfile、LocalMMU 和 register-bank resource。
-- gem5 侧对应口径：它是 O3 commit 后的 matrix backend，不参与 ISA decode，也不替代 cache / TLB / memory hierarchy 的真实 timing。
-- 数据口径：load/store 的数据内容通过 functional access 保证 SE workload 能闭环。
-- timing 口径：LocalMMU、backend register-bank 仲裁、MatrixTE 表达当前阶段的固定延迟、bank conflict、读写拍数和 completion 边界。
+- gem5 侧对应口径：它是 O3 commit 后的 matrix backend，不参与 ISA decode。matrix memory 通过 O3 暴露的 `matrix_mem_port` 作为普通 gem5 `RequestPort` 接入当前 cache hierarchy；这不是 RTL 专用 matrix L2 / TL 通道。
+- 数据口径：timing-connected path 中，load 数据来自 cache `ReadResp` payload，store 数据来自 C register snapshot 打包后的 64B cache-line payload 和 byte enable；不再依赖 cache ack 之后的 `loadTile()` / `storeTile()` functional 搬运来完成 O3 连接路径。
+- timing 口径：LocalMMU 仍表达 AML/BML/CML queue、source ID、beat issue 和 backend-visible completion 边界；`matrix_mem_port` 负责把 beat 变成真实 gem5 timing `Packet` 并处理 response / retry；backend register-bank 仲裁和 MatrixTE 继续表达 bank conflict、读写拍数和 completion 边界。
 
 backend 的基本工作方式是：
 
@@ -61,19 +61,29 @@ backend 的基本工作方式是：
 
 ### Matrix Load / Store 原理
 
-matrix load/store 目前是“timing model + functional data movement”的混合模型。LocalMMU 只表达 load/store beat 的 fixed-latency timing；真实数据读写由 `Gem5MatrixMemoryAdapter` 经由 `readMatrixElem<T>()` / `writeMatrixElem<T>()` 完成。这两个 helper 使用 `AmuLsuDesc::tc` 创建 `SETranslatingPortProxy` 或 `TranslatingPortProxy`，对 guest VA 做 functional access。也就是说，当前模型能让 SE GEMM 读写正确数据，但还没有把 matrix LSU 接到真实 L2 / TL / cache miss timing。
+matrix load/store 现在有 timing-connected 路径。backend 仍先用 `LocalMMUModel` 表达 AML/BML/CML queue、source ID、beat issue 和 backend completion 边界；当 `matrix_mem_port` 已连接时，LocalMMU issue 出来的 beat 会被转换成 `MatrixTimingMemoryAdapter::Request`，再由 O3 的 `MatrixMemPort` 发送普通 gem5 timing `Packet`。因此这条路径会经过当前配置下的 cache hierarchy、request retry 和 `recvTimingResp`，但它不是 RTL 专用 matrix L2 / TL path，也没有在 matrix backend 内部实现 cache tag、MSHR、replacement 或 coherence 策略。
+
+地址和数据规划由 `MemoryLoader.hh` 完成：
+
+1. `TimingLoadPlan` 根据 tile shape、stride、transpose 和 element size，把 matrix load 覆盖的 guest address 拆成 64B cache-line beats；有 `ThreadContext` 时先做 functional translation，beat 内记录 line offset 到 tensor byte offset 的映射。
+2. `TimingStorePlan` 先读取 C register snapshot，再把需要写回的元素打包到 64B `lineData`，同时生成 `byteMask` 和 `byteEnable`，用于 partial-line store。
 
 load 路径大致是：
 
 1. `MatrixAmuBuffer` 将 committed load request 送入 backend。
-2. backend 根据 tile shape 计算 payload size，并拆成 64B LocalMMU beats。
-3. `LocalMMUModel` 每 cycle 最多 issue 一个 beat，并在固定延迟后返回 read response。
-4. read response 表示数据 beat 在 timing model 中已回来；所有 read response 到齐后，functional memory adapter 才通过 `loadTile()` / `readMatrixElem<T>()` 按元素读出完整 tile payload。
-5. 每个 64B response 转成两个 32B MatrixReg write chunk，仅用于 loader write timing/resource 仲裁计数。
-6. backend register-bank 仲裁处理 loader write 和 compute read/write 的 bank conflict。
-7. 所有 response 和 MatrixReg write chunk 完成后，load completion。
+2. backend 建立 `TimingLoadPlan`，把每个 cache-line beat enqueue 到 `LocalMMUModel`。
+3. `LocalMMUModel` 选出 source ID 和 beat 后，backend 附上 physical line address / packet size，经 `matrix_mem_port` 发送 `ReadReq`。
+4. cache `ReadResp` 回来后，backend 按 source ID 完成 LocalMMU response，并把 response payload scatter 到 task-local tensor byte buffer。
+5. 如果 `ReadResp` 数据大小、beat index 或 tensor byte mapping 不匹配，当前 task 进入 `Unsupported`；timing-connected path 不再在 response 到齐后回退到 `loadTile()` functional 读取。
+6. load payload 完整后，backend 再按 32B MatrixReg loader write chunk 走 register-bank 仲裁；所有 cache response 和 MatrixReg write chunk 完成后才产生 load completion。
 
-store 路径相反：backend 先从 C register 做 snapshot，再拆成 64B LocalMMU store beats；所有 store ack 到齐后，functional memory adapter 再通过 `storeTile()` / `writeMatrixElem<T>()` 写完整 tile payload。这里的 64B beat、store ack 和 32B chunk 主要驱动 timing/resource 状态，不表示 architectural MRegFile 已经按每个 beat 做真实数据搬运，也不表示 store 数据逐 beat 写入 architectural memory。release 会等待 pending store 清空，避免 store 还没 ack 就释放 token。
+store 路径大致是：
+
+1. backend 先从 C register 读取 snapshot，建立 `TimingStorePlan`，每个 64B beat 携带写入数据、byte mask 和 byte enable。
+2. `LocalMMUModel` issue store beat 后，`MatrixMemPort` 先发送带 `PHYSICAL | CLEAN | INVALIDATE | DST_POU` flag 的维护请求，让当前 cache hierarchy 处理目标 line 的 dirty / ownership 状态。
+3. 维护请求响应返回后，`MatrixMemPort` 再发送真正带数据和 byte enable 的 `WriteReq`。
+4. `WriteReq` 响应返回后，backend 才把对应 source ID 记为 store ack 并释放；store completion 和 release 都会等待 pending store ack 清空。
+5. store 数据不再通过 ack 之后的 `storeTile()` functional 写内存。最终写入何时命中、miss、进入 MSHR 或写回下层，由当前 gem5 cache hierarchy 决定；matrix backend 只维护 backend-visible 的 beat/source/completion 状态。
 
 ### MTE / MMA 原理
 
@@ -103,7 +113,8 @@ MTE / MMA path 是 CUTE compute 的分段抽象模型。ADC / BDC / CDC 被显�
   - 定义 backend 抽象接口、decoded FIFO entry、task accept、dependency check、backend task life-cycle 和 trace。
 - `MemoryLoader.hh` / `MemoryLoader.cc`
   - 定义 backend memory adapter。
-  - `Gem5MatrixMemoryAdapter` 当前通过 `AmuLsuDesc::tc` 创建 SE / FS translating proxy 做 functional VA read/write，用于 SE 路径闭环。
+  - 定义 `TimingLoadPlan` / `TimingStorePlan`，把 matrix tile memory footprint 拆成 cache-line timing requests。
+  - `Gem5MatrixMemoryAdapter` 仍保留 functional adapter 接口，主要用于非 timing-connected 的隔离路径；O3 连接路径的数据闭环应通过 `matrix_mem_port` timing response / write ack 完成。
 - `Scoreboard.hh` / `Scoreboard.cc`
   - 跟踪 matrix A/B/C register hazard 和 task 依赖。
 - `MatrixTE.hh` / `MatrixTE.cc`
@@ -123,7 +134,8 @@ MTE / MMA path 是 CUTE compute 的分段抽象模型。ADC / BDC / CDC 被显�
   - AML/BML/CML per-client request queue。
   - client round-robin issue。
   - 64 个 source ID / max outstanding。
-  - fixed latency read response / store ack。
+  - standalone mode 可以用 fixed latency 产生 read response / store ack。
+  - timing-memory mode 下 source ID 会交给外部 `matrix_mem_port`，等待真实 timing response 后再完成。
 
 本 PR 的 `src/matrix/SConscript` 只注册当前 backend 生产文件；register-bank 仲裁逻辑保留在 `CUTETOP.hh` / `CUTETOP.cc`，matrix architectural state / whole-tensor functional storage 放在 `MRegFile.hh` / `MRegFile.cc`，不注册 `GTest` 或 `*.test.cc` target。当前 register-bank 仲裁是独立 timing/resource helper，不表示 `MRegFile` 已经实现 RTL 的物理 8-bank / 32B-entry SRAM 存储。
 
@@ -135,8 +147,13 @@ MTE / MMA path 是 CUTE compute 的分段抽象模型。ADC / BDC / CDC 被显�
   - 64 outstanding source ID 上限。
   - AML/BML/CML per-client queue。
   - client round-robin issue。
-  - fixed configurable latency。
-  - read response / store ack。
+  - standalone fixed configurable latency。
+  - timing-memory mode 的 external issue / response completion。
+- Matrix memory port：
+  - `matrix_mem_port` 是普通 gem5 cached `RequestPort`。
+  - load beat 发 `ReadReq`，从 `ReadResp` payload 拼回 matrix tensor。
+  - store beat 先发 `CleanInvalidReq` 风格的 PoU 维护请求，再发携带 data / byte enable 的 `WriteReq`。
+  - request 被下游拒绝时进入 blocked queue，并通过 `recvReqRetry()` 重发。
 - Register-bank 仲裁：
   - 8 bank。
   - 32B entry。
@@ -158,18 +175,20 @@ MTE / MMA path 是 CUTE compute 的分段抽象模型。ADC / BDC / CDC 被显�
 
 这些不是本 PR 已解决内容，需要在 review 时明确边界：
 
-- LocalMMU 还没有接真实 L2 / TL / LLC：
-  - 没有 `RequestPort` / `Packet` / `recvTimingResp` / retry。
-  - 没有 cache tag、hit/miss、MSHR、coherence、replacement。
-  - 当前通过 fixed latency 表达“选中且无 miss”的理想路径。
+- Matrix memory path 已接入 gem5 timing port，但还不是 RTL 专用 matrix L2 / TL：
+  - `matrix_mem_port` 通过普通 gem5 `RequestPort` 进入当前 cache hierarchy，能覆盖 `Packet`、`recvTimingResp` 和 request retry。
+  - cache tag、hit/miss、MSHR、coherence、replacement 由通用 gem5 cache 配置决定，不是 matrix backend 内部的 RTL 对齐资源模型。
+  - 尚未建模 CUTE / matrix 专用 TL source、L2 bank、专用 MSHR、source/channel 仲裁和 RTL matrix L2 refill protocol。
+- Store 维护请求是当前 gem5 cache 集成策略：
+  - store beat 先发 `CLEAN | INVALIDATE | DST_POU` 维护请求，再发 data-carrying `WriteReq`，用于处理当前 cache model 下 dirty line / partial-line write 的正确性边界。
+  - 这不是已经校准过的 RTL matrix store protocol。
 - LocalMMU 没有完整 ready/backpressure：
-  - response 被取走时就释放 source ID。
-  - 没有建模 response ready 为 false 时 source ID 被占住。
-  - 没有建模 TL/LLC 反压导致的 Decoupled bubble。
+  - `matrix_mem_port` 已覆盖 request-side retry；但是 LocalMMU response ready 为 false、fill buffer full、per-bank fill FIFO full 等 source-held backpressure 还没有按 RTL 完整建模。
+  - 还没有建模 TL/LLC 反压导致的所有 Decoupled bubble。
 - Source ID 复用目前是空闲 ID 分配，不是严格 RTL source ID round-robin reuse。
 - LSU fill table 未建模：
-  - 当前 read response 直接转成 pending MatrixReg write chunk。
-  - 没有 bounded fill table，也没有 fill table full 后对 LocalMMU response 施加 backpressure。
+  - 当前目标提交范围中，read response 仍直接转成 pending MatrixReg write chunk。
+  - 没有 RTL 等价的 bounded M1 fill table，也没有 fill table full 后对 LocalMMU response 施加完整 backpressure。
 - Register-bank 仲裁是抽象 bank/resource 模型：
   - 建模 8 bank、32B entry、A/B priority、C odd/even conflict。
   - 该仲裁模型不等于 `MRegFile` 的物理存储布局；`MRegFile` 仍是 logical A/B/C register 的 whole-tensor functional storage。
@@ -193,24 +212,30 @@ MTE / MMA path 是 CUTE compute 的分段抽象模型。ADC / BDC / CDC 被显�
 已通过 build：
 
 ```bash
-scons build/RISCV/gem5.opt --linker=gold -j64 --rvv-impl=simple
+scons -Q build/RISCV/gem5.opt -j8
 ```
 
 结果：PASS。
 
-已通过 SE GEMM smoke。该命令显式打开 `--matrix-kmhv3-scheduler`，用于覆盖 SE 模式下的 matrix IQ/FU 调度；不带该开关时 `configs/example/se.py` 仍使用默认 scheduler。
+已通过 SE GEMM smoke。该命令覆盖 timing-connected load/store、`matrix_mem_port`、store `CleanInvalidReq` + `WriteReq` 路径和 backend release/store drain 边界。
 
 ```bash
-build/RISCV/gem5.opt \
-  --outdir=/tmp/gem5-se-gemm-precomp-matrix-kmhv3-scheduler \
+./build/RISCV/gem5.opt \
+  --outdir=/tmp/gem5-matrix-true-store-gemm \
+  --debug-flags=MatrixCuteTrace \
+  --debug-file=matrix_cute_trace.log \
   configs/example/se.py \
-  -c /nfs/home/hujun/workspace/xsai/xsai-env/firmware/riscv-rootfs/apps/gemm_precomp/build/gemm_precomp \
-  --enable-riscv-vector \
+  --cpu-type=DerivO3CPU \
+  --caches \
+  --l2cache \
   --no-pf \
-  --matrix-kmhv3-scheduler
+  -c /nfs/home/hujun/workspace/xsai/xsai-env/firmware/riscv-rootfs/apps/gemm_precomp/build/gemm_precomp \
+  --enable-riscv-vector
 ```
 
-结果：`All 8 precomp tests PASSED.`
+结果：`All 8 precomp tests PASSED. Exiting @ tick 422448129 because m5_exit instruction encountered`
+
+本地还额外跑过 focused matrix unit tests 和 `git diff --check`，但 `*.test.cc` 文件当前不作为提交范围。
 
 可选补充 trace run：
 
@@ -220,10 +245,12 @@ build/RISCV/gem5.opt \
   --debug-file=matrix_cute.trace \
   --outdir=/tmp/gem5-se-gemm-matrix-trace \
   configs/example/se.py \
-  -c /nfs/home/hujun/workspace/xsai/xsai-env/firmware/riscv-rootfs/apps/gemm_precomp/build/gemm_precomp \
-  --enable-riscv-vector \
+  --cpu-type=DerivO3CPU \
+  --caches \
+  --l2cache \
   --no-pf \
-  --matrix-kmhv3-scheduler
+  -c /nfs/home/hujun/workspace/xsai/xsai-env/firmware/riscv-rootfs/apps/gemm_precomp/build/gemm_precomp \
+  --enable-riscv-vector
 ```
 
 ## PR review 重点
@@ -238,9 +265,11 @@ build/RISCV/gem5.opt \
   - `MatrixAmuBuffer` 在 writeback/commit 后送 request、backend completion 后释放 token / owner 的顺序是否保持 commit、squash、drain 语义。
 - Matrix memory path：
   - `MlsUnit` 的虚拟队列和 replay 状态是否覆盖 TLB not-ready、fault、retry 这类 matrix load/store 前端条件。
-  - 当前 `Gem5MatrixMemoryAdapter` 通过 `readMatrixElem<T>()` / `writeMatrixElem<T>()` 做 functional memory access，只保证数据闭环；不要把它当作真实 L2 / TL timing。
+  - `matrix_mem_port` 的普通 gem5 `RequestPort` 连接、`ReadReq` / `WriteReq` packet、request retry 和 `recvTimingResp` source ID completion 是否符合 O3/backend 边界。
+  - store 的 PoU clean+invalidate 维护请求加 data-carrying `WriteReq` 是否是当前 gem5 cache 集成下可接受的 partial-line store 策略。
+  - 不要把普通 `matrix_mem_port` 描述成 RTL 专用 matrix L2 / TL path；matrix 专用 source/channel/MSHR/fill protocol 仍是后续工作。
 - Backend timing/resource abstraction：
-  - `LocalMMUModel` 的 64B beat、fixed latency、source ID 和 AML/BML/CML round-robin 是否适合作为当前阶段抽象。
+  - `LocalMMUModel` 的 64B beat、source ID、AML/BML/CML round-robin 和 timing-memory external completion 是否适合作为当前阶段抽象。
   - backend register-bank 仲裁的 A/B loader write priority、C odd/even read/write conflict 是否符合 RTL 抽象口径。
   - MTE / CDC 的 accepted input beats、CDC writeback beats、C bank arbitration 是否覆盖当前 GEMM 主路径需要观察的 timing 边界。
 - Release / drain：
@@ -249,9 +278,9 @@ build/RISCV/gem5.opt \
 
 ## 后续建议
 
-1. 接真实 L2/TL timing port，替换 fixed-latency LocalMMU response。
-2. 增加 LocalMMU response ready/backpressure，source ID 在 response 未被消费前不释放。
-3. 增加 LSU fill table / per-bank fill FIFO 的容量和反压模型。
+1. 将普通 `matrix_mem_port` 进一步对齐到 RTL 专用 matrix L2 / TL path，包括 dedicated source/channel、L2 bank/MSHR/fill protocol。
+2. 增加 LocalMMU response ready/backpressure，source ID 在 response 未被完整消费前不释放。
+3. 增加 RTL 等价的 LSU / M1 fill table、per-bank fill FIFO 容量和反压模型。
 4. 用 trace / stats 校准各级 queue / buffer 容量是否合理：
    - 重点看 `MatrixAmuBuffer`、backend decoded FIFO、LocalMMU AML/BML/CML queue、source ID outstanding、LSU fill table / per-bank fill FIFO、CDC writeback pending state。
    - 对照 GEMM 主路径的 occupancy、block reason 和 backpressure 事件，判断当前容量是接近 RTL 资源约束，还是只是不产生 stall 的功能性默认值。

@@ -49,6 +49,7 @@
 #include <memory>
 #include <queue>
 #include <set>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -76,7 +77,9 @@
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/valuepred/valuepred_unit.hh"
+#include "matrix/MemoryLoader.hh"
 #include "mem/cache/prefetch/base.hh"
+#include "mem/port.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/process.hh"
 #include "sim/rolling.hh"
@@ -154,6 +157,53 @@ class CPU : public BaseCPU
     /** The exit event used for terminating all ready-to-exit threads */
     EventFunctionWrapper threadExitEvent;
 
+#if THE_ISA_IS_RISCV
+    class MatrixMemPort : public RequestPort,
+                          public matrix::MatrixTimingMemoryAdapter
+    {
+      public:
+        MatrixMemPort(const std::string &name, CPU *cpu);
+
+        bool connected() const override { return isConnected(); }
+        bool sendTimingRequest(const Request &request) override;
+
+      protected:
+        bool recvTimingResp(PacketPtr pkt) override;
+        void recvReqRetry() override;
+
+      private:
+        struct SenderState : public Packet::SenderState
+        {
+            SenderState(uint32_t source_id, bool is_store,
+                        uint64_t byte_mask,
+                        bool awaiting_store_invalidate=false,
+                        const Request &store_request={})
+                : sourceId(source_id), isStore(is_store),
+                  byteMask(byte_mask),
+                  awaitingStoreInvalidate(awaiting_store_invalidate),
+                  storeRequest(store_request)
+            {
+            }
+
+            uint32_t sourceId = 0;
+            bool isStore = false;
+            uint64_t byteMask = 0;
+            bool awaitingStoreInvalidate = false;
+            Request storeRequest = {};
+        };
+
+        PacketPtr buildTimingPacket(const Request &request);
+        PacketPtr buildStoreInvalidatePacket(const Request &request);
+        void sendOrBlock(PacketPtr pkt);
+        void trySendBlocked();
+
+        CPU *cpu = nullptr;
+        std::deque<PacketPtr> blockedPackets;
+    };
+
+    MatrixMemPort matrixMemPort;
+#endif
+
     /** Schedule tick event, regardless of its current state. */
     void
     scheduleTickEvent(Cycles delay)
@@ -222,6 +272,9 @@ class CPU : public BaseCPU
 
     /** Initialize the CPU */
     void init() override;
+
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
 
     void startup() override;
 

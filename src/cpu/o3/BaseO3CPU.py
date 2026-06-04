@@ -74,6 +74,9 @@ class BaseO3CPU(BaseCPU):
     type = 'BaseO3CPU'
     cxx_class = 'gem5::o3::CPU'
     cxx_header = 'cpu/o3/dyn_inst.hh'
+    if buildEnv['TARGET_ISA'] == 'riscv':
+        matrix_mem_port = RequestPort("Matrix memory timing port")
+        _cached_ports = BaseCPU._cached_ports + ['matrix_mem_port']
     cxx_exports = [
         PyBindMethod("addHintDownStream"),
     ]
@@ -81,6 +84,21 @@ class BaseO3CPU(BaseCPU):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._downstream_pf = []
+
+    def _add_matrix_cached_port(self):
+        if buildEnv['TARGET_ISA'] != 'riscv':
+            return
+        if 'matrix_mem_port' not in self._cached_ports:
+            self._cached_ports += ['matrix_mem_port']
+
+    def addPrivateSplitL1Caches(self, ic, dc, iwc=None, dwc=None):
+        super().addPrivateSplitL1Caches(ic, dc, iwc, dwc)
+        self._add_matrix_cached_port()
+
+    def addTwoLevelCacheHierarchy(self, ic, dc, l2c, iwc=None, dwc=None,
+                                  xbar=None):
+        super().addTwoLevelCacheHierarchy(ic, dc, l2c, iwc, dwc, xbar)
+        self._add_matrix_cached_port()
 
     # Override the normal SimObject::regProbeListeners method and
     # register deferred event handlers.

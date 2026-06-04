@@ -228,6 +228,13 @@ class DetailedCuteBackend : public MatrixBackend
     size_t queueDepth() const { return fifo.depth(); }
     const std::string &name() const { return backendName; }
     const TraceCounters &traceCounters() const { return counters; }
+    void setTimingMemoryAdapter(MatrixTimingMemoryAdapter *adapter)
+    {
+        timingMemory = adapter;
+    }
+    bool completeTimingMemoryResponse(
+        uint32_t source_id, const uint8_t *data = nullptr,
+        uint32_t size = 0) override;
 
   private:
     friend class DetailedCuteBackendTestProbe;
@@ -274,6 +281,14 @@ class DetailedCuteBackend : public MatrixBackend
         unsigned lsuPendingMatrixRegWriteChunks = 0;
         unsigned lsuMatrixRegWriteChunksDone = 0;
         std::deque<uint32_t> lsuPendingMatrixRegWriteEntries;
+        std::deque<uint32_t> lsuPendingMatrixRegWriteSourceIds;
+        std::vector<uint8_t> lsuLoadBytes;
+        std::vector<bool> lsuLoadByteValid;
+        TimingLoadPlan lsuLoadPlan;
+        TimingStorePlan lsuStorePlan;
+        size_t lsuLoadBytesReceived = 0;
+        bool lsuTimingDataComplete = false;
+        bool lsuStorePlanInitialized = false;
         uint64_t issueStep = 0;
         bool occupancyTraced = false;
     };
@@ -357,6 +372,8 @@ class DetailedCuteBackend : public MatrixBackend
     void advanceTaskSlot(std::optional<TaskSlot> &slot);
     void advanceComputeTask();
     void serviceLocalMmuResponses();
+    void issueLocalMmuTimingRequest();
+    bool useTimingMemory() const;
     void traceActiveComputeTasks();
     void serviceActiveComputeUnits();
     void dispatchReadyComputeUnits();
@@ -364,6 +381,11 @@ class DetailedCuteBackend : public MatrixBackend
     void advanceStoreRead(TaskSlot &task);
     size_t lsuPayloadBytes(const AmuLsuDesc &desc) const;
     unsigned lsuBeatCount(const AmuLsuDesc &desc) const;
+    void initializeTimingLoadBuffer(TaskSlot &task);
+    void initializeTimingStoreBuffer(TaskSlot &task);
+    bool recordTimingLoadResponse(
+        TaskSlot &task, const LocalMmuModel::Response &response);
+    bool buildTensorFromTimingLoadData(TaskSlot &task);
     LocalMmuModel::Client localMmuClient(const TaskSlot &task) const;
     bool enqueueLocalMmuBeats(TaskSlot &task);
     void serviceLsuMatrixRegWriteChunk(TaskSlot &task);
@@ -439,6 +461,7 @@ class DetailedCuteBackend : public MatrixBackend
     MatrixRegResource matrixRegResource;
     TimingConfig timingConfig;
     LocalMmuModel localMmu;
+    MatrixTimingMemoryAdapter *timingMemory = nullptr;
     std::vector<MatrixRegResource::Request> pendingMatrixRegWrites;
     unsigned pendingStoreCount = 0;
     unsigned memoryBudget = 1;

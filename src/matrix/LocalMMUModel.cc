@@ -28,6 +28,7 @@
 
 #include "matrix/LocalMMUModel.hh"
 
+#include <algorithm>
 #include <cassert>
 
 namespace gem5
@@ -54,6 +55,35 @@ LocalMmuModel::clientIndex(Client client)
     return static_cast<size_t>(client);
 }
 
+uint64_t
+LocalMmuModel::byteMaskForSize(uint32_t byte_size)
+{
+    if (byte_size == 0) {
+        return 0;
+    }
+    if (byte_size >= 64) {
+        return ~uint64_t(0);
+    }
+    return (uint64_t(1) << byte_size) - 1;
+}
+
+LocalMmuModel::MatrixL2Metadata
+LocalMmuModel::normalizedMetadata(const Request &request)
+{
+    MatrixL2Metadata metadata = request.metadata;
+    if (!metadata.valid) {
+        metadata.byteMask = byteMaskForSize(request.byteSize);
+    }
+
+    metadata.valid = true;
+    metadata.seq = request.seq;
+    metadata.client = request.client;
+    metadata.isStore = request.isStore;
+    metadata.beatIndex = request.beatIndex;
+    metadata.byteSize = request.byteSize;
+    return metadata;
+}
+
 bool
 LocalMmuModel::enqueue(const Request &request)
 {
@@ -62,7 +92,9 @@ LocalMmuModel::enqueue(const Request &request)
     }
     const auto index = clientIndex(request.client);
     assert(index < ClientCount);
-    pending[index].push_back(request);
+    Request queued_request = request;
+    queued_request.metadata = normalizedMetadata(request);
+    pending[index].push_back(queued_request);
     return true;
 }
 
@@ -74,6 +106,19 @@ LocalMmuModel::pendingCount() const
         count += queue.size();
     }
     return count;
+}
+
+bool
+LocalMmuModel::peekNextRequest(Request &request) const
+{
+    for (size_t offset = 0; offset < ClientCount; ++offset) {
+        const auto index = (firstRequestIndex + offset) % ClientCount;
+        if (!pending[index].empty()) {
+            request = pending[index].front();
+            return true;
+        }
+    }
+    return false;
 }
 
 bool
@@ -104,6 +149,42 @@ LocalMmuModel::allocateSource(uint32_t &source_id)
     return false;
 }
 
+bool
+LocalMmuModel::issueRequest(uint64_t ready_cycle, IssuedRequest &issued_request,
+                            const IssueAdmission *admission)
+{
+    if (pendingCount() == 0 || outstanding.size() >= config.maxOutstanding) {
+        return false;
+    }
+
+    Request request;
+    const bool can_peek = peekNextRequest(request);
+    assert(can_peek);
+    if (admission != nullptr && !(*admission)(request)) {
+        return false;
+    }
+
+    uint32_t source_id = 0;
+    if (!allocateSource(source_id)) {
+        return false;
+    }
+
+    const bool has_request = takeNextRequest(request);
+    assert(has_request);
+
+    InFlight in_flight;
+    in_flight.request = request;
+    in_flight.sourceId = source_id;
+    in_flight.readyCycle = ready_cycle;
+    outstanding.push_back(in_flight);
+
+    issued_request.request = request;
+    issued_request.sourceId = source_id;
+    issued_request.metadata = request.metadata;
+    ++issued;
+    return true;
+}
+
 void
 LocalMmuModel::freeSource(uint32_t source_id)
 {
@@ -113,42 +194,110 @@ LocalMmuModel::freeSource(uint32_t source_id)
 }
 
 void
+LocalMmuModel::queueResponse(
+    const InFlight &in_flight, const uint8_t *data, uint32_t size)
+{
+    Response response;
+    response.seq = in_flight.request.seq;
+    response.client = in_flight.request.client;
+    response.isStore = in_flight.request.isStore;
+    response.beatIndex = in_flight.request.beatIndex;
+    response.byteSize = in_flight.request.byteSize;
+    response.sourceId = in_flight.sourceId;
+    response.metadata = in_flight.request.metadata;
+    if (data != nullptr && size != 0) {
+        const auto copy_size = std::min<size_t>(size, response.data.size());
+        std::copy(data, data + copy_size, response.data.begin());
+        response.hasData = true;
+        response.dataSize = copy_size;
+    }
+    readyResponses.push_back(response);
+}
+
+void
 LocalMmuModel::step(uint64_t cycle)
 {
     currentCycle = cycle;
 
-    if (pendingCount() != 0 && outstanding.size() < config.maxOutstanding) {
-        uint32_t source_id = 0;
-        if (allocateSource(source_id)) {
-            Request request;
-            const bool has_request = takeNextRequest(request);
-            assert(has_request);
-            InFlight in_flight;
-            in_flight.request = request;
-            in_flight.sourceId = source_id;
-            in_flight.readyCycle = currentCycle + config.latencyCycles;
-            outstanding.push_back(in_flight);
-            ++issued;
-        }
-    }
+    IssuedRequest unused;
+    issueRequest(currentCycle + config.latencyCycles, unused);
 
     while (!outstanding.empty() &&
            outstanding.front().readyCycle <= currentCycle) {
         const auto in_flight = outstanding.front();
         outstanding.pop_front();
 
-        Response response;
-        response.seq = in_flight.request.seq;
-        response.client = in_flight.request.client;
-        response.isStore = in_flight.request.isStore;
-        response.beatIndex = in_flight.request.beatIndex;
-        response.byteSize = in_flight.request.byteSize;
-        response.sourceId = in_flight.sourceId;
-        readyResponses.push_back(response);
+        queueResponse(in_flight);
         freeSource(in_flight.sourceId);
     }
 
     firstRequestIndex = (firstRequestIndex + 1) % ClientCount;
+}
+
+bool
+LocalMmuModel::issueExternal(uint64_t cycle, IssuedRequest &issued_request)
+{
+    currentCycle = cycle;
+    const bool issued_request_valid =
+        issueRequest(UINT64_MAX, issued_request);
+    firstRequestIndex = (firstRequestIndex + 1) % ClientCount;
+    return issued_request_valid;
+}
+
+bool
+LocalMmuModel::issueExternal(uint64_t cycle, IssuedRequest &issued_request,
+                             const IssueAdmission &admission)
+{
+    currentCycle = cycle;
+    const bool issued_request_valid =
+        issueRequest(UINT64_MAX, issued_request, &admission);
+    firstRequestIndex = (firstRequestIndex + 1) % ClientCount;
+    return issued_request_valid;
+}
+
+bool
+LocalMmuModel::completeExternalResponse(uint32_t source_id)
+{
+    return completeExternalResponse(source_id, nullptr, 0);
+}
+
+bool
+LocalMmuModel::completeExternalResponse(
+    uint32_t source_id, const uint8_t *data, uint32_t size)
+{
+    auto it = std::find_if(
+        outstanding.begin(), outstanding.end(),
+        [source_id](const InFlight &in_flight) {
+            return in_flight.sourceId == source_id;
+        });
+    if (it == outstanding.end()) {
+        return false;
+    }
+    if (it->responseComplete) {
+        return false;
+    }
+
+    const auto in_flight = *it;
+    queueResponse(in_flight, data, size);
+    it->responseComplete = true;
+    return true;
+}
+
+bool
+LocalMmuModel::releaseExternalSource(uint32_t source_id)
+{
+    auto it = std::find_if(
+        outstanding.begin(), outstanding.end(),
+        [source_id](const InFlight &in_flight) {
+            return in_flight.sourceId == source_id;
+        });
+    if (it == outstanding.end() || !it->responseComplete) {
+        return false;
+    }
+
+    outstanding.erase(it);
+    freeSource(source_id);
+    return true;
 }
 
 std::vector<LocalMmuModel::Response>

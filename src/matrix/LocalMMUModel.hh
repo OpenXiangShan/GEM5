@@ -30,9 +30,14 @@
 #define __MATRIX_LOCAL_MMU_MODEL_HH__
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
+#include <optional>
 #include <vector>
+
+#include "matrix/CUTEParameters.hh"
 
 namespace gem5
 {
@@ -56,6 +61,21 @@ class LocalMmuModel
         unsigned maxOutstanding = 64;
     };
 
+    struct MatrixL2Metadata
+    {
+        bool valid = false;
+        uint64_t seq = 0;
+        Client client = Client::AML;
+        bool isStore = false;
+        bool isRMW = false;
+        uint32_t ameIndex = 0;
+        uint32_t beatIndex = 0;
+        MatrixBankKind destBank = MatrixBankKind::A;
+        uint32_t destReg = 0;
+        uint32_t byteSize = 64;
+        uint64_t byteMask = ~uint64_t(0);
+    };
+
     struct Request
     {
         uint64_t seq = 0;
@@ -63,6 +83,7 @@ class LocalMmuModel
         bool isStore = false;
         uint32_t beatIndex = 0;
         uint32_t byteSize = 64;
+        MatrixL2Metadata metadata = {};
     };
 
     struct Response
@@ -73,13 +94,33 @@ class LocalMmuModel
         uint32_t beatIndex = 0;
         uint32_t byteSize = 64;
         uint32_t sourceId = 0;
+        MatrixL2Metadata metadata = {};
+        bool hasData = false;
+        uint32_t dataSize = 0;
+        std::array<uint8_t, 64> data = {};
     };
+
+    struct IssuedRequest
+    {
+        Request request = {};
+        uint32_t sourceId = 0;
+        MatrixL2Metadata metadata = {};
+    };
+
+    using IssueAdmission = std::function<bool(const Request &request)>;
 
     LocalMmuModel();
     explicit LocalMmuModel(Config config);
 
     bool enqueue(const Request &request);
     void step(uint64_t cycle);
+    bool issueExternal(uint64_t cycle, IssuedRequest &issued_request);
+    bool issueExternal(uint64_t cycle, IssuedRequest &issued_request,
+                       const IssueAdmission &admission);
+    bool completeExternalResponse(uint32_t source_id);
+    bool completeExternalResponse(
+        uint32_t source_id, const uint8_t *data, uint32_t size);
+    bool releaseExternalSource(uint32_t source_id);
     std::vector<Response> takeReadyResponses();
 
     size_t pendingCount() const;
@@ -93,14 +134,23 @@ class LocalMmuModel
         Request request = {};
         uint32_t sourceId = 0;
         uint64_t readyCycle = 0;
+        bool responseComplete = false;
     };
 
     static constexpr size_t ClientCount = 3;
 
     static size_t clientIndex(Client client);
+    static uint64_t byteMaskForSize(uint32_t byte_size);
+    static MatrixL2Metadata normalizedMetadata(const Request &request);
+    bool peekNextRequest(Request &request) const;
     bool takeNextRequest(Request &request);
+    bool issueRequest(uint64_t ready_cycle, IssuedRequest &issued_request,
+                      const IssueAdmission *admission = nullptr);
     bool allocateSource(uint32_t &source_id);
     void freeSource(uint32_t source_id);
+    void queueResponse(
+        const InFlight &in_flight, const uint8_t *data = nullptr,
+        uint32_t size = 0);
 
     Config config;
     std::array<std::deque<Request>, ClientCount> pending;

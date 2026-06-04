@@ -42,8 +42,12 @@
 
 #include "cpu/o3/cpu.hh"
 
+#include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <limits>
+#include <utility>
+#include <vector>
 
 #include "config/the_isa.hh"
 #include "cpu/activity.hh"
@@ -110,6 +114,174 @@ requestKindName(matrix::CuteRequestKind kind)
 } // anonymous namespace
 #endif
 
+#if THE_ISA_IS_RISCV
+CPU::MatrixMemPort::MatrixMemPort(const std::string &name, CPU *cpu_)
+    : RequestPort(name, cpu_), cpu(cpu_)
+{
+}
+
+PacketPtr
+CPU::MatrixMemPort::buildTimingPacket(const Request &request)
+{
+    auto req = std::make_shared<gem5::Request>(
+        request.paddr, request.packetSize, gem5::Request::PHYSICAL,
+        cpu->dataRequestorId());
+    req->taskId(cpu->taskId());
+    if (request.contextId != InvalidContextID) {
+        req->setContext(request.contextId);
+    }
+
+    if (request.isStore) {
+        if (!request.byteEnable.empty()) {
+            req->setByteEnable(request.byteEnable);
+        } else {
+            req->setByteEnable(
+                std::vector<bool>(request.packetSize, true));
+        }
+    }
+
+    auto *pkt = request.isStore ?
+        Packet::createWrite(req) : Packet::createRead(req);
+    auto *data = new uint8_t[request.packetSize];
+    if (request.isStore) {
+        std::memset(data, 0, request.packetSize);
+        const auto copy_size = std::min<size_t>(
+            request.dataSize == 0 ? request.packetSize : request.dataSize,
+            request.data.size());
+        std::memcpy(data, request.data.data(), copy_size);
+    } else {
+        std::memset(data, 0, request.packetSize);
+    }
+    pkt->dataDynamic(data);
+    pkt->senderState = new SenderState(
+        request.sourceId, request.isStore, request.byteMask);
+    return pkt;
+}
+
+PacketPtr
+CPU::MatrixMemPort::buildStoreInvalidatePacket(const Request &request)
+{
+    auto req = std::make_shared<gem5::Request>(
+        request.paddr, request.packetSize,
+        gem5::Request::PHYSICAL | gem5::Request::CLEAN |
+            gem5::Request::INVALIDATE | gem5::Request::DST_POU,
+        cpu->dataRequestorId());
+    req->taskId(cpu->taskId());
+    if (request.contextId != InvalidContextID) {
+        req->setContext(request.contextId);
+    }
+
+    auto *pkt = Packet::createWrite(req);
+    pkt->senderState = new SenderState(
+        request.sourceId, true, request.byteMask, true, request);
+    return pkt;
+}
+
+void
+CPU::MatrixMemPort::sendOrBlock(PacketPtr pkt)
+{
+    if (!blockedPackets.empty() || !sendTimingReq(pkt)) {
+        blockedPackets.push_back(pkt);
+        auto *state = dynamic_cast<SenderState *>(pkt->senderState);
+        DPRINTF(MatrixCuteTrace,
+                "matrix_mem_port_blocked source=%u paddr=%#llx size=%u "
+                "blocked=%llu.\n",
+                state ? state->sourceId : 0, pkt->getAddr(), pkt->getSize(),
+                static_cast<unsigned long long>(blockedPackets.size()));
+    } else {
+        auto *state = dynamic_cast<SenderState *>(pkt->senderState);
+        DPRINTF(MatrixCuteTrace,
+                "matrix_mem_port_send source=%u store=%u paddr=%#llx "
+                "size=%u mask=%#llx.\n",
+                state ? state->sourceId : 0,
+                state && state->isStore ? 1 : 0,
+                pkt->getAddr(), pkt->getSize(),
+                state ? static_cast<unsigned long long>(state->byteMask) : 0);
+    }
+}
+
+bool
+CPU::MatrixMemPort::sendTimingRequest(const Request &request)
+{
+    auto *pkt = request.isStore ?
+        buildStoreInvalidatePacket(request) : buildTimingPacket(request);
+    sendOrBlock(pkt);
+    return true;
+}
+
+bool
+CPU::MatrixMemPort::recvTimingResp(PacketPtr pkt)
+{
+    auto *state = dynamic_cast<SenderState *>(pkt->senderState);
+    panic_if(state == nullptr,
+             "Matrix memory response missing sender state");
+
+    const uint32_t source_id = state->sourceId;
+    const bool store_invalidate_done = state->awaitingStoreInvalidate;
+    const auto store_request = state->storeRequest;
+    const bool has_data = pkt->hasData() && pkt->getSize() != 0;
+    const uint32_t data_size = has_data ? pkt->getSize() : 0;
+    std::vector<uint8_t> data;
+    if (has_data) {
+        data.resize(data_size);
+        std::memcpy(data.data(), pkt->getPtr<uint8_t>(), data.size());
+    }
+
+    delete pkt->senderState;
+    pkt->senderState = nullptr;
+    delete pkt;
+
+    if (store_invalidate_done) {
+        auto *write_pkt = buildTimingPacket(store_request);
+        sendOrBlock(write_pkt);
+        cpu->activityRec.activity();
+        cpu->scheduleTickEvent(Cycles(0));
+        DPRINTF(MatrixCuteTrace,
+                "matrix_mem_port_store_invalidate_resp source=%u.\n",
+                source_id);
+        return true;
+    }
+
+    const bool completed =
+        cpu->matrixBackend &&
+        cpu->matrixBackend->completeTimingMemoryResponse(
+            source_id, data.empty() ? nullptr : data.data(), data.size());
+    panic_if(!completed,
+             "Matrix memory response for unknown source %u", source_id);
+
+    cpu->activityRec.activity();
+    cpu->scheduleTickEvent(Cycles(0));
+    DPRINTF(MatrixCuteTrace,
+            "matrix_mem_port_resp source=%u.\n", source_id);
+    return true;
+}
+
+void
+CPU::MatrixMemPort::trySendBlocked()
+{
+    while (!blockedPackets.empty()) {
+        PacketPtr pkt = blockedPackets.front();
+        if (!sendTimingReq(pkt)) {
+            return;
+        }
+        blockedPackets.pop_front();
+        auto *state = dynamic_cast<SenderState *>(pkt->senderState);
+        DPRINTF(MatrixCuteTrace,
+                "matrix_mem_port_retry source=%u blocked=%llu.\n",
+                state ? state->sourceId : 0,
+                static_cast<unsigned long long>(blockedPackets.size()));
+    }
+}
+
+void
+CPU::MatrixMemPort::recvReqRetry()
+{
+    trySendBlocked();
+    cpu->activityRec.activity();
+    cpu->scheduleTickEvent(Cycles(0));
+}
+#endif
+
 CPU::CPU(const BaseO3CPUParams &params)
     : BaseCPU(params),
       mmu(params.mmu),
@@ -117,6 +289,9 @@ CPU::CPU(const BaseO3CPUParams &params)
                 false, Event::CPU_Tick_Pri),
       threadExitEvent([this]{ exitThreads(); }, "O3CPU exit threads",
                 false, Event::CPU_Exit_Pri),
+#if THE_ISA_IS_RISCV
+      matrixMemPort(name() + ".matrix_mem_port", this),
+#endif
 #ifndef NDEBUG
       instcount(0),
 #endif
@@ -200,9 +375,11 @@ CPU::CPU(const BaseO3CPUParams &params)
         numThreads,
         std::vector<InstSeqNum>(TheISA::ISA::MatrixTokenCount, 0));
     constexpr unsigned detailedCuteFifoDepth = 8;
-    matrixBackend = std::make_unique<matrix::DetailedCuteBackend>(
+    auto detailed_backend = std::make_unique<matrix::DetailedCuteBackend>(
         std::make_unique<matrix::Gem5MatrixMemoryAdapter>(),
         detailedCuteFifoDepth);
+    detailed_backend->setTimingMemoryAdapter(&matrixMemPort);
+    matrixBackend = std::move(detailed_backend);
 #endif
 
     // The stages also need their CPU pointer setup.  However this
@@ -681,6 +858,18 @@ CPU::init()
         thread[tid]->noSquashFromTC = false;
 
     commit.setThreads(thread);
+}
+
+Port &
+CPU::getPort(const std::string &if_name, PortID idx)
+{
+#if THE_ISA_IS_RISCV
+    if (if_name == "matrix_mem_port") {
+        return matrixMemPort;
+    }
+#endif
+
+    return BaseCPU::getPort(if_name, idx);
 }
 
 void
