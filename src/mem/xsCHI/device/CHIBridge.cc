@@ -96,7 +96,7 @@ namespace xsCHI
                 blk, it->second);
         if (it->second == 0) {
             inProgressReadByAddr.erase(it);
-            wakeBlockedReads(blk);
+            wakeBlockedReqs(blk);
         }
     }
 
@@ -126,61 +126,47 @@ namespace xsCHI
                 blk, it->second);
         if (it->second == 0) {
             inProgressWriteByAddr.erase(it);
-            wakeBlockedReads(blk);
+            wakeBlockedReqs(blk);
         }
     }
 
     void
-    CHIBridge::enqueueBlockedReadReq(ReqPtr req)
+    CHIBridge::enqueueBlockedReq(ReqPtr req)
     {
         const uint64_t blk = blockAddr(req->getAddr());
-        blockedReadReqByAddr[blk].push_back(req);
+        blockedReqByAddr[blk].push_back(req);
         DPRINTF(CHIBridge,
-                "enqueue blocked read op=%s addr=%#lx blk=%#lx blocked=%u\n",
+                "enqueue blocked req op=%s addr=%#lx blk=%#lx blocked=%u\n",
                 CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(req->getOpcode()),
                 req->getAddr(),
                 blk,
-                static_cast<unsigned>(blockedReadReqByAddr[blk].size()));
+                static_cast<unsigned>(blockedReqByAddr[blk].size()));
     }
 
     void
-    CHIBridge::wakeBlockedReads(uint64_t addr)
+    CHIBridge::wakeBlockedReqs(uint64_t addr)
     {
         const uint64_t blk = blockAddr(addr);
-        auto it = blockedReadReqByAddr.find(blk);
-        if (it == blockedReadReqByAddr.end()) {
+        auto it = blockedReqByAddr.find(blk);
+        if (it == blockedReqByAddr.end()) {
             return;
         }
 
         auto &q = it->second;
-        if (q.size()>1) {
-            DPRINTF(CHIBridge,
-                    "Warning: detect more than 1 same-block blocked read req, which is not expected, \
-                    blk=%#lx count=%u\n",
-                    blk, static_cast<unsigned>(q.size()));
-            //count real read req num in q
-            unsigned real_read_req_num = 0;
-            for (const auto &req : q) {
-                if (req && (req->getOpcode() == CHI_OP_TYPE::CHI_REQ_READUNIQUE ||
-                    req->getOpcode() == CHI_OP_TYPE::CHI_REQ_READSHARED ||
-                    req->getOpcode() == CHI_OP_TYPE::CHI_REQ_READCLEAN)) {
-                    real_read_req_num++;
-                }
-            }
-            assert(real_read_req_num<=1 && "detect more than 1 same-block blocked read req, which is not expected");
-        }
-        //only wake one read req a time
+        // Preserve same-block request order: only wake one request at a time.
         if (!q.empty()) {
             Req_tobesent.push(q.front());
             q.pop_front();
         }
+        const unsigned blockedLeft = static_cast<unsigned>(q.size());
         if (q.empty()) {
-            blockedReadReqByAddr.erase(it);
+            blockedReqByAddr.erase(it);
         }
         DPRINTF(CHIBridge,
-                "wake blocked reads blk=%#lx req_queue=%u\n",
+                "wake blocked reqs blk=%#lx req_queue=%u blocked_left=%u\n",
                 blk,
-                static_cast<unsigned>(Req_tobesent.size()));
+                static_cast<unsigned>(Req_tobesent.size()),
+                blockedLeft);
         if (!Req_tobesent.empty() && !req_handle_event.scheduled()) {
             scheduleReqRetry();
         }
@@ -322,27 +308,12 @@ CHIBridge::BridgeStats::BridgeStats(CHIBridge *parent)
         const CHI_OP_TYPE op = req->getOpcode();
         const uint64_t addr = req->getAddr();
 
-        if (isWriteReqOp(op)) {
-            assert(!hasInProgressRead(addr) &&
-                   "L2Bridge write must not overlap same-address in-progress read");
-            assert(!hasInProgressWrite(addr) &&
-                   "L2Bridge write must not overlap same-address in-progress write");
-            if (!isRetry){
-                //make sure of Req_tobesent do not have same-address read/write req
-                assert(!hasQueuedReadWriteReq(addr));
-            }
-            
-        }
-
-        if (isReadReqOp(op)) {
-            // assert(!hasInProgressRead(addr) &&
-            //        "L2Bridge read must not overlap same-address in-progress read");
-            if (hasInProgressWrite(addr) ||
-                hasInProgressRead(addr)||
-                (!isRetry && hasQueuedReadWriteReq(addr))) {
-                enqueueBlockedReadReq(req);
-                return true;
-            }
+        if ((isReadReqOp(op) || isWriteReqOp(op)) &&
+            (hasInProgressWrite(addr) ||
+             hasInProgressRead(addr) ||
+             (!isRetry && hasQueuedReadWriteReq(addr)))) {
+            enqueueBlockedReq(req);
+            return true;
         }
 
         bool success = false;

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <csignal>
 #include <cstdint>
@@ -18,17 +19,12 @@ namespace gem5
 {
 namespace xsCHI
 {
-namespace
-{
-
-constexpr uint64_t DiagnosticAgeWarnCycles = 10000;
-
-} // namespace
 
     DDRWrapper::DDRWrapper(const Params &p) :
     AbstractMemory(p),
     _NodeID(0),
     useDMT(true),
+    readResponsePaddingCycles(p.read_response_padding_cycles),
     port(p.networkPort),
     read_cb(std::bind(&DDRWrapper::readComplete,
                       this, 0, std::placeholders::_1)),
@@ -119,83 +115,6 @@ DDRWrapper::resetStats() {
 }
 
 void
-DDRWrapper::dumpOutstandingReadState(const char *reason, Addr focusAddr) const
-{
-    DPRINTF(CHIDramsim,
-            "read_state_dump reason=%s focus=%#lx outstandingReads=%u "
-            "transferMap=%u readTracks=%u responseQueue=%u tick=%llu\n",
-            reason,
-            focusAddr,
-            static_cast<unsigned>(outstandingReads.size()),
-            static_cast<unsigned>(outstandingReadTransferMap.size()),
-            static_cast<unsigned>(readTracks.size()),
-            static_cast<unsigned>(responseQueue.size()),
-            static_cast<unsigned long long>(curTick()));
-    for (const auto &[addr, queue] : outstandingReads) {
-        DPRINTF(CHIDramsim,
-                "read_state_dump outstandingReads addr=%#lx depth=%u\n",
-                addr,
-                static_cast<unsigned>(queue.size()));
-    }
-    for (const auto &[addr, req] : outstandingReadTransferMap) {
-        DPRINTF(CHIDramsim,
-                "read_state_dump transferMap addr=%#lx reqTxn=%u retTxn=%u src=%u tgt=%u req=%p\n",
-                addr,
-                req ? req->getTransactionId() : 0,
-                req ? req->getReturnTxnid() : 0,
-                req ? req->getSourceId() : 0,
-                req ? req->getTargetId() : 0,
-                req.get());
-    }
-    for (const auto &[addr, track] : readTracks) {
-        DPRINTF(CHIDramsim,
-                "read_state_dump readTrack addr=%#lx reqTxn=%u retTxn=%u "
-                "src=%u tgt=%u insert=%llu readComplete=%llu "
-                "sendResp=%llu agingWarned=%d\n",
-                addr,
-                track.reqTxnId,
-                track.returnTxnId,
-                track.srcId,
-                track.tgtId,
-                static_cast<unsigned long long>(track.insertTick),
-                static_cast<unsigned long long>(track.readCompleteTick),
-                static_cast<unsigned long long>(track.sendRespTick),
-                track.agingWarned);
-    }
-}
-
-void
-DDRWrapper::scanAgedReadTracks(const char *where)
-{
-    const Tick warnThreshold = clockPeriod() * DiagnosticAgeWarnCycles;
-    for (auto &[addr, track] : readTracks) {
-        if (track.agingWarned || track.insertTick == 0) {
-            continue;
-        }
-        const Tick age = curTick() - track.insertTick;
-        if (age < warnThreshold) {
-            continue;
-        }
-        track.agingWarned = true;
-        DPRINTF(CHIDramsim,
-                "read_track_aging_warn where=%s addr=%#lx reqTxn=%u "
-                "retTxn=%u src=%u tgt=%u age_cycles=%llu age_ticks=%llu "
-                "readComplete=%llu sendResp=%llu\n",
-                where,
-                addr,
-                track.reqTxnId,
-                track.returnTxnId,
-                track.srcId,
-                track.tgtId,
-                static_cast<unsigned long long>(age / clockPeriod()),
-                static_cast<unsigned long long>(age),
-                static_cast<unsigned long long>(track.readCompleteTick),
-                static_cast<unsigned long long>(track.sendRespTick));
-        dumpOutstandingReadState("aging_warn", addr);
-    }
-}
-
-void
 DDRWrapper::sendResponse()
 {
     // assert(!retryResp);
@@ -204,12 +123,19 @@ DDRWrapper::sendResponse()
     DPRINTF(CHIDramsim, "Attempting to send response\n");
 
     auto [pkt, time] = responseQueue.top();
-    auto reqIt = outstandingReadTransferMap.find(pkt->getAddr());
-    if (reqIt == outstandingReadTransferMap.end() || reqIt->second == nullptr) {
-        dumpOutstandingReadState("send_response_missing_transfer", pkt->getAddr());
-        panic("DDRWrapper has no outstanding request for packet addr=%#lx",
-              pkt->getAddr());
+    if (time > curTick()) {
+        DPRINTF(CHIDramsim,
+                "sendResponse stage=not_ready addr=%#lx readyTick=%llu "
+                "tick=%llu\n",
+                pkt->getAddr(),
+                static_cast<unsigned long long>(time),
+                static_cast<unsigned long long>(curTick()));
+        scheduleSendResponseRetry();
+        return;
     }
+    auto reqIt = outstandingReadTransferMap.find(pkt->getAddr());
+    assert(reqIt != outstandingReadTransferMap.end());
+    assert(reqIt->second != nullptr);
     ReqPtr req = reqIt->second;
     if (!req->DataValid()) {
         // if the data is not set, we need to set it here
@@ -237,65 +163,18 @@ DDRWrapper::sendResponse()
     data_flit->setHomeNid(req->getSourceId());
     data_flit->setDbid(req->getTransactionId());
 
-    auto trackIt = readTracks.find(pkt->getAddr());
-    DPRINTF(CHIDramsim,
-            "sendResponse stage=attempt addr=%#lx reqTxnId=%u "
-            "returnTxnId=%u srcId=%u tgtId=%u dataId=%u dbid=%u "
-            "queueDepth=%u responseQueueDepth=%u tick=%llu\n",
-            pkt->getAddr(),
-            req->getTransactionId(),
-            req->getReturnTxnid(),
-            req->getSourceId(),
-            useDMT ? req->getReturnNid() : req->getSourceId(),
-            data_id,
-            req->getTransactionId(),
-            outstandingReads.count(pkt->getAddr()) ?
-                static_cast<unsigned>(outstandingReads.at(pkt->getAddr()).size()) : 0,
-            static_cast<unsigned>(responseQueue.size()),
-            static_cast<unsigned long long>(curTick()));
-
     if (port->send(data_flit)){
         //send success, we can save the request and txn_id
         req->finishTransferdata(data_id);
-        if (trackIt != readTracks.end()) {
-            trackIt->second.sendRespTick = curTick();
-        }
-        DPRINTF(CHIDramsim,
-                "sendResponse stage=sent addr=%#lx reqTxnId=%u "
-                "returnTxnId=%u srcId=%u tgtId=%u dataId=%u dbid=%u "
-                "responseQueueDepth=%u tick=%llu\n",
-                pkt->getAddr(),
-                req->getTransactionId(),
-                req->getReturnTxnid(),
-                req->getSourceId(),
-                useDMT ? req->getReturnNid() : req->getSourceId(),
-                data_id,
-                req->getTransactionId(),
-                static_cast<unsigned>(responseQueue.size()),
-                static_cast<unsigned long long>(curTick()));
     }else {
         //free the data_flit if send failed
         if (data_flit != nullptr) {
             data_flit.reset();
         }
-        DPRINTF(CHIDramsim,
-                "sendResponse stage=blocked addr=%#lx reqTxnId=%u "
-                "returnTxnId=%u srcId=%u tgtId=%u dataId=%u dbid=%u "
-                "responseQueueDepth=%u tick=%llu\n",
-                pkt->getAddr(),
-                req->getTransactionId(),
-                req->getReturnTxnid(),
-                req->getSourceId(),
-                useDMT ? req->getReturnNid() : req->getSourceId(),
-                data_id,
-                req->getTransactionId(),
-                static_cast<unsigned>(responseQueue.size()),
-                static_cast<unsigned long long>(curTick()));
     }
     if (req->dataTransferFinished()){
         responseQueue.pop();
         outstandingReadTransferMap.erase(reqIt);
-        readTracks.erase(pkt->getAddr());
     }
     DPRINTF(CHIDramsim, "Have %d read, %d write, %d responses outstanding\n",
                     nbrOutstandingReads, nbrOutstandingWrites,
@@ -323,7 +202,6 @@ DDRWrapper::tick()
     // Only tick when it's timing mode
     if (system()->isTimingMode()) {
         wrapper.tick();
-        scanAgedReadTracks("tick");
 
         // is the connected port waiting for a retry, if so check the
         // state and send a retry if conditions have changed
@@ -464,6 +342,7 @@ DDRWrapper::accessAndRespond(std::shared_ptr<Packet> pkt)
 {
     // DPRINTF(CHIDramsim, "Access for address %lx\n", pkt->getAddr());
 
+    const bool wasRead = pkt->isRead();
     bool needsResponse = pkt->needsResponse();
 
     // do the actual memory access which also turns the packet into a
@@ -477,10 +356,17 @@ DDRWrapper::accessAndRespond(std::shared_ptr<Packet> pkt)
         assert(pkt->isResponse());
         // Here we pay for xbar additional delay and to process the payload
         // of the packet.
-        Tick time = curTick();
+        const Tick time = curTick() +
+            (wasRead ? cyclesToTicks(readResponsePaddingCycles) : 0);
 
-        // DPRINTF(CHIDramsim, "Queuing response for address %lld\n",
-        //         pkt->getAddr());
+        DPRINTF(CHIDramsim,
+                "accessAndRespond queue response addr=%#lx wasRead=%d "
+                "paddingCycles=%llu readyTick=%llu tick=%llu\n",
+                pkt->getAddr(),
+                wasRead,
+                static_cast<unsigned long long>(readResponsePaddingCycles),
+                static_cast<unsigned long long>(time),
+                static_cast<unsigned long long>(curTick()));
 
         // queue it to be sent back
         responseQueue.push({pkt, time});
@@ -504,7 +390,9 @@ DDRWrapper::scheduleSendResponseRetry()
     if (port->isChannelBlockedByCredit(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_DATA)) {
         return;
     }
-    schedule(sendResponseEvent, curTick() + clockPeriod());
+    const Tick readyTick = responseQueue.top().second;
+    const Tick nextTick = curTick() + clockPeriod();
+    schedule(sendResponseEvent, std::max(readyTick, nextTick));
 }
 
 void
@@ -523,10 +411,7 @@ void DDRWrapper::readComplete(unsigned id, uint64_t addr)
 
     // get the outstanding reads for the address in question
     auto p = outstandingReads.find(addr);
-    if (p == outstandingReads.end()) {
-        dumpOutstandingReadState("read_complete_missing_outstanding", addr);
-        panic("DDRWrapper readComplete missing outstanding read addr=%#lx", addr);
-    }
+    assert(p != outstandingReads.end());
 
     // first in first out, which is not necessarily true, but it is
     // the best we can do at this point
@@ -541,31 +426,6 @@ void DDRWrapper::readComplete(unsigned id, uint64_t addr)
     // response to the response queue straight away
     assert(nbrOutstandingReads != 0);
     --nbrOutstandingReads;
-
-    auto trackIt = readTracks.find(addr);
-    if (trackIt != readTracks.end()) {
-        trackIt->second.readCompleteTick = curTick();
-        DPRINTF(CHIDramsim,
-                "readComplete stage=callback addr=%#lx reqTxnId=%u "
-                "returnTxnId=%u srcId=%u tgtId=%u remainingDepth=%u "
-                "latency_cycles=%llu tick=%llu\n",
-                addr,
-                trackIt->second.reqTxnId,
-                trackIt->second.returnTxnId,
-                trackIt->second.srcId,
-                trackIt->second.tgtId,
-                remainingDepth,
-                static_cast<unsigned long long>(
-                    (curTick() - trackIt->second.insertTick) / clockPeriod()),
-                static_cast<unsigned long long>(curTick()));
-    } else {
-        DPRINTF(CHIDramsim,
-                "readComplete stage=callback addr=%#lx no_readTrack "
-                "remainingDepth=%u tick=%llu\n",
-                addr,
-                remainingDepth,
-                static_cast<unsigned long long>(curTick()));
-    }
 
     // perform the actual memory access
     accessAndRespond(pkt);
@@ -640,53 +500,10 @@ DDRWrapper::handlePortReceive(FlitPtr &flit)
                 }
                 req->setSize(flit->getSize());
                 //here we do not have data,but need to fill it when start transfer
-                if (outstandingReadTransferMap.find(pkt->getAddr()) !=
-                    outstandingReadTransferMap.end()) {
-                    dumpOutstandingReadState("duplicate_read_transfer_insert",
-                                             pkt->getAddr());
-                    panic("DDRWrapper already has a read request for addr=%#lx",
-                          pkt->getAddr());
-                }
                 outstandingReadTransferMap[pkt->getAddr()] = req;
-                ReadTrack track;
-                track.addr = pkt->getAddr();
-                track.reqTxnId = flit->getTxnId();
-                track.returnTxnId = req->getReturnTxnid();
-                track.srcId = flit->getSrcId();
-                track.tgtId = flit->getTgtId();
-                track.insertTick = curTick();
-                readTracks[pkt->getAddr()] = track;
-                DPRINTF(CHIDramsim,
-                        "handlePortReceive stage=READNOSNP_ACCEPT "
-                        "addr=%#lx txnId=%u returnTxnId=%u srcId=%u "
-                        "tgtId=%u queueDepth=%u outstandingReadsSize=%u "
-                        "outstandingReadTransferMapSize=%u tick=%llu\n",
-                        pkt->getAddr(),
-                        flit->getTxnId(),
-                        req->getReturnTxnid(),
-                        flit->getSrcId(),
-                        flit->getTgtId(),
-                        outstandingReads.count(pkt->getAddr()) ?
-                            static_cast<unsigned>(outstandingReads[pkt->getAddr()].size()) : 0,
-                        static_cast<unsigned>(outstandingReads.size()),
-                        static_cast<unsigned>(outstandingReadTransferMap.size()),
-                        static_cast<unsigned long long>(curTick()));
                 return true;
 
             }else{
-                //warn: may casue deadlock
-                DPRINTF(CHIDramsim,
-                        "handlePortReceive stage=READNOSNP_BLOCKED "
-                        "addr=%#lx txnId=%u srcId=%u tgtId=%u "
-                        "outstandingReadsSize=%u "
-                        "outstandingReadTransferMapSize=%u tick=%llu\n",
-                        pkt->getAddr(),
-                        flit->getTxnId(),
-                        flit->getSrcId(),
-                        flit->getTgtId(),
-                        static_cast<unsigned>(outstandingReads.size()),
-                        static_cast<unsigned>(outstandingReadTransferMap.size()),
-                        static_cast<unsigned long long>(curTick()));
                 return false;
             }
             break;
