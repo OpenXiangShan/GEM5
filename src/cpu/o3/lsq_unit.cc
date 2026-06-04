@@ -2123,7 +2123,7 @@ bool LSQUnit::insertStoreBuffer(Addr vaddr, Addr paddr, uint8_t* datas, uint64_t
     // check request is not already in the storebuffer
     auto entry = storeBuffer.get(lsqID, blockPaddr);
     if (entry) {
-        if (entry->sending) {
+        if (entry->evictionInProgress()) {
             if (entry->vice) {
                 // merge into vice
                 stats.sbufferMerge++;
