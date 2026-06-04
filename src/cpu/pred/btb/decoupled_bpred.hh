@@ -238,6 +238,9 @@ class DecoupledBPUWithBTB : public BPredUnit
         FullBTBPrediction &pred,
         BTBEntry &entry,
         const SelectiveOracleOutcome &outcome);
+    void addMissingOracleCondEntries(
+        FullBTBPrediction &pred,
+        const SelectiveOracleBlock &block) const;
     bool getCurrentCondTaken(
         const FullBTBPrediction &pred,
         Addr branchPC) const;

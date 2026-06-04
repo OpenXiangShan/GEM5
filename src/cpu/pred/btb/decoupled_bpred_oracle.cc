@@ -510,6 +510,52 @@ DecoupledBPUWithBTB::getCurrentCondTaken(
 }
 
 void
+DecoupledBPUWithBTB::addMissingOracleCondEntries(
+    FullBTBPrediction &pred,
+    const SelectiveOracleBlock &block) const
+{
+    const Addr block_fall_through =
+        selectiveOracleBlockFallThrough(block.startPC);
+
+    for (const auto &outcome : block.outcomes) {
+        if (outcome.branchPC < block.startPC ||
+            outcome.branchPC >= block_fall_through) {
+            continue;
+        }
+
+        auto entry_it = std::lower_bound(
+            pred.btbEntries.begin(), pred.btbEntries.end(),
+            outcome.branchPC,
+            [](const BTBEntry &entry, Addr pc) {
+                return entry.pc < pc;
+            });
+
+        if (entry_it != pred.btbEntries.end() &&
+            entry_it->valid &&
+            entry_it->pc == outcome.branchPC) {
+            continue;
+        }
+
+        BTBEntry entry;
+        entry.valid = true;
+        entry.pc = outcome.branchPC;
+        entry.target = outcome.target;
+        entry.resolved = false;
+        entry.isCond = true;
+        entry.isIndirect = false;
+        entry.isDirect = true;
+        entry.isCall = false;
+        entry.isReturn = false;
+        entry.size = outcome.size;
+        entry.alwaysTaken = false;
+        entry.ctr = 0;
+        entry.tag = 0;
+        entry.source = -1;
+        pred.btbEntries.insert(entry_it, entry);
+    }
+}
+
+void
 DecoupledBPUWithBTB::applySelectiveOracle(ThreadID tid, FetchTargetId targetId)
 {
     if (!selectiveOracleReplaying) {
@@ -546,6 +592,8 @@ DecoupledBPUWithBTB::applySelectiveOracle(ThreadID tid, FetchTargetId targetId)
     consumed_blocks.clear();
     consumed_blocks.push_back(block);
     dbpBtbStats.selectiveOracleReplayBlocksConsumed++;
+
+    addMissingOracleCondEntries(final_pred, block);
 
     size_t outcome_idx = 0;
     for (auto &entry : final_pred.btbEntries) {
