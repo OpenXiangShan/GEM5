@@ -45,6 +45,7 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <list>
 #include <map>
@@ -160,13 +161,18 @@ class LSQ
         std::vector<uint8_t> blockDatas;
         std::vector<bool> validMask;
         bool sending;
+        bool inDcacheMainPipe;
+        // Exited fake MainPipe at S2 and waits to re-enter from S0.
+        bool replayQueued;
         // the another same addr entry when sending
         // another cannot sending until self sending finished
         StoreBufferEntry *vice = nullptr;
         // merged request
         SbufferRequest *request = nullptr;
 
-        StoreBufferEntry(int size, int index) : index(index)
+        StoreBufferEntry(int size, int index)
+            : index(index), sending(false), inDcacheMainPipe(false),
+              replayQueued(false)
         {
             blockDatas.resize(size, 0);
             validMask.resize(size, false);
@@ -180,6 +186,12 @@ class LSQ
                    const std::vector<bool> &mask);
 
         bool recordForward(RequestPtr req, LSQRequest *lsqreq);
+        // The eviction packet has been built or sent; younger same-line stores
+        // must go to a vice entry instead of mutating this entry's payload.
+        bool evictionInProgress() const
+        {
+            return sending || inDcacheMainPipe || replayQueued;
+        }
     };
 
     class StoreBuffer
@@ -1090,7 +1102,10 @@ class LSQ
     void incStoreBufferInactiveCycles() { ++storeBufferWritebackInactive; }
     bool storeBufferBlocked() const
     {
-        return blockedSbufferEntry != nullptr;
+        // A replayed eviction is still owned by the StoreBuffer and has priority
+        // over SQ offload or new evictions.
+        return blockedSbufferEntry != nullptr ||
+            !sbufferMainPipeReplayQ.empty();
     }
     void setBlockedStoreBufferEntry(StoreBufferEntry *entry,
                                     StoreBufferBlockCause cause =
@@ -1109,8 +1124,22 @@ class LSQ
         return blockedSbufferEntry != nullptr &&
             blockedSbufferCause == StoreBufferBlockCause::MainPipe;
     }
+    // Retry StoreBuffer evictions that exited the fake MainPipe at S2. The
+    // return value is false only when the replay queue is empty; true means a
+    // replay consumed or blocked this writeback opportunity.
+    bool retryReplayStoreBuffer();
+
+    // Retry a StoreBuffer eviction that was blocked before fake MainPipe
+    // admission.
     bool retryBlockedStoreBuffer();
-    bool sbufferSendPacket(PacketPtr data_pkt);
+
+    // Admit a StoreBuffer packet into the fake DCache MainPipe. This does not
+    // issue the packet to the real classic cache.
+    bool sbufferEnterDcacheMainPipe(PacketPtr data_pkt);
+
+    // Issue a StoreBuffer packet from fake S2 to the real classic cache.
+    bool issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt,
+                                              Tick issue_tick);
     void completeSbufferEvict(PacketPtr pkt);
 
     unsigned getLQEntries() const { return LQEntries; }
@@ -1142,6 +1171,7 @@ class LSQ
 
     using DcacheBankMask = std::array<bool, DcacheBankCount>;
     using DcacheMainPipeCompleteCallback = std::function<void(Tick)>;
+    using DcacheMainPipeS2Callback = std::function<bool(Tick)>;
 
     enum class DcacheMainPipeSource : unsigned
     {
@@ -1171,6 +1201,7 @@ class LSQ
         DcacheBankMask readBanks = {};
         DcacheBankMask writeBanks = {};
         DcacheMainPipeCompleteCallback onComplete;
+        DcacheMainPipeS2Callback onS2Issue;
 
         bool isRefill() const
         {
@@ -1222,7 +1253,8 @@ class LSQ
         Addr addr, bool need_data_read,
         DcacheMainPipeCompleteCallback on_complete = {}) const;
     DcacheMainPipeRequest makeStoreBufferMainPipeRequest(
-        const StoreBufferEntry &entry) const;
+        const StoreBufferEntry &entry,
+        DcacheMainPipeS2Callback on_s2_issue = {}) const;
 
     void markDcacheMainPipeBusyBanks();
 
@@ -1238,7 +1270,10 @@ class LSQ
     bool canEnterDcacheMainPipeNow(
         const DcacheMainPipeRequest &request);
     bool canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry);
-    void enterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry);
+
+    // Put a StoreBuffer request into fake S1 and attach its fake S2 issue hook.
+    void enterStoreBufferDcacheMainPipe(StoreBufferEntry &entry,
+                                        PacketPtr data_pkt);
 
     struct NullStruct {};
     boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
@@ -1282,6 +1317,7 @@ class LSQ
     StoreBufferEntry *blockedSbufferEntry = nullptr;
     StoreBufferBlockCause blockedSbufferCause = StoreBufferBlockCause::None;
     bool lastSbufferSendBlockedByMainPipe = false;
+    std::deque<StoreBufferEntry *> sbufferMainPipeReplayQ;
     ThreadID nextStoreBufferOffloadTid = InvalidThreadID;
 
     bool enableBankConflictCheck;
