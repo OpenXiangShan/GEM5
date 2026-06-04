@@ -110,6 +110,8 @@ LSQ::StoreBufferEntry::reset(ThreadID tid, InstSeqNum seq_num,
     this->blockVaddr = block_vaddr;
     this->blockPaddr = block_paddr;
     this->sending = false;
+    this->inDcacheMainPipe = false;
+    this->replayQueued = false;
     this->request = nullptr;
     this->vice = nullptr;
 }
@@ -362,6 +364,8 @@ LSQ::StoreBuffer::release(StoreBufferEntry *entry)
     vld_cnt_vec[entry->tid]--;
     assert(vld_cnt_vec[entry->tid] >= 0);
     int index = entry->index;
+    assert(!entry->inDcacheMainPipe);
+    assert(!entry->replayQueued);
     data_vld[index] = false;
     data_map.erase(crossRef[index]);
     assert(std::find(free_list.begin(), free_list.end(), index) ==
@@ -683,7 +687,16 @@ LSQ::advanceDcacheMainPipe()
     const bool s3_can_go = true;
     const bool s3_ready = !s3_write.valid || s3_can_go;
     const bool s2_can_go = s3_ready;
+
+    bool s2_issue_done = false;
+    if (s2_data_resp.valid && s2_can_go) {
+        // StoreBuffer S2 issue failure exits the fake pipe and is retried by
+        // the replay queue instead of holding S2.
+        s2_issue_done = !s2_data_resp.req.onS2Issue ||
+            s2_data_resp.req.onS2Issue(curTick());
+    }
     const bool s2_ready = !s2_data_resp.valid || s2_can_go;
+
     const bool s1_data_conflict = hasDcacheMainPipeDataArrayConflict();
     const bool s1_can_go = s2_ready && !s1_data_conflict;
 
@@ -700,10 +713,10 @@ LSQ::advanceDcacheMainPipe()
     }
 
     if (s2_data_resp.valid) {
-        if (s2_can_go) {
-            next_s3_write = s2_data_resp;
-        } else {
+        if (!s2_can_go) {
             next_s2_data_resp = s2_data_resp;
+        } else if (s2_issue_done) {
+            next_s3_write = s2_data_resp;
         }
     }
 
@@ -786,7 +799,8 @@ LSQ::makeDcacheRefillMainPipeRequest(
 }
 
 LSQ::DcacheMainPipeRequest
-LSQ::makeStoreBufferMainPipeRequest(const StoreBufferEntry &entry) const
+LSQ::makeStoreBufferMainPipeRequest(
+    const StoreBufferEntry &entry, DcacheMainPipeS2Callback on_s2_issue) const
 {
     DcacheMainPipeRequest req;
     req.source = DcacheMainPipeSource::StoreBuffer;
@@ -809,6 +823,7 @@ LSQ::makeStoreBufferMainPipeRequest(const StoreBufferEntry &entry) const
         req.readBanks.at(bank) = req.writeBanks.at(bank) && !full_write.at(bank);
     }
     req.needDataRead = dcacheBankMaskAny(req.readBanks);
+    req.onS2Issue = std::move(on_s2_issue);
     return req;
 }
 
@@ -941,14 +956,19 @@ LSQ::canEnterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
 }
 
 void
-LSQ::enterStoreBufferDcacheMainPipe(const StoreBufferEntry &entry)
+LSQ::enterStoreBufferDcacheMainPipe(StoreBufferEntry &entry, PacketPtr data_pkt)
 {
-    const auto req = makeStoreBufferMainPipeRequest(entry);
+    const auto req = makeStoreBufferMainPipeRequest(
+        entry,
+        [this, data_pkt](Tick tick) {
+            return issueSbufferPacketFromDcacheMainPipe(data_pkt, tick);
+        });
     auto &s1_data_read =
         dcacheMainPipeStage(DcacheMainPipeStage::S1DataRead);
     assert(!s1_data_read.valid);
     s1_data_read.valid = true;
     s1_data_read.req = req;
+    entry.inDcacheMainPipe = true;
     ++stats.dcacheMainPipeStoreEnter;
 }
 
@@ -1255,6 +1275,11 @@ LSQ::storeBufferWriteback()
         can_evict = false;
     }
 
+    // Replayed S2 exits are retried before pre-admission blocks and new
+    // evictions.
+    if (can_evict && retryReplayStoreBuffer()) {
+        can_evict = false;
+    }
     if (can_evict && retryBlockedStoreBuffer()) {
         can_evict = false;
     }
@@ -1329,12 +1354,43 @@ LSQ::storeBufferWriteback()
                         StoreBufferBlockCause::CachePort);
                 DPRINTF(StoreBuffer, "send packet fail\n");
             } else {
-                DPRINTF(StoreBuffer, "send packet successed\n");
-                entry->sending = true;
+                DPRINTF(StoreBuffer, "enter dcache mainpipe successed\n");
                 resetStoreBufferInactiveCycles();
             }
         }
     }
+}
+
+bool
+LSQ::retryReplayStoreBuffer()
+{
+    if (sbufferMainPipeReplayQ.empty()) {
+        return false;
+    }
+
+    // The front replay has priority, but a failed timing send must wait for the
+    // cache retry before it can re-enter the fake pipe.
+    if (cacheBlocked()) {
+        return true;
+    }
+
+    auto *entry = sbufferMainPipeReplayQ.front();
+    assert(entry);
+    assert(entry->replayQueued);
+    assert(!entry->inDcacheMainPipe);
+    assert(!entry->sending);
+    assert(entry->request);
+
+    bool success = entry->request->sendPacketToCache();
+    if (!success) {
+        // Keep the front replay queued; it will retry from S0 later.
+        return true;
+    }
+
+    entry->replayQueued = false;
+    sbufferMainPipeReplayQ.pop_front();
+    resetStoreBufferInactiveCycles();
+    return true;
 }
 
 bool
@@ -1354,23 +1410,26 @@ LSQ::retryBlockedStoreBuffer()
         return true;
     }
 
-    blockedSbufferEntry->sending = true;
     resetStoreBufferInactiveCycles();
     clearBlockedStoreBufferEntry();
     return true;
 }
 
 bool
-LSQ::sbufferSendPacket(PacketPtr data_pkt)
+LSQ::sbufferEnterDcacheMainPipe(PacketPtr data_pkt)
 {
     lastSbufferSendBlockedByMainPipe = false;
-    bool ret = true;
-    bool cache_got_blocked = false;
 
     auto request = dynamic_cast<SbufferRequest *>(data_pkt->senderState);
     assert(request);
     assert(request->sbuffer_entry);
+    assert(!request->sbuffer_entry->sending);
+    assert(!request->sbuffer_entry->inDcacheMainPipe);
 
+    if (cacheBlocked()) {
+        ++stats.sbufferDcacheReqBlocked;
+        return false;
+    }
     if (!canEnterStoreBufferDcacheMainPipe(*request->sbuffer_entry)) {
         lastSbufferSendBlockedByMainPipe = true;
         ++stats.sbufferDcacheReqBlocked;
@@ -1378,6 +1437,27 @@ LSQ::sbufferSendPacket(PacketPtr data_pkt)
         return false;
     }
 
+    enterStoreBufferDcacheMainPipe(*request->sbuffer_entry, data_pkt);
+    return true;
+}
+
+bool
+LSQ::issueSbufferPacketFromDcacheMainPipe(PacketPtr data_pkt, Tick issue_tick)
+{
+    bool ret = true;
+    bool cache_got_blocked = false;
+
+    auto request = dynamic_cast<SbufferRequest *>(data_pkt->senderState);
+    assert(request);
+    assert(request->sbuffer_entry);
+    assert(request->_numOutstandingPackets == 0);
+    assert(request->sbuffer_entry->inDcacheMainPipe);
+    assert(!request->sbuffer_entry->sending);
+
+    data_pkt->sendTick = issue_tick;
+
+    // Issue to the real classic cache only at fake S2 so StoreBuffer misses
+    // cannot allocate or merge MSHRs at fake-pipe admission time.
     if (!cacheBlocked() && cachePortAvailable(false)) {
         if (!dcachePort.sendTimingReq(data_pkt)) {
             ret = false;
@@ -1390,9 +1470,21 @@ LSQ::sbufferSendPacket(PacketPtr data_pkt)
     if (ret) {
         stats.sbufferDcacheReqFire++;
         cachePortBusy(false);
-        enterStoreBufferDcacheMainPipe(*request->sbuffer_entry);
+        data_pkt->setLSQPtr(this);
+        request->_numOutstandingPackets = 1;
+        request->sbuffer_entry->inDcacheMainPipe = false;
+        request->sbuffer_entry->sending = true;
+        resetStoreBufferInactiveCycles();
     } else {
+        auto *entry = request->sbuffer_entry;
         stats.sbufferDcacheReqBlocked++;
+        entry->inDcacheMainPipe = false;
+        // S2 issue failed. Exit the fake pipe and let the StoreBuffer replay
+        // this eviction from S0 through the replay queue.
+        if (!entry->replayQueued) {
+            entry->replayQueued = true;
+            sbufferMainPipeReplayQ.push_back(entry);
+        }
         if (cache_got_blocked) {
             cacheBlocked(true);
 
@@ -1568,7 +1660,9 @@ LSQ::recvReqRetry()
     iewStage->cacheUnblocked();
     cacheBlocked(false);
 
-    retryBlockedStoreBuffer();
+    if (!retryReplayStoreBuffer()) {
+        retryBlockedStoreBuffer();
+    }
 
     for (ThreadID tid : *activeThreads) {
         thread[tid].recvRetry();
@@ -2287,6 +2381,10 @@ LSQ::willWB()
         if (stage.valid) {
             return true;
         }
+    }
+
+    if (!sbufferMainPipeReplayQ.empty() && !cacheBlocked()) {
+        return true;
     }
 
     if (blockedSbufferEntry && !cacheBlocked()) {
@@ -3231,12 +3329,13 @@ bool
 LSQ::SbufferRequest::sendPacketToCache()
 {
     assert(_numOutstandingPackets == 0);
-    bool success = lsq->sbufferSendPacket(_packets.at(0));
-    DPRINTF(StoreBuffer, "Sbuffer Req::sendPacketToCache: entry[%#x]\n", _packets[0]->getAddr());
-    if (success) {
-        _packets[0]->setLSQPtr(lsq);
-        _numOutstandingPackets = 1;
-    }
+    // This only admits the request into the fake DCache MainPipe. The real
+    // classic-cache timing request is issued by the fake S2 callback.
+    bool success = lsq->sbufferEnterDcacheMainPipe(_packets.at(0));
+    DPRINTF(StoreBuffer,
+            "Sbuffer Req::sendPacketToCache: entry[%#x] %s dcache "
+            "mainpipe\n",
+            _packets[0]->getAddr(), success ? "entered" : "blocked before");
 
     return success;
 }
