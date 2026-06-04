@@ -119,7 +119,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     DataBase bpdb;
     TraceManager *bptrace;
     TraceManager *predTraceManager;  // Trace manager for prediction-time events
-    TraceManager *selectiveOracleTraceManager{};
+    TraceManager *selectiveOracleBlockTraceManager{};
+    TraceManager *selectiveOracleOutcomeTraceManager{};
 
     void initDB();
 
@@ -188,14 +189,15 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool selectiveOracleRecording{false};
     bool selectiveOracleReplaying{false};
     bool selectiveOraclePanicOnMismatch{false};
+    unsigned selectiveOracleReplayLookahead{64};
     std::unordered_set<Addr> selectiveOracleBranchPCs;
     std::array<std::unordered_set<Addr>, MaxThreads> selectiveOracleReplayStartPCs;
     std::array<std::unordered_map<FetchTargetId, SelectiveOracleBlock>, MaxThreads>
         selectiveOracleRecordBlocks;
     std::array<std::deque<SelectiveOracleRecordBuilder>, MaxThreads>
         selectiveOracleActiveRecordBuilders;
-    std::array<std::unordered_map<Addr, std::deque<SelectiveOracleBlock>>, MaxThreads>
-        selectiveOracleReplayBlocks;
+    std::array<std::deque<SelectiveOracleBlock>, MaxThreads>
+        selectiveOracleReplayStream;
     std::array<std::unordered_map<FetchTargetId, std::vector<SelectiveOracleBlock>>, MaxThreads>
         selectiveOracleConsumedBlocks;
     uint64_t selectiveOracleReplayOutcomesLoadedCount{0};
@@ -230,7 +232,7 @@ class DecoupledBPUWithBTB : public BPredUnit
     bool getSelectiveOracleBlock(
         ThreadID tid,
         Addr startPC,
-        SelectiveOracleBlock &block);
+        std::vector<SelectiveOracleBlock> &blocks);
     void restoreSelectiveOracleBlock(ThreadID tid, FetchTargetId targetId);
     void commitSelectiveOracleBlock(ThreadID tid, FetchTargetId targetId);
     void applySelectiveOracle(ThreadID tid, FetchTargetId targetId);
@@ -238,9 +240,6 @@ class DecoupledBPUWithBTB : public BPredUnit
         FullBTBPrediction &pred,
         BTBEntry &entry,
         const SelectiveOracleOutcome &outcome);
-    void addMissingOracleCondEntries(
-        FullBTBPrediction &pred,
-        const SelectiveOracleBlock &block) const;
     bool getCurrentCondTaken(
         const FullBTBPrediction &pred,
         Addr branchPC) const;

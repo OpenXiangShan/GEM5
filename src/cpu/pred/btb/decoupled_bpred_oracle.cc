@@ -1,6 +1,8 @@
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <cinttypes>
+#include <unordered_map>
 
 #include "base/intmath.hh"
 #include "base/output.hh"
@@ -30,6 +32,7 @@ void
 DecoupledBPUWithBTB::initSelectiveOracle(const Params &params)
 {
     selectiveOraclePanicOnMismatch = params.selectiveOraclePanicOnMismatch;
+    selectiveOracleReplayLookahead = params.selectiveOracleReplayLookahead;
 
     for (auto pc : params.selectiveOracleBranchPCs) {
         selectiveOracleBranchPCs.insert(pc);
@@ -46,11 +49,19 @@ DecoupledBPUWithBTB::initSelectiveOracle(const Params &params)
 void
 DecoupledBPUWithBTB::initSelectiveOracleTrace()
 {
-    std::vector<std::pair<std::string, DataType>> fields_vec = {
+    std::vector<std::pair<std::string, DataType>> block_fields_vec = {
         std::make_pair("blockId", UINT64),
         std::make_pair("tid", UINT64),
         std::make_pair("ftqId", UINT64),
         std::make_pair("startPC", UINT64),
+        std::make_pair("outcomeCount", UINT64)
+    };
+    selectiveOracleBlockTraceManager =
+        bpdb.addAndGetTrace("ORACLE_BLOCK", block_fields_vec);
+    selectiveOracleBlockTraceManager->init_table();
+
+    std::vector<std::pair<std::string, DataType>> outcome_fields_vec = {
+        std::make_pair("blockId", UINT64),
         std::make_pair("outcomeIdx", UINT64),
         std::make_pair("branchPC", UINT64),
         std::make_pair("taken", UINT64),
@@ -58,9 +69,9 @@ DecoupledBPUWithBTB::initSelectiveOracleTrace()
         std::make_pair("fallThruPC", UINT64),
         std::make_pair("size", UINT64)
     };
-    selectiveOracleTraceManager =
-        bpdb.addAndGetTrace("SELECTIVEORACLETRACE", fields_vec);
-    selectiveOracleTraceManager->init_table();
+    selectiveOracleOutcomeTraceManager =
+        bpdb.addAndGetTrace("ORACLE_OUTCOME", outcome_fields_vec);
+    selectiveOracleOutcomeTraceManager->init_table();
     removeGivenSwitch(bpDBSwitches, std::string("oracle"));
     selectiveOracleRecording = true;
     someDBenabled = true;
@@ -75,52 +86,67 @@ DecoupledBPUWithBTB::loadSelectiveOracleReplayDB(const std::string &path)
     panic_if(rc != SQLITE_OK, "Failed to open selective oracle replay DB %s: %s",
              resolved_path.c_str(), sqlite3_errmsg(db));
 
-    const char *query =
-        "SELECT blockId, tid, ftqId, startPC, outcomeIdx, branchPC, taken, "
-        "target, fallThruPC, size FROM SELECTIVEORACLETRACE "
-        "ORDER BY blockId, outcomeIdx;";
+    const char *block_query =
+        "SELECT blockId, tid, ftqId, startPC, outcomeCount "
+        "FROM ORACLE_BLOCK ORDER BY blockId;";
     sqlite3_stmt *stmt = nullptr;
-    rc = sqlite3_prepare_v2(db, query, -1, &stmt, nullptr);
-    panic_if(rc != SQLITE_OK, "Failed to query SELECTIVEORACLETRACE in %s: %s",
+    rc = sqlite3_prepare_v2(db, block_query, -1, &stmt, nullptr);
+    panic_if(rc != SQLITE_OK, "Failed to query ORACLE_BLOCK in %s: %s",
              resolved_path.c_str(), sqlite3_errmsg(db));
 
-    bool have_block = false;
-    uint64_t current_block_id = 0;
-    uint64_t next_outcome_idx = 0;
-    SelectiveOracleBlock current_block;
     std::vector<SelectiveOracleBlock> blocks;
+    std::unordered_map<uint64_t, size_t> block_indices;
+    std::unordered_map<uint64_t, uint64_t> expected_outcome_counts;
     std::array<std::unordered_set<Addr>, MaxThreads> selected_start_pcs;
-
-    auto keep_block = [&blocks](const SelectiveOracleBlock &block) {
-        if (block.outcomes.empty()) {
-            return;
-        }
-        blocks.push_back(block);
-    };
 
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
         const uint64_t block_id = sqliteUint64(stmt, 0);
         const auto tid = static_cast<ThreadID>(sqliteUint64(stmt, 1));
         const uint64_t ftq_id = sqliteUint64(stmt, 2);
         const Addr start_pc = sqliteUint64(stmt, 3);
-        const uint64_t outcome_idx = sqliteUint64(stmt, 4);
+        const uint64_t outcome_count = sqliteUint64(stmt, 4);
 
-        if (!have_block || block_id != current_block_id) {
-            if (have_block) {
-                keep_block(current_block);
-            }
-            have_block = true;
+        panic_if(tid >= MaxThreads, "Bad selective oracle replay tid %u", tid);
+        panic_if(block_indices.count(block_id) != 0,
+                 "Duplicated selective oracle block %" PRIu64, block_id);
+
+        SelectiveOracleBlock block;
+        block.tid = tid;
+        block.recordFtqId = ftq_id;
+        block.startPC = start_pc;
+        block_indices[block_id] = blocks.size();
+        expected_outcome_counts[block_id] = outcome_count;
+        blocks.push_back(block);
+    }
+
+    panic_if(rc != SQLITE_DONE, "Failed while reading ORACLE_BLOCK from %s: %s",
+             resolved_path.c_str(), sqlite3_errmsg(db));
+    sqlite3_finalize(stmt);
+
+    const char *outcome_query =
+        "SELECT blockId, outcomeIdx, branchPC, taken, target, fallThruPC, size "
+        "FROM ORACLE_OUTCOME ORDER BY blockId, outcomeIdx;";
+    stmt = nullptr;
+    rc = sqlite3_prepare_v2(db, outcome_query, -1, &stmt, nullptr);
+    panic_if(rc != SQLITE_OK, "Failed to query ORACLE_OUTCOME in %s: %s",
+             resolved_path.c_str(), sqlite3_errmsg(db));
+
+    uint64_t current_block_id = 0;
+    uint64_t next_outcome_idx = 0;
+    bool have_outcome_block = false;
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        const uint64_t block_id = sqliteUint64(stmt, 0);
+        const uint64_t outcome_idx = sqliteUint64(stmt, 1);
+        auto index_it = block_indices.find(block_id);
+        panic_if(index_it == block_indices.end(),
+                 "Selective oracle outcome references unknown block %" PRIu64,
+                 block_id);
+
+        if (!have_outcome_block || block_id != current_block_id) {
+            have_outcome_block = true;
             current_block_id = block_id;
             next_outcome_idx = 0;
-            current_block = SelectiveOracleBlock();
-            current_block.tid = tid;
-            current_block.recordFtqId = ftq_id;
-            current_block.startPC = start_pc;
-        } else {
-            panic_if(current_block.tid != tid ||
-                     current_block.recordFtqId != ftq_id ||
-                     current_block.startPC != start_pc,
-                     "Inconsistent selective oracle block %" PRIu64, block_id);
         }
 
         panic_if(outcome_idx != next_outcome_idx,
@@ -129,30 +155,42 @@ DecoupledBPUWithBTB::loadSelectiveOracleReplayDB(const std::string &path)
                  outcome_idx, block_id, next_outcome_idx);
         next_outcome_idx++;
 
-        SelectiveOracleOutcome outcome;
-        outcome.tid = tid;
-        outcome.ftqId = ftq_id;
-        outcome.startPC = start_pc;
-        outcome.branchPC = sqliteUint64(stmt, 5);
-        outcome.taken = sqliteUint64(stmt, 6) != 0;
-        outcome.target = sqliteUint64(stmt, 7);
-        outcome.fallThrough = sqliteUint64(stmt, 8);
-        outcome.size = static_cast<unsigned>(sqliteUint64(stmt, 9));
-
-        if (selectiveOracleEnabledForPC(outcome.branchPC)) {
-            current_block.hasSelectedPC = true;
-        }
-        panic_if(!current_block.outcomes.empty() &&
-                 current_block.outcomes.back().taken,
+        auto &block = blocks[index_it->second];
+        panic_if(!block.outcomes.empty() && block.outcomes.back().taken,
                  "Selective oracle block %" PRIu64
                  " has outcomes after a taken branch", block_id);
-        current_block.outcomes.push_back(outcome);
+        panic_if(block.outcomes.size() >= expected_outcome_counts[block_id],
+                 "Selective oracle block %" PRIu64
+                 " has more outcomes than expected", block_id);
+
+        SelectiveOracleOutcome outcome;
+        outcome.tid = block.tid;
+        outcome.ftqId = block.recordFtqId;
+        outcome.startPC = block.startPC;
+        outcome.branchPC = sqliteUint64(stmt, 2);
+        outcome.taken = sqliteUint64(stmt, 3) != 0;
+        outcome.target = sqliteUint64(stmt, 4);
+        outcome.fallThrough = sqliteUint64(stmt, 5);
+        outcome.size = static_cast<unsigned>(sqliteUint64(stmt, 6));
+
+        if (selectiveOracleEnabledForPC(outcome.branchPC)) {
+            block.hasSelectedPC = true;
+        }
+        block.outcomes.push_back(outcome);
     }
 
-    panic_if(rc != SQLITE_DONE, "Failed while reading selective oracle replay DB %s: %s",
+    panic_if(rc != SQLITE_DONE, "Failed while reading ORACLE_OUTCOME from %s: %s",
              resolved_path.c_str(), sqlite3_errmsg(db));
-    if (have_block) {
-        keep_block(current_block);
+    sqlite3_finalize(stmt);
+
+    for (const auto &entry : block_indices) {
+        const auto block_id = entry.first;
+        const auto &block = blocks[entry.second];
+        const auto expected = expected_outcome_counts[block_id];
+        panic_if(block.outcomes.size() != expected,
+                 "Selective oracle block %" PRIu64 " has %zu outcomes, "
+                 "expected %" PRIu64,
+                 block_id, block.outcomes.size(), expected);
     }
 
     for (const auto &block : blocks) {
@@ -171,7 +209,7 @@ DecoupledBPUWithBTB::loadSelectiveOracleReplayDB(const std::string &path)
             continue;
         }
 
-        selectiveOracleReplayBlocks[block.tid][block.startPC].push_back(block);
+        selectiveOracleReplayStream[block.tid].push_back(block);
         selectiveOracleReplayBlocksLoadedCount++;
         selectiveOracleReplayOutcomesLoadedCount += block.outcomes.size();
         if (!selectiveOracleBranchPCs.empty()) {
@@ -179,7 +217,6 @@ DecoupledBPUWithBTB::loadSelectiveOracleReplayDB(const std::string &path)
         }
     }
 
-    sqlite3_finalize(stmt);
     sqlite3_close(db);
 }
 
@@ -261,29 +298,32 @@ void
 DecoupledBPUWithBTB::writeSelectiveOracleRecordTrace(
     const SelectiveOracleBlock &block)
 {
-    if (block.outcomes.empty()) {
-        return;
-    }
-
-    panic_if(!selectiveOracleTraceManager,
-             "Selective oracle trace manager is not initialized");
+    panic_if(!selectiveOracleBlockTraceManager ||
+             !selectiveOracleOutcomeTraceManager,
+             "Selective oracle trace managers are not initialized");
 
     const uint64_t block_id = selectiveOracleNextRecordBlockId++;
+    Record block_record;
+    block_record._tick = curTick();
+    block_record._uint64_data["blockId"] = block_id;
+    block_record._uint64_data["tid"] = block.tid;
+    block_record._uint64_data["ftqId"] = block.recordFtqId;
+    block_record._uint64_data["startPC"] = block.startPC;
+    block_record._uint64_data["outcomeCount"] = block.outcomes.size();
+    selectiveOracleBlockTraceManager->write_record(block_record);
+
     for (size_t idx = 0; idx < block.outcomes.size(); ++idx) {
         const auto &outcome = block.outcomes[idx];
         Record record;
         record._tick = curTick();
         record._uint64_data["blockId"] = block_id;
-        record._uint64_data["tid"] = block.tid;
-        record._uint64_data["ftqId"] = block.recordFtqId;
-        record._uint64_data["startPC"] = block.startPC;
         record._uint64_data["outcomeIdx"] = idx;
         record._uint64_data["branchPC"] = outcome.branchPC;
         record._uint64_data["taken"] = outcome.taken ? 1 : 0;
         record._uint64_data["target"] = outcome.target;
         record._uint64_data["fallThruPC"] = outcome.fallThrough;
         record._uint64_data["size"] = outcome.size;
-        selectiveOracleTraceManager->write_record(record);
+        selectiveOracleOutcomeTraceManager->write_record(record);
     }
 
     dbpBtbStats.selectiveOracleRecordBlocks++;
@@ -425,11 +465,10 @@ bool
 DecoupledBPUWithBTB::getSelectiveOracleBlock(
     ThreadID tid,
     Addr startPC,
-    SelectiveOracleBlock &block)
+    std::vector<SelectiveOracleBlock> &blocks)
 {
-    auto &blocks_by_start_pc = selectiveOracleReplayBlocks[tid];
-    auto it = blocks_by_start_pc.find(startPC);
-    if (it == blocks_by_start_pc.end() || it->second.empty()) {
+    auto &stream = selectiveOracleReplayStream[tid];
+    if (stream.empty()) {
         dbpBtbStats.selectiveOracleReplayTraceMissing++;
         if (selectiveOraclePanicOnMismatch) {
             panic("Missing selective oracle block for tid %u startPC %#lx",
@@ -438,9 +477,32 @@ DecoupledBPUWithBTB::getSelectiveOracleBlock(
         return false;
     }
 
-    auto &queue = it->second;
-    block = queue.front();
-    queue.pop_front();
+    const auto search_limit = std::min<size_t>(
+        stream.size(), selectiveOracleReplayLookahead + 1);
+    size_t match_idx = search_limit;
+    for (size_t idx = 0; idx < search_limit; ++idx) {
+        if (stream[idx].startPC == startPC) {
+            match_idx = idx;
+            break;
+        }
+    }
+
+    if (match_idx == search_limit) {
+        dbpBtbStats.selectiveOracleReplayTraceMissing++;
+        if (selectiveOraclePanicOnMismatch) {
+            panic("Missing selective oracle block for tid %u startPC %#lx "
+                  "within lookahead %u",
+                  tid, startPC, selectiveOracleReplayLookahead);
+        }
+        return false;
+    }
+
+    blocks.clear();
+    for (size_t idx = 0; idx <= match_idx; ++idx) {
+        blocks.push_back(stream.front());
+        stream.pop_front();
+    }
+    dbpBtbStats.selectiveOracleReplaySkippedOutcomes += match_idx;
     return true;
 }
 
@@ -461,7 +523,7 @@ DecoupledBPUWithBTB::restoreSelectiveOracleBlock(
 
     auto &blocks = it->second;
     for (auto block_it = blocks.rbegin(); block_it != blocks.rend(); ++block_it) {
-        selectiveOracleReplayBlocks[tid][block_it->startPC].push_front(*block_it);
+        selectiveOracleReplayStream[tid].push_front(*block_it);
         dbpBtbStats.selectiveOracleReplayBlocksRestored++;
     }
     consumed_blocks.erase(it);
@@ -510,52 +572,6 @@ DecoupledBPUWithBTB::getCurrentCondTaken(
 }
 
 void
-DecoupledBPUWithBTB::addMissingOracleCondEntries(
-    FullBTBPrediction &pred,
-    const SelectiveOracleBlock &block) const
-{
-    const Addr block_fall_through =
-        selectiveOracleBlockFallThrough(block.startPC);
-
-    for (const auto &outcome : block.outcomes) {
-        if (outcome.branchPC < block.startPC ||
-            outcome.branchPC >= block_fall_through) {
-            continue;
-        }
-
-        auto entry_it = std::lower_bound(
-            pred.btbEntries.begin(), pred.btbEntries.end(),
-            outcome.branchPC,
-            [](const BTBEntry &entry, Addr pc) {
-                return entry.pc < pc;
-            });
-
-        if (entry_it != pred.btbEntries.end() &&
-            entry_it->valid &&
-            entry_it->pc == outcome.branchPC) {
-            continue;
-        }
-
-        BTBEntry entry;
-        entry.valid = true;
-        entry.pc = outcome.branchPC;
-        entry.target = outcome.target;
-        entry.resolved = false;
-        entry.isCond = true;
-        entry.isIndirect = false;
-        entry.isDirect = true;
-        entry.isCall = false;
-        entry.isReturn = false;
-        entry.size = outcome.size;
-        entry.alwaysTaken = false;
-        entry.ctr = 0;
-        entry.tag = 0;
-        entry.source = -1;
-        pred.btbEntries.insert(entry_it, entry);
-    }
-}
-
-void
 DecoupledBPUWithBTB::applySelectiveOracle(ThreadID tid, FetchTargetId targetId)
 {
     if (!selectiveOracleReplaying) {
@@ -570,30 +586,17 @@ DecoupledBPUWithBTB::applySelectiveOracle(ThreadID tid, FetchTargetId targetId)
         return;
     }
 
-    const auto &blocks_by_start_pc = selectiveOracleReplayBlocks[tid];
-    const auto trace_it = blocks_by_start_pc.find(thread.s0PC);
-    if (trace_it == blocks_by_start_pc.end()) {
-        dbpBtbStats.selectiveOracleReplayNoEligibleBranch++;
-        if (selectiveOracleBranchPCs.empty() && selectiveOraclePanicOnMismatch) {
-            panic("Missing selective oracle startPC %#lx for tid %u",
-                  thread.s0PC, tid);
-        }
-        return;
-    }
-
     dbpBtbStats.selectiveOracleReplayAttempts++;
 
-    SelectiveOracleBlock block;
-    if (!getSelectiveOracleBlock(tid, thread.s0PC, block)) {
+    std::vector<SelectiveOracleBlock> consumed;
+    if (!getSelectiveOracleBlock(tid, thread.s0PC, consumed)) {
         return;
     }
 
     auto &consumed_blocks = selectiveOracleConsumedBlocks[tid][targetId];
-    consumed_blocks.clear();
-    consumed_blocks.push_back(block);
-    dbpBtbStats.selectiveOracleReplayBlocksConsumed++;
-
-    addMissingOracleCondEntries(final_pred, block);
+    consumed_blocks = consumed;
+    dbpBtbStats.selectiveOracleReplayBlocksConsumed += consumed_blocks.size();
+    const auto &block = consumed_blocks.back();
 
     size_t outcome_idx = 0;
     for (auto &entry : final_pred.btbEntries) {
@@ -649,6 +652,7 @@ DecoupledBPUWithBTB::applySelectiveOracle(ThreadID tid, FetchTargetId targetId)
             dbpBtbStats.selectiveOracleReplayNotTaken++;
         }
     }
+
 }
 
 } // namespace btb_pred

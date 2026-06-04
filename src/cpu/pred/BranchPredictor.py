@@ -1219,5 +1219,8 @@ class DecoupledBPUWithBTB(BranchPredictor):
         [],
         "Conditional branch PCs used to select replayed fetch-block start PCs; "
         "empty means all traced fetch blocks are eligible")
+    selectiveOracleReplayLookahead = Param.Unsigned(
+        64,
+        "Number of replay trace blocks to scan for startPC re-synchronization")
     selectiveOraclePanicOnMismatch = Param.Bool(
         False, "Panic when selective oracle replay cannot find a matching outcome")
