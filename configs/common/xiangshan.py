@@ -553,7 +553,27 @@ def build_xiangshan_system(args):
         if args.CHI:
             if getattr(args, 'chi_topology', 'L2ToDramSys') not in l2l3_topologies:
                 test_sys.CHIsys.dramsim3 = test_sys.mem_ctrls[0]
-                test_sys.CHIsys.dramsim3.networkPort = CHIPort(recv_buffer_size=4)
+                chi_port_kwargs = dict(
+                    credit_model=getattr(args, 'chi_credit_model', 'legacy'),
+                    credit_return_direction='down',
+                    up_crd_lat_int=getattr(args, 'chi_up_crd_lat_int', 1),
+                    up_crd_lat_ext=getattr(args, 'chi_up_crd_lat_ext', 2),
+                    dn_crd_lat_int=getattr(args, 'chi_dn_crd_lat_int', 2),
+                    dn_crd_lat_ext=getattr(args, 'chi_dn_crd_lat_ext', 1),
+                    internal_crd_lat=getattr(args, 'chi_internal_crd_lat', 1),
+                )
+                chi_rxbuf_num = getattr(args, 'chi_rxbuf_num', 0)
+                if chi_rxbuf_num:
+                    chi_port_kwargs['rxbuf_num'] = chi_rxbuf_num
+                chi_skid_depth = getattr(args, 'chi_skid_depth', 0)
+                if chi_skid_depth:
+                    chi_port_kwargs['skid_depth'] = chi_skid_depth
+                chi_initial_credit_count = getattr(
+                    args, 'chi_initial_credit_count', 0)
+                if chi_initial_credit_count:
+                    chi_port_kwargs['initial_credit_count'] = (
+                        chi_initial_credit_count)
+                test_sys.CHIsys.dramsim3.networkPort = CHIPort(**chi_port_kwargs)
 
         # Align trace address mapping window to physical memory size (classic cache path)
         if hasattr(args, 'enable_trace_mode') and args.enable_trace_mode:

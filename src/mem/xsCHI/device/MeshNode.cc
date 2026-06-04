@@ -54,16 +54,30 @@ MeshNode::MeshNodeStats::MeshNodeStats(MeshNode *parent)
                "Number of times ingress was backpressured by a full VOQ"),
       ADD_STAT(voq_full_events_by_egress, statistics::units::Count::get(),
                "VOQ full events grouped by routed egress port"),
+      ADD_STAT(voq_backpressure_events_by_channel,
+               statistics::units::Count::get(),
+               "VOQ full/backpressure events grouped by CHI channel"),
       ADD_STAT(voq_depth_accum_by_egress, statistics::units::Count::get(),
                "Accumulated VOQ depth sampled once per scheduler cycle"),
       ADD_STAT(voq_avg_depth_by_egress, statistics::units::Rate<
                     statistics::units::Count,
                     statistics::units::Cycle>::get(),
                "Average VOQ depth per egress port"),
+      ADD_STAT(ib_full_events_by_channel, statistics::units::Count::get(),
+               "CMN RTL IB full events grouped by CHI channel"),
+      ADD_STAT(ib_occupancy_accum_by_channel, statistics::units::Count::get(),
+               "Accumulated CMN RTL IB occupancy sampled at scheduler cycles"),
+      ADD_STAT(ib_avg_occupancy_by_channel, statistics::units::Rate<
+                    statistics::units::Count,
+                    statistics::units::Cycle>::get(),
+               "Average CMN RTL IB occupancy per CHI channel"),
       ADD_STAT(egress_stall_cycles_by_dir, statistics::units::Cycle::get(),
                "Directional cycles with pending flits but no successful send"),
       ADD_STAT(egress_bw_sat_cycles_by_dir, statistics::units::Cycle::get(),
                "Directional cycles that sent flits and still had backlog"),
+      ADD_STAT(egress_credit_blocked_cycles_by_channel,
+               statistics::units::Cycle::get(),
+               "Scheduler cycles where egress send failed due to credit"),
       ADD_STAT(hop_count_hist_snp, statistics::units::Count::get(),
                "Hop-count distribution at local delivery for SNP channel"),
       ADD_STAT(hop_count_hist_req, statistics::units::Count::get(),
@@ -122,12 +136,33 @@ MeshNode::MeshNodeStats::MeshNodeStats(MeshNode *parent)
         voq_full_events_by_egress.subname(p, label);
     }
 
+    voq_backpressure_events_by_channel
+        .init(MeshNode::NumChannels)
+        .flags(nozero);
+    for (size_t c = 0; c < MeshNode::NumChannels; ++c) {
+        const auto ch = static_cast<Flit::CHI_CHN_TYPE>(c);
+        voq_backpressure_events_by_channel.subname(c, MeshNode::channelName(ch));
+    }
+
     voq_depth_accum_by_egress
         .init(MeshNode::NumPorts)
         .flags(nozero);
     for (size_t p = 0; p < MeshNode::NumPorts; ++p) {
         voq_depth_accum_by_egress.subname(
             p, MeshNode::portName(static_cast<PortIndex>(p)));
+    }
+
+    ib_full_events_by_channel
+        .init(MeshNode::NumChannels)
+        .flags(nozero);
+    ib_occupancy_accum_by_channel
+        .init(MeshNode::NumChannels)
+        .flags(nozero);
+    for (size_t c = 0; c < MeshNode::NumChannels; ++c) {
+        const auto ch = static_cast<Flit::CHI_CHN_TYPE>(c);
+        const std::string label = MeshNode::channelName(ch);
+        ib_full_events_by_channel.subname(c, label);
+        ib_occupancy_accum_by_channel.subname(c, label);
     }
 
     egress_stall_cycles_by_dir
@@ -140,6 +175,15 @@ MeshNode::MeshNodeStats::MeshNodeStats(MeshNode *parent)
         const std::string label = MeshNode::directionName(d);
         egress_stall_cycles_by_dir.subname(d, label);
         egress_bw_sat_cycles_by_dir.subname(d, label);
+    }
+
+    egress_credit_blocked_cycles_by_channel
+        .init(MeshNode::NumChannels)
+        .flags(nozero);
+    for (size_t c = 0; c < MeshNode::NumChannels; ++c) {
+        const auto ch = static_cast<Flit::CHI_CHN_TYPE>(c);
+        egress_credit_blocked_cycles_by_channel.subname(c,
+                                                        MeshNode::channelName(ch));
     }
 
     hop_count_hist_snp
@@ -177,6 +221,12 @@ MeshNode::MeshNodeStats::MeshNodeStats(MeshNode *parent)
         .flags(nozero | nonan)
         .precision(6);
     voq_avg_depth_by_egress = voq_depth_accum_by_egress / send_event_cycles;
+
+    ib_avg_occupancy_by_channel
+        .flags(nozero | nonan)
+        .precision(6);
+    ib_avg_occupancy_by_channel =
+        ib_occupancy_accum_by_channel / send_event_cycles;
 }
 
 MeshNode::MeshNode(const Params &p)
@@ -186,6 +236,8 @@ MeshNode::MeshNode(const Params &p)
       nodeX(p.node_x),
       nodeY(p.node_y),
       voqDepth(p.voq_depth == 0 ? 1 : p.voq_depth),
+      ibDepth(p.ib_depth == 0 ? (p.voq_depth == 0 ? 2 : p.voq_depth)
+                              : p.ib_depth),
       voqDepthPerIngress(p.voq_depth_per_ingress),
       outVoq(),
       rrCursor(),
@@ -194,6 +246,7 @@ MeshNode::MeshNode(const Params &p)
       retryOnNextCycle(false)
 {
     registerCallbacks();
+    panic_if(ibDepth == 0, "MeshNode %s has invalid ib_depth=0", name());
 }
 
 void
@@ -274,26 +327,36 @@ MeshNode::handleIngress(PortIndex ingress, FlitPtr &flit)
     const size_t egressIdx = portToIndex(egress);
     const size_t ingressIdx = portToIndex(ingress);
     const size_t channelIdx = channelToIndex(channel);
+    const bool rtlIbMode =
+        ports[ingressIdx]->releasesCreditOnDownstreamRelease();
     const size_t ingressDepth = outVoq[egressIdx][channelIdx][ingressIdx].size();
     const size_t aggregateDepth = getQueueDepth(egress, channel);
-    const size_t selectedDepth = selectBackpressureDepthImpl(
-        ingressDepth, aggregateDepth, voqDepthPerIngress);
+    const size_t selectedDepth = rtlIbMode ?
+        getIngressIbDepth(ingress, channel) :
+        selectBackpressureDepthImpl(
+            ingressDepth, aggregateDepth, voqDepthPerIngress);
+    const size_t depthLimit = rtlIbMode ? ibDepth : voqDepth;
 
-    // Backpressure point: when VOQ is full, keep flit at upstream CHIPort.
-    if (shouldBackpressureImpl(selectedDepth, voqDepth)) {
+    // Backpressure point: when VOQ/IB is full, keep flit at upstream CHIPort.
+    if (shouldBackpressureImpl(selectedDepth, depthLimit)) {
         stats.voq_full_events++;
         stats.voq_full_events_by_egress[egressIdx]++;
+        stats.voq_backpressure_events_by_channel[channelIdx]++;
+        if (rtlIbMode) {
+            stats.ib_full_events_by_channel[channelIdx]++;
+        }
         DPRINTF(CHIMeshNode,
-                "%s ingress=%s egress=%s channel=%d VOQ full mode=%s "
+                "%s ingress=%s egress=%s channel=%d %s full mode=%s "
                 "selected_depth=%u ingress_depth=%u aggregate_depth=%u "
                 "limit=%u op=%s tgt=%u txn=%llu\n",
                 name(), portName(ingress), portName(egress),
                 static_cast<int>(channel),
+                rtlIbMode ? "IB" : "VOQ",
                 voqDepthPerIngress ? "per_ingress" : "aggregate",
                 static_cast<unsigned>(selectedDepth),
                 static_cast<unsigned>(ingressDepth),
                 static_cast<unsigned>(aggregateDepth),
-                static_cast<unsigned>(voqDepth),
+                static_cast<unsigned>(depthLimit),
                 CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(flit->getOpcode()).c_str(),
                 flit->getTgtId(),
                 static_cast<unsigned long long>(flit->getTxnId()));
@@ -321,6 +384,15 @@ MeshNode::onSendEvent()
     stats.send_event_cycles++;
     retryOnNextCycle = false;
     bool sentAny = false;
+    for (size_t c = 0; c < NumChannels; ++c) {
+        size_t channelDepth = 0;
+        for (size_t e = 0; e < NumPorts; ++e) {
+            for (size_t s = 0; s < NumPorts; ++s) {
+                channelDepth += outVoq[e][c][s].size();
+            }
+        }
+        stats.ib_occupancy_accum_by_channel[c] += channelDepth;
+    }
     // Try every output each cycle; each output has independent arbitration.
     for (size_t i = 0; i < NumPorts; ++i) {
         const PortIndex egress = static_cast<PortIndex>(i);
@@ -442,11 +514,18 @@ MeshNode::trySendForOutputAndChannel(PortIndex egress,
                     CHI_OP_HELPER::CHI_OP_TYPE_TO_STR(op).c_str(), tgt,
                     static_cast<unsigned long long>(txn));
             q.pop();
+            CHIPort* const ingressPort = ports[srcIdx];
+            if (ingressPort->releasesCreditOnDownstreamRelease()) {
+                ingressPort->releaseRxbufEntry(channel, curTick());
+            }
             cursor = (srcIdx + 1) % NumPorts;
             return true;
         }
 
         const bool creditBlocked = egressPort->isChannelBlockedByCredit(channel);
+        if (creditBlocked) {
+            stats.egress_credit_blocked_cycles_by_channel[channelIdx]++;
+        }
         if (!creditBlocked) {
             retryOnNextCycle = true;
         }
@@ -523,6 +602,27 @@ MeshNode::getQueueDepthAllChannels(PortIndex egress) const
             egress, static_cast<Flit::CHI_CHN_TYPE>(c));
     }
     return depth;
+}
+
+size_t
+MeshNode::getIngressIbDepth(PortIndex ingress,
+                            Flit::CHI_CHN_TYPE channel) const
+{
+    const size_t ingressIdx = portToIndex(ingress);
+    const size_t channelIdx = channelToIndex(channel);
+
+    size_t depth = 0;
+    for (size_t e = 0; e < NumPorts; ++e) {
+        depth += outVoq[e][channelIdx][ingressIdx].size();
+    }
+    return depth;
+}
+
+bool
+MeshNode::canAllocateIbSlot(PortIndex ingress,
+                            Flit::CHI_CHN_TYPE channel) const
+{
+    return getIngressIbDepth(ingress, channel) < ibDepth;
 }
 
 bool

@@ -40,6 +40,7 @@ class DDRWrapper :  public memory::AbstractMemory
   private:
     uint32_t _NodeID;
     bool useDMT;
+    const Cycles readResponsePaddingCycles;
     // SystemAddressMapRN *sam;
 
     CHIPort* port;
@@ -102,22 +103,6 @@ class DDRWrapper :  public memory::AbstractMemory
 
     boost::heap::priority_queue<std::pair<std::shared_ptr<Packet>, Tick>, boost::heap::compare<sort_policy>> responseQueue;
 
-    struct ReadTrack
-    {
-        Addr addr{0};
-        uint32_t reqTxnId{0};
-        uint32_t returnTxnId{0};
-        uint32_t srcId{0};
-        uint32_t tgtId{0};
-        Tick insertTick{0};
-        Tick readCompleteTick{0};
-        Tick sendRespTick{0};
-        bool agingWarned{false};
-    };
-
-    std::unordered_map<Addr, ReadTrack> readTracks;
-
-
     unsigned int nbrOutstanding() const;
 
     /**
@@ -132,8 +117,6 @@ class DDRWrapper :  public memory::AbstractMemory
     void sendResponse();
     void scheduleSendResponseRetry();
     void handleCreditUnblock(Flit::CHI_CHN_TYPE channel);
-    void dumpOutstandingReadState(const char *reason, Addr focusAddr = 0) const;
-    void scanAgedReadTracks(const char *where);
 
     /**
      * Event to schedule sending of responses

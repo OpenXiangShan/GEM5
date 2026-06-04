@@ -89,6 +89,7 @@ class MeshNode : public ClockedObject
     const uint32_t nodeX;
     const uint32_t nodeY;
     const size_t voqDepth;
+    const size_t ibDepth;
     const bool voqDepthPerIngress;
 
     // VOQ indexed by [egress][channel][ingress]. This avoids head-of-line
@@ -115,12 +116,17 @@ class MeshNode : public ClockedObject
 
         statistics::Scalar voq_full_events;
         statistics::Vector voq_full_events_by_egress;
+        statistics::Vector voq_backpressure_events_by_channel;
 
         statistics::Vector voq_depth_accum_by_egress;
         statistics::Formula voq_avg_depth_by_egress;
+        statistics::Vector ib_full_events_by_channel;
+        statistics::Vector ib_occupancy_accum_by_channel;
+        statistics::Formula ib_avg_occupancy_by_channel;
 
         statistics::Vector egress_stall_cycles_by_dir;
         statistics::Vector egress_bw_sat_cycles_by_dir;
+        statistics::Vector egress_credit_blocked_cycles_by_channel;
 
         statistics::Histogram hop_count_hist_snp;
         statistics::Histogram hop_count_hist_req;
@@ -156,6 +162,10 @@ class MeshNode : public ClockedObject
     bool hasPendingFlits() const;
     size_t getQueueDepth(PortIndex egress, Flit::CHI_CHN_TYPE channel) const;
     size_t getQueueDepthAllChannels(PortIndex egress) const;
+    size_t getIngressIbDepth(PortIndex ingress,
+                             Flit::CHI_CHN_TYPE channel) const;
+    bool canAllocateIbSlot(PortIndex ingress,
+                           Flit::CHI_CHN_TYPE channel) const;
     bool isEgressUsable(PortIndex egress) const;
     void scheduleSendEvent();
     void scheduleSendEventAtNextCycle();

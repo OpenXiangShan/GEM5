@@ -21,6 +21,7 @@
 #include "sim/cur_tick.hh"
 #include "sim/eventq.hh"
 #include "sim/sim_object.hh"
+#include "sim/stats.hh"
 
 namespace gem5
 {
@@ -30,7 +31,29 @@ namespace xsCHI
 class CHIPort: public ClockedObject
 {
 
+  public:
+    static constexpr size_t NumChannels =
+        static_cast<size_t>(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_NUM);
+
+    enum class CreditReturnDirection
+    {
+        Up,
+        Down,
+        Internal,
+    };
+
+    enum class CreditReleasePolicy
+    {
+        OnAccept,
+        OnDownstreamRelease,
+    };
+
   protected:
+    struct PendingCreditReturn
+    {
+        Tick releaseTick;
+        Tick grantTick;
+    };
 
     class UnboundPortException {};
 
@@ -71,8 +94,25 @@ class CHIPort: public ClockedObject
     std::queue<FlitPtr> rsp_buffer;
     // EventFunctionWrapper rsp_handle_event;
 
+    // cmn700_rtl receiver-side RXBUF queues. The existing per-channel buffers
+    // above are the staging/skid queues consumed by receive_callback.
+    std::queue<FlitPtr> req_rxbuf;
+    std::queue<FlitPtr> snp_rxbuf;
+    std::queue<FlitPtr> dat_rxbuf;
+    std::queue<FlitPtr> rsp_rxbuf;
+
     // use to simulate every cycle's tick event, bridge can schedule process order at it own will.
     EventFunctionWrapper global_handle_event;
+
+    EventFunctionWrapper req_credit_grant_event;
+    EventFunctionWrapper snp_credit_grant_event;
+    EventFunctionWrapper dat_credit_grant_event;
+    EventFunctionWrapper rsp_credit_grant_event;
+
+    std::queue<PendingCreditReturn> req_credit_grant_queue;
+    std::queue<PendingCreditReturn> snp_credit_grant_queue;
+    std::queue<PendingCreditReturn> dat_credit_grant_queue;
+    std::queue<PendingCreditReturn> rsp_credit_grant_queue;
 
     // send side
     uint32_t req_credit;
@@ -88,11 +128,87 @@ class CHIPort: public ClockedObject
     Cycles rsp_last_send_time;
 
     // Per-channel blocked state due to credit exhaustion.
-    std::array<bool, static_cast<size_t>(Flit::CHI_CHN_TYPE::CHI_CHN_TYPE_NUM)>
-        channel_blocked_by_credit{};
+    std::array<bool, NumChannels> channel_blocked_by_credit{};
+    std::array<bool, NumChannels> credit_block_start_valid{};
+    std::array<Cycles, NumChannels> credit_block_start{};
+    std::array<bool, NumChannels> no_credit_cycle_valid{};
+    std::array<Cycles, NumChannels> last_no_credit_cycle{};
 
 
-    int BUFFER_SIZE = 8; // 可根据需要调整
+    int rxbufNum = 8;
+    int skidDepth = 8;
+    int initialCreditCount = 8;
+    const bool delayedCreditReturn;
+    const bool rtlCreditModel;
+    const CreditReturnDirection creditReturnDirection;
+    const CreditReleasePolicy creditReleasePolicy;
+    const Cycles upCrdLatInt;
+    const Cycles upCrdLatExt;
+    const Cycles dnCrdLatInt;
+    const Cycles dnCrdLatExt;
+    const Cycles internalCrdLat;
+    std::array<uint32_t, NumChannels> rxbufOutstanding{};
+
+    struct CHIPortStats : public statistics::Group
+    {
+        explicit CHIPortStats(CHIPort *parent);
+
+        statistics::Vector credit_stall_events_by_channel;
+        statistics::Vector credit_stall_cycles_by_channel;
+        statistics::Vector no_credit_bubble_cycles_by_channel;
+        statistics::Vector receive_callback_reject_events_by_channel;
+
+        statistics::Histogram credit_return_latency_hist_req;
+        statistics::Histogram credit_return_latency_hist_snp;
+        statistics::Histogram credit_return_latency_hist_dat;
+        statistics::Histogram credit_return_latency_hist_rsp;
+
+        statistics::Histogram rxbuf_occupancy_hist_req;
+        statistics::Histogram rxbuf_occupancy_hist_snp;
+        statistics::Histogram rxbuf_occupancy_hist_dat;
+        statistics::Histogram rxbuf_occupancy_hist_rsp;
+
+        statistics::Histogram skid_occupancy_hist_req;
+        statistics::Histogram skid_occupancy_hist_snp;
+        statistics::Histogram skid_occupancy_hist_dat;
+        statistics::Histogram skid_occupancy_hist_rsp;
+
+        statistics::Histogram rxbuf_outstanding_hist_req;
+        statistics::Histogram rxbuf_outstanding_hist_snp;
+        statistics::Histogram rxbuf_outstanding_hist_dat;
+        statistics::Histogram rxbuf_outstanding_hist_rsp;
+
+        statistics::Vector rxbuf_release_events_by_channel;
+        statistics::Vector deferred_credit_release_events_by_channel;
+    } stats;
+
+    Cycles creditReturnLatency() const;
+    void returnCreditToPeer(Flit::CHI_CHN_TYPE channel, Tick releaseTick);
+    void enqueueCreditGrant(Flit::CHI_CHN_TYPE channel, Cycles latency,
+                            Tick releaseTick);
+    void processCreditGrant(Flit::CHI_CHN_TYPE channel);
+    std::queue<PendingCreditReturn>&
+    creditGrantQueue(Flit::CHI_CHN_TYPE channel);
+    EventFunctionWrapper&
+    creditGrantEvent(Flit::CHI_CHN_TYPE channel);
+    void grantCredit(Flit::CHI_CHN_TYPE channel);
+    void recordCreditBlocked(Flit::CHI_CHN_TYPE channel);
+    void recordRxbufOccupancy(Flit::CHI_CHN_TYPE channel, size_t occupancy);
+    void recordSkidOccupancy(Flit::CHI_CHN_TYPE channel, size_t occupancy);
+    void recordRxbufOutstanding(Flit::CHI_CHN_TYPE channel, size_t occupancy);
+    void recordReceiveQueueOccupancies(Flit::CHI_CHN_TYPE channel);
+    void sampleCreditReturnLatency(Flit::CHI_CHN_TYPE channel,
+                                   Tick releaseTick);
+    std::queue<FlitPtr>& receiveBuffer(Flit::CHI_CHN_TYPE channel);
+    const std::queue<FlitPtr>& receiveBuffer(Flit::CHI_CHN_TYPE channel) const;
+    std::queue<FlitPtr>& rxbufQueue(Flit::CHI_CHN_TYPE channel);
+    const std::queue<FlitPtr>& rxbufQueue(Flit::CHI_CHN_TYPE channel) const;
+    bool useRtlRxbufStaging() const;
+    void pumpRxbufToStaging(Flit::CHI_CHN_TYPE channel);
+    void pumpRxbufToStaging();
+    bool hasReceiveWork() const;
+    void noteRxbufReceive(Flit::CHI_CHN_TYPE channel);
+    bool releaseCreditOnAccept() const;
 
 public:
     typedef CHIPortParams Params;
@@ -125,6 +241,12 @@ public:
     /** Is this port currently connected to a peer? */
     bool isConnected() const { return _connected; }
     void setOwner(SimObject* owner){owner_module = owner;}
+    bool usesCmn700RtlCreditModel() const { return rtlCreditModel; }
+    bool releasesCreditOnDownstreamRelease() const
+    {
+        return creditReleasePolicy == CreditReleasePolicy::OnDownstreamRelease;
+    }
+    void releaseRxbufEntry(Flit::CHI_CHN_TYPE channel, Tick releaseTick);
 
     void setBlocked();
     void setUnblocked();

@@ -147,6 +147,40 @@ def addNoISAOptions(parser, configure_xiangshan=False):
     parser.add_argument("--l1-to-l2-pf-hint", action="store_true")
     parser.add_argument("--l2-to-l3-pf-hint", action="store_true")
     parser.add_argument("--CHI", action="store_true")
+    parser.add_argument("--chi-credit-model", type=str,
+                        choices=["legacy", "cmn700", "cmn700_rtl"],
+                        default="legacy",
+                        help="xsCHI credit timing model. legacy preserves "
+                             "immediate credit return; cmn700 enables "
+                             "directional delayed credit return; cmn700_rtl "
+                             "models RXBUF as skid+IB with downstream release.")
+    parser.add_argument("--chi-rxbuf-num", type=int, default=0,
+                        help="CHI receive flit buffer entries per channel. "
+                             "0 selects model default: legacy=4, cmn700=3, "
+                             "cmn700_rtl=3.")
+    parser.add_argument("--chi-skid-depth", type=int, default=0,
+                        help="CMN RTL skid/staging entries per channel. "
+                             "0 selects model default.")
+    parser.add_argument("--chi-ib-depth", type=int, default=0,
+                        help="CMN RTL ingress buffer depth per ingress/channel. "
+                             "0 selects model default.")
+    parser.add_argument("--chi-initial-credit-count", type=int, default=0,
+                        help="Initial CHI credits per channel. 0 selects "
+                             "rxbuf_num.")
+    parser.add_argument("--chi-up-crd-lat-int", type=int, default=1,
+                        help="CMN upload internal credit latency in cycles")
+    parser.add_argument("--chi-up-crd-lat-ext", type=int, default=2,
+                        help="CMN upload external credit latency in cycles")
+    parser.add_argument("--chi-dn-crd-lat-int", type=int, default=2,
+                        help="CMN download internal credit latency in cycles")
+    parser.add_argument("--chi-dn-crd-lat-ext", type=int, default=1,
+                        help="CMN download external credit latency in cycles")
+    parser.add_argument("--chi-internal-crd-lat", type=int, default=1,
+                        help="Internal mesh-link credit return latency in cycles")
+    parser.add_argument("--chi-ddr-read-response-padding-cycles", type=int,
+                        default=0,
+                        help="Extra xsCHI DDRWrapper read response padding cycles "
+                             "after DRAM read completion before DAT injection")
     parser.add_argument("--chi-voq-depth", type=int, default=2,
                         help="MeshNode VOQ depth threshold")
     parser.add_argument("--chi-voq-depth-mode", type=str,

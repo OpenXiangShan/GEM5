@@ -12,6 +12,8 @@ class MeshNode(ClockedObject):
     node_y = Param.Unsigned(0, "Mesh Y coordinate")
     # VOQ depth threshold used by MeshNode backpressure.
     voq_depth = Param.Unsigned(2, "MeshNode VOQ depth threshold")
+    ib_depth = Param.Unsigned(
+        0, "CMN RTL-style ingress buffer depth; 0 uses voq_depth/default")
     # True: per-(egress,channel,ingress) depth limit.
     # False: aggregate per-(egress,channel) depth limit.
     voq_depth_per_ingress = Param.Bool(

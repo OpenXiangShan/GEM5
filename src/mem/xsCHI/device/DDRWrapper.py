@@ -16,3 +16,6 @@ class DDRWrapper(AbstractMemory):
                             "Directory to prepend to file names")
     networkPort = Param.CHIPort("networkPort pointer")
     use_dmt = Param.Bool(True, "Whether to use DMT return (ReturnNid/ReturnTxnid) if use FakeL3,it has to be True")
+    read_response_padding_cycles = Param.Cycles(
+        0,
+        "Extra SN/DDR local read response padding before DAT is injected into CHI")
