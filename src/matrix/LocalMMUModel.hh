@@ -162,6 +162,64 @@ class LocalMmuModel
     size_t firstRequestIndex = 0;
 };
 
+class MatrixL2FillTable
+{
+  public:
+    struct Config
+    {
+        size_t entryCount = 4;
+        unsigned fillChunksPerBeat = 2;
+    };
+
+    struct Request
+    {
+        uint32_t sourceId = 0;
+        uint64_t seq = 0;
+        LocalMmuModel::Client client = LocalMmuModel::Client::AML;
+        uint32_t beatIndex = 0;
+        MatrixBankKind destBank = MatrixBankKind::A;
+        uint32_t destReg = 0;
+        uint32_t byteSize = 64;
+    };
+
+    struct Entry
+    {
+        Request request = {};
+        bool hasData = false;
+        uint32_t dataSize = 0;
+        std::array<uint8_t, 64> data = {};
+        unsigned remainingFillChunks = 0;
+    };
+
+    explicit MatrixL2FillTable(Config config);
+
+    bool reserveForIssue(const Request &request);
+    bool acceptResponse(uint32_t source_id, const uint8_t *data,
+                        uint32_t size);
+    bool retireFillChunk(uint32_t source_id);
+    bool releaseSource(uint32_t source_id);
+
+    std::optional<Entry> lookup(uint32_t source_id) const;
+    bool hasFreeEntry() const;
+    bool sourceHeld(uint32_t source_id) const;
+    bool sourceReadyToRelease(uint32_t source_id) const;
+    size_t reservedCount() const;
+    unsigned pendingFillChunks(uint32_t source_id) const;
+
+  private:
+    struct Slot
+    {
+        bool valid = false;
+        Entry entry = {};
+    };
+
+    Slot *findSlot(uint32_t source_id);
+    const Slot *findSlot(uint32_t source_id) const;
+
+    Config config;
+    std::vector<Slot> slots;
+};
+
 } // namespace matrix
 } // namespace gem5
 

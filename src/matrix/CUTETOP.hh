@@ -29,6 +29,7 @@
 #ifndef __MATRIX_CUTE_TOP_HH__
 #define __MATRIX_CUTE_TOP_HH__
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -48,78 +49,6 @@ namespace gem5
 
 namespace matrix
 {
-
-class MatrixRegResource
-{
-  public:
-    static constexpr unsigned NumBanks = 8;
-    static constexpr unsigned EntryBytes = 32;
-    static constexpr unsigned ReadLatencyCycles = 1;
-    static constexpr uint16_t FullBankMask = (1U << NumBanks) - 1;
-
-    enum class Client : uint8_t
-    {
-        DataController,
-        MemoryLoader
-    };
-
-    enum class Access : uint8_t
-    {
-        Read,
-        Write
-    };
-
-    enum class StallReason : uint8_t
-    {
-        None,
-        PartialBankMask,
-        AbWritePriority,
-        BankConflict,
-        CReadWriteConflict
-    };
-
-    struct Request
-    {
-        MatrixBankKind bank = MatrixBankKind::A;
-        Client client = Client::DataController;
-        Access access = Access::Read;
-        uint32_t entry = 0;
-        uint16_t bankMask = FullBankMask;
-    };
-
-    struct Grant
-    {
-        bool granted = false;
-        StallReason reason = StallReason::None;
-    };
-
-    static Request makeRead(MatrixBankKind bank, Client client,
-                            uint32_t entry);
-    static Request makeWrite(MatrixBankKind bank, Client client,
-                             uint32_t entry);
-
-    std::vector<Grant> arbitrate(const std::vector<Request> &requests);
-    void advanceCycle() { ++cycle; }
-
-    bool readResponseReady(MatrixBankKind bank, Client client) const;
-    bool consumeReadResponse(MatrixBankKind bank, Client client);
-
-    uint64_t currentCycle() const { return cycle; }
-
-  private:
-    struct ReadResponse
-    {
-        MatrixBankKind bank = MatrixBankKind::A;
-        Client client = Client::DataController;
-        uint64_t readyCycle = 0;
-    };
-
-    static bool isAbBank(MatrixBankKind bank);
-    void enqueueReadResponse(const Request &request);
-
-    uint64_t cycle = 0;
-    std::deque<ReadResponse> readResponses;
-};
 
 // Detailed CUTE active state: keep this header lean and direct.
 class DetailedCuteBackend : public MatrixBackend
@@ -169,6 +98,10 @@ class DetailedCuteBackend : public MatrixBackend
         uint64_t localMmuBeatsIssued = 0;
         uint64_t localMmuReadResponses = 0;
         uint64_t localMmuStoreAcks = 0;
+        uint64_t matrixL2FillReservations = 0;
+        uint64_t matrixL2FillResponses = 0;
+        uint64_t matrixL2FillRetires = 0;
+        uint64_t matrixL2FillFullStalls = 0;
         uint64_t matrixRegLoaderWriteChunksQueued = 0;
         uint64_t matrixRegLoaderWriteChunksGranted = 0;
         uint64_t matrixRegLoaderWriteChunksStalled = 0;
@@ -193,6 +126,8 @@ class DetailedCuteBackend : public MatrixBackend
     {
         unsigned localMmuLatencyCycles = 1;
         unsigned localMmuMaxOutstanding = 64;
+        unsigned matrixL2FillTableEntries = 4;
+        unsigned matrixL2FillChunksPerBeat = 2;
     };
 
     explicit DetailedCuteBackend(
@@ -461,6 +396,7 @@ class DetailedCuteBackend : public MatrixBackend
     MatrixRegResource matrixRegResource;
     TimingConfig timingConfig;
     LocalMmuModel localMmu;
+    MatrixL2FillTable matrixL2FillTable;
     MatrixTimingMemoryAdapter *timingMemory = nullptr;
     std::vector<MatrixRegResource::Request> pendingMatrixRegWrites;
     unsigned pendingStoreCount = 0;

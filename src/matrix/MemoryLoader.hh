@@ -318,6 +318,22 @@ scatterTimingLoadResponse(const TimingLoadPlan &plan,
     return true;
 }
 
+inline std::vector<uint32_t>
+matrixL2FillEntriesForBeat(uint32_t dest_reg, uint32_t beat_index,
+                           unsigned fill_chunks_per_beat)
+{
+    assert(fill_chunks_per_beat != 0);
+
+    std::vector<uint32_t> entries;
+    entries.reserve(fill_chunks_per_beat);
+    const uint32_t base_entry =
+        dest_reg + beat_index * fill_chunks_per_beat;
+    for (unsigned chunk = 0; chunk < fill_chunks_per_beat; ++chunk) {
+        entries.push_back(base_entry + chunk);
+    }
+    return entries;
+}
+
 class MatrixMemoryAdapter
 {
   public:

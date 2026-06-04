@@ -309,5 +309,146 @@ LocalMmuModel::takeReadyResponses()
     return responses;
 }
 
+MatrixL2FillTable::MatrixL2FillTable(Config config_)
+    : config(config_), slots(config.entryCount)
+{
+    assert(config.entryCount != 0);
+    assert(config.fillChunksPerBeat != 0);
+}
+
+MatrixL2FillTable::Slot *
+MatrixL2FillTable::findSlot(uint32_t source_id)
+{
+    for (auto &slot : slots) {
+        if (slot.valid && slot.entry.request.sourceId == source_id) {
+            return &slot;
+        }
+    }
+    return nullptr;
+}
+
+const MatrixL2FillTable::Slot *
+MatrixL2FillTable::findSlot(uint32_t source_id) const
+{
+    for (const auto &slot : slots) {
+        if (slot.valid && slot.entry.request.sourceId == source_id) {
+            return &slot;
+        }
+    }
+    return nullptr;
+}
+
+bool
+MatrixL2FillTable::reserveForIssue(const Request &request)
+{
+    if (request.byteSize == 0 || request.byteSize > 64 ||
+        findSlot(request.sourceId) != nullptr) {
+        return false;
+    }
+
+    for (auto &slot : slots) {
+        if (slot.valid) {
+            continue;
+        }
+        slot.valid = true;
+        slot.entry = Entry{};
+        slot.entry.request = request;
+        slot.entry.remainingFillChunks = config.fillChunksPerBeat;
+        return true;
+    }
+    return false;
+}
+
+bool
+MatrixL2FillTable::acceptResponse(uint32_t source_id, const uint8_t *data,
+                                  uint32_t size)
+{
+    auto *slot = findSlot(source_id);
+    if (slot == nullptr || slot->entry.hasData || data == nullptr ||
+        size == 0) {
+        return false;
+    }
+
+    const auto copy_size = std::min<size_t>(size, slot->entry.data.size());
+    std::copy(data, data + copy_size, slot->entry.data.begin());
+    slot->entry.hasData = true;
+    slot->entry.dataSize = copy_size;
+    slot->entry.remainingFillChunks = config.fillChunksPerBeat;
+    return true;
+}
+
+bool
+MatrixL2FillTable::retireFillChunk(uint32_t source_id)
+{
+    auto *slot = findSlot(source_id);
+    if (slot == nullptr || !slot->entry.hasData ||
+        slot->entry.remainingFillChunks == 0) {
+        return false;
+    }
+
+    --slot->entry.remainingFillChunks;
+    return true;
+}
+
+bool
+MatrixL2FillTable::releaseSource(uint32_t source_id)
+{
+    auto *slot = findSlot(source_id);
+    if (slot == nullptr || !sourceReadyToRelease(source_id)) {
+        return false;
+    }
+
+    slot->valid = false;
+    slot->entry = Entry{};
+    return true;
+}
+
+std::optional<MatrixL2FillTable::Entry>
+MatrixL2FillTable::lookup(uint32_t source_id) const
+{
+    const auto *slot = findSlot(source_id);
+    if (slot == nullptr) {
+        return std::nullopt;
+    }
+    return slot->entry;
+}
+
+bool
+MatrixL2FillTable::hasFreeEntry() const
+{
+    return std::any_of(
+        slots.begin(), slots.end(),
+        [](const Slot &slot) { return !slot.valid; });
+}
+
+bool
+MatrixL2FillTable::sourceHeld(uint32_t source_id) const
+{
+    return findSlot(source_id) != nullptr;
+}
+
+bool
+MatrixL2FillTable::sourceReadyToRelease(uint32_t source_id) const
+{
+    const auto *slot = findSlot(source_id);
+    return slot != nullptr && slot->entry.hasData &&
+           slot->entry.remainingFillChunks == 0;
+}
+
+size_t
+MatrixL2FillTable::reservedCount() const
+{
+    return std::count_if(
+        slots.begin(), slots.end(),
+        [](const Slot &slot) { return slot.valid; });
+}
+
+unsigned
+MatrixL2FillTable::pendingFillChunks(uint32_t source_id) const
+{
+    const auto *slot = findSlot(source_id);
+    return slot == nullptr ? 0 : slot->entry.remainingFillChunks;
+}
+
 } // namespace matrix
 } // namespace gem5

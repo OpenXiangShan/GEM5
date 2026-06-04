@@ -61,7 +61,10 @@ DetailedCuteBackend::DetailedCuteBackend(
       timingConfig(timing_config),
       localMmu(LocalMmuModel::Config{
           timing_config.localMmuLatencyCycles,
-          timing_config.localMmuMaxOutstanding})
+          timing_config.localMmuMaxOutstanding}),
+      matrixL2FillTable(MatrixL2FillTable::Config{
+          timing_config.matrixL2FillTableEntries,
+          timing_config.matrixL2FillChunksPerBeat})
 {
 }
 

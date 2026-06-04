@@ -53,7 +53,6 @@ namespace
 
 constexpr unsigned MatrixTileMn = 8;
 constexpr unsigned Int8KGroup = 32;
-constexpr unsigned LocalMmuReadResponseMatrixRegChunks = 2;
 
 uint64_t
 byteMaskForSize(uint32_t byte_size)
@@ -77,6 +76,20 @@ lsuMatrixBank(const AmuLsuDesc &desc)
         return MatrixBankKind::B;
     }
     return MatrixBankKind::A;
+}
+
+MatrixL2FillTable::Request
+fillTableRequestForIssue(const LocalMmuModel::IssuedRequest &issued)
+{
+    MatrixL2FillTable::Request request;
+    request.sourceId = issued.sourceId;
+    request.seq = issued.metadata.seq;
+    request.client = issued.metadata.client;
+    request.beatIndex = issued.metadata.beatIndex;
+    request.destBank = issued.metadata.destBank;
+    request.destReg = issued.metadata.destReg;
+    request.byteSize = issued.metadata.byteSize;
+    return request;
 }
 
 CuteCompletion
@@ -135,173 +148,6 @@ execRelease(uint64_t seq, const AmuReleaseDesc &desc)
 }
 
 } // anonymous namespace
-
-MatrixRegResource::Request
-MatrixRegResource::makeRead(MatrixBankKind bank, Client client,
-                            uint32_t entry)
-{
-    Request request;
-    request.bank = bank;
-    request.client = client;
-    request.access = Access::Read;
-    request.entry = entry;
-    return request;
-}
-
-MatrixRegResource::Request
-MatrixRegResource::makeWrite(MatrixBankKind bank, Client client,
-                             uint32_t entry)
-{
-    Request request;
-    request.bank = bank;
-    request.client = client;
-    request.access = Access::Write;
-    request.entry = entry;
-    return request;
-}
-
-bool
-MatrixRegResource::isAbBank(MatrixBankKind bank)
-{
-    return bank == MatrixBankKind::A || bank == MatrixBankKind::B;
-}
-
-void
-MatrixRegResource::enqueueReadResponse(const Request &request)
-{
-    ReadResponse response;
-    response.bank = request.bank;
-    response.client = request.client;
-    response.readyCycle = cycle + ReadLatencyCycles;
-    readResponses.push_back(response);
-}
-
-std::vector<MatrixRegResource::Grant>
-MatrixRegResource::arbitrate(const std::vector<Request> &requests)
-{
-    std::vector<Grant> grants(requests.size());
-    std::vector<bool> eligible(requests.size(), true);
-
-    for (size_t i = 0; i < requests.size(); ++i) {
-        if (requests[i].bankMask != FullBankMask) {
-            grants[i].reason = StallReason::PartialBankMask;
-            eligible[i] = false;
-        }
-    }
-
-    for (const auto bank : {MatrixBankKind::A, MatrixBankKind::B}) {
-        std::vector<size_t> reads;
-        std::vector<size_t> writes;
-        for (size_t i = 0; i < requests.size(); ++i) {
-            if (!eligible[i] || requests[i].bank != bank) {
-                continue;
-            }
-            if (requests[i].access == Access::Read) {
-                reads.push_back(i);
-            } else {
-                writes.push_back(i);
-            }
-        }
-
-        if (!writes.empty()) {
-            grants[writes.front()].granted = true;
-            for (size_t i = 1; i < writes.size(); ++i) {
-                grants[writes[i]].reason = StallReason::BankConflict;
-            }
-            for (const auto read_idx : reads) {
-                grants[read_idx].reason = StallReason::AbWritePriority;
-            }
-        } else if (!reads.empty()) {
-            grants[reads.front()].granted = true;
-            for (size_t i = 1; i < reads.size(); ++i) {
-                grants[reads[i]].reason = StallReason::BankConflict;
-            }
-        }
-    }
-
-    std::vector<size_t> c_reads;
-    std::vector<size_t> c_writes;
-    for (size_t i = 0; i < requests.size(); ++i) {
-        if (!eligible[i] || requests[i].bank != MatrixBankKind::C) {
-            continue;
-        }
-        if (requests[i].access == Access::Read) {
-            c_reads.push_back(i);
-        } else {
-            c_writes.push_back(i);
-        }
-    }
-
-    std::optional<size_t> c_write_grant;
-    if (!c_writes.empty()) {
-        c_write_grant = c_writes.front();
-        grants[*c_write_grant].granted = true;
-        for (size_t i = 1; i < c_writes.size(); ++i) {
-            grants[c_writes[i]].reason = StallReason::BankConflict;
-        }
-    }
-
-    if (!c_reads.empty()) {
-        const bool same_parity_write =
-            c_write_grant &&
-            ((requests[c_reads.front()].entry & 1) ==
-             (requests[*c_write_grant].entry & 1));
-        if (same_parity_write) {
-            grants[c_reads.front()].reason =
-                StallReason::CReadWriteConflict;
-            if (c_writes.size() == 1) {
-                grants[*c_write_grant].granted = false;
-                grants[*c_write_grant].reason =
-                    StallReason::CReadWriteConflict;
-            }
-        } else if (c_writes.size() > 1) {
-            grants[c_reads.front()].reason = StallReason::BankConflict;
-        } else {
-            grants[c_reads.front()].granted = true;
-        }
-        for (size_t i = 1; i < c_reads.size(); ++i) {
-            grants[c_reads[i]].reason = StallReason::BankConflict;
-        }
-    }
-
-    for (size_t i = 0; i < requests.size(); ++i) {
-        if (grants[i].granted && requests[i].access == Access::Read) {
-            enqueueReadResponse(requests[i]);
-        }
-    }
-
-    return grants;
-}
-
-bool
-MatrixRegResource::readResponseReady(MatrixBankKind bank, Client client) const
-{
-    return std::any_of(
-        readResponses.begin(), readResponses.end(),
-        [&](const ReadResponse &response) {
-            return response.bank == bank &&
-                   response.client == client &&
-                   response.readyCycle <= cycle;
-        });
-}
-
-bool
-MatrixRegResource::consumeReadResponse(MatrixBankKind bank, Client client)
-{
-    auto it = std::find_if(
-        readResponses.begin(), readResponses.end(),
-        [&](const ReadResponse &response) {
-            return response.bank == bank &&
-                   response.client == client &&
-                   response.readyCycle <= cycle;
-        });
-    if (it == readResponses.end()) {
-        return false;
-    }
-
-    readResponses.erase(it);
-    return true;
-}
 
 // Active backend register, memory, and writeback helpers.
 bool
@@ -719,7 +565,23 @@ DetailedCuteBackend::issueLocalMmuTimingRequest()
     }
 
     LocalMmuModel::IssuedRequest issued;
-    if (!localMmu.issueExternal(backendStep, issued)) {
+    const auto fill_admission = [&](const LocalMmuModel::Request &request) {
+        if (request.isStore || matrixL2FillTable.hasFreeEntry()) {
+            return true;
+        }
+        ++counters.matrixL2FillFullStalls;
+        DPRINTF(MatrixCuteTrace,
+                "matrix_l2_fill_full [sn:%llu] client=%u beat=%u "
+                "reserved=%llu step=%llu.\n",
+                request.seq,
+                static_cast<unsigned>(request.client),
+                request.beatIndex,
+                static_cast<unsigned long long>(
+                    matrixL2FillTable.reservedCount()),
+                static_cast<unsigned long long>(backendStep));
+        return false;
+    };
+    if (!localMmu.issueExternal(backendStep, issued, fill_admission)) {
         return;
     }
 
@@ -777,6 +639,24 @@ DetailedCuteBackend::issueLocalMmuTimingRequest()
         localMmu.completeExternalResponse(issued.sourceId);
         localMmu.releaseExternalSource(issued.sourceId);
         return;
+    }
+
+    if (!issued.request.isStore) {
+        const bool reserved =
+            matrixL2FillTable.reserveForIssue(
+                fillTableRequestForIssue(issued));
+        assert(reserved);
+        ++counters.matrixL2FillReservations;
+        DPRINTF(MatrixCuteTrace,
+                "matrix_l2_fill_reserve [sn:%llu] client=%u beat=%u "
+                "source=%u reserved=%llu step=%llu.\n",
+                issued.request.seq,
+                static_cast<unsigned>(issued.request.client),
+                issued.request.beatIndex,
+                issued.sourceId,
+                static_cast<unsigned long long>(
+                    matrixL2FillTable.reservedCount()),
+                static_cast<unsigned long long>(backendStep));
     }
 
     if (!timingMemory->sendTimingRequest(request)) {
@@ -927,15 +807,38 @@ DetailedCuteBackend::serviceLsuMatrixRegWriteChunk(TaskSlot &task)
     ++task.lsuMatrixRegWriteChunksDone;
     task.lsuPendingMatrixRegWriteEntries.pop_front();
     task.lsuPendingMatrixRegWriteSourceIds.pop_front();
+    if (useTimingMemory()) {
+        const bool retired =
+            matrixL2FillTable.retireFillChunk(source_id);
+        assert(retired);
+        ++counters.matrixL2FillRetires;
+        DPRINTF(MatrixCuteTrace,
+                "matrix_l2_fill_retire [sn:%llu] source=%u "
+                "remaining=%u step=%llu.\n",
+                task.entry.request.seq,
+                source_id,
+                matrixL2FillTable.pendingFillChunks(source_id),
+                static_cast<unsigned long long>(backendStep));
+    }
     if (std::find(task.lsuPendingMatrixRegWriteSourceIds.begin(),
                   task.lsuPendingMatrixRegWriteSourceIds.end(),
                   source_id) ==
         task.lsuPendingMatrixRegWriteSourceIds.end()) {
         if (useTimingMemory()) {
+            assert(matrixL2FillTable.sourceReadyToRelease(source_id));
             const bool released =
-                localMmu.releaseExternalSource(source_id);
+                matrixL2FillTable.releaseSource(source_id);
             assert(released);
+            DPRINTF(MatrixCuteTrace,
+                    "matrix_l2_fill_release [sn:%llu] source=%u "
+                    "reserved=%llu step=%llu.\n",
+                    task.entry.request.seq,
+                    source_id,
+                    static_cast<unsigned long long>(
+                        matrixL2FillTable.reservedCount()),
+                    static_cast<unsigned long long>(backendStep));
         }
+        localMmu.releaseExternalSource(source_id);
     }
     ++counters.matrixRegLoaderWriteChunksGranted;
     DPRINTF(MatrixCuteTrace,
@@ -1890,37 +1793,52 @@ DetailedCuteBackend::serviceLocalMmuResponses()
             ++task.lsuResponsesReceived;
             if (!response.isStore) {
                 ++counters.localMmuReadResponses;
-                if (useTimingMemory() &&
-                    !recordTimingLoadResponse(task, response)) {
-                    task.bufferedCompletion = makeCompletion(
-                        task.entry.request.seq, CuteRequestKind::Lsu,
-                        CuteCompletionStatus::Unsupported);
-                    task.lsuPendingMatrixRegWriteChunks = 0;
-                    task.lsuPendingMatrixRegWriteEntries.clear();
-                    task.lsuPendingMatrixRegWriteSourceIds.clear();
-                    localMmu.releaseExternalSource(response.sourceId);
-                    return true;
+                if (useTimingMemory()) {
+                    if (!recordTimingLoadResponse(task, response) ||
+                        !matrixL2FillTable.acceptResponse(
+                            response.sourceId, response.data.data(),
+                            response.dataSize)) {
+                        task.bufferedCompletion = makeCompletion(
+                            task.entry.request.seq, CuteRequestKind::Lsu,
+                            CuteCompletionStatus::Unsupported);
+                        task.lsuPendingMatrixRegWriteChunks = 0;
+                        task.lsuPendingMatrixRegWriteEntries.clear();
+                        task.lsuPendingMatrixRegWriteSourceIds.clear();
+                        localMmu.releaseExternalSource(response.sourceId);
+                        return true;
+                    }
+                    ++counters.matrixL2FillResponses;
+                    DPRINTF(MatrixCuteTrace,
+                            "matrix_l2_fill_response [sn:%llu] "
+                            "source=%u bytes=%u chunks=%u reserved=%llu "
+                            "step=%llu.\n",
+                            task.entry.request.seq,
+                            response.sourceId,
+                            response.dataSize,
+                            matrixL2FillTable.pendingFillChunks(
+                                response.sourceId),
+                            static_cast<unsigned long long>(
+                                matrixL2FillTable.reservedCount()),
+                            static_cast<unsigned long long>(backendStep));
                 }
-                const uint32_t base_entry = task.entry.writeRegs[0] +
-                    response.beatIndex *
-                    LocalMmuReadResponseMatrixRegChunks;
-                for (unsigned chunk = 0;
-                     chunk < LocalMmuReadResponseMatrixRegChunks;
-                     ++chunk) {
+                const auto fill_entries = matrixL2FillEntriesForBeat(
+                    task.entry.writeRegs[0], response.beatIndex,
+                    timingConfig.matrixL2FillChunksPerBeat);
+                const auto fill_chunk_count =
+                    static_cast<unsigned>(fill_entries.size());
+                for (const auto entry : fill_entries) {
                     task.lsuPendingMatrixRegWriteEntries.push_back(
-                        base_entry + chunk);
+                        entry);
                     task.lsuPendingMatrixRegWriteSourceIds.push_back(
                         response.sourceId);
                 }
                 task.lsuPendingMatrixRegWriteChunks +=
-                    LocalMmuReadResponseMatrixRegChunks;
+                    fill_chunk_count;
                 counters.matrixRegLoaderWriteChunksQueued +=
-                    LocalMmuReadResponseMatrixRegChunks;
+                    fill_chunk_count;
             } else {
                 ++counters.localMmuStoreAcks;
-                if (useTimingMemory()) {
-                    localMmu.releaseExternalSource(response.sourceId);
-                }
+                localMmu.releaseExternalSource(response.sourceId);
             }
             DPRINTF(MatrixCuteTrace,
                     "local_mmu_response [sn:%llu] unit=%u store=%u "
