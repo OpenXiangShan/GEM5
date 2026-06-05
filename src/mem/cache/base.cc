@@ -1084,12 +1084,11 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         } else {
             // Keep classic-cache release functional, but hold an extra MSHR
             // credit until the refill leaves the fake mainpipe.
-            notify_dcache_refill(true);
-
             // while we deallocate an mshr from the queue we still have to
             // check the isFull condition before and after as we might
             // have been using the reserved entries already
             const bool was_full = dcacheMainPipeEffectiveMSHRFull();
+            notify_dcache_refill(true);
             mshrQueue.deallocate(mshr);
             if (was_full && !dcacheMainPipeEffectiveMSHRFull()) {
                 clearBlocked(Blocked_NoMSHRs);
