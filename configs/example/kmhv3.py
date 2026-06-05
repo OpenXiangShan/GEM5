@@ -114,7 +114,8 @@ def setKmhV3Params(args, system):
             cpu.branchPred.ittage.enabled = True
             cpu.branchPred.mgsc.enabled = True
             cpu.branchPred.ras.enabled = True
-            cpu.branchPred.enable2Fetch = True
+            cpu.branchPred.pairtage.enableSecondBlock = False
+            cpu.branchPred.enable2Fetch = False
             cpu.branchPred.maxFetchBytesPerCycle = 256
 
         # l1 cache per core

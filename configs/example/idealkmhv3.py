@@ -89,7 +89,8 @@ def setKmhV3IdealParams(args, system):
             cpu.branchPred.ftq_size = 64
             cpu.branchPred.fsq_size = 64
             # cpu.branchPred.microtage.enabled = False
-            cpu.branchPred.enable2Fetch = True
+            cpu.branchPred.pairtage.enableSecondBlock = False
+            cpu.branchPred.enable2Fetch = False
             cpu.branchPred.maxFetchBytesPerCycle = 256
 
         # l1 cache per core
