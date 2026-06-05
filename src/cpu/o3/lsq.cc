@@ -902,6 +902,7 @@ LSQ::notifyDcacheRefill(
     dcacheMainPipeRefillQ.push(
         makeDcacheRefillMainPipeRequest(
             addr, need_data_read, std::move(on_complete)));
+    cpu->wakeCPU();
     cpu->activityThisCycle();
 }
 
