@@ -5,6 +5,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <fstream>
 #include <queue>
 #include <stack>
 #include <string>
@@ -188,8 +189,12 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     bool selectiveOracleRecording{false};
     bool selectiveOracleReplaying{false};
+    bool selectiveOracleCSVRecording{false};
     bool selectiveOraclePanicOnMismatch{false};
     unsigned selectiveOracleReplayLookahead{64};
+    std::string selectiveOracleRecordCSVFile;
+    std::string selectiveOracleReplayCSVFile;
+    std::ofstream selectiveOracleCSVStream;
     std::unordered_set<Addr> selectiveOracleBranchPCs;
     std::array<std::unordered_set<Addr>, MaxThreads> selectiveOracleReplayStartPCs;
     std::array<std::unordered_map<FetchTargetId, SelectiveOracleBlock>, MaxThreads>
@@ -207,6 +212,8 @@ class DecoupledBPUWithBTB : public BPredUnit
     void initSelectiveOracle(const Params &params);
     void initSelectiveOracleTrace();
     void loadSelectiveOracleReplayDB(const std::string &path);
+    void initSelectiveOracleCSVRecord(const std::string &path);
+    void loadSelectiveOracleReplayCSV(const std::string &path);
     void publishSelectiveOracleLoadedStat();
     bool selectiveOracleEnabledForPC(Addr branchPC) const;
     bool selectiveOracleReplayEnabledForStartPC(
@@ -229,6 +236,7 @@ class DecoupledBPUWithBTB : public BPredUnit
         FetchTargetId targetId,
         const FetchTarget &target);
     void writeSelectiveOracleRecordTrace(const SelectiveOracleBlock &block);
+    void writeSelectiveOracleRecordCSV(const SelectiveOracleBlock &block);
     bool getSelectiveOracleBlock(
         ThreadID tid,
         Addr startPC,
