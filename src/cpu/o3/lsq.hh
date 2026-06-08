@@ -45,6 +45,7 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <functional>
 #include <list>
 #include <map>
 #include <memory>
@@ -1253,6 +1254,7 @@ class LSQ
     static constexpr unsigned DcacheBankCount = 8;
 
     using DcacheBankMask = std::array<bool, DcacheBankCount>;
+    using DcacheMainPipeCompleteCallback = std::function<void(Tick)>;
 
     enum class DcacheMainPipeSource : unsigned
     {
@@ -1281,6 +1283,7 @@ class LSQ
         bool needWritebackPort = false;
         DcacheBankMask readBanks = {};
         DcacheBankMask writeBanks = {};
+        DcacheMainPipeCompleteCallback onComplete;
 
         bool isRefill() const
         {
@@ -1329,7 +1332,8 @@ class LSQ
     DcacheBankMask storeMaskToDcacheBanks(const std::vector<bool> &mask) const;
 
     DcacheMainPipeRequest makeDcacheRefillMainPipeRequest(
-        Addr addr, bool need_data_read) const;
+        Addr addr, bool need_data_read,
+        DcacheMainPipeCompleteCallback on_complete = {}) const;
     DcacheMainPipeRequest makeStoreBufferMainPipeRequest(
         const StoreBufferEntry &entry) const;
 
@@ -1353,7 +1357,9 @@ class LSQ
     boost::compute::detail::lru_cache<uint64_t, NullStruct> recentlyloadAddr;
     std::vector<std::vector<bool>> bankOccupied;
 
-    void notifyDcacheRefill(Addr addr, bool need_data_read = true);
+    void notifyDcacheRefill(
+        Addr addr, bool need_data_read = true,
+        DcacheMainPipeCompleteCallback on_complete = {});
 
     std::queue<DcacheMainPipeRequest> dcacheMainPipeRefillQ;
     DcacheMainPipeBufferedPipe dcacheMainPipe = {};
