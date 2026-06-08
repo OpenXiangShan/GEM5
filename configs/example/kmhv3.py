@@ -103,10 +103,14 @@ def setKmhV3Params(args, system):
             cpu.branchPred.mbtb.resolvedUpdate = True
             cpu.branchPred.tage.resolvedUpdate = True
             cpu.branchPred.ittage.resolvedUpdate = True
+            cpu.branchPred.tage.tableSizes = [
+                2048, 2048, 2048, 2048, 2048, 2048, 2048, 2048
+            ]
+            cpu.branchPred.tage.numWays = [2, 2, 2, 2, 2, 2, 2, 2]
 
             cpu.branchPred.ubtb.enabled = True
             cpu.branchPred.abtb.enabled = True
-            cpu.branchPred.microtage.enabled = True
+            cpu.branchPred.microtage.enabled = False
             cpu.branchPred.mbtb.enabled = True
             cpu.branchPred.tage.enabled = True
             cpu.branchPred.ittage.enabled = True
