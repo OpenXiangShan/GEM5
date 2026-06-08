@@ -390,6 +390,9 @@ class BaseCache : public ClockedObject, public CacheAccessor
     /** Miss status registers */
     MSHRQueue mshrQueue;
 
+    /** MSHR slots held by fake DCache MainPipe refill timing. */
+    int dcacheMainPipeHeldMSHRCredits = 0;
+
     /** Write/writeback buffer */
     WriteQueue writeBuffer;
 
@@ -481,10 +484,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     void markInService(MSHR *mshr, bool pending_modified_resp)
     {
-        bool wasFull = mshrQueue.isFull();
+        bool wasFull = dcacheMainPipeEffectiveMSHRFull();
         mshrQueue.markInService(mshr, pending_modified_resp);
 
-        if (wasFull && !mshrQueue.isFull()) {
+        if (wasFull && !dcacheMainPipeEffectiveMSHRFull()) {
             clearBlocked(Blocked_NoMSHRs);
         }
     }
@@ -664,6 +667,12 @@ class BaseCache : public ClockedObject, public CacheAccessor
                                     CacheBlk *blk) = 0;
 
     virtual void sendHintViaMSHRTargets(MSHR *mshr, const PacketPtr pkt) = 0;
+
+    bool dcacheMainPipeEffectiveMSHRFull() const;
+    bool dcacheMainPipeCanPrefetch() const;
+    void holdDcacheMainPipeMSHRCredit();
+    void scheduleDcacheMainPipeMSHRCreditRelease(Tick tick);
+    void releaseDcacheMainPipeMSHRCredit();
 
     /**
      * Handles a response (cache line fill/write ack) from the bus.
@@ -1404,7 +1413,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
                                         pkt, time, order++,
                                         allocOnFill(pkt->cmd));
 
-        if (mshrQueue.isFull()) {
+        if (dcacheMainPipeEffectiveMSHRFull()) {
             setBlocked((BlockedCause)MSHRQueue_MSHRs);
         }
 
