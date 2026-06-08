@@ -35,7 +35,6 @@
 #include <cstdint>
 #include <functional>
 #include <map>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -318,32 +317,6 @@ scatterTimingLoadResponse(const TimingLoadPlan &plan,
     return true;
 }
 
-inline std::vector<uint32_t>
-matrixL2FillEntriesForBeat(uint32_t dest_reg, uint32_t beat_index,
-                           unsigned fill_chunks_per_beat)
-{
-    assert(fill_chunks_per_beat != 0);
-
-    std::vector<uint32_t> entries;
-    entries.reserve(fill_chunks_per_beat);
-    const uint32_t base_entry =
-        dest_reg + beat_index * fill_chunks_per_beat;
-    for (unsigned chunk = 0; chunk < fill_chunks_per_beat; ++chunk) {
-        entries.push_back(base_entry + chunk);
-    }
-    return entries;
-}
-
-class MatrixMemoryAdapter
-{
-  public:
-    virtual ~MatrixMemoryAdapter() = default;
-
-    virtual bool loadTile(const AmuLsuDesc &desc, MatrixTensor &out_tensor) = 0;
-    virtual bool storeTile(const AmuLsuDesc &desc,
-                           const MatrixTensor &tensor) = 0;
-};
-
 class MatrixTimingMemoryAdapter
 {
   public:
@@ -366,36 +339,6 @@ class MatrixTimingMemoryAdapter
 
     virtual bool connected() const = 0;
     virtual bool sendTimingRequest(const Request &request) = 0;
-};
-
-class NullMatrixMemoryAdapter : public MatrixMemoryAdapter
-{
-  public:
-    bool loadTile(const AmuLsuDesc &desc, MatrixTensor &out_tensor) override;
-    bool storeTile(const AmuLsuDesc &desc,
-                   const MatrixTensor &tensor) override;
-};
-
-class SparseMatrixMemoryAdapter : public MatrixMemoryAdapter
-{
-  public:
-    bool loadTile(const AmuLsuDesc &desc, MatrixTensor &out_tensor) override;
-    bool storeTile(const AmuLsuDesc &desc,
-                   const MatrixTensor &tensor) override;
-
-    void writeElement(Addr addr, int64_t value);
-    bool readElement(Addr addr, int64_t &value) const;
-
-  private:
-    std::unordered_map<Addr, int64_t> elements;
-};
-
-class Gem5MatrixMemoryAdapter : public MatrixMemoryAdapter
-{
-  public:
-    bool loadTile(const AmuLsuDesc &desc, MatrixTensor &out_tensor) override;
-    bool storeTile(const AmuLsuDesc &desc,
-                   const MatrixTensor &tensor) override;
 };
 
 } // namespace matrix

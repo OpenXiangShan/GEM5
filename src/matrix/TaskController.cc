@@ -29,7 +29,6 @@
 #include "matrix/TaskController.hh"
 
 #include <cassert>
-#include <utility>
 
 #include "base/trace.hh"
 #include "debug/MatrixCuteTrace.hh"
@@ -43,20 +42,16 @@ namespace matrix
 
 // Active request issue path: fifo, headReady, issueHead, dispatchTask.
 DetailedCuteBackend::DetailedCuteBackend(
-    std::unique_ptr<MatrixMemoryAdapter> memory_adapter,
     size_t fifo_depth, size_t ab_reg_count, size_t c_reg_count)
     : DetailedCuteBackend(
-          std::move(memory_adapter), fifo_depth, ab_reg_count, c_reg_count,
-          TimingConfig())
+          fifo_depth, ab_reg_count, c_reg_count, TimingConfig())
 {
 }
 
 DetailedCuteBackend::DetailedCuteBackend(
-    std::unique_ptr<MatrixMemoryAdapter> memory_adapter,
     size_t fifo_depth, size_t ab_reg_count, size_t c_reg_count,
     TimingConfig timing_config)
     : fifo(fifo_depth), regFile(ab_reg_count, c_reg_count),
-      memory(std::move(memory_adapter)),
       scoreboard(ab_reg_count, c_reg_count),
       timingConfig(timing_config),
       localMmu(LocalMmuModel::Config{
@@ -64,7 +59,7 @@ DetailedCuteBackend::DetailedCuteBackend(
           timing_config.localMmuMaxOutstanding}),
       matrixL2FillTable(MatrixL2FillTable::Config{
           timing_config.matrixL2FillTableEntries,
-          timing_config.matrixL2FillChunksPerBeat})
+          timing_config.matrixL2FillBankFifoDepth})
 {
 }
 

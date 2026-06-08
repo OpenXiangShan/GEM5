@@ -67,9 +67,9 @@ class MatrixRegResource
     {
         None,
         PartialBankMask,
+        InvalidOwner,
         AbWritePriority,
-        BankConflict,
-        CReadWriteConflict
+        BankConflict
     };
 
     struct Request
@@ -95,7 +95,6 @@ class MatrixRegResource
     std::vector<Grant> arbitrate(const std::vector<Request> &requests);
     void advanceCycle();
 
-    bool readResponseReady(MatrixBankKind bank, Client client) const;
     bool consumeReadResponse(MatrixBankKind bank, Client client);
 
     uint64_t currentCycle() const { return cycle; }
@@ -110,6 +109,10 @@ class MatrixRegResource
 
     static bool isAbBank(MatrixBankKind bank);
     static size_t abBankIndex(MatrixBankKind bank);
+    static bool validBankMask(uint16_t bank_mask);
+    static bool fullBankMask(uint16_t bank_mask);
+    static bool singleBankMask(uint16_t bank_mask);
+    static bool bankMaskIncludes(uint16_t bank_mask, unsigned bank);
     bool currentCycleGrantBlocks(const Request &request,
                                  Grant &grant) const;
     void markCycleGrant(const Request &request);
@@ -121,17 +124,8 @@ class MatrixRegResource
         Access access = Access::Read;
     };
 
-    struct CBankToken
-    {
-        bool readBusy = false;
-        uint32_t readParity = 0;
-        bool writeBusy = false;
-        uint32_t writeParity = 0;
-    };
-
     uint64_t cycle = 0;
-    std::array<AbBankToken, 2> abBankTokens;
-    CBankToken cBankToken;
+    std::array<std::array<AbBankToken, NumBanks>, 2> abBankTokens;
     std::deque<ReadResponse> readResponses;
 };
 

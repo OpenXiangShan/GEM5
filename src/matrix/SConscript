@@ -11,3 +11,14 @@ Source('Scoreboard.cc')
 Source('MRegFile.cc')
 Source('MemoryLoader.cc')
 Source('MatrixTE.cc')
+
+GTest('local_mmu_model.test', 'local_mmu_model.test.cc',
+      'LocalMMUModel.cc')
+GTest('timing_load_plan.test', 'timing_load_plan.test.cc')
+GTest('timing_store_plan.test', 'timing_store_plan.test.cc')
+GTest('timing_store_backend.test', 'timing_store_backend.test.cc',
+      'CUTETOP.cc', 'TaskController.cc', 'Scoreboard.cc', 'MRegFile.cc',
+      'MatrixTE.cc', 'LocalMMUModel.cc', with_tag('gem5 trace'))
+GTest('matrix_reg_resource.test', 'matrix_reg_resource.test.cc',
+      'MRegFile.cc')
+GTest('scoreboard.test', 'scoreboard.test.cc', 'Scoreboard.cc')

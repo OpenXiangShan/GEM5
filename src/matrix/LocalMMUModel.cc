@@ -313,76 +313,156 @@ MatrixL2FillTable::MatrixL2FillTable(Config config_)
     : config(config_), slots(config.entryCount)
 {
     assert(config.entryCount != 0);
-    assert(config.fillChunksPerBeat != 0);
+    assert(config.bankFifoDepth != 0);
 }
 
 MatrixL2FillTable::Slot *
-MatrixL2FillTable::findSlot(uint32_t source_id)
+MatrixL2FillTable::findSlot(Handle handle)
 {
-    for (auto &slot : slots) {
-        if (slot.valid && slot.entry.request.sourceId == source_id) {
-            return &slot;
-        }
+    if (handle.slot >= slots.size()) {
+        return nullptr;
     }
-    return nullptr;
+    auto &slot = slots[handle.slot];
+    if (!slot.valid || slot.generation != handle.generation) {
+        return nullptr;
+    }
+    return &slot;
 }
 
 const MatrixL2FillTable::Slot *
-MatrixL2FillTable::findSlot(uint32_t source_id) const
+MatrixL2FillTable::findSlot(Handle handle) const
 {
-    for (const auto &slot : slots) {
-        if (slot.valid && slot.entry.request.sourceId == source_id) {
-            return &slot;
-        }
+    if (handle.slot >= slots.size()) {
+        return nullptr;
     }
-    return nullptr;
+    const auto &slot = slots[handle.slot];
+    if (!slot.valid || slot.generation != handle.generation) {
+        return nullptr;
+    }
+    return &slot;
 }
 
 bool
-MatrixL2FillTable::reserveForIssue(const Request &request)
+MatrixL2FillTable::canAccept(const Request &request) const
 {
     if (request.byteSize == 0 || request.byteSize > 64 ||
-        findSlot(request.sourceId) != nullptr) {
+        request.fillChunks == 0) {
         return false;
     }
 
-    for (auto &slot : slots) {
+    return hasFreeEntry();
+}
+
+std::optional<MatrixL2FillTable::Handle>
+MatrixL2FillTable::acceptResponse(const Request &request,
+                                  const uint8_t *data, uint32_t size)
+{
+    if (!canAccept(request) || data == nullptr || size == 0) {
+        return std::nullopt;
+    }
+
+    for (uint32_t index = 0; index < slots.size(); ++index) {
+        auto &slot = slots[index];
         if (slot.valid) {
             continue;
         }
+
         slot.valid = true;
         slot.entry = Entry{};
         slot.entry.request = request;
-        slot.entry.remainingFillChunks = config.fillChunksPerBeat;
-        return true;
+        const auto copy_size = std::min<size_t>(
+            size, slot.entry.data.size());
+        std::copy(data, data + copy_size, slot.entry.data.begin());
+        slot.entry.dataSize = copy_size;
+        slot.entry.remainingFillChunks = request.fillChunks;
+        return Handle{index, slot.generation};
     }
-    return false;
+
+    return std::nullopt;
 }
 
 bool
-MatrixL2FillTable::acceptResponse(uint32_t source_id, const uint8_t *data,
-                                  uint32_t size)
+MatrixL2FillTable::canAcceptResponse(const Request &request) const
 {
-    auto *slot = findSlot(source_id);
-    if (slot == nullptr || slot->entry.hasData || data == nullptr ||
-        size == 0) {
+    if (!canAccept(request) || request.targetBank >= bankFifos.size()) {
         return false;
     }
 
-    const auto copy_size = std::min<size_t>(size, slot->entry.data.size());
-    std::copy(data, data + copy_size, slot->entry.data.begin());
-    slot->entry.hasData = true;
-    slot->entry.dataSize = copy_size;
-    slot->entry.remainingFillChunks = config.fillChunksPerBeat;
-    return true;
+    return bankFifos[request.targetBank].size() < config.bankFifoDepth;
+}
+
+std::optional<MatrixL2FillTable::Handle>
+MatrixL2FillTable::acceptResponseToBank(const Request &request,
+                                        const uint8_t *data, uint32_t size)
+{
+    if (!canAcceptResponse(request)) {
+        return std::nullopt;
+    }
+
+    const auto handle = acceptResponse(request, data, size);
+    if (!handle.has_value()) {
+        return std::nullopt;
+    }
+
+    bankFifos[request.targetBank].push_back(*handle);
+    return handle;
+}
+
+std::optional<MatrixL2FillTable::DrainCandidate>
+MatrixL2FillTable::drainCandidate(unsigned bank) const
+{
+    if (bank >= bankFifos.size() || bankFifos[bank].empty()) {
+        return std::nullopt;
+    }
+
+    const auto handle = bankFifos[bank].front();
+    const auto *slot = findSlot(handle);
+    if (slot == nullptr || slot->entry.remainingFillChunks == 0) {
+        return std::nullopt;
+    }
+
+    DrainCandidate candidate;
+    candidate.handle = handle;
+    candidate.seq = slot->entry.request.seq;
+    candidate.client = slot->entry.request.client;
+    candidate.destBank = slot->entry.request.destBank;
+    candidate.targetBank = slot->entry.request.targetBank;
+    candidate.targetEntry =
+        slot->entry.request.targetEntry +
+        (slot->entry.request.fillChunks -
+         slot->entry.remainingFillChunks);
+    candidate.remainingBeforeRetire = slot->entry.remainingFillChunks;
+    return candidate;
 }
 
 bool
-MatrixL2FillTable::retireFillChunk(uint32_t source_id)
+MatrixL2FillTable::retireDrain(const DrainCandidate &candidate)
 {
-    auto *slot = findSlot(source_id);
-    if (slot == nullptr || !slot->entry.hasData ||
-        slot->entry.remainingFillChunks == 0) {
+    if (candidate.targetBank >= bankFifos.size()) {
+        return false;
+    }
+    auto &fifo = bankFifos[candidate.targetBank];
+    if (fifo.empty() || fifo.front() != candidate.handle) {
+        return false;
+    }
+
+    if (!retireFillChunk(candidate.handle)) {
+        return false;
+    }
+
+    if (!entryReadyToRelease(candidate.handle)) {
+        return true;
+    }
+
+    fifo.pop_front();
+    return releaseEntry(candidate.handle);
+}
+
+bool
+MatrixL2FillTable::retireFillChunk(Handle handle)
+{
+    auto *slot = findSlot(handle);
+    if (slot == nullptr || slot->entry.remainingFillChunks == 0) {
         return false;
     }
 
@@ -391,22 +471,23 @@ MatrixL2FillTable::retireFillChunk(uint32_t source_id)
 }
 
 bool
-MatrixL2FillTable::releaseSource(uint32_t source_id)
+MatrixL2FillTable::releaseEntry(Handle handle)
 {
-    auto *slot = findSlot(source_id);
-    if (slot == nullptr || !sourceReadyToRelease(source_id)) {
+    auto *slot = findSlot(handle);
+    if (slot == nullptr || !entryReadyToRelease(handle)) {
         return false;
     }
 
     slot->valid = false;
     slot->entry = Entry{};
+    ++slot->generation;
     return true;
 }
 
 std::optional<MatrixL2FillTable::Entry>
-MatrixL2FillTable::lookup(uint32_t source_id) const
+MatrixL2FillTable::lookup(Handle handle) const
 {
-    const auto *slot = findSlot(source_id);
+    const auto *slot = findSlot(handle);
     if (slot == nullptr) {
         return std::nullopt;
     }
@@ -422,17 +503,10 @@ MatrixL2FillTable::hasFreeEntry() const
 }
 
 bool
-MatrixL2FillTable::sourceHeld(uint32_t source_id) const
+MatrixL2FillTable::entryReadyToRelease(Handle handle) const
 {
-    return findSlot(source_id) != nullptr;
-}
-
-bool
-MatrixL2FillTable::sourceReadyToRelease(uint32_t source_id) const
-{
-    const auto *slot = findSlot(source_id);
-    return slot != nullptr && slot->entry.hasData &&
-           slot->entry.remainingFillChunks == 0;
+    const auto *slot = findSlot(handle);
+    return slot != nullptr && slot->entry.remainingFillChunks == 0;
 }
 
 size_t
@@ -443,10 +517,19 @@ MatrixL2FillTable::reservedCount() const
         [](const Slot &slot) { return slot.valid; });
 }
 
-unsigned
-MatrixL2FillTable::pendingFillChunks(uint32_t source_id) const
+size_t
+MatrixL2FillTable::bankFifoOccupancy(unsigned bank) const
 {
-    const auto *slot = findSlot(source_id);
+    if (bank >= bankFifos.size()) {
+        return 0;
+    }
+    return bankFifos[bank].size();
+}
+
+unsigned
+MatrixL2FillTable::pendingFillChunks(Handle handle) const
+{
+    const auto *slot = findSlot(handle);
     return slot == nullptr ? 0 : slot->entry.remainingFillChunks;
 }
 

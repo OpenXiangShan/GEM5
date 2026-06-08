@@ -30,7 +30,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <optional>
 
 namespace gem5
 {
@@ -90,54 +89,70 @@ MatrixRegResource::abBankIndex(MatrixBankKind bank)
     return bank == MatrixBankKind::A ? 0 : 1;
 }
 
+bool
+MatrixRegResource::validBankMask(uint16_t bank_mask)
+{
+    return bank_mask != 0 && (bank_mask & ~FullBankMask) == 0;
+}
+
+bool
+MatrixRegResource::fullBankMask(uint16_t bank_mask)
+{
+    return bank_mask == FullBankMask;
+}
+
+bool
+MatrixRegResource::singleBankMask(uint16_t bank_mask)
+{
+    return validBankMask(bank_mask) &&
+           (bank_mask & (bank_mask - 1)) == 0;
+}
+
+bool
+MatrixRegResource::bankMaskIncludes(uint16_t bank_mask, unsigned bank)
+{
+    return (bank_mask & (1U << bank)) != 0;
+}
+
 void
 MatrixRegResource::advanceCycle()
 {
     ++cycle;
-    for (auto &token : abBankTokens) {
-        token = AbBankToken{};
+    for (auto &bank_tokens : abBankTokens) {
+        for (auto &token : bank_tokens) {
+            token = AbBankToken{};
+        }
     }
-    cBankToken = CBankToken{};
 }
 
 bool
 MatrixRegResource::currentCycleGrantBlocks(const Request &request,
                                            Grant &grant) const
 {
-    if (isAbBank(request.bank)) {
-        const auto &token = abBankTokens[abBankIndex(request.bank)];
+    if (!isAbBank(request.bank)) {
+        return false;
+    }
+
+    const auto &bank_tokens = abBankTokens[abBankIndex(request.bank)];
+    bool blocked = false;
+    for (unsigned bank = 0; bank < NumBanks; ++bank) {
+        if (!bankMaskIncludes(request.bankMask, bank)) {
+            continue;
+        }
+        const auto &token = bank_tokens[bank];
         if (!token.busy) {
-            return false;
+            continue;
         }
-        grant.reason = token.access == Access::Write &&
-                       request.access == Access::Read ?
-            StallReason::AbWritePriority : StallReason::BankConflict;
-        return true;
-    }
-
-    if (request.bank != MatrixBankKind::C) {
-        return false;
-    }
-
-    const uint32_t parity = request.entry & 1;
-    if (request.access == Access::Read) {
-        if (cBankToken.readBusy) {
-            grant.reason = StallReason::BankConflict;
+        if (token.access == Access::Write &&
+            request.access == Access::Read) {
+            grant.reason = StallReason::AbWritePriority;
             return true;
         }
-        if (cBankToken.writeBusy && cBankToken.writeParity == parity) {
-            grant.reason = StallReason::CReadWriteConflict;
-            return true;
-        }
-        return false;
+        blocked = true;
     }
 
-    if (cBankToken.writeBusy) {
+    if (blocked) {
         grant.reason = StallReason::BankConflict;
-        return true;
-    }
-    if (cBankToken.readBusy && cBankToken.readParity == parity) {
-        grant.reason = StallReason::CReadWriteConflict;
         return true;
     }
     return false;
@@ -146,24 +161,18 @@ MatrixRegResource::currentCycleGrantBlocks(const Request &request,
 void
 MatrixRegResource::markCycleGrant(const Request &request)
 {
-    if (isAbBank(request.bank)) {
-        auto &token = abBankTokens[abBankIndex(request.bank)];
+    if (!isAbBank(request.bank)) {
+        return;
+    }
+
+    auto &bank_tokens = abBankTokens[abBankIndex(request.bank)];
+    for (unsigned bank = 0; bank < NumBanks; ++bank) {
+        if (!bankMaskIncludes(request.bankMask, bank)) {
+            continue;
+        }
+        auto &token = bank_tokens[bank];
         token.busy = true;
         token.access = request.access;
-        return;
-    }
-
-    if (request.bank != MatrixBankKind::C) {
-        return;
-    }
-
-    const uint32_t parity = request.entry & 1;
-    if (request.access == Access::Read) {
-        cBankToken.readBusy = true;
-        cBankToken.readParity = parity;
-    } else {
-        cBankToken.writeBusy = true;
-        cBankToken.writeParity = parity;
     }
 }
 
@@ -181,122 +190,70 @@ std::vector<MatrixRegResource::Grant>
 MatrixRegResource::arbitrate(const std::vector<Request> &requests)
 {
     std::vector<Grant> grants(requests.size());
-    std::vector<bool> eligible(requests.size(), true);
+    std::vector<bool> eligible(requests.size(), false);
 
     for (size_t i = 0; i < requests.size(); ++i) {
-        if (requests[i].bankMask != FullBankMask) {
+        const auto &request = requests[i];
+        if (!validBankMask(request.bankMask)) {
             grants[i].reason = StallReason::PartialBankMask;
-            eligible[i] = false;
-        }
-    }
-
-    for (size_t i = 0; i < requests.size(); ++i) {
-        if (!eligible[i]) {
             continue;
         }
-        if (currentCycleGrantBlocks(requests[i], grants[i])) {
-            eligible[i] = false;
-        }
-    }
 
-    for (const auto bank : {MatrixBankKind::A, MatrixBankKind::B}) {
-        std::vector<size_t> reads;
-        std::vector<size_t> writes;
-        for (size_t i = 0; i < requests.size(); ++i) {
-            if (!eligible[i] || requests[i].bank != bank) {
+        if (isAbBank(request.bank)) {
+            const bool valid_owner =
+                (request.client == Client::DataController &&
+                 request.access == Access::Read &&
+                 fullBankMask(request.bankMask)) ||
+                (request.client == Client::MemoryLoader &&
+                 request.access == Access::Write);
+            if (!valid_owner) {
+                grants[i].reason = StallReason::InvalidOwner;
                 continue;
             }
-            if (requests[i].access == Access::Read) {
-                reads.push_back(i);
-            } else {
-                writes.push_back(i);
+        } else if (request.bank == MatrixBankKind::C) {
+            const bool valid_owner =
+                (request.client == Client::DataController &&
+                 fullBankMask(request.bankMask)) ||
+                (request.client == Client::MemoryLoader &&
+                 singleBankMask(request.bankMask));
+            if (!valid_owner) {
+                grants[i].reason = StallReason::PartialBankMask;
+                continue;
             }
         }
 
-        if (!writes.empty()) {
-            grants[writes.front()].granted = true;
-            for (size_t i = 1; i < writes.size(); ++i) {
-                grants[writes[i]].reason = StallReason::BankConflict;
-            }
-            for (const auto read_idx : reads) {
-                grants[read_idx].reason = StallReason::AbWritePriority;
-            }
-        } else if (!reads.empty()) {
-            grants[reads.front()].granted = true;
-            for (size_t i = 1; i < reads.size(); ++i) {
-                grants[reads[i]].reason = StallReason::BankConflict;
-            }
-        }
+        eligible[i] = true;
     }
 
-    std::vector<size_t> c_reads;
-    std::vector<size_t> c_writes;
+    const auto try_grant = [&](size_t i) {
+        const auto &request = requests[i];
+        if (!eligible[i] || grants[i].granted ||
+            grants[i].reason != StallReason::None) {
+            return;
+        }
+        if (currentCycleGrantBlocks(request, grants[i])) {
+            return;
+        }
+
+        grants[i].granted = true;
+        markCycleGrant(request);
+        if (request.access == Access::Read) {
+            enqueueReadResponse(request);
+        }
+    };
+
     for (size_t i = 0; i < requests.size(); ++i) {
-        if (!eligible[i] || requests[i].bank != MatrixBankKind::C) {
-            continue;
-        }
-        if (requests[i].access == Access::Read) {
-            c_reads.push_back(i);
-        } else {
-            c_writes.push_back(i);
-        }
-    }
-
-    std::optional<size_t> c_write_grant;
-    if (!c_writes.empty()) {
-        c_write_grant = c_writes.front();
-        grants[*c_write_grant].granted = true;
-        for (size_t i = 1; i < c_writes.size(); ++i) {
-            grants[c_writes[i]].reason = StallReason::BankConflict;
-        }
-    }
-
-    if (!c_reads.empty()) {
-        const bool same_parity_write =
-            c_write_grant &&
-            ((requests[c_reads.front()].entry & 1) ==
-             (requests[*c_write_grant].entry & 1));
-        if (same_parity_write) {
-            grants[c_reads.front()].reason =
-                StallReason::CReadWriteConflict;
-            if (c_writes.size() == 1) {
-                grants[*c_write_grant].granted = false;
-                grants[*c_write_grant].reason =
-                    StallReason::CReadWriteConflict;
-            }
-        } else if (c_writes.size() > 1) {
-            grants[c_reads.front()].reason = StallReason::BankConflict;
-        } else {
-            grants[c_reads.front()].granted = true;
-        }
-        for (size_t i = 1; i < c_reads.size(); ++i) {
-            grants[c_reads[i]].reason = StallReason::BankConflict;
+        if (isAbBank(requests[i].bank) &&
+            requests[i].access == Access::Write) {
+            try_grant(i);
         }
     }
 
     for (size_t i = 0; i < requests.size(); ++i) {
-        if (!grants[i].granted) {
-            continue;
-        }
-        markCycleGrant(requests[i]);
-        if (requests[i].access == Access::Read) {
-            enqueueReadResponse(requests[i]);
-        }
+        try_grant(i);
     }
 
     return grants;
-}
-
-bool
-MatrixRegResource::readResponseReady(MatrixBankKind bank, Client client) const
-{
-    return std::any_of(
-        readResponses.begin(), readResponses.end(),
-        [&](const ReadResponse &response) {
-            return response.bank == bank &&
-                   response.client == client &&
-                   response.readyCycle <= cycle;
-        });
 }
 
 bool

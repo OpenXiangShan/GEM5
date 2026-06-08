@@ -168,7 +168,22 @@ class MatrixL2FillTable
     struct Config
     {
         size_t entryCount = 4;
-        unsigned fillChunksPerBeat = 2;
+        size_t bankFifoDepth = 2;
+    };
+
+    struct Handle
+    {
+        uint32_t slot = 0;
+        uint32_t generation = 0;
+
+        bool operator==(const Handle &other) const
+        {
+            return slot == other.slot && generation == other.generation;
+        }
+        bool operator!=(const Handle &other) const
+        {
+            return !(*this == other);
+        }
     };
 
     struct Request
@@ -180,44 +195,66 @@ class MatrixL2FillTable
         MatrixBankKind destBank = MatrixBankKind::A;
         uint32_t destReg = 0;
         uint32_t byteSize = 64;
+        unsigned fillChunks = 2;
+        unsigned targetBank = 0;
+        uint32_t targetEntry = 0;
     };
 
     struct Entry
     {
         Request request = {};
-        bool hasData = false;
         uint32_t dataSize = 0;
         std::array<uint8_t, 64> data = {};
         unsigned remainingFillChunks = 0;
     };
 
+    struct DrainCandidate
+    {
+        Handle handle = {};
+        uint64_t seq = 0;
+        LocalMmuModel::Client client = LocalMmuModel::Client::AML;
+        MatrixBankKind destBank = MatrixBankKind::A;
+        unsigned targetBank = 0;
+        uint32_t targetEntry = 0;
+        unsigned remainingBeforeRetire = 0;
+    };
+
     explicit MatrixL2FillTable(Config config);
 
-    bool reserveForIssue(const Request &request);
-    bool acceptResponse(uint32_t source_id, const uint8_t *data,
-                        uint32_t size);
-    bool retireFillChunk(uint32_t source_id);
-    bool releaseSource(uint32_t source_id);
+    bool canAccept(const Request &request) const;
+    std::optional<Handle> acceptResponse(const Request &request,
+                                         const uint8_t *data,
+                                         uint32_t size);
+    bool canAcceptResponse(const Request &request) const;
+    std::optional<Handle> acceptResponseToBank(const Request &request,
+                                               const uint8_t *data,
+                                               uint32_t size);
+    std::optional<DrainCandidate> drainCandidate(unsigned bank) const;
+    bool retireDrain(const DrainCandidate &candidate);
+    bool retireFillChunk(Handle handle);
+    bool releaseEntry(Handle handle);
 
-    std::optional<Entry> lookup(uint32_t source_id) const;
+    std::optional<Entry> lookup(Handle handle) const;
     bool hasFreeEntry() const;
-    bool sourceHeld(uint32_t source_id) const;
-    bool sourceReadyToRelease(uint32_t source_id) const;
+    bool entryReadyToRelease(Handle handle) const;
     size_t reservedCount() const;
-    unsigned pendingFillChunks(uint32_t source_id) const;
+    size_t bankFifoOccupancy(unsigned bank) const;
+    unsigned pendingFillChunks(Handle handle) const;
 
   private:
     struct Slot
     {
         bool valid = false;
+        uint32_t generation = 0;
         Entry entry = {};
     };
 
-    Slot *findSlot(uint32_t source_id);
-    const Slot *findSlot(uint32_t source_id) const;
+    Slot *findSlot(Handle handle);
+    const Slot *findSlot(Handle handle) const;
 
     Config config;
     std::vector<Slot> slots;
+    std::array<std::deque<Handle>, 8> bankFifos;
 };
 
 } // namespace matrix

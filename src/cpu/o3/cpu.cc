@@ -376,7 +376,6 @@ CPU::CPU(const BaseO3CPUParams &params)
         std::vector<InstSeqNum>(TheISA::ISA::MatrixTokenCount, 0));
     constexpr unsigned detailedCuteFifoDepth = 8;
     auto detailed_backend = std::make_unique<matrix::DetailedCuteBackend>(
-        std::make_unique<matrix::Gem5MatrixMemoryAdapter>(),
         detailedCuteFifoDepth);
     detailed_backend->setTimingMemoryAdapter(&matrixMemPort);
     matrixBackend = std::move(detailed_backend);
